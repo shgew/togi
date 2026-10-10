@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"maps"
 	"math/rand/v2"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"time"
 
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
+	"github.com/shgew/togi/internal/trialfiles"
 )
 
 var signalOrder = []machine.Signal{machine.ComputationError, machine.Stall, machine.UnexpectedExit, machine.CorrectedMCE, machine.Crash}
@@ -35,6 +37,13 @@ type running struct {
 	escape  bool
 	stopped bool
 	stopErr error
+}
+
+func (t trials) Ended(id string) error {
+	if t.m.samplesDir == "" {
+		return nil
+	}
+	return trialfiles.Compress(filepath.Join(t.m.samplesDir, id))
 }
 
 func (trials) Sweep(ctx context.Context) (string, error) {

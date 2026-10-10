@@ -171,11 +171,19 @@ func TestCrashRecoveryRequestTelemetry(t *testing.T) {
 			contents = append(contents, []byte(`{"elapsed_ms":100000,"pm_table":`)...)
 			name := "samples.jsonl"
 			if tc.gzip {
-				// The completed lines of an interrupted trial whose compression finished; the torn tail never reaches it.
 				contents, name = gzipBytes(t, contents), name+".gz"
 			}
 			if err := os.WriteFile(filepath.Join(trialDir, name), contents, 0644); err != nil {
 				t.Fatal(err)
+			}
+			logDir := filepath.Join(trialDir, "work")
+			if err := os.Mkdir(logDir, 0755); err != nil {
+				t.Fatal(err)
+			}
+			for _, name := range []string{"stdout.log", "stderr.log"} {
+				if err := os.WriteFile(filepath.Join(logDir, name), []byte("interrupted output\n"), 0644); err != nil {
+					t.Fatal(err)
+				}
 			}
 			seams := in.Machine.Seams()
 			seams.Trials = sampledTrials{Trials: seams.Trials, reader: trial.New(trial.Options{Dir: dir})}
@@ -186,6 +194,16 @@ func TestCrashRecoveryRequestTelemetry(t *testing.T) {
 				t.Fatal(err)
 			}
 			assertRequestTelemetry(t, readEvents(t, in.Dir), tc.count, true)
+			if !tc.offline {
+				for _, plain := range []string{filepath.Join(trialDir, "samples.jsonl"), filepath.Join(logDir, "stdout.log"), filepath.Join(logDir, "stderr.log")} {
+					if _, err := os.Stat(plain); !os.IsNotExist(err) {
+						t.Errorf("recovery left plain file %s: %v", filepath.Base(plain), err)
+					}
+					if _, err := os.Stat(plain + ".gz"); err != nil {
+						t.Errorf("recovery compressed file %s: %v", filepath.Base(plain), err)
+					}
+				}
+			}
 		})
 	}
 }

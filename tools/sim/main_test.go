@@ -151,12 +151,19 @@ func TestSimSamplesAreOptIn(t *testing.T) {
 			if diff := cmp.Diff(0, run(args, io.Discard)); diff != "" {
 				t.Fatalf("exit code (-want +got):\n%s", diff)
 			}
-			files, err := filepath.Glob(filepath.Join(dir, "trials", "*", "samples.jsonl"))
+			files, err := filepath.Glob(filepath.Join(dir, "trials", "*", "samples.jsonl.gz"))
 			if err != nil {
 				t.Fatal(err)
 			}
 			if diff := cmp.Diff(writeSamples, len(files) > 0); diff != "" {
 				t.Fatalf("sample files exist (-want +got):\n%s", diff)
+			}
+			plain, err := filepath.Glob(filepath.Join(dir, "trials", "*", "samples.jsonl"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(plain) != 0 {
+				t.Fatalf("completed simulated trials left plain samples: %v", plain)
 			}
 		})
 	}

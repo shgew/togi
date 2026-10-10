@@ -71,7 +71,7 @@ func TestTrialConditionsSamples(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		b, err := readTrialFile(filepath.Join(o.Dir, spec.ID, machine.SamplesFile))
+		b, err := readTrialFile(filepath.Join(o.Dir, spec.ID, "samples.jsonl"))
 		if err != nil {
 			t.Fatal(err)
 		}

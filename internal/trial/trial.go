@@ -15,6 +15,7 @@ import (
 
 	"github.com/shgew/togi/internal/backend"
 	"github.com/shgew/togi/internal/machine"
+	"github.com/shgew/togi/internal/trialfiles"
 )
 
 type Options struct {
@@ -70,7 +71,6 @@ type instance struct {
 	partial        [2]string
 	reaped         chan struct{}
 	joined         chan struct{}
-	dir            string
 	done           bool
 	writersStopped bool
 	unexpected     bool
@@ -181,7 +181,7 @@ func (r *Runner) Start(ctx context.Context, spec machine.TrialSpec) (machine.Run
 			prepared.closeLogs()
 			return nil, t.abort(fmt.Errorf("start %s: %w", scope, err))
 		}
-		inst := &instance{dir: dir, Core: core, CPUs: slices.Clone(cpus), PID: p.PID(), Scope: scope, process: p, resumed: time.Now(), reaped: make(chan struct{}), joined: make(chan struct{})}
+		inst := &instance{Core: core, CPUs: slices.Clone(cpus), PID: p.PID(), Scope: scope, process: p, resumed: time.Now(), reaped: make(chan struct{}), joined: make(chan struct{})}
 		for _, name := range prepared.launch.Watch {
 			inst.watch = append(inst.watch, watchFile{path: filepath.Join(dir, name)})
 		}
@@ -300,6 +300,10 @@ func scopeArgv(unit string, cpus []int, user Identity, dir string, argv ...strin
 	}
 	a = append(a, "--scope", "--quiet", "--collect", "--unit", unit, "--uid", strconv.FormatUint(uint64(user.UID), 10), "--gid", strconv.FormatUint(uint64(user.GID), 10), "--working-directory", dir, "-p", "AllowedCPUs="+joinCPUs(cpus), "-p", "DefaultDependencies=no", "--")
 	return append(a, argv...)
+}
+
+func (r *Runner) Ended(id string) error {
+	return trialfiles.Compress(filepath.Join(r.options.Dir, id))
 }
 
 func (t *running) Started() machine.Started { return t.started }

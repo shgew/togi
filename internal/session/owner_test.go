@@ -36,6 +36,7 @@ type ownerTrials struct {
 	stopped    int
 	panicStart bool
 	stopErr    error
+	endedErr   error
 	smu        machine.SMU
 	tuned      bool
 }
@@ -49,6 +50,13 @@ func (t *ownerTrials) Start(ctx context.Context, spec machine.TrialSpec) (machin
 	offset, _ := t.smu.Offset(spec.Cores[0])
 	t.tuned = offset < 0
 	return &ownerRunning{Running: r, owner: t}, nil
+}
+
+func (t *ownerTrials) Ended(id string) error {
+	if t.endedErr != nil {
+		return t.endedErr
+	}
+	return t.Trials.Ended(id)
 }
 
 type ownerRunning struct {
@@ -96,7 +104,7 @@ func (j ownerJournal) Append(p journal.Payload, cause ...int) (journal.Event, er
 	return event, err
 }
 func TestRunOwnerEveryExit(t *testing.T) {
-	for _, mode := range []string{"passed trial", "ordinary error", "panic"} {
+	for _, mode := range []string{"passed trial", "compression warning", "ordinary error", "panic"} {
 		t.Run(mode, func(t *testing.T) {
 			t.Parallel()
 			r, m, closeJournal := checkedRunner(t, []int{0, 0})
@@ -106,6 +114,9 @@ func TestRunOwnerEveryExit(t *testing.T) {
 			original := errors.New("injected failure")
 			cleanupErr := errors.New("injected close failure")
 			trials := &ownerTrials{Trials: r.in.Machine.Trials, panicStart: mode == "panic"}
+			if mode == "compression warning" {
+				trials.endedErr = original
+			}
 			trials.smu = r.in.Machine.SMU
 			r.in.Machine.Trials = trials
 			r.in.Machine.SMU = ownerSMU{SMU: r.in.Machine.SMU, trials: trials, t: t}
@@ -129,7 +140,7 @@ func TestRunOwnerEveryExit(t *testing.T) {
 					t.Errorf("cleanup offsets (-want +got):\n%s", diff)
 				}
 				closeJournal()
-				if mode != "passed trial" {
+				if mode != "passed trial" && mode != "compression warning" {
 					return cleanupErr
 				}
 				return nil
@@ -153,10 +164,29 @@ func TestRunOwnerEveryExit(t *testing.T) {
 				if runErr != nil {
 					t.Fatal(runErr)
 				}
+				var warnings int
 				for _, e := range r.in.Journal.Events() {
-					if e.Kind == journal.KindSessionWarning {
+					if e.Kind != journal.KindSessionWarning {
+						continue
+					}
+					warnings++
+					if mode != "compression warning" {
 						t.Fatalf("passed trial left a warning: %+v", e.Data)
 					}
+					want := &journal.SessionWarning{Operation: "compress trial files", Trial: "0001", Error: original.Error()}
+					if diff := cmp.Diff(want, e.Data); diff != "" {
+						t.Fatal(diff)
+					}
+					if len(e.Cause) != 1 {
+						t.Fatalf("warning cause = %v", e.Cause)
+					}
+					caused := r.in.Journal.Events()[e.Cause[0]-1].Data.(*journal.TrialEnd)
+					if caused.Outcome != journal.OutcomePass {
+						t.Fatalf("compression failure changed trial outcome: %+v", caused)
+					}
+				}
+				if mode == "compression warning" && warnings != 1 {
+					t.Fatalf("compression warnings = %d, want 1", warnings)
 				}
 			}
 		})

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/shgew/togi/internal/trialfiles"
 )
 
 func writeSamplesGzip(t *testing.T, path, content string) {
@@ -52,12 +53,12 @@ func TestReadSamplesForms(t *testing.T) {
 			t.Parallel()
 			dir := t.TempDir()
 			if tt.plain != nil {
-				if err := os.WriteFile(filepath.Join(dir, SamplesFile), []byte(*tt.plain), 0644); err != nil {
+				if err := os.WriteFile(filepath.Join(dir, trialfiles.Samples), []byte(*tt.plain), 0644); err != nil {
 					t.Fatal(err)
 				}
 			}
 			if tt.gz != nil {
-				path := filepath.Join(dir, SamplesFile+CompressedSuffix)
+				path := filepath.Join(dir, trialfiles.Samples+".gz")
 				if tt.rawGz {
 					if err := os.WriteFile(path, []byte(*tt.gz), 0644); err != nil {
 						t.Fatal(err)
@@ -76,7 +77,7 @@ func TestReadSamplesForms(t *testing.T) {
 func TestReadSamplesStopsEarly(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	writeSamplesGzip(t, filepath.Join(dir, SamplesFile+CompressedSuffix), "{\"elapsed_ms\":1}\n{\"elapsed_ms\":2}\n")
+	writeSamplesGzip(t, filepath.Join(dir, trialfiles.Samples+".gz"), "{\"elapsed_ms\":1}\n{\"elapsed_ms\":2}\n")
 	var got []TrialConditions
 	for s := range ReadSamples(dir) {
 		got = append(got, s)

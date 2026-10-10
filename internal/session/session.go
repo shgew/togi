@@ -743,7 +743,7 @@ func (r *runner) closeOpenTrial() error {
 			}
 		}
 	}
-	_, err := r.append(end, cause...)
+	_, err := r.appendTrialEnd(end, cause...)
 	return err
 }
 
