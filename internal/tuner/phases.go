@@ -132,7 +132,7 @@ func coreList(ids []int) string {
 // phase2Moves returns the profile one round moves to, the cores it moves one count toward their solo limits, and the
 // cores that kept an unverified offset from a round that ended unpassed without a blame (a failure with no deepened core
 // loaded, or a profile that reached a constraint) and are checked again in place without moving. A core that yielded is
-// finished and never moves again.
+// finished: no later round moves it, though an ordinary backoff can still step it back.
 func (s *State) phase2Moves() (profile, moved, carried []int) {
 	profile = s.offsets()
 	passed := s.phases.passed

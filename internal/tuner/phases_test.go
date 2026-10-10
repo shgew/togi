@@ -663,3 +663,52 @@ func TestRoundBaselineOfAFreshMoverIsItsCurrentOffset(t *testing.T) {
 		t.Fatalf("resume baseline (-live +replayed):\n%s", diff)
 	}
 }
+
+func TestConfirmationFailureNamingAPhase1CoreRevertsOnlyTheDeepenedCore(t *testing.T) {
+	h := newHarness(t, soloCore(-10, -11), soloCore(-10, -10))
+	h.add(&journal.ProfileChange{To: []int{-10, -10}})
+	h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleStart, Steps: h.s.steps})
+	h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleEnd, Passed: true, Full: true})
+	drive(t, h, func() bool { return h.s.phases.confirmStart != 0 && h.s.checking.open })
+	if got := h.s.offsets(); !slices.Equal(got, []int{-11, -10}) {
+		t.Fatalf("offsets %v, want core 0 deepened to -11 and core 1 at its phase-1 offset -10", got)
+	}
+	named := func(profile []int) journal.Event {
+		return h.add(&journal.Failure{Signal: machine.Crash, Attribution: journal.Attributed, Core: new(1), Offset: new(-10), Regime: machine.R6, Condition: machine.Together, Profile: profile})
+	}
+	first := named([]int{-11, -10})
+	if h.s.core(1).pending != first.Seq {
+		t.Fatalf("core 1 pending %d, want the failure #%d", h.s.core(1).pending, first.Seq)
+	}
+	a := h.next()
+	d, ok := a.Payload.(*journal.TunerDecision)
+	if !ok || d.Phase != journal.PhaseDeepening || d.Decision != journal.Backoff || d.Core != 0 || d.ToOffset != -10 || d.FailurePoint == nil || *d.FailurePoint != -11 || !slices.Equal(a.Cause, []int{first.Seq}) {
+		t.Fatalf("first failure %+v, want the deepened core 0 back to -10 with failure point -11", a)
+	}
+	if diff := cmp.Diff(a, replayState(h.events).Next()); diff != "" {
+		t.Fatalf("resume (-live +replayed):\n%s", diff)
+	}
+	h.decide(a)
+	if c := h.s.core(1); c.pending != 0 || c.offset != -10 || c.fail == nil || *c.fail != -11 {
+		t.Fatalf("core 1 pending %d, offset %d, failure point %v: the named phase-1 core must keep its offset and lose the pending attribution", c.pending, c.offset, c.fail)
+	}
+	for range 40 {
+		a = h.next()
+		if p, ok := a.Payload.(*journal.TunerDecision); ok && p.Core == 1 && p.Decision == journal.Backoff {
+			t.Fatalf("the named phase-1 core backed off on the failure the deepened core answered: %+v", p)
+		}
+		if _, ok := a.Payload.(*journal.CheckingCycle); ok || a.Kind == RunTrial {
+			break
+		}
+		h.decide(a)
+	}
+	again := named([]int{-10, -10})
+	a = h.next()
+	d, ok = a.Payload.(*journal.TunerDecision)
+	if !ok || d.Phase == journal.PhaseDeepening || d.Decision != journal.Backoff || d.Core != 1 || d.ToOffset != -9 || !slices.Equal(a.Cause, []int{again.Seq}) {
+		t.Fatalf("recurrence %+v, want an ordinary backoff of core 1 citing failure #%d", a, again.Seq)
+	}
+	if diff := cmp.Diff(a, replayState(h.events).Next()); diff != "" {
+		t.Fatalf("resume (-live +replayed):\n%s", diff)
+	}
+}
