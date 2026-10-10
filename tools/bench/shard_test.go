@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"slices"
 	"testing"
 )
@@ -53,10 +54,31 @@ func TestShardsHoldEverySessionOnceAndBalanceWeight(t *testing.T) {
 	if got := slices.Max(loads) - slices.Min(loads); got > 60 {
 		t.Errorf("shard weights %v differ by %v, want a balanced split", loads, got)
 	}
-	for range 50 {
-		for i := range count {
-			if !slices.EqualFunc(shardRuns(runs, weights, i, count), shardRuns(runs, weights, i, count), func(a, b runSpec) bool { return a.seed == b.seed }) {
-				t.Fatalf("shard %d differs between two calls", i)
+}
+
+// An unmeasured session weighs the mean of the measured ones, so every shard process must compute the same mean: with
+// the embedded weights, summing them in another order tips the near tie below and puts default/dev-1 in both shards or
+// in neither.
+func TestShardsAgreeOnUnmeasuredSessions(t *testing.T) {
+	var weights map[string]float64
+	if err := json.Unmarshal(shardWeights, &weights); err != nil {
+		t.Fatal(err)
+	}
+	keys := []sessionKey{{"target-shared-voltage", "holdout", 101}, {"target-r7-request-gap", "dev", 10}, {"added", "dev", 1}, {"added", "dev", 2}, {"default", "dev", 10}, {"default", "dev", 1}}
+	var runs []runSpec
+	for _, k := range keys {
+		runs = append(runs, runSpec{scenario: scenario{Name: k.scenario}, split: k.split, seed: k.seed})
+	}
+	for range 100 {
+		held := map[sessionKey]int{}
+		for i := range 2 {
+			for _, r := range shardRuns(runs, weights, i, 2) {
+				held[sessionKey{r.scenario.Name, r.split, r.seed}]++
+			}
+		}
+		for _, k := range keys {
+			if held[k] != 1 {
+				t.Fatalf("%s is in %d of the shards, want 1", k, held[k])
 			}
 		}
 	}
