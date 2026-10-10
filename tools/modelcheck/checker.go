@@ -133,7 +133,12 @@ func probabilityBounds(n, k int) [2]float64 {
 	return bounds
 }
 
-func (g *preparedGroup) meanP(m *sim.Machine) float64 {
+// Predictor gives one trial's failure probability; sim.Machine and sim.Predictor both do.
+type Predictor interface {
+	FailureProbability(profile []int, spec machine.TrialSpec) float64
+}
+
+func (g *preparedGroup) meanP(m Predictor) float64 {
 	var total float64
 	for _, p := range g.points {
 		total += float64(p.n) * m.FailureProbability(p.profile, p.spec)
@@ -141,7 +146,7 @@ func (g *preparedGroup) meanP(m *sim.Machine) float64 {
 	return total / float64(g.group.N)
 }
 
-func (c *Checker) Accepts(m *sim.Machine) bool {
+func (c *Checker) Accepts(m Predictor) bool {
 	for i := range c.groups {
 		g := &c.groups[i]
 		p := g.meanP(m)
@@ -152,7 +157,7 @@ func (c *Checker) Accepts(m *sim.Machine) bool {
 	return true
 }
 
-func (c *Checker) Check(path, extract string, m *sim.Machine) *Result {
+func (c *Checker) Check(path, extract string, m Predictor) *Result {
 	check := &Result{Machine: path, Extract: extract, Status: "ok", Groups: []Group{}, IdleFailures: c.idle}
 	for i := range c.groups {
 		g := c.groups[i].group

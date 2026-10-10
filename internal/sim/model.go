@@ -421,14 +421,14 @@ func regimeIndex(r machine.Regime) int {
 	return -1
 }
 
-// limit is the deepest offset core passes in regime r; alone reports that every other core is at offset 0.
-func (m *Machine) limit(core int, r machine.Regime, workload string, alone bool) int {
+// limit is the deepest offset core passes in the regime with index i (see regimeIndex); alone reports that every
+// other core is at offset 0.
+func (m *hazards) limit(core, i int, workload string, alone bool) int {
 	for _, w := range m.workloadLimits[core] {
 		if w.id == workload {
 			return w.limit
 		}
 	}
-	i := regimeIndex(r)
 	if i < 0 {
 		return 0
 	}

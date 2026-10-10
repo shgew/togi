@@ -7,7 +7,6 @@ import (
 	"math"
 	"math/rand/v2"
 	"slices"
-	"sync"
 
 	"github.com/shgew/togi/internal/facts"
 	"github.com/shgew/togi/internal/journal"
@@ -25,7 +24,7 @@ type observation struct {
 
 type likelihood struct {
 	cfg   sim.Config
-	m     *sim.Machine
+	m     *sim.Predictor
 	obs   []observation
 	guard *modelcheck.Checker
 }
@@ -93,8 +92,8 @@ func bootstrap(records []trialfacts.Record, seed uint64) []trialfacts.Record {
 	return out
 }
 
-func (l *likelihood) newMachine() *sim.Machine {
-	m, err := sim.New(l.cfg)
+func (l *likelihood) newMachine() *sim.Predictor {
+	m, err := sim.NewPredictor(l.cfg)
 	if err != nil {
 		panic(err)
 	}
@@ -105,7 +104,7 @@ func (l *likelihood) rebuild() {
 	l.m = l.newMachine()
 }
 
-func (l *likelihood) valueOf(m *sim.Machine, i int) float64 {
+func (l *likelihood) valueOf(m *sim.Predictor, i int) float64 {
 	o := &l.obs[i]
 	p := m.FailureProbability(o.profile, o.spec)
 	var loss float64
@@ -149,7 +148,7 @@ func (l *likelihood) rawScore(indices []int) float64 {
 	return l.rawScoreOn(l.m, indices)
 }
 
-func (l *likelihood) rawScoreOn(m *sim.Machine, indices []int) float64 {
+func (l *likelihood) rawScoreOn(m *sim.Predictor, indices []int) float64 {
 	var loss float64
 	for _, i := range indices {
 		loss += l.valueOf(m, i)
@@ -162,18 +161,14 @@ func (l *likelihood) rawScoreOn(m *sim.Machine, indices []int) float64 {
 
 // scan sets l.cfg to each of n candidate configurations in turn through apply, builds their machines, then
 // scores all of them over indices concurrently. apply must change l.cfg only; the scan never changes l.m.
-func (l *likelihood) scan(n int, apply func(k int), indices []int) ([]*sim.Machine, []float64) {
-	machines := make([]*sim.Machine, n)
+func (l *likelihood) scan(n int, apply func(k int), indices []int) ([]*sim.Predictor, []float64) {
+	machines := make([]*sim.Predictor, n)
 	for k := range n {
 		apply(k)
 		machines[k] = l.newMachine()
 	}
 	losses := make([]float64, n)
-	var wg sync.WaitGroup
-	for k := range n {
-		wg.Go(func() { losses[k] = l.rawScoreOn(machines[k], indices) })
-	}
-	wg.Wait()
+	parallelFor(n, func(k int) { losses[k] = l.rawScoreOn(machines[k], indices) })
 	return machines, losses
 }
 
@@ -481,18 +476,14 @@ func (l *likelihood) addJoint(records []trialfacts.Record, ccd int) {
 		score float64
 	}
 	results := make([]fitted, len(candidates))
-	var wg sync.WaitGroup
-	for k, members := range candidates {
-		wg.Go(func() {
-			trial := likelihood{cfg: cloneMachine(l.cfg), obs: l.obs, guard: l.guard}
-			trial.cfg.Joints = append(trial.cfg.Joints, sim.Joint{Regimes: []machine.Regime{machine.R7}, Members: members, Rate: 0.001})
-			trial.rebuild()
-			candidate := &trial.cfg.Joints[original]
-			trial.continuous(func() float64 { return candidate.Rate }, func(x float64) { candidate.Rate = max(x, 1e-12) }, indices, 1e-7, 0.5)
-			results[k] = fitted{joint: *candidate, score: trial.score(indices)}
-		})
-	}
-	wg.Wait()
+	parallelFor(len(candidates), func(k int) {
+		trial := likelihood{cfg: cloneMachine(l.cfg), obs: l.obs, guard: l.guard}
+		trial.cfg.Joints = append(trial.cfg.Joints, sim.Joint{Regimes: []machine.Regime{machine.R7}, Members: candidates[k], Rate: 0.001})
+		trial.rebuild()
+		candidate := &trial.cfg.Joints[original]
+		trial.continuous(func() float64 { return candidate.Rate }, func(x float64) { candidate.Rate = max(x, 1e-12) }, indices, 1e-7, 0.5)
+		results[k] = fitted{joint: *candidate, score: trial.score(indices)}
+	})
 	var best sim.Joint
 	for _, result := range results {
 		if result.score < bestScore {

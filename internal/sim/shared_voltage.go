@@ -98,13 +98,13 @@ func normalizeVoltage(v *SharedVoltage, cores int) (*SharedVoltage, error) {
 	return &out, nil
 }
 
-func (m *Machine) sharedR7(spec machine.TrialSpec) bool {
+func (m *hazards) sharedR7(spec machine.TrialSpec) bool {
 	return m.cfg.SharedVoltage != nil && spec.Regime == machine.R7 && len(spec.Cores) > 1
 }
 
 // R7Requests returns the model's loaded-core requests without samples or RNG.
 // It is available only for multi-core R7 loads on shared-voltage machines.
-func (m *Machine) R7Requests(profile []int, spec machine.TrialSpec) ([16]float32, bool) {
+func (m *hazards) R7Requests(profile []int, spec machine.TrialSpec) ([16]float32, bool) {
 	if !m.sharedR7(spec) {
 		return [16]float32{}, false
 	}
@@ -115,7 +115,7 @@ func (m *Machine) R7Requests(profile []int, spec machine.TrialSpec) ([16]float32
 // total steady-state hazard, including background and unloaded-core hazards.
 // It returns zero outside multi-core shared-voltage R7, for an unloaded or
 // invalid core, or when total hazard is zero. Profile needs one offset per core.
-func (m *Machine) R7FailureShare(profile []int, spec machine.TrialSpec, core int) float64 {
+func (m *hazards) R7FailureShare(profile []int, spec machine.TrialSpec, core int) float64 {
 	if !m.sharedR7(spec) || core < 0 || core >= len(m.limits) || !slices.Contains(spec.Cores, core) {
 		return 0
 	}
@@ -141,7 +141,7 @@ type voltageState struct {
 	rates    [16]float64
 }
 
-func (m *Machine) voltageState(profile []int, spec machine.TrialSpec) voltageState {
+func (m *hazards) voltageState(profile []int, spec machine.TrialSpec) voltageState {
 	v := m.cfg.SharedVoltage
 	w, ok := v.Workload[spec.Workload.ID]
 	if !ok {
