@@ -178,6 +178,25 @@ func TestAuditInvariants(t *testing.T) {
 `, false, nil},
 		{"current rebuilt snapshot disagrees", `{"seq":2,"boot":"b","kind":"state.rebuilt","fields":["cores"]}
 ` + configLoaded(3, tuner.Ruleset, 0), false, []finding{{2, "replay"}}},
+		{"rebuilt then shutdown without config", `{"seq":2,"boot":"b","kind":"state.rebuilt","fields":["cores"]}
+{"seq":3,"boot":"b","kind":"shutdown","reason":"cycles"}
+`, false, []finding{{2, "replay"}}},
+		{"rebuilt then dead end without config", `{"seq":2,"boot":"b","kind":"state.rebuilt","fields":["cores"]}
+{"seq":3,"boot":"b","kind":"deadend","condition":"preflight","detail":"unsupported machine"}
+`, false, []finding{{2, "replay"}}},
+		{"rebuilt then archive without config", `{"seq":2,"boot":"b","kind":"state.rebuilt","fields":["cores"]}
+{"seq":3,"boot":"b","kind":"session.archived","session":"test","path":"archive"}
+`, false, []finding{{2, "replay"}}},
+		{"rebuilt then later boot without config", `{"seq":2,"boot":"b","kind":"state.rebuilt","fields":["cores"]}
+{"seq":3,"boot":"c","kind":"core.phase","core":0}
+`, false, []finding{{2, "replay"}}},
+		{"rebuilt in a finished journal without config", `{"seq":2,"boot":"b","kind":"state.rebuilt","fields":["cores"]}
+`, true, []finding{{2, "replay"}, {2, "termination"}}},
+		{"rebuilt at the end of an open journal", `{"seq":2,"boot":"b","kind":"state.rebuilt","fields":["cores"]}
+`, false, nil},
+		{"stale rebuilt then shutdown", `{"seq":2,"boot":"b","kind":"state.rebuilt","fields":["cores","last_seq"]}
+{"seq":3,"boot":"b","kind":"shutdown","reason":"cycles"}
+`, false, nil},
 		{"rebuilt after a build change", `{"seq":2,"boot":"b","kind":"state.rebuilt","fields":["bios","phases"]}
 ` + configLoaded(3, tuner.Ruleset, 1), false, nil},
 		{"reset clears marks", `{"seq":2,"boot":"b","kind":"core.phase","core":0,"failure_point":-30}

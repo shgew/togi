@@ -76,6 +76,8 @@ func (a *auditor) fold(e journal.Event) {
 		slices.Sort(a.cores)
 	}
 	if e.Boot != a.boot {
+		// The rebuild's run records config.loaded in its own boot.
+		a.flushRebuild()
 		// journal.md rule 2: a reboot may interrupt a write before its readback.
 		clear(a.pending)
 		a.boot = e.Boot
@@ -144,11 +146,14 @@ func (a *auditor) foldBuild(e journal.Event) {
 			a.flushRebuild()
 			a.rebuilt = &e
 		}
+	case *journal.Shutdown, *journal.DeadEnd, *journal.SessionArchived:
+		a.flushRebuild()
 	}
 }
 
-// flushRebuild flags a rebuild no config.loaded followed, so no build change explains it. Only finished runs flush:
-// a live real journal may be read before its run records config.loaded.
+// flushRebuild flags a rebuild whose run ended without config.loaded, so no build change explains it. A run ends at
+// its shutdown, a dead end, a session archive or a later boot; a finished simulated journal ends its last run. A live
+// real journal may be read before its run records config.loaded, so a rebuild pending at its end is deferred.
 func (a *auditor) flushRebuild() {
 	if a.rebuilt != nil {
 		a.add(*a.rebuilt, "replay", "state.rebuilt records disagreement with a current state.json snapshot")
