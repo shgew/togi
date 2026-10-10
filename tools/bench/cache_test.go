@@ -189,6 +189,58 @@ func TestCostTable(t *testing.T) {
 	}
 }
 
+func TestCostTableSurvivesScopeWithoutWall(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "costs.json")
+	if err := os.WriteFile(path, []byte(`{"scopes":[{"key":"a"},{"key":"b","wall":null}]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	costs := loadCosts(path)
+	key := sessionKey{"s", "dev", 1}
+	costs.set("a", key, 7)
+	costs.set("b", key, 9)
+	if got, ok := costs.get("a", key); !ok || got != 7 {
+		t.Errorf("cost set on a scope loaded without wall: %v, %v", got, ok)
+	}
+	if err := costs.save(); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := loadCosts(path).get("b", key); !ok || got != 9 {
+		t.Errorf("costs did not survive a save: %v, %v", got, ok)
+	}
+}
+
+func TestTouchDirRecreatesDirRemovedByPruning(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "same", "k")
+	calls := 0
+	chtimes := func(name string, atime, mtime time.Time) error {
+		calls++
+		if calls == 1 {
+			if err := os.RemoveAll(name); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return os.Chtimes(name, atime, mtime)
+	}
+	if err := touchDir(dir, chtimes); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(dir); err != nil {
+		t.Errorf("cache dir missing after recovery: %v", err)
+	}
+	if calls != 2 {
+		t.Errorf("touch attempts = %d, want 2", calls)
+	}
+
+	if err := touchDir(dir, func(name string, a, m time.Time) error {
+		if err := os.RemoveAll(name); err != nil {
+			t.Fatal(err)
+		}
+		return os.Chtimes(name, a, m)
+	}); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("a dir removed on every attempt must fail after the retries: %v", err)
+	}
+}
+
 func TestRunPool(t *testing.T) {
 	failure := errors.New("failed")
 	var started []int

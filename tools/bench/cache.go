@@ -45,12 +45,8 @@ type sessionCache struct{ dir string }
 func openSessionCache(root, key string) (*sessionCache, error) {
 	parent := filepath.Join(root, "same")
 	dir := filepath.Join(parent, key)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return nil, fmt.Errorf("create session cache: %w", err)
-	}
-	now := time.Now()
-	if err := os.Chtimes(dir, now, now); err != nil {
-		return nil, fmt.Errorf("touch session cache: %w", err)
+	if err := touchDir(dir, os.Chtimes); err != nil {
+		return nil, err
 	}
 	entries, err := os.ReadDir(parent)
 	if err != nil {
@@ -72,6 +68,25 @@ func openSessionCache(root, key string) (*sessionCache, error) {
 		os.RemoveAll(filepath.Join(parent, old.name))
 	}
 	return &sessionCache{dir}, nil
+}
+
+// touchDir creates dir and marks it used now. Another process pruning its least recently used caches may remove dir
+// between the two, so a dir found missing is created again, a few times at most.
+func touchDir(dir string, chtimes func(string, time.Time, time.Time) error) error {
+	const attempts = 3
+	for attempt := 1; ; attempt++ {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return fmt.Errorf("create session cache: %w", err)
+		}
+		now := time.Now()
+		err := chtimes(dir, now, now)
+		if err == nil {
+			return nil
+		}
+		if !errors.Is(err, fs.ErrNotExist) || attempt == attempts {
+			return fmt.Errorf("touch session cache: %w", err)
+		}
+	}
 }
 
 func (c *sessionCache) path(key sessionKey) string {
@@ -230,6 +245,11 @@ func loadCosts(path string) *costTable {
 	}
 	if c.data.Latest == nil {
 		c.data.Latest = map[string]float64{}
+	}
+	for i := range c.data.Scopes {
+		if c.data.Scopes[i].Wall == nil {
+			c.data.Scopes[i].Wall = map[string]float64{}
+		}
 	}
 	return c
 }
