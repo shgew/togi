@@ -40,6 +40,8 @@ type runSpec struct {
 	split    string
 	cfg      sim.Config
 	smoke    bool
+	// machineFiles lists every machine file the machine reads, leaf first; runs of one machine share it, read-only.
+	machineFiles []string
 }
 
 // benchCostScope keys the costs of plain bench runs, which build the current tree's simulator.
@@ -181,13 +183,14 @@ func loadRuns(path, split string, extracts trialfacts.Extracts) ([]runSpec, erro
 			paths = []string{s.Machine}
 		}
 		configs := make([]sim.Config, len(paths))
+		files := make([][]string, len(paths))
 		resolved := make([]string, len(paths))
 		for i, machinePath := range paths {
 			if machinePath != "" {
 				if !filepath.IsAbs(machinePath) {
 					machinePath = filepath.Join(filepath.Dir(path), machinePath)
 				}
-				configs[i], err = sim.LoadMachine(machinePath)
+				configs[i], files[i], err = sim.LoadMachineWithFiles(machinePath)
 				if err != nil {
 					return nil, fmt.Errorf("load scenario %s: %w", s.Name, err)
 				}
@@ -214,7 +217,7 @@ func loadRuns(path, split string, extracts trialfacts.Extracts) ([]runSpec, erro
 					member := index % len(configs)
 					selected := s
 					selected.Machine = resolved[member]
-					runs = append(runs, runSpec{selected, seed, group.name, configs[member], slices.Contains(s.Smoke, seed)})
+					runs = append(runs, runSpec{selected, seed, group.name, configs[member], slices.Contains(s.Smoke, seed), files[member]})
 				}
 			}
 		}
@@ -387,6 +390,7 @@ func execute(o options, stdout, stderr io.Writer) error {
 			return fmt.Errorf("close output: %w", err)
 		}
 	}
+	reportSuiteNotes(stdout, g)
 	reportSummary(stdout, results)
 	modelcheck.Report(stdout, checks)
 	var gateErr error

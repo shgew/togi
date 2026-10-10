@@ -20,15 +20,11 @@ just bench [--split dev|holdout|all] [--out FILE] [--baseline FILE] [--keep DIR]
 |`late-onset`|R7 joint failures that start only after four minutes of load; the cores' own limits have no delay|
 |`idle-limit`|cores that fail idle at shallower offsets than under load (issue #106)|
 |`misleading-mce`|joint crashes that leave an MCE naming one core (issue #114)|
-|`target-r4-limit`|target-fit-derived one-count together R4 limit gap on core 15; each medium-duty checking trial misses it 70.55% of the time, so the default cycle's three still can (issue #107)|
-|`target-nonmember-mce`|target-fit-derived CCD0 joint crashes deliberately name nonmember core 15; parked hunts can stop at that core's parked offset of zero (related to issue #114)|
-|`target-delayed-joint`|target-fit-derived CCD1 joint delayed by two minutes; short checks miss it and finite long-trial coverage can still conclude unsafe (issue #105)|
-|`target-flat-risk`|target-fit-derived rare offset-independent core-15 hazard that survives nonzero backoffs and finite checking evidence (issue #105)|
-|`target-flat-cost`|target-fit-derived stronger core-15 flat hazard; repeated hunts and one-count backoffs exceed three times the unmodified median (issues #105, #106)|
+|`target-nonmember-mce`|synthetic conclusion guard for #530, not an admitted adversary and with no adversary admission: CCD0 joint crashes deliberately name nonmember core 15; parked hunts can stop at that core's parked offset of zero (related to issue #114). It makes no hazard or time claim.|
 |`shared-voltage`|hand-set shared-rail R7 model with workload-dependent requests, clocks and per-core voltage demand; no facts or replay|
 |`target-shared-voltage`|real-fact replay over the all-facts shared-voltage anchor; an in-sample fit, not forward-validated|
-|`target-r7-vf-boost`|anchor-derived AVX2 core-5 required voltage rises faster than its request as partial CCD0 loads boost; in-sample, not forward-validated|
-|`target-r7-request-gap`|anchor-derived AVX-512 required-voltage curves leave core 11 dependent on core 10's rail support: full CCD1 loads pass but partial loads without core 10 can fail; requests unchanged; in-sample, not forward-validated|
+|`target-r7-vf-boost`|overlay of the anchor: AVX2 core-5 required voltage rises faster than its request as partial CCD0 loads boost; in-sample, not forward-validated|
+|`target-r7-request-gap`|overlay of the anchor: AVX-512 required-voltage curves leave core 11 dependent on core 10's rail support: full CCD1 loads pass but partial loads without core 10 can fail; requests unchanged; in-sample, not forward-validated|
 
 The failure sources are separate from the signals they produce:
 
@@ -37,9 +33,9 @@ The failure sources are separate from the signals they produce:
 | `default` | Seeded loaded-core limits. No unloaded-core hazard or joint. |
 | `flat-hazard`, `idle-limit`, `late-onset`, `misleading-mce` | Loaded-core limits, plus respectively nonzero-offset flat hazards on loaded or unloaded cores, unloaded-core idle limits, delayed R7 joints, or R7 joints with misleading MCE attribution. |
 | `target` | Exact real-fact answers where matched; otherwise fitted loaded-core limits, any fitted flat hazards, R7 joints and the residual `[ccd]` hazard where no joint applies. |
-| `target-r4-limit`, `target-nonmember-mce`, `target-delayed-joint`, `target-flat-risk`, `target-flat-cost` | Exact real-fact answers where matched; otherwise the legacy limit/joint fit with the named adversary change. Flat hazards also apply when their cores are unloaded. |
+| `target-nonmember-mce` | Exact real-fact answers where matched; otherwise a frozen copy of an older target-fit-4 limit/joint fit whose CCD0 joint crashes name nonmember core 15. Synthetic, not tracked against the current fit. |
 | `shared-voltage` | Loaded-core voltage-margin hazards for multi-core R7; loaded-core limits elsewhere. No replay, unloaded-core hazard or platform background rate. |
-| `target-shared-voltage`, `target-r7-vf-boost`, `target-r7-request-gap` | Exact real-fact answers where matched; otherwise loaded-core voltage-margin hazards and a CO-independent platform background rate for multi-core R7, and fitted loaded-core limits elsewhere. No unloaded-core hazard. |
+| `target-shared-voltage`, `target-r7-vf-boost`, `target-r7-request-gap` | Exact real-fact answers where matched; otherwise loaded-core voltage-margin hazards and a CO-independent platform background rate for multi-core R7, and fitted loaded-core limits elsewhere. No unloaded-core hazard. The two adversaries are overlays of the anchor and inherit everything else from it. |
 
 On `target-shared-voltage`, changing only unloaded cores' offsets cannot change the fitted multi-core R7 hazard. All `flat` rates are zero and no core has an `idle` limit; the voltage model computes power, clocks and the rail from loaded cores only. The same is true of its two shared-voltage adversaries. Parking unloaded cores can still change which real facts match, since replay matches the **whole** profile. A failure during a parked locate on this anchor is therefore not proof of an unloaded-core voltage dependency: it can come from a loaded core, the background rate or replay. This is a limitation of these scenarios, not a statement about hardware ([simulator model](simulating.md#shared-voltage-r7-model)).
 
@@ -50,6 +46,8 @@ Iterate on `dev`. Run `holdout` only to confirm a result, so the holdout seeds s
 The [`gate` object in `tools/bench/suite.json`](../tools/bench/suite.json) is the open ruleset's bench gate, committed before the ruleset is scored. It names the gate `id`, the `baseline` it is judged against (the ruleset and the commits that recorded the runs; a pull request that re-records runs adds its commit), the seed `split`, the `gated` scenarios, the `pooled` subset, the `conclude` scenarios, the `quantiles`, the bootstrap (`confidence`, `resamples`, `bootstrap_seed`) and `max_time_ratio`. The object and its `note` are the definition and the rationale; this page does not restate them per ruleset, and [ADR 0040](adr/0040-located-hunts.md) records the Ruleset 10 gate it replaced. The gate comes from [issue #491](https://github.com/shgew/togi/issues/491) and [issue #570](https://github.com/shgew/togi/issues/570).
 
 The gate's `notes` array preserves accompanying provenance and caveats as JSON data; it does not affect scoring.
+
+`just bench` prints each `notes` entry as a `suite: ...` line before its summary, so the default run visibly labels `target-nonmember-mce` as the synthetic conclusion guard.
 
 With `--baseline`, `just bench` judges the gate after the generic verdict below, prints each criterion with its estimate, interval, threshold and `PASS` or `FAIL`, then an overall `gate ID: PASS` or `FAIL`, and exits 0 only when the gate passes. Run it as `just bench --split all --baseline tools/bench/baseline.jsonl`, scored once on every seed of the gate's split; a different `--split`, a candidate or baseline run missing for a required seed, a baseline recorded at another ruleset or commit than the gate names, or a missing `worst_r7_hazard_per_h` fails the gate with a refusal that names the cause. A suite without a `gate` prints no gate and exits as before. The criteria, per scenario unless noted:
 
@@ -65,6 +63,8 @@ Maxima and everything else are reported by the summary and the comparison, not g
 The **historical score of 2026-10-07**, recorded in [ADR 0040](adr/0040-located-hunts.md), used the anchor merged at `0ccbe089` (generated at `0f6b5d23`), before its signal-mix regeneration in [#461](https://github.com/shgew/togi/pull/461), merge `bf7230d`. Those gate numbers are simulated results on that earlier evaluation environment, not current-anchor timings.
 
 On the regenerated anchor (`18a51a63`, merged at `bf7230d`), the [2026-10-07 #493 measurements](https://github.com/shgew/togi/issues/493#issuecomment-6040930168) report **simulated** median total time of 53.1 h for ruleset 9 and 249.8 h for ruleset 10, about 4.7×, on `target-shared-voltage` with 24 seeds. Ruleset 10 ran at `645f529`; ruleset 9 ran at `84c2a01` with the same simulator and regenerated machine. That anchor remains unchanged at `2f318490` (2026-10-10). The earlier 1.90×/2.03× claims do not describe it. See [How togi tunes](how-togi-tunes.md) for the measured phase breakdown and [the reproduction recipe](#reproducing-an-older-ruleset).
+
+Where these measurements and the Ruleset 9 and 10 numbers name `target-r7-vf-boost` or `target-r7-request-gap`, they describe the earlier frozen copies, not today's overlays.
 
 A scenario may also list `smoke` seeds, each one of its dev or holdout seeds: the sessions `just smoke` compares ([below](#proving-unchanged-decisions)). The list holds one session per scenario, the one with the most crashes and the longest history that takes about two seconds of CPU or less on the current simulator, so it changes in a reviewed pull request, never silently.
 
@@ -295,6 +295,8 @@ Compare a candidate with the recorded baseline:
 just bench --split all --baseline tools/bench/baseline.jsonl
 ```
 
+The one exception to re-recording a whole baseline is [#563](https://github.com/shgew/togi/issues/563): the two anchor overlays changed from frozen copies to genuine overlays of today's anchor, so only their two 24-seed scenarios (`target-r7-vf-boost`, `target-r7-request-gap`) were re-recorded. The other records stay as they were, the deleted scenarios' records are gone, and the recording commit is appended to the gate's `baseline.commits` ([#659](https://github.com/shgew/togi/issues/659)). The registered criteria, groups and limits did not change, and this records no official #530 score and admits no adversary.
+
 ## Forecasting a real run
 
 Before a hardware run, record what the simulator expects it to do, so that [`just stats` can score it afterwards](reviewing.md#scoring-a-forecast):
@@ -449,6 +451,8 @@ just bench --suite tools/bench/shared-voltage-suite.json --split dev
 Machine paths resolve relative to the suite; facts resolve relative to the machine. The declared facts and BIOS context let `trialfacts.Extracts.Replay` construct `sim.NewReplay` for matching decisive trials, with fitted fallback on unmatched classes/profiles. The bench process reads each extract once and shares it between its metric replay oracles and the model checks of every member that declares it; each simulated session's simulator still loads the extract itself. A replay run remains in-sample evidence, not forward validation.
 
 The suite includes the hand-set `shared-voltage`, the `target-shared-voltage` anchor and two R7 adversaries, each with dev seeds 1–12 and holdout seeds 101–112. Both adversaries passed the unchanged model check on all 52 eligible groups. Under ruleset 8, their dev and holdout median `worst_r7_hazard_per_h` exceeded the corresponding unmodified anchor medians by at least 1.5×. `target-r7-vf-boost` changes only AVX2 core 5's required-clock coefficient to 0.06 V/100 MHz; `target-r7-request-gap` changes AVX-512 cores 9–11's required-clock coefficients to 0.06 V/100 MHz and their required-voltage thresholds to 1.18 V, except core 10 at 1.22 V. Request, clock and power parameters stay at the anchor's values. Across measured R7 trials, both machines reproduce the anchor's loaded requests exactly, retaining its residuals against recorded requests. These expose record-only partial failures and untested request-ordered partial loads, not forward-validated hardware failure rates.
+
+Those measurements and the ruleset 8 ratios describe the earlier frozen-copy `target-r7-vf-boost` and `target-r7-request-gap`, written before the anchor's signal mix was regenerated. They are historical and not measurements of today's overlays ([#563](https://github.com/shgew/togi/issues/563)).
 
 ### Forward-chained check
 

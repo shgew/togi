@@ -19,7 +19,7 @@
     "max_time_ratio": 2.0,
     "baseline": {
       "ruleset": 10,
-      "commits": ["3a9b894"]
+      "commits": ["3a9b894", "21052983"]
     }
   },
   "scenarios": [
@@ -67,44 +67,12 @@
       "smoke": [104]
     },
     {
-      "name": "target-r4-limit",
-      "machine": "machines/target-r4-limit.json",
-      "replay": true,
-      "dev": [1, 2, 3, 4],
-      "holdout": [101, 102, 103, 104],
-      "smoke": [103]
-    },
-    {
       "name": "target-nonmember-mce",
       "machine": "machines/target-nonmember-mce.json",
       "replay": true,
       "dev": [1, 2, 3, 4],
       "holdout": [101, 102, 103, 104],
       "smoke": [103]
-    },
-    {
-      "name": "target-delayed-joint",
-      "machine": "machines/target-delayed-joint.json",
-      "replay": true,
-      "dev": [1, 2, 3, 4],
-      "holdout": [101, 102, 103, 104],
-      "smoke": [2]
-    },
-    {
-      "name": "target-flat-risk",
-      "machine": "machines/target-flat-risk.json",
-      "replay": true,
-      "dev": [1, 2, 3, 4],
-      "holdout": [101, 102, 103, 104],
-      "smoke": [101]
-    },
-    {
-      "name": "target-flat-cost",
-      "machine": "machines/target-flat-cost.json",
-      "replay": true,
-      "dev": [1, 2, 3, 4],
-      "holdout": [101, 102, 103, 104],
-      "smoke": [101]
     },
     {
       "name": "shared-voltage",

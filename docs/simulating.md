@@ -122,6 +122,28 @@ A joint-triggered crash produces no MCE by default, even when `model.crash_mce` 
 
 Run it with `go run ./tools/sim --machine <file> --state-dir <dir>` and inspect `events --kind hunt,combination,deepening` along with `status` and `watch`. `sim.Config` also models late-onset hazards (six minutes of R6 idle or four minutes of R7 heat soak), a flat rare hazard, a failure on an idle core, a backend error just before a crash, and watchdog, power-loss and thermal-trip resets. A scripted outcome pins a particular trial and time for deterministic interruption tests. The simulator has separate wall and boot-local monotonic clocks, so a wall-clock jump need not change which MCE belongs to a trial.
 
+### Machine overlays
+
+A machine file that names a parent in `extends` is an overlay: a scenario that is a named mechanism on an existing machine. It decodes to the parent's decoded machine with only the listed `shared_voltage_override` entries changed, so everything else (limits, model parameters, signal mix, every other shared-voltage value) is the parent's and follows when the parent changes.
+
+```json
+{
+  "description": "Overlay of target-shared-voltage.json: core 5's AVX2 required voltage rises faster with clock.",
+  "extends": "target-shared-voltage.json",
+  "shared_voltage_override": [
+    {
+      "workload": "mprime-avx2-36k-248k-allcore",
+      "core": 5,
+      "threshold_clock_v_per_100mhz": 0.06
+    }
+  ]
+}
+```
+
+`extends` is a path relative to the overlay's own directory, never absolute; the parent may itself be an overlay, and a cycle is an error. Each override entry names a `workload` and a `core` of the parent's `shared_voltage` and sets `threshold_v`, `threshold_clock_v_per_100mhz` or both; an absent field keeps the parent's value, and the result must be a valid machine. An overlay sets no other machine field: only `description` and `notes` may sit beside `extends` and `shared_voltage_override`. An unknown workload or core, a repeated target, an entry that sets neither field and an empty list are errors, as is a parent without `shared_voltage`. The format has no general patching.
+
+A parent's `facts` path is relative to the parent, so the overlay's decoded `facts` is rebased to resolve to the same extract from the overlay's directory. `sim.LoadMachine` returns the machine; `sim.LoadMachineWithFiles` also returns every machine file it was decoded from, the overlay first and then its parents in turn (one path for an ordinary machine file, never the facts extract), for a caller that must notice when any of them changes. `sim.EncodeMachine` always writes the materialized machine, never an overlay.
+
 ## Replaying real answers
 
 ```sh
