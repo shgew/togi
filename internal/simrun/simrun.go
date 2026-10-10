@@ -98,10 +98,19 @@ type Input struct {
 
 func Simulate(ctx context.Context, in Input) (stop session.Stop, err error) {
 	journals := &journals{}
+	var warm *session.Warm
+	if in.InMemoryJournal && !in.ColdBoots {
+		warm = &session.Warm{}
+	}
 	defer func() {
 		kept := journals.kept
 		if kept == nil {
 			return
+		}
+		if state, ok := warm.TakePending(); ok {
+			if writeErr := journals.last.WriteState(state); writeErr != nil {
+				err = errors.Join(err, writeErr)
+			}
 		}
 		finalizeErr := errors.Join(kept.flush(in.Log, in.Renderer), kept.Close())
 		if finalizeErr != nil && errors.Is(err, ErrBootCap) {
@@ -119,10 +128,6 @@ func Simulate(ctx context.Context, in Input) (stop session.Stop, err error) {
 	maxBoots := in.MaxBoots
 	if maxBoots == 0 {
 		maxBoots = defaultMaxBoots
-	}
-	var warm *session.Warm
-	if in.InMemoryJournal && !in.ColdBoots {
-		warm = &session.Warm{}
 	}
 	for n := 1; n <= maxBoots; n++ {
 		stop, err = boot(ctx, in, journals, warm)
@@ -169,6 +174,7 @@ func boot(ctx context.Context, in Input, journals *journals, warm *session.Warm)
 	if in.Wrap != nil {
 		wrapped = in.Wrap(wrapped)
 	}
+	journals.last = wrapped
 	return session.Run(runCtx, session.Input{Config: in.Config, ConfigPath: in.ConfigPath, Boot: id, Journal: wrapped, Machine: seams, Cycles: in.Cycles, Carry: j.carried, Stderr: in.Log, Log: in.Log, Renderer: in.Renderer, SessionID: j.sessionID, Warm: warm, DeferState: in.InMemoryJournal})
 }
 
@@ -177,6 +183,8 @@ func boot(ctx context.Context, in Input, journals *journals, warm *session.Warm)
 type journals struct {
 	prefix journal.Prefix
 	kept   *memoryJournal
+	// last is the last boot's journal as the session saw it, which writes the state projection a crash left pending.
+	last session.Journal
 }
 
 type bootJournal struct {

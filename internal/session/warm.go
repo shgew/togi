@@ -1,6 +1,7 @@
 package session
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
@@ -24,10 +25,12 @@ type Warm struct {
 	defects defect.Index
 	events  int
 	dirty   bool
+	// pending marks the projection as not yet written to the journal's state file.
+	pending bool
 }
 
 // Empty reports whether w holds no state to adopt.
-func (w *Warm) Empty() bool { return w.fold == nil }
+func (w *Warm) Empty() bool { return w == nil || w.fold == nil }
 
 func (w *Warm) project() {
 	if w.dirty {
@@ -64,6 +67,11 @@ func (w *Warm) Verify(events []journal.Event) error {
 	if got, want := findings(w.defects.Find(events, entries)), findings(defect.FindWith(events, entries)); got != want {
 		problems = append(problems, fmt.Sprintf("defect findings: warm %s, replayed %s", got, want))
 	}
+	if rt, err := stateRoundTrip(w.state); err != nil {
+		problems = append(problems, err.Error())
+	} else if fields := journal.DiffFields(rt, w.state); len(fields) > 0 {
+		problems = append(problems, fmt.Sprintf("projection fields %v change in a JSON round trip", fields))
+	}
 	if len(problems) > 0 {
 		return fmt.Errorf("warm state differs from a replay of %d events: %s", len(events), strings.Join(problems, "; "))
 	}
@@ -96,25 +104,55 @@ func replay(events []journal.Event) *Warm {
 	return w
 }
 
+// stateRoundTrip is the state as a state file written from s reads back. A boot that adopts a Warm whose state is still
+// unwritten skips the comparison of that file with the state, which holds only while the two agree in every field.
+func stateRoundTrip(s journal.State) (journal.State, error) {
+	data, err := json.Marshal(s)
+	if err != nil {
+		return journal.State{}, fmt.Errorf("marshal state: %w", err)
+	}
+	var out journal.State
+	if err := json.Unmarshal(data, &out); err != nil {
+		return journal.State{}, fmt.Errorf("unmarshal state: %w", err)
+	}
+	return out, nil
+}
+
 // adopt takes w's state into r when it covers events, and reports whether it did. Whatever w held is gone either way.
-func (w *Warm) adopt(r *runner, events int) bool {
+// State a crashed run left unwritten that r does not adopt is written to the journal first.
+func (w *Warm) adopt(r *runner, events int) (bool, error) {
 	if w == nil || w.Empty() {
-		return false
+		return false, nil
 	}
-	covers := w.events == events
-	if covers {
+	defer func() { *w = Warm{} }()
+	if w.events != events {
+		if !w.pending {
+			return false, nil
+		}
 		w.project()
-		r.fold, r.state, r.tuner, r.defects, r.folded = w.fold, w.state, w.tuner, w.defects, w.events
+		return false, r.in.Journal.WriteState(w.state)
 	}
-	*w = Warm{}
-	return covers
+	r.fold, r.state, r.tuner, r.defects, r.folded = w.fold, w.state, w.tuner, w.defects, w.events
+	r.dirty, r.statePending = w.dirty, w.pending
+	return true, nil
 }
 
 // store keeps r's state in w for the next run.
 func (w *Warm) store(r *runner) {
 	// The runner sets kernelDeadDetail outside the fold; no event records it, so a replay never has it.
 	r.fold.kernelDeadDetail = ""
-	*w = Warm{fold: r.fold, state: r.state, tuner: r.tuner, defects: r.defects, events: r.folded, dirty: r.dirty}
+	*w = Warm{fold: r.fold, state: r.state, tuner: r.tuner, defects: r.defects, events: r.folded, dirty: r.dirty, pending: r.statePending}
+}
+
+// TakePending returns the state projection a crashed run left unwritten, and that it did leave one. The caller writes
+// it to the journal, as the run would have.
+func (w *Warm) TakePending() (journal.State, bool) {
+	if w.Empty() || !w.pending {
+		return journal.State{}, false
+	}
+	w.project()
+	w.pending = false
+	return w.state, true
 }
 
 // recordedBuild is journal.BuildOf the journal's events, read from the folded state when w covers all of them.

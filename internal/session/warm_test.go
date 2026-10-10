@@ -60,15 +60,89 @@ func TestWarmIsAdoptedOnlyWhenItCoversTheJournal(t *testing.T) {
 	w, events := storedWarm(t)
 	fold := w.fold
 	r := &runner{}
-	if !w.adopt(r, len(events)) || r.fold != fold || r.folded != len(events) {
-		t.Fatal("a state covering every event was not adopted")
+	if adopted, err := w.adopt(r, len(events)); err != nil || !adopted || r.fold != fold || r.folded != len(events) {
+		t.Fatalf("a state covering every event: adopted %t, %v", adopted, err)
 	}
 	if !w.Empty() {
 		t.Fatal("adopted state stayed in the Warm")
 	}
 	w, events = storedWarm(t)
-	if w.adopt(&runner{}, len(events)+1) || !w.Empty() {
-		t.Fatal("a state missing events was adopted or kept")
+	if adopted, err := w.adopt(&runner{}, len(events)+1); err != nil || adopted || !w.Empty() {
+		t.Fatalf("a state missing events: adopted %t, %v, kept %t", adopted, err, !w.Empty())
+	}
+}
+
+func TestCrashLeavesDeferredStateUnwrittenInWarm(t *testing.T) {
+	t.Parallel()
+	r, _, closeJournal := checkedRunner(t, []int{0, 0})
+	defer closeJournal()
+	counting := &countingJournal{Journal: r.in.Journal}
+	r.in.Journal, r.in.DeferState, r.in.Warm = counting, true, new(Warm)
+	r.ready = true
+	if _, err := r.append(&journal.SessionWarning{Operation: "test"}); err != nil {
+		t.Fatal(err)
+	}
+	r.in.Warm.store(r)
+	if len(counting.writes) != 0 {
+		t.Fatalf("%d state writes by a run that crashed", len(counting.writes))
+	}
+	next := &runner{in: Input{Journal: counting}}
+	if adopted, err := r.in.Warm.adopt(next, len(counting.Events())); err != nil || !adopted {
+		t.Fatalf("adopted %t, %v", adopted, err)
+	}
+	if !next.statePending {
+		t.Fatal("the adopted state forgot that it is unwritten")
+	}
+	if err := next.checkState(); err != nil || len(counting.writes) != 0 {
+		t.Fatalf("checkState of an unwritten adopted state: %v, %d writes", err, len(counting.writes))
+	}
+	if err := next.finishState(); err != nil || len(counting.writes) != 1 || counting.writes[0].LastSeq != 3 {
+		t.Fatalf("finishing the run: %v, writes %+v", err, counting.writes)
+	}
+}
+
+func TestPendingStateIsTakenOnceAndWrittenWhenNotAdopted(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		take func(*Warm, *countingJournal, int) journal.State
+	}{
+		{"taken", func(w *Warm, _ *countingJournal, _ int) journal.State {
+			state, ok := w.TakePending()
+			if !ok {
+				t.Error("no pending state")
+			}
+			if _, again := w.TakePending(); again {
+				t.Error("pending state taken twice")
+			}
+			return state
+		}},
+		{"journal grew", func(w *Warm, j *countingJournal, events int) journal.State {
+			if adopted, err := w.adopt(&runner{in: Input{Journal: j}}, events+1); err != nil || adopted {
+				t.Errorf("adopted %t, %v", adopted, err)
+			}
+			if len(j.writes) != 1 {
+				t.Fatalf("%d state writes, want the pending one", len(j.writes))
+			}
+			return j.writes[0]
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			r, _, closeJournal := checkedRunner(t, []int{0, 0})
+			defer closeJournal()
+			counting := &countingJournal{Journal: r.in.Journal}
+			r.in.Journal, r.in.DeferState, r.in.Warm = counting, true, new(Warm)
+			r.ready = true
+			if _, err := r.append(&journal.SessionWarning{Operation: "test"}); err != nil {
+				t.Fatal(err)
+			}
+			r.in.Warm.store(r)
+			events := len(counting.Events())
+			if state := tc.take(r.in.Warm, counting, events); state.LastSeq != events {
+				t.Fatalf("state as of event %d, want %d", state.LastSeq, events)
+			}
+		})
 	}
 }
 

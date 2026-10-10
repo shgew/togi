@@ -54,8 +54,9 @@ type Input struct {
 	// replaying the journal when it covers every event, and stores its own state back when it returns.
 	Warm *Warm
 	// DeferState writes the state projection only when something reads it: before an event appended without a
-	// projection write, and when the run returns. Journal.WriteState must not fail and nothing may read the written state
-	// while the run is in progress, which holds for the simulator's in-memory journal.
+	// projection write, and when the run returns, except that a run ending in a crash with Warm set leaves it unwritten
+	// in Warm for Warm.TakePending. Journal.WriteState must not fail and nothing may read the written state while the
+	// run is in progress, which holds for the simulator's in-memory journal.
 	DeferState bool
 }
 
@@ -126,7 +127,13 @@ type runner struct {
 func Run(ctx context.Context, in Input) (stop Stop, err error) {
 	r := &runner{in: in, fold: newFold(), tuner: tuner.New()}
 	defer func() {
-		err = errors.Join(err, r.close(!errors.Is(err, machine.ErrCrashed), &stop), r.finishState())
+		crashed := errors.Is(err, machine.ErrCrashed)
+		err = errors.Join(err, r.close(!crashed, &stop))
+		// A crashed run with Warm leaves its unwritten projection there for the next run to adopt or write.
+		leaveState := crashed && in.DeferState && in.Warm != nil && r.ready
+		if !leaveState {
+			err = errors.Join(err, r.finishState())
+		}
 		if r.in.Warm != nil && r.ready {
 			r.in.Warm.store(r)
 		}
@@ -150,11 +157,9 @@ func (r *runner) run(ctx context.Context) (Stop, error) {
 			return Stop{}, fmt.Errorf("read previous tuning-boot reason: %w", err)
 		}
 	}
-	if !r.in.Warm.adopt(r, len(events)) {
-		journal.Replay(events, r.fold, &r.state, r.tuner)
-		r.folded, r.dirty = len(events), true
+	if err := r.loadFold(events); err != nil {
+		return Stop{}, err
 	}
-	r.ready = true
 	sameBoot := slices.Contains(r.fold.boots, r.in.Boot)
 	r.sameBootUnreconciled = sameBoot && r.fold.baselineSeq != 0
 	if len(events) > 0 {
@@ -473,6 +478,11 @@ func (r *runner) emergencyRestore(err error) error {
 }
 
 func (r *runner) checkState() error {
+	if r.statePending {
+		// The adopted state is the projection the crashed boot left unwritten, so the saved one is its own JSON round trip,
+		// which Warm.Verify checks differs from it in no field.
+		return nil
+	}
 	state := r.project()
 	saved, err := r.in.Journal.ReadState()
 	fields := journal.StateFields()
@@ -1402,4 +1412,18 @@ func (r *runner) restore() error {
 		return nil
 	}
 	return r.apply(targets, &journal.ProfileRestored{Offsets: targets}, r.fold.baselineSeq)
+}
+
+// loadFold takes the state the previous run on this journal left in Warm, or replays the journal into fresh state.
+func (r *runner) loadFold(events []journal.Event) error {
+	adopted, err := r.in.Warm.adopt(r, len(events))
+	if err != nil {
+		return fmt.Errorf("write state projection left by the crashed boot: %w", err)
+	}
+	if !adopted {
+		journal.Replay(events, r.fold, &r.state, r.tuner)
+		r.folded, r.dirty = len(events), true
+	}
+	r.ready = true
+	return nil
 }
