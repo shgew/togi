@@ -69,11 +69,11 @@ func NewPredictor(cfg Config) (*Predictor, error) {
 		return nil, errors.New("new predictor: limits are required")
 	}
 	// Joint members are checked on the indexed copy below, which avoids walking each map twice.
-	unmembered := slices.Clone(cfg.Joints)
-	for j := range unmembered {
-		unmembered[j].Members = nil
+	var jointErr error
+	for j := 0; j < len(cfg.Joints) && jointErr == nil; j++ {
+		jointErr = validateJointFields(&cfg.Joints[j], cfg.Cores)
 	}
-	if err := errors.Join(validateCCD(cfg.CCD), validateLimits(cfg.Limits, cfg.Cores), validateLimitHazards(cfg.Limits), validateJoints(unmembered, cfg.Cores)); err != nil {
+	if err := errors.Join(validateCCD(cfg.CCD), validateLimits(cfg.Limits, cfg.Cores), validateLimitHazards(cfg.Limits), jointErr); err != nil {
 		return nil, fmt.Errorf("new predictor: %w", err)
 	}
 	voltage, err := normalizeVoltage(cfg.SharedVoltage, cfg.Cores)
@@ -98,8 +98,8 @@ func NewPredictor(cfg Config) (*Predictor, error) {
 	p.index(cfg.Joints)
 	for _, members := range p.joints {
 		for _, member := range members {
-			if member.core < 0 || member.core >= cfg.Cores || member.offset < machine.MinOffset || member.offset > machine.MaxOffset {
-				return nil, fmt.Errorf("new predictor: joint member core %d offset %d invalid", member.core, member.offset)
+			if err := validateJointMember(member.core, member.offset, cfg.Cores); err != nil {
+				return nil, fmt.Errorf("new predictor: %w", err)
 			}
 		}
 	}

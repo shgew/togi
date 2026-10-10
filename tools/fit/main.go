@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"slices"
 	"strconv"
 	"time"
@@ -20,7 +21,10 @@ import (
 	"github.com/shgew/togi/tools/trialfacts"
 )
 
-func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }
+func main() {
+	debug.SetGCPercent(400)
+	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+}
 
 func run(args []string, stdout, stderr io.Writer) int {
 	return runWithSharedVoltageFit(args, stdout, stderr, fitSharedVoltage)

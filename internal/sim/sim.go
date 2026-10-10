@@ -414,26 +414,41 @@ func validateOutcome(trial string, s Outcome, cores int) error {
 }
 
 func validateJoints(joints []Joint, cores int) error {
-	for _, joint := range joints {
-		for c, offset := range joint.Members {
-			if c < 0 || c >= cores || offset < machine.MinOffset || offset > machine.MaxOffset {
-				return fmt.Errorf("joint member core %d offset %d invalid", c, offset)
+	for j := range joints {
+		for c, offset := range joints[j].Members {
+			if err := validateJointMember(c, offset, cores); err != nil {
+				return err
 			}
 		}
-		for _, r := range joint.Regimes {
-			if !slices.Contains(machine.Regimes, r) {
-				return fmt.Errorf("joint regime %q is not supported", r)
-			}
+		if err := validateJointFields(&joints[j], cores); err != nil {
+			return err
 		}
-		if joint.Signal != "" && !slices.Contains(signalOrder, joint.Signal) {
-			return fmt.Errorf("joint signal %q is not supported", joint.Signal)
+	}
+	return nil
+}
+
+func validateJointMember(core, offset, cores int) error {
+	if core < 0 || core >= cores || offset < machine.MinOffset || offset > machine.MaxOffset {
+		return fmt.Errorf("joint member core %d offset %d invalid", core, offset)
+	}
+	return nil
+}
+
+// validateJointFields checks everything about a joint except its members.
+func validateJointFields(joint *Joint, cores int) error {
+	for _, r := range joint.Regimes {
+		if !slices.Contains(machine.Regimes, r) {
+			return fmt.Errorf("joint regime %q is not supported", r)
 		}
-		if joint.Rate < 0 || joint.AfterS < 0 {
-			return fmt.Errorf("joint rate %g or delay %g is negative", joint.Rate, joint.AfterS)
-		}
-		if core := joint.CrashMCECore; core != nil && (*core < 0 || *core >= cores) {
-			return fmt.Errorf("joint crash MCE core %d outside [0, %d)", *core, cores)
-		}
+	}
+	if joint.Signal != "" && !slices.Contains(signalOrder, joint.Signal) {
+		return fmt.Errorf("joint signal %q is not supported", joint.Signal)
+	}
+	if joint.Rate < 0 || joint.AfterS < 0 {
+		return fmt.Errorf("joint rate %g or delay %g is negative", joint.Rate, joint.AfterS)
+	}
+	if core := joint.CrashMCECore; core != nil && (*core < 0 || *core >= cores) {
+		return fmt.Errorf("joint crash MCE core %d outside [0, %d)", *core, cores)
 	}
 	return nil
 }
