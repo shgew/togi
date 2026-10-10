@@ -406,7 +406,6 @@ func (s *State) Fold(e journal.Event) {
 		s.flight, s.flightCrashed = p, false
 		s.intents[p.Trial] = p
 		s.intentSeq[e.Seq] = p.Trial
-		s.recordCheckingTrial(p)
 		s.recordZeroRerun(e, p)
 		s.retry = nil
 		if p.Condition == machine.Alone && p.Core != nil {

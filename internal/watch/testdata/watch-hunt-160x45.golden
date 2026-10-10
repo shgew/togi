@@ -39,6 +39,6 @@
               3  rerun R5 both threads on 08: 5 trials of 2m, its original...     19:50  pass     R2 heavy vector on core 04 at -31 · passed · Tctl max 71°C
               4  resume cycle 1                                                   19:48  pass     R2 heavy vector on core 11 at -4 · passed · Tctl max 67°C
                                                                                   19:46  pass     R2 heavy vector on core 03 at -16 · passed · Tctl max 66°C
-                                                                                  +373 more
+                                                                                  +378 more
 
    ?  help    l  log    esc  back    q  close view

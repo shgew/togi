@@ -39,6 +39,6 @@
   R7 ───────────────────── top requesters ───── self-sufficient ─────────────     19:42  pass     R2 heavy vector on core 02 at -34 · passed · Tctl max 74°C
   mprime AVX2 36K-248K     05 14 by offset      01-14                             19:40  pass     R2 heavy vector on core 09 at -16 · passed · Tctl max 64°C
   mprime AVX-512 36K-248K  05 14 by offset      01-14                             19:38  pass     R2 heavy vector on core 01 at -33 · passed · Tctl max 62°C
-  y-cruncher FFTv4         05 14 by offset      01-14                             +369 more
+  y-cruncher FFTv4         05 14 by offset      01-14                             +374 more
 
    ?  help    l  log    esc  back    q  close view

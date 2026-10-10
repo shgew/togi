@@ -217,17 +217,17 @@ func TestAfterScoresAnEndlessRunAsACyclesOneRun(t *testing.T) {
 	}
 	stopped := copyState(t, history)
 	starts := 0
-	simulateNear(t, stopped, 30, 1, nearLimitRate, func(e journal.Event) bool {
+	simulateNear(t, stopped, 31, 1, nearLimitRate, func(e journal.Event) bool {
 		if isCycleStart(e) {
 			starts++
 		}
 		return false
 	})
 	// A --cycles 1 run stops at the end of the confirmation cycle. The endless run goes on to check one more cycle,
-	// which crashes with seed 30 and the near-limit rate, and stops at the start of the cycle after it.
+	// which crashes with seed 31 and the near-limit rate, and stops at the start of the cycle after it.
 	endless := copyState(t, history)
 	seen := 0
-	simulateNear(t, endless, 30, 0, nearLimitRate, func(e journal.Event) bool {
+	simulateNear(t, endless, 31, 0, nearLimitRate, func(e journal.Event) bool {
 		if isCycleStart(e) {
 			seen++
 		}

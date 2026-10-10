@@ -109,30 +109,22 @@ func TestCyclePlanPartialProfileChanges(t *testing.T) {
 			h := chainHarness(t)
 			passChainPart(t, h, []int{0, 1, 2, 3}, nil)
 			h.decide(h.s.cycleNext())
-			before := h.s.CyclePlan().Steps[0].Parts[1]
 			if started {
 				h.trial(h.s.cycleNext(), unsure)
 			}
 			profile := slices.Clone(h.s.Profile())
 			profile[1] = -1
 			h.add(&journal.ProfileChange{From: h.s.Profile(), To: profile})
-			plan := h.s.CyclePlan()
-			if started {
-				if diff := cmp.Diff(before.Cores, plan.Steps[0].Parts[1].Cores); diff != "" {
-					t.Fatalf("inconclusive trial did not freeze the partial: %s", diff)
-				}
-			} else {
-				if len(plan.Steps[0].Parts) != 3 {
-					t.Fatalf("stale unstarted partial remained projected: %+v", plan)
-				}
-				h.decide(h.s.cycleNext())
-				if diff := cmp.Diff([]int{0, 2, 3}, h.s.CyclePlan().Steps[0].Parts[1].Cores); diff != "" {
-					t.Fatalf("rederived partial was not projected: %s", diff)
-				}
+			if plan := h.s.CyclePlan(); len(plan.Steps[0].Parts) != 3 {
+				t.Fatalf("stale partial remained projected: %+v", plan)
+			}
+			h.decide(h.s.cycleNext())
+			if diff := cmp.Diff([]int{0, 2, 3}, h.s.CyclePlan().Steps[0].Parts[1].Cores); diff != "" {
+				t.Fatalf("rederived partial was not projected: %s", diff)
 			}
 			replay := replayState(h.events)
 			if diff := cmp.Diff(h.s.CyclePlan(), replay.CyclePlan()); diff != "" {
-				t.Fatalf("partial freeze changed across replay: %s", diff)
+				t.Fatalf("partial plan changed across replay: %s", diff)
 			}
 		})
 	}

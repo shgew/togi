@@ -148,7 +148,7 @@ func (s Snapshot) stoppedStory() story {
 	return story{"STOPPED", []string{text}, text, plainTone}
 }
 
-const partialNote = "This partial idles the top-requester groups found so far. Its loaded set freezes when the part starts, even if offsets change. Passes and failures count as ordinary evidence."
+const partialNote = "This partial idles the top-requester groups found so far. A backoff re-derives it; an unchanged loaded set keeps its passes. Passes and failures count as ordinary evidence."
 
 // stageLabel names the stage the tuner is in, for a narrator with no trial to speak of.
 func (s Snapshot) stageLabel() string {

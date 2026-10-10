@@ -27,9 +27,8 @@ type checkingStep struct {
 }
 
 type checkingChain struct {
-	start   *journal.CheckingChain
-	seq     int
-	started bool
+	start *journal.CheckingChain
+	seq   int
 }
 
 type requirement struct {
