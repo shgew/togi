@@ -210,7 +210,7 @@ For shared-voltage runs the summary also prints `worst_r7_hazard/h`, the maximum
 
 ### Scoring an intermediate profile
 
-Bench records compute `worst_r7_hazard_per_h` only for `final_profile`, even when a run is censored. They do not score every journal profile. For an intermediate checkpoint, use that checkpoint's 16 offsets and the same machine file. Copy `tools/bench/metrics.go` into a temporary program **inside the checkout**, so Go's `internal` imports remain legal. This avoids the separate-module `go.work` workaround and reuses the exact partial-chain scoring helper:
+Bench records compute `worst_r7_hazard_per_h` only for `final_profile`, even when a run is censored. They do not score every journal profile. For an intermediate checkpoint, use that checkpoint's 16 offsets and the same machine file. Copy `tools/bench/metrics.go` into a temporary program **inside the checkout**, so Go's `internal` imports remain legal. Include its `containsDeadEnd` dependency in the program, even though scoring does not call that function. This avoids the separate-module `go.work` workaround and reuses the exact partial-chain scoring helper:
 
 ```sh
 score=$(mktemp -d "$PWD/.r7-score.XXXXXX")
@@ -222,6 +222,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/shgew/togi/internal/sim"
 )
@@ -248,6 +249,8 @@ func main() {
 	}
 	fmt.Printf("worst_r7_hazard_per_h=%.6f\n", *hazard)
 }
+
+func containsDeadEnd(log string) bool { return strings.Contains(log, "sim: dead end ") }
 EOF
 go run "$score" MACHINE.toml '[OFFSET0,OFFSET1,OFFSET2,OFFSET3,OFFSET4,OFFSET5,OFFSET6,OFFSET7,OFFSET8,OFFSET9,OFFSET10,OFFSET11,OFFSET12,OFFSET13,OFFSET14,OFFSET15]'
 rm -r "$score"
