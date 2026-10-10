@@ -972,3 +972,68 @@ func TestBIOSProfileNeverShowsWhatAPairedHuntFoundFailingWhileItsCommitmentIsPen
 		assertLaterReplay(h)
 	})
 }
+
+// While a paired hunt runs, no failure it observes may stay reached by the shown profile, after every event.
+func TestBIOSProfileNeverReachesAFailureAPairedHuntObservesBeforeItEnds(t *testing.T) {
+	h, _ := pairedHunt(t)
+	fails := func(p []int) bool { return p[0] <= -9 && p[1] <= -11 }
+	var observed [][]int
+	check := func(step string) {
+		t.Helper()
+		shown := h.s.BIOSProfile()
+		for _, p := range observed {
+			if atLeastAsDeep(shown.Offsets, p) {
+				t.Fatalf("%s: the shown profile %v reaches the observed failing profile %v", step, shown.Offsets, p)
+			}
+		}
+		if reason, reached := h.s.Reaches(shown.Offsets); reached {
+			t.Fatalf("%s: the shown profile %v reaches %s", step, shown.Offsets, reason)
+		}
+		if diff := cmp.Diff([]int{-10, -12}, h.s.offsets()); diff != "" {
+			t.Fatalf("%s: the tuning profile moved (-want +got):\n%s", step, diff)
+		}
+		assertShown(t, h, shown)
+	}
+	check("after hunt.start")
+	sawStep := false
+	for range 200 {
+		a := h.next()
+		if _, ok := a.Payload.(*journal.HuntGroup); ok {
+			h.decide(a)
+			check("after hunt.group")
+			continue
+		}
+		if a.Kind == RunTrial {
+			fail := fails(a.Trial.Profile)
+			intent := h.start(a)
+			check("after trial.intent")
+			end := journal.TrialEnd{Trial: intent.Data.(*journal.TrialIntent).Trial, Outcome: journal.OutcomePass, DurationS: 120}
+			if fail {
+				observed = append(observed, slices.Clone(a.Trial.Profile))
+				end = journal.TrialEnd{Trial: end.Trial, Outcome: journal.OutcomeFailure, Signal: machine.Crash, DurationS: 5}
+			}
+			h.add(&end, intent.Seq)
+			check("after trial.end")
+			if fail {
+				attribution := h.next()
+				if f, ok := attribution.Payload.(*journal.Failure); !ok || f.Attribution != journal.Unattributed {
+					t.Fatalf("group attribution %+v", attribution)
+				}
+				h.decide(attribution)
+				check("after the group failure")
+				sawStep = sawStep || h.s.BIOSProfile().Offsets[0] > -9
+			}
+			continue
+		}
+		if _, ok := a.Payload.(*journal.HuntEnd); ok {
+			h.decide(a)
+			check("after hunt.end")
+			break
+		}
+		t.Fatalf("unexpected action %+v", a)
+	}
+	if !sawStep {
+		t.Fatal("no observed failure stepped the shown profile past a reached failing profile")
+	}
+	assertLaterReplay(h)
+}

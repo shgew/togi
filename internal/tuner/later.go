@@ -84,6 +84,7 @@ func (s *State) BIOSProfile() BIOSProfile {
 		}
 	}
 	if h := s.hunt; h != nil && h.pairedStrike != nil && s.strikeValid(*h.pairedStrike) {
+		s.stepPastObservedHuntFailures(h, out.Offsets, since)
 		// The next move of the tuner is shown at once, so the profile never reaches what the hunt learned or observed failing.
 		if id, to, ok := s.pendingHuntBackoff(h); ok {
 			if i := s.index(id); i >= 0 && to > confirmed[i] && to > out.Offsets[i] {
@@ -102,6 +103,50 @@ func (s *State) BIOSProfile() BIOSProfile {
 	}
 	slices.Sort(out.Unconfirmed)
 	return out
+}
+
+// stepPastObservedHuntFailures applies the unattributed-hold rule to the failures a paired hunt observes: while the
+// hold's display is retained, every failing group or member probe whose profile the shown offsets reach steps the
+// cores the group held at their failing offsets one count shallower than that failure, marked unconfirmed since the
+// failure. It repeats until no failure is reached, which ends because the shown offsets only get shallower.
+func (s *State) stepPastObservedHuntFailures(h *hunt, shown []int, since map[int]int) {
+	for changed := true; changed; {
+		changed = false
+		for _, m := range h.groups {
+			outcome, failure, _ := s.groupEvidence(h, m, false)
+			p := m.payload.Profile
+			if outcome != "failure" || len(p) != len(shown) || len(h.start.Parked) != len(p) {
+				continue
+			}
+			if !atLeastAsDeep(shown, p) {
+				continue
+			}
+			seq := failure
+			if seq == 0 {
+				seq = m.seq
+			}
+			for i, c := range s.byID() {
+				if p[i] >= h.start.Parked[i] || shown[i] > p[i] {
+					continue
+				}
+				shown[i] = p[i] + 1
+				changed = true
+				if at, ok := since[c.id]; !ok || seq < at {
+					since[c.id] = seq
+				}
+			}
+		}
+	}
+}
+
+// atLeastAsDeep reports whether profile shown is at least as deep as p on every core.
+func atLeastAsDeep(shown, p []int) bool {
+	for i := range p {
+		if shown[i] > p[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // pendingHuntBackoff returns the core a paired hunt's next decision moves and where, as Next will decide it: the
