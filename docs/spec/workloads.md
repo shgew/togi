@@ -67,14 +67,27 @@ Defaults, all configurable:
 | Short trial for R7, hunt groups, deepening checks and backoff reruns | 120 s (`durations.short_trial_s`) |
 | Checking per-core trial (R1 to R5) | 2 min each |
 | Checking R6 | 15 min |
-| Checking R7 long trials | Full parts total 20 min on two CCDs: 5 min each CCD, 10 min all cores; each derived partial adds 5 min. On one CCD the full part runs 20 min and each derived partial adds 20 min |
+| Checking R7 long trials | One long trial per part, on top of the part's three short trials (below). Long trials of the full parts total 20 min on two CCDs: 5 min each CCD, 10 min all cores; each derived partial adds 5 min. On one CCD the full part's long trial runs 20 min and each derived partial adds 20 min |
 
 For `D = durations.checking_all_core_s` and `n` CCDs, a full R7 long trial runs for `D` on one CCD; on multiple CCDs, each full single-CCD part runs `floor(D / 4)` seconds and the all-core part runs `D - n*floor(D / 4)` seconds. A partial receives its CCD's full-part long duration in addition to these allocations. Every part runs three short `short_trial_s` trials and one long trial. When short and long durations match, their counts add: four trials. All parts require passes and supply full-cycle coverage. `checking_all_core_s` must be in [4, 86400]. A trial is torn down before the next trial. Inconclusive trials repeat their part's frozen loaded cores and workload; partial sets are derived after the predecessor passes, using request telemetry as specified in [tuner.md](tuner.md#r7-request-order-and-attribution).
+
+Worked example of one R7 workload's parts:
+
+Defaults on two CCDs (`short_trial_s` 120, `checking_all_core_s` 1200), one R2 workload:
+
+| Part | Short trials | Long trial | Part total |
+|---|---|---|---|
+| CCD0 full | 3 × 120 s | `floor(1200 / 4)` = 300 s | 660 s |
+| CCD1 full | 3 × 120 s | 300 s | 660 s |
+| All cores | 3 × 120 s | `1200 - 2 × 300` = 600 s | 960 s |
+| Each derived partial | 3 × 120 s | its CCD's full-part long duration, 300 s | 660 s |
+
+Without failures or inconclusive retries, the two full CCD parts and the all-core part run 2280 s (38 min) of trials, of which 1200 s (20 min) is long trials. Each partial in a CCD's chain adds 660 s, and the chain's length depends on the request ties and on which partials pass. Each of the default cycle's three R7 steps runs this for its own R2 workload ([tuner.md, Checking](tuner.md#checking)).
 
 Hunt-group duration selection and its carried-evidence rules are defined in [tuner.md, Hunt](tuner.md#hunt).
 
 Default checking cycle, with elapsed time depending on the request ties and resulting partial chains:
-1. R7, R7, R7: every R2 workload, each on CCD0 full and its partial chain, CCD1 full and its partial chain, then all cores, with three short trials and one long trial per part.
+1. R7, R7, R7: three R7 steps, each with the next R2 workload (three occurrences cover the R2 catalog), on CCD0 full and its partial chain, CCD1 full and its partial chain, then all cores. Every part, partials included, runs three short trials and one long trial, so the long-trial budget in the table is only part of the time (worked example above).
 2. R2, R2, R2: every R2 workload on every core.
 3. R6.
 4. R5 on every core.

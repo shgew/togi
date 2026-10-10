@@ -1,5 +1,7 @@
 Status: see [the index](README.md).
 
+Note (2026-10-10): this ADR keeps its ruleset-4 vocabulary. [ADR 0020 terms today](README.md#adr-0020-terms-today) maps Bronze, mark, mask, refinement and the rest to today's rules.
+
 # Hunt the core behind every failure and refine every core to its mark
 
 A ruleset-3 session ran 21.2 hours with 10 crash reboots yet earned no clean guard rotation. Isolated checking took 12.8 hours; guard repeatedly re-ran R2 before reaching later regimes. Unattributed crashes on one CCD backed off eight cores together, with no observed improvement after eight counts. Attributed resident errors on a core also recurred at offsets that had passed isolated trials. Blaming every loaded core and automatically retrying lost depth neither located the failure nor maximized the depth the evidence allowed ([issue #64](https://github.com/shgew/togi/issues/64)).

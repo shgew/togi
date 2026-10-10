@@ -57,6 +57,7 @@ The dashboard adapts to wide and compact terminals. It shows checking's cycle ch
 |Document|Read it for|
 |---|---|
 |[docs/howto.md](docs/howto.md)|Installing togi and running a tuning session|
+|[docs/how-togi-tunes.md](docs/how-togi-tunes.md)|The tuning sequence, phase costs and ruleset history|
 |[docs/releasing.md](docs/releasing.md)|Versioning, the release workflow and tags|
 |[docs/simulating.md](docs/simulating.md)|Running a simulated session for development|
 |[docs/reviewing.md](docs/reviewing.md)|Reviewing current and archived runs with `just stats`, scoring a run against its forecast, and writing a run's retro|

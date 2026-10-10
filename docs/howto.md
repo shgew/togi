@@ -105,7 +105,14 @@ On Darwin, only copied-journal `reset` uses a private lock; [Host lock](spec/run
 
 ## 2. Rebuild, then boot fresh
 
-Rebuild (`nixos-rebuild boot`, or your usual way), then reboot. In BIOS, every Curve Optimizer offset must be 0. Do not run another tool that writes Curve Optimizer offsets in the boot you tune from: togi reads the offsets it finds at the start of a session as the baseline ([Session start](spec/tuner.md#session-start)).
+Rebuild (`nixos-rebuild boot`, or your usual way), then reboot. In BIOS, set every Curve Optimizer offset to 0. This is a recommendation, not a check: [preflight](spec/runtime.md#preflight) only requires that every core's offset reads back, and a nonzero offset only produces a notice ([Session start](spec/tuner.md#session-start)). Do not run another tool that writes Curve Optimizer offsets in the boot you tune from.
+
+How togi treats the BIOS values:
+
+- It reads every core's offset from the SMU once, at the first `run` of a session, and keeps that baseline for the whole session. Search normally starts there; configuration or carried candidates can supply another start ([Session start](spec/tuner.md#session-start)). A BIOS profile that crashes before togi runs surfaces as a boot-loop dead end ([ADR 0006](adr/0006-start-from-bios-values.md)).
+- Every write sets the core's absolute offset; the SMU does not add it to the BIOS value. Firmware restores BIOS values on reboot; togi's trial writes replace those offsets.
+- The BIOS context that ties a session to a BIOS (BIOS version, board, CPU model, microcode and boost limit) holds no Curve Optimizer offsets. Changing a Curve Optimizer offset in BIOS does not start a new session, and togi keeps the baseline it captured.
+- A clean stop uses the session's original baseline for restoration, not later BIOS values. The safety rules can restore a shallower offset instead ([Exit restoration](spec/runtime.md#exit-codes)). It does not capture the baseline again.
 
 Then check that the machine is ready, without starting a session:
 

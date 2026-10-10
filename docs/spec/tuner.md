@@ -17,9 +17,11 @@ Multi-core R7 means whole-CCD, partial and all-core loads. R1–R6 evidence and 
 1. Every offset stays within [-50, 0]. togi never writes a positive offset.
 2. During a trial run alone only the target carries a nonzero offset. Every other core is written to 0 first, including at the start of each boot, when firmware has restored the BIOS values.
 3. Every SMU write is preceded by a durable intent event and followed by a readback. A readback that differs from the written value is a dead end.
-4. No applied or restored profile reaches a recorded failure point or combination, except after reset.
+4. New tuning-profile applications and restoration do not deepen into a recorded failure point or combination. Reset removes the constraints it clears.
 5. Offsets get deeper only in search and in deepening rounds.
 6. Every decision is an event that names its cause (`journal.md`).
+
+Invariant 4 concerns recorded constraints, not a guarantee that a trial will pass. A failure can make the profile still applied on the hardware reach a newly learned constraint until its backoff is applied. Hunts deliberately revisit failing offsets before committing their failure points or combinations; their experimental parked profiles are not new tuning-profile choices. A group reaching a newly recorded constraint is skipped ([Hunt](#hunt)). The application path writes shallower offsets first and checks each deeper write against the recorded constraints, including when applying a parked profile or restoring offsets. An all-zero rerun is diagnostic, not a replacement tuning profile ([Dead ends](#dead-ends)).
 
 ## Session start
 
@@ -40,6 +42,20 @@ Cores are visited in CCD-alternating order: 0, 8, 1, 9, ... 7, 15. Each turn goe
 A search step runs one R1 trial alone then one R2 trial alone at the same offset, 90 s each by default. Its first failure rejects it. The eventual candidate solo limit additionally needs `n` passes in each of its frozen R1 and R2 trial classes, using `durations.search_trial_s`.
 
 Carried passes can satisfy `check_solo_limit` in its frozen R1/R2 classes at `durations.search_trial_s`, even though they precede the solo limit-check phase boundary. Ordinary search steps still require live trials.
+
+The candidate check's live-pass window starts at `check_solo_limit`, not at the preceding search step. That step's own R1/R2 passes do not count, even if their workload and duration match the frozen classes. Without eligible carried passes, five additional launches per class are needed at the defaults. The check freezes workloads independently of the search step's workload rotation; a different workload is a different class.
+
+Illustrative search for one core, starting at 0 with no failure point:
+
+| Offset | Result | Next action |
+|---|---|---|
+| 0, -5, -10, -15 | Each step passes one R1 and one R2 trial | Keep the deepest passed step and descend by five |
+| -20 | R1 fails; no R2 is launched | Record failure point -20; deepest pass is -15; try -16 |
+| -16, -17, -18 | Each step passes R1 and R2 | Descend by one |
+| -19 | The step passes R1 and R2 | One deeper count reaches -20; record `check_solo_limit` at -19 |
+| -19 | Five new passes in each frozen R1/R2 class | Record the checked solo limit -19 and phase `at_limit` |
+
+If that candidate check instead fails at -19, its stored pass at -19 is contradicted and discarded. With no retained pass, search backs off five counts to -14, then proceeds one count at a time after passing there, since failure point -19 is now known. Reaching a candidate check is not accepting the candidate.
 
 Each core tracks its current offset `o`, `pass` (the deepest offset with a passed step, or none) and `fail` (its failure point, or none).
 
@@ -63,6 +79,10 @@ Any failure during a trial run alone is attributed to the target, crashes includ
 All conclusive trials and facts enter the evidence rules, including former `record_only` R7 outcomes. Every multi-core R7 failure follows [R7 voltage-targeted backoff](#r7-voltage-targeted-backoff); other trials retain the first-failure rules.
 
 One trial is one workload launch, with no internal relaunch. The pass rule is `n = ceil(ln(evidence.miss) / log1p(-evidence.rate))` passing trials, five at the defaults (0.05, 0.5). Outside multi-core R7 the first failure rejects a step and restarts the consecutive pass count. The full count applies to a candidate solo limit's R1 and R2 classes, every hunt group and every deepening check.
+
+`evidence.rate` is the per-trial failure probability the replicated pass rule is meant to detect. `evidence.miss` is the allowed probability of seeing only passes despite that rate. Assuming independent trials with a fixed failure probability at least `rate`, the probability of `n` passes is at most `(1 - rate)^n`; the rule chooses the smallest integer `n` that makes it no greater than `miss`. With rate 0.5 and miss 0.05, four passes leave probability 0.0625 and five leave 0.03125. These are assumptions about repeated trials, not a measured hardware failure rate or a bound on future use.
+
+The defaults are heuristic choices. [ADR 0020](../adr/0020-hunt-and-refine.md) introduced this rule but records no empirical calibration for 0.5 or 0.05. [Issue #493](https://github.com/shgew/togi/issues/493) notes that the existing first-failure/five-pass rule already matches the sequential probability ratio test (SPRT) bound at those values; this equivalence does not justify the chosen values.
 
 A trial class is `(regime, workload, sorted loaded cores, duration_s)`, using intended duration, not the elapsed time before a crash. The ledger records each conclusive trial's class, sequence, applied `trial.intent.profile` and outcome. A pass at profile Q counts toward P only when Q is at least as deep as P and follows the latest failure of that class at a profile at least as shallow as P; a failure at Q rules out P when Q is at least as shallow as P. Requirements on the same class within a step add, so a trial counts once. An idle crash has wildcard R6 class with all cores loaded and invalidates all such R6 classes. Passes at deeper profiles can survive backoff; deeper moves need new evidence.
 
@@ -88,9 +108,27 @@ For load `(workload, sorted loaded cores)` at profile P, obtain requests in this
 
 Every ordered decision cites its measurement sequences in the current journal, or explicitly says it fell back to offsets. The failing or passing trial's own `top_requesters` takes precedence for attribution and self-sufficiency evidence; otherwise derive its top groups using the order above on its applied profile with only measurements available as of that trial, never later measurements.
 
+The fixed 3.6 mV per count is a modeling assumption, not a measured universal CO-to-voltage conversion. It entered `internal/requests` in [commit c9cbf3ae](https://github.com/shgew/togi/commit/c9cbf3ae) without a calibration source. Both the request shifts above and the count conversion in [R7 voltage-targeted backoff](#r7-voltage-targeted-backoff) use it. The simulator's request-slope fit also uses 3.6 mV per count as a prior (`tools/fit/voltage.go`), so that fit is not independent validation of the fixed tuner constant.
+
 A multi-core R7 failure naming a core through a backend signal or exactly one core-local MCE counts against that core. An unattributed failure counts against the loaded CCD's top group, or each CCD's top group for all-core loads. When `stalled_core` identifies one CCD, only that CCD's top group is affected; it does not name the failing core. A live unattributed failure whose failing profile has an unloaded core off CO 0 is first located by a located hunt ([Hunt](#hunt)), and so is a live or carried failure whose loaded cores were all at CO 0 while an unloaded core was not, unless it names a core off CO 0; only a `loaded` end charges it under these rules, through the hunt's group failure instead when that failure named a loaded core. Otherwise multi-core R7 never starts a hunt, parked group, member probe or combination. These rules apply to live and carried failures and to any already-recorded known-failure skip, without duplicating an observation.
 
 An unattributed failure whose affected top group is entirely at CO 0 steps down the same CCD's request order to the next group with a movable loaded core. When an all-core failure affects several CCDs, a CCD whose loaded cores were all at CO 0 in that trial is not affected while another affected CCD has a movable loaded core; the failure counts only against the CCDs that do. It dead-ends with `failure_at_zero` only when no affected CCD has a movable loaded core: irrespective of idle cores once its located hunt ended `loaded`, or when it was not located; a `stalled_core` CCD at 0 dead-ends irrespective of offsets on another CCD under the same condition. A named core at 0 dead-ends only if it was in its own CCD's top group in that trial; otherwise route the failure to that CCD's top group, including the same stepdown rule. A named core at 0 on a CCD with no loaded core in that trial has no top group of its own: the failure counts as unattributed, against the loaded CCD's top group. Each of these dead ends first needs the failing trial's all-zero rerun ([Dead ends](#dead-ends)); a failed locate whose loaded cores were all at CO 0 already was that rerun. Once the all-zero rerun passed, the failure no longer counts against its named core or its `stalled_core` CCD: it counts as unattributed, under the stepdown rules above, against the CCDs with a movable loaded core, and its decisions cite the rerun's `trial.end`.
+
+The following ordered table summarizes the multi-core R7 failure path. Attribution uses the failed trial's profile and request order, not later measurements. Rows that say to continue return to the remaining rows with the updated attribution.
+
+| Order | Condition | Action |
+|---|---|---|
+| 1 | The failure meets the located-hunt rules in [Hunt](#hunt), and would otherwise require a move or dead end | Locate it before charging the loaded cores. No loaded core moves for it while the hunt is open |
+| 2 | That hunt ends `culprit`, `direct`, `combination` or `fallback` | Consume the original R7 failure through the hunt commitment and queue its rerun obligations; do not charge the loaded cores again |
+| 3 | That hunt ends `loaded` | Continue with R7 attribution. If its group failure named a loaded core, charge that group failure against that core at its own applied offset, rather than also moving a core for the original failure |
+| 4 | A backend signal or exactly one core-local MCE names a core | Charge that core. A named CO-0 core that was not a top requester routes to its CCD's top group; if its CCD had no loaded core, route as unattributed |
+| 5 | No core is named | Charge the affected CCDs' top groups. `stalled_core` restricts the affected CCD, not the culprit within it. If several CCDs are affected and any has a movable loaded core, omit affected CCDs whose loaded cores were all at 0 |
+| 6 | A charged top group has no movable core | Step down that CCD's request order to the first group with a movable loaded core |
+| 7 | No affected CCD has a movable loaded core, or a named CO-0 core was a top requester | Test the zero-offset claim under [Dead ends](#dead-ends). A `stalled_core` restriction is not widened merely because another CCD has a nonzero offset |
+| 8 | The failed profile was already all-zero, or its all-zero rerun fails | Record `failure_at_zero`. A failed locate with every loaded core at 0 already supplies the all-zero rerun |
+| 9 | The all-zero rerun passes | Do not dead-end. Drop both named-core and `stalled_core` restrictions and route as unattributed against CCDs with movable loaded cores, including a located hunt if required |
+| 10 | A movable core is selected, but its current offset is already shallower than its offset in that failed trial | No move now. Keep the failure pending in case that core returns to the failing offset or deeper; this alone does not end a deepening round |
+| 11 | A move is still required | End an open deepening round first. Apply [R7 voltage-targeted backoff](#r7-voltage-targeted-backoff), record the moved core's failure point, and satisfy [Checking](#checking)'s rerun obligations before resuming the open cycle |
 
 ## R7 self-sufficiency evidence
 
@@ -110,6 +148,8 @@ Record the moved core's failure point at its applied offset in the failed trial,
 ## Failure points and combinations
 
 A failure point is reached when `P[c] <= fail[c]`; a combination is reached when every member `m` has `P[m] <= C[m]`. A core is at its limit at -50 or if one count deeper would reach a failure point or combination. Re-evaluate whether each core is at its limit after every failure point or combination or offset change. Failure points and combinations accumulate until reset.
+
+These constraints select the tuning profile and bound deeper writes ([Invariants](#invariants)). They do not declare every experimental profile stable. A hunt can reproduce a failure before recording its constraint; after that commitment, it cannot launch a group that reaches the newly recorded constraint.
 
 Among safe profiles, choose the greatest total depth (most negative sum of counts); preferred-core ranking breaks ties, then core-id order. Outside multi-core R7, a combination backoff first looks for a tested move: a passing member probe of the hunt that moved one member with every other member at its failing offset. Of those whose move leaves the profile reaching no failure point or combination, it takes the one moving its member the fewest counts, breaking ties toward the lowest-ranked member, and moves that member to the probe offset, citing the combination and the probe. Without one, it chooses the member leaving the most depth reachable, breaking ties toward the lowest-ranked member, and moves it one count past the combination. Eligible individual failure points carry to a new same-BIOS session, not combinations; multi-core R7 records a new point for the core each voltage-targeted backoff moves.
 
@@ -165,6 +205,8 @@ Moves are `tuner.decision`: `step_deeper`, `check_solo_limit`, `deepen`, `yield`
 
 Checking begins when no core remains in search. Its first `profile.change` has `from: null`. A profile change does not end an open cycle; passing steps on a deeper profile remain evidence after a backoff. Only `reset --core` and a covered cycle ending for deepening (Deepening) end a cycle without passing.
 
+Failures, crashes, hunts and backoffs inside a cycle do not end it or restart its evidence window. A passed cycle can contain dozens of failures and backoffs: “passed” means that its requirements eventually passed on profiles that still cover the ending profile, not that every trial passed on the first attempt.
+
 A cycle captures the configured schedule in its start event. R1 and R2 occurrences select successive catalog workloads (three occurrences cover each catalog); R3, R4 and R5 run on each core; R6 runs all cores. Each R7 occurrence selects its next R2 workload and requires every full, derived partial and all-core part's three short and one long passing trials. Requirements sharing a trial class add, including repeated partial classes, and trials passed on sufficiently deep profiles since the cycle start can fulfill them. The first unmet requirement of the first unmet step runs next; a partial is not derived until its predecessor passes. The cycle ends passed only after every chain is complete and every requirement passes, and is full when it also has at least three R1, R2 and R7 steps and one each of R3, R4, R5 and R6. A non-full end records the missing coverage. The newest passed full-cycle profile that is shallower than the failing profile on at least one core supplies a hunt's parked offsets.
 
 Only live passes since the cycle start fulfill cycle requirements; carried passes never fulfill them. Failure invalidation is global, including carried failures before that start, so the live-pass boundary does not restore contradicted evidence.
@@ -177,9 +219,27 @@ When a backoff or hunt commitment changes an offset, checking first reruns the f
 
 Carried passes can satisfy a rerun's class requirements despite preceding its obligation boundary; failures, including carried ones, retain their normal invalidation effect. When carried passes answer the rerun, the following checking-cycle or deepening-round decision cites those facts and names their source sessions. A rerun does not supply carried passes to full-cycle coverage.
 
+Rerun obligations and cycle requirements read the same evidence ledger with different windows. A live rerun pass after the open cycle's start can also fulfill that cycle's requirement when its class and applied profile cover it; the `rerun` flag and absence of a `cycle` field do not prevent this. The same pass is not counted twice within the cycle: repeated requirements of its class add. Carried passes can discharge a rerun but not the open cycle's requirements.
+
+Illustrative journal sequence, not a recorded run: on two CCDs at the defaults, an R7 full or partial part has three 120 s passes and one 300 s pass to earn. Assume no eligible carried passes, no other pending reruns and no new failure during the rerun.
+
+| Event | Effect |
+|---|---|
+| `checking.cycle` start | Open one cycle and capture its schedule |
+| Three 120 s `trial.end` passes for the part | Meet its short requirement at profile P |
+| Its 300 s `trial.end` failure; `failure`; `tuner.decision` backoff; `profile.change` to shallower Q | Keep the same cycle open. Queue the failed class's rerun |
+| Five 120 s rerun passes at Q (`phase: checking`, `rerun: true`, no `cycle`) | Meet the short rerun obligation; also cover the part's three short cycle passes. Valid earlier passes at P can still cover Q |
+| One 300 s rerun pass at Q | Meet the long rerun obligation and the part's long cycle requirement |
+| Next checking action | Derive the next partial if this part is a chain predecessor, or run the first remaining unmet cycle requirement. Do not repeat this part merely because the answering trials were reruns |
+| `checking.cycle` end, `passed: true` | All remaining requirements and chains have passed. The failure did not create a second cycle |
+
+Other classes' earlier passes remain usable if they cover Q and have not been invalidated. If a failure or profile change leaves some class uncovered, only its unmet requirements need more trials. The five short and one long launches above are not a universal cost: eligible carried passes or live passes after the obligation's failure boundary can reduce it.
+
 A cycle counts only if every core was at its limit when it ended. Ends after the last deepening count as before. An earlier end can also count if it followed the latest `command.reset`, its ending profile was at least as deep as the current profile on every core, and no failure of any trial class since that reset occurred at a profile equal to or shallower than its ending profile on every core. An incomparable failure does not contradict it; a failure with an incomplete profile conservatively prevents this credit. This credit does not change the cycle-start evidence window.
 
 `status` reports clean cycles since the last deepening: the count valid for the current profile, including eligible earlier credit, and the latest clean cycle's number. `run --cycles N` checks its stop rule before starting the next cycle. A clean cycle establishes workload breadth, not a guarantee against rare failures or untested real use.
+
+For example, a voltage-targeted backoff can move a core several counts shallower than its new failure point, leaving room to deepen. The open cycle can still end passed, including the failure and reruns in the example above, but it is not a clean cycle if that core has room at its end. Deepening then reopens the search for depth. This is the usual distinction behind “passed, not clean,” not a count of failures within the cycle; a later deeper profile can also invalidate credit for an earlier clean end. The stop rule still requires every core at its limit and no globally deeper total reachable.
 
 ## Hunt
 
@@ -190,6 +250,62 @@ A located hunt hunts a live unattributed multi-core R7 failure, including one na
 Every unattributed together failure outside multi-core R7 is hunted unless its failing profile already reaches a recorded failure point or combination; then `hunt.skipped` explains why. An unattributed failure with every core at CO 0 has no candidate to hunt: it is the `failure_at_zero` dead end, naming no core. The hunt parks other cores at the newest passed full-cycle profile raised to the failing profile: each core takes the shallower of its passed full-cycle and failing offsets, so passes on the passed full-cycle profile cover parked offsets. A passed full-cycle profile that is nowhere shallower than the failing profile cannot supply parked offsets; the hunt falls back to older passed full-cycle profiles and finally all-zero. Candidates are precisely cores deeper at the failure than at their parked offsets.
 
 For each group, candidates in the selected subset take their failing offsets and every other core takes its parked offset. Delta debugging tests parts, then complements as granularity increases, retaining a failing subset. By default it starts at `short_trial_s`; only when the failed trial's duration is longer than `short_trial_s`, if all initial parts and complements pass, it tests the full failing profile, and if that too passes `n` trials, repeats at the failed trial's duration. Configuration still permits `search_trial_s` or `checking_trial_s` below `short_trial_s`; a shorter or equal failed duration does not trigger this full-profile check or duration repeat. At most one duration escalation occurs.
+
+Partition order follows this pseudocode. `S` and each partition keep core-id order. The optional repeated-core probe, duration prior, located-hunt endpoints and member probes retain the rules below and above.
+
+```text
+partition(S, g):
+    g = clamp(g, 1, len(S))
+    if g == 2 and S == original_candidates
+       and S has both loaded and unloaded candidates:
+        parts = [loaded candidates, unloaded candidates]
+    else:
+        parts = g contiguous pieces of S
+        # Sizes differ by at most one; earlier pieces get the remainder.
+    stably put pieces containing recent constraint cores first
+    return parts
+
+S = original_candidates; g = 2; stage = part; index = 0
+duration = short duration, unless the longer-duration prior applies
+run the locate group first for a located hunt
+if an eligible repeated-core probe runs and passes, return to g = 2
+while len(S) > 1:
+    parts = partition(S, g)
+    group = parts[index] if stage == part else S minus parts[index]
+    test or infer the group using the evidence rules
+    if group fails:
+        S = group
+        g = 2 if stage == part else max(g - 1, 2)
+        stage = part; index = 0
+        remember that a group failed
+        continue
+    if another piece remains in this stage:
+        index += 1
+        continue
+    if stage == part and g > 2:
+        stage = complement; index = 0
+        continue
+    # At g = 2, complements duplicate the two parts; do not test them again.
+    if g == 2 and S == original_candidates and durations differ
+       and no full group was checked and no duration escalation occurred:
+        test the full S at the current duration
+        if it passes:
+            for a located full group already at the failed duration, finish
+            otherwise restart with original_candidates, g = 2, stage = part,
+              index = 0, duration = failed duration, and clear failed/full flags
+            mark the single allowed duration escalation
+            continue
+        remember the full group as checked and failed if it failed
+    if g < len(S):
+        g = min(2 * g, len(S)); stage = part; index = 0
+        continue
+    finish narrowing
+# A singleton is a culprit. Otherwise use the last failing set, or fallback.
+# A located hunt with no failed group first checks the full failing profile
+# at the failed duration before its loaded/fallback endpoint.
+```
+
+“Recent constraint cores” means the core whose latest update made its failure point shallower, or the members of the latest recorded combination. A passed or skipped group advances the partition plan; skipping is not a passed trial and supplies no pass evidence.
 
 A hunt of a failed trial starts directly at that trial's longer duration when `n` valid `short_trial_s` passes of the same regime, workload and loaded cores cover the failing profile, recorded after the latest reset and before the failure, and no earlier failure in that regime at `short_trial_s` or less has occurred since reset. The short-failure veto includes other workloads and profiles. Idle failures without a trial do not use this prior. The first `hunt.group` explains the duration choice and cites the supporting pass sequences; the short passes do not establish an outcome at the longer duration.
 
@@ -203,11 +319,33 @@ A `hunt.group` plan and `hunt.end` cite what established each earlier group's ou
 
 The pre-scheduling known-failure rule also prevents a parked trial from re-running a valid failure outside its local inference window: an inferred-failure `hunt.group` cites the known failure and advances the existing group plan. This does not widen pass inference windows. A hunt entered from a skipped together trial records the known failure's sequence, original trial identity, full failing profile and class in `hunt.start`, including when the source is `trial.carried`; its message explains the skipped trial and source session.
 
+Evidence windows are summarized here. “After” means a journal sequence strictly after the named boundary. Every row retains the class, componentwise profile, failure-invalidation and backend-identity rules in [Evidence](#evidence).
+
+| Requirement or stage | Live passes admitted | Live failures answering the local outcome | Carried passes / failures |
+|---|---|---|---|
+| Ordinary search step | Its own step's R1 then R2 trials; no historical pass inference | Its own failure, or a valid known failure through the pre-scheduling rule | Passes do not replace the live step; eligible failures can skip it |
+| Candidate solo-limit check | After `check_solo_limit` (or the initial checking `core.phase`) | A live failure or the pre-scheduling known-failure rule | Both admitted across the phase boundary |
+| Hunt `part` / `complement`, including the optional repeated-core singleton | After the latest `command.reset` of any core, for planning, running outcome and projected count | After that same reset for local inference | Both admitted across reset/start boundaries if not discarded by reset |
+| Hunt `locate` / `full` / member `probe`, while planning | After `hunt.start` | After `hunt.start` | Both admitted across the hunt-start boundary |
+| Hunt `locate` / `full` / member `probe`, once running | After that `hunt.group`; earlier live partial counts do not combine with new launches | After that `hunt.group` | Both admitted across the group-start boundary |
+| Backoff rerun | After the obligation's failure boundary, at the current checking profile | Normal failure handling; outside multi-core R7 a valid known failure can skip a launch | Both admitted across the obligation boundary |
+| Deepening check | After `deepening.round` start, at its check profile | Normal failure handling; outside multi-core R7 a valid known failure can skip a launch | Both admitted across the round boundary |
+| Open cycle requirements and full-cycle coverage | After `checking.cycle` start; live hunt, rerun or other passes can count if they cover the class and profile | Normal failure handling; global invalidation still includes pre-start failures | Passes excluded; eligible failures still invalidate |
+| Separate all-zero rerun before a dead end | A live rerun of the failed class at the all-zero profile | An actual failed rerun, not a known-failure skip | Neither substitutes for the rerun; an all-zero `locate` instead follows the hunt-stage rows |
+
+A reset discards live and carried facts whose loaded set includes the reset core, and multi-core R7 facts naming that core even when it was unloaded. It also removes the associated request measurements. Other carried facts survive; their carried status admits them across local sequence boundaries. The latest reset of any core nevertheless moves the live `part`/`complement` boundary. All pass counts still start after the newest covering failure, including an eligible failure outside the local pass window. Outside multi-core R7, the pre-scheduling known-failure rule can reject a launch using a failure outside a group's local inference window; it never widens that group's pass window. Multi-core R7 has no such skip.
+
 A singleton ends `culprit` with a failure point at that core's failing offset. A larger subset that failed a group is a combination; if no tested group failed it ends `fallback` with a combination over all remaining candidates at their failing offsets. Before a combination ends, unless the profile already breaks it, member probes find how shallow each member must be, one member at a time in core-id order. A probe is a group of stage `probe` with the probed member at the probe offset, members already probed held at their shallowest failing offsets, the rest of the combination at their failing offsets and every other core at its parked offset, run at the duration of the hunt's last group. For the probed member, its failing offset is the deepest known failure and its parked offset the shallowest known pass. Probes go 1, 2, 4, … counts shallower than the failing offset until one passes or would reach the known pass, then bisect between the shallowest failure and the deepest pass until they are one count apart; a skipped probe stops probing. The hunt then ends `combination`, recording each member's shallowest failing offset as the `hunt.end` `members`; the combination sits at those offsets and the combination backoff rule picks the member to move. An attributed failure during a group ends `direct` and records a failure point at its actual applied offset, even on a core held at parked offsets. `hunt.end` precedes its `backoff` or `combination`; a combination already broken by the profile needs no further backoff. Resume uses cause linkage to emit each missing commitment once. A reset cancels an open hunt and requeues its failure.
 
 ## Deepening
 
 Deepening starts only after search, hunts, reruns and the open cycle finish, when a passed full-cycle profile exists and a core is not at its limit or a globally deeper total is reachable. When only the open cycle stands in the way and an earlier clean cycle, run with every core at its limit on a profile at least as deep as the current one, has no failure contradicting it since, checking ends an incomplete open cycle without passing instead of running its remaining work; a fully executed cycle closes passed with its normal full-cycle coverage before deepening starts; the non-passing end's reason names the covering cycle and its cause cites that cycle's end. Deepening targets the safe profile with greatest total depth over all cores, with preferred-core ranking and then core-id order breaking ties. `deepening.round` snapshots target, the newest passed full-cycle profile as its base, and proposed profile. Cores that must become shallower yield first; those moving deeper go halfway toward their target. Each move is a decision; after the round's last move, whether each core is at its limit is re-evaluated and one `profile.change` applies them all.
+
+Target selection is global, not a per-core walk toward its solo limit. Start each core at -50, or one count shallower than its failure point if that is shallower. For every combination reached by that profile, choose at least one member to raise to one count shallower than its combination offset. Choose the set of such raises with the smallest increase in the sum of offsets; this is the deepest total safe profile. On equal totals, prefer the profile deeper on the highest-ranked core where they differ, then the next ranked core; core-id order fills ties. Candidate solo limits and the passed full-cycle base are not bounds on this target. The base records prior coverage; the round checks newly deepened offsets.
+
+For current offset `p` and deeper target `t`, the proposed offset is `p - ceil((p - t) / 2)`: an odd distance rounds the move toward the deeper target. Thus -20 toward -25 proposes -23, and -20 toward -21 proposes -21. A core that must yield moves all the way to its shallower target first. [ADR 0020](../adr/0020-hunt-and-refine.md) introduced halfway moves without an empirical rationale for the fraction. Halfway is a step-size heuristic, not a measured optimal rate of convergence.
+
+Backoff can leave a gap between the current offset and one count shallower than a failure point; combinations can leave more total depth available by moving a different member. Both can reopen deepening. For an illustrative two-core slice, failure points -31 on both cores allow -30 individually, while a combination at (-20, -20) requires at least one core above -20. From current (-19, -20), the best target is (-30, -19) when the first core ranks higher: the second yields to -19 and the first deepens halfway to -25. This avoids the combination and improves total depth even though one core became shallower. It must still pass the round's checks and checking's workload breadth.
 
 Only deepened cores need checks: each runs `n` R1 trials and `n` R2 trials at `short_trial_s` alone, with the round's index freezing those catalog workloads. For every R7 workload, the round checks the partial where a deepened core belongs to the top group under the current request order, and its CCD's full part when that core is or becomes a top requester there; each selected part needs `n` trials at `short_trial_s`. Checks shared by several deepened cores run once. Request order uses the proposed profile, so a rank change selects the new part and the next checking chain derivation re-orders. A multi-core R7 failure follows voltage-targeted backoff or a zero-offset dead end, after its located hunt if it needs one. A failure's attribution is recorded first; when it requires a move or a located hunt, the round then ends before the resulting backoff or hunt, and a passed round records its end; resume completes missing moves and checks without duplicating decisions. A new failure point or combination that makes the proposed profile unsafe ends the round without applying it.
 
