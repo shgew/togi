@@ -565,7 +565,7 @@ func TestSameCachesBothSides(t *testing.T) {
 			t.Fatalf("run %d: %d launches in total, want %d", run, len(l.launches), want)
 		}
 	}
-	if _, ok := costs.get(sessionKey{"s", "dev", 2}); !ok {
+	if _, ok := costs.get("", sessionKey{"s", "dev", 2}); !ok {
 		t.Error("session cost not recorded")
 	}
 	if files := filesUnder(t, root); len(files) != 0 {

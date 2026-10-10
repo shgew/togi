@@ -202,39 +202,66 @@ func hashFile(h hash.Hash, path, name string) error {
 	return nil
 }
 
-// costTable remembers how long each session took on the last run that finished it, to start the longest ones first.
+// costTable remembers how long each session took, to start the longest ones first. Costs are kept per scope, the
+// simulator that ran them, since a session takes very different times on different simulators; a session never run by
+// a scope's simulator takes the cost of its latest run by any.
 type costTable struct {
 	path string
 	mu   sync.Mutex
-	wall map[string]float64
+	data costFile
 }
 
+type costFile struct {
+	Latest map[string]float64 `json:"latest"`
+	Scopes []costScope        `json:"scopes"`
+}
+
+type costScope struct {
+	Key  string             `json:"key"`
+	Wall map[string]float64 `json:"wall"`
+}
+
+const keptCostScopes = 8
+
 func loadCosts(path string) *costTable {
-	c := &costTable{path: path, wall: map[string]float64{}}
-	if b, err := os.ReadFile(path); err == nil {
-		if json.Unmarshal(b, &c.wall) != nil {
-			c.wall = map[string]float64{}
-		}
+	c := &costTable{path: path}
+	if b, err := os.ReadFile(path); err != nil || json.Unmarshal(b, &c.data) != nil {
+		c.data = costFile{}
+	}
+	if c.data.Latest == nil {
+		c.data.Latest = map[string]float64{}
 	}
 	return c
 }
 
-func (c *costTable) set(key sessionKey, wall float64) {
+func (c *costTable) set(scope string, key sessionKey, wall float64) {
 	if c == nil || wall <= 0 {
 		return
 	}
 	c.mu.Lock()
-	c.wall[key.String()] = wall
-	c.mu.Unlock()
+	defer c.mu.Unlock()
+	c.data.Latest[key.String()] = wall
+	i := slices.IndexFunc(c.data.Scopes, func(s costScope) bool { return s.Key == scope })
+	if i < 0 {
+		c.data.Scopes = slices.Insert(c.data.Scopes, 0, costScope{Key: scope, Wall: map[string]float64{}})
+		c.data.Scopes = c.data.Scopes[:min(len(c.data.Scopes), keptCostScopes)]
+		i = 0
+	}
+	c.data.Scopes[i].Wall[key.String()] = wall
 }
 
-func (c *costTable) get(key sessionKey) (float64, bool) {
+func (c *costTable) get(scope string, key sessionKey) (float64, bool) {
 	if c == nil {
 		return 0, false
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	wall, ok := c.wall[key.String()]
+	if i := slices.IndexFunc(c.data.Scopes, func(s costScope) bool { return s.Key == scope }); i >= 0 {
+		if wall, ok := c.data.Scopes[i].Wall[key.String()]; ok {
+			return wall, true
+		}
+	}
+	wall, ok := c.data.Latest[key.String()]
 	return wall, ok
 }
 
@@ -243,7 +270,7 @@ func (c *costTable) save() error {
 		return nil
 	}
 	c.mu.Lock()
-	b, err := json.Marshal(c.wall)
+	b, err := json.Marshal(c.data)
 	c.mu.Unlock()
 	if err != nil {
 		return err
@@ -251,19 +278,19 @@ func (c *costTable) save() error {
 	return writeFileAtomic(c.path, b)
 }
 
-// longestFirst orders the indexes 0..n-1 by decreasing recorded cost. Sessions without a record come first, in their
-// given order, as they may be the longest; equal costs keep their order.
-func longestFirst(n int, key func(int) sessionKey, costs *costTable) []int {
+// longestFirst orders the indexes 0..n-1 by decreasing cost. Those without a known cost come first, in their given
+// order, as they may be the longest; equal costs keep their order.
+func longestFirst(n int, cost func(int) (float64, bool)) []int {
 	order := make([]int, n)
-	cost := make([]float64, n)
+	costs := make([]float64, n)
 	for i := range order {
 		order[i] = i
-		cost[i] = math.Inf(1)
-		if wall, ok := costs.get(key(i)); ok {
-			cost[i] = wall
+		costs[i] = math.Inf(1)
+		if wall, ok := cost(i); ok {
+			costs[i] = wall
 		}
 	}
-	slices.SortStableFunc(order, func(a, b int) int { return cmp.Compare(cost[b], cost[a]) })
+	slices.SortStableFunc(order, func(a, b int) int { return cmp.Compare(costs[b], costs[a]) })
 	return order
 }
 

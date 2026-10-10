@@ -177,6 +177,7 @@ func executeSame(o options, stdout, stderr io.Writer) (bool, error) {
 		fresh:     o.noCache || o.keep != "",
 		caches:    caches,
 		costs:     costs,
+		scopes:    keys,
 		log:       stderr,
 	}, launch)
 	fmt.Fprintf(stderr, "bench: sessions took %s\n", (time.Since(started) - keyed).Round(time.Millisecond))
@@ -226,6 +227,8 @@ type sameConfig struct {
 	fresh  bool
 	caches [2]*sessionCache
 	costs  *costTable
+	// scopes names each side's simulator for the cost table.
+	scopes [2]string
 	log    io.Writer
 }
 
@@ -306,7 +309,9 @@ func runSame(parent context.Context, w io.Writer, pairs []samePair, cfg sameConf
 	}
 	err := runPool(ctx, cfg.jobs, ready, r.resolve)
 	if err == nil && ctx.Err() == nil {
-		order := longestFirst(len(jobs), func(n int) sessionKey { return pairs[jobs[n].pair].key }, cfg.costs)
+		order := longestFirst(len(jobs), func(n int) (float64, bool) {
+			return cfg.costs.get(cfg.scopes[jobs[n].side], pairs[jobs[n].pair].key)
+		})
 		err = runPool(ctx, cfg.jobs, order, func(ctx context.Context, n int) error {
 			return r.runSide(ctx, jobs[n].pair, jobs[n].side)
 		})
@@ -370,7 +375,7 @@ func (r *sameRun) runSide(ctx context.Context, i, side int) error {
 	if err := r.cfg.caches[side].put(p.key, rec); err != nil {
 		fmt.Fprintf(r.cfg.log, "bench: cache %s %s: %v\n", sameSides[side], p.key, err)
 	}
-	r.cfg.costs.set(p.key, run.wall)
+	r.cfg.costs.set(r.cfg.scopes[side], p.key, run.wall)
 	r.mu.Lock()
 	st := &r.states[i]
 	st.rec[side], st.dirs[side] = &rec, run.dir

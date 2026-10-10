@@ -41,6 +41,10 @@ type runSpec struct {
 	cfg      sim.Config
 	smoke    bool
 }
+
+// benchCostScope keys the costs of plain bench runs, which build the current tree's simulator.
+const benchCostScope = "bench"
+
 type options struct {
 	suite, split, out, baseline, keep, same, forecast, cache string
 	ctx                                                      context.Context
@@ -313,7 +317,8 @@ func execute(o options, stdout, stderr io.Writer) error {
 	}
 	results := make([]result, len(runs))
 	key := func(i int) sessionKey { return sessionKey{runs[i].scenario.Name, runs[i].split, runs[i].seed} }
-	err = runPool(o.ctx, o.jobs, longestFirst(len(runs), key, costs), func(ctx context.Context, i int) error {
+	order := longestFirst(len(runs), func(i int) (float64, bool) { return costs.get(benchCostScope, key(i)) })
+	err = runPool(o.ctx, o.jobs, order, func(ctx context.Context, i int) error {
 		r, err := simulate(ctx, binary, runRoot, runs[i], o.maxBoots, o.timeout, o.keep != "")
 		if err != nil {
 			return err
@@ -321,7 +326,7 @@ func execute(o options, stdout, stderr io.Writer) error {
 		r.Commit, r.Dirty, r.Ruleset = commit, dirty, tuner.Ruleset
 		r.ModelCheck = checksByMachine[runs[i].scenario.Machine]
 		results[i] = r
-		costs.set(key(i), r.WallS)
+		costs.set(benchCostScope, key(i), r.WallS)
 		return nil
 	})
 	if err == nil {

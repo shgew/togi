@@ -149,27 +149,42 @@ func TestOpenSessionCachePrunesLeastRecentlyUsed(t *testing.T) {
 	}
 }
 
-func TestLongestFirst(t *testing.T) {
+func TestCostTable(t *testing.T) {
 	costs := loadCosts(filepath.Join(t.TempDir(), "costs.json"))
 	keys := []sessionKey{{"s", "dev", 1}, {"s", "dev", 2}, {"s", "dev", 3}, {"s", "dev", 4}, {"s", "dev", 5}}
-	costs.set(keys[0], 5)
-	costs.set(keys[1], 50)
-	costs.set(keys[3], 5)
-	got := longestFirst(len(keys), func(i int) sessionKey { return keys[i] }, costs)
-	if diff := cmp.Diff([]int{2, 4, 1, 0, 3}, got); diff != "" {
+	costs.set("fast", keys[0], 5)
+	costs.set("fast", keys[1], 50)
+	costs.set("fast", keys[3], 5)
+	costs.set("slow", keys[1], 500)
+	cost := func(scope string) func(int) (float64, bool) {
+		return func(i int) (float64, bool) { return costs.get(scope, keys[i]) }
+	}
+	if diff := cmp.Diff([]int{2, 4, 1, 0, 3}, longestFirst(len(keys), cost("fast"))); diff != "" {
 		t.Fatalf("unknown costs first in suite order, then longest first, ties in suite order (-want +got):\n%s", diff)
+	}
+	if got, ok := costs.get("slow", keys[0]); !ok || got != 5 {
+		t.Errorf("a session this scope never ran takes its latest cost: %v, %v", got, ok)
+	}
+	if got, _ := costs.get("fast", keys[1]); got != 50 {
+		t.Errorf("a scope's own cost must win over another scope's later one: %v", got)
 	}
 	if err := costs.save(); err != nil {
 		t.Fatal(err)
 	}
-	if got, ok := loadCosts(costs.path).get(keys[1]); !ok || got != 50 {
+	if got, ok := loadCosts(costs.path).get("fast", keys[1]); !ok || got != 50 {
 		t.Fatalf("costs did not survive a save: %v, %v", got, ok)
+	}
+	for i := range keptCostScopes + 2 {
+		costs.set(string(rune('a'+i)), keys[0], 1)
+	}
+	if len(costs.data.Scopes) != keptCostScopes || costs.data.Scopes[0].Key != string(rune('a'+keptCostScopes+1)) {
+		t.Errorf("scopes kept: %d, newest first %q", len(costs.data.Scopes), costs.data.Scopes[0].Key)
 	}
 	corrupt := filepath.Join(t.TempDir(), "costs.json")
 	if err := os.WriteFile(corrupt, []byte("{"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := loadCosts(corrupt).get(keys[0]); ok {
+	if _, ok := loadCosts(corrupt).get("fast", keys[0]); ok {
 		t.Error("corrupt costs must load as empty")
 	}
 }
