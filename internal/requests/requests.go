@@ -39,6 +39,7 @@ func Summarize(samples iter.Seq[machine.TrialConditions], cores []int, ccdOf fun
 	}
 	requests := make(map[int][]float64, len(cores))
 	clocks := map[int][]float64{}
+	perCCD := map[int][]float64{}
 	count := 0
 	for sample := range samples {
 		if sample.ElapsedMS < WarmupMS || sample.PMTable == nil {
@@ -48,7 +49,9 @@ func Summarize(samples iter.Seq[machine.TrialConditions], cores []int, ccdOf fun
 		if slices.ContainsFunc(cores, func(core int) bool { return core < 0 || core >= len(lanes) }) {
 			return Telemetry{}, false
 		}
-		perCCD := map[int][]float64{}
+		for ccd, mhz := range perCCD {
+			perCCD[ccd] = mhz[:0]
+		}
 		for _, core := range cores {
 			requests[core] = append(requests[core], float64(lanes[core]))
 			if mhz, ok := sample.CoreMHz[core]; ok {
@@ -56,7 +59,9 @@ func Summarize(samples iter.Seq[machine.TrialConditions], cores []int, ccdOf fun
 			}
 		}
 		for ccd, mhz := range perCCD {
-			clocks[ccd] = append(clocks[ccd], median(mhz))
+			if len(mhz) > 0 {
+				clocks[ccd] = append(clocks[ccd], medianInPlace(mhz))
+			}
 		}
 		count++
 	}
@@ -126,10 +131,15 @@ func Top(requests map[int]float64) (float64, bool) {
 }
 
 func median(values []float64) float64 {
-	sorted := slices.Sorted(slices.Values(values))
-	middle := len(sorted) / 2
-	if len(sorted)%2 == 0 {
-		return (sorted[middle-1] + sorted[middle]) / 2
+	return medianInPlace(slices.Clone(values))
+}
+
+// medianInPlace sorts values and returns their median.
+func medianInPlace(values []float64) float64 {
+	slices.Sort(values)
+	middle := len(values) / 2
+	if len(values)%2 == 0 {
+		return (values[middle-1] + values[middle]) / 2
 	}
-	return sorted[middle]
+	return values[middle]
 }

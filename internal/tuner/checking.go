@@ -90,20 +90,35 @@ func (s *State) allAtLimit() bool {
 
 func (s *State) longS(part []int) int {
 	d := s.durations.CheckingAllCoreS
-	groups := map[int]bool{}
-	for _, c := range s.cores {
-		groups[s.ccd[c.id]] = true
-	}
-	if len(groups) == 1 {
+	groups := len(s.parts) - 1
+	if groups <= 1 {
 		return d
 	}
 	if len(part) < len(s.cores) {
 		return d / 4
 	}
-	return d - len(groups)*(d/4)
+	return d - groups*(d/4)
 }
 
+// requirements returns step's checking requirements. Callers must not modify the result: it is memoized until an
+// event changes the checking cycle, the checking profile, core offsets or durations.
 func (s *State) requirements(step int) []requirement {
+	if s.reqEpoch != s.checkingEpoch || s.reqByStep == nil {
+		if s.reqByStep == nil {
+			s.reqByStep = map[int][]requirement{}
+		}
+		clear(s.reqByStep)
+		s.reqEpoch = s.checkingEpoch
+	}
+	if req, ok := s.reqByStep[step]; ok {
+		return req
+	}
+	req := s.computeRequirements(step)
+	s.reqByStep[step] = req
+	return req
+}
+
+func (s *State) computeRequirements(step int) []requirement {
 	g := &s.checking
 	r := g.steps[step]
 	w := s.stepWorkload(step)
@@ -170,7 +185,7 @@ func (s *State) cycleNext() Action {
 			if q.count == 0 {
 				continue
 			}
-			if s.passes(q.class, g.profile, g.startSeq, cycleEvidence) >= q.count {
+			if s.cyclePasses(q.class) >= q.count {
 				continue
 			}
 			if s.retry != nil && s.retry.Cycle == g.cycle && s.retry.Condition == machine.Together {

@@ -1,6 +1,7 @@
 package tuner
 
 import (
+	"cmp"
 	"fmt"
 	"math"
 	"slices"
@@ -39,26 +40,11 @@ func (s *State) r7RequestsBefore(workload string, cores []int, profile []int, be
 // r7RequestOrigins returns the loaded cores' requests, the measurements that supplied them, and the cores no
 // measurement covers, whose requests their offsets stand in for.
 func (s *State) r7RequestOrigins(workload string, cores []int, profile []int, before int) (map[int]float64, []int, []int) {
-	var exact *entry
+	exact := s.newestMeasurement(workload, coresKey(cores), before)
 	full := map[int]*entry{}
-	for i := range s.r7Measurements {
-		e := &s.r7Measurements[i]
-		if e.class.workload != workload || len(e.requests) == 0 || before > 0 && e.seq > before {
-			continue
-		}
-		if slices.Equal(e.cores, cores) && (exact == nil || e.seq > exact.seq) {
-			exact = e
-		}
-		for _, ccd := range s.ccdIDs(cores) {
-			var part []int
-			for _, id := range s.ids() {
-				if s.ccd[id] == ccd {
-					part = append(part, id)
-				}
-			}
-			if slices.Equal(e.cores, part) && (full[ccd] == nil || e.seq > full[ccd].seq) {
-				full[ccd] = e
-			}
+	for _, ccd := range s.ccdIDs(cores) {
+		if e := s.newestMeasurement(workload, s.ccdPartKey(ccd), before); e != nil {
+			full[ccd] = e
 		}
 	}
 	out := make(map[int]float64, len(cores))
@@ -83,6 +69,50 @@ func (s *State) r7RequestOrigins(workload string, cores []int, profile []int, be
 	}
 	slices.Sort(sources)
 	return out, sources, byOffset
+}
+
+type measurementKey struct{ workload, cores string }
+
+// newestMeasurement returns the newest measurement of workload on exactly the cores that key names, recorded at or
+// before before when before is positive.
+func (s *State) newestMeasurement(workload, key string, before int) *entry {
+	positions := s.measurements[measurementKey{workload, key}]
+	n := len(positions)
+	if before > 0 {
+		n, _ = slices.BinarySearchFunc(positions, before+1, func(i, seq int) int { return cmp.Compare(s.r7Measurements[i].seq, seq) })
+	}
+	for i := n - 1; i >= 0; i-- {
+		if e := &s.r7Measurements[positions[i]]; len(e.requests) > 0 {
+			return e
+		}
+	}
+	return nil
+}
+
+// ccdPartKey keys the session's cores on ccd, in id order.
+func (s *State) ccdPartKey(ccd int) string {
+	if key, ok := s.ccdKeys[ccd]; ok {
+		return key
+	}
+	var part []int
+	for _, id := range s.ids() {
+		if s.ccd[id] == ccd {
+			part = append(part, id)
+		}
+	}
+	if s.ccdKeys == nil {
+		s.ccdKeys = map[int]string{}
+	}
+	s.ccdKeys[ccd] = coresKey(part)
+	return s.ccdKeys[ccd]
+}
+
+func (s *State) indexMeasurements() {
+	s.measurements = map[measurementKey][]int{}
+	for i, e := range s.r7Measurements {
+		k := measurementKey{e.class.workload, coresKey(e.cores)}
+		s.measurements[k] = append(s.measurements[k], i)
+	}
 }
 func (s *State) r7Top(workload string, cores []int, profile []int) []int {
 	req, _ := s.r7Requests(workload, cores, profile)
@@ -126,17 +156,56 @@ func (s *State) entryTopSources(e entry) ([]int, []int) {
 	if len(e.top) > 0 {
 		return e.top, nil
 	}
-	req, sources := s.trialRequests(e)
-	return s.r7TopRequests(e.cores, req), sources
+	d := s.derivedOf(e)
+	if !d.hasTop {
+		d.top, d.hasTop = s.r7TopRequests(e.cores, d.req), true
+	}
+	return d.top, d.sources
 }
 
 // trialRequests returns a trial's own requests, or those derived from
 // measurements available as of that trial, never later ones.
 func (s *State) trialRequests(e entry) (map[int]float64, []int) {
-	if len(e.requests) > 0 {
-		return e.requests, []int{e.seq}
+	d := s.derivedOf(e)
+	return d.req, d.sources
+}
+
+// derived is what a trial's own requests, or the measurements before it, imply. Later measurements never change it,
+// so only a deleted measurement or a new session invalidates it. Callers must not modify its slices or maps.
+type derived struct {
+	workload       string
+	cores, profile []int
+	req            map[int]float64
+	sources        []int
+	top            []int
+	hasTop         bool
+	targets        []int
+	hasTargets     bool
+	named, stalled int
+}
+
+func (s *State) derivedOf(e entry) *derived {
+	if d := s.derivedBySeq[e.seq]; d != nil && d.workload == e.class.workload && slices.Equal(d.cores, e.cores) && slices.Equal(d.profile, e.profile) {
+		return d
 	}
-	return s.r7RequestsBefore(e.class.workload, e.cores, e.profile, e.seq)
+	d := &derived{workload: e.class.workload, cores: slices.Clone(e.cores), profile: slices.Clone(e.profile)}
+	if len(e.requests) > 0 {
+		d.req, d.sources = e.requests, []int{e.seq}
+	} else {
+		d.req, d.sources = s.r7RequestsBefore(e.class.workload, e.cores, e.profile, e.seq)
+	}
+	if s.derivedBySeq == nil {
+		s.derivedBySeq = map[int]*derived{}
+	}
+	s.derivedBySeq[e.seq] = d
+	return d
+}
+
+func optionalCore(p *int) int {
+	if p == nil {
+		return -1
+	}
+	return *p
 }
 
 // failureTargets returns the cores a failure counts against: its named core, or the top groups of the
@@ -146,13 +215,19 @@ func (s *State) failureTargets(e entry) []int {
 	if s.r7NamedCulprit(e) {
 		return []int{*e.named}
 	}
+	d := s.derivedOf(e)
+	named, stalled := optionalCore(e.named), optionalCore(e.stalled)
+	if d.hasTargets && d.named == named && d.stalled == stalled {
+		return d.targets
+	}
 	top := s.entryTop(e)
 	if e.stalled != nil {
 		top = slices.DeleteFunc(slices.Clone(top), func(id int) bool { return s.ccd[id] != s.ccd[*e.stalled] })
 	}
 	if movable := slices.DeleteFunc(slices.Clone(top), func(id int) bool { return !s.r7LoadedMovable(e, s.ccd[id]) }); len(movable) > 0 {
-		return movable
+		top = movable
 	}
+	d.targets, d.hasTargets, d.named, d.stalled = top, true, named, stalled
 	return top
 }
 
@@ -201,44 +276,81 @@ func (s *State) r7Decision() (Action, bool) {
 	return a, ok
 }
 func (s *State) r7PendingDecision() (Action, bool) {
-	for _, f := range s.pendingFailures {
-		if !s.multiR7(f.class) || !f.carried && f.failure.Condition == machine.Parked {
+	open := s.r7OpenFailures()
+	kept := 0
+	for j, i := range open {
+		a, ok, settled := s.r7FailureDecision(s.pendingFailures[i])
+		if !settled {
+			open[kept] = i
+			kept++
+		}
+		if ok {
+			kept += copy(open[kept:], open[j+1:])
+			s.r7Open = open[:kept]
+			return a, true
+		}
+	}
+	s.r7Open = open[:kept]
+	return Action{}, false
+}
+
+// r7FailureDecision returns the decision failure f requires now, if any, and whether f can decide nothing more until
+// r7Epoch changes: it is not a live multi-core R7 failure, its located hunt settled it, or every core it counts
+// against was handled. Handled cores only accumulate; whatever changes a failure's entry, targets or located hunt
+// bumps r7Epoch.
+func (s *State) r7FailureDecision(f pendingFailure) (Action, bool, bool) {
+	if !s.multiR7(f.class) || !f.carried && f.failure.Condition == machine.Parked {
+		return Action{}, false, true
+	}
+	failed := s.r7FailureEntry(f)
+	if failed == nil {
+		return Action{}, false, false
+	}
+	var located *locatedHunt
+	if loc, ok := s.located[f.seq]; ok {
+		if loc.result != "loaded" {
+			return Action{}, false, true
+		}
+		if loc.named != nil {
+			if s.r7Handled[f.seq][*loc.named] {
+				return Action{}, false, true
+			}
+			a, ok := s.r7LocatedNamedDecision(f, loc)
+			return a, ok, false
+		}
+		located = &loc
+	}
+	targets := s.failureTargets(*failed)
+	if !slices.ContainsFunc(targets, func(id int) bool { return !s.r7Handled[f.seq][id] }) {
+		return Action{}, false, true
+	}
+	if located == nil && s.locatable(f) != nil {
+		return Action{}, false, false
+	}
+	for _, id := range targets {
+		if s.r7Handled[f.seq][id] {
 			continue
 		}
-		failed := s.r7FailureEntry(f)
-		if failed == nil {
-			continue
-		}
-		var located *locatedHunt
-		if loc, ok := s.located[f.seq]; ok {
-			if loc.result != "loaded" {
-				continue
-			}
-			if loc.named != nil {
-				if s.r7Handled[f.seq][*loc.named] {
-					continue
-				}
-				if a, ok := s.r7LocatedNamedDecision(f, loc); ok {
-					return a, true
-				}
-				continue
-			}
-			located = &loc
-		} else if s.locatable(f) != nil {
-			continue
-		}
-		for _, id := range s.failureTargets(*failed) {
-			if s.r7Handled[f.seq][id] {
-				continue
-			}
-			if c := s.core(id); c != nil {
-				if a, ok := s.r7CoreDecision(f, *failed, c, located); ok {
-					return a, true
-				}
+		if c := s.core(id); c != nil {
+			if a, ok := s.r7CoreDecision(f, *failed, c, located); ok {
+				return a, true, false
 			}
 		}
 	}
-	return Action{}, false
+	return Action{}, false, false
+}
+
+// r7OpenFailures lists, in order, the positions in pendingFailures that r7FailureDecision has not found settled since
+// r7Epoch last changed.
+func (s *State) r7OpenFailures() []int {
+	if !s.r7OpenBuilt || s.r7OpenEpoch != s.r7Epoch {
+		s.r7Open = s.r7Open[:0]
+		for i := range s.pendingFailures {
+			s.r7Open = append(s.r7Open, i)
+		}
+		s.r7OpenEpoch, s.r7OpenBuilt = s.r7Epoch, true
+	}
+	return s.r7Open
 }
 
 // r7LocatedNamedDecision charges the loaded core that a located hunt's group failure named: the hunt ended
@@ -264,18 +376,73 @@ func (s *State) r7LocatedNamedDecision(source pendingFailure, loc locatedHunt) (
 // r7FailureEntry returns a multi-core R7 failure's failed trial. Once its all-zero rerun passed, neither its named
 // core nor its stalled core confines it any more: it counts as unattributed against the cores still off CO 0.
 func (s *State) r7FailureEntry(f pendingFailure) *entry {
-	for i := range s.ledger[f.class] {
-		e := &s.ledger[f.class][i]
-		if s.sameR7Failure(e.seq, f.seq) {
-			if r := s.zeroReruns[f.seq]; r != nil && r.passed {
-				unconfined := *e
-				unconfined.named, unconfined.stalled = nil, nil
-				return &unconfined
-			}
-			return e
+	i := s.failureEntryPos(f.class, f.seq)
+	if i < 0 {
+		return nil
+	}
+	e := &s.ledger[f.class][i]
+	if r := s.zeroReruns[f.seq]; r != nil && r.passed {
+		unconfined := *e
+		unconfined.named, unconfined.stalled = nil, nil
+		return &unconfined
+	}
+	return e
+}
+
+func (s *State) setFailureIndex(seq int) {
+	i := len(s.pendingFailures)
+	s.failureIndex[seq] = i
+	if s.failureGroups == nil {
+		s.failureGroups = map[int][]int{}
+	}
+	s.failureGroups[i] = append(s.failureGroups[i], seq)
+	s.failurePos = nil
+	s.r7Epoch++
+}
+
+// eachFailureEntry visits the position in class's ledger of every entry that sameR7Failure matches to seq. The ledger is
+// ordered by seq.
+func (s *State) eachFailureEntry(class trialClass, seq int, visit func(i int)) {
+	entries := s.ledger[class]
+	find := func(x int) {
+		if i, ok := slices.BinarySearchFunc(entries, x, func(e entry, x int) int { return cmp.Compare(e.seq, x) }); ok {
+			visit(i)
 		}
 	}
-	return nil
+	find(seq)
+	if idx, ok := s.failureIndex[seq]; ok {
+		for _, x := range s.failureGroups[idx] {
+			if x != seq && s.failureIndex[x] == idx {
+				find(x)
+			}
+		}
+	}
+}
+
+// failureEntryPos returns the position of the first such entry, or -1. Found positions are memoized until a failure
+// regroups seqs or evidence is deleted; ledger appends never move the first entry.
+func (s *State) failureEntryPos(class trialClass, seq int) int {
+	if p, ok := s.failurePos[seq]; ok && p.class == class {
+		return p.pos
+	}
+	best := -1
+	s.eachFailureEntry(class, seq, func(i int) {
+		if best < 0 || i < best {
+			best = i
+		}
+	})
+	if best >= 0 {
+		if s.failurePos == nil {
+			s.failurePos = map[int]failurePos{}
+		}
+		s.failurePos[seq] = failurePos{class, best}
+	}
+	return best
+}
+
+type failurePos struct {
+	class trialClass
+	pos   int
 }
 
 type r7Order struct {
@@ -641,17 +808,14 @@ func (s *State) r7VoltageTarget(f entry, id int, request float64) (float64, []in
 	return best, seqs
 }
 
-func (s *State) sameR7Failure(a, b int) bool {
-	if a == b {
-		return true
-	}
-	ai, aok := s.failureIndex[a]
-	bi, bok := s.failureIndex[b]
-	return aok && bok && ai == bi
-}
 func (s *State) recordR7Measurement(seq int, p *journal.TrialIntent, end *journal.TrialEnd) {
 	if p.Regime != machine.R7 || len(end.VoltageRequestsV) == 0 {
 		return
 	}
 	s.r7Measurements = append(s.r7Measurements, entry{seq: seq, class: classOf(p), cores: slices.Clone(p.Cores), profile: slices.Clone(p.Profile), requests: end.VoltageRequestsV, top: end.TopRequesters, clocks: end.CCDMHz})
+	if s.measurements == nil {
+		s.measurements = map[measurementKey][]int{}
+	}
+	k := measurementKey{p.Workload, coresKey(p.Cores)}
+	s.measurements[k] = append(s.measurements[k], len(s.r7Measurements)-1)
 }

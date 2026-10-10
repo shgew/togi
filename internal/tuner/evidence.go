@@ -1,6 +1,7 @@
 package tuner
 
 import (
+	"cmp"
 	"fmt"
 	"math"
 	"slices"
@@ -132,21 +133,36 @@ func (r evidenceRule) admits(e *entry, since int) bool {
 func (s *State) latestFailure(k trialClass, p []int, since int) int {
 	last := since
 	entries := s.ledger[k]
-	for i := range entries {
+	fails := s.classFailures[k]
+	for _, i := range slices.Backward(fails) {
 		e := &entries[i]
-		if !e.pass && e.seq > last && AtLeastShallow(e.profile, p) {
+		if e.seq <= last {
+			break
+		}
+		if AtLeastShallow(e.profile, p) {
 			last = e.seq
+			break
 		}
 	}
-	if k.regime == machine.R6 && len(s.idle) > 0 && k.cores == coresKey(s.ids()) {
-		for i := range s.idle {
+	if k.regime == machine.R6 && len(s.idle) > 0 && k.cores == s.allKey {
+		for i := len(s.idle) - 1; i >= 0; i-- {
 			e := &s.idle[i]
-			if e.seq > last && AtLeastShallow(e.profile, p) {
+			if e.seq <= last {
+				break
+			}
+			if AtLeastShallow(e.profile, p) {
 				last = e.seq
+				break
 			}
 		}
 	}
 	return last
+}
+
+// firstAfter returns the position of the first entry recorded after seq; entries are in seq order.
+func firstAfter(entries []entry, seq int) int {
+	i, _ := slices.BinarySearchFunc(entries, seq+1, func(e entry, t int) int { return cmp.Compare(e.seq, t) })
+	return i
 }
 
 func (s *State) passSeqs(k trialClass, p []int, since int, rule evidenceRule) []int {
@@ -158,9 +174,9 @@ func (s *State) passSeqsBefore(k trialClass, p []int, since, until int, rule evi
 	last := s.failureBefore(k, p, 0, until)
 	var seqs []int
 	entries := s.ledger[k]
-	for i := range entries {
+	for i := firstAfter(entries, rule.floor(last, since)); i < len(entries) && entries[i].seq < until; i++ {
 		e := &entries[i]
-		if e.pass && e.seq < until && rule.admits(e, since) && e.seq > last && AtLeastDeep(e.profile, p) && s.current(e) {
+		if e.pass && rule.admits(e, since) && AtLeastDeep(e.profile, p) && s.current(e) {
 			seqs = append(seqs, e.seq)
 		}
 	}
@@ -175,13 +191,22 @@ func (s *State) passesBefore(k trialClass, p []int, since, until int, rule evide
 	last := s.failureBefore(k, p, 0, until)
 	count := 0
 	entries := s.ledger[k]
-	for i := range entries {
+	for i := firstAfter(entries, rule.floor(last, since)); i < len(entries) && entries[i].seq < until; i++ {
 		e := &entries[i]
-		if e.pass && e.seq < until && rule.admits(e, since) && e.seq > last && AtLeastDeep(e.profile, p) && s.current(e) {
+		if e.pass && rule.admits(e, since) && AtLeastDeep(e.profile, p) && s.current(e) {
 			count++
 		}
 	}
 	return count
+}
+
+// floor is the seq at or below which rule admits no entry recorded after the newest failure last: carried entries
+// count from any seq except under cycleEvidence.
+func (r evidenceRule) floor(last, since int) int {
+	if r == cycleEvidence {
+		return max(last, since)
+	}
+	return last
 }
 
 func (s *State) failingSeq(k trialClass, p []int, since int) int {
@@ -200,18 +225,32 @@ func (s *State) failingSeqBefore(k trialClass, p []int, since, until int) int {
 // failureBefore is the newest failure admitted since the boundary at an equal or shallower profile, recorded before
 // until, without failingSeq's check that newer passes cover it.
 func (s *State) failureBefore(k trialClass, p []int, since, until int) int {
-	last := admittedFailure(s.ledger[k], p, since, until, 0)
-	if k.regime == machine.R6 && len(s.idle) > 0 && k.cores == coresKey(s.ids()) {
+	last := 0
+	entries := s.ledger[k]
+	fails := s.classFailures[k]
+	for _, i := range slices.Backward(fails) {
+		e := &entries[i]
+		if e.seq < until && allEvidence.admits(e, since) && AtLeastShallow(e.profile, p) {
+			last = e.seq
+			break
+		}
+	}
+	if k.regime == machine.R6 && len(s.idle) > 0 && k.cores == s.allKey {
 		last = admittedFailure(s.idle, p, since, until, last)
 	}
 	return last
 }
 
+// admittedFailure returns the newest failure in entries, which are in seq order, recorded after last and before
+// until, admitted since the boundary at an equal or shallower profile; last when there is none.
 func admittedFailure(entries []entry, p []int, since, until, last int) int {
-	for i := range entries {
+	for i := len(entries) - 1; i >= 0; i-- {
 		e := &entries[i]
-		if !e.pass && e.seq > last && e.seq < until && allEvidence.admits(e, since) && AtLeastShallow(e.profile, p) {
-			last = e.seq
+		if e.seq <= last {
+			break
+		}
+		if !e.pass && e.seq < until && allEvidence.admits(e, since) && AtLeastShallow(e.profile, p) {
+			return e.seq
 		}
 	}
 	return last
@@ -281,7 +320,10 @@ func (s *State) recordEvidence(ev journal.Event, p *journal.TrialIntent, end *jo
 	if s.classTargets == nil {
 		s.classTargets = map[string]classTarget{}
 	}
-	s.classTargets[k.cores] = classTarget{cores: slices.Clone(e.cores), multi: len(e.cores) > 1}
+	if target := s.classTargets[k.cores]; target.multi != (len(e.cores) > 1) || !slices.Equal(target.cores, e.cores) {
+		s.classTargets[k.cores] = classTarget{cores: slices.Clone(e.cores), multi: len(e.cores) > 1}
+		s.r7Epoch++
+	}
 	e.requests, e.top, e.clocks, e.named, e.stalled = end.VoltageRequestsV, end.TopRequesters, end.CCDMHz, end.Core, end.StalledCore
 	if carried, ok := ev.Data.(*journal.TrialCarried); ok {
 		e.carried = true
@@ -291,8 +333,14 @@ func (s *State) recordEvidence(ev journal.Event, p *journal.TrialIntent, end *jo
 		e.tctlMax, e.hasTctl = *end.TctlMaxC, true
 	}
 	s.ledger[k] = append(s.ledger[k], e)
+	delete(s.cycleMemo, k)
+	delete(s.exposure, k)
 	if !e.pass {
 		s.failures = append(s.failures, e)
+		if s.classFailures == nil {
+			s.classFailures = map[trialClass][]int{}
+		}
+		s.classFailures[k] = append(s.classFailures[k], len(s.ledger[k])-1)
 	}
 	s.projectionDirty = true
 }
@@ -326,6 +374,8 @@ func (s *State) recordIdle(ev journal.Event, p *journal.Failure) {
 		s.carriedSources[ev.Seq] = carried.Source.Session
 	}
 	s.idle = append(s.idle, e)
+	s.evidenceEpoch++
+	s.exposure = nil
 	s.failures = append(s.failures, e)
 	s.projectionDirty = true
 }
@@ -351,7 +401,7 @@ func (s *State) recordCarried(ev journal.Event, p *journal.TrialCarried) {
 }
 
 func (s *State) rememberCarriedFailure(seq int, p *journal.Failure, k trialClass) {
-	s.failureIndex[seq] = len(s.pendingFailures)
+	s.setFailureIndex(seq)
 	s.pendingFailures = append(s.pendingFailures, pendingFailure{seq: seq, failure: p, profile: p.Profile, class: k, carried: true})
 }
 
@@ -363,6 +413,7 @@ func (s *State) failureAfter(f pendingFailure, since int) bool {
 }
 
 func (s *State) resetEvidence(core int) {
+	s.evidenceEpoch++
 	involves := func(e entry) bool {
 		if slices.Contains(e.cores, core) || s.multiR7(e.class) && e.named != nil && *e.named == core {
 			delete(s.carriedSources, e.seq)
@@ -370,14 +421,27 @@ func (s *State) resetEvidence(core int) {
 		}
 		return false
 	}
+	s.classFailures = nil
 	for k, entries := range s.ledger {
 		s.ledger[k] = slices.DeleteFunc(entries, involves)
+		for i, e := range s.ledger[k] {
+			if !e.pass {
+				if s.classFailures == nil {
+					s.classFailures = map[trialClass][]int{}
+				}
+				s.classFailures[k] = append(s.classFailures[k], i)
+			}
+		}
 	}
 	s.idle = slices.DeleteFunc(s.idle, involves)
+	s.exposure = nil
 	s.failures = slices.DeleteFunc(s.failures, involves)
 	s.projectionDirty = true
 	s.rerunCauses = nil
 	s.r7Measurements = slices.DeleteFunc(s.r7Measurements, involves)
+	s.indexMeasurements()
+	s.derivedBySeq, s.failurePos = nil, nil
+	s.r7Epoch++
 }
 
 func (s *State) queueRerun(ev journal.Event) {

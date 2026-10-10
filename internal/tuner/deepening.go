@@ -97,7 +97,18 @@ func (s *State) roundMoves() (Action, bool) {
 	return Action{}, false
 }
 
+// roundChecksWithSources returns the round's checks and the measurements that ordered them. Callers must not modify
+// the result: it is memoized until the next fold.
 func (s *State) roundChecksWithSources() ([]requirement, []int) {
+	if s.roundGen == s.gen && s.roundMemo {
+		return s.roundChecksMemo, s.roundSourcesMemo
+	}
+	out, sources := s.computeRoundChecks()
+	s.roundChecksMemo, s.roundSourcesMemo, s.roundGen, s.roundMemo = out, sources, s.gen, true
+	return out, sources
+}
+
+func (s *State) computeRoundChecks() ([]requirement, []int) {
 	r := s.round
 	if r == nil {
 		return nil, nil

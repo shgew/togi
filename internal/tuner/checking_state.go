@@ -17,8 +17,9 @@ func (s *State) projectChecking() *journal.CheckingState {
 	}
 	peak, peakSeq := 0, 0
 	for _, entries := range s.ledger {
-		for _, e := range entries {
-			if e.seq > g.profileSeq && e.pass && e.condition == machine.Together && e.hasTctl &&
+		for i := len(entries) - 1; i >= 0 && entries[i].seq > g.profileSeq; i-- {
+			e := &entries[i]
+			if e.pass && e.condition == machine.Together && e.hasTctl &&
 				(peakSeq == 0 || e.tctlMax > peak || e.tctlMax == peak && e.seq < peakSeq) {
 				peak, peakSeq = e.tctlMax, e.seq
 			}
@@ -47,19 +48,17 @@ func (s *State) projectChecking() *journal.CheckingState {
 		workload string
 	}
 	trials := map[exposureKey]int{}
+	if s.exposure == nil || s.exposureProfileSeq != g.profileSeq {
+		s.exposure, s.exposureProfileSeq = map[trialClass]int{}, g.profileSeq
+	}
 	for k, entries := range s.ledger {
-		valid, checked := 0, false
-		for i := range entries {
-			e := &entries[i]
-			if !e.pass || e.carried || e.condition == machine.Alone || !AtLeastDeep(e.profile, g.profile) || !s.current(e) {
-				continue
-			}
-			if !checked {
-				valid, checked = s.latestFailure(k, g.profile, 0), true
-			}
-			if e.seq > valid {
-				trials[exposureKey{k.regime, k.workload}]++
-			}
+		n, ok := s.exposure[k]
+		if !ok {
+			n = s.computeExposure(k, entries)
+			s.exposure[k] = n
+		}
+		if n > 0 {
+			trials[exposureKey{k.regime, k.workload}] += n
 		}
 	}
 	for _, r := range machine.Regimes {
@@ -73,6 +72,26 @@ func (s *State) projectChecking() *journal.CheckingState {
 	return out
 }
 
+// computeExposure counts class k's current passing trials at least as deep as the checking profile since the
+// latest failure that invalidates them; projectChecking memoizes it per class.
+func (s *State) computeExposure(k trialClass, entries []entry) int {
+	g := &s.checking
+	n, valid, checked := 0, 0, false
+	for i := range entries {
+		e := &entries[i]
+		if !e.pass || e.carried || e.condition == machine.Alone || !AtLeastDeep(e.profile, g.profile) || !s.current(e) {
+			continue
+		}
+		if !checked {
+			valid, checked = s.latestFailure(k, g.profile, 0), true
+		}
+		if e.seq > valid {
+			n++
+		}
+	}
+	return n
+}
+
 func (s *State) checkingStepsDone() int {
 	g := &s.checking
 	for i := range g.steps {
@@ -80,10 +99,29 @@ func (s *State) checkingStepsDone() int {
 			return i
 		}
 		for _, q := range s.requirements(i) {
-			if q.count > 0 && s.passes(q.class, g.profile, g.startSeq, cycleEvidence) < q.count {
+			if q.count > 0 && s.cyclePasses(q.class) < q.count {
 				return i
 			}
 		}
 	}
 	return len(g.steps)
+}
+
+// cyclePasses is passes(k, ...) for the open cycle: at the checking profile, since the cycle started, under
+// cycleEvidence. It is memoized until the checking cycle or profile, or the evidence, changes.
+func (s *State) cyclePasses(k trialClass) int {
+	if s.cycleCheckingEpoch != s.checkingEpoch || s.cycleEvidenceEpoch != s.evidenceEpoch || s.cycleMemo == nil {
+		if s.cycleMemo == nil {
+			s.cycleMemo = map[trialClass]int{}
+		}
+		clear(s.cycleMemo)
+		s.cycleCheckingEpoch, s.cycleEvidenceEpoch = s.checkingEpoch, s.evidenceEpoch
+	}
+	if n, ok := s.cycleMemo[k]; ok {
+		return n
+	}
+	g := &s.checking
+	n := s.passes(k, g.profile, g.startSeq, cycleEvidence)
+	s.cycleMemo[k] = n
+	return n
 }
