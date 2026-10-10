@@ -27,7 +27,7 @@
   slot      0    1    2    3    4    5    6    7 
   CCD 0   -12  -34* -32  -33  -19    0  -11  -36                                  17:38  backoff  core 01 -35 → -34
   CCD 1   -17  -35  -10  -35   -6  -29  -28  -17                                  17:38  fail     core 01 fails at -35
-  * not confirmed: the next passed full cycle confirms it                         17:38  crash    R5 both threads on core 01 at -35 · rebooted · midway...
+  * not confirmed: a passed cycle confirms it, unless held                        17:38  crash    R5 both threads on core 01 at -35 · rebooted · midway...
                                                                                   17:36  pass     R5 both threads on core 08 at -17 · passed · Tctl max 76°C
   CYCLE 2 ───────────────────────────────────────────────── 18 steps · 4 done     17:34  pass     R5 both threads on core 00 at -12 · passed · Tctl max 66°C
                                                                                   17:32  pass     R6 idle + bursts on 00-15 · passed · Tctl max 70°C

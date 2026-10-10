@@ -58,18 +58,31 @@ func stageMarker(mark string) string {
 	return track.Render(mark)
 }
 
+// contextLines is the BIOS profile with the panel under it: a hunt, the search turns, or the activity. The profile is
+// always shown; the panel under it keeps the rows it leaves.
 func (s Snapshot) contextLines(p layout, now time.Time) []string {
-	if s.hunt != nil {
-		return s.huntLines(p.tables, p.context.w, p.class, now)
-	}
-	if len(s.turns) > 0 {
-		return s.turnLines(p.tables, p.context.w, p.class)
+	var panel []string
+	switch {
+	case s.hunt != nil:
+		panel = s.huntLines(p.tables, p.context.w, p.class, now)
+	case len(s.turns) > 0:
+		panel = s.turnLines(p.tables, p.context.w, p.class)
 	}
 	bios := s.biosLines(p.context.w, p.class)
 	if len(bios) == 0 {
+		if panel != nil {
+			return panel
+		}
 		return s.activityLines(p)
 	}
 	p.context.h -= len(bios) + 1
+	if panel != nil {
+		if len(panel) > p.context.h && p.class == compactLayout {
+			// The compact size has no rows to spare under the profile: the panel gives up its blank rows first.
+			panel = slices.DeleteFunc(slices.Clone(panel), func(row string) bool { return ansi.Strip(row) == "" })
+		}
+		return append(append(bios, ""), boundedRows(panel, p.context.h)...)
+	}
 	return append(append(bios, ""), s.activityLines(p)...)
 }
 
@@ -77,15 +90,15 @@ func (s Snapshot) contextLines(p layout, now time.Time) []string {
 func (s Snapshot) activityLines(p layout) []string {
 	w, t := p.context.w, p.tables
 	r7 := s.r7Lines(p)
+	if s.phase == journal.PhaseDeepening && s.phases != nil && s.phases.round > 0 {
+		return s.roundLines(p, r7)
+	}
 	room := p.context.h
 	if len(r7) > 0 {
 		room -= len(r7) + 1
 	}
 	// lines also returns the running part's row, or -1.
 	lines := func(height int) ([]string, int) {
-		if s.phase == journal.PhaseDeepening && s.phases != nil && s.phases.round > 0 {
-			return s.phase2Lines(t, w), -1
-		}
 		var out []string
 		focus := -1
 		if s.cycle != nil {
@@ -116,6 +129,20 @@ func (s Snapshot) activityLines(p layout) []string {
 		out = append(out, "")
 	}
 	return append(out, r7...)
+}
+
+// roundLines is the open phase 2 round with the R7 lines under it. The round's heading, its bound and its candidates
+// come first: R7 keeps its rows only when they fit under all of those, and the round's checks give up rows before it.
+func (s Snapshot) roundLines(p layout, r7 []string) []string {
+	out, head := s.phase2Lines(p.tables, p.context.w)
+	if len(r7) == 0 {
+		return boundedRows(out, p.context.h)
+	}
+	room := p.context.h - len(r7) - 1
+	if room < head {
+		return boundedRows(out, p.context.h)
+	}
+	return append(append(boundedRows(out, room), ""), r7...)
 }
 
 // cycleLines keeps the running part, or else the current step, within height rows: it leaves out the rows above it
@@ -896,13 +923,14 @@ func (s Snapshot) biosLines(width int, class sizeClass) []string {
 		out = append(out, grey.Render(fmt.Sprintf("CCD %d  ", ccd))+strings.Join(cells[ccd], ""))
 	}
 	if len(b.unconfirmed) > 0 {
-		out = append(out, cutWords(amber.Render("* ")+grey.Render("not confirmed: the next passed full cycle confirms it"), width))
+		out = append(out, cutWords(amber.Render("* ")+grey.Render("not confirmed: a passed cycle confirms it, unless held"), width))
 	}
 	return out
 }
 
-// phase2Lines is the open round: its candidates with their gaps, the bound on what is left, and its checks.
-func (s Snapshot) phase2Lines(t tables, width int) []string {
+// phase2Lines is the open round: its candidates with their gaps, the bound on what is left, and its checks. It also
+// returns how many leading rows are the heading, the bound and the candidates, which the panel keeps first.
+func (s Snapshot) phase2Lines(t tables, width int) ([]string, int) {
 	d := s.phases
 	out := []string{rule(width, grey.Render(fmt.Sprintf("PHASE 2 · ROUND %d", d.round)), ""), "", cutWords(grey.Render(fmt.Sprintf("at most %s left, then one full cycle", plural(d.roundsLeft, "round"))), width)}
 	type shape struct {
@@ -925,11 +953,12 @@ func (s Snapshot) phase2Lines(t tables, width int) []string {
 		}
 		out = append(out, cutWords(textStyle.Render(fmt.Sprintf("%s %s  %d → solo %d  gap %d", noun(len(groups[k]), "core"), coreIDs(groups[k]), k.offset, k.solo, k.gap))+note, width))
 	}
+	head := len(out)
 	out = append(out, "", grey.Render("CHECKS"))
 	for _, check := range d.checks {
 		out = append(out, cutWords(textStyle.Render(fmt.Sprintf("%s on %s  %d/%d passed", check.Regime, coreIDs(check.Cores), check.Passes, check.Needed))+"  "+grey.Render(workloadLabel(check.Workload)), width))
 	}
-	return out
+	return out, head
 }
 
 // numberRanges writes numbers compactly: a run of consecutive numbers becomes a range.

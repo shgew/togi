@@ -1,0 +1,32 @@
+ togi   00:39:10   session 72h39m   59 failures · 15 crashes   last observed failure 00:38, a moment ago
+ ■ SOLO ─ ►  HUNT 4   part 1 of 2 ─ ■ P1 ─ ■ P2 ─ CLEAN 2 ─ ○ CYCLE 4 paused at 1/18
+
+ ▌  Crashed early in R2 heavy vector on 00; no core named. Rerunning it with 01-15 parked.
+
+  R2   heavy vector load  on 00 · 02 04 parked, idle   mprime AVX2 36K-248K · 1 worker            HUNT 4 · PART 1 OF 2
+ ██████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  1:20 left  2/5 ■ ■ ► · ·
+
+ 5/5 pass → part 2: 02   none named → hunt ends   core named → hunt ends
+
+ CCD 0 one loaded 0  2 counts/cell       -50 fail  back      CCD 1 idle       0  2 counts/cell       -50 fail
+ ► 00 -37 MEMBER   ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█         -38             08 -24 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄█·              -25
+   01 -31 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█·           -32             09 -16 AT LIMIT ▄▄▄▄▄▄▄▄█                   -17
+   02 -34 PARKED   ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█          -36  -35        10 -15 AT LIMIT ▄▄▄▄▄▄▄█                    -16
+   03 -14 AT LIMIT ▄▄▄▄▄▄▄█·                   -15             11  -4 AT LIMIT ▄▄█·                         -5
+   04 -31 PARKED   ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█           -33  -32        12  -7 AT LIMIT ▄▄▄█·                        -8
+   05  -7 AT LIMIT ▄▄▄█·                        -8 top         13 -22 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄█                -23
+   06 -27 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄█·             -28             14   0 AT LIMIT █·                           -1 top
+   07 -30 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█            -31             15 -35 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█··        -36
+
+ BIOS PROFILE ─────────────────── UNCONFIRMED since #11146   WHAT HAPPENED ─────────────────────────────── l: last 400
+ slot      0    1    2    3    4    5    6    7 
+ CCD 0   -36* -31  -34* -14* -31*  -7  -27  -30              00:38  hunt     #4 started · part 1: 00 at failing...
+ CCD 1   -24  -16  -15   -4   -7  -22    0  -35              00:38  crash    rerun of R2 heavy vector on core 00 at...
+ * not confirmed: a passed cycle confirms it, unless held    00:36  backoff  core 03 -15 → -14
+                                                             00:36  fail     core 03 fails at -15
+ HUNT 4 ────────────────────────────────────── 00:38 · 40s   00:36  crash    rerun of R2 heavy vector on core 00 at...
+ cause      crash in the rerun of R2 heavy vector on...      00:35  backoff  core 03 -16 → -15
+ ► part 1/2 00 at failing offsets     trial 3/5              00:35  fail     core 03 fails at -16
+ +4 more                                                     +1559 more
+
+  ?  help    l  log    esc  back    q  close view

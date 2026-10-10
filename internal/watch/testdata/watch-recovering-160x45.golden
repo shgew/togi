@@ -20,25 +20,25 @@
     06    0  SEARCH    ·····                              p -10 · next -15          14    0  SEARCH    · █                           -5   passed -1 · next -2
     07    0  SEARCH    ·····                              p -10 · next -15          15    0  SEARCH    ·····                              p -10 · next -15
 
-  TURNS ──────────────────────────────────── one core per turn, in this order     WHAT HAPPENED ───────────────────────────────────────────────── l: last 400
-
-        this turn                   at   so far                                   02:47  crash    with the offsets applied, rebooted
-    13  search step: light, then... -15  passed -10 · next -15                    02:45  backoff  core 12 -15 → -11
-    06  search step: light, then... -15  passed -10 · next -15                    02:45  fail     core 12 fails at -15
-    14  search step: 1 count deeper -2   passed -1 · next -2                      02:45  fail     core 12 · R1 light at -15 · wrong result
-    07  search step: light, then... -15  passed -10 · next -15                    02:45  step     core 04 passed -15, next -20
-    15  search step: light, then... -15  passed -10 · next -15                    02:42  step     core 11 passed -6, next -7
-    00  search step: light, then... -20  passed -15 · next -20                    02:39  step     core 03 passed -15, next -20
-    08  search step: light, then... -20  passed -15 · next -20                    02:36  step     core 10 passed -15, next -20
-    01  search step: light, then... -20  passed -15 · next -20                    02:33  step     core 02 passed -15, next -20
-    09  search step: light, then... -20  passed -15 · next -20                    02:30  step     core 09 passed -15, next -20
-    02  search step: light, then... -20  passed -15 · next -20                    02:27  step     core 01 passed -15, next -20
-    10  search step: light, then... -20  passed -15 · next -20                    02:24  step     core 08 passed -15, next -20
-    03  search step: light, then... -20  passed -15 · next -20                    02:21  step     core 00 passed -15, next -20
-    11  search step: 1 count deeper -7   passed -6 · next -7                      02:18  step     core 15 passed -10, next -15
-    04  search step: light, then... -20  passed -15 · next -20                    02:15  step     core 07 passed -10, next -15
-    12  search step: 1 count deeper -11  passed -10 · next -11                    02:12  step     core 14 passed -1, next -2
-  ► 05  search step: light, then... -15  passed -10 · next -15                    02:09  step     core 06 passed -10, next -15
-                                                                                  +49 more
+  BIOS PROFILE ──────────────────────────────────────────────────────────────     WHAT HAPPENED ───────────────────────────────────────────────── l: last 400
+  none confirmed yet: phase 1 has not passed a full cycle
+                                                                                  02:47  crash    with the offsets applied, rebooted
+  TURNS ──────────────────────────────────── one core per turn, in this order     02:45  backoff  core 12 -15 → -11
+                                                                                  02:45  fail     core 12 fails at -15
+        this turn                   at   so far                                   02:45  fail     core 12 · R1 light at -15 · wrong result
+    13  search step: light, then... -15  passed -10 · next -15                    02:45  step     core 04 passed -15, next -20
+    06  search step: light, then... -15  passed -10 · next -15                    02:42  step     core 11 passed -6, next -7
+    14  search step: 1 count deeper -2   passed -1 · next -2                      02:39  step     core 03 passed -15, next -20
+    07  search step: light, then... -15  passed -10 · next -15                    02:36  step     core 10 passed -15, next -20
+    15  search step: light, then... -15  passed -10 · next -15                    02:33  step     core 02 passed -15, next -20
+    00  search step: light, then... -20  passed -15 · next -20                    02:30  step     core 09 passed -15, next -20
+    08  search step: light, then... -20  passed -15 · next -20                    02:27  step     core 01 passed -15, next -20
+    01  search step: light, then... -20  passed -15 · next -20                    02:24  step     core 08 passed -15, next -20
+    09  search step: light, then... -20  passed -15 · next -20                    02:21  step     core 00 passed -15, next -20
+    02  search step: light, then... -20  passed -15 · next -20                    02:18  step     core 15 passed -10, next -15
+    10  search step: light, then... -20  passed -15 · next -20                    02:15  step     core 07 passed -10, next -15
+    03  search step: light, then... -20  passed -15 · next -20                    02:12  step     core 14 passed -1, next -2
+    11  search step: 1 count deeper -7   passed -6 · next -7                      02:09  step     core 06 passed -10, next -15
+  +3 more                                                                         +49 more
 
    ?  help    l  log    esc  back    q  close view

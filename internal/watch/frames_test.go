@@ -7,6 +7,7 @@ import (
 	"os"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -88,6 +89,42 @@ var unconfirmedJournal = sync.OnceValues(func() ([]journal.Event, error) {
 		return nil, err
 	}
 	return simulateWith(m, config.Default(), nil, simrun.Input{Cycles: 3})
+})
+
+// laterHuntJournal is the default simulated machine through six clean cycles, rerun with a burst of crashes that name
+// no core, scripted on the trials from the first checking trial of cycle 4 on: after a held first failure, a second
+// one makes a hunt while the confirmed profile shows a held, unconfirmed core. [INFERENCE: the burst length was found
+// by scanning; a shorter one stays within the hold.]
+var laterHuntJournal = sync.OnceValues(func() ([]journal.Event, error) {
+	m, err := sim.New(sim.Config{Seed: 1})
+	if err != nil {
+		return nil, err
+	}
+	base, err := simulateWith(m, config.Default(), nil, simrun.Input{Cycles: 6})
+	if err != nil {
+		return nil, err
+	}
+	first := -1
+	for _, e := range base {
+		if p, ok := e.Data.(*journal.TrialIntent); ok && p.Phase == journal.PhaseChecking && p.Cycle >= 4 && p.Regime != machine.R7 {
+			if first, err = strconv.Atoi(p.Trial); err != nil {
+				return nil, err
+			}
+			break
+		}
+	}
+	if first < 0 {
+		return nil, errors.New("no checking trial in cycle 4")
+	}
+	script := map[string]sim.Outcome{}
+	for id := first; id <= first+5; id++ {
+		script[fmt.Sprintf("%04d", id)] = sim.Outcome{Signal: machine.Crash, AtS: 7, Core: 3}
+	}
+	m, err = sim.New(sim.Config{Seed: 1, Script: script})
+	if err != nil {
+		return nil, err
+	}
+	return simulateWith(m, config.Default(), nil, simrun.Input{Cycles: 6})
 })
 
 // firstResultJournal is the default simulated machine stopped at its first confirmed BIOS profile.
@@ -252,6 +289,7 @@ func watchCuts(t *testing.T) []watchCut {
 		{"unconfirmed", cutWhen(t, simulated(t, unconfirmedJournal), func(s *tuner.State, e journal.Event) bool {
 			return e.Kind == journal.KindTrialStart && len(s.BIOSProfile().Unconfirmed) > 0
 		})},
+		{"hunt-bios", huntWithUnconfirmedProfile(t, simulated(t, laterHuntJournal))},
 		{"first-result", simulated(t, firstResultJournal)},
 		{"idle", cutTrial(t, events, func(p *journal.TrialIntent) bool { return p.Regime == machine.R6 })},
 		{"between", cutPassedCheckingTrial(t, events)},
@@ -263,6 +301,23 @@ func watchCuts(t *testing.T) []watchCut {
 			{Seq: last.Seq + 1, Time: last.Time.Add(time.Minute), Boot: last.Boot, Kind: deadEnd.Kind(), Msg: deadEnd.Message(), Data: deadEnd},
 		})},
 	}
+}
+
+// huntWithUnconfirmedProfile cuts at the first trial start of a hunt run while the BIOS profile is confirmed and a
+// core shows an unconfirmed offset: the BIOS rows must stay beside the hunt panel.
+func huntWithUnconfirmedProfile(tb testing.TB, events []journal.Event) []journal.Event {
+	tb.Helper()
+	hunt := map[string]bool{}
+	return cutWhen(tb, events, func(s *tuner.State, e journal.Event) bool {
+		switch p := e.Data.(type) {
+		case *journal.TrialIntent:
+			hunt[p.Trial] = p.Phase == journal.PhaseHunt
+		case *journal.TrialStart:
+			b := s.BIOSProfile()
+			return hunt[p.Trial] && b.Confirmed > 0 && len(b.Unconfirmed) > 0
+		}
+		return false
+	})
 }
 
 // beforeCrashDetected is the journal a crashed session shows after the machine restarted and before togi run records
@@ -297,7 +352,7 @@ func assertFrameBounds(t *testing.T, drawn Drawn, sc Screen) {
 // size under assertFrameBounds.
 var allSizeGoldens = map[string]bool{
 	"search": true, "checking": true, "hunt": true, "member-probe": true,
-	"round": true, "confirmation": true, "concluded": true, "unconfirmed": true, "idle": true, "crashed": true, "recovering": true, "combination": true,
+	"round": true, "confirmation": true, "concluded": true, "unconfirmed": true, "hunt-bios": true, "idle": true, "crashed": true, "recovering": true, "combination": true,
 }
 
 func TestWatchFrames(t *testing.T) {

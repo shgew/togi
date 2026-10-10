@@ -1,0 +1,44 @@
+  togi   00:39:10   session 72h39m   59 failures · 15 crashes   last observed failure 00:38, a moment ago
+
+  ■ SOLO LIMITS  16/16  ───  ►  HUNT 4   parts · part 1 of 2  ───  ■ PHASE 1  ───  ■ PHASE 2  concluded  ───  CLEAN CYCLES 2  · repeats until stopped  ───...
+
+  ▌  HUNT 4   Crashed early in R2 heavy vector on 00; no core named.              last trial      CRASH  on core 00
+  ▌           Rerunning it with 01-15 parked.
+
+  NOW ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── trial 1974
+   R2   heavy vector load  on 00 · 02 04 parked, idle   mprime AVX2 36K-248K · 1 worker                                                  HUNT 4 · PART 1 OF 2
+  ███████████████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  1:20 left  2/5 ■ ■ ► · ·
+
+  if 5 of 5 pass       next: part 2: 02 04 at failing offsets, 00 parked
+  if none is named     hunt 4 ends: 00 named → core 00 -37 → -36 → next: rerun R2 heavy vector on core 00 at -36 · 2m
+  if a core is named   its failure point is recorded → the hunt ends → it backs off → next: rerun R2 heavy vector on core 00 at -36 · 2m
+
+  CCD 0               0  2 counts/cell       -50 fail pt  one loaded              CCD 1               0  2 counts/cell       -50 fail pt  not under load
+  ► 00  -37  MEMBER    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█          -38                             08  -24  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄█·               -25
+    01  -31  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█·            -32                             09  -16  AT LIMIT  ▄▄▄▄▄▄▄▄█                    -17
+    02  -34  PARKED    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█           -36   returns to -35            10  -15  AT LIMIT  ▄▄▄▄▄▄▄█                     -16
+    03  -14  AT LIMIT  ▄▄▄▄▄▄▄█·                    -15                             11   -4  AT LIMIT  ▄▄█·                          -5
+    04  -31  PARKED    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█            -33   returns to -32            12   -7  AT LIMIT  ▄▄▄█·                         -8
+    05   -7  AT LIMIT  ▄▄▄█·                         -8   top by offset             13  -22  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄█                 -23
+    06  -27  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄█·              -28                             14    0  AT LIMIT  █·                            -1   top by offset
+    07  -30  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█             -31                             15  -35  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█··         -36
+
+  BIOS PROFILE ──────────────────── UNCONFIRMED since #11146 · cores 00 02-04     WHAT HAPPENED ───────────────────────────────────────────────── l: last 400
+  slot      0    1    2    3    4    5    6    7 
+  CCD 0   -36* -31  -34* -14* -31*  -7  -27  -30                                  00:38  hunt     #4 started · part 1: 00 at failing offsets, 02 04 parked
+  CCD 1   -24  -16  -15   -4   -7  -22    0  -35                                  00:38  crash    rerun of R2 heavy vector on core 00 at -37 · rebooted...
+  * not confirmed: a passed cycle confirms it, unless held                        00:36  backoff  core 03 -15 → -14
+                                                                                  00:36  fail     core 03 fails at -15
+  HUNT 4 ───────────────────────────────────────── started 00:38 · 40s so far     00:36  crash    rerun of R2 heavy vector on core 00 at -37 · rebooted...
+                                                                                  00:35  backoff  core 03 -16 → -15
+  cause       crash in the rerun of R2 heavy vector on 00 · no core named         00:35  fail     core 03 fails at -16
+  evidence    the last sample came 0:06 into the trial · not enough to...         00:35  crash    rerun of R2 heavy vector on core 00 at -37 · rebooted...
+  candidates  00 02 04, every core with an offset in the failing profile          00:33  backoff  core 03 -17 → -16
+                                                                                  00:33  fail     core 03 fails at -17
+  parts       part    failing      parked       schedule state                    00:33  crash    R2 heavy vector on core 00 at -37 · rebooted · early in...
+            ► 1 of 2  00           01-15        5 x 2m   trial 3 of 5             00:32  backoff  core 03 -17 → -17
+              2 of 2  02 04        00 01 03...  5 x 2m   if part 1 passes         00:32  fail     core 03 fails at -17
+              then finer parts and their complements, until one fails or...       00:32  crash    R2 heavy vector on core 00 at -37 · rebooted · early in...
+  +6 more                                                                         +1552 more
+
+   ?  help    l  log    esc  back    q  close view

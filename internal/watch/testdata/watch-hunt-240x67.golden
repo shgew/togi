@@ -27,24 +27,24 @@
     06    0  PARKED    ···························█··                        -28   returns to -27                           14    0  AT LIMIT  █···                                                   -1
     07    0  PARKED    ································█                     -33   returns to -31                           15    0  PARKED    ·······································█              -40   returns to -38
 
-  HUNT 1 ───────────────────────────────────────────────────────────────────────────────── started 20:23 · 40s so far     WHAT HAPPENED ─────────────────────────────────────────────────────────────────── newest first · l: last 400 events
-
-  cause       corrected hardware error in R5 both threads on 08 · cycle 1 step 8, part 2, trial 1 of 1 · no core...       20:23  hunt     #1 started · part 1: 08 at failing offsets, 00-07 09-13 15 parked
-  candidates  00-13 15, every core with an offset in the failing profile                                                  20:23  fail     R5 both threads on core 08 at -26 · corrected hardware error · no core named
+  BIOS PROFILE ──────────────────────────────────────────────────────────────────────────────────────────────────────     WHAT HAPPENED ─────────────────────────────────────────────────────────────────── newest first · l: last 400 events
+  none confirmed yet: phase 1 has not passed a full cycle
+                                                                                                                          20:23  hunt     #1 started · part 1: 08 at failing offsets, 00-07 09-13 15 parked
+  HUNT 1 ───────────────────────────────────────────────────────────────────────────────── started 20:23 · 40s so far     20:23  fail     R5 both threads on core 08 at -26 · corrected hardware error · no core named
                                                                                                                           20:21  pass     R5 both threads on core 00 at -36 · passed · Tctl max 74°C
-  parts       part        at failing offsets   parked at 0   schedule   state                                             20:19  pass     R6 idle + bursts on 00-15 · passed · Tctl max 69°C
-            ► 1 of 2      08                   00-07 09-15   5 x 2m     trial 1 of 5                                      20:04  pass     R2 heavy vector on core 15 at -38 · passed · Tctl max 73°C
-              2 of 2      00-07 09-13 15       08 14         5 x 2m     if part 1 passes                                  20:02  pass     R2 heavy vector on core 07 at -31 · passed · Tctl max 62°C
-              then finer parts and their complements, until one fails or none does                                        20:00  pass     R2 heavy vector on core 14 at 0 · passed · Tctl max 62°C
-                                                                                                                          19:58  pass     R2 heavy vector on core 06 at -27 · passed · Tctl max 71°C
-  then        if the hunt resolves and the rerun passes:                                                                  19:56  pass     R2 heavy vector on core 13 at -22 · passed · Tctl max 76°C
-              1  record what it found: one core's failure point, or a combination                                         19:54  pass     R2 heavy vector on core 05 at -7 · passed · Tctl max 74°C
-              2  back off past it                                                                                         19:52  pass     R2 heavy vector on core 12 at -9 · passed · Tctl max 62°C
-              3  rerun R5 both threads on 08: 5 trials of 2m, its original length                                         19:50  pass     R2 heavy vector on core 04 at -31 · passed · Tctl max 71°C
-              4  resume cycle 1                                                                                           19:48  pass     R2 heavy vector on core 11 at -4 · passed · Tctl max 67°C
-                                                                                                                          19:46  pass     R2 heavy vector on core 03 at -16 · passed · Tctl max 66°C
-                                                                                                                          19:44  pass     R2 heavy vector on core 10 at -15 · passed · Tctl max 68°C
-                                                                                                                          19:42  pass     R2 heavy vector on core 02 at -34 · passed · Tctl max 74°C
+  cause       corrected hardware error in R5 both threads on 08 · cycle 1 step 8, part 2, trial 1 of 1 · no core...       20:19  pass     R6 idle + bursts on 00-15 · passed · Tctl max 69°C
+  candidates  00-13 15, every core with an offset in the failing profile                                                  20:04  pass     R2 heavy vector on core 15 at -38 · passed · Tctl max 73°C
+                                                                                                                          20:02  pass     R2 heavy vector on core 07 at -31 · passed · Tctl max 62°C
+  parts       part        at failing offsets   parked at 0   schedule   state                                             20:00  pass     R2 heavy vector on core 14 at 0 · passed · Tctl max 62°C
+            ► 1 of 2      08                   00-07 09-15   5 x 2m     trial 1 of 5                                      19:58  pass     R2 heavy vector on core 06 at -27 · passed · Tctl max 71°C
+              2 of 2      00-07 09-13 15       08 14         5 x 2m     if part 1 passes                                  19:56  pass     R2 heavy vector on core 13 at -22 · passed · Tctl max 76°C
+              then finer parts and their complements, until one fails or none does                                        19:54  pass     R2 heavy vector on core 05 at -7 · passed · Tctl max 74°C
+                                                                                                                          19:52  pass     R2 heavy vector on core 12 at -9 · passed · Tctl max 62°C
+  then        if the hunt resolves and the rerun passes:                                                                  19:50  pass     R2 heavy vector on core 04 at -31 · passed · Tctl max 71°C
+              1  record what it found: one core's failure point, or a combination                                         19:48  pass     R2 heavy vector on core 11 at -4 · passed · Tctl max 67°C
+              2  back off past it                                                                                         19:46  pass     R2 heavy vector on core 03 at -16 · passed · Tctl max 66°C
+              3  rerun R5 both threads on 08: 5 trials of 2m, its original length                                         19:44  pass     R2 heavy vector on core 10 at -15 · passed · Tctl max 68°C
+              4  resume cycle 1                                                                                           19:42  pass     R2 heavy vector on core 02 at -34 · passed · Tctl max 74°C
                                                                                                                           19:40  pass     R2 heavy vector on core 09 at -16 · passed · Tctl max 64°C
                                                                                                                           19:38  pass     R2 heavy vector on core 01 at -33 · passed · Tctl max 62°C
                                                                                                                           19:36  pass     R2 heavy vector on core 08 at -26 · passed · Tctl max 69°C

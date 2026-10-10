@@ -27,40 +27,40 @@
   ► 06    0  PARKED    ·········▀·                                                 returns to -10                         ► 14    0  PARKED    ·········▀·                                                 returns to -10
   ► 07    0  PARKED    ·········▀·                                                 returns to -10                         ► 15    0  PARKED    ·········▀·                                                 returns to -10
 
-  HUNT 1 ────────────────────────────────────────────────────────────────────────────── started 07:31 · 50m30s so far     WHAT HAPPENED ─────────────────────────────────────────────────────────────────── newest first · l: last 400 events
-
-  cause       crash in R6 idle + bursts on 00-15 · cycle 1 step 7, trial 1 of 1 · no core named                           08:22  group    hunt 1 groups 40-41 · parts of 03 11 · all passed on existing evidence
-  candidates  00-15, every core with an offset in the failing profile                                                     08:22  crash    hunt 1 group 39 · 03 11 at failing offsets · rebooted
+  BIOS PROFILE ──────────────────────────────────────────────────────────────────────────────────────────────────────     WHAT HAPPENED ─────────────────────────────────────────────────────────────────── newest first · l: last 400 events
+  none confirmed yet: phase 1 has not passed a full cycle
+                                                                                                                          08:22  group    hunt 1 groups 40-41 · parts of 03 11 · all passed on existing evidence
+  HUNT 1 ────────────────────────────────────────────────────────────────────────────── started 07:31 · 50m30s so far     08:22  crash    hunt 1 group 39 · 03 11 at failing offsets · rebooted
                                                                                                                           08:20  group    hunt 1 groups 35-38 · parts of 03 10 11 · all passed on existing evidence
-  parts       groups 1-2   parts of 00-15                               all passed                                        08:20  crash    hunt 1 group 34 · 03 10 11 at failing offsets · rebooted
-              group 3      00-15 at failing offsets                     crashed                                           08:19  group    hunt 1 groups 28-33 · parts of 02 03 10 11 · all passed on existing evidence
-              groups 4-8   parts of 00-15 and their complements         all passed                                        08:19  crash    hunt 1 group 27 · 02 03 10 11 at failing offsets · rebooted
-              group 9      00-03 08-15 at failing offsets, 04-07 parked crashed                                           08:17  group    hunt 1 groups 23-26 · parts of 02 03 08-11 · all passed on existing evidence
-              groups 10-14 parts of 00-03 08-15 and their complements   all passed                                        08:17  crash    hunt 1 group 22 · 02 03 08-11 at failing offsets · rebooted
-              group 15     00-03 08-11 at failing offsets               crashed                                           08:16  group    hunt 1 groups 16-21 · parts of 00-03 08-11 · all passed on existing evidence
-              groups 16-21 parts of 00-03 08-11                         all passed                                        08:16  crash    hunt 1 group 15 · 00-03 08-11 at failing offsets · rebooted
-              group 22     02 03 08-11 at failing offsets               crashed                                           08:14  pass     hunt 1 group 14 · 00-03 12-15 at failing offsets · 5 of 5 passed · Tctl max 76°C
-              groups 23-26 parts of 02 03 08-11 and their complements   all passed                                        08:04  group    hunt 1 groups 10-13 · parts of 00-03 08-15 · all passed on existing evidence
-              group 27     02 03 10 11 at failing offsets               crashed                                           08:04  crash    hunt 1 group 9 · 00-03 08-15 at failing offsets · rebooted
-              groups 28-33 parts of 02 03 10 11                         all passed                                        08:03  pass     hunt 1 group 8 · 04-15 at failing offsets · 5 of 5 passed · Tctl max 74°C
-              group 34     03 10 11 at failing offsets                  crashed                                           07:53  group    hunt 1 groups 4-7 · parts of 00-15 · all passed on existing evidence
-              groups 35-38 parts of 03 10 11 and their complements      all passed                                        07:53  crash    hunt 1 group 3 · 00-15 at failing offsets · rebooted
-              group 39     03 11 at failing offsets                     crashed                                           07:51  pass     hunt 1 group 2 · 08-15 at failing offsets · 5 of 5 passed · Tctl max 71°C
-              groups 40-41 parts of 03 11                               all passed                                        07:41  pass     hunt 1 group 1 · 00-07 at failing offsets · 5 of 5 passed · Tctl max 76°C
-              → 03 11 kept together; probing members                                                                      07:31  hunt     #1 started · part 1: 00-07 at failing offsets, 08-15 parked
-                                                                                                                          07:31  crash    R6 idle + bursts on 00-15 · rebooted · no core named
-  probes      member  now   group failed at     passed at              state                                              07:30  pass     R2 heavy vector on core 15 at -10 · passed · Tctl max 68°C
-              03      -9                                               ► trial 1 of 5                                     07:28  pass     R2 heavy vector on core 07 at -10 · passed · Tctl max 73°C
-              11                                                       waiting                                            07:26  pass     R2 heavy vector on core 14 at -10 · passed · Tctl max 66°C
-                                                                                                                          07:24  pass     R2 heavy vector on core 06 at -10 · passed · Tctl max 69°C
-  then        if the hunt resolves and the rerun passes:                                                                  07:22  pass     R2 heavy vector on core 13 at -10 · passed · Tctl max 73°C
-              1  record the combination: 03 11 at the offsets that still fail                                             07:20  pass     R2 heavy vector on core 05 at -10 · passed · Tctl max 74°C
-              2  back off one member to a tested passing probe that keeps the profile clear                               07:18  pass     R2 heavy vector on core 12 at -10 · passed · Tctl max 68°C
-              3  rerun R6 idle + bursts on 00-15: 5 trials of 2m, then 1 of 15m                                           07:16  pass     R2 heavy vector on core 04 at -10 · passed · Tctl max 67°C
-              4  resume cycle 1                                                                                           07:14  pass     R2 heavy vector on core 11 at -10 · passed · Tctl max 76°C
-                                                                                                                          07:12  pass     R2 heavy vector on core 03 at -10 · passed · Tctl max 65°C
-                                                                                                                          07:10  pass     R2 heavy vector on core 10 at -10 · passed · Tctl max 76°C
-                                                                                                                          07:08  pass     R2 heavy vector on core 02 at -10 · passed · Tctl max 73°C
+  cause       crash in R6 idle + bursts on 00-15 · cycle 1 step 7, trial 1 of 1 · no core named                           08:20  crash    hunt 1 group 34 · 03 10 11 at failing offsets · rebooted
+  candidates  00-15, every core with an offset in the failing profile                                                     08:19  group    hunt 1 groups 28-33 · parts of 02 03 10 11 · all passed on existing evidence
+                                                                                                                          08:19  crash    hunt 1 group 27 · 02 03 10 11 at failing offsets · rebooted
+  parts       groups 1-2   parts of 00-15                               all passed                                        08:17  group    hunt 1 groups 23-26 · parts of 02 03 08-11 · all passed on existing evidence
+              group 3      00-15 at failing offsets                     crashed                                           08:17  crash    hunt 1 group 22 · 02 03 08-11 at failing offsets · rebooted
+              groups 4-8   parts of 00-15 and their complements         all passed                                        08:16  group    hunt 1 groups 16-21 · parts of 00-03 08-11 · all passed on existing evidence
+              group 9      00-03 08-15 at failing offsets, 04-07 parked crashed                                           08:16  crash    hunt 1 group 15 · 00-03 08-11 at failing offsets · rebooted
+              groups 10-14 parts of 00-03 08-15 and their complements   all passed                                        08:14  pass     hunt 1 group 14 · 00-03 12-15 at failing offsets · 5 of 5 passed · Tctl max 76°C
+              group 15     00-03 08-11 at failing offsets               crashed                                           08:04  group    hunt 1 groups 10-13 · parts of 00-03 08-15 · all passed on existing evidence
+              groups 16-21 parts of 00-03 08-11                         all passed                                        08:04  crash    hunt 1 group 9 · 00-03 08-15 at failing offsets · rebooted
+              group 22     02 03 08-11 at failing offsets               crashed                                           08:03  pass     hunt 1 group 8 · 04-15 at failing offsets · 5 of 5 passed · Tctl max 74°C
+              groups 23-26 parts of 02 03 08-11 and their complements   all passed                                        07:53  group    hunt 1 groups 4-7 · parts of 00-15 · all passed on existing evidence
+              group 27     02 03 10 11 at failing offsets               crashed                                           07:53  crash    hunt 1 group 3 · 00-15 at failing offsets · rebooted
+              groups 28-33 parts of 02 03 10 11                         all passed                                        07:51  pass     hunt 1 group 2 · 08-15 at failing offsets · 5 of 5 passed · Tctl max 71°C
+              group 34     03 10 11 at failing offsets                  crashed                                           07:41  pass     hunt 1 group 1 · 00-07 at failing offsets · 5 of 5 passed · Tctl max 76°C
+              groups 35-38 parts of 03 10 11 and their complements      all passed                                        07:31  hunt     #1 started · part 1: 00-07 at failing offsets, 08-15 parked
+              group 39     03 11 at failing offsets                     crashed                                           07:31  crash    R6 idle + bursts on 00-15 · rebooted · no core named
+              groups 40-41 parts of 03 11                               all passed                                        07:30  pass     R2 heavy vector on core 15 at -10 · passed · Tctl max 68°C
+              → 03 11 kept together; probing members                                                                      07:28  pass     R2 heavy vector on core 07 at -10 · passed · Tctl max 73°C
+                                                                                                                          07:26  pass     R2 heavy vector on core 14 at -10 · passed · Tctl max 66°C
+  probes      member  now   group failed at     passed at              state                                              07:24  pass     R2 heavy vector on core 06 at -10 · passed · Tctl max 69°C
+              03      -9                                               ► trial 1 of 5                                     07:22  pass     R2 heavy vector on core 13 at -10 · passed · Tctl max 73°C
+              11                                                       waiting                                            07:20  pass     R2 heavy vector on core 05 at -10 · passed · Tctl max 74°C
+                                                                                                                          07:18  pass     R2 heavy vector on core 12 at -10 · passed · Tctl max 68°C
+  then        if the hunt resolves and the rerun passes:                                                                  07:16  pass     R2 heavy vector on core 04 at -10 · passed · Tctl max 67°C
+              1  record the combination: 03 11 at the offsets that still fail                                             07:14  pass     R2 heavy vector on core 11 at -10 · passed · Tctl max 76°C
+              2  back off one member to a tested passing probe that keeps the profile clear                               07:12  pass     R2 heavy vector on core 03 at -10 · passed · Tctl max 65°C
+              3  rerun R6 idle + bursts on 00-15: 5 trials of 2m, then 1 of 15m                                           07:10  pass     R2 heavy vector on core 10 at -10 · passed · Tctl max 76°C
+              4  resume cycle 1                                                                                           07:08  pass     R2 heavy vector on core 02 at -10 · passed · Tctl max 73°C
                                                                                                                           +57 more
 
    ?  help    l  log    esc  back    q  close view
