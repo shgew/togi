@@ -822,6 +822,7 @@ func TestR7UnattributedFailureFirstLocatesWithIdleCoresAtZero(t *testing.T) {
 	}
 	h.decide(a)
 	trial := Trial{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Condition: machine.Parked, Phase: journal.PhaseHunt, DurationS: 120, Cores: []int{0, 1}, Profile: []int{-30, -30, 0, 0}, Hunt: 1, Group: 1}
+	trial.Requirement = ScheduledRequirement{Kind: "hunt", Class: ScheduledClass{Regime: trial.Regime, Workload: trial.Workload, Cores: "[0 1]", DurationS: trial.DurationS}, Since: h.events[len(h.events)-1].Seq, Rule: huntEvidence, Needed: h.s.n}
 	if diff := cmp.Diff(trial, h.next().Trial); diff != "" {
 		t.Fatalf("locate trial (-want +got):\n%s", diff)
 	}

@@ -150,7 +150,7 @@ func (s *State) r7PartNext(step int, part []int, duration int) (Action, bool) {
 		if s.retry != nil && s.retry.Cycle == g.cycle && s.retry.Step == step+1 && s.retry.Workload == t.Workload && s.retry.DurationS == t.DurationS && slices.Equal(s.retry.Cores, part) {
 			t = *s.retry
 		}
-		return Action{Kind: RunTrial, Trial: t, Cause: []int{g.lastSeq}}, true
+		return s.runTrial(t, []int{g.lastSeq}), true
 	}
 	return Action{}, false
 }

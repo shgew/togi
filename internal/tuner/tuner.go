@@ -46,6 +46,7 @@ type Trial struct {
 	Hunt, Group, Round int
 	Rerun              bool
 	Step               int
+	Requirement        ScheduledRequirement
 }
 
 func (t Trial) Complete(index int, profile []int) (*journal.TrialIntent, machine.Workload, error) {
@@ -135,6 +136,7 @@ type State struct {
 	cursor                  int
 	retry                   *Trial
 	intents                 map[string]*journal.TrialIntent
+	scheduled               map[string]scheduledTrial
 	intentSeq               map[int]string
 	signalled               map[string]bool
 	flight                  *journal.TrialIntent
@@ -219,7 +221,7 @@ type State struct {
 
 func New() *State {
 	c := config.Default()
-	return &State{cursor: -1, intents: map[string]*journal.TrialIntent{}, intentSeq: map[int]string{}, signalled: map[string]bool{}, mces: map[int]*journal.MCE{}, ledger: map[trialClass][]entry{}, carriedSources: map[int]string{}, failureIndex: map[int]int{}, steps: c.Checking.Cycle, durations: journal.ConfigDurations(c.Durations), evidence: journal.ConfigEvidence(c.Evidence), n: c.Evidence.Trials(), projectionDirty: true, bestDirty: true}
+	return &State{cursor: -1, intents: map[string]*journal.TrialIntent{}, scheduled: map[string]scheduledTrial{}, intentSeq: map[int]string{}, signalled: map[string]bool{}, mces: map[int]*journal.MCE{}, ledger: map[trialClass][]entry{}, carriedSources: map[int]string{}, failureIndex: map[int]int{}, steps: c.Checking.Cycle, durations: journal.ConfigDurations(c.Durations), evidence: journal.ConfigEvidence(c.Evidence), n: c.Evidence.Trials(), projectionDirty: true, bestDirty: true}
 }
 
 func partition(cores []machine.CoreInfo) (map[int]int, [][]int) {
@@ -385,6 +387,7 @@ func (s *State) Fold(e journal.Event) {
 			s.commitHuntDecision(e, p)
 		}
 	case *journal.TrialIntent:
+		s.scheduled[p.Trial] = s.scheduledFor(p)
 		s.flight = p
 		s.intents[p.Trial] = p
 		s.intentSeq[e.Seq] = p.Trial
@@ -399,6 +402,7 @@ func (s *State) Fold(e journal.Event) {
 			s.signalled[p.Trial] = true
 		}
 	case *journal.TrialEnd:
+		s.recordTrialHistory(p)
 		if s.flight != nil && s.flight.Trial == p.Trial {
 			s.flight = nil
 		}

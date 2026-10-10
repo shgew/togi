@@ -210,7 +210,7 @@ func (s *State) roundCheck() Action {
 			continue
 		}
 		if s.retry != nil && s.retry.Round == r.start.Round {
-			return Action{Kind: RunTrial, Trial: *s.retry, Cause: []int{r.seq}}
+			return s.runTrial(*s.retry, []int{r.seq})
 		}
 		t := Trial{Regime: q.class.regime, Workload: q.class.workload, Condition: machine.Together, Phase: journal.PhaseDeepening, DurationS: q.class.duration, Round: r.start.Round}
 		if q.class.regime == machine.R7 {
@@ -220,7 +220,7 @@ func (s *State) roundCheck() Action {
 			t.Core, t.Offset = q.core, q.offset
 			t.Condition = machine.Alone
 		}
-		return Action{Kind: RunTrial, Trial: t, Cause: cause}
+		return s.runTrial(t, cause)
 	}
 	return Action{Kind: Decide, Payload: &journal.DeepeningRound{Round: r.start.Round, Event: journal.CycleEnd, Passed: true, Reason: s.carriedReason(cause)}, Cause: cause}
 }

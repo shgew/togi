@@ -190,10 +190,13 @@ func namedCores(s *State, p *journal.TrialIntent) []int {
 }
 
 // sameRequirement reports whether a forecast trial repeats the in-flight trial's evidence requirement.
-func sameRequirement(a, b *journal.TrialIntent) bool {
-	return classOf(a) == classOf(b) && slices.Equal(a.Profile, b.Profile) && a.Phase == b.Phase &&
+func sameRequirement(a, b *journal.TrialIntent, stored, next ScheduledRequirement) bool {
+	return stored.class() == next.class() && stored.Kind == next.Kind &&
+		stored.Since == next.Since && stored.Rule == next.Rule && stored.Needed == next.Needed &&
+		stored.Step == next.Step && stored.Part == next.Part &&
+		slices.Equal(a.Profile, b.Profile) && a.Phase == b.Phase &&
 		a.Condition == b.Condition && a.Rerun == b.Rerun &&
-		a.Cycle == b.Cycle && a.Step == b.Step && a.Hunt == b.Hunt && a.Group == b.Group && a.Round == b.Round
+		a.Cycle == b.Cycle && a.Hunt == b.Hunt && a.Group == b.Group && a.Round == b.Round
 }
 
 func (f *forecastState) end(p *journal.TrialIntent, premise Premise, core *int) {
@@ -305,7 +308,7 @@ func (f *forecastState) passRemaining(p *journal.TrialIntent, remaining int, b *
 		if err != nil {
 			break
 		}
-		if !sameRequirement(p, intent) {
+		if !sameRequirement(p, intent, f.state.StoredRequirement(p.Trial), b.Next.Requirement) {
 			return false
 		}
 		intent.Trial = fmt.Sprintf("forecast-%d", f.seq+1)

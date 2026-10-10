@@ -31,7 +31,7 @@ func (s *State) partCCD(ids []int) int {
 	return ccd
 }
 
-func (s *State) cyclePart(req []requirement, running *journal.TrialIntent) CyclePart {
+func (s *State) cyclePart(req []requirement, since int, rule evidenceRule) CyclePart {
 	p := CyclePart{Cores: slices.Clone(req[0].cores), CCD: s.partCCD(req[0].cores), Done: true}
 	fullSize := len(s.cores)
 	if p.CCD >= 0 {
@@ -55,19 +55,18 @@ func (s *State) cyclePart(req []requirement, running *journal.TrialIntent) Cycle
 			p.LongS = q.class.duration
 			p.Long = q.count
 		}
-		passed := s.passes(q.class, s.checking.profile, s.checking.startSeq, cycleEvidence)
+		passed := s.passes(q.class, s.checking.profile, since, rule)
 		p.Passed += passed
-		p.Failed += s.cycleFailures(q.class, s.checking.profile)
+		p.Failed += s.cycleFailures(q.class, s.checking.profile, since)
 		p.Done = p.Done && passed >= q.count
-		p.Running = p.Running || (running != nil && classOf(running) == q.class)
 	}
 	return p
 }
 
-func (s *State) cycleFailures(k trialClass, profile []int) int {
+func (s *State) cycleFailures(k trialClass, profile []int, since int) int {
 	failed := 0
 	for _, e := range s.ledger[k] {
-		if e.seq > s.checking.startSeq && !e.pass && !e.carried && AtLeastDeep(e.profile, profile) {
+		if e.seq > since && !e.pass && !e.carried && AtLeastDeep(e.profile, profile) {
 			failed++
 		}
 	}
@@ -99,7 +98,19 @@ func (s *State) CyclePlan() CyclePlan {
 			for j < len(req) && slices.Equal(req[k].cores, req[j].cores) {
 				j++
 			}
-			step.Parts = append(step.Parts, s.cyclePart(req[k:j], running))
+			partReq, since, rule := req[k:j], g.startSeq, cycleEvidence
+			isRunning := false
+			if running != nil {
+				stored := s.scheduled[running.Trial]
+				q := stored.requirement
+				isRunning = q.Kind == "cycle" && q.Step == i+1 && q.Part == len(step.Parts)+1
+				if isRunning {
+					partReq, since, rule = stored.part, q.Since, q.Rule
+				}
+			}
+			part := s.cyclePart(partReq, since, rule)
+			part.Running = isRunning
+			step.Parts = append(step.Parts, part)
 			k = j
 		}
 		for _, p := range step.Parts {
@@ -115,15 +126,6 @@ func (s *State) CyclePlan() CyclePlan {
 			out.Current = i
 		}
 		out.Steps = append(out.Steps, step)
-	}
-	// A class can recur in later steps; only the issuing step's part is running.
-	for i := range out.Steps {
-		for j := range out.Steps[i].Parts {
-			part := &out.Steps[i].Parts[j]
-			if part.Running && (running.Step > 0 && running.Step != i+1 || running.Step == 0 && i != out.Current) {
-				part.Running = false
-			}
-		}
 	}
 	return out
 }
@@ -206,65 +208,14 @@ func (s *State) Requirement(p *journal.TrialIntent) TrialRequirement {
 	if p == nil {
 		return TrialRequirement{}
 	}
-	k := classOf(p)
-	profile := p.Profile
-	since := 0
-	rule := cycleEvidence
-	needed := 1
-	switch {
-	case p.Condition == machine.Alone && p.Round == 0:
-		var c *core
-		if p.Core != nil {
-			c = s.core(*p.Core)
-		}
-		if c == nil || !c.check {
-			// An ordinary search step needs one fresh trial; earlier passes in the class answered other steps.
-			return TrialRequirement{Trial: 1, Needed: 1}
-		}
-		needed = s.n
-		since = c.phaseSeq
-		rule = soloLimitEvidence
-	case p.Hunt > 0 && s.hunt != nil:
-		needed = s.hunt.start.Trials
-		rule = huntEvidence
-		for _, g := range s.hunt.groups {
-			if g.payload.Group == p.Group {
-				since = s.inferenceSince(g.payload, g.seq)
-				break
-			}
-		}
-	case p.Rerun && len(s.obligations) > 0:
-		since = s.obligations[0].seq
-		rule = rerunEvidence
-		if p.DurationS == s.durations.ShortTrialS {
-			needed = s.n
-		}
-	case p.Round > 0 && s.round != nil:
-		since = s.round.seq
-		rule = deepeningEvidence
-		for _, q := range s.roundChecks() {
-			if q.class == k {
-				needed = q.count
-				break
-			}
-		}
-	case p.Cycle > 0:
-		since = s.checking.startSeq
-		n := s.passes(k, profile, since, rule)
-		first, last := 0, len(s.checking.steps)
-		if p.Step > 0 && p.Step <= last {
-			first, last = p.Step-1, p.Step
-		}
-		for i := first; i < last; i++ {
-			for _, q := range s.requirements(i) {
-				if q.class == k && q.count > 0 && (p.Step > 0 || n < q.count) {
-					return TrialRequirement{Passed: n, Failed: s.cycleFailures(k, profile), Trial: n + 1, Needed: q.count}
-				}
-			}
-		}
+	q, ok := s.scheduled[p.Trial]
+	if !ok {
+		q = s.scheduledFor(p)
 	}
-	n := s.passes(k, profile, since, rule)
-	return TrialRequirement{Passed: n, Trial: n + 1, Needed: needed}
+	if q.ended != nil {
+		return q.ended.Requirement
+	}
+	return s.requirementProgress(p, q.requirement)
 }
 
 func (s *State) rerunPlan(k trialClass) RerunPlan {

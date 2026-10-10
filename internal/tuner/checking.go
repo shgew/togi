@@ -189,7 +189,7 @@ func (s *State) cycleNext() Action {
 				continue
 			}
 			if s.retry != nil && s.retry.Cycle == g.cycle && s.retry.Condition == machine.Together {
-				return Action{Kind: RunTrial, Trial: *s.retry, Cause: []int{g.lastSeq}}
+				return s.runTrial(*s.retry, []int{g.lastSeq})
 			}
 			t := Trial{Regime: q.class.regime, Workload: q.class.workload, DurationS: q.class.duration, Phase: journal.PhaseChecking, Condition: machine.Together, Cycle: g.cycle}
 			if q.class.regime == machine.R6 || q.class.regime == machine.R7 {
@@ -197,7 +197,7 @@ func (s *State) cycleNext() Action {
 			} else {
 				t.Core, t.Offset = q.core, q.offset
 			}
-			return Action{Kind: RunTrial, Trial: t, Cause: []int{g.lastSeq}}
+			return s.runTrial(t, []int{g.lastSeq})
 		}
 	}
 	fullCycleCoverage, missing := s.fullCycleCoverage(g.steps)
@@ -394,5 +394,5 @@ func (s *State) rerunTrial(k trialClass) Action {
 			failure = r.seq
 		}
 	}
-	return Action{Kind: RunTrial, Trial: t, Cause: []int{failure}}
+	return s.runTrial(t, []int{failure})
 }

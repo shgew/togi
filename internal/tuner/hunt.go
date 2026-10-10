@@ -506,10 +506,10 @@ func (s *State) huntNext() (Action, bool) {
 				return Action{Kind: Decide, Payload: s.makeGroup(h, planOf(m.payload), m.payload.Group, "", true, "its profile reaches "+reachedConstraint), Cause: []int{m.seq}}, true
 			}
 			if s.retry != nil && s.retry.Hunt == h.start.Hunt && s.retry.Group == m.payload.Group {
-				return Action{Kind: RunTrial, Trial: *s.retry, Cause: []int{m.seq}}, true
+				return s.runTrial(*s.retry, []int{m.seq}), true
 			}
 			t := Trial{Regime: h.start.Regime, Workload: h.start.Workload, Condition: machine.Parked, Phase: journal.PhaseHunt, DurationS: m.payload.DurationS, Cores: slices.Clone(h.start.Cores), Profile: slices.Clone(m.payload.Profile), Hunt: h.start.Hunt, Group: m.payload.Group}
-			return Action{Kind: RunTrial, Trial: t, Cause: []int{m.seq}}, true
+			return s.runTrial(t, []int{m.seq}), true
 		}
 	}
 	if a, ok := s.locatedLoadedFailure(h); ok {
