@@ -35,6 +35,8 @@ func run(args []string, stderr io.Writer) int {
 	dir := flags.String("state-dir", "", "use this state `directory`, resuming a journal it holds under the configuration that journal recorded, or under the default configuration with its recorded backend store paths when the journal has an older schema; default a new temporary one")
 	samples := flags.Bool("samples", false, "write trials/<trial-id>/samples.jsonl in the state directory; default keep samples in memory")
 	maxBoots := flags.Int("max-boots", 1000, "stop with exit status 3 if the session is still running after `N` simulated boots")
+	verifyEvery := flags.Int("verify-every", 0, "after every `N`th simulated crash, replay the whole journal into fresh state and fail unless it equals the state the next boot resumes from; 0 checks only when the session stops")
+	coldBoots := flags.Bool("cold-boots", false, "replay the whole journal at every boot, as togi run does, instead of resuming from the state the crashed boot folded")
 	if err := flags.Parse(args); errors.Is(err, flag.ErrHelp) {
 		return 0
 	} else if err != nil {
@@ -46,6 +48,10 @@ func run(args []string, stderr io.Writer) int {
 	}
 	if *cycles < 1 {
 		fmt.Fprintln(stderr, "sim: --cycles must be a positive integer")
+		return 2
+	}
+	if *verifyEvery < 0 {
+		fmt.Fprintln(stderr, "sim: --verify-every must not be negative")
 		return 2
 	}
 	if *maxBoots < 1 {
@@ -94,7 +100,7 @@ func run(args []string, stderr io.Writer) int {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer cancel()
 	renderer := render.NewRenderer(stderr, os.Getenv)
-	stop, err := simrun.Simulate(ctx, simrun.Input{Config: recorded, ConfigPath: config.DefaultPath, Dir: *dir, Machine: m, Log: stderr, Renderer: renderer, Cycles: *cycles, InMemoryJournal: true, WriteSamples: *samples, MaxBoots: *maxBoots})
+	stop, err := simrun.Simulate(ctx, simrun.Input{Config: recorded, ConfigPath: config.DefaultPath, Dir: *dir, Machine: m, Log: stderr, Renderer: renderer, Cycles: *cycles, InMemoryJournal: true, WriteSamples: *samples, MaxBoots: *maxBoots, ColdBoots: *coldBoots, VerifyEvery: *verifyEvery})
 	if errors.Is(err, simrun.ErrBootCap) {
 		fmt.Fprintf(stderr, "sim: %v\n", err)
 		return 3

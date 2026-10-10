@@ -50,6 +50,13 @@ type Input struct {
 	Renderer  render.Renderer
 	Close     func() error
 	SessionID func(time.Time) (string, error)
+	// Warm, when non-nil, carries the folded state between runs on the same journal: a run adopts it instead of
+	// replaying the journal when it covers every event, and stores its own state back when it returns.
+	Warm *Warm
+	// DeferState writes the state projection only when something reads it: before an event appended without a
+	// projection write, and when the run returns. Journal.WriteState must not fail and nothing may read the written state
+	// while the run is in progress, which holds for the simulator's in-memory journal.
+	DeferState bool
 }
 
 type Bootloader interface {
@@ -91,6 +98,13 @@ type runner struct {
 	fold  *fold
 	state journal.State
 	tuner *tuner.State
+	// defects indexes the defect evidence of the journal.
+	defects defect.Index
+	// folded counts the events folded into fold, state and tuner. dirty marks state as not yet projected from tuner, and
+	// statePending a projection not yet written by Journal.WriteState.
+	folded       int
+	dirty        bool
+	statePending bool
 
 	// condition and applied describe this process's last writes or same-boot readbacks.
 	condition            machine.Condition
@@ -106,12 +120,16 @@ type runner struct {
 	swept                bool
 	bootReason           *tuningboot.Reason
 	bootProgress         bool
+	ready                bool
 }
 
 func Run(ctx context.Context, in Input) (stop Stop, err error) {
 	r := &runner{in: in, fold: newFold(), tuner: tuner.New()}
 	defer func() {
-		err = errors.Join(err, r.close(!errors.Is(err, machine.ErrCrashed), &stop))
+		err = errors.Join(err, r.close(!errors.Is(err, machine.ErrCrashed), &stop), r.finishState())
+		if r.in.Warm != nil && r.ready {
+			r.in.Warm.store(r)
+		}
 	}()
 	stop, err = r.run(ctx)
 	if errors.Is(err, errDeadEndEvidence) {
@@ -132,8 +150,11 @@ func (r *runner) run(ctx context.Context) (Stop, error) {
 			return Stop{}, fmt.Errorf("read previous tuning-boot reason: %w", err)
 		}
 	}
-	journal.Replay(events, r.fold, &r.state, r.tuner)
-	r.tuner.Project(&r.state)
+	if !r.in.Warm.adopt(r, len(events)) {
+		journal.Replay(events, r.fold, &r.state, r.tuner)
+		r.folded, r.dirty = len(events), true
+	}
+	r.ready = true
 	sameBoot := slices.Contains(r.fold.boots, r.in.Boot)
 	r.sameBootUnreconciled = sameBoot && r.fold.baselineSeq != 0
 	if len(events) > 0 {
@@ -141,9 +162,9 @@ func (r *runner) run(ctx context.Context) (Stop, error) {
 			return Stop{}, err
 		}
 	}
-	pending, _ := pendingDeadEnd(events)
+	pending, _ := r.fold.pendingDeadEnd()
 	if !sameBoot {
-		if stop, err := r.resumeDeadEnd(events); stop != nil || err != nil {
+		if stop, err := r.resumeDeadEnd(); stop != nil || err != nil {
 			return deref(stop), err
 		}
 	}
@@ -194,7 +215,7 @@ func (r *runner) run(ctx context.Context) (Stop, error) {
 		return deref(stop), err
 	}
 	if sameBoot {
-		if stop, err := r.resumeSameBoot(events); stop != nil || err != nil {
+		if stop, err := r.resumeSameBoot(); stop != nil || err != nil {
 			return deref(stop), err
 		}
 	}
@@ -235,7 +256,11 @@ func (r *runner) checkCompatibility(events []journal.Event) error {
 	if len(events) == 0 {
 		return nil
 	}
-	err := journal.Compatible(journal.BuildOf(events), Build())
+	recorded, warm := r.in.Warm.recordedBuild(len(events))
+	if !warm {
+		recorded = journal.BuildOf(events)
+	}
+	err := journal.Compatible(recorded, Build())
 	if err == nil {
 		return nil
 	}
@@ -280,19 +305,49 @@ func (r *runner) validateConfiguredCores() error {
 }
 
 func (r *runner) append(p journal.Payload, cause ...int) (journal.Event, error) {
-	e, err := r.appendJournal(p, cause...)
+	e, err := r.appendEvent(p, cause...)
 	if err != nil {
 		return journal.Event{}, err
 	}
+	if r.in.DeferState {
+		r.statePending = true
+		return e, nil
+	}
 	if err := r.in.Journal.WriteState(r.state); err != nil {
-		if _, err := r.appendJournal(&journal.SessionWarning{Operation: "write state projection", Error: err.Error()}, e.Seq); err != nil {
+		if _, err := r.appendEvent(&journal.SessionWarning{Operation: "write state projection", Error: err.Error()}, e.Seq); err != nil {
 			return journal.Event{}, err
 		}
 	}
 	return e, nil
 }
 
+// appendJournal appends an event without writing the state projection after it.
 func (r *runner) appendJournal(p journal.Payload, cause ...int) (journal.Event, error) {
+	if err := r.finishState(); err != nil {
+		return journal.Event{}, err
+	}
+	return r.appendEvent(p, cause...)
+}
+
+// finishState writes the projection an append left unwritten.
+func (r *runner) finishState() error {
+	if !r.statePending {
+		return nil
+	}
+	r.statePending = false
+	return r.in.Journal.WriteState(r.project())
+}
+
+// project brings the state projection up to date with the events folded so far and returns it.
+func (r *runner) project() journal.State {
+	if r.dirty {
+		r.tuner.Project(&r.state)
+		r.dirty = false
+	}
+	return r.state
+}
+
+func (r *runner) appendEvent(p journal.Payload, cause ...int) (journal.Event, error) {
 	if r.fatal != nil {
 		return journal.Event{}, r.fatal
 	}
@@ -304,7 +359,11 @@ func (r *runner) appendJournal(p journal.Payload, cause ...int) (journal.Event, 
 	r.fold.Fold(e)
 	r.state.Fold(e)
 	r.tuner.Fold(e)
-	r.tuner.Project(&r.state)
+	r.folded++
+	r.dirty = true
+	if !r.in.DeferState {
+		r.project()
+	}
 	if !r.bootProgress && r.in.Bootloader != nil {
 		r.bootProgress = true
 		if err := r.recordBootProgress(); err != nil {
@@ -414,15 +473,16 @@ func (r *runner) emergencyRestore(err error) error {
 }
 
 func (r *runner) checkState() error {
+	state := r.project()
 	saved, err := r.in.Journal.ReadState()
 	fields := journal.StateFields()
 	if err == nil {
-		fields = journal.DiffFields(saved, r.state)
+		fields = journal.DiffFields(saved, state)
 	}
 	if len(fields) == 0 {
 		return nil
 	}
-	if err := r.in.Journal.WriteState(r.state); err != nil {
+	if err := r.in.Journal.WriteState(state); err != nil {
 		_, warningErr := r.appendJournal(&journal.SessionWarning{Operation: "write state projection", Error: err.Error()})
 		return warningErr
 	}
@@ -723,37 +783,15 @@ func (r *runner) afterEvidence(err error) (Stop, error) {
 	return *stop, nil
 }
 
-func pendingDeadEnd(events []journal.Event) (*journal.Event, bool) {
-	for i, e := range slices.Backward(events) {
-		if _, ok := e.Data.(*journal.DeadEnd); !ok {
-			continue
-		}
-		entry, shutdown := false, false
-		for _, next := range events[i+1:] {
-			if next.Kind == journal.KindBootSavedEntry && slices.Contains(next.Cause, e.Seq) {
-				entry = true
-			}
-			if next.Kind == journal.KindShutdown && next.Data.(*journal.Shutdown).Reason == journal.ShutdownDeadEnd {
-				shutdown = true
-			}
-		}
-		if shutdown {
-			return nil, false
-		}
-		return &events[i], !entry
-	}
-	return nil, false
-}
-
-func (r *runner) resumeDeadEnd(events []journal.Event) (*Stop, error) {
-	e, clear := pendingDeadEnd(events)
+func (r *runner) resumeDeadEnd() (*Stop, error) {
+	e, clear := r.fold.pendingDeadEnd()
 	if e == nil {
 		return nil, nil
 	}
 	return r.finishDeadEnd(*e, clear)
 }
 
-func (r *runner) resumeSameBoot(events []journal.Event) (*Stop, error) {
+func (r *runner) resumeSameBoot() (*Stop, error) {
 	a, pending, err := r.drainDecisions()
 	if err != nil {
 		return nil, err
@@ -765,7 +803,7 @@ func (r *runner) resumeSameBoot(events []journal.Event) (*Stop, error) {
 	if pending {
 		return r.deadEnd(a.Payload.(*journal.DeadEnd), a.Cause...)
 	}
-	if stop, err := r.resumeDeadEnd(events); stop != nil || err != nil {
+	if stop, err := r.resumeDeadEnd(); stop != nil || err != nil {
 		return stop, err
 	}
 	if stop, err := r.checkDefects(); stop != nil || err != nil {
@@ -808,7 +846,7 @@ func (r *runner) deadEnd(d *journal.DeadEnd, cause ...int) (*Stop, error) {
 		d.Action = journal.ActionClearSavedEntry
 	}
 	if r.sameBootUnreconciled {
-		if pending, _ := pendingDeadEnd(r.in.Journal.Events()); pending != nil {
+		if pending, _ := r.fold.pendingDeadEnd(); pending != nil {
 			return r.deadEndStop(d, cause, false), nil
 		}
 	}
@@ -1348,12 +1386,13 @@ func (r *runner) restore() error {
 	if r.applied == nil {
 		return nil
 	}
+	state := r.project()
 	targets := make([]int, len(r.cores))
 	for i, c := range r.cores {
 		o := r.fold.baseline[i]
-		if s := slices.IndexFunc(r.state.Cores, func(s journal.CoreState) bool { return s.Core == c.Core }); s >= 0 {
-			o = max(o, r.state.Cores[s].Offset)
-			if failed := r.state.Cores[s].FailurePoint; failed != nil {
+		if s := slices.IndexFunc(state.Cores, func(s journal.CoreState) bool { return s.Core == c.Core }); s >= 0 {
+			o = max(o, state.Cores[s].Offset)
+			if failed := state.Cores[s].FailurePoint; failed != nil {
 				o = max(o, *failed+1)
 			}
 		}

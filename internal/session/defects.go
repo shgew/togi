@@ -15,7 +15,7 @@ func (r *runner) checkDefects() (*Stop, error) {
 	if entries == nil {
 		entries = defect.Entries()
 	}
-	for _, finding := range defect.FindWith(r.in.Journal.Events(), entries) {
+	for _, finding := range r.defects.Find(r.in.Journal.Events(), entries) {
 		if _, err := r.append(&journal.DefectFound{
 			ID: finding.Entry.ID, Title: finding.Entry.Title, Detail: finding.Entry.Detail, PR: finding.Entry.PR,
 			Direction: string(finding.Entry.Direction), Cores: finding.Cores, Decisions: finding.Decisions,
@@ -23,14 +23,12 @@ func (r *runner) checkDefects() (*Stop, error) {
 			return nil, fmt.Errorf("record defect %d: %w", finding.Entry.ID, err)
 		}
 	}
-	for _, event := range r.in.Journal.Events() {
-		if answer, ok := event.Data.(*journal.DefectAnswered); ok && answer.Answer == "yes" {
-			if err := r.queueDefectResets(event); err != nil {
-				return nil, err
-			}
+	for _, event := range r.defects.Yes(r.in.Journal.Events()) {
+		if err := r.queueDefectResets(event); err != nil {
+			return nil, err
 		}
 	}
-	for _, found := range defect.Unanswered(r.in.Journal.Events()) {
+	for _, found := range r.defects.Unanswered(r.in.Journal.Events()) {
 		var entry defect.Entry
 		for _, candidate := range entries {
 			if candidate.ID == found.ID {
@@ -41,13 +39,7 @@ func (r *runner) checkDefects() (*Stop, error) {
 		if entry.ID == 0 {
 			continue
 		}
-		foundSeq := 0
-		for _, event := range r.in.Journal.Events() {
-			if p, ok := event.Data.(*journal.DefectFound); ok && p.ID == found.ID {
-				foundSeq = event.Seq
-				break
-			}
-		}
+		foundSeq := r.defects.FoundSeq(r.in.Journal.Events(), found.ID)
 		if r.in.Prompt != nil {
 			yes, err := r.in.Prompt(defect.Finding{Entry: entry, Cores: found.Cores, Decisions: found.Decisions})
 			if errors.Is(err, context.Canceled) {

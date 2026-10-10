@@ -32,6 +32,7 @@ func TestSimRefusesInvalidInputs(t *testing.T) {
 		{"zero cycles", []string{"--cycles", "0"}, 2, "sim: --cycles must be a positive integer"},
 		{"negative cycles", []string{"--cycles", "-1"}, 2, "sim: --cycles must be a positive integer"},
 		{"zero boots", []string{"--max-boots", "0"}, 2, "sim: --max-boots must be a positive integer"},
+		{"negative verify interval", []string{"--verify-every", "-1"}, 2, "sim: --verify-every must not be negative"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var out bytes.Buffer
