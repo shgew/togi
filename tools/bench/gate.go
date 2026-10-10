@@ -56,11 +56,11 @@ func (g *gate) resolve(scenarios []scenario) error {
 		}
 	}
 	for _, q := range g.Quantiles {
-		if q <= 0 || q >= 1 {
+		if !(q > 0 && q < 1) {
 			return fmt.Errorf("gate %s: quantile %g outside (0, 1)", g.ID, q)
 		}
 	}
-	if g.Confidence <= 0 || g.Confidence >= 1 || g.Resamples <= 0 || g.MaxTimeRatio <= 0 {
+	if !(g.Confidence > 0 && g.Confidence < 1) || g.Resamples <= 0 || !(g.MaxTimeRatio > 0) {
 		return fmt.Errorf("gate %s: needs confidence in (0, 1), positive resamples and positive max_time_ratio", g.ID)
 	}
 	byName := make(map[string]scenario, len(scenarios))

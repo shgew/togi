@@ -289,8 +289,7 @@ The recorded run lives at `tools/bench/baseline.jsonl`, the path the research pr
 Compare a candidate with the recorded baseline:
 
 ```sh
-just bench --baseline tools/bench/baseline.jsonl
-just bench --split holdout --baseline tools/bench/baseline.jsonl
+just bench --split all --baseline tools/bench/baseline.jsonl
 ```
 
 ## Forecasting a real run
