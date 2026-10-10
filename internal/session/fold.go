@@ -8,6 +8,7 @@ import (
 
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
+	"github.com/shgew/togi/internal/tuner"
 )
 
 type openIntent struct {
@@ -294,7 +295,9 @@ func (f *fold) Fold(e journal.Event) {
 		f.kernelRetries = 0
 		f.kernelRetrySeqs = nil
 		f.crashSeq[p.PreviousBoot] = e.Seq
-		if p.ResetReason == machine.ResetThermalTrip && p.Inconclusive {
+		inTrial := f.open != nil && f.open.boot == p.PreviousBoot
+		kind := tuner.RecordedCrashKind(p, inTrial)
+		if kind == tuner.CrashThermal {
 			f.thermalSeq = e.Seq
 			f.thermalDetail = fmt.Sprintf("the machine reset on a thermal trip (%s); check cooling before tuning again", p.ResetReasonRaw)
 		}
@@ -304,11 +307,12 @@ func (f *fold) Fold(e journal.Event) {
 			}
 		}
 		f.unmatched = slices.DeleteFunc(f.unmatched, func(o openIntent) bool { return o.boot == p.PreviousBoot })
-		inTrial := f.open != nil && f.open.boot == p.PreviousBoot
-		if p.Stray {
+		switch kind {
+		case tuner.CrashStray:
 			f.stray = append(f.stray, e.Seq)
-		} else if !inTrial && !p.Inconclusive && p.ResetReason != machine.ResetThermalTrip {
+		case tuner.CrashIdle:
 			f.pendingIdle = append(f.pendingIdle, e.Seq)
+		case tuner.CrashInTrial, tuner.CrashInconclusive, tuner.CrashThermal:
 		}
 	case *journal.TrialEnd:
 		f.kernelBoundary(e, p.KernelBoundary)

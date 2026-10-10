@@ -152,7 +152,7 @@ A crash is classified by what its boot recorded. A together application counts a
 
 Restoring offsets before `shutdown` (`runtime.md`) is not an application: its `smu.intent` events cite `session.baseline` and leave the boot's last application as it was, so a crash part-way through is classified by what was applied before. After `profile.restored` the cores are back at togi-independent values, and a crash counts as if nothing was applied.
 
-`crash.detected` carries the condition of the boot's last application.
+`crash.detected` carries the condition of the boot's last application. Its `inconclusive` flag reflects the evidence precedence above: a thermal-trip reset with higher-precedence failure evidence is not inconclusive and is processed as the usual trial or idle failure, not a thermal dead end.
 
 
 A crash with a trial in flight and an idle crash are failures like any other: no rule counts them against search or checking, caps them, or pauses after a run of them ([ADR 0018](../adr/0018-crashes-are-not-a-cost.md)). Only stray crashes are counted, for the boot-loop dead end.
