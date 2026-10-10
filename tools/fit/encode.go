@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 
-	"github.com/shgew/togi/internal/machine"
 	"github.com/shgew/togi/internal/sim"
 	"github.com/shgew/togi/tools/modelcheck"
 )
@@ -33,7 +32,7 @@ func encodeMachine(cfg sim.Config, index int, seed uint64, trials int, loss floa
 	for _, group := range flagged {
 		notes = append(notes, fmt.Sprintf("%s interval=[%d,%d]", groupNote("Flagged", group), group.Interval[0], group.Interval[1]))
 	}
-	return machineFile(cfg, notes).Encode()
+	return sim.EncodeMachine(cfg, notes...)
 }
 
 func encodeSharedVoltageAnchor(cfg sim.Config, trials int, loss float64) ([]byte, error) {
@@ -48,33 +47,5 @@ func encodeSharedVoltageAnchor(cfg sim.Config, trials int, loss float64) ([]byte
 		"Real-fact replay is enabled by replay=true on a bench suite scenario, not by a machine key.",
 		signalsNote(cfg.Model),
 	}
-	f := machineFile(cfg, notes)
-	f.SharedVoltage = cfg.SharedVoltage
-	return f.Encode()
-}
-
-// machineFile is the JSON form of a fitted configuration.
-func machineFile(cfg sim.Config, notes []string) sim.MachineFile {
-	f := sim.MachineFile{Notes: notes, Cores: cfg.Cores, Facts: cfg.Facts, CCD: cfg.CCD}
-	if cfg.BIOSContext != (machine.BIOSContext{}) {
-		c := cfg.BIOSContext
-		f.BIOSContext = &c
-	}
-	m := cfg.Model
-	zero := 0.0
-	f.Model = sim.FileModel{PastLimitRate: &m.PastLimitRate, Growth: &m.Growth, NearLimitRate: &m.NearLimitRate, OnsetBoost: &zero}
-	if m.RegimeSignals != nil {
-		f.Model.Signals, f.Model.RegimeSignals = m.Signals, m.RegimeSignals
-	}
-	for core, limit := range cfg.Limits {
-		f.Core = append(f.Core, sim.FileCore{ID: core, Alone: limit.Alone[:], Together: limit.Together[:], Flat: limit.Flat, Idle: limit.Idle, Workload: limit.Workload})
-	}
-	for _, joint := range cfg.Joints {
-		members := make(map[string]int, len(joint.Members))
-		for core, offset := range joint.Members {
-			members[fmt.Sprint(core)] = offset
-		}
-		f.Joint = append(f.Joint, sim.FileJoint{Regimes: []machine.Regime{machine.R7}, Rate: joint.Rate, Members: members})
-	}
-	return f
+	return sim.EncodeMachine(cfg, notes...)
 }

@@ -11,9 +11,9 @@ import (
 	"github.com/shgew/togi/internal/machine"
 )
 
-// MachineFile is the JSON shape of a simulated machine file. Description says what a hand-written machine models;
+// machineFile is the JSON shape of a simulated machine file. Description says what a hand-written machine models;
 // Notes carry a generated machine's provenance. Neither changes the simulated machine.
-type MachineFile struct {
+type machineFile struct {
 	Description   string               `json:"description,omitzero"`
 	Notes         []string             `json:"notes,omitzero"`
 	Cores         int                  `json:"cores,omitzero"`
@@ -22,16 +22,16 @@ type MachineFile struct {
 	Ranking       []int                `json:"ranking,omitzero"`
 	OldKernel     bool                 `json:"old_kernel,omitzero"`
 	BIOSContext   *machine.BIOSContext `json:"bios_context,omitzero"`
-	Model         FileModel            `json:"model,omitzero"`
+	Model         fileModel            `json:"model,omitzero"`
 	CCD           *CCD                 `json:"ccd,omitzero"`
-	Core          []FileCore           `json:"core,omitzero"`
-	Joint         []FileJoint          `json:"joint,omitzero"`
-	Script        []FileScript         `json:"script,omitzero"`
+	Core          []fileCore           `json:"core,omitzero"`
+	Joint         []fileJoint          `json:"joint,omitzero"`
+	Script        []fileScript         `json:"script,omitzero"`
 	SharedVoltage *SharedVoltage       `json:"shared_voltage,omitzero"`
 }
 
-// FileModel overrides DefaultModel field by field; an absent field keeps the default.
-type FileModel struct {
+// fileModel overrides DefaultModel field by field; an absent field keeps the default.
+type fileModel struct {
 	PastLimitRate *float64                                      `json:"past_limit_rate,omitzero"`
 	Growth        *float64                                      `json:"growth,omitzero"`
 	NearLimitRate *float64                                      `json:"near_limit_rate,omitzero"`
@@ -44,7 +44,7 @@ type FileModel struct {
 	Reset         map[machine.ResetKind]float64                 `json:"reset,omitzero"`
 }
 
-type FileCore struct {
+type fileCore struct {
 	ID       int            `json:"id"`
 	Alone    []int          `json:"alone"`
 	Together []int          `json:"together"`
@@ -53,7 +53,7 @@ type FileCore struct {
 	Workload map[string]int `json:"workload,omitzero"`
 }
 
-type FileJoint struct {
+type fileJoint struct {
 	Regimes      []machine.Regime `json:"regimes"`
 	Rate         float64          `json:"rate"`
 	AfterS       float64          `json:"after_s"`
@@ -62,7 +62,7 @@ type FileJoint struct {
 	CrashMCECore *int             `json:"crash_mce_core,omitzero"`
 }
 
-type FileScript struct {
+type fileScript struct {
 	Trial     string            `json:"trial"`
 	Signal    machine.Signal    `json:"signal,omitzero"`
 	AtS       float64           `json:"at_s,omitzero"`
@@ -72,7 +72,7 @@ type FileScript struct {
 }
 
 // Encode renders the file as indented JSON with sorted map keys, ending in a newline.
-func (f MachineFile) Encode() ([]byte, error) {
+func (f machineFile) encode() ([]byte, error) {
 	b, err := json.Marshal(f, json.Deterministic(true), jsontext.WithIndent("  "))
 	if err != nil {
 		return nil, fmt.Errorf("encode simulator machine: %w", err)
@@ -85,7 +85,7 @@ func LoadMachine(path string) (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("load simulator machine %s: %w", path, err)
 	}
-	var f MachineFile
+	var f machineFile
 	if err := json.Unmarshal(data, &f, json.RejectUnknownMembers(true)); err != nil {
 		return Config{}, fmt.Errorf("load simulator machine %s: %w", path, err)
 	}
