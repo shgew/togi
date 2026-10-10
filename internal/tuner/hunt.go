@@ -778,22 +778,30 @@ func (s *State) huntCommitment(h *hunt) (Action, bool) {
 		return Action{Kind: Decide, Payload: &journal.Combination{Combination: s.nextCombination + 1, Members: members, Fallback: end.Result == "fallback", Hunt: h.start.Hunt, Reason: reason + h.pairedClause()}, Cause: []int{h.endSeq}}, true
 	}
 
-	for _, m := range recordedCombination.Members {
+	return s.combinationCommitment(h, recordedCombination.Members, recordedCombination.Combination, recordedCombination.Seq)
+}
+
+// combinationCommitment is the backoff that follows a combination of the hunt once it is recorded (seq is its event,
+// number its C): the backoff to a tested probe, else the member whose backoff leaves the most counts reachable. It
+// reports nothing when a member is already shallower, and takes the members from the caller so a pending
+// combination can be projected before it is recorded.
+func (s *State) combinationCommitment(h *hunt, members []journal.CombinationMember, number, seq int) (Action, bool) {
+	for _, m := range members {
 		if s.checking.profile[s.index(m.Core)] > m.Offset {
 			return Action{}, false
 		}
 	}
 	if c, probe, ok := s.testedBackoff(h); ok {
 		to := probe.payload.Probe.Offset
-		return Action{Kind: Decide, Payload: &journal.TunerDecision{Core: c.id, Phase: journal.PhaseHunt, Decision: journal.Backoff, FromOffset: c.offset, ToOffset: to, Pass: c.pass, FailurePoint: c.fail, Reason: fmt.Sprintf("combination C%d: backing off core %02d to %d, where hunt %d group %d passed with the rest of the combination at its failing offsets%s", recordedCombination.Combination, c.id, to, h.start.Hunt, probe.payload.Group, h.pairedClause())}, Cause: []int{recordedCombination.Seq, probe.seq}}, true
+		return Action{Kind: Decide, Payload: &journal.TunerDecision{Core: c.id, Phase: journal.PhaseHunt, Decision: journal.Backoff, FromOffset: c.offset, ToOffset: to, Pass: c.pass, FailurePoint: c.fail, Reason: fmt.Sprintf("combination C%d: backing off core %02d to %d, where hunt %d group %d passed with the rest of the combination at its failing offsets%s", number, c.id, to, h.start.Hunt, probe.payload.Group, h.pairedClause())}, Cause: []int{seq, probe.seq}}, true
 	}
-	chosen, reach, ok := s.combinationBackoff(recordedCombination.Members, s.huntRanking(h))
+	chosen, reach, ok := s.combinationBackoff(members, s.huntRanking(h))
 	if !ok {
 		return Action{}, false
 	}
 	c := s.core(chosen.Core)
 	to := max(c.offset, chosen.Offset+1)
-	return Action{Kind: Decide, Payload: &journal.TunerDecision{Core: c.id, Phase: journal.PhaseHunt, Decision: journal.Backoff, FromOffset: c.offset, ToOffset: to, Pass: c.pass, FailurePoint: c.fail, Reason: fmt.Sprintf("combination C%d: backing off core %02d leaves %d counts reachable%s", recordedCombination.Combination, c.id, reach, h.pairedClause())}, Cause: []int{recordedCombination.Seq}}, true
+	return Action{Kind: Decide, Payload: &journal.TunerDecision{Core: c.id, Phase: journal.PhaseHunt, Decision: journal.Backoff, FromOffset: c.offset, ToOffset: to, Pass: c.pass, FailurePoint: c.fail, Reason: fmt.Sprintf("combination C%d: backing off core %02d leaves %d counts reachable%s", number, c.id, reach, h.pairedClause())}, Cause: []int{seq}}, true
 }
 
 func (s *State) testedBackoff(h *hunt) (*core, groupRecord, bool) {

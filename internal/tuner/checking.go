@@ -288,7 +288,7 @@ func (s *State) attributedDecision(c *core, f *journal.Failure, seq int) (Action
 	if c.fail != nil {
 		fail = max(fail, *c.fail)
 	}
-	to := max(c.offset, *f.Offset+1)
+	to := backoffTarget(c, *f.Offset)
 	pass, _ := keepPass(c.pass, fail)
 	reason := fmt.Sprintf("attributed %s in %s %s trial %s; failure point %d", f.Signal, f.Condition, f.Regime, f.Trial, fail)
 	if f.KnownFailure != 0 {
@@ -304,6 +304,10 @@ func (s *State) attributedDecision(c *core, f *journal.Failure, seq int) (Action
 	}
 	return Action{Kind: Decide, Payload: &journal.TunerDecision{Core: c.id, Phase: phase, Decision: journal.Backoff, FromOffset: c.offset, ToOffset: to, Pass: pass, FailurePoint: new(fail), Reason: reason}, Cause: []int{cause}}, true
 }
+
+// backoffTarget is where an attributed failure at offset failing steps core c back to: one count shallower than the
+// failure, never deeper than where the core already is.
+func backoffTarget(c *core, failing int) int { return max(c.offset, failing+1) }
 
 // pendingRerun retires completed checks and retains their carried citations until
 // a cycle or deepening decision consumes them. Fold calls it as evidence,

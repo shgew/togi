@@ -819,3 +819,156 @@ func TestBIOSProfileProjectsAPairedHuntsDirectBackoffBeforeItIsRecorded(t *testi
 	}
 	assertLaterReplay(h)
 }
+
+// pairedHunt holds a first idle failure of cores 0 and 1 at [-10,-12], then starts the hunt its second failure pairs
+// with. It returns the harness, the hunt.start and the confirmed sequence.
+func pairedHunt(t *testing.T) (*harness, journal.Event) {
+	t.Helper()
+	h := laterHarness(t, -10, -12)
+	startCycle(h, 4)
+	idleFailure(h)
+	h.decide(h.next())
+	idleFailure(h)
+	return h, h.decide(driveToHuntStart(h))
+}
+
+// runPairedHunt answers every group with fails and records the hunt's end, but nothing after it.
+func runPairedHunt(t *testing.T, h *harness, fails func([]int) bool) *journal.HuntEnd {
+	t.Helper()
+	for range 200 {
+		a := h.next()
+		if _, ok := a.Payload.(*journal.HuntGroup); ok {
+			h.decide(a)
+			continue
+		}
+		if a.Kind == RunTrial {
+			runGroup(h, a, fails(a.Trial.Profile))
+			continue
+		}
+		if end, ok := a.Payload.(*journal.HuntEnd); ok {
+			h.decide(a)
+			return end
+		}
+		t.Fatalf("unexpected action %+v", a)
+	}
+	t.Fatal("hunt did not end")
+	return nil
+}
+
+// assertShownAvoids pins that the shown profile reaches no recorded constraint and does not reach the offsets the
+// hunt's end names as failing together, and that a fresh fold shows the same.
+func assertShownAvoids(t *testing.T, h *harness, step string, failing []journal.CombinationMember) {
+	t.Helper()
+	shown := h.s.BIOSProfile()
+	if reason, reached := h.s.Reaches(shown.Offsets); reached {
+		t.Fatalf("%s: the shown profile %v reaches %s", step, shown.Offsets, reason)
+	}
+	if len(failing) > 0 && !slices.ContainsFunc(failing, func(m journal.CombinationMember) bool { return shown.Offsets[h.s.index(m.Core)] > m.Offset }) {
+		t.Fatalf("%s: the shown profile %v reaches the failing offsets %v", step, shown.Offsets, failing)
+	}
+	assertShown(t, h, shown)
+}
+
+func TestBIOSProfileNeverShowsWhatAPairedHuntFoundFailingWhileItsCommitmentIsPending(t *testing.T) {
+	both := []journal.CombinationMember{{Core: 0, Offset: -10}, {Core: 1, Offset: -12}}
+	for _, tt := range []struct {
+		name    string
+		fails   func([]int) bool
+		end     *journal.HuntEnd
+		result  string
+		failing []journal.CombinationMember
+	}{
+		{"culprit", nil, &journal.HuntEnd{Hunt: 1, Result: "culprit", Cores: []int{0}, Groups: 1}, "culprit", []journal.CombinationMember{{Core: 0, Offset: -10}}},
+		{"combination with probed members", func(p []int) bool { return p[0] <= -9 && p[1] <= -11 }, nil, "combination", []journal.CombinationMember{{Core: 0, Offset: -9}, {Core: 1, Offset: -11}}},
+		{"fallback combination", nil, &journal.HuntEnd{Hunt: 1, Result: "fallback", Cores: []int{0, 1}, Groups: 1}, "fallback", both},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			h, start := pairedHunt(t)
+			end := tt.end
+			if end != nil {
+				h.add(end, start.Seq)
+			} else {
+				end = runPairedHunt(t, h, tt.fails)
+			}
+			if end.Result != tt.result {
+				t.Fatalf("hunt end %+v, want %s", end, tt.result)
+			}
+			assertShownAvoids(t, h, "after hunt.end", tt.failing)
+			if tt.result != "culprit" {
+				combination := h.next()
+				if _, ok := combination.Payload.(*journal.Combination); !ok {
+					t.Fatalf("combination %+v", combination)
+				}
+				h.decide(combination)
+				assertShownAvoids(t, h, "after the combination", tt.failing)
+			}
+			back, a := nextDecision(h)
+			if back.Phase != journal.PhaseHunt || back.ToOffset <= back.FromOffset {
+				t.Fatalf("commitment %+v", back)
+			}
+			h.decide(a)
+			if h.s.hunt != nil {
+				t.Fatal("hunt open after its commitment")
+			}
+			assertShownAvoids(t, h, "after the commitment", tt.failing)
+			assertLaterReplay(h)
+		})
+	}
+
+	t.Run("direct", func(t *testing.T) {
+		h, _ := pairedHunt(t)
+		h.add(&journal.Failure{Attribution: journal.Attributed, Core: new(1), Offset: new(-11), Condition: machine.Parked, Regime: machine.R1, Profile: []int{-9, -11}, Signal: machine.ComputationError})
+		failing := []journal.CombinationMember{{Core: 1, Offset: -11}}
+		assertShownAvoids(t, h, "after the failure", failing)
+		a := h.next()
+		if end, ok := a.Payload.(*journal.HuntEnd); !ok || end.Result != "direct" {
+			t.Fatalf("hunt end %+v", a)
+		}
+		h.decide(a)
+		assertShownAvoids(t, h, "after hunt.end", failing)
+		_, a = nextDecision(h)
+		h.decide(a)
+		assertShownAvoids(t, h, "after the commitment", failing)
+		assertLaterReplay(h)
+	})
+
+	t.Run("combination with a member already shallower", func(t *testing.T) {
+		h, start := pairedHunt(t)
+		h.add(&journal.TunerDecision{Core: 1, Phase: journal.PhaseChecking, Decision: journal.Backoff, FromOffset: -12, ToOffset: -11, Pass: new(-12), FailurePoint: new(-12), Reason: "test"})
+		h.add(&journal.ProfileChange{To: []int{-10, -11}})
+		h.add(&journal.HuntEnd{Hunt: 1, Result: "combination", Cores: []int{0, 1}, Members: both, Groups: 1}, start.Seq)
+		assertShownAvoids(t, h, "after hunt.end", both)
+		a := h.next()
+		if c, ok := a.Payload.(*journal.Combination); !ok || !strings.Contains(c.Reason, "no backoff") {
+			t.Fatalf("combination %+v", a)
+		}
+		h.decide(a)
+		if h.s.hunt != nil {
+			t.Fatal("hunt open after a combination that needs no backoff")
+		}
+		assertShownAvoids(t, h, "after the combination", both)
+		assertLaterReplay(h)
+	})
+
+	t.Run("cancelled", func(t *testing.T) {
+		h, start := pairedHunt(t)
+		h.add(&journal.HuntEnd{Hunt: 1, Result: "cancelled", Groups: 0}, start.Seq)
+		if h.s.hunt != nil {
+			t.Fatal("hunt open after cancellation")
+		}
+		assertShownAvoids(t, h, "after cancellation", nil)
+		assertLaterReplay(h)
+	})
+
+	t.Run("reset of the found core", func(t *testing.T) {
+		h, start := pairedHunt(t)
+		h.add(&journal.HuntEnd{Hunt: 1, Result: "culprit", Cores: []int{0}, Groups: 1}, start.Seq)
+		h.add(&journal.CommandReset{Core: new(0)})
+		h.add(&journal.CorePhase{Core: 0, From: journal.PhaseHasRoom, To: journal.PhaseSearch, Offset: 0})
+		if h.s.hunt != nil {
+			t.Fatal("hunt open after its found core was reset")
+		}
+		assertShownAvoids(t, h, "after the reset", nil)
+		assertLaterReplay(h)
+	})
+}

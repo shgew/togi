@@ -83,20 +83,13 @@ func (s *State) BIOSProfile() BIOSProfile {
 			}
 		}
 	}
-	if h := s.hunt; h != nil && h.pairedStrike != nil && h.end != nil && s.strikeValid(*h.pairedStrike) {
-		// What the tuner decides next moves one core: show it, so the profile never reaches what the hunt learned or
-		// observed failing. Next decides a pending ordinary decision, such as a direct end's backoff, before the commitment.
-		a, ok := s.pendingDecision()
-		if !ok {
-			a, ok = s.huntCommitment(h)
-		}
-		if ok {
-			if d, ok := a.Payload.(*journal.TunerDecision); ok && d.Decision == journal.Backoff {
-				if i := s.index(d.Core); i >= 0 && d.ToOffset > confirmed[i] && d.ToOffset > out.Offsets[i] {
-					out.Offsets[i] = d.ToOffset
-					if _, marked := since[d.Core]; !marked {
-						since[d.Core] = h.endSeq
-					}
+	if h := s.hunt; h != nil && h.pairedStrike != nil && s.strikeValid(*h.pairedStrike) {
+		// The next move of the tuner is shown at once, so the profile never reaches what the hunt learned or observed failing.
+		if id, to, ok := s.pendingHuntBackoff(h); ok {
+			if i := s.index(id); i >= 0 && to > confirmed[i] && to > out.Offsets[i] {
+				out.Offsets[i] = to
+				if _, marked := since[id]; !marked {
+					since[id] = max(h.endSeq, h.seq)
 				}
 			}
 		}
@@ -109,6 +102,41 @@ func (s *State) BIOSProfile() BIOSProfile {
 	}
 	slices.Sort(out.Unconfirmed)
 	return out
+}
+
+// pendingHuntBackoff returns the core a paired hunt's next decision moves and where, as Next will decide it: the
+// attributed failure that ends the hunt direct, or, once the hunt ended, a pending ordinary backoff, the combination's
+// backoff (also before the combination is recorded) or the culprit's. It reads state only.
+func (s *State) pendingHuntBackoff(h *hunt) (core, to int, ok bool) {
+	a, ok := s.pendingDecision()
+	if !ok && h.end != nil {
+		a, ok = s.huntCommitment(h)
+	}
+	if !ok {
+		return 0, 0, false
+	}
+	switch p := a.Payload.(type) {
+	case *journal.TunerDecision:
+		if h.end != nil && p.Decision == journal.Backoff {
+			return p.Core, p.ToOffset, true
+		}
+	case *journal.Combination:
+		if h.end != nil {
+			if a, ok := s.combinationCommitment(h, p.Members, p.Combination, 0); ok {
+				if d, ok := a.Payload.(*journal.TunerDecision); ok && d.Decision == journal.Backoff {
+					return d.Core, d.ToOffset, true
+				}
+			}
+		}
+	case *journal.HuntEnd:
+		if p.Result == "direct" && len(p.Cores) == 1 && len(a.Cause) > 0 {
+			c, f := s.core(p.Cores[0]), s.failureBySeq(a.Cause[0])
+			if c != nil && f != nil && f.failure.Offset != nil {
+				return c.id, backoffTarget(c, *f.failure.Offset), true
+			}
+		}
+	}
+	return 0, 0, false
 }
 
 func (s *State) foldLaterCycleEnd(e journal.Event) {
