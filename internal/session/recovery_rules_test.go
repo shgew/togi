@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -861,9 +862,10 @@ func (j *stopAfterPartialRecovery) Append(p journal.Payload, cause ...int) (jour
 	return e, nil
 }
 
-// TestPartialCrashRecoversIntoBackoffOrLocatedHunt recovers a crashed R7 partial: a named core backs off without a
-// hunt; an unattributed crash, with the idle cores off CO 0, first reruns the load with them at 0.
-func TestPartialCrashRecoversIntoBackoffOrLocatedHunt(t *testing.T) {
+// TestPartialCrashRecoversIntoBackoff recovers a crashed R7 partial: a named core backs off without a
+// hunt; an unattributed crash, with the idle cores off CO 0, backs off the loaded cores and reruns the load before
+// any located hunt.
+func TestPartialCrashRecoversIntoBackoff(t *testing.T) {
 	t.Parallel()
 	for _, signal := range []machine.Signal{"", machine.ComputationError} {
 		t.Run(string(signal), func(t *testing.T) {
@@ -956,17 +958,11 @@ func TestPartialCrashRecoversIntoBackoffOrLocatedHunt(t *testing.T) {
 				if end.Signal != machine.Crash || failure.Attribution != journal.Unattributed {
 					t.Fatalf("recovered crash: %+v %+v", end, failure)
 				}
-				if move != nil || start == nil || !slices.Equal(start.Cores, partial.Cores) {
-					t.Fatalf("unattributed crash moved %+v instead of locating it: %+v", move, start)
+				if start != nil || move == nil || !slices.Contains(partial.Cores, move.Core) || !strings.Contains(move.Reason, "not located on the unloaded cores yet") {
+					t.Fatalf("unattributed crash did not back off the loaded cores before locating: %+v, %+v", move, start)
 				}
-				locate := slices.Clone(partial.Profile)
-				for core := range locate {
-					if !slices.Contains(partial.Cores, core) {
-						locate[core] = 0
-					}
-				}
-				if resumed.next.Condition != machine.Parked || !slices.Equal(resumed.next.Cores, partial.Cores) || !slices.Equal(resumed.next.Profile, locate) {
-					t.Fatalf("the locate did not rerun the partial with its idle cores at 0: %+v", resumed.next)
+				if !resumed.next.Rerun || resumed.next.Condition != machine.Together || !slices.Equal(resumed.next.Cores, partial.Cores) {
+					t.Fatalf("the backoff did not rerun the failed partial: %+v", resumed.next)
 				}
 			}
 			for _, fact := range facts.FromEvents(events).Facts {

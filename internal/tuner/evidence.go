@@ -335,6 +335,9 @@ func (s *State) recordEvidence(ev journal.Event, p *journal.TrialIntent, end *jo
 	s.ledger[k] = append(s.ledger[k], e)
 	delete(s.cycleMemo, k)
 	delete(s.exposure, k)
+	if e.pass && s.multiR7(k) {
+		s.recordLoadPass(k)
+	}
 	if !e.pass {
 		s.failures = append(s.failures, e)
 		if s.classFailures == nil {

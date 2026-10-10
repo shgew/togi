@@ -806,12 +806,17 @@ func unnamed(fail bool) *int {
 	return nil
 }
 
-func TestR7UnattributedFailureFirstLocatesWithIdleCoresAtZero(t *testing.T) {
+func TestR7EscalatedFailureLocatesWithIdleCoresAtZero(t *testing.T) {
 	h := r7Harness(t)
-	ended, failure := failLiveR7(h, journal.TrialEnd{DurationS: 41, TopRequesters: []int{0}})
+	ended, failure := failEscalatedR7(h, journal.TrialEnd{DurationS: 41, TopRequesters: []int{0}})
+	backoffs := h.s.pendingFailures[len(h.s.pendingFailures)-1].loadBackoffs
+	if len(backoffs) != escalateAfter {
+		t.Fatalf("backoffs before the escalated failure %+v", backoffs)
+	}
 	a := h.next()
-	want := &journal.HuntStart{Hunt: 1, Failure: failure.Seq, Trial: h.s.intents[ended.Data.(*journal.TrialEnd).Trial].Trial, Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{0, 1}, DurationS: 120, Failing: []int{-30, -30, -30, -30}, Parked: []int{-30, -30, 0, 0}, Candidates: []int{2, 3}, Trials: h.s.n, TrialS: 120, Miss: h.s.evidence.Miss, Rate: h.s.evidence.Rate, Ranking: []int{0, 1, 2, 3}, Reason: "no core is named, so the failure is located on the unloaded cores before it is charged to the loaded cores"}
-	if diff := cmp.Diff(Action{Kind: Decide, Payload: want, Cause: []int{failure.Seq}}, a); diff != "" {
+	reason := fmt.Sprintf("no core is named, so the failure is located on the unloaded cores before it is charged to the loaded cores; this load has been backed off 2 times since its last passing trial ([#%d #%d]) and still fails, so stepping back its loaded cores is not helping", backoffs[0].decision, backoffs[1].decision)
+	want := &journal.HuntStart{Hunt: 1, Failure: failure.Seq, Trial: h.s.intents[ended.Data.(*journal.TrialEnd).Trial].Trial, Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{0, 1}, DurationS: 120, Failing: []int{-30, -30, -30, -30}, Parked: []int{-30, -30, 0, 0}, Candidates: []int{2, 3}, Trials: h.s.n, TrialS: 120, Miss: h.s.evidence.Miss, Rate: h.s.evidence.Rate, Ranking: []int{0, 1, 2, 3}, Reason: reason}
+	if diff := cmp.Diff(Action{Kind: Decide, Payload: want, Cause: []int{failure.Seq, backoffs[0].decision, backoffs[1].decision}}, a); diff != "" {
 		t.Fatalf("hunt start (-want +got):\n%s", diff)
 	}
 	h.decide(a)
@@ -834,7 +839,7 @@ func TestR7UnattributedFailureFirstLocatesWithIdleCoresAtZero(t *testing.T) {
 
 func TestR7PassedLocateHuntsTheUnloadedCulprit(t *testing.T) {
 	h := r7Harness(t)
-	failLiveR7(h, journal.TrialEnd{DurationS: 41, TopRequesters: []int{0}})
+	failEscalatedR7(h, journal.TrialEnd{DurationS: 41, TopRequesters: []int{0}})
 	a := runLocated(h, func(p []int) *int { return unnamed(p[2] != 0) })
 	end, ok := a.Payload.(*journal.HuntEnd)
 	if !ok || end.Result != "culprit" || !slices.Equal(end.Cores, []int{2}) {
@@ -867,7 +872,7 @@ func TestR7FailedLocateKeepsTheVoltageTargetedBackoff(t *testing.T) {
 	for range h.s.n {
 		r7Fact(h, true, []int{0, 1}, []int{-26, -30, -30, -30}, map[int]float64{0: 1.115, 1: 1.08}, []int{0}, nil, nil, nil)
 	}
-	_, failure := failLiveR7(h, journal.TrialEnd{DurationS: 41, TopRequesters: []int{0}, VoltageRequestsV: map[int]float64{0: 1.1, 1: 1.08}})
+	_, failure := failEscalatedR7(h, journal.TrialEnd{DurationS: 41, TopRequesters: []int{0}, VoltageRequestsV: map[int]float64{0: 1.1, 1: 1.08}})
 	var locate int
 	a := runLocated(h, func(p []int) *int {
 		locate = len(h.events) + 2
@@ -911,7 +916,7 @@ func TestR7LocatedGroupFailureNamingACore(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := r7Harness(t)
-			failLiveR7(h, journal.TrialEnd{DurationS: 41, TopRequesters: []int{0}})
+			failEscalatedR7(h, journal.TrialEnd{DurationS: 41, TopRequesters: []int{0}})
 			a := runLocated(h, func(p []int) *int {
 				if p[2] == 0 {
 					return nil
@@ -991,7 +996,7 @@ func TestR7LocatedFailureNamingALoadedCoreChargesThatCore(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := r7Harness(t)
-			_, failure := failLiveR7(h, journal.TrialEnd{DurationS: 41, TopRequesters: []int{0}})
+			_, failure := failEscalatedR7(h, journal.TrialEnd{DurationS: 41, TopRequesters: []int{0}})
 			var named int
 			a := runLocated(h, func(p []int) *int {
 				if !tc.fails(p) {
@@ -1107,7 +1112,7 @@ func TestR7LocateFailureNamingALoadedCoreAtZero(t *testing.T) {
 			h := r7Harness(t)
 			h.add(&journal.CorePhase{Core: 0, To: journal.PhaseHasRoom, Offset: 0, Reason: "test"})
 			h.add(&journal.ProfileChange{To: []int{0, -30, -30, -30}})
-			_, failure := failLiveR7(h, journal.TrialEnd{DurationS: 41, TopRequesters: tc.top})
+			_, failure := failEscalatedR7(h, journal.TrialEnd{DurationS: 41, TopRequesters: tc.top})
 			a := h.next()
 			for ; ; a = h.next() {
 				switch a.Payload.(type) {
@@ -1213,14 +1218,14 @@ func TestR7PassedZeroRerunLocatesCitingTheRerun(t *testing.T) {
 	h := r7Harness(t)
 	h.add(&journal.CorePhase{Core: 0, To: journal.PhaseHasRoom, Offset: 0, Reason: "test"})
 	h.add(&journal.ProfileChange{To: []int{0, -30, -30, -30}})
-	_, failure := failLiveR7(h, journal.TrialEnd{DurationS: 41, TopRequesters: []int{0}, Core: new(0)})
+	_, failure := failEscalatedR7(h, journal.TrialEnd{DurationS: 41, TopRequesters: []int{0}, Core: new(0)})
 	rerun := runZeroRerun(h, []int{0, 1}, false)
 	a := h.next()
 	start, ok := a.Payload.(*journal.HuntStart)
 	if !ok || start.Failure != failure.Seq || !slices.Equal(start.Candidates, []int{2, 3}) {
 		t.Fatalf("located hunt %+v", a)
 	}
-	if diff := cmp.Diff([]int{failure.Seq, rerun.Seq}, a.Cause); diff != "" {
+	if diff := cmp.Diff([]int{failure.Seq, rerun.Seq}, a.Cause[:2]); diff != "" {
 		t.Fatalf("hunt start cause (-want +got):\n%s", diff)
 	}
 	if missing := missingTokens(start.Reason, "CO 0", "passed", fmt.Sprintf("#%d", failure.Seq), fmt.Sprintf("#%d", rerun.Seq)); len(missing) > 0 {
@@ -1228,4 +1233,29 @@ func TestR7PassedZeroRerunLocatesCitingTheRerun(t *testing.T) {
 	}
 	h.decide(a)
 	assertProjectionReplay(h)
+}
+
+// failEscalatedR7 fails CCD 0's load once more after escalateAfter unattributed failures of it were each backed off
+// without a passing trial between, then restores the offsets and profile those backoffs moved so that the escalated
+// failure fails at the profile the harness had. The failure is located instead of backed off.
+func failEscalatedR7(h *harness, end journal.TrialEnd) (journal.Event, journal.Event) {
+	h.t.Helper()
+	offsets, profile := h.s.offsets(), slices.Clone(h.s.checking.profile)
+	prior := end
+	prior.Core = nil
+	for range escalateAfter {
+		failLiveR7(h, prior)
+		a := h.next()
+		if move, ok := a.Payload.(*journal.TunerDecision); !ok || move.Decision != journal.Backoff {
+			h.t.Fatalf("expected a voltage-targeted backoff before escalation, got %+v", a)
+		}
+		h.decide(a)
+		for i, id := range h.s.ids() {
+			if h.s.offsets()[i] != offsets[i] {
+				h.add(&journal.CorePhase{Core: id, To: journal.PhaseHasRoom, Offset: offsets[i], Reason: "test"})
+			}
+		}
+		h.add(&journal.ProfileChange{To: profile})
+	}
+	return failLiveR7(h, end)
 }

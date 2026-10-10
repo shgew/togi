@@ -15,7 +15,7 @@
 
   [0;92mif 3 of 4 pass       [0;37mnext: trial 4 of 4 · 5m[m
   [0;91mif a core is named   [0;37mits failure point is recorded → it backs off per offset order → next: rerun R7 all-core on 00-07 · 2m[m
-  [0;91mif none is named     [0;37mhunt 1 starts over 08-15 per offset order → next: hunt 1 group 1: R7 all-core on 00-07 · 08-15 parked at 0, idle[m
+  [0;91mif none is named     [0;37mcore 05 -10 → -9 per offset order → next: rerun R7 all-core on 00-07 · 2m[m
 
   [0;97mCCD 0               [0;90m0       -10       -20       -30       -40       -50 fail pt  all under load                         [0;97mCCD 1               [0;90m0       -10       -20       -30       -40       -50 fail pt  not under load[m
   [0;96m► [0;97m00  -37  [0;37mAT LIMIT  [0;97m▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄[0;91m█                [0;37m-38                                            08  -27  AT LIMIT  [0;90m▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄[0;91m█                          [0;90m-28[m

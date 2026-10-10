@@ -115,6 +115,9 @@ type pendingFailure struct {
 	profile []int
 	class   trialClass
 	carried bool
+	// loadBackoffs are the voltage-targeted backoffs of the failed load since its latest passing trial, as folded
+	// before this failure.
+	loadBackoffs []loadBackoff
 }
 
 type rerun struct {
@@ -188,6 +191,7 @@ type State struct {
 	located                 map[int]locatedHunt
 	zeroReruns              map[int]*zeroRerun
 	zeroTrials              map[string]int
+	loads                   map[r7Load][]loadBackoff
 
 	// Indexes and memos over the folded events, so a query costs what changed recently rather than the whole
 	// history. Each is a function of the folded events alone.
@@ -366,6 +370,7 @@ func (s *State) Fold(e journal.Event) {
 		}
 	case *journal.TunerDecision:
 		if p.Decision == journal.Backoff {
+			s.recordLoadBackoff(e)
 			s.consumeR7(e, p.Core)
 		}
 		if c := s.core(p.Core); c != nil {
@@ -586,6 +591,9 @@ func (s *State) foldFailure(e journal.Event, p *journal.Failure) {
 		failure.class = trialClass{machine.R6, machine.Workloads(machine.R6)[0].ID, coresKey(s.ids()), s.durations.CheckingIdleS}
 	}
 	s.setFailureIndex(e.Seq)
+	if s.multiR7(failure.class) {
+		failure.loadBackoffs = slices.Clone(s.loads[loadOf(failure.class)])
+	}
 	s.pendingFailures = append(s.pendingFailures, failure)
 	if s.multiR7(failure.class) {
 		s.eachFailureEntry(failure.class, e.Seq, func(i int) { s.ledger[failure.class][i].named = p.Core })

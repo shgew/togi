@@ -58,8 +58,8 @@ func (s *State) locatePlan(h *hunt) (plan groupPlan, has, decided bool) {
 }
 
 // locatable returns the failed trial of a multi-core R7 failure that is located before it is charged to the loaded
-// cores: a live unattributed one whose load left an unloaded core nonzero, and, carried or naming a core at CO 0,
-// one whose loaded cores were all at CO 0, where locate is its all-zero rerun.
+// cores: a live unattributed one whose load left an unloaded core nonzero and that escalates, and, carried or naming
+// a core at CO 0, one whose loaded cores were all at CO 0, where locate is its all-zero rerun.
 func (s *State) locatable(f pendingFailure) *entry {
 	if !s.multiR7(f.class) || !f.carried && f.failure.Condition == machine.Parked || len(s.locateCandidates(f)) == 0 {
 		return nil
@@ -74,6 +74,8 @@ func (s *State) locatable(f pendingFailure) *entry {
 		}
 		return failed
 	case f.carried || f.failure.Condition != machine.Together || s.r7NamedCulprit(*failed):
+		return nil
+	case !s.escalates(f, *failed):
 		return nil
 	}
 	return failed
@@ -151,6 +153,11 @@ func (s *State) locateStart(f pendingFailure) Action {
 	if r := s.zeroReruns[f.seq]; r != nil && r.passed {
 		p.Reason = fmt.Sprintf("the rerun of failure #%d with every core at CO 0 passed (#%d), so it names no core and is located on the unloaded cores before it is charged to the loaded cores", f.seq, r.end)
 		cause = append(cause, r.end)
+	}
+	if !f.carried && f.failure.Condition == machine.Together {
+		reason, backoffs := s.escalationReason(f)
+		p.Reason += "; " + reason
+		cause = append(cause, backoffs...)
 	}
 	return Action{Kind: Decide, Payload: p, Cause: cause}
 }
