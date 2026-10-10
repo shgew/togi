@@ -263,7 +263,7 @@ func TestRunRejectsInvalidCycles(t *testing.T) {
 				t.Fatalf("exit %d, stdout %q", code, out.String())
 			}
 			firstLine, _, _ := strings.Cut(diagnostics.String(), "\n")
-			want := fmt.Sprintf("togi run: invalid value %q for flag -cycles: must be a positive integer", value)
+			want := fmt.Sprintf("togi run: invalid value %q for flag --cycles: must be a positive integer", value)
 			if diff := cmp.Diff(want, firstLine); diff != "" {
 				t.Fatalf("cycle diagnostic (-want +got): %s", diff)
 			}
@@ -282,7 +282,7 @@ func TestRunRejectsOldCyclesFlag(t *testing.T) {
 	if code != exitUsage || out.Len() != 0 {
 		t.Fatalf("exit %d, stdout %q", code, out.String())
 	}
-	if !strings.Contains(diagnostics.String(), "flag provided but not defined: -laps") {
+	if !strings.Contains(diagnostics.String(), "flag provided but not defined: --laps") {
 		t.Fatalf("old flag diagnostic: %q", diagnostics.String())
 	}
 	if diff := cmp.Diff(map[string]string{}, directoryFiles(t, g.stateDir)); diff != "" {

@@ -15,7 +15,7 @@ import (
 	"github.com/shgew/togi/internal/render"
 )
 
-const eventsHelp = `Usage: togi events [--core <N>] [--kind <kinds>] [--trial <ID>] [--since <time>] [--until <time>] [--json]
+var eventsHelp = `Usage: togi events [--core <N>] [--kind <kinds>] [--trial <ID>] [--since <time>] [--until <time>] [--json]
 
 Print the journal, one readable line per event, oldest first. Filters combine,
 so you can narrow it to one core, one trial or a time window. A different
@@ -25,10 +25,11 @@ and explicitly empty lists are usage errors (exit 2). Valid filters with no
 matches print nothing and exit 0. Readable lines are colored on terminals and
 in the system journal unless NO_COLOR is set.
 
-Examples:
-  togi events --core 3                     Everything that happened to core 3
-  togi events --kind trial,checking.cycle   Every trial event and checking cycle
-  togi events --json --trial 0413          The raw events of trial 0413`
+` + examples(
+	example{"togi events --core 3", "Everything that happened to core 3"},
+	example{"togi events --kind trial,checking.cycle", "Every trial event and checking cycle"},
+	example{"togi events --json --trial 0413", "The raw events of trial 0413"},
+)
 
 func eventsFlags(g *globals, filter *journal.Filter, rawJSON *bool) *flag.FlagSet {
 	flags := newFlagSet("events", g)

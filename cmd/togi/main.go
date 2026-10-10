@@ -93,7 +93,7 @@ func cliWithGlobals(args []string, stdout, stderr io.Writer, g globals) int {
 			usage(stdout)
 			return exitOK
 		}
-		fmt.Fprintf(stderr, "togi: %v\n", err)
+		fmt.Fprintf(stderr, "togi: %s\n", flagMessage(err))
 		usage(stderr)
 		return exitUsage
 	}
@@ -115,7 +115,7 @@ func cliWithGlobals(args []string, stdout, stderr io.Writer, g globals) int {
 	}
 	c := commands[i]
 	if g.configSet && !acceptsConfig(c.name) {
-		return flagError(c.flags(&g), c.help, errors.New("flag provided but not defined: -config"), stderr)
+		return flagError(c.flags(&g), c.help, errConfigScope, stderr)
 	}
 	return c.run(&g, fs.Args()[1:], stdout, stderr)
 }
@@ -156,9 +156,11 @@ func usage(w io.Writer) {
 	b.WriteString("Usage: togi [--config <path>] [--state-dir <path>] <command> [flags]\n")
 	b.WriteString("       togi --version\n\n")
 	b.WriteString("Finds and tests per-core Curve Optimizer offsets on Zen 5 desktop CPUs.\n\n")
-	b.WriteString("Examples:\n")
-	b.WriteString("  sudo togi run --cycles 1   Stop after search and one clean cycle\n")
-	b.WriteString("  togi status                   Show core failure points, combinations, activity and clean cycles\n\n")
+	b.WriteString(examples(
+		example{"sudo togi run --cycles 1", cyclesOneExample},
+		example{"togi status", "Show core failure points, combinations, activity and clean cycles"},
+	))
+	b.WriteString("\n\n")
 	b.WriteString("Commands:\n")
 	sorted := slices.SortedFunc(slices.Values(commands), func(a, b command) int { return strings.Compare(a.name, b.name) })
 	for _, c := range sorted {

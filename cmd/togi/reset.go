@@ -21,7 +21,7 @@ import (
 	"github.com/shgew/togi/internal/tuner"
 )
 
-const resetHelp = `Usage: togi reset --core <N> | --all
+var resetHelp = `Usage: togi reset --core <N> | --all
 
 Reset one core, so the next run restarts its search from the baseline, or archive
 the whole session, so the next run starts a new one that carries nothing from it.
@@ -34,9 +34,10 @@ Both forms refuse unknown event kinds; install the build that wrote them.
 Only one run or reset can own this machine, even with different state directories.
 A busy host lock stops reset before it changes the session.
 
-Examples:
-  sudo togi reset --core 3   Search core 3 again from its baseline
-  sudo togi reset --all      Archive the session and start over`
+` + examples(
+	example{"sudo togi reset --core 3", "Search core 3 again from its baseline"},
+	example{"sudo togi reset --all", "Archive the session and start over"},
+)
 
 func resetFlags(g *globals, core **int, all *bool) *flag.FlagSet {
 	flags := newFlagSet("reset", g)

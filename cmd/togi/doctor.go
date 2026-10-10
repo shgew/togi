@@ -17,7 +17,7 @@ import (
 	"github.com/shgew/togi/internal/session"
 )
 
-const doctorHelp = `Usage: togi doctor
+var doctorHelp = `Usage: togi doctor
 
 Check whether this machine is ready for togi run without starting a session:
 run's preflight checks, the hardware watchdog and, when a session is recorded,
@@ -36,9 +36,10 @@ archives the session and starts a new one. A journal with a newer schema,
 ruleset or evidence epoch, or with unknown event kinds, is refused as run
 refuses it.
 
-Examples:
-  togi doctor        Make the checks that need no root
-  sudo togi doctor   Make every check run makes`
+` + examples(
+	example{"togi doctor", "Make the checks that need no root"},
+	example{"sudo togi doctor", "Make every check run makes"},
+)
 
 // diagnoseFunc is hardware.Diagnose: the run checks made, and those skipped with the reason.
 type diagnoseFunc func(cfg config.Config, recorded *machine.BIOSContext, privileged bool) (ran, skipped []machine.Check, err error)

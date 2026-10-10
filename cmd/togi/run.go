@@ -33,7 +33,7 @@ import (
 	"github.com/shgew/togi/internal/tuningboot"
 )
 
-const runHelp = `Usage: togi run [--cycles <N>] [--tuning-boot <grubenv>] [--no-tui]
+var runHelp = `Usage: togi run [--cycles <N>] [--tuning-boot <grubenv>] [--no-tui]
 
 Start or resume the tuning session in the foreground: search for each core's
 solo limit, hunt the core or combination behind unattributed failures with
@@ -76,10 +76,14 @@ The first durable journal append resets its consecutive restart-limit count and
 records a pending leave reason once. Dead ends and incompatible or unknown-kind
 journals persist a short leave reason before clearing the saved GRUB entry.
 
-Examples:
-  sudo togi run                     Tune this machine until a signal or a dead end
-  sudo togi run --cycles 1            Stop after search finishes and one clean cycle passes
-  sudo togi run --no-tui            Print one line per event instead of the dashboard`
+` + examples(
+	example{"sudo togi run", "Tune this machine until a signal or a dead end"},
+	example{"sudo togi run --cycles 1", cyclesOneExample},
+	example{"sudo togi run --no-tui", "Print one line per event instead of the dashboard"},
+)
+
+// cyclesOneExample describes `run --cycles 1` in the run help and in togi --help.
+const cyclesOneExample = "Stop once every core is at its limit, deepening can reach no more depth and one clean cycle has passed"
 
 func runFlags(g *globals, cycles *int, grubenv *string, noTUI *bool) *flag.FlagSet {
 	flags := newFlagSet("run", g)

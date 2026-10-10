@@ -41,7 +41,7 @@ func TestStatus(t *testing.T) {
 		t.Fatalf("status: exit %d, stderr %s", code, stderr.String())
 	}
 	status := stdout.String()
-	if want := fmt.Sprintf("clean cycles since last deepening: %d, latest cycle %d", st.Checking.CleanCycles, st.Checking.LastCleanCycle); !strings.Contains(status, want) {
+	if want := fmt.Sprintf("clean cycles since last deepening: %d, latest cycle %d", st.Checking.CleanCycles, st.Checking.LastCleanCycle); !strings.Contains(strings.Join(strings.Fields(status), " "), want) {
 		t.Fatalf("status lacks %q:\n%s", want, status)
 	}
 	checkRows(t, "status", status, regexp.MustCompile(`(?m)^(\d\d)  +\d  +\d  +(-?\d+)  `), st)

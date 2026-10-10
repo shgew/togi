@@ -17,7 +17,7 @@ func TestTopLevelRefusals(t *testing.T) {
 	}{
 		{"no-command", nil, "   __              _"},
 		{"unknown-command", []string{"unknown"}, `togi: unknown command "unknown"`},
-		{"unknown-flag", []string{"--unknown"}, "togi: flag provided but not defined: -unknown"},
+		{"unknown-flag", []string{"--unknown"}, "togi: flag provided but not defined: --unknown"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var out, diagnostics bytes.Buffer

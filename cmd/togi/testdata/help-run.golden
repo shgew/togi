@@ -42,9 +42,9 @@ records a pending leave reason once. Dead ends and incompatible or unknown-kind
 journals persist a short leave reason before clearing the saved GRUB entry.
 
 Examples:
-  sudo togi run                     Tune this machine until a signal or a dead end
-  sudo togi run --cycles 1            Stop after search finishes and one clean cycle passes
-  sudo togi run --no-tui            Print one line per event instead of the dashboard
+  sudo togi run              Tune this machine until a signal or a dead end
+  sudo togi run --cycles 1   Stop once every core is at its limit, deepening can reach no more depth and one clean cycle has passed
+  sudo togi run --no-tui     Print one line per event instead of the dashboard
 
 Flags:
   --config <path>      configuration file path for doctor, run and reset (default /etc/togi/config.toml)

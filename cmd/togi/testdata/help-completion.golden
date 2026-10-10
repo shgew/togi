@@ -8,9 +8,9 @@ the script needs nushell 0.115.1 or newer. The Nix package installs all four
 scripts; regenerate a script you saved yourself after updating togi.
 
 Examples:
-  source <(togi completion bash)    Load completions in bash, such as from ~/.bashrc
-  source <(togi completion zsh)     Load completions in zsh after compinit
-  togi completion fish | source     Load completions in fish
+  source <(togi completion bash)              Load completions in bash, such as from ~/.bashrc
+  source <(togi completion zsh)               Load completions in zsh after compinit
+  togi completion fish | source               Load completions in fish
   togi completion nushell | save -f togi.nu   Write a script for nushell's source command
 
 Global flags:
