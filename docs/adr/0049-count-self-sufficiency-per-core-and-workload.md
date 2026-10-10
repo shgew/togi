@@ -1,7 +1,5 @@
 # Count self-sufficiency per core and workload
 
-Status: **Accepted**.
-
 Amends [ADR 0038](0038-self-sufficient-cores.md): its self-sufficiency ledger. [Issue #576](https://github.com/shgew/togi/issues/576) records the decision; [#506](https://github.com/shgew/togi/issues/506) reported the count as a defect and was closed as not planned.
 
 ## Context
