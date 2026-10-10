@@ -2,7 +2,7 @@
 
   ■ SOLO LIMITS  16/16  ───  ○ CYCLE 1  paused at step 7 of 18  ───  ►  HUNT 1   member probes · member 1 of 2  ───  ○ DEEPEN  ───  CLEAN CYCLES 0...
 
-  │ 08:19:00  config loaded         no config at /etc/togi/config.toml; using defaults with togi 0.0.0+dev (schema 4, ruleset 10, fixes 1)
+  │ 08:19:00  config loaded         no config at /etc/togi/config.json; using defaults with togi 0.0.0+dev (schema 4, ruleset 10, fixes 1)
   │ 08:19:00  crash                 crash: boot 1c0d76e4 ended without a clean shutdown; in flight: seq 2380; reset reason: x86/amd: Previous system reset...
   │ 08:19:00  crash                 trial 0270 FAIL crash, last evidence 0s after start
   │ 08:19:00  fail                  unattributed crash failure in parked R6 trial 0270: the group fails, no evidence names a single core
@@ -17,7 +17,7 @@
   │ 08:19:00  trial intent          trial 0271 cores 00, 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 13, 14, 15 R6 mprime SSE 4K-21K idle then bursts...
   │ 08:19:00  trial start           trial 0271 started pid 1271 in scope togi-trial-0271 on cpus 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15
   │ 08:19:00  trial progress        trial 0271 bursts: 0 continues, 16 stops
-  │ 08:20:30  config loaded         no config at /etc/togi/config.toml; using defaults with togi 0.0.0+dev (schema 4, ruleset 10, fixes 1)
+  │ 08:20:30  config loaded         no config at /etc/togi/config.json; using defaults with togi 0.0.0+dev (schema 4, ruleset 10, fixes 1)
   │ 08:20:30  crash                 crash: boot 641f0b8e ended without a clean shutdown; in flight: seq 2432; reset reason: x86/amd: Previous system reset...
   │ 08:20:30  crash                 trial 0271 FAIL crash, last evidence 0s after start
   │ 08:20:30  fail                  unattributed crash failure in parked R6 trial 0271: the group fails, no evidence names a single core
@@ -30,7 +30,7 @@
   │ 08:20:30  trial intent          trial 0272 cores 00, 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 13, 14, 15 R6 mprime SSE 4K-21K idle then bursts...
   │ 08:20:30  trial start           trial 0272 started pid 1272 in scope togi-trial-0272 on cpus 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15
   │ 08:20:30  trial progress        trial 0272 bursts: 0 continues, 16 stops
-  │ 08:22:00  config loaded         no config at /etc/togi/config.toml; using defaults with togi 0.0.0+dev (schema 4, ruleset 10, fixes 1)
+  │ 08:22:00  config loaded         no config at /etc/togi/config.json; using defaults with togi 0.0.0+dev (schema 4, ruleset 10, fixes 1)
   │ 08:22:00  crash                 crash: boot 6fc4ec6c ended without a clean shutdown; in flight: seq 2479; reset reason: x86/amd: Previous system reset...
   │ 08:22:00  crash                 trial 0272 FAIL crash, last evidence 0s after start
   │ 08:22:00  fail                  unattributed crash failure in parked R6 trial 0272: the group fails, no evidence names a single core

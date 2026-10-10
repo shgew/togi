@@ -38,7 +38,7 @@
     11  search step: 1 count deeper -7   passed -6 · next -7                      02:18  step     core 15 passed -10, next -15
     04  search step: light, then... -20  passed -15 · next -20                    02:15  step     core 07 passed -10, next -15
     12  search step: 1 count deeper -11  passed -10 · next -11                    02:12  step     core 14 passed -1, next -2
-    05  search step: light, then... -15  passed -10 · next -15                    02:09  step     core 06 passed -10, next -15
+  ► 05  search step: light, then... -15  passed -10 · next -15                    02:09  step     core 06 passed -10, next -15
                                                                                   +49 more
 
    ?  help    l  log    esc  back    q  close view

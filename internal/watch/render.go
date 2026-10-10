@@ -577,7 +577,7 @@ func (s Snapshot) header(now time.Time, width int, compact bool) string {
 		return fitClauses(width, whole("", head), whole("", grey.Render("   starting")))
 	}
 	if s.problem != nil {
-		return out + grey.Render("   can't read journal")
+		return fitClauses(width, whole("", head), whole("", grey.Render("   can't read journal")))
 	}
 	if !s.session {
 		return fitClauses(width, whole("", head), whole("", grey.Render("   no session yet")))

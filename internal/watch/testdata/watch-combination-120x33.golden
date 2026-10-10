@@ -1,7 +1,7 @@
  togi   13:08:40   session 61h08m   8 failures · 8 crashes   last observed failure 08:22, 52h46m ago
  ■ SOLO ─ ■ CYCLE 2 ─ ○ DEEPEN ─ CLEAN 1
 
- ▌  The requested clean cycles are complete, so I restored safer offsets and stopped. togi run picks up where I left
+ ▌  The requested clean cycles are complete, so I restored safer offsets and stopped. togi run picks up where I...
 
  STOPPED  13:08:00 · requested clean cycles completed
  Rows show the saved profile, not applied now.
