@@ -218,27 +218,21 @@ func movedSince(pr int, before, after pullInfo) error {
 	return nil
 }
 
-// exclusionOf names why the review skips the file, or "" when it is included. Paths and kinds exclude by themselves. Whether a file is generated is its state at the frozen head: a marker in context or outside the hunks counts, and one the final head no longer has does not, however an earlier patch of a delta added it. complete says the sections hold each file's whole change, as the pull request's diff does, so an added or deleted file's section is its whole content and the marker lines it shows count. A file the head lacks has only its patches to show.
+// exclusionOf names why the review skips the file, or "" when it is included. Paths and kinds exclude by themselves. Whether a file is generated is decided on its contents, never on marker lines a patch shows: a marker in context or outside the hunks counts, one after the package clause or inside a string does not, and one an earlier patch of a delta added and a later one dropped does not either. complete says the sections hold each file's whole change, as the pull request's diff does: an added or deleted file's section then is its whole content and needs no read. Any other file is read at the frozen head; one the head lacks has no contents to judge and stays in the review.
 func exclusionOf(t tools, repo, head string, f fileDiff, complete bool) (string, error) {
 	if reason := fixedExclusion(f); reason != "" {
 		return reason, nil
 	}
-	if complete {
-		if isGenerated(f) {
-			return "generated", nil
-		}
-		if f.Status == "added" || f.Status == "deleted" {
-			return "", nil
+	content := ""
+	if complete && (f.Status == "added" || f.Status == "deleted") {
+		content = wholeContent(f)
+	} else {
+		var err error
+		if content, _, err = fileAt(t.gh, repo, head, f.Path); err != nil {
+			return "", err
 		}
 	}
-	content, found, err := fileAt(t.gh, repo, head, f.Path)
-	if err != nil {
-		return "", err
-	}
-	switch {
-	case found && generatedContent(content):
-		return "generated", nil
-	case !found && !complete && isGenerated(f):
+	if generatedContent(content) {
 		return "generated", nil
 	}
 	return "", nil

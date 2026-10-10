@@ -53,8 +53,8 @@ func TestParseDiffQuotedHeaderOnly(t *testing.T) {
 				t.Fatalf("got %d files, want 1", len(files))
 			}
 			f := files[0]
-			if f.Path != tt.wantPath || f.Status != tt.wantStatus || f.Binary != tt.wantBinary || excludedReason(f) != tt.wantExclusion {
-				t.Errorf("file = path %q, status %q, binary %t, exclusion %q; want %q, %q, %t, %q", f.Path, f.Status, f.Binary, excludedReason(f), tt.wantPath, tt.wantStatus, tt.wantBinary, tt.wantExclusion)
+			if f.Path != tt.wantPath || f.Status != tt.wantStatus || f.Binary != tt.wantBinary || fixedExclusion(f) != tt.wantExclusion {
+				t.Errorf("file = path %q, status %q, binary %t, exclusion %q; want %q, %q, %t, %q", f.Path, f.Status, f.Binary, fixedExclusion(f), tt.wantPath, tt.wantStatus, tt.wantBinary, tt.wantExclusion)
 			}
 		})
 	}
@@ -469,7 +469,7 @@ func TestSnapshotRemovedPatchKeepsOnlyGoneFiles(t *testing.T) {
 	patches := map[string]string{
 		"aaa1111 aaa1111^":   onePatch("kept.go", "ctx", "inherited") + onePatch("gone.go", "ctx", "dropped"),
 		"aaa1111 -- kept.go": "",
-		"aaa1111 -- gone.go": "diff --git a/gone.go b/gone.go\n--- a/gone.go\n+++ b/gone.go\n@@ -6 +5,0 @@\n-old\n",
+		"aaa1111 -- gone.go": "diff --git a/gone.go b/gone.go\n--- a/gone.go\n+++ b/gone.go\n@@ -6 +6 @@\n-old\n+dropped\n",
 	}
 	tl, _ := reReviewTools(t, previousBody(3, oldBaseSHA), rangeDiff, patches)
 	if err := runSnapshot(tl, []string{"--previous", previousURL, "700"}); err != nil {
@@ -546,13 +546,46 @@ func TestSnapshotRemovedPatchPartlyInherited(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := readFile(t, filepath.Join(dir, "delta.diff")), file+hunkG; got != want {
+	want := file + "@@ -30,3 +30,2 @@\n ctx\n-G = 1\n tail\n" // F's reversal is out, so G's hunk starts one line later than in the full reversal
+	if got := readFile(t, filepath.Join(dir, "delta.diff")); got != want {
 		t.Errorf("delta.diff = %q, want only G's reversal %q", got, want)
 	}
 	if len(m.Files) != 1 || m.Files[0].Path != "f.go" || m.Files[0].Added != 0 || m.Files[0].Removed != 1 || m.IncludedLines != 1 {
 		t.Errorf("files = %+v, L %d; want f.go with only G's one line", m.Files, m.IncludedLines)
 	}
-	if got, want := readFile(t, filepath.Join(dir, m.Files[0].HunkFile)), file+hunkG; got != want {
+	if got := readFile(t, filepath.Join(dir, m.Files[0].HunkFile)); got != want {
+		t.Errorf("hunk file = %q, want %q", got, want)
+	}
+}
+
+// TestSnapshotRemovedPatchAdjacentLinesPartlyInherited: A added the adjacent lines F and G, one unified hunk. The new base absorbed F; G was dropped. The reversal keeps F as context and removes only G, with coherent line counts.
+func TestSnapshotRemovedPatchAdjacentLinesPartlyInherited(t *testing.T) {
+	t.Parallel()
+	rangeDiff := "1:  aaa1111 < -:  ------- A, F moved into the base\n"
+	const file = "diff --git a/f.go b/f.go\n--- a/f.go\n+++ b/f.go\n"
+	lostG := file + "@@ -7 +6,0 @@\n-G = 1\n"
+	patches := map[string]string{
+		"aaa1111 aaa1111^":     file + "@@ -5,4 +5,2 @@\n ctx\n-F = 1\n-G = 1\n tail\n",
+		"aaa1111 base -- f.go": lostG,
+		"aaa1111 head -- f.go": lostG,
+	}
+	tl, _ := reReviewTools(t, previousBody(3, oldBaseSHA), rangeDiff, patches)
+	if err := runSnapshot(tl, []string{"--previous", previousURL, "700"}); err != nil {
+		t.Fatal(err)
+	}
+	dir := snapshotDir(tl)
+	m, err := readManifest(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := file + "@@ -5,4 +5,3 @@\n ctx\n F = 1\n-G = 1\n tail\n"
+	if got := readFile(t, filepath.Join(dir, "delta.diff")); got != want {
+		t.Errorf("delta.diff = %q, want %q", got, want)
+	}
+	if len(m.Files) != 1 || m.Files[0].Added != 0 || m.Files[0].Removed != 1 || m.IncludedLines != 1 {
+		t.Errorf("files = %+v, L %d; want only G's one line counted", m.Files, m.IncludedLines)
+	}
+	if got := readFile(t, filepath.Join(dir, m.Files[0].HunkFile)); got != want {
 		t.Errorf("hunk file = %q, want %q", got, want)
 	}
 }
@@ -578,6 +611,11 @@ func TestLostEffects(t *testing.T) {
 	mode := parse("diff --git a/f b/f\nold mode 100755\nnew mode 100644\n")[0]
 	binary := parse("diff --git a/f b/f\nindex 1111111..2222222 100644\nBinary files a/f and b/f differ\n")[0]
 	binaryChanged := parse("diff --git a/f b/f\nindex 2222222..3333333 100644\nBinary files a/f and b/f differ\n")
+	// The reversal of a commit that added the adjacent lines F and G in one hunk.
+	adj := parse(file + "@@ -5,4 +5,2 @@\n ctx\n-F = 1\n-G = 1\n tail\n")[0]
+	lostF1, lostG1 := "@@ -6 +5,0 @@\n-F = 1\n", "@@ -7 +6,0 @@\n-G = 1\n"
+	// The same reversal with a mode change of the file.
+	modeText := parse("diff --git a/f b/f\nold mode 100755\nnew mode 100644\nindex 1111111..2222222\n--- a/f\n+++ b/f\n" + hunkF + hunkG)[0]
 	tests := []struct {
 		name       string
 		f          fileDiff
@@ -587,7 +625,7 @@ func TestLostEffects(t *testing.T) {
 		{"both layers keep everything", two, nil, nil, ""},
 		{"the base lost G, the head kept it", two, parse(file + lostG), nil, ""},
 		{"the head lost G, the base kept it", two, nil, parse(file + lostG), ""},
-		{"both lost G", two, parse(file + lostG), parse(file + lostG), file + hunkG},
+		{"both lost G", two, parse(file + lostG), parse(file + lostG), file + "@@ -30,3 +30,2 @@\n ctx\n-G = 1\n tail\n"},
 		{"both lost F", two, parse(file + lostF), parse(file + lostF), file + hunkF},
 		{"each lost a different hunk", two, parse(file + lostF), parse(file + lostG), ""},
 		{"both lost both", two, parse(file + lostF + lostG), parse(file + lostF + lostG), file + hunkF + hunkG},
@@ -599,6 +637,14 @@ func TestLostEffects(t *testing.T) {
 		{"only content changed since", mode, parse(file + "@@ -20 +20 @@\n-x\n+y\n"), parse(file + "@@ -20 +20 @@\n-x\n+y\n"), ""},
 		{"binary differs in both", binary, binaryChanged, binaryChanged, binary.Text},
 		{"binary differs only in the base", binary, binaryChanged, nil, ""},
+		{"adjacent additions, only G lost", adj, parse(file + lostG1), parse(file + lostG1), file + "@@ -5,4 +5,3 @@\n ctx\n F = 1\n-G = 1\n tail\n"},
+		{"adjacent additions, only F lost", adj, parse(file + lostF1), parse(file + lostF1), file + "@@ -5,4 +5,3 @@\n ctx\n-F = 1\n G = 1\n tail\n"},
+		{"adjacent additions, both lost", adj, parse(file + "@@ -6,2 +5,0 @@\n-F = 1\n-G = 1\n"), parse(file + "@@ -6,2 +5,0 @@\n-F = 1\n-G = 1\n"), adj.Text},
+		{"adjacent additions, G lost in the base only", adj, parse(file + lostG1), nil, ""},
+		{"mode kept, F kept, G lost", modeText, parse(file + lostG), parse(file + lostG), file + "@@ -30,3 +30,2 @@\n ctx\n-G = 1\n tail\n"},
+		{"mode kept, text lost", modeText, parse(file + lostF + lostG), parse(file + lostF + lostG), "diff --git a/f b/f\nindex 1111111..2222222\n--- a/f\n+++ b/f\n" + hunkF + hunkG},
+		{"mode lost, text kept", modeText, parse("diff --git a/f b/f\nold mode 100755\nnew mode 100644\n"), parse("diff --git a/f b/f\nold mode 100755\nnew mode 100644\n"), "diff --git a/f b/f\nold mode 100755\nnew mode 100644\n"},
+		{"mode lost, G lost, F kept", modeText, parse("diff --git a/f b/f\nold mode 100755\nnew mode 100644\n" + lostG), parse("diff --git a/f b/f\nold mode 100755\nnew mode 100644\n" + lostG), "diff --git a/f b/f\nold mode 100755\nnew mode 100644\n--- a/f\n+++ b/f\n@@ -30,3 +30,2 @@\n ctx\n-G = 1\n tail\n"},
 	}
 	for _, tt := range tests {
 		got, ok := lostEffects(tt.f, tt.base, tt.head)
@@ -776,5 +822,60 @@ func TestSnapshotDeltaGeneratedStatusIsTheHeads(t *testing.T) {
 	}
 	if len(reads) != 2 || !strings.Contains(reads[0], "gen/c.go") || !strings.Contains(reads[1], "gen/d.go") {
 		t.Errorf("file reads = %q, want gen/c.go and gen/d.go read at the frozen head", reads)
+	}
+}
+
+// deletedFile is the patch that deletes a file that had the given lines.
+func deletedFile(name string, lines ...string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "diff --git a/%[1]s b/%[1]s\ndeleted file mode 100644\nindex 1111111..0000000\n--- a/%[1]s\n+++ /dev/null\n@@ -1,%d +0,0 @@\n", name, len(lines))
+	for _, l := range lines {
+		b.WriteString("-" + l + "\n")
+	}
+	return b.String()
+}
+
+// TestSnapshotGeneratedNeedsAValidHeader: a marker line in a patch does not make a file generated; only a file whose contents carry the marker before their first source token is.
+func TestSnapshotGeneratedNeedsAValidHeader(t *testing.T) {
+	t.Parallel()
+	marker := strings.TrimSuffix(generatedMarker, "\n")
+	diff := addedFile("x/late.go", "package x", marker) +
+		addedFile("x/raw.go", "package x", "var s = `", marker, "`") +
+		addedFile("x/ok.go", marker, "package x") +
+		"diff --git a/x/mod.go b/x/mod.go\nindex 1111111..2222222 100644\n--- a/x/mod.go\n+++ b/x/mod.go\n@@ -1,2 +1,3 @@\n package x\n+" + marker + "\n var a = 1\n" +
+		deletedFile("x/gone_ok.go", marker, "package x") +
+		deletedFile("x/gone_late.go", "package x", marker)
+	contents := map[string]string{"x/mod.go": "package x\n" + marker + "\nvar a = 1\n"}
+	var reads []string
+	pr := pullFake(diff, contents, func(int) pullInfo { return pullInfo{Head: headSHA, Base: baseSHA} })
+	gh := func(args []string) ([]byte, error) {
+		if args[0] == "api" {
+			reads = append(reads, args[len(args)-1])
+		}
+		return pr(args)
+	}
+	tl, _, _, _, _ := testTools(t, gh, nil)
+	if err := runSnapshot(tl, []string{"700"}); err != nil {
+		t.Fatal(err)
+	}
+	m, err := readManifest(snapshotDir(tl))
+	if err != nil {
+		t.Fatal(err)
+	}
+	type row struct{ Path, Exclusion string }
+	var got []row
+	for _, f := range m.Files {
+		got = append(got, row{f.Path, f.Exclusion})
+	}
+	want := []row{
+		{"x/late.go", ""}, {"x/raw.go", ""}, {"x/ok.go", "generated"}, {"x/mod.go", ""},
+		{"x/gone_ok.go", "generated"}, {"x/gone_late.go", ""},
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("exclusions (-want +got):\n%s", diff)
+	}
+	// Added and deleted sections show their whole file; only the modified one is read.
+	if len(reads) != 1 || !strings.Contains(reads[0], "x/mod.go?ref="+headSHA) {
+		t.Errorf("file reads = %q, want only x/mod.go at the frozen head", reads)
 	}
 }

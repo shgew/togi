@@ -93,7 +93,7 @@ func TestParseDiff(t *testing.T) {
 	}
 	var got []row
 	for _, f := range files {
-		got = append(got, row{f.Path, f.OldPath, f.Status, f.Added, f.Removed, f.Binary, f.Changed, excludedReason(f)})
+		got = append(got, row{f.Path, f.OldPath, f.Status, f.Added, f.Removed, f.Binary, f.Changed, fixedExclusion(f)})
 	}
 	want := []row{
 		{Path: "cmd/togi/main.go", Status: "modified", Added: 3, Removed: 1, Changed: []span{{11, 12}, {42, 42}}},
@@ -102,7 +102,7 @@ func TestParseDiff(t *testing.T) {
 		{Path: "docs/two.md", Old: "docs/one.md", Status: "renamed", Added: 1, Removed: 1, Changed: []span{{2, 2}}},
 		{Path: "logo.png", Status: "added", Binary: true, Exclusion: "binary"},
 		{Path: "pkg/testdata/in.txt", Status: "added", Added: 1, Changed: []span{{1, 1}}, Exclusion: "test data (`**/testdata/**`)"},
-		{Path: "pkg/gen.go", Status: "added", Added: 2, Changed: []span{{1, 2}}, Exclusion: "generated"},
+		{Path: "pkg/gen.go", Status: "added", Added: 2, Changed: []span{{1, 2}}},
 		{Path: "pkg/empty", Status: "added"},
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
@@ -303,7 +303,7 @@ func TestSnapshotFirstReview(t *testing.T) {
 	read := func(name string) string {
 		return "gh api -H Accept: application/vnd.github.raw+json repos/shgew/togi/contents/" + name + "?ref=" + headSHA
 	}
-	// Only files whose diff section does not show their whole content are read at the frozen head, then one last look at the pull request.
+	// Only files that are neither excluded by path or kind nor shown whole by an added or deleted section are read at the frozen head, then one last look at the pull request.
 	wantCalls := []string{view, "gh pr diff 700 --color=never --allow-escape-sequences", view, read("cmd/togi/main.go"), read("docs/two.md"), view}
 	if diff := cmp.Diff(wantCalls, g.joined()); diff != "" {
 		t.Errorf("gh calls (-want +got):\n%s", diff)
@@ -459,8 +459,8 @@ func TestSnapshotReReviewClassifiesPatches(t *testing.T) {
 		"bbb3333^ bbb3333": onePatch("b.go", "ctx", "v2"),
 		"bbb4444^ bbb4444": onePatch("c.go", "ctx", "fresh"),
 		"aaa5555 aaa5555^": onePatch("d.go", "ctx", "gone"),
-		// newHead removes what the dropped commit added to d.go, so its effect is really gone.
-		"aaa5555 -- d.go": "diff --git a/d.go b/d.go\n--- a/d.go\n+++ b/d.go\n@@ -6 +5,0 @@\n-old\n",
+		// newHead replaced what the dropped commit added to d.go by what it had removed, so its effect is really gone.
+		"aaa5555 -- d.go": "diff --git a/d.go b/d.go\n--- a/d.go\n+++ b/d.go\n@@ -6 +6 @@\n-old\n+gone\n",
 	}
 	tl, git := reReviewTools(t, previousBody(3, oldBaseSHA), rangeDiff, patches)
 	if err := runSnapshot(tl, []string{"--previous", previousURL, "700"}); err != nil {

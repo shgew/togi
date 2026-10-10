@@ -313,33 +313,28 @@ func fixedExclusion(f fileDiff) string {
 	return ""
 }
 
-// excludedReason names why the review skips the file from its diff section alone, or "" when it is included. A generated marker the section does not show is found by exclusionOf, which reads the file.
-func excludedReason(f fileDiff) string {
-	if reason := fixedExclusion(f); reason != "" {
-		return reason
-	}
-	if isGenerated(f) {
-		return "generated"
-	}
-	return ""
-}
-
 func isGeneratedMarker(line string) bool {
 	return strings.HasPrefix(line, "// Code generated ") && strings.HasSuffix(line, " DO NOT EDIT.")
 }
 
-// isGenerated reports whether the section shows the generated marker: on a line it adds, or on a line it removes when it deletes the file, which then shows the whole old file.
-func isGenerated(f fileDiff) bool {
-	for line := range strings.Lines(f.Text) {
-		line = strings.TrimSuffix(line, "\n")
-		switch {
-		case strings.HasPrefix(line, "+") && isGeneratedMarker(line[1:]):
-			return true
-		case f.Status == "deleted" && strings.HasPrefix(line, "-") && isGeneratedMarker(line[1:]):
-			return true
+// wholeContent returns the contents of the file a section adds or deletes whole: one hunk of added lines from line 1, or of removed lines from line 1. Any other section does not show the file, and the result is empty.
+func wholeContent(f fileDiff) string {
+	var prefix string
+	switch {
+	case f.Status == "added" && f.Removed == 0 && len(f.Hunks) == 1 && len(f.Changed) == 1 && f.Changed[0].First == 1:
+		prefix = "+"
+	case f.Status == "deleted" && f.Added == 0 && len(f.Hunks) == 1 && len(f.Hunks[0].Removals) == 1 && f.Hunks[0].Removals[0].First == 1:
+		prefix = "-"
+	default:
+		return ""
+	}
+	var b strings.Builder
+	for line := range strings.Lines(f.Hunks[0].Text) {
+		if strings.HasPrefix(line, prefix) {
+			b.WriteString(line[1:])
 		}
 	}
-	return false
+	return b.String()
 }
 
 // generatedContent reports whether a file's contents carry the generated marker the way Go defines it: as a whole line comment before the first source token. Blank space and complete line and block comments, however many lines a block spans, may come first; the marker inside a block comment does not count.

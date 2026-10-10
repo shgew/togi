@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -160,34 +161,48 @@ func goneEffects(git gitFunc, oldPatch, newBase, newHead string, files []fileDif
 	return kept, nil
 }
 
-// lostEffects narrows f, the reversal of a removed patch's changes to one file, to the parts that neither the new base (since: the changes from the patch to it) nor the new head keep. It reports false when nothing is lost. Anything it cannot tell apart counts as lost, so an effect is never dropped from the review wrongly.
+// lostEffects narrows f, the reversal of a removed patch's changes to one file, to the changes that neither the new base nor the new head keeps (base and head are the changes from the patch to each). Each changed line is traced on its own, so adjacent lines of one hunk that a lower layer carries stay out of the reversal, which is rendered again as coherent hunks; a mode change that is kept leaves the header too. It reports false when nothing is lost. Anything it cannot tell apart counts as lost, so an effect is never dropped from the review wrongly.
 func lostEffects(f fileDiff, base, head []fileDiff) (fileDiff, bool) {
 	f.Changed = nil
 	if f.Binary || len(f.Hunks) == 0 {
 		return f, effectLost(f, base) && effectLost(f, head)
 	}
-	var lost []hunk
+	lost := func(sign byte, old int, text string) bool {
+		return touches(sign, old, text, base) && touches(sign, old, text, head)
+	}
+	var hunks []hunk
+	var body strings.Builder
+	offset, adds, dels, retained := 0, 0, 0, false
 	for _, h := range f.Hunks {
-		if touches(h, base) && touches(h, head) {
-			lost = append(lost, h)
+		n, a, d, r := narrowHunk(h, lost, offset)
+		retained = retained || r
+		if n.Text == "" {
+			continue
 		}
+		hunks = append(hunks, n)
+		body.WriteString(n.Text)
+		adds, dels = adds+a, dels+d
+		offset += a - d
 	}
 	modeLost := f.Mode != "" && changesMode(base) && changesMode(head)
-	if len(lost) == 0 && !modeLost {
+	if len(hunks) == 0 && !modeLost {
 		return f, false
 	}
-	f.Text, f.Hunks, f.Added, f.Removed, f.Removals = f.Header, lost, 0, 0, nil
-	for _, h := range lost {
-		f.Text += h.Text
+	header := narrowHeader(f, modeLost, retained, len(hunks) > 0)
+	f.Text, f.Header, f.Hunks, f.Added, f.Removed, f.Removals = header+body.String(), header, hunks, adds, dels, nil
+	for _, h := range hunks {
 		f.Removals = append(f.Removals, h.Removals...)
-		for line := range strings.Lines(h.Text) {
-			switch {
-			case strings.HasPrefix(line, "+"):
-				f.Added++
-			case strings.HasPrefix(line, "-"):
-				f.Removed++
-			}
+	}
+	var modes []string
+	for line := range strings.Lines(header) {
+		line = strings.TrimSuffix(line, "\n")
+		if strings.HasPrefix(line, "old mode ") || strings.HasPrefix(line, "new mode ") || strings.HasPrefix(line, "new file mode") || strings.HasPrefix(line, "deleted file mode") {
+			modes = append(modes, line)
 		}
+	}
+	f.Mode = strings.Join(modes, "\n")
+	if retained && (f.Status == "added" || f.Status == "deleted") {
+		f.Status = "modified"
 	}
 	return f, true
 }
@@ -207,22 +222,118 @@ func changesMode(since []fileDiff) bool {
 	return slices.ContainsFunc(since, func(s fileDiff) bool { return s.Mode != "" })
 }
 
-// touches reports whether the changes since the patch undo the hunk's reversal: they remove lines the patch added, or bring back lines it removed.
-func touches(h hunk, since []fileDiff) bool {
+// touches reports whether the changes since the patch undo one line of the reversal: the line the reversal removes (old-side line number old), which they removed too, or the line the reversal adds (text), which they brought back.
+func touches(sign byte, old int, text string, since []fileDiff) bool {
 	for _, s := range since {
 		if s.Binary {
 			return true
 		}
-		for _, r := range s.Removals {
-			if slices.ContainsFunc(h.Removals, func(a span) bool { return r.First <= a.Last && a.First <= r.Last }) {
+		if sign == '-' {
+			if slices.ContainsFunc(s.Removals, func(r span) bool { return r.First <= old && old <= r.Last }) {
 				return true
 			}
+			continue
 		}
 		for _, l := range s.changedLines() {
-			if t, ok := strings.CutPrefix(l, "+"); ok && slices.Contains(h.Added, t) {
+			if t, ok := strings.CutPrefix(l, "+"); ok && t == text {
 				return true
 			}
 		}
 	}
 	return false
+}
+
+var fullHunkHeader = regexp.MustCompile(`^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$`)
+
+// narrowHunk keeps the changes of one reversal hunk that lost reports lost, as one coherent hunk: a reversed removal that is kept stays as context, a reversed addition that is kept is dropped, and the line counts and the new-side start, which offset shifts by the hunks before it, are rewritten. A hunk with no lost change comes back with empty text. retained says some change was left out; a hunk kept whole comes back verbatim when its numbering is unchanged.
+func narrowHunk(h hunk, lost func(sign byte, old int, text string) bool, offset int) (n hunk, adds, dels int, retained bool) {
+	lines := slices.Collect(strings.Lines(h.Text))
+	m := fullHunkHeader.FindStringSubmatch(strings.TrimSuffix(lines[0], "\n"))
+	if m == nil {
+		return h, 0, 0, false
+	}
+	oldStart, _ := strconv.Atoi(m[1])
+	newStart, _ := strconv.Atoi(m[3])
+	oldNo := oldStart
+	var body strings.Builder
+	var removed []int
+	var added []string
+	oldCount, newCount := 0, 0
+	lastKept := false
+	for _, line := range lines[1:] {
+		text := strings.TrimSuffix(line, "\n")
+		switch {
+		case strings.HasPrefix(line, " "):
+			body.WriteString(line)
+			oldCount, newCount, oldNo, lastKept = oldCount+1, newCount+1, oldNo+1, true
+		case strings.HasPrefix(line, "-"):
+			if lost('-', oldNo, text[1:]) {
+				body.WriteString(line)
+				removed = append(removed, oldNo)
+				dels++
+				oldCount++
+			} else {
+				body.WriteString(" " + line[1:])
+				oldCount, newCount, retained = oldCount+1, newCount+1, true
+			}
+			oldNo++
+			lastKept = true
+		case strings.HasPrefix(line, "+"):
+			if lost('+', 0, text[1:]) {
+				body.WriteString(line)
+				added = append(added, text[1:])
+				adds++
+				newCount++
+				lastKept = true
+			} else {
+				retained, lastKept = true, false
+			}
+		case strings.HasPrefix(line, `\`):
+			if lastKept {
+				body.WriteString(line)
+			}
+		}
+	}
+	if adds+dels == 0 {
+		return hunk{}, 0, 0, retained
+	}
+	first := oldStart
+	if oldCount == 0 {
+		first++
+	}
+	first += offset
+	if newCount == 0 {
+		first--
+	}
+	if !retained && first == newStart {
+		return h, adds, dels, false
+	}
+	head := fmt.Sprintf("@@ -%d,%d +%d,%d @@%s\n", oldStart, oldCount, first, newCount, m[5])
+	return hunk{Text: head + body.String(), Removals: spans(removed), Added: added}, adds, dels, retained
+}
+
+// narrowHeader keeps the parts of a reversal's header that its narrowed text still carries: mode lines only when the mode change is lost; and, when some change of the text is left out, no file-creation or deletion lines, since the file stays. Without hunks it drops the file name lines.
+func narrowHeader(f fileDiff, modeLost, partial, hunks bool) string {
+	var b strings.Builder
+	for line := range strings.Lines(f.Header) {
+		t := strings.TrimSuffix(line, "\n")
+		switch {
+		case !hunks && (strings.HasPrefix(t, "--- ") || strings.HasPrefix(t, "+++ ")):
+			continue
+		case strings.HasPrefix(t, "old mode "), strings.HasPrefix(t, "new mode "):
+			if !modeLost {
+				continue
+			}
+		case strings.HasPrefix(t, "new file mode"), strings.HasPrefix(t, "deleted file mode"), strings.HasPrefix(t, "index "):
+			if partial {
+				continue
+			}
+		case t == "--- /dev/null" && partial:
+			line = "--- a/" + f.Path + "\n"
+		case t == "+++ /dev/null" && partial:
+			line = "+++ b/" + f.Path + "\n"
+		}
+		b.WriteString(line)
+	}
+	return b.String()
 }
