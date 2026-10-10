@@ -13,7 +13,7 @@ import (
 )
 
 // Ruleset must be bumped for changes to steps, offset range, phases, regimes, evidence, hunts, deepening or backoffs; this is breaking.
-const Ruleset = 10
+const Ruleset = 11
 
 const EvidenceEpoch = 1
 
