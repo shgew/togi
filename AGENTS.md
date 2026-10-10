@@ -7,7 +7,8 @@ Go CLI that finds per-core Curve Optimizer offsets on Zen 5 desktop CPUs and kee
 - `README.md`: what togi does, what works today, and the common commands.
 - `GLOSSARY.md`: the vocabulary. Name code, events and docs with its terms.
 - `docs/how-togi-tunes.md`: read first to understand the tuning sequence, phase costs and ruleset history; the specs own the rules.
-- `REVIEW.md`: defect criteria, recurring lessons and the review record. Read it before reviewing a pull request.
+- `REVIEW.md`: defect criteria and recurring lessons. Read it before reviewing a pull request.
+- `docs/review-record.md`: the review record format. The review coordinator reads it before writing a record.
 - `.omp/`: reviewer rules, the `review-coordinator` agent and `/review-pr`, the omp command for reviewing pull requests in parallel and recording their gates.
 - `docs/spec/`: normative behavior (`tuner.md`, `workloads.md`, `journal.md`, `runtime.md`). Read the relevant spec before changing behavior, and change spec and code in the same pull request or in layers of one stack merged together.
 - `docs/issues.md`: labels, lifecycle, `Touches:`, claiming and the target-machine queue. Read it before filing, triaging or claiming an issue.

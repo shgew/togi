@@ -302,12 +302,17 @@ land number: _dev-shell
 # Run GitHub commands as robotogi
 [group('github')]
 bot +args: _dev-shell
+    exec just --justfile '{{ justfile() }}' as-bot gh "$@"
+
+# Run a command with one robotogi App token in GH_TOKEN (`just as-bot go run ./tools/reviews publish <snapshot directory>`)
+[group('github')]
+as-bot +cmd: _dev-shell
     #!/usr/bin/env bash
     set -euo pipefail
     token=$(gh-token generate --app-id 5162510 --key "${ROBOTOGI_KEY_FILE:?ROBOTOGI_KEY_FILE must name the robotogi private key file}" --token-only)
-    GH_TOKEN=$token exec gh "$@"
+    GH_TOKEN=$token exec "$@"
 
-# Print the review track record of merged pull requests: robotogi's review check, findings by priority and outcome, and time to the first record
+# Print the review track record of merged pull requests; subcommands snapshot, render and publish run a review's mechanical steps (docs/review-record.md)
 [group('github')]
-reviews: _dev-shell
-    go run ./tools/reviews
+reviews *args: _dev-shell
+    go run ./tools/reviews "$@"
