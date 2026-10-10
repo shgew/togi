@@ -378,11 +378,12 @@ func (s *State) Fold(e journal.Event) {
 		}
 	case *journal.TunerDecision:
 		var held *pendingFailure
+		var back map[int]int
 		if p.Phase == journal.PhaseChecking && p.Decision == journal.Backoff {
 			if p.ToOffset != p.FromOffset {
 				e, _ = s.releaseStrike(e, []int{p.Core})
-			} else {
-				held = s.laterHold(e, p)
+			} else if held = s.laterHold(e, p); held != nil {
+				back = s.holdBack(e, p)
 			}
 		}
 		if p.Decision == journal.Backoff {
@@ -413,7 +414,7 @@ func (s *State) Fold(e journal.Event) {
 			s.noteMove(e.Seq, c)
 			s.pruneStrikes()
 			if held != nil {
-				s.addStrike(held, e.Seq, []int{c.id})
+				s.addStrike(held, e.Seq, []int{c.id}, back)
 			}
 		}
 		s.foldPhase2Decision(e, p)
@@ -491,7 +492,7 @@ func (s *State) Fold(e journal.Event) {
 		s.endHunt(e, p)
 	case *journal.HuntSkipped:
 		if f := s.laterHuntHold(p); f != nil {
-			s.addStrike(f, e.Seq, s.huntCores(*f))
+			s.addStrike(f, e.Seq, s.huntCores(*f), s.huntBack(*f))
 		}
 		s.skipHunt(p)
 	case *journal.Combination:

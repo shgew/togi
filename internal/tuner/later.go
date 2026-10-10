@@ -10,10 +10,13 @@ import (
 // laterWindow is K: two failures against one core pair when they fall within this many cycle starts (ADR 0056).
 const laterWindow = 5
 
-// strike is a held first failure with the cores it counted against and the offsets they had when it happened.
+// strike is a held first failure with the cores it counted against and the offsets they had when it happened. back
+// holds the offset each core the hold steps back would show in the BIOS profile while the hold is valid: the ordinary
+// step-back's target for an attributed or multi-core R7 hold, one count shallower for an unattributed hold's candidates.
 type strike struct {
 	failure, seq, cycle int
 	cores, offsets      []int
+	back                map[int]int
 }
 
 // laterState is rebuilt from the journal. Holds are tuner.decision backoffs that move nothing, and hunt.skipped events,
@@ -26,20 +29,23 @@ type laterState struct {
 	moved        map[int]int
 }
 
-// BIOSProfile is the profile to enter in BIOS: the last confirmed profile with every later step-back applied.
+// BIOSProfile is the profile to enter in BIOS: the last confirmed profile with every later step-back applied, and every
+// valid hold's step-back shown at once.
 type BIOSProfile struct {
 	Offsets []int
 	// Confirmed is the sequence of the passed full cycle that confirmed the profile; 0 before phase 1 ends.
 	Confirmed int
-	// Unconfirmed lists, ascending, the cores stepped back or held since Confirmed.
+	// Unconfirmed lists, ascending, the cores showing an offset that is not the confirmed one: stepped back, or shown
+	// stepped back by a valid hold.
 	Unconfirmed []int
 	// Since is the sequence of the earliest event that left the profile unconfirmed; 0 when it is confirmed.
 	Since int
 }
 
 // BIOSProfile derives the profile to enter in BIOS from the folded events. A step-back replaces it at the decision
-// that records it; a held failure leaves the offsets and marks its cores unconfirmed. The next passed full cycle
-// confirms what the profile then is.
+// that records it. A held failure shows the step-back it would have made, until a second failure pairs, the core moves
+// for another reason (the shown offset then follows the core) or K cycles pass (it returns to the held offset). The
+// next passed full cycle confirms what the profile then is.
 func (s *State) BIOSProfile() BIOSProfile {
 	out := BIOSProfile{Offsets: s.offsets(), Confirmed: s.later.confirmedSeq}
 	confirmed := s.later.confirmed
@@ -58,10 +64,15 @@ func (s *State) BIOSProfile() BIOSProfile {
 		}
 	}
 	for _, k := range s.later.strikes {
-		if k.failure <= s.later.confirmedSeq || !s.strikeValid(k) {
+		if !s.strikeValid(k) {
 			continue
 		}
-		for _, id := range k.cores {
+		for id, to := range k.back {
+			i := s.index(id)
+			if i < 0 || to <= confirmed[i] {
+				continue
+			}
+			out.Offsets[i] = max(out.Offsets[i], to)
 			if seq, ok := since[id]; !ok || k.seq < seq {
 				since[id] = k.seq
 			}
@@ -119,8 +130,11 @@ func (s *State) laterFailure(seq int) *pendingFailure {
 	if s.phases.concluded == 0 {
 		return nil
 	}
+	if _, located := s.located[seq]; located {
+		return nil
+	}
 	f := s.failureBySeq(seq)
-	if f == nil || f.carried || f.failure.KnownFailure != 0 || f.seq <= s.phases.concluded {
+	if f == nil || f.carried || f.failure.KnownFailure != 0 || f.seq <= s.phases.concluded || f.failure.Offset != nil && *f.failure.Offset == 0 {
 		return nil
 	}
 	return f
@@ -237,8 +251,37 @@ func (s *State) laterHold(e journal.Event, p *journal.TunerDecision) *pendingFai
 	return f
 }
 
-func (s *State) addStrike(f *pendingFailure, seq int, cores []int) {
-	k := strike{failure: f.seq, seq: seq, cycle: f.cycle, cores: slices.Clone(cores)}
+// holdBack returns the offset a hold of core p.Core shows in the BIOS profile: the target of the ordinary decision the
+// hold replaced. The fold has not yet applied the hold, so the state is the one Next decided from, and
+// ordinaryDecision changes no decision state, only caches. It returns nil when that decision is not a step-back of the
+// same core answering the same failure.
+func (s *State) holdBack(e journal.Event, p *journal.TunerDecision) map[int]int {
+	a, ok := s.ordinaryDecision()
+	if !ok || len(a.Cause) == 0 || a.Cause[0] != e.Cause[0] {
+		return nil
+	}
+	d, ok := a.Payload.(*journal.TunerDecision)
+	if !ok || d.Core != p.Core || d.Decision != journal.Backoff || d.FromOffset != p.FromOffset || d.ToOffset <= d.FromOffset {
+		return nil
+	}
+	return map[int]int{p.Core: d.ToOffset}
+}
+
+// huntBack returns the offsets a held hunt.skipped of f shows: every candidate the skipped hunt would have searched,
+// one count shallower. Cores at 0 stay.
+func (s *State) huntBack(f pendingFailure) map[int]int {
+	_, _, candidates := s.huntCandidates(f)
+	back := map[int]int{}
+	for _, id := range candidates {
+		if c := s.core(id); c != nil && c.offset < 0 {
+			back[id] = c.offset + 1
+		}
+	}
+	return back
+}
+
+func (s *State) addStrike(f *pendingFailure, seq int, cores []int, back map[int]int) {
+	k := strike{failure: f.seq, seq: seq, cycle: f.cycle, cores: slices.Clone(cores), back: back}
 	for _, id := range cores {
 		k.offsets = append(k.offsets, s.core(id).offset)
 	}

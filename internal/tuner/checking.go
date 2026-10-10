@@ -300,6 +300,7 @@ func (s *State) attributedDecision(c *core, f *journal.Failure, seq int) (Action
 	cause := seq
 	if s.hunt != nil && s.hunt.end != nil && s.hunt.end.Result == "direct" {
 		cause = s.hunt.endSeq
+		reason += s.hunt.pairedClause()
 	}
 	return Action{Kind: Decide, Payload: &journal.TunerDecision{Core: c.id, Phase: phase, Decision: journal.Backoff, FromOffset: c.offset, ToOffset: to, Pass: pass, FailurePoint: new(fail), Reason: reason}, Cause: []int{cause}}, true
 }

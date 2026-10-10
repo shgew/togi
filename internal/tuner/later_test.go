@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/shgew/togi/internal/config"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
 )
@@ -136,8 +137,8 @@ func TestLaterFirstFailureHoldsAndSecondStepsBackNamingBoth(t *testing.T) {
 	if len(h.s.obligations) != 0 || h.s.core(0).offset != -10 || *h.s.core(0).fail != -11 {
 		t.Fatalf("a hold moved something: obligations %v, core %+v", h.s.obligations, h.s.core(0))
 	}
-	if bios := h.s.BIOSProfile(); !slices.Equal(bios.Offsets, []int{-10, -12}) || !slices.Equal(bios.Unconfirmed, []int{0}) || bios.Since != h.events[len(h.events)-1].Seq {
-		t.Fatalf("held BIOS profile %+v", bios)
+	if bios := h.s.BIOSProfile(); !slices.Equal(bios.Offsets, []int{-9, -12}) || !slices.Equal(bios.Unconfirmed, []int{0}) || bios.Since != h.events[len(h.events)-1].Seq {
+		t.Fatalf("a held failure shows its stepped-back offset unconfirmed: %+v", bios)
 	}
 	if next := h.next(); next.Kind != RunTrial || next.Trial.Rerun {
 		t.Fatalf("a held failure must be retested in its cycle, not skipped as a known failure: %+v", next)
@@ -176,15 +177,15 @@ func TestLaterFirstFailureHoldsAndSecondStepsBackNamingBoth(t *testing.T) {
 	assertLaterReplay(h)
 }
 
-func TestLaterHoldPassesBeforeSecondFailureUnconfirmedUntilNextCycle(t *testing.T) {
+func TestLaterHoldKeepsShowingItsStepBackAfterAPassedCycle(t *testing.T) {
 	h := laterHarness(t, -10, -12)
 	startCycle(h, 4)
 	failCore(h, 0)
 	h.decide(h.next())
 	end := endCycle(h, 4)
 	bios := h.s.BIOSProfile()
-	if len(bios.Unconfirmed) != 0 || bios.Confirmed != end.Seq {
-		t.Fatalf("a passed cycle confirms the held profile: %+v", bios)
+	if bios.Confirmed != end.Seq || !slices.Equal(bios.Offsets, []int{-9, -12}) || !slices.Equal(bios.Unconfirmed, []int{0}) {
+		t.Fatalf("a valid hold keeps showing its step-back after a passed cycle: %+v", bios)
 	}
 	if len(h.s.later.strikes) != 1 {
 		t.Fatalf("the strike must outlive passed cycles inside its window: %+v", h.s.later.strikes)
@@ -467,5 +468,186 @@ func TestLaterOffsetsNeverDeepenAfterConclusion(t *testing.T) {
 		endCycle(h, h.s.checking.cycle)
 		startCycle(h, h.s.checking.cycle+1)
 	}
+	assertLaterReplay(h)
+}
+
+// assertShown pins the BIOS profile of the live, incrementally folded state and of a fresh fold of the same journal.
+func assertShown(t *testing.T, h *harness, want BIOSProfile) {
+	t.Helper()
+	if diff := cmp.Diff(want, h.s.BIOSProfile()); diff != "" {
+		t.Fatalf("live BIOS profile (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff(want, replayState(h.events).BIOSProfile()); diff != "" {
+		t.Fatalf("replayed BIOS profile (-want +got):\n%s", diff)
+	}
+}
+
+// holdCase holds the first failure of a later-failure test and names the profile it shows.
+type holdCase struct {
+	name        string
+	offsets     []int
+	hold        func(h *harness) journal.Event
+	shown       []int
+	unconfirmed []int
+}
+
+func holdCases() []holdCase {
+	return []holdCase{
+		{"attributed", []int{-10, -12}, func(h *harness) journal.Event {
+			failCore(h, 0)
+			return h.decide(h.next())
+		}, []int{-9, -12}, []int{0}},
+		{"unattributed steps back its nonzero candidates and leaves cores at 0", []int{-10, 0, -12}, func(h *harness) journal.Event {
+			idleFailure(h)
+			a := h.next()
+			if _, ok := a.Payload.(*journal.HuntSkipped); !ok {
+				h.t.Fatalf("a first idle failure is not held: %+v", a)
+			}
+			return h.decide(a)
+		}, []int{-9, 0, -11}, []int{0, 2}},
+	}
+}
+
+func TestBIOSProfileShowsAHeldFailureSteppedBackAtOnce(t *testing.T) {
+	for _, tt := range holdCases() {
+		t.Run(tt.name, func(t *testing.T) {
+			h := laterHarness(t, tt.offsets...)
+			confirmed := h.s.BIOSProfile().Confirmed
+			startCycle(h, 4)
+			hold := tt.hold(h)
+			assertShown(t, h, BIOSProfile{Offsets: tt.shown, Confirmed: confirmed, Unconfirmed: tt.unconfirmed, Since: hold.Seq})
+			if diff := cmp.Diff(tt.offsets, h.s.offsets()); diff != "" {
+				t.Fatalf("a hold moved a core (-want +got):\n%s", diff)
+			}
+			assertLaterReplay(h)
+		})
+	}
+}
+
+func TestBIOSProfileShowsAMultiCountR7HoldAtTheVoltageTarget(t *testing.T) {
+	h := r7Harness(t)
+	for range config.Default().Evidence.Trials() {
+		r7Fact(h, true, []int{0, 1}, h.s.Profile(), map[int]float64{0: 1.1539, 1: 1.08}, []int{0}, nil, nil, nil)
+	}
+	passCycles(h, 1, 3)
+	confirmed := h.s.BIOSProfile().Confirmed
+	startCycle(h, 4)
+	failLiveR7(h, journal.TrialEnd{Core: new(0), DurationS: 41, TopRequesters: []int{0}, VoltageRequestsV: map[int]float64{0: 1.09447, 1: 1.08}})
+	d, a := nextDecision(h)
+	if !isHold(d) || d.Core != 0 {
+		t.Fatalf("R7 hold %+v", d)
+	}
+	hold := h.decide(a)
+	assertShown(t, h, BIOSProfile{Offsets: []int{-13, -30, -30, -30}, Confirmed: confirmed, Unconfirmed: []int{0}, Since: hold.Seq})
+	assertLaterReplay(h)
+}
+
+func TestBIOSProfileFollowsTheActualStepBackAtASecondFailure(t *testing.T) {
+	for _, tt := range []struct {
+		name              string
+		hold              func(h *harness)
+		second            func(h *harness) journal.Event
+		core              int
+		before            []int
+		beforeUnconfirmed []int
+		after             []int
+	}{
+		{"same core", func(h *harness) { failCore(h, 0); h.decide(h.next()) }, func(h *harness) journal.Event { return failCore(h, 0) }, 0, []int{-9, -12}, []int{0}, []int{-9, -12}},
+		{"attributed failure pairs with a held unattributed one", func(h *harness) { idleFailure(h); h.decide(h.next()) }, func(h *harness) journal.Event { return failCore(h, 1) }, 1, []int{-9, -11}, []int{0, 1}, []int{-10, -11}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			h := laterHarness(t, -10, -12)
+			confirmed := h.s.BIOSProfile().Confirmed
+			startCycle(h, 4)
+			tt.hold(h)
+			hold := h.events[len(h.events)-1]
+			tt.second(h)
+			assertShown(t, h, BIOSProfile{Offsets: tt.before, Confirmed: confirmed, Unconfirmed: tt.beforeUnconfirmed, Since: hold.Seq})
+			d, a := nextDecision(h)
+			if isHold(d) || d.Core != tt.core || d.ToOffset <= d.FromOffset {
+				t.Fatalf("second failure within K must step back: %+v", d)
+			}
+			step := h.decide(a)
+			assertShown(t, h, BIOSProfile{Offsets: tt.after, Confirmed: confirmed, Unconfirmed: []int{tt.core}, Since: step.Seq})
+			assertLaterReplay(h)
+		})
+	}
+}
+
+func TestBIOSProfileReturnsToTheHeldOffsetWhenTheHoldExpires(t *testing.T) {
+	for _, tt := range holdCases() {
+		t.Run(tt.name, func(t *testing.T) {
+			h := laterHarness(t, tt.offsets...)
+			startCycle(h, 4)
+			hold := tt.hold(h)
+			end := endCycle(h, 4)
+			last := passCycles(h, 5, 4+laterWindow-1)
+			if last.Seq <= end.Seq {
+				t.Fatal("no cycle passed")
+			}
+			assertShown(t, h, BIOSProfile{Offsets: tt.shown, Confirmed: last.Seq, Unconfirmed: tt.unconfirmed, Since: hold.Seq})
+			startCycle(h, 4+laterWindow)
+			assertShown(t, h, BIOSProfile{Offsets: tt.offsets, Confirmed: last.Seq})
+			assertLaterReplay(h)
+		})
+	}
+}
+
+// A located hunt's outcome is a hunt-phase answer: it is never held, even when the gate is open.
+func TestLaterLocatedGroupFailureNamingALoadedCoreIsNotHeld(t *testing.T) {
+	h := r7Harness(t)
+	end := journal.TrialEnd{DurationS: 41, TopRequesters: []int{0}}
+	backOffEscalatingR7(h, end)
+	passCycles(h, 1, 3)
+	startCycle(h, 4)
+	if !h.s.laterGate() {
+		t.Fatal("later-failure gate closed")
+	}
+	failLiveR7(h, end)
+	a := runLocated(h, func(p []int) *int {
+		if p[2] == 0 {
+			return nil
+		}
+		return new(0)
+	})
+	if he, ok := a.Payload.(*journal.HuntEnd); !ok || he.Result != "loaded" || !slices.Equal(he.Cores, []int{0, 1}) {
+		t.Fatalf("hunt end %+v", a)
+	}
+	h.decide(a)
+	d, a := nextDecision(h)
+	if isHold(d) || d.Core != 0 || d.ToOffset != -29 || d.FailurePoint == nil || *d.FailurePoint != -30 {
+		t.Fatalf("the group failure's ordinary backoff expected: %+v", d)
+	}
+	h.decide(a)
+	if _, pending := h.s.Drain(); pending {
+		t.Fatal("the failure moved twice")
+	}
+	if len(h.s.later.strikes) != 0 {
+		t.Fatalf("a located outcome created a strike: %+v", h.s.later.strikes)
+	}
+	assertLaterReplay(h)
+}
+
+func TestLaterPairedHuntEndingDirectNamesBothFailuresInTheBackoff(t *testing.T) {
+	h := laterHarness(t, -10, -12)
+	startCycle(h, 4)
+	first := idleFailure(h)
+	h.decide(h.next())
+	second := idleFailure(h)
+	start := driveToHuntStart(h)
+	started := h.decide(start)
+	failure := h.add(&journal.Failure{Attribution: journal.Attributed, Core: new(0), Offset: new(-10), Condition: machine.Parked, Regime: machine.R1, Profile: []int{-10, 0}, Signal: machine.ComputationError})
+	a := h.next()
+	end, ok := a.Payload.(*journal.HuntEnd)
+	if !ok || end.Result != "direct" {
+		t.Fatalf("hunt end %+v", a)
+	}
+	h.decide(a)
+	d, a := nextDecision(h)
+	want := fmt.Sprintf("after failures #%d and #%d", first.Seq, second.Seq)
+	if d.Phase != journal.PhaseHunt || d.Core != 0 || !strings.Contains(d.Reason, want) {
+		t.Fatalf("direct backoff %+v lacks %q (failure #%d, hunt #%d)", d, want, failure.Seq, started.Seq)
+	}
+	h.decide(a)
 	assertLaterReplay(h)
 }

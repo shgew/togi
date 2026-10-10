@@ -1243,6 +1243,14 @@ func TestR7PassedZeroRerunLocatesCitingTheRerun(t *testing.T) {
 // failure fails at the profile the harness had. The failure is located instead of backed off.
 func failEscalatedR7(h *harness, end journal.TrialEnd) (journal.Event, journal.Event) {
 	h.t.Helper()
+	backOffEscalatingR7(h, end)
+	return failLiveR7(h, end)
+}
+
+// backOffEscalatingR7 records the escalateAfter unattributed failures of CCD 0's load, each backed off without a passing
+// trial between, and restores the offsets and profile those backoffs moved.
+func backOffEscalatingR7(h *harness, end journal.TrialEnd) {
+	h.t.Helper()
 	offsets, profile := h.s.offsets(), slices.Clone(h.s.checking.profile)
 	prior := end
 	prior.Core = nil
@@ -1260,5 +1268,4 @@ func failEscalatedR7(h *harness, end journal.TrialEnd) (journal.Event, journal.E
 		}
 		h.add(&journal.ProfileChange{To: profile})
 	}
-	return failLiveR7(h, end)
 }

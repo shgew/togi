@@ -145,8 +145,27 @@ func (s *State) huntStartNext() Action {
 	if skip != nil {
 		return *skip
 	}
-	parked := make([]int, len(f.profile))
-	parkedSeq := 0
+	parked, parkedSeq, candidates := s.huntCandidates(f)
+	p := &journal.HuntStart{Hunt: s.nextHunt + 1, Failure: f.seq, Trial: f.failure.Trial, Regime: f.class.regime, Workload: f.class.workload, Cores: cores, DurationS: f.class.duration, Failing: slices.Clone(f.profile), Parked: parked, ParkedSeq: parkedSeq, Candidates: candidates, Trials: s.n, TrialS: s.durations.ShortTrialS, Miss: s.evidence.Miss, Rate: s.evidence.Rate, Ranking: slices.Clone(s.ranking)}
+	p.Reason = f.failure.Reason
+	cause := []int{f.seq}
+	if parkedSeq != 0 {
+		cause = append(cause, parkedSeq)
+	}
+	if pair != nil {
+		cause = append(cause, pair.failure)
+		if p.Reason != "" {
+			p.Reason += "; "
+		}
+		p.Reason += s.pairClause(pair, s.laterFailure(f.seq))
+	}
+	return Action{Kind: Decide, Payload: p, Cause: cause}
+}
+
+// huntCandidates returns the profile a hunt of f parks the cores at, the latest passed full cycle it comes from (0 for
+// all cores at 0), and the candidates: the cores f's profile has deeper than the parked profile, ascending by ID.
+func (s *State) huntCandidates(f pendingFailure) (parked []int, parkedSeq int, candidates []int) {
+	parked = make([]int, len(f.profile))
 	for _, q := range slices.Backward(s.passedFullCycles) {
 		if len(q.profile) != len(f.profile) {
 			continue
@@ -162,26 +181,12 @@ func (s *State) huntStartNext() Action {
 		parkedSeq = q.seq
 		break
 	}
-	var candidates []int
 	for i, c := range s.byID() {
 		if f.profile[i] < parked[i] {
 			candidates = append(candidates, c.id)
 		}
 	}
-	p := &journal.HuntStart{Hunt: s.nextHunt + 1, Failure: f.seq, Trial: f.failure.Trial, Regime: f.class.regime, Workload: f.class.workload, Cores: cores, DurationS: f.class.duration, Failing: slices.Clone(f.profile), Parked: parked, ParkedSeq: parkedSeq, Candidates: candidates, Trials: s.n, TrialS: s.durations.ShortTrialS, Miss: s.evidence.Miss, Rate: s.evidence.Rate, Ranking: slices.Clone(s.ranking)}
-	p.Reason = f.failure.Reason
-	cause := []int{f.seq}
-	if parkedSeq != 0 {
-		cause = append(cause, parkedSeq)
-	}
-	if pair != nil {
-		cause = append(cause, pair.failure)
-		if p.Reason != "" {
-			p.Reason += "; "
-		}
-		p.Reason += s.pairClause(pair, s.laterFailure(f.seq))
-	}
-	return Action{Kind: Decide, Payload: p, Cause: cause}
+	return parked, parkedSeq, candidates
 }
 
 func (h *hunt) split(set []int, g int) [][]int {

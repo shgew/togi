@@ -236,7 +236,7 @@ Only live passes since the cycle start fulfill cycle requirements; carried passe
 
 Outside multi-core R7, together and parked attribution uses the backend instance's reported core first, then exactly one core named by core-local MCEs, then the single nonzero core in the applied profile. An attributed failure records the failure point at the applied offset and backs off that core to at least one count shallower, including when it was held at a parked offset. A failure at 0 is a `failure_at_zero` dead end once the failing trial's all-zero rerun failed too ([Dead ends](#dead-ends)); if that rerun passes, the failure no longer names that core: a together failure is hunted as unattributed, and a parked failure is the group outcome. If the core was already shallower, its offset need not move. An unattributed together or idle failure queues a hunt of the failing profile and trial class instead of backing off the loaded set. An unattributed parked failure is the group outcome. Multi-core R7 instead follows R7 request order, attribution and voltage-targeted backoff above. Inconclusive trials retry the same class.
 
-After phase 2 concludes, the first failure against a core is held instead of answered by the rules in this paragraph: it records no failure point, backs nothing off and queues no rerun, and a hunt for an unattributed one is skipped ([Later failures](#later-failures)).
+After phase 2 concludes, a failure may be held instead of answered by the rules in this paragraph; [Later failures](#later-failures) owns which ones and what a hold records.
 
 A together checking requirement outside multi-core R7 with a valid known failure goes directly to that failure's attribution or hunt rather than starting the workload. Attributed skips retain the known failing offset for the failure point and back off beyond it; unattributed skips hunt the known full failing profile and class. The decision changes pending state exactly as a live failure would, so a skipped requirement cannot repeatedly skip without making progress. The same pre-scheduling rule applies to reruns and phase-2 round checks outside multi-core R7; a failed round check closes its round before the backoff or hunt ([Phase 2](#phase-2)). Multi-core R7 never skips a trial for a known failure.
 
@@ -272,7 +272,7 @@ A located hunt hunts a live unattributed multi-core R7 failure, including one na
 
 Every unattributed together failure outside multi-core R7 is hunted unless its failing profile already reaches a recorded failure point or combination; then `hunt.skipped` explains why. An unattributed failure with every core at CO 0 has no candidate to hunt: it is the `failure_at_zero` dead end, naming no core. The hunt parks other cores at the newest passed full-cycle profile raised to the failing profile: each core takes the shallower of its passed full-cycle and failing offsets, so passes on the passed full-cycle profile cover parked offsets. A passed full-cycle profile that is nowhere shallower than the failing profile cannot supply parked offsets; the hunt falls back to older passed full-cycle profiles and finally all-zero. Candidates are precisely cores deeper at the failure than at their parked offsets.
 
-After phase 2 concludes, a first unattributed failure is skipped with a `hunt.skipped` that says it is held; a second failure loading one of the same cores within the window starts the hunt, citing both failures ([Later failures](#later-failures)).
+After phase 2 concludes, a failure may be skipped as held instead of hunted, and a second failure loading one of the same cores within the window starts the hunt, citing both failures; [Later failures](#later-failures) owns the rule, its gate and its exceptions.
 
 For each group, candidates in the selected subset take their failing offsets and every other core takes its parked offset. Delta debugging tests parts, then complements as granularity increases, retaining a failing subset. By default it starts at `short_trial_s`; only when the failed trial's duration is longer than `short_trial_s`, if all initial parts and complements pass, it tests the full failing profile, and if that too passes `n` trials, repeats at the failed trial's duration. Configuration still permits `search_trial_s` or `checking_trial_s` below `short_trial_s`; a shorter or equal failed duration does not trigger this full-profile check or duration repeat. At most one duration escalation occurs.
 
@@ -410,7 +410,7 @@ After phase 2 concludes, a core steps back only after two failures count against
 - a multi-core R7 failure: the core each voltage-targeted decision would move, one per affected CCD;
 - an unattributed failure: the loaded cores of its failed trial, every core for an idle failure.
 
-Any load, class or regime pairs with any other. A known-failure skip, a carried failure, a failure at CO 0, a dead end and a hunt-phase outcome are never held. A crash is a failure like any other.
+Any load, class or regime pairs with any other. A known-failure skip, a carried failure, a failure at CO 0, a dead end, a hunt-phase outcome and a located hunt's outcome, including the group failure it names, are never held. A crash is a failure like any other.
 
 **Window.** A failure's cycle is the number of the latest `checking.cycle` start at or before it. A failure pairs with an earlier held failure when their strike sets share a core, their cycles differ by less than K, and every core of the held failure's strike set is still at the offset the hold found it at. Passed cycles in between do not reset a hold; moving a held core for any other reason or the window passing drops it. A pair applies whether or not the gate is still open.
 
@@ -418,22 +418,24 @@ Any load, class or regime pairs with any other. A known-failure skip, a carried 
 
 - For an attributed or multi-core R7 failure, the decision is a `tuner.decision` with phase `checking`, decision `backoff`, equal `from_offset` and `to_offset`, and the core's `pass` and `failure_point` unchanged. Its cause is the failure first, then the causes the ordinary step-back would have had, and its reason starts `holds` and names the failure, its cycle, the cycle by which a second failure steps the core back and K.
 - For an unattributed failure, the decision is a `hunt.skipped` citing the failure whose reason starts `held` and names the loaded cores, the same deadline and K.
-- A hold records no failure point, queues no rerun and does not count toward [escalation](#escalation-to-a-located-hunt); the failure stays valid evidence.
+- A hold records no failure point, queues no rerun and does not count toward [escalation](#escalation-to-a-located-hunt); the failure stays valid evidence. It moves no core, but the [BIOS profile](#bios-profile) shows the step-back the tuner has not yet made.
 
 A failure invalidates every earlier pass of its class at a profile at least as deep, so the failed class must pass again at the same profile before the open cycle can pass. A held failure is not a known failure for the pre-scheduling rule ([Checking](#checking)): the requirement runs, and a second failure there pairs with the first.
 
-**Pair.** The second failure is answered by the ordinary rule: the step-back, or for an unattributed failure the hunt. The decision cites the second failure first and the held failure last in `cause`, and its reason ends `second failure within 5 cycles: #A (cycle a, held) and #B (cycle b)`, with K written as its number. Only the second failure's class gets reruns, and each hold pairs once. Every `tuner.decision` and `combination` that ends a paired hunt says `after failures #A and #B`.
+**Pair.** The second failure is answered by the ordinary rule: the step-back, or for an unattributed failure the hunt. The decision cites the second failure first and the held failure last in `cause`, and its reason ends `second failure within 5 cycles: #A (cycle a, held) and #B (cycle b)`, with K written as its number. Only the second failure's class gets reruns, and each hold pairs once. Every `tuner.decision` and `combination` that ends a paired hunt says `after failures #A and #B`, including the backoff that follows a hunt ending `direct`.
 
 ### BIOS profile
 
 The BIOS profile is what the operator enters in BIOS ([ADR 0004](../adr/0004-find-only.md)). It is derived from the journal, with no event of its own:
 
 - The last confirmed profile is the checking profile at the latest passed full cycle ending at or after phase 1's end.
-- Each core shows the shallower of its confirmed offset and its current offset, so a core deepened by a phase-2 round shows its confirmed offset until a passed cycle confirms it, and a step-back replaces the shown offset at the decision that records it, before its `profile.change`.
-- A core is unconfirmed when it shows an offset other than its confirmed one, or when a hold still valid names it. The profile is unconfirmed while any core is, since the earliest event that marked a core, until the next passed full cycle ends: that cycle confirms what the profile then is.
+- Each core shows the shallowest of its confirmed offset, its current offset and the targets of the valid holds that name it. A core deepened by a phase-2 round shows its confirmed offset until a passed cycle confirms it, and a step-back replaces the shown offset at the decision that records it, before its `profile.change`.
+- A hold's target is the offset the ordinary step-back would have moved the core to: one count shallower for an attributed failure, the voltage-targeted target, possibly several counts shallower, for a multi-core R7 failure. The held `hunt.skipped` of an unattributed failure shows one count shallower for every core the skipped hunt would have searched, its candidates (the failure's nonzero members, as [Hunt](#hunt) computes them); cores at 0 stay. The hunt stays skipped and the core stays where it is, so the tuner itself still does not step back on a single failure.
+- A hold's target stays shown while the hold is valid, through passed cycles. A second failure within K ends it by the pair's ordinary step-back (or hunt), and the shown profile then follows the actual offsets. Moving a held core for any other reason also drops the hold, and the shown offset follows the core. When K cycle starts pass with no second failure the hold expires and the core shows its held offset again, which has passed those cycles.
+- A core is unconfirmed when it shows an offset other than its confirmed one, which includes a core shown stepped back by a hold. The profile is unconfirmed while any core is, since the earliest event that marked a core, until the next passed full cycle ends: that cycle confirms what the profile then is, except for the cores a valid hold still shows stepped back. An expired hold's core shows its held offset, which equals the confirmed profile, so it is confirmed again.
 - Before phase 1 ends there is no confirmed profile.
 
-A held failure keeps the offsets. A step-back, from a second failure or from a failure while the gate is closed, replaces the shown profile at once.
+The shown profile never carries an unresolved failure (Q30): a held failure is shown stepped back at once, and a step-back from a second failure, or from a failure while the gate is closed, replaces it at once.
 
 ## Defect list
 
