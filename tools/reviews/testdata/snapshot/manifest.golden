@@ -1,0 +1,76 @@
+{
+  "version": 1,
+  "repository": "shgew/togi",
+  "pull_request": 700,
+  "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "base_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "previous": null,
+  "carry_forward": false,
+  "files": [
+    {
+      "path": "cmd/togi/main.go",
+      "status": "modified",
+      "added": 3,
+      "removed": 1,
+      "hunk_file": "files/001.diff"
+    },
+    {
+      "path": "go.sum",
+      "status": "modified",
+      "added": 1,
+      "removed": 0,
+      "exclusion": "generated"
+    },
+    {
+      "path": "internal/old.go",
+      "status": "deleted",
+      "added": 0,
+      "removed": 2,
+      "hunk_file": "files/003.diff"
+    },
+    {
+      "path": "docs/two.md",
+      "old_path": "docs/one.md",
+      "status": "renamed",
+      "added": 1,
+      "removed": 1,
+      "hunk_file": "files/004.diff"
+    },
+    {
+      "path": "logo.png",
+      "status": "added",
+      "added": 0,
+      "removed": 0,
+      "binary": true,
+      "exclusion": "binary"
+    },
+    {
+      "path": "pkg/testdata/in.txt",
+      "status": "added",
+      "added": 1,
+      "removed": 0,
+      "exclusion": "test data (`**/testdata/**`)"
+    },
+    {
+      "path": "pkg/gen.go",
+      "status": "added",
+      "added": 2,
+      "removed": 0,
+      "exclusion": "generated"
+    },
+    {
+      "path": "pkg/empty",
+      "status": "added",
+      "added": 0,
+      "removed": 0,
+      "hunk_file": "files/008.diff"
+    }
+  ],
+  "included_files": 4,
+  "included_lines": 8,
+  "reviewers": 1,
+  "small": false,
+  "pr_files": 8,
+  "pr_lines": 12,
+  "coverage": null
+}

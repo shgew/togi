@@ -1,0 +1,16 @@
+snapshot <dir>
+pull request #700 in shgew/togi
+head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+base bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+files: 8, included 4, excluded 4
+  files/001.diff cmd/togi/main.go +3 -1
+  excluded go.sum +1 -0: generated
+  files/003.diff internal/old.go +0 -2
+  files/004.diff docs/two.md +1 -1
+  excluded logo.png +0 -0: binary
+  excluded pkg/testdata/in.txt +1 -0: test data (`**/testdata/**`)
+  excluded pkg/gen.go +2 -0: generated
+  files/008.diff pkg/empty +0 -0
+L 8, F 4: 1 reviewers
+small pull request: false (whole diff 8 files, 12 lines)
+uncovered: not recorded yet; run `just cover <base>` and pass it to `snapshot --cover`

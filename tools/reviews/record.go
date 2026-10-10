@@ -20,8 +20,13 @@ var (
 
 // record is the part of a review record's hidden JSON block this report reads; versions 1, 2 and 3 share it (docs/review-record.md).
 type record struct {
-	Version  int       `json:"version"`
+	Version int `json:"version"`
+	// HeadSHA is in every version; BaseSHA only from version 2.
+	HeadSHA  string    `json:"head_sha"`
+	BaseSHA  string    `json:"base_sha"`
 	Findings []finding `json:"findings"`
+	// Verdict is in every version 3 record.
+	Verdict string `json:"verdict"`
 }
 
 type finding struct {

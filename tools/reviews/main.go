@@ -1,9 +1,14 @@
-// Command reviews prints the recorded agent review's track record over the current repository's merged pull requests: robotogi's review check on each head, findings by priority and outcome from the review records, and the time from opening to the first record.
+// Command reviews reports on the recorded agent review and runs a review's mechanical steps.
+//
+// With no arguments, or `report`, it prints the track record over the current repository's merged pull requests: robotogi's review check on each head, findings by priority and outcome from the review records, and the time from opening to the first record.
+//
+// `snapshot` freezes a pull request's head, base and diff into a directory of hunk files and a manifest; `render` writes the review record from that manifest and the coordinator's findings; `publish` posts the record and the `review` check as robotogi. docs/review-record.md describes them.
 package main
 
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -38,21 +43,47 @@ const pullsQuery = `query($owner: String!, $name: String!, $endCursor: String) {
 // ghFunc runs gh with the arguments and returns its standard output.
 type ghFunc func(args ...string) ([]byte, error)
 
-func runGH(args ...string) ([]byte, error) {
-	cmd := exec.Command("gh", args...)
+func runCommand(name string, args ...string) ([]byte, error) {
+	cmd := exec.Command(name, args...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("gh %s: %w: %s", args[0], err, strings.TrimSpace(stderr.String()))
+		return nil, fmt.Errorf("%s %s: %w: %s", name, args[0], err, strings.TrimSpace(stderr.String()))
 	}
 	return stdout.Bytes(), nil
 }
 
+func runGH(args ...string) ([]byte, error) { return runCommand("gh", args...) }
+
+func runGit(args ...string) ([]byte, error) { return runCommand("git", args...) }
+
 func main() {
-	if err := run(os.Stdout, runGH); err != nil {
+	t := tools{gh: runGH, git: runGit, getenv: os.Getenv, tmp: os.TempDir(), stdin: os.Stdin, stdout: os.Stdout, stderr: os.Stderr}
+	if err := dispatch(t, os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, "reviews:", err)
 		os.Exit(1)
 	}
+}
+
+// dispatch runs the subcommand named first; no subcommand reports.
+func dispatch(t tools, args []string) error {
+	if len(args) == 0 {
+		return run(t.stdout, t.gh)
+	}
+	switch args[0] {
+	case "report":
+		if len(args) > 1 {
+			return errors.New("usage: reviews [report]")
+		}
+		return run(t.stdout, t.gh)
+	case "snapshot":
+		return runSnapshot(t, args[1:])
+	case "render":
+		return runRender(t, args[1:])
+	case "publish":
+		return runPublish(t, args[1:])
+	}
+	return fmt.Errorf("unknown subcommand %q: want report, snapshot, render or publish", args[0])
 }
 
 func run(w io.Writer, gh ghFunc) error {
