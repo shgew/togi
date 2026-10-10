@@ -456,7 +456,7 @@ func TestSnapshotRemovedPatchInheritedFromNewBase(t *testing.T) {
 		t.Errorf("delta.diff = %q, want empty", got)
 	}
 	for _, target := range []string{baseSHA, headSHA} {
-		want := "git diff --no-color --no-ext-diff -U0 aaa1111 " + target + " -- :(literal)d.go"
+		want := "git diff --no-color --no-ext-diff --no-renames -U0 aaa1111 " + target + " -- :(literal)d.go"
 		if !slices.Contains(git.joined(), want) {
 			t.Errorf("git calls %q lack the effect trace %q", git.joined(), want)
 		}

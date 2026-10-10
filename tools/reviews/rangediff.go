@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"slices"
@@ -90,6 +91,14 @@ func classifyRange(git gitFunc, oldBase, oldHead, newBase, newHead string) (delt
 		case '<':
 			// The patch left the range, but its effects may live on: a commit moved into the new base is inherited, not removed. The delta holds the reversal of only what neither the new base nor the new head keeps.
 			s.Status = "removed"
+			// A commit the new base contains, itself or rewritten, is inherited whatever lower commits did to its lines since.
+			inherited, err := inheritedBy(git, e.Old, newBase)
+			if err != nil {
+				return deltaResult{}, err
+			}
+			if inherited {
+				break
+			}
 			_, files, err := patch(e.Old, e.Old+"^")
 			if err != nil {
 				return deltaResult{}, err
@@ -137,16 +146,18 @@ func classifyRange(git gitFunc, oldBase, oldHead, newBase, newHead string) (delt
 func goneEffects(git gitFunc, oldPatch, newBase, newHead string, files []fileDiff) ([]fileDiff, error) {
 	var kept []fileDiff
 	for _, f := range files {
-		name := f.Path
-		if f.OldPath != "" {
-			name = f.OldPath // the reversal's source is the file as the patch left it
+		name := sourceName(f)
+		specs := []string{":(literal)" + name}
+		if f.Path != name {
+			specs = append(specs, ":(literal)"+f.Path) // a rename or copy: the file's other name tells whether it is back
 		}
 		var base, head []fileDiff
 		for _, side := range []struct {
 			target string
 			since  *[]fileDiff
 		}{{newBase, &base}, {newHead, &head}} {
-			out, err := git("diff", "--no-color", "--no-ext-diff", "-U0", oldPatch, side.target, "--", ":(literal)"+name)
+			args := append([]string{"diff", "--no-color", "--no-ext-diff", "--no-renames", "-U0", oldPatch, side.target, "--"}, specs...)
+			out, err := git(args...)
 			if err != nil {
 				return nil, fmt.Errorf("diff %s %s -- %s: %w", oldPatch, side.target, name, err)
 			}
@@ -161,14 +172,14 @@ func goneEffects(git gitFunc, oldPatch, newBase, newHead string, files []fileDif
 	return kept, nil
 }
 
-// lostEffects narrows f, the reversal of a removed patch's changes to one file, to the changes that neither the new base nor the new head keeps (base and head are the changes from the patch to each). Each changed line is traced on its own, so adjacent lines of one hunk that a lower layer carries stay out of the reversal, which is rendered again as coherent hunks; a mode change that is kept leaves the header too. It reports false when nothing is lost. Anything it cannot tell apart counts as lost, so an effect is never dropped from the review wrongly.
+// lostEffects narrows f, the reversal of a removed patch's changes to one file, to the changes that neither the new base nor the new head keeps (base and head are the changes from the patch to each). Each changed line is traced on its own, so adjacent lines of one hunk that a lower layer carries stay out of the reversal, which is rendered again as coherent hunks. The file operation (creation, deletion, rename, copy) and the mode are traced on their own too: one a lower layer carries leaves the header, and the text then applies to the file as it stands now. It reports false when nothing is lost. Anything it cannot tell apart counts as lost, so an effect is never dropped from the review wrongly.
 func lostEffects(f fileDiff, base, head []fileDiff) (fileDiff, bool) {
 	f.Changed = nil
-	if f.Binary || len(f.Hunks) == 0 {
-		return f, effectLost(f, base) && effectLost(f, head)
-	}
+	name := sourceName(f)
+	opLost := f.Status != "modified" && operationLost(f, base) && operationLost(f, head)
+	modeLost := hasModeChange(f) && changesMode(base) && changesMode(head)
 	lost := func(sign byte, old int, text string) bool {
-		return touches(sign, old, text, base) && touches(sign, old, text, head)
+		return touches(sign, old, text, name, base) && touches(sign, old, text, name, head)
 	}
 	var hunks []hunk
 	var body strings.Builder
@@ -184,12 +195,24 @@ func lostEffects(f fileDiff, base, head []fileDiff) (fileDiff, bool) {
 		adds, dels = adds+a, dels+d
 		offset += a - d
 	}
-	modeLost := f.Mode != "" && changesMode(base) && changesMode(head)
-	if len(hunks) == 0 && !modeLost {
+	binaryLost := f.Binary && len(base) > 0 && len(head) > 0
+	if len(hunks) == 0 && !modeLost && !opLost && !binaryLost {
 		return f, false
 	}
-	header := narrowHeader(f, modeLost, retained, len(hunks) > 0)
-	f.Text, f.Header, f.Hunks, f.Added, f.Removed, f.Removals = header+body.String(), header, hunks, adds, dels, nil
+	survives := f.Status != "modified" && !opLost
+	cur := f.Path
+	if f.Status == "renamed" || f.Status == "copied" {
+		cur = f.OldPath // the file stays where the patch left it
+	}
+	header := narrowHeader(f, cur, survives, modeLost, retained, len(hunks) > 0)
+	text := header + body.String()
+	if survives {
+		if f.Binary {
+			text += fmt.Sprintf("Binary files a/%s and b/%s differ\n", cur, cur)
+		}
+		f.Path, f.OldPath, f.Status = cur, "", "modified"
+	}
+	f.Text, f.Header, f.Hunks, f.Added, f.Removed, f.Removals = text, header, hunks, adds, dels, nil
 	for _, h := range hunks {
 		f.Removals = append(f.Removals, h.Removals...)
 	}
@@ -201,35 +224,47 @@ func lostEffects(f fileDiff, base, head []fileDiff) (fileDiff, bool) {
 		}
 	}
 	f.Mode = strings.Join(modes, "\n")
-	if retained && (f.Status == "added" || f.Status == "deleted") {
-		f.Status = "modified"
-	}
 	return f, true
 }
 
-// effectLost reports whether the changes since the patch (its file to a later commit) undo a binary or header-only change of f.
-func effectLost(f fileDiff, since []fileDiff) bool {
-	for _, s := range since {
-		if f.Binary || s.Binary || f.Mode == "" || s.Mode != "" {
-			return true
-		}
-		// A header-only change of mode, and the file's mode is the same.
+// sourceName is the name of the file as the removed patch left it: the source of a reversal that renames or copies, else its path.
+func sourceName(f fileDiff) string {
+	if f.OldPath != "" {
+		return f.OldPath
+	}
+	return f.Path
+}
+
+// operationLost reports whether the changes since the patch undo the file operation of f, the reversal of what the patch did: the patch created the file (f deletes it) and it is gone, the patch deleted it (f creates it) and it is back, or the patch renamed or copied it (f undoes that) and the source is gone or the target is back.
+func operationLost(f fileDiff, since []fileDiff) bool {
+	has := func(path, status string) bool {
+		return slices.ContainsFunc(since, func(s fileDiff) bool { return s.Path == path && s.Status == status })
+	}
+	switch f.Status {
+	case "deleted":
+		return has(f.Path, "deleted")
+	case "added", "copied":
+		return has(f.Path, "added")
+	case "renamed":
+		return has(f.OldPath, "deleted") || has(f.Path, "added")
 	}
 	return false
 }
 
+func hasModeChange(f fileDiff) bool { return strings.Contains(f.Mode, "old mode") }
+
 func changesMode(since []fileDiff) bool {
-	return slices.ContainsFunc(since, func(s fileDiff) bool { return s.Mode != "" })
+	return slices.ContainsFunc(since, hasModeChange)
 }
 
-// touches reports whether the changes since the patch undo one line of the reversal: the line the reversal removes (old-side line number old), which they removed too, or the line the reversal adds (text), which they brought back.
-func touches(sign byte, old int, text string, since []fileDiff) bool {
+// touches reports whether the changes since the patch undo one line of the reversal: the line the reversal removes (old-side line number old of the file name), which they removed too, or the line the reversal adds (text), which they brought back.
+func touches(sign byte, old int, text, name string, since []fileDiff) bool {
 	for _, s := range since {
 		if s.Binary {
 			return true
 		}
 		if sign == '-' {
-			if slices.ContainsFunc(s.Removals, func(r span) bool { return r.First <= old && old <= r.Last }) {
+			if s.Path == name && slices.ContainsFunc(s.Removals, func(r span) bool { return r.First <= old && old <= r.Last }) {
 				return true
 			}
 			continue
@@ -312,28 +347,47 @@ func narrowHunk(h hunk, lost func(sign byte, old int, text string) bool, offset 
 	return hunk{Text: head + body.String(), Removals: spans(removed), Added: added}, adds, dels, retained
 }
 
-// narrowHeader keeps the parts of a reversal's header that its narrowed text still carries: mode lines only when the mode change is lost; and, when some change of the text is left out, no file-creation or deletion lines, since the file stays. Without hunks it drops the file name lines.
-func narrowHeader(f fileDiff, modeLost, partial, hunks bool) string {
+// narrowHeader builds the header of a narrowed reversal. Mode lines stay only when the mode change is lost. When the file operation survives (survives), the old header, which names a creation, deletion, rename or copy, is replaced by a content-only header on cur, the file's current name. Otherwise the old header stays, minus the index line when some change of the text is left out, and minus the file name lines when no hunk is left.
+func narrowHeader(f fileDiff, cur string, survives, modeLost, partial, hunks bool) string {
 	var b strings.Builder
+	if survives {
+		fmt.Fprintf(&b, "diff --git a/%s b/%s\n", cur, cur)
+	}
 	for line := range strings.Lines(f.Header) {
 		t := strings.TrimSuffix(line, "\n")
 		switch {
-		case !hunks && (strings.HasPrefix(t, "--- ") || strings.HasPrefix(t, "+++ ")):
-			continue
 		case strings.HasPrefix(t, "old mode "), strings.HasPrefix(t, "new mode "):
 			if !modeLost {
 				continue
 			}
-		case strings.HasPrefix(t, "new file mode"), strings.HasPrefix(t, "deleted file mode"), strings.HasPrefix(t, "index "):
-			if partial {
-				continue
-			}
-		case t == "--- /dev/null" && partial:
-			line = "--- a/" + f.Path + "\n"
-		case t == "+++ /dev/null" && partial:
-			line = "+++ b/" + f.Path + "\n"
+		case survives:
+			continue
+		case !hunks && (strings.HasPrefix(t, "--- ") || strings.HasPrefix(t, "+++ ")):
+			continue
+		case strings.HasPrefix(t, "index ") && partial:
+			continue
 		}
 		b.WriteString(line)
 	}
+	if survives && hunks {
+		fmt.Fprintf(&b, "--- a/%s\n+++ b/%s\n", cur, cur)
+	}
 	return b.String()
+}
+
+// inheritedBy reports whether the new base already contains commit: as an ancestor, or, when the base was rewritten, as a commit with the same patch (git cherry). Git's exit status 1 means the commit is not an ancestor; any other failure is an error. Only proof counts; when none exists the removal is traced by its lines instead.
+func inheritedBy(git gitFunc, commit, base string) (bool, error) {
+	_, err := git("merge-base", "--is-ancestor", commit, base)
+	if err == nil {
+		return true, nil
+	}
+	var exit interface{ ExitCode() int }
+	if !errors.As(err, &exit) || exit.ExitCode() != 1 {
+		return false, fmt.Errorf("merge-base --is-ancestor %s %s: %w", commit, base, err)
+	}
+	out, err := git("cherry", base, commit, commit+"^")
+	if err != nil {
+		return false, fmt.Errorf("cherry %s %s: %w", base, commit, err)
+	}
+	return strings.HasPrefix(string(out), "- "), nil
 }

@@ -7,6 +7,7 @@ import (
 	neturl "net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -356,6 +357,10 @@ type reReview struct {
 	login string
 	// onAPI and onGit run before a gh api or git call is answered.
 	onAPI, onGit func(args []string)
+	// ancestors are the removed commits the new base contains; equivalents those it contains in a rewritten form. Any other commit is neither.
+	ancestors, equivalents map[string]bool
+	// ancestryErr makes the ancestry check of a commit fail with the error.
+	ancestryErr map[string]error
 }
 
 func (r reReview) tools(t *testing.T) (tools, *fakeRunner) {
@@ -391,16 +396,41 @@ func (r reReview) tools(t *testing.T) (tools, *fakeRunner) {
 			return nil, nil
 		case "range-diff":
 			return []byte(r.rangeDiff), nil
+		case "merge-base":
+			// git merge-base --is-ancestor <commit> <newBase>: exit status 1 is a normal "no".
+			if args[1] != "--is-ancestor" || args[3] != baseSHA {
+				return nil, fmt.Errorf("unexpected git %v", args)
+			}
+			if err, ok := r.ancestryErr[args[2]]; ok {
+				return nil, err
+			}
+			if r.ancestors[args[2]] {
+				return nil, nil
+			}
+			return nil, fmt.Errorf("git merge-base: %w", exitStatus(1))
+		case "cherry":
+			// git cherry <newBase> <commit> <commit>^: "- " marks a commit with an equivalent in the base.
+			if len(args) != 4 || args[1] != baseSHA || args[3] != args[2]+"^" {
+				return nil, fmt.Errorf("unexpected git %v", args)
+			}
+			if r.equivalents[args[2]] {
+				return []byte("- " + args[2] + "\n"), nil
+			}
+			return []byte("+ " + args[2] + "\n"), nil
 		case "diff":
 			n := len(args)
-			if args[n-2] == "--" {
-				// The changes since a removed commit: git diff -U0 <commit> <newBase or newHead> -- :(literal)<path>. A key names the target, base or head, or serves both without one.
-				target := map[string]string{baseSHA: "base", headSHA: "head"}[args[n-3]]
+			if at := slices.Index(args, "--"); at >= 0 {
+				// The changes since a removed commit: git diff -U0 <commit> <newBase or newHead> -- :(literal)<path>... A key names the target, base or head, or serves both without one; several paths are joined by a space.
+				target := map[string]string{baseSHA: "base", headSHA: "head"}[args[at-1]]
 				if target == "" {
-					return nil, fmt.Errorf("changes since a removed commit were read against %s, neither the frozen base nor head: %v", args[n-3], args)
+					return nil, fmt.Errorf("changes since a removed commit were read against %s, neither the frozen base nor head: %v", args[at-1], args)
 				}
-				name := strings.TrimPrefix(args[n-1], ":(literal)")
-				for _, key := range []string{args[n-4] + " " + target + " -- " + name, args[n-4] + " -- " + name} {
+				var names []string
+				for _, a := range args[at+1:] {
+					names = append(names, strings.TrimPrefix(a, ":(literal)"))
+				}
+				name := strings.Join(names, " ")
+				for _, key := range []string{args[at-2] + " " + target + " -- " + name, args[at-2] + " -- " + name} {
 					if p, ok := r.patches[key]; ok {
 						return []byte(p), nil
 					}

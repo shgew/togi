@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"flag"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -111,3 +112,10 @@ func orDefault(s, def string) string {
 	}
 	return s
 }
+
+// exitStatus is a failed command's exit status, as exec.ExitError reports it through ExitCode.
+type exitStatus int
+
+func (e exitStatus) Error() string { return fmt.Sprintf("exit status %d", int(e)) }
+
+func (e exitStatus) ExitCode() int { return int(e) }
