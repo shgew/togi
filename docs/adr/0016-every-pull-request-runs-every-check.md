@@ -1,6 +1,6 @@
 # Every pull request runs every flake check; the release trusts `main`
 
-Status: the race-detector decision and its consequences are superseded by [ADR 0022](0022-run-the-race-detector-in-ci.md); the rejection of slow checks on push to `main` is superseded for the macOS job by [ADR 0046](0046-macos-checks-the-package-on-main.md); the other decisions remain in force.
+Status: see [the index](README.md).
 
 Pull requests ran only `just ci`: lint, the formatting check and the Go tests. The Nix builds, the NixOS VM test and the race detector first ran in the release workflow ([ADR 0014](0014-release-from-a-workflow.md)), so a stale `vendorHash`, a flake or module regression, or a data race surfaced mid-release, after the change had merged.
 

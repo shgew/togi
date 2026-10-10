@@ -1,4 +1,4 @@
-Checks at release superseded by [ADR 0016](0016-every-pull-request-runs-every-check.md); reading entries from `[Unreleased]` superseded by [ADR 0033](0033-changelog-fragments.md), which assembles them from `changes/`. The release commit, push and publish remain.
+Status: see [the index](README.md).
 
 # Releases are made by a workflow started by hand
 

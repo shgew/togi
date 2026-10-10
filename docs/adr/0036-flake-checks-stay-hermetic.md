@@ -1,6 +1,6 @@
 # Flake checks stay hermetic
 
-Status: Accepted.
+Status: see [the index](README.md).
 
 Go changes make local flake checks rebuild from a cold Go cache. Sharing the host's cache would save work, but CI pushes each check's output to the public Cachix cache `togi` ([ADR 0021](0021-cache-check-outputs-on-cachix.md)). A substituted check is meaningful only if it was built from its declared inputs. See [#359](https://github.com/shgew/togi/issues/359).
 

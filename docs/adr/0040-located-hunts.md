@@ -1,6 +1,6 @@
 # Locate multi-core R7 failures before charging the loaded cores
 
-Status: **Accepted**.
+Status: see [the index](README.md).
 
 Amends [ADR 0038](0038-self-sufficient-cores.md): its multi-core R7 attribution, its `failure_at_zero` dead end "regardless of idle cores" and its bench gate. [Issue #415](https://github.com/shgew/togi/issues/415) records the decision and its design; [#348](https://github.com/shgew/togi/issues/348) the all-zero rerun before every `failure_at_zero` dead end; [#416](https://github.com/shgew/togi/issues/416) the Ruleset 10 gate.
 

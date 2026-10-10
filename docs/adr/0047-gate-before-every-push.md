@@ -1,6 +1,6 @@
 # Gate before every push
 
-Status: Accepted.
+Status: see [the index](README.md).
 
 Agents ran `just gate`, then `just check` from a cold cache before every push, so the suite ran about five times per push between the local ladder and CI. See [#492](https://github.com/shgew/togi/issues/492) (A5) and [#498](https://github.com/shgew/togi/issues/498).
 

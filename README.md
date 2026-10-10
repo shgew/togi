@@ -19,8 +19,8 @@ Works today, on a simulated 16-core machine:
 - the full simulated tuning lifecycle: per-core search, failure hunts, combinations, deepening together, full checking cycles, crash resume and reset;
 - a seeded session after a ruleset update or BIOS change, carrying what [Transitions](docs/spec/journal.md#transitions) and [Fact eligibility](docs/spec/journal.md#fact-eligibility) allow;
 - evidence-based hunt duration and singleton-probe scheduling ([Hunt](docs/spec/tuner.md#hunt)), and credit for an earlier clean cycle ([Checking](docs/spec/tuner.md#checking));
-- ruleset-9 R7 full parts and partial chains ([Together trial sequence](docs/spec/tuner.md#together-trial-sequence)), with [voltage-targeted backoff](docs/spec/tuner.md#r7-voltage-targeted-backoff) of multi-core R7 failures and, since ruleset 10, [located hunts](docs/spec/tuner.md#hunt) of unattributed ones;
-- since ruleset 10, an all-zero rerun before a failure at CO 0 stops tuning ([Dead ends](docs/spec/tuner.md#dead-ends));
+- R7 full parts and partial chains ([Together trial sequence](docs/spec/tuner.md#together-trial-sequence)), with [voltage-targeted backoff](docs/spec/tuner.md#r7-voltage-targeted-backoff) of multi-core R7 failures and [located hunts](docs/spec/tuner.md#hunt) of unattributed ones;
+- an all-zero rerun before a failure at CO 0 stops tuning ([Dead ends](docs/spec/tuner.md#dead-ends));
 - reading a session's hunt, combinations, clean cycles, top requesters, per-workload self-sufficiency, valid trials and Tctl peak with `status`, `events` and the live `watch` dashboard ([Commands](docs/spec/runtime.md#commands)).
 
 Built for real hardware, a Granite Ridge desktop running NixOS with GRUB, and tested piece by piece on one:

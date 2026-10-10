@@ -1,4 +1,4 @@
-Superseded by [ADR 0020](0020-hunt-and-refine.md).
+Status: see [the index](README.md).
 
 # Run mprime AVX-512 first in confirmation
 
