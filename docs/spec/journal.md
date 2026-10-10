@@ -92,6 +92,8 @@ Every trial with loaded cores (R1–R7), whether watched through its end or clos
 
 The same trials also carry optional `voltage_requests_v` (loaded core ID → median request in volts), `top_requesters` (each loaded CCD's highest requesters, sorted by core ID, including cores within 1 mV of that CCD's highest median) and `ccd_mhz` (loaded CCD ID → median clock in whole MHz). Their window includes only complete samples with decoded `pm_table` lanes and `elapsed_ms >= 5000`. Fewer than 20 such samples omits all three fields. For each qualifying sample and CCD, take the median of the available loaded-core clocks; then take the median of those sample medians, rounded to the nearest whole MHz. A CCD with fewer than 20 available sample medians has no clock entry. Even medians use the mean of the two middle values. Session topology maps loaded core IDs to CCDs; unloaded cores never count. The message appends ` | top requester NN X.XXX V`, with several requesters comma-separated. These added fields bump neither the schema nor the ruleset, and the existing whole-trial voltage median and minimum remain unchanged. Tuning decisions use them to order R7 partial parts, attribute multi-core R7 failures and size voltage-targeted backoffs (`tuner.md`).
 
+Event kinds and event fields keep their names once released. A change of vocabulary in `GLOSSARY.md` renames prose, messages, help and docs, never the wire, and never bumps `journal.Schema` on its own. Configuration keys follow the same rule (`runtime.md`, Configuration).
+
 ## Event catalog
 
 The catalog is a contract. Adding a kind extends this list in the same pull request.

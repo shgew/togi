@@ -2,6 +2,8 @@
 
 togi finds the deepest per-core Curve Optimizer offsets a Zen 5 desktop CPU sustains, then keeps testing them for breadth: it reports clean cycles, not a durability grade.
 
+The glossary governs prose and display. Wire names are frozen: a vocabulary change renames messages, help and docs, never an event kind or field ([journal.md](docs/spec/journal.md#event-format)) or a configuration key ([runtime.md](docs/spec/runtime.md#configuration)), so it never bumps `journal.Schema` on its own.
+
 ## Language
 
 ### Hardware

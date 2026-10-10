@@ -186,6 +186,8 @@ The effective configuration is recorded in `config.loaded` at every start. Confi
 
 The TOML configuration has no version field, and the Go configuration rejects unknown keys, so a removed or renamed option fails the command until the file is edited. The NixOS module keeps no `mkRenamedOptionModule` or `mkRemovedOptionModule` shims: the change is noted in the changelog. Changed configurable defaults are not a ruleset break.
 
+Configuration keys keep their names once released. A change of vocabulary in `GLOSSARY.md` renames prose, messages, help and docs, never a key, so a vocabulary change alone never makes an existing configuration file fail. Event kinds and fields follow the same rule (`journal.md`, Event format).
+
 ## In-session run
 
 `sudo togi run` on a normal boot. If the machine crashes, it comes back to the normal desktop. The next `sudo togi run` detects the crash from the journal, attributes it to the in-flight action, and continues. Nothing restarts togi automatically outside a tuning boot.
