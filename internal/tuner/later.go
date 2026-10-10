@@ -83,6 +83,19 @@ func (s *State) BIOSProfile() BIOSProfile {
 			}
 		}
 	}
+	if h := s.hunt; h != nil && h.pairedStrike != nil && h.end != nil && s.strikeValid(*h.pairedStrike) {
+		// The hunt's pending commitment moves one core: show it, so the profile never reaches the constraint the hunt learned.
+		if a, ok := s.huntCommitment(h); ok {
+			if d, ok := a.Payload.(*journal.TunerDecision); ok && d.Decision == journal.Backoff {
+				if i := s.index(d.Core); i >= 0 && d.ToOffset > confirmed[i] && d.ToOffset > out.Offsets[i] {
+					out.Offsets[i] = d.ToOffset
+					if _, marked := since[d.Core]; !marked {
+						since[d.Core] = h.endSeq
+					}
+				}
+			}
+		}
+	}
 	for id, seq := range since {
 		out.Unconfirmed = append(out.Unconfirmed, id)
 		if out.Since == 0 || seq < out.Since {

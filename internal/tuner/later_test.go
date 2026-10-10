@@ -731,3 +731,59 @@ func TestBIOSProfileDropsAHoldTargetOnceItsCoreIsConfirmedAtIt(t *testing.T) {
 	}
 	assertLaterReplay(h)
 }
+
+// Between a paired hunt's combination and its backoff the shown profile must not reach the combination the hunt learned.
+func TestBIOSProfileProjectsAPairedHuntsPendingBackoffPastItsCombination(t *testing.T) {
+	h := laterHarness(t, -10, -12)
+	confirmed := h.s.BIOSProfile().Confirmed
+	startCycle(h, 4)
+	idleFailure(h)
+	hold := h.decide(h.next())
+	idleFailure(h)
+	h.decide(driveToHuntStart(h))
+	fails := func(p []int) bool { return p[0] <= -9 && p[1] <= -11 }
+	for range 200 {
+		a := h.next()
+		if _, ok := a.Payload.(*journal.HuntGroup); ok {
+			h.decide(a)
+			continue
+		}
+		if a.Kind == RunTrial {
+			runGroup(h, a, fails(a.Trial.Profile))
+			continue
+		}
+		if _, ok := a.Payload.(*journal.HuntEnd); ok {
+			h.decide(a)
+			break
+		}
+		t.Fatalf("unexpected action %+v", a)
+	}
+	combination := h.next()
+	c, ok := combination.Payload.(*journal.Combination)
+	if !ok || cmp.Diff([]journal.CombinationMember{{Core: 0, Offset: -9}, {Core: 1, Offset: -11}}, c.Members) != "" {
+		t.Fatalf("combination %+v", combination)
+	}
+	h.decide(combination)
+	back, a := nextDecision(h)
+	if back.Phase != journal.PhaseHunt || back.Decision != journal.Backoff || back.ToOffset <= back.FromOffset {
+		t.Fatalf("commitment %+v", back)
+	}
+	pending := h.s.BIOSProfile()
+	if _, reached := h.s.Reaches(pending.Offsets); reached {
+		t.Fatalf("the shown profile %v reaches the combination the hunt learned", pending.Offsets)
+	}
+	if pending.Offsets[h.s.index(back.Core)] != back.ToOffset || pending.Since != hold.Seq || !slices.Equal(pending.Unconfirmed, []int{0, 1}) {
+		t.Fatalf("pending commitment %+v, want core %02d at %d unconfirmed since the hold #%d", pending, back.Core, back.ToOffset, hold.Seq)
+	}
+	assertShown(t, h, pending)
+	commit := h.decide(a)
+	after := h.s.BIOSProfile()
+	if after.Offsets[h.s.index(back.Core)] != back.ToOffset || h.s.hunt != nil {
+		t.Fatalf("after the commitment %+v", after)
+	}
+	if diff := cmp.Diff(BIOSProfile{Offsets: after.Offsets, Confirmed: confirmed, Unconfirmed: []int{back.Core}, Since: commit.Seq}, after); diff != "" {
+		t.Fatalf("after the commitment (-want +got):\n%s", diff)
+	}
+	assertShown(t, h, after)
+	assertLaterReplay(h)
+}
