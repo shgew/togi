@@ -651,3 +651,83 @@ func TestLaterPairedHuntEndingDirectNamesBothFailuresInTheBackoff(t *testing.T) 
 	h.decide(a)
 	assertLaterReplay(h)
 }
+
+func TestBIOSProfileKeepsAPairedHuntsHoldShownUntilItsCommitment(t *testing.T) {
+	h := laterHarness(t, -10, -12)
+	confirmed := h.s.BIOSProfile().Confirmed
+	startCycle(h, 4)
+	idleFailure(h)
+	hold := h.decide(h.next())
+	idleFailure(h)
+	shown := BIOSProfile{Offsets: []int{-9, -11}, Confirmed: confirmed, Unconfirmed: []int{0, 1}, Since: hold.Seq}
+	assertShown(t, h, shown)
+	started := h.decide(driveToHuntStart(h))
+	assertShown(t, h, shown)
+	if len(h.s.later.strikes) != 0 || h.s.hunt == nil || h.s.hunt.paired == 0 {
+		t.Fatalf("the paired hunt did not consume the hold: strikes %+v", h.s.later.strikes)
+	}
+	if a := h.next(); a.Kind == Decide {
+		if _, ok := a.Payload.(*journal.HuntGroup); ok {
+			h.decide(a)
+			assertShown(t, h, shown)
+		}
+	}
+	end := h.add(&journal.HuntEnd{Hunt: 1, Result: "culprit", Cores: []int{0}, Groups: 1}, started.Seq)
+	assertShown(t, h, shown)
+	d, a := nextDecision(h)
+	if d.Phase != journal.PhaseHunt || d.Core != 0 || a.Cause[0] != end.Seq {
+		t.Fatalf("hunt backoff %+v", d)
+	}
+	assertShown(t, h, shown)
+	commit := h.decide(a)
+	assertShown(t, h, BIOSProfile{Offsets: []int{-9, -12}, Confirmed: confirmed, Unconfirmed: []int{0}, Since: commit.Seq})
+	assertLaterReplay(h)
+}
+
+// failLoadingOnly fails a together trial that loads only core id, with no attribution to any core.
+func failLoadingOnly(h *harness, id int) journal.Event {
+	h.t.Helper()
+	tr := Trial{Regime: machine.R1, Workload: machine.Workloads(machine.R1)[0].ID, Condition: machine.Together, Phase: journal.PhaseChecking, DurationS: 120, Core: id, Offset: h.s.core(id).offset, Cycle: h.s.checking.cycle}
+	h.trial(Action{Kind: RunTrial, Trial: tr}, journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.ComputationError, DurationS: 41})
+	a := h.next()
+	if f, ok := a.Payload.(*journal.Failure); !ok || f.Attribution != journal.Unattributed {
+		h.t.Fatalf("want an unattributed failure, got %+v", a)
+	}
+	return h.decide(a)
+}
+
+// A hold's target on a core that really steps back and is then confirmed stops showing; the other core's target stays.
+func TestBIOSProfileDropsAHoldTargetOnceItsCoreIsConfirmedAtIt(t *testing.T) {
+	h := laterHarness(t, -10, -12)
+	startCycle(h, 4)
+	first := failLoadingOnly(h, 0)
+	a := h.next()
+	skip, ok := a.Payload.(*journal.HuntSkipped)
+	if !ok || skip.Failure != first.Seq {
+		t.Fatalf("a first unattributed failure is held: %+v", a)
+	}
+	hold := h.decide(a)
+	if len(h.s.later.strikes) != 1 || !slices.Equal(h.s.later.strikes[0].cores, []int{0}) {
+		t.Fatalf("strikes %+v, want one over core 0", h.s.later.strikes)
+	}
+	assertShown(t, h, BIOSProfile{Offsets: []int{-9, -11}, Confirmed: h.s.BIOSProfile().Confirmed, Unconfirmed: []int{0, 1}, Since: hold.Seq})
+
+	failCore(h, 1)
+	if d, _ := nextDecision(h); !isHold(d) || d.Core != 1 {
+		t.Fatalf("core 1's own first failure is held: %+v", d)
+	}
+	h.decide(h.next())
+	failCore(h, 1)
+	d, a := nextDecision(h)
+	if isHold(d) || d.Core != 1 || d.ToOffset != -11 {
+		t.Fatalf("core 1's second failure steps it back: %+v", d)
+	}
+	h.decide(a)
+	settle(h)
+	end := endCycle(h, 4)
+	assertShown(t, h, BIOSProfile{Offsets: []int{-9, -11}, Confirmed: end.Seq, Unconfirmed: []int{0}, Since: hold.Seq})
+	if len(h.s.later.strikes) != 1 || h.s.later.strikes[0].failure != first.Seq {
+		t.Fatalf("the original strike was not preserved: %+v", h.s.later.strikes)
+	}
+	assertLaterReplay(h)
+}

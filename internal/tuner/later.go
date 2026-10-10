@@ -43,9 +43,10 @@ type BIOSProfile struct {
 }
 
 // BIOSProfile derives the profile to enter in BIOS from the folded events. A step-back replaces it at the decision
-// that records it. A held failure shows the step-back it would have made, until a second failure pairs, the core moves
-// for another reason (the shown offset then follows the core) or K cycles pass (it returns to the held offset). The
-// next passed full cycle confirms what the profile then is.
+// that records it. A held failure shows the step-back it would have made, until a second failure's step-back replaces
+// it, a paired hunt's commitment (or its end without one) does, the core moves for another reason (the shown offset
+// then follows the core) or K cycles pass (it returns to the held offset). The next passed full cycle confirms what
+// the profile then is.
 func (s *State) BIOSProfile() BIOSProfile {
 	out := BIOSProfile{Offsets: s.offsets(), Confirmed: s.later.confirmedSeq}
 	confirmed := s.later.confirmed
@@ -63,7 +64,11 @@ func (s *State) BIOSProfile() BIOSProfile {
 			since[c.id] = seq
 		}
 	}
-	for _, k := range s.later.strikes {
+	shown := s.later.strikes
+	if h := s.hunt; h != nil && h.pairedStrike != nil {
+		shown = append(slices.Clone(shown), *h.pairedStrike)
+	}
+	for _, k := range shown {
 		if !s.strikeValid(k) {
 			continue
 		}
@@ -216,22 +221,24 @@ func (s *State) laterHunt(f pendingFailure, cores []int) (*Action, *strike) {
 }
 
 // releaseStrike consumes the strike an event cites last among at least two causes, when it counts against one of
-// cores, and returns the event without that cause so the ordinary bookkeeping sees only the failure it answers.
-func (s *State) releaseStrike(e journal.Event, cores []int) (journal.Event, int) {
+// cores, and returns the event without that cause so the ordinary bookkeeping sees only the failure it answers, and the
+// strike it consumed.
+func (s *State) releaseStrike(e journal.Event, cores []int) (journal.Event, *strike) {
 	n := len(e.Cause)
 	if n < 2 || len(s.later.strikes) == 0 {
-		return e, 0
+		return e, nil
 	}
 	failure := e.Cause[n-1]
 	i := slices.IndexFunc(s.later.strikes, func(k strike) bool {
 		return k.failure == failure && slices.ContainsFunc(k.cores, func(id int) bool { return slices.Contains(cores, id) })
 	})
 	if i < 0 {
-		return e, 0
+		return e, nil
 	}
+	k := s.later.strikes[i]
 	s.later.strikes = slices.Delete(s.later.strikes, i, i+1)
 	e.Cause = e.Cause[:n-1]
-	return e, failure
+	return e, &k
 }
 
 // laterHold returns the failure a decision holds: a checking backoff that moves nothing and answers a live failure

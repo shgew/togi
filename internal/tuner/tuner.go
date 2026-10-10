@@ -480,11 +480,11 @@ func (s *State) Fold(e journal.Event) {
 		s.ranking = slices.Clone(p.Ranking)
 		s.rankingSeq = e.Seq
 	case *journal.HuntStart:
-		var paired int
-		e, paired = s.releaseStrike(e, p.Cores)
+		var released *strike
+		e, released = s.releaseStrike(e, p.Cores)
 		s.openHunt(e, p)
-		if paired != 0 && s.hunt != nil {
-			s.hunt.paired = paired
+		if released != nil && s.hunt != nil {
+			s.hunt.paired, s.hunt.pairedStrike = released.failure, released
 		}
 	case *journal.HuntGroup:
 		s.recordGroup(e, p)

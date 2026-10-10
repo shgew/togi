@@ -26,8 +26,10 @@ type hunt struct {
 	groups                                []groupRecord
 	end                                   *journal.HuntEnd
 	endSeq, combinationSeq, directFailure int
-	// paired is the held earlier failure whose second failure started this hunt, or 0.
-	paired int
+	// paired is the held earlier failure whose second failure started this hunt, or 0. pairedStrike is that hold: its
+	// stepped-back display stays in the BIOS profile until the hunt's commitment, or its end without one, replaces it.
+	paired       int
+	pairedStrike *strike
 }
 
 func (s *State) openHunt(e journal.Event, p *journal.HuntStart) {
