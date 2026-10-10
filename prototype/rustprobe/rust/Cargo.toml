@@ -1,0 +1,8 @@
+[package]
+name = "rustprobe"
+version = "0.0.0"
+edition = "2024"
+
+[profile.release]
+lto = true
+codegen-units = 1

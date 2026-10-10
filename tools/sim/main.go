@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"runtime/pprof"
 	"syscall"
 	"time"
 
@@ -23,6 +24,17 @@ import (
 )
 
 func main() {
+	if p := os.Getenv("SIM_CPUPROFILE"); p != "" {
+		f, _ := os.Create(p)
+		pprof.StartCPUProfile(f)
+		code := run(os.Args[1:], os.Stderr)
+		pprof.StopCPUProfile()
+		if h := os.Getenv("SIM_HEAPPROFILE"); h != "" {
+			hf, _ := os.Create(h)
+			pprof.Lookup("heap").WriteTo(hf, 0)
+		}
+		os.Exit(code)
+	}
 	os.Exit(run(os.Args[1:], os.Stderr))
 }
 
