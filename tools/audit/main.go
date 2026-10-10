@@ -38,7 +38,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	flags.IntVar(&o.jobs, "jobs", runtime.NumCPU(), "maximum parallel bench subprocesses")
 	flags.StringVar(&o.keep, "keep", "", "retain sweep evidence under DIR (default: a new temporary directory)")
 	flags.StringVar(&o.suite, "suite", "tools/bench/suite.toml", "scenario suite; machine paths resolve relative to it")
-	flags.DurationVar(&o.timeout, "timeout", 180*time.Second, "wall timeout per simulated run")
+	flags.DurationVar(&o.timeout, "timeout", 30*time.Minute, "hang safety limit per simulated run; sessions are bounded by simulated boots")
 	flags.StringVar(&o.records, "records", "", "bench JSON Lines run records for termination and wall-time checks")
 	flags.StringVar(&o.root, "root", "", "bench run root containing SCENARIO/SPLIT-SEED; requires --records")
 	if err := flags.Parse(args); errors.Is(err, flag.ErrHelp) {

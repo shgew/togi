@@ -160,10 +160,7 @@ func nextR7Partial(cores []int, lanes [16]float32) []int {
 	return cores[:n]
 }
 
-func runStatus(exit int, timedOut bool, events []journal.Event, log string) string {
-	if timedOut {
-		return "timeout"
-	}
+func runStatus(exit int, events []journal.Event, log string) string {
 	if exit == 0 && len(events) > 0 {
 		return "concluded"
 	}

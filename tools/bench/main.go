@@ -9,11 +9,12 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
-	"sync"
+	"syscall"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -31,24 +32,40 @@ type scenario struct {
 	Replay   bool     `toml:"replay"`
 	Dev      []uint64 `toml:"dev"`
 	Holdout  []uint64 `toml:"holdout"`
+	Smoke    []uint64 `toml:"smoke"`
 }
 type runSpec struct {
 	scenario scenario
 	seed     uint64
 	split    string
 	cfg      sim.Config
+	smoke    bool
 }
+
+// benchCostScope keys the costs of plain bench runs, which build the current tree's simulator.
+const benchCostScope = "bench"
+
 type options struct {
-	suite, split, out, baseline, keep, same, forecast string
-
-	jobs    int
-	timeout time.Duration
+	suite, split, out, baseline, keep, same, forecast, cache string
+	ctx                                                      context.Context
+	jobs, maxBoots                                           int
+	timeout                                                  time.Duration
+	keepGoing, noCache, smoke                                bool
 }
 
-func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }
+func main() {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	code := runContext(ctx, os.Args[1:], os.Stdout, os.Stderr)
+	stop()
+	os.Exit(code)
+}
 
 func run(args []string, stdout, stderr io.Writer) int {
-	var o options
+	return runContext(context.Background(), args, stdout, stderr)
+}
+
+func runContext(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	o := options{ctx: ctx}
 	flags := flag.NewFlagSet("bench", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	flags.StringVar(&o.suite, "suite", "tools/bench/suite.toml", "scenario TOML file; relative paths resolve in each tree with --same; machine paths are relative to this file")
@@ -59,7 +76,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 	flags.StringVar(&o.same, "same", "", "compare all session journals against checkout DIR, ignoring only build version, revision and description; skip metrics and model checks")
 	flags.StringVar(&o.forecast, "forecast", "", "forecast a real run from a copy of its state directory DIR with the suite's target scenario, counting only events after its last; the copy is read, never written; incompatible with --split, --baseline and --same")
 	flags.IntVar(&o.jobs, "jobs", runtime.NumCPU(), "maximum parallel simulator subprocesses")
-	flags.DurationVar(&o.timeout, "timeout", 180*time.Second, "wall timeout for each simulator subprocess")
+	flags.DurationVar(&o.timeout, "timeout", 30*time.Minute, "hang safety limit per simulator; exceeding it is a harness error, never a session outcome")
+	flags.IntVar(&o.maxBoots, "max-boots", 1000, "maximum simulated boots per session; unfinished sessions exit 3 (censored)")
+	flags.StringVar(&o.cache, "cache", "", "digest and scheduling cache directory (default: user cache directory/togi/bench)")
+	flags.BoolVar(&o.keepGoing, "keep-going", false, "with --same, report every differing session instead of stopping at the first difference")
+	flags.BoolVar(&o.smoke, "smoke", false, "with --same, compare only the suite's smoke sessions")
+	flags.BoolVar(&o.noCache, "no-cache", false, "with --same, run every session on both trees instead of using cached digests; --keep implies it")
 	if err := flags.Parse(args); errors.Is(err, flag.ErrHelp) {
 		return 0
 	} else if err != nil {
@@ -81,8 +103,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 			return 2
 		}
 	}
-	if flags.NArg() != 0 || o.jobs < 1 || o.timeout <= 0 || (o.split != "dev" && o.split != "holdout" && o.split != "all") {
-		fmt.Fprintln(stderr, "bench: require no positional arguments, positive --jobs and --timeout, and --split dev|holdout|all")
+	if flags.NArg() != 0 || o.jobs < 1 || o.maxBoots < 1 || o.timeout <= 0 || (o.split != "dev" && o.split != "holdout" && o.split != "all") {
+		fmt.Fprintln(stderr, "bench: require no positional arguments, positive --jobs, --max-boots and --timeout, and --split dev|holdout|all")
 		return 2
 	}
 	if o.same != "" {
@@ -169,15 +191,28 @@ func loadRuns(path, split string, extracts trialfacts.Extracts) ([]runSpec, erro
 					member := index % len(configs)
 					selected := s
 					selected.Machine = resolved[member]
-					runs = append(runs, runSpec{selected, seed, group.name, configs[member]})
+					runs = append(runs, runSpec{selected, seed, group.name, configs[member], slices.Contains(s.Smoke, seed)})
 				}
 			}
+		}
+		if err := checkSmoke(s, seeds); err != nil {
+			return nil, err
 		}
 	}
 	if len(runs) == 0 {
 		return nil, errors.New("suite has no selected runs")
 	}
 	return runs, nil
+}
+
+// checkSmoke rejects a smoke seed that is neither a dev nor a holdout seed of its scenario.
+func checkSmoke(s scenario, seeds map[uint64]bool) error {
+	for _, seed := range s.Smoke {
+		if !seeds[seed] {
+			return fmt.Errorf("scenario %s smoke seed %d is in neither dev nor holdout", s.Name, seed)
+		}
+	}
+	return nil
 }
 
 func gitOutput(args ...string) (string, error) {
@@ -249,12 +284,22 @@ func execute(o options, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
+	cacheRoot, err := o.cacheDir()
+	if err != nil {
+		return err
+	}
+	costs := loadCosts(filepath.Join(cacheRoot, "costs.json"))
+	defer func() {
+		if err := costs.save(); err != nil {
+			fmt.Fprintf(stderr, "bench: save session costs: %v\n", err)
+		}
+	}()
 	buildDir, err := os.MkdirTemp("", "togi-bench-build-")
 	if err != nil {
 		return fmt.Errorf("create build directory: %w", err)
 	}
 	defer os.RemoveAll(buildDir)
-	binary, err := buildSimulator(buildDir, stderr)
+	binary, err := buildSimulator(o.ctx, buildDir, stderr)
 	if err != nil {
 		return err
 	}
@@ -270,34 +315,33 @@ func execute(o options, stdout, stderr io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("create run directory: %w", err)
 	}
-	if o.keep == "" {
-		defer os.RemoveAll(runRoot)
-	} else {
+	defer func() {
+		if o.keep == "" || o.ctx.Err() != nil {
+			os.RemoveAll(runRoot)
+		}
+	}()
+	if o.keep != "" {
 		fmt.Fprintf(stderr, "bench: keeping runs in %s\n", runRoot)
 	}
 	results := make([]result, len(runs))
-	errs := make([]error, len(runs))
-	queue := make(chan int)
-	var wg sync.WaitGroup
-	for range min(o.jobs, len(runs)) {
-		wg.Go(func() {
-			for i := range queue {
-				r, err := simulate(binary, runRoot, runs[i], o.timeout, o.keep != "")
-				r.Commit, r.Dirty, r.Ruleset = commit, dirty, tuner.Ruleset
-				r.ModelCheck = checksByMachine[runs[i].scenario.Machine]
-				results[i], errs[i] = r, err
-			}
-		})
-	}
-	for i := range runs {
-		queue <- i
-	}
-	close(queue)
-	wg.Wait()
-	for _, err := range errs {
+	key := func(i int) sessionKey { return sessionKey{runs[i].scenario.Name, runs[i].split, runs[i].seed} }
+	order := longestFirst(len(runs), func(i int) (float64, bool) { return costs.get(benchCostScope, key(i)) })
+	err = runPool(o.ctx, o.jobs, order, func(ctx context.Context, i int) error {
+		r, err := simulate(ctx, binary, runRoot, runs[i], o.maxBoots, o.timeout, o.keep != "")
 		if err != nil {
-			return err
+			return fmt.Errorf("%s: %w", key(i), err)
 		}
+		r.Commit, r.Dirty, r.Ruleset = commit, dirty, tuner.Ruleset
+		r.ModelCheck = checksByMachine[runs[i].scenario.Machine]
+		results[i] = r
+		costs.set(benchCostScope, key(i), r.WallS)
+		return nil
+	})
+	if err == nil {
+		err = o.ctx.Err()
+	}
+	if err != nil {
+		return err
 	}
 	setScenarioShares(results)
 	if o.out != "" {
@@ -344,9 +388,9 @@ func modelChecks(runs []runSpec, extracts trialfacts.Extracts) (map[string]*mode
 }
 
 // buildSimulator builds tools/sim from the current tree into dir.
-func buildSimulator(dir string, stderr io.Writer) (string, error) {
+func buildSimulator(ctx context.Context, dir string, stderr io.Writer) (string, error) {
 	binary := filepath.Join(dir, "sim")
-	build := exec.Command("go", "build", "-o", binary, "./tools/sim")
+	build := exec.CommandContext(ctx, "go", "build", "-o", binary, "./tools/sim")
 	build.Stdout, build.Stderr = stderr, stderr
 	if err := build.Run(); err != nil {
 		return "", fmt.Errorf("build simulator: %w", err)
@@ -355,13 +399,14 @@ func buildSimulator(dir string, stderr io.Writer) (string, error) {
 }
 
 type simulation struct {
-	dir      string
-	exit     int
-	wall     float64
-	timedOut bool
+	dir  string
+	exit int
+	wall float64
+	// cpu is the user and system CPU time of the simulator process, in seconds.
+	cpu float64
 }
 
-func launchSimulator(binary, root string, spec runSpec, timeout time.Duration) (simulation, error) {
+func launchSimulator(parent context.Context, binary, root string, spec runSpec, maxBoots int, timeout time.Duration) (simulation, error) {
 	dir := runDir(root, spec)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return simulation{}, fmt.Errorf("create run %s: %w", dir, err)
@@ -370,9 +415,9 @@ func launchSimulator(binary, root string, spec runSpec, timeout time.Duration) (
 	if err != nil {
 		return simulation{}, fmt.Errorf("create run log: %w", err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
-	args := []string{"--seed", fmt.Sprint(spec.seed), "--state-dir", dir}
+	args := []string{"--seed", fmt.Sprint(spec.seed), "--state-dir", dir, "--max-boots", fmt.Sprint(maxBoots)}
 	if spec.scenario.Machine != "" {
 		args = append(args, "--machine", spec.scenario.Machine)
 	}
@@ -384,31 +429,36 @@ func launchSimulator(binary, root string, spec runSpec, timeout time.Duration) (
 	started := time.Now()
 	err = cmd.Run()
 	wall := time.Since(started).Seconds()
-	timedOut := errors.Is(ctx.Err(), context.DeadlineExceeded)
 	if closeErr := log.Close(); closeErr != nil {
 		return simulation{}, fmt.Errorf("close run log: %w", closeErr)
+	}
+	if parent.Err() != nil {
+		return simulation{dir: dir}, parent.Err()
+	}
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return simulation{dir: dir}, fmt.Errorf("simulator exceeded the %s hang safety limit", timeout)
 	}
 	exit := 0
 	if err != nil {
 		var exited *exec.ExitError
-		switch {
-		case errors.As(err, &exited):
-			exit = exited.ExitCode()
-		case timedOut:
-			exit = -1
-		default:
+		if !errors.As(err, &exited) {
 			return simulation{}, fmt.Errorf("start simulator: %w", err)
 		}
+		exit = exited.ExitCode()
 	}
-	return simulation{dir: dir, exit: exit, wall: wall, timedOut: timedOut}, nil
+	var cpu float64
+	if cmd.ProcessState != nil {
+		cpu = (cmd.ProcessState.UserTime() + cmd.ProcessState.SystemTime()).Seconds()
+	}
+	return simulation{dir: dir, exit: exit, wall: wall, cpu: cpu}, nil
 }
 
 func runDir(root string, spec runSpec) string {
 	return filepath.Join(root, spec.scenario.Name, fmt.Sprintf("%s-%d", spec.split, spec.seed))
 }
 
-func simulate(binary, root string, spec runSpec, timeout time.Duration, keep bool) (result, error) {
-	run, err := launchSimulator(binary, root, spec, timeout)
+func simulate(ctx context.Context, binary, root string, spec runSpec, maxBoots int, timeout time.Duration, keep bool) (result, error) {
+	run, err := launchSimulator(ctx, binary, root, spec, maxBoots, timeout)
 	if err != nil {
 		return result{}, err
 	}
@@ -437,7 +487,7 @@ func simulate(binary, root string, spec runSpec, timeout time.Duration, keep boo
 	r.Scenario, r.Seed, r.Split = spec.scenario.Name, spec.seed, spec.split
 	r.Machine = spec.scenario.Machine
 	r.ExitCode, r.WallS = run.exit, run.wall
-	r.Status = runStatus(run.exit, run.timedOut, events, string(text))
+	r.Status = runStatus(run.exit, events, string(text))
 	return r, nil
 }
 

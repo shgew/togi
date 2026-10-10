@@ -192,7 +192,7 @@ func TestForecastFromSimulatedCopy(t *testing.T) {
 			var tables, records [2]bytes.Buffer
 			for i := range 2 {
 				root := t.TempDir()
-				record, err := makeForecast(input, root, anchor, specs, "testdata", len(specs), true, launchInProcess(root))
+				record, err := makeForecast(context.Background(), input, root, anchor, specs, "testdata", len(specs), true, launchInProcess(root))
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -261,11 +261,11 @@ func TestForecastFailsOnFailedRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, run := range []simulation{{exit: 2}, {exit: -1, timedOut: true}, {exit: 0}} {
+	for _, run := range []simulation{{exit: 2}, {exit: -1}, {exit: 0}} {
 		root := t.TempDir()
 		launch := func(spec runSpec) (simulation, error) { return run, nil }
-		if _, err := makeForecast(input, root, anchor, specs, "testdata", 1, false, launch); err == nil {
-			t.Errorf("forecast accepted a run with exit %d, timed out %v and no conclusion", run.exit, run.timedOut)
+		if _, err := makeForecast(context.Background(), input, root, anchor, specs, "testdata", 1, false, launch); err == nil {
+			t.Errorf("forecast accepted a run with exit %d and no conclusion", run.exit)
 		}
 	}
 }
@@ -298,7 +298,7 @@ func TestForecastRejectsDeadEndBeforeAnchor(t *testing.T) {
 		t.Fatal(err)
 	}
 	launch := func(spec runSpec) (simulation, error) { return simulation{exit: 1}, nil }
-	if _, err := makeForecast(input, t.TempDir(), anchor, specs, "testdata", 1, false, launch); err == nil {
+	if _, err := makeForecast(context.Background(), input, t.TempDir(), anchor, specs, "testdata", 1, false, launch); err == nil {
 		t.Error("forecast accepted exit 1 as a dead end from a dead end the copy already held")
 	}
 }
@@ -383,7 +383,7 @@ func TestFailedForecastKeepsOnlyFailedRuns(t *testing.T) {
 			}
 			return inProcess(spec)
 		}
-		_, err := makeForecast(input, root, anchor, specs, "testdata", len(specs), false, launch)
+		_, err := makeForecast(context.Background(), input, root, anchor, specs, "testdata", len(specs), false, launch)
 		if err == nil {
 			t.Fatal("forecast accepted a failed run")
 		}
@@ -400,7 +400,7 @@ func TestFailedForecastKeepsOnlyFailedRuns(t *testing.T) {
 	})
 	t.Run("later step", func(t *testing.T) {
 		root := filepath.Join(t.TempDir(), "runs")
-		record, err := makeForecast(input, root, anchor, specs, "testdata", len(specs), false, launchInProcess(root))
+		record, err := makeForecast(context.Background(), input, root, anchor, specs, "testdata", len(specs), false, launchInProcess(root))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -419,6 +419,36 @@ func TestFailedForecastKeepsOnlyFailedRuns(t *testing.T) {
 		}
 		if exists(root) {
 			t.Error("kept the run root with no failed run")
+		}
+	})
+	t.Run("interrupted", func(t *testing.T) {
+		root := filepath.Join(t.TempDir(), "runs")
+		ctx, cancel := context.WithCancel(context.Background())
+		var launched []runSpec
+		launch := func(spec runSpec) (simulation, error) {
+			launched = append(launched, spec)
+			cancel()
+			return simulation{dir: runDir(root, spec)}, ctx.Err()
+		}
+		_, err := makeForecast(ctx, input, root, anchor, specs, "testdata", 1, false, launch)
+		if err == nil || !strings.Contains(err.Error(), "interrupted") {
+			t.Fatalf("forecast error %v, want interrupted", err)
+		}
+		if diff := cmp.Diff(1, len(launched)); diff != "" {
+			t.Errorf("runs started after the interrupt: %s", diff)
+		}
+		for _, spec := range specs[1:] {
+			if exists(runDir(root, spec)) {
+				t.Errorf("copied state for run %s-%d after the interrupt", spec.split, spec.seed)
+			}
+		}
+		var stderr bytes.Buffer
+		finishRuns(root, false, err, &stderr)
+		if stderr.Len() != 0 {
+			t.Errorf("printed %q for an interrupted forecast", stderr.String())
+		}
+		if exists(root) {
+			t.Error("kept the run root of an interrupted forecast")
 		}
 	})
 }

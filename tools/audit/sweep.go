@@ -20,6 +20,7 @@ type scenario struct {
 	Replay   bool     `toml:"replay,omitempty"`
 	Dev      []uint64 `toml:"dev"`
 	Holdout  []uint64 `toml:"holdout,omitempty"`
+	Smoke    []uint64 `toml:"smoke,omitempty"`
 }
 type suite struct {
 	Scenarios []scenario `toml:"scenario"`
@@ -125,7 +126,7 @@ func sweepSuite(input suite, base string, seeds int) suite {
 		for j := range seeds {
 			s.Dev[j] = uint64(j + 1)
 		}
-		s.Holdout = nil
+		s.Holdout, s.Smoke = nil, nil
 	}
 	return input
 }
@@ -180,16 +181,11 @@ func timingViolations(records []runRecord, root string) []violation {
 	var found []violation
 	for _, r := range records {
 		issue := violation{Directory: runDirectory(root, r), Scenario: r.Scenario, Seed: r.Seed, Check: "wall_time"}
-		switch {
-		case r.Status == "timeout":
-			issue.Reason = fmt.Sprintf("bench timeout after %.3fs (scenario median %.3fs)", r.WallS, medians[r.Scenario])
-		case r.WallS > 10*medians[r.Scenario]:
+		if r.WallS > 10*medians[r.Scenario] {
 			issue.Reason = fmt.Sprintf("wall time %.3fs exceeds 10x scenario median %.3fs", r.WallS, medians[r.Scenario])
-		}
-		if issue.Reason != "" {
 			found = append(found, issue)
 		}
-		if r.Status != "concluded" && r.Status != "deadend" && r.Status != "timeout" {
+		if r.Status != "concluded" && r.Status != "deadend" {
 			issue.Check = "termination"
 			issue.Reason = "bench run ended with status " + r.Status
 			found = append(found, issue)

@@ -109,10 +109,15 @@ bench *args: _dev-shell
 audit *args: _dev-shell
     go run ./tools/audit "$@"
 
-# Prove simulated session decisions are unchanged from a base revision
+# Prove simulated session decisions are unchanged from a base revision; stops at the first difference (`--keep-going` counts them all)
 [group('run')]
-same base="origin/main": _dev-shell
-    dir=$(mktemp -d); trap 'rm -rf "$dir"' EXIT; git archive "$1" | tar -x -C "$dir"; go run ./tools/bench --same "$dir"
+same base="origin/main" *args: _dev-shell
+    dir=$(mktemp -d); trap 'rm -rf "$dir"' EXIT; git archive "$1" | tar -x -C "$dir"; go run ./tools/bench --same "$dir" "${@:2}"
+
+# Prove a fixed selection of simulated sessions, one per scenario, is unchanged from a base revision; same cache and fail-fast as `same`
+[group('run')]
+smoke base="origin/main" *args: _dev-shell
+    dir=$(mktemp -d); trap 'rm -rf "$dir"' EXIT; git archive "$1" | tar -x -C "$dir"; go run ./tools/bench --same "$dir" --smoke "${@:2}"
 
 # Forecast a real run from a copy of its state directory with the target ensemble (`--out tools/bench/forecasts/<session>-<seq>.json`)
 [group('run')]

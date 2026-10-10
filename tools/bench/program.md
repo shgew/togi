@@ -40,7 +40,7 @@ Breaking any rule invalidates an experiment, however good its ratio looks.
 [Benchmarking](../../docs/benchmarking.md#comparing-two-versions) defines pairing, the comparison ratio, bootstrap interval, the V1–V4 guardrails and verdicts; check printed verdicts and violations, not just exit status. The `target` scenario's replay oracle draws a real outcome when the whole applied profile and trial class match same-BIOS facts and otherwise uses the fitted member, so report each verdict's `real_answer_share`: it measures direct real-fact coverage, not confidence.
 
 - State one falsifiable hypothesis per experiment, and bound the mechanism's possible saving on kept run directories (`just stats --state-dir DIRECTORY`) before building it.
-- Compare each candidate against the current best on the dev split. Seeds are deterministic; rerunning the same commit cannot improve its draw. A timeout is a failure to conclude, not a result to exclude.
+- Compare each candidate against the current best on the dev split. Seeds are deterministic; rerunning the same commit cannot improve its draw. A censored run (the boot cap) is a failure to conclude, not a result to exclude.
 - Use the holdout split once per dev winner, only for confirmation. Discard NEUTRAL, REJECT and failed confirmations.
 - Explain a win by checking that the predicted quantity moved. Ablate kept changes periodically and drop any that no longer contribute.
 - Record every experiment, kept or rejected, with its numbers.
