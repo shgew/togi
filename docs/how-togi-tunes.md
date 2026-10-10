@@ -66,7 +66,7 @@ A **hunt** repeats the failed workload and loaded set while changing which candi
 
 A singleton records a failure point. A failing multi-core subset records a combination: those offsets must not all be reached together. Member probes move each member separately to find usable backoff choices. A fallback combination records the conservative outcome when an ordinary hunt cannot reproduce a narrower failure; it is not proof that every member caused it.
 
-Ordinary hunts handle unattributed failures outside multi-core R7, including idle crashes. Ruleset 10's **located hunts** first test whether a multi-core R7 failure still occurs with unloaded cores at 0. They come from [#415](https://github.com/shgew/togi/issues/415) and [ADR 0040](adr/0040-located-hunts.md), not #107. The exact partition order, evidence windows and outcomes are in [Hunt](spec/tuner.md#hunt).
+Ordinary hunts handle unattributed failures outside multi-core R7, including idle crashes. Ruleset 10's **located hunts** test whether a multi-core R7 failure still occurs with unloaded cores at 0. They come from [#415](https://github.com/shgew/togi/issues/415) and [ADR 0040](adr/0040-located-hunts.md), not #107. [ADR 0053](adr/0053-escalation-only-located-hunts.md) makes them an escalation: such a failure is first charged by voltage-targeted backoff, and located only after its load has been backed off twice since its last passing trial or when no loaded core can step back. The exact partition order, evidence windows and outcomes are in [Hunt](spec/tuner.md#hunt).
 
 ### What happens after an R7 failure?
 
