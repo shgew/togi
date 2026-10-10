@@ -1108,7 +1108,7 @@ func TestDrainRecordsFallbackCombinationBeforeBackoff(t *testing.T) {
 
 func TestLocatedHuntResumesDuringLocate(t *testing.T) {
 	h := r7Harness(t)
-	failLiveR7(h, journal.TrialEnd{DurationS: 41, TopRequesters: []int{0}})
+	failEscalatedR7(h, journal.TrialEnd{DurationS: 41, TopRequesters: []int{0}})
 	for range 2 {
 		h.decide(h.next())
 	}

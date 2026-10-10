@@ -30,7 +30,7 @@ What togi takes from existing tools and research, and what it deliberately leave
 - Write the intended offset durably before the SMU write, then read it back.
 - Confine backends with a cgroup cpuset (`AllowedCPUs`) rather than trusting their own affinity settings.
 - Tell a same-boot process restart apart from a real reboot by boot ID.
-- Vary offsets across reboots to locate an unattributed failure. togi uses a journaled parked [hunt](spec/tuner.md#hunt), testing parts and complements rather than only bisecting the loaded set ([ADR 0020](adr/0020-hunt-and-refine.md)). Multi-core R7 uses [measured top requesters and partial chains](spec/tuner.md#r7-request-order-and-attribution) with [voltage-targeted backoff](spec/tuner.md#r7-voltage-targeted-backoff); a located hunt comes first for an unattributed failure whose unloaded cores were not all at 0 ([ADR 0038](adr/0038-self-sufficient-cores.md), [ADR 0040](adr/0040-located-hunts.md)).
+- Vary offsets across reboots to locate an unattributed failure. togi uses a journaled parked [hunt](spec/tuner.md#hunt), testing parts and complements rather than only bisecting the loaded set ([ADR 0020](adr/0020-hunt-and-refine.md)). Multi-core R7 uses [measured top requesters and partial chains](spec/tuner.md#r7-request-order-and-attribution) with [voltage-targeted backoff](spec/tuner.md#r7-voltage-targeted-backoff); an unattributed failure whose unloaded cores were not all at 0 gets a located hunt only when backing off the loaded cores [stops helping](spec/tuner.md#escalation-to-a-located-hunt) ([ADR 0038](adr/0038-self-sufficient-cores.md), [ADR 0040](adr/0040-located-hunts.md), [ADR 0053](adr/0053-escalation-only-located-hunts.md)).
 
 ### Rejected
 

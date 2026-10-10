@@ -47,7 +47,7 @@ func never(Trial) *int { return nil }
 func TestLocatedHuntRetestsTheFullFailingProfileBeforeEndingLoaded(t *testing.T) {
 	t.Run("full profile fails", func(t *testing.T) {
 		h := r7Harness(t)
-		failLiveR7(h, journal.TrialEnd{DurationS: 41, TopRequesters: []int{0}})
+		failEscalatedR7(h, journal.TrialEnd{DurationS: 41, TopRequesters: []int{0}})
 		a := runLocatedUntil(h, jointFailure(120), isFullGroup(120))
 		assertFullFailingGroup(h, a, 120)
 		if n := len(h.s.hunt.groups); n != 3 {
@@ -64,7 +64,7 @@ func TestLocatedHuntRetestsTheFullFailingProfileBeforeEndingLoaded(t *testing.T)
 	})
 	t.Run("full profile passes", func(t *testing.T) {
 		h := r7Harness(t)
-		failLiveR7(h, journal.TrialEnd{DurationS: 41, TopRequesters: []int{0}})
+		failEscalatedR7(h, journal.TrialEnd{DurationS: 41, TopRequesters: []int{0}})
 		a := runLocatedUntil(h, never, isFullGroup(120))
 		assertFullFailingGroup(h, a, 120)
 		h.decide(a)
@@ -107,7 +107,7 @@ func TestEscalatedLocatedHuntRetestsTheFullFailingProfileAtTheFailedDuration(t *
 			c := config.Default()
 			c.Durations.ShortTrialS = 60
 			h.add(&journal.ConfigLoaded{Path: config.DefaultPath, Config: snapshotConfig(c)})
-			failLiveR7(h, journal.TrialEnd{DurationS: 41, TopRequesters: []int{0}})
+			failEscalatedR7(h, journal.TrialEnd{DurationS: 41, TopRequesters: []int{0}})
 			a := runLocatedUntil(h, tc.fails, isFullGroup(120))
 			assertFullFailingGroup(h, a, 120)
 			var stages []string
@@ -137,7 +137,7 @@ func TestEscalatedLocatedHuntRetestsTheFullFailingProfileAtTheFailedDuration(t *
 
 func TestResetOfACandidateCancelsTheLocatedHunt(t *testing.T) {
 	h := r7Harness(t)
-	_, failure := failLiveR7(h, journal.TrialEnd{DurationS: 41, TopRequesters: []int{0}})
+	_, failure := failEscalatedR7(h, journal.TrialEnd{DurationS: 41, TopRequesters: []int{0}})
 	for range 2 {
 		h.decide(h.next())
 	}

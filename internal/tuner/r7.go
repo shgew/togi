@@ -544,6 +544,14 @@ func (s *State) r7CoreDecision(f pendingFailure, failed entry, c *core, located 
 		}
 		order.reason += clause
 	}
+	if located == nil {
+		if reason := s.backoffReason(f, failed); reason != "" {
+			if order.reason != "" {
+				order.reason += "; "
+			}
+			order.reason += reason
+		}
+	}
 	if r := s.zeroReruns[f.seq]; r != nil && r.passed {
 		locatedSeqs = append(locatedSeqs, r.end)
 		if order.reason != "" {

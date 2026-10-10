@@ -68,7 +68,7 @@ A hunt keeps its partition order across profile changes and resume. A crash whil
 
 A singleton records a failure point. A failing multi-core subset records a combination: those offsets must not all be reached together. Member probes move each member separately to find usable backoff choices. A fallback combination records the conservative outcome when an ordinary hunt cannot reproduce a narrower failure; it is not proof that every member caused it.
 
-Ordinary hunts handle unattributed failures outside multi-core R7, including idle crashes. Ruleset 10's **located hunts** first test whether a multi-core R7 failure still occurs with unloaded cores at 0. They come from [#415](https://github.com/shgew/togi/issues/415) and [ADR 0040](adr/0040-located-hunts.md), not #107. The exact partition order, evidence windows and outcomes are in [Hunt](spec/tuner.md#hunt).
+Ordinary hunts handle unattributed failures outside multi-core R7, including idle crashes. Ruleset 10's **located hunts** test whether a multi-core R7 failure still occurs with unloaded cores at 0. They come from [#415](https://github.com/shgew/togi/issues/415) and [ADR 0040](adr/0040-located-hunts.md), not #107. [ADR 0053](adr/0053-escalation-only-located-hunts.md) makes them an escalation: such a failure is first charged by voltage-targeted backoff, and located only after its load has been backed off twice since its last passing trial or when no loaded core can step back. The exact partition order, evidence windows and outcomes are in [Hunt](spec/tuner.md#hunt).
 
 ### What happens after an R7 failure?
 
@@ -78,7 +78,8 @@ The loaded cores share a voltage rail. Attribution groups are per CCD: a named c
 
 | Situation | Next action |
 |---|---|
-| Live unattributed failure, with an unloaded core off CO 0 | Locate first. Keep the loaded cores at their failing offsets; put unloaded cores at 0. Do not move a loaded core while the hunt is open. |
+| Live unattributed failure, with an unloaded core off CO 0 | Charge the loaded cores by voltage-targeted backoff, as in the rows below. Its reason says which backoff of this load it is since the load last passed. |
+| Such a failure that [escalates](spec/tuner.md#escalation-to-a-located-hunt): its load was backed off twice since it last passed, or no loaded core on the affected CCDs can step back | Locate it. Keep the loaded cores at their failing offsets; put unloaded cores at 0. Do not move a loaded core while the hunt is open. |
 | Locate fails | End `loaded`; charge the loaded-side failure. A group failure naming a loaded core charges that core. |
 | Locate passes | Narrow the unloaded candidates with parts and complements; a culprit or combination backs off those candidates. If no narrower group fails, rerun the full failing profile at the failed duration before deciding `loaded`. |
 | Failure charged to loaded cores | Choose a movable core in the affected request group, or the named core, and raise its request toward an eligible passing voltage target; without one, move one count shallower. Record its failure point. |

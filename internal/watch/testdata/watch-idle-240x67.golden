@@ -1,21 +1,21 @@
-  togi   20:22:28   session 20h22m   55 failures · 15 crashes   last observed failure 18:42   screen paused until 20:37
+  togi   20:15:31   session 20h15m   52 failures · 13 crashes   last observed failure 18:35   screen paused until 20:30
 
   ■ SOLO LIMITS  16/16  ───  ► CYCLE 1  step 7 of 18  ───  ○ DEEPEN  ───  CLEAN CYCLES 0  · repeats until stopped
 
   ▌  CYCLE 1   Step 7 leaves every core idle for 15 minutes, with short wake-ups, to test idle and boost states.          last trial      PASS  2:00 on core 15 · Tctl max 73°C
-  ▌            This screen holds still until 20:37, clock included, so drawing it cannot wake the cores.
+  ▌            This screen holds still until 20:30, clock included, so drawing it cannot wake the cores.
 
-  NOW ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── trial 0674
+  NOW ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── trial 0671
    R6   idle + bursts  on all 16 cores   short wake-ups, no workers in between                                                                                                                                               CYCLE 1 · STEP 7
 
-  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░      ▀▀█ █▀█   ▀▀█ ▀▀█
-  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  screen paused until 20:37 so it cannot wake the idle cores  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░      █▀▀ █ █ ▀  ▀█   █
-  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀      ▀▀▀ ▀▀▀ ▀ ▀▀▀   ▀
-  started 20:22 · 15:00                                                                                                                                                                                                               ends at
+  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░      ▀▀█ █▀█   ▀▀█ █▀█
+  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  screen paused until 20:30 so it cannot wake the idle cores  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░      █▀▀ █ █ ▀  ▀█ █ █
+  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀      ▀▀▀ ▀▀▀ ▀ ▀▀▀ ▀▀▀
+  started 20:15 · 15:00                                                                                                                                                                                                               ends at
 
   if it passes         step 7 is done → next: step 8: R5 both threads with mprime SSE 4K-21K
   if a core is named   its failure point is recorded → it backs off → next: rerun R6 idle + bursts on 00-15 · 2m · a core at 0: rerun at CO 0
-  if none is named     hunt 8 starts over 00-13 15 → next: hunt 8 group 1: R6 idle + bursts on 00-15 · 00-07 at failing offsets, 08-13 15 parked at 0
+  if none is named     hunt 5 starts over 00-13 15 → next: hunt 5 group 1: R6 idle + bursts on 00-15 · 00-07 at failing offsets, 08-13 15 parked at 0
 
   CCD 0               0       -10       -20       -30       -40       -50 fail pt  all under load                         CCD 1               0       -10       -20       -30       -40       -50 fail pt  all under load
   ► 00  -37  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                -38                                          ► 08  -26  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                           -27
@@ -29,38 +29,38 @@
 
   CYCLE 1 ───────────────────────────────────────────────────────────────────────────────────────── 18 steps · 6 done     WHAT HAPPENED ─────────────────────────────────────────────────────────────────── newest first · l: last 400 events
 
-    #   kind                  where                   workload                      schedule       result                 20:22  pass     R2 heavy vector on core 15 at -38 · passed · Tctl max 73°C
-  ■  1  R7 all-core           2 CCDs · 13 parts       mprime AVX2 36K-248K          13 parts       done                   20:20  pass     R2 heavy vector on core 07 at -32 · passed · Tctl max 73°C
-  ■  2  R7 all-core           2 CCDs · 13 parts       mprime AVX-512 36K-248K       13 parts       done                   20:18  pass     R2 heavy vector on core 14 at 0 · passed · Tctl max 62°C
-  ■  3  R7 all-core           2 CCDs · 13 parts       y-cruncher FFTv4 + N63 + VT3  13 parts       done                   20:16  pass     R2 heavy vector on core 06 at -27 · passed · Tctl max 71°C
-  ■  4  R2 heavy vector       one core at a time      mprime AVX2 36K-248K          16 x 2m        done · hunt 7          20:14  pass     R2 heavy vector on core 13 at -22 · passed · Tctl max 76°C
-  ■  5  R2 heavy vector       one core at a time      mprime AVX-512 36K-248K       16 x 2m        done                   20:12  pass     R2 heavy vector on core 05 at -7 · passed · Tctl max 74°C
-  ■  6  R2 heavy vector       one core at a time      y-cruncher FFTv4 + N63 + VT3  16 x 2m        done                   20:10  pass     R2 heavy vector on core 12 at -10 · passed · Tctl max 71°C
-  ►  7  R6 idle + bursts      all cores idle          mprime SSE 4K-21K             15m            trial 1 of 1           20:08  pass     R2 heavy vector on core 04 at -32 · passed · Tctl max 73°C
-  ○  8  R5 both threads       one core at a time      mprime SSE 4K-21K             16 x 2m                               20:06  pass     R2 heavy vector on core 11 at -4 · passed · Tctl max 67°C
-  ○  9  R1 light              one core at a time      mprime SSE 4K-21K             16 x 2m                               20:04  pass     R2 heavy vector on core 03 at -17 · passed · Tctl max 76°C
-  ○ 10  R1 light              one core at a time      y-cruncher BKT + SFTv4        16 x 2m                               20:02  pass     R2 heavy vector on core 10 at -16 · passed · Tctl max 73°C
-  ○ 11  R1 light              one core at a time      y-cruncher SNT + SVT          16 x 2m                               20:00  pass     R2 heavy vector on core 02 at -35 · passed · Tctl max 63°C
-  ○ 12  R3 load steps         one core at a time      mprime SSE 4K-21K             16 x 2m                               19:58  pass     R2 heavy vector on core 09 at -16 · passed · Tctl max 64°C
-  ○ 13  R3 load steps         one core at a time      y-cruncher BKT + SFTv4        16 x 2m                               19:56  pass     R2 heavy vector on core 01 at -33 · passed · Tctl max 66°C
-  ○ 14  R3 load steps         one core at a time      y-cruncher SNT + SVT          16 x 2m                               19:54  pass     R2 heavy vector on core 08 at -26 · passed · Tctl max 69°C
-  ○ 15  R4 partial load       one core at a time      mprime SSE 4K-21K             16 x 2m                               19:52  pass     R2 heavy vector on core 00 at -37 · passed · Tctl max 74°C
-  ○ 16  R4 partial load       one core at a time      y-cruncher BKT + SFTv4        16 x 2m                               19:50  pass     R2 heavy vector on core 15 at -38 · passed · Tctl max 62°C
-  ○ 17  R4 partial load       one core at a time      y-cruncher SNT + SVT          16 x 2m                               19:48  pass     R2 heavy vector on core 07 at -32 · passed · Tctl max 62°C
-  ○ 18  R6 idle + bursts      all cores idle          y-cruncher BKT + SFTv4        15m                                   19:46  pass     R2 heavy vector on core 14 at 0 · passed · Tctl max 70°C
-                                                                                                                          19:44  pass     R2 heavy vector on core 06 at -27 · passed · Tctl max 72°C
-  R7 ─────────────────────────── top requesters ───────── self-sufficient ───────────────── observed, not a guarantee     19:42  pass     R2 heavy vector on core 13 at -22 · passed · Tctl max 70°C
-  mprime AVX2 36K-248K           05 14 by offset          01-14                                                           19:40  pass     R2 heavy vector on core 05 at -7 · passed · Tctl max 69°C
-  mprime AVX-512 36K-248K        05 14 by offset          01-14                                                           19:38  pass     R2 heavy vector on core 12 at -10 · passed · Tctl max 68°C
-  y-cruncher FFTv4 + N63 + VT3   05 14 by offset          01-14                                                           19:36  pass     R2 heavy vector on core 04 at -32 · passed · Tctl max 69°C
-                                                                                                                          19:34  pass     R2 heavy vector on core 11 at -4 · passed · Tctl max 69°C
-                                                                                                                          19:32  pass     R2 heavy vector on core 03 at -17 · passed · Tctl max 64°C
-                                                                                                                          19:30  pass     R2 heavy vector on core 10 at -16 · passed · Tctl max 66°C
-                                                                                                                          19:28  pass     R2 heavy vector on core 02 at -35 · passed · Tctl max 66°C
-                                                                                                                          19:26  pass     R2 heavy vector on core 09 at -16 · passed · Tctl max 63°C
-                                                                                                                          19:24  pass     R2 heavy vector on core 01 at -33 · passed · Tctl max 62°C
-                                                                                                                          19:22  pass     R2 heavy vector on core 08 at -26 · passed · Tctl max 68°C
-                                                                                                                          19:20  pass     R2 heavy vector on core 00 at -37 · passed · Tctl max 72°C
-                                                                                                                          +402 more
+    #   kind                  where                   workload                      schedule       result                 20:15  pass     R2 heavy vector on core 15 at -38 · passed · Tctl max 73°C
+  ■  1  R7 all-core           2 CCDs · 13 parts       mprime AVX2 36K-248K          13 parts       done                   20:13  pass     R2 heavy vector on core 07 at -32 · passed · Tctl max 73°C
+  ■  2  R7 all-core           2 CCDs · 13 parts       mprime AVX-512 36K-248K       13 parts       done                   20:11  pass     R2 heavy vector on core 14 at 0 · passed · Tctl max 62°C
+  ■  3  R7 all-core           2 CCDs · 13 parts       y-cruncher FFTv4 + N63 + VT3  13 parts       done                   20:09  pass     R2 heavy vector on core 06 at -27 · passed · Tctl max 71°C
+  ■  4  R2 heavy vector       one core at a time      mprime AVX2 36K-248K          16 x 2m        done · hunt 4          20:07  pass     R2 heavy vector on core 13 at -22 · passed · Tctl max 76°C
+  ■  5  R2 heavy vector       one core at a time      mprime AVX-512 36K-248K       16 x 2m        done                   20:05  pass     R2 heavy vector on core 05 at -7 · passed · Tctl max 74°C
+  ■  6  R2 heavy vector       one core at a time      y-cruncher FFTv4 + N63 + VT3  16 x 2m        done                   20:03  pass     R2 heavy vector on core 12 at -10 · passed · Tctl max 71°C
+  ►  7  R6 idle + bursts      all cores idle          mprime SSE 4K-21K             15m            trial 1 of 1           20:01  pass     R2 heavy vector on core 04 at -32 · passed · Tctl max 73°C
+  ○  8  R5 both threads       one core at a time      mprime SSE 4K-21K             16 x 2m                               19:59  pass     R2 heavy vector on core 11 at -4 · passed · Tctl max 67°C
+  ○  9  R1 light              one core at a time      mprime SSE 4K-21K             16 x 2m                               19:57  pass     R2 heavy vector on core 03 at -17 · passed · Tctl max 76°C
+  ○ 10  R1 light              one core at a time      y-cruncher BKT + SFTv4        16 x 2m                               19:55  pass     R2 heavy vector on core 10 at -16 · passed · Tctl max 73°C
+  ○ 11  R1 light              one core at a time      y-cruncher SNT + SVT          16 x 2m                               19:53  pass     R2 heavy vector on core 02 at -35 · passed · Tctl max 63°C
+  ○ 12  R3 load steps         one core at a time      mprime SSE 4K-21K             16 x 2m                               19:51  pass     R2 heavy vector on core 09 at -16 · passed · Tctl max 64°C
+  ○ 13  R3 load steps         one core at a time      y-cruncher BKT + SFTv4        16 x 2m                               19:49  pass     R2 heavy vector on core 01 at -33 · passed · Tctl max 66°C
+  ○ 14  R3 load steps         one core at a time      y-cruncher SNT + SVT          16 x 2m                               19:47  pass     R2 heavy vector on core 08 at -26 · passed · Tctl max 69°C
+  ○ 15  R4 partial load       one core at a time      mprime SSE 4K-21K             16 x 2m                               19:45  pass     R2 heavy vector on core 00 at -37 · passed · Tctl max 74°C
+  ○ 16  R4 partial load       one core at a time      y-cruncher BKT + SFTv4        16 x 2m                               19:43  pass     R2 heavy vector on core 15 at -38 · passed · Tctl max 62°C
+  ○ 17  R4 partial load       one core at a time      y-cruncher SNT + SVT          16 x 2m                               19:41  pass     R2 heavy vector on core 07 at -32 · passed · Tctl max 62°C
+  ○ 18  R6 idle + bursts      all cores idle          y-cruncher BKT + SFTv4        15m                                   19:39  pass     R2 heavy vector on core 14 at 0 · passed · Tctl max 70°C
+                                                                                                                          19:37  pass     R2 heavy vector on core 06 at -27 · passed · Tctl max 72°C
+  R7 ─────────────────────────── top requesters ───────── self-sufficient ───────────────── observed, not a guarantee     19:35  pass     R2 heavy vector on core 13 at -22 · passed · Tctl max 70°C
+  mprime AVX2 36K-248K           05 14 by offset          01-14                                                           19:33  pass     R2 heavy vector on core 05 at -7 · passed · Tctl max 69°C
+  mprime AVX-512 36K-248K        05 14 by offset          01-14                                                           19:31  pass     R2 heavy vector on core 12 at -10 · passed · Tctl max 68°C
+  y-cruncher FFTv4 + N63 + VT3   05 14 by offset          01-14                                                           19:29  pass     R2 heavy vector on core 04 at -32 · passed · Tctl max 69°C
+                                                                                                                          19:27  pass     R2 heavy vector on core 11 at -4 · passed · Tctl max 69°C
+                                                                                                                          19:25  pass     R2 heavy vector on core 03 at -17 · passed · Tctl max 64°C
+                                                                                                                          19:23  pass     R2 heavy vector on core 10 at -16 · passed · Tctl max 66°C
+                                                                                                                          19:21  pass     R2 heavy vector on core 02 at -35 · passed · Tctl max 66°C
+                                                                                                                          19:19  pass     R2 heavy vector on core 09 at -16 · passed · Tctl max 63°C
+                                                                                                                          19:17  pass     R2 heavy vector on core 01 at -33 · passed · Tctl max 62°C
+                                                                                                                          19:15  pass     R2 heavy vector on core 08 at -26 · passed · Tctl max 68°C
+                                                                                                                          19:13  pass     R2 heavy vector on core 00 at -37 · passed · Tctl max 72°C
+                                                                                                                          +390 more
 
    ?  help    l  log    esc  back    q  close view
