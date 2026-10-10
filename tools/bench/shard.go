@@ -18,9 +18,9 @@ import (
 	"github.com/shgew/togi/tools/trialfacts"
 )
 
-// shardWeights holds each session's measured wall seconds with the checks of `--sim-flags "--verify-every 1
-// --check-memos"` on, keyed by scenario/split-seed. Only the balance of the shards depends on it: a session it lacks
-// weighs the mean of those it has, and stale weights make the shards uneven, never wrong.
+// shardWeights holds each session's wall seconds in CI's sim-verify checks, with the checks of `--sim-flags
+// "--verify-every 1 --check-memos"` on, keyed by scenario/split-seed. Only the balance of the shards depends on it: a
+// session it lacks weighs the mean of those it has, and stale weights make the shards uneven, never wrong.
 //
 //go:embed shard-weights.json
 var shardWeights []byte
