@@ -71,7 +71,7 @@ type fileScript struct {
 	ThenCrash bool              `json:"then_crash,omitzero"`
 }
 
-// Encode renders the file as indented JSON with sorted map keys, ending in a newline.
+// encode renders indented JSON with sorted map keys, ending in a newline.
 func (f machineFile) encode() ([]byte, error) {
 	b, err := json.Marshal(f, json.Deterministic(true), jsontext.WithIndent("  "))
 	if err != nil {
