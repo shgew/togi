@@ -24,13 +24,13 @@ func Compress(dir string) error {
 	if err != nil {
 		return fmt.Errorf("list trial files: %w", err)
 	}
-	errs := []error{compressFile(filepath.Join(dir, Samples))}
+	errs := []error{compressFile(filepath.Join(dir, Samples), syncDir)}
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
 		}
 		for _, name := range []string{"stdout.log", "stderr.log"} {
-			errs = append(errs, compressFile(filepath.Join(dir, entry.Name(), name)))
+			errs = append(errs, compressFile(filepath.Join(dir, entry.Name(), name), syncDir))
 		}
 	}
 	return errors.Join(errs...)
@@ -40,8 +40,8 @@ func Compress(dir string) error {
 // whole under a temporary name, synced and renamed into place before the plain file is removed, so a reader finds one
 // complete form at every moment and a crash leaves either both (readers prefer the plain one) or the compressed one.
 // A missing path is skipped. So is anything that is not a regular file: a workload may replace its logs with a
-// symlink, which is never followed.
-func compressFile(path string) error {
+// symlink, which is never followed. syncDir makes a change to path's directory durable.
+func compressFile(path string, syncDir func(string) error) error {
 	src, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ELOOP) {
@@ -84,33 +84,28 @@ func compressFile(path string) error {
 		return fmt.Errorf("compress %s: %w", filepath.Base(path), err)
 	}
 	dir := filepath.Dir(path)
-	if err := syncDirs(dir); err != nil {
+	if err := syncDir(dir); err != nil {
 		return fmt.Errorf("sync compressed %s: %w", filepath.Base(path), err)
 	}
 	if err := os.Remove(path); err != nil {
 		return fmt.Errorf("remove plain %s: %w", filepath.Base(path), err)
 	}
-	if err := syncDirs(dir); err != nil {
+	if err := syncDir(dir); err != nil {
 		return fmt.Errorf("sync removal of %s: %w", filepath.Base(path), err)
 	}
 	return nil
 }
 
-func syncDirs(paths ...string) error {
-	for _, path := range paths {
-		d, err := os.Open(path)
-		if err == nil {
-			err = d.Sync()
-			closeErr := d.Close()
-			if err == nil {
-				err = closeErr
-			}
-		}
-		if err != nil {
-			return err
-		}
+func syncDir(path string) error {
+	d, err := os.Open(path)
+	if err != nil {
+		return err
 	}
-	return nil
+	err = d.Sync()
+	if closeErr := d.Close(); err == nil {
+		err = closeErr
+	}
+	return err
 }
 
 // Open opens the trial file at path, or its compressed form when the plain one is gone. Compression removes the

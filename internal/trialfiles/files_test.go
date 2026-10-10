@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 )
 
@@ -96,7 +97,7 @@ func TestCompressTrialFile(t *testing.T) {
 			t.Parallel()
 			dir := t.TempDir()
 			tt.setup(t, dir)
-			if err := compressFile(filepath.Join(dir, "log")); err != nil {
+			if err := compressFile(filepath.Join(dir, "log"), syncDir); err != nil {
 				t.Fatal(err)
 			}
 			if diff := cmp.Diff(tt.want, entries(t, dir), cmpopts.EquateEmpty()); diff != "" {
@@ -107,6 +108,43 @@ func TestCompressTrialFile(t *testing.T) {
 				if err != nil || string(got) != tt.read {
 					t.Fatalf("read after compression = %q, %v", got, err)
 				}
+			}
+		})
+	}
+}
+
+// Backends own their instance directories, so a log path may hold a FIFO or a directory; compression opens either
+// without blocking and leaves it alone.
+func TestCompressSkipsNonRegularSources(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name   string
+		create func(path string) error
+		mode   os.FileMode
+	}{
+		{"fifo", func(path string) error { return syscall.Mkfifo(path, 0600) }, os.ModeNamedPipe},
+		{"directory", func(path string) error { return os.Mkdir(path, 0755) }, os.ModeDir},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			instance := filepath.Join(dir, "work")
+			if err := os.Mkdir(instance, 0755); err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(instance, "stdout.log")
+			if err := tt.create(path); err != nil {
+				t.Fatal(err)
+			}
+			if err := Compress(dir); err != nil {
+				t.Fatalf("compress non-regular %s: %v", tt.name, err)
+			}
+			info, err := os.Lstat(path)
+			if err != nil || info.Mode().Type() != tt.mode {
+				t.Fatalf("non-regular source changed: %v, %v", info, err)
+			}
+			if diff := cmp.Diff([]string{"stdout.log"}, entries(t, instance)); diff != "" {
+				t.Fatalf("instance directory (-want +got):\n%s", diff)
 			}
 		})
 	}

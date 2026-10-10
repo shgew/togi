@@ -39,6 +39,9 @@ type ownerTrials struct {
 	endedErr   error
 	smu        machine.SMU
 	tuned      bool
+	t          *testing.T
+	journal    Journal
+	ended      []string
 }
 
 func (t *ownerTrials) Start(ctx context.Context, spec machine.TrialSpec) (machine.Running, error) {
@@ -52,7 +55,17 @@ func (t *ownerTrials) Start(ctx context.Context, spec machine.TrialSpec) (machin
 	return &ownerRunning{Running: r, owner: t}, nil
 }
 
+// Ended stands for compressing a trial's files: the backend must be joined first and the durable trial.end must follow.
 func (t *ownerTrials) Ended(id string) error {
+	if t.active {
+		t.t.Errorf("trial %s files finalized before its workload joined", id)
+	}
+	for _, e := range t.journal.Events() {
+		if p, ok := e.Data.(*journal.TrialEnd); ok && p.Trial == id {
+			t.t.Errorf("trial %s files finalized after its durable trial.end at seq %d", id, e.Seq)
+		}
+	}
+	t.ended = append(t.ended, id)
 	if t.endedErr != nil {
 		return t.endedErr
 	}
@@ -113,7 +126,7 @@ func TestRunOwnerEveryExit(t *testing.T) {
 			defer cancel()
 			original := errors.New("injected failure")
 			cleanupErr := errors.New("injected close failure")
-			trials := &ownerTrials{Trials: r.in.Machine.Trials, panicStart: mode == "panic"}
+			trials := &ownerTrials{Trials: r.in.Machine.Trials, panicStart: mode == "panic", t: t}
 			if mode == "compression warning" {
 				trials.endedErr = original
 			}
@@ -121,6 +134,7 @@ func TestRunOwnerEveryExit(t *testing.T) {
 			r.in.Machine.Trials = trials
 			r.in.Machine.SMU = ownerSMU{SMU: r.in.Machine.SMU, trials: trials, t: t}
 			r.in.Journal = ownerJournal{Journal: r.in.Journal, fail: mode == "ordinary error", cause: original, cancelOnPass: cancel}
+			trials.journal = r.in.Journal
 			r.in.Cycles = 1
 			closed := false
 			r.in.Close = func() error {
@@ -150,6 +164,13 @@ func TestRunOwnerEveryExit(t *testing.T) {
 			func() { defer func() { recovered = recover() }(); _, runErr = Run(ctx, r.in) }()
 			if !closed || trials.active || trials.stopped != 1 || !trials.tuned {
 				t.Fatalf("closed=%v active=%v joins=%d tuned=%v", closed, trials.active, trials.stopped, trials.tuned)
+			}
+			wantEnded := []string(nil)
+			if mode == "passed trial" || mode == "compression warning" {
+				wantEnded = []string{"0001"}
+			}
+			if diff := cmp.Diff(wantEnded, trials.ended); diff != "" {
+				t.Fatalf("finalized trials (-want +got):\n%s", diff)
 			}
 			switch mode {
 			case "panic":

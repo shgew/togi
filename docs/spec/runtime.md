@@ -162,6 +162,8 @@ A failed same-boot preflight records its checks and returns the preflight failur
 
 A different boot ID retains the firmware-reset assumption: no special reconciliation reads or writes occur. An interrupted dead end on a different boot completes its recorded action without preflight or tuning.
 
+A trial still open in the current boot may have lost its owner while its scope lives on, so `run` neither closes nor compresses it until preflight and the stale-scope sweep have succeeded. Compression then precedes the durable `trial.end`, and the closing still precedes same-boot reconciliation, a pending dead end's completion and tuning. A failed preflight or sweep leaves the trial open and its plain files untouched; the next run that passes both closes it. A trial left open by an earlier boot is closed during crash recovery, before preflight.
+
 After every successful nonwriting preflight, on fresh start and resume in either run mode, `run` sweeps leftover `togi-trial-*.scope` units before the first SMU profile write, including any resume-time reconciliation writes. The sweep stops only concrete unit names with the exact `togi-trial-` prefix and `.scope` suffix; it never touches preflight scopes or names embedding that prefix. Recovered processes receive signals only through bounded `systemctl kill --kill-whom=all` calls on those exact scopes, never through a recovered PID or process-group number. Listing, bounded teardown and final unit/process verification share one 15 s deadline regardless of scope count. A `preflight.check` named `trial_scopes` records the result. If listing, teardown or verification fails, `containment` is a dead end; no profile write or trial follows.
 
 ## Configuration
