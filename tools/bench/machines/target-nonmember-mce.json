@@ -1,5 +1,5 @@
 {
-  "description": "Target-fit-derived adversarial machine: A severe CCD0 shared-rail crash leaves a misleading core-local MCE on a core in CCD1. Derived from target-fit-4.json; all parameters except the named mechanism are unchanged.",
+  "description": "Synthetic conclusion guard for #530, not an admitted adversary: a severe CCD0 shared-rail crash leaves a misleading core-local MCE on core 15 in CCD1. Its numeric model, per-core tables and joints are a frozen copy of an older target-fit-4 fit and are not tracked against the current fit; it carries no hazard or time claim and has no adversary admission.",
   "cores": 16,
   "facts": "../facts/target.jsonl.gz",
   "bios_context": {

@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"io"
 	"io/fs"
@@ -493,6 +495,59 @@ func TestForecastReportNamesMachinesRelativeToSuite(t *testing.T) {
 	}
 	if diff := cmp.Diff(filepath.Join(suiteDir, "machines", "target.json"), check.Machine); diff != "" {
 		t.Errorf("report changed the check: %s", diff)
+	}
+}
+
+func TestEnsembleFilesListEveryMachineFile(t *testing.T) {
+	dir := t.TempDir()
+	contents := map[string]string{"parent.json": `{"cores":8}`, "leaf.json": `{"extends":"parent.json"}`, "other.json": `{"cores":4}`}
+	for name, content := range contents {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	path := func(name string) string { return filepath.Join(dir, name) }
+	runs := []runSpec{
+		{scenario: scenario{Name: "a", Machine: path("leaf.json")}, seed: 1, split: "dev", machineFiles: []string{path("parent.json"), path("leaf.json")}},
+		{scenario: scenario{Name: "a", Machine: path("leaf.json")}, seed: 2, split: "dev", machineFiles: []string{path("parent.json"), path("leaf.json")}},
+		{scenario: scenario{Name: "b", Machine: path("other.json")}, seed: 3, split: "dev", machineFiles: []string{path("other.json")}},
+		{scenario: scenario{Name: "c"}, seed: 4, split: "dev"},
+	}
+	files, err := ensembleFiles(dir, runs, trialfacts.Extracts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var want []forecast.File
+	for _, name := range []string{"parent.json", "leaf.json", "other.json"} {
+		sum := sha256.Sum256([]byte(contents[name]))
+		want = append(want, forecast.File{Path: name, SHA256: hex.EncodeToString(sum[:])})
+	}
+	if diff := cmp.Diff(want, files); diff != "" {
+		t.Errorf("ensemble files (-want +got):\n%s", diff)
+	}
+}
+
+func TestLoadRunsSharesMachineFiles(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "m.json"), []byte(`{"cores":8}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	suite := filepath.Join(dir, "suite.json")
+	if err := os.WriteFile(suite, []byte(`{"scenarios":[{"name":"s","machine":"m.json","dev":[1,2]}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runs, err := loadRuns(suite, "dev", trialfacts.Extracts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{filepath.Join(dir, "m.json")}
+	for _, spec := range runs {
+		if diff := cmp.Diff(want, spec.machineFiles); diff != "" {
+			t.Errorf("seed %d machine files (-want +got):\n%s", spec.seed, diff)
+		}
+	}
+	if len(runs) != 2 || &runs[0].machineFiles[0] != &runs[1].machineFiles[0] {
+		t.Error("runs of one machine must share its file list")
 	}
 }
 

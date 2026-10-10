@@ -28,6 +28,11 @@ type machineFile struct {
 	Joint         []fileJoint          `json:"joint,omitzero"`
 	Script        []fileScript         `json:"script,omitzero"`
 	SharedVoltage *SharedVoltage       `json:"shared_voltage,omitzero"`
+
+	// Extends and SharedVoltageOverride only mark the file as an overlay, even when null; loadOverlay decodes the
+	// overlay form from the same bytes.
+	Extends               jsontext.Value `json:"extends,omitzero"`
+	SharedVoltageOverride jsontext.Value `json:"shared_voltage_override,omitzero"`
 }
 
 // fileModel overrides DefaultModel field by field; an absent field keeps the default.
@@ -80,7 +85,28 @@ func (f machineFile) encode() ([]byte, error) {
 	return append(b, '\n'), nil
 }
 
+// LoadMachine decodes the machine file at path. A file that names a parent in extends is an overlay: it is decoded
+// over its parent's materialized machine (see overlay.go).
 func LoadMachine(path string) (Config, error) {
+	return loadMachine(path, nil, nil)
+}
+
+// LoadMachineWithFiles is LoadMachine that also returns every machine file the config was decoded from, leaf first:
+// path, then each overlay's parent in turn. A full machine file yields only path. The facts extract is not listed.
+func LoadMachineWithFiles(path string) (Config, []string, error) {
+	var files []string
+	cfg, err := loadMachine(path, &files, nil)
+	if err != nil {
+		return Config{}, nil, err
+	}
+	return cfg, files, nil
+}
+
+// loadMachine appends path to files when files is non-nil. chain holds the overlays being loaded above path.
+func loadMachine(path string, files *[]string, chain []string) (Config, error) {
+	if files != nil {
+		*files = append(*files, path)
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return Config{}, fmt.Errorf("load simulator machine %s: %w", path, err)
@@ -93,6 +119,14 @@ func LoadMachine(path string) (Config, error) {
 	if kind := jsontext.Value(data).Kind(); kind != '{' {
 		return Config{}, fmt.Errorf("load simulator machine %s: root is %v, want JSON object", path, kind)
 	}
+	if f.Extends != nil || f.SharedVoltageOverride != nil {
+		return loadOverlay(path, data, files, chain)
+	}
+	return f.config(path)
+}
+
+// config materializes a full machine file; path appears only in errors.
+func (f machineFile) config(path string) (Config, error) {
 	cfg := Config{Cores: f.Cores, BIOS: f.BIOS, Ranking: f.Ranking, OldKernel: f.OldKernel, Facts: f.Facts}
 	cfg.CCD = f.CCD
 	cfg.SharedVoltage = f.SharedVoltage

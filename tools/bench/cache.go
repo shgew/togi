@@ -156,8 +156,8 @@ func cacheKey(binary string, maxBoots int) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// runInputs hashes what one session's simulator reads besides its binary: the session's identity and the machine and
-// facts files it names, by name relative to the tree when inside it.
+// runInputs hashes what one session's simulator reads besides its binary: the session's identity and every machine
+// file the machine loads, then its facts file, by name relative to the tree when inside it.
 func runInputs(tree string, spec runSpec) (string, error) {
 	inTree := func(path string) string {
 		if rel, err := filepath.Rel(tree, path); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
@@ -167,10 +167,14 @@ func runInputs(tree string, spec runSpec) (string, error) {
 	}
 	h := sha256.New()
 	fmt.Fprintf(h, "run %s %s %d replay=%t machine=%s\n", spec.scenario.Name, spec.split, spec.seed, spec.scenario.Replay, inTree(spec.scenario.Machine))
-	for _, file := range []string{spec.scenario.Machine, factsPath(spec)} {
+	for _, file := range spec.machineFiles {
 		if err := hashFile(h, file, inTree(file)); err != nil {
 			return "", err
 		}
+	}
+	facts := factsPath(spec)
+	if err := hashFile(h, facts, inTree(facts)); err != nil {
+		return "", err
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
 }

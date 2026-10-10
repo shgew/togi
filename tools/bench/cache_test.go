@@ -53,7 +53,7 @@ func TestCacheKey(t *testing.T) {
 		dir := t.TempDir()
 		path := filepath.Join(dir, "machines", "m.json")
 		write(path, machine)
-		return dir, runSpec{scenario: scenario{Name: "s", Machine: path}, split: "dev", seed: 1}
+		return dir, runSpec{scenario: scenario{Name: "s", Machine: path}, split: "dev", seed: 1, machineFiles: []string{path}}
 	}
 	inputs := func(dir string, spec runSpec) string {
 		t.Helper()
@@ -84,6 +84,48 @@ func TestCacheKey(t *testing.T) {
 		if inputs(dir, other) == want {
 			t.Errorf("changing the %s must change the inputs", name)
 		}
+	}
+}
+
+// An overlay machine reads its parent too, so the parent's content and the declared order are session inputs.
+func TestRunInputsHashEveryMachineFile(t *testing.T) {
+	tree := func(parent string) (string, runSpec) {
+		t.Helper()
+		dir := t.TempDir()
+		parentPath := filepath.Join(dir, "machines", "parent.json")
+		leafPath := filepath.Join(dir, "machines", "leaf.json")
+		for path, content := range map[string]string{parentPath: parent, leafPath: `{"extends":"parent.json"}`} {
+			if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return dir, runSpec{scenario: scenario{Name: "s", Machine: leafPath}, split: "dev", seed: 1, machineFiles: []string{parentPath, leafPath}}
+	}
+	inputs := func(dir string, spec runSpec) string {
+		t.Helper()
+		got, err := runInputs(dir, spec)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	dir, spec := tree(`{"cores":8}`)
+	want := inputs(dir, spec)
+	otherDir, otherSpec := tree(`{"cores":8}`)
+	if inputs(otherDir, otherSpec) != want {
+		t.Error("equal trees in other places must hash alike")
+	}
+	changedDir, changed := tree(`{"cores":16}`)
+	if inputs(changedDir, changed) == want {
+		t.Error("changing only the parent must change the inputs")
+	}
+	reordered := spec
+	reordered.machineFiles = []string{spec.machineFiles[1], spec.machineFiles[0]}
+	if inputs(dir, reordered) == want {
+		t.Error("the declared file order must be hashed")
 	}
 }
 

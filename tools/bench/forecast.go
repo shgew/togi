@@ -288,15 +288,15 @@ func sessionBearing(name string) bool {
 	return false
 }
 
-// ensembleFiles hashes each machine file and facts extract the runs read, in first-use order, by path relative to the
-// suite's directory.
+// ensembleFiles hashes each machine file the runs load, parents included, and each facts extract they read, in
+// first-use order, by path relative to the suite's directory.
 func ensembleFiles(suiteDir string, runs []runSpec, extracts trialfacts.Extracts) ([]forecast.File, error) {
 	var paths []string
 	for _, spec := range runs {
 		if spec.scenario.Machine == "" {
 			continue
 		}
-		paths = append(paths, spec.scenario.Machine)
+		paths = append(paths, spec.machineFiles...)
 		if spec.cfg.Facts != "" {
 			extract, _, err := extracts.Load(spec.scenario.Machine, spec.cfg)
 			if err != nil {

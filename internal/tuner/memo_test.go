@@ -28,7 +28,7 @@ func TestMemosMatchRecomputation(t *testing.T) {
 		{"target-shared-voltage.json", 2, 40},
 		{"target-r7-request-gap.json", 1, 40},
 		{"misleading-mce.json", 3, 40},
-		{"target-delayed-joint.json", 1, 60},
+		{"late-onset.json", 1, 60},
 	} {
 		t.Run(fmt.Sprintf("%s/%d", tc.machine, tc.seed), func(t *testing.T) {
 			t.Parallel()
