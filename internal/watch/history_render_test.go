@@ -81,7 +81,7 @@ func TestHistoryPanelTinyAndTallBudgetsCountDroppedEntries(t *testing.T) {
 			}
 			for i, e := range s.history[:tc.shown] {
 				before, alarm, after := e.sentenceParts()
-				want := trimWords(before+alarm+after, 84)
+				want := cutWords(before+alarm+after, 84)
 				if got := ansi.Strip(rows[2+i]); !strings.HasSuffix(got, want) {
 					t.Errorf("visible entry %d is not the newest retained entry: got %q, want suffix %q", i, got, want)
 				}

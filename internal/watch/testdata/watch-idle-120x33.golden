@@ -18,7 +18,7 @@
  ► 06 -27 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄█·             -28           ► 14   0 AT LIMIT █·                           -1
  ► 07 -32 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█           -33           ► 15 -38 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█        -39
 
- CYCLE 1 ─────────────────────────────── 18 steps · 6 done   WHAT HAPPENED ──────────────────────────────────── l: all
+ CYCLE 1 ─────────────────────────────── 18 steps · 6 done   WHAT HAPPENED ─────────────────────────────── l: last 400
 
  ■  6 R2 heavy vector   16 x 2m       done                   20:22  pass     R2 heavy vector on core 15 at -38...
  ►  7 R6 idle + bursts  15m           trial 1 of 1           20:20  pass     R2 heavy vector on core 07 at -32...
@@ -27,6 +27,6 @@
  R7 ────────────── top ───────────── self-sufficient ─────   20:14  pass     R2 heavy vector on core 13 at -22...
  mprime AVX2       05 14 by offset   01-14                   20:12  pass     R2 heavy vector on core 05 at -7...
  mprime AVX-512    05 14 by offset   01-14                   20:10  pass     R2 heavy vector on core 12 at -10...
- y-cruncher FFTv4  05 14 by offset   01-14                   +193 more
+ y-cruncher FFTv4  05 14 by offset   01-14                   +427 more
 
   ?  help    l  log    esc  back    q  close view
