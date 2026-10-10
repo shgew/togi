@@ -67,8 +67,9 @@ func (s *State) huntGroups(h *hunt) []HuntGroup {
 	return groups
 }
 
-// huntCut numbers the split plan belongs to among the hunt's splits, in the order the hunt first ran them. A split is
-// the set, granularity and trial length its parts and their complements share.
+// huntCut numbers the split plan belongs to among the hunt's splits, in the order the hunt ran them. A split is the
+// set, granularity and trial length its parts and their complements share. A split the hunt returns to after another is
+// a new cut: only the last split ran so far can still be the plan's.
 func huntCut(h *hunt, plan groupPlan) int {
 	if plan.stage != "part" && plan.stage != "complement" {
 		return 0
@@ -84,9 +85,9 @@ func huntCut(h *hunt, plan groupPlan) int {
 			cut++
 			previous = m
 		}
-		if m.Granularity == plan.g && m.DurationS == plan.duration && slices.Equal(m.Set, plan.set) {
-			return cut
-		}
+	}
+	if previous != nil && plan.g == previous.Granularity && plan.duration == previous.DurationS && slices.Equal(plan.set, previous.Set) {
+		return cut
 	}
 	return cut + 1
 }
