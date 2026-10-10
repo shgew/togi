@@ -1037,3 +1037,43 @@ func TestBIOSProfileNeverReachesAFailureAPairedHuntObservesBeforeItEnds(t *testi
 	}
 	assertLaterReplay(h)
 }
+
+// A paired hunt's observed failure steps only the cores it held at their failing offsets: a core parked in that group
+// keeps its shown offset, and a core no hold marked becomes unconfirmed since the failure.
+func TestBIOSProfileStepsOnlyTheHeldCoresOfAnObservedHuntFailure(t *testing.T) {
+	h := laterHarness(t, -10, -12, -14)
+	confirmed := h.s.BIOSProfile().Confirmed
+	startCycle(h, 4)
+	failCore(h, 0)
+	hold := h.decide(h.next())
+	assertShown(t, h, BIOSProfile{Offsets: []int{-9, -12, -14}, Confirmed: confirmed, Unconfirmed: []int{0}, Since: hold.Seq})
+	idleFailure(h)
+	start := driveToHuntStart(h)
+	if p := start.Payload.(*journal.HuntStart); len(start.Cause) != 2 || !slices.Equal(p.Candidates, []int{0, 1, 2}) {
+		t.Fatalf("paired hunt %+v cause %v", p, start.Cause)
+	}
+	h.decide(start)
+	probe := []int{-9, -12, 0}
+	fails := func(p []int) bool { return p[0] <= -9 && p[1] <= -11 }
+	for range 200 {
+		a := h.next()
+		if _, ok := a.Payload.(*journal.HuntGroup); ok {
+			h.decide(a)
+			continue
+		}
+		if a.Kind != RunTrial {
+			t.Fatalf("the hunt ended before its member probe %v failed: %+v", probe, a)
+		}
+		fail := fails(a.Trial.Profile)
+		runGroup(h, a, fail)
+		if fail && slices.Equal(a.Trial.Profile, probe) {
+			assertShown(t, h, BIOSProfile{Offsets: []int{-8, -11, -14}, Confirmed: confirmed, Unconfirmed: []int{0, 1}, Since: hold.Seq})
+			if diff := cmp.Diff([]int{-10, -12, -14}, h.s.offsets()); diff != "" {
+				t.Fatalf("the tuning profile moved (-want +got):\n%s", diff)
+			}
+			assertLaterReplay(h)
+			return
+		}
+	}
+	t.Fatal("hunt never ran its member probe")
+}
