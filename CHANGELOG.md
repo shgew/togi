@@ -2,6 +2,74 @@
 
 All notable changes to togi are documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Changes not yet released wait in [`changes/`](changes/) until the release assembles them here.
 
+## [0.11.0] - 2026-10-10
+
+### Added
+
+- `togi completion bash|zsh|fish|nushell` prints a shell completion script for togi's commands, flags, paths and `events --kind` selectors, and the Nix package installs all four scripts; nushell needs 0.115.1 or newer and completes one `--kind` selector at a time ([#483]).
+- `togi doctor` checks whether the machine is ready for `togi run` without starting a session or writing to the journal: as root it makes every preflight check, exiting 15 when one fails that `run` would turn into a preflight dead end, and warns when no hardware watchdog is active or the BIOS context changed since the session started; without root it makes the checks that need no root and marks the rest skipped ([#485]).
+- `togi run --first-result` stops once the BIOS profile is first confirmed, right after phase 1's passed cycle and before phase 2 moves a core ([#680]).
+
+### Changed
+
+- **BREAKING** The next `togi run` archives a ruleset-9 or ruleset-10 session and starts a ruleset-11 session that carries its eligible same-BIOS facts, candidate solo limits and failure points but none of its offsets, phases or passed cycles: each core's carried solo limit is checked again, from carried passes where they suffice, then checking runs phase 1, phase 2 and the confirmation cycle under the new rules ([#683]).
+- An unattributed multi-core R7 failure that the tuner locates is rerun on its load with the idle cores at CO 0 (a located hunt), which moves a loaded core only if that rerun fails too, a trial of the hunt fails naming a loaded core, or no group of idle cores fails and the original failing load then passes at its duration ([#463]).
+- A failure at CO 0 ends tuning only after the failing trial, rerun with every core at CO 0, fails too; if that rerun passes, the failure goes to the cores off CO 0 instead. A failure whose profile was already all at CO 0 still ends tuning at once ([#464]).
+- A session from an older ruleset carries a failure point at CO 0 only when its failing profile was all at CO 0; any other failure at CO 0 carries as a known failure and is hunted or attributed again instead of ending tuning ([#464]).
+- A pass counts only for the backend binary it ran under: after a backend update, that backend's workloads earn their passes again, carried passes included, while failures keep counting ([#466]).
+- The default `[checking] cycle` runs R3 and R4 three times each, like R1 and R2, so a cycle takes about 2.1 hours longer on 16 cores and misses a one-count R4 limit far less often; a custom `checking.cycle` is unchanged ([#467]).
+- `togi status` shows each core's phase as the dashboard's state words (`SEARCH`, `HAS ROOM`, `AT LIMIT`) instead of the journal values (`search`, `has_room`, `at_limit`) ([#471]).
+- The dashboard help explains what the screen shows and links the tuner specification for the tuning rules ([#544]).
+- Preflight's slot-mapping check now refuses a CPU whose kernel core IDs fall outside 0–15, naming them ([#648]).
+- Keep every trial directory, including all passing trials, and gzip-compress completed trials' telemetry samples and backend logs while reading both plain and compressed files ([#660]).
+- First-party data files now use JSON: operators with a hand-written configuration must convert it to JSON at `/etc/togi/config.json`; NixOS module users rebuild to generate the JSON configuration ([#664]).
+- Anchored benchmark adversaries now inherit the current shared-voltage machine, with refreshed Ruleset 10 baselines and explicit synthetic conclusion-guard labels ([#667]).
+- An unattributed multi-core R7 failure steps back the loaded cores' top voltage group first, and is located on the idle cores only after two such step-backs of the same load since it last passed, or at once when the loaded cores are all at CO 0; the Ruleset 11 session transition covers the changed decisions ([#676]).
+- `togi run` checks each core one count shallower than its solo limit, then moves cores back toward their solo limits one count per round and always confirms the result with one full cycle, instead of deepening in a loop; `--cycles N` counts clean cycles from that confirmation, and the Ruleset 11 session transition covers the changed decisions ([#677]).
+- A checking cycle's R7 chain parts re-derive after any backoff inside it, so a cycle passes only after the ending profile's riskiest load has run, and only parts whose loaded set changed run new trials; the Ruleset 11 session transition covers the changed decisions ([#678]).
+- After phase 2 has concluded and the profile has passed a cycle, `togi run` holds a core's first failure and steps the core back only on a second failure within 5 cycles, with a journal reason naming both failures; the BIOS profile shows a held failure's core stepped back at once, marked unconfirmed, and returns to the held offset when 5 cycles pass without a second failure; the Ruleset 11 session transition covers the changed decisions ([#679]).
+- `togi status` and the dashboard show the phase and the BIOS profile to enter, marked unconfirmed until a passed cycle confirms it (a held failure's stepped-back offset stays marked until its hold ends), and in phase 2 each candidate's remaining gap and the most rounds left before one full cycle, instead of the deepening plan ([#680]).
+
+### Removed
+
+- Four stale target-fit-derived benchmark scenarios no longer run in the default suite ([#667]).
+
+### Fixed
+
+- Repairing a torn journal tail no longer loses the discarded bytes when writing their `journal.torn` record fails or the machine crashes during the repair; the next run records them ([#446]).
+- Carry and `togi reset --all` treat the state directory path literally, so a path containing `[`, `*`, `?` or `\` no longer makes carry fail or silently skip older archived sessions, and no longer hides pending archive or carry markers from `reset --all`. If your state directory path contains one of these characters and a session carried evidence across a ruleset, schema or evidence-epoch transition, run `sudo togi --state-dir <path> reset --core N` with that state directory as `<path>` for every tuned core; the journal cannot show which archives carry skipped ([#447]).
+- `togi status` and `togi watch` show the same checking step count for a cycle that ended without passing before and after a restart, and the restart no longer records a `state.rebuilt` for it ([#450]).
+- The in-session `togi run` warning about a missing hardware watchdog is now recorded as a `session.warning` event, so it stays visible in the dashboard's history and in `togi events` instead of being cleared when the dashboard starts ([#452]).
+- A hunt's end, its combination and its backoff now cite the live failing trials that decided them, not only carried evidence ([#465]).
+- `togi reset --core` exits 16 instead of 1 when the journal's schema, ruleset or evidence epoch differs from this build's, as documented ([#587]).
+- `togi events --core N` now also prints the `trial.end` and the unattributed failures of every trial that loads core N, including trials that started before `--since` ([#588]).
+- A core held by a combination no longer shows its whole depth as blocked on the dashboard gauge; only the depth between its saved offset and its solo limit does ([#589]).
+- The dashboard shows every journal time (failures, history, journal view, stop and recovery bands, hunt start and idle trial end) in local time like its clock and `togi events`, not UTC ([#592]).
+- `togi run`'s dashboard no longer echoes typed keys onto the frame or scrolls it on Enter ([#593]).
+- `togi run`'s defect prompt no longer takes input typed before the question as its answer, and Ctrl-C at the prompt stops the run without waiting for Enter ([#593]).
+- `togi watch` no longer says a trial has ended before the first trial, no longer offers another confirmation trial once a core's confirmation is complete, and no longer shows a running stage or `repeats until stopped` after the session stopped ([#594]).
+- `togi watch` says an unfinished trial crashed, and that `togi run` records it, when a later boot has written events, for every regime including R6; an earlier trial's recovery or a reset command's later clean shutdown no longer masks that crash ([#594]).
+- An overdue non-R6 trial shows how long it is past its planned end without claiming a crash, and says no trial end is recorded even when same-boot progress follows it; started R6 trials retain their frozen planned-end frame in live, one-frame and replay views, even past that end ([#594]).
+- `togi watch` shows `can't read journal: <reason>` for a journal it cannot read, with a retry promise in the live dashboard only; `no session yet` is left for a journal that does not exist ([#594]).
+- The dashboard no longer drops values or cuts words when a line does not fit: notes keep their offsets in a short form, words and R7 core ranges show whole or not at all, and cut text ends with `...` only when a word fits; narrow R7 rows retain offset provenance, and footer hints shorten labels to keep the keys, with `q` retained first on the smallest screens ([#601]).
+- `togi watch`'s journal view no longer moves while scrolled back: new events stay out of the list and the key hint counts them until `End`, and its labels and WHAT HAPPENED's `+N more` now say the list holds the last 400 events and count every older entry left out ([#602]).
+- `togi watch` help now marks scrolling in three-column views, explains SEARCH, CONFIRM, FOUND, WAITING and MEMBER, and ends on its last text row instead of trailing blank rows ([#602]).
+- The trial progress bar shows elapsed time by shape (`█` elapsed, `░` remaining) as well as colour, so it is readable with `NO_COLOR` and in one-frame `watch` ([#652]).
+- After a checking backoff, the stage line and a rerun's narration name the step checking resumes at, and a crash recovery band names the step the crashed trial ran in instead of `step 0` ([#653]).
+- Idle thermal-trip crashes with uncorrected MCE evidence in the next boot now record the usual idle failure instead of silently continuing; the Ruleset 11 session transition covers previously affected sessions ([#656]).
+- The dashboard identifies re-cut hunt parts instead of silently restarting their numbering ([#657]).
+- `togi run` shows its own starting frame rather than the previous run's journal frame ([#657]).
+- The dashboard clears the screen only once at startup ([#657]).
+- Dashboard headers use singular `1 failure` and `1 crash` counts ([#657]).
+- Help Examples align their descriptions and use the same accurate `--cycles 1` explanation in top-level and run help ([#658]).
+- Flag errors spell flags with two dashes, and commands that do not read configuration explain that `--config` applies only to doctor, run and reset ([#658]).
+- `togi status` labels accumulated hunt pass evidence separately from the required count instead of displaying misleading trial fractions such as `37/5` ([#658]).
+- `togi status` fits an 80-column terminal by wrapping long text and placing decisions, combinations, probe details and R7 workloads below their table rows without truncating them ([#658]).
+- Hunts escalate duration only when the failed trial ran longer than `short_trial_s`, rather than shortening their trials after a shorter failure; the Ruleset 11 transition also covers old sessions by archiving them and carrying facts, not decisions, into a new session, without a defect fixup or manual core reset ([#663]).
+- `togi watch` shows an all-zero rerun as trial 1 of 1, never ties a hunt or deepening trial to another hunt's or round's requirement, never shows a trial number past the trials needed, and keeps the crashed trial's part marked running until recovery closes it ([#665]).
+- A tuner trial retried after an inconclusive end now runs only in the search turn, deepening round, checking cycle step, hunt group, rerun obligation or all-zero rerun it belonged to, and is dropped when that context ends, a hunt moves to another group, a reset supersedes it or a resumed config changes its requirement; the Ruleset 11 session transition covers this decision change ([#668]).
+- A hunt keeps one part order for its whole life, and a crash while applying a hunt group's parked profile counts as a parked failure; the Ruleset 11 session transition covers the changed decisions ([#675]).
+
 ## [0.10.0] - 2026-10-04
 
 ### Added
@@ -351,6 +419,8 @@ All notable changes to togi are documented in this file. The format is based on 
 
 [0.10.0]: https://github.com/shgew/togi/releases/tag/v0.10.0
 
+[0.11.0]: https://github.com/shgew/togi/releases/tag/v0.11.0
+
 [#1]: https://github.com/shgew/togi/issues/1
 [#2]: https://github.com/shgew/togi/issues/2
 [#3]: https://github.com/shgew/togi/issues/3
@@ -465,3 +535,43 @@ All notable changes to togi are documented in this file. The format is based on 
 [#397]: https://github.com/shgew/togi/pull/397
 [#398]: https://github.com/shgew/togi/pull/398
 [#402]: https://github.com/shgew/togi/pull/402
+[#446]: https://github.com/shgew/togi/pull/446
+[#447]: https://github.com/shgew/togi/pull/447
+[#450]: https://github.com/shgew/togi/pull/450
+[#452]: https://github.com/shgew/togi/pull/452
+[#463]: https://github.com/shgew/togi/pull/463
+[#464]: https://github.com/shgew/togi/pull/464
+[#465]: https://github.com/shgew/togi/pull/465
+[#466]: https://github.com/shgew/togi/pull/466
+[#467]: https://github.com/shgew/togi/pull/467
+[#471]: https://github.com/shgew/togi/pull/471
+[#483]: https://github.com/shgew/togi/pull/483
+[#485]: https://github.com/shgew/togi/pull/485
+[#544]: https://github.com/shgew/togi/pull/544
+[#587]: https://github.com/shgew/togi/pull/587
+[#588]: https://github.com/shgew/togi/pull/588
+[#589]: https://github.com/shgew/togi/pull/589
+[#592]: https://github.com/shgew/togi/pull/592
+[#593]: https://github.com/shgew/togi/pull/593
+[#594]: https://github.com/shgew/togi/pull/594
+[#601]: https://github.com/shgew/togi/pull/601
+[#602]: https://github.com/shgew/togi/pull/602
+[#648]: https://github.com/shgew/togi/pull/648
+[#652]: https://github.com/shgew/togi/pull/652
+[#653]: https://github.com/shgew/togi/pull/653
+[#656]: https://github.com/shgew/togi/pull/656
+[#657]: https://github.com/shgew/togi/pull/657
+[#658]: https://github.com/shgew/togi/pull/658
+[#660]: https://github.com/shgew/togi/pull/660
+[#663]: https://github.com/shgew/togi/pull/663
+[#664]: https://github.com/shgew/togi/pull/664
+[#665]: https://github.com/shgew/togi/pull/665
+[#667]: https://github.com/shgew/togi/pull/667
+[#668]: https://github.com/shgew/togi/pull/668
+[#675]: https://github.com/shgew/togi/pull/675
+[#676]: https://github.com/shgew/togi/pull/676
+[#677]: https://github.com/shgew/togi/pull/677
+[#678]: https://github.com/shgew/togi/pull/678
+[#679]: https://github.com/shgew/togi/pull/679
+[#680]: https://github.com/shgew/togi/pull/680
+[#683]: https://github.com/shgew/togi/pull/683
