@@ -739,6 +739,8 @@ func (s Snapshot) restingBand() (string, lipgloss.Style, []string) {
 			lines = append(lines, "Rows show the saved profile, not applied now.")
 		}
 		return "DEAD END", red, lines
+	case s.crashedTrial():
+		return "CRASHED, NOT YET RECOVERED", amber, s.crashedLines()
 	case s.stopped != nil:
 		lines := []string{wallSecond(s.stopped.at) + " · " + stopWords(s.stopped.reason)}
 		if s.stopped.saved {
@@ -747,8 +749,6 @@ func (s Snapshot) restingBand() (string, lipgloss.Style, []string) {
 		return "STOPPED", grey, lines
 	case s.recover != nil:
 		return "RECOVERED FROM A CRASH", amber, s.recoveredLines()
-	case s.crashedTrial():
-		return "CRASHED, NOT YET RECOVERED", amber, s.crashedLines()
 	}
 	var lines []string
 	if s.last != nil {

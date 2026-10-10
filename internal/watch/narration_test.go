@@ -213,3 +213,232 @@ func TestTrialPastItsPlannedEndShowsHowLongWithoutClaimingACrash(t *testing.T) {
 		t.Errorf("stage line lacks the time past the end: %q", line)
 	}
 }
+
+func TestProjectPriorRecoveryDoesNotMaskLaterBootCrash(t *testing.T) {
+	t.Parallel()
+	events := dashboardEvents(dashboardSession(),
+		&journal.CorePhase{Core: 0, To: journal.PhaseSearch, Offset: -25},
+		&journal.TrialIntent{Trial: "trial-A", Core: new(0), Offset: new(-25), Condition: machine.Alone, Phase: journal.PhaseSearch, Regime: machine.R1, Workload: "mprime-sse-4k-21k", DurationS: 90, Profile: []int{-25, 0, 0}},
+		&journal.TrialStart{Trial: "trial-A"})
+	for i := range events {
+		events[i].Boot = "boot-A"
+	}
+	reboot := len(events)
+	events = appendStoryEvents(events,
+		&journal.ConfigLoaded{},
+		&journal.CrashDetected{PreviousBoot: "boot-A", InFlight: new(3)},
+		&journal.TrialEnd{Trial: "trial-A", Outcome: journal.OutcomeFailure, Signal: machine.Crash},
+		&journal.TrialIntent{Trial: "trial-B", Core: new(0), Offset: new(-20), Condition: machine.Alone, Phase: journal.PhaseSearch, Regime: machine.R1, Workload: "mprime-sse-4k-21k", DurationS: 90, Profile: []int{-20, 0, 0}})
+	for i := reboot; i < len(events); i++ {
+		events[i].Boot = "boot-B"
+	}
+	preparing := Project(events)
+	if preparing.trial == nil || preparing.trial.id != "trial-B" || preparing.trial.hasStarted || preparing.trial.crashed {
+		t.Fatalf("next intent must be preparing on the recovery boot: %+v", preparing.trial)
+	}
+	if r := preparing.recover; r == nil || r.trial == nil || r.trial.id != "trial-A" || r.end == nil || r.end.id != "trial-A" {
+		t.Fatalf("same-boot intent must retain trial A's recorded recovery: %+v", r)
+	}
+	events = appendStoryEvents(events, &journal.ConfigLoaded{})
+	events[len(events)-1].Boot = "boot-C"
+	s := Project(events)
+	if s.trial == nil || s.trial.id != "trial-B" || !s.trial.crashed || s.trial.hasStarted {
+		t.Fatalf("boot C must establish that unstarted trial B crashed: %+v", s.trial)
+	}
+	now := cutTime(events)
+	for _, oneFrame := range []bool{false, true} {
+		if st := s.story(now, oneFrame); st.label != "CRASHED" || !strings.Contains(st.brief, "Trial trial-B crashed") {
+			t.Errorf("oneFrame=%t: prior recovery masks trial B in the story: %+v", oneFrame, st)
+		}
+	}
+	if title, _, lines := s.restingBand(); title != "CRASHED, NOT YET RECOVERED" || !strings.Contains(strings.Join(lines, " "), "trial trial-B") {
+		t.Errorf("prior recovery masks trial B in NOW: %q, %v", title, lines)
+	}
+	for _, size := range [][2]int{{240, 67}, {160, 45}, {120, 33}} {
+		live := RenderView(s, Screen{View: MainView, Width: size[0], Height: size[1]}, now)
+		for name, frame := range map[string]string{"live": strings.Join(live.Lines, "\n"), "one frame": Render(s, size[0], size[1], now)} {
+			text := words(frame)
+			for _, want := range []string{"CRASHED, NOT YET RECOVERED", "trial trial-B", "togi run records the crash"} {
+				if !strings.Contains(text, want) {
+					t.Errorf("%s %dx%d lacks %q:\n%s", name, size[0], size[1], want, text)
+				}
+			}
+			if strings.Contains(text, "RECOVERED FROM A CRASH") || strings.Contains(text, "I picked up from the journal after the reboot") {
+				t.Errorf("%s %dx%d still presents trial A's recovery as current:\n%s", name, size[0], size[1], text)
+			}
+		}
+	}
+}
+
+func TestNarrationResetAfterRebootShowsUnrecoveredCrash(t *testing.T) {
+	t.Parallel()
+	events := cutTrial(t, simulated(t, sessionJournal), func(p *journal.TrialIntent) bool {
+		return p.Phase == journal.PhaseSearch && p.Regime != machine.R6
+	})
+	running := Project(events)
+	if running.trial == nil || !running.trial.hasStarted || running.trial.crashed || running.recover != nil {
+		t.Fatalf("fixture must have a started, unrecovered trial: %+v", running.trial)
+	}
+	command := len(events)
+	events = appendStoryEvents(events,
+		&journal.CommandReset{Core: new(running.trial.core)},
+		&journal.Shutdown{Reason: journal.ShutdownCommand})
+	for i := command; i < len(events); i++ {
+		events[i].Boot = "reset-boot"
+	}
+	events[len(events)-1].Cause = []int{events[command].Seq}
+	s := Project(events)
+	if s.trial == nil || !s.trial.crashed || !s.trial.hasStarted || s.recover != nil || s.stopped == nil || s.stopped.reason != journal.ShutdownCommand {
+		t.Fatalf("reset boot must stop cleanly without recovering the old crashed trial: trial=%+v recover=%+v stopped=%+v", s.trial, s.recover, s.stopped)
+	}
+	now := cutTime(events)
+	for _, oneFrame := range []bool{false, true} {
+		if st := s.story(now, oneFrame); st.label != "CRASHED" || !strings.Contains(st.brief, "Trial "+s.trial.id+" crashed") {
+			t.Errorf("oneFrame=%t: command shutdown masks the unrecovered trial in the story: %+v", oneFrame, st)
+		}
+	}
+	if title, _, lines := s.restingBand(); title != "CRASHED, NOT YET RECOVERED" || !strings.Contains(strings.Join(lines, " "), "trial "+s.trial.id) {
+		t.Errorf("command shutdown masks the unrecovered trial in NOW: %q, %v", title, lines)
+	}
+	if line := ansi.Strip(s.stageLine(wideLayout, true, now)); strings.Contains(line, "►") || strings.Contains(line, "left") || !strings.Contains(line, "trial crashed") {
+		t.Errorf("reset after reboot presents a running stage: %q", line)
+	}
+	for _, size := range [][2]int{{240, 67}, {160, 45}, {120, 33}} {
+		live := RenderView(s, Screen{View: MainView, Width: size[0], Height: size[1]}, now)
+		for name, frame := range map[string]string{"live": strings.Join(live.Lines, "\n"), "one frame": Render(s, size[0], size[1], now)} {
+			text := words(frame)
+			for _, want := range []string{"CRASHED, NOT YET RECOVERED", "trial " + s.trial.id, "togi run records the crash"} {
+				if !strings.Contains(text, want) {
+					t.Errorf("%s %dx%d lacks %q:\n%s", name, size[0], size[1], want, text)
+				}
+			}
+			for _, bad := range []string{"STOPPED", "left", "past its end", "RECOVERED FROM A CRASH"} {
+				if strings.Contains(text, bad) {
+					t.Errorf("%s %dx%d says %q instead of the unrecovered crash:\n%s", name, size[0], size[1], bad, text)
+				}
+			}
+		}
+	}
+}
+
+func TestNarrationOverdueWithProgressReportsMissingTrialEnd(t *testing.T) {
+	t.Parallel()
+	events := cutTrial(t, simulated(t, sessionJournal), func(p *journal.TrialIntent) bool {
+		return p.Phase == journal.PhaseSearch && p.Regime != machine.R6
+	})
+	running := Project(events)
+	if running.trial == nil || !running.trial.hasStarted || running.trial.crashed || running.trial.duration <= 0 {
+		t.Fatalf("fixture must have a started non-R6 trial: %+v", running.trial)
+	}
+	end := running.trial.started.Add(running.trial.duration)
+	// Output collection during teardown can record progress after the planned end.
+	events = appendStoryEvents(events, &journal.TrialProgress{Trial: running.trial.id, Detail: "FFT 36K done"})
+	events[len(events)-1].Time = end.Add(10 * time.Second)
+	s := Project(events)
+	now := end.Add(42 * time.Second)
+	if s.trial == nil || s.trial.crashed || !s.trial.hasStarted || s.trial.pastEnd(now) != 42*time.Second || s.recover != nil || s.stopped != nil {
+		t.Fatalf("same-boot progress must leave an overdue, not crashed, trial: %+v", s.trial)
+	}
+	for _, oneFrame := range []bool{false, true} {
+		st := s.story(now, oneFrame)
+		text := words(strings.Join(st.lines, "\n"))
+		if !strings.Contains(text, "no trial end recorded") || strings.Contains(text, "nothing recorded since") {
+			t.Errorf("oneFrame=%t: overdue story misrepresents later progress:\n%s", oneFrame, text)
+		}
+	}
+	for _, size := range [][2]int{{240, 67}, {160, 45}, {120, 33}} {
+		live := RenderView(s, Screen{View: MainView, Width: size[0], Height: size[1]}, now)
+		if !live.Until.IsZero() {
+			t.Errorf("%dx%d: non-R6 overdue frame holds still until %s", size[0], size[1], live.Until)
+		}
+		for name, frame := range map[string]string{"live": strings.Join(live.Lines, "\n"), "one frame": Render(s, size[0], size[1], now)} {
+			text := words(frame)
+			for _, want := range []string{"0:42", "past", "no trial end recorded", "may still be running"} {
+				if !strings.Contains(text, want) {
+					t.Errorf("%s %dx%d lacks %q:\n%s", name, size[0], size[1], want, text)
+				}
+			}
+			for _, bad := range []string{"nothing recorded since", "0:00 left", "crashed", "CRASHED", "togi run records the crash"} {
+				if strings.Contains(text, bad) {
+					t.Errorf("%s %dx%d says %q despite same-boot progress:\n%s", name, size[0], size[1], bad, text)
+				}
+			}
+		}
+	}
+}
+
+func TestNarrationR6OverdueKeepsQuietFrameUntilReboot(t *testing.T) {
+	t.Parallel()
+	events := cutTrial(t, simulated(t, sessionJournal), func(p *journal.TrialIntent) bool { return p.Regime == machine.R6 })
+	s := Project(events)
+	if s.trial == nil || !s.trial.hasStarted || s.trial.crashed || s.trial.duration <= 0 || s.recover != nil {
+		t.Fatalf("fixture must have a started R6 trial in the latest boot: %+v", s.trial)
+	}
+	end := s.trial.started.Add(s.trial.duration)
+	firstAt := s.trial.started.Add(time.Second)
+	for _, size := range [][2]int{{240, 67}, {160, 45}, {120, 33}, {80, 24}} {
+		for _, oneFrame := range []bool{false, true} {
+			sc := Screen{View: MainView, Width: size[0], Height: size[1], OneFrame: oneFrame, Keys: !oneFrame}
+			first := RenderView(s, sc, firstAt)
+			if !first.Until.Equal(heldUntilRecorded) {
+				t.Errorf("oneFrame=%t %dx%d: R6 must hold until an event, not its planned end: %s", oneFrame, size[0], size[1], first.Until)
+			}
+			text := words(strings.Join(first.Lines, "\n"))
+			if !strings.Contains(text, end.Format("15:04")) {
+				t.Errorf("oneFrame=%t %dx%d: frozen R6 frame lacks planned end:\n%s", oneFrame, size[0], size[1], text)
+			}
+			for _, at := range []time.Time{end.Add(-time.Second), end.Add(42 * time.Second), end.Add(time.Hour)} {
+				later := RenderView(s, sc, at)
+				if diff := cmp.Diff(first, later); diff != "" {
+					t.Errorf("oneFrame=%t %dx%d: R6 frame or hold changes at %s (-first +later):\n%s", oneFrame, size[0], size[1], at, diff)
+				}
+				text := words(strings.Join(later.Lines, "\n"))
+				for _, bad := range []string{"left", "past its", "past the", "past its planned", "crashed", "CRASHED", "togi run records the crash"} {
+					if strings.Contains(text, bad) {
+						t.Errorf("oneFrame=%t %dx%d: same-boot R6 says %q at %s:\n%s", oneFrame, size[0], size[1], bad, at, text)
+					}
+				}
+				if diff := cmp.Diff(Render(s, size[0], size[1], firstAt), Render(s, size[0], size[1], at)); diff != "" {
+					t.Errorf("%dx%d: one-frame R6 print changes at %s (-first +later):\n%s", size[0], size[1], at, diff)
+				}
+			}
+		}
+	}
+	config := slices.IndexFunc(events, func(e journal.Event) bool { return e.Kind == journal.KindConfigLoaded })
+	if config < 0 {
+		t.Fatal("fixture must record the configuration before the idle trial")
+	}
+	events = appendStoryEvents(events, events[config].Data)
+	events[len(events)-1].Boot = "after-idle"
+	events[len(events)-1].Time = end.Add(42 * time.Second)
+	crashed := Project(events)
+	if crashed.trial == nil || !crashed.trial.crashed || !crashed.trial.hasStarted || crashed.trial.regime != machine.R6 || crashed.recover != nil {
+		t.Fatalf("a later boot must establish an unrecovered R6 crash: %+v", crashed.trial)
+	}
+	if until := crashed.quietUntil(); !until.IsZero() {
+		t.Errorf("a crashed R6 trial still freezes the frame until %s", until)
+	}
+	now := events[len(events)-1].Time.Add(time.Second)
+	if line := ansi.Strip(crashed.stageLine(wideLayout, true, now)); strings.Contains(line, "►") || strings.Contains(line, "left") || !strings.Contains(line, "trial crashed") {
+		t.Errorf("crashed R6 stage line still runs or counts down: %q", line)
+	}
+	for _, size := range [][2]int{{240, 67}, {160, 45}, {120, 33}, {80, 24}} {
+		for _, oneFrame := range []bool{false, true} {
+			drawn := RenderView(crashed, Screen{View: MainView, Width: size[0], Height: size[1], OneFrame: oneFrame}, now)
+			if !drawn.Until.IsZero() {
+				t.Errorf("oneFrame=%t %dx%d: crashed R6 retains its quiet hold: %s", oneFrame, size[0], size[1], drawn.Until)
+			}
+			text := words(strings.Join(drawn.Lines, "\n"))
+			for _, want := range []string{"CRASHED, NOT YET RECOVERED", "trial " + crashed.trial.id, "togi run records the crash"} {
+				if !strings.Contains(text, want) {
+					t.Errorf("oneFrame=%t %dx%d: crashed R6 lacks %q:\n%s", oneFrame, size[0], size[1], want, text)
+				}
+			}
+			for _, bad := range []string{"left", "past its", "screen paused until", "RECOVERED FROM A CRASH"} {
+				if strings.Contains(text, bad) {
+					t.Errorf("oneFrame=%t %dx%d: crashed R6 still says %q:\n%s", oneFrame, size[0], size[1], bad, text)
+				}
+			}
+		}
+	}
+}

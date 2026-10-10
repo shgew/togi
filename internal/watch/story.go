@@ -34,6 +34,9 @@ func (s Snapshot) story(now time.Time, oneFrame bool) story {
 		return story{"NO SESSION YET", []string{"Nothing has been recorded yet. Start with togi run, or boot the togi entry, and I'll tell you what I'm doing here."}, "", plainTone}
 	case s.deadEnd != nil:
 		return s.deadEndStory()
+	case s.crashedTrial():
+		text := fmt.Sprintf("Trial %s crashed: a later boot has written events. togi run records the crash.", vtText(s.trial.id))
+		return story{"CRASHED", []string{text}, text, warnTone}
 	case s.stopped != nil:
 		return s.stoppedStory()
 	case s.recover != nil:
@@ -46,16 +49,12 @@ func (s Snapshot) story(now time.Time, oneFrame bool) story {
 		return story{s.stageLabel(), []string{text}, text, plainTone}
 	}
 	t := s.trial
-	if t.crashed {
-		text := fmt.Sprintf("Trial %s crashed: a later boot has written events. togi run records the crash.", vtText(t.id))
-		return story{"CRASHED", []string{text}, text, warnTone}
-	}
 	if !t.hasStarted {
 		text := "The trial's intent is recorded; its offsets are being applied and its workload is starting."
 		return story{s.stageLabel(), []string{text}, text, plainTone}
 	}
 	if past := t.pastEnd(now); past > 0 {
-		text := fmt.Sprintf("%s past its planned end, nothing recorded since. Its deadline or watchdog may still be running.", clock(past))
+		text := fmt.Sprintf("%s past its planned end, no trial end recorded. Its deadline or watchdog may still be running.", clock(past))
 		return story{s.stageLabel(), []string{text}, text, plainTone}
 	}
 	if t.zeroRerun() {

@@ -195,6 +195,7 @@ func (p *projector) fold(e journal.Event) {
 	p.clearsCombination(e)
 	if p.current != nil && e.Boot != "" && p.currentBoot != "" && e.Boot != p.currentBoot {
 		p.currentBootEnded = true
+		s.recover = nil
 	}
 	if e.Kind != journal.KindShutdown && e.Kind != journal.KindProfileRestored && e.Kind != journal.KindSessionWarning {
 		p.stopped = false
