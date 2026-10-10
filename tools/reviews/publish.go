@@ -12,6 +12,9 @@ import (
 
 const publishUsage = "usage: just as-bot go run ./tools/reviews publish <snapshot directory>"
 
+// robotogiBotLogin is the exact REST login of the robotogi App's comments; a prefix would also match ordinary users such as robotogi-helper.
+const robotogiBotLogin = robotogiLogin + "[bot]"
+
 type checkPayload struct {
 	Name       string      `json:"name"`
 	HeadSHA    string      `json:"head_sha"`
@@ -44,6 +47,9 @@ func runPublish(t tools, args []string) error {
 	var recordURL string
 	switch {
 	case m.CarryForward:
+		if m.Previous == nil || m.Previous.Verdict != "success" {
+			return errors.New("the snapshot carries forward a previous record that is not recorded as a success: render and publish a new record")
+		}
 		recordURL = m.Previous.URL
 		check.Output = checkOutput{Title: "Review carried forward", Summary: carrySummary(m)}
 	default:
@@ -58,8 +64,13 @@ func runPublish(t tools, args []string) error {
 		if rec.HeadSHA != m.HeadSHA {
 			return fmt.Errorf("%s reviews %s, not the snapshot's head %s: run render again", recordFile, rec.HeadSHA, m.HeadSHA)
 		}
-		if recordURL, err = existingRecord(t, m); err != nil {
+		existing, err := existingRecord(t, m)
+		if err != nil {
 			return err
+		}
+		recordURL = existing.URL
+		if existing.URL != "" && normalizeRecord(existing.Body) != normalizeRecord(string(md)) {
+			return fmt.Errorf("robotogi's record %s on %s differs from %s: it is not updated and no check is posted; post the changed review on a new head", existing.URL, m.HeadSHA, recordFile)
 		}
 		if recordURL == "" {
 			if recordURL, err = postRecord(t, m, filepath.Join(dir, recordFile)); err != nil {
@@ -108,11 +119,22 @@ func carrySummary(m manifest) string {
 		p.URL, oldBase, p.HeadSHA, m.BaseSHA, m.HeadSHA, len(m.Patches), context)
 }
 
-// existingRecord returns the URL of robotogi's record for the snapshot's head, or "" when there is none.
-func existingRecord(t tools, m manifest) (string, error) {
+// existingComment is a record comment already on the pull request.
+type existingComment struct {
+	URL  string
+	Body string
+}
+
+// normalizeRecord makes a comment body comparable with the rendered file: GitHub may store CRLF and trim trailing whitespace.
+func normalizeRecord(s string) string {
+	return strings.TrimSpace(strings.ReplaceAll(s, "\r\n", "\n"))
+}
+
+// existingRecord returns robotogi's last record comment for the snapshot's head, or the zero value when there is none.
+func existingRecord(t tools, m manifest) (existingComment, error) {
 	out, err := t.gh("api", "--paginate", "--slurp", "repos/"+m.Repository+"/issues/"+strconv.Itoa(m.PullRequest)+"/comments")
 	if err != nil {
-		return "", fmt.Errorf("list comments of pull request #%d: %w", m.PullRequest, err)
+		return existingComment{}, fmt.Errorf("list comments of pull request #%d: %w", m.PullRequest, err)
 	}
 	var pages [][]struct {
 		URL  string `json:"html_url"`
@@ -122,20 +144,20 @@ func existingRecord(t tools, m manifest) (string, error) {
 		} `json:"user"`
 	}
 	if err := json.Unmarshal(out, &pages); err != nil {
-		return "", fmt.Errorf("decode comments of pull request #%d: %w", m.PullRequest, err)
+		return existingComment{}, fmt.Errorf("decode comments of pull request #%d: %w", m.PullRequest, err)
 	}
-	var url string
+	var found existingComment
 	for _, page := range pages {
 		for _, c := range page {
-			if !strings.HasPrefix(c.User.Login, robotogiLogin) {
+			if c.User.Login != robotogiBotLogin {
 				continue
 			}
 			if r, err := parseRecord(c.Body); err == nil && r.HeadSHA == m.HeadSHA {
-				url = c.URL
+				found = existingComment{URL: c.URL, Body: c.Body}
 			}
 		}
 	}
-	return url, nil
+	return found, nil
 }
 
 func postRecord(t tools, m manifest, file string) (string, error) {

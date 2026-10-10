@@ -39,10 +39,13 @@ type manifest struct {
 	Coverage *coverage `json:"coverage"`
 }
 
+// previousRecord is the record a re-review follows.
 type previousRecord struct {
 	URL     string `json:"url"`
 	HeadSHA string `json:"head_sha"`
 	BaseSHA string `json:"base_sha,omitempty"`
+	// Verdict is the previous record's verdict; empty for a version 1 or 2 record, which has none. Only a `success` record carries forward.
+	Verdict string `json:"verdict,omitempty"`
 }
 
 type manifestFile struct {

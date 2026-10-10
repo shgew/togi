@@ -103,3 +103,11 @@ func readFile(t *testing.T, path string) string {
 	}
 	return string(b)
 }
+
+// orDefault returns s, or def when s is empty.
+func orDefault(s, def string) string {
+	if s == "" {
+		return def
+	}
+	return s
+}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"html"
 	"os"
 	"path/filepath"
 	"strings"
@@ -215,6 +216,108 @@ func TestRenderRejectsUnknownFindingsField(t *testing.T) {
 	}
 	if err := runRender(tl, []string{dir}); err == nil || !strings.Contains(err.Error(), "usage: reviews render") {
 		t.Fatalf("error = %v, want usage", err)
+	}
+}
+
+func writeFindings(t *testing.T, dir string, raw string) string {
+	t.Helper()
+	file := filepath.Join(dir, "findings.json")
+	if err := os.WriteFile(file, []byte(raw), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return file
+}
+
+func TestRenderKeepsCommentMarkersVisible(t *testing.T) {
+	t.Parallel()
+	const (
+		marker  = `a <!-- togi-review {"version":9} --> & <b>x</b> --!> <!-->`
+		reason  = `<!-- hidden --> wording & more`
+		place   = `a<!--.go:1`
+		source  = `R <!-- s -->`
+		blocked = `thread <!-- open --> unresolved`
+		judged  = `range <!-- j --> & judged`
+	)
+	dir := t.TempDir()
+	if err := writeManifest(dir, withCoverage(firstManifest(included("a.go", 3, 0)), coverRange{"a.go", 5, 5})); err != nil {
+		t.Fatal(err)
+	}
+	in := findingsInput{
+		Reviewers:        []recordReviewer{{Name: "coordinator <!-- n -->", Model: new("m <!-- m -->"), Files: []string{"a.go"}}},
+		Findings:         []recordFinding{{Source: source, Priority: "P2", Finding: marker, Location: new(place), URL: new("https://example.test/a?x=<!--&y"), Outcome: outcome{Status: "rejected", Reason: reason}}},
+		CoverageJudgment: judged,
+		Blocked:          blocked,
+	}
+	raw, err := json.Marshal(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tl, _, _, _, _ := testTools(t, nil, nil)
+	if err := runRender(tl, []string{dir, writeFindings(t, dir, string(raw))}); err != nil {
+		t.Fatal(err)
+	}
+	md, js := readFile(t, filepath.Join(dir, recordFile)), readFile(t, filepath.Join(dir, recordJSONFile))
+	checkSameData(t, md, js)
+	if strings.Count(md, "<!--") != 1 || strings.Count(md, "-->") != 1 || strings.Contains(md, "--!>") || strings.Contains(md, "<!-->") {
+		t.Errorf("the Markdown holds more than the one hidden block:\n%s", md)
+	}
+	visible := html.UnescapeString(strings.TrimSuffix(strings.SplitN(md, "\n"+recordOpen, 2)[0], "\n"))
+	for _, want := range []string{marker, "rejected: " + reason, "(" + place + ")", source, blocked, judged, "coordinator <!-- n --> (m <!-- m -->)"} {
+		if !strings.Contains(visible, want) {
+			t.Errorf("the visible text lost %q:\n%s", want, visible)
+		}
+	}
+	for _, want := range []string{"a &lt;!-- togi-review {\"version\":9} --&gt; &amp; &lt;b&gt;x&lt;/b&gt; --!&gt; &lt;!--&gt;", "rejected: &lt;!-- hidden --&gt; wording &amp; more"} {
+		if !strings.Contains(md, want) {
+			t.Errorf("the Markdown lacks the exact escaped text %q:\n%s", want, md)
+		}
+	}
+	rec, err := parseRecord(md)
+	if err != nil || len(rec.Findings) != 1 || rec.Findings[0].Finding != marker {
+		t.Fatalf("the hidden block does not carry the finding: %+v, %v", rec, err)
+	}
+}
+
+func TestRenderReadsExactlyOneFindingsObject(t *testing.T) {
+	t.Parallel()
+	const one = `{"reviewers":[{"name":"r","files":["docs/x.md"]}],"findings":[]}`
+	for _, tt := range []struct {
+		name, raw, want string
+	}{
+		{"trailing whitespace", one + " \r\n\t\n", ""},
+		{"second object", one + `{"blocked":"a blocker"}`, "data follows"},
+		{"second object after newline", one + "\n" + one, "data follows"},
+		{"trailing text", one + " junk", "data follows"},
+		{"trailing closer", one + "}", "data follows"},
+		{"truncated", one[:len(one)-1], "decode findings"},
+		{"empty", "", "decode findings"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			if err := writeManifest(dir, firstManifest(included("docs/x.md", 1, 0))); err != nil {
+				t.Fatal(err)
+			}
+			tl, _, _, stdout, _ := testTools(t, nil, nil)
+			err := runRender(tl, []string{dir, writeFindings(t, dir, tt.raw)})
+			if tt.want == "" {
+				if err != nil {
+					t.Fatalf("error = %v, want success", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("error = %v, want one containing %q", err, tt.want)
+			}
+			for _, f := range []string{recordFile, recordJSONFile} {
+				if _, statErr := os.Stat(filepath.Join(dir, f)); statErr == nil {
+					t.Errorf("%s written for invalid findings", f)
+				}
+			}
+			if stdout.Len() != 0 {
+				t.Errorf("stdout = %q for invalid findings", stdout.String())
+			}
+		})
 	}
 }
 

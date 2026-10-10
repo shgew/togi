@@ -41,7 +41,7 @@ func parseCover(text string) (ranges []coverRange, unbuilt []notBuilt, err error
 	return ranges, unbuilt, nil
 }
 
-// intersectCover keeps the parts of the reported ranges that lie inside the hunks of their file, and the not-built files the review covers. A range outside every hunk belongs to a patch the record does not cover and is dropped.
+// intersectCover keeps the parts of the reported ranges that lie inside the hunks of their file, and the not-built files the review covers. A range outside every hunk belongs to a patch the record does not cover and is dropped. A delta's hunk file concatenates the patches of several commits, so their hunks can overlap; overlapping parts of a file are merged so one uncovered interval counts once. Adjacent parts stay separate.
 func intersectCover(ranges []coverRange, unbuilt []notBuilt, hunks map[string][]span) coverage {
 	c := coverage{Reported: len(ranges), Ranges: []coverRange{}, NotBuilt: []notBuilt{}}
 	for _, r := range ranges {
@@ -58,9 +58,17 @@ func intersectCover(ranges []coverRange, unbuilt []notBuilt, hunks map[string][]
 		}
 	}
 	slices.SortFunc(c.Ranges, func(a, b coverRange) int {
-		return cmp.Or(strings.Compare(a.Path, b.Path), cmp.Compare(a.First, b.First))
+		return cmp.Or(strings.Compare(a.Path, b.Path), cmp.Compare(a.First, b.First), cmp.Compare(a.Last, b.Last))
 	})
-	c.Ranges = slices.Compact(c.Ranges)
+	merged := c.Ranges[:0]
+	for _, r := range c.Ranges {
+		if n := len(merged); n > 0 && merged[n-1].Path == r.Path && r.First <= merged[n-1].Last {
+			merged[n-1].Last = max(merged[n-1].Last, r.Last)
+			continue
+		}
+		merged = append(merged, r)
+	}
+	c.Ranges = merged
 	return c
 }
 

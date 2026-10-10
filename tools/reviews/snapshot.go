@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	neturl "net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -14,7 +15,7 @@ import (
 	"strings"
 )
 
-const snapshotUsage = "usage: reviews snapshot [--previous <record comment URL>] [--cover <file or ->] <PR number>\n       reviews snapshot --cover <file or -> <snapshot directory>"
+const snapshotUsage = "usage: reviews snapshot [--previous <record comment URL> [--previous-base <full base SHA>]] [--cover <file or ->] <PR number>\n       reviews snapshot --cover <file or -> <snapshot directory>"
 
 // tools holds what the subcommands reach outside the process through, so tests inject fakes.
 type tools struct {
@@ -64,6 +65,7 @@ func runSnapshot(t tools, args []string) error {
 	fs := flag.NewFlagSet("snapshot", flag.ContinueOnError)
 	fs.SetOutput(t.stderr)
 	previous := fs.String("previous", "", "URL of the previous review record comment, for a re-review")
+	previousBase := fs.String("previous-base", "", "full SHA of the base the pull request had at the previous record's head, for a record that does not name it (version 1, or 2 without base_sha)")
 	coverFile := fs.String("cover", "", "file with `just cover` output, or - for standard input")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -82,7 +84,7 @@ func runSnapshot(t tools, args []string) error {
 	target := fs.Arg(0)
 	pr, err := strconv.Atoi(target)
 	if err != nil {
-		if *coverFile == "" || *previous != "" {
+		if *coverFile == "" || *previous != "" || *previousBase != "" {
 			return errors.New(snapshotUsage)
 		}
 		m, err := addCover(target, coverText)
@@ -91,7 +93,10 @@ func runSnapshot(t tools, args []string) error {
 		}
 		return printSummary(t.stdout, target, m)
 	}
-	dir, m, err := createSnapshot(t, pr, *previous)
+	if *previousBase != "" && (*previous == "" || !previousBaseSHA.MatchString(*previousBase)) {
+		return fmt.Errorf("--previous-base needs --previous and a full lower-case commit SHA\n%s", snapshotUsage)
+	}
+	dir, m, err := createSnapshot(t, pr, *previous, *previousBase)
 	if err != nil {
 		return err
 	}
@@ -112,8 +117,8 @@ func readInput(stdin io.Reader, name string) ([]byte, error) {
 
 var errHeadRecorded = errors.New("the previous record already covers this head")
 
-// createSnapshot freezes pull request pr and writes its snapshot directory. It refuses when the head or base moved while it ran.
-func createSnapshot(t tools, pr int, previousURL string) (string, manifest, error) {
+// createSnapshot freezes pull request pr and writes its snapshot directory. It refuses when the head or base moved while it ran. previousBase, when set, is the base the previous record's head had, for a record that does not name it.
+func createSnapshot(t tools, pr int, previousURL, previousBase string) (string, manifest, error) {
 	before, err := viewPull(t.gh, pr)
 	if err != nil {
 		return "", manifest{}, err
@@ -131,8 +136,8 @@ func createSnapshot(t tools, pr int, previousURL string) (string, manifest, erro
 	if err != nil {
 		return "", manifest{}, err
 	}
-	if after.Head != before.Head || after.Base != before.Base {
-		return "", manifest{}, fmt.Errorf("pull request #%d moved while the snapshot ran (head %s, base %s before; head %s, base %s after): run snapshot again", pr, before.Head, before.Base, after.Head, after.Base)
+	if err := movedSince(pr, before, after); err != nil {
+		return "", manifest{}, err
 	}
 	prFiles, err := parseDiff(string(raw))
 	if err != nil {
@@ -145,7 +150,7 @@ func createSnapshot(t tools, pr int, previousURL string) (string, manifest, erro
 	scope := prFiles
 	var delta []byte
 	if previousURL != "" {
-		if err := previousRecordOf(t, repo, pr, previousURL, &m); err != nil {
+		if err := previousRecordOf(t, repo, pr, previousURL, previousBase, &m); err != nil {
 			return "", manifest{}, err
 		}
 		if m.Fallback == "" {
@@ -153,10 +158,25 @@ func createSnapshot(t tools, pr int, previousURL string) (string, manifest, erro
 			if err != nil {
 				return "", manifest{}, err
 			}
-			m.Patches, m.CarryForward = d.Patches, d.carryForward()
+			m.Patches, m.CarryForward = d.Patches, d.carryForward() && m.Previous.Verdict == "success"
 			scope = mergeByPath(d.Files)
 			delta = bytes.Join(d.Texts, nil)
 		}
+	}
+	// Everything that reaches out for the frozen head comes before the last look at the pull request.
+	complete := m.Previous == nil || m.Fallback != ""
+	exclusions := make([]string, len(scope))
+	for i, f := range scope {
+		if exclusions[i], err = exclusionOf(t, repo, m.HeadSHA, f, complete); err != nil {
+			return "", manifest{}, err
+		}
+	}
+	last, err := viewPull(t.gh, pr)
+	if err != nil {
+		return "", manifest{}, err
+	}
+	if err := movedSince(pr, before, last); err != nil {
+		return "", manifest{}, err
 	}
 	dir := filepath.Join(t.tmp, "togi-review", fmt.Sprintf("%d-%s", pr, short(before.Head)))
 	if err := os.RemoveAll(dir); err != nil {
@@ -175,7 +195,7 @@ func createSnapshot(t tools, pr int, previousURL string) (string, manifest, erro
 	}
 	m.Files = []manifestFile{}
 	for i, f := range scope {
-		mf := manifestFile{Path: f.Path, OldPath: f.OldPath, Status: f.Status, Added: f.Added, Removed: f.Removed, Binary: f.Binary, Exclusion: excludedReason(f)}
+		mf := manifestFile{Path: f.Path, OldPath: f.OldPath, Status: f.Status, Added: f.Added, Removed: f.Removed, Binary: f.Binary, Exclusion: exclusions[i]}
 		if mf.Exclusion == "" {
 			mf.HunkFile = hunkFileName(i + 1)
 			if err := os.WriteFile(filepath.Join(dir, mf.HunkFile), []byte(f.Text), 0o644); err != nil {
@@ -190,12 +210,57 @@ func createSnapshot(t tools, pr int, previousURL string) (string, manifest, erro
 	return dir, m, writeManifest(dir, m)
 }
 
+// movedSince refuses a snapshot whose pull request head or base is no longer the frozen one.
+func movedSince(pr int, before, after pullInfo) error {
+	if after.Head != before.Head || after.Base != before.Base {
+		return fmt.Errorf("pull request #%d moved while the snapshot ran (head %s, base %s before; head %s, base %s after): run snapshot again", pr, before.Head, before.Base, after.Head, after.Base)
+	}
+	return nil
+}
+
+// exclusionOf names why the review skips the file, or "" when it is included. A section shows the generated marker only when it adds it or deletes the file, so any other file is read at the frozen head: a marker in context or outside the hunks counts. complete says the sections hold each file's whole change, as the pull request's diff does, so an added or deleted file's section is its whole content.
+func exclusionOf(t tools, repo, head string, f fileDiff, complete bool) (string, error) {
+	if reason := excludedReason(f); reason != "" {
+		return reason, nil
+	}
+	if complete && (f.Status == "added" || f.Status == "deleted") {
+		return "", nil
+	}
+	content, found, err := fileAt(t.gh, repo, head, f.Path)
+	if err != nil {
+		return "", err
+	}
+	if found && generatedContent(content) {
+		return "generated", nil
+	}
+	return "", nil
+}
+
+// fileAt reads a file at a commit through the GitHub API, so the reviewing host needs no checkout of it. A file the commit lacks is not an error.
+func fileAt(gh ghFunc, repo, ref, name string) (string, bool, error) {
+	segments := strings.Split(name, "/")
+	for i, s := range segments {
+		segments[i] = neturl.PathEscape(s)
+	}
+	out, err := gh("api", "-H", "Accept: application/vnd.github.raw+json", "repos/"+repo+"/contents/"+strings.Join(segments, "/")+"?ref="+ref)
+	if err != nil {
+		if strings.Contains(err.Error(), "HTTP 404") {
+			return "", false, nil
+		}
+		return "", false, fmt.Errorf("read %s at %s: %w", name, short(ref), err)
+	}
+	return string(out), true, nil
+}
+
 func short(sha string) string { return sha[:min(8, len(sha))] }
 
 var commentURL = regexp.MustCompile(`^https://github\.com/([^/]+/[^/]+)/(?:pull|issues)/(\d+)#issuecomment-(\d+)$`)
 
-// previousRecordOf reads the previous record comment and sets m.Previous. A record that lacks its base cannot be diffed: m.Fallback then says the whole layer is reviewed.
-func previousRecordOf(t tools, repo string, pr int, url string, m *manifest) error {
+// previousBaseSHA is what --previous-base accepts: a complete lower-case commit SHA, SHA-1 or SHA-256.
+var previousBaseSHA = regexp.MustCompile(`^(?:[0-9a-f]{40}|[0-9a-f]{64})$`)
+
+// previousRecordOf reads the previous record comment and sets m.Previous. A record that lacks its base takes previousBase when the caller recovered one; without either it cannot be diffed and m.Fallback says the whole layer is reviewed.
+func previousRecordOf(t tools, repo string, pr int, url, previousBase string, m *manifest) error {
 	match := commentURL.FindStringSubmatch(url)
 	if match == nil {
 		return fmt.Errorf("previous %q is not a pull request comment URL", url)
@@ -216,8 +281,8 @@ func previousRecordOf(t tools, repo string, pr int, url string, m *manifest) err
 	if err := json.Unmarshal(out, &c); err != nil {
 		return fmt.Errorf("decode the previous record comment: %w", err)
 	}
-	if !strings.HasPrefix(c.User.Login, robotogiLogin) {
-		return fmt.Errorf("previous record %s was posted by %q, not %s", url, c.User.Login, robotogiLogin)
+	if c.User.Login != robotogiBotLogin {
+		return fmt.Errorf("previous record %s was posted by %q, not %s", url, c.User.Login, robotogiBotLogin)
 	}
 	r, err := parseRecord(c.Body)
 	if err != nil {
@@ -229,8 +294,15 @@ func previousRecordOf(t tools, repo string, pr int, url string, m *manifest) err
 	if r.HeadSHA == m.HeadSHA {
 		return fmt.Errorf("%w: %s", errHeadRecorded, url)
 	}
-	m.Previous = &previousRecord{URL: url, HeadSHA: r.HeadSHA, BaseSHA: r.BaseSHA}
-	if r.BaseSHA == "" {
+	base := r.BaseSHA
+	switch {
+	case base == "":
+		base = previousBase
+	case previousBase != "" && previousBase != base:
+		return fmt.Errorf("previous record %s names base %s, not the supplied --previous-base %s", url, base, previousBase)
+	}
+	m.Previous = &previousRecord{URL: url, HeadSHA: r.HeadSHA, BaseSHA: base, Verdict: r.Verdict}
+	if base == "" {
 		m.Fallback = fmt.Sprintf("the previous record is version %d and does not name the base the pull request had at its head, so no minimal delta can be established", r.Version)
 	}
 	return nil
@@ -264,8 +336,15 @@ func printSummary(w io.Writer, dir string, m manifest) error {
 				}
 			}
 			fmt.Fprintf(&b, "patches: %d unchanged (%d with only context changed), %d changed, %d added, %d removed\n", counts["unchanged"], context, counts["changed"], counts["added"], counts["removed"])
-			if m.CarryForward {
+			switch {
+			case m.CarryForward:
 				b.WriteString("every patch is unchanged: carry the record forward with a check on the new head\n")
+			case counts["changed"]+counts["added"]+counts["removed"] == 0:
+				verdict := m.Previous.Verdict
+				if verdict == "" {
+					verdict = "not recorded"
+				}
+				fmt.Fprintf(&b, "every patch is unchanged, but the previous record's verdict is %s, not success: it is not carried forward and the new head needs its own record\n", verdict)
 			}
 		}
 	}

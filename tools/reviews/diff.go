@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-// span is an inclusive range of new-side line numbers.
+// span is an inclusive range of line numbers.
 type span struct{ First, Last int }
 
 // fileDiff is one file's section of a unified diff.
@@ -24,11 +24,17 @@ type fileDiff struct {
 	Text string
 	// Changed holds the new-side lines the section adds, merged into spans.
 	Changed []span
+	// Removals holds the old-side lines the section removes, merged into spans.
+	Removals []span
+	// Mode is the section's mode lines (old mode, new mode, new file mode, deleted file mode), one per line.
+	Mode string
+	// Blob is the object a binary section's index line names as the file's new content; Payload is the body of its GIT binary patch.
+	Blob, Payload string
 }
 
 const diffHeader = "diff --git "
 
-var hunkHeader = regexp.MustCompile(`^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@`)
+var hunkHeader = regexp.MustCompile(`^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@`)
 
 // parseDiff splits a unified diff, as git or gh print it, into its file sections. Empty input has no sections; text without a diff header is an error, so a failure message is never taken for a diff.
 func parseDiff(raw string) ([]fileDiff, error) {
@@ -61,17 +67,30 @@ func parseSection(section string) (fileDiff, error) {
 	lines := strings.SplitAfter(section, "\n")
 	headerLine := strings.TrimSuffix(lines[0], "\n")
 	var oldName, newName string
+	var modes, payload []string
+	inPayload := false
 	i := 1
 	for ; i < len(lines); i++ {
 		line := strings.TrimSuffix(lines[i], "\n")
 		if strings.HasPrefix(line, "@@ ") {
 			break
 		}
+		if inPayload {
+			payload = append(payload, line)
+			continue
+		}
 		switch {
+		case strings.HasPrefix(line, "old mode "), strings.HasPrefix(line, "new mode "):
+			modes = append(modes, line)
 		case strings.HasPrefix(line, "new file mode"):
 			f.Status = "added"
+			modes = append(modes, line)
 		case strings.HasPrefix(line, "deleted file mode"):
 			f.Status = "deleted"
+			modes = append(modes, line)
+		case strings.HasPrefix(line, "index "):
+			ids, _, _ := strings.Cut(strings.TrimPrefix(line, "index "), " ")
+			_, f.Blob, _ = strings.Cut(ids, "..")
 		case strings.HasPrefix(line, "rename from "):
 			f.Status, f.OldPath = "renamed", unquote(strings.TrimPrefix(line, "rename from "))
 		case strings.HasPrefix(line, "rename to "):
@@ -84,10 +103,13 @@ func parseSection(section string) (fileDiff, error) {
 			oldName = diffName(strings.TrimPrefix(line, "--- "))
 		case strings.HasPrefix(line, "+++ "):
 			newName = diffName(strings.TrimPrefix(line, "+++ "))
-		case strings.HasPrefix(line, "Binary files "), line == "GIT binary patch":
+		case line == "GIT binary patch":
+			f.Binary, inPayload = true, true
+		case strings.HasPrefix(line, "Binary files "):
 			f.Binary = true
 		}
 	}
+	f.Mode, f.Payload = strings.Join(modes, "\n"), strings.Join(payload, "\n")
 	if f.Path == "" {
 		switch {
 		case newName != "":
@@ -105,12 +127,13 @@ func parseSection(section string) (fileDiff, error) {
 	if f.Status == "deleted" && oldName != "" {
 		f.Path = oldName
 	}
-	next := 0
-	var changed []int
+	old, next := 0, 0
+	var changed, removed []int
 	for ; i < len(lines); i++ {
 		line := lines[i]
 		if m := hunkHeader.FindStringSubmatch(line); m != nil {
-			next, _ = strconv.Atoi(m[1])
+			old, _ = strconv.Atoi(m[1])
+			next, _ = strconv.Atoi(m[2])
 			continue
 		}
 		switch {
@@ -120,11 +143,14 @@ func parseSection(section string) (fileDiff, error) {
 			next++
 		case strings.HasPrefix(line, "-"):
 			f.Removed++
+			removed = append(removed, old)
+			old++
 		case strings.HasPrefix(line, " "):
+			old++
 			next++
 		}
 	}
-	f.Changed = spans(changed)
+	f.Changed, f.Removals = spans(changed), spans(removed)
 	return f, nil
 }
 
@@ -163,8 +189,11 @@ func diffName(s string) string {
 	return s
 }
 
-// headerPath reads the path from "a/P b/P" when both sides name the same file.
+// headerPath reads the path from "a/P b/P" when both sides name the same file. Git C-quotes a name with control characters, quotes, backslashes or, by default, non-ASCII bytes, and quotes both sides then.
 func headerPath(s string) (string, bool) {
+	if strings.HasPrefix(s, `"`) {
+		return quotedHeaderPath(s)
+	}
 	if len(s) < 5 || (len(s)-5)%2 != 0 {
 		return "", false
 	}
@@ -175,31 +204,72 @@ func headerPath(s string) (string, bool) {
 	return s[2 : 2+n], true
 }
 
-// changedLines returns the added and removed lines of the section, ignoring context and hunk positions.
+func quotedHeaderPath(s string) (string, bool) {
+	first, err := strconv.QuotedPrefix(s)
+	if err != nil {
+		return "", false
+	}
+	rest, ok := strings.CutPrefix(s[len(first):], " ")
+	if !ok {
+		return "", false
+	}
+	a, err := strconv.Unquote(first)
+	if err != nil {
+		return "", false
+	}
+	b, err := strconv.Unquote(rest)
+	if err != nil {
+		return "", false
+	}
+	if len(a) < 3 || len(b) < 3 || a[:2] != "a/" || b[:2] != "b/" || a[2:] != b[2:] {
+		return "", false
+	}
+	return a[2:], true
+}
+
+// changedLines returns the added and removed lines of the section, and the no-newline markers that follow them, ignoring context and hunk positions.
 func (f fileDiff) changedLines() []string {
 	var out []string
-	inHunk := false
+	inHunk, afterChange := false, false
 	for line := range strings.Lines(f.Text) {
 		line = strings.TrimSuffix(line, "\n")
 		switch {
 		case strings.HasPrefix(line, "@@ "):
-			inHunk = true
+			inHunk, afterChange = true, false
 		case inHunk && (strings.HasPrefix(line, "+") || strings.HasPrefix(line, "-")):
 			out = append(out, line)
+			afterChange = true
+		case inHunk && strings.HasPrefix(line, `\`):
+			if afterChange {
+				out = append(out, line)
+			}
+		default:
+			afterChange = false
 		}
 	}
 	return out
 }
 
-// sameChanges reports whether two patches add and remove the same lines in the same files, whatever their context lines, hunk positions and messages.
+// sameChanges reports whether two patches change the same files the same way: the same added and removed lines, modes and, for binary files, resulting content, whatever their context lines, hunk positions and messages.
 func sameChanges(a, b []fileDiff) bool {
 	return slices.EqualFunc(a, b, func(x, y fileDiff) bool {
-		return x.Path == y.Path && x.OldPath == y.OldPath && x.Status == y.Status && x.Binary == y.Binary &&
-			slices.Equal(x.changedLines(), y.changedLines())
+		return x.Path == y.Path && x.OldPath == y.OldPath && x.Status == y.Status && x.Binary == y.Binary && x.Mode == y.Mode &&
+			sameBinary(x, y) && slices.Equal(x.changedLines(), y.changedLines())
 	})
 }
 
-// excludedReason names why the review skips the file, or "" when it is included.
+// sameBinary compares what two binary sections leave in the file: the object their index lines name, or their payloads when an index line is missing. Text sections always match.
+func sameBinary(x, y fileDiff) bool {
+	if !x.Binary {
+		return true
+	}
+	if x.Blob != "" && y.Blob != "" {
+		return x.Blob == y.Blob
+	}
+	return x.Blob == y.Blob && x.Payload == y.Payload
+}
+
+// excludedReason names why the review skips the file from its diff section alone, or "" when it is included. A generated marker the section does not show is found by exclusionOf, which reads the file.
 func excludedReason(f fileDiff) string {
 	switch base := path.Base(f.Path); {
 	case base == "go.sum", base == "flake.lock":
@@ -214,11 +284,33 @@ func excludedReason(f fileDiff) string {
 	return ""
 }
 
+func isGeneratedMarker(line string) bool {
+	return strings.HasPrefix(line, "// Code generated ") && strings.HasSuffix(line, " DO NOT EDIT.")
+}
+
+// isGenerated reports whether the section shows the generated marker: on a line it adds, or on a line it removes when it deletes the file, which then shows the whole old file.
 func isGenerated(f fileDiff) bool {
 	for line := range strings.Lines(f.Text) {
 		line = strings.TrimSuffix(line, "\n")
-		if strings.HasPrefix(line, "+// Code generated ") && strings.HasSuffix(line, " DO NOT EDIT.") {
+		switch {
+		case strings.HasPrefix(line, "+") && isGeneratedMarker(line[1:]):
 			return true
+		case f.Status == "deleted" && strings.HasPrefix(line, "-") && isGeneratedMarker(line[1:]):
+			return true
+		}
+	}
+	return false
+}
+
+// generatedContent reports whether a file's contents carry the generated marker the way Go defines it: on a comment line before the first line that is neither blank nor a line comment.
+func generatedContent(content string) bool {
+	for line := range strings.Lines(content) {
+		line = strings.TrimRight(line, "\r\n")
+		switch {
+		case isGeneratedMarker(line):
+			return true
+		case line != "" && !strings.HasPrefix(line, "//"):
+			return false
 		}
 	}
 	return false

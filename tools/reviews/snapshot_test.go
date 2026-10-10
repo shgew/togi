@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	neturl "net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -208,24 +209,52 @@ func TestIsSmall(t *testing.T) {
 	}
 }
 
-// pullHandler answers pr view with the given heads in turn and pr diff with diff.
-func pullHandler(t *testing.T, diff string, heads ...string) func([]string) ([]byte, error) {
-	t.Helper()
+// sampleContents are the frozen head's files that samplePR modifies or renames; none carries a generated marker.
+var sampleContents = map[string]string{
+	"cmd/togi/main.go": "package main\n\nfunc main() {}\n",
+	"docs/two.md":      "title\nnew\n",
+}
+
+// pullFake answers pr view with view(n) for the n-th call, pr diff with diff, and a file read at the frozen head from contents; a file the head lacks is a 404, as gh reports it.
+func pullFake(diff string, contents map[string]string, view func(n int) pullInfo) func([]string) ([]byte, error) {
 	views := 0
+	const filesPrefix = "repos/shgew/togi/contents/"
 	return func(args []string) ([]byte, error) {
 		switch {
 		case args[0] == "pr" && args[1] == "view":
-			head := heads[min(views, len(heads)-1)]
+			p := view(views)
 			views++
-			return fmt.Appendf(nil, `{"headRefOid":%q,"baseRefOid":%q,"url":%q}`, head, baseSHA, prURL), nil
+			return fmt.Appendf(nil, `{"headRefOid":%q,"baseRefOid":%q,"url":%q}`, p.Head, p.Base, prURL), nil
 		case args[0] == "pr" && args[1] == "diff":
 			if diff == "ERROR" {
 				return nil, errors.New("gh pr diff: HTTP 502")
 			}
 			return []byte(diff), nil
+		case len(args) == 4 && args[0] == "api" && args[1] == "-H" && strings.HasPrefix(args[3], filesPrefix):
+			name, ref, _ := strings.Cut(strings.TrimPrefix(args[3], filesPrefix), "?ref=")
+			if ref != headSHA {
+				return nil, fmt.Errorf("file read at %s, not the frozen head: %v", ref, args)
+			}
+			name, err := neturl.PathUnescape(name)
+			if err != nil {
+				return nil, err
+			}
+			body, ok := contents[name]
+			if !ok {
+				return nil, errors.New("gh api: gh: Not Found (HTTP 404)")
+			}
+			return []byte(body), nil
 		}
 		return nil, fmt.Errorf("unexpected gh %v", args)
 	}
+}
+
+// pullHandler answers pr view with the given heads in turn and pr diff with diff.
+func pullHandler(t *testing.T, diff string, heads ...string) func([]string) ([]byte, error) {
+	t.Helper()
+	return pullFake(diff, sampleContents, func(n int) pullInfo {
+		return pullInfo{Head: heads[min(n, len(heads)-1)], Base: baseSHA}
+	})
 }
 
 func snapshotDir(tl tools) string {
@@ -270,7 +299,12 @@ func TestSnapshotFirstReview(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, "delta.diff")); err == nil {
 		t.Error("a first review wrote delta.diff")
 	}
-	wantCalls := []string{"gh pr view 700 --json headRefOid,baseRefOid,url", "gh pr diff 700 --color=never --allow-escape-sequences", "gh pr view 700 --json headRefOid,baseRefOid,url"}
+	view := "gh pr view 700 --json headRefOid,baseRefOid,url"
+	read := func(name string) string {
+		return "gh api -H Accept: application/vnd.github.raw+json repos/shgew/togi/contents/" + name + "?ref=" + headSHA
+	}
+	// Only files whose diff section does not show their whole content are read at the frozen head, then one last look at the pull request.
+	wantCalls := []string{view, "gh pr diff 700 --color=never --allow-escape-sequences", view, read("cmd/togi/main.go"), read("docs/two.md"), view}
 	if diff := cmp.Diff(wantCalls, g.joined()); diff != "" {
 		t.Errorf("gh calls (-want +got):\n%s", diff)
 	}
@@ -310,29 +344,64 @@ func TestSnapshotUsage(t *testing.T) {
 	}
 }
 
-// reReviewTools fakes a pull request that moved from oldHeadSHA to headSHA with the previous record's body.
-func reReviewTools(t *testing.T, recordBody string, rangeDiff string, patches map[string]string) (tools, *fakeRunner) {
+// reReview fakes a pull request that moved from oldHeadSHA to headSHA: the previous record's comment, git's range-diff and patches, and the frozen head's files. Zero fields take the defaults of the common case.
+type reReview struct {
+	body, rangeDiff string
+	// patches answers git diff by "<from> <to>" for a patch, and by "<commit> -- <path>" for the changes since a removed commit, as newHead leaves the file.
+	patches  map[string]string
+	diff     string
+	contents map[string]string
+	view     func(n int) pullInfo
+	// login is the previous record's author; robotogi[bot] when empty.
+	login string
+	// onAPI and onGit run before a gh api or git call is answered.
+	onAPI, onGit func(args []string)
+}
+
+func (r reReview) tools(t *testing.T) (tools, *fakeRunner) {
 	t.Helper()
-	pr := pullHandler(t, samplePR, headSHA)
+	diff := orDefault(r.diff, samplePR)
+	contents := r.contents
+	if contents == nil {
+		contents = sampleContents
+	}
+	view := r.view
+	if view == nil {
+		view = func(int) pullInfo { return pullInfo{Head: headSHA, Base: baseSHA} }
+	}
+	pr := pullFake(diff, contents, view)
 	gh := func(args []string) ([]byte, error) {
 		if args[0] == "api" {
-			if args[1] != "repos/shgew/togi/issues/comments/4242" {
-				return nil, fmt.Errorf("unexpected api %v", args)
+			if r.onAPI != nil {
+				r.onAPI(args)
 			}
-			b, _ := json.Marshal(map[string]any{"body": recordBody, "user": map[string]string{"login": "robotogi[bot]"}})
-			return b, nil
+			if args[1] == "repos/shgew/togi/issues/comments/4242" {
+				b, _ := json.Marshal(map[string]any{"body": r.body, "user": map[string]string{"login": orDefault(r.login, "robotogi[bot]")}})
+				return b, nil
+			}
 		}
 		return pr(args)
 	}
 	git := func(args []string) ([]byte, error) {
+		if r.onGit != nil {
+			r.onGit(args)
+		}
 		switch args[0] {
 		case "fetch":
 			return nil, nil
 		case "range-diff":
-			return []byte(rangeDiff), nil
+			return []byte(r.rangeDiff), nil
 		case "diff":
-			key := args[len(args)-2] + " " + args[len(args)-1]
-			if p, ok := patches[key]; ok {
+			n := len(args)
+			key := args[n-2] + " " + args[n-1]
+			if args[n-2] == "--" {
+				// The changes since a removed commit: git diff -U0 <commit> <newHead> -- :(literal)<path>.
+				if args[n-3] != headSHA {
+					return nil, fmt.Errorf("changes since a removed commit were read against %s, not the frozen head: %v", args[n-3], args)
+				}
+				key = args[n-4] + " -- " + strings.TrimPrefix(args[n-1], ":(literal)")
+			}
+			if p, ok := r.patches[key]; ok {
 				return []byte(p), nil
 			}
 		}
@@ -342,10 +411,25 @@ func reReviewTools(t *testing.T, recordBody string, rangeDiff string, patches ma
 	return tl, c
 }
 
+// reReviewTools fakes a pull request that moved from oldHeadSHA to headSHA with the previous record's body.
+func reReviewTools(t *testing.T, recordBody string, rangeDiff string, patches map[string]string) (tools, *fakeRunner) {
+	t.Helper()
+	return reReview{body: recordBody, rangeDiff: rangeDiff, patches: patches}.tools(t)
+}
+
+// previousBody is a previous record's comment: a version 3 record is a success.
 func previousBody(version int, base string) string {
+	return previousBodyVerdict(version, base, "success")
+}
+
+// previousBodyVerdict is a previous record's comment; a verdict is written whenever one is given, in any version, and version 3 always writes it.
+func previousBodyVerdict(version int, base, verdict string) string {
 	b := fmt.Sprintf(`{"version":%d,"head_sha":%q,"findings":[]`, version, oldHeadSHA)
 	if base != "" {
 		b += fmt.Sprintf(`,"base_sha":%q`, base)
+	}
+	if verdict != "" || version >= 3 {
+		b += fmt.Sprintf(`,"verdict":%q`, verdict)
 	}
 	return "## Review record\n\n<!-- togi-review " + b + "} -->\n"
 }
@@ -369,6 +453,8 @@ func TestSnapshotReReviewClassifiesPatches(t *testing.T) {
 		"bbb3333^ bbb3333": onePatch("b.go", "ctx", "v2"),
 		"bbb4444^ bbb4444": onePatch("c.go", "ctx", "fresh"),
 		"aaa5555 aaa5555^": onePatch("d.go", "ctx", "gone"),
+		// newHead removes what the dropped commit added to d.go, so its effect is really gone.
+		"aaa5555 -- d.go": "diff --git a/d.go b/d.go\n--- a/d.go\n+++ b/d.go\n@@ -6 +5,0 @@\n-old\n",
 	}
 	tl, git := reReviewTools(t, previousBody(3, oldBaseSHA), rangeDiff, patches)
 	if err := runSnapshot(tl, []string{"--previous", previousURL, "700"}); err != nil {
@@ -472,7 +558,9 @@ func TestSnapshotRejectsPrevious(t *testing.T) {
 	}{
 		{"other pull request", "https://github.com/shgew/togi/pull/9#issuecomment-4242", previousBody(3, oldBaseSHA), "robotogi[bot]", "not on pull request #700"},
 		{"not a comment URL", "https://github.com/shgew/togi/pull/700", previousBody(3, oldBaseSHA), "robotogi[bot]", "not a pull request comment URL"},
-		{"someone else's comment", previousURL, previousBody(3, oldBaseSHA), "shgew", "not robotogi"},
+		{"someone else's comment", previousURL, previousBody(3, oldBaseSHA), "shgew", "not robotogi[bot]"},
+		{"prefix lookalike", previousURL, previousBody(3, oldBaseSHA), "robotogi-helper", "not robotogi[bot]"},
+		{"the App slug is not its comment login", previousURL, previousBody(3, oldBaseSHA), "robotogi", "not robotogi[bot]"},
 		{"no record", previousURL, "just a comment", "robotogi[bot]", "no togi-review block"},
 		{"already on this head", previousURL, strings.ReplaceAll(previousBody(3, oldBaseSHA), oldHeadSHA, headSHA), "robotogi[bot]", "already covers this head"},
 	}

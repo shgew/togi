@@ -260,7 +260,7 @@ func TestPublishCarriesForward(t *testing.T) {
 	dir := t.TempDir()
 	m := firstManifest()
 	m.CarryForward = true
-	m.Previous = &previousRecord{URL: previousURL, HeadSHA: oldHeadSHA, BaseSHA: oldBaseSHA}
+	m.Previous = &previousRecord{URL: previousURL, HeadSHA: oldHeadSHA, BaseSHA: oldBaseSHA, Verdict: "success"}
 	m.Patches = []patchStatus{{Status: "unchanged"}, {Status: "unchanged", ContextOnly: true}}
 	if err := writeManifest(dir, m); err != nil {
 		t.Fatal(err)
@@ -283,6 +283,88 @@ func TestPublishCarriesForward(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "record "+previousURL) {
 		t.Errorf("output = %q", out.String())
+	}
+}
+
+func TestPublishRefusesCarryForwardOfAPriorThatIsNotASuccess(t *testing.T) {
+	t.Parallel()
+	for _, verdict := range []string{"blocked", ""} {
+		dir := t.TempDir()
+		m := firstManifest()
+		m.CarryForward = true
+		m.Previous = &previousRecord{URL: previousURL, HeadSHA: oldHeadSHA, BaseSHA: oldBaseSHA, Verdict: verdict}
+		m.Patches = []patchStatus{{Status: "unchanged"}}
+		if err := writeManifest(dir, m); err != nil {
+			t.Fatal(err)
+		}
+		f := &fakeGitHub{heads: []string{headSHA}}
+		tl, _, _, out, _ := testTools(t, f.handle, nil)
+		if err := runPublish(tl, []string{dir}); err == nil || !strings.Contains(err.Error(), "not recorded as a success") {
+			t.Fatalf("verdict %q: error = %v, want a carry-forward refusal", verdict, err)
+		}
+		if len(f.posted) != 0 || out.Len() != 0 {
+			t.Errorf("verdict %q: a refused carry-forward posted %v and printed %q", verdict, f.posted, out.String())
+		}
+	}
+}
+
+func TestPublishIgnoresPrefixLookalikeBots(t *testing.T) {
+	t.Parallel()
+	dir := renderedSnapshot(t, outcome{Status: "fixed", SHA: fixSHA})
+	existing := readFile(t, filepath.Join(dir, recordFile))
+	var users []map[string]any
+	for i, login := range []string{"robotogi-helper", "robotogi", "robotogi[bot]x"} {
+		users = append(users, map[string]any{"html_url": fmt.Sprintf("https://example.test/lookalike-%d", i), "body": existing, "user": map[string]string{"login": login}})
+	}
+	comments, _ := json.Marshal([][]map[string]any{users})
+	f := &fakeGitHub{heads: []string{headSHA}, comments: string(comments)}
+	tl, _, _, out, _ := testTools(t, f.handle, nil)
+	if err := runPublish(tl, []string{dir}); err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff([]string{"comment", "check"}, f.posted); diff != "" {
+		t.Errorf("posts (-want +got):\n%s", diff)
+	}
+	if strings.Contains(out.String(), "example.test") || !strings.Contains(f.checkPayload, recordCommentURL) || strings.Contains(f.checkPayload, "example.test") {
+		t.Errorf("a lookalike's comment was linked: output %q, check %s", out.String(), f.checkPayload)
+	}
+}
+
+func TestPublishRefusesAnExistingRecordThatDiffers(t *testing.T) {
+	t.Parallel()
+	blockedDir := renderedSnapshot(t, outcome{Status: "deferred", Issue: 5})
+	blocked := readFile(t, filepath.Join(blockedDir, recordFile))
+	// The same head rendered again with the finding fixed: the local record is a success, the posted one is blocked.
+	dir := renderedSnapshot(t, outcome{Status: "fixed", SHA: fixSHA})
+	for name, body := range map[string]string{
+		"blocked record": blocked,
+		"other data":     readFile(t, filepath.Join(dir, recordFile)) + "\nextra visible text\n",
+	} {
+		comments, _ := json.Marshal([][]map[string]any{{{"html_url": recordCommentURL, "body": body, "user": map[string]string{"login": "robotogi[bot]"}}}})
+		f := &fakeGitHub{heads: []string{headSHA}, comments: string(comments)}
+		tl, _, _, out, _ := testTools(t, f.handle, nil)
+		err := runPublish(tl, []string{dir})
+		if err == nil || !strings.Contains(err.Error(), "differs from "+recordFile) {
+			t.Fatalf("%s: error = %v, want a mismatch refusal", name, err)
+		}
+		if len(f.posted) != 0 || f.checkPayload != "" || out.Len() != 0 {
+			t.Errorf("%s: a refused publish posted %v, check %q, output %q", name, f.posted, f.checkPayload, out.String())
+		}
+	}
+}
+
+func TestPublishReusesAnIdenticalRecordDespiteLineEndings(t *testing.T) {
+	t.Parallel()
+	dir := renderedSnapshot(t, outcome{Status: "fixed", SHA: fixSHA})
+	body := strings.ReplaceAll(readFile(t, filepath.Join(dir, recordFile)), "\n", "\r\n")
+	comments, _ := json.Marshal([][]map[string]any{{{"html_url": recordCommentURL, "body": body, "user": map[string]string{"login": "robotogi[bot]"}}}})
+	f := &fakeGitHub{heads: []string{headSHA}, comments: string(comments)}
+	tl, _, _, _, _ := testTools(t, f.handle, nil)
+	if err := runPublish(tl, []string{dir}); err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff([]string{"check"}, f.posted); diff != "" {
+		t.Errorf("posts (-want +got):\n%s", diff)
 	}
 }
 

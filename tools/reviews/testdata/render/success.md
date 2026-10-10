@@ -5,7 +5,7 @@
 | Source | Priority | Finding | Outcome |
 |---|---|---|---|
 | [reviewer-1](https://github.com/shgew/togi/pull/700#discussion_r1) | P2 | Readback skipped on retry \| second line of text (`internal/tuner/step.go:42`) | fixed in dddddddddddddddddddddddddddddddddddddddd |
-| reviewer-2 | P3 | Stale comment <b>&</b> | rejected: wording only |
+| reviewer-2 | P3 | Stale comment &lt;b&gt;&amp;&lt;/b&gt; | rejected: wording only |
 | coordinator | P2 | Deferred to a later issue | deferred: #123 |
 
 <details>

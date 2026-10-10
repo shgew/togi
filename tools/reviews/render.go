@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -93,10 +94,8 @@ func runRender(t tools, args []string) error {
 	if err != nil {
 		return fmt.Errorf("read findings: %w", err)
 	}
-	var in findingsInput
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&in); err != nil {
+	in, err := decodeFindings(raw)
+	if err != nil {
 		return fmt.Errorf("decode findings %s: %w", args[1], err)
 	}
 	model, err := buildRecord(m, in)
@@ -116,6 +115,20 @@ func runRender(t tools, args []string) error {
 	}
 	_, err = fmt.Fprintf(t.stdout, "%s: %s on %s\nwrote %s and %s\n", filepath.Base(filepath.Clean(dir)), model.Verdict, model.HeadSHA, filepath.Join(dir, recordFile), filepath.Join(dir, recordJSONFile))
 	return err
+}
+
+// decodeFindings reads exactly one JSON object with known fields. Anything after it but whitespace, such as a second object, is refused rather than silently dropped.
+func decodeFindings(raw []byte) (findingsInput, error) {
+	var in findingsInput
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&in); err != nil {
+		return in, err
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return in, errors.New("data follows the findings object; the file must hold exactly one JSON object")
+	}
+	return in, nil
 }
 
 // buildRecord checks the coordinator's findings against the manifest and joins them into one record.
@@ -245,7 +258,7 @@ func (r recordModel) markdown() string {
 	var b strings.Builder
 	b.WriteString("## Review record\n\n")
 	if r.blocker != "" {
-		fmt.Fprintf(&b, "**%s** on %s: %s.\n\n", r.Verdict, r.HeadSHA, r.blocker)
+		fmt.Fprintf(&b, "**%s** on %s: %s.\n\n", r.Verdict, r.HeadSHA, entities(r.blocker))
 	} else {
 		fmt.Fprintf(&b, "**%s** on %s.\n\n", r.Verdict, r.HeadSHA)
 	}
@@ -256,11 +269,11 @@ func (r recordModel) markdown() string {
 		for _, f := range r.Findings {
 			source := cell(f.Source)
 			if f.URL != nil {
-				source = "[" + source + "](" + *f.URL + ")"
+				source = "[" + source + "](" + entities(*f.URL) + ")"
 			}
 			text := cell(f.Finding)
 			if f.Location != nil {
-				text += " (`" + cell(*f.Location) + "`)"
+				text += " (" + locationText(*f.Location) + ")"
 			}
 			fmt.Fprintf(&b, "| %s | %s | %s | %s |\n", source, f.Priority, text, cell(f.Outcome.text()))
 		}
@@ -283,9 +296,9 @@ func (r recordModel) markdown() string {
 	}
 	parts := make([]string, len(r.Reviewers))
 	for i, rv := range r.Reviewers {
-		parts[i] = rv.Name
+		parts[i] = entities(rv.Name)
 		if rv.Model != nil {
-			parts[i] += " (" + *rv.Model + ")"
+			parts[i] += " (" + entities(*rv.Model) + ")"
 		}
 		parts[i] += ": " + codeList(rv.Files)
 	}
@@ -295,7 +308,7 @@ func (r recordModel) markdown() string {
 		if c.Uncovered == 1 {
 			noun = "range"
 		}
-		fmt.Fprintf(&b, "- Coverage: %d uncovered %s. %s\n", c.Uncovered, noun, c.Judgment)
+		fmt.Fprintf(&b, "- Coverage: %d uncovered %s. %s\n", c.Uncovered, noun, entities(c.Judgment))
 	}
 	b.WriteString("\n</details>\n")
 	return b.String()
@@ -311,9 +324,24 @@ func (o outcome) text() string {
 	return fmt.Sprintf("deferred: #%d", o.Issue)
 }
 
-// cell makes text safe for one table cell.
+// cell makes text safe for one table cell and for the record's hidden block: it escapes &, < and > so human text can open no HTML comment, and shows them as written.
 func cell(s string) string {
-	return strings.ReplaceAll(strings.Join(strings.Fields(s), " "), "|", `\|`)
+	return strings.ReplaceAll(entities(strings.Join(strings.Fields(s), " ")), "|", `\|`)
+}
+
+var htmlEntities = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
+
+// entities writes &, < and > as HTML entities, which Markdown shows as the characters themselves.
+func entities(s string) string {
+	return htmlEntities.Replace(s)
+}
+
+// locationText writes a finding location as a code span; one holding &, < or > is plain escaped text, because a code span would show the entities.
+func locationText(s string) string {
+	if strings.ContainsAny(s, "&<>") {
+		return cell(s)
+	}
+	return "`" + cell(s) + "`"
 }
 
 func codeList(items []string) string {
