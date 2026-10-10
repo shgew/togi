@@ -12,6 +12,7 @@ Go CLI that finds per-core Curve Optimizer offsets on Zen 5 desktop CPUs and kee
 - `docs/issues.md`: labels, lifecycle, `Touches:`, claiming and the target-machine queue. Read it before filing, triaging or claiming an issue.
 - `docs/adr/`: decisions and the alternatives rejected, with statuses in [the index](docs/adr/README.md). Where a spec disagrees with an ADR, the spec wins. Reversing a decision needs a new ADR, which updates the index in the same pull request.
 - `docs/prior-art.md`: before proposing a feature, check whether it was deliberately left out.
+- `docs/porting.md` and `docs/rust-migration.md`: the Go-to-Rust porting guide (rule, idioms, byte hazards, reviewer checklist) and the migration log; read the guide before any porting work, and append what your pull request measured to the log ([ADR 0048](docs/adr/0048-rust.md)).
 - `docs/benchmarking.md`: run it before and after any change to how the tuner decides; it also covers `just forecast`.
 - `docs/simulating.md`, `docs/reviewing.md`, `docs/releasing.md`, `CHANGELOG.md` and `changes/README.md`: read when you do what they name.
 

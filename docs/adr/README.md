@@ -6,7 +6,7 @@ A new ADR adds its line here and updates the status of any ADR it supersedes.
 
 ADRs 0001–0034 keep their historical vocabulary. [0034](0034-one-vocabulary-from-screen-to-journal.md) and [0037](0037-cycles-and-trials.md) translate it to the terms in `GLOSSARY.md` without changing the tuning decisions.
 
-- [0001: Go as the implementation language](0001-go.md) — **in force** for the language; its Bubble Tea consequence no longer holds: `togi watch` uses a custom redraw loop with Lip Gloss rendering.
+- [0001: Go as the implementation language](0001-go.md) — **superseded** by [0048](0048-rust.md): the language, once the Rust cutover lands (Go stays the shipped language until then); its Bubble Tea consequence no longer holds: `togi watch` uses a custom redraw loop with Lip Gloss rendering.
 - [0002: Clean-room rewrite, not a port of linux-corecycler](0002-clean-room-rewrite.md) — **in force**.
 - [0003: The journal is the source of truth; no database](0003-journal-is-source-of-truth.md) — **in force**.
 - [0004: togi finds offsets; BIOS applies them](0004-find-only.md) — **in force**.
@@ -53,3 +53,4 @@ ADRs 0001–0034 keep their historical vocabulary. [0034](0034-one-vocabulary-fr
 - [0045: The tight loop reuses cached test results](0045-the-tight-loop-reuses-cached-test-results.md) — **amended** by [0047](0047-gate-before-every-push.md): `just gate` runs before every push, not every commit; the unshuffled tight loop remains.
 - [0046: macOS checks only the package, on `main`](0046-macos-checks-the-package-on-main.md) — **in force**.
 - [0047: Gate before every push](0047-gate-before-every-push.md) — **in force**.
+- [0048: Rust as the implementation language](0048-rust.md) — **in force**; supersedes [0001](0001-go.md) for the language. The migration's rules are in [`docs/porting.md`](../porting.md), its log in [`docs/rust-migration.md`](../rust-migration.md).
