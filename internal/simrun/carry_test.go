@@ -264,6 +264,14 @@ func TestARulesetTransitionSeedsTheNextSession(t *testing.T) {
 func TestAPreviousRulesetSessionTransitionsToASeededSession(t *testing.T) {
 	t.Parallel()
 	dir, _, _ := cleanCycleSession(t)
+	source, err := journal.ReadState(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decisions := map[int]journal.CoreState{}
+	for _, c := range source.Cores {
+		decisions[c.Core] = c
+	}
 	previous := tuner.Ruleset - 1
 	id := restampRuleset(t, dir, previous)
 	stop, events := simulateAgain(t, dir, sharedVoltageConfig(t, 1000), config.Default(), nil)
@@ -309,8 +317,44 @@ func TestAPreviousRulesetSessionTransitionsToASeededSession(t *testing.T) {
 	}
 	for core, p := range phases {
 		if p.To != journal.PhaseSearch {
-			t.Errorf("core %02d starts in %s, want search: no offsets or phases are carried", core, p.To)
+			t.Errorf("core %02d starts in %s, want a fresh search", core, p.To)
 		}
+	}
+	if len(carried.Carried) == 0 {
+		t.Fatal("no cores carried")
+	}
+	discriminating := false
+	withFailurePoints := 0
+	for _, cc := range carried.Carried {
+		p := phases[cc.Core]
+		if p == nil {
+			t.Fatalf("carried core %02d has no initial core phase", cc.Core)
+		}
+		if cc.CandidateSoloLimit == nil {
+			t.Fatalf("carried core %02d has no candidate solo limit", cc.Core)
+		}
+		want := *cc.CandidateSoloLimit
+		if cc.FailurePoint != nil {
+			withFailurePoints++
+			want = max(want, *cc.FailurePoint+1)
+		}
+		if p.To != journal.PhaseSearch || !p.CheckSoloLimit || p.Offset != want || p.Pass != nil {
+			t.Errorf("core %02d starts %+v, want checking search at %d with no pass", cc.Core, p, want)
+		}
+		if diff := cmp.Diff(cc.FailurePoint, p.FailurePoint); diff != "" {
+			t.Errorf("core %02d failure point (-carried +start):\n%s", cc.Core, diff)
+		}
+		decision, ok := decisions[cc.Core]
+		if !ok {
+			t.Fatalf("carried core %02d has no source decision", cc.Core)
+		}
+		discriminating = discriminating || decision.Offset != want || decision.Pass != nil
+	}
+	if !carried.FailurePoints || withFailurePoints == 0 {
+		t.Fatal("no failure points carried")
+	}
+	if !discriminating {
+		t.Fatal("fixture cannot discriminate decision carry: every source decision matches its fact-derived start with no pass")
 	}
 }
 
