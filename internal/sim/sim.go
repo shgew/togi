@@ -201,7 +201,9 @@ func New(cfg Config) (*Machine, error) {
 		start = cfg.Start
 	}
 	m := &Machine{
-		hazards:         hazards{cfg: cfg, model: model, limits: cfg.Limits},
+		cfg:             cfg,
+		model:           model,
+		limits:          cfg.Limits,
 		boot:            cfg.Boots,
 		now:             start,
 		logs:            map[string][]machine.MCE{},
