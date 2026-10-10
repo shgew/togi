@@ -96,6 +96,8 @@ A failing core draws from its optional `signals` map, otherwise from R7's `[mode
 
 Each `[[core]]` table uses `alone` for its five R1–R5 limits and `together` for its seven R1–R7 limits. In `[model]`, `past_limit_rate` is the failure rate one count past a limit, `growth` scales the rate for each additional count, and `near_limit_rate` is the loaded-core rate at or shallower than the limit.
 
+`internal/sim` owns the machine-file format: `sim.LoadMachine` decodes it and `sim.EncodeMachine` writes every machine-file field. Encoding rejects nonzero `Seed`, `Boots` and `Start` and a non-nil `Replay`, which belong to a run rather than a machine file. Every string value and quoted key is a TOML basic string, with control characters as TOML escapes (for example `\u0007`), and every float is written so `LoadMachine` reads the same value back: whole numbers beyond ±9007199254740991 carry a `.0`, and non-finite values are `inf`, `-inf` and `nan`. `tools/fit` adds only its provenance header to the encoded configuration. `sim.Config.Clone` copies every mutable field, including shared-voltage workload tables; a copied replay shares only its immutable facts.
+
 A machine file sets the core count, BIOS context, ranking, model parameters, per-core limits, joints and scripted outcomes; unset keys keep the seeded defaults, and an unknown key is an error. If it specifies any per-core limits, it must provide a `[[core]]` table for every core. Set `[bios_context]` with `bios_version`, `board`, `cpu_model`, `microcode` and `boost_limit_mhz` to override the simulator's BIOS context. This one adds a pair that crashes only when cores 03 and 11 are both at −30 or deeper under R7:
 
 ```toml

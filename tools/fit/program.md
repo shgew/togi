@@ -20,7 +20,7 @@ The seal moves forward by itself: when the owner refreshes the extract after a n
 ## What you may change
 
 - The failure model in `internal/sim`: how failure probabilities and hazards follow from a machine's parameters, and the machine-file keys that set new parameters.
-- The fitter in `tools/fit`: what it fits, its bounds and its search, and how `encodeMachine` writes new parameters.
+- The fitter in `tools/fit`: what it fits, its bounds and its search, and how `sim.EncodeMachine` writes new parameters.
 - Tests, `docs/simulating.md`, `docs/benchmarking.md` and `internal/sim/doc.go` describing a deliberately changed model.
 
 Everything else is frozen:

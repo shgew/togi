@@ -5,7 +5,6 @@ import (
 	"io"
 	"maps"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/shgew/togi/internal/journal"
@@ -87,12 +86,4 @@ func signalCounts(counts map[machine.Signal]float64) string {
 		parts = append(parts, fmt.Sprintf("%s=%g", signal, counts[signal]))
 	}
 	return strings.Join(parts, " ")
-}
-
-func encodeSignals(counts map[machine.Signal]float64) string {
-	var parts []string
-	for _, signal := range slices.Sorted(maps.Keys(counts)) {
-		parts = append(parts, fmt.Sprintf("%s = %.17g", strconv.Quote(string(signal)), counts[signal]))
-	}
-	return "{" + strings.Join(parts, ", ") + "}"
 }

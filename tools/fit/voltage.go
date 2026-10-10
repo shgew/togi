@@ -1,7 +1,6 @@
 package main
 
 import (
-	"maps"
 	"math"
 	"slices"
 	"time"
@@ -374,7 +373,7 @@ func fitSharedVoltage(records []trialfacts.Record) (sim.Config, float64) {
 	l.cfg, l.obs, l.named = cfg, aggregate(records), namedVoltageFailures(records)
 	l.rebuild()
 	all := l.selectObs(func(observation) bool { return true })
-	best, previous := cloneSharedFit(l.cfg), math.Inf(1)
+	best, previous := l.cfg.Clone(), math.Inf(1)
 	for range 20 {
 		l.fitVoltage()
 		l.fitHazardShape(all)
@@ -385,28 +384,12 @@ func fitSharedVoltage(records []trialfacts.Record) (sim.Config, float64) {
 		if previous-score < 1e-5 {
 			break
 		}
-		best, previous = cloneSharedFit(l.cfg), score
+		best, previous = l.cfg.Clone(), score
 	}
 	l.cfg = best
 	l.rebuild()
 	l.constrainRate(records, all)
 	return l.cfg, l.rawScore(all)
-}
-
-func cloneSharedFit(cfg sim.Config) sim.Config {
-	cfg = cloneMachine(cfg)
-	v := *cfg.SharedVoltage
-	v.Workload = maps.Clone(v.Workload)
-	for _, workload := range machine.Workloads(machine.R7) {
-		w := v.Workload[workload.ID]
-		w.Core = slices.Clone(w.Core)
-		for core := range w.Core {
-			w.Core[core].Signals = maps.Clone(w.Core[core].Signals)
-		}
-		v.Workload[workload.ID] = w
-	}
-	cfg.SharedVoltage = &v
-	return cfg
 }
 
 // constrainRate preserves voltage geometry while profiling the existing

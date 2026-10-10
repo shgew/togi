@@ -225,7 +225,7 @@ func New(cfg Config) (*Machine, error) {
 // resolve returns a copy of cfg with its defaults applied and the failure model it selects, or the first invalid
 // setting. Limits left nil stay nil: limits drawn from the seed are valid by construction.
 func resolve(cfg Config) (Config, Model, error) {
-	cfg = cfg.clone()
+	cfg = cfg.Clone()
 	if cfg.Cores == 0 {
 		cfg.Cores = 16
 	}
@@ -356,7 +356,9 @@ func validateLimitHazards(limits []Limits) error {
 	return nil
 }
 
-func (cfg Config) clone() Config {
+// Clone returns a copy of cfg that shares no mutable state with it. A Replay's facts are fixed once NewReplay
+// returns, so the copy of the Replay shares them.
+func (cfg Config) Clone() Config {
 	cfg.BIOS = slices.Clone(cfg.BIOS)
 	cfg.Limits = slices.Clone(cfg.Limits)
 	for c := range cfg.Limits {
@@ -381,6 +383,18 @@ func (cfg Config) clone() Config {
 	if cfg.CCD != nil {
 		ccd := *cfg.CCD
 		cfg.CCD = &ccd
+	}
+	if cfg.SharedVoltage != nil {
+		voltage := *cfg.SharedVoltage
+		voltage.Workload = maps.Clone(voltage.Workload)
+		for id, workload := range voltage.Workload {
+			workload.Core = slices.Clone(workload.Core)
+			for c := range workload.Core {
+				workload.Core[c].Signals = maps.Clone(workload.Core[c].Signals)
+			}
+			voltage.Workload[id] = workload
+		}
+		cfg.SharedVoltage = &voltage
 	}
 	if cfg.Replay != nil {
 		replay := *cfg.Replay

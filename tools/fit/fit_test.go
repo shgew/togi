@@ -118,7 +118,7 @@ func TestBootstrapDeterminism(t *testing.T) {
 	}
 	first, lossA := fit(a)
 	second, lossB := fit(b)
-	if diff := cmp.Diff(encodeMachine(first, 1, 263, len(a), lossA, nil, nil), encodeMachine(second, 1, 263, len(b), lossB, nil, nil)); diff != "" {
+	if diff := cmp.Diff(mustEncodeMachine(t, first, 1, 263, len(a), lossA), mustEncodeMachine(t, second, 1, 263, len(b), lossB)); diff != "" {
 		t.Fatal(diff)
 	}
 	if cmp.Equal(a, bootstrap(records, 264)) {
@@ -234,7 +234,7 @@ func TestConstrainedFitRefitsCCDWithoutChangingR7Structure(t *testing.T) {
 		},
 		Joints: []sim.Joint{{Members: map[int]int{1: -40}, Regimes: []machine.Regime{machine.R7}, Rate: 0.001}},
 	}
-	want := cloneMachine(base)
+	want := base.Clone()
 	var original, sample []trialfacts.Record
 	for i := range 40 {
 		r := trialfacts.Record{
@@ -279,7 +279,7 @@ func TestConstrainedFitRefitsCCDWithoutChangingR7Structure(t *testing.T) {
 		t.Fatalf("CCD refit mutated its all-facts seed: %s", diff)
 	}
 	second, secondLoss := fitFrom(sample, &base, checker)
-	if diff := cmp.Diff(encodeMachine(first, 1, 263, len(sample), loss, nil, nil), encodeMachine(second, 1, 263, len(sample), secondLoss, nil, nil)); diff != "" {
+	if diff := cmp.Diff(mustEncodeMachine(t, first, 1, 263, len(sample), loss), mustEncodeMachine(t, second, 1, 263, len(sample), secondLoss)); diff != "" {
 		t.Fatalf("CCD-seeded refit is not deterministic: %s", diff)
 	}
 }
@@ -375,22 +375,13 @@ func TestDecisiveFiltersNonTrialsAndPreservesContext(t *testing.T) {
 	}
 }
 
-func TestCloneMachineIsolatesConstrainedParameters(t *testing.T) {
-	idle := -20
-	model := sim.DefaultModel()
-	cfg := sim.Config{Cores: 2, Model: &model, Limits: []sim.Limits{{Idle: &idle, Workload: map[string]int{"work": -25}}, {}}, Joints: []sim.Joint{{Members: map[int]int{0: -30}, Rate: 0.01}}}
-	wantModel := model
-	wantIdle := -20
-	want := sim.Config{Cores: 2, Model: &wantModel, Limits: []sim.Limits{{Idle: &wantIdle, Workload: map[string]int{"work": -25}}, {}}, Joints: []sim.Joint{{Members: map[int]int{0: -30}, Rate: 0.01}}}
-	got := cloneMachine(cfg)
-	got.Model.PastLimitRate = 0.4
-	*got.Limits[0].Idle = -1
-	got.Limits[0].Workload["work"] = -1
-	got.Joints[0].Members[0] = -1
-	got.Joints[0].Rate = 0.2
-	if diff := cmp.Diff(want, cfg); diff != "" {
-		t.Fatalf("refit changed its seed: %s", diff)
+func mustEncodeMachine(t *testing.T, cfg sim.Config, index int, seed uint64, trials int, loss float64) string {
+	t.Helper()
+	content, err := encodeMachine(cfg, index, seed, trials, loss, nil, nil)
+	if err != nil {
+		t.Fatal(err)
 	}
+	return string(content)
 }
 
 func TestJointSearchSeparatesCleanBoundary(t *testing.T) {
@@ -433,7 +424,7 @@ func TestJointCandidateLimitPreservesModel(t *testing.T) {
 			for j := range count {
 				cfg.Joints = append(cfg.Joints, sim.Joint{Members: map[int]int{0: -20 - j}, Regimes: []machine.Regime{machine.R7}, Rate: 0.001})
 			}
-			want := cloneMachine(cfg)
+			want := cfg.Clone()
 			l := likelihood{cfg: cfg, obs: aggregate(records)}
 			l.rebuild()
 			before := l.score([]int{0})

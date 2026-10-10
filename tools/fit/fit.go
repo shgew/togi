@@ -279,7 +279,7 @@ func fitFrom(records []trialfacts.Record, initial *sim.Config, guard *modelcheck
 	if initial == nil {
 		cfg = initialConfig(records)
 	} else {
-		cfg = cloneMachine(*initial)
+		cfg = initial.Clone()
 	}
 	l := likelihood{cfg: cfg, obs: aggregate(records), guard: guard}
 	l.rebuild()
@@ -477,7 +477,7 @@ func (l *likelihood) addJoint(records []trialfacts.Record, ccd int) {
 	}
 	results := make([]fitted, len(candidates))
 	parallelFor(len(candidates), func(k int) {
-		trial := likelihood{cfg: cloneMachine(l.cfg), obs: l.obs, guard: l.guard}
+		trial := likelihood{cfg: l.cfg.Clone(), obs: l.obs, guard: l.guard}
 		trial.cfg.Joints = append(trial.cfg.Joints, sim.Joint{Regimes: []machine.Regime{machine.R7}, Members: candidates[k], Rate: 0.001})
 		trial.rebuild()
 		candidate := &trial.cfg.Joints[original]
@@ -550,28 +550,6 @@ func (l *likelihood) fitWorkloads() {
 			limit.Workload = nil
 		}
 	}
-}
-
-func cloneMachine(cfg sim.Config) sim.Config {
-	model := *cfg.Model
-	cfg.Model = &model
-	if cfg.CCD != nil {
-		c := *cfg.CCD
-		cfg.CCD = &c
-	}
-	cfg.Limits = slices.Clone(cfg.Limits)
-	for core := range cfg.Limits {
-		cfg.Limits[core].Workload = maps.Clone(cfg.Limits[core].Workload)
-		if cfg.Limits[core].Idle != nil {
-			value := *cfg.Limits[core].Idle
-			cfg.Limits[core].Idle = &value
-		}
-	}
-	cfg.Joints = slices.Clone(cfg.Joints)
-	for j := range cfg.Joints {
-		cfg.Joints[j].Members = maps.Clone(cfg.Joints[j].Members)
-	}
-	return cfg
 }
 
 type limitShift struct {
