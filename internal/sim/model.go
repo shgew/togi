@@ -37,8 +37,6 @@ type running struct {
 	stopErr error
 }
 
-func (trials) Passed(string) error { return nil }
-
 func (trials) Sweep(ctx context.Context) (string, error) {
 	return "simulated machine has no leftover trial scopes", ctx.Err()
 }

@@ -70,6 +70,7 @@ type instance struct {
 	partial        [2]string
 	reaped         chan struct{}
 	joined         chan struct{}
+	dir            string
 	done           bool
 	writersStopped bool
 	unexpected     bool
@@ -180,7 +181,7 @@ func (r *Runner) Start(ctx context.Context, spec machine.TrialSpec) (machine.Run
 			prepared.closeLogs()
 			return nil, t.abort(fmt.Errorf("start %s: %w", scope, err))
 		}
-		inst := &instance{Core: core, CPUs: slices.Clone(cpus), PID: p.PID(), Scope: scope, process: p, resumed: time.Now(), reaped: make(chan struct{}), joined: make(chan struct{})}
+		inst := &instance{dir: dir, Core: core, CPUs: slices.Clone(cpus), PID: p.PID(), Scope: scope, process: p, resumed: time.Now(), reaped: make(chan struct{}), joined: make(chan struct{})}
 		for _, name := range prepared.launch.Watch {
 			inst.watch = append(inst.watch, watchFile{path: filepath.Join(dir, name)})
 		}
@@ -299,47 +300,6 @@ func scopeArgv(unit string, cpus []int, user Identity, dir string, argv ...strin
 	}
 	a = append(a, "--scope", "--quiet", "--collect", "--unit", unit, "--uid", strconv.FormatUint(uint64(user.UID), 10), "--gid", strconv.FormatUint(uint64(user.GID), 10), "--working-directory", dir, "-p", "AllowedCPUs="+joinCPUs(cpus), "-p", "DefaultDependencies=no", "--")
 	return append(a, argv...)
-}
-
-func (r *Runner) Passed(id string) error {
-	dir := filepath.Join(r.options.Dir, id)
-	if err := os.WriteFile(filepath.Join(dir, "passed"), nil, 0644); err != nil {
-		return fmt.Errorf("mark trial %s passed: %w", id, err)
-	}
-	entries, err := os.ReadDir(r.options.Dir)
-	if err != nil {
-		return fmt.Errorf("list passed trials: %w", err)
-	}
-	var passed []string
-	for _, e := range entries {
-		if e.IsDir() {
-			if _, err := os.Stat(filepath.Join(r.options.Dir, e.Name(), "passed")); err == nil {
-				passed = append(passed, e.Name())
-			} else if !os.IsNotExist(err) {
-				return fmt.Errorf("stat passed marker %s: %w", e.Name(), err)
-			}
-		}
-	}
-	slices.SortFunc(passed, func(a, b string) int {
-		ai, ae := strconv.ParseUint(a, 10, 64)
-		bi, be := strconv.ParseUint(b, 10, 64)
-		if ae == nil && be == nil {
-			if ai < bi {
-				return -1
-			}
-			if ai > bi {
-				return 1
-			}
-			return 0
-		}
-		return strings.Compare(a, b)
-	})
-	for _, id := range passed[:max(0, len(passed)-200)] {
-		if err := os.RemoveAll(filepath.Join(r.options.Dir, id)); err != nil {
-			return fmt.Errorf("prune passed trial %s: %w", id, err)
-		}
-	}
-	return nil
 }
 
 func (t *running) Started() machine.Started { return t.started }

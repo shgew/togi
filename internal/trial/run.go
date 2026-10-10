@@ -35,6 +35,7 @@ func (t *running) Wait(ctx context.Context, report machine.Reporter) (result mac
 	samples := startSampleWriter(filepath.Join(t.options.Dir, t.spec.ID), t.openSamples)
 	defer func() {
 		err = errors.Join(err, samples.close())
+		err = errors.Join(err, compressTrialFile(filepath.Join(t.options.Dir, t.spec.ID, machine.SamplesFile)))
 	}()
 	conditions := newConditionsSampler(t.options, t.spec, started)
 	result.Stops = t.initialStops
@@ -433,13 +434,14 @@ func (t *running) teardown(result *machine.Result, report machine.Reporter) erro
 		}
 	}
 	t.drainEvents(ctx, result, report, false)
+	compressErr := t.compressBackendLogs()
 	for _, inst := range t.instances {
 		t.classifyPartial(inst, result, report)
 	}
 	if cleanupErr != nil {
 		cleanupErr = errors.Join(machine.ErrContainment, cleanupErr)
 	}
-	t.cleanupErr = errors.Join(cleanupErr, t.outputErr)
+	t.cleanupErr = errors.Join(cleanupErr, t.outputErr, compressErr)
 	if len(result.Escaped) == 0 && result.Signal == "" {
 		t.cleanupErr = errors.Join(t.cleanupErr, t.outputCapErr)
 	}

@@ -171,23 +171,13 @@ func (w sampleWriter) close() error {
 }
 
 func openSamples(dir string) (sampleFile, error) {
-	f, err := os.OpenFile(filepath.Join(dir, "samples.jsonl"), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
+	f, err := os.OpenFile(filepath.Join(dir, machine.SamplesFile), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
 	if err != nil {
 		return nil, fmt.Errorf("create trial samples: %w", err)
 	}
-	for _, path := range []string{dir, filepath.Dir(dir)} {
-		d, err := os.Open(path)
-		if err == nil {
-			err = d.Sync()
-			closeErr := d.Close()
-			if err == nil {
-				err = closeErr
-			}
-		}
-		if err != nil {
-			_ = f.Close()
-			return nil, fmt.Errorf("sync trial samples directory: %w", err)
-		}
+	if err := syncDirs(dir, filepath.Dir(dir)); err != nil {
+		_ = f.Close()
+		return nil, fmt.Errorf("sync trial samples directory: %w", err)
 	}
 	return f, nil
 }

@@ -35,9 +35,7 @@ type ownerTrials struct {
 	active     bool
 	stopped    int
 	panicStart bool
-	passedErr  error
 	stopErr    error
-	cancel     context.CancelFunc
 	smu        machine.SMU
 	tuned      bool
 }
@@ -51,12 +49,6 @@ func (t *ownerTrials) Start(ctx context.Context, spec machine.TrialSpec) (machin
 	offset, _ := t.smu.Offset(spec.Cores[0])
 	t.tuned = offset < 0
 	return &ownerRunning{Running: r, owner: t}, nil
-}
-func (t *ownerTrials) Passed(id string) error {
-	if t.cancel != nil {
-		t.cancel()
-	}
-	return t.passedErr
 }
 
 type ownerRunning struct {
@@ -88,18 +80,23 @@ func (r *ownerRunning) Stop() error {
 
 type ownerJournal struct {
 	Journal
-	fail  bool
-	cause error
+	fail         bool
+	cause        error
+	cancelOnPass context.CancelFunc
 }
 
 func (j ownerJournal) Append(p journal.Payload, cause ...int) (journal.Event, error) {
 	if j.fail && p.Kind() == journal.KindTrialStart {
 		return journal.Event{}, j.cause
 	}
-	return j.Journal.Append(p, cause...)
+	event, err := j.Journal.Append(p, cause...)
+	if end, ok := p.(*journal.TrialEnd); ok && err == nil && end.Outcome == journal.OutcomePass && j.cancelOnPass != nil {
+		j.cancelOnPass()
+	}
+	return event, err
 }
 func TestRunOwnerEveryExit(t *testing.T) {
-	for _, mode := range []string{"passed warning", "ordinary error", "panic"} {
+	for _, mode := range []string{"passed trial", "ordinary error", "panic"} {
 		t.Run(mode, func(t *testing.T) {
 			t.Parallel()
 			r, m, closeJournal := checkedRunner(t, []int{0, 0})
@@ -108,11 +105,11 @@ func TestRunOwnerEveryExit(t *testing.T) {
 			defer cancel()
 			original := errors.New("injected failure")
 			cleanupErr := errors.New("injected close failure")
-			trials := &ownerTrials{Trials: r.in.Machine.Trials, panicStart: mode == "panic", passedErr: original, cancel: cancel}
+			trials := &ownerTrials{Trials: r.in.Machine.Trials, panicStart: mode == "panic"}
 			trials.smu = r.in.Machine.SMU
 			r.in.Machine.Trials = trials
 			r.in.Machine.SMU = ownerSMU{SMU: r.in.Machine.SMU, trials: trials, t: t}
-			r.in.Journal = ownerJournal{Journal: r.in.Journal, fail: mode == "ordinary error", cause: original}
+			r.in.Journal = ownerJournal{Journal: r.in.Journal, fail: mode == "ordinary error", cause: original, cancelOnPass: cancel}
 			r.in.Cycles = 1
 			closed := false
 			r.in.Close = func() error {
@@ -132,7 +129,7 @@ func TestRunOwnerEveryExit(t *testing.T) {
 					t.Errorf("cleanup offsets (-want +got):\n%s", diff)
 				}
 				closeJournal()
-				if mode != "passed warning" {
+				if mode != "passed trial" {
 					return cleanupErr
 				}
 				return nil
@@ -156,24 +153,10 @@ func TestRunOwnerEveryExit(t *testing.T) {
 				if runErr != nil {
 					t.Fatal(runErr)
 				}
-				var warning *journal.SessionWarning
-				var pass int
 				for _, e := range r.in.Journal.Events() {
-					if p, ok := e.Data.(*journal.TrialEnd); ok && p.Outcome == journal.OutcomePass {
-						pass = e.Seq
+					if e.Kind == journal.KindSessionWarning {
+						t.Fatalf("passed trial left a warning: %+v", e.Data)
 					}
-					if p, ok := e.Data.(*journal.SessionWarning); ok {
-						warning = p
-						if diff := cmp.Diff([]int{pass}, e.Cause); diff != "" {
-							t.Fatal(diff)
-						}
-					}
-				}
-				if warning == nil {
-					t.Fatal("missing warning")
-				}
-				if diff := cmp.Diff(&journal.SessionWarning{Operation: "retain passed trial", Trial: "0001", Error: original.Error()}, warning); diff != "" {
-					t.Fatal(diff)
 				}
 			}
 		})
