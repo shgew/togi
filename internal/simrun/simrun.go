@@ -92,8 +92,11 @@ type Input struct {
 	// simulated crash resumes from the state the crashed boot folded.
 	ColdBoots bool
 	// VerifyEvery makes every Nth boot that ends in a crash replay the whole journal into fresh state and fail unless it
-	// equals the state the next boot would resume from; 0 verifies only when the session stops.
+	// equals the state the next boot would resume from; 0 verifies only when the invocation ends: the session stops, an
+	// error ends it or it reaches the boot cap.
 	VerifyEvery int
+	// verify replaces (*session.Warm).Verify when set; tests observe the checks through it.
+	verify func(*session.Warm, []journal.Event) error
 }
 
 func Simulate(ctx context.Context, in Input) (stop session.Stop, err error) {
@@ -129,19 +132,44 @@ func Simulate(ctx context.Context, in Input) (stop session.Stop, err error) {
 	if maxBoots == 0 {
 		maxBoots = defaultMaxBoots
 	}
+	verifyWarm := func(n int) error {
+		if warm == nil || warm.Empty() {
+			return nil
+		}
+		verify := (*session.Warm).Verify
+		if in.verify != nil {
+			verify = in.verify
+		}
+		if verifyErr := verify(warm, journals.kept.Events()); verifyErr != nil {
+			return fmt.Errorf("verify warm resume after boot %d: %w", n, verifyErr)
+		}
+		return nil
+	}
+	verifiedBoot := 0
 	for n := 1; n <= maxBoots; n++ {
 		stop, err = boot(ctx, in, journals, warm)
-		crashed := errors.Is(err, machine.ErrCrashed)
-		if warm != nil && !warm.Empty() && (err == nil || crashed) && (!crashed || in.VerifyEvery > 0 && n%in.VerifyEvery == 0) {
-			if verifyErr := warm.Verify(journals.kept.Events()); verifyErr != nil {
-				return session.Stop{}, fmt.Errorf("verify warm resume after boot %d: %w", n, verifyErr)
+		if !errors.Is(err, machine.ErrCrashed) {
+			if verifyErr := verifyWarm(n); verifyErr != nil {
+				if err == nil {
+					return session.Stop{}, verifyErr
+				}
+				return stop, errors.Join(err, verifyErr)
 			}
+			return stop, err
 		}
-		if crashed {
-			in.Machine.Reboot()
-			continue
+		if in.VerifyEvery > 0 && n%in.VerifyEvery == 0 {
+			if verifyErr := verifyWarm(n); verifyErr != nil {
+				return session.Stop{}, verifyErr
+			}
+			verifiedBoot = n
 		}
-		return stop, err
+		in.Machine.Reboot()
+	}
+	if verifiedBoot != maxBoots {
+		// The cap ends the invocation like a stop does; a failed check is an error, not a censored session.
+		if verifyErr := verifyWarm(maxBoots); verifyErr != nil {
+			return session.Stop{}, verifyErr
+		}
 	}
 	return session.Stop{}, fmt.Errorf("simulate session: %w after %d boots", ErrBootCap, maxBoots)
 }
