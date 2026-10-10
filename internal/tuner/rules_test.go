@@ -313,7 +313,7 @@ func TestDirectFailureAtZero(t *testing.T) {
 			cause := []int{failure.Seq}
 			if !allZero(tc.profile) {
 				want := Trial{Regime: machine.R6, Workload: machine.Workloads(machine.R6)[0].ID, Cores: []int{0, 1}, DurationS: 120, Condition: machine.Parked, Phase: journal.PhaseChecking, Profile: []int{0, 0}, Rerun: true}
-				want.Requirement = ScheduledRequirement{Kind: "unclassified", Class: ScheduledClass{Regime: want.Regime, Workload: want.Workload, Cores: coresKey(want.Cores), DurationS: want.DurationS}, Rule: cycleEvidence, Needed: 1}
+				want.Requirement = ScheduledRequirement{Kind: "zero-rerun", Class: ScheduledClass{Regime: want.Regime, Workload: want.Workload, Cores: coresKey(want.Cores), DurationS: want.DurationS}, Since: failure.Seq, Rule: rerunEvidence, Needed: 1}
 				if tc.condition == machine.Parked {
 					want.Phase = journal.PhaseHunt
 				}

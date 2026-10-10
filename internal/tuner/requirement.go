@@ -57,9 +57,10 @@ func newRequirement(kind string, k trialClass, since int, rule evidenceRule, nee
 	return ScheduledRequirement{Kind: kind, Class: ScheduledClass{Regime: k.regime, Workload: k.workload, Cores: k.cores, DurationS: k.duration}, Since: since, Rule: rule, Needed: needed}
 }
 
-// scheduledFor reconstructs the requirement of a recorded intent from the journal alone. Fold stores it per trial; a
-// builder never calls it for a trial it chose the requirement of.
-func (s *State) scheduledFor(p *journal.TrialIntent) scheduledTrial {
+// scheduledFor reconstructs the requirement of a recorded intent from the journal alone; cause is the intent's cause.
+// Fold stores it per trial; a builder never calls it for a trial it chose the requirement of. A hunt or deepening trial
+// takes its requirement only from the open hunt or round it names; any other is unclassified.
+func (s *State) scheduledFor(p *journal.TrialIntent, cause []int) scheduledTrial {
 	k := classOf(p)
 	q := newRequirement("unclassified", k, 0, cycleEvidence, 1)
 	switch {
@@ -69,7 +70,10 @@ func (s *State) scheduledFor(p *journal.TrialIntent) scheduledTrial {
 			c = s.core(*p.Core)
 		}
 		q = s.soloRequirement(c, k)
-	case p.Hunt > 0 && s.hunt != nil:
+	case p.Hunt > 0:
+		if s.hunt == nil || s.hunt.start.Hunt != p.Hunt {
+			break
+		}
 		q = newRequirement("hunt", k, 0, huntEvidence, s.hunt.start.Trials)
 		for _, g := range s.hunt.groups {
 			if g.payload.Group == p.Group {
@@ -77,9 +81,14 @@ func (s *State) scheduledFor(p *journal.TrialIntent) scheduledTrial {
 				break
 			}
 		}
+	case p.Rerun && p.Condition == machine.Parked:
+		q = zeroRerunRequirement(k, cause)
 	case p.Rerun && len(s.obligations) > 0:
 		q = s.rerunRequirement(k)
-	case p.Round > 0 && s.round != nil:
+	case p.Round > 0:
+		if s.round == nil || s.round.start.Round != p.Round {
+			break
+		}
 		needed := 1
 		for _, r := range s.roundChecks() {
 			if r.class == k {
@@ -133,6 +142,16 @@ func (s *State) rerunRequirement(k trialClass) ScheduledRequirement {
 		needed = s.n
 	}
 	return newRequirement("rerun", k, s.obligations[0].seq, rerunEvidence, needed)
+}
+
+// zeroRerunRequirement is the requirement of an all-zero rerun of the failure cause names: one conclusive trial, whose
+// window opens at that failure and which no other pass of its class answers.
+func zeroRerunRequirement(k trialClass, cause []int) ScheduledRequirement {
+	since := 0
+	if len(cause) > 0 {
+		since = cause[0]
+	}
+	return newRequirement("zero-rerun", k, since, rerunEvidence, 1)
 }
 
 func (s *State) deepeningRequirement(k trialClass, needed int) ScheduledRequirement {
@@ -221,16 +240,16 @@ func (s *State) retryTrial(t Trial, cause []int) Action {
 	if len(p.Profile) == 0 {
 		p.Profile = s.checking.profile
 	}
-	return s.runTrial(t, s.scheduledFor(&p).requirement, cause)
+	return s.runTrial(t, s.scheduledFor(&p, cause).requirement, cause)
 }
 
 func (s *State) requirementProgress(p *journal.TrialIntent, q ScheduledRequirement) TrialRequirement {
-	if q.Kind == "search" {
+	if q.Kind == "search" || q.Kind == "zero-rerun" {
 		return TrialRequirement{Trial: 1, Needed: 1}
 	}
 	k := q.class()
 	n := s.passes(k, p.Profile, q.Since, q.Rule)
-	r := TrialRequirement{Passed: n, Trial: n + 1, Needed: q.Needed}
+	r := TrialRequirement{Passed: min(n, q.Needed), Trial: min(n+1, max(q.Needed, 1)), Needed: q.Needed}
 	if q.Kind == "cycle" {
 		r.Failed = s.cycleFailures(k, p.Profile, q.Since)
 	}
@@ -252,9 +271,9 @@ func (s *State) recordTrialHistory(p *journal.TrialEnd) {
 				continue
 			}
 			if r.class == selected {
-				passed += h.Requirement.Passed
+				passed += min(h.Requirement.Passed, r.count)
 			} else {
-				passed += s.passes(r.class, in.Profile, q.Since, q.Rule)
+				passed += min(s.passes(r.class, in.Profile, q.Since, q.Rule), r.count)
 			}
 			needed += r.count
 		}

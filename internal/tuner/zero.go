@@ -65,7 +65,7 @@ func (s *State) zeroRerunTrial(f pendingFailure) Action {
 			t.Cores = s.ids()
 		}
 	}
-	return s.runTrial(t, s.rerunRequirement(s.shapeClass(t)), []int{f.seq})
+	return s.runTrial(t, zeroRerunRequirement(s.shapeClass(t), []int{f.seq}), []int{f.seq})
 }
 
 // recordZeroRerun remembers an all-zero rerun by the failure its intent cites.
