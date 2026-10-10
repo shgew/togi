@@ -32,7 +32,7 @@ Examples:
 
 func eventsFlags(g *globals, filter *journal.Filter, rawJSON *bool) *flag.FlagSet {
 	flags := newFlagSet("events", g)
-	flags.Func("core", "only events naming core `N`", coreFlag(&filter.Core))
+	flags.Func("core", "only events naming core `N`, and the outcomes of trials that load it", coreFlag(&filter.Core))
 	flags.Func("kind", "only these comma-separated known `kinds`, or groups such as trial for every trial.* kind", func(s string) error {
 		start := len(filter.Kinds)
 		for k := range strings.SplitSeq(s, ",") {
@@ -82,10 +82,7 @@ func runEvents(g *globals, args []string, stdout, stderr io.Writer) int {
 		warnRuleset(events, stderr)
 	}
 	renderer := render.NewRenderer(stdout, os.Getenv)
-	for _, e := range events {
-		if !filter.Match(e) {
-			continue
-		}
+	for _, e := range filter.Select(events) {
 		if rawJSON {
 			fmt.Fprintf(stdout, "%s\n", e.Raw)
 		} else {

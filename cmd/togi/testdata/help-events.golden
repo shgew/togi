@@ -14,7 +14,7 @@ Examples:
   togi events --json --trial 0413          The raw events of trial 0413
 
 Flags:
-  --core <N>           only events naming core N
+  --core <N>           only events naming core N, and the outcomes of trials that load it
   --json               print raw, uncolored JSON events
   --kind <kinds>       only these comma-separated known kinds, or groups such as trial for every trial.* kind
   --since <time>       only events at or after this RFC 3339 time
