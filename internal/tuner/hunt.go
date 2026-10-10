@@ -355,7 +355,7 @@ func (s *State) nextGroupPlan(h *hunt) (groupPlan, bool) {
 			return p, true
 		}
 	}
-	if !p.escalated && !p.fullChecked && p.g == 2 && slices.Equal(p.set, h.start.Candidates) && h.start.DurationS != h.start.TrialS {
+	if !p.escalated && !p.fullChecked && p.g == 2 && slices.Equal(p.set, h.start.Candidates) && h.start.DurationS > h.start.TrialS {
 		p.stage = "full"
 		p.index = 0
 		p.cores = slices.Clone(p.set)
