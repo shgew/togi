@@ -93,7 +93,7 @@ To control concurrency, caching or retention directly, use `go run ./tools/bench
 
 ## Verifying every simulated session
 
-`just bench` and `just same` compare sessions; neither checks the machinery that makes a simulated session fast: the tuner's indexes and memos, and the warm state a boot resumes from instead of replaying the journal. CI runs every session of the suite with both checks on:
+`just bench` and `just same` compare sessions. They verify the warm state a boot resumes from instead of replaying the journal only when each session ends (`tools/sim`'s `--verify-every` defaults to 0; [simulating](simulating.md)), and never recompute the tuner's indexes and memos that make a session fast. CI checks the warm state after every simulated crash and the memos after every tuner step, on every session of the suite:
 
 ```sh
 go run ./tools/bench --split all --shard I/N --sim-flags "--verify-every 1 --check-memos" [--jobs N] [--timeout 180s]
@@ -105,7 +105,7 @@ After a change to what a session costs, re-measure: run `--shard 0/1` under `tas
 
 ## What each check proves
 
-Cite a check as evidence only for the packages it exercises. `just gate` runs the integration tag, the race set and `module`; `just check` runs every flake check the host builds, including the Linux-only `trial-scope-tests`, `vm` and `vm-restart-limit`.
+Cite a check as evidence only for the packages it exercises. `just gate` runs the integration tag, the race set and `module`; `just check` runs every flake check the host builds, including the Linux-only `trial-scope-tests`, `sim-verify-0`, `sim-verify-1`, `vm` and `vm-restart-limit`.
 
 | Check | Runs | Exercises | Does not prove |
 |---|---|---|---|
@@ -119,7 +119,7 @@ Cite a check as evidence only for the packages it exercises. `just gate` runs th
 | `just same` | Both trees' `tools/sim` across every dev and holdout seed of their suites, with journals compared byte for byte (above) | The session, tuner, carry and journal on the paths the suite's scenarios reach, through the simulator's SMU, host, trials and kernel | Any change to trial, detect, smu, hardware or the backends, which the simulator replaces; paths no scenario reaches |
 | `just smoke` | One session per scenario of both trees' `tools/sim`, the suite's `smoke` list, compared as `just same` does | The same simulated paths as `just same`, on the sessions with the most crashes and longest histories of each scenario | Anything `just same` does not prove, and the paths the other sessions reach: run `just same` before relying on it |
 | `just bench` | Simulated sessions for the chosen split (dev by default) and the model checks; with `--baseline FILE`, a comparison with that baseline by metric thresholds | The same simulated paths as `just same` | Unchanged decisions (one changed decision with unchanged totals can pass), or anything about the packages the simulator replaces |
-| `sim-verify-0` and `sim-verify-1` | Linux only, CI-only like the VM tests: every simulated session of the suite (`--split all`), one shard each, with `--verify-every 1 --check-memos` (above) | That each session ends normally with the warm state of every boot equal to a full replay and every tuner memo equal to its recomputation | That decisions are unchanged: no journal is compared |
+| `sim-verify-0` and `sim-verify-1` | Linux only, in `just check` and CI but not in `just gate`: every simulated session of the suite (`--split all`), one shard each, with `--verify-every 1 --check-memos` (above) | That each session ends normally with the warm state of every boot equal to a full replay and every tuner memo equal to its recomputation | That decisions are unchanged: no journal is compared |
 | `just hardware` | On the target machine, `go test -tags hardware -p 1 ./...` | Every ordinary test, plus the hardware tests: both real backends running each R1 and R2 catalog workload on core 2 in a real scope; detect reading the real kernel log; smu's driver checks, writing each core's current offset back and reading it, its BIOS context and PM table; hardware's diagnosis leaving offsets unchanged; trial's scope tests with helper backends | R3 to R7 workloads or multi-core loads on real backends, a new offset written to the SMU, the host's full preflight or ranking, or a tuning session: those need `togi doctor` or `togi run` evidence from the target machine |
 
 ## What a run records
