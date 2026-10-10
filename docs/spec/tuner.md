@@ -187,7 +187,7 @@ R6 loads every core. Each R7 checking step runs each CCD's full part first, then
 
 ## Crashes
 
-A crash is classified by what its boot recorded. A together application counts as applied from its first nonzero `smu.intent`, before `profile.applied`. A backend signal recorded in `trial.progress`, a trial-window MCE selected by boot-local monotonic time or an uncorrected MCE in the next boot takes precedence over reset reason. Otherwise a thermal trip is a dead end; a power-button reset during a trial is its failure, but without an open trial is inconclusive. When reason reporting is supported and confirmed, no reason line means power loss and is inconclusive. An unknown or unsupported reset reason retains the usual classification:
+A crash is classified by what its boot recorded. A together application counts as applied from its first nonzero `smu.intent`, before `profile.applied`. A hunt group's parked application likewise counts as parked from its first nonzero `smu.intent`, before `profile.applied` or `trial.intent`; an attributed idle failure during it ends the hunt `direct`, naming that core at its actual applied offset. A backend signal recorded in `trial.progress`, a trial-window MCE selected by boot-local monotonic time or an uncorrected MCE in the next boot takes precedence over reset reason. Otherwise a thermal trip is a dead end; a power-button reset during a trial is its failure, but without an open trial is inconclusive. When reason reporting is supported and confirmed, no reason line means power loss and is inconclusive. An unknown or unsupported reset reason retains the usual classification:
 - A trial in flight: a failure of that trial. Alone failures belong to the target; together and parked attribution follows Checking.
 - An applied profile with no trial in flight: an idle crash, treated as an unattributed R6 failure with all cores loaded; a trial alone all-zero profile changes nothing.
 - Nothing applied: a stray crash. Reaching `dead_ends.stray_crashes_in_a_row` is the boot-loop dead end.
@@ -253,7 +253,7 @@ Every unattributed together failure outside multi-core R7 is hunted unless its f
 
 For each group, candidates in the selected subset take their failing offsets and every other core takes its parked offset. Delta debugging tests parts, then complements as granularity increases, retaining a failing subset. By default it starts at `short_trial_s`; only when the failed trial's duration is longer than `short_trial_s`, if all initial parts and complements pass, it tests the full failing profile, and if that too passes `n` trials, repeats at the failed trial's duration. Configuration still permits `search_trial_s` or `checking_trial_s` below `short_trial_s`; a shorter or equal failed duration does not trigger this full-profile check or duration repeat. At most one duration escalation occurs.
 
-Partition order follows this pseudocode. `S` and each partition keep core-id order. The optional repeated-core probe, duration prior, located-hunt endpoints and member probes retain the rules below and above.
+Partition order follows this pseudocode. `S` and each partition keep core-id order. When `hunt.start` is folded, the hunt snapshots the tuner's recent constraint cores; every partition uses that snapshot throughout the hunt, including planning and dashboard projections. Replay rebuilds the snapshot from the preceding events, without a new wire field. The optional repeated-core probe, duration prior, located-hunt endpoints and member probes retain the rules below and above.
 
 ```text
 partition(S, g):
@@ -264,7 +264,7 @@ partition(S, g):
     else:
         parts = g contiguous pieces of S
         # Sizes differ by at most one; earlier pieces get the remainder.
-    stably put pieces containing recent constraint cores first
+    stably put pieces containing the hunt-start recent constraint cores first
     return parts
 
 S = original_candidates; g = 2; stage = part; index = 0

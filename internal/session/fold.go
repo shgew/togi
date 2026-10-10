@@ -104,6 +104,12 @@ type fold struct {
 	kernelRetrySeqs  []int
 	kernelDeadDetail string
 	kernelCursors    map[string]string
+	// huntGroup is set by a hunt.group and stays set through the group's parked profile.applied, parked trial.intent
+	// and any interruption, because a resumed session may run the same recorded group again without a new hunt.group. A
+	// together profile.applied or trial.intent, a profile change or restoration, or the hunt's end clears it. While it
+	// is set, a nonzero write that is not a restoration is the group's parked application and counts as parked from its
+	// first write, before profile.applied.
+	huntGroup bool
 
 	unmatched   []openIntent
 	open        *openTrial
@@ -167,6 +173,17 @@ func (f *fold) Fold(e journal.Event) {
 		f.lastKind[e.Boot] = e.Kind
 	} else if e.Kind != journal.KindSessionWarning && e.Kind != journal.KindBootLeaveReason {
 		f.lastKind[e.Boot] = e.Kind
+	}
+	armed := f.huntGroup
+	switch p := e.Data.(type) {
+	case *journal.HuntGroup:
+		f.huntGroup = true
+	case *journal.ProfileApplied:
+		f.huntGroup = f.huntGroup && p.Condition == machine.Parked
+	case *journal.TrialIntent:
+		f.huntGroup = f.huntGroup && p.Condition == machine.Parked
+	case *journal.ProfileChange, *journal.ProfileRestored, *journal.HuntEnd:
+		f.huntGroup = false
 	}
 	switch p := e.Data.(type) {
 	case *journal.SessionStart:
@@ -239,6 +256,9 @@ func (f *fold) Fold(e journal.Event) {
 		if p.Offset != 0 && f.open == nil && !slices.Contains(e.Cause, f.baselineSeq) {
 			f.applied[e.Boot] = e.Seq
 			f.appliedCond[e.Boot] = machine.Together
+			if armed {
+				f.appliedCond[e.Boot] = machine.Parked
+			}
 			if !f.applying[e.Boot] {
 				f.appliedMono[e.Boot] = e.Mono
 				f.applying[e.Boot] = true

@@ -64,6 +64,8 @@ A **passed cycle** has fulfilled its requirements. A **full cycle** additionally
 
 A **hunt** repeats the failed workload and loaded set while changing which candidate cores retain their failing offsets. Other cores are held at parked offsets. This separates changing an offset from changing the load. Parts and complements narrow a failing subset; each group needs five passes by default and its first failure rejects it. Valid existing evidence can avoid launches ([ADR 0023](adr/0023-hunts-that-converge-on-shared-voltage.md), [ADR 0024](adr/0024-schedule-from-uncontradicted-evidence.md), [ADR 0027](adr/0027-carry-trial-facts.md)).
 
+A hunt keeps its partition order across profile changes and resume. A crash while applying a group's parked profile is handled as parked, even before its trial starts; attribution naming one core ends the hunt naming that core ([Hunt](spec/tuner.md#hunt), [Crashes](spec/tuner.md#crashes)).
+
 A singleton records a failure point. A failing multi-core subset records a combination: those offsets must not all be reached together. Member probes move each member separately to find usable backoff choices. A fallback combination records the conservative outcome when an ordinary hunt cannot reproduce a narrower failure; it is not proof that every member caused it.
 
 Ordinary hunts handle unattributed failures outside multi-core R7, including idle crashes. Ruleset 10's **located hunts** first test whether a multi-core R7 failure still occurs with unloaded cores at 0. They come from [#415](https://github.com/shgew/togi/issues/415) and [ADR 0040](adr/0040-located-hunts.md), not #107. The exact partition order, evidence windows and outcomes are in [Hunt](spec/tuner.md#hunt).

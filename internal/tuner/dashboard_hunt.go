@@ -116,7 +116,7 @@ func (s *State) huntParts(h *hunt, plan groupPlan, groups []HuntGroup) []HuntPar
 	}
 	switch plan.stage {
 	case "part", "complement":
-		split := s.split(h, plan.set, plan.g)
+		split := h.split(plan.set, plan.g)
 		for i := range split {
 			part := s.huntPart(h, plan, s.groupPart(split, plan.stage, i, plan.set))
 			for j, g := range slices.Backward(h.groups) {
