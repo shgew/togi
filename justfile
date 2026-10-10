@@ -114,6 +114,11 @@ audit *args: _dev-shell
 same base="origin/main" *args: _dev-shell
     dir=$(mktemp -d); trap 'rm -rf "$dir"' EXIT; git archive "$1" | tar -x -C "$dir"; go run ./tools/bench --same "$dir" "${@:2}"
 
+# Prove a fixed selection of simulated sessions, one per scenario, is unchanged from a base revision; same cache and fail-fast as `same`
+[group('run')]
+smoke base="origin/main" *args: _dev-shell
+    dir=$(mktemp -d); trap 'rm -rf "$dir"' EXIT; git archive "$1" | tar -x -C "$dir"; go run ./tools/bench --same "$dir" --smoke "${@:2}"
+
 # Forecast a real run from a copy of its state directory with the target ensemble (`--out tools/bench/forecasts/<session>-<seq>.json`)
 [group('run')]
 forecast state_dir *args: _dev-shell
