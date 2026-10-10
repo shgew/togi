@@ -426,3 +426,38 @@ func BenchmarkProject(b *testing.B) {
 		Project(events)
 	}
 }
+
+// With colour off the trial bar still shows how far the trial is: elapsed cells are █ and the rest ░, as the gauges
+// use shape as well as colour.
+func TestTrialBarShowsElapsedWithoutColour(t *testing.T) {
+	var events []journal.Event
+	for _, c := range watchCuts(t) {
+		if c.name == "search" {
+			events = c.events
+		}
+	}
+	s, early := Project(events), cutTime(events)
+	late := early.Add(30 * time.Second)
+	for _, size := range [][2]int{{240, 67}, {160, 45}, {120, 33}} {
+		sc := Screen{Width: size[0], Height: size[1], Keys: true}
+		bar := func(now time.Time) string {
+			var rows []string
+			for _, line := range RenderView(s, sc, now).Lines {
+				if text := strings.TrimSpace(ansi.Strip(line)); strings.HasPrefix(text, "█") {
+					rows = append(rows, text[:strings.IndexFunc(text, func(r rune) bool { return r != '█' && r != '░' })])
+				}
+			}
+			if len(rows) == 0 {
+				t.Fatalf("%dx%d: no trial bar row in the frame", size[0], size[1])
+			}
+			return rows[0]
+		}
+		before, after := bar(early), bar(late)
+		if before == after {
+			t.Errorf("%dx%d: colour-off bar is identical at two elapsed times: %q", size[0], size[1], before)
+		}
+		if strings.Count(after, "█") <= strings.Count(before, "█") || !strings.Contains(before, "░") {
+			t.Errorf("%dx%d: elapsed cells must grow as █ over ░ rest: %q then %q", size[0], size[1], before, after)
+		}
+	}
+}

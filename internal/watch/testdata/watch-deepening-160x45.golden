@@ -7,7 +7,7 @@
 
   NOW ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── trial 0462
    R1   light load  on core 00 alone at -30   mprime SSE 4K-21K · 1 worker                                          DEEPEN · ROUND 1 · CORE 00 AT -30 · LIGHT
-  █████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████  1:20 left  0/5 ► · · · ·
+  ███████████████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  1:20 left  0/5 ► · · · ·
 
   if 5 of 5 pass       next: deepening round 1: R2 heavy vector on core 00 alone at -30
   if a core is named   its failure point is recorded → deepening round 1 ends → it backs off → next: rerun R1 light on core 00 at -29 · 2m

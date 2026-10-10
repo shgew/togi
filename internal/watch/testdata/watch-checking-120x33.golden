@@ -4,7 +4,7 @@
  ▌  Step 1, R7 all-core: part 1 of 3 loads 00-07 for 2 minutes.
 
   R7   all-core load  on 00-07   mprime AVX2 36K-248K · 8 workers                            CYCLE 1 · STEP 1 · PART 1
- █████████████████████████████████████████████████████████████████████████████████████████████  1:20 left  0/4 ► · · ·
+ ███████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  1:20 left  0/4 ► · · ·
 
  3/4 pass → trial 4 of 4 · 5m   core named → backs off   none named → hunt 1   backoffs per offset order
 
