@@ -2,10 +2,12 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -113,8 +115,8 @@ func TestFirstJournalDifference(t *testing.T) {
 			}
 		})
 	}
-	if _, err := firstJournalDifference(strings.NewReader("{\n"), strings.NewReader("{}\n")); err == nil {
-		t.Fatal("malformed event must be an error")
+	if _, err := firstJournalDifference(strings.NewReader("{\"kind\":\"session.start\"\n"), strings.NewReader("{}\n")); err == nil {
+		t.Fatal("malformed build-stamp event must be an error")
 	}
 }
 
@@ -179,7 +181,7 @@ func runFakeSame(t *testing.T, root string, sessions [2][]fakeSession, keep bool
 			byKey[side][s.key] = s
 		}
 	}
-	launch := func(side int, spec runSpec) (simulation, error) {
+	launch := func(_ context.Context, side int, spec runSpec) (simulation, error) {
 		s := byKey[side][sessionKey{spec.scenario.Name, spec.split, spec.seed}]
 		dir := filepath.Join(root, sameSides[side], s.key.String())
 		if err := os.MkdirAll(dir, 0755); err != nil {
@@ -199,7 +201,7 @@ func runFakeSame(t *testing.T, root string, sessions [2][]fakeSession, keep bool
 		return simulation{dir: dir, exit: s.exit}, nil
 	}
 	var report bytes.Buffer
-	different, err := runSame(&report, pairRuns(runs), 2, keep, launch)
+	different, err := runSame(context.Background(), &report, pairRuns(runs), sameConfig{jobs: 2, keep: keep, keepGoing: true}, launch)
 	return report.String(), different, err
 }
 
@@ -303,7 +305,7 @@ func TestSameRemovesMatchingRunsBeforeNextPair(t *testing.T) {
 					runs[side] = append(runs[side], runSpec{scenario: scenario{Name: key.scenario}, split: key.split, seed: key.seed})
 				}
 			}
-			launch := func(side int, spec runSpec) (simulation, error) {
+			launch := func(_ context.Context, side int, spec runSpec) (simulation, error) {
 				if side == 0 && spec.scenario.Name == "second" {
 					for _, name := range sameSides {
 						dir := filepath.Join(root, name, keys[0].String())
@@ -329,7 +331,7 @@ func TestSameRemovesMatchingRunsBeforeNextPair(t *testing.T) {
 				return simulation{dir: dir}, nil
 			}
 			var report bytes.Buffer
-			if different, err := runSame(&report, pairRuns(runs), 1, keep, launch); err != nil || different {
+			if different, err := runSame(context.Background(), &report, pairRuns(runs), sameConfig{jobs: 1, keep: keep}, launch); err != nil || different {
 				t.Fatalf("matching pairs: different=%v, err=%v", different, err)
 			}
 			for _, name := range sameSides {
@@ -370,14 +372,17 @@ func TestSameKeepsFailedPairs(t *testing.T) {
 			if report != "" {
 				t.Fatalf("failed run must not report equality: %q", report)
 			}
+			dir := filepath.Join(root, sameSides[failedSide], failed.String())
+			if got, err := os.ReadFile(filepath.Join(dir, "sim.log")); err != nil || string(got) != "diagnostic log\n" {
+				t.Errorf("failed-run diagnostic %s: got %q, err %v", dir, got, err)
+			}
 			for _, side := range sameSides {
-				dir := filepath.Join(root, side, failed.String())
-				if got, err := os.ReadFile(filepath.Join(dir, "sim.log")); err != nil || string(got) != "diagnostic log\n" {
-					t.Errorf("failed-pair diagnostic %s: got %q, err %v", dir, got, err)
-				}
 				if _, err := os.Stat(filepath.Join(root, side, matches.String())); !errors.Is(err, os.ErrNotExist) {
 					t.Errorf("matching pair retained after launch failure: %s (err %v)", side, err)
 				}
+			}
+			if _, err := os.Stat(filepath.Join(root, sameSides[1-failedSide], failed.String())); !errors.Is(err, os.ErrNotExist) {
+				t.Errorf("unfinished pair's other run retained: %v", err)
 			}
 		})
 	}
@@ -426,5 +431,232 @@ func TestSameRejectsExplicitBenchFlags(t *testing.T) {
 				t.Fatalf("missing usage diagnostic: %s", stderr.String())
 			}
 		})
+	}
+}
+
+type recordingLauncher struct {
+	root    string
+	journal func(side int, key sessionKey) string
+	started func()
+
+	mu       sync.Mutex
+	launches []string
+}
+
+func (l *recordingLauncher) launch(ctx context.Context, side int, spec runSpec) (simulation, error) {
+	key := sessionKey{spec.scenario.Name, spec.split, spec.seed}
+	l.mu.Lock()
+	l.launches = append(l.launches, sameSides[side]+" "+key.String())
+	l.mu.Unlock()
+	dir := filepath.Join(l.root, sameSides[side], key.String())
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return simulation{}, err
+	}
+	if l.started != nil {
+		l.started()
+	}
+	if ctx.Err() != nil {
+		return simulation{dir: dir}, ctx.Err()
+	}
+	if err := os.WriteFile(filepath.Join(dir, "events.jsonl"), []byte(l.journal(side, key)), 0600); err != nil {
+		return simulation{}, err
+	}
+	return simulation{dir: dir, wall: 1}, nil
+}
+
+func samePairs(seeds ...uint64) []samePair {
+	var runs [2][]runSpec
+	for side := range runs {
+		for _, seed := range seeds {
+			runs[side] = append(runs[side], runSpec{scenario: scenario{Name: "s"}, split: "dev", seed: seed})
+		}
+	}
+	return pairRuns(runs)
+}
+
+func filesUnder(t *testing.T, root string) []string {
+	t.Helper()
+	var files []string
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if err == nil && !entry.IsDir() {
+			rel, _ := filepath.Rel(root, path)
+			files = append(files, filepath.ToSlash(rel))
+		}
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return files
+}
+
+func TestJournalDigest(t *testing.T) {
+	stamp := func(version string) string {
+		return `{"kind":"session.start","session":"s","version":"` + version + `","msg":"session s started by togi ` + version + ` (schema 2)"}` + "\n"
+	}
+	digest := func(files map[string]string) string {
+		t.Helper()
+		dir := t.TempDir()
+		for name, content := range files {
+			path := filepath.Join(dir, name)
+			if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		got, err := journalDigest(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	base := digest(map[string]string{"events.jsonl": stamp("old") + "{\"seq\":2}\n"})
+	for _, tc := range []struct {
+		name  string
+		files map[string]string
+		equal bool
+	}{
+		{"build stamp is ignored", map[string]string{"events.jsonl": stamp("new") + "{\"seq\":2}\n"}, true},
+		{"event content", map[string]string{"events.jsonl": stamp("old") + "{\"seq\":3}\n"}, false},
+		{"missing final newline", map[string]string{"events.jsonl": stamp("old") + "{\"seq\":2}"}, false},
+		{"extra archive", map[string]string{"events.jsonl": stamp("old") + "{\"seq\":2}\n", "archive/a.jsonl": "{}\n"}, false},
+		{"samples are not journals", map[string]string{"events.jsonl": stamp("old") + "{\"seq\":2}\n", "trials/t/samples.jsonl": "{}\n"}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := digest(tc.files) == base; got != tc.equal {
+				t.Fatalf("digest equal = %v, want %v", got, tc.equal)
+			}
+		})
+	}
+	archived := digest(map[string]string{"archive/a.jsonl": "{}\n"})
+	renamed := digest(map[string]string{"archive/b.jsonl": "{}\n"})
+	if archived == renamed {
+		t.Fatal("journal names are part of the digest")
+	}
+}
+
+func openTestCaches(t *testing.T) ([2]*sessionCache, *costTable) {
+	t.Helper()
+	root := t.TempDir()
+	var caches [2]*sessionCache
+	for side := range caches {
+		var err error
+		if caches[side], err = openSessionCache(root, sameSides[side]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return caches, loadCosts(filepath.Join(root, "costs.json"))
+}
+
+func TestSameCachesBothSides(t *testing.T) {
+	caches, costs := openTestCaches(t)
+	root := t.TempDir()
+	l := &recordingLauncher{root: root, journal: func(int, sessionKey) string { return "{}\n" }}
+	cfg := sameConfig{jobs: 2, caches: caches, costs: costs}
+	for run, want := range []int{6, 6} {
+		var report bytes.Buffer
+		different, err := runSame(context.Background(), &report, samePairs(1, 2, 3), cfg, l.launch)
+		if err != nil || different {
+			t.Fatalf("run %d: different=%v, err=%v", run, different, err)
+		}
+		if len(l.launches) != want {
+			t.Fatalf("run %d: %d launches in total, want %d", run, len(l.launches), want)
+		}
+	}
+	if _, ok := costs.get(sessionKey{"s", "dev", 2}); !ok {
+		t.Error("session cost not recorded")
+	}
+	if files := filesUnder(t, root); len(files) != 0 {
+		t.Errorf("run directories left behind: %v", files)
+	}
+	cfg.fresh = true
+	if _, err := runSame(context.Background(), &bytes.Buffer{}, samePairs(1, 2, 3), cfg, l.launch); err != nil || len(l.launches) != 12 {
+		t.Fatalf("fresh run: %d launches in total, err %v, want 12", len(l.launches), err)
+	}
+}
+
+func TestSameRerunsOnlyTheSideItNeedsToShowADifference(t *testing.T) {
+	caches, costs := openTestCaches(t)
+	l := &recordingLauncher{root: t.TempDir(), journal: func(side int, _ sessionKey) string {
+		return "{}\n{\"side\":" + string(rune('0'+side)) + "}\n"
+	}}
+	var report bytes.Buffer
+	cfg := sameConfig{jobs: 2, caches: caches, costs: costs}
+	if different, err := runSame(context.Background(), &report, samePairs(1), cfg, l.launch); err != nil || !different {
+		t.Fatalf("cold run: different=%v, err=%v", different, err)
+	}
+	want := "same: s/dev-1\n  events.jsonl:2\n  base: {\"side\":0}\n  head: {\"side\":1}\n"
+	if !strings.HasPrefix(report.String(), want) {
+		t.Fatalf("report:\n%s\nwant prefix:\n%s", report.String(), want)
+	}
+	if len(l.launches) != 2 {
+		t.Fatalf("cold run launches: %v", l.launches)
+	}
+	l.launches = nil
+	report.Reset()
+	if different, err := runSame(context.Background(), &report, samePairs(1), cfg, l.launch); err != nil || !different || !strings.HasPrefix(report.String(), want) {
+		t.Fatalf("cached run: different=%v, err=%v, report:\n%s", different, err, report.String())
+	}
+	if len(l.launches) != 2 {
+		t.Fatalf("both cached sides differ, so both must rerun to show the line: %v", l.launches)
+	}
+	l.launches = nil
+	cfg.caches[1] = nil
+	if different, err := runSame(context.Background(), &bytes.Buffer{}, samePairs(1), cfg, l.launch); err != nil || !different {
+		t.Fatalf("head-only run: different=%v, err=%v", different, err)
+	}
+	if diff := cmp.Diff([]string{"head s/dev-1", "base s/dev-1"}, l.launches); diff != "" {
+		t.Fatalf("a fresh head runs once and the cached base once more to show the line (-want +got):\n%s", diff)
+	}
+}
+
+func TestSameStopsAtTheFirstDifference(t *testing.T) {
+	journal := func(side int, key sessionKey) string {
+		if key.seed == 1 && side == 1 {
+			return "{\"changed\":true}\n"
+		}
+		return "{}\n"
+	}
+	for _, keepGoing := range []bool{false, true} {
+		t.Run(map[bool]string{false: "fail fast", true: "keep going"}[keepGoing], func(t *testing.T) {
+			root := t.TempDir()
+			l := &recordingLauncher{root: root, journal: journal}
+			var report bytes.Buffer
+			different, err := runSame(context.Background(), &report, samePairs(1, 2, 3, 4), sameConfig{jobs: 1, keepGoing: keepGoing}, l.launch)
+			if err != nil || !different {
+				t.Fatalf("different=%v, err=%v", different, err)
+			}
+			wantLaunches, wantSummary := 2, "stopped at the first difference"
+			if keepGoing {
+				wantLaunches, wantSummary = 8, "1 of 4 sessions differ"
+			}
+			if len(l.launches) != wantLaunches || !strings.Contains(report.String(), wantSummary) {
+				t.Fatalf("%d launches, want %d; report:\n%s", len(l.launches), wantLaunches, report.String())
+			}
+			want := []string{"base/s/dev-1/events.jsonl", "head/s/dev-1/events.jsonl"}
+			if diff := cmp.Diff(want, filesUnder(t, root)); diff != "" {
+				t.Fatalf("only the differing session keeps its runs (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestSameInterruptRemovesRuns(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	root := t.TempDir()
+	l := &recordingLauncher{root: root, journal: func(int, sessionKey) string { return "{}\n" }, started: cancel}
+	var report bytes.Buffer
+	different, err := runSame(ctx, &report, samePairs(1, 2, 3, 4), sameConfig{jobs: 2}, l.launch)
+	if err != nil || different || report.Len() != 0 {
+		t.Fatalf("different=%v, err=%v, report %q: an interrupted run reports nothing", different, err, report.String())
+	}
+	if files := filesUnder(t, root); len(files) != 0 {
+		t.Errorf("interrupted runs left files: %v", files)
+	}
+	if len(l.launches) > 2 {
+		t.Errorf("runs kept starting after the interrupt: %v", l.launches)
 	}
 }

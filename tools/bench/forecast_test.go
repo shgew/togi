@@ -261,11 +261,11 @@ func TestForecastFailsOnFailedRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, run := range []simulation{{exit: 2}, {exit: -1, timedOut: true}, {exit: 0}} {
+	for _, run := range []simulation{{exit: 2}, {exit: -1}, {exit: 0}} {
 		root := t.TempDir()
 		launch := func(spec runSpec) (simulation, error) { return run, nil }
 		if _, err := makeForecast(input, root, anchor, specs, "testdata", 1, false, launch); err == nil {
-			t.Errorf("forecast accepted a run with exit %d, timed out %v and no conclusion", run.exit, run.timedOut)
+			t.Errorf("forecast accepted a run with exit %d and no conclusion", run.exit)
 		}
 	}
 }

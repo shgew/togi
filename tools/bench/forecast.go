@@ -56,7 +56,7 @@ func executeForecast(o options, stdout, stderr io.Writer) (err error) {
 		return fmt.Errorf("create build directory: %w", err)
 	}
 	defer os.RemoveAll(buildDir)
-	binary, err := buildSimulator(buildDir, stderr)
+	binary, err := buildSimulator(o.ctx, buildDir, stderr)
 	if err != nil {
 		return err
 	}
@@ -70,7 +70,9 @@ func executeForecast(o options, stdout, stderr io.Writer) (err error) {
 		return fmt.Errorf("create run directory: %w", err)
 	}
 	defer func() { finishRuns(root, o.keep != "", err, stderr) }()
-	launch := func(spec runSpec) (simulation, error) { return launchSimulator(binary, root, spec, o.timeout) }
+	launch := func(spec runSpec) (simulation, error) {
+		return launchSimulator(o.ctx, binary, root, spec, o.maxBoots, o.timeout)
+	}
 	record, err := makeForecast(o.forecast, root, anchor, runs, suiteDir, o.jobs, o.keep != "", launch)
 	if err != nil {
 		return err
@@ -161,7 +163,7 @@ func makeForecast(input, root string, anchor forecast.Anchor, specs []runSpec, s
 	return forecast.Record{Anchor: anchor, Ruleset: tuner.Ruleset, Runs: runs, Summary: summary}, nil
 }
 
-// forecastRun resumes one copy of the state directory on the simulator. A timeout or error fails the forecast.
+// forecastRun resumes one copy of the state directory on the simulator. An error fails the forecast.
 func forecastRun(input, root string, anchor forecast.Anchor, spec runSpec, keep bool, launch func(runSpec) (simulation, error)) (forecast.Outcome, error) {
 	dir := runDir(root, spec)
 	if err := copyState(input, dir); err != nil {
@@ -185,15 +187,13 @@ func forecastRun(input, root string, anchor forecast.Anchor, spec runSpec, keep 
 	}
 	// Exit 1 is a dead end only when this invocation reached one: a deadend event after the anchor, or its own sim.log
 	// line when it finished one the copy left pending. A dead end in the copy is not this run's.
-	switch status := runStatus(run.exit, run.timedOut, eventsAfter(sessions, anchor), string(log)); status {
+	switch status := runStatus(run.exit, eventsAfter(sessions, anchor), string(log)); status {
 	case forecast.DeadEnd:
 		outcome.Status = forecast.DeadEnd
 	case forecast.Concluded, forecast.Censored:
 		if outcome.Status != status {
 			return forecast.Outcome{}, fmt.Errorf("simulator exit %d means %s, but the journal after the anchor is %s", run.exit, status, outcome.Status)
 		}
-	case "timeout":
-		return forecast.Outcome{}, fmt.Errorf("simulator timed out")
 	default:
 		return forecast.Outcome{}, fmt.Errorf("simulator failed with exit %d", run.exit)
 	}

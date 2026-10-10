@@ -16,7 +16,6 @@ func TestTimingChecks(t *testing.T) {
 		want    []finding
 	}{
 		{"passing", []runRecord{{Scenario: "a", Status: "concluded", WallS: 1}, {Scenario: "a", Status: "deadend", WallS: 10}}, nil},
-		{"timeout", []runRecord{{Scenario: "a", Status: "timeout", WallS: 180}}, []finding{{0, "wall_time"}}},
 		{"strict tenfold boundary", []runRecord{{Scenario: "a", Status: "concluded", WallS: 1}, {Scenario: "a", Status: "concluded", WallS: 1}, {Scenario: "a", Status: "concluded", WallS: 10}}, nil},
 		{"outlier", []runRecord{{Scenario: "a", Status: "concluded", WallS: 1}, {Scenario: "a", Status: "concluded", WallS: 1}, {Scenario: "a", Status: "concluded", WallS: 11}}, []finding{{0, "wall_time"}}},
 		{"scenario medians separate", []runRecord{{Scenario: "a", Status: "concluded", WallS: 1}, {Scenario: "b", Status: "concluded", WallS: 100}}, nil},

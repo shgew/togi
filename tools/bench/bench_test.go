@@ -148,21 +148,19 @@ func TestRunStatus(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
 		exit      int
-		timeout   bool
 		events    []journal.Event
 		log, want string
 	}{
-		{"concluded", 0, false, []journal.Event{{Kind: journal.KindShutdown}}, "", "concluded"},
-		{"empty", 0, false, nil, "", "error"},
-		{"deadend journal", 1, false, []journal.Event{{Kind: journal.KindDeadEnd}}, "", "deadend"},
-		{"deadend log", 1, false, nil, "sim: dead end stock: unstable", "deadend"},
-		{"error", 1, false, nil, "sim: failed to read file", "error"},
-		{"timeout", -1, true, nil, "", "timeout"},
-		{"boot cap", 3, false, []journal.Event{{Kind: journal.KindCrashDetected}}, "sim: simulate session: simulated machine reached its boot cap without stopping after 1000 boots", "censored"},
-		{"boot cap without journal", 3, false, nil, "", "error"},
+		{"concluded", 0, []journal.Event{{Kind: journal.KindShutdown}}, "", "concluded"},
+		{"empty", 0, nil, "", "error"},
+		{"deadend journal", 1, []journal.Event{{Kind: journal.KindDeadEnd}}, "", "deadend"},
+		{"deadend log", 1, nil, "sim: dead end stock: unstable", "deadend"},
+		{"error", 1, nil, "sim: failed to read file", "error"},
+		{"boot cap", 3, []journal.Event{{Kind: journal.KindCrashDetected}}, "sim: simulate session: simulated machine reached its boot cap without stopping after 1000 boots", "censored"},
+		{"boot cap without journal", 3, nil, "", "error"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if diff := cmp.Diff(tc.want, runStatus(tc.exit, tc.timeout, tc.events, tc.log)); diff != "" {
+			if diff := cmp.Diff(tc.want, runStatus(tc.exit, tc.events, tc.log)); diff != "" {
 				t.Fatal(diff)
 			}
 		})
@@ -189,7 +187,7 @@ func TestBootCapRunIsCensoredCost(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := metrics(events, fresh, 16)
-	r.Status = runStatus(3, false, events, "")
+	r.Status = runStatus(3, events, "")
 	got := struct {
 		Status   string
 		Crashes  int
