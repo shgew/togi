@@ -1,6 +1,4 @@
-The candidate-edge checking phase and the same-ruleset BIOS dead end are superseded by [ADR 0020](0020-hunt-and-refine.md).
-
-The exclusion of carried passes and unattributed failure facts, the ruleset-based archive walk for those facts, and mandatory live rechecking of carried edges are amended by [ADR 0027](0027-carry-trial-facts.md). Resident offsets and passed rotations still do not carry.
+Status: see [the index](README.md).
 
 # A ruleset change starts a seeded session
 

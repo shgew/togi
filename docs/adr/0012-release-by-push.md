@@ -1,4 +1,4 @@
-Superseded by [ADR 0014](0014-release-from-a-workflow.md).
+Status: see [the index](README.md).
 
 # Releases open with a push and publish from CI
 

@@ -1,4 +1,4 @@
-Refusal of older journals superseded by [ADR 0019](0019-a-ruleset-change-starts-a-seeded-session.md); the build stamps and the refusal of newer journals remain.
+Status: see [the index](README.md).
 
 # Compatibility across updates
 

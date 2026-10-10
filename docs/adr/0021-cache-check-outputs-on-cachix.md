@@ -1,6 +1,4 @@
-Serving CI only is amended by [ADR 0042](0042-opt-in-to-the-check-cache-locally.md): a machine whose Nix configuration trusts the cache downloads unchanged checks in local `just check`.
-
-Its consequence that flaky tests surface in local `just test` is amended by [ADR 0045](0045-the-tight-loop-reuses-cached-test-results.md): `just test` reuses cached results, and `just gate` draws a new `-shuffle=on` seed on every run.
+Status: see [the index](README.md).
 
 # Cache check outputs on Cachix
 

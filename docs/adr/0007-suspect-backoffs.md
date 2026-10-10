@@ -1,4 +1,4 @@
-Superseded by [ADR 0011](0011-blame-by-load-and-automatic-regain.md).
+Status: see [the index](README.md).
 
 # Unattributed failures back off as suspects; depth is regained only on request
 

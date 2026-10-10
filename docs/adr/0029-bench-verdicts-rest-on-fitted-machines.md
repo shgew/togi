@@ -1,6 +1,6 @@
 # Bench verdicts rest on fitted machines
 
-Decision 4 and the rule that a kept tuner experiment keeps the target fits passing the model check are amended by [ADR 0044](0044-write-flagged-target-fits.md): when the all-facts fit itself fails the model check, `just fit` writes flagged bootstrap refits unconstrained and names every member's flagged groups in its header and the report, and a kept experiment needs target model checks unchanged from setup. Decision 3 and the check are unchanged.
+Status: see [the index](README.md).
 
 ## Context
 
