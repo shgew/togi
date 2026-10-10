@@ -59,33 +59,9 @@ func executeSame(o options, stdout, stderr io.Writer) (bool, error) {
 	}
 	trees := [2]string{base, head}
 	started := time.Now()
-	extracts := trialfacts.Extracts{}
-	var runs [2][]runSpec
-	for side, tree := range trees {
-		suite := o.suite
-		if !filepath.IsAbs(suite) {
-			suite = filepath.Join(tree, suite)
-		}
-		runs[side], err = loadRuns(suite, "all", extracts)
-		if err != nil {
-			return false, fmt.Errorf("load %s suite: %w", tree, err)
-		}
-	}
-	if o.smoke {
-		smoke := make(map[sessionKey]bool)
-		for _, spec := range runs[1] {
-			if spec.smoke {
-				smoke[sessionKey{spec.scenario.Name, spec.split, spec.seed}] = true
-			}
-		}
-		if len(smoke) == 0 {
-			return false, errors.New("suite has no smoke sessions")
-		}
-		for side := range runs {
-			runs[side] = slices.DeleteFunc(runs[side], func(spec runSpec) bool {
-				return !smoke[sessionKey{spec.scenario.Name, spec.split, spec.seed}]
-			})
-		}
+	runs, err := loadSameRuns(o, trees)
+	if err != nil {
+		return false, err
 	}
 	loaded := time.Since(started)
 	cacheRoot, err := o.cacheDir()
@@ -97,28 +73,11 @@ func executeSame(o options, stdout, stderr io.Writer) (bool, error) {
 		return false, fmt.Errorf("create build directory: %w", err)
 	}
 	defer os.RemoveAll(buildDir)
-	var binaries [2]string
-	var buildErrs [2]error
-	var builds sync.WaitGroup
-	for side, tree := range trees {
-		builds.Go(func() {
-			binaries[side] = filepath.Join(buildDir, sameSides[side])
-			args := append([]string{"build", "-C", tree, "-o", binaries[side]}, simulatorBuildFlags...)
-			build := exec.CommandContext(o.ctx, "go", append(args, "./tools/sim")...)
-			build.Stdout, build.Stderr = stderr, stderr
-			if err := build.Run(); err != nil {
-				buildErrs[side] = fmt.Errorf("build simulator in %s: %w", tree, err)
-			}
-		})
-	}
-	builds.Wait()
-	built := time.Since(started)
-	if o.ctx.Err() != nil {
-		return false, errors.New("interrupted")
-	}
-	if err := errors.Join(buildErrs[:]...); err != nil {
+	binaries, err := buildSameSimulators(o.ctx, trees, buildDir, stderr)
+	if err != nil {
 		return false, err
 	}
+	built := time.Since(started)
 	var keys [2]string
 	var caches [2]*sessionCache
 	for side := range trees {
@@ -127,18 +86,11 @@ func executeSame(o options, stdout, stderr io.Writer) (bool, error) {
 		}
 	}
 	pairs := pairRuns(runs)
-	identical := keys[0] == keys[1]
-	for i := range pairs {
-		for side, spec := range pairs[i].runs {
-			if spec == nil {
-				continue
-			}
-			if pairs[i].inputs[side], err = runInputs(trees[side], *spec); err != nil {
-				return false, fmt.Errorf("hash %s inputs of %s: %w", sameSides[side], pairs[i].key, err)
-			}
-		}
-		identical = identical && pairs[i].runs[0] != nil && pairs[i].runs[1] != nil && pairs[i].inputs[0] == pairs[i].inputs[1]
+	inputsMatch, err := hashPairInputs(trees, pairs)
+	if err != nil {
+		return false, err
 	}
+	identical := keys[0] == keys[1] && inputsMatch
 	keyed := time.Since(started)
 	fmt.Fprintf(stderr, "bench: harness overhead: suites %s, builds %s, keys %s\n", loaded.Round(time.Millisecond), (built - loaded).Round(time.Millisecond), (keyed - built).Round(time.Millisecond))
 	if identical && !o.noCache && o.keep == "" {
@@ -191,6 +143,82 @@ func executeSame(o options, stdout, stderr io.Writer) (bool, error) {
 		os.RemoveAll(root)
 	}
 	return different, err
+}
+
+// loadSameRuns loads the suite of each tree, or with --smoke only the sessions the current tree's suite lists.
+func loadSameRuns(o options, trees [2]string) ([2][]runSpec, error) {
+	extracts := trialfacts.Extracts{}
+	var runs [2][]runSpec
+	for side, tree := range trees {
+		suite := o.suite
+		if !filepath.IsAbs(suite) {
+			suite = filepath.Join(tree, suite)
+		}
+		var err error
+		if runs[side], err = loadRuns(suite, "all", extracts); err != nil {
+			return runs, fmt.Errorf("load %s suite: %w", tree, err)
+		}
+	}
+	if !o.smoke {
+		return runs, nil
+	}
+	smoke := make(map[sessionKey]bool)
+	for _, spec := range runs[1] {
+		if spec.smoke {
+			smoke[sessionKey{spec.scenario.Name, spec.split, spec.seed}] = true
+		}
+	}
+	if len(smoke) == 0 {
+		return runs, errors.New("suite has no smoke sessions")
+	}
+	for side := range runs {
+		runs[side] = slices.DeleteFunc(runs[side], func(spec runSpec) bool {
+			return !smoke[sessionKey{spec.scenario.Name, spec.split, spec.seed}]
+		})
+	}
+	return runs, nil
+}
+
+// buildSameSimulators builds both trees' simulators in dir at the same time.
+func buildSameSimulators(ctx context.Context, trees [2]string, dir string, stderr io.Writer) ([2]string, error) {
+	var binaries [2]string
+	var errs [2]error
+	var builds sync.WaitGroup
+	for side, tree := range trees {
+		builds.Go(func() {
+			binaries[side] = filepath.Join(dir, sameSides[side])
+			args := append([]string{"build", "-C", tree, "-o", binaries[side]}, simulatorBuildFlags...)
+			build := exec.CommandContext(ctx, "go", append(args, "./tools/sim")...)
+			build.Stdout, build.Stderr = stderr, stderr
+			if err := build.Run(); err != nil {
+				errs[side] = fmt.Errorf("build simulator in %s: %w", tree, err)
+			}
+		})
+	}
+	builds.Wait()
+	if ctx.Err() != nil {
+		return binaries, errors.New("interrupted")
+	}
+	return binaries, errors.Join(errs[:]...)
+}
+
+// hashPairInputs sets each pair's input digests and reports whether every pair has both sessions, reading the same
+// inputs.
+func hashPairInputs(trees [2]string, pairs []samePair) (bool, error) {
+	same := true
+	for i := range pairs {
+		for side, spec := range pairs[i].runs {
+			if spec == nil {
+				continue
+			}
+			var err error
+			if pairs[i].inputs[side], err = runInputs(trees[side], *spec); err != nil {
+				return false, fmt.Errorf("hash %s inputs of %s: %w", sameSides[side], pairs[i].key, err)
+			}
+		}
+		same = same && pairs[i].runs[0] != nil && pairs[i].runs[1] != nil && pairs[i].inputs[0] == pairs[i].inputs[1]
+	}
+	return same, nil
 }
 
 func pairRuns(runs [2][]runSpec) []samePair {
@@ -316,7 +344,9 @@ func runSame(parent context.Context, w io.Writer, pairs []samePair, cfg sameConf
 			return r.runSide(ctx, jobs[n].pair, jobs[n].side)
 		})
 	}
-	r.removeUnresolvedRuns()
+	if rmErr := r.removeUnresolvedRuns(); err == nil {
+		err = rmErr
+	}
 	fmt.Fprintf(cfg.log, "bench: base %d cached, %d to run; head %d cached, %d to run\n", cached[0], scheduled[0], cached[1], scheduled[1])
 	if err != nil {
 		return false, err
@@ -463,16 +493,18 @@ func (r *sameRun) removeRuns(i int) error {
 }
 
 // removeUnresolvedRuns drops the run directories of sessions stopped before their comparison.
-func (r *sameRun) removeUnresolvedRuns() {
+func (r *sameRun) removeUnresolvedRuns() error {
 	differing := make(map[int]bool)
 	for _, d := range r.diffs {
 		differing[d.pair] = true
 	}
+	var errs []error
 	for i := range r.states {
 		if !differing[i] {
-			r.removeRuns(i)
+			errs = append(errs, r.removeRuns(i))
 		}
 	}
+	return errors.Join(errs...)
 }
 
 // digestRun takes the digest of a finished simulation's journals.

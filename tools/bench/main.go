@@ -195,16 +195,24 @@ func loadRuns(path, split string, extracts trialfacts.Extracts) ([]runSpec, erro
 				}
 			}
 		}
-		for _, seed := range s.Smoke {
-			if !seeds[seed] {
-				return nil, fmt.Errorf("scenario %s smoke seed %d is in neither dev nor holdout", s.Name, seed)
-			}
+		if err := checkSmoke(s, seeds); err != nil {
+			return nil, err
 		}
 	}
 	if len(runs) == 0 {
 		return nil, errors.New("suite has no selected runs")
 	}
 	return runs, nil
+}
+
+// checkSmoke rejects a smoke seed that is neither a dev nor a holdout seed of its scenario.
+func checkSmoke(s scenario, seeds map[uint64]bool) error {
+	for _, seed := range s.Smoke {
+		if !seeds[seed] {
+			return fmt.Errorf("scenario %s smoke seed %d is in neither dev nor holdout", s.Name, seed)
+		}
+	}
+	return nil
 }
 
 func gitOutput(args ...string) (string, error) {
