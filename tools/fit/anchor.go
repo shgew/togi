@@ -115,4 +115,3 @@ func generateSharedVoltageAnchor(extract, out string, stdout io.Writer, fitter s
 	fmt.Fprintf(stdout, "Fit elapsed: %s\n", time.Since(started).Round(time.Millisecond))
 	return nil
 }
-

@@ -375,15 +375,6 @@ func TestDecisiveFiltersNonTrialsAndPreservesContext(t *testing.T) {
 	}
 }
 
-func mustEncodeMachine(t *testing.T, cfg sim.Config, index int, seed uint64, trials int, loss float64) string {
-	t.Helper()
-	content, err := encodeMachine(cfg, index, seed, trials, loss, nil, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(content)
-}
-
 func TestJointSearchSeparatesCleanBoundary(t *testing.T) {
 	cfg := initialConfig([]trialfacts.Record{{Profile: []int{0, 0}}})
 	cfg.CCD = nil

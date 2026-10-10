@@ -219,4 +219,3 @@ func flaggedGroups(check *modelcheck.Result) []modelcheck.Group {
 	}
 	return flagged
 }
-
