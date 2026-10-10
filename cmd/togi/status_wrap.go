@@ -5,26 +5,27 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"unicode/utf8"
+
+	"github.com/charmbracelet/x/ansi"
 )
 
-// statusWidth is the terminal width status fits. Words are never split, so a
-// single word longer than the room overflows instead.
+// statusWidth is the terminal width in cells status fits. Words are never
+// split, so a single word wider than the room overflows instead.
 const statusWidth = 80
 
-// wrapLines writes text word-wrapped to statusWidth columns: the first line
-// starts with first, every following line with rest. Leading newlines of first
-// print as blank lines before the text.
+// wrapLines writes text word-wrapped to statusWidth terminal cells: the first
+// line starts with first, every following line with rest. Leading newlines of
+// first print as blank lines before the text.
 func wrapLines(w io.Writer, first, rest, text string) {
 	body := strings.TrimLeft(first, "\n")
 	fmt.Fprint(w, first[:len(first)-len(body)])
-	line, width := body, utf8.RuneCountInString(body)
+	line, width := body, ansi.StringWidth(body)
 	empty := true
 	for word := range strings.FieldsSeq(text) {
-		n := utf8.RuneCountInString(word)
+		n := ansi.StringWidth(word)
 		if !empty && width+1+n > statusWidth {
 			fmt.Fprintln(w, line)
-			line, width, empty = rest, utf8.RuneCountInString(rest), true
+			line, width, empty = rest, ansi.StringWidth(rest), true
 		}
 		if !empty {
 			line += " "
@@ -58,14 +59,14 @@ func writeNotedTable(w io.Writer, rows []notedRow) {
 	_ = tw.Flush()
 	lines := strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
 	for i, line := range lines {
-		if utf8.RuneCountInString(line) > statusWidth {
+		if ansi.StringWidth(line) > statusWidth {
 			wrapLines(w, "", "  ", line)
 		} else {
 			fmt.Fprintln(w, line)
 		}
 		for _, n := range rows[i].notes {
 			prefix := "  " + n.label + " "
-			wrapLines(w, prefix, strings.Repeat(" ", utf8.RuneCountInString(prefix)), n.text)
+			wrapLines(w, prefix, strings.Repeat(" ", ansi.StringWidth(prefix)), n.text)
 		}
 	}
 }

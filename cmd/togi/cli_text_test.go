@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -74,6 +75,11 @@ func TestFlagErrorsSpellFlagsWithTwoDashes(t *testing.T) {
 		want string
 	}{
 		{[]string{"status", "--bogus"}, "togi status: flag provided but not defined: --bogus"},
+		{[]string{"status", "--.bogus"}, "togi status: flag provided but not defined: --.bogus"},
+		{[]string{"status", "-☃"}, "togi status: flag provided but not defined: --☃"},
+		{[]string{"status", "--☃"}, "togi status: flag provided but not defined: --☃"},
+		{[]string{"events", "-core"}, "togi events: flag needs an argument: --core"},
+		{[]string{"reset", "-all=maybe"}, `togi reset: invalid boolean value "maybe" for --all: parse error`},
 		{[]string{"events", "--core", "x"}, `togi events: invalid value "x" for flag --core: must be a non-negative integer`},
 		{[]string{"events", "--core"}, "togi events: flag needs an argument: --core"},
 		{[]string{"watch", "--width", "abc"}, `togi watch: invalid value "abc" for flag --width: parse error`},
@@ -92,6 +98,40 @@ func TestFlagErrorsSpellFlagsWithTwoDashes(t *testing.T) {
 				t.Fatalf("first line %q, want %q", first, tc.want)
 			}
 		})
+	}
+}
+
+func TestFlagErrorsPreserveQuotedValues(t *testing.T) {
+	t.Parallel()
+	for _, value := range []string{
+		"flag needs an argument: -core",
+		" for -x",
+		"flag provided but not defined: -bogus",
+		"for flag -core",
+		`" for flag -core: flag needs an argument: -core`,
+		`\ for -x`,
+		`\" for flag -core: \\ for -x`,
+	} {
+		for _, tc := range []struct {
+			args []string
+			want string
+		}{
+			{[]string{"events", "--core", value}, fmt.Sprintf("togi events: invalid value %q for flag --core: must be a non-negative integer", value)},
+			{[]string{"reset", "--all=" + value}, fmt.Sprintf("togi reset: invalid boolean value %q for --all: parse error", value)},
+			{[]string{"events", "--kind", value}, fmt.Sprintf("togi events: invalid value %q for flag --kind: unknown kind or group %q; valid names: %s", value, strings.TrimSpace(value), strings.Join(journal.KindSelectors(), ", "))},
+		} {
+			t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
+				t.Parallel()
+				var stdout, stderr bytes.Buffer
+				if code := cli(tc.args, &stdout, &stderr); code != exitUsage {
+					t.Fatalf("exit %d, want %d", code, exitUsage)
+				}
+				first, _, _ := strings.Cut(stderr.String(), "\n")
+				if first != tc.want {
+					t.Fatalf("first line %q, want %q", first, tc.want)
+				}
+			})
+		}
 	}
 }
 

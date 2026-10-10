@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/shgew/togi/internal/config"
@@ -57,15 +57,37 @@ func parseFlags(flags *flag.FlagSet, args []string, help string, stdout, stderr 
 // errConfigScope is the usage error for --config on a command that reads no configuration.
 var errConfigScope = errors.New("--config applies only to " + strings.Join(configCommands[:len(configCommands)-1], ", ") + " and " + configCommands[len(configCommands)-1])
 
-var flagDash = regexp.MustCompile(`(flag provided but not defined: |flag needs an argument: |for flag | for )-(\w)`)
-
 // flagMessage words a flag package error the way the usage does: flags with two dashes.
-// An undefined --config on a command without one says where --config applies.
+// Only the flag token the package itself adds is reworded; a quoted submitted value and the
+// cause after it stay as they were. An undefined --config on a command without one says
+// where --config applies.
 func flagMessage(err error) string {
-	if err.Error() == "flag provided but not defined: -config" {
+	msg := err.Error()
+	if msg == "flag provided but not defined: -config" {
 		return errConfigScope.Error()
 	}
-	return flagDash.ReplaceAllString(err.Error(), "${1}--${2}")
+	for _, prefix := range []string{"flag provided but not defined: ", "flag needs an argument: "} {
+		if rest, ok := strings.CutPrefix(msg, prefix); ok {
+			return prefix + "-" + rest
+		}
+	}
+	for _, form := range []struct{ lead, join string }{
+		{"invalid value ", " for flag "},
+		{"invalid boolean value ", " for "},
+	} {
+		rest, ok := strings.CutPrefix(msg, form.lead)
+		if !ok {
+			continue
+		}
+		quoted, qerr := strconv.QuotedPrefix(rest)
+		if qerr != nil {
+			break
+		}
+		if tail, ok := strings.CutPrefix(rest[len(quoted):], form.join+"-"); ok {
+			return form.lead + quoted + form.join + "--" + tail
+		}
+	}
+	return msg
 }
 
 func flagError(flags *flag.FlagSet, help string, err error, stderr io.Writer) int {
