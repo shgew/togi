@@ -17,16 +17,19 @@ type groupRecord struct {
 }
 
 type hunt struct {
-	start                                 *journal.HuntStart
-	seq                                   int
-	class                                 trialClass
+	start *journal.HuntStart
+	seq   int
+	class trialClass
+	// recent is the tuner's recent cores when the hunt started. It orders every partition the hunt traverses, so a
+	// recorded group index keeps naming the same part for the hunt's whole life.
+	recent                                []int
 	groups                                []groupRecord
 	end                                   *journal.HuntEnd
 	endSeq, combinationSeq, directFailure int
 }
 
 func (s *State) openHunt(e journal.Event, p *journal.HuntStart) {
-	s.hunt = &hunt{start: p, seq: e.Seq, class: trialClass{p.Regime, p.Workload, coresKey(p.Cores), p.DurationS}}
+	s.hunt = &hunt{start: p, seq: e.Seq, class: trialClass{p.Regime, p.Workload, coresKey(p.Cores), p.DurationS}, recent: slices.Clone(s.recent)}
 	s.nextHunt = max(s.nextHunt, p.Hunt)
 	s.lastPlanSeq = e.Seq
 	s.projectionDirty = true
@@ -163,7 +166,7 @@ func (s *State) huntStartNext() Action {
 	return Action{Kind: Decide, Payload: p, Cause: cause}
 }
 
-func (s *State) split(h *hunt, set []int, g int) [][]int {
+func (h *hunt) split(set []int, g int) [][]int {
 	if len(set) == 0 {
 		return nil
 	}
@@ -192,14 +195,14 @@ func (s *State) split(h *hunt, set []int, g int) [][]int {
 			at += size
 		}
 	}
-	if len(s.recent) > 0 {
+	if len(h.recent) > 0 {
 		slices.SortStableFunc(parts, func(a, b []int) int {
 			ar, br := false, false
 			for _, id := range a {
-				ar = ar || slices.Contains(s.recent, id)
+				ar = ar || slices.Contains(h.recent, id)
 			}
 			for _, id := range b {
-				br = br || slices.Contains(s.recent, id)
+				br = br || slices.Contains(h.recent, id)
 			}
 			if ar == br {
 				return 0
@@ -300,7 +303,7 @@ func (s *State) nextGroupPlan(h *hunt) (groupPlan, bool) {
 				return p, true
 			}
 		}
-		p.cores = s.split(h, p.set, p.g)[0]
+		p.cores = h.split(p.set, p.g)[0]
 		return p, true
 	}
 	last := groups[split-1]
@@ -325,14 +328,14 @@ func (s *State) nextGroupPlan(h *hunt) (groupPlan, bool) {
 				p.result = true
 				return p, false
 			}
-			p.cores = s.split(h, p.set, p.g)[0]
+			p.cores = h.split(p.set, p.g)[0]
 			return p, true
 		}
 		p.fullChecked = true
 	}
 	if len(groups) == 1 && m.Stage == "part" && len(m.Cores) == 1 && m.Granularity > 2 && m.Granularity == len(h.start.Candidates) {
 		p.g, p.index = 2, 0
-		p.cores = s.split(h, p.set, p.g)[0]
+		p.cores = h.split(p.set, p.g)[0]
 		return p, true
 	}
 	if p.stage == "full" {
@@ -342,7 +345,7 @@ func (s *State) nextGroupPlan(h *hunt) (groupPlan, bool) {
 		}
 	}
 	if p.stage == "part" || p.stage == "complement" {
-		parts := s.split(h, p.set, p.g)
+		parts := h.split(p.set, p.g)
 		if p.index+1 < len(parts) {
 			p.index++
 			p.cores = s.groupPart(parts, p.stage, p.index, p.set)
@@ -365,7 +368,7 @@ func (s *State) nextGroupPlan(h *hunt) (groupPlan, bool) {
 		p.g = min(2*p.g, len(p.set))
 		p.stage = "part"
 		p.index = 0
-		p.cores = s.split(h, p.set, p.g)[0]
+		p.cores = h.split(p.set, p.g)[0]
 		return p, true
 	}
 	return h.lastGroupPlan(p)
@@ -390,7 +393,7 @@ func (s *State) afterPassedFull(h *hunt, p groupPlan) (groupPlan, bool) {
 		p.result = true
 		return p, false
 	}
-	p.cores = s.split(h, p.set, p.g)[0]
+	p.cores = h.split(p.set, p.g)[0]
 	return p, true
 }
 
