@@ -71,7 +71,7 @@ Maxima and everything else are reported by the summary and the comparison, not g
 
 **Result: FAIL, 5 of 21 criteria.** The median worst R7 hazard rose on `target-shared-voltage`, `target-r7-vf-boost` and `target-r7-request-gap` against Ruleset 10 (3.94, 3.31 and 3.17 against 1.60, 1.70 and 1.88 per hour, each interval above 0), so did the 90th percentile on `target-shared-voltage` (6.73 against 2.64), and the pooled median is higher (3.31 against 1.72). All eight conclusion criteria and all four time criteria passed: all 220 runs concluded.
 
-The owner granted an exception ([comment](EXCEPTION_COMMENT_URL)) on the absolute bars of [#493](https://github.com/shgew/togi/issues/493) Q24, worst R7 hazard median and p90 not above Ruleset 9's final 4.91 and 10.90 per hour, judged on the point estimates; all pass. The registered criteria compare against Ruleset 10, whose hazard Ruleset 11 does not keep. The gate did not pass and is recorded as FAIL.
+The owner granted an exception ([comment](https://github.com/shgew/togi/issues/530#issuecomment-6102890949)) on the absolute bars of [#493](https://github.com/shgew/togi/issues/493) Q24, worst R7 hazard median and p90 not above Ruleset 9's final 4.91 and 10.90 per hour, judged on the point estimates; all pass. The registered criteria compare against Ruleset 10, whose hazard Ruleset 11 does not keep. The gate did not pass and is recorded as FAIL.
 
 Simulated `target-shared-voltage`, 24 seeds, against the Ruleset 10 baseline:
 
