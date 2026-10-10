@@ -286,7 +286,7 @@ while len(S) > 1:
         stage = complement; index = 0
         continue
     # At g = 2, complements duplicate the two parts; do not test them again.
-    if g == 2 and S == original_candidates and durations differ
+    if g == 2 and S == original_candidates and failed duration > short duration
        and no full group was checked and no duration escalation occurred:
         test the full S at the current duration
         if it passes:
