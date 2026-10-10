@@ -109,6 +109,14 @@ func runContext(ctx context.Context, args []string, stdout, stderr io.Writer) in
 		fmt.Fprintln(stderr, "bench: require no positional arguments, positive --jobs, --max-boots and --timeout, and --split dev|holdout|all")
 		return 2
 	}
+	// Bench sets these for each session, and --same's cache key would miss the files a replaced --machine reads.
+	for arg := range strings.FieldsSeq(o.simFlags) {
+		name, _, _ := strings.Cut(strings.TrimLeft(arg, "-"), "=")
+		if strings.HasPrefix(arg, "-") && slices.Contains([]string{"seed", "machine", "replay-facts", "state-dir", "max-boots"}, name) {
+			fmt.Fprintf(stderr, "bench: --sim-flags cannot set --%s, which bench sets for each session\n", name)
+			return 2
+		}
+	}
 	if o.shard != "" {
 		conflict := ""
 		flags.Visit(func(f *flag.Flag) {

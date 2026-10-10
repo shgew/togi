@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +10,15 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/shgew/togi/tools/trialfacts"
 )
+
+func TestSimFlagsCannotSetSessionFlags(t *testing.T) {
+	for _, simFlags := range []string{"--machine other.toml", "--cycles 2 -seed=3", "--state-dir=x", "--replay-facts", "--max-boots 5"} {
+		var stdout, stderr bytes.Buffer
+		if code := run([]string{"--same=base", "--sim-flags", simFlags}, &stdout, &stderr); code != 2 || !strings.Contains(stderr.String(), "--sim-flags cannot set") {
+			t.Errorf("--sim-flags %q: exit %d, stderr %q; want a usage error", simFlags, code, stderr.String())
+		}
+	}
+}
 
 func TestLoadRunsRejectsInvalidSuite(t *testing.T) {
 	for _, tc := range []struct {
