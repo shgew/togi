@@ -4,7 +4,7 @@
  ▌  Crashed early in R7 all-core on 00-07; no core named. Rerunning it with 08-15 at 0.
 
   R7   all-core load  on 00-07 · 08-15 parked at 0, idle   mprime AVX2 36K-248K · 8 workers           HUNT 1 · GROUP 1
- ███████████████████████████████████████████████████████████████████████████████████████████  1:20 left  0/5 ► · · · ·
+ ██████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  1:20 left  0/5 ► · · · ·
 
  5/5 pass → group 2   none named → hunt ends   core named → hunt ends   backoffs per offset order
 

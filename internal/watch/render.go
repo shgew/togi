@@ -935,7 +935,7 @@ func drawNow(c *canvas, p layout, s Snapshot, now time.Time) {
 	remaining := max(t.duration-elapsed, 0)
 	past := t.pastEnd(now)
 	frac := 0.0
-	if t.duration > 0 {
+	if t.duration > 0 && !quiet {
 		frac = float64(elapsed) / float64(t.duration)
 	}
 	if p.class == wideLayout {
@@ -949,18 +949,11 @@ func drawNow(c *canvas, p layout, s Snapshot, now time.Time) {
 			digits, style = wallMinute(t.started.Add(t.duration)), grey
 		}
 		for y := 3; y <= 5; y++ {
-			glyph := "█"
+			done, rest := "█", "░"
 			if y == 5 {
-				glyph = "▀"
+				done, rest = "▀", "▀"
 			}
-			line := progressBar(cells, frac, glyph)
-			if quiet {
-				if y != 5 {
-					glyph = "░"
-				}
-				line = track.Render(strings.Repeat(glyph, cells))
-			}
-			c.putCells(r, 0, y, line)
+			c.putCells(r, 0, y, progressBar(cells, frac, done, rest))
 		}
 		for y, line := range bigDigits(digits) {
 			c.putCells(r, r.w-ansi.StringWidth(line), 3+y, style.Render(line))
@@ -986,11 +979,7 @@ func drawNow(c *canvas, p layout, s Snapshot, now time.Time) {
 			label = grey.Render("screen paused · ends at ") + textStyle.Render(wallMinute(t.started.Add(t.duration)))
 		}
 		cells := max(r.w-ansi.StringWidth(label)-2, 0)
-		line := progressBar(cells, frac, "█")
-		if quiet {
-			line = track.Render(strings.Repeat("░", cells))
-		}
-		c.putCells(r, 0, y, line+"  "+label)
+		c.putCells(r, 0, y, progressBar(cells, frac, "█", "░")+"  "+label)
 	}
 }
 
@@ -1020,10 +1009,12 @@ func requirementLine(t trialView, compact bool) string {
 	return b.String()
 }
 
-func progressBar(cells int, frac float64, glyph string) string {
+// progressBar draws the elapsed fraction as done cells and the rest as rest cells, so the shape
+// shows elapsed time without colour; a quiet R6 trial passes 0 and shows only the rest.
+func progressBar(cells int, frac float64, done, rest string) string {
 	cells = max(cells, 0)
 	n := int(float64(cells) * min(max(frac, 0), 1))
-	return lit.Render(strings.Repeat(glyph, n)) + track.Render(strings.Repeat(glyph, cells-n))
+	return lit.Render(strings.Repeat(done, n)) + track.Render(strings.Repeat(rest, cells-n))
 }
 
 var digitGlyphs = [11][3]string{
