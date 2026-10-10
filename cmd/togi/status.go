@@ -222,12 +222,11 @@ func writeStatus(w io.Writer, st journal.State, events []journal.Event) {
 	}
 	if r := st.Deepening; r != nil {
 		wrapLines(w, "\n", "  ", fmt.Sprintf("deepening round %d [#%d]: target %v; proposed %v", r.Round, r.Seq, r.Target, r.Profile))
-		tw := newTable(w)
-		fmt.Fprintln(tw, "CHECK\tCORES\tPASSES")
+		checks := []notedRow{{cells: "CHECK\tCORES\tPASSES"}}
 		for _, check := range r.Checks {
-			fmt.Fprintf(tw, "%s %s\t%s\t%d/%d\n", render.EscapeText(string(check.Regime)), render.EscapeText(check.Workload), coreIDs(check.Cores), check.Passes, check.Needed)
+			checks = append(checks, notedRow{cells: fmt.Sprintf("%s %s\t%s\t%d/%d", render.EscapeText(string(check.Regime)), render.EscapeText(check.Workload), coreIDs(check.Cores), check.Passes, check.Needed)})
 		}
-		_ = tw.Flush()
+		writeNotedTable(w, checks)
 	}
 	var findings []journal.DefectFound
 	for _, event := range events {

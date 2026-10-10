@@ -171,3 +171,36 @@ func TestStatusHuntLabelsAccumulatedPassEvidence(t *testing.T) {
 		t.Errorf("status displays accumulated evidence as the group's own trials:\n%s", out.String())
 	}
 }
+
+func TestStatusWideTablesWrapWithoutDroppingValues(t *testing.T) {
+	t.Parallel()
+	cores := make([]int, 16)
+	for i := range cores {
+		cores[i] = i
+	}
+	st := journal.State{
+		Session: &journal.SessionInfo{ID: "s"},
+		Hunt: &journal.HuntState{Groups: []journal.GroupState{
+			{Group: 1, Cores: cores, Outcome: "pending", Passes: 123, Needed: 5},
+		}},
+		Deepening: &journal.DeepeningState{Checks: []journal.CheckState{
+			{Regime: "R7", Workload: "ycruncher-fftv4-n63-vt3-allcore", Cores: cores, Passes: 2, Needed: 5},
+		}},
+	}
+	var out bytes.Buffer
+	writeStatus(&out, st, nil)
+	for line := range strings.SplitSeq(out.String(), "\n") {
+		if n := utf8.RuneCountInString(line); n > statusWidth {
+			t.Errorf("status line is %d columns: %s", n, line)
+		}
+	}
+	words := strings.Join(strings.Fields(out.String()), " ")
+	for _, want := range []string{
+		"G1 " + coreIDs(cores) + " pending 123 5",
+		"R7 ycruncher-fftv4-n63-vt3-allcore " + coreIDs(cores) + " 2/5",
+	} {
+		if !strings.Contains(words, want) {
+			t.Errorf("status lost table values %q:\n%s", want, out.String())
+		}
+	}
+}

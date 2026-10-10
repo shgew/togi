@@ -58,7 +58,11 @@ func writeNotedTable(w io.Writer, rows []notedRow) {
 	_ = tw.Flush()
 	lines := strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
 	for i, line := range lines {
-		fmt.Fprintln(w, line)
+		if utf8.RuneCountInString(line) > statusWidth {
+			wrapLines(w, "", "  ", line)
+		} else {
+			fmt.Fprintln(w, line)
+		}
 		for _, n := range rows[i].notes {
 			prefix := "  " + n.label + " "
 			wrapLines(w, prefix, strings.Repeat(" ", utf8.RuneCountInString(prefix)), n.text)
