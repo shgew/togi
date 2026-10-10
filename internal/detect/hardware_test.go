@@ -35,10 +35,14 @@ func TestHardwareKernelLog(t *testing.T) {
 	if err := json.Unmarshal(out, &boots); err != nil {
 		t.Fatal(err)
 	}
+	const unknown = "0123456789abcdef0123456789abcdef"
 	var prev string
 	for _, b := range boots {
 		if b.Index == -1 {
 			prev = b.BootID
+		}
+		if b.BootID == unknown {
+			t.Fatalf("boot %s is in the system journal; the unknown-boot case needs an ID it does not list", unknown)
 		}
 	}
 	if prev == "" {
@@ -61,7 +65,7 @@ func TestHardwareKernelLog(t *testing.T) {
 	}{
 		{"previous boot", prev, 0, nil},
 		{"current boot, last hour", current, max(0, time.Duration(ts.Nano())-time.Hour), nil},
-		{"unknown boot", "00000000000000000000000000000000", 0, machine.ErrBootMissing},
+		{"unknown boot", unknown, 0, machine.ErrBootMissing},
 	} {
 		mces, err := k.MCEs(c.boot, c.since)
 		if !errors.Is(err, c.wantErr) {
