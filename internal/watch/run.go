@@ -27,11 +27,11 @@ type source struct {
 	// With waiting, the snapshot stays the starting one until the journal holds an event after sequence number since,
 	// the last one before this run's session started.
 	waiting bool
-	since int
-	info os.FileInfo
-	err error
-	snap Snapshot
-	held heldLog // the journal view's list while scrolled back
+	since   int
+	info    os.FileInfo
+	err     error
+	snap    Snapshot
+	held    heldLog // the journal view's list while scrolled back
 }
 
 func (s *source) reload() bool {
