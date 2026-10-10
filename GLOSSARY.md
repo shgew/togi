@@ -133,7 +133,16 @@ Phase 2's rounds: each moves every candidate one count toward its solo limit and
 _Avoid_: refinement, refine
 
 **Confirmed profile**:
-The profile of phase 1's first passed full cycle (the first confirmed profile), then that of the confirmation cycle's passed full end.
+The profile of phase 1's first passed full cycle (the first confirmed profile), then that of every later passed full cycle: the confirmation cycle's, then each cycle of indefinite checking.
+
+**Held failure**:
+After phase 2 concludes, the first failure against a core: nothing moves, and a second failure against the same core within K cycles steps it back ([Later failures](docs/spec/tuner.md#later-failures)).
+
+**BIOS profile**:
+The profile to enter in BIOS: the last confirmed profile with every later step-back applied ([BIOS profile](docs/spec/tuner.md#bios-profile)).
+
+**Unconfirmed profile**:
+A BIOS profile with a core stepped back, or a held failure still valid, since the last confirmed profile; the next passed full cycle confirms it.
 
 **Confirmation cycle**:
 The cycle that starts once phase 1 has ended and no round is due. Its first passed full end concludes phase 2; checking then continues indefinitely without deepening ([Phase 2](docs/spec/tuner.md#phase-2)).

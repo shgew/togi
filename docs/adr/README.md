@@ -83,5 +83,6 @@ ADRs 0001–0034 keep their historical vocabulary. [0034](0034-one-vocabulary-fr
 - [0051: Light checks for review fixes](0051-light-checks-for-review-fixes.md) — **in force**.
 - [0052: Crashes are a cost](0052-crashes-are-a-cost.md) — **in force**.
 - [0053: Locate multi-core R7 failures only when backing off loaded cores stops helping](0053-escalation-only-located-hunts.md) — **in force**.
-- [0054: Two phases replace the deepening loop](0054-two-phases-replace-the-deepening-loop.md) — **in force**.
+- [0054: Two phases replace the deepening loop](0054-two-phases-replace-the-deepening-loop.md) — **in force**, **amended** by [0056](0056-later-failures-step-back-in-pairs.md): after phase 2 concludes, a core steps back only on its second failure within a window, instead of on every failure.
 - [0055: Re-derive R7 chains after a backoff](0055-rederive-r7-chains-after-a-backoff.md) — **in force**.
+- [0056: Later failures step a core back in pairs](0056-later-failures-step-back-in-pairs.md) — **in force**.
