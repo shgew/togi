@@ -104,8 +104,14 @@ func (s *State) perCore() (Action, bool) {
 			return Action{Kind: Decide, Payload: s.searchPass(c.snapshot()), Cause: slices.Clone(c.stepSeqs)}, true
 		}
 	}
-	if s.retry != nil && s.retry.Condition == machine.Alone {
-		return s.retryTrial(*s.retry, []int{s.core(s.retry.Core).lastSeq}), true
+	if r := s.retry; r != nil && r.trial.Condition == machine.Alone && r.trial.Round == 0 && r.trial.Phase == journal.PhaseSearch {
+		if c := s.core(r.trial.Core); c != nil {
+			t := Trial{Core: c.id, Offset: c.offset, Regime: r.trial.Regime, Phase: journal.PhaseSearch, Condition: machine.Alone, DurationS: s.durations.SearchTrialS, Workload: r.trial.Workload}
+			q := s.soloRequirement(c, s.shapeClass(t))
+			if retry, ok := s.retryFor(q); ok {
+				return s.runTrial(retry, q, []int{c.lastSeq}), true
+			}
+		}
 	}
 	if s.cursor >= 0 {
 		c := s.cores[s.cursor]

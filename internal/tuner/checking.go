@@ -190,8 +190,8 @@ func (s *State) cycleNext() Action {
 				continue
 			}
 			selected, _ := s.cycleRequirement(req, i, j)
-			if s.retry != nil && s.retry.Cycle == g.cycle && s.retry.Condition == machine.Together {
-				return s.runRetry(*s.retry, selected, []int{g.lastSeq})
+			if t, ok := s.retryFor(selected); ok {
+				return s.runTrial(t, selected, []int{g.lastSeq})
 			}
 			t := Trial{Regime: q.class.regime, Workload: q.class.workload, DurationS: q.class.duration, Phase: journal.PhaseChecking, Condition: machine.Together, Cycle: g.cycle}
 			if q.class.regime == machine.R6 || q.class.regime == machine.R7 {
@@ -386,9 +386,6 @@ func (s *State) rerunTrial(k trialClass) Action {
 			failure = r.seq
 		}
 	}
-	if s.retry != nil && s.retry.Rerun && s.retry.Condition != machine.Parked {
-		return s.retryTrial(*s.retry, []int{failure})
-	}
 	t := Trial{Regime: k.regime, Workload: k.workload, Phase: journal.PhaseChecking, Condition: machine.Together, DurationS: k.duration, Rerun: true}
 	target := s.classTargets[k.cores]
 	if target.multi || len(target.cores) == 0 {
@@ -401,5 +398,9 @@ func (s *State) rerunTrial(k trialClass) Action {
 		// The built shape no longer matches the selected class (legacy journals), so the journal will record its own.
 		class = s.shapeClass(t)
 	}
-	return s.runTrial(t, s.rerunRequirement(class), []int{failure})
+	sel := s.rerunRequirement(class)
+	if retry, ok := s.retryFor(sel); ok {
+		return s.runTrial(retry, sel, []int{failure})
+	}
+	return s.runTrial(t, sel, []int{failure})
 }

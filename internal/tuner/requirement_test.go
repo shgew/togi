@@ -79,9 +79,10 @@ func TestRetryRequirementMatchesFold(t *testing.T) {
 		wantRetry bool
 	}{
 		{"same shape cycle", machine.R1, func(*config.Config) {}, true},
-		{"stale cycle duration", machine.R1, func(c *config.Config) { c.Durations.CheckingTrialS++ }, true},
+		// A resume that changes the duration changes the class the step requires: the retry is dropped and the current
+		// requirement runs.
+		{"stale cycle duration", machine.R1, func(c *config.Config) { c.Durations.CheckingTrialS++ }, false},
 		{"same shape R7 part", machine.R7, func(*config.Config) {}, true},
-		// An R7 part ignores a retry whose duration no longer matches the part's and schedules a fresh trial.
 		{"stale R7 part duration", machine.R7, func(c *config.Config) { c.Durations.ShortTrialS++ }, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

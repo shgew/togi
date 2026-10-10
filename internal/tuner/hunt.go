@@ -505,16 +505,17 @@ func (s *State) huntNext() (Action, bool) {
 			if reachedConstraint, ok := s.reaches(m.payload.Profile); ok {
 				return Action{Kind: Decide, Payload: s.makeGroup(h, planOf(m.payload), m.payload.Group, "", true, "its profile reaches "+reachedConstraint), Cause: []int{m.seq}}, true
 			}
-			if s.retry != nil && s.retry.Hunt == h.start.Hunt && s.retry.Group == m.payload.Group {
-				return s.runTrial(*s.retry, s.huntRequirement(s.shapeClass(*s.retry), m), []int{m.seq}), true
-			}
 			t := Trial{Regime: h.start.Regime, Workload: h.start.Workload, Condition: machine.Parked, Phase: journal.PhaseHunt, DurationS: m.payload.DurationS, Cores: slices.Clone(h.start.Cores), Profile: slices.Clone(m.payload.Profile), Hunt: h.start.Hunt, Group: m.payload.Group}
 			class := h.class.withDuration(m.payload.DurationS)
 			if h.start.Workload == "" || len(h.start.Cores) == 0 || !slices.IsSorted(h.start.Cores) {
 				// The journal records the sorted cores and the rotation's workload, which the start's own class may not.
 				class = s.shapeClass(t)
 			}
-			return s.runTrial(t, s.huntRequirement(class, m), []int{m.seq}), true
+			q := s.huntRequirement(class, m)
+			if retry, ok := s.retryFor(q); ok {
+				return s.runTrial(retry, q, []int{m.seq}), true
+			}
+			return s.runTrial(t, q, []int{m.seq}), true
 		}
 	}
 	if a, ok := s.locatedLoadedFailure(h); ok {

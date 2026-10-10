@@ -207,40 +207,64 @@ func (s *State) runTrial(t Trial, q ScheduledRequirement, cause []int) Action {
 	return Action{Kind: RunTrial, Trial: t, Cause: cause}
 }
 
-// runRetry schedules retry t. When t repeats the selected requirement q, q is its requirement; a retry keeps the shape
-// of its earlier intent, so after a config or profile change it may not, and then it takes the requirement the fold
-// will reconstruct for it.
-func (s *State) runRetry(t Trial, q ScheduledRequirement, cause []int) Action {
-	if s.retryRepeats(t, q) {
-		return s.runTrial(t, q, cause)
-	}
-	return s.retryTrial(t, cause)
+// savedRetry is the inconclusive trial to repeat, with the requirement it was scheduled under. That requirement names
+// its context: the search turn's core and offset, the deepening round, the cycle and step, the rerun obligation or the
+// all-zero rerun's source failure, with the class, count and window. Only a builder selecting the same requirement
+// serves it.
+type savedRetry struct {
+	intent      *journal.TrialIntent
+	trial       Trial
+	requirement ScheduledRequirement
 }
 
-func (s *State) retryRepeats(t Trial, q ScheduledRequirement) bool {
-	if t.Hunt != 0 || t.Rerun || s.shapeClass(t) != q.class() {
-		return false
-	}
-	switch q.Kind {
-	case "cycle":
-		current := len(t.Profile) == 0 || slices.Equal(t.Profile, s.checking.profile)
-		return t.Cycle > 0 && t.Round == 0 && t.Condition != machine.Alone && (t.Step == q.Step || t.Step == 0 && current)
-	case "deepening":
-		return t.Round > 0
-	}
-	return false
+func (s *State) saveRetry(intent *journal.TrialIntent) {
+	t := trialFromIntent(intent)
+	t.Retry = true
+	s.retry = &savedRetry{intent: intent, trial: t, requirement: s.scheduled[intent.Trial].requirement}
 }
 
-// retryTrial schedules a retry whose requirement is reconstructed from its shape as the fold will reconstruct it.
-func (s *State) retryTrial(t Trial, cause []int) Action {
-	p := journal.TrialIntent{Regime: t.Regime, Workload: s.shapeWorkload(t), DurationS: t.DurationS, Condition: t.Condition, Phase: t.Phase, Cores: t.Cores, Profile: t.Profile, Cycle: t.Cycle, Hunt: t.Hunt, Group: t.Group, Round: t.Round, Rerun: t.Rerun, Step: t.Step}
-	if len(t.Cores) == 0 {
-		p.Core, p.Offset = &t.Core, &t.Offset
+// retryFor returns the saved retry when q, the requirement a builder selected, is the one the retry was scheduled under.
+func (s *State) retryFor(q ScheduledRequirement) (Trial, bool) {
+	if r := s.retry; r != nil && r.requirement == q {
+		return r.trial, true
 	}
-	if len(p.Profile) == 0 {
-		p.Profile = s.checking.profile
+	return Trial{}, false
+}
+
+// dropEndedRetry forgets the saved retry once its context ended or its requirement changed: the search core decided or
+// left the offset, the round, hunt or cycle closed, the profile moved on, the obligation was retired, the source failure
+// was invalidated, or a resume's config changed what the trial counted toward. A reset drops it where it folds.
+func (s *State) dropEndedRetry() {
+	if s.retry != nil && !s.retryHolds(s.retry) {
+		s.retry = nil
 	}
-	return s.runTrial(t, s.scheduledFor(&p, cause).requirement, cause)
+}
+
+func (s *State) retryHolds(r *savedRetry) bool {
+	p := r.intent
+	var cause []int
+	if r.requirement.Since != 0 {
+		cause = []int{r.requirement.Since}
+	}
+	switch {
+	case p.Rerun && p.Condition == machine.Parked:
+		return s.failureBySeq(r.requirement.Since) != nil && s.scheduledFor(p, cause).requirement == r.requirement
+	case p.Condition == machine.Alone && p.Round == 0 && p.Hunt == 0:
+		if p.Core == nil || p.Offset == nil || p.DurationS != s.durations.SearchTrialS {
+			return false
+		}
+		if c := s.core(*p.Core); c == nil || c.phase != journal.PhaseSearch || c.offset != *p.Offset {
+			return false
+		}
+	case p.Cycle > 0 && p.Round == 0 && p.Hunt == 0 && !p.Rerun:
+		if !s.checking.open || s.checking.cycle != p.Cycle {
+			return false
+		}
+		if p.Step == 0 && len(p.Profile) > 0 && !slices.Equal(p.Profile, s.checking.profile) {
+			return false
+		}
+	}
+	return s.scheduledFor(p, cause).requirement == r.requirement
 }
 
 func (s *State) requirementProgress(p *journal.TrialIntent, q ScheduledRequirement) TrialRequirement {
