@@ -850,15 +850,17 @@ fn forecast_detects_recurring_hunt_plan() {
     j.intent(&plan);
     let before = j.state.clone();
     let forecast = j.state.forecast();
-    assert!(
-        forecast.branches.iter().any(|branch| {
-            matches!(
-                branch.uncertainty,
-                Some(Uncertainty::NeedsHistory | Uncertainty::RecurringPlan)
-            ) && branch.next.is_none()
-        }),
-        "{forecast:#?}"
-    );
+    let unnamed = branch(&forecast, Premise::Unnamed);
+    assert_eq!(unnamed.uncertainty, Some(Uncertainty::RecurringPlan));
+    assert!(unnamed.next.is_none());
+    assert_eq!(unnamed.decisions.len(), 2, "{unnamed:#?}");
+    for other in forecast
+        .branches
+        .iter()
+        .filter(|other| other.premise != Premise::Unnamed)
+    {
+        assert_eq!(other.uncertainty, None, "{other:?}");
+    }
     assert_eq!(j.state, before);
 }
 
