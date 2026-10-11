@@ -57,7 +57,9 @@ impl Drop for OnCancel {
     fn drop(&mut self) {
         if let Some((state, id, slot)) = self.registration.take() {
             drop(locked(&slot).take());
-            locked(&state.callbacks).slots.retain(|(slot_id, _)| *slot_id != id);
+            locked(&state.callbacks)
+                .slots
+                .retain(|(slot_id, _)| *slot_id != id);
         }
     }
 }

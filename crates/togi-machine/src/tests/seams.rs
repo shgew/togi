@@ -227,7 +227,10 @@ fn errors_wrap_external_causes() {
     assert_eq!(Error::Crashed.to_string(), "the simulated machine crashed");
 }
 
-fn counter() -> (Arc<AtomicUsize>, impl Fn() -> Box<dyn FnOnce() + Send> + 'static) {
+fn counter() -> (
+    Arc<AtomicUsize>,
+    impl Fn() -> Box<dyn FnOnce() + Send> + 'static,
+) {
     let count = Arc::new(AtomicUsize::new(0));
     let handle = Arc::clone(&count);
     (count, move || {

@@ -212,7 +212,10 @@ fn summarize_skips_samples_with_a_non_finite_lane() {
     let min = i64::try_from(MIN_SAMPLES).unwrap();
     assert!(summarize(noisy(min - 1), cores(&[0, 1]), ccd_of).is_none());
     let got = summarize(noisy(min), cores(&[0, 1]), ccd_of).unwrap();
-    assert_eq!(got, summarize(finite_only(min), cores(&[0, 1]), ccd_of).unwrap());
+    assert_eq!(
+        got,
+        summarize(finite_only(min), cores(&[0, 1]), ccd_of).unwrap()
+    );
     assert!(got.requests.iter().all(|(_, request)| request.is_finite()));
     let unloaded = broken(WARMUP_MS, f32::NAN);
     assert!(summarize(finite_only(min).chain([unloaded]), cores(&[0]), ccd_of).is_some());
