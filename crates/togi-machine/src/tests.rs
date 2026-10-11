@@ -526,3 +526,37 @@ proptest! {
         prop_assert_eq!(serde_json::from_str::<PerCore<i64>>(&json).unwrap(), readings);
     }
 }
+
+#[test]
+fn core_set_iterates_ascending_and_deduplicates() {
+    let mut set: CoreSet = [15, 3, 3, 0, 9].into_iter().map(core).collect();
+    assert_eq!(set.len(), 4);
+    assert_eq!(set.iter().collect::<Vec<_>>(), [0, 3, 9, 15].map(core));
+    assert!(set.contains(core(9)) && !set.contains(core(8)));
+    assert!(!set.insert(core(9)) && set.insert(core(8)));
+    assert!(set.remove(core(0)) && !set.remove(core(0)));
+    set.extend([core(1)]);
+    assert_eq!(set.into_iter().next(), Some(core(1)));
+    assert!(CoreSet::default().is_empty());
+    assert_eq!(CoreSet::default().iter().len(), 0);
+}
+
+#[test]
+fn core_set_serializes_as_a_sorted_array() {
+    let set: CoreSet = [10, 1, 15].into_iter().map(core).collect();
+    let json = serde_json::to_string(&set).unwrap();
+    assert_eq!(json, "[1,10,15]");
+    assert_eq!(serde_json::from_str::<CoreSet>(&json).unwrap(), set);
+    assert_eq!(
+        serde_json::from_str::<CoreSet>("[3,1]").unwrap(),
+        [1, 3].into_iter().map(core).collect()
+    );
+    assert_eq!(serde_json::to_string(&CoreSet::default()).unwrap(), "[]");
+}
+
+#[test]
+fn core_set_rejects_duplicates_and_unsupported_cores() {
+    for json in ["[1,1]", "[16]", "[-1]", "[\"1\"]", "null", "{}"] {
+        assert!(serde_json::from_str::<CoreSet>(json).is_err(), "{json}");
+    }
+}

@@ -4,7 +4,7 @@
 
 use std::collections::BTreeMap;
 
-use togi_machine::{CcdId, CoreId, PER_CORE_MAX, PerCore, TrialConditions};
+use togi_machine::{CcdId, CoreId, CoreSet, PER_CORE_MAX, PerCore, TrialConditions};
 
 /// Skips the samples taken while the load ramps up.
 pub const WARMUP_MS: i64 = 5000;
@@ -21,7 +21,7 @@ pub struct Telemetry {
     /// Each loaded core's median request in volts.
     pub requests: PerCore<f64>,
     /// Each CCD's highest-requesting cores, ties included.
-    pub top_requesters: Vec<CoreId>,
+    pub top_requesters: CoreSet,
     /// Each loaded CCD's median over samples of its loaded cores' median clock.
     pub ccd_mhz: BTreeMap<CcdId, i64>,
 }
@@ -30,12 +30,9 @@ pub struct Telemetry {
 /// [`MIN_SAMPLES`] remain.
 pub fn summarize(
     samples: impl IntoIterator<Item = TrialConditions>,
-    cores: &[CoreId],
+    cores: CoreSet,
     ccd_of: impl Fn(CoreId) -> CcdId,
 ) -> Option<Telemetry> {
-    let mut cores = cores.to_vec();
-    cores.sort_unstable();
-    cores.dedup();
     if cores.is_empty() {
         return None;
     }
@@ -53,7 +50,7 @@ pub fn summarize(
         for mhz in per_ccd.values_mut() {
             mhz.clear();
         }
-        for &core in &cores {
+        for core in cores {
             requests[core.index()].push(f64::from(table.voltage_request_v[core.index()]));
             if let Some(mhz) = sample.core_mhz.get(core) {
                 per_ccd.entry(ccd_of(core)).or_default().push(to_f64(mhz));
@@ -71,7 +68,7 @@ pub fn summarize(
     }
     let mut telemetry = Telemetry::default();
     let mut by_ccd: BTreeMap<CcdId, PerCore<f64>> = BTreeMap::new();
-    for &core in &cores {
+    for core in cores {
         let value = median(&requests[core.index()]);
         telemetry.requests.set(core, value);
         by_ccd.entry(ccd_of(core)).or_default().set(core, value);
@@ -81,7 +78,6 @@ pub fn summarize(
             telemetry.top_requesters.extend(top);
         }
     }
-    telemetry.top_requesters.sort_unstable();
     for (ccd, mhz) in clocks {
         if mhz.len() >= MIN_SAMPLES {
             telemetry.ccd_mhz.insert(ccd, to_i64(median(&mhz).round()));
@@ -91,8 +87,8 @@ pub fn summarize(
 }
 
 /// Orders cores by request, highest first. Each group holds the highest remaining core and every
-/// remaining core within [`TIE_V`] of it, sorted by core.
-pub fn groups(requests: &PerCore<f64>) -> Vec<Vec<CoreId>> {
+/// remaining core within [`TIE_V`] of it.
+pub fn groups(requests: &PerCore<f64>) -> Vec<CoreSet> {
     let mut remaining: Vec<(CoreId, f64)> = requests.iter().collect();
     remaining.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
     let mut groups = Vec::new();
@@ -103,9 +99,7 @@ pub fn groups(requests: &PerCore<f64>) -> Vec<Vec<CoreId>> {
             .take_while(|(_, request)| *request >= highest - TIE_V)
             .count();
         let (group, tail) = rest.split_at(n);
-        let mut cores: Vec<CoreId> = group.iter().map(|&(core, _)| core).collect();
-        cores.sort_unstable();
-        groups.push(cores);
+        groups.push(group.iter().map(|&(core, _)| core).collect());
         rest = tail;
     }
     groups

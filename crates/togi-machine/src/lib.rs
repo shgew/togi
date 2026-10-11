@@ -1,4 +1,5 @@
 mod cancellation;
+mod core_set;
 mod error;
 mod ids;
 mod load;
@@ -11,6 +12,7 @@ mod vocab;
 mod workloads;
 
 pub use cancellation::CancellationToken;
+pub use core_set::CoreSet;
 pub use error::{Error, Partial};
 pub use ids::{BootId, KernelCursor};
 pub use load::{LoadSchedule, Toggles};
