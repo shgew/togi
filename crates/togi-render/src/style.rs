@@ -1,6 +1,4 @@
-use togi_journal::{
-    CorePhase, CycleEvent, Decision, HuntOutcome, Outcome, Payload, RoundEvent,
-};
+use togi_journal::{CorePhase, CycleEvent, Decision, HuntOutcome, Outcome, Payload, RoundEvent};
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum Style {

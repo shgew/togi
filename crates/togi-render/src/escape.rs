@@ -7,7 +7,9 @@ pub struct Escaped<'a> {
 
 #[must_use]
 pub fn escape_text(text: &str) -> Escaped<'_> {
-    Escaped { bytes: text.as_bytes() }
+    Escaped {
+        bytes: text.as_bytes(),
+    }
 }
 
 #[must_use]
@@ -116,7 +118,10 @@ mod tests {
             '\u{61c}', '\u{200e}', '\u{200f}', '\u{2028}', '\u{2029}', '\u{202a}', '\u{202b}',
             '\u{202c}', '\u{202d}', '\u{202e}', '\u{2066}', '\u{2067}', '\u{2068}', '\u{2069}',
         ] {
-            assert_eq!(text(&escaped.to_string()), format!("\\u{:04x}", u32::from(escaped)));
+            assert_eq!(
+                text(&escaped.to_string()),
+                format!("\\u{:04x}", u32::from(escaped))
+            );
         }
         for readable in [
             '\u{7e}', '\u{a0}', '\u{61b}', '\u{61d}', '\u{200d}', '\u{2010}', '\u{2027}',
@@ -128,7 +133,12 @@ mod tests {
 
     #[test]
     fn readable_unicode_and_visible_escapes_are_untouched() {
-        for input in ["trial 0413 PASS | Tctl max 71°C", "日本語 🧪 ünï", "back\\slash \\x1b \\n", ""] {
+        for input in [
+            "trial 0413 PASS | Tctl max 71°C",
+            "日本語 🧪 ünï",
+            "back\\slash \\x1b \\n",
+            "",
+        ] {
             assert_eq!(text(input), input);
         }
     }

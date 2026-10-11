@@ -31,23 +31,41 @@ fn plain() -> Renderer {
 }
 
 fn colored() -> Renderer {
-    Renderer::new(OutputFacts { is_terminal: true, no_color: false, journald: false })
+    Renderer::new(OutputFacts {
+        is_terminal: true,
+        no_color: false,
+        journald: false,
+    })
 }
 
 fn journald() -> Renderer {
-    Renderer::new(OutputFacts { is_terminal: false, no_color: false, journald: true })
+    Renderer::new(OutputFacts {
+        is_terminal: false,
+        no_color: false,
+        journald: true,
+    })
 }
 
 fn journald_no_color() -> Renderer {
-    Renderer::new(OutputFacts { is_terminal: false, no_color: true, journald: true })
+    Renderer::new(OutputFacts {
+        is_terminal: false,
+        no_color: true,
+        journald: true,
+    })
 }
 
 fn trial_end(outcome: &str) -> Event {
-    event("trial.end", &json!({"trial": "0413", "outcome": outcome, "duration_s": 90}))
+    event(
+        "trial.end",
+        &json!({"trial": "0413", "outcome": outcome, "duration_s": 90}),
+    )
 }
 
 fn failure_event() -> Event {
-    event("failure", &json!({"signal": "crash", "attribution": "attributed"}))
+    event(
+        "failure",
+        &json!({"signal": "crash", "attribution": "attributed"}),
+    )
 }
 
 fn decision(decision: &str) -> Event {
@@ -69,15 +87,24 @@ fn transition(from: Option<&str>, to: &str) -> Event {
 }
 
 fn cycle(kind_event: &str, passed: bool, full: bool) -> Event {
-    event("checking.cycle", &json!({"cycle": 1, "event": kind_event, "passed": passed, "full": full}))
+    event(
+        "checking.cycle",
+        &json!({"cycle": 1, "event": kind_event, "passed": passed, "full": full}),
+    )
 }
 
 fn round(kind_event: &str, passed: bool) -> Event {
-    event("deepening.round", &json!({"round": 1, "event": kind_event, "passed": passed}))
+    event(
+        "deepening.round",
+        &json!({"round": 1, "event": kind_event, "passed": passed}),
+    )
 }
 
 fn hunt_end(result: &str) -> Event {
-    event("hunt.end", &json!({"hunt": 1, "result": result, "groups": 2, "reason": "r"}))
+    event(
+        "hunt.end",
+        &json!({"hunt": 1, "result": result, "groups": 2, "reason": "r"}),
+    )
 }
 
 fn hunt_group(inferred: Option<&str>) -> Event {
@@ -105,39 +132,101 @@ fn hunt_start() -> Event {
 fn style_cases() -> Vec<(&'static str, Event, Style)> {
     vec![
         ("failed trial end", trial_end("failure"), Style::Red),
-        ("inconclusive trial end", trial_end("inconclusive"), Style::Dim),
+        (
+            "inconclusive trial end",
+            trial_end("inconclusive"),
+            Style::Dim,
+        ),
         ("passed trial end", trial_end("pass"), Style::Plain),
         ("attributed failure", failure_event(), Style::Red),
         (
             "unattributed failure",
-            event("failure", &json!({"signal": "stall", "attribution": "unattributed"})),
+            event(
+                "failure",
+                &json!({"signal": "stall", "attribution": "unattributed"}),
+            ),
             Style::Red,
         ),
-        ("crash", event("crash.detected", &json!({"previous_boot": "b"})), Style::Red),
+        (
+            "crash",
+            event("crash.detected", &json!({"previous_boot": "b"})),
+            Style::Red,
+        ),
         (
             "dead end",
-            event("deadend", &json!({"condition": "failure_at_zero", "detail": "d"})),
+            event(
+                "deadend",
+                &json!({"condition": "failure_at_zero", "detail": "d"}),
+            ),
             Style::RedBold,
         ),
         ("step deeper", decision("step_deeper"), Style::Green),
         ("deepen", decision("deepen"), Style::Green),
         ("backoff", decision("backoff"), Style::Yellow),
         ("yield", decision("yield"), Style::Yellow),
-        ("check solo limit", decision("check_solo_limit"), Style::Plain),
+        (
+            "check solo limit",
+            decision("check_solo_limit"),
+            Style::Plain,
+        ),
         ("hold", decision("hold"), Style::Plain),
-        ("search to room", transition(Some("search"), "has_room"), Style::GreenBold),
-        ("search to limit", transition(Some("search"), "at_limit"), Style::GreenBold),
-        ("room to limit", transition(Some("has_room"), "at_limit"), Style::GreenBold),
-        ("initial limit", transition(None, "at_limit"), Style::GreenBold),
+        (
+            "search to room",
+            transition(Some("search"), "has_room"),
+            Style::GreenBold,
+        ),
+        (
+            "search to limit",
+            transition(Some("search"), "at_limit"),
+            Style::GreenBold,
+        ),
+        (
+            "room to limit",
+            transition(Some("has_room"), "at_limit"),
+            Style::GreenBold,
+        ),
+        (
+            "initial limit",
+            transition(None, "at_limit"),
+            Style::GreenBold,
+        ),
         ("initial room", transition(None, "has_room"), Style::Plain),
-        ("room to room", transition(Some("has_room"), "has_room"), Style::Plain),
-        ("limit back to search", transition(Some("at_limit"), "search"), Style::Plain),
-        ("limit to room", transition(Some("at_limit"), "has_room"), Style::Plain),
+        (
+            "room to room",
+            transition(Some("has_room"), "has_room"),
+            Style::Plain,
+        ),
+        (
+            "limit back to search",
+            transition(Some("at_limit"), "search"),
+            Style::Plain,
+        ),
+        (
+            "limit to room",
+            transition(Some("at_limit"), "has_room"),
+            Style::Plain,
+        ),
         ("initial search", transition(None, "search"), Style::Plain),
-        ("full passed cycle end", cycle("end", true, true), Style::GreenBold),
-        ("non-full passed cycle end", cycle("end", true, false), Style::Plain),
-        ("failed full cycle end", cycle("end", false, true), Style::Plain),
-        ("full passed cycle start", cycle("start", true, true), Style::Plain),
+        (
+            "full passed cycle end",
+            cycle("end", true, true),
+            Style::GreenBold,
+        ),
+        (
+            "non-full passed cycle end",
+            cycle("end", true, false),
+            Style::Plain,
+        ),
+        (
+            "failed full cycle end",
+            cycle("end", false, true),
+            Style::Plain,
+        ),
+        (
+            "full passed cycle start",
+            cycle("start", true, true),
+            Style::Plain,
+        ),
         ("passed round end", round("end", true), Style::GreenBold),
         ("failed round end", round("end", false), Style::Plain),
         ("passed round start", round("start", true), Style::Plain),
@@ -148,9 +237,21 @@ fn style_cases() -> Vec<(&'static str, Event, Style)> {
         ("hunt fallback", hunt_end("fallback"), Style::Plain),
         ("hunt loaded", hunt_end("loaded"), Style::Plain),
         ("hunt start", hunt_start(), Style::Yellow),
-        ("hunt group without inference", hunt_group(None), Style::Plain),
-        ("hunt group inferred pass", hunt_group(Some("pass")), Style::Plain),
-        ("hunt group inferred failure", hunt_group(Some("failure")), Style::Plain),
+        (
+            "hunt group without inference",
+            hunt_group(None),
+            Style::Plain,
+        ),
+        (
+            "hunt group inferred pass",
+            hunt_group(Some("pass")),
+            Style::Plain,
+        ),
+        (
+            "hunt group inferred failure",
+            hunt_group(Some("failure")),
+            Style::Plain,
+        ),
         (
             "hunt skipped",
             event("hunt.skipped", &json!({"failure": 5, "reason": "held"})),
@@ -158,17 +259,26 @@ fn style_cases() -> Vec<(&'static str, Event, Style)> {
         ),
         (
             "combination",
-            event("combination", &json!({"combination": 1, "members": [], "hunt": 1, "reason": "r"})),
+            event(
+                "combination",
+                &json!({"combination": 1, "members": [], "hunt": 1, "reason": "r"}),
+            ),
             Style::Yellow,
         ),
         (
             "tuner warning",
-            event("tuner.warning", &json!({"warning": "monotonicity", "passes": [], "detail": "d"})),
+            event(
+                "tuner.warning",
+                &json!({"warning": "monotonicity", "passes": [], "detail": "d"}),
+            ),
             Style::Yellow,
         ),
         (
             "session warning",
-            event("session.warning", &json!({"operation": "write state", "error": "disk full"})),
+            event(
+                "session.warning",
+                &json!({"operation": "write state", "error": "disk full"}),
+            ),
             Style::Yellow,
         ),
         (
@@ -184,7 +294,10 @@ fn style_cases() -> Vec<(&'static str, Event, Style)> {
         ),
         (
             "defect answered",
-            event("defect.answered", &json!({"id": 1, "cores": [2], "answer": "yes"})),
+            event(
+                "defect.answered",
+                &json!({"id": 1, "cores": [2], "answer": "yes"}),
+            ),
             Style::Plain,
         ),
         (
@@ -195,7 +308,11 @@ fn style_cases() -> Vec<(&'static str, Event, Style)> {
             ),
             Style::Dim,
         ),
-        ("host ranking", event("host.ranking", &json!({"ranking": [3, 1]})), Style::Plain),
+        (
+            "host ranking",
+            event("host.ranking", &json!({"ranking": [3, 1]})),
+            Style::Plain,
+        ),
         (
             "session archived",
             event("session.archived", &json!({"session": "20261002T011407Z"})),
@@ -232,7 +349,10 @@ fn every_nonplain_style_wraps_the_whole_line_in_owned_sgr() {
         (Style::Yellow, "\x1b[33m"),
         (Style::Dim, "\x1b[2m"),
     ] {
-        assert_eq!(renderer.text(style, "line").to_string(), format!("{open}line\x1b[0m"));
+        assert_eq!(
+            renderer.text(style, "line").to_string(),
+            format!("{open}line\x1b[0m")
+        );
     }
 }
 
@@ -246,7 +366,10 @@ fn a_plain_style_gets_neither_sgr_nor_reset() {
 #[test]
 fn a_colored_event_line_is_wrapped_once() {
     let line = colored().line(&failure_event(), &utc()).to_string();
-    assert_eq!(line, "\x1b[31m01:14:07 failure        stored message\x1b[0m");
+    assert_eq!(
+        line,
+        "\x1b[31m01:14:07 failure        stored message\x1b[0m"
+    );
 }
 
 #[test]
@@ -261,7 +384,11 @@ fn the_default_renderer_is_plain() {
 #[test]
 fn stream_policy_as_data() {
     let policy = |is_terminal, no_color, journald| {
-        Renderer::new(OutputFacts { is_terminal, no_color, journald })
+        Renderer::new(OutputFacts {
+            is_terminal,
+            no_color,
+            journald,
+        })
     };
     let fail = failure_event();
     let pass = trial_end("pass");
@@ -270,12 +397,21 @@ fn stream_policy_as_data() {
     let body = "01:14:07 failure        stored message";
 
     assert_eq!(red(policy(false, false, false)), body);
-    assert_eq!(red(policy(true, false, false)), format!("\x1b[31m{body}\x1b[0m"));
+    assert_eq!(
+        red(policy(true, false, false)),
+        format!("\x1b[31m{body}\x1b[0m")
+    );
     assert_eq!(red(policy(true, true, false)), body);
-    assert_eq!(red(policy(false, false, true)), format!("<3>\x1b[31m{body}\x1b[0m"));
+    assert_eq!(
+        red(policy(false, false, true)),
+        format!("<3>\x1b[31m{body}\x1b[0m")
+    );
     assert_eq!(red(policy(false, true, true)), format!("<3>{body}"));
     assert_eq!(red(policy(true, true, true)), format!("<3>{body}"));
-    assert_eq!(red(policy(true, false, true)), format!("<3>\x1b[31m{body}\x1b[0m"));
+    assert_eq!(
+        red(policy(true, false, true)),
+        format!("<3>\x1b[31m{body}\x1b[0m")
+    );
     assert_eq!(
         policy(false, false, true).line(&pass, &zone).to_string(),
         "01:14:07 trial.end      stored message"
@@ -287,21 +423,55 @@ fn journald_priority_applies_to_red_and_red_bold_only() {
     let renderer = journald();
     let zone = utc();
     let dead_end = event("deadend", &json!({"condition": "smu", "detail": "d"}));
-    assert!(renderer.line(&dead_end, &zone).to_string().starts_with("<3>\x1b[1;31m"));
-    assert!(renderer.line(&failure_event(), &zone).to_string().starts_with("<3>\x1b[31m"));
-    for other in [decision("step_deeper"), decision("backoff"), trial_end("inconclusive")] {
+    assert!(
+        renderer
+            .line(&dead_end, &zone)
+            .to_string()
+            .starts_with("<3>\x1b[1;31m")
+    );
+    assert!(
+        renderer
+            .line(&failure_event(), &zone)
+            .to_string()
+            .starts_with("<3>\x1b[31m")
+    );
+    for other in [
+        decision("step_deeper"),
+        decision("backoff"),
+        trial_end("inconclusive"),
+    ] {
         let line = renderer.line(&other, &zone).to_string();
         assert!(!line.contains("<3>"), "{line}");
     }
-    assert!(renderer.text(Style::RedBold, "refused").to_string().starts_with("<3>"));
-    assert!(!renderer.text(Style::Yellow, "warn").to_string().contains("<3>"));
-    assert_eq!(journald_no_color().text(Style::RedBold, "refused").to_string(), "<3>refused");
-    assert_eq!(colored().text(Style::RedBold, "refused").to_string(), "\x1b[1;31mrefused\x1b[0m");
+    assert!(
+        renderer
+            .text(Style::RedBold, "refused")
+            .to_string()
+            .starts_with("<3>")
+    );
+    assert!(
+        !renderer
+            .text(Style::Yellow, "warn")
+            .to_string()
+            .contains("<3>")
+    );
+    assert_eq!(
+        journald_no_color()
+            .text(Style::RedBold, "refused")
+            .to_string(),
+        "<3>refused"
+    );
+    assert_eq!(
+        colored().text(Style::RedBold, "refused").to_string(),
+        "\x1b[1;31mrefused\x1b[0m"
+    );
 }
 
 #[test]
 fn no_color_keeps_the_priority_prefix_but_drops_ansi() {
-    let line = journald_no_color().line(&failure_event(), &utc()).to_string();
+    let line = journald_no_color()
+        .line(&failure_event(), &utc())
+        .to_string();
     assert_eq!(line, "<3>01:14:07 failure        stored message");
 }
 
@@ -338,10 +508,17 @@ fn the_prefix_is_escaped_once_and_inside_the_style() {
         "\x1b[31m  evidence\\x1b[0m\\x: 01:14:07 failure        stored message\x1b[0m"
     );
     assert_eq!(prefixed.matches("\x1b[0m").count(), 1);
-    let plain_prefixed = plain().prefixed_line(&trial_end("pass"), &utc(), "  evidence: ").to_string();
-    assert_eq!(plain_prefixed, "  evidence: 01:14:07 trial.end      stored message");
+    let plain_prefixed = plain()
+        .prefixed_line(&trial_end("pass"), &utc(), "  evidence: ")
+        .to_string();
     assert_eq!(
-        journald().prefixed_line(&failure_event(), &utc(), "p ").to_string(),
+        plain_prefixed,
+        "  evidence: 01:14:07 trial.end      stored message"
+    );
+    assert_eq!(
+        journald()
+            .prefixed_line(&failure_event(), &utc(), "p ")
+            .to_string(),
         "<3>\x1b[31mp 01:14:07 failure        stored message\x1b[0m"
     );
 }
@@ -359,7 +536,12 @@ fn local_time_uses_the_given_zone() {
         "23:14:07 failure        stored message"
     );
     let ahead = TimeZone::fixed(tz::offset(23));
-    assert!(plain().line(&failure_event(), &ahead).to_string().starts_with("00:14:07 "));
+    assert!(
+        plain()
+            .line(&failure_event(), &ahead)
+            .to_string()
+            .starts_with("00:14:07 ")
+    );
 }
 
 #[test]
@@ -383,7 +565,12 @@ fn the_stored_message_is_rendered_not_regenerated() {
         &json!({"trial": "1", "outcome": "pass", "duration_s": 1}),
     );
     assert_eq!(stored.msg, "operator edited text");
-    assert!(plain().line(&stored, &utc()).to_string().ends_with(" operator edited text"));
+    assert!(
+        plain()
+            .line(&stored, &utc())
+            .to_string()
+            .ends_with(" operator edited text")
+    );
 }
 
 #[test]
@@ -393,7 +580,12 @@ fn the_stored_message_keeps_readable_unicode() {
         "PASS 90s | Tctl max 71°C \u{fffd}",
         &json!({"trial": "1", "outcome": "pass", "duration_s": 1}),
     );
-    assert!(plain().line(&unicode, &utc()).to_string().ends_with("PASS 90s | Tctl max 71°C \u{fffd}"));
+    assert!(
+        plain()
+            .line(&unicode, &utc())
+            .to_string()
+            .ends_with("PASS 90s | Tctl max 71°C \u{fffd}")
+    );
 }
 
 #[test]
@@ -431,8 +623,12 @@ fn write_event_ends_with_exactly_one_newline() {
 #[test]
 fn write_event_appends_one_line_per_call() {
     let mut out = Vec::new();
-    plain().write_event(&mut out, &failure_event(), &utc()).unwrap();
-    plain().write_event(&mut out, &trial_end("pass"), &utc()).unwrap();
+    plain()
+        .write_event(&mut out, &failure_event(), &utc())
+        .unwrap();
+    plain()
+        .write_event(&mut out, &trial_end("pass"), &utc())
+        .unwrap();
     assert_eq!(
         String::from_utf8(out).unwrap(),
         "01:14:07 failure        stored message\n01:14:07 trial.end      stored message\n"
@@ -462,7 +658,9 @@ impl io::Write for FailingWriter {
 fn write_event_propagates_the_sink_error() {
     for fail_after in [0, 5, 30] {
         let mut sink = FailingWriter { fail_after };
-        let error = plain().write_event(&mut sink, &failure_event(), &utc()).unwrap_err();
+        let error = plain()
+            .write_event(&mut sink, &failure_event(), &utc())
+            .unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::BrokenPipe, "{fail_after}");
     }
 }

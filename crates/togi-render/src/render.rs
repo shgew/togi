@@ -29,7 +29,12 @@ impl Renderer {
 
     #[must_use]
     pub const fn line<'a>(&self, event: &'a Event, zone: &'a TimeZone) -> EventLine<'a> {
-        EventLine { renderer: *self, event, zone, prefix: "" }
+        EventLine {
+            renderer: *self,
+            event,
+            zone,
+            prefix: "",
+        }
     }
 
     #[must_use]
@@ -39,12 +44,21 @@ impl Renderer {
         zone: &'a TimeZone,
         prefix: &'a str,
     ) -> EventLine<'a> {
-        EventLine { renderer: *self, event, zone, prefix }
+        EventLine {
+            renderer: *self,
+            event,
+            zone,
+            prefix,
+        }
     }
 
     #[must_use]
     pub const fn text<'a>(&self, style: Style, text: &'a str) -> StyledText<'a> {
-        StyledText { renderer: *self, style, text }
+        StyledText {
+            renderer: *self,
+            style,
+            text,
+        }
     }
 
     pub fn write_event<W: io::Write + ?Sized>(
@@ -101,7 +115,8 @@ impl fmt::Display for Plain<'_> {
 
 impl fmt::Display for EventLine<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.renderer.decorate(f, style_for(&self.event.payload), &Plain(self))
+        self.renderer
+            .decorate(f, style_for(&self.event.payload), &Plain(self))
     }
 }
 
@@ -114,6 +129,7 @@ pub struct StyledText<'a> {
 
 impl fmt::Display for StyledText<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.renderer.decorate(f, self.style, &escape_text(self.text))
+        self.renderer
+            .decorate(f, self.style, &escape_text(self.text))
     }
 }
