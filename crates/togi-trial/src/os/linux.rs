@@ -94,17 +94,29 @@ impl Child for Leader {
 pub(crate) struct Linux {
     proc: Proc,
     user_manager: bool,
+    systemctl: OsString,
 }
 
 impl Linux {
     pub(crate) fn new(proc: Proc, user_manager: bool) -> Self {
-        Self { proc, user_manager }
+        Self {
+            proc,
+            user_manager,
+            systemctl: "systemctl".into(),
+        }
+    }
+
+    /// Test construction: a stand-in for the `systemctl` binary.
+    #[cfg(test)]
+    pub(crate) fn with_systemctl(mut self, program: impl Into<OsString>) -> Self {
+        self.systemctl = program.into();
+        self
     }
 
     fn argv(&self, operation: &Systemd) -> Vec<OsString> {
         let mut argv: Vec<OsString> = Vec::new();
         let mut systemctl = |arguments: &[String]| {
-            argv.push("systemctl".into());
+            argv.push(self.systemctl.clone());
             if self.user_manager {
                 argv.push("--user".into());
             }

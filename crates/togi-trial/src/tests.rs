@@ -6,3 +6,5 @@ mod output;
 mod sweep;
 mod samples;
 mod runner;
+#[cfg(target_os = "linux")]
+mod process;

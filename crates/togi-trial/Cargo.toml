@@ -12,7 +12,7 @@ hardware = []
 
 [dependencies]
 nix = { workspace = true, features = ["user", "signal", "process"] }
-rustix = { workspace = true, features = ["fs", "process", "param", "pipe"] }
+rustix = { workspace = true, features = ["fs", "process", "param", "pipe", "thread"] }
 serde_json.workspace = true
 thiserror.workspace = true
 togi-backend.workspace = true
