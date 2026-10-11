@@ -192,7 +192,7 @@ async fn a_failed_initial_stop_rolls_the_start_back_and_names_the_signal() {
             partial.value.is_none(),
             "the group kill failed too, so nothing is confirmed"
         );
-        assert!(matches!(partial.error, togi_machine::Error::Containment));
+        assert!(matches!(partial.error, togi_machine::Error::Containment(_)));
     })
     .await;
 }

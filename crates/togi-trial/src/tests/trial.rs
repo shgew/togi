@@ -178,7 +178,7 @@ async fn r4_load_steps_signal_the_group_and_count_stops_and_continues() {
     local(async {
         let rig = rig();
         let mut trial = spec(Regime::R4, &[0], Duration::from_secs(1));
-        trial.workload = togi_machine::pick_workload(Regime::R4, 0).clone();
+        trial.workload = togi_machine::pick_workload(Regime::R4, 0).id();
         let schedule = LoadSchedule::for_spec(&trial).unwrap();
         let handle = rig.start(trial).await.unwrap();
         let run = finish(&handle).await;

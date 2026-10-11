@@ -289,18 +289,6 @@ impl Reporter for Discard {
     fn signal(&mut self, _: togi_machine::CoreId, _: togi_machine::Signal, _: &str) {}
 }
 
-fn unobserved(error: &Error) -> TrialResult {
-    TrialResult {
-        ran: Duration::ZERO,
-        failure: None,
-        inconclusive: Some(error.to_string()),
-        escaped: Vec::new(),
-        tctl_max_c: None,
-        stops: 0,
-        conts: 0,
-    }
-}
-
 impl Running for Trial {
     fn started(&self) -> Started {
         self.started.clone()
@@ -313,7 +301,7 @@ impl Running for Trial {
     ) -> Result<TrialResult, Partial<TrialResult>> {
         if let Err(error) = outside_runtime("wait") {
             return Err(Partial {
-                value: unobserved(&error),
+                value: TrialResult::default(),
                 error: error.into(),
             });
         }
@@ -331,14 +319,14 @@ impl Running for Trial {
                 bound: deadline.saturating_duration_since(Instant::now()),
             };
             return Err(Partial {
-                value: unobserved(&error),
+                value: TrialResult::default(),
                 error: error.into(),
             });
         }
         let Some(finished) = self.ended.as_mut() else {
             let error = Error::RuntimeGone;
             return Err(Partial {
-                value: unobserved(&error),
+                value: TrialResult::default(),
                 error: error.into(),
             });
         };
@@ -363,7 +351,11 @@ impl Running for Trial {
             let _ = self.commands.send(TrialCommand::Stop);
             let until = Instant::now() + self.stop_bound;
             if !self.await_end(until, &mut Discard) {
-                return Err(togi_machine::Error::Containment);
+                return Err(Error::Stuck {
+                    operation: "the stop",
+                    bound: self.stop_bound,
+                }
+                .into());
             }
         }
         match self.ended.take() {
@@ -375,7 +367,7 @@ impl Running for Trial {
                 teardown: Err(containment),
                 ..
             }) => Err(Error::Containment(containment).into()),
-            None => Err(togi_machine::Error::Containment),
+            None => Err(Error::RuntimeGone.into()),
         }
     }
 }

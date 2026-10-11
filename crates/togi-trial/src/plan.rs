@@ -124,7 +124,7 @@ impl TrialPlan {
         Ok(Self {
             id,
             regime: spec.regime,
-            workload: spec.workload.clone(),
+            workload: spec.workload.workload().clone(),
             duration: spec.duration,
             instances,
             load,
@@ -160,7 +160,7 @@ mod tests {
         TrialSpec {
             id: "t1".into(),
             regime,
-            workload: pick_workload(regime, 0).clone(),
+            workload: pick_workload(regime, 0).id(),
             condition: Condition::Alone,
             cores: cores.iter().map(|&n| core(n)).collect(),
             cpus: cpus.iter().map(|&n| CpuId(n)).collect(),

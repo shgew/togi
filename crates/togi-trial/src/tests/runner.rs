@@ -361,14 +361,14 @@ fn an_unconfirmed_teardown_is_containment_for_wait_and_for_stop() {
     let partial = trial
         .wait(&CancellationToken::new(), &mut Collect::default())
         .unwrap_err();
-    assert!(matches!(partial.error, togi_machine::Error::Containment));
+    assert!(matches!(partial.error, togi_machine::Error::Containment(_)));
     assert_eq!(
         partial.value.failure, None,
         "evidence is kept beside the containment"
     );
     assert!(matches!(
         trial.stop(),
-        Err(togi_machine::Error::Containment)
+        Err(togi_machine::Error::Containment(_))
     ));
 }
 
@@ -514,8 +514,8 @@ fn wait_gives_up_on_a_supervisor_that_never_answers_at_its_bound() {
         elapsed >= Duration::from_millis(450) && elapsed < secs(3),
         "{elapsed:?}"
     );
-    assert!(matches!(partial.error, togi_machine::Error::Containment));
-    assert!(partial.value.inconclusive.is_some());
+    assert!(matches!(partial.error, togi_machine::Error::Containment(_)));
+    assert_eq!(partial.value, togi_machine::TrialResult::default());
 }
 
 #[test]
@@ -529,7 +529,7 @@ fn stop_gives_up_on_a_supervisor_that_never_answers_with_containment() {
     let (trial, _kept_open) = silent_supervisor(secs(60), &timing);
     let begun = Instant::now();
     let outcome = Box::new(trial).stop();
-    assert!(matches!(outcome, Err(togi_machine::Error::Containment)));
+    assert!(matches!(outcome, Err(togi_machine::Error::Containment(_))));
     assert!(begun.elapsed() >= Duration::from_millis(250) && begun.elapsed() < secs(3));
 }
 
@@ -573,4 +573,28 @@ fn a_backlog_of_reports_cannot_carry_wait_past_its_absolute_bound() {
     let outcome = trial.wait(&CancellationToken::new(), &mut Slow);
     assert!(outcome.is_err());
     assert!(begun.elapsed() < secs(2), "{:?}", begun.elapsed());
+}
+
+#[test]
+fn containment_carries_the_ordered_cleanup_failures_as_its_source() {
+    let (mut runner, _dir) = runner(
+        |fake| {
+            fake.on_systemd(|call| match call {
+                Systemd::Kill { .. } => Some(Reply::Hang),
+                _ => None,
+            });
+        },
+        fast(),
+    );
+    let trial = start(&mut runner, Regime::R1, &[0], Duration::from_millis(100));
+    let Err(togi_machine::Error::Containment(source)) = trial.stop() else {
+        panic!("not containment");
+    };
+    let containment = source
+        .downcast_ref::<Arc<crate::Containment>>()
+        .expect("the source is the failure list");
+    assert!(matches!(
+        containment.failures().first(),
+        Some(crate::CleanupFailure::KillScope { .. })
+    ));
 }

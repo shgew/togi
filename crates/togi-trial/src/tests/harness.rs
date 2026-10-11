@@ -50,7 +50,7 @@ pub(super) fn spec(regime: Regime, cores: &[u8], duration: Duration) -> TrialSpe
     TrialSpec {
         id: "t1".into(),
         regime,
-        workload: pick_workload(regime, 0).clone(),
+        workload: pick_workload(regime, 0).id(),
         condition: Condition::Alone,
         cores: cores.iter().map(|&n| core(n)).collect(),
         cpus,

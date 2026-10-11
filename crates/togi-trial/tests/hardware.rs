@@ -252,7 +252,7 @@ mod hardware {
         TrialSpec {
             id: "hardware".into(),
             regime,
-            workload: pick_workload(regime, 0).clone(),
+            workload: pick_workload(regime, 0).id(),
             condition: Condition::Alone,
             cores: cores.iter().map(|&n| CoreId::new(n).unwrap()).collect(),
             cpus: cores

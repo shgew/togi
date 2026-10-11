@@ -178,7 +178,7 @@ async fn a_partial_start_that_cannot_confirm_is_containment_with_both_scopes_tar
             .unwrap();
         assert!(begun.elapsed() <= secs(15));
         assert!(partial.value.is_none());
-        assert!(matches!(partial.error, togi_machine::Error::Containment));
+        assert!(matches!(partial.error, togi_machine::Error::Containment(_)));
         assert_eq!(
             kills(&rig.fake.systemd_calls()),
             ["togi-trial-t1-c00", "togi-trial-t1-c01"]
@@ -455,7 +455,7 @@ async fn a_pipe_setup_failure_rolls_back_as_unconfirmed_output() {
             partial.value.is_none(),
             "unread output is never a confirmed drain"
         );
-        assert!(matches!(partial.error, togi_machine::Error::Containment));
+        assert!(matches!(partial.error, togi_machine::Error::Containment(_)));
         let process = rig.fake.process(0);
         assert!(
             process.reaped.get(),

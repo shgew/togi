@@ -502,7 +502,7 @@ fn a_detached_pipe_holder_makes_the_drain_unconfirmed_and_the_stop_containment()
         .unwrap();
     kill_pid(descendant);
     assert!(
-        matches!(stopped, Err(togi_machine::Error::Containment)),
+        matches!(stopped, Err(togi_machine::Error::Containment(_))),
         "the group kill cannot reach it and the pipes stay open"
     );
     assert!(begun.elapsed() < secs(10));

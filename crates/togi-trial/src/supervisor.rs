@@ -152,8 +152,8 @@ pub(crate) async fn start<O: Os>(
     spec: TrialSpec,
     ready: Stopped,
 ) -> Result<Handle, Partial<Option<Stopped>>> {
-    let Some(backend) = env.backends.get(spec.workload.backend).cloned() else {
-        return Err(early(Error::BackendMissing(spec.workload.backend), ready));
+    let Some(backend) = env.backends.get(spec.workload.backend()).cloned() else {
+        return Err(early(Error::BackendMissing(spec.workload.backend()), ready));
     };
     if let Err(error) = backend.check() {
         return Err(early(error.into(), ready));

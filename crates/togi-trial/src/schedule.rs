@@ -92,7 +92,9 @@ mod tests {
 
     #[test]
     fn duty_schedule_alternates_stop_and_cont_before_the_end() {
-        let load = Load::Steps(LoadSchedule::Duty { pct: 50 });
+        let load = Load::Steps(LoadSchedule::Duty {
+            pct: togi_machine::DutyPct::new(50).unwrap(),
+        });
         let steps: Vec<_> = timeline(&load, ms(260)).collect();
         let times: Vec<_> = steps.iter().map(|s| s.at).collect();
         assert_eq!(times, [ms(50), ms(100), ms(150), ms(200), ms(250)]);
@@ -111,7 +113,9 @@ mod tests {
 
     #[test]
     fn a_step_at_the_exact_end_is_not_sent() {
-        let load = Load::Steps(LoadSchedule::Duty { pct: 50 });
+        let load = Load::Steps(LoadSchedule::Duty {
+            pct: togi_machine::DutyPct::new(50).unwrap(),
+        });
         assert_eq!(timeline(&load, ms(100)).count(), 1);
     }
 

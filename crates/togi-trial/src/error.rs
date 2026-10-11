@@ -198,12 +198,13 @@ impl Containment {
 impl From<Error> for togi_machine::Error {
     fn from(error: Error) -> Self {
         match error {
-            Error::Containment(_) | Error::Stuck { .. } => Self::Containment,
+            Error::Containment(containment) => Self::Containment(Box::new(containment)),
+            stuck @ Error::Stuck { .. } => Self::Containment(Box::new(stuck)),
             Error::Cancelled => Self::Cancelled,
             Error::BackendMissing(_) => Self::BackendMissing,
             Error::Backend(backend) => backend.into(),
             Error::Joined(joined) => match joined.errors.first() {
-                Some(Error::Containment(_)) => Self::Containment,
+                Some(Error::Containment(_)) => Self::Containment(Box::new(joined)),
                 Some(Error::Cancelled) => Self::Cancelled,
                 Some(Error::BackendMissing(_)) => Self::BackendMissing,
                 _ => Self::Other(Box::new(joined)),
@@ -237,7 +238,7 @@ pub enum InvalidTrial {
     CoreWithoutCpu(CoreId),
     #[error("the trial names no logical CPU")]
     NoCpus,
-    #[error("logical CPU {} belongs to none of the trial's cores", .0.0)]
+    #[error("logical CPU {0} belongs to none of the trial's cores")]
     ForeignCpu(CpuId),
     #[error("the logical CPUs do not match the first CPU of each core")]
     CpusMismatch,
