@@ -8,15 +8,15 @@ use togi_journal::{
     SessionWarning, TrialEnd, TrialId,
 };
 use togi_machine::{
-    BootId, CancellationToken, CoreSet, Error, Kernel, PerCore, Regime, ResetReason, Signal,
-    TargetOffset, TrialResult, Trials,
+    BootId, CancellationToken, CoreId, CoreSet, Error, Kernel, PerCore, Regime, ResetReason,
+    Signal, TargetOffset, Trials,
 };
 use togi_tuner::{CrashFacts, CrashKind, classify_crash, recorded_kind};
 
 use crate::appender::Appender;
 use crate::emergency::SweepCleared;
 use crate::error::{AppendFailure, Flow, SessionError, Step};
-use crate::evidence::{self, RETRY_WAITS, RecordedMce, ResetVerdict, TrialEvidence};
+use crate::evidence::{self, RETRY_WAITS};
 use crate::recovery::{RecoveryState, Registers};
 
 /// What recovery works with: the journal through its appender, the kernel log, the trial files, the boot the run is
@@ -421,6 +421,157 @@ fn sole_nonzero(profile: &PerCore<TargetOffset>) -> Option<(togi_machine::CoreId
     nonzero.next().is_none().then_some(sole)
 }
 
+/// What the journal holds of an open trial and of the crash that cut it short, for [`Closure::decide`].
+struct Facts<'a> {
+    trial: Seq,
+    backend_failure: Option<(Signal, Option<CoreId>)>,
+    machine_checks: &'a [Seq],
+    machine_check_corrected: bool,
+    crash: Option<Cut<'a>>,
+}
+
+/// The crash that ended the trial's boot: its record, the machine checks recorded for it and what its reset says.
+struct Cut<'a> {
+    seq: Seq,
+    recorded: &'a [Seq],
+    reset: &'a Reset,
+}
+
+/// How an open trial closes. The first evidence that holds decides: a backend failure the journal recorded, a
+/// machine check inside the trial, the reset after a crash, and last that togi just stopped.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum Closure {
+    /// The backend reported a failure; a crash after it changes nothing but why the end is not clean.
+    BackendFailure {
+        signal: Signal,
+        core: Option<CoreId>,
+        crashed: bool,
+        causes: Vec<Seq>,
+    },
+    MachineChecks {
+        signal: Signal,
+        crashed: bool,
+        causes: Vec<Seq>,
+    },
+    /// Nothing but the crash: the reset after it says what happened.
+    Crashed {
+        reset: Reset,
+        causes: Vec<Seq>,
+    },
+    Stopped {
+        causes: Vec<Seq>,
+    },
+}
+
+/// Everything a trial end takes from its [`Closure`].
+struct Ruling {
+    outcome: Outcome,
+    signal: Option<Signal>,
+    core: Option<CoreId>,
+    reason: &'static str,
+    interrupted: bool,
+    /// Whether togi itself was the last thing that saw the trial, so its own last evidence is the trial's.
+    stopped: bool,
+}
+
+impl Closure {
+    fn decide(facts: &Facts<'_>) -> Self {
+        let mut causes = vec![facts.trial];
+        causes.extend(facts.machine_checks);
+        let crashed = facts.crash.is_some();
+        if let Some((signal, core)) = facts.backend_failure {
+            if let Some(cut) = &facts.crash
+                && matches!(signal, Signal::CorrectedMce | Signal::UncorrectedMce)
+            {
+                causes.extend(cut.recorded);
+            }
+            return Self::BackendFailure {
+                signal,
+                core,
+                crashed,
+                causes,
+            };
+        }
+        if !facts.machine_checks.is_empty() {
+            return Self::MachineChecks {
+                signal: evidence::machine_check_signal(facts.machine_check_corrected),
+                crashed,
+                causes,
+            };
+        }
+        match &facts.crash {
+            Some(cut) => Self::Crashed {
+                reset: cut.reset.clone(),
+                causes: std::iter::once(cut.seq)
+                    .chain(cut.recorded.iter().copied())
+                    .collect(),
+            },
+            None => Self::Stopped { causes },
+        }
+    }
+
+    fn causes(&self) -> &[Seq] {
+        match self {
+            Self::BackendFailure { causes, .. }
+            | Self::MachineChecks { causes, .. }
+            | Self::Crashed { causes, .. }
+            | Self::Stopped { causes } => causes,
+        }
+    }
+
+    fn ruling(&self) -> Ruling {
+        let failure = |signal, core, reason, crashed: bool| Ruling {
+            outcome: Outcome::Failure,
+            signal: Some(signal),
+            core,
+            reason,
+            interrupted: true,
+            stopped: !crashed,
+        };
+        match self {
+            Self::BackendFailure {
+                signal,
+                core,
+                crashed,
+                ..
+            } => failure(
+                *signal,
+                *core,
+                if *crashed {
+                    "backend reported a failure before the reset"
+                } else {
+                    "togi stopped during the trial"
+                },
+                *crashed,
+            ),
+            Self::MachineChecks {
+                signal, crashed, ..
+            } => failure(
+                *signal,
+                None,
+                "togi stopped during the trial after a machine check",
+                *crashed,
+            ),
+            Self::Crashed { reset, .. } => Ruling {
+                outcome: reset.outcome,
+                signal: reset.signal,
+                core: None,
+                reason: reset.reason,
+                interrupted: reset.outcome != Outcome::Failure,
+                stopped: false,
+            },
+            Self::Stopped { .. } => Ruling {
+                outcome: Outcome::Inconclusive,
+                signal: None,
+                core: None,
+                reason: "togi stopped during the trial",
+                interrupted: true,
+                stopped: true,
+            },
+        }
+    }
+}
+
 /// Ends the open trial with what the journal and the crash that cut it short prove of it.
 fn close_open_trial(recovery: &mut Recovery<'_>) -> Step<()> {
     let state = recovery.appender.recovery();
@@ -428,71 +579,31 @@ fn close_open_trial(recovery: &mut Recovery<'_>) -> Step<()> {
         return Ok(());
     };
     let current = recovery.boot;
-    let signal = open.failure.map(|(signal, _)| signal);
-    let mut missing = Some("togi stopped during the trial");
-    let mut causes = vec![open.seq];
-    let mut mces = Vec::new();
-    if let Some(&first) = open.mces.first() {
-        mces.push(RecordedMce {
-            seq: first,
-            corrected: open.corrected,
-        });
-        causes.extend(&open.mces);
-        if signal.is_none() {
-            missing = Some("togi stopped during the trial after a machine check");
-        }
-    }
-    let mut interrupted = true;
-    let mut stopped = true;
-    let mut reset = None;
     let crash = state.crash(&open.boot);
-    if let Some((crash_seq, detected)) = crash {
-        let recorded = state.recorded_for(&open.boot, current);
-        if matches!(signal, Some(Signal::CorrectedMce | Signal::UncorrectedMce)) {
-            causes.extend(&recorded);
-        }
-        if signal.is_some() {
-            missing = Some("backend reported a failure before the reset");
-            stopped = false;
-        }
-        let verdict = reset_verdict(detected);
-        if signal.is_none() && open.mces.is_empty() {
-            causes = std::iter::once(crash_seq).chain(recorded).collect();
-            missing = None;
-            stopped = false;
-            interrupted = verdict.outcome != Outcome::Failure;
-        }
-        reset = Some(verdict);
-    }
-    let missing = evidence::join_diagnostic(missing, open.kernel_error.as_deref());
-    let result = TrialResult {
-        ran: open.ran(),
-        ..TrialResult::default()
-    };
-    let mut verdict = evidence::adjudicate(&TrialEvidence {
-        result: &result,
-        mces: &mces,
-        reset: reset.as_ref(),
-        missing: missing.as_deref(),
-        duration: Duration::from_secs(open.intent.duration_s.into()),
-        containment: None,
+    let recorded = state.recorded_for(&open.boot, current);
+    let reset = crash.map(|(_, detected)| reset_verdict(detected));
+    let closure = Closure::decide(&Facts {
+        trial: open.seq,
+        backend_failure: open.failure,
+        machine_checks: &open.mces,
+        machine_check_corrected: open.corrected,
+        crash: crash.zip(reset.as_ref()).map(|((seq, _), reset)| Cut {
+            seq,
+            recorded: &recorded,
+            reset,
+        }),
     });
-    if let Some((signal, core)) = open.failure {
-        verdict.outcome = Outcome::Failure;
-        verdict.signal = Some(signal);
-        verdict.core = core;
-        verdict.reason.clone_from(&missing);
-    }
+    let ruling = closure.ruling();
     let trial: TrialId = open.intent.trial.clone();
     let mut end = TrialEnd {
         trial: trial.clone(),
         kernel_cursor: state.kernel_cursor(current).cloned(),
         kernel_error: open.kernel_error.clone(),
-        outcome: verdict.outcome,
-        signal: verdict.signal,
-        core: verdict.core,
-        duration_s: verdict.duration_s,
-        tctl_max_c: verdict.tctl_max_c.and_then(|tctl| i32::try_from(tctl).ok()),
+        outcome: ruling.outcome,
+        signal: ruling.signal,
+        core: ruling.core,
+        duration_s: u32::try_from(open.ran().as_secs()).unwrap_or(u32::MAX),
+        tctl_max_c: None,
         voltage_request_median_v: None,
         voltage_request_min_v: None,
         voltage_requests_v: PerCore::default(),
@@ -504,10 +615,10 @@ fn close_open_trial(recovery: &mut Recovery<'_>) -> Step<()> {
         last_sample_max_mhz: None,
         stalled_core: None,
         worker_stalled_ms: None,
-        reason: verdict.reason,
-        interrupted,
-        last_evidence: stopped && open.kernel_error.is_none(),
-        escaped: verdict.escaped,
+        reason: evidence::join_diagnostic(Some(ruling.reason), open.kernel_error.as_deref()),
+        interrupted: ruling.interrupted,
+        last_evidence: ruling.stopped && open.kernel_error.is_none(),
+        escaped: Vec::new(),
         backend_missing: false,
         containment_error: None,
     };
@@ -524,12 +635,19 @@ fn close_open_trial(recovery: &mut Recovery<'_>) -> Step<()> {
         |core| topology.get(&core).copied(),
     );
     summary.fill(&mut end, crash.is_some());
-    append_trial_end(recovery.appender, recovery.trials, end, &causes)?;
+    append_trial_end(recovery.appender, recovery.trials, end, closure.causes())?;
     Ok(())
 }
 
 /// What the reset after a crash says of the trial it cut short.
-fn reset_verdict(detected: &CrashDetected) -> ResetVerdict {
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Reset {
+    outcome: Outcome,
+    signal: Option<Signal>,
+    reason: &'static str,
+}
+
+fn reset_verdict(detected: &CrashDetected) -> Reset {
     let reason = ResetReason {
         kind: detected.reset_reason,
         raw: detected.reset_reason_raw.clone(),
@@ -549,10 +667,10 @@ fn reset_verdict(detected: &CrashDetected) -> ResetVerdict {
                 "machine crashed during the trial",
             ),
         };
-    ResetVerdict {
+    Reset {
         outcome,
         signal,
-        reason: Some(reason.to_owned()),
+        reason,
     }
 }
 

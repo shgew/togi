@@ -20,7 +20,8 @@ use togi_machine::{
 use togi_render::Renderer;
 
 use super::{
-    KernelUnreadable, Recovered, Recovery, append_trial_end, prior_boots, same_boot_trial,
+    Closure, Cut, Facts, KernelUnreadable, Recovered, Recovery, Reset, append_trial_end,
+    prior_boots, same_boot_trial,
 };
 use crate::appender::Appender;
 use crate::error::{Flow, SessionError, Step};
@@ -1410,4 +1411,201 @@ fn a_trial_whose_containment_is_unconfirmed_keeps_its_files_as_they_are() {
     h.append_end(unapplied_end("0001")).unwrap();
     assert_eq!(h.ended(), ["0001"]);
     h.consistent();
+}
+
+fn seqs(values: &[u64]) -> Vec<Seq> {
+    values.iter().map(|&v| Seq::new(v).unwrap()).collect()
+}
+
+fn reset(outcome: Outcome, signal: Option<Signal>, reason: &'static str) -> Reset {
+    Reset {
+        outcome,
+        signal,
+        reason,
+    }
+}
+
+fn detected(kind: Option<ResetKind>, inconclusive: bool) -> CrashDetected {
+    CrashDetected {
+        previous_boot: boot("b0"),
+        in_flight: None,
+        stray: false,
+        condition: None,
+        reset_reason: kind,
+        reset_reason_raw: Vec::new(),
+        inconclusive,
+        pstore: None,
+    }
+}
+
+#[test]
+fn a_trial_closes_by_the_first_evidence_that_holds() {
+    let trial = Seq::new(1).unwrap();
+    let cut_seq = Seq::new(9).unwrap();
+    let recorded = seqs(&[7, 8]);
+    let crashed = reset(
+        Outcome::Failure,
+        Some(Signal::Crash),
+        "machine crashed during the trial",
+    );
+    let reset_ref = &crashed;
+    let check = seqs(&[3]);
+    let check = check.as_slice();
+    let facts = |backend, checks: &[Seq], corrected, cut: Option<&Reset>| {
+        Closure::decide(&Facts {
+            trial,
+            backend_failure: backend,
+            machine_checks: checks,
+            machine_check_corrected: corrected,
+            crash: cut.map(|reset| Cut {
+                seq: cut_seq,
+                recorded: &recorded,
+                reset,
+            }),
+        })
+    };
+
+    assert_eq!(
+        facts(Some((Signal::Stall, Some(core(0)))), &[], false, None),
+        Closure::BackendFailure {
+            signal: Signal::Stall,
+            core: Some(core(0)),
+            crashed: false,
+            causes: seqs(&[1]),
+        }
+    );
+    assert_eq!(
+        facts(
+            Some((Signal::Stall, Some(core(0)))),
+            check,
+            false,
+            Some(reset_ref)
+        ),
+        Closure::BackendFailure {
+            signal: Signal::Stall,
+            core: Some(core(0)),
+            crashed: true,
+            causes: seqs(&[1, 3]),
+        }
+    );
+    assert_eq!(
+        facts(
+            Some((Signal::UncorrectedMce, None)),
+            &[],
+            false,
+            Some(reset_ref)
+        ),
+        Closure::BackendFailure {
+            signal: Signal::UncorrectedMce,
+            core: None,
+            crashed: true,
+            causes: seqs(&[1, 7, 8]),
+        }
+    );
+    assert_eq!(
+        facts(None, check, true, None),
+        Closure::MachineChecks {
+            signal: Signal::CorrectedMce,
+            crashed: false,
+            causes: seqs(&[1, 3]),
+        }
+    );
+    assert_eq!(
+        facts(None, check, false, Some(reset_ref)),
+        Closure::MachineChecks {
+            signal: Signal::UncorrectedMce,
+            crashed: true,
+            causes: seqs(&[1, 3]),
+        }
+    );
+    assert_eq!(
+        facts(None, &[], false, Some(reset_ref)),
+        Closure::Crashed {
+            reset: crashed,
+            causes: seqs(&[9, 7, 8]),
+        }
+    );
+    assert_eq!(
+        facts(None, &[], false, None),
+        Closure::Stopped { causes: seqs(&[1]) }
+    );
+}
+
+#[test]
+fn a_closure_rules_the_outcome_and_whether_the_trial_was_interrupted() {
+    let stopped = Closure::Stopped { causes: seqs(&[1]) }.ruling();
+    assert_eq!(
+        (
+            stopped.outcome,
+            stopped.signal,
+            stopped.interrupted,
+            stopped.stopped
+        ),
+        (Outcome::Inconclusive, None, true, true)
+    );
+    assert_eq!(stopped.reason, "togi stopped during the trial");
+
+    let signalled = Closure::BackendFailure {
+        signal: Signal::Stall,
+        core: Some(core(8)),
+        crashed: true,
+        causes: seqs(&[1]),
+    }
+    .ruling();
+    assert_eq!(
+        (signalled.outcome, signalled.signal, signalled.core),
+        (Outcome::Failure, Some(Signal::Stall), Some(core(8)))
+    );
+    assert!(signalled.interrupted && !signalled.stopped);
+    assert_eq!(
+        signalled.reason,
+        "backend reported a failure before the reset"
+    );
+
+    let checked = Closure::MachineChecks {
+        signal: Signal::UncorrectedMce,
+        crashed: false,
+        causes: seqs(&[1, 3]),
+    }
+    .ruling();
+    assert_eq!((checked.outcome, checked.stopped), (Outcome::Failure, true));
+    assert_eq!(
+        checked.reason,
+        "togi stopped during the trial after a machine check"
+    );
+
+    for (kind, inconclusive, outcome, signal, interrupted) in [
+        (
+            Some(ResetKind::Watchdog),
+            false,
+            Outcome::Failure,
+            Some(Signal::Crash),
+            false,
+        ),
+        (
+            Some(ResetKind::ThermalTrip),
+            true,
+            Outcome::Inconclusive,
+            None,
+            true,
+        ),
+        (None, true, Outcome::Inconclusive, None, true),
+        (None, false, Outcome::Failure, Some(Signal::Crash), false),
+    ] {
+        let ruling = Closure::Crashed {
+            reset: super::reset_verdict(&detected(kind, inconclusive)),
+            causes: seqs(&[9]),
+        }
+        .ruling();
+        assert_eq!(
+            (
+                ruling.outcome,
+                ruling.signal,
+                ruling.interrupted,
+                ruling.stopped
+            ),
+            (outcome, signal, interrupted, false),
+            "{kind:?} {inconclusive}"
+        );
+    }
 }

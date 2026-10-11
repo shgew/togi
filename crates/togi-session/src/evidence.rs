@@ -150,7 +150,12 @@ pub struct Adjudication {
 }
 
 pub fn mce_signal(mces: &[RecordedMce]) -> Signal {
-    if mces.iter().any(|mce| mce.corrected) {
+    machine_check_signal(mces.iter().any(|mce| mce.corrected))
+}
+
+/// The signal of machine checks that were all corrected, or of any that was not.
+pub const fn machine_check_signal(any_corrected: bool) -> Signal {
+    if any_corrected {
         Signal::CorrectedMce
     } else {
         Signal::UncorrectedMce
