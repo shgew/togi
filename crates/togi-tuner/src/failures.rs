@@ -87,10 +87,6 @@ impl Failures {
         self.queue.iter().copied()
     }
 
-    pub(crate) fn queued(&self) -> Option<&Pending> {
-        self.queue.front().and_then(|seq| self.pending.get(seq))
-    }
-
     pub(crate) fn unresolved(&self) -> usize {
         self.pending.len()
     }

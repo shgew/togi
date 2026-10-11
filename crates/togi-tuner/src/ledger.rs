@@ -28,6 +28,10 @@ pub(crate) fn carried_clause(evidence: &Evidence, seqs: &[Seq]) -> String {
         .iter()
         .filter_map(|&seq| evidence.carried_source(seq))
         .collect();
+    clause_of(&sources)
+}
+
+fn clause_of(sources: &[&SessionRef]) -> String {
     if sources.is_empty() {
         return String::new();
     }
@@ -61,19 +65,25 @@ impl Run {
         )
     }
 
-    fn warn(&mut self, seq: Seq, warning: TunerWarning) {
-        let mut cause = vec![seq];
-        cause.extend(
-            warning
-                .passes
+    /// Freezes the warning for the failure at `seq`. A carried failure is not in the ledger yet,
+    /// so its own session comes as `own`.
+    fn warn(&mut self, seq: Seq, warning: TunerWarning, own: Option<&SessionRef>) {
+        let carried_passes: Vec<Seq> = warning
+            .passes
+            .iter()
+            .copied()
+            .filter(|&pass| self.evidence.carried_source(pass).is_some())
+            .collect();
+        let mut sources: Vec<&SessionRef> = own.into_iter().collect();
+        sources.extend(
+            carried_passes
                 .iter()
-                .copied()
-                .filter(|&pass| self.evidence.carried_source(pass).is_some()),
+                .filter_map(|&pass| self.evidence.carried_source(pass)),
         );
+        let mut cause = vec![seq];
+        cause.extend(carried_passes);
         let mut warning = warning;
-        warning
-            .detail
-            .push_str(&carried_clause(&self.evidence, &cause));
+        warning.detail.push_str(&clause_of(&sources));
         self.warning = Some(PendingWarning { warning, cause });
     }
 
@@ -83,6 +93,7 @@ impl Run {
         class: ClassKey,
         profile: &Profile,
         trial: Option<&togi_journal::TrialId>,
+        own: Option<&SessionRef>,
     ) -> Result<(), FoldError> {
         let needed = self.config.needed;
         let Some(passes) = self.evidence.monotonicity(class, profile, needed)? else {
@@ -111,6 +122,7 @@ impl Run {
                 passes,
                 detail,
             },
+            own,
         );
         Ok(())
     }
@@ -121,6 +133,7 @@ impl Run {
         profile: &Profile,
         source: Option<SessionRef>,
     ) -> Result<(), FoldError> {
+        let own = source.as_ref();
         if let Some(found) = self
             .evidence
             .idle_monotonicity(profile, self.config.needed)?
@@ -141,6 +154,7 @@ impl Run {
                     passes: found.passes,
                     detail,
                 },
+                own,
             );
         }
         match source {
@@ -171,7 +185,7 @@ impl Run {
             Outcome::Inconclusive => {}
             Outcome::Pass => self.evidence.record_pass(observation, open.backend)?,
             Outcome::Failure => {
-                self.warn_failure(seq, open.class, &open.profile, Some(&open.trial))?;
+                self.warn_failure(seq, open.class, &open.profile, Some(&open.trial), None)?;
                 self.evidence.record_failure(observation)?;
             }
         }
@@ -239,7 +253,13 @@ impl Run {
                 .evidence
                 .record_carried_pass(observation, backend, source)?,
             Outcome::Failure => {
-                self.warn_failure(event.seq, class, &profile, carried.source.trial.as_ref())?;
+                self.warn_failure(
+                    event.seq,
+                    class,
+                    &profile,
+                    carried.source.trial.as_ref(),
+                    Some(&source),
+                )?;
                 let observation = Observation {
                     seq: event.seq,
                     class,

@@ -87,10 +87,11 @@ impl Run {
 
     /// An unattributed failure with every core at 0 has no candidate to hunt.
     pub(crate) fn unattributed_zero_dead_end(&self) -> Option<DecisionAction> {
-        let queued_seq = self.failures.queue().next()?;
-        self.failures
-            .queued()
-            .filter(|record| record.profile.is_zero())?;
+        let queued_seq = self.failures.queue().find(|&seq| {
+            self.failures
+                .pending(seq)
+                .is_some_and(|record| record.profile.is_zero())
+        })?;
         Some(DecisionAction::new(
             DeadEnd {
                 condition: DeadEndCondition::FailureAtZero,

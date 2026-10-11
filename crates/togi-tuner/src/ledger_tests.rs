@@ -648,17 +648,13 @@ fn carried_solo_limit_eligibility() {
 
 #[test]
 fn carried_pass_monotonicity_warning() {
-    let mut j = Journal::new(&[0], &[Start::search(-20).checking()]);
+    let mut j = Journal::search_at(&[-19]);
     let n = count(&j);
     let facts = carry_passes(&mut j, (Regime::R1, 0, &[0], 90), &[-20], n, Outcome::Pass);
-    let plan = j.manual(
-        Regime::R1,
-        0,
-        Load::Single(core(0)),
-        Condition::Alone,
-        &[-20],
-        90,
-    );
+    let plan = j.next_trial();
+    assert_eq!(plan.profile, j.profile(&[-19]));
+    assert_eq!(plan.condition, Condition::Alone);
+    assert_eq!(plan.requirement.class, class(Regime::R1, 0, &[0], 90));
     let failure = j.trial(&plan, Outcome::Failure);
     decide_pending(&mut j);
     let action = j.next_decision();
@@ -1168,4 +1164,126 @@ fn repeated_known_failures_keep_one_witness_per_cell() {
         ));
     }
     assert_eq!(j.run().failures.witnesses(), 1);
+}
+
+#[test]
+fn a_carried_all_zero_idle_failure_behind_another_still_stops() {
+    let mut j = Journal::search_at(&[-10, -10]);
+    let first = j.carry_idle(SESSION, &[-10, -10]);
+    let zero = j.carry_idle(SESSION, &[0, 0]);
+    assert_eq!(j.run().failures.queue().collect::<Vec<_>>(), [first, zero]);
+    let stop = j.next_decision();
+    let DecisionPayload::DeadEnd(dead_end) = &stop.payload else {
+        panic!("expected a dead end, got {stop:?}");
+    };
+    assert_eq!(
+        dead_end.condition,
+        togi_journal::DeadEndCondition::FailureAtZero
+    );
+    assert_eq!(dead_end.core, None);
+    assert_eq!(stop.cause, [zero]);
+}
+
+const OTHER_SESSION: &str = "20261003T004254Z";
+
+#[test]
+fn a_carried_failure_warning_names_the_failure_session() {
+    for idle in [false, true] {
+        let mut j = Journal::new(&[0], &[Start::search(-20).checking()]);
+        let n = count(&j);
+        let (regime, duration, condition) = if idle {
+            (Regime::R6, 900, Condition::Together)
+        } else {
+            (Regime::R1, 90, Condition::Alone)
+        };
+        let passes = carry_passes(
+            &mut j,
+            (regime, 0, &[0], duration),
+            &[-20],
+            n,
+            Outcome::Pass,
+        );
+        let failure = if idle {
+            j.carry_idle(OTHER_SESSION, &[-19])
+        } else {
+            j.carry(
+                OTHER_SESSION,
+                (regime, 0, &[0], duration),
+                condition,
+                &[-19],
+                Outcome::Failure,
+            )
+        };
+        let action = j.next_decision();
+        let DecisionPayload::TunerWarning(w) = &action.payload else {
+            panic!("idle={idle}: failure did not contradict carried passes: {action:?}");
+        };
+        let mut cause = vec![failure];
+        cause.extend(passes.iter().copied());
+        assert_eq!(action.cause, cause, "idle={idle}");
+        let clause = format!(
+            "; {} carried facts from session {SESSION}, {OTHER_SESSION}",
+            n + 1
+        );
+        assert!(w.detail.ends_with(&clause), "idle={idle}: {}", w.detail);
+        j.assert_resumes();
+    }
+}
+
+fn poisoned(j: &Journal, state: &mut crate::State) {
+    let next = j.event(
+        togi_journal::SessionNotice {
+            notice: togi_journal::Notice::NonzeroBaseline,
+            cores: togi_machine::CoreSet::default(),
+        }
+        .into(),
+        &[],
+    );
+    assert_eq!(state.fold(&next), Err(FoldError::Poisoned));
+    assert_eq!(state.decide(), None);
+}
+
+fn carried_naming_outside(change: fn(&mut togi_journal::TrialCarried)) {
+    let outside = crate::tests::core(9);
+    for outcome in [Outcome::Pass, Outcome::Failure] {
+        let mut j = Journal::search_at(&[-10, -10]);
+        let mut carried = j.carried_trial(
+            SESSION,
+            togi_journal::TrialClass {
+                regime: Regime::R1,
+                workload: togi_machine::WorkloadId::new(Regime::R1, 0),
+                cores: set(&[0]),
+                duration_s: 90,
+            },
+            Condition::Alone,
+            &[-10, -10],
+            outcome,
+            None,
+        );
+        change(&mut carried);
+        assert_eq!(
+            j.try_append(carried.into(), &[]),
+            Err(FoldError::UnknownCore(outside)),
+            "{outcome:?}"
+        );
+        let mut state = j.state.clone();
+        poisoned(&j, &mut state);
+    }
+}
+
+#[test]
+fn a_carried_trial_core_outside_the_topology_poisons() {
+    carried_naming_outside(|carried| carried.core = Some(core(9)));
+}
+
+#[test]
+fn a_carried_trial_stalled_core_outside_the_topology_poisons() {
+    carried_naming_outside(|carried| carried.stalled_core = Some(core(9)));
+}
+
+#[test]
+fn a_carried_trial_request_lane_outside_the_topology_poisons() {
+    carried_naming_outside(|carried| {
+        carried.voltage_requests_v = [(core(9), 1.0)].into_iter().collect();
+    });
 }
