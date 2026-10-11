@@ -23,6 +23,9 @@ pub(crate) enum Confinement {
 pub(crate) struct LaunchCommand {
     pub(crate) argv: Vec<OsString>,
     pub(crate) cwd: PathBuf,
+    /// The CPUs the launcher itself is confined to from its first instruction; used only without
+    /// a scope, where nothing else confines it.
+    pub(crate) pin: Vec<CpuId>,
 }
 
 pub(crate) fn cpus_list(cpus: &[CpuId]) -> String {
@@ -98,6 +101,10 @@ pub(crate) fn command_for(
     LaunchCommand {
         argv,
         cwd: cwd.to_owned(),
+        pin: match confinement {
+            Confinement::Scoped { .. } => Vec::new(),
+            Confinement::Unscoped => cpus.to_vec(),
+        },
     }
 }
 
@@ -122,6 +129,11 @@ pub(crate) fn spawn(command: &LaunchCommand) -> std::io::Result<std::process::Ch
         .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::InvalidInput))?;
     let root = rustix::process::geteuid().is_root();
     let parent = getpid();
+    let mut pinned = rustix::thread::CpuSet::new();
+    for cpu in &command.pin {
+        pinned.set(usize::from(cpu.0));
+    }
+    let pin = !command.pin.is_empty();
     let mut launcher = Command::new(program);
     launcher
         .args(args)
@@ -136,6 +148,9 @@ pub(crate) fn spawn(command: &LaunchCommand) -> std::io::Result<std::process::Ch
         launcher.pre_exec(move || {
             if root {
                 nix::unistd::setgroups(&[]).map_err(std::io::Error::from)?;
+            }
+            if pin {
+                rustix::thread::sched_setaffinity(None, &pinned)?;
             }
             set_parent_process_death_signal(Some(Signal::KILL))?;
             if getppid() != Some(parent) {
@@ -199,8 +214,20 @@ mod tests {
             inputs: Vec::new(),
             watched: Vec::new(),
         };
+        let scoped = command_for(
+            Confinement::Scoped {
+                identity: BackendIdentity::new(997, 996).unwrap(),
+                user_manager: false,
+            },
+            &scope(),
+            std::path::Path::new("/tmp"),
+            &[CpuId(0)],
+            &plan,
+        );
+        assert!(scoped.pin.is_empty(), "the scope's cpuset confines it");
         let command = command_for(Confinement::Unscoped, &scope(), std::path::Path::new("/tmp"), &[CpuId(0)], &plan);
         assert_eq!(strings(&command.argv), ["/bin/true", "a"]);
         assert_eq!(command.cwd, std::path::Path::new("/tmp"));
+        assert_eq!(command.pin, [CpuId(0)]);
     }
 }
