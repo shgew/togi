@@ -93,6 +93,7 @@ gate: _dev-shell
     cargo shear
     if [[ "{{ os() }}" == linux ]]; then
         go test -c -tags hardware -o /dev/null ./internal/trial
+        just check-one comparison-manifests comparison-selftest comparison-negative
     fi
 
 # Run every flake check this host builds: package, race, lint, fmt, changes, module, the rust-* checks (clippy, nextest, doc, fmt, deny, shear) and, on Linux, trial-scope-tests and the VM tests
@@ -139,6 +140,13 @@ guard base="origin/main" head="HEAD" *args: _dev-shell
 [group('nix')]
 guard-manifest *args: _dev-shell
     nu --no-config-file tools/guard/manifest.nu "$@"
+
+# Print one comparison manifest from the tree (`just comparison-manifest fixtures`); suite, fixtures, goldens or inputs
+[group('run')]
+comparison-manifest kind: _dev-shell
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [[ "$1" == suite ]]; then go run ./tools/compare suite tools/bench/suite.json; else go run ./tools/compare "$1" .; fi
 
 # Prove simulated session decisions are unchanged from a base revision; stops at the first difference (`--keep-going` counts them all)
 [group('run')]
