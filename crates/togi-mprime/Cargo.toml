@@ -1,0 +1,19 @@
+[package]
+name = "togi-mprime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "Plans and classifies mprime torture-test instances"
+
+[dependencies]
+regex.workspace = true
+togi-backend.workspace = true
+togi-machine.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true
