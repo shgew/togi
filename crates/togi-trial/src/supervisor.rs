@@ -31,7 +31,7 @@ use crate::launch::{self, Confinement};
 use crate::os::{Child as _, GroupSignal, Os, SignalError};
 use crate::plan::{Load, TrialPlan};
 use crate::runner::Backends;
-use crate::samples::SamplesWriter;
+use crate::samples::{Open, SamplesWriter};
 use crate::schedule::{Action, Step, timeline};
 use crate::sensors::{Roots, Sensors};
 use crate::stall::Stall;
@@ -55,6 +55,8 @@ pub(crate) struct Env<O: Os> {
     pub(crate) unscoped: bool,
     pub(crate) user_manager: bool,
     pub(crate) pm_table: Option<Arc<dyn PmTableReader + Send + Sync>>,
+    /// Test construction: where samples go instead of the trial's `samples.jsonl`.
+    pub(crate) storage: Option<Rc<dyn Fn() -> Open>>,
 }
 
 impl<O: Os> Env<O> {
@@ -211,7 +213,11 @@ pub(crate) async fn start<O: Os>(
     let started = describe(&plan, &live, launched.argv, launched.files);
     let cores: Vec<CoreId> = plan.instances.iter().map(|instance| instance.core).collect();
     let (failed_tx, storage_failed) = unbounded_channel();
-    let writer = SamplesWriter::spawn(container.samples(), failed_tx).ok();
+    let open = match &env.storage {
+        Some(make) => make(),
+        None => container.samples(),
+    };
+    let writer = SamplesWriter::spawn(open, failed_tx).ok();
     let mut toggles = Toggles::default();
     toggles.stops = launched.stops;
     if let Load::Bursts { .. } = plan.load {
