@@ -769,6 +769,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "togi-tuner"
+version = "0.0.0"
+dependencies = [
+ "jiff",
+ "proptest",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "togi-config",
+ "togi-journal",
+ "togi-machine",
+]
+
+[[package]]
 name = "togi-tuningboot"
 version = "0.0.0"
 dependencies = [
