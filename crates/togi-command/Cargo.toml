@@ -1,0 +1,19 @@
+[package]
+name = "togi-command"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "External commands bounded by a deadline: the whole process group is killed and the pipes are closed when it passes"
+
+[dependencies]
+rustix = { workspace = true, features = ["process"] }
+thiserror.workspace = true
+tokio = { workspace = true, features = ["io-util", "macros", "process", "rt", "time"] }
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true
