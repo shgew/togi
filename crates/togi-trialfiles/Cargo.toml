@@ -9,11 +9,11 @@ description = "Preserves completed trials' samples and backend logs in gzip form
 
 [dependencies]
 flate2.workspace = true
-nix.workspace = true
 rustix.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+nix.workspace = true
 tempfile.workspace = true
 test-case.workspace = true
 

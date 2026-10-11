@@ -2,21 +2,17 @@
 
 use std::ffi::OsString;
 use std::fmt;
-use std::fs::{File, OpenOptions};
-use std::io::{self, Read, Write};
+use std::fs::{self, File, OpenOptions};
+use std::io::{self, BufReader, Read};
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 
 use flate2::Compression;
+use flate2::read::MultiGzDecoder;
 use flate2::write::GzEncoder;
 use rustix::fs::OFlags;
 use rustix::io::Errno;
 
-pub use goerr::{Cause, LinkError, PathError};
-
-mod goerr;
-mod goos;
-mod gzip;
 #[cfg(test)]
 mod tests;
 
@@ -25,63 +21,27 @@ pub const SAMPLES: &str = "samples.jsonl";
 
 const INSTANCE_LOGS: [&str; 2] = ["stdout.log", "stderr.log"];
 
-/// Go's `io.Copy` buffer size.
-const COPY_BUFFER: usize = 32 * 1024;
-
-/// One failed step of compressing a trial's files. The text is the one Go's wrapped error has, because it lands in the
-/// journal verbatim: the operation, the file's base name and the `os` error with Go's errno text.
+/// One failed step of compressing a trial's files, naming the file it concerns.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("list trial files: {0}")]
-    List(#[source] PathError),
-    #[error("open {name}: {source}")]
-    Open { name: String, source: PathError },
-    #[error("stat {name}: {source}")]
-    Stat { name: String, source: PathError },
-    #[error("remove stale {name}: {source}")]
-    RemoveStale { name: String, source: PathError },
-    #[error("create {name}: {source}")]
-    Create { name: String, source: PathError },
-    #[error("compress {name}: {source}")]
-    Compress { name: String, source: Cause },
-    #[error("sync compressed {name}: {source}")]
-    SyncCompressed { name: String, source: Cause },
-    #[error("remove plain {name}: {source}")]
-    RemovePlain { name: String, source: PathError },
-    #[error("sync removal of {name}: {source}")]
-    SyncRemoval { name: String, source: Cause },
-}
-
-impl Error {
-    /// The bytes of Go's `err.Error()`, for the journal. A path in the text keeps its raw bytes, so the text may not be
-    /// UTF-8; the journal encoder must serialize it with Go's JSON rules: each invalid byte as the literal U+FFFD
-    /// character (EF BF BD), the same bytes a real U+FFFD character becomes. `Display` shows each invalid byte as the
-    /// character U+FFFD too, so neither form can tell a replaced byte from a real replacement character.
-    #[must_use]
-    pub fn go_text(&self) -> Vec<u8> {
-        let (prefix, cause) = match self {
-            Error::List(source) => ("list trial files: ".to_owned(), source.go_text()),
-            Error::Open { name, source } => (format!("open {name}: "), source.go_text()),
-            Error::Stat { name, source } => (format!("stat {name}: "), source.go_text()),
-            Error::RemoveStale { name, source } => {
-                (format!("remove stale {name}: "), source.go_text())
-            }
-            Error::Create { name, source } => (format!("create {name}: "), source.go_text()),
-            Error::Compress { name, source } => (format!("compress {name}: "), source.go_text()),
-            Error::SyncCompressed { name, source } => {
-                (format!("sync compressed {name}: "), source.go_text())
-            }
-            Error::RemovePlain { name, source } => {
-                (format!("remove plain {name}: "), source.go_text())
-            }
-            Error::SyncRemoval { name, source } => {
-                (format!("sync removal of {name}: "), source.go_text())
-            }
-        };
-        let mut text = prefix.into_bytes();
-        text.extend(cause);
-        text
-    }
+    #[error("list trial files in {}: {source}", dir.display())]
+    List { dir: PathBuf, source: io::Error },
+    #[error("open {}: {source}", path.display())]
+    Open { path: PathBuf, source: io::Error },
+    #[error("stat {}: {source}", path.display())]
+    Stat { path: PathBuf, source: io::Error },
+    #[error("remove stale {}: {source}", path.display())]
+    RemoveStale { path: PathBuf, source: io::Error },
+    #[error("create {}: {source}", path.display())]
+    Create { path: PathBuf, source: io::Error },
+    #[error("compress {}: {source}", path.display())]
+    Compress { path: PathBuf, source: io::Error },
+    #[error("sync compressed {}: {source}", path.display())]
+    SyncCompressed { path: PathBuf, source: io::Error },
+    #[error("remove plain {}: {source}", path.display())]
+    RemovePlain { path: PathBuf, source: io::Error },
+    #[error("sync removal of {}: {source}", path.display())]
+    SyncRemoval { path: PathBuf, source: io::Error },
 }
 
 /// Every error [`compress`] met, in the order it met them; the text joins them one per line.
@@ -89,16 +49,6 @@ impl Error {
 pub struct Errors(Vec<Error>);
 
 impl Errors {
-    /// The bytes of Go's `errors.Join(...).Error()`: each error's [`Error::go_text`] joined by `\n`.
-    #[must_use]
-    pub fn go_text(&self) -> Vec<u8> {
-        self.0
-            .iter()
-            .map(Error::go_text)
-            .collect::<Vec<_>>()
-            .join(&b'\n')
-    }
-
     #[must_use]
     pub fn errors(&self) -> &[Error] {
         &self.0
@@ -122,20 +72,21 @@ impl std::error::Error for Errors {}
 /// Finishes or retries compression after all writers in `dir` have stopped.
 /// Missing files and directories are harmless: a trial may have stopped before creating them.
 pub fn compress(dir: &Path) -> Result<(), Errors> {
-    let entries = match goos::read_dir(dir) {
-        Ok(entries) => entries,
-        Err(source) if source.is_not_exist() => return Ok(()),
-        Err(source) => return Err(Errors(vec![Error::List(source)])),
+    let instances = match instance_dirs(dir) {
+        Ok(instances) => instances,
+        Err(source) if source.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(source) => {
+            return Err(Errors(vec![Error::List {
+                dir: dir.to_owned(),
+                source,
+            }]));
+        }
     };
     let mut errors = Vec::new();
-    errors.extend(compress_file(&goerr::join(dir, SAMPLES.as_ref()), sync_dir).err());
-    for (name, file_type) in entries {
-        if !file_type.is_dir() {
-            continue;
-        }
-        let instance = goerr::join(dir, &name);
+    errors.extend(compress_file(&dir.join(SAMPLES), sync_dir).err());
+    for instance in instances {
         for log in INSTANCE_LOGS {
-            errors.extend(compress_file(&goerr::join(&instance, log.as_ref()), sync_dir).err());
+            errors.extend(compress_file(&instance.join(log), sync_dir).err());
         }
     }
     if errors.is_empty() {
@@ -145,17 +96,31 @@ pub fn compress(dir: &Path) -> Result<(), Errors> {
     }
 }
 
+/// The real (not symlinked) subdirectories of `dir`, sorted by name. An entry that vanishes while listing is skipped.
+fn instance_dirs(dir: &Path) -> io::Result<Vec<PathBuf>> {
+    let mut instances = Vec::new();
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        match entry.file_type() {
+            Ok(file_type) if file_type.is_dir() => instances.push(entry.path()),
+            Ok(_) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error),
+        }
+    }
+    instances.sort();
+    Ok(instances)
+}
+
 /// Replaces the regular file at `path` with its gzip form at `path` + ".gz". The compressed file is written whole
 /// under a temporary name, synced and renamed into place before the plain file is removed, so a reader finds one
 /// complete form at every moment and a crash leaves either both (readers prefer the plain one) or the compressed one.
 /// A missing path is skipped. So is anything that is not a regular file: a workload may replace its logs with a
-/// symlink, which is never followed. `sync_dir` makes a change to path's directory durable. `path` is a Go-cleaned
-/// path (see [`goerr::join`]), because error texts name paths the way Go does.
+/// symlink, which is never followed. `sync_dir` makes a change to path's directory durable.
 fn compress_file(
     path: &Path,
-    mut sync_dir: impl FnMut(&Path) -> Result<(), Cause>,
+    mut sync_dir: impl FnMut(&Path) -> io::Result<()>,
 ) -> Result<(), Error> {
-    let name = goerr::base(path);
     let mut src = match OpenOptions::new()
         .read(true)
         .custom_flags((OFlags::NOFOLLOW | OFlags::NONBLOCK).bits().cast_signed())
@@ -170,8 +135,8 @@ fn compress_file(
         }
         Err(source) => {
             return Err(Error::Open {
-                name,
-                source: PathError::new("open", path, &source),
+                path: path.to_owned(),
+                source,
             });
         }
     };
@@ -180,20 +145,17 @@ fn compress_file(
         Ok(_) => return Ok(()),
         Err(source) => {
             return Err(Error::Stat {
-                name,
-                source: PathError::new("stat", path, &source),
+                path: path.to_owned(),
+                source,
             });
         }
     }
     let final_path = with_suffix(path, ".gz");
     let tmp = with_suffix(&final_path, ".tmp");
-    if let Err(source) = goos::remove(&tmp)
-        && !source.is_not_exist()
+    if let Err(source) = fs::remove_file(&tmp)
+        && source.kind() != io::ErrorKind::NotFound
     {
-        return Err(Error::RemoveStale {
-            name: goerr::base(&tmp),
-            source,
-        });
+        return Err(Error::RemoveStale { path: tmp, source });
     }
     let dst = OpenOptions::new()
         .write(true)
@@ -202,56 +164,43 @@ fn compress_file(
         .custom_flags(OFlags::NOFOLLOW.bits().cast_signed())
         .open(&tmp)
         .map_err(|source| Error::Create {
-            name: goerr::base(&tmp),
-            source: PathError::new("open", &tmp, &source),
+            path: tmp.clone(),
+            source,
         })?;
-    let published = write_gzip(&mut src, path, dst, &tmp)
-        .and_then(|()| goos::rename_over(&tmp, &final_path).map_err(Cause::from));
+    let published = write_gzip(&mut src, dst).and_then(|()| fs::rename(&tmp, &final_path));
     if let Err(source) = published {
-        let _ = goos::remove(&tmp);
-        return Err(Error::Compress { name, source });
+        let _ = fs::remove_file(&tmp);
+        return Err(Error::Compress {
+            path: path.to_owned(),
+            source,
+        });
     }
-    let dir = goerr::dir(path);
-    sync_dir(&dir).map_err(|source| Error::SyncCompressed {
-        name: name.clone(),
+    let dir = match path.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent,
+        _ => Path::new("."),
+    };
+    sync_dir(dir).map_err(|source| Error::SyncCompressed {
+        path: path.to_owned(),
         source,
     })?;
-    goos::remove(path).map_err(|source| Error::RemovePlain {
-        name: name.clone(),
+    fs::remove_file(path).map_err(|source| Error::RemovePlain {
+        path: path.to_owned(),
         source,
     })?;
-    sync_dir(&dir).map_err(|source| Error::SyncRemoval { name, source })
+    sync_dir(dir).map_err(|source| Error::SyncRemoval {
+        path: path.to_owned(),
+        source,
+    })
 }
 
-/// Copies `src` into the gzip file `dst`, syncs it and checks its close, in Go's order. Each failure names the file and
-/// operation Go's `os.File` method would: `read` of the source, `write`, `sync` and `close` of the temporary.
-fn write_gzip(src: &mut File, src_path: &Path, dst: File, dst_path: &Path) -> Result<(), Cause> {
-    let write_error = |source: io::Error| PathError::new("write", dst_path, &source);
+fn write_gzip(src: &mut File, dst: File) -> io::Result<()> {
     let mut encoder = GzEncoder::new(dst, Compression::default());
-    let mut buffer = vec![0; COPY_BUFFER];
-    loop {
-        match src.read(&mut buffer) {
-            Ok(0) => break,
-            Ok(read) => encoder.write_all(&buffer[..read]).map_err(write_error)?,
-            Err(source) if source.kind() == io::ErrorKind::Interrupted => {}
-            Err(source) => return Err(PathError::new("read", src_path, &source).into()),
-        }
-    }
-    let dst = encoder.finish().map_err(write_error)?;
-    dst.sync_all()
-        .map_err(|source| PathError::new("sync", dst_path, &source))?;
-    Ok(goos::close(dst, dst_path)?)
+    io::copy(src, &mut encoder)?;
+    encoder.finish()?.sync_all()
 }
 
-/// Syncs the directory `path`; its close error counts, as in Go.
-fn sync_dir(path: &Path) -> Result<(), Cause> {
-    let dir = File::open(path).map_err(|source| PathError::new("open", path, &source))?;
-    let synced = dir
-        .sync_all()
-        .map_err(|source| PathError::new("sync", path, &source));
-    let closed = goos::close(dir, path);
-    synced?;
-    Ok(closed?)
+fn sync_dir(path: &Path) -> io::Result<()> {
+    File::open(path)?.sync_all()
 }
 
 fn with_suffix(path: &Path, suffix: &str) -> PathBuf {
@@ -267,7 +216,7 @@ pub struct TrialFile(Form);
 #[derive(Debug)]
 enum Form {
     Plain(File),
-    Compressed(Box<gzip::Reader>),
+    Compressed(Box<MultiGzDecoder<BufReader<File>>>),
 }
 
 impl Read for TrialFile {
@@ -288,7 +237,7 @@ pub fn open(path: &Path) -> io::Result<TrialFile> {
         Err(_) => {}
     }
     let file = File::open(with_suffix(path, ".gz"))?;
-    Ok(TrialFile(Form::Compressed(Box::new(gzip::Reader::new(
-        file,
-    )?))))
+    Ok(TrialFile(Form::Compressed(Box::new(MultiGzDecoder::new(
+        BufReader::new(file),
+    )))))
 }
