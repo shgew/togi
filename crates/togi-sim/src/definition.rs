@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::marker::PhantomData;
 
-use crate::vocab::{RegimeId, Reset, SignalKind};
+use togi_machine::{Regime, ResetKind, Signal};
 
 pub const DEFAULT_CORES: i64 = 16;
 pub const DEFAULT_PAST_LIMIT_RATE: f64 = std::f64::consts::LN_10 / 90.0;
@@ -26,7 +26,7 @@ pub const DEFAULT_BIOS_VERSION: &str = "SIM.1";
 pub const DEFAULT_BOARD: &str = "togi simulator";
 pub const DEFAULT_CPU_MODEL: &str = "Simulated Zen 5 16-Core Processor";
 pub const DEFAULT_MICROCODE: &str = "0x0";
-pub const DEFAULT_BOOST_LIMIT_MHZ: i64 = 5700;
+pub const DEFAULT_BOOST_LIMIT_MHZ: u32 = 5700;
 
 /// Decodes a struct from a JSON object only. Derived `Deserialize` also accepts a sequence of the fields in
 /// order, which a machine file must not. The struct derives with `remote = "Self"`, which leaves the
@@ -133,7 +133,7 @@ where
 mod skip {
     use super::{
         DEFAULT_CORE_LOCAL_BANK, DEFAULT_CORES, DEFAULT_CRASH_MCE, DEFAULT_GROWTH, DEFAULT_ONSET_S,
-        DEFAULT_PAST_LIMIT_RATE, Reset, SignalKind, Weights, default_reset, default_signals,
+        DEFAULT_PAST_LIMIT_RATE, ResetKind, Signal, Weights, default_reset, default_signals,
     };
 
     pub(super) const fn is_zero(value: &f64) -> bool {
@@ -172,11 +172,11 @@ mod skip {
         *value == DEFAULT_ONSET_S
     }
 
-    pub(super) fn signals(weights: &Weights<SignalKind>) -> bool {
+    pub(super) fn signals(weights: &Weights<Signal>) -> bool {
         *weights == default_signals()
     }
 
-    pub(super) fn reset(weights: &Weights<Reset>) -> bool {
+    pub(super) fn reset(weights: &Weights<ResetKind>) -> bool {
         *weights == default_reset()
     }
 }
@@ -256,21 +256,21 @@ pub struct BiosContextDef {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub microcode: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub boost_limit_mhz: Option<i64>,
+    pub boost_limit_mhz: Option<u32>,
 }
 
-fn default_signals() -> Weights<SignalKind> {
+fn default_signals() -> Weights<Signal> {
     Weights::from([
-        (SignalKind::ComputationError, 4.0),
-        (SignalKind::Stall, 1.0),
-        (SignalKind::UnexpectedExit, 1.0),
-        (SignalKind::CorrectedMce, 2.0),
-        (SignalKind::Crash, 2.0),
+        (Signal::ComputationError, 4.0),
+        (Signal::Stall, 1.0),
+        (Signal::UnexpectedExit, 1.0),
+        (Signal::CorrectedMce, 2.0),
+        (Signal::Crash, 2.0),
     ])
 }
 
-fn default_reset() -> Weights<Reset> {
-    Weights::from([(Reset::Watchdog, 1.0)])
+fn default_reset() -> Weights<ResetKind> {
+    Weights::from([(ResetKind::Watchdog, 1.0)])
 }
 
 /// The failure model's scalar parameters and signal and reset mixes.
@@ -299,15 +299,15 @@ pub struct ModelDef {
     #[serde(skip_serializing_if = "skip::is_zero")]
     pub onset_boost: f64,
     #[serde(skip_serializing_if = "skip::signals")]
-    pub signals: Weights<SignalKind>,
+    pub signals: Weights<Signal>,
     /// Replaces `signals` for failures in each listed regime.
     #[serde(
         deserialize_with = "unique_map",
         skip_serializing_if = "BTreeMap::is_empty"
     )]
-    pub regime_signals: BTreeMap<RegimeId, Weights<SignalKind>>,
+    pub regime_signals: BTreeMap<Regime, Weights<Signal>>,
     #[serde(skip_serializing_if = "skip::reset")]
-    pub reset: Weights<Reset>,
+    pub reset: Weights<ResetKind>,
 }
 
 impl ModelDef {
@@ -375,7 +375,7 @@ pub struct JointDef {
     pub members: BTreeMap<i64, i64>,
     /// Regimes the joint applies to; all of them when empty.
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub regimes: Vec<RegimeId>,
+    pub regimes: Vec<Regime>,
     /// Failures per second while active; the model's `past_limit_rate` when absent.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rate: Option<f64>,
@@ -383,7 +383,7 @@ pub struct JointDef {
     #[serde(skip_serializing_if = "skip::is_zero")]
     pub after_s: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub signal: Option<SignalKind>,
+    pub signal: Option<Signal>,
     /// Core named by the uncorrected MCE each crash from this joint leaves in the next boot.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub crash_mce_core: Option<i64>,
@@ -396,14 +396,14 @@ pub struct ScriptDef {
     pub trial: String,
     /// The signal to report; the trial passes when absent.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub signal: Option<SignalKind>,
+    pub signal: Option<Signal>,
     /// Seconds into the trial; nonnegative, clamped to the trial's duration.
     #[serde(skip_serializing_if = "skip::is_zero")]
     pub at_s: f64,
     #[serde(skip_serializing_if = "skip::is_zero_core")]
     pub core: i64,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub reset: Option<Reset>,
+    pub reset: Option<ResetKind>,
     /// Report `signal` and then crash.
     #[serde(skip_serializing_if = "skip::is_false")]
     pub then_crash: bool,
@@ -462,7 +462,7 @@ pub struct VoltageCoreDef {
     pub threshold_clock_v_per_100mhz: f64,
     /// Signal mix of this core's failures; the regime or pooled mix when absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub signals: Option<Weights<SignalKind>>,
+    pub signals: Option<Weights<Signal>>,
 }
 
 inherent_serialize!(

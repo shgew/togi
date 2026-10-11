@@ -5,8 +5,9 @@
 // TestNewPredictorRejects (negative joint rate, member core and offset out of range).
 
 use std::collections::BTreeMap;
+use togi_machine::{ResetKind, Signal};
 use togi_sim::definition::{CcdDef, JointDef, ScriptDef, Weights};
-use togi_sim::{MachineDefinition, Model, Problem, Reset, SignalKind};
+use togi_sim::{MachineDefinition, Model, Problem};
 
 use crate::common::{core_def, flat_cores, invalid, machine, model};
 
@@ -288,14 +289,11 @@ fn a_joint_without_a_rate_takes_the_model_rate_and_an_explicit_zero_stays_zero()
 #[test]
 fn weights_are_finite_nonnegative_with_a_positive_total() {
     let mut definition = two_cores();
-    let mut set = |weights: &[(SignalKind, f64)]| {
+    let mut set = |weights: &[(Signal, f64)]| {
         definition.model.signals = Weights(weights.iter().copied().collect());
         invalid(&definition)
     };
-    let error = set(&[
-        (SignalKind::Stall, -1.0),
-        (SignalKind::ComputationError, -2.0),
-    ]);
+    let error = set(&[(Signal::Stall, -1.0), (Signal::ComputationError, -2.0)]);
     assert_eq!(
         (error.path.as_str(), error.problem),
         ("model.signals.computation_error", Problem::Negative)
@@ -305,44 +303,45 @@ fn weights_are_finite_nonnegative_with_a_positive_total() {
         (error.path.as_str(), error.problem),
         ("model.signals", Problem::ZeroTotal)
     );
-    let error = set(&[(SignalKind::Crash, 0.0)]);
+    let error = set(&[(Signal::Crash, 0.0)]);
     assert_eq!(error.problem, Problem::ZeroTotal);
-    let error = set(&[(SignalKind::Crash, f64::INFINITY)]);
+    let error = set(&[(Signal::Crash, f64::INFINITY)]);
     assert_eq!(
         (error.path.as_str(), error.problem),
         ("model.signals.crash", Problem::NotFinite)
     );
-    let error = set(&[(SignalKind::Crash, f64::NAN)]);
+    let error = set(&[(Signal::Crash, f64::NAN)]);
     assert_eq!(error.problem, Problem::NotFinite);
-    let error = set(&[(SignalKind::Crash, f64::MAX), (SignalKind::Stall, f64::MAX)]);
+    let error = set(&[(Signal::Crash, f64::MAX), (Signal::Stall, f64::MAX)]);
     assert_eq!(
         (error.path.as_str(), error.problem),
         ("model.signals", Problem::NotFinite)
     );
 
-    definition.model.signals = Weights::from([(SignalKind::Crash, 1.0)]);
+    definition.model.signals = Weights::from([(Signal::Crash, 1.0)]);
     definition.model.regime_signals = BTreeMap::from([(
-        togi_sim::RegimeId::R7,
-        Weights::from([(SignalKind::Crash, 1.0)]),
+        togi_machine::Regime::R7,
+        Weights::from([(Signal::Crash, 1.0)]),
     )]);
     assert!(Model::new(&definition, 1).is_ok());
     definition
         .model
         .regime_signals
-        .insert(togi_sim::RegimeId::R2, Weights::default());
+        .insert(togi_machine::Regime::R2, Weights::default());
     refused(&definition, "model.regime_signals.R2", &Problem::ZeroTotal);
 }
 
 #[test]
 fn reset_weights_are_finite_nonnegative_with_a_positive_total() {
     let mut definition = two_cores();
-    definition.model.reset = Weights::from([(Reset::Watchdog, -1.0), (Reset::ThermalTrip, -2.0)]);
+    definition.model.reset =
+        Weights::from([(ResetKind::Watchdog, -1.0), (ResetKind::ThermalTrip, -2.0)]);
     refused(&definition, "model.reset.watchdog", &Problem::Negative);
     definition.model.reset = Weights::default();
     refused(&definition, "model.reset", &Problem::ZeroTotal);
-    definition.model.reset = Weights::from([(Reset::PowerLoss, 0.0)]);
+    definition.model.reset = Weights::from([(ResetKind::PowerLoss, 0.0)]);
     refused(&definition, "model.reset", &Problem::ZeroTotal);
-    definition.model.reset = Weights::from([(Reset::PowerLoss, 3.0)]);
+    definition.model.reset = Weights::from([(ResetKind::PowerLoss, 3.0)]);
     assert_eq!(model(&definition).reset_mix().total(), 3.0);
 }
 
@@ -459,4 +458,37 @@ fn the_first_problem_in_document_order_is_reported() {
     assert_eq!(invalid(&definition).path, "model.growth");
     definition.model.growth = 4.0;
     assert_eq!(invalid(&definition).path, "joint[0].members");
+}
+
+#[test]
+fn only_signals_a_simulated_failure_can_draw_are_supported() {
+    let mut definition = two_cores();
+    definition.model.signals = Weights::from([(Signal::UncorrectedMce, 1.0), (Signal::Crash, 1.0)]);
+    refused(
+        &definition,
+        "model.signals.uncorrected_mce",
+        &Problem::Unsupported,
+    );
+    definition.model.signals = Weights::from([(Signal::Crash, 1.0)]);
+    definition.model.regime_signals = BTreeMap::from([(
+        togi_machine::Regime::R7,
+        Weights::from([(Signal::UncorrectedMce, 1.0)]),
+    )]);
+    refused(
+        &definition,
+        "model.regime_signals.R7.uncorrected_mce",
+        &Problem::Unsupported,
+    );
+    definition.model.regime_signals.clear();
+    let mut bad = joint(&[(0, -5)]);
+    bad.signal = Some(Signal::UncorrectedMce);
+    definition.joint = vec![bad];
+    refused(&definition, "joint[0].signal", &Problem::Unsupported);
+    definition.joint.clear();
+    definition.script = vec![ScriptDef {
+        trial: "0001".to_owned(),
+        signal: Some(Signal::UncorrectedMce),
+        ..ScriptDef::default()
+    }];
+    refused(&definition, "script[0].signal", &Problem::Unsupported);
 }

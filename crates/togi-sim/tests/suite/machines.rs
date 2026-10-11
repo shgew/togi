@@ -29,6 +29,6 @@ fn the_overlays_name_their_parents_and_the_fitted_machines_their_facts() {
     let fit = file::load(machines_dir().join("target-fit-0.json")).expect("loads");
     assert_eq!(fit.facts.as_deref(), Some("../facts/target.jsonl.gz"));
     let model = Model::new(&fit, 1).expect("valid");
-    assert!(!model.bios_context().bios_version.bytes().is_empty());
+    assert!(!model.bios_context().bios_version.is_empty());
     assert_eq!(model.facts(), Some("../facts/target.jsonl.gz"));
 }

@@ -8,12 +8,12 @@
 // TestSharedVoltageBackgroundValidation.
 // The sample, draw and replay-bypass tests wait for the runtime.
 
-use togi_machine::{CoreId, Regime};
+use togi_machine::{CoreId, Regime, Signal};
 use togi_sim::definition::{
     CcdDef, DEFAULT_COUNT_V, JointDef, SharedVoltageDef, VoltageWorkloadDef, Weights,
 };
 use togi_sim::file;
-use togi_sim::{MachineDefinition, Model, Problem, RegimeId, SignalKind, SourceKind};
+use togi_sim::{MachineDefinition, Model, Problem, SourceKind};
 
 use crate::common::{
     committed_machine, flat_cores, invalid, load, machine_dir_text, model, offsets, r7_workload,
@@ -59,13 +59,13 @@ fn the_rail_follows_the_top_loaded_requester_and_idle_cores_never_set_it() {
     let full = model
         .voltage_state(
             &offsets(&profile),
-            &load(&regime, workload, &[0, 1, 2, 3, 4, 5, 6, 7], SECONDS),
+            &load(regime, workload, &[0, 1, 2, 3, 4, 5, 6, 7], SECONDS),
         )
         .expect("shape")
         .expect("a rail");
     close(full.rail, f64::from(full.requests[7]), 1e-7);
 
-    let partial_load = load(&regime, workload, &[0, 1, 2, 3, 4, 5, 6], SECONDS);
+    let partial_load = load(regime, workload, &[0, 1, 2, 3, 4, 5, 6], SECONDS);
     let partial = model
         .voltage_state(&offsets(&profile), &partial_load)
         .expect("shape")
@@ -83,7 +83,7 @@ fn the_rail_follows_the_top_loaded_requester_and_idle_cores_never_set_it() {
     let across = model
         .voltage_state(
             &offsets(&profile),
-            &load(&regime, workload, &[0, 1, 2, 3, 4, 5, 6, 10], SECONDS),
+            &load(regime, workload, &[0, 1, 2, 3, 4, 5, 6, 10], SECONDS),
         )
         .expect("shape")
         .expect("a rail");
@@ -98,7 +98,7 @@ fn clocks_follow_package_power_idle_gain_and_cross_ccd_balance() {
     let regime = r7();
     let clocks = |profile: &[i64; 16], workload: &str, cores: &[i64], model: &Model| {
         model
-            .voltage_state(&offsets(profile), &load(&regime, workload, cores, SECONDS))
+            .voltage_state(&offsets(profile), &load(regime, workload, cores, SECONDS))
             .expect("shape")
             .expect("a rail")
             .clocks
@@ -142,7 +142,7 @@ fn core_eleven_needs_a_supporting_core_to_keep_its_rail() {
     ]);
     let state = |cores: &[i64]| {
         model
-            .voltage_state(&profile, &load(&regime, workload, cores, SECONDS))
+            .voltage_state(&profile, &load(regime, workload, cores, SECONDS))
             .expect("shape")
             .expect("a rail")
     };
@@ -162,7 +162,7 @@ fn core_eleven_needs_a_supporting_core_to_keep_its_rail() {
         .as_ref()
         .expect("core 11 names its signals");
     for x in [0.0, 0.25, 0.5, 0.999] {
-        assert_eq!(mix.pick(x), SignalKind::ComputationError);
+        assert_eq!(mix.pick(x), Signal::ComputationError);
     }
 }
 
@@ -200,7 +200,7 @@ fn the_rail_replaces_loaded_core_hazards_joints_and_ccd_for_multi_core_r7_only()
     });
     definition.joint = vec![JointDef {
         members: [(0, 0)].into(),
-        regimes: vec![RegimeId::R7],
+        regimes: vec![Regime::R7],
         rate: Some(100.0),
         ..JointDef::default()
     }];
@@ -209,7 +209,7 @@ fn the_rail_replaces_loaded_core_hazards_joints_and_ccd_for_multi_core_r7_only()
     let regime = r7();
     let workload = r7_workload(0);
     let zero = offsets(&[0; 16]);
-    let two = load(&regime, workload, &[0, 1], SECONDS);
+    let two = load(regime, workload, &[0, 1], SECONDS);
     let hazard = model.hazard(&zero, &two).expect("shape");
     close(hazard, rate, 1e-12);
     let want = -(-hazard * SECONDS).exp_m1();
@@ -222,7 +222,7 @@ fn the_rail_replaces_loaded_core_hazards_joints_and_ccd_for_multi_core_r7_only()
     let deep = offsets(&[-10; 16]);
     assert!(model.failure_probability(&deep, &two).expect("shape") > want * 5.0);
 
-    let single = load(&regime, workload, &[0], SECONDS);
+    let single = load(regime, workload, &[0], SECONDS);
     assert!(
         model.hazard(&zero, &single).expect("shape") >= 100.0,
         "single-core R7 keeps its joints"
@@ -248,7 +248,7 @@ fn unloaded_core_hazards_survive_the_rail_and_sources_keep_their_order() {
     let sources = model
         .sources(
             &offsets(&[-35; 16]),
-            &load(&regime, r7_workload(0), &[0, 1], SECONDS),
+            &load(regime, r7_workload(0), &[0, 1], SECONDS),
         )
         .expect("shape");
     let kinds: Vec<_> = sources.iter().map(|source| source.kind).collect();
@@ -269,7 +269,7 @@ fn equal_request_and_requirement_slopes_cancel_a_common_clock_shift() {
     let regime = r7();
     let workload = r7_workload(0);
     let profile = offsets(&[-35; 16]);
-    let two = load(&regime, workload, &[0, 1], SECONDS);
+    let two = load(regime, workload, &[0, 1], SECONDS);
     let tune = |delta: f64, coefficient: f64| {
         let mut definition = committed_machine("shared-voltage.json");
         definition.core = flat_cores(16, -50, -50);
@@ -316,7 +316,7 @@ fn an_omitted_requirement_coefficient_keeps_the_clock_independent_threshold() {
         let state = model
             .voltage_state(
                 &offsets(&[-35; 16]),
-                &load(&regime, workload, cores, SECONDS),
+                &load(regime, workload, cores, SECONDS),
             )
             .expect("shape")
             .expect("a rail");
@@ -349,7 +349,7 @@ fn failure_share_is_a_loaded_cores_rail_rate_over_the_total() {
     let regime = r7();
     let workload = r7_workload(0);
     let profile = offsets(&[-35; 16]);
-    let three = load(&regime, workload, &[0, 1, 7], SECONDS);
+    let three = load(regime, workload, &[0, 1, 7], SECONDS);
     for idle_rate in [0.0, 0.01] {
         let mut definition = committed_machine("shared-voltage.json");
         definition
@@ -382,8 +382,8 @@ fn failure_share_is_a_loaded_cores_rail_rate_over_the_total() {
     }
     let model = voltage_model();
     for other in [
-        load(&regime, workload, &[0], SECONDS),
-        load(&Regime::R2, workload, &[0, 1], SECONDS),
+        load(regime, workload, &[0], SECONDS),
+        load(Regime::R2, workload, &[0, 1], SECONDS),
     ] {
         assert_eq!(model.r7_failure_share(&profile, &other, core(0)), Ok(0.0));
     }
@@ -438,16 +438,16 @@ fn the_background_rate_ignores_profile_workload_and_load_and_takes_the_onset_boo
     let regime = r7();
     for offset in [0, -35, -50] {
         let profile = offsets(&[offset; 16]);
-        for workload in togi_machine::workloads(&Regime::R7) {
+        for workload in togi_machine::workloads(Regime::R7) {
             for cores in [&[0, 1][..], &[0, 1, 2, 3, 4, 5, 6, 7], &[0, 1, 8, 9]] {
-                let two = load(&regime, workload.id, cores, 120.0);
+                let two = load(regime, workload.id, cores, 120.0);
                 assert_eq!(
                     model.hazard(&profile, &two),
                     Ok(0.001),
                     "{offset} {cores:?}"
                 );
                 for duration in [5.0, 120.0] {
-                    let timed = load(&regime, workload.id, cores, duration);
+                    let timed = load(regime, workload.id, cores, duration);
                     let exposure = duration + 2.0 * f64::min(duration, 10.0);
                     assert_eq!(
                         model.failure_probability(&profile, &timed),
@@ -464,14 +464,14 @@ fn the_background_rate_ignores_profile_workload_and_load_and_takes_the_onset_boo
     }
     let zero = offsets(&[0; 16]);
     for outside in [
-        load(&regime, r7_workload(0), &[0], 120.0),
-        load(&Regime::R2, "", &[0, 1], 120.0),
+        load(regime, r7_workload(0), &[0], 120.0),
+        load(Regime::R2, "", &[0, 1], 120.0),
     ] {
         assert_eq!(model.hazard(&zero, &outside), Ok(0.0));
     }
     let silent = crate::common::model(&background_machine(0.0));
     assert_eq!(
-        silent.hazard(&zero, &load(&regime, r7_workload(0), &[0, 1], 120.0)),
+        silent.hazard(&zero, &load(regime, r7_workload(0), &[0, 1], 120.0)),
         Ok(0.0)
     );
 }
@@ -487,7 +487,7 @@ fn the_background_is_part_of_the_total_and_never_of_a_numerator() {
     let model = model(&definition);
     let regime = r7();
     let profile = offsets(&[-35; 16]);
-    let two = load(&regime, r7_workload(0), &[0, 1], SECONDS);
+    let two = load(regime, r7_workload(0), &[0, 1], SECONDS);
     let state = model
         .voltage_state(&profile, &two)
         .expect("shape")
@@ -511,7 +511,7 @@ fn r7_requests_exist_for_multi_core_r7_and_telemetry_for_any_trial_on_a_rail() {
     let regime = r7();
     let profile = offsets(&[-35; 16]);
     let idle_v = narrowed(model.voltage().expect("a rail").idle_v);
-    let two = load(&regime, r7_workload(0), &[0, 1], SECONDS);
+    let two = load(regime, r7_workload(0), &[0, 1], SECONDS);
     let requests = model
         .r7_requests(&profile, &two)
         .expect("shape")
@@ -521,16 +521,16 @@ fn r7_requests_exist_for_multi_core_r7_and_telemetry_for_any_trial_on_a_rail() {
         assert_eq!(*request, idle_v);
     }
     assert_eq!(
-        model.r7_requests(&profile, &load(&regime, "", &[0], SECONDS)),
+        model.r7_requests(&profile, &load(regime, "", &[0], SECONDS)),
         Ok(None)
     );
-    let other = load(&Regime::R2, "mprime-sse-4k-21k", &[0, 1], SECONDS);
+    let other = load(Regime::R2, "mprime-sse-4k-21k", &[0, 1], SECONDS);
     assert_eq!(model.r7_requests(&profile, &other), Ok(None));
     let telemetry = model
         .voltage_state(&profile, &other)
         .expect("shape")
         .expect("a rail");
-    let first = load(&Regime::R2, r7_workload(0), &[0, 1], SECONDS);
+    let first = load(Regime::R2, r7_workload(0), &[0, 1], SECONDS);
     assert_eq!(
         Some(telemetry),
         model.voltage_state(&profile, &first).expect("shape"),
@@ -628,7 +628,7 @@ fn rail_numbers_are_finite_and_in_range() {
             w.core[0].clock_v_per_100mhz = -0.1;
         }),
         ("core[0].signals.crash", Problem::NotFinite, |w| {
-            w.core[0].signals = Some(Weights::from([(SignalKind::Crash, f64::INFINITY)]));
+            w.core[0].signals = Some(Weights::from([(Signal::Crash, f64::INFINITY)]));
         }),
         ("core[0].signals", Problem::ZeroTotal, |w| {
             w.core[0].signals = Some(Weights::default());

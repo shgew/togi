@@ -6,19 +6,19 @@
 
 use std::collections::BTreeSet;
 use std::time::Duration;
-use togi_machine::{BiosContext, HostText, Regime, Signal, TargetOffset};
+use togi_machine::{BiosContext, CoreSet, Regime, Signal, TargetOffset};
+use togi_sim::Load;
 use togi_sim::random::{Domain, stream};
 use togi_sim::replay::{FactProblem, InvalidFact, Replay, ReplayFact, ReplayOutcome};
-use togi_sim::{CoreSet, Load};
 
 use crate::common::{cores, offsets};
 
 fn context(version: &str) -> BiosContext {
     BiosContext {
-        bios_version: HostText::new(version),
-        board: HostText::new("board"),
-        cpu_model: HostText::new("cpu"),
-        microcode: HostText::new("0x1"),
+        bios_version: version.to_owned(),
+        board: "board".to_owned(),
+        cpu_model: "cpu".to_owned(),
+        microcode: "0x1".to_owned(),
         boost_limit_mhz: 5700,
     }
 }
@@ -42,7 +42,7 @@ fn failure(signal: Signal, seconds: u64) -> ReplayOutcome {
     }
 }
 
-fn trial<'a>(regime: &'a Regime, workload: &'a str, cores: CoreSet, seconds: u64) -> Load<'a> {
+fn trial<'a>(regime: Regime, workload: &'a str, cores: CoreSet, seconds: u64) -> Load<'a> {
     Load {
         regime,
         workload,
@@ -83,7 +83,7 @@ fn a_match_is_drawn_among_the_facts_of_its_context_and_full_profile() {
     let replay = answers();
     assert_eq!(replay.len(), 5);
     let regime = Regime::R7;
-    let load = trial(&regime, "work", cores(&[0, 1]), 60);
+    let load = trial(regime, "work", cores(&[0, 1]), 60);
     let profile = offsets(&[-20, -21]);
     let mut seen = BTreeSet::new();
     for seed in 1..=64 {
@@ -110,7 +110,7 @@ fn a_match_is_drawn_among_the_facts_of_its_context_and_full_profile() {
 fn the_choice_among_matches_is_uniform() {
     let replay = answers();
     let regime = Regime::R7;
-    let load = trial(&regime, "work", cores(&[0, 1]), 60);
+    let load = trial(regime, "work", cores(&[0, 1]), 60);
     let profile = offsets(&[-20, -21]);
     let mut counts = [0u32; 3];
     for seed in 0..3000 {
@@ -138,7 +138,7 @@ fn the_choice_does_not_depend_on_the_index_hash_order() {
     let first = Replay::new(facts.clone()).expect("valid");
     let second = Replay::new(facts).expect("valid");
     let regime = Regime::R7;
-    let load = trial(&regime, "work", cores(&[0, 1]), 60);
+    let load = trial(regime, "work", cores(&[0, 1]), 60);
     let profile = offsets(&[-20, -21]);
     for seed in 0..50 {
         assert_eq!(
@@ -153,44 +153,44 @@ fn any_difference_in_the_key_leaves_the_trial_to_the_fitted_model() {
     let replay = Replay::new([fact(ReplayOutcome::Pass)]).expect("valid");
     let regime = Regime::R7;
     let profile = offsets(&[-20, -21]);
-    let base = trial(&regime, "work", cores(&[0, 1]), 60);
+    let base = trial(regime, "work", cores(&[0, 1]), 60);
     assert!(replay.has_answer(&context("A"), &base, &profile));
 
     let r2 = Regime::R2;
     let mismatches: Vec<(&str, Load<'_>, Vec<TargetOffset>, BiosContext)> = vec![
         (
             "regime",
-            trial(&r2, "work", cores(&[0, 1]), 60),
+            trial(r2, "work", cores(&[0, 1]), 60),
             profile.clone(),
             context("A"),
         ),
         (
             "workload",
-            trial(&regime, "other", cores(&[0, 1]), 60),
+            trial(regime, "other", cores(&[0, 1]), 60),
             profile.clone(),
             context("A"),
         ),
         (
             "cores",
-            trial(&regime, "work", cores(&[1]), 60),
+            trial(regime, "work", cores(&[1]), 60),
             profile.clone(),
             context("A"),
         ),
         (
             "more cores",
-            trial(&regime, "work", cores(&[0, 1, 2]), 60),
+            trial(regime, "work", cores(&[0, 1, 2]), 60),
             offsets(&[-20, -21, 0]),
             context("A"),
         ),
         (
             "idle",
-            trial(&regime, "work", CoreSet::new(), 60),
+            trial(regime, "work", CoreSet::default(), 60),
             profile.clone(),
             context("A"),
         ),
         (
             "duration",
-            trial(&regime, "work", cores(&[0, 1]), 90),
+            trial(regime, "work", cores(&[0, 1]), 90),
             profile.clone(),
             context("A"),
         ),
@@ -218,7 +218,7 @@ fn any_difference_in_the_key_leaves_the_trial_to_the_fitted_model() {
 fn condition_and_phase_are_not_part_of_the_key() {
     let replay = Replay::new([fact(ReplayOutcome::Pass)]).expect("valid");
     let regime = Regime::R7;
-    let load = trial(&regime, "work", cores(&[0, 1]), 60);
+    let load = trial(regime, "work", cores(&[0, 1]), 60);
     assert!(replay.has_answer(&context("A"), &load, &offsets(&[-20, -21])));
 }
 
@@ -241,7 +241,7 @@ fn facts_with_invalid_evidence_are_refused_with_their_index() {
         (
             "no cores",
             FactProblem::NoCores,
-            Box::new(|f| f.cores = CoreSet::new()),
+            Box::new(|f| f.cores = CoreSet::default()),
         ),
         (
             "a core outside the profile",
@@ -257,16 +257,6 @@ fn facts_with_invalid_evidence_are_refused_with_their_index() {
             "an exposure beyond the duration",
             FactProblem::ExposureTooLong,
             Box::new(|f| f.outcome = failure(Signal::Stall, 61)),
-        ),
-        (
-            "an unknown signal",
-            FactProblem::UnsupportedSignal(Signal::from("invalid")),
-            Box::new(|f| f.outcome = failure(Signal::from("invalid"), 7)),
-        ),
-        (
-            "an empty signal",
-            FactProblem::UnsupportedSignal(Signal::Empty),
-            Box::new(|f| f.outcome = failure(Signal::Empty, 7)),
         ),
     ];
     for (name, problem, edit) in cases {
@@ -302,7 +292,7 @@ fn facts_of_several_contexts_share_one_index() {
     other.context = context("B");
     let replay = Replay::new([fact(ReplayOutcome::Pass), other]).expect("valid");
     let regime = Regime::R7;
-    let load = trial(&regime, "work", cores(&[0, 1]), 60);
+    let load = trial(regime, "work", cores(&[0, 1]), 60);
     let profile = offsets(&[-20, -21]);
     assert!(replay.has_answer(&context("A"), &load, &profile));
     assert!(replay.has_answer(&context("B"), &load, &profile));

@@ -4,11 +4,9 @@
 use rand::{Rng, RngExt};
 use std::collections::HashMap;
 use std::time::Duration;
-use togi_machine::{BiosContext, Regime, Signal, TargetOffset};
+use togi_machine::{BiosContext, CoreSet, Regime, Signal, TargetOffset};
 
-use crate::coreset::CoreSet;
 use crate::hazard::Load;
-use crate::vocab::SignalKind;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ReplayOutcome {
@@ -53,8 +51,6 @@ pub enum FactProblem {
     NoDuration,
     #[error("the exposure exceeds the intended duration")]
     ExposureTooLong,
-    #[error("failure signal {0} is not a failure signal")]
-    UnsupportedSignal(Signal),
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -90,7 +86,7 @@ impl Replay {
                 });
             let buckets = &mut replay.contexts[position].1;
             let key = Key {
-                regime: fact.regime.clone(),
+                regime: fact.regime,
                 workload: fact.workload.clone(),
                 duration: fact.duration,
                 cores: fact.cores,
@@ -118,7 +114,7 @@ impl Replay {
     ) -> Option<&[ReplayFact]> {
         let (_, buckets) = self.contexts.iter().find(|(known, _)| known == context)?;
         let key = Key {
-            regime: load.regime.clone(),
+            regime: load.regime,
             workload: load.workload.to_owned(),
             duration: load.duration,
             cores: load.cores,
@@ -154,7 +150,7 @@ fn validate(fact: &ReplayFact) -> Result<(), FactProblem> {
     if fact.context == BiosContext::default() {
         return Err(FactProblem::NoContext);
     }
-    let Some(highest) = fact.cores.highest() else {
+    let Some(highest) = fact.cores.iter().last() else {
         return Err(FactProblem::NoCores);
     };
     if highest.index() >= fact.profile.len() {
@@ -168,14 +164,9 @@ fn validate(fact: &ReplayFact) -> Result<(), FactProblem> {
     }
     match &fact.outcome {
         ReplayOutcome::Pass => Ok(()),
-        ReplayOutcome::Failure { signal, exposure } => {
-            if SignalKind::of(signal).is_none() && *signal != Signal::UncorrectedMce {
-                Err(FactProblem::UnsupportedSignal(signal.clone()))
-            } else if *exposure > fact.duration {
-                Err(FactProblem::ExposureTooLong)
-            } else {
-                Ok(())
-            }
+        ReplayOutcome::Failure { exposure, .. } if *exposure > fact.duration => {
+            Err(FactProblem::ExposureTooLong)
         }
+        ReplayOutcome::Failure { .. } => Ok(()),
     }
 }

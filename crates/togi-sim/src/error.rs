@@ -37,6 +37,8 @@ pub enum Problem {
     Overflow,
     #[error("needs exactly 16 cores")]
     NeedsSixteenCores,
+    #[error("is not a failure signal a simulated machine can draw")]
+    Unsupported,
     #[error("must name exactly the three R7 workloads")]
     Workloads,
 }

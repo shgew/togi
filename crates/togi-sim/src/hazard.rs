@@ -8,19 +8,19 @@
 //! [`failure_probability`](Model::failure_probability) integrates, so scores and draws agree.
 
 use std::time::Duration;
-use togi_machine::{CoreId, Regime, TargetOffset};
+use togi_machine::{CoreId, CoreSet, Regime, TargetOffset};
 
-use crate::coreset::{CoreSet, ids};
+use crate::cores::ids;
 use crate::error::ShapeError;
 use crate::model::{Joint, Limits, Model, Onset};
 use crate::random::Domain;
-use crate::vocab::RegimeId;
+use crate::vocab::regime_index;
 use crate::voltage::{Voltage, voltage_state};
 
 /// What a trial loads: its regime and workload, the cores running it and its intended duration.
 #[derive(Clone, Copy, Debug)]
 pub struct Load<'a> {
-    pub regime: &'a Regime,
+    pub regime: Regime,
     pub workload: &'a str,
     pub cores: CoreSet,
     pub duration: Duration,
@@ -112,7 +112,7 @@ impl Model {
                 found: profile.len(),
             });
         }
-        match load.cores.highest() {
+        match load.cores.iter().last() {
             Some(core) if core.index() >= self.cores() => Err(ShapeError::LoadedCore {
                 core: core.get(),
                 cores: self.cores(),
@@ -123,7 +123,7 @@ impl Model {
 
     /// The shared-voltage model when `load` is a multi-core R7 trial on a machine that has one.
     pub(crate) fn shared_voltage(&self, load: &Load<'_>) -> Option<&Voltage> {
-        (load.cores.len() > 1 && RegimeId::of(load.regime) == Some(RegimeId::R7))
+        (load.cores.len() > 1 && load.regime == Regime::R7)
             .then(|| self.voltage())
             .flatten()
     }
@@ -141,7 +141,7 @@ impl Model {
         mut visit: impl FnMut(HazardSource),
     ) -> Result<(), ShapeError> {
         self.check_shape(profile, load)?;
-        let regime = RegimeId::of(load.regime);
+        let regime = load.regime;
         let shared = self
             .shared_voltage(load)
             .map(|voltage| (voltage, voltage_state(voltage, profile, load)));
@@ -247,7 +247,7 @@ impl Model {
     fn loaded_rate(
         &self,
         profile: &[TargetOffset],
-        regime: Option<RegimeId>,
+        regime: Regime,
         workload: &str,
         core: CoreId,
         nonzero: usize,
@@ -288,13 +288,13 @@ impl Model {
         &self,
         profile: &[TargetOffset],
         load: &Load<'_>,
-        regime: Option<RegimeId>,
+        regime: Regime,
         ccd: usize,
     ) -> f64 {
         let Some(parameters) = self.ccd() else {
             return 0.0;
         };
-        if regime != Some(RegimeId::R7) {
+        if regime != Regime::R7 {
             return 0.0;
         }
         let size = self.cores() / 2;
@@ -318,20 +318,19 @@ impl Model {
     }
 }
 
-fn limit(limits: &Limits, regime: Option<RegimeId>, workload: &str, alone: bool) -> i64 {
+fn limit(limits: &Limits, regime: Regime, workload: &str, alone: bool) -> i64 {
     if let Some((_, limit)) = limits.workload.iter().find(|(id, _)| id == workload) {
         return *limit;
     }
-    match regime {
-        None => 0,
-        Some(regime) if alone && regime.index() < limits.alone.len() => {
-            limits.alone[regime.index()]
-        }
-        Some(regime) => limits.together[regime.index()],
+    let index = regime_index(regime);
+    if alone && index < limits.alone.len() {
+        limits.alone[index]
+    } else {
+        limits.together[index]
     }
 }
 
-fn joint_rate(joint: &Joint, profile: &[TargetOffset], regime: Option<RegimeId>) -> f64 {
+fn joint_rate(joint: &Joint, profile: &[TargetOffset], regime: Regime) -> f64 {
     if !joint.regimes.covers(regime)
         || joint
             .members

@@ -85,6 +85,12 @@ pub fn stream(seed: u64, domain: Domain, key: &[u64]) -> StdRng {
     StdRng::from_seed(bytes)
 }
 
+/// A key part for text, such as a workload ID.
+pub fn text_part(text: &str) -> u64 {
+    text.bytes()
+        .fold(GOLDEN, |state, byte| absorb(state, u64::from(byte)))
+}
+
 const MIN_BASE: i64 = -40;
 const MAX_BASE: i64 = -5;
 

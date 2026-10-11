@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
-use togi_machine::{BiosContext, CoreId, HostText, Regime, TargetOffset};
+use togi_machine::{BiosContext, CoreId, Regime, ResetKind, Signal, TargetOffset};
 
 use crate::definition::{
     BiosContextDef, CcdDef, CoreDef, DEFAULT_BIOS_VERSION, DEFAULT_BOARD, DEFAULT_BOOST_LIMIT_MHZ,
@@ -11,7 +11,7 @@ use crate::definition::{
 };
 use crate::error::{InvalidMachine, Path, Problem};
 use crate::random::draw_limits;
-use crate::vocab::{RegimeId, Reset, ResetMix, SignalKind, SignalMix};
+use crate::vocab::{ResetMix, SignalMix, regime_index, reset_slot, signal_slot};
 use crate::voltage::Voltage;
 
 const MAX_CORES: usize = 16;
@@ -59,11 +59,11 @@ pub struct JointMember {
 pub struct RegimeSet(u8);
 
 impl RegimeSet {
-    fn from_regimes(regimes: &[RegimeId]) -> Self {
+    fn from_regimes(regimes: &[Regime]) -> Self {
         Self(
             regimes
                 .iter()
-                .fold(0, |mask, regime| mask | 1 << regime.index()),
+                .fold(0, |mask, &regime| mask | 1 << regime_index(regime)),
         )
     }
 
@@ -71,9 +71,8 @@ impl RegimeSet {
         self.0 == 0
     }
 
-    /// Whether the set covers a trial in `regime`; a trial in no known regime is covered only by "all".
-    pub fn covers(self, regime: Option<RegimeId>) -> bool {
-        self.is_all() || regime.is_some_and(|regime| self.0 & (1 << regime.index()) != 0)
+    pub fn covers(self, regime: Regime) -> bool {
+        self.is_all() || self.0 & (1 << regime_index(regime)) != 0
     }
 }
 
@@ -85,16 +84,16 @@ pub struct Joint {
     /// Failures per second while active, resolved against the model's `past_limit_rate`.
     pub rate: f64,
     pub after_s: f64,
-    pub signal: Option<SignalKind>,
+    pub signal: Option<Signal>,
     pub crash_mce_core: Option<CoreId>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Script {
-    pub signal: Option<SignalKind>,
+    pub signal: Option<Signal>,
     pub at_s: f64,
     pub core: CoreId,
-    pub reset: Option<Reset>,
+    pub reset: Option<ResetKind>,
     pub then_crash: bool,
 }
 
@@ -105,6 +104,7 @@ struct Inner {
     facts: Option<String>,
     bios: Vec<TargetOffset>,
     context: BiosContext,
+    context_declared: bool,
     ranking: Option<Vec<i64>>,
     old_kernel: bool,
     params: Params,
@@ -168,6 +168,7 @@ impl Model {
             facts: def.facts.clone(),
             bios,
             context: resolve_context(def.bios_context.as_ref()),
+            context_declared: def.bios_context.is_some(),
             ranking,
             old_kernel: def.old_kernel,
             params,
@@ -204,6 +205,21 @@ impl Model {
         &self.0.context
     }
 
+    /// Whether the machine file declares a BIOS context, rather than leaving the simulator's default.
+    pub fn bios_context_declared(&self) -> bool {
+        self.0.context_declared
+    }
+
+    /// The shallowest of a core's alone limits: the deepest offset it passes in every R1 to R5.
+    pub fn alone_limit(&self, core: CoreId) -> i64 {
+        self.0.limits[core.index()]
+            .alone
+            .iter()
+            .copied()
+            .max()
+            .unwrap_or(-50)
+    }
+
     pub fn ranking(&self) -> Option<&[i64]> {
         self.0.ranking.as_deref()
     }
@@ -217,9 +233,9 @@ impl Model {
     }
 
     /// The signal weights of failures in `regime`: its own when the model lists one, else the pooled mix.
-    pub fn signal_mix(&self, regime: &Regime) -> &SignalMix {
-        RegimeId::of(regime)
-            .and_then(|regime| self.0.regime_signals[regime.index()].as_ref())
+    pub fn signal_mix(&self, regime: Regime) -> &SignalMix {
+        self.0.regime_signals[regime_index(regime)]
+            .as_ref()
             .unwrap_or(&self.0.signals)
     }
 
@@ -247,6 +263,10 @@ impl Model {
 
     pub fn voltage(&self) -> Option<&Voltage> {
         self.0.voltage.as_ref()
+    }
+
+    pub fn scripts(&self) -> &BTreeMap<String, Script> {
+        &self.0.scripts
     }
 
     pub fn script(&self, trial: &str) -> Option<&Script> {
@@ -285,9 +305,8 @@ fn resolve_bios(bios: Option<&[i64]>, cores: usize) -> Result<Vec<TargetOffset>,
 fn resolve_context(def: Option<&BiosContextDef>) -> BiosContext {
     let default = BiosContextDef::default();
     let def = def.unwrap_or(&default);
-    let text = |value: &Option<String>, default: &str| {
-        HostText::new(value.as_deref().unwrap_or(default).as_bytes())
-    };
+    let text =
+        |value: &Option<String>, default: &str| value.as_deref().unwrap_or(default).to_owned();
     BiosContext {
         bios_version: text(&def.bios_version, DEFAULT_BIOS_VERSION),
         board: text(&def.board, DEFAULT_BOARD),
@@ -300,12 +319,14 @@ fn resolve_context(def: Option<&BiosContextDef>) -> BiosContext {
 fn mix_weights<K: Copy + Ord, const N: usize>(
     path: &Path<'_>,
     weights: &Weights<K>,
-    index: impl Fn(K) -> usize,
+    index: impl Fn(K) -> Option<usize>,
     name: impl Fn(K) -> &'static str,
 ) -> Result<[f64; N], InvalidMachine> {
     let mut out = [0.0; N];
     for (&kind, &weight) in &weights.0 {
-        out[index(kind)] = path.key(name(kind)).nonnegative(weight)?;
+        let at = path.key(name(kind));
+        let slot = index(kind).ok_or_else(|| at.error(Problem::Unsupported))?;
+        out[slot] = at.nonnegative(weight)?;
     }
     let total: f64 = out.iter().sum();
     if !total.is_finite() {
@@ -319,9 +340,9 @@ fn mix_weights<K: Copy + Ord, const N: usize>(
 
 pub(crate) fn signal_mix(
     path: &Path<'_>,
-    signals: &Weights<SignalKind>,
+    signals: &Weights<Signal>,
 ) -> Result<SignalMix, InvalidMachine> {
-    mix_weights(path, signals, SignalKind::index, SignalKind::as_str).map(SignalMix::new)
+    mix_weights(path, signals, signal_slot, Signal::as_str).map(SignalMix::new)
 }
 
 type ModelParts = (Params, SignalMix, [Option<SignalMix>; 7], ResetMix);
@@ -355,13 +376,14 @@ fn resolve_model(model: &ModelDef, path: &Path<'_>) -> Result<ModelParts, Invali
     let mut regime_signals: [Option<SignalMix>; 7] = Default::default();
     let regimes = path.key("regime_signals");
     for (regime, mix) in &model.regime_signals {
-        regime_signals[regime.index()] = Some(signal_mix(&regimes.key(regime.as_str()), mix)?);
+        regime_signals[regime_index(*regime)] =
+            Some(signal_mix(&regimes.key(regime.as_str()), mix)?);
     }
     let reset = mix_weights(
         &path.key("reset"),
         &model.reset,
-        Reset::index,
-        Reset::as_str,
+        |reset| Some(reset_slot(reset)),
+        ResetKind::as_str,
     )
     .map(ResetMix::new)?;
     Ok((params, signals, regime_signals, reset))
@@ -468,9 +490,19 @@ fn resolve_joint(
         regimes: RegimeSet::from_regimes(&joint.regimes),
         rate,
         after_s,
-        signal: joint.signal,
+        signal: failure_signal(&path.key("signal"), joint.signal)?,
         crash_mce_core,
     })
+}
+
+fn failure_signal(
+    path: &Path<'_>,
+    signal: Option<Signal>,
+) -> Result<Option<Signal>, InvalidMachine> {
+    match signal {
+        Some(signal) if signal_slot(signal).is_none() => Err(path.error(Problem::Unsupported)),
+        other => Ok(other),
+    }
 }
 
 fn resolve_scripts(
@@ -485,7 +517,7 @@ fn resolve_scripts(
             return Err(path.key("trial").error(Problem::Empty));
         }
         let script = Script {
-            signal: def.signal,
+            signal: failure_signal(&path.key("signal"), def.signal)?,
             at_s: path.key("at_s").nonnegative(def.at_s)?,
             core: core_id(&path.key("core"), def.core, cores)?,
             reset: def.reset,

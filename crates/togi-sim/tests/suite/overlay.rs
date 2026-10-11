@@ -36,7 +36,7 @@ fn overlay(extends: &str, entries: &str) -> String {
 }
 
 fn load(path: &Path) -> MachineDefinition {
-    file::load(path).expect("loads")
+    file::load(&path).expect("loads")
 }
 
 fn entry(workload: &str, core: i64, rest: &str) -> String {

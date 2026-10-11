@@ -3,10 +3,10 @@
 // TestLoadMachineBIOSContext.
 
 use std::collections::BTreeMap;
-use togi_machine::{BiosContext, HostText, Regime};
+use togi_machine::{BiosContext, Regime, ResetKind, Signal};
 use togi_sim::definition::{DEFAULT_GROWTH, DEFAULT_ONSET_S, Weights};
 use togi_sim::file::{self, LoadError};
-use togi_sim::{MachineDefinition, Model, Reset, SignalKind};
+use togi_sim::{MachineDefinition, Model, WEIGHTED_SIGNALS};
 
 use crate::common::{machine, model};
 
@@ -58,16 +58,13 @@ fn a_full_machine_decodes_with_its_metadata() {
     assert_eq!(definition.model.growth, DEFAULT_GROWTH);
     assert_eq!(
         definition.model.reset,
-        Weights::from([(Reset::ThermalTrip, 1.0)])
+        Weights::from([(ResetKind::ThermalTrip, 1.0)])
     );
     assert_eq!(
         definition.model.regime_signals,
         BTreeMap::from([(
-            togi_sim::RegimeId::R7,
-            Weights::from([
-                (SignalKind::Crash, 79.0),
-                (SignalKind::ComputationError, 5.0)
-            ])
+            togi_machine::Regime::R7,
+            Weights::from([(Signal::Crash, 79.0), (Signal::ComputationError, 5.0)])
         )])
     );
     assert_eq!(definition.core[0].workload["special"], -27);
@@ -79,12 +76,9 @@ fn a_full_machine_decodes_with_its_metadata() {
     assert_eq!(model.ranking(), Some(&[9, 7][..]));
     assert!(model.old_kernel());
     assert!(model.has_regime_signals());
-    assert_eq!(
-        model.signal_mix(&Regime::R7).weight(SignalKind::Crash),
-        79.0
-    );
-    assert_eq!(model.signal_mix(&Regime::R1).weight(SignalKind::Crash), 1.0);
-    assert_eq!(model.reset_mix().weight(Reset::ThermalTrip), 1.0);
+    assert_eq!(model.signal_mix(Regime::R7).weight(Signal::Crash), 79.0);
+    assert_eq!(model.signal_mix(Regime::R1).weight(Signal::Crash), 1.0);
+    assert_eq!(model.reset_mix().weight(ResetKind::ThermalTrip), 1.0);
     assert_eq!(
         model.script("0042").map(|script| script.then_crash),
         Some(true)
@@ -186,11 +180,6 @@ fn malformed_documents_are_refused_with_the_file_named() {
             "unknown variant `crsh`",
         ),
         (
-            "unsupported pooled signal",
-            r#"{"model":{"signals":{"uncorrected_mce":1}}}"#.to_owned(),
-            "unknown variant `uncorrected_mce`",
-        ),
-        (
             "unsupported regime in regime_signals",
             r#"{"model":{"regime_signals":{"R9":{"crash":1}}}}"#.to_owned(),
             "unknown variant `R9`",
@@ -242,19 +231,19 @@ fn an_empty_object_is_the_default_machine() {
     assert_eq!(params.onset.boost, 0.0);
     assert_eq!(params.near_limit_rate, 0.0);
     assert!((params.past_limit_rate - 10f64.ln() / 90.0).abs() < 1e-15);
-    assert_eq!(model.reset_mix().weight(Reset::Watchdog), 1.0);
-    let signals = model.signal_mix(&Regime::R1);
-    let weights = SignalKind::ALL.map(|signal| signals.weight(signal));
+    assert_eq!(model.reset_mix().weight(ResetKind::Watchdog), 1.0);
+    let signals = model.signal_mix(Regime::R1);
+    let weights = WEIGHTED_SIGNALS.map(|signal| signals.weight(signal));
     assert_eq!(weights, [4.0, 1.0, 1.0, 2.0, 2.0]);
 }
 
 #[test]
 fn the_default_bios_context_fills_what_a_file_leaves_out() {
     let simulator = BiosContext {
-        bios_version: HostText::new("SIM.1"),
-        board: HostText::new("togi simulator"),
-        cpu_model: HostText::new("Simulated Zen 5 16-Core Processor"),
-        microcode: HostText::new("0x0"),
+        bios_version: "SIM.1".to_owned(),
+        board: "togi simulator".to_owned(),
+        cpu_model: "Simulated Zen 5 16-Core Processor".to_owned(),
+        microcode: "0x0".to_owned(),
         boost_limit_mhz: 5700,
     };
     let context = |text: &str| {
@@ -266,17 +255,17 @@ fn the_default_bios_context_fills_what_a_file_leaves_out() {
     assert_eq!(
         context(present),
         BiosContext {
-            bios_version: HostText::new("B.2"),
-            board: HostText::new("X670"),
-            cpu_model: HostText::new("Zen 5"),
-            microcode: HostText::new("0x123"),
+            bios_version: "B.2".to_owned(),
+            board: "X670".to_owned(),
+            cpu_model: "Zen 5".to_owned(),
+            microcode: "0x123".to_owned(),
             boost_limit_mhz: 5900,
         }
     );
     assert_eq!(
         context(r#"{"cores":2,"bios_context":{"bios_version":"SIM.2"}}"#),
         BiosContext {
-            bios_version: HostText::new("SIM.2"),
+            bios_version: "SIM.2".to_owned(),
             ..simulator
         }
     );

@@ -6,7 +6,7 @@
 use std::collections::BTreeMap;
 use togi_machine::{CoreId, Regime};
 use togi_sim::definition::{CcdDef, JointDef};
-use togi_sim::{HazardSource, MachineDefinition, Model, RegimeId, ShapeError, SourceKind};
+use togi_sim::{HazardSource, MachineDefinition, Model, ShapeError, SourceKind};
 
 use crate::common::{committed_machine, flat_cores, load, machine, model, offsets, r7_workload};
 
@@ -20,12 +20,7 @@ fn base() -> MachineDefinition {
     definition
 }
 
-fn joint(
-    members: &[(i64, i64)],
-    regimes: &[RegimeId],
-    rate: Option<f64>,
-    after_s: f64,
-) -> JointDef {
+fn joint(members: &[(i64, i64)], regimes: &[Regime], rate: Option<f64>, after_s: f64) -> JointDef {
     JointDef {
         members: members.iter().copied().collect(),
         regimes: regimes.to_vec(),
@@ -109,12 +104,7 @@ fn steady_hazard_follows_the_limits_of_the_applied_registers() {
         },
         Case {
             regime: Regime::R7,
-            joint: Some(joint(
-                &[(0, -5), (1, -5)],
-                &[RegimeId::R7],
-                Some(3.0),
-                240.0,
-            )),
+            joint: Some(joint(&[(0, -5), (1, -5)], &[Regime::R7], Some(3.0), 240.0)),
             ..case(
                 "an active joint counts at its steady rate, whatever its delay",
                 [-5, -5],
@@ -133,7 +123,7 @@ fn steady_hazard_follows_the_limits_of_the_applied_registers() {
             )
         },
         Case {
-            joint: Some(joint(&[(0, -5)], &[RegimeId::R7], Some(3.0), 0.0)),
+            joint: Some(joint(&[(0, -5)], &[Regime::R7], Some(3.0), 0.0)),
             ..case(
                 "a joint outside its regimes is inactive",
                 [-5, -5],
@@ -158,7 +148,7 @@ fn steady_hazard_follows_the_limits_of_the_applied_registers() {
         definition.core[0].idle = case.idle;
         definition.joint = case.joint.into_iter().collect();
         let model = model(&definition);
-        let load = load(&case.regime, case.workload, case.cores, 90.0);
+        let load = load(case.regime, case.workload, case.cores, 90.0);
         let got = model
             .hazard(&offsets(&case.profile), &load)
             .expect("a matching profile");
@@ -167,28 +157,17 @@ fn steady_hazard_follows_the_limits_of_the_applied_registers() {
 }
 
 #[test]
-fn a_regime_without_a_limit_index_uses_limit_zero() {
-    let definition = base();
-    let model = model(&definition);
-    let regime = Regime::Empty;
-    let load = load(&regime, "", &[0], 90.0);
-    let rate = |profile: [i64; 2]| model.hazard(&offsets(&profile), &load).expect("shape");
-    assert_eq!(rate([0, 0]), 0.25);
-    assert_eq!(rate([-1, 0]), 2.0);
-}
-
-#[test]
 fn r6_and_r7_use_the_together_limit_even_when_alone() {
     let definition = base();
     let model = model(&definition);
     let profile = offsets(&[-11, 0]);
-    let hazard = |regime: &Regime| {
+    let hazard = |regime: Regime| {
         let load = load(regime, "", &[0], 90.0);
         model.hazard(&profile, &load).expect("shape")
     };
-    assert_eq!(hazard(&Regime::R5), 2.0, "alone limit -10");
-    assert_eq!(hazard(&Regime::R6), 0.25, "together limit -12");
-    assert_eq!(hazard(&Regime::R7), 0.25, "together limit -12");
+    assert_eq!(hazard(Regime::R5), 2.0, "alone limit -10");
+    assert_eq!(hazard(Regime::R6), 0.25, "together limit -12");
+    assert_eq!(hazard(Regime::R7), 0.25, "together limit -12");
 }
 
 #[test]
@@ -197,7 +176,7 @@ fn a_limit_of_one_fails_at_offset_zero() {
     definition.core[0].alone = [1; 5];
     let model = model(&definition);
     let regime = Regime::R1;
-    let load = load(&regime, "", &[0], 90.0);
+    let load = load(regime, "", &[0], 90.0);
     assert_eq!(model.hazard(&offsets(&[0, 0]), &load).expect("shape"), 2.0);
 }
 
@@ -207,7 +186,7 @@ fn near_limit_rate_applies_at_the_limit_and_nothing_below_it() {
     definition.model.near_limit_rate = 0.0;
     let model = model(&definition);
     let regime = Regime::R1;
-    let load = load(&regime, "", &[0], 90.0);
+    let load = load(regime, "", &[0], 90.0);
     assert_eq!(model.hazard(&offsets(&[-10, 0]), &load), Ok(0.0));
     assert_eq!(model.hazard(&offsets(&[-11, 0]), &load), Ok(2.0));
     assert_eq!(model.hazard(&offsets(&[-12, 0]), &load), Ok(8.0));
@@ -217,7 +196,7 @@ fn near_limit_rate_applies_at_the_limit_and_nothing_below_it() {
 fn profiles_and_loads_that_do_not_fit_the_machine_are_refused() {
     let model = model(&base());
     let regime = Regime::R1;
-    let ok = load(&regime, "", &[0], 90.0);
+    let ok = load(regime, "", &[0], 90.0);
     let expect = ShapeError::Profile {
         expected: 2,
         found: 3,
@@ -231,7 +210,7 @@ fn profiles_and_loads_that_do_not_fit_the_machine_are_refused() {
         model.sources(&offsets(&[0, 0, 0]), &ok).unwrap_err(),
         expect
     );
-    let outside = load(&regime, "", &[2], 90.0);
+    let outside = load(regime, "", &[2], 90.0);
     assert_eq!(
         model.hazard(&offsets(&[0, 0]), &outside),
         Err(ShapeError::LoadedCore { core: 2, cores: 2 })
@@ -263,7 +242,7 @@ fn sources_come_in_one_fixed_tie_order() {
     let model = model(&definition);
     let regime = Regime::R1;
     let profile = offsets(&[-20, -20, -20, -20]);
-    let loaded = load(&regime, "", &[2, 0], 90.0);
+    let loaded = load(regime, "", &[2, 0], 90.0);
     let sources = model.sources(&profile, &loaded).expect("shape");
     assert_eq!(
         kinds(&sources),
@@ -280,7 +259,7 @@ fn sources_come_in_one_fixed_tie_order() {
     assert_eq!(sources[5].rate, 0.2);
 
     let r7 = Regime::R7;
-    let loaded = load(&r7, "", &[0, 2], 90.0);
+    let loaded = load(r7, "", &[0, 2], 90.0);
     let sources = model.sources(&profile, &loaded).expect("shape");
     let order = kinds(&sources);
     let position = |kind| order.iter().position(|&known| known == kind);
@@ -326,7 +305,7 @@ fn sources_sum_to_the_steady_hazard_and_scale_to_the_probability() {
         effect: [0.5, -0.5],
     });
     definition.joint = vec![
-        joint(&[(0, -20), (1, -22)], &[RegimeId::R7], Some(0.01), 20.0),
+        joint(&[(0, -20), (1, -22)], &[Regime::R7], Some(0.01), 20.0),
         joint(&[(2, -15), (3, -15)], &[], Some(0.002), 0.0),
     ];
     let model = model(&definition);
@@ -339,11 +318,10 @@ fn sources_sum_to_the_steady_hazard_and_scale_to_the_probability() {
         [-40, -40, -40, -40],
         [0, 0, -17, -30],
     ];
-    let mut regimes: Vec<Regime> = RegimeId::ALL.iter().map(|regime| regime.regime()).collect();
-    regimes.push(Regime::Empty);
+    let regimes = togi_machine::REGIMES;
     for profile in profiles {
         let profile = offsets(&profile);
-        for regime in &regimes {
+        for regime in regimes {
             for cores in [&[0][..], &[2], &[0, 1], &[1, 3], &[0, 1, 2, 3]] {
                 for workload in ["", "custom"] {
                     let load = load(regime, workload, cores, 90.0);
@@ -367,7 +345,7 @@ fn sources_sum_to_the_steady_hazard_and_scale_to_the_probability() {
 fn sources_with_no_rate_are_left_out_so_a_quiet_machine_has_none() {
     let model = model(&machine(2, flat_cores(2, -10, -10)));
     let regime = Regime::R7;
-    let load = load(&regime, "", &[0], 90.0);
+    let load = load(regime, "", &[0], 90.0);
     assert_eq!(model.sources(&offsets(&[-5, 0]), &load), Ok(vec![]));
     assert_eq!(
         model.failure_probability(&offsets(&[-5, 0]), &load),
@@ -379,7 +357,7 @@ fn sources_with_no_rate_are_left_out_so_a_quiet_machine_has_none() {
 fn the_model_is_the_predictor_with_no_limits_required() {
     let model = Model::new(&MachineDefinition::default(), 11).expect("seeded limits");
     let regime = Regime::R1;
-    let load = load(&regime, "", &[3], 90.0);
+    let load = load(regime, "", &[3], 90.0);
     let profile = offsets(&[0; 16]);
     let deep = offsets(&[-50; 16]);
     let safe = model.failure_probability(&profile, &load).expect("shape");
@@ -395,7 +373,7 @@ fn a_model_owns_its_data_and_clones_share_it() {
     definition.ccd = Some(CcdDef::default());
     let model = model(&definition);
     let regime = Regime::R7;
-    let load = load(&regime, "", &[1], 90.0);
+    let load = load(regime, "", &[1], 90.0);
     let profile = offsets(&[-40, -40]);
     let before = model.failure_probability(&profile, &load).expect("shape");
 
@@ -431,7 +409,7 @@ fn shared_voltage_changes_nothing_for_trials_that_do_not_load_two_cores_in_r7() 
         (Regime::R2, &[0, 1]),
         (Regime::R1, &[0]),
     ] {
-        let load = load(&regime, avx, cores, 120.0);
+        let load = load(regime, avx, cores, 120.0);
         assert_eq!(
             with.sources(&profile, &load).expect("shape"),
             without.sources(&profile, &load).expect("shape")

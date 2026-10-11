@@ -94,7 +94,7 @@ fn probability_integrates_loaded_idle_and_delayed_joint_exposure() {
         }];
         let model = model(&definition);
         let regime = Regime::R1;
-        let load = load(&regime, "", &[0], row.duration);
+        let load = load(regime, "", &[0], row.duration);
         let got = model
             .failure_probability(&offsets(&[-10, -10]), &load)
             .expect("shape");

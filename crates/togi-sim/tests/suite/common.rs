@@ -1,9 +1,10 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
+use togi_machine::CoreSet;
 use togi_machine::{Regime, TargetOffset, pick_workload};
 use togi_sim::definition::CoreDef;
-use togi_sim::{CoreSet, InvalidMachine, Load, MachineDefinition, Model, file};
+use togi_sim::{InvalidMachine, Load, MachineDefinition, Model, file};
 
 pub(crate) fn machines_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tools/bench/machines")
@@ -66,12 +67,7 @@ pub(crate) fn cores(ids: &[i64]) -> CoreSet {
         .collect()
 }
 
-pub(crate) fn load<'a>(
-    regime: &'a Regime,
-    workload: &'a str,
-    ids: &[i64],
-    seconds: f64,
-) -> Load<'a> {
+pub(crate) fn load<'a>(regime: Regime, workload: &'a str, ids: &[i64], seconds: f64) -> Load<'a> {
     Load {
         regime,
         workload,
@@ -85,7 +81,7 @@ pub(crate) fn committed_machine(name: &str) -> MachineDefinition {
 }
 
 pub(crate) fn r7_workload(index: usize) -> &'static str {
-    pick_workload(&Regime::R7, index).id
+    pick_workload(Regime::R7, index).id
 }
 
 pub(crate) fn machine_dir_text(name: &str) -> String {

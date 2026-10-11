@@ -6,11 +6,12 @@
 
 use proptest::prelude::*;
 use std::collections::BTreeMap;
+use togi_machine::{Regime, ResetKind, Signal};
 use togi_sim::definition::{
     BiosContextDef, CcdDef, CoreDef, JointDef, ModelDef, ScriptDef, Weights,
 };
 use togi_sim::file::{self, EncodeError};
-use togi_sim::{MachineDefinition, Model, Problem, RegimeId, Reset, SignalKind};
+use togi_sim::{MachineDefinition, Model, Problem, RESETS, WEIGHTED_SIGNALS};
 
 use crate::common::{committed, committed_machine, flat_cores, machine};
 
@@ -48,15 +49,12 @@ fn full() -> MachineDefinition {
         core_local_bank: 0.5,
         onset_s: 40.0,
         onset_boost: 2.0,
-        signals: Weights::from([(SignalKind::Crash, 1.0), (SignalKind::Stall, 2.0)]),
+        signals: Weights::from([(Signal::Crash, 1.0), (Signal::Stall, 2.0)]),
         regime_signals: BTreeMap::from([(
-            RegimeId::R7,
-            Weights::from([
-                (SignalKind::Crash, 79.0),
-                (SignalKind::ComputationError, 5.0),
-            ]),
+            Regime::R7,
+            Weights::from([(Signal::Crash, 79.0), (Signal::ComputationError, 5.0)]),
         )]),
-        reset: Weights::from([(Reset::ThermalTrip, 1.0), (Reset::PowerLoss, 3.0)]),
+        reset: Weights::from([(ResetKind::ThermalTrip, 1.0), (ResetKind::PowerLoss, 3.0)]),
     };
     definition.ccd = Some(CcdDef {
         log_rate: -7.0,
@@ -68,18 +66,18 @@ fn full() -> MachineDefinition {
     definition.core[0].workload = BTreeMap::from([("special".to_owned(), -27)]);
     definition.joint = vec![JointDef {
         members: [(0, -20), (1, -20)].into(),
-        regimes: vec![RegimeId::R6, RegimeId::R7],
+        regimes: vec![Regime::R6, Regime::R7],
         rate: Some(0.05),
         after_s: 30.0,
-        signal: Some(SignalKind::Crash),
+        signal: Some(Signal::Crash),
         crash_mce_core: Some(1),
     }];
     definition.script = vec![ScriptDef {
         trial: "0042".to_owned(),
-        signal: Some(SignalKind::Crash),
+        signal: Some(Signal::Crash),
         at_s: 3.0,
         core: 1,
-        reset: Some(Reset::Watchdog),
+        reset: Some(ResetKind::Watchdog),
         then_crash: true,
     }];
     definition
@@ -102,11 +100,11 @@ fn fields_equal_to_their_default_are_left_out_and_the_rest_are_written() {
     definition.model.onset_boost = 0.0;
     definition.model.crash_mce = 0.6;
     definition.model.signals = Weights::from([
-        (SignalKind::ComputationError, 4.0),
-        (SignalKind::Stall, 1.0),
-        (SignalKind::UnexpectedExit, 1.0),
-        (SignalKind::CorrectedMce, 2.0),
-        (SignalKind::Crash, 2.0),
+        (Signal::ComputationError, 4.0),
+        (Signal::Stall, 1.0),
+        (Signal::UnexpectedExit, 1.0),
+        (Signal::CorrectedMce, 2.0),
+        (Signal::Crash, 2.0),
     ]);
     let text = round_trip(&definition);
     for left_out in [
@@ -279,10 +277,10 @@ fn joints(cores: i64) -> impl Strategy<Value = Vec<JointDef>> {
     proptest::collection::vec(
         (
             proptest::collection::btree_map(0..cores, -50..=0i64, 1..4),
-            proptest::collection::vec(proptest::sample::select(&RegimeId::ALL[..]), 0..3),
+            proptest::collection::vec(proptest::sample::select(&togi_machine::REGIMES[..]), 0..3),
             proptest::option::of(0.0..1.0f64),
             0.0..300.0f64,
-            proptest::option::of(proptest::sample::select(&SignalKind::ALL[..])),
+            proptest::option::of(proptest::sample::select(&WEIGHTED_SIGNALS[..])),
             proptest::option::of(0..cores),
         ),
         0..3,
@@ -314,13 +312,13 @@ fn models() -> impl Strategy<Value = ModelDef> {
             0.0..=1.0f64,
         ),
         (0.0..500.0f64, 0.0..10.0f64),
-        weights(&SignalKind::ALL),
+        weights(&WEIGHTED_SIGNALS),
         proptest::collection::btree_map(
-            proptest::sample::select(&RegimeId::ALL[..]),
-            weights(&SignalKind::ALL),
+            proptest::sample::select(&togi_machine::REGIMES[..]),
+            weights(&WEIGHTED_SIGNALS),
             0..3,
         ),
-        weights(&Reset::ALL),
+        weights(&RESETS),
     )
         .prop_map(
             |(
@@ -380,10 +378,10 @@ fn definitions() -> impl Strategy<Value = MachineDefinition> {
                     (0..count)
                         .map(|index| ScriptDef {
                             trial: format!("{index:04}"),
-                            signal: Some(SignalKind::Stall),
+                            signal: Some(Signal::Stall),
                             at_s: 1.5,
                             core: i64::try_from(index).expect("index") % cores,
-                            reset: Some(Reset::SyncFlood),
+                            reset: Some(ResetKind::SyncFlood),
                             then_crash: index % 2 == 0,
                         })
                         .collect::<Vec<_>>()

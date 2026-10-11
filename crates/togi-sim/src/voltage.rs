@@ -69,7 +69,7 @@ pub struct VoltageState {
 impl Voltage {
     pub(crate) fn resolve(def: &SharedVoltageDef, path: &Path<'_>) -> Result<Self, InvalidMachine> {
         let table = path.key("workload");
-        let catalog = workloads(&Regime::R7);
+        let catalog = workloads(Regime::R7);
         let resolved = catalog
             .iter()
             .map(|entry| {
