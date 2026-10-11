@@ -527,3 +527,35 @@ fn the_wait_bound_covers_the_whole_duration_of_a_long_trial() {
         .saturating_duration_since(Instant::now());
     assert!(remaining > secs(900) + timing.teardown + timing.writer_join);
 }
+
+struct Slow;
+
+impl Reporter for Slow {
+    fn progress(&mut self, _: &str) {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+
+    fn sample(&mut self, _: Sample) {}
+
+    fn signal(&mut self, _: CoreId, _: Signal, _: &str) {}
+}
+
+#[test]
+fn a_backlog_of_reports_cannot_carry_wait_past_its_absolute_bound() {
+    let timing = Timing {
+        teardown: Duration::from_millis(100),
+        writer_join: Duration::from_millis(100),
+        margin: Duration::from_millis(100),
+        ..Timing::default()
+    };
+    let (mut trial, events) = silent_supervisor(Duration::from_millis(200), &timing);
+    for _ in 0..1000 {
+        events
+            .send(crate::supervisor::Event::Progress("ok".into()))
+            .unwrap();
+    }
+    let begun = Instant::now();
+    let outcome = trial.wait(&CancellationToken::new(), &mut Slow);
+    assert!(outcome.is_err());
+    assert!(begun.elapsed() < secs(2), "{:?}", begun.elapsed());
+}
