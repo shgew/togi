@@ -128,7 +128,7 @@ The `togi-hostlock` crate ports `internal/hostlock` ([#747](https://github.com/s
 
 ## Stage 3: `internal/config` (#749, 2026-10-11)
 
-The `togi-config` crate ports `internal/config` ([#749](https://github.com/shgew/togi/issues/749)): 868 lines of library and 636 of tests, against Go's 228 and 168. No Go code is removed or changed. The 142 tests run in 0.016 s under `cargo nextest` on Linux; `go test -count=1 ./internal/config` reports 0.003 s.
+The `togi-config` crate ports `internal/config` ([#749](https://github.com/shgew/togi/issues/749)): 895 lines of library and 656 of tests, against Go's 228 and 168. No Go code is removed or changed. The 150 tests run in 0.025 s under `cargo nextest` on Linux; `go test -count=1 ./internal/config` reports 0.003 s.
 
 - **Config.** One validated `Config` with private fields, decoded through a private `RawConfig` with `deny_unknown_fields` at every level. Settings are newtypes: `TrialSeconds` in [1, 86400], `R7BudgetSeconds` in [4, 86400], `DeadEndThreshold` in [1, 100], `Probability` finite in (0, 1), a non-empty `CheckingSchedule` and `Backends` with absolute paths. Each core has one `InitialOverride`, so a core with both a start offset and a candidate solo limit is unrepresentable. The trial count `ceil(ln(miss)/ln_1p(-rate))` is computed once at construction and must be within 1..=1000.
 - **Journal shape.** `config.loaded` will embed `Config`. Serialization writes every setting, an unset backend path and `backend_user` as `null`, and no trial count; deserializing validates again.
