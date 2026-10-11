@@ -9,6 +9,7 @@ use tokio::io::AsyncRead;
 use tokio::time::Instant;
 
 use crate::id::ScopeName;
+use crate::identity::BackendIdentity;
 use crate::launch::LaunchCommand;
 use crate::procfs::{ProcError, ScopeProcess, Threads, Usage};
 
@@ -54,8 +55,29 @@ pub(crate) enum SignalError {
 
 /// How the owned launcher ended, read without reaping.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct ExitInfo {
-    pub(crate) status: ExitStatus,
+pub(crate) enum ExitInfo {
+    Code(i32),
+    Signal(i32),
+}
+
+impl std::fmt::Display for ExitInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Code(code) => write!(f, "exit status {code}"),
+            Self::Signal(signal) => write!(f, "killed by signal {signal}"),
+        }
+    }
+}
+
+impl From<ExitStatus> for ExitInfo {
+    fn from(status: ExitStatus) -> Self {
+        use std::os::unix::process::ExitStatusExt as _;
+        status
+            .code()
+            .map(Self::Code)
+            .or_else(|| status.signal().map(Self::Signal))
+            .unwrap_or(Self::Code(-1))
+    }
 }
 
 /// A launcher the runner owns: the leader stays an unreaped zombie until teardown reaps it, so
@@ -88,14 +110,14 @@ impl KillSignal {
     }
 }
 
-/// A `systemctl` operation on exact trial scopes; no PID or group ever reaches a recovered process.
+/// A systemd operation on exact trial scopes; no PID or group ever reaches a recovered process.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum Systemctl {
+pub(crate) enum Systemd {
     Kill { scope: ScopeName, signal: KillSignal },
     Stop { scope: ScopeName },
     ListScopes,
-    /// The preflight probe: a throwaway scope pinned to CPU 0 running `true`.
-    Probe,
+    /// The preflight probe: a throwaway scope pinned to CPU 0 that runs `true`.
+    Probe { unit: String, identity: BackendIdentity },
 }
 
 pub(crate) trait Os: 'static {
@@ -106,9 +128,9 @@ pub(crate) trait Os: 'static {
     fn usage(&self, pid: u32) -> Result<Usage, ProcError>;
     fn threads(&self, pid: u32) -> Result<Threads, ProcError>;
     /// Runs through `togi_command::run`; a timed-out call is an error even when it printed text.
-    async fn systemctl(
+    async fn systemd(
         &self,
-        operation: &Systemctl,
+        operation: &Systemd,
         deadline: Instant,
     ) -> Result<togi_command::Output, togi_command::Error>;
     fn scope_processes(&self) -> Result<Vec<ScopeProcess>, ProcError>;
