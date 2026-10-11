@@ -1231,15 +1231,19 @@ fn carried_evidence_consumers() {
         );
     }
     j.cycle_start(1, &[Regime::R1]);
-    let view = j.state.cycle_plan();
+    let projection = j.state.project();
+    let view = projection.cycle_plan;
     assert!(
         view.steps[0]
             .parts
             .iter()
-            .all(|part| part.passed == 0 && !part.done)
-            && view.current == 0,
+            .all(|part| part.passed == 0 && part.failed == 0 && !part.done)
+            && view.current == 0
+            && view.open,
         "the cycle credited carried passes: {view:?}"
     );
+    assert_eq!(projection.requirement, None);
+    assert_eq!(projection.trial_history, None);
     let mut guard = 0;
     loop {
         match j.next() {
@@ -1259,7 +1263,7 @@ fn carried_evidence_consumers() {
         guard += 1;
         assert!(guard < 50, "the live passes never finished the cycle");
     }
-    let view = j.state.cycle_plan();
+    let view = j.state.project().cycle_plan;
     assert!(view.steps[0].done && view.current == 1, "{view:?}");
     j.assert_resumes();
 }
@@ -1449,4 +1453,88 @@ fn dashboard_views_are_read_only() {
         }
         assert_eq!(before, j.state);
     }
+}
+
+#[test]
+fn stored_requirement_separates_class_count_and_part() {
+    let mut j = chain_journal();
+    pass_part(&mut j, &[0, 1, 2, 3], &FULL_REQUESTS);
+    decide_next(&mut j);
+    let plan = j.next_trial();
+    assert!(matches!(
+        plan.context,
+        TrialContext::Cycle { step, part, .. } if step.get().get() == 1 && part.get().get() == 2
+    ));
+    let (intent, trial) = j.intent(&plan);
+    assert_eq!(
+        j.state.project().requirement,
+        Some(TrialRequirement {
+            passed: 0,
+            failed: 0,
+            trial: 1,
+            needed: 3,
+        })
+    );
+    j.end(intent, &trial, Outcome::Inconclusive);
+    let projection = j.state.project();
+    assert_eq!(
+        projection.trial_history,
+        Some(TrialHistory {
+            passed: 0,
+            trial: 1,
+            needed: 3,
+            step: plan.requirement.step,
+        })
+    );
+    let part = &projection.cycle_plan.steps[0].parts[1];
+    assert_eq!(part.short + part.long, 4, "{part:?}");
+    assert_eq!(part.passed + part.failed + 1, 1, "{part:?}");
+    assert!(!part.done && !part.running, "{part:?}");
+    assert_eq!(fresh(&j.events).project(), projection);
+}
+
+#[test]
+fn project_assembles_the_active_hunt() {
+    let mut j = hunt_of(4, SHORT);
+    let opened = j.state.project();
+    let plan = opened.hunt_plan.as_ref().expect("an active hunt");
+    assert_eq!((plan.number, plan.regime), (1, Regime::R6));
+    assert_eq!(plan.candidates, set(&[0, 1, 2, 3]));
+    let failed_trial = plan.trial.clone();
+    assert!(failed_trial.is_some(), "the hunt names the failure's trial");
+    assert!(opened.cycle_plan.paused);
+    assert_eq!(opened.cores.len(), 4);
+    assert_eq!(opened.deepening, None);
+    assert_eq!(opened.requirement, None);
+    let decision = reach_group(&mut j);
+    j.decide(decision);
+    let group_plan = j.next_trial();
+    let (intent, trial) = j.intent(&group_plan);
+    let running = j.state.project();
+    let hunt = running.hunt_plan.as_ref().unwrap();
+    assert_eq!(hunt.trial, failed_trial);
+    assert!(!hunt.groups.is_empty());
+    assert_eq!(
+        running.requirement,
+        Some(TrialRequirement {
+            passed: 0,
+            failed: 0,
+            trial: 1,
+            needed: u32::from(group_plan.requirement.needed.get()),
+        })
+    );
+    j.end(intent, &trial, Outcome::Pass);
+    let ended = j.state.project();
+    assert_eq!(ended.requirement, None);
+    let history = ended.trial_history.unwrap();
+    assert_eq!(
+        (history.passed, history.trial, history.needed),
+        (0, 1, u32::from(group_plan.requirement.needed.get()))
+    );
+    assert_eq!(ended.hunt_plan.as_ref().unwrap().trial, failed_trial);
+    assert_eq!(fresh(&j.events).project(), ended);
+    cancel_hunt(&mut j, 1);
+    let closed = j.state.project();
+    assert_eq!(closed.hunt_plan, None);
+    assert!(!closed.cycle_plan.paused);
 }

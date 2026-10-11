@@ -560,3 +560,37 @@ fn random_outcomes_preserve_profiles() {
     assert!(parked_failures > 0);
     assert!(combinations_seen > 0);
 }
+
+#[test]
+fn carried_passes_count_in_the_deepening_projection() {
+    let (mut j, mut want) = round_fixture();
+    for check in &mut want.checks {
+        let offsets = check.profile.offsets();
+        let values: Vec<i64> = [1, 3, 5, 7]
+            .map(|id| offsets.get(core(id)).unwrap().get())
+            .to_vec();
+        let index = workloads(check.regime)
+            .iter()
+            .position(|workload| workload.id() == check.workload)
+            .unwrap();
+        let cores: Vec<u8> = check.cores.iter().map(togi_machine::CoreId::get).collect();
+        for _ in 0..check.needed {
+            j.carry(
+                "20261002T004254Z",
+                (check.regime, index, &cores, 120),
+                check.condition,
+                &values,
+                Outcome::Pass,
+            );
+        }
+        check.passed = check.needed;
+    }
+    assert_deepening(&j, &want);
+    let Some(Action::Decide(end)) = j.run().round_check_action() else {
+        panic!("carried passes did not complete the round");
+    };
+    assert!(
+        matches!(&end.payload, DecisionPayload::DeepeningRound(round)
+        if round.event == RoundEvent::End && round.passed)
+    );
+}
