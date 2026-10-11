@@ -278,13 +278,41 @@ fn known_errno_text(code: i32) -> Option<&'static str> {
     })
 }
 
-/// The errno of a failed std file operation; they always carry one, so `EIO` is only a defensive default.
+/// The errno of a failed std file operation. Go's `syscall.BytePtrFromString` reports a path with an embedded NUL as
+/// `EINVAL`; std reports it as a non-OS `InvalidInput` error, the only one its file calls make, so `EIO` is only a
+/// defensive default.
 pub(crate) fn errno_of(error: &io::Error) -> i32 {
-    error.raw_os_error().unwrap_or(Errno::IO.raw_os_error())
+    match error.raw_os_error() {
+        Some(errno) => errno,
+        None if error.kind() == io::ErrorKind::InvalidInput => Errno::INVAL.raw_os_error(),
+        None => Errno::IO.raw_os_error(),
+    }
 }
 
-fn lossy(path: &Path) -> Cow<'_, str> {
-    path.to_string_lossy()
+/// Go's string bytes as the journal stores them: its JSON encoder replaces each byte that does not start a valid
+/// UTF-8 sequence with U+FFFD, one per byte, where `to_string_lossy` would replace a whole malformed span once.
+pub(crate) fn journal_text(bytes: &[u8]) -> String {
+    let mut text = String::with_capacity(bytes.len());
+    let mut rest = bytes;
+    loop {
+        match std::str::from_utf8(rest) {
+            Ok(valid) => {
+                text.push_str(valid);
+                return text;
+            }
+            Err(error) => {
+                let (valid, after) = rest.split_at(error.valid_up_to());
+                text.push_str(String::from_utf8_lossy(valid).as_ref());
+                let invalid = error.error_len().unwrap_or(after.len());
+                text.extend(std::iter::repeat_n(char::REPLACEMENT_CHARACTER, invalid));
+                rest = &after[invalid..];
+            }
+        }
+    }
+}
+
+fn lossy(path: &Path) -> String {
+    journal_text(path.as_os_str().as_bytes())
 }
 
 /// Go's `*os.PathError`: `op path: errno text`.
@@ -303,7 +331,7 @@ impl PathError {
     pub(crate) fn from_errno(op: &'static str, path: &Path, errno: i32) -> Self {
         Self {
             op,
-            path: lossy(path).into_owned(),
+            path: lossy(path),
             source: io::Error::from_raw_os_error(errno),
         }
     }
@@ -348,8 +376,8 @@ pub struct LinkError {
 impl LinkError {
     pub(crate) fn rename(old: &Path, new: &Path, errno: i32) -> Self {
         Self {
-            old: lossy(old).into_owned(),
-            new: lossy(new).into_owned(),
+            old: lossy(old),
+            new: lossy(new),
             source: io::Error::from_raw_os_error(errno),
         }
     }
@@ -460,5 +488,5 @@ pub(crate) fn base(path: &Path) -> String {
         .iter()
         .rposition(|&b| b == b'/')
         .map_or(0, |i| i + 1);
-    String::from_utf8_lossy(&bytes[start..end]).into_owned()
+    journal_text(&bytes[start..end])
 }

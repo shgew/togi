@@ -242,7 +242,6 @@ name = "togi-trialfiles"
 version = "0.0.0"
 dependencies = [
  "flate2",
- "miniz_oxide",
  "nix",
  "rustix",
  "tempfile",

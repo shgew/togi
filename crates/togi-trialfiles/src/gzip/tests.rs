@@ -20,8 +20,8 @@ enum Fail {
     Header,
     /// `gzip.ErrChecksum`.
     Checksum,
-    /// `flate.CorruptInputError`; the offset in Go's message is not reproduced.
-    Corrupt,
+    /// `flate.CorruptInputError` at this offset.
+    Corrupt(i64),
 }
 
 impl Fail {
@@ -38,8 +38,9 @@ impl Fail {
             Self::Checksum => {
                 err.kind() == ErrorKind::InvalidData && message == "gzip: invalid checksum"
             }
-            Self::Corrupt => {
-                err.kind() == ErrorKind::InvalidData && message.starts_with("flate: corrupt input")
+            Self::Corrupt(offset) => {
+                err.kind() == ErrorKind::InvalidData
+                    && message == format!("flate: corrupt input before offset {offset}")
             }
         }
     }
@@ -50,14 +51,14 @@ enum Outcome {
     /// `gzip.NewReader` returned this error.
     NewFails(Fail),
     /// `NewReader` succeeded; reading yielded `data`, then `end` (`None` is a clean `io.EOF`).
-    Reads {
-        data: &'static [u8],
-        end: Option<Fail>,
-    },
+    Reads { data: Vec<u8>, end: Option<Fail> },
 }
 
-const fn reads(data: &'static [u8], end: Option<Fail>) -> Outcome {
-    Outcome::Reads { data, end }
+fn reads(data: &[u8], end: Option<Fail>) -> Outcome {
+    Outcome::Reads {
+        data: data.to_vec(),
+        end,
+    }
 }
 
 struct Case {
@@ -129,6 +130,174 @@ fn name_of(len: usize, terminated: bool) -> Vec<u8> {
         name.push(0);
     }
     name
+}
+
+/// Packs bits LSB first, the way DEFLATE streams are laid out.
+#[derive(Default)]
+struct BitWriter {
+    bytes: Vec<u8>,
+    nbits: usize,
+}
+
+impl BitWriter {
+    fn bit(&mut self, bit: bool) {
+        if self.nbits.is_multiple_of(8) {
+            self.bytes.push(0);
+        }
+        if bit {
+            if let Some(last) = self.bytes.last_mut() {
+                *last |= 1 << (self.nbits % 8);
+            }
+        }
+        self.nbits += 1;
+    }
+
+    /// Header fields and extra bits: least significant bit first.
+    fn value(&mut self, value: u32, n: u32) {
+        for i in 0..n {
+            self.bit((value >> i) & 1 == 1);
+        }
+    }
+
+    /// Huffman codes: most significant bit first.
+    fn code(&mut self, code: u32, n: u32) {
+        for i in (0..n).rev() {
+            self.bit((code >> i) & 1 == 1);
+        }
+    }
+}
+
+/// A single fixed-Huffman block built from literals and back references, with the bytes it must decode to.
+struct FixedBlock {
+    bits: BitWriter,
+    out: Vec<u8>,
+}
+
+impl FixedBlock {
+    fn new() -> Self {
+        let mut bits = BitWriter::default();
+        bits.value(1, 1);
+        bits.value(1, 2);
+        Self {
+            bits,
+            out: Vec::new(),
+        }
+    }
+
+    fn symbol(&mut self, symbol: u32) {
+        match symbol {
+            0..144 => self.bits.code(0x30 + symbol, 8),
+            144..256 => self.bits.code(0x190 + symbol - 144, 9),
+            256..280 => self.bits.code(symbol - 256, 7),
+            _ => self.bits.code(0xc0 + symbol - 280, 8),
+        }
+    }
+
+    fn literals(&mut self, bytes: &[u8]) {
+        for &byte in bytes {
+            self.symbol(u32::from(byte));
+            self.out.push(byte);
+        }
+    }
+
+    fn copy(&mut self, length: u32, dist: usize) {
+        match length {
+            3..=10 => self.symbol(254 + length),
+            11..=18 => {
+                self.symbol(265 + (length - 11) / 2);
+                self.bits.value((length - 11) % 2, 1);
+            }
+            19..=34 => {
+                self.symbol(269 + (length - 19) / 4);
+                self.bits.value((length - 19) % 4, 2);
+            }
+            258 => self.symbol(285),
+            _ => panic!("unsupported length {length}"),
+        }
+        let (code, nb, base) = (0..30_u32)
+            .map(|code| {
+                let nb = if code < 4 { 0 } else { (code - 2) / 2 };
+                let base = if code < 4 {
+                    code + 1
+                } else {
+                    (1 << (nb + 1)) + 1 + ((code & 1) << nb)
+                };
+                (code, nb, base as usize)
+            })
+            .rfind(|&(_, _, base)| base <= dist)
+            .unwrap();
+        self.bits.code(code, 5);
+        self.bits.value(u32::try_from(dist - base).unwrap(), nb);
+        for _ in 0..length {
+            self.out.push(self.out[self.out.len() - dist]);
+        }
+    }
+
+    /// The raw DEFLATE bytes, closed by the end-of-block symbol, and the decoded bytes.
+    fn finish(mut self) -> (Vec<u8>, Vec<u8>) {
+        self.symbol(256);
+        (self.bits.bytes, self.out)
+    }
+}
+
+/// A member with a fixed-Huffman body that uses short, extra-bit and maximal matches.
+fn fixed_member() -> (Vec<u8>, Vec<u8>) {
+    let mut block = FixedBlock::new();
+    block.literals(b"abc\n");
+    block.copy(3, 4);
+    block.literals(b"xyz");
+    block.copy(20, 7);
+    block.copy(258, 1);
+    block.copy(12, 9);
+    block.copy(34, 300 - 130);
+    let (body, out) = block.finish();
+    ([header(0), body, trailer(&out)].concat(), out)
+}
+
+fn from_hex(hex: &str) -> Vec<u8> {
+    (0..hex.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap())
+        .collect()
+}
+
+/// A member whose final block is a dynamic-Huffman block cut off inside its last symbols.
+fn truncated_dynamic_member() -> Vec<u8> {
+    from_hex(
+        "1f8b080000000000000305c0010480000000a0ffffefff070018003cc000000000b079e099011b00000000000000000000000000000080bde3716ef773ecebf58ccb3c4dd3e71d8f73bb9f635faf675ce6699a3e",
+    )
+}
+
+/// Back references may not reach before the member's own output, even into the previous member's window.
+fn window_member_then_reach_back() -> Vec<u8> {
+    let mut data = vec![b'\n'; 32748];
+    data.extend_from_slice(b"{\"elapsed_ms\":1000}\n");
+    assert_eq!(data.len(), 32768);
+    [
+        member(&data),
+        from_hex("1f8b0800000000000003c3260600c18a580b14000000"),
+    ]
+    .concat()
+}
+
+/// A dynamic block header followed by `rest`: HLIT, HDIST and HCLEN, then 3-bit code length code lengths.
+fn dynamic_header(
+    hlit: u32,
+    hdist: u32,
+    code_lengths: &[u32],
+    rest: impl FnOnce(&mut BitWriter),
+) -> Vec<u8> {
+    let mut bits = BitWriter::default();
+    bits.value(1, 1);
+    bits.value(2, 2);
+    bits.value(hlit, 5);
+    bits.value(hdist, 5);
+    bits.value(u32::try_from(code_lengths.len() - 4).unwrap(), 4);
+    for &len in code_lengths {
+        bits.value(len, 3);
+    }
+    rest(&mut bits);
+    [header(0), bits.bytes].concat()
 }
 
 fn cases() -> Vec<Case> {
@@ -477,12 +646,12 @@ fn cases() -> Vec<Case> {
     add(
         "stored block then reserved block type",
         [header(0), stored(false, a), vec![0x06, 0, 0, 0]].concat(),
-        reads(b"a\n", Some(Fail::Corrupt)),
+        reads(b"a\n", Some(Fail::Corrupt(8))),
     );
     add(
         "stored block then reserved block type at EOF",
         [header(0), stored(false, a), vec![0x06]].concat(),
-        reads(b"a\n", Some(Fail::Corrupt)),
+        reads(b"a\n", Some(Fail::Corrupt(8))),
     );
     add(
         "two stored blocks then reserved block type",
@@ -493,7 +662,7 @@ fn cases() -> Vec<Case> {
             vec![0x06, 0, 0, 0],
         ]
         .concat(),
-        reads(b"a\nb\n", Some(Fail::Corrupt)),
+        reads(b"a\nb\n", Some(Fail::Corrupt(15))),
     );
     add(
         "stored length complement mismatch",
@@ -504,17 +673,116 @@ fn cases() -> Vec<Case> {
             a.to_vec(),
         ]
         .concat(),
-        reads(b"a\n", Some(Fail::Corrupt)),
+        reads(b"a\n", Some(Fail::Corrupt(12))),
     );
     add(
         "reserved block type first",
         [header(0), vec![0x06, 0, 0, 0]].concat(),
-        reads(b"", Some(Fail::Corrupt)),
+        reads(b"", Some(Fail::Corrupt(1))),
     );
     add(
         "corrupt second member keeps first member's data",
         [member(a), header(0), vec![0x06, 0, 0, 0]].concat(),
-        reads(b"a\n", Some(Fail::Corrupt)),
+        reads(b"a\n", Some(Fail::Corrupt(1))),
+    );
+
+    // Damaged DEFLATE bodies, with Go's input offsets.
+    add(
+        "raw body 03 02 00 reaches before the history",
+        [header(0), vec![0x03, 0x02, 0x00], trailer(&[0; 3])].concat(),
+        reads(b"", Some(Fail::Corrupt(2))),
+    );
+    add(
+        "back reference into the previous member",
+        window_member_then_reach_back(),
+        reads(
+            &[b"\n".repeat(32748), b"{\"elapsed_ms\":1000}\n".to_vec()].concat(),
+            Some(Fail::Corrupt(3)),
+        ),
+    );
+    add(
+        "fixed block reference past the history",
+        {
+            let mut block = FixedBlock::new();
+            block.literals(b"a");
+            block.symbol(257);
+            block.bits.code(1, 5);
+            [header(0), block.bits.bytes].concat()
+        },
+        reads(b"a", Some(Fail::Corrupt(3))),
+    );
+    add(
+        "fixed block length symbol 286",
+        {
+            let mut block = FixedBlock::new();
+            block.literals(b"ab");
+            block.symbol(286);
+            [header(0), block.bits.bytes].concat()
+        },
+        reads(b"ab", Some(Fail::Corrupt(4))),
+    );
+    add(
+        "fixed block distance code 30",
+        {
+            let mut block = FixedBlock::new();
+            block.literals(b"ab");
+            block.symbol(257);
+            block.bits.code(30, 5);
+            [header(0), block.bits.bytes].concat()
+        },
+        reads(b"ab", Some(Fail::Corrupt(4))),
+    );
+    add(
+        "fixed block distance 1 before one byte",
+        {
+            let mut block = FixedBlock::new();
+            block.literals(b"a");
+            block.copy(3, 1);
+            let (body, out) = block.finish();
+            [header(0), body, trailer(&out)].concat()
+        },
+        reads(b"aaaa", None),
+    );
+    add(
+        "dynamic block HLIT 288",
+        dynamic_header(31, 0, &[0; 4], |_| {}),
+        reads(b"", Some(Fail::Corrupt(3))),
+    );
+    add(
+        "dynamic block HDIST 31",
+        dynamic_header(0, 30, &[0; 4], |_| {}),
+        reads(b"", Some(Fail::Corrupt(3))),
+    );
+    add(
+        "dynamic block empty code length code",
+        dynamic_header(0, 0, &[0; 4], |bits| bits.value(0, 8)),
+        reads(b"", Some(Fail::Corrupt(4))),
+    );
+    add(
+        "dynamic block repeat with no previous length",
+        dynamic_header(0, 0, &[1, 0, 0, 1], |bits| {
+            bits.code(1, 1);
+            bits.value(0, 2);
+        }),
+        reads(b"", Some(Fail::Corrupt(4))),
+    );
+    add(
+        "dynamic block oversubscribed code length code",
+        dynamic_header(0, 0, &[1, 1, 1, 0], |_| {}),
+        reads(b"", Some(Fail::Corrupt(4))),
+    );
+    add(
+        "truncated dynamic member",
+        truncated_dynamic_member(),
+        reads(
+            b"{\"elapsed_ms\":1000}\n{\"elapsed_ms\":1000}",
+            Some(Fail::UnexpectedEof),
+        ),
+    );
+    add(
+        "fixed member",
+        fixed_member().0,
+        reads(&fixed_member().1, None),
     );
 
     cases
@@ -679,4 +947,52 @@ fn corrupt_compressed_member_ends_in_invalid_data() {
     let (_, err) = drain(&mut reader, 4096);
     let err = err.expect("corruption must be reported");
     assert_eq!(err.kind(), ErrorKind::InvalidData, "{err}");
+}
+
+/// Go's byte count for every cut of `member` from its 10-byte header on: the reader must hand out exactly that many
+/// bytes of `expected`, then fail with an unexpected EOF.
+fn check_cuts(member: &[u8], expected: &[u8], counts: &[usize]) {
+    for (i, &want) in counts.iter().enumerate() {
+        let cut = 10 + i;
+        for chunk in [4096, 1] {
+            let mut reader = open(&member[..cut]).unwrap();
+            let (got, err) = drain(&mut reader, chunk);
+            assert_eq!(got.len(), want, "cut at {cut}, {chunk}-byte reads");
+            assert_eq!(got, expected[..want], "cut at {cut}, {chunk}-byte reads");
+            let err = err.unwrap();
+            assert!(Fail::UnexpectedEof.matches(&err), "cut at {cut}: {err}");
+        }
+    }
+}
+
+/// Go's byte counts for the cuts of the fixed member.
+const FIXED_CUTS: [usize; 26] = [
+    0, 0, 1, 2, 3, 4, 7, 8, 9, 10, 10, 30, 30, 288, 288, 300, 300, 334, 334, 334, 334, 334, 334,
+    334, 334, 334,
+];
+
+#[test]
+fn fixed_block_truncations_match_go_byte_counts() {
+    let (member, out) = fixed_member();
+    assert_eq!(out.len(), 334);
+    // Cuts 10 up to, not including, the whole member.
+    assert_eq!(10 + FIXED_CUTS.len(), member.len());
+    check_cuts(&member, &out, &FIXED_CUTS);
+}
+
+/// Go's byte counts for the cuts of the dynamic member.
+const DYNAMIC_CUTS: [usize; 75] = [
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 5, 6, 7, 9, 10, 11, 13, 14, 15, 17, 18, 19,
+    21, 23, 24, 25, 27, 28, 29, 31, 32, 33, 35, 36, 37, 39,
+];
+
+#[test]
+fn dynamic_block_truncations_match_go_byte_counts() {
+    // Cuts 10 up to and including the whole member, which is itself cut inside the block: Go stops after 39 bytes
+    // where a decoder reading a 1-bit literal from the last bits would produce a 40th.
+    let member = truncated_dynamic_member();
+    let expected = b"{\"elapsed_ms\":1000}\n{\"elapsed_ms\":1000}";
+    assert_eq!(9 + DYNAMIC_CUTS.len(), member.len());
+    check_cuts(&member, expected, &DYNAMIC_CUTS);
 }

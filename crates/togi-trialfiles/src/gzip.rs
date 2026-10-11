@@ -3,18 +3,17 @@
 //! `flate2`'s gzip decoders differ from Go's in ways a trial's samples can observe: Go validates the first member's
 //! header when the file is opened, ignores reserved header flag bits, caps FNAME/FCOMMENT at 512 bytes, hands
 //! out every byte the inflater produced before a corrupt block, and keeps returning the same error afterwards. This
-//! reader reproduces those points on top of `miniz_oxide`'s raw-DEFLATE core.
+//! reader reproduces those points on top of a port of Go's own DEFLATE decoder ([`flate`]).
 
 use std::fmt;
 use std::fs::File;
-use std::io::{self, BufRead, BufReader, ErrorKind, Read};
+use std::io::{self, BufReader, ErrorKind, Read};
 
 use flate2::Crc;
-use miniz_oxide::inflate::TINFLStatus;
-use miniz_oxide::inflate::core::{
-    DecompressorOxide, TINFL_LZ_DICT_SIZE, decompress, inflate_flags,
-};
 
+use self::flate::{Decompressor, FlateError};
+
+mod flate;
 #[cfg(test)]
 mod tests;
 
@@ -35,13 +34,6 @@ enum Terminal {
     Eof,
     /// The first failure, replayed on every later read as Go's sticky `z.err`.
     Failed { kind: ErrorKind, message: String },
-}
-
-/// What follows the bytes the inflater already produced.
-enum Stop {
-    /// The final block ended; the trailer comes next.
-    MemberEnd,
-    Fail(io::Error),
 }
 
 /// A header read failure. `Eof` is Go's `io.EOF`: zero bytes were available.
@@ -81,14 +73,9 @@ fn invalid_header() -> HeaderError {
 /// Reads a possibly multi-member gzip file, member headers and trailers included.
 pub(crate) struct Reader {
     input: BufReader<File>,
-    decomp: Box<DecompressorOxide>,
-    /// The inflater's 32 KiB history window; `dict[dict_ofs..dict_ofs + dict_avail]` is decoded but not yet returned.
-    dict: Box<[u8]>,
-    dict_ofs: usize,
-    dict_avail: usize,
+    flate: Decompressor,
     /// CRC-32 and length of the current member's returned bytes.
     crc: Crc,
-    stop: Option<Stop>,
     terminal: Option<Terminal>,
 }
 
@@ -104,12 +91,8 @@ impl Reader {
     pub(crate) fn new(file: File) -> io::Result<Self> {
         let mut reader = Self {
             input: BufReader::new(file),
-            decomp: Box::default(),
-            dict: vec![0; TINFL_LZ_DICT_SIZE].into_boxed_slice(),
-            dict_ofs: 0,
-            dict_avail: 0,
+            flate: Decompressor::new(),
             crc: Crc::new(),
-            stop: None,
             terminal: None,
         };
         reader.read_header().map_err(HeaderError::into_io)?;
@@ -194,70 +177,31 @@ impl Reader {
             }
         }
 
-        self.decomp.init();
-        self.dict_ofs = 0;
-        self.dict_avail = 0;
+        self.flate.reset();
         self.crc = Crc::new();
         Ok(())
     }
 
-    /// Records the first failure so every later read repeats it, and returns it.
-    fn fail(&mut self, err: io::Error) -> io::Error {
+    /// Ends the stream at its first failure; later reads repeat it, as Go keeps `z.err`.
+    fn fail(&mut self, err: &io::Error) {
         self.terminal = Some(Terminal::Failed {
             kind: err.kind(),
             message: err.to_string(),
         });
-        err
     }
 
-    /// Runs the inflater once. The bytes it produced go to `dict`; how the member continues goes to `stop`.
-    fn inflate_more(&mut self) -> io::Result<()> {
-        let input = loop {
-            match self.input.fill_buf() {
-                Ok(buf) => break buf,
-                Err(err) if err.kind() == ErrorKind::Interrupted => {}
-                Err(err) => return Err(err),
-            }
-        };
-        let flags = if input.is_empty() {
-            0
-        } else {
-            inflate_flags::TINFL_FLAG_HAS_MORE_INPUT
-        };
-        let (status, consumed, written) = decompress(
-            &mut self.decomp,
-            input,
-            &mut self.dict[..],
-            self.dict_ofs,
-            flags,
-        );
-        self.input.consume(consumed);
-        self.dict_avail = written;
-        self.stop = match status {
-            TINFLStatus::Done => Some(Stop::MemberEnd),
-            TINFLStatus::NeedsMoreInput | TINFLStatus::HasMoreOutput
-                if consumed > 0 || written > 0 =>
-            {
-                None
-            }
-            TINFLStatus::FailedCannotMakeProgress => Some(Stop::Fail(unexpected_eof())),
-            _ => Some(Stop::Fail(io::Error::new(
-                ErrorKind::InvalidData,
-                "flate: corrupt input",
-            ))),
-        };
-        Ok(())
-    }
-
-    /// The trailer check, then the next member's header; a clean end of file there ends the stream.
+    /// The trailer check after a member's last block, then the next member's header; a clean end of file in place
+    /// of that header ends the stream.
     fn finish_member(&mut self) -> io::Result<()> {
         let mut trailer = [0_u8; TRAILER_LEN];
         self.read_full(&mut trailer)
             .map_err(|err| err.no_eof().into_io())?;
         let [c0, c1, c2, c3, s0, s1, s2, s3] = trailer;
-        if u32::from_le_bytes([c0, c1, c2, c3]) != self.crc.sum()
-            || u32::from_le_bytes([s0, s1, s2, s3]) != self.crc.amount()
-        {
+        let stored = (
+            u32::from_le_bytes([c0, c1, c2, c3]),
+            u32::from_le_bytes([s0, s1, s2, s3]),
+        );
+        if stored != (self.crc.sum(), self.crc.amount()) {
             return Err(io::Error::new(
                 ErrorKind::InvalidData,
                 "gzip: invalid checksum",
@@ -275,6 +219,7 @@ impl Reader {
 }
 
 impl Read for Reader {
+    /// Go's `Reader.Read`, which returns `(n, err)` together: here the bytes come first and `err` on the next call.
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         loop {
             match &self.terminal {
@@ -287,26 +232,18 @@ impl Read for Reader {
             if buf.is_empty() {
                 return Ok(0);
             }
-            if self.dict_avail > 0 {
-                let n = self.dict_avail.min(buf.len());
-                let src = self
-                    .dict
-                    .get(self.dict_ofs..self.dict_ofs + n)
-                    .unwrap_or_default();
-                let out = buf.get_mut(..src.len()).unwrap_or_default();
-                out.copy_from_slice(src);
-                self.crc.update(out);
-                self.dict_avail -= n;
-                self.dict_ofs = (self.dict_ofs + n) & (TINFL_LZ_DICT_SIZE - 1);
-                return Ok(n);
-            }
-            let step = match self.stop.take() {
-                Some(Stop::Fail(err)) => Err(err),
-                Some(Stop::MemberEnd) => self.finish_member(),
-                None => self.inflate_more(),
+            let (n, flate_err) = self.flate.read(&mut self.input, buf);
+            self.crc.update(buf.get(..n).unwrap_or_default());
+            let step = match flate_err {
+                None => Ok(()),
+                Some(FlateError::End) => self.finish_member(),
+                Some(err) => Err(err.into_io()),
             };
             if let Err(err) = step {
-                return Err(self.fail(err));
+                self.fail(&err);
+            }
+            if n > 0 {
+                return Ok(n);
             }
         }
     }

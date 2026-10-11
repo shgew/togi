@@ -293,6 +293,50 @@ fn compress_of_a_file_reports_the_listing_failure() {
     );
 }
 
+/// Go keeps a workload-chosen directory name's raw bytes in the error; the journal's JSON encoding then writes U+FFFD
+/// for each invalid byte. Linux names are bytes; Apple file systems refuse a name that is not UTF-8.
+#[cfg(target_os = "linux")]
+#[test]
+fn non_utf8_instance_directory_renders_one_replacement_per_invalid_byte() {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+
+    let dir = TempDir::new().unwrap();
+    let instance = dir.path().join(OsStr::from_bytes(b"\xe2\x82"));
+    fs::create_dir(&instance).unwrap();
+    write(&instance.join("stdout.log"), "o\n");
+    fs::create_dir(instance.join("stdout.log.gz")).unwrap();
+    let root = shown(&dir);
+    let errors = compress(dir.path()).unwrap_err();
+    assert_eq!(
+        errors.to_string(),
+        format!(
+            "compress stdout.log: rename {root}/\u{FFFD}\u{FFFD}/stdout.log.gz.tmp {root}/\u{FFFD}\u{FFFD}/stdout.log.gz: file exists"
+        )
+    );
+}
+
+#[test_case(b"plain", "plain"; "valid text is unchanged")]
+#[test_case("caf\u{e9}".as_bytes(), "caf\u{e9}"; "valid multi-byte text is unchanged")]
+#[test_case(b"\xe2\x82", "\u{FFFD}\u{FFFD}"; "truncated sequence is one replacement per byte")]
+#[test_case(b"a\xed\xa0\x80b\xff", "a\u{FFFD}\u{FFFD}\u{FFFD}b\u{FFFD}"; "surrogate and stray byte")]
+fn journal_text_replaces_each_invalid_byte(bytes: &[u8], want: &str) {
+    assert_eq!(goerr::journal_text(bytes), want);
+}
+
+/// std rejects a path with an embedded NUL before any system call, where Go's `BytePtrFromString` reports `EINVAL`.
+#[test]
+fn embedded_nul_in_the_directory_reports_go_invalid_argument() {
+    let dir = TempDir::new().unwrap();
+    let root = shown(&dir);
+    let errors = compress(&dir.path().join("a\0b")).unwrap_err();
+    assert!(matches!(errors.errors(), [Error::List(_)]));
+    assert_eq!(
+        errors.to_string(),
+        format!("list trial files: open {root}/a\0b: invalid argument")
+    );
+}
+
 #[test]
 fn open_prefers_the_plain_file_and_falls_back_to_gzip() {
     let dir = TempDir::new().unwrap();

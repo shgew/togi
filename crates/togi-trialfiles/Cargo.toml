@@ -9,7 +9,6 @@ description = "Preserves completed trials' samples and backend logs in gzip form
 
 [dependencies]
 flate2.workspace = true
-miniz_oxide.workspace = true
 nix.workspace = true
 rustix.workspace = true
 thiserror.workspace = true
