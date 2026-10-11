@@ -144,6 +144,7 @@ func makeHostile(t *testing.T, caller string) {
 
 // originGH answers pr view with the frozen base and head, refuses pr diff as too large, and reads files at the head from the origin.
 func originGH(t *testing.T, p largePull) ghFunc {
+	t.Helper()
 	home := t.TempDir()
 	const filesPrefix = "repos/shgew/togi/contents/"
 	return func(args ...string) ([]byte, error) {
