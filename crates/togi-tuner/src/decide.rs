@@ -1,20 +1,24 @@
 use togi_journal::{CorePhase, CoreTransition, DeadEnd, DeadEndCondition, ProfileChange, Seq};
-use togi_machine::TargetOffset;
+use togi_machine::{CoreId, Regime, TargetOffset};
 
 use crate::state::Run;
-use crate::{Action, CombinationId, DecisionAction, Profile};
+use crate::{Action, CombinationId, DecisionAction, NotReady, Profile};
+
+fn multi_core_r7(action: &Action) -> bool {
+    matches!(action, Action::RunTrial(plan) if plan.regime == Regime::R7 && plan.load.cores().len() > 1)
+}
 
 impl Run {
     pub(crate) fn offsets(&self) -> Profile {
         Profile::over(self.topo.all(), |core| self.core(core).offset)
     }
 
-    /// Every core has had its first phase; before that nothing can be decided.
-    fn ready(&self) -> bool {
+    fn unphased(&self) -> Option<CoreId> {
         self.topo
             .order()
             .iter()
-            .all(|&core| self.core(core).phase.is_some())
+            .copied()
+            .find(|&core| self.core(core).phase.is_none())
     }
 
     /// The pending monotonicity warning, citing the failure and the carried passes it contradicts.
@@ -177,15 +181,41 @@ impl Run {
         ))
     }
 
-    /// The next thing the tuner does, from the rules the folded state decides alone: first what
-    /// answers a failure or a reset, then the checking profile and the search, then a queued
-    /// failure, the reruns owed, and the open cycle or the next one.
-    pub(crate) fn decide(&self) -> Option<Action> {
-        if !self.ready() {
+    /// The next thing the tuner does: first what answers a failure or a reset, then the checking
+    /// profile and the search, then a queued failure, the reruns owed, and the open cycle or the
+    /// next one. A multi-core R7 trial waits until a host ranking has ever been read.
+    pub(crate) fn next(&self) -> Result<Action, NotReady> {
+        if let Some(core) = self.unphased() {
+            return Err(NotReady::NoPhase(core));
+        }
+        let action = self.next_action().ok_or(NotReady::NoAction)?;
+        if self.ranking.is_none() && multi_core_r7(&action) {
+            return Ok(Action::ReadRanking);
+        }
+        Ok(self.skip_known_failure(action))
+    }
+
+    /// What the tuner decides before it may stop: attribution, the pending warning, an
+    /// unattributed failure at 0, phase-2 blame, the pending failure decision and what closes a
+    /// hunt. Never a trial or a ranking read.
+    pub(crate) fn drain(&self) -> Option<DecisionAction> {
+        if self.unphased().is_some() {
             return None;
         }
-        self.next_action()
-            .map(|action| self.skip_known_failure(action))
+        self.attribution()
+            .or_else(|| self.warning_decision())
+            .or_else(|| self.unattributed_zero_dead_end())
+            .or_else(|| self.phase2_blame_action())
+            .or_else(|| match self.pending_decision() {
+                Some(Action::Decide(decision)) => Some(decision),
+                Some(Action::RunTrial(_) | Action::ReadRanking) | None => None,
+            })
+            .or_else(|| self.hunt_closing())
+    }
+
+    fn pending_decision(&self) -> Option<Action> {
+        self.ordinary_decision()
+            .map(|action| self.later_decision(action))
     }
 
     /// What answers a failure the ordinary way: the multi-core R7 response, else the attributed
@@ -210,8 +240,8 @@ impl Run {
         if let Some(decision) = self.phase2_blame_action() {
             return Some(Action::Decide(decision));
         }
-        if let Some(action) = self.ordinary_decision() {
-            return Some(self.later_decision(action));
+        if let Some(action) = self.pending_decision() {
+            return Some(action);
         }
         if let Some(action) = self.hunt_next() {
             return Some(action);

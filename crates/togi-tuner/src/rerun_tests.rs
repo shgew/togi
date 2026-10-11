@@ -30,6 +30,7 @@ fn session(offsets: &[i64], json: &str) -> Journal {
         .map(|&offset| Start::at_limit(offset).fail(offset - 1).pass(offset))
         .collect();
     let mut j = Journal::new(&ids, &starts);
+    j.ranking(&ids);
     j.load(&testkit::config(json));
     let change = j.next_decision();
     assert!(
@@ -694,8 +695,8 @@ fn carried_rerun_citation_replay() {
         );
         assert_eq!(live.regime, Regime::R1);
         pass(&mut j, &live);
-        let want = j.state.decide();
-        assert_eq!(fresh(&j.events).decide(), want);
+        let want = j.state.next().ok();
+        assert_eq!(fresh(&j.events).next().ok(), want);
         let Some(Action::Decide(next)) = want else {
             panic!("expected the next decision, got {want:?}");
         };
@@ -1041,8 +1042,8 @@ fn carried_rerun_citation_replay_ends_a_deepening_round() {
             "{end:?}"
         );
         j.decide(action);
-        let want = j.state.decide();
-        assert_eq!(fresh(&j.events).decide(), want);
+        let want = j.state.next().ok();
+        assert_eq!(fresh(&j.events).next().ok(), want);
         if let Some(Action::Decide(next)) = &want {
             for seq in &facts {
                 assert!(!next.cause.contains(seq), "#{seq} cited again: {next:?}");
@@ -1093,8 +1094,8 @@ fn a_carried_rerun_boundary_preserves_the_pending_checks() {
             } else {
                 j.cycle_start(1, &[Regime::R1]);
             }
-            let want = j.state.decide();
-            assert_eq!(fresh(&j.events).decide(), want, "{label}");
+            let want = j.state.next().ok();
+            assert_eq!(fresh(&j.events).next().ok(), want, "{label}");
             let Some(Action::RunTrial(plan)) = want else {
                 panic!("{label}: the boundary lost the pending rerun: {want:?}");
             };

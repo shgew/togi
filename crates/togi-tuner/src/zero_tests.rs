@@ -738,6 +738,7 @@ fn a_single_core_zero_rerun_rejects_equivalent_many_and_ambiguous_load_shapes() 
 #[test]
 fn an_unrelated_checking_retry_does_not_replace_a_zero_diagnostic() {
     let mut j = Journal::has_room(&[0, -20]);
+    j.ranking(&[0, 1]);
     j.profile_change(&[0, -20]);
     j.open_default_cycle();
     let cycle = j.next_trial();

@@ -172,7 +172,7 @@ fn pass_part(j: &mut Journal, cores: &[u8], requests: &[(u8, f64)]) -> Seq {
 fn same_next(j: &Journal) -> Action {
     let live = j.next();
     assert_eq!(
-        fresh(&j.events).decide().as_ref(),
+        fresh(&j.events).next().ok().as_ref(),
         Some(&live),
         "a resumed session asks for something else"
     );

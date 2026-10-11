@@ -70,8 +70,8 @@ fn hunt_decide_is_pure_and_repeats_through_a_whole_hunt() {
     let mut decided = Vec::new();
     for _ in 0..400 {
         let before = j.state.clone();
-        let first = j.state.decide();
-        assert_eq!(first, j.state.decide());
+        let first = j.state.next().ok();
+        assert_eq!(first, j.state.next().ok());
         assert_eq!(before, j.state);
         decided.push((j.events.len(), first));
         let action = j.step(&mut |plan: &TrialPlan| oracle(plan));
@@ -86,7 +86,11 @@ fn hunt_decide_is_pure_and_repeats_through_a_whole_hunt() {
         }
     }
     for (len, expected) in decided {
-        assert_eq!(fresh(&j.events[..len]).decide(), expected, "prefix {len}");
+        assert_eq!(
+            fresh(&j.events[..len]).next().ok(),
+            expected,
+            "prefix {len}"
+        );
     }
 }
 
@@ -145,7 +149,7 @@ fn hunt_decide_visits_distinct_cells_not_passes() {
             j.trial(&plan, Outcome::Pass);
         }
         j.state.visits();
-        let _ = j.state.decide();
+        let _ = j.state.next().ok();
         j.state.visits()
     }
     let small = visits(50);

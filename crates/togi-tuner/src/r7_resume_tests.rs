@@ -40,7 +40,7 @@ fn r7_crash_resume_fresh_equals_incremental() {
     j.assert_resumes();
     let resumed = j.resumed();
     assert_eq!(resumed.state, j.state);
-    assert_eq!(resumed.state.decide(), j.state.decide());
+    assert_eq!(resumed.state.next().ok(), j.state.next().ok());
 }
 
 #[test]
@@ -49,10 +49,10 @@ fn repeated_r7_decide_is_equal_and_leaves_the_state_unchanged() {
     let profile = values(&j);
     j.r7_failed(&[0, 1], &profile, &report());
     let before = j.state.clone();
-    let first = j.state.decide();
+    let first = j.state.next().ok();
     assert!(first.is_some());
-    assert_eq!(first, j.state.decide());
-    assert_eq!(first, j.state.clone().decide());
+    assert_eq!(first, j.state.next().ok());
+    assert_eq!(first, j.state.clone().next().ok());
     assert_eq!(before, j.state);
 }
 
@@ -64,7 +64,7 @@ fn decide_visits(passes: usize) -> (u64, usize) {
     let profile = values(&j);
     j.r7_failed(&[0, 1], &profile, &report());
     j.state.visits();
-    let _ = j.state.decide();
+    let _ = j.state.next().ok();
     (j.state.visits(), j.run().r7.targets.entries())
 }
 

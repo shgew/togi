@@ -17,6 +17,7 @@ pub(crate) fn session(offsets: &[i64]) -> Journal {
         .map(|&offset| Start::at_limit(offset).fail(offset - 1).pass(offset))
         .collect();
     let mut j = Journal::new(&ids, &starts).resuming_every(1);
+    j.ranking(&ids);
     let change = j.next_decision();
     j.decide(change);
     j
@@ -112,7 +113,7 @@ pub(crate) fn is_hold(decision: &TunerDecision) -> bool {
 
 pub(crate) fn settle(j: &mut Journal) {
     for _ in 0..40 {
-        match j.state.decide() {
+        match j.state.next().ok() {
             Some(Action::Decide(action)) => {
                 j.decide(action);
             }
@@ -790,7 +791,7 @@ fn strikes_stay_bounded_by_cores_and_the_window() {
         start_cycle(&mut j);
         for round in 0..cycles {
             fail_core(&mut j, u8::try_from(round % 4).unwrap());
-            while let Some(Action::Decide(action)) = j.state.decide() {
+            while let Some(Action::Decide(action)) = j.state.next().ok() {
                 j.decide(action);
             }
             end_cycle(&mut j);
@@ -811,8 +812,8 @@ fn repeated_decisions_are_equal_and_pure() {
     start_cycle(&mut j);
     fail_core(&mut j, 0);
     let before = j.state.clone();
-    let first = j.state.decide();
-    assert_eq!(first, j.state.decide());
+    let first = j.state.next().ok();
+    assert_eq!(first, j.state.next().ok());
     assert_eq!(before, j.state);
     let bios = j.run().bios_profile();
     assert_eq!(bios, j.run().bios_profile());

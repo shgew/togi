@@ -1,33 +1,30 @@
 //! The tuning rules: the core topology, topology-complete profiles, the failure points and
 //! combinations that bound them with the safe optimum they allow, and crash classification.
 
-#![cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the public queries that compose the decision functions land with G6"
-    )
-)]
-
 mod checking;
 mod class;
 mod config;
 mod constraints;
 mod cores;
 mod crash;
+pub mod dashboard;
 mod decide;
 mod depth;
 mod error;
 mod evidence;
 mod failures;
 mod flight;
+pub mod forecast;
 mod hunt;
 mod later;
 mod ledger;
 mod optimum;
+pub mod phase_plan;
 mod phases;
 mod plan;
 mod profile;
+pub mod projection;
+mod query;
 mod r7;
 mod requirement;
 mod rounds;
@@ -46,7 +43,13 @@ mod checking_state_tests;
 #[cfg(test)]
 mod checking_tests;
 #[cfg(test)]
+mod dashboard_tests;
+#[cfg(test)]
+mod drain_tests;
+#[cfg(test)]
 mod fold_tests;
+#[cfg(test)]
+mod forecast_tests;
 #[cfg(test)]
 mod later_tests;
 #[cfg(test)]
@@ -54,7 +57,11 @@ mod ledger_tests;
 #[cfg(test)]
 mod optimum_tests;
 #[cfg(test)]
+mod phase_plan_tests;
+#[cfg(test)]
 mod phase_tests;
+#[cfg(test)]
+mod projection_tests;
 #[cfg(test)]
 mod prop_tests;
 #[cfg(test)]
@@ -99,6 +106,7 @@ pub use plan::{
     TrialContext, TrialPlan, WorkloadChoice,
 };
 pub use profile::{Profile, ProfileError, TopologyMismatch};
+pub use query::{NotReady, replay};
 pub use r7::query::R7CoreStatus;
 pub use state::State;
 pub use topology::{Ranking, RankingError, Topology, TopologyError};

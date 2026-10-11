@@ -700,7 +700,10 @@ fn a_cancelled_round_check_retry_does_not_run_after_its_round_ends() {
     };
     j.reset(1);
     assert_eq!(
-        j.state.decide().map(|a| matches!(a, Action::RunTrial(_))),
+        j.state
+            .next()
+            .ok()
+            .map(|a| matches!(a, Action::RunTrial(_))),
         Some(false)
     );
     let end = j.next_decision();
@@ -766,7 +769,7 @@ fn a_failure_after_the_confirmation_cycle_closed_does_not_revert_deepened_cores(
     let number = j.run().checking.open().unwrap().number.get();
     j.cycle_end(number, false, true);
     crash(&mut j, &[-11, -11]);
-    let action = j.state.decide();
+    let action = j.state.next().ok();
     assert!(
         !matches!(
             &action,
@@ -1242,7 +1245,7 @@ fn round_check_progress_visits_distinct_classes_not_pass_volume() {
         j.run().evidence.take_visits();
         let _ = j.run().round_check_action();
         let first = j.run().evidence.take_visits();
-        let _ = j.state.decide();
+        let _ = j.state.next().ok();
         let decided = j.run().evidence.take_visits();
         (first, decided)
     };

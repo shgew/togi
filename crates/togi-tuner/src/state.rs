@@ -234,7 +234,7 @@ impl State {
 
     /// Folds the next journal event. A structural impossibility, such as a core outside the
     /// topology or an event that does not follow the last, is an error, and the state is
-    /// poisoned: every later `fold` fails and `decide` has nothing to say, because a state that
+    /// poisoned: every later `fold` fails and `next` has nothing to say, because a state that
     /// part-applied an event no longer stands for the journal.
     pub fn fold(&mut self, event: &Event) -> Result<(), FoldError> {
         if self.poisoned {
@@ -322,12 +322,8 @@ impl State {
         Ok(())
     }
 
-    /// The next decision or trial the folded state calls for, from the rules this state holds.
-    pub(crate) fn decide(&self) -> Option<crate::Action> {
-        if self.poisoned {
-            return None;
-        }
-        self.run()?.decide()
+    pub(crate) const fn poisoned(&self) -> bool {
+        self.poisoned
     }
 
     /// Per R7 workload, CCD and core, whether the core has passed as a top requester at its
