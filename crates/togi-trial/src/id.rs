@@ -1,16 +1,9 @@
 use std::fmt;
 
+use crate::error::InvalidId;
 use crate::plan::InstanceName;
 
 pub(crate) const SCOPE_PREFIX: &str = "togi-trial-";
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
-pub enum InvalidId {
-    #[error("the trial id is empty")]
-    Empty,
-    #[error("the trial id contains {0:?}; only A-Z a-z 0-9 _ . : - are allowed")]
-    Character(char),
-}
 
 fn allowed(c: char) -> bool {
     c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | ':' | '-')

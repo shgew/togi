@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use tokio::time::Instant;
 use togi_machine::{CoreId, CoreInfo, PerCore};
+use tokio::time::Instant;
 
 /// Where the sensors live; tests point these at fixtures.
 #[derive(Clone, Debug)]
@@ -103,7 +103,10 @@ impl Sensors {
         }
     }
 
-    #[allow(clippy::cast_precision_loss, reason = "microjoule deltas are far below 2^53")]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "microjoule deltas are far below 2^53"
+    )]
     fn power(&self, energy: Option<i64>, now: Instant) -> Option<f64> {
         let (current, previous) = (energy?, self.energy?);
         let elapsed = now.checked_duration_since(self.energy_at)?;
@@ -140,9 +143,9 @@ fn temperatures(root: &Path) -> (Option<i64>, Option<BTreeMap<String, i64>>) {
         let mut labels: Vec<PathBuf> = files
             .filter_map(|e| e.ok().map(|e| e.path()))
             .filter(|path| {
-                path.file_name().and_then(|n| n.to_str()).is_some_and(|n| {
-                    n.starts_with("temp") && n.ends_with("_label")
-                })
+                path.file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| n.starts_with("temp") && n.ends_with("_label"))
             })
             .collect();
         labels.sort();
@@ -248,10 +251,7 @@ mod tests {
         fixture.write("hwmon/hwmon1/temp5_label", "Tccd2\n");
         let (tctl, tccd) = temperatures(&fixture.roots().hwmon);
         assert_eq!(tctl, Some(75));
-        assert_eq!(
-            tccd,
-            Some(BTreeMap::from([("Tccd1".to_owned(), 61)]))
-        );
+        assert_eq!(tccd, Some(BTreeMap::from([("Tccd1".to_owned(), 61)])));
     }
 
     #[test]
@@ -262,7 +262,10 @@ mod tests {
         fixture.write("hwmon/hwmon1/temp1_label", "Tctl\n");
         fixture.write("hwmon/hwmon1/temp1_input", "50000\n");
         assert_eq!(temperatures(&fixture.roots().hwmon), (None, None));
-        assert_eq!(temperatures(&fixture.dir.path().join("absent")), (None, None));
+        assert_eq!(
+            temperatures(&fixture.dir.path().join("absent")),
+            (None, None)
+        );
     }
 
     #[test]
@@ -329,9 +332,15 @@ mod tests {
         let start = Instant::now();
         let mut sensors = Sensors::new(&fixture.roots(), &[], &[], start);
         fs::remove_file(fixture.dir.path().join("powercap/intel-rapl:0/energy_uj")).unwrap();
-        assert_eq!(sensors.read(start + Duration::from_secs(1)).package_power_w, None);
+        assert_eq!(
+            sensors.read(start + Duration::from_secs(1)).package_power_w,
+            None
+        );
         fixture.write("powercap/intel-rapl:0/energy_uj", "5000000\n");
-        assert_eq!(sensors.read(start + Duration::from_secs(2)).package_power_w, None);
+        assert_eq!(
+            sensors.read(start + Duration::from_secs(2)).package_power_w,
+            None
+        );
         fixture.write("powercap/intel-rapl:0/energy_uj", "7000000\n");
         assert_eq!(
             sensors.read(start + Duration::from_secs(3)).package_power_w,

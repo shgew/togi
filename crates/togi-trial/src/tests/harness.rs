@@ -6,11 +6,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use tempfile::TempDir;
-use tokio::task::LocalSet;
 use togi_machine::{
     CancellationToken, CcdId, Condition, CoreId, CoreInfo, CpuId, Partial, Regime, Stopped,
     TrialSpec, pick_workload,
 };
+use tokio::task::LocalSet;
 
 use crate::identity::BackendIdentity;
 use crate::os::fake::Fake;
@@ -38,7 +38,10 @@ pub(super) fn topology() -> Vec<CoreInfo> {
 pub(super) fn spec(regime: Regime, cores: &[u8], duration: Duration) -> TrialSpec {
     let topology = topology();
     let cpus = if regime.instance_per_core() {
-        cores.iter().map(|&n| topology[usize::from(n)].cpus[0]).collect()
+        cores
+            .iter()
+            .map(|&n| topology[usize::from(n)].cpus[0])
+            .collect()
     } else if regime == Regime::R5 {
         topology[usize::from(cores[0])].cpus.clone()
     } else {
@@ -200,7 +203,9 @@ use crate::os::fake::{Launch, ProcCtx, ProcShared, script};
 use crate::procfs::Usage;
 
 /// A process that prints `lines` on stdout once, then runs until killed.
-pub(super) fn printing(lines: &'static str) -> impl FnMut(usize, &crate::launch::LaunchCommand) -> Launch {
+pub(super) fn printing(
+    lines: &'static str,
+) -> impl FnMut(usize, &crate::launch::LaunchCommand) -> Launch {
     move |_, _| {
         Launch::Run(script(move |mut ctx: ProcCtx| async move {
             ctx.print(lines).await;

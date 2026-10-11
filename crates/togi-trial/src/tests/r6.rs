@@ -6,9 +6,9 @@ use togi_machine::{CancellationToken, Regime};
 
 use super::harness::{crate_error, finish, local, rig, rig_with, spec};
 use crate::error::Error;
+use crate::os::ExitInfo;
 use crate::os::GroupSignal;
 use crate::os::fake::{Delivery, Launch, ProcCtx, SignalErrorKind, script};
-use crate::os::ExitInfo;
 use crate::testing::TestBackend;
 use crate::timing::Timing;
 
@@ -43,7 +43,10 @@ async fn r6_stops_every_core_before_timing_then_bursts_one_core_at_a_time() {
             .unwrap();
         let t0 = tokio::time::Instant::now();
         for index in 0..3 {
-            assert_eq!(rig.fake.process(index).signals.borrow()[..], [GroupSignal::Stop]);
+            assert_eq!(
+                rig.fake.process(index).signals.borrow()[..],
+                [GroupSignal::Stop]
+            );
         }
         let run = finish(&handle).await;
         let mut timeline: Vec<(Duration, usize, GroupSignal)> = Vec::new();
@@ -73,15 +76,25 @@ async fn r6_stops_every_core_before_timing_then_bursts_one_core_at_a_time() {
                 (18_100, 2, GroupSignal::Stop),
             ]
         );
-        assert_eq!((run.finished.result.stops, run.finished.result.conts), (8, 5));
+        assert_eq!(
+            (run.finished.result.stops, run.finished.result.conts),
+            (8, 5)
+        );
         let progress = run.progress();
         assert_eq!(
             progress.first().copied(),
             Some("first half idle, then 100ms bursts every 2s, one core at a time")
         );
-        assert_eq!(progress.last().copied(), Some("bursts: 5 continues, 8 stops"));
+        assert_eq!(
+            progress.last().copied(),
+            Some("bursts: 5 continues, 8 stops")
+        );
         let bursts_seen = progress.iter().filter(|p| p.ends_with("ok burst")).count();
-        assert_eq!(bursts_seen, 5 + 3, "five bursts, then teardown continues each worker once");
+        assert_eq!(
+            bursts_seen,
+            5 + 3,
+            "five bursts, then teardown continues each worker once"
+        );
         assert_eq!(run.finished.result.failure, None);
     })
     .await;
@@ -129,12 +142,13 @@ async fn r6_stops_a_worker_that_never_entered_its_scope_after_the_grace_and_goes
         assert_eq!(signal, GroupSignal::Stop);
         assert!(stopped_at.duration_since(begun) >= Duration::from_millis(500));
         let run = finish(&handle).await;
-        assert!(run
-            .finished
-            .result
-            .inconclusive
-            .as_deref()
-            .is_some_and(|reason| reason.contains("never entered scope")));
+        assert!(
+            run.finished
+                .result
+                .inconclusive
+                .as_deref()
+                .is_some_and(|reason| reason.contains("never entered scope"))
+        );
     })
     .await;
 }
@@ -167,13 +181,17 @@ async fn cancelling_during_the_scope_wait_still_stops_the_worker_then_rolls_back
 async fn a_failed_initial_stop_rolls_the_start_back_and_names_the_signal() {
     local(async {
         let rig = rig();
-        rig.fake.set_signal_error_default(Some(SignalErrorKind::Failed));
+        rig.fake
+            .set_signal_error_default(Some(SignalErrorKind::Failed));
         let partial = rig
             .start(spec(Regime::R6, &[0], secs(20)))
             .await
             .err()
             .unwrap();
-        assert!(partial.value.is_none(), "the group kill failed too, so nothing is confirmed");
+        assert!(
+            partial.value.is_none(),
+            "the group kill failed too, so nothing is confirmed"
+        );
         assert!(matches!(partial.error, togi_machine::Error::Containment));
     })
     .await;
@@ -183,20 +201,23 @@ async fn a_failed_initial_stop_rolls_the_start_back_and_names_the_signal() {
 async fn a_failed_scheduled_stop_ends_the_trial_and_contains_the_workload() {
     local(async {
         let rig = rig();
-        let handle = rig
-            .start(spec(Regime::R4, &[0], secs(5)))
-            .await
-            .unwrap();
+        let handle = rig.start(spec(Regime::R4, &[0], secs(5))).await.unwrap();
         *rig.fake.process(0).signal_error.borrow_mut() = Some(SignalErrorKind::Failed);
         let run = finish(&handle).await;
         assert!(matches!(
             &run.finished.errors[..],
-            [Error::Signal { signal: "SIGSTOP", .. }]
+            [Error::Signal {
+                signal: "SIGSTOP",
+                ..
+            }]
         ));
         let containment = run.finished.teardown.unwrap_err();
         assert!(matches!(
             containment.failures().first(),
-            Some(crate::CleanupFailure::SignalGroup { signal: "SIGKILL", .. })
+            Some(crate::CleanupFailure::SignalGroup {
+                signal: "SIGKILL",
+                ..
+            })
         ));
         assert!(run.finished.result.ran < secs(1));
         let _ = crate_error;

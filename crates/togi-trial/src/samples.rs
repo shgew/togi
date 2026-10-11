@@ -7,45 +7,10 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 
 use rustix::fs::{Mode, OFlags, fsync, openat};
-use tokio::sync::mpsc::UnboundedSender;
 use togi_machine::TrialConditions;
+use tokio::sync::mpsc::UnboundedSender;
 
-#[derive(Debug, thiserror::Error)]
-pub enum StorageError {
-    #[error("create the samples file")]
-    Create(#[source] io::Error),
-    #[error("sync the trial samples directory")]
-    SyncDirectory(#[source] io::Error),
-    #[error("encode a conditions sample")]
-    Encode(#[source] serde_json::Error),
-    #[error("append a conditions sample")]
-    Append(#[source] io::Error),
-    #[error("close the samples file")]
-    Close(#[source] io::Error),
-    #[error("the samples writer did not finish within {0:?}")]
-    JoinTimeout(Duration),
-    #[error("the samples writer thread ended without a result")]
-    Vanished,
-    #[error("start the samples writer thread")]
-    Spawn(#[source] io::Error),
-}
-
-/// Every storage failure of one trial, in the order they happened.
-#[derive(Debug, thiserror::Error)]
-#[error("{}", .0.iter().map(ToString::to_string).collect::<Vec<_>>().join("; "))]
-pub struct StorageFailure(Vec<StorageError>);
-
-impl StorageFailure {
-    pub fn errors(&self) -> &[StorageError] {
-        &self.0
-    }
-}
-
-impl From<StorageError> for StorageFailure {
-    fn from(error: StorageError) -> Self {
-        Self(vec![error])
-    }
-}
+use crate::error::{StorageError, StorageFailure};
 
 /// Where accepted samples go; the real one is a file, tests block and fail it on cue.
 pub(crate) trait Storage: Send + 'static {
@@ -245,7 +210,10 @@ mod tests {
             fail_append,
             fail_close,
         };
-        (shared, Box::new(move || Ok(Box::new(storage) as Box<dyn Storage>)))
+        (
+            shared,
+            Box::new(move || Ok(Box::new(storage) as Box<dyn Storage>)),
+        )
     }
 
     #[test]

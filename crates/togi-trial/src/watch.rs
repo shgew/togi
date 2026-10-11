@@ -15,7 +15,7 @@ pub(crate) const POLL_LIMIT: usize = 64 * 1024;
 /// A file's identity: replacing it by another inode is detected, never silently resumed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct FileId {
-    dev: u64,
+    dev: rustix::fs::Dev,
     ino: u64,
 }
 
@@ -92,10 +92,6 @@ impl Watched {
         }
     }
 
-    pub(crate) const fn name(&self) -> &FileName {
-        &self.name
-    }
-
     /// Whether bytes already seen are still unread, or a line is half read, so the file's
     /// disappearance would lose evidence.
     pub(crate) const fn backlog(&self) -> bool {
@@ -127,7 +123,7 @@ impl Watched {
         }
         Ok(Opened::Regular {
             id: FileId {
-                dev: u64::from(stat.st_dev),
+                dev: stat.st_dev,
                 ino: stat.st_ino,
             },
             size: u64::try_from(stat.st_size).unwrap_or(0),
@@ -197,13 +193,15 @@ impl Watched {
                 Err(errno) => return self.stop(WatchError::Read(errno.into())),
             };
             let mut exceeded = false;
-            let consumed = self.framer.push(&buffer[..count], &mut |frame| match frame {
-                Frame::Line(line) => sink(&line),
-                Frame::Exceeded { .. } => {
-                    exceeded = true;
-                    ControlFlow::Break(())
-                }
-            });
+            let consumed = self
+                .framer
+                .push(&buffer[..count], &mut |frame| match frame {
+                    Frame::Line(line) => sink(&line),
+                    Frame::Exceeded { .. } => {
+                        exceeded = true;
+                        ControlFlow::Break(())
+                    }
+                });
             if exceeded {
                 return self.stop(WatchError::LineTooLong);
             }
@@ -221,7 +219,11 @@ impl Watched {
             size,
             drained,
         };
-        if drained { Poll::Drained } else { Poll::Pending }
+        if drained {
+            Poll::Drained
+        } else {
+            Poll::Pending
+        }
     }
 
     /// The final unterminated line, once the file is fully drained and its writers are gone.
@@ -313,7 +315,10 @@ mod tests {
         assert!(f.watched.backlog());
         f.append(b"ERROR\nFATAL: tail");
         assert_eq!(f.poll().1, ["COMPUTE ERROR"]);
-        assert_eq!(f.watched.finish(WritersStopped::confirmed()).as_deref(), Some("FATAL: tail"));
+        assert_eq!(
+            f.watched.finish(WritersStopped::confirmed()).as_deref(),
+            Some("FATAL: tail")
+        );
         assert_eq!(f.watched.finish(WritersStopped::confirmed()), None);
     }
 
@@ -365,13 +370,10 @@ mod tests {
         let mut f = fixture();
         f.append(&b"x\n".repeat(10_000));
         let mut asked = 0;
-        let poll = f.watched.poll(
-            &mut |_| ControlFlow::Continue(()),
-            &mut || {
-                asked += 1;
-                asked > 2
-            },
-        );
+        let poll = f.watched.poll(&mut |_| ControlFlow::Continue(()), &mut || {
+            asked += 1;
+            asked > 2
+        });
         assert!(matches!(poll, Poll::Pending));
         assert_eq!(asked, 3);
     }
@@ -399,7 +401,10 @@ mod tests {
             let target = f.dir.path().join("target");
             make(&f.path(), &target);
             let (poll, lines) = f.poll();
-            assert!(matches!(poll, Poll::Failed(WatchError::Unsupported)), "{poll:?}");
+            assert!(
+                matches!(poll, Poll::Failed(WatchError::Unsupported)),
+                "{poll:?}"
+            );
             assert!(lines.is_empty());
             assert!(!f.watched.backlog());
             assert!(matches!(f.poll().0, Poll::Drained));
@@ -513,6 +518,9 @@ mod tests {
         );
         assert_eq!(f.watched.finish(WritersStopped::confirmed()), None);
         while !matches!(f.poll().0, Poll::Drained) {}
-        assert_eq!(f.watched.finish(WritersStopped::confirmed()).as_deref(), Some("tail"));
+        assert_eq!(
+            f.watched.finish(WritersStopped::confirmed()).as_deref(),
+            Some("tail")
+        );
     }
 }

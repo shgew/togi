@@ -50,7 +50,10 @@ togi-trial-a.scope.bak loaded active running x
 togi-trial-é.scope loaded active running x
 user.slice loaded active running x
 ";
-    let names: Vec<String> = parse_listing(output).iter().map(ToString::to_string).collect();
+    let names: Vec<String> = parse_listing(output)
+        .iter()
+        .map(ToString::to_string)
+        .collect();
     assert_eq!(names, ["togi-trial-b", "togi-trial-a"]);
 }
 
@@ -101,7 +104,11 @@ async fn the_sweep_signals_each_exact_scope_in_order_and_removes_them_all() {
         assert!(!orphan.alive.get() && !duplicate.alive.get());
         assert_eq!(
             rig.fake.units(),
-            ["togi-preflight-9.scope", "togi-trial-*.scope", "unrelated.scope"]
+            [
+                "togi-preflight-9.scope",
+                "togi-trial-*.scope",
+                "unrelated.scope"
+            ]
         );
     })
     .await;
@@ -122,7 +129,8 @@ async fn a_clean_machine_sweeps_to_success_without_signalling_anything() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn a_lingering_unit_or_a_process_moved_out_of_its_scope_is_containment_after_the_verify_slot() {
+async fn a_lingering_unit_or_a_process_moved_out_of_its_scope_is_containment_after_the_verify_slot()
+{
     for moved_out in [false, true] {
         local(async {
             let rig = rig();
@@ -183,19 +191,37 @@ async fn hung_kills_stay_inside_the_slot_and_every_scope_is_still_attempted() {
             rig.fake.add_unit(&format!("{name}.scope"));
         }
         rig.fake.on_systemd(|call| match call {
-            Systemd::Kill { signal: KillSignal::Kill, .. } | Systemd::Stop { .. } => Some(Reply::Hang),
+            Systemd::Kill {
+                signal: KillSignal::Kill,
+                ..
+            }
+            | Systemd::Stop { .. } => Some(Reply::Hang),
             _ => None,
         });
         let begun = Instant::now();
         let error = sweep(&rig.env).await.err().unwrap();
         assert!(begun.elapsed() <= secs(15));
-        let kills: Vec<_> = calls(&rig).into_iter().filter(|(_, w)| *w == "SIGKILL").collect();
+        let kills: Vec<_> = calls(&rig)
+            .into_iter()
+            .filter(|(_, w)| *w == "SIGKILL")
+            .collect();
         assert_eq!(kills.len(), 3);
-        assert!(calls(&rig).iter().all(|(_, what)| *what != "stop"), "a failed kill skips its stop");
-        assert!(containment(&error)
-            .failures()
-            .iter()
-            .any(|failure| matches!(failure, CleanupFailure::KillScope { signal: "SIGKILL", .. })));
+        assert!(
+            calls(&rig).iter().all(|(_, what)| *what != "stop"),
+            "a failed kill skips its stop"
+        );
+        assert!(
+            containment(&error)
+                .failures()
+                .iter()
+                .any(|failure| matches!(
+                    failure,
+                    CleanupFailure::KillScope {
+                        signal: "SIGKILL",
+                        ..
+                    }
+                ))
+        );
     })
     .await;
 }
@@ -208,7 +234,10 @@ async fn hung_signals_share_the_three_second_grace_and_still_end_in_kill_and_sto
             rig.fake.add_unit(&format!("{name}.scope"));
         }
         rig.fake.on_systemd(|call| match call {
-            Systemd::Kill { signal: KillSignal::Cont | KillSignal::Term, .. } => Some(Reply::Hang),
+            Systemd::Kill {
+                signal: KillSignal::Cont | KillSignal::Term,
+                ..
+            } => Some(Reply::Hang),
             _ => None,
         });
         let begun = Instant::now();
@@ -223,7 +252,15 @@ async fn hung_signals_share_the_three_second_grace_and_still_end_in_kill_and_sto
             .fake
             .systemd_calls()
             .iter()
-            .filter(|(call, _)| matches!(call, Systemd::Kill { signal: KillSignal::Cont | KillSignal::Term, .. }))
+            .filter(|(call, _)| {
+                matches!(
+                    call,
+                    Systemd::Kill {
+                        signal: KillSignal::Cont | KillSignal::Term,
+                        ..
+                    }
+                )
+            })
             .map(|(_, at)| at.duration_since(begun))
             .collect();
         assert!(signal_times.iter().all(|at| *at <= secs(3)));
@@ -238,7 +275,10 @@ async fn an_uncertain_signal_failure_fails_the_sweep_even_when_everything_ends_u
         let rig = rig();
         rig.fake.add_unit("togi-trial-a.scope");
         rig.fake.on_systemd(|call| match call {
-            Systemd::Kill { signal: KillSignal::Term, .. } => Some(Reply::Output {
+            Systemd::Kill {
+                signal: KillSignal::Term,
+                ..
+            } => Some(Reply::Output {
                 success: false,
                 text: "Access denied".into(),
             }),
@@ -247,7 +287,10 @@ async fn an_uncertain_signal_failure_fails_the_sweep_even_when_everything_ends_u
         let error = sweep(&rig.env).await.err().unwrap();
         assert!(matches!(
             containment(&error).failures(),
-            [CleanupFailure::KillScope { signal: "SIGTERM", .. }]
+            [CleanupFailure::KillScope {
+                signal: "SIGTERM",
+                ..
+            }]
         ));
         assert!(rig.fake.units().is_empty(), "cleanup still ran to the end");
     })
@@ -301,7 +344,10 @@ async fn a_failing_verification_listing_or_discovery_is_containment() {
 async fn the_probe_reports_a_confined_scope_and_names_failures() {
     local(async {
         let rig = rig();
-        assert_eq!(probe(&rig.env).await.unwrap(), "scope confined to cpu 0 created");
+        assert_eq!(
+            probe(&rig.env).await.unwrap(),
+            "scope confined to cpu 0 created"
+        );
         let probes = rig
             .fake
             .systemd_calls()

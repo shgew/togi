@@ -5,11 +5,11 @@ use std::os::fd::OwnedFd;
 use rustix::process::{
     Pid, PidfdFlags, Signal, WaitId, WaitIdOptions, kill_process_group, pidfd_open, waitid,
 };
+use togi_machine::CpuId;
 use tokio::io::Interest;
 use tokio::io::unix::AsyncFd;
 use tokio::net::unix::pipe::Receiver;
 use tokio::time::Instant;
-use togi_machine::CpuId;
 
 use super::{Child, ExitInfo, GroupSignal, Os, Pipes, SignalError, Systemd};
 use crate::id::ScopeName;
@@ -57,14 +57,8 @@ impl Child for Leader {
         Ok(status.map(|status| {
             status
                 .exit_status()
-                .and_then(|code| i32::try_from(code).ok())
                 .map(ExitInfo::Code)
-                .or_else(|| {
-                    status
-                        .terminating_signal()
-                        .and_then(|signal| i32::try_from(signal).ok())
-                        .map(ExitInfo::Signal)
-                })
+                .or_else(|| status.terminating_signal().map(ExitInfo::Signal))
                 .unwrap_or(ExitInfo::Code(-1))
         }))
     }

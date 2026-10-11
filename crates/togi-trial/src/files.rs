@@ -12,45 +12,13 @@ use rustix::io::Errno;
 use togi_backend::{Backend, Plan};
 use togi_machine::Workload;
 
+use crate::error::PrepareError;
 use crate::id::TrialId;
 use crate::identity::BackendIdentity;
 use crate::plan::InstancePlan;
 use crate::samples::{Open, create_file};
 
 const MAX_DEPTH: usize = 128;
-
-#[derive(Debug, thiserror::Error)]
-pub enum PrepareError {
-    #[error("{operation} {}", path.display())]
-    Directory {
-        operation: &'static str,
-        path: PathBuf,
-        #[source]
-        source: io::Error,
-    },
-    #[error("{} is not a directory", path.display())]
-    NotDirectory { path: PathBuf },
-    #[error("{} is not searchable by uid {uid} gid {gid}", path.display())]
-    Inaccessible { path: PathBuf, uid: u32, gid: u32 },
-    #[error("create {name} in instance {instance}")]
-    Create {
-        instance: String,
-        name: String,
-        #[source]
-        source: io::Error,
-    },
-    #[error("hand {name} of instance {instance} to the backend account")]
-    Chown {
-        instance: String,
-        name: String,
-        #[source]
-        source: io::Error,
-    },
-    #[error("plan the backend instance")]
-    Backend(#[source] togi_backend::Error),
-    #[error("the backend plan names no program")]
-    EmptyProgram,
-}
 
 /// The trial's root-owned directory, held by descriptor so nothing below is reached by path.
 #[derive(Debug)]
@@ -72,7 +40,11 @@ pub(crate) struct InstanceFiles {
     pub(crate) inputs: Vec<String>,
 }
 
-fn directory_error(operation: &'static str, path: &Path, source: impl Into<io::Error>) -> PrepareError {
+fn directory_error(
+    operation: &'static str,
+    path: &Path,
+    source: impl Into<io::Error>,
+) -> PrepareError {
     PrepareError::Directory {
         operation,
         path: path.to_owned(),
@@ -165,13 +137,16 @@ pub(crate) fn recreate(
     id: &TrialId,
     identity: Option<BackendIdentity>,
 ) -> Result<Container, PrepareError> {
-    let root = std::path::absolute(root).map_err(|error| directory_error("resolve", root, error))?;
+    let root =
+        std::path::absolute(root).map_err(|error| directory_error("resolve", root, error))?;
     std::fs::create_dir_all(&root).map_err(|error| directory_error("create", &root, error))?;
-    let parent = open_directory(None, &root).map_err(|error| directory_error("open", &root, error))?;
+    let parent =
+        open_directory(None, &root).map_err(|error| directory_error("open", &root, error))?;
     let mode = Mode::from_raw_mode(if identity.is_some() { 0o711 } else { 0o755 });
     fchmod(&parent, mode).map_err(|error| directory_error("set the mode of", &root, error))?;
     let path = root.join(id.as_str());
-    let name = c_name(OsStr::new(id.as_str())).map_err(|error| directory_error("name", &path, error))?;
+    let name =
+        c_name(OsStr::new(id.as_str())).map_err(|error| directory_error("name", &path, error))?;
     remove_entry(parent.as_fd(), &name, 0)
         .map_err(|error| directory_error("remove the earlier trial", &path, error))?;
     mkdirat(&parent, &name, Mode::from_raw_mode(0o755))
@@ -227,17 +202,15 @@ impl Container {
             return Err(PrepareError::EmptyProgram);
         }
         let stdout = File::from(
-            create_exclusive(dir.as_fd(), "stdout.log").map_err(|errno| create("stdout.log", errno))?,
+            create_exclusive(dir.as_fd(), "stdout.log")
+                .map_err(|errno| create("stdout.log", errno))?,
         );
         let stderr = File::from(
-            create_exclusive(dir.as_fd(), "stderr.log").map_err(|errno| create("stderr.log", errno))?,
+            create_exclusive(dir.as_fd(), "stderr.log")
+                .map_err(|errno| create("stderr.log", errno))?,
         );
-        let owner = identity.map(|identity| {
-            (
-                Uid::from_raw(identity.uid()),
-                Gid::from_raw(identity.gid()),
-            )
-        });
+        let owner =
+            identity.map(|identity| (Uid::from_raw(identity.uid()), Gid::from_raw(identity.gid())));
         let mut inputs = Vec::with_capacity(backend_plan.inputs.len());
         for input in &backend_plan.inputs {
             let file_name = input.name.as_str();
@@ -374,16 +347,20 @@ mod tests {
         fs::create_dir(&private).unwrap();
         fs::set_permissions(&private, fs::Permissions::from_mode(0o700)).unwrap();
         let own = own_identity();
-        let other = BackendIdentity::new(own.uid().wrapping_add(1), own.gid().wrapping_add(1)).unwrap();
+        let other =
+            BackendIdentity::new(own.uid().wrapping_add(1), own.gid().wrapping_add(1)).unwrap();
         let error = recreate(&private.join("trials"), &id("t1"), Some(other)).unwrap_err();
-        assert!(matches!(error, PrepareError::Inaccessible { ref path, .. } if *path == private.canonicalize().unwrap()));
+        assert!(
+            matches!(error, PrepareError::Inaccessible { ref path, .. } if *path == private.canonicalize().unwrap())
+        );
         assert_eq!(mode_of(&private), 0o700);
     }
 
     #[test]
     fn instances_get_exclusive_logs_inputs_and_fixed_modes() {
         let tmp = tempfile::tempdir().unwrap();
-        let container = recreate(&tmp.path().join("trials"), &id("t1"), Some(own_identity())).unwrap();
+        let container =
+            recreate(&tmp.path().join("trials"), &id("t1"), Some(own_identity())).unwrap();
         let mut backend = TestBackend::new("/bin/true");
         backend.inputs = vec![("prime.txt", "a"), ("local.txt", "b")];
         backend.watched = vec!["results.txt"];
@@ -392,7 +369,10 @@ mod tests {
             .unwrap();
         assert_eq!(files.inputs, ["work/prime.txt", "work/local.txt"]);
         assert_eq!(mode_of(&files.path), 0o755);
-        assert_eq!(fs::read_to_string(files.path.join("prime.txt")).unwrap(), "a");
+        assert_eq!(
+            fs::read_to_string(files.path.join("prime.txt")).unwrap(),
+            "a"
+        );
         assert!(files.path.join("stdout.log").exists() && files.path.join("stderr.log").exists());
         assert_eq!(files.plan.watched.len(), 1);
     }
@@ -402,7 +382,9 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let container = recreate(&tmp.path().join("trials"), &id("t1"), None).unwrap();
         let backend = TestBackend::new("/bin/true");
-        container.instance(&work(), &backend, &workload(), None).unwrap();
+        container
+            .instance(&work(), &backend, &workload(), None)
+            .unwrap();
         let error = container
             .instance(&work(), &backend, &workload(), None)
             .unwrap_err();
@@ -424,7 +406,9 @@ mod tests {
         let other = recreate(&tmp.path().join("trials"), &id("t2"), None).unwrap();
         let mut repeated = TestBackend::new("/bin/true");
         repeated.inputs = vec![("a", "1"), ("a", "2")];
-        let error = other.instance(&work(), &repeated, &workload(), None).unwrap_err();
+        let error = other
+            .instance(&work(), &repeated, &workload(), None)
+            .unwrap_err();
         assert!(matches!(error, PrepareError::Create { ref name, .. } if name == "a"));
         assert_eq!(fs::read_to_string(&victim).unwrap(), "keep");
     }
@@ -441,7 +425,9 @@ mod tests {
         assert!(matches!(error, PrepareError::Backend(_)));
         let empty = TestBackend::new("");
         let other = recreate(&tmp.path().join("trials"), &id("t2"), None).unwrap();
-        let error = other.instance(&work(), &empty, &workload(), None).unwrap_err();
+        let error = other
+            .instance(&work(), &empty, &workload(), None)
+            .unwrap_err();
         assert!(matches!(error, PrepareError::EmptyProgram));
         assert!(!other.path.join("work/stdout.log").exists());
     }
@@ -451,10 +437,16 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let container = recreate(&tmp.path().join("trials"), &id("t1"), None).unwrap();
         let backend = TestBackend::new("/bin/true");
-        let mut files = container.instance(&work(), &backend, &workload(), None).unwrap();
+        let mut files = container
+            .instance(&work(), &backend, &workload(), None)
+            .unwrap();
         let victim = tmp.path().join("victim");
         fs::write(&victim, "keep").unwrap();
-        fs::rename(files.path.join("stdout.log"), files.path.join("stdout.log.retained")).unwrap();
+        fs::rename(
+            files.path.join("stdout.log"),
+            files.path.join("stdout.log.retained"),
+        )
+        .unwrap();
         symlink(&victim, files.path.join("stdout.log")).unwrap();
         files.stdout.write_all(b"output\n").unwrap();
         assert_eq!(fs::read_to_string(&victim).unwrap(), "keep");

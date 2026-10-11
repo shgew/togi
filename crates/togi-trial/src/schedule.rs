@@ -99,7 +99,13 @@ mod tests {
         let actions: Vec<_> = steps.iter().map(|s| s.action).collect();
         assert_eq!(
             actions,
-            [Action::Stop, Action::Cont, Action::Stop, Action::Cont, Action::Stop]
+            [
+                Action::Stop,
+                Action::Cont,
+                Action::Stop,
+                Action::Cont,
+                Action::Stop
+            ]
         );
     }
 
@@ -116,7 +122,10 @@ mod tests {
         let short: Vec<_> = timeline(&load, Duration::from_secs(30)).collect();
         assert!(short.len() < long.len());
         assert_eq!(short[..], long[..short.len()]);
-        assert_eq!(long, timeline(&load, Duration::from_secs(120)).collect::<Vec<_>>());
+        assert_eq!(
+            long,
+            timeline(&load, Duration::from_secs(120)).collect::<Vec<_>>()
+        );
         assert!(long.windows(2).all(|w| w[0].at < w[1].at));
     }
 
@@ -126,10 +135,7 @@ mod tests {
             order: vec![2, 0, 1],
         };
         let steps: Vec<_> = timeline(&load, Duration::from_secs(10)).collect();
-        let shape: Vec<_> = steps
-            .iter()
-            .map(|s| (s.at, s.instance, s.action))
-            .collect();
+        let shape: Vec<_> = steps.iter().map(|s| (s.at, s.instance, s.action)).collect();
         assert_eq!(
             shape,
             [

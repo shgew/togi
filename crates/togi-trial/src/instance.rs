@@ -47,7 +47,9 @@ pub(crate) enum Inbound {
 #[derive(Debug)]
 pub(crate) enum PipeEnd {
     /// End of input; the unterminated final line, unless the line was oversized.
-    Eof { partial: Option<String> },
+    Eof {
+        partial: Option<String>,
+    },
     Exceeded,
     Failed(io::Error),
 }
@@ -202,7 +204,10 @@ impl<O: Os> LiveInstance<O> {
         self.observed.exited
     }
 
-    pub(crate) fn signal(&self, signal: crate::os::GroupSignal) -> Result<(), crate::os::SignalError> {
+    pub(crate) fn signal(
+        &self,
+        signal: crate::os::GroupSignal,
+    ) -> Result<(), crate::os::SignalError> {
         match &self.child {
             Some(child) => child.signal_group(signal),
             None => Err(crate::os::SignalError::Gone),
@@ -211,6 +216,7 @@ impl<O: Os> LiveInstance<O> {
 }
 
 /// What handling one inbound event decided.
+#[derive(Clone, Copy)]
 pub(crate) enum Flow {
     Go,
     Stop,
@@ -259,7 +265,9 @@ pub(crate) fn dispatch<O: Os>(
                 PipeEnd::Eof { partial } => {
                     stop(partial.is_some_and(|text| judge.line(instance, pid, stream, text)))
                 }
-                PipeEnd::Exceeded => stop(judge.observe(Observation::LineTooLong { instance, stream })),
+                PipeEnd::Exceeded => {
+                    stop(judge.observe(Observation::LineTooLong { instance, stream }))
+                }
                 PipeEnd::Failed(error) => {
                     let message = format!("read backend output: {error}");
                     failures.record(CleanupFailure::ReadPipe {

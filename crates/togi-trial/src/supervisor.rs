@@ -2,30 +2,27 @@ use std::future::pending;
 use std::iter::Peekable;
 use std::path::PathBuf;
 use std::rc::Rc;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver as StdReceiver, Sender as StdSender, channel};
-use std::sync::Arc;
 use std::time::Duration;
 
+use togi_backend::Backend;
+use togi_machine::{
+    CancellationToken, CoreId, CoreInfo, CpuId, OnCancel, Partial, PerCore, PmTableReader, Sample,
+    Signal, Started, Stopped, Toggles, TrialConditions, TrialResult, TrialSpec,
+};
 use tokio::sync::mpsc::{
     Receiver, Sender, UnboundedReceiver, UnboundedSender, channel as bounded, unbounded_channel,
 };
 use tokio::time::{Instant, MissedTickBehavior, interval_at, sleep, sleep_until};
-use togi_backend::Backend;
-use togi_machine::{
-    CancellationToken, CoreId, CoreInfo, CpuId, LoadSchedule, OnCancel, Partial, PerCore,
-    PmTableReader, Sample, Signal, Started, Stopped, Toggles, TrialConditions, TrialResult,
-    TrialSpec,
-};
 
-use crate::error::{CleanupFailure, Containment, Error, OutputFailure};
+use crate::error::{Containment, Error, OutputFailure};
 use crate::evidence::{Observation, Selector, Stream};
 use crate::files::{self, Container};
 use crate::id::ScopeName;
 use crate::identity::{BackendIdentity, IdentityError};
-use crate::instance::{
-    Flow, Inbound, LiveInstance, Observed, Reader, Run, dispatch, poll_watched,
-};
+use crate::instance::{Flow, Inbound, LiveInstance, Observed, Reader, Run, dispatch, poll_watched};
 use crate::judge::Judge;
 use crate::launch::{self, Confinement};
 use crate::os::{Child as _, GroupSignal, Os, SignalError};
@@ -178,7 +175,10 @@ pub(crate) async fn start<O: Os>(
     };
     let selector = Selector::new(
         plan.workload.backend,
-        plan.instances.iter().map(|instance| instance.core).collect(),
+        plan.instances
+            .iter()
+            .map(|instance| instance.core)
+            .collect(),
     );
     let mut judge = Judge::new(selector, Arc::clone(&backend), events_tx.clone());
     let mut live = Live {
@@ -211,15 +211,21 @@ pub(crate) async fn start<O: Os>(
         instance.observed.active = Duration::ZERO;
     }
     let started = describe(&plan, &live, launched.argv, launched.files);
-    let cores: Vec<CoreId> = plan.instances.iter().map(|instance| instance.core).collect();
+    let cores: Vec<CoreId> = plan
+        .instances
+        .iter()
+        .map(|instance| instance.core)
+        .collect();
     let (failed_tx, storage_failed) = unbounded_channel();
     let open = match &env.storage {
         Some(make) => make(),
         None => container.samples(),
     };
     let writer = SamplesWriter::spawn(open, failed_tx).ok();
-    let mut toggles = Toggles::default();
-    toggles.stops = launched.stops;
+    let toggles = Toggles {
+        stops: launched.stops,
+        conts: 0,
+    };
     if let Load::Bursts { .. } = plan.load {
         let _ = events_tx.send(Event::Progress(
             "first half idle, then 100ms bursts every 2s, one core at a time".to_owned(),
@@ -285,7 +291,10 @@ fn describe<O: Os>(
     }
 }
 
-#[expect(clippy::too_many_arguments, reason = "one launch pass over the shared start state")]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "one launch pass over the shared start state"
+)]
 async fn launch_all<O: Os>(
     env: &Rc<Env<O>>,
     plan: &TrialPlan,
@@ -311,7 +320,13 @@ async fn launch_all<O: Os>(
         let label = instance.name.dir_name();
         let scope = ScopeName::for_instance(&plan.id, instance.name, plan.per_core());
         let files = container.instance(instance, backend, &plan.workload, identity)?;
-        let command = launch::command_for(confinement, &scope, &files.path, &instance.cpus, &files.plan);
+        let command = launch::command_for(
+            confinement,
+            &scope,
+            &files.path,
+            &instance.cpus,
+            &files.plan,
+        );
         if scoped {
             live.scopes.push(scope.clone());
         }
@@ -332,8 +347,20 @@ async fn launch_all<O: Os>(
         };
         let readers = match pipes {
             Ok(pipes) => [
-                Reader::spawn(index, Stream::Stdout, pipes.stdout, files.stdout, inbound.clone()),
-                Reader::spawn(index, Stream::Stderr, pipes.stderr, files.stderr, inbound.clone()),
+                Reader::spawn(
+                    index,
+                    Stream::Stdout,
+                    pipes.stdout,
+                    files.stdout,
+                    inbound.clone(),
+                ),
+                Reader::spawn(
+                    index,
+                    Stream::Stderr,
+                    pipes.stderr,
+                    files.stderr,
+                    inbound.clone(),
+                ),
             ],
             Err(_) => [Reader::absent(), Reader::absent()],
         };
@@ -617,7 +644,7 @@ impl<O: Os> Supervisor<O> {
             }
         }
         self.rotation = self.rotation.wrapping_add(1);
-        self.record(now, workers);
+        self.record(now, &workers);
         stop.then_some(End::Evidence)
     }
 
@@ -644,7 +671,6 @@ impl<O: Os> Supervisor<O> {
                 });
                 if let Some(thread) = outside {
                     stop |= self.judge.observe(Observation::Escape {
-                        instance: index,
                         cpu: CpuId(u16::try_from(thread.cpu).unwrap_or(u16::MAX)),
                         pid,
                         tid: thread.tid,
@@ -693,7 +719,7 @@ impl<O: Os> Supervisor<O> {
     }
 
     /// Hands one conditions sample to the writer without waiting for storage.
-    fn record(&mut self, now: Instant, workers: PerCore<i64>) {
+    fn record(&mut self, now: Instant, workers: &PerCore<i64>) {
         let readings = self.sensors.read(now);
         if let Some(tctl) = readings.tctl_c {
             self.tctl_max = Some(self.tctl_max.map_or(tctl, |max| max.max(tctl)));
@@ -704,9 +730,13 @@ impl<O: Os> Supervisor<O> {
             tctl_c: readings.tctl_c,
             tccd_c: readings.tccd_c,
             core_mhz: readings.core_mhz,
-            worker_cpu_ms: workers,
+            worker_cpu_ms: *workers,
             package_power_w: readings.package_power_w,
-            pm_table: self.env.pm_table.as_ref().and_then(|reader| reader.pm_table()),
+            pm_table: self
+                .env
+                .pm_table
+                .as_ref()
+                .and_then(|reader| reader.pm_table()),
         };
         if let Some(writer) = &self.writer {
             if let Err(error) = writer.offer(&sample) {
@@ -809,11 +839,13 @@ impl<O: Os> Supervisor<O> {
 )]
 fn report_abandoned(plan: &TrialPlan, proof: &Result<Stopped, Containment>) {
     match proof {
-        Ok(_) => eprintln!("togi: trial {} was dropped while running; torn down", plan.id),
+        Ok(_) => eprintln!(
+            "togi: trial {} was dropped while running; torn down",
+            plan.id
+        ),
         Err(containment) => eprintln!(
             "togi: trial {} was dropped while running; teardown unconfirmed: {containment}",
             plan.id
         ),
     }
 }
-

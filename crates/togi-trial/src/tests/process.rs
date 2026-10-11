@@ -10,10 +10,11 @@ use std::time::{Duration, Instant};
 use togi_backend::{Backend, Error, FileName, Line, Plan, Ready};
 use togi_machine::{CancellationToken, CpuId, Regime, Signal, Stopped, Trials, Workload};
 
-use super::harness::{core, crate_error, nothing_runs, topology as _topology};
+use super::harness::{core, crate_error, nothing_runs};
+use crate::native::Settings;
 use crate::os::linux::Linux;
 use crate::procfs::{Proc, ticks_per_second};
-use crate::runner::{Backends, Options, Runner, Settings};
+use crate::runner::{Backends, Options, Runner};
 use crate::sensors::Roots;
 use crate::timing::Timing;
 
@@ -45,7 +46,10 @@ fn allowed_cpus() -> Vec<u16> {
     list.split(',')
         .flat_map(|part| {
             let (from, to) = part.split_once('-').unwrap_or((part, part));
-            let (from, to) = (from.parse::<u16>().unwrap_or(0), to.parse::<u16>().unwrap_or(0));
+            let (from, to) = (
+                from.parse::<u16>().unwrap_or(0),
+                to.parse::<u16>().unwrap_or(0),
+            );
             from..=to
         })
         .collect()
@@ -108,7 +112,11 @@ fn run_mode(parts: &[&str]) {
             std::thread::sleep(secs(5));
         }
         "affinity-then-oversized" | "compute-then-oversized" => {
-            let text = if mode.starts_with("affinity") { "AFFINITY:9\n" } else { "COMPUTE ERROR\n" };
+            let text = if mode.starts_with("affinity") {
+                "AFFINITY:9\n"
+            } else {
+                "COMPUTE ERROR\n"
+            };
             let _ = std::io::stderr().write_all(text.as_bytes());
             std::thread::sleep(Duration::from_millis(50));
             let _ = stdout().write_all(&big);
@@ -124,9 +132,20 @@ fn run_mode(parts: &[&str]) {
         "pipe-descendant" => {
             use std::os::unix::process::CommandExt as _;
             let exe = std::env::current_exe().unwrap();
+            #[expect(
+                clippy::disallowed_methods,
+                clippy::zombie_processes,
+                reason = "the helper starts a detached descendant that outlives it on purpose"
+            )]
             let child = std::process::Command::new(exe)
                 .process_group(0)
-                .args(["--exact", HELPER, "--nocapture", "--test-threads=1", "helper:hold:0"])
+                .args([
+                    "--exact",
+                    HELPER,
+                    "--nocapture",
+                    "--test-threads=1",
+                    "helper:hold:0",
+                ])
                 .spawn()
                 .unwrap();
             std::fs::write("descendant.pid.tmp", child.id().to_string()).unwrap();
@@ -172,7 +191,10 @@ impl Backend for Helper {
         let cpu = cpus.first().map_or(0, |cpu| cpu.0);
         let mode = if self.mode.starts_with("escape") {
             let from = cpu;
-            let to = allowed_cpus().into_iter().find(|c| *c != from).unwrap_or(from);
+            let to = allowed_cpus()
+                .into_iter()
+                .find(|c| *c != from)
+                .unwrap_or(from);
             format!("{}:{from}:{to}", self.mode)
         } else {
             format!("{}:{cpu}", self.mode)
@@ -262,7 +284,13 @@ fn spec(regime: Regime, cores: &[u8], duration: Duration) -> togi_machine::Trial
     spec.cpus = match regime {
         Regime::R6 | Regime::R7 => cores
             .iter()
-            .map(|&n| CpuId(if n == 0 { cpus[0] } else { cpus.get(1).copied().unwrap_or(cpus[0]) }))
+            .map(|&n| {
+                CpuId(if n == 0 {
+                    cpus[0]
+                } else {
+                    cpus.get(1).copied().unwrap_or(cpus[0])
+                })
+            })
             .collect(),
         _ => vec![CpuId(cpus[0])],
     };
@@ -280,7 +308,11 @@ impl togi_machine::Reporter for Quiet {
 fn run(
     runner: &mut Runner,
     spec: togi_machine::TrialSpec,
-) -> (togi_machine::TrialResult, Result<Stopped, togi_machine::Error>, Duration) {
+) -> (
+    togi_machine::TrialResult,
+    Result<Stopped, togi_machine::Error>,
+    Duration,
+) {
     let started = Instant::now();
     let mut trial = runner
         .start(&CancellationToken::new(), spec, nothing_runs())
@@ -298,19 +330,36 @@ fn run(
 fn a_working_helper_passes_a_failing_one_fails_and_an_exiting_one_exits_early() {
     let dir = tempfile::tempdir().unwrap();
     let mut work = runner("work", false, timing(), dir.path());
-    let (result, stopped, _) = run(&mut work, spec(Regime::R1, &[0], Duration::from_millis(1500)));
-    assert_eq!((result.failure, result.inconclusive.as_deref()), (None, None));
-    assert!(result.escaped.is_empty(), "{:?} of {:?}", result.escaped, allowed_cpus());
+    let (result, stopped, _) = run(
+        &mut work,
+        spec(Regime::R1, &[0], Duration::from_millis(1500)),
+    );
+    assert_eq!(
+        (result.failure, result.inconclusive.as_deref()),
+        (None, None)
+    );
+    assert!(
+        result.escaped.is_empty(),
+        "{:?} of {:?}",
+        result.escaped,
+        allowed_cpus()
+    );
     assert!(stopped.is_ok());
 
     let mut error = runner("error", false, timing(), dir.path());
     let (result, stopped, _) = run(&mut error, spec(Regime::R1, &[0], secs(10)));
-    assert_eq!(result.failure.map(|f| f.signal), Some(Signal::ComputationError));
+    assert_eq!(
+        result.failure.map(|f| f.signal),
+        Some(Signal::ComputationError)
+    );
     assert!(stopped.is_ok());
 
     let mut exit = runner("exit", false, timing(), dir.path());
     let (result, stopped, _) = run(&mut exit, spec(Regime::R1, &[0], secs(10)));
-    assert_eq!(result.failure.map(|f| f.signal), Some(Signal::UnexpectedExit));
+    assert_eq!(
+        result.failure.map(|f| f.signal),
+        Some(Signal::UnexpectedExit)
+    );
     assert!(stopped.is_ok());
 }
 
@@ -344,7 +393,11 @@ fn oversized_output_on_any_source_is_inconclusive_with_the_exact_prefix_and_no_c
         assert!(elapsed < secs(15), "{mode}: {elapsed:?}");
         if let Some(log) = log {
             let bytes = std::fs::read(dir.path().join("trials/t1/work").join(log)).unwrap();
-            assert!((64 * 1024..64 * 1024 + 64).contains(&bytes.len()), "{mode}: {}", bytes.len());
+            assert!(
+                (64 * 1024..64 * 1024 + 64).contains(&bytes.len()),
+                "{mode}: {}",
+                bytes.len()
+            );
             assert!(bytes.ends_with(&vec![b'x'; 1024]), "{mode}");
         }
     }
@@ -360,7 +413,10 @@ fn affinity_and_computation_errors_beat_an_overlong_line() {
         if mode.starts_with("affinity") {
             assert_eq!(result.escaped, [CpuId(9)]);
         } else {
-            assert_eq!(result.failure.map(|f| f.signal), Some(Signal::ComputationError));
+            assert_eq!(
+                result.failure.map(|f| f.signal),
+                Some(Signal::ComputationError)
+            );
         }
         assert!(stopped.is_ok());
     }
@@ -380,17 +436,31 @@ fn r6_workers_are_stopped_before_the_trial_starts_to_count() {
         .unwrap();
     for instance in trial.started().instances {
         let stat = std::fs::read_to_string(format!("/proc/{}/stat", instance.pid)).unwrap();
-        let state = stat.rsplit(')').next().unwrap().trim().chars().next().unwrap();
+        let state = stat
+            .rsplit(')')
+            .next()
+            .unwrap()
+            .trim()
+            .chars()
+            .next()
+            .unwrap();
         assert_eq!(state, 'T', "worker {} is stopped before wait", instance.pid);
     }
     let result = trial.wait(&CancellationToken::new(), &mut Quiet).unwrap();
-    assert_eq!(result.stops, 2 + 1, "two initial stops and the one burst stop");
+    assert_eq!(
+        result.stops,
+        2 + 1,
+        "two initial stops and the one burst stop"
+    );
     assert_eq!(result.conts, 1);
     assert!(trial.stop().is_ok());
 }
 
 fn kill_pid(pid: u32) {
-    if let Some(pid) = i32::try_from(pid).ok().and_then(rustix::process::Pid::from_raw) {
+    if let Some(pid) = i32::try_from(pid)
+        .ok()
+        .and_then(rustix::process::Pid::from_raw)
+    {
         let _ = rustix::process::kill_process(pid, rustix::process::Signal::KILL);
     }
 }
@@ -417,7 +487,11 @@ fn a_detached_pipe_holder_makes_the_drain_unconfirmed_and_the_stop_containment()
     let begun = Instant::now();
     let _ = trial.wait(&CancellationToken::new(), &mut Quiet);
     let stopped = trial.stop();
-    let descendant: u32 = std::fs::read_to_string(&pid_file).unwrap().trim().parse().unwrap();
+    let descendant: u32 = std::fs::read_to_string(&pid_file)
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
     kill_pid(descendant);
     assert!(
         matches!(stopped, Err(togi_machine::Error::Containment)),
@@ -430,8 +504,14 @@ fn a_detached_pipe_holder_makes_the_drain_unconfirmed_and_the_stop_containment()
 fn a_flooding_watched_file_is_drained_once_while_the_helper_ignores_term() {
     let dir = tempfile::tempdir().unwrap();
     let mut flooding = runner("watched-flood", true, timing(), dir.path());
-    let (result, stopped, elapsed) = run(&mut flooding, spec(Regime::R1, &[0], Duration::from_secs(2)));
-    assert_eq!(result.failure.map(|f| f.signal), Some(Signal::ComputationError));
+    let (result, stopped, elapsed) = run(
+        &mut flooding,
+        spec(Regime::R1, &[0], Duration::from_secs(2)),
+    );
+    assert_eq!(
+        result.failure.map(|f| f.signal),
+        Some(Signal::ComputationError)
+    );
     assert!(stopped.is_ok(), "{stopped:?}");
     assert!(elapsed < secs(15), "{elapsed:?}");
 }
@@ -442,9 +522,16 @@ fn a_relative_trial_directory_works_and_the_watched_file_lands_in_the_work_direc
     let cwd = std::env::current_dir().unwrap();
     let mut watching = runner("watched-error", true, timing(), &relative);
     let (result, stopped, _) = run(&mut watching, spec(Regime::R1, &[0], secs(10)));
-    assert_eq!(result.failure.map(|f| f.signal), Some(Signal::ComputationError));
+    assert_eq!(
+        result.failure.map(|f| f.signal),
+        Some(Signal::ComputationError)
+    );
     assert!(stopped.is_ok());
-    assert!(cwd.join(&relative).join("trials/t1/work/results.txt").exists());
+    assert!(
+        cwd.join(&relative)
+            .join("trials/t1/work/results.txt")
+            .exists()
+    );
     std::fs::remove_dir_all(cwd.join(&relative)).unwrap();
 }
 
@@ -453,7 +540,10 @@ fn a_zombie_leader_keeps_its_group_signalable_until_it_is_reaped() {
     use crate::launch::LaunchCommand;
     use crate::os::{Child as _, GroupSignal, Os as _};
     let os = Linux::new(Proc::new("/proc".into(), ticks_per_second()), false);
-    let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
     runtime.block_on(async {
         let command = LaunchCommand {
             argv: vec!["/bin/sh".into(), "-c".into(), "exit 0".into()],
@@ -483,8 +573,12 @@ fn systemctl_calls_are_bounded_and_a_timed_out_missing_scope_text_is_not_success
     )
     .unwrap();
     std::fs::set_permissions(&script, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
-    let os = Linux::new(Proc::new("/proc".into(), ticks_per_second()), false).with_systemctl(&script);
-    let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+    let os =
+        Linux::new(Proc::new("/proc".into(), ticks_per_second()), false).with_systemctl(&script);
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
     let begun = Instant::now();
     let outcome = runtime.block_on(os.systemd(
         &Systemd::Kill {
