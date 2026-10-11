@@ -70,7 +70,11 @@ impl BiosContext {
     /// Reports the first field of `current` that differs from `self`, the recorded context.
     pub fn first_difference(&self, current: &Self) -> Option<ContextMismatch> {
         let texts = [
-            (ContextField::BiosVersion, &self.bios_version, &current.bios_version),
+            (
+                ContextField::BiosVersion,
+                &self.bios_version,
+                &current.bios_version,
+            ),
             (ContextField::Board, &self.board, &current.board),
             (ContextField::CpuModel, &self.cpu_model, &current.cpu_model),
             (ContextField::Microcode, &self.microcode, &current.microcode),

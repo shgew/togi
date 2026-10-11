@@ -2,9 +2,7 @@ use std::collections::BTreeMap;
 
 use togi_machine::{CcdId, CoreId, PerCore, PmTable, TrialConditions};
 
-use super::{
-    MIN_SAMPLES, Telemetry, VOLTS_PER_COUNT, WARMUP_MS, counts, groups, summarize, top,
-};
+use super::{MIN_SAMPLES, Telemetry, VOLTS_PER_COUNT, WARMUP_MS, counts, groups, summarize, top};
 
 fn core(id: i64) -> CoreId {
     CoreId::new(id).unwrap()
@@ -19,7 +17,10 @@ fn ccd_of(core: CoreId) -> CcdId {
 }
 
 fn per_core<T: Copy + Default>(readings: &[(i64, T)]) -> PerCore<T> {
-    readings.iter().map(|&(id, value)| (core(id), value)).collect()
+    readings
+        .iter()
+        .map(|&(id, value)| (core(id), value))
+        .collect()
 }
 
 fn lane(value: f32) -> f64 {

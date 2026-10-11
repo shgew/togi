@@ -91,7 +91,11 @@ impl Iterator for Periods {
 
     fn next(&mut self) -> Option<Duration> {
         Some(match self {
-            Self::Duty { on, off, next_is_on } => {
+            Self::Duty {
+                on,
+                off,
+                next_is_on,
+            } => {
                 let period = if *next_is_on { *on } else { *off };
                 *next_is_on = !*next_is_on;
                 period

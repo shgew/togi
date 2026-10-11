@@ -117,10 +117,7 @@ pub fn counts(v: f64, target: f64) -> i64 {
 }
 
 pub fn top(requests: &PerCore<f64>) -> Option<f64> {
-    requests
-        .iter()
-        .map(|(_, request)| request)
-        .reduce(f64::max)
+    requests.iter().map(|(_, request)| request).reduce(f64::max)
 }
 
 #[expect(

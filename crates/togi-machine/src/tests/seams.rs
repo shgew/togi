@@ -114,7 +114,9 @@ fn partial_propagates_with_question_mark_as_its_error() {
 fn partial_reads_as_its_error() {
     let partial = Partial {
         value: 7_u8,
-        error: Error::from(Box::<dyn std::error::Error + Send + Sync>::from("disk gone")),
+        error: Error::from(Box::<dyn std::error::Error + Send + Sync>::from(
+            "disk gone",
+        )),
     };
     assert_eq!(partial.to_string(), "disk gone");
     assert!(std::error::Error::source(&partial).is_none());
@@ -191,7 +193,12 @@ fn kernel_read_resumes_after_a_cursor_or_reads_the_whole_boot() {
 fn ids_serialize_as_plain_strings() {
     let boot = BootId::from("b".to_owned());
     assert_eq!(serde_json::to_string(&boot).unwrap(), "\"b\"");
-    assert_eq!(serde_json::from_str::<KernelCursor>("\"c\"").unwrap().to_string(), "c");
+    assert_eq!(
+        serde_json::from_str::<KernelCursor>("\"c\"")
+            .unwrap()
+            .to_string(),
+        "c"
+    );
 }
 
 #[test]

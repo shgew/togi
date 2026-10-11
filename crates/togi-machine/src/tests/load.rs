@@ -91,7 +91,10 @@ fn random_stops_lead_continues_by_at_most_one() {
     let five = LoadSchedule::Random { seed: 5 };
     for tenth in 0..9000 {
         let Toggles { stops, conts } = five.toggles(millis(tenth * 10));
-        assert!(stops == conts || stops == conts + 1, "{tenth}: {stops} {conts}");
+        assert!(
+            stops == conts || stops == conts + 1,
+            "{tenth}: {stops} {conts}"
+        );
     }
 }
 
