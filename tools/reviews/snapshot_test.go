@@ -236,6 +236,9 @@ func pullFake(diff string, contents map[string]string, view func(n int) pullInfo
 			if diff == "ERROR" {
 				return nil, errors.New("gh pr diff: HTTP 502")
 			}
+			if diff == "TOO_LARGE" {
+				return nil, errors.New("gh pr: could not find pull request diff: HTTP 406: Sorry, the diff exceeded the maximum number of lines (20000) (https://api.github.com/repos/shgew/togi/pulls/700)\nPullRequest.diff too_large")
+			}
 			return []byte(diff), nil
 		case len(args) == 4 && args[0] == "api" && args[1] == "-H" && strings.HasPrefix(args[3], filesPrefix):
 			name, ref, _ := strings.Cut(strings.TrimPrefix(args[3], filesPrefix), "?ref=")
@@ -338,6 +341,77 @@ func TestSnapshotDiffFailure(t *testing.T) {
 	tl, _, _, _, _ = testTools(t, pullHandler(t, "GraphQL: oops\n", headSHA), nil)
 	if err := runSnapshot(tl, []string{"700"}); err == nil || !strings.Contains(err.Error(), "not a unified diff") {
 		t.Fatalf("error = %v, want a refusal to take text for a diff", err)
+	}
+}
+
+func TestSnapshotTooLargeDiffBuiltLocally(t *testing.T) {
+	t.Parallel()
+	git := func(args []string) ([]byte, error) {
+		switch args[0] {
+		case "fetch":
+			return nil, nil
+		case "diff":
+			return []byte(samplePR), nil
+		}
+		return nil, fmt.Errorf("unexpected git %v", args)
+	}
+	tl, g, c, _, _ := testTools(t, pullHandler(t, "TOO_LARGE", headSHA), git)
+	if err := runSnapshot(tl, []string{"700"}); err != nil {
+		t.Fatal(err)
+	}
+	wantGit := []string{
+		"git fetch --quiet origin " + baseSHA + " " + headSHA,
+		"git diff --no-color --no-ext-diff -M " + baseSHA + "..." + headSHA,
+	}
+	if diff := cmp.Diff(wantGit, c.joined()); diff != "" {
+		t.Errorf("git calls (-want +got):\n%s", diff)
+	}
+	if got := g.joined()[1]; got != "gh pr diff 700 --color=never --allow-escape-sequences" {
+		t.Errorf("second gh call = %q, want the gh diff attempt", got)
+	}
+	dir := snapshotDir(tl)
+	if got := readFile(t, filepath.Join(dir, "pr.diff")); got != samplePR {
+		t.Error("pr.diff is not the locally built diff byte for byte")
+	}
+	var m manifest
+	if err := json.Unmarshal([]byte(readFile(t, filepath.Join(dir, "manifest.json"))), &m); err != nil {
+		t.Fatal(err)
+	}
+	want, err := parseDiff(samplePR)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.PRFiles != len(want) || m.PRLines != totalLines(want) || len(m.Files) != len(want) {
+		t.Errorf("manifest holds %d files, %d lines; the local diff has %d files, %d lines", m.PRFiles, m.PRLines, len(want), totalLines(want))
+	}
+}
+
+func TestSnapshotTooLargeDiffRefusesMovedHead(t *testing.T) {
+	t.Parallel()
+	git := func(args []string) ([]byte, error) {
+		if args[0] == "fetch" {
+			return nil, nil
+		}
+		return []byte(samplePR), nil
+	}
+	tl, _, _, _, _ := testTools(t, pullHandler(t, "TOO_LARGE", headSHA, movedSHA), git)
+	err := runSnapshot(tl, []string{"700"})
+	if err == nil || !strings.Contains(err.Error(), "moved while the snapshot ran") {
+		t.Fatalf("error = %v, want a moved-head refusal", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(tl.tmp, "togi-review")); statErr == nil {
+		t.Error("a refused snapshot left a directory behind")
+	}
+}
+
+func TestSnapshotOtherDiffFailureRunsNoGit(t *testing.T) {
+	t.Parallel()
+	tl, _, c, _, _ := testTools(t, pullHandler(t, "ERROR", headSHA), nil)
+	if err := runSnapshot(tl, []string{"700"}); err == nil || !strings.Contains(err.Error(), "fetch the diff of pull request #700") {
+		t.Fatalf("error = %v, want the fetch failure", err)
+	}
+	if len(c.calls) != 0 {
+		t.Errorf("git ran after an ordinary gh failure: %v", c.joined())
 	}
 }
 

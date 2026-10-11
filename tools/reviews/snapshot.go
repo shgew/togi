@@ -127,10 +127,9 @@ func createSnapshot(t tools, pr int, previousURL, previousBase string) (string, 
 	if err != nil {
 		return "", manifest{}, err
 	}
-	// The diff goes to files, never to a terminal, so gh's guard against escape sequences, which a diff of terminal test data trips, does not apply.
-	raw, err := t.gh("pr", "diff", strconv.Itoa(pr), "--color=never", "--allow-escape-sequences")
+	raw, err := pullDiff(t, pr, before)
 	if err != nil {
-		return "", manifest{}, fmt.Errorf("fetch the diff of pull request #%d: %w", pr, err)
+		return "", manifest{}, err
 	}
 	after, err := viewPull(t.gh, pr)
 	if err != nil {
@@ -216,6 +215,32 @@ func movedSince(pr int, before, after pullInfo) error {
 		return fmt.Errorf("pull request #%d moved while the snapshot ran (head %s, base %s before; head %s, base %s after): run snapshot again", pr, before.Head, before.Base, after.Head, after.Base)
 	}
 	return nil
+}
+
+// pullDiff fetches the diff of pull request pr. When GitHub refuses it as too large, git builds it from the frozen base and head instead, as the merge-base diff GitHub would show.
+func pullDiff(t tools, pr int, frozen pullInfo) ([]byte, error) {
+	// The diff goes to files, never to a terminal, so gh's guard against escape sequences, which a diff of terminal test data trips, does not apply.
+	raw, err := t.gh("pr", "diff", strconv.Itoa(pr), "--color=never", "--allow-escape-sequences")
+	if err == nil {
+		return raw, nil
+	}
+	if !diffTooLarge(err) {
+		return nil, fmt.Errorf("fetch the diff of pull request #%d: %w", pr, err)
+	}
+	if _, err := t.git("fetch", "--quiet", "origin", frozen.Base, frozen.Head); err != nil {
+		return nil, fmt.Errorf("fetch the frozen base and head of pull request #%d, whose diff GitHub refuses as too large: %w", pr, err)
+	}
+	raw, err = t.git("diff", "--no-color", "--no-ext-diff", "-M", frozen.Base+"..."+frozen.Head)
+	if err != nil {
+		return nil, fmt.Errorf("build the diff of pull request #%d, which GitHub refuses as too large: %w", pr, err)
+	}
+	return raw, nil
+}
+
+// diffTooLarge reports whether gh failed because GitHub refuses a diff over its line limit.
+func diffTooLarge(err error) bool {
+	msg := err.Error()
+	return strings.Contains(msg, "HTTP 406") && strings.Contains(msg, "the diff exceeded the maximum number of lines")
 }
 
 // exclusionOf names why the review skips the file, or "" when it is included. Paths and kinds exclude by themselves. Whether a file is generated is decided on its contents, never on marker lines a patch shows: a marker in context or outside the hunks counts, one after the package clause or inside a string does not, and one an earlier patch of a delta added and a later one dropped does not either. complete says the sections hold each file's whole change, as the pull request's diff does: an added or deleted file's section then is its whole content and needs no read. Any other file is read at the frozen head; one the head lacks has no contents to judge and stays in the review.
