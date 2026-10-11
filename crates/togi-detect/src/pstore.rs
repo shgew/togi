@@ -293,7 +293,7 @@ impl Dump {
     }
 }
 
-fn read_at(
+pub(crate) fn read_at(
     file: &OwnedFd,
     buffer: &mut [u8],
     offset: u64,
@@ -328,7 +328,7 @@ fn list(directory: &OwnedFd, path: &Path) -> Result<Vec<(OsString, FileType)>, P
     Ok(entries)
 }
 
-fn is_directory(
+pub(crate) fn is_directory(
     parent: &impl AsFd,
     name: &OsString,
     kind: FileType,

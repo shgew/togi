@@ -1,8 +1,12 @@
+use std::ffi::OsString;
 use std::fs;
+use std::os::fd::OwnedFd;
 use std::os::unix::fs::{DirBuilderExt, PermissionsExt, symlink};
 use std::path::Path;
 use std::time::Duration;
 
+use rustix::fs::FileType;
+use rustix::io::Errno;
 use serde_json::json;
 use tempfile::TempDir;
 use togi_machine::{Kernel as _, PstoreRecord};
@@ -10,7 +14,7 @@ use togi_machine::{Kernel as _, PstoreRecord};
 use super::support::{CURRENT, LATER, MISSING, OLD, Reply, boot, exit, locked, ok, scripted};
 use crate::Error;
 use crate::boot::JournalBoot;
-use crate::pstore::{Access, DumpId, PstoreError, Unsafe, tail_lines};
+use crate::pstore::{Access, DumpId, PstoreError, Unsafe, is_directory, read_at, tail_lines};
 use crate::runner::JOURNALCTL_BUDGET;
 
 fn directory(path: &Path) {
@@ -322,6 +326,45 @@ fn dump_ids_come_from_the_first_line_only() {
     assert!(DumpId::of_header(b"Panic#12 Part3\n").is_some());
     assert!(DumpId::of_header(b"\nPanic#12 Part3\n").is_none());
     assert!(DumpId::of_header(b"Panic#12 Part3 Part4\n").is_none());
+}
+
+#[test]
+fn a_tail_read_cut_short_by_eof_is_an_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("dmesg.txt");
+    fs::write(&path, b"abcd").unwrap();
+    let file = OwnedFd::from(fs::File::open(&path).unwrap());
+    let mut window = [0; 16];
+
+    assert_eq!(read_at(&file, &mut window, 0, false), Err(Errno::IO));
+    assert_eq!(read_at(&file, &mut window, 0, true), Ok(4));
+    assert_eq!(&window[..4], b"abcd");
+}
+
+#[test]
+fn an_unknown_entry_type_is_inspected_without_following_links() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    directory(&root.join("150"));
+    fs::write(root.join("file"), b"x").unwrap();
+    symlink(root.join("150"), root.join("link")).unwrap();
+    let parent = OwnedFd::from(fs::File::open(root).unwrap());
+    let inspect =
+        |name: &str| is_directory(&parent, &OsString::from(name), FileType::Unknown, root);
+
+    assert!(inspect("150").unwrap());
+    assert!(!inspect("file").unwrap());
+    assert!(!inspect("link").unwrap());
+    let error = inspect("missing").unwrap_err();
+    assert!(
+        matches!(
+            &error,
+            PstoreError::Io { access: Access::Inspect, path, source }
+                if *path == root.join("missing")
+                    && source.kind() == std::io::ErrorKind::NotFound
+        ),
+        "{error:?}"
+    );
 }
 
 #[test]

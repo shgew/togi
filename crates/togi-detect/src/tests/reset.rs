@@ -490,3 +490,127 @@ fn a_boot_list_that_cannot_be_read_is_never_clean_or_missing() {
         }
     }
 }
+
+fn reset_line(text: &str) -> String {
+    format!("x86/amd: Previous system reset reason [0x00000001]: {text}")
+}
+
+#[test]
+fn a_failed_reset_reason_read_names_the_operation_and_its_boot() {
+    let cases: [(&str, Exit, Option<&str>); 2] = [
+        (
+            "exit status",
+            (1, b"", "permission denied"),
+            Some("permission denied"),
+        ),
+        ("malformed entry", (0, b"{", ""), None),
+    ];
+    for (name, (code, out, stderr), cause) in cases {
+        let (mut kernel, _) = kernel(&[], move |_| exit(code, out, stderr));
+        let error = kernel.reset_reason(&boot(OLD)).unwrap_err();
+        let text = error.to_string();
+        assert!(text.contains("reset reason"), "{name}: {text}");
+        assert!(!text.contains("journal boundary"), "{name}: {text}");
+        assert!(text.contains(OLD), "{name}: {text}");
+        if let Some(cause) = cause {
+            assert!(text.contains(cause), "{name}: {text}");
+        } else {
+            assert!(caused_by::<DecodeError>(&error).is_some(), "{name}");
+        }
+    }
+}
+
+#[test]
+fn a_failed_boundary_read_names_the_operation_and_the_boot_it_read() {
+    for (name, failing) in [("crashed boot", OLD), ("successor", LATER)] {
+        let list = boots(&[OLD, LATER]);
+        let last = boundary(OLD, "series", "100");
+        let (mut kernel, calls) = kernel(&[], move |args| match args[0].as_str() {
+            "--list-boots" => ok(&list),
+            "-b" if args[1] == failing => exit(1, b"", "permission denied"),
+            "-b" => ok(&last),
+            _ => ok(""),
+        });
+        let error = kernel.reset_reason_after(&boot(OLD)).unwrap_err();
+        let text = error.to_string();
+        assert!(text.contains("journal boundary"), "{name}: {text}");
+        assert!(!text.contains("reset reason"), "{name}: {text}");
+        assert!(text.contains(failing), "{name}: {text}");
+        assert!(text.contains("permission denied"), "{name}: {text}");
+        assert!(
+            locked(&calls).iter().all(|call| argv(call)[0] != "-k"),
+            "{name}: no reset-reason query follows an unreadable boundary"
+        );
+    }
+}
+
+#[test]
+fn an_unreadable_sequence_number_is_a_decode_error_not_a_missing_boot() {
+    let too_big = u64::MAX.to_string() + "0";
+    for (name, text) in [
+        ("not a number", "abc"),
+        ("negative", "-1"),
+        ("above u64", too_big.as_str()),
+    ] {
+        for unreadable in [OLD, LATER] {
+            let good = |id: &str, sequence| boundary(id, "series", sequence);
+            let (last, first) = if unreadable == OLD {
+                (boundary(OLD, "series", text), good(LATER, "101"))
+            } else {
+                (good(OLD, "100"), boundary(LATER, "series", text))
+            };
+            let log = kernel_lines(&["Linux version 7.2.8", THERMAL]);
+            let (mut kernel, calls) = successor_kernel(boots(&[OLD, LATER]), last, first, log);
+            let error = kernel.reset_reason_after(&boot(OLD)).unwrap_err();
+            assert!(
+                !matches!(error, togi_machine::Error::BootMissing),
+                "{name} in {unreadable}"
+            );
+            assert!(
+                matches!(
+                    caused_by::<DecodeError>(&error),
+                    Some(DecodeError::Number { field: "__SEQNUM", text: found, .. }) if found == text
+                ),
+                "{name} in {unreadable}: {error:?}"
+            );
+            assert!(
+                locked(&calls).iter().all(|call| argv(call)[0] != "-k"),
+                "{name} in {unreadable}: no reset-reason query runs"
+            );
+        }
+    }
+}
+
+#[test]
+fn mixed_reset_reasons_keep_the_dominant_kind_and_every_raw_reason() {
+    use ResetKind::{CpuShutdown, PowerButton, SyncFlood, ThermalTrip, Unknown, Watchdog};
+    const UNKNOWN: &str = "unexpected reason";
+    const BUTTON: &str = "power button was pressed for 4 seconds";
+    const SHUTDOWN: &str = "internal CPU shutdown event occurred";
+    const FLOOD: &str = "a software sync flood event occurred";
+    let pairs: [(&str, &str, ResetKind); 8] = [
+        (UNKNOWN, BUTTON, PowerButton),
+        (UNKNOWN, SHUTDOWN, CpuShutdown),
+        (UNKNOWN, FLOOD, SyncFlood),
+        (UNKNOWN, "hardware watchdog timer expired", Watchdog),
+        (
+            UNKNOWN,
+            "internal CPU thermal limit was tripped",
+            ThermalTrip,
+        ),
+        (SHUTDOWN, BUTTON, CpuShutdown),
+        (SHUTDOWN, FLOOD, SyncFlood),
+        (UNKNOWN, UNKNOWN, Unknown),
+    ];
+    for (a, b, dominant) in pairs {
+        for order in [[a, b], [b, a]] {
+            let mut scan = ResetScan::default();
+            for text in order {
+                scan.push(&reset_line(text)).unwrap();
+            }
+            let got = scan.finish();
+            assert_eq!(got.kind, Some(dominant), "{order:?}");
+            assert_eq!(got.raw, order, "{order:?}");
+        }
+    }
+}

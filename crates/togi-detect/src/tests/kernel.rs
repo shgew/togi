@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use serde_json::json;
-use togi_machine::{Kernel as _, Partial};
+use togi_machine::{Kernel as _, KernelCursor, Partial};
 
 use super::support::{
     CURRENT, MISSING, OLD, argv, at, boot, caused_by, core, exit, kernel, lines, locked, ok,
@@ -134,6 +134,24 @@ fn a_boot_that_is_not_32_hex_digits_is_refused_before_any_command() {
             error.to_string().contains("is not a boot id"),
             "{id}: {error}"
         );
+        let cursor = KernelCursor::from("s=1;i=2".to_owned());
+        for after in [None, Some(&cursor)] {
+            let partial = kernel.read_mces(&boot(id), after).unwrap_err();
+            assert!(partial.value.is_empty(), "{id} after {after:?}");
+            assert!(
+                !matches!(
+                    partial.error,
+                    togi_machine::Error::CursorMissing | togi_machine::Error::BootMissing
+                ),
+                "{id} after {after:?}: {:?}",
+                partial.error
+            );
+            let text = partial.error.to_string();
+            assert!(
+                text.contains(&format!("{id:?} is not a boot id")),
+                "{id} after {after:?}: {text}"
+            );
+        }
     }
     assert!(locked(&calls).is_empty());
 }
