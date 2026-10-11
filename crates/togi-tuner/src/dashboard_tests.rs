@@ -1382,6 +1382,7 @@ fn search_turns_order_and_confirmation() {
         .filter(|t| t.running)
         .collect();
     assert_eq!(running.len(), 1, "{running:?}");
+    assert_eq!(running[0].core, core(0));
     j.assert_resumes();
 }
 
@@ -1587,4 +1588,59 @@ fn crash_recovery_keeps_the_running_part() {
     let end = Journal::end_payload(&trial, Outcome::Failure, Some(togi_machine::Signal::Crash));
     j.append(end.into(), &[intent]);
     assert_eq!(running(&j), 0, "the part still runs after its trial ended");
+}
+
+#[test]
+fn search_turns_keep_an_unfinished_second_regime_first_then_rotate_past_the_cursor() {
+    let mut j = Journal::search_at(&[-20, -20, -20]);
+    let turns = |j: &Journal| -> Vec<(u8, Vec<Regime>, bool)> {
+        j.state
+            .search_turns()
+            .iter()
+            .map(|turn| (turn.core.get(), turn.regimes.clone(), turn.running))
+            .collect()
+    };
+    let both = vec![Regime::R1, Regime::R2];
+    let first = j.next_trial();
+    assert_eq!(
+        (first.regime, first.load),
+        (Regime::R1, Load::Single(core(0)))
+    );
+    let (intent, trial) = j.intent(&first);
+    assert_eq!(
+        turns(&j),
+        [
+            (1, both.clone(), false),
+            (2, both.clone(), false),
+            (0, both.clone(), true)
+        ]
+    );
+    j.end(intent, &trial, Outcome::Pass);
+    assert_eq!(
+        turns(&j),
+        [
+            (0, vec![Regime::R2], false),
+            (1, both.clone(), false),
+            (2, both.clone(), false)
+        ]
+    );
+    j.assert_resumes();
+    let second = j.next_trial();
+    assert_eq!(
+        (second.regime, second.load),
+        (Regime::R2, Load::Single(core(0)))
+    );
+    let (intent, trial) = j.intent(&second);
+    assert_eq!(turns(&j)[0], (0, vec![Regime::R2], true));
+    j.end(intent, &trial, Outcome::Pass);
+    let rotated = [
+        (1, both.clone(), false),
+        (2, both.clone(), false),
+        (0, both.clone(), false),
+    ];
+    assert_eq!(turns(&j), rotated);
+    j.assert_resumes();
+    decide_next(&mut j);
+    assert_eq!(turns(&j), rotated);
+    j.assert_resumes();
 }
