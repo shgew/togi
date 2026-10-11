@@ -123,9 +123,10 @@ pub enum CleanupFailure {
         #[source]
         source: io::Error,
     },
-    #[error("kill scope {scope}")]
+    #[error("signal scope {scope} with {signal}")]
     KillScope {
         scope: String,
+        signal: &'static str,
         #[source]
         source: Box<dyn std::error::Error + Send + Sync>,
     },

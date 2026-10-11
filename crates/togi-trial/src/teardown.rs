@@ -233,6 +233,7 @@ impl<'a, O: Os> Teardown<'a, O, Running> {
                 None => confirmed.push(scope),
                 Some(source) => self.failures.record(CleanupFailure::KillScope {
                     scope: scope.to_string(),
+                    signal: KillSignal::Kill.name(),
                     source,
                 }),
             }

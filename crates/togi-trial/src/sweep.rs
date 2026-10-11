@@ -79,14 +79,18 @@ async fn each_scope<O: Os>(
     os: &Rc<O>,
     scopes: &[ScopeName],
     end: Instant,
-    operation: impl Fn(&ScopeName) -> Systemd,
+    signal: KillSignal,
     failures: &mut Vec<CleanupFailure>,
     stop: bool,
 ) {
     let mut calls = JoinSet::new();
     for scope in scopes {
         let os = Rc::clone(os);
-        let (kill, scope) = (operation(scope), scope.clone());
+        let scope = scope.clone();
+        let kill = Systemd::Kill {
+            scope: scope.clone(),
+            signal,
+        };
         calls.spawn_local(async move {
             let outcome = call(os.as_ref(), &kill, end).await;
             let stopped = match (&outcome, stop) {
@@ -102,6 +106,7 @@ async fn each_scope<O: Os>(
         if let Err(source) = outcome {
             failures.push(CleanupFailure::KillScope {
                 scope: scope.to_string(),
+                signal: signal.name(),
                 source,
             });
         }
@@ -152,10 +157,7 @@ pub(crate) async fn sweep<O: Os>(env: &Env<O>) -> Result<(String, Stopped), Erro
             os,
             &scopes,
             grace_end,
-            |scope| Systemd::Kill {
-                scope: scope.clone(),
-                signal,
-            },
+            signal,
             &mut failures,
             false,
         )
@@ -176,10 +178,7 @@ pub(crate) async fn sweep<O: Os>(env: &Env<O>) -> Result<(String, Stopped), Erro
         os,
         &scopes,
         kill_end,
-        |scope| Systemd::Kill {
-            scope: scope.clone(),
-            signal: KillSignal::Kill,
-        },
+        KillSignal::Kill,
         &mut failures,
         true,
     )
