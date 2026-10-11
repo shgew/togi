@@ -1,0 +1,11 @@
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-dbg-in-tests = true
+allow-print-in-tests = true
+
+# The tripwire inventory of #634 (Boundaries): each approved call site carries
+# #[expect(clippy::disallowed_methods, reason = "...")]. An entry lands with the crate that
+# defines or first calls its path: process spawning (trial workloads, journalctl in detect,
+# systemd-run, systemctl and grub-editenv in hardware, the simulator in bench, bench in
+# audit), the SMU seam's write methods and journal writes outside the journal crate.
+disallowed-methods = []
