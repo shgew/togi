@@ -10,9 +10,15 @@ mod identity;
 #[cfg(target_os = "linux")]
 mod evidence;
 #[cfg(target_os = "linux")]
+mod files;
+#[cfg(target_os = "linux")]
 mod id;
 #[cfg(target_os = "linux")]
+mod launch;
+#[cfg(target_os = "linux")]
 mod logs;
+#[cfg(target_os = "linux")]
+mod os;
 #[cfg(target_os = "linux")]
 mod output;
 #[cfg(target_os = "linux")]
@@ -27,6 +33,9 @@ mod schedule;
 mod sensors;
 #[cfg(target_os = "linux")]
 mod stall;
+#[cfg(test)]
+#[cfg(target_os = "linux")]
+mod testing;
 #[cfg(target_os = "linux")]
 mod timing;
 #[cfg(target_os = "linux")]
