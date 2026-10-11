@@ -21,6 +21,7 @@ serde_json = { version = "1", features = ["float_roundtrip", "raw_value"] }
 tempfile = "3"
 test-case = "3"
 thiserror = "2"
+togi-backend = { path = "crates/togi-backend", version = "0.0.0" }
 togi-command = { path = "crates/togi-command", version = "0.0.0" }
 togi-machine = { path = "crates/togi-machine", version = "0.0.0" }
 togi-trialfiles = { path = "crates/togi-trialfiles", version = "0.0.0" }

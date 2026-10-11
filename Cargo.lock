@@ -630,6 +630,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "togi-backend"
+version = "0.0.0"
+dependencies = [
+ "tempfile",
+ "thiserror",
+ "togi-machine",
+]
+
+[[package]]
 name = "togi-command"
 version = "0.0.0"
 dependencies = [
@@ -659,6 +668,23 @@ name = "togi-requests"
 version = "0.0.0"
 dependencies = [
  "togi-machine",
+]
+
+[[package]]
+name = "togi-trial"
+version = "0.0.0"
+dependencies = [
+ "nix",
+ "rustix",
+ "serde_json",
+ "tempfile",
+ "test-case",
+ "thiserror",
+ "togi-backend",
+ "togi-command",
+ "togi-machine",
+ "togi-trialfiles",
+ "tokio",
 ]
 
 [[package]]
