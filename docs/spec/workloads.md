@@ -55,7 +55,7 @@ R6 runs on the profile and in parked hunt trials; R7 runs on the profile, checks
 
 ### Load-step schedules
 
-An R3 or R4 workload starts running, then alternates on and off periods; each on period ends with SIGSTOP and each off period with SIGCONT. R3 draws each period independently and uniformly from {10 ms, 50 ms, 200 ms, 1 s, 5 s} with a PCG seeded by the recorded seed, so the seed reproduces the schedule. R4 runs for its duty share of every 100 ms period. The trial end records how many of each signal were sent.
+An R3 or R4 workload starts running, then alternates on and off periods; each on period ends with SIGSTOP and each off period with SIGCONT. R3 draws each period independently and uniformly from {10 ms, 50 ms, 200 ms, 1 s, 5 s} with `rand`'s `StdRng` seeded by the recorded seed, so the seed reproduces the schedule with the same build. R4 runs for its duty share of every 100 ms period. The trial end records how many of each signal were sent.
 
 ## Durations and checking schedule
 
