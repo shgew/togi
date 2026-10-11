@@ -3,7 +3,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use togi_config::Config;
-use togi_journal::fs::{Fault, Op};
+use togi_journal::fs::{Fault as FsFault, Op};
 use togi_journal::{DeadEndCondition, Outcome as Verdict, Payload, ShutdownReason, TrialEnd};
 use togi_machine::{
     Backend, BankType, BootId, CancellationToken, Clock, CpuId, Error, Kernel, KernelCursor,
@@ -13,7 +13,12 @@ use togi_machine::{
 };
 use togi_sim::faults::{HookPhase, SmuOp, SmuOperation};
 
-use crate::session::{Control, Session, Stop};
+use togi_machine::Condition;
+use togi_sim::model::Script;
+
+use crate::error::{Flow, SessionError};
+use crate::execute::TunerValues;
+use crate::session::{Control, Fault, Session, Stop};
 use crate::testing::{Bench, core, kinds_of, run_plan, search_plan, swept};
 
 fn failure() -> Error {
@@ -125,10 +130,12 @@ impl Kernel for LogKernel {
     }
 }
 
+type Pending = Rc<Cell<Option<fn() -> Error>>>;
+
 struct RetryClock {
     inner: Box<dyn Clock>,
     waits: Rc<RefCell<Vec<Duration>>>,
-    fail_next: Rc<Cell<Option<fn() -> Error>>>,
+    fail_next: Pending,
 }
 
 impl Clock for RetryClock {
@@ -252,7 +259,7 @@ struct Rigged3 {
     log: Log,
     rigs: Rigs,
     waits: Rc<RefCell<Vec<Duration>>>,
-    fail_sleep: Rc<Cell<Option<fn() -> Error>>>,
+    fail_sleep: Pending,
     bench: Bench,
 }
 
@@ -570,7 +577,7 @@ fn a_backend_retry_that_cannot_be_journaled_prevents_the_wait_and_the_trial() {
     rig.rigs.borrow_mut().wait_error = Some(failure);
     trial(&mut rig).unwrap();
     let intents = kind_count(&rig.session, "trial.intent");
-    rig.bench.mem.inject(Fault::before(Op::Write, 1));
+    rig.bench.mem.inject(FsFault::before(Op::Write, 1));
     assert!(trial(&mut rig).is_err());
     assert!(rig.waits.borrow().is_empty());
     assert_eq!(kind_count(&rig.session, "trial.intent"), intents);
@@ -785,6 +792,7 @@ fn a_crash_at_a_kernel_boundary_never_invents_a_pass() {
 
 #[test]
 fn a_missing_current_boot_leaves_what_the_trial_itself_showed() {
+    #[expect(clippy::type_complexity, reason = "a table of cases")]
     let cases: [(&str, Option<Signal>, bool, Verdict, Option<Signal>); 5] = [
         ("missing", None, false, Verdict::Inconclusive, None),
         (
@@ -833,6 +841,7 @@ fn a_missing_current_boot_leaves_what_the_trial_itself_showed() {
 
 #[test]
 fn evidence_survives_a_runner_error_and_the_error_stays_in_the_reason() {
+    #[expect(clippy::type_complexity, reason = "a table of cases")]
     let cases: [(&str, Option<TrialResult>, bool, Verdict, Option<Signal>); 3] = [
         (
             "signal",
@@ -920,4 +929,228 @@ fn request_telemetry_needs_twenty_samples_after_the_warmup() {
         assert_eq!(!end.voltage_requests_v.is_empty(), recorded, "{count}");
         assert_eq!(!end.ccd_mhz.is_empty(), recorded, "{count}");
     }
+}
+
+fn together_plan(session: &Session, offsets: &[i64]) -> togi_tuner::TrialPlan {
+    let mut plan = search_plan(session, core(0), Regime::R1);
+    let topology = session.appender().tuner().topology().unwrap();
+    plan.condition = Condition::Together;
+    plan.load = togi_tuner::Load::Many(session.cores());
+    plan.profile = togi_tuner::Profile::new(topology, crate::testing::offsets(offsets)).unwrap();
+    plan
+}
+
+fn tuned_to(plan: &togi_tuner::TrialPlan) -> TunerValues<'_> {
+    TunerValues {
+        profile: &plan.profile,
+        profile_seq: None,
+        clean_cycles: 0,
+        first_result: false,
+    }
+}
+
+fn applied_conditions(session: &Session) -> Vec<Condition> {
+    session
+        .appender()
+        .journal()
+        .events()
+        .iter()
+        .filter_map(|event| match &event.payload {
+            Payload::ProfileApplied(applied) => Some(applied.condition),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn each_condition_puts_the_machine_on_its_profile_and_an_applied_one_is_not_written_again() {
+    let mut rig = rigged(Bench::new(2));
+    let together = together_plan(&rig.session, &[-5, -3]);
+    rig.session
+        .ensure_condition(&together, &tuned_to(&together))
+        .unwrap();
+    assert_eq!(applied_conditions(&rig.session), [Condition::Together]);
+    let mut smu = rig.bench.sim.seams().smu;
+    assert_eq!(smu.offset(core(0)).unwrap().0, -5);
+    assert_eq!(smu.offset(core(1)).unwrap().0, -3);
+
+    let events = rig.session.appender().journal().events().len();
+    rig.session
+        .ensure_condition(&together, &tuned_to(&together))
+        .unwrap();
+    assert_eq!(rig.session.appender().journal().events().len(), events);
+
+    let mut alone = search_plan(&rig.session, core(0), Regime::R1);
+    alone.condition = Condition::Alone;
+    rig.session
+        .ensure_condition(&alone, &tuned_to(&together))
+        .unwrap();
+    assert_eq!(smu.offset(core(0)).unwrap().0, 0);
+    assert_eq!(smu.offset(core(1)).unwrap().0, 0);
+
+    let mut parked = together_plan(&rig.session, &[-2, -2]);
+    parked.condition = Condition::Parked;
+    rig.session
+        .ensure_condition(&parked, &tuned_to(&together))
+        .unwrap();
+    assert_eq!(smu.offset(core(0)).unwrap().0, -2);
+    assert_eq!(
+        applied_conditions(&rig.session)[1..],
+        [Condition::Alone, Condition::Parked]
+    );
+}
+
+#[test]
+fn a_together_trial_must_carry_the_profile_the_tuner_stands_at() {
+    let mut rig = rigged(Bench::new(2));
+    let plan = together_plan(&rig.session, &[-5, -3]);
+    let other = together_plan(&rig.session, &[-4, -3]);
+    let flow = rig
+        .session
+        .ensure_condition(&plan, &tuned_to(&other))
+        .unwrap_err();
+    assert!(matches!(flow, Flow::Fatal(SessionError::PlanDisagrees)));
+    assert_eq!(kind_count(&rig.session, "profile.applied"), 0);
+}
+
+#[test]
+fn nothing_is_written_or_started_without_the_proof_that_nothing_runs() {
+    let mut rig = rigged(Bench::new(2));
+    rig.session.stopped = None;
+    let plan = together_plan(&rig.session, &[-5, -3]);
+    let events = rig.session.appender().journal().events().len();
+    let flow = rig
+        .session
+        .ensure_condition(&plan, &tuned_to(&plan))
+        .unwrap_err();
+    assert!(matches!(flow, Flow::Fatal(SessionError::Unproven)));
+    let outcome = trial(&mut rig).unwrap_err();
+    assert!(matches!(outcome, SessionError::Unproven));
+    assert_eq!(rig.session.appender().journal().events().len(), events);
+}
+
+#[test]
+fn an_unconfirmed_containment_withholds_the_proof_and_ends_the_trial_as_such() {
+    let mut rig = rigged(Bench::new(2));
+    rig.rigs.borrow_mut().stop_error = Some(|| Error::Containment("workload still running".into()));
+    trial(&mut rig).unwrap();
+    assert!(rig.session.stopped.is_none());
+    assert_eq!(rig.session.fault, Some(Fault::Containment));
+    let end = ends(&rig.session).pop().unwrap();
+    assert_eq!(end.outcome, Verdict::Inconclusive);
+    assert!(end.containment_error.is_some());
+    let writes_after_start: usize = kinds_of(rig.session.appender())
+        .into_iter()
+        .skip_while(|kind| *kind != "trial.start")
+        .filter(|kind| *kind == "smu.write")
+        .count();
+    assert_eq!(writes_after_start, 0);
+    let events = rig.session.appender().journal().events().len();
+    let outcome = trial(&mut rig).unwrap_err();
+    assert!(matches!(outcome, SessionError::Unproven));
+    assert_eq!(rig.session.appender().journal().events().len(), events);
+}
+
+#[test]
+fn a_machine_that_crashes_mid_trial_leaves_the_trial_open_for_the_recovery() {
+    let mut rig = rigged(Bench::new(2));
+    {
+        let mut rigs = rig.rigs.borrow_mut();
+        rigs.wait_error = Some(|| Error::Crashed);
+        rigs.result = Some(TrialResult {
+            ran: Duration::from_secs(10),
+            ..TrialResult::default()
+        });
+    }
+    let error = trial(&mut rig).unwrap_err();
+    assert!(crate::execute::is_crash(&error));
+    assert_eq!(rig.session.fault, Some(Fault::Crashed));
+    assert!(ends(&rig.session).is_empty());
+    assert_eq!(kind_count(&rig.session, "trial.start"), 1);
+}
+
+#[test]
+fn a_backend_failure_the_workload_reports_is_journaled_as_progress_citing_the_start() {
+    let mut rig = rigged(Bench::new(2));
+    rig.bench
+        .sim
+        .script_trial(
+            "0001",
+            Script {
+                signal: Some(Signal::ComputationError),
+                at_s: 10.0,
+                core: core(0),
+                reset: None,
+                then_crash: false,
+            },
+        )
+        .unwrap();
+    trial(&mut rig).unwrap();
+    let events = rig.session.appender().journal().events();
+    let start = events
+        .iter()
+        .find(|event| matches!(event.payload, Payload::TrialStart(_)))
+        .unwrap();
+    let progress: Vec<_> = events
+        .iter()
+        .filter(|event| matches!(event.payload, Payload::TrialProgress(_)))
+        .collect();
+    assert!(!progress.is_empty());
+    assert!(progress.iter().all(|event| event.cause == [start.seq]));
+    let end = ends(&rig.session).pop().unwrap();
+    assert_eq!(end.outcome, Verdict::Failure);
+    assert_eq!(end.signal, Some(Signal::ComputationError));
+}
+
+#[test]
+fn a_journal_that_fails_anywhere_in_a_trial_leaves_no_workload_running() {
+    let mut failed = 0;
+    for nth in 1..=24 {
+        let mut rig = rigged(Bench::new(2));
+        rig.bench.mem.inject(FsFault::before(Op::Write, nth));
+        let outcome = trial(&mut rig);
+        assert!(
+            rig.bench.sim.violations().is_empty(),
+            "write {nth}: {:?}",
+            rig.bench.sim.violations()
+        );
+        if outcome.is_err() {
+            failed += 1;
+            assert!(
+                rig.session.stopped.is_some() || rig.session.fault.is_some(),
+                "write {nth}"
+            );
+        }
+    }
+    assert!(failed >= 8, "{failed}");
+}
+
+#[test]
+fn a_trial_loads_the_first_cpu_of_each_joint_core_and_as_many_of_a_lone_core_as_the_workload_has_threads()
+ {
+    let rig = rigged(Bench::new(2));
+    let topology = rig.session.topology.clone();
+    let joint = together_plan(&rig.session, &[0, 0]);
+    let workload = joint.workload_at(0);
+    let (cores, cpus) = rig.session.assign(&joint, workload).unwrap();
+    assert_eq!(cores, [core(0), core(1)]);
+    assert_eq!(cpus, [topology[0].cpus[0], topology[1].cpus[0]]);
+
+    let lone = search_plan(&rig.session, core(1), Regime::R1);
+    let workload = lone.workload_at(0);
+    let (cores, cpus) = rig.session.assign(&lone, workload).unwrap();
+    assert_eq!(cores, [core(1)]);
+    let threads = usize::from(workload.workload().threads).max(1);
+    assert_eq!(
+        cpus,
+        topology[1].cpus[..threads.min(topology[1].cpus.len())]
+    );
+
+    let missing = search_plan(&rig.session, core(0), Regime::R1);
+    let mut missing = missing;
+    missing.load = togi_tuner::Load::Single(core(9));
+    assert!(matches!(
+        rig.session.assign(&missing, workload),
+        Err(SessionError::NoSuchTrialCore { core: found }) if found == core(9)
+    ));
 }

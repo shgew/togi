@@ -215,9 +215,11 @@ fn a_dead_end_decision_ends_the_run_with_the_dead_end_citing_its_evidence() {
     assert_eq!(last.cause, [cited]);
 }
 
+type Ranks = Result<Vec<CoreRank>, (Vec<CoreRank>, fn() -> Error)>;
+
 struct Ranked {
     inner: Box<dyn Host>,
-    ranks: Result<Vec<CoreRank>, (Vec<CoreRank>, fn() -> Error)>,
+    ranks: Ranks,
 }
 
 impl Host for Ranked {
@@ -266,10 +268,7 @@ fn ranks(values: &[i64]) -> Vec<CoreRank> {
         .collect()
 }
 
-fn recorded_ranking(
-    cores: i64,
-    ranks: Result<Vec<CoreRank>, (Vec<CoreRank>, fn() -> Error)>,
-) -> togi_journal::HostRanking {
+fn recorded_ranking(cores: i64, ranks: Ranks) -> togi_journal::HostRanking {
     let bench = Bench::new(cores);
     let mut session = begun(&bench);
     let inner = std::mem::replace(&mut session.host, bench.sim.seams().host);

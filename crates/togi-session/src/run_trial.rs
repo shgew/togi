@@ -213,6 +213,9 @@ impl Session {
     }
 
     fn trial(&mut self, plan: &TrialPlan, rotation: usize, workload: WorkloadId) -> Step<()> {
+        if self.stopped.is_none() {
+            return Err(SessionError::Unproven.into());
+        }
         let (cores, cpus) = self.assign(plan, workload)?;
         let id = self.appender.recovery().next_trial_id();
         let boundary = self.kernel_boundary(None, false, &[])?;
