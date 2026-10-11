@@ -268,9 +268,7 @@ async fn real_process_escaped_descendant_cannot_extend_the_deadline() {
         pid_file.display()
     );
     let started = StdInstant::now();
-    let error = run_for(&sh_with_helper(&script), ESCAPE_DEADLINE)
-        .await
-        .unwrap_err();
+    let result = run_for(&sh_with_helper(&script), ESCAPE_DEADLINE).await;
     let elapsed = started.elapsed();
     let escaped = KillOnDrop(wait_for_pid_file(&pid_file).await);
     assert!(
@@ -282,7 +280,7 @@ async fn real_process_escaped_descendant_cannot_extend_the_deadline() {
         "the escaped helper did not hold the pipes"
     );
     assert!(elapsed < ESCAPE_DEADLINE + SLACK, "{elapsed:?}");
-    assert!(matches!(error, Error::TimedOut { .. }), "{error:?}");
+    assert!(matches!(result, Err(Error::TimedOut { .. })), "{result:?}");
     drop(escaped);
 }
 

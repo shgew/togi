@@ -449,17 +449,16 @@ impl Leader {
     }
 
     /// Leaves the unreaped leader to a detached thread blocked in waitpid, which outlives the
-    /// caller's runtime, so a leader that exits late is still collected.
+    /// caller's runtime, so a leader that exits late is still collected. Custody passes only once
+    /// the thread exists; until then the leader stays unsettled and Drop tries again.
     fn hand_off(&mut self) -> io::Result<()> {
-        self.group = None;
-        self.settled = true;
         let pid = self
             .pid
             .ok_or_else(|| io::Error::from(io::ErrorKind::NotFound))?;
-        std::thread::Builder::new()
-            .name("togi-command-reaper".to_owned())
-            .spawn(move || reap_blocking(pid))
-            .map(drop)
+        spawn_reaper(pid)?;
+        self.group = None;
+        self.settled = true;
+        Ok(())
     }
 }
 
@@ -474,6 +473,22 @@ impl Drop for Leader {
             let _ = self.hand_off();
         }
     }
+}
+
+fn spawn_reaper(pid: Pid) -> io::Result<()> {
+    #[cfg(test)]
+    {
+        fault::REAPER_SPAWNS.set(fault::REAPER_SPAWNS.get() + 1);
+        let failures = fault::REAPER_FAILURES.get();
+        if failures > 0 {
+            fault::REAPER_FAILURES.set(failures - 1);
+            return Err(io::Error::other("injected reaper thread failure"));
+        }
+    }
+    std::thread::Builder::new()
+        .name("togi-command-reaper".to_owned())
+        .spawn(move || reap_blocking(pid))
+        .map(drop)
 }
 
 fn reap_blocking(pid: Pid) {
@@ -499,8 +514,8 @@ fn injected_setup_failure() -> Option<io::Error> {
     None
 }
 
-/// Per-thread fault injection for the unit tests: a failed post-spawn setup step and a kill that
-/// fails or is not delivered.
+/// Per-thread fault injection for the unit tests: a failed post-spawn setup step, a kill that
+/// fails or is not delivered, and reaper threads that cannot be created.
 #[cfg(test)]
 mod fault {
     use std::cell::Cell;
@@ -518,6 +533,8 @@ mod fault {
         pub(crate) static SETUP: Cell<bool> = const { Cell::new(false) };
         pub(crate) static KILL: Cell<Option<Kill>> = const { Cell::new(None) };
         pub(crate) static SPAWNED: Cell<Option<Pid>> = const { Cell::new(None) };
+        pub(crate) static REAPER_FAILURES: Cell<u32> = const { Cell::new(0) };
+        pub(crate) static REAPER_SPAWNS: Cell<u32> = const { Cell::new(0) };
     }
 }
 
@@ -574,6 +591,13 @@ mod tests {
     /// Kills a child the test expects to be running, even when an assertion fails first.
     struct KillOnDrop(Pid);
 
+    impl KillOnDrop {
+        /// Once the process is reaped its id may be reused, so it must not be signalled.
+        fn disarm(self) {
+            std::mem::forget(self);
+        }
+    }
+
     impl Drop for KillOnDrop {
         fn drop(&mut self) {
             let _ = kill_process(self.0, Signal::KILL);
@@ -588,21 +612,20 @@ mod tests {
     async fn real_process_setup_failure_after_spawn_kills_and_reaps_the_child() {
         fault::SETUP.set(true);
         let started = StdInstant::now();
-        let error = run_for(&sleep_60(), Duration::from_secs(60))
-            .await
-            .unwrap_err();
+        let result = run_for(&sleep_60(), Duration::from_secs(60)).await;
         let elapsed = started.elapsed();
-        let child = spawned();
-        match &error {
-            Error::Io {
+        let child = KillOnDrop(spawned());
+        match &result {
+            Err(Error::Io {
                 operation: Operation::Wait,
                 source,
                 ..
-            } => assert_eq!(source.to_string(), "injected setup failure"),
+            }) => assert_eq!(source.to_string(), "injected setup failure"),
             other => panic!("{other:?}"),
         }
         assert!(elapsed < REAP_GRACE, "{elapsed:?}");
-        assert_reaped_within(child, Duration::ZERO);
+        assert_reaped_within(child.0, Duration::ZERO);
+        child.disarm();
     }
 
     #[tokio::test]
@@ -687,9 +710,11 @@ mod tests {
             deliver: true,
             result: Err(Errno::SRCH),
         }));
-        let error = run_for(&sleep_60(), DEADLINE).await.unwrap_err();
-        assert!(matches!(error, Error::TimedOut { .. }), "{error:?}");
-        assert_reaped_within(spawned(), Duration::ZERO);
+        let result = run_for(&sleep_60(), DEADLINE).await;
+        let child = KillOnDrop(spawned());
+        assert!(matches!(result, Err(Error::TimedOut { .. })), "{result:?}");
+        assert_reaped_within(child.0, Duration::ZERO);
+        child.disarm();
     }
 
     /// A leader that ignores SIGKILL for a while (in the field: uninterruptible sleep) is simulated
@@ -721,6 +746,45 @@ mod tests {
             other => panic!("{other:?}"),
         }
         assert!(elapsed < DEADLINE + REAP_GRACE + SLACK, "{elapsed:?}");
+        assert!(is_running(child), "the leader exited within the grace");
+        assert_reaped_within(child, Duration::from_secs(10));
+    }
+
+    /// A reaper thread that cannot be created must not take custody: the error is reported within
+    /// the bound, and dropping the still-unsettled leader hands it off again.
+    #[test]
+    fn real_process_failed_reaper_thread_leaves_custody_to_the_drop_retry() {
+        fault::KILL.set(Some(fault::Kill {
+            deliver: false,
+            result: Ok(()),
+        }));
+        fault::REAPER_FAILURES.set(1);
+        let started = StdInstant::now();
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "tests exercise the bounded runner with real processes"
+        )]
+        let result = super::run_blocking(&Invocation::new("sleep").arg("3"), DEADLINE);
+        let elapsed = started.elapsed();
+        let child = spawned();
+        match &result {
+            Err(Error::Teardown {
+                cause,
+                operation: Operation::Reap,
+                source,
+                ..
+            }) => {
+                assert!(matches!(**cause, Error::TimedOut { .. }), "{cause:?}");
+                assert_eq!(source.to_string(), "injected reaper thread failure");
+            }
+            other => panic!("{other:?}"),
+        }
+        assert!(elapsed < DEADLINE + REAP_GRACE + SLACK, "{elapsed:?}");
+        assert_eq!(
+            fault::REAPER_SPAWNS.get(),
+            2,
+            "the drop did not retry the handoff"
+        );
         assert!(is_running(child), "the leader exited within the grace");
         assert_reaped_within(child, Duration::from_secs(10));
     }
