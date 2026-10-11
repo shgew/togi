@@ -314,6 +314,7 @@
               vm = import ./nix/vm-test.nix {
                 inherit pkgs;
                 trialTests = config.checks.trial-scope-tests;
+                trialTestsRs = config.checks.trial-scope-tests-rs;
                 package = shippedPackage;
               };
             in
@@ -347,8 +348,30 @@
                   runHook postInstall
                 '';
               };
+              trial-scope-tests-rs = craneLib.mkCargoDerivation (rustCheck {
+                pnameSuffix = "-trial-scope-tests";
+                doInstallCargoArtifacts = false;
+                nativeBuildInputs = rustArgs.nativeBuildInputs ++ [ pkgs.jq ];
+                buildPhaseCargoCommand = ''
+                  cargoWithProfile test --locked -p togi-trial --features hardware --test hardware --test cached_errors \
+                    --no-run --message-format json-render-diagnostics > cargo-messages.json
+                '';
+                installPhaseCommand = ''
+                  mkdir -p "$out/bin"
+                  install_test() {
+                    jq -r --arg target "$1" \
+                      'select(.reason == "compiler-artifact" and .target.name == $target and .executable != null) | .executable' \
+                      cargo-messages.json > executables
+                    test "$(wc -l < executables)" = 1
+                    cp "$(cat executables)" "$out/bin/$2"
+                  }
+                  install_test hardware togi-trial-tests-rs
+                  install_test cached_errors togi-trial-cached-errors-rs
+                '';
+              });
               vm = vm.tuning-boot;
               vm-restart-limit = vm.restart-limit;
+              vm-trial-scope-rs = vm.trial-scope-rs;
             }
           );
 

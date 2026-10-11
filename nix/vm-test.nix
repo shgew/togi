@@ -2,6 +2,7 @@
   pkgs,
   package,
   trialTests,
+  trialTestsRs,
 }:
 let
   module = import ./module.nix { packages.${pkgs.stdenv.hostPlatform.system}.default = package; };
@@ -293,6 +294,68 @@ in
       machine.wait_for_unit("multi-user.target")
       assert machine.succeed("readlink -f /run/current-system").strip() == normal_system
       machine.succeed("! systemctl is-active --quiet togi.service")
+    '';
+  };
+
+  trial-scope-rs = pkgs.testers.runNixOSTest {
+    name = "togi-trial-scope-rs";
+
+    nodes.machine = {
+      imports = [ tuningBoot ];
+      virtualisation.cores = 4;
+      services.togi.hardwareTestGroup = "togi-hardware";
+      users.groups.togi-hardware = { };
+      users.users.togi-hardware = {
+        isNormalUser = true;
+        group = "togi-hardware";
+      };
+      systemd.services."user@".serviceConfig.Delegate = "cpu cpuset io memory pids";
+      environment.systemPackages = [ trialTestsRs ];
+    };
+
+    testScript = ''
+      import json
+
+      hardware = "hardware:: --skip hardware::helper --skip every_r1_and_r2_workload_passes"
+      delegated_hardware = f"{hardware} --skip a_backend_runs_as_the_account --skip the_sweep_removes_orphaned"
+      flags = "--test-threads 1 --nocapture"
+      scopes = "systemctl {manager} list-units --all 'togi-*.scope' --plain --no-legend"
+
+
+      def run_scope_tests(prefix, binary, selection, manager):
+          log = "/tmp/scope-tests.log"
+          status, _ = machine.execute(f"{prefix} {binary} {selection} {flags} > {log} 2>&1")
+          output = machine.succeed(f"cat {log}")
+          machine.log(output)
+          assert status == 0, output
+          left = machine.succeed(f"{prefix} {scopes.format(manager=manager)}").strip()
+          assert left == "", left
+
+
+      machine.wait_for_unit("multi-user.target")
+      assert json.loads(machine.succeed("cat /etc/togi/config.json"))["backend_user"] == "togi-trial"
+      assert machine.succeed("stat -c '%U:%G:%a' /run/lock/togi.lock").strip() == "root:togi-hardware:660"
+      lock_identity = machine.succeed("stat -c '%d:%i' /run/lock/togi.lock").strip()
+      for binary, selection, count in [
+          ("togi-trial-tests-rs", hardware, 10),
+          ("togi-trial-tests-rs", delegated_hardware, 8),
+          ("togi-trial-cached-errors-rs", "cached_errors::", 2),
+      ]:
+          listed = machine.succeed(f"{binary} {selection} --list").splitlines()
+          assert sum(line.endswith(": test") for line in listed) == count, listed
+      run_scope_tests("", "togi-trial-tests-rs", hardware, "")
+      assert machine.succeed("stat -c '%d:%i' /run/lock/togi.lock").strip() == lock_identity
+      machine.succeed("loginctl enable-linger togi-hardware")
+      delegated_uid = machine.succeed("id -u togi-hardware").strip()
+      machine.wait_for_unit(f"user@{delegated_uid}.service")
+      delegated_prefix = (
+          f"runuser -u togi-hardware -- env XDG_RUNTIME_DIR=/run/user/{delegated_uid} "
+          f"DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{delegated_uid}/bus"
+      )
+      run_scope_tests(delegated_prefix, "togi-trial-tests-rs", delegated_hardware, "--user")
+      run_scope_tests(delegated_prefix, "togi-trial-cached-errors-rs", "cached_errors::", "--user")
+      assert machine.succeed("stat -c '%d:%i' /run/lock/togi.lock").strip() == lock_identity
+      assert machine.succeed("stat -c '%U:%G:%a' /run/lock/togi.lock").strip() == "root:togi-hardware:660"
     '';
   };
 
