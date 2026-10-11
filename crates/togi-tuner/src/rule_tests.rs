@@ -1,9 +1,9 @@
-use togi_journal::{Attribution, CrashDetected, Decision, DeadEndCondition, Mce, Outcome, Payload};
+use togi_journal::{Attribution, CrashDetected, DeadEndCondition, Decision, Mce, Outcome, Payload};
 use togi_machine::{BankType, Condition, CpuId, Regime, ResetKind, Signal};
 
-use crate::schedule_tests::{decision, transition};
-use crate::tests::core;
+use crate::schedule_tests::transition;
 use crate::testkit::{Journal, Start, set};
+use crate::tests::core;
 use crate::{Action, DecisionAction, DecisionPayload, FoldError, Load, State};
 
 fn failure_of(action: &DecisionAction) -> &togi_journal::Failure {
@@ -119,20 +119,44 @@ fn a_crash_keeps_the_trial_in_flight_until_its_end() {
 #[test]
 fn together_crash_names_the_sole_nonzero_core_by_id() {
     let mut j = Journal::new(&[0, 8], &[Start::at_limit(0), Start::at_limit(-12)]);
-    let plan = j.manual(Regime::R6, 0, Load::Many(set(&[0, 8])), Condition::Together, &[0, -12], 120);
+    let plan = j.manual(
+        Regime::R6,
+        0,
+        Load::Many(set(&[0, 8])),
+        Condition::Together,
+        &[0, -12],
+        120,
+    );
     j.trial(&plan, Outcome::Failure);
     let action = j.next_decision();
     let failure = failure_of(&action);
     assert_eq!(failure.attribution, Attribution::Attributed);
     assert_eq!(failure.core, Some(core(8)));
-    assert_eq!(failure.offset.map(|offset| offset.get()), Some(-12));
+    assert_eq!(
+        failure.offset.map(togi_machine::TargetOffset::get),
+        Some(-12)
+    );
 }
 
 #[test]
 fn core_local_mces_name_the_core_of_a_together_failure() {
     let run = |cores: &[u8]| {
-        let mut j = Journal::new(&[0, 1, 2], &[Start::at_limit(-10), Start::at_limit(-10), Start::at_limit(-10)]);
-        let plan = j.manual(Regime::R6, 0, Load::Many(set(&[0, 1, 2])), Condition::Together, &[-10, -10, -10], 120);
+        let mut j = Journal::new(
+            &[0, 1, 2],
+            &[
+                Start::at_limit(-10),
+                Start::at_limit(-10),
+                Start::at_limit(-10),
+            ],
+        );
+        let plan = j.manual(
+            Regime::R6,
+            0,
+            Load::Many(set(&[0, 1, 2])),
+            Condition::Together,
+            &[-10, -10, -10],
+            120,
+        );
         let (intent, trial) = j.intent(&plan);
         for &id in cores {
             j.append(mce(&trial, id).into(), &[]);
@@ -142,9 +166,15 @@ fn core_local_mces_name_the_core_of_a_together_failure() {
         failure_of(&action).clone()
     };
     let one = run(&[1]);
-    assert_eq!((one.attribution, one.core), (Attribution::Attributed, Some(core(1))));
+    assert_eq!(
+        (one.attribution, one.core),
+        (Attribution::Attributed, Some(core(1)))
+    );
     let two = run(&[0, 1]);
-    assert_eq!((two.attribution, two.core), (Attribution::Unattributed, None));
+    assert_eq!(
+        (two.attribution, two.core),
+        (Attribution::Unattributed, None)
+    );
     let none = run(&[]);
     assert_eq!(none.attribution, Attribution::Unattributed);
 }
@@ -152,10 +182,38 @@ fn core_local_mces_name_the_core_of_a_together_failure() {
 #[test]
 fn class_key_distinguishes_single_full_ccd_loads() {
     let j = Journal::has_room(&[-10, -11, -12, -13]);
-    let single = j.manual(Regime::R1, 0, Load::Single(core(1)), Condition::Together, &[-10, -11, -12, -13], 120);
-    let many_of_one = j.manual(Regime::R1, 0, Load::Many(set(&[1])), Condition::Together, &[-10, -11, -12, -13], 120);
-    let part = j.manual(Regime::R1, 0, Load::Many(set(&[0, 1])), Condition::Together, &[-10, -11, -12, -13], 120);
-    let all = j.manual(Regime::R1, 0, Load::Many(set(&[0, 1, 2, 3])), Condition::Together, &[-10, -11, -12, -13], 120);
+    let single = j.manual(
+        Regime::R1,
+        0,
+        Load::Single(core(1)),
+        Condition::Together,
+        &[-10, -11, -12, -13],
+        120,
+    );
+    let many_of_one = j.manual(
+        Regime::R1,
+        0,
+        Load::Many(set(&[1])),
+        Condition::Together,
+        &[-10, -11, -12, -13],
+        120,
+    );
+    let part = j.manual(
+        Regime::R1,
+        0,
+        Load::Many(set(&[0, 1])),
+        Condition::Together,
+        &[-10, -11, -12, -13],
+        120,
+    );
+    let all = j.manual(
+        Regime::R1,
+        0,
+        Load::Many(set(&[0, 1, 2, 3])),
+        Condition::Together,
+        &[-10, -11, -12, -13],
+        120,
+    );
     let run = j.run();
     let classes = [&single, &part, &all].map(|plan| run.plan_class(plan));
     assert_ne!(classes[0], classes[1]);
@@ -192,7 +250,10 @@ fn a_fold_error_leaves_the_state_as_it_was() {
     let other = togi_journal::TrialId::from("elsewhere".to_owned());
     let outside = core(9);
     let cases: Vec<(Payload, FoldError)> = vec![
-        (transition(9, togi_journal::CorePhase::Search, 0).into(), FoldError::UnknownCore(outside)),
+        (
+            transition(9, togi_journal::CorePhase::Search, 0).into(),
+            FoldError::UnknownCore(outside),
+        ),
         (
             Journal::end_payload(&other, Outcome::Pass, None).into(),
             FoldError::NoOpenTrial(other.clone()),
@@ -256,7 +317,10 @@ fn a_fold_error_leaves_the_state_as_it_was() {
     stale.seq = intent;
     assert_eq!(
         j.state.fold(&stale),
-        Err(FoldError::OutOfOrder { last: intent, seq: intent })
+        Err(FoldError::OutOfOrder {
+            last: intent,
+            seq: intent
+        })
     );
     assert_eq!(j.state, before);
 }

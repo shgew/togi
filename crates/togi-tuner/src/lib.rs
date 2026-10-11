@@ -3,7 +3,10 @@
 
 #![cfg_attr(
     not(test),
-    expect(dead_code, reason = "the public queries that compose the decision functions land with G6")
+    expect(
+        dead_code,
+        reason = "the public queries that compose the decision functions land with G6"
+    )
 )]
 
 mod class;
@@ -33,9 +36,13 @@ mod ledger_tests;
 #[cfg(test)]
 mod phase_tests;
 #[cfg(test)]
+mod prop_tests;
+#[cfg(test)]
 mod rule_tests;
 #[cfg(test)]
 mod schedule_tests;
+#[cfg(test)]
+mod skip_tests;
 #[cfg(test)]
 mod testkit;
 #[cfg(test)]
@@ -48,15 +55,15 @@ pub use constraints::{
 };
 pub use crash::{CrashFacts, CrashKind, classify_crash, recorded_kind};
 pub use depth::Depth;
+pub use error::FoldError;
 pub use evidence::{
     BackendId, Count, Evidence, IdleContradiction, Observation, SessionRef, Window,
 };
-pub use profile::{Profile, ProfileError};
-pub use topology::{Ranking, RankingError, Topology, TopologyError};
-pub use error::FoldError;
 pub use flight::TrialHistory;
 pub use plan::{
     Action, DecisionAction, DecisionPayload, Load, PartNo, Requirement, RequirementKind, StepNo,
     TrialContext, TrialPlan, WorkloadChoice,
 };
+pub use profile::{Profile, ProfileError};
 pub use state::State;
+pub use topology::{Ranking, RankingError, Topology, TopologyError};

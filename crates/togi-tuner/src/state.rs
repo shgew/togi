@@ -1,20 +1,18 @@
-use togi_journal::{Seq,
-    CommandReset, ConfigLoaded, DeadEnd, DeadEndCondition, Event, Payload, ProfileChange, ResetTarget,
-    SessionBaseline, SessionStart,
+use togi_journal::{
+    CommandReset, ConfigLoaded, DeadEnd, DeadEndCondition, Event, Payload, ProfileChange,
+    ResetTarget, Seq, SessionBaseline, SessionStart,
 };
 use togi_machine::{Backend, PerCore, TargetOffset};
 
-use crate::cores::{Core, Rotation};
 use crate::config::TunerConfig;
-use crate::flight::Flight;
+use crate::cores::{Core, Rotation};
 use crate::failures::Failures;
+use crate::flight::Flight;
 use crate::ledger::PendingWarning;
 use crate::phases::Phases;
 use crate::requirement::Retry;
 use crate::search::Search;
-use crate::{
-    CombinationId, Constraints, Evidence, FailurePoint, FoldError, Profile, Topology,
-};
+use crate::{CombinationId, Constraints, Evidence, FailurePoint, FoldError, Profile, Topology};
 
 /// The checking profile the last `profile.change` set.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]

@@ -42,13 +42,27 @@ fn count(j: &Journal) -> usize {
     usize::from(needed(j).get())
 }
 
-fn together(j: &Journal, regime: Regime, workload: usize, cores: &[u8], profile: &[i64], duration: u32) -> crate::TrialPlan {
+fn together(
+    j: &Journal,
+    regime: Regime,
+    workload: usize,
+    cores: &[u8],
+    profile: &[i64],
+    duration: u32,
+) -> crate::TrialPlan {
     let load = if cores.len() == 1 && regime != Regime::R6 && regime != Regime::R7 {
         Load::Single(core(cores[0]))
     } else {
         Load::Many(set(cores))
     };
-    j.manual(regime, workload, load, Condition::Together, profile, duration)
+    j.manual(
+        regime,
+        workload,
+        load,
+        Condition::Together,
+        profile,
+        duration,
+    )
 }
 
 fn decide_pending(j: &mut Journal) -> Seq {
@@ -58,7 +72,13 @@ fn decide_pending(j: &mut Journal) -> Seq {
 
 #[test]
 fn evidence_validity() {
-    let mut j = Journal::new(&[0, 1], &[Start::at_limit(-20).fail(-21), Start::at_limit(-10).fail(-11)]);
+    let mut j = Journal::new(
+        &[0, 1],
+        &[
+            Start::at_limit(-20).fail(-21),
+            Start::at_limit(-10).fail(-11),
+        ],
+    );
     let k = class(Regime::R6, 0, &[0, 1], 120);
     let rows: [(&[i64], bool); 5] = [
         (&[-20, -10], true),
@@ -69,9 +89,20 @@ fn evidence_validity() {
     ];
     let mut ends = Vec::new();
     for (profile, pass) in rows {
-        let mut plan = j.manual(Regime::R6, 0, Load::Many(set(&[0, 1])), Condition::Parked, profile, 120);
+        let mut plan = j.manual(
+            Regime::R6,
+            0,
+            Load::Many(set(&[0, 1])),
+            Condition::Parked,
+            profile,
+            120,
+        );
         plan.activity = togi_journal::Activity::Hunt;
-        let outcome = if pass { Outcome::Pass } else { Outcome::Failure };
+        let outcome = if pass {
+            Outcome::Pass
+        } else {
+            Outcome::Failure
+        };
         ends.push(j.trial(&plan, outcome));
         if !pass {
             decide_pending(&mut j);
@@ -90,7 +121,10 @@ fn evidence_validity() {
     assert!(failing(&j, idle_class, &[-20, -10], Some(idle)).is_some());
     let queued: Vec<Seq> = j.run().failures.queue().collect();
     assert_eq!(queued, [idle, parked]);
-    assert_eq!(j.run().failures.get(parked).unwrap().class.regime(), Regime::R6);
+    assert_eq!(
+        j.run().failures.get(parked).unwrap().class.regime(),
+        Regime::R6
+    );
     j.assert_resumes();
 }
 
@@ -98,7 +132,9 @@ fn evidence_validity() {
 fn monotonicity_warning() {
     let mut j = Journal::new(&[0], &[Start::at_limit(-10)]);
     let plan = together(&j, Regime::R1, 0, &[0], &[-10], 120);
-    let expected: Vec<Seq> = (0..count(&j)).map(|_| j.trial(&plan, Outcome::Pass)).collect();
+    let expected: Vec<Seq> = (0..count(&j))
+        .map(|_| j.trial(&plan, Outcome::Pass))
+        .collect();
     let failed = j.trial(&plan, Outcome::Failure);
     let attribution = j.next_decision();
     let DecisionPayload::Failure(f) = &attribution.payload else {
@@ -117,20 +153,47 @@ fn monotonicity_warning() {
     assert!(j.warning().is_none());
 }
 
+type IdleCase = (&'static str, [i64; 2], &'static [u32], &'static [u8], bool);
+
 #[test]
 fn idle_monotonicity_warning() {
-    let cases: [(&str, [i64; 2], &[u32], &[u8], bool); 5] = [
+    let cases: [IdleCase; 5] = [
         ("equal profile", [-10, -12], &[120], &[0, 1], true),
         ("deeper passing profile", [-11, -13], &[900], &[0, 1], true),
-        ("shallower passing profile", [-9, -11], &[120], &[0, 1], false),
-        ("durations cannot pool", [-10, -12], &[120, 900], &[0, 1], false),
-        ("partial load cannot establish the class", [-10, -12], &[120], &[0], false),
+        (
+            "shallower passing profile",
+            [-9, -11],
+            &[120],
+            &[0, 1],
+            false,
+        ),
+        (
+            "durations cannot pool",
+            [-10, -12],
+            &[120, 900],
+            &[0, 1],
+            false,
+        ),
+        (
+            "partial load cannot establish the class",
+            [-10, -12],
+            &[120],
+            &[0],
+            false,
+        ),
     ];
     for (name, pass_profile, durations, cores, warns) in cases {
         let mut j = Journal::has_room(&[-10, -12]);
         let seqs: Vec<Seq> = (0..count(&j))
             .map(|i| {
-                let plan = together(&j, Regime::R6, 0, cores, &pass_profile, durations[i % durations.len()]);
+                let plan = together(
+                    &j,
+                    Regime::R6,
+                    0,
+                    cores,
+                    &pass_profile,
+                    durations[i % durations.len()],
+                );
                 j.trial(&plan, Outcome::Pass)
             })
             .collect();
@@ -183,9 +246,17 @@ fn stored_requirement_survives_crash_and_changed_config() {
     }
     let plan = j.next_trial();
     let (intent, trial) = j.intent(&plan);
-    assert_eq!(j.run().flight.open.as_ref().unwrap().requirement, plan.requirement);
-    j.load(&config(r#"{"evidence":{"miss":0.001},"durations":{"search_trial_s":91}}"#));
-    assert_eq!(j.run().flight.open.as_ref().unwrap().requirement, plan.requirement);
+    assert_eq!(
+        j.run().flight.open.as_ref().unwrap().requirement,
+        plan.requirement
+    );
+    j.load(&config(
+        r#"{"evidence":{"miss":0.001},"durations":{"search_trial_s":91}}"#,
+    ));
+    assert_eq!(
+        j.run().flight.open.as_ref().unwrap().requirement,
+        plan.requirement
+    );
     assert_ne!(u32::from(needed(&j).get()), n);
     j.append(
         togi_journal::CrashDetected {
@@ -241,7 +312,10 @@ fn a_search_trial_needs_one_pass_and_a_check_needs_n() {
     let check = Journal::new(&[0], &[Start::search(-20).checking()]);
     let plan = check.next_trial();
     assert_eq!(plan.requirement.needed, needed(&check));
-    assert!(matches!(plan.window_since(), Some(Some(_))));
+    assert!(matches!(
+        plan.requirement.window,
+        Window::LiveOrCarried { since: Some(_) }
+    ));
 }
 
 #[test]
@@ -267,14 +341,22 @@ fn retry_requirement_matches_fold() {
     let retry = j.next_trial();
     assert!(retry.retry);
     j.intent(&retry);
-    assert_eq!(j.run().flight.open.as_ref().unwrap().requirement, retry.requirement);
+    assert_eq!(
+        j.run().flight.open.as_ref().unwrap().requirement,
+        retry.requirement
+    );
 }
 
 #[test]
 fn resumed_requirement_change_drops_retry() {
     let cases: [(&str, &str, bool, u32); 2] = [
         ("unchanged", "{}", true, 90),
-        ("search_trial_s", r#"{"durations":{"search_trial_s":60}}"#, false, 60),
+        (
+            "search_trial_s",
+            r#"{"durations":{"search_trial_s":60}}"#,
+            false,
+            60,
+        ),
     ];
     for (name, json, retry, duration) in cases {
         let mut j = Journal::search_at(&[-10]);
@@ -282,7 +364,11 @@ fn resumed_requirement_change_drops_retry() {
         j.trial(&first, Outcome::Inconclusive);
         j.load(&config(json));
         let plan = j.next_trial();
-        assert_eq!((plan.retry, plan.duration.get(), plan.regime), (retry, duration, Regime::R1), "{name}");
+        assert_eq!(
+            (plan.retry, plan.duration.get(), plan.regime),
+            (retry, duration, Regime::R1),
+            "{name}"
+        );
         j.assert_resumes();
     }
     let mut j = Journal::new(&[0], &[Start::search(-20).checking()]);
@@ -316,10 +402,22 @@ fn search_retry_belongs_to_its_turn() {
     assert!(!plan.retry);
 }
 
+type Reload = &'static [(&'static str, &'static str)];
+
 const SESSION: &str = "20261002T004254Z";
 
-fn carry_passes(j: &mut Journal, class: (Regime, usize, &[u8], u32), profile: &[i64], times: usize, outcome: Outcome) -> Vec<Seq> {
-    let condition = if class.0 == Regime::R6 { Condition::Together } else { Condition::Alone };
+fn carry_passes(
+    j: &mut Journal,
+    class: (Regime, usize, &[u8], u32),
+    profile: &[i64],
+    times: usize,
+    outcome: Outcome,
+) -> Vec<Seq> {
+    let condition = if class.0 == Regime::R6 {
+        Condition::Together
+    } else {
+        Condition::Alone
+    };
     (0..times)
         .map(|_| j.carry(SESSION, class, condition, profile, outcome))
         .collect()
@@ -334,10 +432,7 @@ fn check_decision(j: &mut Journal) -> Seq {
         to_offset: crate::tests::off(-20),
         pass: None,
         failure_point: None,
-        workloads: vec![
-            workloads(Regime::R1)[0].id(),
-            workloads(Regime::R2)[0].id(),
-        ],
+        workloads: vec![workloads(Regime::R1)[0].id(), workloads(Regime::R2)[0].id()],
         reason: "test".to_owned(),
     })
 }
@@ -348,7 +443,13 @@ fn carried_evidence_answers_a_candidate_solo_limit_but_not_an_ordinary_step() {
     let n = count(&j);
     let mut facts = Vec::new();
     for regime in [Regime::R1, Regime::R2] {
-        facts.extend(carry_passes(&mut j, (regime, 0, &[0], 90), &[-20], n, Outcome::Pass));
+        facts.extend(carry_passes(
+            &mut j,
+            (regime, 0, &[0], 90),
+            &[-20],
+            n,
+            Outcome::Pass,
+        ));
     }
     let ordinary = j.next_trial();
     assert_eq!(ordinary.regime, Regime::R1);
@@ -362,7 +463,11 @@ fn carried_evidence_answers_a_candidate_solo_limit_but_not_an_ordinary_step() {
     let mut cause = vec![boundary];
     cause.extend(facts);
     assert_eq!(exit.cause, cause);
-    assert!(phase.reason.contains("carried") && phase.reason.contains(SESSION), "{}", phase.reason);
+    assert!(
+        phase.reason.contains("carried") && phase.reason.contains(SESSION),
+        "{}",
+        phase.reason
+    );
 }
 
 #[test]
@@ -373,23 +478,53 @@ fn carried_failure_invalidation() {
         let duration = j.run().config.short_trial.get();
         let k = class(regime, 0, &[0], duration);
         let n = count(&j);
-        carry_passes(&mut j, (regime, 0, &[0], duration), &[-20], n, Outcome::Pass);
+        carry_passes(
+            &mut j,
+            (regime, 0, &[0], duration),
+            &[-20],
+            n,
+            Outcome::Pass,
+        );
         let failure = if idle {
             j.carry_idle(SESSION, &[-19])
         } else {
-            j.carry(SESSION, (regime, 0, &[0], duration), Condition::Together, &[-19], Outcome::Failure)
+            j.carry(
+                SESSION,
+                (regime, 0, &[0], duration),
+                Condition::Together,
+                &[-19],
+                Outcome::Failure,
+            )
         };
         let boundary = j.cycle_start(1, &[regime]);
-        let since = Window::LiveOrCarried { since: Some(boundary) };
+        let since = Window::LiveOrCarried {
+            since: Some(boundary),
+        };
         let p = j.profile(&[-20]);
-        assert_eq!(j.run().evidence.count(k, &p, since, needed(&j)).valid, 0, "idle={idle}");
-        assert_eq!(failing(&j, k, &[-20], Some(boundary)), Some(failure), "idle={idle}");
+        assert_eq!(
+            j.run().evidence.count(k, &p, since, needed(&j)).valid,
+            0,
+            "idle={idle}"
+        );
+        assert_eq!(
+            failing(&j, k, &[-20], Some(boundary)),
+            Some(failure),
+            "idle={idle}"
+        );
         for i in 0..n {
             let plan = together(&j, regime, 0, &[0], &[-20], duration);
             j.trial(&plan, Outcome::Pass);
-            assert_eq!(failing(&j, k, &[-20], Some(boundary)).is_some(), i + 1 < n, "idle={idle} after {}", i + 1);
+            assert_eq!(
+                failing(&j, k, &[-20], Some(boundary)).is_some(),
+                i + 1 < n,
+                "idle={idle} after {}",
+                i + 1
+            );
         }
-        assert_eq!(j.run().evidence.count(k, &p, since, needed(&j)).valid, u32::try_from(n).unwrap());
+        assert_eq!(
+            j.run().evidence.count(k, &p, since, needed(&j)).valid,
+            u32::try_from(n).unwrap()
+        );
     }
 }
 
@@ -403,7 +538,13 @@ fn reset_clears_carried_core_evidence() {
         for id in [0_u8, 1] {
             let mut p = [0, 0];
             p[usize::from(id)] = -20;
-            carried.push(carry_passes(&mut j, (Regime::R1, 0, &[id], duration), &p, n, outcome));
+            carried.push(carry_passes(
+                &mut j,
+                (Regime::R1, 0, &[id], duration),
+                &p,
+                n,
+                outcome,
+            ));
         }
         j.reset(0);
         for id in [0_u8, 1] {
@@ -439,7 +580,13 @@ fn carried_solo_limit_eligibility() {
         let n = count(&j);
         for regime in [Regime::R1, Regime::R2] {
             for _ in 0..n {
-                j.carry(SESSION, (regime, workload, &[0], duration), Condition::Alone, &[profile], Outcome::Pass);
+                j.carry(
+                    SESSION,
+                    (regime, workload, &[0], duration),
+                    Condition::Alone,
+                    &[profile],
+                    Outcome::Pass,
+                );
             }
         }
         if live_failure {
@@ -460,7 +607,13 @@ fn carried_pass_monotonicity_warning() {
     let mut j = Journal::new(&[0], &[Start::at_limit(-20)]);
     let duration = j.run().config.short_trial.get();
     let n = count(&j);
-    let facts = carry_passes(&mut j, (Regime::R1, 0, &[0], duration), &[-20], n, Outcome::Pass);
+    let facts = carry_passes(
+        &mut j,
+        (Regime::R1, 0, &[0], duration),
+        &[-20],
+        n,
+        Outcome::Pass,
+    );
     let plan = together(&j, Regime::R1, 0, &[0], &[-19], duration);
     let failure = j.trial(&plan, Outcome::Failure);
     decide_pending(&mut j);
@@ -494,14 +647,29 @@ fn carried_passes_do_not_add_session_exposure() {
         let mut j = Journal::new(&[0], &[Start::at_limit(-10)]);
         let duration = j.run().config.short_trial.get();
         let workload = workloads(Regime::R1)[0].id();
-        j.carry(SESSION, (Regime::R1, 0, &[0], duration), condition, &[-10], Outcome::Pass);
+        j.carry(
+            SESSION,
+            (Regime::R1, 0, &[0], duration),
+            condition,
+            &[-10],
+            Outcome::Pass,
+        );
         let boundary = j.profile_change(&[-10]);
         let k = class(Regime::R1, 0, &[0], duration);
         let p = j.profile(&[-10]);
-        let since = Window::LiveOrCarried { since: Some(boundary) };
+        let since = Window::LiveOrCarried {
+            since: Some(boundary),
+        };
         assert_eq!(j.run().evidence.count(k, &p, since, needed(&j)).valid, 1);
         assert_eq!(j.run().evidence.exposure(workload), 0);
-        let plan = j.manual(Regime::R1, 0, Load::Single(core(0)), condition, &[-10], duration);
+        let plan = j.manual(
+            Regime::R1,
+            0,
+            Load::Single(core(0)),
+            condition,
+            &[-10],
+            duration,
+        );
         j.trial(&plan, Outcome::Pass);
         assert_eq!(j.run().evidence.exposure(workload), 1);
     }
@@ -515,9 +683,22 @@ fn carried_failure_survives_newer_pre_boundary_live_failure() {
         let carried = if idle {
             j.carry_idle(SESSION, &[-9, -4])
         } else {
-            j.carry(SESSION, (Regime::R6, 0, &[0, 1], duration), Condition::Parked, &[-9, -4], Outcome::Failure)
+            j.carry(
+                SESSION,
+                (Regime::R6, 0, &[0, 1], duration),
+                Condition::Parked,
+                &[-9, -4],
+                Outcome::Failure,
+            )
         };
-        let mut live = j.manual(Regime::R6, 0, Load::Many(set(&[0, 1])), Condition::Parked, &[-10, -5], duration);
+        let mut live = j.manual(
+            Regime::R6,
+            0,
+            Load::Many(set(&[0, 1])),
+            Condition::Parked,
+            &[-10, -5],
+            duration,
+        );
         live.activity = togi_journal::Activity::Hunt;
         j.trial(&live, Outcome::Failure);
         decide_pending(&mut j);
@@ -526,10 +707,18 @@ fn carried_failure_survives_newer_pre_boundary_live_failure() {
         live.profile = j.profile(&[-10, -10]);
         let n = count(&j);
         for i in 0..n {
-            assert_eq!(failing(&j, k, &[-10, -10], Some(boundary)), Some(carried), "idle={idle} after {i}");
+            assert_eq!(
+                failing(&j, k, &[-10, -10], Some(boundary)),
+                Some(carried),
+                "idle={idle} after {i}"
+            );
             j.trial(&live, Outcome::Pass);
         }
-        assert_eq!(failing(&j, k, &[-10, -10], Some(boundary)), None, "idle={idle}");
+        assert_eq!(
+            failing(&j, k, &[-10, -10], Some(boundary)),
+            None,
+            "idle={idle}"
+        );
     }
 }
 
@@ -544,7 +733,14 @@ fn pass_and_carry(j: &mut Journal, workload: usize, profile: &[i64], paths: (Bac
         j.trial(&plan, Outcome::Pass);
     }
     for _ in 0..n {
-        j.carry_under(SESSION, (Regime::R1, workload, &[0], 90), Condition::Together, profile, Outcome::Pass, Some(paths));
+        j.carry_under(
+            SESSION,
+            (Regime::R1, workload, &[0], 90),
+            Condition::Together,
+            profile,
+            Outcome::Pass,
+            Some(paths),
+        );
     }
 }
 
@@ -552,13 +748,36 @@ fn pass_and_carry(j: &mut Journal, workload: usize, profile: &[i64], paths: (Bac
 fn evidence_is_keyed_by_backend_store_path() {
     assert_eq!(workloads(Regime::R1)[0].backend, Backend::Mprime);
     assert_eq!(workloads(Regime::R1)[1].backend, Backend::Ycruncher);
-    type Reload = &'static [(&'static str, &'static str)];
     let cases: [(&str, Reload, u32, u32, bool); 5] = [
-        ("resume with the same backends", &[(MPRIME_OLD, YCRUNCHER_OLD)], 10, 10, false),
-        ("mprime updated", &[(MPRIME_NEW, YCRUNCHER_OLD)], 0, 10, true),
-        ("y-cruncher updated", &[(MPRIME_OLD, YCRUNCHER_NEW)], 10, 0, false),
+        (
+            "resume with the same backends",
+            &[(MPRIME_OLD, YCRUNCHER_OLD)],
+            10,
+            10,
+            false,
+        ),
+        (
+            "mprime updated",
+            &[(MPRIME_NEW, YCRUNCHER_OLD)],
+            0,
+            10,
+            true,
+        ),
+        (
+            "y-cruncher updated",
+            &[(MPRIME_OLD, YCRUNCHER_NEW)],
+            10,
+            0,
+            false,
+        ),
         ("both updated", &[(MPRIME_NEW, YCRUNCHER_NEW)], 0, 0, true),
-        ("mprime rolled back", &[(MPRIME_NEW, YCRUNCHER_OLD), (MPRIME_OLD, YCRUNCHER_OLD)], 10, 10, false),
+        (
+            "mprime rolled back",
+            &[(MPRIME_NEW, YCRUNCHER_OLD), (MPRIME_OLD, YCRUNCHER_OLD)],
+            10,
+            10,
+            false,
+        ),
     ];
     for (name, reload, mprime, ycruncher, failure_valid) in cases {
         let mut j = Journal::has_room(&[-10, -10]);
@@ -582,7 +801,11 @@ fn evidence_is_keyed_by_backend_store_path() {
         assert_eq!(counts(&j), (mprime, ycruncher), "{name}");
         let replayed = j.resumed();
         assert_eq!(counts(&replayed), (mprime, ycruncher), "{name} replayed");
-        assert_eq!(failing(&j, km, &profile, None).is_some(), failure_valid, "{name}");
+        assert_eq!(
+            failing(&j, km, &profile, None).is_some(),
+            failure_valid,
+            "{name}"
+        );
     }
 }
 
@@ -591,9 +814,24 @@ fn a_backend_update_restarts_carried_solo_limit_evidence() {
     assert_eq!(workloads(Regime::R1)[0].backend, Backend::Mprime);
     assert_eq!(workloads(Regime::R2)[0].backend, Backend::Mprime);
     let cases: [(&str, &str, &str, bool); 3] = [
-        ("same backends answer the check", MPRIME_OLD, YCRUNCHER_OLD, true),
-        ("other backend updated still answers", MPRIME_OLD, YCRUNCHER_NEW, true),
-        ("own backend updated needs live trials", MPRIME_NEW, YCRUNCHER_OLD, false),
+        (
+            "same backends answer the check",
+            MPRIME_OLD,
+            YCRUNCHER_OLD,
+            true,
+        ),
+        (
+            "other backend updated still answers",
+            MPRIME_OLD,
+            YCRUNCHER_NEW,
+            true,
+        ),
+        (
+            "own backend updated needs live trials",
+            MPRIME_NEW,
+            YCRUNCHER_OLD,
+            false,
+        ),
     ];
     for (name, mprime, ycruncher, answered) in cases {
         let mut j = Journal::search_at(&[-20]);
@@ -601,15 +839,28 @@ fn a_backend_update_restarts_carried_solo_limit_evidence() {
         let n = count(&j);
         for regime in [Regime::R1, Regime::R2] {
             for _ in 0..n {
-                j.carry_under(SESSION, (regime, 0, &[0], 90), Condition::Alone, &[-20], Outcome::Pass, Some((Backend::Mprime, MPRIME_OLD)));
+                j.carry_under(
+                    SESSION,
+                    (regime, 0, &[0], 90),
+                    Condition::Alone,
+                    &[-20],
+                    Outcome::Pass,
+                    Some((Backend::Mprime, MPRIME_OLD)),
+                );
             }
         }
         j.load(&backends(mprime, ycruncher));
         check_decision(&mut j);
         let action = j.run().search_action().unwrap();
         if answered {
-            let Action::Decide(DecisionAction { payload: DecisionPayload::CorePhase(p), .. }) = action else {
-                panic!("{name}: carried passes under the recorded backends did not answer the check: {action:?}");
+            let Action::Decide(DecisionAction {
+                payload: DecisionPayload::CorePhase(p),
+                ..
+            }) = action
+            else {
+                panic!(
+                    "{name}: carried passes under the recorded backends did not answer the check: {action:?}"
+                );
             };
             assert_eq!(p.to, togi_journal::CorePhase::HasRoom, "{name}");
         } else {
@@ -617,20 +868,48 @@ fn a_backend_update_restarts_carried_solo_limit_evidence() {
                 panic!("{name}: the check was answered by passes from the previous mprime");
             };
             assert_eq!(plan.regime, Regime::R1, "{name}");
-            assert_eq!(plan.workload, crate::WorkloadChoice::Frozen(workloads(Regime::R1)[0].id()), "{name}");
+            assert_eq!(
+                plan.workload,
+                crate::WorkloadChoice::Frozen(workloads(Regime::R1)[0].id()),
+                "{name}"
+            );
         }
     }
 }
 
 #[test]
 fn a_backend_update_restarts_an_unfinished_search_step() {
-    type Reload = &'static [(&'static str, &'static str)];
     let cases: [(&str, Reload, bool, Reload); 5] = [
-        ("same backends keep the R1 pass", &[(MPRIME_OLD, YCRUNCHER_OLD)], false, &[]),
-        ("other backend updated keeps the R1 pass", &[(MPRIME_OLD, YCRUNCHER_NEW)], false, &[]),
-        ("own backend updated reruns R1", &[(MPRIME_NEW, YCRUNCHER_OLD)], true, &[]),
-        ("own backend rolled back restores the R1 pass", &[(MPRIME_NEW, YCRUNCHER_OLD), (MPRIME_OLD, YCRUNCHER_OLD)], false, &[]),
-        ("rollback after the replacement R1 still needs R2", &[(MPRIME_NEW, YCRUNCHER_OLD)], true, &[(MPRIME_OLD, YCRUNCHER_OLD)]),
+        (
+            "same backends keep the R1 pass",
+            &[(MPRIME_OLD, YCRUNCHER_OLD)],
+            false,
+            &[],
+        ),
+        (
+            "other backend updated keeps the R1 pass",
+            &[(MPRIME_OLD, YCRUNCHER_NEW)],
+            false,
+            &[],
+        ),
+        (
+            "own backend updated reruns R1",
+            &[(MPRIME_NEW, YCRUNCHER_OLD)],
+            true,
+            &[],
+        ),
+        (
+            "own backend rolled back restores the R1 pass",
+            &[(MPRIME_NEW, YCRUNCHER_OLD), (MPRIME_OLD, YCRUNCHER_OLD)],
+            false,
+            &[],
+        ),
+        (
+            "rollback after the replacement R1 still needs R2",
+            &[(MPRIME_NEW, YCRUNCHER_OLD)],
+            true,
+            &[(MPRIME_OLD, YCRUNCHER_OLD)],
+        ),
     ];
     for (name, reload, rerun, rollback) in cases {
         let mut j = Journal::search_at(&[-10]);

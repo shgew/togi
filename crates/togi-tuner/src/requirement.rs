@@ -6,8 +6,8 @@ use togi_machine::{Condition, CoreId};
 use crate::flight::OpenTrial;
 use crate::state::Run;
 use crate::{
-    ClassKey, FoldError, Load, Requirement, RequirementKind, Secs, StepNo, TrialContext,
-    TrialPlan, Window, WorkloadChoice,
+    ClassKey, FoldError, Load, Requirement, RequirementKind, Secs, StepNo, TrialContext, TrialPlan,
+    Window, WorkloadChoice,
 };
 
 /// The inconclusive trial to repeat, with the requirement it was scheduled under. Only a builder
@@ -139,9 +139,7 @@ impl Run {
                 condition: Condition::Alone,
                 activity: intent.activity.unwrap_or(Activity::Search),
                 profile: open.profile,
-                duration: Secs::new(
-                    NonZeroU32::new(intent.duration_s).unwrap_or(NonZeroU32::MIN),
-                ),
+                duration: Secs::new(NonZeroU32::new(intent.duration_s).unwrap_or(NonZeroU32::MIN)),
                 context,
                 requirement: open.requirement,
                 retry: true,

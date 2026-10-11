@@ -38,8 +38,7 @@ impl Failures {
 
     /// The failure known as `seq`: its own event, or the failed `trial.end` it attributed.
     pub(crate) fn get(&self, seq: Seq) -> Option<&FailureRecord> {
-        self.records
-            .get(self.aliases.get(&seq).unwrap_or(&seq))
+        self.records.get(self.aliases.get(&seq).unwrap_or(&seq))
     }
 
     pub(crate) fn queue_is_empty(&self) -> bool {
@@ -61,7 +60,8 @@ impl Failures {
         };
         self.records.retain(|_, record| !drops(record));
         let records = &self.records;
-        self.aliases.retain(|_, record| records.contains_key(record));
+        self.aliases
+            .retain(|_, record| records.contains_key(record));
         self.queue.retain(|seq| records.contains_key(seq));
     }
 }
@@ -69,15 +69,17 @@ impl Failures {
 fn unattributed_attribution(
     run: &Run,
     awaiting: &Awaiting,
-) -> (Attribution, Option<CoreId>, Option<togi_machine::TargetOffset>) {
+) -> (
+    Attribution,
+    Option<CoreId>,
+    Option<togi_machine::TargetOffset>,
+) {
     let intent = &awaiting.intent;
     let named: Vec<CoreId> = match awaiting.core {
         Some(core) => vec![core],
         None => awaiting.mces.iter().collect(),
     };
-    let named = if named.is_empty()
-        && (intent.regime != Regime::R7 || intent.cores.len() <= 1)
-    {
+    let named = if named.is_empty() && (intent.regime != Regime::R7 || intent.cores.len() <= 1) {
         awaiting.profile.sole_nonzero().into_iter().collect()
     } else {
         named
@@ -139,7 +141,11 @@ impl Run {
             (Some(_) | None, Some(_)) | (None, None) => None,
         };
         let known = match failure.known_failure {
-            Some(seq) => Some(self.failures.get(seq).ok_or(FoldError::UnknownFailure(seq))?),
+            Some(seq) => Some(
+                self.failures
+                    .get(seq)
+                    .ok_or(FoldError::UnknownFailure(seq))?,
+            ),
             None => None,
         };
         let loaded = matches!(

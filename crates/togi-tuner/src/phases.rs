@@ -96,13 +96,6 @@ impl Phases {
         }
     }
 
-    pub(crate) fn last_clean_cycle(&self) -> Option<NonZeroU32> {
-        match &self.stage {
-            Stage::Concluded { last_cycle, .. } => Some(*last_cycle),
-            Stage::One | Stage::Rounds(_) | Stage::Confirming { .. } => None,
-        }
-    }
-
     pub(crate) fn cycle_start(&mut self, seq: Seq) {
         if let Stage::Rounds(settled) = &self.stage {
             self.stage = Stage::Confirming {

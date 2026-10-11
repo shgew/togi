@@ -46,7 +46,10 @@ impl TunerConfig {
                 .ok()
                 .and_then(NonZeroU16::new)
                 .unwrap_or(NonZeroU16::MIN),
-            mprime: config.backends().path(Backend::Mprime).map(Path::to_path_buf),
+            mprime: config
+                .backends()
+                .path(Backend::Mprime)
+                .map(Path::to_path_buf),
             ycruncher: config
                 .backends()
                 .path(Backend::Ycruncher)

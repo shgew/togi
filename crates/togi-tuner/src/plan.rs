@@ -265,12 +265,3 @@ pub enum Action {
     RunTrial(TrialPlan),
     ReadRanking,
 }
-
-#[cfg(test)]
-impl TrialPlan {
-    pub(crate) fn window_since(&self) -> Option<Option<Seq>> {
-        match self.requirement.window {
-            Window::Live { since } | Window::LiveOrCarried { since } => Some(since),
-        }
-    }
-}

@@ -3,8 +3,8 @@ use std::collections::BTreeMap;
 use jiff::Timestamp;
 use togi_config::Config;
 use togi_journal::{
-    Attribution, Build, ConfigLoaded, CoreTransition, CorePhase, Event, Failure, Outcome,
-    Payload, SCHEMA, SessionStart, Seq, Stamp, TrialEnd, TrialId, TunerDecision, TunerWarning,
+    Attribution, Build, ConfigLoaded, CorePhase, CoreTransition, Event, Failure, Outcome, Payload,
+    SCHEMA, Seq, SessionStart, Stamp, TrialEnd, TrialId, TunerDecision, TunerWarning,
 };
 use togi_machine::{
     BootId, CcdId, Condition, CoreId, CoreInfo, CoreSet, PerCore, Regime, Signal, TargetOffset,
@@ -13,8 +13,8 @@ use togi_machine::{
 
 use crate::tests::{core, off};
 use crate::{
-    Action, ClassKey, DecisionAction, FoldError, Load, Profile, Requirement, RequirementKind,
-    Secs, State, TrialContext, TrialPlan, Window, WorkloadChoice,
+    Action, ClassKey, DecisionAction, FoldError, Load, Profile, Requirement, RequirementKind, Secs,
+    State, TrialContext, TrialPlan, Window, WorkloadChoice,
 };
 
 pub(crate) fn build() -> Build {
@@ -57,10 +57,6 @@ pub(crate) fn infos(ids: &[u8]) -> Vec<CoreInfo> {
 
 pub(crate) fn set(ids: &[u8]) -> CoreSet {
     ids.iter().map(|&id| core(id)).collect()
-}
-
-pub(crate) fn offsets(pairs: &[(u8, i64)]) -> PerCore<TargetOffset> {
-    pairs.iter().map(|&(id, value)| (core(id), off(value))).collect()
 }
 
 /// How a core stands when a test's session starts.
@@ -127,7 +123,11 @@ impl Start {
             from: Some(CorePhase::Search),
             ..Self::has_room(offset).pass(solo)
         };
-        if solo > -50 { start.fail(solo - 1) } else { start }
+        if solo > -50 {
+            start.fail(solo - 1)
+        } else {
+            start
+        }
     }
 }
 
@@ -170,14 +170,24 @@ impl Journal {
     }
 
     pub(crate) fn search_at(offsets: &[i64]) -> Self {
-        let ids: Vec<u8> = (0..offsets.len()).map(|id| u8::try_from(id).unwrap()).collect();
-        let starts: Vec<Start> = offsets.iter().map(|&offset| Start::search(offset)).collect();
+        let ids: Vec<u8> = (0..offsets.len())
+            .map(|id| u8::try_from(id).unwrap())
+            .collect();
+        let starts: Vec<Start> = offsets
+            .iter()
+            .map(|&offset| Start::search(offset))
+            .collect();
         Self::new(&ids, &starts)
     }
 
     pub(crate) fn has_room(offsets: &[i64]) -> Self {
-        let ids: Vec<u8> = (0..offsets.len()).map(|id| u8::try_from(id).unwrap()).collect();
-        let starts: Vec<Start> = offsets.iter().map(|&offset| Start::has_room(offset)).collect();
+        let ids: Vec<u8> = (0..offsets.len())
+            .map(|id| u8::try_from(id).unwrap())
+            .collect();
+        let starts: Vec<Start> = offsets
+            .iter()
+            .map(|&offset| Start::has_room(offset))
+            .collect();
         Self::new(&ids, &starts)
     }
 
@@ -207,17 +217,14 @@ impl Journal {
         self
     }
 
-    pub(crate) fn ids(&self) -> &[u8] {
-        &self.ids
-    }
-
     pub(crate) fn next_seq(&self) -> Seq {
         Seq::new(self.events.len() as u64 + 1).unwrap()
     }
 
     pub(crate) fn event(&self, payload: Payload, cause: &[Seq]) -> Event {
         let seq = self.next_seq();
-        let time = Timestamp::from_second(1_700_000_000 + i64::try_from(seq.get()).unwrap()).unwrap();
+        let time =
+            Timestamp::from_second(1_700_000_000 + i64::try_from(seq.get()).unwrap()).unwrap();
         Event::new(
             seq,
             Stamp { time, mono: None },
@@ -232,7 +239,7 @@ impl Journal {
         self.state.fold(&event)?;
         let seq = event.seq;
         self.events.push(event);
-        if self.resume_stride > 0 && self.events.len() % self.resume_stride == 0 {
+        if self.resume_stride > 0 && self.events.len().is_multiple_of(self.resume_stride) {
             self.assert_resumes();
         }
         Ok(seq)
@@ -243,7 +250,11 @@ impl Journal {
     }
 
     pub(crate) fn assert_resumes(&self) {
-        assert_eq!(fresh(&self.events), self.state, "a fresh fold differs from the incremental one");
+        assert_eq!(
+            fresh(&self.events),
+            self.state,
+            "a fresh fold differs from the incremental one"
+        );
     }
 
     pub(crate) fn load(&mut self, config: &Config) -> Seq {
@@ -326,7 +337,11 @@ impl Journal {
         (seq, trial)
     }
 
-    pub(crate) fn end_payload(trial: &TrialId, outcome: Outcome, signal: Option<Signal>) -> TrialEnd {
+    pub(crate) fn end_payload(
+        trial: &TrialId,
+        outcome: Outcome,
+        signal: Option<Signal>,
+    ) -> TrialEnd {
         TrialEnd {
             trial: trial.clone(),
             kernel_cursor: None,
@@ -425,7 +440,11 @@ impl Journal {
         self.append(failure.into(), cause)
     }
 
-    pub(crate) fn idle_failure(&mut self, profile: PerCore<TargetOffset>, condition: Condition) -> Seq {
+    pub(crate) fn idle_failure(
+        &mut self,
+        profile: PerCore<TargetOffset>,
+        condition: Condition,
+    ) -> Seq {
         self.failure(
             Failure {
                 signal: Signal::Crash,

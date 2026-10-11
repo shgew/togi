@@ -71,7 +71,9 @@ impl Run {
                 .filter(|&pass| self.evidence.carried_source(pass).is_some()),
         );
         let mut warning = warning;
-        warning.detail.push_str(&carried_clause(&self.evidence, &cause));
+        warning
+            .detail
+            .push_str(&carried_clause(&self.evidence, &cause));
         self.warning = Some(PendingWarning { warning, cause });
     }
 
@@ -134,7 +136,9 @@ impl Run {
             );
         }
         match source {
-            Some(source) => self.evidence.record_carried_idle_failure(seq, profile, source),
+            Some(source) => self
+                .evidence
+                .record_carried_idle_failure(seq, profile, source),
             None => self.evidence.record_idle_failure(seq, profile),
         }
     }
@@ -159,10 +163,7 @@ impl Run {
         }
     }
 
-    pub(crate) fn class_of_trial_class(
-        &self,
-        class: &TrialClass,
-    ) -> Result<ClassKey, FoldError> {
+    pub(crate) fn class_of_trial_class(&self, class: &TrialClass) -> Result<ClassKey, FoldError> {
         let workload = match class.workload {
             Some(workload) if workload.regime() == class.regime => workload,
             Some(workload) => {

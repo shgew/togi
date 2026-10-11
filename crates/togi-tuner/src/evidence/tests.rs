@@ -3,9 +3,7 @@ use std::path::Path;
 
 use proptest::prelude::*;
 use togi_journal::Seq;
-use togi_machine::{
-    Backend, Condition, CoreId, CoreSet, REGIMES, Regime, WorkloadId, workloads,
-};
+use togi_machine::{Backend, Condition, CoreId, CoreSet, REGIMES, Regime, WorkloadId, workloads};
 
 use crate::tests::{core, profile, topology};
 use crate::{

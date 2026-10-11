@@ -86,7 +86,10 @@ impl Run {
 
     /// An unattributed failure with every core at 0 has no candidate to hunt.
     pub(crate) fn unattributed_zero_dead_end(&self) -> Option<DecisionAction> {
-        let queued = self.failures.queued().filter(|record| record.profile.is_zero())?;
+        let queued = self
+            .failures
+            .queued()
+            .filter(|record| record.profile.is_zero())?;
         Some(DecisionAction::new(
             DeadEnd {
                 condition: DeadEndCondition::FailureAtZero,
@@ -133,7 +136,10 @@ impl Run {
                         workloads: Vec::new(),
                         cleared_combination: Vec::new(),
                         reason: limit.map_or_else(
-                            || "one count deeper reaches no failure point or combination".to_owned(),
+                            || {
+                                "one count deeper reaches no failure point or combination"
+                                    .to_owned()
+                            },
                             |limit| limit.to_string(),
                         ),
                     },

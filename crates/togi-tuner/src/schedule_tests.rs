@@ -1,11 +1,9 @@
 use togi_journal::{CorePhase, CoreTransition, Decision, Outcome, Payload, TrialId, TunerDecision};
 use togi_machine::{Condition, Regime, workloads};
 
-use crate::tests::{core, off};
 use crate::testkit::{Journal, Start};
-use crate::{
-    Action, DecisionAction, DecisionPayload, Load, TrialContext, WorkloadChoice,
-};
+use crate::tests::{core, off};
+use crate::{Action, DecisionAction, DecisionPayload, Load, TrialContext, WorkloadChoice};
 
 pub(crate) fn transition(id: u8, to: CorePhase, offset: i64) -> CoreTransition {
     CoreTransition {
@@ -72,7 +70,7 @@ fn search_and_solo_limit_check() {
     };
     assert_eq!(phase.to, togi_journal::CorePhase::HasRoom);
     assert_eq!(phase.offset.get(), -49);
-    assert_eq!(phase.pass.map(|pass| pass.get()), Some(-50));
+    assert_eq!(phase.pass.map(togi_machine::TargetOffset::get), Some(-50));
     j.decide(exit);
     let Action::Decide(DecisionAction {
         payload: DecisionPayload::ProfileChange(change),
@@ -81,7 +79,10 @@ fn search_and_solo_limit_check() {
     else {
         panic!("expected profile.change");
     };
-    assert_eq!(change.to.iter().map(|(_, o)| o.get()).collect::<Vec<_>>(), [-49]);
+    assert_eq!(
+        change.to.iter().map(|(_, o)| o.get()).collect::<Vec<_>>(),
+        [-49]
+    );
     j.assert_resumes();
 }
 
@@ -99,14 +100,20 @@ fn search_failure_and_retry() {
     let DecisionPayload::Failure(attributed) = &failure.payload else {
         panic!("expected a failure, got {failure:?}");
     };
-    assert_eq!(attributed.attribution, togi_journal::Attribution::Attributed);
+    assert_eq!(
+        attributed.attribution,
+        togi_journal::Attribution::Attributed
+    );
     assert_eq!(attributed.core, Some(core(0)));
     j.decide(failure);
     let back = j.next_decision();
     let d = decision(&back);
     assert_eq!(d.decision, Decision::Backoff);
     assert_eq!(d.to_offset.get(), -5);
-    assert_eq!(d.failure_point.map(|point| point.get()), Some(-10));
+    assert_eq!(
+        d.failure_point.map(togi_machine::TargetOffset::get),
+        Some(-10)
+    );
     let text = Payload::from(back.payload).message();
     assert!(text.contains("failed"), "{text}");
     j.assert_resumes();
@@ -164,7 +171,7 @@ fn seeded_candidate_solo_limit_freezes_workloads() {
         panic!("expected core.phase, got {exit:?}");
     };
     assert_eq!(phase.to, CorePhase::HasRoom);
-    assert_eq!(phase.pass.map(|pass| pass.get()), Some(-20));
+    assert_eq!(phase.pass.map(togi_machine::TargetOffset::get), Some(-20));
 }
 
 #[test]
@@ -219,7 +226,11 @@ fn trial_plan_intent_rotation() {
                 WorkloadChoice::Frozen(workloads(regime)[index].id())
             });
             let intent = plan.intent(TrialId::from("probe".to_owned()), j.rotation(&plan));
-            assert_eq!(intent.workload, workloads(regime)[want].id(), "{regime} {outcome:?}");
+            assert_eq!(
+                intent.workload,
+                workloads(regime)[want].id(),
+                "{regime} {outcome:?}"
+            );
             j.trial(&plan, outcome);
             if outcome == Outcome::Failure {
                 let attribution = j.next_decision();

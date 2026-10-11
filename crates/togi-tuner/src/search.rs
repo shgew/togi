@@ -4,16 +4,15 @@ use togi_journal::{
     Activity, CorePhase, CoreTransition, DeadEnd, DeadEndCondition, Decision, Seq, TunerDecision,
 };
 use togi_machine::{
-    Backend, Condition, CoreId, MIN_OFFSET, Regime, TargetOffset, WorkloadId,
-    pick_workload,
+    Backend, Condition, CoreId, MIN_OFFSET, Regime, TargetOffset, WorkloadId, pick_workload,
 };
 
 use crate::cores::Core;
 use crate::ledger::carried_clause;
 use crate::state::Run;
 use crate::{
-    Action, BackendId, ClassKey, DecisionAction, DecisionPayload, Depth, Evidence, Load,
-    Profile, TrialContext, TrialPlan, Window, WorkloadChoice,
+    Action, BackendId, ClassKey, DecisionAction, DecisionPayload, Depth, Evidence, Load, Profile,
+    TrialContext, TrialPlan, Window, WorkloadChoice,
 };
 
 /// How many counts shallower than its solo limit a core starts checking.
@@ -204,9 +203,13 @@ impl Run {
             }
             .into();
         }
-        let fail = view
-            .fail
-            .map_or(offset, |old| if old.shallower_than(offset) { old } else { offset });
+        let fail = view.fail.map_or(offset, |old| {
+            if old.shallower_than(offset) {
+                old
+            } else {
+                offset
+            }
+        });
         let (pass, discarded) = match view.pass {
             Some(pass) if !pass.shallower_than(fail) => (
                 None,
@@ -311,7 +314,11 @@ impl Run {
                 self.config.needed,
             );
             if count.valid < u32::from(self.config.needed.get()) {
-                return Some(Action::RunTrial(self.search_trial(id, regime, Some(frozen))));
+                return Some(Action::RunTrial(self.search_trial(
+                    id,
+                    regime,
+                    Some(frozen),
+                )));
             }
             for seq in count.witnesses {
                 if self.evidence.carried_source(seq).is_some() && !cause.contains(&seq) {
@@ -321,7 +328,11 @@ impl Run {
         }
         let start = core.offset.shallower_by(MARGIN);
         let at = Profile::over(self.topo.all(), |other| {
-            if other == id { start } else { self.core(other).offset }
+            if other == id {
+                start
+            } else {
+                self.core(other).offset
+            }
         });
         let (phase, reason) = match self.constraints.at_limit(id, &at) {
             Some(limit) => (CorePhase::AtLimit, limit.to_string()),
@@ -367,7 +378,10 @@ impl Run {
             if let (Some(_), (Some(r1), Some(r2))) =
                 (current, self.search.current(id, &self.evidence))
             {
-                return Some(Self::decide_core(self.search_pass(self.view(id)), vec![r1, r2]));
+                return Some(Self::decide_core(
+                    self.search_pass(self.view(id)),
+                    vec![r1, r2],
+                ));
             }
         }
         if let Some(plan) = self.serve_retry() {
@@ -375,7 +389,8 @@ impl Run {
         }
         if let Some(id) = cursor {
             let current = self.searching(id).filter(|core| core.check.is_none());
-            if current.is_some() && matches!(self.search.current(id, &self.evidence), (Some(_), None))
+            if current.is_some()
+                && matches!(self.search.current(id, &self.evidence), (Some(_), None))
             {
                 return Some(Action::RunTrial(self.search_trial(id, Regime::R2, None)));
             }

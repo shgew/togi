@@ -1,12 +1,8 @@
-use togi_journal::{
-    Event, Mce, Outcome, Seq, TrialEnd, TrialId, TrialIntent, TrialProgress,
-};
+use togi_journal::{Event, Mce, Outcome, Seq, TrialEnd, TrialId, TrialIntent, TrialProgress};
 use togi_machine::{Condition, CoreId, CoreSet, Signal};
 
 use crate::state::Run;
-use crate::{
-    ClassKey, FoldError, Profile, Requirement, RequirementKind, StepNo,
-};
+use crate::{ClassKey, FoldError, Profile, Requirement, RequirementKind, StepNo};
 
 /// What a trial's requirement stood at just before it ended, never more than its count.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -58,14 +54,17 @@ pub(crate) struct Flight {
 }
 
 impl Run {
-    pub(crate) fn trial_intent(&mut self, event: &Event, intent: &TrialIntent) -> Result<(), FoldError> {
+    pub(crate) fn trial_intent(
+        &mut self,
+        event: &Event,
+        intent: &TrialIntent,
+    ) -> Result<(), FoldError> {
         let class = self.class_of_intent(intent)?;
         let profile = Profile::new(&self.topo, intent.profile)?;
         let requirement = self.intent_requirement(intent, class)?;
-        let alone_core = intent
-            .core
-            .filter(|_| intent.condition == Condition::Alone);
-        let cursor = alone_core.and_then(|core| self.topo.order().iter().position(|&id| id == core));
+        let alone_core = intent.core.filter(|_| intent.condition == Condition::Alone);
+        let cursor =
+            alone_core.and_then(|core| self.topo.order().iter().position(|&id| id == core));
         if cursor.is_some() {
             self.search.turn(cursor);
         }
@@ -144,7 +143,10 @@ impl Run {
                         requirement.needed,
                     )
                     .valid;
-                (valid.min(needed), valid.saturating_add(1).min(needed.max(1)))
+                (
+                    valid.min(needed),
+                    valid.saturating_add(1).min(needed.max(1)),
+                )
             }
         };
         TrialHistory {

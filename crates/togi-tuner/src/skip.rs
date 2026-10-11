@@ -6,7 +6,10 @@ use crate::state::Run;
 use crate::{Action, ClassKey, DecisionAction, Load, TrialContext, TrialPlan};
 
 fn cores_text(cores: togi_machine::CoreSet) -> String {
-    let names: Vec<String> = cores.iter().map(|core| format!("{:02}", core.get())).collect();
+    let names: Vec<String> = cores
+        .iter()
+        .map(|core| format!("{:02}", core.get()))
+        .collect();
     match names.len() {
         1 => format!("core {}", names.join("")),
         _ => format!("cores {}", names.join(", ")),
@@ -37,12 +40,10 @@ impl Run {
             return action;
         }
         let class = self.plan_class(plan);
-        let Some(seq) = self.evidence.failing_seq(
-            class,
-            &plan.profile,
-            None,
-            self.config.needed,
-        ) else {
+        let Some(seq) = self
+            .evidence
+            .failing_seq(class, &plan.profile, None, self.config.needed)
+        else {
             return action;
         };
         let Some(known) = self.failures.get(seq) else {

@@ -2,8 +2,8 @@ use togi_journal::{CorePhase, Decision, Outcome, TunerDecision};
 use togi_machine::Regime;
 
 use crate::schedule_tests::transition;
-use crate::tests::{core, off};
 use crate::testkit::{Journal, Start};
+use crate::tests::{core, off};
 use crate::{Action, DecisionAction, DecisionPayload};
 
 #[test]
@@ -18,7 +18,13 @@ fn search_exit_starts_one_count_shallower_than_the_solo_limit() {
         ),
         ("floor", -50, None, -49, "checking starts at -49"),
         ("zero", 0, None, 0, "checking starts at 0"),
-        ("failure point two counts deeper", -20, Some(-22), -19, "margin"),
+        (
+            "failure point two counts deeper",
+            -20,
+            Some(-22),
+            -19,
+            "margin",
+        ),
     ];
     for (name, solo, fail, start, reason) in cases {
         let mut begin = Start::search(solo).checking();
@@ -41,10 +47,20 @@ fn search_exit_starts_one_count_shallower_than_the_solo_limit() {
             panic!("{name}: the core never left search");
         };
         assert_eq!(exit.offset.get(), start, "{name}");
-        assert_eq!(exit.pass.map(|pass| pass.get()), Some(solo), "{name}");
+        assert_eq!(
+            exit.pass.map(togi_machine::TargetOffset::get),
+            Some(solo),
+            "{name}"
+        );
         assert_eq!(exit.to, CorePhase::HasRoom, "{name}");
         assert!(exit.reason.contains(reason), "{name}: {}", exit.reason);
-        assert_eq!(j.run().core(core(0)).solo_limit.map(|limit| limit.get()), Some(solo));
+        assert_eq!(
+            j.run()
+                .core(core(0))
+                .solo_limit
+                .map(togi_machine::TargetOffset::get),
+            Some(solo)
+        );
     }
 }
 
@@ -80,7 +96,10 @@ fn phase1_never_deepens_and_ends_at_its_first_passed_full_cycle() {
     j.cycle_start(2, &[Regime::R1]);
     let ended = j.cycle_end(2, true, true);
     assert_eq!(j.run().phases.phase1_end(), Some(ended));
-    assert_eq!(j.run().phases.first_confirmed(), Some(&j.profile(&[-10, -10])));
+    assert_eq!(
+        j.run().phases.first_confirmed(),
+        Some(&j.profile(&[-10, -10]))
+    );
     assert!(j.run().round_due());
     j.assert_resumes();
 }
@@ -202,7 +221,9 @@ fn phase2_moves() {
         },
     ];
     for case in cases {
-        let ids: Vec<u8> = (0..case.starts.len()).map(|id| u8::try_from(id).unwrap()).collect();
+        let ids: Vec<u8> = (0..case.starts.len())
+            .map(|id| u8::try_from(id).unwrap())
+            .collect();
         let mut j = Journal::new(&ids, &case.starts);
         if let Some(members) = &case.combination {
             j.combination(1, members);

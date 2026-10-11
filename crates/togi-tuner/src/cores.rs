@@ -1,4 +1,4 @@
-use togi_journal::{CoreTransition, CorePhase, Event, Seq, TunerDecision};
+use togi_journal::{CorePhase, CoreTransition, Event, Seq, TunerDecision};
 use togi_machine::{CoreId, ObservedOffset, Regime, TargetOffset, WorkloadId};
 
 use crate::state::Run;
