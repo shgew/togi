@@ -24,11 +24,14 @@ const (
 // convert-arm64.txt instead: every float-to-integer conversion, and every float32, float32
 // arithmetic and rounding row with a NaN in it, because the CPUs pick different NaN bits.
 // convert-amd64 runs on amd64 only; convert-arm64 cross-builds this program and runs it
-// under qemu-aarch64 unless it already runs on arm64.
+// under qemu-aarch64 unless it already runs on arm64. convert-amd64-nosse41 is the amd64
+// run started with GODEBUG=cpu.sse41=off: Floor, Ceil and Trunc then run Go's assembly
+// instead of ROUNDSD, and it holds only those rows.
 func init() {
 	modes["convert"] = writeConvert
 	modes["convert-amd64"] = writeConvertAMD64
 	modes["convert-arm64"] = writeConvertARM64
+	modes["convert-amd64-nosse41"] = writeConvertAMD64NoSSE41
 }
 
 // convSink keeps the compiler from folding a conversion whose input it can see, because Go
@@ -203,6 +206,25 @@ func convSpeedProducts() [][2]float64 {
 	return out
 }
 
+// convSNaN is a signalling NaN that Floor, Ceil and Trunc quiet (ROUNDSD) or return
+// unchanged (Go's assembly for a CPU without SSE4.1).
+var convSNaN = math.Float64frombits(0x7ff0000000000001)
+
+// convRoundingQuiets reports which branch of Floor, Ceil and Trunc this process runs:
+// true for ROUNDSD, which quiets a signalling NaN.
+func convRoundingQuiets() (bool, error) {
+	bits := math.Float64bits(convSNaN)
+	floor, ceil, trunc := math.Float64bits(math.Floor(convSNaN)), math.Float64bits(math.Ceil(convSNaN)), math.Float64bits(math.Trunc(convSNaN))
+	quiet := bits | 1<<51
+	switch {
+	case floor == quiet && ceil == quiet && trunc == quiet:
+		return true, nil
+	case floor == bits && ceil == bits && trunc == bits:
+		return false, nil
+	}
+	return false, fmt.Errorf("math.Floor, Ceil and Trunc of %#016x gave %#016x, %#016x, %#016x", bits, floor, ceil, trunc)
+}
+
 func writeConvertAMD64(dir string) error {
 	if runtime.GOARCH != "amd64" {
 		return fmt.Errorf("the amd64 vectors are what amd64 does, not %s", runtime.GOARCH)
@@ -210,7 +232,40 @@ func writeConvertAMD64(dir string) error {
 	if err := requireGOAMD64v1(); err != nil {
 		return err
 	}
+	quiets, err := convRoundingQuiets()
+	if err != nil {
+		return err
+	}
+	if !quiets {
+		return fmt.Errorf("the CPU must have SSE4.1 and GODEBUG must not turn it off (GODEBUG=%q)", os.Getenv("GODEBUG"))
+	}
 	return writeConvertArch(dir, "convert-amd64.txt")
+}
+
+// writeConvertAMD64NoSSE41 writes Floor, Ceil and Trunc as Go runs them without SSE4.1.
+func writeConvertAMD64NoSSE41(dir string) error {
+	if runtime.GOARCH != "amd64" {
+		return fmt.Errorf("needs an amd64 host, running on %s", runtime.GOARCH)
+	}
+	if err := requireGOAMD64v1(); err != nil {
+		return err
+	}
+	quiets, err := convRoundingQuiets()
+	if err != nil {
+		return err
+	}
+	if quiets {
+		return fmt.Errorf("this mode needs Go's assembly Floor, Ceil and Trunc: start it with GODEBUG=cpu.sse41=off (GODEBUG=%q)", os.Getenv("GODEBUG"))
+	}
+	file, err := convCreate(dir, "convert-amd64-nosse41.txt")
+	if err != nil {
+		return err
+	}
+	convSink = convFloatToInt64()
+	for _, v := range convSink {
+		file.line("floor", v, math.Floor(v), math.Ceil(v), math.Trunc(v))
+	}
+	return file.close()
 }
 
 func writeConvertARM64(dir string) error {
@@ -424,6 +479,10 @@ func convParseDurationInputs() []string {
 		"0.1h0.1h", "1.123456789123456789s", "1.0000000000000000000000000000000001s", "00000000000000000000000000000000000001s",
 		"0000000000000000000000.0000000000000000000005s", ".000000000000000000000000001h", "1.9999999999ns",
 		"9223372036854775808.0ns", "9223372036854775807.9999999999999999999ns", "-9223372036854775808.5ns", "0.000000000000000000000000h",
+		// d += v wraps in uint64 when two terms are each 1<<63; a fraction past 1<<63; the
+		// fraction digit that would carry its integer past 1<<63
+		"9223372036854775808ns9223372036854775808ns", "-9223372036854775808ns9223372036854775808ns", "9223372036854775808ns9223372036854775808ns1ns",
+		"2562047.9h", "9223372036854775808ns2562047.9h", "0.9223372036854775809s", "0.9223372036854775808s", "-0.92233720368547758099h",
 		"1h1h", "1h-1m", "-1h-1m", "+-1s", "--1s", "++1s", "1s ", " 1s", "1 s", "1S", "1H", "1µs", "1\u00b5S", "1\u03bcs", "1\u00b5m", "1µ", "1m1", "1.s1", ".s1", "1..5s", "1.5.5s", "1e3s", "0x10s", "1_0s",
 		"0s", "-0s", "+0s", "0ns", "00", "0.0", "0.", ".0", "-0.0s", "0h0m0s", "0.0h", "1000000000ns", "1000000us", "1000ms", "60s", "60m", "24h",
 		"1nsns", "ns1", "1n", "1u", "1us1", "1msus", "1.5msus", "1.5ms2", "3.", "3.h", "3.m", "3.ns",

@@ -60,8 +60,7 @@ pub fn duration_from_secs_f64(secs: f64) -> i64 {
 /// signalling NaN where Go's pure-Go algorithm on amd64 returns it unchanged. On arm64 Go
 /// intrinsifies `Round` to `FRINTAD`, which is what `f64::round` lowers to.
 ///
-/// `Floor`, `Ceil` and `Trunc` are [`floor`], [`ceil`] and [`trunc`], which differ from Rust's
-/// only in that they quiet a signalling NaN.
+/// `Floor`, `Ceil` and `Trunc` are [`floor`], [`ceil`] and [`trunc`].
 #[cfg(target_arch = "x86_64")]
 #[must_use]
 pub fn round(x: f64) -> f64 {
@@ -103,25 +102,111 @@ fn quieted(x: f64) -> f64 {
     }
 }
 
-/// Go's `math.Floor` on the targets the vectors cover: `ROUNDSD` on amd64 at `GOAMD64=v1` when
-/// the CPU has SSE4.1, `FRINTMD` on arm64. Both quiet a signalling NaN, which Rust's `f64::floor`
-/// does not on `x86_64`. Without SSE4.1 Go runs assembly that returns a signalling NaN unchanged;
-/// the vectors, and this function, assume a CPU with SSE4.1.
+/// Go's `math.Floor`. On amd64 at `GOAMD64=v1` Go tests for SSE4.1 at run time and uses `ROUNDSD`
+/// when the CPU has it, which quiets a signalling NaN, and its `archFloor` assembly otherwise,
+/// which returns one unchanged; this follows the CPU the same way. On arm64 it is `FRINTMD`,
+/// which quiets.
 #[must_use]
 pub fn floor(x: f64) -> f64 {
-    quieted(x.floor())
+    #[cfg(target_arch = "x86_64")]
+    if !is_x86_feature_detected!("sse4.1") {
+        return floor_asm(x);
+    }
+    floor_rounding_instruction(x)
 }
 
 /// Go's `math.Ceil`; see [`floor`].
 #[must_use]
 pub fn ceil(x: f64) -> f64 {
-    quieted(x.ceil())
+    #[cfg(target_arch = "x86_64")]
+    if !is_x86_feature_detected!("sse4.1") {
+        return ceil_asm(x);
+    }
+    ceil_rounding_instruction(x)
 }
 
 /// Go's `math.Trunc`; see [`floor`].
 #[must_use]
 pub fn trunc(x: f64) -> f64 {
+    #[cfg(target_arch = "x86_64")]
+    if !is_x86_feature_detected!("sse4.1") {
+        return trunc_asm(x);
+    }
+    trunc_rounding_instruction(x)
+}
+
+/// `ROUNDSD` (SSE4.1) and `FRINTMD`, `FRINTPD`, `FRINTZD` (arm64) round and quiet a signalling
+/// NaN; Rust's `f64::floor`, `ceil` and `trunc` do not on `x86_64`, so the NaN is quieted here.
+fn floor_rounding_instruction(x: f64) -> f64 {
+    quieted(x.floor())
+}
+
+fn ceil_rounding_instruction(x: f64) -> f64 {
+    quieted(x.ceil())
+}
+
+fn trunc_rounding_instruction(x: f64) -> f64 {
     quieted(x.trunc())
+}
+
+#[cfg(any(target_arch = "x86_64", test))]
+const SIGN_BIT: u64 = 1 << 63;
+
+/// `Big` of `floor_amd64.s`: 2**52, from which every float64 is an integer.
+#[cfg(any(target_arch = "x86_64", test))]
+const BIG_BITS: u64 = 0x4330_0000_0000_0000;
+
+/// `archFloor` of `floor_amd64.s`, which Go runs on amd64 without SSE4.1: x is returned
+/// unchanged when it is zero, NaN or at least 2**52 in magnitude; otherwise float(int(x)) is
+/// lowered by one where x is below it.
+#[cfg(any(target_arch = "x86_64", test))]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "the integer is below 2**52 in magnitude, so the conversion is exact"
+)]
+fn floor_asm(x: f64) -> f64 {
+    // |x| - 1 wraps to the top of the range for zero, so one unsigned compare covers zero, NaN
+    // and the large values.
+    if (x.to_bits() & !SIGN_BIT).wrapping_sub(1) >= BIG_BITS - 1 {
+        return x;
+    }
+    let truncated = f64_to_i64_amd64(x) as f64;
+    let adjustment = if x < truncated { -1.0 } else { 0.0 };
+    adjustment + truncated
+}
+
+/// `archCeil` of `floor_amd64.s`: x is returned unchanged when it is NaN or at least 2**52 in
+/// magnitude; otherwise the sign of x is put on a zero result.
+#[cfg(any(target_arch = "x86_64", test))]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "the integer is below 2**52 in magnitude, so the conversion is exact"
+)]
+fn ceil_asm(x: f64) -> f64 {
+    let bits = x.to_bits();
+    if bits & !SIGN_BIT >= BIG_BITS {
+        return x;
+    }
+    let sign = bits & SIGN_BIT;
+    let truncated = f64_to_i64_amd64(x) as f64;
+    let signed_truncated = f64::from_bits(truncated.to_bits() | sign);
+    let step: f64 = if x <= truncated { 0.0 } else { 1.0 };
+    f64::from_bits(step.to_bits() | sign) + signed_truncated
+}
+
+/// `archTrunc` of `floor_amd64.s`: x is returned unchanged when it is NaN or at least 2**52 in
+/// magnitude; otherwise float(int(x)) with the sign of x.
+#[cfg(any(target_arch = "x86_64", test))]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "the integer is below 2**52 in magnitude, so the conversion is exact"
+)]
+fn trunc_asm(x: f64) -> f64 {
+    let bits = x.to_bits();
+    if bits & !SIGN_BIT >= BIG_BITS {
+        return x;
+    }
+    f64::from_bits((f64_to_i64_amd64(x) as f64).to_bits() | (bits & SIGN_BIT))
 }
 
 const MAX_DURATION_MAGNITUDE: u64 = 1 << 63;
@@ -196,7 +281,8 @@ pub fn parse_duration(input: &str) -> Option<i64> {
                 return None;
             }
         }
-        d += v;
+        // Go adds in uint64 and wraps: two terms of 1<<63 sum to 0, which passes the check below.
+        d = d.wrapping_add(v);
         if d > MAX_DURATION_MAGNITUDE {
             return None;
         }

@@ -163,6 +163,15 @@ fn float32_arithmetic_equals_rust() {
     expect_none("f32-ops", &failures);
 }
 
+/// False only on an `x86_64` CPU without SSE4.1, where Go's `Floor`, `Ceil` and `Trunc` return
+/// a signalling NaN unchanged and the native vectors, made with SSE4.1, do not apply to them.
+fn native_rounding_quiets_nan() -> bool {
+    #[cfg(target_arch = "x86_64")]
+    return is_x86_feature_detected!("sse4.1");
+    #[cfg(not(target_arch = "x86_64"))]
+    true
+}
+
 #[test]
 fn rounding_functions_match_go() {
     let mut failures = Vec::new();
@@ -171,15 +180,42 @@ fn rounding_functions_match_go() {
         .chain(rows(NATIVE, "math"))
     {
         let x = f64_of(&row[0]);
-        let ok = same_f64(round(x), f64_of(&row[1]))
-            && same_f64(floor(x), f64_of(&row[2]))
+        let rounds = same_f64(floor(x), f64_of(&row[2]))
             && same_f64(ceil(x), f64_of(&row[3]))
             && same_f64(trunc(x), f64_of(&row[4]));
+        let ok = same_f64(round(x), f64_of(&row[1]))
+            && (rounds || (x.is_nan() && !native_rounding_quiets_nan()));
         if !ok {
             failures.push(row[0].clone());
         }
     }
     expect_none("math", &failures);
+}
+
+/// On `x86_64` Go picks `ROUNDSD` or its assembly by the CPU at run time; so does this crate, and
+/// the vectors of the branch the CPU takes must hold for the public functions.
+#[cfg(target_arch = "x86_64")]
+#[test]
+fn rounding_dispatch_follows_the_cpu() {
+    let mut failures = Vec::new();
+    let (name, kind, columns) = if is_x86_feature_detected!("sse4.1") {
+        ("convert-amd64.txt", "math", [2, 3, 4])
+    } else {
+        ("convert-amd64-nosse41.txt", "floor", [1, 2, 3])
+    };
+    let mut nans = 0;
+    for row in rows(name, kind) {
+        let x = f64_of(&row[0]);
+        nans += usize::from(x.is_nan());
+        let ok = same_f64(floor(x), f64_of(&row[columns[0]]))
+            && same_f64(ceil(x), f64_of(&row[columns[1]]))
+            && same_f64(trunc(x), f64_of(&row[columns[2]]));
+        if !ok {
+            failures.push(row[0].clone());
+        }
+    }
+    assert!(nans >= 5, "{name}: only {nans} NaN inputs");
+    expect_none(name, &failures);
 }
 
 #[test]
@@ -304,4 +340,20 @@ fn duration_parsing_hand_written() {
     }
     assert_eq!(parse_duration("1.s"), Some(1_000_000_000));
     assert_eq!(parse_duration(".5s"), Some(500_000_000));
+    // Go adds the terms in uint64 and wraps, so two of 1<<63 sum to zero.
+    assert_eq!(
+        parse_duration("9223372036854775808ns9223372036854775808ns"),
+        Some(0)
+    );
+    assert_eq!(
+        parse_duration("-9223372036854775808ns9223372036854775808ns"),
+        Some(0)
+    );
+    assert_eq!(
+        parse_duration("9223372036854775808ns9223372036854775808ns1ns"),
+        Some(1)
+    );
+    assert_eq!(parse_duration("2562047.9h"), None);
+    assert_eq!(parse_duration("9223372036854775808ns2562047.9h"), None);
+    assert_eq!(parse_duration("0.9223372036854775809s"), Some(922_337_203));
 }
