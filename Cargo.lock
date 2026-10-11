@@ -845,6 +845,7 @@ dependencies = [
  "togi-render",
  "togi-requests",
  "togi-sim",
+ "togi-tuner",
  "togi-tuningboot",
 ]
 

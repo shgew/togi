@@ -15,7 +15,7 @@ use togi_machine::{
     ObservedOffset, PerCore, Regime, ResetKind, Signal, pick_workload,
 };
 
-use super::{CrashOutcome, IntentKind, RecoveryState};
+use super::{IntentKind, RecoveryState};
 use crate::error::FoldError;
 use crate::testing::{build, core, target};
 
@@ -1213,42 +1213,70 @@ fn crash_with(log: &mut Log, previous: &str, edit: impl FnOnce(&mut CrashDetecte
 }
 
 #[test]
-fn recorded_crashes_are_read_back_as_stray_idle_thermal_or_in_a_trial() {
-    let kinds = [
-        (CrashOutcome::Stray, true, false, None),
-        (
-            CrashOutcome::Thermal,
-            false,
-            true,
-            Some(ResetKind::ThermalTrip),
-        ),
-        (
-            CrashOutcome::Inconclusive,
-            false,
-            true,
-            Some(ResetKind::PowerButton),
-        ),
-        (CrashOutcome::Inconclusive, false, true, None),
-        (CrashOutcome::Idle, false, false, None),
+fn recorded_crashes_stand_as_stray_idle_or_thermal_evidence_and_nothing_else() {
+    struct Case {
+        stray: bool,
+        inconclusive: bool,
+        reset: Option<ResetKind>,
+        want: (usize, usize, bool),
+    }
+    let cases = [
+        Case {
+            stray: true,
+            inconclusive: false,
+            reset: None,
+            want: (1, 0, false),
+        },
+        Case {
+            stray: false,
+            inconclusive: true,
+            reset: Some(ResetKind::ThermalTrip),
+            want: (0, 0, true),
+        },
+        Case {
+            stray: false,
+            inconclusive: true,
+            reset: Some(ResetKind::PowerButton),
+            want: (0, 0, false),
+        },
+        Case {
+            stray: false,
+            inconclusive: true,
+            reset: None,
+            want: (0, 0, false),
+        },
+        Case {
+            stray: false,
+            inconclusive: false,
+            reset: None,
+            want: (0, 1, false),
+        },
     ];
-    for (want, stray, inconclusive, reset) in kinds {
+    for case in cases {
+        let mut log = Log::new();
+        log.baseline(&[(0, 0), (8, 0)]);
+        crash_with(&mut log, "a", |detected| {
+            detected.stray = case.stray;
+            detected.inconclusive = case.inconclusive;
+            detected.reset_reason = case.reset;
+        });
+        let state = log.state();
         assert_eq!(
-            CrashOutcome::recorded(
-                &CrashDetected {
-                    stray,
-                    inconclusive,
-                    reset_reason: reset,
-                    ..crash("a")
-                },
-                false
+            (
+                state.stray().len(),
+                state.pending_idle().len(),
+                state.thermal_evidence().is_some()
             ),
-            want
+            case.want
         );
     }
-    assert_eq!(
-        CrashOutcome::recorded(&crash("a"), true),
-        CrashOutcome::InTrial
-    );
+    let mut log = Log::new();
+    log.baseline(&[(0, 0), (8, 0)]);
+    log.at("a", 0).trial_intent("t1", None, Regime::R1);
+    log.at("b", 0);
+    crash_with(&mut log, "a", |_| {});
+    let state = log.state();
+    assert!(state.stray().is_empty() && state.pending_idle().is_empty());
 }
 
 #[test]

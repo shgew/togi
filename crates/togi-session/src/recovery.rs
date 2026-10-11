@@ -11,37 +11,12 @@ use togi_journal::{
 };
 use togi_machine::{
     Backend, BiosContext, BootId, CcdId, Condition, CoreId, CoreSet, CpuId, KernelCursor,
-    ObservedOffset, PerCore, Regime, ResetKind, Signal, TargetOffset,
+    ObservedOffset, PerCore, Regime, ResetReason, Signal, TargetOffset,
 };
+use togi_tuner::{CrashKind, recorded_kind};
 
 use crate::error::FoldError;
 use crate::evidence::{self, RetryDue};
-
-/// What a recorded `crash.detected` says the crash was.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CrashOutcome {
-    InTrial,
-    Idle,
-    Stray,
-    Inconclusive,
-    Thermal,
-}
-
-impl CrashOutcome {
-    fn recorded(detected: &CrashDetected, in_trial: bool) -> Self {
-        if detected.stray {
-            Self::Stray
-        } else if detected.inconclusive && detected.reset_reason == Some(ResetKind::ThermalTrip) {
-            Self::Thermal
-        } else if detected.inconclusive {
-            Self::Inconclusive
-        } else if in_trial {
-            Self::InTrial
-        } else {
-            Self::Idle
-        }
-    }
-}
 
 /// An observation that stands as dead-end evidence until a dead end of its condition is recorded.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -691,8 +666,13 @@ impl RecoveryState {
             .open
             .as_ref()
             .is_some_and(|open| open.boot == detected.previous_boot);
-        let outcome = CrashOutcome::recorded(detected, in_trial);
-        if outcome == CrashOutcome::Thermal {
+        let reason = ResetReason {
+            kind: detected.reset_reason,
+            raw: detected.reset_reason_raw.clone(),
+            supported: detected.reset_reason.is_some(),
+        };
+        let outcome = recorded_kind(detected.stray, detected.inconclusive, &reason, in_trial);
+        if outcome == CrashKind::Thermal {
             self.thermal = Some(Cited {
                 seq: event.seq,
                 detail: format!(
@@ -709,9 +689,9 @@ impl RecoveryState {
         self.unmatched
             .retain(|open| open.boot != detected.previous_boot);
         match outcome {
-            CrashOutcome::Stray => self.stray.push(event.seq),
-            CrashOutcome::Idle => self.pending_idle.push(event.seq),
-            CrashOutcome::InTrial | CrashOutcome::Inconclusive | CrashOutcome::Thermal => {}
+            CrashKind::Stray => self.stray.push(event.seq),
+            CrashKind::Idle => self.pending_idle.push(event.seq),
+            CrashKind::InTrial | CrashKind::Inconclusive | CrashKind::Thermal => {}
         }
     }
 

@@ -51,6 +51,22 @@ impl Refusal {
     }
 }
 
+/// The constraint check of `check_set`: refuses a profile that reaches a failure point or combination the tuner
+/// state holds, one the state cannot judge, or cores other than the topology's. Never reads such a profile as safe.
+pub fn refusal(state: &togi_tuner::State, after: &PerCore<TargetOffset>) -> Option<Refusal> {
+    let (Some(topology), Some(constraints)) = (state.topology(), state.constraints()) else {
+        return Some(Refusal::new("the tuner state holds no standing topology"));
+    };
+    let profile = match togi_tuner::Profile::new(topology, *after) {
+        Ok(profile) => profile,
+        Err(error) => return Some(Refusal::new(error.to_string())),
+    };
+    match constraints.reaches(&profile) {
+        Ok(reached) => reached.map(|reached| Refusal::new(reached.to_string())),
+        Err(mismatch) => Some(Refusal::new(mismatch.to_string())),
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum Refused {
     #[error("refusing to write core {core:02} to {}: the profile would reach {refusal}", .target.get())]

@@ -527,3 +527,112 @@ fn a_crash_at_the_write_is_before_any_effect() {
     assert_eq!(registers.offset(core(0)), Some(ObservedOffset(-10)));
     assert_fold_consistent(&rig.appender);
 }
+
+fn tuner_after(rig: &mut Rig, payloads: Vec<Payload>) -> togi_tuner::State {
+    for payload in payloads {
+        rig.appender.append(payload, &[]).unwrap();
+    }
+    let mut state = togi_tuner::State::new();
+    for event in rig.events() {
+        state.fold(event).unwrap();
+    }
+    state
+}
+
+fn failure_point(core_id: i64, offset: i64) -> Payload {
+    Payload::CorePhase(togi_journal::CoreTransition {
+        core: core(core_id),
+        from: None,
+        to: togi_journal::CorePhase::AtLimit,
+        offset: target(offset + 1),
+        pass: Some(target(offset + 1)),
+        failure_point: Some(target(offset)),
+        check_solo_limit: false,
+        workloads: Vec::new(),
+        cleared_combination: Vec::new(),
+        reason: "test".to_owned(),
+    })
+}
+
+fn combination(members: &[(i64, i64)]) -> Payload {
+    Payload::Combination(togi_journal::Combination {
+        combination: std::num::NonZeroU32::MIN,
+        members: members
+            .iter()
+            .map(|&(member, offset)| togi_journal::Member {
+                core: core(member),
+                offset: target(offset),
+            })
+            .collect(),
+        fallback: false,
+        hunt: std::num::NonZeroU32::MIN,
+        reason: "test".to_owned(),
+    })
+}
+
+#[test]
+fn a_write_reaching_a_folded_failure_point_is_refused_with_no_intent_appended() {
+    let mut rig = Rig::new(4);
+    rig.zero_all().unwrap();
+    let state = tuner_after(&mut rig, vec![failure_point(2, -30)]);
+    let before = rig.kinds();
+    for deeper in [-30, -31, -50] {
+        let refused = rig
+            .hardware
+            .check_set(core(2), target(deeper), &mut |after| {
+                super::refusal(&state, after)
+            })
+            .unwrap_err();
+        assert_eq!(
+            refused.to_string(),
+            format!(
+                "refusing to write core 02 to {deeper}: the profile would reach failure point -30 of core 02"
+            )
+        );
+    }
+    assert_eq!(rig.kinds(), before);
+    assert_eq!(rig.offset(2), 0);
+    drop(
+        rig.hardware
+            .check_set(core(2), target(-29), &mut |after| {
+                super::refusal(&state, after)
+            })
+            .unwrap(),
+    );
+}
+
+#[test]
+fn a_write_completing_a_folded_combination_is_refused_after_the_safe_steps() {
+    let mut rig = Rig::new(4);
+    rig.zero_all().unwrap();
+    let state = tuner_after(&mut rig, vec![combination(&[(0, -20), (1, -20)])]);
+    let error = rig
+        .put(&[-20, -20, 0, 0], &mut |after| {
+            super::refusal(&state, after)
+        })
+        .unwrap_err();
+    let ProfileFailure::Refused(Refused::Reaches {
+        core: refused,
+        refusal,
+        ..
+    }) = error
+    else {
+        panic!("not refused: {error:?}");
+    };
+    assert_eq!(refused, core(1));
+    assert_eq!(refusal.to_string(), "combination C1");
+    assert_eq!(rig.intents(), [(None, 0), (Some(core(0)), -20)]);
+    assert_eq!(rig.offset(0), -20);
+    assert_eq!(rig.offset(1), 0);
+}
+
+#[test]
+fn a_profile_the_tuner_cannot_judge_is_refused_never_read_as_safe() {
+    let mut rig = Rig::new(4);
+    let empty = togi_tuner::State::new();
+    assert!(super::refusal(&empty, &profile(&[0, 0, 0, 0])).is_some());
+    let state = tuner_after(&mut rig, Vec::new());
+    assert!(super::refusal(&state, &profile(&[0, 0, 0, 0])).is_none());
+    assert!(super::refusal(&state, &profile(&[0, 0, 0])).is_some());
+    assert!(super::refusal(&state, &profile(&[0, 0, 0, 0, 0])).is_some());
+}
