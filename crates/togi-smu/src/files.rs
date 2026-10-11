@@ -96,18 +96,20 @@ pub(crate) fn first_stanza(path: &Path) -> Result<Stanza, Error> {
         let mut reader = BufReader::new(file.take(STANZA_LIMIT + 1));
         let mut stanza = Vec::new();
         let mut line = Vec::new();
+        let mut consumed = 0_u64;
         loop {
             line.clear();
             let count = reader
                 .read_until(b'\n', &mut line)
                 .map_err(|source| unreadable(path, source))?;
+            consumed += u64::try_from(count).unwrap_or(u64::MAX);
+            if consumed > STANZA_LIMIT {
+                return Err(too_large(path, STANZA_LIMIT));
+            }
             if count == 0 || line.trim_ascii().is_empty() {
                 return Ok(stanza);
             }
             stanza.extend_from_slice(&line);
-            if u64::try_from(stanza.len()).is_ok_and(|len| len > STANZA_LIMIT) {
-                return Err(too_large(path, STANZA_LIMIT));
-            }
         }
     };
     Ok(Stanza::parse(&String::from_utf8_lossy(&read()?)))

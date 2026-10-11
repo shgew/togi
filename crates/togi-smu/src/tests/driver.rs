@@ -448,6 +448,14 @@ fn oversized_identity_files_are_refused_not_truncated() {
             padded("4"),
         ),
         ("cpuinfo stanza", "proc/cpuinfo", oversized_cpu),
+        (
+            "cpuinfo whitespace line",
+            "proc/cpuinfo",
+            format!(
+                "cpu family : 26\nmodel : 68\n{}pad: filler\n\n",
+                " ".repeat(1024 * 1024 + 16)
+            ),
+        ),
     ] {
         let tree = Tree::new(8, true);
         tree.put(path, &text);
