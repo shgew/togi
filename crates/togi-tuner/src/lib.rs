@@ -8,13 +8,12 @@ mod depth;
 mod evidence;
 mod optimum;
 mod profile;
-mod seq;
 mod topology;
 
 #[cfg(test)]
 mod tests;
 
-pub use class::{ClassKey, Secs, WorkloadId};
+pub use class::{ClassKey, Secs};
 pub use constraints::{
     Combination, CombinationId, ConstraintError, Constraints, FailurePoint, Insertion, Limit,
     Reached,
@@ -25,5 +24,4 @@ pub use evidence::{
     BackendId, Count, Evidence, IdleContradiction, Observation, SessionRef, Window,
 };
 pub use profile::{Profile, ProfileError};
-pub use seq::Seq;
 pub use topology::{Ranking, RankingError, Topology, TopologyError};

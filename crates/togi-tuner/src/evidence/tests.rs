@@ -1,17 +1,20 @@
-use std::num::{NonZeroU16, NonZeroU32, NonZeroU64};
+use std::num::{NonZeroU16, NonZeroU32};
 use std::path::Path;
 
 use proptest::prelude::*;
-use togi_machine::{Backend, Condition, CoreId, CoreSet, REGIMES, Regime, workloads};
+use togi_journal::Seq;
+use togi_machine::{
+    Backend, Condition, CoreId, CoreSet, REGIMES, Regime, WorkloadId, workloads,
+};
 
 use crate::tests::{core, profile, topology};
 use crate::{
-    BackendId, ClassKey, Evidence, IdleContradiction, Observation, Profile, Secs, Seq, SessionRef,
-    Topology, Window, WorkloadId,
+    BackendId, ClassKey, Evidence, IdleContradiction, Observation, Profile, Secs, SessionRef,
+    Topology, Window,
 };
 
 fn seq(n: u64) -> Seq {
-    Seq::new(NonZeroU64::new(n).unwrap())
+    Seq::new(n).unwrap()
 }
 
 fn needed(n: u16) -> NonZeroU16 {
@@ -730,6 +733,7 @@ fn workload_ids_round_trip_the_catalog() {
 }
 
 #[test]
+#[cfg(debug_assertions)]
 #[should_panic(expected = "evidence seqs must ascend")]
 fn seqs_must_ascend() {
     let mut fx = Fx::new(&[0]);
@@ -1255,7 +1259,7 @@ fn run(scenario: &Scenario) {
     }
     for q in &scenario.queries {
         let (k, p) = (resolve_class(&pool, q.class), fx.p(&q.p));
-        let since = NonZeroU64::new(q.since).map(Seq::new);
+        let since = Seq::new(q.since);
         let n = needed(q.needed);
         let window = if q.live_only {
             Window::Live { since }

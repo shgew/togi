@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
-use crate::{Profile, Seq};
+use togi_journal::Seq;
+
+use crate::Profile;
 
 use super::BackendId;
 

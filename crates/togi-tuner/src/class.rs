@@ -1,46 +1,7 @@
 use std::cmp::Ordering;
 use std::num::NonZeroU32;
 
-use togi_machine::{Backend, CoreSet, REGIMES, Regime, Workload, workloads};
-
-/// A workload of the catalog, named by its regime and its place in that regime's list; it orders
-/// the way the catalog lists workloads.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct WorkloadId {
-    regime: Regime,
-    index: u8,
-}
-
-impl WorkloadId {
-    pub fn new(regime: Regime, index: usize) -> Option<Self> {
-        if index >= workloads(regime).len() {
-            return None;
-        }
-        let index = u8::try_from(index).ok()?;
-        Some(Self { regime, index })
-    }
-
-    pub fn by_id(id: &str) -> Option<Self> {
-        REGIMES.into_iter().find_map(|regime| {
-            let index = workloads(regime)
-                .iter()
-                .position(|workload| workload.id == id)?;
-            Self::new(regime, index)
-        })
-    }
-
-    pub const fn regime(self) -> Regime {
-        self.regime
-    }
-
-    pub fn workload(self) -> &'static Workload {
-        &workloads(self.regime)[usize::from(self.index)]
-    }
-
-    pub fn backend(self) -> Backend {
-        self.workload().backend
-    }
-}
+use togi_machine::{CoreSet, Regime, WorkloadId};
 
 /// A trial's intended duration in whole seconds.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -75,7 +36,7 @@ impl ClassKey {
     }
 
     pub const fn regime(self) -> Regime {
-        self.workload.regime
+        self.workload.regime()
     }
 
     pub const fn workload(self) -> WorkloadId {
@@ -92,7 +53,7 @@ impl ClassKey {
 
     /// Whether the class loads several cores under R7, where a failure names its core.
     pub const fn multi_r7(self) -> bool {
-        matches!(self.workload.regime, Regime::R7) && self.loaded.len() > 1
+        matches!(self.workload.regime(), Regime::R7) && self.loaded.len() > 1
     }
 }
 

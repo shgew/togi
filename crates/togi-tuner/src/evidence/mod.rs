@@ -13,9 +13,10 @@ use std::collections::btree_map::Entry;
 use std::num::NonZeroU16;
 use std::path::Path;
 
-use togi_machine::{Backend, Condition, CoreId, CoreSet, Regime};
+use togi_journal::Seq;
+use togi_machine::{Backend, Condition, CoreId, CoreSet, Regime, WorkloadId};
 
-use crate::{ClassKey, Profile, Seq, WorkloadId};
+use crate::{ClassKey, Profile};
 
 pub use backend::BackendId;
 use backend::Backends;
@@ -220,7 +221,7 @@ impl Evidence {
     }
 
     fn advance(&mut self, seq: Seq) {
-        assert!(
+        debug_assert!(
             self.last.is_none_or(|last| last < seq),
             "evidence seqs must ascend"
         );
