@@ -127,17 +127,10 @@ pub struct EvidencePolicy {
 impl EvidencePolicy {
     pub fn new(miss: Probability, rate: Probability) -> Result<Self, TrialsError> {
         let needed = (miss.0.ln() / (-rate.0).ln_1p()).ceil();
-        let (miss_value, rate_value) = (miss.0, rate.0);
-        if needed.is_nan() || needed > f64::from(TrialCount::MAX) {
-            return Err(TrialsError::TooMany {
-                miss: miss_value,
-                rate: rate_value,
-            });
-        }
-        if needed < 1.0 {
-            return Err(TrialsError::TooFew {
-                miss: miss_value,
-                rate: rate_value,
+        if !(1.0..=f64::from(TrialCount::MAX)).contains(&needed) {
+            return Err(TrialsError {
+                miss: miss.0,
+                rate: rate.0,
             });
         }
         #[expect(

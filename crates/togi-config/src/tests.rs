@@ -162,6 +162,7 @@ fn backends_and_user() {
         config.backends().path(Backend::Mprime),
         Some(Path::new("/opt/mprime"))
     );
+    assert_eq!(config.backends().path(Backend::Ycruncher), None);
     assert_eq!(config.backend_user(), Some("togi-trial"));
 }
 
@@ -282,7 +283,7 @@ fn duplicate_members(text: &str) {
 #[test_case(r#"{"evidence":{"miss":1.5}}"#, "evidence.miss" ; "miss above one")]
 #[test_case(r#"{"evidence":{"rate":0}}"#, "evidence.rate: 0 is not a number strictly between 0 and 1" ; "zero rate")]
 #[test_case(r#"{"evidence":{"rate":1}}"#, "evidence.rate: 1 is not a number strictly between 0 and 1" ; "one rate")]
-#[test_case(r#"{"evidence":{"rate":1e-300}}"#, "need more than 1000 trials" ; "rate too small")]
+#[test_case(r#"{"evidence":{"rate":1e-300}}"#, "do not give between 1 and 1000 trials" ; "rate too small")]
 fn evidence_rejected(text: &str, message: &str) {
     let got = rejection(text);
     assert!(got.contains(message), "{got}");
@@ -304,7 +305,9 @@ fn probability_constructor_rejects_endpoints_and_non_finite() {
     }
     for value in [f64::MIN_POSITIVE, 1e-300, 0.5, 1.0 - f64::EPSILON / 2.0] {
         assert_eq!(Probability::new(value).unwrap().get(), value);
+        assert_eq!(Probability::try_from(value), Probability::new(value));
     }
+    assert!(Probability::try_from(f64::NAN).is_err());
 }
 
 #[test_case(0.05, 0.5, 5 ; "default")]
@@ -319,7 +322,7 @@ fn trial_count_bounds() {
     assert_eq!(trials(0.5_f64.powf(999.5), 0.5), Ok(1000));
     assert_eq!(
         trials(0.5_f64.powf(1000.5), 0.5),
-        Err(TrialsError::TooMany {
+        Err(TrialsError {
             miss: 0.5_f64.powf(1000.5),
             rate: 0.5
         })
@@ -344,14 +347,8 @@ fn extreme_probabilities_never_yield_a_zero_or_unbounded_count() {
             }
         }
     }
-    assert!(matches!(
-        trials(f64::from_bits(1), f64::from_bits(1)),
-        Err(TrialsError::TooMany { .. })
-    ));
-    assert!(matches!(
-        trials(0.05, f64::from_bits(1)),
-        Err(TrialsError::TooMany { .. })
-    ));
+    assert!(trials(f64::from_bits(1), f64::from_bits(1)).is_err());
+    assert!(trials(0.05, f64::from_bits(1)).is_err());
 }
 
 #[test_case(r#"{"dead_ends":{"inconclusive_in_a_row":1}}"#, 1, 3 ; "lower")]

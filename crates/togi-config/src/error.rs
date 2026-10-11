@@ -15,11 +15,10 @@ pub struct RangeError {
 pub struct ProbabilityError(pub f64);
 
 #[derive(Clone, Copy, Debug, PartialEq, thiserror::Error)]
-pub enum TrialsError {
-    #[error("miss {miss} and rate {rate} need more than 1000 trials per step")]
-    TooMany { miss: f64, rate: f64 },
-    #[error("miss {miss} and rate {rate} need fewer than one trial per step")]
-    TooFew { miss: f64, rate: f64 },
+#[error("miss {miss} and rate {rate} do not give between 1 and 1000 trials per step")]
+pub struct TrialsError {
+    pub miss: f64,
+    pub rate: f64,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
