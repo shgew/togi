@@ -175,10 +175,11 @@ pub(crate) async fn start<O: Os>(
     };
     let selector = Selector::new(
         plan.workload.backend,
-        plan.instances
+        &plan
+            .instances
             .iter()
-            .map(|instance| instance.core)
-            .collect(),
+            .map(|instance| (instance.core, instance.cpus[0]))
+            .collect::<Vec<_>>(),
     );
     let mut judge = Judge::new(selector, Arc::clone(&backend), events_tx.clone());
     let mut live = Live {

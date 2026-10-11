@@ -108,6 +108,7 @@ struct PendingExit {
 pub(crate) struct Selector {
     backend: Backend,
     cores: Vec<CoreId>,
+    first_cpus: Vec<CpuId>,
     failure: Option<TrialFailure>,
     escaped: Vec<CpuId>,
     inconclusive: Option<String>,
@@ -118,10 +119,13 @@ pub(crate) struct Selector {
 }
 
 impl Selector {
-    pub(crate) const fn new(backend: Backend, cores: Vec<CoreId>) -> Self {
+    /// `instances` pairs each instance's core with the first CPU it was told to use, which names
+    /// the CPU of an affinity error whose own number cannot be read.
+    pub(crate) fn new(backend: Backend, instances: &[(CoreId, CpuId)]) -> Self {
         Self {
             backend,
-            cores,
+            cores: instances.iter().map(|(core, _)| *core).collect(),
+            first_cpus: instances.iter().map(|(_, cpu)| *cpu).collect(),
             failure: None,
             escaped: Vec::new(),
             inconclusive: None,
@@ -320,7 +324,7 @@ impl Selector {
                 }
             }
             Line::AffinityError(cpu) => {
-                let cpu = cpu.unwrap_or_default();
+                let cpu = cpu.unwrap_or(self.first_cpus[instance]);
                 self.escape(cpu, "backend could not set affinity", pid, pid)
             }
         }
@@ -367,7 +371,7 @@ mod tests {
     }
 
     fn selector() -> Selector {
-        Selector::new(Backend::Mprime, vec![core(3)])
+        Selector::new(Backend::Mprime, &[(core(3), CpuId(3))])
     }
 
     fn line(stream: Stream, line: Line, text: &str) -> Observation {
@@ -429,7 +433,7 @@ mod tests {
 
     #[test]
     fn progress_names_the_core_with_several_instances() {
-        let mut s = Selector::new(Backend::Mprime, vec![core(1), core(7)]);
+        let mut s = Selector::new(Backend::Mprime, &[(core(1), CpuId(1)), (core(7), CpuId(7))]);
         let decision = s.observe(Observation::Line {
             instance: 1,
             pid: 1,
@@ -472,7 +476,7 @@ mod tests {
 
     #[test]
     fn first_computation_core_stays_selected_and_is_reported_once() {
-        let mut s = Selector::new(Backend::Mprime, vec![core(1), core(2)]);
+        let mut s = Selector::new(Backend::Mprime, &[(core(1), CpuId(1)), (core(2), CpuId(2))]);
         let first = s.observe(compute());
         assert_eq!(first.reports.len(), 1);
         let second = s.observe(Observation::Line {
@@ -571,6 +575,17 @@ mod tests {
             Some(Signal::ComputationError)
         );
         assert_eq!(verdict.inconclusive, None);
+    }
+
+    #[test]
+    fn an_affinity_error_without_a_readable_cpu_names_the_cpu_the_instance_was_given() {
+        let mut s = selector();
+        s.observe(line(
+            Stream::Stderr,
+            Line::AffinityError(None),
+            "AFFINITY:x",
+        ));
+        assert_eq!(conclude(s).escaped, [CpuId(3)]);
     }
 
     #[test]
