@@ -1163,19 +1163,19 @@ fn vocabulary_map_keys_encode_as_go() {
     );
     assert_eq!(
         encoded(vec![
-            (ResetKind::Watchdog, 1),
-            (ResetKind::from("future"), 2)
+            (ResetKind::from("future"), 2),
+            (ResetKind::Watchdog, 1)
         ])
         .unwrap(),
-        "{\"watchdog\":1,\"future\":2}"
+        "{\"future\":2,\"watchdog\":1}"
     );
     assert_eq!(
-        encoded(vec![(BankType::from("future"), 1), (BankType::Empty, 2)]).unwrap(),
-        "{\"future\":1,\"\":2}"
+        encoded(vec![(BankType::Empty, 2), (BankType::from("future"), 1)]).unwrap(),
+        "{\"\":2,\"future\":1}"
     );
     assert_eq!(
-        encoded(vec![(Condition::Alone, 1), (Condition::Empty, 2)]).unwrap(),
-        "{\"alone\":1,\"\":2}"
+        encoded(vec![(Condition::Empty, 2), (Condition::Alone, 1)]).unwrap(),
+        "{\"\":2,\"alone\":1}"
     );
     assert_eq!(
         encoded(vec![(Backend::Mprime, 1), (Backend::from("other"), 2)]).unwrap(),
