@@ -25,4 +25,4 @@ A pull request whose Acceptance needs a run on the target machine (`just hardwar
 
 ## The tech debt register
 
-One pinned issue, "Tech debt register" (#492), indexes findings that no feature owns. A finding becomes a sub-issue of it only when scheduled, in waves, and each sub-issue follows the lifecycle above. A new audit runs after each target-machine retro, next to triage.
+One pinned issue, "Tech debt register" (#492), indexes findings that no feature owns. A finding becomes a sub-issue of it only when scheduled, in waves, and each sub-issue follows the lifecycle above. An audit runs when the owner asks for one; #492's Status says when the next is planned.

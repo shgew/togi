@@ -9,7 +9,7 @@ Go CLI that finds per-core Curve Optimizer offsets on Zen 5 desktop CPUs and kee
 - `docs/how-togi-tunes.md`: read first to understand the tuning sequence, phase costs and ruleset history; the specs own the rules.
 - `REVIEW.md`: defect criteria and recurring lessons. Read it before reviewing a pull request.
 - `docs/review-record.md`: the review record format. The review coordinator reads it before writing a record.
-- `.omp/`: reviewer rules, the `review-coordinator` agent and `/review-pr`, the omp command for reviewing pull requests in parallel and recording their gates.
+- `.omp/`: reviewer rules, the `review-coordinator` agent, `/review-pr`, the omp command for reviewing pull requests in parallel and recording their gates, and `/retro`, which writes the retro of a target-machine run and files its actions.
 - `docs/spec/`: normative behavior (`tuner.md`, `workloads.md`, `journal.md`, `runtime.md`). Read the relevant spec before changing behavior, and change spec and code in the same pull request or in layers of one stack merged together.
 - `docs/issues.md`: labels, lifecycle, `Touches:`, claiming and the target-machine queue. Read it before filing, triaging or claiming an issue.
 - `docs/adr/`: decisions and the alternatives rejected, with statuses in [the index](docs/adr/README.md). Where a spec disagrees with an ADR, the spec wins. Reversing a decision needs a new ADR, which updates the index in the same pull request.
