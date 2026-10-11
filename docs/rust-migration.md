@@ -286,3 +286,114 @@ The `togi-detect` crate ports `internal/detect` ([#763](https://github.com/shgew
 - **Measurements.** At the frozen review head `0230c2e9` against the base `60f6612e`, the crate adds 4,403 lines and removes none: 1,817 of library, 2,558 of tests (2,470 unit and 88 in the `hardware` integration test) and 28 of manifest. The pull request as a whole changes 23 files, adding 4,437 lines and removing 2 (two rewritten spec paragraphs in `docs/spec/workloads.md`). No Go is removed or changed: `internal/detect` keeps its 736 lines of library and 1,259 of tests until the cutover. The review fixes change these totals; the final diff is the pull request's. No behavior regression was found or intended; the Go-test mapping above is the check.
 - **Review findings.** At the frozen head the review found two P1 defects and several P2 ones, all fixed here. P1: the Rust flake source set left out `internal/detect/testdata`, so the `rust-nextest` check failed in CI; and journal rows decoded from positional arrays as well as objects, so rows are now object-only. P2: a non-numeric CPU or bank number in a status line was ignored instead of a read failure; test gaps (attribution after malformed rows, an invalid boot on a cursor read, diagnostics of reset and boundary errors, `__SEQNUM`, reset-reason precedence, the pstore tail at end of file and the `d_type` fallback); the process tests are now named `real_process_*` and their helpers were cleaned up; and the spec and this entry overstated the validation of kernel versions and the Go-test mapping, now corrected to what the code does.
 - **Not measured.** Compile and test times against Go, and agent cost.
+
+## Stage 2: pilot measurements (#708, 2026-10-11)
+
+The measurements [#637](https://github.com/shgew/togi/issues/637) asks for, taken at commit `8acbf3ca`, when the workspace had 6 crates (`togi-hostlock`, `togi-machine`, `togi-requests`, `togi-trialfiles`, `togi-tuningboot`, `togi-version`; 6,061 lines of Rust with their tests). The Go module had 42 packages. Each decision below uses #637's thresholds: a speed-up is adopted at 20% or more lower median wall time, and the build cap if four builds at once take longer than four in sequence, or swap or run out of memory.
+
+**Host and method.** The development host: 32 threads, 30.9 GiB, Linux; `/tmp` is tmpfs and every build ran there. rustc and cargo 1.99.0 (the pinned stable), mold, go 1.27.1, hyperfine 1.21.0, cargo-nextest 0.9.146; the Go build cache was a private directory and `GOFLAGS=-mod=mod`. A script waited for the one-minute load average to fall below 3 before each hyperfine batch and logged it; other agents shared the host, so every batch started at a load of 2.2 to 3.0 and none was isolated. The warmup run and prepare command are listed with each table. The times are hyperfine's mean ± standard deviation over the runs shown. Two batches broke the rules and were re-run: a Go-test batch that started at load 5.04, and an sccache clean build with a standard deviation of 29.8% (1.928 ± 0.574 s), re-run as the 10-run batch below. Earlier measurements at `fbc8e93c` (3 crates, before #738 rewrote the workspace) were discarded; only the Go clean build was identical either way.
+
+### Clean builds
+
+`hyperfine --runs 5 --warmup 1 --prepare 'cargo clean'` (Rust, start load 2.78) and `--prepare 'go clean -cache'` (Go, start load 2.80):
+
+| Command | Mean ± sd [s] | Min [s] | Max [s] |
+|:---|---:|---:|---:|
+| `cargo build --workspace --locked` | 1.847 ± 0.015 | 1.823 | 1.860 |
+| `cargo build --workspace --release --locked` | 1.966 ± 0.038 | 1.915 | 2.017 |
+| `cargo build --workspace --all-targets --locked` | 2.820 ± 0.049 | 2.760 | 2.893 |
+| `go build ./...` | 3.006 ± 0.036 | 2.968 | 3.048 |
+| `go test -count=1 -run '^$' ./...` (compiles every test) | 3.941 ± 0.014 | 3.929 | 3.959 |
+
+These are not like for like: Go compiled the whole module (about 52,000 lines of library and 75,000 of tests, counted on an older base, in 42 packages) and Rust 6,061 lines in 6 crates. 
+
+### The edit loop
+
+`hyperfine --runs 10 --warmup 2`, preparing each run by rewriting one line at the end of the crate's `lib.rs` (or of a Go file of the package) to a fresh timestamp; start loads 2.77 to 2.88 (listed per row):
+
+| Crate / package (start load Rust, Go) | `cargo check -p X --all-targets --locked` | `cargo nextest run -p X --locked` | `go build ./internal/P` | `go test ./internal/P` |
+|:---|---:|---:|---:|---:|
+| `togi-tuningboot` / `tuningboot` (2.88, 2.77) | 89.9 ± 2.3 ms | 370.6 ± 10.6 ms | 27.0 ± 1.0 ms | 108.1 ± 2.5 ms |
+| `togi-hostlock` / `hostlock` (2.77, 2.84) | 73.0 ± 3.1 ms | 240.9 ± 5.4 ms | 32.6 ± 1.0 ms | 121.1 ± 3.5 ms |
+| `togi-machine` / `machine` (2.77, 2.82) | 226.1 ± 7.6 ms | 684.9 ± 19.5 ms | 46.0 ± 1.6 ms | 273.9 ± 7.2 ms |
+
+By mean, `cargo check` takes 2.2 to 4.9 times a Go build, and `cargo nextest` 2.0 to 3.4 times a Go test. The Go packages are larger or smaller than the crates they correspond to, so this is not like for like either: the Rust loop is slower on togi today.
+
+### Speed-ups, on `togi-machine`
+
+The same edit loop (10 runs, warmup 2) and a clean `cargo build --workspace --all-targets --locked` (5 runs, warmup 1, prepare `rm -rf` of the variant's target directory) in a second copy of the tree, each variant with its own `CARGO_TARGET_DIR`. The nightly toolchain was `rust-bin.nightly.latest.minimal` from the flake's rust-overlay, rustc 1.101.0-nightly of 2026-10-10; the flag went in `CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-arg=-fuse-ld=mold -Zthreads=0"`. Each cell is the median, with the mean ± sd in parentheses (ms; clean in s). Start loads are 2.23 to 3.0:
+
+| Variant | check (10) | nextest (10) | clean debug all-targets (5) |
+|:---|---:|---:|---:|
+| stable (baseline; loads 2.23, 2.86) | 235.0 (236.1 ± 8.9) | 686.8 (685.7 ± 17.8) | 2.834 (2.829 ± 0.050) |
+| stable, `CARGO_INCREMENTAL=0` (control for sccache; loads 2.76, 2.87) | 227.3 (230.0 ± 7.1) | 671.5 (669.2 ± 9.1) | 2.804 (2.827 ± 0.068) |
+| nightly, no flag (control; loads 2.88, 2.83) | 236.9 (238.9 ± 5.0) | 699.6 (696.8 ± 15.2) | 2.929 (2.924 ± 0.029) |
+| **nightly `-Zthreads=0`** (loads 2.90, 2.99) | **130.0 (129.4 ± 6.2)** | **447.1 (450.5 ± 13.9)** | **1.997 (1.998 ± 0.024)** |
+| change against stable | −44.7% | −34.9% | −29.5% |
+| change against nightly with no flag | −45.1% | −36.1% | −31.8% |
+| sccache 0.18.0, `RUSTC_WRAPPER=sccache`, `CARGO_INCREMENTAL=0` (load 2.96) | 225.9 (227.2 ± 3.1) | 676.4 (679.7 ± 17.2) | see below |
+| change against stable | −3.9% | −1.5% | |
+
+sccache's clean builds, each batch's start load 2.83 to 2.88:
+
+| Batch | Without sccache | With sccache | Change |
+|:---|---:|---:|---:|
+| clean debug all-targets, cache warm from another directory (10 runs, warmup 2) | 2.783 ± 0.046 s | 1.645 ± 0.030 s | −41.1% on medians (2.782 s, 1.639 s) |
+| clean release, cache warm (5 runs, warmup 1) | 1.937 ± 0.030 s | 1.021 ± 0.013 s | −47.1% on medians |
+| clean debug all-targets, first build on a cold cache (5 runs, warmup 0; load 2.85) | 2.829 ± 0.050 s (baseline above) | 3.217 ± 0.054 s | +14.1% on medians |
+
+`-Zthreads=0` about doubles user CPU (clean build: 27.7 s of user time against 14.1 s). The cargo job count was swept on the clean debug all-targets build (5 runs, warmup 1, start load 2.83; mean ± sd): `-j1` 14.113 ± 0.047 s, `-j2` 7.376 ± 0.067 s, `-j4` 4.410 ± 0.049 s, `-j8` 2.793 ± 0.038 s, `-j16` 2.764 ± 0.102 s, `-j32` (the default) 2.778 ± 0.061 s. Capping the jobs of a single build gains nothing.
+
+### Concurrent heavy jobs
+
+N copies of the tree in separate directories, all started at once; hyperfine `--runs 5 --warmup 1`, preparing each run by deleting every copy's `target` directory (Rust); the wall time is the slowest copy's. "4 in sequence" runs four one-copy jobs one after another. Start loads 2.76 to 2.98. Mean ± sd [s]:
+
+| Workload | N=1 | N=2 | N=3 | N=4 | 4 in sequence |
+|:---|---:|---:|---:|---:|---:|
+| clean `cargo nextest run --workspace --locked --profile ci` | 3.092 ± 0.122 | 3.599 ± 0.061 | 4.166 ± 0.050 | 4.847 ± 0.050 | 11.842 ± 0.044 |
+| clean `cargo build --workspace --all-targets --locked` | 2.759 ± 0.019 | | | 4.643 ± 0.043 | 10.988 ± 0.044 |
+| clean `cargo build --workspace --release --locked` | 1.911 ± 0.019 | | | 3.074 ± 0.041 | 7.857 ± 0.042 |
+| `go test -count=1 ./...`, warm cache | 5.366 ± 0.097 | 8.692 ± 0.120 | 12.296 ± 0.151 | 15.730 ± 0.173 | 21.887 ± 0.412 |
+
+Four clean nextest jobs with `CARGO_BUILD_JOBS=8` took 4.823 ± 0.083 s (4.847 s without), and with the nightly flag 5.656 ± 0.244 s (medians 5.527 s and 4.870 s), against 2.131 ± 0.025 s for one job with the flag.
+
+`just gate` was run as N clones at once, each in its own directory with one unique comment added to a Go file so Nix rebuilt rather than reused the result (start loads 2.78 to 2.99); the table is the slowest job's wall time per repetition, all jobs exited 0, and the gate is today's (no comparison, no guard):
+
+| N | Runs [s] | Mean [s] |
+|---:|:---|---:|
+| 1 | 52.2, 51.9, 52.9, 58.3, 59.0 | 54.8 |
+| 2 | 58.0, 68.2, 67.6, 68.2, 67.3 | 65.9 |
+| 3 | 65.6, 80.0, 78.1, 79.0, 79.8 | 76.5 |
+| 4 | 93.6, 93.5, 92.3, 91.8 (the fifth repetition was cut off) | 92.8 |
+
+Per-job slowdown against N=1, from the means: gate 1.20, 1.40, 1.69 at N=2, 3, 4; `go test` 1.62, 2.29, 2.93; clean nextest 1.16, 1.35, 1.57. Four `go test` jobs together finished in 15.730 s against 21.887 s in sequence. Memory never ran short: `MemAvailable` fell no lower than 13.5 GiB of the 30.9 GiB (during four gate jobs). The memory counters are host-wide: swap in use grew by up to 0.4 GiB during the cargo jobs, up to 2.5 GiB during four `go test` jobs and up to 1.1 GiB during the gate, while other processes already held 7.1 to 13.0 GiB of swap when the jobs started. Host-wide counters cannot say whose pages moved, so the growth is not attributed to these jobs or to others. No test failed.
+
+### #627's limit
+
+Taken from `gh run list --workflow check.yml --branch main --event push` and `gh run view --json jobs`, for the last ten completed `main` runs (runs 38156387024, 38154629353, 38154014737, 38152528799, 38149653705, 38146522451, 38145539248, 38145163265, 38144243144 and 38143827873; Ubuntu jobs only; duration is `completedAt − startedAt`). The slowest Linux job of each run: 34, 38, 36, 35, 39, 39, 32, 40, 33 and 147 s. **The median is 37.0 s.** The `package` job's log shows the cache use: in nine of the ten runs it copied the `togi` output from the Cachix cache, and in the 147 s run it built `togi` and its Go modules. Over the 99 completed runs of every event from run 38080679799 to run 38145254993, the median slowest Linux job is 113 s (p90 175 s by nearest rank, max 195 s): 129 s for the 77 pull-request runs and 34 s for the 22 `main` runs. The macOS job, which is excluded, took a median of 312 s over the ten `main` runs (210 to 343 s). In the same 99 runs, counting the jobs that succeeded, the six Rust jobs (`rust-clippy`, `rust-nextest`, `rust-doc`, `rust-fmt`, `rust-deny`, `rust-shear`) took a median of 25 to 27 s when the cache hit (60 s or less: clippy 26 s over 54 runs, nextest 25 s over 50, doc 25 s over 54, fmt and deny 27 s over 63 each, shear 26 s over 62), and cold (over 60 s) a median of 69 s for clippy (9 runs, max 102 s), 70 s for nextest (13 runs, max 129 s) and 70 s for doc (9 runs, max 101 s); fmt, deny and shear were never cold (max 55, 52 and 57 s). A cold Rust job is below the cold Go `package` job (over 60 s: median 143.5 s over 50 runs, max 155 s). ADR 0058 deleted the comparison job this limit was to shard, so nothing consumes the limit now.
+
+### Go `Forecast` cost, a performance reference for the tuner's forecast (G6)
+
+The tuner's `Forecast(events)` replays the whole prefix from `New()` once for the base and once more for each premise branch, so one call costs (1 + branches) folds of the prefix and a session's calls cost quadratic time. This is the Go figure the Rust `forecast`, which copies the folded state per premise and never iterates events, is measured against; Go equality is not required.
+
+- **Session.** `go run ./tools/bench --split all --keep DIR` over the suite at `8acbf3ca` kept 220 journals. The longest is `target-r7-request-gap`, holdout seed 110: 40,592 events and 2,266 trial intents. (The stage 0 session, `flat-hazard` seed 102, is 27,879 events on this commit.)
+- **Command.** A throwaway program kept outside the repository read the journal with `journal.Read`, timed three full `tuner.New()` plus `journal.Replay` folds, then, for 800 prefix lengths drawn from a PCG(1, 2) stream and sorted, timed `Forecast(events[:p])` and the fold of that prefix alone. One process, one batch, one run per prefix; the process took 4.62 s of wall time, 5.83 s of user time and 69.1 MiB at peak. The load average was 4.67 when it started and 4.45 when it ended, above the load-3 rule, because the suite had just run on the same host.
+- **Full fold:** 7.75, 7.86 and 7.05 ms, 191, 194 and 174 ns per event.
+- **`Forecast` per prefix, 800 prefixes:** mean 3.86 ms (standard error 0.23 ms), median 1.92 ms, min 0.004 ms, max 39.5 ms; the mean over the last tenth of the session is 15.9 ms (88 prefixes). The fold of the same prefixes averaged 1.87 ms (max 8.2 ms); `Forecast` averaged 2.02 times its fold. Branches per call: median 0, maximum 5.
+- **Whole-session cost.** Calling `Forecast` at every prefix would cost 40,592 × 3.86 ms ≈ 157 s of one core (standard error ≈ 9 s, a sampling estimate). The dashboard calls it once per refresh on the full journal; that call was not timed. The nearest sampled figures are the last tenth's mean, 15.9 ms over 88 prefixes, and the largest sampled call, 39.5 ms at 39,600 events.
+
+### Decisions
+
+- **Nightly `-Zthreads=0`: adopt, as an opt-in dev shell only.** It clears the threshold on all three metrics against stable (−44.7%, −34.9%, −29.5%). CI and the package stay on stable, and the shell is for a host where it is the only heavy job: the flag about doubles CPU use and with four jobs at once it ran slower than stable (5.527 s against 4.870 s median). The change needs `flake.nix`, so it is filed as [#791](https://github.com/shgew/togi/issues/791) under #637.
+- **sccache: adopt for a clean build in a fresh worktree and for release builds, not for the edit loop.** Clean debug builds drop 41.1% and release builds 47.1% with a warm cache; the loop moves 3.9% and 1.5%, below the threshold, because sccache cannot cache incremental builds and the workspace crates. `CARGO_INCREMENTAL=0` by itself changes nothing in the loop. The first build on a cold cache costs 14.1% more. Filed as [#792](https://github.com/shgew/togi/issues/792).
+- **Build cap: reject.** Four builds at once finish in 4.643 s (debug all-targets), 3.074 s (release) and 4.847 s (nextest), against 10.988, 7.857 and 11.842 s in sequence, and `MemAvailable` never fell below 13.5 GiB; the rejection rests on these two. The swap condition is not established either way: host-wide swap grew by at most 0.4 GiB during the cargo jobs, and host-wide counters cannot attribute it. Capping a single build's jobs also gains nothing (`-j8` to `-j32` are within noise).
+- **Heavy-job cap: 2 concurrent (cargo build or nextest, VM tests, bench), unchanged from [ADR 0057](adr/0057-running-the-rust-migration-unattended.md).** The rule used here is the largest N whose per-job slowdown on the heaviest measured workload, `go test`, stays at or under 2 times, with no out-of-memory. `go test` slows 1.62 times at N=2, 2.29 times at N=3 and 2.93 times at N=4; the gate's 1.20, 1.40 and 1.69 and the cargo jobs' 1.16, 1.35 and 1.57 would allow 4, but a host runs a mix, and every mix with a Go test has to hold the 2. VM tests and bench were not measured.
+
+### Limits
+
+- The workspace is tiny: 6 crates, a clean build of under 3 s, and incremental builds of 0.07 to 0.7 s. Ratios here do not carry to the full port; the speed-ups especially will be measured again when the workspace is several times larger, and `-Zthreads=0` may gain more or less.
+- Not like for like against Go: the Go module is about 20 times larger in lines (52,000 library and 75,000 test lines on an older base, against 6,061 of Rust), in 42 packages against 6 crates.
+- One host, with `/tmp` on tmpfs, so disk speed is not in any figure. Other agents shared the host, so no run is isolated: starts at load 2.2 to 3.0, and the end-of-batch loads, which the batch itself raised (up to 95 after four concurrent `go test` jobs), are in the raw data, not shown. #637 asks for isolated loops with no sibling load; these runs do not meet that, and the re-run with no sibling load is [#796](https://github.com/shgew/togi/issues/796).
+- hyperfine ran commands through a shell, and the prepare step was a shell script. The nightly toolchain was a single dated snapshot (2026-10-10), and sccache a single version.
+- Run counts are 5 or 10, so every standard deviation is a small-sample estimate. The gate's fifth four-job repetition was cut off.
+- Not measured: bench concurrency, VM tests, `just gate` in sequence, any build on macOS, any run on a GitHub runner, and agent cost. The `Forecast` probe is one process on one session at a load above 3, and its whole-session figure is a sampling estimate, not a run of the call at every prefix.
