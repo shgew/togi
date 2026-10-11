@@ -159,47 +159,42 @@ pub(crate) struct ParkedFailure {
     pub(crate) seq: Seq,
     pub(crate) core: CoreId,
     pub(crate) offset: TargetOffset,
+    pub(crate) carried: bool,
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub(crate) struct Newest {
-    live: [Option<ParkedFailure>; 2],
-    carried: [Option<ParkedFailure>; 2],
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct Parked {
+    failures: Vec<ParkedFailure>,
 }
 
-fn push_newest(slots: &mut [Option<ParkedFailure>; 2], failure: ParkedFailure) {
-    slots[1] = slots[0];
-    slots[0] = Some(failure);
+#[cfg(test)]
+thread_local! {
+    pub(crate) static LOOKUP_PROBES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
 
-impl Newest {
-    pub(crate) fn add(&mut self, failure: ParkedFailure, carried: bool) {
-        if carried {
-            push_newest(&mut self.carried, failure);
-        } else {
-            push_newest(&mut self.live, failure);
-        }
+impl Parked {
+    pub(crate) fn add(&mut self, failure: ParkedFailure) {
+        self.failures.push(failure);
     }
 
     pub(crate) fn clear_live(&mut self) {
-        self.live = [None; 2];
+        self.failures.retain(|failure| failure.carried);
     }
 
     pub(crate) fn is_empty(&self) -> bool {
-        self.live.iter().chain(&self.carried).all(Option::is_none)
+        self.failures.is_empty()
     }
 
-    pub(crate) fn newest_two(&self, before: Seq) -> [Option<ParkedFailure>; 2] {
-        let mut all: Vec<ParkedFailure> = self
-            .live
-            .iter()
-            .chain(&self.carried)
-            .flatten()
-            .filter(|failure| failure.seq < before)
-            .copied()
-            .collect();
-        all.sort_by_key(|failure| std::cmp::Reverse(failure.seq));
-        [all.first().copied(), all.get(1).copied()]
+    pub(crate) fn newest_two_before(&self, before: Seq) -> Option<[ParkedFailure; 2]> {
+        let end = self.failures.partition_point(|failure| {
+            #[cfg(test)]
+            LOOKUP_PROBES.with(|probes| probes.set(probes.get() + 1));
+            failure.seq < before
+        });
+        let [older, newer] = self.failures.get(end.checked_sub(2)?..end)? else {
+            return None;
+        };
+        Some([*newer, *older])
     }
 }
 
@@ -212,7 +207,7 @@ pub(crate) struct Hunts {
     pub(crate) reset: Option<Seq>,
     pub(crate) located: BTreeMap<Seq, Located>,
     pub(crate) passed_full: Vec<(Seq, Profile)>,
-    pub(crate) parked_failures: HashMap<ClassKey, Newest>,
+    pub(crate) parked_failures: HashMap<ClassKey, Parked>,
     pub(crate) rejecting: Option<Box<Rejecting>>,
 }
 
@@ -229,26 +224,18 @@ impl Hunts {
             .map(|(seq, profile)| (*seq, profile))
     }
 
-    pub(crate) fn note_parked_failure(
-        &mut self,
-        class: ClassKey,
-        failure: ParkedFailure,
-        carried: bool,
-    ) {
-        self.parked_failures
-            .entry(class)
-            .or_default()
-            .add(failure, carried);
+    pub(crate) fn note_parked_failure(&mut self, class: ClassKey, failure: ParkedFailure) {
+        self.parked_failures.entry(class).or_default().add(failure);
     }
 
     pub(crate) fn reset_core(&mut self, seq: Seq, core: CoreId) {
         self.reset = Some(seq);
-        self.parked_failures.retain(|class, newest| {
-            newest.clear_live();
+        self.parked_failures.retain(|class, parked| {
+            parked.clear_live();
             if class.loaded().contains(core) {
                 return false;
             }
-            !newest.is_empty()
+            !parked.is_empty()
         });
     }
 

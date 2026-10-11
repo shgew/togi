@@ -332,6 +332,62 @@ fn repeated_core_probe_is_decided_when_the_hunt_starts() {
 }
 
 #[test]
+fn repeated_core_probe_uses_the_pair_before_its_source() {
+    let (mut j, older, newer, short) = repeated_session();
+    let source = j.together_failure(Regime::R6, 0, &[OFFSET; 4]);
+    carry_parked(&mut j, 1, &[0, -12, 0, 0], short);
+    carry_parked(&mut j, 1, &[0, -11, 0, 0], short);
+    let (_, start) = j.start_hunt();
+    assert_eq!(start.failure, source);
+    let repeated = j.run().hunts.active.as_ref().unwrap().repeated.unwrap();
+    assert_eq!(repeated.core, core(2));
+    assert_eq!(repeated.failures, [older, newer]);
+    let (group, _) = j.group_plan();
+    assert_eq!(group.cores, set(&[2]));
+    j.assert_resumes();
+}
+
+#[test]
+fn a_newer_failure_in_the_pair_cell_after_the_source_does_not_hide_the_pair_before_it() {
+    let (mut j, older, newer, short) = repeated_session();
+    j.together_failure(Regime::R6, 0, &[OFFSET; 4]);
+    carry_parked(&mut j, 2, &[0, 0, -11, 0], short);
+    carry_parked(&mut j, 2, &[0, 0, -12, 0], short);
+    j.start_hunt();
+    let repeated = j.run().hunts.active.as_ref().unwrap().repeated.unwrap();
+    assert_eq!(repeated.core, core(2));
+    assert_eq!(repeated.failures, [older, newer]);
+    j.assert_resumes();
+}
+
+#[test]
+fn the_pre_source_pair_lookup_does_not_grow_with_the_parked_failure_history() {
+    use super::state::{LOOKUP_PROBES, Parked, ParkedFailure};
+    fn probes(history: u64) -> u64 {
+        let mut parked = Parked::default();
+        for seq in 1..=history {
+            parked.add(ParkedFailure {
+                seq: togi_journal::Seq::new(seq).unwrap(),
+                core: core(2),
+                offset: crate::tests::off(-12),
+                carried: true,
+            });
+        }
+        LOOKUP_PROBES.with(|count| count.set(0));
+        let before = togi_journal::Seq::new(history / 2).unwrap();
+        let [newer, older] = parked.newest_two_before(before).unwrap();
+        assert_eq!(
+            (older.seq.get(), newer.seq.get()),
+            (history / 2 - 2, history / 2 - 1)
+        );
+        LOOKUP_PROBES.with(std::cell::Cell::get)
+    }
+    let small = probes(64);
+    let large = probes(65_536);
+    assert!(small <= 7 && large <= 17, "{small} {large}");
+}
+
+#[test]
 fn a_reset_of_a_loaded_core_discards_the_carried_failures_the_repeated_core_probe_needs() {
     let (mut j, ..) = repeated_session();
     j.reset(3);

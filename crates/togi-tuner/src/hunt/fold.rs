@@ -81,10 +81,8 @@ impl Run {
         if !start.candidates.contains(core) {
             return None;
         }
-        let newest = self.hunts.parked_failures.get(&class)?;
-        let [Some(newer), Some(older)] = newest.newest_two(start.failure) else {
-            return None;
-        };
+        let parked = self.hunts.parked_failures.get(&class)?;
+        let [newer, older] = parked.newest_two_before(start.failure)?;
         let adjacent = newer.core == core
             && older.core == core
             && older.offset.get() + 1 == newer.offset.get()
@@ -494,8 +492,15 @@ impl Run {
             return;
         }
         if let (Some(core), Some(offset)) = (failure.core, failure.offset) {
-            self.hunts
-                .note_parked_failure(class, ParkedFailure { seq, core, offset }, carried);
+            self.hunts.note_parked_failure(
+                class,
+                ParkedFailure {
+                    seq,
+                    core,
+                    offset,
+                    carried,
+                },
+            );
         }
     }
 }
