@@ -362,6 +362,36 @@
               };
             in
             {
+              gocompat-vectors =
+                pkgs.runCommand "togi-gocompat-vectors"
+                  {
+                    nativeBuildInputs = [
+                      pkgs.go_1_27
+                      pkgs.qemu-user
+                    ];
+                    src = lib.fileset.toSource {
+                      root = ./.;
+                      fileset = lib.fileset.unions [
+                        ./go.mod
+                        ./go.sum
+                        ./cmd
+                        ./internal
+                        ./tools
+                        ./crates/togi-gocompat/testdata
+                      ];
+                    };
+                  }
+                  ''
+                    cd "$src"
+                    export HOME=$TMPDIR GOCACHE=$TMPDIR/go-cache GOPROXY=off GOTOOLCHAIN=local CGO_ENABLED=0
+                    go build -o $TMPDIR/gocompat-vectors ./tools/gocompat-vectors
+                    mkdir $TMPDIR/vectors
+                    $TMPDIR/gocompat-vectors math-amd64-fma $TMPDIR/vectors
+                    GODEBUG=cpu.fma=off $TMPDIR/gocompat-vectors math-amd64-nofma $TMPDIR/vectors
+                    $TMPDIR/gocompat-vectors math-arm64 $TMPDIR/vectors
+                    diff -r $TMPDIR/vectors crates/togi-gocompat/testdata
+                    touch "$out"
+                  '';
               trial-scope-tests = shippedPackage.overrideAttrs {
                 pname = "togi-trial-scope-tests";
                 src = lib.fileset.toSource {
