@@ -463,6 +463,54 @@ func TestRustNotBuilt(t *testing.T) {
 	}
 }
 
+func TestRustNotBuiltClaimsNoModuleDeclarationItsFileBuilt(t *testing.T) {
+	t.Parallel()
+	const lib = "crates/a/src/lib.rs"
+	for _, tc := range []struct {
+		name  string
+		src   string
+		built map[string]bool
+		want  []string
+	}{
+		{
+			name:  "a cfg(test) module the test build compiled from its own file",
+			src:   "mod b;\n#[cfg(test)]\nmod tests;\n",
+			built: map[string]bool{lib: true, "crates/a/src/tests.rs": true},
+		},
+		{
+			name:  "a module in a directory",
+			src:   "#[cfg(test)]\npub(crate) mod tests;\n",
+			built: map[string]bool{lib: true, "crates/a/src/tests/mod.rs": true},
+		},
+		{
+			name:  "a cfg(test) module no dep-info names",
+			src:   "#[cfg(test)]\nmod tests;\n",
+			built: map[string]bool{lib: true},
+			want:  []string{lib},
+		},
+		{
+			name:  "a feature module whose file another crate's dep-info names",
+			src:   "#[cfg(feature = \"x\")]\nmod x;\n",
+			built: map[string]bool{lib: true, "crates/b/src/x.rs": true},
+			want:  []string{lib},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			writeTree(t, root, map[string]string{lib: tc.src})
+			changed := map[string][]lineRange{lib: {{1, 3}}}
+			got, err := rustNotBuilt(root, changed, tc.built, map[string]map[int]bool{lib: {}}, linuxHost())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("not built (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
 func TestRustNotBuiltNamesFilesNoDepInfoNames(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()

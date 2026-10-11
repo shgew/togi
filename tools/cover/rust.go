@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -241,11 +242,15 @@ func rustNotBuilt(root string, changed map[string][]lineRange, built map[string]
 		if err != nil {
 			return nil, fmt.Errorf("cover: read %s: %w", path, err)
 		}
+		lines := strings.Split(string(src), "\n")
 		if slices.ContainsFunc(cfgOut(src, cfg), func(item lineRange) bool {
 			for n := range measured[path] {
 				if item.first <= n && n <= item.last {
 					return false
 				}
+			}
+			if moduleBuilt(path, strings.Join(lines[item.first-1:item.last], "\n"), built) {
+				return false
 			}
 			return slices.ContainsFunc(changed[path], func(c lineRange) bool { return max(c.first, item.first) <= min(c.last, item.last) })
 		}) {
@@ -253,4 +258,22 @@ func rustNotBuilt(root string, changed map[string][]lineRange, built map[string]
 		}
 	}
 	return paths, nil
+}
+
+var moduleDeclaration = regexp.MustCompile(`^(?:#\[[^\]]*\]\s*)*(?:pub(?:\([^)]*\))?\s+)?mod\s+(\w+)\s*;$`)
+
+// moduleBuilt reports whether item, the text of an item in the source file path, declares an out-of-line module whose file a dep-info names.
+// The declaration holds no lines of the module, so the trace measures the module in its own file.
+func moduleBuilt(path, item string, built map[string]bool) bool {
+	match := moduleDeclaration.FindStringSubmatch(strings.TrimSpace(item))
+	if match == nil {
+		return false
+	}
+	dir, file := filepath.Split(path)
+	name := match[1]
+	candidates := []string{dir + name + ".rs", dir + name + "/mod.rs"}
+	if stem := strings.TrimSuffix(file, ".rs"); stem != "lib" && stem != "main" && stem != "mod" {
+		candidates = append(candidates, dir+stem+"/"+name+".rs", dir+stem+"/"+name+"/mod.rs")
+	}
+	return slices.ContainsFunc(candidates, func(candidate string) bool { return built[candidate] })
 }
