@@ -1537,7 +1537,7 @@ async fn a_start_nobody_waits_for_that_ends_without_proof_is_reported_and_bounde
         let reports = runtime_reports();
         assert_eq!(
             reports,
-            ["togi: a start nobody waits for ended without confirmed cleanup: trial cleanup could not be confirmed"]
+            ["togi: a start nobody waits for ended without confirmed cleanup: trial cleanup could not be confirmed: the start failed: launch instance work in scope togi-trial-t1: launch instance work in scope togi-trial-t1: retained launch failure; signal scope togi-trial-t1 with SIGKILL: systemctl did not finish within 0ns"]
         );
     })
     .await;
@@ -1589,7 +1589,7 @@ async fn a_sweep_nobody_waits_for_that_fails_is_reported_and_bounded() {
         let reports = runtime_reports();
         assert_eq!(
             reports,
-            ["togi: a sweep nobody waits for failed: trial cleanup could not be confirmed"]
+            ["togi: a sweep nobody waits for failed: trial cleanup could not be confirmed: leftover trial unit or process remains at the sweep deadline"]
         );
     })
     .await;

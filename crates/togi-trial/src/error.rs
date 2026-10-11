@@ -298,6 +298,36 @@ impl Shared {
     }
 }
 
+/// An error with every cause behind it, for reports that have no caller to return it to: joined
+/// errors and cleanup failures are listed one by one, each followed by its own source chain.
+#[cfg(target_os = "linux")]
+pub(crate) fn with_causes(error: &(dyn std::error::Error + 'static)) -> String {
+    if let Some(Error::Joined(joined)) = error.downcast_ref::<Error>() {
+        return joined
+            .errors
+            .iter()
+            .map(|member| with_causes(member))
+            .collect::<Vec<_>>()
+            .join("; ");
+    }
+    let containment = error
+        .downcast_ref::<Arc<Containment>>()
+        .map(|containment| &**containment)
+        .or_else(|| error.downcast_ref::<Containment>());
+    if let Some(containment) = containment {
+        return containment
+            .failures
+            .iter()
+            .map(|failure| with_causes(failure))
+            .collect::<Vec<_>>()
+            .join("; ");
+    }
+    match error.source() {
+        Some(source) => format!("{error}: {}", with_causes(source)),
+        None => error.to_string(),
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum InvalidId {
     #[error("the trial id is empty")]

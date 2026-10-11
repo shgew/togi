@@ -1170,8 +1170,9 @@ fn report_abandoned(
             plan.id
         ),
         Err(containment) => format!(
-            "togi: trial {} was dropped while running; teardown unconfirmed: {containment}{panic}",
-            plan.id
+            "togi: trial {} was dropped while running; teardown unconfirmed: {}{panic}",
+            plan.id,
+            crate::error::with_causes(containment)
         ),
     });
 }
