@@ -8,7 +8,7 @@ use togi_machine::{Backend, Condition, CoreId, CoreSet, REGIMES, Regime, Workloa
 use crate::tests::{core, profile, topology};
 use crate::{
     BackendId, ClassKey, Evidence, IdleContradiction, Observation, Profile, Secs, SessionRef,
-    Topology, Window,
+    Topology, TopologyMismatch, Window,
 };
 
 fn seq(n: u64) -> Seq {
@@ -70,7 +70,10 @@ impl Fx {
 
     fn pass_as(&mut self, class: ClassKey, p: &Profile, condition: Condition) -> Seq {
         let at = self.tick();
-        self.ev.record_pass(Self::obs(at, class, p, condition));
+        let backend = self.ev.active_backend(class.workload().backend());
+        self.ev
+            .record_pass(Self::obs(at, class, p, condition), backend)
+            .unwrap();
         at
     }
 
@@ -85,45 +88,51 @@ impl Fx {
     fn fail(&mut self, class: ClassKey, p: &Profile) -> Seq {
         let at = self.tick();
         self.ev
-            .record_failure(Self::obs(at, class, p, Condition::Together));
+            .record_failure(Self::obs(at, class, p, Condition::Together))
+            .unwrap();
         at
     }
 
     fn idle(&mut self, p: &Profile) -> Seq {
         let at = self.tick();
-        self.ev.record_idle_failure(at, p);
+        self.ev.record_idle_failure(at, p).unwrap();
         at
     }
 
     fn carried_pass(&mut self, class: ClassKey, p: &Profile, session: &str) -> Seq {
         let at = self.tick();
         let backend = self.ev.active_backend(class.workload().backend());
-        self.ev.record_carried_pass(
-            Self::obs(at, class, p, Condition::Together),
-            backend,
-            SessionRef::new(session),
-        );
+        self.ev
+            .record_carried_pass(
+                Self::obs(at, class, p, Condition::Together),
+                backend,
+                SessionRef::new(session),
+            )
+            .unwrap();
         at
     }
 
     fn carried_fail(&mut self, class: ClassKey, p: &Profile, session: &str) -> Seq {
         let at = self.tick();
-        self.ev.record_carried_failure(
-            Self::obs(at, class, p, Condition::Together),
-            SessionRef::new(session),
-        );
+        self.ev
+            .record_carried_failure(
+                Self::obs(at, class, p, Condition::Together),
+                SessionRef::new(session),
+            )
+            .unwrap();
         at
     }
 
     fn carried_idle(&mut self, p: &Profile, session: &str) -> Seq {
         let at = self.tick();
         self.ev
-            .record_carried_idle_failure(at, p, SessionRef::new(session));
+            .record_carried_idle_failure(at, p, SessionRef::new(session))
+            .unwrap();
         at
     }
 
     fn valid(&self, class: ClassKey, p: &Profile) -> u32 {
-        self.ev.count(class, p, ANY, needed(1)).valid
+        self.ev.count(class, p, ANY, needed(1)).unwrap().valid
     }
 }
 
@@ -152,20 +161,23 @@ fn evidence_validity() {
     assert_eq!(fx.valid(k, &fx.p(&[-20, -11])), 1);
     assert_eq!(
         fx.ev
-            .failing_seq(k, &fx.p(&[-20, -10]), Some(seqs[1]), needed(3)),
+            .failing_seq(k, &fx.p(&[-20, -10]), Some(seqs[1]), needed(3))
+            .unwrap(),
         Some(seqs[2])
     );
     let idle = fx.idle(&fx.p(&[-20, -10]));
     let other_duration = class(Regime::R6, 0, &[0, 1], 900);
     assert_eq!(
         fx.ev
-            .failing_seq(other_duration, &fx.p(&[-20, -10]), None, needed(3)),
+            .failing_seq(other_duration, &fx.p(&[-20, -10]), None, needed(3))
+            .unwrap(),
         Some(idle)
     );
     let parked = fx.idle(&fx.p(&[-20, -10]));
     assert_eq!(
         fx.ev
-            .failing_seq(other_duration, &fx.p(&[-20, -10]), Some(idle), needed(3)),
+            .failing_seq(other_duration, &fx.p(&[-20, -10]), Some(idle), needed(3))
+            .unwrap(),
         Some(parked)
     );
 }
@@ -180,7 +192,7 @@ fn idle_failure_leaves_partial_r6_and_other_regimes_alone() {
         class(Regime::R1, 0, &[0, 1], 120),
         class(Regime::R7, 0, &[0, 1], 120),
     ] {
-        assert_eq!(fx.ev.failing_seq(k, &p, None, needed(1)), None);
+        assert_eq!(fx.ev.failing_seq(k, &p, None, needed(1)).unwrap(), None);
     }
 }
 
@@ -189,14 +201,20 @@ fn monotonicity_warning() {
     let mut fx = Fx::new(&[0]);
     let k = class(Regime::R1, 0, &[0], 120);
     let p = fx.p(&[-10]);
-    assert_eq!(fx.ev.monotonicity(k, &p, needed(3)), None);
+    assert_eq!(fx.ev.monotonicity(k, &p, needed(3)).unwrap(), None);
     let expected = fx.passes(k, &p, 3);
-    assert_eq!(fx.ev.monotonicity(k, &p, needed(3)), Some(expected.clone()));
-    assert_eq!(fx.ev.monotonicity(k, &p, needed(4)), None);
-    let extra = fx.pass(k, &p);
-    assert_eq!(fx.ev.monotonicity(k, &p, needed(3)), Some(expected));
     assert_eq!(
-        fx.ev.count(k, &p, ANY, needed(3)).valid,
+        fx.ev.monotonicity(k, &p, needed(3)).unwrap(),
+        Some(expected.clone())
+    );
+    assert_eq!(fx.ev.monotonicity(k, &p, needed(4)).unwrap(), None);
+    let extra = fx.pass(k, &p);
+    assert_eq!(
+        fx.ev.monotonicity(k, &p, needed(3)).unwrap(),
+        Some(expected)
+    );
+    assert_eq!(
+        fx.ev.count(k, &p, ANY, needed(3)).unwrap().valid,
         4,
         "witnesses are the first n of {extra:?} and its elders"
     );
@@ -208,10 +226,10 @@ fn multi_core_r7_failures_contradict_nothing() {
     let k = class(Regime::R7, 0, &[0, 1], 120);
     let p = fx.p(&[-10, -10]);
     fx.passes(k, &p, 3);
-    assert_eq!(fx.ev.monotonicity(k, &p, needed(3)), None);
+    assert_eq!(fx.ev.monotonicity(k, &p, needed(3)).unwrap(), None);
     let single = class(Regime::R7, 0, &[0], 120);
     fx.passes(single, &p, 3);
-    assert!(fx.ev.monotonicity(single, &p, needed(3)).is_some());
+    assert!(fx.ev.monotonicity(single, &p, needed(3)).unwrap().is_some());
 }
 
 struct IdleRow {
@@ -274,7 +292,10 @@ fn idle_monotonicity_warning() {
             );
             seqs.push(fx.pass(k, &pass_profile));
         }
-        let found = fx.ev.idle_monotonicity(&fx.p(&[-10, -12]), needed(3));
+        let found = fx
+            .ev
+            .idle_monotonicity(&fx.p(&[-10, -12]), needed(3))
+            .unwrap();
         assert_eq!(found.is_some(), row.warn, "{}", row.name);
         if let Some(found) = found {
             assert_eq!(found.passes, seqs, "{}", row.name);
@@ -296,7 +317,7 @@ fn idle_monotonicity_chooses_earliest_passing_class() {
     };
     for _ in 0..20 {
         assert_eq!(
-            fx.ev.idle_monotonicity(&p, needed(3)),
+            fx.ev.idle_monotonicity(&p, needed(3)).unwrap(),
             Some(expected.clone())
         );
     }
@@ -379,7 +400,7 @@ fn evidence_is_keyed_by_backend_store_path() {
                 }
             }
             assert_eq!(
-                fx.ev.failing_seq(mprime, &p, None, needed(5)),
+                fx.ev.failing_seq(mprime, &p, None, needed(5)).unwrap(),
                 None,
                 "passes under the recording backend outweigh the earlier failure"
             );
@@ -392,7 +413,10 @@ fn evidence_is_keyed_by_backend_store_path() {
         assert_eq!(fx.valid(mprime, &p), row.mprime, "{}", row.name);
         assert_eq!(fx.valid(ycruncher, &p), row.ycruncher, "{}", row.name);
         assert_eq!(
-            fx.ev.failing_seq(mprime, &p, None, needed(5)).is_some(),
+            fx.ev
+                .failing_seq(mprime, &p, None, needed(5))
+                .unwrap()
+                .is_some(),
             row.mprime_failure_valid,
             "{}",
             row.name
@@ -445,9 +469,9 @@ fn carried_failure_invalidation() {
         let window = Window::LiveOrCarried {
             since: Some(boundary),
         };
-        assert_eq!(fx.ev.count(k, &p, window, needed(3)).valid, 0);
+        assert_eq!(fx.ev.count(k, &p, window, needed(3)).unwrap().valid, 0);
         assert_eq!(
-            fx.ev.failing_seq(k, &p, Some(boundary), needed(3)),
+            fx.ev.failing_seq(k, &p, Some(boundary), needed(3)).unwrap(),
             Some(failure)
         );
         for done in 1..=3 {
@@ -455,10 +479,11 @@ fn carried_failure_invalidation() {
             let failing = fx
                 .ev
                 .failing_seq(k, &p, Some(boundary), needed(3))
+                .unwrap()
                 .is_some();
             assert_eq!(failing, done < 3, "after {done} live passes");
         }
-        assert_eq!(fx.ev.count(k, &p, window, needed(3)).valid, 3);
+        assert_eq!(fx.ev.count(k, &p, window, needed(3)).unwrap().valid, 3);
     }
 }
 
@@ -486,7 +511,7 @@ fn reset_clears_carried_core_evidence() {
         fx.ev.reset_core(core(0));
         for (id, (k, p, seqs)) in kept.iter().enumerate() {
             let present = if failure {
-                fx.ev.failing_seq(*k, p, None, needed(3)).is_some()
+                fx.ev.failing_seq(*k, p, None, needed(3)).unwrap().is_some()
             } else {
                 fx.valid(*k, p) > 0
             };
@@ -505,9 +530,14 @@ fn reset_clears_carried_idle_failure() {
     let failure = fx.carried_idle(&p, "old");
     let k = class(Regime::R6, 0, &[0, 1], 900);
     let later = Some(seq(failure.get() + 1));
-    assert!(fx.ev.failing_seq(k, &p, later, needed(1)).is_some());
+    assert!(
+        fx.ev
+            .failing_seq(k, &p, later, needed(1))
+            .unwrap()
+            .is_some()
+    );
     fx.ev.reset_core(core(0));
-    assert_eq!(fx.ev.failing_seq(k, &p, None, needed(1)), None);
+    assert_eq!(fx.ev.failing_seq(k, &p, None, needed(1)).unwrap(), None);
     assert!(fx.ev.carried_source(failure).is_none());
 }
 
@@ -519,7 +549,7 @@ fn reset_drops_idle_failures_live_or_carried_for_any_core() {
     fx.carried_idle(&p, "old");
     fx.ev.reset_core(core(1));
     let k = class(Regime::R6, 0, &[0, 1], 900);
-    assert_eq!(fx.ev.newest_failure(k, &p, None), None);
+    assert_eq!(fx.ev.newest_failure(k, &p, None).unwrap(), None);
 }
 
 #[test]
@@ -537,9 +567,10 @@ fn reset_discards_multi_r7_facts_naming_the_core_even_when_unloaded() {
             named: who.map(core),
         };
         if pass {
-            fx.ev.record_pass(obs);
+            let backend = fx.ev.active_backend(k.workload().backend());
+            fx.ev.record_pass(obs, backend).unwrap();
         } else {
-            fx.ev.record_failure(obs);
+            fx.ev.record_failure(obs).unwrap();
         }
         at
     };
@@ -547,11 +578,15 @@ fn reset_discards_multi_r7_facts_naming_the_core_even_when_unloaded() {
     let gone_failure = named(&mut fx, Some(2), false);
     let kept_pass = named(&mut fx, Some(0), true);
     let unnamed_pass = named(&mut fx, None, true);
-    fx.ev.set_checking_profile(p);
+    fx.ev.set_checking_profile(p).unwrap();
     fx.ev.reset_core(core(2));
-    let count = fx.ev.count(k, &p, ANY, needed(4));
+    let count = fx.ev.count(k, &p, ANY, needed(4)).unwrap();
     assert!(!count.witnesses.contains(&gone_pass));
-    assert_eq!(fx.ev.newest_failure(k, &p, None), None, "{gone_failure:?}");
+    assert_eq!(
+        fx.ev.newest_failure(k, &p, None).unwrap(),
+        None,
+        "{gone_failure:?}"
+    );
     assert_eq!(count.witnesses, vec![kept_pass, unnamed_pass]);
     fx.ev.reset_core(core(0));
     assert_eq!(fx.valid(k, &p), 0, "loaded core 0 drops the whole class");
@@ -564,12 +599,12 @@ fn carried_passes_do_not_add_session_exposure() {
         let k = class(Regime::R1, 0, &[0], 60);
         let p = fx.p(&[-10]);
         fx.carried_pass(k, &p, "old");
-        fx.ev.set_checking_profile(p);
+        fx.ev.set_checking_profile(p).unwrap();
         let boundary = fx.tick();
         let window = Window::LiveOrCarried {
             since: Some(boundary),
         };
-        assert_eq!(fx.ev.count(k, &p, window, needed(1)).valid, 1);
+        assert_eq!(fx.ev.count(k, &p, window, needed(1)).unwrap().valid, 1);
         assert_eq!(fx.ev.exposures().count(), 0);
         fx.pass_as(k, &p, condition);
         assert_eq!(fx.ev.exposures().collect::<Vec<_>>(), [(k.workload(), 1)]);
@@ -582,7 +617,7 @@ fn exposure_counts_live_non_alone_active_backend_passes_after_the_latest_failure
     let k = class(Regime::R1, 0, &[0], 60);
     let deep = fx.p(&[-12, -12]);
     let checking = fx.p(&[-10, -10]);
-    fx.ev.set_checking_profile(checking);
+    fx.ev.set_checking_profile(checking).unwrap();
     fx.pass_as(k, &deep, Condition::Alone);
     fx.pass(k, &deep);
     fx.pass(k, &fx.p(&[-5, -5]));
@@ -616,7 +651,7 @@ fn idle_failure_resets_exposure_of_all_core_r6_classes() {
     let r6 = class(Regime::R6, 0, &[0, 1], 60);
     let r1 = class(Regime::R1, 0, &[0], 60);
     let p = fx.p(&[-10, -10]);
-    fx.ev.set_checking_profile(p);
+    fx.ev.set_checking_profile(p).unwrap();
     fx.pass(r6, &p);
     fx.pass(r1, &p);
     fx.idle(&p);
@@ -640,7 +675,9 @@ fn carried_failure_survives_newer_pre_boundary_live_failure() {
         let start = fx.tick();
         let group = fx.p(&[-10, -5]);
         assert_eq!(
-            fx.ev.failing_seq(k, &group, Some(start), needed(3)),
+            fx.ev
+                .failing_seq(k, &group, Some(start), needed(3))
+                .unwrap(),
             Some(carried)
         );
         let live = fx.p(&[-10, -10]);
@@ -648,7 +685,9 @@ fn carried_failure_survives_newer_pre_boundary_live_failure() {
             fx.pass(k, &live);
             let want = (done < 3).then_some(carried);
             assert_eq!(
-                fx.ev.failing_seq(k, &group, Some(start), needed(3)),
+                fx.ev
+                    .failing_seq(k, &group, Some(start), needed(3))
+                    .unwrap(),
                 want,
                 "idle={idle} after {done} newer passes"
             );
@@ -668,20 +707,28 @@ fn windows_floor_live_passes_and_let_carried_ones_through() {
     let since = Some(boundary);
     let either = fx
         .ev
-        .count(k, &p, Window::LiveOrCarried { since }, needed(5));
+        .count(k, &p, Window::LiveOrCarried { since }, needed(5))
+        .unwrap();
     assert_eq!(either.witnesses, vec![carried, late]);
-    let live = fx.ev.count(k, &p, Window::Live { since }, needed(5));
+    let live = fx
+        .ev
+        .count(k, &p, Window::Live { since }, needed(5))
+        .unwrap();
     assert_eq!(live.witnesses, vec![late]);
-    let all = fx.ev.count(k, &p, ANY, needed(2));
+    let all = fx.ev.count(k, &p, ANY, needed(2)).unwrap();
     assert_eq!((all.valid, all.witnesses), (3, vec![carried, early]));
     fx.fail(k, &p);
     assert_eq!(
-        fx.ev.count(k, &p, Window::Live { since }, needed(5)).valid,
+        fx.ev
+            .count(k, &p, Window::Live { since }, needed(5))
+            .unwrap()
+            .valid,
         0
     );
     assert_eq!(
         fx.ev
             .count(k, &p, Window::LiveOrCarried { since }, needed(5))
+            .unwrap()
             .valid,
         0
     );
@@ -695,7 +742,7 @@ fn witnesses_merge_cells_in_seq_order() {
     for value in [-10, -12, -10, -14, -12] {
         seqs.push(fx.pass(k, &fx.p(&[value])));
     }
-    let count = fx.ev.count(k, &fx.p(&[-9]), ANY, needed(4));
+    let count = fx.ev.count(k, &fx.p(&[-9]), ANY, needed(4)).unwrap();
     assert_eq!(count.valid, 5);
     assert_eq!(count.witnesses, seqs[..4]);
 }
@@ -748,16 +795,16 @@ fn repeat_volume_does_not_change_how_many_cells_a_query_visits() {
         let mut fx = Fx::new(&[0, 1]);
         let k = class(Regime::R1, 0, &[0], 60);
         let p = fx.p(&[-10, -10]);
-        fx.ev.set_checking_profile(p);
+        fx.ev.set_checking_profile(p).unwrap();
         for _ in 0..passes {
             fx.pass(k, &p);
         }
         fx.ev.take_visits();
-        let count = fx.ev.count(k, &p, ANY, needed(3));
+        let count = fx.ev.count(k, &p, ANY, needed(3)).unwrap();
         assert_eq!(count.valid, u32::try_from(passes).unwrap());
         let counted = fx.ev.take_visits();
-        fx.ev.failing_seq(k, &p, None, needed(3));
-        fx.ev.monotonicity(k, &p, needed(3));
+        fx.ev.failing_seq(k, &p, None, needed(3)).unwrap();
+        fx.ev.monotonicity(k, &p, needed(3)).unwrap();
         let asked = fx.ev.take_visits();
         fx.pass(k, &p);
         assert_eq!(fx.ev.take_visits(), 0, "recording a pass visits no cell");
@@ -776,7 +823,7 @@ fn visits_scale_with_distinct_cells() {
         fx.pass(k, &fx.p(&[-depth, 0]));
     }
     fx.ev.take_visits();
-    fx.ev.count(k, &fx.p(&[0, 0]), ANY, needed(1));
+    fx.ev.count(k, &fx.p(&[0, 0]), ANY, needed(1)).unwrap();
     assert_eq!(fx.ev.take_visits(), 8);
 }
 
@@ -1099,13 +1146,19 @@ fn run(scenario: &Scenario) {
                     Condition::Together
                 };
                 let named = nth(*named);
-                fx.ev.record_pass(Observation {
-                    seq: at,
-                    class: k,
-                    profile: &p,
-                    condition,
-                    named,
-                });
+                let backend = fx.ev.active_backend(k.workload().backend());
+                fx.ev
+                    .record_pass(
+                        Observation {
+                            seq: at,
+                            class: k,
+                            profile: &p,
+                            condition,
+                            named,
+                        },
+                        backend,
+                    )
+                    .unwrap();
                 oracle.entries.push(Entry {
                     seq: at,
                     class: k,
@@ -1122,13 +1175,15 @@ fn run(scenario: &Scenario) {
                 let (k, p) = (resolve_class(&pool, *c), fx.p(p));
                 let at = fx.tick();
                 let named = nth(*named);
-                fx.ev.record_failure(Observation {
-                    seq: at,
-                    class: k,
-                    profile: &p,
-                    condition: Condition::Together,
-                    named,
-                });
+                fx.ev
+                    .record_failure(Observation {
+                        seq: at,
+                        class: k,
+                        profile: &p,
+                        condition: Condition::Together,
+                        named,
+                    })
+                    .unwrap();
                 oracle.entries.push(Entry {
                     seq: at,
                     class: k,
@@ -1170,17 +1225,19 @@ fn run(scenario: &Scenario) {
                 let at = fx.tick();
                 let named = nth(*named);
                 let backend = fx.ev.backend_id(k.workload().backend(), path_of(*path));
-                fx.ev.record_carried_pass(
-                    Observation {
-                        seq: at,
-                        class: k,
-                        profile: &p,
-                        condition: Condition::Together,
-                        named,
-                    },
-                    backend,
-                    SessionRef::new("s"),
-                );
+                fx.ev
+                    .record_carried_pass(
+                        Observation {
+                            seq: at,
+                            class: k,
+                            profile: &p,
+                            condition: Condition::Together,
+                            named,
+                        },
+                        backend,
+                        SessionRef::new("s"),
+                    )
+                    .unwrap();
                 oracle.entries.push(Entry {
                     seq: at,
                     class: k,
@@ -1197,16 +1254,18 @@ fn run(scenario: &Scenario) {
                 let (k, p) = (resolve_class(&pool, *c), fx.p(p));
                 let at = fx.tick();
                 let named = nth(*named);
-                fx.ev.record_carried_failure(
-                    Observation {
-                        seq: at,
-                        class: k,
-                        profile: &p,
-                        condition: Condition::Together,
-                        named,
-                    },
-                    SessionRef::new("s"),
-                );
+                fx.ev
+                    .record_carried_failure(
+                        Observation {
+                            seq: at,
+                            class: k,
+                            profile: &p,
+                            condition: Condition::Together,
+                            named,
+                        },
+                        SessionRef::new("s"),
+                    )
+                    .unwrap();
                 oracle.entries.push(Entry {
                     seq: at,
                     class: k,
@@ -1235,7 +1294,7 @@ fn run(scenario: &Scenario) {
             }
             RawOp::Checking(p) => {
                 let p = fx.p(p);
-                fx.ev.set_checking_profile(p);
+                fx.ev.set_checking_profile(p).unwrap();
                 oracle.checking = Some(p);
             }
         }
@@ -1265,7 +1324,7 @@ fn run(scenario: &Scenario) {
             Window::LiveOrCarried { since }
         };
         let want = oracle.passes(k, &p, window);
-        let got = fx.ev.count(k, &p, window, n);
+        let got = fx.ev.count(k, &p, window, n).unwrap();
         assert_eq!(got.valid as usize, want.len(), "valid {q:?}");
         assert_eq!(
             got.witnesses,
@@ -1273,22 +1332,22 @@ fn run(scenario: &Scenario) {
             "witnesses {q:?}"
         );
         assert_eq!(
-            fx.ev.newest_failure(k, &p, since),
+            fx.ev.newest_failure(k, &p, since).unwrap(),
             oracle.failure_before(k, &p, since),
             "newest {q:?}"
         );
         assert_eq!(
-            fx.ev.failing_seq(k, &p, since, n),
+            fx.ev.failing_seq(k, &p, since, n).unwrap(),
             oracle.failing_seq(k, &p, since, usize::from(q.needed)),
             "failing {q:?}"
         );
         assert_eq!(
-            fx.ev.monotonicity(k, &p, n),
+            fx.ev.monotonicity(k, &p, n).unwrap(),
             oracle.monotonicity(k, &p, usize::from(q.needed)),
             "monotonicity {q:?}"
         );
         assert_eq!(
-            fx.ev.idle_monotonicity(&p, n),
+            fx.ev.idle_monotonicity(&p, n).unwrap(),
             oracle.idle_monotonicity(&p, usize::from(q.needed)),
             "idle {q:?}"
         );
@@ -1302,4 +1361,98 @@ proptest! {
     fn count_equals_bruteforce_ledger(scenario in scenarios()) {
         run(&scenario);
     }
+}
+
+#[test]
+fn a_failure_named_later_is_discarded_with_its_core() {
+    let mut fx = Fx::new(&[0, 1, 2]);
+    let k = class(Regime::R7, 0, &[0, 1], 60);
+    let p = fx.p(&[-10, -10, 0]);
+    let at = fx.fail(k, &p);
+    assert_eq!(fx.ev.name_failure(k, &p, at, core(2)), Ok(()));
+    assert_eq!(fx.ev.newest_failure(k, &p, None).unwrap(), Some(at));
+    fx.ev.reset_core(core(2));
+    assert_eq!(fx.ev.newest_failure(k, &p, None).unwrap(), None);
+
+    let kept = fx.fail(k, &p);
+    let other = class(Regime::R1, 0, &[0], 60);
+    let single = fx.fail(other, &p);
+    fx.ev.name_failure(k, &p, kept, core(0)).unwrap();
+    fx.ev.name_failure(k, &p, kept, core(2)).unwrap();
+    fx.ev.name_failure(other, &p, single, core(2)).unwrap();
+    fx.ev.reset_core(core(2));
+    assert_eq!(fx.ev.newest_failure(k, &p, None).unwrap(), Some(kept));
+    assert_eq!(fx.ev.newest_failure(other, &p, None).unwrap(), Some(single));
+    fx.ev.reset_core(core(0));
+    assert_eq!(fx.ev.newest_failure(k, &p, None).unwrap(), None);
+}
+
+#[test]
+fn reset_of_a_named_core_visits_cells_not_facts() {
+    let visits = |facts: usize| {
+        let mut fx = Fx::new(&[0, 1, 2]);
+        let k = class(Regime::R7, 0, &[0, 1], 60);
+        let p = fx.p(&[-10, -10, 0]);
+        for _ in 0..facts {
+            let at = fx.tick();
+            let backend = fx.ev.active_backend(k.workload().backend());
+            let obs = Observation {
+                seq: at,
+                class: k,
+                profile: &p,
+                condition: Condition::Together,
+                named: Some(core(2)),
+            };
+            fx.ev.record_pass(obs, backend).unwrap();
+            let at = fx.tick();
+            fx.ev
+                .record_failure(Observation { seq: at, ..obs })
+                .unwrap();
+        }
+        fx.ev.take_visits();
+        fx.ev.reset_core(core(2));
+        (
+            fx.ev.take_visits(),
+            fx.valid(k, &p),
+            fx.ev.newest_failure(k, &p, None).unwrap(),
+        )
+    };
+    let small = visits(100);
+    let large = visits(10_000);
+    assert_eq!(small, large);
+    assert_eq!((small.1, small.2), (0, None));
+}
+
+#[test]
+fn the_ledger_rejects_a_profile_of_other_cores() {
+    let mut fx = Fx::new(&[0, 1]);
+    let other = topology(&[4, 5]);
+    let foreign = profile(&other, &[-10, -10]);
+    let k = class(Regime::R1, 0, &[0], 60);
+    let mismatch = TopologyMismatch {
+        expected: fx.topo.all(),
+        found: foreign.cores(),
+    };
+    let at = fx.tick();
+    let obs = Observation {
+        seq: at,
+        class: k,
+        profile: &foreign,
+        condition: Condition::Together,
+        named: None,
+    };
+    let backend = fx.ev.active_backend(k.workload().backend());
+    assert_eq!(fx.ev.record_pass(obs, backend), Err(mismatch));
+    assert_eq!(fx.ev.record_failure(obs), Err(mismatch));
+    assert_eq!(fx.ev.record_idle_failure(at, &foreign), Err(mismatch));
+    assert_eq!(fx.ev.count(k, &foreign, ANY, needed(1)), Err(mismatch));
+    assert_eq!(fx.ev.newest_failure(k, &foreign, None), Err(mismatch));
+    assert_eq!(
+        fx.ev.failing_seq(k, &foreign, None, needed(1)),
+        Err(mismatch)
+    );
+    assert_eq!(fx.ev.monotonicity(k, &foreign, needed(1)), Err(mismatch));
+    assert_eq!(fx.ev.idle_monotonicity(&foreign, needed(1)), Err(mismatch));
+    assert_eq!(fx.ev.set_checking_profile(foreign), Err(mismatch));
+    assert_eq!(fx.ev.take_visits(), 0);
 }

@@ -141,7 +141,7 @@ impl TrialPlan {
     /// The `trial.intent` payload that records this plan as trial `trial`.
     pub fn intent(&self, trial: TrialId, rotation: usize) -> TrialIntent {
         let (core, cores, offset) = match self.load {
-            Load::Single(core) => (Some(core), CoreSet::default(), Some(self.profile.get(core))),
+            Load::Single(core) => (Some(core), CoreSet::default(), self.profile.get(core)),
             Load::Many(cores) => (None, cores, None),
         };
         let mut intent = TrialIntent {

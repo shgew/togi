@@ -8,7 +8,7 @@ use togi_journal::{
 };
 use togi_machine::{Condition, CoreId, Regime, WorkloadId, workloads};
 
-use crate::failures::FailureRecord;
+use crate::failures::{Pending, Witness};
 use crate::flight::OpenTrial;
 use crate::state::Run;
 use crate::{
@@ -83,24 +83,23 @@ impl Run {
         class: ClassKey,
         profile: &Profile,
         trial: Option<&togi_journal::TrialId>,
-    ) {
-        if class.multi_r7() {
-            return;
-        }
+    ) -> Result<(), FoldError> {
         let needed = self.config.needed;
-        let count = self.evidence.count(
-            class,
-            profile,
-            Window::LiveOrCarried { since: None },
-            needed,
-        );
-        if count.valid < u32::from(needed.get()) {
-            return;
-        }
+        let Some(passes) = self.evidence.monotonicity(class, profile, needed)? else {
+            return Ok(());
+        };
+        let total = self
+            .evidence
+            .count(
+                class,
+                profile,
+                Window::LiveOrCarried { since: None },
+                needed,
+            )?
+            .valid;
         let detail = format!(
-            "failure at profile {} contradicts {} valid passes in {} {}",
+            "failure at profile {} contradicts {total} valid passes in {} {}",
             profile_text(profile),
-            count.valid,
             class.regime(),
             class.workload()
         );
@@ -109,14 +108,23 @@ impl Run {
             TunerWarning {
                 warning: WarningKind::Monotonicity,
                 trial: trial.cloned(),
-                passes: count.witnesses,
+                passes,
                 detail,
             },
         );
+        Ok(())
     }
 
-    fn admit_idle(&mut self, seq: Seq, profile: &Profile, source: Option<SessionRef>) {
-        if let Some(found) = self.evidence.idle_monotonicity(profile, self.config.needed) {
+    fn admit_idle(
+        &mut self,
+        seq: Seq,
+        profile: &Profile,
+        source: Option<SessionRef>,
+    ) -> Result<(), FoldError> {
+        if let Some(found) = self
+            .evidence
+            .idle_monotonicity(profile, self.config.needed)?
+        {
             let detail = format!(
                 "idle failure at profile {} contradicts {} valid passes in {} {} at {}s",
                 profile_text(profile),
@@ -138,14 +146,20 @@ impl Run {
         match source {
             Some(source) => self
                 .evidence
-                .record_carried_idle_failure(seq, profile, source),
-            None => self.evidence.record_idle_failure(seq, profile),
+                .record_carried_idle_failure(seq, profile, source)?,
+            None => self.evidence.record_idle_failure(seq, profile)?,
         }
+        Ok(())
     }
 
     /// Enters a conclusive end into the ledger, warning first when a failure contradicts `n`
-    /// valid passes.
-    pub(crate) fn record_end(&mut self, seq: Seq, open: &OpenTrial, end: &togi_journal::TrialEnd) {
+    /// valid passes. A pass counts under the backend package its trial began with.
+    pub(crate) fn record_end(
+        &mut self,
+        seq: Seq,
+        open: &OpenTrial,
+        end: &togi_journal::TrialEnd,
+    ) -> Result<(), FoldError> {
         let observation = Observation {
             seq,
             class: open.class,
@@ -155,12 +169,13 @@ impl Run {
         };
         match end.outcome {
             Outcome::Inconclusive => {}
-            Outcome::Pass => self.evidence.record_pass(observation),
+            Outcome::Pass => self.evidence.record_pass(observation, open.backend)?,
             Outcome::Failure => {
-                self.warn_failure(seq, open.class, &open.profile, Some(&open.trial));
-                self.evidence.record_failure(observation);
+                self.warn_failure(seq, open.class, &open.profile, Some(&open.trial))?;
+                self.evidence.record_failure(observation)?;
             }
         }
+        Ok(())
     }
 
     pub(crate) fn class_of_trial_class(&self, class: &TrialClass) -> Result<ClassKey, FoldError> {
@@ -174,9 +189,7 @@ impl Run {
             }
             None => workloads(class.regime)[0].id(),
         };
-        if let Some(core) = class.cores.iter().find(|&core| !self.topo.contains(core)) {
-            return Err(FoldError::UnknownCore(core));
-        }
+        self.require_cores(class.cores)?;
         let duration = NonZeroU32::new(class.duration_s).ok_or(FoldError::ZeroDuration)?;
         Ok(ClassKey::new(workload, class.cores, Secs::new(duration)))
     }
@@ -191,9 +204,21 @@ impl Run {
         if carried.outcome == Outcome::Failure && carried.signal.is_none() {
             return Err(FoldError::MissingSignal);
         }
-        if let Some(core) = carried.core {
-            self.require_core(core)?;
-        }
+        self.require_cores(
+            carried
+                .core
+                .into_iter()
+                .chain(carried.stalled_core)
+                .collect(),
+        )?;
+        self.require_cores(carried.top_requesters)?;
+        self.require_cores(
+            carried
+                .voltage_requests_v
+                .iter()
+                .map(|(core, _)| core)
+                .collect(),
+        )?;
         let backend: BackendId = match &carried.source.backend {
             Some(identity) => self
                 .evidence
@@ -212,9 +237,9 @@ impl Run {
             Outcome::Inconclusive => {}
             Outcome::Pass => self
                 .evidence
-                .record_carried_pass(observation, backend, source),
+                .record_carried_pass(observation, backend, source)?,
             Outcome::Failure => {
-                self.warn_failure(event.seq, class, &profile, carried.source.trial.as_ref());
+                self.warn_failure(event.seq, class, &profile, carried.source.trial.as_ref())?;
                 let observation = Observation {
                     seq: event.seq,
                     class,
@@ -222,35 +247,47 @@ impl Run {
                     condition: carried.condition,
                     named: carried.core,
                 };
-                self.evidence.record_carried_failure(observation, source);
+                self.evidence.record_carried_failure(observation, source)?;
                 let alone = (carried.condition == Condition::Alone && class.loaded().len() == 1)
                     .then(|| class.loaded().first())
                     .flatten();
                 let named: Option<CoreId> = carried.core.or(alone);
                 let (attribution, offset) = match named {
-                    Some(core) => (Attribution::Attributed, Some(profile.get(core))),
+                    Some(core) => (Attribution::Attributed, profile.get(core)),
                     None => (Attribution::Unattributed, None),
                 };
                 let signal = carried.signal.ok_or(FoldError::MissingSignal)?;
-                self.failures.insert(FailureRecord {
-                    seq: event.seq,
-                    failure: Failure {
-                        signal,
-                        attribution,
-                        core: named,
-                        offset,
-                        trial: carried.source.trial.clone(),
-                        regime: Some(class.regime()),
-                        condition: Some(carried.condition),
-                        profile: Some(profile.offsets()),
-                        known_failure: None,
-                        reason: None,
-                        round: None,
+                let failure = Failure {
+                    signal,
+                    attribution,
+                    core: named,
+                    offset,
+                    trial: carried.source.trial.clone(),
+                    regime: Some(class.regime()),
+                    condition: Some(carried.condition),
+                    profile: Some(profile.offsets()),
+                    known_failure: None,
+                    reason: None,
+                    round: None,
+                };
+                self.failures.witness(
+                    event.seq,
+                    true,
+                    Witness {
+                        failure: failure.clone(),
+                        class,
+                        profile,
                     },
-                    class,
-                    profile,
-                    carried: true,
-                });
+                );
+                self.failures.pend(
+                    event.seq,
+                    Pending {
+                        failure,
+                        class,
+                        profile,
+                        carried: true,
+                    },
+                );
             }
         }
         Ok(())
@@ -267,18 +304,36 @@ impl Run {
         )?;
         let class = self.idle_class();
         let source = source_ref(&carried.source);
-        self.admit_idle(event.seq, &profile, Some(source));
-        self.failures.insert(FailureRecord {
-            seq: event.seq,
-            failure: carried.failure.clone(),
-            class,
-            profile,
-            carried: true,
-        });
+        self.admit_idle(event.seq, &profile, Some(source))?;
+        self.failures.witness(
+            event.seq,
+            true,
+            Witness {
+                failure: carried.failure.clone(),
+                class,
+                profile,
+            },
+        );
+        self.failures.pend(
+            event.seq,
+            Pending {
+                failure: carried.failure.clone(),
+                class,
+                profile,
+                carried: true,
+            },
+        );
+        if carried.failure.attribution == Attribution::Unattributed {
+            self.failures.queue_back(event.seq);
+        }
         Ok(())
     }
 
-    pub(crate) fn live_idle_failure(&mut self, seq: Seq, profile: &Profile) {
-        self.admit_idle(seq, profile, None);
+    pub(crate) fn live_idle_failure(
+        &mut self,
+        seq: Seq,
+        profile: &Profile,
+    ) -> Result<(), FoldError> {
+        self.admit_idle(seq, profile, None)
     }
 }

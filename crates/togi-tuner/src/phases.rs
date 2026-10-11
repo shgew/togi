@@ -164,11 +164,16 @@ impl Run {
         let mut carried = Vec::new();
         for &id in self.topo.order() {
             let core = self.core(id);
-            let offset = from.get(id);
+            let Some(offset) = from.get(id) else {
+                continue;
+            };
             if core.phase.is_none_or(|phase| phase == CorePhase::Search) || finished.contains(id) {
                 continue;
             }
-            if passed.is_some_and(|passed| offset.deeper_than(passed.get(id))) {
+            if passed
+                .and_then(|passed| passed.get(id))
+                .is_some_and(|last| offset.deeper_than(last))
+            {
                 carried.push(id);
                 continue;
             }
@@ -182,7 +187,7 @@ impl Run {
                 continue;
             };
             let trial = profile.with(id, deeper);
-            if self.constraints.reaches(&trial).is_none() {
+            if self.constraints.reaches(&trial) == Ok(None) {
                 profile = trial;
                 moved.push(id);
             }

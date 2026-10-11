@@ -1,8 +1,18 @@
+use std::collections::BTreeMap;
+
 use togi_journal::{Event, Mce, Outcome, Seq, TrialEnd, TrialId, TrialIntent, TrialProgress};
 use togi_machine::{Condition, CoreId, CoreSet, Signal};
 
 use crate::state::Run;
-use crate::{ClassKey, FoldError, Profile, Requirement, RequirementKind, StepNo};
+use crate::{BackendId, ClassKey, FoldError, Profile, Requirement, RequirementKind, StepNo};
+
+/// The cores of the MCEs seen in a trial's window that its end cites.
+pub(crate) fn cited_mces(seen: &BTreeMap<Seq, CoreId>, cause: &[Seq]) -> CoreSet {
+    seen.iter()
+        .filter(|(seq, _)| cause.contains(seq))
+        .map(|(_, &core)| core)
+        .collect()
+}
 
 /// What a trial's requirement stood at just before it ended, never more than its count.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -21,9 +31,10 @@ pub(crate) struct OpenTrial {
     pub(crate) profile: Profile,
     pub(crate) class: ClassKey,
     pub(crate) requirement: Requirement,
+    pub(crate) backend: BackendId,
     pub(crate) crashed: bool,
     pub(crate) signalled: bool,
-    pub(crate) mces: CoreSet,
+    pub(crate) mces: BTreeMap<Seq, CoreId>,
 }
 
 /// A failed trial the tuner has yet to attribute.
@@ -61,6 +72,7 @@ impl Run {
     ) -> Result<(), FoldError> {
         let class = self.class_of_intent(intent)?;
         let profile = Profile::new(&self.topo, intent.profile)?;
+        self.require_cores(intent.core.into_iter().collect())?;
         let requirement = self.intent_requirement(intent, class)?;
         let alone_core = intent.core.filter(|_| intent.condition == Condition::Alone);
         let cursor =
@@ -76,9 +88,10 @@ impl Run {
             profile,
             class,
             requirement,
+            backend: self.evidence.active_backend(intent.workload.backend()),
             crashed: false,
             signalled: false,
-            mces: CoreSet::default(),
+            mces: BTreeMap::new(),
         });
         Ok(())
     }
@@ -93,6 +106,7 @@ impl Run {
 
     pub(crate) fn trial_progress(&mut self, progress: &TrialProgress) -> Result<(), FoldError> {
         self.open_for(&progress.trial)?;
+        self.require_cores(progress.core.into_iter().collect())?;
         if progress.signal.is_some() {
             if let Some(open) = self.flight.open.as_mut() {
                 open.signalled = true;
@@ -101,7 +115,10 @@ impl Run {
         Ok(())
     }
 
-    pub(crate) fn mce(&mut self, mce: &Mce) -> Result<(), FoldError> {
+    pub(crate) fn mce(&mut self, event: &Event, mce: &Mce) -> Result<(), FoldError> {
+        if let Some(core) = mce.core {
+            self.require_core(core)?;
+        }
         let Some(core) = mce.core.filter(|_| mce.bank_type.core_local()) else {
             return Ok(());
         };
@@ -111,9 +128,8 @@ impl Run {
         if mce.trial.as_ref().is_some_and(|trial| trial != &open.trial) {
             return Ok(());
         }
-        self.require_core(core)?;
         if let Some(open) = self.flight.open.as_mut() {
-            open.mces.insert(core);
+            open.mces.insert(event.seq, core);
         }
         Ok(())
     }
@@ -142,7 +158,7 @@ impl Run {
                         requirement.window,
                         requirement.needed,
                     )
-                    .valid;
+                    .map_or(0, |count| count.valid);
                 (
                     valid.min(needed),
                     valid.saturating_add(1).min(needed.max(1)),
@@ -165,11 +181,19 @@ impl Run {
         if end.outcome == Outcome::Failure && end.signal.is_none() {
             return Err(FoldError::MissingSignal);
         }
+        self.require_cores(end.core.into_iter().chain(end.stalled_core).collect())?;
+        self.require_cores(end.top_requesters)?;
+        self.require_cores(
+            end.voltage_requests_v
+                .iter()
+                .map(|(core, _)| core)
+                .collect(),
+        )?;
         let Some(open) = self.flight.open.take() else {
             return Err(FoldError::NoOpenTrial(end.trial.clone()));
         };
-        let history = self.history_of(&open);
-        self.record_end(event.seq, &open, end);
+        let history = self.history(&open);
+        self.record_end(event.seq, &open, end)?;
         let conclusive = matches!(end.outcome, Outcome::Pass | Outcome::Failure);
         if conclusive {
             match open.intent.core {
@@ -206,15 +230,11 @@ impl Run {
                     cause: event.cause.clone(),
                     signal,
                     core: end.core,
-                    mces: open.mces,
+                    mces: cited_mces(&open.mces, &event.cause),
                 });
             }
         }
         Ok(())
-    }
-
-    fn history_of(&self, open: &OpenTrial) -> TrialHistory {
-        self.history(open)
     }
 
     /// An alone search pass at the core's current offset, under the backend package now in force,
@@ -231,10 +251,13 @@ impl Run {
             && intent.activity == Some(togi_journal::Activity::Search)
             && state.check.is_none()
         {
-            let backend = intent.workload.backend();
-            let id = self.evidence.active_backend(backend);
-            self.search
-                .record_pass(core, intent.regime, backend, id, seq);
+            self.search.record_pass(
+                core,
+                intent.regime,
+                intent.workload.backend(),
+                open.backend,
+                seq,
+            );
         }
     }
 }

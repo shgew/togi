@@ -1,6 +1,7 @@
 use togi_journal::{CorePhase, CoreTransition, DeadEnd, DeadEndCondition, ProfileChange, Seq};
 use togi_machine::TargetOffset;
 
+use crate::failures::Pending;
 use crate::state::Run;
 use crate::{Action, CombinationId, DecisionAction, Profile};
 
@@ -86,8 +87,8 @@ impl Run {
 
     /// An unattributed failure with every core at 0 has no candidate to hunt.
     pub(crate) fn unattributed_zero_dead_end(&self) -> Option<DecisionAction> {
-        let queued = self
-            .failures
+        let queued_seq = self.failures.queue().next()?;
+        self.failures
             .queued()
             .filter(|record| record.profile.is_zero())?;
         Some(DecisionAction::new(
@@ -97,7 +98,7 @@ impl Run {
                 detail: "unattributed failure with every core at CO 0; the instability is not caused by Curve Optimizer".to_owned(),
                 action: None,
             },
-            vec![queued.seq],
+            vec![queued_seq],
         ))
     }
 
@@ -106,8 +107,18 @@ impl Run {
         self.topo.order().iter().find_map(|&id| {
             let core = self.core(id);
             let seq = core.pending?;
-            (core.phase == Some(CorePhase::Search))
-                .then(|| DecisionAction::new(self.search_failure(id), vec![seq]))
+            if core.phase != Some(CorePhase::Search) {
+                return None;
+            }
+            let failed = self
+                .failures
+                .pending(seq)
+                .and_then(Pending::offset)
+                .unwrap_or(core.offset);
+            Some(DecisionAction::new(
+                self.search_failure(id, failed),
+                vec![seq],
+            ))
         })
     }
 
@@ -117,7 +128,7 @@ impl Run {
         self.topo.order().iter().find_map(|&id| {
             let core = self.core(id);
             let phase = core.phase.filter(|&phase| phase != CorePhase::Search)?;
-            let limit = self.constraints.at_limit(id, &profile);
+            let limit = self.constraints.at_limit(id, &profile).ok().flatten();
             let want = if limit.is_some() {
                 CorePhase::AtLimit
             } else {

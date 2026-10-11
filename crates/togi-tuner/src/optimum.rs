@@ -24,7 +24,7 @@ pub(crate) fn solve(
         let floor = failure_points.get(core).map_or(floor_limit, |point| {
             (point.offset().signed() + 1).max(floor_limit)
         });
-        let ceiling = hi.get(core).signed();
+        let ceiling = hi.get(core).map_or(floor_limit, Depth::signed);
         if floor > ceiling {
             return None;
         }

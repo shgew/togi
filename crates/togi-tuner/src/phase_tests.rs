@@ -138,7 +138,6 @@ fn phases_run_to_a_conclusion_and_count_clean_cycles() {
 fn a_cycle_cannot_pass_before_a_profile_change() {
     let mut j = Journal::new(&[0], &[Start::solo(-10, -11)]);
     j.cycle_start(1, &[Regime::R1]);
-    let before = j.state.clone();
     let error = j.try_append(
         togi_journal::CheckingCycle {
             cycle: std::num::NonZeroU32::MIN,
@@ -153,7 +152,7 @@ fn a_cycle_cannot_pass_before_a_profile_change() {
         &[],
     );
     assert_eq!(error, Err(crate::FoldError::NoCheckingProfile));
-    assert_eq!(j.state, before);
+    assert_eq!(j.state.decide(), None);
 }
 
 #[test]

@@ -1,13 +1,13 @@
 use std::num::{NonZeroU16, NonZeroU32};
 
 use togi_journal::{Activity, TrialIntent};
-use togi_machine::{Condition, CoreId};
+use togi_machine::{Condition, CoreId, Regime};
 
 use crate::flight::OpenTrial;
 use crate::state::Run;
 use crate::{
-    ClassKey, FoldError, Load, Requirement, RequirementKind, Secs, StepNo, TrialContext, TrialPlan,
-    Window, WorkloadChoice,
+    ClassKey, FoldError, Load, Profile, Requirement, RequirementKind, Secs, TrialContext,
+    TrialPlan, Window, WorkloadChoice,
 };
 
 /// The inconclusive trial to repeat, with the requirement it was scheduled under. Only a builder
@@ -80,33 +80,52 @@ impl Run {
         }
     }
 
-    /// The requirement captured before an intent folds. An alone trial outside a round belongs to
-    /// its core's search; one naming a hunt, round or rerun belongs to a context no state opens
-    /// yet; any other is a checking trial counting live passes.
+    /// The core whose search turn or candidate check an alone intent belongs to, when the intent
+    /// is the trial that turn asks for: the core is in search at the intent's offset, runs the
+    /// search duration with every other core at zero, and takes R1, or R2 once its R1 passed,
+    /// with the workload its rotation names or its check froze.
+    fn search_context(&self, intent: &TrialIntent) -> Option<CoreId> {
+        let alone = intent.condition == Condition::Alone
+            && intent.activity == Some(Activity::Search)
+            && intent.cores.is_empty()
+            && intent.cycle.is_none()
+            && intent.step.is_none()
+            && intent.hunt.is_none()
+            && intent.group.is_none()
+            && intent.round.is_none()
+            && !intent.rerun;
+        let id = intent.core.filter(|_| alone)?;
+        let core = self.searching(id)?;
+        let at_offset = intent.offset == Some(core.offset)
+            && Profile::new(&self.topo, intent.profile).ok()
+                == Some(Profile::alone(&self.topo, id, core.offset))
+            && intent.duration_s == self.config.search_trial.get();
+        if !at_offset {
+            return None;
+        }
+        let expected = match (core.check, intent.regime) {
+            (Some(check), Regime::R1) => check.r1,
+            (Some(check), Regime::R2) => check.r2,
+            (None, Regime::R1) => self.rotation_workload(id, Regime::R1),
+            (None, Regime::R2) if self.search.current(id, &self.evidence).0.is_some() => {
+                self.rotation_workload(id, Regime::R2)
+            }
+            _ => return None,
+        };
+        (intent.workload == expected).then_some(id)
+    }
+
+    /// The requirement captured before an intent folds: the one of the search turn or candidate
+    /// check it belongs to. An intent that belongs to no open scheduling context is one the
+    /// tuner never planned.
     pub(crate) fn intent_requirement(
         &self,
         intent: &TrialIntent,
         class: ClassKey,
     ) -> Result<Requirement, FoldError> {
-        let unscheduled = || FoldError::UnscheduledIntent(intent.trial.clone());
-        if intent.hunt.is_some() || intent.round.is_some() || intent.rerun {
-            return Err(unscheduled());
-        }
-        if intent.condition == Condition::Alone {
-            let core = intent.core.ok_or_else(unscheduled)?;
-            if intent.offset.is_none() {
-                return Err(unscheduled());
-            }
-            return Ok(self.solo_requirement(core, class));
-        }
-        Ok(Requirement {
-            kind: RequirementKind::Cycle,
-            class,
-            window: Window::Live { since: None },
-            needed: NonZeroU16::MIN,
-            step: intent.step.map(StepNo::new),
-            part: None,
-        })
+        self.search_context(intent)
+            .map(|core| self.solo_requirement(core, class))
+            .ok_or_else(|| FoldError::UnscheduledIntent(intent.trial.clone()))
     }
 
     /// Keeps an inconclusive alone search trial to retry.
@@ -119,7 +138,7 @@ impl Run {
             RequirementKind::Search => TrialContext::Search {
                 core,
                 regime: intent.regime,
-                offset: open.profile.get(core),
+                offset: intent.offset.unwrap_or_else(|| self.core(core).offset),
             },
             RequirementKind::SoloLimit => TrialContext::SoloLimit {
                 core,
@@ -163,7 +182,7 @@ impl Run {
         };
         let state = self.core(core);
         let current = state.phase == Some(togi_journal::CorePhase::Search)
-            && plan.profile.get(core) == state.offset
+            && plan.profile.get(core) == Some(state.offset)
             && offset.is_none_or(|offset| offset == state.offset)
             && plan.duration == self.config.search_trial;
         if !current {

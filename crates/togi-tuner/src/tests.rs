@@ -8,7 +8,7 @@ use togi_machine::{
 use crate::{
     CombinationId, ConstraintError, Constraints, CrashFacts, CrashKind, Depth, FailurePoint,
     Insertion, Limit, Profile, ProfileError, Ranking, RankingError, Reached, Topology,
-    TopologyError, classify_crash, recorded_kind,
+    TopologyError, TopologyMismatch, classify_crash, recorded_kind,
 };
 
 pub(crate) fn core(id: u8) -> CoreId {
@@ -81,7 +81,7 @@ fn exhaustive(constraints: &Constraints, hi: &Profile, ranking: &Ranking) -> Opt
     let mut p = Profile::over(hi.cores(), |_| floor);
     let mut best: Option<Profile> = None;
     loop {
-        if constraints.reaches(&p).is_none()
+        if constraints.reaches(&p) == Ok(None)
             && best
                 .as_ref()
                 .is_none_or(|best| ranked_better(&p, best, ranking))
@@ -97,7 +97,7 @@ fn exhaustive(constraints: &Constraints, hi: &Profile, ranking: &Ranking) -> Opt
                 p = p.with(current, floor);
                 position += 1;
             } else {
-                p = p.with(current, off(p.get(current).get() + 1));
+                p = p.with(current, off(p.get(current).unwrap().get() + 1));
                 break;
             }
         }
@@ -112,7 +112,7 @@ fn ranked_better(p: &Profile, best: &Profile, ranking: &Ranking) -> bool {
         .order()
         .iter()
         .find(|&&core| p.get(core) != best.get(core))
-        .is_some_and(|&core| p.get(core).deeper_than(best.get(core)))
+        .is_some_and(|&core| p.get(core).unwrap().deeper_than(best.get(core).unwrap()))
 }
 
 #[test]
@@ -124,6 +124,9 @@ fn depth_orders_and_steps_offsets() {
     assert_eq!(off(-10).shallower_by(5), off(-5));
     assert_eq!(off(-48).deeper_by(2), Some(off(-50)));
     assert_eq!(off(-48).deeper_by(3), None);
+    assert_eq!(off(-48).deeper_or_floor(3), off(-50));
+    assert_eq!(off(-10).deeper_or_floor(5), off(-15));
+    assert!(off(-50).at_floor() && !off(-49).at_floor());
     assert_eq!(off(-7).signed(), -7);
 }
 
@@ -211,14 +214,14 @@ fn profile_alone_zero_with_and_total() {
     assert_eq!(zero.sole_nonzero(), None);
     let alone = Profile::alone(&topology, core(8), off(-12));
     assert!(!alone.is_zero());
-    assert_eq!(alone.get(core(8)), off(-12));
-    assert_eq!(alone.get(core(0)), off(0));
+    assert_eq!(alone.get(core(8)), Some(off(-12)));
+    assert_eq!(alone.get(core(0)), Some(off(0)));
     assert_eq!(alone.total(), -12);
     let moved = alone.with(core(1), off(-3));
     assert_eq!(moved.total(), -15);
     assert_eq!(alone.total(), -12);
     assert_eq!(moved.with(core(5), off(-9)), moved);
-    assert_eq!(moved.get(core(5)), off(0));
+    assert_eq!(moved.get(core(5)), None);
 }
 
 #[test]
@@ -240,20 +243,26 @@ fn constraints_reach_and_at_limit() {
     let topology = topology(&[0, 1]);
     let constraints = constraints(&topology, &[(0, -50)], &[&[(0, -49), (1, -50)]]);
 
-    assert_eq!(constraints.reaches(&profile(&topology, &[-49, -49])), None);
+    assert_eq!(
+        constraints.reaches(&profile(&topology, &[-49, -49])),
+        Ok(None)
+    );
     let failure = constraints
         .reaches(&profile(&topology, &[-50, -49]))
+        .unwrap()
         .unwrap();
     assert_eq!(failure.to_string(), "failure point -50 of core 00");
     assert!(matches!(failure, Reached::FailurePoint { core: c, .. } if c == core(0)));
     let combination = constraints
         .reaches(&profile(&topology, &[-49, -50]))
+        .unwrap()
         .unwrap();
     assert_eq!(combination, Reached::Combination(cid(1)));
     assert_eq!(combination.to_string(), "combination C1");
 
     let limit = constraints
         .at_limit(core(0), &profile(&topology, &[-49, -49]))
+        .unwrap()
         .unwrap();
     assert!(matches!(
         limit,
@@ -261,16 +270,18 @@ fn constraints_reach_and_at_limit() {
     ));
     let limit = constraints
         .at_limit(core(1), &profile(&topology, &[-49, -49]))
+        .unwrap()
         .unwrap();
     assert_eq!(limit, Limit::Reached(Reached::Combination(cid(1))));
     let floor = constraints
         .at_limit(core(1), &profile(&topology, &[-49, -50]))
+        .unwrap()
         .unwrap();
     assert_eq!(floor, Limit::Floor);
     assert_eq!(floor.to_string(), "at the floor -50");
     assert_eq!(
         constraints.at_limit(core(1), &profile(&topology, &[-10, -10])),
-        None
+        Ok(None)
     );
 }
 
@@ -285,12 +296,12 @@ fn constraints_check_failure_points_before_combinations_in_core_order() {
     let all_deep = profile(&topology, &[-40, -40, -40]);
     assert!(matches!(
         constraints.reaches(&all_deep),
-        Some(Reached::FailurePoint { core: c, .. }) if c == core(1)
+        Ok(Some(Reached::FailurePoint { core: c, .. })) if c == core(1)
     ));
     let only_combinations = profile(&topology, &[-40, -5, -5]);
     assert_eq!(
         constraints.reaches(&only_combinations),
-        Some(Reached::Combination(cid(1)))
+        Ok(Some(Reached::Combination(cid(1))))
     );
 }
 
@@ -443,10 +454,12 @@ fn optimum() {
             .collect();
         let refs: Vec<&[(u8, i64)]> = combinations.iter().map(<[_; 2]>::as_slice).collect();
         let constraints = constraints(&topology, &[], &refs);
-        let got = constraints.optimum(
-            &profile(&topology, case.hi),
-            &ranking(&topology, case.ranking),
-        );
+        let got = constraints
+            .optimum(
+                &profile(&topology, case.hi),
+                &ranking(&topology, case.ranking),
+            )
+            .unwrap();
         assert_eq!(got, Some(profile(&topology, case.want)), "{}", case.name);
     }
 }
@@ -467,7 +480,7 @@ fn optimum_with_staircase_combinations() {
     let ranking = ranking(&topology, &[0, 1, 2]);
     let want = exhaustive(&constraints, &hi, &ranking);
     assert!(want.is_some());
-    assert_eq!(constraints.optimum(&hi, &ranking), want);
+    assert_eq!(constraints.optimum(&hi, &ranking).unwrap(), want);
 }
 
 #[test]
@@ -482,11 +495,13 @@ fn four_core_cycle_needs_global_yield() {
     let ascending = Ranking::ascending(&topology);
     let global = constraints
         .optimum(&Profile::zero(&topology), &ascending)
+        .unwrap()
         .unwrap();
     assert_eq!(global.total(), -198);
     for bounded in [[-49, -49, -49, -50], [-49, -50, -49, -49]] {
         let target = constraints
             .optimum(&profile(&topology, &bounded), &ascending)
+            .unwrap()
             .unwrap();
         assert_eq!(target.total(), -197, "{bounded:?} yields {target:?}");
     }
@@ -500,7 +515,7 @@ fn optimum_keeps_failure_point_outside_safe_bounds() {
     for hi in [-10, 0] {
         assert_eq!(
             constraints.optimum(&profile(&topology, &[hi]), &ranking),
-            Some(profile(&topology, &[-10]))
+            Ok(Some(profile(&topology, &[-10])))
         );
     }
 }
@@ -510,34 +525,61 @@ fn optimum_is_none_when_the_floor_passes_the_ceiling_or_a_combination_cannot_bre
     let topology = topology(&[0, 1]);
     let ranking = Ranking::ascending(&topology);
     let at_zero = constraints(&topology, &[(0, 0)], &[]);
-    assert_eq!(at_zero.optimum(&Profile::zero(&topology), &ranking), None);
+    assert_eq!(
+        at_zero.optimum(&Profile::zero(&topology), &ranking),
+        Ok(None)
+    );
     let above = constraints(&topology, &[(0, -10)], &[]);
     assert_eq!(
         above.optimum(&profile(&topology, &[-11, 0]), &ranking),
-        None
+        Ok(None)
     );
     let unbreakable = constraints(&topology, &[], &[&[(0, -10), (1, -10)]]);
     assert_eq!(
         unbreakable.optimum(&profile(&topology, &[-10, -10]), &ranking),
-        None
+        Ok(None)
     );
     assert!(
         unbreakable
             .optimum(&profile(&topology, &[-9, -10]), &ranking)
+            .unwrap()
             .is_some()
     );
 }
 
 #[test]
-fn optimum_tolerates_a_profile_of_other_cores() {
+fn constraints_reject_a_profile_of_other_cores() {
     let topology = topology(&[0, 1]);
     let other = self::topology(&[4, 5]);
-    let constraints = constraints(&topology, &[], &[&[(0, -50), (1, -50)]]);
+    let smaller = self::topology(&[0]);
+    let constraints = constraints(&topology, &[(0, -50)], &[&[(0, -50), (1, -50)]]);
     let ranking = Ranking::ascending(&topology);
-    let got = constraints
-        .optimum(&Profile::zero(&other), &ranking)
-        .unwrap();
-    assert_eq!(got.cores(), topology.all());
+    for foreign in [Profile::zero(&other), Profile::zero(&smaller)] {
+        let mismatch = TopologyMismatch {
+            expected: topology.all(),
+            found: foreign.cores(),
+        };
+        assert_eq!(constraints.reaches(&foreign), Err(mismatch));
+        assert_eq!(constraints.at_limit(core(0), &foreign), Err(mismatch));
+        assert_eq!(constraints.optimum(&foreign, &ranking), Err(mismatch));
+    }
+    let foreign_ranking = Ranking::ascending(&other);
+    assert!(
+        constraints
+            .optimum(&Profile::zero(&topology), &foreign_ranking)
+            .is_err()
+    );
+}
+
+#[test]
+fn profile_comparison_never_invents_a_core() {
+    let topology = topology(&[0, 1]);
+    let other = self::topology(&[4, 5]);
+    let here = Profile::zero(&topology);
+    let there = Profile::zero(&other);
+    assert_eq!(here.get(core(4)), None);
+    assert!(!here.covers(&there) && !here.within(&there));
+    assert!(!there.covers(&here) && !there.within(&here));
 }
 
 fn classify(facts: &CrashFacts) -> CrashKind {
@@ -814,10 +856,10 @@ proptest! {
         } else {
             Ranking::ascending(&topology)
         };
-        let got = constraints.optimum(&hi, &ranking);
+        let got = constraints.optimum(&hi, &ranking).unwrap();
         prop_assert_eq!(&got, &exhaustive(&constraints, &hi, &ranking));
         if let Some(found) = got {
-            prop_assert!(constraints.reaches(&found).is_none());
+            prop_assert_eq!(constraints.reaches(&found), Ok(None));
             prop_assert!(found.covers(&hi));
         }
     }

@@ -64,6 +64,6 @@ pub use plan::{
     Action, DecisionAction, DecisionPayload, Load, PartNo, Requirement, RequirementKind, StepNo,
     TrialContext, TrialPlan, WorkloadChoice,
 };
-pub use profile::{Profile, ProfileError};
+pub use profile::{Profile, ProfileError, TopologyMismatch};
 pub use state::State;
 pub use topology::{Ranking, RankingError, Topology, TopologyError};

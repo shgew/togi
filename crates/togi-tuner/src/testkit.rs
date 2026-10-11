@@ -7,8 +7,7 @@ use togi_journal::{
     SCHEMA, Seq, SessionStart, Stamp, TrialEnd, TrialId, TunerDecision, TunerWarning,
 };
 use togi_machine::{
-    BootId, CcdId, Condition, CoreId, CoreInfo, CoreSet, PerCore, Regime, Signal, TargetOffset,
-    WorkloadId,
+    BootId, CcdId, Condition, CoreInfo, CoreSet, PerCore, Regime, Signal, TargetOffset, WorkloadId,
 };
 
 use crate::tests::{core, off};
@@ -491,7 +490,11 @@ impl Journal {
             workload: WorkloadChoice::Frozen(id),
             load,
             condition,
-            activity: togi_journal::Activity::Checking,
+            activity: if condition == Condition::Alone {
+                togi_journal::Activity::Search
+            } else {
+                togi_journal::Activity::Checking
+            },
             profile: self.profile(profile),
             duration,
             context: TrialContext::SoloLimit {
@@ -676,10 +679,6 @@ impl Journal {
 
     pub(crate) fn run(&self) -> &crate::state::Run {
         self.state.run().unwrap()
-    }
-
-    pub(crate) fn core_id(&self, index: usize) -> CoreId {
-        core(self.ids[index])
     }
 
     pub(crate) fn warning(&self) -> Option<TunerWarning> {

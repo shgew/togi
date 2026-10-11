@@ -1,44 +1,82 @@
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 
-use togi_journal::{Attribution, Event, Failure};
-use togi_machine::{Condition, CoreId, Regime};
+use togi_journal::{Attribution, Event, Failure, Seq};
+use togi_machine::{Condition, CoreId, CoreSet, TargetOffset};
 
-use crate::flight::Awaiting;
 use crate::state::Run;
-use togi_journal::Seq;
-
 use crate::{ClassKey, DecisionAction, FoldError, Profile};
 
-/// A failure the tuner knows under the seq of the event that recorded it.
+/// A failure as the known-failure rule needs it: what a skipped trial copies from it.
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct FailureRecord {
-    pub(crate) seq: Seq,
+pub(crate) struct Witness {
+    pub(crate) failure: Failure,
+    pub(crate) class: ClassKey,
+    pub(crate) profile: Profile,
+}
+
+/// A failure no decision has answered yet.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct Pending {
     pub(crate) failure: Failure,
     pub(crate) class: ClassKey,
     pub(crate) profile: Profile,
     pub(crate) carried: bool,
 }
 
-/// The failures later trials can be known to repeat, and the unattributed ones queued for a hunt.
+impl Pending {
+    pub(crate) fn offset(&self) -> Option<TargetOffset> {
+        self.failure.offset
+    }
+}
+
+/// The unresolved failures, the unattributed ones queued for a hunt, and one witness for the
+/// newest failure of each class, profile and origin, which a later trial can be known to repeat.
+/// A decision that answers a failure retires its record; a witness stays until the evidence it
+/// stands for is discarded.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct Failures {
-    records: BTreeMap<Seq, FailureRecord>,
-    aliases: BTreeMap<Seq, Seq>,
+    pending: BTreeMap<Seq, Pending>,
     queue: VecDeque<Seq>,
+    witnesses: BTreeMap<Seq, Witness>,
+    newest: HashMap<(ClassKey, Profile, bool), Seq>,
 }
 
 impl Failures {
-    pub(crate) fn insert(&mut self, record: FailureRecord) {
-        self.records.insert(record.seq, record);
+    /// Keeps `witness` for the ledger fact `seq`, replacing the one it supersedes in its cell.
+    pub(crate) fn witness(&mut self, seq: Seq, carried: bool, witness: Witness) {
+        let key = (witness.class, witness.profile, carried);
+        if let Some(older) = self.newest.insert(key, seq) {
+            self.witnesses.remove(&older);
+        }
+        self.witnesses.insert(seq, witness);
     }
 
-    fn alias(&mut self, seq: Seq, record: Seq) {
-        self.aliases.insert(seq, record);
+    pub(crate) fn witnessed(&self, seq: Seq) -> Option<&Witness> {
+        self.witnesses.get(&seq)
     }
 
-    /// The failure known as `seq`: its own event, or the failed `trial.end` it attributed.
-    pub(crate) fn get(&self, seq: Seq) -> Option<&FailureRecord> {
-        self.records.get(self.aliases.get(&seq).unwrap_or(&seq))
+    pub(crate) fn pend(&mut self, seq: Seq, pending: Pending) {
+        self.pending.insert(seq, pending);
+    }
+
+    pub(crate) fn queue_back(&mut self, seq: Seq) {
+        self.queue.push_back(seq);
+    }
+
+    pub(crate) fn pending(&self, seq: Seq) -> Option<&Pending> {
+        self.pending.get(&seq)
+    }
+
+    pub(crate) fn retire(&mut self, seq: Seq) {
+        if self.pending.remove(&seq).is_some() {
+            self.queue.retain(|&queued| queued != seq);
+        }
+    }
+
+    pub(crate) fn retire_all(&mut self, seqs: &[Seq]) {
+        for &seq in seqs {
+            self.retire(seq);
+        }
     }
 
     pub(crate) fn queue_is_empty(&self) -> bool {
@@ -49,62 +87,76 @@ impl Failures {
         self.queue.iter().copied()
     }
 
-    pub(crate) fn queued(&self) -> Option<&FailureRecord> {
-        self.queue.front().and_then(|seq| self.records.get(seq))
+    pub(crate) fn queued(&self) -> Option<&Pending> {
+        self.queue.front().and_then(|seq| self.pending.get(seq))
     }
 
+    pub(crate) fn unresolved(&self) -> usize {
+        self.pending.len()
+    }
+
+    pub(crate) fn witnesses(&self) -> usize {
+        self.witnesses.len()
+    }
+
+    /// Drops what stands for facts a reset of `core` discards.
     pub(crate) fn forget_core(&mut self, core: CoreId) {
-        let drops = |record: &FailureRecord| {
-            record.class.loaded().contains(core)
-                || (record.class.multi_r7() && record.failure.core == Some(core))
+        let drops = |class: ClassKey, failure: &Failure| {
+            class.loaded().contains(core) || (class.multi_r7() && failure.core == Some(core))
         };
-        self.records.retain(|_, record| !drops(record));
-        let records = &self.records;
-        self.aliases
-            .retain(|_, record| records.contains_key(record));
-        self.queue.retain(|seq| records.contains_key(seq));
+        self.pending
+            .retain(|_, record| !drops(record.class, &record.failure));
+        let pending = &self.pending;
+        self.queue.retain(|seq| pending.contains_key(seq));
+        self.witnesses
+            .retain(|_, witness| !drops(witness.class, &witness.failure));
+        let witnesses = &self.witnesses;
+        self.newest.retain(|_, seq| witnesses.contains_key(seq));
     }
 }
 
-fn unattributed_attribution(
-    run: &Run,
-    awaiting: &Awaiting,
-) -> (
-    Attribution,
-    Option<CoreId>,
-    Option<togi_machine::TargetOffset>,
-) {
-    let intent = &awaiting.intent;
-    let named: Vec<CoreId> = match awaiting.core {
+/// The core a together or parked failure names: the one the trial end names, else the one
+/// core-local MCE the end cites, else outside multi-core R7 the only core off zero. Several
+/// cited cores, or none to go by, name no core.
+pub(crate) fn together_attribution(
+    ended_on: Option<CoreId>,
+    cited: CoreSet,
+    profile: &Profile,
+    multi_r7: bool,
+) -> (Attribution, Option<CoreId>, Option<TargetOffset>) {
+    let named: Vec<CoreId> = match ended_on {
         Some(core) => vec![core],
-        None => awaiting.mces.iter().collect(),
+        None => cited.iter().collect(),
     };
-    let named = if named.is_empty() && (intent.regime != Regime::R7 || intent.cores.len() <= 1) {
-        awaiting.profile.sole_nonzero().into_iter().collect()
+    let named = if named.is_empty() && !multi_r7 {
+        profile.sole_nonzero().into_iter().collect()
     } else {
         named
     };
     match named[..] {
-        [core] if run.topo.contains(core) => (
-            Attribution::Attributed,
-            Some(core),
-            Some(awaiting.profile.get(core)),
-        ),
+        [core] if profile.get(core).is_some() => {
+            (Attribution::Attributed, Some(core), profile.get(core))
+        }
         _ => (Attribution::Unattributed, None, None),
     }
 }
 
 impl Run {
     /// The attribution of the failed trial awaiting one: alone failures belong to the target;
-    /// together and parked ones to the one core a backend signal or core-local MCE names, else
-    /// the only core off zero, else to no core.
+    /// together and parked ones to the one core a backend signal or a core-local MCE the end
+    /// cites names, else the only core off zero, else to no core.
     pub(crate) fn attribution(&self) -> Option<DecisionAction> {
         let awaiting = self.flight.awaiting.as_ref()?;
         let intent = &awaiting.intent;
         let (attribution, core, offset) = if intent.condition == Condition::Alone {
             (Attribution::Attributed, intent.core, intent.offset)
         } else {
-            unattributed_attribution(self, awaiting)
+            together_attribution(
+                awaiting.core,
+                awaiting.mces,
+                &awaiting.profile,
+                awaiting.class.multi_r7(),
+            )
         };
         let mut cause = vec![awaiting.end_seq];
         cause.extend(awaiting.cause.iter().copied());
@@ -143,7 +195,7 @@ impl Run {
         let known = match failure.known_failure {
             Some(seq) => Some(
                 self.failures
-                    .get(seq)
+                    .witnessed(seq)
                     .ok_or(FoldError::UnknownFailure(seq))?,
             ),
             None => None,
@@ -165,44 +217,59 @@ impl Run {
         } else if awaiting.is_none() && known.is_none() {
             profile = self.checking.profile().unwrap_or(profile);
         }
-        let end_seq = awaiting.map(|awaiting| awaiting.end_seq);
+        let ledger_seq = awaiting.map_or(event.seq, |awaiting| awaiting.end_seq);
+        let known_seq = failure.known_failure;
 
-        if end_seq.is_some() {
+        if awaiting.is_some() {
             self.flight.awaiting = None;
         }
-        if let Some(end) = end_seq {
-            self.failures.alias(end, event.seq);
-        }
-        if failure.known_failure.is_some() {
+        if known_seq.is_some() {
             self.retry = None;
+        } else {
+            if let Some(core) = failure.core.filter(|_| class.multi_r7()) {
+                self.evidence
+                    .name_failure(class, &profile, ledger_seq, core)?;
+            }
+            self.failures.witness(
+                ledger_seq,
+                false,
+                Witness {
+                    failure: failure.clone(),
+                    class,
+                    profile,
+                },
+            );
         }
-        self.failures.insert(FailureRecord {
-            seq: event.seq,
-            failure: failure.clone(),
-            class,
-            profile,
-            carried: false,
-        });
+        let cited = known_seq.unwrap_or(event.seq);
+        self.failures.pend(
+            cited,
+            Pending {
+                failure: failure.clone(),
+                class,
+                profile,
+                carried: false,
+            },
+        );
         if class.multi_r7() {
             return Ok(());
         }
         if failure.attribution == Attribution::Attributed {
             if let Some(core) = failure.core {
-                self.update_core(core, |state| state.pending = Some(event.seq));
+                let replaced = self.core(core).pending;
+                if let Some(old) = replaced.filter(|&old| old != cited) {
+                    self.failures.retire(old);
+                }
+                self.update_core(core, |state| state.pending = Some(cited));
             }
         }
         let together = failure.condition == Some(Condition::Together);
         let parked = failure.condition == Some(Condition::Parked);
         let unattributed = failure.attribution == Attribution::Unattributed;
         if unattributed && (together || (parked && failure.trial.is_none())) {
-            self.failures.queue.push_back(event.seq);
+            self.failures.queue_back(cited);
         }
-        if unattributed
-            && failure.known_failure.is_none()
-            && failure.trial.is_none()
-            && (together || parked)
-        {
-            self.live_idle_failure(event.seq, &profile);
+        if unattributed && known_seq.is_none() && failure.trial.is_none() && (together || parked) {
+            self.live_idle_failure(event.seq, &profile)?;
         }
         Ok(())
     }

@@ -59,7 +59,9 @@ fn optimum_with_accumulated_combinations() {
     .unwrap();
 
     let started = Instant::now();
-    let got = constraints.optimum(&profile(&fixture.hi), &ranking);
+    let got = constraints
+        .optimum(&profile(&fixture.hi), &ranking)
+        .unwrap();
     let elapsed = started.elapsed();
 
     assert_eq!(got, Some(profile(&fixture.want)));

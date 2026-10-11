@@ -54,6 +54,7 @@ pub(crate) struct Run {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct State {
     run: Option<Run>,
+    poisoned: bool,
 }
 
 impl Run {
@@ -128,6 +129,7 @@ impl Run {
     }
 
     fn dead_end(&mut self, event: &Event, dead_end: &DeadEnd) -> Result<(), FoldError> {
+        self.failures.retire_all(&event.cause);
         if dead_end.condition != DeadEndCondition::FailureAtZero {
             return Ok(());
         }
@@ -137,6 +139,7 @@ impl Run {
         self.require_core(core)?;
         self.constraints
             .set_failure_point(core, Some(FailurePoint::new(TargetOffset::ZERO)))?;
+        self.retire_pending(core);
         self.update_core(core, |state| {
             state.zero_seq = Some(event.seq);
             state.pending = None;
@@ -157,11 +160,14 @@ impl Run {
 
     fn profile_change(&mut self, event: &Event, change: &ProfileChange) -> Result<(), FoldError> {
         let profile = Profile::new(&self.topo, change.to)?;
+        if let Some(from) = change.from {
+            Profile::new(&self.topo, from)?;
+        }
         self.checking = Checking {
             profile: Some(profile),
             seq: Some(event.seq),
         };
-        self.evidence.set_checking_profile(profile);
+        self.evidence.set_checking_profile(profile)?;
         Ok(())
     }
 }
@@ -180,9 +186,19 @@ impl State {
     }
 
     /// Folds the next journal event. A structural impossibility, such as a core outside the
-    /// topology or an event that does not follow the last, is an error and leaves the state as it
-    /// was.
+    /// topology or an event that does not follow the last, is an error, and the state is
+    /// poisoned: every later `fold` fails and `decide` has nothing to say, because a state that
+    /// part-applied an event no longer stands for the journal.
     pub fn fold(&mut self, event: &Event) -> Result<(), FoldError> {
+        if self.poisoned {
+            return Err(FoldError::Poisoned);
+        }
+        let folded = self.fold_event(event);
+        self.poisoned = folded.is_err();
+        folded
+    }
+
+    fn fold_event(&mut self, event: &Event) -> Result<(), FoldError> {
         if let Some(run) = &self.run {
             if event.seq <= run.last_seq {
                 return Err(FoldError::OutOfOrder {
@@ -207,7 +223,7 @@ impl State {
             Payload::TrialIntent(intent) => self.run_mut()?.trial_intent(event, intent)?,
             Payload::TrialProgress(progress) => self.run_mut()?.trial_progress(progress)?,
             Payload::TrialEnd(end) => self.run_mut()?.trial_end(event, end)?,
-            Payload::Mce(mce) => self.run_mut()?.mce(mce)?,
+            Payload::Mce(mce) => self.run_mut()?.mce(event, mce)?,
             Payload::Failure(failure) => self.run_mut()?.failure(event, failure)?,
             Payload::TrialCarried(carried) => self.run_mut()?.trial_carried(event, carried)?,
             Payload::FailureCarried(carried) => self.run_mut()?.failure_carried(event, carried)?,
@@ -259,6 +275,9 @@ impl State {
 
     /// The next decision or trial the folded state calls for, from the rules this state holds.
     pub(crate) fn decide(&self) -> Option<crate::Action> {
+        if self.poisoned {
+            return None;
+        }
         self.run()?.decide()
     }
 

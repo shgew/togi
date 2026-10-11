@@ -12,8 +12,26 @@ pub enum ProfileError {
     Extra(CoreId),
 }
 
-/// An offset for every core of a topology. A core the profile does not hold reads as zero, and
-/// `with` leaves the profile unchanged for it.
+/// A profile or ranking whose cores are not the ones of the topology it was given to.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("cores {found:?} are not the topology's cores {expected:?}")]
+pub struct TopologyMismatch {
+    pub expected: CoreSet,
+    pub found: CoreSet,
+}
+
+impl TopologyMismatch {
+    pub(crate) fn check(expected: CoreSet, found: CoreSet) -> Result<(), Self> {
+        if expected == found {
+            Ok(())
+        } else {
+            Err(Self { expected, found })
+        }
+    }
+}
+
+/// An offset for every core of a topology; `with` leaves the profile unchanged for a core it does
+/// not hold.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Profile(PerCore<TargetOffset>);
 
@@ -45,8 +63,9 @@ impl Profile {
         Self(cores.iter().map(|core| (core, offset(core))).collect())
     }
 
-    pub fn get(&self, core: CoreId) -> TargetOffset {
-        self.0.get(core).unwrap_or(TargetOffset::ZERO)
+    /// The offset of `core`, or `None` for a core outside the profile.
+    pub fn get(&self, core: CoreId) -> Option<TargetOffset> {
+        self.0.get(core)
     }
 
     #[must_use]
@@ -84,15 +103,23 @@ impl Profile {
     }
 
     /// Whether every core here is at least as deep as in `other`: a pass here supports `other`.
+    /// Profiles of different cores are incomparable.
     pub fn covers(&self, other: &Self) -> bool {
-        self.iter()
-            .all(|(core, offset)| !offset.shallower_than(other.get(core)))
+        self.iter().all(|(core, offset)| {
+            other
+                .get(core)
+                .is_some_and(|theirs| !offset.shallower_than(theirs))
+        }) && self.cores() == other.cores()
     }
 
     /// Whether every core here is at most as deep as in `other`: a failure here rules `other` out.
+    /// Profiles of different cores are incomparable.
     pub fn within(&self, other: &Self) -> bool {
-        self.iter()
-            .all(|(core, offset)| !offset.deeper_than(other.get(core)))
+        self.iter().all(|(core, offset)| {
+            other
+                .get(core)
+                .is_some_and(|theirs| !offset.deeper_than(theirs))
+        }) && self.cores() == other.cores()
     }
 
     /// The sum of the offsets; the more negative, the deeper.

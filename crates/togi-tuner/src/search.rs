@@ -3,9 +3,7 @@ use std::collections::BTreeMap;
 use togi_journal::{
     Activity, CorePhase, CoreTransition, DeadEnd, DeadEndCondition, Decision, Seq, TunerDecision,
 };
-use togi_machine::{
-    Backend, Condition, CoreId, MIN_OFFSET, Regime, TargetOffset, WorkloadId, pick_workload,
-};
+use togi_machine::{Backend, Condition, CoreId, Regime, TargetOffset, WorkloadId, pick_workload};
 
 use crate::cores::Core;
 use crate::ledger::carried_clause;
@@ -76,7 +74,7 @@ impl Search {
 
     /// The seqs of the core's first R1 and R2 passes that ran under the backend packages now in
     /// force.
-    fn current(&self, core: CoreId, evidence: &Evidence) -> (Option<Seq>, Option<Seq>) {
+    pub(crate) fn current(&self, core: CoreId, evidence: &Evidence) -> (Option<Seq>, Option<Seq>) {
         self.steps.get(&core).map_or((None, None), |step| {
             (
                 Self::first_valid(&step.r1, evidence),
@@ -93,10 +91,6 @@ struct View {
     pass: Option<TargetOffset>,
     fail: Option<TargetOffset>,
     checks: u32,
-}
-
-fn text(offset: TargetOffset) -> i64 {
-    offset.get()
 }
 
 impl Run {
@@ -138,7 +132,7 @@ impl Run {
             workloads: vec![r1, r2],
             reason: format!(
                 "candidate solo limit {}: {label}; the full pass rule needs {} trials each of R1 {r1} and R2 {r2}",
-                text(offset),
+                offset.get(),
                 self.config.needed
             ),
         }
@@ -148,7 +142,7 @@ impl Run {
     fn search_pass(&self, view: View) -> DecisionPayload {
         let offset = view.offset;
         let pass = Some(offset);
-        if offset.get() == MIN_OFFSET {
+        if offset.at_floor() {
             return self.check_solo_limit(view, offset, view.fail, "floor");
         }
         let Some(fail) = view.fail else {
@@ -157,7 +151,7 @@ impl Run {
                 activity: Activity::Search,
                 decision: Decision::StepDeeper,
                 from_offset: offset,
-                to_offset: TargetOffset::clamped(offset.get() - 5),
+                to_offset: offset.deeper_or_floor(5),
                 pass,
                 failure_point: None,
                 workloads: Vec::new(),
@@ -171,7 +165,7 @@ impl Run {
                 view,
                 offset,
                 Some(fail),
-                &format!("failure point {}", text(fail)),
+                &format!("failure point {}", fail.get()),
             );
         }
         TunerDecision {
@@ -183,14 +177,17 @@ impl Run {
             pass,
             failure_point: Some(fail),
             workloads: Vec::new(),
-            reason: format!("fine, failure point {}", text(fail)),
+            reason: format!("fine, failure point {}", fail.get()),
         }
         .into()
     }
 
-    pub(crate) fn search_failure(&self, id: CoreId) -> DecisionPayload {
+    /// What a search core's attributed failure decides. `failed` is the offset the failure
+    /// recorded, which a skipped known failure takes from the failure it repeats; the move starts
+    /// from the core's current offset.
+    pub(crate) fn search_failure(&self, id: CoreId, failed: TargetOffset) -> DecisionPayload {
         let view = self.view(id);
-        let offset = view.offset;
+        let offset = failed;
         if offset == TargetOffset::ZERO {
             return DeadEnd {
                 condition: DeadEndCondition::FailureAtZero,
@@ -215,7 +212,7 @@ impl Run {
                 None,
                 format!(
                     "; passed step at {} discarded, the failure contradicts it",
-                    text(pass)
+                    pass.get()
                 ),
             ),
             kept => (kept, String::new()),
@@ -225,7 +222,7 @@ impl Run {
                 core: id,
                 activity: Activity::Search,
                 decision: Decision::Backoff,
-                from_offset: offset,
+                from_offset: view.offset,
                 to_offset: offset.shallower_by(5),
                 pass: None,
                 failure_point: Some(fail),
@@ -240,19 +237,19 @@ impl Run {
                 view,
                 pass,
                 Some(fail),
-                &format!("failure point {}{discarded}", text(fail)),
+                &format!("failure point {}{discarded}", fail.get()),
             );
         }
         TunerDecision {
             core: id,
             activity: Activity::Search,
             decision: Decision::Backoff,
-            from_offset: offset,
+            from_offset: view.offset,
             to_offset: below.unwrap_or(pass),
             pass: Some(pass),
             failure_point: Some(fail),
             workloads: Vec::new(),
-            reason: format!("fine, deepest pass {}{discarded}", text(pass)),
+            reason: format!("fine, deepest pass {}{discarded}", pass.get()),
         }
         .into()
     }
@@ -265,7 +262,7 @@ impl Run {
         ClassKey::new(workload, Load::Single(id).cores(), self.config.search_trial)
     }
 
-    fn rotation_workload(&self, id: CoreId, regime: Regime) -> WorkloadId {
+    pub(crate) fn rotation_workload(&self, id: CoreId, regime: Regime) -> WorkloadId {
         pick_workload(regime, self.core(id).rotation.get(regime)).id()
     }
 
@@ -296,7 +293,7 @@ impl Run {
         }
     }
 
-    fn searching(&self, id: CoreId) -> Option<Core> {
+    pub(crate) fn searching(&self, id: CoreId) -> Option<Core> {
         Some(self.core(id)).filter(|core| core.phase == Some(CorePhase::Search))
     }
 
@@ -307,12 +304,15 @@ impl Run {
         let mut cause: Vec<Seq> = phase_seq.into_iter().collect();
         for (regime, frozen) in [(Regime::R1, check.r1), (Regime::R2, check.r2)] {
             let class = self.alone_class(id, frozen);
-            let count = self.evidence.count(
-                class,
-                &profile,
-                Window::LiveOrCarried { since: phase_seq },
-                self.config.needed,
-            );
+            let count = self
+                .evidence
+                .count(
+                    class,
+                    &profile,
+                    Window::LiveOrCarried { since: phase_seq },
+                    self.config.needed,
+                )
+                .unwrap_or_default();
             if count.valid < u32::from(self.config.needed.get()) {
                 return Some(Action::RunTrial(self.search_trial(
                     id,
@@ -334,21 +334,22 @@ impl Run {
                 self.core(other).offset
             }
         });
-        let (phase, reason) = match self.constraints.at_limit(id, &at) {
+        let limit = self.constraints.at_limit(id, &at).ok().flatten();
+        let (phase, reason) = match limit {
             Some(limit) => (CorePhase::AtLimit, limit.to_string()),
             None => (
                 CorePhase::HasRoom,
                 "one count deeper reaches no failure point or combination".to_owned(),
             ),
         };
-        let solo = text(core.offset);
+        let solo = core.offset.get();
         let reason = format!(
             "solo limit {solo} passed {} trials of R1 {} and R2 {}{}; checking starts at {}, one count shallower than the solo limit {solo} (margin); {reason}",
             self.config.needed,
             check.r1,
             check.r2,
             carried_clause(&self.evidence, &cause),
-            text(start),
+            start.get(),
         );
         Some(Self::decide_core(
             CoreTransition {

@@ -1,8 +1,10 @@
-use togi_journal::{Attribution, CrashDetected, DeadEndCondition, Decision, Mce, Outcome, Payload};
+use togi_journal::{
+    Attribution, CrashDetected, DeadEndCondition, Decision, Mce, Outcome, Payload, Seq, TrialId,
+};
 use togi_machine::{BankType, Condition, CpuId, Regime, ResetKind, Signal};
 
 use crate::schedule_tests::transition;
-use crate::testkit::{Journal, Start, set};
+use crate::testkit::{Journal, set};
 use crate::tests::core;
 use crate::{Action, DecisionAction, DecisionPayload, FoldError, Load, State};
 
@@ -44,6 +46,10 @@ fn an_alone_failure_at_zero_is_a_dead_end() {
     assert_eq!(j.run().core(core(0)).pending, None);
     let state = j.run().core(core(0));
     assert_eq!(state.offset.get(), 0);
+}
+
+fn mce_on(trial: &togi_journal::TrialId, core_id: u8) -> Mce {
+    mce(trial, core_id)
 }
 
 fn mce(trial: &togi_journal::TrialId, core_id: u8) -> Mce {
@@ -117,69 +123,6 @@ fn a_crash_keeps_the_trial_in_flight_until_its_end() {
 }
 
 #[test]
-fn together_crash_names_the_sole_nonzero_core_by_id() {
-    let mut j = Journal::new(&[0, 8], &[Start::at_limit(0), Start::at_limit(-12)]);
-    let plan = j.manual(
-        Regime::R6,
-        0,
-        Load::Many(set(&[0, 8])),
-        Condition::Together,
-        &[0, -12],
-        120,
-    );
-    j.trial(&plan, Outcome::Failure);
-    let action = j.next_decision();
-    let failure = failure_of(&action);
-    assert_eq!(failure.attribution, Attribution::Attributed);
-    assert_eq!(failure.core, Some(core(8)));
-    assert_eq!(
-        failure.offset.map(togi_machine::TargetOffset::get),
-        Some(-12)
-    );
-}
-
-#[test]
-fn core_local_mces_name_the_core_of_a_together_failure() {
-    let run = |cores: &[u8]| {
-        let mut j = Journal::new(
-            &[0, 1, 2],
-            &[
-                Start::at_limit(-10),
-                Start::at_limit(-10),
-                Start::at_limit(-10),
-            ],
-        );
-        let plan = j.manual(
-            Regime::R6,
-            0,
-            Load::Many(set(&[0, 1, 2])),
-            Condition::Together,
-            &[-10, -10, -10],
-            120,
-        );
-        let (intent, trial) = j.intent(&plan);
-        for &id in cores {
-            j.append(mce(&trial, id).into(), &[]);
-        }
-        j.end(intent, &trial, Outcome::Failure);
-        let action = j.next_decision();
-        failure_of(&action).clone()
-    };
-    let one = run(&[1]);
-    assert_eq!(
-        (one.attribution, one.core),
-        (Attribution::Attributed, Some(core(1)))
-    );
-    let two = run(&[0, 1]);
-    assert_eq!(
-        (two.attribution, two.core),
-        (Attribution::Unattributed, None)
-    );
-    let none = run(&[]);
-    assert_eq!(none.attribution, Attribution::Unattributed);
-}
-
-#[test]
 fn class_key_distinguishes_single_full_ccd_loads() {
     let j = Journal::has_room(&[-10, -11, -12, -13]);
     let single = j.manual(
@@ -224,108 +167,6 @@ fn class_key_distinguishes_single_full_ccd_loads() {
 }
 
 #[test]
-fn a_second_session_start_is_an_error() {
-    let j = Journal::search_at(&[-10]);
-    let mut state = j.state.clone();
-    let start = j.events[0].clone();
-    let mut again = start;
-    again.seq = j.next_seq();
-    assert_eq!(state.fold(&again), Err(FoldError::DuplicateStart));
-    assert_eq!(state, j.state);
-}
-
-#[test]
-fn events_before_the_start_are_refused() {
-    let j = Journal::search_at(&[-10]);
-    let mut state = State::new();
-    assert_eq!(state.fold(&j.events[1]), Err(FoldError::NotStarted));
-    assert_eq!(state, State::new());
-}
-
-#[test]
-fn a_fold_error_leaves_the_state_as_it_was() {
-    let mut j = Journal::search_at(&[-10, -10]);
-    let plan = j.next_trial();
-    let (intent, trial) = j.intent(&plan);
-    let other = togi_journal::TrialId::from("elsewhere".to_owned());
-    let outside = core(9);
-    let cases: Vec<(Payload, FoldError)> = vec![
-        (
-            transition(9, togi_journal::CorePhase::Search, 0).into(),
-            FoldError::UnknownCore(outside),
-        ),
-        (
-            Journal::end_payload(&other, Outcome::Pass, None).into(),
-            FoldError::NoOpenTrial(other.clone()),
-        ),
-        (
-            Journal::end_payload(&trial, Outcome::Failure, None).into(),
-            FoldError::MissingSignal,
-        ),
-        (
-            togi_journal::Failure {
-                signal: Signal::Crash,
-                attribution: Attribution::Unattributed,
-                core: None,
-                offset: None,
-                trial: Some(other.clone()),
-                regime: None,
-                condition: Some(Condition::Together),
-                profile: None,
-                known_failure: None,
-                reason: None,
-                round: None,
-            }
-            .into(),
-            FoldError::NotAwaiting(other.clone()),
-        ),
-        (
-            togi_journal::Failure {
-                signal: Signal::Crash,
-                attribution: Attribution::Unattributed,
-                core: None,
-                offset: None,
-                trial: None,
-                regime: None,
-                condition: Some(Condition::Together),
-                profile: None,
-                known_failure: Some(intent),
-                reason: None,
-                round: None,
-            }
-            .into(),
-            FoldError::UnknownFailure(intent),
-        ),
-        (
-            togi_journal::CommandReset {
-                target: togi_journal::ResetTarget::Core(outside),
-            }
-            .into(),
-            FoldError::UnknownCore(outside),
-        ),
-    ];
-    for (payload, expected) in cases {
-        let before = j.state.clone();
-        assert_eq!(j.try_append(payload, &[]), Err(expected));
-        assert_eq!(j.state, before);
-    }
-    let before = j.state.clone();
-    let mut stale = j.event(
-        Journal::end_payload(&trial, Outcome::Pass, None).into(),
-        &[],
-    );
-    stale.seq = intent;
-    assert_eq!(
-        j.state.fold(&stale),
-        Err(FoldError::OutOfOrder {
-            last: intent,
-            seq: intent
-        })
-    );
-    assert_eq!(j.state, before);
-}
-
-#[test]
 fn repeated_decisions_are_equal_and_leave_the_state_alone() {
     let mut j = Journal::search_at(&[-10, -20]);
     let mut seen = 0;
@@ -341,4 +182,262 @@ fn repeated_decisions_are_equal_and_leave_the_state_alone() {
     }
     assert_eq!(seen, 40);
     let _ = (Decision::Hold, Action::ReadRanking);
+}
+
+type Case = Box<dyn Fn(&TrialId, Seq) -> (Payload, FoldError)>;
+type MakePayload = Box<dyn Fn(&TrialId) -> Payload>;
+
+fn poisoned(j: &Journal, state: &mut State) {
+    let next = j.event(
+        togi_journal::SessionNotice {
+            notice: togi_journal::Notice::NonzeroBaseline,
+            cores: togi_machine::CoreSet::default(),
+        }
+        .into(),
+        &[],
+    );
+    assert_eq!(state.fold(&next), Err(FoldError::Poisoned));
+    assert_eq!(state.decide(), None);
+}
+
+#[test]
+fn together_failures_name_the_core_the_end_or_one_cited_mce_names() {
+    use crate::failures::together_attribution;
+    let topology = crate::tests::topology(&[0, 8]);
+    let profile = crate::tests::profile(&topology, &[0, -12]);
+    let both = crate::tests::profile(&topology, &[-3, -12]);
+    let cores = |ids: &[u8]| set(ids);
+    let named = |attribution, id: u8, offset| {
+        (attribution, Some(core(id)), Some(crate::tests::off(offset)))
+    };
+    let none = (Attribution::Unattributed, None, None);
+    assert_eq!(
+        together_attribution(None, cores(&[]), &profile, false),
+        named(Attribution::Attributed, 8, -12)
+    );
+    assert_eq!(together_attribution(None, cores(&[]), &both, false), none);
+    assert_eq!(
+        together_attribution(Some(core(0)), cores(&[8]), &both, false),
+        named(Attribution::Attributed, 0, -3)
+    );
+    assert_eq!(
+        together_attribution(None, cores(&[0]), &profile, false),
+        named(Attribution::Attributed, 0, 0)
+    );
+    assert_eq!(
+        together_attribution(None, cores(&[0, 8]), &profile, false),
+        none
+    );
+    assert_eq!(together_attribution(None, cores(&[]), &profile, true), none);
+    assert_eq!(
+        together_attribution(Some(core(5)), cores(&[]), &profile, false),
+        none
+    );
+}
+
+#[test]
+fn only_the_mces_a_trial_end_cites_name_a_core() {
+    use crate::flight::cited_mces;
+    let seen: std::collections::BTreeMap<Seq, _> = [
+        (Seq::new(5).unwrap(), core(1)),
+        (Seq::new(7).unwrap(), core(2)),
+    ]
+    .into_iter()
+    .collect();
+    let cause = |seqs: &[u64]| -> Vec<Seq> { seqs.iter().map(|&n| Seq::new(n).unwrap()).collect() };
+    assert_eq!(cited_mces(&seen, &cause(&[5])), set(&[1]));
+    assert_eq!(cited_mces(&seen, &cause(&[3, 7])), set(&[2]));
+    assert_eq!(cited_mces(&seen, &cause(&[3])), set(&[]));
+}
+
+#[test]
+fn a_between_trials_mce_is_not_remembered() {
+    let mut j = Journal::search_at(&[-10]);
+    let plan = j.next_trial();
+    j.append(
+        Mce {
+            between_trials: true,
+            trial: None,
+            ..mce(&togi_journal::TrialId::from("none".to_owned()), 0)
+        }
+        .into(),
+        &[],
+    );
+    let (_, _) = j.intent(&plan);
+    assert!(j.run().flight.open.as_ref().unwrap().mces.is_empty());
+}
+
+#[test]
+fn a_second_session_start_poisons_the_state() {
+    let j = Journal::search_at(&[-10]);
+    let mut state = j.state.clone();
+    let mut again = j.events[0].clone();
+    again.seq = j.next_seq();
+    assert_eq!(state.fold(&again), Err(FoldError::DuplicateStart));
+    poisoned(&j, &mut state);
+}
+
+#[test]
+fn events_before_the_start_are_refused() {
+    let j = Journal::search_at(&[-10]);
+    let mut state = State::new();
+    assert_eq!(state.fold(&j.events[1]), Err(FoldError::NotStarted));
+    poisoned(&j, &mut state);
+}
+
+#[test]
+fn a_fold_error_poisons_the_state() {
+    let other = togi_journal::TrialId::from("elsewhere".to_owned());
+    let outside = core(9);
+    let failure =
+        |trial: Option<&togi_journal::TrialId>, known: Option<Seq>| togi_journal::Failure {
+            signal: Signal::Crash,
+            attribution: Attribution::Unattributed,
+            core: None,
+            offset: None,
+            trial: trial.cloned(),
+            regime: None,
+            condition: Some(Condition::Together),
+            profile: None,
+            known_failure: known,
+            reason: None,
+            round: None,
+        };
+    let cases: Vec<Case> = vec![
+        Box::new(move |_, _| {
+            (
+                transition(9, togi_journal::CorePhase::Search, 0).into(),
+                FoldError::UnknownCore(outside),
+            )
+        }),
+        Box::new({
+            let other = other.clone();
+            move |_, _| {
+                (
+                    Journal::end_payload(&other, Outcome::Pass, None).into(),
+                    FoldError::NoOpenTrial(other.clone()),
+                )
+            }
+        }),
+        Box::new(|trial, _| {
+            (
+                Journal::end_payload(trial, Outcome::Failure, None).into(),
+                FoldError::MissingSignal,
+            )
+        }),
+        Box::new({
+            let other = other.clone();
+            move |_, _| {
+                (
+                    failure(Some(&other), None).into(),
+                    FoldError::NotAwaiting(other.clone()),
+                )
+            }
+        }),
+        Box::new({
+            move |_, intent| {
+                (
+                    failure(None, Some(intent)).into(),
+                    FoldError::UnknownFailure(intent),
+                )
+            }
+        }),
+        Box::new(move |_, _| {
+            (
+                togi_journal::CommandReset {
+                    target: togi_journal::ResetTarget::Core(outside),
+                }
+                .into(),
+                FoldError::UnknownCore(outside),
+            )
+        }),
+    ];
+    for case in cases {
+        let mut j = Journal::search_at(&[-10, -10]);
+        let plan = j.next_trial();
+        let (intent, trial) = j.intent(&plan);
+        let (payload, expected) = case(&trial, intent);
+        assert_eq!(j.try_append(payload, &[]), Err(expected));
+        let mut state = j.state.clone();
+        poisoned(&j, &mut state);
+    }
+    let mut j = Journal::search_at(&[-10, -10]);
+    let plan = j.next_trial();
+    let (intent, trial) = j.intent(&plan);
+    let mut stale = j.event(
+        Journal::end_payload(&trial, Outcome::Pass, None).into(),
+        &[],
+    );
+    stale.seq = intent;
+    assert_eq!(
+        j.state.fold(&stale),
+        Err(FoldError::OutOfOrder {
+            last: intent,
+            seq: intent
+        })
+    );
+    let mut state = j.state.clone();
+    poisoned(&j, &mut state);
+}
+
+#[test]
+fn every_core_a_payload_names_must_be_in_the_topology() {
+    let outside = core(9);
+    let cases: Vec<(&str, MakePayload)> = vec![
+        (
+            "end core",
+            Box::new(move |trial| {
+                let mut end = Journal::end_payload(trial, Outcome::Pass, None);
+                end.core = Some(outside);
+                end.into()
+            }),
+        ),
+        (
+            "end stalled core",
+            Box::new(move |trial| {
+                let mut end = Journal::end_payload(trial, Outcome::Pass, None);
+                end.stalled_core = Some(outside);
+                end.into()
+            }),
+        ),
+        (
+            "end top requesters",
+            Box::new(move |trial| {
+                let mut end = Journal::end_payload(trial, Outcome::Pass, None);
+                end.top_requesters = set(&[9]);
+                end.into()
+            }),
+        ),
+        (
+            "end request lanes",
+            Box::new(move |trial| {
+                let mut end = Journal::end_payload(trial, Outcome::Pass, None);
+                end.voltage_requests_v = [(outside, 1.0)].into_iter().collect();
+                end.into()
+            }),
+        ),
+        ("mce core", Box::new(move |trial| mce_on(trial, 9).into())),
+        (
+            "progress core",
+            Box::new(move |trial| {
+                togi_journal::TrialProgress {
+                    trial: trial.clone(),
+                    detail: String::new(),
+                    signal: None,
+                    core: Some(outside),
+                }
+                .into()
+            }),
+        ),
+    ];
+    for (name, make) in cases {
+        let mut j = Journal::search_at(&[-10]);
+        let plan = j.next_trial();
+        let (_, trial) = j.intent(&plan);
+        assert_eq!(
+            j.try_append(make(&trial), &[]),
+            Err(FoldError::UnknownCore(outside)),
+            "{name}"
+        );
+    }
 }

@@ -40,13 +40,13 @@ impl Run {
             return action;
         }
         let class = self.plan_class(plan);
-        let Some(seq) = self
-            .evidence
-            .failing_seq(class, &plan.profile, None, self.config.needed)
+        let Ok(Some(seq)) =
+            self.evidence
+                .failing_seq(class, &plan.profile, None, self.config.needed)
         else {
             return action;
         };
-        let Some(known) = self.failures.get(seq) else {
+        let Some(known) = self.failures.witnessed(seq) else {
             return action;
         };
         let reason = format!(
@@ -73,14 +73,14 @@ impl Run {
             Load::Single(core) if plan.condition == Condition::Alone => {
                 failure.attribution = Attribution::Attributed;
                 failure.core = Some(core);
-                failure.offset = Some(known.profile.get(core));
+                failure.offset = known.profile.get(core);
             }
             Load::Single(_) | Load::Many(_) => {
                 if failure.attribution == Attribution::Unattributed {
                     if let Some(core) = known.profile.sole_nonzero() {
                         failure.attribution = Attribution::Attributed;
                         failure.core = Some(core);
-                        failure.offset = Some(known.profile.get(core));
+                        failure.offset = known.profile.get(core);
                     }
                 }
             }

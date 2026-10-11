@@ -1,6 +1,5 @@
 use proptest::prelude::*;
 use togi_journal::{CorePhase, Outcome};
-use togi_machine::Condition;
 
 use crate::testkit::{Journal, Start};
 use crate::{Action, DecisionAction, DecisionPayload, Load, TrialPlan};
@@ -21,7 +20,7 @@ proptest! {
             1000,
             |plan: &TrialPlan| {
                 let Load::Single(core) = plan.load else { unreachable!() };
-                if plan.profile.get(core).get() >= threshold { Outcome::Pass } else { Outcome::Failure }
+                if plan.profile.get(core).unwrap().get() >= threshold { Outcome::Pass } else { Outcome::Failure }
             },
             left_search,
         );
@@ -73,15 +72,8 @@ proptest! {
 }
 
 fn visits_per_event(passes: usize) -> (u64, u64) {
-    let mut j = Journal::has_room(&[-10, -10]);
-    let plan = j.manual(
-        togi_machine::Regime::R1,
-        0,
-        Load::Single(j.core_id(0)),
-        Condition::Together,
-        &[-10, -10],
-        120,
-    );
+    let mut j = Journal::new(&[0], &[Start::search(-10).checking()]);
+    let plan = j.next_trial();
     for _ in 0..passes {
         j.trial(&plan, Outcome::Pass);
     }

@@ -8,15 +8,15 @@ mod cells;
 #[cfg(test)]
 mod tests;
 
-use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
+use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU16;
 use std::path::Path;
 
 use togi_journal::Seq;
 use togi_machine::{Backend, Condition, CoreId, CoreSet, Regime, WorkloadId};
 
-use crate::{ClassKey, Profile};
+use crate::{ClassKey, Profile, TopologyMismatch};
 
 pub use backend::BackendId;
 use backend::Backends;
@@ -70,20 +70,6 @@ pub struct Observation<'a> {
     pub named: Option<CoreId>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum NamedFact {
-    Pass(BackendId),
-    Failure,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct Named {
-    class: ClassKey,
-    profile: Profile,
-    seq: Seq,
-    fact: NamedFact,
-}
-
 #[cfg(test)]
 #[derive(Clone, Debug, Default)]
 struct Visits(std::cell::Cell<u64>);
@@ -105,7 +91,7 @@ pub struct Evidence {
     idle: FailureCells,
     all_core_r6: Vec<ClassKey>,
     by_core: BTreeMap<CoreId, Vec<ClassKey>>,
-    named: BTreeMap<CoreId, Vec<Named>>,
+    named: BTreeMap<CoreId, BTreeSet<ClassKey>>,
     carried: BTreeMap<Seq, SessionRef>,
     backends: Backends,
     checking: Option<Profile>,
@@ -181,6 +167,10 @@ impl Evidence {
         self.visits.0.replace(0)
     }
 
+    fn check(&self, profile: &Profile) -> Result<(), TopologyMismatch> {
+        TopologyMismatch::check(self.all, profile.cores())
+    }
+
     fn is_all_core_r6(&self, class: ClassKey) -> bool {
         class.regime() == Regime::R6 && class.loaded() == self.all
     }
@@ -201,9 +191,11 @@ impl Evidence {
         self.rebuild_exposure();
     }
 
-    pub fn set_checking_profile(&mut self, profile: Profile) {
+    pub fn set_checking_profile(&mut self, profile: Profile) -> Result<(), TopologyMismatch> {
+        self.check(&profile)?;
         self.checking = Some(profile);
         self.rebuild_exposure();
+        Ok(())
     }
 
     /// Live, non-alone passes of `workload` under the active backend that cover the checking
@@ -240,21 +232,24 @@ impl Evidence {
         }
     }
 
-    fn note_named(&mut self, obs: &Observation<'_>, fact: NamedFact) {
-        if let Some(core) = obs.named.filter(|_| obs.class.multi_r7()) {
-            self.named.entry(core).or_default().push(Named {
-                class: obs.class,
-                profile: *obs.profile,
-                seq: obs.seq,
-                fact,
-            });
+    fn named_of(obs: &Observation<'_>) -> Option<CoreId> {
+        obs.named.filter(|_| obs.class.multi_r7())
+    }
+
+    fn note_named(&mut self, class: ClassKey, named: Option<CoreId>) {
+        if let Some(core) = named {
+            self.named.entry(core).or_default().insert(class);
         }
     }
 
-    /// Records a live pass under the backend package now in force.
-    pub fn record_pass(&mut self, obs: Observation<'_>) {
-        let backend = self.backends.active(obs.class.workload().backend());
-        self.insert_pass(obs, backend, None);
+    /// Records a live pass that ran under the backend package `backend`: the one in force when
+    /// its trial began.
+    pub fn record_pass(
+        &mut self,
+        obs: Observation<'_>,
+        backend: BackendId,
+    ) -> Result<(), TopologyMismatch> {
+        self.insert_pass(obs, backend, None)
     }
 
     /// Records a pass carried from `source`, run under `backend`.
@@ -263,8 +258,8 @@ impl Evidence {
         obs: Observation<'_>,
         backend: BackendId,
         source: SessionRef,
-    ) {
-        self.insert_pass(obs, backend, Some(source));
+    ) -> Result<(), TopologyMismatch> {
+        self.insert_pass(obs, backend, Some(source))
     }
 
     fn insert_pass(
@@ -272,10 +267,12 @@ impl Evidence {
         obs: Observation<'_>,
         backend: BackendId,
         source: Option<SessionRef>,
-    ) {
+    ) -> Result<(), TopologyMismatch> {
+        self.check(obs.profile)?;
         self.advance(obs.seq);
         self.register(obs.class);
-        self.note_named(&obs, NamedFact::Pass(backend));
+        let named = Self::named_of(&obs);
+        self.note_named(obs.class, named);
         let active = self.backends.active(obs.class.workload().backend());
         let counts_exposure = source.is_none()
             && obs.condition != Condition::Alone
@@ -284,7 +281,7 @@ impl Evidence {
                 .checking
                 .is_some_and(|checking| obs.profile.covers(&checking));
         let class = self.classes.entry(obs.class).or_default();
-        let cell = class.passes.cell_mut(backend, *obs.profile);
+        let cell = class.passes.cell_mut(backend, named, *obs.profile);
         if let Some(source) = source {
             cell.carried.push(obs.seq);
             self.carried.insert(obs.seq, source);
@@ -298,26 +295,37 @@ impl Evidence {
                 *self.exposure.entry(obs.class.workload()).or_default() += 1;
             }
         }
+        Ok(())
     }
 
     /// Records a live failure.
-    pub fn record_failure(&mut self, obs: Observation<'_>) {
-        self.insert_failure(obs, None);
+    pub fn record_failure(&mut self, obs: Observation<'_>) -> Result<(), TopologyMismatch> {
+        self.insert_failure(obs, None)
     }
 
-    pub fn record_carried_failure(&mut self, obs: Observation<'_>, source: SessionRef) {
-        self.insert_failure(obs, Some(source));
+    pub fn record_carried_failure(
+        &mut self,
+        obs: Observation<'_>,
+        source: SessionRef,
+    ) -> Result<(), TopologyMismatch> {
+        self.insert_failure(obs, Some(source))
     }
 
-    fn insert_failure(&mut self, obs: Observation<'_>, source: Option<SessionRef>) {
+    fn insert_failure(
+        &mut self,
+        obs: Observation<'_>,
+        source: Option<SessionRef>,
+    ) -> Result<(), TopologyMismatch> {
+        self.check(obs.profile)?;
         self.advance(obs.seq);
         self.register(obs.class);
-        self.note_named(&obs, NamedFact::Failure);
+        let named = Self::named_of(&obs);
+        self.note_named(obs.class, named);
         let rules_out_checking = self
             .checking
             .is_some_and(|checking| obs.profile.within(&checking));
         let class = self.classes.entry(obs.class).or_default();
-        let cell = class.failures.cell_mut(*obs.profile);
+        let cell = class.failures.cell_mut(named, *obs.profile);
         if let Some(source) = source {
             cell.carried.push(obs.seq);
             self.carried.insert(obs.seq, source);
@@ -328,20 +336,71 @@ impl Evidence {
             let dropped = std::mem::take(&mut class.exposure);
             remove_exposure(&mut self.exposure, obs.class.workload(), dropped);
         }
+        Ok(())
+    }
+
+    /// A multi-core R7 failure recorded at `seq` turned out to name `core`: the fact moves to the
+    /// cells of that core, so that resetting it discards the fact. Facts of other classes, and
+    /// facts already naming a core, are left as they are.
+    pub fn name_failure(
+        &mut self,
+        class: ClassKey,
+        profile: &Profile,
+        seq: Seq,
+        core: CoreId,
+    ) -> Result<(), TopologyMismatch> {
+        self.check(profile)?;
+        if !class.multi_r7() {
+            return Ok(());
+        }
+        let Some(cells) = self.classes.get_mut(&class) else {
+            return Ok(());
+        };
+        let Some(from) = cells.failures.cell_at_mut((None, *profile)) else {
+            return Ok(());
+        };
+        let live = from.live.remove(seq);
+        let carried = !live && from.carried.remove(seq);
+        if !live && !carried {
+            return Ok(());
+        }
+        let to = cells.failures.cell_mut(Some(core), *profile);
+        if live {
+            to.live.insert(seq);
+        } else {
+            to.carried.insert(seq);
+        }
+        self.note_named(class, Some(core));
+        Ok(())
     }
 
     /// Records an idle failure at a full profile: it invalidates every all-core R6 class.
-    pub fn record_idle_failure(&mut self, seq: Seq, profile: &Profile) {
-        self.insert_idle(seq, profile, None);
+    pub fn record_idle_failure(
+        &mut self,
+        seq: Seq,
+        profile: &Profile,
+    ) -> Result<(), TopologyMismatch> {
+        self.insert_idle(seq, profile, None)
     }
 
-    pub fn record_carried_idle_failure(&mut self, seq: Seq, profile: &Profile, source: SessionRef) {
-        self.insert_idle(seq, profile, Some(source));
+    pub fn record_carried_idle_failure(
+        &mut self,
+        seq: Seq,
+        profile: &Profile,
+        source: SessionRef,
+    ) -> Result<(), TopologyMismatch> {
+        self.insert_idle(seq, profile, Some(source))
     }
 
-    fn insert_idle(&mut self, seq: Seq, profile: &Profile, source: Option<SessionRef>) {
+    fn insert_idle(
+        &mut self,
+        seq: Seq,
+        profile: &Profile,
+        source: Option<SessionRef>,
+    ) -> Result<(), TopologyMismatch> {
+        self.check(profile)?;
         self.advance(seq);
-        let cell = self.idle.cell_mut(*profile);
+        let cell = self.idle.cell_mut(None, *profile);
         if let Some(source) = source {
             cell.carried.push(seq);
             self.carried.insert(seq, source);
@@ -359,6 +418,7 @@ impl Evidence {
                 }
             }
         }
+        Ok(())
     }
 
     fn newest_in(
@@ -368,7 +428,7 @@ impl Evidence {
         since: Option<Seq>,
     ) -> Option<Seq> {
         let mut newest = None;
-        for cell in cells.iter() {
+        for cell in cells.cells() {
             self.visit();
             if !cell.profile.within(profile) {
                 continue;
@@ -383,6 +443,16 @@ impl Evidence {
     /// above `since`. A newer live failure at or below `since` does not hide an older carried
     /// one. Idle failures count for all-core R6 classes.
     pub fn newest_failure(
+        &self,
+        class: ClassKey,
+        profile: &Profile,
+        since: Option<Seq>,
+    ) -> Result<Option<Seq>, TopologyMismatch> {
+        self.check(profile)?;
+        Ok(self.newest_unchecked(class, profile, since))
+    }
+
+    fn newest_unchecked(
         &self,
         class: ClassKey,
         profile: &Profile,
@@ -407,11 +477,22 @@ impl Evidence {
         profile: &Profile,
         window: Window,
         needed: NonZeroU16,
+    ) -> Result<Count, TopologyMismatch> {
+        self.check(profile)?;
+        Ok(self.count_unchecked(class, profile, window, needed))
+    }
+
+    fn count_unchecked(
+        &self,
+        class: ClassKey,
+        profile: &Profile,
+        window: Window,
+        needed: NonZeroU16,
     ) -> Count {
         let Some(cells) = self.classes.get(&class) else {
             return Count::default();
         };
-        let floor = self.newest_failure(class, profile, None);
+        let floor = self.newest_unchecked(class, profile, None);
         let (since, carried_counts) = match window {
             Window::Live { since } => (since, false),
             Window::LiveOrCarried { since } => (since, true),
@@ -447,9 +528,10 @@ impl Evidence {
         profile: &Profile,
         since: Option<Seq>,
         needed: NonZeroU16,
-    ) -> Option<Seq> {
+    ) -> Result<Option<Seq>, TopologyMismatch> {
+        self.check(profile)?;
         let covered = self
-            .count(
+            .count_unchecked(
                 class,
                 profile,
                 Window::LiveOrCarried { since: None },
@@ -457,11 +539,11 @@ impl Evidence {
             )
             .valid
             >= u32::from(needed.get());
-        if covered {
+        Ok(if covered {
             None
         } else {
-            self.newest_failure(class, profile, since)
-        }
+            self.newest_unchecked(class, profile, since)
+        })
     }
 
     /// Asked before a failure at `profile` is recorded: the first `needed` valid passes it
@@ -471,17 +553,18 @@ impl Evidence {
         class: ClassKey,
         profile: &Profile,
         needed: NonZeroU16,
-    ) -> Option<Vec<Seq>> {
+    ) -> Result<Option<Vec<Seq>>, TopologyMismatch> {
+        self.check(profile)?;
         if class.multi_r7() {
-            return None;
+            return Ok(None);
         }
-        let count = self.count(
+        let count = self.count_unchecked(
             class,
             profile,
             Window::LiveOrCarried { since: None },
             needed,
         );
-        (count.valid >= u32::from(needed.get())).then_some(count.witnesses)
+        Ok((count.valid >= u32::from(needed.get())).then_some(count.witnesses))
     }
 
     /// Asked before an idle failure at `profile` is recorded: among the all-core R6 classes with
@@ -490,11 +573,13 @@ impl Evidence {
         &self,
         profile: &Profile,
         needed: NonZeroU16,
-    ) -> Option<IdleContradiction> {
-        self.all_core_r6
+    ) -> Result<Option<IdleContradiction>, TopologyMismatch> {
+        self.check(profile)?;
+        Ok(self
+            .all_core_r6
             .iter()
             .filter_map(|&class| {
-                let count = self.count(
+                let count = self.count_unchecked(
                     class,
                     profile,
                     Window::LiveOrCarried { since: None },
@@ -505,13 +590,15 @@ impl Evidence {
                     passes: count.witnesses,
                 })
             })
-            .min_by_key(|found| found.passes.first().copied())
+            .min_by_key(|found| found.passes.first().copied()))
     }
 
     /// Discards every fact whose loaded cores include `core`, every multi-core R7 fact naming
-    /// it, and the carried provenance of what goes.
+    /// it, and the carried provenance of what goes. Whole cells go; no fact is looked up one by
+    /// one.
     pub fn reset_core(&mut self, core: CoreId) {
         for key in self.by_core.remove(&core).unwrap_or_default() {
+            self.visit();
             if let Some(cells) = self.classes.remove(&key) {
                 for cell in cells.failures.cells() {
                     forget_carried(&mut self.carried, cell.carried.iter());
@@ -527,11 +614,17 @@ impl Evidence {
                 }
             }
         }
-        for named in self.named.remove(&core).unwrap_or_default() {
-            self.remove_named(named);
-        }
-        for facts in self.named.values_mut() {
-            facts.retain(|fact| self.classes.contains_key(&fact.class));
+        for key in self.named.remove(&core).unwrap_or_default() {
+            self.visit();
+            let Some(cells) = self.classes.get_mut(&key) else {
+                continue;
+            };
+            for cell in cells.failures.remove_named(core) {
+                forget_carried(&mut self.carried, cell.carried.iter());
+            }
+            for cell in cells.passes.remove_named(core) {
+                forget_carried(&mut self.carried, cell.carried.iter());
+            }
         }
         if self.all.contains(core) {
             for cell in std::mem::take(&mut self.idle).cells() {
@@ -541,30 +634,8 @@ impl Evidence {
         self.rebuild_exposure();
     }
 
-    fn remove_named(&mut self, named: Named) {
-        let Some(class) = self.classes.get_mut(&named.class) else {
-            return;
-        };
-        match named.fact {
-            NamedFact::Pass(backend) => {
-                if let Some(cell) = class.passes.cell_at_mut(backend, &named.profile) {
-                    cell.live.remove(named.seq);
-                    cell.live_non_alone.remove(named.seq);
-                    cell.carried.remove(named.seq);
-                }
-            }
-            NamedFact::Failure => {
-                if let Some(cell) = class.failures.cell_at_mut(&named.profile) {
-                    cell.live.remove(named.seq);
-                    cell.carried.remove(named.seq);
-                }
-            }
-        }
-        self.carried.remove(&named.seq);
-    }
-
     fn class_exposure(&self, key: ClassKey, cells: &ClassCells, checking: &Profile) -> u32 {
-        let floor = self.newest_failure(key, checking, None);
+        let floor = self.newest_unchecked(key, checking, None);
         let backend = self.backends.active(key.workload().backend());
         let mut total = 0_usize;
         for cell in cells.passes.cells() {

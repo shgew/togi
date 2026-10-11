@@ -4,7 +4,7 @@ use std::num::NonZeroU32;
 use togi_machine::{CoreId, CoreSet, PER_CORE_MAX, PerCore, TargetOffset};
 
 use crate::optimum::solve;
-use crate::{Depth, Profile, Ranking, Topology};
+use crate::{Depth, Profile, Ranking, Topology, TopologyMismatch};
 
 /// The shallowest offset a core failed at; reaching it or going deeper fails again.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
@@ -276,46 +276,65 @@ impl Constraints {
 
     /// The first failure point `profile` reaches in core order, else the first combination in
     /// insertion order. A failure point is reached when the core is at or deeper than it; a
-    /// combination when every member is at or deeper than its offset.
-    pub fn reaches(&self, profile: &Profile) -> Option<Reached> {
+    /// combination when every member is at or deeper than its offset. A profile of other cores is
+    /// an error, never read as zero.
+    pub fn reaches(&self, profile: &Profile) -> Result<Option<Reached>, TopologyMismatch> {
+        TopologyMismatch::check(self.cores, profile.cores())?;
+        let reached = |core: CoreId, limit: TargetOffset| {
+            profile
+                .get(core)
+                .is_none_or(|offset| !offset.shallower_than(limit))
+        };
         for (core, point) in self.failure_points.iter() {
-            if !profile.get(core).shallower_than(point.offset()) {
-                return Some(Reached::FailurePoint { core, point });
+            if reached(core, point.offset()) {
+                return Ok(Some(Reached::FailurePoint { core, point }));
             }
         }
-        self.combinations
+        Ok(self
+            .combinations
             .iter()
             .find(|combination| {
                 combination
                     .members
                     .iter()
-                    .all(|(member, offset)| !profile.get(member).shallower_than(offset))
+                    .all(|(member, offset)| reached(member, offset))
             })
-            .map(|combination| Reached::Combination(combination.id))
+            .map(|combination| Reached::Combination(combination.id)))
     }
 
     /// Whether `core` cannot go one count deeper from `profile`: it is at the floor, or one count
     /// deeper reaches a failure point or combination.
-    pub fn at_limit(&self, core: CoreId, profile: &Profile) -> Option<Limit> {
-        match profile.get(core).deeper_by(1) {
-            None => Some(Limit::Floor),
-            Some(deeper) => self
-                .reaches(&profile.with(core, deeper))
-                .map(Limit::Reached),
-        }
+    pub fn at_limit(
+        &self,
+        core: CoreId,
+        profile: &Profile,
+    ) -> Result<Option<Limit>, TopologyMismatch> {
+        TopologyMismatch::check(self.cores, profile.cores())?;
+        let Some(deeper) = profile.get(core).and_then(|offset| offset.deeper_by(1)) else {
+            return Ok(Some(Limit::Floor));
+        };
+        Ok(self
+            .reaches(&profile.with(core, deeper))?
+            .map(Limit::Reached))
     }
 
     /// The profile of greatest total depth between each core's floor (just shallower than its
     /// failure point) and `hi` that reaches no failure point or combination, or `None` when there
     /// is none. Among equal totals, the one deeper at the first core of `ranking` where they
-    /// differ.
-    pub fn optimum(&self, hi: &Profile, ranking: &Ranking) -> Option<Profile> {
-        solve(
+    /// differ. `hi` and `ranking` must be of these cores.
+    pub fn optimum(
+        &self,
+        hi: &Profile,
+        ranking: &Ranking,
+    ) -> Result<Option<Profile>, TopologyMismatch> {
+        TopologyMismatch::check(self.cores, hi.cores())?;
+        TopologyMismatch::check(self.cores, ranking.order().iter().copied().collect())?;
+        Ok(solve(
             self.cores,
             &self.failure_points,
             &self.combinations,
             hi,
             ranking,
-        )
+        ))
     }
 }

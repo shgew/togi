@@ -134,12 +134,7 @@ fn skip_known_failure() {
             duration,
         );
         let seq = if case.live {
-            let mut old = plan.clone();
-            old.profile = j.profile(&case.profile);
-            let end = j.trial(&old, Outcome::Failure);
-            let attribution = j.next_decision();
-            j.decide(attribution);
-            end
+            j.idle_failure(j.profile(&case.profile).offsets(), Condition::Together)
         } else {
             j.carry(
                 SESSION,
@@ -288,7 +283,9 @@ fn a_known_together_failure_infers_the_sole_nonzero_core() {
         unreachable!()
     };
     let seq = j.decide(decision);
-    assert_eq!(j.run().core(core(1)).pending, Some(seq));
+    assert_eq!(j.run().core(core(1)).pending, Some(fact));
+    assert!(j.run().failures.pending(fact).is_some());
+    let _ = seq;
     assert!(j.run().flight.awaiting.is_none());
     j.assert_resumes();
 }

@@ -127,7 +127,12 @@ fn decision_supersedes_alone_retry() {
     j.core_phase(transition(0, CorePhase::Search, -5));
     let plan = j.next_trial();
     assert!(!plan.retry);
-    assert_eq!(plan.profile.get(core(0)).get(), -5);
+    assert_eq!(
+        plan.profile
+            .get(core(0))
+            .map(togi_machine::TargetOffset::get),
+        Some(-5)
+    );
 }
 
 #[test]
@@ -206,36 +211,39 @@ fn seeded_candidate_solo_limit_advances_next_workload_pair() {
 
 #[test]
 fn trial_plan_intent_rotation() {
-    for regime in [Regime::R1, Regime::R7] {
-        let mut j = Journal::has_room(&[-10]);
-        let load = if regime == Regime::R1 {
-            Load::Single(core(0))
-        } else {
-            Load::Many(crate::testkit::set(&[0]))
-        };
-        let steps = [
-            (Outcome::Pass, None, 0),
-            (Outcome::Failure, None, 1),
-            (Outcome::Inconclusive, None, 2),
-            (Outcome::Pass, Some(1), 1),
-            (Outcome::Pass, None, 0),
-        ];
-        for (outcome, frozen, want) in steps {
-            let mut plan = j.manual(regime, 0, load, Condition::Together, &[-10], 120);
-            plan.workload = frozen.map_or(WorkloadChoice::Rotate, |index| {
-                WorkloadChoice::Frozen(workloads(regime)[index].id())
-            });
-            let intent = plan.intent(TrialId::from("probe".to_owned()), j.rotation(&plan));
-            assert_eq!(
-                intent.workload,
-                workloads(regime)[want].id(),
-                "{regime} {outcome:?}"
-            );
-            j.trial(&plan, outcome);
-            if outcome == Outcome::Failure {
-                let attribution = j.next_decision();
-                j.decide(attribution);
-            }
-        }
+    let mut j = Journal::search_at(&[-10]);
+    let c = core(0);
+    let rotation = |j: &Journal, regime| j.run().core(c).rotation.get(regime);
+    let first = j.next_trial();
+    assert_eq!(
+        first.workload_at(j.rotation(&first)),
+        workloads(Regime::R1)[0].id()
+    );
+    j.trial(&first, Outcome::Inconclusive);
+    assert_eq!(rotation(&j, Regime::R1), 0);
+    let retry = j.next_trial();
+    assert!(retry.retry);
+    j.trial(&retry, Outcome::Pass);
+    assert_eq!(rotation(&j, Regime::R1), 1);
+    let second = j.next_trial();
+    assert_eq!(second.regime, Regime::R2);
+    j.trial(&second, Outcome::Failure);
+    assert_eq!((rotation(&j, Regime::R1), rotation(&j, Regime::R2)), (1, 1));
+    let attribution = j.next_decision();
+    j.decide(attribution);
+    let back = j.next_decision();
+    j.decide(back);
+    let next = j.next_trial();
+    assert_eq!(next.regime, Regime::R1);
+    let intent = next.intent(TrialId::from("probe".to_owned()), j.rotation(&next));
+    assert_eq!(intent.workload, workloads(Regime::R1)[1].id());
+    let mut frozen = next.clone();
+    frozen.workload = WorkloadChoice::Frozen(workloads(Regime::R1)[2].id());
+    let intent = frozen.intent(TrialId::from("probe".to_owned()), j.rotation(&frozen));
+    assert_eq!(intent.workload, workloads(Regime::R1)[2].id());
+    let catalog = workloads(Regime::R1);
+    for index in 0..2 * catalog.len() {
+        let intent = next.intent(TrialId::from("probe".to_owned()), index);
+        assert_eq!(intent.workload, catalog[index % catalog.len()].id());
     }
 }

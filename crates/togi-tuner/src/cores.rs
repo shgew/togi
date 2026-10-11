@@ -1,5 +1,5 @@
 use togi_journal::{CorePhase, CoreTransition, Event, Seq, TunerDecision};
-use togi_machine::{CoreId, ObservedOffset, Regime, TargetOffset, WorkloadId};
+use togi_machine::{CoreId, CoreSet, ObservedOffset, Regime, TargetOffset, WorkloadId};
 
 use crate::state::Run;
 use crate::{CombinationId, FailurePoint, FoldError};
@@ -87,6 +87,10 @@ impl Run {
         }
     }
 
+    pub(crate) fn require_cores(&self, cores: CoreSet) -> Result<(), FoldError> {
+        cores.iter().try_for_each(|core| self.require_core(core))
+    }
+
     pub(crate) fn require_core(&self, core: CoreId) -> Result<(), FoldError> {
         if self.topo.contains(core) {
             Ok(())
@@ -104,8 +108,15 @@ impl Run {
 
     /// A decision answered the core: its step and pending failure are settled, and a saved alone
     /// retry of it is stale.
+    pub(crate) fn retire_pending(&mut self, core: CoreId) {
+        if let Some(seq) = self.core(core).pending {
+            self.failures.retire(seq);
+        }
+    }
+
     fn decided(&mut self, core: CoreId, seq: Seq) {
         self.search.clear(core);
+        self.retire_pending(core);
         self.update_core(core, |state| {
             state.pending = None;
             state.last_seq = Some(seq);
@@ -163,6 +174,7 @@ impl Run {
         if entering_search {
             self.phases.reset();
         }
+        self.failures.retire_all(&event.cause);
         self.decided(core, seq);
         Ok(())
     }
@@ -194,6 +206,7 @@ impl Run {
                 state.zero_seq = Some(seq);
             }
         });
+        self.failures.retire_all(&event.cause);
         self.decided(core, seq);
         Ok(())
     }
