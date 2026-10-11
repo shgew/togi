@@ -558,3 +558,4 @@ def main [] {
     $failures | each {|failure| print $"FAIL ($failure.test): ($failure.error)" } | ignore
     if ($failures | is-not-empty) { exit 1 }
 }
+
