@@ -76,6 +76,8 @@
               fileset = rustFiles;
             };
             strictDeps = true;
+            # Crane builds the release profile by default; the checks build what `just gate` builds.
+            CARGO_PROFILE = "dev";
             nativeBuildInputs = lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.mold ];
           }
           // rustLinker;
