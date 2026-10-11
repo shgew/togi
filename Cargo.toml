@@ -17,12 +17,14 @@ jiff = { version = "0.2", default-features = false, features = ["std", "serde"] 
 nix = { version = "0.30", default-features = false, features = ["fs"] }
 proptest = "1"
 rand = { version = "=0.10.3", default-features = false, features = ["std_rng"] }
+regex = "1"
 rustix = { version = "1", features = ["fs", "process"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip", "raw_value"] }
 tempfile = "3"
 test-case = "3"
 thiserror = "2"
+togi-backend = { path = "crates/togi-backend", version = "0.0.0" }
 togi-config = { path = "crates/togi-config", version = "0.0.0" }
 togi-defect = { path = "crates/togi-defect", version = "0.0.0" }
 togi-facts = { path = "crates/togi-facts", version = "0.0.0" }
