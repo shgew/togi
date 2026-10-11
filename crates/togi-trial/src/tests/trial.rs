@@ -347,3 +347,44 @@ async fn an_exit_queued_before_a_cancellation_is_still_an_unexpected_exit() {
     })
     .await;
 }
+
+/// A worker that floods stdout with short lines until it is terminated.
+fn flooding(_: usize, _: &crate::launch::LaunchCommand) -> Launch {
+    Launch::Run(script(|mut ctx: ProcCtx| async move {
+        loop {
+            while let Ok(delivery) = ctx.signals.try_recv() {
+                if matches!(
+                    delivery,
+                    crate::os::fake::Delivery::Group(GroupSignal::Term | GroupSignal::Kill)
+                        | crate::os::fake::Delivery::Scope(_)
+                ) {
+                    ctx.exit(ExitInfo::Signal(15));
+                    return;
+                }
+            }
+            ctx.print(&"ok\n".repeat(4096)).await;
+            tokio::task::yield_now().await;
+        }
+    }))
+}
+
+#[tokio::test]
+async fn an_output_flood_neither_skips_load_steps_nor_delays_the_deadline() {
+    local(async {
+        let rig = rig();
+        rig.fake.on_launch(flooding);
+        let trial = spec(Regime::R4, &[0], secs(1));
+        let schedule = LoadSchedule::for_spec(&trial).unwrap();
+        let begun = std::time::Instant::now();
+        let handle = rig.start(trial).await.unwrap();
+        let run = finish(&handle).await;
+        let expected = schedule.toggles(secs(1));
+        assert_eq!(
+            (run.finished.result.stops, run.finished.result.conts),
+            (expected.stops, expected.conts)
+        );
+        assert!(begun.elapsed() < secs(3), "{:?}", begun.elapsed());
+        assert!(run.finished.teardown.is_ok());
+    })
+    .await;
+}

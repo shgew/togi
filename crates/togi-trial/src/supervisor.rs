@@ -15,7 +15,7 @@ use togi_machine::{
 use tokio::sync::mpsc::{
     Receiver, Sender, UnboundedReceiver, UnboundedSender, channel as bounded, unbounded_channel,
 };
-use tokio::time::{Instant, MissedTickBehavior, interval_at, sleep, sleep_until};
+use tokio::time::{Instant, sleep, sleep_until};
 
 use crate::error::{Containment, Error, OutputFailure};
 use crate::evidence::{Observation, Selector, Stream};
@@ -38,6 +38,7 @@ use crate::watch::Watched;
 
 const READINESS_POLL: Duration = Duration::from_millis(10);
 const INBOUND_CAPACITY: usize = 1024;
+const EVENT_BATCH: usize = 64;
 
 /// Everything a trial needs from the runner, owned by the runtime thread.
 pub(crate) struct Env<O: Os> {
@@ -516,12 +517,16 @@ impl<O: Os> Supervisor<O> {
         self.finish(end).await;
     }
 
+    /// Runs due work first on every turn, so a flood of output can neither delay the deadline nor
+    /// skip a load step or a sampling tick; output is then taken in bounded batches.
     async fn supervise(&mut self) -> End {
         let sample = self.env.timing.sample;
-        let mut ticker = interval_at(self.started + sample, sample);
-        ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
         let deadline = self.started + self.plan.duration;
+        let mut next_tick = self.started + sample;
         loop {
+            if let Some(end) = self.due(deadline, &mut next_tick) {
+                return end;
+            }
             let step_at = self.timeline.peek().map(|step| self.started + step.at);
             tokio::select! {
                 biased;
@@ -531,38 +536,68 @@ impl<O: Os> Supervisor<O> {
                     Some(TrialCommand::Abandon) | None => End::Abandoned,
                 },
                 Some(()) = self.storage_failed.recv() => return End::Storage,
-                event = self.inbound.recv(), if self.inbound_open => match event {
-                    None => self.inbound_open = false,
-                    Some(event) => {
-                        let flow = dispatch(
-                            &mut self.judge,
-                            &mut self.live.instances,
-                            &mut self.live.failures,
-                            event,
-                        );
-                        if let Some(end) = self.after(flow) {
-                            return end;
-                        }
-                    }
-                },
                 () = sleep_until(deadline) => return End::Duration,
                 () = async {
                     match step_at {
                         Some(at) => sleep_until(at).await,
                         None => pending::<()>().await,
                     }
-                } => {
-                    if let Some(end) = self.step() {
-                        return end;
+                } => {}
+                () = sleep_until(next_tick) => {}
+                event = self.inbound.recv(), if self.inbound_open => match event {
+                    None => self.inbound_open = false,
+                    Some(event) => {
+                        if let Some(end) = self.batch(event) {
+                            return end;
+                        }
                     }
-                }
-                _ = ticker.tick() => {
-                    if let Some(end) = self.tick() {
-                        return end;
-                    }
-                }
+                },
             }
         }
+    }
+
+    /// Ends at the deadline, else sends every load step that is due and takes a due sample.
+    fn due(&mut self, deadline: Instant, next_tick: &mut Instant) -> Option<End> {
+        let now = Instant::now();
+        if now >= deadline {
+            return Some(End::Duration);
+        }
+        while self
+            .timeline
+            .peek()
+            .is_some_and(|step| self.started + step.at <= now)
+        {
+            if let Some(end) = self.step() {
+                return Some(end);
+            }
+        }
+        if now >= *next_tick {
+            *next_tick = now + self.env.timing.sample;
+            return self.tick();
+        }
+        None
+    }
+
+    /// Handles `first` and at most `EVENT_BATCH - 1` more queued events.
+    fn batch(&mut self, first: Inbound) -> Option<End> {
+        let mut event = Some(first);
+        let mut handled = 0;
+        while let Some(current) = event.take() {
+            let flow = dispatch(
+                &mut self.judge,
+                &mut self.live.instances,
+                &mut self.live.failures,
+                current,
+            );
+            if let Some(end) = self.after(flow) {
+                return Some(end);
+            }
+            handled += 1;
+            if handled < EVENT_BATCH {
+                event = self.inbound.try_recv().ok();
+            }
+        }
+        None
     }
 
     /// An exit before teardown is unexpected, whichever instance it was.
