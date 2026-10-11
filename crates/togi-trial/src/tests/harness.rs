@@ -102,6 +102,7 @@ pub(super) fn rig_edit(
         pm_table: None,
         storage: None,
         log_sink: None,
+        supervisors: std::cell::RefCell::default(),
     };
     edit(&mut env);
     let env = Rc::new(env);

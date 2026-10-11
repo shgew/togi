@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::future::pending;
 use std::iter::Peekable;
 use std::path::PathBuf;
@@ -57,6 +58,8 @@ pub(crate) struct Env<O: Os> {
     pub(crate) storage: Option<Rc<dyn Fn() -> Result<Open, StorageError>>>,
     /// Test construction: what the output log thread writes to instead of the log files.
     pub(crate) log_sink: Option<Rc<dyn Fn() -> Wrap>>,
+    /// Every supervisor started on this thread, so shutdown can have each tear its trial down.
+    pub(crate) supervisors: RefCell<Vec<Supervised>>,
 }
 
 impl<O: Os> Env<O> {
@@ -70,6 +73,13 @@ impl<O: Os> Env<O> {
             user_manager: self.user_manager,
         })
     }
+}
+
+/// A supervisor task the runtime thread keeps track of.
+pub(crate) struct Supervised {
+    pub(crate) trial: String,
+    pub(crate) commands: UnboundedSender<TrialCommand>,
+    pub(crate) task: tokio::task::JoinHandle<()>,
 }
 
 /// What the handle tells its supervisor.
@@ -272,7 +282,16 @@ pub(crate) async fn start<O: Os>(
         rotation: 0,
         inbound_open: true,
     };
-    tokio::task::spawn_local(supervisor.run());
+    let trial = supervisor.plan.id.to_string();
+    let task = tokio::task::spawn_local(supervisor.run());
+    let mut supervisors = env.supervisors.borrow_mut();
+    supervisors.retain(|supervised| !supervised.task.is_finished());
+    supervisors.push(Supervised {
+        trial,
+        commands: commands_tx.clone(),
+        task,
+    });
+    drop(supervisors);
     Ok(Handle {
         commands: commands_tx,
         events: events_rx,

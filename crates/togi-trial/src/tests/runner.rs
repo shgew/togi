@@ -387,13 +387,25 @@ fn dropping_the_runner_is_bounded_even_with_a_stuck_trial() {
                 _ => None,
             });
         },
-        Timing::default(),
+        fast(),
     );
     let trial = start(&mut runner, Regime::R1, &[0], secs(600));
     std::mem::forget(trial);
     let begun = Instant::now();
     drop(runner);
-    assert!(begun.elapsed() < secs(3), "{:?}", begun.elapsed());
+    let bound = fast().stop_bound() + secs(1);
+    assert!(begun.elapsed() < bound + secs(1), "{:?}", begun.elapsed());
+}
+
+#[test]
+fn dropping_the_runner_tears_down_a_trial_whose_handle_was_never_dropped() {
+    let dir = tempfile::tempdir().unwrap();
+    let marker = dir.path().join("terminated.txt");
+    let (mut runner, _keep) = runner(marks_termination(marker.clone()), fast());
+    let trial = start(&mut runner, Regime::R1, &[0], secs(600));
+    std::mem::forget(trial);
+    drop(runner);
+    assert!(marker.exists(), "the supervisor terminated its workload before the runner ended");
 }
 
 #[test]
