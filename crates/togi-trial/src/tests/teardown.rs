@@ -917,6 +917,7 @@ impl Backend for Naps {
 
 #[test_case(1; "one instance")]
 #[test_case(8; "eight instances")]
+#[test_case(16; "sixteen instances")]
 #[tokio::test]
 async fn slow_watched_output_of_many_files_is_bound_by_one_cleanup_budget(count: u8) {
     const LINES: usize = 100;
