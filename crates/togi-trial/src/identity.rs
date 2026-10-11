@@ -19,6 +19,8 @@ impl std::fmt::Display for IdKind {
 pub enum IdentityError {
     #[error("the backend account name is empty")]
     EmptyName,
+    #[error("no backend account is configured")]
+    NotConfigured,
     #[error("look up account {name}")]
     Lookup {
         name: String,

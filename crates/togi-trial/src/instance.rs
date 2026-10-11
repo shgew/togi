@@ -65,6 +65,14 @@ pub(crate) struct Reader {
 }
 
 impl Reader {
+    /// A reader that never existed because the pipe could not be taken; it counts as closed.
+    pub(crate) fn absent() -> Self {
+        Self {
+            task: tokio::task::spawn_local(async {}),
+            closed: true,
+        }
+    }
+
     /// Reads in 4 KiB chunks, frames lines, appends every consumed byte to `log`, and reports.
     pub(crate) fn spawn(
         instance: usize,
