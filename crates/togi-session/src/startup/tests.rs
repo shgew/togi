@@ -1,7 +1,12 @@
+use std::cell::Cell;
+use std::rc::Rc;
+
+use togi_journal::fs::{Fault as FsFault, Op};
 use togi_journal::{DeadEndCondition, Payload, SessionContext};
 use togi_machine::{CancellationToken, Error};
 
 use super::*;
+use crate::emergency::Response;
 use crate::session::{ConfigSource, Stop};
 use crate::testing::{
     Bench, MemBoot, SweepFails, ValidationFails, kinds_of, offsets, put, recorded_baseline, swept,
@@ -168,6 +173,78 @@ fn a_failed_sweep_is_a_containment_dead_end_and_leaves_the_smu_alone() {
             .iter()
             .any(|kind| kind.starts_with("smu."))
     );
+}
+
+#[test]
+fn a_sweep_whose_check_cannot_be_recorded_still_hands_the_emergency_its_proofs() {
+    let bench = Bench::new(2);
+    drop(left_applied(&bench, &[-10, -12]));
+    let mut session = bench.open();
+    session.start().unwrap();
+    session.preflight().unwrap();
+    bench.mem.inject(FsFault::before(Op::Write, 1));
+    let error = session.sweep().unwrap_err();
+    assert!(matches!(error, SessionError::Journal(_)));
+    let ended = session.close(Err(error), &offsets(&[0, 0]), Vec::new());
+    let Some(emergency) = ended.emergency else {
+        panic!("no emergency");
+    };
+    assert!(matches!(&emergency.response, Response::Zeroed(zeroed) if zeroed.is_clean()));
+    let mut smu = bench.sim.seams().smu;
+    let machine: Vec<i64> = (0..2)
+        .map(|n| smu.offset(crate::testing::core(n)).unwrap().0)
+        .collect();
+    assert_eq!(machine, [0, 0]);
+}
+
+#[test]
+fn an_unconfirmed_sweep_latches_the_containment_before_its_check_is_recorded() {
+    let bench = Bench::new(2);
+    let mut input = bench.input();
+    let trials = input.machine.trials;
+    input.machine.trials = Box::new(SweepFails(trials, || Error::Other("scope busy".into())));
+    let Ok(mut session) = Session::open(input) else {
+        panic!("open");
+    };
+    session.start().unwrap();
+    session.preflight().unwrap();
+    bench.mem.inject(FsFault::before(Op::Write, 1));
+    assert!(session.sweep().is_err());
+    assert_eq!(session.fault, Some(crate::session::Fault::Containment));
+}
+
+#[test]
+fn an_unconfirmed_sweep_never_ends_in_a_shutdown_or_touches_the_smu() {
+    let bench = Bench::new(2);
+    let accesses = Rc::new(Cell::new(0_u32));
+    let counter = Rc::clone(&accesses);
+    bench
+        .sim
+        .interrupt_smu(move |_: &togi_sim::faults::SmuOperation| {
+            counter.set(counter.get() + 1);
+            Ok(())
+        });
+    let mut input = bench.input();
+    let trials = input.machine.trials;
+    input.machine.trials = Box::new(SweepFails(trials, || Error::Other("scope busy".into())));
+    let Ok(mut session) = Session::open(input) else {
+        panic!("open");
+    };
+    session.start().unwrap();
+    session.preflight().unwrap();
+    let Control::Stop(stop) = session.sweep().unwrap() else {
+        panic!("no stop");
+    };
+    let ended = session.close(Ok(stop), &offsets(&[0, 0]), Vec::new());
+    assert!(ended.errors.is_empty());
+    assert!(
+        !ended
+            .journal
+            .events()
+            .iter()
+            .any(|event| event.kind().as_str() == "shutdown")
+    );
+    assert_eq!(accesses.get(), 0);
 }
 
 #[test]

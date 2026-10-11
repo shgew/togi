@@ -9,7 +9,7 @@ use togi_machine::{CancellationToken, Error, PerCore, TargetOffset};
 use crate::emergency::SweepCleared;
 use crate::error::{SessionError, Step};
 use crate::recover::{self, Recovered, Recovery};
-use crate::session::{Control, Outcome, Session, Stop, Visit};
+use crate::session::{Control, Fault, Outcome, Session, Stop, Visit};
 use crate::write;
 
 const WATCHDOG_WAIT: Duration = Duration::from_secs(30);
@@ -192,13 +192,14 @@ impl Session {
     pub fn sweep(&mut self) -> Outcome {
         match self.trials.sweep(&CancellationToken::new()) {
             Ok(swept) => {
-                self.record_check("trial_scopes", swept.detail.clone(), true)?;
                 self.sweep = Some(SweepCleared::of(&swept));
                 self.stopped = Some(swept.stopped);
+                self.record_check("trial_scopes", swept.detail.clone(), true)?;
                 Ok(Control::Continue)
             }
             Err(Error::Crashed) => Err(Error::Crashed.into()),
             Err(error) => {
+                self.fault.get_or_insert(Fault::Containment);
                 let detail = error.to_string();
                 let seq = self.record_check("trial_scopes", detail.clone(), false)?;
                 let dead_end = DeadEnd {
