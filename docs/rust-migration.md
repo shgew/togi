@@ -114,6 +114,17 @@ The `togi-tuningboot` crate ports `internal/tuningboot` ([#739](https://github.c
 - **Review findings fixed.** Decoding is now object-only, so a positional array such as `["test",0,"retry"]` is rejected; `encode` writes the record directly, so production code has no `expect`; the randomness failure in `restart_limit` is tested through a private ID-source seam; and the workspace `getrandom` pin moved to 0.4, which removes the duplicate 0.3 copy and its subtree from `Cargo.lock`.
 - **Not measured.** Isolated compile and test times against Go and agent cost were not measured. Byte comparison with Go's records does not apply under the native contract.
 
+## Stage 4: `internal/sim` (#740, 2026-10-11)
+
+The `togi-sim` crate ports `internal/sim` ([#740](https://github.com/shgew/togi/issues/740)): 4,492 lines of library and 6,573 of tests, against Go's 2,808 and 4,057. No Go code is removed or changed. It depends on `togi-machine`, `togi-trialfiles` and `rand`, not on the journal: Go's replay-fact types are the crate's own `ReplayFact`, and Go's `Resume` becomes the `History` the caller builds from the journal.
+
+- **One hazard model.** `Model` (an `Arc`, immutable) is both the machine and Go's `Predictor`. `visit_sources` lists every source of failure in a fixed order, and scoring (`hazard`, `failure_probability`, `r7_failure_share`) and the runtime's competing draws walk it; `Onset::failure_time` inverts `Onset::exposure`, which a property test pins.
+- **Runtime.** `Simulator` shares one `Rc<RefCell<Runtime>>` among the clock, SMU, host, trials and kernel adapters, and never holds a borrow across a reporter or hook call. A trial is a state enum (started, waited), consumed by `stop`, so Go's repeated `Wait` and `Stop`-then-`Wait` cannot happen.
+- **Validation** is strict and field-named (see [simulating](simulating.md#the-rust-simulator-togi-sim)). The Go holes found: unchecked rates, growth, probabilities and onset, infinite weights, a joint rate of `0` standing for "the model's", encoding that could write a machine that does not load, and reset weights that fell back silently.
+- **Randomness** is a splitmix64 fold into `StdRng`, one typed `Domain` per stream. Go keyed streams by formatted strings and legacy condition names.
+- **Tests.** Every Go test of the package maps to a Rust test or a stated reason (mapping in the pull request). Draw-exact Go tests became properties: the failure share of a few thousand seeded trials within five binomial deviations of `failure_probability`, same seed and history giving the same transcript, retries reproducing the class outcome, unloaded draws keyed by the loaded set, telemetry changing no failure.
+- **Not measured.** Compile and test times against Go, and agent cost.
+
 ## Stage 5: `internal/hostlock` (#747, 2026-10-11)
 
 The `togi-hostlock` crate ports `internal/hostlock` ([#747](https://github.com/shgew/togi/issues/747)): 351 lines of library and 594 of tests, against Go's 148 and 400. No Go code is removed or changed. It builds on Linux and macOS only (`#![cfg(unix)]`), and the 20 tests run in 0.02 s under `cargo nextest` on Linux.
