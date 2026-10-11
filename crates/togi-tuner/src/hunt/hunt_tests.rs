@@ -322,6 +322,23 @@ fn a_hunt_start_reads_a_ranking_newer_than_the_last_round_or_hunt_plan() {
 }
 
 #[test]
+fn phase_2_owes_no_round_while_a_hunt_is_open() {
+    let mut j = Journal::new(&[0, 1], &[Start::solo(-10, -11), Start::solo(-10, -11)]);
+    j.profile_change(&[-10, -10]);
+    j.cycle_start(1, &[Regime::R1]);
+    j.cycle_end(1, true, true);
+    j.ranking(&ids(2));
+    assert!(j.run().round_due());
+    fail_together(&mut j, &[0, 1], &[-10, -10], SHORT);
+    let cycle = j.run().checking.last_cycle().unwrap().get();
+    j.cycle_end(cycle, false, false);
+    j.start_hunt();
+    assert!(j.run().hunt_open());
+    assert!(!j.run().round_due());
+    j.assert_resumes();
+}
+
+#[test]
 fn hunt_parked_offsets_selection_and_reset() {
     let mut j = limit_session(4);
     fail_together(&mut j, &[0], &[-30; 4], SHORT);

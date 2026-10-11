@@ -292,12 +292,8 @@ impl Run {
     }
 
     /// Whether a hunt is open. Phase 2 owes no round while one runs.
-    #[expect(
-        clippy::unused_self,
-        reason = "hunts land with G5, which reads the open hunt here"
-    )]
-    pub(crate) fn hunt_open(&self) -> bool {
-        false
+    pub(crate) const fn hunt_open(&self) -> bool {
+        self.hunts.active.is_some()
     }
 
     /// Whether phase 2 owes a round: phase 1 ended, no confirmation began, no cycle is open,
