@@ -216,11 +216,12 @@
                   cargoNextestExtraArgs = "--profile ci";
                 }
                 # main's macOS job builds only package and rust-nextest, so on aarch64-darwin rust-nextest
-                # depends on the native regeneration of the arm64 math, Lgamma and Pow vectors (#637).
+                # depends on the native regeneration of the arm64 math, Lgamma, Pow and conversion vectors (#637).
                 // lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
                   gocompatVectorsMath = config.checks.gocompat-vectors-math;
                   gocompatVectorsLgamma = config.checks.gocompat-vectors-lgamma;
                   gocompatVectorsPow = config.checks.gocompat-vectors-pow;
+                  gocompatVectorsConvert = config.checks.gocompat-vectors-convert;
                 }
               )
             );
@@ -497,6 +498,66 @@
                       ''
                         $TMPDIR/gocompat-vectors pow-arm64 $TMPDIR/vectors
                         cmp $TMPDIR/vectors/pow-arm64.txt crates/togi-gocompat/testdata/pow-arm64.txt
+                      ''
+                  )
+                  + ''
+                    touch "$out"
+                  ''
+                );
+            # Regenerates the conversion vectors from Go and requires them equal to the committed ones.
+            # convert.txt holds only rows that are the same on every architecture; the rows that are
+            # not (float-to-integer conversions, NaN bits) are in convert-amd64.txt and convert-arm64.txt.
+            # x86_64-linux writes all three files, running the arm64 build under qemu-user, and requires
+            # that build's convert.txt equal the committed one; it also writes convert-amd64-nosse41.txt
+            # with GODEBUG=cpu.sse41=off, the Floor, Ceil and Trunc rows of Go's assembly for a CPU
+            # without SSE4.1. aarch64-darwin runs the arm64 paths natively and compares convert.txt and
+            # convert-arm64.txt.
+            gocompat-vectors-convert =
+              pkgs.runCommand "togi-gocompat-vectors-convert"
+                {
+                  nativeBuildInputs = [
+                    pkgs.go_1_27
+                  ]
+                  ++ lib.optional pkgs.stdenv.hostPlatform.isLinux pkgs.qemu-user;
+                  src = lib.fileset.toSource {
+                    root = ./.;
+                    fileset = lib.fileset.unions [
+                      ./go.mod
+                      ./go.sum
+                      ./cmd
+                      ./internal
+                      ./tools
+                      ./crates/togi-gocompat/testdata
+                    ];
+                  };
+                }
+                (
+                  ''
+                    cd "$src"
+                    export HOME=$TMPDIR GOCACHE=$TMPDIR/go-cache GOPROXY=off GOTOOLCHAIN=local CGO_ENABLED=0
+                    go build -o $TMPDIR/gocompat-vectors ./tools/gocompat-vectors
+                    mkdir $TMPDIR/vectors
+                    $TMPDIR/gocompat-vectors convert $TMPDIR/vectors
+                    $TMPDIR/gocompat-vectors convert-arm64 $TMPDIR/vectors
+                  ''
+                  + (
+                    if pkgs.stdenv.hostPlatform.isLinux then
+                      ''
+                        $TMPDIR/gocompat-vectors convert-amd64 $TMPDIR/vectors
+                        GODEBUG=cpu.sse41=off $TMPDIR/gocompat-vectors convert-amd64-nosse41 $TMPDIR/vectors
+                        GOOS=linux GOARCH=arm64 go build -o $TMPDIR/gocompat-vectors-arm64 ./tools/gocompat-vectors
+                        mkdir $TMPDIR/vectors-arm64
+                        qemu-aarch64 $TMPDIR/gocompat-vectors-arm64 convert $TMPDIR/vectors-arm64
+                        cmp $TMPDIR/vectors-arm64/convert.txt crates/togi-gocompat/testdata/convert.txt
+                        for f in convert.txt convert-amd64.txt convert-arm64.txt convert-amd64-nosse41.txt; do
+                          cmp $TMPDIR/vectors/$f crates/togi-gocompat/testdata/$f
+                        done
+                      ''
+                    else
+                      ''
+                        for f in convert.txt convert-arm64.txt; do
+                          cmp $TMPDIR/vectors/$f crates/togi-gocompat/testdata/$f
+                        done
                       ''
                   )
                   + ''
