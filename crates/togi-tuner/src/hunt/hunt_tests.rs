@@ -339,6 +339,56 @@ fn phase_2_owes_no_round_while_a_hunt_is_open() {
 }
 
 #[test]
+fn a_reset_attributes_the_pending_failure_then_cancels_the_hunt_then_closes_the_cycle() {
+    let mut j = limit_session(4);
+    fail_all_together(&mut j, SHORT);
+    j.start_hunt();
+    let (group, cause) = j.group_plan();
+    j.decide(crate::DecisionAction::new(group, cause));
+    let Action::RunTrial(plan) = j.next() else {
+        panic!("expected the group trial");
+    };
+    let (intent, trial) = j.intent(&plan);
+    let mut end = Journal::end_payload(&trial, Outcome::Failure, Some(togi_machine::Signal::Crash));
+    end.duration_s = 5;
+    j.append(end.into(), &[intent]);
+    let cycle = j.run().checking.open().expect("the cycle is open").number;
+    let reset = j.reset(1);
+    let mut kinds = Vec::new();
+    loop {
+        let decision = j.next_decision();
+        let kind = match &decision.payload {
+            DecisionPayload::Failure(_) => "attribute",
+            DecisionPayload::HuntEnd(end) => {
+                assert_eq!(end.result, HuntOutcome::Cancelled);
+                assert_eq!(decision.cause, [reset]);
+                "cancel hunt"
+            }
+            DecisionPayload::CheckingCycle(closed) => {
+                assert_eq!(closed.cycle, cycle);
+                assert!(!closed.passed);
+                assert_eq!(decision.cause, [reset]);
+                "close cycle"
+            }
+            DecisionPayload::CorePhase(phase) => {
+                assert_eq!((phase.core, phase.to), (core(1), CorePhase::Search));
+                assert_eq!(decision.cause, [reset]);
+                "search"
+            }
+            other => panic!("unexpected {other:?}"),
+        };
+        kinds.push(kind);
+        j.decide(decision);
+        if kind == "search" {
+            break;
+        }
+    }
+    assert_eq!(kinds, ["attribute", "cancel hunt", "close cycle", "search"]);
+    assert!(j.run().hunts.active.is_none());
+    j.assert_resumes();
+}
+
+#[test]
 fn hunt_parked_offsets_selection_and_reset() {
     let mut j = limit_session(4);
     fail_together(&mut j, &[0], &[-30; 4], SHORT);
