@@ -975,6 +975,9 @@ async fn a_cancelled_sweep_whose_cleanup_fails_reports_cancelled_and_the_contain
 
 #[cfg(target_os = "linux")]
 mod killed_owner {
+    use std::cell::{Cell, RefCell};
+    use std::collections::BTreeMap;
+    use std::path::Path;
     use std::sync::{Arc, Mutex, PoisonError};
     use std::time::Duration;
 
@@ -1129,49 +1132,271 @@ mod killed_owner {
             .ok()
     }
 
-    fn children_of(parent: u32) -> Vec<Escaped> {
-        let Ok(entries) = std::fs::read_dir("/proc") else {
-            return Vec::new();
-        };
-        entries
-            .filter_map(|entry| entry.ok()?.file_name().to_str()?.parse::<u32>().ok())
-            .filter(|pid| parent_of(*pid) == Some(parent))
-            .filter_map(Escaped::adopt)
-            .collect()
+    #[derive(Clone, Debug, Eq, PartialEq)]
+    enum Freeze {
+        Frozen,
+        Gone,
+        Running,
+        Unobserved(String),
     }
 
-    fn frozen_or_gone(pid: u32) -> bool {
-        if stat_of(pid).is_none_or(|stat| matches!(stat.state, 'Z' | 'X')) {
-            return true;
+    fn vanished(error: &std::io::Error) -> bool {
+        error.kind() == std::io::ErrorKind::NotFound || error.raw_os_error() == Some(3)
+    }
+
+    fn read_stat(path: &Path) -> Result<Option<crate::procfs::Stat>, String> {
+        match std::fs::read_to_string(path) {
+            Ok(text) => parse_stat(&text)
+                .map(Some)
+                .map_err(|error| format!("{}: {error}", path.display())),
+            Err(error) if vanished(&error) => Ok(None),
+            Err(error) => Err(format!("read {}: {error}", path.display())),
         }
-        let Ok(tasks) = std::fs::read_dir(format!("/proc/{pid}/task")) else {
-            return false;
+    }
+
+    fn freeze_of(root: &Path, pid: u32) -> Freeze {
+        let owner = root.join(pid.to_string());
+        match read_stat(&owner.join("stat")) {
+            Ok(None) => return Freeze::Gone,
+            Ok(Some(stat)) if matches!(stat.state, 'Z' | 'X') => return Freeze::Gone,
+            Ok(Some(_)) => {}
+            Err(reason) => return Freeze::Unobserved(reason),
+        }
+        let tasks = match std::fs::read_dir(owner.join("task")) {
+            Ok(tasks) => tasks,
+            Err(error) if vanished(&error) => return Freeze::Gone,
+            Err(error) => return Freeze::Unobserved(format!("list tasks of {pid}: {error}")),
         };
-        let mut seen = false;
-        for task in tasks.flatten() {
-            let Ok(text) = std::fs::read_to_string(task.path().join("stat")) else {
+        let mut seen = 0;
+        let mut running = false;
+        let mut unobserved = None;
+        for task in tasks {
+            let task = match task {
+                Ok(task) => task,
+                Err(error) => {
+                    unobserved.get_or_insert(format!("list tasks of {pid}: {error}"));
+                    continue;
+                }
+            };
+            match read_stat(&task.path().join("stat")) {
+                Ok(None) => {}
+                Ok(Some(stat)) => {
+                    seen += 1;
+                    running |= !matches!(stat.state, 'T' | 't');
+                }
+                Err(reason) => {
+                    unobserved.get_or_insert(reason);
+                }
+            }
+        }
+        if running {
+            Freeze::Running
+        } else if let Some(reason) = unobserved {
+            Freeze::Unobserved(reason)
+        } else if seen == 0 {
+            Freeze::Unobserved(format!("no thread of {pid} observed"))
+        } else {
+            Freeze::Frozen
+        }
+    }
+
+    trait Subject {
+        fn stop(&self) -> bool;
+        fn freeze(&self) -> Freeze;
+        fn children(&mut self) -> Option<Vec<u32>>;
+        fn kill_child(&self, pid: u32);
+        fn child_alive(&self, pid: u32) -> bool;
+        fn kill_owner(&self);
+        fn reap_owner(&mut self) -> bool;
+        fn settle(&self, ready: &mut dyn FnMut() -> bool) -> bool;
+    }
+
+    const QUIET_ROUNDS: u32 = 2;
+    const TRACKING_ROUNDS: u32 = 50;
+
+    fn contain(subject: &mut impl Subject) -> Vec<String> {
+        let mut problems = Vec::new();
+        let stopped = subject.stop();
+        let mut last = Freeze::Running;
+        let confirmed = stopped
+            && subject.settle(&mut || {
+                last = subject.freeze();
+                matches!(last, Freeze::Frozen | Freeze::Gone)
+            });
+        if !stopped {
+            problems.push("the owner could not be stopped".to_owned());
+        } else if !confirmed {
+            problems.push(format!(
+                "the owner was not confirmed frozen; last observation {last:?}"
+            ));
+        }
+        let rounds = if confirmed { 1 } else { TRACKING_ROUNDS };
+        let mut known: Vec<u32> = Vec::new();
+        let mut quiet = 0;
+        let mut settled = false;
+        for _ in 0..rounds {
+            let Some(found) = subject.children() else {
+                quiet = 0;
                 continue;
             };
-            if !parse_stat(&text).is_ok_and(|stat| matches!(stat.state, 'T' | 't')) {
-                return false;
+            let fresh: Vec<u32> = found
+                .into_iter()
+                .filter(|pid| !known.contains(pid))
+                .collect();
+            for pid in &fresh {
+                subject.kill_child(*pid);
             }
-            seen = true;
+            quiet = if fresh.is_empty() { quiet + 1 } else { 0 };
+            known.extend(fresh);
+            if confirmed || quiet >= QUIET_ROUNDS {
+                settled = true;
+                break;
+            }
         }
-        seen
+        if !settled {
+            problems.push(format!(
+                "descendants of the owner were still appearing or unobservable after {rounds} rounds"
+            ));
+        }
+        subject.kill_owner();
+        if !subject.reap_owner() {
+            problems.push("the owner was not reaped".to_owned());
+        }
+        let dead = subject.settle(&mut || known.iter().all(|pid| !subject.child_alive(*pid)));
+        if !dead {
+            problems.push("a descendant survived its kill".to_owned());
+        }
+        problems
     }
 
-    /// Owns the launched owner from launch until its observed exit and reap. Dropped while still
-    /// holding it, it freezes the owner and waits until every thread is stopped, so no further
-    /// fork can race the enumeration of its children, then kills the owner and every child it
-    /// found, reaps the owner and waits for the children to die. It spawns nothing and signals
-    /// no pid it did not pin or hold unreaped.
-    struct OwnerGuard(Option<Leader>);
+    fn fail_loudly(problems: &[String]) {
+        if problems.is_empty() {
+            return;
+        }
+        let message = format!("owner containment unconfirmed: {}", problems.join("; "));
+        if std::thread::panicking() {
+            eprintln!("{message}");
+        } else {
+            panic!("{message}");
+        }
+    }
+
+    struct RealOwner {
+        leader: Option<Leader>,
+        pinned: BTreeMap<u32, Escaped>,
+    }
+
+    impl RealOwner {
+        fn new(leader: Leader) -> Self {
+            Self {
+                leader: Some(leader),
+                pinned: BTreeMap::new(),
+            }
+        }
+
+        fn leader(&self) -> &Leader {
+            self.leader
+                .as_ref()
+                .expect("the owner is held until it is reaped")
+        }
+    }
+
+    fn child_pids(root: &Path, parent: u32) -> Option<Vec<u32>> {
+        let mut found = Vec::new();
+        for entry in std::fs::read_dir(root).ok()? {
+            let Some(pid) = entry
+                .ok()?
+                .file_name()
+                .to_str()
+                .and_then(|name| name.parse::<u32>().ok())
+            else {
+                continue;
+            };
+            let text = match std::fs::read_to_string(root.join(pid.to_string()).join("stat")) {
+                Ok(text) => text,
+                Err(error) if vanished(&error) => continue,
+                Err(_) => return None,
+            };
+            let ppid: u32 = text[text.rfind(')')? + 1..]
+                .split_whitespace()
+                .nth(1)?
+                .parse()
+                .ok()?;
+            if ppid == parent {
+                found.push(pid);
+            }
+        }
+        Some(found)
+    }
+
+    impl Subject for RealOwner {
+        fn stop(&self) -> bool {
+            self.leader().signal_group(GroupSignal::Stop).is_ok()
+        }
+
+        fn freeze(&self) -> Freeze {
+            freeze_of(Path::new("/proc"), self.leader().pid())
+        }
+
+        fn children(&mut self) -> Option<Vec<u32>> {
+            let found = child_pids(Path::new("/proc"), self.leader().pid())?;
+            for pid in &found {
+                if !self.pinned.contains_key(pid)
+                    && let Some(child) = Escaped::adopt(*pid)
+                {
+                    self.pinned.insert(*pid, child);
+                }
+            }
+            Some(found)
+        }
+
+        fn kill_child(&self, pid: u32) {
+            if let Some(child) = self.pinned.get(&pid) {
+                child.kill();
+            }
+        }
+
+        fn child_alive(&self, pid: u32) -> bool {
+            self.pinned.get(&pid).is_some_and(Escaped::alive)
+        }
+
+        fn kill_owner(&self) {
+            let _ = self.leader().signal_group(GroupSignal::Kill);
+        }
+
+        fn reap_owner(&mut self) -> bool {
+            let end = std::time::Instant::now() + Duration::from_secs(5);
+            let exited = poll_until(end, || {
+                self.leader().exit().is_ok_and(|exit| exit.is_some())
+            });
+            exited
+                && self
+                    .leader
+                    .take()
+                    .is_some_and(|leader| leader.reap().is_ok())
+        }
+
+        fn settle(&self, ready: &mut dyn FnMut() -> bool) -> bool {
+            poll_until(std::time::Instant::now() + Duration::from_secs(5), ready)
+        }
+    }
+
+    /// Owns the owner from launch until its observed exit and reap. Dropped while still holding
+    /// it, it freezes the owner and waits until every thread is stopped, so no further fork can
+    /// race the enumeration of its children. When the freeze is not confirmed, it tracks and
+    /// kills descendants for a bounded number of rounds until none new appears. Anything it
+    /// could not confirm panics. It spawns nothing and signals no pid it did not pin or hold
+    /// unreaped.
+    struct Armed<S: Subject>(Option<S>);
+
+    type OwnerGuard = Armed<RealOwner>;
 
     impl OwnerGuard {
         fn owner(&self) -> &Leader {
             self.0
                 .as_ref()
                 .expect("the owner is held until it is reaped")
+                .leader()
         }
 
         fn kill_and_reap(&mut self) -> ExitInfo {
@@ -1181,29 +1406,20 @@ mod killed_owner {
                 std::time::Instant::now() + Duration::from_secs(10),
                 || owner.exit().is_ok_and(|exit| exit.is_some())
             ));
-            self.0.take().expect("held above").reap().unwrap()
+            self.0
+                .take()
+                .and_then(|owner| owner.leader)
+                .expect("held above")
+                .reap()
+                .unwrap()
         }
     }
 
-    impl Drop for OwnerGuard {
+    impl<S: Subject> Drop for Armed<S> {
         fn drop(&mut self) {
-            let Some(owner) = self.0.take() else {
-                return;
-            };
-            let pid = owner.pid();
-            let end = std::time::Instant::now() + Duration::from_secs(5);
-            let _ = owner.signal_group(GroupSignal::Stop);
-            let _ = poll_until(end, || frozen_or_gone(pid));
-            let children = children_of(pid);
-            let _ = owner.signal_group(GroupSignal::Kill);
-            for child in &children {
-                child.kill();
+            if let Some(mut subject) = self.0.take() {
+                fail_loudly(&contain(&mut subject));
             }
-            let end = std::time::Instant::now() + Duration::from_secs(5);
-            if poll_until(end, || owner.exit().is_ok_and(|exit| exit.is_some())) {
-                let _ = owner.reap();
-            }
-            let _ = poll_until(end, || children.iter().all(|child| !child.alive()));
         }
     }
 
@@ -1212,9 +1428,9 @@ mod killed_owner {
         dir: &std::path::Path,
         after_launch: impl FnOnce(&Leader),
     ) -> (Escaped, ScopeProcess) {
-        let mut guard = OwnerGuard(Some(
+        let mut guard = Armed(Some(RealOwner::new(
             os.launch(&helper_command("scope-owner", dir)).unwrap(),
-        ));
+        )));
         after_launch(guard.owner());
         let published = dir.join("descendant.pid");
         assert!(
@@ -1417,5 +1633,248 @@ mod killed_owner {
             "{operations:?}"
         );
         assert!(!*locked(&state.listed), "the unit was stopped");
+    }
+
+    fn stat_text(state: char, parent: u32) -> String {
+        format!("1 (x) {state} {parent}{}", " 0".repeat(35))
+    }
+
+    fn put(root: &Path, relative: &str, text: &str) {
+        let path = root.join(relative);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, text).unwrap();
+    }
+
+    fn owner_with_threads(root: &Path, owner: char, threads: &[char]) {
+        put(root, "7/stat", &stat_text(owner, 1));
+        std::fs::create_dir_all(root.join("7/task")).unwrap();
+        for (index, state) in threads.iter().enumerate() {
+            put(
+                root,
+                &format!("7/task/{}/stat", 7 + index),
+                &stat_text(*state, 1),
+            );
+        }
+    }
+
+    #[test]
+    fn freeze_needs_every_thread_stopped() {
+        let dir = crate::testing::tempdir();
+        owner_with_threads(dir.path(), 'T', &['T', 't']);
+        assert_eq!(freeze_of(dir.path(), 7), Freeze::Frozen);
+        put(dir.path(), "7/task/9/stat", &stat_text('S', 1));
+        assert_eq!(freeze_of(dir.path(), 7), Freeze::Running);
+    }
+
+    #[test]
+    fn freeze_treats_only_a_missing_or_dead_owner_as_gone() {
+        let dir = crate::testing::tempdir();
+        assert_eq!(freeze_of(dir.path(), 7), Freeze::Gone);
+        owner_with_threads(dir.path(), 'Z', &[]);
+        assert_eq!(freeze_of(dir.path(), 7), Freeze::Gone);
+        std::fs::remove_dir_all(dir.path().join("7/task")).unwrap();
+        std::fs::write(dir.path().join("7/stat"), stat_text('T', 1)).unwrap();
+        assert_eq!(freeze_of(dir.path(), 7), Freeze::Gone);
+    }
+
+    #[test]
+    fn a_failed_owner_stat_read_is_not_gone() {
+        let dir = crate::testing::tempdir();
+        std::fs::create_dir_all(dir.path().join("7/stat")).unwrap();
+        assert!(matches!(freeze_of(dir.path(), 7), Freeze::Unobserved(_)));
+        std::fs::remove_dir(dir.path().join("7/stat")).unwrap();
+        put(dir.path(), "7/stat", "garbled");
+        assert!(matches!(freeze_of(dir.path(), 7), Freeze::Unobserved(_)));
+    }
+
+    #[test]
+    fn a_failed_thread_stat_read_never_counts_as_frozen() {
+        let dir = crate::testing::tempdir();
+        owner_with_threads(dir.path(), 'T', &['T']);
+        std::fs::create_dir_all(dir.path().join("7/task/9/stat")).unwrap();
+        assert!(matches!(freeze_of(dir.path(), 7), Freeze::Unobserved(_)));
+        std::fs::remove_dir(dir.path().join("7/task/9/stat")).unwrap();
+        put(dir.path(), "7/task/9/stat", "garbled");
+        assert!(matches!(freeze_of(dir.path(), 7), Freeze::Unobserved(_)));
+    }
+
+    #[test]
+    fn an_owner_with_no_observed_thread_is_not_frozen() {
+        let dir = crate::testing::tempdir();
+        owner_with_threads(dir.path(), 'T', &[]);
+        assert!(matches!(freeze_of(dir.path(), 7), Freeze::Unobserved(_)));
+    }
+
+    #[test]
+    fn an_unreadable_process_entry_makes_the_child_listing_unobservable() {
+        let dir = crate::testing::tempdir();
+        put(dir.path(), "10/stat", &stat_text('S', 5));
+        put(dir.path(), "11/stat", &stat_text('S', 6));
+        assert_eq!(child_pids(dir.path(), 5), Some(vec![10]));
+        std::fs::create_dir_all(dir.path().join("12/stat")).unwrap();
+        assert_eq!(child_pids(dir.path(), 5), None);
+    }
+
+    struct Fake {
+        stop_ok: bool,
+        freeze: Freeze,
+        visible: fn(usize) -> Vec<u32>,
+        listing_lost: bool,
+        unkillable: Vec<u32>,
+        reaps: bool,
+        enumerations: usize,
+        freezes: Cell<usize>,
+        killed: RefCell<Vec<u32>>,
+        owner_killed_after: Cell<Option<usize>>,
+    }
+
+    fn fake(freeze: Freeze, visible: fn(usize) -> Vec<u32>) -> Fake {
+        Fake {
+            stop_ok: true,
+            freeze,
+            visible,
+            listing_lost: false,
+            unkillable: Vec::new(),
+            reaps: true,
+            enumerations: 0,
+            freezes: Cell::new(0),
+            killed: RefCell::new(Vec::new()),
+            owner_killed_after: Cell::new(None),
+        }
+    }
+
+    fn unconfirmed() -> Freeze {
+        Freeze::Unobserved("read failed".to_owned())
+    }
+
+    fn late_child(call: usize) -> Vec<u32> {
+        if call == 1 { vec![1] } else { vec![1, 2] }
+    }
+
+    fn endless_children(call: usize) -> Vec<u32> {
+        (1..=u32::try_from(call).unwrap()).collect()
+    }
+
+    impl Subject for Fake {
+        fn stop(&self) -> bool {
+            self.stop_ok
+        }
+
+        fn freeze(&self) -> Freeze {
+            self.freezes.set(self.freezes.get() + 1);
+            self.freeze.clone()
+        }
+
+        fn children(&mut self) -> Option<Vec<u32>> {
+            self.enumerations += 1;
+            (!self.listing_lost).then(|| (self.visible)(self.enumerations))
+        }
+
+        fn kill_child(&self, pid: u32) {
+            self.killed.borrow_mut().push(pid);
+        }
+
+        fn child_alive(&self, pid: u32) -> bool {
+            self.unkillable.contains(&pid) || !self.killed.borrow().contains(&pid)
+        }
+
+        fn kill_owner(&self) {
+            self.owner_killed_after.set(Some(self.enumerations));
+        }
+
+        fn reap_owner(&mut self) -> bool {
+            self.reaps
+        }
+
+        fn settle(&self, ready: &mut dyn FnMut() -> bool) -> bool {
+            (0..3).any(|_| ready())
+        }
+    }
+
+    #[test]
+    fn an_unconfirmed_freeze_tracks_late_descendants_until_quiet_and_reports() {
+        let mut subject = fake(unconfirmed(), late_child);
+        let problems = contain(&mut subject);
+        assert_eq!(
+            problems,
+            ["the owner was not confirmed frozen; last observation Unobserved(\"read failed\")"]
+        );
+        assert_eq!(*subject.killed.borrow(), [1, 2]);
+        assert_eq!(subject.enumerations, 4);
+        assert_eq!(subject.owner_killed_after.get(), Some(4));
+    }
+
+    #[test]
+    fn a_failed_stop_is_reported_and_descendants_are_still_tracked() {
+        let mut subject = fake(Freeze::Frozen, late_child);
+        subject.stop_ok = false;
+        let problems = contain(&mut subject);
+        assert_eq!(problems, ["the owner could not be stopped"]);
+        assert_eq!(subject.freezes.get(), 0);
+        assert_eq!(*subject.killed.borrow(), [1, 2]);
+    }
+
+    #[test]
+    fn descendants_that_never_stop_appearing_are_bounded_and_reported() {
+        let mut subject = fake(unconfirmed(), endless_children);
+        let problems = contain(&mut subject);
+        assert_eq!(
+            subject.enumerations,
+            usize::try_from(TRACKING_ROUNDS).unwrap()
+        );
+        assert_eq!(subject.owner_killed_after.get(), Some(subject.enumerations));
+        assert!(
+            problems
+                .iter()
+                .any(|problem| problem.contains("still appearing or unobservable after 50 rounds")),
+            "{problems:?}"
+        );
+    }
+
+    #[test]
+    fn a_confirmed_freeze_enumerates_once_and_reports_nothing() {
+        let mut subject = fake(Freeze::Frozen, |_| vec![1]);
+        assert!(contain(&mut subject).is_empty());
+        assert_eq!(subject.enumerations, 1);
+        assert_eq!(subject.freezes.get(), 1);
+        assert_eq!(*subject.killed.borrow(), [1]);
+    }
+
+    #[test]
+    fn an_unobservable_child_listing_is_not_an_empty_one() {
+        let mut subject = fake(Freeze::Frozen, |_| Vec::new());
+        subject.listing_lost = true;
+        let problems = contain(&mut subject);
+        assert_eq!(
+            problems,
+            ["descendants of the owner were still appearing or unobservable after 1 rounds"]
+        );
+    }
+
+    #[test]
+    fn an_unreaped_owner_and_a_surviving_descendant_are_reported() {
+        let mut subject = fake(Freeze::Frozen, |_| vec![1]);
+        subject.unkillable = vec![1];
+        subject.reaps = false;
+        assert_eq!(
+            contain(&mut subject),
+            ["the owner was not reaped", "a descendant survived its kill"]
+        );
+    }
+
+    #[test]
+    fn dropping_an_armed_guard_panics_on_anything_unconfirmed_and_not_otherwise() {
+        let unconfirmed_guard = Armed(Some(fake(unconfirmed(), late_child)));
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            drop(unconfirmed_guard);
+        }));
+        let payload = outcome.expect_err("an unconfirmed freeze must be loud");
+        let message = payload.downcast_ref::<String>().expect("a formatted panic");
+        assert!(
+            message.contains("owner containment unconfirmed"),
+            "{message}"
+        );
+        let clean = Armed(Some(fake(Freeze::Frozen, |_| Vec::new())));
+        assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| drop(clean))).is_ok());
     }
 }
