@@ -29,7 +29,11 @@ mod state;
 mod topology;
 
 #[cfg(test)]
+mod ledger_tests;
+#[cfg(test)]
 mod phase_tests;
+#[cfg(test)]
+mod rule_tests;
 #[cfg(test)]
 mod schedule_tests;
 #[cfg(test)]

@@ -46,6 +46,10 @@ impl Failures {
         self.queue.is_empty()
     }
 
+    pub(crate) fn queue(&self) -> impl Iterator<Item = Seq> + '_ {
+        self.queue.iter().copied()
+    }
+
     pub(crate) fn queued(&self) -> Option<&FailureRecord> {
         self.queue.front().and_then(|seq| self.records.get(seq))
     }

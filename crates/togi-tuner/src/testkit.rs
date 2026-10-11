@@ -191,6 +191,17 @@ impl Journal {
         }
     }
 
+    /// The journal as a resumed session holds it: the same events folded afresh.
+    pub(crate) fn resumed(&self) -> Self {
+        Self {
+            events: self.events.clone(),
+            state: fresh(&self.events),
+            ids: self.ids.clone(),
+            trials: self.trials,
+            resume_stride: 0,
+        }
+    }
+
     pub(crate) fn resuming_every(mut self, stride: usize) -> Self {
         self.resume_stride = stride;
         self
@@ -490,6 +501,19 @@ impl Journal {
         profile: &[i64],
         outcome: Outcome,
     ) -> Seq {
+        self.carry_under(session, class, condition, profile, outcome, None)
+    }
+
+    /// As `carry`, for a trial that ran from the backend package at `backend`.
+    pub(crate) fn carry_under(
+        &mut self,
+        session: &str,
+        class: (Regime, usize, &[u8], u32),
+        condition: Condition,
+        profile: &[i64],
+        outcome: Outcome,
+        backend: Option<(togi_machine::Backend, &str)>,
+    ) -> Seq {
         let (regime, workload, cores, duration) = class;
         let seq = self.next_seq();
         let signal = (outcome == Outcome::Failure).then_some(Signal::Crash);
@@ -501,7 +525,10 @@ impl Journal {
                 trial: None,
                 time: Timestamp::from_second(1_600_000_000).unwrap(),
                 boot: BootId::from("old".to_owned()),
-                backend: None,
+                backend: backend.map(|(backend, path)| togi_journal::BackendIdentity {
+                    backend,
+                    path: path.to_owned(),
+                }),
             },
             class: togi_journal::TrialClass {
                 regime,
@@ -521,6 +548,42 @@ impl Journal {
             voltage_requests_v: PerCore::default(),
             top_requesters: CoreSet::default(),
             ccd_mhz: BTreeMap::new(),
+        };
+        self.append(payload.into(), &[])
+    }
+
+    /// A failure carried from `session` that no trial explains: an idle crash at `profile`.
+    pub(crate) fn carry_idle(&mut self, session: &str, profile: &[i64]) -> Seq {
+        let seq = self.next_seq();
+        let payload = togi_journal::FailureCarried {
+            source: togi_journal::FactSource {
+                session: session.parse().unwrap(),
+                seq,
+                build: build(),
+                trial: None,
+                time: Timestamp::from_second(1_600_000_000).unwrap(),
+                boot: BootId::from("old".to_owned()),
+                backend: None,
+            },
+            class: togi_journal::TrialClass {
+                regime: Regime::R6,
+                workload: None,
+                cores: self.run().topo_ref().all(),
+                duration_s: 900,
+            },
+            failure: Failure {
+                signal: Signal::Crash,
+                attribution: Attribution::Unattributed,
+                core: None,
+                offset: None,
+                trial: None,
+                regime: Some(Regime::R6),
+                condition: Some(Condition::Together),
+                profile: Some(self.profile(profile).offsets()),
+                known_failure: None,
+                reason: None,
+                round: None,
+            },
         };
         self.append(payload.into(), &[])
     }
