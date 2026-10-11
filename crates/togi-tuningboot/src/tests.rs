@@ -268,6 +268,36 @@ fn a_retry_never_clears_the_saved_entry() {
 }
 
 #[test]
+fn a_random_failure_grants_no_retry_and_touches_nothing() {
+    let broken = getrandom::Error::new_custom(1);
+    for stored in ["0", "1", "2"] {
+        let mut bootloader =
+            MemoryBootloader::new(&[(COUNT_VARIABLE, stored), ("saved_entry", "togi")]);
+        let error = restart_limit_with(&mut bootloader, |_| Err(broken)).unwrap_err();
+        assert!(
+            matches!(&error, Error::Random(source) if *source == broken),
+            "{stored}"
+        );
+        assert!(error.source().is_some());
+        assert_eq!(bootloader.log, ["get togi_restart_count"], "{stored}");
+        assert_eq!(bootloader.sets, 0, "{stored}");
+        assert_eq!(bootloader.cleared, 0, "{stored}");
+        assert_eq!(
+            bootloader.snapshot(),
+            [("saved_entry", "togi"), (COUNT_VARIABLE, stored)]
+        );
+    }
+}
+
+#[test]
+fn quotes_and_backslashes_in_a_reason_are_escaped_and_decode_back() {
+    let record = LeaveReason::new(r#"say "hi" in C:\temp"#, count(1)).unwrap();
+    let encoded = record.encode();
+    assert!(encoded.contains(r#"say \"hi\" in C:\\temp"#), "{encoded}");
+    assert_eq!(LeaveReason::decode(&encoded).unwrap(), record);
+}
+
+#[test]
 fn restart_limit_works_through_a_trait_object() {
     let mut bootloader: Box<dyn Bootloader> = Box::new(MemoryBootloader::new(&[]));
     assert_eq!(
@@ -434,6 +464,9 @@ fn decoding_rejects_invalid_records() {
     let cases = [
         "not JSON".to_owned(),
         "null".to_owned(),
+        r#"["test",0,"retry"]"#.to_owned(),
+        r#"["test", 0, "retry"]"#.to_owned(),
+        "[]".to_owned(),
         "{}".to_owned(),
         "{\n}".to_owned(),
         String::new(),

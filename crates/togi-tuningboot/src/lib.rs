@@ -7,6 +7,7 @@ use std::fmt;
 use std::io;
 use std::str::FromStr;
 
+use serde::de::{self, Deserializer, MapAccess, Visitor};
 use serde::{Deserialize, Serialize};
 
 pub const COUNT_VARIABLE: &str = "togi_restart_count";
@@ -234,28 +235,70 @@ impl fmt::Display for ReasonText {
     }
 }
 
-#[derive(Serialize)]
-struct Wire<'a> {
-    id: &'a str,
-    count: u8,
-    reason: &'a str,
-}
-
 /// The record in `togi_leave_reason`: why a tuning boot returned to the normal system.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
 pub struct LeaveReason {
     pub id: ReasonId,
     pub count: RestartCount,
     pub reason: ReasonText,
 }
 
+/// Decodes a JSON object only: a positional array, unknown, missing and duplicate fields are
+/// all rejected, and each field goes through its validating type.
+impl<'de> Deserialize<'de> for LeaveReason {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        const FIELDS: &[&str] = &["id", "count", "reason"];
+
+        struct RecordVisitor;
+
+        impl<'de> Visitor<'de> for RecordVisitor {
+            type Value = LeaveReason;
+
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str("a leave reason object with id, count and reason")
+            }
+
+            fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<LeaveReason, A::Error> {
+                let mut id = None;
+                let mut count = None;
+                let mut reason = None;
+                while let Some(key) = map.next_key::<String>()? {
+                    match key.as_str() {
+                        "id" if id.is_none() => id = Some(map.next_value()?),
+                        "count" if count.is_none() => count = Some(map.next_value()?),
+                        "reason" if reason.is_none() => reason = Some(map.next_value()?),
+                        "id" => return Err(de::Error::duplicate_field("id")),
+                        "count" => return Err(de::Error::duplicate_field("count")),
+                        "reason" => return Err(de::Error::duplicate_field("reason")),
+                        other => return Err(de::Error::unknown_field(other, FIELDS)),
+                    }
+                }
+                Ok(LeaveReason {
+                    id: id.ok_or_else(|| de::Error::missing_field("id"))?,
+                    count: count.ok_or_else(|| de::Error::missing_field("count"))?,
+                    reason: reason.ok_or_else(|| de::Error::missing_field("reason"))?,
+                })
+            }
+        }
+
+        deserializer.deserialize_struct("LeaveReason", FIELDS, RecordVisitor)
+    }
+}
+
 impl LeaveReason {
     /// A record with a fresh random ID and the sanitized `text`.
     pub fn new(text: &str, count: RestartCount) -> Result<Self, Error> {
+        Self::with_id_source(text, count, getrandom::fill)
+    }
+
+    fn with_id_source(
+        text: &str,
+        count: RestartCount,
+        fill: impl FnOnce(&mut [u8]) -> Result<(), getrandom::Error>,
+    ) -> Result<Self, Error> {
         let reason = ReasonText::sanitize(text).ok_or(Error::InvalidRecord(RecordError::Text))?;
         let mut bytes = [0_u8; 16];
-        getrandom::fill(&mut bytes).map_err(Error::Random)?;
+        fill(&mut bytes).map_err(Error::Random)?;
         let id = bytes
             .iter()
             .flat_map(|byte| [byte >> 4, byte & 0xf])
@@ -271,10 +314,6 @@ impl LeaveReason {
     /// Compact JSON of at most 300 printable ASCII bytes. The reason is cut where the whole
     /// record would not fit, counting two bytes for each `"` and `\` that JSON escapes.
     #[must_use]
-    #[expect(
-        clippy::expect_used,
-        reason = "serializing strings and a small integer to a String cannot fail"
-    )]
     pub fn encode(&self) -> String {
         let budget = MAX_RECORD_BYTES.saturating_sub(RECORD_OVERHEAD + self.id.0.len());
         let mut used = 0;
@@ -288,12 +327,22 @@ impl LeaveReason {
             end += 1;
         }
         let reason = self.reason.0[..end].trim_end_matches(' ');
-        serde_json::to_string(&Wire {
-            id: &self.id.0,
-            count: self.count.0,
-            reason,
-        })
-        .expect("a record of strings and a count always serializes")
+        // The ID is letters, digits, `.`, `_` and `-`, and the reason is printable ASCII, so only
+        // `"` and `\` need a JSON escape.
+        let mut record = String::with_capacity(MAX_RECORD_BYTES);
+        record.push_str(r#"{"id":""#);
+        record.push_str(&self.id.0);
+        record.push_str(r#"","count":"#);
+        record.push(char::from(b'0' + self.count.0));
+        record.push_str(r#","reason":""#);
+        for c in reason.chars() {
+            if matches!(c, '"' | '\\') {
+                record.push('\\');
+            }
+            record.push(c);
+        }
+        record.push_str(r#""}"#);
+        record
     }
 
     pub fn decode(value: &str) -> Result<Self, Error> {
@@ -350,6 +399,14 @@ pub fn reset_count(env: &mut (impl Environment + ?Sized)) -> Result<(), Error> {
 /// written together before the saved entry is cleared on exhaustion, and any failure returns an
 /// error instead of a retry.
 pub fn restart_limit(bootloader: &mut (impl Bootloader + ?Sized)) -> Result<RestartLimit, Error> {
+    restart_limit_with(bootloader, getrandom::fill)
+}
+
+/// `restart_limit` with the source of the record ID bytes passed in, so a test can fail it.
+fn restart_limit_with(
+    bootloader: &mut (impl Bootloader + ?Sized),
+    fill: impl FnOnce(&mut [u8]) -> Result<(), getrandom::Error>,
+) -> Result<RestartLimit, Error> {
     let stored = bootloader.get(COUNT_VARIABLE).map_err(Error::ReadCount)?;
     let count = match stored.as_deref() {
         None | Some("" | "0") => 0,
@@ -368,7 +425,7 @@ pub fn restart_limit(bootloader: &mut (impl Bootloader + ?Sized)) -> Result<Rest
         RestartLimit::Retry(_) => RETRY_REASON,
         RestartLimit::Exhausted => EXHAUSTED_REASON,
     };
-    let record = LeaveReason::new(text, count)?;
+    let record = LeaveReason::with_id_source(text, count, fill)?;
     bootloader
         .set(&[
             (COUNT_VARIABLE, &count.get().to_string()),
