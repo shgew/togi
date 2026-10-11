@@ -158,7 +158,7 @@ impl Watched {
             return Poll::Drained;
         }
         let (fd, id, size) = match self.open() {
-            Err(errno) => return self.stop(WatchError::Read(errno.into())),
+            Err(errno) => return self.reject(WatchError::Read(errno.into())),
             Ok(Opened::Missing) => {
                 return if self.backlog() {
                     self.reject(WatchError::Lost)
@@ -171,8 +171,11 @@ impl Watched {
         };
         let mut offset = match self.state {
             State::Tailing {
-                id: known, offset, ..
-            } if known == id && size >= offset => offset,
+                id: known,
+                offset,
+                size: accepted,
+                ..
+            } if known == id && size >= accepted => offset,
             State::Tailing { .. } if self.backlog() => return self.reject(WatchError::Lost),
             State::Tailing { .. } | State::Unopened | State::Stopped => 0,
         };
@@ -190,7 +193,7 @@ impl Watched {
                 Ok(0) => break,
                 Ok(count) => count,
                 Err(Errno::INTR) => continue,
-                Err(errno) => return self.stop(WatchError::Read(errno.into())),
+                Err(errno) => return self.reject(WatchError::Read(errno.into())),
             };
             let mut exceeded = false;
             let consumed = self
@@ -448,6 +451,49 @@ mod tests {
         fs::remove_file(f.path()).unwrap();
         symlink("/dev/null", f.path()).unwrap();
         assert!(matches!(f.poll().0, Poll::Failed(WatchError::Lost)));
+    }
+
+    fn seed_backlog(f: &mut Fixture) {
+        f.append(&b"ok line\n".repeat(128 * 1024 / 8));
+        f.append(b"COMPUTE ERROR\n");
+        assert!(matches!(f.poll().0, Poll::Pending));
+        assert!(f.watched.backlog());
+    }
+
+    #[test]
+    fn truncating_the_same_inode_below_the_accepted_size_loses_the_backlog() {
+        let mut f = fixture();
+        seed_backlog(&mut f);
+        OpenOptions::new()
+            .write(true)
+            .open(f.path())
+            .unwrap()
+            .set_len(POLL_LIMIT as u64)
+            .unwrap();
+        assert!(matches!(f.poll().0, Poll::Failed(WatchError::Lost)));
+    }
+
+    #[test]
+    fn an_open_error_with_an_unread_backlog_is_lost_output() {
+        if rustix::process::geteuid().is_root() {
+            return;
+        }
+        let mut f = fixture();
+        seed_backlog(&mut f);
+        std::fs::set_permissions(f.path(), std::os::unix::fs::PermissionsExt::from_mode(0)).unwrap();
+        assert!(matches!(f.poll().0, Poll::Failed(WatchError::Lost)));
+    }
+
+    #[test]
+    fn an_open_error_without_a_backlog_is_an_ordinary_read_error() {
+        if rustix::process::geteuid().is_root() {
+            return;
+        }
+        let mut f = fixture();
+        f.append(b"fine\n");
+        assert!(matches!(f.poll().0, Poll::Drained));
+        std::fs::set_permissions(f.path(), std::os::unix::fs::PermissionsExt::from_mode(0)).unwrap();
+        assert!(matches!(f.poll().0, Poll::Failed(WatchError::Read(_))));
     }
 
     #[test]
