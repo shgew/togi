@@ -583,6 +583,33 @@ fn an_unattributed_first_failure_is_held_by_skipping_its_hunt() {
 }
 
 #[test]
+fn an_unattributed_hold_shows_only_the_cores_its_hunt_would_search() {
+    let mut j = later_session(&[-10, -12]);
+    let decided = current(&j);
+    j.profile_change(&[-10, -8]);
+    pass_cycles(&mut j, 1);
+    j.profile_change(&decided);
+    pass_cycles(&mut j, 1);
+    assert!(j.run().later_gate().is_some());
+    start_cycle(&mut j);
+    idle_failure(&mut j);
+    let action = j.next_decision();
+    assert!(matches!(
+        action.payload,
+        crate::DecisionPayload::HuntSkipped(_)
+    ));
+    j.decide(action);
+    let strike = *j.run().later.strikes().next().unwrap();
+    assert_eq!(
+        strike.display.iter().collect::<Vec<_>>(),
+        [(core(1), off(-11))],
+        "core 00 passed a full cycle at its offset, so the hunt would not search it"
+    );
+    assert_eq!(current_of(&j.run().bios_profile().shown), [-10, -11]);
+    j.assert_resumes();
+}
+
+#[test]
 fn a_held_unattributed_failure_pairs_with_an_attributed_one_on_a_loaded_core() {
     let mut j = later_session(&[-10, -12]);
     start_cycle(&mut j);

@@ -12,6 +12,7 @@ use togi_journal::{Activity, Decision, Event, HuntSkipped, Seq, TunerDecision};
 use togi_machine::{CoreId, CoreSet, PerCore, TargetOffset};
 
 use crate::failures::Pending;
+use crate::hunt::plan::park;
 use crate::state::Run;
 use crate::{Action, DecisionAction, DecisionPayload, Depth, Profile};
 
@@ -58,12 +59,11 @@ pub(crate) struct Later {
     by_core: BTreeMap<CoreId, BTreeSet<Seq>>,
     held: BTreeSet<Seq>,
     last_full: Option<FullCycle>,
-    passed: Vec<Profile>,
 }
 
 impl Later {
     /// A reset returned a core to search: phase 2 starts over, with no confirmed profile and no
-    /// hold. The profiles that passed a full cycle stay what they were.
+    /// hold.
     pub(crate) fn reset(&mut self) {
         self.confirmed = None;
         self.moved_since = PerCore::default();
@@ -175,8 +175,6 @@ impl Later {
         let Some(profile) = profile else {
             return;
         };
-        self.passed.retain(|known| *known != profile);
-        self.passed.push(profile);
         if settled {
             self.confirmed = Some(Confirmed {
                 profile,
@@ -350,34 +348,6 @@ impl Run {
         ))
     }
 
-    /// The cores a hunt of a failure at `failing` would search: those deeper than the newest
-    /// passed full cycle profile that is shallower than it somewhere, or every core off zero when
-    /// no such profile exists.
-    fn skipped_candidates(&self, failing: &Profile) -> CoreSet {
-        let raised = |passed: &Profile| {
-            Profile::over(self.topo.all(), |core| {
-                let at = failing.get(core).unwrap_or(TargetOffset::ZERO);
-                passed
-                    .get(core)
-                    .filter(|&offset| offset.shallower_than(at))
-                    .unwrap_or(at)
-            })
-        };
-        let parked = self
-            .later
-            .passed
-            .iter()
-            .rev()
-            .map(raised)
-            .find(|parked| parked != failing)
-            .unwrap_or_else(|| Profile::zero(&self.topo));
-        failing
-            .iter()
-            .filter(|&(core, offset)| parked.get(core).is_some_and(|p| offset.deeper_than(p)))
-            .map(|(core, _)| core)
-            .collect()
-    }
-
     /// The strike a `hold` decision records, read from the state it was decided on: the core at
     /// its current offset, shown at the target of the step-back the hold replaced.
     pub(crate) fn hold_strike(&self, event: &Event, decision: &TunerDecision) -> Option<Strike> {
@@ -464,8 +434,8 @@ impl Run {
             .iter()
             .map(|core| (core, self.core(core).offset))
             .collect();
-        let display = self
-            .skipped_candidates(&failure.record.profile)
+        let display = park(&failure.record.profile, self.hunts.passed_newest_first())
+            .candidates
             .iter()
             .map(|core| (core, self.core(core).offset))
             .filter(|&(_, offset)| offset != TargetOffset::ZERO)
