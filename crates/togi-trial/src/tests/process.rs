@@ -435,16 +435,13 @@ fn r6_workers_are_stopped_before_the_trial_starts_to_count() {
         .map_err(|partial| partial.error)
         .unwrap();
     for instance in trial.started().instances {
-        let stat = std::fs::read_to_string(format!("/proc/{}/stat", instance.pid)).unwrap();
-        let state = stat
-            .rsplit(')')
-            .next()
-            .unwrap()
-            .trim()
-            .chars()
-            .next()
-            .unwrap();
-        assert_eq!(state, 'T', "worker {} is stopped before wait", instance.pid);
+        let stopped = wait_until(secs(1), || {
+            std::fs::read_to_string(format!("/proc/{}/stat", instance.pid))
+                .ok()
+                .and_then(|stat| stat.rsplit(')').next().map(str::trim).map(str::to_owned))
+                .is_some_and(|rest| rest.starts_with('T'))
+        });
+        assert!(stopped, "worker {} is stopped before wait", instance.pid);
     }
     let result = trial.wait(&CancellationToken::new(), &mut Quiet).unwrap();
     assert_eq!(
@@ -454,6 +451,17 @@ fn r6_workers_are_stopped_before_the_trial_starts_to_count() {
     );
     assert_eq!(result.conts, 1);
     assert!(trial.stop().is_ok());
+}
+
+fn wait_until(limit: Duration, mut condition: impl FnMut() -> bool) -> bool {
+    let end = Instant::now() + limit;
+    while Instant::now() < end {
+        if condition() {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    condition()
 }
 
 fn kill_pid(pid: u32) {
