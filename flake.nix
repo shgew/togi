@@ -213,7 +213,7 @@
             rust-nextest = craneLib.cargoNextest (
               rustCheck (
                 {
-                  cargoNextestExtraArgs = "--profile ci --no-tests=pass";
+                  cargoNextestExtraArgs = "--profile ci";
                 }
                 # main's macOS job builds only package and rust-nextest, so on aarch64-darwin rust-nextest
                 # depends on the native regeneration of the arm64 math vectors (#637).
