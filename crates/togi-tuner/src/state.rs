@@ -89,6 +89,11 @@ impl Run {
         })
     }
 
+    #[cfg(test)]
+    pub(crate) const fn topo_ref(&self) -> &Topology {
+        &self.topo
+    }
+
     fn config_loaded(&mut self, loaded: &ConfigLoaded) {
         self.config = TunerConfig::from_loaded(loaded);
         for backend in [Backend::Mprime, Backend::Ycruncher] {
