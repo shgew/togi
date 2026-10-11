@@ -630,6 +630,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "togi-carry"
+version = "0.0.0"
+dependencies = [
+ "jiff",
+ "thiserror",
+ "togi-config",
+ "togi-defect",
+ "togi-facts",
+ "togi-journal",
+ "togi-machine",
+]
+
+[[package]]
 name = "togi-command"
 version = "0.0.0"
 dependencies = [
