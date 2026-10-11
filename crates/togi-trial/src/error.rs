@@ -357,6 +357,14 @@ pub enum PrepareError {
     Backend(#[source] togi_backend::Error),
     #[error("the backend plan names no program")]
     EmptyProgram,
+    #[error("preparing {what} did not finish within {bound:?}")]
+    TimedOut { what: String, bound: Duration },
+    #[error("an earlier preparation is still running")]
+    Busy,
+    #[error("start the preparation thread")]
+    Spawn(#[source] io::Error),
+    #[error("the preparation thread ended without a result")]
+    Vanished,
 }
 
 #[derive(Debug, thiserror::Error)]

@@ -18,7 +18,8 @@ use super::harness::{
     Rig, burn, core, crate_error, finish, local, nothing_runs, printing, rig, rig_edit, rig_with,
     spec,
 };
-use crate::error::{Error, InvalidTrial};
+use crate::error::{Error, InvalidTrial, PrepareError};
+use crate::files::Chown;
 use crate::id::ScopeName;
 use crate::logs::{Sink, Wrap};
 use crate::os::fake::{Fake, Launch, ProcCtx, ProcShared, script};
@@ -462,6 +463,7 @@ fn probe_env(rig: &Rig) -> (Rc<Env<Probe>>, Rc<Cell<u32>>) {
         storage: None,
         log_sink: None,
         supervisors: std::cell::RefCell::default(),
+        preparer: rig.env.preparer.clone(),
     };
     (Rc::new(env), lost_threads)
 }
@@ -910,6 +912,230 @@ async fn a_duration_whose_deadlines_overflow_is_refused_before_anything_launches
             Some(Error::Invalid(InvalidTrial::UnrepresentableDuration))
         ));
         assert_eq!(rig.fake.process_count(), 0);
+    })
+    .await;
+}
+
+fn with_inputs() -> TestBackend {
+    let mut backend = TestBackend::new("/bin/true");
+    backend.inputs = vec![("prime.txt", "a"), ("local.txt", "b")];
+    backend
+}
+
+fn refusing_ownership_of(target: &'static str) -> Chown {
+    Chown::new(move |name, _, _, _| {
+        if name == target {
+            Err(rustix::io::Errno::PERM)
+        } else {
+            Ok(())
+        }
+    })
+}
+
+/// The preparation error a failed start carries, first of the joined ones when there are several.
+fn prepare_error(error: &togi_machine::Error) -> Option<&PrepareError> {
+    match crate_error(error)? {
+        Error::Prepare(error) => Some(error),
+        Error::Joined(joined) => match joined.errors().first() {
+            Some(Error::Prepare(error)) => Some(error),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_ownership_failure_names_the_input_and_launches_nothing() {
+    local(async {
+        let rig = rig_edit(with_inputs(), Timing::default(), |env| {
+            env.preparer.chown = refusing_ownership_of("prime.txt");
+        });
+        let partial = rig
+            .start(spec(Regime::R1, &[0], secs(5)))
+            .await
+            .err()
+            .unwrap();
+        assert!(partial.value.is_some(), "the stop proof is returned");
+        assert!(
+            matches!(prepare_error(&partial.error), Some(PrepareError::Chown { instance, name, .. })
+                if instance == "work" && name == "prime.txt"),
+            "{:?}",
+            partial.error
+        );
+        assert!(rig.fake.launches().is_empty());
+        assert_eq!(rig.fake.process_count(), 0);
+    })
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_ownership_failure_of_a_later_instance_rolls_the_earlier_one_back() {
+    local(async {
+        let rig = rig_edit(with_inputs(), Timing::default(), |env| {
+            env.preparer.chown = refusing_ownership_of("c01");
+        });
+        let partial = rig
+            .start(spec(Regime::R7, &[0, 1], secs(30)))
+            .await
+            .err()
+            .unwrap();
+        assert!(partial.value.is_some(), "the rollback confirmed the stop");
+        assert!(
+            matches!(prepare_error(&partial.error), Some(PrepareError::Chown { instance, .. })
+                if instance == "c01"),
+            "{:?}",
+            partial.error
+        );
+        assert_eq!(rig.fake.launches().len(), 1, "c01 never launched");
+        assert!(rig.fake.process(0).reaped.get());
+    })
+    .await;
+}
+
+/// A preparation that blocks on the preparation thread, as a stuck filesystem write does, the
+/// first time it reaches `step`, until released.
+struct BlockedPreparation {
+    entered: Receiver<()>,
+    release: Sender<()>,
+}
+
+fn blocked_preparation(step: &'static str, prepare: Duration) -> (Rig, BlockedPreparation) {
+    let (entered_tx, entered) = channel();
+    let (release, release_rx) = channel();
+    let release_rx = Mutex::new(release_rx);
+    let first = AtomicBool::new(true);
+    let hook = move |name: &str| {
+        if name == step && first.swap(false, Ordering::AcqRel) {
+            let _ = entered_tx.send(());
+            let _ = release_rx.lock().unwrap().recv();
+        }
+    };
+    let timing = Timing {
+        prepare,
+        ..Timing::default()
+    };
+    let rig = rig_edit(TestBackend::new("/bin/true"), timing, |env| {
+        env.preparer.entered = Some(Arc::new(hook));
+    });
+    (rig, BlockedPreparation { entered, release })
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_preparation_stuck_past_its_budget_ends_the_start_with_a_typed_error() {
+    local(async {
+        let (rig, blocked) = blocked_preparation("the trial directory", ms(300));
+        let partial = rig
+            .start(spec(Regime::R1, &[0], secs(5)))
+            .await
+            .err()
+            .unwrap();
+        assert!(partial.value.is_some(), "nothing ran, so the proof returns");
+        assert!(
+            matches!(prepare_error(&partial.error), Some(PrepareError::TimedOut { what, bound })
+                if what == "the trial directory" && *bound == ms(300)),
+            "{:?}",
+            partial.error
+        );
+        blocked.entered.try_recv().unwrap();
+        assert!(rig.fake.launches().is_empty());
+        blocked.release.send(()).unwrap();
+    })
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn cancelling_while_a_preparation_is_stuck_ends_the_start_without_waiting_for_it() {
+    local(async {
+        let (rig, blocked) = blocked_preparation("the trial directory", secs(30));
+        let cancel = CancellationToken::new();
+        let began = std::time::Instant::now();
+        let (result, ()) = tokio::join!(
+            rig.start_with(&cancel, spec(Regime::R1, &[0], secs(5))),
+            async {
+                while blocked.entered.try_recv().is_err() {
+                    tokio::task::yield_now().await;
+                }
+                cancel.cancel();
+            }
+        );
+        let partial = result.err().unwrap();
+        assert!(matches!(partial.error, togi_machine::Error::Cancelled));
+        assert!(partial.value.is_some());
+        assert!(
+            began.elapsed() < secs(10),
+            "the stuck thread was not waited for"
+        );
+        assert!(rig.fake.launches().is_empty());
+        blocked.release.send(()).unwrap();
+    })
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_preparation_stuck_after_an_earlier_instance_launched_rolls_that_instance_back() {
+    local(async {
+        let (rig, blocked) = blocked_preparation("c01", ms(300));
+        let partial = rig
+            .start(spec(Regime::R7, &[0, 1], secs(30)))
+            .await
+            .err()
+            .unwrap();
+        assert!(partial.value.is_some(), "the rollback confirmed the stop");
+        assert!(
+            matches!(prepare_error(&partial.error), Some(PrepareError::TimedOut { what, .. })
+                if what == "c01"),
+            "{:?}",
+            partial.error
+        );
+        assert_eq!(rig.fake.launches().len(), 1);
+        assert!(rig.fake.process(0).reaped.get());
+        blocked.release.send(()).unwrap();
+    })
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_abandoned_preparation_blocks_the_next_one_until_it_returns() {
+    local(async {
+        let (rig, blocked) = blocked_preparation("the trial directory", ms(300));
+        let first = rig
+            .start(spec(Regime::R1, &[0], secs(5)))
+            .await
+            .err()
+            .unwrap();
+        assert!(matches!(
+            prepare_error(&first.error),
+            Some(PrepareError::TimedOut { .. })
+        ));
+        let second = rig
+            .start(spec(Regime::R1, &[0], secs(5)))
+            .await
+            .err()
+            .unwrap();
+        assert!(second.value.is_some());
+        assert!(matches!(
+            prepare_error(&second.error),
+            Some(PrepareError::Busy)
+        ));
+        blocked.release.send(()).unwrap();
+        let began = std::time::Instant::now();
+        let handle = loop {
+            match rig.start(spec(Regime::R1, &[0], secs(5))).await {
+                Ok(handle) => break handle,
+                Err(partial)
+                    if matches!(prepare_error(&partial.error), Some(PrepareError::Busy))
+                        && began.elapsed() < secs(10) =>
+                {
+                    tokio::task::yield_now().await;
+                }
+                Err(partial) => panic!(
+                    "the released preparation never freed the preparer: {}",
+                    partial.error
+                ),
+            }
+        };
+        handle.commands.send(TrialCommand::Stop).unwrap();
+        assert!(finish(&handle).await.finished.teardown.is_ok());
     })
     .await;
 }

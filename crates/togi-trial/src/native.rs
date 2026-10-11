@@ -91,6 +91,7 @@ impl Runner {
             storage: None,
             log_sink: None,
             supervisors: std::cell::RefCell::default(),
+            preparer: crate::prepare::Preparer::default(),
         })?;
         Ok(Self {
             dir,

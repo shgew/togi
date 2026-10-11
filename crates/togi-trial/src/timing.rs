@@ -15,6 +15,9 @@ pub(crate) struct Timing {
     pub drain: Duration,
     pub writer_join: Duration,
     pub probe: Duration,
+    /// One absolute budget for all of a start's file preparation (the trial directory and every
+    /// instance's files), which runs on its own thread.
+    pub prepare: Duration,
     /// Slack the synchronous side adds to what the runtime thread is allowed to take.
     pub margin: Duration,
 }
@@ -31,6 +34,7 @@ impl Default for Timing {
             drain: Duration::from_secs(10),
             writer_join: Duration::from_secs(5),
             probe: Duration::from_secs(30),
+            prepare: Duration::from_secs(10),
             margin: Duration::from_secs(5),
         }
     }
@@ -42,10 +46,11 @@ impl Timing {
         self.stall_grace.min(READINESS_LIMIT)
     }
 
-    /// The most the runtime thread may need to start `instances` instances: each scope wait of an
-    /// R6 start, then a rollback teardown if the start fails. Timing begins after it.
+    /// The most the runtime thread may need to start `instances` instances: the file preparation,
+    /// each scope wait of an R6 start, then a rollback teardown if the start fails. Timing begins
+    /// after it.
     pub(crate) fn start_bound(&self, instances: u32) -> Duration {
-        self.readiness() * instances + self.teardown + self.margin
+        self.prepare + self.readiness() * instances + self.teardown + self.margin
     }
 
     /// From the start's completion to the supervisor's report: the duration, the teardown and the
@@ -59,7 +64,8 @@ impl Timing {
     pub(crate) fn representable(&self, duration: Duration, instances: u32) -> bool {
         self.readiness()
             .checked_mul(instances)
-            .and_then(|scopes| scopes.checked_add(self.teardown))
+            .and_then(|scopes| scopes.checked_add(self.prepare))
+            .and_then(|start| start.checked_add(self.teardown))
             .and_then(|start| start.checked_add(self.margin))
             .and_then(|start| start.checked_add(duration))
             .and_then(|total| total.checked_add(self.stop_bound()))
@@ -89,8 +95,8 @@ mod tests {
         let timing = Timing::default();
         let secs = Duration::from_secs;
         assert_eq!(timing.readiness(), secs(30));
-        assert_eq!(timing.start_bound(1), secs(30 + 15 + 5));
-        assert_eq!(timing.start_bound(16), secs(16 * 30 + 15 + 5));
+        assert_eq!(timing.start_bound(1), secs(10 + 30 + 15 + 5));
+        assert_eq!(timing.start_bound(16), secs(10 + 16 * 30 + 15 + 5));
         assert_eq!(timing.stop_bound(), secs(15 + 5 + 5));
         assert_eq!(timing.wait_bound(secs(900)), secs(900 + 15 + 5 + 5));
         assert_eq!(timing.sweep_bound(), secs(15 + 5));

@@ -141,7 +141,7 @@ fn marks_termination(marker: PathBuf) -> impl FnOnce(&Fake) + Send + 'static {
     }
 }
 
-/// Timings whose start bound a blocked launch can outlast: one instance may take 650 ms.
+/// Timings whose start bound a blocked launch can outlast: one instance may take 850 ms.
 fn stalling() -> Timing {
     Timing {
         sample: Duration::from_millis(50),
@@ -151,6 +151,7 @@ fn stalling() -> Timing {
         kill_slot: Duration::from_millis(100),
         drain: Duration::from_millis(200),
         writer_join: Duration::from_millis(300),
+        prepare: Duration::from_millis(200),
         margin: Duration::from_millis(100),
         ..Timing::default()
     }

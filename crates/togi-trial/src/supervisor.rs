@@ -33,6 +33,7 @@ use crate::launch::{self, Confinement};
 use crate::logs::{LogWriter, LogsEnd, Wrap};
 use crate::os::{Child as _, GroupSignal, LaunchFailure, Os, SignalError};
 use crate::plan::{Load, TrialPlan};
+use crate::prepare::Preparer;
 use crate::runner::Backends;
 use crate::samples::{Open, SamplesWriter};
 use crate::schedule::{Action, Step, timeline};
@@ -64,6 +65,8 @@ pub(crate) struct Env<O: Os> {
     pub(crate) log_sink: Option<Rc<dyn Fn() -> Wrap>>,
     /// Every supervisor started on this thread, so shutdown can have each tear its trial down.
     pub(crate) supervisors: RefCell<Vec<Supervised>>,
+    /// How a start's file preparation runs, off this thread.
+    pub(crate) preparer: Preparer,
 }
 
 impl<O: Os> Env<O> {
@@ -188,18 +191,7 @@ pub(crate) async fn start<O: Os>(
         Confinement::Scoped { identity, .. } => Some(identity),
         Confinement::Unscoped => None,
     };
-    let container = match files::recreate(&env.dir, &plan.id, identity) {
-        Ok(container) => container,
-        Err(error) => return Err(early(error.into(), ready)),
-    };
-    let logs = match LogWriter::spawn(env.log_sink.as_ref().map(|make| make())) {
-        Ok(logs) => logs,
-        Err(error) => return Err(early(Error::LogWriter(error), ready)),
-    };
-    drop(ready);
-
-    let (events_tx, events_rx) = channel();
-    let (inbound_tx, mut inbound_rx) = bounded(INBOUND_CAPACITY);
+    let prepare_until = Instant::now() + env.timing.prepare;
     let (commands_tx, mut commands_rx) = unbounded_channel();
     let cancelled = Arc::new(AtomicBool::new(false));
     let registration = {
@@ -209,6 +201,37 @@ pub(crate) async fn start<O: Os>(
             let _ = commands.send(TrialCommand::Cancel);
         })
     };
+    let container = {
+        let (dir, id) = (env.dir.clone(), plan.id.clone());
+        let chown = env.preparer.chown.clone();
+        let prepared = env
+            .preparer
+            .run(
+                "the trial directory",
+                prepare_until,
+                env.timing.prepare,
+                &mut commands_rx,
+                &cancelled,
+                move || {
+                    let mut container = files::recreate(&dir, &id, identity)?;
+                    container.chown = chown;
+                    Ok(container)
+                },
+            )
+            .await;
+        match prepared {
+            Ok(container) => Arc::new(container),
+            Err(error) => return Err(early(error, ready)),
+        }
+    };
+    let logs = match LogWriter::spawn(env.log_sink.as_ref().map(|make| make())) {
+        Ok(logs) => logs,
+        Err(error) => return Err(early(Error::LogWriter(error), ready)),
+    };
+    drop(ready);
+
+    let (events_tx, events_rx) = channel();
+    let (inbound_tx, mut inbound_rx) = bounded(INBOUND_CAPACITY);
     let selector = Selector::new(
         plan.workload.backend,
         &plan
@@ -230,7 +253,8 @@ pub(crate) async fn start<O: Os>(
         &plan,
         &container,
         confinement,
-        backend.as_ref(),
+        &backend,
+        prepare_until,
         &logs,
         &mut live,
         &inbound_tx,
@@ -357,9 +381,10 @@ fn describe<O: Os>(
 async fn launch_all<O: Os>(
     env: &Rc<Env<O>>,
     plan: &TrialPlan,
-    container: &Container,
+    container: &Arc<Container>,
     confinement: Confinement,
-    backend: &dyn Backend,
+    backend: &Arc<dyn Backend>,
+    prepare_until: Instant,
     logs: &LogWriter,
     live: &mut Live<O>,
     inbound: &Sender<Inbound>,
@@ -380,7 +405,21 @@ async fn launch_all<O: Os>(
         }
         let label = instance.name.dir_name();
         let scope = ScopeName::for_instance(&plan.id, instance.name, plan.per_core());
-        let files = container.instance(instance, backend, &plan.workload, identity)?;
+        let files = env
+            .preparer
+            .run(
+                &label,
+                prepare_until,
+                env.timing.prepare,
+                commands,
+                cancelled,
+                {
+                    let (container, backend) = (Arc::clone(container), Arc::clone(backend));
+                    let (instance, workload) = (instance.clone(), plan.workload.clone());
+                    move || container.instance(&instance, backend.as_ref(), &workload, identity)
+                },
+            )
+            .await?;
         let command = launch::command_for(
             confinement,
             &scope,

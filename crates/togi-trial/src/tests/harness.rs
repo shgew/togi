@@ -115,6 +115,7 @@ pub(super) fn rig_edit(
         storage: None,
         log_sink: None,
         supervisors: std::cell::RefCell::default(),
+        preparer: crate::prepare::Preparer::default(),
     };
     edit(&mut env);
     let env = Rc::new(env);

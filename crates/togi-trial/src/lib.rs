@@ -33,6 +33,8 @@ mod output;
 #[cfg(target_os = "linux")]
 mod plan;
 #[cfg(target_os = "linux")]
+mod prepare;
+#[cfg(target_os = "linux")]
 mod procfs;
 #[cfg(target_os = "linux")]
 mod runtime;

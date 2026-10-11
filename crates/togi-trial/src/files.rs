@@ -3,8 +3,7 @@ use std::fs::File;
 use std::io::{self, Write as _};
 use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
 use std::os::unix::ffi::OsStrExt;
-use std::os::unix::fs::{DirBuilderExt as _, MetadataExt};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
 use rustix::fs::{AtFlags, Dir, Gid, Mode, OFlags, Uid, fchmod, fchown, mkdirat, openat, unlinkat};
@@ -20,12 +19,44 @@ use crate::samples::{Open, create_file};
 
 const MAX_DEPTH: usize = 128;
 
+type ChownFn = dyn Fn(&str, BorrowedFd<'_>, Uid, Gid) -> Result<(), Errno> + Send + Sync;
+
+/// How a created file or directory is handed to the backend account; the target names it for
+/// whoever observes the call. Production changes the owner of the descriptor it was given.
+#[derive(Clone)]
+pub(crate) struct Chown(Arc<ChownFn>);
+
+impl Chown {
+    pub(crate) fn new(
+        change: impl Fn(&str, BorrowedFd<'_>, Uid, Gid) -> Result<(), Errno> + Send + Sync + 'static,
+    ) -> Self {
+        Self(Arc::new(change))
+    }
+
+    fn apply(&self, target: &str, fd: BorrowedFd<'_>, uid: Uid, gid: Gid) -> Result<(), Errno> {
+        (self.0)(target, fd, uid, gid)
+    }
+}
+
+impl Default for Chown {
+    fn default() -> Self {
+        Self::new(|_, fd, uid, gid| fchown(fd, Some(uid), Some(gid)))
+    }
+}
+
+impl std::fmt::Debug for Chown {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Chown")
+    }
+}
+
 /// The trial's root-owned directory, held by descriptor so nothing below is reached by path.
 #[derive(Debug)]
 pub(crate) struct Container {
     pub(crate) path: PathBuf,
     dir: Arc<OwnedFd>,
     parent: Arc<OwnedFd>,
+    pub(crate) chown: Chown,
 }
 
 /// One instance's directory, its retained logs and what the backend asked for.
@@ -56,12 +87,13 @@ fn c_name(name: &OsStr) -> io::Result<CString> {
     CString::new(name.as_bytes()).map_err(io::Error::other)
 }
 
-fn open_directory(parent: Option<BorrowedFd<'_>>, path: &Path) -> Result<OwnedFd, Errno> {
-    let flags = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC;
-    match parent {
-        Some(parent) => openat(parent, path, flags, Mode::empty()),
-        None => rustix::fs::open(path, flags & !OFlags::NOFOLLOW, Mode::empty()),
-    }
+const DIRECTORY: OFlags = OFlags::RDONLY
+    .union(OFlags::DIRECTORY)
+    .union(OFlags::NOFOLLOW)
+    .union(OFlags::CLOEXEC);
+
+fn open_directory(parent: BorrowedFd<'_>, name: &str) -> Result<OwnedFd, Errno> {
+    openat(parent, name, DIRECTORY, Mode::empty())
 }
 
 /// Removes `name` below `dir` without ever following a symlink.
@@ -74,12 +106,7 @@ fn remove_entry(dir: BorrowedFd<'_>, name: &CString, depth: usize) -> io::Result
     if depth >= MAX_DEPTH {
         return Err(io::Error::other("directory nesting too deep"));
     }
-    let child = openat(
-        dir,
-        name,
-        OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
-        Mode::empty(),
-    )?;
+    let child = openat(dir, name, DIRECTORY, Mode::empty())?;
     let mut names = Vec::new();
     for entry in Dir::read_from(&child)? {
         let entry = entry?;
@@ -95,38 +122,154 @@ fn remove_entry(dir: BorrowedFd<'_>, name: &CString, depth: usize) -> io::Result
     Ok(())
 }
 
-fn searchable(meta: &std::fs::Metadata, identity: BackendIdentity) -> bool {
-    let bit = if meta.uid() == identity.uid() {
+/// What the walk from `/` recorded about one directory it held open.
+#[derive(Clone, Debug)]
+struct Link {
+    path: PathBuf,
+    uid: u32,
+    gid: u32,
+    mode: u32,
+}
+
+fn link_of(fd: &OwnedFd, path: &Path) -> Result<Link, PrepareError> {
+    let stat = rustix::fs::fstat(fd).map_err(|error| directory_error("stat", path, error))?;
+    Ok(Link {
+        path: path.to_owned(),
+        uid: stat.st_uid,
+        gid: stat.st_gid,
+        mode: stat.st_mode & 0o7777,
+    })
+}
+
+/// Whether the account, classed as the directory's owner, its group or everybody else (never more
+/// than one class), may search the directory.
+fn searchable(link: &Link, identity: BackendIdentity) -> bool {
+    let bit = if link.uid == identity.uid() {
         0o100
-    } else if meta.gid() == identity.gid() {
+    } else if link.gid == identity.gid() {
         0o010
     } else {
         0o001
     };
-    meta.mode() & bit != 0
+    link.mode & bit != 0
 }
 
-/// Every ancestor of `path`, resolved once, must be a directory the account can search.
-fn check_ancestors(path: &Path, identity: BackendIdentity) -> Result<(), PrepareError> {
-    let resolved =
-        std::fs::canonicalize(path).map_err(|error| directory_error("resolve", path, error))?;
-    for ancestor in resolved.ancestors() {
-        let meta = std::fs::metadata(ancestor)
-            .map_err(|error| directory_error("stat", ancestor, error))?;
-        if !meta.is_dir() {
-            return Err(PrepareError::NotDirectory {
-                path: ancestor.to_owned(),
-            });
+/// Every directory from `/` to the trial directory must be one the account can search.
+fn check_search(chain: &[Link], identity: BackendIdentity) -> Result<(), PrepareError> {
+    match chain.iter().rev().find(|link| !searchable(link, identity)) {
+        None => Ok(()),
+        Some(link) => Err(PrepareError::Inaccessible {
+            path: link.path.clone(),
+            uid: identity.uid(),
+            gid: identity.gid(),
+        }),
+    }
+}
+
+/// Where a directory of the walk sits, which decides who may own it and write to it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Role {
+    /// `/`: trusted whoever owns it, since no other namespace can replace it.
+    NamespaceRoot,
+    /// Above the state directory: owned by root or this process's user; others may write to it
+    /// only through the sticky bit, which stops them replacing entries they do not own (and each
+    /// entry below must itself pass).
+    Ancestor,
+    /// The state directory, parent of the trials directory: root or this user, nobody else writes.
+    State,
+    /// The trials directory: this user only, nobody else writes.
+    Trials,
+}
+
+fn role(index: usize, last: usize) -> Role {
+    if index == last {
+        Role::Trials
+    } else if index + 1 == last {
+        Role::State
+    } else if index == 0 {
+        Role::NamespaceRoot
+    } else {
+        Role::Ancestor
+    }
+}
+
+/// Why a directory may not stand in the trials path, `None` when it may.
+fn refusal(mode: u32, owner: u32, caller: u32, role: Role) -> Option<&'static str> {
+    let root_may_own = role != Role::Trials;
+    let authorized = owner == caller || (root_may_own && owner == 0) || role == Role::NamespaceRoot;
+    if !authorized {
+        return Some("it belongs to another user");
+    }
+    let sticky_covers = matches!(role, Role::NamespaceRoot | Role::Ancestor) && mode & 0o1000 != 0;
+    (mode & 0o022 != 0 && !sticky_covers).then_some("others can write to it")
+}
+
+/// Opens `name` below `dir` as a directory, never through a symlink; a missing one is created
+/// (0755 whatever the umask) when `create` is set.
+fn descend(dir: &OwnedFd, name: &OsStr, at: &Path, create: bool) -> Result<OwnedFd, PrepareError> {
+    let path = at.join(name);
+    let text = name.to_str().ok_or_else(|| {
+        directory_error(
+            "open",
+            &path,
+            io::Error::new(io::ErrorKind::InvalidInput, "the name is not UTF-8"),
+        )
+    })?;
+    match open_directory(dir.as_fd(), text) {
+        Ok(fd) => Ok(fd),
+        Err(Errno::NOENT) if create => {
+            let created = match mkdirat(dir, text, Mode::from_raw_mode(0o755)) {
+                Ok(()) => true,
+                Err(Errno::EXIST) => false,
+                Err(error) => return Err(directory_error("create", &path, error)),
+            };
+            let fd = open_directory(dir.as_fd(), text)
+                .map_err(|error| directory_error("open", &path, error))?;
+            if created {
+                fchmod(&fd, Mode::from_raw_mode(0o755))
+                    .map_err(|error| directory_error("set the mode of", &path, error))?;
+            }
+            Ok(fd)
         }
-        if !searchable(&meta, identity) {
-            return Err(PrepareError::Inaccessible {
-                path: ancestor.to_owned(),
-                uid: identity.uid(),
-                gid: identity.gid(),
-            });
+        Err(error) => Err(directory_error("open", &path, error)),
+    }
+}
+
+/// Opens every directory of `path` from `/` by descriptor, one `openat(O_NOFOLLOW)` per
+/// component, and judges each by `refusal` before going below it. `..` is resolved lexically,
+/// which is exact because no component of the walk is a symlink.
+fn walk(path: &Path, create: bool, caller: u32) -> Result<(OwnedFd, Vec<Link>), PrepareError> {
+    let mut names: Vec<&OsStr> = Vec::new();
+    for component in path.components() {
+        match component {
+            Component::Normal(name) => names.push(name),
+            Component::ParentDir => {
+                names.pop();
+            }
+            Component::RootDir | Component::CurDir | Component::Prefix(_) => {}
         }
     }
-    Ok(())
+    if names.is_empty() {
+        return Err(PrepareError::NotDirectory {
+            path: path.to_owned(),
+        });
+    }
+    let mut at = PathBuf::from("/");
+    let mut dir = rustix::fs::open("/", DIRECTORY & !OFlags::NOFOLLOW, Mode::empty())
+        .map_err(|error| directory_error("open", &at, error))?;
+    let last = names.len();
+    let mut chain = Vec::with_capacity(last + 1);
+    for (index, name) in names.iter().copied().map(Some).chain([None]).enumerate() {
+        let link = link_of(&dir, &at)?;
+        if let Some(reason) = refusal(link.mode, link.uid, caller, role(index, last)) {
+            return Err(PrepareError::Untrusted { path: at, reason });
+        }
+        chain.push(link);
+        let Some(name) = name else { break };
+        dir = descend(&dir, name, &at, create)?;
+        at.push(name);
+    }
+    Ok((dir, chain))
 }
 
 /// Removes any earlier trial of this id without following symlinks, recreates it, fixes its mode
@@ -140,6 +283,7 @@ pub(crate) fn recreate(
     let TrialsRoot {
         path: root,
         dir: parent,
+        mut chain,
     } = TrialsRoot::open(root, true)?;
     let mode = Mode::from_raw_mode(if identity.is_some() { 0o711 } else { 0o755 });
     fchmod(&parent, mode).map_err(|error| directory_error("set the mode of", &root, error))?;
@@ -150,80 +294,61 @@ pub(crate) fn recreate(
         .map_err(|error| directory_error("remove the earlier trial", &path, error))?;
     mkdirat(&parent, &name, Mode::from_raw_mode(0o755))
         .map_err(|error| directory_error("create", &path, error))?;
-    let dir = open_directory(Some(parent.as_fd()), Path::new(id.as_str()))
+    let dir = open_directory(parent.as_fd(), id.as_str())
         .map_err(|error| directory_error("open", &path, error))?;
     fchmod(&dir, mode).map_err(|error| directory_error("set the mode of", &path, error))?;
     if let Some(identity) = identity {
-        check_ancestors(&path, identity)?;
+        chain.pop();
+        chain.push(link_of(&parent, &root)?);
+        chain.push(link_of(&dir, &path)?);
+        check_search(&chain, identity)?;
     }
     Ok(Container {
         path,
         dir: Arc::new(dir),
         parent: Arc::new(parent),
+        chown: Chown::default(),
     })
 }
 
-/// The directory holding every trial, reached by descriptor from its parent, the state directory.
-/// Both must belong to this process's user (the parent may also belong to root) and be writable by
-/// nobody else, so no other account can replace an entry below them; the trials directory itself
-/// is never a symlink.
+/// The directory holding every trial, reached by descriptors from `/`: no component is a symlink,
+/// every directory on the way belongs to root or this process's user and is writable by nobody
+/// else (or only through the sticky bit, above the state directory), so no other account can
+/// replace an entry on the path; the state directory and the trials directory admit no other
+/// writer at all.
 pub(crate) struct TrialsRoot {
     pub(crate) path: PathBuf,
     pub(crate) dir: OwnedFd,
-}
-
-fn trusted(fd: &OwnedFd, path: &Path, root_may_own: bool) -> Result<(), PrepareError> {
-    let stat = rustix::fs::fstat(fd).map_err(|error| directory_error("stat", path, error))?;
-    let euid = rustix::process::geteuid().as_raw();
-    let untrusted = |reason| PrepareError::Untrusted {
-        path: path.to_owned(),
-        reason,
-    };
-    if stat.st_uid != euid && !(root_may_own && stat.st_uid == 0) {
-        return Err(untrusted("it belongs to another user"));
-    }
-    if stat.st_mode & 0o022 != 0 {
-        return Err(untrusted("others can write to it"));
-    }
-    Ok(())
+    chain: Vec<Link>,
 }
 
 impl TrialsRoot {
     pub(crate) fn open(root: &Path, create: bool) -> Result<Self, PrepareError> {
-        let path =
-            std::path::absolute(root).map_err(|error| directory_error("resolve", root, error))?;
-        let (Some(parent_path), Some(name)) = (path.parent(), path.file_name()) else {
-            return Err(PrepareError::NotDirectory { path });
+        let base = if root.is_absolute() {
+            PathBuf::from("/")
+        } else {
+            std::env::current_dir().map_err(|error| directory_error("resolve", root, error))?
         };
-        if create {
-            std::fs::DirBuilder::new()
-                .recursive(true)
-                .mode(0o755)
-                .create(parent_path)
-                .map_err(|error| directory_error("create", parent_path, error))?;
-        }
-        let parent = open_directory(None, parent_path)
-            .map_err(|error| directory_error("open", parent_path, error))?;
-        trusted(&parent, parent_path, true)?;
-        let created = create
-            && match mkdirat(&parent, name, Mode::from_raw_mode(0o755)) {
-                Ok(()) => true,
-                Err(Errno::EXIST) => false,
-                Err(error) => return Err(directory_error("create", &path, error)),
-            };
-        let dir = open_directory(Some(parent.as_fd()), Path::new(name))
-            .map_err(|error| directory_error("open", &path, error))?;
-        if created {
-            fchmod(&dir, Mode::from_raw_mode(0o755))
-                .map_err(|error| directory_error("set the mode of", &path, error))?;
-        }
-        trusted(&dir, &path, false)?;
-        Ok(Self { path, dir })
+        Self::open_from(&base, root, create, rustix::process::geteuid().as_raw())
+    }
+
+    /// `root`, relative to `base` when it is not absolute, judged for the user `caller`.
+    fn open_from(
+        base: &Path,
+        root: &Path,
+        create: bool,
+        caller: u32,
+    ) -> Result<Self, PrepareError> {
+        let (dir, chain) = walk(&base.join(root), create, caller)?;
+        let path = chain
+            .last()
+            .map_or_else(PathBuf::new, |link| link.path.clone());
+        Ok(Self { path, dir, chain })
     }
 
     /// One trial's directory below the root, never through a symlink.
     pub(crate) fn trial(&self, id: &TrialId) -> Result<OwnedFd, PrepareError> {
-        open_directory(Some(self.dir.as_fd()), Path::new(id.as_str()))
+        open_directory(self.dir.as_fd(), id.as_str())
             .map_err(|error| directory_error("open", &self.path.join(id.as_str()), error))
     }
 
@@ -285,8 +410,7 @@ impl Container {
         };
         mkdirat(&*self.dir, name.as_str(), Mode::from_raw_mode(0o755))
             .map_err(|errno| create(&name, errno))?;
-        let dir = open_directory(Some(self.dir.as_fd()), Path::new(&name))
-            .map_err(|errno| create(&name, errno))?;
+        let dir = open_directory(self.dir.as_fd(), &name).map_err(|errno| create(&name, errno))?;
         fchmod(&dir, Mode::from_raw_mode(0o755)).map_err(|errno| create(&name, errno))?;
         let backend_plan = backend
             .plan(workload, &path, &plan.cpus)
@@ -304,6 +428,11 @@ impl Container {
         );
         let owner =
             identity.map(|identity| (Uid::from_raw(identity.uid()), Gid::from_raw(identity.gid())));
+        let chown_failed = |target: &str, errno: Errno| PrepareError::Chown {
+            instance: name.clone(),
+            name: target.to_owned(),
+            source: errno.into(),
+        };
         let mut inputs = Vec::with_capacity(backend_plan.inputs.len());
         for input in &backend_plan.inputs {
             let file_name = input.name.as_str();
@@ -317,20 +446,16 @@ impl Container {
                     source,
                 })?;
             if let Some((uid, gid)) = owner {
-                fchown(&file, Some(uid), Some(gid)).map_err(|errno| PrepareError::Chown {
-                    instance: name.clone(),
-                    name: file_name.to_owned(),
-                    source: errno.into(),
-                })?;
+                self.chown
+                    .apply(file_name, file.as_fd(), uid, gid)
+                    .map_err(|errno| chown_failed(file_name, errno))?;
             }
             inputs.push(format!("{name}/{file_name}"));
         }
         if let Some((uid, gid)) = owner {
-            fchown(&dir, Some(uid), Some(gid)).map_err(|errno| PrepareError::Chown {
-                instance: name.clone(),
-                name: name.clone(),
-                source: errno.into(),
-            })?;
+            self.chown
+                .apply(&name, dir.as_fd(), uid, gid)
+                .map_err(|errno| chown_failed(&name, errno))?;
         }
         Ok(InstanceFiles {
             path,
@@ -355,7 +480,9 @@ mod tests {
     use crate::testing::TestBackend;
     use std::fs;
     use std::io::Read as _;
-    use std::os::unix::fs::{PermissionsExt, symlink};
+    use std::os::unix::fs::{MetadataExt as _, PermissionsExt, symlink};
+    use std::sync::Mutex;
+    use test_case::test_case;
     use togi_machine::{CoreId, CpuId, Regime, pick_workload};
 
     fn own_identity() -> BackendIdentity {
@@ -508,14 +635,159 @@ mod tests {
     }
 
     #[test]
-    fn a_relative_trial_directory_resolves_to_an_absolute_path() {
-        let relative = PathBuf::from(format!("trial-test-relative-{}", std::process::id()));
-        fs::create_dir(&relative).unwrap();
-        fs::set_permissions(&relative, fs::Permissions::from_mode(0o755)).unwrap();
-        let container = recreate(&relative.join("trials"), &id("t1"), None).unwrap();
-        assert!(container.path.is_absolute());
-        assert!(container.path.starts_with(std::env::current_dir().unwrap()));
-        fs::remove_dir_all(&relative).unwrap();
+    fn a_relative_trials_directory_resolves_against_its_base_and_touches_nothing_else() {
+        let tmp = crate::testing::tempdir();
+        let root = TrialsRoot::open_from(
+            tmp.path(),
+            Path::new("state/../state/trials"),
+            true,
+            caller(),
+        )
+        .unwrap();
+        assert_eq!(root.path, tmp.path().join("state/trials"));
+        assert!(root.path.is_absolute() && root.path.is_dir());
+        assert_eq!(mode_of(&tmp.path().join("state")), 0o755);
+    }
+
+    fn caller() -> u32 {
+        rustix::process::geteuid().as_raw()
+    }
+
+    #[test_case(0o777; "world writable")]
+    #[test_case(0o775; "group writable")]
+    #[test_case(0o757; "other writable")]
+    fn a_writable_ancestor_without_the_sticky_bit_is_refused_before_any_change(mode: u32) {
+        let tmp = crate::testing::tempdir();
+        let open = tmp.path().join("open");
+        fs::create_dir(&open).unwrap();
+        fs::set_permissions(&open, fs::Permissions::from_mode(mode)).unwrap();
+        let error = recreate(&open.join("state/trials"), &id("t1"), None).unwrap_err();
+        assert!(
+            matches!(error, PrepareError::Untrusted { ref path, reason } if *path == open && reason == "others can write to it"),
+            "{error}"
+        );
+        assert!(!open.join("state").exists());
+    }
+
+    #[test]
+    fn a_symlinked_ancestor_is_refused_before_any_change() {
+        let tmp = crate::testing::tempdir();
+        let real = tmp.path().join("real");
+        fs::create_dir(&real).unwrap();
+        let link = tmp.path().join("link");
+        symlink(&real, &link).unwrap();
+        let error = recreate(&link.join("state/trials"), &id("t1"), None).unwrap_err();
+        assert!(
+            matches!(error, PrepareError::Directory { operation: "open", ref path, .. } if *path == link),
+            "{error}"
+        );
+        assert!(!real.join("state").exists());
+    }
+
+    #[test]
+    fn a_sticky_world_writable_ancestor_the_runner_owns_is_accepted() {
+        let tmp = crate::testing::tempdir();
+        let shared = tmp.path().join("shared");
+        fs::create_dir(&shared).unwrap();
+        fs::set_permissions(&shared, fs::Permissions::from_mode(0o1777)).unwrap();
+        let container = recreate(&shared.join("state/trials"), &id("t1"), None).unwrap();
+        assert!(container.path.is_dir());
+    }
+
+    #[test]
+    fn an_ancestor_another_user_owns_is_refused_whatever_sits_above_it() {
+        if rustix::process::geteuid().is_root() {
+            return;
+        }
+        let tmp = crate::testing::tempdir();
+        let stranger = caller() + 1;
+        let error = TrialsRoot::open_from(
+            Path::new("/"),
+            &tmp.path().join("state/trials"),
+            false,
+            stranger,
+        )
+        .err()
+        .unwrap();
+        let PrepareError::Untrusted { path, reason } = error else {
+            panic!("not refused as untrusted: {error}");
+        };
+        assert_eq!(reason, "it belongs to another user");
+        assert_eq!(fs::metadata(&path).unwrap().uid(), caller());
+        assert!(tmp.path().starts_with(&path));
+    }
+
+    #[test_case(0o755, 0, Role::Ancestor, None; "root's plain ancestor")]
+    #[test_case(0o755, 1000, Role::Ancestor, None; "the runner's plain ancestor")]
+    #[test_case(0o755, 1001, Role::Ancestor, Some("it belongs to another user"); "a stranger's ancestor")]
+    #[test_case(0o1777, 0, Role::Ancestor, None; "root's sticky world-writable ancestor")]
+    #[test_case(0o1777, 1001, Role::Ancestor, Some("it belongs to another user"); "a stranger's entry below a sticky ancestor")]
+    #[test_case(0o777, 0, Role::Ancestor, Some("others can write to it"); "writable without sticky")]
+    #[test_case(0o775, 1000, Role::Ancestor, Some("others can write to it"); "group writable without sticky")]
+    #[test_case(0o755, 1001, Role::NamespaceRoot, None; "the namespace root is trusted whoever owns it")]
+    #[test_case(0o777, 0, Role::NamespaceRoot, Some("others can write to it"); "a writable namespace root")]
+    #[test_case(0o755, 0, Role::State, None; "root's state directory")]
+    #[test_case(0o1755, 1000, Role::State, None; "the runner's sticky state directory")]
+    #[test_case(0o1777, 1000, Role::State, Some("others can write to it"); "sticky does not cover the state directory")]
+    #[test_case(0o755, 1000, Role::Trials, None; "the runner's trials directory")]
+    #[test_case(0o755, 0, Role::Trials, Some("it belongs to another user"); "root's trials directory is refused to the runner")]
+    #[test_case(0o1777, 1000, Role::Trials, Some("others can write to it"); "sticky does not cover the trials directory")]
+    fn each_directory_of_the_path_is_judged_by_its_place(
+        mode: u32,
+        owner: u32,
+        role: Role,
+        refused: Option<&'static str>,
+    ) {
+        assert_eq!(refusal(mode, owner, 1000, role), refused);
+    }
+
+    fn directory(uid: u32, gid: u32, mode: u32) -> Link {
+        Link {
+            path: PathBuf::from("/d"),
+            uid,
+            gid,
+            mode,
+        }
+    }
+
+    #[test_case(0, 2000, 0o710, true; "another user's directory, the account's primary group, group bit")]
+    #[test_case(0, 2000, 0o701, false; "the other bit does not help a group member")]
+    #[test_case(0, 3000, 0o701, true; "a stranger searches by the other bit")]
+    #[test_case(0, 3000, 0o710, false; "the group bit does not help a stranger")]
+    #[test_case(1000, 3000, 0o100, true; "the owner searches by the owner bit")]
+    #[test_case(1000, 2000, 0o011, false; "the owner class overrides the group and other bits")]
+    fn the_account_searches_by_exactly_one_permission_class(
+        uid: u32,
+        gid: u32,
+        mode: u32,
+        searchable_by_account: bool,
+    ) {
+        let identity = BackendIdentity::new(1000, 2000).unwrap();
+        assert_eq!(
+            searchable(&directory(uid, gid, mode), identity),
+            searchable_by_account
+        );
+    }
+
+    #[test]
+    fn the_deepest_directory_the_account_cannot_search_is_the_one_named() {
+        let identity = BackendIdentity::new(1000, 2000).unwrap();
+        let at = |path: &str, mode| Link {
+            path: PathBuf::from(path),
+            ..directory(0, 2000, mode)
+        };
+        let chain = [
+            at("/", 0o755),
+            at("/a", 0o701),
+            at("/a/b", 0o701),
+            at("/a/b/c", 0o710),
+        ];
+        let error = check_search(&chain, identity).unwrap_err();
+        assert!(
+            matches!(error, PrepareError::Inaccessible { ref path, uid: 1000, gid: 2000 } if path == Path::new("/a/b")),
+            "{error}"
+        );
+        assert!(check_search(&chain[..1], identity).is_ok());
     }
 
     #[test]
@@ -553,6 +825,85 @@ mod tests {
         );
         assert!(files.path.join("stdout.log").exists() && files.path.join("stderr.log").exists());
         assert_eq!(files.plan.watched.len(), 1);
+    }
+
+    fn recording(fail_at: Option<&'static str>) -> (Chown, Arc<Mutex<Vec<String>>>) {
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let seen = Arc::clone(&calls);
+        let chown = Chown::new(move |target, _, _, _| {
+            seen.lock().unwrap().push(target.to_owned());
+            if Some(target) == fail_at {
+                Err(Errno::PERM)
+            } else {
+                Ok(())
+            }
+        });
+        (chown, calls)
+    }
+
+    fn with_inputs() -> TestBackend {
+        let mut backend = TestBackend::new("/bin/true");
+        backend.inputs = vec![("prime.txt", "a"), ("local.txt", "b")];
+        backend
+    }
+
+    #[test]
+    fn the_inputs_and_then_the_directory_change_owner_and_only_when_scoped() {
+        let tmp = crate::testing::tempdir();
+        let mut container = recreate(&tmp.path().join("trials"), &id("t1"), None).unwrap();
+        let (chown, calls) = recording(None);
+        container.chown = chown;
+        container
+            .instance(&work(), &with_inputs(), &workload(), Some(own_identity()))
+            .unwrap();
+        assert_eq!(*calls.lock().unwrap(), ["prime.txt", "local.txt", "work"]);
+        let other = recreate(&tmp.path().join("trials"), &id("t2"), None).unwrap();
+        let mut unscoped = other;
+        let (chown, calls) = recording(None);
+        unscoped.chown = chown;
+        unscoped
+            .instance(&work(), &with_inputs(), &workload(), None)
+            .unwrap();
+        assert!(calls.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_failed_input_ownership_names_the_input_and_changes_nothing_after_it() {
+        let tmp = crate::testing::tempdir();
+        let mut container = recreate(&tmp.path().join("trials"), &id("t1"), None).unwrap();
+        let (chown, calls) = recording(Some("prime.txt"));
+        container.chown = chown;
+        let error = container
+            .instance(&work(), &with_inputs(), &workload(), Some(own_identity()))
+            .unwrap_err();
+        match error {
+            PrepareError::Chown {
+                ref instance,
+                ref name,
+                ref source,
+            } => {
+                assert_eq!((instance.as_str(), name.as_str()), ("work", "prime.txt"));
+                assert_eq!(source.raw_os_error(), Some(Errno::PERM.raw_os_error()));
+            }
+            other => panic!("not an ownership failure: {other}"),
+        }
+        assert_eq!(*calls.lock().unwrap(), ["prime.txt"]);
+    }
+
+    #[test]
+    fn a_failed_directory_ownership_is_named_once_every_input_was_handed_over() {
+        let tmp = crate::testing::tempdir();
+        let mut container = recreate(&tmp.path().join("trials"), &id("t1"), None).unwrap();
+        let (chown, calls) = recording(Some("work"));
+        container.chown = chown;
+        let error = container
+            .instance(&work(), &with_inputs(), &workload(), Some(own_identity()))
+            .unwrap_err();
+        assert!(
+            matches!(error, PrepareError::Chown { ref instance, ref name, .. } if instance == "work" && name == "work"),
+            "{error}"
+        );
+        assert_eq!(*calls.lock().unwrap(), ["prime.txt", "local.txt", "work"]);
     }
 
     #[test]
