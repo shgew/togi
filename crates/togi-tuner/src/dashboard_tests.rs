@@ -1538,3 +1538,51 @@ fn project_assembles_the_active_hunt() {
     assert_eq!(closed.hunt_plan, None);
     assert!(!closed.cycle_plan.paused);
 }
+
+#[test]
+fn crash_recovery_keeps_the_running_part() {
+    let ids = ids(8);
+    let starts: Vec<Start> = STARTS
+        .iter()
+        .map(|&offset| Start::has_room(offset))
+        .collect();
+    let mut j = Journal::on(&ids, two_ccds(), &starts);
+    j.ranking(&ids);
+    decide_next(&mut j);
+    j.cycle_start(1, &[Regime::R1]);
+    let plan = trial_after_decisions(&mut j);
+    assert_eq!(plan.regime, Regime::R1);
+    let (intent, trial) = j.intent(&plan);
+    let running = |j: &Journal| {
+        let projection = j.state.project();
+        assert_eq!(fresh(&j.events).project(), projection);
+        projection.cycle_plan.steps[0]
+            .parts
+            .iter()
+            .filter(|part| part.running)
+            .count()
+    };
+    assert_eq!(running(&j), 1, "the trial's part is not running");
+    j.append(
+        togi_journal::CrashDetected {
+            previous_boot: togi_machine::BootId::from("b".to_owned()),
+            in_flight: Some(intent),
+            stray: false,
+            condition: None,
+            reset_reason: None,
+            reset_reason_raw: Vec::new(),
+            inconclusive: false,
+            pstore: None,
+        }
+        .into(),
+        &[],
+    );
+    assert_eq!(
+        running(&j),
+        1,
+        "crash.detected dropped the running part before recovery closed the trial"
+    );
+    let end = Journal::end_payload(&trial, Outcome::Failure, Some(togi_machine::Signal::Crash));
+    j.append(end.into(), &[intent]);
+    assert_eq!(running(&j), 0, "the part still runs after its trial ended");
+}
