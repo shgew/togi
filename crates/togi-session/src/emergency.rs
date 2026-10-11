@@ -35,6 +35,8 @@ pub enum Withheld {
     NoValidation,
     #[error("offsets unchanged: the stop of every workload is not confirmed")]
     TeardownUnconfirmed,
+    #[error("offsets unchanged: the machine crashed")]
+    Crashed,
 }
 
 /// The right to zero the SMU in an emergency.

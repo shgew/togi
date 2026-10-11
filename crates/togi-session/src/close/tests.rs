@@ -11,7 +11,7 @@ use togi_tuner::DecisionAction;
 
 use crate::emergency::{Response, Withheld};
 use crate::session::{Fault as Broken, Visit};
-use crate::testing::{Bench, core, offsets, put, recorded_baseline, swept};
+use crate::testing::{Bench, core, offsets, put, recorded_baseline, swept, target};
 use crate::{Ended, Session, SessionError, Stop};
 
 fn tuned(bench: &Bench) -> Session {
@@ -370,13 +370,18 @@ fn the_emergency_is_withheld_without_a_validated_smu_or_after_a_fault() {
     ));
     assert_eq!(smu_offsets(&bench), [-5, -5]);
 
-    let bench = Bench::new(2);
-    let ended = latched(&bench, |session| session.fault = Some(Broken::Crashed));
-    assert!(matches!(
-        ended.emergency.unwrap().response,
-        Response::Withheld(Withheld::TeardownUnconfirmed)
-    ));
-    assert_eq!(smu_offsets(&bench), [-5, -5]);
+    for (fault, reason) in [
+        (Broken::Crashed, Withheld::Crashed),
+        (Broken::Containment, Withheld::TeardownUnconfirmed),
+    ] {
+        let bench = Bench::new(2);
+        let ended = latched(&bench, |session| session.fault = Some(fault));
+        assert!(matches!(
+            ended.emergency.unwrap().response,
+            Response::Withheld(withheld) if withheld == reason
+        ));
+        assert_eq!(smu_offsets(&bench), [-5, -5]);
+    }
 }
 
 #[test]
@@ -470,4 +475,34 @@ fn the_shutdown_follows_the_machine_check_of_the_restoration_tail() {
         panic!("{:?}", shutdown.payload);
     };
     assert!(shutdown.kernel_cursor.is_some());
+}
+
+#[test]
+fn a_decision_that_cannot_be_recorded_does_not_skip_the_restoration_but_records_no_shutdown() {
+    let bench = Bench::new(2);
+    let mut session = tuned(&bench);
+    let run = Ok(signalled(&mut session));
+    let unfoldable = DecisionAction::new(
+        togi_journal::CoreTransition {
+            core: core(9),
+            from: None,
+            to: togi_journal::CorePhase::AtLimit,
+            offset: target(-6),
+            pass: None,
+            failure_point: None,
+            check_solo_limit: false,
+            workloads: Vec::new(),
+            cleared_combination: Vec::new(),
+            reason: "test".into(),
+        },
+        Vec::new(),
+    );
+    let ended = session.close(run, &held(), vec![unfoldable]);
+    assert!(matches!(ended.errors.first(), Some(SessionError::Fold(_))));
+    let kinds = kinds(ended.journal.events());
+    assert!(kinds.contains(&"smu.intent"));
+    assert!(!kinds.contains(&"profile.restored"));
+    assert!(!kinds.contains(&"shutdown"));
+    assert!(ended.errors.len() >= 2);
+    assert_eq!(smu_offsets(&bench), [-5, -5]);
 }

@@ -3,7 +3,8 @@
 //! The workload is joined before a step of the run returns, so a run that reaches the cleanup holds the proof that
 //! nothing runs, or holds a fault that says why it does not. Restoration needs that proof and no fault; a latched
 //! journal failure is answered by the emergency instead; the `shutdown` is recorded last, and only on a machine whose
-//! offsets are back where the run found them.
+//! offsets are back where the run found them and whose owed decisions were all recorded. A decision that cannot be
+//! recorded is an error of the run, but it never leaves the offsets on the machine.
 
 use togi_journal::{DeadEndCondition, Payload};
 use togi_machine::{PerCore, TargetOffset};
@@ -63,20 +64,25 @@ impl Session {
         drained: Vec<DecisionAction>,
         errors: &mut Vec<SessionError>,
     ) {
+        let mut drain_failed = false;
         match self.record_drained(drained) {
             Ok(Some(dead_end)) => *stop = Some(dead_end),
             Ok(None) => {}
             Err(error) => {
                 errors.push(error);
-                return;
+                drain_failed = true;
             }
+        }
+        if self.appender.failure().is_some() {
+            return;
         }
         let reached = if smu_dead_end(stop.as_ref()) {
             Reached::Settled
         } else {
             self.restore_and_settle(stop, held, errors)
         };
-        if matches!(reached, Reached::Settled)
+        if !drain_failed
+            && matches!(reached, Reached::Settled)
             && !self.unreconciled()
             && let Err(error) = self.append_shutdown()
         {
@@ -158,10 +164,10 @@ impl Session {
     /// The emergency for a journal that cannot be appended to. A fault withholds it: a crashed machine or one
     /// whose workload may run is not touched.
     fn answer(&mut self, failure: &JournalFailure) -> emergency::Outcome {
-        let gate = if self.fault.is_some() {
-            Err(Withheld::TeardownUnconfirmed)
-        } else {
-            Access::gate(self.sweep, self.validated, self.stopped.as_ref())
+        let gate = match self.fault {
+            Some(Fault::Crashed) => Err(Withheld::Crashed),
+            Some(Fault::Containment) => Err(Withheld::TeardownUnconfirmed),
+            None => Access::gate(self.sweep, self.validated, self.stopped.as_ref()),
         };
         emergency::respond(
             failure,
