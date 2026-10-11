@@ -42,7 +42,7 @@ impl Session {
             if control != Control::Continue {
                 return Ok(control);
             }
-            self.record_drained()?;
+            self.record_drained_leaving_dead_end_pending()?;
             let held = self.held();
             let control = self.reconcile(&held)?;
             if control != Control::Continue {
@@ -54,6 +54,11 @@ impl Session {
             return Ok(control);
         }
         self.begin()
+    }
+
+    fn record_drained_leaving_dead_end_pending(&mut self) -> Result<(), SessionError> {
+        let _finished_by_inspect_after_reconciliation = self.record_drained()?;
+        Ok(())
     }
 
     fn tune(&mut self) -> Result<Stop, SessionError> {

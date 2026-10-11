@@ -127,10 +127,6 @@ fn started_lower(bench: &Bench) -> crate::RunInput {
     input
 }
 
-fn is_crash(ended: &Ended) -> bool {
-    ended.errors.iter().any(SessionError::is_crash)
-}
-
 fn drive_with(bench: &Bench, grub: Option<&SharedGrub>, cancelled: bool) -> Ended {
     for _ in 0..100 {
         if bench.sim.seams().host.boot_id().is_err() {
@@ -141,7 +137,7 @@ fn drive_with(bench: &Bench, grub: Option<&SharedGrub>, cancelled: bool) -> Ende
             input.cancel.cancel();
         }
         let ended = run(input);
-        if !is_crash(&ended) {
+        if !ended.crashed() {
             return ended;
         }
         bench.sim.crash();
@@ -386,7 +382,7 @@ fn a_crash_then_a_failing_preflight_records_the_crash_before_the_dead_end_and_ne
         )
         .unwrap();
     let crashed = run(started_lower(&bench));
-    assert!(is_crash(&crashed), "{:?}", crashed.errors);
+    assert!(crashed.crashed(), "{:?}", crashed.errors);
     drop(crashed);
     bench.sim.reboot();
     bench.sim.fail_check("root", "uid 1000");

@@ -131,6 +131,14 @@ pub struct Ended {
     pub capsule: Option<ResumeCapsule>,
 }
 
+impl Ended {
+    /// Whether any error of the run is one the machine's death or reboot would explain.
+    #[must_use]
+    pub fn crashed(&self) -> bool {
+        self.errors.iter().any(SessionError::is_crash)
+    }
+}
+
 /// What a kernel log read at a boundary leaves for the event that closes the boundary.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct Boundary {

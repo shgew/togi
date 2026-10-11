@@ -156,10 +156,6 @@ fn last_position(events: &[Event], kind: EventKind) -> Option<usize> {
     events.iter().rposition(|event| event.kind() == kind)
 }
 
-fn crashed(ended: &Ended) -> bool {
-    ended.errors.iter().any(SessionError::is_crash)
-}
-
 fn pending_dead_end(stop: Option<&Stop>) -> Option<&DeadEnd> {
     match stop {
         Some(Stop::DeadEnd { dead_end, .. }) => Some(dead_end),
@@ -247,12 +243,12 @@ fn every_smu_access_window_of_the_same_boot_restoration_converges() {
             let boot = fixture.boot();
             let fired = kill_at(&fixture, index + 1, Some(access));
             let killed = fixture.resume();
-            assert!(fired.get() && crashed(&killed), "{:?}", killed.errors);
+            assert!(fired.get() && killed.crashed(), "{:?}", killed.errors);
             drop(killed);
             for _ in 0..2 {
                 let fired = kill_at(&fixture, 8, None);
                 let killed = fixture.resume();
-                assert!(fired.get() && crashed(&killed), "{:?}", killed.errors);
+                assert!(fired.get() && killed.crashed(), "{:?}", killed.errors);
                 assert_eq!(fixture.boot(), boot);
             }
             fixture.bench.sim.interrupt_smu(|_: &SmuOperation| Ok(()));
@@ -853,7 +849,7 @@ fn a_restoration_after_a_combination_hunt_never_reaches_the_combination() {
             line: String::new(),
         }));
         let ended = run(input);
-        if ended.errors.iter().any(SessionError::is_crash) {
+        if ended.crashed() {
             bench.sim.reboot();
             continue;
         }
@@ -1053,7 +1049,7 @@ fn run_through_the_parked_deaths(bench: &Bench, crash_after_the_hunt: bool) -> E
             }))
         }));
         let ended = run(input);
-        if ended.errors.iter().any(SessionError::is_crash) {
+        if ended.crashed() {
             if !killed.replace(false) {
                 bench.sim.reboot();
             }

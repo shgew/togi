@@ -149,7 +149,7 @@ fn a_resumed_checking_session_continues_its_numbering_on_new_boots_in_time_order
     script(&bench, "0001", Signal::Crash, None, true);
     let crashed = one_cycle(&bench, |_| {});
     assert!(
-        crashed.errors.iter().any(crate::SessionError::is_crash),
+        crashed.crashed(),
         "{:?}",
         crashed.errors
     );
@@ -374,7 +374,7 @@ fn a_signal_during_the_kernel_log_retry_wait_stops_the_run_and_leaves_the_crashe
     );
     let crashed = one_cycle(&bench, |_| {});
     assert!(
-        crashed.errors.iter().any(crate::SessionError::is_crash),
+        crashed.crashed(),
         "{:?}",
         crashed.errors
     );

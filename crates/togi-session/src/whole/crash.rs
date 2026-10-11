@@ -20,7 +20,7 @@ use togi_tuner::{Constraints, CoreView, Profile};
 
 use crate::restore::restore_target;
 use crate::testing::{Bench, simulated};
-use crate::{Ended, Response, SessionError, Stop, Withheld, run};
+use crate::{Ended, Response, Stop, Withheld, run};
 
 const BOOTS: usize = 200;
 
@@ -88,10 +88,6 @@ impl RunEnd {
     fn finished(&self) -> bool {
         self.ended.stop.is_some() && self.ended.errors.is_empty()
     }
-
-    fn crashed(&self) -> bool {
-        self.ended.errors.iter().any(SessionError::is_crash)
-    }
 }
 
 /// Runs until a run stops cleanly: a run that crashed starts again after a reboot.
@@ -101,7 +97,7 @@ fn drive(bench: &Bench) -> Ended {
         if end.finished() {
             return end.ended;
         }
-        assert!(end.crashed(), "a run ended in {:?}", end.ended.errors);
+        assert!(end.ended.crashed(), "a run ended in {:?}", end.ended.errors);
         bench.sim.reboot();
     }
     panic!("no stop after {BOOTS} boots");
@@ -150,7 +146,7 @@ fn interrupted(bench: &Bench, after: usize, fate: Fate) -> Ended {
             );
             return end.ended;
         }
-        assert!(end.crashed(), "a run ended in {:?}", end.ended.errors);
+        assert!(end.ended.crashed(), "a run ended in {:?}", end.ended.errors);
         bench.sim.reboot();
     }
     panic!("no stop after {BOOTS} boots");
@@ -634,7 +630,7 @@ fn a_partial_crash_recovers_into_the_named_or_loaded_core_backoff_through_run() 
         before.policy.cycles = Some(NonZeroU32::MIN);
         let crashed = run(before);
         assert!(
-            crashed.errors.iter().any(SessionError::is_crash),
+            crashed.crashed(),
             "{:?}",
             crashed.errors
         );
