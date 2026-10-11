@@ -250,7 +250,11 @@ impl Trial {
     /// Waits for the supervisor's end, handing reports to `report`; false when it never came.
     fn await_end(&mut self, until: Instant, report: &mut dyn Reporter) -> bool {
         while self.ended.is_none() {
-            let remaining = until.saturating_duration_since(Instant::now());
+            let now = Instant::now();
+            if now >= until {
+                return false;
+            }
+            let remaining = until.saturating_duration_since(now);
             match self.events.recv_timeout(remaining) {
                 Ok(Event::Progress(detail)) => report.progress(&detail),
                 Ok(Event::Sample(sample)) => report.sample(sample),
