@@ -1,24 +1,53 @@
 #![cfg(all(feature = "hardware", target_os = "linux"))]
 
+use std::error::Error;
+use std::fmt::Write as _;
 use std::io::{self, Write};
 use std::path::Path;
+use std::sync::{LazyLock, Mutex, MutexGuard, PoisonError};
 use std::thread;
 use std::time::Duration;
 use togi_hostlock::{DEFAULT_PATH, HostLock, Policy};
 use togi_machine::{CoreId, ObservedOffset, PmTableReader, Smu, TargetOffset};
 use togi_smu::Driver;
 
-fn host_lock() -> HostLock {
-    HostLock::acquire(Path::new(DEFAULT_PATH), Policy::Host)
-        .unwrap_or_else(|error| panic!("take the host lock: {error}"))
+/// Taken on first use, held until process exit and never dropped: a transaction past its
+/// deadline leaves its worker inside an uncancellable sysfs call that may still complete a
+/// write, so the kernel must release the lock only once every thread of this process, a stuck
+/// worker included, is gone. Another togi process holding it still fails the test with Busy.
+static HOST_LOCK: LazyLock<HostLock> = LazyLock::new(|| {
+    must(
+        HostLock::acquire(Path::new(DEFAULT_PATH), Policy::Host),
+        "take the host lock",
+    )
+});
+static SERIAL: Mutex<()> = Mutex::new(());
+
+/// Renders an error with its whole `source` chain, which `Display` alone omits.
+fn chain(error: &dyn Error) -> String {
+    let mut text = error.to_string();
+    let mut source = error.source();
+    while let Some(cause) = source {
+        let _ = write!(text, ": {cause}");
+        source = cause.source();
+    }
+    text
+}
+
+fn must<T, E: Error>(result: Result<T, E>, what: &str) -> T {
+    result.unwrap_or_else(|error| panic!("{what}: {}", chain(&error)))
+}
+
+/// Runs the hardware tests of this process one at a time, behind the process-lifetime host lock.
+fn exclusive() -> MutexGuard<'static, ()> {
+    let serial = SERIAL.lock().unwrap_or_else(PoisonError::into_inner);
+    LazyLock::force(&HOST_LOCK);
+    serial
 }
 
 fn validated_driver() -> Driver {
-    let mut driver =
-        Driver::system().unwrap_or_else(|error| panic!("open the SMU driver: {error}"));
-    let _ = driver
-        .validate()
-        .unwrap_or_else(|error| panic!("validate the SMU interface: {error}"));
+    let mut driver = must(Driver::system(), "open the SMU driver");
+    let _ = must(driver.validate(), "validate the SMU interface");
     driver
 }
 
@@ -47,7 +76,7 @@ fn restore(driver: &mut Driver, originals: &[(CoreId, ObservedOffset)]) -> Vec<S
             continue;
         };
         if let Err(error) = write(driver, *core, target) {
-            failures.push(format!("restore core {core:02}: {error}"));
+            failures.push(format!("restore core {core:02}: {}", chain(&error)));
             continue;
         }
         match driver.offset(*core) {
@@ -56,7 +85,7 @@ fn restore(driver: &mut Driver, originals: &[(CoreId, ObservedOffset)]) -> Vec<S
                 "core {core:02}: restored {}, read back {}",
                 original.0, read.0
             )),
-            Err(error) => failures.push(format!("read back core {core:02}: {error}")),
+            Err(error) => failures.push(format!("read back core {core:02}: {}", chain(&error))),
         }
     }
     failures
@@ -65,7 +94,6 @@ fn restore(driver: &mut Driver, originals: &[(CoreId, ObservedOffset)]) -> Vec<S
 struct Restoring {
     driver: Driver,
     originals: Vec<(CoreId, ObservedOffset)>,
-    _lock: HostLock,
 }
 
 impl Drop for Restoring {
@@ -85,7 +113,7 @@ impl Drop for Restoring {
 
 #[test]
 fn hardware_smu_round_trips_every_offset_and_restores_them() {
-    let lock = host_lock();
+    let _serial = exclusive();
     let mut driver = validated_driver();
     for check in [
         driver.check_cpu(),
@@ -96,10 +124,13 @@ fn hardware_smu_round_trips_every_offset_and_restores_them() {
         assert!(check.ok, "check {} failed: {}", check.name, check.detail);
         println!("{}: {}", check.name, check.detail);
     }
-    let cores = driver.topology().unwrap();
+    let cores = must(driver.topology(), "read the topology");
     let mut originals = Vec::with_capacity(cores.len());
     for info in &cores {
-        let offset = driver.offset(info.core).unwrap();
+        let offset = must(
+            driver.offset(info.core),
+            &format!("read core {:02}", info.core),
+        );
         assert!(
             TargetOffset::new(offset.0).is_ok(),
             "core {:02} reads {}, outside the writable range: writing it back would change it",
@@ -108,15 +139,17 @@ fn hardware_smu_round_trips_every_offset_and_restores_them() {
         );
         originals.push((info.core, offset));
     }
-    let mut session = Restoring {
-        driver,
-        originals,
-        _lock: lock,
-    };
+    let mut session = Restoring { driver, originals };
     for (core, original) in session.originals.clone() {
-        let target = TargetOffset::new(original.0).unwrap();
-        write(&mut session.driver, core, target).unwrap();
-        let read = session.driver.offset(core).unwrap();
+        let target = must(
+            TargetOffset::new(original.0),
+            &format!("core {core:02} target"),
+        );
+        must(
+            write(&mut session.driver, core, target),
+            &format!("write core {core:02}"),
+        );
+        let read = must(session.driver.offset(core), &format!("read core {core:02}"));
         assert_eq!(
             read, original,
             "core {core:02} wrote {}, read back {}",
@@ -124,7 +157,7 @@ fn hardware_smu_round_trips_every_offset_and_restores_them() {
         );
         println!("core {core:02}: wrote {}, read back {}", original.0, read.0);
     }
-    let context = session.driver.bios_context().unwrap();
+    let context = must(session.driver.bios_context(), "read the BIOS context");
     assert!(
         context.boost_limit_mhz > 0,
         "boost limit {} MHz",
@@ -135,9 +168,9 @@ fn hardware_smu_round_trips_every_offset_and_restores_them() {
 
 #[test]
 fn hardware_pm_table_lanes_decode_and_residencies_sum_to_100() {
-    let _lock = host_lock();
+    let _serial = exclusive();
     let mut driver = validated_driver();
-    let reader = driver.pm_reader().unwrap();
+    let reader = must(driver.pm_reader(), "open the PM table reader");
     let _ = reader.check();
     thread::sleep(Duration::from_millis(5));
     let check = reader.check();
