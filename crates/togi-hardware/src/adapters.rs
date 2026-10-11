@@ -4,10 +4,13 @@ use std::time::Duration;
 use jiff::Timestamp;
 use rustix::time::{ClockId, clock_gettime};
 use togi_machine::{
-    CancellationToken, Clock, CoreId, Error, ObservedOffset, PmTable, PmTableReader, Smu,
-    SmuValidated, Stopped, TargetOffset,
+    CancellationToken, Clock, CoreId, Error, ObservedOffset, Partial, PmTable, PmTableReader,
+    Running, Smu, SmuValidated, Stopped, Swept, TargetOffset, TrialConditions, TrialSpec, Trials,
 };
 use togi_smu::{Driver, PmReader};
+use togi_trial::Runner;
+
+use crate::host::ScopeProbe;
 
 pub(crate) type SharedDriver = Arc<Mutex<Driver>>;
 
@@ -86,5 +89,47 @@ impl Clock for SystemClock {
         } else {
             Ok(())
         }
+    }
+}
+
+/// The one trial runner, shared by the machine's `Trials` and the preflight's scope probe, so a
+/// process has a single runtime thread.
+#[derive(Clone)]
+pub(crate) struct RunnerHandle(Arc<Mutex<Runner>>);
+
+impl RunnerHandle {
+    pub(crate) fn new(runner: Runner) -> Self {
+        Self(Arc::new(Mutex::new(runner)))
+    }
+}
+
+impl ScopeProbe for RunnerHandle {
+    fn probe(&self) -> Result<String, togi_trial::Error> {
+        lock(&self.0).probe_scope()
+    }
+}
+
+impl Trials for RunnerHandle {
+    fn sweep(&mut self, cancel: &CancellationToken) -> Result<Swept, Error> {
+        lock(&self.0).sweep(cancel)
+    }
+
+    fn start(
+        &mut self,
+        cancel: &CancellationToken,
+        spec: TrialSpec,
+        ready: Stopped,
+    ) -> Result<Box<dyn Running>, Partial<Option<Stopped>>> {
+        lock(&self.0).start(cancel, spec, ready)
+    }
+
+    fn ended(&mut self, id: &str) -> Result<(), Error> {
+        lock(&self.0).ended(id)
+    }
+
+    /// A guard cannot outlive the call, so the trial's samples are read before it returns.
+    fn samples<'a>(&'a self, id: &'a str) -> Box<dyn Iterator<Item = TrialConditions> + 'a> {
+        let samples: Vec<_> = lock(&self.0).samples(id).collect();
+        Box::new(samples.into_iter())
     }
 }

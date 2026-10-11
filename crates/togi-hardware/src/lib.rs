@@ -49,10 +49,9 @@ pub fn open(config: &Config, state_dir: &Path, _lock: &HostLock) -> Result<Machi
     let root = Path::new(SYSTEM_ROOT);
     let parts = Parts::new(Driver::open(root).map_err(Error::OpenSmu)?, config)?;
     let trials = parts.runner(state_dir.join("trials"))?;
-    let scope = parts.runner(std::path::PathBuf::new())?;
     let kernel = parts.kernel()?;
     let smu = SharedSmu(std::sync::Arc::clone(&parts.driver));
-    let host = parts.host(root, Privilege::current(), scope);
+    let host = parts.host(root, Privilege::current(), trials.clone());
     Ok(Machine {
         clock: Box::new(SystemClock),
         smu: Box::new(smu),

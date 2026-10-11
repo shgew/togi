@@ -9,7 +9,7 @@ use togi_smu::Driver;
 use togi_trial::{Backends, Options, Runner};
 use togi_ycruncher::Ycruncher;
 
-use crate::adapters::{PmSlot, SharedDriver};
+use crate::adapters::{PmSlot, RunnerHandle, SharedDriver};
 use crate::error::Error;
 use crate::host::{Privilege, ScopeProbe, SystemHost};
 use crate::preflight::Account;
@@ -47,7 +47,7 @@ impl Parts {
         })
     }
 
-    pub(crate) fn runner(&self, dir: PathBuf) -> Result<Runner, Error> {
+    pub(crate) fn runner(&self, dir: PathBuf) -> Result<RunnerHandle, Error> {
         Runner::new(Options {
             dir,
             backends: self.backends.clone(),
@@ -55,6 +55,7 @@ impl Parts {
             identity: self.account.identity(),
             pm_table: Some(Arc::new(self.pm.clone())),
         })
+        .map(RunnerHandle::new)
         .map_err(Error::TrialRunner)
     }
 
