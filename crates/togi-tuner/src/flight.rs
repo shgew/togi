@@ -202,7 +202,8 @@ impl Run {
         };
         let history = self.history(&open);
         self.record_end(event.seq, &open, end)?;
-        let (failed, zero) = self.end_r7_and_zero(event.seq, &open, end);
+        let cited = cited_mces(&open.mces, &event.cause);
+        let (failed, zero) = self.end_r7_and_zero(event.seq, &open, end, cited);
         let conclusive = matches!(end.outcome, Outcome::Pass | Outcome::Failure);
         if conclusive {
             self.advance_rotation(open.intent.core, open.intent.regime);
@@ -233,7 +234,7 @@ impl Run {
                     cause: event.cause.clone(),
                     signal,
                     core: end.core,
-                    mces: cited_mces(&open.mces, &event.cause),
+                    mces: cited,
                     r7: failed,
                     zero,
                 });

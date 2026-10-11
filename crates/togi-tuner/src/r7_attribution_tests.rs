@@ -750,3 +750,53 @@ fn r7_pending_revives_on_offset_return() {
     assert_eq!(j.run().r7_decision(), None);
     j.assert_resumes();
 }
+
+#[test]
+fn r7_mce_named_unloaded_core_uses_its_lane() {
+    for local_mce in [false, true] {
+        let mut j = Journal::r7_session();
+        let n = j.at_needed();
+        let all = [-30, -30, -30, -30];
+        for _ in 0..n {
+            j.r7_fact(
+                true,
+                &[2, 3],
+                &all,
+                &requests(&[(2, 1.1), (3, 1.09)]).top(&[2]),
+            );
+        }
+        let plan = j.r7_plan(&[0, 1], &all);
+        let (intent, trial) = j.intent(&plan);
+        let mut cause = vec![intent];
+        let mut end =
+            Journal::end_payload(&trial, Outcome::Failure, Some(Signal::ComputationError));
+        end.duration_s = 120;
+        if local_mce {
+            let mce = togi_journal::Mce {
+                cpu: CpuId(3),
+                core: Some(core(3)),
+                bank: 0,
+                bank_type: BankType::LoadStore,
+                corrected: false,
+                monotonic_ns: None,
+                from_boot: None,
+                trial: Some(trial.clone()),
+                between_trials: false,
+                lines: Vec::new(),
+            };
+            cause.push(j.append(mce.into(), &[]));
+        } else {
+            end.core = Some(core(3));
+        }
+        j.append(end.into(), &cause);
+        let attribution = j.next_decision();
+        assert!(
+            matches!(attribution.payload, DecisionPayload::Failure(_)),
+            "{local_mce}"
+        );
+        j.decide(attribution);
+        let (decision, moved) = j.at_next_backoff();
+        assert_eq!(moved, (3, -27), "{local_mce}");
+        assert!(decision.cause.len() > n, "{local_mce}");
+    }
+}

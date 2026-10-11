@@ -9,7 +9,7 @@ use super::measurements::{Measurement, Measurements};
 use super::status::SelfSufficiency;
 use super::target::{PassRecord, R7Targets};
 use crate::BackendId;
-use crate::failures::Pending;
+use crate::failures::{Pending, together_attribution};
 use crate::state::Run;
 
 /// The R7 substate: what request measurements, voltage targets, escalation strikes and
@@ -99,7 +99,10 @@ impl Run {
         seq: Seq,
         open: &crate::flight::OpenTrial,
         end: &togi_journal::TrialEnd,
+        cited: CoreSet,
     ) -> (Option<FailedTrial>, Option<Seq>) {
+        let (_, named, _) =
+            together_attribution(end.core, cited, &open.profile, open.class.multi_r7());
         let failed = self.r7_trial(
             Ended {
                 seq,
@@ -111,7 +114,7 @@ impl Run {
                     clocks: &end.ccd_mhz,
                     stalled: end.stalled_core,
                 },
-                named: end.core,
+                named,
             },
             end.outcome,
             open.backend,
