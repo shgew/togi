@@ -102,10 +102,24 @@ fn random_stops_lead_continues_by_at_most_one() {
 fn schedules_read_as_text() {
     assert_eq!(
         LoadSchedule::Duty { pct: 50 }.to_string(),
-        "50% duty, 100ms period"
+        "50% duty, 100 ms period"
     );
     assert_eq!(
         LoadSchedule::Random { seed: 5 }.to_string(),
-        "random on/off periods from 10ms, 50ms, 200ms, 1s, 5s"
+        "random on/off periods from 10 ms, 50 ms, 200 ms, 1 s, 5 s"
     );
+}
+
+#[test]
+fn schedules_round_trip_as_tagged_objects() {
+    for (schedule, json) in [
+        (
+            LoadSchedule::Random { seed: 5 },
+            r#"{"kind":"random","seed":5}"#,
+        ),
+        (LoadSchedule::Duty { pct: 40 }, r#"{"kind":"duty","pct":40}"#),
+    ] {
+        assert_eq!(serde_json::to_string(&schedule).unwrap(), json);
+        assert_eq!(serde_json::from_str::<LoadSchedule>(json).unwrap(), schedule);
+    }
 }

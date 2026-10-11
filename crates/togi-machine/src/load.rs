@@ -1,6 +1,7 @@
 use crate::{Regime, TrialSpec};
 use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::time::Duration;
 
@@ -19,7 +20,8 @@ const DUTY_PERIOD: Duration = Duration::from_millis(100);
 /// Each on period ends with `SIGSTOP` and each off period with `SIGCONT`. Random periods come from
 /// `rand::rngs::StdRng` seeded with the trial seed, so a schedule is reproducible only with the
 /// pinned `rand` version.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum LoadSchedule {
     Random { seed: u64 },
     Duty { pct: u8 },
@@ -108,17 +110,27 @@ impl Iterator for Periods {
 impl fmt::Display for LoadSchedule {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Duty { pct } => write!(f, "{pct}% duty, {DUTY_PERIOD:?} period"),
+            Self::Duty { pct } => write!(f, "{pct}% duty, ")?;
+                write_period(f, DUTY_PERIOD)?;
+                f.write_str(" period"),
             Self::Random { .. } => {
                 f.write_str("random on/off periods from ")?;
                 for (index, period) in RANDOM_PERIODS.iter().enumerate() {
                     if index > 0 {
                         f.write_str(", ")?;
                     }
-                    write!(f, "{period:?}")?;
+                    write_period(f, *period)?;
                 }
                 Ok(())
             }
         }
+    }
+}
+
+fn write_period(f: &mut fmt::Formatter<'_>, period: Duration) -> fmt::Result {
+    if period.subsec_millis() == 0 && !period.is_zero() {
+        write!(f, "{} s", period.as_secs())
+    } else {
+        write!(f, "{} ms", period.as_millis())
     }
 }
