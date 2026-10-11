@@ -12,7 +12,7 @@ use crate::instance::{Flow, Inbound, LiveInstance, dispatch, poll_watched};
 use crate::judge::Judge;
 use crate::os::{Child as _, GroupSignal, KillSignal, Os, SignalError, Systemd};
 use crate::timing::Timing;
-use crate::watch::WritersStopped;
+use crate::watch::{Watched, WritersStopped};
 
 /// One absolute deadline for the whole teardown; every phase takes a slice of what remains.
 #[derive(Clone, Copy, Debug)]
@@ -348,10 +348,7 @@ impl<'a, O: Os> Teardown<'a, O, Reaped> {
         }
         let unfinished = self.live.instances.iter().any(|instance| {
             !instance.readers_closed()
-                || instance
-                    .watched
-                    .iter()
-                    .any(|file| !file.drained() || file.backlog())
+                || instance.watched.iter().any(|file| !file.drained())
         });
         if timed_out || unfinished {
             self.failures.record(CleanupFailure::DrainDeadline);
@@ -378,7 +375,7 @@ impl<O: Os> Teardown<'_, O, ReadersDone> {
             instance.child.is_none()
                 && instance.readers_closed()
                 && instance.writers.is_some()
-                && instance.watched.iter().all(|file| file.drained() && !file.backlog())
+                && instance.watched.iter().all(Watched::drained)
         });
         if !complete && self.failures.is_empty() {
             self.failures.record(CleanupFailure::DrainDeadline);
