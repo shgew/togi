@@ -297,7 +297,7 @@ fn compress_of_a_file_reports_the_listing_failure() {
 /// for each invalid byte. Linux names are bytes; Apple file systems refuse a name that is not UTF-8.
 #[cfg(target_os = "linux")]
 #[test]
-fn non_utf8_instance_directory_renders_one_replacement_per_invalid_byte() {
+fn non_utf8_instance_directory_keeps_go_raw_bytes_and_displays_one_replacement_per_byte() {
     use std::ffi::OsStr;
     use std::os::unix::ffi::OsStrExt;
 
@@ -314,6 +314,52 @@ fn non_utf8_instance_directory_renders_one_replacement_per_invalid_byte() {
             "compress stdout.log: rename {root}/\u{FFFD}\u{FFFD}/stdout.log.gz.tmp {root}/\u{FFFD}\u{FFFD}/stdout.log.gz: file exists"
         )
     );
+    // Go's err.Error() keeps the raw bytes; its JSON encoder turns each into the escape \ufffd.
+    let mut want = format!("compress stdout.log: rename {root}/").into_bytes();
+    want.extend(b"\xe2\x82/stdout.log.gz.tmp ");
+    want.extend(format!("{root}/").into_bytes());
+    want.extend(b"\xe2\x82/stdout.log.gz: file exists");
+    assert_eq!(errors.go_text(), want);
+    assert_eq!(errors.errors()[0].go_text(), want);
+
+    // A directory that really is named with two U+FFFD characters has the same Display text but other bytes: Go's
+    // JSON encoder writes those characters as UTF-8, not as an escape.
+    let real = TempDir::new().unwrap();
+    let instance = real.path().join("\u{FFFD}\u{FFFD}");
+    fs::create_dir(&instance).unwrap();
+    write(&instance.join("stdout.log"), "o\n");
+    fs::create_dir(instance.join("stdout.log.gz")).unwrap();
+    let real_errors = compress(real.path()).unwrap_err();
+    let real_root = shown(&real);
+    let mut real_want = format!("compress stdout.log: rename {real_root}/").into_bytes();
+    real_want.extend("\u{FFFD}\u{FFFD}/stdout.log.gz.tmp ".as_bytes());
+    real_want.extend(format!("{real_root}/").into_bytes());
+    real_want.extend("\u{FFFD}\u{FFFD}/stdout.log.gz: file exists".as_bytes());
+    assert_eq!(real_errors.go_text(), real_want);
+    assert_eq!(
+        real_errors.to_string().replace(&real_root, "$DIR"),
+        errors.to_string().replace(&root, "$DIR")
+    );
+    assert!(real_want.windows(3).any(|w| w == "\u{FFFD}".as_bytes()));
+    assert!(
+        !errors
+            .go_text()
+            .windows(3)
+            .any(|w| w == "\u{FFFD}".as_bytes())
+    );
+}
+
+#[test]
+fn go_text_joins_errors_with_newlines() {
+    let dir = TempDir::new().unwrap();
+    for instance in ["a", "b"] {
+        fs::create_dir(dir.path().join(instance)).unwrap();
+        write(&dir.path().join(instance).join("stdout.log"), "o\n");
+        fs::create_dir(dir.path().join(instance).join("stdout.log.gz")).unwrap();
+    }
+    let errors = compress(dir.path()).unwrap_err();
+    assert_eq!(errors.go_text(), errors.to_string().into_bytes());
+    assert_eq!(errors.go_text().split(|&b| b == b'\n').count(), 2);
 }
 
 #[test_case(b"plain", "plain"; "valid text is unchanged")]

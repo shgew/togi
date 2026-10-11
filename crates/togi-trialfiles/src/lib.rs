@@ -52,11 +52,53 @@ pub enum Error {
     SyncRemoval { name: String, source: Cause },
 }
 
+impl Error {
+    /// The bytes of Go's `err.Error()`, for the journal. A path in the text keeps its raw bytes, so the text may not be
+    /// UTF-8; the journal encoder must serialize it with Go's JSON rules: each invalid byte as the escape `\ufffd`, a
+    /// real U+FFFD character as its UTF-8 bytes. `Display` shows each invalid byte as the character U+FFFD instead,
+    /// which cannot tell the two apart.
+    #[must_use]
+    pub fn go_text(&self) -> Vec<u8> {
+        let (prefix, cause) = match self {
+            Error::List(source) => ("list trial files: ".to_owned(), source.go_text()),
+            Error::Open { name, source } => (format!("open {name}: "), source.go_text()),
+            Error::Stat { name, source } => (format!("stat {name}: "), source.go_text()),
+            Error::RemoveStale { name, source } => {
+                (format!("remove stale {name}: "), source.go_text())
+            }
+            Error::Create { name, source } => (format!("create {name}: "), source.go_text()),
+            Error::Compress { name, source } => (format!("compress {name}: "), source.go_text()),
+            Error::SyncCompressed { name, source } => {
+                (format!("sync compressed {name}: "), source.go_text())
+            }
+            Error::RemovePlain { name, source } => {
+                (format!("remove plain {name}: "), source.go_text())
+            }
+            Error::SyncRemoval { name, source } => {
+                (format!("sync removal of {name}: "), source.go_text())
+            }
+        };
+        let mut text = prefix.into_bytes();
+        text.extend(cause);
+        text
+    }
+}
+
 /// Every error [`compress`] met, in the order it met them; the text joins them one per line.
 #[derive(Debug)]
 pub struct Errors(Vec<Error>);
 
 impl Errors {
+    /// The bytes of Go's `errors.Join(...).Error()`: each error's [`Error::go_text`] joined by `\n`.
+    #[must_use]
+    pub fn go_text(&self) -> Vec<u8> {
+        self.0
+            .iter()
+            .map(Error::go_text)
+            .collect::<Vec<_>>()
+            .join(&b'\n')
+    }
+
     #[must_use]
     pub fn errors(&self) -> &[Error] {
         &self.0

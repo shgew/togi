@@ -311,15 +311,11 @@ pub(crate) fn journal_text(bytes: &[u8]) -> String {
     }
 }
 
-fn lossy(path: &Path) -> String {
-    journal_text(path.as_os_str().as_bytes())
-}
-
-/// Go's `*os.PathError`: `op path: errno text`.
+/// Go's `*os.PathError`: `op path: errno text`. The path keeps its raw bytes, like Go's string.
 #[derive(Debug)]
 pub struct PathError {
     op: &'static str,
-    path: String,
+    path: Vec<u8>,
     source: io::Error,
 }
 
@@ -331,7 +327,7 @@ impl PathError {
     pub(crate) fn from_errno(op: &'static str, path: &Path, errno: i32) -> Self {
         Self {
             op,
-            path: lossy(path),
+            path: path.as_os_str().as_bytes().to_vec(),
             source: io::Error::from_raw_os_error(errno),
         }
     }
@@ -347,6 +343,15 @@ impl PathError {
         errno_of(&self.source)
     }
 
+    /// The bytes of Go's `err.Error()`: the path is not altered, so it may not be UTF-8.
+    #[must_use]
+    pub fn go_text(&self) -> Vec<u8> {
+        let mut text = format!("{} ", self.op).into_bytes();
+        text.extend_from_slice(&self.path);
+        text.extend_from_slice(format!(": {}", errno_text(self.errno())).as_bytes());
+        text
+    }
+
     /// Go's `errors.Is(err, os.ErrNotExist)`.
     pub(crate) fn is_not_exist(&self) -> bool {
         self.errno() == Errno::NOENT.raw_os_error()
@@ -355,7 +360,13 @@ impl PathError {
 
 impl fmt::Display for PathError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} {}: {}", self.op, self.path, errno_text(self.errno()))
+        write!(
+            f,
+            "{} {}: {}",
+            self.op,
+            journal_text(&self.path),
+            errno_text(self.errno())
+        )
     }
 }
 
@@ -368,16 +379,16 @@ impl std::error::Error for PathError {
 /// Go's `*os.LinkError` for a rename: `rename old new: errno text`.
 #[derive(Debug)]
 pub struct LinkError {
-    old: String,
-    new: String,
+    old: Vec<u8>,
+    new: Vec<u8>,
     source: io::Error,
 }
 
 impl LinkError {
     pub(crate) fn rename(old: &Path, new: &Path, errno: i32) -> Self {
         Self {
-            old: lossy(old),
-            new: lossy(new),
+            old: old.as_os_str().as_bytes().to_vec(),
+            new: new.as_os_str().as_bytes().to_vec(),
             source: io::Error::from_raw_os_error(errno),
         }
     }
@@ -386,6 +397,17 @@ impl LinkError {
     pub fn errno(&self) -> i32 {
         errno_of(&self.source)
     }
+
+    /// The bytes of Go's `err.Error()`: the paths are not altered, so they may not be UTF-8.
+    #[must_use]
+    pub fn go_text(&self) -> Vec<u8> {
+        let mut text = b"rename ".to_vec();
+        text.extend_from_slice(&self.old);
+        text.push(b' ');
+        text.extend_from_slice(&self.new);
+        text.extend_from_slice(format!(": {}", errno_text(self.errno())).as_bytes());
+        text
+    }
 }
 
 impl fmt::Display for LinkError {
@@ -393,8 +415,8 @@ impl fmt::Display for LinkError {
         write!(
             f,
             "rename {} {}: {}",
-            self.old,
-            self.new,
+            journal_text(&self.old),
+            journal_text(&self.new),
             errno_text(self.errno())
         )
     }
@@ -413,6 +435,17 @@ pub enum Cause {
     Path(#[from] PathError),
     #[error(transparent)]
     Link(#[from] LinkError),
+}
+
+impl Cause {
+    /// The bytes of Go's `err.Error()` for this error.
+    #[must_use]
+    pub fn go_text(&self) -> Vec<u8> {
+        match self {
+            Cause::Path(error) => error.go_text(),
+            Cause::Link(error) => error.go_text(),
+        }
+    }
 }
 
 /// `filepath.Clean` on Unix: lexical, never touches the file system.
