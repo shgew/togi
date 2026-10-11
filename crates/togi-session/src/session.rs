@@ -149,7 +149,10 @@ pub(crate) enum Visit {
 }
 
 /// What took the machine out of reach.
-#[expect(dead_code, reason = "the run steps after startup set it")]
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "the run steps after startup set it")
+)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Fault {
     /// The workload's containment could not be confirmed: no SMU access, no restoration.
@@ -158,10 +161,6 @@ pub(crate) enum Fault {
     Crashed,
 }
 
-#[expect(
-    dead_code,
-    reason = "the run steps after startup read the machine and run state"
-)]
 pub struct Session {
     pub(crate) appender: Appender,
     pub(crate) smu: Box<dyn Smu>,

@@ -4,7 +4,7 @@ use togi_machine::{CancellationToken, Error};
 use super::*;
 use crate::session::{ConfigSource, Stop};
 use crate::testing::{
-    Bench, MemBoot, SweepFails, kinds_of, offsets, put, recorded_baseline, swept,
+    Bench, MemBoot, SweepFails, ValidationFails, kinds_of, offsets, put, recorded_baseline, swept,
 };
 
 fn started(bench: &Bench) -> Session {
@@ -184,6 +184,50 @@ fn a_machine_that_crashes_in_the_sweep_is_an_error_not_a_dead_end() {
         session.sweep(),
         Err(SessionError::Machine(Error::Crashed))
     ));
+}
+
+fn started_with_failing_validation(bench: &Bench, error: fn() -> Error) -> Session {
+    let mut input = bench.input();
+    let host = input.machine.host;
+    input.machine.host = Box::new(ValidationFails(host, error));
+    let Ok(mut session) = Session::open(input) else {
+        panic!("open");
+    };
+    assert_eq!(session.start().unwrap(), Control::Continue);
+    session
+}
+
+#[test]
+fn a_machine_that_crashes_while_the_smu_is_validated_is_an_error() {
+    let bench = Bench::new(2);
+    let mut session = started_with_failing_validation(&bench, || Error::Crashed);
+    let before = kinds_of(session.appender());
+    assert!(matches!(
+        session.preflight(),
+        Err(SessionError::Machine(Error::Crashed))
+    ));
+    assert_eq!(kinds_of(session.appender()), before);
+}
+
+#[test]
+fn an_smu_that_cannot_be_validated_is_a_warning_and_leaves_the_emergency_withheld() {
+    let bench = Bench::new(2);
+    let mut session =
+        started_with_failing_validation(&bench, || Error::Other("no SMU driver".into()));
+    assert_eq!(session.preflight().unwrap(), Control::Continue);
+    assert!(session.validated.is_none());
+    let warning = session
+        .appender()
+        .journal()
+        .events()
+        .iter()
+        .find_map(|event| match &event.payload {
+            Payload::SessionWarning(warning) => Some(warning.clone()),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(warning.operation, "validate the SMU interface");
+    assert!(warning.error.contains("no SMU driver"));
 }
 
 fn from_the_tuning_boot(bench: &Bench, cancel: CancellationToken) -> Session {

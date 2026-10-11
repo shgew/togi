@@ -401,3 +401,38 @@ pub(crate) fn swept(bench: &Bench) -> Session {
     assert_eq!(session.sweep().unwrap(), Control::Continue);
     session
 }
+
+/// A host whose SMU validation fails with `error`; everything else is the simulator's.
+pub(crate) struct ValidationFails(pub Box<dyn togi_machine::Host>, pub fn() -> Error);
+
+impl togi_machine::Host for ValidationFails {
+    fn boot_id(&mut self) -> Result<BootId, Error> {
+        self.0.boot_id()
+    }
+
+    fn topology(&mut self) -> Result<Vec<togi_machine::CoreInfo>, Error> {
+        self.0.topology()
+    }
+
+    fn validate_smu(&mut self) -> Result<SmuValidated, Error> {
+        Err((self.1)())
+    }
+
+    fn bios_context(&mut self) -> Result<togi_machine::BiosContext, Error> {
+        self.0.bios_context()
+    }
+
+    fn ranking(
+        &mut self,
+    ) -> Result<Vec<togi_machine::CoreRank>, Partial<Vec<togi_machine::CoreRank>>> {
+        self.0.ranking()
+    }
+
+    fn preflight(&mut self) -> Vec<togi_machine::Check> {
+        self.0.preflight()
+    }
+
+    fn watchdog(&mut self) -> togi_machine::Check {
+        self.0.watchdog()
+    }
+}

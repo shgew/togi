@@ -49,7 +49,10 @@ fn the_machine_goes_back_to_the_baseline_and_the_restoration_cites_it() {
     recorded_baseline(&mut session, &[0, 0]);
     put(&mut session, &[-10, -12]);
     let baseline = session.appender().recovery().baseline().unwrap().0;
-    session.restore(&offsets(&[0, 0])).unwrap();
+    assert_eq!(
+        session.restore(&offsets(&[0, 0])).unwrap(),
+        Restoration::Restored
+    );
     assert_eq!(restorations(&session), [offsets(&[0, 0])]);
     let intents: Vec<_> = session
         .appender()
@@ -109,7 +112,10 @@ fn a_machine_the_run_never_touched_is_left_alone() {
     let mut session = swept(&bench);
     recorded_baseline(&mut session, &[-5, -5]);
     let before = kinds_of(session.appender());
-    session.restore(&offsets(&[0, 0])).unwrap();
+    assert_eq!(
+        session.restore(&offsets(&[0, 0])).unwrap(),
+        Restoration::Unchanged
+    );
     assert_eq!(kinds_of(session.appender()), before);
 }
 
@@ -120,7 +126,10 @@ fn a_profile_that_is_already_the_target_records_nothing() {
     recorded_baseline(&mut session, &[-10, -10]);
     put(&mut session, &[-10, -10]);
     let before = kinds_of(session.appender());
-    session.restore(&offsets(&[-10, -10])).unwrap();
+    assert_eq!(
+        session.restore(&offsets(&[-10, -10])).unwrap(),
+        Restoration::Unchanged
+    );
     assert_eq!(kinds_of(session.appender()), before);
 }
 
@@ -132,6 +141,22 @@ fn without_the_proof_that_nothing_runs_nothing_is_written() {
     put(&mut session, &[-10, -10]);
     session.stopped = None;
     let before = kinds_of(session.appender());
-    session.restore(&offsets(&[0, 0])).unwrap();
+    assert_eq!(
+        session.restore(&offsets(&[0, 0])).unwrap(),
+        Restoration::Withheld
+    );
     assert_eq!(kinds_of(session.appender()), before);
+}
+
+#[test]
+fn a_crash_during_the_restoration_marks_the_machine_out_of_reach() {
+    let bench = Bench::new(2);
+    let mut session = swept(&bench);
+    recorded_baseline(&mut session, &[0, 0]);
+    put(&mut session, &[-10, -10]);
+    bench.sim.crash_at_write(1);
+    let flow = session.restore(&offsets(&[0, 0])).unwrap_err();
+    assert!(matches!(flow, Flow::Fatal(ref error) if error.is_crash()));
+    assert_eq!(session.fault, Some(Fault::Crashed));
+    assert_eq!(session.hardware.profile(), None);
 }

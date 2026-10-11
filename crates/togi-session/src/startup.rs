@@ -3,7 +3,7 @@
 
 use std::time::Duration;
 
-use togi_journal::{DeadEnd, DeadEndCondition, Payload, PreflightCheck, Seq};
+use togi_journal::{DeadEnd, DeadEndCondition, Payload, PreflightCheck, Seq, SessionWarning};
 use togi_machine::{CancellationToken, Error, PerCore, TargetOffset};
 
 use crate::emergency::SweepCleared;
@@ -98,7 +98,22 @@ impl Session {
                 return Ok(control);
             }
         }
-        self.validated = self.host.validate_smu().ok();
+        self.validated = match self.host.validate_smu() {
+            Ok(validated) => Some(validated),
+            Err(Error::Crashed) => return Err(Error::Crashed.into()),
+            Err(error) => {
+                let warning = SessionWarning {
+                    operation: "validate the SMU interface".into(),
+                    trial: None,
+                    error: format!(
+                        "{error}; a journal failure cannot be answered with an emergency zeroing"
+                    ),
+                };
+                self.appender
+                    .append(Payload::SessionWarning(warning), &[])?;
+                None
+            }
+        };
         let mut failed = Vec::new();
         let mut names = Vec::new();
         for check in self.host.preflight() {
@@ -215,7 +230,7 @@ impl Session {
 
     fn read_back_and_restore(&mut self, held: &PerCore<TargetOffset>) -> Step<()> {
         write::read_all(&mut self.appender, &mut *self.smu, &mut self.hardware, &[])?;
-        self.restore(held)
+        self.restore(held).map(drop)
     }
 
     /// What the journal holds that ends the run before it starts: a dead end pending from before, a defect that needs

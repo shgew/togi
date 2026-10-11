@@ -92,6 +92,16 @@ pub enum SessionError {
     Profile(#[source] ProfileFailure),
 }
 
+impl SessionError {
+    /// Whether the machine went down under the step that failed.
+    pub const fn is_crash(&self) -> bool {
+        matches!(
+            self,
+            Self::Machine(togi_machine::Error::Crashed) | Self::Write(WriteFailure::Crashed)
+        )
+    }
+}
+
 impl From<BootError> for SessionError {
     fn from(error: BootError) -> Self {
         match error {
