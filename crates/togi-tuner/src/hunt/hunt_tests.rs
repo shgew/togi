@@ -1732,23 +1732,26 @@ fn drain_commits_resolved_hunt_without_starting_groups() {
         let Action::Decide(decision) = action else {
             panic!("the resolving hunt started a group trial: {action:?}");
         };
+        let closing = j.run().hunt_closing();
         if let DecisionPayload::HuntEnd(found) = &decision.payload {
+            assert_eq!(closing.as_ref(), Some(&decision));
             end = Some(found.clone());
             j.decide(decision);
             break;
         }
+        assert_eq!(closing, None, "a group plan is not a closing decision");
         j.decide(decision);
     }
     let end = end.expect("the known failure resolved the hunt without a trial");
     ended(&end, HuntOutcome::Culprit);
     assert_eq!(core_ids(end.cores), [1]);
-    let commitment = j.run().hunt_next().expect("the culprit is committed");
-    assert_eq!(j.next(), commitment);
-    let commitment = expect_decision(commitment);
+    let commitment = j.run().hunt_closing().expect("the culprit is committed");
+    assert_eq!(j.next(), Action::Decide(commitment.clone()));
     let moved = backoff_of(&commitment);
     assert_eq!(moved.decision, Decision::Backoff);
     assert_eq!((moved.core, moved.to_offset), (core(1), off(-29)));
     j.decide(commitment);
+    assert_eq!(j.run().hunt_closing(), None);
     assert_eq!(j.run().hunt_next(), None);
     assert_owed_rerun(&mut j, source, Regime::R6, &[0, 1]);
     j.assert_resumes();
@@ -1759,23 +1762,23 @@ fn drain_records_fallback_combination_before_backoff() {
     let mut j = hunt_of(2, SHORT);
     let end = j.run_hunt(100, pass_all);
     ended(&end, HuntOutcome::Fallback);
-    let record = j.run().hunt_next().expect("the fallback is recorded");
-    assert_eq!(j.next(), record);
-    let record = expect_decision(record);
+    let record = j.run().hunt_closing().expect("the fallback is recorded");
+    assert_eq!(j.next(), Action::Decide(record.clone()));
+    assert_eq!(j.resumed().run().hunt_closing(), Some(record.clone()));
     let DecisionPayload::Combination(combination) = &record.payload else {
         panic!("expected the combination, got {record:?}");
     };
     assert!(combination.fallback);
     assert_eq!(combination.members, members_of(&[(0, -30), (1, -30)]));
     j.decide(record);
-    let back = j.run().hunt_next().expect("the combination is broken");
-    assert_eq!(j.next(), back);
-    let back = expect_decision(back);
+    let back = j.run().hunt_closing().expect("the combination is broken");
+    assert_eq!(j.next(), Action::Decide(back.clone()));
     let moved = backoff_of(&back);
     assert_eq!(moved.decision, Decision::Backoff);
     assert_eq!(moved.to_offset, off(-29));
     j.decide(back);
     assert!(!reaches_combination(&j));
+    assert_eq!(j.run().hunt_closing(), None);
     assert_eq!(j.run().hunt_next(), None);
     j.assert_resumes();
 }

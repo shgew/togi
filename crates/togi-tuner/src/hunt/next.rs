@@ -21,6 +21,11 @@ use crate::{
     TrialContext, TrialPlan, Window, WorkloadChoice,
 };
 
+enum Settled {
+    Closing(DecisionAction),
+    Plan(DecisionAction),
+}
+
 enum Next {
     Group(Box<Group>),
     End(End),
@@ -307,7 +312,7 @@ impl Run {
         self.planned(hunt, payload, &[], &[], &[])
     }
 
-    fn hunt_end_action(&self, hunt: &Active, end: End) -> Action {
+    fn hunt_end_action(&self, hunt: &Active, end: End) -> Settled {
         let loaded = hunt.class.loaded();
         let (result, mut reason, cores, members) = match end {
             End::Loaded => {
@@ -351,7 +356,7 @@ impl Run {
                     let probes = MemberProbes::new(set, &hunt.failing, &hunt.parked);
                     match probes.step(&self.probe_results(hunt)) {
                         ProbeStep::Run(probe) => {
-                            return Action::Decide(self.probe_group(hunt, &probe));
+                            return Settled::Plan(self.probe_group(hunt, &probe));
                         }
                         ProbeStep::Done(found) => {
                             let listed: Vec<_> = found.members.iter().collect();
@@ -391,7 +396,7 @@ impl Run {
             self.cite_group(hunt, index, &mut cause);
         }
         reason.push_str(&carried_clause(&self.evidence, &cause));
-        Action::Decide(DecisionAction::new(
+        Settled::Closing(DecisionAction::new(
             HuntEnd {
                 hunt: hunt.id,
                 result,
@@ -404,7 +409,7 @@ impl Run {
         ))
     }
 
-    fn located_loaded_failure(&self, hunt: &Active) -> Option<Action> {
+    fn located_loaded_failure(&self, hunt: &Active) -> Option<DecisionAction> {
         if !hunt.located {
             return None;
         }
@@ -423,7 +428,7 @@ impl Run {
             named.get(),
             named.get()
         );
-        Some(Action::Decide(DecisionAction::new(
+        Some(DecisionAction::new(
             HuntEnd {
                 hunt: hunt.id,
                 result: HuntOutcome::Loaded,
@@ -433,7 +438,38 @@ impl Run {
                 reason,
             },
             vec![hunt.seq, failure],
-        )))
+        ))
+    }
+
+    fn settle(&self, hunt: &Active) -> Settled {
+        if let Some(end) = self.located_loaded_failure(hunt) {
+            return Settled::Closing(end);
+        }
+        match self.plan_next(hunt) {
+            Next::Group(group) => Settled::Plan(self.plan_group(hunt, &group)),
+            Next::End(end) => self.hunt_end_action(hunt, end),
+        }
+    }
+
+    fn unanswered_latest<'a>(&self, hunt: &'a Active) -> Option<&'a GroupRecord> {
+        hunt.latest()
+            .filter(|latest| self.answer_of(hunt, latest).outcome.is_none())
+    }
+
+    /// The decision that closes the hunt: its end, then its combination record and backoff. Never
+    /// a group plan or a trial, so it is `None` while a group is unanswered or still to plan.
+    pub(crate) fn hunt_closing(&self) -> Option<DecisionAction> {
+        let hunt = self.hunts.active.as_ref()?;
+        if hunt.end.is_some() {
+            return self.hunt_commitment(hunt);
+        }
+        if self.unanswered_latest(hunt).is_some() {
+            return None;
+        }
+        match self.settle(hunt) {
+            Settled::Closing(decision) => Some(decision),
+            Settled::Plan(_) => None,
+        }
     }
 
     pub(crate) fn hunt_next(&self) -> Option<Action> {
@@ -441,28 +477,22 @@ impl Run {
         if hunt.end.is_some() {
             return self.hunt_commitment(hunt).map(Action::Decide);
         }
-        if let Some(latest) = hunt.latest() {
-            if self.answer_of(hunt, latest).outcome.is_none() {
-                if let Ok(Some(reached)) = self.constraints.reaches(&latest.profile) {
-                    let mut payload = latest.payload.clone();
-                    payload.skipped = true;
-                    payload.inferred = None;
-                    payload.reason = Some(format!("its profile reaches {reached}"));
-                    return Some(Action::Decide(DecisionAction::new(
-                        payload,
-                        vec![latest.seq],
-                    )));
-                }
-                return Some(Action::RunTrial(self.hunt_trial(hunt, latest)));
+        if let Some(latest) = self.unanswered_latest(hunt) {
+            if let Ok(Some(reached)) = self.constraints.reaches(&latest.profile) {
+                let mut payload = latest.payload.clone();
+                payload.skipped = true;
+                payload.inferred = None;
+                payload.reason = Some(format!("its profile reaches {reached}"));
+                return Some(Action::Decide(DecisionAction::new(
+                    payload,
+                    vec![latest.seq],
+                )));
             }
+            return Some(Action::RunTrial(self.hunt_trial(hunt, latest)));
         }
-        if let Some(end) = self.located_loaded_failure(hunt) {
-            return Some(end);
-        }
-        match self.plan_next(hunt) {
-            Next::Group(group) => Some(Action::Decide(self.plan_group(hunt, &group))),
-            Next::End(end) => Some(self.hunt_end_action(hunt, end)),
-        }
+        Some(Action::Decide(match self.settle(hunt) {
+            Settled::Closing(decision) | Settled::Plan(decision) => decision,
+        }))
     }
 
     pub(crate) fn hunt_commitment(&self, hunt: &Active) -> Option<DecisionAction> {
