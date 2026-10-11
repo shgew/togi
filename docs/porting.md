@@ -17,7 +17,7 @@ The contract: **togi becomes idiomatic Rust that does what [`docs/spec/`](spec/)
 | `RawConfig` decoded, then checked in scattered places | `RawConfig` is parsed once into a validated `Config`; the rest of the code takes only `Config` | Invalid states are unrepresentable past the boundary |
 | `fmt.Errorf("…: %w", err)`; `(value, error)` pairs | A `Result` whose error enum names the operation and keeps the cause (`thiserror` in libraries, `anyhow` in the binary); where a failure must keep the progress made, `Result<T, Partial<T>>`, whose error carries that progress, not a value-and-error struct | `errors.Is`/`As` become matches on variants |
 | `encoding/json` structs and hand-written encoders | serde derive with `serde_json` defaults | No custom text rules to carry |
-| `math/rand/v2` PCG and its sampling methods | The `rand` crate's `StdRng`; each seed names its generator and locked `rand` version | A reproducible stream, with no copy of Go's generator |
+| `math/rand/v2` PCG and its sampling methods | The `rand` crate's `StdRng`, `rand` pinned to an exact version | A recorded seed reproduces its stream with the build that recorded it (the journal's build stamp names the build); a `rand` bump changes the stream |
 | `context.Context` passed everywhere | A cancellation token passed explicitly to code that waits; synchronous crates (tuner, journal, simulator, session loop) take none | Cancellation is visible in signatures; tokio stays in the crates that wait on the outside world |
 | Value or pointer receivers, shared pointers copied by accident | Ownership: borrow for reads, `Clone` explicitly where Go copied (`forecast` copies the folded state) | Aliasing that Go allowed silently becomes a compile error |
 
