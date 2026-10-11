@@ -149,6 +149,7 @@ impl Run {
             .collect();
         self.constraints.remove_combinations(&cleared);
         let seq = event.seq;
+        let before = self.core(core).offset;
         let entering_search = transition.to == CorePhase::Search;
         self.update_core(core, |state| {
             if transition.from == Some(CorePhase::Search)
@@ -173,9 +174,11 @@ impl Run {
         });
         if entering_search {
             self.phases.reset();
+            self.later.reset();
         }
         self.failures.retire_all(&event.cause);
         self.decided(core, seq);
+        self.later_moved(core, seq, before);
         Ok(())
     }
 
@@ -194,6 +197,8 @@ impl Run {
         self.constraints
             .set_failure_point(core, decision.failure_point.map(FailurePoint::new))?;
         let seq = event.seq;
+        let before = self.core(core).offset;
+        let hold = self.hold_strike(event, decision);
         self.r7_decided(event, decision);
         if decision.decision == togi_journal::Decision::Backoff
             && decision.activity != togi_journal::Activity::Search
@@ -215,6 +220,7 @@ impl Run {
         });
         self.failures.retire_all(&event.cause);
         self.decided(core, seq);
+        self.later_decided(event, decision, before, hold.as_ref());
         self.retire_reruns();
         self.revalidate_retry();
         Ok(())

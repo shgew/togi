@@ -21,6 +21,7 @@ mod error;
 mod evidence;
 mod failures;
 mod flight;
+mod later;
 mod ledger;
 mod optimum;
 mod phases;
@@ -42,6 +43,8 @@ mod checking_state_tests;
 mod checking_tests;
 #[cfg(test)]
 mod fold_tests;
+#[cfg(test)]
+mod later_tests;
 #[cfg(test)]
 mod ledger_tests;
 #[cfg(test)]

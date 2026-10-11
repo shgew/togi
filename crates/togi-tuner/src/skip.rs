@@ -46,6 +46,9 @@ impl Run {
         else {
             return action;
         };
+        if self.later.is_held(seq) {
+            return action;
+        }
         let Some(known) = self.failures.witnessed(seq) else {
             return action;
         };

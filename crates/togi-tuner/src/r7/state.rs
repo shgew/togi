@@ -149,7 +149,7 @@ impl Run {
     /// the cores its CCD charged are handled, and a backoff of the unattributed kind counts toward
     /// the load's escalation. Deepening backoffs and named charges do not count.
     pub(crate) fn r7_decided(&mut self, event: &Event, decision: &TunerDecision) {
-        if decision.decision != Decision::Backoff {
+        if !matches!(decision.decision, Decision::Backoff | Decision::Hold) {
             return;
         }
         let Some(record) = event.cause.iter().find_map(|seq| self.r7.open.get(seq)) else {
@@ -161,7 +161,7 @@ impl Run {
         let view = self.failed(record);
         let named = self.named_culprit(&view);
         let targets = self.failure_targets(&view);
-        if decision.activity != Activity::Deepening {
+        if decision.activity != Activity::Deepening && decision.decision == Decision::Backoff {
             let kind = if named {
                 BackoffKind::Named
             } else {

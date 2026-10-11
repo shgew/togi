@@ -9,6 +9,7 @@ use crate::config::TunerConfig;
 use crate::cores::{Core, Rotation};
 use crate::failures::Failures;
 use crate::flight::Flight;
+use crate::later::Later;
 use crate::ledger::PendingWarning;
 use crate::phases::Phases;
 use crate::r7::state::R7;
@@ -45,6 +46,7 @@ pub(crate) struct Run {
     pub(crate) ranking: Option<Ranked>,
     pub(crate) checking: Checking,
     pub(crate) reruns: Reruns,
+    pub(crate) later: Later,
     pub(crate) last_seq: Seq,
 }
 
@@ -87,6 +89,7 @@ impl Run {
             ranking: None,
             checking: Checking::default(),
             reruns: Reruns::default(),
+            later: Later::default(),
             last_seq: event.seq,
         })
     }
@@ -253,7 +256,7 @@ impl State {
             Payload::CheckingCycle(cycle) => self.run_mut()?.checking_cycle(event, cycle)?,
             Payload::CheckingStep(step) => self.run_mut()?.checking_step(event, step)?,
             Payload::CheckingChain(chain) => self.run_mut()?.checking_chain(event, chain)?,
-            Payload::HuntSkipped(skipped) => self.run_mut()?.hunt_skipped(skipped),
+            Payload::HuntSkipped(skipped) => self.run_mut()?.hunt_skipped(event, skipped),
             Payload::TunerWarning(_) => self.run_mut()?.warning = None,
             Payload::HostRanking(ranking) => self.run_mut()?.host_ranking(event, ranking)?,
             Payload::SessionContext(_)

@@ -123,7 +123,8 @@ impl Run {
         ))
     }
 
-    pub(crate) fn hunt_skipped(&mut self, skipped: &HuntSkipped) {
+    pub(crate) fn hunt_skipped(&mut self, event: &togi_journal::Event, skipped: &HuntSkipped) {
+        self.later_hunt_skipped(event, skipped);
         self.failures.retire(skipped.failure);
     }
 }

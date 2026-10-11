@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::num::NonZeroU32;
 
 use togi_journal::{Attribution, Event, Failure, Seq};
 use togi_machine::{Condition, CoreId, CoreSet, TargetOffset};
@@ -31,6 +32,8 @@ pub(crate) struct Pending {
     pub(crate) profile: Profile,
     pub(crate) carried: bool,
     pub(crate) load: Load,
+    pub(crate) ledger: Seq,
+    pub(crate) cycle: Option<NonZeroU32>,
 }
 
 impl Pending {
@@ -270,6 +273,8 @@ impl Run {
             profile,
             carried: false,
             load,
+            ledger: ledger_seq,
+            cycle: self.checking.last_cycle(),
         };
         self.failures.pend(cited, pending.clone());
         if class.multi_r7() {

@@ -234,6 +234,7 @@ impl Run {
         match cycle.event {
             CycleEvent::Start => {
                 self.phases.cycle_start(event.seq);
+                self.later_cycle_start(cycle.cycle);
                 self.checking.open = Some(OpenCycle {
                     number: cycle.cycle,
                     start: event.seq,
@@ -256,6 +257,7 @@ impl Run {
                         searching,
                         self.checking.profile,
                     )?;
+                    self.later_full_cycle(event.seq, cycle.cycle);
                 }
                 self.checking.closed = self.checking.open.take().map(|open| Closed {
                     steps_done: if cycle.passed {

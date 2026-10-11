@@ -182,6 +182,15 @@ impl Run {
             .map(|action| self.skip_known_failure(action))
     }
 
+    /// What answers a failure the ordinary way: the multi-core R7 response, else the attributed
+    /// failure of the first core with one pending.
+    pub(crate) fn ordinary_decision(&self) -> Option<Action> {
+        if let Some(response) = self.r7_decision() {
+            return Some(response.into_action());
+        }
+        self.pending_core_action()
+    }
+
     fn next_action(&self) -> Option<Action> {
         let decision = self
             .attribution()
@@ -192,11 +201,8 @@ impl Run {
         if let Some(decision) = decision {
             return Some(Action::Decide(decision));
         }
-        if let Some(response) = self.r7_decision() {
-            return Some(response.into_action());
-        }
-        if let Some(action) = self.pending_core_action() {
-            return Some(action);
+        if let Some(action) = self.ordinary_decision() {
+            return Some(self.later_decision(action));
         }
         if let Some(decision) = self.phase_decision().or_else(|| self.profile_decision()) {
             return Some(Action::Decide(decision));
@@ -205,7 +211,10 @@ impl Run {
             return self.search_action();
         }
         if !self.failures.queue_is_empty() {
-            return self.hunt_skipped_decision().map(Action::Decide);
+            return self
+                .hunt_skipped_decision()
+                .or_else(|| self.later_hunt_hold())
+                .map(Action::Decide);
         }
         if let Some(action) = self.rerun_action() {
             return Some(action);
