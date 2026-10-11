@@ -23,4 +23,12 @@ disallowed-methods = [
     { path = "togi_journal::StateDir::simulated", reason = "Only simulations and session tests keep a journal in memory; production locks a directory on disk" },
     { path = "togi_journal::StateDir::lock_unsynced", reason = "Only the simulator's --state-dir writes a journal without fsync" },
     { path = "togi_journal::fs::MemFs::dump_to", reason = "Only simulations write an in-memory state directory to disk, on request" },
+    { path = "std::process::Command::spawn", reason = "Only togi-command's runner, togi-trial's workload launcher and test helpers spawn processes" },
+    { path = "std::process::Command::output", reason = "Only togi-command's runner, togi-trial's workload launcher and test helpers spawn processes" },
+    { path = "std::process::Command::status", reason = "Only togi-command's runner, togi-trial's workload launcher and test helpers spawn processes" },
+    { path = "tokio::process::Command::spawn", reason = "Only togi-command's runner and test helpers spawn processes" },
+    { path = "tokio::process::Command::output", reason = "Only togi-command's runner and test helpers spawn processes" },
+    { path = "tokio::process::Command::status", reason = "Only togi-command's runner and test helpers spawn processes" },
+    { path = "togi_command::run", reason = "Only journalctl and the macOS boot session probe in detect, systemctl in trial, grub-editenv and systemctl reboot in hardware, and test helpers run external commands" },
+    { path = "togi_command::run_blocking", reason = "Only journalctl and the macOS boot session probe in detect, systemctl in trial, grub-editenv and systemctl reboot in hardware, and test helpers run external commands" },
 ]
