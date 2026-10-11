@@ -800,3 +800,71 @@ fn r7_mce_named_unloaded_core_uses_its_lane() {
         assert!(decision.cause.len() > n, "{local_mce}");
     }
 }
+
+#[test]
+fn r7_tied_charge_requests_ranking_before_selecting_a_core() {
+    let ids = [0, 1, 2, 3];
+    let mut j = Journal::on(&ids, pairs(&ids), &[Start::has_room(-30); 4]);
+    j.profile_change(&[-30; 4]);
+    j.r7_fact(false, &[0, 1], &[-30; 4], &R7Report::default().top(&[0, 1]));
+    assert_eq!(j.run().r7_decision(), Some(R7Response::ReadRanking));
+    assert_eq!(
+        j.run().r7_decision().unwrap().into_action(),
+        Action::ReadRanking
+    );
+    j.ranking(&[0, 1, 2, 3]);
+    let (action, moved) = j.at_next_backoff();
+    assert_eq!(moved, (1, -29));
+    j.decide(action);
+    assert_eq!(j.run().r7_decision(), None);
+    j.assert_resumes();
+}
+
+#[test]
+fn r7_zero_dead_end_explains_the_named_cores_ccd_route() {
+    for (named, top, subject) in [
+        (
+            2,
+            0,
+            "R7 failure naming core 02 at CO 0 on CCD 1, which had no loaded core",
+        ),
+        (0, 1, "core 00 failed at CO 0"),
+    ] {
+        let mut j = Journal::r7_session();
+        j.profile_change(&[0; 4]);
+        let failure = j.r7_fact(
+            false,
+            &[0, 1],
+            &[0; 4],
+            &R7Report::default()
+                .requests(&[(0, 1.1), (1, 1.2)])
+                .top(&[top])
+                .named(named),
+        );
+        let dead = j.at_next_dead_end();
+        let DecisionPayload::DeadEnd(end) = &dead.payload else {
+            unreachable!()
+        };
+        assert!(end.detail.contains(subject), "{}", end.detail);
+        assert!(dead.cause.contains(&failure));
+        j.assert_resumes();
+    }
+}
+
+#[test]
+fn r7_carried_failures_move_before_any_trial() {
+    let mut j = Journal::r7_session();
+    let at = j.at_values();
+    for _ in 0..4 {
+        j.r7_fact(false, &[0, 1], &at, &R7Report::default().top(&[0]).named(1));
+    }
+    let Action::Decide(action) = j.next() else {
+        panic!("carried failures ran a trial before moving");
+    };
+    let td = decision(&action);
+    assert_eq!(
+        (td.decision, td.core.get(), td.to_offset.get()),
+        (Decision::Backoff, 1, -29)
+    );
+    j.assert_resumes();
+}

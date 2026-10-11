@@ -1107,3 +1107,169 @@ fn a_carried_rerun_boundary_preserves_the_pending_checks() {
         }
     }
 }
+
+#[test]
+fn carried_rerun_citations_wait_for_a_cycle_boundary_not_a_step() {
+    let mut j = session(&[-10], r#"{"checking":{"cycle":["R7"]}}"#);
+    j.cycle_start(1, &[Regime::R7]);
+    let profile = checking(&j);
+    let class = ClassKey::new(
+        pick_workload(Regime::R1, 0).id(),
+        set(&[0]),
+        j.run().config.short_trial,
+    );
+    let failure = carry(&mut j, class, &profile, Outcome::Failure, None);
+    let facts: Vec<_> = (0..needed(&j))
+        .map(|_| carry(&mut j, class, &profile, Outcome::Pass, None))
+        .collect();
+    j.append(
+        moved(0, -10, -9, Activity::Checking, Decision::Backoff).into(),
+        &[failure],
+    );
+    j.profile_change(&[-9]);
+    assert!(j.run().reruns.is_empty());
+    assert_eq!(j.run().reruns.citations(), facts);
+    let step = j.run().cycle_action().unwrap();
+    assert!(matches!(
+        &step,
+        Action::Decide(decision)
+            if matches!(decision.payload, DecisionPayload::CheckingStep(_))
+    ));
+    assert_eq!(j.run().after_reruns(step.clone()), step);
+    assert_eq!(j.run().reruns.citations(), facts);
+    j.assert_resumes();
+}
+
+fn ordinals(requirement: &crate::Requirement) -> (Option<u32>, Option<u32>) {
+    (
+        requirement.step.map(|step| step.get().get()),
+        requirement.part.map(|part| part.get().get()),
+    )
+}
+
+fn stored(j: &Journal) -> crate::Requirement {
+    j.run().flight.open.as_ref().unwrap().requirement
+}
+
+#[test]
+fn resumed_short_trial_change_drops_a_rerun_retry() {
+    let cycle = r#"{"checking":{"cycle":["R1"]}}"#;
+    let cases = [
+        ("unchanged", cycle, true, 120),
+        (
+            "short_trial_s",
+            r#"{"checking":{"cycle":["R1"]},"durations":{"short_trial_s":100}}"#,
+            false,
+            100,
+        ),
+    ];
+    for (name, json, retry, duration) in cases {
+        let mut j = session(&[-10], cycle);
+        let template = until_trial(&mut j);
+        let failure = commit(&mut j, &template, 0);
+        let first = rerun(&j);
+        assert_eq!(first.duration, secs(120), "{name}");
+        ended(&mut j, &first, Outcome::Inconclusive, None);
+        j.load(&testkit::config(json));
+        assert_eq!(j.run().retry.is_some(), retry, "{name}");
+        let next = rerun(&j);
+        assert_eq!(
+            (next.retry, next.duration, next.load, next.cause.clone()),
+            (retry, secs(duration), Load::Single(core(0)), vec![failure]),
+            "{name}"
+        );
+        j.intent(&next);
+        assert_eq!(stored(&j), next.requirement, "{name}");
+        j.assert_resumes();
+    }
+}
+
+#[test]
+fn cycle_retries_attach_the_requirement_the_fold_stores() {
+    let r1 = r#"{"checking":{"cycle":["R1"]}}"#;
+    let r7 = r#"{"checking":{"cycle":["R7"]}}"#;
+    let cases = [
+        ("same shape cycle", r1, r1, true),
+        (
+            "stale cycle duration",
+            r1,
+            r#"{"checking":{"cycle":["R1"]},"durations":{"checking_trial_s":100}}"#,
+            false,
+        ),
+        ("same shape R7 part", r7, r7, true),
+        (
+            "stale R7 part duration",
+            r7,
+            r#"{"checking":{"cycle":["R7"]},"durations":{"short_trial_s":100}}"#,
+            false,
+        ),
+    ];
+    for (name, before, after, retry) in cases {
+        let mut j = session(&[-10, -11, -12, -13], before);
+        let first = until_trial(&mut j);
+        assert_eq!(first.requirement.kind, RequirementKind::Cycle, "{name}");
+        assert_eq!(ordinals(&first.requirement), (Some(1), Some(1)), "{name}");
+        ended(&mut j, &first, Outcome::Inconclusive, None);
+        j.load(&testkit::config(after));
+        assert_eq!(j.run().retry.is_some(), retry, "{name}");
+        let next = until_trial(&mut j);
+        assert_eq!(next.retry, retry, "{name}: {next:?}");
+        let duration = if retry { first.duration } else { secs(100) };
+        assert_eq!(next.duration, duration, "{name}");
+        j.intent(&next);
+        assert_eq!(stored(&j), next.requirement, "{name}");
+        j.assert_resumes();
+    }
+}
+
+#[test]
+fn stored_requirement_separates_class_count_and_part() {
+    let mut j = session(&[-10, -11, -12, -13], r#"{"checking":{"cycle":["R7"]}}"#);
+    let all = set(&[0, 1, 2, 3]);
+    let partial = 'found: {
+        for _ in 0..40 {
+            match j.next() {
+                Action::RunTrial(plan) if plan.load.cores() != all => break 'found plan,
+                Action::RunTrial(plan) => {
+                    pass(&mut j, &plan);
+                }
+                Action::Decide(decision) => {
+                    j.decide(decision);
+                }
+                Action::ReadRanking => panic!("the tuner asked to read a ranking"),
+            }
+        }
+        panic!("no partial part came");
+    };
+    let (intent, trial) = j.intent(&partial);
+    let open = stored(&j);
+    assert_eq!(open, partial.requirement);
+    assert_eq!(ordinals(&open), (Some(1), Some(2)));
+    assert_eq!(open.needed.get(), 3);
+    let mut end = Journal::end_payload(&trial, Outcome::Inconclusive, None);
+    end.duration_s = partial.duration.get();
+    j.append(end.into(), &[intent]);
+    let history = j.run().flight.last_closed.as_ref().unwrap().history;
+    assert_eq!(history.needed, 3);
+    assert_eq!(history.step.map(|step| step.get().get()), Some(1));
+    j.assert_resumes();
+}
+
+#[test]
+fn a_rerun_owed_before_any_checking_profile_needs_the_full_short_count() {
+    let mut j = Journal::new(&[0], &[Start::at_limit(-20).fail(-21)]);
+    assert!(j.run().checking.profile().is_none());
+    let class = ClassKey::new(pick_workload(Regime::R1, 0).id(), set(&[0]), secs(900));
+    let at = j.profile(&[-20]);
+    let failure = carry(&mut j, class, &at, Outcome::Failure, Some(0));
+    j.append(
+        moved(0, -20, -19, Activity::Checking, Decision::Backoff).into(),
+        &[failure],
+    );
+    let head = j.run().reruns.head().unwrap();
+    assert_eq!((head.class, head.failure), (class, failure));
+    let need = j.run().rerun_need(head).unwrap();
+    assert_eq!(need.class, class.with_duration(secs(120)));
+    assert_eq!(need.needed, j.run().config.needed);
+    j.assert_resumes();
+}

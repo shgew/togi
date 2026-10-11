@@ -1670,3 +1670,64 @@ mod counts_above_tests {
         }
     }
 }
+
+#[test]
+fn r7_reasons_render_each_voltage_basis_and_locate_provenance() {
+    use crate::r7::reason::{Basis, R7Reason};
+    use crate::r7::respond::LocateReason;
+
+    for (basis, text) in [
+        (Basis::NoTelemetry { offset: -30 }, "no request telemetry"),
+        (
+            Basis::Uncovered {
+                offset: -30,
+                sources: vec![seq(3)],
+            },
+            "request measurements [3] do not cover it",
+        ),
+        (Basis::NoPass { request: 1.1 }, "no qualifying pass"),
+        (
+            Basis::Met {
+                request: 1.2,
+                target: 1.1,
+            },
+            "already met the passed target 1.100 V",
+        ),
+        (
+            Basis::Toward {
+                request: 1.1,
+                target: 1.2,
+            },
+            "request 1.100 V to 1.200 V",
+        ),
+    ] {
+        let reason = R7Reason {
+            failure: seq(10),
+            core: core(0),
+            basis,
+            counts: 1,
+            notes: Vec::new(),
+            rail: None,
+        }
+        .to_string();
+        assert!(reason.contains("after failure #10: core 00"));
+        assert!(reason.contains(text), "{reason}");
+        assert!(reason.contains("1 count"));
+    }
+    for rerun_passed in [None, Some(seq(19))] {
+        let reason = LocateReason {
+            rerun_passed,
+            escalation: Some(Escalation::Backoffs {
+                failures: 2,
+                decisions: vec![seq(12), seq(30)],
+            }),
+        };
+        let mut expected = rerun_passed.into_iter().collect::<Vec<_>>();
+        expected.extend([seq(12), seq(30)]);
+        assert_eq!(reason.cause(), expected);
+        let text = reason.to_string();
+        assert!(text.contains("located on the unloaded cores"));
+        assert!(text.contains("#12, #30"));
+        assert_eq!(text.contains("CO 0 passed (#19)"), rerun_passed.is_some());
+    }
+}

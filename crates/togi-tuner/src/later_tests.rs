@@ -844,3 +844,45 @@ proptest! {
         j.assert_resumes();
     }
 }
+
+#[test]
+fn a_failure_before_the_latest_full_cycle_is_not_held() {
+    for attributed in [false, true] {
+        let mut j = later_session(&[-10, -12]);
+        start_cycle(&mut j);
+        let failure = if attributed {
+            fail_core(&mut j, 0)
+        } else {
+            idle_failure(&mut j)
+        };
+        let full = end_cycle(&mut j);
+        assert!(full > failure);
+        assert!(j.run().later_gate().is_some());
+        if attributed {
+            let action = j.run().ordinary_decision().unwrap();
+            let answered = j.run().later_decision(action.clone());
+            assert_eq!(answered, action);
+            let Action::Decide(action) = answered else {
+                panic!("expected the pending backoff");
+            };
+            assert_eq!(decision(&action).decision, Decision::Backoff);
+            assert_eq!(decision(&action).to_offset, off(-9));
+            assert_eq!(action.cause, [failure]);
+        } else {
+            assert!(j.run().later_hunt_hold().is_none());
+            assert_eq!(j.run().failures.queue().next(), Some(failure));
+        }
+        assert_eq!(strikes(&j), 0);
+        j.assert_resumes();
+    }
+}
+
+#[test]
+fn a_passed_full_cycle_before_any_checking_profile_confirms_nothing() {
+    let mut j = Journal::new(&[0], &[Start::search(-10)]);
+    assert!(j.run().checking.profile().is_none());
+    j.cycle_start(1, &[Regime::R1]);
+    j.cycle_end(1, true, true);
+    assert!(j.run().bios_profile().confirmed.is_none());
+    j.assert_resumes();
+}

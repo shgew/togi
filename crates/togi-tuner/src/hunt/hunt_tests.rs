@@ -2398,3 +2398,314 @@ fn the_known_failure_gate_reads_the_threshold_frozen_at_the_hunt_start() {
         j.assert_resumes();
     }
 }
+
+#[test]
+fn replayed_hunt_trials_clamp_to_the_nonzero_evidence_range() {
+    for (trials, needed) in [(0, 1), (1, 1), (65_535, 65_535), (65_536, 65_535)] {
+        let mut j = limit_session(3);
+        fail_all_together(&mut j, SHORT);
+        let (mut start, cause) = j.hunt_start_payload();
+        start.trials = trials;
+        j.append(start.into(), &cause);
+        assert_eq!(j.run().hunts.active.as_ref().unwrap().needed.get(), needed);
+        let group = j.next_decision();
+        j.decide(group);
+        assert_eq!(j.next_trial().requirement.needed.get(), needed);
+        j.assert_resumes();
+    }
+}
+
+#[test]
+fn a_hunt_start_rejects_a_workload_from_another_regime_without_mutating_the_run() {
+    let mut j = limit_session(3);
+    fail_all_together(&mut j, SHORT);
+    let (mut start, cause) = j.hunt_start_payload();
+    start.workload = workloads(Regime::R3)[0].id();
+    let expected = crate::FoldError::WorkloadRegime {
+        regime: start.regime,
+        workload: start.workload,
+    };
+    let event = j.event(start.into(), &cause);
+    let mut folded = j.state.clone();
+    assert_eq!(folded.fold(&event), Err(expected));
+    assert_eq!(folded.run(), j.state.run());
+}
+
+#[test]
+fn an_empty_hunt_load_replays_as_all_topology_cores() {
+    let mut j = limit_session(3);
+    fail_all_together(&mut j, SHORT);
+    let (mut start, cause) = j.hunt_start_payload();
+    start.cores = set(&[]);
+    j.append(start.into(), &cause);
+    assert_eq!(
+        j.run().hunts.active.as_ref().unwrap().class.loaded(),
+        set(&ids(3))
+    );
+    let group = j.next_decision();
+    j.decide(group);
+    assert_eq!(j.next_trial().load, Load::Many(set(&ids(3))));
+    j.assert_resumes();
+}
+
+#[test]
+fn groups_and_ends_for_another_hunt_do_not_change_the_active_hunt() {
+    for active in [false, true] {
+        let mut j = limit_session(3);
+        if active {
+            fail_all_together(&mut j, SHORT);
+            j.start_hunt();
+        }
+        let before = j.run().hunts.clone();
+        let group = group_event(1, 2, &[0], j.profile(&[-30, 0, 0]), HuntStage::Part);
+        j.append(group.into(), &[]);
+        let end = HuntEnd {
+            hunt: std::num::NonZeroU32::new(2).unwrap(),
+            result: HuntOutcome::Culprit,
+            cores: set(&[0]),
+            members: Vec::new(),
+            groups: 1,
+            reason: "test".to_owned(),
+        };
+        j.append(end.into(), &[]);
+        assert_eq!(j.run().hunts, before, "active {active}");
+        j.assert_resumes();
+    }
+}
+
+#[test]
+fn the_recent_constraint_core_must_be_a_candidate_for_the_repeated_probe() {
+    let mut j = limit_session(4);
+    fail_all_together(&mut j, SHORT);
+    let (mut start, cause) = j.hunt_start_payload();
+    assert_eq!(j.run().constraints.recent(), set(&[3]));
+    start.candidates = set(&[0, 1, 2]);
+    start.parked = j.profile(&[0, 0, 0, -30]).offsets();
+    j.append(start.into(), &cause);
+    assert_eq!(j.run().hunts.active.as_ref().unwrap().repeated, None);
+    let (group, _) = j.group_plan();
+    assert_eq!(group.cores, set(&[0, 1]));
+    assert_eq!(group.granularity, 2);
+    j.assert_resumes();
+}
+
+#[test]
+fn an_unanswered_hunt_group_has_no_drain_commitment() {
+    let mut j = hunt_of(3, SHORT);
+    assert_eq!(j.run().hunt_closing(), None);
+    let planned = j.next_decision();
+    j.decide(planned);
+    let plan = j.next_trial();
+    for _ in 0..4 {
+        assert_eq!(j.run().hunt_closing(), None);
+        j.trial(&plan, Outcome::Pass);
+    }
+    assert_eq!(j.run().hunt_closing(), None);
+    assert!(matches!(j.run().hunt_next(), Some(Action::RunTrial(_))));
+    j.assert_resumes();
+}
+
+#[test]
+fn a_direct_hunt_end_does_not_create_a_second_hunt_commitment() {
+    let mut j = hunt_of(3, SHORT);
+    manual_end(&mut j, HuntOutcome::Direct, &[0]);
+    assert_eq!(j.run().hunt_closing(), None);
+    assert_eq!(j.run().hunt_next(), None);
+    j.assert_resumes();
+}
+
+#[test]
+fn a_culprit_commitment_never_deepens_an_already_shallower_core() {
+    let mut j = limited([-28, -30]);
+    start_hunt_at(&mut j, 1, &[0, 1], &[-30, -30]);
+    manual_end(&mut j, HuntOutcome::Culprit, &[0]);
+    let commitment = j.run().hunt_closing().unwrap();
+    let moved = backoff_of(&commitment);
+    assert_eq!((moved.from_offset, moved.to_offset), (off(-28), off(-28)));
+    assert_eq!(moved.failure_point, Some(off(-29)));
+    assert_eq!(moved.pass, Some(off(-28)));
+    j.decide(commitment);
+    assert!(j.run().hunts.active.is_none());
+    assert_eq!(current(&j), [-28, -30]);
+    j.assert_resumes();
+}
+
+#[test]
+fn a_recorded_combination_needs_no_backoff_after_the_checking_profile_breaks_it() {
+    let mut j = limited([-30, -30]);
+    start_hunt_at(&mut j, 1, &[0, 1], &[-30, -30]);
+    manual_end(&mut j, HuntOutcome::Combination, &[0, 1]);
+    j.combination(1, &[(0, -30), (1, -30)]);
+    assert!(j.run().hunt_closing().is_some());
+    j.profile_change(&[-29, -30]);
+    assert!(j.run().hunts.active.is_some());
+    assert_eq!(j.run().hunt_closing(), None);
+    assert_eq!(j.run().hunt_next(), None);
+    j.assert_resumes();
+}
+
+#[test]
+fn a_combination_commitment_returns_no_unsafe_move_when_no_safe_profile_exists() {
+    let mut j = limited([-30, -30]);
+    start_hunt_at(&mut j, 1, &[0, 1], &[-30, -30]);
+    manual_end(&mut j, HuntOutcome::Combination, &[0, 1]);
+    j.combination(1, &[(0, -30), (1, -30)]);
+    j.core_phase(CoreTransition {
+        core: core(0),
+        from: Some(CorePhase::AtLimit),
+        to: CorePhase::AtLimit,
+        offset: off(-30),
+        pass: None,
+        failure_point: Some(off(0)),
+        check_solo_limit: false,
+        workloads: Vec::new(),
+        cleared_combination: Vec::new(),
+        reason: "test".to_owned(),
+    });
+    assert_eq!(j.run().hunt_closing(), None);
+    assert_eq!(j.run().hunt_next(), None);
+    assert_eq!(current(&j), [-30, -30]);
+    j.assert_resumes();
+}
+
+#[test]
+fn an_open_hunt_blocks_another_queued_hunt_and_locate() {
+    let mut j = hunt_of(3, SHORT);
+    let profile = j.offsets().offsets();
+    let queued = j.idle_failure(profile, Condition::Together);
+    assert!(j.run().failures.queue().any(|seq| seq == queued));
+    assert_eq!(j.run().hunt_start_action(), None);
+    assert_eq!(j.run().locate_action(), None);
+    j.assert_resumes();
+}
+
+#[test]
+fn a_paired_hunt_preserves_the_second_failures_nonempty_reason() {
+    let mut j = crate::later_tests::later_session(&[-10, -12]);
+    crate::later_tests::start_cycle(&mut j);
+    let first = crate::later_tests::idle_failure(&mut j);
+    let held = j.next_decision();
+    j.decide(held);
+    let profile = j.offsets().offsets();
+    let second = j.failure(
+        togi_journal::Failure {
+            signal: togi_machine::Signal::Crash,
+            attribution: Attribution::Unattributed,
+            core: None,
+            offset: None,
+            trial: None,
+            regime: Some(Regime::R6),
+            condition: Some(Condition::Together),
+            profile: Some(profile),
+            known_failure: None,
+            reason: Some("observed idle crash".to_owned()),
+            round: None,
+        },
+        &[],
+    );
+    let decision = crate::later_tests::drive_to_hunt_start(&mut j);
+    let DecisionPayload::HuntStart(start) = &decision.payload else {
+        panic!("expected the paired hunt start, got {decision:?}");
+    };
+    assert_eq!(decision.cause, [second, first]);
+    let reason = start.reason.as_deref().unwrap();
+    assert!(reason.starts_with("observed idle crash; second failure within 5 cycles"));
+    assert!(reason.contains(&format!("#{first}")));
+    assert!(reason.contains(&format!("#{second}")));
+    j.decide(decision);
+    j.assert_resumes();
+}
+
+fn before_first_member_probe() -> Journal {
+    let mut j = hunt_of(4, 600);
+    for _ in 0..200 {
+        if group_of(&j.next()).is_some_and(|group| group.probe.is_some()) {
+            return j;
+        }
+        j.step(&mut |plan| {
+            if at(plan, 0) <= -30 && at(plan, 1) <= -30 {
+                Outcome::Failure
+            } else {
+                Outcome::Pass
+            }
+        });
+    }
+    panic!("the hunt never reached its first member probe");
+}
+
+#[test]
+fn a_skipped_member_probe_ends_with_the_known_failing_members_and_explains_the_stop() {
+    let mut j = before_first_member_probe();
+    let (mut group, cause) = j.group_plan();
+    assert_eq!(group.probe.unwrap().core, core(0));
+    group.skipped = true;
+    group.inferred = None;
+    j.append(group.into(), &cause);
+    let action = j.run().hunt_next().unwrap();
+    let end = end_of(&action).unwrap();
+    assert_eq!(end.result, HuntOutcome::Combination);
+    assert_eq!(end.members, members_of(&[(0, -30), (1, -30)]));
+    assert!(
+        end.reason
+            .contains("member probes stopped at a skipped group")
+    );
+    assert!(end.reason.contains("core 00 -30") && end.reason.contains("core 01 -30"));
+    j.assert_resumes();
+}
+
+#[test]
+fn an_already_broken_combination_ends_without_starting_member_probes() {
+    let mut j = before_first_member_probe();
+    j.profile_change(&[-29, -30, -30, -30]);
+    let action = j.run().hunt_next().unwrap();
+    let end = end_of(&action).unwrap();
+    assert_eq!(end.result, HuntOutcome::Combination);
+    assert_eq!(end.cores, set(&[0, 1]));
+    assert!(end.members.is_empty());
+    assert!(!end.reason.contains("member probes"));
+    j.assert_resumes();
+}
+
+#[test]
+fn a_combination_before_any_checking_profile_is_recorded_without_the_shallower_note() {
+    let starts = [-30, -30].map(|offset| Start::at_limit(offset).fail(offset - 1).pass(offset));
+    let mut j = Journal::new(&[0, 1], &starts);
+    assert!(j.run().checking.profile().is_none());
+    start_hunt_at(&mut j, 1, &[0, 1], &[-30, -30]);
+    manual_end(&mut j, HuntOutcome::Combination, &[0, 1]);
+    let record = j.next_decision();
+    let DecisionPayload::Combination(combination) = &record.payload else {
+        panic!("expected the combination, got {record:?}");
+    };
+    assert_eq!(combination.reason, "hunt 1 found a combined failure");
+    j.decide(record);
+    j.assert_resumes();
+}
+
+#[test]
+fn a_core_reset_drops_live_parked_failures_and_those_of_classes_loading_it() {
+    use super::state::{Hunts, ParkedFailure};
+    let secs = crate::Secs::new(std::num::NonZeroU32::new(SHORT).unwrap());
+    let class = |ids: &[u8]| crate::ClassKey::new(workloads(Regime::R3)[0].id(), set(ids), secs);
+    let parked = |at: u64, carried: bool| ParkedFailure {
+        seq: Seq::new(at).unwrap(),
+        core: core(1),
+        offset: off(-10),
+        carried,
+    };
+    let mut hunts = Hunts::default();
+    hunts.note_parked_failure(class(&[0]), parked(1, true));
+    hunts.note_parked_failure(class(&[0]), parked(2, false));
+    hunts.note_parked_failure(class(&[2]), parked(3, false));
+    hunts.note_parked_failure(class(&[1]), parked(4, true));
+    let reset = Seq::new(9).unwrap();
+    hunts.reset_core(reset, core(1));
+    assert_eq!(hunts.reset, Some(reset));
+    assert_eq!(hunts.parked_failures.len(), 1);
+    let survivor = hunts.parked_failures.get(&class(&[0])).unwrap();
+    assert_eq!(survivor, &{
+        let mut only = super::state::Parked::default();
+        only.add(parked(1, true));
+        only
+    });
+}

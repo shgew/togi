@@ -702,3 +702,138 @@ proptest! {
         j.assert_resumes();
     }
 }
+
+#[test]
+fn an_r7_cycle_intent_waits_for_its_recorded_step() {
+    let mut j = started(&[-10, -12]);
+    j.cycle_start(1, &[Regime::R7]);
+    let mut plan = j.manual(
+        Regime::R7,
+        0,
+        Load::Many(set(&[0, 1])),
+        Condition::Together,
+        &[-10, -12],
+        j.run().config.short_trial.get(),
+    );
+    plan.context = TrialContext::Cycle {
+        cycle: std::num::NonZeroU32::MIN,
+        step: crate::StepNo::new(std::num::NonZeroU32::MIN),
+        part: crate::PartNo::new(std::num::NonZeroU32::MIN),
+    };
+    let intent = plan.intent(TrialId::from("r7-step".to_owned()), 0);
+    let class = j.run().class_of_intent(&intent).unwrap();
+    assert!(matches!(
+        j.run().schedule_intent(&intent, class, &[]),
+        Err(crate::FoldError::UnscheduledIntent(_))
+    ));
+    let step = j.next_decision();
+    assert!(matches!(step.payload, DecisionPayload::CheckingStep(_)));
+    j.decide(step);
+    let (requirement, turn) = j.run().schedule_intent(&intent, class, &[]).unwrap();
+    assert_eq!(requirement.kind, crate::RequirementKind::Cycle);
+    assert_eq!(requirement.class, class);
+    assert_eq!(
+        requirement.step,
+        Some(crate::StepNo::new(std::num::NonZeroU32::MIN))
+    );
+    assert!(turn.is_none());
+    j.assert_resumes();
+}
+
+#[test]
+fn a_checking_chain_rejects_an_unknown_ccd_without_changing_state() {
+    let mut j = started(&[-10, -12]);
+    j.cycle_start(1, &[Regime::R7]);
+    let step = j.next_decision();
+    j.decide(step);
+    let before = j.state.clone();
+    let ccd = togi_machine::CcdId(99);
+    let result = j.try_append(
+        togi_journal::CheckingChain {
+            cycle: std::num::NonZeroU32::MIN,
+            step: std::num::NonZeroU32::MIN,
+            ccd,
+            workload: togi_machine::pick_workload(Regime::R7, 0).id(),
+            groups: vec![set(&[0, 1])],
+            cores: CoreSet::default(),
+            source_seqs: Vec::new(),
+            profile: j.offsets().offsets(),
+            part: std::num::NonZeroU32::MIN,
+            rederived: None,
+        }
+        .into(),
+        &[],
+    );
+    assert_eq!(result, Err(crate::FoldError::UnknownCcd(ccd)));
+    assert_eq!(j.state.run(), before.run());
+}
+
+#[test]
+fn a_single_ccd_r7_cycle_finishes_without_a_cross_ccd_trial() {
+    let mut j = started(&[-10, -12]);
+    j.load(&config(
+        r#"{"checking":{"cycle":["R7"]},"durations":{"checking_all_core_s":120}}"#,
+    ));
+    let end = finish_cycle(&mut j);
+    assert!(end.passed);
+    assert!(!end.full);
+    let intents: Vec<_> = j
+        .events
+        .iter()
+        .filter_map(|event| match &event.payload {
+            Payload::TrialIntent(intent) => Some(intent),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(intents.len(), 4);
+    assert!(intents.iter().all(|intent| {
+        intent.cores == set(&[0, 1])
+            && intent.duration_s == j.run().config.short_trial.get()
+            && intent.regime == Regime::R7
+    }));
+    j.assert_resumes();
+}
+
+#[test]
+fn carried_passes_never_fulfill_a_checking_cycle_step() {
+    let mut j = Journal::has_room(&[-20]);
+    j.load(&config(r#"{"checking":{"cycle":["R1"]}}"#));
+    let change = j.next_decision();
+    j.decide(change);
+    let class = (Regime::R1, 0, &[0u8][..], 120);
+    let needed = j.run().config.needed.get();
+    for _ in 0..needed {
+        j.carry(
+            "20230101T000000Z",
+            class,
+            Condition::Together,
+            &[-20],
+            Outcome::Pass,
+        );
+    }
+    let start = j.next_decision();
+    assert!(
+        matches!(&start.payload, DecisionPayload::CheckingCycle(cycle) if cycle.event == CycleEvent::Start),
+        "{start:?}"
+    );
+    j.decide(start);
+    let mut action = j.next();
+    while let Action::Decide(decision) = action {
+        assert!(
+            !matches!(&decision.payload, DecisionPayload::CheckingCycle(cycle) if cycle.event == CycleEvent::End),
+            "carried passes finished the cycle: {decision:?}"
+        );
+        j.decide(decision);
+        action = j.next();
+    }
+    let Action::RunTrial(plan) = action else {
+        panic!("no live trial was asked for: {action:?}");
+    };
+    assert_eq!(
+        (plan.regime, plan.condition),
+        (Regime::R1, Condition::Together)
+    );
+    assert_eq!(j.run().checking.open().unwrap().steps_done(), 0);
+    assert_eq!(finish_cycle(&mut j).event, CycleEvent::End);
+    j.assert_resumes();
+}

@@ -1250,3 +1250,111 @@ fn r7_check_cores(j: &Journal) -> Vec<Vec<u8>> {
         .map(|check| check.class.loaded().iter().map(CoreId::get).collect())
         .collect()
 }
+
+#[test]
+fn an_r7_backoff_closes_the_open_round_before_any_offset_moves() {
+    let mut j = phase1_done(&[Start::solo(-10, -11), Start::solo(-10, -11)]);
+    j.ranking(&[0, 1]);
+    let start = start_round(&mut j, 1, &[-11, -11], &[0, 1], 5);
+    let failure = j.r7_fact(
+        false,
+        &[0, 1],
+        &[-10, -10],
+        &R7Report::default().named(0).top(&[0]),
+    );
+    let response = j.run().r7_decision().unwrap();
+    assert!(matches!(
+        &response,
+        crate::r7::respond::R7Response::Backoff { .. }
+    ));
+    let before = j.offsets();
+    let action = j.run().round_before_backoff(response.clone());
+    let Action::Decide(close) = action else {
+        panic!("expected the round to close before the backoff");
+    };
+    let DecisionPayload::DeepeningRound(end) = &close.payload else {
+        panic!("expected a round end, got {close:?}");
+    };
+    assert_eq!(end.event, RoundEvent::End);
+    assert_eq!(end.round.get(), 1);
+    assert!(!end.passed);
+    assert!(end.reason.as_deref().unwrap().contains("requires backoff"));
+    assert_eq!(close.cause, [failure]);
+    assert_eq!(j.run().rounds.active().unwrap().start(), start);
+    j.decide(close);
+    assert!(j.run().rounds.active().is_none());
+    assert_eq!(j.offsets(), before);
+    assert_eq!(
+        j.run().round_before_backoff(response.clone()),
+        response.into_action()
+    );
+    j.assert_resumes();
+}
+
+#[test]
+fn a_round_reaching_a_new_combination_ends_before_its_first_move() {
+    let mut j = phase1_done(&[Start::solo(-10, -11), Start::solo(-10, -11)]);
+    let start = start_round(&mut j, 1, &[-11, -11], &[0, 1], 5);
+    j.combination(1, &[(0, -11), (1, -11)]);
+    let before = j.offsets();
+    let close = j.run().round_move_action().unwrap();
+    let DecisionPayload::DeepeningRound(end) = &close.payload else {
+        panic!("expected the unsafe round to close, got {close:?}");
+    };
+    assert_eq!(end.event, RoundEvent::End);
+    assert!(!end.passed);
+    assert!(end.reason.as_deref().unwrap().contains("reaches"));
+    assert_eq!(close.cause, [start]);
+    assert_eq!(j.next_decision(), close);
+    j.decide(close);
+    assert!(j.run().rounds.active().is_none());
+    assert_eq!(j.offsets(), before);
+    j.assert_resumes();
+}
+
+#[test]
+fn a_known_round_failure_uses_the_ordinary_backoff_without_fresh_blame() {
+    let mut j = phase1_done(&[Start::solo(-10, -11)]);
+    let short = j.run().config.short_trial.get();
+    let mut carried = j.carried_trial(
+        "20230101T000000Z",
+        togi_journal::TrialClass {
+            regime: Regime::R1,
+            workload: togi_machine::WorkloadId::new(Regime::R1, 0),
+            cores: set(&[0]),
+            duration_s: short,
+        },
+        Condition::Alone,
+        &[-11],
+        Outcome::Failure,
+        None,
+    );
+    carried.core = Some(core(0));
+    let source = j.append(carried.into(), &[]);
+    start_round(&mut j, 1, &[-11], &[0], 5);
+    finish_moves(&mut j);
+    j.profile_change(&[-11]);
+    let mut skip = j.next_decision();
+    if matches!(skip.payload, DecisionPayload::CorePhase(_)) {
+        j.decide(skip);
+        skip = j.next_decision();
+    }
+    let DecisionPayload::Failure(failure) = &skip.payload else {
+        panic!("expected the known failure, got {skip:?}");
+    };
+    assert_eq!(failure.known_failure, Some(source));
+    j.decide(skip);
+    assert!(j.run().phases.blame().is_none());
+    let close = j.next_decision();
+    assert!(matches!(
+        &close.payload,
+        DecisionPayload::DeepeningRound(end) if !end.passed && end.event == RoundEvent::End
+    ));
+    j.decide(close);
+    let backoff = j.next_decision();
+    let backoff = tuner_decision(&backoff);
+    assert_eq!(backoff.decision, Decision::Backoff);
+    assert_eq!(backoff.activity, Activity::Deepening);
+    assert_eq!(backoff.to_offset, off(-10));
+    j.assert_resumes();
+}

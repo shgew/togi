@@ -669,3 +669,104 @@ fn zero_release_after_a_passed_rerun_outside_multi_r7() {
     assert!(!j.queued(failure));
     j.assert_resumes();
 }
+
+#[test]
+fn a_passed_zero_diagnostic_releases_the_original_obligation() {
+    let mut j = Journal::has_room(&[0, -20]);
+    let plan = together(&j, Regime::R6, &[0, 1], &[0, -20]);
+    let failure = j.failed(&plan, Some(0));
+    let record = j.run().failures.pending(failure).unwrap().clone();
+    let rerun = j.zero_rerun(failure);
+    j.run_named(&rerun, Outcome::Pass, None);
+    assert_eq!(
+        j.run()
+            .at_zero(failure, &record, core(0), "failure", vec![failure]),
+        crate::zero::AtZero::Released
+    );
+    assert!(j.run().pending_core_action().is_none());
+    assert!(j.queued(failure));
+    j.assert_resumes();
+}
+
+#[test]
+fn a_single_core_zero_rerun_rejects_equivalent_many_and_ambiguous_load_shapes() {
+    let mut j = Journal::has_room(&[0, -20]);
+    let plan = together(&j, Regime::R5, &[0], &[0, -20]);
+    let failure = j.failed(&plan, Some(0));
+    let rerun = j.zero_rerun(failure);
+    let trial = TrialId::from("zero-shape".to_owned());
+    let valid = rerun.intent(trial.clone(), 0);
+    let class = j.run().class_of_intent(&valid).unwrap();
+    assert_eq!(
+        j.run().zero_context(&valid, class, &[failure]),
+        Some(rerun.requirement)
+    );
+    for core in [None, Some(core(0))] {
+        let intent = TrialIntent {
+            core,
+            cores: set(&[0]),
+            ..valid.clone()
+        };
+        let event = j.event(intent.into(), &[failure]);
+        let mut probe = j.state.clone();
+        assert_eq!(
+            probe.fold(&event),
+            Err(crate::FoldError::UnscheduledIntent(trial.clone()))
+        );
+        assert_eq!(probe.run(), j.state.run());
+    }
+    j.assert_resumes();
+}
+
+#[test]
+fn an_unrelated_checking_retry_does_not_replace_a_zero_diagnostic() {
+    let mut j = Journal::has_room(&[0, -20]);
+    j.profile_change(&[0, -20]);
+    j.open_default_cycle();
+    let cycle = j.next_trial();
+    j.run_named(&cycle, Outcome::Inconclusive, None);
+    assert!(matches!(
+        j.run().retry.as_ref().unwrap().plan.context,
+        TrialContext::Cycle { .. }
+    ));
+    let plan = together(&j, Regime::R6, &[0, 1], &[0, -20]);
+    let failure = j.failed(&plan, Some(0));
+    let rerun = j.zero_rerun(failure);
+    assert_eq!(rerun.context, TrialContext::ZeroRerun { failure });
+    assert!(!rerun.retry);
+    assert_eq!(rerun.load, plan.load);
+    assert_eq!(rerun.duration, plan.duration);
+    assert!(rerun.profile.is_zero());
+    assert_eq!(rerun.cause, [failure]);
+    j.assert_resumes();
+}
+
+#[test]
+fn a_passed_rerun_of_a_failure_decided_meanwhile_releases_and_queues_nothing() {
+    let mut j = Journal::has_room(&[0, -10, 0, -10]);
+    let profile = [0, -10, 0, -10];
+    let plan = together(&j, Regime::R5, &[0], &profile);
+    let failure = j.failed(&plan, Some(0));
+    let rerun = j.zero_rerun(failure);
+    let (intent, trial) = j.intent(&rerun);
+    j.append(
+        togi_journal::TunerDecision {
+            core: core(0),
+            activity: Activity::Checking,
+            decision: togi_journal::Decision::Backoff,
+            from_offset: off(0),
+            to_offset: off(0),
+            pass: None,
+            failure_point: Some(off(0)),
+            workloads: Vec::new(),
+            reason: "test".to_owned(),
+        }
+        .into(),
+        &[failure],
+    );
+    assert!(j.run().failures.pending(failure).is_none());
+    j.end(intent, &trial, Outcome::Pass);
+    assert!(j.run().failures.queue_is_empty());
+    assert_eq!(j.run().core(core(0)).pending, None);
+    j.assert_resumes();
+}

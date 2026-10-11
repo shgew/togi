@@ -9,6 +9,9 @@ use crate::r7::order::lowest_ranked;
 use crate::state::Run;
 use crate::{DecisionAction, Depth, Profile, Ranking};
 
+#[cfg(test)]
+mod tests;
+
 /// The deepened core a phase-2 failure is charged to: the round it belongs to, or none for a
 /// failure of the confirmation cycle, and the offset the core returns to.
 #[derive(Clone, Debug, Eq, PartialEq)]

@@ -1984,3 +1984,41 @@ fn rerun_derived_hunt_commitments() {
         j.assert_resumes();
     }
 }
+
+#[test]
+fn resetting_a_loaded_core_discards_the_saved_located_group_rejection() {
+    for (reset, retained) in [(0, false), (2, true)] {
+        let mut j = Journal::r7_session();
+        j.loc_fail_escalated(&top0());
+        let located = j.loc_run(|_| Verdict::Named(1));
+        assert_eq!(hunt_end(&located.action).result, HuntOutcome::Loaded);
+        let saved = j.run().hunts.rejecting.clone().unwrap();
+        assert_eq!(saved.open.pending.class.loaded(), set(&[0, 1]));
+        j.reset(reset);
+        assert_eq!(
+            j.run().hunts.rejecting.as_deref(),
+            retained.then_some(saved.as_ref()),
+            "reset core {reset}"
+        );
+        j.assert_resumes();
+    }
+}
+
+#[test]
+fn a_skipped_or_inferred_locate_has_no_live_rejecting_failure() {
+    for inferred in [false, true] {
+        let mut j = Journal::r7_session();
+        j.loc_fail_escalated(&top0());
+        let located = j.loc_run_until(never, |_| true);
+        let mut group = hunt_group(&located.action).clone();
+        assert_eq!(group.stage, HuntStage::Locate);
+        group.skipped = !inferred;
+        group.inferred = inferred.then_some(togi_journal::Inference::Failure);
+        j.append(group.into(), &decision(&located.action).cause);
+        let active = j.run().hunts.active.as_ref().unwrap();
+        assert_eq!(j.run().rejecting_failure(active), None);
+        let action = j.run().hunt_next().unwrap();
+        assert_eq!(hunt_end(&action).result, HuntOutcome::Loaded);
+        j.assert_resumes();
+    }
+}

@@ -731,3 +731,45 @@ fn an_observed_hunt_failure_steps_only_the_cores_it_held() {
     }
     panic!("the hunt never ran its member probe");
 }
+
+#[test]
+fn a_direct_hunt_failure_previews_its_safe_backoff_before_hunt_end() {
+    for (failing, shown) in [(-11, [-9, -10]), (-15, [-9, -11])] {
+        let (mut j, hold, _) = paired_hunt();
+        let confirmed = confirmed_seq(&j);
+        parked_failure(&mut j, 1, failing, &[-9, failing]);
+        let before = j.state.clone();
+        let end = j.next_decision();
+        assert!(
+            matches!(&end.payload, DecisionPayload::HuntEnd(end) if end.result == HuntOutcome::Direct)
+        );
+        assert_shown(&j, &shown, confirmed, &[0, 1], Some(hold));
+        assert_eq!(current_of(&j.offsets()), [-10, -12]);
+        assert_eq!(j.state, before);
+        j.assert_resumes();
+    }
+}
+
+#[test]
+fn a_paired_hunt_shows_no_move_while_a_zero_failure_awaits_its_diagnostic_or_dead_end() {
+    for (profile, name) in [([-9, 0], "diagnostic"), ([0, 0], "dead end")] {
+        let (mut j, hold, _) = paired_hunt();
+        let confirmed = confirmed_seq(&j);
+        parked_failure(&mut j, 1, 0, &profile);
+        let action = j.next();
+        match (&action, name) {
+            (Action::RunTrial(plan), "diagnostic") => {
+                assert!(matches!(
+                    plan.context,
+                    crate::TrialContext::ZeroRerun { .. }
+                ));
+            }
+            (Action::Decide(decision), "dead end") => {
+                assert!(matches!(decision.payload, DecisionPayload::DeadEnd(_)));
+            }
+            other => panic!("{name}: {other:?}"),
+        }
+        assert_shown(&j, &[-9, -11], confirmed, &[0, 1], Some(hold));
+        j.assert_resumes();
+    }
+}
