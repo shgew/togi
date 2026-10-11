@@ -1,0 +1,25 @@
+[package]
+name = "togi-session"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "The tuning session: the hardware write transaction, the journal appender and the run's recovery fold"
+
+[dependencies]
+jiff.workspace = true
+thiserror.workspace = true
+togi-config.workspace = true
+togi-journal.workspace = true
+togi-machine.workspace = true
+togi-render.workspace = true
+togi-requests.workspace = true
+togi-tuningboot.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+togi-sim.workspace = true
+
+[lints]
+workspace = true

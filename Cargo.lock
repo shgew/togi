@@ -833,6 +833,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "togi-session"
+version = "0.0.0"
+dependencies = [
+ "jiff",
+ "proptest",
+ "thiserror",
+ "togi-config",
+ "togi-journal",
+ "togi-machine",
+ "togi-render",
+ "togi-requests",
+ "togi-sim",
+ "togi-tuningboot",
+]
+
+[[package]]
 name = "togi-sim"
 version = "0.0.0"
 dependencies = [
