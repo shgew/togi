@@ -1,10 +1,11 @@
 use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::num::NonZeroU32;
 
 use togi_journal::{Attribution, Event, Failure, Seq};
 use togi_machine::{Condition, CoreId, CoreSet, TargetOffset};
 
 use crate::state::Run;
-use crate::{ClassKey, DecisionAction, FoldError, Profile};
+use crate::{ClassKey, DecisionAction, FoldError, Load, Profile};
 
 /// A failure as the known-failure rule needs it: what a skipped trial copies from it.
 #[derive(Clone, Debug, PartialEq)]
@@ -14,6 +15,15 @@ pub(crate) struct Witness {
     pub(crate) profile: Profile,
 }
 
+/// The shape a failure's class gets when no trial intent records one: a single loaded core is a
+/// single-core trial.
+pub(crate) fn load_of(class: ClassKey) -> Load {
+    match class.loaded().first() {
+        Some(core) if class.loaded().len() == 1 => Load::Single(core),
+        _ => Load::Many(class.loaded()),
+    }
+}
+
 /// A failure no decision has answered yet.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Pending {
@@ -21,6 +31,10 @@ pub(crate) struct Pending {
     pub(crate) class: ClassKey,
     pub(crate) profile: Profile,
     pub(crate) carried: bool,
+    pub(crate) load: Load,
+    pub(crate) ledger: Seq,
+    pub(crate) cycle: Option<NonZeroU32>,
+    pub(crate) round: Option<NonZeroU32>,
 }
 
 impl Pending {
@@ -61,6 +75,18 @@ impl Failures {
 
     pub(crate) fn queue_back(&mut self, seq: Seq) {
         self.queue.push_back(seq);
+    }
+
+    pub(crate) fn dequeue_head(&mut self, seq: Seq) {
+        if self.queue.front() == Some(&seq) {
+            self.queue.pop_front();
+        }
+    }
+
+    pub(crate) fn requeue(&mut self, seq: Seq) {
+        if self.pending.contains_key(&seq) && !self.queue.contains(&seq) {
+            self.queue.push_front(seq);
+        }
     }
 
     pub(crate) fn pending(&self, seq: Seq) -> Option<&Pending> {
@@ -215,6 +241,23 @@ impl Run {
         }
         let ledger_seq = awaiting.map_or(event.seq, |awaiting| awaiting.end_seq);
         let known_seq = failure.known_failure;
+        let zero_rerun = awaiting.and_then(|awaiting| awaiting.zero);
+        let failed_trial = awaiting
+            .and_then(|awaiting| awaiting.r7.clone())
+            .map(|mut trial| {
+                trial.backoffs = self.r7.strikes.snapshot(class.load());
+                trial
+            });
+        let load = match awaiting {
+            Some(awaiting) => match awaiting.intent.core {
+                Some(core) if awaiting.intent.cores.is_empty() => Load::Single(core),
+                _ => Load::Many(class.loaded()),
+            },
+            None => crate::failures::load_of(class),
+        };
+        let round = failure
+            .round
+            .or_else(|| awaiting.and_then(|awaiting| awaiting.intent.round));
 
         if awaiting.is_some() {
             self.flight.awaiting = None;
@@ -237,16 +280,32 @@ impl Run {
             );
         }
         let cited = known_seq.unwrap_or(event.seq);
-        self.failures.pend(
-            cited,
-            Pending {
-                failure: failure.clone(),
-                class,
-                profile,
-                carried: false,
-            },
-        );
+        if known_seq.is_none() {
+            self.hunt_note_parked_failure(event.seq, class, failure, false);
+        }
+        if zero_rerun.is_some() && !class.multi_r7() {
+            return Ok(());
+        }
+        let pending = Pending {
+            failure: failure.clone(),
+            class,
+            profile,
+            carried: false,
+            load,
+            ledger: ledger_seq,
+            cycle: self.checking.last_cycle(),
+            round,
+        };
+        self.failures.pend(cited, pending.clone());
         if class.multi_r7() {
+            if known_seq.is_none() {
+                if zero_rerun.is_none() {
+                    self.hunt_keep_rejecting(ledger_seq, cited, &pending, failed_trial.as_ref());
+                }
+                self.r7_open_failure(cited, pending, failed_trial);
+                self.hunt_located_culprit(cited, class, failure);
+            }
+            self.phase2_failure(cited);
             return Ok(());
         }
         if failure.attribution == Attribution::Attributed {
@@ -254,6 +313,7 @@ impl Run {
                 let replaced = self.core(core).pending;
                 if let Some(old) = replaced.filter(|&old| old != cited) {
                     self.failures.retire(old);
+                    self.prune_blames();
                 }
                 self.update_core(core, |state| state.pending = Some(cited));
             }
@@ -267,6 +327,7 @@ impl Run {
         if unattributed && known_seq.is_none() && failure.trial.is_none() && (together || parked) {
             self.live_idle_failure(event.seq, &profile)?;
         }
+        self.phase2_failure(cited);
         Ok(())
     }
 }

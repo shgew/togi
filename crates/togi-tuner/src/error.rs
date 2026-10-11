@@ -1,7 +1,7 @@
 use togi_journal::{Seq, TrialId};
 use togi_machine::{CoreId, Regime, WorkloadId};
 
-use crate::{ConstraintError, ProfileError, TopologyError, TopologyMismatch};
+use crate::{ConstraintError, ProfileError, RankingError, TopologyError, TopologyMismatch};
 
 /// A journal the tuner cannot have written: the event contradicts the state it folds into. The
 /// state is unchanged when `fold` returns one.
@@ -23,6 +23,8 @@ pub enum FoldError {
     Mismatch(#[from] TopologyMismatch),
     #[error("an earlier event could not be folded")]
     Poisoned,
+    #[error("ranking: {0}")]
+    Ranking(#[from] RankingError),
     #[error("constraint: {0}")]
     Constraint(#[from] ConstraintError),
     #[error("trial {0} is not the open trial")]
@@ -54,4 +56,8 @@ pub enum FoldError {
     NoProfile,
     #[error("a checking cycle passed before any profile.change")]
     NoCheckingProfile,
+    #[error("CCD {} is outside the topology", .0.0)]
+    UnknownCcd(togi_machine::CcdId),
+    #[error("hunt {0} has no candidate to narrow")]
+    NoCandidates(std::num::NonZeroU32),
 }

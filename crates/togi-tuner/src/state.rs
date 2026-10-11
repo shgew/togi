@@ -4,31 +4,29 @@ use togi_journal::{
 };
 use togi_machine::{Backend, PerCore, TargetOffset};
 
+use crate::checking::{Checking, Reruns};
 use crate::config::TunerConfig;
 use crate::cores::{Core, Rotation};
 use crate::failures::Failures;
 use crate::flight::Flight;
+use crate::hunt::Hunts;
+use crate::later::Later;
 use crate::ledger::PendingWarning;
 use crate::phases::Phases;
+use crate::r7::state::R7;
 use crate::requirement::Retry;
+use crate::rounds::Rounds;
 use crate::search::Search;
-use crate::{CombinationId, Constraints, Evidence, FailurePoint, FoldError, Profile, Topology};
+use crate::zero::Zero;
+use crate::{
+    CombinationId, Constraints, Evidence, FailurePoint, FoldError, Profile, Ranking, Topology,
+};
 
-/// The checking profile the last `profile.change` set.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub(crate) struct Checking {
-    profile: Option<Profile>,
-    seq: Option<Seq>,
-}
-
-impl Checking {
-    pub(crate) fn profile(&self) -> Option<Profile> {
-        self.profile
-    }
-
-    pub(crate) fn seq(&self) -> Option<Seq> {
-        self.seq
-    }
+/// The latest host ranking and the event that recorded it.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct Ranked {
+    pub(crate) ranking: Ranking,
+    pub(crate) seq: Seq,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -45,7 +43,15 @@ pub(crate) struct Run {
     pub(crate) retry: Option<Retry>,
     pub(crate) warning: Option<PendingWarning>,
     pub(crate) failures: Failures,
+    pub(crate) r7: R7,
+    pub(crate) zero: Zero,
+    pub(crate) hunts: Hunts,
+    pub(crate) ranking: Option<Ranked>,
+    pub(crate) last_plan_seq: Option<Seq>,
+    pub(crate) rounds: Rounds,
     pub(crate) checking: Checking,
+    pub(crate) reruns: Reruns,
+    pub(crate) later: Later,
     pub(crate) last_seq: Seq,
 }
 
@@ -83,7 +89,15 @@ impl Run {
             retry: None,
             warning: None,
             failures: Failures::default(),
+            r7: R7::default(),
+            zero: Zero::default(),
+            hunts: Hunts::default(),
+            ranking: None,
+            last_plan_seq: None,
+            rounds: Rounds::default(),
             checking: Checking::default(),
+            reruns: Reruns::default(),
+            later: Later::default(),
             last_seq: event.seq,
         })
     }
@@ -99,6 +113,8 @@ impl Run {
             self.evidence
                 .set_backend(backend, self.config.backend_path(backend));
         }
+        self.rebuild_cycle();
+        self.retire_reruns();
         self.revalidate_retry();
     }
 
@@ -123,13 +139,19 @@ impl Run {
         self.require_core(core)?;
         self.evidence.reset_core(core);
         self.failures.forget_core(core);
+        self.prune_blames();
+        self.r7_reset(core);
+        self.hunt_reset(event.seq, core);
         self.update_core(core, |state| state.queued_reset = Some(event.seq));
         self.retry = None;
+        self.reruns.consume_citations();
+        self.cycle_evidence_reset();
         Ok(())
     }
 
     fn dead_end(&mut self, event: &Event, dead_end: &DeadEnd) -> Result<(), FoldError> {
         self.failures.retire_all(&event.cause);
+        self.prune_blames();
         if dead_end.condition != DeadEndCondition::FailureAtZero {
             return Ok(());
         }
@@ -147,7 +169,11 @@ impl Run {
         Ok(())
     }
 
-    fn combination(&mut self, combination: &togi_journal::Combination) -> Result<(), FoldError> {
+    fn combination(
+        &mut self,
+        event: &Event,
+        combination: &togi_journal::Combination,
+    ) -> Result<(), FoldError> {
         let members: PerCore<TargetOffset> = combination
             .members
             .iter()
@@ -155,7 +181,29 @@ impl Run {
             .collect();
         self.constraints
             .insert_combination(CombinationId::new(combination.combination), members)?;
+        self.hunt_combination(event, combination);
         Ok(())
+    }
+
+    fn host_ranking(
+        &mut self,
+        event: &Event,
+        ranking: &togi_journal::HostRanking,
+    ) -> Result<(), FoldError> {
+        self.ranking = Some(Ranked {
+            ranking: Ranking::new(&self.topo, ranking.ranking.clone())?,
+            seq: event.seq,
+        });
+        Ok(())
+    }
+
+    /// Whether the host ranking predates the plan the last round or hunt began, or was never read.
+    pub(crate) fn ranking_stale(&self) -> bool {
+        match (&self.ranking, self.last_plan_seq) {
+            (None, _) => true,
+            (Some(ranked), Some(plan)) => ranked.seq <= plan,
+            (Some(_), None) => false,
+        }
     }
 
     fn profile_change(&mut self, event: &Event, change: &ProfileChange) -> Result<(), FoldError> {
@@ -163,11 +211,10 @@ impl Run {
         if let Some(from) = change.from {
             Profile::new(&self.topo, from)?;
         }
-        self.checking = Checking {
-            profile: Some(profile),
-            seq: Some(event.seq),
-        };
         self.evidence.set_checking_profile(profile)?;
+        self.checking_profile(event, profile);
+        self.retire_reruns();
+        self.revalidate_retry();
         Ok(())
     }
 }
@@ -227,12 +274,18 @@ impl State {
             Payload::Failure(failure) => self.run_mut()?.failure(event, failure)?,
             Payload::TrialCarried(carried) => self.run_mut()?.trial_carried(event, carried)?,
             Payload::FailureCarried(carried) => self.run_mut()?.failure_carried(event, carried)?,
-            Payload::Combination(combination) => self.run_mut()?.combination(combination)?,
+            Payload::Combination(combination) => {
+                self.run_mut()?.combination(event, combination)?;
+            }
             Payload::DeadEnd(dead_end) => self.run_mut()?.dead_end(event, dead_end)?,
             Payload::CrashDetected(_) => self.run_mut()?.crash_detected(),
             Payload::ProfileChange(change) => self.run_mut()?.profile_change(event, change)?,
             Payload::CheckingCycle(cycle) => self.run_mut()?.checking_cycle(event, cycle)?,
+            Payload::CheckingStep(step) => self.run_mut()?.checking_step(event, step)?,
+            Payload::CheckingChain(chain) => self.run_mut()?.checking_chain(event, chain)?,
+            Payload::HuntSkipped(skipped) => self.run_mut()?.hunt_skipped(event, skipped),
             Payload::TunerWarning(_) => self.run_mut()?.warning = None,
+            Payload::HostRanking(ranking) => self.run_mut()?.host_ranking(event, ranking)?,
             Payload::SessionContext(_)
             | Payload::SessionNotice(_)
             | Payload::SessionWarning(_)
@@ -257,15 +310,11 @@ impl State {
             | Payload::StateRebuilt(_) => {
                 self.run_mut()?;
             }
-            Payload::CheckingStep(_)
-            | Payload::CheckingChain(_)
-            | Payload::HostRanking(_)
-            | Payload::HuntStart(_)
-            | Payload::HuntGroup(_)
-            | Payload::HuntEnd(_)
-            | Payload::HuntSkipped(_)
-            | Payload::DeepeningRound(_)
-            | Payload::Shutdown(_) => {
+            Payload::DeepeningRound(round) => self.run_mut()?.deepening_round(event, round)?,
+            Payload::HuntStart(start) => self.run_mut()?.hunt_start(event, start)?,
+            Payload::HuntGroup(group) => self.run_mut()?.hunt_group(event, group)?,
+            Payload::HuntEnd(end) => self.run_mut()?.hunt_end(event, end)?,
+            Payload::Shutdown(_) => {
                 self.run_mut()?;
             }
         }
@@ -281,6 +330,29 @@ impl State {
         self.run()?.decide()
     }
 
+    /// Per R7 workload, CCD and core, whether the core has passed as a top requester at its
+    /// current offset or deeper under the current backend identity.
+    pub fn r7_status(&self) -> Vec<crate::R7CoreStatus> {
+        self.run().map_or_else(Vec::new, Run::r7_status)
+    }
+
+    /// The machine's cores, CCDs and walk order, once the session started and the state stands.
+    pub fn topology(&self) -> Option<&Topology> {
+        if self.poisoned {
+            return None;
+        }
+        self.run().map(|run| &run.topo)
+    }
+
+    /// The failure points and combinations folded so far, once the session started and the state
+    /// stands.
+    pub fn constraints(&self) -> Option<&Constraints> {
+        if self.poisoned {
+            return None;
+        }
+        self.run().map(|run| &run.constraints)
+    }
+
     #[cfg(test)]
     pub(crate) fn run_mut_for_test(&mut self) -> Option<&mut Run> {
         self.run.as_mut()
@@ -288,6 +360,8 @@ impl State {
 
     #[cfg(test)]
     pub(crate) fn visits(&self) -> u64 {
-        self.run().map_or(0, |run| run.evidence.take_visits())
+        self.run().map_or(0, |run| {
+            run.evidence.take_visits() + run.r7.targets.take_visits()
+        })
     }
 }

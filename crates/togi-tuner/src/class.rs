@@ -19,6 +19,20 @@ impl Secs {
     }
 }
 
+/// A load whatever its duration: the workload and the loaded cores. R7 request measurements and
+/// escalation counts belong to a load.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct LoadKey {
+    pub workload: WorkloadId,
+    pub loaded: CoreSet,
+}
+
+impl LoadKey {
+    pub const fn new(workload: WorkloadId, loaded: CoreSet) -> Self {
+        Self { workload, loaded }
+    }
+}
+
 /// What makes two trials comparable evidence: the workload with its regime, the loaded cores
 /// and the intended duration.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -37,6 +51,11 @@ impl ClassKey {
         }
     }
 
+    #[must_use]
+    pub const fn with_duration(self, duration: Secs) -> Self {
+        Self { duration, ..self }
+    }
+
     pub const fn regime(self) -> Regime {
         self.workload.regime()
     }
@@ -51,6 +70,10 @@ impl ClassKey {
 
     pub const fn duration(self) -> Secs {
         self.duration
+    }
+
+    pub const fn load(self) -> LoadKey {
+        LoadKey::new(self.workload, self.loaded)
     }
 
     /// Whether the class loads several cores under R7, where a failure names its core.

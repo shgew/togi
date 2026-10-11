@@ -72,7 +72,7 @@ pub struct Observation<'a> {
 
 #[cfg(test)]
 #[derive(Clone, Debug, Default)]
-struct Visits(std::cell::Cell<u64>);
+pub(crate) struct Visits(pub(crate) std::cell::Cell<u64>);
 
 #[cfg(test)]
 impl PartialEq for Visits {
@@ -602,6 +602,38 @@ impl Evidence {
                 })
             })
             .min_by_key(|found| found.passes.first().copied()))
+    }
+
+    /// Whether some failure of `regime` at a duration of at most `longest` is admitted and was
+    /// recorded before `before`: carried from any seq, live above `after`. Idle failures are
+    /// all-core R6 failures at no duration.
+    pub fn failed_before(
+        &self,
+        regime: Regime,
+        longest: crate::Secs,
+        after: Option<Seq>,
+        before: Seq,
+    ) -> bool {
+        let admitted = |cells: &FailureCells| {
+            cells.cells().iter().any(|cell| {
+                self.visit();
+                cell.live
+                    .after(after)
+                    .first()
+                    .is_some_and(|&seq| seq < before)
+                    || cell
+                        .carried
+                        .after(None)
+                        .first()
+                        .is_some_and(|&seq| seq < before)
+            })
+        };
+        (regime == Regime::R6 && admitted(&self.idle))
+            || self
+                .classes
+                .iter()
+                .filter(|(class, _)| class.regime() == regime && class.duration() <= longest)
+                .any(|(_, cells)| admitted(&cells.failures))
     }
 
     /// Discards every fact whose loaded cores include `core`, every multi-core R7 fact naming

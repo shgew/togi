@@ -9,6 +9,7 @@
     )
 )]
 
+mod checking;
 mod class;
 mod config;
 mod constraints;
@@ -20,19 +21,34 @@ mod error;
 mod evidence;
 mod failures;
 mod flight;
+mod hunt;
+mod later;
 mod ledger;
 mod optimum;
 mod phases;
 mod plan;
 mod profile;
+mod r7;
 mod requirement;
+mod rounds;
 mod search;
 mod skip;
 mod state;
 mod topology;
+mod zero;
 
 #[cfg(test)]
+mod bios_tests;
+#[cfg(test)]
+mod chain_tests;
+#[cfg(test)]
+mod checking_state_tests;
+#[cfg(test)]
+mod checking_tests;
+#[cfg(test)]
 mod fold_tests;
+#[cfg(test)]
+mod later_tests;
 #[cfg(test)]
 mod ledger_tests;
 #[cfg(test)]
@@ -41,6 +57,18 @@ mod optimum_tests;
 mod phase_tests;
 #[cfg(test)]
 mod prop_tests;
+#[cfg(test)]
+mod r7_attribution_tests;
+#[cfg(test)]
+mod r7_escalation_tests;
+#[cfg(test)]
+mod r7_resume_tests;
+#[cfg(test)]
+mod r7_target_tests;
+#[cfg(test)]
+mod rerun_tests;
+#[cfg(test)]
+mod rounds_tests;
 #[cfg(test)]
 mod rule_tests;
 #[cfg(test)]
@@ -51,8 +79,10 @@ mod skip_tests;
 mod testkit;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod zero_tests;
 
-pub use class::{ClassKey, Secs};
+pub use class::{ClassKey, LoadKey, Secs};
 pub use constraints::{
     Combination, CombinationId, ConstraintError, Constraints, FailurePoint, Insertion, Limit,
     Reached,
@@ -69,5 +99,6 @@ pub use plan::{
     TrialContext, TrialPlan, WorkloadChoice,
 };
 pub use profile::{Profile, ProfileError, TopologyMismatch};
+pub use r7::query::R7CoreStatus;
 pub use state::State;
 pub use topology::{Ranking, RankingError, Topology, TopologyError};
