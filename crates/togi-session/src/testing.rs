@@ -1,5 +1,6 @@
 //! A simulated machine, an in-memory journal and an appender over them, for the crate's tests.
 
+use std::collections::BTreeMap;
 use std::io;
 
 use jiff::tz::TimeZone;
@@ -11,9 +12,11 @@ use togi_journal::{
 use togi_machine::{
     BootId, CancellationToken, CoreId, CoreSet, Machine, Smu, SmuValidated, Stopped, TargetOffset,
 };
+use togi_machine::{Error, Partial, Running, Swept, TrialSpec, Trials};
 use togi_render::Renderer;
 use togi_sim::faults::{HookPhase, SmuOp, SmuOperation};
 use togi_sim::{MachineDefinition, Model, RunSettings, Simulator};
+use togi_tuningboot::{Bootloader, Environment, SavedEntry};
 
 use crate::appender::{Appender, Folds};
 use crate::boot::BootHandoff;
@@ -278,4 +281,67 @@ fn rig_starts_a_session() {
     let rig = Rig::new(4);
     assert_eq!(rig.kinds(), ["session.start"]);
     assert_fold_consistent(&rig.appender);
+}
+
+/// A bootloader environment that holds nothing.
+#[derive(Default)]
+pub(crate) struct MemBoot(BTreeMap<String, String>);
+
+impl Environment for MemBoot {
+    fn get(&mut self, name: &str) -> io::Result<Option<String>> {
+        Ok(self.0.get(name).cloned())
+    }
+
+    fn set(&mut self, values: &[(&str, &str)]) -> io::Result<()> {
+        for (name, value) in values {
+            self.0.insert((*name).to_owned(), (*value).to_owned());
+        }
+        Ok(())
+    }
+
+    fn unset(&mut self, names: &[&str]) -> io::Result<()> {
+        for name in names {
+            self.0.remove(*name);
+        }
+        Ok(())
+    }
+}
+
+impl Bootloader for MemBoot {
+    fn clear_saved_entry(&mut self) -> io::Result<SavedEntry> {
+        let before = self.0.remove("saved_entry").unwrap_or_default();
+        Ok(SavedEntry {
+            before,
+            after: String::new(),
+        })
+    }
+}
+
+/// Trials whose sweep fails with `error`; everything else is the simulator's.
+pub(crate) struct SweepFails(pub Box<dyn Trials>, pub fn() -> Error);
+
+impl Trials for SweepFails {
+    fn sweep(&mut self, _cancel: &CancellationToken) -> Result<Swept, Error> {
+        Err((self.1)())
+    }
+
+    fn start(
+        &mut self,
+        cancel: &CancellationToken,
+        spec: TrialSpec,
+        ready: Stopped,
+    ) -> Result<Box<dyn Running>, Partial<Option<Stopped>>> {
+        self.0.start(cancel, spec, ready)
+    }
+
+    fn ended(&mut self, id: &str) -> Result<(), Error> {
+        self.0.ended(id)
+    }
+
+    fn samples<'a>(
+        &'a self,
+        id: &'a str,
+    ) -> Box<dyn Iterator<Item = togi_machine::TrialConditions> + 'a> {
+        self.0.samples(id)
+    }
 }

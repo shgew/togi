@@ -1,0 +1,149 @@
+//! The steps between the startup records and the first trial: the machine's preflight, the stale-scope sweep and,
+//! on a boot a run already used, the reconciliation of the offsets that run left.
+
+use std::time::Duration;
+
+use togi_journal::{DeadEnd, DeadEndCondition, Payload, PreflightCheck, Seq};
+use togi_machine::{CancellationToken, Error};
+
+use crate::emergency::SweepCleared;
+use crate::error::SessionError;
+use crate::session::{Control, Outcome, Session, StopReason};
+
+const WATCHDOG_WAIT: Duration = Duration::from_secs(30);
+const WATCHDOG_STEP: Duration = Duration::from_secs(1);
+
+impl Session {
+    /// A boot whose earlier run left offsets must reconcile them even when asked to stop, so waits ignore the
+    /// cancellation until then.
+    fn waiting_token(&self) -> CancellationToken {
+        if self.unreconciled() {
+            CancellationToken::new()
+        } else {
+            self.cancel.clone()
+        }
+    }
+
+    fn record_check(&mut self, check: &str, detail: String, ok: bool) -> Result<Seq, SessionError> {
+        let payload = PreflightCheck {
+            check: check.to_owned(),
+            detail,
+            ok,
+        };
+        Ok(self
+            .appender
+            .append(Payload::PreflightCheck(payload), &[])?)
+    }
+
+    /// Waits for the hardware watchdog when started from the tuning boot, records the machine's checks and the BIOS
+    /// context comparison, and ends in a preflight dead end citing the failed ones.
+    pub fn preflight(&mut self) -> Outcome {
+        let cancel = self.waiting_token();
+        if self.appender.handoff().is_some() {
+            let control = self.await_watchdog(&cancel)?;
+            if control != Control::Continue {
+                return Ok(control);
+            }
+        }
+        self.validated = self.host.validate_smu().ok();
+        let mut failed = Vec::new();
+        let mut names = Vec::new();
+        for check in self.host.preflight() {
+            let seq = self.record_check(&check.name, check.detail.clone(), check.ok)?;
+            if !check.ok {
+                failed.push(seq);
+                names.push(format!("{} ({})", check.name, check.detail));
+            }
+        }
+        let recorded = self.appender.recovery().context().cloned();
+        if let Some(recorded) = recorded
+            && failed.is_empty()
+        {
+            let current = self.host.bios_context()?;
+            let mismatch = recorded.first_difference(&current);
+            let detail = mismatch.as_ref().map_or_else(
+                || "the BIOS context is the one the session recorded".to_owned(),
+                ToString::to_string,
+            );
+            let seq = self.record_check("bios_context", detail.clone(), mismatch.is_none())?;
+            if mismatch.is_some() {
+                failed.push(seq);
+                names.push(format!("bios_context ({detail})"));
+            }
+        }
+        if failed.is_empty() {
+            return Ok(Control::Continue);
+        }
+        let dead_end = DeadEnd {
+            condition: DeadEndCondition::Preflight,
+            core: None,
+            detail: format!("failed checks: {}", names.join(", ")),
+            action: None,
+        };
+        self.dead_end(dead_end, &failed).map(Control::Stop)
+    }
+
+    fn await_watchdog(&mut self, cancel: &CancellationToken) -> Outcome {
+        let started = self.appender.clock().monotonic();
+        loop {
+            if cancel.is_cancelled() {
+                return Ok(self.shut_down(StopReason::Signal));
+            }
+            let check = self.host.watchdog();
+            let waited = self.appender.clock().monotonic().saturating_sub(started);
+            if check.ok || waited >= WATCHDOG_WAIT {
+                let detail = format!(
+                    "{}; waited {}s for an armed hardware watchdog",
+                    check.detail,
+                    waited.as_secs()
+                );
+                let seq = self.record_check("watchdog", detail.clone(), check.ok)?;
+                if check.ok {
+                    return Ok(Control::Continue);
+                }
+                let dead_end = DeadEnd {
+                    condition: DeadEndCondition::Preflight,
+                    core: None,
+                    detail: format!("failed checks: watchdog ({detail})"),
+                    action: None,
+                };
+                return self.dead_end(dead_end, &[seq]).map(Control::Stop);
+            }
+            let step = WATCHDOG_STEP.min(WATCHDOG_WAIT.saturating_sub(waited));
+            match self.appender.clock().sleep(cancel, step) {
+                Ok(()) => {}
+                Err(Error::Cancelled) => return Ok(self.shut_down(StopReason::Signal)),
+                Err(error) => return Err(error.into()),
+            }
+        }
+    }
+
+    /// Clears the trial scopes a stale run may have left, which is what makes the SMU safe to touch. The sweep is
+    /// never cancelled: it is the only way to know no workload runs. A failed sweep is a containment dead end that
+    /// writes nothing to the SMU.
+    pub fn sweep(&mut self) -> Outcome {
+        match self.trials.sweep(&CancellationToken::new()) {
+            Ok(swept) => {
+                self.record_check("trial_scopes", swept.detail.clone(), true)?;
+                self.sweep = Some(SweepCleared::of(&swept));
+                self.stopped = Some(swept.stopped);
+                Ok(Control::Continue)
+            }
+            Err(Error::Crashed) => Err(Error::Crashed.into()),
+            Err(error) => {
+                let detail = error.to_string();
+                let seq = self.record_check("trial_scopes", detail.clone(), false)?;
+                let dead_end = DeadEnd {
+                    condition: DeadEndCondition::Containment,
+                    core: None,
+                    detail,
+                    action: None,
+                };
+                self.dead_end(dead_end, &[seq]).map(Control::Stop)
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests;

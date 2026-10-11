@@ -107,10 +107,6 @@ pub struct Stop {
 }
 
 impl Stop {
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "the run steps after startup stop through it")
-    )]
     const fn plain(reason: StopReason) -> Self {
         Self {
             reason,
@@ -325,7 +321,7 @@ impl Session {
         matches!(self.visit, Visit::Same { .. })
     }
 
-    const fn unreconciled(&self) -> bool {
+    pub(crate) const fn unreconciled(&self) -> bool {
         matches!(self.visit, Visit::Same { reconciled: false })
     }
 
@@ -496,10 +492,6 @@ impl Session {
     }
 
     /// Ends the run with `reason`; the cleanup records the `shutdown` once the machine is restored.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "the run steps after startup stop through it")
-    )]
     pub(crate) fn shut_down(&mut self, reason: StopReason) -> Control {
         self.record_shutdown(reason);
         Control::Stop(Stop::plain(reason))

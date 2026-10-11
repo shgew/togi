@@ -9,6 +9,7 @@ pub mod error;
 pub mod evidence;
 pub mod recovery;
 pub mod session;
+mod startup;
 pub mod trial;
 pub mod write;
 
