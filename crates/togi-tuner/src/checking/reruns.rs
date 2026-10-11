@@ -35,6 +35,10 @@ impl Reruns {
         self.fifo.is_empty()
     }
 
+    pub(crate) fn owed(&self) -> impl Iterator<Item = Obligation> + '_ {
+        self.fifo.iter().copied()
+    }
+
     pub(crate) fn citations(&self) -> &[Seq] {
         &self.citations
     }

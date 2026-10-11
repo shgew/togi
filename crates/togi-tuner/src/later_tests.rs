@@ -239,6 +239,43 @@ fn first_failure_holds_and_second_steps_back_naming_both() {
     j.assert_resumes();
 }
 
+#[test]
+fn a_pair_owes_one_rerun_for_the_second_failure_and_consumes_the_hold_once() {
+    let mut j = later_session(&[-10, -12]);
+    start_cycle(&mut j);
+    let first = fail_core(&mut j, 0);
+    let ledger = j.run().failures.pending(first).unwrap().ledger;
+    let action = j.next_decision();
+    j.decide(action);
+    assert!(j.run().failures.pending(first).is_none());
+    assert_eq!(strikes(&j), 1);
+
+    let second = fail_core(&mut j, 0);
+    let class = j.run().failures.pending(second).unwrap().class;
+    let (_, cause) = next(&j);
+    assert_eq!(cause.first(), Some(&second));
+    assert_eq!(cause.last(), Some(&first));
+    let action = j.next_decision();
+    j.decide(action);
+    let owed: Vec<_> = j
+        .run()
+        .reruns
+        .owed()
+        .map(|owed| (owed.class, owed.failure))
+        .collect();
+    assert_eq!(owed, [(class, second)]);
+    assert_eq!(strikes(&j), 0);
+    assert!(j.run().later.is_held(ledger));
+    j.assert_resumes();
+
+    settle(&mut j);
+    let third = fail_core(&mut j, 0);
+    let (step, cause) = next(&j);
+    assert_eq!(step.decision, Decision::Backoff);
+    assert_eq!(cause, [third]);
+    assert!(!step.reason.contains("second failure"), "{}", step.reason);
+}
+
 pub(crate) fn current_of(profile: &crate::Profile) -> Vec<i64> {
     profile.iter().map(|(_, offset)| offset.get()).collect()
 }
