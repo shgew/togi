@@ -500,7 +500,10 @@ impl Journal {
                 let outcome = oracle(plan);
                 self.trial(plan, outcome);
             }
-            Action::ReadRanking => panic!("the tuner asked to read a ranking"),
+            Action::ReadRanking => {
+                let order = self.ids.clone();
+                self.ranking(&order);
+            }
         }
         action
     }

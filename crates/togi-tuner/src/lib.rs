@@ -67,6 +67,8 @@ mod r7_target_tests;
 #[cfg(test)]
 mod rerun_tests;
 #[cfg(test)]
+mod rounds_tests;
+#[cfg(test)]
 mod rule_tests;
 #[cfg(test)]
 mod schedule_tests;
