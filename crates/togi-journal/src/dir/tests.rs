@@ -32,7 +32,10 @@ struct Doc {
 fn a_second_writer_is_refused_until_the_first_drops() {
     let fs = MemFs::new();
     let first = dir(&fs);
-    assert!(matches!(crate::testing::try_simulated(&fs), Err(LockError::Held { .. })));
+    assert!(matches!(
+        crate::testing::try_simulated(&fs),
+        Err(LockError::Held { .. })
+    ));
     drop(first);
     assert!(crate::testing::try_simulated(&fs).is_ok());
 }
@@ -53,7 +56,10 @@ fn locking_refuses_a_state_path_that_is_a_file() {
     let root = tempfile::tempdir().unwrap();
     let path = root.path().join("file");
     std::fs::write(&path, "x").unwrap();
-    assert!(matches!(StateDir::lock(path.join("state")), Err(LockError::Dir(DirError::NotADirectory { .. }))));
+    assert!(matches!(
+        StateDir::lock(path.join("state")),
+        Err(LockError::Dir(DirError::NotADirectory { .. }))
+    ));
 }
 
 #[test]
@@ -70,7 +76,10 @@ fn a_damaged_state_is_an_error_not_an_absence() {
     let fs = MemFs::new();
     let dir = dir(&fs);
     fs.put("/state/state.json", "{\"n\":");
-    assert!(matches!(dir.read_state::<Doc>(), Err(StateError::Decode(_))));
+    assert!(matches!(
+        dir.read_state::<Doc>(),
+        Err(StateError::Decode(_))
+    ));
 }
 
 #[test]
@@ -87,7 +96,10 @@ fn state_publication_leaves_the_old_or_the_new_document_under_every_fault() {
         let failed = dir.write_state(&Doc { n: 2 }).is_err();
         assert!(failed, "{fault:?} should fail the publication");
         let read = dir.read_state::<Doc>().unwrap().unwrap();
-        assert!(read == Doc { n: 1 } || read == Doc { n: 2 }, "{fault:?} left {read:?}");
+        assert!(
+            read == Doc { n: 1 } || read == Doc { n: 2 },
+            "{fault:?} left {read:?}"
+        );
         fs.clear_faults();
         dir.write_state(&Doc { n: 3 }).unwrap();
         assert_eq!(dir.read_state::<Doc>().unwrap(), Some(Doc { n: 3 }));
@@ -112,7 +124,10 @@ fn the_directory_is_synced_after_the_state_rename() {
     let log = fs.log();
     let rename = log.iter().rposition(|(op, _)| *op == Op::Rename).unwrap();
     assert_eq!(log[rename + 1].0, Op::SyncDir);
-    let sync = log[..rename].iter().rposition(|(op, _)| *op == Op::Sync).unwrap();
+    let sync = log[..rename]
+        .iter()
+        .rposition(|(op, _)| *op == Op::Sync)
+        .unwrap();
     assert!(sync < rename);
 }
 
@@ -120,16 +135,31 @@ fn the_directory_is_synced_after_the_state_rename() {
 fn archives_list_regular_journals_in_numeric_session_order() {
     let fs = MemFs::new();
     let dir = dir(&fs);
-    for name in ["20260101T000000Z-10", "20260101T000000Z-2", "20260101T000000Z", "20250101T000000Z-3"] {
+    for name in [
+        "20260101T000000Z-10",
+        "20260101T000000Z-2",
+        "20260101T000000Z",
+        "20250101T000000Z-3",
+    ] {
         fs.put(format!("/state/archive/{name}.jsonl"), "");
     }
     fs.put("/state/archive/notes.jsonl", "");
     fs.put("/state/archive/20260101T000000Z-trials/x", "");
     fs.symlink("/state/archive/x", "/state/archive/20270101T000000Z.jsonl");
-    let listed: Vec<String> = dir.archives().unwrap().iter().map(ToString::to_string).collect();
+    let listed: Vec<String> = dir
+        .archives()
+        .unwrap()
+        .iter()
+        .map(ToString::to_string)
+        .collect();
     assert_eq!(
         listed,
-        ["20250101T000000Z-3", "20260101T000000Z", "20260101T000000Z-2", "20260101T000000Z-10"]
+        [
+            "20250101T000000Z-3",
+            "20260101T000000Z",
+            "20260101T000000Z-2",
+            "20260101T000000Z-10"
+        ]
     );
 }
 
@@ -155,7 +185,10 @@ fn a_marker_that_is_not_a_regular_file_is_refused() {
     let dir = dir(&fs);
     fs.put("/state/archive/20260101T000000Z-reset-all/inside", "");
     assert!(matches!(dir.markers(), Err(DirError::NotRegular { .. })));
-    assert!(matches!(dir.reset_boundary(), Err(DirError::NotRegular { .. })));
+    assert!(matches!(
+        dir.reset_boundary(),
+        Err(DirError::NotRegular { .. })
+    ));
 }
 
 #[test]
@@ -165,7 +198,10 @@ fn a_symlinked_reset_marker_is_never_followed() {
     fs.put("/state/archive/20260101T000000Z.jsonl", "");
     fs.put("/elsewhere", "");
     fs.symlink("/elsewhere", "/state/archive/20260101T000000Z-reset-all");
-    assert!(matches!(dir.mark_reset_all(), Err(DirError::NotRegular { .. })));
+    assert!(matches!(
+        dir.mark_reset_all(),
+        Err(DirError::NotRegular { .. })
+    ));
     assert_eq!(fs.contents("/elsewhere").unwrap(), b"");
 }
 
@@ -179,7 +215,10 @@ fn pending_markers_clear_but_the_reset_boundary_is_permanent() {
     assert_eq!(dir.pending_carry().unwrap(), Some(sid("20260102T000000Z")));
     dir.clear_pending(Marker::CarryPending).unwrap();
     assert_eq!(dir.pending_carry().unwrap(), None);
-    assert!(matches!(dir.clear_pending(Marker::ResetAll), Err(DirError::PermanentMarker(Marker::ResetAll))));
+    assert!(matches!(
+        dir.clear_pending(Marker::ResetAll),
+        Err(DirError::PermanentMarker(Marker::ResetAll))
+    ));
     assert_eq!(dir.reset_boundary().unwrap(), Some(sid("20260101T000000Z")));
 }
 
@@ -189,7 +228,11 @@ fn a_directory_with_no_session_gets_no_reset_boundary() {
     let mut dir = dir(&fs);
     assert_eq!(dir.mark_reset_all().unwrap(), None);
     assert_eq!(dir.reset_boundary().unwrap(), None);
-    assert!(fs.entries().iter().all(|(path, _)| !path.starts_with("/state/archive")));
+    assert!(
+        fs.entries()
+            .iter()
+            .all(|(path, _)| !path.starts_with("/state/archive"))
+    );
 }
 
 #[test]
@@ -217,17 +260,29 @@ fn the_reset_boundary_is_synced_before_a_carry_marker_is_removed() {
     let log = fs.log();
     let boundary = "/state/archive/20260101T000000Z-reset-all";
     let carry = "/state/archive/20260101T000000Z-carry-pending";
-    let created = log.iter().position(|(op, path)| *op == Op::Open && path == Path::new(boundary)).unwrap();
-    let synced = log.iter().position(|(op, path)| *op == Op::Sync && path == Path::new(boundary)).unwrap();
+    let created = log
+        .iter()
+        .position(|(op, path)| *op == Op::Open && path == Path::new(boundary))
+        .unwrap();
+    let synced = log
+        .iter()
+        .position(|(op, path)| *op == Op::Sync && path == Path::new(boundary))
+        .unwrap();
     let dirs: Vec<usize> = log
         .iter()
         .enumerate()
         .filter(|(index, (op, _))| *op == Op::SyncDir && *index > synced)
         .map(|(index, _)| index)
         .collect();
-    let removed = log.iter().position(|(op, path)| *op == Op::Remove && path == Path::new(carry)).unwrap();
+    let removed = log
+        .iter()
+        .position(|(op, path)| *op == Op::Remove && path == Path::new(carry))
+        .unwrap();
     assert!(created < synced);
-    assert!(dirs.len() >= 3, "archive and state directory sync before and after the removal");
+    assert!(
+        dirs.len() >= 3,
+        "archive and state directory sync before and after the removal"
+    );
     assert!(dirs[0] < removed && dirs[1] < removed);
     assert!(dirs[2] > removed);
 }
@@ -250,7 +305,11 @@ fn a_fault_anywhere_in_dropping_a_carry_never_loses_the_boundary_or_the_carry() 
                 dir.drop_pending_carry().unwrap();
             }
             assert_eq!(dir.pending_carry().unwrap(), None, "{fault:?}");
-            assert_eq!(dir.reset_boundary().unwrap(), Some(sid("20260101T000000Z")), "{fault:?}");
+            assert_eq!(
+                dir.reset_boundary().unwrap(),
+                Some(sid("20260101T000000Z")),
+                "{fault:?}"
+            );
         }
     }
 }
@@ -268,9 +327,15 @@ fn dropping_without_a_pending_carry_invents_no_boundary() {
 fn a_session_id_is_the_utc_second_until_it_is_taken() {
     let fs = MemFs::new();
     let dir = dir(&fs);
-    assert_eq!(dir.session_id(at(1_700_000_000)).unwrap().to_string(), "20231114T221320Z");
+    assert_eq!(
+        dir.session_id(at(1_700_000_000)).unwrap().to_string(),
+        "20231114T221320Z"
+    );
     fs.put("/state/archive/20231114T221320Z.jsonl", "");
-    assert_eq!(dir.session_id(at(1_700_000_000)).unwrap().to_string(), "20231114T221320Z-2");
+    assert_eq!(
+        dir.session_id(at(1_700_000_000)).unwrap().to_string(),
+        "20231114T221320Z-2"
+    );
 }
 
 #[test]
@@ -279,7 +344,10 @@ fn archived_trial_directories_and_markers_reserve_an_id() {
     let dir = dir(&fs);
     fs.put("/state/archive/20231114T221320Z-trials/x", "");
     fs.put("/state/archive/20231114T221320Z-2-carry-pending", "");
-    assert_eq!(dir.session_id(at(1_700_000_000)).unwrap().to_string(), "20231114T221320Z-3");
+    assert_eq!(
+        dir.session_id(at(1_700_000_000)).unwrap().to_string(),
+        "20231114T221320Z-3"
+    );
 }
 
 #[test]
@@ -287,7 +355,10 @@ fn a_dangling_symlink_reserves_an_id() {
     let fs = MemFs::new();
     let dir = dir(&fs);
     fs.symlink("/nowhere", "/state/archive/20231114T221320Z.jsonl");
-    assert_eq!(dir.session_id(at(1_700_000_000)).unwrap().to_string(), "20231114T221320Z-2");
+    assert_eq!(
+        dir.session_id(at(1_700_000_000)).unwrap().to_string(),
+        "20231114T221320Z-2"
+    );
 }
 
 #[test]
@@ -295,10 +366,16 @@ fn suffixes_order_numerically_so_ten_follows_nine() {
     let fs = MemFs::new();
     let dir = dir(&fs);
     for suffix in 2..=10 {
-        fs.put(format!("/state/archive/20231114T221320Z-{suffix}.jsonl"), "");
+        fs.put(
+            format!("/state/archive/20231114T221320Z-{suffix}.jsonl"),
+            "",
+        );
     }
     fs.put("/state/archive/20231114T221320Z.jsonl", "");
-    assert_eq!(dir.session_id(at(1_700_000_000)).unwrap().to_string(), "20231114T221320Z-11");
+    assert_eq!(
+        dir.session_id(at(1_700_000_000)).unwrap().to_string(),
+        "20231114T221320Z-11"
+    );
 }
 
 #[test]
@@ -320,15 +397,24 @@ fn an_id_follows_a_suffixed_boundary_after_deleted_archives() {
     let fs = MemFs::new();
     let dir = dir(&fs);
     fs.put("/state/archive/20231114T221320Z-10-reset-all", "");
-    assert_eq!(dir.session_id(at(1_700_000_000)).unwrap().to_string(), "20231114T221320Z-11");
+    assert_eq!(
+        dir.session_id(at(1_700_000_000)).unwrap().to_string(),
+        "20231114T221320Z-11"
+    );
 }
 
 #[test]
 fn an_id_at_the_largest_suffix_is_exhausted_not_wrapped() {
     let fs = MemFs::new();
     let dir = dir(&fs);
-    fs.put(format!("/state/archive/20231114T221320Z-{}-reset-all", u32::MAX), "");
-    assert!(matches!(dir.session_id(at(1_700_000_000)), Err(DirError::SessionIdsExhausted { .. })));
+    fs.put(
+        format!("/state/archive/20231114T221320Z-{}-reset-all", u32::MAX),
+        "",
+    );
+    assert!(matches!(
+        dir.session_id(at(1_700_000_000)),
+        Err(DirError::SessionIdsExhausted { .. })
+    ));
 }
 
 #[test]
@@ -336,15 +422,24 @@ fn only_a_live_session_start_names_the_live_session() {
     let fs = MemFs::new();
     let dir = dir(&fs);
     assert_eq!(dir.live_session().unwrap(), None);
-    fs.put("/state/events.jsonl", "{\"seq\":1,\"kind\":\"session.start\",\"data\":{\"session\":\"20231114T221320Z\"}}");
+    fs.put(
+        "/state/events.jsonl",
+        "{\"seq\":1,\"kind\":\"session.start\",\"data\":{\"session\":\"20231114T221320Z\"}}",
+    );
     assert_eq!(dir.live_session().unwrap(), None);
     fs.put(
         "/state/events.jsonl",
         "{\"seq\":1,\"kind\":\"session.start\",\"data\":{\"session\":\"20231114T221320Z\"}}\n",
     );
     assert_eq!(dir.live_session().unwrap(), Some(sid("20231114T221320Z")));
-    fs.put("/state/events.jsonl", "{\"seq\":1,\"kind\":\"mce\",\"data\":{}}\n");
-    assert!(matches!(dir.live_session(), Err(DirError::NotAJournal { .. })));
+    fs.put(
+        "/state/events.jsonl",
+        "{\"seq\":1,\"kind\":\"mce\",\"data\":{}}\n",
+    );
+    assert!(matches!(
+        dir.live_session(),
+        Err(DirError::NotAJournal { .. })
+    ));
 }
 
 #[test]
@@ -357,11 +452,17 @@ fn every_lock_syncs_the_whole_created_chain_again_after_a_failed_sync() {
     let mark = fs.log().len();
     let held = StateDir::lock_in(Arc::new(fs.clone()), path, false).unwrap();
     let log = fs.log();
-    let synced: Vec<&Path> =
-        log[mark..].iter().filter(|(op, _)| *op == Op::SyncDir).map(|(_, path)| path.as_path()).collect();
+    let synced: Vec<&Path> = log[mark..]
+        .iter()
+        .filter(|(op, _)| *op == Op::SyncDir)
+        .map(|(_, path)| path.as_path())
+        .collect();
     drop(held);
     for expected in ["/", "/a", "/a/b"] {
-        assert!(synced.contains(&Path::new(expected)), "{expected} not synced in {synced:?}");
+        assert!(
+            synced.contains(&Path::new(expected)),
+            "{expected} not synced in {synced:?}"
+        );
     }
 }
 

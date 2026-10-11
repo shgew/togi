@@ -7,9 +7,7 @@ use std::str::FromStr;
 
 use serde::Deserialize;
 
-use super::{
-    DirError, EVENTS_FILE, STATE_FILE, STATE_TMP, StateDir, TRIALS_DIR, io_at, not_found,
-};
+use super::{DirError, EVENTS_FILE, STATE_FILE, STATE_TMP, StateDir, TRIALS_DIR, io_at, not_found};
 use crate::fs::FileKind;
 use crate::session_id::SessionId;
 
@@ -81,7 +79,8 @@ struct PeekData {
 
 impl StateDir {
     pub(crate) fn archive_journal(&self, session: &SessionId) -> PathBuf {
-        self.archive_dir().join(format!("{session}{JOURNAL_SUFFIX}"))
+        self.archive_dir()
+            .join(format!("{session}{JOURNAL_SUFFIX}"))
     }
 
     pub(crate) fn archive_trials(&self, session: &SessionId) -> PathBuf {
@@ -89,7 +88,8 @@ impl StateDir {
     }
 
     fn marker_path(&self, marker: Marker, session: &SessionId) -> PathBuf {
-        self.archive_dir().join(format!("{session}{}", marker.suffix()))
+        self.archive_dir()
+            .join(format!("{session}{}", marker.suffix()))
     }
 
     fn archive_entries(&self) -> Result<Vec<crate::fs::DirEntry>, DirError> {
@@ -107,7 +107,14 @@ impl StateDir {
             .archive_entries()?
             .iter()
             .filter(|entry| entry.kind == FileKind::File)
-            .filter_map(|entry| entry.name.to_str()?.strip_suffix(JOURNAL_SUFFIX)?.parse().ok())
+            .filter_map(|entry| {
+                entry
+                    .name
+                    .to_str()?
+                    .strip_suffix(JOURNAL_SUFFIX)?
+                    .parse()
+                    .ok()
+            })
             .collect();
         sessions.sort();
         Ok(sessions)
@@ -117,14 +124,18 @@ impl StateDir {
     pub fn markers(&self) -> Result<Vec<(Marker, SessionId)>, DirError> {
         let mut markers = Vec::new();
         for entry in self.archive_entries()? {
-            let Some(name) = entry.name.to_str() else { continue };
+            let Some(name) = entry.name.to_str() else {
+                continue;
+            };
             let found = Marker::ALL.into_iter().find_map(|marker| {
                 let session = name.strip_suffix(marker.suffix())?.parse().ok()?;
                 Some((marker, session))
             });
             let Some(found) = found else { continue };
             if entry.kind != FileKind::File {
-                return Err(DirError::NotRegular { path: self.archive_dir().join(&entry.name) });
+                return Err(DirError::NotRegular {
+                    path: self.archive_dir().join(&entry.name),
+                });
             }
             markers.push(found);
         }
@@ -133,7 +144,12 @@ impl StateDir {
     }
 
     fn marked(&self, marker: Marker) -> Result<Vec<SessionId>, DirError> {
-        Ok(self.markers()?.into_iter().filter(|(found, _)| *found == marker).map(|(_, session)| session).collect())
+        Ok(self
+            .markers()?
+            .into_iter()
+            .filter(|(found, _)| *found == marker)
+            .map(|(_, session)| session)
+            .collect())
     }
 
     /// The newest session a reset-all marker names: nothing at or before it may feed a later session.
@@ -161,10 +177,16 @@ impl StateDir {
     fn mark(&self, marker: Marker, session: &SessionId) -> Result<(), DirError> {
         self.ensure_archive_dir()?;
         let path = self.marker_path(marker, session);
-        if self.kind_of(&path)?.is_some_and(|kind| kind != FileKind::File) {
+        if self
+            .kind_of(&path)?
+            .is_some_and(|kind| kind != FileKind::File)
+        {
             return Err(DirError::NotRegular { path });
         }
-        let mut file = self.fs().create_truncate(&path).map_err(io_at("create marker", &path))?;
+        let mut file = self
+            .fs()
+            .create_truncate(&path)
+            .map_err(io_at("create marker", &path))?;
         file.sync().map_err(io_at("sync marker", &path))?;
         drop(file);
         self.sync_dirs()
@@ -196,7 +218,10 @@ impl StateDir {
         self.mark_reset_through(live)
     }
 
-    pub(crate) fn mark_reset_through(&self, live: Option<SessionId>) -> Result<Option<SessionId>, DirError> {
+    pub(crate) fn mark_reset_through(
+        &self,
+        live: Option<SessionId>,
+    ) -> Result<Option<SessionId>, DirError> {
         let newest = self
             .archives()?
             .into_iter()
@@ -211,7 +236,9 @@ impl StateDir {
 
     /// Discards the pending carry: the reset boundary becomes durable before the carry markers go.
     pub fn drop_pending_carry(&mut self) -> Result<Option<SessionId>, DirError> {
-        let Some(dropped) = self.pending_carry()? else { return Ok(None) };
+        let Some(dropped) = self.pending_carry()? else {
+            return Ok(None);
+        };
         self.mark_reset_through(Some(dropped))?;
         self.clear_pending(Marker::CarryPending)?;
         Ok(Some(dropped))
@@ -232,7 +259,11 @@ impl StateDir {
     pub(crate) fn id_reserved(&self, session: &SessionId) -> Result<bool, DirError> {
         let paths = [self.archive_journal(session), self.archive_trials(session)]
             .into_iter()
-            .chain(Marker::ALL.into_iter().map(|marker| self.marker_path(marker, session)));
+            .chain(
+                Marker::ALL
+                    .into_iter()
+                    .map(|marker| self.marker_path(marker, session)),
+            );
         for path in paths {
             if self.kind_of(&path)?.is_some() {
                 return Ok(true);
@@ -242,7 +273,11 @@ impl StateDir {
     }
 
     /// The marker a transaction of this kind leaves behind before anything is moved.
-    pub(crate) fn mark_archive_kind(&self, kind: ArchiveKind, session: &SessionId) -> Result<(), DirError> {
+    pub(crate) fn mark_archive_kind(
+        &self,
+        kind: ArchiveKind,
+        session: &SessionId,
+    ) -> Result<(), DirError> {
         match kind {
             ArchiveKind::ResetAll => self.mark_reset_through(Some(*session)).map(drop),
             ArchiveKind::Transition => {
@@ -334,7 +369,9 @@ impl StateDir {
             Err(error) => return Err(io_at("read journal", &path)(error)),
         };
         let mut line = Vec::new();
-        BufReader::new(reader).read_until(b'\n', &mut line).map_err(io_at("read journal", &path))?;
+        BufReader::new(reader)
+            .read_until(b'\n', &mut line)
+            .map_err(io_at("read journal", &path))?;
         if line.pop() != Some(b'\n') {
             return Ok(None);
         }
@@ -349,7 +386,9 @@ impl StateDir {
     /// archive is only moved, plus the reset boundary when the kind is `ResetAll`. Returns the session archived, or
     /// `None` when the directory holds no session.
     pub fn archive_unreadable(&mut self, kind: ArchiveKind) -> Result<Option<SessionId>, DirError> {
-        let Some(session) = self.live_session()? else { return Ok(None) };
+        let Some(session) = self.live_session()? else {
+            return Ok(None);
+        };
         if self.records_archive(&session)? {
             if kind == ArchiveKind::ResetAll {
                 self.mark_reset_through(Some(session))?;
@@ -357,7 +396,10 @@ impl StateDir {
             self.finish_archive(&session)?;
             return Ok(Some(session));
         }
-        if self.kind_of(&self.marker_path(Marker::CompatPending, &session))?.is_none() {
+        if self
+            .kind_of(&self.marker_path(Marker::CompatPending, &session))?
+            .is_none()
+        {
             self.check_archive_free(&session)?;
         }
         self.mark_archive_kind(kind, &session)?;
@@ -369,23 +411,35 @@ impl StateDir {
 
     fn records_archive(&self, session: &SessionId) -> Result<bool, DirError> {
         let path = self.join(EVENTS_FILE);
-        let reader = self.fs().open_read(&path).map_err(io_at("read journal", &path))?;
+        let reader = self
+            .fs()
+            .open_read(&path)
+            .map_err(io_at("read journal", &path))?;
         let mut reader = BufReader::new(reader);
         let mut line = Vec::new();
         loop {
             line.clear();
-            reader.read_until(b'\n', &mut line).map_err(io_at("read journal", &path))?;
+            reader
+                .read_until(b'\n', &mut line)
+                .map_err(io_at("read journal", &path))?;
             if line.pop() != Some(b'\n') {
                 return Ok(false);
             }
-            if peek_session(&line, "session.archived").and_then(Result::ok).as_ref() == Some(session) {
+            if peek_session(&line, "session.archived")
+                .and_then(Result::ok)
+                .as_ref()
+                == Some(session)
+            {
                 return Ok(true);
             }
         }
     }
 }
 
-fn peek_session(line: &[u8], kind: &str) -> Option<Result<SessionId, crate::session_id::InvalidSessionId>> {
+fn peek_session(
+    line: &[u8],
+    kind: &str,
+) -> Option<Result<SessionId, crate::session_id::InvalidSessionId>> {
     let peek: Peek = serde_json::from_slice(line).ok()?;
     if peek.kind != kind {
         return None;

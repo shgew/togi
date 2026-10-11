@@ -17,12 +17,21 @@ fn torn_events(journal: &crate::Journal) -> Vec<&crate::JournalTorn> {
 #[test]
 fn every_byte_truncation_is_complete_lines_plus_a_tail() {
     let bytes = sample(&MemFs::new());
-    let ends: Vec<usize> =
-        bytes.iter().enumerate().filter(|(_, byte)| **byte == b'\n').map(|(index, _)| index + 1).collect();
+    let ends: Vec<usize> = bytes
+        .iter()
+        .enumerate()
+        .filter(|(_, byte)| **byte == b'\n')
+        .map(|(index, _)| index + 1)
+        .collect();
     for cut in 0..=bytes.len() {
         let prefix = &bytes[..cut];
         let complete = ends.iter().filter(|end| **end <= cut).count();
-        let boundary = ends.iter().rev().find(|end| **end <= cut).copied().unwrap_or(0);
+        let boundary = ends
+            .iter()
+            .rev()
+            .find(|end| **end <= cut)
+            .copied()
+            .unwrap_or(0);
 
         let recording = Recording::parse(prefix).unwrap();
         assert_eq!(recording.events().len(), complete, "cut {cut}");
@@ -40,12 +49,24 @@ fn every_byte_truncation_is_complete_lines_plus_a_tail() {
         if boundary == cut {
             assert_eq!(journal.events().len(), complete, "cut {cut}");
             assert_eq!(journal.repaired(), None, "cut {cut}");
-            assert_eq!(live(&fs), prefix, "cut {cut}: a clean journal is not rewritten");
+            assert_eq!(
+                live(&fs),
+                prefix,
+                "cut {cut}: a clean journal is not rewritten"
+            );
         } else if complete == 0 {
             assert!(journal.events().is_empty(), "cut {cut}");
-            assert_eq!(journal.repaired(), None, "cut {cut}: a torn first line records nothing");
+            assert_eq!(
+                journal.repaired(),
+                None,
+                "cut {cut}: a torn first line records nothing"
+            );
             assert!(live(&fs).is_empty(), "cut {cut}");
-            let first = journal.append(stamp(0), crate::testing::start(crate::testing::default_session()), &[]);
+            let first = journal.append(
+                stamp(0),
+                crate::testing::start(crate::testing::default_session()),
+                &[],
+            );
             assert_eq!(first.unwrap().seq.get(), 1, "cut {cut}");
         } else {
             assert_eq!(journal.events().len(), complete + 1, "cut {cut}");
@@ -54,8 +75,15 @@ fn every_byte_truncation_is_complete_lines_plus_a_tail() {
             let record = &torn_events(&journal)[0];
             assert_eq!(record.offset, boundary as u64, "cut {cut}");
             assert_eq!(record.bytes_hex, hex_of(&prefix[boundary..]), "cut {cut}");
-            assert_eq!(&live(&fs)[..boundary], &prefix[..boundary], "cut {cut}: the complete prefix is kept");
-            assert!(Recording::parse(&live(&fs)).unwrap().torn().is_none(), "cut {cut}");
+            assert_eq!(
+                &live(&fs)[..boundary],
+                &prefix[..boundary],
+                "cut {cut}: the complete prefix is kept"
+            );
+            assert!(
+                Recording::parse(&live(&fs)).unwrap().torn().is_none(),
+                "cut {cut}"
+            );
         }
     }
 }
@@ -76,7 +104,10 @@ fn a_repair_is_recorded_once_across_reopens() {
     let journal = reopen(&fs, 2);
     assert_eq!(journal.repaired().map(crate::Seq::get), Some(5));
     assert_eq!(torn_events(&journal)[0].offset, complete as u64);
-    assert_eq!(torn_events(&journal)[0].bytes_hex, hex_of(&bytes[complete..]));
+    assert_eq!(
+        torn_events(&journal)[0].bytes_hex,
+        hex_of(&bytes[complete..])
+    );
     journal.close().unwrap();
     for boot_n in 3..6 {
         let journal = reopen(&fs, boot_n);
@@ -121,13 +152,22 @@ fn every_repair_step_failure_keeps_the_evidence_and_records_it_exactly_once() {
             }
             drop(first);
             let journal = reopen(&fs, 3);
-            let mut expected = vec!["session.start", "session.warning", "session.warning", "session.warning"];
+            let mut expected = vec![
+                "session.start",
+                "session.warning",
+                "session.warning",
+                "session.warning",
+            ];
             expected.push("journal.torn");
             assert_eq!(kinds(journal.events()), expected, "{fault:?}");
             let records = torn_events(&journal);
             assert_eq!(records.len(), 1, "{fault:?}");
             assert_eq!(records[0].offset, complete as u64, "{fault:?}");
-            assert_eq!(records[0].bytes_hex, hex_of(&bytes[complete..]), "{fault:?}");
+            assert_eq!(
+                records[0].bytes_hex,
+                hex_of(&bytes[complete..]),
+                "{fault:?}"
+            );
             assert_eq!(&live(&fs)[..complete], &bytes[..complete], "{fault:?}");
         }
     }
@@ -138,7 +178,10 @@ fn a_stale_temporary_file_is_replaced_by_the_repair() {
     let (bytes, _) = torn_sample();
     let fs = MemFs::new();
     fs.put("/state/events.jsonl", bytes);
-    fs.put("/state/.events.jsonl.tmp", "stale garbage that is not a journal");
+    fs.put(
+        "/state/.events.jsonl.tmp",
+        "stale garbage that is not a journal",
+    );
     let journal = reopen(&fs, 2);
     assert_eq!(journal.events().len(), 5);
     assert!(fs.contents("/state/.events.jsonl.tmp").is_none());
@@ -163,7 +206,11 @@ fn a_torn_first_line_is_truncated_and_the_next_seq_is_one() {
     let mut journal = reopen(&fs, 2);
     assert!(journal.events().is_empty());
     assert!(live(&fs).is_empty());
-    let first = journal.append(stamp(0), crate::testing::start(crate::testing::default_session()), &[]);
+    let first = journal.append(
+        stamp(0),
+        crate::testing::start(crate::testing::default_session()),
+        &[],
+    );
     assert_eq!(first.unwrap().seq.get(), 1);
 }
 
@@ -183,7 +230,11 @@ fn a_torn_first_line_survives_every_truncation_step_failure() {
         fs.clear_faults();
         let mut journal = reopen(&fs, 3);
         assert!(journal.events().is_empty(), "{fault:?}");
-        let first = journal.append(stamp(0), crate::testing::start(crate::testing::default_session()), &[]);
+        let first = journal.append(
+            stamp(0),
+            crate::testing::start(crate::testing::default_session()),
+            &[],
+        );
         assert_eq!(first.unwrap().seq.get(), 1, "{fault:?}");
     }
 }
@@ -194,7 +245,10 @@ fn a_complete_line_that_does_not_decode_is_corruption_and_nothing_is_rewritten()
     bytes.extend_from_slice(b"{\"not\":\"an event\"}\ntrailing");
     let fs = MemFs::new();
     fs.put("/state/events.jsonl", bytes.clone());
-    assert!(matches!(simulated(&fs).open(boot(2)), Err(OpenError::Read(_))));
+    assert!(matches!(
+        simulated(&fs).open(boot(2)),
+        Err(OpenError::Read(_))
+    ));
     assert_eq!(live(&fs), bytes);
 }
 
@@ -206,12 +260,22 @@ fn a_gap_a_wrong_first_event_and_a_forward_cause_are_refused() {
     let mut gap = lines[0].to_vec();
     gap.extend_from_slice(lines[2]);
     let headless: Vec<u8> = lines[1..].concat();
-    let forward = String::from_utf8(good.clone()).unwrap().replacen("\"cause\":[1]", "\"cause\":[2]", 1);
+    let forward =
+        String::from_utf8(good.clone())
+            .unwrap()
+            .replacen("\"cause\":[1]", "\"cause\":[2]", 1);
 
-    for (name, bytes) in [("gap", gap), ("headless", headless), ("forward cause", forward.into_bytes())] {
+    for (name, bytes) in [
+        ("gap", gap),
+        ("headless", headless),
+        ("forward cause", forward.into_bytes()),
+    ] {
         let fs = MemFs::new();
         fs.put("/state/events.jsonl", bytes.clone());
-        assert!(matches!(simulated(&fs).open(boot(2)), Err(OpenError::Read(_))), "{name}");
+        assert!(
+            matches!(simulated(&fs).open(boot(2)), Err(OpenError::Read(_))),
+            "{name}"
+        );
         assert_eq!(live(&fs), bytes, "{name}");
     }
 }
@@ -219,15 +283,24 @@ fn a_gap_a_wrong_first_event_and_a_forward_cause_are_refused() {
 #[test]
 fn an_unknown_kind_is_refused_before_any_repair() {
     let mut bytes = sample(&MemFs::new());
-    let line = String::from_utf8(bytes.split_inclusive(|byte| *byte == b'\n').nth(1).unwrap().to_vec())
-        .unwrap()
-        .replace("session.warning", "invented.kind")
-        .replace("\"seq\":2", "\"seq\":5");
+    let line = String::from_utf8(
+        bytes
+            .split_inclusive(|byte| *byte == b'\n')
+            .nth(1)
+            .unwrap()
+            .to_vec(),
+    )
+    .unwrap()
+    .replace("session.warning", "invented.kind")
+    .replace("\"seq\":2", "\"seq\":5");
     bytes.extend_from_slice(line.as_bytes());
     bytes.extend_from_slice(b"torn");
     let fs = MemFs::new();
     fs.put("/state/events.jsonl", bytes.clone());
-    assert!(matches!(simulated(&fs).open(boot(2)), Err(OpenError::Read(_))));
+    assert!(matches!(
+        simulated(&fs).open(boot(2)),
+        Err(OpenError::Read(_))
+    ));
     assert_eq!(live(&fs), bytes);
 }
 
@@ -255,7 +328,10 @@ fn a_reopen_after_a_failed_repair_directory_sync_syncs_the_directory_again() {
     let mark = fs.log().len();
     let journal = reopen(&fs, 3);
     assert_eq!(journal.events().len(), 5);
-    assert!(fs.log()[mark..]
-        .iter()
-        .any(|(op, path)| *op == crate::fs::Op::SyncDir && path == std::path::Path::new("/state")));
+    assert!(
+        fs.log()[mark..]
+            .iter()
+            .any(|(op, path)| *op == crate::fs::Op::SyncDir
+                && path == std::path::Path::new("/state"))
+    );
 }

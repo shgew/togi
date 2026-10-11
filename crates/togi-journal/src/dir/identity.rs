@@ -14,13 +14,17 @@ impl StateDir {
         if let Some(boundary) = self.reset_boundary()?
             && candidate <= boundary
         {
-            candidate = boundary.next_suffix().ok_or(DirError::SessionIdsExhausted { after: boundary })?;
+            candidate = boundary
+                .next_suffix()
+                .ok_or(DirError::SessionIdsExhausted { after: boundary })?;
         }
         loop {
             if !self.id_reserved(&candidate)? {
                 return Ok(candidate);
             }
-            candidate = candidate.next_suffix().ok_or(DirError::SessionIdsExhausted { after: candidate })?;
+            candidate = candidate
+                .next_suffix()
+                .ok_or(DirError::SessionIdsExhausted { after: candidate })?;
         }
     }
 }

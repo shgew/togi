@@ -141,7 +141,10 @@ pub struct HuntStart {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-#[expect(clippy::struct_excessive_bools, reason = "each flag is a distinct recorded fact")]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "each flag is a distinct recorded fact"
+)]
 pub struct HuntGroup {
     pub hunt: NonZeroU32,
     pub group: NonZeroU32,

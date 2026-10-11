@@ -20,10 +20,11 @@ pub use dir::{ArchiveKind, DirError, Lifetime, LockError, Marker, StateDir, Stat
 pub use event::{DecodeError, Event, Seq, Stamp};
 pub use filter::{Filter, InvalidKindSelector, KindSelector};
 pub use fs::MemFs;
-pub use journal::{AppendError, ArchiveError, CloseError, WriteFailure, Journal, OpenError};
+pub use journal::{AppendError, ArchiveError, CloseError, Journal, OpenError, WriteFailure};
 pub use payload::*;
 pub use reader::{
-    EventReader, FileError, LookupError, ReadError, Recording, Torn, recorded_context, recorded_context_in,
+    EventReader, FileError, LookupError, ReadError, Recording, Torn, recorded_context,
+    recorded_context_in,
 };
 pub use receipt::{SmuIntentReceipt, SmuWritten};
 pub use session_id::{InvalidSessionId, SessionId};

@@ -3,8 +3,8 @@ use std::path::Path;
 
 use super::*;
 use crate::fs::{Fault, MemFs, Op};
-use crate::testing::{begin_default, note, stamp};
 use crate::journal::tests::sample;
+use crate::testing::{begin_default, note, stamp};
 
 fn recorded(fs: &MemFs) -> Vec<u8> {
     sample(fs)
@@ -44,7 +44,10 @@ fn the_first_error_ends_the_stream() {
     let mut bytes = recorded(&MemFs::new());
     bytes.splice(0..0, b"garbage\n".iter().copied());
     let mut reader = EventReader::new(bytes.as_slice());
-    assert!(matches!(reader.next(), Some(Err(ReadError::Decode { line: 1, .. }))));
+    assert!(matches!(
+        reader.next(),
+        Some(Err(ReadError::Decode { line: 1, .. }))
+    ));
     assert!(reader.next().is_none());
     assert_eq!(reader.accepted(), 0);
 }
@@ -106,18 +109,29 @@ fn the_first_recorded_context_is_found_by_complete_lines_only() {
     bytes.extend_from_slice(context_line(3).as_bytes());
     let found = {
         fs.put("/j.jsonl", bytes.clone());
-        recorded_context_in(&fs, Path::new("/j.jsonl")).unwrap().unwrap()
+        recorded_context_in(&fs, Path::new("/j.jsonl"))
+            .unwrap()
+            .unwrap()
     };
-    assert_eq!((found.bios_version.as_str(), found.boost_limit_mhz), ("1.0", 4500));
+    assert_eq!(
+        (found.bios_version.as_str(), found.boost_limit_mhz),
+        ("1.0", 4500)
+    );
 
     fs.put("/torn.jsonl", &bytes[..bytes.len() - 1]);
-    assert_eq!(recorded_context_in(&fs, Path::new("/torn.jsonl")).unwrap(), None);
+    assert_eq!(
+        recorded_context_in(&fs, Path::new("/torn.jsonl")).unwrap(),
+        None
+    );
 }
 
 #[test]
 fn a_missing_journal_has_no_context_but_a_damaged_one_is_an_error() {
     let fs = MemFs::new();
-    assert_eq!(recorded_context_in(&fs, Path::new("/none.jsonl")).unwrap(), None);
+    assert_eq!(
+        recorded_context_in(&fs, Path::new("/none.jsonl")).unwrap(),
+        None
+    );
     fs.put("/bad.jsonl", "damaged\n");
     assert!(recorded_context_in(&fs, Path::new("/bad.jsonl")).is_err());
 }
@@ -126,7 +140,10 @@ fn a_missing_journal_has_no_context_but_a_damaged_one_is_an_error() {
 fn a_context_is_not_found_in_a_journal_without_one() {
     let fs = MemFs::new();
     fs.put("/j.jsonl", recorded(&MemFs::new()));
-    assert_eq!(recorded_context_in(&fs, Path::new("/j.jsonl")).unwrap(), None);
+    assert_eq!(
+        recorded_context_in(&fs, Path::new("/j.jsonl")).unwrap(),
+        None
+    );
 }
 
 #[test]
@@ -138,6 +155,9 @@ fn a_large_event_spans_reader_chunks() {
     drop(journal);
     let recording = Recording::read_in(&fs, Path::new("/state/events.jsonl")).unwrap();
     assert_eq!(recording.events().len(), 2);
-    let fresh = EventReader::new(BufReader::with_capacity(16, Cursor::new(fs.contents("/state/events.jsonl").unwrap())));
+    let fresh = EventReader::new(BufReader::with_capacity(
+        16,
+        Cursor::new(fs.contents("/state/events.jsonl").unwrap()),
+    ));
     assert_eq!(fresh.count(), 2);
 }

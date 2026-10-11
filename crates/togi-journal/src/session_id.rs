@@ -99,11 +99,15 @@ impl FromStr for SessionId {
         let shape = bytes.len() == STAMP_LEN
             && bytes[8] == b'T'
             && bytes[15] == b'Z'
-            && bytes[..8].iter().chain(&bytes[9..15]).all(u8::is_ascii_digit);
+            && bytes[..8]
+                .iter()
+                .chain(&bytes[9..15])
+                .all(u8::is_ascii_digit);
         if !shape {
             return Err(malformed());
         }
-        let number = |range: std::ops::Range<usize>| stamp[range].parse::<i16>().map_err(|_| malformed());
+        let number =
+            |range: std::ops::Range<usize>| stamp[range].parse::<i16>().map_err(|_| malformed());
         let civil = DateTime::new(
             number(0..4)?,
             number(4..6)?.try_into().map_err(|_| malformed())?,

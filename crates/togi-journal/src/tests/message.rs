@@ -24,12 +24,24 @@ fn spec_quoted_texts() {
         "core 07 passed R1+R2 at -32; next -37 (coarse, no failure point yet)"
     );
     decision.decision = Decision::Backoff;
-    assert!(Payload::from(decision.clone()).message().starts_with("core 07 failed at -32"));
+    assert!(
+        Payload::from(decision.clone())
+            .message()
+            .starts_with("core 07 failed at -32")
+    );
     decision.activity = Activity::Checking;
-    assert!(Payload::from(decision.clone()).message().starts_with("core 07 backed off at -32"));
+    assert!(
+        Payload::from(decision.clone())
+            .message()
+            .starts_with("core 07 backed off at -32")
+    );
     decision.decision = Decision::Hold;
     decision.to_offset = decision.from_offset;
-    assert!(Payload::from(decision).message().starts_with("core 07 holds at -32; next -32"));
+    assert!(
+        Payload::from(decision)
+            .message()
+            .starts_with("core 07 holds at -32; next -32")
+    );
 }
 
 #[test]
@@ -44,7 +56,10 @@ fn trial_end_pass_names_the_duration_and_temperature() {
     end.voltage_request_median_v = None;
     end.voltage_request_min_v = None;
     end.top_requesters = togi_machine::CoreSet::default();
-    assert_eq!(Payload::from(end).message(), "trial 0413 PASS 90 s | Tctl max 71°C");
+    assert_eq!(
+        Payload::from(end).message(),
+        "trial 0413 PASS 90 s | Tctl max 71°C"
+    );
 }
 
 #[test]
@@ -75,7 +90,16 @@ fn trial_end_inconclusive_gives_the_reason() {
 #[test]
 fn intent_message_names_the_activity_fields() {
     let text = message(EventKind::TrialIntent);
-    for part in ["trial 0413 core 03 CO -32 R2", "90 s alone", "(retry)", "cycle 2", "step 1", "hunt 3 group 4", "round 5", "rerun"] {
+    for part in [
+        "trial 0413 core 03 CO -32 R2",
+        "90 s alone",
+        "(retry)",
+        "cycle 2",
+        "step 1",
+        "hunt 3 group 4",
+        "round 5",
+        "rerun",
+    ] {
         assert!(text.contains(part), "{part:?} missing from {text}");
     }
     let Payload::TrialIntent(mut intent) = sample(EventKind::TrialIntent) else {
@@ -84,7 +108,11 @@ fn intent_message_names_the_activity_fields() {
     intent.condition = Condition::Parked;
     intent.hunt = None;
     intent.group = None;
-    assert!(Payload::from(intent).message().ends_with("rerun with every core at CO 0"));
+    assert!(
+        Payload::from(intent)
+            .message()
+            .ends_with("rerun with every core at CO 0")
+    );
 }
 
 #[test]
@@ -109,9 +137,17 @@ fn shutdown_messages_follow_the_reason() {
     let Payload::Shutdown(mut shutdown) = sample(EventKind::Shutdown) else {
         unreachable!()
     };
-    assert!(Payload::from(shutdown.clone()).message().contains("requested 2 clean cycles"));
+    assert!(
+        Payload::from(shutdown.clone())
+            .message()
+            .contains("requested 2 clean cycles")
+    );
     shutdown.cycles = Some(std::num::NonZeroU32::MIN);
-    assert!(Payload::from(shutdown.clone()).message().contains("requested clean cycle; stopping"));
+    assert!(
+        Payload::from(shutdown.clone())
+            .message()
+            .contains("requested clean cycle; stopping")
+    );
     shutdown.reason = ShutdownReason::FirstResult;
     assert!(Payload::from(shutdown).message().contains("first result"));
 }
@@ -119,7 +155,14 @@ fn shutdown_messages_follow_the_reason() {
 #[test]
 fn crash_message_prefers_the_raw_reset_line() {
     let text = message(EventKind::CrashDetected);
-    for part in ["boot e8f9aaaa", "in flight: seq 12", "stray", "reset reason: watchdog", "inconclusive", "pstore: /sys/fs/pstore/dmesg-1"] {
+    for part in [
+        "boot e8f9aaaa",
+        "in flight: seq 12",
+        "stray",
+        "reset reason: watchdog",
+        "inconclusive",
+        "pstore: /sys/fs/pstore/dmesg-1",
+    ] {
         assert!(text.contains(part), "{part:?} missing from {text}");
     }
 }
@@ -127,7 +170,9 @@ fn crash_message_prefers_the_raw_reset_line() {
 #[test]
 fn mce_message_marks_scope_and_boot() {
     let text = message(EventKind::Mce);
-    assert!(text.contains("uncorrected MCE on cpu 3 (core 03), bank 5 execution_unit (core-local)"));
+    assert!(
+        text.contains("uncorrected MCE on cpu 3 (core 03), bank 5 execution_unit (core-local)")
+    );
     assert!(text.contains("from boot e8f9aaaa"));
 }
 
@@ -138,7 +183,11 @@ fn trial_signal_message_uses_the_schedule_or_the_counts() {
         unreachable!()
     };
     signal.schedule = None;
-    assert!(Payload::from(signal).message().contains("4 stops, 3 continues"));
+    assert!(
+        Payload::from(signal)
+            .message()
+            .contains("4 stops, 3 continues")
+    );
 }
 
 #[test]
@@ -158,7 +207,10 @@ fn hunt_messages_name_the_stage_and_result() {
     };
     end.result = HuntOutcome::Culprit;
     end.cores = [core(13)].into_iter().collect();
-    assert_eq!(Payload::from(end).message(), "hunt 3 found core 13 after 4 groups (probed)");
+    assert_eq!(
+        Payload::from(end).message(),
+        "hunt 3 found core 13 after 4 groups (probed)"
+    );
 }
 
 #[test]
@@ -181,7 +233,10 @@ fn carried_messages_name_the_source() {
 
 #[test]
 fn session_carried_message_counts_what_it_carries() {
-    assert!(message(EventKind::SessionCarried).starts_with("carried 1 candidate solo limits and 1 failure points"));
+    assert!(
+        message(EventKind::SessionCarried)
+            .starts_with("carried 1 candidate solo limits and 1 failure points")
+    );
 }
 
 #[test]

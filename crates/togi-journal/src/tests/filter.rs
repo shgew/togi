@@ -13,7 +13,13 @@ fn seqs(events: &[&Event]) -> Vec<u64> {
     events.iter().map(|event| event.seq.get()).collect()
 }
 
-fn failure_event(seq_no: u64, seconds: i64, trial: Option<&str>, core_id: Option<u8>, known: Option<u64>) -> Event {
+fn failure_event(
+    seq_no: u64,
+    seconds: i64,
+    trial: Option<&str>,
+    core_id: Option<u8>,
+    known: Option<u64>,
+) -> Event {
     let Payload::Failure(mut failure) = sample(EventKind::Failure) else {
         unreachable!()
     };
@@ -84,7 +90,16 @@ fn selectors_validate_against_the_registry() {
     let mut sorted = names.clone();
     sorted.sort_unstable();
     assert_eq!(names, sorted);
-    for name in ["trial", "trial.end", "failure", "failure.carried", "deadend", "mce", "session", "journal"] {
+    for name in [
+        "trial",
+        "trial.end",
+        "failure",
+        "failure.carried",
+        "deadend",
+        "mce",
+        "session",
+        "journal",
+    ] {
         assert!(names.contains(&name), "{name}");
         assert!(KindSelector::from_str(name).is_ok(), "{name}");
     }
@@ -208,7 +223,10 @@ fn core_filters_see_typed_core_fields_of_every_shape() {
     ];
     for (kind, wanted) in cases {
         let event = at(1, "boot-a", 0, &[], sample(kind));
-        assert!(filter(&[wanted]).matches(&event), "{kind} for core {wanted}");
+        assert!(
+            filter(&[wanted]).matches(&event),
+            "{kind} for core {wanted}"
+        );
         assert!(!filter(&[15]).matches(&event), "{kind} for core 15");
     }
 }

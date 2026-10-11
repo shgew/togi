@@ -12,7 +12,9 @@ use serde::de::DeserializeOwned;
 use crate::dir::{ArchiveKind, DirError, StateDir, StateError};
 use crate::event::{Event, Seq, Stamp};
 use crate::fs::FsFile;
-use crate::payload::{EventKind, Payload, SessionArchived, SmuCommand, SmuIntentRecord, SmuWriteRecord};
+use crate::payload::{
+    EventKind, Payload, SessionArchived, SmuCommand, SmuIntentRecord, SmuWriteRecord,
+};
 use crate::reader::{FileError, LookupError};
 use crate::receipt::{JournalId, SmuIntentReceipt, SmuWritten};
 use crate::session_id::SessionId;
@@ -69,7 +71,10 @@ pub enum OpenError {
     #[error(transparent)]
     Read(#[from] FileError),
     #[error("the journal records the archive of {recorded} but belongs to {live}")]
-    ArchiveMismatch { recorded: SessionId, live: SessionId },
+    ArchiveMismatch {
+        recorded: SessionId,
+        live: SessionId,
+    },
     #[error("repair torn tail ({step}): {source}")]
     Repair {
         step: &'static str,
@@ -116,22 +121,34 @@ impl Writer {
             }
             return Ok(());
         }
-        self.file.write_all(line).map_err(|source| WriteFailure { op: "write", source })?;
-        self.file.sync().map_err(|source| WriteFailure { op: "sync", source })
+        self.file.write_all(line).map_err(|source| WriteFailure {
+            op: "write",
+            source,
+        })?;
+        self.file
+            .sync()
+            .map_err(|source| WriteFailure { op: "sync", source })
     }
 
     fn flush(&mut self) -> Result<(), WriteFailure> {
         if self.buffer.is_empty() {
             return Ok(());
         }
-        self.file.write_all(&self.buffer).map_err(|source| WriteFailure { op: "write", source })?;
+        self.file
+            .write_all(&self.buffer)
+            .map_err(|source| WriteFailure {
+                op: "write",
+                source,
+            })?;
         self.buffer.clear();
         Ok(())
     }
 
     fn finish(&mut self) -> Result<(), WriteFailure> {
         self.flush()?;
-        self.file.sync().map_err(|source| WriteFailure { op: "sync", source })
+        self.file
+            .sync()
+            .map_err(|source| WriteFailure { op: "sync", source })
     }
 }
 
@@ -198,11 +215,20 @@ impl Journal {
         let live = self.events.iter().any(|event| {
             matches!(&event.payload, Payload::BootLeaveReason(leave) if leave.reason_id == reason_id)
         });
-        if live { Ok(true) } else { self.dir.archived_boot_reason(reason_id) }
+        if live {
+            Ok(true)
+        } else {
+            self.dir.archived_boot_reason(reason_id)
+        }
     }
 
     /// Appends one event: a single write of its whole line, an fsync, and only then it is published to `events()`.
-    pub fn append(&mut self, stamp: Stamp, payload: Payload, cause: &[Seq]) -> Result<&Event, AppendError> {
+    pub fn append(
+        &mut self,
+        stamp: Stamp,
+        payload: Payload,
+        cause: &[Seq],
+    ) -> Result<&Event, AppendError> {
         if let Payload::SmuIntent(_) | Payload::SmuWrite(_) = payload {
             return Err(AppendError::Refused(payload.kind()));
         }
@@ -216,27 +242,50 @@ impl Journal {
         command: SmuCommand,
         cause: &[Seq],
     ) -> Result<SmuIntentReceipt, AppendError> {
-        let seq = self.commit(stamp, Payload::SmuIntent(SmuIntentRecord::new(command)), cause)?.seq;
+        let seq = self
+            .commit(
+                stamp,
+                Payload::SmuIntent(SmuIntentRecord::new(command)),
+                cause,
+            )?
+            .seq;
         Ok(SmuIntentReceipt::new(self.id, seq, command))
     }
 
     /// Records that the command the receipt authorizes was written. The receipt is spent whatever the outcome.
-    pub fn append_smu_write(&mut self, stamp: Stamp, receipt: SmuIntentReceipt) -> Result<SmuWritten, AppendError> {
+    pub fn append_smu_write(
+        &mut self,
+        stamp: Stamp,
+        receipt: SmuIntentReceipt,
+    ) -> Result<SmuWritten, AppendError> {
         let (journal, intent, command) = receipt.into_parts();
         if journal != self.id {
             return Err(AppendError::ForeignReceipt);
         }
-        let seq = self.commit(stamp, Payload::SmuWrite(SmuWriteRecord::new(command)), &[intent])?.seq;
+        let seq = self
+            .commit(
+                stamp,
+                Payload::SmuWrite(SmuWriteRecord::new(command)),
+                &[intent],
+            )?
+            .seq;
         Ok(SmuWritten::new(seq, intent, command))
     }
 
-    fn commit(&mut self, stamp: Stamp, payload: Payload, cause: &[Seq]) -> Result<&Event, AppendError> {
+    fn commit(
+        &mut self,
+        stamp: Stamp,
+        payload: Payload,
+        cause: &[Seq],
+    ) -> Result<&Event, AppendError> {
         if let Some(failure) = &self.poison {
             return Err(AppendError::Poisoned(Arc::clone(failure)));
         }
         let seq = seq_after(self.events.last()).ok_or(AppendError::SeqExhausted)?;
         if seq.get() == 1 && !matches!(payload, Payload::SessionStart(_)) {
-            return Err(AppendError::FirstEvent { found: payload.kind() });
+            return Err(AppendError::FirstEvent {
+                found: payload.kind(),
+            });
         }
         if let Some(&cause) = cause.iter().find(|cause| cause.get() >= seq.get()) {
             return Err(AppendError::Cause { seq, cause });
@@ -250,7 +299,13 @@ impl Journal {
         std::str::from_utf8(&line[..line.len() - 1])
             .map_err(|error| AppendError::Encode(serde::ser::Error::custom(error)))
             .and_then(|text| Event::decode(text).map_err(AppendError::Unreadable))
-            .and_then(|decoded| if decoded.payload == event.payload { Ok(()) } else { Err(AppendError::Lossy) })?;
+            .and_then(|decoded| {
+                if decoded.payload == event.payload {
+                    Ok(())
+                } else {
+                    Err(AppendError::Lossy)
+                }
+            })?;
         if let Err(failure) = self.writer.write(&line) {
             let failure = Arc::new(failure);
             self.poison = Some(Arc::clone(&failure));
@@ -277,7 +332,9 @@ impl Journal {
     /// directory is returned so it can be reopened and replayed.
     pub fn close(mut self) -> Result<StateDir, CloseError> {
         if self.poison.is_none() {
-            self.writer.finish().map_err(|failure| CloseError::Io(failure.source))?;
+            self.writer
+                .finish()
+                .map_err(|failure| CloseError::Io(failure.source))?;
         }
         Ok(self.dir)
     }
@@ -285,15 +342,26 @@ impl Journal {
     /// Ends the session: the marker the kind needs, then a durable `session.archived`, then the state file, the trial
     /// directory and the journal move into `archive/`. The writer is spent; a failure after the event is recorded is
     /// finished by the next open of the directory.
-    pub fn archive(mut self, stamp: Stamp, kind: ArchiveKind, cause: &[Seq]) -> Result<StateDir, ArchiveError> {
+    pub fn archive(
+        mut self,
+        stamp: Stamp,
+        kind: ArchiveKind,
+        cause: &[Seq],
+    ) -> Result<StateDir, ArchiveError> {
         let session = self.session.ok_or(ArchiveError::NoSession)?;
         if let Some(failure) = &self.poison {
             return Err(AppendError::Poisoned(Arc::clone(failure)).into());
         }
         self.dir.check_archive_free(&session)?;
         self.dir.mark_archive_kind(kind, &session)?;
-        self.commit(stamp, Payload::SessionArchived(SessionArchived { session }), cause)?;
-        self.writer.finish().map_err(|failure| ArchiveError::Flush(failure.source))?;
+        self.commit(
+            stamp,
+            Payload::SessionArchived(SessionArchived { session }),
+            cause,
+        )?;
+        self.writer
+            .finish()
+            .map_err(|failure| ArchiveError::Flush(failure.source))?;
         let Self { writer, dir, .. } = self;
         drop(writer);
         dir.finish_archive(&session)?;

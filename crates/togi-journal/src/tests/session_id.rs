@@ -11,7 +11,11 @@ fn id(text: &str) -> SessionId {
 
 #[test]
 fn display_and_parse_agree() {
-    for text in ["20261002T011407Z", "20261002T011407Z-2", "20261002T011407Z-10"] {
+    for text in [
+        "20261002T011407Z",
+        "20261002T011407Z-2",
+        "20261002T011407Z-10",
+    ] {
         assert_eq!(id(text).to_string(), text);
     }
 }
@@ -38,7 +42,12 @@ fn malformed_ids_are_refused() {
 
 #[test]
 fn order_is_time_then_numeric_suffix() {
-    let ids = ["20261002T011407Z", "20261002T011407Z-2", "20261002T011407Z-10", "20261002T011408Z"];
+    let ids = [
+        "20261002T011407Z",
+        "20261002T011407Z-2",
+        "20261002T011407Z-10",
+        "20261002T011408Z",
+    ];
     let mut sorted: Vec<_> = ids.iter().map(|text| id(text)).collect();
     sorted.reverse();
     sorted.sort();
@@ -57,7 +66,10 @@ fn new_truncates_to_the_second_and_checks_the_suffix() {
         SessionId::new(time, NonZeroU32::new(1)),
         Err(InvalidSessionId::Suffix(1))
     );
-    assert_eq!(SessionId::new(Timestamp::MIN, None), Err(InvalidSessionId::Time));
+    assert_eq!(
+        SessionId::new(Timestamp::MIN, None),
+        Err(InvalidSessionId::Time)
+    );
 }
 
 #[test]
@@ -65,7 +77,10 @@ fn next_suffix_counts_and_stops_at_overflow() {
     let first = id("20261002T011407Z");
     let second = first.next_suffix().unwrap();
     assert_eq!(second.to_string(), "20261002T011407Z-2");
-    assert_eq!(second.next_suffix().unwrap().to_string(), "20261002T011407Z-3");
+    assert_eq!(
+        second.next_suffix().unwrap().to_string(),
+        "20261002T011407Z-3"
+    );
     let last = SessionId::new(first.timestamp(), NonZeroU32::new(u32::MAX)).unwrap();
     assert_eq!(last.next_suffix(), None);
 }

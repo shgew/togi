@@ -87,9 +87,10 @@ impl Filter {
         for event in events {
             if let (Some(widening), Payload::TrialIntent(intent)) = (&mut widening, &event.payload)
             {
-                let loads = self.cores.iter().any(|core| {
-                    intent.core == Some(core) || intent.cores.contains(core)
-                });
+                let loads = self
+                    .cores
+                    .iter()
+                    .any(|core| intent.core == Some(core) || intent.cores.contains(core));
                 if loads {
                     widening.loading.insert(intent.trial.clone());
                 } else {
@@ -115,10 +116,13 @@ impl Filter {
             return false;
         }
         let core_ok = self.cores.is_empty() || {
-            let named = self.cores.iter().any(|core| names_core(&event.payload, core));
-            let of_trial = widening.as_deref().is_some_and(|widening| {
-                widening_covers(&event.payload, widening)
-            });
+            let named = self
+                .cores
+                .iter()
+                .any(|core| names_core(&event.payload, core));
+            let of_trial = widening
+                .as_deref()
+                .is_some_and(|widening| widening_covers(&event.payload, widening));
             let ok = named || of_trial;
             if ok && let Some(widening) = widening.as_mut() {
                 widening.matched.insert(event.seq);

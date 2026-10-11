@@ -19,7 +19,11 @@ pub enum ReadError {
         source: serde_json::Error,
     },
     #[error("line {line}: expected seq {expected}, found {found}")]
-    Gap { line: u64, expected: u64, found: Seq },
+    Gap {
+        line: u64,
+        expected: u64,
+        found: Seq,
+    },
     #[error("line 1: the first event is {}, not session.start", found.as_str())]
     FirstEvent { found: EventKind },
     #[error("line {line}: cause {cause} does not precede seq {seq}")]
@@ -57,7 +61,14 @@ pub struct EventReader<R> {
 
 impl<R: BufRead> EventReader<R> {
     pub const fn new(reader: R) -> Self {
-        Self { reader, line: Vec::new(), lines: 0, accepted: 0, torn: None, done: false }
+        Self {
+            reader,
+            line: Vec::new(),
+            lines: 0,
+            accepted: 0,
+            torn: None,
+            done: false,
+        }
     }
 
     /// The bytes of the complete lines accepted so far; the end of the last event.
@@ -77,13 +88,27 @@ impl<R: BufRead> EventReader<R> {
             .map_err(|source| ReadError::Decode { line, source })?;
         let expected = line;
         if event.seq.get() != expected {
-            return Err(ReadError::Gap { line, expected, found: event.seq });
+            return Err(ReadError::Gap {
+                line,
+                expected,
+                found: event.seq,
+            });
         }
         if line == 1 && !matches!(event.payload, Payload::SessionStart(_)) {
-            return Err(ReadError::FirstEvent { found: event.payload.kind() });
+            return Err(ReadError::FirstEvent {
+                found: event.payload.kind(),
+            });
         }
-        if let Some(&cause) = event.cause.iter().find(|cause| cause.get() >= event.seq.get()) {
-            return Err(ReadError::Cause { line, seq: event.seq, cause });
+        if let Some(&cause) = event
+            .cause
+            .iter()
+            .find(|cause| cause.get() >= event.seq.get())
+        {
+            return Err(ReadError::Cause {
+                line,
+                seq: event.seq,
+                cause,
+            });
         }
         Ok(event)
     }
@@ -142,7 +167,10 @@ impl Recording {
     }
 
     pub fn read_in(fs: &dyn Fs, path: &Path) -> Result<Self, FileError> {
-        let file_error = |source: ReadError| FileError { path: path.to_path_buf(), source };
+        let file_error = |source: ReadError| FileError {
+            path: path.to_path_buf(),
+            source,
+        };
         let bytes = fs.read(path).map_err(|error| file_error(error.into()))?;
         Self::parse(&bytes).map_err(file_error)
     }
@@ -150,7 +178,10 @@ impl Recording {
     pub(crate) fn parse(bytes: &[u8]) -> Result<Self, ReadError> {
         let mut reader = EventReader::new(bytes);
         let events = reader.by_ref().collect::<Result<Vec<_>, _>>()?;
-        let torn = reader.torn().map(|tail| Torn { offset: reader.accepted(), bytes: tail.to_vec() });
+        let torn = reader.torn().map(|tail| Torn {
+            offset: reader.accepted(),
+            bytes: tail.to_vec(),
+        });
         Ok(Self { events, torn })
     }
 
@@ -176,7 +207,10 @@ fn find_in<T>(
     path: &Path,
     mut pick: impl FnMut(Event) -> Option<T>,
 ) -> Result<Option<T>, FileError> {
-    let file_error = |source: ReadError| FileError { path: path.to_path_buf(), source };
+    let file_error = |source: ReadError| FileError {
+        path: path.to_path_buf(),
+        source,
+    };
     let file = match fs.open_read(path) {
         Ok(file) => file,
         Err(error) if not_found(&error) => return Ok(None),
@@ -210,8 +244,10 @@ impl StateDir {
     /// Whether the live journal or any archived one acknowledged the boot leave reason, newest first. Only complete
     /// lines count.
     pub fn boot_reason_recorded(&self, reason_id: &str) -> Result<bool, LookupError> {
-        if find_in(self.fs(), &self.join(EVENTS_FILE), |event| acknowledges(&event, reason_id).then_some(()))?
-            .is_some()
+        if find_in(self.fs(), &self.join(EVENTS_FILE), |event| {
+            acknowledges(&event, reason_id).then_some(())
+        })?
+        .is_some()
         {
             return Ok(true);
         }
@@ -221,7 +257,11 @@ impl StateDir {
     pub(crate) fn archived_boot_reason(&self, reason_id: &str) -> Result<bool, LookupError> {
         for session in self.archives()?.iter().rev() {
             let path = self.archive_journal(session);
-            if find_in(self.fs(), &path, |event| acknowledges(&event, reason_id).then_some(()))?.is_some() {
+            if find_in(self.fs(), &path, |event| {
+                acknowledges(&event, reason_id).then_some(())
+            })?
+            .is_some()
+            {
                 return Ok(true);
             }
         }

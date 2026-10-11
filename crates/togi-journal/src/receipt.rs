@@ -46,7 +46,11 @@ impl JournalId {
 
 impl SmuIntentReceipt {
     pub(crate) const fn new(journal: JournalId, intent: Seq, command: SmuCommand) -> Self {
-        Self { journal, intent, command }
+        Self {
+            journal,
+            intent,
+            command,
+        }
     }
 
     pub(crate) fn into_parts(self) -> (JournalId, Seq, SmuCommand) {
@@ -74,7 +78,11 @@ pub struct SmuWritten {
 
 impl SmuWritten {
     pub(crate) const fn new(seq: Seq, intent: Seq, command: SmuCommand) -> Self {
-        Self { seq, intent, command }
+        Self {
+            seq,
+            intent,
+            command,
+        }
     }
 
     pub const fn seq(&self) -> Seq {

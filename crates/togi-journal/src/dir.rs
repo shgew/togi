@@ -115,9 +115,17 @@ impl StateDir {
         let lock = fs
             .try_lock(&lock_path)
             .map_err(io_at("lock", &lock_path))?
-            .ok_or_else(|| LockError::Held { path: path.to_path_buf() })?;
-        fs.set_dir_mode(path, STATE_DIR_MODE).map_err(io_at("set directory mode", path))?;
-        Ok(Self { fs, path: path.to_path_buf(), buffered, _lock: lock })
+            .ok_or_else(|| LockError::Held {
+                path: path.to_path_buf(),
+            })?;
+        fs.set_dir_mode(path, STATE_DIR_MODE)
+            .map_err(io_at("set directory mode", path))?;
+        Ok(Self {
+            fs,
+            path: path.to_path_buf(),
+            buffered,
+            _lock: lock,
+        })
     }
 
     pub fn path(&self) -> &Path {
@@ -145,7 +153,9 @@ impl StateDir {
     }
 
     pub(crate) fn sync_dir(&self, path: &Path) -> Result<(), DirError> {
-        self.fs.sync_dir(path).map_err(io_at("sync directory", path))
+        self.fs
+            .sync_dir(path)
+            .map_err(io_at("sync directory", path))
     }
 
     pub(crate) fn sync_dirs(&self) -> Result<(), DirError> {
@@ -187,7 +197,9 @@ impl StateDir {
             Err(error) if not_found(&error) => return Ok(None),
             Err(error) => return Err(io_at("read state", &target)(error).into()),
         };
-        serde_json::from_slice(&bytes).map(Some).map_err(StateError::Decode)
+        serde_json::from_slice(&bytes)
+            .map(Some)
+            .map_err(StateError::Decode)
     }
 
     pub(crate) fn kind_of(&self, path: &Path) -> Result<Option<FileKind>, DirError> {
@@ -197,11 +209,18 @@ impl StateDir {
 
 fn create_dirs(fs: &dyn Fs, path: &Path) -> Result<(), DirError> {
     let mut chain = Vec::new();
-    for ancestor in path.ancestors().take_while(|ancestor| !ancestor.as_os_str().is_empty()) {
+    for ancestor in path
+        .ancestors()
+        .take_while(|ancestor| !ancestor.as_os_str().is_empty())
+    {
         let kind = fs.kind(ancestor).map_err(io_at("stat", ancestor))?;
         match kind {
             Some(FileKind::Dir | FileKind::Symlink) | None => chain.push((ancestor, kind)),
-            Some(_) => return Err(DirError::NotADirectory { path: ancestor.to_path_buf() }),
+            Some(_) => {
+                return Err(DirError::NotADirectory {
+                    path: ancestor.to_path_buf(),
+                });
+            }
         }
         if kind == Some(FileKind::Symlink) {
             break;
@@ -218,8 +237,13 @@ fn create_dirs(fs: &dyn Fs, path: &Path) -> Result<(), DirError> {
     }
     for (dir, _) in &chain {
         let Some(parent) = dir.parent() else { continue };
-        let parent = if parent.as_os_str().is_empty() { Path::new(".") } else { parent };
-        fs.sync_dir(parent).map_err(io_at("sync directory", parent))?;
+        let parent = if parent.as_os_str().is_empty() {
+            Path::new(".")
+        } else {
+            parent
+        };
+        fs.sync_dir(parent)
+            .map_err(io_at("sync directory", parent))?;
     }
     Ok(())
 }

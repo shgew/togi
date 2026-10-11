@@ -11,8 +11,8 @@ use std::str::FromStr;
 use serde::{Serialize, Serializer};
 
 pub use domain::{
-    Activity, Attribution, CorePhase, CycleEvent, DeadEndAction, DeadEndCondition, DefectAnswer,
-    DefectDirection, Decision, HuntOutcome, HuntStage, Inference, Notice, Outcome, RetryTarget,
+    Activity, Attribution, CorePhase, CycleEvent, DeadEndAction, DeadEndCondition, Decision,
+    DefectAnswer, DefectDirection, HuntOutcome, HuntStage, Inference, Notice, Outcome, RetryTarget,
     RoundEvent, ShutdownReason, SmuOp, WarningKind,
 };
 pub use session::{

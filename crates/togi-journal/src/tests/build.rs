@@ -39,7 +39,11 @@ const MIXED_NEWER_EVIDENCE: (u32, u32, u32) = (1, 5, 4);
 fn resume_uses_current_archives_older_and_refuses_any_newer_dimension() {
     assert_eq!(verdict(SAME, Operation::Resume), Verdict::Use);
     for older in [OLDER_SCHEMA, OLDER_RULESET, OLDER_EVIDENCE] {
-        assert_eq!(verdict(older, Operation::Resume), Verdict::Archive, "{older:?}");
+        assert_eq!(
+            verdict(older, Operation::Resume),
+            Verdict::Archive,
+            "{older:?}"
+        );
     }
     assert_eq!(
         verdict(NEWER_SCHEMA, Operation::Resume),
@@ -86,11 +90,25 @@ fn append_needs_every_dimension_current() {
 
 #[test]
 fn reset_all_archives_unchanged_unless_the_schema_matches() {
-    for same_schema in [SAME, OLDER_RULESET, NEWER_RULESET, OLDER_EVIDENCE, NEWER_EVIDENCE] {
-        assert_eq!(verdict(same_schema, Operation::ResetAll), Verdict::Use, "{same_schema:?}");
+    for same_schema in [
+        SAME,
+        OLDER_RULESET,
+        NEWER_RULESET,
+        OLDER_EVIDENCE,
+        NEWER_EVIDENCE,
+    ] {
+        assert_eq!(
+            verdict(same_schema, Operation::ResetAll),
+            Verdict::Use,
+            "{same_schema:?}"
+        );
     }
     for other in [OLDER_SCHEMA, NEWER_SCHEMA, MIXED_NEWER_SCHEMA] {
-        assert_eq!(verdict(other, Operation::ResetAll), Verdict::Archive, "{other:?}");
+        assert_eq!(
+            verdict(other, Operation::ResetAll),
+            Verdict::Archive,
+            "{other:?}"
+        );
     }
 }
 
@@ -112,7 +130,11 @@ fn inspect_needs_the_same_schema() {
 #[test]
 fn replay_needs_a_known_schema_and_the_same_ruleset_and_ignores_the_epoch() {
     for usable in [SAME, OLDER_SCHEMA, OLDER_EVIDENCE, NEWER_EVIDENCE] {
-        assert_eq!(verdict(usable, Operation::Replay), Verdict::Use, "{usable:?}");
+        assert_eq!(
+            verdict(usable, Operation::Replay),
+            Verdict::Use,
+            "{usable:?}"
+        );
     }
     assert_eq!(
         verdict(NEWER_SCHEMA, Operation::Replay),
@@ -130,8 +152,18 @@ fn replay_needs_a_known_schema_and_the_same_ruleset_and_ignores_the_epoch() {
 
 #[test]
 fn history_reads_any_shipped_schema_not_newer() {
-    for usable in [SAME, OLDER_SCHEMA, OLDER_RULESET, NEWER_RULESET, NEWER_EVIDENCE] {
-        assert_eq!(verdict(usable, Operation::History), Verdict::Use, "{usable:?}");
+    for usable in [
+        SAME,
+        OLDER_SCHEMA,
+        OLDER_RULESET,
+        NEWER_RULESET,
+        NEWER_EVIDENCE,
+    ] {
+        assert_eq!(
+            verdict(usable, Operation::History),
+            Verdict::Use,
+            "{usable:?}"
+        );
     }
     assert_eq!(
         verdict(NEWER_SCHEMA, Operation::History),
@@ -159,5 +191,10 @@ fn build_wire_accepts_a_missing_fixes_field() {
     let build: Build =
         serde_json::from_str(r#"{"version":"1","ruleset":1,"schema":1,"evidence":1}"#).unwrap();
     assert_eq!(build.fixes, 0);
-    assert!(serde_json::from_str::<Build>(r#"{"version":"1","ruleset":1,"schema":1,"evidence":1,"x":1}"#).is_err());
+    assert!(
+        serde_json::from_str::<Build>(
+            r#"{"version":"1","ruleset":1,"schema":1,"evidence":1,"x":1}"#
+        )
+        .is_err()
+    );
 }

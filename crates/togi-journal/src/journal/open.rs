@@ -17,10 +17,12 @@ fn repair_step(step: &'static str) -> impl FnOnce(io::Error) -> OpenError {
 }
 
 fn hex(bytes: &[u8]) -> String {
-    bytes.iter().fold(String::with_capacity(bytes.len() * 2), |mut text, byte| {
-        let _ = write!(text, "{byte:02x}");
-        text
-    })
+    bytes
+        .iter()
+        .fold(String::with_capacity(bytes.len() * 2), |mut text, byte| {
+            let _ = write!(text, "{byte:02x}");
+            text
+        })
 }
 
 fn started_session(events: &[Event]) -> Option<SessionId> {
@@ -31,7 +33,9 @@ fn started_session(events: &[Event]) -> Option<SessionId> {
 }
 
 fn recorded_archive(events: &[Event]) -> Result<Option<SessionId>, OpenError> {
-    let Some(live) = started_session(events) else { return Ok(None) };
+    let Some(live) = started_session(events) else {
+        return Ok(None);
+    };
     let archived = events.iter().find_map(|event| match &event.payload {
         Payload::SessionArchived(archived) => Some(archived.session),
         _ => None,
@@ -60,8 +64,10 @@ impl StateDir {
             Err(error) if not_found(&error) => Vec::new(),
             Err(error) => return Err(io_at("read journal", &path)(error).into()),
         };
-        let recording =
-            Recording::parse(&bytes).map_err(|source| FileError { path: path.clone(), source })?;
+        let recording = Recording::parse(&bytes).map_err(|source| FileError {
+            path: path.clone(),
+            source,
+        })?;
         let (events, torn) = recording.into_parts();
         let (mut events, torn) = if let Some(session) = recorded_archive(&events)? {
             self.finish_archive(&session)?;
@@ -80,12 +86,28 @@ impl StateDir {
         if self.kind_of(&archive)?.is_some() {
             self.sync_dir(&archive)?;
         }
-        let mut file = self.fs().open_append(&path).map_err(io_at("open journal", &path))?;
+        let mut file = self
+            .fs()
+            .open_append(&path)
+            .map_err(io_at("open journal", &path))?;
         file.sync().map_err(io_at("sync journal", &path))?;
         self.sync_dir(self.path())?;
         let session = started_session(&events);
-        let writer = Writer { file, buffer: Vec::new(), buffered: self.buffered() };
-        Ok(Journal { writer, events, boot, id: JournalId::next(), repaired, session, poison: None, dir: self })
+        let writer = Writer {
+            file,
+            buffer: Vec::new(),
+            buffered: self.buffered(),
+        };
+        Ok(Journal {
+            writer,
+            events,
+            boot,
+            id: JournalId::next(),
+            repaired,
+            session,
+            poison: None,
+            dir: self,
+        })
     }
 
     fn repair(
@@ -98,26 +120,49 @@ impl StateDir {
     ) -> Result<Option<Seq>, OpenError> {
         let path = self.join(EVENTS_FILE);
         if events.is_empty() {
-            let mut file = self.fs().open_append(&path).map_err(repair_step("open journal"))?;
+            let mut file = self
+                .fs()
+                .open_append(&path)
+                .map_err(repair_step("open journal"))?;
             file.set_len(0).map_err(repair_step("truncate"))?;
             file.sync().map_err(repair_step("sync truncation"))?;
             return Ok(None);
         }
         let seq = seq_after(events.last()).ok_or(OpenError::SeqExhausted)?;
-        let payload = Payload::JournalTorn(JournalTorn { offset: torn.offset, bytes_hex: hex(&torn.bytes) });
-        let event = Event::new(seq, Stamp { time: now, mono: None }, boot.clone(), Vec::new(), payload);
+        let payload = Payload::JournalTorn(JournalTorn {
+            offset: torn.offset,
+            bytes_hex: hex(&torn.bytes),
+        });
+        let event = Event::new(
+            seq,
+            Stamp {
+                time: now,
+                mono: None,
+            },
+            boot.clone(),
+            Vec::new(),
+            payload,
+        );
         let line = encode(&event).map_err(OpenError::Encode)?;
         let complete = &bytes[..bytes.len() - torn.bytes.len()];
         let mut repaired = Vec::with_capacity(complete.len() + line.len());
         repaired.extend_from_slice(complete);
         repaired.extend_from_slice(&line);
         let tmp = self.join(EVENTS_TMP);
-        let mut file = self.fs().create_truncate(&tmp).map_err(repair_step("create temporary journal"))?;
-        file.write_all(&repaired).map_err(repair_step("write temporary journal"))?;
+        let mut file = self
+            .fs()
+            .create_truncate(&tmp)
+            .map_err(repair_step("create temporary journal"))?;
+        file.write_all(&repaired)
+            .map_err(repair_step("write temporary journal"))?;
         file.sync().map_err(repair_step("sync temporary journal"))?;
         drop(file);
-        self.fs().rename(&tmp, &path).map_err(repair_step("replace journal"))?;
-        self.fs().sync_dir(self.path()).map_err(repair_step("sync state directory"))?;
+        self.fs()
+            .rename(&tmp, &path)
+            .map_err(repair_step("replace journal"))?;
+        self.fs()
+            .sync_dir(self.path())
+            .map_err(repair_step("sync state directory"))?;
         events.push(event);
         Ok(Some(seq))
     }

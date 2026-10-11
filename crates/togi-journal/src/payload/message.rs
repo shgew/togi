@@ -3,7 +3,7 @@ use std::fmt::Write as _;
 use togi_machine::{CoreId, CoreSet, PerCore, Signal, TargetOffset, WorkloadId};
 
 use super::domain::{
-    Activity, Attribution, CorePhase, CycleEvent, Decision, DeadEndAction, HuntOutcome, HuntStage,
+    Activity, Attribution, CorePhase, CycleEvent, DeadEndAction, Decision, HuntOutcome, HuntStage,
     Notice, Outcome, RoundEvent, ShutdownReason, SmuOp, WarningKind,
 };
 use super::session::{CarriedSource, ResetTarget};
@@ -767,7 +767,11 @@ fn host_ranking(p: &HostRanking) -> String {
         Some(detail) => format!("preferred-core ranking unavailable ({detail}); core-id order"),
         None => format!(
             "preferred cores {}",
-            p.ranking.iter().map(|id| core(*id)).collect::<Vec<_>>().join(" ")
+            p.ranking
+                .iter()
+                .map(|id| core(*id))
+                .collect::<Vec<_>>()
+                .join(" ")
         ),
     }
 }
@@ -800,7 +804,12 @@ fn hunt_start(p: &HuntStart) -> String {
 }
 
 fn hunt_group(p: &HuntGroup) -> String {
-    let mut prefix = format!("hunt {} group {}: cores {}", p.hunt, p.group, cores(p.cores));
+    let mut prefix = format!(
+        "hunt {} group {}: cores {}",
+        p.hunt,
+        p.group,
+        cores(p.cores)
+    );
     let mut running = "at failing offsets, the rest parked".to_owned();
     if p.stage == HuntStage::Locate {
         prefix = format!("hunt {} group {}: locate", p.hunt, p.group);
@@ -844,7 +853,9 @@ fn plural_groups(count: u32) -> String {
 
 fn hunt_end(p: &HuntEnd) -> String {
     let groups = plural_groups(p.groups);
-    let single = (p.cores.len() == 1).then(|| p.cores.iter().next()).flatten();
+    let single = (p.cores.len() == 1)
+        .then(|| p.cores.iter().next())
+        .flatten();
     match (p.result, single) {
         (HuntOutcome::Loaded, _) => format!(
             "hunt {} ended after {groups}: the failure stays with loaded cores {} ({})",
@@ -994,9 +1005,9 @@ fn boot_saved_entry(p: &BootSavedEntry) -> String {
     let mut text = match (&p.error, p.before.as_deref(), p.after.as_deref()) {
         (Some(error), _, _) => format!("GRUB saved entry not cleared: {error}"),
         (None, None, None) => "GRUB saved entry was already unset".to_owned(),
-        (None, Some(before), None) => format!(
-            "GRUB saved entry {before} cleared; the next boot selects the first menu entry"
-        ),
+        (None, Some(before), None) => {
+            format!("GRUB saved entry {before} cleared; the next boot selects the first menu entry")
+        }
         (None, before, Some(after)) => {
             format!("GRUB saved entry {} -> {after}", before.unwrap_or("unset"))
         }

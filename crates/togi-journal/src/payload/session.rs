@@ -12,12 +12,18 @@ use super::domain::{
 use super::trial::TrialId;
 use crate::{Build, Seq, SessionId};
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "serde passes skipped fields by reference")]
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde passes skipped fields by reference"
+)]
 pub(super) fn is_false(value: &bool) -> bool {
     !*value
 }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "serde passes skipped fields by reference")]
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde passes skipped fields by reference"
+)]
 pub(super) fn is_zero(value: &u32) -> bool {
     *value == 0
 }

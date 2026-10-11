@@ -40,8 +40,14 @@ fn context_and_baseline_are_recorded_per_core() {
     let session = state.session.as_ref().unwrap();
     assert_eq!(session.bios_context.as_ref().unwrap().bios_version, "F31");
     assert_eq!(session.baseline.len(), 2);
-    assert_eq!(state.core(core(1)).unwrap().baseline, Some(togi_machine::ObservedOffset(-5)));
-    assert_eq!(state.core(core(0)).unwrap().baseline, Some(togi_machine::ObservedOffset(0)));
+    assert_eq!(
+        state.core(core(1)).unwrap().baseline,
+        Some(togi_machine::ObservedOffset(-5))
+    );
+    assert_eq!(
+        state.core(core(0)).unwrap().baseline,
+        Some(togi_machine::ObservedOffset(0))
+    );
 }
 
 #[test]
@@ -99,12 +105,7 @@ fn a_new_smu_intent_replaces_the_older_one_and_the_write_citing_it_clears_it() {
 
 #[test]
 fn a_write_citing_another_intent_leaves_this_one_open() {
-    let state = replay(&[
-        start(),
-        smu_intent(2, "boot-a"),
-        smu_write(3, "boot-a", 1),
-    ])
-    .unwrap();
+    let state = replay(&[start(), smu_intent(2, "boot-a"), smu_write(3, "boot-a", 1)]).unwrap();
     assert_eq!(state.in_flight().unwrap().seq, Seq::new(2).unwrap());
 }
 
@@ -178,7 +179,10 @@ fn events_without_shared_facts_only_advance_last_seq() {
         events.push(at(seq_no, "boot-a", 1, &[], payload));
     }
     let state = replay(&events).unwrap();
-    assert_eq!(state.last_seq, Seq::new(u64::try_from(events.len()).unwrap()));
+    assert_eq!(
+        state.last_seq,
+        Seq::new(u64::try_from(events.len()).unwrap())
+    );
 }
 
 #[test]
@@ -235,7 +239,9 @@ fn decisions_and_baselines_for_unknown_cores_are_fold_errors() {
     let Payload::SessionBaseline(mut baseline) = sample(EventKind::SessionBaseline) else {
         unreachable!()
     };
-    baseline.offsets.set(core(9), togi_machine::ObservedOffset(0));
+    baseline
+        .offsets
+        .set(core(9), togi_machine::ObservedOffset(0));
     let error = replay(&[start(), at(2, "boot-a", 1, &[], baseline.into())]).unwrap_err();
     assert!(matches!(error, FoldError::UnknownCore { .. }));
 }

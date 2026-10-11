@@ -36,7 +36,8 @@ fn every_kind_round_trips_through_the_wire() {
         assert!(!event.msg.is_empty(), "{kind} has no message");
         let line = event.encode().unwrap();
         assert!(!line.contains('\n'));
-        let decoded = Event::decode(&line).unwrap_or_else(|error| panic!("{kind}: {error}\n{line}"));
+        let decoded =
+            Event::decode(&line).unwrap_or_else(|error| panic!("{kind}: {error}\n{line}"));
         assert_eq!(decoded, event, "{kind}");
         assert_eq!(decoded.encode().unwrap(), line, "{kind}");
     }

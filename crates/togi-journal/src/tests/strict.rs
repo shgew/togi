@@ -69,7 +69,10 @@ fn mono_and_cause_are_omitted_when_empty() {
     zero.mono = Some(std::time::Duration::ZERO);
     let line: Value = serde_json::from_str(&zero.encode().unwrap()).unwrap();
     assert_eq!(line["mono_ms"], json!(0));
-    assert_eq!(Event::decode(&zero.encode().unwrap()).unwrap().mono, zero.mono);
+    assert_eq!(
+        Event::decode(&zero.encode().unwrap()).unwrap().mono,
+        zero.mono
+    );
 }
 
 #[test]
@@ -129,7 +132,10 @@ fn unknown_fields_in_nested_machine_types_are_refused() {
         assert!(nested.is_object(), "{kind}.{field}");
         nested["bogus"] = json!(1);
         let error = Event::decode(&line.to_string()).unwrap_err();
-        assert!(matches!(error, DecodeError::Payload { kind: named, .. } if named == kind), "{kind}: {error}");
+        assert!(
+            matches!(error, DecodeError::Payload { kind: named, .. } if named == kind),
+            "{kind}: {error}"
+        );
     }
 }
 
@@ -146,7 +152,10 @@ fn unknown_workload_ids_are_refused_wherever_a_payload_names_one() {
         let mut line = line_of(super::fixtures::sample(kind));
         *line.pointer_mut(pointer).unwrap() = json!("not-a-workload");
         let error = Event::decode(&line.to_string()).unwrap_err();
-        assert!(error.to_string().contains("not-a-workload"), "{kind}: {error}");
+        assert!(
+            error.to_string().contains("not-a-workload"),
+            "{kind}: {error}"
+        );
     }
 }
 

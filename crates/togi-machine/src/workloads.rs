@@ -46,7 +46,9 @@ impl WorkloadId {
 
     pub fn by_id(id: &str) -> Option<Self> {
         REGIMES.into_iter().find_map(|regime| {
-            let index = workloads(regime).iter().position(|workload| workload.id == id)?;
+            let index = workloads(regime)
+                .iter()
+                .position(|workload| workload.id == id)?;
             Self::new(regime, index)
         })
     }

@@ -235,7 +235,9 @@ pub(crate) fn samples() -> Vec<Payload> {
         }
         .into(),
         Payload::SmuIntent(SmuIntentRecord::new(command)),
-        Payload::SmuWrite(SmuWriteRecord::new(SmuCommand::SetAll { offset: target(0) })),
+        Payload::SmuWrite(SmuWriteRecord::new(SmuCommand::SetAll {
+            offset: target(0),
+        })),
         SmuReadback {
             core: core(3),
             offset: ObservedOffset(-20),
@@ -606,7 +608,13 @@ pub(crate) fn sample(kind: EventKind) -> Payload {
         .unwrap()
 }
 
-pub(crate) fn at(seq_no: u64, boot_name: &str, seconds: i64, cause: &[u64], payload: Payload) -> Event {
+pub(crate) fn at(
+    seq_no: u64,
+    boot_name: &str,
+    seconds: i64,
+    cause: &[u64],
+    payload: Payload,
+) -> Event {
     let base: Timestamp = "2026-10-02T01:00:00Z".parse().unwrap();
     let time = base + jiff::SignedDuration::from_secs(seconds);
     Event::new(

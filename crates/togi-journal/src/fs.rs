@@ -37,7 +37,9 @@ pub trait FsFile: Send + fmt::Debug {
 }
 
 /// An exclusive lock; dropping it releases the lock.
-pub struct FsLock(#[expect(dead_code, reason = "held only for its Drop")] Box<dyn Any + Send + Sync>);
+pub struct FsLock(
+    #[expect(dead_code, reason = "held only for its Drop")] Box<dyn Any + Send + Sync>,
+);
 
 impl fmt::Debug for FsLock {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -93,12 +95,17 @@ impl DiskFs {
 
     fn options() -> OpenOptions {
         let mut options = OpenOptions::new();
-        options.mode(0o644).custom_flags((OFlags::NOFOLLOW | OFlags::NONBLOCK).bits().cast_signed());
+        options
+            .mode(0o644)
+            .custom_flags((OFlags::NOFOLLOW | OFlags::NONBLOCK).bits().cast_signed());
         options
     }
 
     fn open_write(self, options: &OpenOptions, path: &Path) -> io::Result<Box<dyn FsFile>> {
-        Ok(Box::new(DiskFile { file: options.open(path)?, synced: self.synced }))
+        Ok(Box::new(DiskFile {
+            file: options.open(path)?,
+            synced: self.synced,
+        }))
     }
 }
 
@@ -121,7 +128,11 @@ impl FsFile for DiskFile {
     }
 
     fn sync(&mut self) -> io::Result<()> {
-        if self.synced { self.file.sync_data() } else { Ok(()) }
+        if self.synced {
+            self.file.sync_data()
+        } else {
+            Ok(())
+        }
     }
 
     fn set_len(&mut self, len: u64) -> io::Result<()> {
@@ -143,7 +154,10 @@ impl Fs for DiskFs {
     }
 
     fn create_truncate(&self, path: &Path) -> io::Result<Box<dyn FsFile>> {
-        self.open_write(Self::options().write(true).create(true).truncate(true), path)
+        self.open_write(
+            Self::options().write(true).create(true).truncate(true),
+            path,
+        )
     }
 
     fn open_read(&self, path: &Path) -> io::Result<Box<dyn Read + Send>> {
@@ -155,7 +169,13 @@ impl Fs for DiskFs {
     }
 
     fn rename_noreplace(&self, from: &Path, to: &Path) -> io::Result<()> {
-        Ok(rustix::fs::renameat_with(CWD, from, CWD, to, RenameFlags::NOREPLACE)?)
+        Ok(rustix::fs::renameat_with(
+            CWD,
+            from,
+            CWD,
+            to,
+            RenameFlags::NOREPLACE,
+        )?)
     }
 
     fn remove_file(&self, path: &Path) -> io::Result<()> {
@@ -186,7 +206,10 @@ impl Fs for DiskFs {
         std::fs::read_dir(path)?
             .map(|entry| {
                 let entry = entry?;
-                Ok(DirEntry { name: entry.file_name(), kind: disk_kind(entry.file_type()?) })
+                Ok(DirEntry {
+                    name: entry.file_name(),
+                    kind: disk_kind(entry.file_type()?),
+                })
             })
             .collect()
     }
@@ -194,13 +217,24 @@ impl Fs for DiskFs {
     fn kind(&self, path: &Path) -> io::Result<Option<FileKind>> {
         match std::fs::symlink_metadata(path) {
             Ok(metadata) => Ok(Some(disk_kind(metadata.file_type()))),
-            Err(error) if matches!(error.kind(), io::ErrorKind::NotFound | io::ErrorKind::NotADirectory) => Ok(None),
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::NotFound | io::ErrorKind::NotADirectory
+                ) =>
+            {
+                Ok(None)
+            }
             Err(error) => Err(error),
         }
     }
 
     fn try_lock(&self, path: &Path) -> io::Result<Option<FsLock>> {
-        let file = Self::options().read(true).write(true).create(true).open(path)?;
+        let file = Self::options()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(path)?;
         match file.try_lock() {
             Ok(()) => Ok(Some(FsLock(Box::new(file)))),
             Err(std::fs::TryLockError::WouldBlock) => Ok(None),
@@ -273,27 +307,52 @@ pub struct Fault {
 impl Fault {
     /// Fails the operation without performing it.
     pub fn before(op: Op, nth: u64) -> Self {
-        Self { target: Target::Op(op), nth, effect: Effect::Before, name: None }
+        Self {
+            target: Target::Op(op),
+            nth,
+            effect: Effect::Before,
+            name: None,
+        }
     }
 
     /// Performs the operation, then reports it failed.
     pub fn after(op: Op, nth: u64) -> Self {
-        Self { target: Target::Op(op), nth, effect: Effect::After, name: None }
+        Self {
+            target: Target::Op(op),
+            nth,
+            effect: Effect::After,
+            name: None,
+        }
     }
 
     /// Writes the first half of the bytes, then fails.
     pub fn short_write(nth: u64) -> Self {
-        Self { target: Target::Op(Op::Write), nth, effect: Effect::Short, name: None }
+        Self {
+            target: Target::Op(Op::Write),
+            nth,
+            effect: Effect::Short,
+            name: None,
+        }
     }
 
     /// Fails the `nth` mutating operation of any kind without performing it.
     pub fn any_before(nth: u64) -> Self {
-        Self { target: Target::AnyMutation, nth, effect: Effect::Before, name: None }
+        Self {
+            target: Target::AnyMutation,
+            nth,
+            effect: Effect::Before,
+            name: None,
+        }
     }
 
     /// Performs the `nth` mutating operation of any kind, then reports it failed.
     pub fn any_after(nth: u64) -> Self {
-        Self { target: Target::AnyMutation, nth, effect: Effect::After, name: None }
+        Self {
+            target: Target::AnyMutation,
+            nth,
+            effect: Effect::After,
+            name: None,
+        }
     }
 
     /// Counts only operations touching a path with this file name.
@@ -309,7 +368,10 @@ impl Fault {
             Target::AnyMutation => op.mutates(),
         };
         op_matches
-            && self.name.as_deref().is_none_or(|name| paths.iter().any(|path| path.file_name() == Some(name)))
+            && self
+                .name
+                .as_deref()
+                .is_none_or(|name| paths.iter().any(|path| path.file_name() == Some(name)))
     }
 }
 
@@ -336,7 +398,13 @@ impl Tree {
     fn check(&mut self, op: Op, paths: &[&Path]) -> Option<Effect> {
         if op.mutates() {
             self.mutations += 1;
-            self.log.push((op, paths.first().map(|path| path.to_path_buf()).unwrap_or_default()));
+            self.log.push((
+                op,
+                paths
+                    .first()
+                    .map(|path| path.to_path_buf())
+                    .unwrap_or_default(),
+            ));
         }
         let mut fired = None;
         self.faults.retain_mut(|(fault, seen)| {
@@ -355,7 +423,11 @@ impl Tree {
     }
 
     fn node(&self, path: &Path) -> Option<&Node> {
-        if path == Path::new("/") { Some(&Node::Dir) } else { self.nodes.get(path) }
+        if path == Path::new("/") {
+            Some(&Node::Dir)
+        } else {
+            self.nodes.get(path)
+        }
     }
 
     fn parent_dir(&self, path: &Path) -> io::Result<()> {
@@ -377,7 +449,10 @@ impl Tree {
 
     fn reclaim(&mut self, inode: u64) {
         let open = self.handles.get(&inode).is_some_and(|count| *count > 0);
-        let linked = self.nodes.values().any(|node| matches!(node, Node::File(linked) if *linked == inode));
+        let linked = self
+            .nodes
+            .values()
+            .any(|node| matches!(node, Node::File(linked) if *linked == inode));
         if !open && !linked {
             self.data.remove(&inode);
             self.handles.remove(&inode);
@@ -437,7 +512,11 @@ impl Tree {
         for (path, node) in moved {
             self.nodes.remove(&path);
             let relative = path.strip_prefix(from).unwrap_or(Path::new(""));
-            let destination = if relative.as_os_str().is_empty() { to.to_path_buf() } else { to.join(relative) };
+            let destination = if relative.as_os_str().is_empty() {
+                to.to_path_buf()
+            } else {
+                to.join(relative)
+            };
             self.nodes.insert(destination, node);
         }
         if let Some(inode) = replaced {
@@ -447,9 +526,10 @@ impl Tree {
     }
 
     fn children<'a>(&'a self, dir: &'a Path) -> impl Iterator<Item = (&'a PathBuf, &'a Node)> + 'a {
-        self.nodes.range(dir.to_path_buf()..).skip_while(move |(path, _)| path.as_path() == dir).filter(
-            move |(path, _)| path.parent() == Some(dir),
-        )
+        self.nodes
+            .range(dir.to_path_buf()..)
+            .skip_while(move |(path, _)| path.as_path() == dir)
+            .filter(move |(path, _)| path.parent() == Some(dir))
     }
 }
 
@@ -516,7 +596,9 @@ impl MemFs {
         let mut tree = self.tree();
         for ancestor in path.ancestors().skip(1) {
             if ancestor != Path::new("/") && !ancestor.as_os_str().is_empty() {
-                tree.nodes.entry(ancestor.to_path_buf()).or_insert(Node::Dir);
+                tree.nodes
+                    .entry(ancestor.to_path_buf())
+                    .or_insert(Node::Dir);
             }
         }
         let inode = if let Some(Node::File(inode)) = tree.node(path) {
@@ -531,7 +613,9 @@ impl MemFs {
     }
 
     pub fn symlink(&self, target: impl Into<PathBuf>, link: impl AsRef<Path>) {
-        self.tree().nodes.insert(link.as_ref().to_path_buf(), Node::Symlink(target.into()));
+        self.tree()
+            .nodes
+            .insert(link.as_ref().to_path_buf(), Node::Symlink(target.into()));
     }
 
     /// Every path in the tree with its kind, in path order.
@@ -555,7 +639,10 @@ impl MemFs {
             match node {
                 Node::Dir => std::fs::create_dir_all(&target)?,
                 Node::File(inode) => {
-                    std::fs::write(&target, data.get(&inode).map(Vec::as_slice).unwrap_or_default())?;
+                    std::fs::write(
+                        &target,
+                        data.get(&inode).map(Vec::as_slice).unwrap_or_default(),
+                    )?;
                 }
                 Node::Symlink(link) => std::os::unix::fs::symlink(link, &target)?,
             }
@@ -580,7 +667,11 @@ impl MemFs {
     fn open_file(&self, path: &Path, mode: OpenMode) -> io::Result<Box<dyn FsFile>> {
         let inode = self.mutate(Op::Open, &[path], |tree| tree.open(path, mode))?;
         *self.tree().handles.entry(inode).or_default() += 1;
-        Ok(Box::new(MemFile { fs: self.clone(), path: path.to_path_buf(), inode }))
+        Ok(Box::new(MemFile {
+            fs: self.clone(),
+            path: path.to_path_buf(),
+            inode,
+        }))
     }
 }
 
@@ -622,7 +713,10 @@ impl FsFile for MemFile {
             Some(Effect::Short) => &bytes[..bytes.len() / 2],
             Some(Effect::After) | None => bytes,
         };
-        tree.data.entry(self.inode).or_default().extend_from_slice(written);
+        tree.data
+            .entry(self.inode)
+            .or_default()
+            .extend_from_slice(written);
         match effect {
             Some(Effect::Short) => Err(short_write()),
             Some(Effect::After) => Err(injected(Op::Write)),
@@ -721,7 +815,10 @@ impl Fs for MemFs {
             Some(Node::Dir) => Ok(tree
                 .children(path)
                 .filter_map(|(child, node)| {
-                    Some(DirEntry { name: child.file_name()?.to_os_string(), kind: mem_kind(node) })
+                    Some(DirEntry {
+                        name: child.file_name()?.to_os_string(),
+                        kind: mem_kind(node),
+                    })
                 })
                 .collect()),
             Some(_) => Err(io::Error::from(io::ErrorKind::NotADirectory)),
@@ -751,7 +848,10 @@ impl Fs for MemFs {
             tree.locks.remove(path);
             return Err(injected(Op::Open));
         }
-        Ok(Some(FsLock(Box::new(MemLock { fs: self.clone(), path: path.to_path_buf() }))))
+        Ok(Some(FsLock(Box::new(MemLock {
+            fs: self.clone(),
+            path: path.to_path_buf(),
+        }))))
     }
 
     fn set_dir_mode(&self, path: &Path, _mode: u32) -> io::Result<()> {
@@ -825,7 +925,10 @@ mod tests {
         fs.put("/s/.state.json.tmp", "y");
         fs.fail_state_publication();
         fs.rename(Path::new("/s/a"), Path::new("/s/b")).unwrap();
-        assert!(fs.rename(Path::new("/s/.state.json.tmp"), Path::new("/s/state.json")).is_err());
+        assert!(
+            fs.rename(Path::new("/s/.state.json.tmp"), Path::new("/s/state.json"))
+                .is_err()
+        );
         assert!(fs.contents("/s/state.json").is_none());
     }
 
@@ -844,7 +947,9 @@ mod tests {
         dir(&fs, "/s");
         fs.put("/s/a", "x");
         fs.put("/s/b", "y");
-        let error = fs.rename_noreplace(Path::new("/s/a"), Path::new("/s/b")).unwrap_err();
+        let error = fs
+            .rename_noreplace(Path::new("/s/a"), Path::new("/s/b"))
+            .unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::AlreadyExists);
         assert_eq!(fs.contents("/s/b").unwrap(), b"y");
     }
@@ -855,7 +960,8 @@ mod tests {
         dir(&fs, "/s");
         dir(&fs, "/s/t");
         fs.put("/s/t/x", "1");
-        fs.rename_noreplace(Path::new("/s/t"), Path::new("/s/u")).unwrap();
+        fs.rename_noreplace(Path::new("/s/t"), Path::new("/s/u"))
+            .unwrap();
         assert_eq!(fs.contents("/s/u/x").unwrap(), b"1");
         assert_eq!(fs.kind(Path::new("/s/t")).unwrap(), None);
     }
@@ -878,7 +984,10 @@ mod tests {
         fs.symlink("/s/real", "/s/link");
         assert!(fs.open_read(Path::new("/s/link")).is_err());
         assert!(fs.open_append(Path::new("/s/link")).is_err());
-        assert_eq!(fs.kind(Path::new("/s/link")).unwrap(), Some(FileKind::Symlink));
+        assert_eq!(
+            fs.kind(Path::new("/s/link")).unwrap(),
+            Some(FileKind::Symlink)
+        );
     }
 
     #[test]
@@ -893,8 +1002,14 @@ mod tests {
         assert_eq!(
             entries,
             [
-                DirEntry { name: "d".into(), kind: FileKind::Dir },
-                DirEntry { name: "f".into(), kind: FileKind::File }
+                DirEntry {
+                    name: "d".into(),
+                    kind: FileKind::Dir
+                },
+                DirEntry {
+                    name: "f".into(),
+                    kind: FileKind::File
+                }
             ]
         );
     }
@@ -913,7 +1028,10 @@ mod tests {
     #[test]
     fn create_dir_needs_a_parent() {
         let fs = MemFs::new();
-        assert_eq!(fs.create_dir(Path::new("/a/b")).unwrap_err().kind(), io::ErrorKind::NotFound);
+        assert_eq!(
+            fs.create_dir(Path::new("/a/b")).unwrap_err().kind(),
+            io::ErrorKind::NotFound
+        );
     }
 
     #[test]
@@ -942,7 +1060,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("a"), "x").unwrap();
         std::fs::write(dir.path().join("b"), "y").unwrap();
-        let error = DiskFs::default().rename_noreplace(&dir.path().join("a"), &dir.path().join("b")).unwrap_err();
+        let error = DiskFs::default()
+            .rename_noreplace(&dir.path().join("a"), &dir.path().join("b"))
+            .unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::AlreadyExists);
     }
 
@@ -951,8 +1071,15 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("real"), "x").unwrap();
         std::os::unix::fs::symlink(dir.path().join("real"), dir.path().join("link")).unwrap();
-        assert!(DiskFs::default().open_read(&dir.path().join("link")).is_err());
-        assert_eq!(DiskFs::default().kind(&dir.path().join("link")).unwrap(), Some(FileKind::Symlink));
+        assert!(
+            DiskFs::default()
+                .open_read(&dir.path().join("link"))
+                .is_err()
+        );
+        assert_eq!(
+            DiskFs::default().kind(&dir.path().join("link")).unwrap(),
+            Some(FileKind::Symlink)
+        );
     }
 
     #[test]
@@ -963,8 +1090,13 @@ mod tests {
             let mut file = fs.create_truncate(Path::new("/s/.tmp")).unwrap();
             file.write_all(b"document").unwrap();
             drop(file);
-            fs.rename(Path::new("/s/.tmp"), Path::new("/s/state.json")).unwrap();
-            assert!(fs.stored_files() <= 2, "round {round}: {} stored", fs.stored_files());
+            fs.rename(Path::new("/s/.tmp"), Path::new("/s/state.json"))
+                .unwrap();
+            assert!(
+                fs.stored_files() <= 2,
+                "round {round}: {} stored",
+                fs.stored_files()
+            );
         }
         fs.remove_file(Path::new("/s/state.json")).unwrap();
         assert_eq!(fs.stored_files(), 0);

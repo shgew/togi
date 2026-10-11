@@ -22,7 +22,10 @@ pub enum FoldError {
 }
 
 fn display_last(last: Option<Seq>) -> String {
-    last.map_or_else(|| "the start of the journal".to_owned(), |seq| seq.to_string())
+    last.map_or_else(
+        || "the start of the journal".to_owned(),
+        |seq| seq.to_string(),
+    )
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -188,13 +191,16 @@ impl State {
                 self.push_open(event, None);
             }
             Payload::SmuWrite(_) | Payload::SmuError(_) => {
-                self.open
-                    .retain(|open| !(open.kind == EventKind::SmuIntent && event.cause.contains(&open.seq)));
+                self.open.retain(|open| {
+                    !(open.kind == EventKind::SmuIntent && event.cause.contains(&open.seq))
+                });
             }
             Payload::TrialIntent(intent) => self.push_open(event, Some(intent.trial.clone())),
             Payload::TrialEnd(end) => {
-                self.open
-                    .retain(|open| !(open.kind == EventKind::TrialIntent && open.trial.as_ref() == Some(&end.trial)));
+                self.open.retain(|open| {
+                    !(open.kind == EventKind::TrialIntent
+                        && open.trial.as_ref() == Some(&end.trial))
+                });
             }
             Payload::CrashDetected(crash) => {
                 self.open.retain(|open| open.boot != crash.previous_boot);
