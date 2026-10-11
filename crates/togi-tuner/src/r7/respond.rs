@@ -555,7 +555,7 @@ impl Run {
         let mut target: Option<Target> = None;
         let own = match failing.volts {
             Some(request) => {
-                let failing_top = if charge.stepped { charge.rail } else { request };
+                let failing_top = charge.rail;
                 target = if charge.named {
                     let mhz = self
                         .ccd_of(id)

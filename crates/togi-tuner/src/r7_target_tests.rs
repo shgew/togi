@@ -146,6 +146,36 @@ fn r7_unattributed_voltage_target() {
 }
 
 #[test]
+fn r7_tied_top_target_must_beat_the_ccd_maximum() {
+    for (pass_top, admitted) in [(1.1, false), (1.104, true)] {
+        let mut j = Journal::r7_session();
+        let n = needed(&j);
+        passes(
+            &mut j,
+            n,
+            &[0, 1],
+            &[-26, -30, -30, -30],
+            &report(&[(0, pass_top), (1, 1.08)], &[0]),
+        );
+        j.r7_fact(
+            false,
+            &[0, 1],
+            &ALL_30,
+            &report(&[(0, 1.1), (1, 1.0991)], &[0, 1]),
+        );
+        let (decision, why) = r7_backoff(&j);
+        assert_eq!(why.core, core(1), "{pass_top}");
+        if admitted {
+            assert_toward(&why, 1.0991, pass_top);
+            assert_eq!(moved(&decision), (1, -28));
+        } else {
+            assert_no_pass(&why, 1.0991);
+            assert_eq!(moved(&decision), (1, -29));
+        }
+    }
+}
+
+#[test]
 fn r7_named_target_transfers_across_loads_without_fail_clock() {
     let mut j = Journal::r7_session();
     let n = needed(&j);
