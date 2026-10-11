@@ -451,3 +451,84 @@ fn an_attributed_idle_failure_during_a_group_application_ends_the_hunt_direct() 
     j.decide(decision);
     j.assert_resumes();
 }
+
+fn member_probe_oracle(plan: &TrialPlan) -> Outcome {
+    let deep = |core_id: u8, limit: i64| {
+        plan.profile
+            .get(core(core_id))
+            .is_some_and(|offset| offset.get() <= limit)
+    };
+    if deep(0, -7) && deep(1, -9) {
+        Outcome::Failure
+    } else {
+        Outcome::Pass
+    }
+}
+
+fn probing(redundant: usize, settled_probes: usize) -> (Journal, u64, crate::Action) {
+    let mut j = started(4);
+    let mut seen: Vec<(Vec<i64>, u32, Outcome)> = Vec::new();
+    for _ in 0..400 {
+        let action = j.next();
+        if let Action::Decide(DecisionAction {
+            payload: DecisionPayload::HuntGroup(group),
+            ..
+        }) = &action
+        {
+            if group.probe.is_some() {
+                if seen.len() == settled_probes {
+                    break;
+                }
+                let values: Vec<i64> = group.profile.iter().map(|(_, o)| o.get()).collect();
+                let plan = j.manual(
+                    Regime::R6,
+                    0,
+                    Load::Many(set(&[0, 1, 2, 3])),
+                    Condition::Together,
+                    &values,
+                    group.duration_s,
+                );
+                seen.push((values, group.duration_s, member_probe_oracle(&plan)));
+            }
+        }
+        j.step(&mut |plan: &TrialPlan| member_probe_oracle(plan));
+    }
+    assert_eq!(seen.len(), settled_probes, "the hunt reached the probe");
+    for (values, duration, outcome) in &seen {
+        for _ in 0..redundant {
+            j.carry(
+                "20261002T004254Z",
+                (Regime::R6, 0, &[0, 1, 2, 3], *duration),
+                Condition::Together,
+                values,
+                *outcome,
+            );
+        }
+    }
+    j.state.visits();
+    let action = j.next();
+    let visits = j.state.visits();
+    (j, visits, action)
+}
+
+#[test]
+fn hunt_cost_distinct_probes() {
+    for settled_probes in [2, 3, 4] {
+        let (small, small_visits, small_next) = probing(3, settled_probes);
+        let (large, large_visits, large_next) = probing(300, settled_probes);
+        assert!(small_visits > 0);
+        assert_eq!(small_visits, large_visits, "{settled_probes} probes");
+        let probe_of = |action: &Action| match action {
+            Action::Decide(DecisionAction {
+                payload: DecisionPayload::HuntGroup(group),
+                ..
+            }) => (group.probe, group.profile),
+            other => panic!("expected the next probe group, got {other:?}"),
+        };
+        assert_eq!(probe_of(&small_next), probe_of(&large_next));
+        assert_eq!(
+            small.run().hunt_groups().len(),
+            large.run().hunt_groups().len()
+        );
+    }
+}
