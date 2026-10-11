@@ -368,8 +368,11 @@ fn a_resumed_session_refuses_added_or_removed_cores_before_any_append() {
         else {
             panic!("not refused");
         };
-        let ids =
-            |set: togi_machine::CoreSet| set.iter().map(|core| core.get()).collect::<Vec<_>>();
+        let ids = |set: togi_machine::CoreSet| {
+            set.into_iter()
+                .map(togi_machine::CoreId::get)
+                .collect::<Vec<_>>()
+        };
         assert_eq!(ids(got_added), added);
         assert_eq!(ids(got_removed), removed);
         assert_eq!(crate::testing::kinds_of(session.appender()), before);

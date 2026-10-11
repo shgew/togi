@@ -144,7 +144,7 @@ pub fn respond(
     let zero = zero(smu, &access);
     let mut readbacks = Vec::new();
     if !matches!(zero, Err(Error::Crashed)) {
-        for core in cores.iter() {
+        for core in cores {
             let result = smu.offset(core);
             let crashed = matches!(result, Err(Error::Crashed));
             readbacks.push(Readback { core, result });

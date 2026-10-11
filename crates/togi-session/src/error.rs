@@ -92,8 +92,8 @@ pub enum SessionError {
     #[error(
         "the session was recorded on other cores than this machine has now (added: {}; removed: {}); \
          archive the session to start over",
-        listed(added),
-        listed(removed)
+        listed(*added),
+        listed(*removed)
     )]
     TopologyChanged { added: CoreSet, removed: CoreSet },
     #[error(
@@ -134,7 +134,7 @@ impl SessionError {
     }
 }
 
-fn listed(cores: &CoreSet) -> String {
+fn listed(cores: CoreSet) -> String {
     if cores.is_empty() {
         return "none".to_owned();
     }
