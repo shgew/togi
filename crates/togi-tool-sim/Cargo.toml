@@ -1,0 +1,22 @@
+[package]
+name = "togi-tool-sim"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "The simulator suite check: suite expansion into runs, shard partition and the coverage check over shard manifests"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+togi-journal.workspace = true
+togi-tool-audit.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+togi-sim.workspace = true
+
+[lints]
+workspace = true
