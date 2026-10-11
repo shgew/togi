@@ -535,7 +535,8 @@ fn a_payload_that_reads_back_different_is_refused_without_poison_or_seq() {
 
 fn fine_stamp(nanos: i64, mono: Option<std::time::Duration>) -> Stamp {
     Stamp {
-        time: jiff::Timestamp::from_nanosecond(1_700_000_000_000_000_000 + i128::from(nanos)).unwrap(),
+        time: jiff::Timestamp::from_nanosecond(1_700_000_000_000_000_000 + i128::from(nanos))
+            .unwrap(),
         mono,
     }
 }
