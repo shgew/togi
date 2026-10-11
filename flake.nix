@@ -159,9 +159,21 @@
                 platforms = [ system ];
               };
             };
+          comparison = import ./nix/comparison.nix {
+            inherit pkgs lib;
+            package = config.checks.package;
+            goSource = lib.fileset.toSource {
+              root = ./.;
+              fileset = goFiles;
+            };
+            revision = inputs.self.rev or inputs.self.dirtyRev or "dev";
+          };
         in
         {
-          packages.default = togi (inputs.self.shortRev or inputs.self.dirtyShortRev or "dev");
+          packages = {
+            default = togi (inputs.self.shortRev or inputs.self.dirtyShortRev or "dev");
+          }
+          // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux comparison.packages;
 
           devShells.default = pkgs.mkShell (
             {
@@ -313,6 +325,7 @@
               package = inputs.self.checks.x86_64-linux.package;
             };
           }
+          // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux comparison.checks
           // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux (
             let
               vm = import ./nix/vm-test.nix {
