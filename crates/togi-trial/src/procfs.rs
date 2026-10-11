@@ -10,7 +10,8 @@ const EXCERPT: usize = 256;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct Stat {
     pub(crate) state: char,
-    pub(crate) pgrp: u64,
+    /// `-1` for a task the kernel is tearing down: it no longer has a group to print.
+    pub(crate) pgrp: i64,
     pub(crate) utime: u64,
     pub(crate) stime: u64,
     pub(crate) starttime: u64,
@@ -47,6 +48,12 @@ fn field(fields: &[&str], number: usize, text: &str) -> Result<u64, StatError> {
     }
 }
 
+fn signed_field(fields: &[&str], number: usize, text: &str) -> Result<i64, StatError> {
+    fields[number - 3]
+        .parse::<i64>()
+        .map_err(|_| StatError::new("non-numeric field", text))
+}
+
 /// Splits after the last `)` so a command name may hold spaces and parentheses; fields are named
 /// by their number in proc(5).
 pub(crate) fn parse_stat(text: &str) -> Result<Stat, StatError> {
@@ -60,7 +67,7 @@ pub(crate) fn parse_stat(text: &str) -> Result<Stat, StatError> {
     let processor = field(&fields, 39, text)?;
     Ok(Stat {
         state: fields[0].chars().next().unwrap_or('?'),
-        pgrp: field(&fields, 5, text)?,
+        pgrp: signed_field(&fields, 5, text)?,
         utime: field(&fields, 14, text)?,
         stime: field(&fields, 15, text)?,
         starttime: field(&fields, 22, text)?,
@@ -604,6 +611,16 @@ mod tests {
             starttime: 9,
         };
         assert_eq!(proc.alive(&process), Ok(false));
+        write(
+            &dir,
+            "30/stat",
+            &stat_line("w", 'X', &[(5, "-1"), (6, "-1"), (22, "9")]),
+        );
+        assert_eq!(
+            proc.alive(&process),
+            Ok(false),
+            "a task being torn down prints -1 for its group and session"
+        );
         write(&dir, "30/stat", "broken");
         assert!(proc.alive(&process).is_err());
         assert_eq!(proc.alive(&ScopeProcess { pid: 31, ..process }), Ok(false));

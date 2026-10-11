@@ -312,7 +312,7 @@ impl Escaped {
         self.pid
     }
 
-    pub(super) fn group(&self) -> Option<u64> {
+    pub(super) fn group(&self) -> Option<i64> {
         stat_of(self.pid).map(|stat| stat.pgrp)
     }
 
@@ -997,7 +997,7 @@ fn real_process_a_zombie_leader_keeps_its_group_signalable_until_it_is_reaped() 
         let descendant = published_holder(&dir.path().join("descendant.pid"));
         assert_eq!(
             descendant.group(),
-            Some(u64::from(child.pid())),
+            Some(i64::from(child.pid())),
             "the descendant is in the leader's group"
         );
         assert!(descendant.alive());
