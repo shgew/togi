@@ -49,15 +49,30 @@ impl OutputFacts {
         no_color: Option<&OsStr>,
         journal_stream: Option<&OsStr>,
     ) -> Self {
-        let Some(identity) = identity_of(stream) else {
-            return Self::default();
-        };
+        Self::from_parts(
+            stream.as_fd().is_terminal(),
+            identity_of(stream),
+            no_color,
+            journal_stream,
+        )
+    }
+
+    /// A stream without a readable identity (Darwin's `dev_t` is signed, and devfs device numbers can be
+    /// negative) is still a terminal when isatty says so; it only cannot be the journald stream.
+    fn from_parts(
+        is_terminal: bool,
+        identity: Option<StreamIdentity>,
+        no_color: Option<&OsStr>,
+        journal_stream: Option<&OsStr>,
+    ) -> Self {
         Self {
-            is_terminal: stream.as_fd().is_terminal(),
+            is_terminal,
             no_color: no_color.is_some_and(|value| !value.is_empty()),
-            journald: journal_stream
-                .and_then(parse_journal_stream)
-                .is_some_and(|named| named == identity),
+            journald: identity.is_some_and(|identity| {
+                journal_stream
+                    .and_then(parse_journal_stream)
+                    .is_some_and(|named| named == identity)
+            }),
         }
     }
 }
@@ -156,6 +171,19 @@ mod tests {
             .unwrap();
         let facts = OutputFacts::detect(&slave, None, None);
         drop(master);
+        assert_eq!(
+            facts,
+            OutputFacts {
+                is_terminal: true,
+                no_color: false,
+                journald: false
+            }
+        );
+    }
+
+    #[test]
+    fn a_terminal_without_a_readable_identity_is_still_a_terminal_but_never_journald() {
+        let facts = OutputFacts::from_parts(true, None, None, Some(OsStr::new("8:12345")));
         assert_eq!(
             facts,
             OutputFacts {

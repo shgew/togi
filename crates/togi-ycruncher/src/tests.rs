@@ -183,6 +183,7 @@ fn select_compares_non_utf8_names_bytewise() {
     );
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn non_utf8_names_are_selected_and_checked() {
     let pkg = TempDir::new().unwrap();
@@ -231,6 +232,7 @@ fn non_utf8_names_are_selected_and_checked() {
     ));
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn only_a_non_matching_non_utf8_name_is_no_binary() {
     let pkg = TempDir::new().unwrap();
