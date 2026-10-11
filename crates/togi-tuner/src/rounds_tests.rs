@@ -110,6 +110,43 @@ fn zero_movable_candidates_still_run_the_full_confirmation_cycle() {
 }
 
 #[test]
+fn zero_movable_candidates_never_conclude_at_phase1_end() {
+    let mut j = Journal::new(&[0], &[Start::solo(-10, -10)]);
+    drive(&mut j, 4000, |j| j.run().phases.phase1_end().is_some());
+    assert_eq!(j.run().phases.clean_cycles(), 0);
+    assert_eq!(j.run().phases.concluded(), None);
+    assert!(!j.run().round_due());
+    let next = j.next_decision();
+    let DecisionPayload::CheckingCycle(cycle) = &next.payload else {
+        panic!("expected the confirmation cycle to start, got {next:?}");
+    };
+    assert_eq!(cycle.event, togi_journal::CycleEvent::Start);
+    assert!(
+        cycle
+            .reason
+            .as_deref()
+            .unwrap_or_default()
+            .contains("confirmation"),
+        "{cycle:?}"
+    );
+}
+
+#[test]
+fn phase2_round_1_moves_every_candidate_one_count_from_the_phase1_cycle() {
+    let mut j = solo_cores(&[-10, -10, -10, -10], -11);
+    drive(&mut j, 4000, |j| j.run().phases.phase1_end().is_some());
+    let phase1_end = j.run().phases.phase1_end().unwrap();
+    drive(&mut j, 4000, |j| j.run().rounds.active().is_some());
+    let start = round_starts(&j.events)[0];
+    assert_eq!(start.round.get(), 1);
+    assert_eq!(start.cores, set(&[0, 1, 2, 3]));
+    assert_eq!(start.profile, j.profile(&[-11, -11, -11, -11]).offsets());
+    assert_eq!(start.target, j.profile(&[-11, -11, -11, -11]).offsets());
+    assert_eq!(start.base_seq, Some(phase1_end));
+    j.assert_resumes();
+}
+
+#[test]
 fn a_blamed_round_failure_yields_every_unloaded_mover_then_backs_off_the_loaded_one() {
     let mut j = solo_cores(&[-10, -10, -10, -10], -11);
     drive(&mut j, 4000, |j| j.run().phases.phase1_end().is_some());
