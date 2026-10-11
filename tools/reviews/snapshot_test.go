@@ -373,6 +373,7 @@ func TestSnapshotTooLargeDiffBuiltLocally(t *testing.T) {
 	if got := readFile(t, filepath.Join(dir, "pr.diff")); got != samplePR {
 		t.Error("pr.diff is not the locally built diff byte for byte")
 	}
+	checkGolden(t, "snapshot/manifest.golden", readFile(t, filepath.Join(dir, "manifest.json")))
 	var m manifest
 	if err := json.Unmarshal([]byte(readFile(t, filepath.Join(dir, "manifest.json"))), &m); err != nil {
 		t.Fatal(err)
@@ -383,6 +384,17 @@ func TestSnapshotTooLargeDiffBuiltLocally(t *testing.T) {
 	}
 	if m.PRFiles != len(want) || m.PRLines != totalLines(want) || len(m.Files) != len(want) {
 		t.Errorf("manifest holds %d files, %d lines; the local diff has %d files, %d lines", m.PRFiles, m.PRLines, len(want), totalLines(want))
+	}
+	for i, f := range m.Files {
+		if f.Exclusion != "" {
+			if _, err := os.Stat(filepath.Join(dir, hunkFileName(i+1))); !os.IsNotExist(err) {
+				t.Errorf("excluded file %s has a hunk file: %v", f.Path, err)
+			}
+			continue
+		}
+		if got := readFile(t, filepath.Join(dir, f.HunkFile)); got != want[i].Text {
+			t.Errorf("%s is not %s's section of the local diff", f.HunkFile, f.Path)
+		}
 	}
 }
 
