@@ -932,6 +932,43 @@ fn a_rail_whose_deficit_stays_small_is_accepted_however_large_its_rate() {
 }
 
 #[test]
+fn a_rail_whose_common_clock_slopes_hide_its_deficit_at_the_clock_extremes_is_refused() {
+    // Both clock slopes are 1e16 V per 100 MHz, so at the extreme clocks the request and the requirement are
+    // about 1e17 to 1e23 V and 1.02 V against 1.2 V rounds away. At the 5000 MHz reference the deficit is
+    // 0.18 V over a 1e-310 V margin: a rate of 1.8e309 per second, which no f64 holds.
+    let mut definition = rewrite_cores(committed_machine("shared-voltage.json"), |core| {
+        core.base_v = 1.2;
+        core.threshold_v = 1.2;
+        core.count_v = 0.0;
+        core.clock_v_per_100mhz = 1e16;
+        core.threshold_clock_v_per_100mhz = 1e16;
+    });
+    let rail = definition.shared_voltage.as_mut().expect("a rail");
+    rail.rate = 1.0;
+    rail.margin_v = 1e-310;
+    for workload in rail.workload.values_mut() {
+        workload.reference_mhz = 5000.0;
+        workload.full_mhz = [5000.0; 2];
+        workload.idle_gain_mhz = 0.0;
+        workload.package_mhz_per_w = 0.0;
+        workload.balance_mhz_per_w = 0.0;
+    }
+    let error = invalid(&definition);
+    assert_eq!(error.problem, Problem::Overflow, "{error}");
+    assert!(
+        error.path.starts_with("shared_voltage.workload.") && error.path.ends_with(".core[0]"),
+        "{error}"
+    );
+    // With a margin in range the same slopes are harmless: the rates stay finite at the reference clock.
+    definition.shared_voltage.as_mut().expect("a rail").margin_v = 1.0;
+    let model = model(&definition);
+    let two = load(r7(), r7_workload(0), &[0, 1], 1.0);
+    let sources = model.sources(&offsets(&[-50; 16]), &two).expect("shape");
+    assert_eq!(sources.len(), 2);
+    assert!(sources.iter().all(|source| source.rate.is_finite()));
+}
+
+#[test]
 fn requirement_coefficients_are_finite_and_nonnegative_without_an_upper_bound() {
     let workload = r7_workload(0);
     let set = |coefficient: f64| {

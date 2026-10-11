@@ -180,25 +180,29 @@ fn resolve_core(
             .transpose()?,
     };
     // The rail is at least this core's own request, so the deficit at runtime is at most the
-    // requirement minus that request. Requirement and request are linear in the offset (-50..=0) and in
-    // the clock offset from the reference (1..=u32::MAX MHz, what a trial reports), so the largest
-    // deficit is at one of four corners, taken as one difference so that equal bases and slopes cancel.
-    // A voltage that is not finite, or a hazard beyond `f64::MAX` at the largest deficit, is
-    // unrepresentable: the core is refused rather than left to produce an infinite source.
+    // requirement minus that request. Both are linear in the offset (-50..=0) and in the clock offset
+    // from the reference (1..=u32::MAX MHz, what a trial reports), so the largest deficit is at one of
+    // four corners. It is formed from the differences of the bases and slopes, so a huge clock term common
+    // to both cannot round a small deficit away, plus the rounding the runtime's own subtraction of two
+    // voltages of at most the corners' magnitude can add. A voltage that is not finite, or a hazard
+    // beyond `f64::MAX` at the largest deficit, is unrepresentable: the core is refused rather than left
+    // to produce an infinite source.
     let mut worst = f64::NEG_INFINITY;
     for above in [1.0 - reference_mhz, MAX_MHZ - reference_mhz] {
         for offset in [-50.0, 0.0] {
             let request =
                 core.base_v + core.count_v * offset + core.clock_v_per_100mhz * above / 100.0;
             let threshold = core.threshold_v + core.threshold_clock_v_per_100mhz * above / 100.0;
-            let deficit = threshold - request;
-            if !deficit.is_finite() {
+            if !request.is_finite() || !threshold.is_finite() {
                 return Err(path.error(Problem::Overflow));
             }
-            worst = worst.max(deficit);
+            let exact = (core.threshold_v - core.base_v) - core.count_v * offset
+                + (core.threshold_clock_v_per_100mhz - core.clock_v_per_100mhz) * above / 100.0;
+            let rounding = 4.0 * f64::EPSILON * request.abs().max(threshold.abs());
+            worst = worst.max(exact + rounding).max(threshold - request);
         }
     }
-    if worst > 0.0 && !softplus_rate(rail, worst).is_finite() {
+    if !worst.is_finite() || (worst > 0.0 && !softplus_rate(rail, worst).is_finite()) {
         return Err(path.error(Problem::Overflow));
     }
     Ok(core)

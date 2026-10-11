@@ -384,17 +384,17 @@ mod tests {
 
     #[test]
     fn a_directory_that_cannot_be_resolved_is_reported_with_the_overlay_file_that_needed_it() {
-        let missing = Path::new("/nonexistent-togi-sim-directory");
-        let source = canonical_dir(missing).expect_err("no such directory");
+        let root = tempfile::tempdir().expect("temporary directory");
+        let missing = root.path().join("never-created");
+        let source = canonical_dir(&missing).expect_err("no such directory");
         let error = LoadError::Directory {
             path: PathBuf::from("overlays/leaf.json"),
-            directory: missing.to_path_buf(),
+            directory: missing.clone(),
             source,
         };
         let message = error.to_string();
         assert!(
-            message.contains("overlays/leaf.json")
-                && message.contains("nonexistent-togi-sim-directory"),
+            message.contains("overlays/leaf.json") && message.contains(&*missing.to_string_lossy()),
             "{message}"
         );
     }
