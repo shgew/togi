@@ -327,6 +327,29 @@ fn escalation_count_survives_resume() {
 }
 
 #[test]
+fn an_escalated_failure_whose_chosen_core_is_shallower_stays_pending_without_a_hunt() {
+    let mut j = Journal::r7_session();
+    let played = j.play("AAA");
+    let failed = j.values();
+    let (failure, _, _) = j.located();
+    assert_eq!(failure, played.last_failure());
+
+    let mut shallower = failed.clone();
+    shallower[0] += 1;
+    j.place(0, shallower[0]);
+    assert_eq!(j.values()[1], failed[1]);
+    assert_eq!(j.run().r7_decision(), None);
+    assert_eq!(j.run().locate_due(), None);
+    assert!(j.run().r7.open.contains_key(&failure));
+    j.assert_resumes();
+
+    j.place(0, failed[0]);
+    let (again, _, _) = j.located();
+    assert_eq!(again, failure);
+    j.assert_resumes();
+}
+
+#[test]
 fn escalation_when_loaded_cores_cannot_back_off() {
     let mut j = Journal::r7_session();
     j.place(0, 0);

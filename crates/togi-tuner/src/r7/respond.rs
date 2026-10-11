@@ -669,13 +669,16 @@ impl Run {
         }
         if link.is_none() {
             if let Some(reason) = self.locatable(&view) {
-                return unhandled
+                let required = unhandled
                     .iter()
-                    .any(|&core| !self.answered(&view, core))
-                    .then_some(R7Route::Locate {
+                    .find_map(|&core| self.core_response(&view, core, None))?;
+                return Some(match required {
+                    R7Response::ReadRanking => R7Route::Respond(Box::new(R7Response::ReadRanking)),
+                    _ => R7Route::Locate {
                         failure: record.seq,
                         reason,
-                    });
+                    },
+                });
             }
         }
         unhandled
