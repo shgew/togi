@@ -184,6 +184,14 @@ impl ProcCtx {
     }
 }
 
+/// A process found by discovery: `alive` says whether it lives, `visible` whether it is still in
+/// its scope, out of reach of a scope kill when false.
+#[derive(Clone)]
+pub(crate) struct Recovered {
+    pub(crate) alive: Rc<Cell<bool>>,
+    pub(crate) visible: Rc<Cell<bool>>,
+}
+
 type LaunchScript = Box<dyn FnMut(usize, &LaunchCommand) -> Launch>;
 type SystemdScript = Box<dyn FnMut(&Systemd) -> Option<Reply>>;
 
@@ -193,10 +201,10 @@ struct Shared {
     systemd_calls: RefCell<Vec<(Systemd, Instant)>>,
     launch_script: RefCell<LaunchScript>,
     systemd_script: RefCell<SystemdScript>,
-    units: RefCell<Vec<ScopeName>>,
+    units: RefCell<Vec<String>>,
     ready_default: Cell<bool>,
     signal_error_default: Cell<Option<SignalErrorKind>>,
-    recovered: RefCell<Vec<(ScopeProcess, Rc<Cell<bool>>)>>,
+    recovered: RefCell<Vec<(ScopeProcess, Recovered)>>,
     next_pid: Cell<u32>,
 }
 
@@ -277,22 +285,26 @@ impl Fake {
         self.shared.systemd_calls.borrow().clone()
     }
 
-    pub(crate) fn add_unit(&self, scope: ScopeName) {
-        self.shared.units.borrow_mut().push(scope);
+    /// A unit as `systemctl list-units` prints its name, valid or not.
+    pub(crate) fn add_unit(&self, unit: &str) {
+        self.shared.units.borrow_mut().push(unit.to_owned());
     }
 
-    pub(crate) fn units(&self) -> Vec<ScopeName> {
+    pub(crate) fn units(&self) -> Vec<String> {
         self.shared.units.borrow().clone()
     }
 
-    /// A process found in a scope by `/proc` discovery; the returned flag says whether it lives.
-    pub(crate) fn add_recovered(&self, process: ScopeProcess) -> Rc<Cell<bool>> {
-        let alive = Rc::new(Cell::new(true));
+    /// A process found in a scope by `/proc` discovery.
+    pub(crate) fn add_recovered(&self, process: ScopeProcess) -> Recovered {
+        let recovered = Recovered {
+            alive: Rc::new(Cell::new(true)),
+            visible: Rc::new(Cell::new(true)),
+        };
         self.shared
             .recovered
             .borrow_mut()
-            .push((process, Rc::clone(&alive)));
-        alive
+            .push((process, recovered.clone()));
+        recovered
     }
 
     fn deliver_to_scope(&self, scope: &ScopeName, signal: KillSignal) {
@@ -301,9 +313,9 @@ impl Fake {
                 let _ = process.to_script.send(Delivery::Scope(signal));
             }
         }
-        for (process, alive) in self.shared.recovered.borrow().iter() {
-            if &process.scope == scope && signal == KillSignal::Kill {
-                alive.set(false);
+        for (process, recovered) in self.shared.recovered.borrow().iter() {
+            if &process.scope == scope && signal == KillSignal::Kill && recovered.visible.get() {
+                recovered.alive.set(false);
             }
         }
     }
@@ -464,10 +476,10 @@ impl Os for Fake {
                 let mut text = String::new();
                 match operation {
                     Systemd::Kill { scope, signal } => self.deliver_to_scope(scope, *signal),
-                    Systemd::Stop { scope } => self.shared.units.borrow_mut().retain(|u| u != scope),
+                    Systemd::Stop { scope } => self.shared.units.borrow_mut().retain(|unit| *unit != scope.unit()),
                     Systemd::ListScopes => {
                         for unit in self.shared.units.borrow().iter() {
-                            text.push_str(&format!("{} loaded active running trial\n", unit.unit()));
+                            text.push_str(&format!("{unit} loaded active running trial\n"));
                         }
                     }
                     Systemd::Probe { .. } => {}
@@ -501,7 +513,7 @@ impl Os for Fake {
             .recovered
             .borrow()
             .iter()
-            .filter(|(_, alive)| alive.get())
+            .filter(|(_, recovered)| recovered.alive.get() && recovered.visible.get())
             .map(|(process, _)| process.clone())
             .collect())
     }
@@ -512,7 +524,7 @@ impl Os for Fake {
             .recovered
             .borrow()
             .iter()
-            .any(|(known, alive)| known == process && alive.get()))
+            .any(|(known, recovered)| known == process && recovered.alive.get()))
     }
 }
 
