@@ -11,6 +11,7 @@ description = "Runs stress-program trials in confined systemd scopes and proves 
 hardware = []
 
 [dependencies]
+flate2.workspace = true
 nix = { workspace = true, features = ["user", "signal", "process"] }
 rustix = { workspace = true, features = ["fs", "process", "param", "pipe", "thread"] }
 serde_json.workspace = true

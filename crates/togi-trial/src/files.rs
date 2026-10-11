@@ -3,7 +3,7 @@ use std::fs::File;
 use std::io::{self, Write as _};
 use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
 use std::os::unix::ffi::OsStrExt;
-use std::os::unix::fs::MetadataExt;
+use std::os::unix::fs::{DirBuilderExt as _, MetadataExt};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -137,11 +137,7 @@ pub(crate) fn recreate(
     id: &TrialId,
     identity: Option<BackendIdentity>,
 ) -> Result<Container, PrepareError> {
-    let root =
-        std::path::absolute(root).map_err(|error| directory_error("resolve", root, error))?;
-    std::fs::create_dir_all(&root).map_err(|error| directory_error("create", &root, error))?;
-    let parent =
-        open_directory(None, &root).map_err(|error| directory_error("open", &root, error))?;
+    let TrialsRoot { path: root, dir: parent } = TrialsRoot::open(root, true)?;
     let mode = Mode::from_raw_mode(if identity.is_some() { 0o711 } else { 0o755 });
     fchmod(&parent, mode).map_err(|error| directory_error("set the mode of", &root, error))?;
     let path = root.join(id.as_str());
@@ -162,6 +158,98 @@ pub(crate) fn recreate(
         dir: Arc::new(dir),
         parent: Arc::new(parent),
     })
+}
+
+/// The directory holding every trial, reached by descriptor from its parent, the state directory.
+/// Both must belong to this process's user (the parent may also belong to root) and be writable by
+/// nobody else, so no other account can replace an entry below them; the trials directory itself
+/// is never a symlink.
+pub(crate) struct TrialsRoot {
+    pub(crate) path: PathBuf,
+    pub(crate) dir: OwnedFd,
+}
+
+fn trusted(fd: &OwnedFd, path: &Path, root_may_own: bool) -> Result<(), PrepareError> {
+    let stat = rustix::fs::fstat(fd).map_err(|error| directory_error("stat", path, error))?;
+    let euid = rustix::process::geteuid().as_raw();
+    let untrusted = |reason| PrepareError::Untrusted {
+        path: path.to_owned(),
+        reason,
+    };
+    if stat.st_uid != euid && !(root_may_own && stat.st_uid == 0) {
+        return Err(untrusted("it belongs to another user"));
+    }
+    if stat.st_mode & 0o022 != 0 {
+        return Err(untrusted("others can write to it"));
+    }
+    Ok(())
+}
+
+impl TrialsRoot {
+    pub(crate) fn open(root: &Path, create: bool) -> Result<Self, PrepareError> {
+        let path =
+            std::path::absolute(root).map_err(|error| directory_error("resolve", root, error))?;
+        let (Some(parent_path), Some(name)) = (path.parent(), path.file_name()) else {
+            return Err(PrepareError::NotDirectory { path });
+        };
+        if create {
+            std::fs::DirBuilder::new()
+                .recursive(true)
+                .mode(0o755)
+                .create(parent_path)
+                .map_err(|error| directory_error("create", parent_path, error))?;
+        }
+        let parent = open_directory(None, parent_path)
+            .map_err(|error| directory_error("open", parent_path, error))?;
+        trusted(&parent, parent_path, true)?;
+        let created = create
+            && match mkdirat(&parent, name, Mode::from_raw_mode(0o755)) {
+                Ok(()) => true,
+                Err(Errno::EXIST) => false,
+                Err(error) => return Err(directory_error("create", &path, error)),
+            };
+        let dir = open_directory(Some(parent.as_fd()), Path::new(name))
+            .map_err(|error| directory_error("open", &path, error))?;
+        if created {
+            fchmod(&dir, Mode::from_raw_mode(0o755))
+                .map_err(|error| directory_error("set the mode of", &path, error))?;
+        }
+        trusted(&dir, &path, false)?;
+        Ok(Self { path, dir })
+    }
+
+    /// One trial's directory below the root, never through a symlink.
+    pub(crate) fn trial(&self, id: &TrialId) -> Result<OwnedFd, PrepareError> {
+        open_directory(Some(self.dir.as_fd()), Path::new(id.as_str()))
+            .map_err(|error| directory_error("open", &self.path.join(id.as_str()), error))
+    }
+
+    /// The trial's conditions samples, plain or compressed, read through validated descriptors:
+    /// a symlink, FIFO or other nonregular file is never opened for reading.
+    pub(crate) fn samples(&self, id: &TrialId) -> Option<Box<dyn io::Read>> {
+        let trial = self.trial(id).ok()?;
+        let open = |name: &str| -> Result<File, Errno> {
+            let fd = openat(
+                &trial,
+                name,
+                OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC,
+                Mode::empty(),
+            )?;
+            let stat = rustix::fs::fstat(&fd)?;
+            if rustix::fs::FileType::from_raw_mode(stat.st_mode) != rustix::fs::FileType::RegularFile {
+                return Err(Errno::INVAL);
+            }
+            Ok(File::from(fd))
+        };
+        match open(togi_trialfiles::SAMPLES) {
+            Ok(file) => Some(Box::new(file)),
+            Err(Errno::NOENT) => {
+                let compressed = open(&format!("{}.gz", togi_trialfiles::SAMPLES)).ok()?;
+                Some(Box::new(flate2::read::MultiGzDecoder::new(compressed)))
+            }
+            Err(_) => None,
+        }
+    }
 }
 
 fn create_exclusive(dir: BorrowedFd<'_>, name: &str) -> Result<OwnedFd, Errno> {
@@ -261,6 +349,7 @@ mod tests {
     use crate::plan::InstanceName;
     use crate::testing::TestBackend;
     use std::fs;
+    use std::io::Read as _;
     use std::os::unix::fs::{PermissionsExt, symlink};
     use togi_machine::{CoreId, CpuId, Regime, pick_workload};
 
@@ -298,6 +387,77 @@ mod tests {
         assert_eq!(mode_of(&container.path), 0o711);
         let unscoped = recreate(&root, &id("t2"), None).unwrap();
         assert_eq!(mode_of(&unscoped.path), 0o755);
+    }
+
+    #[test]
+    fn a_symlinked_trials_directory_is_refused() {
+        let tmp = tempfile::tempdir().unwrap();
+        let real = tmp.path().join("real");
+        fs::create_dir(&real).unwrap();
+        symlink(&real, tmp.path().join("trials")).unwrap();
+        assert!(recreate(&tmp.path().join("trials"), &id("t1"), None).is_err());
+        assert!(!real.join("t1").exists());
+    }
+
+    #[test]
+    fn a_trials_directory_others_can_write_is_refused_before_any_change() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("trials");
+        fs::create_dir(&root).unwrap();
+        fs::create_dir(root.join("t1")).unwrap();
+        fs::set_permissions(&root, fs::Permissions::from_mode(0o777)).unwrap();
+        let error = recreate(&root, &id("t1"), None).unwrap_err();
+        assert!(matches!(error, PrepareError::Untrusted { .. }), "{error}");
+        assert!(root.join("t1").exists(), "nothing was removed");
+        assert_eq!(mode_of(&root), 0o777, "nothing was chmodded");
+    }
+
+    #[test]
+    fn a_state_directory_others_can_write_is_refused() {
+        let tmp = tempfile::tempdir().unwrap();
+        let state = tmp.path().join("state");
+        fs::create_dir(&state).unwrap();
+        fs::set_permissions(&state, fs::Permissions::from_mode(0o775)).unwrap();
+        let error = recreate(&state.join("trials"), &id("t1"), None).unwrap_err();
+        assert!(matches!(error, PrepareError::Untrusted { .. }), "{error}");
+        assert!(!state.join("trials").exists());
+    }
+
+    #[test]
+    fn a_trials_directory_owned_by_another_user_is_refused() {
+        if rustix::process::geteuid().is_root() {
+            return;
+        }
+        let error = TrialsRoot::open(Path::new("/usr/bin"), false).err().unwrap();
+        assert!(matches!(error, PrepareError::Untrusted { .. }), "{error}");
+    }
+
+    #[test]
+    fn samples_are_read_only_from_regular_files_below_the_validated_root() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root_path = tmp.path().join("trials");
+        let container = recreate(&root_path, &id("t1"), None).unwrap();
+        let root = TrialsRoot::open(&root_path, false).unwrap();
+        assert!(root.samples(&id("t1")).is_none(), "missing is empty");
+        let victim = tmp.path().join("victim.jsonl");
+        fs::write(&victim, "{\"elapsed_ms\":1}\n").unwrap();
+        symlink(&victim, container.path.join("samples.jsonl")).unwrap();
+        assert!(root.samples(&id("t1")).is_none(), "a symlink is never followed");
+        fs::remove_file(container.path.join("samples.jsonl")).unwrap();
+        rustix::fs::mknodat(
+            rustix::fs::CWD,
+            &container.path.join("samples.jsonl"),
+            rustix::fs::FileType::Fifo,
+            Mode::from_raw_mode(0o600),
+            0,
+        )
+        .unwrap();
+        assert!(root.samples(&id("t1")).is_none(), "a FIFO is never opened for reading");
+        fs::remove_file(container.path.join("samples.jsonl")).unwrap();
+        fs::write(container.path.join("samples.jsonl"), "{\"elapsed_ms\":2}\n").unwrap();
+        let mut text = String::new();
+        root.samples(&id("t1")).unwrap().read_to_string(&mut text).unwrap();
+        assert_eq!(text, "{\"elapsed_ms\":2}\n");
     }
 
     #[test]

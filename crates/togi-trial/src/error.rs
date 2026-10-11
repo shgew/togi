@@ -254,6 +254,8 @@ pub enum PrepareError {
     },
     #[error("{} is not a directory", path.display())]
     NotDirectory { path: PathBuf },
+    #[error("{} cannot hold trials: {reason}", path.display())]
+    Untrusted { path: PathBuf, reason: &'static str },
     #[error("{} is not searchable by uid {uid} gid {gid}", path.display())]
     Inaccessible { path: PathBuf, uid: u32, gid: u32 },
     #[error("create {name} in instance {instance}")]
