@@ -237,3 +237,41 @@ func TestSnapshotTooLargeDiffIsolatedFromCaller(t *testing.T) {
 		}
 	}
 }
+
+func TestSnapshotTooLargeDiffFetchFailure(t *testing.T) {
+	p := newLargePull(t)
+	p.head = strings.Repeat("0123456789", 4)
+	makeHostile(t, p.caller)
+	var stdout, stderr bytes.Buffer
+	tl := tools{
+		gh: originGH(t, p), git: runGit, isolatedGit: runIsolatedGit,
+		getenv: func(string) string { return "" }, tmp: t.TempDir(),
+		stdin: strings.NewReader(""), stdout: &stdout, stderr: &stderr,
+	}
+	err := runSnapshot(tl, []string{"700"})
+	if err == nil {
+		t.Fatal("snapshot of a pull whose head the origin lacks succeeded")
+	}
+	// The operator sees the failed step, the command and its subcommand with git's exit status, and git's own explanation.
+	for _, s := range []string{
+		"fetch the frozen base and head of pull request #700, whose diff GitHub refuses as too large: ",
+		"git fetch: exit status ",
+		"fatal: ",
+		p.head,
+	} {
+		if !strings.Contains(err.Error(), s) {
+			t.Errorf("error lacks %q: %v", s, err)
+		}
+	}
+	entries, err := os.ReadDir(tl.tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var left []string
+	for _, e := range entries {
+		left = append(left, e.Name())
+	}
+	if diff := cmp.Diff([]string(nil), left); diff != "" {
+		t.Errorf("failed snapshot left entries in its temporary directory (-want +got):\n%s", diff)
+	}
+}
