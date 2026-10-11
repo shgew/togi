@@ -182,7 +182,7 @@ fn every_archive_step_failure_resumes_once_and_leaves_the_sources_immutable() {
                     assert!(reopened.events().is_empty(), "{context}");
                     match kind {
                         ArchiveKind::Transition => {
-                            assert!(fs.contents(CARRY).is_some(), "{context}")
+                            assert!(fs.contents(CARRY).is_some(), "{context}");
                         }
                         ArchiveKind::ResetAll => assert!(fs.contents(RESET).is_some(), "{context}"),
                     }
