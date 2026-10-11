@@ -5,6 +5,7 @@ use togi_journal::{Event, Journal, Seq, SessionId};
 
 use crate::appender::Folds;
 use crate::error::FoldError;
+use crate::publication::StateDocument;
 
 /// Every fold of a journal's events, owned, bound to the journal it was folded from: its session and its last event.
 ///
@@ -35,6 +36,21 @@ pub enum Divergence {
     Recovery,
     #[error("the defect state differs")]
     Defects,
+    #[error("the published state document {0}")]
+    Document(#[from] DocumentDivergence),
+}
+
+/// How the state document published from a capsule's folds fails to be the one a cold fold publishes.
+#[derive(Debug, thiserror::Error)]
+pub enum DocumentDivergence {
+    #[error("does not encode: {0}")]
+    Encode(#[source] serde_json::Error),
+    #[error("does not decode: {0}")]
+    Decode(#[source] serde_json::Error),
+    #[error("decodes to a different document")]
+    RoundTrip,
+    #[error("differs from the cold fold's")]
+    Cold,
 }
 
 impl ResumeCapsule {
@@ -82,8 +98,21 @@ impl ResumeCapsule {
         if kept.defects != cold.defects {
             return Err(Divergence::Defects);
         }
+        check_document(&StateDocument::of(kept), &StateDocument::of(&cold))?;
         Ok(())
     }
+}
+
+fn check_document(kept: &StateDocument, cold: &StateDocument) -> Result<(), DocumentDivergence> {
+    let text = serde_json::to_string(kept).map_err(DocumentDivergence::Encode)?;
+    let decoded: StateDocument = serde_json::from_str(&text).map_err(DocumentDivergence::Decode)?;
+    if decoded != *kept {
+        return Err(DocumentDivergence::RoundTrip);
+    }
+    if kept != cold {
+        return Err(DocumentDivergence::Cold);
+    }
+    Ok(())
 }
 
 fn last_seq(events: &[Event]) -> Option<Seq> {

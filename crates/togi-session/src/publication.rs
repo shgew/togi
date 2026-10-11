@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use togi_journal::{Payload, SessionWarning, StateRebuilt};
 use togi_tuner::Projection;
 
-use crate::appender::Appender;
+use crate::appender::{Appender, Folds};
 use crate::error::{AppendFailure, SessionError};
 use crate::session::Session;
 
@@ -18,6 +18,15 @@ pub enum PublicationPolicy {
 pub(crate) struct StateDocument {
     pub facts: togi_journal::State,
     pub tuner: Projection,
+}
+
+impl StateDocument {
+    pub(crate) fn of(folds: &Folds) -> Self {
+        Self {
+            facts: folds.facts.clone(),
+            tuner: folds.tuner.project(),
+        }
+    }
 }
 
 #[derive(Serialize)]

@@ -35,7 +35,7 @@ pub use commands::{CommandError, reset_all, reset_core};
 pub use emergency::{Outcome as Emergency, Readback, Response, Withheld, Zeroed};
 pub use error::{AppendFailure, FoldError, JournalCause, JournalFailure, SessionError};
 pub use publication::PublicationPolicy;
-pub use resume::{Divergence, ResumeCapsule};
+pub use resume::{Divergence, DocumentDivergence, ResumeCapsule};
 pub use run::run;
 pub use session::{ConfigSource, Ended, Prompt, PromptError, RunInput, Stop, StopPolicy};
 pub use write::{ConstraintRefusal, ProfileFailure, Refused, WriteFailure};

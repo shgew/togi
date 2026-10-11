@@ -7,6 +7,7 @@ use togi_sim::MachineDefinition;
 use togi_sim::definition::ModelDef;
 
 use super::*;
+use crate::publication::StateDocument;
 use crate::testing::Bench;
 use crate::{Ended, Stop, run};
 
@@ -91,6 +92,38 @@ fn verify_names_the_part_that_differs() {
     let mut defects = capsule_of(events, &CAUTIOUS);
     defects.folds.defects = DefectState::new(&AGGRESSIVE);
     assert!(matches!(defects.verify(events), Err(Divergence::Defects)));
+}
+
+#[test]
+fn a_verified_capsules_document_round_trips_through_json() {
+    let bench = bench();
+    let ended = one_cycle(&bench, None);
+    let capsule = ended.capsule.as_ref().unwrap();
+    capsule.verify(ended.journal.events()).unwrap();
+    let document = StateDocument::of(&capsule.folds);
+    let decoded: StateDocument =
+        serde_json::from_str(&serde_json::to_string(&document).unwrap()).unwrap();
+    assert_eq!(decoded, document);
+    assert!(!document.tuner.cores.is_empty());
+    check_document(&document, &document).unwrap();
+}
+
+#[test]
+fn the_document_check_rejects_a_document_other_than_the_cold_folds() {
+    let bench = bench();
+    let ended = one_cycle(&bench, None);
+    let (prefix, events) = halves(&ended);
+    let document = StateDocument::of(&fold_of(events));
+    let behind = StateDocument::of(&fold_of(prefix));
+    assert_ne!(document, behind);
+    assert!(matches!(
+        check_document(&behind, &document),
+        Err(DocumentDivergence::Cold)
+    ));
+    assert!(matches!(
+        check_document(&document, &behind),
+        Err(DocumentDivergence::Cold)
+    ));
 }
 
 #[test]
