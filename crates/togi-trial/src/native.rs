@@ -12,6 +12,7 @@ use tokio::sync::mpsc::UnboundedSender;
 
 use crate::error::Error;
 use crate::error::InvalidTrial;
+use crate::files::TrialsRoot;
 use crate::id::TrialId;
 use crate::runner::Options;
 use crate::runtime::{Command, Runtime, outside_runtime};
@@ -182,14 +183,21 @@ impl Trials for Runner {
     fn ended(&mut self, id: &str) -> Result<(), togi_machine::Error> {
         outside_runtime("ended")?;
         let id = TrialId::parse(id).map_err(|error| Error::Invalid(InvalidTrial::Id(error)))?;
-        togi_trialfiles::compress(&self.dir.join(id.as_str()))
+        let root = TrialsRoot::open(&self.dir, false).map_err(Error::Prepare)?;
+        root.trial(&id).map_err(Error::Prepare)?;
+        togi_trialfiles::compress(&root.path.join(id.as_str()))
             .map_err(|errors| Error::Compress(errors).into())
     }
 
     fn samples<'a>(&'a self, id: &'a str) -> Box<dyn Iterator<Item = TrialConditions> + 'a> {
-        match TrialId::parse(id) {
-            Ok(id) => Box::new(togi_machine::read_samples(&self.dir.join(id.as_str()))),
-            Err(_) => Box::new(std::iter::empty()),
+        let reader = TrialId::parse(id).ok().and_then(|id| {
+            TrialsRoot::open(&self.dir, false)
+                .ok()
+                .and_then(|root| root.samples(&id))
+        });
+        match reader {
+            Some(reader) => Box::new(togi_machine::ReadSamples::from_reader(reader)),
+            None => Box::new(std::iter::empty()),
         }
     }
 }
