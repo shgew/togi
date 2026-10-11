@@ -6,6 +6,7 @@
 
 mod error;
 mod identity;
+mod runner;
 
 #[cfg(target_os = "linux")]
 mod evidence;
@@ -14,9 +15,15 @@ mod files;
 #[cfg(target_os = "linux")]
 mod id;
 #[cfg(target_os = "linux")]
+mod instance;
+#[cfg(target_os = "linux")]
+mod judge;
+#[cfg(target_os = "linux")]
 mod launch;
 #[cfg(target_os = "linux")]
 mod logs;
+#[cfg(target_os = "linux")]
+mod native;
 #[cfg(target_os = "linux")]
 mod os;
 #[cfg(target_os = "linux")]
@@ -26,6 +33,8 @@ mod plan;
 #[cfg(target_os = "linux")]
 mod procfs;
 #[cfg(target_os = "linux")]
+mod runtime;
+#[cfg(target_os = "linux")]
 mod samples;
 #[cfg(target_os = "linux")]
 mod schedule;
@@ -33,11 +42,22 @@ mod schedule;
 mod sensors;
 #[cfg(target_os = "linux")]
 mod stall;
+#[cfg(target_os = "linux")]
+mod supervisor;
+#[cfg(target_os = "linux")]
+mod sweep;
+#[cfg(target_os = "linux")]
+mod teardown;
 #[cfg(test)]
 #[cfg(target_os = "linux")]
 mod testing;
+#[cfg(test)]
+#[cfg(target_os = "linux")]
+mod tests;
 #[cfg(target_os = "linux")]
 mod timing;
+#[cfg(not(target_os = "linux"))]
+mod unsupported;
 #[cfg(target_os = "linux")]
 mod watch;
 
@@ -46,3 +66,4 @@ pub use error::{
     PrepareError, StorageError, StorageFailure,
 };
 pub use identity::{BackendIdentity, IdentityError};
+pub use runner::{Backends, Options, Runner, Trial};
