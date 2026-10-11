@@ -7,23 +7,23 @@ mod config;
 mod constraints;
 mod cores;
 mod crash;
-pub mod dashboard;
+mod dashboard;
 mod decide;
 mod depth;
 mod error;
 mod evidence;
 mod failures;
 mod flight;
-pub mod forecast;
+mod forecast;
 mod hunt;
 mod later;
 mod ledger;
 mod optimum;
-pub mod phase_plan;
+mod phase_plan;
 mod phases;
 mod plan;
 mod profile;
-pub mod projection;
+mod projection;
 mod query;
 mod r7;
 mod requirement;
@@ -97,17 +97,28 @@ pub use constraints::{
     Reached,
 };
 pub use crash::{CrashFacts, CrashKind, classify_crash, recorded_kind};
+pub use dashboard::{
+    CyclePart, CyclePlan, CycleStep, GroupState, HuntGroup, HuntPart, HuntPlan, MemberProbe,
+    RerunPlan, SearchTurn, TrialRequirement,
+};
 pub use depth::Depth;
 pub use error::FoldError;
 pub use evidence::{
     BackendId, Count, Evidence, IdleContradiction, Observation, SessionRef, Window,
 };
 pub use flight::TrialHistory;
+pub use forecast::{AllPass, Between, Branch, Forecast, Premise, Uncertainty};
+pub use later::bios::{BiosProfile, Confirmed, Unconfirmed};
+pub use phase_plan::{Candidate, PhaseNo, PhasePlan};
 pub use plan::{
     Action, DecisionAction, DecisionPayload, Load, PartNo, Requirement, RequirementKind, StepNo,
     TrialContext, TrialPlan, WorkloadChoice,
 };
 pub use profile::{Profile, ProfileError, TopologyMismatch};
+pub use projection::{
+    CheckingView, ConstraintView, CoreView, DeepeningCheck, DeepeningView, Projection,
+    TemperaturePeak,
+};
 pub use query::{NotReady, replay};
 pub use r7::query::R7CoreStatus;
 pub use state::State;

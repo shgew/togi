@@ -5,8 +5,10 @@ use togi_journal::{CorePhase, Seq};
 use togi_machine::{Condition, CoreId, CoreSet, PerCore, Regime, TargetOffset, WorkloadId};
 
 use crate::dashboard::{CyclePlan, HuntPlan, SearchTurn, TrialRequirement};
-use crate::phase_plan::{BiosProfile, PhasePlan};
-use crate::{Combination, FailurePoint, Profile, R7CoreStatus, State, TrialHistory, Window};
+use crate::phase_plan::PhasePlan;
+use crate::{
+    BiosProfile, Combination, FailurePoint, Profile, R7CoreStatus, State, TrialHistory, Window,
+};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct CoreView {

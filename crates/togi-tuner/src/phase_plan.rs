@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use togi_journal::Seq;
 use togi_machine::{CoreId, CoreSet, MIN_OFFSET, PerCore, TargetOffset};
 
-pub use crate::later::bios::{BiosProfile, Confirmed, Unconfirmed};
+use crate::BiosProfile;
 use crate::rounds::Shape;
 use crate::state::Run;
 use crate::{Profile, State};

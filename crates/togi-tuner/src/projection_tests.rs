@@ -7,12 +7,15 @@ use togi_journal::{Activity, CorePhase, DeepeningRound, Outcome, RoundEvent, Seq
 use togi_machine::{Condition, CoreSet, Regime, Signal, workloads};
 
 use crate::dashboard::TrialRequirement;
-use crate::phase_plan::{BiosProfile, Candidate, Confirmed, PhaseNo};
+use crate::phase_plan::{Candidate, PhaseNo};
 use crate::projection::{CoreView, DeepeningCheck, DeepeningView, Projection, TemperaturePeak};
 use crate::prop_tests::seeded;
 use crate::testkit::{Journal, Start, fresh, set};
 use crate::tests::{core, off};
-use crate::{Action, DecisionPayload, Depth, Load, Profile, State, TrialHistory, TrialPlan};
+use crate::{
+    Action, BiosProfile, Confirmed, DecisionPayload, Depth, Load, Profile, State, TrialHistory,
+    TrialPlan,
+};
 
 fn project(j: &Journal) -> Projection {
     let before = j.state.clone();
