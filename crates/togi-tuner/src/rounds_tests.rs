@@ -4,7 +4,7 @@ use togi_journal::{
 };
 use togi_machine::{Condition, CoreId, CoreSet, PerCore, Regime, Signal};
 
-use crate::testkit::{Journal, Start, fresh, set};
+use crate::testkit::{Journal, R7Report, Start, set};
 use crate::tests::{core, off};
 use crate::{Action, DecisionAction, DecisionPayload, Load, TrialPlan};
 
@@ -482,10 +482,67 @@ fn a_fresh_movers_round_baseline_is_its_current_offset() {
         workloads: Vec::new(),
         reason: "test".to_owned(),
     });
-    until_round(&mut j);
-    let round = j.run().rounds.active().unwrap();
-    let again = fresh(&j.events);
-    assert_eq!(again.run().unwrap().rounds.active(), Some(round));
+    j.round_start(1, &[-8, -11], &[0, 1], 5);
+    let shape = j.run().rounds.active().unwrap().shape();
+    assert_eq!(shape.baseline(), &j.profile(&[-7, -10]));
+    assert!(shape.deepened(core(0)));
+    let alone: Vec<CoreId> = j
+        .run()
+        .rounds
+        .active()
+        .unwrap()
+        .checks()
+        .iter()
+        .filter(|check| check.condition == Condition::Alone)
+        .map(|check| check.class.loaded().iter().next().unwrap())
+        .collect();
+    assert!(alone.contains(&core(0)));
+    let failure = named_crash(&mut j, 0, -8, &[-8, -11]);
+    let action = j.next_decision();
+    assert!(
+        matches!(action.payload, DecisionPayload::DeepeningRound(_)),
+        "{action:?}"
+    );
+    assert_eq!(action.cause, [failure]);
+    j.decide(action);
+    loop {
+        let action = j.next_decision();
+        if tuner_decision(&action).decision == Decision::Backoff {
+            let back = tuner_decision(&action);
+            assert_eq!((back.core, back.to_offset), (core(0), off(-7)));
+            assert_eq!(back.failure_point, Some(off(-8)));
+            j.decide(action);
+            break;
+        }
+        j.decide(action);
+    }
+    j.assert_resumes();
+}
+
+#[test]
+fn a_malformed_round_base_is_a_fold_error_that_changes_nothing() {
+    let mut j = phase1_done(&[Start::solo(-10, -12), Start::solo(-10, -12)]);
+    let before = j.state.run().cloned();
+    let result = j.try_append(
+        togi_journal::DeepeningRound {
+            round: std::num::NonZeroU32::MIN,
+            event: RoundEvent::Start,
+            base: PerCore::default(),
+            base_seq: None,
+            target: j.profile(&[-11, -11]).offsets(),
+            profile: j.profile(&[-11, -11]).offsets(),
+            cores: set(&[0, 1]),
+            ranking: Vec::new(),
+            trials: Some(5),
+            trial_s: Some(120),
+            passed: false,
+            reason: None,
+        }
+        .into(),
+        &[],
+    );
+    assert!(result.is_err());
+    assert_eq!(j.state.run().cloned(), before);
 }
 
 #[test]
@@ -635,24 +692,485 @@ fn every_prefix_of_a_round_blame_and_confirmation_resumes_identically() {
 }
 
 #[test]
-fn a_reset_closes_the_open_round_before_the_core_searches() {
+fn a_reset_closes_the_open_round_or_cycle_before_the_core_searches() {
+    for deepening in [false, true] {
+        let mut j = phase1_done(&[Start::solo(-10, -11)]);
+        j.baseline(&[(0, -7)]);
+        if deepening {
+            j.round_start(2, &[-30], &[0], 5);
+        } else {
+            j.cycle_start(4, &[Regime::R1]);
+        }
+        let reset = j.reset(0);
+        let end = j.next_decision();
+        assert_eq!(end.cause, [reset], "deepening {deepening}");
+        match &end.payload {
+            DecisionPayload::DeepeningRound(round) if deepening => {
+                assert_eq!(
+                    (round.round.get(), round.event, round.passed),
+                    (2, RoundEvent::End, false)
+                );
+            }
+            DecisionPayload::CheckingCycle(cycle) if !deepening => {
+                assert_eq!(cycle.cycle.get(), 4);
+                assert_eq!(cycle.event, togi_journal::CycleEvent::End);
+                assert!(!cycle.passed && !cycle.full);
+            }
+            other => panic!("deepening {deepening}: expected the close, got {other:?}"),
+        }
+        j.decide(end);
+        let search = j.next_decision();
+        let DecisionPayload::CorePhase(phase) = &search.payload else {
+            panic!("expected the core to search, got {search:?}");
+        };
+        assert_eq!(phase.to, CorePhase::Search);
+        assert_eq!(phase.offset, off(-7));
+        assert_eq!((phase.pass, phase.failure_point), (None, None));
+        j.decide(search);
+        assert!(j.run().rounds.active().is_none());
+        assert_eq!(j.run().phases.phase1_end(), None);
+        j.assert_resumes();
+    }
+}
+
+#[test]
+fn deepening_rechecks_its_own_partial_for_every_r7_workload() {
+    let offsets = [-20; 8];
+    let mut j = quad_session(&offsets);
+    carry_r7_passes(&mut j, &offsets);
+    let mut deeper = offsets;
+    deeper[1] -= 1;
+    start_round(&mut j, 2, &deeper, &[1], 2);
+    let checks = j.run().rounds.active().unwrap().checks().to_vec();
+    assert_eq!(checks.len(), 5);
+    for (index, workload) in togi_machine::workloads(Regime::R7).iter().enumerate() {
+        let check = &checks[index + 2];
+        assert_eq!(check.class.workload(), workload.id());
+        assert_eq!(check.class.loaded(), set(&[1, 2, 3]));
+    }
+    for _ in 0..4 {
+        let Some(Action::RunTrial(plan)) = j.run().round_check_action() else {
+            panic!("expected a solo check");
+        };
+        assert_eq!(plan.condition, Condition::Alone);
+        assert_eq!(plan.load, Load::Single(core(1)));
+        j.trial(&plan, Outcome::Pass);
+    }
+    for workload in togi_machine::workloads(Regime::R7) {
+        for _ in 0..2 {
+            let Some(Action::RunTrial(plan)) = j.run().round_check_action() else {
+                panic!("expected an R7 own-partial check");
+            };
+            assert_eq!(plan.condition, Condition::Together);
+            assert_eq!(plan.requirement.class.workload(), workload.id());
+            assert_eq!(plan.load, Load::Many(set(&[1, 2, 3])));
+            j.trial(&plan, Outcome::Pass);
+        }
+    }
+    let Some(Action::Decide(end)) = j.run().round_check_action() else {
+        panic!("expected the round end");
+    };
+    let DecisionPayload::DeepeningRound(end) = end.payload else {
+        panic!("expected the round end");
+    };
+    assert!(end.passed);
+    j.assert_resumes();
+}
+
+#[test]
+fn a_request_rank_change_adds_the_ccd_whole_part() {
+    let offsets = [-10, -20, -30, -40, -20, -20, -20, -20];
+    let mut j = quad_session(&offsets);
+    carry_r7_passes(&mut j, &offsets);
+    let mut moved = offsets;
+    moved[0] = -50;
+    moved[1] = -21;
+    start_round(&mut j, 1, &moved, &[0, 1], 2);
+    let want: Vec<Vec<u8>> = [vec![0, 1, 2, 3], vec![0, 2, 3]]
+        .into_iter()
+        .cycle()
+        .take(6)
+        .collect();
+    assert_eq!(r7_check_cores(&j), want);
+    j.assert_resumes();
+}
+
+fn until_round_started(j: &mut Journal) -> togi_journal::DeepeningRound {
+    drive(j, 4000, |j| j.run().rounds.active().is_some());
+    round_starts(&j.events).last().copied().unwrap().clone()
+}
+
+#[test]
+fn an_idle_failure_ends_deepening_before_moves() {
+    let ids = [0, 1, 2, 3];
+    let mut j = Journal::new(&ids, &[Start::solo(-10, -11); 4]);
+    for (index, members) in [[0, 1], [1, 2], [2, 3], [3, 0], [1, 3]].iter().enumerate() {
+        let members: Vec<(u8, i64)> = members.iter().map(|&id| (id, -50)).collect();
+        j.combination(u32::try_from(index).unwrap() + 1, &members);
+    }
+    j.profile_change(&[-10; 4]);
+    j.cycle_start(1, &[Regime::R1]);
+    j.cycle_end(1, true, true);
+    let round = until_round_started(&mut j);
+    let failure = crash(&mut j, &[-10; 4]);
+    let action = j.next_decision();
+    let DecisionPayload::DeepeningRound(end) = &action.payload else {
+        panic!("an idle failure did not end the round: {action:?}");
+    };
+    assert_eq!(end.round, round.round);
+    assert_eq!(end.event, RoundEvent::End);
+    let reason = end.reason.as_deref().unwrap();
+    assert!(
+        reason.contains("failure") && reason.contains("hunt"),
+        "{reason}"
+    );
+    assert_eq!(action.cause, [failure]);
+}
+
+#[test]
+fn a_live_deepening_failure_ends_the_round_before_the_backoff() {
+    let mut j = solo_cores(&[-10, -10], -11);
+    drive(&mut j, 4000, |j| j.run().phases.phase1_end().is_some());
+    let round = until_round_started(&mut j);
+    finish_moves(&mut j);
+    let moved: Vec<i64> = vec![-11; 2];
+    j.profile_change(&moved);
+    let failure = fail_alone(&mut j, 0);
+    let action = j.next_decision();
+    let DecisionPayload::DeepeningRound(end) = &action.payload else {
+        panic!("the live failure did not close the round: {action:?}");
+    };
+    assert_eq!(
+        (end.round, end.event, end.passed),
+        (round.round, RoundEvent::End, false)
+    );
+    assert_eq!(action.cause, [failure]);
+    j.decide(action);
+    let action = j.next_decision();
+    let unloaded = tuner_decision(&action);
+    assert_eq!(
+        (unloaded.decision, unloaded.core),
+        (Decision::Yield, core(1))
+    );
+    j.decide(action);
+    let action = j.next_decision();
+    let back = tuner_decision(&action);
+    assert_eq!(back.activity, Activity::Deepening);
+    assert_eq!(back.to_offset.get(), -10);
+    assert_eq!(back.failure_point, Some(off(-11)));
+}
+
+fn unscheduled(j: &Journal, plan: &TrialPlan) {
+    let trial = togi_journal::TrialId::from("9999".to_owned());
+    let event = j.event(plan.intent(trial.clone(), 0).into(), &plan.cause);
+    let mut probe = j.state.clone();
+    assert_eq!(
+        probe.fold(&event),
+        Err(crate::FoldError::UnscheduledIntent(trial)),
+        "{plan:?}"
+    );
+    assert_eq!(probe.run(), j.state.run());
+}
+
+#[test]
+fn a_round_intent_is_scheduled_only_for_the_open_rounds_own_checks() {
+    let mut j = solo_cores(&[-40, -40, -40, -40], -41);
+    drive(&mut j, 4000, |j| j.run().phases.phase1_end().is_some());
+    until_round_checks(&mut j, 4);
+    let round = round_starts(&j.events).last().copied().unwrap().clone();
+    let plan = j.next_trial();
+    assert_eq!(
+        plan.context,
+        crate::TrialContext::Round { round: round.round }
+    );
+    let (intent, trial) = j.intent(&plan);
+    assert_eq!(
+        j.run().flight.open.as_ref().unwrap().requirement.kind,
+        crate::RequirementKind::Round
+    );
+    let other = std::num::NonZeroU32::new(round.round.get() + 1).unwrap();
+    j.end(intent, &trial, Outcome::Pass);
+    let next = j.next_trial();
+    unscheduled(
+        &j,
+        &TrialPlan {
+            context: crate::TrialContext::Round { round: other },
+            ..next.clone()
+        },
+    );
+    unscheduled(
+        &j,
+        &TrialPlan {
+            activity: Activity::Checking,
+            ..next.clone()
+        },
+    );
+    j.assert_resumes();
+}
+
+#[test]
+fn carried_passes_satisfy_every_round_check_and_are_cited() {
+    let mut j = Journal::new(&[0], &[Start::has_room(-10)]);
+    j.profile_change(&[-10]);
+    let n = usize::from(j.run().config.needed.get());
+    let short = j.run().config.short_trial.get();
+    let mut facts = Vec::new();
+    for (regime, condition) in [
+        (Regime::R1, Condition::Alone),
+        (Regime::R2, Condition::Alone),
+        (Regime::R7, Condition::Together),
+    ] {
+        for _ in 0..n {
+            facts.push(j.carry(
+                "20261002T004254Z",
+                (regime, 0, &[0], short),
+                condition,
+                &[-11],
+                Outcome::Pass,
+            ));
+        }
+    }
+    for workload in 1..togi_machine::workloads(Regime::R7).len() {
+        for _ in 0..n {
+            facts.push(j.carry(
+                "20261002T004254Z",
+                (Regime::R7, workload, &[0], short),
+                Condition::Together,
+                &[-11],
+                Outcome::Pass,
+            ));
+        }
+    }
+    let boundary = start_round(&mut j, 1, &[-11], &[0], u32::try_from(n).unwrap());
+    let Some(Action::Decide(end)) = j.run().round_check_action() else {
+        panic!("carried passes scheduled a live trial");
+    };
+    let DecisionPayload::DeepeningRound(round) = &end.payload else {
+        panic!("expected the round end, got {end:?}");
+    };
+    assert!(round.passed);
+    let mut want = vec![boundary];
+    want.extend(facts);
+    assert_eq!(end.cause, want);
+    let reason = round.reason.as_deref().unwrap();
+    assert!(reason.contains("20261002T004254Z"), "{reason}");
+}
+
+#[test]
+fn a_skipped_deepening_check_closes_the_round_before_its_attributed_backoff() {
+    let mut j = Journal::new(&[0, 1], &[Start::has_room(-19), Start::at_limit(-20)]);
+    let change = j.next_decision();
+    j.decide(change);
+    let short = j.run().config.short_trial.get();
+    let class = togi_journal::TrialClass {
+        regime: Regime::R1,
+        workload: togi_machine::WorkloadId::new(Regime::R1, 0),
+        cores: set(&[0]),
+        duration_s: short,
+    };
+    let mut carried = j.carried_trial(
+        "20230101T000000Z",
+        class,
+        Condition::Alone,
+        &[-20, 0],
+        Outcome::Failure,
+        None,
+    );
+    carried.core = Some(core(0));
+    let failure = j.append(carried.into(), &[]);
+    start_round(&mut j, 1, &[-20, -20], &[0], 5);
+    j.decision(TunerDecision {
+        core: core(0),
+        activity: Activity::Deepening,
+        decision: Decision::Deepen,
+        from_offset: off(-19),
+        to_offset: off(-20),
+        pass: None,
+        failure_point: None,
+        workloads: Vec::new(),
+        reason: "test".to_owned(),
+    });
+    j.profile_change(&[-20, -20]);
+    let skip = j.next_decision();
+    let DecisionPayload::Failure(known) = &skip.payload else {
+        panic!("a known failure scheduled a live check: {skip:?}");
+    };
+    assert_eq!(known.known_failure, Some(failure));
+    j.decide(skip);
+    let action = j.next_decision();
+    let DecisionPayload::DeepeningRound(end) = &action.payload else {
+        panic!("the skipped check did not close the round: {action:?}");
+    };
+    assert_eq!(end.event, RoundEvent::End);
+    assert!(!end.passed);
+    assert!(action.cause.contains(&failure));
+    j.decide(action);
+    let action = j.next_decision();
+    let back = tuner_decision(&action);
+    assert_eq!(back.decision, Decision::Backoff);
+    assert_eq!(back.activity, Activity::Deepening);
+    assert_eq!(back.to_offset.get(), -19);
+    assert!(action.cause.contains(&failure));
+    j.decide(action);
+    j.assert_resumes();
+}
+
+#[test]
+fn a_yield_answers_no_failure_pending_on_the_yielding_core() {
+    let mut j = solo_cores(&[-10, -10, -10, -10], -11);
+    drive(&mut j, 4000, |j| j.run().phases.phase1_end().is_some());
+    until_round_checks(&mut j, 4);
+    let first = fail_alone(&mut j, 0);
+    let end = j.next_decision();
+    j.decide(end);
+    let second = named_crash(&mut j, 2, -11, &[-11, -11, -11, -11]);
+    assert_eq!(j.run().core(core(2)).pending, Some(second));
+    loop {
+        let action = j.next_decision();
+        let decision = tuner_decision(&action);
+        assert_eq!(action.cause, [first]);
+        let yielded = (decision.decision, decision.core) == (Decision::Yield, core(2));
+        let done = decision.decision == Decision::Backoff;
+        j.decide(action);
+        if yielded {
+            assert_eq!(j.run().core(core(2)).pending, Some(second));
+            assert!(j.run().failures.pending(second).is_some());
+            break;
+        }
+        assert!(!done);
+    }
+    j.assert_resumes();
+}
+
+#[test]
+fn a_saved_round_retry_is_served_to_its_own_check_alone() {
     let mut j = solo_cores(&[-10, -10], -11);
     drive(&mut j, 4000, |j| j.run().phases.phase1_end().is_some());
     until_round_checks(&mut j, 2);
-    let reset = j.reset(0);
-    let end = j.next_decision();
-    assert!(
-        matches!(end.payload, DecisionPayload::DeepeningRound(_)),
-        "{end:?}"
-    );
-    assert_eq!(end.cause, [reset]);
-    j.decide(end);
-    assert!(j.run().rounds.active().is_none());
-    let search = j.next_decision();
-    let DecisionPayload::CorePhase(phase) = &search.payload else {
-        panic!("expected the core to search, got {search:?}");
+    let first = j.next_trial();
+    j.trial(&first, Outcome::Inconclusive);
+    let round = j.run().rounds.active().unwrap();
+    let other = round
+        .checks()
+        .iter()
+        .find(|check| check.class != first.requirement.class)
+        .unwrap()
+        .class;
+    let elsewhere = crate::Requirement {
+        class: other,
+        ..first.requirement
     };
-    assert_eq!(phase.to, CorePhase::Search);
-    j.decide(search);
-    assert_eq!(j.run().phases.phase1_end(), None);
+    assert_eq!(j.run().serve_round_retry(&elsewhere, Vec::new()), None);
+    let served = j
+        .run()
+        .serve_round_retry(&first.requirement, Vec::new())
+        .unwrap();
+    assert!(served.retry);
+    assert_eq!(served.requirement, first.requirement);
+}
+
+#[test]
+fn phase2_blames_and_backoffs_never_count_toward_escalation() {
+    let mut j = solo_cores(&[-10, -10, -10, -10], -11);
+    drive(&mut j, 4000, |j| j.run().phases.phase1_end().is_some());
+    until_round(&mut j);
+    finish_moves(&mut j);
+    let (_, _, decided) = fail_r7_and_blame(&mut j);
+    assert_eq!(decided.last().unwrap().decision, Decision::Backoff);
+    assert_eq!(
+        j.run().r7.strikes,
+        crate::r7::escalation::Strikes::default()
+    );
+    j.assert_resumes();
+}
+
+#[test]
+fn round_check_progress_visits_distinct_classes_not_pass_volume() {
+    let visits = |passes: usize| {
+        let mut j = Journal::new(&[0, 1], &[Start::has_room(-10), Start::has_room(-10)]);
+        j.profile_change(&[-10, -10]);
+        let short = j.run().config.short_trial.get();
+        for _ in 0..passes {
+            j.carry(
+                "20261002T004254Z",
+                (Regime::R1, 0, &[0], short),
+                Condition::Alone,
+                &[-11, 0],
+                Outcome::Pass,
+            );
+        }
+        j.round_start(1, &[-11, -11], &[0, 1], 5);
+        j.run().evidence.take_visits();
+        let _ = j.run().round_check_action();
+        let first = j.run().evidence.take_visits();
+        let _ = j.state.decide();
+        let decided = j.run().evidence.take_visits();
+        (first, decided)
+    };
+    let small = visits(100);
+    assert!(small.0 > 0);
+    assert_eq!(visits(10_000), small);
+}
+
+#[test]
+fn a_round_beyond_the_catalog_length_wraps_its_workload_index() {
+    let lengths = [Regime::R1, Regime::R2].map(|regime| togi_machine::workloads(regime).len());
+    let round = u32::try_from(lengths[0] * lengths[1] + 1).unwrap();
+    let mut j = Journal::new(&[0], &[Start::has_room(-10)]);
+    j.profile_change(&[-10]);
+    j.round_start(round, &[-11], &[0], 5);
+    let alone: Vec<_> = j
+        .run()
+        .rounds
+        .active()
+        .unwrap()
+        .checks()
+        .iter()
+        .filter(|check| check.condition == Condition::Alone)
+        .map(|check| check.class.workload())
+        .collect();
+    let first = [Regime::R1, Regime::R2].map(|regime| togi_machine::workloads(regime)[0].id());
+    assert_eq!(alone, first);
+}
+
+fn quad_session(offsets: &[i64]) -> Journal {
+    let ids: Vec<u8> = (0..offsets.len())
+        .map(|id| u8::try_from(id).unwrap())
+        .collect();
+    let starts: Vec<Start> = offsets
+        .iter()
+        .map(|&offset| Start::has_room(offset))
+        .collect();
+    let mut j = Journal::on(&ids, crate::testkit::quads(&ids), &starts);
+    j.profile_change(offsets);
+    j
+}
+
+fn carry_r7_passes(j: &mut Journal, offsets: &[i64]) {
+    let report = R7Report::default().requests(&[(0, 1.2), (1, 1.1), (2, 1.0), (3, 0.9)]);
+    for workload in 0..togi_machine::workloads(Regime::R7).len() {
+        j.r7_fact_of(workload, true, &[0, 1, 2, 3], offsets, &report);
+    }
+}
+
+fn start_round(
+    j: &mut Journal,
+    round: u32,
+    profile: &[i64],
+    cores: &[u8],
+    trials: u32,
+) -> togi_journal::Seq {
+    j.round_start(round, profile, cores, trials)
+}
+
+fn r7_check_cores(j: &Journal) -> Vec<Vec<u8>> {
+    j.run()
+        .rounds
+        .active()
+        .unwrap()
+        .checks()
+        .iter()
+        .filter(|check| check.class.regime() == Regime::R7)
+        .map(|check| check.class.loaded().iter().map(CoreId::get).collect())
+        .collect()
 }

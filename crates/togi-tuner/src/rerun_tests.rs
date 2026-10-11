@@ -163,6 +163,17 @@ fn carry(
     outcome: Outcome,
     named: Option<u8>,
 ) -> Seq {
+    carry_in(j, class, Condition::Together, profile, outcome, named)
+}
+
+fn carry_in(
+    j: &mut Journal,
+    class: ClassKey,
+    condition: Condition,
+    profile: &Profile,
+    outcome: Outcome,
+    named: Option<u8>,
+) -> Seq {
     let seq = j.next_seq();
     let payload = TrialCarried {
         source: FactSource {
@@ -180,7 +191,7 @@ fn carry(
             cores: class.loaded(),
             duration_s: class.duration().get(),
         },
-        condition: Condition::Together,
+        condition,
         activity: None,
         rerun: false,
         profile: profile.offsets(),
@@ -956,4 +967,143 @@ fn intent_context_rejects_a_cycle_trial_outside_the_schedule() {
     );
     j.assert_resumes();
     pass(&mut j, &plan);
+}
+
+fn deepening_rerun_session(failing: i64) -> Journal {
+    let mut j = Journal::new(
+        &[0],
+        &[Start::at_limit(failing).fail(failing - 1).pass(failing)],
+    );
+    j.load(&testkit::config(r#"{"checking":{"cycle":["R1"]}}"#));
+    j.profile_change(&[failing]);
+    j
+}
+
+fn back_off_in_round(j: &mut Journal, failure: Seq, from: i64, to: i64) {
+    j.append(
+        moved(0, from, to, Activity::Checking, Decision::Backoff).into(),
+        &[failure],
+    );
+    let from = checking(j).offsets();
+    let to = j.profile(&[to]).offsets();
+    j.append(
+        ProfileChange {
+            from: Some(from),
+            to,
+        }
+        .into(),
+        &[],
+    );
+}
+
+#[test]
+fn carried_rerun_citation_replay_ends_a_deepening_round() {
+    for reload in [false, true] {
+        let mut j = deepening_rerun_session(-10).resuming_every(1);
+        let n = needed(&j);
+        let profile = checking(&j);
+        let long = ClassKey::new(pick_workload(Regime::R1, 0).id(), set(&[0]), secs(900));
+        let failure = carry(&mut j, long, &profile, Outcome::Failure, None);
+        let count = if reload { n - 1 } else { n };
+        let mut facts: Vec<Seq> = (0..count)
+            .map(|_| {
+                carry(
+                    &mut j,
+                    long.with_duration(secs(120)),
+                    &profile,
+                    Outcome::Pass,
+                    None,
+                )
+            })
+            .collect();
+        facts.push(carry(&mut j, long, &profile, Outcome::Pass, None));
+        j.round_start(1, &[-9], &[0], u32::from(n));
+        back_off_in_round(&mut j, failure, -10, -9);
+        if reload {
+            j.load(&testkit::config(
+                r#"{"checking":{"cycle":["R1"]},"evidence":{"miss":0.1}}"#,
+            ));
+            assert!(needed(&j) < n, "n did not drop");
+        }
+        let action = j.next_decision();
+        let DecisionPayload::DeepeningRound(end) = &action.payload else {
+            panic!("the rerun did not finish the round: {action:?}");
+        };
+        assert!(end.passed, "reload {reload}");
+        for seq in &facts {
+            assert!(action.cause.contains(seq), "#{seq} not cited: {action:?}");
+        }
+        assert!(
+            end.reason
+                .as_deref()
+                .unwrap_or_default()
+                .contains("rerun checks passed"),
+            "{end:?}"
+        );
+        j.decide(action);
+        let want = j.state.decide();
+        assert_eq!(fresh(&j.events).decide(), want);
+        if let Some(Action::Decide(next)) = &want {
+            for seq in &facts {
+                assert!(!next.cause.contains(seq), "#{seq} cited again: {next:?}");
+            }
+        }
+    }
+}
+
+#[test]
+fn a_carried_rerun_boundary_preserves_the_pending_checks() {
+    for deepening in [false, true] {
+        for missing_long in [false, true] {
+            let label = format!("deepening {deepening}, missing long {missing_long}");
+            let mut j = deepening_rerun_session(-10);
+            let n = needed(&j);
+            let profile = checking(&j);
+            let long = ClassKey::new(pick_workload(Regime::R1, 0).id(), set(&[0]), secs(900));
+            let failure = carry(&mut j, long, &profile, Outcome::Failure, None);
+            let (count, duration) = if missing_long { (n, 900) } else { (n - 1, 120) };
+            for _ in 0..count {
+                carry(
+                    &mut j,
+                    long.with_duration(secs(120)),
+                    &profile,
+                    Outcome::Pass,
+                    None,
+                );
+            }
+            back_off_in_round(&mut j, failure, -10, -9);
+            if deepening {
+                j.round_start(1, &[-9], &[0], u32::from(n));
+                let round = std::num::NonZeroU32::MIN;
+                let end = togi_journal::DeepeningRound {
+                    round,
+                    event: togi_journal::RoundEvent::End,
+                    base: PerCore::default(),
+                    base_seq: None,
+                    target: PerCore::default(),
+                    profile: PerCore::default(),
+                    cores: CoreSet::default(),
+                    ranking: Vec::new(),
+                    trials: None,
+                    trial_s: None,
+                    passed: false,
+                    reason: Some("test".to_owned()),
+                };
+                j.append(end.into(), &[]);
+            } else {
+                j.cycle_start(1, &[Regime::R1]);
+            }
+            let want = j.state.decide();
+            assert_eq!(fresh(&j.events).decide(), want, "{label}");
+            let Some(Action::RunTrial(plan)) = want else {
+                panic!("{label}: the boundary lost the pending rerun: {want:?}");
+            };
+            assert!(
+                matches!(plan.context, TrialContext::Rerun { .. }),
+                "{label}"
+            );
+            assert_eq!(plan.duration, secs(duration), "{label}");
+            assert_eq!(plan.cause, [failure], "{label}");
+        }
+    }
 }

@@ -801,6 +801,35 @@ impl Journal {
         self.state.run().unwrap()
     }
 
+    /// Starts round `round` moving `cores` to `profile`, needing `trials` passes of 120 s.
+    pub(crate) fn round_start(
+        &mut self,
+        round: u32,
+        profile: &[i64],
+        cores: &[u8],
+        trials: u32,
+    ) -> Seq {
+        let profile = self.profile(profile).offsets();
+        self.append(
+            togi_journal::DeepeningRound {
+                round: std::num::NonZeroU32::new(round).unwrap(),
+                event: togi_journal::RoundEvent::Start,
+                base: self.offsets().offsets(),
+                base_seq: None,
+                target: profile,
+                profile,
+                cores: set(cores),
+                ranking: Vec::new(),
+                trials: Some(trials),
+                trial_s: Some(120),
+                passed: false,
+                reason: None,
+            }
+            .into(),
+            &[],
+        )
+    }
+
     pub(crate) fn warning(&self) -> Option<TunerWarning> {
         match self.state.decide() {
             Some(Action::Decide(DecisionAction {
@@ -817,6 +846,16 @@ pub(crate) fn pairs(ids: &[u8]) -> Vec<CoreInfo> {
         .map(|&id| CoreInfo {
             core: core(id),
             ccd: CcdId(id / 2),
+            cpus: Vec::new(),
+        })
+        .collect()
+}
+
+pub(crate) fn quads(ids: &[u8]) -> Vec<CoreInfo> {
+    ids.iter()
+        .map(|&id| CoreInfo {
+            core: core(id),
+            ccd: CcdId(id / 4),
             cpus: Vec::new(),
         })
         .collect()
@@ -941,9 +980,20 @@ impl Journal {
         self.decide(decision)
     }
 
-    /// An R7 fact carried from an earlier session, workload index 0 at 120 s.
     pub(crate) fn r7_fact(
         &mut self,
+        pass: bool,
+        cores: &[u8],
+        profile: &[i64],
+        report: &R7Report,
+    ) -> Seq {
+        self.r7_fact_of(0, pass, cores, profile, report)
+    }
+
+    /// An R7 fact carried from an earlier session, of the given workload index at 120 s.
+    pub(crate) fn r7_fact_of(
+        &mut self,
+        workload: usize,
         pass: bool,
         cores: &[u8],
         profile: &[i64],
@@ -967,7 +1017,7 @@ impl Journal {
             },
             class: togi_journal::TrialClass {
                 regime: Regime::R7,
-                workload: WorkloadId::new(Regime::R7, 0),
+                workload: WorkloadId::new(Regime::R7, workload),
                 cores: set(cores),
                 duration_s: 120,
             },
