@@ -282,6 +282,36 @@ func TestCfgOutItemExtent(t *testing.T) {
 			src:  "fn f(a: u8, b: bool) -> bool { a != 1 && !b }\n#[cfg(windows)]\nfn gone() {}\n",
 			want: []lineRange{{2, 3}},
 		},
+		{
+			name: "an associated type binding inside generics does not end the item at the next generic comma",
+			src:  "#[cfg(windows)]\nstruct Gone<T: Iterator<Item=u8>, U> {\n    a: T,\n    b: U,\n}\nfn live() {}\n",
+			want: []lineRange{{1, 5}},
+		},
+		{
+			name: "a field type with a binding in nested generics ends at the comma after the type",
+			src:  "struct S {\n    #[cfg(windows)]\n    f: Result<\n        Box<dyn Iterator<Item=u8>>,\n        String,\n    >,\n    g: u8,\n}\n",
+			want: []lineRange{{2, 6}},
+		},
+		{
+			name: "a generic default does not end the item at the next generic comma",
+			src:  "#[cfg(windows)]\nstruct D<T = u8,\n    U = u16> {\n    a: T,\n}\nfn live() {}\n",
+			want: []lineRange{{1, 5}},
+		},
+		{
+			name: "a match arm with a comparison guard ends at its comma",
+			src:  "fn f(x: Option<u8>) -> u8 {\n    match x {\n        #[cfg(windows)]\n        Some(v) if v < 3 => v,\n        _ => 0,\n    }\n}\n",
+			want: []lineRange{{3, 4}},
+		},
+		{
+			name: "a block comment between a macro name and its bang does not make its token tree an attribute",
+			src:  "const A: &str = stringify /* c */ !(#[cfg(windows)] fn f() {});\n#[cfg(windows)]\nfn gone() {}\n",
+			want: []lineRange{{2, 3}},
+		},
+		{
+			name: "a line comment between a macro name and its bang does not make its token tree an attribute",
+			src:  "const A: &str = stringify // c\n    !(#[cfg(windows)] fn f() {});\n#[cfg(windows)]\nfn gone() {}\n",
+			want: []lineRange{{3, 4}},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

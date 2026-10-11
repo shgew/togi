@@ -56,11 +56,20 @@ func cfgOut(src []byte, cfg hostCfg) []lineRange {
 	var out []lineRange
 	lineOf := func(i int) int { return 1 + bytes.Count(src[:i], []byte{'\n'}) }
 	var blocks []int
+	last := -1
 	for i := 0; i < len(src); i++ {
 		if next, ok := skipLiteral(src, i); ok {
+			if src[i] != '/' {
+				last = next - 1
+			}
 			i = next - 1
 			continue
 		}
+		if isSpace(src[i]) {
+			continue
+		}
+		prev := last
+		last = i
 		switch src[i] {
 		case '{':
 			blocks = append(blocks, i)
@@ -69,12 +78,12 @@ func cfgOut(src []byte, cfg hostCfg) []lineRange {
 				blocks = blocks[:len(blocks)-1]
 			}
 		case '!':
-			if group := macroGroup(src, i); group >= 0 {
+			if group := macroGroup(src, prev, i); group >= 0 {
 				end := matching(src, group)
 				if end < 0 {
 					return out
 				}
-				i = end
+				i, last = end, end
 			}
 		case '#':
 			open := skipSpace(src, i+1)
@@ -90,7 +99,7 @@ func cfgOut(src []byte, cfg hostCfg) []lineRange {
 				return out
 			}
 			start := i
-			i = end
+			i, last = end, end
 			value, isCfg := attrCfg(string(src[open+1:end]), cfg)
 			if !isCfg || value == cfgTrue {
 				continue
@@ -114,11 +123,9 @@ func cfgOut(src []byte, cfg hostCfg) []lineRange {
 }
 
 // macroGroup returns the index of the bracket opening the token tree of the macro invocation or macro_rules definition whose `!` is at bang, or -1.
-func macroGroup(src []byte, bang int) int {
-	j := bang
-	for j > 0 && isSpace(src[j-1]) {
-		j--
-	}
+// last is the index of the last byte before bang outside whitespace and comments, or -1.
+func macroGroup(src []byte, last, bang int) int {
+	j := last + 1
 	name := j
 	for name > 0 && isIdent(src[name-1]) {
 		name--
@@ -299,7 +306,8 @@ func matching(src []byte, open int) int {
 
 // itemEnd returns the index after the item starting at i: after its first semicolon or comma outside brackets and generics,
 // at the unmatched bracket closing around it, or after its first brace block.
-// Angle brackets count as generics only until an `=`, after which `<` and `>` are operators.
+// Angle brackets count as generics until an `=` outside them or a comparison or `=>`, after which `<` and `>` are operators;
+// an `=` inside them binds an associated type or a default, as in `Iterator<Item = u8>`.
 func itemEnd(src []byte, i int) int {
 	depth, angles := 0, 0
 	for ; i < len(src); i++ {
@@ -332,7 +340,8 @@ func itemEnd(src []byte, i int) int {
 				angles--
 			}
 		case '=':
-			if depth == 0 {
+			operator := strings.IndexByte("=<>!", src[i-1]) >= 0 || i+1 < len(src) && (src[i+1] == '=' || src[i+1] == '>')
+			if depth == 0 && (operator || angles <= 0) {
 				angles = -1
 			}
 		case ';':
