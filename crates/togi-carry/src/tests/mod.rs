@@ -440,6 +440,7 @@ enum Stored {
     Events(Vec<Event>),
     Poisoned,
     Corrupt,
+    Unopenable,
 }
 
 #[derive(Default)]
@@ -471,6 +472,10 @@ impl Archive {
         self.stored.insert(id, Stored::Corrupt);
     }
 
+    pub(super) fn unopenable(&mut self, id: SessionId) {
+        self.stored.insert(id, Stored::Unopenable);
+    }
+
     pub(super) fn polled(&self, id: SessionId) -> usize {
         self.polled.borrow().get(&id).copied().unwrap_or(0)
     }
@@ -495,6 +500,7 @@ impl Archives for Archive {
                     panic!("a source that must stay unread was polled")
                 },
             ))),
+            Some(Stored::Unopenable) => return Err(Unreadable("unopenable")),
             Some(Stored::Corrupt) => Some(Box::new(std::iter::once(Err(Unreadable("corrupt"))))),
         })
     }

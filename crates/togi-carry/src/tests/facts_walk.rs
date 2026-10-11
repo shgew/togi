@@ -616,3 +616,38 @@ fn culprit_from_known_failure_keeps_source_signal() {
         }
     }
 }
+
+#[test]
+fn original_outside_the_walk_is_rechecked_when_present() {
+    for (fixed, retained) in [(false, false), (true, true)] {
+        let r = recheck(fixed);
+        let (mut archive, _) = chain_of(&[&r.b, &r.a]);
+        let got = resolve(&pending(&mut archive, &[r.b.id], None, &DEFECTS), 1);
+        let mut want = vec![r.a_pass];
+        if retained {
+            want.extend([r.a_failure, r.idle]);
+        }
+        want.push(r.b_own);
+        assert_eq!(ids(got.facts()), want, "original fixed {fixed}");
+        assert_eq!(archive.opened, [r.b.id, r.a.id]);
+    }
+}
+
+#[test]
+fn an_original_that_cannot_be_opened_stops_carry() {
+    let r = recheck(false);
+    let (mut archive, chain) = chain_of(&[&r.b]);
+    archive.unopenable(r.a.id);
+    let got = select(&chain, None, &DEFECTS, &mut archive);
+    assert!(matches!(
+        got,
+        Err(CarryError::Open { session, .. }) if session == r.a.id
+    ));
+}
+
+#[test]
+fn an_empty_chain_carries_nothing() {
+    let mut archive = Archive::default();
+    assert!(select(&[], None, &[], &mut archive).unwrap().is_none());
+    assert!(archive.opened.is_empty());
+}

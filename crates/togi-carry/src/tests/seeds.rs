@@ -515,3 +515,39 @@ fn seed_extrema_tie_keeps_first() {
         )]
     );
 }
+
+#[test]
+fn only_a_singleton_culprit_of_a_known_hunt_seeds() {
+    let failing = profile(&[(0, -10), (2, -35), (5, -20)]);
+    for (name, outcome, culprits, start_hunt) in [
+        ("direct", togi_journal::HuntOutcome::Direct, set(&[2]), true),
+        (
+            "two culprits",
+            togi_journal::HuntOutcome::Culprit,
+            set(&[2, 5]),
+            true,
+        ),
+        (
+            "no hunt start",
+            togi_journal::HuntOutcome::Culprit,
+            set(&[2]),
+            false,
+        ),
+    ] {
+        let mut x = Source::new(day(9), &[0, 2, 5], 3, 1).with_context(&context());
+        let failure = x.add(super::idle_failure(failing));
+        if start_hunt {
+            x.add(hunt_start(1, failure, failing, set(&[2])));
+        }
+        let mut end = culprit(1, culprits);
+        end.result = outcome;
+        x.add(end);
+
+        let (mut archive, chain) = chain_of(&[&x]);
+        assert_eq!(
+            pending(&mut archive, &chain, None, &[]).seeds(),
+            [],
+            "{name}"
+        );
+    }
+}

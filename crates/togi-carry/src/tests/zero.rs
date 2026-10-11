@@ -233,3 +233,40 @@ fn zero_proof_persisted_in_seed() {
         );
     }
 }
+
+#[test]
+fn zero_failure_outside_a_trial_is_confirmed_by_its_recorded_profile() {
+    for (name, profile, confirmed) in [
+        (
+            "all-zero partial profile",
+            Some(profile(&[(0, 0), (1, 0)])),
+            true,
+        ),
+        (
+            "partial profile with a deeper core",
+            Some(profile(&[(0, 0), (1, -5)])),
+            false,
+        ),
+        ("no profile", None, false),
+    ] {
+        let mut x = Source::new(day(9), &CORES, 10, 1).with_context(&context());
+        let failure = x.add(Failure {
+            signal: Signal::Crash,
+            attribution: Attribution::Attributed,
+            core: Some(core(1)),
+            offset: Some(super::offset(0)),
+            trial: None,
+            regime: Some(Regime::R6),
+            condition: Some(Condition::Parked),
+            profile,
+            known_failure: None,
+            reason: None,
+            round: None,
+        });
+        let want: Vec<_> = confirmed
+            .then(|| seed(1, None, Some(point(0, x.id, failure, Signal::Crash))))
+            .into_iter()
+            .collect();
+        assert_eq!(seeds_of(&x), want, "{name}");
+    }
+}

@@ -15,10 +15,6 @@ pub struct SourceSummary {
 }
 
 impl SourceSummary {
-    pub const fn id(&self) -> SessionId {
-        self.facts.id
-    }
-
     pub const fn facts(&self) -> &SessionFacts {
         &self.facts
     }
