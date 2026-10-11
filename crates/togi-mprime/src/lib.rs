@@ -1,6 +1,5 @@
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::sync::LazyLock;
 
 use regex::Regex;
 use togi_backend::{Backend, Error, FileName, Input, Line, Plan, Ready, check_executable};
@@ -64,41 +63,53 @@ fn local_txt(settings: &str) -> String {
     format!("ErrorCheck=1\nSumInputsErrorCheck=1\n{settings}")
 }
 
-static COMPUTATION: LazyLock<[Regex; 2]> = LazyLock::new(|| {
-    [
-        pattern(
-            r"(?i)FATAL ERROR|ERROR: ILLEGAL SUMOUT|Possible hardware failure|Hardware failure detected|Maximum number of warnings exceeded|TORTURE TEST FAILED|Torture Test completed .* - [1-9][0-9]* errors",
-        ),
-        pattern(
-            r"(?i)ERROR: SUM\(INPUTS\) != SUM\(OUTPUTS\)|ERROR: Shift counter corrupt|ERROR: Illegal double encountered|ERROR: FFT data has been zeroed|ERROR: Jacobi error check failed|Warning: ILLEGAL SUMOUT|Warning: SUMOUT MISMATCH",
-        ),
-    ]
-});
-static SETUP: LazyLock<Regex> = LazyLock::new(|| {
-    pattern(
-        r"(?i)Error allocating memory|Out of memory|Unable to allocate memory|Cannot initialize FFT code",
-    )
-});
-static PROGRESS: LazyLock<Regex> =
-    LazyLock::new(|| pattern(r"(?i)Self-test ([0-9]+K?)(?: \(thread [0-9]+ of [0-9]+\))? passed"));
+/// The output patterns, compiled once when the adapter is built.
+#[derive(Clone, Debug)]
+struct Patterns {
+    computation: [Regex; 2],
+    setup: Regex,
+    progress: Regex,
+}
 
-#[expect(
-    clippy::expect_used,
-    reason = "the patterns are literals proven by every classify test"
-)]
-fn pattern(source: &str) -> Regex {
-    Regex::new(source).expect("literal pattern compiles")
+fn pattern(source: &str) -> Result<Regex, Error> {
+    Regex::new(source).map_err(|source| Error::Pattern { name: NAME, source })
+}
+
+impl Patterns {
+    fn new() -> Result<Self, Error> {
+        Ok(Self {
+            computation: [
+                pattern(
+                    r"(?i)FATAL ERROR|ERROR: ILLEGAL SUMOUT|Possible hardware failure|Hardware failure detected|Maximum number of warnings exceeded|TORTURE TEST FAILED|Torture Test completed .* - [1-9][0-9]* errors",
+                )?,
+                pattern(
+                    r"(?i)ERROR: SUM\(INPUTS\) != SUM\(OUTPUTS\)|ERROR: Shift counter corrupt|ERROR: Illegal double encountered|ERROR: FFT data has been zeroed|ERROR: Jacobi error check failed|Warning: ILLEGAL SUMOUT|Warning: SUMOUT MISMATCH",
+                )?,
+            ],
+            setup: pattern(
+                r"(?i)Error allocating memory|Out of memory|Unable to allocate memory|Cannot initialize FFT code",
+            )?,
+            progress: pattern(r"(?i)Self-test ([0-9]+K?)(?: \(thread [0-9]+ of [0-9]+\))? passed")?,
+        })
+    }
 }
 
 /// The mprime package at `pkg`; the program is `pkg/bin/mprime`.
 #[derive(Clone, Debug)]
 pub struct Mprime {
     pkg: PathBuf,
+    patterns: Patterns,
 }
 
 impl Mprime {
-    pub fn new(pkg: impl Into<PathBuf>) -> Self {
-        Self { pkg: pkg.into() }
+    /// # Errors
+    ///
+    /// [`Error::Pattern`] if an output pattern does not compile.
+    pub fn new(pkg: impl Into<PathBuf>) -> Result<Self, Error> {
+        Ok(Self {
+            pkg: pkg.into(),
+            patterns: Patterns::new()?,
+        })
     }
 
     fn binary(&self) -> PathBuf {
@@ -154,11 +165,16 @@ impl Backend for Mprime {
     }
 
     fn classify(&self, line: &str) -> Line {
-        if COMPUTATION.iter().any(|pattern| pattern.is_match(line)) {
+        let patterns = &self.patterns;
+        if patterns
+            .computation
+            .iter()
+            .any(|pattern| pattern.is_match(line))
+        {
             Line::ComputationError
-        } else if SETUP.is_match(line) {
+        } else if patterns.setup.is_match(line) {
             Line::SetupError
-        } else if let Some(size) = PROGRESS.captures(line).and_then(|c| c.get(1)) {
+        } else if let Some(size) = patterns.progress.captures(line).and_then(|c| c.get(1)) {
             Line::Progress(format!("self-test {} passed", size.as_str()))
         } else {
             Line::Other

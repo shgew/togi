@@ -1,10 +1,11 @@
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::io;
+use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
-use std::sync::LazyLock;
 
 use regex::Regex;
+use regex::bytes::Regex as BytesRegex;
 use togi_backend::{Backend, Error, FileName, Input, Line, Plan, Ready, check_executable};
 use togi_machine::{CpuId, Workload};
 
@@ -54,38 +55,63 @@ fn config(cpus: &[CpuId], tests: &[&str]) -> String {
     )
 }
 
-static BINARY_NAME: LazyLock<Regex> = LazyLock::new(|| pattern(r"^[0-9]{2}-[A-Za-z0-9]+ ~ .+$"));
-static SGR: LazyLock<Regex> = LazyLock::new(|| pattern(r"\x1b\[[0-9;]*m"));
-static AFFINITY: LazyLock<Regex> =
-    LazyLock::new(|| pattern(r"(?i)Failed to set core affinity to core: *([0-9]+)"));
-static COMPUTATION: LazyLock<Regex> = LazyLock::new(|| {
-    pattern(
-        r"(?i)Error\(s\) encountered|Coefficient is too large|Checksum mismatch|Running[\t\n\x0c\r ]+[^\t\n\x0c\r ]+:[\t\n\x0c\r ]*FAIL",
-    )
-});
-static SETUP: LazyLock<Regex> =
-    LazyLock::new(|| pattern(r"(?i)InvalidParametersException|Invalid Parameter"));
-static PROGRESS: LazyLock<Regex> =
-    LazyLock::new(|| pattern(r"(?i)Running[\t\n\x0c\r ]+([^\t\n\x0c\r ]+):[\t\n\x0c\r ]*Passed"));
+/// The output and file-name patterns, compiled once when the adapter is built.
+#[derive(Clone, Debug)]
+struct Patterns {
+    /// Matched against raw name bytes: a binary name need not be UTF-8.
+    binary_name: BytesRegex,
+    sgr: Regex,
+    affinity: Regex,
+    computation: Regex,
+    setup: Regex,
+    progress: Regex,
+}
 
-#[expect(
-    clippy::expect_used,
-    reason = "the patterns are literals proven by every classify test"
-)]
-fn pattern(source: &str) -> Regex {
-    Regex::new(source).expect("literal pattern compiles")
+fn pattern(source: &str) -> Result<Regex, Error> {
+    Regex::new(source).map_err(|source| Error::Pattern { name: NAME, source })
+}
+
+impl Patterns {
+    fn new() -> Result<Self, Error> {
+        Ok(Self {
+            // `(?-u)` lets `.` match any byte but `\n`, as Go's `.` did on invalid UTF-8.
+            binary_name: BytesRegex::new(r"(?-u)^[0-9]{2}-[A-Za-z0-9]+ ~ .+$")
+                .map_err(|source| Error::Pattern { name: NAME, source })?,
+            sgr: pattern(r"\x1b\[[0-9;]*m")?,
+            affinity: pattern(r"(?i)Failed to set core affinity to core: *([0-9]+)")?,
+            computation: pattern(
+                r"(?i)Error\(s\) encountered|Coefficient is too large|Checksum mismatch|Running[\t\n\x0c\r ]+[^\t\n\x0c\r ]+:[\t\n\x0c\r ]*FAIL",
+            )?,
+            setup: pattern(r"(?i)InvalidParametersException|Invalid Parameter")?,
+            progress: pattern(r"(?i)Running[\t\n\x0c\r ]+([^\t\n\x0c\r ]+):[\t\n\x0c\r ]*Passed")?,
+        })
+    }
+}
+
+/// Whichever of `current` and `name` is bytewise smaller.
+fn smaller<'a>(current: Option<&'a OsStr>, name: &'a OsStr) -> &'a OsStr {
+    match current {
+        Some(current) if current.as_bytes() <= name.as_bytes() => current,
+        _ => name,
+    }
 }
 
 /// The lexically smallest binary name and the smallest Zen 5 name among `names`.
 ///
-/// `read_dir` yields entries in no order, so the minimum is chosen explicitly.
-fn select<'a>(names: impl IntoIterator<Item = &'a str>) -> (Option<&'a str>, Option<&'a str>) {
-    let mut lowest: Option<&str> = None;
-    let mut zen5: Option<&str> = None;
-    for name in names.into_iter().filter(|name| BINARY_NAME.is_match(name)) {
-        lowest = Some(lowest.map_or(name, |current| current.min(name)));
-        if name.starts_with(ZEN5_PREFIX) {
-            zen5 = Some(zen5.map_or(name, |current| current.min(name)));
+/// `read_dir` yields entries in no order, so the minimum is chosen explicitly, bytewise.
+fn select<'a>(
+    binary_name: &BytesRegex,
+    names: impl IntoIterator<Item = &'a OsStr>,
+) -> (Option<&'a OsStr>, Option<&'a OsStr>) {
+    let mut lowest: Option<&OsStr> = None;
+    let mut zen5: Option<&OsStr> = None;
+    for name in names
+        .into_iter()
+        .filter(|name| binary_name.is_match(name.as_bytes()))
+    {
+        lowest = Some(smaller(lowest, name));
+        if name.as_bytes().starts_with(ZEN5_PREFIX.as_bytes()) {
+            zen5 = Some(smaller(zen5, name));
         }
     }
     (lowest, zen5)
@@ -94,8 +120,8 @@ fn select<'a>(names: impl IntoIterator<Item = &'a str>) -> (Option<&'a str>, Opt
 #[derive(Debug)]
 struct Binaries {
     root: PathBuf,
-    lowest: String,
-    zen5: String,
+    lowest: OsString,
+    zen5: OsString,
 }
 
 impl Binaries {
@@ -111,11 +137,18 @@ impl Binaries {
 #[derive(Clone, Debug)]
 pub struct Ycruncher {
     pkg: PathBuf,
+    patterns: Patterns,
 }
 
 impl Ycruncher {
-    pub fn new(pkg: impl Into<PathBuf>) -> Self {
-        Self { pkg: pkg.into() }
+    /// # Errors
+    ///
+    /// [`Error::Pattern`] if a pattern does not compile.
+    pub fn new(pkg: impl Into<PathBuf>) -> Result<Self, Error> {
+        Ok(Self {
+            pkg: pkg.into(),
+            patterns: Patterns::new()?,
+        })
     }
 
     /// Both the lowest-ISA and the Zen 5 binary are required and checked, whichever one runs.
@@ -139,11 +172,12 @@ impl Ycruncher {
         };
         let mut names = Vec::new();
         for entry in fs::read_dir(&root).map_err(read)? {
-            if let Ok(name) = entry.map_err(read)?.file_name().into_string() {
-                names.push(name);
-            }
+            names.push(entry.map_err(read)?.file_name());
         }
-        let (lowest, zen5) = select(names.iter().map(String::as_str));
+        let (lowest, zen5) = select(
+            &self.patterns.binary_name,
+            names.iter().map(OsString::as_os_str),
+        );
         let lowest = lowest.ok_or_else(|| Error::NoBinaries {
             name: NAME,
             root: root.clone(),
@@ -172,8 +206,8 @@ impl Backend for Ycruncher {
             detail: format!(
                 "{} ({}, {})",
                 self.pkg.display(),
-                binaries.lowest,
-                binaries.zen5
+                Path::new(&binaries.lowest).display(),
+                Path::new(&binaries.zen5).display()
             ),
         })
     }
@@ -209,14 +243,15 @@ impl Backend for Ycruncher {
     }
 
     fn classify(&self, line: &str) -> Line {
-        let line = SGR.replace_all(line, "");
-        if let Some(cpu) = AFFINITY.captures(&line).and_then(|c| c.get(1)) {
+        let patterns = &self.patterns;
+        let line = patterns.sgr.replace_all(line, "");
+        if let Some(cpu) = patterns.affinity.captures(&line).and_then(|c| c.get(1)) {
             Line::AffinityError(cpu.as_str().parse().ok().map(CpuId))
-        } else if COMPUTATION.is_match(&line) {
+        } else if patterns.computation.is_match(&line) {
             Line::ComputationError
-        } else if SETUP.is_match(&line) {
+        } else if patterns.setup.is_match(&line) {
             Line::SetupError
-        } else if let Some(test) = PROGRESS.captures(&line).and_then(|c| c.get(1)) {
+        } else if let Some(test) = patterns.progress.captures(&line).and_then(|c| c.get(1)) {
             Line::Progress(format!("{} passed", test.as_str()))
         } else {
             Line::Other

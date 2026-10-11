@@ -43,6 +43,11 @@ pub enum Error {
         backend: togi_machine::Backend,
         workload: togi_machine::WorkloadId,
     },
+    #[error("compile {name} output pattern")]
+    Pattern {
+        name: &'static str,
+        source: regex::Error,
+    },
 }
 
 impl Error {

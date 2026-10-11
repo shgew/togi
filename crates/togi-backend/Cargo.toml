@@ -8,6 +8,7 @@ publish.workspace = true
 description = "The contract between the trial runner and the stress programs it launches"
 
 [dependencies]
+regex.workspace = true
 thiserror.workspace = true
 togi-machine.workspace = true
 

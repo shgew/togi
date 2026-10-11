@@ -48,6 +48,21 @@ fn detail(pkg: &TempDir) -> String {
     format!("{} ({LOWEST}, {ZEN5})", pkg.path().display())
 }
 
+fn binary_name() -> BytesRegex {
+    Patterns::new().unwrap().binary_name
+}
+
+fn select_names<'a>(
+    names: impl IntoIterator<Item = &'a str>,
+) -> (Option<&'a str>, Option<&'a str>) {
+    let names: Vec<&OsStr> = names.into_iter().map(OsStr::new).collect();
+    let (lowest, zen5) = select(&binary_name(), names);
+    (
+        lowest.map(|name| name.to_str().unwrap()),
+        zen5.map(|name| name.to_str().unwrap()),
+    )
+}
+
 #[test]
 fn select_picks_the_lexical_minimum_whatever_the_order() {
     let names = [
@@ -61,13 +76,13 @@ fn select_picks_the_lexical_minimum_whatever_the_order() {
         let mut rotated = names;
         rotated.rotate_left(rotation);
         assert_eq!(
-            select(rotated),
+            select_names(rotated),
             (Some("05-A64 ~ Awa"), Some("24-ZN5 ~ Alpha"))
         );
     }
     let reversed: Vec<_> = names.into_iter().rev().collect();
     assert_eq!(
-        select(reversed),
+        select_names(reversed),
         (Some("05-A64 ~ Awa"), Some("24-ZN5 ~ Alpha"))
     );
 }
@@ -89,24 +104,24 @@ fn select_ignores_names_that_are_not_binaries() {
         "05-A64 ~ Kasumi\nmore",
         "",
     ];
-    assert_eq!(select(names), (None, None));
+    assert_eq!(select_names(names), (None, None));
     assert_eq!(
-        select(names.into_iter().chain([ZEN5])),
+        select_names(names.into_iter().chain([ZEN5])),
         (Some(ZEN5), Some(ZEN5))
     );
 }
 
 #[test]
 fn select_can_find_zen5_without_a_lower_binary() {
-    assert_eq!(select(["24-ZN5 ~ Komari"]), (Some(ZEN5), Some(ZEN5)));
-    assert_eq!(select(["05-A64 ~ Kasumi"]), (Some(LOWEST), None));
-    assert_eq!(select([]), (None, None));
+    assert_eq!(select_names(["24-ZN5 ~ Komari"]), (Some(ZEN5), Some(ZEN5)));
+    assert_eq!(select_names(["05-A64 ~ Kasumi"]), (Some(LOWEST), None));
+    assert_eq!(select_names([]), (None, None));
 }
 
 #[test]
 fn identity_and_detail() {
     let pkg = fake_package(true);
-    let ycruncher = Ycruncher::new(pkg.path());
+    let ycruncher = Ycruncher::new(pkg.path()).unwrap();
     assert_eq!(ycruncher.kind(), togi_machine::Backend::Ycruncher);
     assert_eq!(ycruncher.check().unwrap().detail, detail(&pkg));
 }
@@ -121,7 +136,7 @@ fn unrelated_entries_are_ignored() {
         let pkg = fake_package(true);
         write_binary(&pkg, name, mode);
         assert_eq!(
-            Ycruncher::new(pkg.path()).check().unwrap().detail,
+            Ycruncher::new(pkg.path()).unwrap().check().unwrap().detail,
             detail(&pkg),
             "{name} {mode:o}"
         );
@@ -137,20 +152,93 @@ fn creation_order_does_not_decide_the_choice() {
     write_binary(&pkg, "11-SNB ~ Hina", 0o755);
     write_binary(&pkg, "05-A64 ~ Kasumi", 0o755);
     assert_eq!(
-        Ycruncher::new(pkg.path()).check().unwrap().detail,
+        Ycruncher::new(pkg.path()).unwrap().check().unwrap().detail,
         detail(&pkg)
     );
 }
 
+fn os(bytes: &[u8]) -> &OsStr {
+    OsStr::from_bytes(bytes)
+}
+
 #[test]
-fn non_utf8_names_are_ignored() {
-    let pkg = fake_package(true);
-    let odd = binaries_dir(&pkg).join(OsStr::from_bytes(b"00-\xff ~ odd"));
-    fs::write(&odd, "binary").unwrap();
+fn select_compares_non_utf8_names_bytewise() {
+    let odd_zen5 = os(b"24-ZN5 ~ Komari\xff");
+    let odd_lowest = os(b"00-A64 ~ \xfe");
+    let ignored = os(b"00-\xff ~ odd");
+    let names = [
+        os(ZEN5.as_bytes()),
+        odd_zen5,
+        odd_lowest,
+        ignored,
+        os(LOWEST.as_bytes()),
+    ];
     assert_eq!(
-        Ycruncher::new(pkg.path()).check().unwrap().detail,
-        detail(&pkg)
+        select(&binary_name(), names),
+        (Some(odd_lowest), Some(os(ZEN5.as_bytes())))
     );
+    assert_eq!(
+        select(&binary_name(), [odd_zen5, ignored]),
+        (Some(odd_zen5), Some(odd_zen5))
+    );
+}
+
+#[test]
+fn non_utf8_names_are_selected_and_checked() {
+    let pkg = TempDir::new().unwrap();
+    let root = binaries_dir(&pkg);
+    fs::create_dir_all(&root).unwrap();
+    let odd_zen5 = os(b"24-ZN5 ~ Komari\xff");
+    let odd_lowest = os(b"00-A64 ~ Kasumi\xfe");
+    for name in [odd_zen5, odd_lowest] {
+        let path = root.join(name);
+        fs::write(&path, "binary").unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    // A non-matching non-UTF-8 name is still ignored, however small it sorts.
+    fs::write(root.join(os(b"00-\xff ~ odd")), "binary").unwrap();
+    let ycruncher = Ycruncher::new(pkg.path()).unwrap();
+    assert_eq!(
+        ycruncher.check().unwrap().detail,
+        format!(
+            "{} ({}, {})",
+            pkg.path().display(),
+            Path::new(odd_lowest).display(),
+            Path::new(odd_zen5).display()
+        )
+    );
+    let plan = ycruncher
+        .plan(
+            workload("ycruncher-fftv4-n63-vt3"),
+            Path::new("/w"),
+            &cpus(&[2]),
+        )
+        .unwrap();
+    assert_eq!(plan.program, root.join(odd_zen5));
+    let plan = ycruncher
+        .plan(
+            workload("ycruncher-bkt-sftv4"),
+            Path::new("/w"),
+            &cpus(&[2]),
+        )
+        .unwrap();
+    assert_eq!(plan.program, root.join(odd_lowest));
+
+    fs::set_permissions(root.join(odd_zen5), fs::Permissions::from_mode(0o644)).unwrap();
+    assert!(matches!(
+        ycruncher.check().unwrap_err(),
+        Error::NotExecutable { path, .. } if path == root.join(odd_zen5)
+    ));
+}
+
+#[test]
+fn only_a_non_matching_non_utf8_name_is_no_binary() {
+    let pkg = TempDir::new().unwrap();
+    let root = binaries_dir(&pkg);
+    fs::create_dir_all(&root).unwrap();
+    fs::write(root.join(os(b"00-\xff ~ odd")), "binary").unwrap();
+    let error = Ycruncher::new(pkg.path()).unwrap().check().unwrap_err();
+    assert!(matches!(error, Error::NoBinaries { .. }), "{error:?}");
 }
 
 #[test]
@@ -164,7 +252,7 @@ fn both_chosen_binaries_must_be_executable_regular_files() {
         } else {
             fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
         }
-        let error = Ycruncher::new(pkg.path()).check().unwrap_err();
+        let error = Ycruncher::new(pkg.path()).unwrap().check().unwrap_err();
         assert!(
             matches!(&error, Error::NotExecutable { path: named, .. } if *named == path),
             "{name} directory={directory}: {error:?}"
@@ -178,7 +266,7 @@ fn both_chosen_binaries_must_be_executable_regular_files() {
 fn missing_binaries_directory_is_backend_missing() {
     let pkg = fake_package(true);
     fs::remove_dir_all(binaries_dir(&pkg)).unwrap();
-    let error = Ycruncher::new(pkg.path()).check().unwrap_err();
+    let error = Ycruncher::new(pkg.path()).unwrap().check().unwrap_err();
     assert!(matches!(error, Error::BinariesMissing { .. }));
     assert!(error.is_missing());
     assert!(
@@ -191,7 +279,7 @@ fn missing_binaries_directory_is_backend_missing() {
 #[test]
 fn missing_zen5_fails_check_and_every_plan() {
     let pkg = fake_package(false);
-    let ycruncher = Ycruncher::new(pkg.path());
+    let ycruncher = Ycruncher::new(pkg.path()).unwrap();
     let error = ycruncher.check().unwrap_err();
     assert!(matches!(error, Error::NoZen5 { .. }));
     assert!(error.is_missing());
@@ -211,7 +299,7 @@ fn no_matching_names_is_backend_missing() {
     fs::remove_dir_all(&root).unwrap();
     fs::create_dir(&root).unwrap();
     fs::write(root.join("README"), "").unwrap();
-    let error = Ycruncher::new(pkg.path()).check().unwrap_err();
+    let error = Ycruncher::new(pkg.path()).unwrap().check().unwrap_err();
     assert!(matches!(error, Error::NoBinaries { .. }));
     assert!(error.is_missing());
     assert!(error.to_string().contains(&root.display().to_string()));
@@ -223,7 +311,7 @@ fn dangling_chosen_binary_is_backend_missing() {
     let path = binaries_dir(&pkg).join(LOWEST);
     fs::remove_file(&path).unwrap();
     symlink("absent", &path).unwrap();
-    let error = Ycruncher::new(pkg.path()).check().unwrap_err();
+    let error = Ycruncher::new(pkg.path()).unwrap().check().unwrap_err();
     assert!(matches!(error, Error::Missing { .. }));
     assert!(error.is_missing());
 }
@@ -234,7 +322,7 @@ fn cyclic_chosen_binary_is_not_backend_missing() {
     let path = binaries_dir(&pkg).join(LOWEST);
     fs::remove_file(&path).unwrap();
     symlink(LOWEST, &path).unwrap();
-    let error = Ycruncher::new(pkg.path()).check().unwrap_err();
+    let error = Ycruncher::new(pkg.path()).unwrap().check().unwrap_err();
     assert!(matches!(error, Error::Stat { .. }));
     assert!(!error.is_missing());
     assert!(error.to_string().contains(&path.display().to_string()));
@@ -246,7 +334,7 @@ fn binaries_path_that_is_a_file_is_not_backend_missing() {
     let root = binaries_dir(&pkg);
     fs::remove_dir_all(&root).unwrap();
     fs::write(&root, "").unwrap();
-    let error = Ycruncher::new(pkg.path()).check().unwrap_err();
+    let error = Ycruncher::new(pkg.path()).unwrap().check().unwrap_err();
     assert!(matches!(error, Error::ReadBinaries { .. }));
     assert!(!error.is_missing());
     assert!(error.to_string().contains(&root.display().to_string()));
@@ -257,12 +345,21 @@ fn unreadable_binaries_directory_is_not_backend_missing() {
     let pkg = fake_package(true);
     let root = binaries_dir(&pkg);
     fs::set_permissions(&root, fs::Permissions::from_mode(0o000)).unwrap();
-    let result = Ycruncher::new(pkg.path()).check();
+    // Root, or a process with CAP_DAC_OVERRIDE, reads the directory anyway.
+    let unrestricted = fs::read_dir(&root).is_ok();
+    let result = Ycruncher::new(pkg.path()).unwrap().check();
     fs::set_permissions(&root, fs::Permissions::from_mode(0o755)).unwrap();
-    if let Err(error) = result {
-        assert!(matches!(error, Error::ReadBinaries { .. }));
-        assert!(!error.is_missing());
+    if unrestricted {
+        return;
     }
+    let error = result.unwrap_err();
+    match &error {
+        Error::ReadBinaries { source, .. } => {
+            assert_eq!(source.kind(), io::ErrorKind::PermissionDenied);
+        }
+        other => panic!("{other:?}"),
+    }
+    assert!(!error.is_missing());
 }
 
 fn expected_config(cpus: &str, memory: u64, tests: &[&str]) -> String {
@@ -278,7 +375,7 @@ fn expected_config(cpus: &str, memory: u64, tests: &[&str]) -> String {
 #[test]
 fn plans_match_exactly() {
     let pkg = fake_package(true);
-    let ycruncher = Ycruncher::new(pkg.path());
+    let ycruncher = Ycruncher::new(pkg.path()).unwrap();
     let dir = TempDir::new().unwrap();
     for (base, binary, tests, ids, text, memory) in [
         (
@@ -330,6 +427,7 @@ fn plans_match_exactly() {
 fn config_is_literal_native_syntax() {
     let pkg = fake_package(true);
     let plan = Ycruncher::new(pkg.path())
+        .unwrap()
         .plan(
             workload("ycruncher-snt-svt"),
             Path::new("/w"),
@@ -346,7 +444,7 @@ fn config_is_literal_native_syntax() {
 #[test]
 fn memory_is_32_mib_per_cpu() {
     let pkg = fake_package(true);
-    let ycruncher = Ycruncher::new(pkg.path());
+    let ycruncher = Ycruncher::new(pkg.path()).unwrap();
     for count in 1..=4u16 {
         let ids: Vec<u16> = (0..count).collect();
         let plan = ycruncher
@@ -368,6 +466,7 @@ fn memory_is_32_mib_per_cpu() {
 fn unsupported_workload_is_refused_before_discovery() {
     let pkg = TempDir::new().unwrap();
     let error = Ycruncher::new(pkg.path())
+        .unwrap()
         .plan(workload("mprime-sse-4k-21k"), Path::new("/w"), &cpus(&[2]))
         .unwrap_err();
     assert!(matches!(error, Error::Unsupported { .. }));
@@ -379,6 +478,7 @@ fn unsupported_workload_is_refused_before_discovery() {
 fn a_plan_needs_a_cpu() {
     let pkg = fake_package(true);
     let error = Ycruncher::new(pkg.path())
+        .unwrap()
         .plan(workload("ycruncher-bkt-sftv4"), Path::new("/w"), &[])
         .unwrap_err();
     assert!(matches!(error, Error::NoCpus { .. }));
@@ -389,6 +489,7 @@ fn planning_writes_nothing() {
     let pkg = fake_package(true);
     let dir = TempDir::new().unwrap();
     Ycruncher::new(pkg.path())
+        .unwrap()
         .plan(workload("ycruncher-bkt-sftv4"), dir.path(), &cpus(&[2]))
         .unwrap();
     assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 0);
@@ -397,7 +498,7 @@ fn planning_writes_nothing() {
 #[test]
 fn every_catalog_workload_plans() {
     let pkg = fake_package(true);
-    let ycruncher = Ycruncher::new(pkg.path());
+    let ycruncher = Ycruncher::new(pkg.path()).unwrap();
     let dir = TempDir::new().unwrap();
     let mut planned = BTreeSet::new();
     for regime in REGIMES {
@@ -432,7 +533,7 @@ fn every_catalog_workload_plans() {
 }
 
 fn classify(line: &str) -> Line {
-    Ycruncher::new("").classify(line)
+    Ycruncher::new("").unwrap().classify(line)
 }
 
 #[test]

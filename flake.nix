@@ -59,6 +59,9 @@
             ./deny.toml
             ./.config
             ./crates
+            # The backend crates' tests read the Go adapters' output fixtures in place.
+            ./internal/backend/mprime/testdata
+            ./internal/backend/ycruncher/testdata
             ./version.txt
           ];
           rustLinker = lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {

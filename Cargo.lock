@@ -665,6 +665,7 @@ dependencies = [
 name = "togi-backend"
 version = "0.0.0"
 dependencies = [
+ "regex",
  "tempfile",
  "thiserror",
  "togi-machine",

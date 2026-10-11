@@ -210,6 +210,10 @@ fn only_absence_maps_to_backend_missing() {
             backend: togi_machine::Backend::Mprime,
             workload: catalog("mprime-sse-4k-21k"),
         },
+        Error::Pattern {
+            name: "mprime",
+            source: regex::Regex::new(&String::from("(")).unwrap_err(),
+        },
     ];
     for error in present {
         assert!(!error.is_missing(), "{error}");

@@ -46,7 +46,7 @@ fn text(plan: &Plan, name: &str) -> String {
 #[test]
 fn identity_and_detail() {
     let pkg = fake_package();
-    let mprime = Mprime::new(pkg.path());
+    let mprime = Mprime::new(pkg.path()).unwrap();
     assert_eq!(mprime.kind(), togi_machine::Backend::Mprime);
     assert_eq!(
         mprime.check().unwrap().detail,
@@ -58,7 +58,7 @@ fn identity_and_detail() {
 fn missing_binary_is_backend_missing() {
     let pkg = fake_package();
     fs::remove_file(pkg.path().join("bin/mprime")).unwrap();
-    let error = Mprime::new(pkg.path()).check().unwrap_err();
+    let error = Mprime::new(pkg.path()).unwrap().check().unwrap_err();
     assert!(error.is_missing());
     assert!(matches!(
         togi_machine::Error::from(error),
@@ -74,7 +74,7 @@ fn non_executable_binary_fails_check() {
         fs::Permissions::from_mode(0o644),
     )
     .unwrap();
-    let error = Mprime::new(pkg.path()).check().unwrap_err();
+    let error = Mprime::new(pkg.path()).unwrap().check().unwrap_err();
     assert!(matches!(error, Error::NotExecutable { .. }));
     assert!(!error.is_missing());
 }
@@ -85,7 +85,7 @@ fn stat_failure_is_not_backend_missing() {
     let binary = pkg.path().join("bin/mprime");
     fs::remove_file(&binary).unwrap();
     symlink("mprime", &binary).unwrap();
-    let error = Mprime::new(pkg.path()).check().unwrap_err();
+    let error = Mprime::new(pkg.path()).unwrap().check().unwrap_err();
     assert!(!error.is_missing());
     assert!(error.to_string().contains(&binary.display().to_string()));
 }
@@ -102,7 +102,7 @@ fn expected_settings(fft: (u16, u16), flags: [u8; 4], hyper: u8, threads: usize)
 #[test]
 fn plans_match_exactly() {
     let pkg = fake_package();
-    let mprime = Mprime::new(pkg.path());
+    let mprime = Mprime::new(pkg.path()).unwrap();
     let dir = TempDir::new().unwrap();
     for (base, fft, flags, ids, hyper) in [
         ("mprime-sse-4k-21k", (4, 21), [0, 0, 0, 0], vec![2], 0),
@@ -149,6 +149,7 @@ fn plans_match_exactly() {
 fn sse_single_cpu_local_txt_is_literal() {
     let pkg = fake_package();
     let plan = Mprime::new(pkg.path())
+        .unwrap()
         .plan(workload("mprime-sse-4k-21k"), Path::new("/w"), &cpus(&[2]))
         .unwrap();
     assert_eq!(
@@ -161,7 +162,7 @@ fn sse_single_cpu_local_txt_is_literal() {
 #[test]
 fn thread_count_and_hyperthreading_follow_the_cpu_list() {
     let pkg = fake_package();
-    let mprime = Mprime::new(pkg.path());
+    let mprime = Mprime::new(pkg.path()).unwrap();
     for (ids, hyper) in [(vec![2], 0), (vec![2, 18], 1), (vec![2, 18, 3, 19], 1)] {
         let plan = mprime
             .plan(workload("mprime-sse-4k-21k"), Path::new("/w"), &cpus(&ids))
@@ -178,6 +179,7 @@ fn thread_count_and_hyperthreading_follow_the_cpu_list() {
 fn unsupported_workload_is_refused_before_the_binary_is_checked() {
     let pkg = TempDir::new().unwrap();
     let error = Mprime::new(pkg.path())
+        .unwrap()
         .plan(
             workload("ycruncher-bkt-sftv4"),
             Path::new("/w"),
@@ -193,6 +195,7 @@ fn unsupported_workload_is_refused_before_the_binary_is_checked() {
 fn a_plan_needs_a_cpu() {
     let pkg = fake_package();
     let error = Mprime::new(pkg.path())
+        .unwrap()
         .plan(workload("mprime-sse-4k-21k"), Path::new("/w"), &[])
         .unwrap_err();
     assert!(matches!(error, Error::NoCpus { .. }));
@@ -204,6 +207,7 @@ fn missing_binary_yields_no_plan() {
     fs::remove_file(pkg.path().join("bin/mprime")).unwrap();
     let dir = TempDir::new().unwrap();
     let error = Mprime::new(pkg.path())
+        .unwrap()
         .plan(workload("mprime-sse-4k-21k"), dir.path(), &cpus(&[2]))
         .unwrap_err();
     assert!(error.is_missing());
@@ -215,6 +219,7 @@ fn planning_writes_nothing() {
     let pkg = fake_package();
     let dir = TempDir::new().unwrap();
     Mprime::new(pkg.path())
+        .unwrap()
         .plan(workload("mprime-sse-4k-21k"), dir.path(), &cpus(&[2]))
         .unwrap();
     assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 0);
@@ -223,7 +228,7 @@ fn planning_writes_nothing() {
 #[test]
 fn every_catalog_workload_plans() {
     let pkg = fake_package();
-    let mprime = Mprime::new(pkg.path());
+    let mprime = Mprime::new(pkg.path()).unwrap();
     let dir = TempDir::new().unwrap();
     let mut planned = BTreeSet::new();
     for regime in REGIMES {
@@ -258,7 +263,7 @@ fn every_catalog_workload_plans() {
 }
 
 fn classify(line: &str) -> Line {
-    Mprime::new("").classify(line)
+    Mprime::new("").unwrap().classify(line)
 }
 
 #[test]
