@@ -21,6 +21,7 @@ mod error;
 mod evidence;
 mod failures;
 mod flight;
+mod hunt;
 mod later;
 mod ledger;
 mod optimum;

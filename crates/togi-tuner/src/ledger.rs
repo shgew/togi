@@ -329,6 +329,7 @@ impl Run {
                     cycle: None,
                     round: None,
                 };
+                self.hunt_note_parked_failure(event.seq, class, &pending.failure, true);
                 self.failures.pend(event.seq, pending.clone());
                 self.r7_open_failure(event.seq, pending, failed);
             }

@@ -143,7 +143,8 @@ impl Run {
         if let Some(turn) = self.search_turn(intent) {
             return Ok((self.solo_requirement(turn.core, class), Some(turn)));
         }
-        self.zero_context(intent, class, cause)
+        self.hunt_intent(intent, class)
+            .or_else(|| self.zero_context(intent, class, cause))
             .or_else(|| self.rerun_context(intent, class))
             .or_else(|| self.round_context(intent, class))
             .or_else(|| self.cycle_context(intent, class))
@@ -178,10 +179,13 @@ impl Run {
             RequirementKind::Round => Some(TrialContext::Round {
                 round: intent.round?,
             }),
-            RequirementKind::Search
-            | RequirementKind::SoloLimit
-            | RequirementKind::ZeroRerun
-            | RequirementKind::Hunt => None,
+            RequirementKind::Hunt => Some(TrialContext::Hunt {
+                hunt: intent.hunt?,
+                group: intent.group?,
+            }),
+            RequirementKind::Search | RequirementKind::SoloLimit | RequirementKind::ZeroRerun => {
+                None
+            }
         }
     }
 
@@ -227,9 +231,10 @@ impl Run {
                 TrialContext::Cycle { .. } => self.cycle_retry_requirement(plan),
                 TrialContext::Rerun { failure } => self.rerun_retry_requirement(plan, failure),
                 TrialContext::Round { round } => self.round_retry_requirement(plan, round),
-                TrialContext::Search { .. }
-                | TrialContext::SoloLimit { .. }
-                | TrialContext::Hunt { .. } => Some(retry.requirement),
+                TrialContext::Hunt { hunt, group } => self.hunt_retry_requirement(hunt, group),
+                TrialContext::Search { .. } | TrialContext::SoloLimit { .. } => {
+                    Some(retry.requirement)
+                }
             };
         };
         let state = self.core(turn.core);

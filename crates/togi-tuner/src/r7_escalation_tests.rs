@@ -66,10 +66,6 @@ impl Played {
     }
 }
 
-fn is_hunt(action: Option<Action>) -> bool {
-    matches!(action, Some(Action::Decide(d)) if matches!(d.payload, DecisionPayload::HuntStart(_)))
-}
-
 impl Journal {
     fn values(&self) -> Vec<i64> {
         self.offsets()
@@ -200,7 +196,6 @@ impl Journal {
 
     fn located(&self) -> (Seq, Escalation, Vec<Seq>) {
         assert_eq!(self.run().r7_decision(), None);
-        assert!(!is_hunt(self.state.decide()));
         match self.run().locate_due() {
             Some(R7Route::Locate { failure, reason }) => {
                 assert_eq!(reason.rerun_passed, None);

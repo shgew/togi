@@ -33,6 +33,9 @@ impl Run {
             let core = self.core(id);
             core.queued_reset.map(|queued| (id, core, queued))
         })?;
+        if let Some(cancel) = self.hunt_cancel(id, queued) {
+            return Some(cancel);
+        }
         if let Some(end) = self
             .round_reset_end(id, queued)
             .or_else(|| self.cycle_reset_end(id, queued))
@@ -210,6 +213,9 @@ impl Run {
         if let Some(action) = self.ordinary_decision() {
             return Some(self.later_decision(action));
         }
+        if let Some(action) = self.hunt_next() {
+            return Some(action);
+        }
         if let Some(decision) = self
             .round_queue_close()
             .or_else(|| self.round_move_action())
@@ -226,7 +232,11 @@ impl Run {
             return self
                 .hunt_skipped_decision()
                 .or_else(|| self.later_hunt_hold())
-                .map(Action::Decide);
+                .map(Action::Decide)
+                .or_else(|| self.hunt_start_action());
+        }
+        if let Some(action) = self.locate_action() {
+            return Some(action);
         }
         if let Some(action) = self.rerun_action() {
             return Some(action);

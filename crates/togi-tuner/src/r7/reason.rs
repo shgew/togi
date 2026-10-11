@@ -47,6 +47,7 @@ pub(crate) enum Note {
         failure: Seq,
         end: Seq,
     },
+    Located(String),
 }
 
 impl fmt::Display for Note {
@@ -87,6 +88,7 @@ impl fmt::Display for Note {
                 f,
                 "not located on the unloaded cores yet: this is voltage-targeted backoff {n} of this load since its last passing trial, and its failures are located only after {after}"
             ),
+            Self::Located(clause) => f.write_str(clause),
             Self::RerunPassed { failure, end } => write!(
                 f,
                 "the rerun of failure #{failure} with every core at CO 0 passed (#{end}), so it counts as unattributed against the cores off CO 0"

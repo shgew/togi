@@ -787,7 +787,7 @@ fn crash_detected(intent: Seq) -> Payload {
 
 #[test]
 fn an_inconclusive_end_after_a_config_change_keeps_no_stale_retry() {
-    let cases: [(&str, Journal, &str); 2] = [
+    let cases: Vec<(&str, Journal, &str)> = vec![
         (
             "search_trial_s",
             Journal::search_at(&[-10]),

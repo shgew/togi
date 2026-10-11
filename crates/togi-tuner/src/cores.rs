@@ -142,6 +142,7 @@ impl Run {
     ) -> Result<(), FoldError> {
         let core = transition.core;
         self.require_core(core)?;
+        self.hunt_phase_reset(core);
         let check = Check::recorded(core, transition.check_solo_limit, &transition.workloads)?;
         self.constraints
             .set_failure_point(core, transition.failure_point.map(FailurePoint::new))?;
@@ -213,6 +214,7 @@ impl Run {
         {
             self.queue_rerun(&event.cause);
         }
+        self.hunt_decided(event, decision);
         self.update_core(core, |state| {
             state.offset = decision.to_offset;
             state.pass = decision.pass;

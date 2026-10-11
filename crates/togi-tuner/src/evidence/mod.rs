@@ -604,6 +604,34 @@ impl Evidence {
             .min_by_key(|found| found.passes.first().copied()))
     }
 
+    /// Whether some failure of `regime` at a duration of at most `longest` is admitted and was
+    /// recorded before `before`: carried from any seq, live above `after`.
+    pub fn failed_before(
+        &self,
+        regime: Regime,
+        longest: crate::Secs,
+        after: Option<Seq>,
+        before: Seq,
+    ) -> bool {
+        self.classes
+            .iter()
+            .filter(|(class, _)| class.regime() == regime && class.duration() <= longest)
+            .any(|(_, cells)| {
+                cells.failures.cells().iter().any(|cell| {
+                    self.visit();
+                    cell.live
+                        .after(after)
+                        .first()
+                        .is_some_and(|&seq| seq < before)
+                        || cell
+                            .carried
+                            .after(None)
+                            .first()
+                            .is_some_and(|&seq| seq < before)
+                })
+            })
+    }
+
     /// Discards every fact whose loaded cores include `core`, every multi-core R7 fact naming
     /// it, and the carried provenance of what goes. Whole cells go; no fact is looked up one by
     /// one.

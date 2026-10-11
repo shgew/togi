@@ -93,9 +93,27 @@ impl Run {
                 failure: seq,
             })
         });
+        let found = found.or_else(|| self.hunt_obligation(cause));
         if let Some(obligation) = found {
             self.reruns.push(obligation);
         }
+    }
+
+    /// A hunt commitment answers the failure that started the hunt, or the parked failure that
+    /// ended it directly: its class is owed a rerun, counted from that failure.
+    fn hunt_obligation(&self, cause: &[Seq]) -> Option<Obligation> {
+        let (source, direct) = self.hunts.commitment_source(*cause.first()?)?;
+        let direct = direct.and_then(|seq| {
+            self.failures.pending(seq).map(|pending| Obligation {
+                class: pending.class,
+                failure: seq,
+            })
+        });
+        let class = self.hunts.active.as_ref()?.class;
+        direct.or(Some(Obligation {
+            class,
+            failure: source,
+        }))
     }
 
     fn rerun_answer(&self, obligation: Obligation) -> Answer {

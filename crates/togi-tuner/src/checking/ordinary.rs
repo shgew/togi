@@ -34,7 +34,10 @@ impl Run {
                 AtZero::Released => None,
             };
         }
-        if let Some(end) = self.round_failure_close(record, seq) {
+        if let Some(end) = self
+            .round_failure_close(record, seq)
+            .or_else(|| self.hunt_direct(id, seq, record))
+        {
             return Some(Action::Decide(end));
         }
         Some(Action::Decide(
@@ -109,7 +112,7 @@ impl Run {
                 workloads: Vec::new(),
                 reason,
             },
-            vec![seq],
+            vec![self.hunt_direct_end().unwrap_or(seq)],
         )
     }
 

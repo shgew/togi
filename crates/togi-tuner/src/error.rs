@@ -58,4 +58,6 @@ pub enum FoldError {
     NoCheckingProfile,
     #[error("CCD {} is outside the topology", .0.0)]
     UnknownCcd(togi_machine::CcdId),
+    #[error("hunt {0} has no candidate to narrow")]
+    NoCandidates(std::num::NonZeroU32),
 }

@@ -88,7 +88,12 @@ pub(crate) fn zero_requirement(class: ClassKey, failure: Seq) -> Requirement {
     }
 }
 
-fn dead_end(core: CoreId, head: &str, rerun: Option<Seq>, cause: Vec<Seq>) -> DecisionAction {
+pub(crate) fn dead_end(
+    core: CoreId,
+    head: &str,
+    rerun: Option<Seq>,
+    cause: Vec<Seq>,
+) -> DecisionAction {
     let detail = match rerun {
         None => format!("{head}; {NOT_CURVE_OPTIMIZER}"),
         Some(end) => format!(

@@ -9,7 +9,7 @@ use crate::Secs;
 
 /// What the tuner reads from the operator configuration: the trial durations, the checking
 /// cycle, the pass count and the backend packages.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct TunerConfig {
     pub(crate) search_trial: Secs,
     pub(crate) short_trial: Secs,
@@ -18,6 +18,8 @@ pub(crate) struct TunerConfig {
     pub(crate) checking_all_core: Secs,
     pub(crate) cycle: Box<[Regime]>,
     pub(crate) needed: NonZeroU16,
+    pub(crate) miss: f64,
+    pub(crate) rate: f64,
     pub(crate) mprime: Option<PathBuf>,
     pub(crate) ycruncher: Option<PathBuf>,
 }
@@ -46,6 +48,8 @@ impl TunerConfig {
                 .ok()
                 .and_then(NonZeroU16::new)
                 .unwrap_or(NonZeroU16::MIN),
+            miss: config.evidence().miss().get(),
+            rate: config.evidence().rate().get(),
             mprime: config
                 .backends()
                 .path(Backend::Mprime)

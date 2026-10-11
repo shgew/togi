@@ -77,6 +77,18 @@ impl Failures {
         self.queue.push_back(seq);
     }
 
+    pub(crate) fn dequeue_head(&mut self, seq: Seq) {
+        if self.queue.front() == Some(&seq) {
+            self.queue.pop_front();
+        }
+    }
+
+    pub(crate) fn requeue(&mut self, seq: Seq) {
+        if self.pending.contains_key(&seq) && !self.queue.contains(&seq) {
+            self.queue.push_front(seq);
+        }
+    }
+
     pub(crate) fn pending(&self, seq: Seq) -> Option<&Pending> {
         self.pending.get(&seq)
     }
@@ -268,6 +280,9 @@ impl Run {
             );
         }
         let cited = known_seq.unwrap_or(event.seq);
+        if known_seq.is_none() {
+            self.hunt_note_parked_failure(event.seq, class, failure, false);
+        }
         if zero_rerun.is_some() && !class.multi_r7() {
             return Ok(());
         }
@@ -284,7 +299,11 @@ impl Run {
         self.failures.pend(cited, pending.clone());
         if class.multi_r7() {
             if known_seq.is_none() {
+                if zero_rerun.is_none() {
+                    self.hunt_keep_rejecting(ledger_seq, cited, &pending, failed_trial.as_ref());
+                }
                 self.r7_open_failure(cited, pending, failed_trial);
+                self.hunt_located_culprit(cited, class, failure);
             }
             self.phase2_failure(cited);
             return Ok(());

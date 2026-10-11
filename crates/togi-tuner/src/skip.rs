@@ -33,36 +33,49 @@ impl Run {
             return action;
         };
         let multi_r7 = plan.regime == Regime::R7 && plan.load.cores().len() > 1;
+        let hunt = matches!(plan.context, TrialContext::Hunt { .. });
         if multi_r7
-            || plan.condition == Condition::Parked
+            || (plan.condition == Condition::Parked && !hunt)
             || matches!(plan.context, TrialContext::ZeroRerun { .. })
         {
             return action;
         }
+        let needed = if hunt {
+            self.hunts
+                .active
+                .as_ref()
+                .map_or(self.config.needed, |active| active.needed)
+        } else {
+            self.config.needed
+        };
         let class = self.plan_class(plan);
-        let Ok(Some(seq)) =
-            self.evidence
-                .failing_seq(class, &plan.profile, None, self.config.needed)
+        let Ok(Some(seq)) = self
+            .evidence
+            .failing_seq(class, &plan.profile, None, needed)
         else {
             return action;
         };
-        if self.later.is_held(seq) {
-            return action;
-        }
-        let Some(known) = self.failures.witnessed(seq) else {
-            return action;
-        };
         let reason = format!(
-            "skipped {} {} {} trial on {} for {}s at profile {}: known failure #{seq} at an equal-or-shallower profile is not covered by {} newer passes{}",
+            "skipped {} {} {} trial on {} for {}s at profile {}: known failure #{seq} at an equal-or-shallower profile is not covered by {needed} newer passes{}",
             plan.condition,
             plan.regime,
             class.workload(),
             cores_text(class.loaded()),
             plan.duration.get(),
             profile_text(&plan.profile),
-            self.config.needed,
             carried_clause(&self.evidence, &[seq]),
         );
+        if hunt {
+            return self
+                .skip_hunt_group(plan, seq, reason)
+                .map_or(action, Action::Decide);
+        }
+        if self.later.is_held(seq) {
+            return action;
+        }
+        let Some(known) = self.failures.witnessed(seq) else {
+            return action;
+        };
         let mut failure: Failure = known.failure.clone();
         failure.known_failure = Some(seq);
         failure.reason = Some(reason);

@@ -9,6 +9,7 @@ use crate::config::TunerConfig;
 use crate::cores::{Core, Rotation};
 use crate::failures::Failures;
 use crate::flight::Flight;
+use crate::hunt::Hunts;
 use crate::later::Later;
 use crate::ledger::PendingWarning;
 use crate::phases::Phases;
@@ -44,6 +45,7 @@ pub(crate) struct Run {
     pub(crate) failures: Failures,
     pub(crate) r7: R7,
     pub(crate) zero: Zero,
+    pub(crate) hunts: Hunts,
     pub(crate) ranking: Option<Ranked>,
     pub(crate) last_plan_seq: Option<Seq>,
     pub(crate) rounds: Rounds,
@@ -89,6 +91,7 @@ impl Run {
             failures: Failures::default(),
             r7: R7::default(),
             zero: Zero::default(),
+            hunts: Hunts::default(),
             ranking: None,
             last_plan_seq: None,
             rounds: Rounds::default(),
@@ -138,6 +141,7 @@ impl Run {
         self.failures.forget_core(core);
         self.prune_blames();
         self.r7_reset(core);
+        self.hunt_reset(event.seq, core);
         self.update_core(core, |state| state.queued_reset = Some(event.seq));
         self.retry = None;
         self.reruns.consume_citations();
@@ -165,7 +169,11 @@ impl Run {
         Ok(())
     }
 
-    fn combination(&mut self, combination: &togi_journal::Combination) -> Result<(), FoldError> {
+    fn combination(
+        &mut self,
+        event: &Event,
+        combination: &togi_journal::Combination,
+    ) -> Result<(), FoldError> {
         let members: PerCore<TargetOffset> = combination
             .members
             .iter()
@@ -173,6 +181,7 @@ impl Run {
             .collect();
         self.constraints
             .insert_combination(CombinationId::new(combination.combination), members)?;
+        self.hunt_combination(event, combination);
         Ok(())
     }
 
@@ -265,7 +274,9 @@ impl State {
             Payload::Failure(failure) => self.run_mut()?.failure(event, failure)?,
             Payload::TrialCarried(carried) => self.run_mut()?.trial_carried(event, carried)?,
             Payload::FailureCarried(carried) => self.run_mut()?.failure_carried(event, carried)?,
-            Payload::Combination(combination) => self.run_mut()?.combination(combination)?,
+            Payload::Combination(combination) => {
+                self.run_mut()?.combination(event, combination)?;
+            }
             Payload::DeadEnd(dead_end) => self.run_mut()?.dead_end(event, dead_end)?,
             Payload::CrashDetected(_) => self.run_mut()?.crash_detected(),
             Payload::ProfileChange(change) => self.run_mut()?.profile_change(event, change)?,
@@ -300,10 +311,10 @@ impl State {
                 self.run_mut()?;
             }
             Payload::DeepeningRound(round) => self.run_mut()?.deepening_round(event, round)?,
-            Payload::HuntStart(_)
-            | Payload::HuntGroup(_)
-            | Payload::HuntEnd(_)
-            | Payload::Shutdown(_) => {
+            Payload::HuntStart(start) => self.run_mut()?.hunt_start(event, start)?,
+            Payload::HuntGroup(group) => self.run_mut()?.hunt_group(event, group)?,
+            Payload::HuntEnd(end) => self.run_mut()?.hunt_end(event, end)?,
+            Payload::Shutdown(_) => {
                 self.run_mut()?;
             }
         }

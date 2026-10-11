@@ -162,14 +162,22 @@ impl Run {
         let view = self.failed(record);
         let named = self.named_culprit(&view);
         let targets = self.failure_targets(&view);
+        let located_named = self
+            .hunts
+            .located
+            .get(&seq)
+            .and_then(|located| located.end.as_ref())
+            .is_some_and(|end| end.named.is_some());
         if decision.activity != Activity::Deepening && decision.decision == Decision::Backoff {
-            let kind = if named {
+            let kind = if located_named {
+                BackoffKind::LocatedNamed
+            } else if named {
                 BackoffKind::Named
             } else {
                 BackoffKind::Unattributed
             };
             self.r7.strikes.backoff(load, kind, event.seq, seq);
-            if let (false, Some(core)) = (named, recorded_name) {
+            if let (false, Some(core)) = (named || located_named, recorded_name) {
                 self.r7.named.insert(seq, core);
             }
         }
@@ -184,8 +192,9 @@ impl Run {
         };
         open.handled.insert(decision.core);
         open.handled.extend(marked);
-        if targets.iter().all(|&core| open.handled.contains(core)) {
+        if located_named || targets.iter().all(|&core| open.handled.contains(core)) {
             self.r7.open.remove(&seq);
+            self.hunts.located.remove(&seq);
         }
     }
 

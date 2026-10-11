@@ -449,7 +449,7 @@ fn a_skipped_unattributed_failure_is_queued_for_its_hunt_once() {
     assert_eq!(skipped.known_failure, Some(fact));
     j.decide(skip);
     assert!(j.run().failures.queue().any(|seq| seq == fact));
-    assert_eq!(j.state.decide(), None);
+    assert_eq!(j.state.decide(), Some(Action::ReadRanking));
     j.assert_resumes();
 }
 
@@ -492,7 +492,7 @@ fn an_unattributed_failure_that_reaches_nothing_waits_for_its_hunt() {
     let plan = r6(&j, &ids, &[-10, -10]);
     let failure = named_failure(&mut j, &plan, None);
     assert!(j.run().failures.queue().any(|seq| seq == failure));
-    assert_eq!(j.state.decide(), None);
+    assert_eq!(j.state.decide(), Some(Action::ReadRanking));
 }
 
 #[test]

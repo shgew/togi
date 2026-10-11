@@ -1,6 +1,6 @@
 use std::fmt;
 
-use togi_journal::{Activity, Decision, Seq, TunerDecision};
+use togi_journal::{Activity, Decision, HuntOutcome, Seq, TunerDecision};
 use togi_machine::{CcdId, Condition, CoreId, CoreSet, PerCore, TargetOffset};
 use togi_requests::groups;
 
@@ -10,6 +10,7 @@ use super::failed::FailedTrial;
 use super::order::lowest_ranked;
 use super::reason::{Basis, Note, R7Reason, ids};
 use super::target::{OwnRequest, Target, backoff_counts, backoff_move};
+use crate::hunt::state::{Located, LocatedEnd};
 use crate::ledger::carried_clause;
 use crate::r7::failed::OpenFailure;
 use crate::state::Run;
@@ -49,7 +50,45 @@ pub(crate) enum R7Response {
     ReadRanking,
 }
 
+pub(crate) type LocatedLink<'a> = (&'a Located, &'a LocatedEnd);
+
+fn located_clause(located: &Located, end: &LocatedEnd) -> (String, Vec<Seq>) {
+    let mut seqs = vec![end.seq];
+    let hunt = located.hunt;
+    let text = match (&end.named, end.failure) {
+        (Some(named), Some(failure)) => {
+            seqs.push(failure);
+            format!(
+                "hunt {hunt} ended loaded after failure #{failure} named loaded core {:02}, which also answers failure #{}",
+                named.core.get(),
+                located.source
+            )
+        }
+        (None, Some(failure)) => {
+            seqs.push(failure);
+            format!(
+                "hunt {hunt} kept the failure on the loaded cores after failure #{failure} with every unloaded core at CO 0"
+            )
+        }
+        (Some(_) | None, None) => {
+            format!("hunt {hunt} kept the failure on the loaded cores")
+        }
+    };
+    (text, seqs)
+}
+
 impl R7Response {
+    pub(crate) fn sourced(mut self, source: Seq) -> Self {
+        match &mut self {
+            Self::Backoff { decision, .. } | Self::DeadEnd(decision) => {
+                decision.cause.retain(|&seq| seq != source);
+                decision.cause.insert(0, source);
+            }
+            Self::ZeroRerun(_) | Self::ReadRanking => {}
+        }
+        self
+    }
+
     pub(crate) fn into_action(self) -> Action {
         match self {
             Self::Backoff { decision, .. } | Self::DeadEnd(decision) => Action::Decide(decision),
@@ -429,7 +468,12 @@ impl Run {
     /// The response a failure requires against target `id`, none when the core it would move
     /// already sits shallower than in the failed trial: the failure then needs no move, and
     /// stays pending in case that core returns to its failing offset.
-    fn core_response(&self, view: &Failed<'_>, id: CoreId) -> Option<R7Response> {
+    fn core_response(
+        &self,
+        view: &Failed<'_>,
+        id: CoreId,
+        link: Option<LocatedLink<'_>>,
+    ) -> Option<R7Response> {
         if self.answered(view, id) {
             return None;
         }
@@ -438,7 +482,14 @@ impl Run {
         let rerun = view.rerun_end;
         let live = !record.pending.carried
             && record.pending.failure.condition == Some(Condition::Together);
-        if live && !self.named_culprit(view) && !self.locate_candidates(record).is_empty() {
+        let mut located_seqs: Vec<Seq> = Vec::new();
+        let mut clause: Option<String> = None;
+        if let Some((located, end)) = link {
+            let (text, seqs) = located_clause(located, end);
+            charge.notes.push(Note::Located(text.clone()));
+            clause = Some(text);
+            located_seqs = seqs;
+        } else if live && !self.named_culprit(view) && !self.locate_candidates(record).is_empty() {
             charge.notes.push(Note::Ordinal {
                 n: view.trial.backoffs.failures() + 1,
                 after: super::escalation::ESCALATE_AFTER,
@@ -451,10 +502,20 @@ impl Run {
             });
         }
         let mut cause = vec![record.seq];
+        cause.extend(located_seqs);
         cause.extend(rerun);
         cause.extend(charge.sources.iter().copied());
         if charge.group.is_empty() || (charge.named && Self::at_zero_in(view.profile(), id)) {
-            let head = self.failed_at_zero_head(view, id, &charge);
+            let mut head = self.failed_at_zero_head(view, id, &charge);
+            if let Some(text) = &clause {
+                head.push_str(", and ");
+                head.push_str(text);
+            }
+            if link.is_some_and(|(_, end)| end.all_zero && end.failure.is_some()) {
+                return Some(R7Response::DeadEnd(crate::zero::dead_end(
+                    id, &head, None, cause,
+                )));
+            }
             return match self.at_zero(record.seq, &record.pending, id, &head, cause) {
                 AtZero::DeadEnd(decision) => Some(R7Response::DeadEnd(*decision)),
                 AtZero::Rerun(plan) => Some(R7Response::ZeroRerun(plan)),
@@ -583,6 +644,24 @@ impl Run {
 
     /// The route of one multi-core R7 failure whose cores `handled` already answered.
     fn r7_route(&self, record: &OpenFailure) -> Option<R7Route> {
+        let link = match self.hunts.located.get(&record.seq) {
+            None => None,
+            Some(located) => match &located.end {
+                Some(end) if end.result == HuntOutcome::Loaded => Some((located, end)),
+                Some(_) | None => return None,
+            },
+        };
+        if let Some((_, end)) = link {
+            if let Some(named) = &end.named {
+                if record.handled.contains(named.core) {
+                    return None;
+                }
+                let view = self.failed(&named.failure);
+                return self
+                    .core_response(&view, named.core, link)
+                    .map(|response| R7Route::Respond(Box::new(response.sourced(record.seq))));
+            }
+        }
         let view = self.failed(record);
         let unhandled: Vec<CoreId> = self
             .failure_targets(&view)
@@ -592,18 +671,20 @@ impl Run {
         if unhandled.is_empty() {
             return None;
         }
-        if let Some(reason) = self.locatable(&view) {
-            return unhandled
-                .iter()
-                .any(|&core| !self.answered(&view, core))
-                .then_some(R7Route::Locate {
-                    failure: record.seq,
-                    reason,
-                });
+        if link.is_none() {
+            if let Some(reason) = self.locatable(&view) {
+                return unhandled
+                    .iter()
+                    .any(|&core| !self.answered(&view, core))
+                    .then_some(R7Route::Locate {
+                        failure: record.seq,
+                        reason,
+                    });
+            }
         }
         unhandled
             .iter()
-            .find_map(|&core| self.core_response(&view, core))
+            .find_map(|&core| self.core_response(&view, core, link))
             .map(|response| R7Route::Respond(Box::new(response)))
     }
 

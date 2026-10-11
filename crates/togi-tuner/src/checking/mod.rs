@@ -251,6 +251,7 @@ impl Run {
             CycleEvent::End => {
                 if cycle.passed && cycle.full {
                     let searching = self.any_searching();
+                    self.hunt_passed_full_cycle(event.seq);
                     self.phases.passed_full_cycle(
                         event.seq,
                         cycle.cycle,
