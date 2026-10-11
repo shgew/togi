@@ -1,7 +1,12 @@
 //! The public seams end to end: the runtime thread, the sync API and abandoned handles. These run
 //! in real time on the fake OS, with short timings where a bound is under test.
 
-use std::sync::Arc;
+use std::cell::Cell;
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+use std::rc::Rc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use tempfile::TempDir;
@@ -9,13 +14,17 @@ use togi_machine::{
     CancellationToken, CoreId, Partial, Regime, Reporter, Running, Sample, Signal, Stopped, Trials,
 };
 
-use super::harness::{crate_error, nothing_runs, own_identity, spec, topology};
-use crate::error::Error;
+use super::harness::{
+    Run, crate_error, finish, local, nothing_runs, own_identity, rig, spec, topology,
+};
+use crate::error::{CleanupFailure, Error, InvalidTrial};
+use crate::id::ScopeName;
 use crate::native::Settings;
 use crate::os::fake::{Delivery, Fake, Launch, ProcCtx, Reply, script};
-use crate::os::{ExitInfo, GroupSignal, Systemd};
+use crate::os::{ExitInfo, GroupSignal, KillSignal, Systemd};
 use crate::runner::{Backends, Options, Runner};
 use crate::sensors::Roots;
+use crate::supervisor::TrialCommand;
 use crate::testing::TestBackend;
 use crate::timing::Timing;
 
@@ -113,19 +122,56 @@ fn wait_for(deadline: Duration, mut condition: impl FnMut() -> bool) -> bool {
 }
 
 /// A worker that notes in `marker` when it is asked to terminate, then ends.
-fn marks_termination(marker: std::path::PathBuf) -> impl FnOnce(&Fake) + Send + 'static {
+fn terminating(marker: &Path) -> Launch {
+    let marker = marker.to_owned();
+    Launch::Run(script(move |mut ctx: ProcCtx| async move {
+        while let Some(delivery) = ctx.signals.recv().await {
+            if matches!(delivery, Delivery::Group(GroupSignal::Term)) {
+                std::fs::write(&marker, "terminated").unwrap();
+                ctx.exit(ExitInfo::Signal(15));
+                return;
+            }
+        }
+    }))
+}
+
+fn marks_termination(marker: PathBuf) -> impl FnOnce(&Fake) + Send + 'static {
     move |fake| {
+        fake.on_launch(move |_, _| terminating(&marker));
+    }
+}
+
+/// Timings whose start bound a blocked launch can outlast: one instance may take 650 ms.
+fn stalling() -> Timing {
+    Timing {
+        sample: Duration::from_millis(50),
+        stall_grace: Duration::from_millis(150),
+        stop_grace: Duration::from_millis(50),
+        teardown: Duration::from_millis(400),
+        kill_slot: Duration::from_millis(100),
+        drain: Duration::from_millis(200),
+        writer_join: Duration::from_millis(300),
+        margin: Duration::from_millis(100),
+        ..Timing::default()
+    }
+}
+
+/// Workers that note termination in `marker`, the first launch of which blocks the runtime thread
+/// for `stall` first, as slow filesystem or launcher setup does. `launches` counts the launches;
+/// `ready` is whether the workers start inside their scope.
+fn stalls_first_launch(
+    stall: Duration,
+    marker: PathBuf,
+    launches: Arc<AtomicUsize>,
+    ready: bool,
+) -> impl FnOnce(&Fake) + Send + 'static {
+    move |fake| {
+        fake.set_ready_default(ready);
         fake.on_launch(move |_, _| {
-            let marker = marker.clone();
-            Launch::Run(script(move |mut ctx: ProcCtx| async move {
-                while let Some(delivery) = ctx.signals.recv().await {
-                    if matches!(delivery, Delivery::Group(GroupSignal::Term)) {
-                        std::fs::write(&marker, "terminated").unwrap();
-                        ctx.exit(ExitInfo::Signal(15));
-                        return;
-                    }
-                }
-            }))
+            if launches.fetch_add(1, Ordering::SeqCst) == 0 {
+                std::thread::sleep(stall);
+            }
+            terminating(&marker)
         });
     }
 }
@@ -537,9 +583,7 @@ fn stop_gives_up_on_a_supervisor_that_never_answers_with_containment() {
 fn the_wait_bound_covers_the_whole_duration_of_a_long_trial() {
     let timing = Timing::default();
     let (trial, _kept_open) = silent_supervisor(secs(900), &timing);
-    let remaining = trial
-        .wait_deadline()
-        .saturating_duration_since(Instant::now());
+    let remaining = trial.wait_budget();
     assert!(remaining > secs(900) + timing.teardown + timing.writer_join);
 }
 
@@ -597,4 +641,573 @@ fn containment_carries_the_ordered_cleanup_failures_as_its_source() {
         containment.failures().first(),
         Some(crate::CleanupFailure::KillScope { .. })
     ));
+}
+
+fn start_failure(
+    runner: &mut Runner,
+    regime: Regime,
+    cores: &[u8],
+    duration: Duration,
+) -> Partial<Option<Stopped>> {
+    runner
+        .start(
+            &CancellationToken::new(),
+            spec(regime, cores, duration),
+            nothing_runs(),
+        )
+        .err()
+        .expect("the start fails")
+}
+
+#[test]
+fn a_stalled_start_is_containment_without_a_value_and_the_trial_it_finishes_late_is_abandoned() {
+    let dir = crate::testing::tempdir();
+    let marker = dir.path().join("terminated.txt");
+    let (mut runner, _keep) = runner(
+        stalls_first_launch(secs(1), marker.clone(), Arc::new(AtomicUsize::new(0)), true),
+        stalling(),
+    );
+    let begun = Instant::now();
+    let partial = start_failure(&mut runner, Regime::R1, &[0], secs(600));
+    assert!(begun.elapsed() < secs(5), "{:?}", begun.elapsed());
+    assert!(partial.value.is_none(), "no proof that nothing runs");
+    assert!(matches!(partial.error, togi_machine::Error::Containment(_)));
+    assert!(
+        wait_for(secs(10), || marker.exists()),
+        "the workload of a start nobody waits for was torn down"
+    );
+}
+
+#[test]
+fn a_timed_out_start_launches_no_further_instance_and_rolls_back_the_first() {
+    let dir = crate::testing::tempdir();
+    let marker = dir.path().join("terminated.txt");
+    let launches = Arc::new(AtomicUsize::new(0));
+    let (mut runner, _keep) = runner(
+        stalls_first_launch(
+            Duration::from_millis(1200),
+            marker.clone(),
+            Arc::clone(&launches),
+            true,
+        ),
+        stalling(),
+    );
+    let partial = start_failure(&mut runner, Regime::R7, &[0, 1], secs(600));
+    assert!(partial.value.is_none());
+    assert!(matches!(partial.error, togi_machine::Error::Containment(_)));
+    assert!(
+        wait_for(secs(10), || marker.exists()),
+        "the first instance was rolled back"
+    );
+    assert_eq!(
+        launches.load(Ordering::SeqCst),
+        1,
+        "a start nobody waits for launches nothing more"
+    );
+}
+
+#[test]
+fn dropping_the_runner_after_a_timed_out_start_waits_for_the_rollback_in_progress() {
+    let dir = crate::testing::tempdir();
+    let marker = dir.path().join("terminated.txt");
+    let (mut runner, _keep) = runner(
+        stalls_first_launch(
+            secs(1),
+            marker.clone(),
+            Arc::new(AtomicUsize::new(0)),
+            false,
+        ),
+        stalling(),
+    );
+    let partial = start_failure(&mut runner, Regime::R6, &[0], secs(600));
+    assert!(partial.value.is_none());
+    drop(runner);
+    assert!(
+        marker.exists(),
+        "shutdown let the start that was waiting for its scope roll its workload back"
+    );
+}
+
+#[test]
+fn dropping_the_trial_and_the_runner_back_to_back_still_terminates_the_workload() {
+    let dir = crate::testing::tempdir();
+    let marker = dir.path().join("terminated.txt");
+    let (mut runner, _keep) = runner(marks_termination(marker.clone()), fast());
+    let trial = start(&mut runner, Regime::R1, &[0], secs(600));
+    drop(trial);
+    drop(runner);
+    assert!(
+        marker.exists(),
+        "the runner ended only after the abandoned workload was terminated"
+    );
+}
+
+#[test]
+fn a_duration_that_cannot_be_scheduled_is_refused_before_anything_changes() {
+    let (mut runner, dir) = runner(|_| {}, fast());
+    let partial = start_failure(&mut runner, Regime::R1, &[0], Duration::MAX);
+    assert!(partial.value.is_some(), "nothing ran, so the proof returns");
+    assert!(matches!(
+        crate_error(&partial.error),
+        Some(Error::Invalid(InvalidTrial::UnrepresentableDuration))
+    ));
+    assert!(!dir.path().join("trials").exists());
+}
+
+#[test]
+fn a_repeated_wait_reports_the_failure_the_first_one_did() {
+    let (mut runner, _dir) = runner(|_| {}, fast());
+    let mut trial = start(&mut runner, Regime::R1, &[0], secs(600));
+    let cancel = CancellationToken::new();
+    cancel.cancel();
+    let first = trial.wait(&cancel, &mut Collect::default()).unwrap_err();
+    assert!(matches!(first.error, togi_machine::Error::Cancelled));
+    let again = trial
+        .wait(&CancellationToken::new(), &mut Collect::default())
+        .unwrap_err();
+    assert!(matches!(again.error, togi_machine::Error::Cancelled));
+    assert_eq!(again.value, first.value);
+    assert!(trial.stop().is_ok());
+}
+
+#[test]
+fn a_cancelled_trial_keeps_the_output_failure_that_followed_its_cancellation() {
+    let (mut runner, _dir) = runner(
+        |fake| {
+            fake.on_launch(|_, _| {
+                Launch::Run(script(|mut ctx: ProcCtx| async move {
+                    while let Some(delivery) = ctx.signals.recv().await {
+                        if matches!(delivery, Delivery::Group(GroupSignal::Term)) {
+                            ctx.print(&"x".repeat(70_000)).await;
+                            ctx.exit(ExitInfo::Signal(15));
+                            return;
+                        }
+                    }
+                }))
+            });
+        },
+        fast(),
+    );
+    let mut trial = start(&mut runner, Regime::R1, &[0], secs(600));
+    let cancel = CancellationToken::new();
+    cancel.cancel();
+    let waited = trial.wait(&cancel, &mut Collect::default());
+    let Err(Partial {
+        error: togi_machine::Error::Other(inner),
+        ..
+    }) = waited
+    else {
+        panic!("a cancellation that carries an output failure must not read as a bare one");
+    };
+    let shared = inner
+        .downcast_ref::<crate::error::Shared>()
+        .expect("the joined errors");
+    let Error::Joined(joined) = shared.error() else {
+        panic!("{shared}");
+    };
+    assert!(
+        matches!(joined.errors(), [Error::Cancelled, Error::Output(_)]),
+        "{joined}"
+    );
+    assert!(trial.stop().is_ok());
+}
+
+/// Timings whose supervisor bound is short: a trial's wait bound is its duration plus 600 ms.
+fn quick() -> Timing {
+    Timing {
+        sample: Duration::from_millis(50),
+        stop_grace: Duration::from_millis(50),
+        teardown: Duration::from_millis(300),
+        kill_slot: Duration::from_millis(100),
+        drain: Duration::from_millis(150),
+        writer_join: Duration::from_millis(200),
+        margin: Duration::from_millis(100),
+        ..Timing::default()
+    }
+}
+
+#[test]
+fn a_first_wait_after_the_old_deadline_still_gets_the_finished_outcome() {
+    let (mut runner, _dir) = runner(|_| {}, quick());
+    let mut trial = start(&mut runner, Regime::R1, &[0], Duration::from_millis(100));
+    std::thread::sleep(Duration::from_millis(1300));
+    let result = trial
+        .wait(&CancellationToken::new(), &mut Collect::default())
+        .map_err(|partial| partial.error)
+        .unwrap();
+    assert_eq!(result.ran, Duration::from_millis(100));
+    assert!(
+        trial
+            .wait(&CancellationToken::new(), &mut Collect::default())
+            .is_ok(),
+        "and the outcome stays retrievable"
+    );
+    assert!(trial.stop().is_ok());
+}
+
+#[test]
+fn a_late_wait_with_a_backlog_of_reports_is_still_bounded() {
+    let (mut runner, _dir) = runner(
+        |fake| {
+            fake.on_launch(|_, _| {
+                Launch::Run(script(|mut ctx: ProcCtx| async move {
+                    ctx.print(&"ok line\n".repeat(300)).await;
+                    ctx.until_killed().await;
+                }))
+            });
+        },
+        quick(),
+    );
+    let mut trial = start(&mut runner, Regime::R1, &[0], Duration::from_millis(100));
+    std::thread::sleep(Duration::from_millis(1300));
+    let begun = Instant::now();
+    let partial = trial
+        .wait(&CancellationToken::new(), &mut Slow)
+        .unwrap_err();
+    assert!(begun.elapsed() < secs(2), "{:?}", begun.elapsed());
+    assert!(matches!(partial.error, togi_machine::Error::Containment(_)));
+}
+
+fn names(dir: &Path) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+        .collect();
+    names.sort();
+    names
+}
+
+/// Every file of every trial directory except `skip`, by path.
+fn retained(root: &Path, skip: &str) -> BTreeMap<PathBuf, Vec<u8>> {
+    let mut found = BTreeMap::new();
+    for trial in std::fs::read_dir(root).unwrap() {
+        let trial = trial.unwrap();
+        if trial.file_name() == skip {
+            continue;
+        }
+        for file in std::fs::read_dir(trial.path()).unwrap() {
+            let path = file.unwrap().path();
+            found.insert(path.clone(), std::fs::read(path).unwrap());
+        }
+    }
+    found
+}
+
+fn files_below(dir: &Path, prefix: &str, found: &mut Vec<String>) {
+    for entry in std::fs::read_dir(dir).unwrap() {
+        let entry = entry.unwrap();
+        let name = format!("{prefix}{}", entry.file_name().to_str().unwrap());
+        if entry.file_type().unwrap().is_dir() {
+            files_below(&entry.path(), &format!("{name}/"), found);
+        } else {
+            found.push(name);
+        }
+    }
+    found.sort();
+}
+
+#[test]
+fn ending_a_trial_compresses_it_and_leaves_every_older_retained_trial_untouched() {
+    let (mut runner, dir) = runner(|_| {}, fast());
+    let trials = dir.path().join("trials");
+    for i in 0..205 {
+        let old = trials.join(format!("{:04}", 9000 + i));
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::write(old.join("passed"), "").unwrap();
+        std::fs::write(old.join("samples.jsonl.gz"), "old").unwrap();
+    }
+    let mut expected = names(&trials);
+    expected.push("t1".to_owned());
+    expected.sort();
+    let before = retained(&trials, "t1");
+    assert_eq!(before.len(), 410);
+
+    let mut trial = start(&mut runner, Regime::R7, &[0, 1], Duration::from_millis(300));
+    let _ = trial.wait(&CancellationToken::new(), &mut Collect::default());
+    drop(trial.stop().unwrap());
+    runner.ended("t1").unwrap();
+
+    let mut files = Vec::new();
+    files_below(&trials.join("t1"), "", &mut files);
+    let has = |file: &str, extension: &str| {
+        Path::new(file)
+            .extension()
+            .is_some_and(|found| found == extension)
+    };
+    let plain: Vec<_> = files
+        .iter()
+        .filter(|file| has(file, "log") || file.as_str() == "samples.jsonl")
+        .collect();
+    assert!(plain.is_empty(), "plain files left after ending: {plain:?}");
+    let compressed: Vec<_> = files.iter().filter(|file| has(file, "gz")).collect();
+    assert_eq!(
+        compressed,
+        [
+            "c00/stderr.log.gz",
+            "c00/stdout.log.gz",
+            "c01/stderr.log.gz",
+            "c01/stdout.log.gz",
+            "samples.jsonl.gz"
+        ]
+    );
+    assert_eq!(
+        retained(&trials, "t1"),
+        before,
+        "older trials are untouched"
+    );
+    assert_eq!(names(&trials), expected);
+}
+
+#[test]
+fn compression_follows_the_directory_it_holds_not_its_pathname() {
+    use rustix::fs::{Mode, OFlags, open};
+    let dir = crate::testing::tempdir();
+    let trials = dir.path().join("trials");
+    let trial = trials.join("t1");
+    let make = |at: &Path, text: &str| {
+        std::fs::create_dir_all(at.join("c00")).unwrap();
+        std::fs::write(at.join("samples.jsonl"), text).unwrap();
+        std::fs::write(at.join("c00/stdout.log"), text).unwrap();
+    };
+    make(&trial, "real\n");
+    let held = open(
+        &trial,
+        OFlags::DIRECTORY | OFlags::RDONLY | OFlags::CLOEXEC,
+        Mode::empty(),
+    )
+    .unwrap();
+    // A directory above the trial is renamed and replaced after the descriptor was taken.
+    std::fs::rename(&trial, trials.join("moved")).unwrap();
+    make(&trial, "decoy\n");
+
+    crate::native::compress_pinned(&held).unwrap();
+
+    let moved = trials.join("moved");
+    assert!(moved.join("samples.jsonl.gz").exists());
+    assert!(!moved.join("samples.jsonl").exists());
+    assert!(moved.join("c00/stdout.log.gz").exists());
+    assert_eq!(
+        std::fs::read_to_string(trial.join("samples.jsonl")).unwrap(),
+        "decoy\n"
+    );
+    assert!(!trial.join("samples.jsonl.gz").exists());
+    assert!(!trial.join("c00/stdout.log.gz").exists());
+}
+
+/// A sweep whose caller cancels it as it sends SIGTERM to the leftover scope, which is the first
+/// cleanup step after discovery. `calls` records the signals and stops; with `stuck`, a scope
+/// stop is acknowledged without removing the unit.
+fn cancelled_after_term(
+    calls: Arc<Mutex<Vec<String>>>,
+    cancel: CancellationToken,
+    stuck: bool,
+) -> impl FnOnce(&Fake) + Send + 'static {
+    move |fake| {
+        fake.add_unit("togi-trial-old.scope");
+        fake.on_systemd(move |call| match call {
+            Systemd::Kill { signal, .. } => {
+                calls.lock().unwrap().push(signal.name().to_owned());
+                if *signal == KillSignal::Term {
+                    cancel.cancel();
+                }
+                None
+            }
+            Systemd::Stop { .. } => {
+                calls.lock().unwrap().push("stop".to_owned());
+                stuck.then_some(Reply::Output {
+                    success: true,
+                    text: String::new(),
+                })
+            }
+            _ => None,
+        });
+    }
+}
+
+#[test]
+fn a_sweep_cancelled_after_discovery_still_kills_and_stops_what_it_found() {
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let cancel = CancellationToken::new();
+    let (mut runner, _dir) = runner(
+        cancelled_after_term(Arc::clone(&calls), cancel.clone(), false),
+        fast(),
+    );
+    let error = runner.sweep(&cancel).unwrap_err();
+    assert!(matches!(error, togi_machine::Error::Cancelled), "{error}");
+    let calls = calls.lock().unwrap().clone();
+    assert!(calls.contains(&"SIGKILL".to_owned()), "{calls:?}");
+    assert!(calls.contains(&"stop".to_owned()), "{calls:?}");
+}
+
+#[test]
+fn a_sweep_cancelled_after_discovery_reports_the_cleanup_it_could_not_confirm() {
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let cancel = CancellationToken::new();
+    let (mut runner, _dir) = runner(
+        cancelled_after_term(Arc::clone(&calls), cancel.clone(), true),
+        fast(),
+    );
+    let error = runner.sweep(&cancel).unwrap_err();
+    assert!(
+        matches!(error, togi_machine::Error::Containment(_)),
+        "an unconfirmed cleanup is not hidden behind the cancellation: {error}"
+    );
+    assert!(calls.lock().unwrap().contains(&"SIGKILL".to_owned()));
+}
+
+#[derive(Clone, Copy)]
+enum Phase {
+    Reaping,
+    Draining,
+    Verifying,
+}
+
+struct Abandoned {
+    rig: super::harness::Rig,
+    run: Run,
+    member: Rc<Cell<bool>>,
+}
+
+/// Stops a trial, abandons its handle while its teardown is in `phase` and lets the cleanup go
+/// on; with `fault`, the cleanup meets the failure that phase can meet, which never clears.
+async fn abandoned_during(phase: Phase, fault: bool) -> Abandoned {
+    let rig = rig();
+    let released = Rc::new(Cell::new(false));
+    let mut member = Rc::new(Cell::new(false));
+    match phase {
+        Phase::Reaping => {
+            rig.fake.on_launch(|_, _| {
+                Launch::Run(script(|mut ctx: ProcCtx| async move {
+                    ctx.until_killed_ignoring_term().await;
+                }))
+            });
+            if fault {
+                rig.fake.on_systemd(|call| match call {
+                    Systemd::Kill { .. } => Some(Reply::Hang),
+                    _ => None,
+                });
+            }
+        }
+        Phase::Draining => {
+            let released = Rc::clone(&released);
+            rig.fake.on_launch(move |_, _| {
+                let released = Rc::clone(&released);
+                Launch::Run(script(move |mut ctx: ProcCtx| async move {
+                    ctx.until_killed().await;
+                    // The leader is gone, but a descendant still holds the output pipes.
+                    while !released.get() {
+                        tokio::time::sleep(Duration::from_millis(10)).await;
+                    }
+                }))
+            });
+        }
+        Phase::Verifying => {
+            let survivor = rig.fake.add_recovered(crate::procfs::ScopeProcess {
+                scope: ScopeName::from_unit("togi-trial-t1.scope").unwrap(),
+                pid: 9000,
+                starttime: 1,
+            });
+            member = survivor.alive;
+            rig.fake.on_systemd(|call| match call {
+                Systemd::Kill { .. } => Some(Reply::Output {
+                    success: true,
+                    text: String::new(),
+                }),
+                _ => None,
+            });
+        }
+    }
+    let handle = rig.start(spec(Regime::R1, &[0], secs(600))).await.unwrap();
+    handle.commands.send(TrialCommand::Stop).unwrap();
+    let process = rig.fake.process(0);
+    match phase {
+        // SIGTERM is out and ignored; the grace period runs for 3 s.
+        Phase::Reaping => tokio::time::sleep(secs(1)).await,
+        Phase::Draining | Phase::Verifying => {
+            while !process.reaped.get() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        }
+    }
+    if matches!(phase, Phase::Verifying) {
+        tokio::time::sleep(secs(1)).await;
+    }
+    // The `Trial` is dropped here.
+    handle.commands.send(TrialCommand::Abandon).unwrap();
+    if !fault {
+        match phase {
+            Phase::Reaping => {}
+            Phase::Draining => released.set(true),
+            Phase::Verifying => member.set(false),
+        }
+    }
+    let run = finish(&handle).await;
+    Abandoned { rig, run, member }
+}
+
+#[tokio::test(start_paused = true)]
+async fn abandoning_while_the_workload_ignores_term_still_kills_and_reaps_it() {
+    local(async {
+        let clean = abandoned_during(Phase::Reaping, false).await;
+        assert!(clean.run.finished.teardown.is_ok());
+        let process = clean.rig.fake.process(0);
+        assert!(process.reaped.get());
+        assert!(process.signals.borrow().contains(&GroupSignal::Kill));
+
+        let faulty = abandoned_during(Phase::Reaping, true).await;
+        let containment = faulty.run.finished.teardown.unwrap_err();
+        assert!(
+            containment
+                .failures()
+                .iter()
+                .any(|failure| matches!(failure, CleanupFailure::KillScope { .. })),
+            "no proof that nothing runs while the scope kill is unconfirmed"
+        );
+        let process = faulty.rig.fake.process(0);
+        assert!(process.signals.borrow().contains(&GroupSignal::Kill));
+        assert!(process.reaped.get(), "the rest of the cleanup still ran");
+    })
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn abandoning_while_readers_drain_still_waits_for_them_and_never_proves_an_undrained_stop() {
+    local(async {
+        let clean = abandoned_during(Phase::Draining, false).await;
+        assert!(clean.run.finished.teardown.is_ok());
+        assert!(clean.rig.fake.process(0).reaped.get());
+
+        let faulty = abandoned_during(Phase::Draining, true).await;
+        let containment = faulty.run.finished.teardown.unwrap_err();
+        assert!(
+            containment
+                .failures()
+                .iter()
+                .any(|failure| matches!(failure, CleanupFailure::DrainDeadline)),
+            "{containment}"
+        );
+        assert!(faulty.rig.fake.process(0).reaped.get());
+    })
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn abandoning_during_verification_still_waits_for_the_scope_to_empty() {
+    local(async {
+        let clean = abandoned_during(Phase::Verifying, false).await;
+        assert!(clean.run.finished.teardown.is_ok());
+        assert!(!clean.member.get());
+
+        let faulty = abandoned_during(Phase::Verifying, true).await;
+        let containment = faulty.run.finished.teardown.unwrap_err();
+        assert!(
+            matches!(
+                containment.failures(),
+                [CleanupFailure::ScopeMembers { scope }] if scope == "togi-trial-t1"
+            ),
+            "{containment}"
+        );
+        assert!(faulty.member.get(), "the member outlived the teardown");
+    })
+    .await;
 }

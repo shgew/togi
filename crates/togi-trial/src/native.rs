@@ -10,8 +10,8 @@ use togi_machine::{
 };
 use tokio::sync::mpsc::UnboundedSender;
 
-use crate::error::Error;
 use crate::error::InvalidTrial;
+use crate::error::{Error, Shared};
 use crate::files::TrialsRoot;
 use crate::id::TrialId;
 use crate::runner::Options;
@@ -132,11 +132,15 @@ impl Drop for Runner {
 impl Trials for Runner {
     fn sweep(&mut self, cancel: &CancellationToken) -> Result<Swept, togi_machine::Error> {
         let bound = self.timing.sweep_bound();
-        self.ask("the sweep", bound, |reply| Command::Sweep {
-            cancel: cancel.clone(),
+        let attempt = cancel.child_token();
+        let asked = self.ask("the sweep", bound, |reply| Command::Sweep {
+            cancel: attempt.clone(),
             reply,
-        })?
-        .map_err(Into::into)
+        });
+        if matches!(asked, Err(Error::Stuck { .. })) {
+            attempt.cancel();
+        }
+        asked?.map_err(Into::into)
     }
 
     fn start(
@@ -152,10 +156,19 @@ impl Trials for Runner {
             });
         }
         let instances = u32::try_from(spec.cores.len()).unwrap_or(u32::MAX).max(1);
+        if !self.timing.representable(spec.duration, instances) {
+            return Err(Partial {
+                value: Some(ready),
+                error: Error::Invalid(InvalidTrial::UnrepresentableDuration).into(),
+            });
+        }
         let bound = self.timing.start_bound(instances);
+        // This start's own token: fired when the caller gives up waiting, so the runtime rolls
+        // the start back instead of finishing a trial nobody holds, and when the runner ends.
+        let attempt = cancel.child_token();
         let (reply, answer) = sync_channel(1);
         let command = Command::Start {
-            cancel: cancel.clone(),
+            cancel: attempt.clone(),
             spec: Box::new(spec),
             ready,
             reply,
@@ -167,16 +180,19 @@ impl Trials for Runner {
             });
         }
         match answer.recv_timeout(bound) {
-            Ok(Ok(handle)) => Ok(Box::new(Trial::new(handle, &self.timing))),
+            Ok(Ok(delivered)) => Ok(Box::new(Trial::new(delivered.claim(), &self.timing))),
             Ok(Err(partial)) => Err(partial),
-            Err(_) => Err(Partial {
-                value: None,
-                error: Error::Stuck {
-                    operation: "the start",
-                    bound,
-                }
-                .into(),
-            }),
+            Err(_) => {
+                attempt.cancel();
+                Err(Partial {
+                    value: None,
+                    error: Error::Stuck {
+                        operation: "the start",
+                        bound,
+                    }
+                    .into(),
+                })
+            }
         }
     }
 
@@ -184,9 +200,8 @@ impl Trials for Runner {
         outside_runtime("ended")?;
         let id = TrialId::parse(id).map_err(|error| Error::Invalid(InvalidTrial::Id(error)))?;
         let root = TrialsRoot::open(&self.dir, false).map_err(Error::Prepare)?;
-        root.trial(&id).map_err(Error::Prepare)?;
-        togi_trialfiles::compress(&root.path.join(id.as_str()))
-            .map_err(|errors| Error::Compress(errors).into())
+        let trial = root.trial(&id).map_err(Error::Prepare)?;
+        compress_pinned(&trial).map_err(|errors| Error::Compress(errors).into())
     }
 
     fn samples<'a>(&'a self, id: &'a str) -> Box<dyn Iterator<Item = TrialConditions> + 'a> {
@@ -226,7 +241,11 @@ pub struct Trial {
     cancelled: Arc<AtomicBool>,
     _registration: OnCancel,
     ended: Option<Finished>,
-    deadline: Instant,
+    /// What `wait` found beyond the result, built by the first `wait` that reached the end.
+    failure: Option<Arc<Error>>,
+    reported: bool,
+    created: Instant,
+    bound: Duration,
     stop_bound: Duration,
 }
 
@@ -247,38 +266,60 @@ impl Trial {
             cancelled,
             _registration: registration,
             ended: None,
-            deadline: Instant::now() + timing.wait_bound(duration),
+            failure: None,
+            reported: false,
+            created: Instant::now(),
+            bound: timing.wait_bound(duration),
             stop_bound: timing.stop_bound(),
         }
     }
 
     #[cfg(test)]
-    pub(crate) fn wait_deadline(&self) -> Instant {
-        self.deadline
+    pub(crate) fn wait_budget(&self) -> Duration {
+        self.bound.saturating_sub(self.created.elapsed())
     }
 
-    /// Waits for the supervisor's end, handing reports to `report`; false when it never came.
-    fn await_end(&mut self, until: Instant, report: &mut dyn Reporter) -> bool {
+    /// Waits up to `budget` for the supervisor's end, handing reports to `report`; with `block`
+    /// false it takes only what is already queued. False when the end never came.
+    fn await_end(&mut self, budget: Duration, block: bool, report: &mut dyn Reporter) -> bool {
+        let begun = Instant::now();
         while self.ended.is_none() {
-            let now = Instant::now();
-            if now >= until {
+            let elapsed = begun.elapsed();
+            if elapsed >= budget {
                 return false;
             }
-            let remaining = until.saturating_duration_since(now);
-            match self.events.recv_timeout(remaining) {
-                Ok(Event::Progress(detail)) => report.progress(&detail),
-                Ok(Event::Sample(sample)) => report.sample(sample),
-                Ok(Event::Signal {
+            let event = if block {
+                self.events
+                    .recv_timeout(budget.saturating_sub(elapsed))
+                    .ok()
+            } else {
+                self.events.try_recv().ok()
+            };
+            match event {
+                Some(Event::Progress(detail)) => report.progress(&detail),
+                Some(Event::Sample(sample)) => report.sample(sample),
+                Some(Event::Signal {
                     core,
                     signal,
                     detail,
                 }) => report.signal(core, signal, &detail),
-                Ok(Event::Finished(finished)) => self.ended = Some(*finished),
-                Err(_) => return false,
+                Some(Event::Finished(finished)) => self.ended = Some(*finished),
+                None => return false,
             }
         }
         true
     }
+}
+
+/// Compresses the trial directory `trial` holds open. The files are reached through the
+/// descriptor, not through the trial's pathname, so renaming or replacing a directory above it
+/// cannot redirect the compression.
+pub(crate) fn compress_pinned(trial: &std::os::fd::OwnedFd) -> Result<(), togi_trialfiles::Errors> {
+    use std::os::fd::AsRawFd as _;
+    togi_trialfiles::compress(&PathBuf::from(format!(
+        "/proc/self/fd/{}",
+        trial.as_raw_fd()
+    )))
 }
 
 struct Discard;
@@ -312,11 +353,18 @@ impl Running for Trial {
                 let _ = commands.send(TrialCommand::Cancel);
             })
         };
-        let deadline = self.deadline;
-        if !self.await_end(deadline, report) {
+        let remaining = self.bound.saturating_sub(self.created.elapsed());
+        // A wait after the supervisor's bound has passed still collects what already finished:
+        // it reads what is queued, bounded by the stop bound for reports, and never blocks.
+        let (budget, block) = if remaining.is_zero() {
+            (self.stop_bound, false)
+        } else {
+            (remaining, true)
+        };
+        if !self.await_end(budget, block, report) {
             let error = Error::Stuck {
                 operation: "the trial supervisor",
-                bound: deadline.saturating_duration_since(Instant::now()),
+                bound: self.bound,
             };
             return Err(Partial {
                 value: TrialResult::default(),
@@ -331,16 +379,21 @@ impl Running for Trial {
             });
         };
         let result = finished.result.clone();
-        let mut errors = Vec::new();
-        if let Err(containment) = &finished.teardown {
-            errors.push(Error::Containment(Arc::clone(containment)));
+        // Built once, so a repeated wait reports what the first one did.
+        if !self.reported {
+            let mut errors = Vec::new();
+            if let Err(containment) = &finished.teardown {
+                errors.push(Error::Containment(Arc::clone(containment)));
+            }
+            errors.append(&mut finished.errors);
+            self.failure = Error::join(errors).map(Arc::new);
+            self.reported = true;
         }
-        errors.append(&mut finished.errors);
-        match Error::join(errors) {
+        match &self.failure {
             None => Ok(result),
             Some(error) => Err(Partial {
                 value: result,
-                error: error.into(),
+                error: Shared::seam(error),
             }),
         }
     }
@@ -349,8 +402,7 @@ impl Running for Trial {
         outside_runtime("stop")?;
         if self.ended.is_none() {
             let _ = self.commands.send(TrialCommand::Stop);
-            let until = Instant::now() + self.stop_bound;
-            if !self.await_end(until, &mut Discard) {
+            if !self.await_end(self.stop_bound, true, &mut Discard) {
                 return Err(Error::Stuck {
                     operation: "the stop",
                     bound: self.stop_bound,

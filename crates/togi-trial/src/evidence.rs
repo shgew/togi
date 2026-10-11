@@ -103,7 +103,8 @@ struct PendingExit {
 
 /// The one selector, for live and teardown observations alike. Precedence: escape, then
 /// computation error, stall or unexpected exit (first selected core), then setup error, then
-/// sampling or observation loss. Oversized-line errors are suppressed only by stronger evidence.
+/// sampling or observation loss. Oversized-line errors are kept apart from that reason and surface
+/// as diagnostics unless an escape or backend failure signal suppresses them.
 #[derive(Debug)]
 pub(crate) struct Selector {
     backend: Backend,
@@ -112,9 +113,10 @@ pub(crate) struct Selector {
     failure: Option<TrialFailure>,
     escaped: Vec<CpuId>,
     inconclusive: Option<String>,
-    setup_error: bool,
-    line_too_long: bool,
-    pending_exit: Option<PendingExit>,
+    /// Per instance: whether it reported a setup error, which explains only its own exit.
+    setup_error: Vec<bool>,
+    line_caps: Vec<String>,
+    pending_exits: Vec<PendingExit>,
     diagnostics: Vec<String>,
 }
 
@@ -129,9 +131,9 @@ impl Selector {
             failure: None,
             escaped: Vec::new(),
             inconclusive: None,
-            setup_error: false,
-            line_too_long: false,
-            pending_exit: None,
+            setup_error: vec![false; instances.len()],
+            line_caps: Vec::new(),
+            pending_exits: Vec::new(),
             diagnostics: Vec::new(),
         }
     }
@@ -178,8 +180,7 @@ impl Selector {
                 text,
             } => self.line(instance, pid, stream, line, text),
             Observation::UnexpectedExit { instance, detail } => {
-                self.pending_exit
-                    .get_or_insert(PendingExit { instance, detail });
+                self.pending_exits.push(PendingExit { instance, detail });
                 Decision {
                     stop: true,
                     reports: Vec::new(),
@@ -220,13 +221,12 @@ impl Selector {
             }
             Observation::LineTooLong { instance, stream } => {
                 let core = self.core(instance);
-                self.line_too_long = true;
-                self.weak_reason(|| {
-                    format!(
-                        "core {core:02} read {}: backend output line exceeds 64 KiB",
-                        stream.name()
-                    )
-                });
+                let message = format!(
+                    "core {core:02} read {}: backend output line exceeds 64 KiB",
+                    stream.name()
+                );
+                self.weak_reason(|| message.clone());
+                self.line_caps.push(message);
                 Decision {
                     stop: true,
                     reports: Vec::new(),
@@ -314,7 +314,7 @@ impl Selector {
                 decision
             }
             Line::SetupError => {
-                self.setup_error = true;
+                self.setup_error[instance] = true;
                 let backend = self.backend;
                 self.weak_reason(|| format!("{backend} setup error: {text}"));
                 Decision {
@@ -329,25 +329,34 @@ impl Selector {
         }
     }
 
-    /// Settles what the exits seen before teardown mean, after final output was classified: an
-    /// unexpected exit counts only when nothing else explains the trial.
+    /// Settles what the exits seen before teardown mean, after final output was classified: the
+    /// first exit its own instance's setup error does not explain counts only when nothing else
+    /// explains the trial. Oversized-line errors then join the diagnostics unless an escape or
+    /// backend failure signal was selected.
     pub(crate) fn conclude(mut self) -> (Verdict, Vec<Report>) {
         let mut reports = Vec::new();
-        if let Some(exit) = self.pending_exit.take() {
-            if !self.line_too_long && !self.setup_error && !self.escaped() && self.failure.is_none()
-            {
-                let core = self.core(exit.instance);
-                self.inconclusive = None;
-                self.failure = Some(TrialFailure {
-                    signal: Signal::UnexpectedExit,
-                    core,
-                });
-                reports.push(Report::Signal {
-                    core,
-                    signal: Signal::UnexpectedExit,
-                    detail: exit.detail,
-                });
-            }
+        let exit = std::mem::take(&mut self.pending_exits)
+            .into_iter()
+            .find(|exit| !self.setup_error[exit.instance]);
+        if let Some(exit) = exit
+            && self.line_caps.is_empty()
+            && !self.escaped()
+            && self.failure.is_none()
+        {
+            let core = self.core(exit.instance);
+            self.inconclusive = None;
+            self.failure = Some(TrialFailure {
+                signal: Signal::UnexpectedExit,
+                core,
+            });
+            reports.push(Report::Signal {
+                core,
+                signal: Signal::UnexpectedExit,
+                detail: exit.detail,
+            });
+        }
+        if !self.escaped() && self.failure.is_none() {
+            self.diagnostics.append(&mut self.line_caps);
         }
         (
             Verdict {
@@ -621,7 +630,80 @@ mod tests {
             verdict.inconclusive.as_deref(),
             Some("core 03 read stdout.log: backend output line exceeds 64 KiB")
         );
-        assert!(verdict.diagnostics.is_empty());
+        assert_eq!(
+            verdict.diagnostics,
+            ["core 03 read stdout.log: backend output line exceeds 64 KiB"]
+        );
+    }
+
+    #[test]
+    fn the_cap_error_survives_a_sampling_loss_and_stronger_evidence_drops_it() {
+        let loss = || Observation::SamplingLoss {
+            instance: 0,
+            what: "usage sampling lost: x".into(),
+        };
+        let cap = "core 03 read stdout.log: backend output line exceeds 64 KiB";
+        for order in [[loss(), too_long()], [too_long(), loss()]] {
+            let mut s = selector();
+            for observation in order {
+                s.observe(observation);
+            }
+            let verdict = conclude(s);
+            assert_eq!(verdict.diagnostics, [cap]);
+            assert!(verdict.inconclusive.is_some());
+        }
+        for strong in [compute(), affinity()] {
+            let mut s = selector();
+            s.observe(too_long());
+            s.observe(strong);
+            assert!(conclude(s).diagnostics.is_empty());
+        }
+        let mut s = selector();
+        s.observe(too_long());
+        s.observe(Observation::UnexpectedExit {
+            instance: 0,
+            detail: "exit status 0".into(),
+        });
+        let verdict = conclude(s);
+        assert_eq!(verdict.failure, None);
+        assert_eq!(verdict.diagnostics, [cap]);
+    }
+
+    #[test]
+    fn another_instances_setup_error_does_not_explain_an_unexplained_exit() {
+        let mut s = Selector::new(Backend::Mprime, &[(core(3), CpuId(3)), (core(4), CpuId(4))]);
+        s.observe(Observation::UnexpectedExit {
+            instance: 0,
+            detail: "exit status 0".into(),
+        });
+        s.observe(Observation::Line {
+            instance: 1,
+            pid: 43,
+            stream: Stream::Stdout,
+            line: Line::SetupError,
+            text: "PIN FAILED".into(),
+        });
+        let (verdict, reports) = s.conclude();
+        assert_eq!(
+            verdict.failure,
+            Some(TrialFailure {
+                signal: Signal::UnexpectedExit,
+                core: core(3)
+            })
+        );
+        assert_eq!(verdict.inconclusive, None);
+        assert_eq!(reports.len(), 1);
+
+        let mut s = Selector::new(Backend::Mprime, &[(core(3), CpuId(3)), (core(4), CpuId(4))]);
+        for instance in [0, 1] {
+            s.observe(Observation::UnexpectedExit {
+                instance,
+                detail: "exit status 0".into(),
+            });
+        }
+        s.observe(setup());
+        let verdict = s.conclude().0;
+        assert_eq!(verdict.failure.map(|f| f.core), Some(core(4)));
     }
 
     #[test]

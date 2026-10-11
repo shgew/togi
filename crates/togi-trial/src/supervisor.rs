@@ -1,11 +1,15 @@
+use std::any::Any;
 use std::cell::RefCell;
-use std::future::pending;
+use std::future::{Future, pending, poll_fn};
 use std::iter::Peekable;
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::PathBuf;
+use std::pin::pin;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver as StdReceiver, Sender as StdSender, channel};
+use std::task::Poll;
 use std::time::Duration;
 
 use togi_backend::Backend;
@@ -18,7 +22,7 @@ use tokio::sync::mpsc::{
 };
 use tokio::time::{Instant, sleep, sleep_until};
 
-use crate::error::{CleanupFailure, Containment, Error, OutputFailure, StorageError};
+use crate::error::{CleanupFailure, Containment, Error, InvalidTrial, OutputFailure, StorageError};
 use crate::evidence::{Observation, Selector, Stream};
 use crate::files::{self, Container};
 use crate::id::ScopeName;
@@ -112,6 +116,13 @@ pub(crate) struct Finished {
     /// Runner errors that are not containment: cancellation, a failed load step, storage, output.
     pub(crate) errors: Vec<Error>,
     pub(crate) teardown: Result<Stopped, Arc<Containment>>,
+    /// Whether the handle was dropped before this end was published, however far the teardown had
+    /// got; the supervisor reported it on stderr because no caller is left to read it.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "the stderr report is its only consumer outside tests")
+    )]
+    pub(crate) abandoned: bool,
 }
 
 /// The `Trial` side of one supervisor task.
@@ -166,6 +177,10 @@ pub(crate) async fn start<O: Os>(
         Ok(plan) => plan,
         Err(error) => return Err(early(error.into(), ready)),
     };
+    let instances = u32::try_from(plan.instances.len()).unwrap_or(u32::MAX);
+    if !env.timing.representable(plan.duration, instances) {
+        return Err(early(InvalidTrial::UnrepresentableDuration.into(), ready));
+    }
     let identity = match confinement {
         Confinement::Scoped { identity, .. } => Some(identity),
         Confinement::Unscoped => None,
@@ -199,7 +214,7 @@ pub(crate) async fn start<O: Os>(
             .map(|instance| (instance.core, instance.cpus[0]))
             .collect::<Vec<_>>(),
     );
-    let mut judge = Judge::new(selector, Arc::clone(&backend), events_tx.clone());
+    let judge = Judge::new(selector, Arc::clone(&backend), events_tx.clone());
     let mut live = Live {
         instances: Vec::with_capacity(plan.instances.len()),
         scopes: Vec::new(),
@@ -222,7 +237,7 @@ pub(crate) async fn start<O: Os>(
     )
     .await;
     if let Err(cause) = outcome {
-        return Err(roll_back(&env, live, &mut judge, &mut inbound_rx, cause).await);
+        return Err(roll_back(&env, live, judge, &mut inbound_rx, logs, cause).await);
     }
 
     let started_at = Instant::now();
@@ -515,16 +530,19 @@ async fn await_scope<O: Os>(
     }
 }
 
-/// Tears down a partly started trial with the same phases and budget as a finished one.
+/// Tears down a partly started trial with the same phases and budget as a finished one, then
+/// finishes the output log writer within its bound and joins what it and the readers report with
+/// the error that made the start fail.
 async fn roll_back<O: Os>(
     env: &Rc<Env<O>>,
     live: Live<O>,
-    judge: &mut Judge,
+    mut judge: Judge,
     inbound: &mut Receiver<Inbound>,
+    logs: LogWriter,
     cause: Error,
 ) -> Partial<Option<Stopped>> {
     let budget = Budget::start(env.timing);
-    let ended = Teardown::begin(&env.os, inbound, judge, live, budget)
+    let ended = Teardown::begin(&env.os, inbound, &mut judge, live, budget)
         .reap()
         .await
         .drain()
@@ -532,16 +550,64 @@ async fn roll_back<O: Os>(
         .verify()
         .await
         .finish();
-    match ended.proof {
-        Ok(stopped) => Partial {
-            value: Some(stopped),
-            error: cause.into(),
-        },
-        Err(containment) => Partial {
-            value: None,
-            error: Error::Containment(Arc::new(containment.caused_by(cause))).into(),
-        },
+    let mut diagnostics = settle_logs(&mut judge, logs.finish(env.timing.writer_join).await);
+    diagnostics.splice(0..0, judge.conclude().diagnostics);
+    let (first, proof) = match ended.proof {
+        Ok(stopped) => (cause, Some(stopped)),
+        Err(containment) => (
+            Error::Containment(Arc::new(containment.caused_by(cause))),
+            None,
+        ),
+    };
+    let mut later = Vec::new();
+    if !diagnostics.is_empty() {
+        later.push(Error::Output(OutputFailure { diagnostics }));
     }
+    Partial {
+        value: proof,
+        error: Error::join_after(first, later).into(),
+    }
+}
+
+/// Hands the writer's failures to the evidence; a join that ran out of time is a diagnostic of its
+/// own, returned for the caller to report.
+fn settle_logs(judge: &mut Judge, ended: LogsEnd) -> Vec<String> {
+    match ended {
+        LogsEnd::Done(failures) => {
+            for failure in failures {
+                judge.observe(Observation::OutputError {
+                    instance: failure.instance,
+                    stream: failure.stream,
+                    error: format!("write output log: {}", failure.error),
+                });
+            }
+            Vec::new()
+        }
+        LogsEnd::TimedOut(bound) => vec![format!(
+            "the output log writer did not finish within {bound:?}"
+        )],
+    }
+}
+
+/// Polls `work`, turning a panic in it into an `Err` the caller can still clean up after.
+async fn contained<F: Future>(work: F) -> Result<F::Output, Box<dyn Any + Send>> {
+    let mut work = pin!(work);
+    poll_fn(
+        |cx| match catch_unwind(AssertUnwindSafe(|| work.as_mut().poll(cx))) {
+            Ok(Poll::Pending) => Poll::Pending,
+            Ok(Poll::Ready(output)) => Poll::Ready(Ok(output)),
+            Err(payload) => Poll::Ready(Err(payload)),
+        },
+    )
+    .await
+}
+
+fn panic_text(payload: &(dyn Any + Send)) -> String {
+    payload
+        .downcast_ref::<&str>()
+        .map(|text| (*text).to_owned())
+        .or_else(|| payload.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "a panic without a message".to_owned())
 }
 
 enum End {
@@ -552,6 +618,8 @@ enum End {
     Evidence,
     Storage,
     Toggle(Error),
+    /// Supervision panicked; the teardown still runs and proves or withholds the stop.
+    Panicked(String),
 }
 
 struct Supervisor<O: Os> {
@@ -578,7 +646,10 @@ struct Supervisor<O: Os> {
 
 impl<O: Os> Supervisor<O> {
     async fn run(mut self) {
-        let end = self.supervise().await;
+        let end = match contained(self.supervise()).await {
+            Ok(end) => end,
+            Err(payload) => End::Panicked(panic_text(payload.as_ref())),
+        };
         self.finish(end).await;
     }
 
@@ -718,8 +789,9 @@ impl<O: Os> Supervisor<O> {
         let now = Instant::now();
         let count = self.live.instances.len();
         let next_step = self.timeline.peek().map(|step| self.started + step.at);
+        let deadline = self.started + self.plan.duration;
         let halt_at = [
-            Some(self.started + self.plan.duration),
+            Some(deadline),
             Some(now + self.env.timing.sample),
             next_step,
         ]
@@ -742,6 +814,12 @@ impl<O: Os> Supervisor<O> {
         let mut workers = PerCore::<i64>::default();
         if !stop && !cancelled.load(Ordering::Acquire) {
             for step in 0..count {
+                // A watched poll or an earlier sample may have used the rest of the duration; the
+                // observations after it are no part of the trial, and they must not delay the
+                // teardown or turn a late read failure into evidence.
+                if Instant::now() >= deadline {
+                    break;
+                }
                 let index = (self.rotation + step) % count;
                 stop |= self.sample(index, now, &mut workers);
             }
@@ -862,6 +940,7 @@ impl<O: Os> Supervisor<O> {
             toggles,
             tctl_max,
             mut errors,
+            mut commands,
             ..
         } = self;
         for instance in &live.instances {
@@ -886,10 +965,19 @@ impl<O: Os> Supervisor<O> {
         let ran = Instant::now()
             .saturating_duration_since(started)
             .min(plan.duration);
-        let abandoned = matches!(end, End::Abandoned);
+        let abandoned_before = matches!(end, End::Abandoned);
+        let mut panicked = None;
         match end {
             End::Cancelled => errors.push(Error::Cancelled),
             End::Toggle(error) => errors.push(error),
+            End::Panicked(what) => {
+                judge.observe(Observation::SamplingLoss {
+                    instance: 0,
+                    what: format!("trial supervision panicked: {what}"),
+                });
+                errors.push(Error::Panicked { what: what.clone() });
+                panicked = Some(what);
+            }
             End::Duration | End::Stopped | End::Abandoned | End::Evidence | End::Storage => {}
         }
         let budget = Budget::start(env.timing);
@@ -912,23 +1000,7 @@ impl<O: Os> Supervisor<O> {
         if let Err(failure) = samples {
             errors.push(Error::Storage(failure));
         }
-        let mut late = Vec::new();
-        match logs {
-            LogsEnd::Done(failures) => {
-                for failure in failures {
-                    judge.observe(Observation::OutputError {
-                        instance: failure.instance,
-                        stream: failure.stream,
-                        error: format!("write output log: {}", failure.error),
-                    });
-                }
-            }
-            LogsEnd::TimedOut(bound) => {
-                late.push(format!(
-                    "the output log writer did not finish within {bound:?}"
-                ));
-            }
-        }
+        let late = settle_logs(&mut judge, logs);
         let mut verdict = judge.conclude();
         verdict.diagnostics.extend(late);
         if !verdict.diagnostics.is_empty() {
@@ -951,13 +1023,19 @@ impl<O: Os> Supervisor<O> {
             stops: toggles.stops,
             conts: toggles.conts,
         };
+        // The handle may have been dropped at any point of the teardown; nothing awaits between
+        // this look at the commands and the publication, so the last answer is the one reported.
+        let abandoned = abandoned_before
+            || std::iter::from_fn(|| commands.try_recv().ok())
+                .any(|command| matches!(command, TrialCommand::Abandon));
         if abandoned {
-            report_abandoned(&plan, &ended.proof);
+            report_abandoned(&plan, &ended.proof, panicked.as_deref());
         }
         let _ = events.send(Event::Finished(Box::new(Finished {
             result,
             errors,
             teardown: ended.proof.map_err(Arc::new),
+            abandoned,
         })));
     }
 }
@@ -966,14 +1044,21 @@ impl<O: Os> Supervisor<O> {
     clippy::print_stderr,
     reason = "an abandoned trial has no caller left to report to"
 )]
-fn report_abandoned(plan: &TrialPlan, proof: &Result<Stopped, Containment>) {
+fn report_abandoned(
+    plan: &TrialPlan,
+    proof: &Result<Stopped, Containment>,
+    panicked: Option<&str>,
+) {
+    let panic = panicked.map_or_else(String::new, |what| {
+        format!("; supervision panicked: {what}")
+    });
     match proof {
         Ok(_) => eprintln!(
-            "togi: trial {} was dropped while running; torn down",
+            "togi: trial {} was dropped while running; torn down{panic}",
             plan.id
         ),
         Err(containment) => eprintln!(
-            "togi: trial {} was dropped while running; teardown unconfirmed: {containment}",
+            "togi: trial {} was dropped while running; teardown unconfirmed: {containment}{panic}",
             plan.id
         ),
     }

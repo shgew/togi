@@ -1,17 +1,20 @@
 //! Conditions samples through the supervisor: sensors, the writer and its failure modes.
 
 use std::rc::Rc;
+use std::sync::atomic::Ordering;
+use std::sync::mpsc::{Receiver, channel};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use togi_machine::{CancellationToken, Regime, Signal};
+use togi_machine::{CancellationToken, Regime};
 
 use super::harness::{core, finish, local, rig, rig_edit, spec};
+use super::trial::Recorder;
 use crate::error::Error;
 use crate::error::StorageError;
 use crate::os::GroupSignal;
-use crate::os::fake::{Launch, ProcCtx, script};
 use crate::samples::{Open, Storage};
+use crate::supervisor::{Event, Handle};
 use crate::testing::TestBackend;
 use crate::timing::Timing;
 
@@ -245,18 +248,53 @@ async fn a_write_failure_ends_the_trial_and_keeps_the_close_error_too() {
     .await;
 }
 
+/// Opens `recorder` only once `gate` is released, so the setup itself blocks and not just a write.
+fn gated_open(
+    gate: Receiver<()>,
+    recorder: &Recorder,
+) -> Rc<dyn Fn() -> Result<Open, StorageError>> {
+    let slot = Mutex::new(Some((gate, recorder.clone())));
+    Rc::new(move || {
+        let parts = slot.lock().unwrap().take();
+        Ok(Box::new(move || {
+            let (gate, recorder) =
+                parts.ok_or_else(|| StorageError::Create(std::io::Error::other("opened twice")))?;
+            let _ = gate.recv();
+            Ok(Box::new(recorder) as Box<dyn Storage>)
+        }) as Open)
+    })
+}
+
+/// Whether the supervisor has published its end; reading it would hand it to nobody else.
+fn ended(handle: &Handle) -> bool {
+    while let Ok(event) = handle.events.try_recv() {
+        if matches!(event, Event::Finished(_)) {
+            return true;
+        }
+    }
+    false
+}
+
+/// Advances virtual time by hand until the first worker has been reaped. The supervisor then waits
+/// for the writer's join, which runs in real time and keeps the runtime from auto-advancing, so a
+/// virtual sleep that was pending then would never wake; a manual advance does not depend on it.
+async fn until_reaped(rig: &super::harness::Rig) {
+    while !rig.fake.process(0).reaped.get() {
+        tokio::time::advance(Duration::from_millis(10)).await;
+    }
+}
+
 #[tokio::test(start_paused = true)]
-async fn cancelling_while_storage_setup_blocks_stops_the_workload_and_joins_the_writer() {
+async fn cancelling_while_samples_setup_is_blocked_stops_the_workload_before_the_setup_ends() {
     local(async {
-        let (gate, gated) = std::sync::mpsc::channel::<()>();
-        let lines = Arc::new(Mutex::new(0));
-        let storage = blocked_open(gated, Arc::clone(&lines));
+        let (release, gate) = channel::<()>();
+        let recorder = Recorder::default();
         let timing = Timing {
-            writer_join: Duration::from_millis(100),
+            writer_join: secs(30),
             ..Timing::default()
         };
         let rig = rig_edit(TestBackend::new("/bin/true"), timing, |env| {
-            env.storage = Some(storage);
+            env.storage = Some(gated_open(gate, &recorder));
         });
         let cancel = CancellationToken::new();
         let handle = rig
@@ -265,19 +303,177 @@ async fn cancelling_while_storage_setup_blocks_stops_the_workload_and_joins_the_
             .unwrap();
         tokio::time::sleep(Duration::from_millis(1500)).await;
         cancel.cancel();
-        gate.send(()).unwrap();
+        until_reaped(&rig).await;
+        let process = rig.fake.process(0);
+        assert!(
+            process.signals.borrow().contains(&GroupSignal::Term) && process.reaped.get(),
+            "cancellation waited for the samples setup before stopping the workload"
+        );
+        assert!(
+            !ended(&handle),
+            "the end was published before the setup finished"
+        );
+        assert!(!recorder.closed.load(Ordering::Acquire));
+
+        release.send(()).unwrap();
         let run = finish(&handle).await;
+        assert!(matches!(run.finished.errors[..], [Error::Cancelled]));
+        assert!(run.finished.teardown.is_ok());
+        let ran = run.finished.result.ran;
+        assert!(
+            ran >= Duration::from_millis(1500) && ran < Duration::from_millis(1600),
+            "{ran:?}"
+        );
+        let samples = recorder.samples();
+        assert_eq!(
+            samples.len(),
+            1,
+            "the sample taken during setup was drained"
+        );
+        assert_eq!(samples[0]["elapsed_ms"], 1000);
+        assert!(
+            recorder.closed.load(Ordering::Acquire),
+            "the file was not closed"
+        );
+    })
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn blocked_samples_setup_keeps_the_load_schedule_and_the_end_waits_for_the_writer() {
+    local(async {
+        let (release, gate) = channel::<()>();
+        let recorder = Recorder::default();
+        let timing = Timing {
+            writer_join: secs(30),
+            ..Timing::default()
+        };
+        let rig = rig_edit(TestBackend::new("/bin/true"), timing, |env| {
+            env.storage = Some(gated_open(gate, &recorder));
+        });
+        let trial = spec(Regime::R4, &[0], secs(3));
+        let handle = rig.start(trial.clone()).await.unwrap();
+        let t0 = tokio::time::Instant::now();
+        // Up to the deadline virtual time runs by itself, so the load steps land exactly when
+        // due; the teardown after it is driven by hand.
+        tokio::time::sleep(secs(3)).await;
+        until_reaped(&rig).await;
+        let steps: Vec<_> = rig
+            .fake
+            .process(0)
+            .signal_times
+            .borrow()
+            .iter()
+            .filter(|(at, signal)| {
+                at.duration_since(t0) < secs(3)
+                    && matches!(signal, GroupSignal::Stop | GroupSignal::Cont)
+            })
+            .map(|(at, _)| at.duration_since(t0).as_millis())
+            .collect();
+        let load = crate::plan::Load::Steps(togi_machine::LoadSchedule::for_spec(&trial).unwrap());
+        let expected: Vec<u128> = crate::schedule::timeline(&load, secs(3))
+            .map(|step| step.at.as_millis())
+            .collect();
+        assert_eq!(steps, expected);
+        assert!(
+            !ended(&handle),
+            "the end was published before the pending sample was durable"
+        );
+
+        release.send(()).unwrap();
+        let run = finish(&handle).await;
+        assert_eq!(run.finished.result.ran, secs(3));
+        assert!(run.finished.errors.is_empty(), "{:?}", run.finished.errors);
+        assert!(run.finished.teardown.is_ok());
+        let samples = recorder.samples();
+        assert_eq!(
+            samples.len(),
+            1,
+            "only the first sample fits behind a blocked setup"
+        );
+        assert_eq!(samples[0]["elapsed_ms"], 1000);
+        assert!(
+            recorder.closed.load(Ordering::Acquire),
+            "the file was not closed"
+        );
+    })
+    .await;
+}
+
+fn open_fails_after(delay: Duration) -> Rc<dyn Fn() -> Result<Open, StorageError>> {
+    Rc::new(move || {
+        Ok(Box::new(move || {
+            std::thread::sleep(delay);
+            Err(StorageError::Create(std::io::Error::other(
+                "injected open failure",
+            )))
+        }) as Open)
+    })
+}
+
+#[tokio::test]
+async fn an_open_failure_before_the_deadline_ends_the_trial_when_it_happens() {
+    local(async {
+        let timing = Timing {
+            sample: Duration::from_millis(50),
+            ..Timing::default()
+        };
+        let rig = rig_edit(TestBackend::new("/bin/true"), timing, |env| {
+            env.storage = Some(open_fails_after(Duration::from_millis(150)));
+        });
+        let handle = rig
+            .start(spec(Regime::R1, &[0], Duration::from_millis(900)))
+            .await
+            .unwrap();
+        let run = finish(&handle).await;
+        let ran = run.finished.result.ran;
+        assert!(
+            ran >= Duration::from_millis(100) && ran < Duration::from_millis(900),
+            "{ran:?}"
+        );
         assert!(matches!(
-            run.finished.errors.first(),
-            Some(Error::Cancelled)
+            &run.finished.errors[..],
+            [Error::Storage(failure)] if matches!(failure.errors(), [StorageError::Create(_)])
         ));
         assert!(run.finished.teardown.is_ok());
-        assert_eq!(rig.fake.process(0).signals.borrow()[0], GroupSignal::Cont);
-        let _ = (
-            Signal::Stall,
-            script(|_: ProcCtx| async {}),
-            Launch::Fail(std::io::Error::other("x")),
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn an_open_failure_after_the_deadline_neither_delays_teardown_nor_is_lost() {
+    local(async {
+        let timing = Timing {
+            sample: Duration::from_millis(50),
+            writer_join: Duration::from_millis(200),
+            ..Timing::default()
+        };
+        let duration = Duration::from_millis(400);
+        let rig = rig_edit(TestBackend::new("/bin/true"), timing, |env| {
+            env.storage = Some(open_fails_after(Duration::from_millis(1500)));
+        });
+        let handle = rig.start(spec(Regime::R1, &[0], duration)).await.unwrap();
+        let begun = tokio::time::Instant::now();
+        let run = finish(&handle).await;
+        assert_eq!(run.finished.result.ran, duration);
+        let terminated = rig
+            .fake
+            .process(0)
+            .signal_times
+            .borrow()
+            .iter()
+            .find(|(_, signal)| *signal == GroupSignal::Term)
+            .map(|(at, _)| at.duration_since(begun))
+            .unwrap();
+        assert!(
+            terminated < duration + Duration::from_millis(250),
+            "sample setup delayed the teardown past the deadline: {terminated:?}"
         );
+        assert!(matches!(
+            &run.finished.errors[..],
+            [Error::Storage(failure)] if matches!(failure.errors(), [StorageError::JoinTimeout(_)])
+        ));
+        assert!(run.finished.teardown.is_ok());
     })
     .await;
 }

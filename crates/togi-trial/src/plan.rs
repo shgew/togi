@@ -61,6 +61,9 @@ impl TrialPlan {
         if spec.cores.is_empty() {
             return Err(InvalidTrial::NoCores);
         }
+        if !spec.regime.instance_per_core() && spec.cores.len() > 1 {
+            return Err(InvalidTrial::CoresForOneInstance);
+        }
         let mut seen = CoreSet::default();
         let mut infos = Vec::with_capacity(spec.cores.len());
         for &core in &spec.cores {
@@ -96,11 +99,8 @@ impl TrialPlan {
             if spec.cpus.is_empty() {
                 return Err(InvalidTrial::NoCpus);
             }
-            if let Some(&foreign) = spec
-                .cpus
-                .iter()
-                .find(|cpu| !infos.iter().any(|info| info.cpus.contains(cpu)))
-            {
+            let assigned = infos[0];
+            if let Some(&foreign) = spec.cpus.iter().find(|cpu| !assigned.cpus.contains(cpu)) {
                 return Err(InvalidTrial::ForeignCpu(foreign));
             }
             vec![InstancePlan {
@@ -250,6 +250,20 @@ mod tests {
         assert_eq!(
             TrialPlan::build(&spec(Regime::R1, &[0], &[1]), &topo).unwrap_err(),
             InvalidTrial::ForeignCpu(CpuId(1))
+        );
+        assert_eq!(
+            TrialPlan::build(&spec(Regime::R1, &[0, 1], &[1]), &topo).unwrap_err(),
+            InvalidTrial::CoresForOneInstance,
+            "work on core 1 must not be attributed to core 0"
+        );
+        assert_eq!(
+            TrialPlan::build(&spec(Regime::R5, &[1, 0], &[1, 9]), &topo).unwrap_err(),
+            InvalidTrial::CoresForOneInstance
+        );
+        assert_eq!(
+            TrialPlan::build(&spec(Regime::R5, &[1], &[1, 8]), &topo).unwrap_err(),
+            InvalidTrial::ForeignCpu(CpuId(8)),
+            "a CPU of another core is refused for the one assigned core"
         );
         assert_eq!(
             TrialPlan::build(&spec(Regime::R6, &[0, 1], &[0]), &topo).unwrap_err(),

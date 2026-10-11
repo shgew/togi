@@ -1,8 +1,10 @@
 use std::collections::BTreeSet;
 use std::rc::Rc;
+use std::sync::Arc;
 use std::time::Duration;
 
-use togi_machine::Stopped;
+use togi_machine::{CancellationToken, Stopped};
+use tokio::sync::Notify;
 use tokio::task::JoinSet;
 use tokio::time::{Instant, sleep, sleep_until, timeout_at};
 
@@ -135,18 +137,49 @@ async fn each_scope<O: Os>(
     }
 }
 
+/// Resolves once `cancel` fires; `woken` is the notify its `on_cancel` callback signals.
+async fn until_cancelled(cancel: &CancellationToken, woken: &Notify) {
+    if !cancel.is_cancelled() {
+        woken.notified().await;
+    }
+}
+
 /// Clears leftovers of an earlier run under one absolute deadline: signals only through exact
 /// scopes, verifies no unit, no scope process and no captured process remains. A failed
 /// observation is recorded and the known scopes are still killed; every failure is kept.
-pub(crate) async fn sweep<O: Os>(env: &Env<O>) -> Result<(String, Stopped), Error> {
+///
+/// Discovery stops `kill_slot` short of the deadline, so a hung listing or scan still leaves
+/// time to SIGKILL and stop every scope already known. Cancellation during discovery returns
+/// `Cancelled` at once, with nothing signalled. Once a scope is known, cancellation never drops
+/// the work: the signals, kill, stop and verification finish inside the same deadline, and the
+/// result is `Cancelled` (joined with the containment failures, if cleanup did not confirm).
+pub(crate) async fn sweep<O: Os>(
+    env: &Env<O>,
+    cancel: &CancellationToken,
+) -> Result<(String, Stopped), Error> {
     let os = &env.os;
     let timing = env.timing;
-    let deadline = Instant::now() + timing.teardown;
+    let woken = Arc::new(Notify::new());
+    let _registration = {
+        let woken = Arc::clone(&woken);
+        cancel.on_cancel(move || woken.notify_one())
+    };
+    let begun = Instant::now();
+    let deadline = begun + timing.teardown;
+    let reserve = timing.kill_slot.min(timing.teardown / 2);
+    let discovery_end = deadline.checked_sub(reserve).unwrap_or(begun);
     let mut failures = Vec::new();
-    let units = list(os.as_ref(), deadline)
-        .await
-        .map_err(|source| contained(vec![observe("the trial scope list", source)]))?;
-    let captured = match os.scope_processes(deadline).await {
+    let listed = tokio::select! {
+        () = until_cancelled(cancel, &woken) => return Err(Error::Cancelled),
+        listed = list(os.as_ref(), discovery_end) => listed,
+    };
+    let units =
+        listed.map_err(|source| contained(vec![observe("the trial scope list", source)]))?;
+    let scanned = tokio::select! {
+        () = until_cancelled(cancel, &woken) => return Err(Error::Cancelled),
+        scanned = os.scope_processes(discovery_end) => scanned,
+    };
+    let captured = match scanned {
         Ok(captured) => captured,
         Err(error) => {
             failures.push(observe("the trial processes", error));
@@ -160,9 +193,12 @@ pub(crate) async fn sweep<O: Os>(env: &Env<O>) -> Result<(String, Stopped), Erro
         .into_iter()
         .collect();
 
-    let grace_end = deadline.min(Instant::now() + timing.stop_grace);
-    for signal in [KillSignal::Cont, KillSignal::Term] {
-        each_scope(os, &scopes, grace_end, signal, &mut failures, false).await;
+    // The grace never eats the reserved kill slot; a discovery that ran to its end leaves none.
+    let grace_end = discovery_end.min(Instant::now() + timing.stop_grace);
+    if Instant::now() < grace_end {
+        for signal in [KillSignal::Cont, KillSignal::Term] {
+            each_scope(os, &scopes, grace_end, signal, &mut failures, false).await;
+        }
     }
     while Instant::now() < grace_end {
         match os.survivors(&captured, grace_end).await {
@@ -219,8 +255,17 @@ pub(crate) async fn sweep<O: Os>(env: &Env<O>) -> Result<(String, Stopped), Erro
     if !confirmed && observed {
         failures.push(CleanupFailure::Leftover);
     }
+    let cancelled = cancel.is_cancelled();
     if !failures.is_empty() || !confirmed {
-        return Err(contained(failures));
+        let failure = contained(failures);
+        return Err(if cancelled {
+            Error::join_after(Error::Cancelled, vec![failure])
+        } else {
+            failure
+        });
+    }
+    if cancelled {
+        return Err(Error::Cancelled);
     }
     #[expect(
         clippy::disallowed_methods,

@@ -65,6 +65,9 @@ pub(crate) struct ProcShared {
     pub(crate) signal_times: RefCell<Vec<(Instant, GroupSignal)>>,
     stdout_failure: Rc<RefCell<PipeFailure>>,
     pub(crate) signal_error: RefCell<Option<SignalErrorKind>>,
+    /// Armed one-shot failures, shared by every process of the fake: the first delivery of a
+    /// matching signal fails and disarms its entry.
+    fail_once: Rc<RefCell<Vec<(GroupSignal, SignalErrorKind)>>>,
     pub(crate) reaped: Cell<bool>,
     exit: Cell<Option<ExitInfo>>,
     exited: watch::Sender<bool>,
@@ -206,18 +209,22 @@ pub(crate) struct Recovered {
 type LaunchScript = Box<dyn FnMut(usize, &LaunchCommand) -> Launch>;
 type SystemdScript = Box<dyn FnMut(&Systemd) -> Option<Reply>>;
 
+type ThreadsHook = Box<dyn FnMut(u32)>;
+
 struct Shared {
     launches: RefCell<Vec<LaunchCommand>>,
     processes: RefCell<Vec<Rc<ProcShared>>>,
     systemd_calls: RefCell<Vec<(Systemd, Instant)>>,
     launch_script: RefCell<LaunchScript>,
     systemd_script: RefCell<SystemdScript>,
+    threads_hook: RefCell<Option<ThreadsHook>>,
     units: RefCell<Vec<String>>,
     ready_default: Cell<bool>,
     fail_pipes: Cell<bool>,
     fail_alive: Cell<bool>,
     hang_scans: Cell<bool>,
     signal_error_default: Cell<Option<SignalErrorKind>>,
+    fail_once: Rc<RefCell<Vec<(GroupSignal, SignalErrorKind)>>>,
     recovered: RefCell<Vec<(ScopeProcess, Recovered)>>,
     next_pid: Cell<u32>,
 }
@@ -239,12 +246,14 @@ impl Default for Fake {
                     Launch::Run(script(|mut ctx| async move { ctx.until_killed().await }))
                 })),
                 systemd_script: RefCell::new(Box::new(|_| None)),
+                threads_hook: RefCell::new(None),
                 units: RefCell::default(),
                 ready_default: Cell::new(true),
                 fail_pipes: Cell::new(false),
                 fail_alive: Cell::new(false),
                 hang_scans: Cell::new(false),
                 signal_error_default: Cell::new(None),
+                fail_once: Rc::default(),
                 recovered: RefCell::default(),
                 next_pid: Cell::new(1000),
             }),
@@ -282,9 +291,21 @@ impl Fake {
         *self.shared.systemd_script.borrow_mut() = Box::new(script);
     }
 
+    /// Runs `hook(pid)` at the start of every thread read, before the process is looked up and
+    /// with no process state borrowed, so it may change a process or burn real time.
+    pub(crate) fn on_threads(&self, hook: impl FnMut(u32) + 'static) {
+        *self.shared.threads_hook.borrow_mut() = Some(Box::new(hook));
+    }
+
     /// Every signal to a new process fails like this.
     pub(crate) fn set_signal_error_default(&self, kind: Option<SignalErrorKind>) {
         self.shared.signal_error_default.set(kind);
+    }
+
+    /// The next delivery of `signal` to any process fails like `kind`, once: a refused `SIGSTOP`
+    /// followed by a teardown whose signals succeed.
+    pub(crate) fn fail_signal_once(&self, signal: GroupSignal, kind: SignalErrorKind) {
+        self.shared.fail_once.borrow_mut().push((signal, kind));
     }
 
     /// Checking whether a captured process lives fails.
@@ -392,7 +413,14 @@ impl Child for FakeChild {
             .signal_times
             .borrow_mut()
             .push((Instant::now(), signal));
-        match *self.shared.signal_error.borrow() {
+        let once = {
+            let mut armed = self.shared.fail_once.borrow_mut();
+            armed
+                .iter()
+                .position(|(armed_signal, _)| *armed_signal == signal)
+                .map(|position| armed.remove(position).1)
+        };
+        match once.or(*self.shared.signal_error.borrow()) {
             Some(SignalErrorKind::Gone) => return Err(SignalError::Gone),
             Some(SignalErrorKind::Failed) => {
                 return Err(SignalError::Failed(io::Error::other("signal refused")));
@@ -448,6 +476,7 @@ impl Os for Fake {
             signal_times: RefCell::default(),
             stdout_failure: Rc::new(RefCell::new(PipeFailure::default())),
             signal_error: RefCell::new(self.shared.signal_error_default.get()),
+            fail_once: Rc::clone(&self.shared.fail_once),
             reaped: Cell::new(false),
             exit: Cell::new(None),
             exited,
@@ -502,6 +531,9 @@ impl Os for Fake {
     }
 
     fn threads(&self, pid: u32) -> Result<Threads, ProcError> {
+        if let Some(hook) = self.shared.threads_hook.borrow_mut().as_mut() {
+            hook(pid);
+        }
         let processes = self.shared.processes.borrow();
         processes
             .iter()
@@ -520,6 +552,14 @@ impl Os for Fake {
             .systemd_calls
             .borrow_mut()
             .push((operation.clone(), Instant::now()));
+        // Like `togi_command::run`: a deadline that is not in the future times out without
+        // starting the command, so no script runs and no effect applies.
+        if deadline <= Instant::now() {
+            return Err(togi_command::Error::TimedOut {
+                program: "systemctl".into(),
+                timeout: Duration::ZERO,
+            });
+        }
         let scripted = (self.shared.systemd_script.borrow_mut())(operation);
         let reply = if let Some(reply) = scripted {
             reply

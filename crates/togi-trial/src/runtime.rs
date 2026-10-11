@@ -1,11 +1,9 @@
 use std::rc::Rc;
-use std::sync::Arc;
 use std::sync::mpsc::{Receiver, SyncSender, channel, sync_channel};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
 use togi_machine::{CancellationToken, Partial, Stopped, Swept, TrialSpec};
-use tokio::sync::Notify;
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 use tokio::task::LocalSet;
 
@@ -18,12 +16,15 @@ use crate::timing::Timing;
 pub(crate) type Reply<T> = SyncSender<T>;
 
 pub(crate) enum Command {
+    /// `cancel` is this start's own token, a child of the caller's: the synchronous side fires
+    /// it when it gives up waiting and the runtime when it shuts down.
     Start {
         cancel: CancellationToken,
         spec: Box<TrialSpec>,
         ready: Stopped,
-        reply: Reply<Result<Handle, Partial<Option<Stopped>>>>,
+        reply: Reply<Result<Delivered, Partial<Option<Stopped>>>>,
     },
+    /// `cancel` is this sweep's own token, as for `Start`.
     Sweep {
         cancel: CancellationToken,
         reply: Reply<Result<Swept, Error>>,
@@ -73,15 +74,17 @@ impl Runtime {
                 let env = Rc::new(make_env());
                 let _ = bound_tx.send(env.timing.stop_bound() + JOIN_SLACK);
                 LocalSet::new().block_on(&runtime, async move {
+                    let mut tasks: Vec<Task> = Vec::new();
                     while let Some(command) = inbox.recv().await {
                         match command {
                             Command::Shutdown => break,
                             command => {
-                                tokio::task::spawn_local(serve(Rc::clone(&env), command));
+                                tasks.retain(|task| !task.handle.is_finished());
+                                tasks.push(Task::spawn(&env, command));
                             }
                         }
                     }
-                    contain_all(&env).await;
+                    contain_all(&env, tasks).await;
                 });
                 runtime.shutdown_background();
                 let _ = finished_tx.send(());
@@ -113,6 +116,43 @@ impl Runtime {
     }
 }
 
+/// A started trial on its way to the caller. If it is dropped undelivered or unclaimed, because
+/// the caller stopped waiting for the start, the trial is abandoned so its supervisor tears it
+/// down; the caller claims it with `claim`.
+pub(crate) struct Delivered {
+    handle: Handle,
+    guard: Abandon,
+}
+
+struct Abandon {
+    commands: UnboundedSender<TrialCommand>,
+    armed: bool,
+}
+
+impl Delivered {
+    fn new(handle: Handle) -> Self {
+        let guard = Abandon {
+            commands: handle.commands.clone(),
+            armed: true,
+        };
+        Self { handle, guard }
+    }
+
+    pub(crate) fn claim(self) -> Handle {
+        let Self { handle, mut guard } = self;
+        guard.armed = false;
+        handle
+    }
+}
+
+impl Drop for Abandon {
+    fn drop(&mut self) {
+        if self.armed && self.commands.send(TrialCommand::Abandon).is_ok() {
+            report("a trial started after its caller gave up waiting was abandoned");
+        }
+    }
+}
+
 async fn serve<O: Os>(env: Rc<Env<O>>, command: Command) {
     match command {
         Command::Start {
@@ -121,19 +161,22 @@ async fn serve<O: Os>(env: Rc<Env<O>>, command: Command) {
             ready,
             reply,
         } => {
-            let _ = reply.send(start(env, cancel, *spec, ready).await);
+            let outcome = start(env, cancel, *spec, ready).await.map(Delivered::new);
+            if let Err(std::sync::mpsc::SendError(Err(Partial { value: None, error }))) =
+                reply.send(outcome)
+            {
+                report(&format!(
+                    "a start nobody waits for ended without confirmed cleanup: {error}"
+                ));
+            }
         }
         Command::Sweep { cancel, reply } => {
-            let woken = Arc::new(Notify::new());
-            let _registration = {
-                let woken = Arc::clone(&woken);
-                cancel.on_cancel(move || woken.notify_one())
-            };
-            let outcome = tokio::select! {
-                outcome = sweep::sweep(&env) => outcome.map(|(detail, stopped)| Swept { detail, stopped }),
-                () = woken.notified() => Err(Error::Cancelled),
-            };
-            let _ = reply.send(outcome);
+            let outcome = sweep::sweep(&env, &cancel)
+                .await
+                .map(|(detail, stopped)| Swept { detail, stopped });
+            if let Err(std::sync::mpsc::SendError(Err(error))) = reply.send(outcome) {
+                report(&format!("a sweep nobody waits for failed: {error}"));
+            }
         }
         Command::Probe { reply } => {
             let _ = reply.send(sweep::probe(&env).await);
@@ -142,10 +185,51 @@ async fn serve<O: Os>(env: Rc<Env<O>>, command: Command) {
     }
 }
 
-/// Asks every live supervisor to tear its trial down and waits for them within one shared slot,
-/// so no workload is left running by dropping its supervisor; one still running at the end of
-/// the slot is reported, since nothing is left to contain it.
-async fn contain_all<O: Os>(env: &Env<O>) {
+/// What the runtime thread runs for a command, kept so shutdown can cancel and await it.
+struct Task {
+    what: &'static str,
+    cancel: Option<CancellationToken>,
+    handle: tokio::task::JoinHandle<()>,
+}
+
+impl Task {
+    fn spawn<O: Os>(env: &Rc<Env<O>>, command: Command) -> Self {
+        let (what, cancel) = match &command {
+            Command::Start { cancel, .. } => ("start", Some(cancel.clone())),
+            Command::Sweep { cancel, .. } => ("sweep", Some(cancel.clone())),
+            Command::Probe { .. } | Command::Shutdown => ("probe", None),
+        };
+        Self {
+            what,
+            cancel,
+            handle: tokio::task::spawn_local(serve(Rc::clone(env), command)),
+        }
+    }
+}
+
+/// Ends everything in flight within one shared slot, so dropping the runtime never leaves a
+/// workload running: cancels the starts and sweeps still working and waits for them, since a
+/// cancelled start rolls back and a cancelled sweep finishes its cleanup, then has every
+/// supervisor tear its trial down. Whatever is still running at the end of the slot is
+/// reported, since nothing is left to contain it.
+async fn contain_all<O: Os>(env: &Env<O>, tasks: Vec<Task>) {
+    let deadline = tokio::time::Instant::now() + env.timing.stop_bound();
+    for task in &tasks {
+        if let Some(cancel) = &task.cancel {
+            cancel.cancel();
+        }
+    }
+    for task in tasks {
+        if tokio::time::timeout_at(deadline, task.handle)
+            .await
+            .is_err()
+        {
+            report(&format!(
+                "a {} was still running when its runner shut down",
+                task.what
+            ));
+        }
+    }
     let live: Vec<Supervised> = env
         .supervisors
         .borrow_mut()
@@ -155,23 +239,25 @@ async fn contain_all<O: Os>(env: &Env<O>) {
     for supervised in &live {
         let _ = supervised.commands.send(TrialCommand::Abandon);
     }
-    let deadline = tokio::time::Instant::now() + env.timing.stop_bound();
     for supervised in live {
         if tokio::time::timeout_at(deadline, supervised.task)
             .await
             .is_err()
         {
-            report_uncontained(&supervised.trial);
+            report(&format!(
+                "trial {} was still not torn down when its runner shut down",
+                supervised.trial
+            ));
         }
     }
 }
 
 #[expect(
     clippy::print_stderr,
-    reason = "the runner is being dropped, so no caller is left to report to"
+    reason = "the runner is being dropped or its caller gave up, so no caller is left to report to"
 )]
-fn report_uncontained(trial: &str) {
-    eprintln!("togi: trial {trial} was still not torn down when its runner shut down");
+fn report(message: &str) {
+    eprintln!("togi: {message}");
 }
 
 /// Refuses to block inside an async runtime.

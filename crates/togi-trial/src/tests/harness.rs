@@ -66,10 +66,22 @@ pub(super) struct Rig {
     pub(super) dir: TempDir,
 }
 
+/// The account of the fixtures that need a backend identity: the effective user and group of the
+/// test process, so a root-owned source tree is irrelevant. Root and the reserved ids cannot be a
+/// backend account, so a root run uses the conventional `nobody` (65534); the fixtures' directories
+/// are world-searchable, so that account can reach them.
 pub(super) fn own_identity() -> BackendIdentity {
-    use std::os::unix::fs::MetadataExt as _;
-    let meta = std::fs::metadata(".").unwrap();
-    BackendIdentity::new(meta.uid(), meta.gid()).unwrap()
+    identity_of(
+        rustix::process::geteuid().as_raw(),
+        rustix::process::getegid().as_raw(),
+    )
+}
+
+pub(super) fn identity_of(uid: u32, gid: u32) -> BackendIdentity {
+    const NOBODY: u32 = 65534;
+    BackendIdentity::new(uid, gid)
+        .or_else(|_| BackendIdentity::new(NOBODY, NOBODY))
+        .unwrap()
 }
 
 pub(super) fn rig_with(backend: TestBackend, timing: Timing) -> Rig {
@@ -230,6 +242,201 @@ pub(super) fn burn(shared: &std::rc::Rc<ProcShared>, cpus: u32) {
             });
         }
     });
+}
+
+/// When a worker printed, and the instance it was.
+pub(super) type Ticks = Rc<std::cell::RefCell<Vec<(usize, tokio::time::Instant)>>>;
+
+/// A worker that produces output on its own every `period`, but only while it is not stopped:
+/// `SIGSTOP` silences it until `SIGCONT`, as it does a real process. Each line is recorded in
+/// `ticks` with the instant it was written, so a test can prove the quiet intervals.
+pub(super) fn ticking(
+    period: Duration,
+    ticks: &Ticks,
+) -> impl FnMut(usize, &crate::launch::LaunchCommand) -> Launch + use<> {
+    use crate::os::fake::Delivery;
+    use crate::os::{ExitInfo, GroupSignal};
+    let ticks = Rc::clone(ticks);
+    move |index, _| {
+        let ticks = Rc::clone(&ticks);
+        Launch::Run(script(move |mut ctx: ProcCtx| async move {
+            let mut stopped = false;
+            let mut clock = tokio::time::interval_at(tokio::time::Instant::now() + period, period);
+            loop {
+                tokio::select! {
+                    delivery = ctx.signals.recv() => match delivery {
+                        Some(Delivery::Group(GroupSignal::Stop)) => stopped = true,
+                        Some(Delivery::Group(GroupSignal::Cont)) => stopped = false,
+                        Some(Delivery::Group(GroupSignal::Term | GroupSignal::Kill) | Delivery::Scope(_)) => {
+                            ctx.exit(ExitInfo::Signal(9));
+                            return;
+                        }
+                        None => return,
+                    },
+                    _ = clock.tick() => {
+                        if !stopped {
+                            ticks.borrow_mut().push((index, tokio::time::Instant::now()));
+                            ctx.print("ok tick\n").await;
+                        }
+                    }
+                }
+            }
+        }))
+    }
+}
+
+/// Whether a write at `at` can have come from a process that was running: it was, strictly before
+/// `at` or counting the signals delivered at `at` itself. A write in the same virtual instant as a
+/// stop or a continue may land on either side of it, so only a write strictly inside a stopped
+/// interval is a violation.
+pub(super) fn running_at(
+    signals: &[(tokio::time::Instant, crate::os::GroupSignal)],
+    at: tokio::time::Instant,
+) -> bool {
+    use crate::os::GroupSignal;
+    let state = |inclusive: bool| {
+        let mut running = true;
+        for (when, signal) in signals {
+            if *when > at || (!inclusive && *when == at) {
+                break;
+            }
+            match signal {
+                GroupSignal::Stop => running = false,
+                GroupSignal::Cont => running = true,
+                GroupSignal::Term | GroupSignal::Kill => return true,
+            }
+        }
+        running
+    };
+    state(false) || state(true)
+}
+
+mod tests {
+    use tokio::time::Instant;
+
+    use super::*;
+    use crate::os::fake::SignalErrorKind;
+    use crate::os::{GroupSignal, KillSignal, Os, Systemd};
+
+    #[test]
+    fn the_fixture_identity_is_the_effective_account_or_nobody_for_root() {
+        assert_eq!(
+            (identity_of(1000, 100).uid(), identity_of(1000, 100).gid()),
+            (1000, 100)
+        );
+        for (uid, gid) in [(0, 0), (0, 100), (1000, 0), (u32::MAX, 100)] {
+            let identity = identity_of(uid, gid);
+            assert_eq!((identity.uid(), identity.gid()), (65534, 65534));
+        }
+        let own = own_identity();
+        let (uid, gid) = (
+            rustix::process::geteuid().as_raw(),
+            rustix::process::getegid().as_raw(),
+        );
+        if uid != 0 && gid != 0 {
+            assert_eq!((own.uid(), own.gid()), (uid, gid));
+        } else {
+            assert_eq!((own.uid(), own.gid()), (65534, 65534));
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn an_expired_systemd_deadline_times_out_without_running_the_script_or_its_effect() {
+        let fake = Fake::default();
+        let scripted = Rc::new(std::cell::Cell::new(0));
+        let seen = Rc::clone(&scripted);
+        fake.on_systemd(move |_| {
+            seen.set(seen.get() + 1);
+            None
+        });
+        fake.add_unit("togi-trial-t1.scope");
+        let scope = crate::id::ScopeName::from_unit("togi-trial-t1.scope").unwrap();
+        let now = Instant::now();
+        for deadline in [now, now - Duration::from_millis(1)] {
+            for operation in [
+                Systemd::Stop {
+                    scope: scope.clone(),
+                },
+                Systemd::Kill {
+                    scope: scope.clone(),
+                    signal: KillSignal::Kill,
+                },
+                Systemd::ListScopes,
+            ] {
+                let outcome = fake.systemd(&operation, deadline).await;
+                assert!(
+                    matches!(outcome, Err(togi_command::Error::TimedOut { .. })),
+                    "{operation:?}"
+                );
+            }
+        }
+        assert_eq!(scripted.get(), 0, "the script is never asked");
+        assert_eq!(
+            fake.units(),
+            ["togi-trial-t1.scope"],
+            "the stop was not applied"
+        );
+        let later = fake
+            .systemd(
+                &Systemd::Stop { scope },
+                Instant::now() + Duration::from_secs(1),
+            )
+            .await;
+        assert!(later.is_ok(), "a live deadline still applies the effect");
+        assert!(fake.units().is_empty());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_one_shot_signal_failure_fails_only_the_next_matching_delivery() {
+        use crate::os::Child as _;
+        let fake = Fake::default();
+        local(async {
+            let command = crate::launch::LaunchCommand {
+                argv: vec!["worker".into()],
+                cwd: std::path::PathBuf::from("."),
+                pin: Vec::new(),
+            };
+            let child = fake.launch(&command).unwrap_or_else(|_| panic!("launch"));
+            fake.fail_signal_once(GroupSignal::Stop, SignalErrorKind::Failed);
+            assert!(child.signal_group(GroupSignal::Cont).is_ok());
+            assert!(child.signal_group(GroupSignal::Stop).is_err());
+            assert!(child.signal_group(GroupSignal::Stop).is_ok());
+            assert_eq!(
+                fake.process(0).signals.borrow()[..],
+                [GroupSignal::Cont, GroupSignal::Stop, GroupSignal::Stop]
+            );
+        })
+        .await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn the_threads_hook_runs_before_the_read_and_can_change_what_it_returns() {
+        let fake = Fake::default();
+        local(async {
+            let command = crate::launch::LaunchCommand {
+                argv: vec!["worker".into()],
+                cwd: std::path::PathBuf::from("."),
+                pin: Vec::new(),
+            };
+            let child = fake.launch(&command).unwrap_or_else(|_| panic!("launch"));
+            let pid = crate::os::Child::pid(&child);
+            assert!(fake.threads(pid).is_ok());
+            let process = fake.process(0);
+            let seen = Rc::new(std::cell::Cell::new(None));
+            let recorded = Rc::clone(&seen);
+            fake.on_threads(move |pid| {
+                recorded.set(Some(pid));
+                *process.threads.borrow_mut() =
+                    Err(crate::procfs::ProcError::Observation("lost".to_owned()));
+            });
+            assert!(matches!(
+                fake.threads(pid),
+                Err(crate::procfs::ProcError::Observation(_))
+            ));
+            assert_eq!(seen.get(), Some(pid));
+        })
+        .await;
+    }
 }
 
 /// The crate's own error inside a seam error, when it carries one.

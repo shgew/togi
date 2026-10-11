@@ -99,7 +99,11 @@ async fn an_oversized_line_is_inconclusive_keeps_its_prefix_and_is_not_containme
         );
         assert_eq!((result.failure, result.escaped.len()), (None, 0));
         assert!(run.finished.teardown.is_ok());
-        assert!(run.finished.errors.is_empty());
+        assert!(
+            matches!(&run.finished.errors[..], [Error::Output(_)]),
+            "the cap is a runner error without stronger evidence: {:?}",
+            run.finished.errors
+        );
         match source {
             Source::Stdout => assert_eq!(log(&rig, "stdout.log"), vec![b'x'; LINE_LIMIT]),
             Source::Stderr => assert_eq!(log(&rig, "stderr.log"), vec![b'x'; LINE_LIMIT]),

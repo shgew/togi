@@ -491,6 +491,103 @@ mod tests {
         ));
     }
 
+    fn readable_sibling(dir: &tempfile::TempDir) {
+        write(dir, "20/cgroup", "0::/a/togi-trial-x.scope\n");
+        write(dir, "20/stat", &stat_line("w", 'S', &[(22, "777")]));
+    }
+
+    #[test]
+    fn scope_scan_skips_a_vanished_cgroup_and_keeps_the_readable_siblings() {
+        let (dir, proc) = fixture();
+        readable_sibling(&dir);
+        // A pid whose directory lost its files between listing and reading.
+        fs::create_dir_all(dir.path().join("40")).unwrap();
+        let found = proc.scope_processes().unwrap();
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].pid, 20);
+    }
+
+    #[test]
+    fn scope_scan_fails_when_the_cgroup_or_stat_is_not_a_readable_file() {
+        for broken in ["cgroup", "stat"] {
+            let (dir, proc) = fixture();
+            readable_sibling(&dir);
+            if broken == "stat" {
+                write(&dir, "30/cgroup", "0::/a/togi-trial-y.scope\n");
+            }
+            fs::create_dir_all(dir.path().join(format!("30/{broken}"))).unwrap();
+            let Err(ProcError::Observation(text)) = proc.scope_processes() else {
+                panic!("a {broken} that is a directory must fail the scan");
+            };
+            assert!(text.contains(broken), "{text}");
+        }
+    }
+
+    #[test]
+    fn scope_scan_fails_on_permission_denied_but_not_on_a_vanished_file() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        for denied in ["cgroup", "stat"] {
+            let (dir, proc) = fixture();
+            readable_sibling(&dir);
+            write(&dir, "30/cgroup", "0::/a/togi-trial-y.scope\n");
+            write(&dir, "30/stat", &stat_line("w", 'S', &[(22, "5")]));
+            let path = dir.path().join(format!("30/{denied}"));
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o0)).unwrap();
+            if fs::read(&path).is_ok() {
+                // Running as root: permissions do not apply, so denial cannot be staged.
+                return;
+            }
+            let Err(ProcError::Observation(text)) = proc.scope_processes() else {
+                panic!("an unreadable {denied} must fail the scan");
+            };
+            assert!(text.contains(denied), "{text}");
+            fs::remove_file(&path).unwrap();
+            assert_eq!(proc.scope_processes().map(|found| found.len()), Ok(1));
+        }
+    }
+
+    #[test]
+    fn only_a_missing_process_counts_as_gone_not_io_errors_or_denials() {
+        assert!(disappeared(&io::Error::from(io::ErrorKind::NotFound)));
+        assert!(disappeared(&io::Error::from_raw_os_error(3)));
+        for errno in [5, 13, 21] {
+            assert!(
+                !disappeared(&io::Error::from_raw_os_error(errno)),
+                "errno {errno} is a lost observation"
+            );
+        }
+    }
+
+    #[test]
+    fn per_process_reads_fail_on_a_non_file_stat_and_threads_keep_readable_ones() {
+        let (dir, proc) = fixture();
+        fs::create_dir_all(dir.path().join("50/stat")).unwrap();
+        assert!(matches!(proc.usage(50), Err(ProcError::Observation(_))));
+        let process = ScopeProcess {
+            scope: scope("togi-trial-x"),
+            pid: 50,
+            starttime: 1,
+        };
+        assert!(matches!(
+            proc.alive(&process),
+            Err(ProcError::Observation(_))
+        ));
+        fs::create_dir_all(dir.path().join("50/cgroup")).unwrap();
+        assert!(matches!(
+            proc.in_scope(50, &process.scope),
+            Err(ProcError::Observation(_))
+        ));
+        write(&dir, "51/task/1/stat", &stat_line("w", 'R', &[(39, "2")]));
+        fs::create_dir_all(dir.path().join("51/task/2/stat")).unwrap();
+        let found = proc.threads(51).unwrap();
+        assert_eq!(found.threads, [Thread { tid: 1, cpu: 2 }]);
+        assert!(matches!(
+            found.errors.as_slice(),
+            [ProcError::Observation(_)]
+        ));
+    }
+
     #[test]
     fn alive_rejects_zombies_and_surfaces_read_errors() {
         let (dir, proc) = fixture();

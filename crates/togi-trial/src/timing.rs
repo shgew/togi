@@ -49,9 +49,21 @@ impl Timing {
     }
 
     /// From the start's completion to the supervisor's report: the duration, the teardown and the
-    /// samples writer's join.
+    /// samples writer's join. Saturates; `representable` refuses what would.
     pub(crate) fn wait_bound(&self, duration: Duration) -> Duration {
-        duration + self.stop_bound()
+        duration.saturating_add(self.stop_bound())
+    }
+
+    /// Whether a trial of `duration` over `instances` instances has every deadline the runner
+    /// forms, from the start's bound to the supervisor's report, as an `Instant`.
+    pub(crate) fn representable(&self, duration: Duration, instances: u32) -> bool {
+        self.readiness()
+            .checked_mul(instances)
+            .and_then(|scopes| scopes.checked_add(self.teardown))
+            .and_then(|start| start.checked_add(self.margin))
+            .and_then(|start| start.checked_add(duration))
+            .and_then(|total| total.checked_add(self.stop_bound()))
+            .is_some_and(|total| std::time::Instant::now().checked_add(total).is_some())
     }
 
     /// From a stop request to the supervisor's report: the teardown and the writer join.
@@ -93,5 +105,14 @@ mod tests {
             ..Timing::default()
         };
         assert_eq!(timing.readiness(), Duration::from_millis(500));
+    }
+
+    #[test]
+    fn a_duration_whose_deadlines_overflow_is_not_representable() {
+        let timing = Timing::default();
+        assert!(timing.representable(Duration::from_mins(15), 16));
+        assert!(!timing.representable(Duration::MAX, 1));
+        assert!(!timing.representable(Duration::from_secs(u64::MAX / 2), 1));
+        assert_eq!(timing.wait_bound(Duration::MAX), Duration::MAX);
     }
 }

@@ -60,6 +60,8 @@ pub enum Error {
     Containment(#[source] Arc<Containment>),
     #[error("cancelled")]
     Cancelled,
+    #[error("trial supervision panicked: {what}")]
+    Panicked { what: String },
     #[error("the samples file")]
     Storage(#[from] StorageFailure),
     #[error("backend output could not be read cleanly")]
@@ -81,6 +83,18 @@ impl Error {
             1 => errors.pop(),
             _ => Some(Self::Joined(Joined { errors })),
         }
+    }
+
+    /// `first` and then what happened after it; `first` alone when nothing did.
+    #[cfg(target_os = "linux")]
+    pub(crate) fn join_after(first: Self, later: Vec<Self>) -> Self {
+        if later.is_empty() {
+            return first;
+        }
+        let mut errors = Vec::with_capacity(later.len() + 1);
+        errors.push(first);
+        errors.extend(later);
+        Self::Joined(Joined { errors })
     }
 }
 
@@ -195,22 +209,84 @@ impl Containment {
     }
 }
 
+/// How an error reads at the machine seam, which has fixed categories.
+enum Seam {
+    Cancelled,
+    Containment,
+    BackendMissing,
+    Other,
+}
+
+impl Error {
+    /// A cleanup that could not be confirmed outranks everything joined to it; otherwise the
+    /// first error names the category, and a cancellation that carries other errors stays an
+    /// ordinary error so none of them is lost.
+    fn seam(&self) -> Seam {
+        match self {
+            Self::Containment(_) | Self::Stuck { .. } => Seam::Containment,
+            Self::Cancelled => Seam::Cancelled,
+            Self::BackendMissing(_) => Seam::BackendMissing,
+            Self::Joined(joined) => {
+                if joined
+                    .errors
+                    .iter()
+                    .any(|error| matches!(error.seam(), Seam::Containment))
+                {
+                    Seam::Containment
+                } else if matches!(joined.errors.first(), Some(Self::BackendMissing(_))) {
+                    Seam::BackendMissing
+                } else {
+                    Seam::Other
+                }
+            }
+            _ => Seam::Other,
+        }
+    }
+}
+
 impl From<Error> for togi_machine::Error {
     fn from(error: Error) -> Self {
         match error {
             Error::Containment(containment) => Self::Containment(Box::new(containment)),
-            stuck @ Error::Stuck { .. } => Self::Containment(Box::new(stuck)),
-            Error::Cancelled => Self::Cancelled,
-            Error::BackendMissing(_) => Self::BackendMissing,
             Error::Backend(backend) => backend.into(),
-            Error::Joined(joined) => match joined.errors.first() {
-                Some(Error::Containment(_)) => Self::Containment(Box::new(joined)),
-                Some(Error::Cancelled) => Self::Cancelled,
-                Some(Error::BackendMissing(_)) => Self::BackendMissing,
-                _ => Self::Other(Box::new(joined)),
+            other => match other.seam() {
+                Seam::Cancelled => Self::Cancelled,
+                Seam::BackendMissing => Self::BackendMissing,
+                Seam::Containment => Self::Containment(Box::new(other)),
+                Seam::Other => Self::Other(Box::new(other)),
             },
-            other => Self::Other(Box::new(other)),
         }
+    }
+}
+
+/// An error a trial keeps after reporting it, so every later report reads the same.
+#[cfg(target_os = "linux")]
+#[derive(Debug, thiserror::Error)]
+#[error(transparent)]
+pub(crate) struct Shared(Arc<Error>);
+
+#[cfg(target_os = "linux")]
+impl Shared {
+    /// The seam error for a kept error, the same each time it is asked for.
+    pub(crate) fn seam(error: &Arc<Error>) -> togi_machine::Error {
+        match &**error {
+            Error::Containment(containment) => {
+                togi_machine::Error::Containment(Box::new(Arc::clone(containment)))
+            }
+            other => match other.seam() {
+                Seam::Cancelled => togi_machine::Error::Cancelled,
+                Seam::BackendMissing => togi_machine::Error::BackendMissing,
+                Seam::Containment => {
+                    togi_machine::Error::Containment(Box::new(Self(Arc::clone(error))))
+                }
+                Seam::Other => togi_machine::Error::Other(Box::new(Self(Arc::clone(error)))),
+            },
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn error(&self) -> &Error {
+        &self.0
     }
 }
 
@@ -242,6 +318,10 @@ pub enum InvalidTrial {
     ForeignCpu(CpuId),
     #[error("the logical CPUs do not match the first CPU of each core")]
     CpusMismatch,
+    #[error("a regime that runs one instance takes exactly one core")]
+    CoresForOneInstance,
+    #[error("the trial duration cannot be represented as a deadline")]
+    UnrepresentableDuration,
 }
 
 #[derive(Debug, thiserror::Error)]

@@ -2,17 +2,25 @@
 
 use std::time::Duration;
 
-use tokio::time::Instant;
+use togi_machine::{CancellationToken, Stopped};
+use tokio::task::spawn_local;
+use tokio::time::{Instant, sleep};
 
 use super::harness::{local, rig, rig_edit};
 use crate::error::{CleanupFailure, Error};
 use crate::id::ScopeName;
 use crate::os::fake::Reply;
-use crate::os::{KillSignal, Systemd};
+use crate::os::{KillSignal, Os, Systemd};
 use crate::procfs::ScopeProcess;
-use crate::sweep::{parse_listing, probe, sweep};
+use crate::supervisor::Env;
+use crate::sweep::{parse_listing, probe, sweep as run_sweep};
 use crate::testing::TestBackend;
 use crate::timing::Timing;
+
+/// A sweep nobody cancels.
+async fn sweep<O: Os>(env: &Env<O>) -> Result<(String, Stopped), Error> {
+    run_sweep(env, &CancellationToken::new()).await
+}
 
 fn secs(n: u64) -> Duration {
     Duration::from_secs(n)
@@ -174,7 +182,11 @@ async fn a_hung_initial_listing_is_containment_at_the_shared_deadline() {
         });
         let begun = Instant::now();
         let error = sweep(&rig.env).await.err().unwrap();
-        assert_eq!(begun.elapsed(), secs(15));
+        assert_eq!(
+            begun.elapsed(),
+            secs(13),
+            "discovery stops two seconds short of the deadline"
+        );
         assert!(matches!(
             containment(&error).failures(),
             [CleanupFailure::Observe { .. }]
@@ -316,7 +328,7 @@ async fn a_scope_that_is_already_gone_is_not_a_failure() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn a_failing_verification_listing_or_discovery_is_containment() {
+async fn a_failing_verification_listing_is_containment() {
     local(async {
         let rig = rig();
         rig.fake.add_unit("togi-trial-a.scope");
@@ -458,7 +470,7 @@ async fn a_verification_failure_keeps_the_earlier_kill_failure() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn a_hanging_process_scan_is_cut_at_the_shared_deadline_and_listed_scopes_are_still_killed() {
+async fn a_hanging_process_scan_is_cut_short_of_the_deadline_and_listed_scopes_are_still_killed() {
     local(async {
         let rig = rig();
         rig.fake.add_unit("togi-trial-a.scope");
@@ -466,7 +478,29 @@ async fn a_hanging_process_scan_is_cut_at_the_shared_deadline_and_listed_scopes_
         let begun = Instant::now();
         let error = sweep(&rig.env).await.err().unwrap();
         assert!(begun.elapsed() <= secs(15), "{:?}", begun.elapsed());
-        assert!(calls(&rig).contains(&("togi-trial-a".to_owned(), "SIGKILL")));
+        let all = calls(&rig);
+        assert!(all.contains(&("togi-trial-a".to_owned(), "SIGKILL")));
+        assert!(all.contains(&("togi-trial-a".to_owned(), "stop")));
+        let kill_at = rig
+            .fake
+            .systemd_calls()
+            .iter()
+            .find(|(call, _)| {
+                matches!(
+                    call,
+                    Systemd::Kill {
+                        signal: KillSignal::Kill,
+                        ..
+                    }
+                )
+            })
+            .map(|(_, at)| at.duration_since(begun))
+            .unwrap();
+        assert!(kill_at < secs(15), "the kill got a live slot: {kill_at:?}");
+        assert!(
+            rig.fake.units().is_empty(),
+            "the kill and stop took effect, not only got attempted"
+        );
         assert!(matches!(
             containment(&error).failures().first(),
             Some(CleanupFailure::Observe {
@@ -474,6 +508,215 @@ async fn a_hanging_process_scan_is_cut_at_the_shared_deadline_and_listed_scopes_
                 ..
             })
         ));
+    })
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_stop_that_hangs_or_fails_after_a_successful_kill_is_kept_and_the_other_scopes_still_stop()
+ {
+    for hang in [true, false] {
+        local(async move {
+            let rig = rig();
+            for name in ["togi-trial-a", "togi-trial-b", "togi-trial-c"] {
+                rig.fake.add_unit(&format!("{name}.scope"));
+            }
+            rig.fake.on_systemd(move |call| match call {
+                Systemd::Stop { scope } if scope.to_string() == "togi-trial-a" => Some(if hang {
+                    Reply::Hang
+                } else {
+                    Reply::Output {
+                        success: false,
+                        text: "Access denied".into(),
+                    }
+                }),
+                _ => None,
+            });
+            let begun = Instant::now();
+            let error = sweep(&rig.env).await.err().unwrap();
+            assert!(begun.elapsed() <= secs(15), "{:?}", begun.elapsed());
+            let all = calls(&rig);
+            assert_eq!(all.iter().filter(|(_, w)| *w == "SIGKILL").count(), 3);
+            assert_eq!(
+                all.iter().filter(|(_, w)| *w == "stop").count(),
+                3,
+                "the other scopes are still stopped"
+            );
+            let stops = rig
+                .fake
+                .systemd_calls()
+                .iter()
+                .filter(|(call, _)| matches!(call, Systemd::Stop { .. }))
+                .map(|(_, at)| at.duration_since(begun))
+                .collect::<Vec<_>>();
+            assert!(stops.iter().all(|at| *at <= secs(2)), "{stops:?}");
+            let failures = containment(&error).failures();
+            assert!(
+                failures.iter().any(|failure| matches!(
+                    failure,
+                    CleanupFailure::StopScope { scope, .. } if scope == "togi-trial-a"
+                )),
+                "{failures:?}"
+            );
+            assert!(
+                !failures
+                    .iter()
+                    .any(|failure| matches!(failure, CleanupFailure::KillScope { .. })),
+                "the kill itself succeeded: {failures:?}"
+            );
+            assert_eq!(rig.fake.units(), ["togi-trial-a.scope"]);
+        })
+        .await;
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_failing_verification_discovery_withholds_stopped_and_keeps_the_earlier_failure() {
+    local(async {
+        let rig = rig();
+        rig.fake.add_unit("togi-trial-a.scope");
+        let fake = rig.fake.clone();
+        let mut listings = 0;
+        rig.fake.on_systemd(move |call| match call {
+            Systemd::Kill {
+                signal: KillSignal::Term,
+                ..
+            } => Some(Reply::Output {
+                success: false,
+                text: "Access denied".into(),
+            }),
+            Systemd::ListScopes => {
+                listings += 1;
+                if listings > 1 {
+                    // The verification's process scan, which follows its listing, now hangs.
+                    fake.hang_scans();
+                }
+                None
+            }
+            _ => None,
+        });
+        let error = sweep(&rig.env).await.err().unwrap();
+        let failures = containment(&error).failures();
+        assert!(
+            matches!(
+                failures.first(),
+                Some(CleanupFailure::KillScope {
+                    signal: "SIGTERM",
+                    ..
+                })
+            ),
+            "{failures:?}"
+        );
+        assert!(
+            failures.iter().any(|failure| matches!(
+                failure,
+                CleanupFailure::Observe {
+                    what: "the trial processes",
+                    ..
+                }
+            )),
+            "{failures:?}"
+        );
+        assert!(
+            !failures
+                .iter()
+                .any(|failure| matches!(failure, CleanupFailure::Leftover)),
+            "an unobserved machine is not reported as a leftover: {failures:?}"
+        );
+        assert!(rig.fake.units().is_empty(), "cleanup still ran to the end");
+    })
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn cancelling_during_discovery_returns_cancelled_at_once_and_signals_nothing() {
+    local(async {
+        let rig = rig();
+        rig.fake.add_unit("togi-trial-a.scope");
+        rig.fake.on_systemd(|call| match call {
+            Systemd::ListScopes => Some(Reply::Hang),
+            _ => None,
+        });
+        let cancel = CancellationToken::new();
+        let trigger = cancel.clone();
+        spawn_local(async move {
+            sleep(secs(1)).await;
+            trigger.cancel();
+        });
+        let begun = Instant::now();
+        let error = run_sweep(&rig.env, &cancel).await.err().unwrap();
+        assert!(matches!(error, Error::Cancelled), "{error:?}");
+        assert_eq!(begun.elapsed(), secs(1));
+        assert!(calls(&rig).is_empty());
+    })
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn cancelling_after_the_term_still_kills_and_stops_every_discovered_scope() {
+    local(async {
+        let rig = rig();
+        rig.fake.add_unit("togi-trial-a.scope");
+        // Nothing but SIGKILL ends this captured process: it ignores TERM.
+        let stubborn = rig.fake.add_recovered(process("togi-trial-a", 4242));
+        let cancel = CancellationToken::new();
+        let trigger = cancel.clone();
+        spawn_local(async move {
+            sleep(secs(1)).await;
+            trigger.cancel();
+        });
+        let error = run_sweep(&rig.env, &cancel).await.err().unwrap();
+        assert!(matches!(error, Error::Cancelled), "{error:?}");
+        let all = calls(&rig);
+        let term = all.iter().position(|(_, w)| *w == "SIGTERM").unwrap();
+        let kill = all.iter().position(|(_, w)| *w == "SIGKILL").unwrap();
+        assert!(term < kill && all.contains(&("togi-trial-a".to_owned(), "stop")));
+        assert!(!stubborn.alive.get(), "the sweep finished the cleanup");
+        assert!(rig.fake.units().is_empty());
+    })
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_cancelled_sweep_whose_cleanup_fails_reports_cancelled_and_the_containment_failure() {
+    local(async {
+        let rig = rig();
+        rig.fake.add_unit("togi-trial-a.scope");
+        let _stubborn = rig.fake.add_recovered(process("togi-trial-a", 4242));
+        rig.fake.on_systemd(|call| match call {
+            Systemd::Kill {
+                signal: KillSignal::Kill,
+                ..
+            } => Some(Reply::Output {
+                success: false,
+                text: "Access denied".into(),
+            }),
+            _ => None,
+        });
+        let cancel = CancellationToken::new();
+        let trigger = cancel.clone();
+        spawn_local(async move {
+            sleep(secs(1)).await;
+            trigger.cancel();
+        });
+        let error = run_sweep(&rig.env, &cancel).await.err().unwrap();
+        let Error::Joined(joined) = &error else {
+            panic!("not joined: {error:?}");
+        };
+        let [Error::Cancelled, second] = joined.errors() else {
+            panic!("unexpected members: {error:?}");
+        };
+        assert!(matches!(
+            containment(second).failures().first(),
+            Some(CleanupFailure::KillScope {
+                signal: "SIGKILL",
+                ..
+            })
+        ));
+        assert!(
+            calls(&rig).iter().any(|(_, what)| *what == "SIGKILL"),
+            "the kill was still attempted after the cancel"
+        );
     })
     .await;
 }
