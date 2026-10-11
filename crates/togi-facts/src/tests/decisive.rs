@@ -342,3 +342,36 @@ fn own_pass_takes_the_backend_recorded_before_its_intent() {
     );
     assert_eq!(facts.facts[2].source.backend, identity("2"));
 }
+
+fn ycruncher_workload() -> togi_machine::WorkloadId {
+    togi_machine::REGIMES
+        .into_iter()
+        .find_map(|regime| {
+            togi_machine::workloads(regime)
+                .iter()
+                .find(|w| w.backend == togi_machine::Backend::Ycruncher)
+                .map(togi_machine::Workload::id)
+        })
+        .unwrap()
+}
+
+#[test]
+fn a_ycruncher_pass_takes_the_ycruncher_identity() {
+    let mut s = Script::begin(&[0]);
+    s.add(ConfigLoaded {
+        config: togi_config::Config::parse(
+            r#"{"backends":{"mprime":"/store/m","ycruncher":"/store/y"}}"#,
+        )
+        .unwrap(),
+        ..config_loaded(1)
+    });
+    s.add(togi_journal::TrialIntent {
+        workload: ycruncher_workload(),
+        ..alone("y", 0, -3, &[0])
+    });
+    s.add(pass("y", 3));
+    let facts = s.extract();
+    let backend = facts.facts[0].source.backend.as_ref().unwrap();
+    assert_eq!(backend.backend, togi_machine::Backend::Ycruncher);
+    assert_eq!(backend.path, "/store/y");
+}

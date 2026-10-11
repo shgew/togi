@@ -6,7 +6,9 @@ use togi_journal::{
 };
 use togi_machine::{Backend, CcdId, Condition, Regime, Signal};
 
-use super::{Script, build, core, fail, idle, intent, pass, profile, session, set, start, trial};
+use super::{
+    Script, alone, build, core, fail, idle, intent, pass, profile, session, set, start, trial,
+};
 use crate::{Fact, FactsError, Observation, SessionFacts};
 
 fn original() -> SessionFacts {
@@ -218,5 +220,37 @@ fn carried_facts_must_be_decisive_well_formed() {
             ),
             "{name}: {result:?}"
         );
+    }
+}
+
+#[test]
+fn a_passing_copy_round_trips_and_accessors_agree() {
+    let mut s = Script::begin(&[0, 1]);
+    s.add(alone("p", 1, -7, &[0, 1]));
+    s.add(pass("p", 9));
+    s.add(idle(
+        Some(Condition::Together),
+        Some(profile(&[(0, -1), (1, -2)])),
+    ));
+    let facts = s.extract();
+    let [pass_fact, idle_fact] = &facts.facts[..] else {
+        unreachable!()
+    };
+    assert!(!pass_fact.is_failure());
+    assert!(idle_fact.is_failure());
+    assert_eq!(pass_fact.regime(), Regime::R1);
+    assert_eq!(pass_fact.loaded(), set(&[1]));
+    assert_eq!(idle_fact.profile(), &profile(&[(0, -1), (1, -2)]));
+    assert_eq!(pass_fact.id().session, super::first());
+    assert_eq!(pass_fact.id().seq, pass_fact.source.seq);
+
+    let mut copy = Script::begin(&[0, 1]);
+    copy.add(pass_fact.to_payload());
+    copy.add(idle_fact.to_payload());
+    let copied = copy.extract();
+    assert_eq!(copied.carried.len(), 2);
+    for (copy, original) in copied.carried.iter().zip(&facts.facts) {
+        assert_eq!(copy.source, original.source);
+        assert_eq!(copy.observation, original.observation);
     }
 }

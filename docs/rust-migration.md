@@ -170,7 +170,7 @@ The `togi-config` crate ports `internal/config` ([#749](https://github.com/shgew
 
 ## Stage 3: `internal/facts` (#751, 2026-10-11)
 
-The `togi-facts` crate ports `internal/facts` ([#751](https://github.com/shgew/togi/issues/751)): 860 lines of library and 1,314 of tests, against Go's 403 and 664. No Go code is removed or changed. The 26 tests run in 0.03 s under `cargo nextest` on Linux; `go test -count=1 ./internal/facts` reports 0.009 s.
+The `togi-facts` crate ports `internal/facts` ([#751](https://github.com/shgew/togi/issues/751)): 860 lines of library and 1,399 of tests, against Go's 403 and 664. No Go code is removed or changed. The 29 tests run in 0.03 s under `cargo nextest` on Linux; `go test -count=1 ./internal/facts` reports 0.009 s.
 
 - **One streaming pass.** `extract(session, events)` folds an iterator of `Result<Event, E>` and keeps no event list: only unended trial intents, the ids of decided trials and the facts themselves. A read error propagates with no partial result. Own decisive facts (`facts`) and copies from `trial.carried`/`failure.carried` (`carried`) stay apart; copies keep their original session, seq, time, build, epoch, boot, trial and backend identity, and record the local carried seq beside it.
 - **What carry gets.** Each fact's local occurrence seq, the latest reset seq per core and the latest `reset --all` seq, the `session.carried` seq, the latest `shutdown` seq and the unended trial intents, so carry applies its rules without re-reading events. `Fact::to_payload` builds the carried copy.

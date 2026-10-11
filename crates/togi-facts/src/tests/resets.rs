@@ -115,3 +115,21 @@ fn latest_reset_per_core_wins() {
     assert_eq!(facts.cutoffs.core(core(0)), Some(latest));
     assert_eq!(facts.cutoffs.all(), None);
 }
+
+#[test]
+fn archive_without_a_cause_still_applies_the_all_reset() {
+    let mut s = Script::begin(&[0]);
+    s.add(CommandReset {
+        target: ResetTarget::All,
+    });
+    let archived = s.add(SessionArchived { session: first() });
+    let facts = s.extract();
+    assert_eq!(facts.resets[0].applied, Some(archived));
+    assert_eq!(
+        facts.resets[0].effects,
+        vec![Effect {
+            seq: archived,
+            kind: EventKind::SessionArchived
+        }]
+    );
+}
