@@ -53,6 +53,38 @@ func (f *fakeRunner) joined() []string {
 	return out
 }
 
+// isolatedCall is one isolated git invocation: the repository directory and the arguments.
+type isolatedCall struct {
+	Dir  string
+	Args []string
+}
+
+// fakeIsolated stands in for the isolated git: every call is recorded, and handle answers it.
+type fakeIsolated struct {
+	handle func(dir string, args []string) ([]byte, error)
+	calls  []isolatedCall
+}
+
+func (f *fakeIsolated) run(dir string, args ...string) ([]byte, error) {
+	f.calls = append(f.calls, isolatedCall{dir, args})
+	return f.handle(dir, args)
+}
+
+func (f *fakeIsolated) subcommands() []string {
+	var out []string
+	for _, c := range f.calls {
+		out = append(out, c.Args[0])
+	}
+	return out
+}
+
+// useIsolatedGit makes the tools' isolated git answer with handle.
+func useIsolatedGit(tl *tools, handle func(dir string, args []string) ([]byte, error)) *fakeIsolated {
+	f := &fakeIsolated{handle: handle}
+	tl.isolatedGit = f.run
+	return f
+}
+
 // testTools returns tools whose gh and git are the given handlers and whose output goes to the returned buffers.
 func testTools(t *testing.T, gh, git func(args []string) ([]byte, error)) (tools, *fakeRunner, *fakeRunner, *bytes.Buffer, *bytes.Buffer) {
 	t.Helper()
@@ -64,8 +96,12 @@ func testTools(t *testing.T, gh, git func(args []string) ([]byte, error)) (tools
 		c.handle = func(args []string) ([]byte, error) { t.Fatalf("unexpected git %v", args); return nil, nil }
 	}
 	var stdout, stderr bytes.Buffer
+	unexpected := func(dir string, args ...string) ([]byte, error) {
+		t.Fatalf("unexpected isolated git %v in %s", args, dir)
+		return nil, nil
+	}
 	return tools{
-		gh: g.run, git: c.run, tmp: t.TempDir(), stdin: strings.NewReader(""),
+		gh: g.run, git: c.run, isolatedGit: unexpected, tmp: t.TempDir(), stdin: strings.NewReader(""),
 		getenv: func(k string) string {
 			if k == "GH_TOKEN" {
 				return "token"

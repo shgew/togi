@@ -13,6 +13,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -44,11 +45,15 @@ const pullsQuery = `query($owner: String!, $name: String!, $endCursor: String) {
 type ghFunc func(args ...string) ([]byte, error)
 
 func runCommand(name string, args ...string) ([]byte, error) {
-	cmd := exec.Command(name, args...)
+	return runCmd(exec.Command(name, args...), args[0])
+}
+
+// runCmd runs cmd and returns its standard output; a failure names the command and its subcommand sub and carries standard error.
+func runCmd(cmd *exec.Cmd, sub string) ([]byte, error) {
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("%s %s: %w: %s", name, args[0], err, strings.TrimSpace(stderr.String()))
+		return nil, fmt.Errorf("%s %s: %w: %s", filepath.Base(cmd.Path), sub, err, strings.TrimSpace(stderr.String()))
 	}
 	return stdout.Bytes(), nil
 }
@@ -57,8 +62,21 @@ func runGH(args ...string) ([]byte, error) { return runCommand("gh", args...) }
 
 func runGit(args ...string) ([]byte, error) { return runCommand("git", args...) }
 
+// runIsolatedGit runs git with dir as its working directory and no configuration, attributes or Git environment from the caller, so the same arguments give the same result on any host.
+func runIsolatedGit(dir string, args ...string) ([]byte, error) {
+	cmd := exec.Command("git", append([]string{"-c", "core.attributesFile=/dev/null"}, args...)...)
+	cmd.Dir = dir
+	for _, kv := range os.Environ() {
+		if !strings.HasPrefix(kv, "GIT_") {
+			cmd.Env = append(cmd.Env, kv)
+		}
+	}
+	cmd.Env = append(cmd.Env, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_ATTR_NOSYSTEM=1")
+	return runCmd(cmd, args[0])
+}
+
 func main() {
-	t := tools{gh: runGH, git: runGit, getenv: os.Getenv, tmp: os.TempDir(), stdin: os.Stdin, stdout: os.Stdout, stderr: os.Stderr}
+	t := tools{gh: runGH, git: runGit, isolatedGit: runIsolatedGit, getenv: os.Getenv, tmp: os.TempDir(), stdin: os.Stdin, stdout: os.Stdout, stderr: os.Stderr}
 	if err := dispatch(t, os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, "reviews:", err)
 		os.Exit(1)
