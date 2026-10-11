@@ -1,12 +1,11 @@
 use crate::{
-    BankType, BiosContext, Condition, CoreId, CoreInfo, CpuId, NanoDuration, ObservedOffset,
-    Regime, ResetKind, Signal, TargetOffset, TrialConditions, Workload,
+    BankType, BiosContext, CancellationToken, Condition, CoreId, CoreInfo, CpuId, NanoDuration,
+    ObservedOffset, Regime, ResetKind, Signal, TargetOffset, TrialConditions, Workload,
 };
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use std::error::Error as StdError;
 use std::fmt;
-use tokio_util::sync::CancellationToken;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum ErrorKind {

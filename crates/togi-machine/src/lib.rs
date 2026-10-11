@@ -1,3 +1,4 @@
+mod cancellation;
 mod per_core;
 mod samples;
 mod scalars;
@@ -6,6 +7,7 @@ mod topology;
 mod vocab;
 mod workloads;
 
+pub use cancellation::CancellationToken;
 pub use per_core::PerCore;
 pub use samples::{PmTable, PmTableReader, ReadSamples, TrialConditions, read_samples};
 pub use scalars::{

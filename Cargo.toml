@@ -20,8 +20,7 @@ serde_json = { version = "1", features = ["float_roundtrip", "raw_value"] }
 tempfile = "3"
 test-case = "3"
 thiserror = "2"
-tokio-util = { version = "0.7", features = ["rt"] }
-togi-trialfiles = { path = "crates/togi-trialfiles" }
+togi-trialfiles = { path = "crates/togi-trialfiles", version = "0.0.0" }
 
 [workspace.lints.rust]
 unsafe_code = "deny"

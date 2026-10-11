@@ -612,3 +612,55 @@ fn vocabulary_json_null_is_the_empty_value() {
     );
     assert!(serde_json::from_str::<Regime>("1").is_err());
 }
+
+#[test]
+fn cancellation_clones_and_children_keep_context_ownership() {
+    let parent = CancellationToken::new();
+    let clone = parent.clone();
+    let child = parent.child_token();
+    let grandchild = child.child_token();
+    child.cancel();
+    assert!(child.is_cancelled());
+    assert!(grandchild.is_cancelled());
+    assert!(!parent.is_cancelled());
+    let sibling = parent.child_token();
+    clone.cancel();
+    parent.cancel();
+    assert!(parent.is_cancelled());
+    assert!(sibling.is_cancelled());
+    assert!(parent.child_token().is_cancelled());
+    assert!(child.child_token().is_cancelled());
+}
+
+#[test]
+fn cancellation_wakes_waiters_without_sleeping_or_polling() {
+    let token = CancellationToken::new();
+    let (started, ready) = std::sync::mpsc::channel();
+    let handles: Vec<_> = (0..4)
+        .map(|_| {
+            let waiting = token.clone();
+            let started = started.clone();
+            std::thread::spawn(move || {
+                started.send(()).unwrap();
+                waiting.wait();
+                assert!(waiting.is_cancelled());
+            })
+        })
+        .collect();
+    for _ in &handles {
+        ready.recv().unwrap();
+    }
+    token.cancel();
+    for handle in handles {
+        handle.join().unwrap();
+    }
+    token.wait();
+}
+
+#[test]
+fn cancellation_timeout_checks_do_not_need_a_runtime() {
+    let token = CancellationToken::default();
+    assert!(!token.wait_timeout(std::time::Duration::ZERO));
+    token.cancel();
+    assert!(token.wait_timeout(std::time::Duration::ZERO));
+}
