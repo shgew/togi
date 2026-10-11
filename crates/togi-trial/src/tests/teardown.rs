@@ -884,6 +884,112 @@ async fn a_watched_append_after_the_last_drain_poll_is_classified_before_the_pro
     .await;
 }
 
+struct FinalBudget {
+    inner: TestBackend,
+    until: Arc<std::sync::OnceLock<tokio::time::Instant>>,
+    classified: Arc<AtomicUsize>,
+}
+
+impl Backend for FinalBudget {
+    fn kind(&self) -> togi_machine::Backend {
+        self.inner.kind()
+    }
+
+    fn check(&self) -> Result<Ready, togi_backend::Error> {
+        self.inner.check()
+    }
+
+    fn plan(
+        &self,
+        workload: &Workload,
+        dir: &Path,
+        cpus: &[CpuId],
+    ) -> Result<Plan, togi_backend::Error> {
+        self.inner.plan(workload, dir, cpus)
+    }
+
+    fn classify(&self, line: &str) -> Line {
+        if line == "spend final budget" {
+            self.classified.fetch_add(1, Ordering::SeqCst);
+            let until = self.until.get().expect("the scan set the bound");
+            std::thread::sleep(until.saturating_duration_since(tokio::time::Instant::now()));
+        }
+        self.inner.classify(line)
+    }
+}
+
+#[tokio::test]
+async fn a_final_partial_consuming_the_budget_cannot_confirm_another_files_old_snapshot() {
+    local(async {
+        let mut inner = TestBackend::new("/bin/true");
+        inner.watched = vec!["results.txt", "second.txt"];
+        let until = Arc::new(std::sync::OnceLock::new());
+        let classified = Arc::new(AtomicUsize::new(0));
+        let backend = FinalBudget {
+            inner: inner.clone(),
+            until: Arc::clone(&until),
+            classified: Arc::clone(&classified),
+        };
+        let timing = Timing {
+            stop_grace: Duration::from_millis(50),
+            kill_slot: Duration::from_millis(50),
+            drain: Duration::from_millis(500),
+            teardown: Duration::from_secs(1),
+            ..Timing::default()
+        };
+        let rig = rig_edit(inner, timing, move |env| {
+            env.backends = Backends::new().with(Arc::new(backend));
+        });
+        rig.fake.on_launch(|_, command| {
+            let first = command.cwd.join("results.txt");
+            let second = command.cwd.join("second.txt");
+            Launch::Run(script(move |mut ctx: ProcCtx| async move {
+                std::fs::write(first, "spend final budget").unwrap();
+                std::fs::write(second, "COMPUTE").unwrap();
+                ctx.until_killed().await;
+            }))
+        });
+        let fake = rig.fake.clone();
+        let scans = Arc::new(AtomicUsize::new(0));
+        let scanned = Arc::clone(&scans);
+        rig.fake.on_scan(move || {
+            if scanned.fetch_add(1, Ordering::SeqCst) == 0 {
+                use std::io::Write as _;
+                let path = fake.launches()[0].cwd.join("second.txt");
+                std::fs::OpenOptions::new()
+                    .append(true)
+                    .open(path)
+                    .unwrap()
+                    .write_all(b" ERROR")
+                    .unwrap();
+                let began = fake.process(0).signal_times.borrow()[0].0;
+                until
+                    .set(began + timing.teardown + Duration::from_millis(20))
+                    .unwrap();
+            }
+        });
+        let cancel = CancellationToken::new();
+        let handle = rig
+            .start_with(&cancel, spec(Regime::R1, &[3], secs(60)))
+            .await
+            .unwrap();
+        cancel.cancel();
+        let run = finish(&handle).await;
+        assert_eq!(classified.load(Ordering::SeqCst), 1);
+        assert!(scans.load(Ordering::SeqCst) >= 1);
+        assert_eq!(run.finished.result.failure, None);
+        let containment = run
+            .finished
+            .teardown
+            .expect_err("an unfinished final reread cannot mint a stop proof");
+        assert!(matches!(
+            containment.failures(),
+            [CleanupFailure::DrainDeadline]
+        ));
+    })
+    .await;
+}
+
 struct Naps {
     inner: TestBackend,
     nap: Duration,

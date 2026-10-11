@@ -212,6 +212,7 @@ pub(crate) struct Watched {
     framer: Framer,
     buffer: Vec<u8>,
     inflight: Option<JoinHandle<Fetched>>,
+    final_read_pending: bool,
     read_at: ReadAt,
 }
 
@@ -237,6 +238,7 @@ impl Watched {
             framer: Framer::default(),
             buffer: Vec::new(),
             inflight: None,
+            final_read_pending: false,
             read_at: Arc::new(|fd, buffer, offset| pread(fd, buffer, offset)),
         }
     }
@@ -251,9 +253,9 @@ impl Watched {
     }
 
     /// Nothing more will be read now: fully read, never created, or rejected. A read still in
-    /// flight is not drained, whatever the last poll saw.
+    /// flight, or a final read that ended unfinished, is not drained, whatever the last poll saw.
     pub(crate) const fn drained(&self) -> bool {
-        if self.inflight.is_some() {
+        if self.final_read_pending || self.inflight.is_some() {
             return false;
         }
         match self.state {
@@ -461,6 +463,7 @@ impl Watched {
                 other => break other,
             }
         };
+        self.final_read_pending = matches!(poll, Poll::Pending);
         if matches!(poll, Poll::Drained)
             && self.drained()
             && let Some(line) = self.framer.finish()
@@ -625,6 +628,37 @@ mod tests {
         assert!(matches!(poll, Poll::Drained));
         assert_eq!(lines, ["COMPUTE ERROR", "FATAL: tail"]);
         assert!(f.watched.drained());
+    }
+
+    #[tokio::test]
+    async fn an_expired_final_read_invalidates_the_earlier_drained_snapshot() {
+        let mut f = fixture();
+        f.append(b"old\nCOMPUTE");
+        let (poll, lines) = f.poll().await;
+        assert!(matches!(poll, Poll::Drained));
+        assert_eq!(lines, ["old"]);
+        assert!(f.watched.drained());
+        f.append(b" ERROR\nFATAL: tail");
+
+        let (poll, lines) = f.finish(Instant::now()).await;
+        assert!(matches!(poll, Poll::Pending) && lines.is_empty());
+        assert!(!f.watched.drained(), "the final snapshot was not read");
+
+        let (poll, lines) = f.finish(far()).await;
+        assert!(matches!(poll, Poll::Drained));
+        assert_eq!(lines, ["COMPUTE ERROR", "FATAL: tail"]);
+        assert!(f.watched.drained());
+        assert!(f.finish(far()).await.1.is_empty());
+    }
+
+    #[tokio::test]
+    async fn an_expired_final_read_cannot_confirm_a_previously_missing_file() {
+        let mut f = fixture();
+        assert!(matches!(f.poll().await.0, Poll::Idle));
+        f.append(b"COMPUTE ERROR");
+        let (poll, lines) = f.finish(Instant::now()).await;
+        assert!(matches!(poll, Poll::Pending) && lines.is_empty());
+        assert!(!f.watched.drained(), "the final snapshot was not read");
     }
 
     #[tokio::test]
@@ -798,6 +832,9 @@ mod tests {
         );
         assert!(lines.is_empty());
         assert!(!f.watched.backlog());
+        let (poll, lines) = f.finish(Instant::now()).await;
+        assert!(matches!(poll, Poll::Drained) && lines.is_empty());
+        assert!(f.watched.drained());
     }
 
     #[tokio::test]
@@ -1051,7 +1088,8 @@ mod tests {
         assert_eq!(f.watched.oversized(), Some(&vec![b'x'; LINE_LIMIT][..]));
         assert!(!f.watched.backlog() && f.watched.drained());
         assert!(matches!(f.poll().await.0, Poll::Drained));
-        let (_, lines) = f.finish(far()).await;
+        let (poll, lines) = f.finish(Instant::now()).await;
+        assert!(matches!(poll, Poll::Drained) && f.watched.drained());
         assert!(lines.is_empty());
         assert_eq!(f.watched.oversized().map(<[u8]>::len), Some(LINE_LIMIT));
     }
