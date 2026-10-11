@@ -459,3 +459,4 @@ func TestReadCommandsRefuseHistoricalSchemaFixture(t *testing.T) {
 		})
 	}
 }
+
