@@ -89,6 +89,15 @@ impl Zeroed {
                 .iter()
                 .all(|readback| readback.problem().is_none())
     }
+
+    /// The machine crashed during the emergency, and nothing touched the SMU after it.
+    pub fn crashed(&self) -> bool {
+        matches!(self.zero, Err(Error::Crashed))
+            || self
+                .readbacks
+                .iter()
+                .any(|readback| matches!(readback.result, Err(Error::Crashed)))
+    }
 }
 
 #[derive(Debug)]
@@ -113,7 +122,8 @@ fn zero(smu: &mut dyn Smu, access: &Access<'_>) -> Result<(), Error> {
 }
 
 /// Answers a failed journal append. Zeroes every core of `cores` without an intent when the gate allows it, reads
-/// each back, and writes the original error and what the emergency did to `report`. Appends nothing.
+/// each back, and writes the original error and what the emergency did to `report`. Appends nothing. A crash ends
+/// every SMU access at once.
 pub fn respond(
     original: &JournalFailure,
     gate: Result<Access<'_>, Withheld>,
@@ -131,27 +141,32 @@ pub fn respond(
             };
         }
     };
-    let zeroed = zero(smu, &access);
-    let readbacks: Vec<Readback> = cores
-        .iter()
-        .map(|core| Readback {
-            core,
-            result: smu.offset(core),
-        })
-        .collect();
-    let zeroed = Zeroed {
-        zero: zeroed,
-        readbacks,
-    };
+    let zero = zero(smu, &access);
+    let mut readbacks = Vec::new();
+    if !matches!(zero, Err(Error::Crashed)) {
+        for core in cores.iter() {
+            let result = smu.offset(core);
+            let crashed = matches!(result, Err(Error::Crashed));
+            readbacks.push(Readback { core, result });
+            if crashed {
+                break;
+            }
+        }
+    }
+    let zeroed = Zeroed { zero, readbacks };
     let problems: Vec<String> = zeroed
         .readbacks
         .iter()
         .filter_map(Readback::problem)
         .collect();
-    let status = if problems.is_empty() {
-        "readback all 0".to_owned()
-    } else {
-        format!("readback: {}", problems.join(", "))
+    let status = match (problems.is_empty(), zeroed.crashed()) {
+        (true, false) => "readback all 0".to_owned(),
+        (true, true) => "no readback after the crash".to_owned(),
+        (false, false) => format!("readback: {}", problems.join(", ")),
+        (false, true) => format!(
+            "readback: {}; no readback after the crash",
+            problems.join(", ")
+        ),
     };
     let report = match &zeroed.zero {
         Ok(()) => writeln!(

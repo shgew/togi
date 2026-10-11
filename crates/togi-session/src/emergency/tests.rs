@@ -185,12 +185,13 @@ fn an_interruption_of_any_emergency_access_keeps_the_original_error_and_appends_
         let mut report = Vec::new();
         let gate = Access::gate(Some(rig.sweep), Some(rig.validated), Some(&rig.stopped));
         let outcome = respond(&failure(), gate, &mut *rig.smu, cores(2), &mut report);
+        let Response::Zeroed(zeroed) = &outcome.response else {
+            panic!("withheld at access {interrupted}");
+        };
+        assert!(zeroed.crashed(), "access {interrupted}");
+        assert_eq!(seen.get(), interrupted, "access {interrupted}");
         assert!(
-            matches!(outcome.response, Response::Zeroed(_)),
-            "access {interrupted}"
-        );
-        assert!(
-            (interrupted..=accesses).contains(&seen.get()),
+            text(report.clone()).contains("after the crash"),
             "access {interrupted}"
         );
         assert!(text(report).starts_with(ORIGINAL), "access {interrupted}");
