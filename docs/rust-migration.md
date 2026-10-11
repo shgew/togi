@@ -53,7 +53,7 @@ The owner started stage 2 ([#637](https://github.com/shgew/togi/issues/637)) on 
 - The SMU write transaction lives in the session crate (stage 4), with the `smu.intent` receipt minted by the journal crate, so stage 5 reshapes nothing the simulations link.
 - Stage 5's async ownership follows the owning object, with Go's single non-cancellable PM-table reader kept as the one exception.
 - Hazard 9 names Go's amd64 assembly paths (`archExp` with its FMA branch, `archLog`), and a flake check regenerates every Go-generated vector file.
-- Dependabot's `nix` and `github-actions` updates pause until stage 9, a red `main` stops merges until a revert lands, the integration owner is defined, and the CI-budget fallback no longer halts the run.
+- Dependabot's `nix` and `github-actions` updates pause until stage 9, a red `main` stops merges until its Linux jobs are green again (a revert of the breaking merge comes first), the integration owner is defined, and the CI-budget fallback no longer halts the run.
 - The stop list applies to merged code and to defects Go shares; findings in an open pull request are fixed there.
 
 **Decisions this stage's first pull request records** ([#691](https://github.com/shgew/togi/issues/691)). ADR 0057 partly supersedes ADR 0048 and ADR 0046. Protected comparison assets change by the additive rule, the append-only hash manifest and the `guard` status, with the owner-only `owner-approved` label for the rest. The suite is every session of `tools/bench/suite.json`, 220 today (the dev and holdout seeds of its 11 scenarios, counted from the file), where ADR 0048's text says 252. On `main`, the macOS job also builds the Rust workspace and runs its tests.
