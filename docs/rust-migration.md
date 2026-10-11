@@ -158,7 +158,7 @@ The `togi-config` crate ports `internal/config` ([#749](https://github.com/shgew
 
 ## Stage 3: `internal/defect` (#750, 2026-10-11)
 
-The `togi-defect` crate ports `internal/defect` and the pure part of `internal/session/defects.go` and the `status` reset guidance ([#750](https://github.com/shgew/togi/issues/750)): 395 lines of library and 682 of tests, against Go's 274 and 164 in `internal/defect`. No Go code is removed or changed. The 22 tests run in 0.016 s under `cargo nextest` on Linux; `go test -count=1 ./internal/defect` reports 0.005 s.
+The `togi-defect` crate ports `internal/defect` and the pure part of `internal/session/defects.go` and the `status` reset guidance ([#750](https://github.com/shgew/togi/issues/750)): 395 lines of library and 682 of tests, against Go's 274 and 164 in `internal/defect`. No Go code is removed or changed. The 23 tests run in 0.013 s under `cargo nextest` on Linux; `go test -count=1 ./internal/defect` reports 0.005 s.
 
 - **Registry.** `KNOWN_DEFECTS` starts empty, so the fixes stamp is 0. Go's only entry, the power-off false failure, matched journals that only Go wrote, and Rust reads none. Clauses are data (decision kind, decision, cause kind) with no predicate closure; a `const` assertion and `DefectState::new` both refuse ids that are not strictly increasing.
 - **One fold.** `DefectState::fold` matches every payload kind exhaustively and does all the work as events arrive. The queries take `&self`, never walk events and cost only what they return. The state keeps the seqs of cause kinds the registry names and nothing else, so with the empty registry it keeps none.
