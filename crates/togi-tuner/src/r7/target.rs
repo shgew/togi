@@ -218,12 +218,14 @@ impl R7Targets {
 
     #[cfg(test)]
     pub(crate) fn take_visits(&self) -> u64 {
-        self.visits.0.replace(0)
+        self.visits.0.swap(0, std::sync::atomic::Ordering::Relaxed)
     }
 
     #[cfg(test)]
     fn visit(&self) {
-        self.visits.0.set(self.visits.0.get() + 1);
+        self.visits
+            .0
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
     #[cfg(not(test))]

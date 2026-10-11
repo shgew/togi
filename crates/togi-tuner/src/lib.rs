@@ -65,6 +65,8 @@ mod projection_tests;
 #[cfg(test)]
 mod prop_tests;
 #[cfg(test)]
+mod query_tests;
+#[cfg(test)]
 mod r7_attribution_tests;
 #[cfg(test)]
 mod r7_escalation_tests;

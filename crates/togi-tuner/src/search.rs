@@ -43,6 +43,10 @@ impl Search {
         self.cursor = cursor;
     }
 
+    pub(crate) const fn cursor(&self) -> Option<usize> {
+        self.cursor
+    }
+
     pub(crate) fn clear(&mut self, core: CoreId) {
         self.steps.remove(&core);
     }
@@ -254,7 +258,7 @@ impl Run {
         Action::Decide(DecisionAction { payload, cause })
     }
 
-    fn alone_class(&self, id: CoreId, workload: WorkloadId) -> ClassKey {
+    pub(crate) fn alone_class(&self, id: CoreId, workload: WorkloadId) -> ClassKey {
         ClassKey::new(workload, Load::Single(id).cores(), self.config.search_trial)
     }
 
@@ -262,7 +266,12 @@ impl Run {
         pick_workload(regime, self.core(id).rotation.get(regime)).id()
     }
 
-    fn search_trial(&self, id: CoreId, regime: Regime, frozen: Option<WorkloadId>) -> TrialPlan {
+    pub(crate) fn search_trial(
+        &self,
+        id: CoreId,
+        regime: Regime,
+        frozen: Option<WorkloadId>,
+    ) -> TrialPlan {
         let core = self.core(id);
         let workload = frozen.unwrap_or_else(|| self.rotation_workload(id, regime));
         let context = if core.check.is_some() {

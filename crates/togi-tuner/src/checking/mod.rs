@@ -36,7 +36,7 @@ pub(crate) struct OpenCycle {
 }
 
 impl OpenCycle {
-    fn have(&self, class: ClassKey) -> u32 {
+    pub(crate) fn have(&self, class: ClassKey) -> u32 {
         self.valid.get(&class).copied().unwrap_or(0)
     }
 
@@ -44,16 +44,25 @@ impl OpenCycle {
         self.have(quota.class) >= quota.count
     }
 
+    pub(crate) fn plan(&self) -> &[StepPlan] {
+        &self.plan
+    }
+
+    pub(crate) fn chains_complete(&self, index: usize, topo: &Topology) -> bool {
+        self.plan.get(index).is_some_and(|step| {
+            step.regime != Regime::R7
+                || self.r7.get(&index).is_some_and(|started| {
+                    started.complete(topo.ccds().iter().map(|&(ccd, _)| ccd))
+                })
+        })
+    }
+
     fn first_incomplete(&self, topo: &Topology) -> usize {
         self.plan
             .iter()
             .enumerate()
             .position(|(index, step)| {
-                let chains = step.regime != Regime::R7
-                    || self.r7.get(&index).is_some_and(|started| {
-                        started.complete(topo.ccds().iter().map(|&(ccd, _)| ccd))
-                    });
-                !chains || !step.quotas().all(|quota| self.met(quota))
+                !self.chains_complete(index, topo) || !step.quotas().all(|quota| self.met(quota))
             })
             .unwrap_or(self.plan.len())
     }
@@ -64,10 +73,10 @@ impl OpenCycle {
     }
 }
 
-/// The cycle that ended last: its steps and how many of them were finished.
+/// The cycle that ended last as it stood when it ended, and how many of its steps were finished.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct Closed {
-    pub(crate) steps: Box<[Regime]>,
+    pub(crate) cycle: OpenCycle,
     pub(crate) steps_done: usize,
 }
 
@@ -266,7 +275,7 @@ impl Run {
                     } else {
                         open.done
                     },
-                    steps: open.steps,
+                    cycle: open,
                 });
                 self.checking.last_seq = Some(event.seq);
             }

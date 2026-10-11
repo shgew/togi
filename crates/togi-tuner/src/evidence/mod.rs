@@ -72,7 +72,7 @@ pub struct Observation<'a> {
 
 #[cfg(test)]
 #[derive(Clone, Debug, Default)]
-pub(crate) struct Visits(pub(crate) std::cell::Cell<u64>);
+pub(crate) struct Visits(pub(crate) std::sync::Arc<std::sync::atomic::AtomicU64>);
 
 #[cfg(test)]
 impl PartialEq for Visits {
@@ -147,7 +147,9 @@ impl Evidence {
 
     #[cfg(test)]
     fn visit(&self) {
-        self.visits.0.set(self.visits.0.get() + 1);
+        self.visits
+            .0
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
     #[cfg(not(test))]
@@ -156,7 +158,7 @@ impl Evidence {
 
     #[cfg(test)]
     pub(crate) fn take_visits(&self) -> u64 {
-        self.visits.0.replace(0)
+        self.visits.0.swap(0, std::sync::atomic::Ordering::Relaxed)
     }
 
     fn check(&self, profile: &Profile) -> Result<(), TopologyMismatch> {
@@ -479,6 +481,37 @@ impl Evidence {
             None
         };
         own.max(idle)
+    }
+
+    fn live_in(&self, cells: &FailureCells, profile: &Profile, since: Option<Seq>) -> usize {
+        cells
+            .cells()
+            .iter()
+            .filter(|cell| {
+                self.visit();
+                cell.profile.within(profile)
+            })
+            .map(|cell| cell.live.after(since).len())
+            .sum()
+    }
+
+    pub(crate) fn live_failures(
+        &self,
+        class: ClassKey,
+        profile: &Profile,
+        since: Option<Seq>,
+    ) -> Result<u32, TopologyMismatch> {
+        self.check(profile)?;
+        let own = self
+            .classes
+            .get(&class)
+            .map_or(0, |cells| self.live_in(&cells.failures, profile, since));
+        let idle = if self.is_all_core_r6(class) {
+            self.live_in(&self.idle, profile, since)
+        } else {
+            0
+        };
+        Ok(u32::try_from(own + idle).unwrap_or(u32::MAX))
     }
 
     /// The valid passes supporting `profile` in `window`, with the first `needed` of them.

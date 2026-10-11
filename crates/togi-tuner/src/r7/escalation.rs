@@ -24,8 +24,10 @@ pub(crate) enum BackoffKind {
     /// The located hunt's backoff that charges a named core.
     LocatedNamed,
     /// A phase-2 blame or confirmation revert.
+    #[cfg(test)]
     Deepening,
     /// A held later failure, which moved no voltage.
+    #[cfg(test)]
     Hold,
 }
 
@@ -182,16 +184,19 @@ impl Strikes {
         self.loads.get(&load).cloned().unwrap_or_default()
     }
 
+    #[cfg(test)]
     /// The failures of `load` backed off since its latest pass.
     pub(crate) fn failures(&self, load: LoadKey) -> u32 {
         self.loads.get(&load).map_or(0, Backoffs::failures)
     }
 
+    #[cfg(test)]
     /// Which backoff of its load the next one is, since the last pass.
     pub(crate) fn next_ordinal(&self, load: LoadKey) -> u32 {
         self.failures(load) + 1
     }
 
+    #[cfg(test)]
     pub(crate) fn escalation(
         &self,
         topology: &Topology,

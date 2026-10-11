@@ -8,6 +8,8 @@ publish.workspace = true
 description = "Tuning rules: topology, profiles, failure points and combinations, and crash classification"
 
 [dependencies]
+jiff.workspace = true
+serde.workspace = true
 thiserror.workspace = true
 togi-config.workspace = true
 togi-journal.workspace = true
@@ -15,9 +17,7 @@ togi-machine.workspace = true
 togi-requests.workspace = true
 
 [dev-dependencies]
-jiff.workspace = true
 proptest.workspace = true
-serde.workspace = true
 serde_json.workspace = true
 
 [lints]

@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use togi_machine::{CcdId, CoreId, Regime, WorkloadId, workloads};
 
 use super::Applied;
@@ -7,7 +8,7 @@ use crate::{LoadKey, Profile};
 
 /// Whether a core of an R7 workload has been seen to pass as a top requester at its current
 /// offset or deeper. Observed self-sufficiency, not a guarantee against future failures.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct R7CoreStatus {
     pub core: CoreId,
     pub ccd: CcdId,

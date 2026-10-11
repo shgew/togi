@@ -791,7 +791,7 @@ fn strikes_stay_bounded_by_cores_and_the_window() {
         start_cycle(&mut j);
         for round in 0..cycles {
             fail_core(&mut j, u8::try_from(round % 4).unwrap());
-            while let Some(Action::Decide(action)) = j.state.next().ok() {
+            while let Ok(Action::Decide(action)) = j.state.next() {
                 j.decide(action);
             }
             end_cycle(&mut j);

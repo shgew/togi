@@ -472,7 +472,7 @@ impl Journal {
 
     /// The tuner's next action, which the state must have.
     pub(crate) fn next(&self) -> Action {
-        self.state.next().ok().expect("the tuner has a next action")
+        self.state.next().expect("the tuner has a next action")
     }
 
     pub(crate) fn next_trial(&self) -> TrialPlan {

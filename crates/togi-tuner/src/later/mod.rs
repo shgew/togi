@@ -3,7 +3,7 @@
 //! held: it moves nothing, and the BIOS profile shows the step-back the tuner has not made. Every
 //! input is kept by the fold; the decision functions only read.
 
-mod bios;
+pub(crate) mod bios;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;

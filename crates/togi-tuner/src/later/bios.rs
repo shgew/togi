@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use serde::{Deserialize, Serialize};
 use togi_journal::{Decision, Seq};
 use togi_machine::{CoreId, PerCore, TargetOffset};
 
@@ -11,32 +12,32 @@ use crate::state::Run;
 use crate::{Action, CombinationId, DecisionPayload, Depth, Profile};
 
 /// The profile of the latest passed full cycle at or after phase 1's end, and the cycle's event.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct Confirmed {
-    pub(crate) profile: Profile,
-    pub(crate) seq: Seq,
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct Confirmed {
+    pub profile: Profile,
+    pub seq: Seq,
 }
 
 /// A core showing an offset other than its confirmed one, since the event that left it so.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct Unconfirmed {
-    pub(crate) core: CoreId,
-    pub(crate) since: Seq,
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct Unconfirmed {
+    pub core: CoreId,
+    pub since: Seq,
 }
 
 /// The profile to enter in BIOS: the last confirmed profile with every later step-back applied,
 /// and every valid hold's step-back shown at once.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct BiosProfile {
-    pub(crate) confirmed: Option<Confirmed>,
-    pub(crate) shown: Profile,
-    pub(crate) unconfirmed: Vec<Unconfirmed>,
-    pub(crate) first_result: bool,
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct BiosProfile {
+    pub confirmed: Option<Confirmed>,
+    pub shown: Profile,
+    pub unconfirmed: Vec<Unconfirmed>,
+    pub first_result: bool,
 }
 
 impl BiosProfile {
     /// The earliest event that left a core unconfirmed.
-    pub(crate) fn since(&self) -> Option<Seq> {
+    pub fn since(&self) -> Option<Seq> {
         self.unconfirmed.iter().map(|mark| mark.since).min()
     }
 }

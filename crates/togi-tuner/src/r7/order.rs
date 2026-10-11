@@ -29,6 +29,7 @@ pub(crate) struct CcdOrder {
 }
 
 /// The first group of a CCD holding a core that can still move.
+#[cfg(test)]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct Movable<'a> {
     /// The movable members of the group.
@@ -39,6 +40,7 @@ pub(crate) struct Movable<'a> {
     pub(crate) rail: f64,
 }
 
+#[cfg(test)]
 impl Movable<'_> {
     pub(crate) fn stepped_down(&self) -> bool {
         !self.skipped.is_empty()
@@ -46,6 +48,7 @@ impl Movable<'_> {
 }
 
 impl CcdOrder {
+    #[cfg(test)]
     pub(crate) fn ccd(&self) -> CcdId {
         self.ccd
     }
@@ -66,6 +69,7 @@ impl CcdOrder {
         self.groups.first().copied().unwrap_or_default()
     }
 
+    #[cfg(test)]
     /// The first group with a loaded core off CO 0 in `profile`, reduced to those cores. A mixed
     /// tie at the top is no step-down: its nonzero members are the group.
     pub(crate) fn first_movable(&self, profile: &Profile) -> Option<Movable<'_>> {
@@ -185,6 +189,7 @@ impl RequestOrder {
         &self.sources
     }
 
+    #[cfg(test)]
     pub(crate) fn is_offset_only(&self) -> bool {
         self.sources.is_empty()
     }
@@ -215,6 +220,7 @@ impl RequestOrder {
             .collect()
     }
 
+    #[cfg(test)]
     pub(crate) fn ccds(&self) -> &[CcdOrder] {
         &self.ccds
     }

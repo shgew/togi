@@ -53,6 +53,7 @@ pub(crate) struct Run {
     pub(crate) reruns: Reruns,
     pub(crate) later: Later,
     pub(crate) last_seq: Seq,
+    pub(crate) stopped: bool,
 }
 
 /// The tuner's state: one fold of the journal, with a substate per rule group. `fold` takes each
@@ -99,6 +100,7 @@ impl Run {
             reruns: Reruns::default(),
             later: Later::default(),
             last_seq: event.seq,
+            stopped: false,
         })
     }
 
@@ -108,6 +110,7 @@ impl Run {
     }
 
     fn config_loaded(&mut self, loaded: &ConfigLoaded) {
+        self.stopped = false;
         self.config = TunerConfig::from_loaded(loaded);
         for backend in [Backend::Mprime, Backend::Ycruncher] {
             self.evidence
@@ -150,6 +153,7 @@ impl Run {
     }
 
     fn dead_end(&mut self, event: &Event, dead_end: &DeadEnd) -> Result<(), FoldError> {
+        self.stopped = true;
         self.failures.retire_all(&event.cause);
         self.prune_blames();
         if dead_end.condition != DeadEndCondition::FailureAtZero {
@@ -314,9 +318,7 @@ impl State {
             Payload::HuntStart(start) => self.run_mut()?.hunt_start(event, start)?,
             Payload::HuntGroup(group) => self.run_mut()?.hunt_group(event, group)?,
             Payload::HuntEnd(end) => self.run_mut()?.hunt_end(event, end)?,
-            Payload::Shutdown(_) => {
-                self.run_mut()?;
-            }
+            Payload::Shutdown(_) => self.run_mut()?.stopped = true,
         }
         self.run_mut()?.last_seq = event.seq;
         Ok(())
@@ -329,7 +331,9 @@ impl State {
     /// Per R7 workload, CCD and core, whether the core has passed as a top requester at its
     /// current offset or deeper under the current backend identity.
     pub fn r7_status(&self) -> Vec<crate::R7CoreStatus> {
-        self.run().map_or_else(Vec::new, Run::r7_status)
+        self.run()
+            .filter(|_| !self.poisoned())
+            .map_or_else(Vec::new, Run::r7_status)
     }
 
     /// The machine's cores, CCDs and walk order, once the session started and the state stands.

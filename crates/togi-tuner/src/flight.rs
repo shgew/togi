@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use serde::{Deserialize, Serialize};
 use togi_journal::{Event, Mce, Outcome, Seq, TrialEnd, TrialId, TrialIntent, TrialProgress};
 use togi_machine::{Condition, CoreId, CoreSet, Regime, Signal};
 
@@ -17,7 +18,7 @@ pub(crate) fn cited_mces(seen: &BTreeMap<Seq, CoreId>, cause: &[Seq]) -> CoreSet
 }
 
 /// What a trial's requirement stood at just before it ended, never more than its count.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct TrialHistory {
     pub passed: u32,
     pub trial: u32,
@@ -148,7 +149,7 @@ impl Run {
         }
     }
 
-    fn history(&self, open: &OpenTrial) -> TrialHistory {
+    pub(crate) fn history(&self, open: &OpenTrial) -> TrialHistory {
         let requirement = open.requirement;
         let needed = u32::from(requirement.needed.get());
         let (passed, trial) = match requirement.kind {

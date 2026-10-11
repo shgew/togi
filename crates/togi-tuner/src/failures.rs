@@ -113,10 +113,12 @@ impl Failures {
         self.queue.iter().copied()
     }
 
+    #[cfg(test)]
     pub(crate) fn unresolved(&self) -> usize {
         self.pending.len()
     }
 
+    #[cfg(test)]
     pub(crate) fn witnesses(&self) -> usize {
         self.witnesses.len()
     }

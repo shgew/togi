@@ -519,7 +519,7 @@ fn assert_fixed_group(where_: &str, group: &HuntGroup) {
 }
 
 fn assert_fixed_plan(where_: &str, state: &crate::State) {
-    if let Some(Action::Decide(decision)) = state.next().ok() {
+    if let Ok(Action::Decide(decision)) = state.next() {
         if let DecisionPayload::HuntGroup(group) = &decision.payload {
             assert_fixed_group(where_, group);
         }

@@ -35,6 +35,33 @@ impl State {
     }
 
     /// The next decision, trial or ranking read the folded state calls for.
+    ///
+    /// ```compile_fail
+    /// use togi_journal::Event;
+    /// use togi_tuner::State;
+    ///
+    /// fn signatures_take_no_event_list(state: &State, events: &[Event]) {
+    ///     let _ = state.next(events);
+    /// }
+    /// ```
+    ///
+    /// ```compile_fail
+    /// use togi_journal::Event;
+    /// use togi_tuner::State;
+    ///
+    /// fn project_takes_no_event_list(state: &State, events: &[Event]) {
+    ///     let _ = state.project(events);
+    /// }
+    /// ```
+    ///
+    /// ```compile_fail
+    /// use togi_journal::Event;
+    /// use togi_tuner::State;
+    ///
+    /// fn forecast_takes_no_event_list(state: &State, events: &[Event]) {
+    ///     let _ = state.forecast(events);
+    /// }
+    /// ```
     pub fn next(&self) -> Result<Action, NotReady> {
         self.ready()?.next()
     }

@@ -26,7 +26,7 @@ enum Settled {
     Plan(DecisionAction),
 }
 
-enum Next {
+pub(super) enum Next {
     Group(Box<Group>),
     End(End),
 }
@@ -49,7 +49,7 @@ fn offsets_text(members: &[(togi_machine::CoreId, TargetOffset)]) -> String {
     parts.join(" + ")
 }
 
-const fn stage_of(stage: GroupStage) -> HuntStage {
+pub(super) const fn stage_of(stage: GroupStage) -> HuntStage {
     match stage {
         GroupStage::Locate => HuntStage::Locate,
         GroupStage::Part | GroupStage::Repeated => HuntStage::Part,
@@ -59,7 +59,7 @@ const fn stage_of(stage: GroupStage) -> HuntStage {
 }
 
 impl Run {
-    fn hunt_secs(hunt: &Active, duration: Duration) -> Secs {
+    pub(super) fn hunt_secs(hunt: &Active, duration: Duration) -> Secs {
         match duration {
             Duration::Short => hunt.short,
             Duration::Failed => hunt.class.duration(),
@@ -113,7 +113,7 @@ impl Run {
         }
     }
 
-    fn plan_next(&self, hunt: &Active) -> Next {
+    pub(super) fn plan_next(&self, hunt: &Active) -> Next {
         if hunt.located {
             if let Some(locate) = hunt.groups.first() {
                 if matches!(
@@ -449,6 +449,13 @@ impl Run {
             Next::Group(group) => Settled::Plan(self.plan_group(hunt, &group)),
             Next::End(end) => self.hunt_end_action(hunt, end),
         }
+    }
+
+    pub(crate) fn hunt_settled(&self) -> bool {
+        self.hunts.active.as_ref().is_some_and(|hunt| {
+            hunt.end.is_some()
+                || (hunt.latest().is_some() && self.unanswered_latest(hunt).is_none())
+        })
     }
 
     fn unanswered_latest<'a>(&self, hunt: &'a Active) -> Option<&'a GroupRecord> {

@@ -114,7 +114,7 @@ fn r7_only() -> &'static str {
     r#"{"checking":{"cycle":["R7"]}}"#
 }
 
-fn chain_journal() -> Journal {
+pub(crate) fn chain_journal() -> Journal {
     journal(two_ccds(), &STARTS, Some(r7_only()))
 }
 
@@ -148,7 +148,7 @@ fn long_secs(j: &Journal, cores: CoreSet) -> u32 {
     }
 }
 
-fn pass_part(j: &mut Journal, cores: &[u8], requests: &[(u8, f64)]) -> Seq {
+pub(crate) fn pass_part(j: &mut Journal, cores: &[u8], requests: &[(u8, f64)]) -> Seq {
     let cores = set(cores);
     let mut last = None;
     for trial in 0..4 {

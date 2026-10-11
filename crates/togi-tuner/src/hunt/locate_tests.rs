@@ -1225,7 +1225,7 @@ fn reset_after_hunt_end_drops_commitment() {
     assert_eq!((phase.core, phase.to), (core(0), CorePhase::Search));
     j.decide(decision(&action).clone());
     assert!(j.run().hunts.active.is_none());
-    if let Some(Action::Decide(next)) = j.state.next().ok() {
+    if let Ok(Action::Decide(next)) = j.state.next() {
         assert!(
             !matches!(&next.payload, DecisionPayload::TunerDecision(td) if td.activity == Activity::Hunt),
             "the reset core received a hunt commitment: {next:?}"

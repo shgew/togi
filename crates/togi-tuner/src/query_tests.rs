@@ -1,0 +1,357 @@
+use proptest::prelude::*;
+use togi_journal::{CorePhase, Decision, Event, Outcome};
+use togi_machine::{Condition, Regime};
+
+use crate::forecast::{AllPass, Forecast, Premise};
+use crate::projection::Projection;
+use crate::prop_tests::seeded;
+use crate::testkit::{Journal, Start, fresh};
+use crate::tests::{core, off};
+use crate::{
+    Action, DecisionAction, DecisionPayload, Load, NotReady, State, TrialContext, TrialPlan,
+};
+
+fn outcome(byte: u8) -> Outcome {
+    match byte {
+        0..=199 => Outcome::Pass,
+        200..=239 => Outcome::Failure,
+        _ => Outcome::Inconclusive,
+    }
+}
+
+fn drive(journal: &mut Journal, script: &[(u8, u8)], ids: &[u8]) {
+    for &(operation, byte) in script {
+        if operation % 11 == 0 {
+            journal.reset(ids[usize::from(operation / 11) % ids.len()]);
+            continue;
+        }
+        let Ok(action) = journal.state.next() else {
+            break;
+        };
+        match action {
+            Action::Decide(decision) => {
+                let stopped = matches!(decision.payload, DecisionPayload::DeadEnd(_));
+                journal.decide(decision);
+                if stopped {
+                    break;
+                }
+            }
+            Action::RunTrial(plan) => {
+                journal.trial(&plan, outcome(byte));
+            }
+            Action::ReadRanking => {
+                journal.ranking(ids);
+            }
+        }
+    }
+}
+
+fn journals(start: i64, script: &[(u8, u8)]) -> Vec<Journal> {
+    let ids = [0, 4, 9];
+    let mut search = Journal::new(&ids, &[Start::search(start); 3]);
+    drive(&mut search, script, &ids);
+
+    let ids = [4, 9];
+    let mut checking = Journal::new(&ids, &[Start::has_room(-20); 2]);
+    let change = checking.next_decision();
+    assert!(matches!(change.payload, DecisionPayload::ProfileChange(_)));
+    checking.decide(change);
+    checking.idle_failure(checking.offsets().offsets(), Condition::Together);
+    assert_eq!(checking.state.next(), Ok(Action::ReadRanking));
+    drive(&mut checking, script, &ids);
+    vec![search, checking]
+}
+
+fn action_kind(answer: &Result<Action, NotReady>) -> u8 {
+    match answer {
+        Ok(Action::Decide(_)) => 1,
+        Ok(Action::RunTrial(_)) => 2,
+        Ok(Action::ReadRanking) => 4,
+        Err(_) => 0,
+    }
+}
+
+fn every_prefix(journal: &Journal, mut check: impl FnMut(&State, &[Event])) -> u8 {
+    let mut state = State::new();
+    let mut kinds = 0;
+    for length in 0..=journal.events.len() {
+        check(&state, &journal.events[..length]);
+        kinds |= action_kind(&state.next());
+        if let Some(event) = journal.events.get(length) {
+            state.fold(event).unwrap();
+        }
+    }
+    assert_eq!(state, journal.state);
+    kinds
+}
+
+proptest! {
+    #![proptest_config(seeded(48))]
+
+    #[test]
+    fn next_is_pure(
+        start in -49_i64..=-5,
+        script in proptest::collection::vec((any::<u8>(), any::<u8>()), 1..65),
+    ) {
+        let mut kinds = 0;
+        for journal in journals(start, &script) {
+            kinds |= every_prefix(&journal, |state, _| {
+                let before = state.clone();
+                let _ = state.next();
+                let _ = state.next();
+                assert_eq!(state, &before);
+            });
+        }
+        prop_assert_eq!(kinds, 7);
+    }
+
+    #[test]
+    fn repeated_next_same_answer(
+        start in -49_i64..=-5,
+        script in proptest::collection::vec((any::<u8>(), any::<u8>()), 1..65),
+    ) {
+        let mut kinds = 0;
+        for journal in journals(start, &script) {
+            kinds |= every_prefix(&journal, |state, _| {
+                let first = state.next();
+                let _ = state.drain();
+                let _ = state.project();
+                assert_eq!(state.next(), first);
+                assert_eq!(state.next(), first);
+            });
+        }
+        prop_assert_eq!(kinds, 7);
+    }
+
+    #[test]
+    fn fresh_fold_equals_incremental_every_prefix(
+        start in -49_i64..=-5,
+        script in proptest::collection::vec((any::<u8>(), any::<u8>()), 1..65),
+    ) {
+        let mut kinds = 0;
+        for journal in journals(start, &script) {
+            kinds |= every_prefix(&journal, |incremental, prefix| {
+                let resumed = fresh(prefix);
+                assert_eq!(&resumed, incremental);
+                assert_eq!(resumed.next(), incremental.next());
+                assert_eq!(resumed.project(), incremental.project());
+            });
+        }
+        prop_assert_eq!(kinds, 7);
+    }
+}
+
+fn repeated_evidence(passes: usize) -> (Journal, TrialPlan) {
+    let mut journal = Journal::new(&[0], &[Start::search(-10).checking()]);
+    let plan = journal.next_trial();
+    assert_eq!(plan.regime, Regime::R1);
+    assert_eq!(plan.load, Load::Single(core(0)));
+    assert_eq!(plan.requirement.needed.get(), 5);
+    for _ in 0..passes {
+        journal.trial(&plan, Outcome::Pass);
+    }
+    assert_eq!(
+        journal
+            .events
+            .iter()
+            .filter(|event| matches!(event.payload, togi_journal::Payload::TrialEnd(_)))
+            .count(),
+        passes,
+    );
+    journal.state.visits();
+    (journal, plan)
+}
+
+fn assert_second_regime(plan: &TrialPlan) {
+    assert_eq!(plan.regime, Regime::R2);
+    assert_eq!(plan.load, Load::Single(core(0)));
+    assert_eq!(plan.profile.get(core(0)), Some(off(-10)));
+    assert_eq!(plan.condition, Condition::Alone);
+    assert_eq!(
+        plan.context,
+        TrialContext::SoloLimit {
+            core: core(0),
+            regime: Regime::R2
+        }
+    );
+    assert_eq!(plan.requirement.needed.get(), 5);
+}
+
+fn fold_cost(passes: usize) -> u64 {
+    let (mut journal, plan) = repeated_evidence(passes);
+    let before = journal.events.len();
+    journal.trial(&plan, Outcome::Pass);
+    let visits = journal.state.visits();
+    assert_eq!(journal.events.len(), before + 2);
+    let history = journal.state.trial_history().unwrap();
+    assert_eq!((history.passed, history.trial, history.needed), (5, 5, 5));
+    assert_second_regime(&journal.next_trial());
+    visits
+}
+
+#[test]
+fn fold_visits_bounded_by_distinct_evidence() {
+    let small = fold_cost(100);
+    let large = fold_cost(10_000);
+    assert!(small > 0, "fold must consult pre-end evidence");
+    assert_eq!(large, small);
+    assert!(
+        small <= 6,
+        "one pass cell and at most five witnesses: {small}"
+    );
+}
+
+fn next_cost(passes: usize) -> u64 {
+    let (journal, _) = repeated_evidence(passes);
+    let before = journal.state.clone();
+    let length = journal.events.len();
+    let answer = journal.state.next().unwrap();
+    let visits = journal.state.visits();
+    let Action::RunTrial(plan) = &answer else {
+        panic!("expected unmet R2 candidate requirement, got {answer:?}");
+    };
+    assert_second_regime(plan);
+    assert_eq!(journal.state.next(), Ok(answer));
+    assert_eq!(journal.state, before);
+    assert_eq!(journal.events.len(), length);
+    visits
+}
+
+#[test]
+fn next_visits_bounded() {
+    let small = next_cost(100);
+    let large = next_cost(10_000);
+    assert!(small > 0, "next must consult candidate evidence");
+    assert_eq!(large, small);
+    assert!(
+        small <= 6,
+        "one pass cell and at most five witnesses: {small}"
+    );
+}
+
+fn project_cost(passes: usize) -> u64 {
+    let (journal, _) = repeated_evidence(passes);
+    let before = journal.state.clone();
+    let length = journal.events.len();
+    let projection = journal.state.project();
+    let visits = journal.state.visits();
+    assert_eq!(projection.cores.len(), 1);
+    let core_view = &projection.cores[0];
+    assert_eq!(core_view.core, core(0));
+    assert_eq!(core_view.phase, Some(CorePhase::Search));
+    assert_eq!(core_view.offset, off(-10));
+    assert_eq!(core_view.failure_point, None);
+    assert_eq!(core_view.solo_limit, None);
+    assert_eq!(projection.search_turns.len(), 1);
+    let turn = &projection.search_turns[0];
+    assert_eq!(turn.core, core(0));
+    assert!(turn.confirm);
+    assert!(!turn.running);
+    assert_eq!(
+        (turn.step, turn.light, turn.heavy, turn.needed),
+        (0, u32::try_from(passes).unwrap(), 0, 5)
+    );
+    assert_eq!(turn.regimes, [Regime::R1, Regime::R2]);
+    assert_eq!(turn.workload.regime(), Regime::R2);
+    assert_eq!(projection.checking.profile, None);
+    assert!(!projection.cycle_plan.open);
+    assert_eq!(projection.requirement, None);
+    assert_eq!(projection.trial_history.unwrap().passed, 5);
+    assert_eq!(journal.state.project(), projection);
+    assert_eq!(journal.state, before);
+    assert_eq!(journal.events.len(), length);
+    visits
+}
+
+#[test]
+fn project_visits_bounded() {
+    let small = project_cost(100);
+    let large = project_cost(10_000);
+    assert!(small > 0, "projection must consult candidate evidence");
+    assert_eq!(large, small);
+    assert!(
+        small <= 2,
+        "only the R1 and R2 candidate classes are consulted: {small}"
+    );
+}
+
+fn forecast_cost(passes: usize) -> u64 {
+    let (mut journal, _) = repeated_evidence(passes);
+    let plan = journal.next_trial();
+    assert_second_regime(&plan);
+    journal.intent(&plan);
+    journal.state.visits();
+    let before = journal.state.clone();
+    let length = journal.events.len();
+    let forecast = journal.state.forecast();
+    let visits = journal.state.visits();
+    assert_eq!(forecast.between, None);
+    assert_eq!(
+        forecast
+            .branches
+            .iter()
+            .map(|branch| branch.premise)
+            .collect::<Vec<_>>(),
+        [
+            Premise::Pass,
+            Premise::AllPass,
+            Premise::Named(core(0)),
+            Premise::Inconclusive
+        ]
+    );
+    let pass = &forecast.branches[0];
+    assert_eq!(pass.passes, 1);
+    assert_eq!(pass.all_pass, None);
+    assert_eq!(pass.uncertainty, None);
+    assert!(pass.decisions.is_empty());
+    assert_second_regime(pass.next.as_ref().unwrap());
+    let all_pass = &forecast.branches[1];
+    assert_eq!(all_pass.passes, 5);
+    assert_eq!(all_pass.all_pass, Some(AllPass::Complete));
+    assert_eq!(all_pass.uncertainty, None);
+    assert!(all_pass.decisions.iter().any(|decision| matches!(decision, DecisionPayload::CorePhase(change) if change.core == core(0) && change.to != CorePhase::Search && change.offset == off(-9) && change.pass == Some(off(-10)))));
+    assert_eq!(
+        all_pass.next.as_ref().unwrap().profile.get(core(0)),
+        Some(off(-9))
+    );
+    let named = &forecast.branches[2];
+    assert_eq!(named.passes, 0);
+    assert_eq!(named.uncertainty, None);
+    assert!(named.decisions.iter().any(|decision| matches!(decision, DecisionPayload::Failure(failure) if failure.core == Some(core(0)) && failure.offset == Some(off(-10)))));
+    assert!(named.decisions.iter().any(|decision| matches!(decision, DecisionPayload::TunerDecision(change) if change.core == core(0) && change.decision == Decision::Backoff && change.to_offset == off(-5))));
+    let inconclusive = &forecast.branches[3];
+    assert_eq!(inconclusive.passes, 0);
+    assert_eq!(inconclusive.uncertainty, None);
+    assert!(inconclusive.decisions.is_empty());
+    let retry = inconclusive.next.as_ref().unwrap();
+    assert_second_regime(retry);
+    assert!(retry.retry);
+    assert_eq!(retry.requirement, plan.requirement);
+    assert_eq!(journal.state, before);
+    assert_eq!(journal.events.len(), length);
+    assert_eq!(journal.state.forecast(), forecast);
+    visits
+}
+
+#[test]
+fn forecast_clone_not_replay() {
+    let small = forecast_cost(100);
+    let large = forecast_cost(10_000);
+    assert!(
+        small > 0,
+        "counter must observe evidence consulted by synthetic branch folds"
+    );
+    assert_eq!(large, small);
+    assert!(
+        small <= 384,
+        "four premises, five synthetic passes, and bounded cell/witness visits: {small}"
+    );
+}
+
+#[test]
+fn signatures_are_shared_borrows_without_a_journal() {
+    let _: fn(&State) -> Result<Action, NotReady> = State::next;
+    let _: fn(&State) -> Option<DecisionAction> = State::drain;
+    let _: fn(&State) -> Projection = State::project;
+    let _: fn(&State) -> Forecast = State::forecast;
+}
