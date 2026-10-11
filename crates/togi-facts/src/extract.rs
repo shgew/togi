@@ -164,7 +164,40 @@ impl Extractor {
                 self.carry_commit.get_or_insert(event.seq);
             }
             Payload::Shutdown(_) => self.shutdown = Some(event.seq),
-            _ => {}
+            Payload::SessionBaseline(_)
+            | Payload::SessionNotice(_)
+            | Payload::SessionWarning(_)
+            | Payload::PreflightCheck(_)
+            | Payload::SmuIntent(_)
+            | Payload::SmuWrite(_)
+            | Payload::SmuReadback(_)
+            | Payload::SmuError(_)
+            | Payload::ProfileApplied(_)
+            | Payload::ProfileChange(_)
+            | Payload::ProfileRestored(_)
+            | Payload::Mce(_)
+            | Payload::TunerDecision(_)
+            | Payload::CheckingCycle(_)
+            | Payload::CheckingStep(_)
+            | Payload::CheckingChain(_)
+            | Payload::HostRanking(_)
+            | Payload::HuntStart(_)
+            | Payload::HuntGroup(_)
+            | Payload::HuntEnd(_)
+            | Payload::HuntSkipped(_)
+            | Payload::Combination(_)
+            | Payload::DeepeningRound(_)
+            | Payload::TunerWarning(_)
+            | Payload::BackendRetry(_)
+            | Payload::DefectFound(_)
+            | Payload::DefectAnswered(_)
+            | Payload::DeadEnd(_)
+            | Payload::BootSavedEntry(_)
+            | Payload::BootLeaveReason(_)
+            | Payload::JournalTorn(_)
+            | Payload::StateRebuilt(_)
+            | Payload::CorePhase(_)
+            | Payload::SessionArchived(_) => {}
         }
         self.record_reset_effects(event);
         Ok(())
@@ -228,13 +261,11 @@ impl Extractor {
                 Ok(())
             };
         };
-        if !decisive {
-            return Ok(());
-        }
         let intent = &open.activity.intent;
         let outcome = match end.outcome {
+            Outcome::Inconclusive => return Ok(()),
             Outcome::Pass => Decisive::Pass,
-            _ => Decisive::Failure {
+            Outcome::Failure => Decisive::Failure {
                 signal: end.signal.ok_or(FactsError::Incomplete {
                     seq: event.seq,
                     field: "signal",
