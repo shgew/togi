@@ -361,16 +361,57 @@ fn dropping_a_guard_waits_for_a_callback_a_concurrent_cancel_already_claimed() {
     };
     started_rx.recv().unwrap();
     let observed_done = Arc::clone(&finished);
+    let (waiting_tx, waiting_rx) = std::sync::mpsc::channel();
     let dropper = std::thread::spawn(move || {
+        crate::cancellation::BEFORE_WAIT.with(|hook| *hook.borrow_mut() = Some(waiting_tx));
         drop(guard);
         observed_done.load(Ordering::SeqCst)
     });
+    waiting_rx.recv().unwrap();
+    assert!(!finished.load(Ordering::SeqCst));
     release_tx.send(()).unwrap();
     assert!(
         dropper.join().unwrap(),
         "the guard dropped while its callback was still running"
     );
     canceller.join().unwrap();
+}
+
+struct PanicsOnDrop;
+
+impl Drop for PanicsOnDrop {
+    fn drop(&mut self) {
+        panic!("payload drop");
+    }
+}
+
+#[test]
+fn later_panic_payloads_are_never_dropped_during_dispatch() {
+    let token = CancellationToken::new();
+    let child = token.child_token();
+    let (count, callback) = counter();
+    let _first = token.on_cancel(|| panic!("first"));
+    let _second = token.on_cancel(|| std::panic::panic_any(PanicsOnDrop));
+    let _third = token.on_cancel(callback());
+    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| token.cancel()));
+    assert!(outcome.is_err());
+    assert_eq!(count.load(Ordering::SeqCst), 1);
+    assert!(child.is_cancelled());
+}
+
+#[test]
+fn a_panicking_child_callback_resurfaces_without_sparing_siblings() {
+    let parent = CancellationToken::new();
+    let first = parent.child_token();
+    let second = parent.child_token();
+    let (count, callback) = counter();
+    let _boom = first.on_cancel(|| panic!("child failed"));
+    let _counted = second.on_cancel(callback());
+    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| parent.cancel()));
+    assert!(outcome.is_err());
+    assert!(first.is_cancelled());
+    assert!(second.is_cancelled());
+    assert_eq!(count.load(Ordering::SeqCst), 1);
 }
 
 #[test]

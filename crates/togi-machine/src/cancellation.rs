@@ -53,6 +53,24 @@ fn run(slot: &SlotCell) {
     }
 }
 
+type Payload = Box<dyn std::any::Any + Send>;
+
+fn keep_first(first: &mut Option<Payload>, later: Payload) {
+    if first.is_none() {
+        *first = Some(later);
+    } else {
+        // A payload's Drop may panic, which would unwind out of the dispatch loop.
+        std::mem::forget(later);
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Signalled under the slot lock right before a dropping guard waits on its callback.
+    pub(crate) static BEFORE_WAIT: std::cell::RefCell<Option<std::sync::mpsc::Sender<()>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
 #[derive(Default)]
 struct State {
     /// Keeps the ancestor chain alive, so a dropped intermediate token still forwards cancellation.
@@ -100,6 +118,12 @@ impl Drop for OnCancel {
             .running_on
             .is_some_and(|running| running != this_thread)
         {
+            #[cfg(test)]
+            BEFORE_WAIT.with(|hook| {
+                if let Some(waiting) = &*hook.borrow() {
+                    let _ = waiting.send(());
+                }
+            });
             slot_state = slot
                 .finished
                 .wait(slot_state)
@@ -141,13 +165,13 @@ impl CancellationToken {
         let mut panic = None;
         for (_, slot) in &slots {
             if let Err(payload) = catch_unwind(AssertUnwindSafe(|| run(slot))) {
-                panic.get_or_insert(payload);
+                keep_first(&mut panic, payload);
             }
         }
         for child in children {
             if let Some(state) = child.upgrade() {
                 if let Err(payload) = catch_unwind(AssertUnwindSafe(|| Self { state }.cancel())) {
-                    panic.get_or_insert(payload);
+                    keep_first(&mut panic, payload);
                 }
             }
         }
