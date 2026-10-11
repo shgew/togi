@@ -42,7 +42,7 @@ fn failure(signal: Signal, seconds: u64) -> ReplayOutcome {
     }
 }
 
-fn trial<'a>(regime: Regime, workload: &'a str, cores: CoreSet, seconds: u64) -> Load<'a> {
+fn trial(regime: Regime, workload: &str, cores: CoreSet, seconds: u64) -> Load<'_> {
     Load {
         regime,
         workload,
@@ -275,10 +275,7 @@ fn every_failure_signal_the_extract_can_hold_is_accepted_and_a_zero_exposure_is_
         Signal::UncorrectedMce,
         Signal::Crash,
     ] {
-        assert!(
-            Replay::new([fact(failure(signal.clone(), 0))]).is_ok(),
-            "{signal}"
-        );
+        assert!(Replay::new([fact(failure(signal, 0))]).is_ok(), "{signal}");
     }
     assert!(
         Replay::new([fact(failure(Signal::Crash, 60))]).is_ok(),

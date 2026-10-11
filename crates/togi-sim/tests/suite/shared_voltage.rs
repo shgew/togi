@@ -166,7 +166,7 @@ fn core_eleven_needs_a_supporting_core_to_keep_its_rail() {
     }
 }
 
-fn tuned_rail(mut definition: MachineDefinition) -> MachineDefinition {
+pub(crate) fn tuned_rail(mut definition: MachineDefinition) -> MachineDefinition {
     definition.core = flat_cores(16, -50, -50);
     for workload in definition
         .shared_voltage
