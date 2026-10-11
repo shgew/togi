@@ -1,6 +1,9 @@
 //! Summarizes the core voltage requests and clocks a trial recorded and orders loaded cores by
 //! request. Both CCDs share one core voltage, and the highest request among the loaded cores sets
 //! it.
+//!
+//! Inputs are finite by construction: samples arrive through serde_json, which cannot encode
+//! NaN or infinity, so `counts`, `groups` and `top` need no NaN handling.
 
 use std::collections::BTreeMap;
 
@@ -58,7 +61,7 @@ pub fn summarize(
         }
         for (&ccd, mhz) in &mut per_ccd {
             if !mhz.is_empty() {
-                clocks.entry(ccd).or_default().push(median_in_place(mhz));
+                clocks.entry(ccd).or_default().push(median(mhz));
             }
         }
         count += 1;
@@ -69,7 +72,7 @@ pub fn summarize(
     let mut telemetry = Telemetry::default();
     let mut by_ccd: BTreeMap<CcdId, PerCore<f64>> = BTreeMap::new();
     for core in cores {
-        let value = median(&requests[core.index()]);
+        let value = median(&mut requests[core.index()]);
         telemetry.requests.set(core, value);
         by_ccd.entry(ccd_of(core)).or_default().set(core, value);
     }
@@ -78,9 +81,9 @@ pub fn summarize(
             telemetry.top_requesters.extend(top);
         }
     }
-    for (ccd, mhz) in clocks {
+    for (ccd, mut mhz) in clocks {
         if mhz.len() >= MIN_SAMPLES {
-            telemetry.ccd_mhz.insert(ccd, to_i64(median(&mhz).round()));
+            telemetry.ccd_mhz.insert(ccd, to_i64(median(&mut mhz).round()));
         }
     }
     Some(telemetry)
@@ -130,11 +133,7 @@ const fn to_i64(value: f64) -> i64 {
     value as i64
 }
 
-fn median(values: &[f64]) -> f64 {
-    median_in_place(&mut values.to_vec())
-}
-
-fn median_in_place(values: &mut [f64]) -> f64 {
+fn median(values: &mut [f64]) -> f64 {
     values.sort_unstable_by(f64::total_cmp);
     let middle = values.len() / 2;
     if values.len().is_multiple_of(2) {
