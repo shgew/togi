@@ -1,6 +1,6 @@
 use std::num::NonZeroU32;
 
-use togi_facts::{Decisive, Fact, FactId, Observation};
+use togi_facts::{Decisive, Fact, FactId, FactsError, Observation, Telemetry};
 use togi_journal::{
     Attribution, CarriedSource, Failure, FailureCarried, Outcome, Payload, ResetTarget,
     SessionCarried, TrialCarried,
@@ -162,11 +162,15 @@ struct Recheck {
     a_failure: FactId,
     idle: FactId,
     b_own: FactId,
+    z: Source,
+    z_failure: FactId,
 }
 
 fn recheck(a_fixed: bool) -> Recheck {
     let mut z = Source::new(before(), &[0, 1], 6, 1).with_context(&context());
-    z.fail(0, -30, Condition::Alone, Attribution::Attributed);
+    let z_failure = z
+        .fail(0, -30, Condition::Alone, Attribution::Attributed)
+        .end;
     let mut a = Source::new(day(1), &[0, 1], 6, 1).with_context(&context());
     if a_fixed {
         a.fixes(1);
@@ -210,8 +214,10 @@ fn recheck(a_fixed: bool) -> Recheck {
         a_failure: a.id_of(failed.end),
         idle: a.id_of(idle),
         b_own: b.id_of(b_own),
+        z_failure: z.id_of(z_failure),
         a,
         b,
+        z,
     }
 }
 
@@ -226,8 +232,8 @@ fn copied_failures_rechecked_against_original_defects() {
         ("original fixes stamp protects failures", true, true),
     ] {
         let r = recheck(fixed);
-        let (mut archive, _) = chain_of(&[&r.b, &r.a]);
-        let chain = [r.b.id, r.a.id];
+        let (mut archive, _) = chain_of(&[&r.b, &r.a, &r.z]);
+        let chain = [r.b.id, r.a.id, r.z.id];
         let got = resolve(&pending(&mut archive, &chain, None, &DEFECTS), 1);
         let mut want = vec![r.a_pass];
         if retained {
@@ -235,10 +241,42 @@ fn copied_failures_rechecked_against_original_defects() {
         }
         want.push(r.b_own);
         assert_eq!(ids(got.facts()), want, "{name}");
+        assert!(
+            !ids(got.facts()).contains(&r.z_failure),
+            "{name}: the older uncopied failure is not collected"
+        );
         assert_eq!(
             archive.opened,
             [r.b.id, r.a.id],
             "{name}: older evidence is not collected, the original only rechecked"
+        );
+    }
+}
+
+#[test]
+fn copied_failures_with_an_original_that_does_not_start_are_a_read_error() {
+    let r = recheck(false);
+    let empty = {
+        let mut source = Source::new(r.a.id, &[0, 1], 6, 1).with_context(&context());
+        source.events.clear();
+        source
+    };
+    let headerless = {
+        let mut source = Source::new(r.a.id, &[0, 1], 6, 1).with_context(&context());
+        source.events.remove(0);
+        source
+    };
+    for (name, original) in [("empty", empty), ("headerless", headerless)] {
+        let (mut archive, chain) = chain_of(&[&r.b]);
+        archive.put(&original);
+        let got = select(&chain, None, &DEFECTS, &mut archive);
+        assert!(
+            matches!(
+                got,
+                Err(CarryError::Read { session, source: FactsError::NotStarted })
+                    if session == r.a.id
+            ),
+            "{name} original"
         );
     }
 }
@@ -349,7 +387,12 @@ fn copied_telemetry_dedup_prefix() {
         else {
             panic!("not a trial fact");
         };
-        assert_eq!(telemetry.is_some(), recorded);
+        let expected = recorded.then(|| Telemetry {
+            voltage_requests_v: [(core(0), 1.125), (core(1), 1.25)].into_iter().collect(),
+            top_requesters: set(&[0, 1]),
+            ccd_mhz: [(CcdId(4), 4800), (CcdId(9), 4900)].into_iter().collect(),
+        });
+        assert_eq!(*telemetry, expected);
         assert!(matches!(
             outcome,
             Decisive::Failure { stalled: Some(stalled), .. } if *stalled == core(0)

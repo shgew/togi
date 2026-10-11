@@ -1,6 +1,6 @@
 use togi_defect::Entry;
 use togi_facts::{FactsError, SessionFacts, extract};
-use togi_journal::{Event, Seq, SessionId};
+use togi_journal::{Event, Payload, Seq, SessionId};
 use togi_machine::BiosContext;
 
 use crate::seeds::{ExclusionTracker, Exclusions, SeedFold, SourceSeeds};
@@ -70,13 +70,24 @@ pub(crate) fn summarize<E>(
     })
 }
 
+/// Folds only the exclusions of an original outside the chain, refusing a stream that does not begin with
+/// `session.start` as [`extract`] does.
 pub(crate) fn scan_exclusions<E>(
     events: impl IntoIterator<Item = Result<Event, E>>,
     registry: &'static [Entry],
-) -> Result<Exclusions, E> {
+) -> Result<Exclusions, FactsError<E>> {
+    let mut events = events.into_iter();
+    let first = events
+        .next()
+        .ok_or(FactsError::NotStarted)?
+        .map_err(FactsError::Read)?;
+    if !matches!(first.payload, Payload::SessionStart(_)) {
+        return Err(FactsError::NotStarted);
+    }
     let mut tracker = ExclusionTracker::new(registry);
+    tracker.fold(&first);
     for event in events {
-        tracker.fold(&event?);
+        tracker.fold(&event.map_err(FactsError::Read)?);
     }
     Ok(tracker.finish())
 }

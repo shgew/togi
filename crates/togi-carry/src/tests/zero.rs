@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::num::NonZeroU32;
 
 use togi_journal::{Attribution, Failure, Outcome, Payload, TrialCarried};
@@ -123,6 +124,33 @@ fn only_confirmed_zero_failure_points() {
             .expect("the trial fact survives");
         assert_eq!(fact.source.trial.as_ref(), Some(&zero.trial), "{name}");
         assert!(fact.is_failure(), "{name}");
+
+        let resolved = resolve(&got, 1);
+        assert_eq!(resolved.seeds(), want, "{name}");
+        let original = x.id_of(zero.end);
+        let resolved_fact = resolved
+            .facts()
+            .iter()
+            .find(|fact| fact.id() == original)
+            .expect("the original failed trial survives resolution");
+        assert_eq!(
+            resolved_fact.source.trial.as_ref(),
+            Some(&zero.trial),
+            "{name}"
+        );
+        assert!(resolved_fact.is_failure(), "{name}");
+        let payloads = resolved.fact_payloads(&HashSet::new(), set(&CORES));
+        let emitted = payloads
+            .iter()
+            .find_map(|payload| match payload {
+                Payload::TrialCarried(carried) if carried.source.seq == zero.end => Some(carried),
+                _ => None,
+            })
+            .expect("the original failed trial is emitted");
+        assert_eq!(emitted.source.session, x.id, "{name}");
+        assert_eq!(emitted.source.trial.as_ref(), Some(&zero.trial), "{name}");
+        assert_eq!(emitted.outcome, Outcome::Failure, "{name}");
+        assert_eq!(emitted.signal, Some(Signal::Crash), "{name}");
     }
 }
 

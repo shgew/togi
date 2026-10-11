@@ -128,31 +128,39 @@ fn emission_filters_to_machine_cores_and_missing_copies() {
     let mut a = Source::new(day(1), &[0, 1, 2], 6, 1).with_context(&context());
     let pass = a.pass(0, -30, Condition::Alone);
     a.fail(1, -30, Condition::Alone, Attribution::Attributed);
+    a.pass(2, -30, Condition::Alone);
     a.add(idle_failure(profile(&[(0, -30), (1, -30), (2, -30)])));
     let (mut archive, chain) = chain_of(&[&a]);
     let resolved = resolve(&pending(&mut archive, &chain, None, &[]), 1);
-    assert_eq!(resolved.facts().len(), 3);
+    assert_eq!(resolved.facts().len(), 4);
+    let resolved_cores: Vec<_> = resolved
+        .seeds()
+        .iter()
+        .map(|seed| seed.core.get())
+        .collect();
+    assert_eq!(
+        resolved_cores,
+        [0, 1, 2],
+        "the off-machine core 2 holds a candidate before emission"
+    );
 
     let machine = set(&[0, 1]);
     let carried = resolved.session_carried(machine);
-    assert!(
-        carried
-            .carried
-            .iter()
-            .all(|seed| machine.contains(seed.core))
-    );
+    let carried_cores: Vec<_> = carried.carried.iter().map(|seed| seed.core.get()).collect();
+    assert_eq!(carried_cores, [0, 1]);
+    assert_eq!(carried.carried, resolved.seeds()[..2]);
     assert_eq!(carried.sources, resolved.sources());
 
     let none = HashSet::new();
     assert_eq!(
         resolved.fact_payloads(&none, machine).len(),
         2,
-        "the idle failure loads core 2, absent from this machine"
+        "the core 2 pass and the idle failure load core 2, absent from this machine"
     );
 
     let copied: HashSet<_> = [a.id_of(pass)].into();
     let payloads = resolved.fact_payloads(&copied, set(&[0, 1, 2]));
-    assert_eq!(payloads.len(), 2);
+    assert_eq!(payloads.len(), 3);
     assert!(
         payloads
             .iter()

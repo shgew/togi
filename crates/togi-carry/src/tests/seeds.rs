@@ -296,6 +296,29 @@ fn shutdown_stops_in_flight_seed() {
 }
 
 #[test]
+fn reset_all_stops_in_flight_seed() {
+    let mut cleared = Source::new(day(9), &[4], 3, 1).with_context(&context());
+    cleared.intent(4, -20, Condition::Alone);
+    cleared.add(reset(ResetTarget::All));
+    let (mut archive, chain) = chain_of(&[&cleared]);
+    assert_eq!(pending(&mut archive, &chain, None, &[]).seeds(), []);
+
+    let mut resumed = Source::new(day(9), &[4], 3, 1).with_context(&context());
+    resumed.intent(4, -20, Condition::Alone);
+    resumed.add(reset(ResetTarget::All));
+    resumed.intent(4, -22, Condition::Alone);
+    let (mut archive, chain) = chain_of(&[&resumed]);
+    assert_eq!(
+        pending(&mut archive, &chain, None, &[]).seeds(),
+        [seed(
+            4,
+            None,
+            Some(point(-22, resumed.id, seq(5), Signal::Crash))
+        )]
+    );
+}
+
+#[test]
 fn commitment_stops_seed_walk() {
     for reset_after in [false, true] {
         let mut a = Source::new(day(1), &[5, 7], 2, 1).with_context(&context());
