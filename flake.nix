@@ -215,11 +215,6 @@
                 cargo deny --offline --locked check bans licenses sources advisories
               '';
             });
-            rust-shear = craneLib.mkCargoDerivation (rustNoDeps {
-              pnameSuffix = "-shear";
-              nativeBuildInputs = [ pkgs.cargo-shear ];
-              buildPhaseCargoCommand = "cargo shear";
-            });
             race = config.checks.package.overrideAttrs {
               pname = "togi-race";
               src = lib.fileset.toSource {
