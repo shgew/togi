@@ -1,0 +1,134 @@
+use std::convert::Infallible;
+use std::path::Path;
+
+use togi_facts::{Decisive, Fact, FactsError, Observation, SessionFacts};
+use togi_journal::{LookupError, Payload, Recording, Seq, SessionId, StateDir};
+use togi_machine::{CoreSet, PerCore};
+
+use crate::record::{BuildStamp, Class, InvalidProfile, Phase, Profile, TrialFact};
+
+#[derive(Debug, thiserror::Error)]
+pub enum ExtractError {
+    #[error(transparent)]
+    Journals(#[from] LookupError),
+    #[error("lock the state directory: {0}")]
+    Lock(#[from] togi_journal::LockError),
+    #[error("session {session}: {source}")]
+    Facts {
+        session: SessionId,
+        #[source]
+        source: FactsError<Infallible>,
+    },
+    #[error("session {session} event {seq}: {source}")]
+    Profile {
+        session: SessionId,
+        seq: Seq,
+        #[source]
+        source: InvalidProfile,
+    },
+    #[error("no facts to extract")]
+    NoFacts,
+}
+
+/// The facts of every session in the state directory, archived ones oldest first and then the live one, each
+/// session's in journal order. Extract from a copy of the directory, never the live state: reading takes the
+/// directory's writer lock.
+pub fn extract(dir: &StateDir) -> Result<Vec<TrialFact>, ExtractError> {
+    from_recordings(dir.recordings()?)
+}
+
+/// [`extract`] on the state directory at `path`.
+pub fn extract_dir(path: impl AsRef<Path>) -> Result<Vec<TrialFact>, ExtractError> {
+    extract(&StateDir::lock(path)?)
+}
+
+/// The facts of journals read one by one, in session order. A journal without events is skipped; no facts at
+/// all is an error, since an empty extract is no evidence.
+pub fn from_recordings(
+    recordings: impl IntoIterator<Item = Recording>,
+) -> Result<Vec<TrialFact>, ExtractError> {
+    let mut sessions = Vec::new();
+    for recording in recordings {
+        let events = recording.into_events();
+        let Some(Payload::SessionStart(start)) = events.first().map(|event| &event.payload) else {
+            continue;
+        };
+        let session = start.session;
+        let facts = togi_facts::extract(session, events.into_iter().map(Ok::<_, Infallible>))
+            .map_err(|source| ExtractError::Facts { session, source })?;
+        sessions.push(facts);
+    }
+    sessions.sort_by_key(|session| session.id);
+    let mut records = Vec::new();
+    for session in &sessions {
+        for fact in &session.facts {
+            records.push(record(session, fact)?);
+        }
+    }
+    if records.is_empty() {
+        return Err(ExtractError::NoFacts);
+    }
+    Ok(records)
+}
+
+fn record(session: &SessionFacts, fact: &Fact) -> Result<TrialFact, ExtractError> {
+    let profile =
+        Profile::from_per_core(fact.profile()).map_err(|source| ExtractError::Profile {
+            session: fact.source.session,
+            seq: fact.source.seq,
+            source,
+        })?;
+    let (class, condition, phase, outcome, duration_s, telemetry) = match &fact.observation {
+        Observation::Trial {
+            class,
+            condition,
+            activity,
+            outcome,
+            duration_s,
+            telemetry,
+            ..
+        } => (
+            Class::Trial(*class),
+            *condition,
+            activity.map(Phase::from),
+            *outcome,
+            *duration_s,
+            telemetry.as_ref(),
+        ),
+        Observation::IdleFailure {
+            loaded,
+            condition,
+            signal,
+            core,
+            ..
+        } => (
+            Class::Idle { loaded: *loaded },
+            *condition,
+            None,
+            Decisive::Failure {
+                signal: *signal,
+                core: *core,
+                stalled: None,
+            },
+            0,
+            None,
+        ),
+    };
+    Ok(TrialFact {
+        session: fact.source.session,
+        build: BuildStamp::from(&fact.source.build),
+        context: session.context.clone(),
+        seq: fact.source.seq,
+        trial: fact.source.trial.clone(),
+        class,
+        condition,
+        phase,
+        record_only: false,
+        profile,
+        outcome,
+        duration_s,
+        voltage_requests_v: telemetry.map_or_else(PerCore::default, |t| t.voltage_requests_v),
+        top_requesters: telemetry.map_or_else(CoreSet::default, |t| t.top_requesters),
+        ccd_mhz: telemetry.map(|t| t.ccd_mhz.clone()).unwrap_or_default(),
+    })
+}

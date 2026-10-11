@@ -258,3 +258,58 @@ fn a_reader_that_fails_mid_line_yields_the_error_and_ends_without_a_torn_tail() 
     assert!(reader.next().is_none());
     assert_eq!(reader.accepted(), complete);
 }
+
+fn started(recording: &Recording) -> crate::SessionId {
+    match &recording.events()[0].payload {
+        Payload::SessionStart(start) => start.session,
+        other => panic!("first event is {other:?}"),
+    }
+}
+
+#[test]
+fn recordings_read_the_archives_oldest_first_then_the_live_journal() {
+    use crate::testing::{begin, boot, session, simulated, start};
+
+    let fs = MemFs::new();
+    assert!(simulated(&fs).recordings().unwrap().is_empty());
+
+    let newer = session("20231114T000000Z");
+    let older = session("20231113T000000Z");
+    let dir = begin(&fs, newer)
+        .archive(stamp(5), crate::ArchiveKind::Transition, &[])
+        .unwrap();
+    let archived = dir.recordings().unwrap();
+    assert_eq!(archived.len(), 1);
+    assert_eq!(started(&archived[0]), newer);
+
+    let mut live = dir.open(boot(2)).unwrap();
+    live.append(stamp(6), start(older), &[]).unwrap();
+    let dir = live.close().unwrap();
+    let recordings = dir.recordings().unwrap();
+    assert_eq!(recordings.len(), 2);
+    assert_eq!(started(&recordings[0]), newer);
+    assert_eq!(started(&recordings[1]), older);
+
+    let events = recordings.into_iter().nth(1).unwrap().into_events();
+    assert_eq!(events.len(), 1);
+}
+
+#[test]
+fn recordings_fail_on_an_unreadable_journal_and_ignore_a_torn_tail() {
+    use crate::testing::{path, simulated};
+
+    let fs = MemFs::new();
+    let mut bytes = recorded(&fs);
+    bytes.extend_from_slice(b"{\"seq\":5");
+    fs.put(path("events.jsonl"), bytes);
+    let recordings = simulated(&fs).recordings().unwrap();
+    assert_eq!(recordings[0].events().len(), 4);
+    assert!(recordings[0].torn().is_some());
+
+    let broken = MemFs::new();
+    broken.put(path("events.jsonl"), "garbage\n");
+    assert!(matches!(
+        simulated(&broken).recordings(),
+        Err(LookupError::File(_))
+    ));
+}

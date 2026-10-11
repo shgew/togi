@@ -60,6 +60,7 @@
             ./.config
             ./crates
             ./tools/bench/machines
+            ./tools/bench/facts
             # The backend crates' tests read the Go adapters' output fixtures in place.
             ./internal/backend/mprime/testdata
             ./internal/backend/ycruncher/testdata
