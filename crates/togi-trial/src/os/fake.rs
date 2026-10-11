@@ -215,6 +215,8 @@ struct Shared {
     units: RefCell<Vec<String>>,
     ready_default: Cell<bool>,
     fail_pipes: Cell<bool>,
+    fail_alive: Cell<bool>,
+    hang_scans: Cell<bool>,
     signal_error_default: Cell<Option<SignalErrorKind>>,
     recovered: RefCell<Vec<(ScopeProcess, Recovered)>>,
     next_pid: Cell<u32>,
@@ -240,6 +242,8 @@ impl Default for Fake {
                 units: RefCell::default(),
                 ready_default: Cell::new(true),
                 fail_pipes: Cell::new(false),
+                fail_alive: Cell::new(false),
+                hang_scans: Cell::new(false),
                 signal_error_default: Cell::new(None),
                 recovered: RefCell::default(),
                 next_pid: Cell::new(1000),
@@ -281,6 +285,16 @@ impl Fake {
     /// Every signal to a new process fails like this.
     pub(crate) fn set_signal_error_default(&self, kind: Option<SignalErrorKind>) {
         self.shared.signal_error_default.set(kind);
+    }
+
+    /// Checking whether a captured process lives fails.
+    pub(crate) fn fail_alive(&self) {
+        self.shared.fail_alive.set(true);
+    }
+
+    /// Every `/proc` scan hangs until its deadline.
+    pub(crate) fn hang_scans(&self) {
+        self.shared.hang_scans.set(true);
     }
 
     /// Taking the pipes of new processes fails, as when registering them with the reactor fails.
@@ -548,24 +562,55 @@ impl Os for Fake {
         }
     }
 
-    fn scope_processes(&self) -> Result<Vec<ScopeProcess>, ProcError> {
-        Ok(self
+    async fn scope_processes(&self, deadline: Instant) -> Result<Vec<ScopeProcess>, ProcError> {
+        if self.shared.hang_scans.get() {
+            sleep_until(deadline).await;
+            return Err(ProcError::Observation("scan timed out".to_owned()));
+        }
+        let mut found: Vec<ScopeProcess> = self
             .shared
             .recovered
             .borrow()
             .iter()
             .filter(|(_, recovered)| recovered.alive.get() && recovered.visible.get())
             .map(|(process, _)| process.clone())
-            .collect())
+            .collect();
+        for process in self.shared.processes.borrow().iter() {
+            let scope = process.scope.as_deref().map(|scope| format!("{scope}.scope"));
+            if let Some(scope) = scope.as_deref().and_then(ScopeName::from_unit) {
+                if !process.exited() {
+                    found.push(ScopeProcess {
+                        scope,
+                        pid: process.pid,
+                        starttime: 0,
+                    });
+                }
+            }
+        }
+        Ok(found)
     }
 
-    fn process_alive(&self, process: &ScopeProcess) -> Result<bool, ProcError> {
-        Ok(self
-            .shared
-            .recovered
-            .borrow()
+    async fn survivors(
+        &self,
+        captured: &[ScopeProcess],
+        deadline: Instant,
+    ) -> Result<usize, ProcError> {
+        if self.shared.fail_alive.get() {
+            return Err(ProcError::Observation("permission denied".to_owned()));
+        }
+        if self.shared.hang_scans.get() {
+            sleep_until(deadline).await;
+            return Err(ProcError::Observation("scan timed out".to_owned()));
+        }
+        let recovered = self.shared.recovered.borrow();
+        Ok(captured
             .iter()
-            .any(|(known, recovered)| known == process && recovered.alive.get()))
+            .filter(|process| {
+                recovered
+                    .iter()
+                    .any(|(known, state)| known == *process && state.alive.get())
+            })
+            .count())
     }
 }
 

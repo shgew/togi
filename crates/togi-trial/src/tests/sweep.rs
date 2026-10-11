@@ -391,3 +391,70 @@ async fn the_probe_is_bounded_by_thirty_seconds_and_needs_an_account() {
     })
     .await;
 }
+
+#[tokio::test(start_paused = true)]
+async fn a_failed_grace_observation_still_kills_and_stops_every_known_scope() {
+    local(async {
+        let rig = rig();
+        rig.fake.add_unit("togi-trial-a.scope");
+        let _member = rig.fake.add_recovered(process("togi-trial-a", 50));
+        rig.fake.fail_alive();
+        let error = sweep(&rig.env).await.err().unwrap();
+        let all = calls(&rig);
+        assert!(all.contains(&("togi-trial-a".to_owned(), "SIGKILL")));
+        assert!(all.contains(&("togi-trial-a".to_owned(), "stop")));
+        assert!(matches!(
+            containment(&error).failures().first(),
+            Some(CleanupFailure::Observe { what: "a captured trial process", .. })
+        ));
+    })
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_verification_failure_keeps_the_earlier_kill_failure() {
+    local(async {
+        let rig = rig();
+        rig.fake.add_unit("togi-trial-a.scope");
+        let mut listings = 0;
+        rig.fake.on_systemd(move |call| match call {
+            Systemd::Kill { signal: KillSignal::Kill, .. } => Some(Reply::Output {
+                success: false,
+                text: "Access denied".into(),
+            }),
+            Systemd::ListScopes => {
+                listings += 1;
+                (listings > 1).then(|| Reply::Output {
+                    success: false,
+                    text: "bus down".into(),
+                })
+            }
+            _ => None,
+        });
+        let error = sweep(&rig.env).await.err().unwrap();
+        let failures = containment(&error).failures();
+        assert!(matches!(failures.first(), Some(CleanupFailure::KillScope { signal: "SIGKILL", .. })));
+        assert!(failures
+            .iter()
+            .any(|failure| matches!(failure, CleanupFailure::Observe { what: "the trial scope list", .. })));
+    })
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_hanging_process_scan_is_cut_at_the_shared_deadline_and_listed_scopes_are_still_killed() {
+    local(async {
+        let rig = rig();
+        rig.fake.add_unit("togi-trial-a.scope");
+        rig.fake.hang_scans();
+        let begun = Instant::now();
+        let error = sweep(&rig.env).await.err().unwrap();
+        assert!(begun.elapsed() <= secs(15), "{:?}", begun.elapsed());
+        assert!(calls(&rig).contains(&("togi-trial-a".to_owned(), "SIGKILL")));
+        assert!(matches!(
+            containment(&error).failures().first(),
+            Some(CleanupFailure::Observe { what: "the trial processes", .. })
+        ));
+    })
+    .await;
+}
