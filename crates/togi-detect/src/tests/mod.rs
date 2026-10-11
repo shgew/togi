@@ -1,5 +1,6 @@
 mod cursor;
 mod deadline;
+mod decode;
 mod kernel;
 mod parse;
 mod pstore;

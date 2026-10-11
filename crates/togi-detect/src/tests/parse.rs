@@ -385,6 +385,44 @@ fn a_cpu_number_beyond_the_machine_stops_the_parse_and_keeps_earlier_checks() {
 }
 
 #[test]
+fn a_status_line_with_a_non_numeric_cpu_or_bank_stops_the_parse_and_keeps_earlier_checks() {
+    let map = cores(&[(0, &[0])]);
+    let cases = [
+        (
+            "[Hardware Error]: CPU:abc (1a:44:0) MC1_STATUS[Over|CE|-]: 0xbc00000000010135",
+            StatusError::Cpu("abc".to_owned()),
+        ),
+        (
+            "[Hardware Error]: CPU:+0 (1a:44:0) MC1_STATUS[Over|CE|-]: 0xbc00000000010135",
+            StatusError::Cpu("+0".to_owned()),
+        ),
+        (
+            "[Hardware Error]: CPU:0 (1a:44:0) MCabc_STATUS[Over|CE|-]: 0xbc00000000010135",
+            StatusError::Bank("abc".to_owned()),
+        ),
+        (
+            "[Hardware Error]: CPU abc: Machine Check: 0 Bank 1: bc00000000010135",
+            StatusError::Cpu("abc".to_owned()),
+        ),
+        (
+            "[Hardware Error]: CPU +0: Machine Check: 0 Bank 1: 0000000000000000",
+            StatusError::Cpu("+0".to_owned()),
+        ),
+        (
+            "[Hardware Error]: CPU 0: Machine Check Exception: 0 Bank x1: bc00000000010135",
+            StatusError::Bank("x1".to_owned()),
+        ),
+    ];
+    for (text, error) in cases {
+        let messages = [message(1, DECODE_UNIT_STATUS), message(2, text)];
+        let failure = parse(&messages, &map).unwrap_err();
+        assert_eq!(failure.error, error, "{text}");
+        assert_eq!(failure.mces.len(), 1, "{text}");
+        assert_eq!(failure.mces[0].core, Some(core(0)), "{text}");
+    }
+}
+
+#[test]
 fn status_lines_are_matched_exactly() {
     let map = cores(&[(0, &[0])]);
     for text in [
@@ -393,7 +431,10 @@ fn status_lines_are_matched_exactly() {
         "[Hardware Error]: CPU:0 (1a:44:0) MC1_STATUS[Over|CE|-]: 0xbc00000000010135 ",
         "[Hardware Error]: CPU:0 (1a:44) MC1_STATUS[Over|CE|-]: 0xbc00000000010135",
         "[Hardware Error]: CPU 0: Machine Check: 0 Bank 1: 000000000000000",
-        "[Hardware Error]: CPU +0: Machine Check: 0 Bank 1: 0000000000000000",
+        "[Hardware Error]: CPU:abc (1a:44) MC1_STATUS[Over|CE|-]: 0xbc00000000010135",
+        "[Hardware Error]: CPU:abc is offline",
+        "[Hardware Error]: CPU abc: Machine Check: 0 Bank x1: 000000000000000",
+        "[Hardware Error]: CPU abc: Machine Check pending",
     ] {
         assert!(
             parse(&[message(1, text)], &map).unwrap().is_empty(),

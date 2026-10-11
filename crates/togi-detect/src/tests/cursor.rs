@@ -4,7 +4,7 @@ use serde_json::{Value, json};
 use togi_machine::{Kernel as _, KernelCursor, Partial};
 
 use super::support::{OLD, Reply, argv, boot, caused_by, core, exit, kernel, lines, locked, ok};
-use crate::DecodeError;
+use crate::{DecodeError, StatusError};
 
 const OTHER: &str = "ef01ef01ef01ef01ef01ef01ef01ef01";
 const STATUS: &str = "[Hardware Error]: CPU:2 (1a:44:0) MC1_STATUS[Over|CE|-]: 0xbc00000000010135";
@@ -24,7 +24,7 @@ fn cursor(text: &str) -> KernelCursor {
 }
 
 fn unresumable(out: Vec<u8>, after: Option<&str>) -> Partial<Vec<togi_machine::Mce>> {
-    let (mut kernel, _) = kernel(&[], move |_| ok(&out));
+    let (mut kernel, _) = kernel(&[(1, &[2])], move |_| ok(&out));
     let after = after.map(cursor);
     kernel.read_mces(&boot(OLD), after.as_ref()).unwrap_err()
 }
@@ -130,8 +130,60 @@ fn a_malformed_entry_keeps_the_earlier_checks_and_no_cursor() {
     let partial = unresumable(out, None);
     assert_eq!(partial.value.len(), 1);
     assert!(partial.value[0].corrected);
+    assert_eq!(partial.value[0].core, Some(core(1)));
+    assert!(caused_by::<DecodeError>(&partial).is_some());
+}
+
+#[test]
+fn an_earlier_check_on_an_unknown_cpu_keeps_no_core_before_a_malformed_entry() {
+    let mut out = lines(&[entry("mce", OLD, STATUS, 1_000_000)]);
+    out.extend(b"{broken\n");
+    let (mut kernel, _) = kernel(&[], move |_| ok(&out));
+    let partial = kernel.read_mces(&boot(OLD), None).unwrap_err();
+    assert_eq!(partial.value.len(), 1);
     assert_eq!(partial.value[0].core, None);
     assert!(caused_by::<DecodeError>(&partial).is_some());
+}
+
+#[test]
+fn a_status_line_with_a_non_numeric_cpu_or_bank_stops_the_read_without_a_cursor() {
+    for (name, text, error) in [
+        (
+            "cpu",
+            "[Hardware Error]: CPU:abc (1a:44:0) MC1_STATUS[Over|CE|-]: 0xbc00000000010135",
+            StatusError::Cpu("abc".to_owned()),
+        ),
+        (
+            "bank",
+            "[Hardware Error]: CPU:2 (1a:44:0) MCabc_STATUS[Over|CE|-]: 0xbc00000000010135",
+            StatusError::Bank("abc".to_owned()),
+        ),
+        (
+            "raw cpu",
+            "[Hardware Error]: CPU abc: Machine Check: 0 Bank 1: bc00000000010135",
+            StatusError::Cpu("abc".to_owned()),
+        ),
+        (
+            "raw bank",
+            "[Hardware Error]: CPU 2: Machine Check: 0 Bank abc: bc00000000010135",
+            StatusError::Bank("abc".to_owned()),
+        ),
+    ] {
+        let out = lines(&[
+            entry("a", OLD, STATUS, 1_000_000),
+            entry("b", OLD, text, 2_000_000),
+            entry("c", OLD, "ordinary kernel message", 3_000_000),
+        ]);
+        let partial = unresumable(out, None);
+        assert_eq!(partial.value.len(), 1, "{name}");
+        assert_eq!(partial.value[0].core, Some(core(1)), "{name}");
+        assert_eq!(
+            caused_by::<StatusError>(&partial),
+            Some(&error),
+            "{name}: {}",
+            partial.error
+        );
+    }
 }
 
 #[test]
@@ -241,6 +293,7 @@ fn malformed_messages_keep_only_earlier_evidence() {
         assert!(caused_by::<DecodeError>(&partial).is_some(), "{name}");
         assert_eq!(partial.value.len(), 1, "{name}");
         assert!(partial.value[0].corrected, "{name}");
+        assert_eq!(partial.value[0].core, Some(core(1)), "{name}");
         assert!(kernel.mces(&boot(OLD), Duration::ZERO).is_err(), "{name}");
     }
 }

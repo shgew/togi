@@ -278,15 +278,10 @@ impl Status {
         let Some(found) = Self::decoded(text).or_else(|| Self::raw(text)) else {
             return Ok(None);
         };
-        let cpu = found
-            .cpu
-            .parse()
+        let cpu = number(found.cpu)
             .map(CpuId)
-            .map_err(|_| StatusError::Cpu(found.cpu.to_owned()))?;
-        let bank = found
-            .bank
-            .parse()
-            .map_err(|_| StatusError::Bank(found.bank.to_owned()))?;
+            .ok_or_else(|| StatusError::Cpu(found.cpu.to_owned()))?;
+        let bank = number(found.bank).ok_or_else(|| StatusError::Bank(found.bank.to_owned()))?;
         Ok(Some(Self {
             cpu,
             bank,
@@ -295,15 +290,16 @@ impl Status {
         }))
     }
 
+    /// The status line's structure with its CPU and bank tokens unchecked, so a token that is not a
+    /// number is a read failure and not a line that merely is not a status.
     fn decoded(text: &str) -> Option<Found<'_>> {
         let rest = text.strip_prefix("[Hardware Error]: CPU:")?;
-        let (cpu, rest) = digits(rest)?;
-        let rest = rest.strip_prefix(" (")?;
+        let (cpu, rest) = token(rest, " (")?;
         let (_, rest) = hex(rest)?;
         let (_, rest) = hex(rest.strip_prefix(':')?)?;
         let (_, rest) = hex(rest.strip_prefix(':')?)?;
-        let (bank, rest) = digits(rest.strip_prefix(") MC")?)?;
-        let (flags, rest) = rest.strip_prefix("_STATUS[")?.split_once(']')?;
+        let (bank, rest) = token(rest.strip_prefix(") MC")?, "_STATUS[")?;
+        let (flags, rest) = rest.split_once(']')?;
         sixteen_hex(rest.strip_prefix(": 0x")?)?;
         Some(Found {
             cpu,
@@ -316,12 +312,11 @@ impl Status {
     fn raw(text: &str) -> Option<Found<'_>> {
         const OVERFLOW_OR_UNCORRECTED: u64 = 1 << 61 | 1 << 44;
         let rest = text.strip_prefix("[Hardware Error]: CPU ")?;
-        let (cpu, rest) = digits(rest)?;
-        let rest = rest.strip_prefix(": Machine Check")?;
+        let (cpu, rest) = token(rest, ": Machine Check")?;
         let rest = rest.strip_prefix(" Exception").unwrap_or(rest);
         let (_, rest) = hex(rest.strip_prefix(": ")?)?;
-        let (bank, rest) = digits(rest.strip_prefix(" Bank ")?)?;
-        let status = sixteen_hex(rest.strip_prefix(": ")?)?;
+        let (bank, rest) = token(rest.strip_prefix(" Bank ")?, ": ")?;
+        let status = sixteen_hex(rest)?;
         Some(Found {
             cpu,
             bank,
@@ -336,6 +331,19 @@ struct Found<'a> {
     bank: &'a str,
     corrected: bool,
     raw: bool,
+}
+
+/// The text up to the first `delimiter` and what follows it. A token never spans whitespace.
+fn token<'a>(text: &'a str, delimiter: &str) -> Option<(&'a str, &'a str)> {
+    let (token, rest) = text.split_once(delimiter)?;
+    (!token.contains(char::is_whitespace)).then_some((token, rest))
+}
+
+/// A number written as plain decimal digits; a sign or any other character makes it no number.
+fn number<T: std::str::FromStr>(text: &str) -> Option<T> {
+    digits(text)
+        .filter(|(_, rest)| rest.is_empty())
+        .and_then(|(number, _)| number.parse().ok())
 }
 
 fn split_while(text: &str, keep: impl Fn(char) -> bool) -> Option<(&str, &str)> {

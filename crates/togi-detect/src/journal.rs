@@ -7,6 +7,7 @@ use serde::Deserialize;
 use serde_json::value::RawValue;
 use togi_command::Output;
 use togi_machine::KernelCursor;
+use togi_machine::serde_object::Object;
 
 use crate::boot::JournalBoot;
 use crate::error::{Error, Operation};
@@ -251,6 +252,12 @@ impl Entry {
     }
 }
 
+/// Decodes one JSON object. A derived `Deserialize` also takes a positional array of the fields,
+/// which journalctl never writes and a row must not be read from.
+fn object<'a, T: Deserialize<'a>>(json: &'a [u8]) -> Result<T, serde_json::Error> {
+    serde_json::from_slice::<Object<T>>(json).map(|Object(value)| value)
+}
+
 fn rows(out: &[u8]) -> impl Iterator<Item = &[u8]> {
     out.split(|&byte| byte == b'\n')
         .filter(|row| !row.is_empty())
@@ -259,7 +266,7 @@ fn rows(out: &[u8]) -> impl Iterator<Item = &[u8]> {
 pub(crate) fn mce_messages(out: &[u8], since: Duration) -> Result<Vec<Message>, DecodeError> {
     let mut messages = Vec::new();
     for row in rows(out) {
-        let message = serde_json::from_slice::<Entry>(row)?.message()?;
+        let message = object::<Entry>(row)?.message()?;
         if message.monotonic >= since {
             messages.push(message);
         }
@@ -274,7 +281,7 @@ pub(crate) fn reset_texts(out: &[u8]) -> Result<Vec<String>, DecodeError> {
         message: Option<Box<RawValue>>,
     }
     rows(out)
-        .map(|row| text_of(serde_json::from_slice::<Row>(row)?.message.as_deref()))
+        .map(|row| text_of(object::<Row>(row)?.message.as_deref()))
         .collect()
 }
 
@@ -299,7 +306,7 @@ pub(crate) fn read_interval(
     let mut messages = Vec::new();
     let mut last: Option<String> = None;
     for row in rows(out) {
-        let entry = match serde_json::from_slice::<Entry>(row) {
+        let entry = match object::<Entry>(row) {
             Ok(entry) => entry,
             Err(error) => return Interval::failed(messages, IntervalError::Decode(error.into())),
         };
@@ -346,7 +353,8 @@ pub(crate) struct BootEntry {
 }
 
 pub(crate) fn boot_entries(out: &[u8]) -> Result<Vec<BootEntry>, serde_json::Error> {
-    serde_json::from_slice(out)
+    let entries: Vec<Object<BootEntry>> = serde_json::from_slice(out)?;
+    Ok(entries.into_iter().map(|Object(entry)| entry).collect())
 }
 
 #[derive(Deserialize)]
@@ -364,7 +372,7 @@ pub(crate) fn position(out: &[u8], boot: &JournalBoot) -> Result<Option<Position
     if out.trim_ascii().is_empty() {
         return Ok(None);
     }
-    let row: PositionRow = serde_json::from_slice(out)?;
+    let row: PositionRow = object(out)?;
     let sequence = row
         .sequence
         .as_deref()
