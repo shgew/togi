@@ -299,23 +299,19 @@ impl Journal {
         };
         let event = Event::new(seq, stamp, self.boot.clone(), cause.to_vec(), payload);
         let line = encode(&event).map_err(AppendError::Encode)?;
-        std::str::from_utf8(&line[..line.len() - 1])
+        let decoded = std::str::from_utf8(&line[..line.len() - 1])
             .map_err(|error| AppendError::Encode(serde::ser::Error::custom(error)))
-            .and_then(|text| Event::decode(text).map_err(AppendError::Unreadable))
-            .and_then(|decoded| {
-                if decoded.payload == event.payload {
-                    Ok(())
-                } else {
-                    Err(AppendError::Lossy)
-                }
-            })?;
+            .and_then(|text| Event::decode(text).map_err(AppendError::Unreadable))?;
+        if decoded.payload != event.payload {
+            return Err(AppendError::Lossy);
+        }
         if let Err(failure) = self.writer.write(&line) {
             let failure = Arc::new(failure);
             self.poison = Some(Arc::clone(&failure));
             return Err(AppendError::Failed(failure));
         }
         self.session = self.session.or(session);
-        self.events.push(event);
+        self.events.push(decoded);
         Ok(&self.events[self.events.len() - 1])
     }
 

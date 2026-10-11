@@ -532,3 +532,49 @@ fn a_payload_that_reads_back_different_is_refused_without_poison_or_seq() {
         );
     }
 }
+
+fn fine_stamp(nanos: i64, mono: Option<std::time::Duration>) -> Stamp {
+    Stamp {
+        time: jiff::Timestamp::from_nanosecond(1_700_000_000_000_000_000 + i128::from(nanos)).unwrap(),
+        mono,
+    }
+}
+
+#[test]
+fn a_sub_millisecond_monotonic_time_is_published_as_the_line_reads_back() {
+    let fs = MemFs::new();
+    let mut journal = begin_default(&fs);
+    let mono = std::time::Duration::from_nanos(86_113_456_789);
+    journal
+        .append(fine_stamp(123_456_789, Some(mono)), note("a"), &[])
+        .unwrap();
+    let live = journal.events().to_vec();
+    journal.close().unwrap();
+    assert_eq!(reopen(&fs, 2).events(), live);
+}
+
+proptest::proptest! {
+    #[test]
+    fn appended_events_equal_the_reopened_journal(
+        stamps in proptest::collection::vec(
+            (
+                0_i64..1_000_000_000_000,
+                proptest::option::of(0_u64..1_000_000_000_000),
+            ),
+            1..8,
+        ),
+    ) {
+        let fs = MemFs::new();
+        let mut journal = begin_default(&fs);
+        for (index, (nanos, mono)) in stamps.into_iter().enumerate() {
+            let mono = mono.map(std::time::Duration::from_nanos);
+            journal
+                .append(fine_stamp(nanos, mono), note(&index.to_string()), &[])
+                .unwrap();
+        }
+        let live = journal.events().to_vec();
+        journal.close().unwrap();
+        let reopened = reopen(&fs, 2);
+        proptest::prop_assert_eq!(reopened.events(), live.as_slice());
+    }
+}
