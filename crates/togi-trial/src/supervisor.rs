@@ -372,6 +372,7 @@ async fn launch_all<O: Os>(
         Confinement::Unscoped => None,
     };
     let scoped = identity.is_some();
+    let owner = identity.map_or_else(|| rustix::process::geteuid().as_raw(), BackendIdentity::uid);
     let suspend_first = matches!(plan.load, Load::Bursts { .. });
     for (index, instance) in plan.instances.iter().enumerate() {
         if cancelled.load(Ordering::Acquire) {
@@ -458,7 +459,7 @@ async fn launch_all<O: Os>(
                 .plan
                 .watched
                 .iter()
-                .map(|name| Watched::new(Arc::clone(&files.dir), name.clone()))
+                .map(|name| Watched::new(Arc::clone(&files.dir), name.clone(), owner))
                 .collect(),
             writers: None,
             observed: Observed {
@@ -552,7 +553,8 @@ async fn roll_back<O: Os>(
         .await
         .verify()
         .await
-        .finish();
+        .finish()
+        .await;
     let mut diagnostics = settle_logs(&mut judge, logs.finish(env.timing.writer_join).await);
     let panic = judge.take_panic();
     diagnostics.splice(0..0, judge.conclude().diagnostics);
@@ -668,7 +670,7 @@ impl<O: Os> Supervisor<O> {
         let deadline = self.started + self.plan.duration;
         let mut next_tick = self.started + sample;
         loop {
-            if let Some(end) = self.due(deadline, &mut next_tick) {
+            if let Some(end) = self.due(deadline, &mut next_tick).await {
                 return end;
             }
             let step_at = self.timeline.peek().map(|step| self.started + step.at);
@@ -701,7 +703,7 @@ impl<O: Os> Supervisor<O> {
     }
 
     /// Ends at the deadline, else sends every load step that is due and takes a due sample.
-    fn due(&mut self, deadline: Instant, next_tick: &mut Instant) -> Option<End> {
+    async fn due(&mut self, deadline: Instant, next_tick: &mut Instant) -> Option<End> {
         let now = Instant::now();
         if now >= deadline {
             return Some(End::Duration);
@@ -717,7 +719,7 @@ impl<O: Os> Supervisor<O> {
         }
         if now >= *next_tick {
             *next_tick = now + self.env.timing.sample;
-            return self.tick();
+            return self.tick().await;
         }
         None
     }
@@ -793,7 +795,7 @@ impl<O: Os> Supervisor<O> {
         None
     }
 
-    fn tick(&mut self) -> Option<End> {
+    async fn tick(&mut self) -> Option<End> {
         let now = Instant::now();
         let count = self.live.instances.len();
         let next_step = self.timeline.peek().map(|step| self.started + step.at);
@@ -815,8 +817,10 @@ impl<O: Os> Supervisor<O> {
                 &mut self.live.instances[index],
                 &mut self.judge,
                 &mut self.live.failures,
+                halt_at,
                 &mut || cancelled.load(Ordering::Acquire) || Instant::now() >= halt_at,
-            );
+            )
+            .await;
             stop |= polled.stop;
         }
         let mut workers = PerCore::<i64>::default();
@@ -989,7 +993,8 @@ impl<O: Os> Supervisor<O> {
             .await
             .verify()
             .await
-            .finish();
+            .finish()
+            .await;
         if let Some(what) = panicked.take().or_else(|| judge.take_panic()) {
             judge.observe(Observation::SamplingLoss {
                 instance: 0,

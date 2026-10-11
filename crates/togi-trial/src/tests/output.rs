@@ -1,11 +1,13 @@
 //! Output framing, the 64 KiB cap, watched files and their evidence under teardown.
 
 use std::os::unix::fs::symlink;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use test_case::test_case;
-use togi_machine::{CancellationToken, CpuId, Regime, Signal};
+use togi_backend::{Backend, Line, Plan, Ready};
+use togi_machine::{CancellationToken, CpuId, Regime, Signal, Workload};
 use tokio::io::AsyncWriteExt as _;
 
 use super::harness::{finish, local, rig_edit, rig_with, spec};
@@ -14,6 +16,7 @@ use crate::os::fake::{Delivery, Launch, ProcCtx, Reply, SignalErrorKind, script}
 use crate::os::{ExitInfo, GroupSignal, Systemd};
 use crate::output::LINE_LIMIT;
 use crate::procfs::{Thread, Threads};
+use crate::runner::Backends;
 use crate::testing::TestBackend;
 use crate::timing::Timing;
 
@@ -385,41 +388,128 @@ async fn a_flooded_instance_does_not_skip_the_required_samples_of_its_neighbour(
     .await;
 }
 
-#[tokio::test(start_paused = true)]
-async fn a_flood_leaves_the_load_step_schedule_untouched() {
+/// The watching test backend whose classifier takes a controlled real time per `SLOW` line and
+/// notes when the first one was classified.
+#[derive(Debug)]
+struct Slow {
+    inner: TestBackend,
+    nap: Duration,
+    first: Arc<OnceLock<std::time::Instant>>,
+}
+
+impl Backend for Slow {
+    fn kind(&self) -> togi_machine::Backend {
+        self.inner.kind()
+    }
+
+    fn check(&self) -> Result<Ready, togi_backend::Error> {
+        self.inner.check()
+    }
+
+    fn plan(
+        &self,
+        workload: &Workload,
+        dir: &Path,
+        cpus: &[CpuId],
+    ) -> Result<Plan, togi_backend::Error> {
+        self.inner.plan(workload, dir, cpus)
+    }
+
+    fn classify(&self, line: &str) -> Line {
+        if line.starts_with("SLOW") {
+            self.first.get_or_init(std::time::Instant::now);
+            std::thread::sleep(self.nap);
+        }
+        self.inner.classify(line)
+    }
+}
+
+#[tokio::test]
+async fn a_slow_classified_watched_flood_is_polled_during_the_trial_and_leaves_the_load_steps_on_time()
+ {
     local(async {
-        let rig = rig_with(watching(), Timing::default());
+        let first = Arc::new(OnceLock::new());
+        let slow = Slow {
+            inner: watching(),
+            nap: Duration::from_millis(2),
+            first: Arc::clone(&first),
+        };
+        let timing = Timing {
+            sample: Duration::from_millis(25),
+            ..Timing::default()
+        };
+        let rig = rig_edit(watching(), timing, move |env| {
+            env.backends = Backends::new().with(Arc::new(slow));
+        });
         rig.fake.on_launch(|_, command| {
             let file = results(command);
             Launch::Run(script(move |mut ctx: ProcCtx| async move {
-                std::fs::write(file, flood(4 * 1024 * 1024 / 8)).unwrap();
+                std::fs::write(file, "SLOW ok line\n".repeat(400)).unwrap();
                 ctx.until_killed().await;
             }))
         });
+        let begun = std::time::Instant::now();
         let handle = rig.start(spec(Regime::R4, &[0], secs(1))).await.unwrap();
-        let t0 = tokio::time::Instant::now();
         let run = finish(&handle).await;
-        let steps: Vec<_> = rig
+        let classified = first.get().expect("the flood was classified");
+        assert!(
+            classified.duration_since(begun) < Duration::from_millis(500),
+            "watched output is polled by the sampling ticks of the trial, not first by the \
+             teardown: {:?}",
+            classified.duration_since(begun)
+        );
+        let toggles: Vec<_> = rig
             .fake
             .process(0)
             .signal_times
             .borrow()
             .iter()
-            .filter(|(at, signal)| {
-                at.duration_since(t0) < secs(1)
-                    && matches!(signal, GroupSignal::Stop | GroupSignal::Cont)
-            })
-            .map(|(at, _)| at.duration_since(t0).as_millis())
+            .filter(|(_, signal)| matches!(signal, GroupSignal::Stop | GroupSignal::Cont))
+            .map(|(at, _)| *at)
             .collect();
         let load = crate::plan::Load::Steps(
             togi_machine::LoadSchedule::for_spec(&spec(Regime::R4, &[0], secs(1))).unwrap(),
         );
-        let expected: Vec<u128> = crate::schedule::timeline(&load, secs(1))
-            .map(|step| step.at.as_millis())
+        let planned: Vec<_> = crate::schedule::timeline(&load, secs(1))
+            .map(|step| step.at)
             .collect();
-        assert!(expected.len() >= 10);
-        assert_eq!(steps, expected);
+        assert!(planned.len() >= 10 && toggles.len() >= planned.len());
+        for (actual, at) in toggles.iter().zip(&planned) {
+            let late = actual.duration_since(toggles[0]).abs_diff(*at - planned[0]);
+            assert!(
+                late < Duration::from_millis(40),
+                "a step planned at {at:?} ran {late:?} off its schedule"
+            );
+        }
         assert!(run.finished.teardown.is_ok());
+    })
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_hard_linked_watched_file_is_refused_as_an_ordinary_diagnostic() {
+    local(async {
+        let rig = rig_with(watching(), Timing::default());
+        rig.fake.on_launch(|_, command| {
+            let file = results(command);
+            Launch::Run(script(move |mut ctx: ProcCtx| async move {
+                let elsewhere = file.with_file_name("elsewhere");
+                std::fs::write(&elsewhere, "COMPUTE ERROR\n").unwrap();
+                std::fs::hard_link(&elsewhere, &file).unwrap();
+                ctx.until_killed().await;
+            }))
+        });
+        let handle = rig.start(spec(Regime::R1, &[0], secs(3))).await.unwrap();
+        let run = finish(&handle).await;
+        assert!(run.finished.teardown.is_ok());
+        assert_eq!(run.finished.result.failure, None);
+        assert_eq!(
+            run.finished.result.inconclusive.as_deref(),
+            Some(
+                "core 00 watched output: refused watched output file: the file has other hard links"
+            )
+        );
+        assert!(matches!(&run.finished.errors[..], [Error::Output(_)]));
     })
     .await;
 }

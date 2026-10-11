@@ -8,9 +8,8 @@ use tokio::task::JoinSet;
 use tokio::time::{Instant, sleep, sleep_until, timeout_at};
 
 use crate::error::{CleanupFailure, Containment};
-use crate::evidence::Stream;
 use crate::id::ScopeName;
-use crate::instance::{Flow, Inbound, LiveInstance, dispatch, poll_watched};
+use crate::instance::{Flow, Inbound, LiveInstance, dispatch, finish_watched, poll_watched};
 use crate::judge::Judge;
 use crate::os::{Child as _, GroupSignal, KillSignal, Os, SignalError, Systemd};
 use crate::timing::Timing;
@@ -313,8 +312,10 @@ impl<'a, O: Os> Teardown<'a, O, Reaped> {
                     &mut self.live.instances[index],
                     self.judge,
                     &mut self.failures,
+                    end,
                     &mut || Instant::now() >= end,
-                );
+                )
+                .await;
                 pending |= polled.pending;
             }
             self.rotation = self.rotation.wrapping_add(1);
@@ -426,18 +427,14 @@ impl<'a, O: Os> Teardown<'a, O, ReadersDone> {
 }
 
 impl<O: Os> Teardown<'_, O, Verified> {
-    /// Classifies the final partial lines of watched files whose writers are confirmed stopped,
-    /// then mints the proof; this is the only place that does.
-    pub(crate) fn finish(mut self) -> Ended {
+    /// Reads the watched files of every instance whose writers are confirmed stopped to their
+    /// end, classifies their final partial lines, then mints the proof; this is the only place
+    /// that does. The drain's flag is not trusted: what a surviving writer appended before the
+    /// scope was seen empty is read here, within what remains of the teardown budget.
+    pub(crate) async fn finish(mut self) -> Ended {
+        let until = self.budget.deadline();
         for instance in &mut self.live.instances {
-            let (index, pid) = (instance.index, instance.pid);
-            if let Some(writers) = instance.writers {
-                for file in &mut instance.watched {
-                    if let Some(line) = file.finish(writers) {
-                        self.judge.line(index, pid, Stream::Watched, line);
-                    }
-                }
-            }
+            finish_watched(instance, self.judge, &mut self.failures, until).await;
         }
         let complete = self.live.instances.iter().all(|instance| {
             instance.child.is_none()

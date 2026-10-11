@@ -298,12 +298,14 @@ pub(crate) struct Polled {
     pub(crate) stop: bool,
 }
 
-/// Polls every watched file of `instance` once. `halt` ends a poll early between chunks, and a
-/// line that ends the trial ends it between lines.
-pub(crate) fn poll_watched<O: Os>(
+/// Polls every watched file of `instance` once. The wait for each file's blocking read ends at
+/// `until`; `halt` ends a poll early between chunks and lines, and a line that ends the trial
+/// ends it between lines.
+pub(crate) async fn poll_watched<O: Os>(
     instance: &mut LiveInstance<O>,
     judge: &mut Judge,
     failures: &mut Failures,
+    until: Instant,
     halt: &mut impl FnMut() -> bool,
 ) -> Polled {
     let (index, pid) = (instance.index, instance.pid);
@@ -311,46 +313,94 @@ pub(crate) fn poll_watched<O: Os>(
     let mut polled = Polled::default();
     for file in &mut instance.watched {
         let mut ended = false;
-        let poll = file.poll(
-            &mut |line| {
-                if judge.line(index, pid, Stream::Watched, line.to_owned()) {
-                    ended = true;
-                    std::ops::ControlFlow::Break(())
-                } else {
-                    std::ops::ControlFlow::Continue(())
-                }
-            },
-            halt,
-        );
+        let poll = file
+            .poll(
+                until,
+                &mut |line| {
+                    if judge.line(index, pid, Stream::Watched, line.to_owned()) {
+                        ended = true;
+                        std::ops::ControlFlow::Break(())
+                    } else {
+                        std::ops::ControlFlow::Continue(())
+                    }
+                },
+                halt,
+            )
+            .await;
         polled.stop |= ended;
         match poll {
             Poll::Idle | Poll::Drained => {}
             Poll::Pending => polled.pending = true,
             Poll::Failed(error) => {
-                let observation = match error {
-                    WatchError::LineTooLong => Observation::LineTooLong {
-                        instance: index,
-                        stream: Stream::Watched,
-                    },
-                    WatchError::Lost => {
-                        failures.record(CleanupFailure::WatchedLost {
-                            instance: label.clone(),
-                        });
-                        Observation::OutputError {
-                            instance: index,
-                            stream: Stream::Watched,
-                            error: error.to_string(),
-                        }
-                    }
-                    WatchError::Unsupported | WatchError::Read(_) => Observation::OutputError {
-                        instance: index,
-                        stream: Stream::Watched,
-                        error: error.to_string(),
-                    },
-                };
-                polled.stop |= judge.observe(observation);
+                polled.stop |= report(judge, failures, index, &label, &error);
             }
         }
     }
     polled
+}
+
+/// The last read of every watched file of `instance` after its writers were confirmed stopped:
+/// whatever they appended since the last poll is read and classified, then the unterminated
+/// final line. A file that cannot be read to its end stays undrained, or fails as in a poll.
+/// Does nothing for an instance whose writers are not confirmed.
+pub(crate) async fn finish_watched<O: Os>(
+    instance: &mut LiveInstance<O>,
+    judge: &mut Judge,
+    failures: &mut Failures,
+    until: Instant,
+) {
+    let Some(writers) = instance.writers else {
+        return;
+    };
+    let (index, pid) = (instance.index, instance.pid);
+    let label = instance.plan.name.dir_name();
+    for file in &mut instance.watched {
+        let poll = file
+            .finish(writers, until, &mut |line| {
+                if judge.line(index, pid, Stream::Watched, line.to_owned()) {
+                    std::ops::ControlFlow::Break(())
+                } else {
+                    std::ops::ControlFlow::Continue(())
+                }
+            })
+            .await;
+        if let Poll::Failed(error) = poll {
+            report(judge, failures, index, &label, &error);
+        }
+    }
+}
+
+/// Records a watched file's end: containment when accepted bytes were lost, an evidence
+/// observation always. Whether that observation ends the trial.
+fn report(
+    judge: &mut Judge,
+    failures: &mut Failures,
+    index: usize,
+    label: &str,
+    error: &WatchError,
+) -> bool {
+    let observation = match error {
+        WatchError::LineTooLong => Observation::LineTooLong {
+            instance: index,
+            stream: Stream::Watched,
+        },
+        WatchError::Lost => {
+            failures.record(CleanupFailure::WatchedLost {
+                instance: label.to_owned(),
+            });
+            Observation::OutputError {
+                instance: index,
+                stream: Stream::Watched,
+                error: error.to_string(),
+            }
+        }
+        WatchError::Unsupported | WatchError::Refused(_) | WatchError::Read(_) => {
+            Observation::OutputError {
+                instance: index,
+                stream: Stream::Watched,
+                error: error.to_string(),
+            }
+        }
+    };
+    judge.observe(observation)
 }

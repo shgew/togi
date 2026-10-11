@@ -9,9 +9,9 @@ pub(crate) const CHUNK: usize = 4096;
 pub(crate) enum Frame {
     /// One complete line without its terminator (CR and LF each end a line).
     Line(String),
-    /// The line passed `LINE_LIMIT`; the first `LINE_LIMIT` bytes are kept as a diagnostic prefix
-    /// and the stream is not read further.
-    Exceeded { prefix: Vec<u8> },
+    /// The line passed `LINE_LIMIT`; the framer keeps its first `LINE_LIMIT` bytes as a diagnostic
+    /// prefix and the stream is not read further.
+    Exceeded,
 }
 
 /// Splits a byte stream into lines with a fixed memory bound.
@@ -42,8 +42,7 @@ impl Framer {
                 }
             } else if self.line.len() == LINE_LIMIT {
                 self.exceeded = true;
-                let prefix = std::mem::take(&mut self.line);
-                let _ = sink(Frame::Exceeded { prefix });
+                let _ = sink(Frame::Exceeded);
                 return index;
             } else {
                 self.line.push(byte);
@@ -64,11 +63,17 @@ impl Framer {
 
     /// Whether an unterminated line is buffered.
     pub(crate) const fn pending(&self) -> bool {
-        !self.line.is_empty()
+        !self.exceeded && !self.line.is_empty()
     }
 
     pub(crate) const fn exceeded(&self) -> bool {
         self.exceeded
+    }
+
+    /// The kept prefix of the oversized line.
+    #[cfg(test)]
+    pub(crate) fn oversized(&self) -> Option<&[u8]> {
+        self.exceeded.then_some(self.line.as_slice())
     }
 }
 
@@ -124,9 +129,10 @@ mod tests {
     fn one_byte_over_the_limit_exceeds_and_keeps_the_prefix() {
         let over = vec![b'x'; LINE_LIMIT + 1];
         let (out, mut framer) = frames(&[&over]);
-        assert_eq!(out.len(), 1);
-        assert!(matches!(&out[0], Frame::Exceeded { prefix } if prefix.len() == LINE_LIMIT));
+        assert_eq!(out, [Frame::Exceeded]);
         assert!(framer.exceeded());
+        assert_eq!(framer.oversized(), Some(&over[..LINE_LIMIT]));
+        assert!(!framer.pending());
         assert_eq!(framer.finish(), None);
     }
 
