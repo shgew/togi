@@ -2,28 +2,34 @@
 
 use std::collections::BTreeMap;
 use std::io;
+use std::num::{NonZeroU16, NonZeroU32};
 
 use jiff::tz::TimeZone;
 use togi_config::Config;
 use togi_defect::Entry;
 use togi_journal::{
-    Build, Event, MemFs, Payload, SCHEMA, Seq, SessionBaseline, SessionStart, StateDir, fs::Fault,
-    fs::Op,
+    Activity, Build, Event, MemFs, Payload, SCHEMA, Seq, SessionBaseline, SessionStart, StateDir,
+    fs::Fault, fs::Op,
 };
 use togi_machine::{
-    BootId, CancellationToken, Condition, CoreId, CoreSet, Machine, ObservedOffset, PerCore, Smu,
-    SmuValidated, Stopped, TargetOffset,
+    BootId, CancellationToken, Condition, CoreId, CoreSet, Machine, ObservedOffset, PerCore,
+    Regime, Smu, SmuValidated, Stopped, TargetOffset, pick_workload,
 };
 use togi_machine::{Error, Partial, Running, Swept, TrialSpec, Trials};
 use togi_render::Renderer;
 use togi_sim::faults::{HookPhase, SmuOp, SmuOperation};
 use togi_sim::{MachineDefinition, Model, RunSettings, Simulator};
+use togi_tuner::{
+    Action, ClassKey, Load, Profile, Requirement, RequirementKind, Secs, TrialContext, TrialPlan,
+    Window, WorkloadChoice,
+};
 use togi_tuningboot::{Bootloader, Environment, SavedEntry};
 
 use crate::appender::{Appender, Folds};
 use crate::boot::BootHandoff;
 use crate::emergency::SweepCleared;
 use crate::error::AppendFailure;
+use crate::execute::TunerValues;
 use crate::session::{ConfigSource, Control, RunInput, Session, StopPolicy};
 use crate::write::{Hardware, ProfileRecord, ProfileRequest, apply_profile, checker};
 
@@ -435,4 +441,74 @@ impl togi_machine::Host for ValidationFails {
     fn watchdog(&mut self) -> togi_machine::Check {
         self.0.watchdog()
     }
+}
+
+pub(crate) fn begun(bench: &Bench) -> Session {
+    let mut session = swept(bench);
+    assert_eq!(session.begin().unwrap(), Control::Continue);
+    session
+}
+
+/// The search trial the tuner would ask for next on `core`, built the way the tuner builds it.
+pub(crate) fn search_plan(session: &Session, core: CoreId, regime: Regime) -> TrialPlan {
+    let topology = session.appender().tuner().topology().unwrap();
+    let offset = session
+        .appender()
+        .journal()
+        .events()
+        .iter()
+        .rev()
+        .find_map(|event| match &event.payload {
+            Payload::CorePhase(phase) if phase.core == core => Some(phase.offset),
+            _ => None,
+        })
+        .unwrap();
+    let duration = Secs::new(NonZeroU32::new(session.config.search_trial().get()).unwrap());
+    let rotation = session.appender().recovery().rotation(Some(core), regime);
+    let workload = pick_workload(regime, usize::try_from(rotation).unwrap());
+    TrialPlan {
+        regime,
+        workload: WorkloadChoice::Rotate,
+        load: Load::Single(core),
+        condition: Condition::Alone,
+        activity: Activity::Search,
+        profile: Profile::alone(topology, core, offset),
+        duration,
+        context: TrialContext::Search {
+            core,
+            regime,
+            offset,
+        },
+        requirement: Requirement {
+            kind: RequirementKind::Search,
+            class: ClassKey::new(workload.id(), std::iter::once(core).collect(), duration),
+            window: Window::Live { since: None },
+            needed: NonZeroU16::MIN,
+            step: None,
+            part: None,
+        },
+        retry: false,
+        cause: Vec::new(),
+    }
+}
+
+pub(crate) fn tuned_values(session: &Session) -> Profile {
+    Profile::zero(session.appender().tuner().topology().unwrap())
+}
+
+pub(crate) fn run_action(session: &mut Session, action: Action) -> crate::session::Outcome {
+    let profile = tuned_values(session);
+    session.execute(
+        action,
+        &TunerValues {
+            profile: &profile,
+            profile_seq: None,
+            clean_cycles: 0,
+            first_result: false,
+        },
+    )
+}
+
+pub(crate) fn run_plan(session: &mut Session, plan: TrialPlan) -> crate::session::Outcome {
+    run_action(session, Action::RunTrial(plan))
 }
