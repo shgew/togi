@@ -10,10 +10,11 @@ use std::io;
 use std::os::unix::process::ExitStatusExt as _;
 use std::pin::Pin;
 use std::process::ExitStatus;
+use std::task::{Context, Poll, Waker};
 use std::rc::Rc;
 use std::time::Duration;
 
-use tokio::io::{AsyncWriteExt as _, DuplexStream, duplex};
+use tokio::io::{AsyncRead, AsyncWriteExt as _, DuplexStream, ReadBuf, duplex};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use tokio::sync::watch;
 use tokio::time::{Instant, sleep_until};
@@ -53,6 +54,8 @@ pub(crate) struct ProcShared {
     pub(crate) usage: RefCell<Result<Usage, ProcError>>,
     pub(crate) threads: RefCell<Result<Threads, ProcError>>,
     pub(crate) signals: RefCell<Vec<GroupSignal>>,
+    pub(crate) signal_times: RefCell<Vec<(Instant, GroupSignal)>>,
+    stdout_failure: Rc<RefCell<PipeFailure>>,
     pub(crate) signal_error: RefCell<Option<SignalErrorKind>>,
     pub(crate) reaped: Cell<bool>,
     exit: Cell<Option<ExitInfo>>,
@@ -66,7 +69,46 @@ pub(crate) enum SignalErrorKind {
     Failed,
 }
 
+#[derive(Default)]
+struct PipeFailure {
+    fail: bool,
+    waker: Option<Waker>,
+}
+
+/// The read end of stdout; it can be made to fail like a pipe with an I/O error.
+struct Flaky {
+    inner: DuplexStream,
+    failure: Rc<RefCell<PipeFailure>>,
+}
+
+impl AsyncRead for Flaky {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        let this = self.get_mut();
+        {
+            let mut failure = this.failure.borrow_mut();
+            if failure.fail {
+                return Poll::Ready(Err(io::Error::from_raw_os_error(5)));
+            }
+            failure.waker = Some(cx.waker().clone());
+        }
+        Pin::new(&mut this.inner).poll_read(cx, buf)
+    }
+}
+
 impl ProcShared {
+    /// The next read of stdout fails with `EIO`.
+    pub(crate) fn fail_stdout(&self) {
+        let mut failure = self.stdout_failure.borrow_mut();
+        failure.fail = true;
+        if let Some(waker) = failure.waker.take() {
+            waker.wake();
+        }
+    }
+
     pub(crate) fn exited(&self) -> bool {
         self.exit.get().is_some()
     }
@@ -152,6 +194,7 @@ struct Shared {
     launch_script: RefCell<LaunchScript>,
     systemd_script: RefCell<SystemdScript>,
     units: RefCell<Vec<ScopeName>>,
+    ready_default: Cell<bool>,
     recovered: RefCell<Vec<(ScopeProcess, Rc<Cell<bool>>)>>,
     next_pid: Cell<u32>,
 }
@@ -174,6 +217,7 @@ impl Default for Fake {
                 })),
                 systemd_script: RefCell::new(Box::new(|_| None)),
                 units: RefCell::default(),
+                ready_default: Cell::new(true),
                 recovered: RefCell::default(),
                 next_pid: Cell::new(1000),
             }),
@@ -203,6 +247,11 @@ impl Fake {
     /// Answers systemd calls; `None` falls back to the default (success, effect applied).
     pub(crate) fn on_systemd(&self, script: impl FnMut(&Systemd) -> Option<Reply> + 'static) {
         *self.shared.systemd_script.borrow_mut() = Box::new(script);
+    }
+
+    /// Whether new processes start inside their scope.
+    pub(crate) fn set_ready_default(&self, ready: bool) {
+        self.shared.ready_default.set(ready);
     }
 
     pub(crate) fn process(&self, index: usize) -> Rc<ProcShared> {
@@ -282,6 +331,10 @@ impl Child for FakeChild {
 
     fn signal_group(&self, signal: GroupSignal) -> Result<(), SignalError> {
         self.shared.signals.borrow_mut().push(signal);
+        self.shared
+            .signal_times
+            .borrow_mut()
+            .push((Instant::now(), signal));
         match *self.shared.signal_error.borrow() {
             Some(SignalErrorKind::Gone) => return Err(SignalError::Gone),
             Some(SignalErrorKind::Failed) => {
@@ -327,13 +380,15 @@ impl Os for Fake {
         let shared = Rc::new(ProcShared {
             pid,
             scope: scope_in(command),
-            ready: Cell::new(true),
+            ready: Cell::new(self.shared.ready_default.get()),
             usage: RefCell::new(Ok(Usage {
                 cpu_time: Duration::ZERO,
                 cpu: 0,
             })),
             threads: RefCell::new(Ok(Threads::default())),
             signals: RefCell::default(),
+            signal_times: RefCell::default(),
+            stdout_failure: Rc::new(RefCell::new(PipeFailure::default())),
             signal_error: RefCell::default(),
             reaped: Cell::new(false),
             exit: Cell::new(None),
@@ -351,7 +406,10 @@ impl Os for Fake {
         Ok(FakeChild {
             shared,
             pipes: Some(Pipes {
-                stdout: Box::pin(stdout_reader),
+                stdout: Box::pin(Flaky {
+                    inner: stdout_reader,
+                    failure: Rc::clone(&shared.stdout_failure),
+                }),
                 stderr: Box::pin(stderr_reader),
             }),
             exit,
