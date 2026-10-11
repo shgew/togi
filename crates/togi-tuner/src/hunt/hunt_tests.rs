@@ -2616,6 +2616,51 @@ fn a_paired_hunt_preserves_the_second_failures_nonempty_reason() {
     j.assert_resumes();
 }
 
+#[test]
+fn a_warned_idle_failure_still_opens_its_hunt() {
+    for (name, pass_profile, warns) in [
+        ("equal profile", [-10, -12], true),
+        ("deeper passing profile", [-11, -13], true),
+        ("shallower passing profile", [-9, -11], false),
+    ] {
+        let mut j = super::support::hunt_session(&[-10, -12]);
+        let passes: Vec<Seq> = (0..j.run().config.needed.get())
+            .map(|_| {
+                j.carry(
+                    CARRIED_SESSION,
+                    (Regime::R6, 0, &[0, 1], SHORT),
+                    Condition::Together,
+                    &pass_profile,
+                    Outcome::Pass,
+                )
+            })
+            .collect();
+        let profile = j.profile(&[-10, -12]).offsets();
+        let failure = j.idle_failure(profile, Condition::Together);
+        let mut warned = false;
+        let mut started = None;
+        for _ in 0..20 {
+            let action = j.next_decision();
+            match &action.payload {
+                DecisionPayload::TunerWarning(warning) => {
+                    assert_eq!(warning.passes, passes, "{name}");
+                    assert_eq!(action.cause[0], failure, "{name}");
+                    warned = true;
+                }
+                DecisionPayload::HuntStart(start) => {
+                    started = Some(start.failure);
+                    break;
+                }
+                _ => {}
+            }
+            j.decide(action);
+        }
+        assert_eq!(warned, warns, "{name}");
+        assert_eq!(started, Some(failure), "{name}");
+        j.assert_resumes();
+    }
+}
+
 fn before_first_member_probe() -> Journal {
     let mut j = hunt_of(4, 600);
     for _ in 0..200 {

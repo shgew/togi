@@ -1470,6 +1470,59 @@ fn carried_failure_establishes_later_hunt_group() {
 }
 
 #[test]
+fn a_carried_failure_is_admitted_to_a_group_past_a_newer_live_failure_before_the_hunt() {
+    for idle in [false, true] {
+        let mut j = loc_pair_session();
+        let duration = j.run().config.short_trial.get();
+        j.load(&config(&format!(
+            r#"{{"durations":{{"checking_idle_s":{duration}}}}}"#
+        )));
+        let carried = if idle {
+            j.carry_idle(SESSION, &[-9, 0])
+        } else {
+            j.carry(
+                SESSION,
+                (Regime::R6, 0, &[0, 1], duration),
+                Condition::Together,
+                &[-9, 0],
+                Outcome::Failure,
+            )
+        };
+        let live = |j: &mut Journal, profile: &[i64]| {
+            let plan = j.manual(
+                Regime::R6,
+                0,
+                Load::Many(set(&[0, 1])),
+                Condition::Together,
+                profile,
+                duration,
+            );
+            j.trial(&plan, Outcome::Failure);
+            let decision = j.next_decision();
+            assert!(matches!(decision.payload, DecisionPayload::Failure(_)));
+            j.decide(decision)
+        };
+        live(&mut j, &[-10, 0]);
+        let source = live(&mut j, &[-10, -10]);
+        loc_hand_start(&mut j, source, &[-10, -10], duration);
+        let run = j.run();
+        let hunt = run.hunts.active.as_ref().expect("the hunt is open");
+        let class = hunt.class_at(Secs::new(std::num::NonZeroU32::new(duration).unwrap()));
+        for stage in [HuntStage::Full, HuntStage::Probe] {
+            let since = run.hunt_since(stage, hunt.seq);
+            let answer = run.evidence_answer(hunt, class, &hunt.failing, since);
+            assert_eq!(
+                answer.outcome,
+                Some(super::plan::GroupOutcome::Failed),
+                "idle={idle} {stage:?}"
+            );
+            assert_eq!(answer.failure, Some(carried), "idle={idle} {stage:?}");
+        }
+        j.assert_resumes();
+    }
+}
+
+#[test]
 fn carried_passes_establish_a_hunt_group() {
     let mut j = loc_pair_session();
     let duration = j.run().config.short_trial.get();
