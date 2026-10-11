@@ -468,7 +468,7 @@ pub(crate) fn counts_above(v: f64, top: f64) -> i64 {
         reason = "`as` saturates out-of-range values and maps NaN to 0, which suits counts"
     )]
     let floor = ((top - v) / VOLTS_PER_COUNT + COUNT_ROUNDING_TOLERANCE).floor() as i64;
-    (floor + 1).max(1)
+    floor.saturating_add(1).max(1)
 }
 
 /// The moved core's own failing request.

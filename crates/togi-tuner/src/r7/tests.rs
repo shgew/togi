@@ -1402,7 +1402,7 @@ mod props {
     }
 
     proptest! {
-        #![proptest_config(ProptestConfig::with_cases(128))]
+        #![proptest_config(crate::prop_tests::seeded(128))]
 
         #[test]
         fn the_newest_only_store_answers_like_a_list_of_every_measurement(
@@ -1668,6 +1668,26 @@ mod counts_above_tests {
         ] {
             assert_eq!(counts_above(v, top), want, "counts_above({v}, {top})");
         }
+    }
+
+    #[test]
+    fn a_finite_request_gap_beyond_the_count_range_clamps_to_the_largest_count() {
+        assert_eq!(counts_above(1.0, 1e20), i64::MAX);
+        assert_eq!(counts_above(1.0, f64::MAX / 2.0), i64::MAX);
+        assert_eq!(
+            backoff_counts(OwnRequest::Measured(1.0), None, Some(1e20)),
+            i64::MAX
+        );
+        let applied = TargetOffset::new(-30).unwrap();
+        assert_eq!(
+            backoff_move(
+                applied,
+                None,
+                backoff_counts(OwnRequest::Measured(1.0), None, Some(1e20))
+            )
+            .to,
+            TargetOffset::new(0).unwrap()
+        );
     }
 }
 
