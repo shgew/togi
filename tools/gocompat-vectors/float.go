@@ -77,8 +77,7 @@ func writeFloatVectors(outDir string) error {
 func jsonLine(v float64) (string, error) {
 	out, err := json.Marshal(v)
 	if err != nil {
-		var unsupported *json.UnsupportedValueError
-		if errors.As(err, &unsupported) {
+		if _, ok := errors.AsType[*json.UnsupportedValueError](err); ok {
 			return "error", nil
 		}
 		return "", err
