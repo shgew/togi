@@ -270,10 +270,9 @@ func moduleBuilt(path, item string, built map[string]bool) bool {
 		return false
 	}
 	dir, file := filepath.Split(path)
-	name := match[1]
-	candidates := []string{dir + name + ".rs", dir + name + "/mod.rs"}
 	if stem := strings.TrimSuffix(file, ".rs"); stem != "lib" && stem != "main" && stem != "mod" {
-		candidates = append(candidates, dir+stem+"/"+name+".rs", dir+stem+"/"+name+"/mod.rs")
+		dir += stem + "/"
 	}
-	return slices.ContainsFunc(candidates, func(candidate string) bool { return built[candidate] })
+	name := match[1]
+	return built[dir+name+".rs"] || built[dir+name+"/mod.rs"]
 }

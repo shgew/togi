@@ -468,6 +468,7 @@ func TestRustNotBuiltClaimsNoModuleDeclarationItsFileBuilt(t *testing.T) {
 	const lib = "crates/a/src/lib.rs"
 	for _, tc := range []struct {
 		name  string
+		file  string
 		src   string
 		built map[string]bool
 		want  []string
@@ -494,13 +495,30 @@ func TestRustNotBuiltClaimsNoModuleDeclarationItsFileBuilt(t *testing.T) {
 			built: map[string]bool{lib: true, "crates/b/src/x.rs": true},
 			want:  []string{lib},
 		},
+		{
+			name:  "a module declared in a non-root file is not proven by a sibling file",
+			file:  "crates/a/src/foo.rs",
+			src:   "#[cfg(test)]\nmod tests;\n",
+			built: map[string]bool{"crates/a/src/foo.rs": true, "crates/a/src/tests.rs": true},
+			want:  []string{"crates/a/src/foo.rs"},
+		},
+		{
+			name:  "a module declared in a non-root file, found under the file's stem",
+			file:  "crates/a/src/foo.rs",
+			src:   "#[cfg(test)]\nmod tests;\n",
+			built: map[string]bool{"crates/a/src/foo.rs": true, "crates/a/src/foo/tests.rs": true},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			root := t.TempDir()
-			writeTree(t, root, map[string]string{lib: tc.src})
-			changed := map[string][]lineRange{lib: {{1, 3}}}
-			got, err := rustNotBuilt(root, changed, tc.built, map[string]map[int]bool{lib: {}}, linuxHost())
+			path := lib
+			if tc.file != "" {
+				path = tc.file
+			}
+			writeTree(t, root, map[string]string{path: tc.src})
+			changed := map[string][]lineRange{path: {{1, 3}}}
+			got, err := rustNotBuilt(root, changed, tc.built, map[string]map[int]bool{path: {}}, linuxHost())
 			if err != nil {
 				t.Fatal(err)
 			}
