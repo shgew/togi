@@ -37,7 +37,6 @@ use crate::timing::Timing;
 use crate::watch::Watched;
 
 const READINESS_POLL: Duration = Duration::from_millis(10);
-const READINESS_LIMIT: Duration = Duration::from_secs(30);
 const INBOUND_CAPACITY: usize = 1024;
 
 /// Everything a trial needs from the runner, owned by the runtime thread.
@@ -106,6 +105,7 @@ pub(crate) struct Handle {
     pub(crate) commands: UnboundedSender<TrialCommand>,
     pub(crate) events: StdReceiver<Event>,
     pub(crate) started: Started,
+    pub(crate) duration: Duration,
     pub(crate) cancelled: Arc<AtomicBool>,
     pub(crate) registration: OnCancel,
 }
@@ -212,6 +212,7 @@ pub(crate) async fn start<O: Os>(
         instance.observed.active = Duration::ZERO;
     }
     let started = describe(&plan, &live, launched.argv, launched.files);
+    let duration = plan.duration;
     let cores: Vec<CoreId> = plan
         .instances
         .iter()
@@ -257,6 +258,7 @@ pub(crate) async fn start<O: Os>(
         commands: commands_tx,
         events: events_rx,
         started,
+        duration,
         cancelled,
         registration,
     })
@@ -433,7 +435,7 @@ async fn await_scope<O: Os>(
     if instance.observed.ready {
         return Readiness::Ready;
     }
-    let end = Instant::now() + env.timing.stall_grace.min(READINESS_LIMIT);
+    let end = Instant::now() + env.timing.readiness();
     loop {
         if env.os.in_scope(instance.pid, &instance.scope) == Ok(true) {
             return Readiness::Ready;

@@ -32,6 +32,7 @@ fn fast() -> Timing {
         drain: Duration::from_millis(300),
         writer_join: Duration::from_millis(500),
         probe: Duration::from_millis(300),
+        margin: Duration::from_millis(200),
         ..Timing::default()
     }
 }
@@ -442,4 +443,87 @@ fn a_cancelled_sweep_returns_cancelled_without_waiting_out_its_deadline() {
     let error = runner.sweep(&cancel).unwrap_err();
     assert!(matches!(error, togi_machine::Error::Cancelled));
     assert!(begun.elapsed() < secs(5));
+}
+
+#[test]
+fn a_trial_longer_than_the_teardown_budgets_still_completes_through_wait() {
+    let timing = fast();
+    let (mut runner, _dir) = runner(|_| {}, timing);
+    let long = timing.teardown + timing.writer_join + timing.margin + Duration::from_secs(1);
+    let mut trial = start(&mut runner, Regime::R1, &[0], long);
+    let begun = Instant::now();
+    let result = trial
+        .wait(&CancellationToken::new(), &mut Collect::default())
+        .map_err(|partial| partial.error)
+        .unwrap();
+    assert_eq!(result.ran, long);
+    assert!(begun.elapsed() + Duration::from_millis(100) >= long);
+    assert!(trial.stop().is_ok());
+}
+
+fn silent_supervisor(
+    duration: Duration,
+    timing: &Timing,
+) -> (
+    crate::native::Trial,
+    std::sync::mpsc::Sender<crate::supervisor::Event>,
+) {
+    let (events_tx, events) = std::sync::mpsc::channel();
+    let (commands, _commands_rx) = tokio::sync::mpsc::unbounded_channel();
+    let handle = crate::supervisor::Handle {
+        commands,
+        events,
+        started: togi_machine::Started::default(),
+        duration,
+        cancelled: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        registration: CancellationToken::new().on_cancel(|| {}),
+    };
+    (crate::native::Trial::new(handle, timing), events_tx)
+}
+
+#[test]
+fn wait_gives_up_on_a_supervisor_that_never_answers_at_its_bound() {
+    let timing = Timing {
+        teardown: Duration::from_millis(100),
+        writer_join: Duration::from_millis(100),
+        margin: Duration::from_millis(100),
+        ..Timing::default()
+    };
+    let (mut trial, _kept_open) = silent_supervisor(Duration::from_millis(200), &timing);
+    let begun = Instant::now();
+    let partial = trial
+        .wait(&CancellationToken::new(), &mut Collect::default())
+        .unwrap_err();
+    let elapsed = begun.elapsed();
+    assert!(
+        elapsed >= Duration::from_millis(450) && elapsed < secs(3),
+        "{elapsed:?}"
+    );
+    assert!(matches!(partial.error, togi_machine::Error::Containment));
+    assert!(partial.value.inconclusive.is_some());
+}
+
+#[test]
+fn stop_gives_up_on_a_supervisor_that_never_answers_with_containment() {
+    let timing = Timing {
+        teardown: Duration::from_millis(100),
+        writer_join: Duration::from_millis(100),
+        margin: Duration::from_millis(100),
+        ..Timing::default()
+    };
+    let (trial, _kept_open) = silent_supervisor(secs(60), &timing);
+    let begun = Instant::now();
+    let outcome = Box::new(trial).stop();
+    assert!(matches!(outcome, Err(togi_machine::Error::Containment)));
+    assert!(begun.elapsed() >= Duration::from_millis(250) && begun.elapsed() < secs(3));
+}
+
+#[test]
+fn the_wait_bound_covers_the_whole_duration_of_a_long_trial() {
+    let timing = Timing::default();
+    let (trial, _kept_open) = silent_supervisor(secs(900), &timing);
+    let remaining = trial
+        .wait_deadline()
+        .saturating_duration_since(Instant::now());
+    assert!(remaining > secs(900) + timing.teardown + timing.writer_join);
 }
