@@ -59,3 +59,11 @@ The owner started stage 2 ([#637](https://github.com/shgew/togi/issues/637)) on 
 **Decisions this stage's first pull request records** ([#691](https://github.com/shgew/togi/issues/691)). ADR 0057 partly supersedes ADR 0048 and ADR 0046. Protected comparison assets change by the additive rule, the append-only hash manifest and the `guard` status, with the owner-only `owner-approved` label for the rest. The suite is every session of `tools/bench/suite.json`, 220 today (the dev and holdout seeds of its 11 scenarios, counted from the file), where ADR 0048's text says 252. On `main`, the macOS job also builds the Rust workspace and runs its tests.
 
 **Not measured yet.** Compile and test times, the comparison's CI time and the heavy-job cap come from stage 2's measurements pull request.
+
+## Stage 2: the root package (2026-10-11)
+
+The `togi-version` crate ports `version.go` ([#696](https://github.com/shgew/togi/issues/696)): 33 lines of library and 32 of tests against Go's 48 and 84, with the Go package unchanged. `version()` is the trimmed `version.txt`, embedded at compile time; `rev()` is the `TOGI_REV` the build sets at compile time, which plays the part of Go's `-X github.com/shgew/togi.rev`; `string()` joins them with `+`.
+
+- **Departure from Go, the owner's call.** A local cargo build reports `dev`. Go reads the commit and dirty flag from the build's VCS settings, which cargo does not record, so that branch has no port; `bench` and `forecast` read the commit from git at run time instead (#637, Version stamps).
+- **Not yet stamped.** The flake builds no Rust package until the binary lands (stage 7), so nothing sets `TOGI_REV` yet; that package's derivation sets it from the flake revision as `packages.default` does for Go.
+- **Not measured yet.** Compile and test times wait for the stage's measurements pull request.

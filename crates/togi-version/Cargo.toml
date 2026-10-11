@@ -1,0 +1,11 @@
+[package]
+name = "togi-version"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "The togi version from version.txt and the revision a build stamps"
+
+[lints]
+workspace = true
