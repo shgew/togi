@@ -592,10 +592,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "togi-gocompat"
-version = "0.0.0"
-
-[[package]]
 name = "togi-machine"
 version = "0.0.0"
 dependencies = [

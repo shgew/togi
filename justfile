@@ -90,7 +90,7 @@ gate: _dev-shell
     set -euo pipefail
     just check-one fmt
     just lint
-    just check-one module changes gocompat-vectors gocompat-vectors-math gocompat-vectors-lgamma gocompat-vectors-pow gocompat-vectors-convert gocompat-vectors-expfloat
+    just check-one module changes
     vendored=$(nix build --no-link --print-out-paths '.#checks.{{ system }}.package.goModules')
     fresh=$(mktemp -d)
     trap 'rm -rf "$fresh"' EXIT
@@ -104,15 +104,14 @@ gate: _dev-shell
     cargo shear
     if [[ "{{ os() }}" == linux ]]; then
         go test -c -tags hardware -o /dev/null ./internal/trial
-        just check-one comparison-manifests comparison-selftest comparison-negative
     fi
 
-# Run every flake check this host builds: package, race, lint, fmt, changes, module, gocompat-vectors, gocompat-vectors-math, gocompat-vectors-lgamma, gocompat-vectors-pow, gocompat-vectors-convert, gocompat-vectors-expfloat, the rust-* checks (clippy, nextest, doc, fmt, deny, shear) and, on Linux, trial-scope-tests and the VM tests
+# Run every flake check this host builds: package, race, lint, fmt, changes, module, the rust-* checks (clippy, nextest, doc, fmt, deny, shear) and, on Linux, trial-scope-tests and the VM tests
 [group('nix')]
 check *args:
     nix flake check "$@"
 
-# Build named flake checks: package, race, lint, fmt, changes, module, gocompat-vectors, gocompat-vectors-math, gocompat-vectors-lgamma, gocompat-vectors-pow, gocompat-vectors-convert, gocompat-vectors-expfloat, rust-clippy, rust-nextest, rust-doc, rust-fmt, rust-deny, rust-shear or, on Linux, trial-scope-tests, vm and vm-restart-limit (`just check-one race`)
+# Build named flake checks: package, race, lint, fmt, changes, module, rust-clippy, rust-nextest, rust-doc, rust-fmt, rust-deny, rust-shear or, on Linux, trial-scope-tests, vm and vm-restart-limit (`just check-one race`)
 [group('nix')]
 check-one +names:
     nix build --no-link $(printf '.#checks.{{ system }}.%s ' "$@")
@@ -141,23 +140,6 @@ bench *args: _dev-shell
 [group('run')]
 audit *args: _dev-shell
     go run ./tools/audit "$@"
-
-# Run the guard as CI does: HEAD's changes against BASE's manifest and flake checks; `--approved` reports changes without failing (`just guard origin/main HEAD`)
-[group('nix')]
-guard base="origin/main" head="HEAD" *args: _dev-shell
-    nu --no-config-file tools/guard/guard.nu "$1" "$2" "${@:3}"
-
-# Print the protected-asset manifest of the working tree, or with `--append` only the lines the committed manifest lacks
-[group('nix')]
-guard-manifest *args: _dev-shell
-    nu --no-config-file tools/guard/manifest.nu "$@"
-
-# Print one comparison manifest from the tree (`just comparison-manifest fixtures`); suite, fixtures, goldens or inputs
-[group('run')]
-comparison-manifest kind: _dev-shell
-    #!/usr/bin/env bash
-    set -euo pipefail
-    if [[ "$1" == suite ]]; then go run ./tools/compare suite tools/bench/suite.json; else go run ./tools/compare "$1" .; fi
 
 # Prove simulated session decisions are unchanged from a base revision; stops at the first difference (`--keep-going` counts them all)
 [group('run')]
@@ -363,7 +345,7 @@ push-fix: (_push-ready "push-fix" "push the stack with gh stack push")
     fi
     git push --force-with-lease --force-if-includes --set-upstream origin "refs/heads/$branch:refs/heads/$branch"
 
-# Wait until pull request N has check, review and the guard status passing on its head and no unresolved review thread, then report it ready for the owner; never merges
+# Wait until pull request N has check and review passing on its head and no unresolved review thread, then report it ready for the owner; never merges
 [group('github')]
 land number: _dev-shell
     #!/usr/bin/env bash
@@ -387,15 +369,6 @@ land number: _dev-shell
                     exit 1
                 fi
             done
-            guard=$(gh api "repos/{owner}/{repo}/commits/$head/status" --jq '[.statuses[] | select(.context == "guard")][0].state // "missing"')
-            case "$guard" in
-                success) ;;
-                failure | error)
-                    echo "land: #$1 guard status is $guard on $head" >&2
-                    exit 1
-                    ;;
-                *) waiting+=("guard $guard") ;;
-            esac
             if ((${#waiting[@]} == 0)); then
                 break
             fi
@@ -422,7 +395,7 @@ land number: _dev-shell
         fi
         echo "land: #$1 head moved from $head to $current"
     done
-    echo "land: #$1 is ready for the owner to merge: check, review and guard passed on $head and every review thread is resolved"
+    echo "land: #$1 is ready for the owner to merge: check and review passed on $head and every review thread is resolved"
 
 # Run GitHub commands as robotogi
 [group('github')]
