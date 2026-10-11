@@ -320,6 +320,32 @@
                   HOME=$TMPDIR nu --no-config-file tools/guard/test.nu
                   touch "$out"
                 '';
+            gocompat-vectors =
+              pkgs.runCommand "togi-gocompat-vectors"
+                {
+                  nativeBuildInputs = [ pkgs.go_1_27 ];
+                  src = lib.fileset.toSource {
+                    root = ./.;
+                    fileset = lib.fileset.unions [
+                      ./go.mod
+                      ./go.sum
+                      ./cmd
+                      ./internal
+                      ./tools
+                      ./crates/togi-gocompat/testdata
+                    ];
+                  };
+                }
+                ''
+                  cd "$src"
+                  export HOME=$TMPDIR GOCACHE=$TMPDIR/go-cache GOPROXY=off GOTOOLCHAIN=local CGO_ENABLED=0
+                  mkdir $TMPDIR/vectors
+                  for mode in float; do
+                    go run ./tools/gocompat-vectors $mode $TMPDIR/vectors
+                  done
+                  diff -r $TMPDIR/vectors crates/togi-gocompat/testdata
+                  touch "$out"
+                '';
             module = import ./nix/module-test.nix {
               pkgs = inputs.nixpkgs.legacyPackages.x86_64-linux;
               hostPkgs = pkgs;
