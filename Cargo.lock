@@ -681,6 +681,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "togi-hostlock"
+version = "0.0.0"
+dependencies = [
+ "nix",
+ "rustix",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
 name = "togi-machine"
 version = "0.0.0"
 dependencies = [
