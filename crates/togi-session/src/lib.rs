@@ -27,6 +27,9 @@ mod write;
 #[cfg(test)]
 mod testing;
 
+#[cfg(test)]
+mod whole;
+
 pub use boot::BootError;
 pub use commands::{CommandError, reset_all, reset_core};
 pub use emergency::{Outcome as Emergency, Readback, Response, Withheld, Zeroed};
