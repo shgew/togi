@@ -1,0 +1,27 @@
+name: check
+
+on:
+  pull_request:
+
+jobs:
+  eval:
+    runs-on: ubuntu-26.04
+    outputs:
+      checks: ${{ steps.list.outputs.checks }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: list
+        run: echo "checks=$(nix eval --json .#checks.x86_64-linux --apply builtins.attrNames)" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: eval
+    runs-on: ubuntu-26.04
+    steps:
+      - run: nix build ".#checks.x86_64-linux.$CHECK"
+
+  check:
+    if: always()
+    needs: [build]
+    runs-on: ubuntu-26.04
+    steps:
+      - run: test "$BUILD" = success

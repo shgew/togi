@@ -1,0 +1,55 @@
+# Protects the comparison assets listed in tools/guard/manifest.sha256 (docs/porting.md). The workflow runs from
+# the base branch, so a pull request cannot edit the guard that judges it: it checks out the base, fetches the
+# head commit as data, and runs the base's guard. No head code runs; the only evaluation of the head is
+# `nix eval` of its flake's check names in pure mode. The verdict is the `guard` commit status on the head.
+name: guard
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+    branches: [main]
+
+permissions:
+  contents: read
+  statuses: write
+
+concurrency:
+  group: guard-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  guard:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31
+      - name: Fetch the head commit as data
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: git fetch --no-tags --depth=1 origin "$HEAD_SHA"
+      - name: Run the base's guard and post the guard status
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          APPROVED: ${{ contains(github.event.pull_request.labels.*.name, 'owner-approved') }}
+        run: |
+          flags=()
+          if [ "$APPROVED" = true ]; then flags+=(--approved); fi
+          set +e
+          nix shell --inputs-from . nixpkgs#nushell --command nu --no-config-file tools/guard/guard.nu "$BASE_SHA" "$HEAD_SHA" "${flags[@]}" 2>&1 | tee "$RUNNER_TEMP/guard.log"
+          code=${PIPESTATUS[0]}
+          set -e
+          state=success
+          if [ "$code" -ne 0 ]; then state=failure; fi
+          description=$(grep -E '^(owner-approved: |[0-9]+ protected changes|no protected asset changed)' "$RUNNER_TEMP/guard.log" | tail -n 1 | cut -c1-140)
+          if [ -z "$description" ]; then description='the guard could not run; see the workflow run'; fi
+          gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$HEAD_SHA" \
+            -f state="$state" \
+            -f context=guard \
+            -f description="$description" \
+            -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          exit "$code"

@@ -197,6 +197,23 @@
                   HOME=$TMPDIR GOCACHE=$TMPDIR/go-cache GOPROXY=off GOTOOLCHAIN=local CGO_ENABLED=0 go run ./tools/release -check changes
                   touch "$out"
                 '';
+            guard =
+              pkgs.runCommand "togi-guard"
+                {
+                  nativeBuildInputs = [
+                    pkgs.gitMinimal
+                    pkgs.nushell
+                  ];
+                  src = lib.fileset.toSource {
+                    root = ./.;
+                    fileset = ./tools/guard;
+                  };
+                }
+                ''
+                  cd "$src"
+                  HOME=$TMPDIR nu --no-config-file tools/guard/test.nu
+                  touch "$out"
+                '';
             module = import ./nix/module-test.nix {
               pkgs = inputs.nixpkgs.legacyPackages.x86_64-linux;
               hostPkgs = pkgs;
