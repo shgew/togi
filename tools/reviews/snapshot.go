@@ -19,9 +19,11 @@ const snapshotUsage = "usage: reviews snapshot [--previous <record comment URL> 
 
 // tools holds what the subcommands reach outside the process through, so tests inject fakes.
 type tools struct {
-	gh     ghFunc
-	git    gitFunc
-	getenv func(string) string
+	gh  ghFunc
+	git gitFunc
+	// isolatedGit runs git in a repository directory the caller's configuration, attributes and Git environment do not reach.
+	isolatedGit func(dir string, args ...string) ([]byte, error)
+	getenv      func(string) string
 	// tmp is the directory holding togi-review/.
 	tmp    string
 	stdin  io.Reader
@@ -227,10 +229,27 @@ func pullDiff(t tools, pr int, frozen pullInfo) ([]byte, error) {
 	if !diffTooLarge(err) {
 		return nil, fmt.Errorf("fetch the diff of pull request #%d: %w", pr, err)
 	}
-	if _, err := t.git("fetch", "--quiet", "origin", frozen.Base, frozen.Head); err != nil {
+	return localPullDiff(t, pr, frozen)
+}
+
+// localPullDiff builds the merge-base diff of the frozen base and head in a temporary bare repository holding their complete history, so neither the caller's checkout (shallow, or with its own configuration and attributes) nor its Git environment shapes the bytes.
+func localPullDiff(t tools, pr int, frozen pullInfo) ([]byte, error) {
+	out, err := t.git("remote", "get-url", "origin")
+	if err != nil {
+		return nil, fmt.Errorf("read the origin URL to build the diff of pull request #%d, which GitHub refuses as too large: %w", pr, err)
+	}
+	dir, err := os.MkdirTemp(t.tmp, "togi-review-diff-")
+	if err != nil {
+		return nil, fmt.Errorf("make a temporary repository to build the diff of pull request #%d, which GitHub refuses as too large: %w", pr, err)
+	}
+	defer os.RemoveAll(dir)
+	if _, err := t.isolatedGit(dir, "init", "--quiet", "--bare", "--template="); err != nil {
+		return nil, fmt.Errorf("initialise the temporary repository for the diff of pull request #%d, which GitHub refuses as too large: %w", pr, err)
+	}
+	if _, err := t.isolatedGit(dir, "fetch", "--no-tags", "--quiet", strings.TrimSpace(string(out)), frozen.Base, frozen.Head); err != nil {
 		return nil, fmt.Errorf("fetch the frozen base and head of pull request #%d, whose diff GitHub refuses as too large: %w", pr, err)
 	}
-	raw, err = t.git("diff", "--no-color", "--no-ext-diff", "-M", frozen.Base+"..."+frozen.Head)
+	raw, err := t.isolatedGit(dir, "diff", "--no-color", "--no-ext-diff", "--no-textconv", "-M", "--src-prefix=a/", "--dst-prefix=b/", frozen.Base+"..."+frozen.Head)
 	if err != nil {
 		return nil, fmt.Errorf("build the diff of pull request #%d, which GitHub refuses as too large: %w", pr, err)
 	}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	neturl "net/url"
 	"os"
 	"path/filepath"
@@ -344,30 +345,80 @@ func TestSnapshotDiffFailure(t *testing.T) {
 	}
 }
 
-func TestSnapshotTooLargeDiffBuiltLocally(t *testing.T) {
-	t.Parallel()
+const originURL = "https://example.test/shgew/togi.git"
+
+// localDiffTools returns tools for a too-large pull request whose git answers the origin URL and whose isolated git answers like a working repository, except where isolated answers first.
+func localDiffTools(t *testing.T, gh func([]string) ([]byte, error), isolated func(dir string, args []string) ([]byte, error)) (tools, *fakeRunner, *fakeIsolated) {
+	t.Helper()
 	git := func(args []string) ([]byte, error) {
-		switch args[0] {
-		case "fetch":
-			return nil, nil
-		case "diff":
-			return []byte(samplePR), nil
+		if slices.Equal(args, []string{"remote", "get-url", "origin"}) {
+			return []byte(originURL + "\n"), nil
 		}
 		return nil, fmt.Errorf("unexpected git %v", args)
 	}
-	tl, g, c, _, _ := testTools(t, pullHandler(t, "TOO_LARGE", headSHA), git)
+	tl, _, c, _, _ := testTools(t, gh, git)
+	iso := useIsolatedGit(&tl, func(dir string, args []string) ([]byte, error) {
+		if isolated != nil {
+			if out, err := isolated(dir, args); out != nil || err != nil {
+				return out, err
+			}
+		}
+		if args[0] == "diff" {
+			return []byte(samplePR), nil
+		}
+		return nil, nil
+	})
+	return tl, c, iso
+}
+
+func leftovers(t *testing.T, tl tools) []string {
+	t.Helper()
+	entries, err := os.ReadDir(tl.tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, e := range entries {
+		if e.Name() != "togi-review" {
+			names = append(names, e.Name())
+		}
+	}
+	return names
+}
+
+func TestSnapshotTooLargeDiffBuiltLocally(t *testing.T) {
+	t.Parallel()
+	handler := pullHandler(t, "TOO_LARGE", headSHA)
+	tl, c, iso := localDiffTools(t, handler, nil)
+	g := &fakeRunner{name: "gh", handle: handler}
+	tl.gh = g.run
 	if err := runSnapshot(tl, []string{"700"}); err != nil {
 		t.Fatal(err)
 	}
-	wantGit := []string{
-		"git fetch --quiet origin " + baseSHA + " " + headSHA,
-		"git diff --no-color --no-ext-diff -M " + baseSHA + "..." + headSHA,
+	if diff := cmp.Diff([]string{"git remote get-url origin"}, c.joined()); diff != "" {
+		t.Errorf("git calls in the caller's checkout (-want +got):\n%s", diff)
 	}
-	if diff := cmp.Diff(wantGit, c.joined()); diff != "" {
-		t.Errorf("git calls (-want +got):\n%s", diff)
+	wantArgs := [][]string{
+		{"init", "--quiet", "--bare", "--template="},
+		{"fetch", "--no-tags", "--quiet", originURL, baseSHA, headSHA},
+		{"diff", "--no-color", "--no-ext-diff", "--no-textconv", "-M", "--src-prefix=a/", "--dst-prefix=b/", baseSHA + "..." + headSHA},
+	}
+	if len(iso.calls) != len(wantArgs) {
+		t.Fatalf("isolated git ran %d times, want %d: %v", len(iso.calls), len(wantArgs), iso.calls)
+	}
+	for i, c := range iso.calls {
+		if diff := cmp.Diff(wantArgs[i], c.Args); diff != "" {
+			t.Errorf("isolated git call %d (-want +got):\n%s", i, diff)
+		}
+		if c.Dir != iso.calls[0].Dir || filepath.Dir(c.Dir) != tl.tmp {
+			t.Errorf("isolated git call %d ran in %s, want one directory directly under %s", i, c.Dir, tl.tmp)
+		}
 	}
 	if got := g.joined()[1]; got != "gh pr diff 700 --color=never --allow-escape-sequences" {
 		t.Errorf("second gh call = %q, want the gh diff attempt", got)
+	}
+	if names := leftovers(t, tl); len(names) != 0 {
+		t.Errorf("the temporary repository was left behind: %v", names)
 	}
 	dir := snapshotDir(tl)
 	if got := readFile(t, filepath.Join(dir, "pr.diff")); got != samplePR {
@@ -398,21 +449,115 @@ func TestSnapshotTooLargeDiffBuiltLocally(t *testing.T) {
 	}
 }
 
-func TestSnapshotTooLargeDiffRefusesMovedHead(t *testing.T) {
+func TestSnapshotTooLargeDiffRefusesMovement(t *testing.T) {
 	t.Parallel()
-	git := func(args []string) ([]byte, error) {
-		if args[0] == "fetch" {
-			return nil, nil
-		}
-		return []byte(samplePR), nil
+	moved := map[string]func(n int) pullInfo{
+		"head": func(n int) pullInfo { return pullInfo{Head: []string{headSHA, movedSHA}[min(n, 1)], Base: baseSHA} },
+		"base": func(n int) pullInfo { return pullInfo{Head: headSHA, Base: []string{baseSHA, movedSHA}[min(n, 1)]} },
 	}
-	tl, _, _, _, _ := testTools(t, pullHandler(t, "TOO_LARGE", headSHA, movedSHA), git)
-	err := runSnapshot(tl, []string{"700"})
-	if err == nil || !strings.Contains(err.Error(), "moved while the snapshot ran") {
-		t.Fatalf("error = %v, want a moved-head refusal", err)
+	for name, view := range moved {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			tl, _, iso := localDiffTools(t, pullFake("TOO_LARGE", sampleContents, view), nil)
+			err := runSnapshot(tl, []string{"700"})
+			if err == nil || !strings.Contains(err.Error(), "moved while the snapshot ran") {
+				t.Fatalf("error = %v, want a moved-%s refusal", err, name)
+			}
+			if len(iso.calls) != 3 {
+				t.Errorf("isolated git ran %v, want the whole fallback before the refusal", iso.subcommands())
+			}
+			if _, statErr := os.Stat(filepath.Join(tl.tmp, "togi-review")); statErr == nil {
+				t.Error("a refused snapshot left a directory behind")
+			}
+			if names := leftovers(t, tl); len(names) != 0 {
+				t.Errorf("the temporary repository was left behind: %v", names)
+			}
+		})
 	}
-	if _, statErr := os.Stat(filepath.Join(tl.tmp, "togi-review")); statErr == nil {
-		t.Error("a refused snapshot left a directory behind")
+}
+
+func TestSnapshotTooLargeDiffStepFailures(t *testing.T) {
+	t.Parallel()
+	cause := errors.New("injected failure")
+	tests := []struct {
+		step        string
+		wantMessage string
+		wantIso     []string
+	}{
+		{"get-url", "read the origin URL", nil},
+		{"mkdir", "make a temporary repository", nil},
+		{"init", "initialise the temporary repository", []string{"init"}},
+		{"fetch", "fetch the frozen base and head of pull request #700", []string{"init", "fetch"}},
+		{"diff", "build the diff of pull request #700", []string{"init", "fetch", "diff"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.step, func(t *testing.T) {
+			t.Parallel()
+			tl, c, iso := localDiffTools(t, pullHandler(t, "TOO_LARGE", headSHA), func(_ string, args []string) ([]byte, error) {
+				if args[0] == tt.step {
+					return nil, cause
+				}
+				return nil, nil
+			})
+			switch tt.step {
+			case "get-url":
+				c.handle = func([]string) ([]byte, error) { return nil, cause }
+			case "mkdir":
+				tl.tmp = filepath.Join(tl.tmp, "missing")
+			}
+			err := runSnapshot(tl, []string{"700"})
+			want := cause
+			if tt.step == "mkdir" {
+				want = fs.ErrNotExist
+			}
+			if !errors.Is(err, want) {
+				t.Fatalf("error = %v, want one wrapping %v", err, want)
+			}
+			if !strings.Contains(err.Error(), tt.wantMessage) || !strings.Contains(err.Error(), "#700") {
+				t.Errorf("error = %v, want the %s step and the pull request named", err, tt.step)
+			}
+			if diff := cmp.Diff(tt.wantIso, iso.subcommands()); diff != "" {
+				t.Errorf("isolated git ran (-want +got):\n%s", diff)
+			}
+			if _, statErr := os.Stat(filepath.Join(tl.tmp, "togi-review")); statErr == nil {
+				t.Error("a failed fallback left a snapshot directory behind")
+			}
+			if tt.step != "mkdir" {
+				if names := leftovers(t, tl); len(names) != 0 {
+					t.Errorf("the temporary repository was left behind: %v", names)
+				}
+			}
+		})
+	}
+}
+
+func TestSnapshotDiffRefusalsOutsideTooLargeRunNoGit(t *testing.T) {
+	t.Parallel()
+	tests := map[string]string{
+		"406 for another reason":     "gh pr: could not find pull request diff: HTTP 406: Not Acceptable",
+		"line limit without the 406": "gh pr: could not find pull request diff: HTTP 502: Sorry, the diff exceeded the maximum number of lines (20000)",
+	}
+	for name, message := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			gh := pullHandler(t, "", headSHA)
+			tl, _, c, _, _ := testTools(t, func(args []string) ([]byte, error) {
+				if args[0] == "pr" && args[1] == "diff" {
+					return nil, errors.New(message)
+				}
+				return gh(args)
+			}, nil)
+			err := runSnapshot(tl, []string{"700"})
+			if err == nil || !strings.Contains(err.Error(), "fetch the diff of pull request #700") {
+				t.Fatalf("error = %v, want the fetch failure", err)
+			}
+			if len(c.calls) != 0 {
+				t.Errorf("git ran: %v", c.joined())
+			}
+			if names := leftovers(t, tl); len(names) != 0 {
+				t.Errorf("a temporary repository was made: %v", names)
+			}
+		})
 	}
 }
 
