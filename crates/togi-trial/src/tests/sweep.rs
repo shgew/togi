@@ -352,6 +352,166 @@ async fn a_failing_verification_listing_is_containment() {
     .await;
 }
 
+fn bus_unreachable() -> Reply {
+    Reply::Fail(togi_command::Error::Spawn {
+        program: "systemctl".into(),
+        source: std::io::Error::other("bus unreachable"),
+    })
+}
+
+fn is_the_command_failure(failure: &CleanupFailure) -> bool {
+    std::error::Error::source(failure).is_some_and(|source| {
+        matches!(
+            source.downcast_ref::<togi_command::Error>(),
+            Some(togi_command::Error::Spawn { .. })
+        )
+    })
+}
+
+fn labels(error: &Error) -> Vec<String> {
+    containment(error)
+        .failures()
+        .iter()
+        .map(|failure| match failure {
+            CleanupFailure::KillScope { signal, .. } => format!("kill {signal}"),
+            CleanupFailure::StopScope { .. } => "stop".to_owned(),
+            CleanupFailure::Observe { what, .. } => format!("observe {what}"),
+            CleanupFailure::Leftover => "leftover".to_owned(),
+            other => panic!("unexpected {other:?}"),
+        })
+        .collect()
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_signal_command_that_cannot_run_is_kept_even_when_everything_ends_up_gone() {
+    local(async {
+        let rig = rig();
+        rig.fake.add_unit("togi-trial-a.scope");
+        rig.fake.on_systemd(|call| match call {
+            Systemd::Kill {
+                signal: KillSignal::Term,
+                ..
+            } => Some(bus_unreachable()),
+            _ => None,
+        });
+        let error = sweep(&rig.env).await.err().unwrap();
+        assert_eq!(labels(&error), ["kill SIGTERM"]);
+        assert!(is_the_command_failure(&containment(&error).failures()[0]));
+        assert!(rig.fake.units().is_empty(), "cleanup still ran to the end");
+    })
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_kill_command_that_cannot_run_is_kept_and_its_scope_is_not_stopped() {
+    local(async {
+        let rig = rig();
+        rig.fake.add_unit("togi-trial-a.scope");
+        rig.fake.on_systemd(|call| match call {
+            Systemd::Kill {
+                signal: KillSignal::Kill,
+                ..
+            } => Some(bus_unreachable()),
+            _ => None,
+        });
+        let error = sweep(&rig.env).await.err().unwrap();
+        assert_eq!(labels(&error), ["kill SIGKILL", "leftover"]);
+        assert!(is_the_command_failure(&containment(&error).failures()[0]));
+        assert!(
+            !calls(&rig).contains(&("togi-trial-a".to_owned(), "stop")),
+            "a scope whose kill failed is not stopped"
+        );
+    })
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_stop_command_that_cannot_run_is_kept_and_the_unit_is_a_leftover() {
+    local(async {
+        let rig = rig();
+        rig.fake.add_unit("togi-trial-a.scope");
+        rig.fake.on_systemd(|call| match call {
+            Systemd::Stop { .. } => Some(bus_unreachable()),
+            _ => None,
+        });
+        let error = sweep(&rig.env).await.err().unwrap();
+        assert_eq!(labels(&error), ["stop", "leftover"]);
+        assert!(is_the_command_failure(&containment(&error).failures()[0]));
+    })
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_initial_listing_that_cannot_run_is_not_an_empty_machine() {
+    local(async {
+        let rig = rig();
+        rig.fake.add_unit("togi-trial-a.scope");
+        rig.fake.on_systemd(|call| match call {
+            Systemd::ListScopes => Some(bus_unreachable()),
+            _ => None,
+        });
+        let error = sweep(&rig.env).await.err().unwrap();
+        assert_eq!(labels(&error), ["observe the trial scope list"]);
+        assert!(is_the_command_failure(&containment(&error).failures()[0]));
+        assert!(calls(&rig).is_empty());
+    })
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_final_listing_that_cannot_run_withholds_stopped_even_when_the_machine_is_clean() {
+    local(async {
+        let rig = rig();
+        rig.fake.add_unit("togi-trial-a.scope");
+        let mut listings = 0;
+        rig.fake.on_systemd(move |call| match call {
+            Systemd::ListScopes => {
+                listings += 1;
+                (listings > 1).then(bus_unreachable)
+            }
+            _ => None,
+        });
+        let error = sweep(&rig.env).await.err().unwrap();
+        assert_eq!(labels(&error), ["observe the trial scope list"]);
+        assert!(is_the_command_failure(&containment(&error).failures()[0]));
+        assert!(rig.fake.units().is_empty());
+    })
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn command_failures_keep_every_earlier_failure_in_order() {
+    local(async {
+        let rig = rig();
+        rig.fake.add_unit("togi-trial-a.scope");
+        let mut listings = 0;
+        rig.fake.on_systemd(move |call| match call {
+            Systemd::Kill {
+                signal: KillSignal::Term,
+                ..
+            }
+            | Systemd::Stop { .. } => Some(bus_unreachable()),
+            Systemd::ListScopes => {
+                listings += 1;
+                (listings > 1).then(bus_unreachable)
+            }
+            _ => None,
+        });
+        let error = sweep(&rig.env).await.err().unwrap();
+        assert_eq!(
+            labels(&error),
+            ["kill SIGTERM", "stop", "observe the trial scope list"]
+        );
+        assert!(
+            containment(&error)
+                .failures()
+                .iter()
+                .all(is_the_command_failure)
+        );
+    })
+    .await;
+}
+
 #[tokio::test(start_paused = true)]
 async fn the_probe_reports_a_confined_scope_and_names_failures() {
     local(async {

@@ -462,6 +462,18 @@ mod tests {
     }
 
     #[test]
+    fn a_task_entry_that_is_not_a_directory_is_lost_observation() {
+        let (dir, proc) = fixture();
+        write(&dir, "99/task", "");
+        match proc.threads(99) {
+            Err(ProcError::Observation(message)) => {
+                assert!(message.contains("99/task"), "{message}");
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
     fn scope_scan_captures_identity_skips_zombies_and_disappeared() {
         let (dir, proc) = fixture();
         write(&dir, "20/cgroup", "0::/a/togi-trial-x.scope\n");
