@@ -113,7 +113,7 @@ pub(crate) struct Selector {
     escaped: Vec<CpuId>,
     inconclusive: Option<String>,
     setup_error: bool,
-    output_error: bool,
+    line_too_long: bool,
     pending_exit: Option<PendingExit>,
     diagnostics: Vec<String>,
 }
@@ -130,7 +130,7 @@ impl Selector {
             escaped: Vec::new(),
             inconclusive: None,
             setup_error: false,
-            output_error: false,
+            line_too_long: false,
             pending_exit: None,
             diagnostics: Vec::new(),
         }
@@ -220,7 +220,7 @@ impl Selector {
             }
             Observation::LineTooLong { instance, stream } => {
                 let core = self.core(instance);
-                self.output_error = true;
+                self.line_too_long = true;
                 self.weak_reason(|| {
                     format!(
                         "core {core:02} read {}: backend output line exceeds 64 KiB",
@@ -239,7 +239,6 @@ impl Selector {
             } => {
                 let core = self.core(instance);
                 let message = format!("core {core:02} {}: {error}", stream.name());
-                self.output_error = true;
                 self.weak_reason(|| message.clone());
                 self.diagnostics.push(message);
                 Decision::default()
@@ -335,7 +334,7 @@ impl Selector {
     pub(crate) fn conclude(mut self) -> (Verdict, Vec<Report>) {
         let mut reports = Vec::new();
         if let Some(exit) = self.pending_exit.take() {
-            if !self.output_error && !self.setup_error && !self.escaped() && self.failure.is_none()
+            if !self.line_too_long && !self.setup_error && !self.escaped() && self.failure.is_none()
             {
                 let core = self.core(exit.instance);
                 self.inconclusive = None;
@@ -623,6 +622,24 @@ mod tests {
             Some("core 03 read stdout.log: backend output line exceeds 64 KiB")
         );
         assert!(verdict.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn an_ordinary_output_error_does_not_hide_a_later_early_exit() {
+        let mut s = selector();
+        s.observe(Observation::OutputError {
+            instance: 0,
+            stream: Stream::Stdout,
+            error: "write output log: disk full".into(),
+        });
+        s.observe(Observation::UnexpectedExit {
+            instance: 0,
+            detail: "exit status 0".into(),
+        });
+        let verdict = conclude(s);
+        assert_eq!(verdict.failure.map(|f| f.signal), Some(Signal::UnexpectedExit));
+        assert_eq!(verdict.inconclusive, None);
+        assert_eq!(verdict.diagnostics.len(), 1);
     }
 
     #[test]
