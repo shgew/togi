@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"math"
 	"math/rand/v2"
 	"os"
@@ -35,7 +34,8 @@ type formatSpec struct {
 }
 
 // formatSpecs covers every strconv.FormatFloat call and fmt verb in the Go
-// code that formats a float (docs/rust-migration.md lists each site), plus the
+// code that formats a float (the Go-compatible float formatting entry in
+// docs/rust-migration.md lists each site), plus the
 // neighbouring precisions and the upper-case verbs.
 var formatSpecs = []formatSpec{
 	{'f', -1}, {'f', 0}, {'f', 1}, {'f', 2}, {'f', 3}, {'f', 4}, {'f', 6}, {'f', 9},
@@ -46,6 +46,67 @@ var formatSpecs = []formatSpec{
 }
 
 var goldenSpecs = map[formatSpec]bool{{'f', 2}: true, {'f', 3}: true, {'g', 6}: true, {'g', 17}: true}
+
+// goldenInputs are the committed journals, state, facts and bench files whose
+// numbers togi itself wrote or reads. Review-tool and GitHub API fixtures and
+// kernel MCE records are left out, as is any file not listed here, so the
+// vectors change only when one of these files does.
+var goldenInputs = []string{
+	"cmd/togi/testdata/events.jsonl",
+	"cmd/togi/testdata/future-kind.jsonl",
+	"internal/carry/testdata/20260924T204352Z.jsonl.gz",
+	"internal/carry/testdata/20260926T151414Z.jsonl.gz",
+	"internal/carry/testdata/20260927T221954Z.jsonl.gz",
+	"internal/carry/testdata/real-facts.json",
+	"internal/defect/testdata/power-off.jsonl",
+	"internal/journal/testdata/20260924T204352Z-config.jsonl",
+	"internal/journal/testdata/20260926T151414Z-config.jsonl",
+	"internal/journal/testdata/20260927T221954Z-config.jsonl",
+	"internal/tuner/testdata/hunt-live-failure-causes.jsonl",
+	"internal/tuner/testdata/optimum-accumulated-combinations.json",
+	"internal/watch/watchtest/testdata/render-combination.jsonl.gz",
+	"internal/watch/watchtest/testdata/render-concluded.jsonl.gz",
+	"internal/watch/watchtest/testdata/render-hunt.jsonl.gz",
+	"tools/bench/baseline.jsonl",
+	"tools/bench/facts/target.jsonl.gz",
+	"tools/bench/forecasts/20261004T211726Z-5873.json",
+	"tools/bench/gates/ruleset-11/baseline.jsonl",
+	"tools/bench/gates/ruleset-11/candidate.jsonl",
+	"tools/bench/gates/ruleset-11/suite.json",
+	"tools/bench/machines/flat-hazard.json",
+	"tools/bench/machines/idle-limit.json",
+	"tools/bench/machines/late-onset.json",
+	"tools/bench/machines/misleading-mce.json",
+	"tools/bench/machines/shared-voltage.json",
+	"tools/bench/machines/target-fit-0.json",
+	"tools/bench/machines/target-fit-1.json",
+	"tools/bench/machines/target-fit-2.json",
+	"tools/bench/machines/target-fit-3.json",
+	"tools/bench/machines/target-fit-4.json",
+	"tools/bench/machines/target-fit-5.json",
+	"tools/bench/machines/target-fit-6.json",
+	"tools/bench/machines/target-fit-7.json",
+	"tools/bench/machines/target-fit-8.json",
+	"tools/bench/machines/target-nonmember-mce.json",
+	"tools/bench/machines/target-r7-request-gap.json",
+	"tools/bench/machines/target-r7-vf-boost.json",
+	"tools/bench/machines/target-shared-voltage.json",
+	"tools/bench/suite.json",
+	"tools/bench/testdata/forecast-in-flight.json",
+	"tools/bench/testdata/forecast-stopped.json",
+	"tools/bench/testdata/forecast-suite.json",
+	"tools/modelcheck/testdata/model-facts.jsonl.gz",
+	"tools/modelcheck/testdata/model-flagged.json",
+	"tools/modelcheck/testdata/model-ok.json",
+	"tools/replay/testdata/schema-2-ruleset-8.jsonl.gz",
+	"tools/stats/testdata/combination.jsonl.gz",
+	"tools/stats/testdata/forecast-censored.json",
+	"tools/stats/testdata/forecast-concluded.json",
+	"tools/stats/testdata/forecast-unconcluded.json",
+	"tools/stats/testdata/recovered-state/events.jsonl",
+	"tools/stats/testdata/recovered-state/trials/0001/samples.jsonl",
+	"tools/stats/testdata/recovered-state/trials/0002/samples.jsonl",
+}
 
 func init() {
 	modes["float"] = writeFloatVectors
@@ -70,8 +131,8 @@ func writeFloatVectors(outDir string) error {
 		return err
 	}
 
-	formatSet := dedupe(slices.Concat(fixed, ties[:formatTies], wide[:formatWide], decimal[:formatDecimal]))
-	return writeFormatFile(filepath.Join(outDir, "float-format.txt"), formatSet, golden)
+	samples := slices.Concat(ties[:formatTies], wide[:formatWide], decimal[:formatDecimal])
+	return writeFormatFile(filepath.Join(outDir, "float-format.txt"), fixed, samples, golden)
 }
 
 func jsonLine(v float64) (string, error) {
@@ -105,23 +166,35 @@ func writeBitsFile(path string, values []float64, line func(float64) (string, er
 	return os.WriteFile(path, b.Bytes(), 0o644)
 }
 
-func writeFormatFile(path string, values, golden []float64) error {
+// writeFormatFile pins every spec for the fixed and golden values. Random
+// samples beyond fixedFormatMaxExp are skipped for 'f', whose output there is
+// hundreds of digits long and adds nothing the fixed extremes do not cover.
+func writeFormatFile(path string, fixed, samples, golden []float64) error {
 	var b bytes.Buffer
 	for _, spec := range formatSpecs {
-		set := values
-		if goldenSpecs[spec] {
-			set = dedupe(slices.Concat(values, golden))
-		}
-		for _, v := range set {
-			if spec.fmt == 'f' && !math.IsNaN(v) && !math.IsInf(v, 0) && v != 0 {
-				if exp := math.Ilogb(v); exp > fixedFormatMaxExp || exp < -fixedFormatMaxExp {
-					continue
-				}
+		var sampled []float64
+		for _, v := range samples {
+			if spec.fmt != 'f' || fixedFormatRange(v) {
+				sampled = append(sampled, v)
 			}
+		}
+		set := slices.Concat(fixed, sampled)
+		if goldenSpecs[spec] {
+			set = slices.Concat(set, golden)
+		}
+		for _, v := range dedupe(set) {
 			fmt.Fprintf(&b, "%c\t%d\t%016x\t%s\n", spec.fmt, spec.prec, math.Float64bits(v), strconv.FormatFloat(v, spec.fmt, spec.prec, 64))
 		}
 	}
 	return os.WriteFile(path, b.Bytes(), 0o644)
+}
+
+func fixedFormatRange(v float64) bool {
+	if math.IsNaN(v) || math.IsInf(v, 0) || v == 0 {
+		return true
+	}
+	exp := math.Ilogb(v)
+	return exp >= -fixedFormatMaxExp && exp <= fixedFormatMaxExp
 }
 
 func dedupe(values []float64) []float64 {
@@ -222,28 +295,15 @@ func goldenFloats(root string) ([]float64, error) {
 			out = append(out, v)
 		}
 	}
-	for _, dir := range []string{"cmd", "internal", "tools"} {
-		err := filepath.WalkDir(filepath.Join(root, dir), func(path string, d fs.DirEntry, err error) error {
-			if err != nil || d.IsDir() {
-				return err
-			}
-			name := d.Name()
-			gz := strings.HasSuffix(name, ".gz")
-			name = strings.TrimSuffix(name, ".gz")
-			if !strings.HasSuffix(name, ".json") && !strings.HasSuffix(name, ".jsonl") {
-				return nil
-			}
-			data, err := readMaybeGzip(path, gz)
-			if err != nil {
-				return err
-			}
-			for _, chunk := range jsonDocuments(data, strings.HasSuffix(name, ".jsonl")) {
-				walkNumbers(chunk, collect)
-			}
-			return nil
-		})
+	for _, rel := range goldenInputs {
+		gz := strings.HasSuffix(rel, ".gz")
+		name := strings.TrimSuffix(rel, ".gz")
+		data, err := readMaybeGzip(filepath.Join(root, rel), gz)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("read golden input %s: %w", rel, err)
+		}
+		for _, chunk := range jsonDocuments(data, strings.HasSuffix(name, ".jsonl")) {
+			walkNumbers(chunk, collect)
 		}
 	}
 	slices.SortFunc(out, func(a, b float64) int {
