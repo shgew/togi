@@ -58,10 +58,15 @@ async fn run_for(invocation: &Invocation, timeout: Duration) -> Result<Output, E
 }
 
 /// Kills a process the test started outside the runner's reach, even when an assertion fails.
+/// It is armed only while the process runs and is disarmed as soon as it is seen to stop, so it
+/// never signals an id that may have been reused.
 struct KillOnDrop(Pid);
 
 impl KillOnDrop {
-    /// Once the process is known to be gone its id may be reused, so it must not be signalled.
+    fn if_running(pid: Pid) -> Option<Self> {
+        is_running(pid).then_some(Self(pid))
+    }
+
     fn disarm(self) {
         std::mem::forget(self);
     }
@@ -98,14 +103,18 @@ fn is_running(pid: Pid) -> bool {
     }
 }
 
-async fn assert_stops(pid: Pid) {
+async fn stops(pid: Pid) -> bool {
     for _ in 0..50 {
         if !is_running(pid) {
-            return;
+            return true;
         }
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
-    panic!("process {pid:?} is still running");
+    false
+}
+
+async fn assert_stops(pid: Pid) {
+    assert!(stops(pid).await, "process {pid:?} is still running");
 }
 
 #[cfg(target_os = "linux")]
@@ -270,13 +279,13 @@ async fn real_process_escaped_descendant_cannot_extend_the_deadline() {
     let started = StdInstant::now();
     let result = run_for(&sh_with_helper(&script), ESCAPE_DEADLINE).await;
     let elapsed = started.elapsed();
-    let escaped = KillOnDrop(wait_for_pid_file(&pid_file).await);
+    let escaped = KillOnDrop::if_running(wait_for_pid_file(&pid_file).await);
     assert!(
         ready.exists(),
         "the helper had not left the group by the deadline"
     );
     assert!(
-        is_running(escaped.0),
+        escaped.is_some(),
         "the escaped helper did not hold the pipes"
     );
     assert!(elapsed < ESCAPE_DEADLINE + SLACK, "{elapsed:?}");
@@ -301,8 +310,9 @@ async fn real_process_exited_leader_stays_unreaped_until_the_group_is_killed() {
     let mut run = Box::pin(run_for(&invocation, Duration::from_secs(60)));
     let observe = async {
         let leader = wait_for_pid_file(&leader_file).await;
-        let escaped = KillOnDrop(wait_for_pid_file(&escaped_file).await);
+        let escaped = wait_for_pid_file(&escaped_file).await;
         wait_for_file(&ready).await;
+        let escaped = KillOnDrop::if_running(escaped).map(|guard| (escaped, guard));
         let mut zombie = false;
         for _ in 0..250 {
             if is_zombie(leader) {
@@ -317,15 +327,17 @@ async fn real_process_exited_leader_stays_unreaped_until_the_group_is_killed() {
         result = &mut run => panic!("the run ended before it was dropped: {result:?}"),
         observed = observe => observed,
     };
+    let Some((escaped, guard)) = escaped else {
+        panic!("the escaped helper was not running");
+    };
     assert!(zombie, "the exited leader was reaped before the run ended");
-    assert!(is_running(escaped.0));
     drop(run);
     assert!(
-        is_running(escaped.0),
+        is_running(escaped),
         "the group kill reached a process outside the group"
     );
     assert_eq!(test_kill_process(leader), Err(Errno::SRCH));
-    drop(escaped);
+    drop(guard);
 }
 
 /// A descendant in the group holds the pipes while the leader overflows `stream`.
@@ -344,15 +356,25 @@ async fn overflow_kills_the_group(stream: Stream) {
     );
     let invocation = sh(&script).output_limit(1000);
     let started = StdInstant::now();
-    let (result, (descendant, alive)) =
+    let (result, (descendant, guard)) =
         tokio::join!(run_for(&invocation, Duration::from_secs(10)), async {
-            let descendant = KillOnDrop(wait_for_pid_file(&pid_file).await);
-            let alive = is_running(descendant.0);
+            let descendant = wait_for_pid_file(&pid_file).await;
+            let guard = KillOnDrop::if_running(descendant);
             fs::write(&go, "")
                 .unwrap_or_else(|error| panic!("cannot write {}: {error}", go.display()));
-            (descendant, alive)
+            (descendant, guard)
         });
+    let alive = guard.is_some();
+    let stopped = stops(descendant).await;
+    let _guard = match guard {
+        Some(guard) if stopped => {
+            guard.disarm();
+            None
+        }
+        guard => guard,
+    };
     assert!(alive, "the descendant was not running before the overflow");
+    assert!(stopped, "the descendant {descendant:?} is still running");
     assert!(started.elapsed() < Duration::from_secs(5));
     match result {
         Ok(output) => panic!("{output:?}"),
@@ -367,8 +389,6 @@ async fn overflow_kills_the_group(stream: Stream) {
         }
         Err(other) => panic!("{other:?}"),
     }
-    assert_stops(descendant.0).await;
-    descendant.disarm();
 }
 
 #[tokio::test]

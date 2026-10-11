@@ -5,6 +5,7 @@ use std::fmt;
 use std::io;
 use std::os::unix::process::CommandExt as _;
 use std::process::{Child, ExitStatus, Stdio};
+use std::sync::mpsc;
 use std::time::Duration;
 
 use rustix::io::Errno;
@@ -99,6 +100,7 @@ pub enum Operation {
     Wait,
     Read(Stream),
     StartRuntime,
+    StartReaper,
     KillGroup,
     Reap,
 }
@@ -109,6 +111,7 @@ impl fmt::Display for Operation {
             Self::Wait => f.write_str("wait for"),
             Self::Read(stream) => write!(f, "read the {stream} of"),
             Self::StartRuntime => f.write_str("start a runtime for"),
+            Self::StartReaper => f.write_str("start a reaper thread for"),
             Self::KillGroup => f.write_str("kill the process group of"),
             Self::Reap => f.write_str("reap"),
         }
@@ -255,10 +258,13 @@ struct Started {
     stderr: ChildStderr,
 }
 
-/// Spawns through std so that a `Leader` owns the child the moment the OS process exists: every
-/// later setup failure (pidfd, pipe registration) tears the group down and reaps or hands off the
-/// leader instead of dropping an unwatched child.
+/// Starts the reaper thread first, so nothing after the spawn can fail to find the child an owner,
+/// then spawns through std so that a `Leader` owns the child the moment the OS process exists:
+/// every later setup failure (pidfd, pipe registration) tears the group down and reaps or hands
+/// off the leader instead of dropping an unwatched child.
 async fn start(invocation: &Invocation) -> Result<Started, Error> {
+    let reaper =
+        Reaper::start().map_err(|source| invocation.io_error(Operation::StartReaper, source))?;
     let mut command = std::process::Command::new(&invocation.program);
     command
         .args(&invocation.args)
@@ -275,7 +281,7 @@ async fn start(invocation: &Invocation) -> Result<Started, Error> {
         program: invocation.program.clone(),
         source,
     })?;
-    let mut leader = Leader::new(child);
+    let mut leader = Leader::new(child, reaper);
     match leader.watch(invocation) {
         Ok((stdout, stderr)) => Ok(Started {
             leader,
@@ -297,30 +303,31 @@ fn async_pipe<S, A>(
         .map_err(|source| invocation.io_error(Operation::Read(stream), source))
 }
 
-/// Owns the spawned leader until it is settled: reaped, or handed to a reaper thread. Dropping an
-/// unsettled leader kills its group and hands it off, so neither a running command nor a zombie
-/// is left behind on any path.
+/// Owns the spawned leader until it is settled: reaped, or handed to its reaper thread. Dropping
+/// an unsettled leader kills its group and hands it off, which cannot fail, so neither a running
+/// command nor a zombie is left behind on any path.
 struct Leader {
     child: Child,
-    pid: Option<Pid>,
+    pid: Pid,
     /// The group still to signal; cleared once it is signalled or the leader is reaped or handed
     /// off, since the id may then be reused.
     group: Option<Pid>,
-    settled: bool,
+    /// `None` once the leader is settled; dropping it ends the idle thread.
+    reaper: Option<Reaper>,
     #[cfg(target_os = "linux")]
     pidfd: Option<tokio::io::unix::AsyncFd<std::os::fd::OwnedFd>>,
 }
 
 impl Leader {
-    fn new(child: Child) -> Self {
-        let pid = i32::try_from(child.id()).ok().and_then(Pid::from_raw);
+    fn new(child: Child, reaper: Reaper) -> Self {
+        let pid = Pid::from_child(&child);
         #[cfg(test)]
-        fault::SPAWNED.set(pid);
+        fault::SPAWNED.set(Some(pid));
         Self {
             child,
             pid,
-            group: pid,
-            settled: false,
+            group: Some(pid),
+            reaper: Some(reaper),
             #[cfg(target_os = "linux")]
             pidfd: None,
         }
@@ -332,15 +339,8 @@ impl Leader {
         }
         #[cfg(target_os = "linux")]
         {
-            let pidfd = self
-                .pid
-                .ok_or_else(|| io::Error::from(io::ErrorKind::NotFound))
-                .and_then(|pid| {
-                    Ok(rustix::process::pidfd_open(
-                        pid,
-                        rustix::process::PidfdFlags::empty(),
-                    )?)
-                })
+            let pidfd = rustix::process::pidfd_open(self.pid, rustix::process::PidfdFlags::empty())
+                .map_err(io::Error::from)
                 .and_then(|fd| {
                     tokio::io::unix::AsyncFd::with_interest(fd, tokio::io::Interest::READABLE)
                 })
@@ -382,7 +382,7 @@ impl Leader {
     /// Reaps a leader that has already exited, so the wait returns at once.
     fn reap(&mut self) -> io::Result<ExitStatus> {
         self.group = None;
-        self.settled = true;
+        self.reaper = None;
         self.child.wait()
     }
 
@@ -390,7 +390,7 @@ impl Leader {
         let status = self.child.try_wait();
         if !matches!(status, Ok(None)) {
             self.group = None;
-            self.settled = true;
+            self.reaper = None;
         }
         status
     }
@@ -421,7 +421,7 @@ impl Leader {
         let give_up = Instant::now() + grace;
         while self.try_reap()?.is_none() {
             if Instant::now() >= give_up {
-                self.hand_off()?;
+                self.hand_off();
                 return Err(io::Error::new(
                     io::ErrorKind::TimedOut,
                     format!(
@@ -448,47 +448,55 @@ impl Leader {
         }
     }
 
-    /// Leaves the unreaped leader to a detached thread blocked in waitpid, which outlives the
-    /// caller's runtime, so a leader that exits late is still collected. Custody passes only once
-    /// the thread exists; until then the leader stays unsettled and Drop tries again.
-    fn hand_off(&mut self) -> io::Result<()> {
-        let pid = self
-            .pid
-            .ok_or_else(|| io::Error::from(io::ErrorKind::NotFound))?;
-        spawn_reaper(pid)?;
+    /// Leaves the unreaped leader to its reaper thread, which outlives the caller's runtime, so a
+    /// leader that exits late is still collected.
+    fn hand_off(&mut self) {
         self.group = None;
-        self.settled = true;
-        Ok(())
+        if let Some(reaper) = self.reaper.take() {
+            reaper.hand_off(self.pid);
+        }
     }
 }
 
 impl Drop for Leader {
     /// Cancellation: nobody is left to report a failure to, so kill and reap or hand off.
     fn drop(&mut self) {
-        if self.settled {
+        if self.reaper.is_none() {
             return;
         }
         let _ = self.kill_group();
         if matches!(self.try_reap(), Ok(None)) {
-            let _ = self.hand_off();
+            self.hand_off();
         }
     }
 }
 
-fn spawn_reaper(pid: Pid) -> io::Result<()> {
-    #[cfg(test)]
-    {
-        fault::REAPER_SPAWNS.set(fault::REAPER_SPAWNS.get() + 1);
-        let failures = fault::REAPER_FAILURES.get();
-        if failures > 0 {
-            fault::REAPER_FAILURES.set(failures - 1);
+/// A thread started before the command and blocked until it is given the leader to wait for, so
+/// handing a leader off after the spawn cannot fail. Dropping it unused ends the thread.
+struct Reaper(mpsc::Sender<Pid>);
+
+impl Reaper {
+    fn start() -> io::Result<Self> {
+        #[cfg(test)]
+        if fault::REAPER.get() {
             return Err(io::Error::other("injected reaper thread failure"));
         }
+        let (sender, receiver) = mpsc::channel();
+        std::thread::Builder::new()
+            .name("togi-command-reaper".to_owned())
+            .spawn(move || {
+                if let Ok(pid) = receiver.recv() {
+                    reap_blocking(pid);
+                }
+            })?;
+        Ok(Self(sender))
     }
-    std::thread::Builder::new()
-        .name("togi-command-reaper".to_owned())
-        .spawn(move || reap_blocking(pid))
-        .map(drop)
+
+    /// The thread holds the receiver until it is sent a pid or the sender is dropped, and this
+    /// consumes the only sender, so the send cannot find the receiver gone.
+    fn hand_off(self, pid: Pid) {
+        let _ = self.0.send(pid);
+    }
 }
 
 fn reap_blocking(pid: Pid) {
@@ -515,7 +523,7 @@ fn injected_setup_failure() -> Option<io::Error> {
 }
 
 /// Per-thread fault injection for the unit tests: a failed post-spawn setup step, a kill that
-/// fails or is not delivered, and reaper threads that cannot be created.
+/// fails or is not delivered, and a reaper thread that cannot be created.
 #[cfg(test)]
 mod fault {
     use std::cell::Cell;
@@ -533,19 +541,17 @@ mod fault {
         pub(crate) static SETUP: Cell<bool> = const { Cell::new(false) };
         pub(crate) static KILL: Cell<Option<Kill>> = const { Cell::new(None) };
         pub(crate) static SPAWNED: Cell<Option<Pid>> = const { Cell::new(None) };
-        pub(crate) static REAPER_FAILURES: Cell<u32> = const { Cell::new(0) };
-        pub(crate) static REAPER_SPAWNS: Cell<u32> = const { Cell::new(0) };
+        pub(crate) static REAPER: Cell<bool> = const { Cell::new(false) };
     }
 }
 
 #[cfg(test)]
 #[cfg(target_os = "linux")]
 mod tests {
-    use std::fs;
     use std::time::{Duration, Instant as StdInstant};
 
     use rustix::io::Errno;
-    use rustix::process::{Pid, Signal, kill_process, test_kill_process};
+    use rustix::process::{Pid, Signal, WaitId, WaitIdOptions, kill_process, waitid};
 
     use super::{Error, Invocation, Operation, Output, REAP_GRACE, fault};
 
@@ -568,33 +574,39 @@ mod tests {
         fault::SPAWNED.get().expect("a child was spawned")
     }
 
-    fn is_running(pid: Pid) -> bool {
-        let zombie = fs::read_to_string(format!("/proc/{}/stat", pid.as_raw_nonzero()))
-            .ok()
-            .and_then(|stat| {
-                stat.rsplit_once(')')
-                    .and_then(|(_, rest)| rest.trim_start().chars().next())
-            })
-            .is_some_and(|state| state == 'Z');
-        test_kill_process(pid).is_ok() && !zombie
+    /// Whether the runner, or its reaper thread, has reaped our child: `waitid` without `WNOWAIT`
+    /// is never called here, so ECHILD can only mean someone in this process collected it.
+    fn reaped(pid: Pid) -> bool {
+        let options = WaitIdOptions::EXITED | WaitIdOptions::NOHANG | WaitIdOptions::NOWAIT;
+        match waitid(WaitId::Pid(pid), options) {
+            Ok(_) => false,
+            Err(Errno::CHILD) => true,
+            Err(errno) => panic!("waitid {pid:?}: {errno}"),
+        }
     }
 
-    /// ESRCH: the process is dead and reaped, not a zombie.
+    /// Still our child and not exited: the id cannot have been reused.
+    fn is_running(pid: Pid) -> bool {
+        let options = WaitIdOptions::EXITED | WaitIdOptions::NOHANG | WaitIdOptions::NOWAIT;
+        matches!(waitid(WaitId::Pid(pid), options), Ok(None))
+    }
+
     fn assert_reaped_within(pid: Pid, within: Duration) {
         let give_up = StdInstant::now() + within;
-        while test_kill_process(pid) != Err(Errno::SRCH) {
+        while !reaped(pid) {
             assert!(StdInstant::now() < give_up, "{pid:?} was not reaped");
             std::thread::sleep(Duration::from_millis(10));
         }
     }
 
-    /// Kills a child the test expects to be running, even when an assertion fails first.
+    /// Kills a child the test expects to be running when an assertion fails first. It is armed
+    /// only on a child that is still unreaped, which only this guard ends, so its id cannot have
+    /// been reused when the guard fires.
     struct KillOnDrop(Pid);
 
     impl KillOnDrop {
-        /// Once the process is reaped its id may be reused, so it must not be signalled.
-        fn disarm(self) {
-            std::mem::forget(self);
+        fn if_running(pid: Pid) -> Option<Self> {
+            is_running(pid).then_some(Self(pid))
         }
     }
 
@@ -614,7 +626,8 @@ mod tests {
         let started = StdInstant::now();
         let result = run_for(&sleep_60(), Duration::from_secs(60)).await;
         let elapsed = started.elapsed();
-        let child = KillOnDrop(spawned());
+        let child = spawned();
+        let cleanup = KillOnDrop::if_running(child);
         match &result {
             Err(Error::Io {
                 operation: Operation::Wait,
@@ -624,8 +637,8 @@ mod tests {
             other => panic!("{other:?}"),
         }
         assert!(elapsed < REAP_GRACE, "{elapsed:?}");
-        assert_reaped_within(child.0, Duration::ZERO);
-        child.disarm();
+        assert!(cleanup.is_none(), "the child was left running");
+        assert!(reaped(child), "the child was left unreaped");
     }
 
     #[tokio::test]
@@ -636,19 +649,17 @@ mod tests {
             result: Err(Errno::PERM),
         }));
         let started = StdInstant::now();
-        let error = run_for(&sleep_60(), Duration::from_secs(60))
-            .await
-            .unwrap_err();
+        let result = run_for(&sleep_60(), Duration::from_secs(60)).await;
         let elapsed = started.elapsed();
         let child = spawned();
-        let cleanup = KillOnDrop(child);
-        match &error {
-            Error::Teardown {
+        let cleanup = KillOnDrop::if_running(child);
+        match &result {
+            Err(Error::Teardown {
                 cause,
                 operation: Operation::KillGroup,
                 source,
                 ..
-            } => {
+            }) => {
                 assert!(
                     matches!(
                         **cause,
@@ -664,7 +675,7 @@ mod tests {
             other => panic!("{other:?}"),
         }
         assert!(elapsed < REAP_GRACE + SLACK, "{elapsed:?}");
-        assert!(is_running(child), "the error hid a running group");
+        assert!(cleanup.is_some(), "the error hid a running group");
         drop(cleanup);
         assert_reaped_within(child, Duration::from_secs(5));
     }
@@ -676,10 +687,11 @@ mod tests {
             result: Err(Errno::PERM),
         }));
         let started = StdInstant::now();
-        let error = run_for(&sleep_60(), DEADLINE).await.unwrap_err();
+        let result = run_for(&sleep_60(), DEADLINE).await;
         let elapsed = started.elapsed();
         let child = spawned();
-        let cleanup = KillOnDrop(child);
+        let cleanup = KillOnDrop::if_running(child);
+        let error = result.unwrap_err();
         let message = error.to_string();
         match &error {
             Error::Teardown {
@@ -699,7 +711,7 @@ mod tests {
             "{message}"
         );
         assert!(elapsed < DEADLINE + REAP_GRACE + SLACK, "{elapsed:?}");
-        assert!(is_running(child), "the error hid a running group");
+        assert!(cleanup.is_some(), "the error hid a running group");
         drop(cleanup);
         assert_reaped_within(child, Duration::from_secs(5));
     }
@@ -711,10 +723,11 @@ mod tests {
             result: Err(Errno::SRCH),
         }));
         let result = run_for(&sleep_60(), DEADLINE).await;
-        let child = KillOnDrop(spawned());
+        let child = spawned();
+        let cleanup = KillOnDrop::if_running(child);
         assert!(matches!(result, Err(Error::TimedOut { .. })), "{result:?}");
-        assert_reaped_within(child.0, Duration::ZERO);
-        child.disarm();
+        assert!(cleanup.is_none(), "the child was left running");
+        assert!(reaped(child), "the child was left unreaped");
     }
 
     /// A leader that ignores SIGKILL for a while (in the field: uninterruptible sleep) is simulated
@@ -750,42 +763,69 @@ mod tests {
         assert_reaped_within(child, Duration::from_secs(10));
     }
 
-    /// A reaper thread that cannot be created must not take custody: the error is reported within
-    /// the bound, and dropping the still-unsettled leader hands it off again.
+    /// Cancellation has no grace and no caller: dropping the future hands a leader the kill did not
+    /// reach straight to the reaper thread, which collects it once it exits.
     #[test]
-    fn real_process_failed_reaper_thread_leaves_custody_to_the_drop_retry() {
+    fn real_process_cancelled_run_hands_a_surviving_leader_to_the_reaper() {
         fault::KILL.set(Some(fault::Kill {
             deliver: false,
             result: Ok(()),
         }));
-        fault::REAPER_FAILURES.set(1);
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let started = StdInstant::now();
+        let abandoned = runtime.block_on(async {
+            tokio::time::timeout(
+                DEADLINE,
+                run_for(&Invocation::new("sleep").arg("3"), Duration::from_secs(60)),
+            )
+            .await
+        });
+        drop(runtime);
+        let elapsed = started.elapsed();
+        let child = spawned();
+        assert!(abandoned.is_err(), "{abandoned:?}");
+        assert!(elapsed < DEADLINE + SLACK, "{elapsed:?}");
+        assert!(
+            is_running(child),
+            "the leader exited before it was handed off"
+        );
+        assert_reaped_within(child, Duration::from_secs(10));
+    }
+
+    /// The reaper thread starts before the command, so a thread that cannot be created means no
+    /// process was started.
+    #[test]
+    fn a_reaper_thread_that_cannot_start_starts_nothing() {
+        fault::REAPER.set(true);
+        let dir = tempfile::tempdir().unwrap();
+        let marker = dir.path().join("marker");
+        let invocation = Invocation::new("sh")
+            .arg("-c")
+            .arg(format!("touch {}", marker.display()));
         let started = StdInstant::now();
         #[expect(
             clippy::disallowed_methods,
             reason = "tests exercise the bounded runner with real processes"
         )]
-        let result = super::run_blocking(&Invocation::new("sleep").arg("3"), DEADLINE);
+        let result = super::run_blocking(&invocation, Duration::from_secs(10));
         let elapsed = started.elapsed();
-        let child = spawned();
         match &result {
-            Err(Error::Teardown {
-                cause,
-                operation: Operation::Reap,
+            Err(Error::Io {
+                program,
+                operation: Operation::StartReaper,
                 source,
-                ..
             }) => {
-                assert!(matches!(**cause, Error::TimedOut { .. }), "{cause:?}");
+                assert_eq!(program, "sh");
                 assert_eq!(source.to_string(), "injected reaper thread failure");
             }
             other => panic!("{other:?}"),
         }
-        assert!(elapsed < DEADLINE + REAP_GRACE + SLACK, "{elapsed:?}");
-        assert_eq!(
-            fault::REAPER_SPAWNS.get(),
-            2,
-            "the drop did not retry the handoff"
-        );
-        assert!(is_running(child), "the leader exited within the grace");
-        assert_reaped_within(child, Duration::from_secs(10));
+        assert!(elapsed < Duration::from_millis(100), "{elapsed:?}");
+        assert_eq!(fault::SPAWNED.get(), None, "a process was started");
+        std::thread::sleep(Duration::from_millis(100));
+        assert!(!marker.exists(), "the command ran");
     }
 }
