@@ -98,7 +98,7 @@ The `togi-gocompat` crate reproduces Go's float formatting byte for byte ([#697]
 
 ## Stage 2: `internal/trialfiles` (2026-10-11)
 
-The `togi-trialfiles` crate ports `internal/trialfiles` ([#695](https://github.com/shgew/togi/issues/695)): 219 lines of library and 330 of tests against Go's 140 and 295, with the Go package unchanged. It removes the placeholder crate and the `--no-tests=pass` flags the empty workspace needed.
+The `togi-trialfiles` crate ports `internal/trialfiles` ([#695](https://github.com/shgew/togi/issues/695)): 219 lines of library and 331 of tests against Go's 140 and 295, with the Go package unchanged. It removes the placeholder crate and the `--no-tests=pass` flags the empty workspace needed.
 
 - **Departures from Go that no consumer sees.** `Open` returns a reader that reports a malformed gzip header on its first read, where Go's `Open` reports it itself; every Go caller treats both the same. Rust's standard library cannot report the error of closing the compressed file after its `fsync`, so that check is gone. Error text names the operation as Go's does, but the cause is Rust's `io::Error` text, which differs from Go's `syscall` text.
 - **Not measured yet.** Compile and test times wait for the stage's measurements pull request.
