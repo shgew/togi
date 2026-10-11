@@ -28,6 +28,8 @@ mod teardown;
 mod timing;
 #[cfg(test)]
 mod testing;
+#[cfg(test)]
+mod tests;
 mod watch;
 
 pub use error::{CleanupFailure, Containment, Error, OutputFailure};
