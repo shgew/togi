@@ -330,7 +330,7 @@ The run log and `togi events` color the whole human-readable line according to i
 | Inconclusive trial or `backend.retry` | Dim |
 | `hunt.group`, `deepening.round` start, `hunt.skipped`, `host.ranking`, passed non-full cycle, and everything else | Plain |
 
-ANSI SGR is used when that output stream is a terminal (character device) or `JOURNAL_STREAM` names that stream (its device and inode match). A non-empty `NO_COLOR` disables ANSI even in the system journal. `events.jsonl`, `state.json` and `togi events --json` stay uncolored. When `JOURNAL_STREAM` names that stream, red and red-bold lines start with `<3>` so systemd stores them at priority err (`SyslogLevelPrefix=` is on by default), including with `NO_COLOR`; no other line gets a priority prefix, and terminals outside the system journal never get one. `togi events` uses the same rules on stdout.
+ANSI SGR is used when that output stream is a terminal (a character device such as `/dev/null` is not one) or `JOURNAL_STREAM` names that stream (its device and inode match, whatever the file type). A non-empty `NO_COLOR` disables ANSI even in the system journal. `events.jsonl`, `state.json` and `togi events --json` stay uncolored. When `JOURNAL_STREAM` names that stream, red and red-bold lines start with `<3>` so systemd stores them at priority err (`SyslogLevelPrefix=` is on by default), including with `NO_COLOR`; no other line gets a priority prefix, and terminals outside the system journal never get one. `togi events` uses the same rules on stdout.
 
 Every new event kind names its row here, or plain.
 
