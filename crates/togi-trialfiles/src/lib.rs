@@ -54,9 +54,9 @@ pub enum Error {
 
 impl Error {
     /// The bytes of Go's `err.Error()`, for the journal. A path in the text keeps its raw bytes, so the text may not be
-    /// UTF-8; the journal encoder must serialize it with Go's JSON rules: each invalid byte as the escape `\ufffd`, a
-    /// real U+FFFD character as its UTF-8 bytes. `Display` shows each invalid byte as the character U+FFFD instead,
-    /// which cannot tell the two apart.
+    /// UTF-8; the journal encoder must serialize it with Go's JSON rules: each invalid byte as the literal U+FFFD
+    /// character (EF BF BD), the same bytes a real U+FFFD character becomes. `Display` shows each invalid byte as the
+    /// character U+FFFD too, so neither form can tell a replaced byte from a real replacement character.
     #[must_use]
     pub fn go_text(&self) -> Vec<u8> {
         let (prefix, cause) = match self {
