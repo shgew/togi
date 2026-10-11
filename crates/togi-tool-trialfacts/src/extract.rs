@@ -2,7 +2,10 @@ use std::convert::Infallible;
 use std::path::Path;
 
 use togi_facts::{Decisive, Fact, FactsError, Observation, SessionFacts};
-use togi_journal::{LookupError, Payload, Recording, Seq, SessionId, StateDir};
+use togi_journal::{
+    Build, LookupError, Operation, Payload, Recording, Refusal, SCHEMA, Seq, SessionId, StateDir,
+    Verdict,
+};
 use togi_machine::{CoreSet, PerCore};
 
 use crate::record::{BuildStamp, Class, InvalidProfile, Phase, Profile, TrialFact};
@@ -18,6 +21,12 @@ pub enum ExtractError {
         session: SessionId,
         #[source]
         source: FactsError<Infallible>,
+    },
+    #[error("session {session}: {source}")]
+    Incompatible {
+        session: SessionId,
+        #[source]
+        source: Refusal,
     },
     #[error("session {session} event {seq}: {source}")]
     Profile {
@@ -42,8 +51,9 @@ pub fn extract_dir(path: impl AsRef<Path>) -> Result<Vec<TrialFact>, ExtractErro
     extract(&StateDir::lock(path)?)
 }
 
-/// The facts of journals read one by one, in session order. A journal without events is skipped; no facts at
-/// all is an error, since an empty extract is no evidence.
+/// The facts of journals read one by one, in session order. A journal without events is skipped; one whose
+/// schema this build cannot read as history is refused before extraction; no facts at all is an error, since
+/// an empty extract is no evidence.
 pub fn from_recordings(
     recordings: impl IntoIterator<Item = Recording>,
 ) -> Result<Vec<TrialFact>, ExtractError> {
@@ -54,6 +64,13 @@ pub fn from_recordings(
             continue;
         };
         let session = start.session;
+        let reader = Build {
+            schema: SCHEMA,
+            ..start.build.clone()
+        };
+        if let Verdict::Refuse(source) = reader.verdict(&start.build, Operation::History) {
+            return Err(ExtractError::Incompatible { session, source });
+        }
         let facts = togi_facts::extract(session, events.into_iter().map(Ok::<_, Infallible>))
             .map_err(|source| ExtractError::Facts { session, source })?;
         sessions.push(facts);

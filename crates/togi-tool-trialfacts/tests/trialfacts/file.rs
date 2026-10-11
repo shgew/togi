@@ -161,6 +161,64 @@ fn a_write_failure_at_any_step_is_reported() {
     }
 }
 
+const WIRE_KEYS: [&str; 20] = [
+    "session",
+    "build",
+    "ruleset",
+    "context",
+    "seq",
+    "trial",
+    "kind",
+    "class",
+    "condition",
+    "phase",
+    "record_only",
+    "profile",
+    "outcome",
+    "signal",
+    "duration_s",
+    "stalled_core",
+    "core",
+    "voltage_requests_v",
+    "top_requesters",
+    "ccd_mhz",
+];
+
+fn positional(object: &serde_json::Value, keys: &[&str]) -> serde_json::Value {
+    let defaults = serde_json::json!({
+        "voltage_requests_v": {}, "top_requesters": [], "ccd_mhz": {}, "record_only": false,
+    });
+    keys.iter()
+        .map(|key| {
+            object
+                .get(key)
+                .or_else(|| defaults.get(key))
+                .cloned()
+                .unwrap_or(serde_json::Value::Null)
+        })
+        .collect()
+}
+
+#[test]
+fn a_fact_that_would_not_read_back_is_refused_and_leaves_the_destination_unchanged() {
+    let mut facts = sample();
+    facts[2].outcome = Decisive::Pass;
+    assert!(matches!(
+        encode(Vec::new(), &facts),
+        Err(WriteError::Invalid { index: 2, .. })
+    ));
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("facts.gz");
+    std::fs::write(&path, "existing output").unwrap();
+    assert!(matches!(
+        write(&path, &facts),
+        Err(WriteError::Invalid { index: 2, .. })
+    ));
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "existing output");
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+}
+
 #[test]
 fn a_voltage_request_that_is_not_finite_is_refused() {
     let mut facts = sample();
@@ -336,6 +394,45 @@ fn a_record_that_contradicts_itself_or_the_vocabulary_is_refused() {
         (
             "a malformed session",
             edit(&pass, &|v| v["session"] = "yesterday".into()),
+        ),
+        (
+            "an idle failure with a trial duration",
+            edit(&idle, &|v| v["class"]["duration_s"] = 90.into()),
+        ),
+        (
+            "a record as a positional array",
+            positional(&pass, &WIRE_KEYS),
+        ),
+        (
+            "a build stamp as a positional array",
+            edit(&pass, &|v| {
+                v["build"] = positional(
+                    &v["build"],
+                    &["version", "rev", "ruleset", "schema", "fixes", "evidence"],
+                );
+            }),
+        ),
+        (
+            "a class as a positional array",
+            edit(&pass, &|v| {
+                v["class"] =
+                    positional(&v["class"], &["regime", "workload", "cores", "duration_s"]);
+            }),
+        ),
+        (
+            "a context as a positional array",
+            edit(&pass, &|v| {
+                v["context"] = positional(
+                    &v["context"],
+                    &[
+                        "bios_version",
+                        "board",
+                        "cpu_model",
+                        "microcode",
+                        "boost_limit_mhz",
+                    ],
+                );
+            }),
         ),
     ];
     for (name, value) in cases {

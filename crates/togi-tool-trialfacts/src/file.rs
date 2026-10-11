@@ -6,7 +6,7 @@ use flate2::Compression;
 use flate2::read::MultiGzDecoder;
 use flate2::write::GzEncoder;
 
-use crate::record::TrialFact;
+use crate::record::{InvalidFact, TrialFact};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ReadError {
@@ -34,6 +34,8 @@ pub enum WriteError {
     Empty,
     #[error("fact {index} records a voltage request that is not finite")]
     NotFinite { index: usize },
+    #[error("fact {index} contradicts itself: {source}")]
+    Invalid { index: usize, source: InvalidFact },
     #[error("write extract: {0}")]
     Io(#[from] io::Error),
     #[error("replace {}: {source}", path.display())]
@@ -116,12 +118,16 @@ fn validate(facts: &[TrialFact]) -> Result<(), WriteError> {
     if facts.is_empty() {
         return Err(WriteError::Empty);
     }
-    match facts.iter().position(|fact| {
-        fact.voltage_requests_v
+    for (index, fact) in facts.iter().enumerate() {
+        fact.check()
+            .map_err(|source| WriteError::Invalid { index, source })?;
+        if fact
+            .voltage_requests_v
             .iter()
             .any(|(_, volts)| !volts.is_finite())
-    }) {
-        Some(index) => Err(WriteError::NotFinite { index }),
-        None => Ok(()),
+        {
+            return Err(WriteError::NotFinite { index });
+        }
     }
+    Ok(())
 }

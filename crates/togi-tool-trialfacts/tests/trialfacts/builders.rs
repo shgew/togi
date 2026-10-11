@@ -136,15 +136,27 @@ impl Writer {
 
     /// `session.start` of `cores` under the `fixture` BIOS context, then its `session.context`.
     pub(crate) fn begin(&mut self, session: &str, ruleset: u32, cores: &[i64]) {
+        self.begin_with(session, cores, |build| build.ruleset = ruleset);
+    }
+
+    /// [`Self::begin`] with the recorded build adjusted by `adjust`.
+    pub(crate) fn begin_with(
+        &mut self,
+        session: &str,
+        cores: &[i64],
+        adjust: impl FnOnce(&mut Build),
+    ) {
+        let mut build = Build {
+            version: "fixture".into(),
+            rev: Some("abc".into()),
+            ruleset: 1,
+            schema: SCHEMA,
+            fixes: 0,
+            evidence: 1,
+        };
+        adjust(&mut build);
         self.add(SessionStart {
-            build: Build {
-                version: "fixture".into(),
-                rev: Some("abc".into()),
-                ruleset,
-                schema: SCHEMA,
-                fixes: 0,
-                evidence: 1,
-            },
+            build,
             session: session.parse().unwrap(),
             cores: cores
                 .iter()

@@ -3,7 +3,7 @@ use std::io::Read;
 
 use flate2::read::GzDecoder;
 use togi_facts::{Decisive, TrialClass};
-use togi_journal::{Failure, MemFs, Outcome, Payload};
+use togi_journal::{Activity, Dimension, Failure, MemFs, Outcome, Payload, SCHEMA};
 use togi_machine::{CcdId, Condition, PerCore, Regime, Signal};
 use togi_tool_trialfacts::{
     Class, ExtractError, InvalidProfile, Phase, TrialFact, decode, encode, extract, extract_dir,
@@ -264,6 +264,64 @@ fn a_bad_source_is_an_error_and_no_facts() {
     w.add(alone("1", 0, -10, &[-10, 0]));
     let error = extract(&w.close()).unwrap_err();
     assert!(matches!(error, ExtractError::Facts { .. }), "{error}");
+}
+
+#[test]
+fn a_session_whose_schema_is_not_readable_history_is_refused_by_name() {
+    for schema in [0, SCHEMA + 1] {
+        let fs = MemFs::new();
+        let mut w = Writer::open(&fs);
+        passing_session(&mut w, OLD, 1);
+        let mut w = w.archive();
+        w.begin_with(NEW, &[0, 1], |build| build.schema = schema);
+        w.trial(alone("1", 0, -10, &[-10, 0]), end("1", Outcome::Pass, 90));
+        let error = extract(&w.close()).unwrap_err();
+        match &error {
+            ExtractError::Incompatible { session, source } => {
+                assert_eq!(session.to_string(), NEW);
+                assert_eq!(source.dimension, Dimension::Schema);
+                assert_eq!(source.recorded, schema);
+                assert_eq!(source.current, SCHEMA);
+            }
+            other => panic!("schema {schema}: {other}"),
+        }
+        assert!(error.to_string().contains(NEW), "{error}");
+    }
+}
+
+#[test]
+fn a_different_ruleset_or_evidence_epoch_is_still_history() {
+    let fs = MemFs::new();
+    let mut w = Writer::open(&fs);
+    w.begin_with(OLD, &[0, 1], |build| {
+        build.ruleset = 9;
+        build.evidence = 7;
+    });
+    w.trial(alone("1", 0, -10, &[-10, 0]), end("1", Outcome::Pass, 90));
+    let mut expected = passed(OLD, 9);
+    expected.build.evidence = Some(7);
+    assert_eq!(extract(&w.close()).unwrap(), [expected]);
+}
+
+#[test]
+fn hunt_and_deepening_activities_extract_as_their_phases() {
+    for (activity, phase, name) in [
+        (Activity::Hunt, Phase::Hunt, "hunt"),
+        (Activity::Deepening, Phase::Deepening, "deepening"),
+    ] {
+        let fs = MemFs::new();
+        let mut w = Writer::open(&fs);
+        w.begin(OLD, 1, &[0, 1]);
+        let mut intent = alone("1", 0, -10, &[-10, 0]);
+        intent.activity = Some(activity);
+        w.trial(intent, end("1", Outcome::Pass, 90));
+        let facts = extract(&w.close()).unwrap();
+        assert_eq!(facts.len(), 1, "{name}");
+        assert_eq!(facts[0].phase, Some(phase), "{name}");
+        let plain = gunzip(&encoded(&facts));
+        let record: serde_json::Value = serde_json::from_str(plain.trim()).unwrap();
+        assert_eq!(record["phase"], name);
+    }
 }
 
 #[test]

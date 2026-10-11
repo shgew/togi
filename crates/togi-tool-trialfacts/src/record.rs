@@ -5,7 +5,7 @@ use togi_facts::{Decisive, TrialClass};
 use togi_journal::{Activity, Build, Seq, SessionId, TrialId};
 use togi_machine::{
     BiosContext, CcdId, Condition, CoreId, CoreSet, PER_CORE_MAX, PerCore, Regime, Signal,
-    TargetOffset, WorkloadId,
+    TargetOffset, WorkloadId, object_only,
 };
 
 /// The offsets applied to every core in core-id order: at least one, at most [`PER_CORE_MAX`].
@@ -150,20 +150,22 @@ impl From<Activity> for Phase {
     }
 }
 
-/// The build stamp of the session that recorded a fact. `evidence` is absent from extracts the Go tool wrote.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct BuildStamp {
-    pub version: String,
-    /// Empty when the build recorded no revision.
-    #[serde(default)]
-    pub rev: String,
-    pub ruleset: u32,
-    pub schema: u32,
-    #[serde(default)]
-    pub fixes: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub evidence: Option<u32>,
+object_only! {
+    /// The build stamp of the session that recorded a fact. `evidence` is absent from extracts the Go tool wrote.
+    #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct BuildStamp {
+        pub version: String,
+        /// Empty when the build recorded no revision.
+        #[serde(default)]
+        pub rev: String,
+        pub ruleset: u32,
+        pub schema: u32,
+        #[serde(default)]
+        pub fixes: u32,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub evidence: Option<u32>,
+    }
 }
 
 #[expect(
@@ -228,25 +230,29 @@ enum WireOutcome {
     Failure,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct WireClass {
-    regime: Regime,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    workload: Option<WorkloadId>,
-    cores: CoreSet,
-    #[serde(default)]
-    duration_s: u32,
+object_only! {
+    #[derive(Clone, Debug, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    struct WireClass {
+        regime: Regime,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        workload: Option<WorkloadId>,
+        cores: CoreSet,
+        #[serde(default)]
+        duration_s: u32,
+    }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct WireContext {
-    bios_version: String,
-    board: String,
-    cpu_model: String,
-    microcode: String,
-    boost_limit_mhz: u32,
+object_only! {
+    #[derive(Clone, Debug, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    struct WireContext {
+        bios_version: String,
+        board: String,
+        cpu_model: String,
+        microcode: String,
+        boost_limit_mhz: u32,
+    }
 }
 
 impl From<WireContext> for BiosContext {
@@ -273,38 +279,40 @@ impl From<BiosContext> for WireContext {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Wire {
-    session: SessionId,
-    build: BuildStamp,
-    ruleset: u32,
-    context: Option<WireContext>,
-    seq: Seq,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    trial: Option<TrialId>,
-    kind: Kind,
-    class: WireClass,
-    condition: Condition,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    phase: Option<Phase>,
-    #[serde(default, skip_serializing_if = "is_false")]
-    record_only: bool,
-    profile: Profile,
-    outcome: WireOutcome,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    signal: Option<Signal>,
-    duration_s: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    stalled_core: Option<CoreId>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    core: Option<CoreId>,
-    #[serde(default, skip_serializing_if = "PerCore::is_empty")]
-    voltage_requests_v: PerCore<f64>,
-    #[serde(default, skip_serializing_if = "CoreSet::is_empty")]
-    top_requesters: CoreSet,
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    ccd_mhz: BTreeMap<CcdId, u32>,
+object_only! {
+    #[derive(Clone, Debug, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    struct Wire {
+        session: SessionId,
+        build: BuildStamp,
+        ruleset: u32,
+        context: Option<WireContext>,
+        seq: Seq,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        trial: Option<TrialId>,
+        kind: Kind,
+        class: WireClass,
+        condition: Condition,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        phase: Option<Phase>,
+        #[serde(default, skip_serializing_if = "is_false")]
+        record_only: bool,
+        profile: Profile,
+        outcome: WireOutcome,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        signal: Option<Signal>,
+        duration_s: u32,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        stalled_core: Option<CoreId>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        core: Option<CoreId>,
+        #[serde(default, skip_serializing_if = "PerCore::is_empty")]
+        voltage_requests_v: PerCore<f64>,
+        #[serde(default, skip_serializing_if = "CoreSet::is_empty")]
+        top_requesters: CoreSet,
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        ccd_mhz: BTreeMap<CcdId, u32>,
+    }
 }
 
 #[derive(Debug, Eq, PartialEq, thiserror::Error)]
@@ -317,12 +325,24 @@ pub enum InvalidFact {
     IdleWorkload,
     #[error("regime {recorded} differs from {expected}, the regime of the fact's class")]
     Regime { recorded: Regime, expected: Regime },
+    #[error("a failure outside any trial records a trial duration of {0}s")]
+    IdleDuration(u32),
     #[error("a failure records no signal")]
     NoSignal,
     #[error("a pass records a signal, an attributed core or a stalled core")]
     PassWithFailureDetail,
     #[error("a failure outside any trial is not a failure")]
     IdlePass,
+}
+
+impl TrialFact {
+    /// Refuses a fact its own fields contradict, which the extract could not read back.
+    pub fn check(&self) -> Result<(), InvalidFact> {
+        match (self.class, self.outcome) {
+            (Class::Idle { .. }, Decisive::Pass) => Err(InvalidFact::IdlePass),
+            _ => Ok(()),
+        }
+    }
 }
 
 impl TryFrom<Wire> for TrialFact {
@@ -342,9 +362,10 @@ impl TryFrom<Wire> for TrialFact {
                 duration_s: wire.class.duration_s,
             }),
             (Kind::Trial, None) => return Err(InvalidFact::NoWorkload),
-            (Kind::Idle, None) => Class::Idle {
+            (Kind::Idle, None) if wire.class.duration_s == 0 => Class::Idle {
                 loaded: wire.class.cores,
             },
+            (Kind::Idle, None) => return Err(InvalidFact::IdleDuration(wire.class.duration_s)),
             (Kind::Idle, Some(_)) => return Err(InvalidFact::IdleWorkload),
         };
         if wire.class.regime != class.regime() {
@@ -355,9 +376,6 @@ impl TryFrom<Wire> for TrialFact {
         }
         let outcome = match (wire.outcome, wire.signal) {
             (WireOutcome::Pass, None) if wire.core.is_none() && wire.stalled_core.is_none() => {
-                if wire.kind == Kind::Idle {
-                    return Err(InvalidFact::IdlePass);
-                }
                 Decisive::Pass
             }
             (WireOutcome::Pass, _) => return Err(InvalidFact::PassWithFailureDetail),
@@ -368,7 +386,7 @@ impl TryFrom<Wire> for TrialFact {
             },
             (WireOutcome::Failure, None) => return Err(InvalidFact::NoSignal),
         };
-        Ok(Self {
+        let fact = Self {
             session: wire.session,
             build: wire.build,
             context: wire.context.map(BiosContext::from),
@@ -384,7 +402,9 @@ impl TryFrom<Wire> for TrialFact {
             voltage_requests_v: wire.voltage_requests_v,
             top_requesters: wire.top_requesters,
             ccd_mhz: wire.ccd_mhz,
-        })
+        };
+        fact.check()?;
+        Ok(fact)
     }
 }
 
