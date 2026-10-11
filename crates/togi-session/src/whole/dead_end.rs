@@ -560,7 +560,7 @@ fn offsets_of(bench: &Bench) -> Vec<i64> {
     (0..2).map(|n| smu.offset(core(n)).unwrap().0).collect()
 }
 
-fn decisions(events: &[Event]) -> togi_tuner::projection::Projection {
+fn decisions(events: &[Event]) -> togi_tuner::Projection {
     togi_tuner::replay(events).unwrap().project()
 }
 

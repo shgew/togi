@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use togi_journal::{Payload, SessionWarning, StateRebuilt};
-use togi_tuner::projection::Projection;
+use togi_tuner::Projection;
 
 use crate::appender::Appender;
 use crate::error::{AppendFailure, SessionError};

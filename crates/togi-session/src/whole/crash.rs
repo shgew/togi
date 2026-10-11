@@ -16,8 +16,7 @@ use togi_sim::MachineDefinition;
 use togi_sim::definition::{CoreDef, ModelDef, Weights};
 use togi_sim::faults::SmuOperation;
 use togi_sim::model::Script;
-use togi_tuner::projection::CoreView;
-use togi_tuner::{Constraints, Profile};
+use togi_tuner::{Constraints, CoreView, Profile};
 
 use crate::restore::restore_target;
 use crate::testing::{Bench, simulated};
