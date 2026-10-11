@@ -8,6 +8,7 @@ use togi_machine::{CancellationToken, Error, PerCore, TargetOffset};
 
 use crate::emergency::SweepCleared;
 use crate::error::{SessionError, Step};
+use crate::recover::{self, Recovered, Recovery};
 use crate::session::{Control, Outcome, Session, Stop, Visit};
 use crate::write;
 
@@ -15,6 +16,57 @@ const WATCHDOG_WAIT: Duration = Duration::from_secs(30);
 const WATCHDOG_STEP: Duration = Duration::from_secs(1);
 
 impl Session {
+    /// Classifies and records every crashed boot before this one. A kernel log that stays unreadable is evidence
+    /// for a no-evidence dead end, which [`Session::check_dead_end`] places after a thermal trip. A pending dead
+    /// end is finished first, so nothing is read for it.
+    pub fn recover_prior(&mut self) -> Outcome {
+        if self.appender.recovery().pending_dead_end().is_some() {
+            return Ok(Control::Continue);
+        }
+        let recovered = recover::prior_boots(Recovery {
+            appender: &mut self.appender,
+            kernel: &mut *self.kernel,
+            trials: &mut *self.trials,
+            boot: &self.boot,
+            cancel: &self.cancel,
+        });
+        let step = recovered.map(|recovered| match recovered {
+            Recovered::Done => Control::Continue,
+            Recovered::Cancelled if self.unreconciled() => {
+                self.recovery_cancelled = true;
+                Control::Continue
+            }
+            Recovered::Cancelled => self.shut_down(Stop::Signal),
+            Recovered::Unreadable(unreadable) => {
+                self.unreadable = Some(unreadable);
+                Control::Continue
+            }
+        });
+        self.settle(step)
+    }
+
+    /// Closes the trial this boot's earlier run left open, which needs the proof that nothing runs.
+    pub fn recover_same_boot(&mut self) -> Outcome {
+        if !self.same_boot() || self.recovery_cancelled {
+            return Ok(Control::Continue);
+        }
+        let Some(sweep) = self.sweep else {
+            return Ok(Control::Continue);
+        };
+        let step = recover::same_boot_trial(
+            Recovery {
+                appender: &mut self.appender,
+                kernel: &mut *self.kernel,
+                trials: &mut *self.trials,
+                boot: &self.boot,
+                cancel: &self.cancel,
+            },
+            &sweep,
+        )
+        .map(|()| Control::Continue);
+        self.settle(step)
+    }
+
     /// A boot whose earlier run left offsets must reconcile them even when asked to stop, so waits ignore the
     /// cancellation until then.
     fn waiting_token(&self) -> CancellationToken {

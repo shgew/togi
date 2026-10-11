@@ -369,3 +369,87 @@ fn a_resumed_boot_does_not_give_up_on_the_watchdog_before_it_is_reconciled() {
     assert!(checks(&session).contains(&("watchdog".to_owned(), true)));
     assert_eq!(session.sweep().unwrap(), Control::Continue);
 }
+
+fn crash_records(session: &Session) -> usize {
+    session
+        .appender()
+        .journal()
+        .events()
+        .iter()
+        .filter(|event| matches!(event.payload, Payload::CrashDetected(_)))
+        .count()
+}
+
+#[test]
+fn a_boot_that_crashed_before_this_one_gets_its_crash_recorded() {
+    let bench = Bench::new(2);
+    let mut earlier = bench.open();
+    earlier.start().unwrap();
+    drop(earlier);
+    bench.sim.crash();
+    bench.sim.reboot();
+    let mut session = bench.open();
+    session.start().unwrap();
+    assert_eq!(crash_records(&session), 0);
+    assert_eq!(session.recover_prior().unwrap(), Control::Continue);
+    assert_eq!(crash_records(&session), 1);
+    crate::testing::assert_fold_consistent(session.appender());
+}
+
+#[test]
+fn a_dead_end_pending_from_another_boot_is_not_recovered_around() {
+    let bench = Bench::new(2);
+    let mut earlier = bench.open();
+    earlier.start().unwrap();
+    earlier
+        .appender
+        .append(
+            Payload::DeadEnd(togi_journal::DeadEnd {
+                condition: DeadEndCondition::Preflight,
+                detail: "failed".into(),
+                action: Some(togi_journal::DeadEndAction::Exit),
+                core: None,
+            }),
+            &[],
+        )
+        .unwrap();
+    drop(earlier);
+    bench.sim.crash();
+    bench.sim.reboot();
+    let mut session = bench.open();
+    let before = kinds_of(session.appender());
+    assert_eq!(session.recover_prior().unwrap(), Control::Continue);
+    assert_eq!(kinds_of(session.appender()), before);
+}
+
+#[test]
+fn an_unreadable_kernel_log_is_no_evidence_citing_the_retries() {
+    let bench = Bench::new(2);
+    let mut session = bench.open();
+    session.start().unwrap();
+    assert!(session.check_dead_end().unwrap().is_none());
+    let retry = session.appender().journal().events()[0].seq;
+    session.unreadable = Some(crate::recover::KernelUnreadable {
+        detail: "kernel log unreadable".into(),
+        retries: vec![retry],
+    });
+    let (dead_end, causes) = dead_end_of(Control::Stop(session.check_dead_end().unwrap().unwrap()));
+    assert_eq!(dead_end.condition, DeadEndCondition::NoEvidence);
+    assert_eq!(dead_end.detail, "kernel log unreadable");
+    assert_eq!(causes, [retry]);
+}
+
+#[test]
+fn the_same_boot_trial_waits_for_the_boot_to_be_swept() {
+    let bench = Bench::new(2);
+    let mut first = bench.open();
+    first.start().unwrap();
+    assert_eq!(first.recover_same_boot().unwrap(), Control::Continue);
+    drop(first);
+    let mut again = bench.open();
+    assert!(again.same_boot());
+    again.start().unwrap();
+    let before = kinds_of(again.appender());
+    assert_eq!(again.recover_same_boot().unwrap(), Control::Continue);
+    assert_eq!(kinds_of(again.appender()), before);
+}

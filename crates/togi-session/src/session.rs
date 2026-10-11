@@ -29,6 +29,7 @@ use crate::boot::{self, BootHandoff};
 use crate::emergency::{self, SweepCleared};
 use crate::error::{Flow, SessionError, Step};
 use crate::evidence::{self, Placement, Window};
+use crate::recover::KernelUnreadable;
 use crate::recovery::Cited;
 use crate::write::Hardware;
 
@@ -185,6 +186,7 @@ pub struct Session {
     pub(crate) validated: Option<SmuValidated>,
     pub(crate) visit: Visit,
     pub(crate) recovery_cancelled: bool,
+    pub(crate) unreadable: Option<KernelUnreadable>,
     /// Why the machine may no longer be touched, once it may not.
     pub(crate) fault: Option<Fault>,
     /// The `shutdown` the cleanup records once the machine is restored.
@@ -288,6 +290,7 @@ impl Session {
             validated: None,
             visit,
             recovery_cancelled: false,
+            unreadable: None,
             fault: None,
             shutdown: None,
         })
@@ -525,7 +528,15 @@ impl Session {
         };
         let inconclusive = self.inconclusive_threshold();
         let stray_limit = self.config.dead_ends().stray_crashes_in_a_row().get() as usize;
+        let unreadable = self.unreadable.as_ref().map(|unreadable| {
+            (
+                DeadEndCondition::NoEvidence,
+                unreadable.detail.clone(),
+                unreadable.retries.clone(),
+            )
+        });
         let found = cited(DeadEndCondition::ThermalTrip, recovery.thermal_evidence())
+            .or(unreadable)
             .or_else(|| cited(DeadEndCondition::NoEvidence, recovery.missing_evidence()))
             .or_else(|| cited(DeadEndCondition::Smu, recovery.smu_evidence()))
             .or_else(|| cited(DeadEndCondition::Containment, recovery.containment_evidence()))
