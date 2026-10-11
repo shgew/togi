@@ -655,15 +655,25 @@ fn reset_all_clears_guidance_and_later_findings_are_unaffected() {
 fn query_cost_independent_of_event_count() {
     let mut log = Log::default();
     log.start(0);
-    let baseline = log.state(&CAUTIOUS);
     for _ in 0..5_000 {
         log.warning();
+        log.failure();
         log.reset(ResetTarget::Core(core(1)), &[]);
     }
+    let empty = log.state(&NONE);
+    assert_eq!(empty.retained_kinds(), 0);
+    assert_eq!(empty, DefectState::new(&NONE).tap_fold(&log));
+
     let state = log.state(&CAUTIOUS);
-    assert_eq!(state, baseline);
+    assert_eq!(state.retained_kinds(), 5_000);
     assert_eq!(state.new_findings().count(), 0);
     assert_eq!(state.unanswered().count(), 0);
     assert_eq!(state.missing_resets().count(), 0);
     assert_eq!(state.excluded_failures().count(), 0);
+
+    let mut warnings_only = Log::default();
+    for _ in 0..5_000 {
+        warnings_only.warning();
+    }
+    assert_eq!(warnings_only.state(&CAUTIOUS).retained_kinds(), 0);
 }

@@ -78,7 +78,7 @@ impl DefectState {
             is_ordered(registry),
             "defect ids must be strictly increasing"
         );
-        let mut watched = vec![EventKind::Failure];
+        let mut watched = Vec::new();
         for clause in registry.iter().flat_map(|entry| entry.clauses) {
             if !watched.contains(&clause.cause_kind) {
                 watched.push(clause.cause_kind);
@@ -96,6 +96,11 @@ impl DefectState {
             pending_resets: BTreeMap::new(),
             excluded: BTreeSet::new(),
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn retained_kinds(&self) -> usize {
+        self.kinds.len()
     }
 
     pub fn fold(&mut self, event: &Event) {
