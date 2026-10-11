@@ -7,6 +7,7 @@ pub mod boot;
 pub mod emergency;
 pub mod error;
 pub mod evidence;
+pub mod recover;
 pub mod recovery;
 pub mod session;
 mod startup;
