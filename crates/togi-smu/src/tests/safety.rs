@@ -120,3 +120,14 @@ fn emergency_zero_needs_a_validated_driver_even_with_a_proof() {
     assert!(matches!(smu_error(&error), Error::IdentityOnly { .. }));
     assert_eq!(fake.hardware_calls(), 0);
 }
+
+#[test]
+fn every_pm_reader_request_shares_the_one_reader() {
+    let tree = Tree::new(8, true);
+    let fake = Fake::new();
+    let mut driver = validated(&tree, &fake);
+    let first = driver.pm_reader().unwrap();
+    let second = driver.pm_reader().unwrap();
+    assert!(std::sync::Arc::ptr_eq(&first, &second));
+    assert_eq!(std::sync::Arc::strong_count(&first), 3);
+}

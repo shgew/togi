@@ -22,6 +22,7 @@ pub(crate) struct Pending {
 pub(crate) struct Validated {
     worker: Worker,
     slots: Result<SlotMap, Arc<SlotError>>,
+    pm: Option<Arc<PmReader>>,
 }
 
 impl Validated {
@@ -198,6 +199,7 @@ impl Driver {
         self.stage = Stage::Validated(Validated {
             worker,
             slots: slots.map_err(Arc::new),
+            pm: None,
         });
         Ok(Self::proof())
     }
@@ -272,19 +274,25 @@ impl Driver {
         })
     }
 
-    /// The PM table reader. Reading the table sends RSMU command 0x03, so it exists only once
-    /// the driver validated.
-    pub fn pm_reader(&mut self) -> Result<PmReader, Error> {
-        validated(&mut self.stage, Operation::ReadPmTable)?;
+    /// The driver's one PM table reader, started on first use; every call returns the same
+    /// reader, so at most one read is ever in flight. Reading the table sends RSMU command 0x03,
+    /// so it exists only once the driver validated.
+    pub fn pm_reader(&mut self) -> Result<Arc<PmReader>, Error> {
         let layout = self
             .topology()
             .map_or(Err(Unavailable::Topology), |cores| pm_table::layout(&cores));
-        PmReader::start(
+        let validated = validated(&mut self.stage, Operation::ReadPmTable)?;
+        if let Some(reader) = &validated.pm {
+            return Ok(Arc::clone(reader));
+        }
+        let reader = Arc::new(PmReader::start(
             Box::new(FileSource::new(&self.root)),
             layout,
             Box::new(Monotonic::new()),
             Timing::DEFAULT,
-        )
+        )?);
+        validated.pm = Some(Arc::clone(&reader));
+        Ok(reader)
     }
 
     fn read_offset(&mut self, core: CoreId) -> Result<ObservedOffset, Error> {
