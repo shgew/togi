@@ -593,6 +593,7 @@ fn settle_logs(judge: &mut Judge, ended: LogsEnd) -> Vec<String> {
         LogsEnd::TimedOut(bound) => vec![format!(
             "the output log writer did not finish within {bound:?}"
         )],
+        LogsEnd::Vanished => vec!["the output log writer ended without reporting".to_owned()],
     }
 }
 

@@ -1,12 +1,13 @@
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, Write};
-use std::sync::mpsc::{
-    Receiver, RecvTimeoutError, Sender, SyncSender, TrySendError, channel, sync_channel,
-};
+use std::sync::mpsc::{Receiver, Sender, SyncSender, TrySendError, channel, sync_channel};
 use std::time::Duration;
 
+use tokio::sync::oneshot;
+
 use crate::evidence::Stream;
+use crate::join::{self, Missing};
 
 /// How many chunks may wait for the log thread before further output bytes are dropped.
 const QUEUE: usize = 256;
@@ -30,6 +31,8 @@ pub(crate) struct LogFailure {
 pub(crate) enum LogsEnd {
     Done(Vec<LogFailure>),
     TimedOut(Duration),
+    /// The thread ended without reporting, so its failures are unknown.
+    Vanished,
 }
 
 /// One std thread writes every output log of a trial, so a blocked filesystem write never stalls
@@ -38,7 +41,7 @@ pub(crate) struct LogWriter {
     queue: SyncSender<(Key, Vec<u8>)>,
     opens: Sender<(Key, Sink)>,
     wrap: Wrap,
-    done: Receiver<Vec<LogFailure>>,
+    done: oneshot::Receiver<Vec<LogFailure>>,
 }
 
 /// What a pipe reader holds to append its consumed bytes to its log.
@@ -73,9 +76,13 @@ impl LogHandle {
 
 impl LogWriter {
     pub(crate) fn spawn(wrap: Option<Wrap>) -> io::Result<Self> {
+        #[cfg(test)]
+        if refusal::take() {
+            return Err(io::Error::other("no threads left"));
+        }
         let (queue, writes) = sync_channel(QUEUE);
         let (opens, registered) = channel();
-        let (finished, done) = channel();
+        let (finished, done) = oneshot::channel();
         std::thread::Builder::new()
             .name("togi-logs".to_owned())
             .spawn(move || {
@@ -100,19 +107,36 @@ impl LogWriter {
         }
     }
 
-    /// Closes the queue and waits at most `bound` of real time for queued bytes to be written; the
-    /// wait runs on the blocking pool, never on the runtime thread, and a thread stuck in a write
-    /// is abandoned.
+    /// Closes the queue and waits until `bound` from now for queued bytes to be written; a thread
+    /// stuck in a write is abandoned, and the wait holds no blocking-pool slot.
     pub(crate) async fn finish(self, bound: Duration) -> LogsEnd {
         let Self {
             queue, opens, done, ..
         } = self;
         drop((queue, opens));
-        match tokio::task::spawn_blocking(move || done.recv_timeout(bound)).await {
-            Ok(Ok(failures)) => LogsEnd::Done(failures),
-            Ok(Err(RecvTimeoutError::Timeout)) => LogsEnd::TimedOut(bound),
-            Ok(Err(RecvTimeoutError::Disconnected)) | Err(_) => LogsEnd::Done(Vec::new()),
+        match join::report(done, bound).await {
+            Ok(failures) => LogsEnd::Done(failures),
+            Err(Missing::TimedOut) => LogsEnd::TimedOut(bound),
+            Err(Missing::Vanished) => LogsEnd::Vanished,
         }
+    }
+}
+
+/// Test seam: the next `LogWriter::spawn` on this thread fails as an exhausted OS would.
+#[cfg(test)]
+pub(crate) mod refusal {
+    use std::cell::Cell;
+
+    thread_local! {
+        static NEXT: Cell<bool> = const { Cell::new(false) };
+    }
+
+    pub(crate) fn arm() {
+        NEXT.with(|next| next.set(true));
+    }
+
+    pub(super) fn take() -> bool {
+        NEXT.with(Cell::take)
     }
 }
 
@@ -221,7 +245,7 @@ mod tests {
                     (3, Stream::Stderr)
                 );
             }
-            LogsEnd::TimedOut(_) => panic!("timed out"),
+            LogsEnd::TimedOut(_) | LogsEnd::Vanished => panic!("did not finish"),
         }
     }
 
@@ -249,5 +273,29 @@ mod tests {
             LogsEnd::TimedOut(_)
         ));
         drop(gate);
+    }
+
+    #[test]
+    fn a_stuck_write_is_abandoned_at_the_join_bound_while_the_blocking_pool_is_saturated() {
+        let (runtime, release) = crate::join::saturated_pool();
+        let (gate, stuck) = std::sync::mpsc::channel();
+        runtime.block_on(async {
+            let stuck = Mutex::new(Some(stuck));
+            let writer = LogWriter::spawn(Some(Box::new(move |_| {
+                Box::new(Stuck(stuck.lock().unwrap().take().unwrap())) as Sink
+            })))
+            .unwrap();
+            let mut log = writer.open(0, Stream::Stdout, file());
+            log.append(b"x").unwrap();
+            drop(log);
+            let ended = tokio::time::timeout(
+                Duration::from_secs(5),
+                writer.finish(Duration::from_millis(100)),
+            )
+            .await
+            .expect("the join outlived its bound behind the blocking pool");
+            assert!(matches!(ended, LogsEnd::TimedOut(_)));
+        });
+        drop((gate, release));
     }
 }

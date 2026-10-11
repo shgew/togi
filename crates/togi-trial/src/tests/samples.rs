@@ -538,3 +538,24 @@ async fn a_stuck_writer_join_does_not_block_the_runtime_thread() {
     })
     .await;
 }
+
+#[tokio::test(start_paused = true)]
+async fn a_log_writer_that_cannot_start_is_refused_with_its_error_the_proof_and_no_workload() {
+    local(async {
+        let rig = rig();
+        crate::logs::refusal::arm();
+        let partial = rig
+            .start(spec(Regime::R1, &[0], secs(5)))
+            .await
+            .err()
+            .unwrap();
+        assert!(partial.value.is_some(), "the stop proof is returned");
+        assert!(matches!(
+            super::harness::crate_error(&partial.error),
+            Some(Error::LogWriter(error)) if error.to_string() == "no threads left"
+        ));
+        assert_eq!(rig.fake.process_count(), 0);
+        assert!(rig.fake.launches().is_empty());
+    })
+    .await;
+}

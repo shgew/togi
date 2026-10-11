@@ -17,6 +17,8 @@ mod id;
 #[cfg(target_os = "linux")]
 mod instance;
 #[cfg(target_os = "linux")]
+mod join;
+#[cfg(target_os = "linux")]
 mod judge;
 #[cfg(target_os = "linux")]
 mod launch;
