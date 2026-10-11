@@ -171,6 +171,7 @@ impl Run {
     fn round_start(&mut self, seq: Seq, round: &DeepeningRound) -> Result<(), FoldError> {
         let profile = Profile::new(&self.topo, round.profile)?;
         let target = Profile::new(&self.topo, round.target)?;
+        Profile::new(&self.topo, round.base)?;
         self.require_cores(round.cores)?;
         let offsets = self.offsets();
         let baseline = self.phases.passed().map_or(offsets, |passed| {
