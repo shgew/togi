@@ -521,21 +521,15 @@ impl Session {
     }
 
     fn mce_corrected(&self, seq: Seq) -> bool {
-        self.appender
-            .journal()
-            .events()
-            .iter()
-            .rev()
-            .find(|event| event.seq == seq)
-            .is_some_and(|event| {
-                matches!(
-                    &event.payload,
-                    Payload::Mce(Mce {
-                        corrected: true,
-                        ..
-                    })
-                )
-            })
+        self.appender.journal().event(seq).is_some_and(|event| {
+            matches!(
+                &event.payload,
+                Payload::Mce(Mce {
+                    corrected: true,
+                    ..
+                })
+            )
+        })
     }
 
     /// Resets the core a trial alone set, then reads the kernel log: machine checks since the trial's window began
