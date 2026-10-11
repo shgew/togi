@@ -593,6 +593,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "togi-hostlock"
+version = "0.0.0"
+dependencies = [
+ "nix",
+ "rustix",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
 name = "togi-machine"
 version = "0.0.0"
 dependencies = [
@@ -623,6 +633,17 @@ dependencies = [
  "rustix",
  "tempfile",
  "test-case",
+ "thiserror",
+]
+
+[[package]]
+name = "togi-tuningboot"
+version = "0.0.0"
+dependencies = [
+ "getrandom",
+ "proptest",
+ "serde",
+ "serde_json",
  "thiserror",
 ]
 
