@@ -258,3 +258,148 @@ fn a_reader_that_fails_mid_line_yields_the_error_and_ends_without_a_torn_tail() 
     assert!(reader.next().is_none());
     assert_eq!(reader.accepted(), complete);
 }
+
+fn started(recording: &Recording) -> crate::SessionId {
+    match &recording.events()[0].payload {
+        Payload::SessionStart(start) => start.session,
+        other => panic!("first event is {other:?}"),
+    }
+}
+
+#[test]
+fn recordings_read_the_archives_oldest_first_then_the_live_journal() {
+    use crate::testing::{begin, boot, session, simulated, start};
+
+    let fs = MemFs::new();
+    assert!(simulated(&fs).recordings().unwrap().is_empty());
+
+    let newer = session("20231114T000000Z");
+    let older = session("20231113T000000Z");
+    let dir = begin(&fs, newer)
+        .archive(stamp(5), crate::ArchiveKind::Transition, &[])
+        .unwrap();
+    let archived = dir.recordings().unwrap();
+    assert_eq!(archived.len(), 1);
+    assert_eq!(started(&archived[0]), newer);
+
+    let mut live = dir.open(boot(2)).unwrap();
+    live.append(stamp(6), start(older), &[]).unwrap();
+    let dir = live.close().unwrap();
+    let recordings = dir.recordings().unwrap();
+    assert_eq!(recordings.len(), 2);
+    assert_eq!(started(&recordings[0]), newer);
+    assert_eq!(started(&recordings[1]), older);
+
+    let events = recordings.into_iter().nth(1).unwrap().into_events();
+    assert_eq!(events.len(), 1);
+}
+
+#[test]
+fn recordings_fail_on_an_unreadable_journal_and_ignore_a_torn_tail() {
+    use crate::testing::{path, simulated};
+
+    let fs = MemFs::new();
+    let mut bytes = recorded(&fs);
+    bytes.extend_from_slice(b"{\"seq\":5");
+    fs.put(path("events.jsonl"), bytes);
+    let recordings = simulated(&fs).recordings().unwrap();
+    assert_eq!(recordings[0].events().len(), 4);
+    assert!(recordings[0].torn().is_some());
+
+    let broken = MemFs::new();
+    broken.put(path("events.jsonl"), "garbage\n");
+    assert!(matches!(
+        simulated(&broken).recordings(),
+        Err(LookupError::File(_))
+    ));
+}
+
+fn journal_of(session: crate::SessionId) -> Vec<u8> {
+    let fs = MemFs::new();
+    drop(crate::testing::begin(&fs, session));
+    crate::testing::live(&fs)
+}
+
+fn archived_pair(fs: &MemFs) -> (crate::SessionId, crate::SessionId) {
+    use crate::testing::session;
+
+    let ninth = session("20231114T000000Z-9");
+    let tenth = session("20231114T000000Z-10");
+    for id in [tenth, ninth] {
+        fs.put(format!("/state/archive/{id}.jsonl"), journal_of(id));
+    }
+    (ninth, tenth)
+}
+
+#[test]
+fn recordings_order_archives_by_session_not_by_name() {
+    use crate::testing::{path, session, simulated};
+
+    let fs = MemFs::new();
+    let (ninth, tenth) = archived_pair(&fs);
+    let live = session("20231115T000000Z");
+    fs.put(path("events.jsonl"), journal_of(live));
+    let started: Vec<_> = simulated(&fs)
+        .recordings()
+        .unwrap()
+        .iter()
+        .map(started)
+        .collect();
+    assert_eq!(started, [ninth, tenth, live]);
+}
+
+fn archive_failure(fs: &MemFs) -> FileError {
+    match crate::testing::simulated(fs).recordings() {
+        Err(LookupError::File(error)) => error,
+        other => panic!("expected a file error, got {other:?}"),
+    }
+}
+
+#[test]
+fn an_undecodable_archive_after_a_readable_one_is_an_error_naming_its_session() {
+    let fs = MemFs::new();
+    let (_, tenth) = archived_pair(&fs);
+    let mut bytes = journal_of(tenth);
+    bytes.extend_from_slice(b"{not json\n");
+    fs.put(format!("/state/archive/{tenth}.jsonl"), bytes);
+    let error = archive_failure(&fs);
+    assert!(
+        matches!(error.source, ReadError::Decode { line: 2, .. }),
+        "{error}"
+    );
+    assert_eq!(
+        error.path,
+        Path::new(&format!("/state/archive/{tenth}.jsonl"))
+    );
+    assert!(error.to_string().contains(&tenth.to_string()), "{error}");
+}
+
+#[test]
+fn an_unreadable_archive_after_a_readable_one_is_an_error_naming_its_session() {
+    let fs = MemFs::new();
+    let (_, tenth) = archived_pair(&fs);
+    fs.inject(Fault::before(Op::Read, 1).named(format!("{tenth}.jsonl")));
+    let error = archive_failure(&fs);
+    assert!(matches!(error.source, ReadError::Io(_)), "{error}");
+    assert_eq!(
+        error.path,
+        Path::new(&format!("/state/archive/{tenth}.jsonl"))
+    );
+    assert!(error.to_string().contains(&tenth.to_string()), "{error}");
+}
+
+#[test]
+fn an_unreadable_live_journal_is_an_error_not_the_archives_alone() {
+    use crate::testing::{path, session};
+
+    let fs = MemFs::new();
+    archived_pair(&fs);
+    fs.put(
+        path("events.jsonl"),
+        journal_of(session("20231115T000000Z")),
+    );
+    fs.inject(Fault::before(Op::Read, 1).named("events.jsonl"));
+    let error = archive_failure(&fs);
+    assert!(matches!(error.source, ReadError::Io(_)), "{error}");
+    assert_eq!(error.path, path("events.jsonl"));
+}

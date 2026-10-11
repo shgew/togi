@@ -197,6 +197,10 @@ impl Recording {
         self.torn.as_ref()
     }
 
+    pub fn into_events(self) -> Vec<Event> {
+        self.events
+    }
+
     pub(crate) fn into_parts(self) -> (Vec<Event>, Option<Torn>) {
         (self.events, self.torn)
     }
@@ -266,6 +270,29 @@ impl StateDir {
             }
         }
         Ok(false)
+    }
+
+    /// Every journal of the directory read whole: the archived sessions oldest first, then the live journal when
+    /// there is one. Only complete lines count.
+    pub fn recordings(&self) -> Result<Vec<Recording>, LookupError> {
+        let mut recordings = Vec::new();
+        for session in self.archives()? {
+            recordings.push(Recording::read_in(
+                self.fs(),
+                &self.archive_journal(&session),
+            )?);
+        }
+        let live = self.join(EVENTS_FILE);
+        let file_error = |source: ReadError| FileError {
+            path: live.clone(),
+            source,
+        };
+        match self.fs().read(&live) {
+            Ok(bytes) => recordings.push(Recording::parse(&bytes).map_err(file_error)?),
+            Err(error) if not_found(&error) => {}
+            Err(error) => return Err(file_error(error.into()).into()),
+        }
+        Ok(recordings)
     }
 }
 

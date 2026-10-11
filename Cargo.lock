@@ -838,6 +838,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "togi-tool-trialfacts"
+version = "0.0.0"
+dependencies = [
+ "flate2",
+ "jiff",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "togi-facts",
+ "togi-journal",
+ "togi-machine",
+ "togi-sim",
+]
+
+[[package]]
 name = "togi-trialfiles"
 version = "0.0.0"
 dependencies = [
