@@ -25,7 +25,7 @@ use togi_tuner::{
 };
 use togi_tuningboot::{Bootloader, Environment, SavedEntry};
 
-use crate::appender::{Appender, Folds};
+use crate::appender::Appender;
 use crate::boot::BootHandoff;
 use crate::emergency::SweepCleared;
 use crate::error::AppendFailure;
@@ -206,9 +206,10 @@ impl Rig {
 
 /// The appender's incremental folds are what a fresh fold of the journal gives.
 pub(crate) fn assert_fold_consistent(appender: &Appender) {
-    let fresh =
-        Folds::replay_with(appender.defect_registry(), appender.journal().events()).unwrap();
-    assert_eq!(&fresh, appender.folds());
+    appender
+        .capsule()
+        .verify(appender.journal().events())
+        .unwrap();
 }
 
 /// A simulated machine and an in-memory journal directory, from which each run opens its own session.
@@ -262,6 +263,7 @@ impl Bench {
             bootloader: None,
             prompt: None,
             defects: self.defects,
+            resume: None,
             carry: None,
             log: None,
             renderer: Renderer::default(),

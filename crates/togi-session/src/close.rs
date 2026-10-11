@@ -183,10 +183,16 @@ impl Session {
                 .map(|failure| self.answer(&failure));
         }
         errors.extend(self.appender.take_log_failure().map(SessionError::Log));
+        let capsule = self
+            .appender
+            .failure()
+            .is_none()
+            .then(|| self.appender.capsule());
         Ended {
             stop,
             errors,
             emergency,
+            capsule,
             journal: self.appender.into_journal(),
         }
     }

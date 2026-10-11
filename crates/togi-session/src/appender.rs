@@ -11,6 +11,7 @@ use togi_render::Renderer;
 use crate::boot::BootHandoff;
 use crate::error::{AppendFailure, FoldError, JournalFailure};
 use crate::recovery::RecoveryState;
+use crate::resume::ResumeCapsule;
 
 /// A journal that does not fold into the run's state, handed back with the reason.
 #[derive(Debug)]
@@ -80,7 +81,6 @@ pub(crate) struct Appender {
     latched: Option<JournalFailure>,
     trial: Option<CancellationToken>,
     handoff: Option<BootHandoff>,
-    #[cfg(test)]
     defects: &'static [Entry],
     pub(crate) publication: Option<crate::publication::PublicationPolicy>,
     pub(crate) publishing: bool,
@@ -95,21 +95,27 @@ impl Appender {
         renderer: Renderer,
         zone: TimeZone,
     ) -> Result<Self, FoldError> {
-        Self::resume_with(journal, clock, renderer, zone, KNOWN_DEFECTS)
+        Self::resume_with(journal, clock, renderer, zone, KNOWN_DEFECTS, None)
             .map_err(|unresumed| unresumed.error)
     }
 
-    /// [`Appender::resume`] with the defects to judge by; a journal that does not fold is handed back.
+    /// [`Appender::resume`] with the defects to judge by and the capsule of an earlier run, whose folds are taken
+    /// over when it covers exactly this journal. A journal that does not fold is handed back.
     pub(crate) fn resume_with(
         journal: Journal,
         clock: Box<dyn Clock>,
         renderer: Renderer,
         zone: TimeZone,
         defects: &'static [Entry],
+        capsule: Option<ResumeCapsule>,
     ) -> Result<Self, Box<Unresumed>> {
-        let folds = match Folds::replay_with(defects, journal.events()) {
-            Ok(folds) => folds,
-            Err(error) => return Err(Box::new(Unresumed { journal, error })),
+        let adopted = capsule.and_then(|capsule| capsule.adopt(&journal, defects));
+        let folds = match adopted {
+            Some(folds) => folds,
+            None => match Folds::replay_with(defects, journal.events()) {
+                Ok(folds) => folds,
+                Err(error) => return Err(Box::new(Unresumed { journal, error })),
+            },
         };
         Ok(Self {
             journal,
@@ -122,17 +128,15 @@ impl Appender {
             latched: None,
             trial: None,
             handoff: None,
-            #[cfg(test)]
             defects,
             publication: None,
             publishing: false,
         })
     }
 
-    /// The defects the run judges by.
-    #[cfg(test)]
-    pub(crate) const fn defect_registry(&self) -> &'static [Entry] {
-        self.defects
+    /// The capsule that lets the next run skip folding this appender's journal.
+    pub(crate) fn capsule(&self) -> ResumeCapsule {
+        ResumeCapsule::new(&self.journal, self.defects, self.folds.clone())
     }
 
     #[must_use]
@@ -161,11 +165,6 @@ impl Appender {
 
     pub(crate) const fn defects(&self) -> &DefectState {
         &self.folds.defects
-    }
-
-    #[cfg(test)]
-    pub(crate) const fn folds(&self) -> &Folds {
-        &self.folds
     }
 
     pub(crate) fn clock(&mut self) -> &mut dyn Clock {

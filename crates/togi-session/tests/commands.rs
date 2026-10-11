@@ -1,7 +1,4 @@
-#![expect(
-    clippy::unwrap_used,
-    reason = "helpers panic on a broken fixture"
-)]
+#![expect(clippy::unwrap_used, reason = "helpers panic on a broken fixture")]
 
 use std::io;
 
@@ -68,6 +65,7 @@ fn input(sim: &Simulator, mem: &MemFs) -> RunInput {
         bootloader: None,
         prompt: None,
         defects: &[],
+        resume: None,
         carry: None,
         log: None,
         renderer: Renderer::default(),

@@ -31,6 +31,7 @@ use crate::error::{Flow, SessionError, Step};
 use crate::evidence::{self, Placement, Window};
 use crate::recover::KernelUnreadable;
 use crate::recovery::Cited;
+use crate::resume::ResumeCapsule;
 use crate::write::{Hardware, Verified};
 
 /// When a run that met no dead end stops on its own.
@@ -80,6 +81,8 @@ pub struct RunInput {
     pub prompt: Option<Box<dyn Prompt>>,
     /// The defects this build knows; [`togi_defect::KNOWN_DEFECTS`] outside tests.
     pub defects: &'static [togi_defect::Entry],
+    /// What the previous run on this journal left; adopted only when it covers exactly the journal.
+    pub resume: Option<ResumeCapsule>,
     /// What a transition carries into a new session.
     pub carry: Option<PendingCarry>,
     /// Receives each appended event's line.
@@ -122,6 +125,10 @@ pub struct Ended {
     pub errors: Vec<SessionError>,
     pub emergency: Option<emergency::Outcome>,
     pub journal: Journal,
+    /// What the next run on this journal may adopt instead of folding it again: `None` when the run latched a
+    /// journal failure, which leaves the journal's last state unproven. A crashed run keeps its capsule: the folds
+    /// follow every append, whatever was published.
+    pub capsule: Option<ResumeCapsule>,
 }
 
 /// What a kernel log read at a boundary leaves for the event that closes the boundary.
@@ -208,6 +215,7 @@ impl Session {
             mut bootloader,
             prompt,
             defects,
+            resume,
             carry,
             log,
             renderer,
@@ -221,6 +229,7 @@ impl Session {
                 errors: vec![error],
                 emergency: None,
                 journal,
+                capsule: None,
             })
         };
         if let Some(refusal) = refusal(&build, &journal) {
@@ -235,6 +244,7 @@ impl Session {
                 errors,
                 emergency: None,
                 journal,
+                capsule: None,
             }));
         }
         let handoff = match bootloader.map(BootHandoff::read).transpose() {
@@ -248,13 +258,14 @@ impl Session {
             trials,
             kernel,
         } = machine;
-        let mut appender = match Appender::resume_with(journal, clock, renderer, zone, defects) {
-            Ok(appender) => appender,
-            Err(unresumed) => {
-                let Unresumed { journal, error } = *unresumed;
-                return Err(refused(journal, error.into()));
-            }
-        };
+        let mut appender =
+            match Appender::resume_with(journal, clock, renderer, zone, defects, resume) {
+                Ok(appender) => appender,
+                Err(unresumed) => {
+                    let Unresumed { journal, error } = *unresumed;
+                    return Err(refused(journal, error.into()));
+                }
+            };
         if let Some(log) = log {
             appender = appender.with_log(log);
         }
