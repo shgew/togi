@@ -110,9 +110,11 @@ impl Iterator for Periods {
 impl fmt::Display for LoadSchedule {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Duty { pct } => write!(f, "{pct}% duty, ")?;
+            Self::Duty { pct } => {
+                write!(f, "{pct}% duty, ")?;
                 write_period(f, DUTY_PERIOD)?;
-                f.write_str(" period"),
+                f.write_str(" period")
+            }
             Self::Random { .. } => {
                 f.write_str("random on/off periods from ")?;
                 for (index, period) in RANDOM_PERIODS.iter().enumerate() {
