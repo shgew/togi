@@ -4,7 +4,7 @@ use std::error::Error;
 use std::fmt::Write as _;
 use std::io::{self, Write};
 use std::path::Path;
-use std::sync::{LazyLock, Mutex, MutexGuard, PoisonError};
+use std::sync::{LazyLock, Mutex, MutexGuard};
 use std::thread;
 use std::time::Duration;
 use togi_hostlock::{DEFAULT_PATH, HostLock, Policy};
@@ -40,7 +40,13 @@ fn must<T, E: Error>(result: Result<T, E>, what: &str) -> T {
 
 /// Runs the hardware tests of this process one at a time, behind the process-lifetime host lock.
 fn exclusive() -> MutexGuard<'static, ()> {
-    let serial = SERIAL.lock().unwrap_or_else(PoisonError::into_inner);
+    // A panicked test may have left its worker inside an uncancellable sysfs write: refuse, never recover.
+    let Ok(serial) = SERIAL.lock() else {
+        panic!(
+            "an earlier hardware test in this process panicked; its SMU worker may still be inside \
+             an uncancellable sysfs call, so this process refuses further hardware access"
+        );
+    };
     LazyLock::force(&HOST_LOCK);
     serial
 }
