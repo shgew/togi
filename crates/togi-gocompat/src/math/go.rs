@@ -29,7 +29,7 @@ fn nan() -> f64 {
 }
 
 #[inline(always)]
-fn madd<const FUSED: bool>(a: f64, x: f64, y: f64) -> f64 {
+pub(super) fn madd<const FUSED: bool>(a: f64, x: f64, y: f64) -> f64 {
     if FUSED {
         super::fma(x, y, a)
     } else {
@@ -38,7 +38,7 @@ fn madd<const FUSED: bool>(a: f64, x: f64, y: f64) -> f64 {
 }
 
 #[inline(always)]
-fn msub<const FUSED: bool>(a: f64, x: f64, y: f64) -> f64 {
+pub(super) fn msub<const FUSED: bool>(a: f64, x: f64, y: f64) -> f64 {
     if FUSED {
         super::fma(-x, y, a)
     } else {
@@ -47,7 +47,7 @@ fn msub<const FUSED: bool>(a: f64, x: f64, y: f64) -> f64 {
 }
 
 #[inline(always)]
-fn nmsub<const FUSED: bool>(a: f64, x: f64, y: f64) -> f64 {
+pub(super) fn nmsub<const FUSED: bool>(a: f64, x: f64, y: f64) -> f64 {
     if FUSED {
         super::fma(x, y, -a)
     } else {
