@@ -11,11 +11,11 @@ use crate::{
     TopologyError, classify_crash, recorded_kind,
 };
 
-fn core(id: u8) -> CoreId {
+pub(crate) fn core(id: u8) -> CoreId {
     CoreId::new(i64::from(id)).unwrap()
 }
 
-fn off(value: i64) -> TargetOffset {
+pub(crate) fn off(value: i64) -> TargetOffset {
     TargetOffset::new(value).unwrap()
 }
 
@@ -31,12 +31,12 @@ fn info(id: u8, ccd: u8) -> CoreInfo {
     }
 }
 
-fn topology(ids: &[u8]) -> Topology {
+pub(crate) fn topology(ids: &[u8]) -> Topology {
     let infos: Vec<CoreInfo> = ids.iter().map(|&id| info(id, id / 8)).collect();
     Topology::new(&infos).unwrap()
 }
 
-fn profile(topology: &Topology, values: &[i64]) -> Profile {
+pub(crate) fn profile(topology: &Topology, values: &[i64]) -> Profile {
     let offsets: PerCore<TargetOffset> = topology
         .all()
         .iter()
