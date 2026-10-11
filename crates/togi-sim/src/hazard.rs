@@ -190,7 +190,7 @@ impl Model {
                 found: profile.len(),
             });
         }
-        match load.cores.iter().last() {
+        match load.cores.last() {
             Some(core) if core.index() >= self.cores() => Err(ShapeError::LoadedCore {
                 core: core.get(),
                 cores: self.cores(),

@@ -6,12 +6,14 @@
 
 use std::collections::BTreeSet;
 use std::time::Duration;
-use togi_machine::{BiosContext, CoreSet, Regime, Signal, TargetOffset, Workload, pick_workload};
+use togi_machine::{BiosContext, CoreSet, Regime, Signal, TargetOffset, workload_by_id};
 use togi_sim::random::{Domain, stream};
 use togi_sim::replay::{FactProblem, InvalidFact, Replay, ReplayFact, ReplayOutcome};
 use togi_sim::{Load, RunSettings};
 
-use crate::common::{Rig, cores, crashed, flat_cores, machine, model, offsets, sharp, spec};
+use crate::common::{
+    Rig, cores, crashed, flat_cores, machine, model, offsets, r7_workload, sharp, spec,
+};
 
 fn context(version: &str) -> BiosContext {
     BiosContext {
@@ -264,14 +266,11 @@ fn run_against(replay: Option<Replay>, signal: Signal, key: &MissKey) -> (String
     if key.change_context {
         rig.sim.set_bios_context(context("B"));
     }
-    let work = Workload {
-        id: key.workload,
-        ..pick_workload(key.regime, 0).clone()
-    };
+    let work = workload_by_id(key.workload).expect("a catalog workload");
     let (waited, _) = rig.run(spec(
         "1",
         key.regime,
-        &work,
+        work,
         key.cores,
         Duration::from_secs(key.seconds),
     ));
@@ -297,12 +296,13 @@ fn a_replay_miss_runs_the_fitted_failure_model_exactly_as_if_there_were_no_repla
     };
     let replay = || {
         let mut recorded = fact(ReplayOutcome::Pass);
+        recorded.workload = r7_workload(0).to_owned();
         recorded.context = probe.clone();
         Replay::new([recorded]).expect("valid")
     };
     let base = MissKey {
         regime: Regime::R7,
-        workload: "work",
+        workload: r7_workload(0),
         cores: &[0, 1],
         seconds: 60,
         change_profile: false,
@@ -332,7 +332,7 @@ fn a_replay_miss_runs_the_fitted_failure_model_exactly_as_if_there_were_no_repla
             (
                 "workload",
                 MissKey {
-                    workload: "other",
+                    workload: r7_workload(1),
                     ..base
                 },
             ),

@@ -36,7 +36,7 @@ fn confirmed() -> Stopped {
 fn load_of(spec: &TrialSpec) -> Load<'_> {
     Load {
         regime: spec.regime,
-        workload: spec.workload.id,
+        workload: spec.workload.as_str(),
         cores: spec.cores.iter().copied().collect(),
         duration: spec.duration,
     }
@@ -78,7 +78,7 @@ impl Trials for SimTrials {
         if runtime
             .faults
             .missing_backends
-            .contains(&spec.workload.backend)
+            .contains(&spec.workload.backend())
         {
             return Err(fail(Error::BackendMissing));
         }
@@ -112,7 +112,7 @@ impl Trials for SimTrials {
             pid: 1000u32.saturating_add(number),
             scope: format!("togi-trial-{}", spec.id),
             cpus: spec.cpus.clone(),
-            argv: vec!["sim".to_owned(), spec.workload.id.to_owned()],
+            argv: vec!["sim".to_owned(), spec.workload.to_string()],
             schedule: LoadSchedule::for_spec(&spec),
             ..Started::default()
         };
@@ -171,18 +171,6 @@ impl SimRunning {
     }
 }
 
-fn blank() -> TrialResult {
-    TrialResult {
-        ran: Duration::ZERO,
-        failure: None,
-        inconclusive: None,
-        escaped: Vec::new(),
-        tctl_max_c: None,
-        stops: 0,
-        conts: 0,
-    }
-}
-
 impl Running for SimRunning {
     fn started(&self) -> Started {
         self.started.clone()
@@ -194,7 +182,7 @@ impl Running for SimRunning {
         report: &mut dyn Reporter,
     ) -> Result<TrialResult, Partial<TrialResult>> {
         let fail = |error| Partial {
-            value: blank(),
+            value: TrialResult::default(),
             error,
         };
         if self.stale() {
@@ -332,9 +320,11 @@ impl Runtime {
         let profile = self.regs.clone();
         let planned = self.plan(spec, &load, &profile)?;
         let start = self.clock();
-        let mut result = blank();
-        result.ran = spec.duration;
-        if let Some(first) = load.cores.iter().next() {
+        let mut result = TrialResult {
+            ran: spec.duration,
+            ..TrialResult::default()
+        };
+        if let Some(first) = load.cores.first() {
             let mut rng = stream(self.seed, Domain::Tctl, &self.key(spec, first));
             result.tctl_max_c = Some(62 + rng.random_range(0..15));
             if escape {
@@ -493,7 +483,7 @@ impl Runtime {
         let snapshot = LastTrial {
             id: Some(spec.id.clone()),
             cores: load.cores,
-            threads: spec.workload.threads,
+            threads: spec.workload.workload().threads,
             ran: self.clock().saturating_sub(start),
             stalled,
             voltage: self.model.voltage_state(profile, load).ok().flatten(),
@@ -523,14 +513,14 @@ impl Runtime {
                     u64::try_from(spec.index).unwrap_or(u64::MAX),
                     regime_index(spec.regime) as u64,
                     u64::try_from(spec.duration.as_nanos()).unwrap_or(u64::MAX),
-                    text_part(spec.workload.id),
+                    text_part(spec.workload.as_str()),
                 ],
             );
             if let Some(fact) = replay.answer(&self.bios, load, profile, &mut rng) {
                 return Ok(match &fact.outcome {
                     ReplayOutcome::Pass => None,
                     ReplayOutcome::Failure { signal, exposure } => {
-                        fact.cores.iter().next().map(|core| Failure {
+                        fact.cores.first().map(|core| Failure {
                             signal: Some(*signal),
                             evidence: Evidence::Nothing,
                             replayed: true,
@@ -590,7 +580,7 @@ impl Runtime {
         } else {
             Some(Signal::Crash)
         };
-        let lowest = || load.cores.iter().next();
+        let lowest = || load.cores.first();
         let failure = |core: CoreId| Failure::new(core, Duration::ZERO);
         match source.kind {
             SourceKind::Core(core) => (core, failure(core)),
@@ -671,7 +661,7 @@ impl Runtime {
             .model
             .voltage()
             .and_then(|voltage| {
-                voltage.workload(spec.workload.id).cores[core.index()]
+                voltage.workload(spec.workload.as_str()).cores[core.index()]
                     .signals
                     .as_ref()
             })

@@ -10,8 +10,7 @@
 use jiff::SignedDuration;
 use std::time::Duration;
 use togi_machine::{
-    BiosContext, CancellationToken, Condition, Error, Regime, ResetKind, Signal, Workload,
-    pick_workload,
+    BiosContext, CancellationToken, Condition, Error, Regime, ResetKind, Signal, pick_workload,
 };
 use togi_sim::definition::{BiosContextDef, CcdDef, JointDef, ModelDef, ScriptDef, Weights};
 use togi_sim::model::{Onset, Script};
@@ -282,17 +281,14 @@ fn a_workload_limit_beats_the_alone_limit_and_an_outsider_switches_to_together()
         sharp(Signal::ComputationError),
         vec![],
     );
-    definition.core[0].workload = [("special".to_owned(), -5)].into();
+    let limited = pick_workload(Regime::R1, 1);
+    definition.core[0].workload = [(limited.id.to_owned(), -5)].into();
     let mut rig = Rig::new(&definition, 1);
     assert!(
         rig.pass(basic(Regime::R1, &[0], SECOND)).failure.is_none(),
         "alone limit -20"
     );
-    let special = Workload {
-        id: "special",
-        ..pick_workload(Regime::R1, 0).clone()
-    };
-    let result = rig.pass(spec("0002", Regime::R1, &special, &[0], SECOND));
+    let result = rig.pass(spec("0002", Regime::R1, limited, &[0], SECOND));
     assert!(result.failure.is_some(), "workload limit -5");
     rig.set(1, -1).expect("set");
     assert!(
@@ -603,10 +599,7 @@ fn a_replayed_uncorrected_machine_check_names_a_bank_by_the_models_probability()
         let mut definition = machine(2, flat_cores(2, -50, -50));
         definition.bios = Some(vec![-20, -21]);
         definition.model.core_local_bank = local;
-        let work = Workload {
-            id: "work",
-            ..pick_workload(Regime::R7, 0).clone()
-        };
+        let work = pick_workload(Regime::R7, 0);
         let mut banks = std::collections::BTreeSet::new();
         for seed in 0..60u64 {
             let model = model(&definition);
@@ -619,7 +612,7 @@ fn a_replayed_uncorrected_machine_check_names_a_bank_by_the_models_probability()
                     ..RunSettings::default()
                 },
             );
-            let (waited, _) = rig.run(spec("1", Regime::R7, &work, &[0, 1], MINUTE));
+            let (waited, _) = rig.run(spec("1", Regime::R7, work, &[0, 1], MINUTE));
             assert!(crashed(&waited));
             rig.sim.reboot();
             let boot = rig.boot();
@@ -749,7 +742,7 @@ fn replay_of(context: BiosContext, signal: Signal) -> Replay {
     Replay::new([ReplayFact {
         context,
         regime: Regime::R7,
-        workload: "work".to_owned(),
+        workload: pick_workload(Regime::R7, 0).id.to_owned(),
         cores: cores(&[0, 1]),
         duration: MINUTE,
         profile: offsets(&[-20, -21]),
@@ -774,11 +767,8 @@ fn replayed(signal: Signal) -> (Rig, crate::common::Waited, crate::common::Recor
             ..RunSettings::default()
         },
     );
-    let work = Workload {
-        id: "work",
-        ..pick_workload(Regime::R7, 0).clone()
-    };
-    let (waited, recorder) = rig.run(spec("1", Regime::R7, &work, &[0, 1], MINUTE));
+    let work = pick_workload(Regime::R7, 0);
+    let (waited, recorder) = rig.run(spec("1", Regime::R7, work, &[0, 1], MINUTE));
     (rig, waited, recorder)
 }
 
@@ -845,15 +835,12 @@ fn a_trial_without_a_matching_fact_falls_back_to_the_fitted_model() {
         ..RunSettings::default()
     };
     let mut rig = Rig::with(model, settings);
-    let work = Workload {
-        id: "work",
-        ..pick_workload(Regime::R7, 0).clone()
-    };
-    let mut other = spec("1", Regime::R7, &work, &[0, 1], MINUTE);
+    let work = pick_workload(Regime::R7, 0);
+    let mut other = spec("1", Regime::R7, work, &[0, 1], MINUTE);
     other.duration = Duration::from_secs(90);
     assert!(rig.pass(other).failure.is_none(), "a different duration");
     rig.set(0, -22).expect("set");
-    let matching = spec("2", Regime::R7, &work, &[0, 1], MINUTE);
+    let matching = spec("2", Regime::R7, work, &[0, 1], MINUTE);
     assert!(rig.pass(matching).failure.is_none(), "a different profile");
     rig.sim.set_bios_context(BiosContext {
         bios_version: "changed".to_owned(),
@@ -862,7 +849,7 @@ fn a_trial_without_a_matching_fact_falls_back_to_the_fitted_model() {
     rig.set_all(0).expect("zero");
     rig.set(0, -20).expect("set");
     rig.set(1, -21).expect("set");
-    let matching = spec("3", Regime::R7, &work, &[0, 1], MINUTE);
+    let matching = spec("3", Regime::R7, work, &[0, 1], MINUTE);
     assert!(rig.pass(matching).failure.is_none(), "another BIOS context");
 }
 
@@ -885,12 +872,9 @@ fn a_model_that_declares_its_context_answers_replay_under_it() {
             ..RunSettings::default()
         },
     );
-    let work = Workload {
-        id: "work",
-        ..pick_workload(Regime::R7, 0).clone()
-    };
+    let work = pick_workload(Regime::R7, 0);
     assert!(crashed(
-        &rig.run(spec("1", Regime::R7, &work, &[0, 1], MINUTE)).0
+        &rig.run(spec("1", Regime::R7, work, &[0, 1], MINUTE)).0
     ));
     let _ = offset(0);
 }

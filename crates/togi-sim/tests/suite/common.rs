@@ -136,7 +136,7 @@ pub(crate) fn spec(
     TrialSpec {
         id: id.to_owned(),
         regime,
-        workload: workload.clone(),
+        workload: workload.id(),
         condition: Condition::Together,
         cores: cores.iter().map(|&id| core(id)).collect(),
         cpus: cores
@@ -157,7 +157,7 @@ pub(crate) fn basic(regime: Regime, cores: &[i64], duration: Duration) -> TrialS
 pub(crate) fn load_of(spec: &TrialSpec) -> togi_sim::Load<'_> {
     togi_sim::Load {
         regime: spec.regime,
-        workload: spec.workload.id,
+        workload: spec.workload.as_str(),
         cores: spec.cores.iter().copied().collect(),
         duration: spec.duration,
     }
@@ -258,7 +258,7 @@ impl Rig {
         self.set_all(0).expect("zero");
         self.set(core, value).expect("set");
         let mut spec = basic(regime, &[core], Duration::from_secs(90));
-        spec.workload = pick_workload(regime, index).clone();
+        spec.workload = pick_workload(regime, index).id();
         spec.condition = Condition::Alone;
         spec.index = index;
         self.run(spec).0

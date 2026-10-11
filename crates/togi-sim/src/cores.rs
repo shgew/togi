@@ -1,7 +1,7 @@
 use togi_machine::CoreId;
 
 pub(crate) fn core_id(index: usize) -> Option<CoreId> {
-    CoreId::new(i64::try_from(index).ok()?).ok()
+    CoreId::try_from(index).ok()
 }
 
 /// The first `count` core IDs in ascending order.

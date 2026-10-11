@@ -66,7 +66,7 @@ struct Key {
 /// the full applied profile. Condition and phase are not part of the key.
 #[derive(Clone, Debug, Default)]
 pub struct Replay {
-    contexts: Vec<(BiosContext, HashMap<Key, Vec<ReplayFact>>)>,
+    contexts: HashMap<BiosContext, HashMap<Key, Vec<ReplayFact>>>,
     facts: usize,
 }
 
@@ -76,15 +76,7 @@ impl Replay {
         let mut replay = Self::default();
         for (index, fact) in facts.into_iter().enumerate() {
             validate(&fact).map_err(|problem| InvalidFact { index, problem })?;
-            let position = replay
-                .contexts
-                .iter()
-                .position(|(context, _)| *context == fact.context)
-                .unwrap_or_else(|| {
-                    replay.contexts.push((fact.context.clone(), HashMap::new()));
-                    replay.contexts.len() - 1
-                });
-            let buckets = &mut replay.contexts[position].1;
+            let buckets = replay.contexts.entry(fact.context.clone()).or_default();
             let key = Key {
                 regime: fact.regime,
                 workload: fact.workload.clone(),
@@ -112,7 +104,7 @@ impl Replay {
         load: &Load<'_>,
         profile: &[TargetOffset],
     ) -> Option<&[ReplayFact]> {
-        let (_, buckets) = self.contexts.iter().find(|(known, _)| known == context)?;
+        let buckets = self.contexts.get(context)?;
         let key = Key {
             regime: load.regime,
             workload: load.workload.to_owned(),
@@ -150,7 +142,7 @@ fn validate(fact: &ReplayFact) -> Result<(), FactProblem> {
     if fact.context == BiosContext::default() {
         return Err(FactProblem::NoContext);
     }
-    let Some(highest) = fact.cores.iter().last() else {
+    let Some(highest) = fact.cores.last() else {
         return Err(FactProblem::NoCores);
     };
     if highest.index() >= fact.profile.len() {

@@ -223,7 +223,7 @@ fn a_replayed_pass_overrides_the_background() {
     let replay = Replay::new([ReplayFact {
         context: model.bios_context().clone(),
         regime: Regime::R7,
-        workload: spec.workload.id.to_owned(),
+        workload: spec.workload.as_str().to_owned(),
         cores: cores(&[0, 1]),
         duration: spec.duration,
         profile: offsets(&[0; 16]),

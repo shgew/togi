@@ -74,7 +74,7 @@ fn write_faults_start_counting_when_armed() {
 fn a_missing_backend_fails_every_start_of_its_workloads() {
     let mut rig = Rig::new(&two_cores(), 1);
     let mprime = basic(Regime::R1, &[0], MINUTE);
-    assert_eq!(mprime.workload.backend, togi_machine::Backend::Mprime);
+    assert_eq!(mprime.workload.backend(), togi_machine::Backend::Mprime);
     rig.sim.miss_backend(togi_machine::Backend::Mprime);
     let Err(failed) = rig.start(mprime) else {
         panic!("started");
@@ -285,7 +285,7 @@ fn the_topology_splits_the_cores_into_two_ccds_with_their_sibling_threads() {
         let mut rig = Rig::new(&definition, 1);
         let want: Vec<CoreInfo> = (0..cores)
             .map(|index| CoreInfo {
-                core: core(i64::try_from(index).expect("core")),
+                core: togi_machine::CoreId::try_from(index).expect("core"),
                 ccd: CcdId(u8::try_from(index / (cores / 2)).expect("ccd")),
                 cpus: vec![
                     CpuId(u16::try_from(index).expect("cpu")),
