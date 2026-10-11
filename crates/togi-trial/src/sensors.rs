@@ -1,7 +1,9 @@
-use std::path::PathBuf;
-use std::time::Duration;
+use std::collections::BTreeMap;
+use std::fs;
+use std::path::{Path, PathBuf};
 
-use togi_machine::{CoreId, CoreInfo};
+use tokio::time::Instant;
+use togi_machine::{CoreId, CoreInfo, PerCore};
 
 /// Where the sensors live; tests point these at fixtures.
 #[derive(Clone, Debug)]
@@ -27,32 +29,313 @@ impl Default for Roots {
 #[derive(Debug, Default, PartialEq)]
 pub(crate) struct Readings {
     pub(crate) tctl_c: Option<i64>,
-    pub(crate) tccd_c: Option<std::collections::BTreeMap<String, i64>>,
-    pub(crate) core_mhz: Vec<(CoreId, i64)>,
+    pub(crate) tccd_c: Option<BTreeMap<String, i64>>,
+    pub(crate) core_mhz: PerCore<i64>,
     pub(crate) package_power_w: Option<f64>,
 }
 
 /// Reads temperatures, clocks of the loaded cores and package energy.
 #[derive(Debug)]
 pub(crate) struct Sensors {
-    roots: Roots,
-    loaded: Vec<CoreId>,
-    topology: Vec<CoreInfo>,
+    hwmon: PathBuf,
+    powercap: PathBuf,
+    clocks: Vec<(CoreId, PathBuf)>,
+    energy: Option<i64>,
+    energy_at: Instant,
+}
+
+fn read_integer(path: &Path) -> Option<i64> {
+    fs::read_to_string(path).ok()?.trim().parse().ok()
 }
 
 impl Sensors {
-    /// Takes the energy baseline now.
-    pub(crate) fn new(roots: Roots, topology: Vec<CoreInfo>, loaded: Vec<CoreId>) -> Self {
+    /// Takes the energy baseline at `now`, when timing begins.
+    pub(crate) fn new(
+        roots: &Roots,
+        topology: &[CoreInfo],
+        loaded: &[CoreId],
+        now: Instant,
+    ) -> Self {
+        let clocks = loaded
+            .iter()
+            .filter_map(|&core| {
+                let first = topology
+                    .iter()
+                    .find(|info| info.core == core)?
+                    .cpus
+                    .first()?;
+                Some((
+                    core,
+                    roots
+                        .cpu
+                        .join(format!("cpu{}", first.0))
+                        .join("cpufreq/scaling_cur_freq"),
+                ))
+            })
+            .collect();
+        let powercap = roots.powercap.join("intel-rapl:0");
         Self {
-            roots,
-            loaded,
-            topology,
+            hwmon: roots.hwmon.clone(),
+            energy: read_integer(&powercap.join("energy_uj")),
+            powercap,
+            clocks,
+            energy_at: now,
         }
     }
 
-    /// `elapsed` is the time since the previous reading, for the power division.
-    pub(crate) fn read(&mut self, elapsed: Duration) -> Readings {
-        let _ = (elapsed, &self.roots, &self.loaded, &self.topology);
-        unimplemented!()
+    pub(crate) fn read(&mut self, now: Instant) -> Readings {
+        let (tctl_c, tccd_c) = temperatures(&self.hwmon);
+        let mut core_mhz = PerCore::default();
+        for (core, path) in &self.clocks {
+            if let Some(khz) = read_integer(path).filter(|khz| *khz >= 0) {
+                core_mhz.set(*core, khz / 1000);
+            }
+        }
+        let energy = read_integer(&self.powercap.join("energy_uj"));
+        let package_power_w = self.power(energy, now);
+        self.energy = energy;
+        self.energy_at = now;
+        Readings {
+            tctl_c,
+            tccd_c,
+            core_mhz,
+            package_power_w,
+        }
+    }
+
+    #[allow(clippy::cast_precision_loss, reason = "microjoule deltas are far below 2^53")]
+    fn power(&self, energy: Option<i64>, now: Instant) -> Option<f64> {
+        let (current, previous) = (energy?, self.energy?);
+        let elapsed = now.checked_duration_since(self.energy_at)?;
+        if elapsed.is_zero() {
+            return None;
+        }
+        let mut delta = current - previous;
+        if delta < 0 {
+            let limit = read_integer(&self.powercap.join("max_energy_range_uj"))?;
+            if limit <= previous {
+                return None;
+            }
+            delta += limit;
+        }
+        (delta >= 0).then(|| delta as f64 / 1e6 / elapsed.as_secs_f64())
+    }
+}
+
+/// The first hwmon directory named `k10temp` or `zenpower`; it is not skipped for lacking sensors.
+fn temperatures(root: &Path) -> (Option<i64>, Option<BTreeMap<String, i64>>) {
+    let Ok(entries) = fs::read_dir(root) else {
+        return (None, None);
+    };
+    let mut dirs: Vec<PathBuf> = entries.filter_map(|e| e.ok().map(|e| e.path())).collect();
+    dirs.sort();
+    for dir in dirs {
+        let name = fs::read_to_string(dir.join("name")).unwrap_or_default();
+        if !matches!(name.trim(), "k10temp" | "zenpower") {
+            continue;
+        }
+        let Ok(files) = fs::read_dir(&dir) else {
+            return (None, None);
+        };
+        let mut labels: Vec<PathBuf> = files
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .filter(|path| {
+                path.file_name().and_then(|n| n.to_str()).is_some_and(|n| {
+                    n.starts_with("temp") && n.ends_with("_label")
+                })
+            })
+            .collect();
+        labels.sort();
+        let mut tctl = None;
+        let mut tccd = BTreeMap::new();
+        for path in labels {
+            let Ok(label) = fs::read_to_string(&path) else {
+                continue;
+            };
+            let label = label.trim();
+            let is_ccd = label
+                .strip_prefix("Tccd")
+                .and_then(|n| n.parse::<i64>().ok())
+                .is_some_and(|n| n >= 1);
+            if label != "Tctl" && !is_ccd {
+                continue;
+            }
+            let input = path.with_file_name(
+                path.file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or_default()
+                    .replace("_label", "_input"),
+            );
+            let Some(millidegrees) = read_integer(&input) else {
+                continue;
+            };
+            if label == "Tctl" {
+                tctl = Some(millidegrees / 1000);
+            } else {
+                tccd.insert(label.to_owned(), millidegrees / 1000);
+            }
+        }
+        return (tctl, (!tccd.is_empty()).then_some(tccd));
+    }
+    (None, None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+    use togi_machine::{CcdId, CpuId};
+
+    struct Fixture {
+        dir: tempfile::TempDir,
+    }
+
+    impl Fixture {
+        fn new() -> Self {
+            Self {
+                dir: tempfile::tempdir().unwrap(),
+            }
+        }
+
+        fn write(&self, relative: &str, text: &str) {
+            let path = self.dir.path().join(relative);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, text).unwrap();
+        }
+
+        fn roots(&self) -> Roots {
+            Roots {
+                hwmon: self.dir.path().join("hwmon"),
+                cpu: self.dir.path().join("cpu"),
+                powercap: self.dir.path().join("powercap"),
+                proc: self.dir.path().join("proc"),
+            }
+        }
+    }
+
+    fn core(n: u8) -> CoreId {
+        CoreId::new(i64::from(n)).unwrap()
+    }
+
+    fn topology() -> Vec<CoreInfo> {
+        vec![
+            CoreInfo {
+                core: core(0),
+                ccd: CcdId(0),
+                cpus: vec![CpuId(0), CpuId(8)],
+            },
+            CoreInfo {
+                core: core(1),
+                ccd: CcdId(0),
+                cpus: vec![CpuId(1), CpuId(9)],
+            },
+        ]
+    }
+
+    #[test]
+    fn k10temp_labels_map_to_whole_degrees_and_zenpower_tctl_beats_tdie() {
+        let fixture = Fixture::new();
+        fixture.write("hwmon/hwmon0/name", "nvme\n");
+        fixture.write("hwmon/hwmon1/name", "zenpower\n");
+        fixture.write("hwmon/hwmon1/temp1_label", "Tdie\n");
+        fixture.write("hwmon/hwmon1/temp1_input", "70999\n");
+        fixture.write("hwmon/hwmon1/temp2_label", "Tctl\n");
+        fixture.write("hwmon/hwmon1/temp2_input", "75500\n");
+        fixture.write("hwmon/hwmon1/temp3_label", "Tccd1\n");
+        fixture.write("hwmon/hwmon1/temp3_input", "61000\n");
+        fixture.write("hwmon/hwmon1/temp4_label", "Tccd0\n");
+        fixture.write("hwmon/hwmon1/temp4_input", "1000\n");
+        fixture.write("hwmon/hwmon1/temp5_label", "Tccd2\n");
+        let (tctl, tccd) = temperatures(&fixture.roots().hwmon);
+        assert_eq!(tctl, Some(75));
+        assert_eq!(
+            tccd,
+            Some(BTreeMap::from([("Tccd1".to_owned(), 61)]))
+        );
+    }
+
+    #[test]
+    fn the_first_matching_hwmon_is_used_even_without_sensors() {
+        let fixture = Fixture::new();
+        fixture.write("hwmon/hwmon0/name", "k10temp\n");
+        fixture.write("hwmon/hwmon1/name", "zenpower\n");
+        fixture.write("hwmon/hwmon1/temp1_label", "Tctl\n");
+        fixture.write("hwmon/hwmon1/temp1_input", "50000\n");
+        assert_eq!(temperatures(&fixture.roots().hwmon), (None, None));
+        assert_eq!(temperatures(&fixture.dir.path().join("absent")), (None, None));
+    }
+
+    #[test]
+    fn clocks_come_from_the_first_cpu_of_each_loaded_core_only() {
+        let fixture = Fixture::new();
+        fixture.write("cpu/cpu0/cpufreq/scaling_cur_freq", "4500000\n");
+        fixture.write("cpu/cpu1/cpufreq/scaling_cur_freq", "3999999\n");
+        fixture.write("cpu/cpu8/cpufreq/scaling_cur_freq", "1000\n");
+        let now = Instant::now();
+        let mut sensors = Sensors::new(&fixture.roots(), &topology(), &[core(0)], now);
+        let readings = sensors.read(now + Duration::from_secs(1));
+        assert_eq!(readings.core_mhz.get(core(0)), Some(4500));
+        assert_eq!(readings.core_mhz.get(core(1)), None);
+        let mut both = Sensors::new(&fixture.roots(), &topology(), &[core(0), core(1)], now);
+        let readings = both.read(now);
+        assert_eq!(readings.core_mhz.get(core(1)), Some(3999));
+    }
+
+    #[test]
+    fn negative_or_unparsable_frequencies_are_omitted() {
+        let fixture = Fixture::new();
+        fixture.write("cpu/cpu0/cpufreq/scaling_cur_freq", "-5\n");
+        fixture.write("cpu/cpu1/cpufreq/scaling_cur_freq", "fast\n");
+        let now = Instant::now();
+        let mut sensors = Sensors::new(&fixture.roots(), &topology(), &[core(0), core(1)], now);
+        assert!(sensors.read(now).core_mhz.is_empty());
+    }
+
+    #[test]
+    fn package_power_is_energy_delta_over_elapsed_time() {
+        let fixture = Fixture::new();
+        fixture.write("powercap/intel-rapl:0/energy_uj", "1000000\n");
+        let start = Instant::now();
+        let mut sensors = Sensors::new(&fixture.roots(), &[], &[], start);
+        fixture.write("powercap/intel-rapl:0/energy_uj", "11000000\n");
+        let readings = sensors.read(start + Duration::from_secs(1));
+        assert_eq!(readings.package_power_w, Some(10.0));
+    }
+
+    #[test]
+    fn a_counter_wrap_uses_the_range_only_when_it_exceeds_the_previous_reading() {
+        let fixture = Fixture::new();
+        fixture.write("powercap/intel-rapl:0/energy_uj", "9000000\n");
+        fixture.write("powercap/intel-rapl:0/max_energy_range_uj", "10000000\n");
+        let start = Instant::now();
+        let mut sensors = Sensors::new(&fixture.roots(), &[], &[], start);
+        fixture.write("powercap/intel-rapl:0/energy_uj", "1000000\n");
+        assert_eq!(
+            sensors.read(start + Duration::from_secs(1)).package_power_w,
+            Some(2.0)
+        );
+        fixture.write("powercap/intel-rapl:0/max_energy_range_uj", "500000\n");
+        fixture.write("powercap/intel-rapl:0/energy_uj", "100000\n");
+        assert_eq!(
+            sensors.read(start + Duration::from_secs(2)).package_power_w,
+            None
+        );
+    }
+
+    #[test]
+    fn a_missing_reading_resets_the_baseline_so_the_next_good_one_omits_power() {
+        let fixture = Fixture::new();
+        fixture.write("powercap/intel-rapl:0/energy_uj", "1000000\n");
+        let start = Instant::now();
+        let mut sensors = Sensors::new(&fixture.roots(), &[], &[], start);
+        fs::remove_file(fixture.dir.path().join("powercap/intel-rapl:0/energy_uj")).unwrap();
+        assert_eq!(sensors.read(start + Duration::from_secs(1)).package_power_w, None);
+        fixture.write("powercap/intel-rapl:0/energy_uj", "5000000\n");
+        assert_eq!(sensors.read(start + Duration::from_secs(2)).package_power_w, None);
+        fixture.write("powercap/intel-rapl:0/energy_uj", "7000000\n");
+        assert_eq!(
+            sensors.read(start + Duration::from_secs(3)).package_power_w,
+            Some(2.0)
+        );
     }
 }

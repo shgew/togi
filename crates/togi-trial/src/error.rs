@@ -3,7 +3,7 @@ use std::io;
 use crate::files::PrepareError;
 use crate::identity::IdentityError;
 use crate::plan::InvalidTrial;
-use crate::samples::StorageError;
+use crate::samples::StorageFailure;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -37,7 +37,9 @@ pub enum Error {
     #[error("cancelled")]
     Cancelled,
     #[error("the samples file")]
-    Storage(#[from] StorageError),
+    Storage(#[from] StorageFailure),
+    #[error("backend output could not be read cleanly")]
+    Output(#[source] OutputFailure),
     #[error("compress the trial files")]
     Compress(#[source] togi_trialfiles::Errors),
     #[error("{operation} is supported on Linux only")]
@@ -97,6 +99,13 @@ pub enum CleanupFailure {
         #[source]
         source: Box<dyn std::error::Error + Send + Sync>,
     },
+}
+
+/// Output I/O errors of a trial, kept whatever evidence was selected.
+#[derive(Debug, thiserror::Error)]
+#[error("{}", .diagnostics.join("; "))]
+pub struct OutputFailure {
+    pub(crate) diagnostics: Vec<String>,
 }
 
 impl Containment {

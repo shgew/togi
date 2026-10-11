@@ -27,8 +27,9 @@ mod teardown;
 mod timing;
 mod watch;
 
-pub use error::{CleanupFailure, Containment, Error};
+pub use error::{CleanupFailure, Containment, Error, OutputFailure};
 pub use files::PrepareError;
 pub use identity::{BackendIdentity, IdentityError};
 pub use plan::InvalidTrial;
 pub use runner::{Backends, Options, Runner, Trial};
+pub use samples::{StorageError, StorageFailure};
