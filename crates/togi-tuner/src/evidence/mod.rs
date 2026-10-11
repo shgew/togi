@@ -92,7 +92,6 @@ pub struct Evidence {
     all_core_r6: Vec<ClassKey>,
     by_core: BTreeMap<CoreId, Vec<ClassKey>>,
     named: BTreeMap<CoreId, BTreeSet<ClassKey>>,
-    carried: BTreeMap<Seq, SessionRef>,
     backends: Backends,
     checking: Option<Profile>,
     exposure: BTreeMap<WorkloadId, u32>,
@@ -127,12 +126,6 @@ fn remove_exposure(exposure: &mut BTreeMap<WorkloadId, u32>, workload: WorkloadI
     }
 }
 
-fn forget_carried(carried: &mut BTreeMap<Seq, SessionRef>, seqs: impl Iterator<Item = Seq>) {
-    for seq in seqs {
-        carried.remove(&seq);
-    }
-}
-
 impl Evidence {
     /// An empty ledger for a machine whose cores are `all`.
     pub fn new(all: CoreSet) -> Self {
@@ -143,7 +136,6 @@ impl Evidence {
             all_core_r6: Vec::new(),
             by_core: BTreeMap::new(),
             named: BTreeMap::new(),
-            carried: BTreeMap::new(),
             backends: Backends::new(),
             checking: None,
             exposure: BTreeMap::new(),
@@ -208,8 +200,30 @@ impl Evidence {
         self.exposure.iter().map(|(&workload, &n)| (workload, n))
     }
 
+    /// The session a carried fact came from, while the cell holding it stands. Looks through
+    /// the distinct cells, not through facts.
     pub fn carried_source(&self, seq: Seq) -> Option<&SessionRef> {
-        self.carried.get(&seq)
+        for cells in self.classes.values() {
+            for cell in cells.failures.cells() {
+                self.visit();
+                if let Some(source) = cell.carried.source(seq) {
+                    return Some(source);
+                }
+            }
+            for cell in cells.passes.cells() {
+                self.visit();
+                if let Some(source) = cell.carried.source(seq) {
+                    return Some(source);
+                }
+            }
+        }
+        for cell in self.idle.cells() {
+            self.visit();
+            if let Some(source) = cell.carried.source(seq) {
+                return Some(source);
+            }
+        }
+        None
     }
 
     fn advance(&mut self, seq: Seq) {
@@ -283,8 +297,7 @@ impl Evidence {
         let class = self.classes.entry(obs.class).or_default();
         let cell = class.passes.cell_mut(backend, named, *obs.profile);
         if let Some(source) = source {
-            cell.carried.push(obs.seq);
-            self.carried.insert(obs.seq, source);
+            cell.carried.push(obs.seq, source);
         } else {
             cell.live.push(obs.seq);
             if obs.condition != Condition::Alone {
@@ -327,8 +340,7 @@ impl Evidence {
         let class = self.classes.entry(obs.class).or_default();
         let cell = class.failures.cell_mut(named, *obs.profile);
         if let Some(source) = source {
-            cell.carried.push(obs.seq);
-            self.carried.insert(obs.seq, source);
+            cell.carried.push(obs.seq, source);
         } else {
             cell.live.push(obs.seq);
         }
@@ -360,15 +372,15 @@ impl Evidence {
             return Ok(());
         };
         let live = from.live.remove(seq);
-        let carried = !live && from.carried.remove(seq);
-        if !live && !carried {
+        let source = if live { None } else { from.carried.remove(seq) };
+        if !live && source.is_none() {
             return Ok(());
         }
         let to = cells.failures.cell_mut(Some(core), *profile);
-        if live {
-            to.live.insert(seq);
+        if let Some(source) = source {
+            to.carried.insert(seq, source);
         } else {
-            to.carried.insert(seq);
+            to.live.insert(seq);
         }
         self.note_named(class, Some(core));
         Ok(())
@@ -402,8 +414,7 @@ impl Evidence {
         self.advance(seq);
         let cell = self.idle.cell_mut(None, *profile);
         if let Some(source) = source {
-            cell.carried.push(seq);
-            self.carried.insert(seq, source);
+            cell.carried.push(seq, source);
         } else {
             cell.live.push(seq);
         }
@@ -599,14 +610,7 @@ impl Evidence {
     pub fn reset_core(&mut self, core: CoreId) {
         for key in self.by_core.remove(&core).unwrap_or_default() {
             self.visit();
-            if let Some(cells) = self.classes.remove(&key) {
-                for cell in cells.failures.cells() {
-                    forget_carried(&mut self.carried, cell.carried.iter());
-                }
-                for cell in cells.passes.cells() {
-                    forget_carried(&mut self.carried, cell.carried.iter());
-                }
-            }
+            self.classes.remove(&key);
             self.all_core_r6.retain(|&other| other != key);
             for other in key.loaded() {
                 if let Some(keys) = self.by_core.get_mut(&other) {
@@ -619,17 +623,11 @@ impl Evidence {
             let Some(cells) = self.classes.get_mut(&key) else {
                 continue;
             };
-            for cell in cells.failures.remove_named(core) {
-                forget_carried(&mut self.carried, cell.carried.iter());
-            }
-            for cell in cells.passes.remove_named(core) {
-                forget_carried(&mut self.carried, cell.carried.iter());
-            }
+            cells.failures.remove_named(core);
+            cells.passes.remove_named(core);
         }
         if self.all.contains(core) {
-            for cell in std::mem::take(&mut self.idle).cells() {
-                forget_carried(&mut self.carried, cell.carried.iter());
-            }
+            self.idle = FailureCells::default();
         }
         self.rebuild_exposure();
     }

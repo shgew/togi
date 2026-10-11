@@ -1354,8 +1354,16 @@ fn run(scenario: &Scenario) {
     }
 }
 
+fn fixed_config() -> ProptestConfig {
+    ProptestConfig {
+        rng_seed: proptest::test_runner::RngSeed::Fixed(0x7061_7274_6974_696f),
+        failure_persistence: None,
+        ..ProptestConfig::with_cases(600)
+    }
+}
+
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(600))]
+    #![proptest_config(fixed_config())]
 
     #[test]
     fn count_equals_bruteforce_ledger(scenario in scenarios()) {
@@ -1392,12 +1400,13 @@ fn reset_of_a_named_core_visits_cells_not_facts() {
     let visits = |facts: usize| {
         let mut fx = Fx::new(&[0, 1, 2]);
         let k = class(Regime::R7, 0, &[0, 1], 60);
+        let loaded = class(Regime::R1, 0, &[2], 60);
         let p = fx.p(&[-10, -10, 0]);
+        let mut carried = Vec::new();
         for _ in 0..facts {
-            let at = fx.tick();
             let backend = fx.ev.active_backend(k.workload().backend());
             let obs = Observation {
-                seq: at,
+                seq: fx.tick(),
                 class: k,
                 profile: &p,
                 condition: Condition::Together,
@@ -1408,19 +1417,44 @@ fn reset_of_a_named_core_visits_cells_not_facts() {
             fx.ev
                 .record_failure(Observation { seq: at, ..obs })
                 .unwrap();
+            let at = fx.tick();
+            fx.ev
+                .record_carried_pass(
+                    Observation { seq: at, ..obs },
+                    backend,
+                    SessionRef::new("old"),
+                )
+                .unwrap();
+            carried.push(at);
+            let at = fx.tick();
+            fx.ev
+                .record_carried_failure(Observation { seq: at, ..obs }, SessionRef::new("old"))
+                .unwrap();
+            carried.push(at);
+            carried.push(fx.carried_pass(loaded, &p, "old"));
+            carried.push(fx.carried_fail(loaded, &p, "old"));
+            carried.push(fx.carried_idle(&p, "old"));
         }
         fx.ev.take_visits();
         fx.ev.reset_core(core(2));
+        let cost = fx.ev.take_visits();
+        let forgotten = carried.iter().all(|&at| fx.ev.carried_source(at).is_none());
         (
-            fx.ev.take_visits(),
+            cost,
             fx.valid(k, &p),
+            fx.valid(loaded, &p),
             fx.ev.newest_failure(k, &p, None).unwrap(),
+            fx.ev.newest_failure(loaded, &p, None).unwrap(),
+            forgotten,
         )
     };
     let small = visits(100);
     let large = visits(10_000);
     assert_eq!(small, large);
-    assert_eq!((small.1, small.2), (0, None));
+    assert_eq!(
+        (small.1, small.2, small.3, small.4, small.5),
+        (0, 0, None, None, true)
+    );
 }
 
 #[test]

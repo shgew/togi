@@ -5,7 +5,7 @@ use togi_machine::CoreId;
 
 use crate::Profile;
 
-use super::BackendId;
+use super::{BackendId, SessionRef};
 
 /// Seqs in ascending order; each lookup is a binary search.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -44,9 +44,49 @@ impl Seqs {
             Err(_) => false,
         }
     }
+}
 
-    pub(super) fn iter(&self) -> impl Iterator<Item = Seq> + '_ {
-        self.0.iter().copied()
+/// Carried seqs in ascending order, each with the session it came from. The provenance lives in
+/// the cell, so discarding the cell discards it too.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(super) struct Carried {
+    seqs: Seqs,
+    sources: Vec<SessionRef>,
+}
+
+impl Carried {
+    pub(super) fn push(&mut self, seq: Seq, source: SessionRef) {
+        self.seqs.push(seq);
+        self.sources.push(source);
+    }
+
+    /// Adds `seq` at its place unless it is here.
+    pub(super) fn insert(&mut self, seq: Seq, source: SessionRef) {
+        if let Err(at) = self.seqs.0.binary_search(&seq) {
+            self.seqs.0.insert(at, seq);
+            self.sources.insert(at, source);
+        }
+    }
+
+    /// Removes `seq`, returning the session it came from.
+    pub(super) fn remove(&mut self, seq: Seq) -> Option<SessionRef> {
+        let at = self.seqs.0.binary_search(&seq).ok()?;
+        self.seqs.0.remove(at);
+        Some(self.sources.remove(at))
+    }
+
+    pub(super) fn source(&self, seq: Seq) -> Option<&SessionRef> {
+        let at = self.seqs.0.binary_search(&seq).ok()?;
+        self.sources.get(at)
+    }
+
+    pub(super) fn last(&self) -> Option<Seq> {
+        self.seqs.last()
+    }
+
+    /// The seqs above `floor`.
+    pub(super) fn after(&self, floor: Option<Seq>) -> &[Seq] {
+        self.seqs.after(floor)
     }
 }
 
@@ -56,7 +96,7 @@ pub(super) struct FailureCell {
     pub(super) named: Option<CoreId>,
     pub(super) profile: Profile,
     pub(super) live: Seqs,
-    pub(super) carried: Seqs,
+    pub(super) carried: Carried,
 }
 
 /// The passes of one class at one profile under one backend package and named core.
@@ -67,7 +107,7 @@ pub(super) struct PassCell {
     pub(super) profile: Profile,
     pub(super) live: Seqs,
     pub(super) live_non_alone: Seqs,
-    pub(super) carried: Seqs,
+    pub(super) carried: Carried,
 }
 
 pub(super) trait Cell {
@@ -130,19 +170,15 @@ impl<C: Cell> Cells<C> {
         &self.cells
     }
 
-    /// Drops the cells naming `core`, returning them.
-    pub(super) fn remove_named(&mut self, core: CoreId) -> Vec<C> {
-        let (gone, kept): (Vec<C>, Vec<C>) = std::mem::take(&mut self.cells)
-            .into_iter()
-            .partition(|cell| cell.named() == Some(core));
-        self.cells = kept;
+    /// Drops the cells naming `core`, with the carried provenance they hold.
+    pub(super) fn remove_named(&mut self, core: CoreId) {
+        self.cells.retain(|cell| cell.named() != Some(core));
         self.index = self
             .cells
             .iter()
             .enumerate()
             .map(|(at, cell)| (cell.key(), at))
             .collect();
-        gone
     }
 }
 
@@ -155,7 +191,7 @@ impl FailureCells {
             named,
             profile,
             live: Seqs::default(),
-            carried: Seqs::default(),
+            carried: Carried::default(),
         })
     }
 }
@@ -173,7 +209,7 @@ impl PassCells {
             profile,
             live: Seqs::default(),
             live_non_alone: Seqs::default(),
-            carried: Seqs::default(),
+            carried: Carried::default(),
         })
     }
 }
