@@ -24,6 +24,7 @@ use crate::id::ScopeName;
 use crate::identity::{BackendIdentity, IdentityError};
 use crate::instance::{Flow, Inbound, LiveInstance, Observed, Reader, Run, dispatch, poll_watched};
 use crate::judge::Judge;
+use crate::logs::{LogWriter, LogsEnd, Wrap};
 use crate::launch::{self, Confinement};
 use crate::os::{Child as _, GroupSignal, Os, SignalError};
 use crate::plan::{Load, TrialPlan};
@@ -54,6 +55,8 @@ pub(crate) struct Env<O: Os> {
     pub(crate) pm_table: Option<Arc<dyn PmTableReader + Send + Sync>>,
     /// Test construction: where samples go instead of the trial's `samples.jsonl`.
     pub(crate) storage: Option<Rc<dyn Fn() -> Result<Open, StorageError>>>,
+    /// Test construction: what the output log thread writes to instead of the log files.
+    pub(crate) log_sink: Option<Rc<dyn Fn() -> Wrap>>,
 }
 
 impl<O: Os> Env<O> {
@@ -161,6 +164,10 @@ pub(crate) async fn start<O: Os>(
         Ok(container) => container,
         Err(error) => return Err(early(error.into(), ready)),
     };
+    let logs = match LogWriter::spawn(env.log_sink.as_ref().map(|make| make())) {
+        Ok(logs) => logs,
+        Err(error) => return Err(early(Error::LogWriter(error), ready)),
+    };
     drop(ready);
 
     let (events_tx, events_rx) = channel();
@@ -196,6 +203,7 @@ pub(crate) async fn start<O: Os>(
         &container,
         confinement,
         backend.as_ref(),
+        &logs,
         &mut live,
         &inbound_tx,
         &mut commands_rx,
@@ -255,6 +263,7 @@ pub(crate) async fn start<O: Os>(
         events: events_tx,
         cancelled: Arc::clone(&cancelled),
         writer,
+        logs,
         storage_failed,
         started: started_at,
         toggles,
@@ -314,6 +323,7 @@ async fn launch_all<O: Os>(
     container: &Container,
     confinement: Confinement,
     backend: &dyn Backend,
+    logs: &LogWriter,
     live: &mut Live<O>,
     inbound: &Sender<Inbound>,
     commands: &mut UnboundedReceiver<TrialCommand>,
@@ -364,14 +374,14 @@ async fn launch_all<O: Os>(
                     index,
                     Stream::Stdout,
                     pipes.stdout,
-                    files.stdout,
+                    logs.open(index, Stream::Stdout, files.stdout),
                     inbound.clone(),
                 ),
                 Reader::spawn(
                     index,
                     Stream::Stderr,
                     pipes.stderr,
-                    files.stderr,
+                    logs.open(index, Stream::Stderr, files.stderr),
                     inbound.clone(),
                 ),
             ],
@@ -510,6 +520,7 @@ struct Supervisor<O: Os> {
     events: StdSender<Event>,
     cancelled: Arc<AtomicBool>,
     writer: Option<SamplesWriter>,
+    logs: LogWriter,
     storage_failed: UnboundedReceiver<()>,
     sensors: Sensors,
     timeline: Peekable<Box<dyn Iterator<Item = Step>>>,
@@ -801,6 +812,7 @@ impl<O: Os> Supervisor<O> {
             mut inbound,
             events,
             writer,
+            logs,
             started,
             toggles,
             tctl_max,
@@ -842,12 +854,34 @@ impl<O: Os> Supervisor<O> {
             .drain()
             .await
             .finish();
-        if let Some(writer) = writer {
-            if let Err(failure) = writer.finish(env.timing.writer_join).await {
-                errors.push(Error::Storage(failure));
+        let bound = env.timing.writer_join;
+        let samples = async {
+            match writer {
+                Some(writer) => writer.finish(bound).await,
+                None => Ok(()),
+            }
+        };
+        let (samples, logs) = tokio::join!(samples, logs.finish(bound));
+        if let Err(failure) = samples {
+            errors.push(Error::Storage(failure));
+        }
+        let mut late = Vec::new();
+        match logs {
+            LogsEnd::Done(failures) => {
+                for failure in failures {
+                    judge.observe(Observation::OutputError {
+                        instance: failure.instance,
+                        stream: failure.stream,
+                        error: format!("write output log: {}", failure.error),
+                    });
+                }
+            }
+            LogsEnd::TimedOut(bound) => {
+                late.push(format!("the output log writer did not finish within {bound:?}"));
             }
         }
-        let verdict = judge.conclude();
+        let mut verdict = judge.conclude();
+        verdict.diagnostics.extend(late);
         if !verdict.diagnostics.is_empty() {
             errors.push(Error::Output(OutputFailure {
                 diagnostics: verdict.diagnostics,

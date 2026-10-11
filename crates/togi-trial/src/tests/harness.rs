@@ -101,6 +101,7 @@ pub(super) fn rig_edit(
         user_manager: false,
         pm_table: None,
         storage: None,
+        log_sink: None,
     };
     edit(&mut env);
     let env = Rc::new(env);

@@ -4,7 +4,7 @@ use togi_machine::{Backend, CoreId, CpuId, Sample, Signal, TrialFailure};
 const SYSTEMD_STARTUP_FAILURES: [&str; 2] =
     ["Failed to start transient scope unit", "Failed to execute"];
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum Stream {
     Stdout,
     Stderr,

@@ -632,3 +632,49 @@ async fn writers_confirmed_for_one_instance_keep_their_evidence_when_another_sco
     })
     .await;
 }
+
+struct Blocked(std::sync::mpsc::Receiver<()>);
+
+impl std::io::Write for Blocked {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        let _ = self.0.recv();
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_blocked_log_write_never_stalls_supervision_and_is_reported() {
+    local(async {
+        let gates = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let kept = std::sync::Arc::clone(&gates);
+        let rig = rig_edit(TestBackend::new("/bin/true"), Timing::default(), move |env| {
+            let gates = std::sync::Arc::clone(&kept);
+            env.log_sink = Some(std::rc::Rc::new(move || {
+                let gates = std::sync::Arc::clone(&gates);
+                Box::new(move |_file| {
+                    let (gate, blocked) = std::sync::mpsc::channel::<()>();
+                    gates.lock().unwrap().push(gate);
+                    Box::new(Blocked(blocked)) as crate::logs::Sink
+                })
+            }));
+        });
+        rig.fake.on_launch(emits(Source::Stdout, b"ok line\n".repeat(512 * 1024)));
+        let handle = rig.start(spec(Regime::R1, &[0], secs(3))).await.unwrap();
+        let wall = std::time::Instant::now();
+        let run = finish(&handle).await;
+        assert!(wall.elapsed() < secs(10));
+        assert_eq!(run.finished.result.ran, secs(3));
+        assert!(run.finished.teardown.is_ok());
+        let Some(Error::Output(output)) = run.finished.errors.last() else {
+            panic!("{:?}", run.finished.errors);
+        };
+        assert!(output.diagnostics().iter().any(|d| d.contains("output bytes were dropped")));
+        assert!(output.diagnostics().iter().any(|d| d.contains("did not finish")));
+        drop(gates);
+    })
+    .await;
+}

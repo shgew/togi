@@ -21,6 +21,8 @@ mod judge;
 #[cfg(target_os = "linux")]
 mod launch;
 #[cfg(target_os = "linux")]
+mod logs;
+#[cfg(target_os = "linux")]
 mod native;
 #[cfg(target_os = "linux")]
 mod os;

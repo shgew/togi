@@ -1,5 +1,4 @@
-use std::fs::File;
-use std::io::{self, Write as _};
+use std::io;
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -12,6 +11,7 @@ use crate::error::CleanupFailure;
 use crate::evidence::{Observation, Stream};
 use crate::id::ScopeName;
 use crate::judge::Judge;
+use crate::logs::LogHandle;
 use crate::os::{Child, Os, Pipe};
 use crate::output::{CHUNK, Frame, Framer};
 use crate::plan::InstancePlan;
@@ -60,7 +60,7 @@ pub(crate) enum Run {
     Suspended,
 }
 
-/// One pipe's reader task; it owns the retained log descriptor and ends at end of input.
+/// One pipe's reader task; it queues the bytes for its log and ends at end of input.
 pub(crate) struct Reader {
     pub(crate) task: JoinHandle<()>,
     pub(crate) closed: bool,
@@ -75,18 +75,17 @@ impl Reader {
         }
     }
 
-    /// Reads in 4 KiB chunks, frames lines, appends every consumed byte to `log`, and reports.
+    /// Reads in 4 KiB chunks, frames lines, queues every consumed byte for `log`, and reports.
     pub(crate) fn spawn(
         instance: usize,
         stream: Stream,
         mut pipe: Pipe,
-        mut log: File,
+        mut log: LogHandle,
         events: Sender<Inbound>,
     ) -> Self {
         let task = tokio::task::spawn_local(async move {
             let mut framer = Framer::default();
             let mut buffer = [0_u8; CHUNK];
-            let mut log_failed = false;
             let end = loop {
                 let count = match pipe.read(&mut buffer).await {
                     Ok(0) => {
@@ -104,17 +103,14 @@ impl Reader {
                     }
                     std::ops::ControlFlow::Continue(())
                 });
-                if !log_failed {
-                    if let Err(error) = log.write_all(&buffer[..consumed]) {
-                        log_failed = true;
-                        let event = Inbound::LogError {
-                            instance,
-                            stream,
-                            error,
-                        };
-                        if events.send(event).await.is_err() {
-                            return;
-                        }
+                if log.append(&buffer[..consumed]).is_err() {
+                    let event = Inbound::LogError {
+                        instance,
+                        stream,
+                        error: io::Error::other("the log writer fell behind; output bytes were dropped"),
+                    };
+                    if events.send(event).await.is_err() {
+                        return;
                     }
                 }
                 for text in lines {

@@ -88,6 +88,7 @@ impl Runner {
             user_manager: settings.user_manager,
             pm_table,
             storage: None,
+            log_sink: None,
         })?;
         Ok(Self {
             dir,
