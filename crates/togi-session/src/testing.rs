@@ -11,11 +11,10 @@ use togi_render::Renderer;
 use togi_sim::faults::{HookPhase, SmuOp, SmuOperation};
 use togi_sim::{MachineDefinition, Model, RunSettings, Simulator};
 
-use crate::appender::Appender;
+use crate::appender::{Appender, Folds};
 use crate::boot::BootHandoff;
 use crate::emergency::SweepCleared;
 use crate::error::AppendFailure;
-use crate::recovery::RecoveryState;
 use crate::write::Hardware;
 
 pub(crate) struct Rig {
@@ -174,10 +173,10 @@ impl Rig {
     }
 }
 
-/// The appender's incremental fold is what a fresh fold of the journal gives.
+/// The appender's incremental folds are what a fresh fold of the journal gives.
 pub(crate) fn assert_fold_consistent(appender: &Appender) {
-    let fresh = RecoveryState::replay(appender.journal().events()).unwrap();
-    assert_eq!(&fresh, appender.recovery());
+    let fresh = Folds::replay(appender.journal().events()).unwrap();
+    assert_eq!(&fresh, appender.folds());
 }
 
 #[test]

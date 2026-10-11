@@ -3,6 +3,7 @@
 use std::io::{self, Write};
 
 use jiff::tz::TimeZone;
+use togi_defect::DefectState;
 use togi_journal::{
     AppendError, Event, Journal, Payload, Seq, SmuCommand, SmuIntentReceipt, SmuWritten, Stamp,
 };
@@ -13,6 +14,36 @@ use crate::boot::BootHandoff;
 use crate::error::{AppendFailure, FoldError, JournalFailure};
 use crate::recovery::RecoveryState;
 
+/// Every reducer the run keeps over its journal, each fed every event once and in order: the recovery fold first,
+/// then the tuner state, then the defect state.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Folds {
+    pub recovery: RecoveryState,
+    pub tuner: togi_tuner::State,
+    pub defects: DefectState,
+}
+
+impl Folds {
+    pub fn replay<'a>(events: impl IntoIterator<Item = &'a Event>) -> Result<Self, FoldError> {
+        let mut folds = Self::default();
+        for event in events {
+            folds.apply(event)?;
+        }
+        Ok(folds)
+    }
+
+    /// Folds one event. A tuner state that cannot take it in stays poisoned: the journal is corrupt.
+    pub fn apply(&mut self, event: &Event) -> Result<(), FoldError> {
+        self.recovery.apply(event)?;
+        self.tuner.fold(event).map_err(|error| FoldError::Tuner {
+            seq: event.seq,
+            error,
+        })?;
+        self.defects.fold(event);
+        Ok(())
+    }
+}
+
 /// Stamps an event from the machine clock, appends it, then folds it into the run's reducers, writes its log line
 /// and, after the first durable append, runs the tuning-boot handoff.
 ///
@@ -21,7 +52,7 @@ use crate::recovery::RecoveryState;
 pub struct Appender {
     journal: Journal,
     clock: Box<dyn Clock>,
-    recovery: RecoveryState,
+    folds: Folds,
     renderer: Renderer,
     zone: TimeZone,
     log: Option<Box<dyn Write>>,
@@ -39,11 +70,11 @@ impl Appender {
         renderer: Renderer,
         zone: TimeZone,
     ) -> Result<Self, FoldError> {
-        let recovery = RecoveryState::replay(journal.events())?;
+        let folds = Folds::replay(journal.events())?;
         Ok(Self {
             journal,
             clock,
-            recovery,
+            folds,
             renderer,
             zone,
             log: None,
@@ -71,7 +102,19 @@ impl Appender {
     }
 
     pub const fn recovery(&self) -> &RecoveryState {
-        &self.recovery
+        &self.folds.recovery
+    }
+
+    pub const fn tuner(&self) -> &togi_tuner::State {
+        &self.folds.tuner
+    }
+
+    pub const fn defects(&self) -> &DefectState {
+        &self.folds.defects
+    }
+
+    pub const fn folds(&self) -> &Folds {
+        &self.folds
     }
 
     pub fn clock(&mut self) -> &mut dyn Clock {
@@ -177,7 +220,7 @@ impl Appender {
                 &mut self.log_failure,
                 event,
             );
-            self.recovery.apply(event)?;
+            self.folds.apply(event)?;
         }
         if let Some(mut handoff) = self.handoff.take() {
             let result = handoff.after_durable_append(self);
@@ -203,3 +246,6 @@ fn log_line(
         *log = None;
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -321,7 +321,7 @@ fn a_reason_an_archived_journal_holds_is_cleared_without_a_new_event() {
         Payload::SessionStart(SessionStart {
             build: build(),
             session: "20260101T000100Z".parse().unwrap(),
-            cores: Vec::new(),
+            cores: sim.seams().host.topology().unwrap(),
         }),
         &[],
     )

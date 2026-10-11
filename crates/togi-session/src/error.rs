@@ -22,12 +22,19 @@ impl JournalFailure {
 }
 
 /// A journal that cannot be folded into the run's state.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum FoldError {
     #[error("event #{seq} is {kind} before session.start")]
     BeforeStart { seq: Seq, kind: EventKind },
     #[error("event #{seq} is a second session.start")]
     DuplicateStart { seq: Seq },
+    /// The tuner cannot have written the journal: an event contradicts its state.
+    #[error("event #{seq} does not fold into the tuner state: {error}")]
+    Tuner {
+        seq: Seq,
+        #[source]
+        error: togi_tuner::FoldError,
+    },
 }
 
 /// Why an event that reached the journal was not fully taken in.

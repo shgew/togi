@@ -840,6 +840,7 @@ dependencies = [
  "proptest",
  "thiserror",
  "togi-config",
+ "togi-defect",
  "togi-journal",
  "togi-machine",
  "togi-render",
