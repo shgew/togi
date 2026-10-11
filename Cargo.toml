@@ -12,7 +12,7 @@ publish = false
 [workspace.dependencies]
 flate2 = "1"
 getrandom = { version = "0.4", features = ["std"] }
-jiff = { version = "0.2", default-features = false, features = ["std"] }
+jiff = { version = "0.2", default-features = false, features = ["std", "serde"] }
 nix = { version = "0.30", default-features = false, features = ["fs"] }
 proptest = "1"
 rand = { version = "=0.10.3", default-features = false, features = ["std_rng"] }
