@@ -6,6 +6,7 @@ use togi_machine::{Condition, Regime, workloads};
 
 use super::plan::GroupOutcome;
 use super::support::{ended, passed_cycle};
+use crate::later_tests::{pass_cycles, start_cycle, strikes};
 use crate::testkit::{Journal, Start, config, set};
 use crate::tests::{core, off};
 use crate::{Action, DecisionPayload, Load, TrialContext, TrialPlan};
@@ -2005,32 +2006,43 @@ fn parked_failure_naming_a_core_at_zero_reruns_all_zero() {
 
 #[test]
 fn together_failure_naming_a_core_at_zero_is_hunted_after_a_passed_rerun() {
-    let mut j = Journal::new(&[0, 1], &[Start::has_room(0), Start::has_room(-10)]);
-    j.profile_change(&[0, -10]);
-    j.ranking(&[0, 1]);
-    let plan = together_plan(&mut j, &[0, 1], &[0, -10], SHORT);
-    named_failure(&mut j, &plan, 0);
-    let attribution = j.next_decision();
-    let failure = j.decide(attribution);
-    let rerun = j.next_trial();
-    assert_eq!(rerun.context, TrialContext::ZeroRerun { failure });
-    j.trial(&rerun, Outcome::Pass);
-    let action = j.next();
-    let decision = expect_decision(action.clone());
-    let DecisionPayload::HuntStart(start) = &decision.payload else {
-        panic!("the failure was not hunted among the nonzero cores: {decision:?}");
-    };
-    assert_eq!(start.failure, failure);
-    assert_eq!(core_ids(start.candidates), [1]);
-    assert_eq!(j.resumed().next(), action);
-    j.decide(decision);
-    let end = expect_decision(j.next());
-    let DecisionPayload::HuntEnd(end) = &end.payload else {
-        panic!("expected the hunt end, got {end:?}");
-    };
-    assert_eq!(end.result, HuntOutcome::Culprit);
-    assert_eq!(core_ids(end.cores), [1]);
-    j.assert_resumes();
+    for gate_open in [false, true] {
+        let mut j = Journal::new(&[0, 1], &[Start::has_room(0), Start::has_room(-10)]);
+        j.profile_change(&[0, -10]);
+        j.ranking(&[0, 1]);
+        if gate_open {
+            pass_cycles(&mut j, 3);
+            start_cycle(&mut j);
+            assert!(
+                j.run().later_gate().is_some(),
+                "the later-failure gate is closed"
+            );
+        }
+        let plan = together_plan(&mut j, &[0, 1], &[0, -10], SHORT);
+        named_failure(&mut j, &plan, 0);
+        let attribution = j.next_decision();
+        let failure = j.decide(attribution);
+        let rerun = j.next_trial();
+        assert_eq!(rerun.context, TrialContext::ZeroRerun { failure });
+        j.trial(&rerun, Outcome::Pass);
+        let action = j.next();
+        let decision = expect_decision(action.clone());
+        let DecisionPayload::HuntStart(start) = &decision.payload else {
+            panic!("the failure was not hunted among the nonzero cores: {decision:?}");
+        };
+        assert_eq!(start.failure, failure);
+        assert_eq!(core_ids(start.candidates), [1]);
+        assert_eq!(strikes(&j), 0, "a failure at CO 0 was held");
+        assert_eq!(j.resumed().next(), action);
+        j.decide(decision);
+        let end = expect_decision(j.next());
+        let DecisionPayload::HuntEnd(end) = &end.payload else {
+            panic!("expected the hunt end, got {end:?}");
+        };
+        assert_eq!(end.result, HuntOutcome::Culprit);
+        assert_eq!(core_ids(end.cores), [1]);
+        j.assert_resumes();
+    }
 }
 
 fn group_event(

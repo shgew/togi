@@ -1,10 +1,10 @@
 use togi_journal::{CycleEvent, Outcome};
-use togi_machine::{Condition, Regime};
+use togi_machine::{Condition, Regime, Signal};
 
 use crate::checking::Peak;
 use crate::testkit::{Journal, config};
 use crate::tests::core;
-use crate::{Action, DecisionPayload, Load, TrialPlan};
+use crate::{Action, DecisionPayload, Load, TrialContext, TrialPlan};
 
 fn started(offsets: &[i64]) -> Journal {
     let mut j = Journal::has_room(offsets);
@@ -114,6 +114,28 @@ fn temperature_counts_only_together_passes_with_a_reading() {
     let attribution = j.next_decision();
     j.decide(attribution);
     assert_eq!(j.run().checking.temperature_peak(), None);
+
+    let mut zero = Journal::has_room(&[0, -10]);
+    let failing = zero.manual(
+        Regime::R5,
+        0,
+        Load::Single(core(0)),
+        Condition::Together,
+        &[0, -10],
+        120,
+    );
+    let (intent, trial) = zero.intent(&failing);
+    let mut end = Journal::end_payload(&trial, Outcome::Failure, Some(Signal::ComputationError));
+    end.core = Some(core(0));
+    end.tctl_max_c = Some(99);
+    zero.append(end.into(), &[intent]);
+    let attribution = zero.next_decision();
+    zero.decide(attribution);
+    let rerun = zero.next_trial();
+    assert_eq!(rerun.condition, Condition::Parked);
+    assert!(matches!(rerun.context, TrialContext::ZeroRerun { .. }));
+    with_tctl(&mut zero, &rerun, Outcome::Pass, Some(97));
+    assert_eq!(zero.run().checking.temperature_peak(), None);
 
     let mut alone = Journal::search_at(&[-10]);
     let search = alone.next_trial();

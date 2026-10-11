@@ -1,5 +1,5 @@
 use togi_journal::{CorePhase, DeadEndCondition, Decision, Outcome, Seq, TunerDecision};
-use togi_machine::{BankType, CcdId, Condition, CpuId, Signal};
+use togi_machine::{BankType, CcdId, Condition, CpuId, Regime, Signal};
 
 use crate::r7::escalation::{ESCALATE_AFTER, Escalation};
 use crate::r7::reason::{Basis, Note, R7Reason};
@@ -703,6 +703,57 @@ fn r7_failure_needs_no_move_while_moved_core_is_shallower() {
         assert_eq!(moved, (0, failed[0] + 1), "{name}");
         j.assert_resumes();
     }
+}
+
+#[test]
+fn r7_failure_needs_no_move_during_a_deepening_round_while_the_named_core_is_shallower() {
+    let mut j = Journal::new(&[0, 1], &[Start::solo(-10, -11), Start::solo(-10, -11)]);
+    j.profile_change(&[-10, -10]);
+    j.cycle_start(1, &[Regime::R1]);
+    j.cycle_end(1, true, true);
+    j.ranking(&[0, 1]);
+    let start = j.round_start(1, &[-10, -11], &[1], 5);
+    let failed = [-12, -10];
+    let failure = j.r7_fact(
+        false,
+        &[0, 1],
+        &failed,
+        &R7Report::default().top(&[0]).named(0),
+    );
+    let round_open = |j: &Journal| j.run().rounds.active().map(crate::rounds::Round::start);
+    assert_eq!(j.run().r7_decision(), None);
+    let held = loop {
+        match j.state.decide() {
+            Some(Action::Decide(step))
+                if !matches!(&step.payload, DecisionPayload::DeepeningRound(_))
+                    && !matches!(&step.payload, DecisionPayload::TunerDecision(td) if td.decision == Decision::Backoff) =>
+            {
+                j.decide(step);
+            }
+            other => break other,
+        }
+    };
+    assert!(
+        matches!(held, Some(Action::RunTrial(_))),
+        "core 00 already shallower than in the failed trial, yet {held:?}"
+    );
+    assert_eq!(round_open(&j), Some(start));
+    j.assert_resumes();
+
+    j.at_set_offset(0, failed[0]);
+    assert_eq!(round_open(&j), Some(start));
+    let action = j.next_decision();
+    let DecisionPayload::DeepeningRound(end) = &action.payload else {
+        panic!("expected the round to end before the backoff, got {action:?}");
+    };
+    assert_eq!(end.event, togi_journal::RoundEvent::End);
+    assert!(!end.passed);
+    assert_eq!(action.cause, [failure]);
+    j.decide(action);
+    assert_eq!(round_open(&j), None);
+    let (_, moved) = j.at_next_backoff();
+    assert_eq!(moved, (0, failed[0] + 1));
+    j.assert_resumes();
 }
 
 #[test]

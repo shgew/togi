@@ -3,7 +3,7 @@ use std::num::NonZeroU32;
 
 use jiff::Timestamp;
 use togi_journal::{
-    Activity, Attribution, DeadEnd, DeadEndCondition, FactSource, Outcome, Payload, Seq,
+    Activity, Attribution, DeadEnd, DeadEndCondition, FactSource, HuntStart, Outcome, Payload, Seq,
     TrialCarried, TrialClass, TrialId, TrialIntent,
 };
 use togi_machine::{BootId, Condition, CoreSet, PerCore, Regime, Signal, WorkloadId};
@@ -45,8 +45,30 @@ fn dead_end(action: &Action) -> (&DeadEnd, &[Seq]) {
     }
 }
 
-fn hunt_start(action: Option<&Action>) -> bool {
-    matches!(action, Some(Action::Decide(decision)) if matches!(decision.payload, DecisionPayload::HuntStart(_)))
+impl Journal {
+    fn hunt_after_decisions(&mut self, ranking: &[u8]) -> HuntStart {
+        for _ in 0..10 {
+            match self.next() {
+                Action::ReadRanking => {
+                    self.ranking(ranking);
+                }
+                Action::Decide(decision) => {
+                    if let DecisionPayload::HuntStart(start) = &decision.payload {
+                        let start = start.clone();
+                        self.decide(decision);
+                        return start;
+                    }
+                    assert!(
+                        !matches!(decision.payload, DecisionPayload::DeadEnd(_)),
+                        "dead end before the hunt: {decision:?}"
+                    );
+                    self.decide(decision);
+                }
+                Action::RunTrial(plan) => panic!("trial {plan:?} before the hunt"),
+            }
+        }
+        panic!("the failure was not hunted")
+    }
 }
 
 impl Journal {
@@ -237,7 +259,9 @@ fn single_core_zero_rerun_keeps_its_shape() {
     );
     assert!(j.queued(failure));
     assert_eq!(j.run().core(core(0)).pending, None);
-    assert!(!hunt_start(j.state.decide().as_ref()));
+    let start = j.hunt_after_decisions(&[0, 1]);
+    assert_eq!(start.failure, failure);
+    assert_eq!(start.candidates, set(&[1]));
     j.assert_resumes();
 }
 
@@ -475,16 +499,9 @@ fn carried_unconfirmed_failure_at_zero_is_hunted() {
     assert_eq!(skipped.attribution, Attribution::Unattributed);
     j.decide(skip);
     assert!(j.queued(fact));
-    for _ in 0..10 {
-        let Some(Action::Decide(decision)) = j.state.decide() else {
-            break;
-        };
-        assert!(
-            !matches!(decision.payload, DecisionPayload::DeadEnd(_)),
-            "dead end before any all-zero rerun: {decision:?}"
-        );
-        j.decide(decision);
-    }
+    let start = j.hunt_after_decisions(&[0, 1, 2, 3]);
+    assert_eq!(start.failure, fact);
+    assert_eq!(start.candidates, set(&[2, 3]));
     j.assert_resumes();
 }
 

@@ -1,6 +1,6 @@
 use togi_journal::{
     Activity, Attribution, CorePhase, CoreTransition, DeadEnd, DeadEndCondition, Decision, HuntEnd,
-    HuntGroup, HuntOutcome, HuntStage, HuntStart, Outcome, Seq, TunerDecision,
+    HuntGroup, HuntOutcome, HuntStage, HuntStart, Member, Outcome, Seq, TunerDecision,
 };
 use togi_machine::{Condition, Regime, Signal, workloads};
 
@@ -1565,62 +1565,235 @@ fn carried_passes_establish_a_hunt_group() {
     j.assert_resumes();
 }
 
-#[test]
-fn skipped_together_failure_makes_progress() {
-    let starts = [Start::at_limit(-20); 2];
-    let mut j = Journal::new(&[0, 1], &starts);
-    j.profile_change(&[-20, -20]);
-    j.ranking(&[0, 1]);
-    let failure = j.carry(
-        SESSION,
-        (Regime::R6, 0, &[0, 1], 900),
-        Condition::Together,
-        &[-20, -20],
-        Outcome::Failure,
-    );
+fn loc_hunt_before_member_probe(carried: &[Outcome]) -> (Journal, Vec<Seq>) {
+    let mut j = loc_limit_session(4, -30);
+    let duration = j.run().config.short_trial.get();
+    let facts: Vec<Seq> = carried
+        .iter()
+        .map(|&outcome| {
+            j.carry(
+                SESSION,
+                (Regime::R6, 0, &[0, 1, 2, 3], duration),
+                Condition::Together,
+                &[-29, -30, 0, 0],
+                outcome,
+            )
+        })
+        .collect();
     let plan = j.manual(
         Regime::R6,
         0,
-        Load::Many(set(&[0, 1])),
+        Load::Many(set(&[0, 1, 2, 3])),
         Condition::Together,
-        &[-20, -20],
-        900,
+        &[-30, -30, -30, -30],
+        duration,
     );
-    let skipped = j.run().skip_known_failure(Action::RunTrial(plan));
-    let DecisionPayload::Failure(known) = &decision(&skipped).payload else {
-        panic!("the carried failure did not skip the trial: {skipped:?}");
+    j.trial(&plan, Outcome::Failure);
+    let attribution = j.next_decision();
+    j.decide(attribution);
+    j.start_hunt();
+    let mut oracle = |plan: &TrialPlan| {
+        if at(plan, 0) <= -30 && at(plan, 1) <= -30 {
+            Outcome::Failure
+        } else {
+            Outcome::Pass
+        }
     };
-    assert_eq!(known.known_failure, Some(failure));
-    j.decide(decision(&skipped).clone());
-    let mut found = false;
     for _ in 0..200 {
-        let action = j.loc_act();
-        match &action {
-            Action::RunTrial(plan) => {
-                assert!(
-                    found,
-                    "together failure was rerun before its decision: {plan:?}"
-                );
-                return;
-            }
-            Action::Decide(decision) => {
-                if let DecisionPayload::HuntStart(start) = &decision.payload {
+        if hunt_group_of(&j.next()).is_some_and(|group| group.probe.is_some()) {
+            return (j, facts);
+        }
+        j.step(&mut oracle);
+    }
+    panic!("the hunt never reached its first member probe");
+}
+
+fn hunt_group_of(action: &Action) -> Option<&HuntGroup> {
+    match action {
+        Action::Decide(decision) => match &decision.payload {
+            DecisionPayload::HuntGroup(group) => Some(group),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+#[test]
+fn carried_evidence_before_the_hunt_establishes_a_member_probe() {
+    let first = Member {
+        core: core(0),
+        offset: off(-29),
+    };
+    let needed = {
+        let j = loc_limit_session(4, -30);
+        usize::from(j.run().config.needed.get())
+    };
+    for passes in [true, false] {
+        let carried = vec![
+            if passes {
+                Outcome::Pass
+            } else {
+                Outcome::Failure
+            };
+            if passes { needed } else { 1 }
+        ];
+        let (mut j, facts) = loc_hunt_before_member_probe(&carried);
+        let hunt_seq = j.run().hunts.active.as_ref().expect("the hunt is open").seq;
+        assert!(facts.iter().all(|&fact| fact < hunt_seq));
+        let planned = j.next();
+        let probe = hunt_group(&planned);
+        assert_eq!(probe.stage, HuntStage::Probe);
+        assert_eq!(probe.probe, Some(first));
+        let cause = &decision(&planned).cause;
+        assert_eq!(cause[0], hunt_seq);
+        for fact in &facts {
+            assert!(
+                cause.contains(fact),
+                "passes={passes}: #{fact} not cited in {cause:?}"
+            );
+        }
+        let reason = probe.reason.clone().unwrap();
+        assert!(reason.contains(SESSION), "{reason}");
+        let want = if passes {
+            togi_journal::Inference::Pass
+        } else {
+            togi_journal::Inference::Failure
+        };
+        assert_eq!(probe.inferred, Some(want), "passes={passes}: {probe:?}");
+        j.decide(decision(&planned).clone());
+        let view = j.run().hunt_groups().last().cloned().unwrap();
+        let want = if passes {
+            super::plan::GroupOutcome::Passed
+        } else {
+            super::plan::GroupOutcome::Failed
+        };
+        assert_eq!(view.probe, Some(first));
+        assert_eq!(view.outcome, Some(want), "passes={passes}");
+        assert!(view.carried, "passes={passes}: {view:?}");
+        if passes {
+            assert_eq!(view.passed, u32::try_from(needed).unwrap());
+        }
+        let next = j.next();
+        let following = hunt_group(&next);
+        assert_eq!(following.inferred, None, "passes={passes}: {following:?}");
+        let moved = following.probe.expect("the probes go on");
+        let (member, offset) = if passes { (1, -29) } else { (0, -28) };
+        assert_eq!((moved.core, moved.offset), (core(member), off(offset)));
+        j.assert_resumes();
+    }
+}
+
+#[test]
+fn skipped_together_failure_makes_progress() {
+    for attributed in [false, true] {
+        let starts = [Start::at_limit(-20); 2];
+        let mut j = Journal::new(&[0, 1], &starts);
+        j.profile_change(&[-20, -20]);
+        j.ranking(&[0, 1]);
+        let duration = j.run().config.checking_idle.get();
+        let mut fact = j.carried_trial(
+            SESSION,
+            togi_journal::TrialClass {
+                regime: Regime::R6,
+                workload: togi_machine::WorkloadId::new(Regime::R6, 0),
+                cores: set(&[0, 1]),
+                duration_s: duration,
+            },
+            Condition::Together,
+            &[-20, -20],
+            Outcome::Failure,
+            None,
+        );
+        fact.core = attributed.then(|| core(0));
+        let failure = j.append(fact.into(), &[]);
+        j.cycle_start(1, &[Regime::R6]);
+        if attributed {
+            let retry = j.manual(
+                Regime::R6,
+                0,
+                Load::Many(set(&[0, 1])),
+                Condition::Together,
+                &[-20, -20],
+                duration,
+            );
+            j.trial(&retry, Outcome::Inconclusive);
+            let pending = j
+                .run()
+                .retry
+                .as_ref()
+                .expect("the inconclusive trial left a retry");
+            assert_eq!(pending.plan.profile, j.profile(&[-20, -20]));
+            assert_eq!(
+                j.run().evidence.failing_seq(
+                    pending.plan.requirement.class,
+                    &pending.plan.profile,
+                    None,
+                    j.run().config.needed,
+                ),
+                Ok(Some(failure)),
+                "the retry does not select a known-failing profile"
+            );
+        }
+        let mut found = false;
+        for _ in 0..100 {
+            let action = j.loc_act();
+            assert!(
+                !matches!(action, Action::RunTrial(_)),
+                "together failure was rerun before its decision: {action:?}"
+            );
+            let Action::Decide(decision) = &action else {
+                unreachable!();
+            };
+            match &decision.payload {
+                DecisionPayload::HuntStart(start) => {
+                    assert!(!attributed, "{start:?}");
                     assert_eq!(start.failure, failure);
                     assert!(decision.cause.contains(&failure), "{:?}", decision.cause);
                     assert_eq!(start.failing, j.profile(&[-20, -20]).offsets());
                     assert_eq!(
                         (start.regime, start.workload, start.duration_s),
-                        (Regime::R6, workloads(Regime::R6)[0].id(), 900)
+                        (Regime::R6, workloads(Regime::R6)[0].id(), duration)
                     );
                     assert_eq!(start.cores, set(&[0, 1]));
                     found = true;
                 }
-                j.decide(decision.clone());
+                DecisionPayload::TunerDecision(moved) if moved.decision == Decision::Backoff => {
+                    assert!(attributed, "{moved:?}");
+                    assert_eq!(
+                        (moved.core, moved.to_offset),
+                        (core(0), off(-19)),
+                        "{moved:?}"
+                    );
+                    assert!(decision.cause.contains(&failure), "{:?}", decision.cause);
+                    found = true;
+                }
+                _ => {}
             }
-            Action::ReadRanking => unreachable!(),
+            j.decide(decision.clone());
+            if found {
+                break;
+            }
         }
+        assert!(
+            found,
+            "the skipped together step reached no hunt or backoff"
+        );
+        let mut live = false;
+        for _ in 0..200 {
+            match j.loc_act() {
+                Action::RunTrial(_) => {
+                    live = true;
+                    break;
+                }
+                Action::Decide(decision) => {
+                    j.decide(decision);
+                }
+                Action::ReadRanking => unreachable!(),
+            }
+        }
+        assert!(live, "the skip loop prevented the next live trial");
+        j.assert_resumes();
     }
-    panic!("the skip loop prevented the next live trial");
 }
 
 #[test]

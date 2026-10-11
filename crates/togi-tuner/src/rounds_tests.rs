@@ -6,7 +6,7 @@ use togi_machine::{Condition, CoreId, CoreSet, PerCore, Regime, Signal};
 
 use crate::testkit::{Journal, R7Report, Start, set};
 use crate::tests::{core, off};
-use crate::{Action, DecisionAction, DecisionPayload, Load, TrialPlan};
+use crate::{Action, DecisionAction, DecisionPayload, Load, TrialContext, TrialPlan};
 
 fn solo_cores(offsets: &[i64], solo: i64) -> Journal {
     let ids: Vec<u8> = (0..offsets.len())
@@ -665,8 +665,7 @@ fn a_failure_in_a_round_is_blamed_before_the_ranking_is_read() {
     j.assert_resumes();
 }
 
-#[test]
-fn a_cancelled_round_check_retry_does_not_run_after_its_round_ends() {
+fn round_check_retry() -> (Journal, TrialPlan) {
     let mut j = solo_cores(&[-10, -10], -11);
     drive(&mut j, 4000, |j| j.run().phases.phase1_end().is_some());
     until_round_checks(&mut j, 2);
@@ -675,10 +674,74 @@ fn a_cancelled_round_check_retry_does_not_run_after_its_round_ends() {
     let retry = j.next_trial();
     assert!(retry.retry);
     assert_eq!(retry.requirement, first.requirement);
+    assert_eq!(retry.context, first.context);
     assert!(j.run().retry.is_some());
+    (j, retry)
+}
+
+fn first_trial_after(j: &mut Journal) -> TrialPlan {
+    for _ in 0..10 {
+        match j.next() {
+            Action::RunTrial(plan) => return plan,
+            Action::Decide(decision) => {
+                j.decide(decision);
+            }
+            Action::ReadRanking => panic!("no ranking was asked for"),
+        }
+    }
+    panic!("no trial after the transition");
+}
+
+#[test]
+fn a_cancelled_round_check_retry_does_not_run_after_its_round_ends() {
+    let (mut j, retry) = round_check_retry();
+    let TrialContext::Round { round } = retry.context else {
+        panic!("the retry is not a round check: {retry:?}");
+    };
+    j.reset(1);
+    assert_eq!(
+        j.state.decide().map(|a| matches!(a, Action::RunTrial(_))),
+        Some(false)
+    );
+    let end = j.next_decision();
+    assert!(
+        matches!(&end.payload, DecisionPayload::DeepeningRound(r) if r.event == RoundEvent::End && r.round == round),
+        "reset must cancel the round first: {end:?}"
+    );
+    j.decide(end);
+    assert!(j.run().retry.is_none());
+    let next = first_trial_after(&mut j);
+    assert!(!next.retry, "{next:?}");
+    assert_ne!(next.context, retry.context);
+    assert!(matches!(next.context, TrialContext::Search { core: c, .. } if c == core(1)));
+    assert_eq!(next.activity, Activity::Search);
+    assert_eq!(next.load, Load::Single(core(1)));
+    j.assert_resumes();
+
+    let (mut j, _) = round_check_retry();
     end_round_by_hand(&mut j);
     assert!(j.run().rounds.active().is_none());
     assert!(j.run().retry.is_none());
+    until_round_checks(&mut j, 2);
+    let next = j.next_trial();
+    let TrialContext::Round { round: second } = next.context else {
+        panic!("the next round's first check is not a round check: {next:?}");
+    };
+    assert_ne!(second, round);
+    assert!(!next.retry, "{next:?}");
+    assert_eq!(next.activity, Activity::Deepening);
+    j.assert_resumes();
+
+    let (mut j, retry) = round_check_retry();
+    end_round_by_hand(&mut j);
+    j.reset(1);
+    let next = first_trial_after(&mut j);
+    assert!(!next.retry, "{next:?}");
+    assert_ne!(next.context, retry.context);
+    assert!(matches!(next.context, TrialContext::Search { core: c, .. } if c == core(1)));
+    assert_eq!(next.activity, Activity::Search);
+    assert_eq!(next.load, Load::Single(core(1)));
+    j.assert_resumes();
 }
 
 #[test]
