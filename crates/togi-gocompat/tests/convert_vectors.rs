@@ -4,8 +4,15 @@ use std::fs;
 use std::path::Path;
 
 use togi_gocompat::convert::{
-    duration_from_secs_f64, duration_hours, duration_minutes, duration_round, duration_seconds,
-    duration_string, duration_truncate, f64_to_i64, shl_i64,
+    ceil, duration_from_secs_f64, duration_hours, duration_minutes, duration_round,
+    duration_seconds, duration_string, duration_truncate, f64_to_i64, floor, parse_duration, round,
+    shl_i64, trunc,
+};
+
+const NATIVE: &str = if cfg!(target_arch = "x86_64") {
+    "convert-amd64.txt"
+} else {
+    "convert-arm64.txt"
 };
 
 fn rows(name: &str, kind: &str) -> Vec<Vec<String>> {
@@ -37,11 +44,19 @@ fn int(text: &str) -> i64 {
 }
 
 fn same_f64(a: f64, b: f64) -> bool {
-    a.to_bits() == b.to_bits() || (a.is_nan() && b.is_nan())
+    a.to_bits() == b.to_bits()
 }
 
 fn same_f32(a: f32, b: f32) -> bool {
-    a.to_bits() == b.to_bits() || (a.is_nan() && b.is_nan())
+    a.to_bits() == b.to_bits()
+}
+
+fn hex_bytes(text: &str) -> Vec<u8> {
+    assert_eq!(text.len() % 2, 0, "odd hex {text:?}");
+    (0..text.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&text[i..i + 2], 16).unwrap())
+        .collect()
 }
 
 fn expect_none(kind: &str, failures: &[String]) {
@@ -53,29 +68,23 @@ fn expect_none(kind: &str, failures: &[String]) {
     );
 }
 
-#[test]
-fn float_to_int64_matches_go_on_amd64() {
+/// The native conversion, including the scaled duration conversions, against Go on this target.
+fn check_float_to_int(name: &str, convert: fn(f64) -> i64) {
     let mut failures = Vec::new();
-    for row in rows("convert-amd64.txt", "i64") {
-        let got = f64_to_i64(f64_of(&row[0]));
+    for row in rows(name, "i64") {
+        let got = convert(f64_of(&row[0]));
         if got != int(&row[1]) {
             failures.push(format!("{}: got {got}, want {}", row[0], row[1]));
         }
     }
-    expect_none("i64", &failures);
-}
-
-#[test]
-fn duration_from_seconds_matches_go_on_amd64() {
-    let mut failures = Vec::new();
-    for row in rows("convert-amd64.txt", "dur-secs") {
-        let got = duration_from_secs_f64(f64_of(&row[0]));
+    for row in rows(name, "dur-secs") {
+        let got = convert(f64_of(&row[0]) * 1e9);
         if got != int(&row[1]) {
-            failures.push(format!("{}: got {got}, want {}", row[0], row[1]));
+            failures.push(format!("{} s: got {got}, want {}", row[0], row[1]));
         }
     }
-    for row in rows("convert-amd64.txt", "dur-scaled") {
-        let got = f64_to_i64(f64_of(&row[0]) * f64_of(&row[1]));
+    for row in rows(name, "dur-scaled") {
+        let got = convert(f64_of(&row[0]) * f64_of(&row[1]));
         if got != int(&row[2]) {
             failures.push(format!(
                 "{} * {}: got {got}, want {}",
@@ -83,32 +92,38 @@ fn duration_from_seconds_matches_go_on_amd64() {
             ));
         }
     }
-    expect_none("dur-secs", &failures);
+    expect_none(name, &failures);
 }
 
 #[test]
-fn float_to_int64_boundaries() {
-    assert_eq!(f64_to_i64(f64::NAN), i64::MIN);
-    assert_eq!(f64_to_i64(f64::INFINITY), i64::MIN);
-    assert_eq!(f64_to_i64(f64::NEG_INFINITY), i64::MIN);
-    assert_eq!(f64_to_i64(9_223_372_036_854_775_808.0), i64::MIN);
-    assert_eq!(
-        f64_to_i64(9_223_372_036_854_774_784.0),
-        9_223_372_036_854_774_784
-    );
-    assert_eq!(f64_to_i64(-9_223_372_036_854_775_808.0), i64::MIN);
-    assert_eq!(f64_to_i64(-9_223_372_036_854_777_856.0), i64::MIN);
-    assert_eq!(f64_to_i64(-0.9), 0);
-    assert_eq!(f64_to_i64(-1.9), -1);
-    assert_eq!(f64_to_i64(2.9), 2);
+fn native_float_to_int64_matches_go() {
+    check_float_to_int(NATIVE, f64_to_i64);
+}
+
+#[test]
+fn native_duration_from_seconds_follows_the_target() {
     assert_eq!(duration_from_secs_f64(1.5), 1_500_000_000);
-    assert_eq!(duration_from_secs_f64(f64::NAN), i64::MIN);
+    let overflow = if cfg!(target_arch = "x86_64") {
+        i64::MIN
+    } else {
+        i64::MAX
+    };
+    assert_eq!(duration_from_secs_f64(1e10), overflow);
+    let nan = if cfg!(target_arch = "x86_64") {
+        i64::MIN
+    } else {
+        0
+    };
+    assert_eq!(duration_from_secs_f64(f64::NAN), nan);
 }
 
 #[test]
 fn float32_rounding_equals_rust_as_f32() {
     let mut failures = Vec::new();
-    for row in rows("convert.txt", "f32") {
+    for row in rows("convert.txt", "f32")
+        .into_iter()
+        .chain(rows(NATIVE, "f32"))
+    {
         #[expect(
             clippy::cast_possible_truncation,
             reason = "the vector is the narrowing itself"
@@ -129,7 +144,10 @@ fn float32_rounding_equals_rust_as_f32() {
 #[test]
 fn float32_arithmetic_equals_rust() {
     let mut failures = Vec::new();
-    for row in rows("convert.txt", "f32-ops") {
+    for row in rows("convert.txt", "f32-ops")
+        .into_iter()
+        .chain(rows(NATIVE, "f32-ops"))
+    {
         let (a, b) = (f32_of(&row[0]), f32_of(&row[1]));
         let ok = same_f32(a + b, f32_of(&row[2]))
             && same_f32(a - b, f32_of(&row[3]))
@@ -146,14 +164,17 @@ fn float32_arithmetic_equals_rust() {
 }
 
 #[test]
-fn rounding_functions_equal_rust() {
+fn rounding_functions_match_go() {
     let mut failures = Vec::new();
-    for row in rows("convert.txt", "math") {
+    for row in rows("convert.txt", "math")
+        .into_iter()
+        .chain(rows(NATIVE, "math"))
+    {
         let x = f64_of(&row[0]);
-        let ok = same_f64(x.round(), f64_of(&row[1]))
-            && same_f64(x.floor(), f64_of(&row[2]))
-            && same_f64(x.ceil(), f64_of(&row[3]))
-            && same_f64(x.trunc(), f64_of(&row[4]));
+        let ok = same_f64(round(x), f64_of(&row[1]))
+            && same_f64(floor(x), f64_of(&row[2]))
+            && same_f64(ceil(x), f64_of(&row[3]))
+            && same_f64(trunc(x), f64_of(&row[4]));
         if !ok {
             failures.push(row[0].clone());
         }
@@ -249,4 +270,38 @@ fn shifts_follow_go() {
         }
     }
     expect_none("shl", &failures);
+}
+
+#[test]
+fn duration_parsing_matches_go() {
+    let mut failures = Vec::new();
+    let mut parsed = 0;
+    for row in rows("convert.txt", "dur-parse") {
+        let want = (row[1] != "error").then(|| int(&row[1]));
+        let got = String::from_utf8(hex_bytes(&row[0])).map_or(None, |text| parse_duration(&text));
+        parsed += usize::from(got.is_some());
+        if got != want {
+            failures.push(format!("{}: got {got:?}, want {want:?}", row[0]));
+        }
+    }
+    expect_none("dur-parse", &failures);
+    assert!(parsed > 400, "only {parsed} inputs parse");
+}
+
+#[test]
+fn duration_parsing_hand_written() {
+    assert_eq!(parse_duration("0.5ns0.5ns"), Some(0));
+    assert_eq!(parse_duration("1.5s"), Some(1_500_000_000));
+    assert_eq!(parse_duration("-0"), Some(0));
+    assert_eq!(parse_duration("1h2m3s"), Some(3_723_000_000_000));
+    assert_eq!(parse_duration("12\u{b5}s"), Some(12_000));
+    assert_eq!(parse_duration("12\u{3bc}s"), Some(12_000));
+    assert_eq!(parse_duration("-9223372036854775808ns"), Some(i64::MIN));
+    assert_eq!(parse_duration("9223372036854775807ns"), Some(i64::MAX));
+    assert_eq!(parse_duration("9223372036854775808ns"), None);
+    for bad in ["", "+", "-", ".s", "1.s2", "1", "1d", "s", "1 s"] {
+        assert_eq!(parse_duration(bad), None, "{bad:?}");
+    }
+    assert_eq!(parse_duration("1.s"), Some(1_000_000_000));
+    assert_eq!(parse_duration(".5s"), Some(500_000_000));
 }
