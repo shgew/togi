@@ -216,3 +216,82 @@ fn a_dead_end_pending_from_another_boot_is_finished_first() {
         ["session.start", "config.loaded", "deadend"]
     );
 }
+
+fn unreadable() -> togi_machine::Error {
+    togi_machine::Error::Other("hardware identity unavailable".into())
+}
+
+fn untouched(bench: &Bench, session: &Session) {
+    let mut smu = bench.sim.seams().smu;
+    for core in session.cores() {
+        assert_eq!(smu.offset(core).unwrap().0, 0);
+    }
+    let kinds = crate::testing::kinds_of(session.appender());
+    for kind in ["smu.intent", "trial.intent", "shutdown"] {
+        assert!(!kinds.contains(&kind), "{kind}");
+    }
+}
+
+#[test]
+fn a_host_that_cannot_be_read_does_not_start_tuning() {
+    use crate::testing::ReadFails;
+
+    let bench = Bench::new(2);
+    let mut session = bench.open();
+    let inner = std::mem::replace(&mut session.host, bench.sim.seams().host);
+    session.host = Box::new(ReadFails {
+        inner,
+        topology: Some(unreadable),
+        context: None,
+    });
+    assert!(matches!(session.start(), Err(SessionError::Machine(_))));
+    assert!(crate::testing::kinds_of(session.appender()).is_empty());
+    untouched(&bench, &session);
+    drop(session);
+
+    let mut session = crate::testing::swept(&bench);
+    let inner = std::mem::replace(&mut session.host, bench.sim.seams().host);
+    session.host = Box::new(ReadFails {
+        inner,
+        topology: None,
+        context: Some(unreadable),
+    });
+    assert!(matches!(session.begin(), Err(SessionError::Machine(_))));
+    let kinds = crate::testing::kinds_of(session.appender());
+    assert!(!kinds.contains(&"session.baseline") && !kinds.contains(&"core.phase"));
+    untouched(&bench, &session);
+}
+
+#[test]
+fn an_identity_that_cannot_be_allocated_leaves_the_journal_empty() {
+    use togi_journal::fs::{Fault, Op};
+
+    let bench = Bench::new(2);
+    let mut session = bench.open();
+    bench.mem.inject(Fault::before(Op::Read, 1));
+    assert!(session.start().is_err());
+    assert!(crate::testing::kinds_of(session.appender()).is_empty());
+    untouched(&bench, &session);
+}
+
+#[test]
+fn a_refused_journal_whose_saved_entry_cannot_be_cleared_keeps_both_errors() {
+    let bench = Bench::new(2);
+    let mut session = bench.open();
+    session.start().unwrap();
+    drop(session);
+    let mut input = bench.input();
+    input.build.ruleset += 1;
+    input.bootloader = Some(Box::new(crate::testing::ClearFails::default()));
+    let Err(ended) = Session::open(input) else {
+        panic!("opened");
+    };
+    assert!(matches!(
+        ended.errors.as_slice(),
+        [
+            SessionError::Compatibility(_),
+            SessionError::ClearSavedEntry(_)
+        ]
+    ));
+    assert_eq!(ended.journal.events().len(), 2);
+}

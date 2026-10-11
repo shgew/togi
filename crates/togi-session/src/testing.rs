@@ -512,3 +512,72 @@ pub(crate) fn run_action(session: &mut Session, action: Action) -> crate::sessio
 pub(crate) fn run_plan(session: &mut Session, plan: TrialPlan) -> crate::session::Outcome {
     run_action(session, Action::RunTrial(plan))
 }
+
+/// A host whose topology or BIOS context cannot be read; everything else is the simulator's.
+pub(crate) struct ReadFails {
+    pub inner: Box<dyn togi_machine::Host>,
+    pub topology: Option<fn() -> Error>,
+    pub context: Option<fn() -> Error>,
+}
+
+impl togi_machine::Host for ReadFails {
+    fn boot_id(&mut self) -> Result<BootId, Error> {
+        self.inner.boot_id()
+    }
+
+    fn topology(&mut self) -> Result<Vec<togi_machine::CoreInfo>, Error> {
+        match self.topology {
+            Some(error) => Err(error()),
+            None => self.inner.topology(),
+        }
+    }
+
+    fn validate_smu(&mut self) -> Result<SmuValidated, Error> {
+        self.inner.validate_smu()
+    }
+
+    fn bios_context(&mut self) -> Result<togi_machine::BiosContext, Error> {
+        match self.context {
+            Some(error) => Err(error()),
+            None => self.inner.bios_context(),
+        }
+    }
+
+    fn ranking(
+        &mut self,
+    ) -> Result<Vec<togi_machine::CoreRank>, Partial<Vec<togi_machine::CoreRank>>> {
+        self.inner.ranking()
+    }
+
+    fn preflight(&mut self) -> Vec<togi_machine::Check> {
+        self.inner.preflight()
+    }
+
+    fn watchdog(&mut self) -> togi_machine::Check {
+        self.inner.watchdog()
+    }
+}
+
+/// A bootloader whose saved entry cannot be cleared.
+#[derive(Default)]
+pub(crate) struct ClearFails(pub MemBoot);
+
+impl Environment for ClearFails {
+    fn get(&mut self, name: &str) -> io::Result<Option<String>> {
+        self.0.get(name)
+    }
+
+    fn set(&mut self, values: &[(&str, &str)]) -> io::Result<()> {
+        self.0.set(values)
+    }
+
+    fn unset(&mut self, names: &[&str]) -> io::Result<()> {
+        self.0.unset(names)
+    }
+}
+
+impl Bootloader for ClearFails {
+    fn clear_saved_entry(&mut self) -> io::Result<SavedEntry> {
+        Err(io::Error::other("GRUB environment unavailable"))
+    }
+}

@@ -200,3 +200,68 @@ fn a_carry_is_committed_after_the_context_and_baseline_and_before_any_phase_once
     assert_eq!(kinds_of(session.appender()).len(), before);
     crate::testing::assert_fold_consistent(session.appender());
 }
+
+fn carried_core(limit: Option<i64>, failure_point: Option<i64>) -> togi_journal::CarriedCore {
+    let from = togi_journal::Provenance {
+        session: SessionId::new(jiff::Timestamp::from_second(1_000_000).unwrap(), None).unwrap(),
+        seq: togi_journal::Seq::new(1).unwrap(),
+    };
+    togi_journal::CarriedCore {
+        core: core(0),
+        candidate_solo_limit: limit.map(|offset| togi_journal::CarriedLimit {
+            offset: target(offset),
+            from,
+        }),
+        failure_point: failure_point.map(|offset| togi_journal::CarriedFailurePoint {
+            offset: target(offset),
+            from,
+            signal: togi_machine::Signal::Crash,
+        }),
+    }
+}
+
+#[test]
+fn a_carried_start_stays_one_count_shallower_than_the_failure_point() {
+    let bench = Bench::new(2);
+    let session = bench.open();
+    let carried = carried_core(Some(-12), Some(-10));
+    let phase = session.first_transition(core(0), 0, Some(&carried));
+    assert_eq!(phase.offset, target(-9));
+    assert!(phase.check_solo_limit);
+    assert_eq!(phase.failure_point, Some(target(-10)));
+    assert!(
+        phase
+            .reason
+            .contains("one count shallower than the failure point -10 carried from session")
+    );
+
+    let carried = carried_core(Some(-5), Some(-10));
+    let phase = session.first_transition(core(0), 0, Some(&carried));
+    assert_eq!(phase.offset, target(-5));
+    assert_eq!(phase.failure_point, Some(target(-10)));
+
+    let carried = carried_core(None, Some(-20));
+    let phase = session.first_transition(core(0), 0, Some(&carried));
+    assert_eq!(phase.offset, target(0));
+    assert!(!phase.check_solo_limit);
+    assert_eq!(phase.failure_point, Some(target(-20)));
+}
+
+#[test]
+fn a_resumed_baseline_beyond_the_range_is_clamped_where_the_search_starts() {
+    let bench = Bench::new(2);
+    let mut session = crate::testing::swept(&bench);
+    crate::testing::recorded_baseline(&mut session, &[-60, 5]);
+    assert_eq!(session.begin().unwrap(), Control::Continue);
+    let phases = phases(&session);
+    let offsets: Vec<_> = phases.iter().map(|(phase, _)| phase.offset).collect();
+    assert_eq!(offsets, [target(-50), target(0)]);
+    let reasons: Vec<_> = phases
+        .iter()
+        .map(|(phase, _)| phase.reason.as_str())
+        .collect();
+    assert_eq!(
+        reasons,
+        ["baseline -60 clamped to -50", "baseline 5 clamped to 0"]
+    );
+}
