@@ -461,7 +461,7 @@ togi stops when it cannot make progress:
 | Attributed failure at offset 0 outside multi-core R7, or an unattributed together failure with every core at 0. In multi-core R7: a named core at 0 that was a top requester of its CCD in that trial, or an unattributed failure with every loaded core of each affected CCD at 0, once its located hunt ended `loaded` when an unloaded core was off CO 0. Unless the failing profile was all at 0, only once the failing trial's all-zero rerun failed too | The instability is not caused by Curve Optimizer. |
 | SMU readback differs from the written value, or an SMU command fails | Offsets can no longer be trusted. |
 | The same backend has `dead_ends.inconclusive_in_a_row` consecutive inconclusive trials (3 by default), then three more consecutive inconclusive trials after waits of 60, 300 and 1800 seconds before those trials, or is missing | No evidence can be produced; the `no_evidence` dead end fires at `dead_ends.inconclusive_in_a_row + 3` (6 by default). |
-| 3 stray crashes in a row | The machine crashes before togi acts: a boot loop. |
+| `dead_ends.stray_crashes_in_a_row` stray crashes in a row (3 by default) | The machine crashes before togi acts: a boot loop. |
 | A backend thread observed outside its allowed logical CPUs | Attribution is broken. |
 | Preflight fails | The environment is not the one being tuned. |
 | An unanswered too-aggressive defect without a terminal | Earlier decisions may have moved offsets deeper than proven; an operator must decide whether to reset the affected cores. |
