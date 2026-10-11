@@ -1,7 +1,10 @@
 //! Output framing, the 64 KiB cap, watched files and their evidence under teardown.
 
+use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
@@ -384,6 +387,60 @@ async fn a_flooded_instance_does_not_skip_the_required_samples_of_its_neighbour(
         let run = finish(&handle).await;
         assert_eq!(run.finished.result.escaped, [CpuId(7)]);
         assert!(run.finished.result.ran <= secs(2));
+    })
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn every_ready_instance_is_sampled_each_tick_while_both_watched_floods_are_outstanding() {
+    local(async {
+        let rig = rig_with(watching(), Timing::default());
+        rig.fake.on_launch(|_, command| {
+            let file = results(command);
+            Launch::Run(script(move |mut ctx: ProcCtx| async move {
+                ctx.write_file(file, flood(4 * 1024 * 1024 / 8)).unwrap();
+                ctx.until_killed().await;
+            }))
+        });
+        let cancel = CancellationToken::new();
+        let threads_seen = Rc::new(RefCell::new(BTreeMap::<u32, usize>::new()));
+        let (seen, cancelling) = (Rc::clone(&threads_seen), cancel.clone());
+        rig.fake.on_threads(move |pid| {
+            let mut seen = seen.borrow_mut();
+            *seen.entry(pid).or_default() += 1;
+            if seen.len() == 2 && seen.values().all(|&count| count == 3) {
+                cancelling.cancel();
+            }
+        });
+        let begun = tokio::time::Instant::now();
+        let handle = rig
+            .start_with(&cancel, spec(Regime::R7, &[0, 1], secs(600)))
+            .await
+            .unwrap();
+        let run = finish(&handle).await;
+        let pids = [rig.fake.process(0).pid, rig.fake.process(1).pid];
+        assert_eq!(
+            *threads_seen.borrow(),
+            BTreeMap::from([(pids[0], 3), (pids[1], 3)])
+        );
+        let samples: Vec<_> =
+            togi_machine::read_samples(&rig.dir.path().join("trials/t1")).collect();
+        for core in [super::harness::core(0), super::harness::core(1)] {
+            let usage_seen = samples
+                .iter()
+                .filter(|sample| sample.worker_cpu_ms.get(core).is_some())
+                .count();
+            assert_eq!(usage_seen, 3, "usage observations of {core:?}");
+        }
+        assert!(
+            matches!(run.finished.errors[..], [Error::Cancelled]),
+            "{:?}",
+            run.finished.errors
+        );
+        assert!(run.finished.result.failure.is_none());
+        assert_eq!(run.finished.result.ran, secs(3));
+        assert!(run.finished.teardown.is_ok());
+        assert!(begun.elapsed() <= secs(4), "{:?}", begun.elapsed());
     })
     .await;
 }

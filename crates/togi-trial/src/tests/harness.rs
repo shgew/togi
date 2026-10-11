@@ -70,7 +70,7 @@ pub(super) struct Rig {
 /// test process, so a root-owned source tree is irrelevant. Root and the reserved ids cannot be a
 /// backend account, so a root run uses the conventional `nobody` (65534); the fixtures' directories
 /// are world-searchable, so that account can reach them.
-pub(super) fn own_identity() -> BackendIdentity {
+pub(crate) fn own_identity() -> BackendIdentity {
     identity_of(
         rustix::process::geteuid().as_raw(),
         rustix::process::getegid().as_raw(),

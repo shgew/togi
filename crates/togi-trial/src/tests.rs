@@ -1,4 +1,4 @@
-mod harness;
+pub(crate) mod harness;
 mod output;
 #[cfg(target_os = "linux")]
 mod process;

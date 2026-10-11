@@ -478,17 +478,13 @@ mod tests {
     use super::*;
     use crate::plan::InstanceName;
     use crate::testing::TestBackend;
+    use crate::tests::harness::own_identity;
     use std::fs;
     use std::io::Read as _;
     use std::os::unix::fs::{MetadataExt as _, PermissionsExt, symlink};
     use std::sync::Mutex;
     use test_case::test_case;
     use togi_machine::{CoreId, CpuId, Regime, pick_workload};
-
-    fn own_identity() -> BackendIdentity {
-        let meta = fs::metadata(".").unwrap();
-        BackendIdentity::new(meta.uid(), meta.gid()).unwrap()
-    }
 
     fn id(text: &str) -> TrialId {
         TrialId::parse(text).unwrap()
