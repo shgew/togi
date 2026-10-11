@@ -62,7 +62,7 @@ The owner started stage 2 ([#637](https://github.com/shgew/togi/issues/637)) on 
 
 ## Stage 2: the root package (2026-10-11)
 
-The `togi-version` crate ports `version.go` ([#696](https://github.com/shgew/togi/issues/696)): 33 lines of library and 29 of tests against Go's 41 and 90, with the Go package unchanged. `version()` is the trimmed `version.txt`, embedded at compile time; `rev()` is the `TOGI_REV` the build sets at compile time, which plays the part of Go's `-X github.com/shgew/togi.rev`; `string()` joins them with `+`.
+The `togi-version` crate ports `version.go` ([#696](https://github.com/shgew/togi/issues/696)): 33 lines of library and 32 of tests against Go's 48 and 84, with the Go package unchanged. `version()` is the trimmed `version.txt`, embedded at compile time; `rev()` is the `TOGI_REV` the build sets at compile time, which plays the part of Go's `-X github.com/shgew/togi.rev`; `string()` joins them with `+`.
 
 - **Departure from Go, the owner's call.** A local cargo build reports `dev`. Go reads the commit and dirty flag from the build's VCS settings, which cargo does not record, so that branch has no port; `bench` and `forecast` read the commit from git at run time instead (#637, Version stamps).
 - **Not yet stamped.** The flake builds no Rust package until the binary lands (stage 7), so nothing sets `TOGI_REV` yet; that package's derivation sets it from the flake revision as `packages.default` does for Go.
