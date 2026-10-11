@@ -1,4 +1,4 @@
-b831c0a060fc777a7f133d6ba379cd69f00d537fa878ce17ddc636fdc15e1a59  .github/workflows/guard.yml
+b831c0a160fc777a7f133d6ba379cd69f00d537fa878ce17ddc636fdc15e1a59  .github/workflows/guard.yml
 88dfa8ff8ba12e6be6198b9b3f8b6283c9f25d9c1b96f5bdc4022a08b70a62bf  cmd/togi/carried_test.go
 d72b0f8533d6d730750383cb693b01248dfb0eb43262d719ee4a70c8e8f61c32  cmd/togi/cli_text_test.go
 47612600a5e08afb160f8b12d9ec3f92f620d6783c0399e3144d7a90509333c9  cmd/togi/compat_test.go
