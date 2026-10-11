@@ -126,15 +126,26 @@ impl OutputFailure {
 
 /// Every failure a cleanup met, in the order it met them; the first never gets replaced.
 #[derive(Debug, thiserror::Error)]
-#[error("{}", .failures.iter().map(ToString::to_string).collect::<Vec<_>>().join("; "))]
+#[error("{}", .failures.iter().map(failure_text).collect::<Vec<_>>().join("; "))]
 pub struct Containment {
     failures: Vec<CleanupFailure>,
+}
+
+fn failure_text(failure: &CleanupFailure) -> String {
+    let mut text = failure.to_string();
+    let mut source = std::error::Error::source(failure);
+    while let Some(cause) = source {
+        text.push_str(": ");
+        text.push_str(&cause.to_string());
+        source = cause.source();
+    }
+    text
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum CleanupFailure {
     /// The error that made the start roll back; it stays first.
-    #[error("the start failed: {0}")]
+    #[error("the start failed")]
     Start(#[source] Box<Error>),
     #[error("signal group {pgid} with {signal}")]
     SignalGroup {

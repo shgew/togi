@@ -1384,14 +1384,9 @@ async fn a_handle_dropped_after_the_last_abandon_check_still_reports_an_unconfir
         .expect("the supervisor reached its publication");
         let reports = crate::supervisor::ABANDON_REPORTS.with_borrow(Clone::clone);
         assert!(survivor.alive.get());
-        assert!(
-            matches!(
-                &reports[..],
-                [report] if report.contains("trial t1")
-                    && report.contains("teardown unconfirmed")
-                    && report.contains("togi-trial-t1")
-            ),
-            "{reports:?}"
+        assert_eq!(
+            reports,
+            ["togi: trial t1 was dropped while running; teardown unconfirmed: a process remains in scope togi-trial-t1 at the teardown deadline"]
         );
     })
     .await;
@@ -1537,7 +1532,7 @@ async fn a_start_nobody_waits_for_that_ends_without_proof_is_reported_and_bounde
         let reports = runtime_reports();
         assert_eq!(
             reports,
-            ["togi: a start nobody waits for ended without confirmed cleanup: trial cleanup could not be confirmed: the start failed: launch instance work in scope togi-trial-t1: launch instance work in scope togi-trial-t1: retained launch failure; signal scope togi-trial-t1 with SIGKILL: systemctl did not finish within 0ns"]
+            ["togi: a start nobody waits for ended without confirmed cleanup: trial cleanup could not be confirmed: the start failed: launch instance work in scope togi-trial-t1: retained launch failure; signal scope togi-trial-t1 with SIGKILL: systemctl did not finish within 0ns"]
         );
     })
     .await;
