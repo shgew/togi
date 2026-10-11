@@ -11,11 +11,17 @@ publish = false
 
 [workspace.dependencies]
 flate2 = "1"
+jiff = { version = "0.2", default-features = false, features = ["std"] }
 nix = { version = "0.30", default-features = false, features = ["fs"] }
+proptest = "1"
 rustix = { version = "1", features = ["fs"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["float_roundtrip", "raw_value"] }
 tempfile = "3"
 test-case = "3"
 thiserror = "2"
+tokio-util = { version = "0.7", features = ["rt"] }
+togi-trialfiles = { path = "crates/togi-trialfiles" }
 
 [workspace.lints.rust]
 unsafe_code = "deny"
