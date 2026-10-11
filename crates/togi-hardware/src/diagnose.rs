@@ -95,8 +95,20 @@ pub(crate) fn diagnose_at(
     root: &Path,
     config: &Config,
     recorded: Option<&BiosContext>,
-    privileged: bool,
+    request_privileged: bool,
+    privilege: Privilege,
 ) -> Result<Diagnosis, Error> {
+    let (host, privileged) = diagnosis_host(root, config, request_privileged, privilege)?;
+    Ok(diagnose_with(&host, recorded, privileged))
+}
+
+pub(crate) fn diagnosis_host(
+    root: &Path,
+    config: &Config,
+    request_privileged: bool,
+    privilege: Privilege,
+) -> Result<(SystemHost, bool), Error> {
+    let privileged = request_privileged && privilege.is_root();
     let driver = if privileged {
         Driver::open(root)
     } else {
@@ -105,8 +117,8 @@ pub(crate) fn diagnose_at(
     .map_err(Error::OpenSmu)?;
     let parts = Parts::new(driver, config)?;
     let scope = parts.runner(PathBuf::new())?;
-    let host = parts.host(root, Privilege::current(), scope);
-    Ok(diagnose_with(&host, recorded, privileged))
+    let host = parts.host(root, privilege, scope);
+    Ok((host, privileged))
 }
 
 #[cfg(test)]

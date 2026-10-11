@@ -1,9 +1,10 @@
 use togi_config::Config;
 use togi_machine::{BiosContext, Check, Host};
 
-use super::support::{Scope, Tree, Watch, host, refused_account};
+use super::support::{Scope, Tree, Watch, host, refused_account, resolved_account};
+use crate::adapters::lock;
 use crate::checks::{CheckName, Skip, Skipped};
-use crate::diagnose::diagnose_at;
+use crate::diagnose::{diagnose_at, diagnose_with, diagnosis_host};
 use crate::host::Privilege;
 
 fn names(checks: &[Check]) -> Vec<&str> {
@@ -21,7 +22,14 @@ fn recorded() -> BiosContext {
 fn an_unprivileged_diagnosis_touches_no_mailbox_or_pm_table_file() {
     let tree = Tree::new();
     let watch = Watch::on(&tree);
-    let diagnosis = diagnose_at(tree.root(), &Config::default(), Some(&recorded()), false).unwrap();
+    let diagnosis = diagnose_at(
+        tree.root(),
+        &Config::default(),
+        Some(&recorded()),
+        false,
+        Privilege::Root,
+    )
+    .unwrap();
     assert_eq!(watch.touched(), Vec::<&str>::new());
     assert_eq!(
         names(&diagnosis.ran),
@@ -56,7 +64,14 @@ fn an_unprivileged_diagnosis_of_an_unidentified_machine_skips_only_what_needs_ro
         "proc/cpuinfo",
         "cpu family : 25\nmodel : 68\nmodel name : Test CPU\n",
     );
-    let diagnosis = diagnose_at(tree.root(), &Config::default(), None, false).unwrap();
+    let diagnosis = diagnose_at(
+        tree.root(),
+        &Config::default(),
+        None,
+        false,
+        Privilege::User(1000),
+    )
+    .unwrap();
     assert!(!diagnosis.ran[0].ok);
     assert_eq!(names(&diagnosis.ran), ["cpu", "ryzen_smu", "watchdog"]);
     let reasons: Vec<_> = diagnosis
@@ -85,13 +100,23 @@ fn the_privileged_and_unprivileged_check_sets_partition_the_preflight() {
     assert_eq!(preflight[0].name, "root");
     let steps = names(&preflight[1..]);
 
-    let privileged = diagnose_at(tree.root(), &Config::default(), None, true).unwrap();
+    let watch = Watch::on(&tree);
+    let privileged =
+        diagnose_at(tree.root(), &Config::default(), None, true, Privilege::Root).unwrap();
+    assert!(!watch.touched().is_empty());
     assert!(privileged.skipped.is_empty());
     let mut expected = steps.clone();
     expected.push("watchdog");
     assert_eq!(names(&privileged.ran), expected);
 
-    let unprivileged = diagnose_at(tree.root(), &Config::default(), None, false).unwrap();
+    let unprivileged = diagnose_at(
+        tree.root(),
+        &Config::default(),
+        None,
+        false,
+        Privilege::Root,
+    )
+    .unwrap();
     let (watchdog, ran) = unprivileged.ran.split_last().unwrap();
     assert_eq!(watchdog.name, "watchdog");
     let mut union: Vec<&str> = names(ran);
@@ -110,7 +135,14 @@ fn the_privileged_and_unprivileged_check_sets_partition_the_preflight() {
 #[test]
 fn failed_checks_skip_the_bios_comparison() {
     let tree = Tree::new();
-    let diagnosis = diagnose_at(tree.root(), &Config::default(), Some(&recorded()), true).unwrap();
+    let diagnosis = diagnose_at(
+        tree.root(),
+        &Config::default(),
+        Some(&recorded()),
+        true,
+        Privilege::Root,
+    )
+    .unwrap();
     assert!(!names(&diagnosis.ran).contains(&"bios_context"));
     assert_eq!(
         diagnosis.skipped,
@@ -120,4 +152,73 @@ fn failed_checks_skip_the_bios_comparison() {
         }]
     );
     assert!(diagnosis.bios_context_error.is_none());
+}
+
+#[test]
+fn a_privileged_request_by_a_user_stays_identity_only_and_skips_every_privileged_probe() {
+    assert_identity_only_diagnosis(true, Privilege::User(1000));
+}
+
+#[test]
+fn root_without_a_privileged_request_stays_identity_only_and_skips_every_privileged_probe() {
+    assert_identity_only_diagnosis(false, Privilege::Root);
+}
+
+fn assert_identity_only_diagnosis(request_privileged: bool, privilege: Privilege) {
+    let tree = Tree::new();
+    let watch = Watch::on(&tree);
+    let diagnosis = diagnose_at(
+        tree.root(),
+        &Config::default(),
+        Some(&recorded()),
+        request_privileged,
+        privilege,
+    )
+    .unwrap();
+    assert_eq!(watch.touched(), Vec::<&str>::new());
+    assert_eq!(
+        names(&diagnosis.ran),
+        ["cpu", "ryzen_smu", "backends", "backend_user", "watchdog"]
+    );
+    let skipped: Vec<_> = [
+        CheckName::Readback,
+        CheckName::PmTable,
+        CheckName::SlotMapping,
+        CheckName::SystemdRun,
+        CheckName::BiosContext,
+    ]
+    .into_iter()
+    .map(|name| Skipped {
+        name,
+        reason: Skip::NeedsRoot,
+    })
+    .collect();
+    assert_eq!(diagnosis.skipped, skipped);
+    assert!(diagnosis.bios_context_error.is_none());
+
+    let (mut host, privileged) = diagnosis_host(
+        tree.root(),
+        &Config::default(),
+        request_privileged,
+        privilege,
+    )
+    .unwrap();
+    let scope = Scope::creating();
+    host.scope = Box::new(scope.clone());
+    host.account = resolved_account();
+    let diagnosis = diagnose_with(&host, Some(&recorded()), privileged);
+    assert_eq!(diagnosis.skipped, skipped);
+    assert_eq!(scope.calls.get(), 0);
+
+    let mut driver = lock(&host.driver);
+    assert!(matches!(
+        driver.validate(),
+        Err(togi_smu::Error::IdentityOnly { .. })
+    ));
+    assert!(matches!(
+        driver.pm_reader(),
+        Err(togi_smu::Error::IdentityOnly { .. })
+    ));
+    assert!(!driver.check_readback().ok);
+    assert_eq!(watch.touched(), Vec::<&str>::new());
 }

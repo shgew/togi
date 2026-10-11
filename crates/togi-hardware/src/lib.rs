@@ -61,15 +61,21 @@ pub fn open(config: &Config, state_dir: &Path, _lock: &HostLock) -> Result<Machi
     })
 }
 
-/// Makes `run`'s preflight checks without writing anything. Unprivileged, the driver is opened for
-/// its identity checks only and no mailbox or PM table file is touched.
+/// Makes `run`'s preflight checks without writing anything. Privileged checks require both a
+/// request and root. Otherwise the driver only checks identity and touches no mailbox or PM table.
 pub fn diagnose(
     config: &Config,
     recorded: Option<&BiosContext>,
-    privileged: bool,
+    request_privileged: bool,
 ) -> Result<Diagnosis, Error> {
     check_platform()?;
-    diagnose::diagnose_at(Path::new(SYSTEM_ROOT), config, recorded, privileged)
+    diagnose::diagnose_at(
+        Path::new(SYSTEM_ROOT),
+        config,
+        recorded,
+        request_privileged,
+        Privilege::current(),
+    )
 }
 
 #[cfg(test)]

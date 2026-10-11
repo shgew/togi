@@ -137,6 +137,8 @@ Before a successful leftover-scope sweep, a journal write failure reports the er
 
 `run` requires root: it changes core voltage and the boot entry, and creates cgroup scopes. Linux `reset` normally runs as root; its host lock is accessible only to root and explicitly delegated users. Darwin `reset` of a copied journal can run as that private lock's owner without root. `doctor` makes every check only as root; without it, it makes the checks that need no root and reports the rest skipped. The read-only commands work for any user who can read the state directory.
 
+The hardware diagnosis API treats privileged checks as a request, not authorization: it checks the caller's effective UID before constructing the driver. Without both a request and effective UID 0, the driver is identity-only and mailbox, SMN, PM table and scope probes stay skipped even if file permissions would allow them.
+
 Togi stays root. Backend workloads run as the unprivileged account named by `backend_user`, using that account's UID and primary GID with no inherited supplementary groups. The NixOS module declares the `togi-trial` system user and group and writes its name into the configuration. A missing account setting, nonexistent account, invalid UID or GID, UID 0 or primary GID 0 refuses preflight; workloads never fall back to root.
 
 ## Preflight
