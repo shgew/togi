@@ -170,11 +170,12 @@ The `togi-config` crate ports `internal/config` ([#749](https://github.com/shgew
 
 ## Stage 2: native `togi-render` (#706, 2026-10-11)
 
-The `togi-render` crate ports `internal/render`: about 390 lines of library and 700 of tests against Go's 232 and 380; no Go code is removed or changed. Its 42 tests run in 0.01 s under `cargo nextest` on Linux; `go test -count=1 ./internal/render` reports 0.002 s. What changed against Go, as built:
+The `togi-render` crate ports `internal/render`: about 400 lines of library and 1,040 of tests (`tests.rs` plus the inline test modules in `escape.rs` and `output.rs`) against Go's 232 and 380; no Go code is removed or changed. Its 43 tests run in 0.01 s under `cargo nextest` on Linux; `go test -count=1 ./internal/render` reports 0.002 s. What changed against Go, as built:
 
 - **Terminal detection.** Colour follows `std::io::IsTerminal`, not a character-device mode bit, so `/dev/null` is plain (Go coloured it). `JOURNAL_STREAM` is parsed once into a numeric device and inode and compared with `fstat` of the stream; a failed `fstat` is plain. `OutputFacts::detect` takes any `AsFd` and the two environment values, so the binary detects before it wraps the stream in a buffer.
 - **Errors.** `Renderer::write_event` writes one line and one newline and returns the `io::Error`; Go's `Log` dropped write errors. The time zone is a required `&TimeZone`, so Go's nil-location panic cannot happen.
 - **Styles.** `style_for` matches the typed `Payload` exhaustively, with no catch-all arm, so a new kind does not compile until it names its style; `hold` is plain.
 - **Streaming.** Escaping and lines are `Display` adapters (`Escaped`, `EventLine`, `StyledText`) that write into the caller's formatter, with no intermediate `String`. `escape_bytes` escapes malformed UTF-8 byte by byte without a lossy decode.
+- **Review findings fixed.** The review found that the style-table test left out several plain cases Go's tests pinned, and that nothing pinned how a hostile diagnostic is logged. The table now covers the session baseline, an unavailable host ranking, a skipped hunt group and a hunt group with probe and held members as plain. A new test pins that logging a diagnostic with terminal controls in its message and detail prints one escaped line, while the journal's message, detail and serialization stay raw. The size figures above were corrected to count all the test code.
 - **Moved out.** `PhaseWord` and the dashboard's IBM437 console folding belong to watch and status; the opaque-event path is gone with the journal's unknown kinds.
 - **Not measured.** Isolated compile times against Go, rendering throughput and agent cost.

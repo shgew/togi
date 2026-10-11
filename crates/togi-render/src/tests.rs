@@ -2,7 +2,7 @@ use std::io;
 
 use jiff::tz::{self, TimeZone};
 use serde_json::{Value, json};
-use togi_journal::Event;
+use togi_journal::{Event, Payload};
 
 use crate::{OutputFacts, Renderer, Style, escape_text, style_for};
 
@@ -253,6 +253,31 @@ fn style_cases() -> Vec<(&'static str, Event, Style)> {
             Style::Plain,
         ),
         (
+            "hunt group skipped",
+            event(
+                "hunt.group",
+                &json!({
+                    "hunt": 4, "group": 1, "cores": [3, 11], "profile": {}, "set": [3, 11],
+                    "granularity": 2, "stage": "probe", "index": 0, "duration_s": 0,
+                    "skipped": true, "reason": "already checked",
+                }),
+            ),
+            Style::Plain,
+        ),
+        (
+            "hunt group with probe and held members",
+            event(
+                "hunt.group",
+                &json!({
+                    "hunt": 4, "group": 5, "cores": [3], "profile": {"3": -40, "11": -22},
+                    "set": [3, 11], "granularity": 1, "stage": "probe", "index": 0,
+                    "duration_s": 120, "probe": {"core": 11, "offset": -22},
+                    "held": [{"core": 3, "offset": -40}],
+                }),
+            ),
+            Style::Plain,
+        ),
+        (
             "hunt skipped",
             event("hunt.skipped", &json!({"failure": 5, "reason": "held"})),
             Style::Plain,
@@ -311,6 +336,16 @@ fn style_cases() -> Vec<(&'static str, Event, Style)> {
         (
             "host ranking",
             event("host.ranking", &json!({"ranking": [3, 1]})),
+            Style::Plain,
+        ),
+        (
+            "host ranking unavailable",
+            event("host.ranking", &json!({"ranking": [], "detail": "missing"})),
+            Style::Plain,
+        ),
+        (
+            "session baseline",
+            event("session.baseline", &json!({"offsets": {"0": 0, "1": -5}})),
             Style::Plain,
         ),
         (
@@ -618,6 +653,46 @@ fn write_event_ends_with_exactly_one_newline() {
     assert_eq!(text.matches('\n').count(), 1);
     assert!(text.ends_with("\x1b[0m\n"));
     assert!(text.contains("first\\nsecond\\n"));
+}
+
+#[test]
+fn write_event_escapes_a_diagnostic_without_sanitizing_its_evidence() {
+    let detail = "日本語\x1b[2J\x1b]52;c;data\x07\r\n\u{9b}31m\u{202e}\u{2028}";
+    let msg = format!("trial 0001 {detail}");
+    let diagnostic = event_with(
+        "trial.progress",
+        &msg,
+        &json!({"trial": "0001", "detail": detail}),
+    );
+    let before = diagnostic.encode().unwrap();
+    let escaped = r"trial 0001 日本語\x1b[2J\x1b]52;c;data\x07\r\n\u009b31m\u202e\u2028";
+    for (name, renderer) in [("colored", colored()), ("plain", plain())] {
+        let mut out = Vec::new();
+        renderer.write_event(&mut out, &diagnostic, &utc()).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert_eq!(
+            text,
+            format!("01:14:07 trial.progress {escaped}\n"),
+            "{name}"
+        );
+        assert!(
+            !text.contains(['\x1b', '\r', '\u{9b}', '\u{202e}', '\u{2028}']),
+            "{name}"
+        );
+    }
+    assert_eq!(diagnostic.msg, msg);
+    let Payload::TrialProgress(progress) = &diagnostic.payload else {
+        panic!("not a trial progress: {:?}", diagnostic.payload);
+    };
+    assert_eq!(progress.detail, detail);
+    let after = diagnostic.encode().unwrap();
+    assert_eq!(before, after);
+    let decoded = Event::decode(&after).unwrap();
+    assert_eq!(decoded.msg, msg);
+    let Payload::TrialProgress(progress) = &decoded.payload else {
+        panic!("not a trial progress: {:?}", decoded.payload);
+    };
+    assert_eq!(progress.detail, detail);
 }
 
 #[test]
