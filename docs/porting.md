@@ -15,19 +15,19 @@ The comparison assets are protected from the moment stage 2 ([#637](https://gith
 **The manifest and the guard.** `tools/guard/manifest.sha256` holds the manifest: `sha256  path` lines, sorted by path when first written, then only appended to. It lists:
 
 - the Go reference: every `.go` file, `go.mod` and `go.sum` of the root package, `cmd/togi`, `internal/**` and the tools whose output is compared (`tools/sim`, `tools/bench`, `tools/trialfacts`, `tools/replay`, `tools/stats`, `tools/fit`, `tools/modelcheck`, `tools/forecast`, `tools/facts`, `tools/audit`); `tools/release`, `tools/board`, `tools/reviews` and `tools/cover` move to nushell and are not compared, and `version.txt` changes with every release, so none of them is listed;
-- every file under those packages' `testdata`, and `tools/bench/suite.json`, `tools/bench/machines/` and `tools/bench/facts/`;
+- every file under those packages' `testdata`, and `tools/bench/suite.json`, `tools/bench/baseline.jsonl`, `tools/bench/gates/`, `tools/bench/machines/` and `tools/bench/facts/`, which the bench package's tests read;
 - the guard's own files (`tools/guard/` except the manifest, which the append-only rule protects, and `.github/workflows/guard.yml`).
 
 `just guard-manifest` prints the whole list for the working tree; `just guard-manifest --append` prints only the lines the committed manifest lacks, and fails if an existing entry no longer matches. A pull request that adds a protected file appends those lines to the manifest in the same commit, and stage-by-stage additions (the comparison harness, the oracles) append their own.
 
-The guard is `tools/guard/guard.nu`, in nushell like the repository's other tools; `.github/workflows/guard.yml` runs it from `main` on every pull request and posts the `guard` status. It compares the pull request's base and head and fails on any of:
+The guard is `tools/guard/guard.nu`, in nushell like the repository's other tools; `.github/workflows/guard.yml` runs it from `main` on every pull request and posts the `guard` status. It compares the base against the tree that merging the head into the base produces (`git merge-tree`), so a base branch that moved on since the pull request branched changes nothing, and a head that does not merge cleanly fails even with the label until it is rebased. Both trees are read as git data; the one exception is `nix eval` of their flake checks, in pure mode with import-from-derivation disabled, so the head runs no build. It fails on any of:
 
-- a listed file that differs at the head, or is deleted, renamed or replaced by a symlink;
-- a head manifest that does not start with the base manifest's exact bytes;
-- a change to a guard file;
-- a flake check of the base's `checks.x86_64-linux` missing at the head, each tree evaluated with `nix eval` in pure mode;
-- a change to the `eval` or `check` job of `.github/workflows/check.yml`, compared as parsed YAML so comments and formatting do not count;
-- a change to the `same` recipe of the `justfile`, attributes included.
+- a listed file that differs in the merged tree, or is deleted, renamed or replaced by a symlink;
+- a merged manifest that does not start with the base manifest's exact bytes, or a base manifest that does not end with a newline; every appended line must be `<64 lower-hex>  <path>`, end with a newline, name a path neither listed nor appended before, and match a regular file of the merged tree by sha256, so a wrong or misplaced entry cannot reach `main`; the appended paths are hashed like the listed ones;
+- a change to a guard file, compared by mode and content;
+- a flake check missing from the merged tree: every `checks.<system>.<name>` of the base, across all systems, must still exist;
+- a change to the `eval`, `build` or `check` job of `.github/workflows/check.yml`, or to any of its top-level keys except `jobs` (`on`, `permissions`, `concurrency`, `env`, `defaults`), which the jobs inherit, compared as parsed YAML so comments, formatting and key order do not count; the `macos` job and jobs the base lacks stay free;
+- a change to the `same` recipe of the `justfile`, attributes included, or to the justfile's top-level `set` lines, which decide how the recipe runs.
 
 With the `owner-approved` label it reports the same findings and passes. `just guard [BASE [HEAD]]` runs it between two revisions (defaults `origin/main` and `HEAD`), and `just land` waits for the status. The rules have unit tests (`tools/guard/test.nu`, the `guard` flake check).
 

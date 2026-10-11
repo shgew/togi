@@ -2,6 +2,14 @@ name: check
 
 on:
   pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  NIX_CONFIG: accept-flake-config = false
 
 jobs:
   eval:
@@ -15,9 +23,18 @@ jobs:
 
   build:
     needs: eval
+    strategy:
+      matrix:
+        check: ${{ fromJSON(needs.eval.outputs.checks) }}
     runs-on: ubuntu-26.04
     steps:
       - run: nix build ".#checks.x86_64-linux.$CHECK"
+
+  macos:
+    if: github.event_name == 'push'
+    runs-on: macos-26
+    steps:
+      - run: nix build ".#checks.aarch64-darwin.package"
 
   check:
     if: always()

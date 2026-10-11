@@ -7,8 +7,8 @@ use guard.nu [manifest_path parse-manifest]
 
 const roots = [cmd/togi internal tools/sim tools/bench tools/trialfacts tools/replay tools/stats tools/fit tools/modelcheck tools/forecast tools/facts tools/audit]
 const root_files = [go.mod go.sum version.go version_test.go]
-const bench_inputs = [tools/bench/suite.json]
-const bench_input_dirs = [tools/bench/machines/ tools/bench/facts/]
+const bench_inputs = [tools/bench/suite.json tools/bench/baseline.jsonl]
+const bench_input_dirs = [tools/bench/machines/ tools/bench/facts/ tools/bench/gates/]
 const guard_dirs = [tools/guard/]
 const guard_files = [.github/workflows/guard.yml]
 
