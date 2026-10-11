@@ -1051,8 +1051,8 @@ async fn slow_watched_output_of_many_files_is_bound_by_one_cleanup_budget(count:
             let second = command.cwd.join("second.txt");
             Launch::Run(script(move |mut ctx: ProcCtx| async move {
                 let text = format!("{}COMPUTE ERROR", "ok\n".repeat(LINES));
-                std::fs::write(first, &text).unwrap();
-                std::fs::write(second, &text).unwrap();
+                ctx.write_file(first, &text).unwrap();
+                ctx.write_file(second, &text).unwrap();
                 ctx.until_killed().await;
             }))
         });
