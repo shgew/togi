@@ -97,7 +97,7 @@ fn the_arm64_float32_fusion_matters() {
 
 #[cfg(target_arch = "x86_64")]
 mod amd64_vectors {
-    use super::{Vector, check, exp_float64, parse};
+    use super::{Script, Vector, check, exp_float64, parse};
     use crate::math::amd64;
 
     const AMD64_FMA: &str = include_str!("../../../testdata/expfloat-amd64-fma.txt");
@@ -129,6 +129,29 @@ mod amd64_vectors {
             parse(AMD64_NOFMA)
         };
         check("dispatch", &vectors, |src| crate::math::exp_float64(src));
+    }
+
+    fn mismatches(text: &'static str, exp: fn(f64) -> f64) -> usize {
+        parse(text)
+            .iter()
+            .filter(|v| {
+                let mut script = Script {
+                    draws: &v.draws,
+                    used: 0,
+                };
+                exp_float64::<false>(&mut script, exp, amd64::log).to_bits() != v.want
+                    || script.used != v.draws.len()
+            })
+            .count()
+    }
+
+    #[test]
+    fn the_exp_branches_matter() {
+        let scripts = 13;
+        let fma_under_plain = mismatches(AMD64_FMA, amd64::exp_plain);
+        let nofma_under_fma = mismatches(AMD64_NOFMA, amd64::exp_fma);
+        assert!(fma_under_plain >= scripts, "{fma_under_plain}");
+        assert!(nofma_under_fma >= scripts, "{nofma_under_fma}");
     }
 }
 
@@ -190,16 +213,53 @@ fn forced_vectors_reach_the_tail_and_the_rejection_path() {
     assert!(chained > 50, "{chained}");
 }
 
+/// The rejection tests of one call as (row, rejected): a draw on the fast path or in the
+/// tail ends the call without one, and a test that rejected is followed by another draw.
+fn rejection_tests(v: &Vector) -> Vec<(usize, bool)> {
+    let mut tests = Vec::new();
+    let mut pos = 0;
+    while pos < v.draws.len() {
+        let u = v.draws[pos];
+        let (j, i) = (u as u32, usize::from((u >> 32) as u8));
+        if j < KE[i] || i == 0 {
+            break;
+        }
+        pos += 2;
+        tests.push((i, pos < v.draws.len()));
+    }
+    tests
+}
+
 #[test]
 fn every_table_row_is_forced_on_the_rejection_path() {
-    let mut rows = [false; 256];
+    let mut accepted = [false; 256];
+    let mut redrawn = [false; 256];
+    let mut chained = [false; 256];
     for v in &parse(ARM64) {
-        let (j, i) = first_draw(v);
-        if i != 0 && j >= KE[i] {
-            rows[i] = true;
+        let tests = rejection_tests(v);
+        let Some(&(first, first_rejected)) = tests.first() else {
+            continue;
+        };
+        accepted[first] |= tests.len() == 1 && !first_rejected;
+        redrawn[first] |= first_rejected;
+        let mut run = 0;
+        for (k, &(row, rejected)) in tests.iter().enumerate() {
+            run = match (rejected, k) {
+                (false, _) => 0,
+                (true, k) if run > 0 && tests[k - 1].0 == row => run + 1,
+                (true, _) => 1,
+            };
+            chained[row] |= run >= 3;
         }
     }
-    assert!(rows[1..].iter().all(|&seen| seen));
+    let missing = |seen: &[bool; 256]| (1..256).filter(|&i| !seen[i]).collect::<Vec<_>>();
+    assert_eq!(missing(&accepted), [], "rows never accepted after one test");
+    assert_eq!(missing(&redrawn), [], "rows never rejected and redrawn");
+    assert_eq!(
+        missing(&chained),
+        [],
+        "rows never rejected three times in a row"
+    );
 }
 
 #[test]

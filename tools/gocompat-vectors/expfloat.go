@@ -163,6 +163,20 @@ func writeExpAMD64(outDir string, wantFMA bool) error {
 				p.in, got, want, branchName(wantFMA), os.Getenv("GODEBUG"))
 		}
 	}
+	t, err := readExpTables()
+	if err != nil {
+		return err
+	}
+	for _, p := range branchProbes {
+		want := 3
+		if p.fmaAccepts == wantFMA {
+			want = 2
+		}
+		if got := len(callExp(t, p.script, rand.NewPCG(expSeed, 3)).draws); got != want {
+			return fmt.Errorf("script %#016x took %d draws, want %d: Go is not running the %s branch of archExp (GODEBUG=%q)",
+				p.script, got, want, branchName(wantFMA), os.Getenv("GODEBUG"))
+		}
+	}
 	calls, err := expCalls()
 	if err != nil {
 		return err
@@ -267,10 +281,13 @@ func callExp(t *expTables, script []uint64, pcg *rand.PCG) expCall {
 	return expCall{draws: src.used, result: v, rejects: j >= t.ke[i] && i != 0}
 }
 
-// expCalls builds the vectors. Plain sequential calls from a PCG are the bulk, and
-// the forced calls cover every table row on the rejection path (accepted after one
-// test, rejected and redrawn, rejected several times in a row), and the tail, on the
-// boundary draws of the 32-bit and 53-bit fields.
+// expCalls builds the vectors. Plain sequential calls from a PCG are the bulk. The
+// forced calls cover every table row on the rejection path, and the tail, on the
+// boundary draws of the 32-bit and 53-bit fields. Each row also has a scripted call
+// that its rejection test rejects three times in a row, and the scripts of
+// branchProbes tell the two branches of Go's amd64 math.Exp apart. checkExpRows fails
+// when a row lacks a call accepted after one test, a call redrawn after a rejection or
+// a call rejected three times in a row.
 func expCalls() ([]expCall, error) {
 	t, err := readExpTables()
 	if err != nil {
@@ -299,21 +316,11 @@ func expCalls() ([]expCall, error) {
 		}
 	}
 
-	var accepted, redrawn, chained, tail int
+	var tail int
 	for i := 1; i < 256; i++ {
 		for range 40 {
 			j := jAtLeast(forcedPCG, t.ke[i])
-			c := callExp(t, []uint64{expDraw(uint8(i), j)}, forcedPCG)
-			calls = append(calls, c)
-			switch {
-			case len(c.draws) == 2:
-				accepted++
-			case len(c.draws) > 2:
-				redrawn++
-			}
-			if len(c.draws) > 4 {
-				chained++
-			}
+			calls = append(calls, callExp(t, []uint64{expDraw(uint8(i), j)}, forcedPCG))
 		}
 	}
 	for range 400 {
@@ -324,6 +331,25 @@ func expCalls() ([]expCall, error) {
 			script = append(script, expDraw(i, j), forcedPCG.Uint64())
 		}
 		calls = append(calls, callExp(t, script, forcedPCG))
+	}
+	// A 53-bit draw of 2^53-1 puts the bound at fe[i-1], the top of the row, and j of
+	// 2^32-1 puts float32(Exp(-x)) at the bottom of it, so the test rejects. The call
+	// ends on a draw of j = 0, which takes the fast path of every row but 1, where ke is
+	// 0: three rejections and seven draws, or eight with a float draw of 0 that accepts.
+	for i := 1; i < 256; i++ {
+		var script []uint64
+		for range 3 {
+			script = append(script, expDraw(uint8(i), math.MaxUint32), 1<<53-1)
+		}
+		script = append(script, expDraw(uint8(i), 0))
+		if t.ke[i] == 0 {
+			script = append(script, 0)
+		}
+		c := callExp(t, script, forcedPCG)
+		if len(c.draws) != len(script) {
+			return nil, fmt.Errorf("row %d: the scripted chain of three rejections used %d draws, want %d", i, len(c.draws), len(script))
+		}
+		calls = append(calls, c)
 	}
 
 	for _, j := range []uint32{t.ke[0], t.ke[0] + 1, t.ke[0] + 2, math.MaxUint32, math.MaxUint32 - 1} {
@@ -347,11 +373,120 @@ func expCalls() ([]expCall, error) {
 	for _, script := range probes {
 		calls = append(calls, callExp(t, script, forcedPCG))
 	}
+	for _, p := range branchProbes {
+		calls = append(calls, callExp(t, p.script, forcedPCG))
+	}
 
-	if accepted < 1000 || redrawn < 1000 || chained < 50 || tail < 100 {
-		return nil, fmt.Errorf("forced paths are too thin: %d accepted after a test, %d redrawn, %d chained, %d tail", accepted, redrawn, chained, tail)
+	if tail < 100 {
+		return nil, fmt.Errorf("forced paths are too thin: %d tail calls", tail)
+	}
+	if err := checkExpRows(t, calls); err != nil {
+		return nil, err
 	}
 	return calls, nil
+}
+
+// expTest is one rejection test of a call: the table row it drew and whether it
+// rejected, which is when the call drew again.
+type expTest struct {
+	row      uint8
+	rejected bool
+}
+
+// expTests returns the rejection tests a call ran, in order. A draw on the fast path or
+// in the tail ends the call without one.
+func expTests(t *expTables, draws []uint64) []expTest {
+	var tests []expTest
+	for pos := 0; pos < len(draws); {
+		j, i := uint32(draws[pos]), uint8(draws[pos]>>32)
+		if j < t.ke[i] || i == 0 {
+			break
+		}
+		pos += 2
+		tests = append(tests, expTest{row: i, rejected: pos < len(draws)})
+	}
+	return tests
+}
+
+// checkExpRows fails unless every table row from 1 to 255 has a call accepted by its
+// first test, a call whose first test rejected and drew again, and a call with three
+// rejections of that row in a row.
+func checkExpRows(t *expTables, calls []expCall) error {
+	var accepted, redrawn, chained [256]bool
+	for _, c := range calls {
+		tests := expTests(t, c.draws)
+		if len(tests) == 0 {
+			continue
+		}
+		first := tests[0]
+		accepted[first.row] = accepted[first.row] || (len(tests) == 1 && !first.rejected)
+		redrawn[first.row] = redrawn[first.row] || first.rejected
+		run := 0
+		for k, x := range tests {
+			switch {
+			case !x.rejected:
+				run = 0
+			case run > 0 && tests[k-1].row == x.row:
+				run++
+			default:
+				run = 1
+			}
+			if run >= 3 {
+				chained[x.row] = true
+			}
+		}
+	}
+	var missing []string
+	for i := 1; i < 256; i++ {
+		if !accepted[i] {
+			missing = append(missing, fmt.Sprintf("row %d: no call accepted after one test", i))
+		}
+		if !redrawn[i] {
+			missing = append(missing, fmt.Sprintf("row %d: no call rejected and redrawn", i))
+		}
+		if !chained[i] {
+			missing = append(missing, fmt.Sprintf("row %d: no call rejected three times in a row", i))
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("forced paths miss %d cases, first %q", len(missing), missing[:min(len(missing), 5)])
+	}
+	return nil
+}
+
+// branchProbe is a script that the two branches of Go's amd64 math.Exp answer
+// differently. The first draw is a rejection test of its row, and the float draw puts
+// the test's bound between float32(Exp(-x)) of the two branches, so the branch that
+// returns the larger value accepts after 2 draws and the other rejects and takes a
+// third draw, the fast path of row 0, which returns 0 after 3.
+type branchProbe struct {
+	script     []uint64
+	fmaAccepts bool
+}
+
+// branchProbes were found by evaluating the Rust ports of both branches, which the
+// vectors pin to Go, on every draw j from ke[i] to 2^32-1 of every row i from 1 to 255,
+// and keeping the pairs (i, j) whose float32(Exp(-x)) differs between the branches.
+// Their float64 results lie within four ulps of a float32 rounding midpoint, and only
+// four pairs qualify: rows 5, 29, 141 and 147. For each, the scripts take float draws m
+// whose float32(m/2^53) is the lowest, the middle and the highest value that puts the
+// bound fe[i] + f*(fe[i-1]-fe[i]) between the two float32 results, and the second
+// script of row 5 was found by hand. writeExpAMD64 has Go confirm each script, and the
+// scripts are in every vector file, where the Rust tests fail a wrong branch.
+var branchProbes = []branchProbe{
+	{[]uint64{expDraw(5, 0xf1c25b19), 0x000d854d10000000, 0}, true},
+	{[]uint64{expDraw(5, 0xf1c25b19), 0x000d854f90000000, 0}, true},
+	{[]uint64{expDraw(5, 0xf1c25b19), 0x000d855020000000, 0}, true},
+	{[]uint64{expDraw(5, 0xf1c25b19), 0x000d855320000000, 0}, true},
+	{[]uint64{expDraw(29, 0xfc36d22b), 0x0015806800000000, 0}, true},
+	{[]uint64{expDraw(29, 0xfc36d22b), 0x00158070e0000000, 0}, true},
+	{[]uint64{expDraw(29, 0xfc36d22b), 0x00158079a0000000, 0}, true},
+	{[]uint64{expDraw(141, 0xfec224a3), 0x001538a440000000, 0}, false},
+	{[]uint64{expDraw(141, 0xfec224a3), 0x001538ab80000000, 0}, false},
+	{[]uint64{expDraw(141, 0xfec224a3), 0x001538b2a0000000, 0}, false},
+	{[]uint64{expDraw(147, 0xfe3ce5c3), 0x001e576900000000, 0}, false},
+	{[]uint64{expDraw(147, 0xfe3ce5c3), 0x001e577080000000, 0}, false},
+	{[]uint64{expDraw(147, 0xfe3ce5c3), 0x001e577800000000, 0}, false},
 }
 
 func writeExpFile(path string, header []string, calls []expCall) error {
