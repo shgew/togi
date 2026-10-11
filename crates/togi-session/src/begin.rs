@@ -20,7 +20,7 @@ impl Session {
     /// Records what the session starts from, each piece once however often the run begins: the BIOS context, the
     /// baseline and its notice, the carry and a start phase for every core. A baseline that cannot be read is SMU
     /// evidence.
-    pub fn begin(&mut self) -> Outcome {
+    pub(crate) fn begin(&mut self) -> Outcome {
         let step = self.record_start().map(|()| Control::Continue);
         self.settle(step)
     }

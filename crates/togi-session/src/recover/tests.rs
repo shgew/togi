@@ -326,7 +326,7 @@ impl Harness {
                 boot: &self.boot,
                 cancel: &self.cancel,
             },
-            &cleared,
+            cleared,
         )
     }
 

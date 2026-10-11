@@ -21,7 +21,7 @@ use crate::recovery::{RecoveryState, Registers};
 
 /// What recovery works with: the journal through its appender, the kernel log, the trial files, the boot the run is
 /// in and the token that cancels a retry wait.
-pub struct Recovery<'a> {
+pub(crate) struct Recovery<'a> {
     pub appender: &'a mut Appender,
     pub kernel: &'a mut dyn Kernel,
     pub trials: &'a mut dyn Trials,
@@ -30,7 +30,7 @@ pub struct Recovery<'a> {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum Recovered {
+pub(crate) enum Recovered {
     /// Every crashed boot is classified and recorded, and the trial they left open is closed.
     Done,
     /// A kernel-log retry wait was cancelled: the crash it was for and the ones after it stay unclassified.
@@ -41,7 +41,7 @@ pub enum Recovered {
 
 /// The kernel log that could not be read, for the no-evidence dead end that cites its retries.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct KernelUnreadable {
+pub(crate) struct KernelUnreadable {
     pub detail: String,
     pub retries: Vec<Seq>,
 }
@@ -49,7 +49,7 @@ pub struct KernelUnreadable {
 /// Classifies and records every crashed boot before the current one, oldest first, then closes the trial they left
 /// open and answers their idle crashes. A trial open in the current boot waits for [`same_boot_trial`]: only the
 /// sweep proves nothing writes its files any more. Repeating it records nothing new.
-pub fn prior_boots(recovery: Recovery<'_>) -> Step<Recovered> {
+pub(crate) fn prior_boots(recovery: Recovery<'_>) -> Step<Recovered> {
     let mut crashes = Crashes {
         recovery,
         waited: false,
@@ -76,7 +76,7 @@ pub fn prior_boots(recovery: Recovery<'_>) -> Step<Recovered> {
 
 /// Closes the trial an earlier run left open in the current boot, once the sweep cleared what it left running. With
 /// a dead end pending it only closes the trial: the dead end ends the run before any failure could be acted on.
-pub fn same_boot_trial(mut recovery: Recovery<'_>, _cleared: &SweepCleared) -> Step<()> {
+pub(crate) fn same_boot_trial(mut recovery: Recovery<'_>, _cleared: SweepCleared) -> Step<()> {
     let state = recovery.appender.recovery();
     if state
         .open_trial()
@@ -93,7 +93,7 @@ pub fn same_boot_trial(mut recovery: Recovery<'_>, _cleared: &SweepCleared) -> S
 /// Appends a trial's end after compressing its files, so a crash between the two leaves the files to compress again;
 /// a trial whose containment is unconfirmed keeps its files as they are. A failed compression is a warning the end
 /// causes; it never changes the outcome.
-pub fn append_trial_end(
+pub(crate) fn append_trial_end(
     appender: &mut Appender,
     trials: &mut dyn Trials,
     end: TrialEnd,

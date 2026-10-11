@@ -2,13 +2,8 @@
 //!
 //! The one exception to intent before write, so it is gated three ways. A stale trial scope may still hold a
 //! workload until a sweep succeeded, the SMU may not be what togi expects until it was validated, and a workload of
-//! this run may still run until teardown is confirmed. Without all three nothing touches the SMU.
-//!
-//! The sweep proof cannot be forged:
-//!
-//! ```compile_fail,E0423
-//! let _ = togi_session::emergency::SweepCleared(());
-//! ```
+//! this run may still run until teardown is confirmed. Without all three nothing touches the SMU. Only a successful
+//! sweep makes a [`SweepCleared`].
 
 use std::io::{self, Write};
 
@@ -18,10 +13,10 @@ use crate::error::JournalFailure;
 
 /// A stale-scope sweep of this run succeeded.
 #[derive(Clone, Copy, Debug)]
-pub struct SweepCleared(());
+pub(crate) struct SweepCleared(());
 
 impl SweepCleared {
-    pub const fn of(_swept: &Swept) -> Self {
+    pub(crate) const fn of(_swept: &Swept) -> Self {
         Self(())
     }
 }
@@ -41,13 +36,13 @@ pub enum Withheld {
 
 /// The right to zero the SMU in an emergency.
 #[derive(Debug)]
-pub struct Access<'a> {
+pub(crate) struct Access<'a> {
     validated: SmuValidated,
     stopped: &'a Stopped,
 }
 
 impl<'a> Access<'a> {
-    pub fn gate(
+    pub(crate) fn gate(
         sweep: Option<SweepCleared>,
         validated: Option<SmuValidated>,
         stopped: Option<&'a Stopped>,
@@ -124,7 +119,7 @@ fn zero(smu: &mut dyn Smu, access: &Access<'_>) -> Result<(), Error> {
 /// Answers a failed journal append. Zeroes every core of `cores` without an intent when the gate allows it, reads
 /// each back, and writes the original error and what the emergency did to `report`. Appends nothing. A crash ends
 /// every SMU access at once.
-pub fn respond(
+pub(crate) fn respond(
     original: &JournalFailure,
     gate: Result<Access<'_>, Withheld>,
     smu: &mut dyn Smu,

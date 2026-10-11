@@ -118,7 +118,7 @@ fn tuner_values_stop(
         .execute(
             Action::Decide(DecisionAction::new(payload, Vec::new())),
             &TunerValues {
-                profile: &profile,
+                profile: Some(&profile),
                 profile_seq: None,
                 clean_cycles,
                 first_result: false,

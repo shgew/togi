@@ -258,6 +258,7 @@ impl Bench {
             journal,
             machine,
             policy: StopPolicy::default(),
+            publication: crate::publication::PublicationPolicy::OnFinish,
             bootloader: None,
             prompt: None,
             defects: self.defects,
@@ -501,7 +502,7 @@ pub(crate) fn run_action(session: &mut Session, action: Action) -> crate::sessio
     session.execute(
         action,
         &TunerValues {
-            profile: &profile,
+            profile: Some(&profile),
             profile_seq: None,
             clean_cycles: 0,
             first_result: false,

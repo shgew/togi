@@ -4,15 +4,14 @@ use togi_journal::{CycleEvent, HostRanking, Payload, RoundEvent, Seq};
 use togi_machine::{CoreId, CoreRank, PerCore};
 use togi_tuner::{Action, DecisionAction, DecisionPayload, Profile};
 
-use crate::error::{Flow, SessionError, Step};
+use crate::error::{Flow, Step};
 use crate::session::{Control, Fault, Outcome, Session, Stop, StopPolicy};
-use crate::write::WriteFailure;
 
 /// What only the tuner knows when it asks for an action: the profile it stands at, the event that profile came from,
 /// the clean checking cycles it has completed and whether the BIOS profile is confirmed.
 #[derive(Clone, Copy, Debug)]
-pub struct TunerValues<'a> {
-    pub profile: &'a Profile,
+pub(crate) struct TunerValues<'a> {
+    pub profile: Option<&'a Profile>,
     pub profile_seq: Option<Seq>,
     pub clean_cycles: u32,
     pub first_result: bool,
@@ -21,8 +20,8 @@ pub struct TunerValues<'a> {
 impl StopPolicy {
     /// The stop `payload` is where a run that asked for one ends, if it is: only the start of a checking cycle or
     /// round, never a step of a confirmation under way.
-    pub fn reached(
-        &self,
+    pub(crate) fn reached(
+        self,
         payload: &DecisionPayload,
         clean_cycles: u32,
         first_result: bool,
@@ -49,7 +48,7 @@ impl StopPolicy {
 
 impl Session {
     /// Carries out one action of the tuner. A dead end the action's evidence supports ends the run with it.
-    pub fn execute(&mut self, action: Action, tuned: &TunerValues<'_>) -> Outcome {
+    pub(crate) fn execute(&mut self, action: Action, tuned: &TunerValues<'_>) -> Outcome {
         let step = match action {
             Action::Decide(decision) => self.decide(decision, tuned),
             Action::ReadRanking => self.rank(),
@@ -57,7 +56,7 @@ impl Session {
         };
         let outcome = self.settle(step);
         if let Err(error) = &outcome
-            && is_crash(error)
+            && error.is_crash()
         {
             self.fault.get_or_insert(Fault::Crashed);
         }
@@ -150,16 +149,9 @@ fn ranking(
     }
 }
 
-pub(crate) fn is_crash(error: &SessionError) -> bool {
-    matches!(
-        error,
-        SessionError::Machine(togi_machine::Error::Crashed)
-            | SessionError::Write(WriteFailure::Crashed)
-    )
+pub(crate) fn is_crash_flow(flow: &Flow) -> bool {
+    matches!(flow, Flow::Fatal(error) if error.is_crash())
 }
 
-pub(crate) fn is_crash_flow(flow: &Flow) -> bool {
-    matches!(flow, Flow::Fatal(error) if is_crash(error))
-}
 #[cfg(test)]
 mod tests;

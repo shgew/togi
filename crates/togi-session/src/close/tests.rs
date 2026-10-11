@@ -4,15 +4,15 @@ use jiff::Timestamp;
 use togi_journal::fs::{Fault, Op};
 use togi_journal::{DeadEnd, DeadEndCondition, Event, Payload, SessionWarning, ShutdownReason};
 use togi_machine::{
-    BankType, BootId, CpuId, Error, Kernel, KernelCursor, KernelRead, Partial, PerCore,
-    PstoreRecord, ResetReason, TargetOffset,
+    BankType, BootId, CpuId, Error, Kernel, KernelCursor, KernelRead, Partial, PstoreRecord,
+    ResetReason,
 };
-use togi_tuner::DecisionAction;
 
 use crate::emergency::{Response, Withheld};
+use crate::session::Session;
 use crate::session::{Fault as Broken, Visit};
-use crate::testing::{Bench, core, offsets, put, recorded_baseline, swept, target};
-use crate::{Ended, Session, SessionError, Stop};
+use crate::testing::{Bench, core, put, recorded_baseline, swept, target};
+use crate::{Ended, SessionError, Stop};
 
 fn tuned(bench: &Bench) -> Session {
     let mut session = swept(bench);
@@ -36,12 +36,35 @@ fn smu_offsets(bench: &Bench) -> Vec<i64> {
     (0..2).map(|n| smu.offset(core(n)).unwrap().0).collect()
 }
 
-fn held() -> PerCore<TargetOffset> {
-    offsets(&[0, 0])
+fn close(session: Session, run: Result<Stop, SessionError>) -> Ended {
+    session.close(run)
 }
 
-fn close(session: Session, run: Result<Stop, SessionError>) -> Ended {
-    session.close(run, &held(), Vec::new())
+fn failed_search(bench: &Bench, offset: i64) -> Session {
+    let mut session = swept(bench);
+    session.config = togi_config::Config::parse(&format!(
+        r#"{{"start_offsets":{{"0":{offset},"1":{offset}}}}}"#
+    ))
+    .unwrap();
+    session.begin().unwrap();
+    session.validated = Some(session.host.validate_smu().unwrap());
+    bench
+        .sim
+        .script_trial(
+            "0001",
+            togi_sim::model::Script {
+                signal: Some(togi_machine::Signal::ComputationError),
+                at_s: 1.0,
+                core: core(0),
+                reset: None,
+                then_crash: false,
+            },
+        )
+        .unwrap();
+    let plan = crate::testing::search_plan(&session, core(0), togi_machine::Regime::R1);
+    crate::testing::run_plan(&mut session, plan).unwrap();
+    assert!(session.appender.tuner().drain().is_some());
+    session
 }
 
 fn dead_end(condition: DeadEndCondition) -> DeadEnd {
@@ -258,27 +281,12 @@ fn a_boot_with_unreconciled_offsets_restores_but_records_no_shutdown() {
 #[test]
 fn drained_commitments_are_recorded_before_the_restoration() {
     let bench = Bench::new(2);
-    let mut session = tuned(&bench);
+    let mut session = failed_search(&bench, -5);
     let run = Ok(signalled(&mut session));
-    let warning = DecisionAction::new(
-        togi_journal::TunerWarning {
-            warning: togi_journal::WarningKind::Monotonicity,
-            trial: None,
-            passes: Vec::new(),
-            detail: "drained".into(),
-        },
-        Vec::new(),
-    );
-    let ended = session.close(run, &held(), vec![warning]);
+    let ended = session.close(run);
     let kinds = kinds(ended.journal.events());
-    let drained = kinds
-        .iter()
-        .position(|&kind| kind == "tuner.warning")
-        .unwrap();
-    let restored = kinds
-        .iter()
-        .position(|&kind| kind == "profile.restored")
-        .unwrap();
+    let drained = kinds.iter().position(|&kind| kind == "failure").unwrap();
+    let restored = kinds.iter().position(|&kind| kind == "shutdown").unwrap();
     assert!(drained < restored);
     assert_eq!(ended.stop, Some(Stop::Signal));
 }
@@ -286,24 +294,17 @@ fn drained_commitments_are_recorded_before_the_restoration() {
 #[test]
 fn a_drained_dead_end_replaces_the_stop_and_its_commitments_come_first() {
     let bench = Bench::new(2);
-    let mut session = tuned(&bench);
+    let mut session = failed_search(&bench, 0);
     let run = Ok(signalled(&mut session));
-    let drained = vec![DecisionAction::new(
-        dead_end(DeadEndCondition::Preflight),
-        Vec::new(),
-    )];
-    let ended = session.close(run, &held(), drained);
+    let ended = session.close(run);
     let Some(Stop::DeadEnd { dead_end, .. }) = &ended.stop else {
         panic!("{:?}", ended.stop);
     };
-    assert_eq!(dead_end.condition, DeadEndCondition::Preflight);
+    assert_eq!(dead_end.condition, DeadEndCondition::FailureAtZero);
     let events = ended.journal.events();
     let kinds = kinds(events);
     let recorded = kinds.iter().position(|&kind| kind == "deadend").unwrap();
-    let restored = kinds
-        .iter()
-        .position(|&kind| kind == "profile.restored")
-        .unwrap();
+    let restored = kinds.iter().position(|&kind| kind == "shutdown").unwrap();
     assert!(recorded < restored);
     assert_eq!(shutdown_reason(events), Some(ShutdownReason::DeadEnd));
 }
@@ -514,23 +515,23 @@ fn a_decision_that_cannot_be_folded_gets_the_emergency_instead_of_the_restoratio
 {
     let bench = Bench::new(2);
     let mut session = tuned(&bench);
-    let run = Ok(signalled(&mut session));
-    let unfoldable = DecisionAction::new(
-        togi_journal::CoreTransition {
-            core: core(9),
-            from: None,
-            to: togi_journal::CorePhase::AtLimit,
-            offset: target(-6),
-            pass: None,
-            failure_point: None,
-            check_solo_limit: false,
-            workloads: Vec::new(),
-            cleared_combination: Vec::new(),
-            reason: "test".into(),
-        },
-        Vec::new(),
-    );
-    let ended = session.close(run, &held(), vec![unfoldable]);
+    let unfoldable = togi_journal::CoreTransition {
+        core: core(9),
+        from: None,
+        to: togi_journal::CorePhase::AtLimit,
+        offset: target(-6),
+        pass: None,
+        failure_point: None,
+        check_solo_limit: false,
+        workloads: Vec::new(),
+        cleared_combination: Vec::new(),
+        reason: "test".into(),
+    };
+    let error = session
+        .appender
+        .append(Payload::CorePhase(unfoldable), &[])
+        .unwrap_err();
+    let ended = session.close(Err(error.into()));
     assert!(matches!(ended.errors.first(), Some(SessionError::Fold(_))));
     let kinds = kinds(ended.journal.events());
     assert!(kinds.contains(&"smu.intent"));

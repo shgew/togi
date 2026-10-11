@@ -34,7 +34,7 @@ fn describe(error: &dyn std::error::Error) -> String {
 
 /// What leaving the tuning boot for a dead end did.
 #[derive(Debug)]
-pub struct Left {
+pub(crate) struct Left {
     pub entry: io::Result<tuningboot::SavedEntry>,
     /// Saving the leave reason failed. It never changes whether the saved entry was cleared.
     pub reason_error: Option<BootError>,
@@ -42,7 +42,7 @@ pub struct Left {
 
 impl Left {
     /// The `boot.saved_entry` event that records it.
-    pub fn payload(&self) -> BootSavedEntry {
+    pub(crate) fn payload(&self) -> BootSavedEntry {
         let (before, after, error) = match &self.entry {
             Ok(entry) => (Some(entry.before.clone()), Some(entry.after.clone()), None),
             Err(error) => (None, None, Some(describe(error))),
@@ -56,7 +56,7 @@ impl Left {
     }
 }
 
-pub struct BootHandoff {
+pub(crate) struct BootHandoff {
     bootloader: Box<dyn Bootloader>,
     pending: Option<LeaveReason>,
     progressed: bool,
@@ -64,21 +64,13 @@ pub struct BootHandoff {
 
 impl BootHandoff {
     /// Reads the pending leave reason. Nothing may have been appended yet.
-    pub fn read(mut bootloader: Box<dyn Bootloader>) -> Result<Self, BootError> {
+    pub(crate) fn read(mut bootloader: Box<dyn Bootloader>) -> Result<Self, BootError> {
         let pending = tuningboot::read_reason(&mut *bootloader)?;
         Ok(Self {
             bootloader,
             pending,
             progressed: false,
         })
-    }
-
-    pub const fn pending(&self) -> Option<&LeaveReason> {
-        self.pending.as_ref()
-    }
-
-    pub fn bootloader(&mut self) -> &mut dyn Bootloader {
-        &mut *self.bootloader
     }
 
     pub(crate) fn after_durable_append(
@@ -116,13 +108,13 @@ impl BootHandoff {
     }
 
     /// Leaves the tuning boot for a dead end: saves why, then clears the saved boot entry.
-    pub fn leave(&mut self, reason: &str) -> Left {
+    pub(crate) fn leave(&mut self, reason: &str) -> Left {
         leave(&mut *self.bootloader, reason)
     }
 }
 
 /// Leaves the tuning boot without a session: saves why, then clears the saved boot entry.
-pub fn leave(bootloader: &mut dyn Bootloader, reason: &str) -> Left {
+pub(crate) fn leave(bootloader: &mut dyn Bootloader, reason: &str) -> Left {
     let reason_error = LeaveReason::new(reason, RestartCount::ZERO)
         .and_then(|record| tuningboot::write_reason(bootloader, &record))
         .err()

@@ -9,6 +9,7 @@ description = "The tuning session: the hardware write transaction, the journal a
 
 [dependencies]
 jiff.workspace = true
+serde.workspace = true
 thiserror.workspace = true
 togi-carry.workspace = true
 togi-config.workspace = true
@@ -23,6 +24,7 @@ togi-tuningboot.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
+serde_json.workspace = true
 togi-sim.workspace = true
 
 [lints]

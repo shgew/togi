@@ -438,7 +438,7 @@ fn a_trial_waits_at_one_five_and_thirty_minutes_after_inconclusive_trials_and_re
     assert_eq!(ends(&rig.session)[0].outcome, Verdict::Inconclusive);
     rig.fail_sleep.set(Some(|| Error::Crashed));
     let crashed = trial(&mut rig).unwrap_err();
-    assert!(crate::execute::is_crash(&crashed), "{crashed:?}");
+    assert!(crashed.is_crash(), "{crashed:?}");
     assert_eq!(retries(&rig.session), [(1, 60)]);
     assert_eq!(trial(&mut rig).unwrap(), Control::Continue);
     assert_eq!(retries(&rig.session), [(1, 60)]);
@@ -767,13 +767,13 @@ fn a_crash_at_a_kernel_boundary_never_invents_a_pass() {
     let mut rig = rigged(Bench::new(2));
     lose_read(&rig.log, 1, || Error::Crashed);
     let error = trial(&mut rig).unwrap_err();
-    assert!(crate::execute::is_crash(&error), "{error:?}");
+    assert!(error.is_crash(), "{error:?}");
     assert_eq!(kind_count(&rig.session, "trial.intent"), 0);
 
     let mut rig = rigged(Bench::new(2));
     lose_read(&rig.log, 2, || Error::Crashed);
     let error = trial(&mut rig).unwrap_err();
-    assert!(crate::execute::is_crash(&error), "{error:?}");
+    assert!(error.is_crash(), "{error:?}");
     assert_eq!(kind_count(&rig.session, "trial.start"), 1);
     assert!(ends(&rig.session).is_empty());
 
@@ -781,7 +781,7 @@ fn a_crash_at_a_kernel_boundary_never_invents_a_pass() {
     rig.rigs.borrow_mut().result = Some(failing_with(Signal::ComputationError));
     lose_read(&rig.log, 2, || Error::Crashed);
     let error = trial(&mut rig).unwrap_err();
-    assert!(crate::execute::is_crash(&error), "{error:?}");
+    assert!(error.is_crash(), "{error:?}");
     let ends = ends(&rig.session);
     assert_eq!(ends.len(), 1);
     assert_eq!(ends[0].outcome, Verdict::Failure);
@@ -942,7 +942,7 @@ fn together_plan(session: &Session, offsets: &[i64]) -> togi_tuner::TrialPlan {
 
 fn tuned_to(plan: &togi_tuner::TrialPlan) -> TunerValues<'_> {
     TunerValues {
-        profile: &plan.profile,
+        profile: Some(&plan.profile),
         profile_seq: None,
         clean_cycles: 0,
         first_result: false,
@@ -1063,7 +1063,7 @@ fn a_machine_that_crashes_mid_trial_leaves_the_trial_open_for_the_recovery() {
         });
     }
     let error = trial(&mut rig).unwrap_err();
-    assert!(crate::execute::is_crash(&error));
+    assert!(error.is_crash());
     assert_eq!(rig.session.fault, Some(Fault::Crashed));
     assert!(ends(&rig.session).is_empty());
     assert_eq!(kind_count(&rig.session, "trial.start"), 1);

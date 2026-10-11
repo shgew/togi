@@ -1,29 +1,36 @@
-//! The tuning session: the run in [`session`], and what every session step is built on: the journal appender, the
-//! run's recovery fold, the pure evidence rules, the tuning-boot handoff, and the two ways an offset reaches the SMU:
-//! the write transaction in [`write`] and the journal-failure emergency in [`emergency`].
+//! The tuning session: [`run`] takes a [`RunInput`] through startup, the tuning loop and the cleanup every exit
+//! shares, and hands the journal back in [`Ended`]. [`reset_core`] and [`reset_all`] are the two journal commands
+//! that change what a later run does.
 
-pub mod appender;
+mod appender;
 mod begin;
-pub mod boot;
+mod boot;
 mod close;
-pub mod commands;
+mod commands;
 mod defects;
-pub mod emergency;
-pub mod error;
-pub mod evidence;
+mod emergency;
+mod error;
+mod evidence;
 mod execute;
-pub mod recover;
-pub mod recovery;
+mod publication;
+mod recover;
+mod recovery;
 mod restore;
+mod run;
 mod run_trial;
-pub mod session;
+mod session;
 mod startup;
-pub mod trial;
-pub mod write;
+mod trial;
+mod write;
 
 #[cfg(test)]
 mod testing;
 
-pub use error::{AppendFailure, Flow, FoldError, JournalFailure, SessionError, Step};
-pub use execute::TunerValues;
-pub use session::{Control, Ended, Outcome, RunInput, Session, Stop, StopPolicy};
+pub use boot::BootError;
+pub use commands::{CommandError, reset_all, reset_core};
+pub use emergency::{Outcome as Emergency, Readback, Response, Withheld, Zeroed};
+pub use error::{AppendFailure, FoldError, JournalCause, JournalFailure, SessionError};
+pub use publication::PublicationPolicy;
+pub use run::run;
+pub use session::{ConfigSource, Ended, Prompt, PromptError, RunInput, Stop, StopPolicy};
+pub use write::{ConstraintRefusal, ProfileFailure, Refused, WriteFailure};

@@ -8,7 +8,7 @@
 
 use togi_journal::{DeadEndCondition, Payload};
 use togi_machine::{PerCore, TargetOffset};
-use togi_tuner::{DecisionAction, DecisionPayload};
+use togi_tuner::DecisionPayload;
 
 use crate::emergency::{self, Access, Withheld};
 use crate::error::{Flow, JournalFailure, SessionError};
@@ -24,17 +24,7 @@ enum Reached {
 
 impl Session {
     /// Ends the run with `run`, the stop it reached or the error that ended it, and hands the journal back.
-    ///
-    /// `held` is what the tuner still holds per core, which bounds the restoration, and `drained` the decisions it
-    /// owes before the run ends. Nothing touches the SMU after a crash or an unconfirmed containment. A restoration
-    /// that fails at the SMU turns a clean stop into an SMU dead end and leaves a dead end the run already reached as
-    /// it was.
-    pub fn close(
-        mut self,
-        run: Result<Stop, SessionError>,
-        held: &PerCore<TargetOffset>,
-        drained: Vec<DecisionAction>,
-    ) -> Ended {
+    pub(crate) fn close(mut self, run: Result<Stop, SessionError>) -> Ended {
         let mut errors = Vec::new();
         let mut stop = match run {
             Ok(stop) => Some(stop),
@@ -47,7 +37,7 @@ impl Session {
             }
         };
         if self.fault.is_none() && self.appender.failure().is_none() {
-            self.clean_up(&mut stop, held, drained, &mut errors);
+            self.clean_up(&mut stop, &mut errors);
         }
         let emergency = self
             .appender
@@ -57,20 +47,16 @@ impl Session {
         self.finish(stop, errors, emergency)
     }
 
-    fn clean_up(
-        &mut self,
-        stop: &mut Option<Stop>,
-        held: &PerCore<TargetOffset>,
-        drained: Vec<DecisionAction>,
-        errors: &mut Vec<SessionError>,
-    ) {
+    fn clean_up(&mut self, stop: &mut Option<Stop>, errors: &mut Vec<SessionError>) {
         let mut drain_failed = false;
-        match self.record_drained(drained) {
-            Ok(Some(dead_end)) => *stop = Some(dead_end),
-            Ok(None) => {}
-            Err(error) => {
-                errors.push(error);
-                drain_failed = true;
+        if matches!(stop, Some(Stop::Signal)) {
+            match self.record_drained() {
+                Ok(Some(dead_end)) => *stop = Some(dead_end),
+                Ok(None) => {}
+                Err(error) => {
+                    errors.push(error);
+                    drain_failed = true;
+                }
             }
         }
         if self.appender.failure().is_some() {
@@ -79,7 +65,8 @@ impl Session {
         let reached = if smu_dead_end(stop.as_ref()) {
             Reached::Settled
         } else {
-            self.restore_and_settle(stop, held, errors)
+            let held = self.held();
+            self.restore_and_settle(stop, &held, errors)
         };
         if !drain_failed
             && matches!(reached, Reached::Settled)
@@ -127,11 +114,8 @@ impl Session {
 
     /// Appends the decisions the tuner owes, in order, before the machine is restored. The first dead end among
     /// them is recorded as the run's dead end and replaces the stop; what follows it stays owed.
-    pub(crate) fn record_drained(
-        &mut self,
-        drained: Vec<DecisionAction>,
-    ) -> Result<Option<Stop>, SessionError> {
-        for action in drained {
+    pub(crate) fn record_drained(&mut self) -> Result<Option<Stop>, SessionError> {
+        while let Some(action) = self.appender.tuner().drain() {
             match action.payload {
                 DecisionPayload::DeadEnd(dead_end) => {
                     return self.dead_end(dead_end, &action.cause).map(Some);
@@ -181,11 +165,24 @@ impl Session {
     /// The last step of every exit: what the run publishes beyond the journal belongs here, after the final event
     /// and before the journal leaves the session.
     fn finish(
-        self,
+        mut self,
         stop: Option<Stop>,
-        errors: Vec<SessionError>,
-        emergency: Option<emergency::Outcome>,
+        mut errors: Vec<SessionError>,
+        mut emergency: Option<emergency::Outcome>,
     ) -> Ended {
+        if self.appender.failure().is_none()
+            && self.fault != Some(Fault::Crashed)
+            && !self.appender.journal().events().is_empty()
+            && let Err(error) = self.appender.publish_state()
+        {
+            errors.push(error.into());
+            emergency = self
+                .appender
+                .failure()
+                .cloned()
+                .map(|failure| self.answer(&failure));
+        }
+        errors.extend(self.appender.take_log_failure().map(SessionError::Log));
         Ended {
             stop,
             errors,

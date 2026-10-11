@@ -14,7 +14,7 @@ use crate::recovery::RecoveryState;
 
 /// A journal that does not fold into the run's state, handed back with the reason.
 #[derive(Debug)]
-pub struct Unresumed {
+pub(crate) struct Unresumed {
     pub journal: Journal,
     pub error: FoldError,
 }
@@ -22,19 +22,22 @@ pub struct Unresumed {
 /// Every reducer the run keeps over its journal, each fed every event once and in order: the recovery fold first,
 /// then the tuner state, then the defect state.
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct Folds {
+pub(crate) struct Folds {
     pub recovery: RecoveryState,
     pub tuner: togi_tuner::State,
     pub defects: DefectState,
+    pub facts: togi_journal::State,
 }
 
 impl Folds {
-    pub fn replay<'a>(events: impl IntoIterator<Item = &'a Event>) -> Result<Self, FoldError> {
+    pub(crate) fn replay<'a>(
+        events: impl IntoIterator<Item = &'a Event>,
+    ) -> Result<Self, FoldError> {
         Self::replay_with(KNOWN_DEFECTS, events)
     }
 
     /// Replays with the defect state judging by `defects` instead of the defects this build knows.
-    pub fn replay_with<'a>(
+    pub(crate) fn replay_with<'a>(
         defects: &'static [Entry],
         events: impl IntoIterator<Item = &'a Event>,
     ) -> Result<Self, FoldError> {
@@ -49,13 +52,14 @@ impl Folds {
     }
 
     /// Folds one event. A tuner state that cannot take it in stays poisoned: the journal is corrupt.
-    pub fn apply(&mut self, event: &Event) -> Result<(), FoldError> {
+    pub(crate) fn apply(&mut self, event: &Event) -> Result<(), FoldError> {
         self.recovery.apply(event)?;
         self.tuner.fold(event).map_err(|error| FoldError::Tuner {
             seq: event.seq,
             error,
         })?;
         self.defects.fold(event);
+        self.facts.apply(event)?;
         Ok(())
     }
 }
@@ -65,10 +69,10 @@ impl Folds {
 ///
 /// The first failed append latches: every later append returns that failure without touching the journal, and the
 /// running trial's token is cancelled so its workload stops.
-pub struct Appender {
-    journal: Journal,
+pub(crate) struct Appender {
+    pub(crate) journal: Journal,
     clock: Box<dyn Clock>,
-    folds: Folds,
+    pub(crate) folds: Folds,
     renderer: Renderer,
     zone: TimeZone,
     log: Option<Box<dyn Write>>,
@@ -76,12 +80,16 @@ pub struct Appender {
     latched: Option<JournalFailure>,
     trial: Option<CancellationToken>,
     handoff: Option<BootHandoff>,
+    #[cfg(test)]
     defects: &'static [Entry],
+    pub(crate) publication: Option<crate::publication::PublicationPolicy>,
+    pub(crate) publishing: bool,
 }
 
 impl Appender {
     /// Takes over an opened journal, folding the events it already holds into the run's state without logging them.
-    pub fn resume(
+    #[cfg(test)]
+    pub(crate) fn resume(
         journal: Journal,
         clock: Box<dyn Clock>,
         renderer: Renderer,
@@ -92,7 +100,7 @@ impl Appender {
     }
 
     /// [`Appender::resume`] with the defects to judge by; a journal that does not fold is handed back.
-    pub fn resume_with(
+    pub(crate) fn resume_with(
         journal: Journal,
         clock: Box<dyn Clock>,
         renderer: Renderer,
@@ -114,75 +122,80 @@ impl Appender {
             latched: None,
             trial: None,
             handoff: None,
+            #[cfg(test)]
             defects,
+            publication: None,
+            publishing: false,
         })
     }
 
     /// The defects the run judges by.
-    pub const fn defect_registry(&self) -> &'static [Entry] {
+    #[cfg(test)]
+    pub(crate) const fn defect_registry(&self) -> &'static [Entry] {
         self.defects
     }
 
     #[must_use]
-    pub fn with_log(mut self, log: Box<dyn Write>) -> Self {
+    pub(crate) fn with_log(mut self, log: Box<dyn Write>) -> Self {
         self.log = Some(log);
         self
     }
 
     #[must_use]
-    pub fn with_handoff(mut self, handoff: BootHandoff) -> Self {
+    pub(crate) fn with_handoff(mut self, handoff: BootHandoff) -> Self {
         self.handoff = Some(handoff);
         self
     }
 
-    pub const fn journal(&self) -> &Journal {
+    pub(crate) const fn journal(&self) -> &Journal {
         &self.journal
     }
 
-    pub const fn recovery(&self) -> &RecoveryState {
+    pub(crate) const fn recovery(&self) -> &RecoveryState {
         &self.folds.recovery
     }
 
-    pub const fn tuner(&self) -> &togi_tuner::State {
+    pub(crate) const fn tuner(&self) -> &togi_tuner::State {
         &self.folds.tuner
     }
 
-    pub const fn defects(&self) -> &DefectState {
+    pub(crate) const fn defects(&self) -> &DefectState {
         &self.folds.defects
     }
 
-    pub const fn folds(&self) -> &Folds {
+    #[cfg(test)]
+    pub(crate) const fn folds(&self) -> &Folds {
         &self.folds
     }
 
-    pub fn clock(&mut self) -> &mut dyn Clock {
+    pub(crate) fn clock(&mut self) -> &mut dyn Clock {
         &mut *self.clock
     }
 
-    pub fn handoff(&mut self) -> Option<&mut BootHandoff> {
+    pub(crate) fn handoff(&mut self) -> Option<&mut BootHandoff> {
         self.handoff.as_mut()
     }
 
     /// The failure that latched the appender, if any append has failed.
-    pub const fn failure(&self) -> Option<&JournalFailure> {
+    pub(crate) const fn failure(&self) -> Option<&JournalFailure> {
         self.latched.as_ref()
     }
 
-    /// The first error writing the event log. The log is dropped after it, and the run goes on.
-    pub const fn log_failure(&self) -> Option<&io::Error> {
-        self.log_failure.as_ref()
+    /// Takes the first error writing the event log. The log is dropped after it, and the run goes on.
+    pub(crate) const fn take_log_failure(&mut self) -> Option<io::Error> {
+        self.log_failure.take()
     }
 
     /// The token of the trial that is running, cancelled when an append fails; `None` once it ended.
-    pub fn watch_trial(&mut self, token: Option<CancellationToken>) {
+    pub(crate) fn watch_trial(&mut self, token: Option<CancellationToken>) {
         self.trial = token;
     }
 
-    pub fn into_journal(self) -> Journal {
+    pub(crate) fn into_journal(self) -> Journal {
         self.journal
     }
     /// Acknowledges the tuning-boot leave reason still pending, as after a resumed dead end.
-    pub fn import_boot_reason(&mut self) -> Result<(), AppendFailure> {
+    pub(crate) fn import_boot_reason(&mut self) -> Result<(), AppendFailure> {
         let Some(mut handoff) = self.handoff.take() else {
             return Ok(());
         };
@@ -191,7 +204,11 @@ impl Appender {
         result
     }
 
-    pub fn append(&mut self, payload: Payload, causes: &[Seq]) -> Result<Seq, AppendFailure> {
+    pub(crate) fn append(
+        &mut self,
+        payload: Payload,
+        causes: &[Seq],
+    ) -> Result<Seq, AppendFailure> {
         let stamp = self.stamp()?;
         let seq = match self.journal.append(stamp, payload, causes) {
             Ok(event) => event.seq,
@@ -266,6 +283,10 @@ impl Appender {
             let result = handoff.after_durable_append(self);
             self.handoff = Some(handoff);
             result?;
+        }
+        if self.publication == Some(crate::publication::PublicationPolicy::Live) && !self.publishing
+        {
+            self.publish_state()?;
         }
         Ok(())
     }

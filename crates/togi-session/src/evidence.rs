@@ -10,7 +10,7 @@ use togi_machine::{
 use togi_requests::Telemetry;
 
 /// The waits before the first, second and third retry of a backend or of the kernel log.
-pub const RETRY_WAITS: [Duration; 3] = [
+pub(crate) const RETRY_WAITS: [Duration; 3] = [
     Duration::from_mins(1),
     Duration::from_mins(5),
     Duration::from_mins(30),
@@ -18,7 +18,7 @@ pub const RETRY_WAITS: [Duration; 3] = [
 
 /// A retry that is due: its number, how long to wait, and whether `backend.retry` still has to record it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct RetryDue {
+pub(crate) struct RetryDue {
     pub attempt: u8,
     pub wait: Duration,
     pub record: bool,
@@ -35,37 +35,37 @@ fn retry(attempt: usize) -> Option<RetryDue> {
 
 /// The retry a backend is due after `streak` inconclusive trials in a row: none until `threshold` of them, then
 /// three waits, one per further inconclusive trial.
-pub fn backend_retry(streak: usize, threshold: DeadEndThreshold) -> Option<RetryDue> {
+pub(crate) fn backend_retry(streak: usize, threshold: DeadEndThreshold) -> Option<RetryDue> {
     let threshold = usize::try_from(threshold.get()).ok()?;
     retry(streak.checked_sub(threshold)? + 1)
 }
 
 /// Whether the streak outlasted the threshold and all three retries: no evidence can be had from the backend.
-pub fn backend_exhausted(streak: usize, threshold: DeadEndThreshold) -> bool {
+pub(crate) fn backend_exhausted(streak: usize, threshold: DeadEndThreshold) -> bool {
     usize::try_from(threshold.get()).is_ok_and(|threshold| streak >= threshold + RETRY_WAITS.len())
 }
 
 /// The kernel-log retry that follows `recorded` retries since the last crash was classified.
-pub fn kernel_retry(recorded: usize) -> Option<RetryDue> {
+pub(crate) fn kernel_retry(recorded: usize) -> Option<RetryDue> {
     retry(recorded + 1)
 }
 
 /// The monotonic span a trial's machine checks fall in, both ends inclusive.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Window {
+pub(crate) struct Window {
     pub since: Duration,
     pub until: Duration,
 }
 
 impl Window {
-    pub fn contains(self, mono: Duration) -> bool {
+    pub(crate) fn contains(self, mono: Duration) -> bool {
         self.since <= mono && mono <= self.until
     }
 }
 
 /// Where the journal files a machine check the kernel log yielded.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Placement {
+pub(crate) enum Placement {
     /// Evidence of the trial whose window it is in.
     Trial,
     /// An uncorrected one a crashed boot's recovery found in the current boot's log: it belongs to that crash.
@@ -74,7 +74,7 @@ pub enum Placement {
     BetweenTrials,
 }
 
-pub fn place_kernel_mce(
+pub(crate) fn place_kernel_mce(
     mono: Duration,
     corrected: bool,
     trial: Option<Window>,
@@ -91,17 +91,22 @@ pub fn place_kernel_mce(
 }
 
 /// Whether a machine check at `mono` of a trial's boot is inside the trial's window; one without a time is.
-pub fn mce_in_window(mono: Option<Duration>, since: Duration) -> bool {
+pub(crate) fn mce_in_window(mono: Option<Duration>, since: Duration) -> bool {
     mono.is_none_or(|mono| mono >= since)
 }
 
 /// Whether the crash of `boot` owns a machine check recorded from `from_boot`: the boot's own, and the uncorrected
 /// ones its successor's kernel retained in its banks. A corrected one of the successor is the successor's.
-pub fn crash_owns(from_boot: &BootId, corrected: bool, boot: &BootId, next: &BootId) -> bool {
+pub(crate) fn crash_owns(
+    from_boot: &BootId,
+    corrected: bool,
+    boot: &BootId,
+    next: &BootId,
+) -> bool {
     from_boot == boot || (from_boot == next && !corrected)
 }
 
-pub fn join_diagnostic(reason: Option<&str>, diagnostic: Option<&str>) -> Option<String> {
+pub(crate) fn join_diagnostic(reason: Option<&str>, diagnostic: Option<&str>) -> Option<String> {
     match (present(reason), present(diagnostic)) {
         (Some(reason), Some(diagnostic)) => Some(format!("{reason}; {diagnostic}")),
         (Some(text), None) | (None, Some(text)) => Some(text.to_owned()),
@@ -114,20 +119,20 @@ fn present(text: Option<&str>) -> Option<&str> {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct RecordedMce {
+pub(crate) struct RecordedMce {
     pub seq: Seq,
     pub corrected: bool,
 }
 
 /// What the reset after a crashed trial says of it.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ResetVerdict {
+pub(crate) struct ResetVerdict {
     pub outcome: Outcome,
     pub signal: Option<Signal>,
     pub reason: Option<String>,
 }
 
-pub struct TrialEvidence<'a> {
+pub(crate) struct TrialEvidence<'a> {
     pub result: &'a TrialResult,
     pub mces: &'a [RecordedMce],
     pub reset: Option<&'a ResetVerdict>,
@@ -138,7 +143,7 @@ pub struct TrialEvidence<'a> {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Adjudication {
+pub(crate) struct Adjudication {
     pub outcome: Outcome,
     pub signal: Option<Signal>,
     pub core: Option<CoreId>,
@@ -149,12 +154,11 @@ pub struct Adjudication {
     pub tctl_max_c: Option<i64>,
 }
 
-pub fn mce_signal(mces: &[RecordedMce]) -> Signal {
+pub(crate) fn mce_signal(mces: &[RecordedMce]) -> Signal {
     machine_check_signal(mces.iter().any(|mce| mce.corrected))
 }
 
-/// The signal of machine checks that were all corrected, or of any that was not.
-pub const fn machine_check_signal(any_corrected: bool) -> Signal {
+pub(crate) const fn machine_check_signal(any_corrected: bool) -> Signal {
     if any_corrected {
         Signal::CorrectedMce
     } else {
@@ -165,7 +169,7 @@ pub const fn machine_check_signal(any_corrected: bool) -> Signal {
 /// The outcome a trial's evidence adds up to. The first that holds wins: a worker outside its CPUs, containment
 /// that could not be confirmed, a backend signal, a machine check, the reset after a crash, a missing observation
 /// or an inconclusive diagnostic, a short run, and only then a pass.
-pub fn adjudicate(evidence: &TrialEvidence<'_>) -> Adjudication {
+pub(crate) fn adjudicate(evidence: &TrialEvidence<'_>) -> Adjudication {
     let result = evidence.result;
     let missing = present(evidence.missing);
     let mut end = Adjudication {
@@ -207,7 +211,7 @@ pub fn adjudicate(evidence: &TrialEvidence<'_>) -> Adjudication {
 
 /// The last sample of a trial, as much of it as a crash recovery or a trial end reports.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct LastSample {
+pub(crate) struct LastSample {
     pub elapsed_ms: i64,
     pub tctl_c: Option<i64>,
     pub core_mhz: PerCore<i64>,
@@ -215,19 +219,19 @@ pub struct LastSample {
 
 /// A loaded core whose worker stopped advancing, and the elapsed time of the first sample that showed it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Stall {
+pub(crate) struct Stall {
     pub core: CoreId,
     pub since_ms: i64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Voltage {
+pub(crate) struct Voltage {
     pub median_v: f64,
     pub min_v: f64,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct SampleSummary {
+pub(crate) struct SampleSummary {
     pub last: Option<LastSample>,
     pub stalled: Option<Stall>,
     pub voltage: Option<Voltage>,
@@ -351,7 +355,7 @@ impl Observer {
 /// Reads a trial's samples once: the last one, which loaded core's worker stopped first (a unique one, over valid
 /// readings of two or more cores outside R6, where the workers are suspended on purpose), the loaded cores'
 /// requested voltage, and the request telemetry, which needs every loaded core on a known CCD.
-pub fn summarize_samples(
+pub(crate) fn summarize_samples(
     samples: impl IntoIterator<Item = TrialConditions>,
     loaded: CoreSet,
     regime: Regime,
@@ -378,7 +382,7 @@ pub fn summarize_samples(
 impl SampleSummary {
     /// Writes what the samples say into a trial's end: the requested voltage and request telemetry of every end, the
     /// stalled worker of a failure, and the last sample of a trial a crash cut short.
-    pub fn fill(&self, end: &mut TrialEnd, crashed: bool) {
+    pub(crate) fn fill(&self, end: &mut TrialEnd, crashed: bool) {
         if let Some(voltage) = self.voltage {
             end.voltage_request_median_v = Some(voltage.median_v);
             end.voltage_request_min_v = Some(voltage.min_v);

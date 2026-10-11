@@ -7,8 +7,8 @@ use togi_sim::MachineDefinition;
 use togi_sim::faults::{HookPhase, SmuOp as SimOp, SmuOperation};
 
 use super::{
-    ProfileFailure, ProfileRecord, ProfileRequest, Refusal, Refused, Slot, WriteFailure, apply,
-    apply_profile,
+    ConstraintRefusal, ProfileFailure, ProfileRecord, ProfileRequest, Refused, Slot, WriteFailure,
+    apply, apply_profile,
 };
 use crate::emergency::{Access, Response, respond};
 use crate::error::Flow;
@@ -22,7 +22,7 @@ fn profile(offsets: &[i64]) -> PerCore<TargetOffset> {
         .collect()
 }
 
-fn allow(_: &PerCore<TargetOffset>) -> Option<Refusal> {
+fn allow(_: &PerCore<TargetOffset>) -> Option<ConstraintRefusal> {
     None
 }
 
@@ -55,7 +55,7 @@ impl Rig {
     fn put(
         &mut self,
         offsets: &[i64],
-        check: &mut dyn FnMut(&PerCore<TargetOffset>) -> Option<Refusal>,
+        check: &mut dyn FnMut(&PerCore<TargetOffset>) -> Option<ConstraintRefusal>,
     ) -> Result<super::Verified, ProfileFailure> {
         let target = profile(offsets);
         apply_profile(
@@ -131,7 +131,7 @@ fn a_refused_write_appends_no_intent_and_reaches_no_hardware() {
     let refused = rig
         .hardware
         .check_set(core(1), target(-30), &mut |_| {
-            Some(Refusal::new("failure point -30 of core 01"))
+            Some(ConstraintRefusal::new("failure point -30 of core 01"))
         })
         .unwrap_err();
     assert_eq!(
@@ -255,7 +255,7 @@ fn a_combination_is_refused_at_the_step_that_reaches_it_with_the_earlier_steps_k
     let mut rig = Rig::new(4);
     let mut combination = |after: &PerCore<TargetOffset>| {
         let deep = |n| after.get(core(n)).is_some_and(|offset| offset.get() <= -30);
-        (deep(0) && deep(1)).then(|| Refusal::new("combination 1"))
+        (deep(0) && deep(1)).then(|| ConstraintRefusal::new("combination 1"))
     };
     let error = rig.put(&[-30, -30, 0, 0], &mut combination).unwrap_err();
     assert!(matches!(
@@ -283,7 +283,7 @@ fn a_failure_point_is_refused_before_any_write_of_that_core() {
         after
             .get(core(2))
             .is_some_and(|offset| offset.get() <= -30)
-            .then(|| Refusal::new("failure point -30 of core 02"))
+            .then(|| ConstraintRefusal::new("failure point -30 of core 02"))
     };
     let error = rig.put(&[0, 0, -30, 0], &mut failure_point).unwrap_err();
     assert_eq!(

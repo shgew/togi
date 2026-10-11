@@ -50,6 +50,8 @@ pub enum FoldError {
         #[source]
         error: togi_tuner::FoldError,
     },
+    #[error("event does not fold into the shared journal facts: {0}")]
+    Facts(#[from] togi_journal::FoldError),
 }
 
 /// Why an event that reached the journal was not fully taken in.
@@ -106,6 +108,8 @@ pub enum SessionError {
     /// The profile a trial together was planned on is not the one the tuner stands at.
     #[error("the trial's profile is not the one the machine is set to")]
     PlanDisagrees,
+    #[error("the tuner cannot choose the next action after startup: {0}")]
+    NotReady(#[from] togi_tuner::NotReady),
     #[error("clear GRUB's saved entry after an incompatible journal: {0}")]
     ClearSavedEntry(#[source] io::Error),
     #[error("allocate the session id: {0}")]
@@ -166,12 +170,12 @@ impl From<AppendFailure> for SessionError {
 
 /// How a step leaves the straight path: a dead end the evidence already recorded, or an error.
 #[derive(Debug)]
-pub enum Flow {
+pub(crate) enum Flow {
     DeadEnd(DeadEndCondition),
     Fatal(SessionError),
 }
 
-pub type Step<T> = Result<T, Flow>;
+pub(crate) type Step<T> = Result<T, Flow>;
 
 impl From<SessionError> for Flow {
     fn from(error: SessionError) -> Self {

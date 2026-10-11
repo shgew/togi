@@ -19,7 +19,7 @@ impl Session {
     /// Classifies and records every crashed boot before this one. A kernel log that stays unreadable is evidence
     /// for a no-evidence dead end, which [`Session::check_dead_end`] places after a thermal trip. A pending dead
     /// end is finished first, so nothing is read for it.
-    pub fn recover_prior(&mut self) -> Outcome {
+    pub(crate) fn recover_prior(&mut self) -> Outcome {
         if self.appender.recovery().pending_dead_end().is_some() {
             return Ok(Control::Continue);
         }
@@ -46,7 +46,7 @@ impl Session {
     }
 
     /// Closes the trial this boot's earlier run left open, which needs the proof that nothing runs.
-    pub fn recover_same_boot(&mut self) -> Outcome {
+    pub(crate) fn recover_same_boot(&mut self) -> Outcome {
         if !self.same_boot() || self.recovery_cancelled {
             return Ok(Control::Continue);
         }
@@ -61,7 +61,7 @@ impl Session {
                 boot: &self.boot,
                 cancel: &self.cancel,
             },
-            &sweep,
+            sweep,
         )
         .map(|()| Control::Continue);
         self.settle(step)
@@ -90,7 +90,7 @@ impl Session {
 
     /// Waits for the hardware watchdog when started from the tuning boot, records the machine's checks and the BIOS
     /// context comparison, and ends in a preflight dead end citing the failed ones.
-    pub fn preflight(&mut self) -> Outcome {
+    pub(crate) fn preflight(&mut self) -> Outcome {
         let cancel = self.waiting_token();
         if self.appender.handoff().is_some() {
             let control = self.await_watchdog(&cancel)?;
@@ -189,7 +189,7 @@ impl Session {
     /// Clears the trial scopes a stale run may have left, which is what makes the SMU safe to touch. The sweep is
     /// never cancelled: it is the only way to know no workload runs. A failed sweep is a containment dead end that
     /// writes nothing to the SMU.
-    pub fn sweep(&mut self) -> Outcome {
+    pub(crate) fn sweep(&mut self) -> Outcome {
         match self.trials.sweep(&CancellationToken::new()) {
             Ok(swept) => {
                 self.sweep = Some(SweepCleared::of(&swept));
@@ -217,7 +217,7 @@ impl Session {
 impl Session {
     /// On a boot a run already used: reads the offsets that run left, puts the baseline back as bounded by `held`
     /// and only then lets the boot's cancellation count. A failed read or write is SMU evidence.
-    pub fn reconcile(&mut self, held: &PerCore<TargetOffset>) -> Outcome {
+    pub(crate) fn reconcile(&mut self, held: &PerCore<TargetOffset>) -> Outcome {
         if !self.unreconciled() {
             return Ok(Control::Continue);
         }
@@ -237,7 +237,7 @@ impl Session {
     /// What the journal holds that ends the run before it starts: a dead end pending from before, a defect that needs
     /// an answer, a dead end its evidence supports, and a stop that was asked for while the earlier boots' evidence
     /// was read.
-    pub fn inspect(&mut self) -> Outcome {
+    pub(crate) fn inspect(&mut self) -> Outcome {
         if let Some(stop) = self.resume_dead_end()? {
             return Ok(Control::Stop(stop));
         }

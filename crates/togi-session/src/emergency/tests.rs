@@ -10,7 +10,7 @@ use togi_sim::faults::SmuOperation;
 use super::{Access, Response, Withheld, respond};
 use crate::error::JournalFailure;
 use crate::testing::{Rig, core, target};
-use crate::write::{Refusal, apply};
+use crate::write::{ConstraintRefusal, apply};
 
 fn failure() -> JournalFailure {
     JournalFailure::new(AppendError::SeqExhausted)
@@ -77,7 +77,7 @@ fn cores(n: i64) -> CoreSet {
 fn lower(rig: &mut Rig, n: i64, offset: i64) {
     let checked = rig
         .hardware
-        .check_set(core(n), target(offset), &mut |_| None::<Refusal>)
+        .check_set(core(n), target(offset), &mut |_| None::<ConstraintRefusal>)
         .unwrap();
     drop(apply(&mut rig.appender, &mut *rig.smu, &rig.stopped, checked, &[]).unwrap());
 }

@@ -185,7 +185,7 @@ fn a_sweep_whose_check_cannot_be_recorded_still_hands_the_emergency_its_proofs()
     bench.mem.inject(FsFault::before(Op::Write, 1));
     let error = session.sweep().unwrap_err();
     assert!(matches!(error, SessionError::Journal(_)));
-    let ended = session.close(Err(error), &offsets(&[0, 0]), Vec::new());
+    let ended = session.close(Err(error));
     let Some(emergency) = ended.emergency else {
         panic!("no emergency");
     };
@@ -235,7 +235,7 @@ fn an_unconfirmed_sweep_never_ends_in_a_shutdown_or_touches_the_smu() {
     let Control::Stop(stop) = session.sweep().unwrap() else {
         panic!("no stop");
     };
-    let ended = session.close(Ok(stop), &offsets(&[0, 0]), Vec::new());
+    let ended = session.close(Ok(stop));
     assert!(ended.errors.is_empty());
     assert!(
         !ended

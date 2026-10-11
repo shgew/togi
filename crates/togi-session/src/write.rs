@@ -6,31 +6,8 @@
 //! back into the journal. Only a readback that agrees makes a slot [`Slot::Known`], and the [`Verified`] it returns
 //! is what a trial needs to start.
 //!
-//! Neither [`CheckedWrite`] nor [`Verified`] can be built outside this module:
-//!
-//! ```compile_fail,E0451
-//! fn forge(hardware: &mut togi_session::write::Hardware) -> togi_session::write::CheckedWrite<'_> {
-//!     togi_session::write::CheckedWrite { hardware, command: todo!() }
-//! }
-//! ```
-//!
-//! ```compile_fail,E0451
-//! fn forge() -> togi_session::write::Verified {
-//!     togi_session::write::Verified { readbacks: Vec::new(), targets: Vec::new(), profile: None }
-//! }
-//! ```
-//!
-//! And [`apply`] takes the proof that no workload runs:
-//!
-//! ```compile_fail,E0061
-//! fn without_proof(
-//!     appender: &mut togi_session::appender::Appender,
-//!     smu: &mut dyn togi_machine::Smu,
-//!     checked: togi_session::write::CheckedWrite<'_>,
-//! ) {
-//!     let _ = togi_session::write::apply(appender, smu, checked, &[]);
-//! }
-//! ```
+//! Neither [`CheckedWrite`] nor [`Verified`] can be built outside this module, and [`apply`] takes the proof that
+//! no workload runs.
 
 use togi_journal::{Payload, ProfileApplied, ProfileRestored, Seq, SmuCommand, SmuOp, SmuReadback};
 use togi_machine::{
@@ -43,25 +20,29 @@ use crate::error::{AppendFailure, JournalFailure};
 /// What the profile a write would leave reaches: a failure point or a combination.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 #[error("{0}")]
-pub struct Refusal(String);
+pub struct ConstraintRefusal(String);
 
-impl Refusal {
-    pub fn new(reached: impl Into<String>) -> Self {
+impl ConstraintRefusal {
+    pub(crate) fn new(reached: impl Into<String>) -> Self {
         Self(reached.into())
     }
 }
 
 /// The constraint check of `check_set`: refuses a profile that reaches a failure point or combination the tuner
 /// state holds, one the state cannot judge, or cores other than the topology's. Never reads such a profile as safe.
-pub fn refusal(state: &togi_tuner::State, after: &PerCore<TargetOffset>) -> Option<Refusal> {
+#[cfg(test)]
+pub(crate) fn refusal(
+    state: &togi_tuner::State,
+    after: &PerCore<TargetOffset>,
+) -> Option<ConstraintRefusal> {
     judge(state.topology(), state.constraints(), after)
 }
 
 /// [`refusal`] against the tuner state as it stands now, for a write sequence that appends to the journal the state
 /// is folded from.
-pub fn checker(
+pub(crate) fn checker(
     state: &togi_tuner::State,
-) -> impl FnMut(&PerCore<TargetOffset>) -> Option<Refusal> + use<> {
+) -> impl FnMut(&PerCore<TargetOffset>) -> Option<ConstraintRefusal> + use<> {
     let topology = state.topology().cloned();
     let constraints = state.constraints().cloned();
     move |after| judge(topology.as_ref(), constraints.as_ref(), after)
@@ -71,17 +52,19 @@ fn judge(
     topology: Option<&togi_tuner::Topology>,
     constraints: Option<&togi_tuner::Constraints>,
     after: &PerCore<TargetOffset>,
-) -> Option<Refusal> {
+) -> Option<ConstraintRefusal> {
     let (Some(topology), Some(constraints)) = (topology, constraints) else {
-        return Some(Refusal::new("the tuner state holds no standing topology"));
+        return Some(ConstraintRefusal::new(
+            "the tuner state holds no standing topology",
+        ));
     };
     let profile = match togi_tuner::Profile::new(topology, *after) {
         Ok(profile) => profile,
-        Err(error) => return Some(Refusal::new(error.to_string())),
+        Err(error) => return Some(ConstraintRefusal::new(error.to_string())),
     };
     match constraints.reaches(&profile) {
-        Ok(reached) => reached.map(|reached| Refusal::new(reached.to_string())),
-        Err(mismatch) => Some(Refusal::new(mismatch.to_string())),
+        Ok(reached) => reached.map(|reached| ConstraintRefusal::new(reached.to_string())),
+        Err(mismatch) => Some(ConstraintRefusal::new(mismatch.to_string())),
     }
 }
 
@@ -91,7 +74,7 @@ pub enum Refused {
     Reaches {
         core: CoreId,
         target: TargetOffset,
-        refusal: Refusal,
+        refusal: ConstraintRefusal,
     },
     #[error("refusing to write core {core:02}: the offsets of the other cores are not known")]
     Unknown { core: CoreId },
@@ -101,7 +84,7 @@ pub enum Refused {
 
 /// What a run knows of one core's offset.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum Slot {
+pub(crate) enum Slot {
     /// Not known: never read, or a command went out and its readback did not confirm the target.
     #[default]
     Unknown,
@@ -111,14 +94,14 @@ pub enum Slot {
 
 /// The offsets this run knows the machine holds.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Hardware {
+pub(crate) struct Hardware {
     cores: CoreSet,
     slots: PerCore<Slot>,
     engaged: bool,
 }
 
 impl Hardware {
-    pub fn new(cores: CoreSet) -> Self {
+    pub(crate) fn new(cores: CoreSet) -> Self {
         Self {
             cores,
             slots: cores.iter().map(|core| (core, Slot::Unknown)).collect(),
@@ -126,15 +109,15 @@ impl Hardware {
         }
     }
 
-    pub const fn cores(&self) -> CoreSet {
+    pub(crate) const fn cores(&self) -> CoreSet {
         self.cores
     }
 
-    pub fn slot(&self, core: CoreId) -> Option<Slot> {
+    pub(crate) fn slot(&self, core: CoreId) -> Option<Slot> {
         self.slots.get(core)
     }
 
-    pub const fn engaged(&self) -> bool {
+    pub(crate) const fn engaged(&self) -> bool {
         self.engaged
     }
 
@@ -145,7 +128,7 @@ impl Hardware {
     }
 
     /// The profile on the machine, when every core's offset is known.
-    pub fn profile(&self) -> Option<PerCore<TargetOffset>> {
+    pub(crate) fn profile(&self) -> Option<PerCore<TargetOffset>> {
         self.cores
             .iter()
             .map(|core| match self.slots.get(core) {
@@ -158,11 +141,11 @@ impl Hardware {
     /// A write of `target` to `core`. When it can deepen the core, `check` sees the profile the machine would hold
     /// afterwards and names what it reaches; a write that leaves the core as deep or shallower than it is known to
     /// be, or sets it to 0, moves toward no constraint and is not checked.
-    pub fn check_set(
+    pub(crate) fn check_set(
         &mut self,
         core: CoreId,
         target: TargetOffset,
-        check: &mut dyn FnMut(&PerCore<TargetOffset>) -> Option<Refusal>,
+        check: &mut dyn FnMut(&PerCore<TargetOffset>) -> Option<ConstraintRefusal>,
     ) -> Result<CheckedWrite<'_>, Refused> {
         if !self.cores.contains(core) {
             return Err(Refused::NoSuchCore { core });
@@ -195,7 +178,7 @@ impl Hardware {
     }
 
     /// A write of 0 to every core. Nothing to check: 0 reaches no failure point or combination.
-    pub fn zero_all(&mut self) -> CheckedWrite<'_> {
+    pub(crate) fn zero_all(&mut self) -> CheckedWrite<'_> {
         self.engaged = true;
         CheckedWrite {
             hardware: self,
@@ -220,14 +203,14 @@ impl Hardware {
 /// A write that passed the constraint check, borrowing the hardware it will change.
 #[must_use = "a checked write does nothing until it is applied"]
 #[derive(Debug)]
-pub struct CheckedWrite<'h> {
+pub(crate) struct CheckedWrite<'h> {
     hardware: &'h mut Hardware,
     command: SmuCommand,
 }
 
 /// Proof that every command of a transaction reached the machine and its readbacks agreed.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Verified {
+pub(crate) struct Verified {
     readbacks: Vec<Seq>,
     targets: Vec<(CoreId, TargetOffset)>,
     profile: Option<Seq>,
@@ -235,17 +218,19 @@ pub struct Verified {
 
 impl Verified {
     /// The `smu.readback` events that confirmed it, oldest first.
-    pub fn readbacks(&self) -> &[Seq] {
+    pub(crate) fn readbacks(&self) -> &[Seq] {
         &self.readbacks
     }
 
     /// The offsets confirmed, by core.
-    pub fn targets(&self) -> &[(CoreId, TargetOffset)] {
+    #[cfg(test)]
+    pub(crate) fn targets(&self) -> &[(CoreId, TargetOffset)] {
         &self.targets
     }
 
     /// The `profile.applied` or `profile.restored` that recorded a profile transaction.
-    pub const fn profile(&self) -> Option<Seq> {
+    #[cfg(test)]
+    pub(crate) const fn profile(&self) -> Option<Seq> {
         self.profile
     }
 }
@@ -302,7 +287,7 @@ fn execute(smu: &mut dyn Smu, command: SmuCommand) -> Result<(), Error> {
 ///
 /// The slots of those cores are unknown from before the command goes out until a readback confirms the target, so
 /// a failure at any point leaves nothing believed that was not read.
-pub fn apply(
+pub(crate) fn apply(
     appender: &mut Appender,
     smu: &mut dyn Smu,
     _stopped: &Stopped,
@@ -397,14 +382,14 @@ fn failed(
 
 /// What a read of every core's offset found, and the `smu.readback` events that recorded it.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Reading {
+pub(crate) struct Reading {
     pub offsets: PerCore<ObservedOffset>,
     pub readbacks: Vec<Seq>,
 }
 
 /// Reads every core's offset, journals each as a readback without an expected value and lets the hardware know what
 /// it found: a value no write could have put there leaves the slot unknown. A read that fails records `smu.error`.
-pub fn read_all(
+pub(crate) fn read_all(
     appender: &mut Appender,
     smu: &mut dyn Smu,
     hardware: &mut Hardware,
@@ -445,7 +430,7 @@ pub fn read_all(
 
 /// What records a profile transaction once its readbacks agree.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ProfileRecord {
+pub(crate) enum ProfileRecord {
     Applied(Condition),
     Restored,
 }
@@ -468,7 +453,7 @@ impl From<AppendFailure> for ProfileFailure {
 
 /// A profile to put on the machine: its offsets, the events its writes cite, and what records it.
 #[derive(Clone, Copy, Debug)]
-pub struct ProfileRequest<'a> {
+pub(crate) struct ProfileRequest<'a> {
     pub target: &'a PerCore<TargetOffset>,
     pub causes: &'a [Seq],
     pub record: ProfileRecord,
@@ -478,13 +463,13 @@ pub struct ProfileRequest<'a> {
 /// that get shallower are written in core order, then the cores that get deeper, each after the check of the
 /// profile that step leaves. A step that fails leaves the steps before it written and read back and records no
 /// profile.
-pub fn apply_profile(
+pub(crate) fn apply_profile(
     appender: &mut Appender,
     smu: &mut dyn Smu,
     stopped: &Stopped,
     hardware: &mut Hardware,
     request: ProfileRequest<'_>,
-    check: &mut dyn FnMut(&PerCore<TargetOffset>) -> Option<Refusal>,
+    check: &mut dyn FnMut(&PerCore<TargetOffset>) -> Option<ConstraintRefusal>,
 ) -> Result<Verified, ProfileFailure> {
     let ProfileRequest {
         target,

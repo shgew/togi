@@ -73,6 +73,7 @@ pub struct RunInput {
     pub journal: Journal,
     pub machine: Machine,
     pub policy: StopPolicy,
+    pub publication: crate::publication::PublicationPolicy,
     /// Set only in the tuning boot, where a dead end hands the next boot back to the normal system.
     pub bootloader: Option<Box<dyn Bootloader>>,
     /// `None` when no terminal can answer.
@@ -107,12 +108,12 @@ pub enum Stop {
 
 /// Whether the run goes on after a step.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum Control {
+pub(crate) enum Control {
     Continue,
     Stop(Stop),
 }
 
-pub type Outcome = Result<Control, SessionError>;
+pub(crate) type Outcome = Result<Control, SessionError>;
 
 /// How a run ended: the stop it reached, every error on the way out, and the journal handed back.
 pub struct Ended {
@@ -125,14 +126,14 @@ pub struct Ended {
 
 /// What a kernel log read at a boundary leaves for the event that closes the boundary.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct Boundary {
+pub(crate) struct Boundary {
     pub cursor: Option<KernelCursor>,
     pub error: Option<String>,
 }
 
 /// The trial whose window a boundary's machine checks may fall in.
 #[derive(Clone, Copy, Debug)]
-pub struct TrialWindow<'a> {
+pub(crate) struct TrialWindow<'a> {
     pub trial: &'a TrialId,
     pub since: Duration,
 }
@@ -157,7 +158,7 @@ pub(crate) enum Fault {
     Crashed,
 }
 
-pub struct Session {
+pub(crate) struct Session {
     pub(crate) appender: Appender,
     pub(crate) smu: Box<dyn Smu>,
     pub(crate) host: Box<dyn Host>,
@@ -194,7 +195,7 @@ pub struct Session {
 impl Session {
     /// Takes over the journal: refuses one this build may not append to, reads the pending tuning-boot reason, folds
     /// the journal and reads the topology. Nothing is appended.
-    pub fn open(input: RunInput) -> Result<Self, Box<Ended>> {
+    pub(crate) fn open(input: RunInput) -> Result<Self, Box<Ended>> {
         let RunInput {
             config,
             source,
@@ -203,6 +204,7 @@ impl Session {
             journal,
             machine,
             policy,
+            publication,
             mut bootloader,
             prompt,
             defects,
@@ -259,6 +261,7 @@ impl Session {
         if let Some(handoff) = handoff {
             appender = appender.with_handoff(handoff);
         }
+        appender.publication = Some(publication);
         let visit = if appender.recovery().boots().contains(&boot) {
             Visit::Same {
                 reconciled: appender.recovery().baseline().is_none(),
@@ -295,19 +298,17 @@ impl Session {
         })
     }
 
-    pub const fn appender(&self) -> &Appender {
+    #[cfg(test)]
+    pub(crate) const fn appender(&self) -> &Appender {
         &self.appender
     }
 
-    pub const fn boot(&self) -> &BootId {
-        &self.boot
-    }
-
-    pub fn cores(&self) -> CoreSet {
+    #[cfg(test)]
+    pub(crate) fn cores(&self) -> CoreSet {
         self.hardware.cores()
     }
 
-    pub const fn same_boot(&self) -> bool {
+    pub(crate) const fn same_boot(&self) -> bool {
         matches!(self.visit, Visit::Same { .. })
     }
 
@@ -318,7 +319,7 @@ impl Session {
     /// Reads the topology and refuses changed session cores before finishing an earlier boot's dead end; then
     /// refuses configured cores it lacks and, unless a dead end stays pending until reconciliation, records the
     /// startup kernel boundary and the configuration.
-    pub fn start(&mut self) -> Outcome {
+    pub(crate) fn start(&mut self) -> Outcome {
         let mut topology = self.host.topology()?;
         topology.sort_by_key(|info| info.core);
         let cores: CoreSet = topology.iter().map(|info| info.core).collect();
@@ -530,7 +531,7 @@ impl Session {
     }
 
     /// The dead end the recorded evidence supports, strongest first.
-    pub fn check_dead_end(&mut self) -> Result<Option<Stop>, SessionError> {
+    pub(crate) fn check_dead_end(&mut self) -> Result<Option<Stop>, SessionError> {
         let recovery = self.appender.recovery();
         let cited = |condition, cited: Option<&Cited>| {
             cited.map(|cited| (condition, cited.detail.clone(), vec![cited.seq]))

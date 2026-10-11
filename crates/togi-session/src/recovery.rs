@@ -21,20 +21,20 @@ use crate::evidence::{self, RetryDue};
 
 /// An observation that stands as dead-end evidence until a dead end of its condition is recorded.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Cited {
+pub(crate) struct Cited {
     pub seq: Seq,
     pub detail: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum IntentKind {
+pub(crate) enum IntentKind {
     Smu,
     Trial(TrialId),
 }
 
 /// An intent that no write, error or end has answered yet.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct OpenIntent {
+pub(crate) struct OpenIntent {
     pub seq: Seq,
     pub boot: BootId,
     pub kind: IntentKind,
@@ -42,7 +42,7 @@ pub struct OpenIntent {
 
 /// A trial's start and the last time anything of it was recorded.
 #[derive(Clone, Debug, PartialEq)]
-pub struct Started {
+pub(crate) struct Started {
     pub seq: Seq,
     pub cpus: Vec<CpuId>,
     pub time: Timestamp,
@@ -53,7 +53,7 @@ pub struct Started {
 
 /// The trial that has an intent and no end.
 #[derive(Clone, Debug, PartialEq)]
-pub struct OpenTrial {
+pub(crate) struct OpenTrial {
     pub seq: Seq,
     pub intent: TrialIntent,
     pub boot: BootId,
@@ -88,7 +88,7 @@ impl OpenTrial {
 
     /// How long the trial is known to have run: from its start to the last thing recorded of it. Nothing is
     /// recorded between events, so after a crash this is a lower bound.
-    pub fn ran(&self) -> Duration {
+    pub(crate) fn ran(&self) -> Duration {
         let Some(started) = &self.started else {
             return Duration::ZERO;
         };
@@ -99,7 +99,7 @@ impl OpenTrial {
         }
     }
 
-    pub fn includes_mce(&self, mono: Option<Duration>) -> bool {
+    pub(crate) fn includes_mce(&self, mono: Option<Duration>) -> bool {
         let since = self
             .window_start
             .or(self.started.as_ref().and_then(|started| started.mono))
@@ -110,7 +110,7 @@ impl OpenTrial {
 
 /// A machine check recorded from another boot, for a crash to claim.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct RecoveredMce {
+pub(crate) struct RecoveredMce {
     pub seq: Seq,
     pub from_boot: BootId,
     pub corrected: bool,
@@ -142,26 +142,28 @@ impl MceKey {
 /// The registers of one boot as far as the journal proves them: the baseline, lowered to every target an intent
 /// asked for, and uncertain until a readback.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct Registers {
+pub(crate) struct Registers {
     offsets: PerCore<ObservedOffset>,
     uncertain: CoreSet,
 }
 
 impl Registers {
-    pub fn offset(&self, core: CoreId) -> Option<ObservedOffset> {
+    pub(crate) fn offset(&self, core: CoreId) -> Option<ObservedOffset> {
         self.offsets.get(core)
     }
 
-    pub fn uncertain(&self, core: CoreId) -> bool {
+    #[cfg(test)]
+    pub(crate) fn uncertain(&self, core: CoreId) -> bool {
         self.uncertain.contains(core)
     }
 
-    pub fn offsets(&self) -> &PerCore<ObservedOffset> {
+    #[cfg(test)]
+    pub(crate) fn offsets(&self) -> &PerCore<ObservedOffset> {
         &self.offsets
     }
 
     /// Whether a readback answered every write the boot asked for.
-    pub fn certain(&self) -> bool {
+    pub(crate) fn certain(&self) -> bool {
         self.uncertain.is_empty()
     }
 
@@ -208,7 +210,7 @@ struct BackendState {
 
 /// The latest dead end and what has followed it.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct PendingDeadEnd {
+pub(crate) struct PendingDeadEnd {
     pub seq: Seq,
     pub dead_end: DeadEnd,
     /// The events the dead end cites.
@@ -219,18 +221,19 @@ pub struct PendingDeadEnd {
 
 impl PendingDeadEnd {
     /// Whether the saved boot entry still has to be cleared.
-    pub const fn needs_saved_entry(&self) -> bool {
+    #[cfg(test)]
+    pub(crate) const fn needs_saved_entry(&self) -> bool {
         self.saved_entry.is_none()
     }
 
     /// Whether the latest attempt to clear the saved boot entry succeeded; `None` before any.
-    pub const fn saved_entry_cleared(&self) -> Option<bool> {
+    pub(crate) const fn saved_entry_cleared(&self) -> Option<bool> {
         self.saved_entry
     }
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct RecoveryState {
+pub(crate) struct RecoveryState {
     started: bool,
     build: Option<Build>,
     context: Option<BiosContext>,
@@ -263,7 +266,10 @@ pub struct RecoveryState {
 }
 
 impl RecoveryState {
-    pub fn replay<'a>(events: impl IntoIterator<Item = &'a Event>) -> Result<Self, FoldError> {
+    #[cfg(test)]
+    pub(crate) fn replay<'a>(
+        events: impl IntoIterator<Item = &'a Event>,
+    ) -> Result<Self, FoldError> {
         let mut state = Self::default();
         for event in events {
             state.apply(event)?;
@@ -272,7 +278,7 @@ impl RecoveryState {
     }
 
     /// Folds one event. An event the state cannot take in leaves it unchanged.
-    pub fn apply(&mut self, event: &Event) -> Result<(), FoldError> {
+    pub(crate) fn apply(&mut self, event: &Event) -> Result<(), FoldError> {
         match (&event.payload, self.started) {
             (Payload::SessionStart(_), true) => {
                 return Err(FoldError::DuplicateStart { seq: event.seq });
@@ -814,50 +820,51 @@ fn cpu_list(cpus: &[CpuId]) -> String {
 /// Queries over the fold.
 impl RecoveryState {
     /// The journal holds a `session.start`.
-    pub const fn started(&self) -> bool {
+    pub(crate) const fn started(&self) -> bool {
         self.started
     }
 
-    pub fn boots(&self) -> &[BootId] {
+    pub(crate) fn boots(&self) -> &[BootId] {
         &self.boots
     }
 
     /// The kind of the last event of the boot that is not a warning or a leave reason: those never replace a
     /// shutdown, or the next boot would invent a crash.
-    pub fn last_kind(&self, boot: &BootId) -> Option<EventKind> {
+    pub(crate) fn last_kind(&self, boot: &BootId) -> Option<EventKind> {
         self.records.get(boot).map(|record| record.last_kind)
     }
 
-    pub fn build(&self) -> Option<&Build> {
+    #[cfg(test)]
+    pub(crate) fn build(&self) -> Option<&Build> {
         self.build.as_ref()
     }
 
-    pub fn context(&self) -> Option<&BiosContext> {
+    pub(crate) fn context(&self) -> Option<&BiosContext> {
         self.context.as_ref()
     }
 
-    pub fn topology(&self) -> &BTreeMap<CoreId, CcdId> {
+    pub(crate) fn topology(&self) -> &BTreeMap<CoreId, CcdId> {
         &self.topology
     }
 
-    pub fn baseline(&self) -> Option<(Seq, &PerCore<ObservedOffset>)> {
+    pub(crate) fn baseline(&self) -> Option<(Seq, &PerCore<ObservedOffset>)> {
         self.baseline.as_ref().map(|(seq, offsets)| (*seq, offsets))
     }
 
-    pub const fn noticed(&self) -> bool {
+    pub(crate) const fn noticed(&self) -> bool {
         self.noticed
     }
 
-    pub fn phase(&self, core: CoreId) -> Option<CorePhase> {
+    pub(crate) fn phase(&self, core: CoreId) -> Option<CorePhase> {
         self.phases.get(&core).copied()
     }
 
-    pub fn carried(&self) -> Option<(Seq, &BTreeMap<CoreId, CarriedCore>)> {
+    pub(crate) fn carried(&self) -> Option<(Seq, &BTreeMap<CoreId, CarriedCore>)> {
         self.carried.as_ref().map(|(seq, cores)| (*seq, cores))
     }
 
     /// Boots before `current` with no shutdown and no `crash.detected`, oldest first.
-    pub fn crashed_boots<'a>(
+    pub(crate) fn crashed_boots<'a>(
         &'a self,
         current: &'a BootId,
     ) -> impl Iterator<Item = &'a BootId> + 'a {
@@ -869,7 +876,7 @@ impl RecoveryState {
     }
 
     /// The boot that followed `boot` in the journal, or `current` when none has.
-    pub fn next_boot<'a>(&'a self, boot: &BootId, current: &'a BootId) -> &'a BootId {
+    pub(crate) fn next_boot<'a>(&'a self, boot: &BootId, current: &'a BootId) -> &'a BootId {
         self.boots
             .iter()
             .position(|known| known == boot)
@@ -879,7 +886,7 @@ impl RecoveryState {
 
     /// The machine checks a crash of `boot` may cite: those recorded from `boot` and not claimed by another crash,
     /// and the uncorrected ones its successor's kernel retained, which belong to the crash before it.
-    pub fn recorded_for(&self, boot: &BootId, current: &BootId) -> Vec<Seq> {
+    pub(crate) fn recorded_for(&self, boot: &BootId, current: &BootId) -> Vec<Seq> {
         let next = self.next_boot(boot, current);
         self.recovered
             .iter()
@@ -897,7 +904,7 @@ impl RecoveryState {
     }
 
     /// The latest intent of `boot` that nothing answered, not the last event of the boot.
-    pub fn latest_unmatched_intent(&self, boot: &BootId) -> Option<Seq> {
+    pub(crate) fn latest_unmatched_intent(&self, boot: &BootId) -> Option<Seq> {
         self.unmatched
             .iter()
             .rev()
@@ -905,82 +912,87 @@ impl RecoveryState {
             .map(|open| open.seq)
     }
 
-    pub fn unmatched_intents(&self) -> &[OpenIntent] {
+    #[cfg(test)]
+    pub(crate) fn unmatched_intents(&self) -> &[OpenIntent] {
         &self.unmatched
     }
 
-    pub fn open_trial(&self) -> Option<&OpenTrial> {
+    pub(crate) fn open_trial(&self) -> Option<&OpenTrial> {
         self.open.as_ref()
     }
 
     /// Whether the journal has a machine check with the identity of `mce` of `boot`.
-    pub fn has_recorded(&self, boot: &BootId, mce: &togi_machine::Mce) -> bool {
+    pub(crate) fn has_recorded(&self, boot: &BootId, mce: &togi_machine::Mce) -> bool {
         self.mce_keys.contains(&MceKey::of(mce, boot))
     }
 
     /// The latest dead end unless a dead-end shutdown followed it.
-    pub fn pending_dead_end(&self) -> Option<&PendingDeadEnd> {
+    pub(crate) fn pending_dead_end(&self) -> Option<&PendingDeadEnd> {
         self.dead_end.as_ref().filter(|pending| !pending.shutdown)
     }
 
-    pub fn next_trial_id(&self) -> TrialId {
+    pub(crate) fn next_trial_id(&self) -> TrialId {
         TrialId::from(format!("{:04}", self.trials + 1))
     }
 
     /// How many conclusive trials of `regime` ran on `core`, or on every core when `core` is `None`; the
     /// workload rotates with it.
-    pub fn rotation(&self, core: Option<CoreId>, regime: Regime) -> u32 {
+    pub(crate) fn rotation(&self, core: Option<CoreId>, regime: Regime) -> u32 {
         match core {
             Some(core) => self.index.get(&(core, regime)).copied().unwrap_or(0),
             None => self.all_index.get(&regime).copied().unwrap_or(0),
         }
     }
 
-    pub fn kernel_cursor(&self, boot: &BootId) -> Option<&KernelCursor> {
+    pub(crate) fn kernel_cursor(&self, boot: &BootId) -> Option<&KernelCursor> {
         self.kernel_cursors.get(boot)
     }
 
     /// What the journal proves of `core`'s register in `boot`.
-    pub fn registers(&self, boot: &BootId) -> Option<&Registers> {
+    pub(crate) fn registers(&self, boot: &BootId) -> Option<&Registers> {
         self.records
             .get(boot)
             .and_then(|record| record.registers.as_ref())
     }
 
     /// The profile application of `boot` that no restoration followed: its seq and condition.
-    pub fn applied(&self, boot: &BootId) -> Option<(Seq, Condition)> {
+    pub(crate) fn applied(&self, boot: &BootId) -> Option<(Seq, Condition)> {
         self.records.get(boot).and_then(|record| record.applied)
     }
 
     /// The monotonic time the profile application of `boot` first wrote at.
-    pub fn applied_mono(&self, boot: &BootId) -> Option<Duration> {
+    #[cfg(test)]
+    pub(crate) fn applied_mono(&self, boot: &BootId) -> Option<Duration> {
         self.records
             .get(boot)
             .and_then(|record| record.applied_mono)
     }
 
     /// Whether `boot` began applying a profile that `profile.applied` has not completed.
-    pub fn applying(&self, boot: &BootId) -> bool {
+    #[cfg(test)]
+    pub(crate) fn applying(&self, boot: &BootId) -> bool {
         self.records.get(boot).is_some_and(|record| record.applying)
     }
 
-    pub const fn hunt_group_armed(&self) -> bool {
+    #[cfg(test)]
+    pub(crate) const fn hunt_group_armed(&self) -> bool {
         self.hunt_group
     }
 
-    pub fn crash_of(&self, boot: &BootId) -> Option<Seq> {
+    #[cfg(test)]
+    pub(crate) fn crash_of(&self, boot: &BootId) -> Option<Seq> {
         self.crashes.get(boot).map(|(seq, _)| *seq)
     }
 
     /// The `crash.detected` that classified the crash of `boot`.
-    pub fn crash(&self, boot: &BootId) -> Option<(Seq, &CrashDetected)> {
+    pub(crate) fn crash(&self, boot: &BootId) -> Option<(Seq, &CrashDetected)> {
         self.crashes
             .get(boot)
             .map(|(seq, detected)| (*seq, detected))
     }
 
     /// The idle crashes no failure has answered yet, in the order they were detected.
-    pub fn idle_crashes(&self) -> impl Iterator<Item = (Seq, &CrashDetected)> + '_ {
+    pub(crate) fn idle_crashes(&self) -> impl Iterator<Item = (Seq, &CrashDetected)> + '_ {
         self.pending_idle.iter().filter_map(|idle| {
             self.crashes
                 .values()
@@ -989,45 +1001,50 @@ impl RecoveryState {
         })
     }
 
-    pub fn pending_idle(&self) -> &[Seq] {
+    #[cfg(test)]
+    pub(crate) fn pending_idle(&self) -> &[Seq] {
         &self.pending_idle
     }
 
-    pub fn stray(&self) -> &[Seq] {
+    pub(crate) fn stray(&self) -> &[Seq] {
         &self.stray
     }
 
-    pub fn smu_evidence(&self) -> Option<&Cited> {
+    pub(crate) fn smu_evidence(&self) -> Option<&Cited> {
         self.smu.as_ref()
     }
 
-    pub fn containment_evidence(&self) -> Option<&Cited> {
+    pub(crate) fn containment_evidence(&self) -> Option<&Cited> {
         self.containment.as_ref()
     }
 
-    pub fn missing_evidence(&self) -> Option<&Cited> {
+    pub(crate) fn missing_evidence(&self) -> Option<&Cited> {
         self.missing.as_ref()
     }
 
-    pub fn thermal_evidence(&self) -> Option<&Cited> {
+    pub(crate) fn thermal_evidence(&self) -> Option<&Cited> {
         self.thermal.as_ref()
     }
 
     /// The seqs of the consecutive inconclusive trials of `backend`, an interrupted one excepted.
-    pub fn streak(&self, backend: Backend) -> &[Seq] {
+    #[cfg(test)]
+    pub(crate) fn streak(&self, backend: Backend) -> &[Seq] {
         self.backends
             .get(&backend)
             .map_or(&[], |state| state.streak.as_slice())
     }
 
-    pub fn last_inconclusive_reason(&self, backend: Backend) -> Option<&str> {
+    pub(crate) fn last_inconclusive_reason(&self, backend: Backend) -> Option<&str> {
         self.backends
             .get(&backend)
             .and_then(|state| state.last_reason.as_deref())
     }
 
     /// The backend that stayed inconclusive through every retry, and the trials that were.
-    pub fn exhausted_backend(&self, threshold: DeadEndThreshold) -> Option<(Backend, &[Seq])> {
+    pub(crate) fn exhausted_backend(
+        &self,
+        threshold: DeadEndThreshold,
+    ) -> Option<(Backend, &[Seq])> {
         self.backends.iter().find_map(|(backend, state)| {
             evidence::backend_exhausted(state.streak.len(), threshold)
                 .then_some((*backend, state.streak.as_slice()))
@@ -1036,7 +1053,7 @@ impl RecoveryState {
 
     /// The wait to sit out before the next trial of `backend`, and whether a `backend.retry` has to record it:
     /// not when that attempt's record is durable and no trial followed it.
-    pub fn backend_retry_due(
+    pub(crate) fn backend_retry_due(
         &self,
         backend: Backend,
         threshold: DeadEndThreshold,
@@ -1053,7 +1070,7 @@ impl RecoveryState {
     }
 
     /// The kernel-log retries recorded since the last crash was classified.
-    pub fn kernel_retries(&self) -> &[Seq] {
+    pub(crate) fn kernel_retries(&self) -> &[Seq] {
         &self.kernel_retries
     }
 }

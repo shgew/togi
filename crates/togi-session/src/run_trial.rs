@@ -88,10 +88,11 @@ impl Session {
                 .map(|core| (core, TargetOffset::ZERO))
                 .collect(),
             Condition::Together => {
-                if plan.profile != *tuned.profile {
+                let Some(profile) = tuned.profile.filter(|profile| **profile == plan.profile)
+                else {
                     return Err(SessionError::PlanDisagrees.into());
-                }
-                tuned.profile.offsets()
+                };
+                profile.offsets()
             }
             Condition::Parked => plan.profile.offsets(),
         };
