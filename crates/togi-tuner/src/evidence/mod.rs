@@ -20,6 +20,9 @@ use crate::{ClassKey, Profile, TopologyMismatch};
 
 pub use backend::BackendId;
 use backend::Backends;
+#[cfg(test)]
+pub(crate) use cells::take_copied;
+pub(crate) use cells::unique;
 use cells::{ClassCells, FailureCells};
 
 /// The session a carried fact came from.
@@ -159,6 +162,30 @@ impl Evidence {
     #[cfg(test)]
     pub(crate) fn take_visits(&self) -> u64 {
         self.visits.0.swap(0, std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// How many of this ledger's lists of seqs share their storage with the same list of `other`,
+    /// and how many it has.
+    #[cfg(test)]
+    pub(crate) fn shared_with(&self, other: &Self) -> (usize, usize) {
+        let mut shared = 0;
+        let mut total = 0;
+        for (cells, twin) in self
+            .classes
+            .iter()
+            .filter_map(|(class, cells)| other.classes.get(class).map(|twin| (cells, twin)))
+        {
+            for (cell, other) in cells.passes.cells().iter().zip(twin.passes.cells()) {
+                total += 2;
+                shared += usize::from(cell.live.shares_storage(&other.live));
+                shared += usize::from(cell.live_non_alone.shares_storage(&other.live_non_alone));
+            }
+            for (cell, other) in cells.failures.cells().iter().zip(twin.failures.cells()) {
+                total += 1;
+                shared += usize::from(cell.live.shares_storage(&other.live));
+            }
+        }
+        (shared, total)
     }
 
     fn check(&self, profile: &Profile) -> Result<(), TopologyMismatch> {

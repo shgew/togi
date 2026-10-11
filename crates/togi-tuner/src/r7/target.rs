@@ -65,7 +65,7 @@ fn failure_floor(evidence: &Evidence, class: ClassKey, profile: &Profile) -> Opt
 struct Segment {
     floor: Option<Seq>,
     count: u32,
-    first: Vec<Seq>,
+    first: std::sync::Arc<Vec<Seq>>,
 }
 
 /// The passes one request and clock summary stands for, oldest segment first.
@@ -80,13 +80,13 @@ impl Entry {
             Some(last) if last.floor == floor => {
                 last.count = last.count.saturating_add(1);
                 if last.first.len() < usize::from(togi_config::TrialCount::MAX) {
-                    last.first.push(seq);
+                    crate::evidence::unique(&mut last.first).push(seq);
                 }
             }
             _ => self.segments.push(Segment {
                 floor,
                 count: 1,
-                first: vec![seq],
+                first: std::sync::Arc::new(vec![seq]),
             }),
         }
     }
@@ -198,6 +198,35 @@ impl R7Targets {
             .flat_map(|group| group.ccd_top.values().chain(group.load_top.values()))
             .map(|entry| entry.segments.len())
             .sum()
+    }
+
+    /// How many witness lists share their storage with the same list of `other`, and how many
+    /// there are.
+    #[cfg(test)]
+    pub(crate) fn shared_with(&self, other: &Self) -> (usize, usize) {
+        let mut shared = 0;
+        let mut total = 0;
+        for (group, twin) in self
+            .groups
+            .iter()
+            .filter_map(|(id, group)| other.groups.get(id).map(|twin| (group, twin)))
+        {
+            for (entries, others) in [
+                (&group.ccd_top, &twin.ccd_top),
+                (&group.load_top, &twin.load_top),
+            ] {
+                for (entry, other) in entries
+                    .iter()
+                    .filter_map(|(key, entry)| others.get(key).map(|other| (entry, other)))
+                {
+                    for (segment, twin) in entry.segments.iter().zip(&other.segments) {
+                        total += 1;
+                        shared += usize::from(std::sync::Arc::ptr_eq(&segment.first, &twin.first));
+                    }
+                }
+            }
+        }
+        (shared, total)
     }
 
     /// The groups stored.

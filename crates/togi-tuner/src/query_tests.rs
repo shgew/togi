@@ -275,7 +275,7 @@ fn project_visits_bounded() {
     );
 }
 
-fn forecast_cost(passes: usize) -> u64 {
+fn forecast_cost(passes: usize) -> (u64, u64) {
     let (mut journal, _) = repeated_evidence(passes);
     let plan = journal.next_trial();
     assert_second_regime(&plan);
@@ -283,7 +283,9 @@ fn forecast_cost(passes: usize) -> u64 {
     journal.state.visits();
     let before = journal.state.clone();
     let length = journal.events.len();
+    crate::evidence::take_copied();
     let forecast = journal.state.forecast();
+    let copied = crate::evidence::take_copied();
     let visits = journal.state.visits();
     assert_eq!(forecast.between, None);
     assert_eq!(
@@ -330,13 +332,13 @@ fn forecast_cost(passes: usize) -> u64 {
     assert_eq!(journal.state, before);
     assert_eq!(journal.events.len(), length);
     assert_eq!(journal.state.forecast(), forecast);
-    visits
+    (visits, copied)
 }
 
 #[test]
 fn forecast_clone_not_replay() {
-    let small = forecast_cost(100);
-    let large = forecast_cost(10_000);
+    let (small, small_copied) = forecast_cost(100);
+    let (large, large_copied) = forecast_cost(10_000);
     assert!(
         small > 0,
         "counter must observe evidence consulted by synthetic branch folds"
@@ -345,6 +347,38 @@ fn forecast_clone_not_replay() {
     assert!(
         small <= 384,
         "four premises, five synthetic passes, and bounded cell/witness visits: {small}"
+    );
+    assert_eq!(
+        large_copied, small_copied,
+        "the branches copied seqs in proportion to the passes behind them"
+    );
+    assert!(small_copied < 100, "{small_copied}");
+}
+
+#[test]
+fn a_cloned_state_shares_its_evidence_until_one_side_writes_a_cell() {
+    let (mut journal, _) = repeated_evidence(10_000);
+    let second = journal.next_trial();
+    assert_second_regime(&second);
+    journal.trial(&second, Outcome::Pass);
+    let snapshot = journal.state.clone();
+    let shared = |journal: &Journal| {
+        journal
+            .run()
+            .evidence
+            .shared_with(&snapshot.run().unwrap().evidence)
+    };
+    let (all, total) = shared(&journal);
+    assert!(total >= 2, "{total}");
+    assert_eq!(all, total, "a clone copied seqs it only reads");
+    crate::evidence::take_copied();
+    journal.trial(&second, Outcome::Pass);
+    let copied = crate::evidence::take_copied();
+    let (kept, total) = shared(&journal);
+    assert_eq!(
+        (kept, total, copied),
+        (total - 1, total, 1),
+        "writing one pass of the second class must un-share only that class's list, and copy it alone"
     );
 }
 
@@ -376,4 +410,45 @@ fn replay_folds_a_whole_journal_and_stops_at_the_first_event_it_cannot_follow() 
         crate::replay(&j.events[1..]),
         Err(crate::FoldError::NotStarted)
     ));
+}
+
+#[test]
+fn a_cloned_state_shares_the_r7_witnesses_until_one_side_writes_a_segment() {
+    let mut journal = Journal::r7_session();
+    let report = crate::testkit::R7Report::default().requests(&[(0, 1.1), (1, 1.0)]);
+    for _ in 0..500 {
+        journal.r7_trial(&[0, 1], &[-30; 4], Outcome::Pass, &report);
+    }
+    let snapshot = journal.state.clone();
+    let shared = |journal: &Journal| {
+        journal
+            .run()
+            .r7
+            .targets
+            .shared_with(&snapshot.run().unwrap().r7.targets)
+    };
+    let (all, total) = shared(&journal);
+    assert!(total > 0);
+    assert_eq!(all, total, "a clone copied witnesses it only reads");
+    let witnesses = |state: &State| state.run().unwrap().r7.targets.witnesses();
+    assert_eq!(witnesses(&snapshot), 1000);
+    journal.r7_trial(&[0, 1], &[-30; 4], Outcome::Pass, &report);
+    assert_eq!(shared(&journal), (0, total));
+    assert_eq!(witnesses(&snapshot), 1000, "a write reached the clone");
+    assert_eq!(witnesses(&journal.state), 1002);
+}
+
+#[test]
+fn a_cloned_state_shares_its_failure_witnesses() {
+    let (mut journal, _) = repeated_evidence(100);
+    let second = journal.next_trial();
+    assert_second_regime(&second);
+    journal.trial(&second, Outcome::Failure);
+    let clone = journal.state.clone();
+    let (shared, total) = journal
+        .run()
+        .evidence
+        .shared_with(&clone.run().unwrap().evidence);
+    assert!(total >= 3, "{total}");
+    assert_eq!(shared, total);
 }

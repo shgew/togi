@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use togi_journal::Seq;
 use togi_machine::CoreId;
@@ -7,20 +8,42 @@ use crate::Profile;
 
 use super::{BackendId, SessionRef};
 
-/// Seqs in ascending order; each lookup is a binary search.
+#[cfg(test)]
+thread_local! {
+    static COPIED: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// The elements copied on this thread, because a shared list was written, since the last call.
+#[cfg(test)]
+pub(crate) fn take_copied() -> u64 {
+    COPIED.with(|copied| copied.replace(0))
+}
+
+/// The list behind `shared`, copied first when another clone still holds it.
+pub(crate) fn unique<T: Clone>(shared: &mut Arc<Vec<T>>) -> &mut Vec<T> {
+    #[cfg(test)]
+    if Arc::strong_count(shared) > 1 {
+        let length = u64::try_from(shared.len()).unwrap_or(u64::MAX);
+        COPIED.with(|copied| copied.set(copied.get() + length));
+    }
+    Arc::make_mut(shared)
+}
+
+/// Seqs in ascending order; each lookup is a binary search. A clone shares the storage until
+/// either side changes it, so cloning a state costs the cells, not the seqs they hold.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub(super) struct Seqs(Vec<Seq>);
+pub(super) struct Seqs(Arc<Vec<Seq>>);
 
 impl Seqs {
     pub(super) fn push(&mut self, seq: Seq) {
         debug_assert!(self.0.last().is_none_or(|&last| last < seq));
-        self.0.push(seq);
+        unique(&mut self.0).push(seq);
     }
 
     /// Adds `seq` at its place; the seqs it moves past are the few recorded after it.
     pub(super) fn insert(&mut self, seq: Seq) {
         if let Err(at) = self.0.binary_search(&seq) {
-            self.0.insert(at, seq);
+            unique(&mut self.0).insert(at, seq);
         }
     }
 
@@ -38,11 +61,16 @@ impl Seqs {
     pub(super) fn remove(&mut self, seq: Seq) -> bool {
         match self.0.binary_search(&seq) {
             Ok(at) => {
-                self.0.remove(at);
+                unique(&mut self.0).remove(at);
                 true
             }
             Err(_) => false,
         }
+    }
+
+    #[cfg(test)]
+    pub(super) fn shares_storage(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
     }
 }
 
@@ -51,28 +79,28 @@ impl Seqs {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(super) struct Carried {
     seqs: Seqs,
-    sources: Vec<SessionRef>,
+    sources: Arc<Vec<SessionRef>>,
 }
 
 impl Carried {
     pub(super) fn push(&mut self, seq: Seq, source: SessionRef) {
         self.seqs.push(seq);
-        self.sources.push(source);
+        unique(&mut self.sources).push(source);
     }
 
     /// Adds `seq` at its place unless it is here.
     pub(super) fn insert(&mut self, seq: Seq, source: SessionRef) {
         if let Err(at) = self.seqs.0.binary_search(&seq) {
-            self.seqs.0.insert(at, seq);
-            self.sources.insert(at, source);
+            unique(&mut self.seqs.0).insert(at, seq);
+            unique(&mut self.sources).insert(at, source);
         }
     }
 
     /// Removes `seq`, returning the session it came from.
     pub(super) fn remove(&mut self, seq: Seq) -> Option<SessionRef> {
         let at = self.seqs.0.binary_search(&seq).ok()?;
-        self.seqs.0.remove(at);
-        Some(self.sources.remove(at))
+        unique(&mut self.seqs.0).remove(at);
+        Some(unique(&mut self.sources).remove(at))
     }
 
     pub(super) fn source(&self, seq: Seq) -> Option<&SessionRef> {
