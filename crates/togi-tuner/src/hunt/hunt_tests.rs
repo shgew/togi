@@ -2260,3 +2260,56 @@ fn a_rejected_core_phase_keeps_the_hunt_a_queued_reset_would_close() {
     assert_eq!(folded.run(), j.state.run());
     assert!(j.run().hunts.active.as_ref().unwrap().end.is_some());
 }
+
+fn known_failure_hunt(passes_after: usize, config_after_start: &str) -> (Journal, Seq, Seq) {
+    let mut j = Journal::new(&[0, 1], &[Start::has_room(-10); 2]);
+    j.profile_change(&[-10, -10]);
+    j.ranking(&[0, 1]);
+    let plan = together_plan(&mut j, &[0, 1], &[-10, -10], SHORT);
+    let known = j.trial(&plan, Outcome::Failure);
+    attribute(&mut j);
+    for _ in 0..passes_after {
+        j.trial(&plan, Outcome::Pass);
+    }
+    start_hunt_at(&mut j, 1, &[0, 1], &[-10, -10]);
+    j.load(&config(config_after_start));
+    let group = group_event(1, 1, &[0, 1], j.profile(&[-10, -10]), HuntStage::Full);
+    let group_seq = j.append(group.into(), &[]);
+    (j, known, group_seq)
+}
+
+#[test]
+fn the_known_failure_gate_reads_the_threshold_frozen_at_the_hunt_start() {
+    let lower = r#"{"evidence":{"miss":0.9,"rate":0.5}}"#;
+    let higher = r#"{"evidence":{"miss":0.001,"rate":0.5}}"#;
+    for (config_text, passes, replaced) in [
+        (lower, 3, true),
+        (higher, 7, false),
+        (lower, 5, false),
+        (higher, 4, true),
+    ] {
+        let (j, known, group_seq) = known_failure_hunt(passes, config_text);
+        let hunt = j.run().hunts.active.as_ref().unwrap().needed.get();
+        let configured = j.run().config.needed.get();
+        assert_eq!(hunt, 5);
+        assert_ne!(configured, hunt, "{config_text}");
+        let action = j.next();
+        if replaced {
+            let decision = expect_decision(action.clone());
+            let group = group_in(&decision);
+            assert_eq!(
+                group.inferred,
+                Some(Inference::Failure),
+                "{config_text} {passes}"
+            );
+            assert_eq!(decision.cause, [group_seq, known]);
+        } else {
+            assert!(
+                matches!(action, Action::RunTrial(_)),
+                "{config_text} {passes}: {action:?}"
+            );
+        }
+        assert_eq!(j.resumed().next(), action);
+        j.assert_resumes();
+    }
+}
