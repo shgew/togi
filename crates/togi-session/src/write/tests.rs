@@ -3,6 +3,7 @@ use std::rc::Rc;
 
 use togi_journal::{DeadEndCondition, Payload, SmuOp};
 use togi_machine::{Condition, CoreId, Error, ObservedOffset, PerCore, TargetOffset};
+use togi_sim::MachineDefinition;
 use togi_sim::faults::{HookPhase, SmuOp as SimOp, SmuOperation};
 
 use super::{
@@ -635,4 +636,76 @@ fn a_profile_the_tuner_cannot_judge_is_refused_never_read_as_safe() {
     assert!(super::refusal(&state, &profile(&[0, 0, 0, 0])).is_none());
     assert!(super::refusal(&state, &profile(&[0, 0, 0])).is_some());
     assert!(super::refusal(&state, &profile(&[0, 0, 0, 0, 0])).is_some());
+}
+
+#[test]
+fn reading_every_core_journals_each_without_an_expected_value_and_knows_the_slots() {
+    let mut rig = Rig::new(4);
+    let reading =
+        super::read_all(&mut rig.appender, &mut *rig.smu, &mut rig.hardware, &[]).unwrap();
+    assert_eq!(
+        rig.kinds(),
+        [
+            "session.start",
+            "smu.readback",
+            "smu.readback",
+            "smu.readback",
+            "smu.readback"
+        ]
+    );
+    assert_eq!(reading.readbacks.len(), 4);
+    for (n, seq) in (0..4).zip(&reading.readbacks) {
+        assert_eq!(reading.offsets.get(core(n)), Some(ObservedOffset(0)));
+        assert_eq!(rig.hardware.slot(core(n)), Some(Slot::Known(target(0))));
+        let Payload::SmuReadback(readback) = &rig.appender.journal().event(*seq).unwrap().payload
+        else {
+            panic!("not a readback");
+        };
+        assert_eq!(readback.core, core(n));
+        assert_eq!(readback.expected, None);
+    }
+    assert_fold_consistent(&rig.appender);
+}
+
+#[test]
+fn a_nonzero_machine_is_read_as_it_stands_and_a_value_no_write_can_set_is_unknown() {
+    let mut rig = Rig::defined(&MachineDefinition {
+        cores: 2,
+        bios: Some(vec![-5, -7]),
+        ..MachineDefinition::default()
+    });
+    let reading =
+        super::read_all(&mut rig.appender, &mut *rig.smu, &mut rig.hardware, &[]).unwrap();
+    assert_eq!(reading.offsets.get(core(1)), Some(ObservedOffset(-7)));
+    assert_eq!(rig.hardware.slot(core(0)), Some(Slot::Known(target(-5))));
+    assert_eq!(rig.hardware.slot(core(1)), Some(Slot::Known(target(-7))));
+    rig.hardware.observe(core(1), ObservedOffset(1));
+    assert_eq!(rig.hardware.slot(core(1)), Some(Slot::Unknown));
+    assert_eq!(rig.hardware.profile(), None);
+}
+
+#[test]
+fn a_failed_read_records_the_error_and_is_smu_evidence() {
+    let mut rig = Rig::new(2);
+    rig.sim.interrupt_smu(|operation: &SmuOperation| {
+        if operation.op == SimOp::Read && operation.phase == HookPhase::Before {
+            return Err(Error::Other("mailbox timeout".into()));
+        }
+        Ok(())
+    });
+    let failure =
+        super::read_all(&mut rig.appender, &mut *rig.smu, &mut rig.hardware, &[]).unwrap_err();
+    assert!(matches!(
+        failure,
+        WriteFailure::Smu {
+            op: SmuOp::Read,
+            ..
+        }
+    ));
+    assert!(matches!(
+        Flow::from(failure),
+        Flow::DeadEnd(DeadEndCondition::Smu)
+    ));
+    assert_eq!(rig.kinds(), ["session.start", "smu.error"]);
+    assert_eq!(rig.hardware.slot(core(0)), Some(Slot::Unknown));
 }

@@ -63,7 +63,14 @@ pub(crate) fn build() -> Build {
 
 impl Rig {
     pub(crate) fn new(cores: i64) -> Self {
-        let (rig, first) = Self::custom(cores, None, |_| {});
+        Self::defined(&MachineDefinition {
+            cores,
+            ..MachineDefinition::default()
+        })
+    }
+
+    pub(crate) fn defined(definition: &MachineDefinition) -> Self {
+        let (rig, first) = Self::build(definition, None, |_| {});
         first.unwrap();
         rig
     }
@@ -79,7 +86,15 @@ impl Rig {
             cores,
             ..MachineDefinition::default()
         };
-        let model = Model::new(&definition, 1).unwrap();
+        Self::build(&definition, handoff, setup)
+    }
+
+    fn build(
+        definition: &MachineDefinition,
+        handoff: Option<BootHandoff>,
+        setup: impl FnOnce(&MemFs),
+    ) -> (Self, Result<Seq, AppendFailure>) {
+        let model = Model::new(definition, 1).unwrap();
         let sim = Simulator::new(
             model,
             RunSettings {

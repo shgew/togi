@@ -158,7 +158,9 @@ pub(crate) enum Visit {
     Other,
     /// The journal already holds this boot; `reconciled` is whether the offsets an earlier run of it left have been
     /// read back (true when it left none).
-    Same { reconciled: bool },
+    Same {
+        reconciled: bool,
+    },
 }
 
 /// What took the machine out of reach.

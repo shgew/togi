@@ -114,6 +114,11 @@ impl Hardware {
         self.slots.get(core)
     }
 
+    fn observe(&mut self, core: CoreId, observed: ObservedOffset) {
+        let slot = TargetOffset::new(observed.0).map_or(Slot::Unknown, Slot::Known);
+        self.slots.set(core, slot);
+    }
+
     /// The profile on the machine, when every core's offset is known.
     pub fn profile(&self) -> Option<PerCore<TargetOffset>> {
         self.cores
@@ -294,8 +299,8 @@ pub fn apply(
             appender,
             command.op(),
             command.core(),
-            target,
-            intent,
+            Some(target),
+            &[intent],
             error,
         ));
     }
@@ -309,8 +314,8 @@ pub fn apply(
                     appender,
                     SmuOp::Read,
                     Some(core),
-                    target,
-                    written.seq(),
+                    Some(target),
+                    &[written.seq()],
                     error,
                 ));
             }
@@ -344,8 +349,8 @@ fn failed(
     appender: &mut Appender,
     op: SmuOp,
     core: Option<CoreId>,
-    target: TargetOffset,
-    cause: Seq,
+    offset: Option<TargetOffset>,
+    causes: &[Seq],
     error: Error,
 ) -> WriteFailure {
     if matches!(error, Error::Crashed) {
@@ -354,13 +359,60 @@ fn failed(
     let record = Payload::SmuError(togi_journal::SmuError {
         op,
         core,
-        offset: Some(target),
+        offset,
         error: error.to_string(),
     });
-    match appender.append(record, &[cause]) {
+    match appender.append(record, causes) {
         Ok(_) => WriteFailure::Smu { op, core, error },
         Err(failure) => failure.into(),
     }
+}
+
+/// What a read of every core's offset found, and the `smu.readback` events that recorded it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Reading {
+    pub offsets: PerCore<ObservedOffset>,
+    pub readbacks: Vec<Seq>,
+}
+
+/// Reads every core's offset, journals each as a readback without an expected value and lets the hardware know what
+/// it found: a value no write could have put there leaves the slot unknown. A read that fails records `smu.error`.
+pub fn read_all(
+    appender: &mut Appender,
+    smu: &mut dyn Smu,
+    hardware: &mut Hardware,
+    causes: &[Seq],
+) -> Result<Reading, WriteFailure> {
+    let mut offsets = PerCore::default();
+    let mut readbacks = Vec::with_capacity(hardware.cores.len());
+    for core in &hardware.cores {
+        let observed = match smu.offset(core) {
+            Ok(observed) => observed,
+            Err(error) => {
+                hardware.slots.set(core, Slot::Unknown);
+                return Err(failed(
+                    appender,
+                    SmuOp::Read,
+                    Some(core),
+                    None,
+                    causes,
+                    error,
+                ));
+            }
+        };
+        hardware.observe(core, observed);
+        let seq = appender.append(
+            Payload::SmuReadback(SmuReadback {
+                core,
+                offset: observed,
+                expected: None,
+            }),
+            causes,
+        )?;
+        offsets.set(core, observed);
+        readbacks.push(seq);
+    }
+    Ok(Reading { offsets, readbacks })
 }
 
 /// What records a profile transaction once its readbacks agree.
