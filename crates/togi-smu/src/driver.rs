@@ -1,7 +1,9 @@
 use crate::error::{Error, Operation, chain};
 use crate::identity;
 use crate::mailbox::{COMMAND_DEADLINE, Command, Transport, Worker};
-use crate::pm_table::{self, FileSource, Monotonic, PmReader, Timing, Unavailable};
+use crate::pm_table::{
+    self, FileSource, Gated, Monotonic, PmReader, PmSource, Timing, Unavailable,
+};
 use crate::slots::{self, Location, SlotError, SlotMap};
 use crate::sysfs::Sysfs;
 use crate::topology::{self, RawCpu};
@@ -16,12 +18,14 @@ use togi_machine::{
 
 pub(crate) struct Pending {
     transport: Box<dyn Transport>,
+    pm: Arc<dyn PmSource>,
     deadline: Duration,
 }
 
 pub(crate) struct Validated {
     worker: Worker,
     slots: Result<SlotMap, Arc<SlotError>>,
+    pm_source: Arc<dyn PmSource>,
     pm: Option<Arc<PmReader>>,
 }
 
@@ -119,6 +123,7 @@ impl Driver {
     pub fn open(root: &Path) -> Result<Self, Error> {
         let pending = Sysfs::locate(root).map(|sysfs| Pending {
             transport: Box::new(sysfs),
+            pm: Arc::new(FileSource::new(root)),
             deadline: COMMAND_DEADLINE,
         });
         Self::with_stage(root, Stage::Unvalidated(pending))
@@ -129,17 +134,40 @@ impl Driver {
         Self::with_stage(root, Stage::IdentityOnly { loaded })
     }
 
+    /// An identity-only driver handed the same transport and PM source `open` would build. It
+    /// ignores both, as `identity_only` does, so a test can observe that nothing reaches them.
+    #[cfg(test)]
+    pub(crate) fn identity_only_observed(
+        root: &Path,
+        transport: Box<dyn Transport>,
+        pm: Arc<dyn PmSource>,
+    ) -> Result<Self, Error> {
+        drop((transport, pm));
+        Self::identity_only(root)
+    }
+
     #[cfg(test)]
     pub(crate) fn with_transport(
         root: &Path,
         transport: Box<dyn Transport>,
+        pm: Arc<dyn PmSource>,
         deadline: Duration,
     ) -> Result<Self, Error> {
         let pending = Pending {
             transport,
+            pm,
             deadline,
         };
         Self::with_stage(root, Stage::Unvalidated(Some(pending)))
+    }
+
+    /// Replaces the mailbox deadline of a validated driver, so a test can validate generously
+    /// and then time out quickly.
+    #[cfg(test)]
+    pub(crate) fn set_deadline(&mut self, deadline: Duration) {
+        if let Stage::Validated(validated) = &mut self.stage {
+            validated.worker.set_deadline(deadline);
+        }
     }
 
     fn with_stage(root: &Path, stage: Stage) -> Result<Self, Error> {
@@ -199,6 +227,7 @@ impl Driver {
         self.stage = Stage::Validated(Validated {
             worker,
             slots: slots.map_err(Arc::new),
+            pm_source: pending.pm,
             pm: None,
         });
         Ok(Self::proof())
@@ -276,17 +305,24 @@ impl Driver {
 
     /// The driver's one PM table reader, started on first use; every call returns the same
     /// reader, so at most one read is ever in flight. Reading the table sends RSMU command 0x03,
-    /// so it exists only once the driver validated.
+    /// so it exists only once the driver validated, and neither a new nor an existing reader
+    /// starts a read once a mailbox transaction timed out.
     pub fn pm_reader(&mut self) -> Result<Arc<PmReader>, Error> {
         let layout = self
             .topology()
             .map_or(Err(Unavailable::Topology), |cores| pm_table::layout(&cores));
-        let validated = validated(&mut self.stage, Operation::ReadPmTable)?;
+        let operation = Operation::ReadPmTable;
+        let validated = validated(&mut self.stage, operation)?;
+        let poison = validated.worker.poison();
+        poison
+            .check()
+            .map_err(|source| Error::Mailbox { operation, source })?;
         if let Some(reader) = &validated.pm {
             return Ok(Arc::clone(reader));
         }
+        let source = Gated::new(Arc::clone(&validated.pm_source), poison);
         let reader = Arc::new(PmReader::start(
-            Box::new(FileSource::new(&self.root)),
+            Box::new(source),
             layout,
             Box::new(Monotonic::new()),
             Timing::DEFAULT,

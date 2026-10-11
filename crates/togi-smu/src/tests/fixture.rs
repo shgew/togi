@@ -1,4 +1,5 @@
 use crate::mailbox::{Command, MailboxError, Status, Transport};
+use crate::pm_table::{PmFile, PmSource};
 use crate::{Driver, Error};
 use std::collections::HashMap;
 use std::fs;
@@ -24,6 +25,15 @@ impl Gate {
         while !*open {
             open = opened.wait(open).unwrap_or_else(PoisonError::into_inner);
         }
+    }
+
+    /// Waits for `open`, giving up after `limit`; says whether the gate opened.
+    pub(super) fn wait_timeout(&self, limit: Duration) -> bool {
+        let (state, opened) = &*self.0;
+        let (open, _) = opened
+            .wait_timeout_while(lock(state), limit, |open| !*open)
+            .unwrap_or_else(PoisonError::into_inner);
+        *open
     }
 
     pub(super) fn open(&self) {
@@ -116,9 +126,13 @@ struct FakeState {
     failing_smn_reads: Vec<usize>,
     smn_hook: Option<SmnHook>,
     command_hook: Option<CommandHook>,
+    pm: Vec<PmFile>,
+    pm_version: Option<Vec<u8>>,
+    pm_table: Option<Vec<u8>>,
 }
 
-/// A counting mailbox: records every command and SMN read it receives and answers from tables.
+/// A counting hardware stand-in: records every command, SMN read and PM file read it receives and
+/// answers from tables.
 #[derive(Clone)]
 pub(super) struct Fake(Arc<Mutex<FakeState>>);
 
@@ -133,6 +147,9 @@ impl Fake {
             failing_smn_reads: Vec::new(),
             smn_hook: None,
             command_hook: None,
+            pm: Vec::new(),
+            pm_version: None,
+            pm_table: None,
         })))
     }
 
@@ -176,7 +193,33 @@ impl Fake {
 
     pub(super) fn hardware_calls(&self) -> usize {
         let state = self.state();
-        state.commands.len() + state.smn.len()
+        state.commands.len() + state.smn.len() + state.pm.len()
+    }
+
+    /// How many times the PM source was asked for `file`.
+    pub(super) fn pm_reads(&self, file: PmFile) -> usize {
+        self.state().pm.iter().filter(|read| **read == file).count()
+    }
+
+    /// What the PM files hold; `None` makes the read fail like a missing file.
+    pub(super) fn serve_pm(&self, version: Option<&[u8]>, table: Option<&[u8]>) {
+        let mut state = self.state();
+        state.pm_version = version.map(<[u8]>::to_vec);
+        state.pm_table = table.map(<[u8]>::to_vec);
+    }
+}
+
+impl PmSource for Fake {
+    fn read(&self, file: PmFile) -> io::Result<Vec<u8>> {
+        let mut state = self.state();
+        state.pm.push(file);
+        let content = match file {
+            PmFile::Version => &state.pm_version,
+            PmFile::Table => &state.pm_table,
+        };
+        content
+            .clone()
+            .ok_or_else(|| io::Error::from(io::ErrorKind::NotFound))
     }
 }
 
@@ -223,11 +266,28 @@ impl Transport for Fake {
 }
 
 pub(super) fn open(tree: &Tree, fake: &Fake) -> Driver {
-    Driver::with_transport(tree.root(), Box::new(fake.clone()), GENEROUS).unwrap()
+    open_within(tree, fake, GENEROUS)
+}
+
+/// Like `open`, with the given mailbox deadline from the first transaction on.
+pub(super) fn open_within(tree: &Tree, fake: &Fake, deadline: Duration) -> Driver {
+    Driver::with_transport(
+        tree.root(),
+        Box::new(fake.clone()),
+        Arc::new(fake.clone()),
+        deadline,
+    )
+    .unwrap()
 }
 
 pub(super) fn open_error(tree: &Tree, fake: &Fake) -> Error {
-    Driver::with_transport(tree.root(), Box::new(fake.clone()), GENEROUS).unwrap_err()
+    Driver::with_transport(
+        tree.root(),
+        Box::new(fake.clone()),
+        Arc::new(fake.clone()),
+        GENEROUS,
+    )
+    .unwrap_err()
 }
 
 pub(super) fn validated(tree: &Tree, fake: &Fake) -> Driver {

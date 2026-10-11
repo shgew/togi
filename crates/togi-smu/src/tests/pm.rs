@@ -1,11 +1,13 @@
-use super::fixture::{Gate, core, lock};
+use super::fixture::{Gate, Tree, core, lock};
 use crate::pm_table::{
-    DecodeError, Lane, Monotonic, PmClock, PmFile, PmReader, PmSource, TABLE_LEN, Timing,
-    Unavailable, VERSION, decode, layout, parse_version,
+    DecodeError, FileSource, Lane, Monotonic, PmClock, PmFile, PmReader, PmSource, State,
+    TABLE_LEN, Timing, Unavailable, VERSION, decode, layout, parse_version,
 };
+use crate::sysfs::DRIVER_DIR;
+use std::fs;
 use std::io::{self, ErrorKind};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant};
 use togi_machine::{CcdId, CoreInfo, PmTable, PmTableReader};
@@ -519,4 +521,124 @@ fn the_reader_is_shared_with_the_trial_thread() {
             .unwrap()
     });
     assert_eq!(seen, Some(synthetic().1));
+}
+
+/// A clock that records how long `check` is willing to wait instead of waiting, so the bound is
+/// asserted exactly and without real time.
+#[derive(Clone)]
+struct Probe {
+    clock: Clockwork,
+    waits: Arc<Mutex<Vec<Duration>>>,
+}
+
+impl PmClock for Probe {
+    fn now(&self) -> Duration {
+        self.clock.now()
+    }
+
+    fn wait<'a>(
+        &self,
+        _changed: &Condvar,
+        state: MutexGuard<'a, State>,
+        limit: Duration,
+    ) -> MutexGuard<'a, State> {
+        lock(&self.waits).push(limit);
+        state
+    }
+}
+
+#[test]
+fn check_never_waits_longer_than_what_is_left_of_the_read_budget() {
+    for file in [PmFile::Version, PmFile::Table] {
+        let source = Source::good();
+        let gate = source.block(file, 0);
+        let probe = Probe {
+            clock: Clockwork::new(),
+            waits: Arc::default(),
+        };
+        let reader = start(&source, probe.clone(), fake_timing());
+        source.wait_for_reads(file, 1);
+        for step in [
+            Duration::ZERO,
+            Duration::from_millis(30),
+            Duration::from_millis(70),
+            Duration::from_secs(3600),
+        ] {
+            probe.clock.advance(step);
+            assert!(reader.check().ok);
+        }
+        assert_eq!(
+            *lock(&probe.waits),
+            [
+                BUDGET,
+                Duration::from_millis(70),
+                Duration::ZERO,
+                Duration::ZERO
+            ],
+            "{file:?}: the wait was not the remaining budget"
+        );
+        gate.open();
+    }
+}
+
+fn pm_file(tree: &Tree, name: &str, bytes: &[u8]) -> FileSource {
+    fs::write(tree.path(&format!("{DRIVER_DIR}/{name}")), bytes).unwrap();
+    FileSource::new(tree.root())
+}
+
+#[test]
+fn the_file_source_reads_at_most_one_byte_past_the_version_length() {
+    let tree = Tree::new(8, true);
+    for (len, returned) in [(0, 0), (3, 3), (4, 4), (5, 5), (6, 5), (64 * 1024, 5)] {
+        let bytes = if len == 4 {
+            VERSION_BYTES.to_vec()
+        } else {
+            vec![0xab; len]
+        };
+        let source = pm_file(&tree, "pm_table_version", &bytes);
+        let read = source.read(PmFile::Version).unwrap();
+        assert_eq!(read.len(), returned, "{len} bytes on disk");
+        assert_eq!(
+            parse_version(&read),
+            (len == 4).then_some(VERSION),
+            "{len} bytes on disk"
+        );
+    }
+}
+
+#[test]
+fn the_file_source_reads_at_most_one_byte_past_the_table_length() {
+    let tree = Tree::new(8, true);
+    for (len, returned) in [
+        (0, 0),
+        (100, 100),
+        (TABLE_LEN - 1, TABLE_LEN - 1),
+        (TABLE_LEN, TABLE_LEN),
+        (TABLE_LEN + 1, TABLE_LEN + 1),
+        (TABLE_LEN + 2, TABLE_LEN + 1),
+        (1 << 20, TABLE_LEN + 1),
+    ] {
+        let source = pm_file(&tree, "pm_table", &vec![0_u8; len]);
+        let read = source.read(PmFile::Table).unwrap();
+        assert_eq!(read.len(), returned, "{len} bytes on disk");
+        match decode(&read) {
+            Ok(_) => assert_eq!(len, TABLE_LEN),
+            Err(error) => assert_eq!(error, DecodeError::Size { len: returned }),
+        }
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn the_file_source_stops_reading_an_endless_file() {
+    let tree = Tree::new(8, true);
+    for (name, file, limit) in [
+        ("pm_table_version", PmFile::Version, 5),
+        ("pm_table", PmFile::Table, TABLE_LEN + 1),
+    ] {
+        let path = tree.path(&format!("{DRIVER_DIR}/{name}"));
+        std::os::unix::fs::symlink("/dev/zero", path).unwrap();
+        let read = FileSource::new(tree.root()).read(file).unwrap();
+        assert_eq!(read.len(), limit, "{name}");
+    }
 }

@@ -1,10 +1,18 @@
 use super::fixture::{
-    Fake, Tree, accepted_unvalidated, forged_proof, open, read, smu_error, validated, write,
-    write_all, zero_all,
+    Fake, GENEROUS, Tree, accepted_unvalidated, forged_proof, open, read, smu_error, validated,
+    write, write_all, zero_all,
 };
 use crate::mailbox::Command;
+use crate::pm_table::PmFile;
 use crate::{Driver, Error, Operation};
+use std::sync::Arc;
 use togi_machine::{ObservedOffset, PmTableReader, TargetOffset};
+
+/// The identity-only driver, handed the counting fake as its transport and PM source.
+fn observed_identity_only(tree: &Tree, fake: &Fake) -> Driver {
+    Driver::identity_only_observed(tree.root(), Box::new(fake.clone()), Arc::new(fake.clone()))
+        .unwrap()
+}
 
 #[test]
 fn nothing_reaches_the_mailbox_before_validation() {
@@ -26,8 +34,22 @@ fn the_pm_table_reader_exists_only_for_a_validated_driver() {
             operation: Operation::ReadPmTable
         }
     ));
+    assert_eq!(
+        fake.hardware_calls(),
+        0,
+        "a refused reader touched hardware"
+    );
     let _ = driver.validate().unwrap();
+    let calls = fake.hardware_calls();
+    assert_eq!(fake.pm_reads(PmFile::Version), 0, "validate read a PM file");
     let reader = driver.pm_reader().unwrap();
+    assert!(reader.wait_idle(GENEROUS), "the first read never finished");
+    assert_eq!(
+        fake.pm_reads(PmFile::Version),
+        1,
+        "positive control: a validated reader reads the version"
+    );
+    assert_eq!(fake.hardware_calls(), calls + 1);
     let check = reader.check();
     assert!(check.ok);
     assert!(
@@ -115,10 +137,56 @@ fn emergency_zero_needs_a_validated_driver_even_with_a_proof() {
             operation: Operation::EmergencyZero
         }
     ));
-    let mut identity = Driver::identity_only(tree.root()).unwrap();
+    let mut identity = observed_identity_only(&tree, &fake);
     let error = zero_all(&mut identity, forged_proof()).unwrap_err();
     assert!(matches!(smu_error(&error), Error::IdentityOnly { .. }));
     assert_eq!(fake.hardware_calls(), 0);
+}
+
+#[test]
+fn an_identity_only_driver_reaches_neither_the_mailbox_nor_the_pm_files() {
+    let tree = Tree::new(8, true);
+    tree.identity_files();
+    let fake = Fake::new();
+    let mut driver = observed_identity_only(&tree, &fake);
+    assert!(driver.check_cpu().ok);
+    assert!(driver.check_driver().ok);
+    assert!(matches!(
+        driver.validate().unwrap_err(),
+        Error::IdentityOnly {
+            operation: Operation::Validate
+        }
+    ));
+    assert_eq!(accepted_unvalidated(&mut driver), Vec::<&str>::new());
+    let error = zero_all(&mut driver, forged_proof()).unwrap_err();
+    assert!(matches!(smu_error(&error), Error::IdentityOnly { .. }));
+    assert!(driver.topology().is_ok());
+    assert_eq!(fake.hardware_calls(), 0);
+}
+
+#[test]
+fn a_driver_that_failed_its_identity_check_reaches_no_hardware_or_pm_file() {
+    let tree = Tree::new(8, true);
+    tree.put(
+        "proc/cpuinfo",
+        "cpu family : 25\nmodel : 68\nmodel name : Zen 3\n",
+    );
+    let fake = Fake::new();
+    let mut driver = open(&tree, &fake);
+    assert!(matches!(
+        driver.validate().unwrap_err(),
+        Error::UnsupportedCpu { .. }
+    ));
+    assert_eq!(accepted_unvalidated(&mut driver), Vec::<&str>::new());
+    assert!(matches!(
+        driver.pm_reader().unwrap_err(),
+        Error::NotValidated {
+            operation: Operation::ReadPmTable
+        }
+    ));
+    assert_eq!(fake.hardware_calls(), 0);
+    assert_eq!(fake.pm_reads(PmFile::Version), 0);
+    assert_eq!(fake.pm_reads(PmFile::Table), 0);
 }
 
 #[test]

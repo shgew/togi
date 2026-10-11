@@ -1,4 +1,5 @@
 use crate::Error;
+use crate::mailbox::Poison;
 use crate::sysfs::DRIVER_DIR;
 use std::fmt;
 use std::fs::File;
@@ -173,9 +174,43 @@ impl PmSource for FileSource {
     }
 }
 
-/// Time since an arbitrary start, so tests can inject their own.
+/// Refuses every read once a mailbox transaction overran: reading `pm_table` sends RSMU command
+/// 0x03, which must not start while the stuck transaction may still be outstanding.
+pub(crate) struct Gated {
+    source: Arc<dyn PmSource>,
+    poison: Arc<Poison>,
+}
+
+impl Gated {
+    pub(crate) fn new(source: Arc<dyn PmSource>, poison: Arc<Poison>) -> Self {
+        Self { source, poison }
+    }
+}
+
+impl PmSource for Gated {
+    fn read(&self, file: PmFile) -> io::Result<Vec<u8>> {
+        self.poison.check().map_err(io::Error::other)?;
+        self.source.read(file)
+    }
+}
+
+/// Time since an arbitrary start, and how long a check waits, so tests can inject their own.
 pub(crate) trait PmClock: Send + Sync {
     fn now(&self) -> Duration;
+
+    /// Waits at most `limit` for the read in flight to finish; `check` never waits longer than
+    /// what is left of the read's budget.
+    fn wait<'a>(
+        &self,
+        changed: &Condvar,
+        state: MutexGuard<'a, State>,
+        limit: Duration,
+    ) -> MutexGuard<'a, State> {
+        changed
+            .wait_timeout_while(state, limit, |state| state.flight != Flight::Idle)
+            .unwrap_or_else(PoisonError::into_inner)
+            .0
+    }
 }
 
 pub(crate) struct Monotonic(Instant);
@@ -244,7 +279,7 @@ fn read_once(
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Flight {
+pub(crate) enum Flight {
     Idle,
     Requested(Duration),
     Reading(Duration),
@@ -265,7 +300,7 @@ struct Completed {
     started: Duration,
 }
 
-struct State {
+pub(crate) struct State {
     flight: Flight,
     seen: Option<u32>,
     latest: Option<Completed>,
@@ -420,10 +455,7 @@ impl PmReader {
                 .saturating_sub(now.saturating_sub(started))
         });
         shared.changed.notify_all();
-        let (state, _) = shared
-            .changed
-            .wait_timeout_while(state, remaining, |state| state.flight != Flight::Idle)
-            .unwrap_or_else(PoisonError::into_inner);
+        let state = shared.clock.wait(&shared.changed, state, remaining);
         let view = state.view(shared.clock.now(), shared.timing);
         drop(state);
         let version = view.version.map_or_else(
