@@ -637,6 +637,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "togi-smu"
+version = "0.0.0"
+dependencies = [
+ "rustix",
+ "tempfile",
+ "thiserror",
+ "togi-hostlock",
+ "togi-machine",
+]
+
+[[package]]
 name = "togi-trialfiles"
 version = "0.0.0"
 dependencies = [

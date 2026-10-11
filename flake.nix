@@ -197,6 +197,7 @@
               pnameSuffix = "-clippy";
               buildPhaseCargoCommand = ''
                 cargoWithProfile clippy --locked --all-targets -- --deny warnings
+                cargoWithProfile clippy --locked --all-targets --all-features -- --deny warnings
                 cargoWithProfile clippy --locked --all-targets --target aarch64-apple-darwin -- --deny warnings
               '';
             });
