@@ -202,9 +202,6 @@ fn partial_insertion_sort(data: &mut [f64], a: usize, b: usize) -> bool {
 
 fn break_patterns(data: &mut [f64], a: usize, b: usize) {
     let length = b - a;
-    if length < 8 {
-        return;
-    }
     let mut random = length as u64;
     let modulus = 1_u64 << length.bit_width();
     let middle = a + (length / 4) * 2;
@@ -232,14 +229,12 @@ fn choose_pivot(data: &[f64], a: usize, b: usize) -> (usize, Hint) {
     let mut quarter = a + length / 4;
     let mut middle = a + length / 4 * 2;
     let mut three_quarters = a + length / 4 * 3;
-    if length >= 8 {
-        if length >= SHORTEST_NINTHER {
-            quarter = median_adjacent(data, quarter, &mut swaps);
-            middle = median_adjacent(data, middle, &mut swaps);
-            three_quarters = median_adjacent(data, three_quarters, &mut swaps);
-        }
-        middle = median(data, quarter, middle, three_quarters, &mut swaps);
+    if length >= SHORTEST_NINTHER {
+        quarter = median_adjacent(data, quarter, &mut swaps);
+        middle = median_adjacent(data, middle, &mut swaps);
+        three_quarters = median_adjacent(data, three_quarters, &mut swaps);
     }
+    middle = median(data, quarter, middle, three_quarters, &mut swaps);
     match swaps {
         0 => (middle, Hint::Increasing),
         MAX_SWAPS => (middle, Hint::Decreasing),
@@ -268,7 +263,7 @@ fn median_adjacent(data: &[f64], a: usize, swaps: &mut usize) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use super::sort_f64;
+    use super::{pdqsort, sort_f64};
     use std::fs;
     use std::path::Path;
 
@@ -298,6 +293,25 @@ mod tests {
             assert_eq!(got, want, "row {rows}");
             rows += 1;
         }
-        assert_eq!(rows, 98);
+        assert_eq!(rows, 109);
+    }
+
+    #[test]
+    fn heapsort_fallback_sorts() {
+        let mut state = 0x2545_f491_4f6c_dd1d_u64;
+        for len in 13..200 {
+            let mut data: Vec<f64> = (0..len)
+                .map(|_| {
+                    state = state
+                        .wrapping_mul(6_364_136_223_846_793_005)
+                        .wrapping_add(1_442_695_040_888_963_407);
+                    f64::from(u8::try_from(state >> 56).unwrap() % 40)
+                })
+                .collect();
+            let mut want = data.clone();
+            want.sort_by(f64::total_cmp);
+            pdqsort(&mut data, 0, len, 0);
+            assert_eq!(data, want, "length {len}");
+        }
     }
 }

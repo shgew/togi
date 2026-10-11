@@ -221,6 +221,8 @@ fn top_is_the_highest_request() {
     assert_eq!(top(&PerCore::default()), None);
     assert_eq!(top(&per_core(&[(3, 1.2), (1, 1.4), (7, 1.3)])), Some(1.4));
     assert_eq!(top(&per_core(&[(0, -0.0), (1, 0.0)])).unwrap().to_bits(), 0);
+    assert_eq!(top(&per_core(&[(0, 0.0), (1, -0.0)])).unwrap().to_bits(), 0);
+    assert_eq!(top(&per_core(&[(0, 1.4), (1, 1.4)])), Some(1.4));
     assert!(top(&per_core(&[(0, 1.0), (1, f64::NAN)])).unwrap().is_nan());
     assert!(top(&per_core(&[(0, f64::NAN), (1, 1.0)])).unwrap().is_nan());
 }

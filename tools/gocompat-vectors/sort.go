@@ -76,6 +76,16 @@ func writeSort(outDir string) error {
 		}
 		cases = append(cases, ascending, descending, equal, sawtooth, organ, nearlySorted)
 	}
+	for _, n := range []int{49, 50, 51, 200, 1000} {
+		descending := make([]float64, n)
+		for i := range n {
+			descending[i] = float64(n - i)
+		}
+		cases = append(cases, descending)
+	}
+	for _, n := range []int{13, 50, 100, 257, 1000, 4000} {
+		cases = append(cases, adversary(n))
+	}
 	for _, values := range cases {
 		in := sortBits(values)
 		slices.Sort(values)
@@ -86,6 +96,43 @@ func writeSort(outDir string) error {
 		return err
 	}
 	return f.Close()
+}
+
+// adversary builds McIlroy's "killer" input for n values: it sorts index
+// numbers by values it fixes lazily, always answering so that the comparison
+// sequence stays as lopsided as possible, then returns the values it fixed.
+// slices.SortFunc and slices.Sort share one algorithm, so the input makes
+// Sort partition unevenly and break patterns, which random input rarely does.
+func adversary(n int) []float64 {
+	gas := n - 1
+	values := make([]int, n)
+	indexes := make([]int, n)
+	for i := range n {
+		values[i] = gas
+		indexes[i] = i
+	}
+	solid, candidate := 0, 0
+	slices.SortFunc(indexes, func(x, y int) int {
+		if values[x] == gas && values[y] == gas {
+			if x == candidate {
+				values[x] = solid
+			} else {
+				values[y] = solid
+			}
+			solid++
+		}
+		if values[x] == gas {
+			candidate = x
+		} else if values[y] == gas {
+			candidate = y
+		}
+		return values[x] - values[y]
+	})
+	out := make([]float64, n)
+	for i, v := range values {
+		out[i] = float64(v)
+	}
+	return out
 }
 
 func sortBits(values []float64) string {
