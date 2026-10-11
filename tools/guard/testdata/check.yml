@@ -38,7 +38,7 @@ jobs:
 
   check:
     if: always()
-    needs: [build]
+    needs: [build, macos]
     runs-on: ubuntu-26.04
     steps:
       - run: test "$BUILD" = success

@@ -26,8 +26,8 @@ The guard is `tools/guard/guard.nu`, in nushell like the repository's other tool
 - a merged manifest that does not start with the base manifest's exact bytes, or a base manifest that does not end with a newline; every appended line must be `<64 lower-hex>  <path>`, end with a newline, name a path neither listed nor appended before, and match a regular file of the merged tree by sha256, so a wrong or misplaced entry cannot reach `main`; the appended paths are hashed like the listed ones;
 - a change to a guard file, compared by mode and content;
 - a flake check missing from the merged tree: every `checks.<system>.<name>` of the base, across all systems, must still exist;
-- a change to the `eval`, `build` or `check` job of `.github/workflows/check.yml`, or to any of its top-level keys except `jobs` (`on`, `permissions`, `concurrency`, `env`, `defaults`), which the jobs inherit, compared as parsed YAML so comments, formatting and key order do not count; the `macos` job and jobs the base lacks stay free;
-- a change to the `same` recipe of the `justfile`, attributes included, or to the justfile's top-level `set` lines, which decide how the recipe runs.
+- a change to or removal of any job of `.github/workflows/check.yml` that the base has (`eval`, `build`, `macos`, `check`), or to any of its top-level keys except `jobs` (`on`, `permissions`, `concurrency`, `env`, `defaults`), which the jobs inherit, compared as parsed YAML so comments, formatting and key order do not count; a job the base lacks stays free;
+- a change to the `same` recipe of the `justfile`, attributes included, or to the justfile's top-level `set`, `export`, `import` and `mod` lines, in order, which decide how the recipe runs.
 
 With the `owner-approved` label it reports the same findings and passes. `just guard [BASE [HEAD]]` runs it between two revisions (defaults `origin/main` and `HEAD`), and `just land` waits for the status. The rules have unit tests (`tools/guard/test.nu`, the `guard` flake check).
 

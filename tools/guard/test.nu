@@ -137,9 +137,9 @@ export def test-renamed-flake-check-fails [] {
     assert equal (rules (base-snapshot) $head) ['flake-check']
 }
 
-export def test-unrelated-workflow-job-change-passes [] {
-    let head = head-snapshot | update workflow ((fixture check.yml) | str replace 'nix build ".#checks.aarch64-darwin.package"' 'nix build --print-build-logs ".#checks.aarch64-darwin.package"')
-    assert equal (rules (base-snapshot) $head) []
+export def test-macos-job-change-fails [] {
+    let head = head-snapshot | update workflow ((fixture check.yml) | str replace 'nix build ".#checks.aarch64-darwin.package"' 'true')
+    assert equal (violations (base-snapshot) $head | get detail) ['job macos in .github/workflows/check.yml changed']
 }
 
 export def test-comment-and-whitespace-changes-in-the-workflow-pass [] {
@@ -388,14 +388,42 @@ export def test-canonical-sorts-keys-at-every-depth-and-keeps-list-order [] {
     assert equal ({b: {z: 1, a: [{y: 1, x: 2}, 3]}, a: 0} | canonical | to json --raw) '{"a":0,"b":{"a":[{"x":2,"y":1},3],"z":1}}'
 }
 
+export def test-canonical-keeps-null-list-elements [] {
+    assert equal ([build macos null] | canonical | to json --raw) '["build","macos",null]'
+}
+
+export def test-null-added-to-a-job-list-fails [] {
+    let head = head-snapshot | update workflow ((fixture check.yml) | str replace 'needs: [build, macos]' 'needs: [build, macos, null]')
+    assert equal (violations (base-snapshot) $head | get detail) ['job check in .github/workflows/check.yml changed']
+}
+
 export def test-justfile-set-line-change-fails [] {
     let head = head-snapshot | update justfile ((fixture justfile) | str replace 'set shell := ["bash", "-euo", "pipefail", "-c"]' 'set shell := ["true"]')
-    assert equal (violations (base-snapshot) $head | get detail) ['justfile settings changed']
+    assert equal (violations (base-snapshot) $head | get detail) ['justfile settings, exports or imports changed']
 }
 
 export def test-justfile-set-line-added-fails [] {
     let head = head-snapshot | update justfile ("set dotenv-load\n" + (fixture justfile))
     assert equal (rules (base-snapshot) $head) ['same-recipe']
+}
+
+export def test-justfile-export-added-fails [] {
+    let head = head-snapshot | update justfile ("export BASH_ENV := justfile_directory() + \"/skip.sh\"\n" + (fixture justfile))
+    assert equal (violations (base-snapshot) $head | get detail) ['justfile settings, exports or imports changed']
+}
+
+export def test-justfile-import-added-fails [] {
+    for line in ["import 'skip.just'" "import? 'skip.just'"] {
+        let head = head-snapshot | update justfile ($"($line)\n" + (fixture justfile))
+        assert equal (violations (base-snapshot) $head | get detail) ['justfile settings, exports or imports changed']
+    }
+}
+
+export def test-justfile-module-added-fails [] {
+    for line in ['mod skip' 'mod? skip'] {
+        let head = head-snapshot | update justfile ($"($line)\n" + (fixture justfile))
+        assert equal (rules (base-snapshot) $head) ['same-recipe']
+    }
 }
 
 # A fresh repository with the base files committed on `main`

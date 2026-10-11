@@ -7,7 +7,6 @@
 
 export const manifest_path = 'tools/guard/manifest.sha256'
 export const workflow_path = '.github/workflows/check.yml'
-export const decision_jobs = [eval build check]
 export const justfile_path = 'justfile'
 export const protected_recipe = 'same'
 export const guard_prefixes = ['tools/guard/' '.github/workflows/guard.yml']
@@ -121,7 +120,7 @@ export def canonical []: any -> any {
     let value = $in
     match ($value | describe | str replace --regex '<.*' '') {
         'record' => ($value | transpose key value | sort-by key | reduce --fold {} {|row, sorted| $sorted | insert $row.key ($row.value | canonical) })
-        'list' | 'table' => ($value | each {|item| $item | canonical })
+        'list' | 'table' => ($value | each --keep-empty {|item| $item | canonical })
         _ => $value
     }
 }
@@ -158,10 +157,10 @@ export def recipe [text: any, name: string]: nothing -> any {
     [...$attributes ($lines | get $header) ...$body] | str join "\n"
 }
 
-# A justfile's top-level `set` lines, in order
+# A justfile's top-level statements that change how recipes execute (`set`, `export`, `import`, `mod`), in order
 export def settings [text: any]: nothing -> list<string> {
     if $text == null { return [] }
-    $text | lines | where {|line| $line =~ '^set[ \t]' }
+    $text | lines | where {|line| $line =~ '^(set|export|import\??|mod\??)[ \t]' }
 }
 
 def guard-path []: string -> bool {
@@ -238,9 +237,10 @@ export def violations [base: record, head: record]: nothing -> table<rule: strin
     | where {|name| $name not-in $head.checks }
     | each {|name| {rule: 'flake-check', detail: $"checks.($name) is missing at the head"} }
 
-    let base_jobs = workflow-jobs $base.workflow $decision_jobs
-    let head_jobs = workflow-jobs $head.workflow $decision_jobs
-    let jobs = $decision_jobs
+    let job_names = parse-workflow $base.workflow | get -o jobs | default {} | columns
+    let base_jobs = workflow-jobs $base.workflow $job_names
+    let head_jobs = workflow-jobs $head.workflow $job_names
+    let jobs = $job_names
     | where {|name| ($base_jobs | get $name) != null and ($base_jobs | get $name) != ($head_jobs | get $name) }
     | each {|name| {rule: 'decision-path', detail: $"job ($name) in ($workflow_path) (if ($head_jobs | get $name) == null { 'is removed' } else { 'changed' })"} }
     let base_settings = workflow-settings $base.workflow
@@ -260,7 +260,7 @@ export def violations [base: record, head: record]: nothing -> table<rule: strin
             [{rule: 'same-recipe', detail: $"recipe ($protected_recipe) in ($justfile_path) (if $head_recipe == null { 'is removed' } else { 'changed' })"}]
         }
         let settings_change = if (settings $base.justfile) == (settings $head.justfile) { [] } else {
-            [{rule: 'same-recipe', detail: $"($justfile_path) settings changed"}]
+            [{rule: 'same-recipe', detail: $"($justfile_path) settings, exports or imports changed"}]
         }
         [...$recipe_change ...$settings_change]
     }
