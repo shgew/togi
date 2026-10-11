@@ -199,13 +199,10 @@ impl Run {
         }
     }
 
-    /// The saved retry as a trial plan, when the search turn's own builder selects its
-    /// requirement.
+    /// The saved retry as a trial plan. A retry that stopped holding was dropped by the fold of
+    /// the event that ended its context, so a saved one is always current.
     pub(crate) fn serve_retry(&self) -> Option<TrialPlan> {
         let retry = self.retry.as_ref()?;
-        if self.retry_requirement(retry)? != retry.requirement {
-            return None;
-        }
         let mut plan = retry.plan.clone();
         plan.cause = self.core(retry.turn.core).last_seq.into_iter().collect();
         Some(plan)

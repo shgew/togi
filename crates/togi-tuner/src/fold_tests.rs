@@ -735,3 +735,29 @@ fn kinds_later_groups_own_change_no_tuner_state() {
     }
     j.assert_resumes();
 }
+
+#[test]
+fn the_checking_profile_follows_the_decided_offsets_only_when_it_differs() {
+    let mut j = Journal::has_room(&[-10]);
+    j.profile_change(&[-10]);
+    assert!(j.run().profile_decision().is_none());
+    j.decision(TunerDecision {
+        core: core(0),
+        activity: Activity::Checking,
+        decision: Decision::Backoff,
+        from_offset: off(-10),
+        to_offset: off(-9),
+        pass: None,
+        failure_point: Some(off(-10)),
+        workloads: Vec::new(),
+        reason: "test".to_owned(),
+    });
+    assert!(j.run().profile_decision().is_some());
+}
+
+#[test]
+fn phase_2_moves_are_only_asked_of_profiles_of_the_topology() {
+    let j = Journal::has_room(&[-10]);
+    let foreign = crate::Profile::zero(&crate::tests::topology(&[4]));
+    assert!(j.run().phase2_moves(&foreign, None).is_none());
+}
