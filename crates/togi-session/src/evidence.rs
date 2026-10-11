@@ -1,7 +1,7 @@
 //! What a trial's evidence amounts to. Pure: no journal, no hardware, no clock.
 
-use std::num::NonZeroU32;
 use std::time::Duration;
+use togi_config::DeadEndThreshold;
 
 use togi_journal::{Outcome, Seq, TrialEnd};
 use togi_machine::{
@@ -35,13 +35,13 @@ fn retry(attempt: usize) -> Option<RetryDue> {
 
 /// The retry a backend is due after `streak` inconclusive trials in a row: none until `threshold` of them, then
 /// three waits, one per further inconclusive trial.
-pub fn backend_retry(streak: usize, threshold: NonZeroU32) -> Option<RetryDue> {
+pub fn backend_retry(streak: usize, threshold: DeadEndThreshold) -> Option<RetryDue> {
     let threshold = usize::try_from(threshold.get()).ok()?;
     retry(streak.checked_sub(threshold)? + 1)
 }
 
 /// Whether the streak outlasted the threshold and all three retries: no evidence can be had from the backend.
-pub fn backend_exhausted(streak: usize, threshold: NonZeroU32) -> bool {
+pub fn backend_exhausted(streak: usize, threshold: DeadEndThreshold) -> bool {
     usize::try_from(threshold.get()).is_ok_and(|threshold| streak >= threshold + RETRY_WAITS.len())
 }
 

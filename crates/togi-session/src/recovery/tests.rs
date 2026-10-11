@@ -1089,7 +1089,7 @@ fn inconclusive_trials_streak_unless_interrupted_and_a_conclusive_one_ends_it() 
 
 #[test]
 fn a_retry_is_recorded_once_per_attempt_and_again_after_a_trial_followed_it() {
-    let k = std::num::NonZeroU32::MIN;
+    let k = togi_config::DeadEndThreshold::new(1).unwrap();
     let mut log = Log::new();
     log.baseline(&[(0, 0), (8, 0)]);
     log.trial_intent("0001", Some(0), Regime::R1);
@@ -1119,7 +1119,7 @@ fn a_retry_is_recorded_once_per_attempt_and_again_after_a_trial_followed_it() {
 
 #[test]
 fn a_backend_inconclusive_through_every_retry_is_exhausted_until_a_no_evidence_dead_end() {
-    let k = std::num::NonZeroU32::MIN;
+    let k = togi_config::DeadEndThreshold::new(1).unwrap();
     let mut log = Log::new();
     log.baseline(&[(0, 0), (8, 0)]);
     for n in 1..=4 {

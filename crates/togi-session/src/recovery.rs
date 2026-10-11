@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::time::Duration;
 
 use jiff::Timestamp;
+use togi_config::DeadEndThreshold;
 use togi_journal::{
     Build, CarriedCore, CorePhase, CrashDetected, DeadEnd, DeadEndCondition, Event, EventKind,
     Outcome, Payload, RetryTarget, Seq, ShutdownReason, SmuCommand, TrialId, TrialIntent,
@@ -1026,7 +1027,7 @@ impl RecoveryState {
     }
 
     /// The backend that stayed inconclusive through every retry, and the trials that were.
-    pub fn exhausted_backend(&self, threshold: std::num::NonZeroU32) -> Option<(Backend, &[Seq])> {
+    pub fn exhausted_backend(&self, threshold: DeadEndThreshold) -> Option<(Backend, &[Seq])> {
         self.backends.iter().find_map(|(backend, state)| {
             evidence::backend_exhausted(state.streak.len(), threshold)
                 .then_some((*backend, state.streak.as_slice()))
@@ -1038,7 +1039,7 @@ impl RecoveryState {
     pub fn backend_retry_due(
         &self,
         backend: Backend,
-        threshold: std::num::NonZeroU32,
+        threshold: DeadEndThreshold,
     ) -> Option<RetryDue> {
         let state = self.backends.get(&backend);
         let streak = state.map_or(0, |state| state.streak.len());

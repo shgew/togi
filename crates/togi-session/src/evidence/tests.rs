@@ -1,5 +1,5 @@
-use std::num::NonZeroU32;
 use std::time::Duration;
+use togi_config::DeadEndThreshold;
 
 use togi_journal::{Outcome, Seq, TrialEnd};
 use togi_machine::{
@@ -356,8 +356,8 @@ fn a_crash_owns_its_boots_machine_checks_and_the_uncorrected_ones_its_successor_
     assert!(!crash_owns(&other, false, &old, &new));
 }
 
-fn threshold(k: u32) -> NonZeroU32 {
-    NonZeroU32::new(k).unwrap()
+fn threshold(k: u32) -> DeadEndThreshold {
+    DeadEndThreshold::new(i64::from(k)).unwrap()
 }
 
 #[test]

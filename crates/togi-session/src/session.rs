@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use jiff::tz::TimeZone;
 use togi_carry::PendingCarry;
-use togi_config::Config;
+use togi_config::{Config, DeadEndThreshold};
 use togi_defect::FindingView;
 use togi_journal::{
     Build, ConfigLoaded, DeadEnd, DeadEndAction, DeadEndCondition, Journal, Mce, Operation,
@@ -504,8 +504,8 @@ impl Session {
     }
 
     /// The inconclusive trials in a row of one backend after which its retries begin.
-    pub(crate) fn inconclusive_threshold(&self) -> NonZeroU32 {
-        self.config.dead_ends().inconclusive_in_a_row().count()
+    pub(crate) fn inconclusive_threshold(&self) -> DeadEndThreshold {
+        self.config.dead_ends().inconclusive_in_a_row()
     }
 
     /// Turns the end of a step into whether the run goes on: dead-end evidence becomes the dead end it supports.
