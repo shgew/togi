@@ -5,6 +5,7 @@ use std::io::{Cursor, Write};
 use std::path::Path;
 
 mod load;
+mod object_only;
 mod seams;
 
 fn core(value: i64) -> CoreId {
@@ -128,6 +129,46 @@ fn workload_regime_contracts() {
         }
     }
     assert_eq!(workload_by_id("not-a-workload"), None);
+}
+
+#[test]
+fn workload_ids_name_every_catalog_entry() {
+    let mut seen = std::collections::BTreeSet::new();
+    for regime in REGIMES {
+        for (index, workload) in workloads(regime).iter().enumerate() {
+            let id = workload.id();
+            assert_eq!(id, WorkloadId::new(regime, index).unwrap());
+            assert_eq!(id.regime(), regime);
+            assert_eq!(id.workload(), workload);
+            assert_eq!(id.as_str(), workload.id);
+            assert_eq!(id.to_string(), workload.id);
+            assert_eq!(workload.id.parse::<WorkloadId>().unwrap(), id);
+            let json = serde_json::to_string(&id).unwrap();
+            assert_eq!(json, format!("\"{}\"", workload.id));
+            assert_eq!(serde_json::from_str::<WorkloadId>(&json).unwrap(), id);
+            assert!(seen.insert(id));
+        }
+    }
+    assert_eq!(seen.len(), 33);
+    assert!(seen.iter().zip(seen.iter().skip(1)).all(|(a, b)| a < b));
+}
+
+#[test]
+fn unknown_workload_ids_are_rejected() {
+    assert_eq!(WorkloadId::by_id("not-a-workload"), None);
+    assert!("".parse::<WorkloadId>().is_err());
+    assert!(serde_json::from_str::<WorkloadId>("\"not-a-workload\"").is_err());
+    assert!(serde_json::from_str::<WorkloadId>("3").is_err());
+    assert_eq!(WorkloadId::new(Regime::R1, 3), None);
+}
+
+#[test]
+fn nested_vocabulary_types_refuse_unknown_fields() {
+    assert!(serde_json::from_str::<CoreInfo>(r#"{"core":0,"ccd":0,"cpus":[0],"x":1}"#).is_err());
+    assert!(serde_json::from_str::<PstoreRecord>(r#"{"path":"p","lines":[],"x":1}"#).is_err());
+    assert!(serde_json::from_str::<LoadSchedule>(r#"{"kind":"random","seed":1,"x":1}"#).is_err());
+    assert!(serde_json::from_str::<LoadSchedule>(r#"{"kind":"duty","pct":50,"x":1}"#).is_err());
+    assert!(serde_json::from_str::<LoadSchedule>(r#"{"kind":"random","seed":1}"#).is_ok());
 }
 
 fn write_gzip(path: &Path, content: &str) {
@@ -559,4 +600,52 @@ fn core_set_rejects_duplicates_and_unsupported_cores() {
     for json in ["[1,1]", "[16]", "[-1]", "[\"1\"]", "null", "{}"] {
         assert!(serde_json::from_str::<CoreSet>(json).is_err(), "{json}");
     }
+}
+
+#[test]
+fn core_sets_iterate_from_both_ends() {
+    let set: CoreSet = [3_u8, 0, 15, 7]
+        .into_iter()
+        .map(|id| CoreId::try_from(id).unwrap())
+        .collect();
+    let ids = |iter: &mut dyn Iterator<Item = CoreId>| iter.map(CoreId::get).collect::<Vec<_>>();
+    assert_eq!(ids(&mut set.iter()), [0, 3, 7, 15]);
+    assert_eq!(ids(&mut set.iter().rev()), [15, 7, 3, 0]);
+    assert_eq!(set.first().map(CoreId::get), Some(0));
+    assert_eq!(set.last().map(CoreId::get), Some(15));
+    let mut both = set.iter();
+    assert_eq!(both.next().map(CoreId::get), Some(0));
+    assert_eq!(both.next_back().map(CoreId::get), Some(15));
+    assert_eq!(both.len(), 2);
+    assert_eq!(both.next_back().map(CoreId::get), Some(7));
+    assert_eq!(both.next().map(CoreId::get), Some(3));
+    assert_eq!((both.next(), both.next_back()), (None, None));
+    assert_eq!(CoreSet::default().first(), None);
+    assert_eq!(CoreSet::default().last(), None);
+}
+
+#[test]
+fn core_ids_convert_from_unsigned_integers() {
+    assert_eq!(CoreId::try_from(15_u8).unwrap().get(), 15);
+    assert_eq!(CoreId::try_from(15_usize).unwrap().index(), 15);
+    assert_eq!(CoreId::try_from(16_u8), Err(InvalidCore(16)));
+    assert_eq!(CoreId::try_from(16_usize), Err(InvalidCore(16)));
+    assert!(CoreId::try_from(usize::MAX).is_err());
+}
+
+#[test]
+fn containment_keeps_its_cause_behind_a_fixed_message() {
+    use std::error::Error as _;
+    let error = Error::Containment("scope still has 2 processes".into());
+    assert_eq!(error.to_string(), "trial cleanup could not be confirmed");
+    assert_eq!(
+        error.source().unwrap().to_string(),
+        "scope still has 2 processes"
+    );
+}
+
+#[test]
+fn ccd_and_cpu_ids_display_as_numbers() {
+    assert_eq!(CcdId(1).to_string(), "1");
+    assert_eq!(CpuId(23).to_string(), "23");
 }

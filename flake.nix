@@ -180,6 +180,7 @@
                 pkgs.nushell
                 rustToolchain
                 pkgs.cargo-deny
+                pkgs.cargo-fuzz
                 pkgs.cargo-llvm-cov
                 pkgs.cargo-nextest
                 pkgs.cargo-shear

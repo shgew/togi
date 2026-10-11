@@ -33,10 +33,36 @@ impl CoreId {
     }
 }
 
+impl TryFrom<u8> for CoreId {
+    type Error = InvalidCore;
+    fn try_from(value: u8) -> Result<Self, InvalidCore> {
+        Self::new(i64::from(value))
+    }
+}
+
+impl TryFrom<usize> for CoreId {
+    type Error = InvalidCore;
+    fn try_from(value: usize) -> Result<Self, InvalidCore> {
+        Self::new(i64::try_from(value).unwrap_or(i64::MAX))
+    }
+}
+
 impl TryFrom<i64> for CoreId {
     type Error = InvalidCore;
     fn try_from(value: i64) -> Result<Self, InvalidCore> {
         Self::new(value)
+    }
+}
+
+impl std::fmt::Display for CcdId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl std::fmt::Display for CpuId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
     }
 }
 

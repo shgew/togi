@@ -336,7 +336,7 @@ fn real_process_excludes_until_it_exits() {
     let path = lock_in(&dir);
     #[expect(
         clippy::disallowed_methods,
-        reason = "test helper: re-executes the test binary so another process holds the lock"
+        reason = "test helper re-executes the test binary"
     )]
     let mut child = Command::new(std::env::current_exe().unwrap())
         .args(["--exact", "tests::hold_lock_helper", "--nocapture"])
