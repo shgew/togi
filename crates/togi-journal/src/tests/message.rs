@@ -781,6 +781,7 @@ fn carried_trials_keep_class_outcome_duration_profile_and_requesters() {
         "after 90 s",
         "intended 90 s",
         "-30",
+        "alone R2",
     ] {
         assert!(pass.contains(part), "{part:?} missing from {pass}");
     }
@@ -804,6 +805,40 @@ fn carried_trials_keep_class_outcome_duration_profile_and_requesters() {
             .message()
             .contains("was inconclusive")
     );
+}
+
+#[test]
+fn carried_trials_name_their_class() {
+    let Payload::TrialCarried(mut carried) = sample(EventKind::TrialCarried) else {
+        unreachable!()
+    };
+    let text = Payload::from(carried.clone()).message();
+    assert!(
+        text.contains("alone R2 mprime AVX2 36K-248K on cores 03 passed"),
+        "{text}"
+    );
+    carried.condition = Condition::Together;
+    carried.class.regime = Regime::R7;
+    carried.class.workload = None;
+    carried.class.cores = set(&[1, 5]);
+    let text = Payload::from(carried).message();
+    assert!(
+        text.contains("together R7 any workload on cores 01, 05 passed"),
+        "{text}"
+    );
+    assert!(!text.contains("AVX2"), "{text}");
+}
+
+#[test]
+fn a_raw_reset_line_is_kept_verbatim_over_the_typed_reason() {
+    let Payload::CrashDetected(mut crash) = sample(EventKind::CrashDetected) else {
+        unreachable!()
+    };
+    let raw = "WDT: hardware watchdog expired (SP5100 TCO)";
+    crash.reset_reason_raw = vec![raw.into()];
+    let text = Payload::from(crash).message();
+    assert!(text.contains(&format!("reset reason: {raw}")), "{text}");
+    assert!(!text.contains("reset reason: watchdog"), "{text}");
 }
 
 #[test]

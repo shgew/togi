@@ -49,3 +49,72 @@ fn nested_machine_types_are_object_only_inside_a_container() {
     let error = serde_json::from_str::<Option<LoadSchedule>>(r#"["random",1]"#).unwrap_err();
     assert!(error.to_string().contains("expected an object"), "{error}");
 }
+
+/// The control: what a plain derive accepts and `object_only!` refuses, with serde's attributes kept.
+mod mechanism {
+    use serde::{Deserialize, Serialize};
+
+    use crate::object_only;
+
+    #[derive(Debug, PartialEq, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Plain {
+        a: u8,
+        b: Option<u8>,
+    }
+
+    object_only! {
+        /// A documented definition.
+        #[derive(Debug, PartialEq, Serialize)]
+        #[serde(deny_unknown_fields)]
+        struct Guarded {
+            #[serde(rename = "first")]
+            a: u8,
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            b: Option<u8>,
+        }
+
+        #[derive(Debug, PartialEq, Serialize)]
+        #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+        enum Tagged {
+            One { n: u8 },
+            Two { m: u8, #[serde(default)] extra: bool },
+        }
+    }
+
+    #[test]
+    fn a_plain_derive_takes_the_array_this_macro_refuses() {
+        assert_eq!(
+            serde_json::from_str::<Plain>("[1,2]").unwrap(),
+            Plain { a: 1, b: Some(2) }
+        );
+        assert!(serde_json::from_str::<Guarded>("[1,2]").is_err());
+        assert!(serde_json::from_str::<Guarded>("[1]").is_err());
+    }
+
+    #[test]
+    fn serde_attributes_and_serialization_are_unchanged() {
+        let guarded = serde_json::from_str::<Guarded>(r#"{"first":1}"#).unwrap();
+        assert_eq!(guarded, Guarded { a: 1, b: None });
+        assert_eq!(serde_json::to_string(&guarded).unwrap(), r#"{"first":1}"#);
+        assert!(serde_json::from_str::<Guarded>(r#"{"first":1,"x":2}"#).is_err());
+        assert!(serde_json::from_str::<Guarded>(r#"{"a":1}"#).is_err());
+        assert_eq!(
+            serde_json::from_str::<Tagged>(r#"{"kind":"two","m":3}"#).unwrap(),
+            Tagged::Two { m: 3, extra: false }
+        );
+        assert_eq!(
+            serde_json::to_string(&Tagged::One { n: 4 }).unwrap(),
+            r#"{"kind":"one","n":4}"#
+        );
+        assert!(serde_json::from_str::<Tagged>(r#"["one",4]"#).is_err());
+        assert!(serde_json::from_str::<Tagged>(r#"["two",3,true]"#).is_err());
+    }
+
+    #[test]
+    fn the_trait_call_refuses_an_array_too() {
+        let mut input = serde_json::Deserializer::from_str("[1,0,[]]");
+        let error = crate::CoreInfo::deserialize(&mut input).unwrap_err();
+        assert!(error.to_string().contains("expected an object"), "{error}");
+    }
+}

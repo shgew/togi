@@ -39,37 +39,101 @@ pub fn deserialize<'de, D: Deserializer<'de>, T: Deserialize<'de>>(
     Object::deserialize(deserializer).map(|Object(value)| value)
 }
 
-/// Makes each listed type decode from a map only, wherever it appears.
+/// Defines structs and struct-variant enums that decode from a map only.
 ///
-/// Each type derives `Serialize` and `Deserialize` with `#[serde(remote = "Self")]`, which turns the
-/// derived impls into inherent `serialize` and `deserialize` functions; this macro implements the
-/// traits over them, decoding through [`Object`]. Every other serde attribute behaves as derived.
+/// Write each definition as usual, deriving `Serialize` but not `Deserialize`, inside the macro. It
+/// emits the definition unchanged and implements `Deserialize` through [`Object`] over a private
+/// mirror that derives `Deserialize` with the same `serde` attributes, so the type is object-only
+/// wherever it appears and no inherent or trait path decodes it positionally. Fields and variants
+/// carry their `serde` attributes (`default`, `rename`, `skip_serializing_if`) as in a derive; other
+/// container attributes stay on the definition.
+///
+/// A struct has no inherent `deserialize`, so only the trait's object-only impl decodes it:
+///
+/// ```compile_fail,E0599
+/// let mut input = serde_json::Deserializer::from_str("[1, 0, []]");
+/// let _ = togi_machine::CoreInfo::deserialize(&mut input);
+/// ```
 #[macro_export]
 macro_rules! object_only {
-    ($($ty:ty),+ $(,)?) => {$(
-        impl<'de> ::serde::Deserialize<'de> for $ty {
-            fn deserialize<D: ::serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-                struct Fields($ty);
+    (@attrs [$($def:tt)*] [$($mirror:tt)*] #[serde $args:tt] $($rest:tt)+) => {
+        $crate::object_only!(@attrs [$($def)* #[serde $args]] [$($mirror)* #[serde $args]] $($rest)+);
+    };
+    (@attrs [$($def:tt)*] [$($mirror:tt)*] #[$other:meta] $($rest:tt)+) => {
+        $crate::object_only!(@attrs [$($def)* #[$other]] [$($mirror)*] $($rest)+);
+    };
+    (
+        @attrs [$($def:tt)*] [$($mirror:tt)*]
+        $vis:vis struct $name:ident {
+            $($(#[$field_meta:meta])* $field_vis:vis $field:ident : $ty:ty),* $(,)?
+        }
+        $($rest:tt)*
+    ) => {
+        $($def)*
+        $vis struct $name {
+            $($(#[$field_meta])* $field_vis $field: $ty),*
+        }
 
-                impl<'de> ::serde::Deserialize<'de> for Fields {
-                    fn deserialize<D: ::serde::Deserializer<'de>>(
-                        deserializer: D,
-                    ) -> Result<Self, D::Error> {
-                        <$ty>::deserialize(deserializer).map(Fields)
-                    }
+        const _: () = {
+            #[derive(::serde::Deserialize)]
+            $($mirror)*
+            struct Mirror {
+                $($(#[$field_meta])* $field: $ty),*
+            }
+
+            impl<'de> ::serde::Deserialize<'de> for $name {
+                fn deserialize<D: ::serde::Deserializer<'de>>(
+                    deserializer: D,
+                ) -> ::core::result::Result<Self, D::Error> {
+                    <$crate::serde_object::Object<Mirror> as ::serde::Deserialize>::deserialize(
+                        deserializer,
+                    )
+                    .map(|$crate::serde_object::Object(mirror)| Self {
+                        $($field: mirror.$field),*
+                    })
                 }
-
-                <$crate::serde_object::Object<Fields> as ::serde::Deserialize>::deserialize(
-                    deserializer,
-                )
-                .map(|$crate::serde_object::Object(Fields(value))| value)
             }
+        };
+
+        $crate::object_only!($($rest)*);
+    };
+    (
+        @attrs [$($def:tt)*] [$($mirror:tt)*]
+        $vis:vis enum $name:ident {
+            $($variant:ident { $($(#[$field_meta:meta])* $field:ident : $ty:ty),* $(,)? }),+ $(,)?
+        }
+        $($rest:tt)*
+    ) => {
+        $($def)*
+        $vis enum $name {
+            $($variant { $($(#[$field_meta])* $field: $ty),* }),+
         }
 
-        impl ::serde::Serialize for $ty {
-            fn serialize<S: ::serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-                <$ty>::serialize(self, serializer)
+        const _: () = {
+            #[derive(::serde::Deserialize)]
+            $($mirror)*
+            enum Mirror {
+                $($variant { $($(#[$field_meta])* $field: $ty),* }),+
             }
-        }
-    )+};
+
+            impl<'de> ::serde::Deserialize<'de> for $name {
+                fn deserialize<D: ::serde::Deserializer<'de>>(
+                    deserializer: D,
+                ) -> ::core::result::Result<Self, D::Error> {
+                    <$crate::serde_object::Object<Mirror> as ::serde::Deserialize>::deserialize(
+                        deserializer,
+                    )
+                    .map(|$crate::serde_object::Object(mirror)| match mirror {
+                        $(Mirror::$variant { $($field),* } => Self::$variant { $($field),* }),+
+                    })
+                }
+            }
+        };
+
+        $crate::object_only!($($rest)*);
+    };
+    () => {};
+    ($($item:tt)+) => {
+        $crate::object_only!(@attrs [] [] $($item)+);
+    };
 }

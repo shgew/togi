@@ -1,21 +1,24 @@
 use std::cmp::Ordering;
 use std::fmt;
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
+use togi_machine::object_only;
 
 pub const SCHEMA: u32 = 1;
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
-#[serde(remote = "Self", deny_unknown_fields)]
-pub struct Build {
-    pub version: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub rev: Option<String>,
-    pub ruleset: u32,
-    pub schema: u32,
-    #[serde(default)]
-    pub fixes: u32,
-    pub evidence: u32,
+object_only! {
+    #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct Build {
+        pub version: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub rev: Option<String>,
+        pub ruleset: u32,
+        pub schema: u32,
+        #[serde(default)]
+        pub fixes: u32,
+        pub evidence: u32,
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -126,5 +129,3 @@ impl Build {
         }
     }
 }
-
-togi_machine::object_only!(Build,);

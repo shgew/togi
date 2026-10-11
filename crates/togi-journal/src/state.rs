@@ -1,7 +1,8 @@
 use std::path::{Path, PathBuf};
 
 use jiff::Timestamp;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
+use togi_machine::object_only;
 use togi_machine::{Backend, BiosContext, BootId, CcdId, CoreId, CpuId, ObservedOffset, PerCore};
 
 use crate::payload::{DeadEndCondition, EventKind, Payload, TrialId};
@@ -30,68 +31,75 @@ fn display_last(last: Option<Seq>) -> String {
     )
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(remote = "Self")]
-pub struct SessionInfo {
-    pub id: SessionId,
-    pub start: Timestamp,
-    pub build: Build,
-    pub bios_context: Option<BiosContext>,
-    pub baseline: PerCore<ObservedOffset>,
+object_only! {
+    #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+    pub struct SessionInfo {
+        pub id: SessionId,
+        pub start: Timestamp,
+        pub build: Build,
+        pub bios_context: Option<BiosContext>,
+        pub baseline: PerCore<ObservedOffset>,
+    }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(remote = "Self")]
-pub struct DecisionRef {
-    pub seq: Seq,
-    pub msg: String,
+object_only! {
+    #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+    pub struct DecisionRef {
+        pub seq: Seq,
+        pub msg: String,
+    }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(remote = "Self")]
-pub struct CoreFacts {
-    pub core: CoreId,
-    pub ccd: CcdId,
-    pub cpus: Vec<CpuId>,
-    pub baseline: Option<ObservedOffset>,
-    pub last_decision: Option<DecisionRef>,
+object_only! {
+    #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+    pub struct CoreFacts {
+        pub core: CoreId,
+        pub ccd: CcdId,
+        pub cpus: Vec<CpuId>,
+        pub baseline: Option<ObservedOffset>,
+        pub last_decision: Option<DecisionRef>,
+    }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(remote = "Self")]
-pub struct InFlight {
-    pub seq: Seq,
-    pub kind: EventKind,
-    pub msg: String,
-    pub boot: BootId,
-    pub trial: Option<TrialId>,
+object_only! {
+    #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+    pub struct InFlight {
+        pub seq: Seq,
+        pub kind: EventKind,
+        pub msg: String,
+        pub boot: BootId,
+        pub trial: Option<TrialId>,
+    }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(remote = "Self")]
-pub struct DeadEndRef {
-    pub condition: DeadEndCondition,
-    pub seq: Seq,
+object_only! {
+    #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+    pub struct DeadEndRef {
+        pub condition: DeadEndCondition,
+        pub seq: Seq,
+    }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(remote = "Self")]
-pub struct State {
-    pub schema: u32,
-    pub session: Option<SessionInfo>,
-    pub cores: Vec<CoreFacts>,
-    pub last_seq: Option<Seq>,
-    pub open: Vec<InFlight>,
-    pub dead_end: Option<DeadEndRef>,
-    pub backends: BackendPaths,
+object_only! {
+    #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+    pub struct State {
+        pub schema: u32,
+        pub session: Option<SessionInfo>,
+        pub cores: Vec<CoreFacts>,
+        pub last_seq: Option<Seq>,
+        pub open: Vec<InFlight>,
+        pub dead_end: Option<DeadEndRef>,
+        pub backends: BackendPaths,
+    }
 }
 
-/// The backend store paths the latest `config.loaded` recorded; a pass counts only under the path in force.
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(remote = "Self")]
-pub struct BackendPaths {
-    pub mprime: Option<PathBuf>,
-    pub ycruncher: Option<PathBuf>,
+object_only! {
+    /// The backend store paths the latest `config.loaded` recorded; a pass counts only under the path in force.
+    #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+    pub struct BackendPaths {
+        pub mprime: Option<PathBuf>,
+        pub ycruncher: Option<PathBuf>,
+    }
 }
 
 impl BackendPaths {
@@ -276,13 +284,3 @@ impl State {
         Ok(())
     }
 }
-
-togi_machine::object_only!(
-    SessionInfo,
-    DecisionRef,
-    CoreFacts,
-    InFlight,
-    DeadEndRef,
-    State,
-    BackendPaths,
-);

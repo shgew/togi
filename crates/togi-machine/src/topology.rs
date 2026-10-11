@@ -1,15 +1,16 @@
+use crate::object_only;
 use crate::{CcdId, CoreId, CpuId};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(remote = "Self", deny_unknown_fields)]
-pub struct CoreInfo {
-    pub core: CoreId,
-    pub ccd: CcdId,
-    pub cpus: Vec<CpuId>,
+object_only! {
+    #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct CoreInfo {
+        pub core: CoreId,
+        pub ccd: CcdId,
+        pub cpus: Vec<CpuId>,
+    }
 }
-
-crate::object_only!(CoreInfo, BiosContext);
 
 pub fn order(cores: &[CoreInfo]) -> Vec<CoreId> {
     let mut sorted: Vec<_> = cores.iter().collect();
@@ -29,14 +30,15 @@ pub fn order(cores: &[CoreInfo]) -> Vec<CoreId> {
     result
 }
 
-#[derive(Clone, Debug, Default, Eq, Hash, PartialEq, Serialize, Deserialize)]
-#[serde(remote = "Self")]
-pub struct BiosContext {
-    pub bios_version: String,
-    pub board: String,
-    pub cpu_model: String,
-    pub microcode: String,
-    pub boost_limit_mhz: u32,
+object_only! {
+    #[derive(Clone, Debug, Default, Eq, Hash, PartialEq, Serialize)]
+    pub struct BiosContext {
+        pub bios_version: String,
+        pub board: String,
+        pub cpu_model: String,
+        pub microcode: String,
+        pub boost_limit_mhz: u32,
+    }
 }
 
 /// A field of [`BiosContext`], named as it is recorded.

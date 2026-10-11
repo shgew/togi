@@ -1,18 +1,16 @@
 use serde::{Deserialize, Serialize};
+use togi_machine::object_only;
 use togi_machine::{CoreId, ObservedOffset, TargetOffset};
 
 use super::domain::SmuOp;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(
-    remote = "Self",
-    tag = "op",
-    rename_all = "snake_case",
-    deny_unknown_fields
-)]
-pub enum SmuCommand {
-    Set { core: CoreId, offset: TargetOffset },
-    SetAll { offset: TargetOffset },
+object_only! {
+    #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+    #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
+    pub enum SmuCommand {
+        Set { core: CoreId, offset: TargetOffset },
+        SetAll { offset: TargetOffset },
+    }
 }
 
 impl SmuCommand {
@@ -91,24 +89,27 @@ impl SmuWriteRecord {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(remote = "Self", deny_unknown_fields)]
-pub struct SmuReadback {
-    pub core: CoreId,
-    pub offset: ObservedOffset,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub expected: Option<TargetOffset>,
+object_only! {
+    #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct SmuReadback {
+        pub core: CoreId,
+        pub offset: ObservedOffset,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub expected: Option<TargetOffset>,
+    }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(remote = "Self", deny_unknown_fields)]
-pub struct SmuError {
-    pub op: SmuOp,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub core: Option<CoreId>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub offset: Option<TargetOffset>,
-    pub error: String,
-}
+object_only! {
+    #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct SmuError {
+        pub op: SmuOp,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub core: Option<CoreId>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub offset: Option<TargetOffset>,
+        pub error: String,
+    }
 
-togi_machine::object_only!(SmuCommand, SmuReadback, SmuError,);
+}

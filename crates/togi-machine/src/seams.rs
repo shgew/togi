@@ -1,10 +1,11 @@
+use crate::object_only;
 use crate::{
     BankType, BiosContext, BootId, CancellationToken, Condition, CoreId, CoreInfo, CpuId, Error,
     KernelCursor, LoadSchedule, ObservedOffset, Partial, Regime, ResetKind, Signal, TargetOffset,
     TrialConditions, WorkloadId,
 };
 use jiff::Timestamp;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::time::Duration;
 
 pub trait Clock {
@@ -217,14 +218,14 @@ pub struct KernelRead {
     pub cursor: KernelCursor,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(remote = "Self", deny_unknown_fields)]
-pub struct PstoreRecord {
-    pub path: String,
-    pub lines: Vec<String>,
+object_only! {
+    #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct PstoreRecord {
+        pub path: String,
+        pub lines: Vec<String>,
+    }
 }
-
-crate::object_only!(PstoreRecord);
 
 pub trait Kernel {
     /// An earlier boot missing from the journal is `Error::BootMissing`.

@@ -1,6 +1,7 @@
 //! Everything decoded from journal or state JSON is an object: serde's positional array form of a
 //! struct, which `deny_unknown_fields` does not constrain, is refused even when correctly sized.
 
+use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::fixtures::{at, sample, samples};
@@ -49,11 +50,6 @@ fn nested_objects(value: &Value, at: &str, found: &mut Vec<String>) {
         }
         _ => {}
     }
-}
-
-/// Whether the derived (positional-capable) decoder takes `json`: the control for each refusal.
-fn derived_takes<T>(json: &Value, derived: impl FnOnce(Value) -> serde_json::Result<T>) -> bool {
-    derived(json.clone()).is_ok()
 }
 
 fn as_array(object: &Value) -> Value {
@@ -106,8 +102,7 @@ fn a_correctly_sized_positional_data_is_refused() {
         null,
         null
     ]);
-    // The derived sequence form takes it, so the refusal below is the object-only path's.
-    assert!(derived_takes(&array, payload::ConfigLoaded::deserialize));
+    assert!(payload::ConfigLoaded::deserialize(array.clone()).is_err());
     line["data"] = array;
     let error = Event::decode(&line.to_string()).unwrap_err();
     assert!(
@@ -125,7 +120,7 @@ fn a_correctly_sized_positional_data_is_refused() {
     // `session.archived`: session.
     let mut line = line_of(sample(EventKind::SessionArchived));
     let array = json!([line["data"]["session"]]);
-    assert!(derived_takes(&array, payload::SessionArchived::deserialize));
+    assert!(payload::SessionArchived::deserialize(array.clone()).is_err());
     line["data"] = array;
     let error = Event::decode(&line.to_string()).unwrap_err();
     assert!(
@@ -188,7 +183,7 @@ fn nested_journal_structs_refuse_a_correctly_sized_array() {
         &["version", "rev", "ruleset", "schema", "fixes", "evidence"],
     );
     assert_eq!(line["data"]["build"].as_array().unwrap().len(), 6);
-    assert!(derived_takes(&line["data"]["build"], Build::deserialize));
+    assert!(Build::deserialize(line["data"]["build"].clone()).is_err());
     let error = Event::decode(&line.to_string()).unwrap_err();
     assert_expected_an_object(&error.to_string());
 
@@ -247,7 +242,7 @@ fn state_decodes_only_from_an_object() {
         "schema", "session", "cores", "last_seq", "open", "dead_end", "backends",
     ];
     let array = positional(&object, &fields);
-    assert!(derived_takes(&array, State::deserialize));
+    assert!(State::deserialize(array.clone()).is_err());
     assert_expected_an_object(&read_state(&array).unwrap_err().to_string());
 }
 
@@ -263,10 +258,7 @@ fn backend_paths_decode_only_from_an_object() {
         }
     );
 
-    assert!(derived_takes(
-        &json!(["/opt/mprime", null]),
-        BackendPaths::deserialize
-    ));
+    assert!(BackendPaths::deserialize(json!(["/opt/mprime", null])).is_err());
     object["backends"] = json!(["/opt/mprime", null]);
     assert_expected_an_object(&read_state(&object).unwrap_err().to_string());
     assert!(serde_json::from_str::<BackendPaths>(r#"["/opt/mprime",null]"#).is_err());
