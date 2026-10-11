@@ -120,7 +120,10 @@ pub(crate) struct Finished {
     /// got; the supervisor reported it on stderr because no caller is left to read it.
     #[cfg_attr(
         not(test),
-        expect(dead_code, reason = "the stderr report is its only consumer outside tests")
+        expect(
+            dead_code,
+            reason = "the stderr report is its only consumer outside tests"
+        )
     )]
     pub(crate) abandoned: bool,
 }
