@@ -653,6 +653,98 @@ async fn cancelling_during_discovery_returns_cancelled_at_once_and_signals_nothi
 }
 
 #[tokio::test(start_paused = true)]
+async fn cancelling_during_initial_process_scan_finishes_listed_scope_cleanup_and_keeps_errors() {
+    for fail_stop in [false, true] {
+        local(async move {
+            let rig = rig();
+            rig.fake.add_unit("togi-trial-a.scope");
+            rig.fake.hang_scans();
+            if fail_stop {
+                rig.fake.on_systemd(|call| match call {
+                    Systemd::Stop { .. } => Some(Reply::Output {
+                        success: false,
+                        text: "Access denied".into(),
+                    }),
+                    _ => None,
+                });
+            }
+            let scanning = std::rc::Rc::new(tokio::sync::Notify::new());
+            let entered = std::rc::Rc::clone(&scanning);
+            rig.fake.on_scan(move || entered.notify_one());
+            let cancel = CancellationToken::new();
+            let trigger = cancel.clone();
+            spawn_local(async move {
+                scanning.notified().await;
+                trigger.cancel();
+            });
+            let begun = Instant::now();
+            let error = run_sweep(&rig.env, &cancel).await.err().unwrap();
+            let all = calls(&rig);
+            assert!(
+                all.contains(&("togi-trial-a".to_owned(), "SIGKILL")),
+                "{all:?}"
+            );
+            assert!(
+                all.contains(&("togi-trial-a".to_owned(), "stop")),
+                "{all:?}"
+            );
+            assert!(begun.elapsed() <= secs(15), "{:?}", begun.elapsed());
+            for (operation, at) in rig.fake.systemd_calls() {
+                if matches!(operation, Systemd::Kill { .. } | Systemd::Stop { .. }) {
+                    assert!(at.duration_since(begun) < secs(15));
+                }
+            }
+            let Error::Joined(joined) = &error else {
+                panic!("not joined: {error:?}");
+            };
+            let [Error::Cancelled, second] = joined.errors() else {
+                panic!("unexpected members: {error:?}");
+            };
+            let failures = containment(second).failures();
+            assert!(matches!(
+                failures.first(),
+                Some(CleanupFailure::Observe {
+                    what: "the trial processes",
+                    ..
+                })
+            ));
+            assert_eq!(
+                failures
+                    .iter()
+                    .any(|failure| matches!(failure, CleanupFailure::StopScope { .. })),
+                fail_stop,
+                "{failures:?}"
+            );
+            assert_eq!(rig.fake.units().is_empty(), !fail_stop);
+        })
+        .await;
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn cancelling_during_initial_process_scan_without_a_known_scope_returns_at_once() {
+    local(async {
+        let rig = rig();
+        rig.fake.hang_scans();
+        let scanning = std::rc::Rc::new(tokio::sync::Notify::new());
+        let entered = std::rc::Rc::clone(&scanning);
+        rig.fake.on_scan(move || entered.notify_one());
+        let cancel = CancellationToken::new();
+        let trigger = cancel.clone();
+        spawn_local(async move {
+            scanning.notified().await;
+            trigger.cancel();
+        });
+        let begun = Instant::now();
+        let error = run_sweep(&rig.env, &cancel).await.err().unwrap();
+        assert!(matches!(error, Error::Cancelled), "{error:?}");
+        assert_eq!(begun.elapsed(), Duration::ZERO);
+        assert!(calls(&rig).is_empty());
+    })
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
 async fn cancelling_after_the_term_still_kills_and_stops_every_discovered_scope() {
     local(async {
         let rig = rig();
@@ -729,9 +821,7 @@ mod killed_owner {
     use togi_machine::{CancellationToken, Trials};
     use tokio::time::Instant;
 
-    use super::super::process::{
-        Escaped, Helper, helper_command, linux, runner_over, timing, wait_until,
-    };
+    use super::super::process::{Escaped, Helper, helper_command, linux, runner_over, timing};
     use crate::id::ScopeName;
     use crate::launch::LaunchCommand;
     use crate::os::linux::{Leader, Linux};
@@ -858,6 +948,250 @@ mod killed_owner {
         }
     }
 
+    fn poll_until(end: std::time::Instant, mut ready: impl FnMut() -> bool) -> bool {
+        loop {
+            if ready() {
+                return true;
+            }
+            if std::time::Instant::now() >= end {
+                return false;
+            }
+            std::thread::yield_now();
+        }
+    }
+
+    fn parent_of(pid: u32) -> Option<u32> {
+        let text = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+        text[text.rfind(')')? + 1..]
+            .split_whitespace()
+            .nth(1)?
+            .parse()
+            .ok()
+    }
+
+    fn children_of(parent: u32) -> Vec<Escaped> {
+        let Ok(entries) = std::fs::read_dir("/proc") else {
+            return Vec::new();
+        };
+        entries
+            .filter_map(|entry| entry.ok()?.file_name().to_str()?.parse::<u32>().ok())
+            .filter(|pid| parent_of(*pid) == Some(parent))
+            .filter_map(Escaped::adopt)
+            .collect()
+    }
+
+    fn frozen_or_gone(pid: u32) -> bool {
+        if stat_of(pid).is_none_or(|stat| matches!(stat.state, 'Z' | 'X')) {
+            return true;
+        }
+        let Ok(tasks) = std::fs::read_dir(format!("/proc/{pid}/task")) else {
+            return false;
+        };
+        let mut seen = false;
+        for task in tasks.flatten() {
+            let Ok(text) = std::fs::read_to_string(task.path().join("stat")) else {
+                continue;
+            };
+            if !parse_stat(&text).is_ok_and(|stat| matches!(stat.state, 'T' | 't')) {
+                return false;
+            }
+            seen = true;
+        }
+        seen
+    }
+
+    /// Owns the launched owner from launch until its observed exit and reap. Dropped while still
+    /// holding it, it freezes the owner and waits until every thread is stopped, so no further
+    /// fork can race the enumeration of its children, then kills the owner and every child it
+    /// found, reaps the owner and waits for the children to die. It spawns nothing and signals
+    /// no pid it did not pin or hold unreaped.
+    struct OwnerGuard(Option<Leader>);
+
+    impl OwnerGuard {
+        fn owner(&self) -> &Leader {
+            self.0
+                .as_ref()
+                .expect("the owner is held until it is reaped")
+        }
+
+        fn kill_and_reap(&mut self) -> ExitInfo {
+            let owner = self.owner();
+            assert!(owner.signal_group(GroupSignal::Kill).is_ok());
+            assert!(poll_until(
+                std::time::Instant::now() + Duration::from_secs(10),
+                || owner.exit().is_ok_and(|exit| exit.is_some())
+            ));
+            self.0.take().expect("held above").reap().unwrap()
+        }
+    }
+
+    impl Drop for OwnerGuard {
+        fn drop(&mut self) {
+            let Some(owner) = self.0.take() else {
+                return;
+            };
+            let pid = owner.pid();
+            let end = std::time::Instant::now() + Duration::from_secs(5);
+            let _ = owner.signal_group(GroupSignal::Stop);
+            let _ = poll_until(end, || frozen_or_gone(pid));
+            let children = children_of(pid);
+            let _ = owner.signal_group(GroupSignal::Kill);
+            for child in &children {
+                child.kill();
+            }
+            let end = std::time::Instant::now() + Duration::from_secs(5);
+            if poll_until(end, || owner.exit().is_ok_and(|exit| exit.is_some())) {
+                let _ = owner.reap();
+            }
+            let _ = poll_until(end, || children.iter().all(|child| !child.alive()));
+        }
+    }
+
+    fn setup_owner(
+        os: &Linux,
+        dir: &std::path::Path,
+        after_launch: impl FnOnce(&Leader),
+    ) -> (Escaped, ScopeProcess) {
+        let mut guard = OwnerGuard(Some(
+            os.launch(&helper_command("scope-owner", dir)).unwrap(),
+        ));
+        after_launch(guard.owner());
+        let published = dir.join("descendant.pid");
+        assert!(
+            poll_until(std::time::Instant::now() + Duration::from_secs(10), || {
+                published.exists()
+            }),
+            "the owner started no detached descendant"
+        );
+        let pid: u32 = std::fs::read_to_string(&published)
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        assert_eq!(
+            parent_of(pid),
+            Some(guard.owner().pid()),
+            "the published process is the owner's child"
+        );
+        let descendant = Escaped::adopt(pid).expect("the descendant is alive");
+        assert_eq!(guard.kill_and_reap(), ExitInfo::Signal(9));
+        let starttime = stat_of(pid)
+            .map(|stat| stat.starttime)
+            .expect("the descendant outlived its owner");
+        let orphan = ScopeProcess {
+            scope: ScopeName::from_unit("togi-trial-leftover.scope").unwrap(),
+            pid,
+            starttime,
+        };
+        (descendant, orphan)
+    }
+
+    struct SetupWitness {
+        dir: std::path::PathBuf,
+        owner: Option<(u32, u64)>,
+    }
+
+    fn stat_of(pid: u32) -> Option<crate::procfs::Stat> {
+        std::fs::read_to_string(format!("/proc/{pid}/stat"))
+            .ok()
+            .and_then(|text| parse_stat(&text).ok())
+    }
+
+    impl SetupWitness {
+        fn new(dir: &std::path::Path) -> Self {
+            Self {
+                dir: dir.to_owned(),
+                owner: None,
+            }
+        }
+
+        fn note_owner(&mut self, owner: &Leader) {
+            self.owner = stat_of(owner.pid()).map(|stat| (owner.pid(), stat.starttime));
+        }
+
+        fn live_in_dir(&self) -> Vec<Escaped> {
+            let Ok(entries) = std::fs::read_dir("/proc") else {
+                return Vec::new();
+            };
+            entries
+                .filter_map(|entry| entry.ok()?.file_name().to_str()?.parse::<u32>().ok())
+                .filter(|pid| {
+                    std::fs::read_link(format!("/proc/{pid}/cwd")).is_ok_and(|cwd| cwd == self.dir)
+                })
+                .filter_map(Escaped::adopt)
+                .filter(Escaped::alive)
+                .collect()
+        }
+
+        fn owner_unreaped(&self) -> bool {
+            self.owner.is_some_and(|(pid, starttime)| {
+                stat_of(pid).is_some_and(|stat| stat.starttime == starttime)
+            })
+        }
+    }
+
+    impl Drop for SetupWitness {
+        fn drop(&mut self) {
+            let end = std::time::Instant::now() + Duration::from_secs(5);
+            let leaked = self.live_in_dir();
+            for process in &leaked {
+                process.kill();
+            }
+            let _ = poll_until(end, || leaked.iter().all(|process| !process.alive()));
+            if self.owner_unreaped()
+                && let Some((pid, _)) = self.owner
+                && let Some(pid) = i32::try_from(pid)
+                    .ok()
+                    .and_then(rustix::process::Pid::from_raw)
+            {
+                let _ = rustix::process::waitpid(Some(pid), rustix::process::WaitOptions::NOHANG);
+            }
+        }
+    }
+
+    #[test]
+    fn real_process_owner_setup_failures_leave_no_owner_or_detached_descendant() {
+        for fault in ["immediately", "before-publication-read", "read", "parse"] {
+            let dir = crate::testing::tempdir();
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            let _enter = runtime.enter();
+            let os = linux();
+            let mut witness = SetupWitness::new(dir.path());
+            let begun = std::time::Instant::now();
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                setup_owner(&os, dir.path(), |owner| {
+                    witness.note_owner(owner);
+                    assert!(fault != "immediately", "injected setup failure");
+                    let published = dir.path().join("descendant.pid");
+                    assert!(poll_until(
+                        std::time::Instant::now() + Duration::from_secs(10),
+                        || published.exists()
+                    ));
+                    std::fs::rename(&published, dir.path().join("descendant.pid.tmp")).unwrap();
+                    match fault {
+                        "before-publication-read" => panic!("injected setup failure"),
+                        "read" => std::fs::create_dir(&published).unwrap(),
+                        "parse" => std::fs::write(&published, "invalid pid").unwrap(),
+                        _ => unreachable!(),
+                    }
+                })
+            }));
+            let leaked: Vec<u32> = witness.live_in_dir().iter().map(Escaped::pid).collect();
+            let unreaped = witness.owner_unreaped();
+            drop(witness);
+            assert!(result.is_err(), "{fault}");
+            assert!(
+                leaked.is_empty(),
+                "processes leaked after {fault}: {leaked:?}"
+            );
+            assert!(!unreaped, "the owner was not reaped after {fault}");
+            assert!(begun.elapsed() < Duration::from_secs(15), "{fault}");
+        }
+    }
+
     /// Go `TestProcessSweepAfterKilledOwner`: a real owner starts a detached descendant and is
     /// killed; the descendant survives, and the sweep removes it.
     #[test]
@@ -870,36 +1204,7 @@ mod killed_owner {
         let os = linux();
         let (descendant, orphan) = {
             let _enter = runtime.enter();
-            let owner = os
-                .launch(&helper_command("scope-owner", dir.path()))
-                .unwrap();
-            let published = dir.path().join("descendant.pid");
-            assert!(
-                wait_until(Duration::from_secs(10), || published.exists()),
-                "the owner started no detached descendant"
-            );
-            let pid: u32 = std::fs::read_to_string(&published)
-                .unwrap()
-                .trim()
-                .parse()
-                .unwrap();
-            let descendant = Escaped::adopt(pid).expect("the descendant is alive");
-            assert!(owner.signal_group(GroupSignal::Kill).is_ok());
-            assert!(wait_until(Duration::from_secs(10), || owner
-                .exit()
-                .is_ok_and(|exit| exit.is_some())));
-            assert_eq!(owner.reap().unwrap(), ExitInfo::Signal(9));
-            let starttime = std::fs::read_to_string(format!("/proc/{pid}/stat"))
-                .ok()
-                .and_then(|text| parse_stat(&text).ok())
-                .map(|stat| stat.starttime)
-                .expect("the descendant outlived its owner");
-            let orphan = ScopeProcess {
-                scope: ScopeName::from_unit("togi-trial-leftover.scope").unwrap(),
-                pid,
-                starttime,
-            };
-            (descendant, orphan)
+            setup_owner(&os, dir.path(), |_| {})
         };
         assert!(
             descendant.alive(),

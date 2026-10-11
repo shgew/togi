@@ -149,10 +149,10 @@ async fn until_cancelled(cancel: &CancellationToken, woken: &Notify) {
 /// observation is recorded and the known scopes are still killed; every failure is kept.
 ///
 /// Discovery stops `kill_slot` short of the deadline, so a hung listing or scan still leaves
-/// time to SIGKILL and stop every scope already known. Cancellation during discovery returns
-/// `Cancelled` at once, with nothing signalled. Once a scope is known, cancellation never drops
-/// the work: the signals, kill, stop and verification finish inside the same deadline, and the
-/// result is `Cancelled` (joined with the containment failures, if cleanup did not confirm).
+/// time to SIGKILL and stop every scope already known. Cancellation before any scope is known
+/// returns `Cancelled` at once. Once a scope is known, cancellation never drops the work: the
+/// scan, signals, kill, stop and verification finish inside the same deadline, and the result
+/// is `Cancelled` (joined with the containment failures, if cleanup did not confirm).
 pub(crate) async fn sweep<O: Os>(
     env: &Env<O>,
     cancel: &CancellationToken,
@@ -176,7 +176,7 @@ pub(crate) async fn sweep<O: Os>(
     let units =
         listed.map_err(|source| contained(vec![observe("the trial scope list", source)]))?;
     let scanned = tokio::select! {
-        () = until_cancelled(cancel, &woken) => return Err(Error::Cancelled),
+        () = until_cancelled(cancel, &woken), if units.is_empty() => return Err(Error::Cancelled),
         scanned = os.scope_processes(discovery_end) => scanned,
     };
     let captured = match scanned {
