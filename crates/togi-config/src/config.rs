@@ -1,6 +1,9 @@
 use std::{collections::BTreeMap, fs, path::Path, path::PathBuf};
 
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{
+    Deserialize, Deserializer, Serialize, Serializer,
+    de::{MapAccess, Visitor, value::MapAccessDeserializer},
+};
 use togi_machine::{CoreId, Regime};
 
 use crate::{
@@ -15,7 +18,7 @@ use crate::{
 pub const DEFAULT_PATH: &str = "/etc/togi/config.json";
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]
-#[serde(try_from = "RawConfig")]
+#[serde(try_from = "Object<RawConfig>")]
 pub struct Config {
     overrides: BTreeMap<CoreId, InitialOverride>,
     search_trial: TrialSeconds,
@@ -32,7 +35,7 @@ pub struct Config {
 
 impl Config {
     pub fn parse(text: &str) -> Result<Self, ConfigError> {
-        Self::try_from(serde_json::from_str::<RawConfig>(text)?)
+        Self::try_from(serde_json::from_str::<Object<RawConfig>>(text)?)
     }
 
     pub fn load(path: &Path) -> Result<Self, LoadError> {
@@ -113,16 +116,40 @@ impl Default for Config {
     }
 }
 
+/// Decodes `T` from a JSON object only: derived `Deserialize` also takes serde's positional
+/// sequence form, which `deny_unknown_fields` does not constrain.
+pub(crate) struct Object<T>(T);
+
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for Object<T> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Members<T>(std::marker::PhantomData<T>);
+
+        impl<'de, T: Deserialize<'de>> Visitor<'de> for Members<T> {
+            type Value = Object<T>;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("an object")
+            }
+
+            fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<Object<T>, A::Error> {
+                T::deserialize(MapAccessDeserializer::new(map)).map(Object)
+            }
+        }
+
+        deserializer.deserialize_map(Members(std::marker::PhantomData))
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct RawConfig {
     start_offsets: Option<RawCoreMap>,
     candidate_solo_limits: Option<RawCoreMap>,
-    durations: Option<RawDurations>,
-    evidence: Option<RawEvidence>,
-    checking: Option<RawChecking>,
-    dead_ends: Option<RawDeadEnds>,
-    backends: Option<RawBackends>,
+    durations: Option<Object<RawDurations>>,
+    evidence: Option<Object<RawEvidence>>,
+    checking: Option<Object<RawChecking>>,
+    dead_ends: Option<Object<RawDeadEnds>>,
+    backends: Option<Object<RawBackends>>,
     backend_user: Option<String>,
 }
 
@@ -197,14 +224,14 @@ fn probability(
     })
 }
 
-impl TryFrom<RawConfig> for Config {
+impl TryFrom<Object<RawConfig>> for Config {
     type Error = ConfigError;
 
-    fn try_from(raw: RawConfig) -> Result<Self, ConfigError> {
+    fn try_from(Object(raw): Object<RawConfig>) -> Result<Self, ConfigError> {
         let mut config = Self::default();
         let overrides = overrides::resolve(raw.start_offsets, raw.candidate_solo_limits)?;
 
-        if let Some(durations) = raw.durations {
+        if let Some(Object(durations)) = raw.durations {
             config.search_trial = seconds(
                 "search_trial_s",
                 durations.search_trial_s,
@@ -231,18 +258,18 @@ impl TryFrom<RawConfig> for Config {
             }
         }
 
-        if let Some(evidence) = raw.evidence {
+        if let Some(Object(evidence)) = raw.evidence {
             let defaults = config.evidence;
             let miss = probability("miss", evidence.miss, defaults.miss())?;
             let rate = probability("rate", evidence.rate, defaults.rate())?;
             config.evidence = EvidencePolicy::new(miss, rate)?;
         }
 
-        if let Some(cycle) = raw.checking.and_then(|checking| checking.cycle) {
+        if let Some(cycle) = raw.checking.and_then(|Object(checking)| checking.cycle) {
             config.checking_cycle = CheckingSchedule::new(cycle)?;
         }
 
-        if let Some(dead_ends) = raw.dead_ends {
+        if let Some(Object(dead_ends)) = raw.dead_ends {
             let defaults = config.dead_ends;
             config.dead_ends = DeadEndPolicy::new(
                 threshold(
@@ -258,7 +285,7 @@ impl TryFrom<RawConfig> for Config {
             );
         }
 
-        if let Some(backends) = raw.backends {
+        if let Some(Object(backends)) = raw.backends {
             config.backends = Backends::new(backends.mprime, backends.ycruncher)?;
         }
 

@@ -253,6 +253,24 @@ fn malformed_documents(text: &str) {
     ));
 }
 
+#[test_case("[null,null,null,null,null,null,null,null]" ; "root")]
+#[test_case(r#"{"durations":[60,null,null,null,null]}"# ; "durations")]
+#[test_case(r#"{"evidence":[0.001,0.25]}"# ; "evidence")]
+#[test_case(r#"{"checking":[["R7"]]}"# ; "checking")]
+#[test_case(r#"{"dead_ends":[5,10]}"# ; "dead ends")]
+#[test_case(r#"{"backends":["/opt/mprime",null]}"# ; "backends")]
+#[test_case(r#"{"start_offsets":[-10]}"# ; "start offsets")]
+#[test_case(r#"{"candidate_solo_limits":[-36]}"# ; "candidate solo limits")]
+fn positional_arrays_rejected(text: &str) {
+    assert!(matches!(
+        Config::parse(text).unwrap_err(),
+        ConfigError::Syntax(_)
+    ));
+    assert!(serde_json::from_str::<Config>(text).is_err());
+    let value: Value = serde_json::from_str(text).unwrap();
+    assert!(serde_json::from_value::<Config>(value).is_err());
+}
+
 #[test_case(r#"{"bogus":1}"# ; "top level")]
 #[test_case(r#"{"durations":{"search_s":1}}"# ; "durations")]
 #[test_case(r#"{"durations":{"confirmation_trial_s":300}}"# ; "removed confirmation key")]
@@ -535,6 +553,8 @@ fn customised_values_survive() {
     );
     assert_eq!(config.checking_trial().get(), 1);
     assert_eq!(config.checking_all_core().get(), 4);
+    assert_eq!(config.evidence().miss().get(), 0.001);
+    assert_eq!(config.evidence().rate().get(), 0.25);
     assert_eq!(config.evidence().trials().get(), 25);
     assert_eq!(
         config.backends().ycruncher(),
