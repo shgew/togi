@@ -90,7 +90,7 @@ gate: _dev-shell
     set -euo pipefail
     just check-one fmt
     just lint
-    just check-one module changes gocompat-vectors gocompat-vectors-math gocompat-vectors-lgamma gocompat-vectors-pow
+    just check-one module changes gocompat-vectors gocompat-vectors-math gocompat-vectors-lgamma gocompat-vectors-pow gocompat-vectors-convert
     vendored=$(nix build --no-link --print-out-paths '.#checks.{{ system }}.package.goModules')
     fresh=$(mktemp -d)
     trap 'rm -rf "$fresh"' EXIT
@@ -107,12 +107,12 @@ gate: _dev-shell
         just check-one comparison-manifests comparison-selftest comparison-negative
     fi
 
-# Run every flake check this host builds: package, race, lint, fmt, changes, module, gocompat-vectors, gocompat-vectors-math, gocompat-vectors-lgamma, gocompat-vectors-pow, the rust-* checks (clippy, nextest, doc, fmt, deny, shear) and, on Linux, trial-scope-tests and the VM tests
+# Run every flake check this host builds: package, race, lint, fmt, changes, module, gocompat-vectors, gocompat-vectors-math, gocompat-vectors-lgamma, gocompat-vectors-pow, gocompat-vectors-convert, the rust-* checks (clippy, nextest, doc, fmt, deny, shear) and, on Linux, trial-scope-tests and the VM tests
 [group('nix')]
 check *args:
     nix flake check "$@"
 
-# Build named flake checks: package, race, lint, fmt, changes, module, gocompat-vectors, gocompat-vectors-math, gocompat-vectors-lgamma, gocompat-vectors-pow, rust-clippy, rust-nextest, rust-doc, rust-fmt, rust-deny, rust-shear or, on Linux, trial-scope-tests, vm and vm-restart-limit (`just check-one race`)
+# Build named flake checks: package, race, lint, fmt, changes, module, gocompat-vectors, gocompat-vectors-math, gocompat-vectors-lgamma, gocompat-vectors-pow, gocompat-vectors-convert, rust-clippy, rust-nextest, rust-doc, rust-fmt, rust-deny, rust-shear or, on Linux, trial-scope-tests, vm and vm-restart-limit (`just check-one race`)
 [group('nix')]
 check-one +names:
     nix build --no-link $(printf '.#checks.{{ system }}.%s ' "$@")

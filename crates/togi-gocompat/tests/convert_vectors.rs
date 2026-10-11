@@ -1,0 +1,252 @@
+#![cfg(test)]
+
+use std::fs;
+use std::path::Path;
+
+use togi_gocompat::convert::{
+    duration_from_secs_f64, duration_hours, duration_minutes, duration_round, duration_seconds,
+    duration_string, duration_truncate, f64_to_i64, shl_i64,
+};
+
+fn rows(name: &str, kind: &str) -> Vec<Vec<String>> {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("testdata")
+        .join(name);
+    let text = fs::read_to_string(&path).unwrap();
+    assert!(text.ends_with('\n'), "{name} ends without a newline");
+    let rows: Vec<Vec<String>> = text
+        .lines()
+        .map(|line| line.split('\t').map(str::to_owned).collect::<Vec<_>>())
+        .filter(|fields| fields[0] == kind)
+        .map(|fields| fields[1..].to_vec())
+        .collect();
+    assert!(!rows.is_empty(), "{name} has no {kind} vectors");
+    rows
+}
+
+fn f64_of(bits: &str) -> f64 {
+    f64::from_bits(u64::from_str_radix(bits, 16).unwrap())
+}
+
+fn f32_of(bits: &str) -> f32 {
+    f32::from_bits(u32::from_str_radix(bits, 16).unwrap())
+}
+
+fn int(text: &str) -> i64 {
+    text.parse().unwrap()
+}
+
+fn same_f64(a: f64, b: f64) -> bool {
+    a.to_bits() == b.to_bits() || (a.is_nan() && b.is_nan())
+}
+
+fn same_f32(a: f32, b: f32) -> bool {
+    a.to_bits() == b.to_bits() || (a.is_nan() && b.is_nan())
+}
+
+fn expect_none(kind: &str, failures: &[String]) {
+    assert!(
+        failures.is_empty(),
+        "{kind}: {} mismatches, first {:?}",
+        failures.len(),
+        &failures[..failures.len().min(5)]
+    );
+}
+
+#[test]
+fn float_to_int64_matches_go_on_amd64() {
+    let mut failures = Vec::new();
+    for row in rows("convert-amd64.txt", "i64") {
+        let got = f64_to_i64(f64_of(&row[0]));
+        if got != int(&row[1]) {
+            failures.push(format!("{}: got {got}, want {}", row[0], row[1]));
+        }
+    }
+    expect_none("i64", &failures);
+}
+
+#[test]
+fn duration_from_seconds_matches_go_on_amd64() {
+    let mut failures = Vec::new();
+    for row in rows("convert-amd64.txt", "dur-secs") {
+        let got = duration_from_secs_f64(f64_of(&row[0]));
+        if got != int(&row[1]) {
+            failures.push(format!("{}: got {got}, want {}", row[0], row[1]));
+        }
+    }
+    for row in rows("convert-amd64.txt", "dur-scaled") {
+        let got = f64_to_i64(f64_of(&row[0]) * f64_of(&row[1]));
+        if got != int(&row[2]) {
+            failures.push(format!(
+                "{} * {}: got {got}, want {}",
+                row[0], row[1], row[2]
+            ));
+        }
+    }
+    expect_none("dur-secs", &failures);
+}
+
+#[test]
+fn float_to_int64_boundaries() {
+    assert_eq!(f64_to_i64(f64::NAN), i64::MIN);
+    assert_eq!(f64_to_i64(f64::INFINITY), i64::MIN);
+    assert_eq!(f64_to_i64(f64::NEG_INFINITY), i64::MIN);
+    assert_eq!(f64_to_i64(9_223_372_036_854_775_808.0), i64::MIN);
+    assert_eq!(
+        f64_to_i64(9_223_372_036_854_774_784.0),
+        9_223_372_036_854_774_784
+    );
+    assert_eq!(f64_to_i64(-9_223_372_036_854_775_808.0), i64::MIN);
+    assert_eq!(f64_to_i64(-9_223_372_036_854_777_856.0), i64::MIN);
+    assert_eq!(f64_to_i64(-0.9), 0);
+    assert_eq!(f64_to_i64(-1.9), -1);
+    assert_eq!(f64_to_i64(2.9), 2);
+    assert_eq!(duration_from_secs_f64(1.5), 1_500_000_000);
+    assert_eq!(duration_from_secs_f64(f64::NAN), i64::MIN);
+}
+
+#[test]
+fn float32_rounding_equals_rust_as_f32() {
+    let mut failures = Vec::new();
+    for row in rows("convert.txt", "f32") {
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "the vector is the narrowing itself"
+        )]
+        let got = f64_of(&row[0]) as f32;
+        if !same_f32(got, f32_of(&row[1])) {
+            failures.push(format!(
+                "{}: got {:08x}, want {}",
+                row[0],
+                got.to_bits(),
+                row[1]
+            ));
+        }
+    }
+    expect_none("f32", &failures);
+}
+
+#[test]
+fn float32_arithmetic_equals_rust() {
+    let mut failures = Vec::new();
+    for row in rows("convert.txt", "f32-ops") {
+        let (a, b) = (f32_of(&row[0]), f32_of(&row[1]));
+        let ok = same_f32(a + b, f32_of(&row[2]))
+            && same_f32(a - b, f32_of(&row[3]))
+            && same_f32(a * b, f32_of(&row[4]))
+            && same_f32(a / b, f32_of(&row[5]))
+            && same_f64(f64::from(a), f64_of(&row[6]))
+            && (f64::from(a) > f64::from(b)) == (row[7] == "true")
+            && (a > b) == (row[8] == "true");
+        if !ok {
+            failures.push(format!("{} {}", row[0], row[1]));
+        }
+    }
+    expect_none("f32-ops", &failures);
+}
+
+#[test]
+fn rounding_functions_equal_rust() {
+    let mut failures = Vec::new();
+    for row in rows("convert.txt", "math") {
+        let x = f64_of(&row[0]);
+        let ok = same_f64(x.round(), f64_of(&row[1]))
+            && same_f64(x.floor(), f64_of(&row[2]))
+            && same_f64(x.ceil(), f64_of(&row[3]))
+            && same_f64(x.trunc(), f64_of(&row[4]));
+        if !ok {
+            failures.push(row[0].clone());
+        }
+    }
+    expect_none("math", &failures);
+}
+
+#[test]
+fn duration_strings_match_go() {
+    let mut failures = Vec::new();
+    for row in rows("convert.txt", "dur-string") {
+        let got = duration_string(int(&row[0]));
+        if got != row[1] {
+            failures.push(format!("{}: got {got:?}, want {:?}", row[0], row[1]));
+        }
+    }
+    expect_none("dur-string", &failures);
+}
+
+#[test]
+fn duration_unit_conversions_match_go() {
+    let mut failures = Vec::new();
+    for row in rows("convert.txt", "dur-float") {
+        let d = int(&row[0]);
+        let ok = same_f64(duration_seconds(d), f64_of(&row[1]))
+            && same_f64(duration_minutes(d), f64_of(&row[2]))
+            && same_f64(duration_hours(d), f64_of(&row[3]));
+        if !ok {
+            failures.push(row[0].clone());
+        }
+    }
+    for row in rows("convert.txt", "dur-int") {
+        let d = int(&row[0]);
+        if d / 1_000_000 != int(&row[1]) || d / 1_000 != int(&row[2]) {
+            failures.push(row[0].clone());
+        }
+    }
+    expect_none("dur-float", &failures);
+}
+
+#[test]
+fn duration_rounding_matches_go() {
+    let mut failures = Vec::new();
+    for row in rows("convert.txt", "dur-round") {
+        let (d, m) = (int(&row[0]), int(&row[1]));
+        if duration_round(d, m) != int(&row[2]) || duration_truncate(d, m) != int(&row[3]) {
+            failures.push(format!("{d} {m}"));
+        }
+    }
+    expect_none("dur-round", &failures);
+}
+
+#[test]
+fn duration_multiplication_wraps_as_go() {
+    let mut failures = Vec::new();
+    for row in rows("convert.txt", "dur-mul") {
+        if int(&row[0]).wrapping_mul(int(&row[1])) != int(&row[2]) {
+            failures.push(format!("{} * {}", row[0], row[1]));
+        }
+    }
+    expect_none("dur-mul", &failures);
+}
+
+#[test]
+fn integer_division_and_remainder_follow_go() {
+    let mut failures = Vec::new();
+    for row in rows("convert.txt", "divmod") {
+        let (a, b) = (int(&row[0]), int(&row[1]));
+        if a.wrapping_div(b) != int(&row[2]) || a.wrapping_rem(b) != int(&row[3]) {
+            failures.push(format!("{a} {b}"));
+        }
+    }
+    expect_none("divmod", &failures);
+    assert_eq!((-7_i64).wrapping_div(2), -3);
+    assert_eq!((-7_i64).wrapping_rem(2), -1);
+    assert_eq!(i64::MIN.wrapping_div(-1), i64::MIN);
+    assert_eq!(i64::MIN.wrapping_rem(-1), 0);
+}
+
+#[test]
+fn shifts_follow_go() {
+    let mut failures = Vec::new();
+    for row in rows("convert.txt", "shl") {
+        let n: u64 = row[1].parse().unwrap();
+        if shl_i64(int(&row[0]), n) != int(&row[2]) {
+            failures.push(format!("{} << {n}", row[0]));
+        }
+    }
+    for row in rows("convert.txt", "shl-int") {
+        let n: u64 = row[1].parse().unwrap();
+        if shl_i64(int(&row[0]), n) != int(&row[2]) {
+            failures.push(format!("{} << {n} (int)", row[0]));
+        }
+    }
+    expect_none("shl", &failures);
+}

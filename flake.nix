@@ -503,6 +503,39 @@
                     touch "$out"
                   ''
                 );
+            # The float-to-integer vectors are what amd64 does, so only x86_64-linux regenerates them.
+            gocompat-vectors-convert =
+              pkgs.runCommand "togi-gocompat-vectors-convert"
+                {
+                  nativeBuildInputs = [ pkgs.go_1_27 ];
+                  src = lib.fileset.toSource {
+                    root = ./.;
+                    fileset = lib.fileset.unions [
+                      ./go.mod
+                      ./go.sum
+                      ./cmd
+                      ./internal
+                      ./tools
+                      ./crates/togi-gocompat/testdata
+                    ];
+                  };
+                }
+                (
+                  ''
+                    cd "$src"
+                    export HOME=$TMPDIR GOCACHE=$TMPDIR/go-cache GOPROXY=off GOTOOLCHAIN=local CGO_ENABLED=0
+                    mkdir $TMPDIR/vectors
+                    go run ./tools/gocompat-vectors convert $TMPDIR/vectors
+                    cmp $TMPDIR/vectors/convert.txt crates/togi-gocompat/testdata/convert.txt
+                  ''
+                  + lib.optionalString (pkgs.stdenv.hostPlatform.isLinux && pkgs.stdenv.hostPlatform.isx86_64) ''
+                    go run ./tools/gocompat-vectors convert-amd64 $TMPDIR/vectors
+                    cmp $TMPDIR/vectors/convert-amd64.txt crates/togi-gocompat/testdata/convert-amd64.txt
+                  ''
+                  + ''
+                    touch "$out"
+                  ''
+                );
             module = import ./nix/module-test.nix {
               pkgs = inputs.nixpkgs.legacyPackages.x86_64-linux;
               hostPkgs = pkgs;
