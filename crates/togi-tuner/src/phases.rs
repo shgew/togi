@@ -201,42 +201,21 @@ impl Run {
             .any(|&id| self.core(id).phase == Some(CorePhase::Search))
     }
 
-    /// Whether phase 2 owes a round: phase 1 ended, no confirmation began, nothing is searching or
-    /// queued for a hunt, and some core can move or must be checked again in place.
+    /// Whether phase 2 owes a round: phase 1 ended, no confirmation began, no cycle is open,
+    /// nothing is searching, queued for a hunt or owed a rerun, and some core can move or must be
+    /// checked again in place.
     pub(crate) fn round_due(&self) -> bool {
         if self.phases.phase1_end().is_none()
             || self.phases.confirm_start().is_some()
             || self.phases.concluded().is_some()
+            || self.checking.open().is_some()
             || !self.failures.queue_is_empty()
+            || !self.reruns.is_empty()
             || self.any_searching()
         {
             return false;
         }
         self.phase2_moves(&self.offsets(), self.phases.passed())
             .is_some_and(|moves| !moves.moved.is_empty() || !moves.carried.is_empty())
-    }
-
-    pub(crate) fn checking_cycle(
-        &mut self,
-        event: &togi_journal::Event,
-        cycle: &togi_journal::CheckingCycle,
-    ) -> Result<(), FoldError> {
-        use togi_journal::CycleEvent;
-        match cycle.event {
-            CycleEvent::Start => {
-                self.phases.cycle_start(event.seq);
-                Ok(())
-            }
-            CycleEvent::End if cycle.passed && cycle.full => {
-                let searching = self.any_searching();
-                self.phases.passed_full_cycle(
-                    event.seq,
-                    cycle.cycle,
-                    searching,
-                    self.checking.profile(),
-                )
-            }
-            CycleEvent::End => Ok(()),
-        }
     }
 }

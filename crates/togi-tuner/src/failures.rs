@@ -4,7 +4,7 @@ use togi_journal::{Attribution, Event, Failure, Seq};
 use togi_machine::{Condition, CoreId, CoreSet, TargetOffset};
 
 use crate::state::Run;
-use crate::{ClassKey, DecisionAction, FoldError, Profile};
+use crate::{ClassKey, DecisionAction, FoldError, Load, Profile};
 
 /// A failure as the known-failure rule needs it: what a skipped trial copies from it.
 #[derive(Clone, Debug, PartialEq)]
@@ -14,6 +14,15 @@ pub(crate) struct Witness {
     pub(crate) profile: Profile,
 }
 
+/// The shape a failure's class gets when no trial intent records one: a single loaded core is a
+/// single-core trial.
+pub(crate) fn load_of(class: ClassKey) -> Load {
+    match class.loaded().first() {
+        Some(core) if class.loaded().len() == 1 => Load::Single(core),
+        _ => Load::Many(class.loaded()),
+    }
+}
+
 /// A failure no decision has answered yet.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Pending {
@@ -21,6 +30,7 @@ pub(crate) struct Pending {
     pub(crate) class: ClassKey,
     pub(crate) profile: Profile,
     pub(crate) carried: bool,
+    pub(crate) load: Load,
 }
 
 impl Pending {
@@ -215,6 +225,20 @@ impl Run {
         }
         let ledger_seq = awaiting.map_or(event.seq, |awaiting| awaiting.end_seq);
         let known_seq = failure.known_failure;
+        let zero_rerun = awaiting.and_then(|awaiting| awaiting.zero);
+        let failed_trial = awaiting
+            .and_then(|awaiting| awaiting.r7.clone())
+            .map(|mut trial| {
+                trial.backoffs = self.r7.strikes.snapshot(class.load());
+                trial
+            });
+        let load = match awaiting {
+            Some(awaiting) => match awaiting.intent.core {
+                Some(core) if awaiting.intent.cores.is_empty() => Load::Single(core),
+                _ => Load::Many(class.loaded()),
+            },
+            None => crate::failures::load_of(class),
+        };
 
         if awaiting.is_some() {
             self.flight.awaiting = None;
@@ -237,16 +261,21 @@ impl Run {
             );
         }
         let cited = known_seq.unwrap_or(event.seq);
-        self.failures.pend(
-            cited,
-            Pending {
-                failure: failure.clone(),
-                class,
-                profile,
-                carried: false,
-            },
-        );
+        if zero_rerun.is_some() && !class.multi_r7() {
+            return Ok(());
+        }
+        let pending = Pending {
+            failure: failure.clone(),
+            class,
+            profile,
+            carried: false,
+            load,
+        };
+        self.failures.pend(cited, pending.clone());
         if class.multi_r7() {
+            if known_seq.is_none() {
+                self.r7_open_failure(cited, pending, failed_trial);
+            }
             return Ok(());
         }
         if failure.attribution == Attribution::Attributed {

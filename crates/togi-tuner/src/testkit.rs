@@ -151,12 +151,17 @@ impl Journal {
     /// A session over cores `ids` (two CCDs: ids below 8 and the rest), each core starting as
     /// `starts` says, in id order, under the default configuration.
     pub(crate) fn new(ids: &[u8], starts: &[Start]) -> Self {
+        Self::on(ids, infos(ids), starts)
+    }
+
+    /// As `new` over the given topology.
+    pub(crate) fn on(ids: &[u8], cores: Vec<CoreInfo>, starts: &[Start]) -> Self {
         let mut journal = Self::bare(ids);
         let begin = journal.append(
             SessionStart {
                 build: build(),
                 session: "20231114T221320Z".parse().unwrap(),
-                cores: infos(ids),
+                cores,
             }
             .into(),
             &[],
@@ -328,7 +333,91 @@ impl Journal {
         self.state.run().unwrap().rotation(plan)
     }
 
+    /// Opens the default checking cycle, with every R7 step begun, ending an open one unpassed.
+    pub(crate) fn open_default_cycle(&mut self) {
+        if let Some(open) = self.run().checking.open() {
+            let number = open.number.get();
+            self.cycle_end(number, false, false);
+        }
+        let offsets = self.run().offsets();
+        if self.run().checking.profile().is_none() {
+            self.append(
+                togi_journal::ProfileChange {
+                    from: None,
+                    to: offsets.offsets(),
+                }
+                .into(),
+                &[],
+            );
+        }
+        let next = self
+            .run()
+            .checking
+            .last_cycle()
+            .map_or(1, |last| last.get() + 1);
+        let steps = self.run().config.cycle.to_vec();
+        self.cycle_start(next, &steps);
+        let profile = self.run().checking.profile().unwrap().offsets();
+        for (index, regime) in steps.iter().enumerate() {
+            if *regime == Regime::R7 {
+                self.append(
+                    togi_journal::CheckingStep {
+                        cycle: std::num::NonZeroU32::new(next).unwrap(),
+                        step: std::num::NonZeroU32::new(u32::try_from(index).unwrap() + 1).unwrap(),
+                        profile,
+                    }
+                    .into(),
+                    &[],
+                );
+            }
+        }
+    }
+
+    /// A manual together plan placed in the open cycle's schedule, opening the default cycle when
+    /// none holds the plan's class.
+    fn scheduled(&mut self, plan: &TrialPlan) -> TrialPlan {
+        let TrialContext::Cycle { cycle, step, .. } = plan.context else {
+            return plan.clone();
+        };
+        let class = ClassKey::new(
+            plan.workload_at(self.rotation(plan)),
+            plan.load.cores(),
+            plan.duration,
+        );
+        let held = self
+            .run()
+            .checking
+            .open()
+            .is_some_and(|open| open.number == cycle)
+            && self
+                .run()
+                .checking
+                .locate(class, Some(usize::try_from(step.get().get() - 1).unwrap()))
+                .is_some();
+        if held {
+            return plan.clone();
+        }
+        if self.run().checking.locate(class, None).is_none() {
+            self.open_default_cycle();
+        }
+        let (index, part) = self
+            .run()
+            .checking
+            .locate(class, None)
+            .expect("the default cycle schedules the class");
+        let ordinal =
+            |at: usize| std::num::NonZeroU32::new(u32::try_from(at).unwrap() + 1).unwrap();
+        let mut placed = plan.clone();
+        placed.context = TrialContext::Cycle {
+            cycle: self.run().checking.open().unwrap().number,
+            step: crate::StepNo::new(ordinal(index)),
+            part: crate::PartNo::new(ordinal(part)),
+        };
+        placed
+    }
+
     pub(crate) fn intent(&mut self, plan: &TrialPlan) -> (Seq, TrialId) {
+        let plan = &self.scheduled(plan);
         self.trials += 1;
         let trial = TrialId::from(format!("{:04}", self.trials));
         let intent = plan.intent(trial.clone(), self.rotation(plan));
@@ -497,9 +586,16 @@ impl Journal {
             },
             profile: self.profile(profile),
             duration,
-            context: TrialContext::SoloLimit {
-                core: core(self.ids[0]),
-                regime,
+            context: match condition {
+                Condition::Together => TrialContext::Cycle {
+                    cycle: std::num::NonZeroU32::MIN,
+                    step: crate::StepNo::new(std::num::NonZeroU32::MIN),
+                    part: crate::PartNo::new(std::num::NonZeroU32::MIN),
+                },
+                _ => TrialContext::SoloLimit {
+                    core: core(self.ids[0]),
+                    regime,
+                },
             },
             requirement: Requirement {
                 kind: RequirementKind::Cycle,
@@ -710,5 +806,205 @@ impl Journal {
             })) => Some(warning),
             _ => None,
         }
+    }
+}
+
+pub(crate) fn pairs(ids: &[u8]) -> Vec<CoreInfo> {
+    ids.iter()
+        .map(|&id| CoreInfo {
+            core: core(id),
+            ccd: CcdId(id / 2),
+            cpus: Vec::new(),
+        })
+        .collect()
+}
+
+/// What an R7 trial reports besides its outcome.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct R7Report {
+    pub(crate) requests: Vec<(u8, f64)>,
+    pub(crate) top: Vec<u8>,
+    pub(crate) named: Option<u8>,
+    pub(crate) stalled: Option<u8>,
+    pub(crate) clocks: Vec<(u8, u32)>,
+}
+
+impl R7Report {
+    pub(crate) fn requests(mut self, requests: &[(u8, f64)]) -> Self {
+        self.requests = requests.to_vec();
+        self
+    }
+
+    pub(crate) fn top(mut self, top: &[u8]) -> Self {
+        self.top = top.to_vec();
+        self
+    }
+
+    pub(crate) fn named(mut self, named: u8) -> Self {
+        self.named = Some(named);
+        self
+    }
+
+    pub(crate) fn stalled(mut self, stalled: u8) -> Self {
+        self.stalled = Some(stalled);
+        self
+    }
+
+    pub(crate) fn clocks(mut self, clocks: &[(u8, u32)]) -> Self {
+        self.clocks = clocks.to_vec();
+        self
+    }
+}
+
+impl Journal {
+    /// Four has-room cores at -30, CCDs {0,1} and {2,3}, checking profile set, ranking 0..3.
+    pub(crate) fn r7_session() -> Self {
+        let ids = [0, 1, 2, 3];
+        let starts = [Start::has_room(-30); 4];
+        let mut journal = Self::on(&ids, pairs(&ids), &starts);
+        journal.profile_change(&[-30, -30, -30, -30]);
+        journal.ranking(&[0, 1, 2, 3]);
+        journal
+    }
+
+    pub(crate) fn ranking(&mut self, order: &[u8]) -> Seq {
+        self.append(
+            togi_journal::HostRanking {
+                ranking: order.iter().map(|&id| core(id)).collect(),
+                values: PerCore::default(),
+                detail: None,
+            }
+            .into(),
+            &[],
+        )
+    }
+
+    /// The current offsets, in session core order.
+    pub(crate) fn offsets(&self) -> Profile {
+        self.run().offsets()
+    }
+
+    /// An R7 plan over `cores` for workload index 0 at 120 s, checking, together, at `profile`.
+    pub(crate) fn r7_plan(&self, cores: &[u8], profile: &[i64]) -> TrialPlan {
+        self.manual(
+            Regime::R7,
+            0,
+            Load::Many(set(cores)),
+            Condition::Together,
+            profile,
+            120,
+        )
+    }
+
+    /// A live R7 trial over `cores` at `profile` that ends `outcome` with `report`. Returns the
+    /// end's seq.
+    pub(crate) fn r7_trial(
+        &mut self,
+        cores: &[u8],
+        profile: &[i64],
+        outcome: Outcome,
+        report: &R7Report,
+    ) -> Seq {
+        let plan = self.r7_plan(cores, profile);
+        let (intent, trial) = self.intent(&plan);
+        let signal = (outcome == Outcome::Failure).then_some(Signal::ComputationError);
+        let mut end = Self::end_payload(&trial, outcome, signal);
+        end.duration_s = 120;
+        end.voltage_requests_v = report
+            .requests
+            .iter()
+            .map(|&(id, volts)| (core(id), volts))
+            .collect();
+        end.top_requesters = set(&report.top);
+        end.core = report.named.map(core);
+        end.stalled_core = report.stalled.map(core);
+        end.ccd_mhz = report
+            .clocks
+            .iter()
+            .map(|&(ccd, mhz)| (CcdId(ccd), mhz))
+            .collect();
+        self.append(end.into(), &[intent])
+    }
+
+    /// A live failing R7 trial, followed by the failure the tuner's attribution records for it.
+    /// Returns the failure's seq.
+    pub(crate) fn r7_failed(&mut self, cores: &[u8], profile: &[i64], report: &R7Report) -> Seq {
+        self.r7_trial(cores, profile, Outcome::Failure, report);
+        let decision = self.next_decision();
+        assert!(
+            matches!(decision.payload, crate::DecisionPayload::Failure(_)),
+            "expected the attribution of the failed trial, got {decision:?}"
+        );
+        self.decide(decision)
+    }
+
+    /// An R7 fact carried from an earlier session, workload index 0 at 120 s.
+    pub(crate) fn r7_fact(
+        &mut self,
+        pass: bool,
+        cores: &[u8],
+        profile: &[i64],
+        report: &R7Report,
+    ) -> Seq {
+        let seq = self.next_seq();
+        let outcome = if pass {
+            Outcome::Pass
+        } else {
+            Outcome::Failure
+        };
+        let payload = togi_journal::TrialCarried {
+            source: togi_journal::FactSource {
+                session: "20230101T000000Z".parse().unwrap(),
+                seq,
+                build: build(),
+                trial: None,
+                time: Timestamp::from_second(1_600_000_000).unwrap(),
+                boot: BootId::from("old".to_owned()),
+                backend: None,
+            },
+            class: togi_journal::TrialClass {
+                regime: Regime::R7,
+                workload: WorkloadId::new(Regime::R7, 0),
+                cores: set(cores),
+                duration_s: 120,
+            },
+            condition: Condition::Together,
+            activity: None,
+            rerun: false,
+            profile: self.profile(profile).offsets(),
+            outcome,
+            signal: (!pass).then_some(Signal::ComputationError),
+            duration_s: 120,
+            core: report.named.map(core),
+            stalled_core: report.stalled.map(core),
+            voltage_requests_v: report
+                .requests
+                .iter()
+                .map(|&(id, volts)| (core(id), volts))
+                .collect(),
+            top_requesters: set(&report.top),
+            ccd_mhz: report
+                .clocks
+                .iter()
+                .map(|&(ccd, mhz)| (CcdId(ccd), mhz))
+                .collect(),
+        };
+        self.append(payload.into(), &[])
+    }
+
+    /// Performs the tuner's decisions until it asks for anything else, returning the backoffs in
+    /// order as (core, to offset).
+    pub(crate) fn drain_backoffs(&mut self, limit: usize) -> Vec<(u8, i64)> {
+        let mut moved = Vec::new();
+        for _ in 0..limit {
+            let Some(Action::Decide(decision)) = self.state.decide() else {
+                break;
+            };
+            if let crate::DecisionPayload::TunerDecision(td) = &decision.payload {
+                moved.push((td.core.get(), td.to_offset.get()));
+            }
+            self.decide(decision);
+        }
+        moved
     }
 }

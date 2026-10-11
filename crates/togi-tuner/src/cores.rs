@@ -125,7 +125,7 @@ impl Run {
         if self
             .retry
             .as_ref()
-            .is_some_and(|retry| retry.turn.core == core)
+            .is_some_and(|retry| retry.turn.is_some_and(|turn| turn.core == core))
         {
             self.retry = None;
         }
@@ -194,6 +194,13 @@ impl Run {
         self.constraints
             .set_failure_point(core, decision.failure_point.map(FailurePoint::new))?;
         let seq = event.seq;
+        self.r7_decided(event, decision);
+        if decision.decision == togi_journal::Decision::Backoff
+            && decision.activity != togi_journal::Activity::Search
+            && decision.to_offset != decision.from_offset
+        {
+            self.queue_rerun(&event.cause);
+        }
         self.update_core(core, |state| {
             state.offset = decision.to_offset;
             state.pass = decision.pass;
@@ -208,6 +215,8 @@ impl Run {
         });
         self.failures.retire_all(&event.cause);
         self.decided(core, seq);
+        self.retire_reruns();
+        self.revalidate_retry();
         Ok(())
     }
 }

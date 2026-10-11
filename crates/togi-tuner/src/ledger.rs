@@ -10,6 +10,7 @@ use togi_machine::{Condition, CoreId, Regime, WorkloadId, workloads};
 
 use crate::failures::{Pending, Witness};
 use crate::flight::OpenTrial;
+use crate::r7::failed::{Ended, Telemetry};
 use crate::state::Run;
 use crate::{
     BackendId, ClassKey, Evidence, FoldError, Observation, Profile, Secs, SessionRef, Window,
@@ -240,6 +241,25 @@ impl Run {
             None => self.evidence.backend_id(class.workload().backend(), None),
         };
         let source = source_ref(&carried.source);
+        let mut failed = self.r7_trial(
+            Ended {
+                seq: event.seq,
+                class,
+                profile: &profile,
+                telemetry: Telemetry {
+                    requests: &carried.voltage_requests_v,
+                    top: carried.top_requesters,
+                    clocks: &carried.ccd_mhz,
+                    stalled: carried.stalled_core,
+                },
+                named: carried.core,
+            },
+            carried.outcome,
+            backend,
+        );
+        if let Some(trial) = failed.as_mut() {
+            trial.backoffs = self.r7.strikes.snapshot(class.load());
+        }
         let observation = Observation {
             seq: event.seq,
             class,
@@ -299,16 +319,21 @@ impl Run {
                         profile,
                     },
                 );
-                self.failures.pend(
-                    event.seq,
-                    Pending {
-                        failure,
-                        class,
-                        profile,
-                        carried: true,
-                    },
-                );
+                let pending = Pending {
+                    failure,
+                    class,
+                    profile,
+                    carried: true,
+                    load: crate::failures::load_of(class),
+                };
+                self.failures.pend(event.seq, pending.clone());
+                self.r7_open_failure(event.seq, pending, failed);
             }
+        }
+        if carried.outcome != Outcome::Inconclusive {
+            self.cycle_evidence_changed(class);
+            self.retire_reruns();
+            self.revalidate_retry();
         }
         Ok(())
     }
@@ -341,11 +366,13 @@ impl Run {
                 class,
                 profile,
                 carried: true,
+                load: crate::Load::Many(class.loaded()),
             },
         );
         if carried.failure.attribution == Attribution::Unattributed {
             self.failures.queue_back(event.seq);
         }
+        self.cycle_idle_failed();
         Ok(())
     }
 
@@ -354,6 +381,8 @@ impl Run {
         seq: Seq,
         profile: &Profile,
     ) -> Result<(), FoldError> {
-        self.admit_idle(seq, profile, None)
+        self.admit_idle(seq, profile, None)?;
+        self.cycle_idle_failed();
+        Ok(())
     }
 }

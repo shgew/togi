@@ -12,6 +12,7 @@ thiserror.workspace = true
 togi-config.workspace = true
 togi-journal.workspace = true
 togi-machine.workspace = true
+togi-requests.workspace = true
 
 [dev-dependencies]
 jiff.workspace = true

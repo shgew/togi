@@ -84,6 +84,8 @@ fn together_awaiting(j: &Journal, regime: Regime, profile: &[i64], end: Option<u
         signal: Signal::Crash,
         core: end.map(core),
         mces: CoreSet::default(),
+        r7: None,
+        zero: None,
     }
 }
 
@@ -193,7 +195,7 @@ fn a_newer_failure_of_a_core_retires_the_one_it_replaces() {
 }
 
 #[test]
-fn a_pending_failure_of_a_core_not_in_search_waits_for_its_decision() {
+fn a_pending_failure_of_a_core_not_in_search_is_backed_off() {
     let mut j = Journal::has_room(&[-10]);
     let seq = j.failure(
         Failure {
@@ -205,7 +207,14 @@ fn a_pending_failure_of_a_core_not_in_search_waits_for_its_decision() {
         &[],
     );
     assert_eq!(j.run().core(core(0)).pending, Some(seq));
-    assert!(j.run().pending_search_decision().is_none());
+    let Some(crate::Action::Decide(action)) = j.run().pending_core_action() else {
+        panic!("the pending failure was not answered");
+    };
+    assert!(matches!(
+        action.payload,
+        crate::DecisionPayload::TunerDecision(_)
+    ));
+    assert_eq!(action.cause, [seq]);
 }
 
 #[test]
