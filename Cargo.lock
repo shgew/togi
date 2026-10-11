@@ -652,6 +652,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "togi-detect"
+version = "0.0.0"
+dependencies = [
+ "jiff",
+ "nix",
+ "rustix",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "togi-command",
+ "togi-hostlock",
+ "togi-machine",
+]
+
+[[package]]
 name = "togi-hostlock"
 version = "0.0.0"
 dependencies = [
