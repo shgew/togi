@@ -720,6 +720,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "togi-sim"
+version = "0.0.0"
+dependencies = [
+ "jiff",
+ "proptest",
+ "rand",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "togi-machine",
+ "togi-trialfiles",
+]
+
+[[package]]
 name = "togi-smu"
 version = "0.0.0"
 dependencies = [
