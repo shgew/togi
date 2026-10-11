@@ -1,15 +1,20 @@
 //! Teardown, rollback and containment on the fake OS under paused time.
 
+use std::path::Path;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use test_case::test_case;
-use togi_machine::{CancellationToken, Regime, Signal};
+use togi_backend::{Backend, Line, Plan, Ready};
+use togi_machine::{CancellationToken, CpuId, Regime, Signal, Workload};
 
 use super::harness::{core, crate_error, finish, local, printing, rig, rig_edit, rig_with, spec};
 use crate::error::{CleanupFailure, Error};
 use crate::id::ScopeName;
 use crate::os::fake::{Launch, ProcCtx, Reply, ScanFault, script};
 use crate::os::{ExitInfo, GroupSignal, Systemd};
+use crate::runner::Backends;
 use crate::testing::TestBackend;
 use crate::timing::Timing;
 
@@ -834,6 +839,147 @@ async fn a_classifier_panic_during_rollback_is_joined_after_the_launch_cause() {
                     if instance == "c01" && what.contains("the classifier met BOOM")
             ),
             "{joined:?}"
+        );
+    })
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_watched_append_after_the_last_drain_poll_is_classified_before_the_proof() {
+    local(async {
+        let rig = watching_rig();
+        rig.fake.on_launch(|_, command| {
+            let results = command.cwd.join("results.txt");
+            Launch::Run(script(move |mut ctx: ProcCtx| async move {
+                std::fs::write(results, "COMPUTE").unwrap();
+                ctx.until_killed().await;
+            }))
+        });
+        let fake = rig.fake.clone();
+        let appended = Arc::new(AtomicUsize::new(0));
+        let appends = Arc::clone(&appended);
+        rig.fake.on_scan(move || {
+            if appends.fetch_add(1, Ordering::SeqCst) == 0 {
+                use std::io::Write as _;
+                let path = fake.launches()[0].cwd.join("results.txt");
+                let mut file = std::fs::OpenOptions::new().append(true).open(path).unwrap();
+                file.write_all(b" ERROR").unwrap();
+            }
+        });
+        let cancel = CancellationToken::new();
+        let handle = rig
+            .start_with(&cancel, spec(Regime::R1, &[3], secs(60)))
+            .await
+            .unwrap();
+        cancel.cancel();
+        let run = finish(&handle).await;
+        assert!(appended.load(Ordering::SeqCst) >= 1, "the scan ran");
+        let failure = run.finished.result.failure.expect("the late append counts");
+        assert_eq!(
+            (failure.signal, failure.core),
+            (Signal::ComputationError, core(3))
+        );
+        assert!(run.finished.teardown.is_ok(), "{:?}", run.finished.teardown);
+    })
+    .await;
+}
+
+struct Naps {
+    inner: TestBackend,
+    nap: Duration,
+    classified: Arc<AtomicUsize>,
+}
+
+impl Backend for Naps {
+    fn kind(&self) -> togi_machine::Backend {
+        self.inner.kind()
+    }
+
+    fn check(&self) -> Result<Ready, togi_backend::Error> {
+        self.inner.check()
+    }
+
+    fn plan(
+        &self,
+        workload: &Workload,
+        dir: &Path,
+        cpus: &[CpuId],
+    ) -> Result<Plan, togi_backend::Error> {
+        self.inner.plan(workload, dir, cpus)
+    }
+
+    fn classify(&self, line: &str) -> Line {
+        self.classified.fetch_add(1, Ordering::SeqCst);
+        std::thread::sleep(self.nap);
+        self.inner.classify(line)
+    }
+}
+
+#[test_case(1; "one instance")]
+#[test_case(8; "eight instances")]
+#[tokio::test]
+async fn slow_watched_output_of_many_files_is_bound_by_one_cleanup_budget(count: u8) {
+    const LINES: usize = 100;
+    local(async {
+        let mut inner = TestBackend::new("/bin/true");
+        inner.watched = vec!["results.txt", "second.txt"];
+        let classified = Arc::new(AtomicUsize::new(0));
+        let slow = Naps {
+            inner: inner.clone(),
+            nap: Duration::from_millis(20),
+            classified: Arc::clone(&classified),
+        };
+        let timing = Timing {
+            stop_grace: Duration::from_millis(100),
+            kill_slot: Duration::from_millis(100),
+            drain: Duration::from_millis(600),
+            teardown: Duration::from_secs(1),
+            ..Timing::default()
+        };
+        let rig = rig_edit(inner, timing, move |env| {
+            env.backends = Backends::new().with(Arc::new(slow));
+        });
+        rig.fake.on_launch(|_, command| {
+            let first = command.cwd.join("results.txt");
+            let second = command.cwd.join("second.txt");
+            Launch::Run(script(move |mut ctx: ProcCtx| async move {
+                let text = format!("{}COMPUTE ERROR", "ok\n".repeat(LINES));
+                std::fs::write(first, &text).unwrap();
+                std::fs::write(second, &text).unwrap();
+                ctx.until_killed().await;
+            }))
+        });
+        let cores: Vec<u8> = (0..count).collect();
+        let regime = if count == 1 { Regime::R1 } else { Regime::R7 };
+        let cancel = CancellationToken::new();
+        let handle = rig
+            .start_with(&cancel, spec(regime, &cores, secs(60)))
+            .await
+            .unwrap();
+        let begun = std::time::Instant::now();
+        cancel.cancel();
+        let run = finish(&handle).await;
+        let elapsed = begun.elapsed();
+        assert!(
+            elapsed <= timing.teardown + Duration::from_millis(500),
+            "one absolute budget bounds the drain of every file: {elapsed:?}"
+        );
+        let containment = run.finished.teardown.unwrap_err();
+        assert!(
+            containment
+                .failures()
+                .iter()
+                .any(|failure| matches!(failure, CleanupFailure::DrainDeadline)),
+            "{:?}",
+            containment.failures()
+        );
+        assert!(
+            classified.load(Ordering::SeqCst) < usize::from(count) * 2 * LINES,
+            "the unread backlog was not classified in full"
+        );
+        assert_eq!(
+            run.finished.result.failure, None,
+            "the unread COMPUTE ERROR is never seen"
         );
     })
     .await;

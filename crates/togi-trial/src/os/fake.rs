@@ -221,6 +221,7 @@ type LaunchScript = Box<dyn FnMut(usize, &LaunchCommand) -> Launch>;
 type SystemdScript = Box<dyn FnMut(&Systemd) -> Option<Reply>>;
 
 type ThreadsHook = Box<dyn FnMut(u32)>;
+type ScanHook = Box<dyn FnMut()>;
 
 struct Shared {
     launches: RefCell<Vec<LaunchCommand>>,
@@ -229,6 +230,7 @@ struct Shared {
     launch_script: RefCell<LaunchScript>,
     systemd_script: RefCell<SystemdScript>,
     threads_hook: RefCell<Option<ThreadsHook>>,
+    scan_hook: RefCell<Option<ScanHook>>,
     units: RefCell<Vec<String>>,
     ready_default: Cell<bool>,
     fail_pipes: Cell<bool>,
@@ -259,6 +261,7 @@ impl Default for Fake {
                 })),
                 systemd_script: RefCell::new(Box::new(|_| None)),
                 threads_hook: RefCell::new(None),
+                scan_hook: RefCell::new(None),
                 units: RefCell::default(),
                 ready_default: Cell::new(true),
                 fail_pipes: Cell::new(false),
@@ -334,6 +337,12 @@ impl Fake {
     /// Scans of the trial's scopes fail like `fault`, while survivor checks stay normal.
     pub(crate) fn fault_scans(&self, fault: ScanFault) {
         self.shared.scan_fault.set(Some(fault));
+    }
+
+    /// Runs `hook` at the start of every scan of the trial's scopes, with no process state
+    /// borrowed, so it can act as a writer still running when the scan began.
+    pub(crate) fn on_scan(&self, hook: impl FnMut() + 'static) {
+        *self.shared.scan_hook.borrow_mut() = Some(Box::new(hook));
     }
 
     /// Taking the pipes of new processes fails, as when registering them with the reactor fails.
@@ -622,6 +631,9 @@ impl Os for Fake {
     }
 
     async fn scope_processes(&self, deadline: Instant) -> Result<Vec<ScopeProcess>, ProcError> {
+        if let Some(hook) = self.shared.scan_hook.borrow_mut().as_mut() {
+            hook();
+        }
         match self.shared.scan_fault.get() {
             Some(ScanFault::Fail) => {
                 return Err(ProcError::Observation("scan failed".to_owned()));
