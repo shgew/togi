@@ -60,7 +60,7 @@ cover base="": _dev-shell
     fi
     go run ./tools/cover --profile "$profile" --base "$1" --tags integration
 
-# Lint all Go packages as built for Linux and for macOS, and the Rust workspace with clippy for Linux and aarch64 macOS, with optional Go lint flags
+# Lint all Go packages as built for Linux and for macOS, and the Rust workspace with clippy for the host's target and aarch64 macOS, with optional Go lint flags
 [group('quality')]
 lint *args: _dev-shell
     for target in linux/amd64 darwin/arm64; do env GOOS="${target%/*}" GOARCH="${target#*/}" CGO_ENABLED=0 golangci-lint run ./... "$@"; done
