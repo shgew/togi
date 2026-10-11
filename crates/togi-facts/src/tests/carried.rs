@@ -26,6 +26,7 @@ fn original() -> SessionFacts {
     });
     s.add(ConfigLoaded {
         build: build(4),
+        config: togi_config::Config::default(),
         path: "later".into(),
         file: false,
         kernel_cursor: None,

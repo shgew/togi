@@ -610,6 +610,7 @@ version = "0.0.0"
 dependencies = [
  "jiff",
  "thiserror",
+ "togi-config",
  "togi-journal",
  "togi-machine",
 ]

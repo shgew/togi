@@ -13,5 +13,8 @@ thiserror.workspace = true
 togi-journal.workspace = true
 togi-machine.workspace = true
 
+[dev-dependencies]
+togi-config.workspace = true
+
 [lints]
 workspace = true

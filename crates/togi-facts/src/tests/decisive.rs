@@ -16,6 +16,7 @@ fn config_loaded(evidence: u32) -> ConfigLoaded {
     stamp.ruleset = 6;
     ConfigLoaded {
         build: stamp,
+        config: togi_config::Config::default(),
         path: "config.json".into(),
         file: false,
         kernel_cursor: None,
@@ -302,4 +303,42 @@ fn stamps_and_markers_come_from_their_own_events() {
     assert_eq!(facts.shutdown, Some(latest));
     assert_eq!(facts.topology.len(), 1);
     assert_eq!(facts.cores, set(&[0]));
+}
+
+#[test]
+fn own_pass_takes_the_backend_recorded_before_its_intent() {
+    let loaded = |mprime: &str, ycruncher: &str| ConfigLoaded {
+        config: togi_config::Config::parse(&format!(
+            r#"{{"backends":{{"mprime":"{mprime}","ycruncher":"{ycruncher}"}}}}"#
+        ))
+        .unwrap(),
+        ..config_loaded(1)
+    };
+    let mut s = Script::begin(&[0]);
+    s.add(loaded("/store/m1", "/store/y1"));
+    s.add(alone("pass", 0, -10, &[0]));
+    s.add(loaded("/store/m2", "/store/y2"));
+    s.add(pass("pass", 5));
+    s.add(alone("fail", 0, -10, &[0]));
+    s.add(fail("fail", Signal::Crash, 5));
+    s.add(alone("later", 0, -10, &[0]));
+    s.add(pass("later", 5));
+    let facts = s.extract();
+    let backend = workload(Regime::R1).backend();
+    let path = |n: &str| match backend {
+        togi_machine::Backend::Mprime => format!("/store/m{n}"),
+        togi_machine::Backend::Ycruncher => format!("/store/y{n}"),
+    };
+    let identity = |n: &str| {
+        Some(crate::BackendIdentity {
+            backend,
+            path: path(n),
+        })
+    };
+    assert_eq!(facts.facts[0].source.backend, identity("1"));
+    assert_eq!(
+        facts.facts[1].source.backend, None,
+        "failures are not keyed by backend"
+    );
+    assert_eq!(facts.facts[2].source.backend, identity("2"));
 }

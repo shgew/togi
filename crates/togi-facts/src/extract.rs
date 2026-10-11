@@ -36,8 +36,18 @@ struct Backends {
 }
 
 impl Backends {
-    fn recorded(_loaded: &ConfigLoaded) -> Self {
-        Self::default()
+    fn recorded(loaded: &ConfigLoaded) -> Self {
+        let paths = loaded.config.backends();
+        let identity = |backend| {
+            paths.path(backend).map(|path| BackendIdentity {
+                backend,
+                path: path.to_string_lossy().into_owned(),
+            })
+        };
+        Self {
+            mprime: identity(Backend::Mprime),
+            ycruncher: identity(Backend::Ycruncher),
+        }
     }
 
     fn get(&self, backend: Backend) -> Option<&BackendIdentity> {
