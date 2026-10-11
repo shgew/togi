@@ -219,6 +219,7 @@
                 # depends on the native regeneration of the arm64 math vectors (#637).
                 // lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
                   gocompatVectorsMath = config.checks.gocompat-vectors-math;
+                  gocompatVectorsLgamma = config.checks.gocompat-vectors-lgamma;
                 }
               )
             );
@@ -400,6 +401,54 @@
                       ''
                         $TMPDIR/gocompat-vectors math-arm64 $TMPDIR/vectors
                         cmp $TMPDIR/vectors/math-arm64.txt crates/togi-gocompat/testdata/math-arm64.txt
+                      ''
+                  )
+                  + ''
+                    touch "$out"
+                  ''
+                );
+            # Regenerates the Lgamma vectors from Go and requires them equal to the committed ones.
+            # x86_64-linux writes both files, running the arm64 build under qemu-user;
+            # aarch64-darwin runs the arm64 path natively and compares lgamma-arm64.txt.
+            gocompat-vectors-lgamma =
+              pkgs.runCommand "togi-gocompat-vectors-lgamma"
+                {
+                  nativeBuildInputs = [
+                    pkgs.go_1_27
+                  ]
+                  ++ lib.optional pkgs.stdenv.hostPlatform.isLinux pkgs.qemu-user;
+                  src = lib.fileset.toSource {
+                    root = ./.;
+                    fileset = lib.fileset.unions [
+                      ./go.mod
+                      ./go.sum
+                      ./cmd
+                      ./internal
+                      ./tools
+                      ./crates/togi-gocompat/testdata
+                    ];
+                  };
+                }
+                (
+                  ''
+                    cd "$src"
+                    export HOME=$TMPDIR GOCACHE=$TMPDIR/go-cache GOPROXY=off GOTOOLCHAIN=local CGO_ENABLED=0
+                    go build -o $TMPDIR/gocompat-vectors ./tools/gocompat-vectors
+                    mkdir $TMPDIR/vectors
+                  ''
+                  + (
+                    if pkgs.stdenv.hostPlatform.isLinux then
+                      ''
+                        $TMPDIR/gocompat-vectors lgamma-amd64 $TMPDIR/vectors
+                        $TMPDIR/gocompat-vectors lgamma-arm64 $TMPDIR/vectors
+                        for f in lgamma-amd64.txt lgamma-arm64.txt; do
+                          cmp $TMPDIR/vectors/$f crates/togi-gocompat/testdata/$f
+                        done
+                      ''
+                    else
+                      ''
+                        $TMPDIR/gocompat-vectors lgamma-arm64 $TMPDIR/vectors
+                        cmp $TMPDIR/vectors/lgamma-arm64.txt crates/togi-gocompat/testdata/lgamma-arm64.txt
                       ''
                   )
                   + ''
