@@ -569,3 +569,14 @@ proptest! {
         check_new(&text, wanted);
     }
 }
+
+#[test]
+fn serde_serialization_matches_encoding_and_display_prints_the_text() {
+    let record = LeaveReason::new("journal incompatible", count(2)).unwrap();
+    assert_eq!(serde_json::to_string(&record).unwrap(), record.encode());
+    assert_eq!(record.id.to_string(), record.id.as_str());
+    assert_eq!(record.reason.to_string(), "journal incompatible");
+    assert_eq!(String::from(record.id.clone()), record.id.as_str());
+    assert_eq!(String::from(record.reason.clone()), "journal incompatible");
+    assert_eq!(u8::from(record.count), 2);
+}
