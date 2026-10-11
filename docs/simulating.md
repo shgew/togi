@@ -166,6 +166,22 @@ For the fitted fallback, every active failure source draws an exponential waitin
 
 Computation errors, stalls, unexpected exits and crashes stop at the selected time. A fallback corrected MCE is logged at that time but lets the trial finish its intended duration; a replayed corrected MCE instead uses the recorded duration. An uncorrected MCE causes a reset at its selected time. Each crash reboot adds 90 simulated seconds outside trial exposure. `Machine.Hazard` reports steady-state risk without delays or onset boosts; `Machine.FailureProbability` integrates them over the intended duration. Neither uses replayed outcomes.
 
+### The Rust simulator (`togi-sim`)
+
+`crates/togi-sim` is the native port of `internal/sim`; it takes over when `tools/sim` does. It is a library: `Model::new(&MachineDefinition, seed)` validates a machine file's document, and a `Simulator` built from a `Model` and `RunSettings { seed, history, replay }` hands the session its seams (`Simulator::seams`, a `togi_machine::Machine`) and offers the controls tests use: `jump_wall`, `crash`, `next_reset`, `power_loss`, `reboot`, the fault arms (`fail_write`, `crash_at_write`, `crash_before_apply`, `corrupt_readback`, `fail_setup`, `miss_backend`, `escape`, `fail_check`), `script_trial`, `set_bios_context`, `set_samples_dir` and `interrupt_smu`, whose hook sees every SMU access before and after its effect. `History` (boots, last event time, BIOS context) replaces Go's `Resume`: a machine starts one reboot after the last event and numbers its boots after the recorded ones.
+
+The machine-file format is the same document, with these differences:
+
+- **Strict validation.** `Model::new` checks every number: finite, in range, `growth` positive, probabilities in 0 to 1, weights nonnegative with a positive total (reset weights too, so an empty reset map is an error, not a silent watchdog), `onset_boost` and `onset_s` nonnegative, hazards that cannot overflow within the offset range. An error names the field (`joint[2].members.3`). Go left most of these unchecked.
+- **A joint's `rate` is optional.** Absent, it is the model's `past_limit_rate`; an explicit `0` is a joint that never fails (Go read `0` as "use the model rate"). A joint needs at least one member. A script's `at_s` must be finite and nonnegative.
+- **Strict decoding.** Objects only (a positional array is not a machine), no unknown fields and no duplicate keys, in maps too. `count_v: 0` still selects the 3.6 mV default.
+- **Encoding.** `file::encode` writes the materialized machine as pretty JSON with every field equal to its default left out, and refuses a machine `Model::new` refuses.
+- **Overlays** keep their own `description` and `notes`; the rest is the parent's.
+
+Randomness is `rand`'s `StdRng`, one stream per typed domain seeded by a fixed splitmix64 fold over the run seed, the domain and its key parts. A loaded core's draws are keyed by the core, regime, condition, its applied offset and the trial index, never the trial ID or another core's offset, so a retry reproduces its class outcome; an unloaded core's draws also name the loaded *set*, whatever its order. Telemetry has its own domains and consumes no failure draw. The loaded set is a `CoreSet`, so a joint's or CCD's failure is attributed to the lowest loaded core, not the first in the caller's order. Seeds and streams are not Go's: the same seed gives different limits and failures than the Go simulator.
+
+A trial's failure is the earliest strictly before the intended end of the sources `Model::visit_sources` lists (loaded and idle cores, shared-rail cores, CCDs, joints, the background), and the same list gives `Model::hazard`, `Model::failure_probability` and `Model::r7_failure_share`, so scores and draws cannot diverge. Each trial runs once: a second `wait` is an error and a trial of an earlier boot is `Error::Crashed`.
+
 ## Measured reference journals
 
 [`just stats`](reviewing.md) reports exposure and failures from real journals; it does not fit simulator defaults. These three archived sessions came from one Ryzen 9 9950X3D2 under one BIOS context. The session IDs identify the unmodified compressed fixtures in `internal/carry/testdata/`.
