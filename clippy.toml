@@ -5,15 +5,16 @@ allow-print-in-tests = true
 
 # The tripwire inventory of #634 (Boundaries): each approved call site carries
 # #[expect(clippy::disallowed_methods, reason = "...")]. An entry lands with the crate that
-# defines or first calls its path: process spawning (trial workloads, journalctl in detect,
-# systemd-run, systemctl and grub-editenv in hardware, the simulator in bench, bench in
-# audit), the SMU seam's write methods and journal writes outside the journal crate. The
-# journal's disk filesystem (`DiskFs`) is crate-private, so another crate writes journal files
-# only through `StateDir::lock` or the entries below: the two non-durable constructors and
-# `MemFs::dump_to`, which writes a simulation's files to disk. Their negative controls are the
-# `#[expect]`ed calls in togi-journal's integration tests (a separate crate), which fail the
-# lint if an entry stops matching, and the compile_fail doctest in togi-journal's lib.rs. A
-# write through std's own file APIs is left to review, as #634 (Boundaries) says.
+# defines or first calls its path: process spawning (togi-command's runner, trial workloads,
+# journalctl in detect, systemctl in trial, grub-editenv and systemctl reboot in hardware, the
+# simulator in bench, bench in audit), the SMU seam's write methods and journal writes outside
+# the journal crate. The journal's disk filesystem (`DiskFs`) is crate-private, so another
+# crate writes journal files only through `StateDir::lock` or the entries below: the two
+# non-durable constructors and `MemFs::dump_to`, which writes a simulation's files to disk.
+# Their negative controls are the `#[expect]`ed calls in togi-journal's integration tests (a
+# separate crate), which fail the lint if an entry stops matching, and the compile_fail doctest
+# in togi-journal's lib.rs. A write through std's own file APIs is left to review, as #634
+# (Boundaries) says.
 disallowed-methods = [
     { path = "togi_machine::Smu::set_offset", reason = "Only the session write transaction writes a core offset through the SMU seam" },
     { path = "togi_machine::Smu::set_all_offsets", reason = "Only the session write transaction writes every offset through the SMU seam" },
@@ -23,4 +24,12 @@ disallowed-methods = [
     { path = "togi_journal::StateDir::simulated", reason = "Only simulations and session tests keep a journal in memory; production locks a directory on disk" },
     { path = "togi_journal::StateDir::lock_unsynced", reason = "Only the simulator's --state-dir writes a journal without fsync" },
     { path = "togi_journal::fs::MemFs::dump_to", reason = "Only simulations write an in-memory state directory to disk, on request" },
+    { path = "std::process::Command::spawn", reason = "Only togi-command's runner, togi-trial's workload launcher and test helpers spawn processes" },
+    { path = "std::process::Command::output", reason = "Only togi-command's runner, togi-trial's workload launcher and test helpers spawn processes" },
+    { path = "std::process::Command::status", reason = "Only togi-command's runner, togi-trial's workload launcher and test helpers spawn processes" },
+    { path = "tokio::process::Command::spawn", reason = "Only togi-command's runner and test helpers spawn processes" },
+    { path = "tokio::process::Command::output", reason = "Only togi-command's runner and test helpers spawn processes" },
+    { path = "tokio::process::Command::status", reason = "Only togi-command's runner and test helpers spawn processes" },
+    { path = "togi_command::run", reason = "Only journalctl and the macOS boot session probe in detect, systemctl in trial, grub-editenv and systemctl reboot in hardware, and test helpers run external commands" },
+    { path = "togi_command::run_blocking", reason = "Only journalctl and the macOS boot session probe in detect, systemctl in trial, grub-editenv and systemctl reboot in hardware, and test helpers run external commands" },
 ]
