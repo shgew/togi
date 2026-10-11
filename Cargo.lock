@@ -645,6 +645,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "togi-render"
+version = "0.0.0"
+dependencies = [
+ "jiff",
+ "rustix",
+ "serde_json",
+ "tempfile",
+ "togi-journal",
+]
+
+[[package]]
 name = "togi-requests"
 version = "0.0.0"
 dependencies = [
