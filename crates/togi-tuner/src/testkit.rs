@@ -537,9 +537,36 @@ impl Journal {
         backend: Option<(togi_machine::Backend, &str)>,
     ) -> Seq {
         let (regime, workload, cores, duration) = class;
+        let payload = self.carried_trial(
+            session,
+            togi_journal::TrialClass {
+                regime,
+                workload: WorkloadId::new(regime, workload),
+                cores: set(cores),
+                duration_s: duration,
+            },
+            condition,
+            profile,
+            outcome,
+            backend,
+        );
+        self.append(payload.into(), &[])
+    }
+
+    /// The `trial.carried` payload for a trial of `class`, to append as is or to alter first.
+    pub(crate) fn carried_trial(
+        &self,
+        session: &str,
+        class: togi_journal::TrialClass,
+        condition: Condition,
+        profile: &[i64],
+        outcome: Outcome,
+        backend: Option<(togi_machine::Backend, &str)>,
+    ) -> togi_journal::TrialCarried {
+        let duration = class.duration_s;
         let seq = self.next_seq();
         let signal = (outcome == Outcome::Failure).then_some(Signal::Crash);
-        let payload = togi_journal::TrialCarried {
+        togi_journal::TrialCarried {
             source: togi_journal::FactSource {
                 session: session.parse().unwrap(),
                 seq,
@@ -552,12 +579,7 @@ impl Journal {
                     path: path.to_owned(),
                 }),
             },
-            class: togi_journal::TrialClass {
-                regime,
-                workload: WorkloadId::new(regime, workload),
-                cores: set(cores),
-                duration_s: duration,
-            },
+            class,
             condition,
             activity: None,
             rerun: false,
@@ -570,8 +592,7 @@ impl Journal {
             voltage_requests_v: PerCore::default(),
             top_requesters: CoreSet::default(),
             ccd_mhz: BTreeMap::new(),
-        };
-        self.append(payload.into(), &[])
+        }
     }
 
     /// A failure carried from `session` that no trial explains: an idle crash at `profile`.

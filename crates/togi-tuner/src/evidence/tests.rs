@@ -1456,3 +1456,31 @@ fn the_ledger_rejects_a_profile_of_other_cores() {
     assert_eq!(fx.ev.set_checking_profile(foreign), Err(mismatch));
     assert_eq!(fx.ev.take_visits(), 0);
 }
+
+#[test]
+fn naming_a_failure_that_is_not_there_changes_nothing() {
+    let mut fx = Fx::new(&[0, 1, 2]);
+    let k = class(Regime::R7, 0, &[0, 1], 60);
+    let p = fx.p(&[-10, -10, 0]);
+    let elsewhere = fx.p(&[-20, -20, 0]);
+    assert_eq!(fx.ev.name_failure(k, &p, seq(1), core(2)), Ok(()));
+    let at = fx.fail(k, &p);
+    assert_eq!(fx.ev.name_failure(k, &elsewhere, at, core(2)), Ok(()));
+    assert_eq!(fx.ev.name_failure(k, &p, seq(99), core(2)), Ok(()));
+    fx.ev.reset_core(core(2));
+    assert_eq!(fx.ev.newest_failure(k, &p, None).unwrap(), Some(at));
+}
+
+#[test]
+fn a_carried_failure_named_later_is_discarded_with_its_core_and_its_provenance() {
+    let mut fx = Fx::new(&[0, 1, 2]);
+    let k = class(Regime::R7, 0, &[0, 1], 60);
+    let p = fx.p(&[-10, -10, 0]);
+    let at = fx.carried_fail(k, &p, "old");
+    assert!(fx.ev.carried_source(at).is_some());
+    fx.ev.name_failure(k, &p, at, core(2)).unwrap();
+    assert_eq!(fx.ev.newest_failure(k, &p, None).unwrap(), Some(at));
+    fx.ev.reset_core(core(2));
+    assert_eq!(fx.ev.newest_failure(k, &p, None).unwrap(), None);
+    assert!(fx.ev.carried_source(at).is_none());
+}

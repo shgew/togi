@@ -50,17 +50,13 @@ impl Search {
     pub(crate) fn record_pass(
         &mut self,
         core: CoreId,
-        regime: Regime,
+        r1: bool,
         backend: Backend,
         id: BackendId,
         seq: Seq,
     ) {
         let step = self.steps.entry(core).or_default();
-        let passes = match regime {
-            Regime::R1 => &mut step.r1,
-            Regime::R2 => &mut step.r2,
-            Regime::R3 | Regime::R4 | Regime::R5 | Regime::R6 | Regime::R7 => return,
-        };
+        let passes = if r1 { &mut step.r1 } else { &mut step.r2 };
         passes.entry(id).or_insert(StepPass { seq, backend });
     }
 

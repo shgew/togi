@@ -32,6 +32,8 @@ mod state;
 mod topology;
 
 #[cfg(test)]
+mod fold_tests;
+#[cfg(test)]
 mod ledger_tests;
 #[cfg(test)]
 mod phase_tests;

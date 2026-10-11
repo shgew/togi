@@ -228,7 +228,9 @@ fn phase2_moves() {
             j.combination(1, members);
         }
         let run = j.run();
-        let moves = run.phase2_moves(&run.offsets(), run.phases.passed());
+        let moves = run
+            .phase2_moves(&run.offsets(), run.phases.passed())
+            .unwrap();
         assert_eq!(moves.profile, j.profile(&case.want), "{}", case.name);
         let moved: Vec<_> = case.moved.iter().map(|&id| core(id)).collect();
         assert_eq!(moves.moved, moved, "{}", case.name);

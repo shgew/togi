@@ -157,16 +157,14 @@ impl Run {
     /// is not moved again; one deeper than it last passed is checked in place; one with no solo
     /// limit or already at it has nothing to move toward; the rest move one count if the profile
     /// so far reaches no failure point or combination.
-    pub(crate) fn phase2_moves(&self, from: &Profile, passed: Option<&Profile>) -> Moves {
+    pub(crate) fn phase2_moves(&self, from: &Profile, passed: Option<&Profile>) -> Option<Moves> {
         let finished = self.phases.finished();
         let mut profile = *from;
         let mut moved = Vec::new();
         let mut carried = Vec::new();
         for &id in self.topo.order() {
             let core = self.core(id);
-            let Some(offset) = from.get(id) else {
-                continue;
-            };
+            let offset = from.get(id)?;
             if core.phase.is_none_or(|phase| phase == CorePhase::Search) || finished.contains(id) {
                 continue;
             }
@@ -183,20 +181,17 @@ impl Run {
             {
                 continue;
             }
-            let Some(deeper) = offset.deeper_by(1) else {
-                continue;
-            };
-            let trial = profile.with(id, deeper);
+            let trial = profile.with(id, offset.deeper_or_floor(1));
             if self.constraints.reaches(&trial) == Ok(None) {
                 profile = trial;
                 moved.push(id);
             }
         }
-        Moves {
+        Some(Moves {
             profile,
             moved,
             carried,
-        }
+        })
     }
 
     pub(crate) fn any_searching(&self) -> bool {
@@ -217,8 +212,8 @@ impl Run {
         {
             return false;
         }
-        let moves = self.phase2_moves(&self.offsets(), self.phases.passed());
-        !moves.moved.is_empty() || !moves.carried.is_empty()
+        self.phase2_moves(&self.offsets(), self.phases.passed())
+            .is_some_and(|moves| !moves.moved.is_empty() || !moves.carried.is_empty())
     }
 
     pub(crate) fn checking_cycle(

@@ -1,8 +1,9 @@
 use std::collections::BTreeMap;
 
 use togi_journal::{Event, Mce, Outcome, Seq, TrialEnd, TrialId, TrialIntent, TrialProgress};
-use togi_machine::{Condition, CoreId, CoreSet, Signal};
+use togi_machine::{CoreId, CoreSet, Regime, Signal};
 
+use crate::requirement::Turn;
 use crate::state::Run;
 use crate::{BackendId, ClassKey, FoldError, Profile, Requirement, RequirementKind, StepNo};
 
@@ -31,9 +32,9 @@ pub(crate) struct OpenTrial {
     pub(crate) profile: Profile,
     pub(crate) class: ClassKey,
     pub(crate) requirement: Requirement,
+    pub(crate) turn: Turn,
     pub(crate) backend: BackendId,
     pub(crate) crashed: bool,
-    pub(crate) signalled: bool,
     pub(crate) mces: BTreeMap<Seq, CoreId>,
 }
 
@@ -73,13 +74,9 @@ impl Run {
         let class = self.class_of_intent(intent)?;
         let profile = Profile::new(&self.topo, intent.profile)?;
         self.require_cores(intent.core.into_iter().collect())?;
-        let requirement = self.intent_requirement(intent, class)?;
-        let alone_core = intent.core.filter(|_| intent.condition == Condition::Alone);
-        let cursor =
-            alone_core.and_then(|core| self.topo.order().iter().position(|&id| id == core));
-        if cursor.is_some() {
-            self.search.turn(cursor);
-        }
+        let (requirement, turn) = self.schedule_intent(intent, class)?;
+        self.search
+            .turn(self.topo.order().iter().position(|&id| id == turn.core));
         self.retry = None;
         self.flight.open = Some(OpenTrial {
             trial: intent.trial.clone(),
@@ -88,9 +85,9 @@ impl Run {
             profile,
             class,
             requirement,
+            turn,
             backend: self.evidence.active_backend(intent.workload.backend()),
             crashed: false,
-            signalled: false,
             mces: BTreeMap::new(),
         });
         Ok(())
@@ -106,13 +103,7 @@ impl Run {
 
     pub(crate) fn trial_progress(&mut self, progress: &TrialProgress) -> Result<(), FoldError> {
         self.open_for(&progress.trial)?;
-        self.require_cores(progress.core.into_iter().collect())?;
-        if progress.signal.is_some() {
-            if let Some(open) = self.flight.open.as_mut() {
-                open.signalled = true;
-            }
-        }
-        Ok(())
+        self.require_cores(progress.core.into_iter().collect())
     }
 
     pub(crate) fn mce(&mut self, event: &Event, mce: &Mce) -> Result<(), FoldError> {
@@ -177,7 +168,6 @@ impl Run {
     }
 
     pub(crate) fn trial_end(&mut self, event: &Event, end: &TrialEnd) -> Result<(), FoldError> {
-        self.open_for(&end.trial)?;
         if end.outcome == Outcome::Failure && end.signal.is_none() {
             return Err(FoldError::MissingSignal);
         }
@@ -189,36 +179,22 @@ impl Run {
                 .map(|(core, _)| core)
                 .collect(),
         )?;
-        let Some(open) = self.flight.open.take() else {
-            return Err(FoldError::NoOpenTrial(end.trial.clone()));
+        let open = match self.flight.open.take() {
+            Some(open) if open.trial == end.trial => open,
+            _ => return Err(FoldError::NoOpenTrial(end.trial.clone())),
         };
         let history = self.history(&open);
         self.record_end(event.seq, &open, end)?;
-        let conclusive = matches!(end.outcome, Outcome::Pass | Outcome::Failure);
-        if conclusive {
-            match open.intent.core {
-                Some(core) => self.update_core(core, |state| {
-                    state.rotation.advance(open.intent.regime);
-                }),
-                None => self.all_rotation.advance(open.intent.regime),
-            }
+        if matches!(end.outcome, Outcome::Pass | Outcome::Failure) {
+            self.advance_rotation(Some(open.turn.core), open.intent.regime);
         }
         self.flight.last_closed = Some(ClosedTrial {
             trial: open.trial.clone(),
             history,
         });
-        let alone = open.intent.condition == Condition::Alone;
-        if alone {
-            if let Some(core) = open.intent.core {
-                self.update_core(core, |state| state.last_seq = Some(event.seq));
-            }
-        }
+        self.update_core(open.turn.core, |state| state.last_seq = Some(event.seq));
         match end.outcome {
-            Outcome::Pass => {
-                if alone {
-                    self.record_step_pass(event.seq, &open);
-                }
-            }
+            Outcome::Pass => self.record_step_pass(event.seq, &open),
             Outcome::Inconclusive => self.save_retry(&open),
             Outcome::Failure => {
                 let signal = end.signal.ok_or(FoldError::MissingSignal)?;
@@ -237,24 +213,17 @@ impl Run {
         Ok(())
     }
 
-    /// An alone search pass at the core's current offset, under the backend package now in force,
-    /// is part of its unfinished step.
+    /// A search pass at the core's current offset, under the backend package its trial began with,
+    /// is part of its unfinished step; a candidate check's passes are counted by the ledger alone.
     fn record_step_pass(&mut self, seq: Seq, open: &OpenTrial) {
-        let intent = &open.intent;
-        let Some(core) = intent.core else {
-            return;
-        };
-        let state = self.core(core);
-        let searching = state.phase == Some(togi_journal::CorePhase::Search);
-        if searching
-            && intent.offset == Some(state.offset)
-            && intent.activity == Some(togi_journal::Activity::Search)
-            && state.check.is_none()
-        {
+        let state = self.core(open.turn.core);
+        let current = state.phase == Some(togi_journal::CorePhase::Search)
+            && open.turn.offset == Some(state.offset);
+        if current {
             self.search.record_pass(
-                core,
-                intent.regime,
-                intent.workload.backend(),
+                open.turn.core,
+                open.turn.regime == Regime::R1,
+                open.intent.workload.backend(),
                 open.backend,
                 seq,
             );

@@ -864,3 +864,79 @@ proptest! {
         }
     }
 }
+
+#[test]
+fn recent_names_the_core_of_the_latest_shallower_point_or_the_latest_combination() {
+    let topology = topology(&[0, 1, 2]);
+    let mut constraints = Constraints::new(&topology);
+    assert!(constraints.recent().is_empty());
+    constraints
+        .insert_failure_point(core(1), FailurePoint::new(off(-20)))
+        .unwrap();
+    assert_eq!(constraints.recent().iter().collect::<Vec<_>>(), [core(1)]);
+    constraints
+        .insert_failure_point(core(2), FailurePoint::new(off(-30)))
+        .unwrap();
+    constraints
+        .insert_failure_point(core(1), FailurePoint::new(off(-25)))
+        .unwrap();
+    assert_eq!(constraints.recent().iter().collect::<Vec<_>>(), [core(2)]);
+    constraints
+        .insert_combination(cid(1), members(&[(0, -10), (1, -10)]))
+        .unwrap();
+    assert_eq!(
+        constraints.recent().iter().collect::<Vec<_>>(),
+        [core(0), core(1)]
+    );
+    constraints
+        .insert_combination(cid(2), members(&[(2, -5)]))
+        .unwrap();
+    constraints
+        .insert_combination(cid(3), members(&[(2, -5)]))
+        .unwrap();
+    assert_eq!(constraints.recent().iter().collect::<Vec<_>>(), [core(2)]);
+}
+
+#[test]
+fn a_failure_point_can_be_replaced_or_cleared_but_only_for_a_core_of_the_topology() {
+    let topology = topology(&[0]);
+    let mut constraints = Constraints::new(&topology);
+    let point = |value| Some(FailurePoint::new(off(value)));
+    constraints.set_failure_point(core(0), point(-20)).unwrap();
+    constraints.set_failure_point(core(0), point(-30)).unwrap();
+    assert_eq!(constraints.failure_points().get(core(0)), point(-30));
+    constraints.set_failure_point(core(0), None).unwrap();
+    assert_eq!(constraints.failure_points().get(core(0)), None);
+    assert_eq!(
+        constraints.set_failure_point(core(1), point(-1)),
+        Err(ConstraintError::UnknownCore(core(1)))
+    );
+}
+
+#[test]
+fn repeating_a_constraint_does_not_add_to_what_the_optimum_solves() {
+    let topology = topology(&[0, 1, 2, 3]);
+    let pairs: [&[(u8, i64)]; 3] = [
+        &[(0, -50), (1, -50)],
+        &[(1, -50), (2, -50)],
+        &[(2, -50), (3, -50)],
+    ];
+    let once = constraints(&topology, &[], &pairs);
+    let mut repeated = once.clone();
+    for round in 0..1000_u32 {
+        for (index, pair) in pairs.iter().enumerate() {
+            let id = cid(100 + round * 3 + u32::try_from(index).unwrap());
+            assert_eq!(
+                repeated.insert_combination(id, members(pair)),
+                Ok(Insertion::Duplicate(cid(u32::try_from(index).unwrap() + 1)))
+            );
+        }
+    }
+    assert_eq!(repeated.combinations().len(), pairs.len());
+    let ranking = Ranking::ascending(&topology);
+    let hi = Profile::zero(&topology);
+    assert_eq!(
+        repeated.optimum(&hi, &ranking).unwrap(),
+        once.optimum(&hi, &ranking).unwrap()
+    );
+}

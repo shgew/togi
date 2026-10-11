@@ -125,7 +125,7 @@ impl Run {
         if self
             .retry
             .as_ref()
-            .is_some_and(|retry| retry.alone_core() == Some(core))
+            .is_some_and(|retry| retry.turn.core == core)
         {
             self.retry = None;
         }
