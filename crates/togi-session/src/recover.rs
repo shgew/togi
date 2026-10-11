@@ -29,12 +29,14 @@ pub struct Recovery<'a> {
     pub cancel: &'a CancellationToken,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct Recovered {
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Recovered {
+    /// Every crashed boot is classified and recorded, and the trial they left open is closed.
+    Done,
     /// A kernel-log retry wait was cancelled: the crash it was for and the ones after it stay unclassified.
-    pub cancelled: bool,
+    Cancelled,
     /// The kernel log stayed unreadable through every retry: the run has no evidence to go on.
-    pub unreadable: Option<KernelUnreadable>,
+    Unreadable(KernelUnreadable),
 }
 
 /// The kernel log that could not be read, for the no-evidence dead end that cites its retries.
@@ -54,18 +56,8 @@ pub fn prior_boots(recovery: Recovery<'_>) -> Step<Recovered> {
     };
     match crashes.classify() {
         Ok(()) => {}
-        Err(Halt::Cancelled) => {
-            return Ok(Recovered {
-                cancelled: true,
-                unreadable: None,
-            });
-        }
-        Err(Halt::Unreadable(unreadable)) => {
-            return Ok(Recovered {
-                cancelled: false,
-                unreadable: Some(unreadable),
-            });
-        }
+        Err(Halt::Cancelled) => return Ok(Recovered::Cancelled),
+        Err(Halt::Unreadable(unreadable)) => return Ok(Recovered::Unreadable(unreadable)),
         Err(Halt::Flow(flow)) => return Err(flow),
     }
     let mut recovery = crashes.recovery;
@@ -76,10 +68,10 @@ pub fn prior_boots(recovery: Recovery<'_>) -> Step<Recovered> {
         .open_trial()
         .is_some_and(|open| open.boot == *boot)
     {
-        return Ok(Recovered::default());
+        return Ok(Recovered::Done);
     }
     finish(&mut recovery)?;
-    Ok(Recovered::default())
+    Ok(Recovered::Done)
 }
 
 /// Closes the trial an earlier run left open in the current boot, once the sweep cleared what it left running. With

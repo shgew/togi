@@ -572,7 +572,7 @@ fn fatal_crash(step: &Step<impl std::fmt::Debug>) -> bool {
 fn an_idle_crash_is_recorded_once_and_answered_with_one_failure() {
     let mut h = Harness::new(&idle_log(|log| written(log, 0, -20)), "b1");
     h.reasons(&[("b0", None), ("b1", Some(ResetKind::Watchdog))]);
-    assert_eq!(h.recover().unwrap(), Recovered::default());
+    assert_eq!(h.recover().unwrap(), Recovered::Done);
     let crashes = h.crashes();
     assert_eq!(crashes.len(), 1);
     let (crash_event, crash) = crashes[0];
@@ -588,10 +588,10 @@ fn an_idle_crash_is_recorded_once_and_answered_with_one_failure() {
     h.consistent();
 
     let before = h.events().len();
-    assert_eq!(h.recover().unwrap(), Recovered::default());
+    assert_eq!(h.recover().unwrap(), Recovered::Done);
     assert_eq!(h.events().len(), before);
     h.reopen();
-    assert_eq!(h.recover().unwrap(), Recovered::default());
+    assert_eq!(h.recover().unwrap(), Recovered::Done);
     assert_eq!(h.events().len(), before);
     h.consistent();
 }
@@ -1078,7 +1078,7 @@ fn the_kernel_log_is_retried_after_one_five_and_thirty_minutes_then_read_or_give
         script.failing = Some(boot("b0"));
         script.failures = 3;
     }
-    assert_eq!(h.recover().unwrap(), Recovered::default());
+    assert_eq!(h.recover().unwrap(), Recovered::Done);
     let waits: Vec<_> = h.retries().iter().map(|(_, retry)| retry.wait_s).collect();
     assert_eq!(waits, [60, 300, 1800]);
     let attempts: Vec<_> = h.retries().iter().map(|(_, retry)| retry.attempt).collect();
@@ -1104,14 +1104,10 @@ fn the_kernel_log_is_retried_after_one_five_and_thirty_minutes_then_read_or_give
     let recovered = h.recover().unwrap();
     let retries: Vec<Seq> = h.retries().iter().map(|(event, _)| event.seq).collect();
     assert_eq!(retries.len(), 3);
-    let Recovered {
-        cancelled: false,
-        unreadable:
-            Some(KernelUnreadable {
-                detail,
-                retries: cited,
-            }),
-    } = recovered
+    let Recovered::Unreadable(KernelUnreadable {
+        detail,
+        retries: cited,
+    }) = recovered
     else {
         panic!("{recovered:?}");
     };
@@ -1140,7 +1136,7 @@ fn the_kernel_log_of_this_boot_is_retried_though_an_older_boot_the_system_journa
     ]);
     h.kernel.borrow_mut().gone.insert(boot("b1"));
     let recovered = h.recover().unwrap();
-    assert!(recovered.unreadable.is_some());
+    assert!(matches!(recovered, Recovered::Unreadable(_)));
     assert_eq!(h.retries().len(), 3);
 }
 
@@ -1161,13 +1157,7 @@ fn a_cancelled_wait_appends_nothing_and_a_pending_retry_is_not_read_again() {
     h.cancel.cancel();
     let before = h.events().len();
     let recovered = h.recover().unwrap();
-    assert_eq!(
-        recovered,
-        Recovered {
-            cancelled: true,
-            unreadable: None
-        }
-    );
+    assert_eq!(recovered, Recovered::Cancelled);
     assert_eq!(h.events().len(), before);
     assert!(h.kernel.borrow().reads.is_empty());
     assert!(h.sleeps().is_empty());
@@ -1197,13 +1187,7 @@ fn a_run_cut_short_in_a_retry_wait_waits_the_same_attempt_again_without_a_new_re
         if crashed {
             assert!(fatal_crash(&first));
         } else {
-            assert_eq!(
-                first.unwrap(),
-                Recovered {
-                    cancelled: true,
-                    unreadable: None
-                }
-            );
+            assert_eq!(first.unwrap(), Recovered::Cancelled);
         }
         assert_eq!(h.retries().len(), 1);
         assert!(h.crashes().is_empty());
@@ -1215,7 +1199,7 @@ fn a_run_cut_short_in_a_retry_wait_waits_the_same_attempt_again_without_a_new_re
             state.crash_at = None;
             state.cancel_at = None;
         }
-        assert_eq!(h.recover().unwrap(), Recovered::default());
+        assert_eq!(h.recover().unwrap(), Recovered::Done);
         assert_eq!(h.retries().len(), 1);
         assert_eq!(h.sleeps(), [Duration::from_mins(1), Duration::from_mins(1)]);
         let crashes = h.crashes();
