@@ -62,7 +62,7 @@ impl fmt::Display for DutyPct {
 /// build that recorded it, since `rand` is pinned to an exact version and the journal's build stamp
 /// identifies it; a `rand` bump changes the stream.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum LoadSchedule {
     Random { seed: u64 },
     Duty { pct: DutyPct },

@@ -5,7 +5,7 @@ use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use togi_machine::{
     Backend, BankType, BootId, CcdId, Condition, CoreId, CoreSet, CpuId, KernelCursor,
-    LoadSchedule, PerCore, PstoreRecord, Regime, ResetKind, Signal, TargetOffset,
+    LoadSchedule, PerCore, PstoreRecord, Regime, ResetKind, Signal, TargetOffset, WorkloadId,
 };
 
 use super::domain::{Activity, Attribution, Outcome};
@@ -50,7 +50,7 @@ pub struct TrialIntent {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub offset: Option<TargetOffset>,
     pub regime: Regime,
-    pub workload: String,
+    pub workload: WorkloadId,
     pub duration_s: u32,
     pub condition: Condition,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -271,7 +271,8 @@ pub struct BackendIdentity {
 #[serde(deny_unknown_fields)]
 pub struct TrialClass {
     pub regime: Regime,
-    pub workload: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workload: Option<WorkloadId>,
     pub cores: CoreSet,
     pub duration_s: u32,
 }

@@ -130,6 +130,46 @@ fn workload_regime_contracts() {
     assert_eq!(workload_by_id("not-a-workload"), None);
 }
 
+#[test]
+fn workload_ids_name_every_catalog_entry() {
+    let mut seen = std::collections::BTreeSet::new();
+    for regime in REGIMES {
+        for (index, workload) in workloads(regime).iter().enumerate() {
+            let id = workload.id();
+            assert_eq!(id, WorkloadId::new(regime, index).unwrap());
+            assert_eq!(id.regime(), regime);
+            assert_eq!(id.workload(), workload);
+            assert_eq!(id.as_str(), workload.id);
+            assert_eq!(id.to_string(), workload.id);
+            assert_eq!(workload.id.parse::<WorkloadId>().unwrap(), id);
+            let json = serde_json::to_string(&id).unwrap();
+            assert_eq!(json, format!("\"{}\"", workload.id));
+            assert_eq!(serde_json::from_str::<WorkloadId>(&json).unwrap(), id);
+            assert!(seen.insert(id));
+        }
+    }
+    assert_eq!(seen.len(), 33);
+    assert!(seen.iter().zip(seen.iter().skip(1)).all(|(a, b)| a < b));
+}
+
+#[test]
+fn unknown_workload_ids_are_rejected() {
+    assert_eq!(WorkloadId::by_id("not-a-workload"), None);
+    assert!("".parse::<WorkloadId>().is_err());
+    assert!(serde_json::from_str::<WorkloadId>("\"not-a-workload\"").is_err());
+    assert!(serde_json::from_str::<WorkloadId>("3").is_err());
+    assert_eq!(WorkloadId::new(Regime::R1, 3), None);
+}
+
+#[test]
+fn nested_vocabulary_types_refuse_unknown_fields() {
+    assert!(serde_json::from_str::<CoreInfo>(r#"{"core":0,"ccd":0,"cpus":[0],"x":1}"#).is_err());
+    assert!(serde_json::from_str::<PstoreRecord>(r#"{"path":"p","lines":[],"x":1}"#).is_err());
+    assert!(serde_json::from_str::<LoadSchedule>(r#"{"kind":"random","seed":1,"x":1}"#).is_err());
+    assert!(serde_json::from_str::<LoadSchedule>(r#"{"kind":"duty","pct":50,"x":1}"#).is_err());
+    assert!(serde_json::from_str::<LoadSchedule>(r#"{"kind":"random","seed":1}"#).is_ok());
+}
+
 fn write_gzip(path: &Path, content: &str) {
     let mut writer = GzEncoder::new(std::fs::File::create(path).unwrap(), Compression::default());
     writer.write_all(content.as_bytes()).unwrap();

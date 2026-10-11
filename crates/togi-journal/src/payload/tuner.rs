@@ -1,7 +1,7 @@
 use std::num::NonZeroU32;
 
 use serde::{Deserialize, Serialize};
-use togi_machine::{CcdId, CoreId, CoreSet, PerCore, Regime, TargetOffset};
+use togi_machine::{CcdId, CoreId, CoreSet, PerCore, Regime, TargetOffset, WorkloadId};
 
 use super::domain::{
     Activity, CorePhase, CycleEvent, Decision, HuntOutcome, HuntStage, Inference, RetryTarget,
@@ -24,7 +24,7 @@ pub struct TunerDecision {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub failure_point: Option<TargetOffset>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub workloads: Vec<String>,
+    pub workloads: Vec<WorkloadId>,
     pub reason: String,
 }
 
@@ -43,7 +43,7 @@ pub struct CoreTransition {
     #[serde(default, skip_serializing_if = "is_false")]
     pub check_solo_limit: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub workloads: Vec<String>,
+    pub workloads: Vec<WorkloadId>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub cleared_combination: Vec<NonZeroU32>,
     pub reason: String,
@@ -87,7 +87,7 @@ pub struct CheckingChain {
     pub cycle: NonZeroU32,
     pub step: NonZeroU32,
     pub ccd: CcdId,
-    pub workload: String,
+    pub workload: WorkloadId,
     pub groups: Vec<CoreSet>,
     pub cores: CoreSet,
     pub source_seqs: Vec<Seq>,
@@ -122,7 +122,7 @@ pub struct HuntStart {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub trial: Option<TrialId>,
     pub regime: Regime,
-    pub workload: String,
+    pub workload: WorkloadId,
     pub cores: CoreSet,
     pub duration_s: u32,
     pub failing: PerCore<TargetOffset>,

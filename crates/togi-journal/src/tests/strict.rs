@@ -112,3 +112,46 @@ fn hold_is_an_explicit_decision() {
     };
     assert_eq!(decision.decision, Decision::Hold);
 }
+
+#[test]
+fn unknown_fields_in_nested_machine_types_are_refused() {
+    let cases = [
+        (EventKind::SessionStart, "cores", Some(0)),
+        (EventKind::CrashDetected, "pstore", None),
+        (EventKind::TrialSignal, "schedule", None),
+    ];
+    for (kind, field, index) in cases {
+        let mut line = line_of(super::fixtures::sample(kind));
+        let nested = match index {
+            Some(index) => &mut line["data"][field][index],
+            None => &mut line["data"][field],
+        };
+        assert!(nested.is_object(), "{kind}.{field}");
+        nested["bogus"] = json!(1);
+        let error = Event::decode(&line.to_string()).unwrap_err();
+        assert!(matches!(error, DecodeError::Payload { kind: named, .. } if named == kind), "{kind}: {error}");
+    }
+}
+
+#[test]
+fn unknown_workload_ids_are_refused_wherever_a_payload_names_one() {
+    let cases = [
+        (EventKind::TrialIntent, "/data/workload"),
+        (EventKind::HuntStart, "/data/workload"),
+        (EventKind::CheckingChain, "/data/workload"),
+        (EventKind::TrialCarried, "/data/class/workload"),
+        (EventKind::TunerDecision, "/data/workloads/0"),
+    ];
+    for (kind, pointer) in cases {
+        let mut line = line_of(super::fixtures::sample(kind));
+        *line.pointer_mut(pointer).unwrap() = json!("not-a-workload");
+        let error = Event::decode(&line.to_string()).unwrap_err();
+        assert!(error.to_string().contains("not-a-workload"), "{kind}: {error}");
+    }
+}
+
+#[test]
+fn an_idle_class_has_no_workload_on_the_wire() {
+    let line = line_of(super::fixtures::sample(EventKind::FailureCarried));
+    assert!(line["data"]["class"].get("workload").is_none());
+}

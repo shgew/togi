@@ -40,7 +40,7 @@ fn nan_payload() -> Payload {
         failure: Seq::FIRST,
         trial: None,
         regime: Regime::R2,
-        workload: "w".into(),
+        workload: "mprime-sse-4k-21k".parse().unwrap(),
         cores: CoreSet::default(),
         duration_s: 1,
         failing: PerCore::default(),

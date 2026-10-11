@@ -1,6 +1,6 @@
 use std::fmt::Write as _;
 
-use togi_machine::{CoreId, CoreSet, PerCore, Signal, TargetOffset, workload_by_id};
+use togi_machine::{CoreId, CoreSet, PerCore, Signal, TargetOffset, WorkloadId};
 
 use super::domain::{
     Activity, Attribution, CorePhase, CycleEvent, Decision, DeadEndAction, HuntOutcome, HuntStage,
@@ -298,8 +298,8 @@ fn profile_restored(p: &ProfileRestored) -> String {
     )
 }
 
-fn workload_label(id: &str) -> &str {
-    workload_by_id(id).map_or(id, |workload| workload.label)
+fn workload_label(id: WorkloadId) -> &'static str {
+    id.workload().label
 }
 
 fn trial_intent(p: &TrialIntent) -> String {
@@ -316,7 +316,7 @@ fn trial_intent(p: &TrialIntent) -> String {
         text,
         " {} {} {} s {}",
         p.regime,
-        workload_label(&p.workload),
+        workload_label(p.workload),
         p.duration_s,
         p.condition
     );
@@ -554,7 +554,7 @@ fn trial_carried(p: &TrialCarried) -> String {
         build_name(&p.source.build),
         p.condition,
         p.class.regime,
-        workload_label(&p.class.workload),
+        p.class.workload.map_or("any workload", workload_label),
         cores(p.class.cores),
         p.duration_s,
         profile(&p.profile),
@@ -734,7 +734,7 @@ fn checking_chain(p: &CheckingChain) -> String {
         p.cycle,
         p.step,
         p.ccd.0,
-        workload_label(&p.workload),
+        workload_label(p.workload),
         groups(&p.groups)
     );
     if p.cores.is_empty() {

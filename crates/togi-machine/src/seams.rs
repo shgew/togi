@@ -215,6 +215,7 @@ pub struct KernelRead {
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PstoreRecord {
     pub path: String,
     pub lines: Vec<String>,

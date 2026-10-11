@@ -2,6 +2,7 @@ use crate::{CcdId, CoreId, CpuId};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CoreInfo {
     pub core: CoreId,
     pub ccd: CcdId,

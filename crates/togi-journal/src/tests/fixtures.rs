@@ -5,10 +5,14 @@ use jiff::Timestamp;
 use togi_machine::{
     BankType, BiosContext, BootId, CcdId, Condition, CoreId, CoreInfo, CoreSet, CpuId,
     KernelCursor, LoadSchedule, ObservedOffset, PerCore, PstoreRecord, Regime, ResetKind, Signal,
-    TargetOffset,
+    TargetOffset, WorkloadId,
 };
 
 use crate::*;
+
+pub(crate) fn workload(id: &str) -> WorkloadId {
+    id.parse().unwrap()
+}
 
 pub(crate) fn core(id: u8) -> CoreId {
     CoreId::new(i64::from(id)).unwrap()
@@ -95,7 +99,7 @@ fn fact_source() -> FactSource {
 fn class() -> TrialClass {
     TrialClass {
         regime: Regime::R2,
-        workload: "mprime-avx2-36k-248k".into(),
+        workload: Some(workload("mprime-avx2-36k-248k")),
         cores: set(&[3]),
         duration_s: 90,
     }
@@ -268,7 +272,7 @@ pub(crate) fn samples() -> Vec<Payload> {
             cores: CoreSet::default(),
             offset: Some(target(-32)),
             regime: Regime::R2,
-            workload: "mprime-avx2-36k-248k".into(),
+            workload: workload("mprime-avx2-36k-248k"),
             duration_s: 90,
             condition: Condition::Alone,
             activity: Some(Activity::Search),
@@ -345,7 +349,7 @@ pub(crate) fn samples() -> Vec<Payload> {
             },
             class: TrialClass {
                 regime: Regime::R6,
-                workload: String::new(),
+                workload: None,
                 cores: set(&[0, 1, 2, 3]),
                 duration_s: 0,
             },
@@ -393,7 +397,7 @@ pub(crate) fn samples() -> Vec<Payload> {
             to_offset: target(-37),
             pass: Some(target(-32)),
             failure_point: None,
-            workloads: vec!["mprime-sse-4k-21k".into()],
+            workloads: vec![workload("mprime-sse-4k-21k")],
             reason: "coarse, no failure point yet".into(),
         }
         .into(),
@@ -430,7 +434,7 @@ pub(crate) fn samples() -> Vec<Payload> {
             cycle: ord(1),
             step: ord(1),
             ccd: CcdId(0),
-            workload: "mprime-avx2-36k-248k".into(),
+            workload: workload("mprime-avx2-36k-248k"),
             groups: vec![set(&[1, 2]), set(&[3])],
             cores: set(&[3, 4]),
             source_seqs: vec![seq(5), seq(6)],
@@ -450,7 +454,7 @@ pub(crate) fn samples() -> Vec<Payload> {
             failure: seq(904),
             trial: Some(trial()),
             regime: Regime::R7,
-            workload: "mprime-avx2-36k-248k".into(),
+            workload: workload("mprime-avx2-36k-248k"),
             cores: set(&[0, 1, 2, 3]),
             duration_s: 120,
             failing: profile(&[-10, -20, -30, -40]),

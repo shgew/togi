@@ -29,7 +29,7 @@ pub use seams::{
 };
 pub use topology::{BiosContext, ContextField, ContextMismatch, CoreInfo, order};
 pub use vocab::{Backend, BankType, Condition, REGIMES, Regime, ResetKind, Signal};
-pub use workloads::{MPRIME_AVX512_ID, Workload, pick_workload, workload_by_id, workloads};
+pub use workloads::{MPRIME_AVX512_ID, UnknownWorkload, Workload, WorkloadId, pick_workload, workload_by_id, workloads};
 
 #[cfg(test)]
 mod tests;
