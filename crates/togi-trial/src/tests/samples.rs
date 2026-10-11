@@ -302,19 +302,39 @@ async fn a_writer_that_cannot_start_ends_the_trial_with_a_storage_error() {
     .await;
 }
 
-#[tokio::test(start_paused = true)]
+#[tokio::test]
 async fn a_stuck_writer_join_does_not_block_the_runtime_thread() {
     local(async {
         let (gate, gated) = std::sync::mpsc::channel::<()>();
         let lines = Arc::new(Mutex::new(0));
         let storage = blocked_open(gated, Arc::clone(&lines));
-        let rig = rig_edit(TestBackend::new("/bin/true"), Timing::default(), |env| {
+        let timing = Timing {
+            writer_join: secs(1),
+            ..Timing::default()
+        };
+        let rig = rig_edit(TestBackend::new("/bin/true"), timing, |env| {
             env.storage = Some(storage);
         });
-        let handle = rig.start(spec(Regime::R1, &[0], secs(3))).await.unwrap();
+        let ticks = Rc::new(std::cell::Cell::new(0_u32));
+        let counter = Rc::clone(&ticks);
+        let ticker = tokio::task::spawn_local(async move {
+            loop {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+                counter.set(counter.get() + 1);
+            }
+        });
+        let handle = rig.start(spec(Regime::R1, &[0], secs(2))).await.unwrap();
         let wall = std::time::Instant::now();
         let run = finish(&handle).await;
-        assert!(wall.elapsed() < secs(2), "the five-second join ran in virtual time");
+        ticker.abort();
+        let elapsed = wall.elapsed();
+        assert!(elapsed >= Duration::from_millis(2900), "{elapsed:?}");
+        let expected = u32::try_from(elapsed.as_millis() / 20).unwrap();
+        assert!(
+            ticks.get() * 4 >= expected * 3,
+            "the runtime kept running during the join: {} of {expected} ticks",
+            ticks.get()
+        );
         assert!(matches!(&run.finished.errors[..], [Error::Storage(_)]));
         drop(gate);
     })

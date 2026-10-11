@@ -231,7 +231,7 @@ async fn the_cap_never_hides_cleanup_or_ordinary_io_errors() {
             run.finished.result.inconclusive.as_deref(),
             Some("core 00 read stderr.log: backend output line exceeds 64 KiB")
         );
-        assert!(matches!(&run.finished.errors[..], [Error::Output(_)]));
+        assert!(matches!(&run.finished.errors[..], [Error::Output(_)]), "{:?}", run.finished.errors);
         let containment = run.finished.teardown.unwrap_err();
         assert!(
             containment
@@ -651,7 +651,11 @@ async fn a_blocked_log_write_never_stalls_supervision_and_is_reported() {
     local(async {
         let gates = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let kept = std::sync::Arc::clone(&gates);
-        let rig = rig_edit(TestBackend::new("/bin/true"), Timing::default(), move |env| {
+        let timing = Timing {
+            writer_join: Duration::from_millis(300),
+            ..Timing::default()
+        };
+        let rig = rig_edit(TestBackend::new("/bin/true"), timing, move |env| {
             let gates = std::sync::Arc::clone(&kept);
             env.log_sink = Some(std::rc::Rc::new(move || {
                 let gates = std::sync::Arc::clone(&gates);

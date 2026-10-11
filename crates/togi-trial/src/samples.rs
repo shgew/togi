@@ -2,7 +2,7 @@ use std::fs::File;
 use std::io::{self, Write as _};
 use std::os::fd::{AsFd, OwnedFd};
 use std::sync::Arc;
-use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
+use std::sync::mpsc::{Receiver, RecvTimeoutError, SyncSender, TrySendError, sync_channel};
 use std::time::Duration;
 
 use rustix::fs::{Mode, OFlags, fsync, openat};
@@ -65,14 +65,14 @@ pub(crate) enum Offered {
 #[derive(Debug)]
 pub(crate) struct SamplesWriter {
     queue: SyncSender<Vec<u8>>,
-    done: tokio::sync::oneshot::Receiver<Result<(), StorageFailure>>,
+    done: Receiver<Result<(), StorageFailure>>,
 }
 
 impl SamplesWriter {
     /// A storage failure wakes `failed` once and ends the writer; `finish` returns the errors.
     pub(crate) fn spawn(open: Open, failed: UnboundedSender<()>) -> Result<Self, StorageError> {
         let (queue, samples) = sync_channel::<Vec<u8>>(1);
-        let (finished, done) = tokio::sync::oneshot::channel();
+        let (finished, done) = std::sync::mpsc::channel();
         std::thread::Builder::new()
             .name("togi-samples".to_owned())
             .spawn(move || {
@@ -94,15 +94,16 @@ impl SamplesWriter {
         })
     }
 
-    /// Closes the queue and waits at most `bound` for the thread to drain and close the file,
-    /// without blocking the runtime; a thread stuck in storage is abandoned and reported.
+    /// Closes the queue and waits at most `bound` of real time for the thread to drain and close
+    /// the file; the wait runs on the blocking pool, never on the runtime thread, and a thread
+    /// stuck in storage is abandoned and reported.
     pub(crate) async fn finish(self, bound: Duration) -> Result<(), StorageFailure> {
         let Self { queue, done } = self;
         drop(queue);
-        match tokio::time::timeout(bound, done).await {
+        match tokio::task::spawn_blocking(move || done.recv_timeout(bound)).await {
             Ok(Ok(result)) => result,
-            Ok(Err(_)) => Err(StorageError::Vanished.into()),
-            Err(_) => Err(StorageError::JoinTimeout(bound).into()),
+            Ok(Err(RecvTimeoutError::Timeout)) => Err(StorageError::JoinTimeout(bound).into()),
+            Ok(Err(RecvTimeoutError::Disconnected)) | Err(_) => Err(StorageError::Vanished.into()),
         }
     }
 }
