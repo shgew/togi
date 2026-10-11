@@ -1,5 +1,6 @@
 use crate::PerCore;
-use serde::de::{MapAccess, SeqAccess, Visitor};
+use crate::go_json::{decode_fields, field_eq, json_text, parse, scalar, update_object};
+use serde::de::{MapAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 use serde_json::value::RawValue;
 use std::collections::BTreeMap;
@@ -22,82 +23,57 @@ pub trait PmTableReader {
     fn pm_table(&self) -> Option<PmTable>;
 }
 
-struct Float32Array([f32; 16]);
-impl<'de> Deserialize<'de> for Float32Array {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct Array;
-        impl<'de> Visitor<'de> for Array {
-            type Value = Float32Array;
-            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str("a float32 array")
-            }
-            fn visit_seq<A: SeqAccess<'de>>(self, mut array: A) -> Result<Self::Value, A::Error> {
-                let mut values = [0.0; 16];
-                let mut index = 0;
-                while let Some(raw) = array.next_element::<Box<RawValue>>()? {
-                    if index < values.len() && raw.get() != "null" {
-                        let value: f32 = raw.get().parse().map_err(serde::de::Error::custom)?;
-                        if !value.is_finite() {
-                            return Err(serde::de::Error::custom("float32 overflow"));
-                        }
-                        values[index] = value;
-                    }
-                    index += 1;
+/// Go's decoding of a `[16]float32` field: `null` changes nothing, a JSON
+/// array writes into the existing elements (a `null` element keeps its value),
+/// zeroes the positions the array does not reach and ignores extra elements.
+fn update_floats(slot: &mut [f32; 16], raw: &str) -> Result<(), serde_json::Error> {
+    if raw == "null" {
+        return Ok(());
+    }
+    let items: Vec<Box<RawValue>> = parse(raw)?;
+    for (index, value) in slot.iter_mut().enumerate() {
+        match items.get(index).map(|item| item.get()) {
+            None => *value = 0.0,
+            Some("null") => {}
+            Some(item) => {
+                let parsed: f32 = item.parse().map_err(serde::de::Error::custom)?;
+                if !parsed.is_finite() {
+                    return Err(serde::de::Error::custom("float32 overflow"));
                 }
-                Ok(Float32Array(values))
+                *value = parsed;
             }
         }
-        deserializer.deserialize_seq(Array)
     }
+    Ok(())
 }
 
-struct TableUpdate<'a>(&'a mut PmTable);
-impl<'de> serde::de::DeserializeSeed<'de> for TableUpdate<'_> {
-    type Value = ();
-    fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<(), D::Error> {
-        deserializer.deserialize_any(self)
-    }
-}
-impl<'de> Visitor<'de> for TableUpdate<'_> {
-    type Value = ();
-    fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("a PM-table object or null")
-    }
-    fn visit_unit<E: serde::de::Error>(self) -> Result<(), E> {
-        Ok(())
-    }
-    fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<(), A::Error> {
-        while let Some((key, raw)) = map.next_entry::<String, Box<RawValue>>()? {
-            let target = if field_eq(&key, "power_w") {
-                &mut self.0.power_w
-            } else if field_eq(&key, "voltage_request_v") {
-                &mut self.0.voltage_request_v
-            } else if field_eq(&key, "temperature_c") {
-                &mut self.0.temperature_c
-            } else if field_eq(&key, "c0_pct") {
-                &mut self.0.c0_pct
-            } else if field_eq(&key, "cc1_pct") {
-                &mut self.0.cc1_pct
-            } else if field_eq(&key, "cc6_pct") {
-                &mut self.0.cc6_pct
-            } else {
-                continue;
-            };
-            if raw.get() != "null" {
-                *target = serde_json::from_str::<Float32Array>(raw.get())
-                    .map_err(serde::de::Error::custom)?
-                    .0;
-            }
-        }
-        Ok(())
-    }
+fn update_table_member(table: &mut PmTable, key: &str, raw: &str) -> Result<(), serde_json::Error> {
+    let slot = if field_eq(key, "power_w") {
+        &mut table.power_w
+    } else if field_eq(key, "voltage_request_v") {
+        &mut table.voltage_request_v
+    } else if field_eq(key, "temperature_c") {
+        &mut table.temperature_c
+    } else if field_eq(key, "c0_pct") {
+        &mut table.c0_pct
+    } else if field_eq(key, "cc1_pct") {
+        &mut table.cc1_pct
+    } else if field_eq(key, "cc6_pct") {
+        &mut table.cc6_pct
+    } else {
+        return Ok(());
+    };
+    update_floats(slot, raw)
 }
 
+const PM_TABLE: &str = "a PM-table object or null";
+
+/// Decodes as Go's `json.Unmarshal` does into `PMTable`. Bytes Go wrote go
+/// through `json_text` first.
 impl<'de> Deserialize<'de> for PmTable {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        use serde::de::DeserializeSeed;
         let mut table = Self::default();
-        TableUpdate(&mut table).deserialize(deserializer)?;
+        decode_fields(deserializer, &mut table, PM_TABLE, update_table_member)?;
         Ok(table)
     }
 }
@@ -125,11 +101,8 @@ impl<'de> Deserialize<'de> for Temperatures {
             fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
                 let mut values = BTreeMap::new();
                 while let Some((key, raw)) = map.next_entry::<String, Box<RawValue>>()? {
-                    let value = if raw.get() == "null" {
-                        0
-                    } else {
-                        serde_json::from_str(raw.get()).map_err(serde::de::Error::custom)?
-                    };
+                    let mut value = 0;
+                    scalar(&mut value, raw.get()).map_err(serde::de::Error::custom)?;
                     values.insert(key, value);
                 }
                 Ok(Temperatures(values))
@@ -139,66 +112,65 @@ impl<'de> Deserialize<'de> for Temperatures {
     }
 }
 
+fn update_condition(
+    sample: &mut TrialConditions,
+    key: &str,
+    raw: &str,
+) -> Result<(), serde_json::Error> {
+    if field_eq(key, "elapsed_ms") {
+        scalar(&mut sample.elapsed_ms, raw)
+    } else if field_eq(key, "tctl_c") {
+        sample.tctl_c = parse(raw)?;
+        Ok(())
+    } else if field_eq(key, "tccd_c") {
+        if raw == "null" {
+            sample.tccd_c = None;
+        } else {
+            let values = parse::<Temperatures>(raw)?.0;
+            sample
+                .tccd_c
+                .get_or_insert_with(BTreeMap::new)
+                .extend(values);
+        }
+        Ok(())
+    } else if field_eq(key, "core_mhz") {
+        sample.core_mhz = parse(raw)?;
+        Ok(())
+    } else if field_eq(key, "worker_cpu_ms") {
+        sample.worker_cpu_ms = parse(raw)?;
+        Ok(())
+    } else if field_eq(key, "package_power_w") {
+        sample.package_power_w = parse(raw)?;
+        Ok(())
+    } else if field_eq(key, "pm_table") {
+        if raw == "null" {
+            sample.pm_table = None;
+            Ok(())
+        } else {
+            update_object(
+                raw,
+                sample.pm_table.get_or_insert_with(PmTable::default),
+                PM_TABLE,
+                update_table_member,
+            )
+        }
+    } else {
+        Ok(())
+    }
+}
+
+/// Decodes as Go's `json.Unmarshal` does into `TrialConditions`. Bytes Go
+/// wrote go through `json_text` first; `ReadSamples` does that.
 impl<'de> Deserialize<'de> for TrialConditions {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct Conditions;
-        impl<'de> Visitor<'de> for Conditions {
-            type Value = TrialConditions;
-            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str("a conditions object or null")
-            }
-            fn visit_unit<E: serde::de::Error>(self) -> Result<Self::Value, E> {
-                Ok(TrialConditions::default())
-            }
-            fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
-                use serde::de::DeserializeSeed;
-                let mut sample = TrialConditions::default();
-                while let Some((key, raw)) = map.next_entry::<String, Box<RawValue>>()? {
-                    let raw = raw.get();
-                    if field_eq(&key, "elapsed_ms") {
-                        if raw != "null" {
-                            sample.elapsed_ms =
-                                serde_json::from_str(raw).map_err(serde::de::Error::custom)?;
-                        }
-                    } else if field_eq(&key, "tctl_c") {
-                        sample.tctl_c =
-                            serde_json::from_str(raw).map_err(serde::de::Error::custom)?;
-                    } else if field_eq(&key, "tccd_c") {
-                        if raw == "null" {
-                            sample.tccd_c = None;
-                        } else {
-                            let values = serde_json::from_str::<Temperatures>(raw)
-                                .map_err(serde::de::Error::custom)?
-                                .0;
-                            sample
-                                .tccd_c
-                                .get_or_insert_with(BTreeMap::new)
-                                .extend(values);
-                        }
-                    } else if field_eq(&key, "core_mhz") {
-                        sample.core_mhz =
-                            serde_json::from_str(raw).map_err(serde::de::Error::custom)?;
-                    } else if field_eq(&key, "worker_cpu_ms") {
-                        sample.worker_cpu_ms =
-                            serde_json::from_str(raw).map_err(serde::de::Error::custom)?;
-                    } else if field_eq(&key, "package_power_w") {
-                        sample.package_power_w =
-                            serde_json::from_str(raw).map_err(serde::de::Error::custom)?;
-                    } else if field_eq(&key, "pm_table") {
-                        if raw == "null" {
-                            sample.pm_table = None;
-                        } else {
-                            let mut decoder = serde_json::Deserializer::from_str(raw);
-                            TableUpdate(sample.pm_table.get_or_insert_with(PmTable::default))
-                                .deserialize(&mut decoder)
-                                .map_err(serde::de::Error::custom)?;
-                        }
-                    }
-                }
-                Ok(sample)
-            }
-        }
-        deserializer.deserialize_any(Conditions)
+        let mut sample = Self::default();
+        decode_fields(
+            deserializer,
+            &mut sample,
+            "a conditions object or null",
+            update_condition,
+        )?;
+        Ok(sample)
     }
 }
 
@@ -237,81 +209,12 @@ impl<R: Read> Iterator for ReadSamples<R> {
                     return None;
                 }
             }
-            let text = json_text(&self.line);
-            if let Ok(sample) = serde_json::from_str(&text) {
+            let Ok(text) = json_text(&self.line) else {
+                continue;
+            };
+            if let Ok(sample) = parse(&text) {
                 return Some(sample);
             }
         }
     }
-}
-
-fn json_text(bytes: &[u8]) -> std::borrow::Cow<'_, str> {
-    use std::borrow::Cow;
-    let text = match std::str::from_utf8(bytes) {
-        Ok(text) => Cow::Borrowed(text),
-        Err(_) => Cow::Owned(crate::HostText::new(bytes.to_vec()).normalized()),
-    };
-    let mut result = String::new();
-    let mut copied = 0;
-    let mut index = 0;
-    let mut string = false;
-    while index < text.len() {
-        let byte = text.as_bytes()[index];
-        if byte == b'"' {
-            string = !string;
-            index += 1;
-            continue;
-        }
-        if !string || byte != b'\\' {
-            index += 1;
-            continue;
-        }
-        if text.as_bytes().get(index + 1) != Some(&b'u') {
-            index += 2;
-            continue;
-        }
-        let Some(code) = hex_escape(&text, index) else {
-            index += 2;
-            continue;
-        };
-        if (0xd800..=0xdbff).contains(&code) {
-            if let Some(next) = hex_escape(&text, index + 6) {
-                if (0xdc00..=0xdfff).contains(&next) {
-                    index += 12;
-                    continue;
-                }
-            }
-        } else if !(0xdc00..=0xdfff).contains(&code) {
-            index += 6;
-            continue;
-        }
-        result.push_str(&text[copied..index]);
-        result.push_str("\\ufffd");
-        index += 6;
-        copied = index;
-    }
-    if copied == 0 {
-        text
-    } else {
-        result.push_str(&text[copied..]);
-        Cow::Owned(result)
-    }
-}
-
-fn hex_escape(text: &str, index: usize) -> Option<u16> {
-    if text.as_bytes().get(index..index + 2)? != b"\\u" {
-        return None;
-    }
-    u16::from_str_radix(text.get(index + 2..index + 6)?, 16).ok()
-}
-
-fn field_eq(actual: &str, expected: &str) -> bool {
-    actual
-        .chars()
-        .map(|ch| match ch {
-            '\u{212a}' => 'k',
-            '\u{17f}' => 's',
-            ch => ch.to_ascii_lowercase(),
-        })
-        .eq(expected.chars())
 }

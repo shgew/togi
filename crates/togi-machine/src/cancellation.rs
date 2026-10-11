@@ -4,6 +4,8 @@ use std::time::Duration;
 
 #[derive(Debug, Default)]
 struct State {
+    /// Keeps the ancestor chain alive, so a dropped intermediate token still forwards cancellation.
+    _parent: Option<Arc<Self>>,
     cancelled: AtomicBool,
     children: Mutex<Vec<Weak<Self>>>,
     changed: Condvar,
@@ -47,7 +49,12 @@ impl CancellationToken {
 
     #[must_use]
     pub fn child_token(&self) -> Self {
-        let child = Self::new();
+        let child = Self {
+            state: Arc::new(State {
+                _parent: Some(Arc::clone(&self.state)),
+                ..State::default()
+            }),
+        };
         let mut children = self.children();
         children.retain(|child| child.strong_count() != 0);
         if self.is_cancelled() {

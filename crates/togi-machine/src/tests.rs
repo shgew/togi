@@ -5,6 +5,8 @@ use serde::Serialize;
 use std::io::{Cursor, Write};
 use std::path::Path;
 
+mod seams;
+
 fn core(value: i64) -> CoreId {
     CoreId::new(value).unwrap()
 }
@@ -231,7 +233,7 @@ fn compare_context_after_journal_round_trip() {
     let encoded = serde_json::to_string(&host).unwrap();
     assert_eq!(
         encoded,
-        "{\"bios_version\":\"F3\\ufffd\\ufffd\",\"board\":\"X870E \\ufffd\",\"cpu_model\":\"AMD Ryzen 9 9950X\",\"microcode\":\"0xb404032\",\"boost_limit_mhz\":5700}"
+        "{\"bios_version\":\"F3\u{fffd}\u{fffd}\",\"board\":\"X870E \u{fffd}\",\"cpu_model\":\"AMD Ryzen 9 9950X\",\"microcode\":\"0xb404032\",\"boost_limit_mhz\":5700}"
     );
     let recorded = serde_json::from_str(&encoded).unwrap();
     assert_eq!(
@@ -260,6 +262,8 @@ fn compare_context_after_journal_round_trip() {
 
 #[test]
 fn host_text_preserves_invalid_bytes_and_json_escapes() {
+    // Expected bytes are Go 1.27.1 output: json.Marshal for `json(true)`, the
+    // journal writer (jsonv2.Marshal with EscapeForHTML(false)) for `json(false)`.
     let text = HostText::new(b"\xff\xfe\xe1\x80<>&\n\"\\\x01".to_vec());
     assert_eq!(
         text.normalized(),
@@ -267,7 +271,11 @@ fn host_text_preserves_invalid_bytes_and_json_escapes() {
     );
     assert_eq!(
         text.json(false),
-        "\"\\ufffd\\ufffd\\ufffd\\ufffd<>&\\n\\\"\\\\\\u0001\""
+        "\"\u{fffd}\u{fffd}\u{fffd}\u{fffd}<>&\\n\\\"\\\\\\u0001\""
+    );
+    assert_eq!(
+        text.json(true),
+        "\"\u{fffd}\u{fffd}\u{fffd}\u{fffd}\\u003c\\u003e\\u0026\\n\\\"\\\\\\u0001\""
     );
     assert_eq!(
         HostText::from("\u{fffd}\u{2028}\u{2029}\r\t\u{8}\u{c}").json(true),
@@ -276,6 +284,22 @@ fn host_text_preserves_invalid_bytes_and_json_escapes() {
     assert_eq!(
         HostText::from("<>&").json(true),
         "\"\\u003c\\u003e\\u0026\""
+    );
+    for (bytes, expected) in [
+        (&b"x\xffy\xef\xbf\xbd"[..], "\"x\u{fffd}y\u{fffd}\""),
+        (b"\xe2\x82", "\"\u{fffd}\u{fffd}\""),
+        (b"\xed\xa0\x80", "\"\u{fffd}\u{fffd}\u{fffd}\""),
+    ] {
+        assert_eq!(HostText::new(bytes).json(true), expected);
+        assert_eq!(HostText::new(bytes).json(false), expected);
+    }
+    assert_eq!(
+        HostText::from("\u{8}\u{c}\u{7f}\u{1}\u{1f}\u{2028}\u{2029}<>&\"\\\n\r\t").json(true),
+        "\"\\b\\f\u{7f}\\u0001\\u001f\\u2028\\u2029\\u003c\\u003e\\u0026\\\"\\\\\\n\\r\\t\""
+    );
+    assert_eq!(
+        HostText::from("\u{8}\u{c}\u{7f}\u{1}\u{1f}\u{2028}\u{2029}<>&\"\\\n\r\t").json(false),
+        "\"\\b\\f\u{7f}\\u0001\\u001f\\u2028\\u2029<>&\\\"\\\\\\n\\r\\t\""
     );
 }
 
@@ -463,7 +487,30 @@ fn error_sentinels_survive_context_and_join() {
     assert_eq!(error.to_string(), "failed");
 }
 
+fn fixed_config() -> ProptestConfig {
+    ProptestConfig {
+        rng_seed: proptest::test_runner::RngSeed::Fixed(0x7061_7274_6974_696f),
+        failure_persistence: None,
+        ..ProptestConfig::default()
+    }
+}
+
+#[test]
+fn property_runs_are_reproducible() {
+    use proptest::strategy::{Strategy, ValueTree};
+    use proptest::test_runner::TestRunner;
+    let draw = || {
+        let mut runner = TestRunner::new(fixed_config());
+        (0..8)
+            .map(|_| any::<u64>().new_tree(&mut runner).unwrap().current())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(draw(), draw());
+    assert!(fixed_config().failure_persistence.is_none());
+}
+
 proptest! {
+    #![proptest_config(fixed_config())]
     #[test]
     fn clamp_offset_property(value in any::<i64>()) {
         let target = TargetOffset::clamped(value);
@@ -572,7 +619,7 @@ fn topology_and_pstore_preserve_null_and_empty_collections() {
     };
     assert_eq!(
         serde_json::to_string(&record).unwrap(),
-        "{\"path\":\"record\\ufffd\",\"lines\":null}"
+        "{\"path\":\"record\u{fffd}\",\"lines\":null}"
     );
     let record = PstoreRecord {
         lines: Some(vec![]),
@@ -580,7 +627,7 @@ fn topology_and_pstore_preserve_null_and_empty_collections() {
     };
     assert_eq!(
         serde_json::to_string(&record).unwrap(),
-        "{\"path\":\"record\\ufffd\",\"lines\":[]}"
+        "{\"path\":\"record\u{fffd}\",\"lines\":[]}"
     );
 }
 
@@ -663,4 +710,415 @@ fn cancellation_timeout_checks_do_not_need_a_runtime() {
     assert!(!token.wait_timeout(std::time::Duration::ZERO));
     token.cancel();
     assert!(token.wait_timeout(std::time::Duration::ZERO));
+}
+
+fn nested(depth: usize) -> String {
+    format!("{}{}", "[".repeat(depth), "]".repeat(depth))
+}
+
+fn go_text(bytes: &[u8]) -> String {
+    json_text(bytes).unwrap().into_owned()
+}
+
+fn floats(prefix: &[f32]) -> [f32; 16] {
+    let mut values = [0.0; 16];
+    values[..prefix.len()].copy_from_slice(prefix);
+    values
+}
+
+fn cpus(values: &[i64]) -> Vec<CpuId> {
+    values.iter().copied().map(CpuId).collect()
+}
+
+fn lines(values: &[&str]) -> Vec<HostText> {
+    values.iter().copied().map(HostText::from).collect()
+}
+
+fn assert_marshals_as_go<T>(value: &str, json: &str)
+where
+    T: Serialize + for<'a> From<&'a str>,
+{
+    assert_eq!(serde_json::to_string(&T::from(value)).unwrap(), json);
+}
+
+#[test]
+fn vocabulary_json_matches_go_marshal() {
+    // Go 1.27.1: json.Marshal of a string-typed value, and the journal writer
+    // (jsonv2.Marshal with EscapeForHTML(false)) for the second column.
+    for (value, marshal, journal) in [
+        ("R6", "\"R6\"", "\"R6\""),
+        ("", "\"\"", "\"\""),
+        (
+            "R\u{2028}\u{2029}",
+            "\"R\\u2028\\u2029\"",
+            "\"R\\u2028\\u2029\"",
+        ),
+        ("a<b>&c", "\"a\\u003cb\\u003e\\u0026c\"", "\"a<b>&c\""),
+        (
+            "\u{8}\u{c}\u{7f}\u{1}\u{1f}\u{2028}\u{2029}<>&\"\\\n\r\t",
+            "\"\\b\\f\u{7f}\\u0001\\u001f\\u2028\\u2029\\u003c\\u003e\\u0026\\\"\\\\\\n\\r\\t\"",
+            "\"\\b\\f\u{7f}\\u0001\\u001f\\u2028\\u2029<>&\\\"\\\\\\n\\r\\t\"",
+        ),
+    ] {
+        assert_marshals_as_go::<Regime>(value, marshal);
+        assert_marshals_as_go::<Condition>(value, marshal);
+        assert_marshals_as_go::<Signal>(value, marshal);
+        assert_marshals_as_go::<BankType>(value, marshal);
+        assert_marshals_as_go::<ResetKind>(value, marshal);
+        assert_marshals_as_go::<Backend>(value, marshal);
+        assert_eq!(Regime::from(value).json(true), marshal);
+        assert_eq!(Regime::from(value).json(false), journal);
+        assert_eq!(HostText::from(value).json(true), marshal);
+        assert_eq!(HostText::from(value).json(false), journal);
+    }
+}
+
+#[test]
+fn vocabulary_has_one_value_per_string() {
+    assert_eq!(Regime::from("R6"), Regime::R6);
+    assert_eq!(Regime::from(String::from("R6")), Regime::R6);
+    assert_eq!(Regime::from(""), Regime::Empty);
+    assert_eq!(Regime::from(String::new()), Regime::Empty);
+    assert!(Regime::from("R6").valid());
+    assert!(Regime::from("R6").instance_per_core());
+    assert_eq!(
+        pick_workload(&Regime::from(String::from("R6")), 0),
+        pick_workload(&Regime::R6, 0)
+    );
+    assert!(BankType::from("load_store").core_local());
+    assert_eq!(Backend::from("mprime"), Backend::Mprime);
+    assert_eq!(Condition::from(""), Condition::Empty);
+    assert_eq!(Signal::from("crash"), Signal::Crash);
+    assert_eq!(ResetKind::from("unknown"), ResetKind::UnknownReason);
+    assert_eq!(
+        serde_json::from_str::<Regime>("\"R6\"").unwrap(),
+        Regime::R6
+    );
+    assert_eq!(
+        serde_json::from_str::<Regime>("\"\"").unwrap(),
+        Regime::Empty
+    );
+    for value in ["R8", "r6", " R6", "R6 ", "R\u{2028}", "<>&\u{fffd}"] {
+        let regime = Regime::from(value);
+        assert!(matches!(&regime, Regime::Unknown(unknown) if unknown.as_str() == value));
+        assert_eq!(regime.as_str(), value);
+        assert_eq!(
+            serde_json::from_str::<Regime>(&serde_json::to_string(&regime).unwrap()).unwrap(),
+            regime
+        );
+    }
+}
+
+#[test]
+fn json_text_gives_go_replacements_for_invalid_bytes_and_surrogates() {
+    // Go 1.27.1 json.Unmarshal of each input.
+    let text = go_text(b"\"a\xffb\xe2\x82c\"");
+    assert_eq!(
+        serde_json::from_str::<HostText>(&text)
+            .unwrap()
+            .normalized(),
+        "a\u{fffd}b\u{fffd}\u{fffd}c"
+    );
+    for (input, expected) in [
+        (
+            r#""\ud800x\udc00\ud800\udc00\ud800\ud800""#,
+            "\u{fffd}x\u{fffd}\u{10000}\u{fffd}\u{fffd}",
+        ),
+        (r#""\udc00\ud800""#, "\u{fffd}\u{fffd}"),
+        (r#""\ud800\u0041""#, "\u{fffd}A"),
+        (r#""R6\ud800""#, "R6\u{fffd}"),
+    ] {
+        let text = go_text(input.as_bytes());
+        assert_eq!(
+            serde_json::from_str::<HostText>(&text)
+                .unwrap()
+                .normalized(),
+            expected
+        );
+        assert_eq!(
+            serde_json::from_str::<Signal>(&text).unwrap().as_str(),
+            expected
+        );
+    }
+    assert_eq!(
+        serde_json::from_str::<Regime>(&go_text(b"\"R\xff\""))
+            .unwrap()
+            .as_str(),
+        "R\u{fffd}"
+    );
+    let context: BiosContext = serde_json::from_str(&go_text(
+        b"{\"bios_version\":\"F3\xff\",\"board\":\"\\ud800x\",\"cpu_model\":\"a\xe2\x82b\"}",
+    ))
+    .unwrap();
+    assert_eq!(context.bios_version.normalized(), "F3\u{fffd}");
+    assert_eq!(context.board.normalized(), "\u{fffd}x");
+    assert_eq!(context.cpu_model.normalized(), "a\u{fffd}\u{fffd}b");
+    let record: PstoreRecord = serde_json::from_str(&go_text(
+        b"{\"path\":\"p\xff\",\"lines\":[\"\\udc00\",\"\xe1\x80\"]}",
+    ))
+    .unwrap();
+    assert_eq!(record.path.normalized(), "p\u{fffd}");
+    assert_eq!(record.lines, Some(lines(&["\u{fffd}", "\u{fffd}\u{fffd}"])));
+    let info: CoreInfo =
+        serde_json::from_str(&go_text(b"{\"cpus\":[1],\"\xff\":2,\"core\":3}")).unwrap();
+    assert_eq!((info.core, info.cpus), (core(3), Some(cpus(&[1]))));
+    let samples: Vec<_> = ReadSamples::from_reader(Cursor::new(
+        &b"{\"elapsed_ms\":1,\"tccd_c\":{\"\\ud800\":1,\"\xff\":2,\"\\ud800\\udc00\":3}}\n"[..],
+    ))
+    .collect();
+    let readings = samples[0].tccd_c.as_ref().unwrap();
+    assert_eq!(
+        readings
+            .iter()
+            .map(|(k, v)| (k.as_str(), *v))
+            .collect::<Vec<_>>(),
+        [("\u{fffd}", 2), ("\u{10000}", 3)]
+    );
+}
+
+#[test]
+fn json_text_enforces_go_nesting_limit_everywhere() {
+    // Go 1.27.1: depth 10000 decodes, 10001 fails with "exceeded max depth",
+    // ignored members included.
+    assert!(json_text(nested(10_000).as_bytes()).is_ok());
+    assert_eq!(json_text(nested(10_001).as_bytes()), Err(ExceededMaxDepth));
+    let core_line = |depth: usize| format!("{{\"core\":3,\"x\":{}}}", nested(depth - 1));
+    assert!(json_text(core_line(10_000).as_bytes()).is_ok());
+    assert_eq!(
+        json_text(core_line(10_001).as_bytes()),
+        Err(ExceededMaxDepth)
+    );
+    let brackets_in_strings = format!(
+        "{{\"a\\\"{}\":\"{}\"}}",
+        "[".repeat(20_000),
+        "{".repeat(20_000)
+    );
+    assert!(json_text(brackets_in_strings.as_bytes()).is_ok());
+    assert_eq!(ExceededMaxDepth.to_string(), "exceeded max depth");
+
+    let line = |depth: usize| format!("{{\"elapsed_ms\":1,\"ignored\":{}}}\n", nested(depth - 1));
+    let count = |text: String| ReadSamples::from_reader(Cursor::new(text.into_bytes())).count();
+    assert_eq!(count(line(10_000)), 1);
+    assert_eq!(count(line(10_001)), 0);
+    assert_eq!(count(line(200)), 1);
+    let samples: Vec<_> = ReadSamples::from_reader(Cursor::new(
+        format!("{}{{\"elapsed_ms\":2}}\n", line(10_001)).into_bytes(),
+    ))
+    .collect();
+    assert_eq!(samples.len(), 1);
+    assert_eq!(samples[0].elapsed_ms, 2);
+}
+
+#[test]
+fn duplicate_pm_arrays_keep_readings_under_null_elements() {
+    // Go 1.27.1 json.Unmarshal into PMTable, which decodes arrays in place.
+    let table = |json: &str| {
+        serde_json::from_str::<TrialConditions>(json)
+            .unwrap()
+            .pm_table
+            .unwrap()
+    };
+    assert_eq!(
+        table(r#"{"pm_table":{"power_w":[7,8,9],"power_w":[null,2]}}"#).power_w,
+        floats(&[7.0, 2.0])
+    );
+    let across = table(r#"{"pm_table":{"cc6_pct":[7,8,9]},"pm_table":{"cc6_pct":[null,2]}}"#);
+    assert_eq!(across.cc6_pct, floats(&[7.0, 2.0]));
+    assert_eq!(across.power_w, floats(&[]));
+    let long: Vec<_> = (1..=17).map(|value| value.to_string()).collect();
+    let long = table(&format!(
+        "{{\"pm_table\":{{\"power_w\":[{}]}}}}",
+        long.join(",")
+    ));
+    assert_eq!(
+        long.power_w,
+        floats(&(1..=16_u8).map(f32::from).collect::<Vec<_>>())
+    );
+    assert_eq!(
+        table(r#"{"pm_table":{"power_w":[1],"power_w":null}}"#).power_w,
+        floats(&[1.0])
+    );
+    for name in [
+        "power_w",
+        "voltage_request_v",
+        "temperature_c",
+        "c0_pct",
+        "cc1_pct",
+        "cc6_pct",
+    ] {
+        let json = format!("{{\"pm_table\":{{\"{name}\":[5,6,7],\"{name}\":[null,1]}}}}");
+        let table = table(&json);
+        let all = [
+            table.power_w,
+            table.voltage_request_v,
+            table.temperature_c,
+            table.c0_pct,
+            table.cc1_pct,
+            table.cc6_pct,
+        ];
+        let touched: Vec<_> = all
+            .iter()
+            .filter(|values| values.iter().any(|value| *value != 0.0))
+            .collect();
+        assert_eq!(touched, [&floats(&[5.0, 1.0])], "{name}");
+    }
+    let standalone: PmTable =
+        serde_json::from_str(r#"{"POWER_W":[7,8,9],"power_w":[null,2]}"#).unwrap();
+    assert_eq!(standalone.power_w, floats(&[7.0, 2.0]));
+    let lines: Vec<_> = ReadSamples::from_reader(Cursor::new(
+        &b"{\"pm_table\":{\"power_w\":[7,8,9],\"power_w\":[null,2]}}\n"[..],
+    ))
+    .collect();
+    assert_eq!(lines[0].pm_table.unwrap().power_w, floats(&[7.0, 2.0]));
+}
+
+#[test]
+fn core_info_decodes_as_go_structs() {
+    // Expectations are Go 1.27.1 json.Unmarshal into machine.CoreInfo.
+    let decode = |json: &str| serde_json::from_str::<CoreInfo>(json).unwrap();
+    let info = decode(r#"{"Core":4,"CCD":-1,"CPUS":[1]}"#);
+    assert_eq!(
+        (info.core, info.ccd, info.cpus),
+        (core(4), CcdId(-1), Some(cpus(&[1])))
+    );
+    assert_eq!(
+        decode(r#"{"core":null,"ccd":null,"cpus":null}"#),
+        CoreInfo::default()
+    );
+    assert_eq!(decode("null"), CoreInfo::default());
+    let info = decode(r#"{"core":2,"core":null,"ccd":1,"ccd":3,"cpus":[1,2],"cpus":[null]}"#);
+    assert_eq!(
+        (info.core, info.ccd, info.cpus),
+        (core(2), CcdId(3), Some(cpus(&[1])))
+    );
+    for (json, expected) in [
+        (
+            r#"{"cpus":[5,6],"cpus":[null,7,null]}"#,
+            Some(cpus(&[5, 7, 0])),
+        ),
+        (
+            r#"{"cpus":[1,2,3],"cpus":[9],"cpus":[null,null,null]}"#,
+            Some(cpus(&[9, 2, 3])),
+        ),
+        (
+            r#"{"cpus":[1,2,3,4,5],"cpus":[9],"cpus":[null,null,null,null,null,null,null]}"#,
+            Some(cpus(&[9, 2, 3, 4, 5, 0, 0])),
+        ),
+        (
+            r#"{"cpus":[1,2,3,4,5],"cpus":[],"cpus":[null,null,null,null,null,null,null]}"#,
+            Some(cpus(&[0; 7])),
+        ),
+        (
+            r#"{"cpus":[1,2,3],"cpus":null,"cpus":[null,null]}"#,
+            Some(cpus(&[0, 0])),
+        ),
+        (
+            r#"{"cpus":[1,2,3,4,5,6,7,8,9],"cpus":[0],"cpus":[null,null,null,null,null,null,null,null,null,null]}"#,
+            Some(cpus(&[0, 2, 3, 4, 5, 6, 7, 8, 9, 0])),
+        ),
+        (r#"{"cpus":[null]}"#, Some(cpus(&[0]))),
+        (r#"{"cpus":[1],"cpus":null}"#, None),
+        (r#"{"cpus":[]}"#, Some(cpus(&[]))),
+        ("{}", None),
+    ] {
+        assert_eq!(decode(json).cpus, expected, "{json}");
+    }
+    let info =
+        decode(r#"{"cOrE":5,"ccd":2,"cpu\u017f":[3],"unknown":{"a":[1]},"c_o_r_e":9,"CO-RE":8}"#);
+    assert_eq!(
+        (info.core, info.ccd, info.cpus),
+        (core(5), CcdId(2), Some(cpus(&[3])))
+    );
+    assert_eq!(decode(r#"{"\u212aey":1,"core":7}"#).core, core(7));
+    for json in [
+        r#"{"core":1.5}"#,
+        r#"{"core":16}"#,
+        r#"{"core":-1}"#,
+        r#"{"cpus":{}}"#,
+        "[]",
+        r#"{"cpus":["a"]}"#,
+    ] {
+        assert!(serde_json::from_str::<CoreInfo>(json).is_err(), "{json}");
+    }
+    assert_eq!(serde_json::from_str::<CpuId>("null").unwrap(), CpuId(0));
+    assert_eq!(serde_json::from_str::<CcdId>("null").unwrap(), CcdId(0));
+    assert_eq!(serde_json::from_str::<CoreId>("null").unwrap(), core(0));
+    assert!(serde_json::from_str::<CoreId>("16").is_err());
+}
+
+#[test]
+fn bios_context_decodes_as_go_structs() {
+    // Expectations are Go 1.27.1 json.Unmarshal into machine.BIOSContext.
+    let decode = |json: &str| serde_json::from_str::<BiosContext>(json).unwrap();
+    assert_eq!(
+        decode(r#"{"BIOS_VERSION":"F3"}"#),
+        BiosContext {
+            bios_version: "F3".into(),
+            ..BiosContext::default()
+        }
+    );
+    assert_eq!(
+        decode(r#"{"bios_version":"F3","bios_version":null,"board":null,"boost_limit_mhz":null}"#),
+        BiosContext {
+            bios_version: "F3".into(),
+            ..BiosContext::default()
+        }
+    );
+    assert_eq!(
+        decode(
+            r#"{"bios_version":"a","Bios_Version":"b","MICROCODE":"m","Boo\u017ft_limit_mhz":5700,"cpu_model":"c","other":1}"#
+        ),
+        BiosContext {
+            bios_version: "b".into(),
+            board: HostText::default(),
+            cpu_model: "c".into(),
+            microcode: "m".into(),
+            boost_limit_mhz: 5700,
+        }
+    );
+    assert_eq!(
+        decode(r#"{"biosversion":"x","bios-version":"y"}"#),
+        BiosContext::default()
+    );
+    assert_eq!(decode("null"), BiosContext::default());
+    for json in [
+        r#"{"boost_limit_mhz":"1"}"#,
+        r#"{"board":1}"#,
+        r#"{"board":"\x"}"#,
+        "[]",
+    ] {
+        assert!(serde_json::from_str::<BiosContext>(json).is_err(), "{json}");
+    }
+}
+
+#[test]
+fn pstore_record_decodes_as_go_structs() {
+    // Expectations are Go 1.27.1 json.Unmarshal into machine.PstoreRecord.
+    let decode = |json: &str| serde_json::from_str::<PstoreRecord>(json).unwrap();
+    let record = decode(r#"{"PATH":"p","LINES":["x"]}"#);
+    assert_eq!(
+        (record.path, record.lines),
+        ("p".into(), Some(lines(&["x"])))
+    );
+    let record = decode(r#"{"path":"p","path":null,"lines":["a","b"],"lines":null}"#);
+    assert_eq!((record.path, record.lines), ("p".into(), None));
+    assert_eq!(
+        decode(r#"{"lines":["a","b"],"lines":[null]}"#).lines,
+        Some(lines(&["a"]))
+    );
+    assert_eq!(
+        decode(r#"{"lines":["a","b","c"],"lines":["z"],"lines":[null,null,null]}"#).lines,
+        Some(lines(&["z", "b", "c"]))
+    );
+    assert_eq!(
+        decode(r#"{"lines":["a"],"lines":[]}"#).lines,
+        Some(lines(&[]))
+    );
+    let record = decode(r#"{"pAtH":"q","line\u017f":["z"],"extra":true}"#);
+    assert_eq!(
+        (record.path, record.lines),
+        ("q".into(), Some(lines(&["z"])))
+    );
+    assert_eq!(decode("null"), PstoreRecord::default());
+    assert!(serde_json::from_str::<PstoreRecord>(r#"{"lines":"x"}"#).is_err());
 }

@@ -31,9 +31,11 @@ impl CoreId {
     }
 }
 
+/// Decodes a number checked to 0–15, or `null` as 0 as Go's `int` does.
 impl<'de> Deserialize<'de> for CoreId {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        Self::new(i64::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+        Self::new(Option::<i64>::deserialize(deserializer)?.unwrap_or_default())
+            .map_err(serde::de::Error::custom)
     }
 }
 
@@ -43,17 +45,31 @@ impl std::fmt::Display for CoreId {
     }
 }
 
-#[derive(
-    Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize,
-)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(transparent)]
 pub struct CcdId(pub i64);
 
-#[derive(
-    Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize,
-)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(transparent)]
 pub struct CpuId(pub i64);
+
+/// Decodes a number, or `null` as 0 as Go's `int` does.
+impl<'de> Deserialize<'de> for CcdId {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Ok(Self(
+            Option::<i64>::deserialize(deserializer)?.unwrap_or_default(),
+        ))
+    }
+}
+
+/// Decodes a number, or `null` as 0 as Go's `int` does.
+impl<'de> Deserialize<'de> for CpuId {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Ok(Self(
+            Option::<i64>::deserialize(deserializer)?.unwrap_or_default(),
+        ))
+    }
+}
 
 #[derive(
     Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize,

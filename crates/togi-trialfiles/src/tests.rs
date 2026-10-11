@@ -314,7 +314,7 @@ fn non_utf8_instance_directory_keeps_go_raw_bytes_and_displays_one_replacement_p
             "compress stdout.log: rename {root}/\u{FFFD}\u{FFFD}/stdout.log.gz.tmp {root}/\u{FFFD}\u{FFFD}/stdout.log.gz: file exists"
         )
     );
-    // Go's err.Error() keeps the raw bytes; its JSON encoder turns each into the escape \ufffd.
+    // Go's err.Error() keeps the raw bytes; its JSON encoder writes each as the literal U+FFFD character.
     let mut want = format!("compress stdout.log: rename {root}/").into_bytes();
     want.extend(b"\xe2\x82/stdout.log.gz.tmp ");
     want.extend(format!("{root}/").into_bytes());

@@ -1,12 +1,41 @@
-use crate::{CcdId, CoreId, CpuId};
+use crate::go_json::{GoSlice, decode_fields, field_eq, for_each_char, scalar, write_json_string};
+use crate::{CcdId, CoreId, CpuId, PstoreRecord};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 pub struct CoreInfo {
     pub core: CoreId,
     pub ccd: CcdId,
     pub cpus: Option<Vec<CpuId>>,
+}
+
+/// Decodes as Go's `json.Unmarshal` does into `CoreInfo`: names match under
+/// Go's case folding, later duplicates update earlier ones, `null` leaves a
+/// number alone and empties `cpus`, unknown members are skipped. `core` stays
+/// checked to 0–15. Bytes Go wrote go through `json_text` first.
+impl<'de> Deserialize<'de> for CoreInfo {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let mut info = Self::default();
+        let mut cpus = GoSlice::<CpuId>::default();
+        decode_fields(
+            deserializer,
+            &mut (&mut info, &mut cpus),
+            "a core object or null",
+            |(info, cpus), key, raw| {
+                if field_eq(key, "core") {
+                    scalar(&mut info.core, raw)
+                } else if field_eq(key, "ccd") {
+                    scalar(&mut info.ccd, raw)
+                } else if field_eq(key, "cpus") {
+                    cpus.update(raw)
+                } else {
+                    Ok(())
+                }
+            },
+        )?;
+        info.cpus = cpus.into_option();
+        Ok(info)
+    }
 }
 
 pub fn order(cores: &[CoreInfo]) -> Vec<CoreId> {
@@ -27,6 +56,12 @@ pub fn order(cores: &[CoreInfo]) -> Vec<CoreId> {
     result
 }
 
+/// Bytes a host reported, which need not be UTF-8.
+///
+/// Go carries them in a `string` and converts every invalid byte to U+FFFD
+/// when it writes or compares them; `normalized`, `json` and `Serialize` do
+/// the same, so a text that went through JSON compares equal to its
+/// normalization. The literal U+FFFD is the only form of a replacement.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct HostText(Vec<u8>);
 
@@ -40,56 +75,15 @@ impl HostText {
 
     pub fn normalized(&self) -> String {
         let mut result = String::new();
-        self.characters(|ch, _| result.push(ch));
+        for_each_char(&self.0, |ch| result.push(ch));
         result
     }
 
-    fn characters(&self, mut visit: impl FnMut(char, bool)) {
-        let mut remaining = self.0.as_slice();
-        while !remaining.is_empty() {
-            match std::str::from_utf8(remaining) {
-                Ok(text) => {
-                    for ch in text.chars() {
-                        visit(ch, false);
-                    }
-                    break;
-                }
-                Err(error) => {
-                    if let Ok(text) = std::str::from_utf8(&remaining[..error.valid_up_to()]) {
-                        for ch in text.chars() {
-                            visit(ch, false);
-                        }
-                    }
-                    visit('\u{fffd}', true);
-                    remaining = &remaining[error.valid_up_to() + 1..];
-                }
-            }
-        }
-    }
-
+    /// The JSON string Go writes: `json.Marshal` with `escape_html`, the
+    /// journal writer without it.
     pub fn json(&self, escape_html: bool) -> String {
-        use std::fmt::Write;
-        let mut result = String::from("\"");
-        self.characters(|ch, invalid| match ch {
-            _ if invalid => result.push_str("\\ufffd"),
-            '"' => result.push_str("\\\""),
-            '\\' => result.push_str("\\\\"),
-            '\n' => result.push_str("\\n"),
-            '\r' => result.push_str("\\r"),
-            '\t' => result.push_str("\\t"),
-            '\u{8}' => result.push_str("\\b"),
-            '\u{c}' => result.push_str("\\f"),
-            '\u{2028}' => result.push_str("\\u2028"),
-            '\u{2029}' => result.push_str("\\u2029"),
-            '<' | '>' | '&' if escape_html => {
-                let _ = write!(result, "\\u{:04x}", u32::from(ch));
-            }
-            ch if ch < '\u{20}' => {
-                let _ = write!(result, "\\u{:04x}", u32::from(ch));
-            }
-            ch => result.push(ch),
-        });
-        result.push('"');
+        let mut result = String::new();
+        write_json_string(&mut result, &self.0, escape_html);
         result
     }
 }
@@ -108,20 +102,81 @@ impl Serialize for HostText {
     }
 }
 
+/// Decodes a string, or `null` as empty. Bytes Go wrote go through
+/// `json_text` first.
 impl<'de> Deserialize<'de> for HostText {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        Ok(Self::new(String::deserialize(deserializer)?.into_bytes()))
+        Ok(Self::new(
+            Option::<String>::deserialize(deserializer)?
+                .unwrap_or_default()
+                .into_bytes(),
+        ))
     }
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 pub struct BiosContext {
     pub bios_version: HostText,
     pub board: HostText,
     pub cpu_model: HostText,
     pub microcode: HostText,
     pub boost_limit_mhz: i64,
+}
+
+/// Decodes as Go's `json.Unmarshal` does into `BIOSContext`. Bytes Go wrote
+/// go through `json_text` first.
+impl<'de> Deserialize<'de> for BiosContext {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let mut context = Self::default();
+        decode_fields(
+            deserializer,
+            &mut context,
+            "a BIOS context object or null",
+            |context, key, raw| {
+                if field_eq(key, "bios_version") {
+                    scalar(&mut context.bios_version, raw)
+                } else if field_eq(key, "board") {
+                    scalar(&mut context.board, raw)
+                } else if field_eq(key, "cpu_model") {
+                    scalar(&mut context.cpu_model, raw)
+                } else if field_eq(key, "microcode") {
+                    scalar(&mut context.microcode, raw)
+                } else if field_eq(key, "boost_limit_mhz") {
+                    scalar(&mut context.boost_limit_mhz, raw)
+                } else {
+                    Ok(())
+                }
+            },
+        )?;
+        Ok(context)
+    }
+}
+
+/// Decodes as Go's `json.Unmarshal` does into `PstoreRecord`. Bytes Go wrote
+/// go through `json_text` first.
+impl<'de> Deserialize<'de> for PstoreRecord {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let mut path = HostText::default();
+        let mut lines = GoSlice::<HostText>::default();
+        decode_fields(
+            deserializer,
+            &mut (&mut path, &mut lines),
+            "a pstore record object or null",
+            |(path, lines), key, raw| {
+                if field_eq(key, "path") {
+                    scalar(&mut **path, raw)
+                } else if field_eq(key, "lines") {
+                    lines.update(raw)
+                } else {
+                    Ok(())
+                }
+            },
+        )?;
+        Ok(Self {
+            path,
+            lines: lines.into_option(),
+        })
+    }
 }
 
 pub fn compare_context(recorded: &BiosContext, current: &BiosContext) -> (String, bool) {

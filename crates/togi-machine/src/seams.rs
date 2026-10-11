@@ -3,7 +3,7 @@ use crate::{
     ObservedOffset, Regime, ResetKind, Signal, TargetOffset, TrialConditions, Workload,
 };
 use jiff::Timestamp;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::error::Error as StdError;
 use std::fmt;
 
@@ -80,6 +80,35 @@ impl Error {
 
 pub type SeamResult<T> = Result<T, Error>;
 
+/// A value together with the error that ended the call, like Go's `(T, error)` where the caller
+/// reads the value even when the error is set.
+#[derive(Debug)]
+pub struct SeamOutcome<T> {
+    pub value: T,
+    pub error: Option<Error>,
+}
+
+impl<T> SeamOutcome<T> {
+    pub const fn ok(value: T) -> Self {
+        Self { value, error: None }
+    }
+
+    pub const fn failed(value: T, error: Error) -> Self {
+        Self {
+            value,
+            error: Some(error),
+        }
+    }
+
+    /// Drops the value when the call failed.
+    pub fn into_result(self) -> SeamResult<T> {
+        match self.error {
+            Some(error) => Err(error),
+            None => Ok(self.value),
+        }
+    }
+}
+
 pub trait Clock {
     fn now(&self) -> Timestamp;
     fn monotonic(&self) -> NanoDuration;
@@ -97,7 +126,8 @@ pub trait Host {
     fn topology(&mut self) -> SeamResult<Vec<CoreInfo>>;
     fn validate_smu(&mut self) -> SeamResult<()>;
     fn bios_context(&mut self) -> SeamResult<BiosContext>;
-    fn ranking(&mut self) -> SeamResult<Vec<CoreRank>>;
+    /// `None` is a nil ranking; the session journals the values it holds even when the read failed.
+    fn ranking(&mut self) -> SeamOutcome<Option<Vec<CoreRank>>>;
     fn preflight(&mut self) -> Vec<Check>;
     fn watchdog(&mut self) -> Check;
 }
@@ -175,11 +205,12 @@ pub trait Reporter {
 pub trait Running {
     fn started(&self) -> Started;
     /// Calls the borrowed reporter only on this thread, and joins the workload before returning.
+    /// The accumulated result comes back even when the wait also failed.
     fn wait(
         &mut self,
         cancel: &CancellationToken,
         report: &mut dyn Reporter,
-    ) -> SeamResult<TrialResult>;
+    ) -> SeamOutcome<TrialResult>;
     /// Cancels and joins; repeated calls return the first teardown result.
     fn stop(&mut self) -> SeamResult<()>;
 }
@@ -220,16 +251,20 @@ pub struct KernelRead {
     pub cursor: String,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 pub struct PstoreRecord {
     pub path: crate::HostText,
     pub lines: Option<Vec<crate::HostText>>,
 }
 
+/// `mces` and `read_mces` return `SeamOutcome` because the session uses the evidence read before a
+/// failure (`internal/session/kernel.go`, `readMCEs` on a missing earlier boot). The reset-reason and
+/// pstore reads stay `SeamResult`: their callers drop the value whenever the error is not a missing boot.
 pub trait Kernel {
-    fn mces(&mut self, boot: &str, since: NanoDuration) -> SeamResult<Vec<Mce>>;
-    fn read_mces(&mut self, boot: &str, cursor: &str) -> SeamResult<KernelRead>;
+    /// An earlier boot missing from the journal returns an empty read with `ErrorKind::BootMissing`.
+    fn mces(&mut self, boot: &str, since: NanoDuration) -> SeamOutcome<Vec<Mce>>;
+    /// Keeps the validated MCEs and last cursor read before a failure; an unresumable cursor is `ErrorKind::CursorMissing`.
+    fn read_mces(&mut self, boot: &str, cursor: &str) -> SeamOutcome<KernelRead>;
     fn reset_reason(&mut self, boot: &str) -> SeamResult<ResetReason>;
     fn reset_reason_after(&mut self, boot: &str) -> SeamResult<ResetReason>;
     fn saved_pstore(&mut self, boot: &str) -> SeamResult<Option<PstoreRecord>>;
