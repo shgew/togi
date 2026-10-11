@@ -6,7 +6,8 @@ use std::path::Path;
 use flate2::Compression;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
-use rustix::fs::{CWD, FileType, Mode, mknodat};
+use nix::sys::stat::Mode;
+use nix::unistd::mkfifo;
 use tempfile::TempDir;
 use test_case::test_case;
 
@@ -92,7 +93,7 @@ fn compress_trial_file(setup: fn(&Path), want: &[&str], read: &str) {
 }
 
 fn make_fifo(path: &Path) {
-    mknodat(CWD, path, FileType::Fifo, Mode::from_raw_mode(0o600), 0).unwrap();
+    mkfifo(path, Mode::from_bits_truncate(0o600)).unwrap();
 }
 
 fn make_dir(path: &Path) {
