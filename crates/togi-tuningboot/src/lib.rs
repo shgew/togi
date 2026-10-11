@@ -236,6 +236,13 @@ impl fmt::Display for ReasonText {
     }
 }
 
+#[derive(Serialize)]
+struct Wire<'a> {
+    id: &'a str,
+    count: u8,
+    reason: &'a str,
+}
+
 /// The record in `togi_leave_reason`: why a tuning boot returned to the normal system.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -282,12 +289,13 @@ impl LeaveReason {
             used += cost;
             end += 1;
         }
-        let fitted = Self {
-            id: self.id.clone(),
-            count: self.count,
-            reason: ReasonText(self.reason.0[..end].trim_end_matches(' ').to_owned()),
-        };
-        serde_json::to_string(&fitted).expect("a record of strings and a count always serializes")
+        let reason = self.reason.0[..end].trim_end_matches(' ');
+        serde_json::to_string(&Wire {
+            id: &self.id.0,
+            count: self.count.0,
+            reason,
+        })
+        .expect("a record of strings and a count always serializes")
     }
 
     pub fn decode(value: &str) -> Result<Self, Error> {
