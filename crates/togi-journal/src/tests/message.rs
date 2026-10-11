@@ -263,13 +263,25 @@ fn hunt_messages_name_the_stage_and_result() {
     let Payload::HuntGroup(mut group) = sample(EventKind::HuntGroup) else {
         unreachable!()
     };
-    assert!(Payload::from(group.clone()).message().contains("inferred"));
+    assert_eq!(
+        Payload::from(group.clone()).message(),
+        "hunt 3 group 4: core 01 at -22 with core 00 -40 failure inferred: inferred"
+    );
     group.inferred = None;
     group.probe = None;
     group.stage = HuntStage::Locate;
-    assert!(Payload::from(group.clone()).message().contains("locate"));
+    group.reason = Some("locating".into());
+    assert_eq!(
+        Payload::from(group.clone()).message(),
+        "hunt 3 group 4: locate with every unloaded core at 0 and the loaded cores at their failing offsets; trials of 120 s; locating"
+    );
+    group.stage = HuntStage::Part;
+    group.cores = set(&[7]);
     group.skipped = true;
-    assert!(Payload::from(group).message().contains("skipped"));
+    group.reason = Some("already checked".into());
+    let skipped = Payload::from(group).message();
+    assert_eq!(skipped, "hunt 3 group 4: cores 07 skipped: already checked");
+    assert!(!skipped.contains("trials of"), "{skipped}");
     let Payload::HuntEnd(mut end) = sample(EventKind::HuntEnd) else {
         unreachable!()
     };
@@ -279,6 +291,71 @@ fn hunt_messages_name_the_stage_and_result() {
         Payload::from(end).message(),
         "hunt 3 found core 13 after 4 groups (probed)"
     );
+}
+
+fn multi_core_intent() -> TrialIntent {
+    let Payload::TrialIntent(mut intent) = sample(EventKind::TrialIntent) else {
+        unreachable!()
+    };
+    intent.core = None;
+    intent.offset = None;
+    intent.cores = set(&[3, 7]);
+    intent.retry = false;
+    intent.cycle = None;
+    intent.step = None;
+    intent.round = None;
+    intent
+}
+
+#[test]
+fn multi_core_trial_intents_name_every_loaded_core() {
+    let hunt = TrialIntent {
+        condition: Condition::Parked,
+        ..multi_core_intent()
+    };
+    let text = Payload::from(hunt).message();
+    assert_eq!(
+        text,
+        "trial 0413 cores 03, 07 R2 mprime AVX2 36K-248K 90 s parked hunt 3 group 4 rerun"
+    );
+    assert!(!text.contains(" CO "), "{text}");
+
+    let deepening = TrialIntent {
+        condition: Condition::Together,
+        hunt: None,
+        group: None,
+        round: Some(ord(2)),
+        ..multi_core_intent()
+    };
+    let text = Payload::from(deepening).message();
+    assert!(text.starts_with("trial 0413 cores 03, 07 R2"), "{text}");
+    assert!(text.ends_with("together round 2 rerun"), "{text}");
+    assert!(!text.contains("hunt"), "{text}");
+}
+
+#[test]
+fn checking_step_names_cycle_step_and_current_profile() {
+    let text = Payload::from(CheckingStep {
+        cycle: ord(2),
+        step: ord(4),
+        profile: profile(&[-20, -50]),
+    })
+    .message();
+    assert!(
+        text.starts_with("checking cycle 2 R7 step 4 starts at current profile "),
+        "{text}"
+    );
+    assert!(text.contains("-20") && text.contains("-50"), "{text}");
+}
+
+#[test]
+fn a_dead_end_shutdown_says_it_stopped_at_a_dead_end() {
+    let Payload::Shutdown(mut shutdown) = sample(EventKind::Shutdown) else {
+        unreachable!()
+    };
+    shutdown.reason = ShutdownReason::DeadEnd;
+    let text = Payload::from(shutdown).message();
+    assert_eq!(text, "stopped at a dead end");
 }
 
 #[test]
