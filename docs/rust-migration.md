@@ -40,3 +40,22 @@ Append entries below the last one, newest last. State what was measured and how,
 **Limits.** One path, one session and one build of each language. It measures wall time and peak memory of that kernel, not compile time, test time, the effect on agent-driven development, or a whole-session Rust comparison. Comparison failures, regressions, independent review findings and agent cost were not recorded for the probe. The pilot (stage 2, [#637](https://github.com/shgew/togi/issues/637)) records compile and test times against Go's.
 
 **Decisions.** The owner decided on 2026-10-10 to migrate ([#634](https://github.com/shgew/togi/issues/634)), and that agents merge migration pull requests once CI and the `review` check pass and every thread is resolved, except the cutover and changes to the protected comparison assets. The same day, the Go structure-only issues the port replaces were closed ([#104](https://github.com/shgew/togi/issues/104), [#124](https://github.com/shgew/togi/issues/124), [#321](https://github.com/shgew/togi/issues/321), [#322](https://github.com/shgew/togi/issues/322), [#323](https://github.com/shgew/togi/issues/323), [#550](https://github.com/shgew/togi/issues/550), [#552](https://github.com/shgew/togi/issues/552), [#562](https://github.com/shgew/togi/issues/562), [#565](https://github.com/shgew/togi/issues/565) to [#568](https://github.com/shgew/togi/issues/568), [#573](https://github.com/shgew/togi/issues/573), [#575](https://github.com/shgew/togi/issues/575), [#577](https://github.com/shgew/togi/issues/577)) and [#541](https://github.com/shgew/togi/issues/541)'s type cut was superseded; their designs are in the porting guide.
+
+## Stage 2: the start (2026-10-11)
+
+The owner started stage 2 ([#637](https://github.com/shgew/togi/issues/637)) on 2026-10-11, and the run continues unattended under the rules of [#634](https://github.com/shgew/togi/issues/634) (**Running unattended**), recorded in [ADR 0057](adr/0057-running-the-rust-migration-unattended.md). This entry opens the stage's log; its pull requests append their measurements below it.
+
+**The plan council.** Before the start, a two-reviewer plan council reviewed the epic and stages 2–12 ([#637](https://github.com/shgew/togi/issues/637)–[#647](https://github.com/shgew/togi/issues/647)). Its findings were applied to the issue bodies, each marked "(orchestrator, 2026-10-11, plan council)" ([summary](https://github.com/shgew/togi/issues/634#issuecomment-6108195762)):
+
+- A `guard` status runs from `main` through `pull_request_target`, so a pull request cannot unregister or rewire the comparison checks that judge it.
+- The cutover gains a persistent backup, a rollback procedure, a live-session gate beside the live-journal gate, evidence renewed on every push, and closing only after the release.
+- Offset write targets and raw observed offsets become separate types, and the claims for typestate narrow: it proves order and authority, not that a readback or teardown happens.
+- The SMU write transaction lives in the session crate (stage 4), with the `smu.intent` receipt minted by the journal crate, so stage 5 reshapes nothing the simulations link.
+- Stage 5's async ownership follows the owning object, with Go's single non-cancellable PM-table reader kept as the one exception.
+- Hazard 9 names Go's amd64 assembly paths (`archExp` with its FMA branch, `archLog`), and a flake check regenerates every Go-generated vector file.
+- Dependabot's `nix` and `github-actions` updates pause until stage 9, a red `main` stops merges until a revert lands, the integration owner is defined, and the CI-budget fallback no longer halts the run.
+- The stop list applies to merged code and to defects Go shares; findings in an open pull request are fixed there.
+
+**Decisions this stage's first pull request records** ([#691](https://github.com/shgew/togi/issues/691)). ADR 0057 partly supersedes ADR 0048 and ADR 0046. Protected comparison assets change by the additive rule, the append-only hash manifest and the `guard` status, with the owner-only `owner-approved` label for the rest. The suite is every session of `tools/bench/suite.json`, 220 today (the dev and holdout seeds of its 11 scenarios, counted from the file), where ADR 0048's text says 252. On `main`, the macOS job also builds the Rust workspace and runs its tests.
+
+**Not measured yet.** Compile and test times, the comparison's CI time and the heavy-job cap come from stage 2's measurements pull request.
