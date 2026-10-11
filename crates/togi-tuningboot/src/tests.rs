@@ -43,7 +43,10 @@ impl MemoryBootloader {
 
     fn fail(&self, op: Op) -> io::Result<()> {
         if self.failing.contains(&op) {
-            Err(io::Error::new(io::ErrorKind::PermissionDenied, "GRUB failure"))
+            Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "GRUB failure",
+            ))
         } else {
             Ok(())
         }
@@ -151,7 +154,13 @@ fn two_retries_then_exhaustion_clears_saved_entry_and_stays_at_three() {
             }
         );
         assert_eq!(record.id.as_str().len(), 32);
-        assert!(record.id.as_str().bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()));
+        assert!(
+            record
+                .id
+                .as_str()
+                .bytes()
+                .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+        );
         previous_id = Some(record.id);
     }
     assert_eq!(bootloader.cleared, 2);
@@ -171,7 +180,11 @@ fn stored_counts_map_to_the_next_count() {
         let values: Vec<_> = stored.map(|v| (COUNT_VARIABLE, v)).into_iter().collect();
         let mut bootloader = MemoryBootloader::new(&values);
         restart_limit(&mut bootloader).unwrap();
-        assert_eq!(bootloader.values[COUNT_VARIABLE], want.to_string(), "{stored:?}");
+        assert_eq!(
+            bootloader.values[COUNT_VARIABLE],
+            want.to_string(),
+            "{stored:?}"
+        );
     }
 }
 
@@ -179,9 +192,21 @@ fn stored_counts_map_to_the_next_count() {
 fn invalid_counts_grant_no_retry_and_write_nothing() {
     let long = "9".repeat(301);
     for value in [
-        "-1", "4", "01", "+1", "1\n", " 1", "1 ", "x", "garbage", "0x1", "１", long.as_str(),
+        "-1",
+        "4",
+        "01",
+        "+1",
+        "1\n",
+        " 1",
+        "1 ",
+        "x",
+        "garbage",
+        "0x1",
+        "１",
+        long.as_str(),
     ] {
-        let mut bootloader = MemoryBootloader::new(&[(COUNT_VARIABLE, value), ("saved_entry", "togi")]);
+        let mut bootloader =
+            MemoryBootloader::new(&[(COUNT_VARIABLE, value), ("saved_entry", "togi")]);
         let error = restart_limit(&mut bootloader).unwrap_err();
         assert!(
             matches!(&error, Error::InvalidCount(seen) if seen == value),
@@ -207,14 +232,20 @@ fn a_failure_at_each_step_grants_no_retry_and_leaves_only_what_happened() {
     assert_eq!(io_source(&error), io::ErrorKind::PermissionDenied);
     assert_eq!(bootloader.sets, 0);
     assert_eq!(bootloader.cleared, 0);
-    assert_eq!(bootloader.snapshot(), [("saved_entry", "togi"), (COUNT_VARIABLE, "2")]);
+    assert_eq!(
+        bootloader.snapshot(),
+        [("saved_entry", "togi"), (COUNT_VARIABLE, "2")]
+    );
 
     let mut bootloader = MemoryBootloader::new(&state).failing(&[Op::Set]);
     let error = restart_limit(&mut bootloader).unwrap_err();
     assert!(matches!(error, Error::WriteCountAndReason(_)));
     assert_eq!(io_source(&error), io::ErrorKind::PermissionDenied);
     assert_eq!(bootloader.cleared, 0);
-    assert_eq!(bootloader.snapshot(), [("saved_entry", "togi"), (COUNT_VARIABLE, "2")]);
+    assert_eq!(
+        bootloader.snapshot(),
+        [("saved_entry", "togi"), (COUNT_VARIABLE, "2")]
+    );
 
     let mut bootloader = MemoryBootloader::new(&state).failing(&[Op::Clear]);
     let error = restart_limit(&mut bootloader).unwrap_err();
@@ -250,7 +281,9 @@ fn restart_limit_works_through_a_trait_object() {
 fn reason_round_trips_through_the_environment_and_cleans_up_independently() {
     let mut bootloader = MemoryBootloader::new(&[(COUNT_VARIABLE, "2"), ("saved_entry", "togi")]);
     assert!(read_reason(&mut bootloader).unwrap().is_none());
-    bootloader.values.insert(REASON_VARIABLE.to_owned(), String::new());
+    bootloader
+        .values
+        .insert(REASON_VARIABLE.to_owned(), String::new());
     assert!(read_reason(&mut bootloader).unwrap().is_none());
 
     let want = LeaveReason::new("journal incompatible", count(0)).unwrap();
@@ -268,8 +301,11 @@ fn reason_round_trips_through_the_environment_and_cleans_up_independently() {
 #[test]
 fn failed_operations_preserve_state() {
     let record = LeaveReason::new("retry", count(2)).unwrap();
-    let mut bootloader = MemoryBootloader::new(&[(COUNT_VARIABLE, "2"), (REASON_VARIABLE, "pending")])
-        .failing(&[Op::Get, Op::Set, Op::Unset]);
+    let mut bootloader = MemoryBootloader::new(&[
+        (COUNT_VARIABLE, "2"),
+        (REASON_VARIABLE, "pending"),
+    ])
+    .failing(&[Op::Get, Op::Set, Op::Unset]);
     let errors = [
         read_reason(&mut bootloader).unwrap_err(),
         write_reason(&mut bootloader, &record).unwrap_err(),
@@ -307,7 +343,10 @@ fn sanitize_replaces_cuts_and_trims() {
     for (input, want) in [
         ("retry", Some("retry")),
         ("  padded \n", Some("padded")),
-        ("first\nsecond\rthird\ttab\0 ☃", Some("first second third tab? ?")),
+        (
+            "first\nsecond\rthird\ttab\0 ☃",
+            Some("first second third tab? ?"),
+        ),
         ("\u{7f}\u{1b}[0m", Some("??[0m")),
         (long.as_str(), Some(&long[..160])),
         (padded_cut.as_str(), Some(&padded_cut[..159])),
@@ -366,14 +405,23 @@ fn an_escaped_reason_is_cut_to_the_budget() {
         reason: ReasonText::sanitize(&"\"".repeat(160)).unwrap(),
     };
     let encoded = record.encode();
-    assert!(encoded.len() == 299 || encoded.len() == 300, "{}", encoded.len());
-    assert_eq!(LeaveReason::decode(&encoded).unwrap().reason.as_str().len(), 102);
+    assert!(
+        encoded.len() == 299 || encoded.len() == 300,
+        "{}",
+        encoded.len()
+    );
+    assert_eq!(
+        LeaveReason::decode(&encoded).unwrap().reason.as_str().len(),
+        102
+    );
 }
 
 #[test]
 fn decoding_accepts_a_well_formed_record() {
-    let record = LeaveReason::decode(r#"{"id":"fallback-0a1b","count":0,"reason":"restart-limit command failed"}"#)
-        .unwrap();
+    let record = LeaveReason::decode(
+        r#"{"id":"fallback-0a1b","count":0,"reason":"restart-limit command failed"}"#,
+    )
+    .unwrap();
     assert_eq!(record.id.as_str(), "fallback-0a1b");
     assert_eq!(record.count, count(0));
 }
@@ -447,7 +495,16 @@ fn constructors_refuse_invalid_metadata() {
         assert!(RestartCount::try_from(value).is_err());
     }
     let too_long = "a".repeat(161);
-    for text in ["", " ", " \n\t ", " lead", "trail ", "line\nbreak", "☃", too_long.as_str()] {
+    for text in [
+        "",
+        " ",
+        " \n\t ",
+        " lead",
+        "trail ",
+        "line\nbreak",
+        "☃",
+        too_long.as_str(),
+    ] {
         assert!(text.parse::<ReasonText>().is_err(), "{text:?}");
     }
     assert!("a".repeat(160).parse::<ReasonText>().is_ok());
@@ -477,7 +534,10 @@ fn fixed_config() -> ProptestConfig {
 fn check_new(text: &str, wanted: u8) {
     let result = LeaveReason::new(text, count(wanted));
     let Some(sanitized) = ReasonText::sanitize(text) else {
-        assert!(matches!(result, Err(Error::InvalidRecord(RecordError::Text))));
+        assert!(matches!(
+            result,
+            Err(Error::InvalidRecord(RecordError::Text))
+        ));
         return;
     };
     let record = result.unwrap();

@@ -184,7 +184,7 @@ The `togi-requests` crate ports `internal/requests` ([#704](https://github.com/s
 
 ## Stage 4: `internal/tuningboot` (#739, 2026-10-11)
 
-The `togi-tuningboot` crate ports `internal/tuningboot` ([#739](https://github.com/shgew/togi/issues/739)): 383 lines of library and 511 of tests, against Go's 232 and 240. No Go code is removed or changed. The real `grub-editenv` implementation lands with the hardware crate and the retry-marker file with the binary.
+The `togi-tuningboot` crate ports `internal/tuningboot` ([#739](https://github.com/shgew/togi/issues/739)): 387 lines of library and 571 of tests, against Go's 232 and 240. No Go code is removed or changed. The real `grub-editenv` implementation lands with the hardware crate and the retry-marker file with the binary.
 
 - **Seams.** `Environment` and `Bootloader` return `io::Result`, with `None` for an unset variable where Go returned `""`; an empty stored value still reads as unset. The free functions take `&mut (impl Environment + ?Sized)`, so the session's `Box<dyn Bootloader>` works. `restart_limit` returns `RestartLimit::Retry(count)` or `Exhausted`, never a count with a boolean beside an error.
 - **Invalid records are unrepresentable.** `ReasonId`, `RestartCount` and `ReasonText` validate on construction and on Serde decoding, so `write_reason` has no invalid-metadata error and Go's `validateReason` runs once, in the constructors. Reason text must also not start or end with a space; Go accepted such a record from the environment, and `ReasonText::sanitize` never produced one.

@@ -70,9 +70,7 @@ pub enum RecordError {
     Id,
     #[error("count must be 0 to 3")]
     Count,
-    #[error(
-        "reason must have 1 to 160 printable ASCII bytes and no leading or trailing space"
-    )]
+    #[error("reason must have 1 to 160 printable ASCII bytes and no leading or trailing space")]
     Text,
     #[error("record exceeds 300 bytes")]
     TooLong,
@@ -325,9 +323,7 @@ pub enum RestartLimit {
     Exhausted,
 }
 
-pub fn read_reason(
-    env: &mut (impl Environment + ?Sized),
-) -> Result<Option<LeaveReason>, Error> {
+pub fn read_reason(env: &mut (impl Environment + ?Sized)) -> Result<Option<LeaveReason>, Error> {
     match env.get(REASON_VARIABLE).map_err(Error::ReadReason)? {
         Some(value) if !value.is_empty() => value.parse().map(Some),
         _ => Ok(None),
