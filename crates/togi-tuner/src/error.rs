@@ -31,6 +31,8 @@ pub enum FoldError {
     NotAwaiting(TrialId),
     #[error("trial {0} is not one the tuner schedules")]
     UnscheduledIntent(TrialId),
+    #[error("trial {trial} began while trial {open} is still open or awaiting attribution")]
+    OverlappingIntent { trial: TrialId, open: TrialId },
     #[error("failure #{0} is unknown")]
     UnknownFailure(Seq),
     #[error("workload {workload} is not an {regime} workload")]

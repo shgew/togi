@@ -71,6 +71,17 @@ impl Run {
         event: &Event,
         intent: &TrialIntent,
     ) -> Result<(), FoldError> {
+        if let Some(open) = self.flight.open.as_ref().map(|open| &open.trial).or(self
+            .flight
+            .awaiting
+            .as_ref()
+            .map(|awaiting| &awaiting.intent.trial))
+        {
+            return Err(FoldError::OverlappingIntent {
+                trial: intent.trial.clone(),
+                open: open.clone(),
+            });
+        }
         let class = self.class_of_intent(intent)?;
         let profile = Profile::new(&self.topo, intent.profile)?;
         self.require_cores(intent.core.into_iter().collect())?;
@@ -195,7 +206,10 @@ impl Run {
         self.update_core(open.turn.core, |state| state.last_seq = Some(event.seq));
         match end.outcome {
             Outcome::Pass => self.record_step_pass(event.seq, &open),
-            Outcome::Inconclusive => self.save_retry(&open),
+            Outcome::Inconclusive => {
+                self.save_retry(&open);
+                self.revalidate_retry();
+            }
             Outcome::Failure => {
                 let signal = end.signal.ok_or(FoldError::MissingSignal)?;
                 self.flight.awaiting = Some(Awaiting {

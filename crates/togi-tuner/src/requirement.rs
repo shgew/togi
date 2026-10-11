@@ -121,9 +121,7 @@ impl Run {
             (Some(check), Regime::R1) => check.r1,
             (Some(check), Regime::R2) => check.r2,
             (None, Regime::R1) => self.rotation_workload(id, Regime::R1),
-            (None, Regime::R2) if self.search.current(id, &self.evidence).0.is_some() => {
-                self.rotation_workload(id, Regime::R2)
-            }
+            (None, Regime::R2) if self.r1_passed(id) => self.rotation_workload(id, Regime::R2),
             _ => return None,
         };
         (intent.workload == expected).then_some(Turn {
@@ -145,6 +143,12 @@ impl Run {
             .search_turn(intent)
             .ok_or_else(|| FoldError::UnscheduledIntent(intent.trial.clone()))?;
         Ok((self.solo_requirement(turn.core, class), turn))
+    }
+
+    /// Whether the core's unfinished search step holds an R1 pass under the backend packages now
+    /// in force, which its R2 trial needs.
+    fn r1_passed(&self, id: CoreId) -> bool {
+        self.search.current(id, &self.evidence).0.is_some()
     }
 
     /// Keeps an inconclusive search or candidate-check trial to retry.
@@ -177,6 +181,7 @@ impl Run {
         let current = state.phase == Some(togi_journal::CorePhase::Search)
             && retry.plan.profile.get(turn.core) == Some(state.offset)
             && turn.offset.is_none_or(|offset| offset == state.offset)
+            && (turn.regime != Regime::R2 || turn.offset.is_none() || self.r1_passed(turn.core))
             && retry.plan.duration == self.config.search_trial;
         current.then(|| {
             let class = ClassKey::new(

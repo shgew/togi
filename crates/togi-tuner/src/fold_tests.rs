@@ -761,3 +761,106 @@ fn phase_2_moves_are_only_asked_of_profiles_of_the_topology() {
     let foreign = crate::Profile::zero(&crate::tests::topology(&[4]));
     assert!(j.run().phase2_moves(&foreign, None).is_none());
 }
+
+fn crash_detected(intent: Seq) -> Payload {
+    togi_journal::CrashDetected {
+        previous_boot: togi_machine::BootId::from("boot".to_owned()),
+        in_flight: Some(intent),
+        stray: false,
+        condition: None,
+        reset_reason: None,
+        reset_reason_raw: Vec::new(),
+        inconclusive: false,
+        pstore: None,
+    }
+    .into()
+}
+
+#[test]
+fn an_inconclusive_end_after_a_config_change_keeps_no_stale_retry() {
+    let cases: [(&str, Journal, &str); 2] = [
+        (
+            "search_trial_s",
+            Journal::search_at(&[-10]),
+            r#"{"durations":{"search_trial_s":60}}"#,
+        ),
+        (
+            "evidence count",
+            Journal::new(&[0], &[Start::search(-20).checking()]),
+            r#"{"evidence":{"miss":0.001}}"#,
+        ),
+    ];
+    for (name, mut j, json) in cases {
+        let plan = j.next_trial();
+        let (intent, trial) = j.intent(&plan);
+        j.append(crash_detected(intent), &[]);
+        j.load(&crate::testkit::config(json));
+        j.end(intent, &trial, Outcome::Inconclusive);
+        assert!(j.run().retry.is_none(), "{name}");
+        let next = j.next_trial();
+        assert!(!next.retry, "{name}");
+        assert_eq!(next.duration, j.run().config.search_trial, "{name}");
+        let intent = next.intent(TrialId::from("0002".to_owned()), j.rotation(&next));
+        assert!(j.try_append(intent.into(), &next.cause).is_ok(), "{name}");
+        assert_eq!(
+            j.run().flight.open.as_ref().unwrap().requirement,
+            next.requirement,
+            "{name}"
+        );
+        j.assert_resumes();
+    }
+}
+
+#[test]
+fn an_r2_retry_needs_the_backend_its_r1_passed_under() {
+    use crate::testkit::{MPRIME_NEW, YCRUNCHER_NEW, backends};
+    let mut j = Journal::search_at(&[-10]);
+    let r1 = j.next_trial();
+    assert_eq!(r1.regime, Regime::R1);
+    j.trial(&r1, Outcome::Pass);
+    let r2 = j.next_trial();
+    assert_eq!(r2.regime, Regime::R2);
+    j.trial(&r2, Outcome::Inconclusive);
+    assert!(j.next_trial().retry);
+    j.load(&backends(MPRIME_NEW, YCRUNCHER_NEW));
+    assert_eq!(j.run().search.current(core(0), &j.run().evidence).0, None);
+    let next = j.next_trial();
+    assert_eq!((next.retry, next.regime), (false, Regime::R1));
+    let intent = next.intent(TrialId::from("0003".to_owned()), j.rotation(&next));
+    assert!(j.try_append(intent.into(), &next.cause).is_ok());
+    j.assert_resumes();
+}
+
+#[test]
+fn an_intent_while_a_trial_is_open_or_awaiting_attribution_is_refused() {
+    let mut j = Journal::search_at(&[-10]);
+    let plan = j.next_trial();
+    let (intent, open) = j.intent(&plan);
+    j.append(crash_detected(intent), &[]);
+    let before = j.run().clone();
+    let second = plan.intent(TrialId::from("0002".to_owned()), j.rotation(&plan));
+    assert_eq!(
+        j.try_append(second.into(), &plan.cause),
+        Err(FoldError::OverlappingIntent {
+            trial: TrialId::from("0002".to_owned()),
+            open,
+        })
+    );
+    assert_eq!(j.run(), &before);
+
+    let mut j = Journal::new(&[0], &[Start::search(-20).checking()]);
+    let plan = j.next_trial();
+    let (intent, failed) = j.intent(&plan);
+    j.end(intent, &failed, Outcome::Failure);
+    assert!(j.run().flight.awaiting.is_some());
+    let before = j.run().clone();
+    let second = plan.intent(TrialId::from("0002".to_owned()), j.rotation(&plan));
+    assert_eq!(
+        j.try_append(second.into(), &plan.cause),
+        Err(FoldError::OverlappingIntent {
+            trial: TrialId::from("0002".to_owned()),
+            open: failed,
+        })
+    );
+    assert_eq!(j.run(), &before);
+}
