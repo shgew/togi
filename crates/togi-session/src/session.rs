@@ -89,31 +89,19 @@ pub struct RunInput {
     pub report: Box<dyn Write>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum StopReason {
+/// Why the run ended.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Stop {
     Signal,
-    DeadEnd,
     Cycles,
     FirstResult,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Stop {
-    pub reason: StopReason,
-    /// The dead end and the events it cites, for [`StopReason::DeadEnd`].
-    pub dead_end: Option<(DeadEnd, Vec<Seq>)>,
-    /// The dead end asks the caller to reboot into the normal system.
-    pub reboot: bool,
-}
-
-impl Stop {
-    const fn plain(reason: StopReason) -> Self {
-        Self {
-            reason,
-            dead_end: None,
-            reboot: false,
-        }
-    }
+    DeadEnd {
+        dead_end: DeadEnd,
+        /// The events the dead end cites.
+        causes: Vec<Seq>,
+        /// The dead end asks the caller to reboot into the normal system.
+        reboot: bool,
+    },
 }
 
 /// Whether the run goes on after a step.
@@ -492,20 +480,20 @@ impl Session {
     }
 
     /// Ends the run with `reason`; the cleanup records the `shutdown` once the machine is restored.
-    pub(crate) fn shut_down(&mut self, reason: StopReason) -> Control {
-        self.record_shutdown(reason);
-        Control::Stop(Stop::plain(reason))
+    pub(crate) fn shut_down(&mut self, stop: Stop) -> Control {
+        self.record_shutdown(&stop);
+        Control::Stop(stop)
     }
 
-    fn record_shutdown(&mut self, reason: StopReason) {
-        let (recorded, cycles) = match reason {
-            StopReason::Signal => (ShutdownReason::Signal, None),
-            StopReason::DeadEnd => (ShutdownReason::DeadEnd, None),
-            StopReason::Cycles => (ShutdownReason::Cycles, self.policy.cycles),
-            StopReason::FirstResult => (ShutdownReason::FirstResult, None),
+    pub(crate) fn record_shutdown(&mut self, stop: &Stop) {
+        let (reason, cycles) = match stop {
+            Stop::Signal => (ShutdownReason::Signal, None),
+            Stop::DeadEnd { .. } => (ShutdownReason::DeadEnd, None),
+            Stop::Cycles => (ShutdownReason::Cycles, self.policy.cycles),
+            Stop::FirstResult => (ShutdownReason::FirstResult, None),
         };
         self.shutdown = Some(Shutdown {
-            reason: recorded,
+            reason,
             kernel_cursor: None,
             kernel_error: None,
             cycles,
@@ -514,8 +502,7 @@ impl Session {
 
     /// The inconclusive trials in a row of one backend after which its retries begin.
     pub(crate) fn inconclusive_threshold(&self) -> NonZeroU32 {
-        NonZeroU32::new(self.config.dead_ends().inconclusive_in_a_row().get())
-            .unwrap_or(NonZeroU32::MIN)
+        self.config.dead_ends().inconclusive_in_a_row().count()
     }
 
     /// Turns the end of a step into whether the run goes on: dead-end evidence becomes the dead end it supports.
@@ -601,7 +588,7 @@ impl Session {
         let seq = self
             .appender
             .append(Payload::DeadEnd(dead_end.clone()), causes)?;
-        self.finish_dead_end(seq, dead_end, causes.to_vec(), true)
+        self.finish_dead_end(seq, dead_end, causes.to_vec(), None)
     }
 
     /// Finishes the dead end the journal holds pending, if any.
@@ -609,34 +596,33 @@ impl Session {
         let Some(pending) = self.appender.recovery().pending_dead_end() else {
             return Ok(None);
         };
-        let (seq, dead_end, clear) = (
+        let (seq, dead_end, causes, cleared) = (
             pending.seq,
             pending.dead_end.clone(),
-            pending.needs_saved_entry(),
+            pending.causes.clone(),
+            pending.saved_entry_cleared(),
         );
-        let causes = self
-            .appender
-            .journal()
-            .event(seq)
-            .map(|event| event.cause.clone())
-            .unwrap_or_default();
-        self.finish_dead_end(seq, dead_end, causes, clear).map(Some)
+        self.finish_dead_end(seq, dead_end, causes, cleared)
+            .map(Some)
     }
 
+    /// Leaves the tuning boot for a dead end and records the shutdown it ends the run with. `cleared` is the result
+    /// of an earlier attempt to clear the saved boot entry, when there was one.
     fn finish_dead_end(
         &mut self,
         seq: Seq,
         dead_end: DeadEnd,
         causes: Vec<Seq>,
-        clear: bool,
+        cleared: Option<bool>,
     ) -> Result<Stop, SessionError> {
         if self.unreconciled() {
             return Ok(dead_end_stop(dead_end, causes, false));
         }
         let action = dead_end.action.unwrap_or(DeadEndAction::Exit);
-        let cleared = match action {
-            DeadEndAction::Exit => true,
-            DeadEndAction::ClearSavedEntry | DeadEndAction::ClearSavedEntryAndReboot if clear => {
+        let cleared = match (action, cleared) {
+            (DeadEndAction::Exit, _) => true,
+            (_, Some(cleared)) => cleared,
+            (DeadEndAction::ClearSavedEntry | DeadEndAction::ClearSavedEntryAndReboot, None) => {
                 self.appender.import_boot_reason()?;
                 let reason = format!("dead end {}: {}", dead_end.condition, dead_end.detail);
                 match self
@@ -652,29 +638,18 @@ impl Session {
                     }
                 }
             }
-            DeadEndAction::ClearSavedEntry | DeadEndAction::ClearSavedEntryAndReboot => self
-                .appender
-                .journal()
-                .events()
-                .iter()
-                .filter(|event| event.cause.contains(&seq))
-                .filter_map(|event| match &event.payload {
-                    Payload::BootSavedEntry(entry) => Some(entry.error.is_none()),
-                    _ => None,
-                })
-                .next_back()
-                .unwrap_or(false),
         };
         let reboot = action == DeadEndAction::ClearSavedEntryAndReboot && cleared;
-        self.record_shutdown(StopReason::DeadEnd);
-        Ok(dead_end_stop(dead_end, causes, reboot))
+        let stop = dead_end_stop(dead_end, causes, reboot);
+        self.record_shutdown(&stop);
+        Ok(stop)
     }
 }
 
 fn dead_end_stop(dead_end: DeadEnd, causes: Vec<Seq>, reboot: bool) -> Stop {
-    Stop {
-        reason: StopReason::DeadEnd,
-        dead_end: Some((dead_end, causes)),
+    Stop::DeadEnd {
+        dead_end,
+        causes,
         reboot,
     }
 }

@@ -115,9 +115,9 @@ fn stray_crashes_end_in_a_boot_loop_that_exits_without_a_bootloader() {
     session.start().unwrap();
     let crashes: Vec<Seq> = (0..3).map(|_| stray_crash(&mut session)).collect();
     let stop = session.check_dead_end().unwrap();
-    let Some(Stop {
-        reason: StopReason::DeadEnd,
-        dead_end: Some((dead_end, causes)),
+    let Some(Stop::DeadEnd {
+        dead_end,
+        causes,
         reboot: false,
     }) = stop
     else {
@@ -158,7 +158,12 @@ fn smu_evidence_outranks_a_boot_loop() {
         .append(Payload::SmuError(error), &[])
         .unwrap();
     let stop = session.check_dead_end().unwrap().unwrap();
-    let (dead_end, causes) = stop.dead_end.unwrap();
+    let Stop::DeadEnd {
+        dead_end, causes, ..
+    } = stop
+    else {
+        panic!("{stop:?}");
+    };
     assert_eq!(dead_end.condition, DeadEndCondition::Smu);
     assert_eq!(causes, [cited]);
 }
@@ -168,10 +173,7 @@ fn a_signal_stop_records_its_shutdown_for_the_cleanup() {
     let bench = Bench::new(2);
     let mut session = bench.open();
     session.start().unwrap();
-    assert_eq!(
-        session.shut_down(StopReason::Signal),
-        Control::Stop(Stop::plain(StopReason::Signal))
-    );
+    assert_eq!(session.shut_down(Stop::Signal), Control::Stop(Stop::Signal));
     assert_eq!(
         session.shutdown.as_ref().map(|shutdown| shutdown.reason),
         Some(ShutdownReason::Signal)
@@ -199,9 +201,16 @@ fn a_dead_end_pending_from_another_boot_is_finished_first() {
     let Control::Stop(stop) = session.start().unwrap() else {
         panic!("continued");
     };
-    assert_eq!(stop.reason, StopReason::DeadEnd);
-    assert_eq!(stop.dead_end.map(|(recorded, _)| recorded), Some(dead_end));
-    assert!(!stop.reboot);
+    let Stop::DeadEnd {
+        dead_end: recorded,
+        reboot,
+        ..
+    } = stop
+    else {
+        panic!("{stop:?}");
+    };
+    assert_eq!(recorded, dead_end);
+    assert!(!reboot);
     assert_eq!(
         crate::testing::kinds_of(session.appender()),
         ["session.start", "config.loaded", "deadend"]

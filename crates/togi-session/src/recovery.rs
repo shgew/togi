@@ -210,14 +210,21 @@ struct BackendState {
 pub struct PendingDeadEnd {
     pub seq: Seq,
     pub dead_end: DeadEnd,
-    saved_entry: bool,
+    /// The events the dead end cites.
+    pub causes: Vec<Seq>,
+    saved_entry: Option<bool>,
     shutdown: bool,
 }
 
 impl PendingDeadEnd {
     /// Whether the saved boot entry still has to be cleared.
     pub const fn needs_saved_entry(&self) -> bool {
-        !self.saved_entry
+        self.saved_entry.is_none()
+    }
+
+    /// Whether the latest attempt to clear the saved boot entry succeeded; `None` before any.
+    pub const fn saved_entry_cleared(&self) -> Option<bool> {
+        self.saved_entry
     }
 }
 
@@ -441,7 +448,7 @@ impl RecoveryState {
                 RetryTarget::Mprime => self.backend_retried(Backend::Mprime, retry),
                 RetryTarget::Ycruncher => self.backend_retried(Backend::Ycruncher, retry),
             },
-            Payload::DeadEnd(dead_end) => self.dead_ended(seq, dead_end),
+            Payload::DeadEnd(dead_end) => self.dead_ended(seq, &event.cause, dead_end),
             Payload::SessionWarning(_)
             | Payload::SessionArchived(_)
             | Payload::PreflightCheck(_)
@@ -473,8 +480,8 @@ impl RecoveryState {
             return;
         };
         match &event.payload {
-            Payload::BootSavedEntry(_) => {
-                pending.saved_entry |= event.cause.contains(&pending.seq);
+            Payload::BootSavedEntry(entry) if event.cause.contains(&pending.seq) => {
+                pending.saved_entry = Some(entry.error.is_none());
             }
             Payload::Shutdown(shutdown) => {
                 pending.shutdown |= shutdown.reason == ShutdownReason::DeadEnd;
@@ -765,11 +772,12 @@ impl RecoveryState {
         state.followed = false;
     }
 
-    fn dead_ended(&mut self, seq: Seq, dead_end: &DeadEnd) {
+    fn dead_ended(&mut self, seq: Seq, causes: &[Seq], dead_end: &DeadEnd) {
         self.dead_end = Some(PendingDeadEnd {
             seq,
             dead_end: dead_end.clone(),
-            saved_entry: false,
+            causes: causes.to_vec(),
+            saved_entry: None,
             shutdown: false,
         });
         match dead_end.condition {

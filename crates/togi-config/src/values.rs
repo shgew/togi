@@ -63,6 +63,17 @@ bounded!(
     DeadEndThreshold, 1, 100
 );
 
+const _: () = assert!(DeadEndThreshold::MIN >= 1);
+
+impl DeadEndThreshold {
+    pub const fn count(self) -> std::num::NonZeroU32 {
+        match std::num::NonZeroU32::new(self.0) {
+            Some(count) => count,
+            None => unreachable!(),
+        }
+    }
+}
+
 impl TrialSeconds {
     pub const fn as_duration(self) -> Duration {
         Duration::from_secs(self.0 as u64)

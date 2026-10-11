@@ -27,15 +27,13 @@ fn checks(session: &Session) -> Vec<(String, bool)> {
 }
 
 fn dead_end_of(control: Control) -> (togi_journal::DeadEnd, Vec<Seq>) {
-    let Control::Stop(Stop {
-        reason: StopReason::DeadEnd,
-        dead_end: Some(found),
-        ..
+    let Control::Stop(Stop::DeadEnd {
+        dead_end, causes, ..
     }) = control
     else {
         panic!("{control:?}");
     };
-    found
+    (dead_end, causes)
 }
 
 fn record_context(session: &mut Session) {
@@ -235,13 +233,7 @@ fn a_signal_while_waiting_for_the_watchdog_stops_the_run() {
     cancel.cancel();
     let mut session = from_the_tuning_boot(&bench, cancel);
     let control = session.preflight().unwrap();
-    assert!(matches!(
-        control,
-        Control::Stop(Stop {
-            reason: StopReason::Signal,
-            ..
-        })
-    ));
+    assert!(matches!(control, Control::Stop(Stop::Signal)));
     assert!(checks(&session).is_empty());
 }
 
@@ -356,10 +348,7 @@ fn a_stop_asked_for_while_the_earlier_boots_were_read_waits_for_the_reconciliati
     assert_eq!(machine_offsets(&mut session), [0, 0]);
     assert!(matches!(
         session.inspect().unwrap(),
-        Control::Stop(Stop {
-            reason: StopReason::Signal,
-            ..
-        })
+        Control::Stop(Stop::Signal)
     ));
 }
 

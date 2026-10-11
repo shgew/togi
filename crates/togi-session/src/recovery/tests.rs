@@ -1394,11 +1394,13 @@ fn kernel_retries_end_with_a_no_evidence_dead_end_so_a_later_run_retries_afresh(
 #[test]
 fn a_dead_end_is_pending_until_its_saved_entry_is_cleared_and_its_shutdown_recorded() {
     let mut log = Log::new();
-    log.baseline(&[(0, 0), (8, 0)]);
+    let evidence = log.baseline(&[(0, 0), (8, 0)]);
     assert!(log.state().pending_dead_end().is_none());
-    let dead = log.add(dead_end(DeadEndCondition::Preflight), &[]);
+    let dead = log.add(dead_end(DeadEndCondition::Preflight), &[evidence]);
     let pending = log.state().pending_dead_end().cloned().unwrap();
     assert_eq!(pending.seq, dead);
+    assert_eq!(pending.causes, [evidence]);
+    assert_eq!(pending.saved_entry_cleared(), None);
     assert_eq!(pending.dead_end.condition, DeadEndCondition::Preflight);
     assert!(pending.needs_saved_entry());
 
@@ -1420,6 +1422,30 @@ fn a_dead_end_is_pending_until_its_saved_entry_is_cleared_and_its_shutdown_recor
     );
     entry(&[dead], &mut log);
     assert!(!log.state().pending_dead_end().unwrap().needs_saved_entry());
+    assert_eq!(
+        log.state()
+            .pending_dead_end()
+            .unwrap()
+            .saved_entry_cleared(),
+        Some(true)
+    );
+    log.add(
+        Payload::BootSavedEntry(BootSavedEntry {
+            before: None,
+            after: None,
+            error: Some("grub-editenv failed".into()),
+            reason_error: None,
+        }),
+        &[dead],
+    );
+    assert_eq!(
+        log.state()
+            .pending_dead_end()
+            .unwrap()
+            .saved_entry_cleared(),
+        Some(false),
+        "the latest attempt counts"
+    );
     log.add(shutdown(ShutdownReason::Signal), &[]);
     assert!(
         log.state().pending_dead_end().is_some(),

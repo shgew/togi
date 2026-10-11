@@ -21,4 +21,4 @@ pub mod write;
 mod testing;
 
 pub use error::{AppendFailure, Flow, FoldError, JournalFailure, SessionError, Step};
-pub use session::{Control, Ended, Outcome, RunInput, Session, Stop, StopPolicy, StopReason};
+pub use session::{Control, Ended, Outcome, RunInput, Session, Stop, StopPolicy};

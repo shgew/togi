@@ -8,7 +8,7 @@ use togi_machine::{CancellationToken, Error, PerCore, TargetOffset};
 
 use crate::emergency::SweepCleared;
 use crate::error::{SessionError, Step};
-use crate::session::{Control, Outcome, Session, StopReason, Visit};
+use crate::session::{Control, Outcome, Session, Stop, Visit};
 use crate::write;
 
 const WATCHDOG_WAIT: Duration = Duration::from_secs(30);
@@ -88,7 +88,7 @@ impl Session {
         let started = self.appender.clock().monotonic();
         loop {
             if cancel.is_cancelled() {
-                return Ok(self.shut_down(StopReason::Signal));
+                return Ok(self.shut_down(Stop::Signal));
             }
             let check = self.host.watchdog();
             let waited = self.appender.clock().monotonic().saturating_sub(started);
@@ -113,7 +113,7 @@ impl Session {
             let step = WATCHDOG_STEP.min(WATCHDOG_WAIT.saturating_sub(waited));
             match self.appender.clock().sleep(cancel, step) {
                 Ok(()) => {}
-                Err(Error::Cancelled) => return Ok(self.shut_down(StopReason::Signal)),
+                Err(Error::Cancelled) => return Ok(self.shut_down(Stop::Signal)),
                 Err(error) => return Err(error.into()),
             }
         }
@@ -180,7 +180,7 @@ impl Session {
             return Ok(Control::Stop(stop));
         }
         if self.recovery_cancelled {
-            return Ok(self.shut_down(StopReason::Signal));
+            return Ok(self.shut_down(Stop::Signal));
         }
         Ok(Control::Continue)
     }

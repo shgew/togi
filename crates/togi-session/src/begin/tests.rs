@@ -140,10 +140,7 @@ fn a_baseline_failing_to_read_is_smu_evidence_and_leaves_no_baseline() {
     let control = session.begin().unwrap();
     assert!(matches!(
         control,
-        Control::Stop(crate::session::Stop {
-            reason: crate::session::StopReason::DeadEnd,
-            ..
-        })
+        Control::Stop(crate::session::Stop::DeadEnd { .. })
     ));
     assert!(session.appender().recovery().baseline().is_none());
     assert!(phases(&session).is_empty());

@@ -9,7 +9,7 @@ use togi_journal::{
 use togi_machine::CoreSet;
 
 use crate::error::SessionError;
-use crate::session::{PromptError, Session, Stop, StopReason};
+use crate::session::{PromptError, Session, Stop};
 
 impl Session {
     /// Records the defects the journal's decisions match, queues the resets of every answered "yes", and puts each
@@ -111,10 +111,8 @@ impl Session {
     }
 
     fn signal_stop(&mut self) -> Stop {
-        match self.shut_down(StopReason::Signal) {
-            crate::session::Control::Stop(stop) => stop,
-            crate::session::Control::Continue => unreachable!("a shutdown stops the run"),
-        }
+        self.record_shutdown(&Stop::Signal);
+        Stop::Signal
     }
 
     /// A reset for every core a "yes" answer named that has none yet, each citing the answer.

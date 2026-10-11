@@ -104,7 +104,12 @@ fn a_matching_decision_is_recorded_as_a_finding_citing_it() {
 fn an_aggressive_finding_without_a_terminal_is_a_defect_dead_end() {
     let mut session = session_with_a_match(&AGGRESSIVE, None);
     let stop = session.check_defects().unwrap().unwrap();
-    let (dead_end, causes) = stop.dead_end.unwrap();
+    let Stop::DeadEnd {
+        dead_end, causes, ..
+    } = stop
+    else {
+        panic!("{stop:?}");
+    };
     assert_eq!(dead_end.condition, DeadEndCondition::Defect);
     assert_eq!(
         dead_end.detail,
@@ -156,7 +161,7 @@ fn a_no_answer_resets_nothing() {
 fn a_cancelled_question_stops_the_run_with_the_finding_unanswered() {
     let mut session = session_with_a_match(&CAUTIOUS, Some(asked(Err(PromptError::Cancelled))));
     let stop = session.check_defects().unwrap().unwrap();
-    assert_eq!(stop.reason, StopReason::Signal);
+    assert_eq!(stop, Stop::Signal);
     assert_eq!(kinds_after_start(&session), ["defect.found"]);
     assert!(session.shutdown.is_some());
 }
