@@ -260,12 +260,30 @@ pub(crate) async fn contain_pending<O: Os>(
     contain_all(env, tasks).await;
 }
 
+#[cfg(test)]
+pub(crate) async fn serve_detached<O: Os>(env: Rc<Env<O>>, command: Command) {
+    serve(env, command).await;
+}
+
+#[cfg(test)]
+thread_local! {
+    /// What `report` would have written to stderr.
+    pub(crate) static RUNTIME_REPORTS: std::cell::RefCell<Vec<String>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+#[cfg(not(test))]
 #[expect(
     clippy::print_stderr,
     reason = "the runner is being dropped or its caller gave up, so no caller is left to report to"
 )]
 fn report(message: &str) {
     eprintln!("togi: {message}");
+}
+
+#[cfg(test)]
+fn report(message: &str) {
+    RUNTIME_REPORTS.with_borrow_mut(|reports| reports.push(format!("togi: {message}")));
 }
 
 /// Refuses to block inside an async runtime.

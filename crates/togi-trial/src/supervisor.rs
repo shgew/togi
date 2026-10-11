@@ -1149,6 +1149,11 @@ pub(crate) fn after_abandon_snapshot(hook: impl FnOnce() + 'static) {
     AFTER_ABANDON_SNAPSHOT.set(Some(Box::new(hook)));
 }
 
+#[cfg(test)]
+pub(crate) fn register<O: Os>(env: &Env<O>, supervised: Supervised) {
+    env.supervisors.borrow_mut().register(supervised);
+}
+
 fn report_abandoned(
     plan: &TrialPlan,
     teardown: &Result<Stopped, Arc<Containment>>,

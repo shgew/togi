@@ -1432,25 +1432,52 @@ impl PmTableReader for PanickingReader {
     }
 }
 
+fn panicking_rig() -> super::harness::Rig {
+    let backend = TestBackend::new("/bin/true");
+    let rig = rig_edit(backend.clone(), Timing::default(), |env| {
+        env.pm_table = Some(Arc::new(PanickingReader));
+        env.backends = Backends::new().with(Arc::new(BoomBackend(backend)));
+    });
+    rig.fake.on_launch(|_, _| {
+        Launch::Run(script(|mut ctx: ProcCtx| async move {
+            while let Some(delivery) = ctx.signals.recv().await {
+                if matches!(delivery, Delivery::Group(GroupSignal::Term)) {
+                    ctx.print("BOOM\n").await;
+                    ctx.exit(ExitInfo::Signal(15));
+                    return;
+                }
+            }
+        }))
+    });
+    rig
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_dropped_handle_reports_both_supervision_panics_in_order_with_the_teardown() {
+    local(async {
+        let rig = panicking_rig();
+        let handle = rig.start(spec(Regime::R1, &[0], secs(600))).await.unwrap();
+        crate::supervisor::ABANDON_REPORTS.with_borrow_mut(Vec::clear);
+        let commands = handle.commands.clone();
+        drop(handle);
+        tokio::time::sleep(secs(30)).await;
+        assert!(commands.is_closed(), "the supervisor has ended");
+        let reports = crate::supervisor::ABANDON_REPORTS.with_borrow(Clone::clone);
+        assert_eq!(
+            reports,
+            ["togi: trial t1 was dropped while running; torn down; \
+                 supervision panicked: the PM table reader failed; \
+                 supervision panicked: the classifier met BOOM"],
+            "{reports:?}"
+        );
+    })
+    .await;
+}
+
 #[tokio::test(start_paused = true)]
 async fn a_supervision_panic_keeps_a_classifier_panic_from_the_final_output() {
     local(async {
-        let backend = TestBackend::new("/bin/true");
-        let rig = rig_edit(backend.clone(), Timing::default(), |env| {
-            env.pm_table = Some(Arc::new(PanickingReader));
-            env.backends = Backends::new().with(Arc::new(BoomBackend(backend)));
-        });
-        rig.fake.on_launch(|_, _| {
-            Launch::Run(script(|mut ctx: ProcCtx| async move {
-                while let Some(delivery) = ctx.signals.recv().await {
-                    if matches!(delivery, Delivery::Group(GroupSignal::Term)) {
-                        ctx.print("BOOM\n").await;
-                        ctx.exit(ExitInfo::Signal(15));
-                        return;
-                    }
-                }
-            }))
-        });
+        let rig = panicking_rig();
         let handle = rig.start(spec(Regime::R1, &[0], secs(600))).await.unwrap();
         let begun = tokio::time::Instant::now();
         let run = tokio::time::timeout(secs(300), finish(&handle))
@@ -1472,4 +1499,176 @@ async fn a_supervision_panic_keeps_a_classifier_panic_from_the_final_output() {
         assert!(run.finished.result.inconclusive.is_some());
     })
     .await;
+}
+
+fn runtime_reports() -> Vec<String> {
+    crate::runtime::RUNTIME_REPORTS.with_borrow(Clone::clone)
+}
+
+fn undeliverable_start() -> crate::runtime::Command {
+    let (reply, nobody) = std::sync::mpsc::sync_channel(1);
+    drop(nobody);
+    crate::runtime::Command::Start {
+        cancel: CancellationToken::new(),
+        spec: Box::new(spec(Regime::R1, &[0], secs(600))),
+        ready: nothing_runs(),
+        reply,
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_start_nobody_waits_for_that_ends_without_proof_is_reported_and_bounded() {
+    local(async {
+        let rig = rig();
+        rig.fake.on_launch(|_, _| {
+            Launch::FailRetained(
+                script(|mut ctx: ProcCtx| async move { ctx.until_killed().await }),
+                std::io::Error::other("retained launch failure"),
+            )
+        });
+        rig.fake.on_systemd(|call| match call {
+            Systemd::Kill { .. } => Some(Reply::Hang),
+            _ => None,
+        });
+        crate::runtime::RUNTIME_REPORTS.with_borrow_mut(Vec::clear);
+        let begun = tokio::time::Instant::now();
+        crate::runtime::serve_detached(Rc::clone(&rig.env), undeliverable_start()).await;
+        assert!(begun.elapsed() <= rig.env.timing.stop_bound());
+        let reports = runtime_reports();
+        assert_eq!(
+            reports,
+            ["togi: a start nobody waits for ended without confirmed cleanup: trial cleanup could not be confirmed"]
+        );
+    })
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_start_nobody_waits_for_that_rolls_back_with_proof_is_not_reported() {
+    local(async {
+        let rig = rig();
+        rig.fake.on_launch(|_, _| {
+            Launch::FailRetained(
+                script(|mut ctx: ProcCtx| async move { ctx.until_killed().await }),
+                std::io::Error::other("retained launch failure"),
+            )
+        });
+        crate::runtime::RUNTIME_REPORTS.with_borrow_mut(Vec::clear);
+        crate::runtime::serve_detached(Rc::clone(&rig.env), undeliverable_start()).await;
+        assert!(rig.fake.process(0).reaped.get());
+        assert_eq!(runtime_reports(), Vec::<String>::new());
+    })
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_sweep_nobody_waits_for_that_fails_is_reported_and_bounded() {
+    local(async {
+        let rig = rig();
+        rig.fake.add_unit("togi-trial-old.scope");
+        rig.fake.on_systemd(|call| match call {
+            Systemd::Stop { .. } => Some(Reply::Output {
+                success: true,
+                text: String::new(),
+            }),
+            _ => None,
+        });
+        let (reply, nobody) = std::sync::mpsc::sync_channel(1);
+        drop(nobody);
+        crate::runtime::RUNTIME_REPORTS.with_borrow_mut(Vec::clear);
+        let begun = tokio::time::Instant::now();
+        crate::runtime::serve_detached(
+            Rc::clone(&rig.env),
+            crate::runtime::Command::Sweep {
+                cancel: CancellationToken::new(),
+                reply,
+            },
+        )
+        .await;
+        assert!(begun.elapsed() <= rig.env.timing.sweep_bound());
+        let reports = runtime_reports();
+        assert_eq!(
+            reports,
+            ["togi: a sweep nobody waits for failed: trial cleanup could not be confirmed"]
+        );
+    })
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn shutdown_reports_the_live_supervisor_still_running_at_the_shared_deadline() {
+    local(async {
+        let rig = rig();
+        let live = rig.start(spec(Regime::R1, &[0], secs(600))).await.unwrap();
+        let (commands, mut inbox) = tokio::sync::mpsc::unbounded_channel();
+        let task = tokio::task::spawn_local(async move {
+            let _inbox = inbox.recv().await;
+            std::future::pending::<()>().await;
+        });
+        crate::supervisor::register(
+            &rig.env,
+            crate::supervisor::Supervised {
+                trial: "wedged".into(),
+                commands,
+                task,
+            },
+        );
+        crate::runtime::RUNTIME_REPORTS.with_borrow_mut(Vec::clear);
+        let begun = tokio::time::Instant::now();
+        crate::runtime::contain_pending(&rig.env, Vec::new()).await;
+        assert_eq!(begun.elapsed(), rig.env.timing.stop_bound());
+        assert_eq!(
+            runtime_reports(),
+            ["togi: trial wedged was still not torn down when its runner shut down"]
+        );
+        let run = tokio::time::timeout(Duration::ZERO, finish(&live))
+            .await
+            .expect("the other live supervisor was torn down inside the slot");
+        assert!(run.finished.abandoned);
+        assert!(run.finished.teardown.is_ok());
+        assert!(rig.fake.process(0).reaped.get());
+    })
+    .await;
+}
+
+#[test]
+fn a_cached_cancellation_joined_to_a_failed_teardown_stays_containment_with_every_diagnostic() {
+    let (mut runner, _dir) = runner(
+        |fake| {
+            fake.on_systemd(|call| match call {
+                Systemd::Kill { .. } => Some(Reply::Hang),
+                _ => None,
+            });
+        },
+        fast(),
+    );
+    let mut trial = start(&mut runner, Regime::R1, &[0], secs(600));
+    let cancel = CancellationToken::new();
+    cancel.cancel();
+    let mut seen = Vec::new();
+    for round in 0..2 {
+        let partial = trial.wait(&cancel, &mut Collect::default()).unwrap_err();
+        let togi_machine::Error::Containment(inner) = partial.error else {
+            panic!("round {round}: the machine category is not containment: {partial:?}");
+        };
+        let Some(Error::Joined(joined)) = inner
+            .source()
+            .and_then(|source| source.downcast_ref::<Error>())
+        else {
+            panic!("round {round}: no joined diagnostics behind {inner}");
+        };
+        let [Error::Containment(containment), Error::Cancelled] = joined.errors() else {
+            panic!("round {round}: {joined}");
+        };
+        assert!(matches!(
+            containment.failures().first(),
+            Some(CleanupFailure::KillScope { .. })
+        ));
+        seen.push(joined.to_string());
+    }
+    assert_eq!(seen[0], seen[1]);
+    assert!(matches!(
+        trial.stop(),
+        Err(togi_machine::Error::Containment(_))
+    ));
 }
