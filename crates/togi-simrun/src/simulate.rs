@@ -1,0 +1,189 @@
+use std::cell::RefCell;
+use std::io;
+use std::path::Path;
+use std::rc::Rc;
+
+use togi_journal::{Event, Journal, LockError, MemFs, Recording, StateDir};
+use togi_session::{Ended, PublicationPolicy, ResumeCapsule, RunInput, SessionError};
+
+use crate::input::{Finished, Persistence, Replay, SimInput, SimOutcome};
+use crate::observe::{Slot, Tee, UserLog, Watch};
+use crate::{HistoryError, SimError};
+
+#[expect(
+    clippy::disallowed_methods,
+    reason = "a simulation keeps its state directory in memory or on disk without syncing"
+)]
+fn lock(persistence: &Persistence) -> Result<StateDir, LockError> {
+    Ok(match persistence {
+        Persistence::Memory(fs) => StateDir::simulated(fs.clone())?,
+        Persistence::Files(path) => StateDir::lock_unsynced(path)?,
+    })
+}
+
+fn crashed(ended: &Ended) -> bool {
+    ended.errors.iter().any(SessionError::is_crash)
+}
+
+/// Boots the simulated machine, runs the session on it and reboots it after every crash, until a run ends without
+/// one or `max_boots` boots have run.
+///
+/// # Errors
+///
+/// A state directory that cannot be locked, opened, closed or dumped, a resume capsule that differs from a fresh
+/// fold of its journal, or a boot that left none to check.
+pub fn simulate(input: SimInput) -> Result<SimOutcome, SimError> {
+    let SimInput {
+        config,
+        source,
+        build,
+        simulator,
+        persistence,
+        replay,
+        verify_every,
+        max_boots,
+        policy,
+        write_samples,
+        defects,
+        log,
+        renderer,
+        zone,
+        cancel,
+        observer,
+        dump_to,
+    } = input;
+    let memory = match &persistence {
+        Persistence::Memory(fs) => Some(fs.clone()),
+        Persistence::Files(_) => None,
+    };
+    if observer.is_some() && memory.is_none() {
+        return Err(SimError::ObserverOnDisk);
+    }
+    let samples = match (&persistence, write_samples) {
+        (_, false) => None,
+        (Persistence::Memory(_), true) => return Err(SimError::SamplesInMemory),
+        (Persistence::Files(_), true) => Some(lock(&persistence)?.trials_dir()),
+    };
+    simulator.set_samples_dir(samples);
+    let publication = match persistence {
+        Persistence::Memory(_) => PublicationPolicy::OnFinish,
+        Persistence::Files(_) => PublicationPolicy::Live,
+    };
+    let user: UserLog = Rc::new(RefCell::new(log));
+    let slot: Slot = Rc::new(RefCell::new(observer));
+    let mut resume: Option<ResumeCapsule> = None;
+    let mut outcome = None;
+    for number in 1..=max_boots.get() {
+        let mut machine = simulator.seams();
+        let boot = machine.host.boot_id().map_err(|source| SimError::Host {
+            boot: number,
+            source,
+        })?;
+        let journal = lock(&persistence)?
+            .open_at(boot.clone(), simulator.now())
+            .map_err(|source| SimError::Open {
+                boot: number,
+                source,
+            })?;
+        if let (Some(seq), Some(log)) = (journal.repaired(), user.borrow_mut().as_mut()) {
+            if let Some(event) = journal.event(seq) {
+                let _ = renderer.write_event(log, event, &zone);
+            }
+        }
+        let run_cancel = cancel.child_token();
+        let tee = Tee {
+            user: Rc::clone(&user),
+            watch: memory.as_ref().map(|fs| Watch {
+                fs: fs.clone(),
+                observer: Rc::clone(&slot),
+                cancel: run_cancel.clone(),
+            }),
+        };
+        let ended = togi_session::run(RunInput {
+            config: config.clone(),
+            source: source.clone(),
+            build: build.clone(),
+            boot,
+            journal,
+            machine,
+            policy,
+            publication,
+            bootloader: None,
+            prompt: None,
+            defects,
+            resume: resume.take(),
+            carry: None,
+            log: Some(Box::new(tee)),
+            renderer,
+            zone: zone.clone(),
+            cancel: run_cancel,
+            report: Box::new(io::sink()),
+        });
+        let crash = crashed(&ended);
+        let last = number == max_boots.get();
+        let due = !crash || last || verify_every.is_some_and(|every| number % every.get() == 0);
+        if due {
+            verify(&ended, number)?;
+        }
+        let Ended {
+            stop,
+            errors,
+            emergency,
+            journal,
+            capsule,
+        } = ended;
+        close(journal, number)?;
+        if !crash {
+            outcome = Some(SimOutcome::Stopped(Box::new(Finished {
+                stop,
+                errors,
+                emergency,
+                capsule,
+            })));
+            break;
+        }
+        resume = capsule.filter(|_| replay == Replay::Warm);
+        simulator.reboot();
+    }
+    if let Some(destination) = dump_to {
+        dump(memory.as_ref(), &destination)?;
+    }
+    Ok(outcome.unwrap_or(SimOutcome::Capped { boots: max_boots }))
+}
+
+fn verify(ended: &Ended, boot: u32) -> Result<(), SimError> {
+    match &ended.capsule {
+        Some(capsule) => capsule
+            .verify(ended.journal.events())
+            .map_err(|source| SimError::Diverged { boot, source }),
+        None if ended.errors.is_empty() || crashed(ended) => Err(SimError::NoCapsule { boot }),
+        None => Ok(()),
+    }
+}
+
+fn close(journal: Journal, boot: u32) -> Result<(), SimError> {
+    journal
+        .close()
+        .map(drop)
+        .map_err(|source| SimError::Close { boot, source })
+}
+
+#[expect(
+    clippy::disallowed_methods,
+    reason = "a simulation writes its in-memory state directory to disk on request"
+)]
+fn dump(memory: Option<&MemFs>, destination: &Path) -> Result<(), SimError> {
+    match memory {
+        Some(fs) => fs.dump_to(destination).map_err(SimError::Dump),
+        None => Ok(()),
+    }
+}
+
+/// The events of the live journal in `persistence`, after a simulation.
+pub fn events(persistence: &Persistence) -> Result<Vec<Event>, HistoryError> {
+    let recordings = lock(persistence)?.recordings()?;
+    Ok(recordings
+        .into_iter()
+        .next_back()
+        .map_or_else(Vec::new, Recording::into_events))
+}

@@ -919,6 +919,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "togi-simrun"
+version = "0.0.0"
+dependencies = [
+ "jiff",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "togi-config",
+ "togi-defect",
+ "togi-journal",
+ "togi-machine",
+ "togi-render",
+ "togi-session",
+ "togi-sim",
+ "togi-tuner",
+]
+
+[[package]]
 name = "togi-smu"
 version = "0.0.0"
 dependencies = [

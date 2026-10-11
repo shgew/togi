@@ -1,0 +1,27 @@
+[package]
+name = "togi-simrun"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "Drives a tuning session on the simulator: a crash reboots the simulated machine and the next boot resumes the journal"
+
+[dependencies]
+jiff.workspace = true
+thiserror.workspace = true
+togi-config.workspace = true
+togi-defect.workspace = true
+togi-journal.workspace = true
+togi-machine.workspace = true
+togi-render.workspace = true
+togi-session.workspace = true
+togi-sim.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+tempfile.workspace = true
+togi-tuner.workspace = true
+
+[lints]
+workspace = true
