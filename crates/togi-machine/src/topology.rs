@@ -2,12 +2,14 @@ use crate::{CcdId, CoreId, CpuId};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct CoreInfo {
     pub core: CoreId,
     pub ccd: CcdId,
     pub cpus: Vec<CpuId>,
 }
+
+crate::object_only!(CoreInfo, BiosContext);
 
 pub fn order(cores: &[CoreInfo]) -> Vec<CoreId> {
     let mut sorted: Vec<_> = cores.iter().collect();
@@ -28,6 +30,7 @@ pub fn order(cores: &[CoreInfo]) -> Vec<CoreId> {
 }
 
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self")]
 pub struct BiosContext {
     pub bios_version: String,
     pub board: String,

@@ -2,6 +2,7 @@ mod build;
 mod filter;
 mod fixtures;
 mod message;
+mod object_only;
 mod session_id;
 mod state;
 mod strict;

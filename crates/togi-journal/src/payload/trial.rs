@@ -35,7 +35,7 @@ impl std::fmt::Display for TrialId {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct TrialIntent {
     pub trial: TrialId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -72,7 +72,7 @@ pub struct TrialIntent {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct TrialInstance {
     pub core: CoreId,
     pub cpus: Vec<CpuId>,
@@ -81,7 +81,7 @@ pub struct TrialInstance {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct TrialStart {
     pub trial: TrialId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -97,7 +97,7 @@ pub struct TrialStart {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct TrialProgress {
     pub trial: TrialId,
     pub detail: String,
@@ -108,7 +108,7 @@ pub struct TrialProgress {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct TrialSignal {
     pub trial: TrialId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -120,7 +120,7 @@ pub struct TrialSignal {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct TrialSample {
     pub trial: TrialId,
     pub warning: String,
@@ -130,7 +130,7 @@ pub struct TrialSample {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct TrialEnd {
     pub trial: TrialId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -182,7 +182,7 @@ pub struct TrialEnd {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct Failure {
     pub signal: Signal,
     pub attribution: Attribution,
@@ -207,7 +207,7 @@ pub struct Failure {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct Mce {
     pub cpu: CpuId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -227,7 +227,7 @@ pub struct Mce {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct CrashDetected {
     pub previous_boot: BootId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -247,7 +247,7 @@ pub struct CrashDetected {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct FactSource {
     pub session: SessionId,
     pub seq: Seq,
@@ -261,14 +261,14 @@ pub struct FactSource {
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct BackendIdentity {
     pub backend: Backend,
     pub path: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct TrialClass {
     pub regime: Regime,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -278,7 +278,7 @@ pub struct TrialClass {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct TrialCarried {
     pub source: FactSource,
     pub class: TrialClass,
@@ -305,9 +305,27 @@ pub struct TrialCarried {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct FailureCarried {
     pub source: FactSource,
     pub class: TrialClass,
     pub failure: Failure,
 }
+
+togi_machine::object_only!(
+    TrialIntent,
+    TrialInstance,
+    TrialStart,
+    TrialProgress,
+    TrialSignal,
+    TrialSample,
+    TrialEnd,
+    Failure,
+    Mce,
+    CrashDetected,
+    FactSource,
+    BackendIdentity,
+    TrialClass,
+    TrialCarried,
+    FailureCarried,
+);

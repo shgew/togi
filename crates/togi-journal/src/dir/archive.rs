@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use serde::Deserialize;
+use togi_machine::serde_object::{self, Object};
 
 use super::{DirError, EVENTS_FILE, STATE_FILE, STATE_TMP, StateDir, TRIALS_DIR, io_at, not_found};
 use crate::fs::FileKind;
@@ -68,7 +69,7 @@ pub enum ArchiveKind {
 #[derive(Deserialize)]
 struct Peek {
     kind: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "serde_object::deserialize")]
     data: PeekData,
 }
 
@@ -441,7 +442,7 @@ fn peek_session(
     line: &[u8],
     kind: &str,
 ) -> Option<Result<SessionId, crate::session_id::InvalidSessionId>> {
-    let peek: Peek = serde_json::from_slice(line).ok()?;
+    let Object(peek) = serde_json::from_slice::<Object<Peek>>(line).ok()?;
     if peek.kind != kind {
         return None;
     }

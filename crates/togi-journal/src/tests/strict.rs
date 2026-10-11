@@ -57,6 +57,27 @@ fn unknown_envelope_field_is_an_error_that_names_the_kind() {
     assert!(read.to_string().starts_with("line 1:"), "{read}");
     assert!(read.to_string().contains("extra"), "{read}");
     assert_names_session_start(&read.to_string());
+
+    // A kind spelled with a JSON escape is the same kind.
+    let escaped = line.replacen("session.start", r"session\u002estart", 1);
+    assert_ne!(escaped, line);
+    let error = Event::decode(&escaped).unwrap_err();
+    assert!(
+        matches!(
+            error,
+            DecodeError::Envelope {
+                kind: Some(EventKind::SessionStart),
+                ..
+            }
+        ),
+        "{error}"
+    );
+    assert_names_session_start(&error.to_string());
+    let read = EventReader::new(format!("{escaped}\n").as_bytes())
+        .next()
+        .unwrap()
+        .unwrap_err();
+    assert_names_session_start(&read.to_string());
 }
 
 #[test]
@@ -69,6 +90,25 @@ fn invalid_envelope_value_names_the_kind_when_the_kind_is_known() {
     );
     assert_names_session_start(&error.to_string());
     let read = EventReader::new(format!("{line}\n").as_bytes())
+        .next()
+        .unwrap()
+        .unwrap_err();
+    assert_names_session_start(&read.to_string());
+
+    let escaped = line.replacen("session.start", r"session\u002estart", 1);
+    assert_ne!(escaped, line);
+    let error = Event::decode(&escaped).unwrap_err();
+    assert!(
+        matches!(
+            error,
+            DecodeError::Envelope {
+                kind: Some(EventKind::SessionStart),
+                ..
+            }
+        ),
+        "{error}"
+    );
+    let read = EventReader::new(format!("{escaped}\n").as_bytes())
         .next()
         .unwrap()
         .unwrap_err();

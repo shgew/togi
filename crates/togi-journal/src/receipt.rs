@@ -3,6 +3,7 @@ use crate::payload::SmuCommand;
 
 /// Proof that the journal made a command's `smu.intent` durable, issued by [`Journal::append_smu_intent`] and spent
 /// by [`Journal::append_smu_write`] on the same journal.
+/// On an unsynced simulator journal ([`StateDir::lock_unsynced`]) the intent reached the file but was not fsynced.
 ///
 /// A receipt cannot be built, cloned or copied outside this crate:
 ///
@@ -26,6 +27,7 @@ use crate::payload::SmuCommand;
 ///
 /// [`Journal::append_smu_intent`]: crate::Journal::append_smu_intent
 /// [`Journal::append_smu_write`]: crate::Journal::append_smu_write
+/// [`StateDir::lock_unsynced`]: crate::StateDir::lock_unsynced
 #[must_use = "the receipt authorizes one SMU write"]
 #[derive(Debug)]
 pub struct SmuIntentReceipt {

@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 pub const SCHEMA: u32 = 1;
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct Build {
     pub version: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -126,3 +126,5 @@ impl Build {
         }
     }
 }
+
+togi_machine::object_only!(Build,);

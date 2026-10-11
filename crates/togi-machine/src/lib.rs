@@ -7,6 +7,7 @@ mod per_core;
 mod samples;
 mod scalars;
 mod seams;
+pub mod serde_object;
 mod topology;
 mod vocab;
 mod workloads;

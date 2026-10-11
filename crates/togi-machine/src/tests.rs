@@ -5,6 +5,7 @@ use std::io::{Cursor, Write};
 use std::path::Path;
 
 mod load;
+mod object_only;
 mod seams;
 
 fn core(value: i64) -> CoreId {

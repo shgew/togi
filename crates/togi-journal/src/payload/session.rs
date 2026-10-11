@@ -29,7 +29,7 @@ pub(super) fn is_zero(value: &u32) -> bool {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct SessionStart {
     pub build: Build,
     pub session: SessionId,
@@ -37,7 +37,7 @@ pub struct SessionStart {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct SessionContext {
     pub bios_version: String,
     pub board: String,
@@ -71,13 +71,13 @@ impl From<BiosContext> for SessionContext {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct SessionBaseline {
     pub offsets: PerCore<ObservedOffset>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct SessionNotice {
     pub notice: Notice,
     #[serde(default, skip_serializing_if = "CoreSet::is_empty")]
@@ -85,7 +85,7 @@ pub struct SessionNotice {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct SessionWarning {
     pub operation: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -94,27 +94,27 @@ pub struct SessionWarning {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct SessionArchived {
     pub session: SessionId,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct Provenance {
     pub session: SessionId,
     pub seq: Seq,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct CarriedLimit {
     pub offset: TargetOffset,
     pub from: Provenance,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct CarriedFailurePoint {
     pub offset: TargetOffset,
     pub from: Provenance,
@@ -122,7 +122,7 @@ pub struct CarriedFailurePoint {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct CarriedSource {
     pub session: SessionId,
     pub schema: u32,
@@ -130,7 +130,7 @@ pub struct CarriedSource {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct CarriedCore {
     pub core: CoreId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -140,7 +140,7 @@ pub struct CarriedCore {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct SessionCarried {
     pub sources: Vec<CarriedSource>,
     pub failure_points: bool,
@@ -151,7 +151,7 @@ pub struct SessionCarried {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct ConfigLoaded {
     pub build: Build,
     pub config: togi_config::Config,
@@ -164,7 +164,7 @@ pub struct ConfigLoaded {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct PreflightCheck {
     pub check: String,
     pub detail: String,
@@ -172,14 +172,14 @@ pub struct PreflightCheck {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct ProfileApplied {
     pub offsets: PerCore<TargetOffset>,
     pub condition: togi_machine::Condition,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct ProfileChange {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub from: Option<PerCore<TargetOffset>>,
@@ -187,7 +187,7 @@ pub struct ProfileChange {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct ProfileRestored {
     pub offsets: PerCore<TargetOffset>,
 }
@@ -200,13 +200,13 @@ pub enum ResetTarget {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct CommandReset {
     pub target: ResetTarget,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct DefectFound {
     pub id: NonZeroU32,
     pub title: String,
@@ -218,7 +218,7 @@ pub struct DefectFound {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct DefectAnswered {
     pub id: NonZeroU32,
     pub cores: CoreSet,
@@ -226,7 +226,7 @@ pub struct DefectAnswered {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct DeadEnd {
     pub condition: DeadEndCondition,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -237,7 +237,7 @@ pub struct DeadEnd {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct BootSavedEntry {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub before: Option<String>,
@@ -250,7 +250,7 @@ pub struct BootSavedEntry {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct BootLeaveReason {
     pub reason_id: String,
     pub restart_limit_count: u8,
@@ -258,7 +258,7 @@ pub struct BootLeaveReason {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct Shutdown {
     pub reason: ShutdownReason,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -270,14 +270,43 @@ pub struct Shutdown {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct JournalTorn {
     pub offset: u64,
     pub bytes_hex: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct StateRebuilt {
     pub fields: Vec<String>,
 }
+
+togi_machine::object_only!(
+    SessionStart,
+    SessionContext,
+    SessionBaseline,
+    SessionNotice,
+    SessionWarning,
+    SessionArchived,
+    Provenance,
+    CarriedLimit,
+    CarriedFailurePoint,
+    CarriedSource,
+    CarriedCore,
+    SessionCarried,
+    ConfigLoaded,
+    PreflightCheck,
+    ProfileApplied,
+    ProfileChange,
+    ProfileRestored,
+    CommandReset,
+    DefectFound,
+    DefectAnswered,
+    DeadEnd,
+    BootSavedEntry,
+    BootLeaveReason,
+    Shutdown,
+    JournalTorn,
+    StateRebuilt,
+);

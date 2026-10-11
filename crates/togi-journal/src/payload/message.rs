@@ -881,14 +881,14 @@ fn hunt_end(p: &HuntEnd) -> String {
             "hunt {hunt} ended after {groups}: the failure stays with loaded {named}{reason}"
         ),
         HuntOutcome::Combination => {
-            let mut text = format!(
-                "hunt {hunt} ended after {groups}: no single core fails alone, the failure needs {named} together"
-            );
-            if !p.members.is_empty() {
-                let _ = write!(text, " ({})", members(&p.members));
-            }
-            text.push_str(&reason);
-            text
+            let combination = if p.members.is_empty() {
+                format!("{named} at their failing offsets")
+            } else {
+                members(&p.members)
+            };
+            format!(
+                "hunt {hunt} ended after {groups}: failing offset combination {combination}, with the hunt's other cores parked{reason}"
+            )
         }
         HuntOutcome::Fallback => format!(
             "hunt {hunt} ended after {groups} without isolating the failure: falling back to every candidate together, {named}{reason}"

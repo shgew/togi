@@ -12,7 +12,7 @@ use super::trial::TrialId;
 use crate::Seq;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct TunerDecision {
     pub core: CoreId,
     pub activity: Activity,
@@ -29,7 +29,7 @@ pub struct TunerDecision {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct CoreTransition {
     pub core: CoreId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -50,7 +50,7 @@ pub struct CoreTransition {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct CheckingCycle {
     pub cycle: NonZeroU32,
     pub event: CycleEvent,
@@ -67,7 +67,7 @@ pub struct CheckingCycle {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct CheckingStep {
     pub cycle: NonZeroU32,
     pub step: NonZeroU32,
@@ -82,7 +82,7 @@ pub enum Rederived {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct CheckingChain {
     pub cycle: NonZeroU32,
     pub step: NonZeroU32,
@@ -98,7 +98,7 @@ pub struct CheckingChain {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct HostRanking {
     pub ranking: Vec<CoreId>,
     #[serde(default, skip_serializing_if = "PerCore::is_empty")]
@@ -108,14 +108,14 @@ pub struct HostRanking {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct Member {
     pub core: CoreId,
     pub offset: TargetOffset,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct HuntStart {
     pub hunt: NonZeroU32,
     pub failure: Seq,
@@ -140,7 +140,7 @@ pub struct HuntStart {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 #[expect(
     clippy::struct_excessive_bools,
     reason = "each flag is a distinct recorded fact"
@@ -174,7 +174,7 @@ pub struct HuntGroup {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct HuntEnd {
     pub hunt: NonZeroU32,
     pub result: HuntOutcome,
@@ -187,14 +187,14 @@ pub struct HuntEnd {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct HuntSkipped {
     pub failure: Seq,
     pub reason: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct Combination {
     pub combination: NonZeroU32,
     pub members: Vec<Member>,
@@ -205,7 +205,7 @@ pub struct Combination {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct DeepeningRound {
     pub round: NonZeroU32,
     pub event: RoundEvent,
@@ -232,7 +232,7 @@ pub struct DeepeningRound {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct TunerWarning {
     pub warning: WarningKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -242,10 +242,28 @@ pub struct TunerWarning {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct BackendRetry {
     pub backend: RetryTarget,
     pub attempt: u8,
     pub wait_s: u32,
     pub reason: String,
 }
+
+togi_machine::object_only!(
+    TunerDecision,
+    CoreTransition,
+    CheckingCycle,
+    CheckingStep,
+    CheckingChain,
+    HostRanking,
+    Member,
+    HuntStart,
+    HuntGroup,
+    HuntEnd,
+    HuntSkipped,
+    Combination,
+    DeepeningRound,
+    TunerWarning,
+    BackendRetry,
+);

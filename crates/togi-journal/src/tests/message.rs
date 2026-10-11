@@ -381,7 +381,10 @@ fn combination_and_fallback_hunt_ends_name_every_core_without_a_culprit() {
     end.result = HuntOutcome::Combination;
     end.members = vec![member(0, -40), member(1, -30)];
     let text = Payload::from(end.clone()).message();
-    assert!(text.contains("cores 00, 01 together"), "{text}");
+    assert!(text.contains("failing offset combination"), "{text}");
+    assert!(text.contains("parked"), "{text}");
+    assert!(!text.contains("alone"), "{text}");
+    assert!(!text.contains("single core"), "{text}");
     assert!(text.contains("core 00 -40 + core 01 -30"), "{text}");
     assert!(text.contains("probed"), "{text}");
     assert!(!text.contains("found"), "{text}");
@@ -724,5 +727,261 @@ fn hunt_group_lists_its_cores_comma_separated() {
         Payload::from(group)
             .message()
             .ends_with("pass inferred: complement passed")
+    );
+}
+
+#[test]
+fn carry_without_failure_points_says_they_stay_behind_and_why() {
+    let Payload::SessionCarried(mut carried) = sample(EventKind::SessionCarried) else {
+        unreachable!()
+    };
+    carried.failure_points = false;
+    carried.detail = Some("BIOS context changed".into());
+    let text = Payload::from(carried.clone()).message();
+    assert!(text.contains("1 candidate solo limits"), "{text}");
+    assert!(
+        text.contains("failure points stay behind: BIOS context changed"),
+        "{text}"
+    );
+    assert!(!text.contains("1 failure points"), "{text}");
+    carried.detail = None;
+    assert!(
+        Payload::from(carried)
+            .message()
+            .ends_with("no reason recorded")
+    );
+}
+
+#[test]
+fn applied_profiles_name_the_condition_they_apply_to() {
+    let applied = |condition| {
+        Payload::from(ProfileApplied {
+            offsets: profile(&[-30, 0]),
+            condition,
+        })
+        .message()
+    };
+    assert!(applied(Condition::Parked).starts_with("group profile applied"));
+    assert!(applied(Condition::Together).starts_with("profile applied"));
+    let alone = applied(Condition::Alone);
+    assert!(alone.contains("alone") && alone.contains("CO 0"), "{alone}");
+    assert!(!alone.contains("-30"), "{alone}");
+}
+
+#[test]
+fn carried_trials_keep_class_outcome_duration_profile_and_requesters() {
+    let Payload::TrialCarried(mut carried) = sample(EventKind::TrialCarried) else {
+        unreachable!()
+    };
+    let pass = Payload::from(carried.clone()).message();
+    for part in [
+        "carried pass",
+        "passed",
+        "top requester cores 03",
+        "after 90 s",
+        "intended 90 s",
+        "-30",
+    ] {
+        assert!(pass.contains(part), "{part:?} missing from {pass}");
+    }
+    carried.outcome = Outcome::Failure;
+    carried.signal = Some(Signal::Crash);
+    carried.duration_s = 7;
+    carried.top_requesters = CoreSet::default();
+    let text = Payload::from(carried.clone()).message();
+    for part in [
+        "carried failure",
+        "failed (crash)",
+        "after 7 s",
+        "intended 90 s",
+    ] {
+        assert!(text.contains(part), "{part:?} missing from {text}");
+    }
+    assert!(!text.contains("top requester"), "{text}");
+    carried.outcome = Outcome::Inconclusive;
+    assert!(
+        Payload::from(carried)
+            .message()
+            .contains("was inconclusive")
+    );
+}
+
+#[test]
+fn trial_end_voltage_telemetry_survives_every_outcome() {
+    let Payload::TrialEnd(base) = sample(EventKind::TrialEnd) else {
+        unreachable!()
+    };
+    for outcome in [Outcome::Pass, Outcome::Failure, Outcome::Inconclusive] {
+        let end = TrialEnd {
+            outcome,
+            reason: Some("interrupted".into()),
+            ..base.clone()
+        };
+        let text = Payload::from(end).message();
+        assert!(
+            text.contains("loaded voltage request median 1.100 V, min 1.050 V"),
+            "{outcome}: {text}"
+        );
+        assert!(
+            text.contains("top requester 03 1.125 V"),
+            "{outcome}: {text}"
+        );
+    }
+}
+
+#[test]
+fn tied_top_requesters_are_all_listed() {
+    let Payload::TrialEnd(mut end) = sample(EventKind::TrialEnd) else {
+        unreachable!()
+    };
+    end.top_requesters = set(&[3, 5]);
+    let text = Payload::from(end).message();
+    assert!(
+        text.contains("top requester 03 1.125 V, 05 1.100 V"),
+        "{text}"
+    );
+}
+
+#[test]
+fn a_between_trials_mce_is_recorded_only() {
+    let Payload::Mce(mut mce) = sample(EventKind::Mce) else {
+        unreachable!()
+    };
+    mce.trial = None;
+    mce.between_trials = true;
+    let text = Payload::from(mce.clone()).message();
+    assert!(text.ends_with("between trials (recorded only)"), "{text}");
+    mce.between_trials = false;
+    assert!(!Payload::from(mce).message().contains("between trials"));
+}
+
+#[test]
+fn a_typed_reset_reason_is_named_when_no_raw_line_exists() {
+    let Payload::CrashDetected(mut crash) = sample(EventKind::CrashDetected) else {
+        unreachable!()
+    };
+    crash.reset_reason_raw.clear();
+    let text = Payload::from(crash.clone()).message();
+    assert!(text.contains("reset reason: watchdog"), "{text}");
+    assert!(
+        text.contains("inconclusive: reset does not establish a tuning failure"),
+        "{text}"
+    );
+    crash.inconclusive = false;
+    assert!(!Payload::from(crash).message().contains("inconclusive"));
+}
+
+#[test]
+fn a_deepen_decision_says_deepened_not_failed() {
+    let Payload::TunerDecision(mut decision) = sample(EventKind::TunerDecision) else {
+        unreachable!()
+    };
+    decision.activity = Activity::Deepening;
+    decision.decision = Decision::Deepen;
+    decision.from_offset = target(-30);
+    decision.to_offset = target(-31);
+    decision.reason = "checks passed".into();
+    assert_eq!(
+        Payload::from(decision).message(),
+        "core 07 deepened at -30; next -31 (checks passed)"
+    );
+}
+
+#[test]
+fn a_checking_chain_without_request_telemetry_says_it_fell_back_to_offsets() {
+    let Payload::CheckingChain(mut chain) = sample(EventKind::CheckingChain) else {
+        unreachable!()
+    };
+    chain.source_seqs.clear();
+    let text = Payload::from(chain.clone()).message();
+    assert!(
+        text.contains("offset fallback (no request telemetry)"),
+        "{text}"
+    );
+    assert!(text.contains("partial 2 loads cores 03, 04"), "{text}");
+    let measured = Payload::from(CheckingChain {
+        source_seqs: vec![seq(5), seq(6)],
+        ..chain
+    })
+    .message();
+    assert!(
+        measured.contains("request measurements #5, #6"),
+        "{measured}"
+    );
+    assert!(!measured.contains("fallback"), "{measured}");
+}
+
+#[test]
+fn defect_messages_name_the_diagnosis_and_the_answer() {
+    let Payload::DefectFound(mut found) = sample(EventKind::DefectFound) else {
+        unreachable!()
+    };
+    let text = Payload::from(found.clone()).message();
+    for part in [
+        "defect 1",
+        "pull request #14",
+        "too_cautious",
+        "decisions #20",
+        "affected cores 02",
+        "clean exit",
+    ] {
+        assert!(text.contains(part), "{part:?} missing from {text}");
+    }
+    found.detail.clear();
+    assert!(
+        Payload::from(found)
+            .message()
+            .ends_with("affected cores 02")
+    );
+    assert_eq!(
+        message(EventKind::DefectAnswered),
+        "defect 1: answered yes to reset cores 02"
+    );
+}
+
+#[test]
+fn a_previous_boot_leave_reason_carries_the_restart_count() {
+    assert_eq!(
+        message(EventKind::BootLeaveReason),
+        "previous tuning boot ended: restart limit (consecutive restart-limit boots: 3)"
+    );
+}
+
+#[test]
+fn an_unavailable_ranking_gives_the_cause_and_the_fallback_order() {
+    let Payload::HostRanking(mut ranking) = sample(EventKind::HostRanking) else {
+        unreachable!()
+    };
+    let ok = Payload::from(ranking.clone()).message();
+    assert!(ok.starts_with("preferred cores 03 01"), "{ok}");
+    ranking.detail = Some("firmware unavailable".into());
+    let text = Payload::from(ranking).message();
+    assert!(
+        text.contains("unavailable (firmware unavailable)"),
+        "{text}"
+    );
+    assert!(text.ends_with("core-id order"), "{text}");
+}
+
+#[test]
+fn monotonicity_warnings_use_the_detail_or_the_trial_and_pass_count() {
+    let Payload::TunerWarning(mut warning) = sample(EventKind::TunerWarning) else {
+        unreachable!()
+    };
+    assert_eq!(
+        Payload::from(warning.clone()).message(),
+        "monotonicity: failed at -30"
+    );
+    warning.detail.clear();
+    let text = Payload::from(warning.clone()).message();
+    assert!(
+        text.contains("trial 0413 failed on a profile at least as shallow as 2 passes"),
+        "{text}"
+    );
+    warning.trial = None;
+    let text = Payload::from(warning).message();
+    assert!(
+        text.contains("idle failure") && text.contains("2 passes"),
+        "{text}"
     );
 }

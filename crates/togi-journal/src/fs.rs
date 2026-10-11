@@ -1076,6 +1076,10 @@ mod tests {
         dir(&fs, "/s");
         fs.put("/s/a/b", "bytes");
         let out = tempfile::tempdir().unwrap();
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "pins the simulation dump the tripwire guards"
+        )]
         fs.dump_to(out.path()).unwrap();
         assert_eq!(std::fs::read(out.path().join("s/a/b")).unwrap(), b"bytes");
     }

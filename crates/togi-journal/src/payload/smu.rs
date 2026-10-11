@@ -4,7 +4,12 @@ use togi_machine::{CoreId, ObservedOffset, TargetOffset};
 use super::domain::SmuOp;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(
+    remote = "Self",
+    tag = "op",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
 pub enum SmuCommand {
     Set { core: CoreId, offset: TargetOffset },
     SetAll { offset: TargetOffset },
@@ -87,7 +92,7 @@ impl SmuWriteRecord {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct SmuReadback {
     pub core: CoreId,
     pub offset: ObservedOffset,
@@ -96,7 +101,7 @@ pub struct SmuReadback {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct SmuError {
     pub op: SmuOp,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -105,3 +110,5 @@ pub struct SmuError {
     pub offset: Option<TargetOffset>,
     pub error: String,
 }
+
+togi_machine::object_only!(SmuCommand, SmuReadback, SmuError,);

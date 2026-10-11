@@ -31,6 +31,7 @@ fn display_last(last: Option<Seq>) -> String {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self")]
 pub struct SessionInfo {
     pub id: SessionId,
     pub start: Timestamp,
@@ -40,12 +41,14 @@ pub struct SessionInfo {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self")]
 pub struct DecisionRef {
     pub seq: Seq,
     pub msg: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self")]
 pub struct CoreFacts {
     pub core: CoreId,
     pub ccd: CcdId,
@@ -55,6 +58,7 @@ pub struct CoreFacts {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self")]
 pub struct InFlight {
     pub seq: Seq,
     pub kind: EventKind,
@@ -64,12 +68,14 @@ pub struct InFlight {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self")]
 pub struct DeadEndRef {
     pub condition: DeadEndCondition,
     pub seq: Seq,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self")]
 pub struct State {
     pub schema: u32,
     pub session: Option<SessionInfo>,
@@ -82,6 +88,7 @@ pub struct State {
 
 /// The backend store paths the latest `config.loaded` recorded; a pass counts only under the path in force.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self")]
 pub struct BackendPaths {
     pub mprime: Option<PathBuf>,
     pub ycruncher: Option<PathBuf>,
@@ -269,3 +276,13 @@ impl State {
         Ok(())
     }
 }
+
+togi_machine::object_only!(
+    SessionInfo,
+    DecisionRef,
+    CoreFacts,
+    InFlight,
+    DeadEndRef,
+    State,
+    BackendPaths,
+);

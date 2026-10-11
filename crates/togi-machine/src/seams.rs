@@ -218,11 +218,13 @@ pub struct KernelRead {
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct PstoreRecord {
     pub path: String,
     pub lines: Vec<String>,
 }
+
+crate::object_only!(PstoreRecord);
 
 pub trait Kernel {
     /// An earlier boot missing from the journal is `Error::BootMissing`.

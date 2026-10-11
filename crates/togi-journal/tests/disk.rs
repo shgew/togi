@@ -198,6 +198,22 @@ fn a_buffered_journal_dropped_without_close_loses_only_what_was_buffered() {
 #[test]
 #[expect(
     clippy::disallowed_methods,
+    reason = "pins the in-memory simulation and its dump to disk, the tripwires' negative controls"
+)]
+fn a_simulated_journal_dumped_to_disk_reads_back_whole() {
+    let fs = togi_journal::fs::MemFs::new();
+    let mut journal = begin(StateDir::simulated(fs.clone()).unwrap());
+    journal.append(stamp(1), note("simulated"), &[]).unwrap();
+    let expected = appended(&journal);
+    drop(journal.close().unwrap());
+    let out = tempfile::tempdir().unwrap();
+    fs.dump_to(out.path()).unwrap();
+    assert_eq!(on_disk(&out.path().join("state/events.jsonl")), expected);
+}
+
+#[test]
+#[expect(
+    clippy::disallowed_methods,
     reason = "pins the unsynced buffered mode the simulator uses"
 )]
 fn an_unsynced_smu_intent_receipt_is_minted_only_after_the_intent_reached_the_file() {

@@ -7,7 +7,7 @@ use serde::de::Error as _;
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::value::RawValue;
-use togi_machine::BootId;
+use togi_machine::{BootId, serde_object::Object};
 
 use crate::payload::{EventKind, Payload, UnknownKind};
 
@@ -129,8 +129,8 @@ impl Event {
     }
 
     pub fn decode(line: &str) -> Result<Self, DecodeError> {
-        match serde_json::from_str::<Envelope>(line) {
-            Ok(envelope) => envelope.into_event(),
+        match serde_json::from_str::<Object<Envelope>>(line) {
+            Ok(Object(envelope)) => envelope.into_event(),
             Err(source) => Err(DecodeError::Envelope {
                 kind: known_kind(line),
                 source,
@@ -181,12 +181,12 @@ fn kind_prefix(kind: Option<EventKind>) -> String {
 
 /// The `kind` of a record whose envelope failed strict decoding, if it names one.
 fn known_kind(line: &str) -> Option<EventKind> {
+    // Owned: a kind spelled with a JSON escape (`session\u002estart`) cannot be borrowed.
     #[derive(Deserialize)]
-    struct Probe<'a> {
-        #[serde(borrow)]
-        kind: &'a str,
+    struct Probe {
+        kind: String,
     }
-    serde_json::from_str::<Probe<'_>>(line)
+    serde_json::from_str::<Object<Probe>>(line)
         .ok()
-        .and_then(|probe| probe.kind.parse().ok())
+        .and_then(|Object(probe)| probe.kind.parse().ok())
 }
