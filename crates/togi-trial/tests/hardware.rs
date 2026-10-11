@@ -14,6 +14,7 @@ mod hardware {
     use std::time::{Duration, Instant};
 
     use togi_backend::{Backend, Error, FileName, Input, Line, Plan, Ready};
+    use togi_hostlock::{DEFAULT_PATH, HostLock, Policy};
     use togi_machine::{
         CancellationToken, CcdId, Condition, CoreId, CoreInfo, CpuId, Regime, Reporter, Running,
         Signal, Stopped, TrialSpec, Trials, Workload, pick_workload,
@@ -107,9 +108,14 @@ mod hardware {
         }
     }
 
+    static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// The staged helper and trial directory, with the host lock held until cleanup has finished.
     struct Staged {
         root: PathBuf,
         exe: PathBuf,
+        _lock: HostLock,
+        _serial: std::sync::MutexGuard<'static, ()>,
     }
 
     impl Staged {
@@ -118,13 +124,22 @@ mod hardware {
                 rustix::process::geteuid().is_root(),
                 "hardware tests run as root under the host lock"
             );
+            let serial = SERIAL
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let lock = HostLock::acquire(Path::new(DEFAULT_PATH), Policy::Host).unwrap();
             let root = PathBuf::from(format!("/run/togi-trial-hardware-{}", std::process::id()));
             std::fs::create_dir_all(&root).unwrap();
             std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o755)).unwrap();
             let exe = root.join("helper");
             std::fs::copy(std::env::current_exe().unwrap(), &exe).unwrap();
             std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o555)).unwrap();
-            Self { root, exe }
+            Self {
+                root,
+                exe,
+                _lock: lock,
+                _serial: serial,
+            }
         }
     }
 

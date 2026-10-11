@@ -114,11 +114,9 @@ impl Runner {
 
     /// The preflight check: a scope pinned to CPU 0 is created and ends, within 30 s.
     pub fn probe_scope(&self) -> Result<String, Error> {
-        self.ask(
-            "the scope probe",
-            self.timing.probe + Duration::from_secs(5),
-            |reply| Command::Probe { reply },
-        )?
+        self.ask("the scope probe", self.timing.probe_bound(), |reply| {
+            Command::Probe { reply }
+        })?
     }
 }
 
@@ -130,7 +128,7 @@ impl Drop for Runner {
 
 impl Trials for Runner {
     fn sweep(&mut self, cancel: &CancellationToken) -> Result<Swept, togi_machine::Error> {
-        let bound = self.timing.teardown + Duration::from_secs(5);
+        let bound = self.timing.sweep_bound();
         self.ask("the sweep", bound, |reply| Command::Sweep {
             cancel: cancel.clone(),
             reply,
@@ -151,11 +149,7 @@ impl Trials for Runner {
             });
         }
         let instances = u32::try_from(spec.cores.len()).unwrap_or(u32::MAX).max(1);
-        let bound = spec.duration
-            + Duration::from_secs(30) * instances
-            + self.timing.stop_grace
-            + Duration::from_secs(20)
-            + self.timing.teardown;
+        let bound = self.timing.start_bound(instances);
         let (reply, answer) = sync_channel(1);
         let command = Command::Start {
             cancel: cancel.clone(),
@@ -227,11 +221,12 @@ pub struct Trial {
 }
 
 impl Trial {
-    fn new(handle: Handle, timing: &Timing) -> Self {
+    pub(crate) fn new(handle: Handle, timing: &Timing) -> Self {
         let Handle {
             commands,
             events,
             started,
+            duration,
             cancelled,
             registration,
         } = handle;
@@ -242,12 +237,14 @@ impl Trial {
             cancelled,
             _registration: registration,
             ended: None,
-            deadline: Instant::now()
-                + timing.teardown
-                + timing.writer_join
-                + Duration::from_secs(5),
-            stop_bound: timing.teardown + Duration::from_secs(2),
+            deadline: Instant::now() + timing.wait_bound(duration),
+            stop_bound: timing.stop_bound(),
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn wait_deadline(&self) -> Instant {
+        self.deadline
     }
 
     /// Waits for the supervisor's end, handing reports to `report`; false when it never came.

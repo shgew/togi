@@ -734,6 +734,7 @@ dependencies = [
  "thiserror",
  "togi-backend",
  "togi-command",
+ "togi-hostlock",
  "togi-machine",
  "togi-trialfiles",
  "tokio",
