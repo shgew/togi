@@ -322,6 +322,12 @@ fn repeated_core_probe_is_decided_when_the_hunt_starts() {
         u32::try_from(start.candidates.len()).unwrap()
     );
     assert!(cause.contains(&older) && cause.contains(&newer));
+    let reason = group.reason.as_deref().unwrap();
+    assert!(
+        reason.contains("two parked failures in this class followed one-count backoffs on core 02")
+    );
+    assert!(!reason.contains("valid short trials"), "{reason}");
+    assert!(!reason.contains("test the failed duration"), "{reason}");
     j.append(group.clone().into(), &cause);
 
     carry_parked(&mut j, 1, &[0, -12, 0, 0], group.duration_s);

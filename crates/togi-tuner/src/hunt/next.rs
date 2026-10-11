@@ -168,6 +168,7 @@ impl Run {
         mut payload: HuntGroup,
         note: &[String],
         priority: &[Seq],
+        repeated: &[Seq],
     ) -> DecisionAction {
         let class = hunt.class_at(Secs::new(
             NonZeroU32::new(payload.duration_s).unwrap_or(NonZeroU32::MIN),
@@ -207,6 +208,7 @@ impl Run {
             );
             cause.extend(priority.iter().copied());
         }
+        cause.extend(repeated.iter().copied());
         for text in note {
             reason.push_str(text);
         }
@@ -239,15 +241,15 @@ impl Run {
             &[]
         };
         let mut note = Vec::new();
-        let mut priority_seqs = priority.to_vec();
+        let mut repeated_seqs = Vec::new();
         if let (GroupStage::Repeated, Some(repeated)) = (group.stage, hunt.repeated) {
             note.push(format!(
                 "; two parked failures in this class followed one-count backoffs on core {:02}, so probe that core first",
                 repeated.core.get()
             ));
-            priority_seqs.extend(repeated.failures);
+            repeated_seqs.extend(repeated.failures);
         }
-        self.planned(hunt, payload, &note, &priority_seqs)
+        self.planned(hunt, payload, &note, priority, &repeated_seqs)
     }
 
     fn probe_results(&self, hunt: &Active) -> Vec<ProbeResult> {
@@ -302,7 +304,7 @@ impl Run {
                 probe.member.get()
             )),
         };
-        self.planned(hunt, payload, &[], &[])
+        self.planned(hunt, payload, &[], &[], &[])
     }
 
     fn hunt_end_action(&self, hunt: &Active, end: End) -> Action {
