@@ -1,3 +1,4 @@
+use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError, Weak};
 use std::thread::{self, ThreadId};
@@ -137,13 +138,21 @@ impl CancellationToken {
         drop(registered_children);
         let slots = std::mem::take(&mut locked(&self.state.callbacks).slots);
         self.state.changed.notify_all();
+        let mut panic = None;
         for (_, slot) in &slots {
-            run(slot);
+            if let Err(payload) = catch_unwind(AssertUnwindSafe(|| run(slot))) {
+                panic.get_or_insert(payload);
+            }
         }
         for child in children {
             if let Some(state) = child.upgrade() {
-                Self { state }.cancel();
+                if let Err(payload) = catch_unwind(AssertUnwindSafe(|| Self { state }.cancel())) {
+                    panic.get_or_insert(payload);
+                }
             }
+        }
+        if let Some(payload) = panic {
+            resume_unwind(payload);
         }
     }
 

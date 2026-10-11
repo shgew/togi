@@ -441,3 +441,16 @@ fn ranking_values_survive_a_failed_read() {
     );
     assert!(matches!(partial.error, Error::Crashed));
 }
+
+#[test]
+fn a_panicking_callback_does_not_stop_later_callbacks_or_children() {
+    let token = CancellationToken::new();
+    let child = token.child_token();
+    let (count, callback) = counter();
+    let _first = token.on_cancel(|| panic!("callback failed"));
+    let _second = token.on_cancel(callback());
+    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| token.cancel()));
+    assert!(outcome.is_err());
+    assert_eq!(count.load(Ordering::SeqCst), 1);
+    assert!(child.is_cancelled());
+}
