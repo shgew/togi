@@ -5,7 +5,7 @@ use togi_journal::{AppendError, DeadEndCondition, DirError, EventKind, LookupErr
 use togi_machine::CoreId;
 
 use crate::boot::BootError;
-use crate::write::WriteFailure;
+use crate::write::{ProfileFailure, WriteFailure};
 
 /// The first failed journal append of a run. Cloning shares the original error.
 #[derive(Clone, Debug, thiserror::Error)]
@@ -81,6 +81,15 @@ pub enum SessionError {
     /// A step reported dead-end evidence, and the journal supports no dead end.
     #[error("{0} dead-end evidence reported without a recorded dead end")]
     DeadEndUnrecorded(DeadEndCondition),
+    #[error("ask whether to reset the cores of defect {defect}: {source}")]
+    Prompt {
+        defect: u32,
+        #[source]
+        source: io::Error,
+    },
+    /// A profile the run built is one it may not put on the machine, or not one of this machine.
+    #[error("put a profile on the machine: {0}")]
+    Profile(#[source] ProfileFailure),
 }
 
 impl From<BootError> for SessionError {
@@ -131,6 +140,17 @@ impl From<WriteFailure> for Flow {
             }
             WriteFailure::Journal(_) | WriteFailure::Record(_) | WriteFailure::Crashed => {
                 Self::Fatal(failure.into())
+            }
+        }
+    }
+}
+
+impl From<ProfileFailure> for Flow {
+    fn from(failure: ProfileFailure) -> Self {
+        match failure {
+            ProfileFailure::Write(failure) => failure.into(),
+            ProfileFailure::Refused(_) | ProfileFailure::Shape { .. } => {
+                Self::Fatal(SessionError::Profile(failure))
             }
         }
     }

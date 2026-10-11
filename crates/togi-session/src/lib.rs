@@ -4,11 +4,13 @@
 
 pub mod appender;
 pub mod boot;
+mod defects;
 pub mod emergency;
 pub mod error;
 pub mod evidence;
 pub mod recover;
 pub mod recovery;
+mod restore;
 pub mod session;
 mod startup;
 pub mod trial;

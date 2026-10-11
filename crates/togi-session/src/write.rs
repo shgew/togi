@@ -54,7 +54,25 @@ impl Refusal {
 /// The constraint check of `check_set`: refuses a profile that reaches a failure point or combination the tuner
 /// state holds, one the state cannot judge, or cores other than the topology's. Never reads such a profile as safe.
 pub fn refusal(state: &togi_tuner::State, after: &PerCore<TargetOffset>) -> Option<Refusal> {
-    let (Some(topology), Some(constraints)) = (state.topology(), state.constraints()) else {
+    judge(state.topology(), state.constraints(), after)
+}
+
+/// [`refusal`] against the tuner state as it stands now, for a write sequence that appends to the journal the state
+/// is folded from.
+pub fn checker(
+    state: &togi_tuner::State,
+) -> impl FnMut(&PerCore<TargetOffset>) -> Option<Refusal> + use<> {
+    let topology = state.topology().cloned();
+    let constraints = state.constraints().cloned();
+    move |after| judge(topology.as_ref(), constraints.as_ref(), after)
+}
+
+fn judge(
+    topology: Option<&togi_tuner::Topology>,
+    constraints: Option<&togi_tuner::Constraints>,
+    after: &PerCore<TargetOffset>,
+) -> Option<Refusal> {
+    let (Some(topology), Some(constraints)) = (topology, constraints) else {
         return Some(Refusal::new("the tuner state holds no standing topology"));
     };
     let profile = match togi_tuner::Profile::new(topology, *after) {
@@ -96,6 +114,7 @@ pub enum Slot {
 pub struct Hardware {
     cores: CoreSet,
     slots: PerCore<Slot>,
+    engaged: bool,
 }
 
 impl Hardware {
@@ -103,6 +122,7 @@ impl Hardware {
         Self {
             cores,
             slots: cores.iter().map(|core| (core, Slot::Unknown)).collect(),
+            engaged: false,
         }
     }
 
@@ -114,7 +134,12 @@ impl Hardware {
         self.slots.get(core)
     }
 
+    pub const fn engaged(&self) -> bool {
+        self.engaged
+    }
+
     fn observe(&mut self, core: CoreId, observed: ObservedOffset) {
+        self.engaged = true;
         let slot = TargetOffset::new(observed.0).map_or(Slot::Unknown, Slot::Known);
         self.slots.set(core, slot);
     }
@@ -159,6 +184,7 @@ impl Hardware {
                 });
             }
         }
+        self.engaged = true;
         Ok(CheckedWrite {
             hardware: self,
             command: SmuCommand::Set {
@@ -170,6 +196,7 @@ impl Hardware {
 
     /// A write of 0 to every core. Nothing to check: 0 reaches no failure point or combination.
     pub fn zero_all(&mut self) -> CheckedWrite<'_> {
+        self.engaged = true;
         CheckedWrite {
             hardware: self,
             command: SmuCommand::SetAll {
@@ -389,6 +416,7 @@ pub fn read_all(
         let observed = match smu.offset(core) {
             Ok(observed) => observed,
             Err(error) => {
+                hardware.engaged = true;
                 hardware.slots.set(core, Slot::Unknown);
                 return Err(failed(
                     appender,

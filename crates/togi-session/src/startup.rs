@@ -4,11 +4,12 @@
 use std::time::Duration;
 
 use togi_journal::{DeadEnd, DeadEndCondition, Payload, PreflightCheck, Seq};
-use togi_machine::{CancellationToken, Error};
+use togi_machine::{CancellationToken, Error, PerCore, TargetOffset};
 
 use crate::emergency::SweepCleared;
-use crate::error::SessionError;
-use crate::session::{Control, Outcome, Session, StopReason};
+use crate::error::{SessionError, Step};
+use crate::session::{Control, Outcome, Session, StopReason, Visit};
+use crate::write;
 
 const WATCHDOG_WAIT: Duration = Duration::from_secs(30);
 const WATCHDOG_STEP: Duration = Duration::from_secs(1);
@@ -142,6 +143,46 @@ impl Session {
                 self.dead_end(dead_end, &[seq]).map(Control::Stop)
             }
         }
+    }
+}
+
+impl Session {
+    /// On a boot a run already used: reads the offsets that run left, puts the baseline back as bounded by `held`
+    /// and only then lets the boot's cancellation count. A failed read or write is SMU evidence.
+    pub fn reconcile(&mut self, held: &PerCore<TargetOffset>) -> Outcome {
+        if !self.unreconciled() {
+            return Ok(Control::Continue);
+        }
+        let step = self.read_back_and_restore(held).map(|()| Control::Continue);
+        let control = self.settle(step)?;
+        if control == Control::Continue {
+            self.visit = Visit::Same { reconciled: true };
+        }
+        Ok(control)
+    }
+
+    fn read_back_and_restore(&mut self, held: &PerCore<TargetOffset>) -> Step<()> {
+        write::read_all(&mut self.appender, &mut *self.smu, &mut self.hardware, &[])?;
+        self.restore(held)
+    }
+
+    /// What the journal holds that ends the run before it starts: a dead end pending from before, a defect that needs
+    /// an answer, a dead end its evidence supports, and a stop that was asked for while the earlier boots' evidence
+    /// was read.
+    pub fn inspect(&mut self) -> Outcome {
+        if let Some(stop) = self.resume_dead_end()? {
+            return Ok(Control::Stop(stop));
+        }
+        if let Some(stop) = self.check_defects()? {
+            return Ok(Control::Stop(stop));
+        }
+        if let Some(stop) = self.check_dead_end()? {
+            return Ok(Control::Stop(stop));
+        }
+        if self.recovery_cancelled {
+            return Ok(self.shut_down(StopReason::Signal));
+        }
+        Ok(Control::Continue)
     }
 }
 

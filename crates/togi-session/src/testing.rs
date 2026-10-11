@@ -7,10 +7,12 @@ use jiff::tz::TimeZone;
 use togi_config::Config;
 use togi_defect::Entry;
 use togi_journal::{
-    Build, Event, MemFs, Payload, SCHEMA, Seq, SessionStart, StateDir, fs::Fault, fs::Op,
+    Build, Event, MemFs, Payload, SCHEMA, Seq, SessionBaseline, SessionStart, StateDir, fs::Fault,
+    fs::Op,
 };
 use togi_machine::{
-    BootId, CancellationToken, CoreId, CoreSet, Machine, Smu, SmuValidated, Stopped, TargetOffset,
+    BootId, CancellationToken, Condition, CoreId, CoreSet, Machine, ObservedOffset, PerCore, Smu,
+    SmuValidated, Stopped, TargetOffset,
 };
 use togi_machine::{Error, Partial, Running, Swept, TrialSpec, Trials};
 use togi_render::Renderer;
@@ -22,8 +24,8 @@ use crate::appender::{Appender, Folds};
 use crate::boot::BootHandoff;
 use crate::emergency::SweepCleared;
 use crate::error::AppendFailure;
-use crate::session::{ConfigSource, RunInput, Session, StopPolicy};
-use crate::write::Hardware;
+use crate::session::{ConfigSource, Control, RunInput, Session, StopPolicy};
+use crate::write::{Hardware, ProfileRecord, ProfileRequest, apply_profile, checker};
 
 pub(crate) struct Rig {
     pub sim: Simulator,
@@ -344,4 +346,55 @@ impl Trials for SweepFails {
     ) -> Box<dyn Iterator<Item = togi_machine::TrialConditions> + 'a> {
         self.0.samples(id)
     }
+}
+
+pub(crate) fn offsets(values: &[i64]) -> PerCore<TargetOffset> {
+    (0..)
+        .zip(values)
+        .map(|(n, &value)| (core(n), target(value)))
+        .collect()
+}
+
+pub(crate) fn observed(values: &[i64]) -> PerCore<ObservedOffset> {
+    (0..)
+        .zip(values)
+        .map(|(n, &value)| (core(n), ObservedOffset(value)))
+        .collect()
+}
+
+pub(crate) fn recorded_baseline(session: &mut Session, values: &[i64]) {
+    session
+        .appender
+        .append(
+            Payload::SessionBaseline(SessionBaseline {
+                offsets: observed(values),
+            }),
+            &[],
+        )
+        .unwrap();
+}
+
+pub(crate) fn put(session: &mut Session, values: &[i64]) {
+    let target = offsets(values);
+    let mut check = checker(session.appender.tuner());
+    apply_profile(
+        &mut session.appender,
+        &mut *session.smu,
+        session.stopped.as_ref().unwrap(),
+        &mut session.hardware,
+        ProfileRequest {
+            target: &target,
+            causes: &[],
+            record: ProfileRecord::Applied(Condition::Together),
+        },
+        &mut check,
+    )
+    .unwrap();
+}
+
+pub(crate) fn swept(bench: &Bench) -> Session {
+    let mut session = bench.open();
+    assert_eq!(session.start().unwrap(), Control::Continue);
+    assert_eq!(session.sweep().unwrap(), Control::Continue);
+    session
 }
