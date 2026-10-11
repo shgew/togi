@@ -361,6 +361,30 @@
                   done
                   touch "$out"
                 '';
+            gocompat-vectors-sort =
+              pkgs.runCommand "togi-gocompat-vectors-sort"
+                {
+                  nativeBuildInputs = [ pkgs.go_1_27 ];
+                  src = lib.fileset.toSource {
+                    root = ./.;
+                    fileset = lib.fileset.unions [
+                      ./go.mod
+                      ./go.sum
+                      ./cmd
+                      ./internal
+                      ./tools
+                      ./crates/togi-gocompat/testdata
+                    ];
+                  };
+                }
+                ''
+                  cd "$src"
+                  export HOME=$TMPDIR GOCACHE=$TMPDIR/go-cache GOPROXY=off GOTOOLCHAIN=local CGO_ENABLED=0
+                  mkdir $TMPDIR/vectors
+                  go run ./tools/gocompat-vectors sort $TMPDIR/vectors
+                  cmp $TMPDIR/vectors/sort.txt crates/togi-gocompat/testdata/sort.txt
+                  touch "$out"
+                '';
             # Regenerates the math vectors from Go and requires them equal to the committed ones.
             # x86_64-linux writes all three files, running the arm64 build under qemu-user;
             # aarch64-darwin runs the arm64 paths natively and compares math-arm64.txt.

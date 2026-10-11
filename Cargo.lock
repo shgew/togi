@@ -610,6 +610,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "togi-requests"
+version = "0.0.0"
+dependencies = [
+ "togi-gocompat",
+ "togi-machine",
+]
+
+[[package]]
 name = "togi-trialfiles"
 version = "0.0.0"
 dependencies = [
