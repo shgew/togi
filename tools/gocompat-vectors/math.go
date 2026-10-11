@@ -238,6 +238,68 @@ func newRand(stream uint64) *rand.Rand {
 	return rand.New(rand.NewPCG(mathSeed, stream))
 }
 
+// goVF is vf from Go's src/math/all_test.go (lines 14-25), copied verbatim.
+var goVF = []float64{
+	4.9790119248836735e+00,
+	7.7388724745781045e+00,
+	-2.7688005719200159e-01,
+	-5.0106036182710749e+00,
+	9.6362937071984173e+00,
+	2.9263772392439646e+00,
+	5.2290834314593066e+00,
+	2.7279399104360102e+00,
+	1.8253080916808550e+00,
+	-8.6859247685756013e+00,
+}
+
+// goTestExp adds the inputs of Go's TestExp (all_test.go lines 2438-2454):
+// vf[i] and vfexpSC (lines 1058-1072).
+func (s *inputSet) goTestExp() {
+	s.add(goVF...)
+	s.add(math.Inf(-1), -2000, 2000, math.Inf(1), math.NaN(),
+		7.097827128933841e+02, // smallest float64 that overflows Exp(x)
+		1.48852223e+09,        // Issue 18912
+		1.4885222e+09,
+		1,
+		3.725290298461915e-09, // near zero
+		-740,                  // denormal
+	)
+}
+
+// goTestExpm1 adds the inputs of Go's TestExpm1 (all_test.go lines 2456-2474):
+// vf[i]/100, vf[i]*10 and vfexpm1SC (lines 1113-1121).
+func (s *inputSet) goTestExpm1() {
+	for _, v := range goVF {
+		s.add(v / 100)
+	}
+	for _, v := range goVF {
+		s.add(v * 10)
+	}
+	s.add(math.Inf(-1), -710, math.Copysign(0, -1), 0, 710, math.Inf(1), math.NaN())
+}
+
+// goTestLog adds the inputs of Go's TestLog (all_test.go lines 2771-2786):
+// Abs(vf[i]), 10 and vflogSC (lines 1537-1545).
+func (s *inputSet) goTestLog() {
+	for _, v := range goVF {
+		s.add(math.Abs(v))
+	}
+	s.add(10)
+	s.add(math.Inf(-1), -math.Pi, math.Copysign(0, -1), 0, 1, math.Inf(1), math.NaN())
+}
+
+// goTestLog1p adds the inputs of Go's TestLog1p (all_test.go lines 2823-2839):
+// vf[i]/100, 9 and the first len(vflogSC) = 7 entries of vflog1pSC (lines
+// 1569-1578), which is all the Go test iterates; its eighth entry,
+// 4503599627370496.5, is never run by Go and is left out.
+func (s *inputSet) goTestLog1p() {
+	for _, v := range goVF {
+		s.add(v / 100)
+	}
+	s.add(9)
+	s.add(math.Inf(-1), -math.Pi, -1, math.Copysign(0, -1), 0, math.Inf(1), math.NaN())
+}
+
 // The ranges below come from the Go code that calls these functions:
 // Exp(LogRate + Effect + Slope*(depth/size-25)) in internal/sim/hazard.go and
 // Exp(-|x|) in internal/sim/shared_voltage.go; Expm1(-hazard) in
@@ -276,6 +338,7 @@ func expInputs() []float64 {
 	s.uniform(r, -745.2, 709.8, 1500)
 	s.uniform(r, -30, 12, 1500)
 	s.logUniform(r, -1074, 9, 1000, true)
+	s.goTestExp()
 	return s.xs
 }
 
@@ -304,6 +367,7 @@ func expm1Inputs() []float64 {
 	s.uniform(r, -45, 45, 1000)
 	s.uniform(r, 45, 709.8, 300)
 	s.logUniform(r, -1074, 9, 1000, true)
+	s.goTestExpm1()
 	return s.xs
 }
 
@@ -331,6 +395,7 @@ func logInputs() []float64 {
 	}
 	s.logUniform(r, -1074, 1023, 1500, false)
 	s.logUniform(r, -45, 25, 1500, false)
+	s.goTestLog()
 	return s.xs
 }
 
@@ -365,5 +430,6 @@ func log1pInputs() []float64 {
 	s.uniform(r, 0, 2, 500)
 	s.logUniform(r, -1074, 1023, 1500, true)
 	s.logUniform(r, -60, 60, 1000, false)
+	s.goTestLog1p()
 	return s.xs
 }

@@ -51,54 +51,6 @@ fn unknown(func: &str) -> ! {
     panic!("unknown function {func}")
 }
 
-#[cfg(target_arch = "x86_64")]
-mod x86 {
-    use super::{arm64, go};
-
-    #[target_feature(enable = "fma")]
-    pub(super) fn arm64_exp(x: f64) -> f64 {
-        arm64::exp(x)
-    }
-
-    #[target_feature(enable = "fma")]
-    pub(super) fn arm64_expm1(x: f64) -> f64 {
-        go::expm1::<true>(x)
-    }
-
-    #[target_feature(enable = "fma")]
-    pub(super) fn arm64_log(x: f64) -> f64 {
-        go::log::<true>(x)
-    }
-
-    #[target_feature(enable = "fma")]
-    pub(super) fn arm64_log1p(x: f64) -> f64 {
-        go::log1p::<true>(x)
-    }
-}
-
-#[cfg(target_arch = "x86_64")]
-#[expect(
-    unsafe_code,
-    reason = "calls FMA-compiled code after the feature check"
-)]
-fn arm64_eval(func: &str, x: f64) -> f64 {
-    assert!(
-        is_x86_feature_detected!("fma"),
-        "running the arm64 port on x86_64 needs FMA"
-    );
-    // SAFETY: the CPU supports FMA, checked above.
-    unsafe {
-        match func {
-            "exp" => x86::arm64_exp(x),
-            "expm1" => x86::arm64_expm1(x),
-            "log" => x86::arm64_log(x),
-            "log1p" => x86::arm64_log1p(x),
-            other => unknown(other),
-        }
-    }
-}
-
-#[cfg(target_arch = "aarch64")]
 fn arm64_eval(func: &str, x: f64) -> f64 {
     match func {
         "exp" => arm64::exp(x),
@@ -126,17 +78,8 @@ mod amd64_vectors {
     const AMD64_FMA: &str = include_str!("../../testdata/math-amd64-fma.txt");
     const AMD64_NOFMA: &str = include_str!("../../testdata/math-amd64-nofma.txt");
 
-    #[expect(
-        unsafe_code,
-        reason = "calls FMA-compiled code after the feature check"
-    )]
     fn fma_exp(x: f64) -> f64 {
-        assert!(
-            amd64::use_fma(),
-            "the FMA branch of archExp needs a CPU with AVX and FMA"
-        );
-        // SAFETY: the CPU supports FMA, checked above.
-        unsafe { amd64::exp_fma(x) }
+        amd64::exp_fma(x)
     }
 
     #[test]
@@ -200,4 +143,214 @@ fn dispatch_is_the_arm64_path() {
         "log1p" => super::log1p(x),
         other => unknown(other),
     });
+}
+
+/// `vf` from Go's `src/math/all_test.go`, lines 14-25.
+#[expect(
+    clippy::excessive_precision,
+    reason = "the literals are Go's own, copied verbatim"
+)]
+const GO_VF: [f64; 10] = [
+    4.979_011_924_883_673_5e+00,
+    7.738_872_474_578_104_5e+00,
+    -2.768_800_571_920_015_9e-01,
+    -5.010_603_618_271_074_9e+00,
+    9.636_293_707_198_417_3e+00,
+    2.926_377_239_243_964_6e+00,
+    5.229_083_431_459_306_6e+00,
+    2.727_939_910_436_010_2e+00,
+    1.825_308_091_680_855e+00,
+    -8.685_924_768_575_601_3e+00,
+];
+
+/// Go's `NaN()`, whose bits differ from `f64::NAN`.
+fn go_nan() -> f64 {
+    f64::from_bits(0x7ff8_0000_0000_0001)
+}
+
+/// The inputs of Go's `TestExp` (`all_test.go` lines 2438-2454): `vf[i]` and `vfexpSC`
+/// (lines 1058-1072). Go's `testExp` also runs the pure-Go `ExpGo`, which no path of
+/// this crate runs.
+fn go_test_exp_inputs() -> Vec<f64> {
+    let mut xs = GO_VF.to_vec();
+    xs.extend([
+        f64::NEG_INFINITY,
+        -2000.0,
+        2000.0,
+        f64::INFINITY,
+        go_nan(),
+        7.097_827_128_933_841e+02,
+        1.488_522_23e+09,
+        1.488_522_2e+09,
+        1.0,
+        3.725_290_298_461_915e-09,
+        -740.0,
+    ]);
+    xs
+}
+
+/// The inputs of Go's `TestExpm1` (lines 2456-2474): `vf[i]/100`, `vf[i]*10` and
+/// `vfexpm1SC` (lines 1113-1121).
+fn go_test_expm1_inputs() -> Vec<f64> {
+    let mut xs: Vec<f64> = GO_VF.iter().map(|v| v / 100.0).collect();
+    xs.extend(GO_VF.iter().map(|v| v * 10.0));
+    xs.extend([
+        f64::NEG_INFINITY,
+        -710.0,
+        -0.0,
+        0.0,
+        710.0,
+        f64::INFINITY,
+        go_nan(),
+    ]);
+    xs
+}
+
+/// The inputs of Go's `TestLog` (lines 2771-2786): `Abs(vf[i])`, `10` and `vflogSC`
+/// (lines 1537-1545).
+fn go_test_log_inputs() -> Vec<f64> {
+    let mut xs: Vec<f64> = GO_VF.iter().map(|v| v.abs()).collect();
+    xs.push(10.0);
+    xs.extend([
+        f64::NEG_INFINITY,
+        -std::f64::consts::PI,
+        -0.0,
+        0.0,
+        1.0,
+        f64::INFINITY,
+        go_nan(),
+    ]);
+    xs
+}
+
+/// The inputs of Go's `TestLog1p` (lines 2823-2839): `vf[i]/100`, `9` and the first
+/// `len(vflogSC)` = 7 entries of `vflog1pSC` (lines 1569-1578), which is all Go iterates.
+fn go_test_log1p_inputs() -> Vec<f64> {
+    let mut xs: Vec<f64> = GO_VF.iter().map(|v| v / 100.0).collect();
+    xs.push(9.0);
+    xs.extend([
+        f64::NEG_INFINITY,
+        -std::f64::consts::PI,
+        -1.0,
+        -0.0,
+        0.0,
+        f64::INFINITY,
+        go_nan(),
+    ]);
+    xs
+}
+
+/// Requires every input to be in the vectors for `func` and `eval` to return the
+/// vector's bits for it.
+fn check_go_test(
+    name: &str,
+    vectors: &[Vector],
+    func: &str,
+    inputs: &[f64],
+    eval: impl Fn(f64) -> f64,
+) {
+    let mut failures = Vec::new();
+    for &x in inputs {
+        let bits = x.to_bits();
+        match vectors.iter().find(|v| v.func == func && v.input == bits) {
+            None => failures.push(format!("{func} {bits:016x}: not in the vectors")),
+            Some(v) => {
+                let got = eval(x).to_bits();
+                if got != v.want {
+                    failures.push(format!(
+                        "{func} {bits:016x}: got {got:016x}, want {:016x}",
+                        v.want
+                    ));
+                }
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{name}: {failures:#?}");
+}
+
+#[test]
+fn go_test_exp() {
+    let inputs = go_test_exp_inputs();
+    check_go_test("arm64", &parse(ARM64), "exp", &inputs, arm64::exp);
+    #[cfg(target_arch = "x86_64")]
+    {
+        use crate::math::amd64;
+        check_go_test(
+            "amd64 fma",
+            &parse(include_str!("../../testdata/math-amd64-fma.txt")),
+            "exp",
+            &inputs,
+            amd64::exp_fma,
+        );
+        check_go_test(
+            "amd64 nofma",
+            &parse(include_str!("../../testdata/math-amd64-nofma.txt")),
+            "exp",
+            &inputs,
+            amd64::exp_plain,
+        );
+    }
+}
+
+#[test]
+fn go_test_expm1() {
+    let inputs = go_test_expm1_inputs();
+    check_go_test("arm64", &parse(ARM64), "expm1", &inputs, go::expm1::<true>);
+    #[cfg(target_arch = "x86_64")]
+    check_go_test(
+        "amd64",
+        &parse(include_str!("../../testdata/math-amd64-fma.txt")),
+        "expm1",
+        &inputs,
+        go::expm1::<false>,
+    );
+}
+
+#[test]
+fn go_test_log() {
+    let inputs = go_test_log_inputs();
+    check_go_test("arm64", &parse(ARM64), "log", &inputs, go::log::<true>);
+    assert_eq!(
+        go::log::<true>(10.0).to_bits(),
+        std::f64::consts::LN_10.to_bits()
+    );
+    #[cfg(target_arch = "x86_64")]
+    {
+        use crate::math::amd64;
+        check_go_test(
+            "amd64",
+            &parse(include_str!("../../testdata/math-amd64-fma.txt")),
+            "log",
+            &inputs,
+            amd64::log,
+        );
+        assert_eq!(
+            amd64::log(10.0).to_bits(),
+            std::f64::consts::LN_10.to_bits()
+        );
+    }
+}
+
+#[test]
+fn go_test_log1p() {
+    let inputs = go_test_log1p_inputs();
+    check_go_test("arm64", &parse(ARM64), "log1p", &inputs, go::log1p::<true>);
+    assert_eq!(
+        go::log1p::<true>(9.0).to_bits(),
+        std::f64::consts::LN_10.to_bits()
+    );
+    #[cfg(target_arch = "x86_64")]
+    {
+        check_go_test(
+            "amd64",
+            &parse(include_str!("../../testdata/math-amd64-fma.txt")),
+            "log1p",
+            &inputs,
+            go::log1p::<false>,
+        );
+        assert_eq!(
+            go::log1p::<false>(9.0).to_bits(),
+            std::f64::consts::LN_10.to_bits()
+        );
+    }
 }

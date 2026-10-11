@@ -12,29 +12,11 @@
 //! | `log` | `archLog`, assembly | pure Go, fused |
 //! | `log1p` | pure Go, no fusion | pure Go, fused |
 //!
-//! The platform libm is never called: fused operations go through `f64::mul_add`
-//! inside code compiled for the hardware instruction.
+//! No transcendental libm function is called. Fused operations go through
+//! `f64::mul_add`, which is correctly rounded by contract, so its bits do not depend
+//! on whether it becomes the FMA instruction or a call to libm's `fma`.
 
-/// Fused multiply-add, `a * b + c` rounded once, as the hardware instruction.
-///
-/// On `x86_64` this is the FMA instruction, never the platform libm, so it must only run
-/// in code compiled with the `fma` target feature: `amd64::exp_fma` and the test wrappers
-/// that run the arm64 port. Everything that reaches it with fusion on is `inline(always)`.
-#[cfg(target_arch = "x86_64")]
-#[inline(always)]
-#[expect(unsafe_code, reason = "the FMA intrinsic needs the target feature")]
-fn fma(a: f64, b: f64, c: f64) -> f64 {
-    use std::arch::x86_64::{_mm_cvtsd_f64, _mm_fmadd_sd, _mm_set_sd};
-    // SAFETY: every caller is inlined into a function compiled with the fma target feature.
-    unsafe { _mm_cvtsd_f64(_mm_fmadd_sd(_mm_set_sd(a), _mm_set_sd(b), _mm_set_sd(c))) }
-}
-
-#[cfg(target_arch = "aarch64")]
-#[inline(always)]
-#[expect(
-    clippy::inline_always,
-    reason = "keeps the helper out of call overhead like the instruction it names"
-)]
+/// Fused multiply-add, `a * b + c` rounded once, as Go's fused instructions round it.
 fn fma(a: f64, b: f64, c: f64) -> f64 {
     a.mul_add(b, c)
 }

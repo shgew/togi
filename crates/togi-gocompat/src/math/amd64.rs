@@ -23,20 +23,9 @@ pub(super) fn use_fma() -> bool {
 }
 
 pub(super) fn exp(x: f64) -> f64 {
-    if use_fma() {
-        exp_fma_checked(x)
-    } else {
-        exp_plain(x)
-    }
+    if use_fma() { exp_fma(x) } else { exp_plain(x) }
 }
 
-#[expect(unsafe_code, reason = "calls the FMA variant after the run-time check")]
-fn exp_fma_checked(x: f64) -> f64 {
-    // SAFETY: the caller has checked that the CPU supports FMA.
-    unsafe { exp_fma(x) }
-}
-
-#[target_feature(enable = "fma")]
 pub(super) fn exp_fma(x: f64) -> f64 {
     exp_impl::<true>(x)
 }
