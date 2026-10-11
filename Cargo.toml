@@ -25,6 +25,7 @@ tempfile = "3"
 test-case = "3"
 thiserror = "2"
 togi-backend = { path = "crates/togi-backend", version = "0.0.0" }
+togi-command = { path = "crates/togi-command", version = "0.0.0" }
 togi-config = { path = "crates/togi-config", version = "0.0.0" }
 togi-hostlock = { path = "crates/togi-hostlock", version = "0.0.0" }
 togi-journal = { path = "crates/togi-journal", version = "0.0.0" }
