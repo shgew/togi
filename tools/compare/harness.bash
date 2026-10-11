@@ -83,12 +83,13 @@ expect-one() {
     rm -rf "$tmp"
 }
 
-# Every journal the manifests list has expected output, and nothing else does.
+# Every journal the manifests list has both expected outputs, and no other file is in the expected output.
 coverage() {
-    local want have
+    local want have files
     want=$(sorted_ids | cut -f1)
-    have=$(cd "$EXPECTED" && find . -name state.json -printf '%h\n' | sed 's|^\./||' | LC_ALL=C sort)
-    [[ $want == "$have" ]] || { echo "check: expected output and manifests disagree:" >&2; diff <(echo "$want") <(echo "$have") >&2 || true; return 1; }
+    files=$(echo "$want" | awk '{ print $0 "/encoded.jsonl.zst"; print $0 "/state.json" }' | LC_ALL=C sort)
+    have=$(cd "$EXPECTED" && find . ! -type d -printf '%P\n' | LC_ALL=C sort)
+    [[ $files == "$have" ]] || { echo "check: expected output and manifests disagree:" >&2; diff <(echo "$files") <(echo "$have") >&2 || true; return 1; }
     have=$(cd "$CORPUS/sessions" && find . -name events.jsonl.zst -printf '%h\n' | sed 's|^\./|suite/|' | LC_ALL=C sort)
     [[ $(echo "$want" | grep '^suite/') == "$have" ]] || { echo "check: corpus and suite manifest disagree:" >&2; diff <(echo "$want" | grep '^suite/') <(echo "$have") >&2 || true; return 1; }
     local scenario split seed machine flags
@@ -106,9 +107,14 @@ check() {
     local selected
     selected=$(sorted_ids | awk -F'\t' -v n="${HARNESS_SHARDS:-1}" -v i="${HARNESS_SHARD:-0}" -v sel="${HARNESS_SELECT:-}" '(NR - 1) % n == i && (sel == "" || $1 ~ sel)')
     [[ -n $selected ]] || { echo "check: selection is empty" >&2; return 1; }
-    local failed
-    failed=$(printf '%s\n' "$selected" | xargs -d '\n' -P "$jobs" -n1 "$self" check-one | LC_ALL=C sort || true)
-    [[ -z $failed ]] || { printf '%s\n' "$failed" >&2; return 1; }
+    # A worker that stops before it compares, a failed decompression for example, prints no FAIL line: its exit status
+    # is the only trace, and it fails the check apart from the FAIL lines.
+    local failed status=0
+    failed=$(printf '%s\n' "$selected" | xargs -d '\n' -P "$jobs" -n1 "$self" check-one) || status=$?
+    failed=$(LC_ALL=C sort <<<"$failed")
+    [[ -z $failed ]] || printf '%s\n' "$failed" >&2
+    ((status == 0)) || echo "check: a comparison worker failed" >&2
+    [[ -z $failed && $status == 0 ]] || return 1
     echo "compared: $(echo "$selected" | wc -l) journals"
 }
 

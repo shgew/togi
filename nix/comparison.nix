@@ -153,19 +153,44 @@ in
           FAIL fixture/internal/tuner/testdata/hunt-live-failure-causes.jsonl: state.json differs
           FAIL fixture/tools/stats/testdata/recovered-state/events.jsonl: subject wrote no encoded.jsonl or state.json
           EOF
+          # Controls of the driver's own checks run the unmodified Go subject, so that only the driver can fail, and
+          # each asserts its diagnostic on stderr, not just a non-zero exit.
+          go=${compare}/bin/compare
+          control() {
+            local what=$1 want=$2
+            shift 2
+            if env "$@" harness check 2>err; then
+              echo "negative control: $what went undetected" >&2
+              exit 1
+            fi
+            grep -qF -- "$want" err || {
+              echo "negative control: $what failed without '$want':" >&2
+              cat err >&2
+              exit 1
+            }
+          }
           cp -rs ${expected} extra
           chmod -R +w extra
           mkdir -p extra/suite/bogus/dev-1
           touch extra/suite/bogus/dev-1/state.json
-          if EXPECTED=$PWD/extra harness check 2>/dev/null; then
-            echo 'negative control: an extra expected journal went undetected' >&2
-            exit 1
-          fi
-          rm -r extra/suite/bogus extra/fixture/internal/defect/testdata/power-off.jsonl
-          if EXPECTED=$PWD/extra harness check 2>/dev/null; then
-            echo 'negative control: a missing expected journal went undetected' >&2
-            exit 1
-          fi
+          control 'an extra expected journal with only state.json' 'suite/bogus/dev-1/state.json' \
+            SUBJECT=$go EXPECTED=$PWD/extra
+          rm extra/suite/bogus/dev-1/state.json
+          touch extra/suite/bogus/dev-1/encoded.jsonl.zst
+          control 'an extra expected journal with only encoded.jsonl.zst' 'suite/bogus/dev-1/encoded.jsonl.zst' \
+            SUBJECT=$go EXPECTED=$PWD/extra
+          rm -r extra/suite/bogus
+          rm extra/fixture/internal/defect/testdata/power-off.jsonl/encoded.jsonl.zst
+          control 'a journal without encoded.jsonl.zst that the selection leaves out' 'fixture/internal/defect/testdata/power-off.jsonl/encoded.jsonl.zst' \
+            SUBJECT=$go EXPECTED=$PWD/extra HARNESS_SELECT='^fixture/cmd/togi/testdata/events[.]jsonl$'
+          rm -r extra/fixture/internal/defect/testdata/power-off.jsonl
+          control 'a missing expected journal' 'fixture/internal/defect/testdata/power-off.jsonl/state.json' \
+            SUBJECT=$go EXPECTED=$PWD/extra
+          cp -rs ${goSource} source
+          chmod -R +w source
+          rm source/internal/defect/testdata/power-off.jsonl
+          control 'a comparison worker that failed before it compared' 'check: a comparison worker failed' \
+            SUBJECT=$go SOURCE=$PWD/source HARNESS_SELECT='^fixture/internal/defect/testdata/power-off[.]jsonl$'
         '';
   };
 }

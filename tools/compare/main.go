@@ -1,6 +1,7 @@
 // Command compare is the Go side of the comparison harness: it is the reference subject, writing what Go decodes,
 // re-encodes and projects into state.json for a journal, and it lists the bench suite's sessions and the committed
-// fixtures, goldens and inputs the manifests freeze. It is a development program and never ships.
+// fixtures, goldens and inputs (the suite file, machines, recorded facts and every other testdata file the comparisons
+// read) the manifests freeze. It is a development program and never ships.
 package main
 
 import (
@@ -26,7 +27,8 @@ const usage = `usage:
   compare suite SUITE                  print the suite's sessions: scenario, split, seed and machine
   compare fixtures ROOT                print each committed testdata JSONL file under ROOT: its kind, path and hash
   compare goldens ROOT                 print the path and hash of each golden file the comparison protects
-  compare inputs ROOT                  print the path and hash of the suite file, machines and recorded facts`
+  compare inputs ROOT                  print the path and hash of the suite file, machines and recorded facts, and of
+                                       every other file in the ported packages' testdata that no other manifest lists`
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
@@ -42,9 +44,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	case len(args) == 2 && args[0] == "fixtures":
 		err = fixtures(args[1], stdout)
 	case len(args) == 2 && args[0] == "goldens":
-		err = listFiles(args[1], stdout, goldenRoots, func(path string) bool { return strings.HasSuffix(path, ".golden") })
+		err = listFiles(args[1], stdout, goldenRoots, isGolden)
 	case len(args) == 2 && args[0] == "inputs":
-		err = listFiles(args[1], stdout, inputRoots, func(string) bool { return true })
+		err = inputs(args[1], stdout)
 	default:
 		fmt.Fprintln(stderr, usage)
 		return 2
@@ -168,9 +170,51 @@ func listSuite(path string, w io.Writer) error {
 }
 
 var (
-	goldenRoots = []string{"cmd/togi", "internal/watch", "tools/stats", "tools/bench"}
-	inputRoots  = []string{"tools/bench/suite.json", "tools/bench/machines", "tools/bench/facts"}
+	// goldenRoots are the ported packages whose .golden files the comparison protects; tools/board and tools/reviews
+	// are rewritten rather than ported, so their goldens stay out.
+	goldenRoots = []string{"cmd/togi", "internal/watch", "tools/fit", "tools/stats", "tools/bench"}
+	// inputRoots are the bench suite's own inputs.
+	inputRoots = []string{"tools/bench/suite.json", "tools/bench/machines", "tools/bench/facts"}
+	// inputPackages are the packages whose testdata the comparisons read; every file there the fixtures or goldens
+	// manifest does not list is an input.
+	inputPackages = []string{
+		"internal/carry", "internal/journal", "internal/watch", "internal/tuner", "internal/defect",
+		"cmd/togi", "tools/replay", "tools/stats",
+	}
 )
+
+// isFixture reports whether the fixtures manifest lists path: a JSONL file, plain or gzipped, in a testdata directory.
+func isFixture(path string) bool {
+	return strings.Contains(filepath.ToSlash(path), "/testdata/") &&
+		(strings.HasSuffix(path, ".jsonl") || strings.HasSuffix(path, ".jsonl.gz"))
+}
+
+// isGolden reports whether path is a golden file; the goldens manifest lists those under goldenRoots.
+func isGolden(path string) bool { return strings.HasSuffix(path, ".golden") }
+
+// inputs prints "path hash" for the bench suite's inputs and for every file under an input package's testdata that
+// neither the fixtures nor the goldens manifest lists, so each committed file the comparisons read is in exactly one
+// manifest.
+func inputs(root string, w io.Writer) error {
+	roots := slices.Clone(inputRoots)
+	for _, p := range inputPackages {
+		roots = append(roots, p+"/testdata")
+	}
+	return listFiles(root, w, roots, func(path string) bool {
+		if isFixture(path) {
+			return false
+		}
+		if !isGolden(path) {
+			return true
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return true
+		}
+		rel = filepath.ToSlash(rel)
+		return !slices.ContainsFunc(goldenRoots, func(r string) bool { return strings.HasPrefix(rel, r+"/") })
+	})
+}
 
 // listFiles prints "path hash" for each file under the roots, sorted, that the filter keeps.
 func listFiles(root string, w io.Writer, roots []string, keep func(path string) bool) error {
@@ -225,7 +269,7 @@ func fixtures(root string, w io.Writer) error {
 		if err != nil || d.IsDir() {
 			return err
 		}
-		if !strings.Contains(filepath.ToSlash(path), "/testdata/") || !strings.HasSuffix(path, ".jsonl") && !strings.HasSuffix(path, ".jsonl.gz") {
+		if !isFixture(path) {
 			return nil
 		}
 		hashed, err := hashLine(root, path)

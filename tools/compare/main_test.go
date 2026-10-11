@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -52,5 +54,57 @@ func TestStampedRestoresOnlyAZeroStampTheSourceLineHad(t *testing.T) {
 				t.Fatalf("line (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+func TestInputsListsTestdataNeitherFixturesNorGoldensCover(t *testing.T) {
+	root := t.TempDir()
+	for _, rel := range []string{
+		"tools/bench/suite.json",
+		"internal/carry/testdata/real-facts.json",
+		"internal/journal/testdata/fuzz/FuzzX/seed",
+		"internal/tuner/testdata/sub/deep/data.json",
+		"internal/carry/testdata/journal.jsonl",
+		"internal/carry/testdata/journal.jsonl.gz",
+		"internal/carry/testdata/encoded.golden",
+		"internal/watch/testdata/view.golden",
+		"internal/watch/testdata/view.txt",
+		"internal/other/testdata/data.json",
+		"internal/carry/data.json",
+		"tools/board/testdata/board.golden",
+	} {
+		path := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(rel), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Every root must exist, as in the checkout.
+	for _, r := range append(slices.Clone(inputRoots[1:]), "internal/defect/testdata", "cmd/togi/testdata", "tools/replay/testdata", "tools/stats/testdata", "internal/watch/testdata") {
+		if err := os.MkdirAll(filepath.Join(root, filepath.FromSlash(r)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var out bytes.Buffer
+	if err := inputs(root, &out); err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for line := range strings.SplitSeq(strings.TrimSuffix(out.String(), "\n"), "\n") {
+		got = append(got, strings.Split(line, "\t")[0])
+	}
+	want := []string{
+		// A golden outside goldenRoots has no other manifest, so it is an input.
+		"internal/carry/testdata/encoded.golden",
+		"internal/carry/testdata/real-facts.json",
+		"internal/journal/testdata/fuzz/FuzzX/seed",
+		"internal/tuner/testdata/sub/deep/data.json",
+		"internal/watch/testdata/view.txt",
+		"tools/bench/suite.json",
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Fatalf("inputs (-want +got):\n%s", diff)
 	}
 }
