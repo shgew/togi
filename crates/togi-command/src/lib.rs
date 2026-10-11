@@ -6,6 +6,7 @@ use std::io;
 use std::process::{ExitStatus, Stdio};
 use std::time::Duration;
 
+use rustix::io::Errno;
 use rustix::process::{Pid, Signal, kill_process_group};
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::process::Child;
@@ -135,33 +136,20 @@ pub enum Error {
     InsideRuntime { program: OsString },
 }
 
+/// The child leads its own process group and stays unreaped until the run is decided, so the group id
+/// cannot be recycled before the group is killed. Where the exit can only be observed by reaping
+/// (not Linux), a child reaped before the deadline is not signalled and only its pipes are dropped.
 pub async fn run(invocation: &Invocation, deadline: Instant) -> Result<Output, Error> {
     let timeout = deadline.saturating_duration_since(Instant::now());
-    let mut command = tokio::process::Command::new(&invocation.program);
-    command
-        .args(&invocation.args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .process_group(0);
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "the one spawn behind togi-command's bounded runner"
-    )]
-    let spawned = command.spawn();
-    let mut child = spawned.map_err(|source| Error::Spawn {
-        program: invocation.program.clone(),
-        source,
-    })?;
-    let mut group = GroupKill::of(&child);
-    let stdout = child.stdout.take();
-    let stderr = child.stderr.take();
+    let mut leader = Leader::spawn(invocation)?;
+    let stdout = leader.child.stdout.take();
+    let stderr = leader.child.stderr.take();
 
     let finished = tokio::time::timeout_at(deadline, async {
         tokio::try_join!(
             async {
-                child
-                    .wait()
+                leader
+                    .exited()
                     .await
                     .map_err(|source| invocation.io_error(Operation::Wait, source))
             },
@@ -172,8 +160,11 @@ pub async fn run(invocation: &Invocation, deadline: Instant) -> Result<Output, E
     .await;
 
     let error = match finished {
-        Ok(Ok((status, stdout, stderr))) => {
-            group.disarm();
+        Ok(Ok(((), stdout, stderr))) => {
+            let status = leader
+                .reap()
+                .await
+                .map_err(|source| invocation.io_error(Operation::Wait, source))?;
             return Ok(Output {
                 status,
                 stdout,
@@ -186,8 +177,7 @@ pub async fn run(invocation: &Invocation, deadline: Instant) -> Result<Output, E
             timeout,
         },
     };
-    group.kill();
-    reap(&mut child).await;
+    leader.kill_and_reap().await;
     Err(error)
 }
 
@@ -234,35 +224,101 @@ async fn read_capped(
     Ok(bytes)
 }
 
-async fn reap(child: &mut Child) {
-    let _ = tokio::time::timeout(REAP_GRACE, child.wait()).await;
+struct Leader {
+    child: Child,
+    group: Option<Pid>,
+    #[cfg(target_os = "linux")]
+    pidfd: tokio::io::unix::AsyncFd<std::os::fd::OwnedFd>,
 }
 
-struct GroupKill(Option<Pid>);
-
-impl GroupKill {
-    fn of(child: &Child) -> Self {
-        Self(
-            child
-                .id()
-                .and_then(|id| i32::try_from(id).ok())
-                .and_then(Pid::from_raw),
-        )
+impl Leader {
+    fn spawn(invocation: &Invocation) -> Result<Self, Error> {
+        let mut command = tokio::process::Command::new(&invocation.program);
+        command
+            .args(&invocation.args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .process_group(0);
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "the one spawn behind togi-command's bounded runner"
+        )]
+        let spawned = command.spawn();
+        let child = spawned.map_err(|source| Error::Spawn {
+            program: invocation.program.clone(),
+            source,
+        })?;
+        let group = child
+            .id()
+            .and_then(|id| i32::try_from(id).ok())
+            .and_then(Pid::from_raw);
+        #[cfg(target_os = "linux")]
+        let pidfd = match group
+            .ok_or_else(|| io::Error::from(io::ErrorKind::NotFound))
+            .and_then(|pid| {
+                Ok(rustix::process::pidfd_open(
+                    pid,
+                    rustix::process::PidfdFlags::empty(),
+                )?)
+            })
+            .and_then(|fd| {
+                tokio::io::unix::AsyncFd::with_interest(fd, tokio::io::Interest::READABLE)
+            }) {
+            Ok(pidfd) => pidfd,
+            Err(source) => {
+                if let Some(group) = group {
+                    kill_group_ignoring_errors(group);
+                }
+                return Err(invocation.io_error(Operation::Wait, source));
+            }
+        };
+        Ok(Self {
+            child,
+            group,
+            #[cfg(target_os = "linux")]
+            pidfd,
+        })
     }
 
-    fn disarm(&mut self) {
-        self.0 = None;
+    #[cfg(target_os = "linux")]
+    async fn exited(&mut self) -> io::Result<()> {
+        self.pidfd.readable().await.map(drop)
     }
 
-    fn kill(&mut self) {
-        if let Some(group) = self.0.take() {
-            let _ = kill_process_group(group, Signal::KILL);
+    #[cfg(not(target_os = "linux"))]
+    async fn exited(&mut self) -> io::Result<()> {
+        self.child.wait().await?;
+        self.group = None;
+        Ok(())
+    }
+
+    async fn reap(&mut self) -> io::Result<ExitStatus> {
+        self.group = None;
+        self.child.wait().await
+    }
+
+    async fn kill_and_reap(&mut self) {
+        self.kill_group();
+        let _ = tokio::time::timeout(REAP_GRACE, self.child.wait()).await;
+    }
+
+    fn kill_group(&mut self) {
+        if let Some(group) = self.group.take() {
+            kill_group_ignoring_errors(group);
         }
     }
 }
 
-impl Drop for GroupKill {
+impl Drop for Leader {
     fn drop(&mut self) {
-        self.kill();
+        self.kill_group();
+    }
+}
+
+fn kill_group_ignoring_errors(group: Pid) {
+    match kill_process_group(group, Signal::KILL) {
+        Ok(()) | Err(Errno::SRCH) => {}
+        Err(_other) => {}
     }
 }

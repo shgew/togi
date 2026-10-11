@@ -133,6 +133,7 @@ async fn a_passed_deadline_still_times_out() {
     assert!(matches!(error, Error::TimedOut { .. }), "{error:?}");
 }
 
+#[cfg(target_os = "linux")]
 #[tokio::test]
 async fn group_descendant_holding_the_pipes_is_killed() {
     let dir = tempfile::tempdir().unwrap();
@@ -162,6 +163,38 @@ async fn escaped_descendant_cannot_extend_the_deadline() {
     let _ = rustix::process::kill_process(escaped, rustix::process::Signal::KILL);
     assert!(elapsed < DEADLINE + SLACK, "{elapsed:?}");
     assert!(matches!(error, Error::TimedOut { .. }), "{error:?}");
+    assert_stops(escaped).await;
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn exited_leader_stays_unreaped_until_the_group_is_killed() {
+    let dir = tempfile::tempdir().unwrap();
+    let leader_file = dir.path().join("leader");
+    let escaped_file = dir.path().join("escaped");
+    let script = format!(
+        "echo $$ > {}; setsid sleep 60 & echo $! > {}",
+        leader_file.display(),
+        escaped_file.display()
+    );
+    let invocation = sh(&script);
+    let observe = async {
+        let leader = wait_for_pid_file(&leader_file).await;
+        let escaped = wait_for_pid_file(&escaped_file).await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert!(is_zombie(leader), "the exited leader was reaped early");
+        assert!(is_running(escaped));
+        (leader, escaped)
+    };
+    let (result, (leader, escaped)) = tokio::join!(run_for(&invocation, DEADLINE), observe);
+    let still_running = is_running(escaped);
+    let _ = rustix::process::kill_process(escaped, rustix::process::Signal::KILL);
+    assert!(matches!(result, Err(Error::TimedOut { .. })), "{result:?}");
+    assert!(
+        still_running,
+        "the group kill reached a process outside the group"
+    );
+    assert_eq!(test_kill_process(leader), Err(Errno::SRCH));
     assert_stops(escaped).await;
 }
 
