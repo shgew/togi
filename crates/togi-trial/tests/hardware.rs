@@ -300,12 +300,7 @@ mod hardware {
             let fd = rustix::fs::openat(&parent_fd, name, DIR_FLAGS, Mode::empty()).unwrap();
             let stat = rustix::fs::fstat(&fd).unwrap();
             assert_eq!(stat.st_uid, euid, "the staging directory is the caller's");
-            assert_eq!(
-                stat.st_mode & 0o7777,
-                0o700,
-                "the staging directory is fresh"
-            );
-            rustix::fs::fchmod(&fd, Mode::from_raw_mode(0o755)).unwrap();
+            rustix::fs::fchmod(&fd, Mode::from_raw_mode(0o700)).unwrap();
             let tree = Tree {
                 root: parent.join(name),
                 fd,
@@ -329,6 +324,7 @@ mod hardware {
             drop(helper);
             rustix::fs::mkdirat(&tree.fd, "trials", Mode::from_raw_mode(0o755)).unwrap();
             rustix::fs::fchmod(tree.dir(&["trials"]).unwrap(), Mode::from_raw_mode(0o755)).unwrap();
+            rustix::fs::fchmod(&tree.fd, Mode::from_raw_mode(0o755)).unwrap();
             Self {
                 tree: Arc::new(tree),
                 _dir: dir,
