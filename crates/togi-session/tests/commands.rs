@@ -157,3 +157,35 @@ fn reset_all_that_cannot_archive_fails_and_releases_the_lock() {
     assert!(matches!(error, CommandError::Archive(_)), "{error:?}");
     drop(dir(&mem));
 }
+
+#[test]
+fn a_failed_reset_core_append_keeps_the_durable_prefix_and_only_a_synced_command_survives() {
+    for (fault, survives) in [(Op::Write, false), (Op::Sync, true)] {
+        let (sim, mem) = (simulator(), MemFs::new());
+        let mut journal = started(&sim, &mem);
+        let before = kinds(&journal);
+        mem.inject(Fault::before(fault, 1).named("events.jsonl"));
+        let error =
+            reset_core(&build(), &mut journal, &mut *sim.seams().clock, core(1)).unwrap_err();
+        assert!(
+            matches!(error, CommandError::Append(_)),
+            "{fault:?}: {error:?}"
+        );
+        drop(journal);
+        mem.clear_faults();
+        let boot = sim.seams().host.boot_id().unwrap();
+        let reopened = dir(&mem).open_at(boot, sim.now()).unwrap();
+        let after = kinds(&reopened);
+        assert_eq!(after[..before.len()], before[..], "{fault:?}");
+        if survives {
+            assert_eq!(after[before.len()..], ["command.reset"], "{fault:?}");
+            let event = reopened.events().last().unwrap();
+            assert!(matches!(
+                &event.payload,
+                Payload::CommandReset(reset) if reset.target == ResetTarget::Core(core(1))
+            ));
+        } else {
+            assert_eq!(after, before, "{fault:?}");
+        }
+    }
+}

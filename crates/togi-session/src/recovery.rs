@@ -715,6 +715,7 @@ impl RecoveryState {
             .retain(|open| open.boot != detected.previous_boot);
         match outcome {
             CrashKind::Stray => self.stray.push(event.seq),
+            CrashKind::Idle if detected.condition == Some(Condition::Alone) => {}
             CrashKind::Idle => self.pending_idle.push(event.seq),
             CrashKind::InTrial | CrashKind::Inconclusive | CrashKind::Thermal => {}
         }
