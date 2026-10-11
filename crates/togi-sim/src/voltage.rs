@@ -240,7 +240,7 @@ pub(crate) fn voltage_state(
     let workload = voltage.workload(load.workload);
     let mut loaded = [0u32; 2];
     let mut watts = [0.0f64; 2];
-    for core in load.cores.iter() {
+    for core in load.cores {
         let ccd = core.index() / CCD_SIZE;
         loaded[ccd] += 1;
         let counts = steps(profile[core.index()].get() + 35);
@@ -263,7 +263,7 @@ pub(crate) fn voltage_state(
     let mut requests = [narrow(voltage.idle_v); CORES];
     let mut rail = 0.0f64;
     let above_reference = |core: usize| f64::from(clocks[core / CCD_SIZE]) - workload.reference_mhz;
-    for core in load.cores.iter() {
+    for core in load.cores {
         let index = core.index();
         let parameters = &workload.cores[index];
         let request = parameters.base_v
@@ -273,7 +273,7 @@ pub(crate) fn voltage_state(
         rail = rail.max(request);
     }
     let mut rates = [0.0; CORES];
-    for core in load.cores.iter() {
+    for core in load.cores {
         let index = core.index();
         let parameters = &workload.cores[index];
         let mut threshold = parameters.threshold_v;

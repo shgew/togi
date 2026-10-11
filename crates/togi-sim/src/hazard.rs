@@ -167,7 +167,7 @@ impl Model {
             }
         }
         if let Some((voltage, state)) = &shared {
-            for core in load.cores.iter() {
+            for core in load.cores {
                 let rate = state.rates[core.index()];
                 if rate > 0.0 {
                     visit(HazardSource {
