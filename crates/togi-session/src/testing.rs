@@ -1,6 +1,10 @@
 //! A simulated machine, an in-memory journal and an appender over them, for the crate's tests.
 
+use std::io;
+
 use jiff::tz::TimeZone;
+use togi_config::Config;
+use togi_defect::Entry;
 use togi_journal::{
     Build, Event, MemFs, Payload, SCHEMA, Seq, SessionStart, StateDir, fs::Fault, fs::Op,
 };
@@ -15,6 +19,7 @@ use crate::appender::{Appender, Folds};
 use crate::boot::BootHandoff;
 use crate::emergency::SweepCleared;
 use crate::error::AppendFailure;
+use crate::session::{ConfigSource, RunInput, Session, StopPolicy};
 use crate::write::Hardware;
 
 pub(crate) struct Rig {
@@ -175,8 +180,82 @@ impl Rig {
 
 /// The appender's incremental folds are what a fresh fold of the journal gives.
 pub(crate) fn assert_fold_consistent(appender: &Appender) {
-    let fresh = Folds::replay(appender.journal().events()).unwrap();
+    let fresh =
+        Folds::replay_with(appender.defect_registry(), appender.journal().events()).unwrap();
     assert_eq!(&fresh, appender.folds());
+}
+
+/// A simulated machine and an in-memory journal directory, from which each run opens its own session.
+pub(crate) struct Bench {
+    pub sim: Simulator,
+    pub mem: MemFs,
+    pub config: Config,
+    pub defects: &'static [Entry],
+}
+
+impl Bench {
+    pub(crate) fn new(cores: i64) -> Self {
+        let definition = MachineDefinition {
+            cores,
+            ..MachineDefinition::default()
+        };
+        let sim = Simulator::new(
+            Model::new(&definition, 1).unwrap(),
+            RunSettings {
+                seed: 1,
+                ..RunSettings::default()
+            },
+        );
+        Self {
+            sim,
+            mem: MemFs::new(),
+            config: Config::default(),
+            defects: &[],
+        }
+    }
+
+    /// What a run on the simulator's current boot is given, with no bootloader, terminal or carry.
+    pub(crate) fn input(&self) -> RunInput {
+        let mut machine = self.sim.seams();
+        let boot = machine.host.boot_id().unwrap();
+        let journal = simulated(&self.mem)
+            .open_at(boot.clone(), self.sim.now())
+            .unwrap();
+        RunInput {
+            config: self.config.clone(),
+            source: ConfigSource::default(),
+            build: build(),
+            boot,
+            journal,
+            machine,
+            policy: StopPolicy::default(),
+            bootloader: None,
+            prompt: None,
+            defects: self.defects,
+            carry: None,
+            log: None,
+            renderer: Renderer::default(),
+            zone: TimeZone::UTC,
+            cancel: CancellationToken::new(),
+            report: Box::new(io::sink()),
+        }
+    }
+
+    pub(crate) fn open(&self) -> Session {
+        match Session::open(self.input()) {
+            Ok(session) => session,
+            Err(ended) => panic!("open: {:?}", ended.errors),
+        }
+    }
+}
+
+pub(crate) fn kinds_of(appender: &Appender) -> Vec<&'static str> {
+    appender
+        .journal()
+        .events()
+        .iter()
+        .map(|event| event.kind().as_str())
+        .collect()
 }
 
 #[test]
