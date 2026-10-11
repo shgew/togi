@@ -720,3 +720,237 @@ async fn a_cancelled_sweep_whose_cleanup_fails_reports_cancelled_and_the_contain
     })
     .await;
 }
+
+#[cfg(target_os = "linux")]
+mod killed_owner {
+    use std::sync::{Arc, Mutex, PoisonError};
+    use std::time::Duration;
+
+    use togi_machine::{CancellationToken, Trials};
+    use tokio::time::Instant;
+
+    use super::super::process::{
+        Escaped, Helper, helper_command, linux, runner_over, timing, wait_until,
+    };
+    use crate::id::ScopeName;
+    use crate::launch::LaunchCommand;
+    use crate::os::linux::{Leader, Linux};
+    use crate::os::{Child as _, ExitInfo, GroupSignal, KillSignal, LaunchFailure, Os, Systemd};
+    use crate::procfs::{
+        Proc, ProcError, ScopeProcess, Threads, Usage, parse_stat, ticks_per_second,
+    };
+    use crate::timing::Timing;
+
+    struct Leftovers {
+        listed: Mutex<bool>,
+        operations: Mutex<Vec<(String, &'static str)>>,
+        orphan: ScopeProcess,
+    }
+
+    fn locked<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+        mutex.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Systemd is faked, with one leftover unit whose only member is the real detached
+    /// descendant: a scope signal reaches that process, and a stop removes the unit.
+    struct Leftover {
+        linux: Linux,
+        proc: Proc,
+        state: Arc<Leftovers>,
+    }
+
+    impl Leftover {
+        fn orphan_alive(&self) -> Result<bool, ProcError> {
+            self.proc.alive(&self.state.orphan)
+        }
+    }
+
+    impl Os for Leftover {
+        type Child = Leader;
+
+        fn launch(&self, _: &LaunchCommand) -> Result<Leader, LaunchFailure<Leader>> {
+            Err(std::io::Error::other("the sweep launches nothing").into())
+        }
+
+        fn in_scope(&self, pid: u32, scope: &ScopeName) -> Result<bool, ProcError> {
+            self.linux.in_scope(pid, scope)
+        }
+
+        fn usage(&self, pid: u32) -> Result<Usage, ProcError> {
+            self.linux.usage(pid)
+        }
+
+        fn threads(&self, pid: u32) -> Result<Threads, ProcError> {
+            self.linux.threads(pid)
+        }
+
+        #[expect(
+            clippy::unused_async_trait_impl,
+            reason = "the trait's operation is async; this seam answers at once"
+        )]
+        async fn systemd(
+            &self,
+            operation: &Systemd,
+            _: Instant,
+        ) -> Result<togi_command::Output, togi_command::Error> {
+            use std::os::unix::process::ExitStatusExt as _;
+            let stdout = match operation {
+                Systemd::ListScopes if *locked(&self.state.listed) => {
+                    format!(
+                        "{} loaded active running x\n",
+                        self.state.orphan.scope.unit()
+                    )
+                }
+                Systemd::Kill { scope, signal } => {
+                    let name = match signal {
+                        KillSignal::Cont => "SIGCONT",
+                        KillSignal::Term => "SIGTERM",
+                        KillSignal::Kill => "SIGKILL",
+                    };
+                    locked(&self.state.operations).push((scope.to_string(), name));
+                    let delivered = match signal {
+                        KillSignal::Cont => rustix::process::Signal::CONT,
+                        KillSignal::Term => rustix::process::Signal::TERM,
+                        KillSignal::Kill => rustix::process::Signal::KILL,
+                    };
+                    if *scope == self.state.orphan.scope
+                        && self.orphan_alive().unwrap_or(false)
+                        && let Some(pid) = i32::try_from(self.state.orphan.pid)
+                            .ok()
+                            .and_then(rustix::process::Pid::from_raw)
+                    {
+                        let _ = rustix::process::kill_process(pid, delivered);
+                    }
+                    String::new()
+                }
+                Systemd::Stop { scope } => {
+                    locked(&self.state.operations).push((scope.to_string(), "stop"));
+                    *locked(&self.state.listed) = false;
+                    String::new()
+                }
+                Systemd::ListScopes | Systemd::Probe { .. } => String::new(),
+            };
+            Ok(togi_command::Output {
+                status: std::process::ExitStatus::from_raw(0),
+                stdout: stdout.into_bytes(),
+                stderr: Vec::new(),
+            })
+        }
+
+        #[expect(
+            clippy::unused_async_trait_impl,
+            reason = "the trait's operation is async; this seam answers at once"
+        )]
+        async fn scope_processes(&self, _: Instant) -> Result<Vec<ScopeProcess>, ProcError> {
+            Ok(if self.orphan_alive()? {
+                vec![self.state.orphan.clone()]
+            } else {
+                Vec::new()
+            })
+        }
+
+        async fn survivors(
+            &self,
+            captured: &[ScopeProcess],
+            deadline: Instant,
+        ) -> Result<usize, ProcError> {
+            self.linux.survivors(captured, deadline).await
+        }
+    }
+
+    /// Go `TestProcessSweepAfterKilledOwner`: a real owner starts a detached descendant and is
+    /// killed; the descendant survives, and the sweep removes it.
+    #[test]
+    fn real_process_a_sweep_after_a_killed_owner_removes_its_detached_descendant() {
+        let dir = crate::testing::tempdir();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let os = linux();
+        let (descendant, orphan) = {
+            let _enter = runtime.enter();
+            let owner = os
+                .launch(&helper_command("scope-owner", dir.path()))
+                .unwrap();
+            let published = dir.path().join("descendant.pid");
+            assert!(
+                wait_until(Duration::from_secs(10), || published.exists()),
+                "the owner started no detached descendant"
+            );
+            let pid: u32 = std::fs::read_to_string(&published)
+                .unwrap()
+                .trim()
+                .parse()
+                .unwrap();
+            let descendant = Escaped::adopt(pid).expect("the descendant is alive");
+            assert!(owner.signal_group(GroupSignal::Kill).is_ok());
+            assert!(wait_until(Duration::from_secs(10), || owner
+                .exit()
+                .is_ok_and(|exit| exit.is_some())));
+            assert_eq!(owner.reap().unwrap(), ExitInfo::Signal(9));
+            let starttime = std::fs::read_to_string(format!("/proc/{pid}/stat"))
+                .ok()
+                .and_then(|text| parse_stat(&text).ok())
+                .map(|stat| stat.starttime)
+                .expect("the descendant outlived its owner");
+            let orphan = ScopeProcess {
+                scope: ScopeName::from_unit("togi-trial-leftover.scope").unwrap(),
+                pid,
+                starttime,
+            };
+            (descendant, orphan)
+        };
+        assert!(
+            descendant.alive(),
+            "the detached descendant survived the killed owner"
+        );
+
+        let state = Arc::new(Leftovers {
+            listed: Mutex::new(true),
+            operations: Mutex::new(Vec::new()),
+            orphan,
+        });
+        let make = {
+            let state = Arc::clone(&state);
+            move || Leftover {
+                linux: linux(),
+                proc: Proc::new("/proc".into(), ticks_per_second()),
+                state,
+            }
+        };
+        let sweep_timing = Timing {
+            teardown: Duration::from_secs(10),
+            stop_grace: Duration::from_secs(2),
+            ..timing()
+        };
+        let mut runner = runner_over(
+            Helper::new("hold", false),
+            false,
+            sweep_timing,
+            dir.path(),
+            make,
+        );
+        let begun = std::time::Instant::now();
+        let swept = runner.sweep(&CancellationToken::new()).unwrap();
+        assert!(begun.elapsed() < sweep_timing.teardown + Duration::from_secs(1));
+        assert_eq!(
+            swept.detail,
+            "removed 1 leftover trial scopes; no trial unit or process remains"
+        );
+        assert!(
+            !descendant.alive(),
+            "the sweep removed the detached descendant"
+        );
+        let operations = locked(&state.operations);
+        assert!(
+            operations.contains(&("togi-trial-leftover".to_owned(), "SIGKILL")),
+            "{operations:?}"
+        );
+        assert!(
+            operations.contains(&("togi-trial-leftover".to_owned(), "stop")),
+            "{operations:?}"
+        );
+        assert!(!*locked(&state.listed), "the unit was stopped");
+    }
+}
