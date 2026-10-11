@@ -8,7 +8,7 @@ use togi_machine::{CancellationToken, Regime, Signal};
 use super::harness::{core, crate_error, finish, local, printing, rig, rig_edit, rig_with, spec};
 use crate::error::{CleanupFailure, Error};
 use crate::id::ScopeName;
-use crate::os::fake::{Launch, ProcCtx, Reply, script};
+use crate::os::fake::{Launch, ProcCtx, Reply, ScanFault, script};
 use crate::os::{ExitInfo, GroupSignal, Systemd};
 use crate::testing::TestBackend;
 use crate::timing::Timing;
@@ -37,6 +37,23 @@ fn immortal(_: usize, _: &crate::launch::LaunchCommand) -> Launch {
         let _keep = ctx;
         std::future::pending::<()>().await;
     }))
+}
+
+/// The failure list a containment error at the seam carries, also when later errors joined it.
+fn containment_of(error: &togi_machine::Error) -> &crate::Containment {
+    let togi_machine::Error::Containment(source) = error else {
+        panic!("not containment: {error:?}");
+    };
+    if let Some(containment) = source.downcast_ref::<std::sync::Arc<crate::Containment>>() {
+        return containment;
+    }
+    let Some(Error::Joined(joined)) = source.downcast_ref::<Error>() else {
+        panic!("not a failure list: {source:?}");
+    };
+    let Some(Error::Containment(containment)) = joined.errors().first() else {
+        panic!("the containment is not first: {joined:?}");
+    };
+    containment
 }
 
 #[test_case(1; "one instance")]
@@ -178,7 +195,28 @@ async fn a_partial_start_that_cannot_confirm_is_containment_with_both_scopes_tar
             .unwrap();
         assert!(begun.elapsed() <= secs(15));
         assert!(partial.value.is_none());
-        assert!(matches!(partial.error, togi_machine::Error::Containment(_)));
+        let failures = containment_of(&partial.error).failures();
+        let [
+            CleanupFailure::Start(cause),
+            CleanupFailure::Reap { instance, .. },
+            CleanupFailure::DrainDeadline,
+            CleanupFailure::ScopeMembers { scope },
+        ] = failures
+        else {
+            panic!("{failures:?}");
+        };
+        assert!(
+            matches!(
+                &**cause,
+                Error::Launch { instance, source, .. }
+                    if instance == "c01" && source.to_string() == "systemd-run missing"
+            ),
+            "{cause:?}"
+        );
+        assert_eq!(
+            (instance.as_str(), scope.as_str()),
+            ("c00", "togi-trial-t1-c00")
+        );
         assert_eq!(
             kills(&rig.fake.systemd_calls()),
             ["togi-trial-t1-c00", "togi-trial-t1-c01"]
@@ -573,6 +611,230 @@ async fn a_member_that_exits_after_the_kill_is_waited_for_and_then_confirmed() {
         cancel.cancel();
         let run = finish(&handle).await;
         assert!(run.finished.teardown.is_ok());
+    })
+    .await;
+}
+
+fn watching_rig() -> super::harness::Rig {
+    let mut backend = TestBackend::new("/bin/true");
+    backend.watched = vec!["results.txt"];
+    let rig = rig_with(backend, Timing::default());
+    rig.fake.on_launch(|_, command| {
+        let results = command.cwd.join("results.txt");
+        Launch::Run(script(move |mut ctx: ProcCtx| async move {
+            std::fs::write(results, "COMPUTE ERROR").unwrap();
+            ctx.until_killed().await;
+        }))
+    });
+    rig
+}
+
+#[test_case(false, ScanFault::Fail, "scan failed"; "a failed scan")]
+#[test_case(true, ScanFault::Fail, "scan failed"; "a failed scan after a failed kill")]
+#[test_case(false, ScanFault::Late, "after the teardown deadline"; "an empty scan after the deadline")]
+#[test_case(true, ScanFault::Late, "after the teardown deadline"; "an empty scan after the deadline and a failed kill")]
+#[tokio::test(start_paused = true)]
+async fn an_unverifiable_scope_scan_withholds_the_proof_and_the_watched_partial(
+    kill_fails: bool,
+    fault: ScanFault,
+    reason: &str,
+) {
+    local(async {
+        let rig = watching_rig();
+        rig.fake.fault_scans(fault);
+        if kill_fails {
+            rig.fake.on_systemd(|call| match call {
+                Systemd::Kill { .. } => Some(Reply::Output {
+                    success: false,
+                    text: "Access denied".into(),
+                }),
+                _ => None,
+            });
+        }
+        let cancel = CancellationToken::new();
+        let handle = rig
+            .start_with(&cancel, spec(Regime::R1, &[0], secs(60)))
+            .await
+            .unwrap();
+        cancel.cancel();
+        let begun = tokio::time::Instant::now();
+        let run = finish(&handle).await;
+        assert!(begun.elapsed() <= secs(15) + Duration::from_millis(50));
+        let containment = run.finished.teardown.unwrap_err();
+        let failures = containment.failures();
+        let observed = if kill_fails {
+            let [CleanupFailure::KillScope { source, .. }, observed] = failures else {
+                panic!("{failures:?}");
+            };
+            assert!(source.to_string().contains("Access denied"), "{source}");
+            observed
+        } else {
+            let [observed] = failures else {
+                panic!("{failures:?}");
+            };
+            observed
+        };
+        let CleanupFailure::Observe { what, source } = observed else {
+            panic!("{observed:?}");
+        };
+        assert_eq!(*what, "the trial scope members");
+        assert!(source.to_string().contains(reason), "{source}");
+        assert_eq!(
+            run.finished.result.failure, None,
+            "a watched partial is not classified while the scope is unverified"
+        );
+    })
+    .await;
+}
+
+#[test_case(1; "one scope")]
+#[test_case(2; "two scopes")]
+#[tokio::test(start_paused = true)]
+async fn a_scope_kill_that_outlives_its_deadline_is_cut_off_at_the_shared_slot(count: u8) {
+    local(async {
+        let rig = rig();
+        rig.fake.on_launch(|_, _| {
+            Launch::Run(script(|mut ctx: ProcCtx| async move {
+                ctx.until_killed_ignoring_term().await;
+            }))
+        });
+        rig.fake.on_systemd(|call| match call {
+            Systemd::Kill { .. } => Some(Reply::Stall),
+            _ => None,
+        });
+        let cores: Vec<u8> = (0..count).collect();
+        let regime = if count == 1 { Regime::R1 } else { Regime::R7 };
+        let cancel = CancellationToken::new();
+        let handle = rig
+            .start_with(&cancel, spec(regime, &cores, secs(600)))
+            .await
+            .unwrap();
+        let begun = tokio::time::Instant::now();
+        cancel.cancel();
+        let run = finish(&handle).await;
+        let timing = Timing::default();
+        let slot_start = begun + timing.stop_grace;
+        let slot_end = slot_start + timing.kill_slot;
+        let calls = rig.fake.systemd_calls();
+        assert_eq!(kills(&calls).len(), usize::from(count));
+        assert!(calls.iter().all(|(_, at)| *at == slot_start), "{calls:?}");
+        for index in 0..usize::from(count) {
+            let times = rig.fake.process(index).signal_times.borrow().clone();
+            let (kill_at, signal) = *times.last().unwrap();
+            assert_eq!(signal, GroupSignal::Kill);
+            assert_eq!(kill_at, slot_end, "the group kill follows the slot");
+        }
+        let containment = run.finished.teardown.unwrap_err();
+        let failures = containment.failures();
+        assert_eq!(failures.len(), usize::from(count), "{failures:?}");
+        for failure in failures {
+            let CleanupFailure::KillScope { source, .. } = failure else {
+                panic!("{failure:?}");
+            };
+            assert!(
+                source
+                    .downcast_ref::<tokio::time::error::Elapsed>()
+                    .is_some(),
+                "{source}"
+            );
+        }
+        assert!(
+            begun.elapsed() <= timing.stop_grace + timing.kill_slot + Duration::from_millis(50)
+        );
+    })
+    .await;
+}
+
+fn boom_backend(watched: bool) -> TestBackend {
+    let mut backend = TestBackend::new("/bin/true");
+    backend.panic_on = Some("BOOM");
+    if watched {
+        backend.watched = vec!["results.txt"];
+    }
+    backend
+}
+
+#[test_case(false; "final pipe output")]
+#[test_case(true; "a watched partial")]
+#[tokio::test(start_paused = true)]
+async fn a_classifier_panic_during_teardown_is_reported_and_teardown_stays_bounded(watched: bool) {
+    local(async {
+        let rig = rig_with(boom_backend(watched), Timing::default());
+        rig.fake.on_launch(move |_, command| {
+            let results = command.cwd.join("results.txt");
+            Launch::Run(script(move |mut ctx: ProcCtx| async move {
+                if watched {
+                    std::fs::write(results, "BOOM").unwrap();
+                    ctx.until_killed().await;
+                } else {
+                    ctx.until_killed_ignoring_term().await;
+                    ctx.print("BOOM\n").await;
+                }
+            }))
+        });
+        let cancel = CancellationToken::new();
+        let handle = rig
+            .start_with(&cancel, spec(Regime::R1, &[0], secs(600)))
+            .await
+            .unwrap();
+        cancel.cancel();
+        let begun = tokio::time::Instant::now();
+        let run = tokio::time::timeout(secs(60), finish(&handle))
+            .await
+            .expect("the supervisor published an end after the panic");
+        assert!(begun.elapsed() <= secs(15) + Duration::from_millis(50));
+        assert!(run.finished.teardown.is_ok(), "the stop is still proven");
+        assert!(rig.fake.process(0).reaped.get());
+        assert!(
+            matches!(
+                &run.finished.errors[..],
+                [Error::Cancelled, Error::Panicked { what }] if what.contains("the classifier met BOOM")
+            ),
+            "{:?}",
+            run.finished.errors
+        );
+        assert!(
+            run.finished.result.inconclusive.is_some(),
+            "a trial whose classifier panicked cannot pass: {:?}",
+            run.finished.result
+        );
+    })
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_classifier_panic_during_rollback_is_joined_after_the_launch_cause() {
+    local(async {
+        let rig = rig_with(boom_backend(false), Timing::default());
+        rig.fake.on_launch(|n, _| {
+            if n == 0 {
+                Launch::Run(script(|mut ctx: ProcCtx| async move {
+                    ctx.until_killed_ignoring_term().await;
+                    ctx.print("BOOM\n").await;
+                }))
+            } else {
+                Launch::Fail(std::io::Error::other("systemd-run missing"))
+            }
+        });
+        let begun = tokio::time::Instant::now();
+        let partial = rig
+            .start(spec(Regime::R7, &[0, 1], secs(60)))
+            .await
+            .err()
+            .unwrap();
+        assert!(begun.elapsed() <= secs(15) + Duration::from_millis(50));
+        assert!(partial.value.is_some(), "the stop is still proven");
+        let Some(Error::Joined(joined)) = crate_error(&partial.error) else {
+            panic!("{:?}", partial.error);
+        };
+        assert!(
+            matches!(
+                joined.errors(),
+                [Error::Launch { instance, .. }, Error::Panicked { what }]
+                    if instance == "c01" && what.contains("the classifier met BOOM")
+            ),
+            "{joined:?}"
+        );
     })
     .await;
 }

@@ -554,6 +554,7 @@ async fn roll_back<O: Os>(
         .await
         .finish();
     let mut diagnostics = settle_logs(&mut judge, logs.finish(env.timing.writer_join).await);
+    let panic = judge.take_panic();
     diagnostics.splice(0..0, judge.conclude().diagnostics);
     let (first, proof) = match ended.proof {
         Ok(stopped) => (cause, Some(stopped)),
@@ -563,6 +564,9 @@ async fn roll_back<O: Os>(
         ),
     };
     let mut later = Vec::new();
+    if let Some(what) = panic {
+        later.push(Error::Panicked { what });
+    }
     if !diagnostics.is_empty() {
         later.push(Error::Output(OutputFailure { diagnostics }));
     }
@@ -605,7 +609,7 @@ async fn contained<F: Future>(work: F) -> Result<F::Output, Box<dyn Any + Send>>
     .await
 }
 
-fn panic_text(payload: &(dyn Any + Send)) -> String {
+pub(crate) fn panic_text(payload: &(dyn Any + Send)) -> String {
     payload
         .downcast_ref::<&str>()
         .map(|text| (*text).to_owned())
@@ -973,14 +977,7 @@ impl<O: Os> Supervisor<O> {
         match end {
             End::Cancelled => errors.push(Error::Cancelled),
             End::Toggle(error) => errors.push(error),
-            End::Panicked(what) => {
-                judge.observe(Observation::SamplingLoss {
-                    instance: 0,
-                    what: format!("trial supervision panicked: {what}"),
-                });
-                errors.push(Error::Panicked { what: what.clone() });
-                panicked = Some(what);
-            }
+            End::Panicked(what) => panicked = Some(what),
             End::Duration | End::Stopped | End::Abandoned | End::Evidence | End::Storage => {}
         }
         let budget = Budget::start(env.timing);
@@ -992,6 +989,14 @@ impl<O: Os> Supervisor<O> {
             .verify()
             .await
             .finish();
+        if let Some(what) = panicked.take().or_else(|| judge.take_panic()) {
+            judge.observe(Observation::SamplingLoss {
+                instance: 0,
+                what: format!("trial supervision panicked: {what}"),
+            });
+            errors.push(Error::Panicked { what: what.clone() });
+            panicked = Some(what);
+        }
         let bound = env.timing.writer_join;
         let samples = async {
             match writer {

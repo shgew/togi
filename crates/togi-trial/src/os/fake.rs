@@ -52,6 +52,8 @@ pub(crate) enum Reply {
     },
     /// Never answers: the call runs to its deadline and times out.
     Hang,
+    /// Never answers and ignores its deadline: only a caller's own timeout ends the wait.
+    Stall,
     Fail(togi_command::Error),
 }
 
@@ -78,6 +80,15 @@ pub(crate) struct ProcShared {
 pub(crate) enum SignalErrorKind {
     Gone,
     Failed,
+}
+
+/// How a `/proc` scan of the trial's scopes goes wrong.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ScanFault {
+    /// The scan fails at once.
+    Fail,
+    /// The scan finds nothing, but only after its deadline has passed.
+    Late,
 }
 
 #[derive(Default)]
@@ -223,6 +234,7 @@ struct Shared {
     fail_pipes: Cell<bool>,
     fail_alive: Cell<bool>,
     hang_scans: Cell<bool>,
+    scan_fault: Cell<Option<ScanFault>>,
     signal_error_default: Cell<Option<SignalErrorKind>>,
     fail_once: Rc<RefCell<Vec<(GroupSignal, SignalErrorKind)>>>,
     recovered: RefCell<Vec<(ScopeProcess, Recovered)>>,
@@ -252,6 +264,7 @@ impl Default for Fake {
                 fail_pipes: Cell::new(false),
                 fail_alive: Cell::new(false),
                 hang_scans: Cell::new(false),
+                scan_fault: Cell::new(None),
                 signal_error_default: Cell::new(None),
                 fail_once: Rc::default(),
                 recovered: RefCell::default(),
@@ -316,6 +329,11 @@ impl Fake {
     /// Every `/proc` scan hangs until its deadline.
     pub(crate) fn hang_scans(&self) {
         self.shared.hang_scans.set(true);
+    }
+
+    /// Scans of the trial's scopes fail like `fault`, while survivor checks stay normal.
+    pub(crate) fn fault_scans(&self, fault: ScanFault) {
+        self.shared.scan_fault.set(Some(fault));
     }
 
     /// Taking the pipes of new processes fails, as when registering them with the reactor fails.
@@ -598,11 +616,22 @@ impl Os for Fake {
                     timeout: Duration::ZERO,
                 })
             }
+            Reply::Stall => std::future::pending().await,
             Reply::Fail(error) => Err(error),
         }
     }
 
     async fn scope_processes(&self, deadline: Instant) -> Result<Vec<ScopeProcess>, ProcError> {
+        match self.shared.scan_fault.get() {
+            Some(ScanFault::Fail) => {
+                return Err(ProcError::Observation("scan failed".to_owned()));
+            }
+            Some(ScanFault::Late) => {
+                sleep_until(deadline + Duration::from_millis(1)).await;
+                return Ok(Vec::new());
+            }
+            None => {}
+        }
         if self.shared.hang_scans.get() {
             sleep_until(deadline).await;
             return Err(ProcError::Observation("scan timed out".to_owned()));

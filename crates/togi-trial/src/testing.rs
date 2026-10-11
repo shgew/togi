@@ -16,6 +16,7 @@ pub(crate) struct TestBackend {
     pub(crate) inputs: Vec<(&'static str, &'static str)>,
     pub(crate) watched: Vec<&'static str>,
     pub(crate) fail_plan: bool,
+    pub(crate) panic_on: Option<&'static str>,
 }
 
 impl TestBackend {
@@ -27,6 +28,7 @@ impl TestBackend {
             inputs: Vec::new(),
             watched: Vec::new(),
             fail_plan: false,
+            panic_on: None,
         }
     }
 }
@@ -74,6 +76,9 @@ impl Backend for TestBackend {
     }
 
     fn classify(&self, line: &str) -> Line {
+        if let Some(trigger) = self.panic_on {
+            assert!(!line.contains(trigger), "the classifier met {trigger}");
+        }
         if line.contains("COMPUTE ERROR") {
             Line::ComputationError
         } else if line.starts_with("PIN FAILED") {
