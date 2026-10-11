@@ -406,14 +406,22 @@ fn excluded_failures_follow_fixes_filtering() {
 fn unanswered_matches_by_id() {
     for answer in [DefectAnswer::Yes, DefectAnswer::No] {
         let mut log = Log::default();
-        let first = log.found(1, DefectDirection::TooCautious, &[2], &[]);
+        let first_decision = log.warning();
+        let second_decision = log.warning();
+        let first = log.found(1, DefectDirection::TooCautious, &[2], &[first_decision]);
         log.answer(1, answer, &[2], first);
-        let second = log.found(2, DefectDirection::TooAggressive, &[3], &[]);
+        let second = log.found(2, DefectDirection::TooAggressive, &[3], &[second_decision]);
         log.answer(99, answer, &[3], second);
         let state = log.state(&PAIR);
         assert_eq!(unanswered_ids(&state), [2], "{answer:?}");
         assert_eq!(state.finding_seq(id(1)), Some(first));
         assert_eq!(state.finding_seq(id(2)), Some(second));
+        let views: Vec<_> = state.unanswered().collect();
+        assert_eq!(views.len(), 1, "{answer:?}");
+        assert_eq!(views[0].seq, second, "{answer:?}");
+        assert_eq!(views[0].direction, DefectDirection::TooAggressive);
+        assert_eq!(views[0].cores, cores(&[3]), "{answer:?}");
+        assert_eq!(views[0].decisions, [second_decision], "{answer:?}");
     }
 }
 
@@ -660,25 +668,55 @@ fn reset_all_clears_guidance_and_later_findings_are_unaffected() {
     assert_eq!(log.state(&PAIR).reset_guidance().count(), 0);
 }
 
-#[test]
-fn query_cost_independent_of_event_count() {
+/// Every query's visit count on the scenario, each run to completion and non-empty.
+fn query_visits(state: &DefectState, failure: Seq) -> [u64; 7] {
+    state.take_visits();
+    let mut visits = [0; 7];
+    let mut measure = |at: usize, returned: usize| {
+        assert!(returned > 0, "query {at} returned nothing");
+        visits[at] = state.take_visits();
+        assert!(visits[at] > 0, "query {at} visited nothing");
+    };
+    measure(0, state.new_findings().count());
+    measure(1, state.unanswered().count());
+    measure(2, state.reset_guidance().count());
+    measure(3, state.missing_resets().count());
+    measure(4, state.excluded_failures().count());
+    measure(5, usize::from(state.excludes_failure(failure)));
+    measure(6, usize::from(state.finding_seq(id(1)).is_some()));
+    visits
+}
+
+/// The scenario every query answers non-empty, behind `extra` irrelevant events of each kind.
+fn busy_log(extra: usize) -> (Log, Seq) {
     let mut log = Log::default();
     log.start(0);
-    for _ in 0..5_000 {
+    for _ in 0..extra {
         log.warning();
         log.failure();
-        log.reset(ResetTarget::Core(core(1)), &[]);
+        log.reset(ResetTarget::Core(core(5)), &[]);
     }
-    let empty = log.state(&NONE);
-    assert_eq!(empty.retained_kinds(), 0);
-    assert_eq!(empty, DefectState::new(&NONE).tap_fold(&log));
+    let failure = log.failure();
+    let decision = log.decision(0, Decision::Backoff, &[failure]);
+    log.found(1, DefectDirection::TooCautious, &[0], &[decision]);
+    let aggressive = log.found(7, DefectDirection::TooAggressive, &[1], &[]);
+    log.answer(7, DefectAnswer::Yes, &[1], aggressive);
+    (log, failure)
+}
 
-    let state = log.state(&CAUTIOUS);
-    assert_eq!(state.retained_kinds(), 5_000);
-    assert_eq!(state.new_findings().count(), 0);
-    assert_eq!(state.unanswered().count(), 0);
-    assert_eq!(state.missing_resets().count(), 0);
-    assert_eq!(state.excluded_failures().count(), 0);
+#[test]
+fn query_cost_independent_of_event_count() {
+    let (small, small_failure) = busy_log(0);
+    let (large, large_failure) = busy_log(5_000);
+    let base = query_visits(&small.state(&PAIR), small_failure);
+    let state = large.state(&PAIR);
+    assert_eq!(state.retained_kinds(), 5_001);
+    assert_eq!(query_visits(&state, large_failure), base);
+    assert_eq!(small.state(&PAIR).retained_kinds(), 1);
+
+    let empty = large.state(&NONE);
+    assert_eq!(empty.retained_kinds(), 0);
+    assert_eq!(empty, DefectState::new(&NONE).tap_fold(&large));
 
     let mut warnings_only = Log::default();
     for _ in 0..5_000 {

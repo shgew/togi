@@ -52,6 +52,20 @@ pub struct Guidance<'a> {
     pub cores: CoreSet,
 }
 
+#[cfg(test)]
+#[derive(Clone, Debug, Default)]
+struct Visits(std::cell::Cell<u64>);
+
+#[cfg(test)]
+impl PartialEq for Visits {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+#[cfg(test)]
+impl Eq for Visits {}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DefectState {
     registry: &'static [Entry],
@@ -64,6 +78,8 @@ pub struct DefectState {
     answered: BTreeSet<DefectId>,
     pending_resets: BTreeMap<Seq, CoreSet>,
     excluded: BTreeSet<Seq>,
+    #[cfg(test)]
+    visits: Visits,
 }
 
 impl Default for DefectState {
@@ -95,7 +111,26 @@ impl DefectState {
             answered: BTreeSet::new(),
             pending_resets: BTreeMap::new(),
             excluded: BTreeSet::new(),
+            #[cfg(test)]
+            visits: Visits::default(),
         }
+    }
+
+    #[cfg(test)]
+    fn visit(&self) {
+        self.visits.0.set(self.visits.0.get() + 1);
+    }
+
+    #[cfg(not(test))]
+    #[expect(
+        clippy::unused_self,
+        reason = "the test build counts query visits here"
+    )]
+    fn visit(&self) {}
+
+    #[cfg(test)]
+    pub(crate) fn take_visits(&self) -> u64 {
+        self.visits.0.replace(0)
     }
 
     #[cfg(test)]
@@ -260,6 +295,7 @@ impl DefectState {
 
     pub fn new_findings(&self) -> impl Iterator<Item = PendingFinding<'_>> {
         self.registry.iter().filter_map(|entry| {
+            self.visit();
             let matches = self.unrecorded.get(&entry.id)?;
             Some(PendingFinding {
                 entry,
@@ -272,30 +308,45 @@ impl DefectState {
     pub fn unanswered(&self) -> impl Iterator<Item = FindingView<'_>> {
         self.order
             .iter()
-            .filter(|id| !self.answered.contains(id))
+            .filter(|id| {
+                self.visit();
+                !self.answered.contains(id)
+            })
             .map(|&id| self.view(id))
     }
 
     pub fn finding_seq(&self, id: DefectId) -> Option<Seq> {
+        self.visit();
         self.findings.get(&id).map(|finding| finding.seq)
     }
 
     pub fn missing_resets(&self) -> impl Iterator<Item = (Seq, CoreId)> {
         self.pending_resets
             .iter()
-            .flat_map(|(&answer, cores)| cores.iter().map(move |core| (answer, core)))
+            .flat_map(move |(&answer, cores)| {
+                self.visit();
+                cores.iter().map(move |core| {
+                    self.visit();
+                    (answer, core)
+                })
+            })
     }
 
     pub fn excludes_failure(&self, failure: Seq) -> bool {
+        self.visit();
         self.excluded.contains(&failure)
     }
 
     pub fn excluded_failures(&self) -> impl Iterator<Item = Seq> {
-        self.excluded.iter().copied()
+        self.excluded.iter().map(|&failure| {
+            self.visit();
+            failure
+        })
     }
 
     pub fn reset_guidance(&self) -> impl Iterator<Item = Guidance<'_>> {
         self.order.iter().filter_map(|&id| {
+            self.visit();
             let cores = self.findings[&id].guidance;
             (!cores.is_empty()).then(|| Guidance {
                 finding: self.view(id),
@@ -305,6 +356,7 @@ impl DefectState {
     }
 
     fn view(&self, id: DefectId) -> FindingView<'_> {
+        self.visit();
         let finding = &self.findings[&id];
         let entry = self
             .registry
