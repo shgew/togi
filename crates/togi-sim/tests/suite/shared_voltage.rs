@@ -999,6 +999,45 @@ fn a_rail_whose_terms_round_before_they_cancel_is_refused() {
 }
 
 #[test]
+fn a_rail_rate_that_rounds_past_f64_stays_finite() {
+    // Subnormal voltages make the refusal's rounding allowance vanish, yet at the 4294967294 MHz clock
+    // and offset -50 the deficit is one subnormal over a one-subnormal margin at rate f64::MAX: a hazard
+    // past f64. The rate is held at f64::MAX, so the sources stay finite and the share is a number.
+    let s = f64::from_bits(1);
+    let mut definition = rewrite_cores(committed_machine("shared-voltage.json"), |core| {
+        core.base_v = 472_446_453.0 * s;
+        core.threshold_v = s;
+        core.count_v = s;
+        core.clock_v_per_100mhz = 50.0 * s;
+        core.threshold_clock_v_per_100mhz = 61.0 * s;
+    });
+    let rail = definition.shared_voltage.as_mut().expect("a rail");
+    rail.rate = f64::MAX;
+    rail.margin_v = s;
+    for workload in rail.workload.values_mut() {
+        workload.reference_mhz = 1.0;
+        workload.full_mhz = [4_294_967_294.0; 2];
+        workload.idle_gain_mhz = 0.0;
+        workload.package_mhz_per_w = 0.0;
+        workload.balance_mhz_per_w = 0.0;
+    }
+    let model =
+        togi_sim::Model::new(&definition, 1).expect("the refusal cannot bound this rounding");
+    let profile = offsets(&[-50; 16]);
+    let two = load(r7(), r7_workload(0), &[0, 1], 1.0);
+    let sources = model.sources(&profile, &two).expect("shape");
+    assert!(!sources.is_empty());
+    assert!(
+        sources.iter().all(|source| source.rate.is_finite()),
+        "{sources:?}"
+    );
+    let share = model
+        .r7_failure_share(&profile, &two, core(0))
+        .expect("shape");
+    assert!(share.is_finite(), "{share}");
+}
+
+#[test]
 fn requirement_coefficients_are_finite_and_nonnegative_without_an_upper_bound() {
     let workload = r7_workload(0);
     let set = |coefficient: f64| {

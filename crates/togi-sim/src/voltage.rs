@@ -365,7 +365,10 @@ pub(crate) fn voltage_state(
         if parameters.threshold_clock_v_per_100mhz != 0.0 {
             threshold += parameters.threshold_clock_v_per_100mhz * above_reference(index) / 100.0;
         }
-        rates[index] = softplus_rate(voltage, threshold - rail);
+        // Construction refuses every rail whose worst-case hazard it can bound beyond f64::MAX; a rate
+        // that still rounds past it (subnormal or cancelling terms) fails at once either way, so it is
+        // held at f64::MAX and every source stays finite.
+        rates[index] = softplus_rate(voltage, threshold - rail).min(f64::MAX);
     }
     VoltageState {
         requests,
