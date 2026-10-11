@@ -821,37 +821,89 @@ mod hardware {
         join_errors(&errors)
     }
 
+    const SYSTEMCTL_NOT_LOADED: i32 = 5;
+
+    fn stray_stop_error(
+        scope: &str,
+        stop: &Result<std::process::ExitStatus, String>,
+        gone: bool,
+    ) -> Option<String> {
+        match stop {
+            Ok(status) if status.success() => None,
+            Ok(status) if gone && status.code() == Some(SYSTEMCTL_NOT_LOADED) => None,
+            Ok(status) => Some(format!("systemctl stop {scope}: {status}")),
+            Err(error) => Some(format!("systemctl stop {scope}: {error}")),
+        }
+    }
+
     fn stop_stray_scope(unit: &str, deadline: Instant) -> Result<(), String> {
         let scope = format!("{unit}.scope");
-        let mut errors = Vec::new();
-        match systemctl_until(&["stop", &scope], deadline) {
-            Ok(output) if output.status.success() => {}
-            Ok(output) => errors.push(format!("systemctl stop {scope}: {}", output.status)),
-            Err(error) => errors.push(format!("systemctl stop {scope}: {error}")),
-        }
+        let stop = systemctl_until(&["stop", &scope], deadline).map(|output| output.status);
+        let mut verified = Vec::new();
+        let mut gone = false;
         loop {
             let listed = systemctl_until(
                 &["list-units", "--all", "--plain", "--no-legend", &scope],
                 deadline,
             );
             match listed {
-                Ok(output) if output.status.success() && output.stdout.is_empty() => break,
+                Ok(output) if output.status.success() && output.stdout.is_empty() => {
+                    gone = true;
+                    break;
+                }
                 Ok(output) if !output.status.success() => {
-                    errors.push(format!("systemctl list-units {scope}: {}", output.status));
+                    verified.push(format!("systemctl list-units {scope}: {}", output.status));
                     break;
                 }
                 Ok(_) if Instant::now() >= deadline => {
-                    errors.push(format!("{scope} did not stop"));
+                    verified.push(format!("{scope} did not stop"));
                     break;
                 }
                 Ok(_) => std::thread::sleep(Duration::from_millis(50)),
                 Err(error) => {
-                    errors.push(format!("systemctl list-units {scope}: {error}"));
+                    verified.push(format!("systemctl list-units {scope}: {error}"));
                     break;
                 }
             }
         }
+        let errors: Vec<String> = stray_stop_error(&scope, &stop, gone)
+            .into_iter()
+            .chain(verified)
+            .collect();
         join_errors(&errors)
+    }
+
+    #[test]
+    fn stray_cleanup_accepts_an_unloaded_scope_only_once_it_is_gone() {
+        use std::os::unix::process::ExitStatusExt as _;
+        let exited = |code: i32| Ok(std::process::ExitStatus::from_raw(code << 8));
+        let scope = "togi-unrelated-hardware.scope";
+        assert_eq!(stray_stop_error(scope, &exited(0), true), None);
+        assert_eq!(
+            stray_stop_error(scope, &exited(SYSTEMCTL_NOT_LOADED), true),
+            None
+        );
+        let unloaded_but_listed = stray_stop_error(scope, &exited(SYSTEMCTL_NOT_LOADED), false);
+        assert!(
+            unloaded_but_listed
+                .as_deref()
+                .is_some_and(|error| error.contains("exit status: 5")),
+            "{unloaded_but_listed:?}"
+        );
+        let refused = stray_stop_error(scope, &exited(1), true);
+        assert!(
+            refused
+                .as_deref()
+                .is_some_and(|error| error.contains("exit status: 1")),
+            "{refused:?}"
+        );
+        let unrun = stray_stop_error(scope, &Err("injected spawn failure".to_owned()), true);
+        assert!(
+            unrun
+                .as_deref()
+                .is_some_and(|error| error.contains("injected spawn failure")),
+            "{unrun:?}"
+        );
     }
 
     struct ReapFault {
