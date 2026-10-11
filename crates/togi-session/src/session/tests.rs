@@ -378,3 +378,36 @@ fn a_resumed_session_refuses_added_or_removed_cores_before_any_append() {
         assert_eq!(crate::testing::kinds_of(session.appender()), before);
     }
 }
+
+#[test]
+fn a_changed_topology_is_refused_before_finishing_a_prior_boots_dead_end() {
+    let bench = Bench::new(2);
+    let mut first = bench.open();
+    first.start().unwrap();
+    first
+        .appender
+        .append(
+            Payload::DeadEnd(DeadEnd {
+                condition: DeadEndCondition::Smu,
+                core: None,
+                detail: "smu gone".into(),
+                action: Some(DeadEndAction::ClearSavedEntry),
+            }),
+            &[],
+        )
+        .unwrap();
+    drop(first);
+    bench.sim.reboot();
+    let mut input = bench.input();
+    let host = input.machine.host;
+    input.machine.host = Box::new(Cores(host, with_core_five));
+    input.bootloader = Some(Box::new(crate::testing::MemBoot::default()));
+    let Ok(mut session) = Session::open(input) else {
+        panic!("open");
+    };
+    assert!(!session.same_boot());
+    let before = crate::testing::kinds_of(session.appender());
+    let result = session.start();
+    assert_eq!(crate::testing::kinds_of(session.appender()), before);
+    assert!(matches!(result, Err(SessionError::TopologyChanged { .. })));
+}

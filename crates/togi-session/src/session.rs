@@ -315,15 +315,10 @@ impl Session {
         matches!(self.visit, Visit::Same { reconciled: false })
     }
 
-    /// Finishes a dead end an earlier boot left pending, reads the topology and refuses configured cores it lacks;
-    /// then, unless a dead end stays pending until this boot is reconciled, records the session's start, the
+    /// Reads the topology and refuses changed session cores before finishing an earlier boot's dead end; then
+    /// refuses configured cores it lacks and, unless a dead end stays pending until reconciliation, records the
     /// startup kernel boundary and the configuration.
     pub fn start(&mut self) -> Outcome {
-        if !self.same_boot()
-            && let Some(stop) = self.resume_dead_end()?
-        {
-            return Ok(Control::Stop(stop));
-        }
         let mut topology = self.host.topology()?;
         topology.sort_by_key(|info| info.core);
         let cores: CoreSet = topology.iter().map(|info| info.core).collect();
@@ -336,6 +331,11 @@ impl Session {
                     removed: known.iter().filter(|&core| !cores.contains(core)).collect(),
                 });
             }
+        }
+        if !self.same_boot()
+            && let Some(stop) = self.resume_dead_end()?
+        {
+            return Ok(Control::Stop(stop));
         }
         if let Some((core, _)) = self
             .config
