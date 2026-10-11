@@ -600,3 +600,34 @@ fn core_set_rejects_duplicates_and_unsupported_cores() {
         assert!(serde_json::from_str::<CoreSet>(json).is_err(), "{json}");
     }
 }
+
+#[test]
+fn core_sets_iterate_from_both_ends() {
+    let set: CoreSet = [3_u8, 0, 15, 7]
+        .into_iter()
+        .map(|id| CoreId::try_from(id).unwrap())
+        .collect();
+    let ids = |iter: &mut dyn Iterator<Item = CoreId>| iter.map(CoreId::get).collect::<Vec<_>>();
+    assert_eq!(ids(&mut set.iter()), [0, 3, 7, 15]);
+    assert_eq!(ids(&mut set.iter().rev()), [15, 7, 3, 0]);
+    assert_eq!(set.first().map(CoreId::get), Some(0));
+    assert_eq!(set.last().map(CoreId::get), Some(15));
+    let mut both = set.iter();
+    assert_eq!(both.next().map(CoreId::get), Some(0));
+    assert_eq!(both.next_back().map(CoreId::get), Some(15));
+    assert_eq!(both.len(), 2);
+    assert_eq!(both.next_back().map(CoreId::get), Some(7));
+    assert_eq!(both.next().map(CoreId::get), Some(3));
+    assert_eq!((both.next(), both.next_back()), (None, None));
+    assert_eq!(CoreSet::default().first(), None);
+    assert_eq!(CoreSet::default().last(), None);
+}
+
+#[test]
+fn core_ids_convert_from_unsigned_integers() {
+    assert_eq!(CoreId::try_from(15_u8).unwrap().get(), 15);
+    assert_eq!(CoreId::try_from(15_usize).unwrap().index(), 15);
+    assert_eq!(CoreId::try_from(16_u8), Err(InvalidCore(16)));
+    assert_eq!(CoreId::try_from(16_usize), Err(InvalidCore(16)));
+    assert!(CoreId::try_from(usize::MAX).is_err());
+}

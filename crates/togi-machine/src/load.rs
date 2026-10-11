@@ -80,7 +80,7 @@ impl LoadSchedule {
         match spec.regime {
             Regime::R3 => Some(Self::Random { seed: spec.seed }),
             Regime::R4 => Some(Self::Duty {
-                pct: spec.workload.duty_pct,
+                pct: spec.workload.workload().duty_pct,
             }),
             Regime::R1 | Regime::R2 | Regime::R5 | Regime::R6 | Regime::R7 => None,
         }

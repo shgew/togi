@@ -27,7 +27,7 @@ pub fn order(cores: &[CoreInfo]) -> Vec<CoreId> {
     result
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq, Serialize, Deserialize)]
 pub struct BiosContext {
     pub bios_version: String,
     pub board: String,

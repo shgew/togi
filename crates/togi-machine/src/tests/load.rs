@@ -5,7 +5,7 @@ fn spec(regime: Regime, seed: u64, index: usize) -> TrialSpec {
     TrialSpec {
         id: "t".to_owned(),
         regime,
-        workload: pick_workload(regime, index).clone(),
+        workload: pick_workload(regime, index).id(),
         condition: Condition::Alone,
         cores: Vec::new(),
         cpus: Vec::new(),

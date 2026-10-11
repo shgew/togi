@@ -35,6 +35,16 @@ impl CoreSet {
         self.present == 0
     }
 
+    /// The lowest core in the set.
+    pub fn first(&self) -> Option<CoreId> {
+        self.iter().next()
+    }
+
+    /// The highest core in the set.
+    pub fn last(&self) -> Option<CoreId> {
+        self.iter().next_back()
+    }
+
     pub const fn iter(&self) -> CoreSetIter {
         CoreSetIter {
             remaining: self.present,
@@ -63,6 +73,17 @@ impl Iterator for CoreSetIter {
     fn size_hint(&self) -> (usize, Option<usize>) {
         let left = self.remaining.count_ones() as usize;
         (left, Some(left))
+    }
+}
+
+impl DoubleEndedIterator for CoreSetIter {
+    fn next_back(&mut self) -> Option<CoreId> {
+        if self.remaining == 0 {
+            return None;
+        }
+        let index = self.remaining.ilog2();
+        self.remaining &= !(1 << index);
+        u8::try_from(index).ok().map(CoreId::from_index)
     }
 }
 

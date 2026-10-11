@@ -1,7 +1,7 @@
 use crate::{
     BankType, BiosContext, BootId, CancellationToken, Condition, CoreId, CoreInfo, CpuId, Error,
     KernelCursor, LoadSchedule, ObservedOffset, Partial, Regime, ResetKind, Signal, TargetOffset,
-    TrialConditions, Workload,
+    TrialConditions, WorkloadId,
 };
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
@@ -68,7 +68,8 @@ pub trait Host {
     fn topology(&mut self) -> Result<Vec<CoreInfo>, Error>;
     fn validate_smu(&mut self) -> Result<SmuValidated, Error>;
     fn bios_context(&mut self) -> Result<BiosContext, Error>;
-    /// The partial value is the preferred-core values read before the failure, in topology order.
+    /// The partial value is the preferred-core values read before the failure, in topology order. An unavailable
+    /// ranking is `Err(Partial { value: vec![], error })`.
     fn ranking(&mut self) -> Result<Vec<CoreRank>, Partial<Vec<CoreRank>>>;
     fn preflight(&mut self) -> Vec<Check>;
     fn watchdog(&mut self) -> Check;
@@ -91,7 +92,7 @@ pub struct Check {
 pub struct TrialSpec {
     pub id: String,
     pub regime: Regime,
-    pub workload: Workload,
+    pub workload: WorkloadId,
     pub condition: Condition,
     pub cores: Vec<CoreId>,
     pub cpus: Vec<CpuId>,
@@ -111,7 +112,7 @@ pub struct Started {
     pub schedule: Option<LoadSchedule>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct TrialResult {
     pub ran: Duration,
     pub failure: Option<TrialFailure>,
@@ -153,7 +154,8 @@ pub trait Reporter {
 pub trait Running {
     fn started(&self) -> Started;
     /// Calls the borrowed reporter only on this thread, and joins the workload before returning.
-    /// The partial value is what the trial accumulated before the failure.
+    /// On `Err(Partial { value, .. })` the value is what the trial accumulated until the failure: for
+    /// [`Error::Crashed`] the time run until the crash and the stops and continues counted so far.
     fn wait(
         &mut self,
         cancel: &CancellationToken,
