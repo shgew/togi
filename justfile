@@ -20,6 +20,21 @@ test *args: _dev-shell
 focus package *args: _dev-shell
     go test "$@"
 
+# Run the Rust test suite with optional nextest flags (`just test-rs -p togi-journal`)
+[group('test')]
+test-rs *args: _dev-shell
+    cargo nextest run --no-tests=pass "$@"
+
+# Run one Rust crate's tests with optional nextest flags (`just focus-rs togi-journal`)
+[group('test')]
+focus-rs crate *args: _dev-shell
+    cargo nextest run --no-tests=pass -p "$@"
+
+# Type-check one Rust crate without building it (`just check-rs togi-journal`)
+[group('test')]
+check-rs crate: _dev-shell
+    cargo check --all-targets -p "$1"
+
 # Run the hardware tests on the target machine (Linux only), entering the dev shell itself because sudo drops it
 [group('test')]
 hardware *args:
@@ -45,17 +60,19 @@ cover base="": _dev-shell
     fi
     go run ./tools/cover --profile "$profile" --base "$1" --tags integration
 
-# Lint all Go packages as built for Linux and for macOS, with optional lint flags
+# Lint all Go packages as built for Linux and for macOS, and the Rust workspace with clippy for Linux and aarch64 macOS, with optional Go lint flags
 [group('quality')]
 lint *args: _dev-shell
     for target in linux/amd64 darwin/arm64; do env GOOS="${target%/*}" GOARCH="${target#*/}" CGO_ENABLED=0 golangci-lint run ./... "$@"; done
+    cargo clippy --locked --all-targets -- --deny warnings
+    cargo clippy --locked --all-targets --target aarch64-apple-darwin -- --deny warnings
 
 # Format Go, Nix and this justfile in place
 [group('quality')]
 fmt:
     nix fmt
 
-# Run every non-VM flake check, cheapest first, using warm dev-shell Go caches
+# Run every non-VM flake check, cheapest first, using warm dev-shell Go and Rust caches
 [group('quality')]
 gate: _dev-shell
     #!/usr/bin/env bash
@@ -70,16 +87,20 @@ gate: _dev-shell
     diff -rq "$fresh/vendor" "$vendored" >&2 || { echo 'gate: the Go modules vendored for vendorHash in flake.nix differ from go.mod and go.sum; update vendorHash' >&2; exit 1; }
     go test -shuffle=on -tags integration ./...
     go test -race -shuffle=on -tags integration ./internal/trial ./internal/journal ./internal/watch ./internal/smu ./cmd/togi
+    cargo nextest run --locked --profile ci --no-tests=pass
+    cargo test --locked --doc
+    cargo deny --locked check bans licenses sources
+    cargo shear
     if [[ "{{ os() }}" == linux ]]; then
         go test -c -tags hardware -o /dev/null ./internal/trial
     fi
 
-# Run every flake check this host builds: package, race, lint, fmt, changes, module and, on Linux, trial-scope-tests and the VM tests
+# Run every flake check this host builds: package, race, lint, fmt, changes, module, the rust-* checks (clippy, nextest, doc, fmt, deny, shear) and, on Linux, trial-scope-tests and the VM tests
 [group('nix')]
 check *args:
     nix flake check "$@"
 
-# Build named flake checks: package, race, lint, fmt, changes, module or, on Linux, trial-scope-tests, vm and vm-restart-limit (`just check-one race`)
+# Build named flake checks: package, race, lint, fmt, changes, module, rust-clippy, rust-nextest, rust-doc, rust-fmt, rust-deny, rust-shear or, on Linux, trial-scope-tests, vm and vm-restart-limit (`just check-one race`)
 [group('nix')]
 check-one +names:
     nix build --no-link $(printf '.#checks.{{ system }}.%s ' "$@")

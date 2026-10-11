@@ -1,6 +1,7 @@
 # CI's definition of green: every Linux flake check on GitHub-hosted runners, one job per check so the VM
 # tests boot in parallel. On pushes to `main` only, a native arm64 runner also builds
-# `checks.aarch64-darwin.package`; pull requests skip it (ADR 0046). The aggregating `check` job requires
+# `checks.aarch64-darwin.package` and `checks.aarch64-darwin.rust-nextest`, which builds the Rust
+# workspace and runs its tests; pull requests skip it (ADR 0046). The aggregating `check` job requires
 # the Linux checks, and on `main` the macOS job too. Jobs substitute from the public Cachix cache `togi`
 # and push each check's output when CACHIX_AUTH_TOKEN is available, so a check whose inputs are unchanged
 # passes without running; the checks build the package with the revision `dev` so that a new commit alone
@@ -89,6 +90,8 @@ jobs:
           skipPush: true
       - name: nix build .#checks.aarch64-darwin.package
         run: nix build --no-link --print-build-logs --print-out-paths .#checks.aarch64-darwin.package > "$RUNNER_TEMP/out-paths"
+      - name: nix build .#checks.aarch64-darwin.rust-nextest
+        run: nix build --no-link --print-build-logs --print-out-paths .#checks.aarch64-darwin.rust-nextest >> "$RUNNER_TEMP/out-paths"
       - name: Push the check's output to Cachix
         if: env.CACHIX_AUTH_TOKEN != ''
         continue-on-error: true

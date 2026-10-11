@@ -7,6 +7,15 @@
       url = "github:hercules-ci/flake-parts";
       inputs.nixpkgs-lib.follows = "nixpkgs";
     };
+    rust-overlay = {
+      url = "github:oxalica/rust-overlay";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    crane.url = "github:ipetkov/crane";
+    advisory-db = {
+      url = "github:rustsec/advisory-db";
+      flake = false;
+    };
   };
 
   outputs =
@@ -39,6 +48,51 @@
             ./internal
             ./tools
           ];
+          rustPkgs = pkgs.extend inputs.rust-overlay.overlays.default;
+          rustToolchain = rustPkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
+          craneLib = (inputs.crane.mkLib rustPkgs).overrideToolchain rustToolchain;
+          rustFiles = lib.fileset.unions [
+            ./Cargo.toml
+            ./Cargo.lock
+            ./rust-toolchain.toml
+            ./clippy.toml
+            ./deny.toml
+            ./.config
+            ./crates
+          ];
+          rustLinker = lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
+            CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS = "-C link-arg=-fuse-ld=mold";
+          };
+          rustArgs = {
+            pname = "togi-rust";
+            version = "0.0.0";
+            src = lib.fileset.toSource {
+              root = ./.;
+              fileset = rustFiles;
+            };
+            strictDeps = true;
+            nativeBuildInputs = lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.mold ];
+          }
+          // rustLinker;
+          rustDeps = craneLib.buildDepsOnly rustArgs;
+          rustCheck = args: rustArgs // args // { cargoArtifacts = rustDeps; };
+          rustNoDeps =
+            args:
+            rustArgs
+            // args
+            // {
+              cargoArtifacts = null;
+              doInstallCargoArtifacts = false;
+              nativeBuildInputs = rustArgs.nativeBuildInputs ++ args.nativeBuildInputs;
+            };
+          advisoryDb = pkgs.runCommand "advisory-db" { nativeBuildInputs = [ pkgs.gitMinimal ]; } ''
+            cp -r ${inputs.advisory-db} $out
+            chmod -R +w $out
+            cd $out
+            git init --quiet
+            git add --all
+            git -c user.name=nix -c user.email=nix@localhost commit --quiet --message advisory-db
+          '';
           shippedFiles =
             lib.fileset.difference
               (lib.fileset.intersection goFiles (
@@ -109,24 +163,63 @@
         {
           packages.default = togi (inputs.self.shortRev or inputs.self.dirtyShortRev or "dev");
 
-          devShells.default = pkgs.mkShell {
-            packages = [
-              pkgs.flock
-              pkgs.go_1_27
-              pkgs.gh
-              pkgs.gh-token
-              pkgs.gopls
-              pkgs.golangci-lint
-              pkgs.just
-              pkgs.nixfmt
-              pkgs.nushell
-            ];
-            GOTOOLCHAIN = "local";
-            TOGI_DEV_SHELL = "1";
-          };
+          devShells.default = pkgs.mkShell (
+            {
+              packages = [
+                pkgs.flock
+                pkgs.go_1_27
+                pkgs.gh
+                pkgs.gh-token
+                pkgs.gopls
+                pkgs.golangci-lint
+                pkgs.just
+                pkgs.nixfmt
+                pkgs.nushell
+                rustToolchain
+                pkgs.cargo-deny
+                pkgs.cargo-llvm-cov
+                pkgs.cargo-nextest
+                pkgs.cargo-shear
+                pkgs.mold
+              ];
+              GOTOOLCHAIN = "local";
+              TOGI_DEV_SHELL = "1";
+            }
+            // rustLinker
+          );
 
           checks = {
             package = togi "dev";
+            rust-clippy = craneLib.mkCargoDerivation (rustCheck {
+              pnameSuffix = "-clippy";
+              buildPhaseCargoCommand = ''
+                cargoWithProfile clippy --locked --all-targets -- --deny warnings
+                cargoWithProfile clippy --locked --all-targets --target aarch64-apple-darwin -- --deny warnings
+              '';
+            });
+            rust-nextest = craneLib.cargoNextest (rustCheck {
+              cargoNextestExtraArgs = "--profile ci --no-tests=pass";
+            });
+            rust-doc = craneLib.cargoDocTest (rustCheck { });
+            rust-fmt = craneLib.cargoFmt rustArgs;
+            rust-deny = craneLib.mkCargoDerivation (rustNoDeps {
+              pnameSuffix = "-deny";
+              nativeBuildInputs = [
+                pkgs.cargo-deny
+                pkgs.gitMinimal
+              ];
+              buildPhaseCargoCommand = ''
+                mkdir -p $CARGO_HOME/advisory-dbs
+                cp -r ${advisoryDb} $CARGO_HOME/advisory-dbs/advisory-db-3157b0e258782691
+                chmod -R u+w $CARGO_HOME/advisory-dbs
+                cargo deny --offline --locked check bans licenses sources advisories
+              '';
+            });
+            rust-shear = craneLib.mkCargoDerivation (rustNoDeps {
+              pnameSuffix = "-shear";
+              nativeBuildInputs = [ pkgs.cargo-shear ];
+              buildPhaseCargoCommand = "cargo shear";
+            });
             race = config.checks.package.overrideAttrs {
               pname = "togi-race";
               src = lib.fileset.toSource {
@@ -167,7 +260,7 @@
                     fileset = lib.fileset.unions [
                       ./flake.nix
                       ./justfile
-                      (lib.fileset.fileFilter (f: f.hasExt "go" || f.hasExt "nix") ./.)
+                      (lib.fileset.fileFilter (f: f.hasExt "go" || f.hasExt "nix" || f.hasExt "rs") ./.)
                     ];
                   };
                 }
@@ -251,6 +344,7 @@
               pkgs.nixfmt
               pkgs.go_1_27
               pkgs.just
+              rustToolchain
             ];
             settings = {
               on-unmatched = "info";
@@ -263,6 +357,14 @@
                 command = "gofmt";
                 options = [ "-w" ];
                 includes = [ "*.go" ];
+              };
+              formatter.rustfmt = {
+                command = "rustfmt";
+                options = [
+                  "--edition"
+                  "2024"
+                ];
+                includes = [ "*.rs" ];
               };
               formatter.just = {
                 command = "just";

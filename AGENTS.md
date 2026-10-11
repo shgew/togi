@@ -65,6 +65,12 @@ Development works on x86_64-linux and macOS (aarch64-darwin); hardware runs and 
 
 Linux-only code uses OS-suffixed files (`_linux.go`, `_darwin.go`) and a `//go:build !linux` fallback returning a wrapped `errors.ErrUnsupported`.
 
+## Rust
+
+The Go-to-Rust port ([#634](https://github.com/shgew/togi/issues/634), [`docs/porting.md`](docs/porting.md)) is a Cargo workspace beside the Go module: crates under `crates/`, one directory per crate, named `togi-<package>`. A new crate is only a directory with a `Cargo.toml` that sets `[lints] workspace = true`; the toolchain is the exact version in `rust-toolchain.toml`, bumped only in its own pull request. `just focus-rs <crate>` and `just check-rs <crate>` are the inner loop, `just test-rs` runs the workspace, and `just gate` and `just lint` run Go and Rust, including `cargo clippy --target aarch64-apple-darwin` from Linux. The `rust-*` flake checks (clippy, nextest, doc tests, rustfmt, cargo-deny, cargo-shear) run in CI like every other check.
+
+Lints live in the workspace `Cargo.toml` and `clippy.toml`; CI denies warnings. Write `#[expect(lint, reason = "...")]`, never `#[allow]`. `unwrap`, `expect`, `dbg!` and `todo!` are denied outside tests, and printing is allowed only in output modules. `unsafe_code` is denied: only the crates for `internal/trial` and `internal/hardware` may add a local `#[expect(unsafe_code, reason = "...")]` inside a safe API, with a `// SAFETY:` comment; reach for rustix first, and park any other unsafe for the owner.
+
 ## Layout
 
 Each package's purpose is its package doc comment (`go doc ./internal/<name>`). Two invariants hold across packages:
