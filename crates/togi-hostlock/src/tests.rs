@@ -334,6 +334,10 @@ fn host_policy_leaves_provisioning_to_root() {
 fn real_process_excludes_until_it_exits() {
     let dir = private_dir();
     let path = lock_in(&dir);
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "test helper re-executes the test binary"
+    )]
     let mut child = Command::new(std::env::current_exe().unwrap())
         .args(["--exact", "tests::hold_lock_helper", "--nocapture"])
         .env(HOLD_ENV, &path)
