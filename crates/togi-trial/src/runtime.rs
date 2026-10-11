@@ -11,7 +11,8 @@ use tokio::task::LocalSet;
 
 use crate::error::Error;
 use crate::os::Os;
-use crate::supervisor::{Env, Handle, start};
+use crate::supervisor::{Env, Handle, Supervised, TrialCommand, start};
+use crate::timing::Timing;
 use crate::sweep;
 
 pub(crate) type Reply<T> = SyncSender<T>;
@@ -38,9 +39,11 @@ pub(crate) struct Runtime {
     commands: UnboundedSender<Command>,
     thread: Option<JoinHandle<()>>,
     finished: Receiver<()>,
+    join_bound: Duration,
 }
 
-pub(crate) const JOIN_BOUND: Duration = Duration::from_secs(1);
+/// What the synchronous side waits beyond the supervisors' own shutdown slot.
+const JOIN_SLACK: Duration = Duration::from_secs(1);
 
 impl Runtime {
     /// Builds the `current_thread` runtime and `LocalSet` on a new thread; `make_env` runs there,
@@ -48,6 +51,8 @@ impl Runtime {
     pub(crate) fn spawn<O: Os>(
         make_env: impl FnOnce() -> Env<O> + Send + 'static,
     ) -> Result<Self, Error> {
+        let join_bound = Timing::default().stop_bound() + JOIN_SLACK;
+        let (bound_tx, bound_rx) = sync_channel::<Duration>(1);
         let (commands, mut inbox) = unbounded_channel::<Command>();
         let (finished_tx, finished) = channel();
         let (ready_tx, ready_rx) = sync_channel::<Result<(), Error>>(1);
@@ -66,6 +71,7 @@ impl Runtime {
                 };
                 let _ = ready_tx.send(Ok(()));
                 let env = Rc::new(make_env());
+                let _ = bound_tx.send(env.timing.stop_bound() + JOIN_SLACK);
                 LocalSet::new().block_on(&runtime, async move {
                     while let Some(command) = inbox.recv().await {
                         match command {
@@ -75,16 +81,19 @@ impl Runtime {
                             }
                         }
                     }
+                    contain_all(&env).await;
                 });
                 runtime.shutdown_background();
                 let _ = finished_tx.send(());
             })
             .map_err(Error::RuntimeThread)?;
         ready_rx.recv().map_err(|_| Error::RuntimeGone)??;
+        let join_bound = bound_rx.recv().unwrap_or(join_bound);
         Ok(Self {
             commands,
             thread: Some(thread),
             finished,
+            join_bound,
         })
     }
 
@@ -92,11 +101,11 @@ impl Runtime {
         self.commands.send(command).map_err(|_| Error::RuntimeGone)
     }
 
-    /// Asks the thread to end and waits at most `JOIN_BOUND`; stuck work is abandoned, and the
-    /// launchers' parent-death signal ends whatever still runs when the thread does.
+    /// Asks the thread to tear down every live trial and end, and waits at most for the
+    /// supervisors' shutdown slot plus a second; a thread stuck past that is abandoned.
     pub(crate) fn shutdown(&mut self) {
         let _ = self.commands.send(Command::Shutdown);
-        if self.finished.recv_timeout(JOIN_BOUND).is_ok() {
+        if self.finished.recv_timeout(self.join_bound).is_ok() {
             if let Some(thread) = self.thread.take() {
                 let _ = thread.join();
             }
@@ -131,6 +140,35 @@ async fn serve<O: Os>(env: Rc<Env<O>>, command: Command) {
         }
         Command::Shutdown => {}
     }
+}
+
+/// Asks every live supervisor to tear its trial down and waits for them within one shared slot,
+/// so no workload is left running by dropping its supervisor; one still running at the end of
+/// the slot is reported, since nothing is left to contain it.
+async fn contain_all<O: Os>(env: &Env<O>) {
+    let live: Vec<Supervised> = env
+        .supervisors
+        .borrow_mut()
+        .drain(..)
+        .filter(|supervised| !supervised.task.is_finished())
+        .collect();
+    for supervised in &live {
+        let _ = supervised.commands.send(TrialCommand::Abandon);
+    }
+    let deadline = tokio::time::Instant::now() + env.timing.stop_bound();
+    for supervised in live {
+        if tokio::time::timeout_at(deadline, supervised.task).await.is_err() {
+            report_uncontained(&supervised.trial);
+        }
+    }
+}
+
+#[expect(
+    clippy::print_stderr,
+    reason = "the runner is being dropped, so no caller is left to report to"
+)]
+fn report_uncontained(trial: &str) {
+    eprintln!("togi: trial {trial} was still not torn down when its runner shut down");
 }
 
 /// Refuses to block inside an async runtime.

@@ -89,6 +89,7 @@ impl Runner {
             pm_table,
             storage: None,
             log_sink: None,
+            supervisors: std::cell::RefCell::default(),
         })?;
         Ok(Self {
             dir,
