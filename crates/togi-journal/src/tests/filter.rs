@@ -1,6 +1,7 @@
 use std::str::FromStr;
 
 use jiff::Timestamp;
+use togi_machine::CpuId;
 
 use super::fixtures::{at, core, end, intent, sample, set};
 use crate::*;
@@ -229,4 +230,36 @@ fn core_filters_see_typed_core_fields_of_every_shape() {
         );
         assert!(!filter(&[15]).matches(&event), "{kind} for core 15");
     }
+}
+
+#[test]
+fn a_member_probe_group_matches_the_probed_core_absent_from_its_cores() {
+    let Payload::HuntGroup(mut group) = sample(EventKind::HuntGroup) else {
+        unreachable!()
+    };
+    group.cores = set(&[0]);
+    group.probe = Some(super::fixtures::member(5, -22));
+    let events = [at(1, "boot-a", 0, &[], group.into())];
+    assert_eq!(seqs(&filter(&[5]).select(&events)), [1]);
+    assert!(filter(&[5]).matches(&events[0]));
+    assert!(filter(&[0]).matches(&events[0]));
+    assert!(!filter(&[7]).matches(&events[0]));
+}
+
+#[test]
+fn a_trial_start_matches_every_core_it_launched_an_instance_for() {
+    let Payload::TrialStart(mut start) = sample(EventKind::TrialStart) else {
+        unreachable!()
+    };
+    start.instances.push(TrialInstance {
+        core: core(9),
+        cpus: vec![CpuId(9)],
+        pid: 48212,
+        scope: "togi-trial-0413-c09".into(),
+    });
+    let events = [at(1, "boot-a", 0, &[], start.into())];
+    assert_eq!(seqs(&filter(&[3]).select(&events)), [1]);
+    assert_eq!(seqs(&filter(&[9]).select(&events)), [1]);
+    assert!(filter(&[9]).matches(&events[0]));
+    assert!(!filter(&[15]).matches(&events[0]));
 }

@@ -69,14 +69,56 @@ fn dead_end_is_recorded_and_cleared_by_config_loaded() {
         unreachable!()
     };
     dead_end.core = Some(core(0));
-    let mut events = vec![start(), at(2, "boot-a", 1, &[], dead_end.into())];
+    let Payload::TunerDecision(mut decision) = sample(EventKind::TunerDecision) else {
+        unreachable!()
+    };
+    decision.core = core(0);
+    let dead_end_event = at(3, "boot-a", 2, &[], dead_end.into());
+    let mut events = vec![
+        start(),
+        at(2, "boot-a", 1, &[], decision.into()),
+        dead_end_event.clone(),
+    ];
     let state = replay(&events).unwrap();
     let reference = state.dead_end.unwrap();
     assert_eq!(reference.condition, DeadEndCondition::FailureAtZero);
-    assert_eq!(reference.seq, Seq::new(2).unwrap());
-    assert!(state.core(core(0)).unwrap().last_decision.is_some());
-    events.push(at(3, "boot-a", 2, &[], sample(EventKind::ConfigLoaded)));
+    assert_eq!(reference.seq, Seq::new(3).unwrap());
+    assert_eq!(
+        state.core(core(0)).unwrap().last_decision,
+        Some(DecisionRef {
+            seq: dead_end_event.seq,
+            msg: dead_end_event.msg,
+        })
+    );
+    events.push(at(4, "boot-a", 3, &[], sample(EventKind::ConfigLoaded)));
     assert_eq!(replay(&events).unwrap().dead_end, None);
+}
+
+#[test]
+fn a_core_phase_replaces_the_earlier_last_decision_with_its_own_seq_and_msg() {
+    let Payload::TunerDecision(mut decision) = sample(EventKind::TunerDecision) else {
+        unreachable!()
+    };
+    decision.core = core(1);
+    let Payload::CorePhase(mut phase) = sample(EventKind::CorePhase) else {
+        unreachable!()
+    };
+    phase.core = core(1);
+    let phase_event = at(3, "boot-a", 2, &[], phase.into());
+    let state = replay(&[
+        start(),
+        at(2, "boot-a", 1, &[], decision.into()),
+        phase_event.clone(),
+    ])
+    .unwrap();
+    assert_eq!(
+        state.core(core(1)).unwrap().last_decision,
+        Some(DecisionRef {
+            seq: phase_event.seq,
+            msg: phase_event.msg,
+        })
+    );
+    assert!(state.core(core(0)).unwrap().last_decision.is_none());
 }
 
 #[test]
@@ -141,6 +183,22 @@ fn the_newest_unmatched_intent_is_in_flight_across_kinds() {
     .unwrap();
     assert_eq!(state.open.len(), 2);
     assert_eq!(state.in_flight().unwrap().kind, EventKind::SmuIntent);
+}
+
+#[test]
+fn completing_the_smu_command_leaves_the_open_trial_in_flight() {
+    let state = replay(&[
+        start(),
+        at(2, "boot-a", 1, &[], intent("0001", Some(0), &[])),
+        smu_intent(3, "boot-a"),
+        smu_write(4, "boot-a", 3),
+    ])
+    .unwrap();
+    assert_eq!(state.open.len(), 1);
+    let open = state.in_flight().unwrap();
+    assert_eq!(open.kind, EventKind::TrialIntent);
+    assert_eq!(open.seq, Seq::new(2).unwrap());
+    assert_eq!(open.trial.as_ref().unwrap().as_str(), "0001");
 }
 
 #[test]

@@ -488,45 +488,61 @@ fn failure_text(p: &Failure) -> String {
     };
     let signal = p.signal;
     let trial = p.trial.as_ref();
+    let in_trial = |trial: &super::TrialId| {
+        let mut text = String::new();
+        if let Some(condition) = p.condition {
+            text.push_str(condition.as_str());
+            text.push(' ');
+        }
+        if let Some(regime) = p.regime {
+            let _ = write!(text, "{regime} ");
+        }
+        format!("in {text}trial {trial}")
+    };
     match p.attribution {
         Attribution::Attributed => match (p.core, p.offset) {
-            (Some(id), Some(offset)) => match (loaded, trial) {
-                (true, None) => format!(
-                    "core {} failure at CO {}: {signal} with the {profile_name} profile applied and no trial in flight, the only nonzero core",
-                    core(id),
-                    offset.get()
-                ),
-                (true, Some(trial)) => format!(
-                    "core {} failure at CO {}: {signal} in {} {} trial {trial}",
-                    core(id),
-                    offset.get(),
-                    p.condition.map_or("", Condition::as_str),
-                    p.regime.map_or(String::new(), |regime| regime.to_string()),
-                ),
-                (false, _) => format!(
-                    "core {} failure at CO {}: {signal} in trial {} (alone: attributed to the target)",
-                    core(id),
-                    offset.get(),
-                    trial.map_or("-", |trial| trial.as_str())
-                ),
-            },
+            (Some(id), Some(offset)) => {
+                let (id, offset) = (core(id), offset.get());
+                match (trial, p.condition) {
+                    (None, _) if loaded => format!(
+                        "core {id} failure at CO {offset}: {signal} with the {profile_name} profile applied and no trial in flight, the only nonzero core"
+                    ),
+                    (None, _) => {
+                        format!("core {id} failure at CO {offset}: {signal} with no trial recorded")
+                    }
+                    (Some(trial), Some(Condition::Alone)) => format!(
+                        "core {id} failure at CO {offset}: {signal} {} (alone: attributed to the target)",
+                        in_trial(trial)
+                    ),
+                    (Some(trial), _) => {
+                        format!(
+                            "core {id} failure at CO {offset}: {signal} {}",
+                            in_trial(trial)
+                        )
+                    }
+                }
+            }
             _ => format!("attributed {signal} failure"),
         },
-        Attribution::Unattributed => {
-            let regime = p.regime.map_or(String::new(), |regime| regime.to_string());
-            match (p.condition, trial) {
-                (Some(Condition::Parked), Some(trial)) => format!(
-                    "unattributed {signal} failure in parked {regime} trial {trial}: the group fails, no evidence names a single core"
-                ),
-                (_, Some(trial)) if loaded => format!(
-                    "unattributed {signal} failure in together {regime} trial {trial}: no evidence names a single core"
-                ),
-                _ if loaded => format!(
-                    "unattributed {signal} failure with the {profile_name} profile applied and no trial in flight: counted as a {regime} failure"
-                ),
-                _ => format!("unattributed {signal} failure: no trial was in flight"),
+        Attribution::Unattributed => match (trial, p.condition) {
+            (Some(trial), Some(Condition::Parked)) => format!(
+                "unattributed {signal} failure {}: the group fails, no evidence names a single core",
+                in_trial(trial)
+            ),
+            (Some(trial), _) => format!(
+                "unattributed {signal} failure {}: no evidence names a single core",
+                in_trial(trial)
+            ),
+            (None, _) if loaded => {
+                let class = p
+                    .regime
+                    .map_or_else(String::new, |regime| format!("{regime} "));
+                format!(
+                    "unattributed {signal} failure with the {profile_name} profile applied and no trial in flight: counted as a {class}failure"
+                )
             }
-        }
+            (None, _) => format!("unattributed {signal} failure: no trial was in flight"),
+        },
     }
 }
 
@@ -852,38 +868,55 @@ fn plural_groups(count: u32) -> String {
 }
 
 fn hunt_end(p: &HuntEnd) -> String {
+    let hunt = p.hunt;
     let groups = plural_groups(p.groups);
-    let single = (p.cores.len() == 1)
-        .then(|| p.cores.iter().next())
-        .flatten();
-    match (p.result, single) {
-        (HuntOutcome::Loaded, _) => format!(
-            "hunt {} ended after {groups}: the failure stays with loaded cores {} ({})",
-            p.hunt,
-            cores(p.cores),
-            p.reason
-        ),
-        (HuntOutcome::Direct, Some(id)) => format!(
-            "hunt {} ended after {groups}: core {} was attributed directly ({})",
-            p.hunt,
-            core(id),
-            p.reason
-        ),
-        (_, Some(id)) if p.reason.is_empty() => {
-            format!("hunt {} found core {} after {groups}", p.hunt, core(id))
+    let reason = parenthesized(&p.reason);
+    let named = named_cores(p.cores);
+    match p.result {
+        HuntOutcome::Culprit => format!("hunt {hunt} found {named} after {groups}{reason}"),
+        HuntOutcome::Direct => {
+            format!("hunt {hunt} ended after {groups}: {named} was attributed directly{reason}")
         }
-        (_, Some(id)) => format!(
-            "hunt {} found core {} after {groups} ({})",
-            p.hunt,
-            core(id),
-            p.reason
+        HuntOutcome::Loaded => format!(
+            "hunt {hunt} ended after {groups}: the failure stays with loaded {named}{reason}"
         ),
-        (result, None) => format!(
-            "hunt {} {result}: cores {} after {groups} ({})",
-            p.hunt,
-            cores(p.cores),
-            p.reason
+        HuntOutcome::Combination => {
+            let mut text = format!(
+                "hunt {hunt} ended after {groups}: no single core fails alone, the failure needs {named} together"
+            );
+            if !p.members.is_empty() {
+                let _ = write!(text, " ({})", members(&p.members));
+            }
+            text.push_str(&reason);
+            text
+        }
+        HuntOutcome::Fallback => format!(
+            "hunt {hunt} ended after {groups} without isolating the failure: falling back to every candidate together, {named}{reason}"
         ),
+        HuntOutcome::Cancelled => {
+            let mut text = format!("hunt {hunt} cancelled after {groups}; no culprit established");
+            if !p.cores.is_empty() {
+                let _ = write!(text, ", {named} unresolved");
+            }
+            text.push_str(&reason);
+            text
+        }
+    }
+}
+
+fn named_cores(set: CoreSet) -> String {
+    match (set.len(), set.iter().next()) {
+        (0, _) => "no recorded core".to_owned(),
+        (1, Some(id)) => format!("core {}", core(id)),
+        _ => format!("cores {}", cores(set)),
+    }
+}
+
+fn parenthesized(reason: &str) -> String {
+    if reason.is_empty() {
+        String::new()
+    } else {
+        format!(" ({reason})")
     }
 }
 

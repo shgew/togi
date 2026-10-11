@@ -3,7 +3,7 @@ use std::path::Path;
 
 use super::*;
 use crate::fs::{Fault, MemFs, Op};
-use crate::journal::tests::sample;
+use crate::journal::tests::{non_start_first_line, sample};
 use crate::testing::{begin_default, note, stamp};
 
 fn recorded(fs: &MemFs) -> Vec<u8> {
@@ -155,9 +155,106 @@ fn a_large_event_spans_reader_chunks() {
     drop(journal);
     let recording = Recording::read_in(&fs, Path::new("/state/events.jsonl")).unwrap();
     assert_eq!(recording.events().len(), 2);
-    let fresh = EventReader::new(BufReader::with_capacity(
+    let events = EventReader::new(BufReader::with_capacity(
         16,
         Cursor::new(fs.contents("/state/events.jsonl").unwrap()),
+    ))
+    .collect::<Result<Vec<_>, _>>()
+    .unwrap();
+    assert_eq!(events.len(), 2);
+    assert!(matches!(
+        &events[1].payload,
+        Payload::SessionWarning(warning) if warning.operation == big
     ));
-    assert_eq!(fresh.count(), 2);
+}
+
+#[test]
+fn the_first_of_two_differing_contexts_wins() {
+    let fs = MemFs::new();
+    let mut journal = begin_default(&fs);
+    journal.append(stamp(1), note("n"), &[]).unwrap();
+    let mut bytes = fs.contents("/state/events.jsonl").unwrap();
+    bytes.extend_from_slice(context_line(3).as_bytes());
+    let second = context_line(4).replace("\"bios_version\":\"1.0\"", "\"bios_version\":\"2.0\"");
+    bytes.extend_from_slice(second.as_bytes());
+    fs.put("/j.jsonl", bytes);
+    let found = recorded_context_in(&fs, Path::new("/j.jsonl"))
+        .unwrap()
+        .unwrap();
+    assert_eq!(found.bios_version, "1.0");
+}
+
+#[test]
+fn a_contiguous_journal_that_does_not_begin_with_session_start_is_refused() {
+    let bytes = non_start_first_line(&recorded(&MemFs::new()));
+    let mut reader = EventReader::new(bytes.as_slice());
+    assert!(matches!(
+        reader.next(),
+        Some(Err(ReadError::FirstEvent {
+            found: EventKind::SessionWarning
+        }))
+    ));
+    assert!(reader.next().is_none());
+    assert_eq!(reader.accepted(), 0);
+    assert!(matches!(
+        Recording::parse(&bytes),
+        Err(ReadError::FirstEvent { .. })
+    ));
+    let fs = MemFs::new();
+    fs.put("/j.jsonl", bytes);
+    let error = recorded_context_in(&fs, Path::new("/j.jsonl")).unwrap_err();
+    assert!(matches!(error.source, ReadError::FirstEvent { .. }));
+}
+
+/// A reader that serves `data` and then fails instead of reporting end of input.
+struct FailingAfter {
+    data: Vec<u8>,
+    position: usize,
+}
+
+impl io::Read for FailingAfter {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let available = self.fill_buf()?;
+        let len = available.len().min(buf.len());
+        buf[..len].copy_from_slice(&available[..len]);
+        self.consume(len);
+        Ok(len)
+    }
+}
+
+impl BufRead for FailingAfter {
+    fn fill_buf(&mut self) -> io::Result<&[u8]> {
+        if self.position >= self.data.len() {
+            return Err(io::Error::other("device went away"));
+        }
+        Ok(&self.data[self.position..=self.position])
+    }
+
+    fn consume(&mut self, amount: usize) {
+        self.position += amount;
+    }
+}
+
+#[test]
+fn a_reader_that_fails_mid_line_yields_the_error_and_ends_without_a_torn_tail() {
+    let mut data = recorded(&MemFs::new());
+    let complete = data.len() as u64;
+    data.extend_from_slice(b"{\"seq\":5,\"tim");
+    let mut reader = EventReader::new(FailingAfter { data, position: 0 });
+    let mut accepted = Vec::new();
+    let error = loop {
+        match reader
+            .next()
+            .expect("the failure is yielded before the end")
+        {
+            Ok(event) => accepted.push(event),
+            Err(error) => break error,
+        }
+    };
+    assert!(matches!(error, ReadError::Io(_)), "{error}");
+    assert_eq!(accepted.len(), 4);
+    assert_eq!(reader.accepted(), complete);
+    assert_eq!(reader.torn(), None);
+    assert!(reader.next().is_none());
+    assert_eq!(reader.accepted(), complete);
 }

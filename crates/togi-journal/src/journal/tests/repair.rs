@@ -1,7 +1,7 @@
-use super::{hex_of, sample};
+use super::{hex_of, non_start_first_line, sample};
 use crate::fs::{Fault, MemFs};
 use crate::testing::{boot, kinds, live, note, reopen, simulated, stamp};
-use crate::{EventKind, OpenError, Payload, Recording};
+use crate::{EventKind, OpenError, Payload, ReadError, Recording};
 
 fn torn_events(journal: &crate::Journal) -> Vec<&crate::JournalTorn> {
     journal
@@ -131,35 +131,50 @@ fn the_repair_event_carries_the_opening_boot_and_time() {
 #[test]
 fn every_repair_step_failure_keeps_the_evidence_and_records_it_exactly_once() {
     let (bytes, complete) = torn_sample();
-    for nth in 1..=8 {
+    let steps = {
+        let fs = MemFs::new();
+        fs.put("/state/events.jsonl", bytes.clone());
+        let dir = simulated(&fs);
+        let before = fs.mutations();
+        drop(dir.open(boot(2)).unwrap());
+        fs.mutations() - before
+    };
+    assert!(
+        steps >= 8,
+        "the repair and the writer open are {steps} steps"
+    );
+    for nth in 1..=steps {
         for fault in [Fault::any_before(nth), Fault::any_after(nth)] {
             let fs = MemFs::new();
             fs.put("/state/events.jsonl", bytes.clone());
-            let dir = crate::testing::simulated(&fs);
+            let dir = simulated(&fs);
             fs.inject(fault.clone());
-            let first = dir.open(boot(2));
+            let error = dir
+                .open(boot(2))
+                .err()
+                .unwrap_or_else(|| panic!("{fault:?}: the open succeeded despite the fault"));
+            assert!(
+                matches!(error, OpenError::Repair { .. } | OpenError::Dir(_)),
+                "{fault:?}: {error}"
+            );
             fs.clear_faults();
-            if let Err(error) = &first {
-                assert!(
-                    matches!(error, OpenError::Repair { .. } | OpenError::Dir(_)),
-                    "{fault:?}: {error}"
-                );
-                let on_disk = live(&fs);
-                assert!(
-                    on_disk == bytes || Recording::parse(&on_disk).unwrap().torn().is_none(),
-                    "{fault:?}: the file is the original or the finished repair"
-                );
-            }
-            drop(first);
+            let on_disk = live(&fs);
+            assert!(
+                on_disk == bytes || Recording::parse(&on_disk).unwrap().torn().is_none(),
+                "{fault:?}: the file is the original or the finished repair"
+            );
             let journal = reopen(&fs, 3);
-            let mut expected = vec![
-                "session.start",
-                "session.warning",
-                "session.warning",
-                "session.warning",
-            ];
-            expected.push("journal.torn");
-            assert_eq!(kinds(journal.events()), expected, "{fault:?}");
+            assert_eq!(
+                kinds(journal.events()),
+                [
+                    "session.start",
+                    "session.warning",
+                    "session.warning",
+                    "session.warning",
+                    "journal.torn",
+                ],
+                "{fault:?}"
+            );
             let records = torn_events(&journal);
             assert_eq!(records.len(), 1, "{fault:?}");
             assert_eq!(records[0].offset, complete as u64, "{fault:?}");
@@ -253,23 +268,18 @@ fn a_complete_line_that_does_not_decode_is_corruption_and_nothing_is_rewritten()
 }
 
 #[test]
-fn a_gap_a_wrong_first_event_and_a_forward_cause_are_refused() {
+fn a_gap_and_a_forward_cause_are_refused() {
     let good = sample(&MemFs::new());
     let lines: Vec<&[u8]> = good.split_inclusive(|byte| *byte == b'\n').collect();
 
     let mut gap = lines[0].to_vec();
     gap.extend_from_slice(lines[2]);
-    let headless: Vec<u8> = lines[1..].concat();
     let forward =
         String::from_utf8(good.clone())
             .unwrap()
             .replacen("\"cause\":[1]", "\"cause\":[2]", 1);
 
-    for (name, bytes) in [
-        ("gap", gap),
-        ("headless", headless),
-        ("forward cause", forward.into_bytes()),
-    ] {
+    for (name, bytes) in [("gap", gap), ("forward cause", forward.into_bytes())] {
         let fs = MemFs::new();
         fs.put("/state/events.jsonl", bytes.clone());
         assert!(
@@ -278,6 +288,32 @@ fn a_gap_a_wrong_first_event_and_a_forward_cause_are_refused() {
         );
         assert_eq!(live(&fs), bytes, "{name}");
     }
+}
+
+#[test]
+fn a_contiguous_journal_that_does_not_begin_with_session_start_is_refused() {
+    let bytes = non_start_first_line(&sample(&MemFs::new()));
+    assert!(matches!(
+        Recording::parse(&bytes),
+        Err(ReadError::FirstEvent {
+            found: EventKind::SessionWarning
+        })
+    ));
+    let fs = MemFs::new();
+    fs.put("/state/events.jsonl", bytes.clone());
+    let Err(OpenError::Read(error)) = simulated(&fs).open(boot(2)) else {
+        panic!("a journal without session.start first must be refused by open");
+    };
+    assert!(
+        matches!(
+            error.source,
+            ReadError::FirstEvent {
+                found: EventKind::SessionWarning
+            }
+        ),
+        "{error}"
+    );
+    assert_eq!(live(&fs), bytes);
 }
 
 #[test]

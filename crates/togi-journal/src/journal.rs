@@ -235,7 +235,9 @@ impl Journal {
         self.commit(stamp, payload, cause)
     }
 
-    /// Records the intent to run `command` and returns the receipt that authorizes writing it.
+    /// Records the intent to run `command` and returns the receipt that authorizes writing it. A buffered journal
+    /// first writes its buffer through to the file, so the receipt never outruns the bytes on disk; without an fsync,
+    /// that receipt proves the intent's order and that it survives the process exiting, not a power loss.
     pub fn append_smu_intent(
         &mut self,
         stamp: Stamp,
@@ -249,6 +251,7 @@ impl Journal {
                 cause,
             )?
             .seq;
+        self.flush()?;
         Ok(SmuIntentReceipt::new(self.id, seq, command))
     }
 

@@ -25,6 +25,7 @@ fn samples_cover_every_kind_once() {
 fn every_kind_round_trips_through_the_wire() {
     for (index, payload) in samples().into_iter().enumerate() {
         let kind = payload.kind();
+        let message = payload.message();
         let seq_no = u64::try_from(index).unwrap() + 2;
         let event = Event::new(
             seq(seq_no),
@@ -33,7 +34,8 @@ fn every_kind_round_trips_through_the_wire() {
             vec![seq(1)],
             payload,
         );
-        assert!(!event.msg.is_empty(), "{kind} has no message");
+        assert!(!message.is_empty(), "{kind} has no message");
+        assert_eq!(event.msg, message, "{kind} stores its generated message");
         let line = event.encode().unwrap();
         assert!(!line.contains('\n'));
         let decoded =

@@ -17,14 +17,76 @@ fn unknown_kind_is_named() {
     assert!(error.to_string().contains("trial.nope"), "{error}");
 }
 
-#[test]
-fn unknown_envelope_field_is_an_error() {
+/// The first sample (`session.start`) as the first journal line, mutated by `corrupt`.
+fn corrupted_first_line(corrupt: impl FnOnce(&mut Value)) -> String {
     let mut line = line_of(samples().remove(0));
-    line["extra"] = json!(1);
-    assert!(matches!(
-        Event::decode(&line.to_string()),
-        Err(DecodeError::Envelope(_))
-    ));
+    line["seq"] = json!(1);
+    line.as_object_mut().unwrap().remove("cause");
+    corrupt(&mut line);
+    line.to_string()
+}
+
+fn assert_names_session_start(error: &str) {
+    assert!(
+        error.contains("session.start"),
+        "kind missing from: {error}"
+    );
+}
+
+#[test]
+fn unknown_envelope_field_is_an_error_that_names_the_kind() {
+    let line = corrupted_first_line(|line| line["extra"] = json!(1));
+    let error = Event::decode(&line).unwrap_err();
+    assert!(
+        matches!(
+            error,
+            DecodeError::Envelope {
+                kind: Some(EventKind::SessionStart),
+                ..
+            }
+        ),
+        "{error}"
+    );
+    assert!(error.to_string().contains("extra"), "{error}");
+    assert_names_session_start(&error.to_string());
+
+    let read = EventReader::new(format!("{line}\n").as_bytes())
+        .next()
+        .unwrap()
+        .unwrap_err();
+    assert!(read.to_string().starts_with("line 1:"), "{read}");
+    assert!(read.to_string().contains("extra"), "{read}");
+    assert_names_session_start(&read.to_string());
+}
+
+#[test]
+fn invalid_envelope_value_names_the_kind_when_the_kind_is_known() {
+    let line = corrupted_first_line(|line| line["seq"] = json!(0));
+    let error = Event::decode(&line).unwrap_err();
+    assert!(
+        matches!(error, DecodeError::Envelope { kind: Some(_), .. }),
+        "{error}"
+    );
+    assert_names_session_start(&error.to_string());
+    let read = EventReader::new(format!("{line}\n").as_bytes())
+        .next()
+        .unwrap()
+        .unwrap_err();
+    assert_names_session_start(&read.to_string());
+}
+
+#[test]
+fn envelope_errors_without_a_known_kind_do_not_invent_one() {
+    let line = corrupted_first_line(|line| {
+        line["kind"] = json!("trial.nope");
+        line["extra"] = json!(1);
+    });
+    let error = Event::decode(&line).unwrap_err();
+    assert!(
+        matches!(error, DecodeError::Envelope { kind: None, .. }),
+        "{error}"
+    );
+    assert!(error.to_string().starts_with("malformed event:"), "{error}");
 }
 
 #[test]

@@ -272,7 +272,8 @@ impl StateDir {
         Ok(false)
     }
 
-    /// The marker a transaction of this kind leaves behind before anything is moved.
+    /// The marker a transaction of this kind leaves behind before anything is moved. A marker an earlier attempt left
+    /// is written and synced again, so nothing moves behind a record that may not be durable.
     pub(crate) fn mark_archive_kind(
         &self,
         kind: ArchiveKind,
@@ -281,9 +282,8 @@ impl StateDir {
         match kind {
             ArchiveKind::ResetAll => self.mark_reset_through(Some(*session)).map(drop),
             ArchiveKind::Transition => {
-                if self.pending_carry()?.is_none() {
-                    self.mark(Marker::CarryPending, session)?;
-                }
+                let source = self.pending_carry()?.unwrap_or(*session);
+                self.mark(Marker::CarryPending, &source)?;
                 Ok(())
             }
         }
@@ -331,6 +331,7 @@ impl StateDir {
                 if self.live_session()? != Some(session) {
                     return Err(DirError::NotAJournal { path: events });
                 }
+                self.mark(Marker::CompatPending, &session)?;
                 self.finish_archive(&session)?;
             } else if self.kind_of(&self.archive_journal(&session))? == Some(FileKind::File) {
                 self.sync_dirs()?;

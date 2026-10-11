@@ -1,3 +1,4 @@
+use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -476,10 +477,112 @@ fn a_failed_lock_never_leaks_the_lock() {
 }
 
 #[test]
-fn a_failed_mode_change_releases_the_lock() {
+fn a_failed_mode_change_takes_no_lock() {
     let fs = MemFs::new();
     fs.inject(Fault::before(Op::SetMode, 1));
     assert!(crate::testing::try_simulated(&fs).is_err());
+    assert_eq!(fs.contents("/state/lock"), None);
     fs.clear_faults();
     assert!(crate::testing::try_simulated(&fs).is_ok());
+}
+
+#[test]
+fn the_directory_mode_is_set_before_the_lock_file_is_opened() {
+    let fs = MemFs::new();
+    let _held = dir(&fs);
+    let log = fs.log();
+    let mode = log
+        .iter()
+        .position(|(op, path)| *op == Op::SetMode && path == Path::new("/state"))
+        .unwrap();
+    let lock = log
+        .iter()
+        .position(|(op, path)| *op == Op::Open && path == Path::new("/state/lock"))
+        .unwrap();
+    assert!(mode < lock);
+}
+
+fn mode_of(path: &Path) -> u32 {
+    std::fs::metadata(path).unwrap().permissions().mode() & 0o777
+}
+
+#[test]
+fn locking_an_existing_directory_restores_the_state_mode_before_taking_the_lock() {
+    let root = tempfile::tempdir().unwrap();
+    for mode in [0o777, 0o700] {
+        let path = root.path().join(format!("state-{mode:o}"));
+        std::fs::create_dir(&path).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(mode)).unwrap();
+        let held = StateDir::lock(&path).unwrap();
+        assert_eq!(mode_of(&path), 0o711);
+        drop(held);
+    }
+}
+
+#[test]
+fn locking_a_directory_the_owner_cannot_write_still_succeeds() {
+    if rustix::process::geteuid().is_root() {
+        return;
+    }
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("state");
+    std::fs::create_dir(&path).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o500)).unwrap();
+    let held = StateDir::lock(&path).unwrap();
+    assert_eq!(mode_of(&path), 0o711);
+    assert!(path.join("lock").is_file());
+    drop(held);
+}
+
+#[test]
+fn a_symlinked_archive_directory_is_refused_on_disk() {
+    let root = tempfile::tempdir().unwrap();
+    let outside = root.path().join("outside");
+    std::fs::create_dir(&outside).unwrap();
+    std::fs::write(outside.join("20260101T000000Z.jsonl"), "").unwrap();
+    std::fs::write(outside.join("20260101T000000Z-reset-all"), "").unwrap();
+    let path = root.path().join("state");
+    let held = StateDir::lock(&path).unwrap();
+    std::os::unix::fs::symlink(&outside, path.join("archive")).unwrap();
+    assert!(matches!(held.archives(), Err(DirError::Io { .. })));
+    assert!(matches!(held.markers(), Err(DirError::Io { .. })));
+}
+
+#[test]
+fn a_stale_state_temporary_is_replaced_by_a_fresh_file() {
+    let fs = MemFs::new();
+    let mut dir = dir(&fs);
+    fs.put("/state/.state.json.tmp", "stale stale stale stale stale");
+    let stale = fs.open_append(Path::new("/state/.state.json.tmp")).unwrap();
+    dir.write_state(&Doc { n: 1 }).unwrap();
+    drop(stale);
+    assert_eq!(dir.read_state::<Doc>().unwrap(), Some(Doc { n: 1 }));
+    assert_eq!(fs.contents("/state/.state.json.tmp"), None);
+}
+
+#[test]
+fn publication_never_writes_through_a_pre_existing_temporary_inode() {
+    let fs = MemFs::new();
+    let mut dir = dir(&fs);
+    dir.write_state(&Doc { n: 1 }).unwrap();
+    fs.put("/state/.state.json.tmp", "stale");
+    let mut stale = fs.open_append(Path::new("/state/.state.json.tmp")).unwrap();
+    fs.fail_state_publication();
+    assert!(dir.write_state(&Doc { n: 2 }).is_err());
+    stale.write_all(b"tamper").unwrap();
+    assert_eq!(dir.read_state::<Doc>().unwrap(), Some(Doc { n: 1 }));
+}
+
+#[test]
+fn publication_leaves_a_hard_link_to_the_published_state_untouched_on_disk() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("state");
+    let mut dir = StateDir::lock(&path).unwrap();
+    dir.write_state(&Doc { n: 1 }).unwrap();
+    let keep = root.path().join("keep");
+    std::fs::hard_link(path.join("state.json"), &keep).unwrap();
+    std::fs::hard_link(path.join("state.json"), path.join(".state.json.tmp")).unwrap();
+    dir.write_state(&Doc { n: 2 }).unwrap();
+    assert_eq!(std::fs::read(&keep).unwrap(), b"{\"n\":1}\n");
+    assert_eq!(dir.read_state::<Doc>().unwrap(), Some(Doc { n: 2 }));
 }

@@ -83,6 +83,14 @@ fn append_needs_every_dimension_current() {
         refuse(Dimension::Evidence, 2, 3)
     );
     assert_eq!(
+        verdict(NEWER_SCHEMA, Operation::Append),
+        refuse(Dimension::Schema, 3, 2)
+    );
+    assert_eq!(
+        verdict(NEWER_RULESET, Operation::Append),
+        refuse(Dimension::Ruleset, 6, 5)
+    );
+    assert_eq!(
         verdict(NEWER_EVIDENCE, Operation::Append),
         refuse(Dimension::Evidence, 4, 3)
     );
@@ -117,6 +125,7 @@ fn inspect_needs_the_same_schema() {
     for same_schema in [SAME, OLDER_RULESET, NEWER_RULESET, NEWER_EVIDENCE] {
         assert_eq!(verdict(same_schema, Operation::Inspect), Verdict::Use);
     }
+    assert_eq!(verdict(OLDER_EVIDENCE, Operation::Inspect), Verdict::Use);
     assert_eq!(
         verdict(OLDER_SCHEMA, Operation::Inspect),
         refuse(Dimension::Schema, 1, 2)
@@ -169,10 +178,56 @@ fn history_reads_any_shipped_schema_not_newer() {
         verdict(NEWER_SCHEMA, Operation::History),
         refuse(Dimension::Schema, 3, 2)
     );
+    assert_eq!(verdict(OLDER_EVIDENCE, Operation::History), Verdict::Use);
     assert_eq!(
         verdict((0, 5, 3), Operation::History),
         refuse(Dimension::Schema, 0, 2)
     );
+}
+
+#[test]
+fn changing_only_version_rev_or_fixes_leaves_every_verdict_unchanged() {
+    let operations = [
+        Operation::Resume,
+        Operation::Append,
+        Operation::ResetAll,
+        Operation::Inspect,
+        Operation::Replay,
+        Operation::History,
+    ];
+    let recorded_stamps = [
+        SAME,
+        OLDER_SCHEMA,
+        OLDER_RULESET,
+        OLDER_EVIDENCE,
+        NEWER_SCHEMA,
+        NEWER_RULESET,
+        NEWER_EVIDENCE,
+    ];
+    for recorded in recorded_stamps {
+        let mut upgraded = stamp(recorded);
+        upgraded.version = "9.9.9".into();
+        upgraded.rev = Some("def5678".into());
+        upgraded.fixes = 7;
+        for operation in operations {
+            assert_eq!(
+                stamp(BINARY).verdict(&upgraded, operation),
+                verdict(recorded, operation),
+                "{recorded:?} {operation:?}"
+            );
+        }
+    }
+    let mut upgraded_binary = stamp(BINARY);
+    upgraded_binary.version = "9.9.9".into();
+    upgraded_binary.rev = Some("def5678".into());
+    upgraded_binary.fixes = 7;
+    for operation in operations {
+        assert_eq!(
+            upgraded_binary.verdict(&stamp(SAME), operation),
+            Verdict::Use,
+            "{operation:?}"
+        );
+    }
 }
 
 #[test]

@@ -7,11 +7,12 @@ use std::ffi::OsString;
 use std::fmt;
 use std::fs::{File, OpenOptions};
 use std::io::{self, Read, Write};
+use std::os::unix::ffi::OsStringExt;
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-use rustix::fs::{CWD, OFlags, RenameFlags};
+use rustix::fs::{AtFlags, CWD, Dir, FileType, OFlags, RenameFlags};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum FileKind {
@@ -77,8 +78,12 @@ pub trait Fs: Send + Sync + fmt::Debug {
 }
 
 /// The real filesystem. Every sync reaches the disk unless the value was made by [`DiskFs::unsynced`].
+///
+/// Crate-private: no other crate can open a journal on disk for writing except through [`StateDir::lock`].
+///
+/// [`StateDir::lock`]: crate::StateDir::lock
 #[derive(Clone, Copy, Debug)]
-pub struct DiskFs {
+pub(crate) struct DiskFs {
     synced: bool,
 }
 
@@ -203,15 +208,29 @@ impl Fs for DiskFs {
     }
 
     fn read_dir(&self, path: &Path) -> io::Result<Vec<DirEntry>> {
-        std::fs::read_dir(path)?
-            .map(|entry| {
-                let entry = entry?;
-                Ok(DirEntry {
-                    name: entry.file_name(),
-                    kind: disk_kind(entry.file_type()?),
-                })
-            })
-            .collect()
+        let dir = OpenOptions::new()
+            .read(true)
+            .custom_flags((OFlags::NOFOLLOW | OFlags::DIRECTORY).bits().cast_signed())
+            .open(path)?;
+        let mut entries = Vec::new();
+        for entry in Dir::read_from(&dir)? {
+            let entry = entry?;
+            let name = entry.file_name();
+            if matches!(name.to_bytes(), b"." | b"..") {
+                continue;
+            }
+            let file_type = match entry.file_type() {
+                FileType::Unknown => FileType::from_raw_mode(
+                    rustix::fs::statat(&dir, name, AtFlags::SYMLINK_NOFOLLOW)?.st_mode,
+                ),
+                known => known,
+            };
+            entries.push(DirEntry {
+                name: OsString::from_vec(name.to_bytes().to_vec()),
+                kind: rustix_kind(file_type),
+            });
+        }
+        Ok(entries)
     }
 
     fn kind(&self, path: &Path) -> io::Result<Option<FileKind>> {
@@ -240,6 +259,15 @@ impl Fs for DiskFs {
             Err(std::fs::TryLockError::WouldBlock) => Ok(None),
             Err(std::fs::TryLockError::Error(error)) => Err(error),
         }
+    }
+}
+
+fn rustix_kind(kind: FileType) -> FileKind {
+    match kind {
+        FileType::RegularFile => FileKind::File,
+        FileType::Directory => FileKind::Dir,
+        FileType::Symlink => FileKind::Symlink,
+        _ => FileKind::Other,
     }
 }
 
@@ -408,12 +436,12 @@ impl Tree {
         }
         let mut fired = None;
         self.faults.retain_mut(|(fault, seen)| {
-            if fired.is_some() || !fault.matches(op, paths) {
+            if !fault.matches(op, paths) {
                 return true;
             }
             *seen += 1;
             if *seen >= fault.nth.max(1) {
-                fired = Some(fault.effect);
+                fired.get_or_insert(fault.effect);
                 false
             } else {
                 true
@@ -665,8 +693,16 @@ impl MemFs {
     }
 
     fn open_file(&self, path: &Path, mode: OpenMode) -> io::Result<Box<dyn FsFile>> {
-        let inode = self.mutate(Op::Open, &[path], |tree| tree.open(path, mode))?;
-        *self.tree().handles.entry(inode).or_default() += 1;
+        let mut tree = self.tree();
+        let effect = tree.check(Op::Open, &[path]);
+        if matches!(effect, Some(Effect::Before | Effect::Short)) {
+            return Err(injected(Op::Open));
+        }
+        let inode = tree.open(path, mode)?;
+        if effect.is_some() {
+            return Err(injected(Op::Open));
+        }
+        *tree.handles.entry(inode).or_default() += 1;
         Ok(Box::new(MemFile {
             fs: self.clone(),
             path: path.to_path_buf(),
@@ -1121,5 +1157,60 @@ mod tests {
         fs.inject(Fault::after(Op::Open, 1));
         assert!(fs.try_lock(Path::new("/s/lock")).is_err());
         assert!(fs.try_lock(Path::new("/s/lock")).unwrap().is_some());
+    }
+
+    #[test]
+    fn every_queued_fault_counts_each_matching_operation() {
+        let fs = MemFs::new();
+        dir(&fs, "/s");
+        let mut file = fs.open_append(Path::new("/s/a")).unwrap();
+        fs.inject(Fault::before(Op::Sync, 1));
+        fs.inject(Fault::before(Op::Sync, 2));
+        assert!(file.sync().is_err());
+        assert!(file.sync().is_err());
+        file.sync().unwrap();
+    }
+
+    #[test]
+    fn an_open_that_fails_after_taking_effect_holds_no_handle() {
+        let fs = MemFs::new();
+        dir(&fs, "/s");
+        fs.inject(Fault::after(Op::Open, 1));
+        assert!(fs.open_append(Path::new("/s/a")).is_err());
+        fs.remove_file(Path::new("/s/a")).unwrap();
+        assert_eq!(fs.stored_files(), 0);
+    }
+
+    #[test]
+    fn create_new_refuses_an_existing_file() {
+        let fs = MemFs::new();
+        dir(&fs, "/s");
+        fs.put("/s/a", "x");
+        let error = fs.create_new(Path::new("/s/a")).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::AlreadyExists);
+        assert_eq!(fs.contents("/s/a").unwrap(), b"x");
+    }
+
+    #[test]
+    fn disk_read_dir_refuses_a_symlinked_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("real")).unwrap();
+        std::fs::write(dir.path().join("real/inner"), "x").unwrap();
+        std::os::unix::fs::symlink(dir.path().join("real"), dir.path().join("link")).unwrap();
+        assert!(
+            DiskFs::default()
+                .read_dir(&dir.path().join("link"))
+                .is_err()
+        );
+        let entries = DiskFs::default()
+            .read_dir(&dir.path().join("real"))
+            .unwrap();
+        assert_eq!(
+            entries,
+            [DirEntry {
+                name: "inner".into(),
+                kind: FileKind::File
+            }]
+        );
     }
 }

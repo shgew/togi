@@ -7,7 +7,11 @@ allow-print-in-tests = true
 # #[expect(clippy::disallowed_methods, reason = "...")]. An entry lands with the crate that
 # defines or first calls its path: process spawning (trial workloads, journalctl in detect,
 # systemd-run, systemctl and grub-editenv in hardware, the simulator in bench, bench in
-# audit), the SMU seam's write methods and journal writes outside the journal crate.
+# audit) and the SMU seam's write methods. Journal writes outside the journal crate are
+# confined by crate privacy instead: the disk filesystem (`DiskFs`) is crate-private, a
+# compile_fail doctest in togi-journal is the negative control, and the only ways to open a
+# journal on disk for writing are `StateDir::lock` and the two non-durable constructors below,
+# which carry the tripwire entries.
 disallowed-methods = [
     { path = "togi_machine::Smu::set_offset", reason = "Only the session write transaction writes a core offset through the SMU seam" },
     { path = "togi_machine::Smu::set_all_offsets", reason = "Only the session write transaction writes every offset through the SMU seam" },

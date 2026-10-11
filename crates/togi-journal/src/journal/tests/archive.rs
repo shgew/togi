@@ -1,5 +1,5 @@
 use super::sample;
-use crate::fs::{Fault, MemFs};
+use crate::fs::{Fault, MemFs, Op};
 use crate::testing::{
     begin, begin_default, boot, default_session, kinds, live, note, reopen, session, simulated,
     stamp, start,
@@ -569,4 +569,98 @@ fn reopening_after_a_moved_archive_syncs_the_archive_directory_before_the_next_w
         })
         .unwrap();
     assert!(archive_sync < writer);
+}
+
+fn position(log: &[(Op, std::path::PathBuf)], op: Op, path: &str) -> Option<usize> {
+    log.iter()
+        .position(|(logged, at)| *logged == op && at == std::path::Path::new(path))
+}
+
+#[test]
+fn open_syncs_a_surviving_compat_marker_and_its_directories_before_resuming_the_archive() {
+    let fs = MemFs::new();
+    let original = unreadable_fixture(&fs);
+    let mut dir = simulated(&fs);
+    fs.inject(Fault::before(Op::Sync, 1).named("20231114T221320Z-compat-pending"));
+    assert!(dir.archive_unreadable(ArchiveKind::ResetAll).is_err());
+    fs.clear_faults();
+    drop(dir);
+    assert!(fs.contents(COMPAT).is_some());
+    assert_eq!(live(&fs), original);
+
+    let mark = fs.log().len();
+    let journal = reopen(&fs, 2);
+    assert!(journal.events().is_empty());
+    assert_archived_intact(&fs, &original, "resumed");
+    let log = fs.log().split_off(mark);
+    let first_removal = position(&log, Op::Remove, "/state/state.json").unwrap();
+    for (op, path) in [
+        (Op::Sync, COMPAT),
+        (Op::SyncDir, "/state/archive"),
+        (Op::SyncDir, "/state"),
+    ] {
+        let synced = position(&log, op, path).unwrap_or_else(|| panic!("{op:?} {path} never ran"));
+        assert!(
+            synced < first_removal,
+            "{op:?} {path} must precede the first destructive step"
+        );
+    }
+}
+
+#[test]
+fn a_transition_retry_syncs_the_pending_carry_it_keeps_as_its_source() {
+    let fs = MemFs::new();
+    drop(
+        seeded(&fs)
+            .archive(stamp(5), ArchiveKind::Transition, &[])
+            .unwrap(),
+    );
+    let mut second = begin(&fs, session("20231115T000000Z"));
+    second.append(stamp(6), note("more"), &[]).unwrap();
+    fs.inject(Fault::before(Op::Sync, 1).named("20231114T221320Z-carry-pending"));
+    assert!(
+        second
+            .archive(stamp(7), ArchiveKind::Transition, &[])
+            .is_err()
+    );
+    fs.clear_faults();
+    assert_eq!(fs.contents("/state/archive/20231115T000000Z.jsonl"), None);
+
+    let mark = fs.log().len();
+    let dir = reopen(&fs, 3)
+        .archive(stamp(7), ArchiveKind::Transition, &[])
+        .unwrap();
+    assert!(position(&fs.log().split_off(mark), Op::Sync, CARRY).is_some());
+    assert_eq!(dir.pending_carry().unwrap(), Some(default_session()));
+    assert_eq!(dir.markers().unwrap().len(), 1);
+    assert_eq!(dir.archives().unwrap().len(), 2);
+}
+
+#[test]
+fn recovering_an_already_moved_archive_fails_closed_at_every_step_and_retries_once() {
+    let data = b"{\"seq\":1}\n";
+    for nth in 1..=4 {
+        for fault in [Fault::any_before(nth), Fault::any_after(nth)] {
+            let fs = MemFs::new();
+            fs.put(ARCHIVED, data.as_slice());
+            fs.put(COMPAT, "");
+            let dir = simulated(&fs);
+            fs.inject(fault.clone());
+            let context = format!("{fault:?}");
+            let error = dir.open(boot(2)).unwrap_err();
+            assert!(matches!(error, crate::OpenError::Dir(_)), "{context}");
+            assert!(fs.kind_is_none("/state/events.jsonl"), "{context}");
+            assert_eq!(fs.contents(ARCHIVED).unwrap(), data, "{context}");
+            let removed = nth == 4 || (nth == 3 && fault == Fault::any_after(3));
+            assert_eq!(fs.contents(COMPAT).is_none(), removed, "{context}");
+
+            fs.clear_faults();
+            let journal = simulated(&fs)
+                .open(boot(3))
+                .unwrap_or_else(|error| panic!("{context}: {error}"));
+            assert!(journal.events().is_empty(), "{context}");
+            assert_eq!(fs.contents(COMPAT), None, "{context}");
+            assert_eq!(fs.contents(ARCHIVED).unwrap(), data, "{context}");
+        }
+    }
 }

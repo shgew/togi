@@ -62,8 +62,13 @@ pub struct Event {
 
 #[derive(Debug, thiserror::Error)]
 pub enum DecodeError {
-    #[error("malformed event: {0}")]
-    Envelope(#[source] serde_json::Error),
+    #[error("malformed {}event: {source}", kind_prefix(*.kind))]
+    Envelope {
+        /// The record's `kind` when it names a known event kind.
+        kind: Option<EventKind>,
+        #[source]
+        source: serde_json::Error,
+    },
     #[error("{0}")]
     UnknownKind(#[source] UnknownKind),
     #[error("{kind} event: {source}")]
@@ -124,9 +129,13 @@ impl Event {
     }
 
     pub fn decode(line: &str) -> Result<Self, DecodeError> {
-        serde_json::from_str::<Envelope>(line)
-            .map_err(DecodeError::Envelope)?
-            .into_event()
+        match serde_json::from_str::<Envelope>(line) {
+            Ok(envelope) => envelope.into_event(),
+            Err(source) => Err(DecodeError::Envelope {
+                kind: known_kind(line),
+                source,
+            }),
+        }
     }
 
     pub fn encode(&self) -> Result<String, serde_json::Error> {
@@ -161,8 +170,23 @@ impl Serialize for Event {
 
 impl<'de> Deserialize<'de> for Event {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        Envelope::deserialize(deserializer)?
-            .into_event()
-            .map_err(D::Error::custom)
+        let record = Box::<RawValue>::deserialize(deserializer)?;
+        Self::decode(record.get()).map_err(D::Error::custom)
     }
+}
+
+fn kind_prefix(kind: Option<EventKind>) -> String {
+    kind.map_or_else(String::new, |kind| format!("{kind} "))
+}
+
+/// The `kind` of a record whose envelope failed strict decoding, if it names one.
+fn known_kind(line: &str) -> Option<EventKind> {
+    #[derive(Deserialize)]
+    struct Probe<'a> {
+        #[serde(borrow)]
+        kind: &'a str,
+    }
+    serde_json::from_str::<Probe<'_>>(line)
+        .ok()
+        .and_then(|probe| probe.kind.parse().ok())
 }

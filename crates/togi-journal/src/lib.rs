@@ -1,3 +1,10 @@
+//! The session journal. Other crates read journals and simulate them in memory through [`fs::MemFs`]; the only way
+//! they open a journal on disk for writing is [`StateDir::lock`], because the disk filesystem is crate-private:
+//!
+//! ```compile_fail,E0603
+//! let _ = togi_journal::fs::DiskFs::default();
+//! ```
+
 mod build;
 mod dir;
 mod event;

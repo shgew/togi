@@ -45,6 +45,17 @@ pub(crate) fn sample(fs: &MemFs) -> Vec<u8> {
     live(fs)
 }
 
+/// One complete, decodable line numbered 1 with no cause whose kind is not `session.start`.
+pub(crate) fn non_start_first_line(good: &[u8]) -> Vec<u8> {
+    let line = good.split_inclusive(|byte| *byte == b'\n').nth(1).unwrap();
+    let mut event: serde_json::Value = serde_json::from_slice(line).unwrap();
+    event["seq"] = 1.into();
+    event.as_object_mut().unwrap().remove("cause");
+    let mut bytes = serde_json::to_vec(&event).unwrap();
+    bytes.push(b'\n');
+    bytes
+}
+
 fn command() -> SmuCommand {
     SmuCommand::SetAll {
         offset: TargetOffset::ZERO,
@@ -105,7 +116,7 @@ fn events_survive_close_and_reopen_in_order() {
     let fs = MemFs::new();
     let bytes = sample(&fs);
     assert_eq!(bytes.split_inclusive(|byte| *byte == b'\n').count(), 4);
-    let journal = reopen(&fs, 2);
+    let mut journal = reopen(&fs, 2);
     assert_eq!(
         kinds(journal.events()),
         [
@@ -116,6 +127,23 @@ fn events_survive_close_and_reopen_in_order() {
         ]
     );
     assert_eq!(journal.repaired(), None);
+    let boots = |events: &[crate::Event]| {
+        events
+            .iter()
+            .map(|event| event.boot.clone())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        boots(journal.events()),
+        [boot(1), boot(1), boot(1), boot(1)]
+    );
+    let appended = journal.append(stamp(4), note("after reboot"), &[]).unwrap();
+    assert_eq!(appended.boot, boot(2));
+    journal.close().unwrap();
+    let expected = [boot(1), boot(1), boot(1), boot(1), boot(2)];
+    let recording = Recording::read_in(&fs, &crate::testing::path("events.jsonl")).unwrap();
+    assert_eq!(boots(recording.events()), expected);
+    assert_eq!(boots(reopen(&fs, 3).events()), expected);
 }
 
 #[test]
@@ -441,6 +469,40 @@ fn an_unreadable_archive_is_reported_not_taken_for_absence() {
     assert!(matches!(
         dir.boot_reason_recorded("r"),
         Err(crate::LookupError::File(_))
+    ));
+}
+
+#[test]
+fn a_diagnostic_naming_the_reason_is_not_an_acknowledgement() {
+    let fs = MemFs::new();
+    let mut journal = begin_default(&fs);
+    let diagnostic = Payload::SessionWarning(crate::SessionWarning {
+        operation: "boot.leave_reason".into(),
+        trial: None,
+        error: "reason_id r1".into(),
+    });
+    let event = journal.append(stamp(1), diagnostic, &[]).unwrap();
+    assert!(event.msg.contains("boot.leave_reason") && event.msg.contains("r1"));
+    assert!(!journal.boot_reason_recorded("r1").unwrap());
+    let dir = journal.close().unwrap();
+    assert!(!dir.boot_reason_recorded("r1").unwrap());
+    let dir = dir
+        .open(boot(2))
+        .unwrap()
+        .archive(stamp(2), ArchiveKind::Transition, &[])
+        .unwrap();
+    assert_eq!(dir.archives().unwrap().len(), 1);
+    assert!(!dir.boot_reason_recorded("r1").unwrap());
+}
+
+#[test]
+fn an_archive_that_is_not_a_directory_fails_the_lookup() {
+    let fs = MemFs::new();
+    let dir = simulated(&fs);
+    fs.put("/state/archive", "not a directory");
+    assert!(matches!(
+        dir.boot_reason_recorded("r"),
+        Err(crate::LookupError::Dir(_))
     ));
 }
 

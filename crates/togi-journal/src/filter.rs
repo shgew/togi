@@ -182,6 +182,7 @@ fn names_core(payload: &Payload, core: CoreId) -> bool {
         Payload::SmuReadback(p) => p.core == core,
         Payload::SmuError(p) => p.core == Some(core),
         Payload::TrialIntent(p) => p.core == Some(core) || p.cores.contains(core),
+        Payload::TrialStart(p) => p.instances.iter().any(|instance| instance.core == core),
         Payload::TrialProgress(p) => p.core == Some(core),
         Payload::TrialEnd(p) => p.core == Some(core),
         Payload::TrialCarried(p) => p.core == Some(core) || p.class.cores.contains(core),
@@ -192,7 +193,9 @@ fn names_core(payload: &Payload, core: CoreId) -> bool {
         Payload::CorePhase(p) => p.core == core,
         Payload::CheckingChain(p) => p.cores.contains(core),
         Payload::HuntStart(p) => p.cores.contains(core) || p.candidates.contains(core),
-        Payload::HuntGroup(p) => p.cores.contains(core),
+        Payload::HuntGroup(p) => {
+            p.cores.contains(core) || p.probe.is_some_and(|probe| probe.core == core)
+        }
         Payload::HuntEnd(p) => {
             p.cores.contains(core) || p.members.iter().any(|member| member.core == core)
         }

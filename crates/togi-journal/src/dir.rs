@@ -99,7 +99,8 @@ impl StateDir {
     }
 
     /// A state directory on disk whose files are never synced and whose journal buffers 64 KiB of events, flushed on
-    /// read, archive and close. Fast simulations only: a crash loses events.
+    /// read, archive and close. Fast simulations only: a crash loses events. An SMU intent receipt from such a journal
+    /// proves the intent reached the file in order and survives the process exiting, not that it survives power loss.
     pub fn lock_unsynced(path: impl AsRef<Path>) -> Result<Self, LockError> {
         Self::lock_in(Arc::new(DiskFs::unsynced()), path.as_ref(), true)
     }
@@ -111,6 +112,8 @@ impl StateDir {
 
     fn lock_in(fs: Arc<dyn Fs>, path: &Path, buffered: bool) -> Result<Self, LockError> {
         create_dirs(fs.as_ref(), path)?;
+        fs.set_dir_mode(path, STATE_DIR_MODE)
+            .map_err(io_at("set directory mode", path))?;
         let lock_path = path.join(LOCK_FILE);
         let lock = fs
             .try_lock(&lock_path)
@@ -118,8 +121,6 @@ impl StateDir {
             .ok_or_else(|| LockError::Held {
                 path: path.to_path_buf(),
             })?;
-        fs.set_dir_mode(path, STATE_DIR_MODE)
-            .map_err(io_at("set directory mode", path))?;
         Ok(Self {
             fs,
             path: path.to_path_buf(),
@@ -179,7 +180,11 @@ impl StateDir {
         let tmp = self.join(STATE_TMP);
         let target = self.join(STATE_FILE);
         let publish = || -> io::Result<()> {
-            let mut file = self.fs.create_truncate(&tmp)?;
+            match self.fs.remove_file(&tmp) {
+                Err(error) if !not_found(&error) => return Err(error),
+                _ => {}
+            }
+            let mut file = self.fs.create_new(&tmp)?;
             file.write_all(&bytes)?;
             file.sync()?;
             drop(file);

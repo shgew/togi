@@ -4,10 +4,10 @@ use std::process::Command;
 
 use jiff::Timestamp;
 use togi_journal::{
-    ArchiveKind, Build, Journal, LockError, Payload, Recording, SCHEMA, SessionId, SessionStart,
-    SessionWarning, Stamp, StateDir,
+    ArchiveKind, Build, Journal, LockError, Payload, Recording, SCHEMA, Seq, SessionId,
+    SessionStart, SessionWarning, SmuCommand, Stamp, StateDir,
 };
-use togi_machine::BootId;
+use togi_machine::{BootId, TargetOffset};
 
 const CHILD: &str = "child_appends_then_aborts";
 const ENV: &str = "TOGI_JOURNAL_ABORT_DIR";
@@ -68,9 +68,26 @@ mod support {
         std::fs::create_dir(&path).unwrap();
         0o777 & !mode(&path)
     }
+
+    pub(crate) fn appended(journal: &Journal) -> Vec<(Seq, Payload)> {
+        journal
+            .events()
+            .iter()
+            .map(|event| (event.seq, event.payload.clone()))
+            .collect()
+    }
+
+    pub(crate) fn on_disk(path: &Path) -> Vec<(Seq, Payload)> {
+        Recording::read(path)
+            .unwrap()
+            .events()
+            .iter()
+            .map(|event| (event.seq, event.payload.clone()))
+            .collect()
+    }
 }
 
-use support::{begin, boot, mode, note, stamp};
+use support::{appended, begin, boot, mode, note, on_disk, stamp};
 
 #[test]
 fn a_disk_journal_survives_close_reopen_state_and_archive() {
@@ -140,19 +157,24 @@ fn the_unsynced_mode_buffers_until_flush_close_or_64_kib() {
     journal.append(stamp(1), note("small"), &[]).unwrap();
     assert_eq!(std::fs::read(&path).unwrap(), b"");
     journal.flush().unwrap();
-    assert_eq!(Recording::read(&path).unwrap().events().len(), 2);
+    assert_eq!(on_disk(&path), appended(&journal));
+    assert_eq!(on_disk(&path).len(), 2);
 
     journal.append(stamp(2), note("buffered"), &[]).unwrap();
-    assert_eq!(Recording::read(&path).unwrap().events().len(), 2);
+    assert_eq!(on_disk(&path), appended(&journal)[..2]);
     journal
         .append(stamp(3), note(&"x".repeat(70 * 1024)), &[])
         .unwrap();
-    assert_eq!(Recording::read(&path).unwrap().events().len(), 4);
+    assert_eq!(on_disk(&path), appended(&journal));
+    assert_eq!(on_disk(&path).len(), 4);
 
     journal.append(stamp(4), note("tail"), &[]).unwrap();
+    let expected = appended(&journal);
+    assert_eq!(on_disk(&path), expected[..4]);
     let dir = journal.close().unwrap();
     drop(dir);
-    assert_eq!(Recording::read(&path).unwrap().events().len(), 5);
+    assert_eq!(on_disk(&path), expected);
+    assert_eq!(expected.len(), 5);
 }
 
 #[test]
@@ -166,15 +188,41 @@ fn a_buffered_journal_dropped_without_close_loses_only_what_was_buffered() {
     let mut journal = begin(StateDir::lock_unsynced(&state).unwrap());
     journal.append(stamp(1), note("flushed"), &[]).unwrap();
     journal.flush().unwrap();
+    let flushed = appended(&journal);
+    assert_eq!(flushed[1].1, note("flushed"));
     journal.append(stamp(2), note("lost"), &[]).unwrap();
     drop(journal);
-    assert_eq!(
-        Recording::read(&state.join("events.jsonl"))
-            .unwrap()
-            .events()
-            .len(),
-        2
-    );
+    assert_eq!(on_disk(&state.join("events.jsonl")), flushed);
+}
+
+#[test]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "pins the unsynced buffered mode the simulator uses"
+)]
+fn an_unsynced_smu_intent_receipt_is_minted_only_after_the_intent_reached_the_file() {
+    let root = tempfile::tempdir().unwrap();
+    let state = root.path().join("state");
+    let path = state.join("events.jsonl");
+    let mut journal = begin(StateDir::lock_unsynced(&state).unwrap());
+    journal.append(stamp(1), note("before"), &[]).unwrap();
+    assert_eq!(std::fs::read(&path).unwrap(), b"");
+
+    let receipt = journal
+        .append_smu_intent(
+            stamp(2),
+            SmuCommand::SetAll {
+                offset: TargetOffset::ZERO,
+            },
+            &[],
+        )
+        .unwrap();
+    let written = on_disk(&path);
+    assert_eq!(written, appended(&journal));
+    assert_eq!(written.len(), 3);
+    let (seq, payload) = written.last().unwrap();
+    assert_eq!(*seq, receipt.intent());
+    assert!(matches!(payload, Payload::SmuIntent(_)));
 }
 
 #[test]
@@ -192,7 +240,7 @@ fn child_appends_then_aborts() {
 }
 
 #[test]
-fn an_abrupt_exit_loses_no_acknowledged_event() {
+fn real_process_an_abrupt_exit_loses_no_acknowledged_event() {
     let root = tempfile::tempdir().unwrap();
     let state = root.path().join("state");
     let status = Command::new(std::env::current_exe().unwrap())
