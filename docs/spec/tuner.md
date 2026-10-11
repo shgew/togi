@@ -420,7 +420,7 @@ Any load, class or regime pairs with any other. A known-failure skip, a carried 
 
 **Hold.** A failure with no earlier failure to pair with is held. The rest of the pipeline sees it as handled and nothing moves:
 
-- For an attributed or multi-core R7 failure, the decision is a `tuner.decision` with phase `checking`, decision `backoff`, equal `from_offset` and `to_offset`, and the core's `pass` and `failure_point` unchanged. Its cause is the failure first, then the causes the ordinary step-back would have had, and its reason starts `holds` and names the failure, its cycle, the cycle by which a second failure steps the core back and K.
+- For an attributed or multi-core R7 failure, the decision is a `tuner.decision` with phase `checking`, decision `hold`, equal `from_offset` and `to_offset`, and the core's `pass` and `failure_point` unchanged. A hold is its own decision value, never inferred from equal offsets or the reason: it keeps pass and fail, queues no rerun obligation and counts no escalation strike. Its cause is the failure first, then the causes the ordinary step-back would have had, and its reason starts `holds` and names the failure, its cycle, the cycle by which a second failure steps the core back and K.
 - For an unattributed failure, the decision is a `hunt.skipped` citing the failure whose reason starts `held` and names the loaded cores, the same deadline and K.
 - A hold records no failure point, queues no rerun and does not count toward [escalation](#escalation-to-a-located-hunt); the failure stays valid evidence. It moves no core, but the [BIOS profile](#bios-profile) shows the step-back the tuner has not yet made.
 
