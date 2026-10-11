@@ -7,17 +7,31 @@ use togi_machine::{CoreId, CoreSet};
 use crate::boot::BootError;
 use crate::write::{ProfileFailure, WriteFailure};
 
-/// The first failed journal append of a run. Cloning shares the original error.
+/// Why the journal can no longer be trusted to match the run: an append failed, or an event reached the journal that
+/// the run's state cannot absorb.
+#[derive(Debug, thiserror::Error)]
+pub enum JournalCause {
+    #[error("journal write: {0}")]
+    Append(#[source] AppendError),
+    #[error("an event is durable but the run's state does not take it in: {0}")]
+    Fold(#[source] FoldError),
+}
+
+/// The first failure that latched a run's journal. Cloning shares the original cause.
 #[derive(Clone, Debug, thiserror::Error)]
-#[error("journal write: {0}")]
-pub struct JournalFailure(#[source] Arc<AppendError>);
+#[error(transparent)]
+pub struct JournalFailure(Arc<JournalCause>);
 
 impl JournalFailure {
     pub(crate) fn new(error: AppendError) -> Self {
-        Self(Arc::new(error))
+        Self(Arc::new(JournalCause::Append(error)))
     }
 
-    pub fn error(&self) -> &AppendError {
+    pub(crate) fn fold(error: FoldError) -> Self {
+        Self(Arc::new(JournalCause::Fold(error)))
+    }
+
+    pub fn cause(&self) -> &JournalCause {
         &self.0
     }
 }
@@ -74,6 +88,14 @@ pub enum SessionError {
     Log(#[source] io::Error),
     #[error("an initial offset is configured for core {core:02}, which this machine does not have")]
     NoSuchCore { core: CoreId },
+    /// The session was recorded on other cores than the machine has now: a resumed session cannot change them.
+    #[error(
+        "the session was recorded on other cores than this machine has now (added: {}; removed: {}); \
+         archive the session to start over",
+        listed(added),
+        listed(removed)
+    )]
+    TopologyChanged { added: CoreSet, removed: CoreSet },
     #[error(
         "a trial is planned on core {core:02}, which this machine does not have or gives no CPU"
     )]
@@ -88,14 +110,6 @@ pub enum SessionError {
     ClearSavedEntry(#[source] io::Error),
     #[error("allocate the session id: {0}")]
     SessionId(#[from] DirError),
-    /// The session was recorded on other cores than the machine has now: a resumed session cannot change them.
-    #[error(
-        "the session was recorded on other cores than this machine has now (added: {}; removed: {}); \
-         archive the session to start over",
-        listed(added),
-        listed(removed)
-    )]
-    TopologyChanged { added: CoreSet, removed: CoreSet },
     /// A step reported dead-end evidence, and the journal supports no dead end.
     #[error("{0} dead-end evidence reported without a recorded dead end")]
     DeadEndUnrecorded(DeadEndCondition),
@@ -120,6 +134,17 @@ impl SessionError {
     }
 }
 
+fn listed(cores: &CoreSet) -> String {
+    if cores.is_empty() {
+        return "none".to_owned();
+    }
+    cores
+        .iter()
+        .map(|core| format!("{core:02}"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 impl From<BootError> for SessionError {
     fn from(error: BootError) -> Self {
         match error {
@@ -134,17 +159,6 @@ impl From<AppendFailure> for SessionError {
         match failure {
             AppendFailure::Journal(failure) => Self::Journal(failure),
             AppendFailure::Fold(failure) => Self::Fold(failure),
-fn listed(cores: &CoreSet) -> String {
-    if cores.is_empty() {
-        return "none".to_owned();
-    }
-    cores
-        .iter()
-        .map(|core| format!("{core:02}"))
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
             AppendFailure::Boot(error) => error.into(),
         }
     }

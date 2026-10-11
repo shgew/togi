@@ -940,7 +940,8 @@ fn the_crashed_boots_own_machine_checks_are_the_trials_only_inside_its_window() 
 }
 
 #[test]
-fn a_machine_check_an_interrupted_recovery_journaled_still_fails_the_crash_when_the_kernel_forgot_it() {
+fn a_machine_check_an_interrupted_recovery_journaled_still_fails_the_crash_when_the_kernel_forgot_it()
+ {
     let mut log = trial_log();
     log.at("b0", 41_000);
     let held = log.add(recorded_mce(20, false), &[]);

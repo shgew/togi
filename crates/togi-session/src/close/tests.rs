@@ -336,6 +336,38 @@ fn a_journal_failure_zeroes_the_machine_through_the_gate_and_appends_nothing() {
     assert!(matches!(ended.errors[0], SessionError::Journal(_)));
 }
 
+#[test]
+fn an_event_the_run_cannot_fold_gets_the_emergency_like_a_failed_append() {
+    let bench = Bench::new(2);
+    let mut session = tuned(&bench);
+    let run = Ok(signalled(&mut session));
+    let error = session
+        .appender
+        .append(
+            Payload::CorePhase(togi_journal::CoreTransition {
+                core: core(9),
+                from: None,
+                to: togi_journal::CorePhase::Search,
+                offset: target(-10),
+                pass: None,
+                failure_point: None,
+                check_solo_limit: false,
+                workloads: Vec::new(),
+                cleared_combination: Vec::new(),
+                reason: "test".into(),
+            }),
+            &[],
+        )
+        .unwrap_err();
+    let ended = close(session, run.and(Err(error.into())));
+    let Some(emergency) = ended.emergency else {
+        panic!("no emergency");
+    };
+    assert!(matches!(&emergency.response, Response::Zeroed(zeroed) if zeroed.is_clean()));
+    assert_eq!(smu_offsets(&bench), [0, 0]);
+    assert!(matches!(ended.errors[0], SessionError::Fold(_)));
+}
+
 fn latched(bench: &Bench, prepare: impl FnOnce(&mut Session)) -> Ended {
     let mut session = tuned(bench);
     let run = Ok(signalled(&mut session));
@@ -478,7 +510,8 @@ fn the_shutdown_follows_the_machine_check_of_the_restoration_tail() {
 }
 
 #[test]
-fn a_decision_that_cannot_be_recorded_does_not_skip_the_restoration_but_records_no_shutdown() {
+fn a_decision_that_cannot_be_folded_gets_the_emergency_instead_of_the_restoration_and_no_shutdown()
+{
     let bench = Bench::new(2);
     let mut session = tuned(&bench);
     let run = Ok(signalled(&mut session));
@@ -503,6 +536,9 @@ fn a_decision_that_cannot_be_recorded_does_not_skip_the_restoration_but_records_
     assert!(kinds.contains(&"smu.intent"));
     assert!(!kinds.contains(&"profile.restored"));
     assert!(!kinds.contains(&"shutdown"));
-    assert!(ended.errors.len() >= 2);
-    assert_eq!(smu_offsets(&bench), [-5, -5]);
+    let Some(emergency) = ended.emergency else {
+        panic!("no emergency");
+    };
+    assert!(matches!(&emergency.response, Response::Zeroed(zeroed) if zeroed.is_clean()));
+    assert_eq!(smu_offsets(&bench), [0, 0]);
 }

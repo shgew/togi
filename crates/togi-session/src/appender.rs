@@ -4,9 +4,7 @@ use std::io::{self, Write};
 
 use jiff::tz::TimeZone;
 use togi_defect::{DefectState, Entry, KNOWN_DEFECTS};
-use togi_journal::{
-    AppendError, Event, Journal, Payload, Seq, SmuCommand, SmuIntentReceipt, SmuWritten, Stamp,
-};
+use togi_journal::{Event, Journal, Payload, Seq, SmuCommand, SmuIntentReceipt, SmuWritten, Stamp};
 use togi_machine::{CancellationToken, Clock};
 use togi_render::Renderer;
 
@@ -197,7 +195,7 @@ impl Appender {
         let stamp = self.stamp()?;
         let seq = match self.journal.append(stamp, payload, causes) {
             Ok(event) => event.seq,
-            Err(error) => return Err(self.latch(error).into()),
+            Err(error) => return Err(self.latch(JournalFailure::new(error)).into()),
         };
         self.absorb(seq)?;
         Ok(seq)
@@ -211,7 +209,7 @@ impl Appender {
         let stamp = self.stamp()?;
         let receipt = match self.journal.append_smu_intent(stamp, command, causes) {
             Ok(receipt) => receipt,
-            Err(error) => return Err(self.latch(error).into()),
+            Err(error) => return Err(self.latch(JournalFailure::new(error)).into()),
         };
         self.absorb(receipt.intent())?;
         Ok(receipt)
@@ -224,7 +222,7 @@ impl Appender {
         let stamp = self.stamp()?;
         let written = match self.journal.append_smu_write(stamp, receipt) {
             Ok(written) => written,
-            Err(error) => return Err(self.latch(error).into()),
+            Err(error) => return Err(self.latch(JournalFailure::new(error)).into()),
         };
         self.absorb(written.seq())?;
         Ok(written)
@@ -240,8 +238,7 @@ impl Appender {
         }
     }
 
-    fn latch(&mut self, error: AppendError) -> JournalFailure {
-        let failure = JournalFailure::new(error);
+    fn latch(&mut self, failure: JournalFailure) -> JournalFailure {
         if self.latched.is_none() {
             self.latched = Some(failure.clone());
         }
@@ -260,7 +257,10 @@ impl Appender {
                 &mut self.log_failure,
                 event,
             );
-            self.folds.apply(event)?;
+            if let Err(error) = self.folds.apply(event) {
+                self.latch(JournalFailure::fold(error.clone()));
+                return Err(error.into());
+            }
         }
         if let Some(mut handoff) = self.handoff.take() {
             let result = handoff.after_durable_append(self);

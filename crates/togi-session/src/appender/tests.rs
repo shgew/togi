@@ -4,7 +4,7 @@ use togi_machine::{Condition, CoreSet, PerCore, Regime, pick_workload};
 use togi_render::Renderer;
 
 use super::Appender;
-use crate::error::{AppendFailure, FoldError};
+use crate::error::{AppendFailure, FoldError, JournalCause, JournalFailure};
 use crate::testing::{Rig, assert_fold_consistent, core, target};
 
 fn unscheduled() -> Payload {
@@ -58,4 +58,26 @@ fn an_event_the_tuner_never_planned_is_a_corrupt_journal_now_and_on_resume() {
         resumed,
         Err(FoldError::Tuner { seq: at, .. }) if at == seq
     ));
+}
+
+#[test]
+fn an_event_the_run_cannot_fold_latches_the_appender_and_cancels_the_trial() {
+    let mut rig = Rig::new(2);
+    let token = togi_machine::CancellationToken::new();
+    rig.appender.watch_trial(Some(token.clone()));
+    let before = rig.events().len();
+    assert!(matches!(
+        rig.appender.append(unscheduled(), &[]),
+        Err(AppendFailure::Fold(_))
+    ));
+    assert!(matches!(
+        rig.appender.failure().map(JournalFailure::cause),
+        Some(JournalCause::Fold(_))
+    ));
+    assert!(token.is_cancelled());
+    assert!(matches!(
+        rig.appender.append(unscheduled(), &[]),
+        Err(AppendFailure::Journal(_))
+    ));
+    assert_eq!(rig.events().len(), before + 1);
 }
