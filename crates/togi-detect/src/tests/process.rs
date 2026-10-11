@@ -1,4 +1,5 @@
 use std::fs;
+use std::os::fd::OwnedFd;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -71,13 +72,41 @@ fn assert_gone(process: &Identity) {
     panic!("process {} survived the deadline", process.pid);
 }
 
+/// A helper the test started, killed when dropped so a failed assertion leaks no `sleep 3600`.
+///
+/// The pidfd is opened by id and then kept only if the process behind it still has the recorded
+/// start time; from then on the pidfd names that process for good, so the kill never reaches an
+/// id the kernel reused.
+struct Reaped(Option<OwnedFd>);
+
+impl Reaped {
+    fn arm(process: &Identity) -> Self {
+        let pidfd = i32::try_from(process.pid)
+            .ok()
+            .and_then(rustix::process::Pid::from_raw)
+            .and_then(|pid| {
+                rustix::process::pidfd_open(pid, rustix::process::PidfdFlags::empty()).ok()
+            })
+            .filter(|_| started(process.pid).as_deref() == Some(process.started.as_str()));
+        Self(pidfd)
+    }
+}
+
+impl Drop for Reaped {
+    fn drop(&mut self) {
+        if let Some(pidfd) = &self.0 {
+            let _ = rustix::process::pidfd_send_signal(pidfd, rustix::process::Signal::KILL);
+        }
+    }
+}
+
 fn timed_out(error: &togi_machine::Error) -> bool {
     caused_by::<togi_command::Error>(error)
         .is_some_and(|source| matches!(source, togi_command::Error::TimedOut { .. }))
 }
 
 #[test]
-fn a_hung_journalctl_is_killed_at_the_deadline() {
+fn real_process_a_hung_journalctl_is_killed_at_the_deadline() {
     let dir = tempfile::tempdir().unwrap();
     let pid_file = dir.path().join("pid");
     let body = format!("{}exec sleep 3600\n", record("$$", &pid_file));
@@ -85,13 +114,15 @@ fn a_hung_journalctl_is_killed_at_the_deadline() {
     let started_at = Instant::now();
     let error = kernel.mces(&boot(OLD), Duration::ZERO).unwrap_err();
     let elapsed = started_at.elapsed();
+    let helper = identity(&pid_file);
+    let _reaped = Reaped::arm(&helper);
     assert!(timed_out(&error), "{error:?}");
     assert!(elapsed < DEADLINE + SLACK, "{elapsed:?}");
-    assert_gone(&identity(&pid_file));
+    assert_gone(&helper);
 }
 
 #[test]
-fn a_descendant_holding_the_pipes_cannot_extend_the_deadline() {
+fn real_process_a_descendant_holding_the_pipes_cannot_extend_the_deadline() {
     let dir = tempfile::tempdir().unwrap();
     let pid_file = dir.path().join("pid");
     let body = format!("sleep 3600 &\n{}exit 0\n", record("$!", &pid_file));
@@ -99,17 +130,19 @@ fn a_descendant_holding_the_pipes_cannot_extend_the_deadline() {
     let started_at = Instant::now();
     let error = kernel.mces(&boot(OLD), Duration::ZERO).unwrap_err();
     let elapsed = started_at.elapsed();
+    let helper = identity(&pid_file);
+    let _reaped = Reaped::arm(&helper);
     assert!(timed_out(&error), "{error:?}");
     assert!(
         elapsed + Duration::from_millis(100) >= DEADLINE,
         "{elapsed:?}"
     );
     assert!(elapsed < DEADLINE + SLACK, "{elapsed:?}");
-    assert_gone(&identity(&pid_file));
+    assert_gone(&helper);
 }
 
 #[test]
-fn a_hung_command_of_a_later_step_is_bounded_by_the_same_budget() {
+fn real_process_a_hung_command_of_a_later_step_is_bounded_by_the_same_budget() {
     let dir = tempfile::tempdir().unwrap();
     let pid_file = dir.path().join("pid");
     let body = format!(
@@ -120,13 +153,16 @@ fn a_hung_command_of_a_later_step_is_bounded_by_the_same_budget() {
     let mut kernel = kernel_running(program(dir.path(), &body), DEADLINE);
     let started_at = Instant::now();
     let error = kernel.reset_reason_after(&boot(OLD)).unwrap_err();
+    let elapsed = started_at.elapsed();
+    let helper = identity(&pid_file);
+    let _reaped = Reaped::arm(&helper);
     assert!(timed_out(&error), "{error:?}");
-    assert!(started_at.elapsed() < DEADLINE + SLACK);
-    assert_gone(&identity(&pid_file));
+    assert!(elapsed < DEADLINE + SLACK, "{elapsed:?}");
+    assert_gone(&helper);
 }
 
 #[test]
-fn a_program_that_answers_is_run_by_path_with_the_exact_arguments() {
+fn real_process_a_program_that_answers_is_run_by_path_with_the_exact_arguments() {
     let dir = tempfile::tempdir().unwrap();
     let args_file = dir.path().join("args");
     let body = format!(
@@ -142,7 +178,7 @@ fn a_program_that_answers_is_run_by_path_with_the_exact_arguments() {
 }
 
 #[test]
-fn a_missing_program_is_a_spawn_error() {
+fn real_process_a_missing_program_is_a_spawn_error() {
     let mut kernel = kernel_running(PathBuf::from("/nonexistent/journalctl"), DEADLINE);
     let error = kernel.mces(&boot(OLD), Duration::ZERO).unwrap_err();
     assert!(
