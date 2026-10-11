@@ -114,11 +114,15 @@ impl Run {
         }
     }
 
-    fn decided(&mut self, core: CoreId, seq: Seq) {
+    fn decided(&mut self, core: CoreId, seq: Seq, answers_pending: bool) {
         self.search.clear(core);
-        self.retire_pending(core);
+        if answers_pending {
+            self.retire_pending(core);
+        }
         self.update_core(core, |state| {
-            state.pending = None;
+            if answers_pending {
+                state.pending = None;
+            }
             state.last_seq = Some(seq);
             state.last_decision = Some(seq);
         });
@@ -179,7 +183,7 @@ impl Run {
         }
         self.failures.retire_all(&event.cause);
         self.prune_blames();
-        self.decided(core, seq);
+        self.decided(core, seq, true);
         self.later_moved(core, seq, before);
         Ok(())
     }
@@ -224,7 +228,7 @@ impl Run {
         if !yielded {
             self.failures.retire_all(&event.cause);
         }
-        self.decided(core, seq);
+        self.decided(core, seq, !yielded);
         self.phase2_backoff(decision, &event.cause);
         self.prune_blames();
         self.later_decided(event, decision, before, hold.as_ref());
