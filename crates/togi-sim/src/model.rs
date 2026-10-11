@@ -10,6 +10,7 @@ use crate::definition::{
     Weights,
 };
 use crate::error::{InvalidMachine, Path, Problem};
+use crate::hazard::largest_limit_rate;
 use crate::random::draw_limits;
 use crate::vocab::{ResetMix, SignalMix, regime_index, reset_slot, signal_slot};
 use crate::voltage::Voltage;
@@ -143,7 +144,15 @@ impl Model {
         let limits = if def.core.is_empty() {
             draw_limits(seed, cores)
         } else {
-            resolve_limits(&def.core, cores)?
+            resolve_limits(
+                &def.core,
+                cores,
+                largest_limit_rate(
+                    params.past_limit_rate,
+                    params.growth,
+                    params.near_limit_rate,
+                ),
+            )?
         };
         let joints = def
             .joint
@@ -356,7 +365,7 @@ fn resolve_model(model: &ModelDef, path: &Path<'_>) -> Result<ModelParts, Invali
     let near_limit_rate = path
         .key("near_limit_rate")
         .nonnegative(model.near_limit_rate)?;
-    if !(past_limit_rate * growth.powf(50.0) + near_limit_rate).is_finite() {
+    if !largest_limit_rate(past_limit_rate, growth, near_limit_rate).is_finite() {
         return Err(growth_path.error(Problem::Overflow));
     }
     let params = Params {
@@ -395,7 +404,12 @@ fn resolve_ccd(ccd: &CcdDef) -> Result<CcdDef, InvalidMachine> {
     path.key("slope").nonnegative(ccd.slope)?;
     for (i, &effect) in ccd.effect.iter().enumerate() {
         path.key("effect").index(i).finite(effect)?;
-        if ccd.log_rate + effect + ccd.slope * 25.0 > 700.0 {
+    }
+    // The deepest mean applied depth is 25 counts past the exponent's reference, and the slope is not
+    // negative. Finite parts can still sum to infinity or cancel to NaN, which no comparison catches.
+    for effect in ccd.effect {
+        let exponent = ccd.log_rate + effect + ccd.slope * 25.0;
+        if !exponent.is_finite() || exponent > 700.0 {
             return Err(path.error(Problem::Overflow));
         }
     }
@@ -414,7 +428,11 @@ fn core_id(path: &Path<'_>, value: i64, cores: usize) -> Result<CoreId, InvalidM
     })
 }
 
-fn resolve_limits(defs: &[CoreDef], cores: usize) -> Result<Vec<Limits>, InvalidMachine> {
+fn resolve_limits(
+    defs: &[CoreDef],
+    cores: usize,
+    limit_rate: f64,
+) -> Result<Vec<Limits>, InvalidMachine> {
     let mut slots: Vec<Option<Limits>> = vec![None; cores];
     let table = Path::root("core");
     for (i, def) in defs.iter().enumerate() {
@@ -431,6 +449,11 @@ fn resolve_limits(defs: &[CoreDef], cores: usize) -> Result<Vec<Limits>, Invalid
         for (j, &limit) in def.together.iter().enumerate() {
             together.index(j).within(limit, -50, 1)?;
         }
+        let flat_path = path.key("flat");
+        let flat = flat_path.nonnegative(def.flat)?;
+        if !(flat + limit_rate).is_finite() {
+            return Err(flat_path.error(Problem::Overflow));
+        }
         if let Some(idle) = def.idle {
             path.key("idle").within(idle, -50, 1)?;
         }
@@ -442,7 +465,7 @@ fn resolve_limits(defs: &[CoreDef], cores: usize) -> Result<Vec<Limits>, Invalid
             alone: def.alone,
             together: def.together,
             idle: def.idle,
-            flat: path.key("flat").nonnegative(def.flat)?,
+            flat,
             workload: def.workload.iter().map(|(k, &v)| (k.clone(), v)).collect(),
         });
     }
@@ -481,6 +504,7 @@ fn resolve_joint(
         None => past_limit_rate,
     };
     let after_s = path.key("after_s").nonnegative(joint.after_s)?;
+    let signal = failure_signal(&path.key("signal"), joint.signal)?;
     let crash_mce_core = joint
         .crash_mce_core
         .map(|core| core_id(&path.key("crash_mce_core"), core, cores))
@@ -490,7 +514,7 @@ fn resolve_joint(
         regimes: RegimeSet::from_regimes(&joint.regimes),
         rate,
         after_s,
-        signal: failure_signal(&path.key("signal"), joint.signal)?,
+        signal,
         crash_mce_core,
     })
 }
@@ -516,6 +540,9 @@ fn resolve_scripts(
         if def.trial.is_empty() {
             return Err(path.key("trial").error(Problem::Empty));
         }
+        if scripts.contains_key(&def.trial) {
+            return Err(path.key("trial").error(Problem::Duplicate));
+        }
         let script = Script {
             signal: failure_signal(&path.key("signal"), def.signal)?,
             at_s: path.key("at_s").nonnegative(def.at_s)?,
@@ -523,9 +550,7 @@ fn resolve_scripts(
             reset: def.reset,
             then_crash: def.then_crash,
         };
-        if scripts.insert(def.trial.clone(), script).is_some() {
-            return Err(path.key("trial").error(Problem::Duplicate));
-        }
+        scripts.insert(def.trial.clone(), script);
     }
     Ok(scripts)
 }

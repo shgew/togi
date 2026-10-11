@@ -15,6 +15,8 @@ use crate::vocab::SignalMix;
 
 const CORES: usize = 16;
 const CCD_SIZE: usize = 8;
+/// The highest clock a trial reports, in MHz: `whole_mhz` saturates there.
+const MAX_MHZ: f64 = 4_294_967_295.0;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Voltage {
@@ -68,22 +70,7 @@ pub struct VoltageState {
 
 impl Voltage {
     pub(crate) fn resolve(def: &SharedVoltageDef, path: &Path<'_>) -> Result<Self, InvalidMachine> {
-        let table = path.key("workload");
-        let catalog = workloads(Regime::R7);
-        let resolved = catalog
-            .iter()
-            .map(|entry| {
-                let workload = def
-                    .workload
-                    .get(entry.id)
-                    .ok_or_else(|| table.error(Problem::Workloads))?;
-                resolve_workload(entry.id, workload, &table.key(entry.id))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        if def.workload.len() != catalog.len() {
-            return Err(table.error(Problem::Workloads));
-        }
-        Ok(Self {
+        let mut rail = Self {
             idle_v: path.key("idle_v").positive(def.idle_v)?,
             margin_v: path.key("margin_v").positive(def.margin_v)?,
             rate: path.key("rate").positive(def.rate)?,
@@ -92,8 +79,24 @@ impl Voltage {
                 .nonnegative(def.background_rate)?,
             power_limit_w: path.key("power_limit_w").positive(def.power_limit_w)?,
             thermal_limit_w: path.key("thermal_limit_w").positive(def.thermal_limit_w)?,
-            workloads: resolved,
-        })
+            workloads: Vec::new(),
+        };
+        let table = path.key("workload");
+        let catalog = workloads(Regime::R7);
+        rail.workloads = catalog
+            .iter()
+            .map(|entry| {
+                let workload = def
+                    .workload
+                    .get(entry.id)
+                    .ok_or_else(|| table.error(Problem::Workloads))?;
+                resolve_workload(entry.id, workload, &rail, &table.key(entry.id))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        if def.workload.len() != catalog.len() {
+            return Err(table.error(Problem::Workloads));
+        }
+        Ok(rail)
     }
 
     /// The parameters of workload `id`; an ID that is not an R7 workload gets the first R7 workload's,
@@ -109,45 +112,58 @@ impl Voltage {
 fn resolve_workload(
     id: &'static str,
     def: &VoltageWorkloadDef,
+    rail: &Voltage,
     path: &Path<'_>,
 ) -> Result<VoltageWorkload, InvalidMachine> {
     let full = path.key("full_mhz");
     let cores = path.key("core");
+    let reference_mhz = path.key("reference_mhz").positive(def.reference_mhz)?;
+    let full_mhz = [
+        full.index(0).positive(def.full_mhz[0])?,
+        full.index(1).positive(def.full_mhz[1])?,
+    ];
+    let idle_gain_mhz = path.key("idle_gain_mhz").nonnegative(def.idle_gain_mhz)?;
+    let watts_per_core = path.key("watts_per_core").positive(def.watts_per_core)?;
+    let offset_watts_per_count = path
+        .key("offset_watts_per_count")
+        .nonnegative(def.offset_watts_per_count)?;
+    let package_mhz_per_w = path
+        .key("package_mhz_per_w")
+        .nonnegative(def.package_mhz_per_w)?;
+    let balance_mhz_per_w = path
+        .key("balance_mhz_per_w")
+        .nonnegative(def.balance_mhz_per_w)?;
     cores.length(CORES, def.core.len())?;
     Ok(VoltageWorkload {
         id,
-        reference_mhz: path.key("reference_mhz").positive(def.reference_mhz)?,
-        full_mhz: [
-            full.index(0).positive(def.full_mhz[0])?,
-            full.index(1).positive(def.full_mhz[1])?,
-        ],
-        idle_gain_mhz: path.key("idle_gain_mhz").nonnegative(def.idle_gain_mhz)?,
-        watts_per_core: path.key("watts_per_core").positive(def.watts_per_core)?,
-        offset_watts_per_count: path
-            .key("offset_watts_per_count")
-            .nonnegative(def.offset_watts_per_count)?,
-        package_mhz_per_w: path
-            .key("package_mhz_per_w")
-            .nonnegative(def.package_mhz_per_w)?,
-        balance_mhz_per_w: path
-            .key("balance_mhz_per_w")
-            .nonnegative(def.balance_mhz_per_w)?,
+        reference_mhz,
+        full_mhz,
+        idle_gain_mhz,
+        watts_per_core,
+        offset_watts_per_count,
+        package_mhz_per_w,
+        balance_mhz_per_w,
         cores: def
             .core
             .iter()
             .enumerate()
-            .map(|(i, core)| resolve_core(core, &cores.index(i)))
+            .map(|(i, core)| resolve_core(core, reference_mhz, rail, &cores.index(i)))
             .collect::<Result<_, _>>()?,
     })
 }
 
-fn resolve_core(def: &VoltageCoreDef, path: &Path<'_>) -> Result<VoltageCore, InvalidMachine> {
+fn resolve_core(
+    def: &VoltageCoreDef,
+    reference_mhz: f64,
+    rail: &Voltage,
+    path: &Path<'_>,
+) -> Result<VoltageCore, InvalidMachine> {
     let count_v = if def.count_v == 0.0 {
         DEFAULT_COUNT_V
     } else {
         def.count_v
     };
-    Ok(VoltageCore {
+    let core = VoltageCore {
         base_v: path.key("base_v").positive(def.base_v)?,
         threshold_v: path.key("threshold_v").positive(def.threshold_v)?,
         count_v: path.key("count_v").positive(count_v)?,
@@ -162,7 +178,20 @@ fn resolve_core(def: &VoltageCoreDef, path: &Path<'_>) -> Result<VoltageCore, In
             .as_ref()
             .map(|signals| signal_mix(&path.key("signals"), signals))
             .transpose()?,
-    })
+    };
+    // The largest voltage a request or a threshold can reach, at the deepest offset and the highest
+    // clock a trial reports, bounds the deficit and with it the hazard. A rate beyond `f64::MAX` is
+    // unrepresentable, so the core is refused rather than left to produce an infinite source.
+    let mhz = MAX_MHZ.max(reference_mhz);
+    let volts = core.base_v
+        + core.count_v * 50.0
+        + (core.clock_v_per_100mhz + core.threshold_clock_v_per_100mhz) * mhz / 100.0
+        + core.threshold_v;
+    let rate = mul_div(rail.rate, volts, rail.margin_v) / std::f64::consts::LN_2 + rail.rate;
+    if !rate.is_finite() {
+        return Err(path.error(Problem::Overflow));
+    }
+    Ok(core)
 }
 
 #[expect(
@@ -221,15 +250,49 @@ impl Model {
         if self.shared_voltage(load).is_none() || !load.cores.contains(core) {
             return Ok(0.0);
         }
+        // Rates are compared in units of the largest, so the total cannot overflow into infinity and
+        // the share of two huge rates is not infinity over infinity.
+        let mut largest = 0.0f64;
+        self.visit_sources(profile, load, |source| largest = largest.max(source.rate))?;
+        if largest <= 0.0 {
+            return Ok(0.0);
+        }
         let (mut total, mut own) = (0.0, 0.0);
         self.visit_sources(profile, load, |source| {
-            total += source.rate;
+            total += source.rate / largest;
             if source.kind == SourceKind::Voltage(core) {
-                own = source.rate;
+                own = source.rate / largest;
             }
         })?;
-        Ok(if total > 0.0 { own / total } else { 0.0 })
+        Ok(own / total)
     }
+}
+
+/// The failures per second of a core `deficit` volts below its requirement: `rate · softplus(x) / ln 2`
+/// with `x = deficit / margin_v`. A tiny margin overflows `x` to infinity while the hazard
+/// `rate · deficit / margin_v` is still representable (a tiny rate); then the quotient is evaluated
+/// without the intermediate `x`, and the softplus' exponential remainder, which vanishes there, is dropped.
+fn softplus_rate(voltage: &Voltage, deficit: f64) -> f64 {
+    let x = deficit / voltage.margin_v;
+    if x > f64::MAX {
+        return mul_div(voltage.rate, deficit, voltage.margin_v) / std::f64::consts::LN_2;
+    }
+    let softplus = x.max(0.0) + (-x.abs()).exp().ln_1p();
+    voltage.rate * softplus / std::f64::consts::LN_2
+}
+
+/// `a · b / c` for positive `a`, `b`, `c`, with the intermediate that neither overflows nor underflows,
+/// or in the log domain when none does: exact wherever the quotient is representable.
+fn mul_div(a: f64, b: f64, c: f64) -> f64 {
+    let product = a * b;
+    if product.is_normal() && (product / c).is_finite() {
+        return product / c;
+    }
+    let scale = a / c;
+    if scale.is_normal() && (scale * b).is_finite() {
+        return scale * b;
+    }
+    (a.ln() + b.ln() - c.ln()).exp()
 }
 
 pub(crate) fn voltage_state(
@@ -261,7 +324,7 @@ pub(crate) fn voltage_state(
         clocks[ccd] = whole_mhz(mhz);
     }
     let mut requests = [narrow(voltage.idle_v); CORES];
-    let mut rail = 0.0f64;
+    let mut rail: Option<f64> = None;
     let above_reference = |core: usize| f64::from(clocks[core / CCD_SIZE]) - workload.reference_mhz;
     for core in load.cores {
         let index = core.index();
@@ -270,8 +333,10 @@ pub(crate) fn voltage_state(
             + parameters.count_v * steps(profile[index].get())
             + parameters.clock_v_per_100mhz * above_reference(index) / 100.0;
         requests[index] = narrow(request);
-        rail = rail.max(request);
+        rail = Some(rail.map_or(request, |top| top.max(request)));
     }
+    // The highest request of a loaded core, which may be negative; no core loaded, no rail.
+    let rail = rail.unwrap_or(0.0);
     let mut rates = [0.0; CORES];
     for core in load.cores {
         let index = core.index();
@@ -280,9 +345,7 @@ pub(crate) fn voltage_state(
         if parameters.threshold_clock_v_per_100mhz != 0.0 {
             threshold += parameters.threshold_clock_v_per_100mhz * above_reference(index) / 100.0;
         }
-        let x = (threshold - rail) / voltage.margin_v;
-        let softplus = x.max(0.0) + (-x.abs()).exp().ln_1p();
-        rates[index] = voltage.rate * softplus / std::f64::consts::LN_2;
+        rates[index] = softplus_rate(voltage, threshold - rail);
     }
     VoltageState {
         requests,

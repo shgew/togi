@@ -1,6 +1,7 @@
 // The shared-voltage rail: clocks, requests, hazards, failure share and validation.
 // Go: TestSharedVoltageTopRequester, TestSharedVoltageClockShape, TestSharedVoltageCore11NeedsSupport (the
-// computation-error mix is asserted on the mix, not on a draw), TestSharedVoltageDrawsAndScores (analytic
+// support rule on the rail, and the failure signal of core 11 through a seeded simulator trial),
+// TestSharedVoltageDrawsAndScores (analytic
 // part), TestSharedVoltageValidation, TestSharedVoltageThresholdClock, TestSharedVoltageDefaultThresholdClock,
 // TestR7FailureShare (its allocation count: visiting sources allocates nothing by construction),
 // TestSharedVoltageThresholdClockValidation, TestSharedVoltageThresholdClockDecodeAndOwnership,
@@ -8,15 +9,18 @@
 // TestSharedVoltageBackgroundValidation.
 // The sample, draw and replay-bypass tests wait for the runtime.
 
+use std::time::Duration;
 use togi_machine::{CoreId, Regime, Signal};
 use togi_sim::definition::{
-    CcdDef, DEFAULT_COUNT_V, JointDef, SharedVoltageDef, VoltageWorkloadDef, Weights,
+    CcdDef, DEFAULT_COUNT_V, JointDef, SharedVoltageDef, VoltageCoreDef, VoltageWorkloadDef,
+    Weights,
 };
 use togi_sim::file;
 use togi_sim::{MachineDefinition, Model, Problem, SourceKind};
 
 use crate::common::{
-    committed_machine, flat_cores, invalid, load, machine_dir_text, model, offsets, r7_workload,
+    Rig, committed_machine, flat_cores, invalid, load, machine_dir_text, model, offsets,
+    r7_workload, spec,
 };
 
 const SECONDS: f64 = 120.0;
@@ -163,6 +167,56 @@ fn core_eleven_needs_a_supporting_core_to_keep_its_rail() {
         .expect("core 11 names its signals");
     for x in [0.0, 0.25, 0.5, 0.999] {
         assert_eq!(mix.pick(x), Signal::ComputationError);
+    }
+}
+
+#[test]
+fn a_rail_failure_of_core_eleven_takes_the_signal_of_its_own_mix() {
+    let id = r7_workload(1);
+    let mut definition = rewrite_cores(committed_machine("shared-voltage.json"), |core| {
+        core.base_v = 1.2;
+        core.threshold_v = 0.01;
+        core.count_v = 0.0;
+        core.clock_v_per_100mhz = 0.0;
+        core.threshold_clock_v_per_100mhz = 0.0;
+        core.signals = None;
+    });
+    // Core 11 alone requires more than the rail gives; the others are far above their requirement.
+    let eleven = &mut definition
+        .shared_voltage
+        .as_mut()
+        .expect("a rail")
+        .workload
+        .get_mut(id)
+        .expect("workload")
+        .core[11];
+    eleven.threshold_v = 5.0;
+    eleven.signals = Some(Weights::from([(Signal::ComputationError, 1.0)]));
+    definition.model.signals = Weights::from([(Signal::Crash, 1.0)]);
+    definition.model.regime_signals = [(Regime::R7, Weights::from([(Signal::Crash, 1.0)]))].into();
+    let model = model(&definition);
+    for seed in 0..5 {
+        let mut rig = Rig::with(
+            model.clone(),
+            togi_sim::RunSettings {
+                seed,
+                ..togi_sim::RunSettings::default()
+            },
+        );
+        let trial = spec(
+            "0001",
+            r7(),
+            togi_machine::workload_by_id(id).expect("an R7 workload"),
+            &[10, 11],
+            Duration::from_secs(120),
+        );
+        let result = rig.pass(trial);
+        let failure = result.failure.expect("the rail fails core 11");
+        assert_eq!(
+            (failure.signal, failure.core),
+            (Signal::ComputationError, core(11)),
+            "seed {seed}"
+        );
     }
 }
 
@@ -342,6 +396,131 @@ fn a_core_count_of_zero_selects_the_default_volts_per_count() {
             .flat_map(|workload| &workload.cores)
             .all(|core| core.count_v == DEFAULT_COUNT_V)
     );
+}
+
+fn rewrite_cores(
+    mut definition: MachineDefinition,
+    edit: impl Fn(&mut VoltageCoreDef),
+) -> MachineDefinition {
+    definition.core = flat_cores(16, -50, -50);
+    let rail = definition.shared_voltage.as_mut().expect("a rail");
+    for workload in rail.workload.values_mut() {
+        workload.core.iter_mut().for_each(&edit);
+    }
+    definition
+}
+
+#[test]
+fn the_rail_is_the_highest_loaded_request_even_when_every_request_is_negative() {
+    let definition = rewrite_cores(committed_machine("shared-voltage.json"), |core| {
+        core.base_v = 0.1;
+        core.threshold_v = 0.1;
+        core.count_v = 0.0;
+        core.clock_v_per_100mhz = 0.0;
+        core.threshold_clock_v_per_100mhz = 0.0;
+    });
+    let model = model(&definition);
+    let voltage = model.voltage().expect("a rail");
+    let workload = r7_workload(0);
+    let profile = offsets(&[-50; 16]);
+    let state = |cores: &[i64]| {
+        model
+            .voltage_state(&profile, &load(r7(), workload, cores, SECONDS))
+            .expect("shape")
+            .expect("a rail")
+    };
+
+    let request = 0.1 + DEFAULT_COUNT_V * -50.0;
+    assert!(request < 0.0, "{request}");
+    let two = state(&[0, 1]);
+    close(two.rail, request, 1e-12);
+    assert_eq!(two.requests[0], narrowed(request));
+    let x = (0.1 - request) / voltage.margin_v;
+    let want = voltage.rate * (x + (-x).exp().ln_1p()) / std::f64::consts::LN_2;
+    for core in [0, 1] {
+        close(two.rates[core], want, 1e-9 * want);
+    }
+
+    let none = state(&[]);
+    assert_eq!(none.rail, 0.0, "no loaded request, no rail");
+    assert_eq!(none.rates, [0.0; 16]);
+}
+
+#[test]
+fn a_margin_whose_normalized_deficit_overflows_keeps_its_representable_hazard() {
+    let tiny = 1e-310;
+    let mut definition = rewrite_cores(committed_machine("shared-voltage.json"), |core| {
+        core.base_v = 1.2;
+        core.threshold_v = 1.2;
+        core.count_v = 0.0;
+        core.clock_v_per_100mhz = 0.0;
+        core.threshold_clock_v_per_100mhz = 0.0;
+    });
+    let rail = definition.shared_voltage.as_mut().expect("a rail");
+    rail.margin_v = tiny;
+    rail.rate = tiny;
+    let model = model(&definition);
+    let workload = r7_workload(0);
+    let profile = offsets(&[-35; 16]);
+    // Every loaded core asks 1.2 - 35 · 0.0036 = 1.074 V of a 1.2 V requirement: a deficit of 0.126 V,
+    // `rate · deficit / margin_v` of which is the 0.126 failures per second the equal tiny `rate` and
+    // `margin_v` leave, over ln 2, though the deficit over the margin alone is infinite.
+    let per_core = 0.126 / std::f64::consts::LN_2;
+    let one_second = load(r7(), workload, &[0, 1], 1.0);
+    let state = model
+        .voltage_state(&profile, &one_second)
+        .expect("shape")
+        .expect("a rail");
+    for core in [0, 1] {
+        close(state.rates[core], per_core, 1e-9);
+    }
+    let hazard = model.hazard(&profile, &one_second).expect("shape");
+    close(hazard, 2.0 * per_core, 1e-9);
+    close(
+        model
+            .failure_probability(&profile, &one_second)
+            .expect("shape"),
+        -(-hazard).exp_m1(),
+        1e-12,
+    );
+    for id in [0, 1] {
+        let share = model
+            .r7_failure_share(&profile, &one_second, core(id))
+            .expect("shape");
+        close(share, 0.5, 1e-9);
+    }
+}
+
+#[test]
+fn the_share_of_two_rates_whose_sum_overflows_is_still_their_ratio() {
+    let mut definition = rewrite_cores(committed_machine("shared-voltage.json"), |core| {
+        core.base_v = 1.2;
+        core.threshold_v = 1.2;
+        core.count_v = 0.0;
+        core.clock_v_per_100mhz = 0.0;
+        core.threshold_clock_v_per_100mhz = 0.0;
+    });
+    let rail = definition.shared_voltage.as_mut().expect("a rail");
+    rail.rate = 1e307;
+    rail.margin_v = 1.0;
+    rail.background_rate = 1.7e308;
+    let model = model(&definition);
+    let profile = offsets(&[-35; 16]);
+    let two = load(r7(), r7_workload(0), &[0, 1], 1.0);
+    let state = model
+        .voltage_state(&profile, &two)
+        .expect("shape")
+        .expect("a rail");
+    let hazard = model.hazard(&profile, &two).expect("shape");
+    assert!(hazard.is_infinite(), "the steady hazard does not fit");
+    let ratio = state.rates[0] / 1.7e308;
+    for id in [0, 1] {
+        let share = model
+            .r7_failure_share(&profile, &two, core(id))
+            .expect("shape");
+        close(share, ratio / (1.0 + 2.0 * ratio), 1e-9);
+    }
+    assert_eq!(model.failure_probability(&profile, &two), Ok(1.0));
 }
 
 #[test]
@@ -649,6 +828,66 @@ fn rail_numbers_are_finite_and_in_range() {
         assert_eq!(
             (error.path, error.problem),
             (format!("shared_voltage.workload.{id}.{field}"), problem)
+        );
+    }
+}
+
+#[test]
+fn rail_fields_are_checked_in_document_order() {
+    let id = r7_workload(0);
+    let error = invalid(&edit_rail(|rail| {
+        rail.thermal_limit_w = 0.0;
+        rail.workload.get_mut(id).expect("workload").core.pop();
+    }));
+    assert_eq!(
+        (error.path.as_str(), error.problem),
+        ("shared_voltage.thermal_limit_w", Problem::NotPositive),
+        "the rail's numbers come before its workloads"
+    );
+    let error = invalid(&edit_rail(|rail| {
+        let workload = rail.workload.get_mut(id).expect("workload");
+        workload.core.pop();
+        workload.balance_mhz_per_w = -1.0;
+    }));
+    assert_eq!(
+        (error.path, error.problem),
+        (
+            format!("shared_voltage.workload.{id}.balance_mhz_per_w"),
+            Problem::Negative
+        ),
+        "a workload's numbers come before its core table"
+    );
+    let error = invalid(&edit_rail(|rail| {
+        let workload = rail.workload.get_mut(id).expect("workload");
+        workload.core.pop();
+        workload.core[0].base_v = 0.0;
+    }));
+    assert_eq!(
+        error.path,
+        format!("shared_voltage.workload.{id}.core"),
+        "the table's length comes before its entries"
+    );
+}
+
+#[test]
+fn a_rail_whose_hazard_cannot_be_represented_is_refused() {
+    let edits: [(&str, RailEdit); 2] = [
+        ("a rate that overflows over a small margin", |rail| {
+            rail.rate = 1e308;
+            rail.margin_v = 1e-3;
+        }),
+        ("a requirement slope that overflows the threshold", |rail| {
+            for workload in rail.workload.values_mut() {
+                workload.core[0].threshold_clock_v_per_100mhz = 1e308;
+            }
+        }),
+    ];
+    for (name, edit) in edits {
+        let error = invalid(&edit_rail(edit));
+        assert_eq!(error.problem, Problem::Overflow, "{name}: {error}");
+        assert!(
+            error.path.starts_with("shared_voltage.workload.") && error.path.ends_with(".core[0]"),
+            "{name}: {error}"
         );
     }
 }

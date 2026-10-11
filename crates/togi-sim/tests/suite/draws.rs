@@ -7,13 +7,13 @@
 
 use std::time::Duration;
 use togi_machine::{Regime, Signal, TrialSpec};
-use togi_sim::definition::{CcdDef, JointDef, ModelDef, Weights};
+use togi_sim::definition::{CcdDef, JointDef, Weights};
 use togi_sim::replay::{Replay, ReplayFact, ReplayOutcome};
 use togi_sim::{MachineDefinition, Model, RunSettings};
 
 use crate::common::{
     Rig, basic, committed_machine, cores, crashed, flat_cores, load_of, machine, model, offsets,
-    r7_workload, sharp, spec,
+    r7_workload, spec,
 };
 use crate::shared_voltage::tuned_rail;
 
@@ -245,12 +245,10 @@ fn a_replayed_pass_overrides_the_background() {
 
 #[test]
 fn the_same_seed_draws_the_same_failures_and_telemetry_changes_none() {
-    let mut definition = committed_machine("shared-voltage.json");
-    definition.model = ModelDef {
-        past_limit_rate: 0.05,
-        ..sharp(Signal::ComputationError)
-    };
-    let model = model(&definition);
+    // Failures must be likely, or a telemetry that perturbed them would go unseen.
+    let model = model(&background_machine(0.005));
+    let p = expected(&model, &[0; 16], &voltage_trial());
+    assert!((0.3..=0.9).contains(&p), "{p}");
     let run = |seed: u64, with_samples: bool| {
         let dir = tempfile::tempdir().expect("a directory");
         let mut rig = rig_with_seed(&model, seed);
@@ -258,13 +256,18 @@ fn the_same_seed_draws_the_same_failures_and_telemetry_changes_none() {
             rig.sim.set_samples_dir(Some(dir.path().to_owned()));
         }
         let mut out = Vec::new();
+        let mut failures = 0usize;
         for index in 0..40usize {
             let mut trial = voltage_trial();
             trial.index = index;
             trial.id = format!("{index:04}");
             let waited = rig.run(trial).0;
             let lanes = rig.machine.trials.samples(&format!("{index:04}")).count();
-            out.push(format!("{waited:?} {lanes}"));
+            // The outcome, its exposure and when it ended.
+            out.push(format!("{waited:?} {lanes} {:?}", rig.sim.now()));
+            if failed(&waited) {
+                failures += 1;
+            }
             if crashed(&waited) {
                 rig.sim.reboot();
             }
@@ -274,13 +277,15 @@ fn the_same_seed_draws_the_same_failures_and_telemetry_changes_none() {
                 .trials
                 .sweep(&togi_machine::CancellationToken::new());
         }
-        (out, rig.sim.now())
+        (out, rig.sim.now(), failures)
     };
-    assert_eq!(run(5, false), run(5, false));
-    assert_eq!(
-        run(5, false),
-        run(5, true),
-        "telemetry consumes no failure draw"
+    let plain = run(5, false);
+    assert!(
+        (1..40).contains(&plain.2),
+        "the fixed seed must mix failures and passes: {} failures",
+        plain.2
     );
-    assert_ne!(run(5, false).0, run(6, false).0);
+    assert_eq!(plain, run(5, false));
+    assert_eq!(plain, run(5, true), "telemetry consumes no failure draw");
+    assert_ne!(plain.0, run(6, false).0);
 }

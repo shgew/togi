@@ -263,18 +263,52 @@ fn load_overlay(
     }
     if let Some(facts) = &machine.facts {
         let parent_dir = parent_path.parent().unwrap_or(Path::new(""));
-        if !facts.is_empty() && !Path::new(facts).is_absolute() && clean(parent_dir) != clean(dir) {
-            let target = clean(&parent_dir.join(facts));
-            machine.facts = Some(
-                relative(&clean(dir), &target)
-                    .and_then(|rebased| rebased.to_str().map(str::to_owned))
-                    .ok_or_else(|| fail(OverlayProblem::Facts(facts.clone())))?,
-            );
+        if !facts.is_empty() && !Path::new(facts).is_absolute() {
+            let canonical = |directory: &Path| {
+                let directory = if directory.as_os_str().is_empty() {
+                    Path::new(".")
+                } else {
+                    directory
+                };
+                fs::canonicalize(directory).map_err(|source| LoadError::Read {
+                    path: directory.to_path_buf(),
+                    source,
+                })
+            };
+            let (from, to) = (canonical(dir)?, canonical(parent_dir)?);
+            if from != to {
+                machine.facts = Some(
+                    rebase(&from, &to, Path::new(facts))
+                        .and_then(|rebased| rebased.to_str().map(str::to_owned))
+                        .ok_or_else(|| fail(OverlayProblem::Facts(facts.clone())))?,
+                );
+            }
         }
     }
     machine.description = overlay.description;
     machine.notes = overlay.notes;
     Ok(machine)
+}
+
+/// `facts`, a path relative to canonical directory `to`, as a path relative to canonical directory `from`.
+/// Only the climb between the two directories is simplified: it is made of real directories, while a segment of
+/// `facts` itself may be a symlink, so `facts` is otherwise kept verbatim and never cleaned.
+fn rebase(from: &Path, to: &Path, facts: &Path) -> Option<PathBuf> {
+    let climb = relative(from, to)?;
+    let mut parts: Vec<Component<'_>> = climb.components().collect();
+    let mut rest = facts.components().peekable();
+    while rest
+        .next_if(|component| *component == Component::ParentDir)
+        .is_some()
+    {
+        if matches!(parts.last(), Some(Component::Normal(_))) {
+            parts.pop();
+        } else {
+            parts.push(Component::ParentDir);
+        }
+    }
+    parts.extend(rest.filter(|component| *component != Component::CurDir));
+    Some(parts.into_iter().collect())
 }
 
 /// `path` with `.` and `..` resolved lexically, as a file system would not: symlinks are not followed.

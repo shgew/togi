@@ -3,7 +3,8 @@
 // TestInMemorySampleRetentionDoesNotGrowWithDuration, TestSampleSetupFailuresRemainErrors),
 // TestSharedVoltageSamplesAndDeterminism (lanes; the request summary is togi-requests' own test),
 // TestSharedVoltageSamplesStayLazy; TestSamplePersistenceFailuresRemainErrors (a /dev/full integration test)
-// is covered by the setup-failure test here, which injects the failure with a path that cannot be created.
+// is `a_sample_file_that_refuses_writes_is_an_error_with_the_trial_result` below, and the setup failures
+// are covered by the test that cannot create the path.
 
 use std::time::Duration;
 use togi_machine::{
@@ -258,6 +259,42 @@ fn a_sample_store_that_cannot_be_written_is_an_error_with_the_trial_result() {
             matches!(partial.error, togi_machine::Error::Other(_)),
             "{case}"
         );
+    }
+}
+
+/// The sample file opens, then every write is refused (`/dev/full`): a short trial fails when its buffer is
+/// flushed, a long one while the series streams out. Both keep the storage error and the trial's result.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_sample_file_that_refuses_writes_is_an_error_with_the_trial_result() {
+    const NO_SPACE: i32 = 28;
+    for (case, seconds) in [("short", 3), ("long", 3600)] {
+        let mut rig = Rig::new(&machine(2, vec![]), 1);
+        let root = tempfile::tempdir().expect("a directory");
+        let trial_dir = root.path().join("0001");
+        std::fs::create_dir_all(&trial_dir).expect("a trial directory");
+        std::os::unix::fs::symlink("/dev/full", trial_dir.join(togi_trialfiles::SAMPLES))
+            .expect("a link to a full device");
+        rig.sim.set_samples_dir(Some(root.path().to_owned()));
+        let duration = Duration::from_secs(seconds);
+        let (waited, _) = rig.run(spec(
+            "0001",
+            Regime::R1,
+            togi_machine::pick_workload(Regime::R1, 0),
+            &[0],
+            duration,
+        ));
+        let Err(partial) = waited else {
+            panic!("{case}: persisted");
+        };
+        assert_eq!(partial.value.ran, duration, "{case}");
+        let togi_machine::Error::Other(cause) = partial.error else {
+            panic!("{case}: not a storage error");
+        };
+        let io = cause
+            .downcast_ref::<std::io::Error>()
+            .expect("an I/O error");
+        assert_eq!(io.raw_os_error(), Some(NO_SPACE), "{case}");
     }
 }
 

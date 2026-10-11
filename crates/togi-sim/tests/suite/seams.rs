@@ -315,6 +315,53 @@ fn a_machine_starts_at_the_epoch_or_one_reboot_after_its_history() {
     assert_eq!(rig.sim.now(), last + SignedDuration::from_secs(90));
 }
 
+#[test]
+fn the_clock_seam_follows_sleeps_wall_jumps_and_reboots_from_a_fresh_or_resumed_start() {
+    let epoch = jiff::Timestamp::from_second(1_767_225_600).expect("a time");
+    let last = epoch + SignedDuration::from_hours(7);
+    let resumed = RunSettings {
+        history: History {
+            last_time: Some(last),
+            ..History::default()
+        },
+        ..RunSettings::default()
+    };
+    let fresh = Rig::with(model(&two_cores()), RunSettings::default());
+    let resumed = Rig::with(model(&two_cores()), resumed);
+    for (mut rig, start) in [
+        (fresh, epoch),
+        (resumed, last + SignedDuration::from_secs(90)),
+    ] {
+        let cancel = CancellationToken::new();
+        assert_eq!(rig.machine.clock.now(), start);
+        assert_eq!(rig.machine.clock.monotonic(), Duration::ZERO);
+        rig.machine
+            .clock
+            .sleep(&cancel, Duration::from_secs(5))
+            .expect("sleep");
+        assert_eq!(
+            rig.machine.clock.now(),
+            start + SignedDuration::from_secs(5)
+        );
+        assert_eq!(rig.machine.clock.monotonic(), Duration::from_secs(5));
+        rig.sim.jump_wall(SignedDuration::from_hours(1));
+        assert_eq!(
+            rig.machine.clock.now(),
+            start + SignedDuration::from_secs(5) + SignedDuration::from_hours(1)
+        );
+        assert_eq!(rig.machine.clock.monotonic(), Duration::from_secs(5));
+        let before = rig.machine.clock.now();
+        rig.sim.crash();
+        rig.sim.reboot();
+        assert_eq!(
+            rig.machine.clock.now(),
+            before + SignedDuration::from_secs(90)
+        );
+        assert_eq!(rig.machine.clock.monotonic(), Duration::ZERO);
+        assert_eq!(rig.machine.clock.now(), rig.sim.now());
+    }
+}
+
 fn cursor_machine() -> Rig {
     let mut definition = machine(2, flat_cores(2, -50, -50));
     definition.script = vec![ScriptDef {

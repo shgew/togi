@@ -200,13 +200,13 @@ impl Running for SimRunning {
         if self.stale() {
             return Err(fail(Error::Crashed));
         }
-        if cancel.is_cancelled() {
-            return Err(fail(Error::Cancelled));
-        }
         if self.state == State::Waited {
             return Err(fail(other("the trial was already waited on")));
         }
         self.state = State::Waited;
+        if cancel.is_cancelled() {
+            return Err(fail(Error::Cancelled));
+        }
         let outcome = self
             .shared
             .borrow_mut()
@@ -382,6 +382,9 @@ impl Runtime {
             if let Some(reset) = failure.reset {
                 self.set_next_reset(reset);
             }
+            result.ran = failure.at;
+            count(spec, &mut result);
+            progress(spec, &result, events);
             self.crash();
             return Err(result);
         }
@@ -450,7 +453,7 @@ impl Runtime {
                         "simulated replayed uncorrected machine check".to_owned(),
                     ));
                 }
-                let pending = self.mce(0.0, failure.core, false);
+                let pending = self.mce(rng.random(), failure.core, false);
                 self.queue_mce(pending);
                 self.set_next_reset(ResetKind::SyncFlood);
                 self.crash();
@@ -674,7 +677,7 @@ impl Runtime {
             })
             .unwrap_or_else(|| self.model.signal_mix(spec.regime));
         let mut rng = stream(self.seed, Domain::VoltageSignal, &self.key(spec, core));
-        if rng.random::<f64>() * mix.total() < mix.weight(Signal::ComputationError) {
+        if rng.random::<f64>() < mix.probability(Signal::ComputationError) {
             Signal::ComputationError
         } else {
             Signal::Crash

@@ -112,6 +112,18 @@ fn a_retry_reproduces_the_class_outcome() {
         trial("0011", 7, Condition::Alone),
         "so is the condition"
     );
+    assert_eq!(
+        trial("0012", 7, Condition::Parked),
+        trial("0013", 7, Condition::Parked),
+        "a parked retry reproduces the outcome"
+    );
+    let parked = trial("0014", 7, Condition::Parked);
+    assert_ne!(parked, first, "parked is not together");
+    assert_ne!(
+        parked,
+        trial("0015", 7, Condition::Alone),
+        "parked is not alone"
+    );
 }
 
 fn failure_time(boost: f64, onset_s: f64, rate: f64, growth: f64, duration: Duration) -> Duration {
@@ -515,6 +527,11 @@ fn scripts_drive_outcomes_and_the_wall_and_monotonic_clocks_apart() {
     second.id = "0002".to_owned();
     let (waited, recorder) = rig.run(second);
     assert!(crashed(&waited));
+    let Err(partial) = &waited else {
+        panic!("a crash");
+    };
+    assert_eq!(partial.value.ran, Duration::from_secs(3));
+    assert_eq!(rig.sim.monotonic(), Duration::from_secs(18));
     assert_eq!(recorder.signals, [(core(1), Signal::ComputationError)]);
     rig.sim.reboot();
     let boot = rig.boot();
@@ -545,6 +562,73 @@ fn a_script_that_then_crashes_reports_only_backend_signals() {
         assert!(crashed(&waited), "{signal}");
         assert_eq!(recorder.signals, want, "{signal}");
         assert!(matches!(rig.machine.host.boot_id(), Err(Error::Crashed)));
+    }
+}
+
+#[test]
+fn a_script_that_crashes_after_a_signal_returns_the_exposure_it_ran() {
+    for regime in [Regime::R1, Regime::R6] {
+        let partial_of = |then_crash: bool| {
+            let mut definition = machine(2, vec![]);
+            scripted(
+                &mut definition,
+                &[("0001", Signal::Crash, 40.0, 0, None, then_crash)],
+            );
+            let mut rig = Rig::new(&definition, 1);
+            let (waited, recorder) = rig.run(basic(regime, &[0], MINUTE));
+            let Err(partial) = waited else {
+                panic!("{regime:?}: a crash");
+            };
+            (partial.value, recorder.progress, rig.sim.monotonic())
+        };
+        let (ordinary, ordinary_progress, _) = partial_of(false);
+        let (chained, chained_progress, monotonic) = partial_of(true);
+        assert_eq!(chained.ran, Duration::from_secs(40), "{regime:?}");
+        assert_eq!(monotonic, Duration::from_secs(40), "{regime:?}");
+        assert_eq!(
+            (chained.stops, chained.conts),
+            (ordinary.stops, ordinary.conts),
+            "{regime:?}"
+        );
+        assert_eq!(chained_progress, ordinary_progress, "{regime:?}");
+        if regime == Regime::R6 {
+            assert!(chained.conts > 0, "the bursts before the crash are counted");
+        }
+    }
+}
+
+#[test]
+fn a_replayed_uncorrected_machine_check_names_a_bank_by_the_models_probability() {
+    for (local, want_local) in [(1.0, true), (0.0, false)] {
+        let mut definition = machine(2, flat_cores(2, -50, -50));
+        definition.bios = Some(vec![-20, -21]);
+        definition.model.core_local_bank = local;
+        let work = Workload {
+            id: "work",
+            ..pick_workload(Regime::R7, 0).clone()
+        };
+        let mut banks = std::collections::BTreeSet::new();
+        for seed in 0..60u64 {
+            let model = model(&definition);
+            let replay = replay_of(model.bios_context().clone(), Signal::UncorrectedMce);
+            let mut rig = Rig::with(
+                model,
+                RunSettings {
+                    seed,
+                    replay: Some(replay),
+                    ..RunSettings::default()
+                },
+            );
+            let (waited, _) = rig.run(spec("1", Regime::R7, &work, &[0, 1], MINUTE));
+            assert!(crashed(&waited));
+            rig.sim.reboot();
+            let boot = rig.boot();
+            let mces = rig.mces(&boot);
+            assert_eq!(mces.len(), 1);
+            assert_eq!(mces[0].bank_type.core_local(), want_local, "{local}");
+            banks.insert(mces[0].bank);
+        }
+        assert!(banks.len() > 1, "{local}: the bank is drawn, not fixed");
     }
 }
 
@@ -599,7 +683,11 @@ fn a_trial_can_be_scripted_after_the_machine_is_built() {
         .expect("a script");
     let result = rig.pass(basic(Regime::R1, &[1], MINUTE));
     assert_eq!(result.ran, Duration::from_secs(2));
-    assert_eq!(result.failure.map(|failure| failure.core), Some(core(1)));
+    let failure = result.failure.expect("a failure");
+    assert_eq!(
+        (failure.signal, failure.core),
+        (Signal::ComputationError, core(1))
+    );
     let outside = Script {
         signal: Some(Signal::Crash),
         at_s: 0.0,

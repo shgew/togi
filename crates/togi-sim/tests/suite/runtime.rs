@@ -384,6 +384,29 @@ fn a_cancelled_wait_does_not_advance_the_clock() {
 }
 
 #[test]
+fn a_cancelled_wait_consumes_the_trial() {
+    let mut rig = Rig::new(&two_cores(ModelDef::default()), 6);
+    let mut running = rig
+        .start(basic(Regime::R1, &[0], Duration::from_secs(60)))
+        .unwrap_or_else(|error| panic!("{error}"));
+    let cancel = CancellationToken::new();
+    cancel.cancel();
+    let mut recorder = crate::common::Recorder::default();
+    assert!(running.wait(&cancel, &mut recorder).is_err());
+    let start = rig.sim.now();
+    let again = running.wait(&CancellationToken::new(), &mut recorder);
+    assert!(matches!(
+        again,
+        Err(Partial {
+            error: Error::Other(_),
+            ..
+        })
+    ));
+    assert_eq!(rig.sim.now(), start, "the second wait ran nothing");
+    assert!(running.stop().is_ok());
+}
+
+#[test]
 fn a_trial_is_waited_on_once() {
     let mut rig = Rig::new(&two_cores(ModelDef::default()), 6);
     let mut running = rig

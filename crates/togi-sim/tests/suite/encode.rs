@@ -120,6 +120,22 @@ fn fields_equal_to_their_default_are_left_out_and_the_rest_are_written() {
     assert!(text.contains("\"crash_mce\": 0.6"), "{text}");
     let eight = round_trip(&machine(8, vec![]));
     assert!(eight.contains("\"cores\": 8"), "{eight}");
+    let mut ccd = machine(16, vec![]);
+    ccd.ccd = Some(CcdDef {
+        log_rate: -7.0,
+        slope: 0.0,
+        effect: [0.0, 0.5],
+    });
+    let text = round_trip(&ccd);
+    assert!(text.contains("\"log_rate\": -7.0"), "{text}");
+    assert!(text.contains("\"effect\""), "{text}");
+    assert!(!text.contains("slope"), "{text}");
+    ccd.ccd = Some(CcdDef::default());
+    let text = round_trip(&ccd);
+    assert!(text.contains("\"ccd\": {}"), "{text}");
+    for left_out in ["log_rate", "slope", "effect"] {
+        assert!(!text.contains(left_out), "{left_out} in {text}");
+    }
 }
 
 #[test]

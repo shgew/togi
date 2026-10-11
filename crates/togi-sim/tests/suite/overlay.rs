@@ -256,6 +256,47 @@ fn normalized(path: &Path) -> PathBuf {
     parts.into_iter().collect()
 }
 
+#[cfg(unix)]
+#[test]
+fn inherited_facts_through_a_symlinked_directory_still_name_the_same_extract() {
+    let dir = tempfile::tempdir().expect("temporary directory");
+    std::fs::create_dir_all(dir.path().join("elsewhere/deep")).expect("create the link target");
+    write_parent(
+        &dir.path().join("machines/parent.json"),
+        r#""facts": "alias/../extract.jsonl.gz","#,
+    );
+    std::os::unix::fs::symlink(
+        dir.path().join("elsewhere/deep"),
+        dir.path().join("machines/alias"),
+    )
+    .expect("link a directory");
+    let leaf = write(
+        &dir.path().join("overlays/leaf.json"),
+        &overlay(
+            "../machines/parent.json",
+            &entry(AVX2, 5, r#", "threshold_v": 1.1"#),
+        ),
+    );
+    let got = load(&leaf).facts.expect("facts");
+    // The file system resolves `alias/..` to the link target's parent, not to `machines`.
+    let directory_of = |base: &Path, facts: &str| {
+        let path = base.join(facts);
+        assert_eq!(
+            path.file_name().and_then(|n| n.to_str()),
+            Some("extract.jsonl.gz")
+        );
+        std::fs::canonicalize(path.parent().expect("a directory")).expect("an existing directory")
+    };
+    assert_eq!(
+        directory_of(&dir.path().join("overlays"), &got),
+        directory_of(&dir.path().join("machines"), "alias/../extract.jsonl.gz"),
+    );
+    assert_eq!(
+        directory_of(&dir.path().join("overlays"), &got),
+        std::fs::canonicalize(dir.path().join("elsewhere")).expect("the link target's parent"),
+    );
+}
+
 #[test]
 fn an_overlay_of_a_parent_without_facts_has_none() {
     let dir = tempfile::tempdir().expect("temporary directory");

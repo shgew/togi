@@ -74,6 +74,12 @@ impl SignalMix {
         self.0.iter().sum()
     }
 
+    /// The probability that a failure draws `signal`: its weight over the total, which unlike scaling a
+    /// uniform draw by the total is exact for subnormal weights.
+    pub fn probability(&self, signal: Signal) -> f64 {
+        self.weight(signal) / self.total()
+    }
+
     /// Maps `x` in `[0, 1)` to a signal in proportion to the weights.
     pub fn pick(&self, x: f64) -> Signal {
         pick(&WEIGHTED_SIGNALS, &self.0, x)
@@ -103,10 +109,14 @@ impl ResetMix {
     }
 }
 
+/// Picks the kind at fraction `x` of the weights' total. The weights are compared in units of the
+/// largest one, so a mix of subnormal weights draws in the same proportions as the same mix scaled up.
 fn pick<T: Copy>(kinds: &[T], weights: &[f64], x: f64) -> T {
-    let mut left = x * weights.iter().sum::<f64>();
+    let largest = weights.iter().copied().fold(0.0, f64::max);
+    let mut left = x * weights.iter().map(|weight| weight / largest).sum::<f64>();
     let mut last = kinds[0];
     for (&kind, &weight) in kinds.iter().zip(weights) {
+        let weight = weight / largest;
         if weight > 0.0 {
             if left < weight {
                 return kind;

@@ -6,12 +6,12 @@
 
 use std::collections::BTreeSet;
 use std::time::Duration;
-use togi_machine::{BiosContext, CoreSet, Regime, Signal, TargetOffset};
-use togi_sim::Load;
+use togi_machine::{BiosContext, CoreSet, Regime, Signal, TargetOffset, Workload, pick_workload};
 use togi_sim::random::{Domain, stream};
 use togi_sim::replay::{FactProblem, InvalidFact, Replay, ReplayFact, ReplayOutcome};
+use togi_sim::{Load, RunSettings};
 
-use crate::common::{cores, offsets};
+use crate::common::{Rig, cores, crashed, flat_cores, machine, model, offsets, sharp, spec};
 
 fn context(version: &str) -> BiosContext {
     BiosContext {
@@ -195,7 +195,12 @@ fn any_difference_in_the_key_leaves_the_trial_to_the_fitted_model() {
             context("A"),
         ),
         ("loaded offset", base, offsets(&[-21, -21]), context("A")),
-        ("unloaded offset", base, offsets(&[-20, -22]), context("A")),
+        (
+            "other loaded offset",
+            base,
+            offsets(&[-20, -22]),
+            context("A"),
+        ),
         (
             "profile length",
             base,
@@ -211,6 +216,164 @@ fn any_difference_in_the_key_leaves_the_trial_to_the_fitted_model() {
             replay.answer(&context, &load, &profile, &mut rng).is_none(),
             "{name}"
         );
+    }
+}
+
+#[test]
+fn an_offset_of_an_unloaded_core_is_part_of_the_key() {
+    let mut recorded = fact(ReplayOutcome::Pass);
+    recorded.profile = offsets(&[-20, -21, -5]);
+    let replay = Replay::new([recorded]).expect("valid");
+    let load = trial(Regime::R7, "work", cores(&[0, 1]), 60);
+    let profile = offsets(&[-20, -21, -5]);
+    assert!(replay.has_answer(&context("A"), &load, &profile));
+    let mut rng = stream(1, Domain::Replay, &[]);
+    assert!(
+        replay
+            .answer(&context("A"), &load, &profile, &mut rng)
+            .is_some()
+    );
+    // Only core 2 differs, and core 2 is not loaded.
+    let changed = offsets(&[-20, -21, -6]);
+    assert!(!replay.has_answer(&context("A"), &load, &changed));
+    assert!(
+        replay
+            .answer(&context("A"), &load, &changed, &mut rng)
+            .is_none()
+    );
+}
+
+/// One trial of a machine whose fitted model fails it at once, with `replay` if given: its debug-printed
+/// outcome, the virtual time it took and whether the machine crashed.
+fn run_against(replay: Option<Replay>, signal: Signal, key: &MissKey) -> (String, Duration, bool) {
+    let mut definition = machine(2, flat_cores(2, -10, -10));
+    definition.model = sharp(signal);
+    definition.bios = Some(vec![-20, -21]);
+    let model = model(&definition);
+    let mut rig = Rig::with(
+        model,
+        RunSettings {
+            seed: 5,
+            replay,
+            ..RunSettings::default()
+        },
+    );
+    if key.change_profile {
+        rig.set(1, -22).expect("set");
+    }
+    if key.change_context {
+        rig.sim.set_bios_context(context("B"));
+    }
+    let work = Workload {
+        id: key.workload,
+        ..pick_workload(key.regime, 0).clone()
+    };
+    let (waited, _) = rig.run(spec(
+        "1",
+        key.regime,
+        &work,
+        key.cores,
+        Duration::from_secs(key.seconds),
+    ));
+    let crash = crashed(&waited);
+    (format!("{waited:?}"), rig.sim.monotonic(), crash)
+}
+
+struct MissKey {
+    regime: Regime,
+    workload: &'static str,
+    cores: &'static [i64],
+    seconds: u64,
+    change_profile: bool,
+    change_context: bool,
+}
+
+#[test]
+fn a_replay_miss_runs_the_fitted_failure_model_exactly_as_if_there_were_no_replay() {
+    let probe = {
+        let mut definition = machine(2, flat_cores(2, -10, -10));
+        definition.bios = Some(vec![-20, -21]);
+        model(&definition).bios_context().clone()
+    };
+    let replay = || {
+        let mut recorded = fact(ReplayOutcome::Pass);
+        recorded.context = probe.clone();
+        Replay::new([recorded]).expect("valid")
+    };
+    let base = MissKey {
+        regime: Regime::R7,
+        workload: "work",
+        cores: &[0, 1],
+        seconds: 60,
+        change_profile: false,
+        change_context: false,
+    };
+    for signal in [Signal::ComputationError, Signal::Crash] {
+        // The control: the key matches, the fact answers a pass and the fitted model's failure never runs.
+        let hit = run_against(Some(replay()), signal, &base);
+        let model_only = run_against(None, signal, &base);
+        assert_ne!(hit, model_only, "{signal}: the recorded pass is used");
+        assert!(
+            model_only.2 == (signal == Signal::Crash),
+            "{signal}: the model fails the trial"
+        );
+        assert!(
+            model_only.1 < Duration::from_secs(60),
+            "{signal}: and does so early"
+        );
+        let misses = [
+            (
+                "regime",
+                MissKey {
+                    regime: Regime::R2,
+                    ..base
+                },
+            ),
+            (
+                "workload",
+                MissKey {
+                    workload: "other",
+                    ..base
+                },
+            ),
+            (
+                "cores",
+                MissKey {
+                    cores: &[1],
+                    ..base
+                },
+            ),
+            (
+                "duration",
+                MissKey {
+                    seconds: 90,
+                    ..base
+                },
+            ),
+            (
+                "profile",
+                MissKey {
+                    change_profile: true,
+                    ..base
+                },
+            ),
+            (
+                "context",
+                MissKey {
+                    change_context: true,
+                    ..base
+                },
+            ),
+        ];
+        for (name, key) in misses {
+            let missed = run_against(Some(replay()), signal, &key);
+            let model_only = run_against(None, signal, &key);
+            assert_eq!(missed, model_only, "{signal}: {name}");
+            assert!(
+                missed.1 < Duration::from_secs(key.seconds),
+                "{signal}: {name} did not fail"
+            );
+        }
     }
 }
 

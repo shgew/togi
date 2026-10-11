@@ -152,3 +152,106 @@ fn a_tiny_rate_cannot_fail_inside_a_trial() {
     let time = onset.failure_time(0.0, 1e-300, 1.0);
     assert!(time > 1e6, "{time}");
 }
+
+#[test]
+fn a_boost_whose_exposure_overflows_still_scores_the_failures_it_draws() {
+    let rate = 1e-309;
+    let mut definition = machine(
+        2,
+        vec![
+            CoreDef {
+                flat: rate,
+                ..core_def(0, -10, -10)
+            },
+            core_def(1, -10, -10),
+        ],
+    );
+    definition.model.past_limit_rate = 0.0;
+    definition.model.near_limit_rate = 0.0;
+    definition.model.growth = 1.0;
+    definition.model.onset_s = 10.0;
+    definition.model.onset_boost = 1e308;
+    let model = model(&definition);
+    let onset = model.params().onset;
+    assert!(
+        onset.exposure(0.0, 10.0).is_infinite(),
+        "a unit rate's boosted exposure does not fit"
+    );
+    let load = load(Regime::R1, "", &[0], 10.0);
+    let profile = offsets(&[-5, 0]);
+    let sources = model.sources(&profile, &load).expect("shape");
+    assert_eq!(sources.len(), 1);
+    assert_eq!(sources[0].rate, rate);
+
+    // The boosted rate is about 0.1 per second, so the ten seconds hold about one failure.
+    let failures = onset.failures(0.0, rate, 10.0);
+    assert!((failures - 1.0).abs() < 1e-9, "{failures}");
+    let got = model.failure_probability(&profile, &load).expect("shape");
+    assert_eq!(got, -(-failures).exp_m1());
+    assert!((got - (1.0 - (-1.0f64).exp())).abs() < 1e-9, "{got}");
+
+    // Drawing inverts the same count: half of it is reached halfway, twice of it after the end.
+    let half = onset.failure_time(0.0, rate, failures / 2.0);
+    assert!((half - 5.0).abs() < 1e-6, "{half}");
+    assert!(onset.failure_time(0.0, rate, failures * 2.0) > 10.0);
+}
+
+#[test]
+fn a_growth_power_that_underflows_cannot_silence_a_representable_rate() {
+    let mut definition = machine(
+        2,
+        vec![
+            core_def(0, -10, -10),
+            CoreDef {
+                idle: Some(-10),
+                ..core_def(1, -10, -10)
+            },
+        ],
+    );
+    definition.model.past_limit_rate = 1e308;
+    definition.model.growth = 1e-163;
+    definition.model.near_limit_rate = 0.0;
+    let model = model(&definition);
+    // Three counts past the limit: 1e308 · (1e-163)² is 1e-18, though (1e-163)² alone is 0.
+    let profile = offsets(&[-13, -13]);
+    let load = load(Regime::R1, "", &[0], 1e18);
+    let sources = model.sources(&profile, &load).expect("shape");
+    assert_eq!(
+        sources.iter().map(|source| source.kind).collect::<Vec<_>>(),
+        [
+            togi_sim::SourceKind::Core(crate::common::core(0)),
+            togi_sim::SourceKind::Idle(crate::common::core(1)),
+        ]
+    );
+    for source in &sources {
+        assert!((source.rate - 1e-18).abs() <= 1e-9 * 1e-18, "{source:?}");
+    }
+    let got = model.failure_probability(&profile, &load).expect("shape");
+    assert!((got - (1.0 - (-2.0f64).exp())).abs() < 1e-9, "{got}");
+}
+
+#[test]
+fn rates_at_the_edge_of_f64_never_turn_a_probability_into_nan() {
+    let flat = |id| CoreDef {
+        flat: 1e308,
+        ..core_def(id, -10, -10)
+    };
+    let mut definition = machine(2, vec![flat(0), flat(1)]);
+    definition.model.past_limit_rate = 0.0;
+    definition.model.near_limit_rate = 0.0;
+    definition.model.growth = 1.0;
+    definition.model.onset_s = 10.0;
+    definition.model.onset_boost = 1e308;
+    let model = model(&definition);
+    let profile = offsets(&[-5, -5]);
+    for (seconds, want) in [(0.0, 0.0), (1.0, 1.0), (10.0, 1.0), (100.0, 1.0)] {
+        let load = load(Regime::R1, "", &[0, 1], seconds);
+        let sources = model.sources(&profile, &load).expect("shape");
+        assert!(sources.iter().all(|source| source.rate.is_finite()));
+        assert_eq!(
+            model.failure_probability(&profile, &load),
+            Ok(want),
+            "{seconds} s"
+        );
+    }
+}

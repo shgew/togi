@@ -144,6 +144,10 @@ mod skip {
         *value == 0
     }
 
+    pub(super) fn no_effect(value: &[f64; 2]) -> bool {
+        value.iter().all(|&effect| effect == 0.0)
+    }
+
     pub(super) const fn is_false(value: &bool) -> bool {
         !*value
     }
@@ -337,9 +341,12 @@ impl Default for ModelDef {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(remote = "Self", deny_unknown_fields, default)]
 pub struct CcdDef {
+    #[serde(skip_serializing_if = "skip::is_zero")]
     pub log_rate: f64,
     /// Nonnegative.
+    #[serde(skip_serializing_if = "skip::is_zero")]
     pub slope: f64,
+    #[serde(skip_serializing_if = "skip::no_effect")]
     pub effect: [f64; 2],
 }
 

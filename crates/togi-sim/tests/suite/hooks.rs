@@ -156,3 +156,69 @@ fn the_emergency_zero_writes_every_core_through_the_hook_and_the_write_faults() 
     rig.sim.fail_write(1);
     assert!(rig.machine.smu.emergency_zero(validated, &stopped).is_err());
 }
+
+#[test]
+fn a_hook_that_crashes_the_machine_before_an_access_leaves_the_access_unapplied() {
+    for op in [SmuOp::Set, SmuOp::SetAll, SmuOp::Read] {
+        let mut rig = rig();
+        let sim = rig.sim.clone();
+        rig.sim.interrupt_smu(move |access: &SmuOperation| {
+            if access.op == op && access.phase == HookPhase::Before {
+                sim.crash();
+            }
+            Ok(())
+        });
+        let result = match op {
+            SmuOp::Set => rig.set(0, -2),
+            SmuOp::SetAll => rig.set_all(-2),
+            SmuOp::Read => rig.read(0).map(|_| ()),
+        };
+        assert!(matches!(result, Err(Error::Crashed)), "{op:?}: {result:?}");
+        rig.sim.interrupt_smu(|_: &SmuOperation| Ok(()));
+        assert!(matches!(rig.read(0), Err(Error::Crashed)), "{op:?}");
+        rig.sim.reboot();
+        assert_eq!(registers(&mut rig), [-5, -6], "{op:?}");
+    }
+}
+
+#[test]
+fn a_hook_that_reboots_the_machine_before_an_access_cannot_leak_it_into_the_new_boot() {
+    for op in [SmuOp::Set, SmuOp::SetAll, SmuOp::Read] {
+        let mut rig = rig();
+        let sim = rig.sim.clone();
+        rig.sim.interrupt_smu(move |access: &SmuOperation| {
+            if access.op == op && access.phase == HookPhase::Before {
+                sim.crash();
+                sim.reboot();
+            }
+            Ok(())
+        });
+        let result = match op {
+            SmuOp::Set => rig.set(0, -2),
+            SmuOp::SetAll => rig.set_all(-2),
+            SmuOp::Read => rig.read(0).map(|_| ()),
+        };
+        assert!(matches!(result, Err(Error::Crashed)), "{op:?}: {result:?}");
+        rig.sim.interrupt_smu(|_: &SmuOperation| Ok(()));
+        assert_eq!(registers(&mut rig), [-5, -6], "{op:?}");
+    }
+}
+
+#[test]
+fn a_write_stopped_by_a_hook_crash_is_counted_against_the_write_faults_once() {
+    let mut rig = rig();
+    let sim = rig.sim.clone();
+    rig.sim.interrupt_smu(move |access: &SmuOperation| {
+        if access.phase == HookPhase::Before {
+            sim.crash();
+        }
+        Ok(())
+    });
+    rig.sim.fail_write(2);
+    assert!(matches!(rig.set(0, -2), Err(Error::Crashed)));
+    rig.sim.interrupt_smu(|_: &SmuOperation| Ok(()));
+    rig.sim.reboot();
+    // The crashed write took the first count; the next write is the second and fails.
+    assert!(rig.set(0, -2).is_err());
+    assert_eq!(registers(&mut rig), [-5, -6]);
+}

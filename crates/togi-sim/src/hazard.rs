@@ -68,27 +68,73 @@ impl HazardSource {
 
 impl Onset {
     /// Seconds of exposure to a source that starts at `after_s` within a trial of `duration_s`, counting
-    /// the boosted seconds `1 + boost` times.
+    /// the boosted seconds `1 + boost` times: the [`failures`](Self::failures) of a source of rate 1.
     pub fn exposure(self, after_s: f64, duration_s: f64) -> f64 {
-        (duration_s - after_s).max(0.0)
-            + self.boost * (duration_s.min(self.window_s) - after_s).max(0.0)
+        self.failures(after_s, 1.0, duration_s)
+    }
+
+    /// The expected failures of a source of `rate` that starts at `after_s` within a trial of
+    /// `duration_s`: the boosted rate `rate · (1 + boost)` times the seconds inside the onset window, plus
+    /// `rate` times the seconds after it. Each phase is one rate-times-seconds product, so the count is
+    /// infinite only when the true count exceeds `f64::MAX`, and a phase with no seconds adds nothing.
+    pub fn failures(self, after_s: f64, rate: f64, duration_s: f64) -> f64 {
+        let seconds = duration_s - after_s;
+        if seconds <= 0.0 {
+            return 0.0;
+        }
+        let early = self.window_s - after_s;
+        if early > 0.0 && self.boost > 0.0 {
+            let boosted = rate * (1.0 + self.boost);
+            if seconds <= early {
+                return boosted * seconds;
+            }
+            return boosted * early + rate * (seconds - early);
+        }
+        rate * seconds
     }
 
     /// The time, in seconds into the trial, at which a source of `rate` that starts at `after_s` has
-    /// accumulated `cumulative` expected failures: the inverse of [`exposure`](Self::exposure). Drawing
+    /// accumulated `cumulative` expected failures: the inverse of [`failures`](Self::failures). Drawing
     /// `cumulative` from an exponential distribution of mean 1 samples the source's failure time.
     pub fn failure_time(self, after_s: f64, rate: f64, cumulative: f64) -> f64 {
         let early = self.window_s - after_s;
         if early > 0.0 && self.boost > 0.0 {
-            let boosted = 1.0 + self.boost;
-            let seconds = cumulative / (rate * boosted);
+            let boosted = rate * (1.0 + self.boost);
+            let seconds = cumulative / boosted;
             if seconds <= early {
                 return after_s + seconds;
             }
-            return after_s + early + (cumulative - early * rate * boosted) / rate;
+            return after_s + early + (cumulative - boosted * early) / rate;
         }
         after_s + cumulative / rate
     }
+}
+
+/// The most counts past a limit an offset can reach: a limit of 1 at offset -50 is 51 counts past it,
+/// 50 growth steps beyond the first.
+const DEEPEST_STEPS: f64 = 50.0;
+
+/// `rate · growth^steps`, the failures per second `steps + 1` counts past a limit. When the power alone
+/// would underflow or overflow, the product is taken in the log domain, so a representable rate is never
+/// lost on the way; a zero rate stays zero.
+pub(crate) fn grown(rate: f64, growth: f64, steps: f64) -> f64 {
+    if rate == 0.0 {
+        return 0.0;
+    }
+    let factor = growth.powf(steps);
+    if factor.is_normal() {
+        rate * factor
+    } else {
+        steps.mul_add(growth.ln(), rate.ln()).exp()
+    }
+}
+
+/// The largest rate a limit gives a core anywhere in the range of limits (-50..=1) and offsets
+/// (-50..=0): the near-limit rate, or the past-limit rate at either end of its growth.
+pub(crate) fn largest_limit_rate(past_limit_rate: f64, growth: f64, near_limit_rate: f64) -> f64 {
+    near_limit_rate
+        .max(past_limit_rate)
+        .max(grown(past_limit_rate, growth, DEEPEST_STEPS))
 }
 
 /// Counts and ratios of small integers as `f64`.
@@ -227,8 +273,9 @@ impl Model {
         Ok(rate)
     }
 
-    /// The probability that a trial of `load.duration` fails: every source integrated over its exposure,
-    /// with the onset boost and delays, as `-expm1(-Σ rate · exposure)`.
+    /// The probability that a trial of `load.duration` fails: every source's
+    /// [`failures`](Onset::failures) over the trial, with the onset boost and delays, as
+    /// `-expm1(-Σ failures)`.
     pub fn failure_probability(
         &self,
         profile: &[TargetOffset],
@@ -236,11 +283,11 @@ impl Model {
     ) -> Result<f64, ShapeError> {
         let duration = load.duration.as_secs_f64();
         let onset = self.params().onset;
-        let mut hazard = 0.0;
+        let mut failures = 0.0;
         self.visit_sources(profile, load, |source| {
-            hazard += source.rate * onset.exposure(source.after_s, duration);
+            failures += onset.failures(source.after_s, source.rate, duration);
         })?;
-        Ok(-(-hazard).exp_m1())
+        Ok(-(-failures).exp_m1())
     }
 
     /// A loaded core is alone when no other core has a nonzero offset.
@@ -260,7 +307,7 @@ impl Model {
         let past = limit - offset;
         let flat = if offset == 0 { 0.0 } else { limits.flat };
         flat + if past >= 1 {
-            params.past_limit_rate * params.growth.powf(steps(past - 1))
+            grown(params.past_limit_rate, params.growth, steps(past - 1))
         } else {
             params.near_limit_rate
         }
@@ -276,7 +323,11 @@ impl Model {
         if let Some(idle) = limits.idle {
             let past = idle - offset;
             if past >= 1 {
-                rate += self.params().past_limit_rate * self.params().growth.powf(steps(past - 1));
+                rate += grown(
+                    self.params().past_limit_rate,
+                    self.params().growth,
+                    steps(past - 1),
+                );
             }
         }
         rate

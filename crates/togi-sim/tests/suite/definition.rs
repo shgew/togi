@@ -3,12 +3,14 @@
 // TestLoadMachineBIOSContext.
 
 use std::collections::BTreeMap;
+use std::time::Duration;
 use togi_machine::{BiosContext, Regime, ResetKind, Signal};
-use togi_sim::definition::{DEFAULT_GROWTH, DEFAULT_ONSET_S, Weights};
+use togi_sim::definition::{DEFAULT_GROWTH, DEFAULT_ONSET_S, ScriptDef, Weights};
 use togi_sim::file::{self, LoadError};
-use togi_sim::{MachineDefinition, Model, WEIGHTED_SIGNALS};
+use togi_sim::model::Script;
+use togi_sim::{MachineDefinition, Model, RunSettings, WEIGHTED_SIGNALS};
 
-use crate::common::{machine, model};
+use crate::common::{Rig, basic, core, machine, model};
 
 const FULL: &str = r#"{
   "description": "Fixture machine",
@@ -274,8 +276,30 @@ fn the_default_bios_context_fills_what_a_file_leaves_out() {
 #[test]
 fn a_model_keeps_what_it_was_built_from_by_value() {
     let mut definition = machine(2, crate::common::flat_cores(2, -20, -20));
+    definition.script = vec![ScriptDef {
+        trial: "0001".to_owned(),
+        signal: Some(Signal::Stall),
+        at_s: 1.0,
+        core: 1,
+        ..ScriptDef::default()
+    }];
     let model = Model::new(&definition, 1).expect("valid");
     definition.core[0].alone = [-5; 5];
     definition.script.clear();
     assert_eq!(model.limits()[0].alone, [-20; 5]);
+    assert_eq!(
+        model.script("0001"),
+        Some(&Script {
+            signal: Some(Signal::Stall),
+            at_s: 1.0,
+            core: core(1),
+            reset: None,
+            then_crash: false,
+        })
+    );
+    let mut rig = Rig::with(model, RunSettings::default());
+    let result = rig.pass(basic(Regime::R1, &[0, 1], Duration::from_secs(60)));
+    let failure = result.failure.expect("the scripted failure");
+    assert_eq!((failure.signal, failure.core), (Signal::Stall, core(1)));
+    assert_eq!(result.ran, Duration::from_secs(1));
 }

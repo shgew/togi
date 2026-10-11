@@ -5,11 +5,12 @@
 // TestNewPredictorRejects (negative joint rate, member core and offset out of range).
 
 use std::collections::BTreeMap;
-use togi_machine::{ResetKind, Signal};
+use togi_machine::{Regime, ResetKind, Signal};
 use togi_sim::definition::{CcdDef, JointDef, ScriptDef, Weights};
+use togi_sim::file::{self, LoadError};
 use togi_sim::{MachineDefinition, Model, Problem};
 
-use crate::common::{core_def, flat_cores, invalid, machine, model};
+use crate::common::{core_def, flat_cores, invalid, load, machine, model, offsets};
 
 fn refused(definition: &MachineDefinition, path: &str, problem: &Problem) {
     let error = invalid(definition);
@@ -48,6 +49,41 @@ fn topology_is_checked_before_the_limits() {
         "cores",
         &Problem::Topology(18),
     );
+}
+
+fn load_text(text: &str) -> Result<MachineDefinition, LoadError> {
+    let dir = tempfile::tempdir().expect("a directory");
+    let path = dir.path().join("machine.json");
+    std::fs::write(&path, text).expect("write the machine");
+    file::load(&path)
+}
+
+// Go loads `{"cores": -2, "core": [{"id": 0}]}` and the 18-core analogue and gets the topology error. The
+// native loader decodes strictly first, and `alone` and `together` are required fields of a core, so those
+// two documents are refused as a parse error that names the file and the missing limits. The same
+// documents with the limits written reach `Model::new`, which names the core count, not the core table.
+#[test]
+fn a_loaded_document_is_refused_for_its_topology_before_its_limits() {
+    let limits =
+        r#""alone": [-10, -10, -10, -10, -10], "together": [-10, -10, -10, -10, -10, -10, -10]"#;
+    for cores in [-2, 18] {
+        let complete = format!(r#"{{"cores": {cores}, "core": [{{"id": 0, {limits}}}]}}"#);
+        match load_text(&complete) {
+            Err(LoadError::Invalid { source, .. }) => assert_eq!(
+                (source.path.as_str(), source.problem),
+                ("cores", Problem::Topology(cores))
+            ),
+            other => panic!("{cores} cores: {other:?}"),
+        }
+        let bare = format!(r#"{{"cores": {cores}, "core": [{{"id": 0}}]}}"#);
+        let error = load_text(&bare).expect_err("a refused document");
+        let message = error.to_string();
+        assert!(matches!(error, LoadError::Parse { .. }), "{message}");
+        assert!(
+            message.contains("machine.json") && message.contains("alone"),
+            "{message}"
+        );
+    }
 }
 
 #[test]
@@ -131,6 +167,40 @@ fn flat_rates_are_finite_and_nonnegative() {
         definition.core[1].flat = flat;
         refused(&definition, "core[1].flat", &problem);
     }
+}
+
+#[test]
+fn a_flat_rate_that_adds_to_a_limit_rate_beyond_f64_is_refused() {
+    let mut definition = two_cores();
+    definition.model.growth = 1.0;
+    definition.model.past_limit_rate = 1e308;
+    definition.core[1].flat = 1e308;
+    refused(&definition, "core[1].flat", &Problem::Overflow);
+    definition.model.past_limit_rate = 0.0;
+    definition.model.near_limit_rate = 1e308;
+    refused(&definition, "core[1].flat", &Problem::Overflow);
+    definition.core[1].flat = 1e307;
+    assert!(
+        Model::new(&definition, 1).is_ok(),
+        "the sum is representable"
+    );
+    definition.model.near_limit_rate = 0.0;
+    definition.core[1].flat = f64::MAX;
+    assert!(Model::new(&definition, 1).is_ok(), "a flat rate alone is");
+}
+
+#[test]
+fn a_zero_past_limit_rate_stays_zero_however_fast_it_would_grow() {
+    let mut definition = two_cores();
+    definition.model.past_limit_rate = 0.0;
+    definition.model.growth = 1e10;
+    let model = model(&definition);
+    let load = load(Regime::R1, "", &[0], 90.0);
+    assert_eq!(model.hazard(&offsets(&[-50, 0]), &load), Ok(0.0));
+    assert_eq!(
+        model.failure_probability(&offsets(&[-50, 0]), &load),
+        Ok(0.0)
+    );
 }
 
 #[test]
@@ -346,6 +416,38 @@ fn reset_weights_are_finite_nonnegative_with_a_positive_total() {
 }
 
 #[test]
+fn a_mix_of_subnormal_weights_draws_in_the_proportions_of_any_scale() {
+    let tiny = f64::from_bits(1);
+    for weight in [tiny, 1.0, 1e300] {
+        let mut definition = two_cores();
+        definition.model.signals =
+            Weights::from([(Signal::ComputationError, weight), (Signal::Crash, weight)]);
+        definition.model.reset = Weights::from([
+            (ResetKind::Watchdog, weight),
+            (ResetKind::ThermalTrip, weight),
+        ]);
+        let model = model(&definition);
+        let signals = model.signal_mix(togi_machine::Regime::R1);
+        let resets = model.reset_mix();
+        let (mut computation, mut watchdog) = (0, 0);
+        for step in 0..1000 {
+            let x = f64::from(step) / 1000.0;
+            let want = usize::from(x >= 0.5);
+            computation += usize::from(signals.pick(x) == Signal::ComputationError);
+            watchdog += usize::from(resets.pick(x) == ResetKind::Watchdog);
+            assert_eq!(
+                signals.pick(x),
+                [Signal::ComputationError, Signal::Crash][want],
+                "weight {weight}, x {x}"
+            );
+        }
+        assert_eq!((computation, watchdog), (500, 500), "weight {weight}");
+        assert_eq!(signals.probability(Signal::ComputationError), 0.5);
+        assert_eq!(signals.probability(Signal::Stall), 0.0);
+    }
+}
+
+#[test]
 fn model_scalars_are_checked() {
     type Edit = fn(&mut MachineDefinition);
     let cases: [(&str, Problem, Edit); 15] = [
@@ -445,6 +547,16 @@ fn ccd_parameters_are_finite_with_a_nonnegative_slope() {
         (error.path.as_str(), error.problem),
         ("ccd", Problem::Overflow)
     );
+    let error = set(CcdDef {
+        log_rate: -1e308,
+        slope: 1e308,
+        effect: [-1e308, -1e308],
+    });
+    assert_eq!(
+        (error.path.as_str(), error.problem),
+        ("ccd", Problem::Overflow),
+        "finite parts that sum to infinity and cancel to NaN are not an in-range exponent"
+    );
 }
 
 #[test]
@@ -458,6 +570,58 @@ fn the_first_problem_in_document_order_is_reported() {
     assert_eq!(invalid(&definition).path, "model.growth");
     definition.model.growth = 4.0;
     assert_eq!(invalid(&definition).path, "joint[0].members");
+}
+
+#[test]
+fn nested_fields_are_checked_in_document_order() {
+    let out = |value| Problem::OutOfRange {
+        value,
+        min: -50,
+        max: 1,
+    };
+    let mut definition = two_cores();
+    definition.core[1].together[2] = 9;
+    definition.core[1].flat = -1.0;
+    definition.core[1].idle = Some(-51);
+    definition.core[1].workload = BTreeMap::from([("w".to_owned(), 2)]);
+    refused(&definition, "core[1].together[2]", &out(9));
+    definition.core[1].together[2] = -10;
+    refused(&definition, "core[1].flat", &Problem::Negative);
+    definition.core[1].flat = 0.0;
+    refused(&definition, "core[1].idle", &out(-51));
+    definition.core[1].idle = None;
+    refused(&definition, "core[1].workload.w", &out(2));
+
+    let mut bad = joint(&[(0, -5)]);
+    bad.after_s = -1.0;
+    bad.signal = Some(Signal::UncorrectedMce);
+    bad.crash_mce_core = Some(2);
+    let mut definition = two_cores();
+    definition.joint = vec![bad.clone()];
+    refused(&definition, "joint[0].after_s", &Problem::Negative);
+    bad.after_s = 0.0;
+    definition.joint = vec![bad.clone()];
+    refused(&definition, "joint[0].signal", &Problem::Unsupported);
+    bad.signal = None;
+    definition.joint = vec![bad];
+    assert_eq!(invalid(&definition).path, "joint[0].crash_mce_core");
+
+    let script = |trial: &str| ScriptDef {
+        trial: trial.to_owned(),
+        signal: Some(Signal::UncorrectedMce),
+        at_s: -1.0,
+        core: 7,
+        ..ScriptDef::default()
+    };
+    let mut definition = two_cores();
+    definition.script = vec![script("0001"), script("0001")];
+    refused(&definition, "script[0].signal", &Problem::Unsupported);
+    definition.script[0].signal = None;
+    definition.script[0].at_s = 0.0;
+    definition.script[0].core = 0;
+    refused(&definition, "script[1].trial", &Problem::Duplicate);
+    definition.script[1].trial = "0002".to_owned();
+    refused(&definition, "script[1].signal", &Problem::Unsupported);
 }
 
 #[test]

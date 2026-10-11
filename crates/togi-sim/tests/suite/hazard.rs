@@ -328,12 +328,17 @@ fn sources_sum_to_the_steady_hazard_and_scale_to_the_probability() {
                     let sources = model.sources(&profile, &load).expect("shape");
                     let rate: f64 = sources.iter().map(|source| source.rate).sum();
                     assert_eq!(model.hazard(&profile, &load), Ok(rate));
+                    let failures: f64 = sources
+                        .iter()
+                        .map(|source| onset.failures(source.after_s, source.rate, 90.0))
+                        .sum();
                     let exposure: f64 = sources
                         .iter()
                         .map(|source| source.rate * onset.exposure(source.after_s, 90.0))
                         .sum();
+                    assert!((failures - exposure).abs() <= 1e-12 * exposure.max(1.0));
                     let probability = model.failure_probability(&profile, &load).expect("shape");
-                    assert_eq!(probability, -(-exposure).exp_m1());
+                    assert_eq!(probability, -(-failures).exp_m1());
                     assert!((0.0..=1.0).contains(&probability));
                 }
             }
@@ -371,11 +376,20 @@ fn a_model_owns_its_data_and_clones_share_it() {
     definition.core[0].idle = Some(-9);
     definition.joint = vec![joint(&[(0, -20)], &[], Some(0.5), 0.0)];
     definition.ccd = Some(CcdDef::default());
-    let model = model(&definition);
-    let regime = Regime::R7;
-    let load = load(regime, "", &[1], 90.0);
-    let profile = offsets(&[-40, -40]);
-    let before = model.failure_probability(&profile, &load).expect("shape");
+    let owned = model(&definition);
+    let regime = Regime::R1;
+    // Short enough not to saturate: a probability of 1 would be the same for any configuration.
+    let load = load(regime, "", &[1], 0.001);
+    let profile = offsets(&[-10, -10]);
+    let sources = owned.sources(&profile, &load).expect("shape");
+    let hazard = owned.hazard(&profile, &load).expect("shape");
+    let before = owned.failure_probability(&profile, &load).expect("shape");
+    assert_eq!(
+        hazard,
+        0.25 + 2.0,
+        "the loaded core's near-limit and core 0's idle rate"
+    );
+    assert!((0.1..0.9).contains(&before), "{before}");
 
     definition.core[0].idle = Some(-50);
     definition.core[0].flat = 0.5;
@@ -384,8 +398,19 @@ fn a_model_owns_its_data_and_clones_share_it() {
     definition.ccd = None;
     definition.model.past_limit_rate = 0.5;
 
-    let clone = model.clone();
-    drop(model);
+    let rebuilt = model(&definition);
+    assert_ne!(
+        rebuilt.sources(&profile, &load).expect("shape"),
+        sources,
+        "the mutation changes a model built from the definition"
+    );
+    assert_ne!(rebuilt.hazard(&profile, &load), Ok(hazard));
+    assert_ne!(rebuilt.failure_probability(&profile, &load), Ok(before));
+
+    let clone = owned.clone();
+    drop(owned);
+    assert_eq!(clone.sources(&profile, &load), Ok(sources));
+    assert_eq!(clone.hazard(&profile, &load), Ok(hazard));
     assert_eq!(clone.failure_probability(&profile, &load), Ok(before));
 }
 

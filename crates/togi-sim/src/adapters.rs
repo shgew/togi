@@ -33,6 +33,16 @@ impl Runtime {
         }
     }
 
+    /// Whether the machine is still alive in boot `boot`: a reentrant hook may have crashed or rebooted it.
+    fn still(&self, boot: u32) -> Result<(), Error> {
+        self.alive()?;
+        if self.boot_number == boot {
+            Ok(())
+        } else {
+            Err(Error::Crashed)
+        }
+    }
+
     /// Everything that can stop a write before it reaches a register: a crash, and the armed write faults.
     fn gate_write(&mut self) -> Result<(), Error> {
         self.alive()?;
@@ -117,15 +127,16 @@ pub(crate) struct SimSmu(pub(crate) Shared);
 
 impl Smu for SimSmu {
     fn offset(&mut self, core: CoreId) -> Result<ObservedOffset, Error> {
-        let current = {
+        let (current, boot) = {
             let runtime = self.0.borrow();
             runtime.alive()?;
             runtime.existing_core(core)?;
-            runtime.regs[core.index()].get()
+            (runtime.regs[core.index()].get(), runtime.boot_number)
         };
         intercept(&self.0, SmuOp::Read, Some(core), current, HookPhase::Before)?;
         let observed = {
             let mut runtime = self.0.borrow_mut();
+            runtime.still(boot)?;
             let register = runtime.regs[core.index()].get();
             if runtime.faults.corrupt_pending.remove(core) {
                 if register == MIN_OFFSET {
@@ -142,15 +153,20 @@ impl Smu for SimSmu {
     }
 
     fn set_offset(&mut self, core: CoreId, offset: TargetOffset) -> Result<(), Error> {
-        {
+        let boot = {
             let mut runtime = self.0.borrow_mut();
             runtime.alive()?;
             runtime.existing_core(core)?;
             runtime.gate_write()?;
-        }
+            runtime.boot_number
+        };
         let value = offset.get();
         intercept(&self.0, SmuOp::Set, Some(core), value, HookPhase::Before)?;
-        self.0.borrow_mut().written(core, offset);
+        {
+            let mut runtime = self.0.borrow_mut();
+            runtime.still(boot)?;
+            runtime.written(core, offset);
+        }
         intercept(&self.0, SmuOp::Set, Some(core), value, HookPhase::After)
     }
 
@@ -168,11 +184,16 @@ impl Smu for SimSmu {
 }
 
 fn write_all(shared: &Shared, offset: TargetOffset) -> Result<(), Error> {
-    shared.borrow_mut().gate_write()?;
+    let boot = {
+        let mut runtime = shared.borrow_mut();
+        runtime.gate_write()?;
+        runtime.boot_number
+    };
     let value = offset.get();
     intercept(shared, SmuOp::SetAll, None, value, HookPhase::Before)?;
     {
         let mut runtime = shared.borrow_mut();
+        runtime.still(boot)?;
         let cores = runtime.regs.len();
         for core in ids(cores) {
             runtime.written(core, offset);
