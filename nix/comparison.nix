@@ -114,6 +114,11 @@ let
   '';
 in
 {
+  # A crate's comparison check, registered in flake.nix so that this protected file stays unchanged:
+  # `comparison-journal = comparison.check "journal" { SUBJECT = "${subject}/bin/compare-journal"; }`.
+  # HARNESS_SHARDS and HARNESS_SHARD in the attributes shard it.
+  check = name: env: verify name env "harness check";
+
   packages = {
     comparison-corpus = corpus;
     comparison-expected = expected;
