@@ -74,6 +74,16 @@ pub enum SessionError {
     Log(#[source] io::Error),
     #[error("an initial offset is configured for core {core:02}, which this machine does not have")]
     NoSuchCore { core: CoreId },
+    #[error(
+        "a trial is planned on core {core:02}, which this machine does not have or gives no CPU"
+    )]
+    NoSuchTrialCore { core: CoreId },
+    /// A trial or a profile write was asked for without the proof that no workload runs.
+    #[error("nothing proves that no workload runs, so nothing may be written or started")]
+    Unproven,
+    /// The profile a trial together was planned on is not the one the tuner stands at.
+    #[error("the trial's profile is not the one the machine is set to")]
+    PlanDisagrees,
     #[error("clear GRUB's saved entry after an incompatible journal: {0}")]
     ClearSavedEntry(#[source] io::Error),
     #[error("allocate the session id: {0}")]

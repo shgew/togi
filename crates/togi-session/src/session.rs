@@ -31,7 +31,7 @@ use crate::error::{Flow, SessionError, Step};
 use crate::evidence::{self, Placement, Window};
 use crate::recover::KernelUnreadable;
 use crate::recovery::Cited;
-use crate::write::Hardware;
+use crate::write::{Hardware, Verified};
 
 /// When a run that met no dead end stops on its own.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -149,10 +149,6 @@ pub(crate) enum Visit {
 }
 
 /// What took the machine out of reach.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the run steps after startup set it")
-)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Fault {
     /// The workload's containment could not be confirmed: no SMU access, no restoration.
@@ -190,6 +186,9 @@ pub struct Session {
     pub(crate) fault: Option<Fault>,
     /// The `shutdown` the cleanup records once the machine is restored.
     pub(crate) shutdown: Option<Shutdown>,
+    /// The write transaction that last put the machine in the state the next trial starts on; `None` once a write
+    /// of the run failed or before any succeeded.
+    pub(crate) confirmed: Option<Verified>,
 }
 
 impl Session {
@@ -292,6 +291,7 @@ impl Session {
             unreadable: None,
             fault: None,
             shutdown: None,
+            confirmed: None,
         })
     }
 

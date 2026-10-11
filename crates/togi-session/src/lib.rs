@@ -11,9 +11,11 @@ mod defects;
 pub mod emergency;
 pub mod error;
 pub mod evidence;
+mod execute;
 pub mod recover;
 pub mod recovery;
 mod restore;
+mod run_trial;
 pub mod session;
 mod startup;
 pub mod trial;
@@ -23,4 +25,5 @@ pub mod write;
 mod testing;
 
 pub use error::{AppendFailure, Flow, FoldError, JournalFailure, SessionError, Step};
+pub use execute::TunerValues;
 pub use session::{Control, Ended, Outcome, RunInput, Session, Stop, StopPolicy};
