@@ -8,7 +8,6 @@ publish.workspace = true
 description = "Per-core voltage request and clock summaries of a trial, and the ordering of loaded cores by request"
 
 [dependencies]
-togi-gocompat.workspace = true
 togi-machine.workspace = true
 
 [lints]

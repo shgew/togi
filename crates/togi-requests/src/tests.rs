@@ -1,8 +1,11 @@
+use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
 use togi_machine::{CcdId, CoreId, PerCore, PmTable, TrialConditions};
 
-use super::{MIN_SAMPLES, Telemetry, VOLTS_PER_COUNT, WARMUP_MS, counts, groups, summarize, top};
+use super::{
+    MIN_SAMPLES, Telemetry, VOLTS_PER_COUNT, WARMUP_MS, compare, counts, groups, summarize, top,
+};
 
 fn core(id: i64) -> CoreId {
     CoreId::new(id).unwrap()
@@ -148,19 +151,16 @@ fn summarize_counts_a_repeated_core_twice_per_sample() {
 }
 
 #[test]
-fn summarize_median_of_signed_zeros_matches_go() {
-    let zeros = [-0.0_f32, 0.0, -0.0, 0.0, -0.0];
-    let seq: Vec<_> = (0..MIN_SAMPLES)
-        .map(|index| {
-            sample(
-                WARMUP_MS + i64::try_from(index).unwrap() * 1000,
-                &[(0, zeros[index % zeros.len()])],
-                &[],
-            )
-        })
-        .collect();
-    let got = summarize(seq, &cores(&[0]), ccd_of).unwrap();
-    assert_eq!(got.requests.get(core(0)).unwrap().to_bits(), 1 << 63);
+fn compare_orders_nan_first_and_signed_zeros_equal() {
+    for x in [f64::NEG_INFINITY, -1.0, 0.0, 1.0, f64::INFINITY] {
+        assert_eq!(compare(f64::NAN, x), Ordering::Less, "NaN vs {x}");
+        assert_eq!(compare(x, f64::NAN), Ordering::Greater, "{x} vs NaN");
+    }
+    assert_eq!(compare(f64::NAN, f64::NAN), Ordering::Equal);
+    assert_eq!(compare(-0.0, 0.0), Ordering::Equal);
+    assert_eq!(compare(0.0, -0.0), Ordering::Equal);
+    assert_eq!(compare(1.0, 2.0), Ordering::Less);
+    assert_eq!(compare(2.0, 1.0), Ordering::Greater);
 }
 
 #[test]

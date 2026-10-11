@@ -5,8 +5,6 @@
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
-use togi_gocompat::convert::{ceil, f64_to_i64, round};
-use togi_gocompat::sort::sort_f64;
 use togi_machine::{CcdId, CoreId, PER_CORE_MAX, PerCore, TrialConditions};
 
 /// Skips the samples taken while the load ramps up.
@@ -84,9 +82,7 @@ pub fn summarize(
     telemetry.top_requesters.sort_unstable();
     for (ccd, mhz) in clocks {
         if mhz.len() >= MIN_SAMPLES {
-            telemetry
-                .ccd_mhz
-                .insert(ccd, f64_to_i64(round(median(&mhz))));
+            telemetry.ccd_mhz.insert(ccd, to_i64(median(&mhz).round()));
         }
     }
     Some(telemetry)
@@ -115,7 +111,7 @@ pub fn groups(requests: &PerCore<f64>) -> Vec<Vec<CoreId>> {
 
 /// The counts shallower that raise a request from `v` to at least `target`, and at least one.
 pub fn counts(v: f64, target: f64) -> i64 {
-    f64_to_i64(ceil((target - v) / VOLTS_PER_COUNT - 1e-9)).max(1)
+    to_i64(((target - v) / VOLTS_PER_COUNT - 1e-9).ceil()).max(1)
 }
 
 pub fn top(requests: &PerCore<f64>) -> Option<f64> {
@@ -149,10 +145,18 @@ fn go_max(x: f64, y: f64) -> f64 {
 
 #[expect(
     clippy::cast_precision_loss,
-    reason = "Go's float64(int) rounds the same way"
+    reason = "clock readings in MHz are far below 2^53"
 )]
 const fn to_f64(value: i64) -> f64 {
     value as f64
+}
+
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "`as` saturates out-of-range values and maps NaN to 0, which suits whole MHz and counts"
+)]
+const fn to_i64(value: f64) -> i64 {
+    value as i64
 }
 
 fn median(values: &[f64]) -> f64 {
@@ -160,7 +164,7 @@ fn median(values: &[f64]) -> f64 {
 }
 
 fn median_in_place(values: &mut [f64]) -> f64 {
-    sort_f64(values);
+    values.sort_unstable_by(|a, b| compare(*a, *b));
     let middle = values.len() / 2;
     if values.len().is_multiple_of(2) {
         #[expect(
