@@ -1667,3 +1667,62 @@ fn a_cached_cancellation_joined_to_a_failed_teardown_stays_containment_with_ever
         Err(togi_machine::Error::Containment(_))
     ));
 }
+
+#[test]
+fn a_containment_shows_each_failure_with_its_causes_once_in_order() {
+    let mut containment = crate::Containment::new(CleanupFailure::Start(Box::new(Error::Launch {
+        instance: "work".into(),
+        scope: "togi-trial-t1".into(),
+        source: std::io::Error::other("no such file"),
+    })));
+    containment.push(CleanupFailure::KillScope {
+        scope: "togi-trial-t1".into(),
+        signal: "SIGKILL",
+        source: Box::new(std::io::Error::other("timed out")),
+    });
+    assert_eq!(
+        containment.to_string(),
+        "the start failed: launch instance work in scope togi-trial-t1: no such file; \
+         signal scope togi-trial-t1 with SIGKILL: timed out"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_cancelled_sweep_nobody_waits_for_with_failed_cleanup_reports_every_cause_in_order() {
+    local(async {
+        let rig = rig();
+        let cancel = CancellationToken::new();
+        rig.fake.add_unit("togi-trial-old.scope");
+        rig.fake.on_systemd({
+            let cancel = cancel.clone();
+            move |call| match call {
+                Systemd::Kill { signal, .. } => {
+                    if *signal == KillSignal::Term {
+                        cancel.cancel();
+                    }
+                    None
+                }
+                Systemd::Stop { .. } => Some(Reply::Output {
+                    success: false,
+                    text: "unit busy".into(),
+                }),
+                _ => None,
+            }
+        });
+        let (reply, nobody) = std::sync::mpsc::sync_channel(1);
+        drop(nobody);
+        crate::runtime::RUNTIME_REPORTS.with_borrow_mut(Vec::clear);
+        crate::runtime::serve_detached(
+            Rc::clone(&rig.env),
+            crate::runtime::Command::Sweep { cancel, reply },
+        )
+        .await;
+        assert_eq!(
+            runtime_reports(),
+            ["togi: a sweep nobody waits for failed: cancelled; trial cleanup could not be confirmed: \
+              stop scope togi-trial-old: exited with exit status: 1: unit busy; \
+              leftover trial unit or process remains at the sweep deadline"]
+        );
+    })
+    .await;
+}
