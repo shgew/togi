@@ -5,6 +5,7 @@
 pub mod appender;
 mod begin;
 pub mod boot;
+pub mod commands;
 mod defects;
 pub mod emergency;
 pub mod error;

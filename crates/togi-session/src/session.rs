@@ -666,7 +666,7 @@ fn dead_end_stop(dead_end: DeadEnd, causes: Vec<Seq>, reboot: bool) -> Stop {
 }
 
 /// Why this build may not append to the journal, judged by the build of its `session.start`.
-fn refusal(build: &Build, journal: &Journal) -> Option<togi_journal::Refusal> {
+pub(crate) fn refusal(build: &Build, journal: &Journal) -> Option<togi_journal::Refusal> {
     let recorded = journal
         .events()
         .iter()
