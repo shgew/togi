@@ -7,13 +7,13 @@
 mod hardware {
     use std::ffi::OsString;
     use std::fs::File;
-    use std::io::{Read as _, Write as _};
+    use std::io::{self, Read as _, Write as _};
     use std::os::fd::OwnedFd;
     use std::os::unix::fs::OpenOptionsExt as _;
     use std::path::{Path, PathBuf};
     use std::process::{Child, Command, Stdio};
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+    use std::sync::{Arc, Mutex, MutexGuard, PoisonError, mpsc};
     use std::time::{Duration, Instant};
 
     use rustix::fs::{AtFlags, CWD, FileType, Mode, OFlags};
@@ -630,6 +630,22 @@ mod hardware {
     }
 
     fn systemctl(args: &[&str]) -> Result<togi_command::Output, togi_command::Error> {
+        systemctl_within(args, Duration::from_secs(10))
+    }
+
+    fn systemctl_until(args: &[&str], deadline: Instant) -> Result<togi_command::Output, String> {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err("the teardown deadline elapsed".to_owned());
+        }
+        systemctl_within(args, remaining.min(Duration::from_secs(10)))
+            .map_err(|error| chain(&error))
+    }
+
+    fn systemctl_within(
+        args: &[&str],
+        limit: Duration,
+    ) -> Result<togi_command::Output, togi_command::Error> {
         let mut invocation = togi_command::Invocation::new("systemctl");
         if !root() {
             invocation = invocation.arg("--user");
@@ -638,7 +654,7 @@ mod hardware {
             clippy::disallowed_methods,
             reason = "a hardware test inspects and stops systemd units directly, within a bound"
         )]
-        let output = togi_command::run_blocking(&invocation.args(args), Duration::from_secs(10));
+        let output = togi_command::run_blocking(&invocation.args(args), limit);
         output
     }
 
@@ -688,13 +704,295 @@ mod hardware {
         text
     }
 
+    trait StrayChild: Send + 'static {
+        fn kill(&mut self) -> io::Result<()>;
+        fn try_wait(&mut self) -> io::Result<bool>;
+        fn wait(&mut self) -> io::Result<()>;
+    }
+
+    impl StrayChild for Child {
+        fn kill(&mut self) -> io::Result<()> {
+            Child::kill(self)
+        }
+
+        fn try_wait(&mut self) -> io::Result<bool> {
+            Child::try_wait(self).map(|status| status.is_some())
+        }
+
+        fn wait(&mut self) -> io::Result<()> {
+            Child::wait(self).map(|_| ())
+        }
+    }
+
+    struct StrayWaiter<C> {
+        child: mpsc::Sender<C>,
+        done: mpsc::Receiver<io::Result<()>>,
+    }
+
+    impl<C: StrayChild> StrayWaiter<C> {
+        fn start() -> io::Result<Self> {
+            let (child, waiting) = mpsc::channel::<C>();
+            let (finished, done) = mpsc::channel();
+            std::thread::Builder::new()
+                .name("trial-test-reaper".to_owned())
+                .spawn(move || {
+                    if let Ok(mut child) = waiting.recv() {
+                        let _ = finished.send(child.wait());
+                    }
+                })?;
+            Ok(Self { child, done })
+        }
+
+        fn wait_until(self, child: C, deadline: Instant) -> io::Result<()> {
+            self.child
+                .send(child)
+                .map_err(|_| io::Error::other("stray reaper disappeared"))?;
+            self.done
+                .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+                .map_err(|error| match error {
+                    mpsc::RecvTimeoutError::Timeout => {
+                        io::Error::new(io::ErrorKind::TimedOut, "stray reap deadline elapsed")
+                    }
+                    mpsc::RecvTimeoutError::Disconnected => {
+                        io::Error::other("stray reaper ended without reporting")
+                    }
+                })?
+        }
+    }
+
+    fn kill_stray<C: StrayChild>(
+        mut child: C,
+        waiter: StrayWaiter<C>,
+        deadline: Instant,
+    ) -> Result<(), String> {
+        let mut errors = Vec::new();
+        if let Err(error) = child.kill() {
+            errors.push(format!("kill stray child: {error}"));
+        }
+        match child.try_wait() {
+            Ok(true) => return join_errors(&errors),
+            Ok(false) => {}
+            Err(error) => errors.push(format!("poll stray child: {error}")),
+        }
+        let reap = deadline.min(Instant::now() + STRAY_REAP);
+        if let Err(error) = waiter.wait_until(child, reap) {
+            errors.push(format!("reap stray child: {error}"));
+        }
+        join_errors(&errors)
+    }
+
+    fn join_errors(errors: &[String]) -> Result<(), String> {
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors.join("; "))
+        }
+    }
+
+    fn isolated(
+        what: &str,
+        step: impl FnOnce(Instant) -> Result<(), String>,
+        deadline: Instant,
+    ) -> Result<(), String> {
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| step(deadline))).unwrap_or_else(
+            |payload| {
+                let reason = payload
+                    .downcast_ref::<&str>()
+                    .map(|text| (*text).to_owned())
+                    .or_else(|| payload.downcast_ref::<String>().cloned())
+                    .unwrap_or_else(|| "non-text panic".to_owned());
+                Err(format!("{what} panicked: {reason}"))
+            },
+        )
+    }
+
+    fn cleanup_stray(
+        deadline: Instant,
+        kill: impl FnOnce(Instant) -> Result<(), String>,
+        stop: impl FnOnce(Instant) -> Result<(), String>,
+    ) -> Result<(), String> {
+        let mut errors = Vec::new();
+        if let Err(error) = isolated("stray kill", kill, deadline) {
+            errors.push(error);
+        }
+        if let Err(error) = isolated("stray scope stop", stop, deadline) {
+            errors.push(error);
+        }
+        join_errors(&errors)
+    }
+
+    fn stop_stray_scope(unit: &str, deadline: Instant) -> Result<(), String> {
+        let scope = format!("{unit}.scope");
+        let mut errors = Vec::new();
+        match systemctl_until(&["stop", &scope], deadline) {
+            Ok(output) if output.status.success() => {}
+            Ok(output) => errors.push(format!("systemctl stop {scope}: {}", output.status)),
+            Err(error) => errors.push(format!("systemctl stop {scope}: {error}")),
+        }
+        loop {
+            let listed = systemctl_until(
+                &["list-units", "--all", "--plain", "--no-legend", &scope],
+                deadline,
+            );
+            match listed {
+                Ok(output) if output.status.success() && output.stdout.is_empty() => break,
+                Ok(output) if !output.status.success() => {
+                    errors.push(format!("systemctl list-units {scope}: {}", output.status));
+                    break;
+                }
+                Ok(_) if Instant::now() >= deadline => {
+                    errors.push(format!("{scope} did not stop"));
+                    break;
+                }
+                Ok(_) => std::thread::sleep(Duration::from_millis(50)),
+                Err(error) => {
+                    errors.push(format!("systemctl list-units {scope}: {error}"));
+                    break;
+                }
+            }
+        }
+        join_errors(&errors)
+    }
+
+    struct ReapFault {
+        caller: std::thread::ThreadId,
+        events: mpsc::Sender<&'static str>,
+        released: mpsc::Receiver<()>,
+        kill_fails: bool,
+        poll_fails: bool,
+    }
+
+    impl StrayChild for ReapFault {
+        fn kill(&mut self) -> io::Result<()> {
+            let _ = self.events.send("kill");
+            if self.kill_fails {
+                Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "injected kill refusal",
+                ))
+            } else {
+                Ok(())
+            }
+        }
+
+        fn try_wait(&mut self) -> io::Result<bool> {
+            let _ = self.events.send("try_wait");
+            if self.poll_fails {
+                Err(io::Error::other("injected reap failure"))
+            } else {
+                Ok(false)
+            }
+        }
+
+        fn wait(&mut self) -> io::Result<()> {
+            if std::thread::current().id() == self.caller {
+                let _ = self.events.send("unbounded wait");
+                return Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "injected blocked child wait",
+                ));
+            }
+            self.released
+                .recv_timeout(Duration::from_secs(1))
+                .map_err(io::Error::other)
+        }
+    }
+
+    #[test]
+    fn stray_cleanup_stops_the_scope_after_a_reap_timeout() {
+        let (record, events) = mpsc::channel();
+        let (release, released) = mpsc::channel();
+        let child = ReapFault {
+            caller: std::thread::current().id(),
+            events: record.clone(),
+            released,
+            kill_fails: false,
+            poll_fails: false,
+        };
+        let waiter = StrayWaiter::start().unwrap();
+        let deadline = Instant::now();
+        let result = cleanup_stray(
+            deadline,
+            |bound| kill_stray(child, waiter, bound),
+            |bound| {
+                assert_eq!(bound, deadline);
+                let _ = record.send("stop");
+                let _ = release.send(());
+                Ok(())
+            },
+        );
+        assert_eq!(
+            events.try_iter().collect::<Vec<_>>(),
+            ["kill", "try_wait", "stop"]
+        );
+        assert!(result.unwrap_err().contains("stray reap deadline elapsed"));
+    }
+
+    #[test]
+    fn stray_cleanup_preserves_kill_reap_and_scope_failures() {
+        let (record, events) = mpsc::channel();
+        let (release, released) = mpsc::channel();
+        let child = ReapFault {
+            caller: std::thread::current().id(),
+            events: record.clone(),
+            released,
+            kill_fails: true,
+            poll_fails: true,
+        };
+        let waiter = StrayWaiter::start().unwrap();
+        let result = cleanup_stray(
+            Instant::now(),
+            |bound| kill_stray(child, waiter, bound),
+            |_| {
+                let _ = record.send("stop");
+                let _ = release.send(());
+                Err("injected scope stop failure".to_owned())
+            },
+        );
+        assert_eq!(
+            events.try_iter().collect::<Vec<_>>(),
+            ["kill", "try_wait", "stop"]
+        );
+        let error = result.unwrap_err();
+        let kill = error.find("injected kill refusal");
+        let reap = error.find("injected reap failure");
+        let stop = error.find("injected scope stop failure");
+        assert!(
+            kill.is_some() && reap.is_some() && stop.is_some(),
+            "{error}"
+        );
+        assert!(kill < reap && reap < stop, "{error}");
+    }
+
+    #[test]
+    fn stray_cleanup_stops_the_scope_after_a_kill_panic() {
+        let (record, events) = mpsc::channel();
+        let result = cleanup_stray(
+            Instant::now(),
+            |_| panic!("injected kill panic"),
+            |_| {
+                let _ = record.send("stop");
+                panic!("injected stop panic")
+            },
+        );
+        assert_eq!(events.try_iter().collect::<Vec<_>>(), ["stop"]);
+        let error = result.unwrap_err();
+        let kill = error.find("injected kill panic");
+        let stop = error.find("injected stop panic");
+        assert!(kill.is_some() && stop.is_some(), "{error}");
+        assert!(kill < stop, "{error}");
+    }
+
     /// A process the test started and the scope it leaves behind: on drop, even while unwinding,
     /// the process is killed and reaped and the scope stopped, each within a bound.
     struct Stray {
         unit: String,
         child: Option<Child>,
+        waiter: Option<StrayWaiter<Child>>,
         ended: bool,
     }
+
+    const STRAY_REAP: Duration = Duration::from_secs(5);
 
     impl Stray {
         /// An unrelated scope that the sweep must leave alone.
@@ -705,6 +1003,7 @@ mod hardware {
             }
             argv.extend(["--scope", "--quiet", "--collect", "--unit", name]);
             argv.extend(["sleep", "300"]);
+            let waiter = StrayWaiter::start().unwrap();
             #[expect(
                 clippy::disallowed_methods,
                 reason = "a hardware test creates an unrelated scope to prove the sweep leaves it alone"
@@ -719,6 +1018,7 @@ mod hardware {
             let stray = Self {
                 unit: name.to_owned(),
                 child: Some(child),
+                waiter: Some(waiter),
                 ended: false,
             };
             assert!(
@@ -728,27 +1028,40 @@ mod hardware {
             stray
         }
 
-        fn kill(&mut self) {
-            if let Some(mut child) = self.child.take() {
-                let _ = child.kill();
-                let _ = child.wait();
+        fn kill(&mut self, deadline: Instant) -> Result<(), String> {
+            if let Some(child) = self.child.take() {
+                let waiter = self
+                    .waiter
+                    .take()
+                    .ok_or_else(|| "stray child has no wait owner".to_owned())?;
+                kill_stray(child, waiter, deadline)?;
             }
+            Ok(())
         }
 
-        /// Kills the process and stops the scope; true when the scope is then gone.
-        fn end(mut self) -> bool {
+        fn cleanup(&mut self) -> Result<(), String> {
             self.ended = true;
-            self.kill();
-            let _ = systemctl(&["stop", &format!("{}.scope", self.unit)]);
-            scope_gone(&self.unit)
+            let unit = self.unit.clone();
+            cleanup_stray(
+                Instant::now() + TEARDOWN,
+                |deadline| self.kill(deadline),
+                |deadline| stop_stray_scope(&unit, deadline),
+            )
+        }
+
+        fn end(mut self) -> Result<(), String> {
+            self.cleanup()
         }
     }
 
     impl Drop for Stray {
         fn drop(&mut self) {
             if !self.ended {
-                self.kill();
-                let _ = systemctl(&["stop", &format!("{}.scope", self.unit)]);
+                if let Err(error) = self.cleanup()
+                    && !std::thread::panicking()
+                {
+                    panic!("stray cleanup failed: {error}");
+                }
             }
         }
     }
@@ -974,6 +1287,7 @@ mod hardware {
     fn the_sweep_removes_orphaned_trial_scopes_and_keeps_every_other_scope() {
         let staged = Staged::new();
         let tree = &staged.tree;
+        let waiter = StrayWaiter::start().unwrap();
         #[expect(
             clippy::disallowed_methods,
             reason = "a hardware test runs a trial runner in a process it then kills, as a crash would"
@@ -988,11 +1302,12 @@ mod hardware {
         let mut orphaned = Stray {
             unit: "togi-trial-hardware".to_owned(),
             child: Some(owner),
+            waiter: Some(waiter),
             ended: false,
         };
         let orphan = detached(tree, WORK, "togi-trial-hardware").unwrap();
         assert!(wait_for(Duration::from_secs(60), || tree.exists(&[], "abandoned")));
-        orphaned.kill();
+        orphaned.kill(Instant::now() + TEARDOWN).unwrap();
         let unrelated = Stray::scope("togi-unrelated-hardware");
         let preflight = Stray::scope("togi-preflight-hardware");
         assert!(orphan.descendant.alive(), "the orphan died with its runner");
@@ -1012,8 +1327,8 @@ mod hardware {
         assert!(scope_gone("togi-trial-hardware"));
         assert!(scope_active("togi-unrelated-hardware"));
         assert!(scope_active("togi-preflight-hardware"));
-        assert!(unrelated.end(), "the unrelated scope did not stop");
-        assert!(preflight.end(), "the preflight scope did not stop");
+        unrelated.end().unwrap();
+        preflight.end().unwrap();
         drop(orphaned);
     }
 
