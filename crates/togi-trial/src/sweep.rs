@@ -10,7 +10,6 @@ use crate::error::{CleanupFailure, Containment, Error};
 use crate::id::ScopeName;
 use crate::identity::IdentityError;
 use crate::os::{KillSignal, Os, Systemd};
-use crate::procfs::ScopeProcess;
 use crate::supervisor::Env;
 
 const POLL: Duration = Duration::from_millis(100);
@@ -68,8 +67,20 @@ async fn list<O: Os>(os: &O, end: Instant) -> Result<Vec<ScopeName>, Boxed> {
     }
 }
 
-fn observe(what: &'static str, source: Boxed) -> Error {
-    Error::Containment(Containment::new(CleanupFailure::Observe { what, source }).into())
+fn observe(what: &'static str, source: impl Into<Boxed>) -> CleanupFailure {
+    CleanupFailure::Observe {
+        what,
+        source: source.into(),
+    }
+}
+
+fn contained(failures: Vec<CleanupFailure>) -> Error {
+    let mut failures = failures.into_iter();
+    let mut containment = Containment::new(failures.next().unwrap_or(CleanupFailure::Leftover));
+    for failure in failures {
+        containment.push(failure);
+    }
+    Error::Containment(containment.into())
 }
 
 /// Sends the same `operation` for every scope concurrently inside one slot.
@@ -124,101 +135,105 @@ async fn each_scope<O: Os>(
     }
 }
 
-fn gone<O: Os>(os: &O, captured: &[ScopeProcess]) -> Result<bool, Boxed> {
-    for process in captured {
-        if os
-            .process_alive(process)
-            .map_err(|error| Box::new(error) as Boxed)?
-        {
-            return Ok(false);
-        }
-    }
-    Ok(true)
-}
-
 /// Clears leftovers of an earlier run under one absolute deadline: signals only through exact
-/// scopes, verifies no unit, no scope process and no captured process remains.
+/// scopes, verifies no unit, no scope process and no captured process remains. A failed
+/// observation is recorded and the known scopes are still killed; every failure is kept.
 pub(crate) async fn sweep<O: Os>(env: &Env<O>) -> Result<(String, Stopped), Error> {
     let os = &env.os;
     let timing = env.timing;
     let deadline = Instant::now() + timing.teardown;
+    let mut failures = Vec::new();
     let units = list(os.as_ref(), deadline)
         .await
-        .map_err(|source| observe("the trial scope list", source))?;
-    let captured = os
-        .scope_processes()
-        .map_err(|error| observe("the trial processes", Box::new(error)))?;
+        .map_err(|source| contained(vec![observe("the trial scope list", source)]))?;
+    let captured = match os.scope_processes(deadline).await {
+        Ok(captured) => captured,
+        Err(error) => {
+            failures.push(observe("the trial processes", error));
+            Vec::new()
+        }
+    };
     let scopes: Vec<ScopeName> = units
         .into_iter()
         .chain(captured.iter().map(|process| process.scope.clone()))
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect();
-    let mut failures = Vec::new();
 
     let grace_end = deadline.min(Instant::now() + timing.stop_grace);
     for signal in [KillSignal::Cont, KillSignal::Term] {
         each_scope(os, &scopes, grace_end, signal, &mut failures, false).await;
     }
     while Instant::now() < grace_end {
-        if gone(os.as_ref(), &captured)
-            .map_err(|source| observe("a captured trial process", source))?
-        {
-            break;
+        match os.survivors(&captured, grace_end).await {
+            Ok(0) => break,
+            Ok(_) => {}
+            Err(error) => {
+                failures.push(observe("a captured trial process", error));
+                break;
+            }
         }
-        sleep(POLL.min(grace_end.saturating_duration_since(Instant::now()))).await;
+        tokio::select! {
+            () = sleep(POLL) => {}
+            () = sleep_until(grace_end) => {}
+        }
     }
 
     let kill_end = deadline.min(Instant::now() + timing.kill_slot);
     each_scope(os, &scopes, kill_end, KillSignal::Kill, &mut failures, true).await;
 
     let verify_end = deadline.min(Instant::now() + timing.drain);
-    let mut leftover = true;
-    while Instant::now() < verify_end {
-        let processes_gone = gone(os.as_ref(), &captured)
-            .map_err(|source| observe("a captured trial process", source))?;
-        let remaining = list(os.as_ref(), verify_end)
-            .await
-            .map_err(|source| observe("the trial scope list", source))?;
-        let fresh = os
-            .scope_processes()
-            .map_err(|error| observe("the trial processes", Box::new(error)))?;
-        if processes_gone && remaining.is_empty() && fresh.is_empty() {
-            leftover = false;
-            break;
+    let mut confirmed = false;
+    let mut observed = true;
+    while observed && Instant::now() < verify_end {
+        let survivors = os.survivors(&captured, verify_end).await;
+        let remaining = list(os.as_ref(), verify_end).await;
+        let fresh = os.scope_processes(verify_end).await;
+        match (survivors, remaining, fresh) {
+            (Ok(0), Ok(remaining), Ok(fresh)) if remaining.is_empty() && fresh.is_empty() => {
+                confirmed = Instant::now() <= deadline;
+                break;
+            }
+            (survivors, remaining, fresh) => {
+                if let Err(error) = survivors {
+                    failures.push(observe("a captured trial process", error));
+                    observed = false;
+                }
+                if let Err(source) = remaining {
+                    failures.push(observe("the trial scope list", source));
+                    observed = false;
+                }
+                if let Err(error) = fresh {
+                    failures.push(observe("the trial processes", error));
+                    observed = false;
+                }
+            }
         }
-        tokio::select! {
-            () = sleep(POLL) => {}
-            () = sleep_until(verify_end) => {}
+        if observed {
+            tokio::select! {
+                () = sleep(POLL) => {}
+                () = sleep_until(verify_end) => {}
+            }
         }
     }
-    if leftover {
+    if !confirmed && observed {
         failures.push(CleanupFailure::Leftover);
     }
-    let mut failures = failures.into_iter();
-    match failures.next() {
-        None => {
-            #[expect(
-                clippy::disallowed_methods,
-                reason = "the sweep verified no trial unit, scope process or captured process remains"
-            )]
-            let stopped = Stopped::confirmed();
-            Ok((
-                format!(
-                    "removed {} leftover trial scopes; no trial unit or process remains",
-                    scopes.len()
-                ),
-                stopped,
-            ))
-        }
-        Some(first) => {
-            let mut containment = Containment::new(first);
-            for failure in failures {
-                containment.push(failure);
-            }
-            Err(Error::Containment(containment.into()))
-        }
+    if !failures.is_empty() || !confirmed {
+        return Err(contained(failures));
     }
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the sweep verified no trial unit, scope process or captured process remains"
+    )]
+    let stopped = Stopped::confirmed();
+    Ok((
+        format!(
+            "removed {} leftover trial scopes; no trial unit or process remains",
+            scopes.len()
+        ),
+        stopped,
+    ))
 }
 
 /// The preflight check: a throwaway scope pinned to CPU 0 is created and ends, within 30 s.

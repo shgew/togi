@@ -76,6 +76,7 @@ impl Runtime {
                         }
                     }
                 });
+                runtime.shutdown_background();
                 let _ = finished_tx.send(());
             })
             .map_err(Error::RuntimeThread)?;

@@ -236,11 +236,41 @@ impl Os for Linux {
         togi_command::run(&invocation, deadline).await
     }
 
-    fn scope_processes(&self) -> Result<Vec<ScopeProcess>, ProcError> {
-        self.proc.scope_processes()
+    async fn scope_processes(&self, deadline: Instant) -> Result<Vec<ScopeProcess>, ProcError> {
+        let proc = self.proc.clone();
+        off_thread(deadline, move || proc.scope_processes()).await
     }
 
-    fn process_alive(&self, process: &ScopeProcess) -> Result<bool, ProcError> {
-        self.proc.alive(process)
+    async fn survivors(
+        &self,
+        captured: &[ScopeProcess],
+        deadline: Instant,
+    ) -> Result<usize, ProcError> {
+        let (proc, captured) = (self.proc.clone(), captured.to_vec());
+        off_thread(deadline, move || {
+            let mut alive = 0;
+            for process in &captured {
+                if proc.alive(process)? {
+                    alive += 1;
+                }
+            }
+            Ok(alive)
+        })
+        .await
+    }
+}
+
+/// Runs a `/proc` scan on tokio's blocking pool, so a slow read cannot stall the runtime thread,
+/// and gives up at `deadline`; the abandoned scan finishes on its own.
+async fn off_thread<T: Send + 'static>(
+    deadline: Instant,
+    scan: impl FnOnce() -> Result<T, ProcError> + Send + 'static,
+) -> Result<T, ProcError> {
+    match tokio::time::timeout_at(deadline, tokio::task::spawn_blocking(scan)).await {
+        Ok(Ok(result)) => result,
+        Ok(Err(error)) => Err(ProcError::Observation(format!("the /proc scan failed: {error}"))),
+        Err(_) => Err(ProcError::Observation(
+            "the /proc scan did not finish before the deadline".to_owned(),
+        )),
     }
 }

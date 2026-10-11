@@ -166,6 +166,10 @@ pub(crate) trait Os: 'static {
         operation: &Systemd,
         deadline: Instant,
     ) -> Result<togi_command::Output, togi_command::Error>;
-    fn scope_processes(&self) -> Result<Vec<ScopeProcess>, ProcError>;
-    fn process_alive(&self, process: &ScopeProcess) -> Result<bool, ProcError>;
+    /// Every live process in a trial scope. The scan runs off the runtime thread; one that has not
+    /// finished by `deadline` is an observation failure.
+    async fn scope_processes(&self, deadline: Instant) -> Result<Vec<ScopeProcess>, ProcError>;
+    /// How many of `captured` still live, by pid and start time, under the same rule.
+    async fn survivors(&self, captured: &[ScopeProcess], deadline: Instant)
+    -> Result<usize, ProcError>;
 }
