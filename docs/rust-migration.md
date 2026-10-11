@@ -156,6 +156,16 @@ The `togi-config` crate ports `internal/config` ([#749](https://github.com/shgew
 - **Review findings fixed.** The root and every section are now object-only, so a correctly sized positional array such as `{"durations":[60,null,null,null,null]}` is rejected; it used to set the search duration. A test now pins the parsed non-default `miss` and `rate`. This log entry was missing, and the pull request's Go-test map and list of Go bugs were corrected.
 - **Not measured.** Isolated compile times against Go, and agent cost.
 
+## Stage 3: `internal/defect` (#750, 2026-10-11)
+
+The `togi-defect` crate ports `internal/defect` and the pure part of `internal/session/defects.go` and the `status` reset guidance ([#750](https://github.com/shgew/togi/issues/750)): 447 lines of library and 726 of tests, against Go's 274 and 164 in `internal/defect`. No Go code is removed or changed. The 23 tests run in 0.013 s under `cargo nextest` on Linux; `go test -count=1 ./internal/defect` reports 0.005 s.
+
+- **Registry.** `KNOWN_DEFECTS` starts empty, so the fixes stamp is 0. Go's only entry, the power-off false failure, matched journals that only Go wrote, and Rust reads none. Clauses are data (decision kind, decision, cause kind) with no predicate closure; a `const` assertion and `DefectState::new` both refuse ids that are not strictly increasing.
+- **One fold.** `DefectState::fold` matches every payload kind exhaustively and does all the work as events arrive. The queries take `&self` and never walk events: each reads only registry entries (`new_findings`), recorded findings (`unanswered`, `reset_guidance`), pending resets (`missing_resets`) or excluded failures (`excluded_failures`), even when it returns nothing, so its cost is bounded by that retained evidence and never by the event count. `query_cost_independent_of_event_count` pins it: a test-only visit counter per element read shows the same count for every query with and without 5,000 extra warnings, failures and resets of uninvolved cores, on a scenario where every query returns something. The state keeps the seqs of cause kinds the registry names and nothing else, so with the empty registry it keeps none.
+- **Go bugs fixed.** A recorded too-aggressive finding whose id the build did not list was skipped, so unattended tuning carried on past it (T1); it is now a finding with its recorded direction. Only the first matching failure cause of a decision was excluded from carry (T2); now every one is. `Fixed()` panicked on an empty registry (T19). The Go index changed on query and assumed an append-only slice. Ids and seqs of 0 are now unrepresentable.
+- **Deleted.** The legacy block of resets recorded before an answer, and the Go power-off predicate with its fixture.
+- **Not measured.** Isolated compile times against Go, and agent cost.
+
 ## Stage 5: `togi-smu` (#762, 2026-10-11)
 
 - **`togi-smu`** ports `internal/smu`: `Driver` implements `togi_machine::Smu` (0xD5 read, 0x06 per-core write, 0x07 all-core write, `emergency_zero` as 0x07 with 0 behind `SmuValidated` and `&Stopped`). Targets are `TargetOffset`, so the clamp to [-50, 0] happens before any access; readbacks are raw sign-extended `ObservedOffset`s, never clamped.
