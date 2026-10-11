@@ -597,6 +597,12 @@ fn default_state_uses_the_known_registry() {
 }
 
 #[test]
+fn zero_is_not_a_defect_id() {
+    assert_eq!(DefectId::new(0), None);
+    assert_eq!(DefectId::new(3).map(DefectId::get), Some(3));
+}
+
+#[test]
 fn registry_ids_strictly_increasing() {
     assert!(is_ordered(KNOWN_DEFECTS));
     assert!(is_ordered(&NONE));
