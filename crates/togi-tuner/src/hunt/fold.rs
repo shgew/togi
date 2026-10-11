@@ -160,7 +160,7 @@ impl Run {
             cut: Cut::default(),
         };
         self.hunts.next_id = self.hunts.next_id.max(start.hunt.get());
-        self.hunts.last_start = Some(event.seq);
+        self.last_plan_seq = Some(event.seq);
         if located {
             self.hunts.located.insert(
                 start.failure,

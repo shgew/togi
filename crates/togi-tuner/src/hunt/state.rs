@@ -203,7 +203,6 @@ pub(crate) struct Hunts {
     pub(crate) active: Option<Box<Active>>,
     pub(crate) next_id: u32,
     pub(crate) next_combination: u32,
-    pub(crate) last_start: Option<Seq>,
     pub(crate) reset: Option<Seq>,
     pub(crate) located: BTreeMap<Seq, Located>,
     pub(crate) passed_full: Vec<(Seq, Profile)>,

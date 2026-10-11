@@ -621,6 +621,22 @@ fn r7_escalated_failure_locates_with_idle_cores_at_zero() {
 }
 
 #[test]
+fn a_locate_reads_a_ranking_newer_than_the_last_round_plan() {
+    let mut j = Journal::r7_session();
+    let (_, failure, _) = j.loc_fail_escalated(&top0());
+    assert!(!j.run().ranking_stale());
+    let profile = values(j.offsets());
+    let round = j.round_start(1, &profile, &[0], 1);
+    j.round_end(1, round);
+    assert_eq!(j.run().locate_action(), Some(Action::ReadRanking));
+    let ids = j.loc_ids();
+    j.ranking(&ids);
+    let action = j.run().locate_action().expect("the failure is located");
+    assert_eq!(hunt_start(&action).failure, failure);
+    j.assert_resumes();
+}
+
+#[test]
 fn r7_passed_locate_hunts_the_unloaded_culprit() {
     let mut j = Journal::r7_session();
     let (_, failure, _) = j.loc_fail_escalated(&top0());

@@ -830,6 +830,29 @@ impl Journal {
         )
     }
 
+    /// Ends round `round` started at `start` without passing, leaving the profile where it is.
+    pub(crate) fn round_end(&mut self, round: u32, start: Seq) -> Seq {
+        let profile = self.offsets().offsets();
+        self.append(
+            togi_journal::DeepeningRound {
+                round: std::num::NonZeroU32::new(round).unwrap(),
+                event: togi_journal::RoundEvent::End,
+                base: profile,
+                base_seq: None,
+                target: profile,
+                profile,
+                cores: CoreSet::default(),
+                ranking: Vec::new(),
+                trials: None,
+                trial_s: None,
+                passed: false,
+                reason: Some("ended".to_owned()),
+            }
+            .into(),
+            &[start],
+        )
+    }
+
     pub(crate) fn warning(&self) -> Option<TunerWarning> {
         match self.state.decide() {
             Some(Action::Decide(DecisionAction {

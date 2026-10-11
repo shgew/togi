@@ -307,6 +307,21 @@ fn hunt_parked_offsets_raises_the_passed_full_cycle_profile() {
 }
 
 #[test]
+fn a_hunt_start_reads_a_ranking_newer_than_the_last_round_or_hunt_plan() {
+    let mut j = limit_session(4);
+    let round = j.round_start(1, &[-30; 4], &[0], 1);
+    assert_eq!(j.run().last_plan_seq, Some(round));
+    j.round_end(1, round);
+    fail_together(&mut j, &[0], &[-30; 4], SHORT);
+    assert_eq!(j.run().hunt_start_action(), Some(Action::ReadRanking));
+    j.ranking(&ids(4));
+    let (start, _) = j.start_hunt();
+    assert_eq!(j.run().last_plan_seq, Some(start));
+    assert!(j.run().ranking_stale());
+    j.assert_resumes();
+}
+
+#[test]
 fn hunt_parked_offsets_selection_and_reset() {
     let mut j = limit_session(4);
     fail_together(&mut j, &[0], &[-30; 4], SHORT);

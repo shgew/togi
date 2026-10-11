@@ -197,7 +197,7 @@ impl Run {
         Ok(())
     }
 
-    /// Whether the host ranking predates the plan the last round began, or was never read.
+    /// Whether the host ranking predates the plan the last round or hunt began, or was never read.
     pub(crate) fn ranking_stale(&self) -> bool {
         match (&self.ranking, self.last_plan_seq) {
             (None, _) => true,

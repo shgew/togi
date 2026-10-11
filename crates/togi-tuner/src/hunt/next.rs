@@ -748,11 +748,7 @@ impl Run {
                 vec![seq],
             )));
         }
-        if self
-            .ranking
-            .as_ref()
-            .is_none_or(|ranked| Some(ranked.seq) <= self.hunts.last_start)
-        {
+        if self.ranking_stale() {
             return Some(Action::ReadRanking);
         }
         let class = record.class;
@@ -795,11 +791,7 @@ impl Run {
         let R7Route::Locate { failure, reason } = self.locate_due()? else {
             return None;
         };
-        if self
-            .ranking
-            .as_ref()
-            .is_none_or(|ranked| Some(ranked.seq) <= self.hunts.last_start)
-        {
+        if self.ranking_stale() {
             return Some(Action::ReadRanking);
         }
         let record = self.r7.open.get(&failure)?;
