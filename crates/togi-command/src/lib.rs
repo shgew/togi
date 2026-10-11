@@ -604,14 +604,26 @@ mod tests {
     /// been reused when the guard fires.
     struct KillOnDrop(Pid);
 
+    thread_local! {
+        /// Signals sent by `KillOnDrop` guards on this thread.
+        static GUARD_SIGNALS: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+    }
+
     impl KillOnDrop {
+        /// Builds the guard only once the check passes: a guard built and then rejected would
+        /// signal the id when dropped.
         fn if_running(pid: Pid) -> Option<Self> {
-            is_running(pid).then_some(Self(pid))
+            if is_running(pid) {
+                Some(Self(pid))
+            } else {
+                None
+            }
         }
     }
 
     impl Drop for KillOnDrop {
         fn drop(&mut self) {
+            GUARD_SIGNALS.set(GUARD_SIGNALS.get() + 1);
             let _ = kill_process(self.0, Signal::KILL);
         }
     }
@@ -639,6 +651,11 @@ mod tests {
         assert!(elapsed < REAP_GRACE, "{elapsed:?}");
         assert!(cleanup.is_none(), "the child was left running");
         assert!(reaped(child), "the child was left unreaped");
+        assert_eq!(
+            GUARD_SIGNALS.get(),
+            0,
+            "a rejected guard signalled a reaped id"
+        );
     }
 
     #[tokio::test]
@@ -728,6 +745,11 @@ mod tests {
         assert!(matches!(result, Err(Error::TimedOut { .. })), "{result:?}");
         assert!(cleanup.is_none(), "the child was left running");
         assert!(reaped(child), "the child was left unreaped");
+        assert_eq!(
+            GUARD_SIGNALS.get(),
+            0,
+            "a rejected guard signalled a reaped id"
+        );
     }
 
     /// A leader that ignores SIGKILL for a while (in the field: uninterruptible sleep) is simulated

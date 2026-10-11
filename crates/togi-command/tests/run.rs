@@ -5,7 +5,7 @@ use std::path::Path;
 use std::time::{Duration, Instant as StdInstant};
 
 use rustix::io::Errno;
-use rustix::process::{Pid, Signal, kill_process, test_kill_process};
+use rustix::process::{Pid, test_kill_process};
 use togi_command::{Error, Invocation, Output, Stream};
 use tokio::time::Instant;
 
@@ -57,24 +57,69 @@ async fn run_for(invocation: &Invocation, timeout: Duration) -> Result<Output, E
     togi_command::run(invocation, Instant::now() + timeout).await
 }
 
-/// Kills a process the test started outside the runner's reach, even when an assertion fails.
-/// It is armed only while the process runs and is disarmed as soon as it is seen to stop, so it
-/// never signals an id that may have been reused.
-struct KillOnDrop(Pid);
+/// A process the test started outside the runner's reach (a reparented descendant or a helper in
+/// its own session), killed when dropped so a failed assertion leaks nothing.
+///
+/// On Linux it holds a pidfd opened while the process is known to run, which names that process
+/// for good: liveness is the pidfd's readability and the kill goes through `pidfd_send_signal`,
+/// so an id that init reaped and the kernel reused is never signalled. Elsewhere no stable
+/// identity exists for a process that is not our child, so nothing is ever signalled by id; the
+/// helpers there sleep for a finite time instead.
+struct Watched {
+    #[cfg(target_os = "linux")]
+    pidfd: std::os::fd::OwnedFd,
+    #[cfg(not(target_os = "linux"))]
+    pid: Pid,
+}
 
-impl KillOnDrop {
-    fn if_running(pid: Pid) -> Option<Self> {
-        is_running(pid).then_some(Self(pid))
+impl Watched {
+    /// `None` unless the process is running now.
+    #[cfg(target_os = "linux")]
+    fn open(pid: Pid) -> Option<Self> {
+        let pidfd = rustix::process::pidfd_open(pid, rustix::process::PidfdFlags::empty()).ok()?;
+        let watched = Self { pidfd };
+        watched.is_running().then_some(watched)
     }
 
-    fn disarm(self) {
-        std::mem::forget(self);
+    #[cfg(not(target_os = "linux"))]
+    fn open(pid: Pid) -> Option<Self> {
+        is_running(pid).then_some(Self { pid })
+    }
+
+    /// A pidfd is readable once its process has terminated.
+    #[cfg(target_os = "linux")]
+    fn is_running(&self) -> bool {
+        let mut fds = [rustix::event::PollFd::new(
+            &self.pidfd,
+            rustix::event::PollFlags::IN,
+        )];
+        let now = rustix::event::Timespec {
+            tv_sec: 0,
+            tv_nsec: 0,
+        };
+        matches!(rustix::event::poll(&mut fds, Some(&now)), Ok(0))
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    fn is_running(&self) -> bool {
+        is_running(self.pid)
+    }
+
+    async fn stops(&self) -> bool {
+        for _ in 0..50 {
+            if !self.is_running() {
+                return true;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        false
     }
 }
 
-impl Drop for KillOnDrop {
+#[cfg(target_os = "linux")]
+impl Drop for Watched {
     fn drop(&mut self) {
-        let _ = kill_process(self.0, Signal::KILL);
+        let _ = rustix::process::pidfd_send_signal(&self.pidfd, rustix::process::Signal::KILL);
     }
 }
 
@@ -279,7 +324,7 @@ async fn real_process_escaped_descendant_cannot_extend_the_deadline() {
     let started = StdInstant::now();
     let result = run_for(&sh_with_helper(&script), ESCAPE_DEADLINE).await;
     let elapsed = started.elapsed();
-    let escaped = KillOnDrop::if_running(wait_for_pid_file(&pid_file).await);
+    let escaped = Watched::open(wait_for_pid_file(&pid_file).await);
     assert!(
         ready.exists(),
         "the helper had not left the group by the deadline"
@@ -290,7 +335,6 @@ async fn real_process_escaped_descendant_cannot_extend_the_deadline() {
     );
     assert!(elapsed < ESCAPE_DEADLINE + SLACK, "{elapsed:?}");
     assert!(matches!(result, Err(Error::TimedOut { .. })), "{result:?}");
-    drop(escaped);
 }
 
 #[cfg(target_os = "linux")]
@@ -312,7 +356,7 @@ async fn real_process_exited_leader_stays_unreaped_until_the_group_is_killed() {
         let leader = wait_for_pid_file(&leader_file).await;
         let escaped = wait_for_pid_file(&escaped_file).await;
         wait_for_file(&ready).await;
-        let escaped = KillOnDrop::if_running(escaped).map(|guard| (escaped, guard));
+        let escaped = Watched::open(escaped);
         let mut zombie = false;
         for _ in 0..250 {
             if is_zombie(leader) {
@@ -327,17 +371,16 @@ async fn real_process_exited_leader_stays_unreaped_until_the_group_is_killed() {
         result = &mut run => panic!("the run ended before it was dropped: {result:?}"),
         observed = observe => observed,
     };
-    let Some((escaped, guard)) = escaped else {
+    let Some(escaped) = escaped else {
         panic!("the escaped helper was not running");
     };
     assert!(zombie, "the exited leader was reaped before the run ended");
     drop(run);
     assert!(
-        is_running(escaped),
+        escaped.is_running(),
         "the group kill reached a process outside the group"
     );
     assert_eq!(test_kill_process(leader), Err(Errno::SRCH));
-    drop(guard);
 }
 
 /// A descendant in the group holds the pipes while the leader overflows `stream`.
@@ -356,22 +399,18 @@ async fn overflow_kills_the_group(stream: Stream) {
     );
     let invocation = sh(&script).output_limit(1000);
     let started = StdInstant::now();
-    let (result, (descendant, guard)) =
+    let (result, (descendant, watched)) =
         tokio::join!(run_for(&invocation, Duration::from_secs(10)), async {
             let descendant = wait_for_pid_file(&pid_file).await;
-            let guard = KillOnDrop::if_running(descendant);
+            let watched = Watched::open(descendant);
             fs::write(&go, "")
                 .unwrap_or_else(|error| panic!("cannot write {}: {error}", go.display()));
-            (descendant, guard)
+            (descendant, watched)
         });
-    let alive = guard.is_some();
-    let stopped = stops(descendant).await;
-    let _guard = match guard {
-        Some(guard) if stopped => {
-            guard.disarm();
-            None
-        }
-        guard => guard,
+    let alive = watched.is_some();
+    let stopped = match &watched {
+        Some(watched) => watched.stops().await,
+        None => false,
     };
     assert!(alive, "the descendant was not running before the overflow");
     assert!(stopped, "the descendant {descendant:?} is still running");

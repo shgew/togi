@@ -13,6 +13,7 @@ thiserror.workspace = true
 tokio = { workspace = true, features = ["io-util", "macros", "net", "process", "rt", "time"] }
 
 [dev-dependencies]
+rustix = { workspace = true, features = ["event"] }
 tempfile.workspace = true
 
 [lints]
