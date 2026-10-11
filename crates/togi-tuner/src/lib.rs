@@ -36,6 +36,8 @@ mod topology;
 mod zero;
 
 #[cfg(test)]
+mod bios_tests;
+#[cfg(test)]
 mod chain_tests;
 #[cfg(test)]
 mod checking_state_tests;

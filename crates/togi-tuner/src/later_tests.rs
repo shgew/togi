@@ -74,6 +74,25 @@ pub(crate) fn fail_core(j: &mut Journal, id: u8) -> Seq {
     j.decide(attribution)
 }
 
+pub(crate) fn fail_loading_only(j: &mut Journal, id: u8) -> Seq {
+    let duration = j.run().config.checking_trial.get();
+    let plan = j.manual(
+        Regime::R1,
+        0,
+        Load::Single(core(id)),
+        Condition::Together,
+        &current(j),
+        duration,
+    );
+    j.trial(&plan, Outcome::Failure);
+    let attribution = j.next_decision();
+    assert!(matches!(
+        &attribution.payload,
+        crate::DecisionPayload::Failure(f) if f.attribution == togi_journal::Attribution::Unattributed
+    ));
+    j.decide(attribution)
+}
+
 pub(crate) fn idle_failure(j: &mut Journal) -> Seq {
     let profile = j.offsets().offsets();
     j.idle_failure(profile, Condition::Together)

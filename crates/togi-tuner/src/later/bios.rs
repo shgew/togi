@@ -96,4 +96,9 @@ impl Run {
             unconfirmed,
         }
     }
+
+    /// The BIOS profile is confirmed and no core has been stepped back or held since.
+    pub(crate) fn first_result(&self) -> bool {
+        self.bios_profile().first_result
+    }
 }
