@@ -23,12 +23,12 @@ focus package *args: _dev-shell
 # Run the Rust test suite with optional nextest flags (`just test-rs -p togi-journal`)
 [group('test')]
 test-rs *args: _dev-shell
-    cargo nextest run --no-tests=pass "$@"
+    cargo nextest run "$@"
 
 # Run one Rust crate's tests with optional nextest flags (`just focus-rs togi-journal`)
 [group('test')]
 focus-rs crate *args: _dev-shell
-    cargo nextest run --no-tests=pass -p "$@"
+    cargo nextest run -p "$@"
 
 # Type-check one Rust crate without building it (`just check-rs togi-journal`)
 [group('test')]
@@ -67,7 +67,7 @@ cover-rs base: _dev-shell
     set -euo pipefail
     trace=$(mktemp)
     trap 'rm -f "$trace"' EXIT
-    cargo llvm-cov nextest --locked --no-tests=pass --lcov --output-path "$trace" >&2
+    cargo llvm-cov nextest --locked --lcov --output-path "$trace" >&2
     target=${CARGO_LLVM_COV_TARGET_DIR:-${CARGO_TARGET_DIR:-target}/llvm-cov-target}
     go run ./tools/cover --lcov "$trace" --build-dir "$target/debug" --base "$1"
 
@@ -98,7 +98,7 @@ gate: _dev-shell
     diff -rq "$fresh/vendor" "$vendored" >&2 || { echo 'gate: the Go modules vendored for vendorHash in flake.nix differ from go.mod and go.sum; update vendorHash' >&2; exit 1; }
     go test -shuffle=on -tags integration ./...
     go test -race -shuffle=on -tags integration ./internal/trial ./internal/journal ./internal/watch ./internal/smu ./cmd/togi
-    cargo nextest run --locked --profile ci --no-tests=pass
+    cargo nextest run --locked --profile ci
     cargo test --locked --doc
     cargo deny --locked check bans licenses sources
     cargo shear

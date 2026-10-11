@@ -10,6 +10,12 @@ repository = "https://github.com/shgew/togi"
 publish = false
 
 [workspace.dependencies]
+flate2 = "1"
+nix = { version = "0.30", default-features = false, features = ["fs"] }
+rustix = { version = "1", features = ["fs"] }
+tempfile = "3"
+test-case = "3"
+thiserror = "2"
 
 [workspace.lints.rust]
 unsafe_code = "deny"
