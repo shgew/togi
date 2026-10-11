@@ -1,0 +1,266 @@
+use std::fmt;
+use std::num::NonZeroU32;
+
+use togi_machine::{CoreId, CoreSet, PER_CORE_MAX, PerCore, TargetOffset};
+
+use crate::optimum::solve;
+use crate::{Depth, Profile, Ranking, Topology};
+
+/// The shallowest offset a core failed at; reaching it or going deeper fails again.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+pub struct FailurePoint(TargetOffset);
+
+impl FailurePoint {
+    pub const fn new(offset: TargetOffset) -> Self {
+        Self(offset)
+    }
+
+    pub const fn offset(self) -> TargetOffset {
+        self.0
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CombinationId(NonZeroU32);
+
+impl CombinationId {
+    pub const fn new(id: NonZeroU32) -> Self {
+        Self(id)
+    }
+
+    pub const fn get(self) -> u32 {
+        self.0.get()
+    }
+}
+
+impl fmt::Display for CombinationId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "C{}", self.0)
+    }
+}
+
+/// Offsets at which the member cores fail together though each passes alone.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Combination {
+    id: CombinationId,
+    members: PerCore<TargetOffset>,
+}
+
+impl Combination {
+    pub const fn id(&self) -> CombinationId {
+        self.id
+    }
+
+    pub const fn members(&self) -> &PerCore<TargetOffset> {
+        &self.members
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Reached {
+    FailurePoint { core: CoreId, point: FailurePoint },
+    Combination(CombinationId),
+}
+
+impl fmt::Display for Reached {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::FailurePoint { core, point } => write!(
+                f,
+                "failure point {} of core {:02}",
+                point.offset().get(),
+                core.get()
+            ),
+            Self::Combination(id) => write!(f, "combination {id}"),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Limit {
+    Floor,
+    Reached(Reached),
+}
+
+impl fmt::Display for Limit {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Floor => f.write_str("at the floor -50"),
+            Self::Reached(reached) => reached.fmt(f),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum ConstraintError {
+    #[error("core {0} is outside the topology")]
+    UnknownCore(CoreId),
+    #[error("a combination needs at least one member")]
+    EmptyCombination,
+    #[error("combination {0} already exists")]
+    DuplicateId(CombinationId),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Insertion {
+    Added,
+    Duplicate(CombinationId),
+}
+
+/// The failure points and combinations recorded for a topology's cores. They accumulate until a
+/// core is cleared.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Constraints {
+    cores: CoreSet,
+    failure_points: PerCore<FailurePoint>,
+    combinations: Vec<Combination>,
+    by_core: [Vec<usize>; PER_CORE_MAX],
+}
+
+impl Constraints {
+    pub fn new(topology: &Topology) -> Self {
+        Self {
+            cores: topology.all(),
+            failure_points: PerCore::default(),
+            combinations: Vec::new(),
+            by_core: Default::default(),
+        }
+    }
+
+    pub const fn failure_points(&self) -> &PerCore<FailurePoint> {
+        &self.failure_points
+    }
+
+    /// The combinations in insertion order.
+    pub fn combinations(&self) -> &[Combination] {
+        &self.combinations
+    }
+
+    /// The combinations `core` is a member of, in insertion order.
+    pub fn combinations_with(&self, core: CoreId) -> impl Iterator<Item = &Combination> {
+        self.by_core[core.index()]
+            .iter()
+            .filter_map(|&index| self.combinations.get(index))
+    }
+
+    /// Keeps the shallowest of the recorded and the new failure point.
+    pub fn insert_failure_point(
+        &mut self,
+        core: CoreId,
+        point: FailurePoint,
+    ) -> Result<(), ConstraintError> {
+        if !self.cores.contains(core) {
+            return Err(ConstraintError::UnknownCore(core));
+        }
+        let keep = match self.failure_points.get(core) {
+            Some(old) => point.offset().shallower_than(old.offset()),
+            None => true,
+        };
+        if keep {
+            self.failure_points.set(core, point);
+        }
+        Ok(())
+    }
+
+    /// Adds a combination unless one with the same members exists, which keeps its place and id.
+    pub fn insert_combination(
+        &mut self,
+        id: CombinationId,
+        members: PerCore<TargetOffset>,
+    ) -> Result<Insertion, ConstraintError> {
+        let Some((first, _)) = members.iter().next() else {
+            return Err(ConstraintError::EmptyCombination);
+        };
+        if let Some((core, _)) = members.iter().find(|&(core, _)| !self.cores.contains(core)) {
+            return Err(ConstraintError::UnknownCore(core));
+        }
+        if let Some(same) = self
+            .combinations_with(first)
+            .find(|combination| combination.members == members)
+        {
+            return Ok(Insertion::Duplicate(same.id));
+        }
+        if self
+            .combinations
+            .iter()
+            .any(|combination| combination.id == id)
+        {
+            return Err(ConstraintError::DuplicateId(id));
+        }
+        let index = self.combinations.len();
+        for (core, _) in members.iter() {
+            self.by_core[core.index()].push(index);
+        }
+        self.combinations.push(Combination { id, members });
+        Ok(Insertion::Added)
+    }
+
+    /// Drops the failure point of `core` and every combination it belongs to, returning the ids of
+    /// the combinations dropped in insertion order.
+    pub fn clear_core(&mut self, core: CoreId) -> Vec<CombinationId> {
+        self.failure_points = self
+            .failure_points
+            .iter()
+            .filter(|&(owner, _)| owner != core)
+            .collect();
+        let cleared: Vec<CombinationId> =
+            self.combinations_with(core).map(Combination::id).collect();
+        if cleared.is_empty() {
+            return cleared;
+        }
+        self.combinations
+            .retain(|combination| combination.members.get(core).is_none());
+        self.by_core = Default::default();
+        for (index, combination) in self.combinations.iter().enumerate() {
+            for (member, _) in combination.members.iter() {
+                self.by_core[member.index()].push(index);
+            }
+        }
+        cleared
+    }
+
+    /// The first failure point `profile` reaches in core order, else the first combination in
+    /// insertion order. A failure point is reached when the core is at or deeper than it; a
+    /// combination when every member is at or deeper than its offset.
+    pub fn reaches(&self, profile: &Profile) -> Option<Reached> {
+        for (core, point) in self.failure_points.iter() {
+            if !profile.get(core).shallower_than(point.offset()) {
+                return Some(Reached::FailurePoint { core, point });
+            }
+        }
+        self.combinations
+            .iter()
+            .find(|combination| {
+                combination
+                    .members
+                    .iter()
+                    .all(|(member, offset)| !profile.get(member).shallower_than(offset))
+            })
+            .map(|combination| Reached::Combination(combination.id))
+    }
+
+    /// Whether `core` cannot go one count deeper from `profile`: it is at the floor, or one count
+    /// deeper reaches a failure point or combination.
+    pub fn at_limit(&self, core: CoreId, profile: &Profile) -> Option<Limit> {
+        match profile.get(core).deeper_by(1) {
+            None => Some(Limit::Floor),
+            Some(deeper) => self
+                .reaches(&profile.with(core, deeper))
+                .map(Limit::Reached),
+        }
+    }
+
+    /// The profile of greatest total depth between each core's floor (just shallower than its
+    /// failure point) and `hi` that reaches no failure point or combination, or `None` when there
+    /// is none. Among equal totals, the one deeper at the first core of `ranking` where they
+    /// differ.
+    pub fn optimum(&self, hi: &Profile, ranking: &Ranking) -> Option<Profile> {
+        solve(
+            self.cores,
+            &self.failure_points,
+            &self.combinations,
+            hi,
+            ranking,
+        )
+    }
+}

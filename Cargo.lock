@@ -675,6 +675,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "togi-tuner"
+version = "0.0.0"
+dependencies = [
+ "proptest",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "togi-machine",
+]
+
+[[package]]
 name = "togi-tuningboot"
 version = "0.0.0"
 dependencies = [
