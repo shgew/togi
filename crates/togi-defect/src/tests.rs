@@ -362,9 +362,30 @@ fn excluded_failures_persist_after_finding() {
     let state = log.state(&ALTERNATIVES);
     assert_eq!(
         state.excluded_failures().collect::<Vec<_>>(),
-        [first, second, unrelated]
+        [first, second]
     );
-    assert!(!state.excludes_failure(warning));
+    assert!(!state.excludes_failure(unrelated) && !state.excludes_failure(warning));
+}
+
+#[test]
+fn failure_cited_beside_a_non_failure_match_is_not_excluded() {
+    let mut log = Log::default();
+    log.start(0);
+    let warning = log.warning();
+    let failure = log.failure();
+    let matched = log.decision(0, Decision::StepDeeper, &[warning, failure]);
+    let state = log.state(&ALTERNATIVES);
+    assert_eq!(state.new_findings().count(), 1);
+    assert_eq!(state.excluded_failures().count(), 0);
+    assert!(!state.excludes_failure(failure));
+
+    let both = log.decision(1, Decision::Backoff, &[warning, failure]);
+    let state = log.state(&ALTERNATIVES);
+    assert_eq!(state.excluded_failures().collect::<Vec<_>>(), [failure]);
+    assert_eq!(
+        state.new_findings().next().unwrap().decisions,
+        [matched, both].as_slice()
+    );
 }
 
 #[test]

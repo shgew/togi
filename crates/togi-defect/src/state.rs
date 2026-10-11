@@ -158,36 +158,42 @@ impl DefectState {
     }
 
     fn fold_decision(&mut self, event: &Event, decision: &TunerDecision) {
-        let mut matched_any = false;
         for entry in self.registry {
-            if self.fixes >= entry.id.get() || !self.matches(entry, event, decision) {
+            if self.fixes >= entry.id.get() {
                 continue;
             }
-            matched_any = true;
-            if !self.findings.contains_key(&entry.id) {
+            let mut matched = false;
+            for (cause, cause_kind) in Self::matched_causes(&self.kinds, entry, event, decision) {
+                matched = true;
+                if cause_kind == EventKind::Failure {
+                    self.excluded.insert(cause);
+                }
+            }
+            if matched && !self.findings.contains_key(&entry.id) {
                 let matches = self.unrecorded.entry(entry.id).or_default();
                 matches.cores.insert(decision.core);
                 matches.decisions.push(event.seq);
             }
         }
-        if matched_any {
-            let failures = event
-                .cause
-                .iter()
-                .filter(|cause| self.kinds.get(cause) == Some(&EventKind::Failure));
-            self.excluded.extend(failures);
-        }
     }
 
-    fn matches(&self, entry: &Entry, event: &Event, decision: &TunerDecision) -> bool {
-        event.cause.iter().any(|cause| {
-            self.kinds.get(cause).is_some_and(|&cause_kind| {
-                entry.clauses.iter().any(|clause| {
+    fn matched_causes<'a>(
+        kinds: &'a BTreeMap<Seq, EventKind>,
+        entry: &'a Entry,
+        event: &'a Event,
+        decision: &'a TunerDecision,
+    ) -> impl Iterator<Item = (Seq, EventKind)> + 'a {
+        event.cause.iter().filter_map(move |&cause| {
+            let cause_kind = *kinds.get(&cause)?;
+            entry
+                .clauses
+                .iter()
+                .any(|clause| {
                     clause.decision_kind == EventKind::TunerDecision
                         && clause.decision == decision.decision
                         && clause.cause_kind == cause_kind
                 })
-            })
+                .then_some((cause, cause_kind))
         })
     }
 
