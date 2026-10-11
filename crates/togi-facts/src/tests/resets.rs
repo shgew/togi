@@ -84,19 +84,63 @@ fn reset_history_preserves_facts() {
 #[test]
 fn archive_applies_outstanding_all_resets_without_double_effect() {
     let mut s = Script::begin(&[0]);
-    let all_reset = s.add(CommandReset {
+    let cited = s.add(CommandReset {
         target: ResetTarget::All,
     });
-    let archived = s.add_caused(&[all_reset], SessionArchived { session: first() });
-    let other = s.add(CommandReset {
+    let uncited = s.add(CommandReset {
+        target: ResetTarget::All,
+    });
+    let archived = s.add_caused(&[cited], SessionArchived { session: first() });
+    let after = s.add(CommandReset {
         target: ResetTarget::All,
     });
     let facts = s.extract();
+    let archive_effect = vec![Effect {
+        seq: archived,
+        kind: EventKind::SessionArchived,
+    }];
+    assert_eq!(facts.resets[0].seq, cited);
     assert_eq!(facts.resets[0].applied, Some(archived));
-    assert_eq!(facts.resets[0].effects.len(), 1);
-    assert_eq!(facts.resets[1].seq, other);
-    assert_eq!(facts.resets[1].applied, None);
-    assert_eq!(facts.cutoffs.all(), Some(other));
+    assert_eq!(facts.resets[0].effects, archive_effect);
+    assert_eq!(facts.resets[1].seq, uncited);
+    assert_eq!(facts.resets[1].applied, Some(archived));
+    assert_eq!(facts.resets[1].effects, archive_effect);
+    assert_eq!(facts.resets[2].seq, after);
+    assert_eq!(facts.resets[2].applied, None);
+    assert!(facts.resets[2].effects.is_empty());
+    assert_eq!(facts.cutoffs.all(), Some(after));
+}
+
+#[test]
+fn only_the_citing_phase_of_the_reset_core_applies_a_core_reset() {
+    let mut s = Script::begin(&[0, 1]);
+    let reset = s.add(CommandReset {
+        target: ResetTarget::Core(core(0)),
+    });
+    let other_core = s.add_caused(&[reset], phase(1));
+    let facts = s.extract();
+    assert_eq!(
+        facts.resets[0].effects,
+        vec![Effect {
+            seq: other_core,
+            kind: EventKind::CorePhase
+        }]
+    );
+    assert_eq!(facts.resets[0].applied, None, "another core's phase");
+
+    s.add(phase(0));
+    let facts = s.extract();
+    assert_eq!(
+        facts.resets[0].effects.len(),
+        1,
+        "uncited phase is no effect"
+    );
+    assert_eq!(facts.resets[0].applied, None, "uncited phase");
+
+    let citing = s.add_caused(&[reset], phase(0));
+    let facts = s.extract();
+    assert_eq!(facts.resets[0].effects.len(), 2);
+    assert_eq!(facts.resets[0].applied, Some(citing));
 }
 
 #[test]
@@ -105,7 +149,7 @@ fn latest_reset_per_core_wins() {
     s.add(CommandReset {
         target: ResetTarget::Core(core(0)),
     });
-    s.add(CommandReset {
+    let core_one = s.add(CommandReset {
         target: ResetTarget::Core(core(1)),
     });
     let latest = s.add(CommandReset {
@@ -113,6 +157,7 @@ fn latest_reset_per_core_wins() {
     });
     let facts = s.extract();
     assert_eq!(facts.cutoffs.core(core(0)), Some(latest));
+    assert_eq!(facts.cutoffs.core(core(1)), Some(core_one));
     assert_eq!(facts.cutoffs.all(), None);
 }
 

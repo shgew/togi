@@ -129,6 +129,22 @@ impl Extractor {
             Payload::SessionStart(_) => return Err(FactsError::DuplicateStart { seq: event.seq }),
             Payload::SessionContext(context) => self.context = Some(context.bios_context()),
             Payload::ConfigLoaded(loaded) => {
+                let (start, loaded_build) = (&self.start, &loaded.build);
+                let field = if loaded_build.schema != start.schema {
+                    Some("schema")
+                } else if loaded_build.ruleset != start.ruleset {
+                    Some("ruleset")
+                } else if loaded_build.evidence != start.evidence {
+                    Some("evidence")
+                } else {
+                    None
+                };
+                if let Some(field) = field {
+                    return Err(FactsError::StampChanged {
+                        seq: event.seq,
+                        field,
+                    });
+                }
                 self.build = loaded.build.clone();
                 self.backends = Backends::recorded(loaded);
             }
@@ -497,14 +513,27 @@ fn carried_failure<E>(seq: Seq, carried: &FailureCarried) -> Result<Fact, FactsE
     {
         return Err(FactsError::NotIdle { seq });
     }
-    let condition = failure.condition.ok_or(FactsError::Incomplete {
-        seq,
-        field: "failure.condition",
-    })?;
-    let profile = failure.profile.ok_or(FactsError::Incomplete {
-        seq,
-        field: "failure.profile",
-    })?;
+    let (Some(condition @ (Condition::Together | Condition::Parked)), Some(profile)) =
+        (failure.condition, failure.profile)
+    else {
+        return Err(if failure.profile.is_none() {
+            FactsError::Incomplete {
+                seq,
+                field: "failure.profile",
+            }
+        } else if failure.condition.is_none() {
+            FactsError::Incomplete {
+                seq,
+                field: "failure.condition",
+            }
+        } else {
+            FactsError::NotIdle { seq }
+        });
+    };
+    let profiled = profile.iter().map(|(core, _)| core).collect::<CoreSet>();
+    if profiled.is_empty() || profiled != carried.class.cores {
+        return Err(FactsError::NotIdle { seq });
+    }
     Ok(Fact {
         source: copied_source(&carried.source),
         local: seq,

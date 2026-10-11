@@ -10,8 +10,8 @@ use std::convert::Infallible;
 
 use jiff::Timestamp;
 use togi_journal::{
-    Attribution, Build, Event, Failure, Outcome, Payload, SCHEMA, Seq, SessionId, SessionStart,
-    Stamp, TrialEnd, TrialId, TrialIntent,
+    Attribution, Build, ConfigLoaded, Event, Failure, Outcome, Payload, SCHEMA, Seq, SessionId,
+    SessionStart, Stamp, TrialEnd, TrialId, TrialIntent,
 };
 use togi_machine::{
     BootId, CcdId, Condition, CoreId, CoreInfo, CoreSet, CpuId, PerCore, Regime, Signal,
@@ -64,6 +64,34 @@ pub(super) fn build(evidence: u32) -> Build {
         fixes: 0,
         evidence,
     }
+}
+
+/// A `config.loaded` build: the durable stamps of `base`, a newer version, rev and fixes.
+pub(super) fn refreshed(base: &Build, version: &str) -> Build {
+    Build {
+        version: version.into(),
+        rev: Some("rev".into()),
+        fixes: base.fixes + 1,
+        ..base.clone()
+    }
+}
+
+pub(super) fn config_loaded(build: Build) -> ConfigLoaded {
+    ConfigLoaded {
+        build,
+        config: togi_config::Config::default(),
+        path: "config.json".into(),
+        file: false,
+        kernel_cursor: None,
+        kernel_error: None,
+    }
+}
+
+pub(super) fn config_with_backends(mprime: &str, ycruncher: &str) -> togi_config::Config {
+    togi_config::Config::parse(&format!(
+        r#"{{"backends":{{"mprime":"{mprime}","ycruncher":"{ycruncher}"}}}}"#
+    ))
+    .unwrap()
 }
 
 pub(super) fn start(id: SessionId, cores: &[i64], evidence: u32) -> SessionStart {

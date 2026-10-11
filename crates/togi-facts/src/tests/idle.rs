@@ -1,7 +1,7 @@
 use togi_journal::{Attribution, Payload, TrialId};
-use togi_machine::{Condition, Regime, Signal};
+use togi_machine::{BootId, Condition, Regime, Signal};
 
-use super::{Script, first, idle, profile, set};
+use super::{Script, build, config_loaded, first, idle, profile, refreshed, set};
 use crate::Observation;
 
 #[test]
@@ -44,6 +44,12 @@ fn idle_failures() {
         Case {
             name: "alone",
             condition: Some(Condition::Alone),
+            want: false,
+            ..base
+        },
+        Case {
+            name: "no condition",
+            condition: None,
             want: false,
             ..base
         },
@@ -159,4 +165,29 @@ fn known_failure_skip_does_not_create_idle_fact() {
         assert_eq!(facts.facts.len(), 1);
         assert_eq!(facts.facts[0].source.seq, original);
     }
+}
+
+#[test]
+fn idle_fact_takes_the_refreshed_build_the_failures_boot_and_the_start_epoch() {
+    let refreshed_build = refreshed(&build(1), "0.2.0");
+    let mut s = Script::begin(&[0, 1]);
+    s.add(config_loaded(refreshed_build.clone()));
+    s.boot("b");
+    let seq = s.add(idle(
+        Some(Condition::Together),
+        Some(profile(&[(0, -1), (1, -1)])),
+    ));
+    let facts = s.extract();
+    let [fact] = &facts.facts[..] else {
+        unreachable!()
+    };
+    assert_eq!(fact.source.seq, seq);
+    assert_eq!(fact.source.build, refreshed_build);
+    assert_eq!(fact.source.boot, BootId::from("b".to_owned()));
+    assert_eq!(fact.source.epoch, 1);
+    assert_eq!(
+        facts.build,
+        build(1),
+        "the session's stamp stays the start's"
+    );
 }

@@ -15,6 +15,8 @@ pub enum FactsError<E> {
     },
     #[error("session.start records no cores")]
     EmptyTopology,
+    #[error("event {seq}: config.loaded changes the session's {field}, fixed by session.start")]
+    StampChanged { seq: Seq, field: &'static str },
     #[error("event {seq}: trial {trial} already has an intent")]
     DuplicateIntent { trial: TrialId, seq: Seq },
     #[error("event {seq}: trial {trial} already ended with a decisive outcome")]

@@ -2,12 +2,14 @@ use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 
 use togi_journal::{
-    BackendIdentity, ConfigLoaded, FailureCarried, Outcome, Payload, TrialCarried, TrialEnd,
+    Attribution, BackendIdentity, ConfigLoaded, FailureCarried, Outcome, Payload, Seq,
+    TrialCarried, TrialEnd,
 };
 use togi_machine::{Backend, CcdId, Condition, Regime, Signal};
 
 use super::{
-    Script, alone, build, core, fail, idle, intent, pass, profile, session, set, start, trial,
+    Script, alone, build, config_loaded, config_with_backends, core, fail, idle, intent, pass,
+    profile, refreshed, session, set, start, trial,
 };
 use crate::{Fact, FactsError, Observation, SessionFacts};
 
@@ -16,7 +18,7 @@ fn original() -> SessionFacts {
     stamp.ruleset = 6;
     let mut s = Script::new("intent-boot");
     s.add(togi_journal::SessionStart {
-        build: stamp,
+        build: stamp.clone(),
         ..start(super::first(), &[7, 1, 3], 4)
     });
     s.add(togi_journal::TrialIntent {
@@ -27,12 +29,8 @@ fn original() -> SessionFacts {
         ..intent("0304", Condition::Together, Regime::R7)
     });
     s.add(ConfigLoaded {
-        build: build(4),
-        config: togi_config::Config::default(),
         path: "later".into(),
-        file: false,
-        kernel_cursor: None,
-        kernel_error: None,
+        ..config_loaded(refreshed(&stamp, "0.2.0"))
     });
     s.boot("end-boot");
     s.add(TrialEnd {
@@ -191,7 +189,67 @@ fn carried_facts_must_be_decisive_well_formed() {
                 },
                 ..idle_copy.clone()
             }),
-            "not idle",
+            "not idle: in a trial",
+        ),
+        (
+            Payload::FailureCarried(FailureCarried {
+                failure: togi_journal::Failure {
+                    attribution: Attribution::Attributed,
+                    ..idle_copy.failure.clone()
+                },
+                ..idle_copy.clone()
+            }),
+            "not idle: attributed",
+        ),
+        (
+            Payload::FailureCarried(FailureCarried {
+                failure: togi_journal::Failure {
+                    known_failure: Some(Seq::new(1).unwrap()),
+                    ..idle_copy.failure.clone()
+                },
+                ..idle_copy.clone()
+            }),
+            "not idle: known failure",
+        ),
+        (
+            Payload::FailureCarried(FailureCarried {
+                failure: togi_journal::Failure {
+                    condition: Some(Condition::Alone),
+                    ..idle_copy.failure.clone()
+                },
+                ..idle_copy.clone()
+            }),
+            "not idle: alone",
+        ),
+        (
+            Payload::FailureCarried(FailureCarried {
+                failure: togi_journal::Failure {
+                    profile: Some(profile(&[])),
+                    ..idle_copy.failure.clone()
+                },
+                ..idle_copy.clone()
+            }),
+            "not idle: empty profile",
+        ),
+        (
+            Payload::FailureCarried(FailureCarried {
+                class: togi_journal::TrialClass {
+                    cores: set(&[1, 3]),
+                    ..idle_copy.class.clone()
+                },
+                ..idle_copy.clone()
+            }),
+            "not idle: profile cores differ from the class",
+        ),
+        (
+            Payload::FailureCarried(FailureCarried {
+                failure: togi_journal::Failure {
+                    condition: None,
+                    ..idle_copy.failure.clone()
+                },
+                ..idle_copy.clone()
+            }),
+            "condition",
         ),
         (
             Payload::FailureCarried(FailureCarried {
@@ -213,11 +271,11 @@ fn carried_facts_must_be_decisive_well_formed() {
                 (name, &result),
                 ("inconclusive", Err(FactsError::NotDecisive { .. }))
                     | (
-                        "signal" | "workload" | "profile",
+                        "signal" | "workload" | "condition" | "profile",
                         Err(FactsError::Incomplete { .. })
                     )
-                    | ("not idle", Err(FactsError::NotIdle { .. }))
-            ),
+            ) || (name.starts_with("not idle")
+                && matches!(result, Err(FactsError::NotIdle { .. }))),
             "{name}: {result:?}"
         );
     }
@@ -249,8 +307,71 @@ fn a_passing_copy_round_trips_and_accessors_agree() {
     copy.add(idle_fact.to_payload());
     let copied = copy.extract();
     assert_eq!(copied.carried.len(), 2);
+    assert!(copied.facts.is_empty(), "copies are not own facts");
     for (copy, original) in copied.carried.iter().zip(&facts.facts) {
         assert_eq!(copy.source, original.source);
         assert_eq!(copy.observation, original.observation);
+    }
+}
+
+#[test]
+fn a_pass_keeps_its_build_epoch_and_backend_through_two_copies() {
+    let mut original_start = build(4);
+    original_start.ruleset = 6;
+    let mut s = Script::new("a");
+    s.add(togi_journal::SessionStart {
+        build: original_start.clone(),
+        ..start(super::first(), &[0, 1], 4)
+    });
+    let refreshed_build = refreshed(&original_start, "0.2.0");
+    s.add(ConfigLoaded {
+        config: config_with_backends("/orig/mprime", "/orig/ycruncher"),
+        ..config_loaded(refreshed_build.clone())
+    });
+    s.add(alone("p", 0, -7, &[0, 1]));
+    s.add(pass("p", 9));
+    let first = s.extract();
+    let [pass_fact] = &first.facts[..] else {
+        unreachable!()
+    };
+    assert_eq!(pass_fact.source.build, refreshed_build);
+    assert_ne!(pass_fact.source.build, original_start);
+    assert_eq!(pass_fact.source.epoch, 4);
+    let backend = pass_fact
+        .source
+        .backend
+        .clone()
+        .expect("the pass follows a config.loaded with backend paths");
+    assert!(backend.path.starts_with("/orig/"));
+
+    let hop = |id: &str, evidence: u32, version: &str, from: &[Fact]| {
+        let id = session(id);
+        let own = build(evidence);
+        let mut s = Script::new("copy-boot");
+        s.add(start(id, &[0, 1], evidence));
+        for fact in from {
+            s.add(fact.to_payload());
+        }
+        s.add(ConfigLoaded {
+            config: config_with_backends(
+                &format!("/{version}/mprime"),
+                &format!("/{version}/ycruncher"),
+            ),
+            ..config_loaded(refreshed(&own, version))
+        });
+        s.try_extract(id).unwrap()
+    };
+    let second = hop("20261002T000000Z", 9, "0.3.0", &first.facts);
+    let third = hop("20261003T000000Z", 11, "0.4.0", &second.carried);
+    for hopped in [&second, &third] {
+        assert!(hopped.facts.is_empty(), "copies are not own facts");
+        let [copy] = &hopped.carried[..] else {
+            unreachable!()
+        };
+        assert_eq!(copy.source, pass_fact.source);
+        assert_eq!(copy.observation, pass_fact.observation);
+        assert_eq!(copy.source.epoch, 4);
+        assert_eq!(copy.source.build, refreshed_build);
+        assert_eq!(copy.source.backend, Some(backend.clone()));
     }
 }
