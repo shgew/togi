@@ -175,8 +175,10 @@ impl Run {
         if entering_search {
             self.phases.reset();
             self.later.reset();
+            self.rounds_reset();
         }
         self.failures.retire_all(&event.cause);
+        self.prune_blames();
         self.decided(core, seq);
         self.later_moved(core, seq, before);
         Ok(())
@@ -200,6 +202,7 @@ impl Run {
         let before = self.core(core).offset;
         let hold = self.hold_strike(event, decision);
         self.r7_decided(event, decision);
+        let yielded = self.phase2_yield(decision);
         if decision.decision == togi_journal::Decision::Backoff
             && decision.activity != togi_journal::Activity::Search
             && decision.to_offset != decision.from_offset
@@ -218,8 +221,12 @@ impl Run {
                 state.zero_seq = Some(seq);
             }
         });
-        self.failures.retire_all(&event.cause);
+        if !yielded {
+            self.failures.retire_all(&event.cause);
+        }
         self.decided(core, seq);
+        self.phase2_backoff(decision, &event.cause);
+        self.prune_blames();
         self.later_decided(event, decision, before, hold.as_ref());
         self.retire_reruns();
         self.revalidate_retry();

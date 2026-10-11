@@ -34,6 +34,9 @@ impl Run {
                 AtZero::Released => None,
             };
         }
+        if let Some(end) = self.round_failure_close(record, seq) {
+            return Some(Action::Decide(end));
+        }
         Some(Action::Decide(
             self.attributed_backoff(id, seq, record, failed),
         ))
@@ -66,6 +69,8 @@ impl Run {
         let pass = core.pass.filter(|pass| pass.shallower_than(point));
         let activity = if failure.condition == Some(Condition::Parked) {
             Activity::Hunt
+        } else if record.round.is_some() {
+            Activity::Deepening
         } else {
             Activity::Checking
         };

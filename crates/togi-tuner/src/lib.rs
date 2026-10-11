@@ -29,6 +29,7 @@ mod plan;
 mod profile;
 mod r7;
 mod requirement;
+mod rounds;
 mod search;
 mod skip;
 mod state;

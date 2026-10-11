@@ -34,6 +34,7 @@ pub(crate) struct Pending {
     pub(crate) load: Load,
     pub(crate) ledger: Seq,
     pub(crate) cycle: Option<NonZeroU32>,
+    pub(crate) round: Option<NonZeroU32>,
 }
 
 impl Pending {
@@ -242,6 +243,9 @@ impl Run {
             },
             None => crate::failures::load_of(class),
         };
+        let round = failure
+            .round
+            .or_else(|| awaiting.and_then(|awaiting| awaiting.intent.round));
 
         if awaiting.is_some() {
             self.flight.awaiting = None;
@@ -275,12 +279,14 @@ impl Run {
             load,
             ledger: ledger_seq,
             cycle: self.checking.last_cycle(),
+            round,
         };
         self.failures.pend(cited, pending.clone());
         if class.multi_r7() {
             if known_seq.is_none() {
                 self.r7_open_failure(cited, pending, failed_trial);
             }
+            self.phase2_failure(cited);
             return Ok(());
         }
         if failure.attribution == Attribution::Attributed {
@@ -288,6 +294,7 @@ impl Run {
                 let replaced = self.core(core).pending;
                 if let Some(old) = replaced.filter(|&old| old != cited) {
                     self.failures.retire(old);
+                    self.prune_blames();
                 }
                 self.update_core(core, |state| state.pending = Some(cited));
             }
@@ -301,6 +308,7 @@ impl Run {
         if unattributed && known_seq.is_none() && failure.trial.is_none() && (together || parked) {
             self.live_idle_failure(event.seq, &profile)?;
         }
+        self.phase2_failure(cited);
         Ok(())
     }
 }

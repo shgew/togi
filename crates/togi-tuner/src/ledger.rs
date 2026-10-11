@@ -327,6 +327,7 @@ impl Run {
                     load: crate::failures::load_of(class),
                     ledger: event.seq,
                     cycle: None,
+                    round: None,
                 };
                 self.failures.pend(event.seq, pending.clone());
                 self.r7_open_failure(event.seq, pending, failed);
@@ -371,6 +372,7 @@ impl Run {
                 load: crate::Load::Many(class.loaded()),
                 ledger: event.seq,
                 cycle: None,
+                round: None,
             },
         );
         if carried.failure.attribution == Attribution::Unattributed {

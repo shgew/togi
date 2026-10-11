@@ -33,7 +33,10 @@ impl Run {
             let core = self.core(id);
             core.queued_reset.map(|queued| (id, core, queued))
         })?;
-        if let Some(end) = self.cycle_reset_end(id, queued) {
+        if let Some(end) = self
+            .round_reset_end(id, queued)
+            .or_else(|| self.cycle_reset_end(id, queued))
+        {
             return Some(end);
         }
         let cleared: Vec<CombinationId> = self
@@ -186,7 +189,7 @@ impl Run {
     /// failure of the first core with one pending.
     pub(crate) fn ordinary_decision(&self) -> Option<Action> {
         if let Some(response) = self.r7_decision() {
-            return Some(response.into_action());
+            return Some(self.round_before_backoff(response));
         }
         self.pending_core_action()
     }
@@ -201,8 +204,17 @@ impl Run {
         if let Some(decision) = decision {
             return Some(Action::Decide(decision));
         }
+        if let Some(decision) = self.phase2_blame_action() {
+            return Some(Action::Decide(decision));
+        }
         if let Some(action) = self.ordinary_decision() {
             return Some(self.later_decision(action));
+        }
+        if let Some(decision) = self
+            .round_queue_close()
+            .or_else(|| self.round_move_action())
+        {
+            return Some(Action::Decide(decision));
         }
         if let Some(decision) = self.phase_decision().or_else(|| self.profile_decision()) {
             return Some(Action::Decide(decision));
@@ -219,11 +231,21 @@ impl Run {
         if let Some(action) = self.rerun_action() {
             return Some(action);
         }
+        if self.rounds.active().is_some() {
+            return self
+                .round_check_action()
+                .map(|action| self.after_reruns(action));
+        }
         if self.checking.open().is_some() {
             return self.cycle_action().map(|action| self.after_reruns(action));
         }
         if self.round_due() {
-            return None;
+            if self.ranking_stale() {
+                return Some(Action::ReadRanking);
+            }
+            return self
+                .round_start_action()
+                .map(|action| self.after_reruns(action));
         }
         Some(self.after_reruns(self.cycle_start_action()))
     }

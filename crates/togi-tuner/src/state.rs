@@ -14,6 +14,7 @@ use crate::ledger::PendingWarning;
 use crate::phases::Phases;
 use crate::r7::state::R7;
 use crate::requirement::Retry;
+use crate::rounds::Rounds;
 use crate::search::Search;
 use crate::zero::Zero;
 use crate::{
@@ -44,6 +45,8 @@ pub(crate) struct Run {
     pub(crate) r7: R7,
     pub(crate) zero: Zero,
     pub(crate) ranking: Option<Ranked>,
+    pub(crate) last_plan_seq: Option<Seq>,
+    pub(crate) rounds: Rounds,
     pub(crate) checking: Checking,
     pub(crate) reruns: Reruns,
     pub(crate) later: Later,
@@ -87,6 +90,8 @@ impl Run {
             r7: R7::default(),
             zero: Zero::default(),
             ranking: None,
+            last_plan_seq: None,
+            rounds: Rounds::default(),
             checking: Checking::default(),
             reruns: Reruns::default(),
             later: Later::default(),
@@ -131,6 +136,7 @@ impl Run {
         self.require_core(core)?;
         self.evidence.reset_core(core);
         self.failures.forget_core(core);
+        self.prune_blames();
         self.r7_reset(core);
         self.update_core(core, |state| state.queued_reset = Some(event.seq));
         self.retry = None;
@@ -141,6 +147,7 @@ impl Run {
 
     fn dead_end(&mut self, event: &Event, dead_end: &DeadEnd) -> Result<(), FoldError> {
         self.failures.retire_all(&event.cause);
+        self.prune_blames();
         if dead_end.condition != DeadEndCondition::FailureAtZero {
             return Ok(());
         }
@@ -179,6 +186,15 @@ impl Run {
             seq: event.seq,
         });
         Ok(())
+    }
+
+    /// Whether the host ranking predates the plan the last round began, or was never read.
+    pub(crate) fn ranking_stale(&self) -> bool {
+        match (&self.ranking, self.last_plan_seq) {
+            (None, _) => true,
+            (Some(ranked), Some(plan)) => ranked.seq <= plan,
+            (Some(_), None) => false,
+        }
     }
 
     fn profile_change(&mut self, event: &Event, change: &ProfileChange) -> Result<(), FoldError> {
@@ -283,10 +299,10 @@ impl State {
             | Payload::StateRebuilt(_) => {
                 self.run_mut()?;
             }
+            Payload::DeepeningRound(round) => self.run_mut()?.deepening_round(event, round)?,
             Payload::HuntStart(_)
             | Payload::HuntGroup(_)
             | Payload::HuntEnd(_)
-            | Payload::DeepeningRound(_)
             | Payload::Shutdown(_) => {
                 self.run_mut()?;
             }

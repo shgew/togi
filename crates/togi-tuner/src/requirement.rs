@@ -145,6 +145,7 @@ impl Run {
         }
         self.zero_context(intent, class, cause)
             .or_else(|| self.rerun_context(intent, class))
+            .or_else(|| self.round_context(intent, class))
             .or_else(|| self.cycle_context(intent, class))
             .map(|requirement| (requirement, None))
             .ok_or_else(|| FoldError::UnscheduledIntent(intent.trial.clone()))
@@ -174,10 +175,12 @@ impl Run {
                     Some(TrialContext::Rerun { failure: since? })
                 }
             },
+            RequirementKind::Round => Some(TrialContext::Round {
+                round: intent.round?,
+            }),
             RequirementKind::Search
             | RequirementKind::SoloLimit
             | RequirementKind::ZeroRerun
-            | RequirementKind::Round
             | RequirementKind::Hunt => None,
         }
     }
@@ -223,9 +226,9 @@ impl Run {
                 TrialContext::ZeroRerun { failure } => self.zero_retry_requirement(plan, failure),
                 TrialContext::Cycle { .. } => self.cycle_retry_requirement(plan),
                 TrialContext::Rerun { failure } => self.rerun_retry_requirement(plan, failure),
+                TrialContext::Round { round } => self.round_retry_requirement(plan, round),
                 TrialContext::Search { .. }
                 | TrialContext::SoloLimit { .. }
-                | TrialContext::Round { .. }
                 | TrialContext::Hunt { .. } => Some(retry.requirement),
             };
         };

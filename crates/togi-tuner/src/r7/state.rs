@@ -87,6 +87,7 @@ impl Run {
                 class.load(),
                 Measurement::new(seq, *profile, *telemetry.requests),
             );
+            self.refresh_round_checks();
         }
         failed
     }
@@ -193,6 +194,7 @@ impl Run {
     /// answers owed to the failures it discards.
     pub(crate) fn r7_reset(&mut self, core: CoreId) {
         self.r7.measurements.reset_core(core);
+        self.refresh_round_checks();
         self.r7.targets.reset_core(core);
         self.r7.status.reset_core(core);
         let named = &self.r7.named;
