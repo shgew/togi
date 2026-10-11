@@ -15,10 +15,13 @@
 //! | `sin`, `cos` (inside `lgamma`) | pure Go, no fusion | pure Go, fused |
 //! | `floor`, `%` (inside `lgamma`) | `ROUNDSD` with SSE4.1, else `archFloor`, and pure Go `mod`, all exact | `FRINTMD` and pure Go `mod`, both exact |
 //! | `pow` | pure Go over this target's `exp` and `log` | pure Go over this target's `exp` and `log`, nothing fused |
+//! | `exp_float64` | over this target's `exp` and `log`, float32 test unfused | over this target's `exp` and `log`, float32 test fused |
 //!
 //! No transcendental libm function is called. Fused operations go through
 //! `f64::mul_add`, which is correctly rounded by contract, so its bits do not depend
 //! on whether it becomes the FMA instruction or a call to libm's `fma`.
+
+pub use expfloat::Uint64Source;
 
 /// Fused multiply-add, `a * b + c` rounded once, as Go's fused instructions round it.
 fn fma(a: f64, b: f64, c: f64) -> f64 {
@@ -29,6 +32,7 @@ fn fma(a: f64, b: f64, c: f64) -> f64 {
 mod amd64;
 #[cfg(any(target_arch = "aarch64", all(test, target_arch = "x86_64")))]
 mod arm64;
+mod expfloat;
 mod go;
 mod lgamma;
 #[cfg(test)]
@@ -103,4 +107,15 @@ pub fn lgamma(x: f64) -> (f64, i32) {
 #[must_use]
 pub fn pow(x: f64, y: f64) -> f64 {
     pow::pow(x, y, exp, log)
+}
+
+#[cfg(target_arch = "x86_64")]
+const FUSED_FLOAT32: bool = false;
+#[cfg(target_arch = "aarch64")]
+const FUSED_FLOAT32: bool = true;
+
+/// Go's `rand.Rand.ExpFloat64`: an exponentially distributed value with rate 1, drawn from `src`.
+#[must_use]
+pub fn exp_float64(src: &mut impl Uint64Source) -> f64 {
+    expfloat::exp_float64::<FUSED_FLOAT32>(src, exp, log)
 }
