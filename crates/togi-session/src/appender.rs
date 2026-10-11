@@ -3,7 +3,7 @@
 use std::io::{self, Write};
 
 use jiff::tz::TimeZone;
-use togi_defect::DefectState;
+use togi_defect::{DefectState, Entry, KNOWN_DEFECTS};
 use togi_journal::{
     AppendError, Event, Journal, Payload, Seq, SmuCommand, SmuIntentReceipt, SmuWritten, Stamp,
 };
@@ -13,6 +13,13 @@ use togi_render::Renderer;
 use crate::boot::BootHandoff;
 use crate::error::{AppendFailure, FoldError, JournalFailure};
 use crate::recovery::RecoveryState;
+
+/// A journal that does not fold into the run's state, handed back with the reason.
+#[derive(Debug)]
+pub struct Unresumed {
+    pub journal: Journal,
+    pub error: FoldError,
+}
 
 /// Every reducer the run keeps over its journal, each fed every event once and in order: the recovery fold first,
 /// then the tuner state, then the defect state.
@@ -25,7 +32,18 @@ pub struct Folds {
 
 impl Folds {
     pub fn replay<'a>(events: impl IntoIterator<Item = &'a Event>) -> Result<Self, FoldError> {
-        let mut folds = Self::default();
+        Self::replay_with(KNOWN_DEFECTS, events)
+    }
+
+    /// Replays with the defect state judging by `defects` instead of the defects this build knows.
+    pub fn replay_with<'a>(
+        defects: &'static [Entry],
+        events: impl IntoIterator<Item = &'a Event>,
+    ) -> Result<Self, FoldError> {
+        let mut folds = Self {
+            defects: DefectState::new(defects),
+            ..Self::default()
+        };
         for event in events {
             folds.apply(event)?;
         }
@@ -60,6 +78,7 @@ pub struct Appender {
     latched: Option<JournalFailure>,
     trial: Option<CancellationToken>,
     handoff: Option<BootHandoff>,
+    defects: &'static [Entry],
 }
 
 impl Appender {
@@ -70,7 +89,22 @@ impl Appender {
         renderer: Renderer,
         zone: TimeZone,
     ) -> Result<Self, FoldError> {
-        let folds = Folds::replay(journal.events())?;
+        Self::resume_with(journal, clock, renderer, zone, KNOWN_DEFECTS)
+            .map_err(|unresumed| unresumed.error)
+    }
+
+    /// [`Appender::resume`] with the defects to judge by; a journal that does not fold is handed back.
+    pub fn resume_with(
+        journal: Journal,
+        clock: Box<dyn Clock>,
+        renderer: Renderer,
+        zone: TimeZone,
+        defects: &'static [Entry],
+    ) -> Result<Self, Box<Unresumed>> {
+        let folds = match Folds::replay_with(defects, journal.events()) {
+            Ok(folds) => folds,
+            Err(error) => return Err(Box::new(Unresumed { journal, error })),
+        };
         Ok(Self {
             journal,
             clock,
@@ -82,7 +116,13 @@ impl Appender {
             latched: None,
             trial: None,
             handoff: None,
+            defects,
         })
+    }
+
+    /// The defects the run judges by.
+    pub const fn defect_registry(&self) -> &'static [Entry] {
+        self.defects
     }
 
     #[must_use]

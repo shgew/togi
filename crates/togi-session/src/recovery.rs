@@ -792,6 +792,11 @@ fn cpu_list(cpus: &[CpuId]) -> String {
 
 /// Queries over the fold.
 impl RecoveryState {
+    /// The journal holds a `session.start`.
+    pub const fn started(&self) -> bool {
+        self.started
+    }
+
     pub fn boots(&self) -> &[BootId] {
         &self.boots
     }

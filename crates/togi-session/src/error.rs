@@ -1,7 +1,8 @@
 use std::io;
 use std::sync::Arc;
 
-use togi_journal::{AppendError, DeadEndCondition, EventKind, LookupError, Refusal, Seq};
+use togi_journal::{AppendError, DeadEndCondition, DirError, EventKind, LookupError, Refusal, Seq};
+use togi_machine::CoreId;
 
 use crate::boot::BootError;
 use crate::write::WriteFailure;
@@ -71,6 +72,24 @@ pub enum SessionError {
     Write(#[from] WriteFailure),
     #[error("write the event log: {0}")]
     Log(#[source] io::Error),
+    #[error("an initial offset is configured for core {core:02}, which this machine does not have")]
+    NoSuchCore { core: CoreId },
+    #[error("clear GRUB's saved entry after an incompatible journal: {0}")]
+    ClearSavedEntry(#[source] io::Error),
+    #[error("allocate the session id: {0}")]
+    SessionId(#[from] DirError),
+    /// A step reported dead-end evidence, and the journal supports no dead end.
+    #[error("{0} dead-end evidence reported without a recorded dead end")]
+    DeadEndUnrecorded(DeadEndCondition),
+}
+
+impl From<BootError> for SessionError {
+    fn from(error: BootError) -> Self {
+        match error {
+            BootError::Bootloader(error) => Self::Bootloader(error),
+            BootError::Lookup(error) => Self::Lookup(error),
+        }
+    }
 }
 
 impl From<AppendFailure> for SessionError {
@@ -78,8 +97,7 @@ impl From<AppendFailure> for SessionError {
         match failure {
             AppendFailure::Journal(failure) => Self::Journal(failure),
             AppendFailure::Fold(failure) => Self::Fold(failure),
-            AppendFailure::Boot(BootError::Bootloader(error)) => Self::Bootloader(error),
-            AppendFailure::Boot(BootError::Lookup(error)) => Self::Lookup(error),
+            AppendFailure::Boot(error) => error.into(),
         }
     }
 }

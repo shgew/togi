@@ -839,6 +839,7 @@ dependencies = [
  "jiff",
  "proptest",
  "thiserror",
+ "togi-carry",
  "togi-config",
  "togi-defect",
  "togi-journal",

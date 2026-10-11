@@ -117,14 +117,19 @@ impl BootHandoff {
 
     /// Leaves the tuning boot for a dead end: saves why, then clears the saved boot entry.
     pub fn leave(&mut self, reason: &str) -> Left {
-        let reason_error = LeaveReason::new(reason, RestartCount::ZERO)
-            .and_then(|record| tuningboot::write_reason(&mut *self.bootloader, &record))
-            .err()
-            .map(BootError::from);
-        Left {
-            entry: self.bootloader.clear_saved_entry(),
-            reason_error,
-        }
+        leave(&mut *self.bootloader, reason)
+    }
+}
+
+/// Leaves the tuning boot without a session: saves why, then clears the saved boot entry.
+pub fn leave(bootloader: &mut dyn Bootloader, reason: &str) -> Left {
+    let reason_error = LeaveReason::new(reason, RestartCount::ZERO)
+        .and_then(|record| tuningboot::write_reason(bootloader, &record))
+        .err()
+        .map(BootError::from);
+    Left {
+        entry: bootloader.clear_saved_entry(),
+        reason_error,
     }
 }
 
