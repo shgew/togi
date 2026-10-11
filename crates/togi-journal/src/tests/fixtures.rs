@@ -10,6 +10,13 @@ use togi_machine::{
 
 use crate::*;
 
+pub(crate) fn config() -> togi_config::Config {
+    togi_config::Config::parse(
+        r#"{"backends":{"mprime":"/nix/store/x-mprime"},"start_offsets":{"3":-10}}"#,
+    )
+    .unwrap()
+}
+
 pub(crate) fn workload(id: &str) -> WorkloadId {
     id.parse().unwrap()
 }
@@ -222,7 +229,8 @@ pub(crate) fn samples() -> Vec<Payload> {
         .into(),
         ConfigLoaded {
             build: build(),
-            path: "/etc/togi.toml".into(),
+            config: config(),
+            path: "/etc/togi/config.json".into(),
             file: true,
             kernel_cursor: Some(KernelCursor::from("s=1".to_owned())),
             kernel_error: None,
@@ -547,7 +555,7 @@ pub(crate) fn samples() -> Vec<Payload> {
         }
         .into(),
         DefectFound {
-            id: 1,
+            id: ord(1),
             title: "false failure on power-off".into(),
             detail: "clean exit".into(),
             pr: 14,
@@ -557,7 +565,7 @@ pub(crate) fn samples() -> Vec<Payload> {
         }
         .into(),
         DefectAnswered {
-            id: 1,
+            id: ord(1),
             cores: set(&[2]),
             answer: DefectAnswer::Yes,
         }

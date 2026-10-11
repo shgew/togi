@@ -150,10 +150,11 @@ pub struct SessionCarried {
     pub carried: Vec<CarriedCore>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ConfigLoaded {
     pub build: Build,
+    pub config: togi_config::Config,
     pub path: String,
     pub file: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -207,7 +208,7 @@ pub struct CommandReset {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DefectFound {
-    pub id: u32,
+    pub id: NonZeroU32,
     pub title: String,
     pub detail: String,
     pub pr: u32,
@@ -219,7 +220,7 @@ pub struct DefectFound {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DefectAnswered {
-    pub id: u32,
+    pub id: NonZeroU32,
     pub cores: CoreSet,
     pub answer: DefectAnswer,
 }

@@ -1,6 +1,8 @@
+use std::path::{Path, PathBuf};
+
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
-use togi_machine::{BiosContext, BootId, CcdId, CoreId, CpuId, ObservedOffset, PerCore};
+use togi_machine::{Backend, BiosContext, BootId, CcdId, CoreId, CpuId, ObservedOffset, PerCore};
 
 use crate::payload::{DeadEndCondition, EventKind, Payload, TrialId};
 use crate::{Build, Event, SCHEMA, Seq, SessionId};
@@ -75,6 +77,23 @@ pub struct State {
     pub last_seq: Option<Seq>,
     pub open: Vec<InFlight>,
     pub dead_end: Option<DeadEndRef>,
+    pub backends: BackendPaths,
+}
+
+/// The backend store paths the latest `config.loaded` recorded; a pass counts only under the path in force.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct BackendPaths {
+    pub mprime: Option<PathBuf>,
+    pub ycruncher: Option<PathBuf>,
+}
+
+impl BackendPaths {
+    pub fn path(&self, backend: Backend) -> Option<&Path> {
+        match backend {
+            Backend::Mprime => self.mprime.as_deref(),
+            Backend::Ycruncher => self.ycruncher.as_deref(),
+        }
+    }
 }
 
 impl Default for State {
@@ -86,6 +105,7 @@ impl Default for State {
             last_seq: None,
             open: Vec::new(),
             dead_end: None,
+            backends: BackendPaths::default(),
         }
     }
 }
@@ -180,6 +200,11 @@ impl State {
             }
             Payload::ConfigLoaded(config) => {
                 self.dead_end = None;
+                let backends = config.config.backends();
+                self.backends = BackendPaths {
+                    mprime: backends.mprime().map(Path::to_path_buf),
+                    ycruncher: backends.ycruncher().map(Path::to_path_buf),
+                };
                 if let Some(session) = &mut self.session {
                     session.build.version.clone_from(&config.build.version);
                     session.build.rev.clone_from(&config.build.rev);

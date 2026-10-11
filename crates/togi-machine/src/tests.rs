@@ -631,3 +631,20 @@ fn core_ids_convert_from_unsigned_integers() {
     assert_eq!(CoreId::try_from(16_usize), Err(InvalidCore(16)));
     assert!(CoreId::try_from(usize::MAX).is_err());
 }
+
+#[test]
+fn containment_keeps_its_cause_behind_a_fixed_message() {
+    use std::error::Error as _;
+    let error = Error::Containment("scope still has 2 processes".into());
+    assert_eq!(error.to_string(), "trial cleanup could not be confirmed");
+    assert_eq!(
+        error.source().unwrap().to_string(),
+        "scope still has 2 processes"
+    );
+}
+
+#[test]
+fn ccd_and_cpu_ids_display_as_numbers() {
+    assert_eq!(CcdId(1).to_string(), "1");
+    assert_eq!(CpuId(23).to_string(), "23");
+}

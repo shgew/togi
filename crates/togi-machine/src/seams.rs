@@ -155,7 +155,8 @@ pub trait Running {
     fn started(&self) -> Started;
     /// Calls the borrowed reporter only on this thread, and joins the workload before returning.
     /// On `Err(Partial { value, .. })` the value is what the trial accumulated until the failure: for
-    /// [`Error::Crashed`] the time run until the crash and the stops and continues counted so far.
+    /// [`Error::Crashed`] the time run until the crash and the stops and continues counted so far. A refusal that
+    /// observed nothing returns `Err(Partial { value: TrialResult::default(), error })`.
     fn wait(
         &mut self,
         cancel: &CancellationToken,

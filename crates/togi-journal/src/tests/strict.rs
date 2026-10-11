@@ -164,3 +164,32 @@ fn an_idle_class_has_no_workload_on_the_wire() {
     let line = line_of(super::fixtures::sample(EventKind::FailureCarried));
     assert!(line["data"]["class"].get("workload").is_none());
 }
+
+#[test]
+fn a_config_that_does_not_validate_is_refused() {
+    let mut line = line_of(super::fixtures::sample(EventKind::ConfigLoaded));
+    line["data"]["config"]["backends"]["mprime"] = json!("relative/path");
+    let error = Event::decode(&line.to_string()).unwrap_err();
+    assert!(
+        matches!(
+            error,
+            DecodeError::Payload {
+                kind: EventKind::ConfigLoaded,
+                ..
+            }
+        ),
+        "{error}"
+    );
+    let mut line = line_of(super::fixtures::sample(EventKind::ConfigLoaded));
+    line["data"]["config"]["bogus"] = json!(1);
+    assert!(Event::decode(&line.to_string()).is_err());
+}
+
+#[test]
+fn a_defect_id_of_zero_is_refused() {
+    for kind in [EventKind::DefectFound, EventKind::DefectAnswered] {
+        let mut line = line_of(super::fixtures::sample(kind));
+        line["data"]["id"] = json!(0);
+        assert!(Event::decode(&line.to_string()).is_err(), "{kind}");
+    }
+}

@@ -28,4 +28,6 @@ pub use reader::{
 };
 pub use receipt::{SmuIntentReceipt, SmuWritten};
 pub use session_id::{InvalidSessionId, SessionId};
-pub use state::{CoreFacts, DeadEndRef, DecisionRef, FoldError, InFlight, SessionInfo, State};
+pub use state::{
+    BackendPaths, CoreFacts, DeadEndRef, DecisionRef, FoldError, InFlight, SessionInfo, State,
+};

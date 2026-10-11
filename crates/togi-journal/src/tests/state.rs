@@ -273,3 +273,33 @@ fn a_prefix_state_equals_the_state_built_event_by_event() {
     }
     assert_eq!(incremental, replay(&events).unwrap());
 }
+
+#[test]
+fn backend_paths_follow_the_latest_config_loaded() {
+    let state = replay(&[
+        start(),
+        at(2, "boot-a", 1, &[], sample(EventKind::ConfigLoaded)),
+    ])
+    .unwrap();
+    assert_eq!(
+        state.backends.path(togi_machine::Backend::Mprime),
+        Some(std::path::Path::new("/nix/store/x-mprime"))
+    );
+    assert_eq!(state.backends.path(togi_machine::Backend::Ycruncher), None);
+    let Payload::ConfigLoaded(mut config) = sample(EventKind::ConfigLoaded) else {
+        unreachable!()
+    };
+    config.config =
+        togi_config::Config::parse(r#"{"backends":{"ycruncher":"/nix/store/y"}}"#).unwrap();
+    let state = replay(&[
+        start(),
+        at(2, "boot-a", 1, &[], sample(EventKind::ConfigLoaded)),
+        at(3, "boot-a", 2, &[], config.into()),
+    ])
+    .unwrap();
+    assert_eq!(state.backends.path(togi_machine::Backend::Mprime), None);
+    assert_eq!(
+        state.backends.path(togi_machine::Backend::Ycruncher),
+        Some(std::path::Path::new("/nix/store/y"))
+    );
+}
