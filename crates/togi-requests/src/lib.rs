@@ -2,7 +2,6 @@
 //! request. Both CCDs share one core voltage, and the highest request among the loaded cores sets
 //! it.
 
-use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
 use togi_machine::{CcdId, CoreId, PER_CORE_MAX, PerCore, TrialConditions};
@@ -13,6 +12,9 @@ pub const MIN_SAMPLES: usize = 20;
 /// The spread within which cores count as one top.
 pub const TIE_V: f64 = 0.001;
 pub const VOLTS_PER_COUNT: f64 = 0.0036;
+/// Keeps a request that sits exactly a whole number of counts above `v` from rounding up one count
+/// further on floating-point error.
+const COUNT_ROUNDING_TOLERANCE: f64 = 1e-9;
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Telemetry {
@@ -31,6 +33,9 @@ pub fn summarize(
     cores: &[CoreId],
     ccd_of: impl Fn(CoreId) -> CcdId,
 ) -> Option<Telemetry> {
+    let mut cores = cores.to_vec();
+    cores.sort_unstable();
+    cores.dedup();
     if cores.is_empty() {
         return None;
     }
@@ -48,7 +53,7 @@ pub fn summarize(
         for mhz in per_ccd.values_mut() {
             mhz.clear();
         }
-        for &core in cores {
+        for &core in &cores {
             requests[core.index()].push(f64::from(table.voltage_request_v[core.index()]));
             if let Some(mhz) = sample.core_mhz.get(core) {
                 per_ccd.entry(ccd_of(core)).or_default().push(to_f64(mhz));
@@ -66,10 +71,7 @@ pub fn summarize(
     }
     let mut telemetry = Telemetry::default();
     let mut by_ccd: BTreeMap<CcdId, PerCore<f64>> = BTreeMap::new();
-    for &core in cores {
-        if telemetry.requests.get(core).is_some() {
-            continue;
-        }
+    for &core in &cores {
         let value = median(&requests[core.index()]);
         telemetry.requests.set(core, value);
         by_ccd.entry(ccd_of(core)).or_default().set(core, value);
@@ -91,8 +93,8 @@ pub fn summarize(
 /// Orders cores by request, highest first. Each group holds the highest remaining core and every
 /// remaining core within [`TIE_V`] of it, sorted by core.
 pub fn groups(requests: &PerCore<f64>) -> Vec<Vec<CoreId>> {
-    let mut remaining: Vec<(CoreId, f64)> = requests.all().collect();
-    remaining.sort_by(|a, b| compare(b.1, a.1).then(a.0.cmp(&b.0)));
+    let mut remaining: Vec<(CoreId, f64)> = requests.iter().collect();
+    remaining.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
     let mut groups = Vec::new();
     let mut rest = remaining.as_slice();
     while let Some(&(_, highest)) = rest.first() {
@@ -111,36 +113,14 @@ pub fn groups(requests: &PerCore<f64>) -> Vec<Vec<CoreId>> {
 
 /// The counts shallower that raise a request from `v` to at least `target`, and at least one.
 pub fn counts(v: f64, target: f64) -> i64 {
-    to_i64(((target - v) / VOLTS_PER_COUNT - 1e-9).ceil()).max(1)
+    to_i64(((target - v) / VOLTS_PER_COUNT - COUNT_ROUNDING_TOLERANCE).ceil()).max(1)
 }
 
 pub fn top(requests: &PerCore<f64>) -> Option<f64> {
-    requests.all().map(|(_, request)| request).reduce(go_max)
-}
-
-fn compare(x: f64, y: f64) -> Ordering {
-    let (x_nan, y_nan) = (x.is_nan(), y.is_nan());
-    if (x_nan && !y_nan) || x < y {
-        Ordering::Less
-    } else if x > y || (y_nan && !x_nan) {
-        Ordering::Greater
-    } else {
-        Ordering::Equal
-    }
-}
-
-fn go_max(x: f64, y: f64) -> f64 {
-    if x.is_nan() {
-        x
-    } else if y.is_nan() {
-        y
-    } else if x > y {
-        x
-    } else if y > x || x.is_sign_negative() {
-        y
-    } else {
-        x
-    }
+    requests
+        .iter()
+        .map(|(_, request)| request)
+        .reduce(f64::max)
 }
 
 #[expect(
@@ -164,15 +144,10 @@ fn median(values: &[f64]) -> f64 {
 }
 
 fn median_in_place(values: &mut [f64]) -> f64 {
-    values.sort_unstable_by(|a, b| compare(*a, *b));
+    values.sort_unstable_by(f64::total_cmp);
     let middle = values.len() / 2;
     if values.len().is_multiple_of(2) {
-        #[expect(
-            clippy::manual_midpoint,
-            reason = "Go adds before halving, which f64::midpoint does not at the extremes"
-        )]
-        let mean = (values[middle - 1] + values[middle]) / 2.0;
-        mean
+        values[middle - 1].midpoint(values[middle])
     } else {
         values[middle]
     }
