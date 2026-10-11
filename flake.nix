@@ -59,6 +59,7 @@
             ./deny.toml
             ./.config
             ./crates
+            ./tools/bench/machines
             ./version.txt
           ];
           rustLinker = lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
