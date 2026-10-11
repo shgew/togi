@@ -14,15 +14,23 @@ use crate::error::Error;
 use crate::host::{Privilege, ScopeProbe, SystemHost};
 use crate::preflight::Account;
 
-pub(crate) fn backends(config: &Config) -> Backends {
+pub(crate) fn backends(config: &Config) -> Result<Backends, Error> {
     let mut backends = Backends::new();
     if let Some(path) = config.backends().path(Backend::Mprime) {
-        backends = backends.with(Arc::new(Mprime::new(path)));
+        let mprime = Mprime::new(path).map_err(|source| Error::Backend {
+            backend: Backend::Mprime,
+            source,
+        })?;
+        backends = backends.with(Arc::new(mprime));
     }
     if let Some(path) = config.backends().path(Backend::Ycruncher) {
-        backends = backends.with(Arc::new(Ycruncher::new(path)));
+        let ycruncher = Ycruncher::new(path).map_err(|source| Error::Backend {
+            backend: Backend::Ycruncher,
+            source,
+        })?;
+        backends = backends.with(Arc::new(ycruncher));
     }
-    backends
+    Ok(backends)
 }
 
 /// What the host, the trial runners and the diagnosis share: one driver, the backends the
@@ -42,7 +50,7 @@ impl Parts {
             driver: Arc::new(Mutex::new(driver)),
             topology,
             pm: PmSlot::default(),
-            backends: backends(config),
+            backends: backends(config)?,
             account: Account::resolve(config.backend_user()),
         })
     }

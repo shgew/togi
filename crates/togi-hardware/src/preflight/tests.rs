@@ -167,10 +167,10 @@ fn package(executable: bool) -> TempDir {
 fn backends(root: &Path, mprime: bool, ycruncher: bool) -> Backends {
     let mut backends = Backends::new();
     if mprime {
-        backends = backends.with(Arc::new(Mprime::new(root)));
+        backends = backends.with(Arc::new(Mprime::new(root).unwrap()));
     }
     if ycruncher {
-        backends = backends.with(Arc::new(Ycruncher::new(root)));
+        backends = backends.with(Arc::new(Ycruncher::new(root).unwrap()));
     }
     backends
 }

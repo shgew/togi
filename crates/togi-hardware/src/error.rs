@@ -9,6 +9,12 @@ pub enum Error {
     OpenSmu(#[source] togi_smu::Error),
     #[error("read the CPU topology")]
     Topology(#[source] togi_smu::Error),
+    #[error("build the {backend} backend")]
+    Backend {
+        backend: togi_machine::Backend,
+        #[source]
+        source: togi_backend::Error,
+    },
     #[error("start the trial runner")]
     TrialRunner(#[source] togi_trial::Error),
     #[error("index the logical CPUs of each core for the kernel log")]
