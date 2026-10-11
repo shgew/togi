@@ -17,7 +17,7 @@ use tokio::sync::mpsc::{
 };
 use tokio::time::{Instant, sleep, sleep_until};
 
-use crate::error::{Containment, Error, OutputFailure};
+use crate::error::{Containment, Error, OutputFailure, StorageError};
 use crate::evidence::{Observation, Selector, Stream};
 use crate::files::{self, Container};
 use crate::id::ScopeName;
@@ -53,7 +53,7 @@ pub(crate) struct Env<O: Os> {
     pub(crate) user_manager: bool,
     pub(crate) pm_table: Option<Arc<dyn PmTableReader + Send + Sync>>,
     /// Test construction: where samples go instead of the trial's `samples.jsonl`.
-    pub(crate) storage: Option<Rc<dyn Fn() -> Open>>,
+    pub(crate) storage: Option<Rc<dyn Fn() -> Result<Open, StorageError>>>,
 }
 
 impl<O: Os> Env<O> {
@@ -222,9 +222,18 @@ pub(crate) async fn start<O: Os>(
     let (failed_tx, storage_failed) = unbounded_channel();
     let open = match &env.storage {
         Some(make) => make(),
-        None => container.samples(),
+        None => Ok(container.samples()),
     };
-    let writer = SamplesWriter::spawn(open, failed_tx).ok();
+    let notify = failed_tx.clone();
+    let mut errors = Vec::new();
+    let writer = match open.and_then(|open| SamplesWriter::spawn(open, failed_tx)) {
+        Ok(writer) => Some(writer),
+        Err(error) => {
+            errors.push(Error::Storage(error.into()));
+            let _ = notify.send(());
+            None
+        }
+    };
     let toggles = Toggles {
         stops: launched.stops,
         conts: 0,
@@ -250,7 +259,7 @@ pub(crate) async fn start<O: Os>(
         started: started_at,
         toggles,
         tctl_max: None,
-        errors: Vec::new(),
+        errors,
         rotation: 0,
         inbound_open: true,
     };
@@ -834,7 +843,7 @@ impl<O: Os> Supervisor<O> {
             .await
             .finish();
         if let Some(writer) = writer {
-            if let Err(failure) = writer.finish(env.timing.writer_join) {
+            if let Err(failure) = writer.finish(env.timing.writer_join).await {
                 errors.push(Error::Storage(failure));
             }
         }
