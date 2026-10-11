@@ -15,7 +15,10 @@ impl Run {
     pub(crate) fn round_checks(&self, round: &Round) -> (Vec<Check>, Vec<Seq>) {
         let shape = round.shape();
         let mut checks = Vec::new();
-        for core in shape.cores().iter().filter(|&core| shape.deepened(core)) {
+        for &core in self.topo.order() {
+            if !shape.deepened(core) {
+                continue;
+            }
             let Some(offset) = shape.profile().get(core) else {
                 continue;
             };
