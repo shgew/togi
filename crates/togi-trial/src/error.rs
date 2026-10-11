@@ -1,10 +1,11 @@
 use std::io;
+use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
-use crate::files::PrepareError;
+use togi_machine::{CoreId, CpuId};
+
 use crate::identity::IdentityError;
-use crate::plan::InvalidTrial;
-use crate::samples::StorageFailure;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -69,6 +70,7 @@ pub enum Error {
 
 impl Error {
     /// One error for several that happened, the first kept first; `None` for none.
+    #[cfg(target_os = "linux")]
     pub(crate) fn join(mut errors: Vec<Self>) -> Option<Self> {
         match errors.len() {
             0 => None,
@@ -179,6 +181,7 @@ impl Containment {
     }
 
     /// Puts the error that made the start roll back in front of the cleanup's own failures.
+    #[cfg(target_os = "linux")]
     pub(crate) fn caused_by(self, cause: Error) -> Self {
         let mut failures = vec![CleanupFailure::Start(Box::new(cause))];
         failures.extend(self.failures);
@@ -201,5 +204,105 @@ impl From<Error> for togi_machine::Error {
             },
             other => Self::Other(Box::new(other)),
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum InvalidId {
+    #[error("the trial id is empty")]
+    Empty,
+    #[error("the trial id contains {0:?}; only A-Z a-z 0-9 _ . : - are allowed")]
+    Character(char),
+}
+
+#[derive(Debug, Eq, PartialEq, thiserror::Error)]
+pub enum InvalidTrial {
+    #[error(transparent)]
+    Id(#[from] InvalidId),
+    #[error("the trial duration is zero")]
+    ZeroDuration,
+    #[error("the trial names no core")]
+    NoCores,
+    #[error("core {0} is listed twice")]
+    DuplicateCore(CoreId),
+    #[error("core {0} is not in the topology")]
+    UnknownCore(CoreId),
+    #[error("core {0} has no logical CPU in the topology")]
+    CoreWithoutCpu(CoreId),
+    #[error("the trial names no logical CPU")]
+    NoCpus,
+    #[error("logical CPU {} belongs to none of the trial's cores", .0.0)]
+    ForeignCpu(CpuId),
+    #[error("the logical CPUs do not match the first CPU of each core")]
+    CpusMismatch,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum PrepareError {
+    #[error("{operation} {}", path.display())]
+    Directory {
+        operation: &'static str,
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("{} is not a directory", path.display())]
+    NotDirectory { path: PathBuf },
+    #[error("{} is not searchable by uid {uid} gid {gid}", path.display())]
+    Inaccessible { path: PathBuf, uid: u32, gid: u32 },
+    #[error("create {name} in instance {instance}")]
+    Create {
+        instance: String,
+        name: String,
+        #[source]
+        source: io::Error,
+    },
+    #[error("hand {name} of instance {instance} to the backend account")]
+    Chown {
+        instance: String,
+        name: String,
+        #[source]
+        source: io::Error,
+    },
+    #[error("plan the backend instance")]
+    Backend(#[source] togi_backend::Error),
+    #[error("the backend plan names no program")]
+    EmptyProgram,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum StorageError {
+    #[error("create the samples file")]
+    Create(#[source] io::Error),
+    #[error("sync the trial samples directory")]
+    SyncDirectory(#[source] io::Error),
+    #[error("encode a conditions sample")]
+    Encode(#[source] serde_json::Error),
+    #[error("append a conditions sample")]
+    Append(#[source] io::Error),
+    #[error("close the samples file")]
+    Close(#[source] io::Error),
+    #[error("the samples writer did not finish within {0:?}")]
+    JoinTimeout(Duration),
+    #[error("the samples writer thread ended without a result")]
+    Vanished,
+    #[error("start the samples writer thread")]
+    Spawn(#[source] io::Error),
+}
+
+/// Every storage failure of one trial, in the order they happened.
+#[derive(Debug, thiserror::Error)]
+#[error("{}", .0.iter().map(ToString::to_string).collect::<Vec<_>>().join("; "))]
+pub struct StorageFailure(pub(crate) Vec<StorageError>);
+
+impl StorageFailure {
+    pub fn errors(&self) -> &[StorageError] {
+        &self.0
+    }
+}
+
+impl From<StorageError> for StorageFailure {
+    fn from(error: StorageError) -> Self {
+        Self(vec![error])
     }
 }

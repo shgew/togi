@@ -32,10 +32,12 @@ pub(crate) enum Observation {
         text: String,
     },
     /// A launcher exited before teardown began.
-    UnexpectedExit { instance: usize, detail: String },
+    UnexpectedExit {
+        instance: usize,
+        detail: String,
+    },
     /// A thread ran on a CPU outside the instance's allowed set.
     Escape {
-        instance: usize,
         cpu: CpuId,
         pid: u32,
         tid: u32,
@@ -46,15 +48,24 @@ pub(crate) enum Observation {
         cpu: u32,
         detail: String,
     },
-    LineTooLong { instance: usize, stream: Stream },
+    LineTooLong {
+        instance: usize,
+        stream: Stream,
+    },
     /// An output I/O failure: surfaces always, whatever else was selected.
     OutputError {
         instance: usize,
         stream: Stream,
         error: String,
     },
-    SamplingLoss { instance: usize, what: String },
-    NeverEntered { instance: usize, scope: String },
+    SamplingLoss {
+        instance: usize,
+        what: String,
+    },
+    NeverEntered {
+        instance: usize,
+        scope: String,
+    },
 }
 
 #[derive(Debug, PartialEq)]
@@ -163,18 +174,16 @@ impl Selector {
                 text,
             } => self.line(instance, pid, stream, line, text),
             Observation::UnexpectedExit { instance, detail } => {
-                self.pending_exit.get_or_insert(PendingExit { instance, detail });
+                self.pending_exit
+                    .get_or_insert(PendingExit { instance, detail });
                 Decision {
                     stop: true,
                     reports: Vec::new(),
                 }
             }
-            Observation::Escape {
-                instance: _,
-                cpu,
-                pid,
-                tid,
-            } => self.escape(cpu, "outside allowed cpus", pid, tid),
+            Observation::Escape { cpu, pid, tid } => {
+                self.escape(cpu, "outside allowed cpus", pid, tid)
+            }
             Observation::Stall {
                 instance,
                 pid,
@@ -238,7 +247,9 @@ impl Selector {
             }
             Observation::NeverEntered { instance, scope } => {
                 let core = self.core(instance);
-                self.weak_reason(|| format!("core {core:02} setup error: never entered scope {scope}"));
+                self.weak_reason(|| {
+                    format!("core {core:02} setup error: never entered scope {scope}")
+                });
                 Decision::default()
             }
         }
@@ -320,10 +331,7 @@ impl Selector {
     pub(crate) fn conclude(mut self) -> (Verdict, Vec<Report>) {
         let mut reports = Vec::new();
         if let Some(exit) = self.pending_exit.take() {
-            if !self.output_error
-                && !self.setup_error
-                && !self.escaped()
-                && self.failure.is_none()
+            if !self.output_error && !self.setup_error && !self.escaped() && self.failure.is_none()
             {
                 let core = self.core(exit.instance);
                 self.inconclusive = None;
@@ -381,7 +389,11 @@ mod tests {
     }
 
     fn affinity() -> Observation {
-        line(Stream::Stderr, Line::AffinityError(Some(CpuId(9))), "AFFINITY:9")
+        line(
+            Stream::Stderr,
+            Line::AffinityError(Some(CpuId(9))),
+            "AFFINITY:9",
+        )
     }
 
     fn too_long() -> Observation {
@@ -399,17 +411,20 @@ mod tests {
     fn progress_is_reported_from_stdout_only() {
         let mut s = selector();
         assert_eq!(
-            s.observe(line(Stream::Stdout, Line::Progress("ok".into()), "ok")).reports,
+            s.observe(line(Stream::Stdout, Line::Progress("ok".into()), "ok"))
+                .reports,
             [Report::Progress("ok".into())]
         );
-        assert!(s
-            .observe(line(Stream::Stderr, Line::Progress("ok".into()), "ok"))
-            .reports
-            .is_empty());
-        assert!(s
-            .observe(line(Stream::Watched, Line::Progress("ok".into()), "ok"))
-            .reports
-            .is_empty());
+        assert!(
+            s.observe(line(Stream::Stderr, Line::Progress("ok".into()), "ok"))
+                .reports
+                .is_empty()
+        );
+        assert!(
+            s.observe(line(Stream::Watched, Line::Progress("ok".into()), "ok"))
+                .reports
+                .is_empty()
+        );
     }
 
     #[test]
@@ -433,7 +448,10 @@ mod tests {
                 s.observe(observation);
             }
             let verdict = conclude(s);
-            assert_eq!(verdict.failure.map(|f| f.signal), Some(Signal::ComputationError));
+            assert_eq!(
+                verdict.failure.map(|f| f.signal),
+                Some(Signal::ComputationError)
+            );
             assert_eq!(verdict.inconclusive, None);
         }
     }
@@ -478,7 +496,10 @@ mod tests {
             detail: "1.0s cpu in 10.0s running".into(),
         });
         s.observe(compute());
-        assert_eq!(conclude(s).failure.map(|f| f.signal), Some(Signal::ComputationError));
+        assert_eq!(
+            conclude(s).failure.map(|f| f.signal),
+            Some(Signal::ComputationError)
+        );
     }
 
     #[test]
@@ -508,7 +529,6 @@ mod tests {
             what: "thread sampling lost".into(),
         });
         let decision = s.observe(Observation::Escape {
-            instance: 0,
             cpu: CpuId(5),
             pid: 10,
             tid: 11,
@@ -546,7 +566,10 @@ mod tests {
             what: "thread sampling lost".into(),
         });
         let verdict = conclude(s);
-        assert_eq!(verdict.failure.map(|f| f.signal), Some(Signal::ComputationError));
+        assert_eq!(
+            verdict.failure.map(|f| f.signal),
+            Some(Signal::ComputationError)
+        );
         assert_eq!(verdict.inconclusive, None);
     }
 
@@ -558,7 +581,10 @@ mod tests {
                 s.observe(observation);
             }
             let verdict = conclude(s);
-            assert_eq!(verdict.failure.map(|f| f.signal), Some(Signal::ComputationError));
+            assert_eq!(
+                verdict.failure.map(|f| f.signal),
+                Some(Signal::ComputationError)
+            );
             assert_eq!(verdict.inconclusive, None);
         }
         for order in [[too_long(), affinity()], [affinity(), too_long()]] {
@@ -595,7 +621,10 @@ mod tests {
         });
         s.observe(too_long());
         let verdict = conclude(s);
-        assert_eq!(verdict.failure.map(|f| f.signal), Some(Signal::ComputationError));
+        assert_eq!(
+            verdict.failure.map(|f| f.signal),
+            Some(Signal::ComputationError)
+        );
         assert_eq!(
             verdict.diagnostics,
             ["core 03 stderr.log: write output log: disk full"]
@@ -611,7 +640,10 @@ mod tests {
         let mut s = selector();
         assert!(s.observe(exit()).stop);
         let (verdict, reports) = s.conclude();
-        assert_eq!(verdict.failure.map(|f| f.signal), Some(Signal::UnexpectedExit));
+        assert_eq!(
+            verdict.failure.map(|f| f.signal),
+            Some(Signal::UnexpectedExit)
+        );
         assert_eq!(
             reports,
             [Report::Signal {
@@ -625,8 +657,17 @@ mod tests {
             s.observe(exit());
             s.observe(blocker);
             let (verdict, reports) = s.conclude();
-            assert_ne!(verdict.failure.map(|f| f.signal), Some(Signal::UnexpectedExit));
-            assert!(reports.iter().all(|r| !matches!(r, Report::Signal { signal: Signal::UnexpectedExit, .. })));
+            assert_ne!(
+                verdict.failure.map(|f| f.signal),
+                Some(Signal::UnexpectedExit)
+            );
+            assert!(reports.iter().all(|r| !matches!(
+                r,
+                Report::Signal {
+                    signal: Signal::UnexpectedExit,
+                    ..
+                }
+            )));
         }
     }
 
@@ -642,7 +683,10 @@ mod tests {
             detail: "exit status 0".into(),
         });
         let verdict = conclude(s);
-        assert_eq!(verdict.failure.map(|f| f.signal), Some(Signal::UnexpectedExit));
+        assert_eq!(
+            verdict.failure.map(|f| f.signal),
+            Some(Signal::UnexpectedExit)
+        );
         assert_eq!(verdict.inconclusive, None);
     }
 
@@ -666,7 +710,10 @@ mod tests {
             );
         }
         let mut s = selector();
-        assert!(!s.observe(line(Stream::Stdout, Line::Other, "Failed to execute")).stop);
+        assert!(
+            !s.observe(line(Stream::Stdout, Line::Other, "Failed to execute"))
+                .stop
+        );
     }
 
     #[test]

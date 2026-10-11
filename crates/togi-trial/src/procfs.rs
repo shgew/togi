@@ -95,7 +95,7 @@ pub(crate) fn scope_of(cgroup: &str) -> Option<ScopeName> {
         .filter_map(|line| line.splitn(3, ':').nth(2))
         .flat_map(|path| path.split('/'))
         .filter_map(|component| ScopeName::from_unit(component.trim()))
-        .last()
+        .next_back()
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -201,9 +201,9 @@ impl Proc {
             };
             let name = entry.file_name().to_string_lossy().into_owned();
             let Some(tid) = name.parse::<u32>().ok().filter(|tid| *tid > 0) else {
-                found
-                    .errors
-                    .push(ProcError::Observation(format!("task id {name:?} is not a thread")));
+                found.errors.push(ProcError::Observation(format!(
+                    "task id {name:?} is not a thread"
+                )));
                 continue;
             };
             match self.stat(&format!("{pid}/task/{tid}/stat")) {
@@ -298,7 +298,11 @@ mod tests {
 
     #[test]
     fn comm_with_spaces_and_parentheses_parses_and_cpu_time_uses_the_tick_rate() {
-        let text = stat_line("backend (worker)", 'R', &[(14, "125"), (15, "25"), (39, "7")]);
+        let text = stat_line(
+            "backend (worker)",
+            'R',
+            &[(14, "125"), (15, "25"), (39, "7")],
+        );
         let stat = parse_stat(&text).unwrap();
         assert_eq!((stat.utime, stat.stime, stat.processor), (125, 25, 7));
         assert_eq!(cpu_time(&stat, 100), Some(Duration::from_millis(1500)));
@@ -326,16 +330,36 @@ mod tests {
 
     #[test]
     fn malformed_stats_are_diagnosed_with_a_capped_quoted_excerpt() {
-        assert!(parse_stat("no delimiter here").unwrap_err().to_string().contains("\"no delimiter here\""));
-        assert!(parse_stat("1 (x) S 1 2").unwrap_err().to_string().contains("too few"));
+        assert!(
+            parse_stat("no delimiter here")
+                .unwrap_err()
+                .to_string()
+                .contains("\"no delimiter here\"")
+        );
+        assert!(
+            parse_stat("1 (x) S 1 2")
+                .unwrap_err()
+                .to_string()
+                .contains("too few")
+        );
         let long = format!("1 (x) {}", "z ".repeat(400));
         let error = parse_stat(&long).unwrap_err().to_string();
         assert!(error.ends_with(" (truncated)"));
         assert!(error.len() < 400);
         let negative = stat_line("x", 'R', &[(14, "-1")]);
-        assert!(parse_stat(&negative).unwrap_err().to_string().contains("negative"));
+        assert!(
+            parse_stat(&negative)
+                .unwrap_err()
+                .to_string()
+                .contains("negative")
+        );
         let bad = stat_line("x", 'R', &[(39, "cpu")]);
-        assert!(parse_stat(&bad).unwrap_err().to_string().contains("non-numeric"));
+        assert!(
+            parse_stat(&bad)
+                .unwrap_err()
+                .to_string()
+                .contains("non-numeric")
+        );
     }
 
     #[test]
@@ -343,7 +367,10 @@ mod tests {
         let cgroup = "0::/system.slice/togi-trial-a.scope\n";
         assert!(in_scope(cgroup, &scope("togi-trial-a")));
         assert!(!in_scope(cgroup, &scope("togi-trial-b")));
-        assert!(!in_scope("0::/system.slice/xtogi-trial-a.scope\n", &scope("togi-trial-a")));
+        assert!(!in_scope(
+            "0::/system.slice/xtogi-trial-a.scope\n",
+            &scope("togi-trial-a")
+        ));
     }
 
     #[test]
@@ -370,7 +397,15 @@ mod tests {
     fn usage_distinguishes_missing_from_malformed() {
         let (dir, proc) = fixture();
         assert_eq!(proc.usage(10), Err(ProcError::Gone));
-        write(&dir, "10/stat", &stat_line("backend (worker)", 'R', &[(14, "125"), (15, "25"), (39, "7")]));
+        write(
+            &dir,
+            "10/stat",
+            &stat_line(
+                "backend (worker)",
+                'R',
+                &[(14, "125"), (15, "25"), (39, "7")],
+            ),
+        );
         assert_eq!(
             proc.usage(10),
             Ok(Usage {
@@ -435,9 +470,15 @@ mod tests {
         let (dir, proc) = fixture();
         write(&dir, "20/cgroup", "0::/a/togi-trial-x.scope\n");
         write(&dir, "20/stat", "broken");
-        assert!(matches!(proc.scope_processes(), Err(ProcError::Observation(_))));
+        assert!(matches!(
+            proc.scope_processes(),
+            Err(ProcError::Observation(_))
+        ));
         let missing = Proc::new(dir.path().join("nowhere"), 100);
-        assert!(matches!(missing.scope_processes(), Err(ProcError::Observation(_))));
+        assert!(matches!(
+            missing.scope_processes(),
+            Err(ProcError::Observation(_))
+        ));
     }
 
     #[test]
@@ -452,9 +493,6 @@ mod tests {
         assert_eq!(proc.alive(&process), Ok(false));
         write(&dir, "30/stat", "broken");
         assert!(proc.alive(&process).is_err());
-        assert_eq!(
-            proc.alive(&ScopeProcess { pid: 31, ..process }),
-            Ok(false)
-        );
+        assert_eq!(proc.alive(&ScopeProcess { pid: 31, ..process }), Ok(false));
     }
 }

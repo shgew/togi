@@ -56,14 +56,19 @@ impl Backend for TestBackend {
                 .inputs
                 .iter()
                 .map(|(name, contents)| Input {
-                    name: name.parse::<FileName>().unwrap_or_else(|_| FileName::from_static("input")),
+                    name: name
+                        .parse::<FileName>()
+                        .unwrap_or_else(|_| FileName::from_static("input")),
                     contents: contents.as_bytes().to_vec(),
                 })
                 .collect(),
             watched: self
                 .watched
                 .iter()
-                .map(|name| name.parse::<FileName>().unwrap_or_else(|_| FileName::from_static("results.txt")))
+                .map(|name| {
+                    name.parse::<FileName>()
+                        .unwrap_or_else(|_| FileName::from_static("results.txt"))
+                })
                 .collect(),
         })
     }

@@ -2,9 +2,9 @@ use std::collections::BTreeSet;
 use std::rc::Rc;
 use std::time::Duration;
 
+use togi_machine::Stopped;
 use tokio::task::JoinSet;
 use tokio::time::{Instant, sleep, sleep_until, timeout_at};
-use togi_machine::Stopped;
 
 use crate::error::{CleanupFailure, Containment, Error};
 use crate::id::ScopeName;
@@ -69,9 +69,7 @@ async fn list<O: Os>(os: &O, end: Instant) -> Result<Vec<ScopeName>, Boxed> {
 }
 
 fn observe(what: &'static str, source: Boxed) -> Error {
-    Error::Containment(
-        Containment::new(CleanupFailure::Observe { what, source }).into(),
-    )
+    Error::Containment(Containment::new(CleanupFailure::Observe { what, source }).into())
 }
 
 /// Sends the same `operation` for every scope concurrently inside one slot.
@@ -95,7 +93,14 @@ async fn each_scope<O: Os>(
             let outcome = call(os.as_ref(), &kill, end).await;
             let stopped = match (&outcome, stop) {
                 (Ok(()), true) => Some(
-                    call(os.as_ref(), &Systemd::Stop { scope: scope.clone() }, end).await,
+                    call(
+                        os.as_ref(),
+                        &Systemd::Stop {
+                            scope: scope.clone(),
+                        },
+                        end,
+                    )
+                    .await,
                 ),
                 _ => None,
             };
@@ -119,7 +124,7 @@ async fn each_scope<O: Os>(
     }
 }
 
-async fn gone<O: Os>(os: &O, captured: &[ScopeProcess]) -> Result<bool, Boxed> {
+fn gone<O: Os>(os: &O, captured: &[ScopeProcess]) -> Result<bool, Boxed> {
     for process in captured {
         if os
             .process_alive(process)
@@ -153,19 +158,10 @@ pub(crate) async fn sweep<O: Os>(env: &Env<O>) -> Result<(String, Stopped), Erro
 
     let grace_end = deadline.min(Instant::now() + timing.stop_grace);
     for signal in [KillSignal::Cont, KillSignal::Term] {
-        each_scope(
-            os,
-            &scopes,
-            grace_end,
-            signal,
-            &mut failures,
-            false,
-        )
-        .await;
+        each_scope(os, &scopes, grace_end, signal, &mut failures, false).await;
     }
     while Instant::now() < grace_end {
         if gone(os.as_ref(), &captured)
-            .await
             .map_err(|source| observe("a captured trial process", source))?
         {
             break;
@@ -174,21 +170,12 @@ pub(crate) async fn sweep<O: Os>(env: &Env<O>) -> Result<(String, Stopped), Erro
     }
 
     let kill_end = deadline.min(Instant::now() + timing.kill_slot);
-    each_scope(
-        os,
-        &scopes,
-        kill_end,
-        KillSignal::Kill,
-        &mut failures,
-        true,
-    )
-    .await;
+    each_scope(os, &scopes, kill_end, KillSignal::Kill, &mut failures, true).await;
 
     let verify_end = deadline.min(Instant::now() + timing.drain);
     let mut leftover = true;
     while Instant::now() < verify_end {
         let processes_gone = gone(os.as_ref(), &captured)
-            .await
             .map_err(|source| observe("a captured trial process", source))?;
         let remaining = list(os.as_ref(), verify_end)
             .await
@@ -241,7 +228,9 @@ pub(crate) async fn probe<O: Os>(env: &Env<O>) -> Result<String, Error> {
     let end = Instant::now() + env.timing.probe;
     let operation = Systemd::Probe { unit, identity };
     match timeout_at(end, env.os.systemd(&operation, end)).await {
-        Ok(Ok(output)) if output.status.success() => Ok("scope confined to cpu 0 created".to_owned()),
+        Ok(Ok(output)) if output.status.success() => {
+            Ok("scope confined to cpu 0 created".to_owned())
+        }
         Ok(Ok(output)) => Err(Error::Probe {
             detail: format!(
                 "systemd-run exited with {}: {}",

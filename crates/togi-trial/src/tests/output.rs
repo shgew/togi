@@ -5,8 +5,8 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use test_case::test_case;
-use tokio::io::AsyncWriteExt as _;
 use togi_machine::{CancellationToken, CpuId, Regime, Signal};
+use tokio::io::AsyncWriteExt as _;
 
 use super::harness::{finish, local, rig_edit, rig_with, spec};
 use crate::error::{CleanupFailure, Error};
@@ -39,7 +39,10 @@ fn results(command: &crate::launch::LaunchCommand) -> PathBuf {
 }
 
 /// A process that emits `bytes` on one source, then lives until killed.
-fn emits(source: Source, bytes: Vec<u8>) -> impl FnMut(usize, &crate::launch::LaunchCommand) -> Launch {
+fn emits(
+    source: Source,
+    bytes: Vec<u8>,
+) -> impl FnMut(usize, &crate::launch::LaunchCommand) -> Launch {
     emits_lingering(source, bytes, false)
 }
 
@@ -90,7 +93,9 @@ async fn an_oversized_line_is_inconclusive_keeps_its_prefix_and_is_not_containme
         let result = &run.finished.result;
         assert_eq!(
             result.inconclusive,
-            Some(format!("core 00 read {name}: backend output line exceeds 64 KiB"))
+            Some(format!(
+                "core 00 read {name}: backend output line exceeds 64 KiB"
+            ))
         );
         assert_eq!((result.failure, result.escaped.len()), (None, 0));
         assert!(run.finished.teardown.is_ok());
@@ -170,7 +175,11 @@ async fn computation_and_affinity_errors_win_over_the_cap_in_either_order(
         let rig = rig_with(TestBackend::new("/bin/true"), Timing::default());
         rig.fake.on_launch(move |_, _| {
             Launch::Run(script(move |mut ctx: ProcCtx| async move {
-                let text = if affinity { "AFFINITY:3\n" } else { "COMPUTE ERROR\n" };
+                let text = if affinity {
+                    "AFFINITY:3\n"
+                } else {
+                    "COMPUTE ERROR\n"
+                };
                 if line_first {
                     ctx.eprint(text).await;
                     tokio::time::sleep(Duration::from_millis(10)).await;
@@ -191,7 +200,10 @@ async fn computation_and_affinity_errors_win_over_the_cap_in_either_order(
             assert_eq!(result.escaped, [CpuId(3)]);
             assert_eq!(result.failure, None);
         } else {
-            assert_eq!(result.failure.map(|f| f.signal), Some(Signal::ComputationError));
+            assert_eq!(
+                result.failure.map(|f| f.signal),
+                Some(Signal::ComputationError)
+            );
             assert!(result.escaped.is_empty());
         }
     })
@@ -202,7 +214,8 @@ async fn computation_and_affinity_errors_win_over_the_cap_in_either_order(
 async fn the_cap_never_hides_cleanup_or_ordinary_io_errors() {
     local(async {
         let rig = rig_with(TestBackend::new("/bin/true"), Timing::default());
-        rig.fake.on_launch(emits_lingering(Source::Stderr, vec![b'x'; 1 << 20], true));
+        rig.fake
+            .on_launch(emits_lingering(Source::Stderr, vec![b'x'; 1 << 20], true));
         rig.fake.on_systemd(|call| match call {
             Systemd::Kill { .. } => Some(Reply::Fail(togi_command::Error::Spawn {
                 program: "systemctl".into(),
@@ -220,14 +233,18 @@ async fn the_cap_never_hides_cleanup_or_ordinary_io_errors() {
         );
         assert!(matches!(&run.finished.errors[..], [Error::Output(_)]));
         let containment = run.finished.teardown.unwrap_err();
-        assert!(containment
-            .failures()
-            .iter()
-            .any(|failure| matches!(failure, CleanupFailure::KillScope { .. })));
-        assert!(containment
-            .failures()
-            .iter()
-            .any(|failure| matches!(failure, CleanupFailure::ReadPipe { .. })));
+        assert!(
+            containment
+                .failures()
+                .iter()
+                .any(|failure| matches!(failure, CleanupFailure::KillScope { .. }))
+        );
+        assert!(
+            containment
+                .failures()
+                .iter()
+                .any(|failure| matches!(failure, CleanupFailure::ReadPipe { .. }))
+        );
     })
     .await;
 }
@@ -436,10 +453,12 @@ async fn unread_accepted_watched_bytes_that_vanish_are_lost_output_and_containme
         let handle = rig.start(spec(Regime::R1, &[0], secs(5))).await.unwrap();
         let run = finish(&handle).await;
         let containment = run.finished.teardown.unwrap_err();
-        assert!(containment
-            .failures()
-            .iter()
-            .any(|failure| matches!(failure, CleanupFailure::WatchedLost { .. })));
+        assert!(
+            containment
+                .failures()
+                .iter()
+                .any(|failure| matches!(failure, CleanupFailure::WatchedLost { .. }))
+        );
         assert!(run.finished.result.inconclusive.is_some());
         assert_eq!(run.finished.result.failure, None);
     })
@@ -495,14 +514,17 @@ async fn a_watched_partial_is_classified_only_after_the_scope_kill_confirms_the_
                     match delivery {
                         Delivery::Group(GroupSignal::Term) => {
                             use std::io::Write as _;
-                            let mut handle = std::fs::OpenOptions::new().append(true).open(&file).unwrap();
+                            let mut handle = std::fs::OpenOptions::new()
+                                .append(true)
+                                .open(&file)
+                                .unwrap();
                             handle.write_all(b" ERROR").unwrap();
                         }
                         Delivery::Scope(_) => {
                             ctx.exit(ExitInfo::Signal(9));
                             return;
                         }
-                        _ => {}
+                        Delivery::Group(_) => {}
                     }
                 }
             }))
@@ -553,7 +575,7 @@ async fn an_unscoped_watched_partial_needs_a_group_kill_that_actually_succeeded(
         let rig = rig_edit(watching(), Timing::default(), |env| env.unscoped = true);
         rig.fake.on_launch(|_, command| {
             let file = results(command);
-            Launch::Run(script(move |mut ctx: ProcCtx| async move {
+            Launch::Run(script(move |ctx: ProcCtx| async move {
                 std::fs::write(&file, "COMPUTE ERROR").unwrap();
                 tokio::time::sleep(Duration::from_millis(2500)).await;
                 ctx.exit(ExitInfo::Code(0));
@@ -601,7 +623,11 @@ async fn writers_confirmed_for_one_instance_keep_their_evidence_when_another_sco
         cancel.cancel();
         let run = finish(&handle).await;
         let failure = run.finished.result.failure.unwrap();
-        assert_eq!(failure.core, super::harness::core(1), "c01's writers were confirmed");
+        assert_eq!(
+            failure.core,
+            super::harness::core(1),
+            "c01's writers were confirmed"
+        );
         assert!(run.finished.teardown.is_err());
     })
     .await;

@@ -1,9 +1,9 @@
 use std::rc::Rc;
 
+use togi_machine::Stopped;
 use tokio::sync::mpsc::Receiver;
 use tokio::task::JoinSet;
 use tokio::time::{Instant, sleep_until, timeout_at};
-use togi_machine::Stopped;
 
 use crate::error::{CleanupFailure, Containment};
 use crate::evidence::Stream;
@@ -348,8 +348,7 @@ impl<'a, O: Os> Teardown<'a, O, Reaped> {
             }
         }
         let unfinished = self.live.instances.iter().any(|instance| {
-            !instance.readers_closed()
-                || instance.watched.iter().any(|file| !file.drained())
+            !instance.readers_closed() || instance.watched.iter().any(|file| !file.drained())
         });
         if timed_out || unfinished {
             self.failures.record(CleanupFailure::DrainDeadline);
@@ -395,4 +394,3 @@ impl<O: Os> Teardown<'_, O, ReadersDone> {
         Ended { proof }
     }
 }
-

@@ -4,10 +4,10 @@ use std::sync::mpsc::{Receiver, SyncSender, channel, sync_channel};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
+use togi_machine::{CancellationToken, Partial, Stopped, Swept, TrialSpec};
 use tokio::sync::Notify;
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 use tokio::task::LocalSet;
-use togi_machine::{CancellationToken, Partial, Stopped, Swept, TrialSpec};
 
 use crate::error::Error;
 use crate::os::Os;

@@ -5,13 +5,14 @@
 //! signal, free to print, sleep, ignore `SIGTERM` or hold the pipes after its leader exited.
 
 use std::cell::{Cell, RefCell};
+use std::fmt::Write as _;
 use std::future::Future;
 use std::io;
 use std::os::unix::process::ExitStatusExt as _;
 use std::pin::Pin;
 use std::process::ExitStatus;
-use std::task::{Context, Poll, Waker};
 use std::rc::Rc;
+use std::task::{Context, Poll, Waker};
 use std::time::Duration;
 
 use tokio::io::{AsyncRead, AsyncWriteExt as _, DuplexStream, ReadBuf, duplex};
@@ -41,7 +42,10 @@ pub(crate) enum Launch {
 
 /// What the fake systemd answers to one call.
 pub(crate) enum Reply {
-    Output { success: bool, text: String },
+    Output {
+        success: bool,
+        text: String,
+    },
     /// Never answers: the call runs to its deadline and times out.
     Hang,
     Fail(togi_command::Error),
@@ -157,7 +161,10 @@ impl ProcCtx {
     /// Ignores `SIGTERM`: only `SIGKILL` of the group or a scope kill ends it.
     pub(crate) async fn until_killed_ignoring_term(&mut self) {
         self.until(|delivery| {
-            matches!(delivery, Delivery::Group(GroupSignal::Kill) | Delivery::Scope(_))
+            matches!(
+                delivery,
+                Delivery::Group(GroupSignal::Kill) | Delivery::Scope(_)
+            )
         })
         .await;
     }
@@ -246,7 +253,13 @@ where
 
 fn scope_in(command: &LaunchCommand) -> Option<String> {
     let position = command.argv.iter().position(|arg| arg == "--unit")?;
-    Some(command.argv.get(position + 1)?.to_string_lossy().into_owned())
+    Some(
+        command
+            .argv
+            .get(position + 1)?
+            .to_string_lossy()
+            .into_owned(),
+    )
 }
 
 impl Fake {
@@ -449,7 +462,9 @@ impl Os for Fake {
         processes
             .iter()
             .find(|process| process.pid == pid)
-            .map_or(Err(ProcError::Gone), |process| process.usage.borrow().clone())
+            .map_or(Err(ProcError::Gone), |process| {
+                process.usage.borrow().clone()
+            })
     }
 
     fn threads(&self, pid: u32) -> Result<Threads, ProcError> {
@@ -457,7 +472,9 @@ impl Os for Fake {
         processes
             .iter()
             .find(|process| process.pid == pid)
-            .map_or(Err(ProcError::Gone), |process| clone_threads(&process.threads.borrow()))
+            .map_or(Err(ProcError::Gone), |process| {
+                clone_threads(&process.threads.borrow())
+            })
     }
 
     async fn systemd(
@@ -470,24 +487,28 @@ impl Os for Fake {
             .borrow_mut()
             .push((operation.clone(), Instant::now()));
         let scripted = (self.shared.systemd_script.borrow_mut())(operation);
-        let reply = match scripted {
-            Some(reply) => reply,
-            None => {
-                let mut text = String::new();
-                match operation {
-                    Systemd::Kill { scope, signal } => self.deliver_to_scope(scope, *signal),
-                    Systemd::Stop { scope } => self.shared.units.borrow_mut().retain(|unit| *unit != scope.unit()),
-                    Systemd::ListScopes => {
-                        for unit in self.shared.units.borrow().iter() {
-                            text.push_str(&format!("{unit} loaded active running trial\n"));
-                        }
+        let reply = if let Some(reply) = scripted {
+            reply
+        } else {
+            let mut text = String::new();
+            match operation {
+                Systemd::Kill { scope, signal } => self.deliver_to_scope(scope, *signal),
+                Systemd::Stop { scope } => {
+                    self.shared
+                        .units
+                        .borrow_mut()
+                        .retain(|unit| *unit != scope.unit());
+                }
+                Systemd::ListScopes => {
+                    for unit in self.shared.units.borrow().iter() {
+                        let _ = writeln!(text, "{unit} loaded active running trial");
                     }
-                    Systemd::Probe { .. } => {}
                 }
-                Reply::Output {
-                    success: true,
-                    text,
-                }
+                Systemd::Probe { .. } => {}
+            }
+            Reply::Output {
+                success: true,
+                text,
             }
         };
         match reply {
@@ -532,7 +553,11 @@ fn clone_threads(threads: &Result<Threads, ProcError>) -> Result<Threads, ProcEr
     match threads {
         Ok(found) => Ok(Threads {
             threads: found.threads.clone(),
-            errors: found.errors.iter().map(|e| ProcError::Observation(e.to_string())).collect(),
+            errors: found
+                .errors
+                .iter()
+                .map(|e| ProcError::Observation(e.to_string()))
+                .collect(),
         }),
         Err(error) => Err(match error {
             ProcError::Gone => ProcError::Gone,

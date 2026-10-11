@@ -95,7 +95,7 @@ mod tests {
     #[test]
     fn lf_cr_and_crlf_each_end_a_line() {
         let (out, mut framer) = frames(&[b"a\nb\rc\r\nd"]);
-        assert_eq!(out, [line("a"), line("b"), line("c"), line(""), ]);
+        assert_eq!(out, [line("a"), line("b"), line("c"), line(""),]);
         assert_eq!(framer.finish().as_deref(), Some("d"));
     }
 
@@ -136,7 +136,10 @@ mod tests {
         let mut framer = Framer::default();
         let consumed = framer.push(&over, &mut |_| ControlFlow::Continue(()));
         assert_eq!(consumed, LINE_LIMIT);
-        assert_eq!(framer.push(b"more\n", &mut |_| ControlFlow::Continue(())), 0);
+        assert_eq!(
+            framer.push(b"more\n", &mut |_| ControlFlow::Continue(())),
+            0
+        );
     }
 
     #[test]
@@ -152,7 +155,12 @@ mod tests {
             }
         });
         assert_eq!(consumed, 8);
-        assert_eq!(framer.push(&b"one\ntwo\nthree\n"[consumed..], &mut |_| ControlFlow::Continue(())), 6);
+        assert_eq!(
+            framer.push(&b"one\ntwo\nthree\n"[consumed..], &mut |_| {
+                ControlFlow::Continue(())
+            }),
+            6
+        );
     }
 
     #[test]

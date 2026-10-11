@@ -175,7 +175,9 @@ mod tests {
     }
 
     fn strings(argv: &[OsString]) -> Vec<String> {
-        argv.iter().map(|a| a.to_string_lossy().into_owned()).collect()
+        argv.iter()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect()
     }
 
     #[test]
@@ -192,9 +194,25 @@ mod tests {
         assert_eq!(
             strings(&argv),
             [
-                "systemd-run", "--scope", "--quiet", "--collect", "--unit", "togi-trial-t1-c00",
-                "--uid", "997", "--gid", "996", "--working-directory", "/trials/t1/c00", "-p",
-                "AllowedCPUs=2,18", "-p", "DefaultDependencies=no", "--", "/bin/mprime", "-t",
+                "systemd-run",
+                "--scope",
+                "--quiet",
+                "--collect",
+                "--unit",
+                "togi-trial-t1-c00",
+                "--uid",
+                "997",
+                "--gid",
+                "996",
+                "--working-directory",
+                "/trials/t1/c00",
+                "-p",
+                "AllowedCPUs=2,18",
+                "-p",
+                "DefaultDependencies=no",
+                "--",
+                "/bin/mprime",
+                "-t",
             ]
         );
     }
@@ -202,7 +220,14 @@ mod tests {
     #[test]
     fn a_user_manager_adds_the_user_flag_first() {
         let identity = BackendIdentity::new(1001, 1002).unwrap();
-        let argv = scope_argv(scope().as_str(), identity, true, std::path::Path::new("/"), &[CpuId(0)], &["x".into()]);
+        let argv = scope_argv(
+            scope().as_str(),
+            identity,
+            true,
+            std::path::Path::new("/"),
+            &[CpuId(0)],
+            &["x".into()],
+        );
         assert_eq!(strings(&argv)[..2], ["systemd-run", "--user"]);
     }
 
@@ -225,7 +250,13 @@ mod tests {
             &plan,
         );
         assert!(scoped.pin.is_empty(), "the scope's cpuset confines it");
-        let command = command_for(Confinement::Unscoped, &scope(), std::path::Path::new("/tmp"), &[CpuId(0)], &plan);
+        let command = command_for(
+            Confinement::Unscoped,
+            &scope(),
+            std::path::Path::new("/tmp"),
+            &[CpuId(0)],
+            &plan,
+        );
         assert_eq!(strings(&command.argv), ["/bin/true", "a"]);
         assert_eq!(command.cwd, std::path::Path::new("/tmp"));
         assert_eq!(command.pin, [CpuId(0)]);

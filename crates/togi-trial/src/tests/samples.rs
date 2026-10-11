@@ -8,9 +8,10 @@ use togi_machine::{CancellationToken, Regime, Signal};
 
 use super::harness::{core, finish, local, rig, rig_edit, spec};
 use crate::error::Error;
+use crate::error::StorageError;
 use crate::os::GroupSignal;
 use crate::os::fake::{Launch, ProcCtx, script};
-use crate::samples::{Open, Storage, StorageError};
+use crate::samples::{Open, Storage};
 use crate::testing::TestBackend;
 use crate::timing::Timing;
 
@@ -64,13 +65,16 @@ async fn each_tick_persists_a_conditions_sample_with_sensors_workers_and_power()
         assert_eq!(samples[1].elapsed_ms, 2000);
         for (index, sample) in samples.iter().enumerate() {
             assert_eq!(sample.tctl_c, Some(62));
-            assert_eq!(sample.tccd_c.as_ref().and_then(|m| m.get("Tccd1")), Some(&58));
+            assert_eq!(
+                sample.tccd_c.as_ref().and_then(|m| m.get("Tccd1")),
+                Some(&58)
+            );
             assert_eq!(sample.core_mhz.get(core(2)), Some(4500));
             assert_eq!(sample.core_mhz.len(), 1);
             assert_eq!(sample.package_power_w, Some(10.0));
             assert_eq!(
                 sample.worker_cpu_ms.get(core(2)),
-                Some(1000 * (index as i64 + 1))
+                Some(1000 * (i64::try_from(index).unwrap() + 1))
             );
             assert!(sample.pm_table.is_none());
         }
@@ -120,7 +124,8 @@ fn blocked_open(
     Rc::new(move || {
         let parts = slot.lock().unwrap().take();
         Box::new(move || {
-            let (gate, lines) = parts.ok_or_else(|| StorageError::Create(std::io::Error::other("reused")))?;
+            let (gate, lines) =
+                parts.ok_or_else(|| StorageError::Create(std::io::Error::other("reused")))?;
             Ok(Box::new(Blocking { gate, lines }) as Box<dyn Storage>)
         })
     })
@@ -162,7 +167,10 @@ async fn slow_storage_neither_delays_load_steps_nor_the_trial_and_the_join_is_bo
             .collect();
         assert_eq!(steps, expected);
         assert_eq!(run.finished.result.ran, secs(3));
-        assert!(run.finished.teardown.is_ok(), "storage is never containment");
+        assert!(
+            run.finished.teardown.is_ok(),
+            "storage is never containment"
+        );
         assert!(matches!(
             &run.finished.errors[..],
             [Error::Storage(failure)] if matches!(failure.errors(), [StorageError::JoinTimeout(_)])
@@ -187,7 +195,10 @@ async fn an_open_failure_ends_the_trial_early_without_delaying_teardown() {
         let handle = rig.start(spec(Regime::R1, &[0], secs(30))).await.unwrap();
         let begun = std::time::Instant::now();
         let run = finish(&handle).await;
-        assert!(begun.elapsed() < secs(5), "the open failure ended a 30 s trial");
+        assert!(
+            begun.elapsed() < secs(5),
+            "the open failure ended a 30 s trial"
+        );
         assert!(run.finished.result.ran < secs(5));
         assert!(matches!(&run.finished.errors[..], [Error::Storage(_)]));
         assert!(run.finished.teardown.is_ok());
@@ -215,7 +226,9 @@ async fn a_write_failure_ends_the_trial_and_keeps_the_close_error_too() {
             ..Timing::default()
         };
         let rig = rig_edit(TestBackend::new("/bin/true"), timing, |env| {
-            env.storage = Some(Rc::new(|| Box::new(|| Ok(Box::new(Failing) as Box<dyn Storage>))));
+            env.storage = Some(Rc::new(|| {
+                Box::new(|| Ok(Box::new(Failing) as Box<dyn Storage>))
+            }));
         });
         let handle = rig.start(spec(Regime::R1, &[0], secs(30))).await.unwrap();
         let run = finish(&handle).await;
@@ -254,10 +267,17 @@ async fn cancelling_while_storage_setup_blocks_stops_the_workload_and_joins_the_
         cancel.cancel();
         gate.send(()).unwrap();
         let run = finish(&handle).await;
-        assert!(matches!(run.finished.errors.first(), Some(Error::Cancelled)));
+        assert!(matches!(
+            run.finished.errors.first(),
+            Some(Error::Cancelled)
+        ));
         assert!(run.finished.teardown.is_ok());
         assert_eq!(rig.fake.process(0).signals.borrow()[0], GroupSignal::Cont);
-        let _ = (Signal::Stall, script(|_: ProcCtx| async {}), Launch::Fail(std::io::Error::other("x")));
+        let _ = (
+            Signal::Stall,
+            script(|_: ProcCtx| async {}),
+            Launch::Fail(std::io::Error::other("x")),
+        );
     })
     .await;
 }

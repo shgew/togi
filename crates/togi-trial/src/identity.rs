@@ -73,3 +73,74 @@ impl BackendIdentity {
         self.gid
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ids_are_bounded_away_from_root_and_the_unchanged_sentinel() {
+        assert!(BackendIdentity::new(997, 996).is_ok());
+        assert!(BackendIdentity::new(1, u32::MAX - 1).is_ok());
+        assert!(matches!(
+            BackendIdentity::new(0, 996),
+            Err(IdentityError::Reserved {
+                kind: IdKind::User,
+                value: 0
+            })
+        ));
+        assert!(matches!(
+            BackendIdentity::new(997, 0),
+            Err(IdentityError::Reserved {
+                kind: IdKind::Group,
+                value: 0
+            })
+        ));
+        assert!(matches!(
+            BackendIdentity::new(u32::MAX, 996),
+            Err(IdentityError::Reserved {
+                kind: IdKind::User,
+                ..
+            })
+        ));
+        assert!(matches!(
+            BackendIdentity::new(997, u32::MAX),
+            Err(IdentityError::Reserved {
+                kind: IdKind::Group,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn an_empty_or_unknown_account_is_refused_not_defaulted() {
+        assert!(matches!(
+            BackendIdentity::lookup(""),
+            Err(IdentityError::EmptyName)
+        ));
+        assert!(matches!(
+            BackendIdentity::lookup("togi-no-such-account-4f2a"),
+            Err(IdentityError::Unknown { .. })
+        ));
+    }
+
+    #[test]
+    fn root_is_refused_by_name() {
+        assert!(matches!(
+            BackendIdentity::lookup("root"),
+            Err(IdentityError::Reserved { value: 0, .. })
+        ));
+    }
+
+    #[test]
+    fn an_ordinary_account_resolves_to_its_uid_and_primary_gid() {
+        let Ok(Some(user)) = User::from_name("nobody") else {
+            return;
+        };
+        let identity = BackendIdentity::lookup("nobody").unwrap();
+        assert_eq!(
+            (identity.uid(), identity.gid()),
+            (user.uid.as_raw(), user.gid.as_raw())
+        );
+    }
+}

@@ -19,17 +19,17 @@ fn secs(n: u64) -> Duration {
 async fn a_quiet_trial_runs_its_whole_duration_and_teardown_stops_it() {
     local(async {
         let rig = rig();
-        let handle = rig
-            .start(spec(Regime::R1, &[2], secs(10)))
-            .await
-            .unwrap();
+        let handle = rig.start(spec(Regime::R1, &[2], secs(10))).await.unwrap();
         let started = tokio::time::Instant::now();
         let run = finish(&handle).await;
         assert!(started.elapsed() >= secs(10));
         assert!(run.finished.teardown.is_ok());
         assert!(run.finished.errors.is_empty());
         let result = &run.finished.result;
-        assert_eq!((result.failure, result.inconclusive.as_deref()), (None, None));
+        assert_eq!(
+            (result.failure, result.inconclusive.as_deref()),
+            (None, None)
+        );
         assert_eq!(result.ran, secs(10));
         let process = rig.fake.process(0);
         assert!(process.reaped.get());
@@ -67,7 +67,10 @@ async fn a_computation_error_ends_the_trial_and_names_the_core() {
         let handle = rig.start(spec(Regime::R1, &[3], secs(60))).await.unwrap();
         let run = finish(&handle).await;
         let failure = run.finished.result.failure.unwrap();
-        assert_eq!((failure.signal, failure.core), (Signal::ComputationError, core(3)));
+        assert_eq!(
+            (failure.signal, failure.core),
+            (Signal::ComputationError, core(3))
+        );
         assert!(run.finished.result.ran < secs(1));
         assert_eq!(run.signals(), [(core(3), Signal::ComputationError)]);
         assert!(run.finished.teardown.is_ok());
@@ -87,7 +90,10 @@ async fn an_early_exit_is_an_unexpected_exit_of_that_core() {
         let handle = rig.start(spec(Regime::R2, &[1], secs(60))).await.unwrap();
         let run = finish(&handle).await;
         let failure = run.finished.result.failure.unwrap();
-        assert_eq!((failure.signal, failure.core), (Signal::UnexpectedExit, core(1)));
+        assert_eq!(
+            (failure.signal, failure.core),
+            (Signal::UnexpectedExit, core(1))
+        );
         assert_eq!(run.signals(), [(core(1), Signal::UnexpectedExit)]);
         assert!(run.finished.teardown.is_ok());
     })
@@ -195,10 +201,7 @@ async fn r7_runs_one_instance_per_core_and_progress_names_the_core() {
     local(async {
         let rig = rig();
         rig.fake.on_launch(printing("ok working\n"));
-        let handle = rig
-            .start(spec(Regime::R7, &[1, 5], secs(3)))
-            .await
-            .unwrap();
+        let handle = rig.start(spec(Regime::R7, &[1, 5], secs(3))).await.unwrap();
         assert_eq!(handle.started.instances.len(), 2);
         assert_eq!(handle.started.instances[0].scope, "togi-trial-t1-c01");
         assert_eq!(handle.started.instances[1].scope, "togi-trial-t1-c05");
@@ -208,7 +211,10 @@ async fn r7_runs_one_instance_per_core_and_progress_names_the_core() {
         progress.sort_unstable();
         assert_eq!(progress, ["core 01 ok working", "core 05 ok working"]);
         assert_eq!(run.finished.result.failure, None);
-        assert_eq!((run.finished.result.stops, run.finished.result.conts), (0, 0));
+        assert_eq!(
+            (run.finished.result.stops, run.finished.result.conts),
+            (0, 0)
+        );
     })
     .await;
 }

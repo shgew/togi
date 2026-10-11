@@ -5,9 +5,7 @@ use std::time::Duration;
 use test_case::test_case;
 use togi_machine::{CancellationToken, Regime, Signal};
 
-use super::harness::{
-    core, crate_error, finish, local, printing, rig, rig_edit, rig_with, spec,
-};
+use super::harness::{core, crate_error, finish, local, printing, rig, rig_edit, rig_with, spec};
 use crate::error::{CleanupFailure, Error};
 use crate::id::ScopeName;
 use crate::os::fake::{Launch, ProcCtx, Reply, script};
@@ -65,7 +63,10 @@ async fn teardown_shares_one_fifteen_second_budget_across_instances(count: u8) {
         cancel.cancel();
         let run = finish(&handle).await;
         let elapsed = begun.elapsed();
-        assert!(elapsed >= secs(15) && elapsed <= secs(15) + Duration::from_millis(50), "{elapsed:?}");
+        assert!(
+            elapsed >= secs(15) && elapsed <= secs(15) + Duration::from_millis(50),
+            "{elapsed:?}"
+        );
         let containment = run.finished.teardown.unwrap_err();
         assert!(matches!(
             containment.failures().first(),
@@ -79,11 +80,12 @@ async fn teardown_shares_one_fifteen_second_budget_across_instances(count: u8) {
         }
         assert_eq!(kills(&rig.fake.systemd_calls()).len(), usize::from(count));
         let slot_end = begun + secs(5);
-        assert!(rig
-            .fake
-            .systemd_calls()
-            .iter()
-            .all(|(_, at)| *at <= slot_end));
+        assert!(
+            rig.fake
+                .systemd_calls()
+                .iter()
+                .all(|(_, at)| *at <= slot_end)
+        );
     })
     .await;
 }
@@ -191,7 +193,9 @@ async fn a_partial_start_that_confirms_keeps_its_cause_without_containment() {
         let rig = rig();
         rig.fake.on_launch(|n, command| {
             if n == 0 {
-                Launch::Run(script(|mut ctx: ProcCtx| async move { ctx.until_killed().await }))
+                Launch::Run(script(|mut ctx: ProcCtx| async move {
+                    ctx.until_killed().await;
+                }))
             } else {
                 let _ = command;
                 Launch::Fail(std::io::Error::other("systemd-run missing"))
@@ -235,7 +239,11 @@ async fn nothing_launches_when_preparation_fails() {
         assert!(rig.fake.launches().is_empty());
 
         let rig = rig_with(TestBackend::new(""), Timing::default());
-        let partial = rig.start(spec(Regime::R1, &[0], secs(5))).await.err().unwrap();
+        let partial = rig
+            .start(spec(Regime::R1, &[0], secs(5)))
+            .await
+            .err()
+            .unwrap();
         assert!(partial.value.is_some());
         assert!(rig.fake.launches().is_empty());
 
@@ -244,7 +252,11 @@ async fn nothing_launches_when_preparation_fails() {
             std::fs::write(&obstacle, "x").unwrap();
             env.dir = obstacle.join("trials");
         });
-        let partial = rig.start(spec(Regime::R1, &[0], secs(5))).await.err().unwrap();
+        let partial = rig
+            .start(spec(Regime::R1, &[0], secs(5)))
+            .await
+            .err()
+            .unwrap();
         assert!(partial.value.is_some());
         assert!(rig.fake.launches().is_empty());
     })
@@ -264,14 +276,22 @@ async fn an_invalid_spec_or_missing_backend_or_identity_never_touches_the_disk()
         let rig = rig_edit(TestBackend::new("/bin/true"), Timing::default(), |env| {
             env.backends = crate::runner::Backends::new();
         });
-        let partial = rig.start(spec(Regime::R1, &[0], secs(5))).await.err().unwrap();
+        let partial = rig
+            .start(spec(Regime::R1, &[0], secs(5)))
+            .await
+            .err()
+            .unwrap();
         assert!(matches!(partial.error, togi_machine::Error::BackendMissing));
         assert!(partial.value.is_some());
 
         let rig = rig_edit(TestBackend::new("/bin/true"), Timing::default(), |env| {
             env.identity = None;
         });
-        let partial = rig.start(spec(Regime::R1, &[0], secs(5))).await.err().unwrap();
+        let partial = rig
+            .start(spec(Regime::R1, &[0], secs(5)))
+            .await
+            .err()
+            .unwrap();
         assert!(matches!(
             crate_error(&partial.error),
             Some(Error::Identity(crate::IdentityError::NotConfigured))
@@ -306,7 +326,10 @@ async fn final_unterminated_pipe_output_survives_confirmed_and_unconfirmed_clean
             cancel.cancel();
             let run = finish(&handle).await;
             let failure = run.finished.result.failure.unwrap();
-            assert_eq!((failure.signal, failure.core), (Signal::ComputationError, core(4)));
+            assert_eq!(
+                (failure.signal, failure.core),
+                (Signal::ComputationError, core(4))
+            );
             assert_eq!(run.finished.teardown.is_err(), hang_scope);
         })
         .await;
@@ -324,7 +347,10 @@ async fn a_pipe_read_error_is_kept_as_containment_and_evidence() {
         let containment = run.finished.teardown.unwrap_err();
         assert!(matches!(
             containment.failures().first(),
-            Some(CleanupFailure::ReadPipe { stream: "stdout.log", .. })
+            Some(CleanupFailure::ReadPipe {
+                stream: "stdout.log",
+                ..
+            })
         ));
         assert!(matches!(&run.finished.errors[..], [Error::Output(_)]));
         assert!(run.finished.result.inconclusive.is_some());
@@ -357,6 +383,60 @@ async fn a_process_that_ignores_term_gets_killed_after_the_grace() {
         let _ = ExitInfo::Code(0);
         let _ = ScopeName::from_unit("togi-trial-x.scope");
         let _ = printing("");
+    })
+    .await;
+}
+
+/// The leader exits when asked, but a detached descendant keeps the pipes open until its scope dies.
+fn leaves_a_pipe_holder(_: usize, _: &crate::launch::LaunchCommand) -> Launch {
+    Launch::Run(script(|mut ctx: ProcCtx| async move {
+        ctx.until_killed().await;
+        ctx.until_scope_killed().await;
+    }))
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_detached_pipe_holder_ends_with_the_scope_kill_and_teardown_confirms() {
+    local(async {
+        let rig = rig();
+        rig.fake.on_launch(leaves_a_pipe_holder);
+        let cancel = CancellationToken::new();
+        let handle = rig
+            .start_with(&cancel, spec(Regime::R1, &[0], secs(60)))
+            .await
+            .unwrap();
+        cancel.cancel();
+        let run = finish(&handle).await;
+        assert!(run.finished.teardown.is_ok());
+    })
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_detached_pipe_holder_beyond_a_failed_scope_kill_leaves_the_drain_unconfirmed() {
+    local(async {
+        let rig = rig();
+        rig.fake.on_launch(leaves_a_pipe_holder);
+        rig.fake.on_systemd(|call| match call {
+            Systemd::Kill { .. } => Some(Reply::Hang),
+            _ => None,
+        });
+        let cancel = CancellationToken::new();
+        let handle = rig
+            .start_with(&cancel, spec(Regime::R1, &[0], secs(60)))
+            .await
+            .unwrap();
+        cancel.cancel();
+        let begun = tokio::time::Instant::now();
+        let run = finish(&handle).await;
+        assert!(begun.elapsed() <= secs(15) + Duration::from_millis(50));
+        let containment = run.finished.teardown.unwrap_err();
+        assert!(
+            containment
+                .failures()
+                .iter()
+                .any(|failure| matches!(failure, CleanupFailure::DrainDeadline))
+        );
     })
     .await;
 }

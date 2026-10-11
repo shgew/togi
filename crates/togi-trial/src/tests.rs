@@ -1,10 +1,10 @@
 mod harness;
-mod teardown;
-mod trial;
-mod r6;
 mod output;
-mod sweep;
-mod samples;
-mod runner;
 #[cfg(target_os = "linux")]
 mod process;
+mod r6;
+mod runner;
+mod samples;
+mod sweep;
+mod teardown;
+mod trial;

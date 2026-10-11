@@ -13,10 +13,10 @@ use crate::identity::BackendIdentity;
 use crate::launch::LaunchCommand;
 use crate::procfs::{ProcError, ScopeProcess, Threads, Usage};
 
-#[cfg(target_os = "linux")]
-pub(crate) mod linux;
 #[cfg(test)]
 pub(crate) mod fake;
+#[cfg(target_os = "linux")]
+pub(crate) mod linux;
 
 pub(crate) type Pipe = Pin<Box<dyn AsyncRead>>;
 
@@ -113,11 +113,19 @@ impl KillSignal {
 /// A systemd operation on exact trial scopes; no PID or group ever reaches a recovered process.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum Systemd {
-    Kill { scope: ScopeName, signal: KillSignal },
-    Stop { scope: ScopeName },
+    Kill {
+        scope: ScopeName,
+        signal: KillSignal,
+    },
+    Stop {
+        scope: ScopeName,
+    },
     ListScopes,
     /// The preflight probe: a throwaway scope pinned to CPU 0 that runs `true`.
-    Probe { unit: String, identity: BackendIdentity },
+    Probe {
+        unit: String,
+        identity: BackendIdentity,
+    },
 }
 
 pub(crate) trait Os: 'static {

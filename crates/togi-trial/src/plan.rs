@@ -4,29 +4,8 @@ use togi_machine::{
     CoreId, CoreInfo, CoreSet, CpuId, LoadSchedule, Regime, TrialSpec, Workload, order,
 };
 
-use crate::id::{InvalidId, TrialId};
-
-#[derive(Debug, Eq, PartialEq, thiserror::Error)]
-pub enum InvalidTrial {
-    #[error(transparent)]
-    Id(#[from] InvalidId),
-    #[error("the trial duration is zero")]
-    ZeroDuration,
-    #[error("the trial names no core")]
-    NoCores,
-    #[error("core {0} is listed twice")]
-    DuplicateCore(CoreId),
-    #[error("core {0} is not in the topology")]
-    UnknownCore(CoreId),
-    #[error("core {0} has no logical CPU in the topology")]
-    CoreWithoutCpu(CoreId),
-    #[error("the trial names no logical CPU")]
-    NoCpus,
-    #[error("logical CPU {} belongs to none of the trial's cores", .0.0)]
-    ForeignCpu(CpuId),
-    #[error("the logical CPUs do not match the first CPU of each core")]
-    CpusMismatch,
-}
+use crate::error::InvalidTrial;
+use crate::id::TrialId;
 
 /// Where an instance lives on disk and in its scope name.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -57,7 +36,9 @@ pub(crate) enum Load {
     Continuous,
     Steps(LoadSchedule),
     /// R6: instance indices in the order their bursts run.
-    Bursts { order: Vec<usize> },
+    Bursts {
+        order: Vec<usize>,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -158,6 +139,7 @@ impl TrialPlan {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::InvalidId;
     use togi_machine::{CcdId, Condition, pick_workload};
 
     fn core(n: u8) -> CoreId {
@@ -209,10 +191,15 @@ mod tests {
 
     #[test]
     fn r6_bursts_follow_the_machine_order_mapped_to_instances() {
-        let plan = TrialPlan::build(&spec(Regime::R6, &[3, 0, 2, 1], &[3, 0, 2, 1]), &topology())
-            .unwrap();
+        let plan =
+            TrialPlan::build(&spec(Regime::R6, &[3, 0, 2, 1], &[3, 0, 2, 1]), &topology()).unwrap();
         // order() interleaves ccd0 [0,1] and ccd1 [2,3]: 0, 2, 1, 3 -> positions in [3,0,2,1]
-        assert_eq!(plan.load, Load::Bursts { order: vec![1, 2, 3, 0] });
+        assert_eq!(
+            plan.load,
+            Load::Bursts {
+                order: vec![1, 2, 3, 0]
+            }
+        );
     }
 
     #[test]

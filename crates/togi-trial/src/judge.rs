@@ -15,7 +15,11 @@ pub(crate) struct Judge {
 }
 
 impl Judge {
-    pub(crate) fn new(selector: Selector, backend: Arc<dyn Backend>, events: Sender<Event>) -> Self {
+    pub(crate) fn new(
+        selector: Selector,
+        backend: Arc<dyn Backend>,
+        events: Sender<Event>,
+    ) -> Self {
         Self {
             selector,
             backend,

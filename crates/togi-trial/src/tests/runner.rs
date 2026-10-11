@@ -11,9 +11,10 @@ use togi_machine::{
 
 use super::harness::{crate_error, nothing_runs, own_identity, spec, topology};
 use crate::error::Error;
+use crate::native::Settings;
 use crate::os::fake::{Delivery, Fake, Launch, ProcCtx, Reply, script};
 use crate::os::{ExitInfo, GroupSignal, Systemd};
-use crate::runner::{Backends, Options, Runner, Settings};
+use crate::runner::{Backends, Options, Runner};
 use crate::sensors::Roots;
 use crate::testing::TestBackend;
 use crate::timing::Timing;
@@ -35,10 +36,7 @@ fn fast() -> Timing {
     }
 }
 
-fn runner(
-    setup: impl FnOnce(&Fake) + Send + 'static,
-    timing: Timing,
-) -> (Runner, TempDir) {
+fn runner(setup: impl FnOnce(&Fake) + Send + 'static, timing: Timing) -> (Runner, TempDir) {
     let dir = tempfile::tempdir().unwrap();
     let options = Options {
         dir: dir.path().join("trials"),
@@ -86,9 +84,18 @@ impl Reporter for Collect {
     }
 }
 
-fn start(runner: &mut Runner, regime: Regime, cores: &[u8], duration: Duration) -> Box<dyn Running> {
+fn start(
+    runner: &mut Runner,
+    regime: Regime,
+    cores: &[u8],
+    duration: Duration,
+) -> Box<dyn Running> {
     runner
-        .start(&CancellationToken::new(), spec(regime, cores, duration), nothing_runs())
+        .start(
+            &CancellationToken::new(),
+            spec(regime, cores, duration),
+            nothing_runs(),
+        )
         .map_err(|partial| partial.error)
         .unwrap()
 }
@@ -105,9 +112,7 @@ fn wait_for(deadline: Duration, mut condition: impl FnMut() -> bool) -> bool {
 }
 
 /// A worker that notes in `marker` when it is asked to terminate, then ends.
-fn marks_termination(
-    marker: std::path::PathBuf,
-) -> impl FnOnce(&Fake) + Send + 'static {
+fn marks_termination(marker: std::path::PathBuf) -> impl FnOnce(&Fake) + Send + 'static {
     move |fake| {
         fake.on_launch(move |_, _| {
             let marker = marker.clone();
@@ -172,7 +177,10 @@ fn a_failing_trial_reports_its_signal_on_the_waiting_thread() {
     let mut report = Collect::default();
     let result = trial.wait(&CancellationToken::new(), &mut report).unwrap();
     assert_eq!(report.signals.len(), 1);
-    assert_eq!(result.failure.map(|f| f.signal), Some(Signal::ComputationError));
+    assert_eq!(
+        result.failure.map(|f| f.signal),
+        Some(Signal::ComputationError)
+    );
     assert!(trial.stop().is_ok());
 }
 
@@ -202,15 +210,26 @@ fn readers_keep_draining_between_start_and_wait() {
     let log = dir.path().join("trials/t1/work/stdout.log");
     let expected = 200 * 100 * "ok line of output\n".len() as u64;
     assert!(
-        wait_for(secs(10), || std::fs::metadata(&log).is_ok_and(|m| m.len() == expected)),
+        wait_for(secs(10), || std::fs::metadata(&log)
+            .is_ok_and(|m| m.len() == expected)),
         "the log filled before anyone waited"
     );
     let mut report = Collect::default();
     let cancel = CancellationToken::new();
     cancel.cancel();
     let outcome = trial.wait(&cancel, &mut report);
-    assert!(matches!(outcome, Err(Partial { error: togi_machine::Error::Cancelled, .. })));
-    assert_eq!(report.progress.len(), 200 * 100, "every queued progress line reaches the waiter");
+    assert!(matches!(
+        outcome,
+        Err(Partial {
+            error: togi_machine::Error::Cancelled,
+            ..
+        })
+    ));
+    assert_eq!(
+        report.progress.len(),
+        200 * 100,
+        "every queued progress line reaches the waiter"
+    );
     assert!(trial.stop().is_ok());
 }
 
@@ -219,15 +238,23 @@ async fn the_blocking_apis_refuse_to_run_inside_a_runtime() {
     let (mut runner, _dir) = runner(|_| {}, fast());
     assert!(matches!(
         runner.probe_scope(),
-        Err(Error::InsideRuntime { operation: "the scope probe" })
+        Err(Error::InsideRuntime {
+            operation: "the scope probe"
+        })
     ));
     let sweep = runner.sweep(&CancellationToken::new()).unwrap_err();
     assert!(matches!(
         crate_error(&sweep),
-        Some(Error::InsideRuntime { operation: "the sweep" })
+        Some(Error::InsideRuntime {
+            operation: "the sweep"
+        })
     ));
     let partial = runner
-        .start(&CancellationToken::new(), spec(Regime::R1, &[0], secs(1)), nothing_runs())
+        .start(
+            &CancellationToken::new(),
+            spec(Regime::R1, &[0], secs(1)),
+            nothing_runs(),
+        )
         .err()
         .unwrap();
     assert!(partial.value.is_some(), "the proof comes back untouched");
@@ -242,7 +269,9 @@ async fn the_blocking_apis_refuse_to_run_inside_a_runtime() {
 fn waiting_and_stopping_inside_a_runtime_are_refused_and_the_trial_stays_usable() {
     let (mut runner, _dir) = runner(|_| {}, fast());
     let mut trial = start(&mut runner, Regime::R1, &[0], Duration::from_millis(200));
-    let runtime = tokio::runtime::Builder::new_current_thread().build().unwrap();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .build()
+        .unwrap();
     let refused = runtime.block_on(async {
         trial
             .wait(&CancellationToken::new(), &mut Collect::default())
@@ -271,7 +300,10 @@ fn a_trial_dropped_after_start_is_torn_down_by_its_supervisor() {
     let (mut runner, _keep) = runner(marks_termination(marker.clone()), fast());
     let trial = start(&mut runner, Regime::R1, &[0], secs(600));
     drop(trial);
-    assert!(wait_for(secs(10), || marker.exists()), "SIGTERM reached the abandoned workload");
+    assert!(
+        wait_for(secs(10), || marker.exists()),
+        "SIGTERM reached the abandoned workload"
+    );
 }
 
 #[test]
@@ -325,10 +357,18 @@ fn an_unconfirmed_teardown_is_containment_for_wait_and_for_stop() {
         fast(),
     );
     let mut trial = start(&mut runner, Regime::R1, &[0], Duration::from_millis(200));
-    let partial = trial.wait(&CancellationToken::new(), &mut Collect::default()).unwrap_err();
+    let partial = trial
+        .wait(&CancellationToken::new(), &mut Collect::default())
+        .unwrap_err();
     assert!(matches!(partial.error, togi_machine::Error::Containment));
-    assert_eq!(partial.value.failure, None, "evidence is kept beside the containment");
-    assert!(matches!(trial.stop(), Err(togi_machine::Error::Containment)));
+    assert_eq!(
+        partial.value.failure, None,
+        "evidence is kept beside the containment"
+    );
+    assert!(matches!(
+        trial.stop(),
+        Err(togi_machine::Error::Containment)
+    ));
 }
 
 #[test]
@@ -363,7 +403,10 @@ fn the_runner_sweeps_probes_compresses_and_reads_samples() {
         },
         fast(),
     );
-    assert_eq!(runner.probe_scope().unwrap(), "scope confined to cpu 0 created");
+    assert_eq!(
+        runner.probe_scope().unwrap(),
+        "scope confined to cpu 0 created"
+    );
     let swept = runner.sweep(&CancellationToken::new()).unwrap();
     assert!(swept.detail.starts_with("removed 1 leftover trial scopes"));
 
