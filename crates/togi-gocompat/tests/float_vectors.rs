@@ -129,3 +129,58 @@ fn verb_v_boundaries_read_as_go_writes_them() {
     assert_eq!(format_v(f64::INFINITY), "+Inf");
     assert_eq!(format_v(f64::NEG_INFINITY), "-Inf");
 }
+
+/// Go's output at a precision past the exact expansion is that expansion followed by zeros, so
+/// the expectation is the Rust output at a precision below Rust's limit with the zeros inserted.
+fn zero_padded(v: f64, verb: Verb, prec: usize) -> String {
+    let base = if verb == Verb::F { 1100 } else { 1000 };
+    let shorter = format_float(v, verb, Some(base));
+    let zeros = "0".repeat(prec - base);
+    match shorter.find(['e', 'E']) {
+        Some(at) => format!("{}{zeros}{}", &shorter[..at], &shorter[at..]),
+        None => format!("{shorter}{zeros}"),
+    }
+}
+
+#[test]
+fn precision_beyond_rust_limit_matches_go() {
+    let tenth = "1.000000000000000055511151231257827021181583404541015625";
+    let zeros = |n: usize| "0".repeat(n);
+    assert_eq!(
+        format_float(0.0, Verb::E, Some(65536)),
+        format!("0.{}e+00", zeros(65536))
+    );
+    assert_eq!(
+        format_float(1.0, Verb::UpperE, Some(100_000)),
+        format!("1.{}E+00", zeros(100_000))
+    );
+    assert_eq!(
+        format_float(0.1, Verb::E, Some(65536)),
+        format!("{tenth}{}e-01", zeros(65536 - 54))
+    );
+    assert_eq!(
+        format_float(1.0, Verb::F, Some(65536)),
+        format!("1.{}", zeros(65536))
+    );
+    assert_eq!(
+        format_float(0.0, Verb::F, Some(100_000)),
+        format!("0.{}", zeros(100_000))
+    );
+    for v in [0.0, 1.0, 0.1, 5e-324, f64::MAX] {
+        for verb in [Verb::E, Verb::UpperE, Verb::F] {
+            for prec in [65536, 100_000] {
+                assert_eq!(
+                    format_float(v, verb, Some(prec)),
+                    zero_padded(v, verb, prec),
+                    "{v:e} {verb:?} {prec}"
+                );
+            }
+        }
+    }
+    assert_eq!(format_float(0.0, Verb::UpperG, Some(65537)), "0");
+    assert_eq!(format_float(1.5, Verb::UpperG, Some(65537)), "1.5");
+    assert_eq!(
+        format_float(0.1, Verb::G, Some(65537)),
+        "0.1000000000000000055511151231257827021181583404541015625"
+    );
+}

@@ -20,6 +20,11 @@ impl fmt::Display for NonFinite {
 
 impl std::error::Error for NonFinite {}
 
+/// Rust's formatting precision tops out at `u16::MAX`, while Go accepts any `int`. An f64's exact
+/// decimal expansion has at most 767 significant digits and 1074 after the point, so asking for
+/// this many is exact and every further requested digit is a zero.
+const EXACT_DIGITS: usize = 1100;
+
 struct Digits {
     digits: Vec<u8>,
     dp: i64,
@@ -55,6 +60,7 @@ impl Digits {
     }
 
     fn rounded(magnitude: f64, significant: usize) -> Self {
+        let significant = significant.min(EXACT_DIGITS);
         Self::parse(&format!("{:.*e}", significant - 1, magnitude))
     }
 
@@ -148,7 +154,9 @@ pub fn format_float(v: f64, verb: Verb, prec: Option<usize>) -> String {
     let upper = matches!(verb, Verb::UpperE | Verb::UpperG);
     match (verb, prec) {
         (Verb::F, Some(prec)) => {
-            write!(out, "{magnitude:.prec$}").ok();
+            let exact = prec.min(EXACT_DIGITS);
+            write!(out, "{magnitude:.exact$}").ok();
+            out.extend(std::iter::repeat_n('0', prec - exact));
         }
         (Verb::F, None) => {
             let d = Digits::shortest(magnitude);
