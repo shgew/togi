@@ -50,7 +50,6 @@ pub struct SmuIntentRecord {
 }
 
 impl SmuIntentRecord {
-    #[cfg_attr(not(test), expect(dead_code, reason = "the journal's SMU append mints the record"))]
     pub(crate) const fn new(command: SmuCommand) -> Self {
         Self { command }
     }
@@ -78,7 +77,6 @@ pub struct SmuWriteRecord {
 }
 
 impl SmuWriteRecord {
-    #[cfg_attr(not(test), expect(dead_code, reason = "the journal's SMU append mints the record"))]
     pub(crate) const fn new(command: SmuCommand) -> Self {
         Self { command }
     }

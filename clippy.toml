@@ -14,4 +14,6 @@ disallowed-methods = [
     { path = "togi_machine::Smu::emergency_zero", reason = "Only the session's journal-failure emergency zeroes every core, after a confirmed teardown" },
     { path = "togi_machine::SmuValidated::checked", reason = "Only a host implementation that validated the SMU interface mints its proof" },
     { path = "togi_machine::Stopped::confirmed", reason = "Only a seam implementation that confirmed every workload stopped mints a teardown proof" },
+    { path = "togi_journal::StateDir::simulated", reason = "Only simulations and session tests keep a journal in memory; production locks a directory on disk" },
+    { path = "togi_journal::StateDir::lock_unsynced", reason = "Only the simulator's --state-dir writes a journal without fsync" },
 ]

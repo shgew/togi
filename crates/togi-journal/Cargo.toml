@@ -9,6 +9,7 @@ description = "The append-only record of a tuning session: events, payloads, bui
 
 [dependencies]
 jiff.workspace = true
+rustix.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
@@ -16,6 +17,7 @@ togi-machine.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
+tempfile.workspace = true
 
 [lints]
 workspace = true

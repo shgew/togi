@@ -1,0 +1,320 @@
+use super::sample;
+use crate::fs::{Fault, MemFs};
+use crate::testing::{
+    begin, begin_default, boot, default_session, kinds, live, note, reopen, session, simulated, stamp, start,
+};
+use crate::{AppendError, ArchiveError, ArchiveKind, DirError, EventKind, Marker, Recording, SessionId};
+
+const ARCHIVED: &str = "/state/archive/20231114T221320Z.jsonl";
+const TRIALS: &str = "/state/archive/20231114T221320Z-trials";
+const CARRY: &str = "/state/archive/20231114T221320Z-carry-pending";
+const RESET: &str = "/state/archive/20231114T221320Z-reset-all";
+const COMPAT: &str = "/state/archive/20231114T221320Z-compat-pending";
+
+fn seeded(fs: &MemFs) -> crate::Journal {
+    let mut journal = begin_default(fs);
+    journal.append(stamp(1), note("work"), &[]).unwrap();
+    fs.put("/state/state.json", "{}\n");
+    fs.put("/state/trials/0001/sample.csv", "t,v\n");
+    journal
+}
+
+fn reference(kind: ArchiveKind) -> Vec<u8> {
+    let fs = MemFs::new();
+    seeded(&fs).archive(stamp(5), kind, &[]).unwrap();
+    fs.contents(ARCHIVED).unwrap()
+}
+
+fn assert_archived_intact(fs: &MemFs, expected: &[u8], context: &str) {
+    assert_eq!(fs.contents(ARCHIVED).unwrap(), expected, "{context}");
+    assert_eq!(fs.contents(format!("{TRIALS}/0001/sample.csv")).unwrap(), b"t,v\n", "{context}");
+    assert!(live(fs).is_empty(), "{context}");
+    assert!(fs.contents("/state/state.json").is_none(), "{context}");
+    assert!(fs.kind_is_none("/state/trials"), "{context}");
+    assert_eq!(fs.contents(COMPAT), None, "{context}");
+}
+
+trait Probe {
+    fn kind_is_none(&self, path: &str) -> bool;
+}
+
+impl Probe for MemFs {
+    fn kind_is_none(&self, path: &str) -> bool {
+        use crate::fs::Fs as _;
+        self.kind(std::path::Path::new(path)).unwrap().is_none()
+    }
+}
+
+#[test]
+fn reset_all_archives_the_session_behind_a_durable_boundary() {
+    let fs = MemFs::new();
+    let dir = seeded(&fs).archive(stamp(5), ArchiveKind::ResetAll, &[]).unwrap();
+    let archived = fs.contents(ARCHIVED).unwrap();
+    assert_archived_intact(&fs, &archived, "reset");
+    let recording = Recording::parse(&archived).unwrap();
+    assert_eq!(kinds(recording.events()), ["session.start", "session.warning", "session.archived"]);
+    assert_eq!(dir.reset_boundary().unwrap(), Some(default_session()));
+    assert_eq!(dir.pending_carry().unwrap(), None);
+    assert_eq!(dir.archives().unwrap(), [default_session()]);
+    assert!(fs.contents(RESET).is_some());
+}
+
+#[test]
+fn a_transition_leaves_a_pending_carry_and_no_boundary() {
+    let fs = MemFs::new();
+    let dir = seeded(&fs).archive(stamp(5), ArchiveKind::Transition, &[]).unwrap();
+    assert_eq!(dir.pending_carry().unwrap(), Some(default_session()));
+    assert_eq!(dir.reset_boundary().unwrap(), None);
+    assert!(fs.contents(CARRY).is_some());
+}
+
+#[test]
+fn a_transition_keeps_an_earlier_pending_carry_as_the_source() {
+    let fs = MemFs::new();
+    let dir = seeded(&fs).archive(stamp(5), ArchiveKind::Transition, &[]).unwrap();
+    drop(dir);
+    let mut second = begin(&fs, session("20231115T000000Z"));
+    second.append(stamp(6), note("more"), &[]).unwrap();
+    let dir = second.archive(stamp(7), ArchiveKind::Transition, &[]).unwrap();
+    assert_eq!(dir.pending_carry().unwrap(), Some(default_session()));
+    assert_eq!(dir.markers().unwrap().len(), 1);
+    assert_eq!(dir.archives().unwrap().len(), 2);
+}
+
+#[test]
+fn the_next_session_starts_empty_and_the_archive_stays_immutable() {
+    let fs = MemFs::new();
+    let dir = seeded(&fs).archive(stamp(5), ArchiveKind::ResetAll, &[]).unwrap();
+    let archived = fs.contents(ARCHIVED).unwrap();
+    let id = dir.session_id(stamp(5).time).unwrap();
+    assert!(id > default_session());
+    let mut journal = dir.open(boot(2)).unwrap();
+    assert!(journal.events().is_empty());
+    assert!(matches!(journal.append(stamp(6), note("x"), &[]), Err(AppendError::FirstEvent { .. })));
+    journal.append(stamp(6), start(id), &[]).unwrap();
+    journal.append(stamp(7), note("y"), &[]).unwrap();
+    assert_eq!(fs.contents(ARCHIVED).unwrap(), archived);
+}
+
+#[test]
+fn an_archive_that_already_exists_is_refused_before_anything_is_recorded() {
+    let fs = MemFs::new();
+    let journal = seeded(&fs);
+    fs.put(ARCHIVED, "someone else's");
+    let before = live(&fs);
+    let mutations = fs.mutations();
+    let error = journal.archive(stamp(5), ArchiveKind::ResetAll, &[]).unwrap_err();
+    assert!(matches!(error, ArchiveError::Dir(DirError::ArchiveExists { .. })));
+    assert_eq!(fs.mutations(), mutations);
+    assert_eq!(live(&fs), before);
+    assert_eq!(fs.contents(ARCHIVED).unwrap(), b"someone else's");
+}
+
+#[test]
+fn a_journal_with_no_session_has_nothing_to_archive() {
+    let fs = MemFs::new();
+    let journal = simulated(&fs).open(boot(1)).unwrap();
+    assert!(matches!(journal.archive(stamp(1), ArchiveKind::ResetAll, &[]), Err(ArchiveError::NoSession)));
+}
+
+#[test]
+fn a_poisoned_journal_cannot_archive() {
+    let fs = MemFs::new();
+    let mut journal = seeded(&fs);
+    fs.inject(Fault::before(crate::fs::Op::Write, 1));
+    assert!(journal.append(stamp(2), note("x"), &[]).is_err());
+    let error = journal.archive(stamp(5), ArchiveKind::ResetAll, &[]).unwrap_err();
+    assert!(matches!(error, ArchiveError::Append(AppendError::Poisoned(_))));
+}
+
+#[test]
+fn every_archive_step_failure_resumes_once_and_leaves_the_sources_immutable() {
+    for kind in [ArchiveKind::ResetAll, ArchiveKind::Transition] {
+        let expected = reference(kind);
+        for nth in 1..=40 {
+            for fault in [Fault::any_before(nth), Fault::any_after(nth)] {
+                let fs = MemFs::new();
+                let journal = seeded(&fs);
+                let original = live(&fs);
+                fs.inject(fault.clone());
+                let result = journal.archive(stamp(5), kind, &[]).map(drop);
+                fs.clear_faults();
+                let context = format!("{kind:?} {fault:?}");
+                let reopened = reopen(&fs, 2);
+                if fs.contents(ARCHIVED).is_some() {
+                    assert_archived_intact(&fs, &expected, &context);
+                    assert!(reopened.events().is_empty(), "{context}");
+                    match kind {
+                        ArchiveKind::Transition => assert!(fs.contents(CARRY).is_some(), "{context}"),
+                        ArchiveKind::ResetAll => assert!(fs.contents(RESET).is_some(), "{context}"),
+                    }
+                } else {
+                    assert!(result.is_err(), "{context}");
+                    assert_eq!(live(&fs), original, "{context}: an archive that did not start changes nothing");
+                    assert_eq!(reopened.events().len(), 2, "{context}");
+                    assert!(fs.contents(CARRY).is_none(), "{context}: no carry for a session that lives on");
+                }
+                let archived_events = fs
+                    .contents(ARCHIVED)
+                    .map(|bytes| Recording::parse(&bytes).unwrap())
+                    .map(|recording| recording.events().iter().filter(|e| e.kind() == EventKind::SessionArchived).count());
+                assert!(archived_events.is_none_or(|count| count == 1), "{context}");
+                if result.is_ok() {
+                    assert_archived_intact(&fs, &expected, &context);
+                }
+            }
+        }
+    }
+}
+
+fn unreadable_fixture(fs: &MemFs) -> Vec<u8> {
+    let mut journal = seeded(fs);
+    journal.append(stamp(2), note("older build"), &[]).unwrap();
+    journal.close().unwrap();
+    live(fs)
+}
+
+#[test]
+fn an_unreadable_journal_is_archived_byte_for_byte_behind_a_compat_marker() {
+    for kind in [ArchiveKind::ResetAll, ArchiveKind::Transition] {
+        let fs = MemFs::new();
+        let original = unreadable_fixture(&fs);
+        let mut dir = simulated(&fs);
+        assert_eq!(dir.archive_unreadable(kind).unwrap(), Some(default_session()));
+        assert_archived_intact(&fs, &original, "unreadable");
+        assert!(dir.markers().unwrap().iter().all(|(marker, _)| *marker != Marker::CompatPending));
+    }
+}
+
+#[test]
+fn archiving_nothing_archives_nothing() {
+    let fs = MemFs::new();
+    let mut dir = simulated(&fs);
+    assert_eq!(dir.archive_unreadable(ArchiveKind::ResetAll).unwrap(), None);
+    fs.put("/state/events.jsonl", "{\"seq\":1,\"ti");
+    assert_eq!(dir.archive_unreadable(ArchiveKind::ResetAll).unwrap(), None);
+}
+
+#[test]
+fn an_unreadable_archive_resumes_through_every_step_failure() {
+    for kind in [ArchiveKind::ResetAll, ArchiveKind::Transition] {
+        for nth in 1..=30 {
+            for fault in [Fault::any_before(nth), Fault::any_after(nth)] {
+                let fs = MemFs::new();
+                let original = unreadable_fixture(&fs);
+                let mut dir = simulated(&fs);
+                fs.inject(fault.clone());
+                let result = dir.archive_unreadable(kind);
+                fs.clear_faults();
+                drop(dir);
+                let context = format!("{kind:?} {fault:?}");
+                let reopened = reopen(&fs, 2);
+                if fs.contents(ARCHIVED).is_some() {
+                    assert_archived_intact(&fs, &original, &context);
+                    assert!(reopened.events().is_empty(), "{context}");
+                } else {
+                    assert!(result.is_err(), "{context}");
+                    assert_eq!(live(&fs), original, "{context}");
+                    assert!(fs.contents(CARRY).is_none(), "{context}");
+                }
+                assert_eq!(fs.contents(COMPAT), None, "{context}");
+            }
+        }
+    }
+}
+
+#[test]
+fn an_archive_recorded_before_the_unreadable_path_runs_is_only_finished() {
+    let fs = MemFs::new();
+    let journal = seeded(&fs);
+    fs.inject(Fault::before(crate::fs::Op::Rename, 1));
+    assert!(journal.archive(stamp(5), ArchiveKind::ResetAll, &[]).is_err());
+    fs.clear_faults();
+    let recorded = live(&fs);
+    assert_eq!(Recording::parse(&recorded).unwrap().events().len(), 3);
+    let mut dir = simulated(&fs);
+    assert_eq!(dir.archive_unreadable(ArchiveKind::Transition).unwrap(), Some(default_session()));
+    assert_eq!(fs.contents(ARCHIVED).unwrap(), recorded);
+    assert_eq!(fs.contents(CARRY), None);
+    assert_eq!(fs.contents(COMPAT), None);
+}
+
+#[test]
+fn open_finishes_a_recorded_archive_even_when_a_torn_tail_follows_it() {
+    let fs = MemFs::new();
+    let journal = seeded(&fs);
+    fs.inject(Fault::before(crate::fs::Op::Rename, 1));
+    assert!(journal.archive(stamp(5), ArchiveKind::Transition, &[]).is_err());
+    fs.clear_faults();
+    let mut bytes = live(&fs);
+    bytes.extend_from_slice(b"{\"seq\":4,\"tim");
+    fs.put("/state/events.jsonl", bytes.clone());
+    let journal = reopen(&fs, 2);
+    assert!(journal.events().is_empty());
+    assert_eq!(fs.contents(ARCHIVED).unwrap(), bytes);
+    assert!(fs.contents("/state/events.jsonl").is_none() || live(&fs).is_empty());
+}
+
+#[test]
+fn a_recorded_archive_naming_another_session_is_refused() {
+    let fs = MemFs::new();
+    let journal = seeded(&fs);
+    fs.inject(Fault::before(crate::fs::Op::Rename, 1));
+    assert!(journal.archive(stamp(5), ArchiveKind::ResetAll, &[]).is_err());
+    fs.clear_faults();
+    let text = String::from_utf8(live(&fs)).unwrap();
+    let last = text.rfind("\"session\":\"20231114T221320Z\"").unwrap();
+    let forged = format!("{}\"session\":\"20231115T000000Z\"{}", &text[..last], &text[last + 28..]);
+    fs.put("/state/events.jsonl", forged);
+    assert!(matches!(simulated(&fs).open(boot(2)), Err(crate::OpenError::ArchiveMismatch { .. })));
+}
+
+#[test]
+fn a_compat_marker_without_its_archive_is_refused_and_kept() {
+    let fs = MemFs::new();
+    fs.put(COMPAT, "");
+    let error = simulated(&fs).open(boot(1)).unwrap_err();
+    assert!(matches!(error, crate::OpenError::Dir(DirError::MissingArchive { .. })));
+    assert!(fs.contents(COMPAT).is_some());
+}
+
+#[test]
+fn a_compat_marker_after_the_journal_moved_is_removed_by_open() {
+    let fs = MemFs::new();
+    fs.put(COMPAT, "");
+    fs.put(ARCHIVED, "moved");
+    let journal = reopen(&fs, 1);
+    assert!(journal.events().is_empty());
+    assert_eq!(fs.contents(COMPAT), None);
+    assert_eq!(fs.contents(ARCHIVED).unwrap(), b"moved");
+}
+
+#[test]
+fn a_compat_marker_for_a_different_live_session_is_refused() {
+    let fs = MemFs::new();
+    sample(&fs);
+    fs.put("/state/archive/20991231T000000Z-compat-pending", "");
+    assert!(simulated(&fs).open(boot(2)).is_err());
+    assert!(fs.contents("/state/events.jsonl").is_some());
+}
+
+#[test]
+fn trials_are_moved_without_replacing_an_existing_directory() {
+    let fs = MemFs::new();
+    let journal = seeded(&fs);
+    fs.put(format!("{TRIALS}/other"), "x");
+    let error = journal.archive(stamp(5), ArchiveKind::ResetAll, &[]).unwrap_err();
+    assert!(matches!(error, ArchiveError::Dir(DirError::ArchiveExists { .. })));
+    assert_eq!(fs.contents("/state/trials/0001/sample.csv").unwrap(), b"t,v\n");
+}
+
+#[test]
+fn the_archive_listing_and_ids_see_the_new_archive() {
+    let fs = MemFs::new();
+    let dir = seeded(&fs).archive(stamp(5), ArchiveKind::ResetAll, &[]).unwrap();
+    let listed: Vec<SessionId> = dir.archives().unwrap();
+    assert_eq!(listed, [default_session()]);
+    let next = dir.session_id(crate::testing::stamp(0).time).unwrap();
+    assert_eq!(next.to_string(), "20231114T221320Z-2");
+    assert!(fs.kind_is_none(&format!("{TRIALS}-x")));
+}
