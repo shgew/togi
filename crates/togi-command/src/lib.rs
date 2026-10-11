@@ -434,17 +434,20 @@ impl Leader {
         Ok(())
     }
 
-    /// ESRCH means nothing is left to signal; any other failure keeps the group for a retry on drop.
+    /// A group that is gone leaves nothing to signal; any other failure keeps the group for a
+    /// retry on drop.
     fn kill_group(&mut self) -> Result<(), Errno> {
         let Some(group) = self.group else {
             return Ok(());
         };
         match signal_group(group) {
-            Ok(()) | Err(Errno::SRCH) => {
+            Err(errno) if !group_gone(errno, errno == Errno::PERM && leader_exited(self.pid)) => {
+                Err(errno)
+            }
+            _ => {
                 self.group = None;
                 Ok(())
             }
-            Err(errno) => Err(errno),
         }
     }
 
@@ -503,6 +506,25 @@ fn reap_blocking(pid: Pid) {
     while matches!(waitpid(Some(pid), WaitOptions::empty()), Err(Errno::INTR)) {}
 }
 
+/// ESRCH means the group is gone. Darwin's killpg returns EPERM instead when every member is a
+/// zombie, so EPERM counts as gone only once the leader is known to have exited.
+fn group_gone(errno: Errno, leader_exited: bool) -> bool {
+    errno == Errno::SRCH || (errno == Errno::PERM && leader_exited)
+}
+
+#[cfg(target_os = "linux")]
+fn leader_exited(_: Pid) -> bool {
+    false
+}
+
+/// Whether the leader has exited, without reaping it.
+#[cfg(not(target_os = "linux"))]
+fn leader_exited(pid: Pid) -> bool {
+    use rustix::process::{WaitId, WaitIdOptions, waitid};
+    let options = WaitIdOptions::EXITED | WaitIdOptions::NOWAIT | WaitIdOptions::NOHANG;
+    matches!(waitid(WaitId::Pid(pid), options), Ok(Some(_)))
+}
+
 fn signal_group(group: Pid) -> Result<(), Errno> {
     #[cfg(test)]
     if let Some(fault) = fault::KILL.get() {
@@ -542,6 +564,33 @@ mod fault {
         pub(crate) static KILL: Cell<Option<Kill>> = const { Cell::new(None) };
         pub(crate) static SPAWNED: Cell<Option<Pid>> = const { Cell::new(None) };
         pub(crate) static REAPER: Cell<bool> = const { Cell::new(false) };
+    }
+}
+
+#[cfg(test)]
+mod group_tests {
+    use rustix::io::Errno;
+
+    use super::group_gone;
+
+    #[test]
+    fn esrch_is_gone() {
+        assert!(group_gone(Errno::SRCH, false));
+    }
+
+    #[test]
+    fn eperm_with_exited_leader_is_gone() {
+        assert!(group_gone(Errno::PERM, true));
+    }
+
+    #[test]
+    fn eperm_with_live_leader_is_an_error() {
+        assert!(!group_gone(Errno::PERM, false));
+    }
+
+    #[test]
+    fn other_errno_is_an_error() {
+        assert!(!group_gone(Errno::INVAL, true));
     }
 }
 
