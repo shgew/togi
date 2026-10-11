@@ -1,7 +1,7 @@
 use std::num::NonZeroU32;
 
 use togi_defect::{DefectId, DefectState, Entry};
-use togi_journal::DefectDirection;
+use togi_journal::{DefectDirection, Payload};
 use togi_machine::Signal;
 use togi_sim::MachineDefinition;
 use togi_sim::definition::ModelDef;
@@ -215,6 +215,10 @@ fn a_run_given_the_capsule_of_another_journal_folds_its_own() {
 }
 
 fn crashed(bench: &Bench) -> Ended {
+    crashed_publishing(bench, crate::PublicationPolicy::OnFinish)
+}
+
+fn crashed_publishing(bench: &Bench, publication: crate::PublicationPolicy) -> Ended {
     bench
         .sim
         .script_trial(
@@ -228,7 +232,10 @@ fn crashed(bench: &Bench) -> Ended {
             },
         )
         .unwrap();
-    let ended = one_cycle(bench, None);
+    let mut input = bench.input();
+    input.policy.cycles = Some(NonZeroU32::MIN);
+    input.publication = publication;
+    let ended = run(input);
     assert!(
         ended.errors.iter().any(crate::SessionError::is_crash),
         "{:?}",
@@ -269,4 +276,30 @@ fn the_boot_after_a_crash_resumes_the_same_from_a_capsule_or_a_replay() {
     let saved: crate::publication::StateDocument = resumed.journal.read_state().unwrap().unwrap();
     let facts = togi_journal::State::replay(resumed.journal.events()).unwrap();
     assert_eq!(saved.facts, facts);
+}
+
+#[test]
+fn a_crashed_runs_capsule_publishes_what_a_live_run_had_and_the_next_boot_rebuilds_nothing() {
+    let deferred = bench();
+    let mut crashed = crashed(&deferred);
+    let capsule = crashed.capsule.take().unwrap();
+    capsule.publish(&mut crashed.journal).unwrap();
+    let published: StateDocument = crashed.journal.read_state().unwrap().unwrap();
+
+    let live = bench();
+    let live_crashed = crashed_publishing(&live, crate::PublicationPolicy::Live);
+    let had: StateDocument = live_crashed.journal.read_state().unwrap().unwrap();
+    assert_eq!(published, had);
+    assert_eq!(journal_text(&crashed), journal_text(&live_crashed));
+    drop(crashed);
+
+    deferred.sim.reboot();
+    let resumed = one_cycle(&deferred, None);
+    assert!(
+        resumed
+            .journal
+            .events()
+            .iter()
+            .all(|event| !matches!(event.payload, Payload::StateRebuilt(_)))
+    );
 }

@@ -1,11 +1,11 @@
 //! The state a run hands the next run so that it need not fold the journal again.
 
 use togi_defect::Entry;
-use togi_journal::{Event, Journal, Seq, SessionId};
+use togi_journal::{Event, Journal, Seq, SessionId, StateError};
 
 use crate::appender::Folds;
 use crate::error::FoldError;
-use crate::publication::StateDocument;
+use crate::publication::{StateDocument, StateDocumentRef};
 
 /// Every fold of a journal's events, owned, bound to the journal it was folded from: its session and its last event.
 ///
@@ -69,6 +69,15 @@ impl ResumeCapsule {
             && self.last == last_seq(journal.events())
             && std::ptr::eq(self.defects, defects))
         .then_some(self.folds)
+    }
+
+    /// Writes the state document a live run publishes after its last append, for a run that ended without publishing.
+    ///
+    /// # Errors
+    ///
+    /// The journal's state file write error.
+    pub fn publish(&self, journal: &mut Journal) -> Result<(), StateError> {
+        journal.write_state(&StateDocumentRef::of(&self.folds))
     }
 
     /// Checks every part against the fold of `events` from nothing, naming the first part that differs.

@@ -30,18 +30,23 @@ impl StateDocument {
 }
 
 #[derive(Serialize)]
-struct StateDocumentRef<'a> {
+pub(crate) struct StateDocumentRef<'a> {
     facts: &'a togi_journal::State,
     tuner: Projection,
 }
 
+impl<'a> StateDocumentRef<'a> {
+    pub(crate) fn of(folds: &'a Folds) -> Self {
+        Self {
+            facts: &folds.facts,
+            tuner: folds.tuner.project(),
+        }
+    }
+}
+
 impl Appender {
     pub(crate) fn publish_state(&mut self) -> Result<bool, AppendFailure> {
-        let state = StateDocumentRef {
-            facts: &self.folds.facts,
-            tuner: self.folds.tuner.project(),
-        };
-        match self.journal.write_state(&state) {
+        match self.journal.write_state(&StateDocumentRef::of(&self.folds)) {
             Ok(()) => Ok(true),
             Err(error) => {
                 self.publishing = true;
