@@ -9,6 +9,7 @@ use std::fmt::Write as _;
 use std::future::Future;
 use std::io;
 use std::os::unix::process::ExitStatusExt as _;
+use std::path::Path;
 use std::pin::Pin;
 use std::process::ExitStatus;
 use std::rc::Rc;
@@ -143,12 +144,13 @@ impl ProcShared {
     }
 }
 
-/// What a process script holds.
+/// What a process script holds. `account` is the `--uid`/`--gid` its scope runs it under, if any.
 pub(crate) struct ProcCtx {
     pub(crate) shared: Rc<ProcShared>,
     pub(crate) stdout: DuplexStream,
     pub(crate) stderr: DuplexStream,
     pub(crate) signals: UnboundedReceiver<Delivery>,
+    pub(crate) account: Option<(u32, u32)>,
 }
 
 impl ProcCtx {
@@ -158,6 +160,21 @@ impl ProcCtx {
 
     pub(crate) async fn eprint(&mut self, text: &str) {
         let _ = self.stderr.write_all(text.as_bytes()).await;
+    }
+
+    /// Creates or truncates `path` and writes `contents` as the process's account, as a backend
+    /// under `systemd-run --uid --gid` would: a privileged suite would otherwise leave root's
+    /// files that the trial rightly refuses to read.
+    pub(crate) fn write_file(
+        &self,
+        path: impl AsRef<Path>,
+        contents: impl AsRef<[u8]>,
+    ) -> io::Result<()> {
+        let mut file = std::fs::File::create(path)?;
+        if let Some((uid, gid)) = self.account {
+            std::os::unix::fs::fchown(&file, Some(uid), Some(gid))?;
+        }
+        io::Write::write_all(&mut file, contents.as_ref())
     }
 
     pub(crate) fn exit(&self, info: ExitInfo) {
@@ -286,8 +303,8 @@ where
     Box::new(move |ctx| Box::pin(run(ctx)))
 }
 
-fn scope_in(command: &LaunchCommand) -> Option<String> {
-    let position = command.argv.iter().position(|arg| arg == "--unit")?;
+fn flag_in(command: &LaunchCommand, flag: &str) -> Option<String> {
+    let position = command.argv.iter().position(|arg| arg == flag)?;
     Some(
         command
             .argv
@@ -295,6 +312,17 @@ fn scope_in(command: &LaunchCommand) -> Option<String> {
             .to_string_lossy()
             .into_owned(),
     )
+}
+
+fn scope_in(command: &LaunchCommand) -> Option<String> {
+    flag_in(command, "--unit")
+}
+
+fn account_in(command: &LaunchCommand) -> Option<(u32, u32)> {
+    Some((
+        flag_in(command, "--uid")?.parse().ok()?,
+        flag_in(command, "--gid")?.parse().ok()?,
+    ))
 }
 
 impl Fake {
@@ -515,6 +543,7 @@ impl Os for Fake {
             stdout: stdout_writer,
             stderr: stderr_writer,
             signals,
+            account: account_in(command),
         };
         tokio::task::spawn_local(script(ctx));
         let flaky = Rc::clone(&shared.stdout_failure);

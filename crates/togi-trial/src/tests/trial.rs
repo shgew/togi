@@ -130,7 +130,7 @@ async fn a_watched_file_error_is_found_at_the_next_tick() {
         rig.fake.on_launch(|_, command| {
             let results = command.cwd.join("results.txt");
             Launch::Run(script(move |mut ctx: ProcCtx| async move {
-                std::fs::write(results, "fine\nCOMPUTE ERROR\n").unwrap();
+                ctx.write_file(results, "fine\nCOMPUTE ERROR\n").unwrap();
                 ctx.until_killed().await;
             }))
         });
@@ -688,7 +688,7 @@ async fn a_watched_poll_that_uses_the_rest_of_the_duration_leaves_no_required_sa
         rig.fake.on_launch(|_, command| {
             let results = command.cwd.join("results.txt");
             Launch::Run(script(move |mut ctx: ProcCtx| async move {
-                std::fs::write(results, "SLOW one\nSLOW two\n").unwrap();
+                ctx.write_file(results, "SLOW one\nSLOW two\n").unwrap();
                 ctx.until_killed().await;
             }))
         });

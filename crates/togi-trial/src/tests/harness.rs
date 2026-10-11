@@ -341,6 +341,122 @@ mod tests {
         }
     }
 
+    fn launch_under(
+        fake: &Fake,
+        identity: BackendIdentity,
+        cwd: &std::path::Path,
+    ) -> Rc<std::cell::RefCell<Option<std::io::Result<()>>>> {
+        use crate::os::Os as _;
+        let argv = crate::launch::scope_argv(
+            "togi-trial-t1-c00.scope",
+            identity,
+            false,
+            cwd,
+            &[CpuId(0)],
+            &["worker".into()],
+        );
+        let target = cwd.join("results.txt");
+        let written = Rc::new(std::cell::RefCell::new(None));
+        let slot = Rc::clone(&written);
+        fake.on_launch(move |_, _| {
+            let (target, slot) = (target.clone(), Rc::clone(&slot));
+            Launch::Run(script(move |ctx: ProcCtx| async move {
+                *slot.borrow_mut() = Some(ctx.write_file(target, "COMPUTE ERROR\n"));
+            }))
+        });
+        let command = crate::launch::LaunchCommand {
+            argv,
+            cwd: cwd.to_owned(),
+            pin: Vec::new(),
+        };
+        fake.launch(&command).unwrap_or_else(|_| panic!("launch"));
+        written
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_fake_process_takes_the_account_its_scope_runs_it_under() {
+        local(async {
+            let fake = Fake::default();
+            let seen = Rc::new(std::cell::RefCell::new(Vec::new()));
+            let slot = Rc::clone(&seen);
+            fake.on_launch(move |_, _| {
+                let slot = Rc::clone(&slot);
+                Launch::Run(script(move |ctx: ProcCtx| async move {
+                    slot.borrow_mut().push(ctx.account);
+                }))
+            });
+            let identity = BackendIdentity::new(997, 996).unwrap();
+            let scoped = crate::launch::LaunchCommand {
+                argv: crate::launch::scope_argv(
+                    "togi-trial-t1-c00.scope",
+                    identity,
+                    false,
+                    std::path::Path::new("/trials/t1/c00"),
+                    &[CpuId(0)],
+                    &["worker".into()],
+                ),
+                cwd: "/trials/t1/c00".into(),
+                pin: Vec::new(),
+            };
+            let bare = crate::launch::LaunchCommand {
+                argv: vec!["worker".into()],
+                ..scoped.clone()
+            };
+            for command in [&scoped, &bare] {
+                let _ = crate::os::Os::launch(&fake, command);
+            }
+            tokio::task::yield_now().await;
+            assert_eq!(*seen.borrow(), [Some((997, 996)), None]);
+        })
+        .await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn every_watched_write_of_a_rig_process_targets_the_rigs_configured_account() {
+        local(async {
+            let rig = rig();
+            let seen = Rc::new(std::cell::Cell::new(None));
+            let slot = Rc::clone(&seen);
+            rig.fake.on_launch(move |_, _| {
+                let slot = Rc::clone(&slot);
+                Launch::Run(script(move |mut ctx: ProcCtx| async move {
+                    slot.set(Some(ctx.account));
+                    ctx.until_killed().await;
+                }))
+            });
+            let handle = rig
+                .start(spec(Regime::R1, &[0], Duration::from_secs(5)))
+                .await
+                .unwrap();
+            tokio::task::yield_now().await;
+            let identity = rig.env.identity.unwrap();
+            assert_eq!(seen.get(), Some(Some((identity.uid(), identity.gid()))));
+            drop(handle);
+        })
+        .await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_privileged_run_hands_watched_files_to_the_configured_account() {
+        if !rustix::process::geteuid().is_root() {
+            eprintln!("skipped: needs root to chown a watched file to another account");
+            return;
+        }
+        local(async {
+            let dir = crate::testing::tempdir();
+            let identity = identity_of(0, 0);
+            let fake = Fake::default();
+            let written = launch_under(&fake, identity, dir.path());
+            tokio::task::yield_now().await;
+            assert!(matches!(written.borrow().as_ref(), Some(Ok(()))));
+            let meta = std::fs::metadata(dir.path().join("results.txt")).unwrap();
+            let owner = std::os::unix::fs::MetadataExt::uid(&meta);
+            assert_eq!(owner, identity.uid());
+            assert_ne!(owner, 0);
+        })
+        .await;
+    }
+
     #[tokio::test(start_paused = true)]
     async fn an_expired_systemd_deadline_times_out_without_running_the_script_or_its_effect() {
         let fake = Fake::default();

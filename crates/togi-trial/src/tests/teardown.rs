@@ -548,7 +548,7 @@ async fn an_acknowledged_scope_kill_with_a_surviving_member_is_containment() {
         rig.fake.on_launch(|_, command| {
             let results = command.cwd.join("results.txt");
             Launch::Run(script(move |mut ctx: ProcCtx| async move {
-                std::fs::write(results, "COMPUTE ERROR").unwrap();
+                ctx.write_file(results, "COMPUTE ERROR").unwrap();
                 ctx.until_killed().await;
             }))
         });
@@ -627,7 +627,7 @@ fn watching_rig() -> super::harness::Rig {
     rig.fake.on_launch(|_, command| {
         let results = command.cwd.join("results.txt");
         Launch::Run(script(move |mut ctx: ProcCtx| async move {
-            std::fs::write(results, "COMPUTE ERROR").unwrap();
+            ctx.write_file(results, "COMPUTE ERROR").unwrap();
             ctx.until_killed().await;
         }))
     });
@@ -769,7 +769,7 @@ async fn a_classifier_panic_during_teardown_is_reported_and_teardown_stays_bound
             let results = command.cwd.join("results.txt");
             Launch::Run(script(move |mut ctx: ProcCtx| async move {
                 if watched {
-                    std::fs::write(results, "BOOM").unwrap();
+                    ctx.write_file(results, "BOOM").unwrap();
                     ctx.until_killed().await;
                 } else {
                     ctx.until_killed_ignoring_term().await;
@@ -851,7 +851,7 @@ async fn a_watched_append_after_the_last_drain_poll_is_classified_before_the_pro
         rig.fake.on_launch(|_, command| {
             let results = command.cwd.join("results.txt");
             Launch::Run(script(move |mut ctx: ProcCtx| async move {
-                std::fs::write(results, "COMPUTE").unwrap();
+                ctx.write_file(results, "COMPUTE").unwrap();
                 ctx.until_killed().await;
             }))
         });
@@ -944,8 +944,8 @@ async fn a_final_partial_consuming_the_budget_cannot_confirm_another_files_old_s
             let first = command.cwd.join("results.txt");
             let second = command.cwd.join("second.txt");
             Launch::Run(script(move |mut ctx: ProcCtx| async move {
-                std::fs::write(first, "spend final budget").unwrap();
-                std::fs::write(second, "COMPUTE").unwrap();
+                ctx.write_file(first, "spend final budget").unwrap();
+                ctx.write_file(second, "COMPUTE").unwrap();
                 ctx.until_killed().await;
             }))
         });

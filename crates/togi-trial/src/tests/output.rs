@@ -65,7 +65,7 @@ fn emits_lingering(
                 Source::Stderr => {
                     let _ = ctx.stderr.write_all(&bytes).await;
                 }
-                Source::Watched => std::fs::write(file, &bytes).unwrap(),
+                Source::Watched => ctx.write_file(file, &bytes).unwrap(),
             }
             if lingers {
                 ctx.until_killed_ignoring_term().await;
@@ -148,7 +148,7 @@ async fn a_line_of_exactly_the_limit_is_accepted_in_every_source(source: Source,
                     Source::Stderr => {
                         let _ = ctx.stderr.write_all(&bytes).await;
                     }
-                    Source::Watched => std::fs::write(file, &bytes).unwrap(),
+                    Source::Watched => ctx.write_file(file, &bytes).unwrap(),
                 }
                 if unterminated_pipe {
                     ctx.exit(ExitInfo::Code(0));
@@ -291,7 +291,7 @@ async fn a_watched_flood_with_a_final_unterminated_error_is_drained_once_without
         rig.fake.on_launch(move |_, command| {
             let (bytes, file) = (bytes.clone(), results(command));
             Launch::Run(script(move |mut ctx: ProcCtx| async move {
-                std::fs::write(file, &bytes).unwrap();
+                ctx.write_file(file, &bytes).unwrap();
                 ctx.until_killed_ignoring_term().await;
             }))
         });
@@ -317,7 +317,7 @@ async fn an_error_beyond_the_first_read_batches_is_found_by_the_teardown_drain()
         rig.fake.on_launch(move |_, command| {
             let (bytes, file) = (bytes.clone(), results(command));
             Launch::Run(script(move |mut ctx: ProcCtx| async move {
-                std::fs::write(file, &bytes).unwrap();
+                ctx.write_file(file, &bytes).unwrap();
                 ctx.until_killed().await;
             }))
         });
@@ -341,9 +341,9 @@ async fn a_flooding_file_cannot_starve_the_quiet_instance_beside_it() {
             let file = results(command);
             Launch::Run(script(move |mut ctx: ProcCtx| async move {
                 if n == 0 {
-                    std::fs::write(file, flood(4 * 1024 * 1024 / 8)).unwrap();
+                    ctx.write_file(file, flood(4 * 1024 * 1024 / 8)).unwrap();
                 } else {
-                    std::fs::write(file, "COMPUTE ERROR\n").unwrap();
+                    ctx.write_file(file, "COMPUTE ERROR\n").unwrap();
                 }
                 ctx.until_killed().await;
             }))
@@ -368,7 +368,7 @@ async fn a_flooded_instance_does_not_skip_the_required_samples_of_its_neighbour(
             let file = results(command);
             Launch::Run(script(move |mut ctx: ProcCtx| async move {
                 if n == 0 {
-                    std::fs::write(file, flood(4 * 1024 * 1024 / 8)).unwrap();
+                    ctx.write_file(file, flood(4 * 1024 * 1024 / 8)).unwrap();
                 }
                 ctx.until_killed().await;
             }))
@@ -444,7 +444,7 @@ async fn a_slow_classified_watched_flood_is_polled_during_the_trial_and_leaves_t
         rig.fake.on_launch(|_, command| {
             let file = results(command);
             Launch::Run(script(move |mut ctx: ProcCtx| async move {
-                std::fs::write(file, "SLOW ok line\n".repeat(400)).unwrap();
+                ctx.write_file(file, "SLOW ok line\n".repeat(400)).unwrap();
                 ctx.until_killed().await;
             }))
         });
@@ -495,7 +495,7 @@ async fn a_hard_linked_watched_file_is_refused_as_an_ordinary_diagnostic() {
             let file = results(command);
             Launch::Run(script(move |mut ctx: ProcCtx| async move {
                 let elsewhere = file.with_file_name("elsewhere");
-                std::fs::write(&elsewhere, "COMPUTE ERROR\n").unwrap();
+                ctx.write_file(&elsewhere, "COMPUTE ERROR\n").unwrap();
                 std::fs::hard_link(&elsewhere, &file).unwrap();
                 ctx.until_killed().await;
             }))
@@ -531,14 +531,14 @@ async fn unread_accepted_watched_bytes_that_vanish_are_lost_output_and_containme
         rig.fake.on_launch(move |_, command| {
             let (file, how) = (results(command), how.clone());
             Launch::Run(script(move |mut ctx: ProcCtx| async move {
-                std::fs::write(&file, seeded_lines()).unwrap();
+                ctx.write_file(&file, seeded_lines()).unwrap();
                 tokio::time::sleep(Duration::from_millis(1500)).await;
                 match how.as_str() {
                     "remove" => std::fs::remove_file(&file).unwrap(),
-                    "truncate" => std::fs::write(&file, "short\n").unwrap(),
+                    "truncate" => ctx.write_file(&file, "short\n").unwrap(),
                     "replace" => {
                         let other = file.with_file_name("other");
-                        std::fs::write(&other, seeded_lines()).unwrap();
+                        ctx.write_file(&other, seeded_lines()).unwrap();
                         std::fs::rename(other, &file).unwrap();
                     }
                     _ => {
@@ -608,7 +608,7 @@ async fn a_watched_partial_is_classified_only_after_the_scope_kill_confirms_the_
         rig.fake.on_launch(|_, command| {
             let file = results(command);
             Launch::Run(script(move |mut ctx: ProcCtx| async move {
-                std::fs::write(&file, "COMPUTE").unwrap();
+                ctx.write_file(&file, "COMPUTE").unwrap();
                 while let Some(delivery) = ctx.signals.recv().await {
                     match delivery {
                         Delivery::Group(GroupSignal::Term) => {
@@ -648,7 +648,7 @@ async fn an_exit_queued_ahead_of_a_watched_error_beyond_the_first_batch_does_not
         rig.fake.on_launch(move |_, command| {
             let (bytes, file) = (bytes.clone(), results(command));
             Launch::Run(script(move |ctx: ProcCtx| async move {
-                std::fs::write(file, &bytes).unwrap();
+                ctx.write_file(file, &bytes).unwrap();
                 ctx.exit(ExitInfo::Code(1));
             }))
         });
@@ -675,7 +675,7 @@ async fn an_unscoped_watched_partial_needs_a_group_kill_that_actually_succeeded(
         rig.fake.on_launch(|_, command| {
             let file = results(command);
             Launch::Run(script(move |ctx: ProcCtx| async move {
-                std::fs::write(&file, "COMPUTE ERROR").unwrap();
+                ctx.write_file(&file, "COMPUTE ERROR").unwrap();
                 tokio::time::sleep(Duration::from_millis(2500)).await;
                 ctx.exit(ExitInfo::Code(0));
             }))
@@ -699,7 +699,7 @@ async fn writers_confirmed_for_one_instance_keep_their_evidence_when_another_sco
         rig.fake.on_launch(|n, command| {
             let file = results(command);
             Launch::Run(script(move |mut ctx: ProcCtx| async move {
-                std::fs::write(&file, "COMPUTE ERROR").unwrap();
+                ctx.write_file(&file, "COMPUTE ERROR").unwrap();
                 let _ = n;
                 ctx.until_killed().await;
             }))
