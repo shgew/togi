@@ -318,3 +318,40 @@ fn the_archive_listing_and_ids_see_the_new_archive() {
     assert_eq!(next.to_string(), "20231114T221320Z-2");
     assert!(fs.kind_is_none(&format!("{TRIALS}-x")));
 }
+
+fn recorded_but_not_moved(fs: &MemFs) -> Vec<u8> {
+    let journal = seeded(fs);
+    fs.inject(Fault::before(crate::fs::Op::Rename, 1));
+    assert!(journal.archive(stamp(5), ArchiveKind::Transition, &[]).is_err());
+    fs.clear_faults();
+    live(fs)
+}
+
+#[test]
+fn a_recorded_reset_all_still_leaves_the_permanent_boundary() {
+    let fs = MemFs::new();
+    let recorded = recorded_but_not_moved(&fs);
+    let mut dir = simulated(&fs);
+    assert_eq!(dir.archive_unreadable(ArchiveKind::ResetAll).unwrap(), Some(default_session()));
+    assert_eq!(dir.reset_boundary().unwrap(), Some(default_session()));
+    assert_eq!(fs.contents(ARCHIVED).unwrap(), recorded);
+    assert_eq!(fs.contents(COMPAT), None);
+}
+
+#[test]
+fn the_boundary_is_durable_before_a_recorded_reset_all_moves_anything() {
+    let fs = MemFs::new();
+    let recorded = recorded_but_not_moved(&fs);
+    let mut dir = simulated(&fs);
+    fs.inject(Fault::before(crate::fs::Op::Open, 1));
+    assert!(dir.archive_unreadable(ArchiveKind::ResetAll).is_err());
+    fs.clear_faults();
+    assert_eq!(live(&fs), recorded);
+    assert!(fs.contents(ARCHIVED).is_none());
+    assert_eq!(dir.reset_boundary().unwrap(), None);
+    assert!(fs.contents("/state/trials/0001/sample.csv").is_some());
+
+    assert_eq!(dir.archive_unreadable(ArchiveKind::ResetAll).unwrap(), Some(default_session()));
+    assert_eq!(dir.reset_boundary().unwrap(), Some(default_session()));
+    assert_eq!(fs.contents(ARCHIVED).unwrap(), recorded);
+}

@@ -333,10 +333,14 @@ impl StateDir {
     }
 
     /// Archives a journal this build cannot read, without appending to it. A journal that already records its own
-    /// archive is only moved. Returns the session archived, or `None` when the directory holds no session.
+    /// archive is only moved, plus the reset boundary when the kind is `ResetAll`. Returns the session archived, or
+    /// `None` when the directory holds no session.
     pub fn archive_unreadable(&mut self, kind: ArchiveKind) -> Result<Option<SessionId>, DirError> {
         let Some(session) = self.live_session()? else { return Ok(None) };
         if self.records_archive(&session)? {
+            if kind == ArchiveKind::ResetAll {
+                self.mark_reset_through(Some(session))?;
+            }
             self.finish_archive(&session)?;
             return Ok(Some(session));
         }
