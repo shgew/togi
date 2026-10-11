@@ -826,7 +826,7 @@ fn scenarios() -> impl Strategy<Value = Scenario> {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(500))]
+    #![proptest_config(crate::prop_tests::seeded(500))]
 
     #[test]
     fn optimum_matches_exhaustive_search(scenario in scenarios()) {

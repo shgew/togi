@@ -36,6 +36,8 @@ mod fold_tests;
 #[cfg(test)]
 mod ledger_tests;
 #[cfg(test)]
+mod optimum_tests;
+#[cfg(test)]
 mod phase_tests;
 #[cfg(test)]
 mod prop_tests;

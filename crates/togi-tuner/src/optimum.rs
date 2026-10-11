@@ -113,6 +113,18 @@ fn tie_order(cores: CoreSet, ranking: &Ranking) -> Vec<CoreId> {
     order
 }
 
+#[cfg(test)]
+thread_local! {
+    /// Search nodes visited on this thread since the last `take_nodes`.
+    static NODES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// The search nodes visited on this thread since the previous call, for work-bound tests.
+#[cfg(test)]
+pub(crate) fn take_nodes() -> u64 {
+    NODES.with(|nodes| nodes.replace(0))
+}
+
 struct Search {
     needs: Vec<Needs>,
     order: Vec<CoreId>,
@@ -123,6 +135,8 @@ struct Search {
 
 impl Search {
     fn visit(&mut self) {
+        #[cfg(test)]
+        NODES.with(|nodes| nodes.set(nodes.get() + 1));
         let mut branch = None;
         let mut branch_moves = 0;
         let mut bound = 0;

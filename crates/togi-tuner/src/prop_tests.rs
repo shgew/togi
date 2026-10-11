@@ -4,6 +4,33 @@ use togi_journal::{CorePhase, Outcome};
 use crate::testkit::{Journal, Start};
 use crate::{Action, DecisionAction, DecisionPayload, Load, TrialPlan};
 
+/// The proptest configuration for this crate: `cases` cases drawn from a fixed seed, so every run
+/// checks the same cases, and no failure file written into the source tree.
+pub(crate) fn seeded(cases: u32) -> ProptestConfig {
+    ProptestConfig {
+        cases,
+        rng_seed: proptest::test_runner::RngSeed::Fixed(0x7475_6e65_725f_7072),
+        failure_persistence: None,
+        ..ProptestConfig::default()
+    }
+}
+
+#[test]
+fn seeded_config_draws_the_same_cases_every_run() {
+    use proptest::strategy::{Strategy, ValueTree};
+    use proptest::test_runner::TestRunner;
+
+    let draw = || {
+        let mut runner = TestRunner::new(seeded(8));
+        (0..8)
+            .map(|_| any::<u64>().new_tree(&mut runner).unwrap().current())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(draw(), draw());
+    assert_eq!(seeded(48).cases, 48);
+    assert!(seeded(48).failure_persistence.is_none());
+}
+
 fn left_search(action: &Action) -> bool {
     matches!(action, Action::Decide(DecisionAction {
         payload: DecisionPayload::CorePhase(phase), ..
@@ -11,7 +38,7 @@ fn left_search(action: &Action) -> bool {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(256))]
+    #![proptest_config(seeded(256))]
 
     #[test]
     fn search_converges(threshold in -49_i64..=0, start in -50_i64..=0) {
@@ -41,7 +68,7 @@ fn outcome(byte: u8) -> Outcome {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(48))]
+    #![proptest_config(seeded(48))]
 
     #[test]
     fn a_fresh_fold_of_every_prefix_equals_the_incremental_fold(

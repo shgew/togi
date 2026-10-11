@@ -1,9 +1,15 @@
 use std::num::NonZeroU32;
-use std::time::{Duration, Instant};
 
 use serde::Deserialize;
 use togi_machine::{CcdId, CoreId, CoreInfo, PerCore, TargetOffset};
-use togi_tuner::{CombinationId, Constraints, FailurePoint, Profile, Ranking, Topology};
+
+use crate::optimum::take_nodes;
+use crate::{CombinationId, Constraints, FailurePoint, Profile, Ranking, Topology};
+
+/// Search nodes the accumulated-combinations fixture may cost. The pruned search visits far
+/// fewer (11 today); with the implied-combination drop and the fewest-moves branch choice
+/// disabled it visits 229124.
+const NODE_BOUND: u64 = 50;
 
 #[derive(Deserialize)]
 struct Fixture {
@@ -16,8 +22,10 @@ struct Fixture {
 
 #[test]
 fn optimum_with_accumulated_combinations() {
-    let fixture: Fixture =
-        serde_json::from_str(include_str!("data/optimum-accumulated-combinations.json")).unwrap();
+    let fixture: Fixture = serde_json::from_str(include_str!(
+        "../tests/data/optimum-accumulated-combinations.json"
+    ))
+    .unwrap();
     let core = |id: u8| CoreId::new(i64::from(id)).unwrap();
     let offset = |value: i64| TargetOffset::new(value).unwrap();
     let infos: Vec<CoreInfo> = (0..u8::try_from(fixture.hi.len()).unwrap())
@@ -58,15 +66,12 @@ fn optimum_with_accumulated_combinations() {
     )
     .unwrap();
 
-    let started = Instant::now();
+    take_nodes();
     let got = constraints
         .optimum(&profile(&fixture.hi), &ranking)
         .unwrap();
-    let elapsed = started.elapsed();
+    let nodes = take_nodes();
 
     assert_eq!(got, Some(profile(&fixture.want)));
-    assert!(
-        elapsed < Duration::from_secs(10),
-        "optimum took {elapsed:?}"
-    );
+    assert!(nodes <= NODE_BOUND, "optimum visited {nodes} search nodes");
 }
