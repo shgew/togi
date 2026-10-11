@@ -12,8 +12,8 @@ use tokio::task::LocalSet;
 use crate::error::Error;
 use crate::os::Os;
 use crate::supervisor::{Env, Handle, Supervised, TrialCommand, start};
-use crate::timing::Timing;
 use crate::sweep;
+use crate::timing::Timing;
 
 pub(crate) type Reply<T> = SyncSender<T>;
 
@@ -157,7 +157,10 @@ async fn contain_all<O: Os>(env: &Env<O>) {
     }
     let deadline = tokio::time::Instant::now() + env.timing.stop_bound();
     for supervised in live {
-        if tokio::time::timeout_at(deadline, supervised.task).await.is_err() {
+        if tokio::time::timeout_at(deadline, supervised.task)
+            .await
+            .is_err()
+        {
             report_uncontained(&supervised.trial);
         }
     }

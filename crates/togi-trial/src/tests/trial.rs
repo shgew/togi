@@ -343,7 +343,10 @@ async fn an_exit_queued_before_a_cancellation_is_still_an_unexpected_exit() {
         let run = finish(&handle).await;
         assert!(matches!(run.finished.errors[..], [Error::Cancelled]));
         let failure = run.finished.result.failure.unwrap();
-        assert_eq!((failure.signal, failure.core), (Signal::UnexpectedExit, core(2)));
+        assert_eq!(
+            (failure.signal, failure.core),
+            (Signal::UnexpectedExit, core(2))
+        );
     })
     .await;
 }

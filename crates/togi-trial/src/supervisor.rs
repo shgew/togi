@@ -25,8 +25,8 @@ use crate::id::ScopeName;
 use crate::identity::{BackendIdentity, IdentityError};
 use crate::instance::{Flow, Inbound, LiveInstance, Observed, Reader, Run, dispatch, poll_watched};
 use crate::judge::Judge;
-use crate::logs::{LogWriter, LogsEnd, Wrap};
 use crate::launch::{self, Confinement};
+use crate::logs::{LogWriter, LogsEnd, Wrap};
 use crate::os::{Child as _, GroupSignal, LaunchFailure, Os, SignalError};
 use crate::plan::{Load, TrialPlan};
 use crate::runner::Backends;
@@ -924,7 +924,9 @@ impl<O: Os> Supervisor<O> {
                 }
             }
             LogsEnd::TimedOut(bound) => {
-                late.push(format!("the output log writer did not finish within {bound:?}"));
+                late.push(format!(
+                    "the output log writer did not finish within {bound:?}"
+                ));
             }
         }
         let mut verdict = judge.conclude();

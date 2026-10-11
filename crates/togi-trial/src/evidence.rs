@@ -637,7 +637,10 @@ mod tests {
             detail: "exit status 0".into(),
         });
         let verdict = conclude(s);
-        assert_eq!(verdict.failure.map(|f| f.signal), Some(Signal::UnexpectedExit));
+        assert_eq!(
+            verdict.failure.map(|f| f.signal),
+            Some(Signal::UnexpectedExit)
+        );
         assert_eq!(verdict.inconclusive, None);
         assert_eq!(verdict.diagnostics.len(), 1);
     }

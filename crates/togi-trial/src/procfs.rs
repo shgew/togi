@@ -377,7 +377,10 @@ mod tests {
     fn a_component_with_spaces_is_a_different_cgroup_not_a_trial_scope() {
         assert_eq!(scope_of("0::/other/ togi-trial-a.scope /child\n"), None);
         assert_eq!(scope_of("0::/other/togi-trial-a.scope \n"), None);
-        assert!(!in_scope("0::/other/togi-trial-a.scope \n", &scope("togi-trial-a")));
+        assert!(!in_scope(
+            "0::/other/togi-trial-a.scope \n",
+            &scope("togi-trial-a")
+        ));
     }
 
     #[test]

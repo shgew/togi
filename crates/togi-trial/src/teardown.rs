@@ -1,9 +1,9 @@
 use std::rc::Rc;
 
+use std::collections::BTreeSet;
 use togi_machine::Stopped;
 use tokio::sync::mpsc::Receiver;
 use tokio::task::JoinSet;
-use std::collections::BTreeSet;
 
 use tokio::time::{Instant, sleep, sleep_until, timeout_at};
 

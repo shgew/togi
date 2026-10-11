@@ -451,10 +451,16 @@ async fn a_pipe_setup_failure_rolls_back_as_unconfirmed_output() {
             .await
             .err()
             .unwrap();
-        assert!(partial.value.is_none(), "unread output is never a confirmed drain");
+        assert!(
+            partial.value.is_none(),
+            "unread output is never a confirmed drain"
+        );
         assert!(matches!(partial.error, togi_machine::Error::Containment));
         let process = rig.fake.process(0);
-        assert!(process.reaped.get(), "the launched child was still contained and reaped");
+        assert!(
+            process.reaped.get(),
+            "the launched child was still contained and reaped"
+        );
         assert_eq!(kills(&rig.fake.systemd_calls()), ["togi-trial-t1"]);
     })
     .await;
@@ -477,8 +483,14 @@ async fn a_launcher_whose_exit_watch_failed_is_still_killed_and_reaped_by_the_ro
             .err()
             .unwrap();
         assert!(begun.elapsed() <= secs(15));
-        assert!(partial.value.is_some(), "the retained child was confirmed stopped");
-        assert!(matches!(crate_error(&partial.error), Some(Error::Launch { .. })));
+        assert!(
+            partial.value.is_some(),
+            "the retained child was confirmed stopped"
+        );
+        assert!(matches!(
+            crate_error(&partial.error),
+            Some(Error::Launch { .. })
+        ));
         assert!(rig.fake.process(0).reaped.get());
     })
     .await;

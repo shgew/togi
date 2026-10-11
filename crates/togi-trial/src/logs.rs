@@ -200,7 +200,9 @@ mod tests {
         log.append(b"one\n").unwrap();
         log.append(b"two\n").unwrap();
         drop(log);
-        assert!(matches!(writer.finish(Duration::from_secs(5)).await, LogsEnd::Done(f) if f.is_empty()));
+        assert!(
+            matches!(writer.finish(Duration::from_secs(5)).await, LogsEnd::Done(f) if f.is_empty())
+        );
         assert_eq!(*written.lock().unwrap(), b"one\ntwo\n");
     }
 
@@ -214,7 +216,10 @@ mod tests {
         match writer.finish(Duration::from_secs(5)).await {
             LogsEnd::Done(failures) => {
                 assert_eq!(failures.len(), 1);
-                assert_eq!((failures[0].instance, failures[0].stream), (3, Stream::Stderr));
+                assert_eq!(
+                    (failures[0].instance, failures[0].stream),
+                    (3, Stream::Stderr)
+                );
             }
             LogsEnd::TimedOut(_) => panic!("timed out"),
         }

@@ -231,7 +231,11 @@ async fn the_cap_never_hides_cleanup_or_ordinary_io_errors() {
             run.finished.result.inconclusive.as_deref(),
             Some("core 00 read stderr.log: backend output line exceeds 64 KiB")
         );
-        assert!(matches!(&run.finished.errors[..], [Error::Output(_)]), "{:?}", run.finished.errors);
+        assert!(
+            matches!(&run.finished.errors[..], [Error::Output(_)]),
+            "{:?}",
+            run.finished.errors
+        );
         let containment = run.finished.teardown.unwrap_err();
         assert!(
             containment
@@ -666,7 +670,8 @@ async fn a_blocked_log_write_never_stalls_supervision_and_is_reported() {
                 })
             }));
         });
-        rig.fake.on_launch(emits(Source::Stdout, b"ok line\n".repeat(512 * 1024)));
+        rig.fake
+            .on_launch(emits(Source::Stdout, b"ok line\n".repeat(512 * 1024)));
         let handle = rig.start(spec(Regime::R1, &[0], secs(3))).await.unwrap();
         let wall = std::time::Instant::now();
         let run = finish(&handle).await;
@@ -676,8 +681,18 @@ async fn a_blocked_log_write_never_stalls_supervision_and_is_reported() {
         let Some(Error::Output(output)) = run.finished.errors.last() else {
             panic!("{:?}", run.finished.errors);
         };
-        assert!(output.diagnostics().iter().any(|d| d.contains("output bytes were dropped")));
-        assert!(output.diagnostics().iter().any(|d| d.contains("did not finish")));
+        assert!(
+            output
+                .diagnostics()
+                .iter()
+                .any(|d| d.contains("output bytes were dropped"))
+        );
+        assert!(
+            output
+                .diagnostics()
+                .iter()
+                .any(|d| d.contains("did not finish"))
+        );
         drop(gates);
     })
     .await;
