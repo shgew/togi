@@ -508,6 +508,24 @@ func TestRustNotBuiltClaimsNoModuleDeclarationItsFileBuilt(t *testing.T) {
 			src:   "#[cfg(test)]\nmod tests;\n",
 			built: map[string]bool{"crates/a/src/foo.rs": true, "crates/a/src/foo/tests.rs": true},
 		},
+		{
+			name:  "a module whose path attribute names another file",
+			src:   "#[cfg(windows)]\n#[path = \"win.rs\"]\nmod imp;\n",
+			built: map[string]bool{lib: true, "crates/a/src/imp.rs": true},
+			want:  []string{lib},
+		},
+		{
+			name:  "a module whose cfg_attr path names another file",
+			src:   "#[cfg(windows)]\n#[cfg_attr(unix, path = \"x.rs\")]\nmod imp;\n",
+			built: map[string]bool{lib: true, "crates/a/src/imp.rs": true},
+			want:  []string{lib},
+		},
+		{
+			name:  "a module declared inside an inline module is not proven by a top-level file",
+			src:   "mod outer {\n    #[cfg(feature = \"x\")]\n    mod tests;\n}\n",
+			built: map[string]bool{lib: true, "crates/a/src/tests.rs": true},
+			want:  []string{lib},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

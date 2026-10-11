@@ -260,19 +260,24 @@ func rustNotBuilt(root string, changed map[string][]lineRange, built map[string]
 	return paths, nil
 }
 
-var moduleDeclaration = regexp.MustCompile(`^(?:#\[[^\]]*\]\s*)*(?:pub(?:\([^)]*\))?\s+)?mod\s+(\w+)\s*;$`)
+var (
+	moduleDeclaration = regexp.MustCompile(`^((?:#\[[^\]]*\]\s*)*)(?:pub(?:\([^)]*\))?\s+)?mod\s+(\w+)\s*;$`)
+	pathAttribute     = regexp.MustCompile(`\bpath\s*=`)
+)
 
 // moduleBuilt reports whether item, the text of an item in the source file path, declares an out-of-line module whose file a dep-info names.
 // The declaration holds no lines of the module, so the trace measures the module in its own file.
+// A path attribute names another file, so it proves nothing.
+// An indented declaration sits in an inline module and resolves under that module's directory, so it proves nothing.
 func moduleBuilt(path, item string, built map[string]bool) bool {
-	match := moduleDeclaration.FindStringSubmatch(strings.TrimSpace(item))
-	if match == nil {
+	match := moduleDeclaration.FindStringSubmatch(strings.TrimRight(item, " \t\r\n"))
+	if match == nil || pathAttribute.MatchString(match[1]) {
 		return false
 	}
 	dir, file := filepath.Split(path)
 	if stem := strings.TrimSuffix(file, ".rs"); stem != "lib" && stem != "main" && stem != "mod" {
 		dir += stem + "/"
 	}
-	name := match[1]
+	name := match[2]
 	return built[dir+name+".rs"] || built[dir+name+"/mod.rs"]
 }
