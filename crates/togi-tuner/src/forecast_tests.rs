@@ -904,3 +904,37 @@ fn stored_requirement_survives_crash_and_changed_config_forecast() {
     assert!(crashed.between.is_some());
     assert_eq!(fresh(&j.events).forecast(), crashed);
 }
+
+#[test]
+fn forecast_folds_the_recorded_ranking_again_when_a_later_plan_left_it_stale() {
+    let ids = [0, 1, 2, 3];
+    let starts = vec![Start::at_limit(-30).fail(-31); 4];
+    let mut j = Journal::on(&ids, topology(4), &starts);
+    j.profile_change(&[-30; 4]);
+    j.ranking(&ids);
+    let round = j.round_start(1, &[-30; 4], &[0], 1);
+    j.round_end(1, round);
+    let seconds = j.run().config.checking_idle.get();
+    let plan = j.manual(
+        Regime::R6,
+        0,
+        Load::Many(set(&ids)),
+        togi_machine::Condition::Together,
+        &[-30; 4],
+        seconds,
+    );
+    j.intent(&plan);
+    assert!(j.run().ranking_stale());
+    let forecast = j.state.forecast();
+    let unnamed = branch(&forecast, Premise::Unnamed);
+    assert_eq!(unnamed.uncertainty, None, "{unnamed:?}");
+    assert!(matches!(
+        unnamed.decisions.as_slice(),
+        [
+            DecisionPayload::Failure(_),
+            DecisionPayload::HuntStart(_),
+            DecisionPayload::HuntGroup(_)
+        ]
+    ));
+    assert_eq!(fresh(&j.events).forecast(), forecast);
+}

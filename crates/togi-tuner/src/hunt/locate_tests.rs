@@ -385,6 +385,9 @@ fn located_hunt_retests_the_full_failing_profile_before_ending_loaded() {
     let end = hunt_end(&located.action).clone();
     assert_eq!(end.result, HuntOutcome::Loaded, "{end:?}");
     assert_eq!((end.cores, end.groups), (set(&[0, 1]), 4));
+    let finished = j.state.hunt_plan().expect("the hunt is still active");
+    assert!(finished.parts.is_empty() && finished.probes.is_empty());
+    assert_eq!(finished.cut, 0);
     let ended = j.decide(decision(&located.action).clone());
     let action = j.loc_act();
     let move_ = backoff(&action);

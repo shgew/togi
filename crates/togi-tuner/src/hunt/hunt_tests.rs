@@ -2724,6 +2724,24 @@ fn an_already_broken_combination_ends_without_starting_member_probes() {
 }
 
 #[test]
+fn an_already_broken_combination_shows_every_member_done_in_the_plan() {
+    let mut j = before_first_member_probe();
+    let ladder = |j: &Journal| -> Vec<(togi_machine::CoreId, i64, bool)> {
+        j.state
+            .hunt_plan()
+            .unwrap()
+            .probes
+            .iter()
+            .map(|probe| (probe.member, probe.offset.get(), probe.done))
+            .collect()
+    };
+    assert!(ladder(&j).iter().any(|&(_, _, done)| !done));
+    j.profile_change(&[-29, -30, -30, -30]);
+    assert_eq!(ladder(&j), [(core(0), -30, true), (core(1), -30, true)]);
+    j.assert_resumes();
+}
+
+#[test]
 fn a_combination_before_any_checking_profile_is_recorded_without_the_shallower_note() {
     let starts = [-30, -30].map(|offset| Start::at_limit(offset).fail(offset - 1).pass(offset));
     let mut j = Journal::new(&[0, 1], &starts);

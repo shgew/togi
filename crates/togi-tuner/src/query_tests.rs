@@ -355,3 +355,25 @@ fn signatures_are_shared_borrows_without_a_journal() {
     let _: fn(&State) -> Projection = State::project;
     let _: fn(&State) -> Forecast = State::forecast;
 }
+
+#[test]
+fn replay_folds_a_whole_journal_and_stops_at_the_first_event_it_cannot_follow() {
+    let mut j = Journal::has_room(&[-20, -20]);
+    for _ in 0..3 {
+        let decision = j.next_decision();
+        j.decide(decision);
+    }
+    let replayed = crate::replay(&j.events).unwrap();
+    assert_eq!(replayed, j.state);
+    assert_eq!(replayed.next(), j.state.next());
+    assert_eq!(crate::replay([]).unwrap(), State::new());
+    let again = j.events.iter().chain(j.events.first());
+    assert!(matches!(
+        crate::replay(again),
+        Err(crate::FoldError::OutOfOrder { .. })
+    ));
+    assert!(matches!(
+        crate::replay(&j.events[1..]),
+        Err(crate::FoldError::NotStarted)
+    ));
+}

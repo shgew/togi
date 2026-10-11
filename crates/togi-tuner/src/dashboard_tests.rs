@@ -246,6 +246,7 @@ fn core_limit_holders() {
         }
         assert_eq!(j.state.core_limit(core(0)), want, "{name}");
         assert_eq!(fresh(&j.events).core_limit(core(0)), want, "{name}");
+        assert_eq!(j.state.core_limit(core(9)), None, "{name}");
     }
 }
 
@@ -1393,6 +1394,7 @@ fn views_are_empty_without_a_session_or_after_poisoning() {
         assert_eq!(state.trial_history(), None);
         assert_eq!(state.hunt_plan(), None);
         assert_eq!(state.core_limit(core(0)), None);
+        assert_eq!(state.forecast(), crate::Forecast::default());
     }
     empty(&crate::State::new());
     let mut j = Journal::search_at(&[-20]);
