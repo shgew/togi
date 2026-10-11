@@ -143,7 +143,7 @@ guard-manifest *args: _dev-shell
 # Prove simulated session decisions are unchanged from a base revision; stops at the first difference (`--keep-going` counts them all)
 [group('run')]
 same base="origin/main" *args: _dev-shell
-    dir=$(mktemp -d); trap 'rm -rf "$dir"' EXIT; git archive "$1" | tar -x -C "$dir"; go run ./tools/bench --same "$dir" "${@:2}"
+    dir=$(mktemp -d -t same.XXXXXX); trap 'rm -rf "$dir"' EXIT; git archive "$1" | tar -x -C "$dir"; go run ./tools/bench --same "$dir" "${@:2}"
 
 # Prove a fixed selection of simulated sessions, one per scenario, is unchanged from a base revision; same cache and fail-fast as `same`
 [group('run')]
