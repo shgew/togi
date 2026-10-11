@@ -454,7 +454,7 @@ fn shell(deadline: Duration, output_limit: usize) -> Process {
 }
 
 #[test]
-fn the_process_runner_returns_standard_output_of_a_successful_command() {
+fn real_process_runner_returns_standard_output_of_a_successful_command() {
     let (_dir, path) = script("echo \"$1\"; echo saved_entry=togi\n");
     let output = shell(Duration::from_secs(10), 1024)
         .run(&path, &Edit::List)
@@ -463,7 +463,7 @@ fn the_process_runner_returns_standard_output_of_a_successful_command() {
 }
 
 #[test]
-fn the_process_runner_reports_a_failing_exit_with_its_trimmed_stderr() {
+fn real_process_runner_reports_a_failing_exit_with_its_trimmed_stderr() {
     let (_dir, path) = script("echo ' unwritable ' >&2; exit 3\n");
     let error = shell(Duration::from_secs(10), 1024)
         .run(&path, &Edit::Unset(vec!["saved_entry".to_owned()]))
@@ -476,7 +476,7 @@ fn the_process_runner_reports_a_failing_exit_with_its_trimmed_stderr() {
 }
 
 #[test]
-fn the_process_runner_kills_a_hung_command_at_its_deadline() {
+fn real_process_runner_kills_a_hung_command_at_its_deadline() {
     let (_dir, path) = script("sleep 30\n");
     let begun = std::time::Instant::now();
     let error = shell(Duration::from_millis(300), 1024)
@@ -499,7 +499,7 @@ fn the_process_runner_kills_a_hung_command_at_its_deadline() {
 }
 
 #[test]
-fn the_process_runner_refuses_output_beyond_its_cap() {
+fn real_process_runner_refuses_output_beyond_its_cap() {
     let (_dir, path) = script("head -c 4096 /dev/zero\n");
     let error = shell(Duration::from_secs(10), 1024)
         .run(&path, &Edit::List)
@@ -514,7 +514,7 @@ fn the_process_runner_refuses_output_beyond_its_cap() {
 }
 
 #[test]
-fn the_process_runner_refuses_output_that_is_not_utf8() {
+fn real_process_runner_refuses_output_that_is_not_utf8() {
     let (_dir, path) = script("printf '\\377\\376'\n");
     let error = shell(Duration::from_secs(10), 1024)
         .run(&path, &Edit::List)

@@ -130,21 +130,31 @@ pub(super) fn refused_account() -> Account {
 #[derive(Clone)]
 pub(super) struct Scope {
     pub(super) calls: Rc<Cell<usize>>,
-    reply: Result<&'static str, &'static str>,
+    reply: Rc<dyn Fn() -> Result<String, togi_trial::Error>>,
 }
 
 impl Scope {
     pub(super) fn creating() -> Self {
-        Self {
-            calls: Rc::default(),
-            reply: Ok("scope confined to cpu 0 created"),
-        }
+        Self::answering(|| Ok("scope confined to cpu 0 created".to_owned()))
     }
 
     pub(super) fn refusing(detail: &'static str) -> Self {
+        Self::answering(move || {
+            Err(togi_trial::Error::Probe {
+                detail: detail.to_owned(),
+                source: None,
+            })
+        })
+    }
+
+    pub(super) fn failing(error: fn() -> togi_trial::Error) -> Self {
+        Self::answering(move || Err(error()))
+    }
+
+    fn answering(reply: impl Fn() -> Result<String, togi_trial::Error> + 'static) -> Self {
         Self {
             calls: Rc::default(),
-            reply: Err(detail),
+            reply: Rc::new(reply),
         }
     }
 }
@@ -152,13 +162,7 @@ impl Scope {
 impl ScopeProbe for Scope {
     fn probe(&self) -> Result<String, togi_trial::Error> {
         self.calls.set(self.calls.get() + 1);
-        match self.reply {
-            Ok(detail) => Ok(detail.to_owned()),
-            Err(detail) => Err(togi_trial::Error::Probe {
-                detail: detail.to_owned(),
-                source: None,
-            }),
-        }
+        (self.reply)()
     }
 }
 

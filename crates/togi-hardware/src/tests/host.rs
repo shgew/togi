@@ -221,6 +221,49 @@ fn a_refused_scope_probe_fails_the_check_with_its_cause() {
     );
 }
 
+fn failed_probe_detail(error: fn() -> togi_trial::Error) -> String {
+    let tree = Tree::new();
+    let mut host = host(
+        &tree,
+        Privilege::Root,
+        resolved_account(),
+        Scope::failing(error),
+    );
+    let checks = host.preflight();
+    let systemd = find(&checks, "systemd_run");
+    assert!(!systemd.ok);
+    systemd.detail.clone()
+}
+
+#[test]
+fn a_panicked_trial_runner_fails_the_scope_check_naming_the_panic() {
+    let detail = failed_probe_detail(|| togi_trial::Error::Panicked {
+        what: "the probe task met BOOM".to_owned(),
+    });
+    assert_eq!(
+        detail,
+        "trial supervision panicked: the probe task met BOOM"
+    );
+}
+
+#[test]
+fn a_stuck_trial_runner_fails_the_scope_check_naming_the_bound() {
+    let detail = failed_probe_detail(|| togi_trial::Error::Stuck {
+        operation: "the scope probe",
+        bound: std::time::Duration::from_secs(35),
+    });
+    assert_eq!(
+        detail,
+        "the trial runtime did not answer the scope probe within 35s"
+    );
+}
+
+#[test]
+fn a_vanished_trial_runtime_fails_the_scope_check() {
+    let detail = failed_probe_detail(|| togi_trial::Error::RuntimeGone);
+    assert_eq!(detail, "the trial runtime thread is no longer running");
+}
+
 #[test]
 fn the_host_reads_its_topology_from_the_one_driver() {
     let tree = Tree::new();
