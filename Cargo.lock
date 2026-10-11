@@ -678,6 +678,7 @@ dependencies = [
 name = "togi-tuner"
 version = "0.0.0"
 dependencies = [
+ "jiff",
  "proptest",
  "serde",
  "serde_json",
