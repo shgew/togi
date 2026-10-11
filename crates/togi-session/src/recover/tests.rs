@@ -942,20 +942,34 @@ fn the_crashed_boots_own_machine_checks_are_the_trials_only_inside_its_window() 
 #[test]
 fn a_machine_check_an_interrupted_recovery_journaled_still_fails_the_crash_when_the_kernel_forgot_it()
  {
-    let mut log = trial_log();
-    log.at("b0", 41_000);
-    let held = log.add(recorded_mce(20, false), &[]);
-    let mut h = Harness::new(&log, "b1");
-    h.reasons(&[("b0", Some(ResetKind::Watchdog)), ("b1", None)]);
-    h.recover().unwrap();
-    let (crash_event, crash) = h.crashes()[0];
-    assert!(!crash.inconclusive);
-    assert_eq!(crash_event.cause, [held]);
-    let (end_event, end) = h.ends()[0];
-    assert_eq!(end.outcome, Outcome::Failure);
-    assert!(end_event.cause.contains(&held));
-    assert_eq!(h.mces().len(), 1);
-    h.consistent();
+    for corrected in [false, true] {
+        let mut log = trial_log();
+        log.at("b0", 41_000);
+        let Payload::Mce(mut mce) = recorded_mce(20, false) else {
+            panic!("not a machine check");
+        };
+        mce.corrected = corrected;
+        let held = log.add(Payload::Mce(mce), &[]);
+        let mut h = Harness::new(&log, "b1");
+        h.reasons(&[("b0", Some(ResetKind::Watchdog)), ("b1", None)]);
+        h.recover().unwrap();
+        let (crash_event, crash) = h.crashes()[0];
+        assert!(!crash.inconclusive);
+        assert_eq!(crash_event.cause, [held]);
+        let (end_event, end) = h.ends()[0];
+        assert_eq!(end.outcome, Outcome::Failure);
+        assert_eq!(
+            end.signal,
+            Some(if corrected {
+                Signal::CorrectedMce
+            } else {
+                Signal::UncorrectedMce
+            })
+        );
+        assert!(end_event.cause.contains(&held));
+        assert_eq!(h.mces().len(), 1);
+        h.consistent();
+    }
 }
 
 #[test]
@@ -1534,14 +1548,32 @@ fn a_trial_closes_by_the_first_evidence_that_holds() {
         Closure::MachineChecks {
             signal: Signal::UncorrectedMce,
             crashed: true,
-            causes: seqs(&[1, 3]),
+            causes: seqs(&[1, 3, 7, 8]),
         }
     );
     assert_eq!(
         facts(None, &[], false, Some(reset_ref)),
+        Closure::MachineChecks {
+            signal: Signal::UncorrectedMce,
+            crashed: true,
+            causes: seqs(&[9, 7, 8]),
+        }
+    );
+    assert_eq!(
+        Closure::decide(&Facts {
+            trial,
+            backend_failure: None,
+            machine_checks: &[],
+            machine_check_corrected: false,
+            crash: Some(Cut {
+                seq: cut_seq,
+                recorded: &[],
+                reset: reset_ref,
+            }),
+        }),
         Closure::Crashed {
             reset: crashed,
-            causes: seqs(&[9, 7, 8]),
+            causes: seqs(&[9]),
         }
     );
     assert_eq!(

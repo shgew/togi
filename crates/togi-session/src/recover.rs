@@ -490,7 +490,22 @@ impl Closure {
                 causes,
             };
         }
-        if !facts.machine_checks.is_empty() {
+        if !facts.machine_checks.is_empty()
+            || facts
+                .crash
+                .as_ref()
+                .is_some_and(|cut| !cut.recorded.is_empty())
+        {
+            if let Some(cut) = &facts.crash {
+                if facts.machine_checks.is_empty() {
+                    causes = vec![cut.seq];
+                }
+                for &seq in cut.recorded {
+                    if !causes.contains(&seq) {
+                        causes.push(seq);
+                    }
+                }
+            }
             return Self::MachineChecks {
                 signal: evidence::machine_check_signal(facts.machine_check_corrected),
                 crashed,
@@ -584,7 +599,12 @@ fn close_open_trial(recovery: &mut Recovery<'_>) -> Step<()> {
         trial: open.seq,
         backend_failure: open.failure,
         machine_checks: &open.mces,
-        machine_check_corrected: open.corrected,
+        machine_check_corrected: open.corrected
+            || recorded.iter().any(|&seq| {
+                recovery.appender.journal().event(seq).is_some_and(
+                    |event| matches!(&event.payload, Payload::Mce(mce) if mce.corrected),
+                )
+            }),
         crash: crash.zip(reset.as_ref()).map(|((seq, _), reset)| Cut {
             seq,
             recorded: &recorded,
