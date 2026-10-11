@@ -300,19 +300,18 @@ impl Watched {
     /// Waits for the blocking owner, starting it unless one is already in flight, until `until`.
     /// An owner not done by then stays in flight: it is never replaced while stuck.
     async fn wait(&mut self, until: Instant) -> Waited {
-        let mut task = match self.inflight.take() {
-            Some(task) => task,
-            None => {
-                let request = Request {
-                    dir: Arc::clone(&self.dir),
-                    name: self.name.clone(),
-                    owner: self.owner,
-                    resume: self.resume(),
-                    buffer: std::mem::take(&mut self.buffer),
-                    read_at: Arc::clone(&self.read_at),
-                };
-                tokio::task::spawn_blocking(move || fetch(request))
-            }
+        let mut task = if let Some(task) = self.inflight.take() {
+            task
+        } else {
+            let request = Request {
+                dir: Arc::clone(&self.dir),
+                name: self.name.clone(),
+                owner: self.owner,
+                resume: self.resume(),
+                buffer: std::mem::take(&mut self.buffer),
+                read_at: Arc::clone(&self.read_at),
+            };
+            tokio::task::spawn_blocking(move || fetch(request))
         };
         match timeout_at(until, &mut task).await {
             Ok(Ok(fetched)) => Waited::Done(fetched),

@@ -475,7 +475,8 @@ async fn a_slow_classified_watched_flood_is_polled_during_the_trial_and_leaves_t
             .collect();
         assert!(planned.len() >= 10 && toggles.len() >= planned.len());
         for (actual, at) in toggles.iter().zip(&planned) {
-            let late = actual.duration_since(toggles[0]).abs_diff(*at - planned[0]);
+            let planned_after = at.saturating_sub(planned[0]);
+            let late = actual.duration_since(toggles[0]).abs_diff(planned_after);
             assert!(
                 late < Duration::from_millis(40),
                 "a step planned at {at:?} ran {late:?} off its schedule"
