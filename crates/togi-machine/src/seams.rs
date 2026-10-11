@@ -1,29 +1,11 @@
 use crate::{
-    BankType, BiosContext, CancellationToken, Condition, CoreId, CoreInfo, CpuId, ObservedOffset,
-    Regime, ResetKind, Signal, TargetOffset, TrialConditions, Workload,
+    BankType, BiosContext, BootId, CancellationToken, Condition, CoreId, CoreInfo, CpuId, Error,
+    KernelCursor, LoadSchedule, ObservedOffset, Partial, Regime, ResetKind, Signal, TargetOffset,
+    TrialConditions, Workload,
 };
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
-
-/// Why a machine seam call failed. The named variants are the conditions callers branch on.
-#[derive(Debug, thiserror::Error)]
-pub enum Error {
-    #[error("the simulated machine crashed")]
-    Crashed,
-    #[error("backend binary missing")]
-    BackendMissing,
-    #[error("trial cleanup could not be confirmed")]
-    Containment,
-    #[error("boot missing from the system journal")]
-    BootMissing,
-    #[error("kernel log cursor cannot be resumed")]
-    CursorMissing,
-    #[error("cancelled")]
-    Cancelled,
-    #[error(transparent)]
-    Other(#[from] Box<dyn std::error::Error + Send + Sync>),
-}
 
 pub trait Clock {
     fn now(&self) -> Timestamp;
@@ -32,25 +14,62 @@ pub trait Clock {
     fn sleep(&mut self, cancel: &CancellationToken, duration: Duration) -> Result<(), Error>;
 }
 
+/// Proof that every trial workload stopped.
+///
+/// Only a seam implementation that confirmed every workload stopped may call [`Stopped::confirmed`].
+///
+/// ```compile_fail
+/// let forged = togi_machine::Stopped(());
+/// ```
+///
+/// ```compile_fail
+/// fn duplicate(proof: togi_machine::Stopped) -> togi_machine::Stopped {
+///     let copy = proof.clone();
+///     copy
+/// }
+/// ```
+#[derive(Debug, Eq, PartialEq)]
+#[must_use]
+pub struct Stopped(());
+
+impl Stopped {
+    pub const fn confirmed() -> Self {
+        Self(())
+    }
+}
+
+/// Proof that the SMU interface answered a validation.
+///
+/// Only a host implementation that validated the SMU may call [`SmuValidated::checked`].
+///
+/// ```compile_fail
+/// let forged = togi_machine::SmuValidated(());
+/// ```
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[must_use]
+pub struct SmuValidated(());
+
+impl SmuValidated {
+    pub const fn checked() -> Self {
+        Self(())
+    }
+}
+
 pub trait Smu {
     fn offset(&mut self, core: CoreId) -> Result<ObservedOffset, Error>;
     fn set_offset(&mut self, core: CoreId, offset: TargetOffset) -> Result<(), Error>;
     fn set_all_offsets(&mut self, offset: TargetOffset) -> Result<(), Error>;
-}
-
-/// Preferred-core values read before `error` ended the read, in topology order.
-#[derive(Debug, Default)]
-pub struct Ranking {
-    pub ranks: Vec<CoreRank>,
-    pub error: Option<Error>,
+    /// Writes 0 to every core and nothing else, so it cannot raise an offset's magnitude.
+    fn emergency_zero(&mut self, validated: SmuValidated, stopped: &Stopped) -> Result<(), Error>;
 }
 
 pub trait Host {
-    fn boot_id(&mut self) -> Result<String, Error>;
+    fn boot_id(&mut self) -> Result<BootId, Error>;
     fn topology(&mut self) -> Result<Vec<CoreInfo>, Error>;
-    fn validate_smu(&mut self) -> Result<(), Error>;
+    fn validate_smu(&mut self) -> Result<SmuValidated, Error>;
     fn bios_context(&mut self) -> Result<BiosContext, Error>;
-    fn ranking(&mut self) -> Ranking;
+    /// The partial value is the preferred-core values read before the failure, in topology order.
+    fn ranking(&mut self) -> Result<Vec<CoreRank>, Partial<Vec<CoreRank>>>;
     fn preflight(&mut self) -> Vec<Check>;
     fn watchdog(&mut self) -> Check;
 }
@@ -83,39 +102,45 @@ pub struct TrialSpec {
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Started {
-    pub pid: i64,
+    pub pid: u32,
     pub scope: String,
     pub cpus: Vec<CpuId>,
     pub argv: Vec<String>,
     pub files: Vec<String>,
     pub instances: Vec<Instance>,
+    pub schedule: Option<LoadSchedule>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TrialResult {
     pub ran: Duration,
-    pub signal: Option<Signal>,
-    pub core: CoreId,
-    pub inconclusive: String,
+    pub failure: Option<TrialFailure>,
+    pub inconclusive: Option<String>,
     pub escaped: Vec<CpuId>,
     pub tctl_max_c: Option<i64>,
-    pub stops: i64,
-    pub conts: i64,
+    pub stops: u32,
+    pub conts: u32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TrialFailure {
+    pub signal: Signal,
+    pub core: CoreId,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Instance {
     pub core: CoreId,
     pub cpus: Vec<CpuId>,
-    pub pid: i64,
+    pub pid: u32,
     pub scope: String,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Sample {
     pub warning: String,
-    pub pid: i64,
-    pub tid: i64,
+    pub pid: u32,
+    pub tid: u32,
     pub cpu: CpuId,
 }
 
@@ -125,28 +150,36 @@ pub trait Reporter {
     fn signal(&mut self, core: CoreId, signal: Signal, detail: &str);
 }
 
-/// What a trial accumulated before `error`, if any, ended the wait.
-#[derive(Debug)]
-pub struct Waited {
-    pub result: TrialResult,
-    pub error: Option<Error>,
-}
-
 pub trait Running {
     fn started(&self) -> Started;
     /// Calls the borrowed reporter only on this thread, and joins the workload before returning.
-    fn wait(&mut self, cancel: &CancellationToken, report: &mut dyn Reporter) -> Waited;
-    /// Cancels and joins; repeated calls return the first teardown result.
-    fn stop(&mut self) -> Result<(), Error>;
+    /// The partial value is what the trial accumulated before the failure.
+    fn wait(
+        &mut self,
+        cancel: &CancellationToken,
+        report: &mut dyn Reporter,
+    ) -> Result<TrialResult, Partial<TrialResult>>;
+    /// Cancels and joins, and proves every workload stopped.
+    fn stop(self: Box<Self>) -> Result<Stopped, Error>;
+}
+
+/// The outcome of clearing leftovers of earlier runs.
+#[derive(Debug)]
+pub struct Swept {
+    pub detail: String,
+    pub stopped: Stopped,
 }
 
 pub trait Trials {
-    fn sweep(&mut self, cancel: &CancellationToken) -> Result<String, Error>;
+    fn sweep(&mut self, cancel: &CancellationToken) -> Result<Swept, Error>;
+    /// Needs the proof that nothing runs. The partial value is `Some` when the failed start's
+    /// rollback confirmed nothing runs.
     fn start(
         &mut self,
         cancel: &CancellationToken,
         spec: TrialSpec,
-    ) -> Result<Box<dyn Running>, Error>;
+        ready: Stopped,
+    ) -> Result<Box<dyn Running>, Partial<Option<Stopped>>>;
     fn ended(&mut self, id: &str) -> Result<(), Error>;
     fn samples<'a>(&'a self, id: &'a str) -> Box<dyn Iterator<Item = TrialConditions> + 'a>;
 }
@@ -155,7 +188,7 @@ pub trait Trials {
 pub struct Mce {
     pub cpu: CpuId,
     pub core: Option<CoreId>,
-    pub bank: i64,
+    pub bank: u16,
     pub bank_type: BankType,
     pub corrected: bool,
     pub time: Timestamp,
@@ -163,19 +196,22 @@ pub struct Mce {
     pub lines: Vec<String>,
 }
 
+/// What a boot's kernel logged about the reset before it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResetReason {
-    pub kind: ResetKind,
-    pub raw: String,
+    /// `None` when the boot logged no reason line; `Some(ResetKind::Unknown)` for a line togi does
+    /// not recognize.
+    pub kind: Option<ResetKind>,
+    pub raw: Vec<String>,
+    /// Whether the kernel is recent enough (6.16 or later) to log reset reasons.
     pub supported: bool,
 }
 
-/// Machine-check events and the last cursor read before `error`, if any, ended the read.
+/// Machine-check events and the cursor after the last log entry read.
 #[derive(Debug, Default)]
 pub struct KernelRead {
     pub mces: Vec<Mce>,
-    pub cursor: String,
-    pub error: Option<Error>,
+    pub cursor: KernelCursor,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -186,13 +222,18 @@ pub struct PstoreRecord {
 
 pub trait Kernel {
     /// An earlier boot missing from the journal is `Error::BootMissing`.
-    fn mces(&mut self, boot: &str, since: Duration) -> Result<Vec<Mce>, Error>;
-    /// An unresumable cursor is `Error::CursorMissing` in `KernelRead::error`; the MCEs and cursor
-    /// read before a failure stay in the result.
-    fn read_mces(&mut self, boot: &str, cursor: &str) -> KernelRead;
-    fn reset_reason(&mut self, boot: &str) -> Result<ResetReason, Error>;
-    fn reset_reason_after(&mut self, boot: &str) -> Result<ResetReason, Error>;
-    fn saved_pstore(&mut self, boot: &str) -> Result<Option<PstoreRecord>, Error>;
+    fn mces(&mut self, boot: &BootId, since: Duration) -> Result<Vec<Mce>, Error>;
+    /// Reads after an exact cursor, or the whole boot when `after` is `None`. An unresumable cursor
+    /// is `Error::CursorMissing`, never a silently shortened interval. The partial value is the
+    /// MCEs read before the failure.
+    fn read_mces(
+        &mut self,
+        boot: &BootId,
+        after: Option<&KernelCursor>,
+    ) -> Result<KernelRead, Partial<Vec<Mce>>>;
+    fn reset_reason(&mut self, boot: &BootId) -> Result<ResetReason, Error>;
+    fn reset_reason_after(&mut self, boot: &BootId) -> Result<ResetReason, Error>;
+    fn saved_pstore(&mut self, boot: &BootId) -> Result<Option<PstoreRecord>, Error>;
 }
 
 pub struct Machine {

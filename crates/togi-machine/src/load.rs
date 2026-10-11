@@ -1,0 +1,120 @@
+use crate::{Regime, TrialSpec};
+use rand::rngs::StdRng;
+use rand::{RngExt, SeedableRng};
+use std::fmt;
+use std::time::Duration;
+
+const RANDOM_PERIODS: [Duration; 5] = [
+    Duration::from_millis(10),
+    Duration::from_millis(50),
+    Duration::from_millis(200),
+    Duration::from_secs(1),
+    Duration::from_secs(5),
+];
+
+const DUTY_PERIOD: Duration = Duration::from_millis(100);
+
+/// How a load-step trial alternates its workload between running and stopped.
+///
+/// Each on period ends with `SIGSTOP` and each off period with `SIGCONT`. Random periods come from
+/// `rand::rngs::StdRng` seeded with the trial seed, so a schedule is reproducible only with the
+/// pinned `rand` version.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LoadSchedule {
+    Random { seed: u64 },
+    Duty { pct: u8 },
+}
+
+/// How many stop and continue signals a schedule has sent.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Toggles {
+    pub stops: u32,
+    pub conts: u32,
+}
+
+impl LoadSchedule {
+    pub fn for_spec(spec: &TrialSpec) -> Option<Self> {
+        match spec.regime {
+            Regime::R3 => Some(Self::Random { seed: spec.seed }),
+            Regime::R4 => Some(Self::Duty {
+                pct: spec.workload.duty_pct,
+            }),
+            Regime::R1 | Regime::R2 | Regime::R5 | Regime::R6 | Regime::R7 => None,
+        }
+    }
+
+    /// Yields on, off, on, off, … forever.
+    pub fn periods(&self) -> impl Iterator<Item = Duration> + use<> {
+        match *self {
+            Self::Duty { pct } => {
+                let on = DUTY_PERIOD * u32::from(pct.min(100)) / 100;
+                Periods::Duty {
+                    on,
+                    off: DUTY_PERIOD.saturating_sub(on),
+                    next_is_on: true,
+                }
+            }
+            Self::Random { seed } => Periods::Random(Box::new(StdRng::seed_from_u64(seed))),
+        }
+    }
+
+    /// Counts the periods that ended before `ran`; a period ending at `ran` is not counted.
+    pub fn toggles(&self, ran: Duration) -> Toggles {
+        let mut toggles = Toggles::default();
+        let mut elapsed = Duration::ZERO;
+        for (index, period) in self.periods().enumerate() {
+            elapsed += period;
+            if elapsed >= ran {
+                break;
+            }
+            if index % 2 == 0 {
+                toggles.stops += 1;
+            } else {
+                toggles.conts += 1;
+            }
+        }
+        toggles
+    }
+}
+
+enum Periods {
+    Duty {
+        on: Duration,
+        off: Duration,
+        next_is_on: bool,
+    },
+    Random(Box<StdRng>),
+}
+
+impl Iterator for Periods {
+    type Item = Duration;
+
+    fn next(&mut self) -> Option<Duration> {
+        Some(match self {
+            Self::Duty { on, off, next_is_on } => {
+                let period = if *next_is_on { *on } else { *off };
+                *next_is_on = !*next_is_on;
+                period
+            }
+            Self::Random(rng) => RANDOM_PERIODS[rng.random_range(0..RANDOM_PERIODS.len())],
+        })
+    }
+}
+
+impl fmt::Display for LoadSchedule {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Duty { pct } => write!(f, "{pct}% duty, {DUTY_PERIOD:?} period"),
+            Self::Random { .. } => {
+                f.write_str("random on/off periods from ")?;
+                for (index, period) in RANDOM_PERIODS.iter().enumerate() {
+                    if index > 0 {
+                        f.write_str(", ")?;
+                    }
+                    write!(f, "{period:?}")?;
+                }
+                Ok(())
+            }
+        }
+    }
+}

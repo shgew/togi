@@ -14,6 +14,7 @@ flate2 = "1"
 jiff = { version = "0.2", default-features = false, features = ["std"] }
 nix = { version = "0.30", default-features = false, features = ["fs"] }
 proptest = "1"
+rand = { version = "=0.10.3", default-features = false, features = ["std_rng"] }
 rustix = { version = "1", features = ["fs"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip", "raw_value"] }

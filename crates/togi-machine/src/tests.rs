@@ -4,6 +4,7 @@ use proptest::prelude::*;
 use std::io::{Cursor, Write};
 use std::path::Path;
 
+mod load;
 mod seams;
 
 fn core(value: i64) -> CoreId {
@@ -38,10 +39,10 @@ fn offsets_json_preserves_raw_readbacks() {
 
 #[test]
 fn core_order() {
-    let cores: Vec<_> = (0..16)
+    let cores: Vec<_> = (0..16_u8)
         .rev()
         .map(|value| CoreInfo {
-            core: core(value),
+            core: core(i64::from(value)),
             ccd: CcdId(value / 8),
             cpus: Vec::new(),
         })
@@ -53,17 +54,17 @@ fn core_order() {
     let uneven = [
         CoreInfo {
             core: core(9),
-            ccd: CcdId(2),
+            ccd: CcdId(3),
             cpus: Vec::new(),
         },
         CoreInfo {
             core: core(2),
-            ccd: CcdId(-1),
+            ccd: CcdId(1),
             cpus: Vec::new(),
         },
         CoreInfo {
             core: core(0),
-            ccd: CcdId(-1),
+            ccd: CcdId(1),
             cpus: Vec::new(),
         },
     ];
@@ -82,7 +83,7 @@ fn per_core_copies_are_independent() {
     assert_eq!(original.len(), 1);
     assert_eq!(original.get(core(4)), None);
     assert_eq!(
-        copied.all().collect::<Vec<_>>(),
+        copied.iter().collect::<Vec<_>>(),
         [(core(3), 2), (core(4), 5)]
     );
 }
@@ -347,7 +348,9 @@ fn bank_attribution_scope() {
 
 #[test]
 fn per_core_serializes_as_core_keyed_object() {
-    let readings = PerCore::from_readings([(core(15), 1_i64), (core(1), 2), (core(10), 3)]);
+    let readings = [(core(15), 1_i64), (core(1), 2), (core(10), 3)]
+        .into_iter()
+        .collect::<PerCore<_>>();
     let json = serde_json::to_string(&readings).unwrap();
     assert_eq!(
         serde_json::from_str::<PerCore<i64>>(&json).unwrap(),
@@ -376,7 +379,7 @@ fn per_core_rejects_unsupported_cores() {
 }
 
 #[test]
-fn compare_context_after_journal_round_trip() {
+fn context_difference_after_journal_round_trip() {
     let host = BiosContext {
         bios_version: "F3".to_owned(),
         board: "X870E".to_owned(),
@@ -387,26 +390,34 @@ fn compare_context_after_journal_round_trip() {
     let recorded: BiosContext =
         serde_json::from_str(&serde_json::to_string(&host).unwrap()).unwrap();
     assert_eq!(recorded, host);
-    assert_eq!(compare_context(&recorded, &host), Ok(()));
+    assert_eq!(recorded.first_difference(&host), None);
     let changed = BiosContext {
         microcode: "0xb404035".to_owned(),
         ..host.clone()
     };
-    let mismatch = compare_context(&recorded, &changed).unwrap_err();
-    assert_eq!(mismatch.field, "microcode");
+    let mismatch = recorded.first_difference(&changed).unwrap();
+    assert_eq!(mismatch.field, ContextField::Microcode);
+    assert_eq!(mismatch.field.to_string(), "microcode");
     assert_eq!(
         mismatch.to_string(),
         "microcode is 0xb404035; the session recorded 0xb404032"
     );
     let changed = BiosContext {
         boost_limit_mhz: 5800,
+        ..host.clone()
+    };
+    assert_eq!(
+        recorded.first_difference(&changed).unwrap().to_string(),
+        "boost_limit_mhz is 5800; the session recorded 5700"
+    );
+    let both = BiosContext {
+        board: "other".to_owned(),
+        boost_limit_mhz: 1,
         ..host
     };
     assert_eq!(
-        compare_context(&recorded, &changed)
-            .unwrap_err()
-            .to_string(),
-        "boost_limit_mhz is 5800; the session recorded 5700"
+        recorded.first_difference(&both).unwrap().field,
+        ContextField::Board
     );
 }
 
@@ -447,8 +458,8 @@ fn trial_conditions_round_trip_and_omit_empty_sensors() {
         elapsed_ms: 5000,
         tctl_c: Some(0),
         tccd_c: Some([("Tccd1".to_owned(), 60)].into()),
-        core_mhz: PerCore::from_readings([(core(0), 5500)]),
-        worker_cpu_ms: PerCore::from_readings([(core(0), 0), (core(7), 4000)]),
+        core_mhz: [(core(0), 5500)].into_iter().collect(),
+        worker_cpu_ms: [(core(0), 0), (core(7), 4000)].into_iter().collect(),
         package_power_w: Some(142.5),
         pm_table: Some(PmTable {
             power_w: [1.5; 16],

@@ -50,13 +50,13 @@ impl std::fmt::Display for CoreId {
     Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize,
 )]
 #[serde(transparent)]
-pub struct CcdId(pub i64);
+pub struct CcdId(pub u8);
 
 #[derive(
     Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize,
 )]
 #[serde(transparent)]
-pub struct CpuId(pub i64);
+pub struct CpuId(pub u16);
 
 #[derive(
     Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize,

@@ -32,48 +32,62 @@ pub struct BiosContext {
     pub board: String,
     pub cpu_model: String,
     pub microcode: String,
-    pub boost_limit_mhz: i64,
+    pub boost_limit_mhz: u32,
+}
+
+/// A field of [`BiosContext`], named as it is recorded.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ContextField {
+    BiosVersion,
+    Board,
+    CpuModel,
+    Microcode,
+    BoostLimitMhz,
+}
+
+impl std::fmt::Display for ContextField {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::BiosVersion => "bios_version",
+            Self::Board => "board",
+            Self::CpuModel => "cpu_model",
+            Self::Microcode => "microcode",
+            Self::BoostLimitMhz => "boost_limit_mhz",
+        })
+    }
 }
 
 /// A field of the BIOS context that differs from the one a session recorded.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 #[error("{field} is {current}; the session recorded {recorded}")]
 pub struct ContextMismatch {
-    pub field: &'static str,
+    pub field: ContextField,
     pub current: String,
     pub recorded: String,
 }
 
-/// Reports the first field of `current` that differs from `recorded`.
-pub fn compare_context(
-    recorded: &BiosContext,
-    current: &BiosContext,
-) -> Result<(), ContextMismatch> {
-    let texts = [
-        (
-            "bios_version",
-            &recorded.bios_version,
-            &current.bios_version,
-        ),
-        ("board", &recorded.board, &current.board),
-        ("cpu_model", &recorded.cpu_model, &current.cpu_model),
-        ("microcode", &recorded.microcode, &current.microcode),
-    ];
-    for (field, before, after) in texts {
-        if before != after {
-            return Err(ContextMismatch {
-                field,
-                current: after.clone(),
-                recorded: before.clone(),
-            });
+impl BiosContext {
+    /// Reports the first field of `current` that differs from `self`, the recorded context.
+    pub fn first_difference(&self, current: &Self) -> Option<ContextMismatch> {
+        let texts = [
+            (ContextField::BiosVersion, &self.bios_version, &current.bios_version),
+            (ContextField::Board, &self.board, &current.board),
+            (ContextField::CpuModel, &self.cpu_model, &current.cpu_model),
+            (ContextField::Microcode, &self.microcode, &current.microcode),
+        ];
+        for (field, recorded, now) in texts {
+            if recorded != now {
+                return Some(ContextMismatch {
+                    field,
+                    current: now.clone(),
+                    recorded: recorded.clone(),
+                });
+            }
         }
-    }
-    if recorded.boost_limit_mhz != current.boost_limit_mhz {
-        return Err(ContextMismatch {
-            field: "boost_limit_mhz",
+        (self.boost_limit_mhz != current.boost_limit_mhz).then(|| ContextMismatch {
+            field: ContextField::BoostLimitMhz,
             current: current.boost_limit_mhz.to_string(),
-            recorded: recorded.boost_limit_mhz.to_string(),
-        });
+            recorded: self.boost_limit_mhz.to_string(),
+        })
     }
-    Ok(())
 }

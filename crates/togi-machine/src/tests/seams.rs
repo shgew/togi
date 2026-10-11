@@ -44,9 +44,8 @@ fn cancelling_a_dropped_intermediate_chain_leaves_siblings_alone() {
 fn result(ran: Duration) -> TrialResult {
     TrialResult {
         ran,
-        signal: None,
-        core: CoreId::new(0).unwrap(),
-        inconclusive: String::new(),
+        failure: None,
+        inconclusive: None,
         escaped: Vec::new(),
         tctl_max_c: None,
         stops: 0,
@@ -61,15 +60,23 @@ impl Running for FailingRunning {
         Started::default()
     }
 
-    fn wait(&mut self, _cancel: &CancellationToken, _report: &mut dyn Reporter) -> Waited {
-        Waited {
-            result: result(Duration::from_secs(85)),
-            error: Some(Error::Cancelled),
-        }
+    fn wait(
+        &mut self,
+        _cancel: &CancellationToken,
+        _report: &mut dyn Reporter,
+    ) -> Result<TrialResult, Partial<TrialResult>> {
+        Err(Partial {
+            value: result(Duration::from_secs(85)),
+            error: Error::Cancelled,
+        })
     }
 
-    fn stop(&mut self) -> Result<(), Error> {
-        Ok(())
+    fn stop(self: Box<Self>) -> Result<Stopped, Error> {
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "the test double stands for a seam that confirmed teardown"
+        )]
+        Ok(Stopped::confirmed())
     }
 }
 
@@ -82,64 +89,124 @@ impl Reporter for NoReporter {
 }
 
 #[test]
-fn running_wait_returns_the_accumulated_result_with_its_error() {
+fn running_wait_keeps_the_accumulated_result_with_its_error() {
     let mut running: Box<dyn Running> = Box::new(FailingRunning);
-    let waited = running.wait(&CancellationToken::new(), &mut NoReporter);
-    assert_eq!(waited.result, result(Duration::from_secs(85)));
-    assert!(matches!(waited.error, Some(Error::Cancelled)));
+    let Err(Partial { value, error }) = running.wait(&CancellationToken::new(), &mut NoReporter)
+    else {
+        panic!("wait succeeded");
+    };
+    assert_eq!(value, result(Duration::from_secs(85)));
+    assert!(matches!(error, Error::Cancelled));
+    assert!(running.stop().is_ok());
+}
+
+fn propagate(running: &mut dyn Running) -> Result<TrialResult, Box<dyn std::error::Error>> {
+    Ok(running.wait(&CancellationToken::new(), &mut NoReporter)?)
+}
+
+#[test]
+fn partial_propagates_with_question_mark_as_its_error() {
+    let error = propagate(&mut FailingRunning).unwrap_err();
+    assert_eq!(error.to_string(), "cancelled");
+}
+
+#[test]
+fn partial_reads_as_its_error() {
+    let partial = Partial {
+        value: 7_u8,
+        error: Error::from(Box::<dyn std::error::Error + Send + Sync>::from("disk gone")),
+    };
+    assert_eq!(partial.to_string(), "disk gone");
+    assert!(std::error::Error::source(&partial).is_none());
+    let (value, error) = partial.into_parts();
+    assert_eq!(value, 7);
+    assert_eq!(error.to_string(), "disk gone");
+    let wrapped = Partial {
+        value: (),
+        error: Error::from(Box::<dyn std::error::Error + Send + Sync>::from(
+            std::io::Error::other(std::io::Error::other("inner")),
+        )),
+    };
+    assert_eq!(
+        std::error::Error::source(&wrapped).map(ToString::to_string),
+        std::error::Error::source(&wrapped.error).map(ToString::to_string)
+    );
 }
 
 struct PartialKernel;
 
 impl Kernel for PartialKernel {
-    fn mces(&mut self, _boot: &str, _since: Duration) -> Result<Vec<Mce>, Error> {
+    fn mces(&mut self, _boot: &BootId, _since: Duration) -> Result<Vec<Mce>, Error> {
         Err(Error::BootMissing)
     }
 
-    fn read_mces(&mut self, _boot: &str, cursor: &str) -> KernelRead {
-        KernelRead {
-            mces: Vec::new(),
-            cursor: format!("{cursor}+1"),
-            error: Some(Error::CursorMissing),
+    fn read_mces(
+        &mut self,
+        _boot: &BootId,
+        after: Option<&KernelCursor>,
+    ) -> Result<KernelRead, Partial<Vec<Mce>>> {
+        match after {
+            None => Ok(KernelRead {
+                mces: Vec::new(),
+                cursor: KernelCursor::from("c0".to_owned()),
+            }),
+            Some(_) => Err(Partial {
+                value: Vec::new(),
+                error: Error::CursorMissing,
+            }),
         }
     }
 
-    fn reset_reason(&mut self, _boot: &str) -> Result<ResetReason, Error> {
+    fn reset_reason(&mut self, _boot: &BootId) -> Result<ResetReason, Error> {
         Err(Error::BootMissing)
     }
 
-    fn reset_reason_after(&mut self, _boot: &str) -> Result<ResetReason, Error> {
+    fn reset_reason_after(&mut self, _boot: &BootId) -> Result<ResetReason, Error> {
         Err(Error::BootMissing)
     }
 
-    fn saved_pstore(&mut self, _boot: &str) -> Result<Option<PstoreRecord>, Error> {
+    fn saved_pstore(&mut self, _boot: &BootId) -> Result<Option<PstoreRecord>, Error> {
         Ok(None)
     }
 }
 
 #[test]
-fn kernel_read_keeps_partial_evidence_with_its_error() {
+fn kernel_read_resumes_after_a_cursor_or_reads_the_whole_boot() {
     let mut kernel: Box<dyn Kernel> = Box::new(PartialKernel);
-    let read = kernel.read_mces("boot", "c0");
-    assert_eq!(read.cursor, "c0+1");
-    assert!(matches!(read.error, Some(Error::CursorMissing)));
+    let boot = BootId::from("boot".to_owned());
+    let read = kernel.read_mces(&boot, None).unwrap();
+    assert_eq!(read.cursor.as_str(), "c0");
+    let Err(partial) = kernel.read_mces(&boot, Some(&read.cursor)) else {
+        panic!("resumed an unresumable cursor");
+    };
+    assert!(partial.value.is_empty());
+    assert!(matches!(partial.error, Error::CursorMissing));
     assert!(matches!(
-        kernel.mces("boot", Duration::ZERO),
+        kernel.mces(&boot, Duration::ZERO),
         Err(Error::BootMissing)
     ));
 }
 
 #[test]
-fn ranking_values_survive_a_failed_read() {
-    let ranking = Ranking {
-        ranks: vec![CoreRank {
-            core: CoreId::new(1).unwrap(),
-            value: 7,
-        }],
-        error: Some(Error::Crashed),
+fn ids_serialize_as_plain_strings() {
+    let boot = BootId::from("b".to_owned());
+    assert_eq!(serde_json::to_string(&boot).unwrap(), "\"b\"");
+    assert_eq!(serde_json::from_str::<KernelCursor>("\"c\"").unwrap().to_string(), "c");
+}
+
+#[test]
+fn reset_reason_tells_no_line_from_an_unrecognized_one() {
+    let silent = ResetReason {
+        kind: None,
+        raw: Vec::new(),
+        supported: true,
     };
-    assert_eq!(ranking.ranks[0].value, 7);
-    assert!(matches!(ranking.error, Some(Error::Crashed)));
+    let unrecognized = ResetReason {
+        kind: Some(ResetKind::Unknown),
+        raw: vec!["something new".to_owned()],
+        supported: true,
+    };
+    assert_ne!(silent, unrecognized);
 }
 
 #[test]

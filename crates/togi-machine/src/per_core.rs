@@ -18,14 +18,6 @@ impl<T: Copy + Default> Default for PerCore<T> {
 }
 
 impl<T: Copy + Default> PerCore<T> {
-    pub fn from_readings(readings: impl IntoIterator<Item = (CoreId, T)>) -> Self {
-        let mut result = Self::default();
-        for (core, value) in readings {
-            result.set(core, value);
-        }
-        result
-    }
-
     pub fn set(&mut self, core: CoreId, value: T) {
         self.values[core.index()] = value;
         self.present |= 1 << core.get();
@@ -42,7 +34,7 @@ impl<T: Copy + Default> PerCore<T> {
         self.present == 0
     }
 
-    pub fn all(&self) -> impl Iterator<Item = (CoreId, T)> + '_ {
+    pub fn iter(&self) -> impl Iterator<Item = (CoreId, T)> + '_ {
         (0..16_u8).filter_map(|index| {
             let core = CoreId::from_index(index);
             self.get(core).map(|value| (core, value))
@@ -52,14 +44,24 @@ impl<T: Copy + Default> PerCore<T> {
 
 impl<T: Copy + Default + Serialize> Serialize for PerCore<T> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_map(self.all())
+        serializer.collect_map(self.iter())
     }
 }
 
 impl<'de, T: Copy + Default + Deserialize<'de>> Deserialize<'de> for PerCore<T> {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        Ok(Self::from_readings(BTreeMap::<CoreId, T>::deserialize(
-            deserializer,
-        )?))
+        Ok(BTreeMap::<CoreId, T>::deserialize(deserializer)?
+            .into_iter()
+            .collect())
+    }
+}
+
+impl<T: Copy + Default> FromIterator<(CoreId, T)> for PerCore<T> {
+    fn from_iter<I: IntoIterator<Item = (CoreId, T)>>(readings: I) -> Self {
+        let mut result = Self::default();
+        for (core, value) in readings {
+            result.set(core, value);
+        }
+        result
     }
 }
