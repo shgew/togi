@@ -1,7 +1,7 @@
-use crate::seams::SeamOutcome;
 use crate::*;
-use std::error::Error as StdError;
-use std::fmt;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::time::Duration;
 
 #[test]
 fn descendant_observes_cancellation_after_an_intermediate_token_is_dropped() {
@@ -43,13 +43,12 @@ fn cancelling_a_dropped_intermediate_chain_leaves_siblings_alone() {
     assert!(sibling.is_cancelled());
 }
 
-fn result(ran: i64) -> TrialResult {
+fn result(ran: Duration) -> TrialResult {
     TrialResult {
-        ran: NanoDuration(ran),
-        signal: Signal::Empty,
-        core: CoreId::new(0).unwrap(),
-        inconclusive: String::new(),
-        escaped: None,
+        ran,
+        failure: None,
+        inconclusive: None,
+        escaped: Vec::new(),
         tctl_max_c: None,
         stops: 0,
         conts: 0,
@@ -67,12 +66,19 @@ impl Running for FailingRunning {
         &mut self,
         _cancel: &CancellationToken,
         _report: &mut dyn Reporter,
-    ) -> SeamOutcome<TrialResult> {
-        SeamOutcome::failed(result(85), Error::Kind(ErrorKind::Cancelled))
+    ) -> Result<TrialResult, Partial<TrialResult>> {
+        Err(Partial {
+            value: result(Duration::from_secs(85)),
+            error: Error::Cancelled,
+        })
     }
 
-    fn stop(&mut self) -> SeamResult<()> {
-        Ok(())
+    fn stop(self: Box<Self>) -> Result<Stopped, Error> {
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "the test double stands for a seam that confirmed teardown"
+        )]
+        Ok(Stopped::confirmed())
     }
 }
 
@@ -85,102 +91,372 @@ impl Reporter for NoReporter {
 }
 
 #[test]
-fn running_wait_returns_the_accumulated_result_with_its_error() {
+fn running_wait_keeps_the_accumulated_result_with_its_error() {
     let mut running: Box<dyn Running> = Box::new(FailingRunning);
-    let outcome = running.wait(&CancellationToken::new(), &mut NoReporter);
-    assert_eq!(outcome.value, result(85));
-    assert!(
-        outcome
-            .error
-            .as_ref()
-            .unwrap()
-            .contains(ErrorKind::Cancelled)
+    let Err(Partial { value, error }) = running.wait(&CancellationToken::new(), &mut NoReporter)
+    else {
+        panic!("wait succeeded");
+    };
+    assert_eq!(value, result(Duration::from_secs(85)));
+    assert!(matches!(error, Error::Cancelled));
+    assert!(running.stop().is_ok());
+}
+
+fn propagate(running: &mut dyn Running) -> Result<TrialResult, Box<dyn std::error::Error>> {
+    Ok(running.wait(&CancellationToken::new(), &mut NoReporter)?)
+}
+
+#[test]
+fn partial_propagates_with_question_mark_as_its_error() {
+    let error = propagate(&mut FailingRunning).unwrap_err();
+    assert_eq!(error.to_string(), "cancelled");
+}
+
+#[test]
+fn partial_keeps_its_named_error_findable_after_question_mark_into_a_boxed_error() {
+    fn propagate_boxed(
+        running: &mut dyn Running,
+    ) -> Result<TrialResult, Box<dyn std::error::Error + Send + Sync>> {
+        Ok(running.wait(&CancellationToken::new(), &mut NoReporter)?)
+    }
+    let error = propagate_boxed(&mut FailingRunning).unwrap_err();
+    let chain = std::iter::successors(Some(&*error as &(dyn std::error::Error + 'static)), |e| {
+        e.source()
+    });
+    let named = chain.into_iter().find_map(|e| e.downcast_ref::<Error>());
+    assert!(matches!(named, Some(Error::Cancelled)));
+}
+
+#[test]
+fn partial_reads_as_its_error() {
+    let partial = Partial {
+        value: 7_u8,
+        error: Error::from(Box::<dyn std::error::Error + Send + Sync>::from(
+            "disk gone",
+        )),
+    };
+    assert_eq!(partial.to_string(), "disk gone");
+    assert_eq!(
+        std::error::Error::source(&partial).map(ToString::to_string),
+        Some("disk gone".to_owned())
+    );
+    let (value, error) = partial.into_parts();
+    assert_eq!(value, 7);
+    assert_eq!(error.to_string(), "disk gone");
+    let wrapped = Partial {
+        value: (),
+        error: Error::from(Box::<dyn std::error::Error + Send + Sync>::from(
+            std::io::Error::other(std::io::Error::other("inner")),
+        )),
+    };
+    assert_eq!(
+        std::error::Error::source(&wrapped)
+            .and_then(std::error::Error::source)
+            .map(ToString::to_string),
+        std::error::Error::source(&wrapped.error).map(ToString::to_string)
     );
 }
 
 struct PartialKernel;
 
 impl Kernel for PartialKernel {
-    fn mces(&mut self, _boot: &str, _since: NanoDuration) -> SeamOutcome<Vec<Mce>> {
-        SeamOutcome::failed(Vec::new(), Error::Kind(ErrorKind::BootMissing))
+    fn mces(&mut self, _boot: &BootId, _since: Duration) -> Result<Vec<Mce>, Error> {
+        Err(Error::BootMissing)
     }
 
-    fn read_mces(&mut self, _boot: &str, cursor: &str) -> SeamOutcome<KernelRead> {
-        SeamOutcome::failed(
-            KernelRead {
-                mces: Some(Vec::new()),
-                cursor: format!("{cursor}+1"),
-            },
-            Error::Context {
-                detail: "decode kernel message".to_owned(),
-                source: Box::new(Error::Kind(ErrorKind::CursorMissing)),
-            },
-        )
+    fn read_mces(
+        &mut self,
+        _boot: &BootId,
+        after: Option<&KernelCursor>,
+    ) -> Result<KernelRead, Partial<Vec<Mce>>> {
+        match after {
+            None => Ok(KernelRead {
+                mces: Vec::new(),
+                cursor: KernelCursor::from("c0".to_owned()),
+            }),
+            Some(_) => Err(Partial {
+                value: Vec::new(),
+                error: Error::CursorMissing,
+            }),
+        }
     }
 
-    fn reset_reason(&mut self, _boot: &str) -> SeamResult<ResetReason> {
-        Err(Error::Kind(ErrorKind::BootMissing))
+    fn reset_reason(&mut self, _boot: &BootId) -> Result<ResetReason, Error> {
+        Err(Error::BootMissing)
     }
 
-    fn reset_reason_after(&mut self, _boot: &str) -> SeamResult<ResetReason> {
-        Err(Error::Kind(ErrorKind::BootMissing))
+    fn reset_reason_after(&mut self, _boot: &BootId) -> Result<ResetReason, Error> {
+        Err(Error::BootMissing)
     }
 
-    fn saved_pstore(&mut self, _boot: &str) -> SeamResult<Option<PstoreRecord>> {
+    fn saved_pstore(&mut self, _boot: &BootId) -> Result<Option<PstoreRecord>, Error> {
         Ok(None)
     }
 }
 
 #[test]
-fn kernel_read_keeps_partial_evidence_with_its_error() {
+fn kernel_read_resumes_after_a_cursor_or_reads_the_whole_boot() {
     let mut kernel: Box<dyn Kernel> = Box::new(PartialKernel);
-    let read = kernel.read_mces("boot", "c0");
-    assert_eq!(read.value.cursor, "c0+1");
-    assert_eq!(read.value.mces, Some(Vec::new()));
-    assert!(
-        read.error
-            .as_ref()
+    let boot = BootId::from("boot".to_owned());
+    let read = kernel.read_mces(&boot, None).unwrap();
+    assert_eq!(read.cursor.as_str(), "c0");
+    let Err(partial) = kernel.read_mces(&boot, Some(&read.cursor)) else {
+        panic!("resumed an unresumable cursor");
+    };
+    assert!(partial.value.is_empty());
+    assert!(matches!(partial.error, Error::CursorMissing));
+    assert!(matches!(
+        kernel.mces(&boot, Duration::ZERO),
+        Err(Error::BootMissing)
+    ));
+}
+
+#[test]
+fn ids_serialize_as_plain_strings() {
+    let boot = BootId::from("b".to_owned());
+    assert_eq!(serde_json::to_string(&boot).unwrap(), "\"b\"");
+    assert_eq!(
+        serde_json::from_str::<KernelCursor>("\"c\"")
             .unwrap()
-            .contains(ErrorKind::CursorMissing)
+            .to_string(),
+        "c"
     );
-    let legacy = kernel.mces("boot", NanoDuration(0));
-    assert!(legacy.value.is_empty());
+}
+
+#[test]
+fn reset_reason_tells_no_line_from_an_unrecognized_one() {
+    let silent = ResetReason {
+        kind: None,
+        raw: Vec::new(),
+        supported: true,
+    };
+    let unrecognized = ResetReason {
+        kind: Some(ResetKind::Unknown),
+        raw: vec!["something new".to_owned()],
+        supported: true,
+    };
+    assert_ne!(silent, unrecognized);
+}
+
+#[test]
+fn errors_wrap_external_causes() {
+    let error = Error::from(Box::<dyn std::error::Error + Send + Sync>::from(
+        "disk gone",
+    ));
+    assert_eq!(error.to_string(), "disk gone");
+    assert_eq!(Error::Crashed.to_string(), "the simulated machine crashed");
+}
+
+fn counter() -> (
+    Arc<AtomicUsize>,
+    impl Fn() -> Box<dyn FnOnce() + Send> + 'static,
+) {
+    let count = Arc::new(AtomicUsize::new(0));
+    let handle = Arc::clone(&count);
+    (count, move || {
+        let count = Arc::clone(&handle);
+        Box::new(move || {
+            count.fetch_add(1, Ordering::SeqCst);
+        })
+    })
+}
+
+#[test]
+fn on_cancel_fires_once() {
+    let token = CancellationToken::new();
+    let (count, callback) = counter();
+    let guard = token.on_cancel(callback());
+    assert_eq!(count.load(Ordering::SeqCst), 0);
+    token.cancel();
+    token.cancel();
+    assert_eq!(count.load(Ordering::SeqCst), 1);
+    drop(guard);
+    assert_eq!(count.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn on_cancel_fires_immediately_when_already_cancelled() {
+    let token = CancellationToken::new();
+    token.cancel();
+    let (count, callback) = counter();
+    let _guard = token.on_cancel(callback());
+    assert_eq!(count.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn ancestor_cancellation_fires_the_childs_callback() {
+    let parent = CancellationToken::new();
+    let child = parent.child_token();
+    let (count, callback) = counter();
+    let _guard = child.on_cancel(callback());
+    drop(child);
+    parent.cancel();
+    assert_eq!(count.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn dropped_guard_never_fires() {
+    let token = CancellationToken::new();
+    let (count, callback) = counter();
+    drop(token.on_cancel(callback()));
+    token.cancel();
+    assert_eq!(count.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn callbacks_may_register_and_cancel_without_deadlock() {
+    let token = CancellationToken::new();
+    let (count, callback) = counter();
+    let inner = token.clone();
+    let nested = Arc::new(std::sync::Mutex::new(None));
+    let stash = Arc::clone(&nested);
+    let late = callback();
+    let _guard = token.on_cancel(move || {
+        inner.cancel();
+        *stash.lock().unwrap() = Some(inner.on_cancel(late));
+    });
+    token.cancel();
+    assert_eq!(count.load(Ordering::SeqCst), 1);
+    assert!(nested.lock().unwrap().is_some());
+}
+
+struct CancelOnDrop(CancellationToken);
+
+impl Drop for CancelOnDrop {
+    fn drop(&mut self) {
+        self.0.cancel();
+    }
+}
+
+#[test]
+fn dropping_a_guard_whose_unrun_callback_cancels_the_token_does_not_deadlock() {
+    let token = CancellationToken::new();
+    let (count, callback) = counter();
+    let capture = CancelOnDrop(token.clone());
+    let run = callback();
+    let guard = token.on_cancel(move || {
+        let _keep = &capture;
+        run();
+    });
+    std::thread::spawn(move || drop(guard)).join().unwrap();
+    assert!(token.is_cancelled());
+    assert_eq!(count.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn dropping_a_guard_waits_for_a_callback_a_concurrent_cancel_already_claimed() {
+    let token = CancellationToken::new();
+    let (started_tx, started_rx) = std::sync::mpsc::channel();
+    let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+    let finished = Arc::new(AtomicBool::new(false));
+    let work_done = Arc::clone(&finished);
+    let guard = token.on_cancel(move || {
+        started_tx.send(()).unwrap();
+        release_rx.recv().unwrap();
+        work_done.store(true, Ordering::SeqCst);
+    });
+    let canceller = {
+        let token = token.clone();
+        std::thread::spawn(move || token.cancel())
+    };
+    started_rx.recv().unwrap();
+    let observed_done = Arc::clone(&finished);
+    let (waiting_tx, waiting_rx) = std::sync::mpsc::channel();
+    let dropper = std::thread::spawn(move || {
+        crate::cancellation::BEFORE_WAIT.with(|hook| *hook.borrow_mut() = Some(waiting_tx));
+        drop(guard);
+        observed_done.load(Ordering::SeqCst)
+    });
+    waiting_rx.recv().unwrap();
+    assert!(!finished.load(Ordering::SeqCst));
+    release_tx.send(()).unwrap();
     assert!(
-        legacy
-            .error
-            .as_ref()
-            .unwrap()
-            .contains(ErrorKind::BootMissing)
+        dropper.join().unwrap(),
+        "the guard dropped while its callback was still running"
     );
+    canceller.join().unwrap();
+}
+
+struct PanicsOnDrop;
+
+impl Drop for PanicsOnDrop {
+    fn drop(&mut self) {
+        panic!("payload drop");
+    }
+}
+
+#[test]
+fn later_panic_payloads_are_never_dropped_during_dispatch() {
+    let token = CancellationToken::new();
+    let child = token.child_token();
+    let (count, callback) = counter();
+    let _first = token.on_cancel(|| panic!("first"));
+    let _second = token.on_cancel(|| std::panic::panic_any(PanicsOnDrop));
+    let _third = token.on_cancel(callback());
+    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| token.cancel()));
+    assert!(outcome.is_err());
+    assert_eq!(count.load(Ordering::SeqCst), 1);
+    assert!(child.is_cancelled());
+}
+
+#[test]
+fn a_panicking_child_callback_resurfaces_without_sparing_siblings() {
+    let parent = CancellationToken::new();
+    let first = parent.child_token();
+    let second = parent.child_token();
+    let (count, callback) = counter();
+    let _boom = first.on_cancel(|| panic!("child failed"));
+    let _counted = second.on_cancel(callback());
+    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| parent.cancel()));
+    assert!(outcome.is_err());
+    assert!(first.is_cancelled());
+    assert!(second.is_cancelled());
+    assert_eq!(count.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn a_callback_may_drop_its_own_guard() {
+    let token = CancellationToken::new();
+    let stash = Arc::new(std::sync::Mutex::new(None));
+    let inside = Arc::clone(&stash);
+    let ran = Arc::new(AtomicBool::new(false));
+    let marked = Arc::clone(&ran);
+    *stash.lock().unwrap() = Some(token.on_cancel(move || {
+        drop(inside.lock().unwrap().take());
+        marked.store(true, Ordering::SeqCst);
+    }));
+    token.cancel();
+    assert!(ran.load(Ordering::SeqCst));
+    assert!(stash.lock().unwrap().is_none());
 }
 
 struct RankingHost;
 
 impl Host for RankingHost {
-    fn boot_id(&mut self) -> SeamResult<String> {
-        Ok(String::new())
+    fn boot_id(&mut self) -> Result<BootId, Error> {
+        Err(Error::BootMissing)
     }
 
-    fn topology(&mut self) -> SeamResult<Vec<CoreInfo>> {
+    fn topology(&mut self) -> Result<Vec<CoreInfo>, Error> {
         Ok(Vec::new())
     }
 
-    fn validate_smu(&mut self) -> SeamResult<()> {
-        Ok(())
+    fn validate_smu(&mut self) -> Result<SmuValidated, Error> {
+        Err(Error::Crashed)
     }
 
-    fn bios_context(&mut self) -> SeamResult<BiosContext> {
-        Ok(BiosContext::default())
+    fn bios_context(&mut self) -> Result<BiosContext, Error> {
+        Err(Error::BootMissing)
     }
 
-    fn ranking(&mut self) -> SeamOutcome<Option<Vec<CoreRank>>> {
-        SeamOutcome::failed(
-            Some(vec![CoreRank {
+    fn ranking(&mut self) -> Result<Vec<CoreRank>, Partial<Vec<CoreRank>>> {
+        Err(Partial {
+            value: vec![CoreRank {
                 core: CoreId::new(1).unwrap(),
                 value: 7,
-            }]),
-            Error::Kind(ErrorKind::Crashed),
-        )
+            }],
+            error: Error::Crashed,
+        })
     }
 
     fn preflight(&mut self) -> Vec<Check> {
@@ -194,81 +470,28 @@ impl Host for RankingHost {
 
 #[test]
 fn ranking_values_survive_a_failed_read() {
-    let outcome = RankingHost.ranking();
-    assert_eq!(outcome.value.unwrap()[0].value, 7);
-    assert!(outcome.error.unwrap().contains(ErrorKind::Crashed));
-}
-
-#[test]
-fn outcome_into_result_keeps_the_value_only_without_an_error() {
-    assert_eq!(SeamOutcome::ok(3).into_result().unwrap(), 3);
-    let failed = SeamOutcome::failed(3, Error::Kind(ErrorKind::Crashed)).into_result();
-    assert!(failed.unwrap_err().contains(ErrorKind::Crashed));
-}
-
-#[derive(Debug)]
-struct ExternalError {
-    source: ErrorKind,
-}
-
-impl fmt::Display for ExternalError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("external failure")
-    }
-}
-
-impl StdError for ExternalError {
-    fn source(&self) -> Option<&(dyn StdError + 'static)> {
-        Some(&self.source)
-    }
-}
-
-#[derive(Debug)]
-struct Layered(Box<dyn StdError + Send + Sync>);
-
-impl fmt::Display for Layered {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("layered failure")
-    }
-}
-
-impl StdError for Layered {
-    fn source(&self) -> Option<&(dyn StdError + 'static)> {
-        Some(self.0.as_ref())
-    }
-}
-
-#[test]
-fn bare_sentinel_matches_only_its_kind() {
-    let error = Error::Kind(ErrorKind::Containment);
-    assert!(error.contains(ErrorKind::Containment));
-    assert!(!error.contains(ErrorKind::Crashed));
-    let boxed = Error::Other(Box::new(ErrorKind::Containment));
-    assert!(boxed.contains(ErrorKind::Containment));
-    assert!(!boxed.contains(ErrorKind::Crashed));
-}
-
-#[test]
-fn sentinel_is_found_through_an_external_source_chain() {
-    let error = Error::Other(Box::new(ExternalError {
-        source: ErrorKind::Containment,
-    }));
-    assert!(error.contains(ErrorKind::Containment));
-    assert!(!error.contains(ErrorKind::Crashed));
-    let deep = Error::Other(Box::new(Layered(Box::new(ExternalError {
-        source: ErrorKind::Containment,
-    }))));
-    assert!(deep.contains(ErrorKind::Containment));
-    assert!(!deep.contains(ErrorKind::BootMissing));
-    let context = Error::Context {
-        detail: "teardown".to_owned(),
-        source: Box::new(deep),
+    let Err(partial) = RankingHost.ranking() else {
+        panic!("ranking succeeded");
     };
-    assert!(context.contains(ErrorKind::Containment));
+    assert_eq!(
+        partial.value,
+        [CoreRank {
+            core: CoreId::new(1).unwrap(),
+            value: 7,
+        }]
+    );
+    assert!(matches!(partial.error, Error::Crashed));
 }
 
 #[test]
-fn external_error_without_a_sentinel_matches_nothing() {
-    let error = Error::Other(Box::new(std::io::Error::other("disk gone")));
-    assert!(!error.contains(ErrorKind::Containment));
+fn a_panicking_callback_does_not_stop_later_callbacks_or_children() {
+    let token = CancellationToken::new();
+    let child = token.child_token();
+    let (count, callback) = counter();
+    let _first = token.on_cancel(|| panic!("callback failed"));
+    let _second = token.on_cancel(callback());
+    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| token.cancel()));
+    assert!(outcome.is_err());
+    assert_eq!(count.load(Ordering::SeqCst), 1);
+    assert!(child.is_cancelled());
 }

@@ -5,10 +5,17 @@ fail-fast = false
 [test-groups.real-process]
 max-threads = 2
 
+[test-groups.hardware]
+max-threads = 1
+
 [[profile.default.overrides]]
 filter = "test(/(^|::)real_process_/)"
 test-group = "real-process"
 slow-timeout = { period = "60s", terminate-after = 5 }
+
+[[profile.default.overrides]]
+filter = "package(togi-smu) & binary(hardware)"
+test-group = "hardware"
 
 [profile.ci]
 slow-timeout = { period = "30s", terminate-after = 4 }
@@ -21,3 +28,7 @@ status-level = "slow"
 filter = "test(/(^|::)real_process_/)"
 test-group = "real-process"
 slow-timeout = { period = "60s", terminate-after = 5 }
+
+[[profile.ci.overrides]]
+filter = "package(togi-smu) & binary(hardware)"
+test-group = "hardware"

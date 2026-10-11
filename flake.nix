@@ -160,21 +160,11 @@
                 platforms = [ system ];
               };
             };
-          comparison = import ./nix/comparison.nix {
-            inherit pkgs lib;
-            package = config.checks.package;
-            goSource = lib.fileset.toSource {
-              root = ./.;
-              fileset = goFiles;
-            };
-            revision = inputs.self.rev or inputs.self.dirtyRev or "dev";
-          };
         in
         {
           packages = {
             default = togi (inputs.self.shortRev or inputs.self.dirtyShortRev or "dev");
-          }
-          // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux comparison.packages;
+          };
 
           devShells.default = pkgs.mkShell (
             {
@@ -207,25 +197,13 @@
               pnameSuffix = "-clippy";
               buildPhaseCargoCommand = ''
                 cargoWithProfile clippy --locked --all-targets -- --deny warnings
+                cargoWithProfile clippy --locked --all-targets --all-features -- --deny warnings
                 cargoWithProfile clippy --locked --all-targets --target aarch64-apple-darwin -- --deny warnings
               '';
             });
-            rust-nextest = craneLib.cargoNextest (
-              rustCheck (
-                {
-                  cargoNextestExtraArgs = "--profile ci";
-                }
-                # main's macOS job builds only package and rust-nextest, so on aarch64-darwin rust-nextest
-                # depends on the native regeneration of the arm64 math, Lgamma, Pow, conversion and ExpFloat64 vectors (#637).
-                // lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
-                  gocompatVectorsMath = config.checks.gocompat-vectors-math;
-                  gocompatVectorsLgamma = config.checks.gocompat-vectors-lgamma;
-                  gocompatVectorsPow = config.checks.gocompat-vectors-pow;
-                  gocompatVectorsConvert = config.checks.gocompat-vectors-convert;
-                  gocompatVectorsExpfloat = config.checks.gocompat-vectors-expfloat;
-                }
-              )
-            );
+            rust-nextest = craneLib.cargoNextest (rustCheck {
+              cargoNextestExtraArgs = "--profile ci";
+            });
             rust-doc = craneLib.cargoDocTest (rustCheck { });
             rust-fmt = craneLib.cargoFmt rustArgs;
             rust-deny = craneLib.mkCargoDerivation (rustNoDeps {
@@ -316,312 +294,12 @@
                   HOME=$TMPDIR GOCACHE=$TMPDIR/go-cache GOPROXY=off GOTOOLCHAIN=local CGO_ENABLED=0 go run ./tools/release -check changes
                   touch "$out"
                 '';
-            guard =
-              pkgs.runCommand "togi-guard"
-                {
-                  nativeBuildInputs = [
-                    pkgs.gitMinimal
-                    pkgs.nushell
-                  ];
-                  src = lib.fileset.toSource {
-                    root = ./.;
-                    fileset = ./tools/guard;
-                  };
-                }
-                ''
-                  cd "$src"
-                  HOME=$TMPDIR nu --no-config-file tools/guard/test.nu
-                  touch "$out"
-                '';
-            gocompat-vectors =
-              pkgs.runCommand "togi-gocompat-vectors"
-                {
-                  nativeBuildInputs = [ pkgs.go_1_27 ];
-                  src = lib.fileset.toSource {
-                    root = ./.;
-                    fileset = lib.fileset.unions [
-                      ./go.mod
-                      ./go.sum
-                      ./cmd
-                      ./internal
-                      ./tools
-                      ./crates/togi-gocompat/testdata
-                    ];
-                  };
-                }
-                ''
-                  cd "$src"
-                  export HOME=$TMPDIR GOCACHE=$TMPDIR/go-cache GOPROXY=off GOTOOLCHAIN=local CGO_ENABLED=0
-                  mkdir $TMPDIR/vectors
-                  for mode in float; do
-                    go run ./tools/gocompat-vectors $mode $TMPDIR/vectors
-                  done
-                  for f in float-format.txt float-json.txt float-v.txt; do
-                    cmp $TMPDIR/vectors/$f crates/togi-gocompat/testdata/$f
-                  done
-                  touch "$out"
-                '';
-            # Regenerates the math vectors from Go and requires them equal to the committed ones.
-            # x86_64-linux writes all three files, running the arm64 build under qemu-user;
-            # aarch64-darwin runs the arm64 paths natively and compares math-arm64.txt.
-            gocompat-vectors-math =
-              pkgs.runCommand "togi-gocompat-vectors-math"
-                {
-                  nativeBuildInputs = [
-                    pkgs.go_1_27
-                  ]
-                  ++ lib.optional pkgs.stdenv.hostPlatform.isLinux pkgs.qemu-user;
-                  src = lib.fileset.toSource {
-                    root = ./.;
-                    fileset = lib.fileset.unions [
-                      ./go.mod
-                      ./go.sum
-                      ./cmd
-                      ./internal
-                      ./tools
-                      ./crates/togi-gocompat/testdata
-                    ];
-                  };
-                }
-                (
-                  ''
-                    cd "$src"
-                    export HOME=$TMPDIR GOCACHE=$TMPDIR/go-cache GOPROXY=off GOTOOLCHAIN=local CGO_ENABLED=0
-                    go build -o $TMPDIR/gocompat-vectors ./tools/gocompat-vectors
-                    mkdir $TMPDIR/vectors
-                  ''
-                  + (
-                    if pkgs.stdenv.hostPlatform.isLinux then
-                      ''
-                        $TMPDIR/gocompat-vectors math-amd64-fma $TMPDIR/vectors
-                        GODEBUG=cpu.fma=off $TMPDIR/gocompat-vectors math-amd64-nofma $TMPDIR/vectors
-                        $TMPDIR/gocompat-vectors math-arm64 $TMPDIR/vectors
-                        for f in math-amd64-fma.txt math-amd64-nofma.txt math-arm64.txt; do
-                          cmp $TMPDIR/vectors/$f crates/togi-gocompat/testdata/$f
-                        done
-                      ''
-                    else
-                      ''
-                        $TMPDIR/gocompat-vectors math-arm64 $TMPDIR/vectors
-                        cmp $TMPDIR/vectors/math-arm64.txt crates/togi-gocompat/testdata/math-arm64.txt
-                      ''
-                  )
-                  + ''
-                    touch "$out"
-                  ''
-                );
-            # Regenerates the Lgamma vectors from Go and requires them equal to the committed ones.
-            # x86_64-linux writes both files, running the arm64 build under qemu-user;
-            # aarch64-darwin runs the arm64 path natively and compares lgamma-arm64.txt.
-            gocompat-vectors-lgamma =
-              pkgs.runCommand "togi-gocompat-vectors-lgamma"
-                {
-                  nativeBuildInputs = [
-                    pkgs.go_1_27
-                  ]
-                  ++ lib.optional pkgs.stdenv.hostPlatform.isLinux pkgs.qemu-user;
-                  src = lib.fileset.toSource {
-                    root = ./.;
-                    fileset = lib.fileset.unions [
-                      ./go.mod
-                      ./go.sum
-                      ./cmd
-                      ./internal
-                      ./tools
-                      ./crates/togi-gocompat/testdata
-                    ];
-                  };
-                }
-                (
-                  ''
-                    cd "$src"
-                    export HOME=$TMPDIR GOCACHE=$TMPDIR/go-cache GOPROXY=off GOTOOLCHAIN=local CGO_ENABLED=0
-                    go build -o $TMPDIR/gocompat-vectors ./tools/gocompat-vectors
-                    mkdir $TMPDIR/vectors
-                  ''
-                  + (
-                    if pkgs.stdenv.hostPlatform.isLinux then
-                      ''
-                        $TMPDIR/gocompat-vectors lgamma-amd64 $TMPDIR/vectors
-                        $TMPDIR/gocompat-vectors lgamma-arm64 $TMPDIR/vectors
-                        for f in lgamma-amd64.txt lgamma-arm64.txt; do
-                          cmp $TMPDIR/vectors/$f crates/togi-gocompat/testdata/$f
-                        done
-                      ''
-                    else
-                      ''
-                        $TMPDIR/gocompat-vectors lgamma-arm64 $TMPDIR/vectors
-                        cmp $TMPDIR/vectors/lgamma-arm64.txt crates/togi-gocompat/testdata/lgamma-arm64.txt
-                      ''
-                  )
-                  + ''
-                    touch "$out"
-                  ''
-                );
-            # Regenerates the Pow vectors from Go like gocompat-vectors-math does.
-            gocompat-vectors-pow =
-              pkgs.runCommand "togi-gocompat-vectors-pow"
-                {
-                  nativeBuildInputs = [
-                    pkgs.go_1_27
-                  ]
-                  ++ lib.optional pkgs.stdenv.hostPlatform.isLinux pkgs.qemu-user;
-                  src = lib.fileset.toSource {
-                    root = ./.;
-                    fileset = lib.fileset.unions [
-                      ./go.mod
-                      ./go.sum
-                      ./cmd
-                      ./internal
-                      ./tools
-                      ./crates/togi-gocompat/testdata
-                    ];
-                  };
-                }
-                (
-                  ''
-                    cd "$src"
-                    export HOME=$TMPDIR GOCACHE=$TMPDIR/go-cache GOPROXY=off GOTOOLCHAIN=local CGO_ENABLED=0
-                    go build -o $TMPDIR/gocompat-vectors ./tools/gocompat-vectors
-                    mkdir $TMPDIR/vectors
-                  ''
-                  + (
-                    if pkgs.stdenv.hostPlatform.isLinux then
-                      ''
-                        $TMPDIR/gocompat-vectors pow-amd64-fma $TMPDIR/vectors
-                        GODEBUG=cpu.fma=off $TMPDIR/gocompat-vectors pow-amd64-nofma $TMPDIR/vectors
-                        $TMPDIR/gocompat-vectors pow-arm64 $TMPDIR/vectors
-                        for f in pow-amd64-fma.txt pow-amd64-nofma.txt pow-arm64.txt; do
-                          cmp $TMPDIR/vectors/$f crates/togi-gocompat/testdata/$f
-                        done
-                      ''
-                    else
-                      ''
-                        $TMPDIR/gocompat-vectors pow-arm64 $TMPDIR/vectors
-                        cmp $TMPDIR/vectors/pow-arm64.txt crates/togi-gocompat/testdata/pow-arm64.txt
-                      ''
-                  )
-                  + ''
-                    touch "$out"
-                  ''
-                );
-            # Regenerates the conversion vectors from Go and requires them equal to the committed ones.
-            # convert.txt holds only rows that are the same on every architecture; the rows that are
-            # not (float-to-integer conversions, NaN bits) are in convert-amd64.txt and convert-arm64.txt.
-            # x86_64-linux writes all three files, running the arm64 build under qemu-user, and requires
-            # that build's convert.txt equal the committed one; it also writes convert-amd64-nosse41.txt
-            # with GODEBUG=cpu.sse41=off, the Floor, Ceil and Trunc rows of Go's assembly for a CPU
-            # without SSE4.1. aarch64-darwin runs the arm64 paths natively and compares convert.txt and
-            # convert-arm64.txt.
-            gocompat-vectors-convert =
-              pkgs.runCommand "togi-gocompat-vectors-convert"
-                {
-                  nativeBuildInputs = [
-                    pkgs.go_1_27
-                  ]
-                  ++ lib.optional pkgs.stdenv.hostPlatform.isLinux pkgs.qemu-user;
-                  src = lib.fileset.toSource {
-                    root = ./.;
-                    fileset = lib.fileset.unions [
-                      ./go.mod
-                      ./go.sum
-                      ./cmd
-                      ./internal
-                      ./tools
-                      ./crates/togi-gocompat/testdata
-                    ];
-                  };
-                }
-                (
-                  ''
-                    cd "$src"
-                    export HOME=$TMPDIR GOCACHE=$TMPDIR/go-cache GOPROXY=off GOTOOLCHAIN=local CGO_ENABLED=0
-                    go build -o $TMPDIR/gocompat-vectors ./tools/gocompat-vectors
-                    mkdir $TMPDIR/vectors
-                    $TMPDIR/gocompat-vectors convert $TMPDIR/vectors
-                    $TMPDIR/gocompat-vectors convert-arm64 $TMPDIR/vectors
-                  ''
-                  + (
-                    if pkgs.stdenv.hostPlatform.isLinux then
-                      ''
-                        $TMPDIR/gocompat-vectors convert-amd64 $TMPDIR/vectors
-                        GODEBUG=cpu.sse41=off $TMPDIR/gocompat-vectors convert-amd64-nosse41 $TMPDIR/vectors
-                        GOOS=linux GOARCH=arm64 go build -o $TMPDIR/gocompat-vectors-arm64 ./tools/gocompat-vectors
-                        mkdir $TMPDIR/vectors-arm64
-                        qemu-aarch64 $TMPDIR/gocompat-vectors-arm64 convert $TMPDIR/vectors-arm64
-                        cmp $TMPDIR/vectors-arm64/convert.txt crates/togi-gocompat/testdata/convert.txt
-                        for f in convert.txt convert-amd64.txt convert-arm64.txt convert-amd64-nosse41.txt; do
-                          cmp $TMPDIR/vectors/$f crates/togi-gocompat/testdata/$f
-                        done
-                      ''
-                    else
-                      ''
-                        for f in convert.txt convert-arm64.txt; do
-                          cmp $TMPDIR/vectors/$f crates/togi-gocompat/testdata/$f
-                        done
-                      ''
-                  )
-                  + ''
-                    touch "$out"
-                  ''
-                );
-            # Regenerates the ExpFloat64 tables and vectors from Go like gocompat-vectors-math does.
-            gocompat-vectors-expfloat =
-              pkgs.runCommand "togi-gocompat-vectors-expfloat"
-                {
-                  nativeBuildInputs = [
-                    pkgs.go_1_27
-                  ]
-                  ++ lib.optional pkgs.stdenv.hostPlatform.isLinux pkgs.qemu-user;
-                  src = lib.fileset.toSource {
-                    root = ./.;
-                    fileset = lib.fileset.unions [
-                      ./go.mod
-                      ./go.sum
-                      ./cmd
-                      ./internal
-                      ./tools
-                      ./crates/togi-gocompat/testdata
-                      ./crates/togi-gocompat/src/math/expfloat/tables.rs
-                    ];
-                  };
-                }
-                (
-                  ''
-                    cd "$src"
-                    export HOME=$TMPDIR GOCACHE=$TMPDIR/go-cache GOPROXY=off GOTOOLCHAIN=local CGO_ENABLED=0
-                    go build -o $TMPDIR/gocompat-vectors ./tools/gocompat-vectors
-                    mkdir $TMPDIR/vectors
-                    $TMPDIR/gocompat-vectors expfloat-tables $TMPDIR/vectors
-                    cmp $TMPDIR/vectors/tables.rs crates/togi-gocompat/src/math/expfloat/tables.rs
-                  ''
-                  + (
-                    if pkgs.stdenv.hostPlatform.isLinux then
-                      ''
-                        $TMPDIR/gocompat-vectors expfloat-amd64-fma $TMPDIR/vectors
-                        GODEBUG=cpu.fma=off $TMPDIR/gocompat-vectors expfloat-amd64-nofma $TMPDIR/vectors
-                        $TMPDIR/gocompat-vectors expfloat-arm64 $TMPDIR/vectors
-                        for f in expfloat-amd64-fma.txt expfloat-amd64-nofma.txt expfloat-arm64.txt; do
-                          cmp $TMPDIR/vectors/$f crates/togi-gocompat/testdata/$f
-                        done
-                      ''
-                    else
-                      ''
-                        $TMPDIR/gocompat-vectors expfloat-arm64 $TMPDIR/vectors
-                        cmp $TMPDIR/vectors/expfloat-arm64.txt crates/togi-gocompat/testdata/expfloat-arm64.txt
-                      ''
-                  )
-                  + ''
-                    touch "$out"
-                  ''
-                );
             module = import ./nix/module-test.nix {
               pkgs = inputs.nixpkgs.legacyPackages.x86_64-linux;
               hostPkgs = pkgs;
               package = inputs.self.checks.x86_64-linux.package;
             };
           }
-          // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux comparison.checks
           // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux (
             let
               vm = import ./nix/vm-test.nix {

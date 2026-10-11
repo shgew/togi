@@ -1,26 +1,26 @@
-use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
-use togi_machine::{CcdId, CoreId, PerCore, PmTable, TrialConditions};
+use togi_machine::{CcdId, CoreId, CoreSet, PerCore, PmTable, TrialConditions};
 
-use super::{
-    MIN_SAMPLES, Telemetry, VOLTS_PER_COUNT, WARMUP_MS, compare, counts, groups, summarize, top,
-};
+use super::{MIN_SAMPLES, Telemetry, VOLTS_PER_COUNT, WARMUP_MS, counts, groups, summarize, top};
 
 fn core(id: i64) -> CoreId {
     CoreId::new(id).unwrap()
 }
 
-fn cores(ids: &[i64]) -> Vec<CoreId> {
+fn cores(ids: &[i64]) -> CoreSet {
     ids.iter().map(|&id| core(id)).collect()
 }
 
 fn ccd_of(core: CoreId) -> CcdId {
-    CcdId(i64::from(core.get()) / 8)
+    CcdId(core.get() / 8)
 }
 
 fn per_core<T: Copy + Default>(readings: &[(i64, T)]) -> PerCore<T> {
-    PerCore::from_readings(readings.iter().map(|&(id, value)| (core(id), value)))
+    readings
+        .iter()
+        .map(|&(id, value)| (core(id), value))
+        .collect()
 }
 
 fn lane(value: f32) -> f64 {
@@ -69,7 +69,7 @@ fn summarize_uses_samples_after_warmup() {
             )
         }
     });
-    let got = summarize(seq, &cores(&[0, 1, 8]), ccd_of).expect("20 samples after the warmup");
+    let got = summarize(seq, cores(&[0, 1, 8]), ccd_of).expect("20 samples after the warmup");
     let want = Telemetry {
         requests: per_core(&[(0, lane(1.100)), (1, lane(1.0995)), (8, lane(1.050))]),
         top_requesters: cores(&[0, 1, 8]),
@@ -85,14 +85,14 @@ fn summarize_needs_min_samples_after_warmup() {
     assert!(
         summarize(
             samples(0, last(MIN_SAMPLES - 1), steady),
-            &cores(&[3]),
+            cores(&[3]),
             ccd_of
         )
         .is_none(),
         "19 samples after the warmup summarized"
     );
     assert!(
-        summarize(samples(0, last(MIN_SAMPLES), steady), &cores(&[3]), ccd_of).is_some(),
+        summarize(samples(0, last(MIN_SAMPLES), steady), cores(&[3]), ccd_of).is_some(),
         "20 samples after the warmup did not summarize"
     );
 }
@@ -111,7 +111,7 @@ fn summarize_needs_min_clock_samples_per_ccd() {
             (vec![(0, 1.1), (8, 1.05)], mhz)
         },
     );
-    let got = summarize(seq, &cores(&[0, 8]), ccd_of).expect("20 samples after the warmup");
+    let got = summarize(seq, cores(&[0, 8]), ccd_of).expect("20 samples after the warmup");
     let want = Telemetry {
         requests: per_core(&[(0, lane(1.1)), (8, lane(1.05))]),
         top_requesters: cores(&[0, 8]),
@@ -127,40 +127,26 @@ fn summarize_skips_samples_without_lanes() {
         core_mhz: per_core(&[(2, 5000)]),
         ..TrialConditions::default()
     });
-    assert!(summarize(seq, &cores(&[2]), ccd_of).is_none());
+    assert!(summarize(seq, cores(&[2]), ccd_of).is_none());
 }
 
 #[test]
 fn summarize_without_cores_is_none() {
     let seq = samples(WARMUP_MS, 30000, |_| (vec![(0, 1.1)], vec![(0, 5000)]));
-    assert!(summarize(seq, &[], ccd_of).is_none());
+    assert!(summarize(seq, CoreSet::default(), ccd_of).is_none());
 }
 
 #[test]
-fn summarize_counts_a_repeated_core_twice_per_sample() {
+fn summarize_counts_a_repeated_core_once() {
     let seq = samples(WARMUP_MS, 30000, |ms| {
         let step = f32::from(u16::try_from(ms / 1000).unwrap());
         (vec![(0, 1.0 + step * 0.01)], vec![(0, 5000 + ms / 1000)])
     });
-    let once = summarize(seq.clone(), &cores(&[0]), ccd_of).unwrap();
-    let twice = summarize(seq, &cores(&[0, 0]), ccd_of).unwrap();
-    assert_eq!(once.requests, twice.requests);
-    assert_eq!(once.top_requesters, twice.top_requesters);
+    let once = summarize(seq.clone(), cores(&[0]), ccd_of).unwrap();
+    let twice = summarize(seq, cores(&[0, 0]), ccd_of).unwrap();
+    assert_eq!(cores(&[0, 0]).len(), 1);
+    assert_eq!(once, twice);
     assert_eq!(once.ccd_mhz, BTreeMap::from([(CcdId(0), 5018)]));
-    assert_eq!(twice.ccd_mhz, BTreeMap::from([(CcdId(0), 5018)]));
-}
-
-#[test]
-fn compare_orders_nan_first_and_signed_zeros_equal() {
-    for x in [f64::NEG_INFINITY, -1.0, 0.0, 1.0, f64::INFINITY] {
-        assert_eq!(compare(f64::NAN, x), Ordering::Less, "NaN vs {x}");
-        assert_eq!(compare(x, f64::NAN), Ordering::Greater, "{x} vs NaN");
-    }
-    assert_eq!(compare(f64::NAN, f64::NAN), Ordering::Equal);
-    assert_eq!(compare(-0.0, 0.0), Ordering::Equal);
-    assert_eq!(compare(0.0, -0.0), Ordering::Equal);
-    assert_eq!(compare(1.0, 2.0), Ordering::Less);
-    assert_eq!(compare(2.0, 1.0), Ordering::Greater);
 }
 
 #[test]
@@ -194,15 +180,6 @@ fn groups_orders_by_request() {
 }
 
 #[test]
-fn groups_orders_nan_last_and_signed_zeros_equal() {
-    let requests = per_core(&[(0, f64::NAN), (1, -0.0), (2, 0.0), (3, f64::NEG_INFINITY)]);
-    assert_eq!(
-        groups(&requests),
-        vec![cores(&[1, 2]), cores(&[3]), cores(&[0])]
-    );
-}
-
-#[test]
 fn counts_raises_a_request_by_whole_counts() {
     for (v, target, want) in [
         (1.100, 1.100, 1),
@@ -210,7 +187,6 @@ fn counts_raises_a_request_by_whole_counts() {
         (1.100, 1.100 + VOLTS_PER_COUNT, 1),
         (1.100, 1.100 + VOLTS_PER_COUNT + 0.0001, 2),
         (1.0322, 1.0443, 4),
-        (0.0, f64::NAN, 1),
     ] {
         assert_eq!(counts(v, target), want, "counts({v}, {target})");
     }
@@ -220,9 +196,27 @@ fn counts_raises_a_request_by_whole_counts() {
 fn top_is_the_highest_request() {
     assert_eq!(top(&PerCore::default()), None);
     assert_eq!(top(&per_core(&[(3, 1.2), (1, 1.4), (7, 1.3)])), Some(1.4));
-    assert_eq!(top(&per_core(&[(0, -0.0), (1, 0.0)])).unwrap().to_bits(), 0);
-    assert_eq!(top(&per_core(&[(0, 0.0), (1, -0.0)])).unwrap().to_bits(), 0);
     assert_eq!(top(&per_core(&[(0, 1.4), (1, 1.4)])), Some(1.4));
-    assert!(top(&per_core(&[(0, 1.0), (1, f64::NAN)])).unwrap().is_nan());
-    assert!(top(&per_core(&[(0, f64::NAN), (1, 1.0)])).unwrap().is_nan());
+}
+
+#[test]
+fn summarize_skips_samples_with_a_non_finite_lane() {
+    let valid = |ms: i64| sample(ms, &[(0, 1.1), (1, 1.2)], &[(0, 5000), (1, 5000)]);
+    let broken = |ms: i64, bad: f32| sample(ms, &[(0, 1.1), (1, bad)], &[(0, 5000), (1, 5000)]);
+    let finite_only = |count: i64| (0..count).map(|index| valid(WARMUP_MS + index * 1000));
+    let noisy = |count: i64| {
+        finite_only(count)
+            .chain([f32::NAN, f32::INFINITY, f32::NEG_INFINITY].map(|bad| broken(WARMUP_MS, bad)))
+            .collect::<Vec<_>>()
+    };
+    let min = i64::try_from(MIN_SAMPLES).unwrap();
+    assert!(summarize(noisy(min - 1), cores(&[0, 1]), ccd_of).is_none());
+    let got = summarize(noisy(min), cores(&[0, 1]), ccd_of).unwrap();
+    assert_eq!(
+        got,
+        summarize(finite_only(min), cores(&[0, 1]), ccd_of).unwrap()
+    );
+    assert!(got.requests.iter().all(|(_, request)| request.is_finite()));
+    let unloaded = broken(WARMUP_MS, f32::NAN);
+    assert!(summarize(finite_only(min).chain([unloaded]), cores(&[0]), ccd_of).is_some());
 }

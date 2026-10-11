@@ -421,6 +421,7 @@ version = "0.10.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "65c9fb96cbc91e3478eaae79a69fcd3f1ae4ad052e471fe6732fff548984b4af"
 dependencies = [
+ "chacha20",
  "getrandom",
  "rand_core",
 ]
@@ -639,8 +640,26 @@ dependencies = [
 ]
 
 [[package]]
-name = "togi-gocompat"
+name = "togi-config"
 version = "0.0.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tempfile",
+ "test-case",
+ "thiserror",
+ "togi-machine",
+]
+
+[[package]]
+name = "togi-hostlock"
+version = "0.0.0"
+dependencies = [
+ "nix",
+ "rustix",
+ "tempfile",
+ "thiserror",
+]
 
 [[package]]
 name = "togi-machine"
@@ -649,6 +668,7 @@ dependencies = [
  "flate2",
  "jiff",
  "proptest",
+ "rand",
  "serde",
  "serde_json",
  "tempfile",
@@ -664,6 +684,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "togi-smu"
+version = "0.0.0"
+dependencies = [
+ "rustix",
+ "tempfile",
+ "thiserror",
+ "togi-hostlock",
+ "togi-machine",
+]
+
+[[package]]
 name = "togi-trialfiles"
 version = "0.0.0"
 dependencies = [
@@ -672,6 +703,17 @@ dependencies = [
  "rustix",
  "tempfile",
  "test-case",
+ "thiserror",
+]
+
+[[package]]
+name = "togi-tuningboot"
+version = "0.0.0"
+dependencies = [
+ "getrandom",
+ "proptest",
+ "serde",
+ "serde_json",
  "thiserror",
 ]
 
