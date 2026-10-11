@@ -295,3 +295,82 @@ fn a_refused_journal_whose_saved_entry_cannot_be_cleared_keeps_both_errors() {
     ));
     assert_eq!(ended.journal.events().len(), 2);
 }
+
+type Reshape = fn(Vec<togi_machine::CoreInfo>) -> Vec<togi_machine::CoreInfo>;
+
+struct Cores(Box<dyn togi_machine::Host>, Reshape);
+
+impl togi_machine::Host for Cores {
+    fn boot_id(&mut self) -> Result<togi_machine::BootId, togi_machine::Error> {
+        self.0.boot_id()
+    }
+
+    fn topology(&mut self) -> Result<Vec<togi_machine::CoreInfo>, togi_machine::Error> {
+        self.0.topology().map(self.1)
+    }
+
+    fn validate_smu(&mut self) -> Result<togi_machine::SmuValidated, togi_machine::Error> {
+        self.0.validate_smu()
+    }
+
+    fn bios_context(&mut self) -> Result<togi_machine::BiosContext, togi_machine::Error> {
+        self.0.bios_context()
+    }
+
+    fn ranking(
+        &mut self,
+    ) -> Result<Vec<togi_machine::CoreRank>, togi_machine::Partial<Vec<togi_machine::CoreRank>>>
+    {
+        self.0.ranking()
+    }
+
+    fn preflight(&mut self) -> Vec<togi_machine::Check> {
+        self.0.preflight()
+    }
+
+    fn watchdog(&mut self) -> togi_machine::Check {
+        self.0.watchdog()
+    }
+}
+
+fn without_core_one(mut cores: Vec<togi_machine::CoreInfo>) -> Vec<togi_machine::CoreInfo> {
+    cores.retain(|info| info.core != crate::testing::core(1));
+    cores
+}
+
+fn with_core_five(mut cores: Vec<togi_machine::CoreInfo>) -> Vec<togi_machine::CoreInfo> {
+    let mut added = cores[0].clone();
+    added.core = crate::testing::core(5);
+    cores.push(added);
+    cores
+}
+
+#[test]
+fn a_resumed_session_refuses_added_or_removed_cores_before_any_append() {
+    let cases: [(Reshape, &[u8], &[u8]); 2] =
+        [(without_core_one, &[], &[1]), (with_core_five, &[5], &[])];
+    for (change, added, removed) in cases {
+        let bench = Bench::new(2);
+        let mut first = bench.open();
+        first.start().unwrap();
+        drop(first);
+        let mut input = bench.input();
+        let host = input.machine.host;
+        input.machine.host = Box::new(Cores(host, change));
+        let Ok(mut session) = Session::open(input) else {
+            panic!("open");
+        };
+        let before = crate::testing::kinds_of(session.appender());
+        let Err(SessionError::TopologyChanged {
+            added: got_added,
+            removed: got_removed,
+        }) = session.start()
+        else {
+            panic!("not refused");
+        };
+        let ids = |set: togi_machine::CoreSet| set.iter().map(|core| core.get()).collect::<Vec<_>>();
+        assert_eq!(ids(got_added), added);
+        assert_eq!(ids(got_removed), removed);
+        assert_eq!(crate::testing::kinds_of(session.appender()), before);
+    }
+}

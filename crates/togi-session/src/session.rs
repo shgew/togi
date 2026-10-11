@@ -327,6 +327,16 @@ impl Session {
         let mut topology = self.host.topology()?;
         topology.sort_by_key(|info| info.core);
         let cores: CoreSet = topology.iter().map(|info| info.core).collect();
+        let recorded = self.appender.recovery();
+        if recorded.started() {
+            let known: CoreSet = recorded.topology().keys().copied().collect();
+            if known != cores {
+                return Err(SessionError::TopologyChanged {
+                    added: cores.iter().filter(|&core| !known.contains(core)).collect(),
+                    removed: known.iter().filter(|&core| !cores.contains(core)).collect(),
+                });
+            }
+        }
         if let Some((core, _)) = self
             .config
             .overrides()

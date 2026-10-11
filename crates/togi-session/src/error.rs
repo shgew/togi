@@ -2,7 +2,7 @@ use std::io;
 use std::sync::Arc;
 
 use togi_journal::{AppendError, DeadEndCondition, DirError, EventKind, LookupError, Refusal, Seq};
-use togi_machine::CoreId;
+use togi_machine::{CoreId, CoreSet};
 
 use crate::boot::BootError;
 use crate::write::{ProfileFailure, WriteFailure};
@@ -88,6 +88,14 @@ pub enum SessionError {
     ClearSavedEntry(#[source] io::Error),
     #[error("allocate the session id: {0}")]
     SessionId(#[from] DirError),
+    /// The session was recorded on other cores than the machine has now: a resumed session cannot change them.
+    #[error(
+        "the session was recorded on other cores than this machine has now (added: {}; removed: {}); \
+         archive the session to start over",
+        listed(added),
+        listed(removed)
+    )]
+    TopologyChanged { added: CoreSet, removed: CoreSet },
     /// A step reported dead-end evidence, and the journal supports no dead end.
     #[error("{0} dead-end evidence reported without a recorded dead end")]
     DeadEndUnrecorded(DeadEndCondition),
@@ -126,6 +134,17 @@ impl From<AppendFailure> for SessionError {
         match failure {
             AppendFailure::Journal(failure) => Self::Journal(failure),
             AppendFailure::Fold(failure) => Self::Fold(failure),
+fn listed(cores: &CoreSet) -> String {
+    if cores.is_empty() {
+        return "none".to_owned();
+    }
+    cores
+        .iter()
+        .map(|core| format!("{core:02}"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
             AppendFailure::Boot(error) => error.into(),
         }
     }
