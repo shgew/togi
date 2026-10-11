@@ -811,6 +811,9 @@ impl Run {
         let R7Route::Locate { failure, reason } = self.locate_due()? else {
             return None;
         };
+        if let Some(close) = self.round_locate_close(failure) {
+            return Some(Action::Decide(close));
+        }
         if self.ranking_stale() {
             return Some(Action::ReadRanking);
         }

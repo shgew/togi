@@ -681,6 +681,31 @@ fn a_located_group_failure_naming_a_loaded_core_is_not_held() {
 }
 
 #[test]
+fn a_locate_ends_the_open_round_first() {
+    let mut j = Journal::r7_session();
+    let (_, failure, _) = j.loc_fail_escalated(&top0());
+    let profile = values(j.offsets());
+    j.round_start(1, &profile, &[0], 1);
+    let action = j.run().locate_action().expect("the failure is located");
+    let DecisionPayload::DeepeningRound(round) = &decision(&action).payload else {
+        panic!("expected the round to end, got {action:?}");
+    };
+    assert_eq!(
+        (round.round.get(), round.event, round.passed),
+        (1, togi_journal::RoundEvent::End, false)
+    );
+    assert_eq!(decision(&action).cause, [failure]);
+    assert_eq!(
+        round.reason.as_deref(),
+        Some(format!("R7 failure #{failure} needs a located hunt").as_str())
+    );
+    j.decide(decision(&action).clone());
+    assert!(j.run().rounds.active().is_none());
+    assert_eq!(j.run().locate_action(), Some(Action::ReadRanking));
+    j.assert_resumes();
+}
+
+#[test]
 fn r7_passed_locate_hunts_the_unloaded_culprit() {
     let mut j = Journal::r7_session();
     let (_, failure, _) = j.loc_fail_escalated(&top0());

@@ -73,6 +73,17 @@ impl Run {
         ))
     }
 
+    /// The round in progress ends before the located hunt the R7 failure at `failure` needs.
+    pub(crate) fn round_locate_close(&self, failure: Seq) -> Option<DecisionAction> {
+        let round = self.rounds.active()?;
+        Some(round_end(
+            round.id(),
+            false,
+            format!("R7 failure #{failure} needs a located hunt"),
+            vec![failure],
+        ))
+    }
+
     /// A reset of `core` ends the round in progress.
     pub(crate) fn round_reset_end(&self, core: CoreId, queued: Seq) -> Option<DecisionAction> {
         let round = self.rounds.active()?;
