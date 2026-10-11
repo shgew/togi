@@ -117,9 +117,15 @@ fn schedules_round_trip_as_tagged_objects() {
             LoadSchedule::Random { seed: 5 },
             r#"{"kind":"random","seed":5}"#,
         ),
-        (LoadSchedule::Duty { pct: 40 }, r#"{"kind":"duty","pct":40}"#),
+        (
+            LoadSchedule::Duty { pct: 40 },
+            r#"{"kind":"duty","pct":40}"#,
+        ),
     ] {
         assert_eq!(serde_json::to_string(&schedule).unwrap(), json);
-        assert_eq!(serde_json::from_str::<LoadSchedule>(json).unwrap(), schedule);
+        assert_eq!(
+            serde_json::from_str::<LoadSchedule>(json).unwrap(),
+            schedule
+        );
     }
 }
