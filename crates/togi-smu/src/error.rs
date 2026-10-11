@@ -63,8 +63,15 @@ pub enum Error {
     CpuNumber { name: String },
     #[error("no online CPU cores in {}", path.display())]
     NoOnlineCpus { path: PathBuf },
-    #[error("parse cpu family {family:?} and model {model:?}")]
-    ParseCpuInfo { family: String, model: String },
+    #[error("parse cpu {field} {text:?}")]
+    ParseCpuInfo {
+        field: &'static str,
+        text: String,
+        #[source]
+        source: ParseIntError,
+    },
+    #[error("{} is larger than {limit} bytes", path.display())]
+    TooLarge { path: PathBuf, limit: u64 },
     #[error("{summary}: not Granite Ridge desktop (family 0x1A, model 0x40-0x4F)")]
     UnsupportedCpu { summary: CpuSummary },
     #[error("/sys/kernel/ryzen_smu_drv not found: ryzen_smu is not loaded")]

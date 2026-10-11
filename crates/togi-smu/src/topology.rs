@@ -1,8 +1,7 @@
 use crate::Error;
-use crate::files::{read_int, read_int_opt, read_lossy};
+use crate::files::{is_missing, read_int, read_int_opt, read_lossy};
 use crate::slots::SlotError;
 use std::fs;
-use std::io;
 use std::path::Path;
 use togi_machine::{CcdId, CpuId};
 
@@ -54,11 +53,10 @@ fn cpu_numbers(base: &Path) -> Result<Vec<CpuId>, Error> {
 }
 
 fn online(dir: &Path) -> Result<bool, Error> {
-    let path = dir.join("online");
-    match read_lossy(&path) {
+    match read_lossy(&dir.join("online")) {
         Ok(text) => Ok(text.trim() != "0"),
-        Err(source) if source.kind() == io::ErrorKind::NotFound => Ok(true),
-        Err(source) => Err(Error::ReadFile { path, source }),
+        Err(error) if is_missing(&error) => Ok(true),
+        Err(error) => Err(error),
     }
 }
 
@@ -119,20 +117,24 @@ pub(crate) fn group(cpus: &[RawCpu]) -> Result<Vec<CoreGroup>, SlotError> {
     let mut keys: Vec<i64> = cpus.iter().map(|cpu| cpu.ccd_key).collect();
     keys.sort_unstable();
     keys.dedup();
-    group_by(cpus, |cpu| cpu.core_id)
+    let cores = group_by(cpus, |cpu| cpu.core_id);
+    let disagreeing: Vec<(i64, Vec<(CpuId, i64)>)> = cores
+        .iter()
+        .filter(|(_, members)| members.iter().any(|m| m.ccd_key != members[0].ccd_key))
+        .map(|(core_id, members)| {
+            (
+                *core_id,
+                members.iter().map(|m| (m.cpu, m.ccd_key)).collect(),
+            )
+        })
+        .collect();
+    if !disagreeing.is_empty() {
+        return Err(SlotError::Siblings(disagreeing));
+    }
+    cores
         .into_iter()
         .map(|(core_id, members)| {
-            let key = members[0].ccd_key;
-            if members.iter().any(|member| member.ccd_key != key) {
-                return Err(SlotError::Siblings {
-                    core_id,
-                    cpus: members
-                        .iter()
-                        .map(|member| (member.cpu, member.ccd_key))
-                        .collect(),
-                });
-            }
-            let index = keys.partition_point(|candidate| *candidate < key);
+            let index = keys.partition_point(|candidate| *candidate < members[0].ccd_key);
             let ccd = u8::try_from(index)
                 .map(CcdId)
                 .map_err(|_| SlotError::TooManyCcds { count: keys.len() })?;

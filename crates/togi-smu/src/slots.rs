@@ -7,7 +7,8 @@ const RSMU_RESPONSE: u32 = 0x03b1_0570;
 const RSMU_COMMAND: u32 = 0x03b1_0524;
 const CCD_FUSE: u32 = 0x304a_03dc;
 const CCD_FUSE_STRIDE_SHIFT: u32 = 25;
-const SLOTS_PER_CCD: usize = 8;
+/// Cores per CCD: a core's hardware CCD is its raw id divided by this, its slot the remainder.
+pub(crate) const SLOTS_PER_CCD: u8 = 8;
 
 /// Where the SMU addresses a core: the CCD and the slot on it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -58,12 +59,13 @@ impl fmt::Display for FuseRead {
     }
 }
 
-/// A core whose raw id does not match the slot its position on the CCD implies.
+/// A core whose raw id names a different hardware CCD (core ID / 8) than the CCD its cache or
+/// die key ranks to.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Misplaced {
     pub core: CoreId,
-    pub slot: usize,
-    pub want: usize,
+    pub ccd: CcdId,
+    pub want: CcdId,
 }
 
 fn join<T>(items: &[T], each: impl Fn(&T) -> String, separator: &str) -> String {
@@ -83,13 +85,13 @@ pub enum SlotError {
     )]
     Packages(Vec<(i64, Vec<CpuId>)>),
     #[error(
-        "core {core_id} siblings report different CCD keys: {}",
-        join(cpus, |(cpu, key)| format!("cpu{} key {key}", cpu.0), ", ")
+        "{}",
+        join(.0, |(core_id, cpus)| format!(
+            "core {core_id} siblings report different CCD keys: {}",
+            join(cpus, |(cpu, key)| format!("cpu{} key {key}", cpu.0), ", ")
+        ), "; ")
     )]
-    Siblings {
-        core_id: i64,
-        cpus: Vec<(CpuId, i64)>,
-    },
+    Siblings(Vec<(i64, Vec<(CpuId, i64)>)>),
     #[error("{count} distinct CCD keys do not fit a CCD index")]
     TooManyCcds { count: usize },
     #[error(
@@ -114,14 +116,10 @@ pub enum SlotError {
     #[error("CCD{} fuse {mask:#04x} leaves 8 live slots for {cores} cores", ccd.0)]
     CoreCount { ccd: CcdId, mask: u8, cores: usize },
     #[error(
-        "CCD{} core IDs disagree with modulo-eight slots: {}",
-        ccd.0,
-        join(misplaced, |m| format!("core {:02} at slot {}, want slot {}", m.core, m.slot, m.want), "; ")
+        "core IDs disagree with their CCD (core ID / 8): {}",
+        join(.0, |m| format!("core {:02} on CCD{}, want CCD{}", m.core, m.ccd.0, m.want.0), "; ")
     )]
-    SlotOrder {
-        ccd: CcdId,
-        misplaced: Vec<Misplaced>,
-    },
+    CcdIdentity(Vec<Misplaced>),
 }
 
 type SmnRead<'a> = dyn FnMut(u32) -> Result<u32, MailboxError> + 'a;
@@ -157,7 +155,8 @@ fn read_disabled_mask(ccd: CcdId, smn: &mut SmnRead<'_>) -> Result<u8, SlotError
 
 /// Maps every core to its CCD and slot from the topology and the CCD fuses.
 ///
-/// Refuses before any SMN read when the identity is ambiguous or a raw core id is outside 0–15.
+/// Refuses before any SMN read when the identity is ambiguous, a core's raw id names another
+/// hardware CCD than its CCD key, or a raw core id is outside 0–15.
 pub(crate) fn map(cpus: &[RawCpu], smn: &mut SmnRead<'_>) -> Result<SlotMap, SlotError> {
     let mut cores = topology::group(cpus)?;
     cores.sort_by_key(|core| (core.ccd, core.core_id));
@@ -184,6 +183,24 @@ pub(crate) fn map(cpus: &[RawCpu], smn: &mut SmnRead<'_>) -> Result<SlotMap, Slo
     if !outside.is_empty() {
         return Err(SlotError::OutOfRange(outside));
     }
+    let misplaced: Vec<Misplaced> = ccds
+        .iter()
+        .flat_map(|(ccd, ids)| {
+            ids.iter()
+                .filter_map(|id| CoreId::new(*id).ok())
+                .filter_map(|core| {
+                    let want = CcdId(core.get() / SLOTS_PER_CCD);
+                    (want != *ccd).then_some(Misplaced {
+                        core,
+                        ccd: *ccd,
+                        want,
+                    })
+                })
+        })
+        .collect();
+    if !misplaced.is_empty() {
+        return Err(SlotError::CcdIdentity(misplaced));
+    }
     let mut locations = [None; PER_CORE_MAX];
     let mut details = Vec::new();
     for (ccd, ids) in &ccds {
@@ -192,7 +209,7 @@ pub(crate) fn map(cpus: &[RawCpu], smn: &mut SmnRead<'_>) -> Result<SlotMap, Slo
         if mask != 0 {
             return Err(SlotError::Harvested { ccd, mask });
         }
-        if ids.len() != SLOTS_PER_CCD {
+        if ids.len() != usize::from(SLOTS_PER_CCD) {
             return Err(SlotError::CoreCount {
                 ccd,
                 mask,
@@ -200,21 +217,11 @@ pub(crate) fn map(cpus: &[RawCpu], smn: &mut SmnRead<'_>) -> Result<SlotMap, Slo
             });
         }
         let members: Vec<CoreId> = ids.iter().filter_map(|id| CoreId::new(*id).ok()).collect();
-        let misplaced: Vec<Misplaced> = members
-            .iter()
-            .enumerate()
-            .filter(|(slot, core)| core.index() % SLOTS_PER_CCD != *slot)
-            .map(|(slot, core)| Misplaced {
-                core: *core,
-                slot,
-                want: core.index() % SLOTS_PER_CCD,
-            })
-            .collect();
-        if !misplaced.is_empty() {
-            return Err(SlotError::SlotOrder { ccd, misplaced });
-        }
-        for (slot, core) in (0_u8..).zip(&members) {
-            locations[core.index()] = Some(Location { ccd, slot });
+        for core in &members {
+            locations[core.index()] = Some(Location {
+                ccd,
+                slot: core.get() % SLOTS_PER_CCD,
+            });
         }
         if let (Some(first), Some(last)) = (members.first(), members.last()) {
             let mut detail = String::new();

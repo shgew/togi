@@ -42,13 +42,15 @@ impl fmt::Display for DriverSummary {
 /// Family 0x1A, model 0x40–0x4F, from the first `/proc/cpuinfo` stanza.
 pub(crate) fn cpu(root: &Path) -> Result<CpuSummary, Error> {
     let stanza = first_stanza(&root.join("proc/cpuinfo"))?;
-    let (family, model) = (stanza.get("cpu family"), stanza.get("model"));
-    let (Ok(family_number), Ok(model_number)) = (family.parse(), model.parse()) else {
-        return Err(Error::ParseCpuInfo {
-            family: family.to_owned(),
-            model: model.to_owned(),
-        });
+    let parse = |field: &'static str, text: &str| {
+        text.parse::<u32>().map_err(|source| Error::ParseCpuInfo {
+            field,
+            text: text.to_owned(),
+            source,
+        })
     };
+    let family_number = parse("family", stanza.get("cpu family"))?;
+    let model_number = parse("model", stanza.get("model"))?;
     let summary = CpuSummary {
         family: family_number,
         model: model_number,

@@ -6,12 +6,6 @@ use std::path::Path;
 const TEXT_LIMIT: u64 = 64 * 1024;
 const STANZA_LIMIT: u64 = 1024 * 1024;
 
-pub(crate) fn read_lossy(path: &Path) -> io::Result<String> {
-    let mut bytes = Vec::new();
-    File::open(path)?.take(TEXT_LIMIT).read_to_end(&mut bytes)?;
-    Ok(String::from_utf8_lossy(&bytes).into_owned())
-}
-
 fn unreadable(path: &Path, source: io::Error) -> Error {
     Error::ReadFile {
         path: path.to_owned(),
@@ -19,10 +13,32 @@ fn unreadable(path: &Path, source: io::Error) -> Error {
     }
 }
 
+fn too_large(path: &Path, limit: u64) -> Error {
+    Error::TooLarge {
+        path: path.to_owned(),
+        limit,
+    }
+}
+
+/// The file's text, lossy UTF-8; a file longer than the limit is refused, never truncated.
+pub(crate) fn read_lossy(path: &Path) -> Result<String, Error> {
+    let mut bytes = Vec::new();
+    File::open(path)
+        .and_then(|file| file.take(TEXT_LIMIT + 1).read_to_end(&mut bytes))
+        .map_err(|source| unreadable(path, source))?;
+    if u64::try_from(bytes.len()).is_ok_and(|len| len > TEXT_LIMIT) {
+        return Err(too_large(path, TEXT_LIMIT));
+    }
+    Ok(String::from_utf8_lossy(&bytes).into_owned())
+}
+
+/// Whether `error` is a read failure because the file does not exist.
+pub(crate) fn is_missing(error: &Error) -> bool {
+    matches!(error, Error::ReadFile { source, .. } if source.kind() == io::ErrorKind::NotFound)
+}
+
 pub(crate) fn read_trimmed(path: &Path) -> Result<String, Error> {
-    read_lossy(path)
-        .map(|text| text.trim().to_owned())
-        .map_err(|source| unreadable(path, source))
+    read_lossy(path).map(|text| text.trim().to_owned())
 }
 
 fn parse_int(path: &Path, text: &str) -> Result<i64, Error> {
@@ -35,15 +51,14 @@ fn parse_int(path: &Path, text: &str) -> Result<i64, Error> {
 }
 
 pub(crate) fn read_int(path: &Path) -> Result<i64, Error> {
-    let text = read_lossy(path).map_err(|source| unreadable(path, source))?;
-    parse_int(path, &text)
+    parse_int(path, &read_lossy(path)?)
 }
 
 pub(crate) fn read_int_opt(path: &Path) -> Result<Option<i64>, Error> {
     match read_lossy(path) {
         Ok(text) => parse_int(path, &text).map(Some),
-        Err(source) if source.kind() == io::ErrorKind::NotFound => Ok(None),
-        Err(source) => Err(unreadable(path, source)),
+        Err(error) if is_missing(&error) => Ok(None),
+        Err(error) => Err(error),
     }
 }
 
@@ -76,18 +91,24 @@ impl Stanza {
 }
 
 pub(crate) fn first_stanza(path: &Path) -> Result<Stanza, Error> {
-    let read = || -> io::Result<Vec<u8>> {
-        let mut reader = BufReader::new(File::open(path)?.take(STANZA_LIMIT));
+    let read = || -> Result<Vec<u8>, Error> {
+        let file = File::open(path).map_err(|source| unreadable(path, source))?;
+        let mut reader = BufReader::new(file.take(STANZA_LIMIT + 1));
         let mut stanza = Vec::new();
         let mut line = Vec::new();
         loop {
             line.clear();
-            if reader.read_until(b'\n', &mut line)? == 0 || line.trim_ascii().is_empty() {
+            let count = reader
+                .read_until(b'\n', &mut line)
+                .map_err(|source| unreadable(path, source))?;
+            if count == 0 || line.trim_ascii().is_empty() {
                 return Ok(stanza);
             }
             stanza.extend_from_slice(&line);
+            if u64::try_from(stanza.len()).is_ok_and(|len| len > STANZA_LIMIT) {
+                return Err(too_large(path, STANZA_LIMIT));
+            }
         }
     };
-    let bytes = read().map_err(|source| unreadable(path, source))?;
-    Ok(Stanza::parse(&String::from_utf8_lossy(&bytes)))
+    Ok(Stanza::parse(&String::from_utf8_lossy(&read()?)))
 }

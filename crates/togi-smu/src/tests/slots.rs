@@ -3,7 +3,7 @@ use super::fixture::{
     validated, write,
 };
 use crate::mailbox::{Command, MailboxError};
-use crate::{Driver, Error, FuseRead, Misplaced, SlotError};
+use crate::{Driver, Error, FuseRead, Misplaced, Operation, SlotError};
 use togi_machine::{CcdId, CpuId, TargetOffset};
 
 fn mapping_detail(driver: &mut Driver) -> (bool, String) {
@@ -12,13 +12,31 @@ fn mapping_detail(driver: &mut Driver) -> (bool, String) {
     (check.ok, check.detail)
 }
 
+/// Every raw core id 0-15, independent of whether `topology()` converts, is refused for both a
+/// read and a write by the slot mapping, and no command reaches the mailbox.
 fn assert_per_core_refused(driver: &mut Driver, fake: &Fake) {
-    for info in driver.topology().into_iter().flatten() {
-        let id = i64::from(info.core.get());
-        assert!(read(driver, id).is_err(), "read of core {id} accepted");
+    for id in 0..16 {
+        let error = read(driver, id).unwrap_err();
         assert!(
-            write(driver, id, TargetOffset::clamped(-10)).is_err(),
-            "write of core {id} accepted"
+            matches!(
+                smu_error(&error),
+                Error::SlotMapping {
+                    operation: Operation::ReadOffset(_),
+                    ..
+                }
+            ),
+            "read of core {id}: {error:?}"
+        );
+        let error = write(driver, id, TargetOffset::clamped(-10)).unwrap_err();
+        assert!(
+            matches!(
+                smu_error(&error),
+                Error::SlotMapping {
+                    operation: Operation::SetOffset(_),
+                    ..
+                }
+            ),
+            "write of core {id}: {error:?}"
         );
     }
     assert!(fake.commands().is_empty(), "{:?}", fake.commands());
@@ -121,15 +139,15 @@ fn slot_identity_preflight() {
             "cross-ccd-ids",
             [[0, 1, 2, 3, 4, 5, 6, 8], [7, 9, 10, 11, 12, 13, 14, 15]],
             true,
-            "CCD0 core IDs disagree with modulo-eight slots: core 08 at slot 7, want slot 0",
-            true,
+            "core IDs disagree with their CCD (core ID / 8): core 08 on CCD0, want CCD1; core 07 on CCD1, want CCD0",
+            false,
         ),
         ids(
             "multiple-offending-ids",
             [[0, 1, 2, 3, 4, 5, 8, 9], [6, 7, 10, 11, 12, 13, 14, 15]],
             true,
-            "CCD0 core IDs disagree with modulo-eight slots: core 08 at slot 6, want slot 0; core 09 at slot 7, want slot 1",
-            true,
+            "core IDs disagree with their CCD (core ID / 8): core 08 on CCD0, want CCD1; core 09 on CCD0, want CCD1; core 06 on CCD1, want CCD0; core 07 on CCD1, want CCD0",
+            false,
         ),
         ids(
             "second-ccd-id-outside-range",
@@ -159,8 +177,8 @@ fn slot_identity_preflight() {
             "cross-ccd-die-fallback",
             [[0, 1, 2, 3, 4, 5, 6, 8], [7, 9, 10, 11, 12, 13, 14, 15]],
             false,
-            "CCD0 core IDs disagree with modulo-eight slots: core 08 at slot 7, want slot 0",
-            true,
+            "core IDs disagree with their CCD (core ID / 8): core 08 on CCD0, want CCD1; core 07 on CCD1, want CCD0",
+            false,
         ),
     ] {
         let tree = Tree::new(8, case.cache);
@@ -201,10 +219,10 @@ fn slot_identity_preflight() {
             case.name
         );
         let readback = driver.check_readback();
-        let expected = if case.reads_smn {
-            case.detail
-        } else {
+        let expected = if case.detail.contains("outside supported range") {
             "outside supported range 0-15"
+        } else {
+            case.detail
         };
         assert!(
             !readback.ok && readback.detail.contains(expected),
@@ -281,7 +299,22 @@ fn fuse_read_failure_at_each_stage_refuses_per_core_access() {
             source.as_ref(),
             SlotError::Read { read, source: MailboxError::Read { .. }, .. } if *read == stage
         ));
-        assert!(write(&mut driver, 0, TargetOffset::clamped(-10)).is_err());
+        let error = write(&mut driver, 0, TargetOffset::clamped(-10)).unwrap_err();
+        let Error::SlotMapping { operation, source } = smu_error(&error) else {
+            panic!("{failed}: {error:?}");
+        };
+        assert!(matches!(operation, Operation::SetOffset(_)), "{failed}");
+        assert!(
+            matches!(
+                source.as_ref(),
+                SlotError::Read { read, source: MailboxError::Read { .. }, .. } if *read == stage
+            ),
+            "{failed}: {source:?}"
+        );
+        assert!(
+            chain(smu_error(&error)).contains("SMN unavailable"),
+            "{failed}"
+        );
         assert!(fake.commands().is_empty());
     }
 }
@@ -301,7 +334,7 @@ fn siblings_that_disagree_on_the_ccd_refuse_before_any_smn_read() {
     assert!(fake.smn_reads().is_empty());
     assert!(matches!(
         driver.topology().unwrap_err(),
-        Error::Topology(SlotError::Siblings { core_id: 9, .. })
+        Error::Topology(SlotError::Siblings(groups)) if groups.len() == 1 && groups[0].0 == 9
     ));
     assert_per_core_refused(&mut driver, &fake);
 }
@@ -371,26 +404,100 @@ fn a_raw_core_id_outside_0_to_15_is_a_typed_topology_error() {
 
 #[test]
 fn slot_error_details_name_every_offender() {
-    let error = SlotError::SlotOrder {
-        ccd: CcdId(1),
-        misplaced: vec![Misplaced {
+    let error = SlotError::CcdIdentity(vec![
+        Misplaced {
             core: super::fixture::core(9),
-            slot: 0,
-            want: 1,
-        }],
-    };
+            ccd: CcdId(0),
+            want: CcdId(1),
+        },
+        Misplaced {
+            core: super::fixture::core(3),
+            ccd: CcdId(1),
+            want: CcdId(0),
+        },
+    ]);
     assert_eq!(
         chain(&error),
-        "CCD1 core IDs disagree with modulo-eight slots: core 09 at slot 0, want slot 1"
+        "core IDs disagree with their CCD (core ID / 8): core 09 on CCD0, want CCD1; core 03 on CCD1, want CCD0"
     );
-    let siblings = SlotError::Siblings {
-        core_id: 3,
-        cpus: vec![(CpuId(3), 20), (CpuId(19), 21)],
-    };
+    let siblings = SlotError::Siblings(vec![
+        (3, vec![(CpuId(3), 20), (CpuId(19), 21)]),
+        (5, vec![(CpuId(5), 20), (CpuId(21), 21)]),
+    ]);
     assert_eq!(
         siblings.to_string(),
-        "core 3 siblings report different CCD keys: cpu3 key 20, cpu19 key 21"
+        "core 3 siblings report different CCD keys: cpu3 key 20, cpu19 key 21; core 5 siblings report different CCD keys: cpu5 key 20, cpu21 key 21"
     );
+}
+
+#[test]
+fn every_disagreeing_sibling_group_is_named() {
+    let tree = Tree::new(8, true);
+    tree.cpu(20, 4, 1, true);
+    tree.cpu(25, 9, 0, true);
+    let fake = Fake::new();
+    let mut driver = validated(&tree, &fake);
+    let (ok, detail) = mapping_detail(&mut driver);
+    assert!(!ok);
+    assert_eq!(
+        detail,
+        "core 4 siblings report different CCD keys: cpu4 key 20, cpu20 key 21; core 9 siblings report different CCD keys: cpu9 key 21, cpu25 key 20"
+    );
+    assert!(matches!(
+        driver.topology().unwrap_err(),
+        Error::Topology(SlotError::Siblings(groups)) if groups.len() == 2
+    ));
+    assert!(fake.smn_reads().is_empty());
+    assert_per_core_refused(&mut driver, &fake);
+}
+
+fn ccd_identity_detail(offenders: &[(usize, usize, usize)]) -> String {
+    let list: Vec<String> = offenders
+        .iter()
+        .map(|(core, ccd, want)| format!("core {core:02} on CCD{ccd}, want CCD{want}"))
+        .collect();
+    format!(
+        "core IDs disagree with their CCD (core ID / 8): {}",
+        list.join("; ")
+    )
+}
+
+#[test]
+fn a_wholly_offline_ccd0_does_not_renumber_ccd1_onto_it() {
+    let tree = Tree::new(8, true);
+    for cpu in (0..8).chain(16..24) {
+        tree.put(&format!("sys/devices/system/cpu/cpu{cpu}/online"), "0\n");
+    }
+    let fake = Fake::new();
+    let mut driver = validated(&tree, &fake);
+    let offenders: Vec<_> = (8..16).map(|core| (core, 0, 1)).collect();
+    assert_eq!(
+        mapping_detail(&mut driver),
+        (false, ccd_identity_detail(&offenders))
+    );
+    assert!(fake.smn_reads().is_empty(), "{:?}", fake.smn_reads());
+    assert_per_core_refused(&mut driver, &fake);
+}
+
+#[test]
+fn swapped_ccd_key_groups_refuse_before_any_fuse_read() {
+    let tree = Tree::new(8, true);
+    for cpu in 0..16 {
+        tree.cpu(cpu, cpu, 1 - cpu / 8, true);
+        tree.cpu(cpu + 16, cpu, 1 - cpu / 8, true);
+    }
+    let fake = Fake::new();
+    let mut driver = validated(&tree, &fake);
+    let offenders: Vec<_> = (8..16)
+        .map(|core| (core, 0, 1))
+        .chain((0..8).map(|core| (core, 1, 0)))
+        .collect();
+    assert_eq!(
+        mapping_detail(&mut driver),
+        (false, ccd_identity_detail(&offenders))
+    );
+    assert!(fake.smn_reads().is_empty(), "{:?}", fake.smn_reads());
+    assert_per_core_refused(&mut driver, &fake);
 }
 
 #[test]
