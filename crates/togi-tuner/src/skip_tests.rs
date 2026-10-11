@@ -42,7 +42,7 @@ fn skip_known_failure() {
             skip: true,
         },
         Case {
-            name: "live equal",
+            name: "idle equal",
             live: true,
             profile: [-20, -20],
             passes: 0,
@@ -173,6 +173,27 @@ fn skip_known_failure() {
         let text = Payload::from(DecisionPayload::Failure(failure)).message();
         assert!(text.contains("skipped"), "{}: {text}", case.name);
     }
+}
+
+#[test]
+fn a_live_alone_failure_skips_citing_its_trial_end() {
+    let mut j = Journal::search_at(&[-20]);
+    let mut plan = j.next_trial();
+    plan.workload = crate::WorkloadChoice::Frozen(plan.workload_at(j.rotation(&plan)));
+    assert_eq!(plan.condition, Condition::Alone);
+    let end = j.trial(&plan, Outcome::Failure);
+    let attribution = j
+        .run()
+        .attribution()
+        .expect("the failed trial awaits attribution");
+    let event = j.decide(attribution);
+    assert_ne!(event, end);
+    let (failure, cause) =
+        known_failure(&skipped(&j, &plan)).expect("the live failure skips the trial");
+    assert_eq!(failure.known_failure, Some(end));
+    assert_eq!(cause, [end]);
+    let text = Payload::from(DecisionPayload::Failure(failure)).message();
+    assert!(text.contains("skipped"), "{text}");
 }
 
 #[test]
