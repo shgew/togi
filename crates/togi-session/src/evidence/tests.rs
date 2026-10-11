@@ -1,7 +1,7 @@
 use std::num::NonZeroU32;
 use std::time::Duration;
 
-use togi_journal::{Outcome, Seq};
+use togi_journal::{Outcome, Seq, TrialEnd};
 use togi_machine::{
     BootId, CcdId, CoreId, CoreSet, CpuId, PerCore, PmTable, Regime, Signal, TrialConditions,
     TrialFailure, TrialResult,
@@ -635,4 +635,72 @@ fn request_telemetry_needs_twenty_samples_after_the_warmup_and_every_loaded_core
     );
     assert!(unknown.telemetry.is_none());
     assert!(unknown.voltage.is_some());
+}
+
+#[test]
+fn a_summary_fills_an_end_with_the_stall_of_a_failure_and_the_last_sample_of_a_crash() {
+    let samples = [(1, 1000), (2, 1000), (3, 1000)].map(|(second, cpu)| TrialConditions {
+        elapsed_ms: second * 1000,
+        tctl_c: Some(70 + second),
+        core_mhz: [(core(2), 4400), (core(7), 4200)].into_iter().collect(),
+        worker_cpu_ms: [(core(2), second * 100), (core(7), cpu)]
+            .into_iter()
+            .collect(),
+        ..voltage_sample(1.25, 1.5)
+    });
+    let summary = summarize_samples(samples, set(&[2, 7]), Regime::R7, |_| None);
+    let end = |outcome, crashed| {
+        let mut end = TrialEnd {
+            trial: togi_journal::TrialId::from("0001".to_owned()),
+            kernel_cursor: None,
+            kernel_error: None,
+            outcome,
+            signal: None,
+            core: None,
+            duration_s: 3,
+            tctl_max_c: None,
+            voltage_request_median_v: None,
+            voltage_request_min_v: None,
+            voltage_requests_v: PerCore::default(),
+            top_requesters: CoreSet::default(),
+            ccd_mhz: std::collections::BTreeMap::new(),
+            last_sample_s: None,
+            last_sample_tctl_c: None,
+            last_sample_min_mhz: None,
+            last_sample_max_mhz: None,
+            stalled_core: None,
+            worker_stalled_ms: None,
+            reason: None,
+            interrupted: false,
+            last_evidence: false,
+            escaped: Vec::new(),
+            backend_missing: false,
+            containment_error: None,
+        };
+        summary.fill(&mut end, crashed);
+        end
+    };
+
+    let failed = end(Outcome::Failure, true);
+    assert_eq!(failed.voltage_request_median_v, Some(1.5));
+    assert_eq!(
+        (failed.stalled_core, failed.worker_stalled_ms),
+        (Some(core(7)), Some(2000))
+    );
+    assert_eq!(
+        (failed.last_sample_s, failed.last_sample_tctl_c),
+        (Some(3), Some(73))
+    );
+    assert_eq!(
+        (failed.last_sample_min_mhz, failed.last_sample_max_mhz),
+        (Some(4200), Some(4400))
+    );
+
+    let passed = end(Outcome::Pass, false);
+    assert_eq!(passed.voltage_request_median_v, Some(1.5));
+    assert_eq!(
+        (passed.stalled_core, passed.worker_stalled_ms),
+        (None, None)
+    );
+    assert_eq!(passed.last_sample_s, None);
 }

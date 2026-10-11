@@ -428,6 +428,7 @@ fn registers_are_the_baseline_lowered_by_intents_and_certain_after_a_readback_by
     assert!(registers.uncertain(core(8)));
     assert_eq!(registers.offset(core(0)), Some(ObservedOffset(0)));
     assert!(!registers.uncertain(core(0)));
+    assert!(!registers.certain());
 
     let write = log.written(8, -12, intent);
     log.readback(8, -12, -12, write);
@@ -435,6 +436,11 @@ fn registers_are_the_baseline_lowered_by_intents_and_certain_after_a_readback_by
     let registers = state.registers(&boot("b0")).unwrap();
     assert!(!registers.uncertain(core(8)));
     assert_eq!(registers.offset(core(8)), Some(ObservedOffset(-12)));
+    assert!(registers.certain());
+    assert_eq!(
+        registers.offsets().iter().collect::<Vec<_>>(),
+        [(core(0), ObservedOffset(0)), (core(8), ObservedOffset(-12))]
+    );
 }
 
 #[test]
@@ -1290,6 +1296,14 @@ fn stray_crashes_and_idle_crashes_stand_until_something_answers_them() {
         (state.stray(), state.pending_idle()),
         (&[stray][..], &[idle][..])
     );
+    let idle_crashes: Vec<_> = state.idle_crashes().collect();
+    assert_eq!(idle_crashes, [(idle, &crash("y"))]);
+    assert_eq!(state.crash(&boot("x")).map(|(seq, _)| seq), Some(stray));
+    assert!(
+        state
+            .crash(&boot("x"))
+            .is_some_and(|(_, detected)| detected.stray)
+    );
     log.add(
         Payload::Failure(togi_journal::Failure {
             signal: Signal::Crash,
@@ -1307,6 +1321,7 @@ fn stray_crashes_and_idle_crashes_stand_until_something_answers_them() {
         &[idle],
     );
     assert!(log.state().pending_idle().is_empty());
+    assert_eq!(log.state().idle_crashes().count(), 0);
     log.add(dead_end(DeadEndCondition::BootLoop), &[]);
     assert!(log.state().stray().is_empty());
     log.intent(0, -10, &[]);
@@ -1348,6 +1363,26 @@ fn a_thermal_trip_stands_as_evidence_until_its_dead_end_and_kernel_retries_end_w
     );
     log.add(dead_end(DeadEndCondition::ThermalTrip), &[]);
     assert!(log.state().thermal_evidence().is_none());
+}
+
+#[test]
+fn kernel_retries_end_with_a_no_evidence_dead_end_so_a_later_run_retries_afresh() {
+    let mut log = Log::new();
+    log.baseline(&[(0, 0), (8, 0)]);
+    let retry = log.add(
+        Payload::BackendRetry(BackendRetry {
+            backend: RetryTarget::KernelLog,
+            attempt: 1,
+            wait_s: 60,
+            reason: "kernel log".into(),
+        }),
+        &[],
+    );
+    assert_eq!(log.state().kernel_retries(), [retry]);
+    log.add(dead_end(DeadEndCondition::Smu), &[]);
+    assert_eq!(log.state().kernel_retries(), [retry]);
+    log.add(dead_end(DeadEndCondition::NoEvidence), &[]);
+    assert!(log.state().kernel_retries().is_empty());
 }
 
 #[test]

@@ -3,7 +3,7 @@
 use std::num::NonZeroU32;
 use std::time::Duration;
 
-use togi_journal::{Outcome, Seq};
+use togi_journal::{Outcome, Seq, TrialEnd};
 use togi_machine::{
     BootId, CcdId, CoreId, CoreSet, CpuId, PerCore, Regime, Signal, TrialConditions, TrialResult,
 };
@@ -367,6 +367,43 @@ pub fn summarize_samples(
         voltage: observer.voltage(),
         last: observer.last,
         telemetry,
+    }
+}
+
+impl SampleSummary {
+    /// Writes what the samples say into a trial's end: the requested voltage and request telemetry of every end, the
+    /// stalled worker of a failure, and the last sample of a trial a crash cut short.
+    pub fn fill(&self, end: &mut TrialEnd, crashed: bool) {
+        if let Some(voltage) = self.voltage {
+            end.voltage_request_median_v = Some(voltage.median_v);
+            end.voltage_request_min_v = Some(voltage.min_v);
+        }
+        if let Some(telemetry) = &self.telemetry {
+            end.voltage_requests_v = telemetry.requests;
+            end.top_requesters = telemetry.top_requesters;
+            end.ccd_mhz = telemetry
+                .ccd_mhz
+                .iter()
+                .filter_map(|(&ccd, &mhz)| Some((ccd, u32::try_from(mhz).ok()?)))
+                .collect();
+        }
+        if end.outcome == Outcome::Failure
+            && let Some(stall) = self.stalled
+        {
+            end.stalled_core = Some(stall.core);
+            end.worker_stalled_ms = u64::try_from(stall.since_ms).ok();
+        }
+        if crashed && let Some(last) = &self.last {
+            end.last_sample_s = u32::try_from(last.elapsed_ms / 1000).ok();
+            end.last_sample_tctl_c = last.tctl_c.and_then(|tctl| i32::try_from(tctl).ok());
+            let mhz = || {
+                last.core_mhz
+                    .iter()
+                    .filter_map(|(_, mhz)| u32::try_from(mhz).ok())
+            };
+            end.last_sample_min_mhz = mhz().min();
+            end.last_sample_max_mhz = mhz().max();
+        }
     }
 }
 

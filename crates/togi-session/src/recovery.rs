@@ -155,6 +155,15 @@ impl Registers {
         self.uncertain.contains(core)
     }
 
+    pub fn offsets(&self) -> &PerCore<ObservedOffset> {
+        &self.offsets
+    }
+
+    /// Whether a readback answered every write the boot asked for.
+    pub fn certain(&self) -> bool {
+        self.uncertain.is_empty()
+    }
+
     fn lower(&mut self, core: CoreId, target: i64) {
         let held = self.offsets.get(core).map_or(0, |offset| offset.0);
         self.offsets.set(core, ObservedOffset(held.min(target)));
@@ -224,7 +233,7 @@ pub struct RecoveryState {
     carried: Option<(Seq, BTreeMap<CoreId, CarriedCore>)>,
     boots: Vec<BootId>,
     records: BTreeMap<BootId, BootRecord>,
-    crashes: BTreeMap<BootId, Seq>,
+    crashes: BTreeMap<BootId, (Seq, CrashDetected)>,
     backends: BTreeMap<Backend, BackendState>,
     kernel_retries: Vec<Seq>,
     kernel_cursors: BTreeMap<BootId, KernelCursor>,
@@ -660,8 +669,10 @@ impl RecoveryState {
 
     fn crash_detected(&mut self, event: &Event, detected: &CrashDetected) {
         self.kernel_retries.clear();
-        self.crashes
-            .insert(detected.previous_boot.clone(), event.seq);
+        self.crashes.insert(
+            detected.previous_boot.clone(),
+            (event.seq, detected.clone()),
+        );
         let in_trial = self
             .open
             .as_ref()
@@ -769,6 +780,7 @@ impl RecoveryState {
                     state.streak.clear();
                 }
                 self.missing = None;
+                self.kernel_retries.clear();
             }
             DeadEndCondition::ThermalTrip => self.thermal = None,
             DeadEndCondition::BootLoop => self.stray.clear(),
@@ -948,7 +960,24 @@ impl RecoveryState {
     }
 
     pub fn crash_of(&self, boot: &BootId) -> Option<Seq> {
-        self.crashes.get(boot).copied()
+        self.crashes.get(boot).map(|(seq, _)| *seq)
+    }
+
+    /// The `crash.detected` that classified the crash of `boot`.
+    pub fn crash(&self, boot: &BootId) -> Option<(Seq, &CrashDetected)> {
+        self.crashes
+            .get(boot)
+            .map(|(seq, detected)| (*seq, detected))
+    }
+
+    /// The idle crashes no failure has answered yet, in the order they were detected.
+    pub fn idle_crashes(&self) -> impl Iterator<Item = (Seq, &CrashDetected)> + '_ {
+        self.pending_idle.iter().filter_map(|idle| {
+            self.crashes
+                .values()
+                .find(|(seq, _)| seq == idle)
+                .map(|(seq, detected)| (*seq, detected))
+        })
     }
 
     pub fn pending_idle(&self) -> &[Seq] {
