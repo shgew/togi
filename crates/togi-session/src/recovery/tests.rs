@@ -19,7 +19,7 @@ use super::{IntentKind, RecoveryState};
 use crate::error::FoldError;
 use crate::testing::{build, core, target};
 
-fn boot(name: &str) -> BootId {
+pub(crate) fn boot(name: &str) -> BootId {
     BootId::from(name.to_owned())
 }
 
@@ -28,8 +28,8 @@ fn seq(n: u64) -> Seq {
 }
 
 /// A journal written by hand, one event after another.
-struct Log {
-    events: Vec<Event>,
+pub(crate) struct Log {
+    pub(crate) events: Vec<Event>,
     boot: BootId,
     mono_ms: Option<u64>,
     wall: i64,
@@ -37,11 +37,11 @@ struct Log {
 
 impl Log {
     /// A session over cores 0 and 8, on boot `b0`.
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self::on(&[(0, 0), (8, 1)])
     }
 
-    fn on(cores: &[(i64, u8)]) -> Self {
+    pub(crate) fn on(cores: &[(i64, u8)]) -> Self {
         let mut log = Self {
             events: Vec::new(),
             boot: boot("b0"),
@@ -66,13 +66,13 @@ impl Log {
         log
     }
 
-    fn at(&mut self, name: &str, mono_ms: u64) -> &mut Self {
+    pub(crate) fn at(&mut self, name: &str, mono_ms: u64) -> &mut Self {
         self.boot = boot(name);
         self.mono_ms = Some(mono_ms);
         self
     }
 
-    fn mono(&mut self, mono_ms: u64) -> &mut Self {
+    pub(crate) fn mono(&mut self, mono_ms: u64) -> &mut Self {
         self.mono_ms = Some(mono_ms);
         self
     }
@@ -82,7 +82,7 @@ impl Log {
         self
     }
 
-    fn next(&self) -> Seq {
+    pub(crate) fn next(&self) -> Seq {
         seq(u64::try_from(self.events.len()).unwrap() + 1)
     }
 
@@ -93,7 +93,7 @@ impl Log {
         }
     }
 
-    fn add(&mut self, payload: Payload, causes: &[Seq]) -> Seq {
+    pub(crate) fn add(&mut self, payload: Payload, causes: &[Seq]) -> Seq {
         let seq = self.next();
         self.events.push(Event::new(
             seq,
@@ -122,7 +122,7 @@ impl Log {
         seq
     }
 
-    fn intent(&mut self, core: i64, offset: i64, causes: &[Seq]) -> Seq {
+    pub(crate) fn intent(&mut self, core: i64, offset: i64, causes: &[Seq]) -> Seq {
         self.smu(
             "smu.intent",
             &format!(r#"{{"op":"set","core":{core},"offset":{offset}}}"#),
@@ -130,7 +130,7 @@ impl Log {
         )
     }
 
-    fn intent_all(&mut self, offset: i64, causes: &[Seq]) -> Seq {
+    pub(crate) fn intent_all(&mut self, offset: i64, causes: &[Seq]) -> Seq {
         self.smu(
             "smu.intent",
             &format!(r#"{{"op":"set_all","offset":{offset}}}"#),
@@ -138,7 +138,7 @@ impl Log {
         )
     }
 
-    fn written(&mut self, core: i64, offset: i64, intent: Seq) -> Seq {
+    pub(crate) fn written(&mut self, core: i64, offset: i64, intent: Seq) -> Seq {
         self.smu(
             "smu.write",
             &format!(r#"{{"op":"set","core":{core},"offset":{offset}}}"#),
@@ -146,7 +146,13 @@ impl Log {
         )
     }
 
-    fn readback(&mut self, core_id: i64, observed: i64, expected: i64, write: Seq) -> Seq {
+    pub(crate) fn readback(
+        &mut self,
+        core_id: i64,
+        observed: i64,
+        expected: i64,
+        write: Seq,
+    ) -> Seq {
         self.add(
             Payload::SmuReadback(SmuReadback {
                 core: core(core_id),
@@ -157,7 +163,7 @@ impl Log {
         )
     }
 
-    fn baseline(&mut self, offsets: &[(i64, i64)]) -> Seq {
+    pub(crate) fn baseline(&mut self, offsets: &[(i64, i64)]) -> Seq {
         self.add(
             Payload::SessionBaseline(SessionBaseline {
                 offsets: offsets
@@ -169,7 +175,7 @@ impl Log {
         )
     }
 
-    fn trial_intent(&mut self, id: &str, single: Option<i64>, regime: Regime) -> Seq {
+    pub(crate) fn trial_intent(&mut self, id: &str, single: Option<i64>, regime: Regime) -> Seq {
         let intent = TrialIntent {
             trial: TrialId::from(id.to_owned()),
             kernel_cursor: None,
@@ -202,7 +208,7 @@ impl Log {
         self.add(Payload::TrialIntent(intent), &[])
     }
 
-    fn started(&mut self, id: &str, window_start_ns: Option<u64>, cause: Seq) -> Seq {
+    pub(crate) fn started(&mut self, id: &str, window_start_ns: Option<u64>, cause: Seq) -> Seq {
         self.add(
             Payload::TrialStart(TrialStart {
                 trial: TrialId::from(id.to_owned()),
@@ -218,7 +224,7 @@ impl Log {
         )
     }
 
-    fn ended(&mut self, id: &str, outcome: Outcome, cause: &[Seq]) -> Seq {
+    pub(crate) fn ended(&mut self, id: &str, outcome: Outcome, cause: &[Seq]) -> Seq {
         self.add(Payload::TrialEnd(trial_end(id, outcome)), cause)
     }
 
@@ -226,11 +232,11 @@ impl Log {
         self.add(Payload::Mce(mce), &[])
     }
 
-    fn crashed(&mut self, previous: &str, causes: &[Seq]) -> Seq {
+    pub(crate) fn crashed(&mut self, previous: &str, causes: &[Seq]) -> Seq {
         self.add(Payload::CrashDetected(crash(previous)), causes)
     }
 
-    fn state(&self) -> RecoveryState {
+    pub(crate) fn state(&self) -> RecoveryState {
         RecoveryState::replay(&self.events).unwrap()
     }
 }
@@ -301,7 +307,7 @@ fn warning(text: &str) -> Payload {
     })
 }
 
-fn shutdown(reason: ShutdownReason) -> Payload {
+pub(crate) fn shutdown(reason: ShutdownReason) -> Payload {
     Payload::Shutdown(Shutdown {
         reason,
         kernel_cursor: None,
@@ -310,7 +316,7 @@ fn shutdown(reason: ShutdownReason) -> Payload {
     })
 }
 
-fn dead_end(condition: DeadEndCondition) -> Payload {
+pub(crate) fn dead_end(condition: DeadEndCondition) -> Payload {
     Payload::DeadEnd(DeadEnd {
         condition,
         core: None,
@@ -503,7 +509,7 @@ fn a_trial_in_flight_makes_no_application() {
     assert_eq!(log.state().applied(&boot("b0")), None);
 }
 
-fn hunt_group() -> Payload {
+pub(crate) fn hunt_group() -> Payload {
     Payload::HuntGroup(HuntGroup {
         hunt: std::num::NonZeroU32::MIN,
         group: std::num::NonZeroU32::MIN,

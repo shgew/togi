@@ -563,3 +563,6 @@ fn reset_verdict(detected: &CrashDetected) -> ResetVerdict {
         reason: Some(reason.to_owned()),
     }
 }
+
+#[cfg(test)]
+mod tests;

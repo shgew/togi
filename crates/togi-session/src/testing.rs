@@ -41,7 +41,7 @@ pub(crate) struct Rig {
     clippy::disallowed_methods,
     reason = "session tests keep the journal in memory"
 )]
-fn simulated(mem: &MemFs) -> StateDir {
+pub(crate) fn simulated(mem: &MemFs) -> StateDir {
     StateDir::simulated(mem.clone()).unwrap()
 }
 
