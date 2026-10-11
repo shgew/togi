@@ -17,43 +17,47 @@ import (
 // rustHost is the target the coverage build compiled for: its triple and the cfg options `rustc --print cfg` names for it.
 type rustHost struct {
 	triple string
-	cfg    map[string]bool
+	cfg    hostCfg
 }
 
-// coverageCfg holds the options cargo llvm-cov nextest enables beyond the target's own: test builds and cargo llvm-cov's cfg(coverage).
-var coverageCfg = []string{"test", "coverage"}
+// coverageCfg holds the option cargo llvm-cov enables beyond the target's own: cfg(coverage).
+// test is not in it: unit-test builds set it, while the library builds that integration tests and dependents link do not.
+var coverageCfg = []string{"coverage"}
 
 func hostOf() (rustHost, error) {
 	version, err := exec.Command("rustc", "-vV").Output()
 	if err != nil {
 		return rustHost{}, fmt.Errorf("cover: rustc -vV: %w", err)
 	}
-	h := rustHost{cfg: map[string]bool{}}
-	for line := range strings.Lines(string(version)) {
-		if triple, ok := strings.CutPrefix(strings.TrimSpace(line), "host: "); ok {
-			h.triple = triple
-		}
-	}
-	if h.triple == "" {
-		return rustHost{}, fmt.Errorf("cover: rustc -vV names no host")
-	}
-	cfg, err := exec.Command("rustc", "--print", "cfg").Output()
+	printed, err := exec.Command("rustc", "--print", "cfg").Output()
 	if err != nil {
 		return rustHost{}, fmt.Errorf("cover: rustc --print cfg: %w", err)
 	}
-	for line := range strings.Lines(string(cfg)) {
-		if line = strings.TrimSpace(line); line != "" {
-			h.cfg[line] = true
+	return hostFrom(string(version), string(printed))
+}
+
+// hostFrom builds the host from the output of `rustc -vV` and `rustc --print cfg`.
+func hostFrom(version, printed string) (rustHost, error) {
+	var triple string
+	for line := range strings.Lines(version) {
+		if host, ok := strings.CutPrefix(strings.TrimSpace(line), "host: "); ok {
+			triple = host
 		}
 	}
-	for _, name := range coverageCfg {
-		h.cfg[name] = true
+	if triple == "" {
+		return rustHost{}, fmt.Errorf("cover: rustc -vV names no host")
 	}
-	return h, nil
+	options := slices.Clone(coverageCfg)
+	for line := range strings.Lines(printed) {
+		if line = strings.TrimSpace(line); line != "" {
+			options = append(options, line)
+		}
+	}
+	return rustHost{triple: triple, cfg: newHostCfg(options...)}, nil
 }
 
 // runRust reports the changed Rust lines the lcov trace of a cargo llvm-cov run leaves unreached, then the changed files with code that build left out.
-func runRust(tracePath, depsDir, base string, out io.Writer) error {
+func runRust(tracePath, buildDir, base string, out io.Writer) error {
 	trace, err := os.Open(tracePath)
 	if err != nil {
 		return fmt.Errorf("cover: open lcov trace: %w", err)
@@ -67,10 +71,10 @@ func runRust(tracePath, depsDir, base string, out io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("cover: working directory: %w", err)
 	}
-	return reportRust(trace, depsDir, root, base, host, out)
+	return reportRust(trace, buildDir, root, base, host, out)
 }
 
-func reportRust(trace io.Reader, depsDir, root, base string, host rustHost, out io.Writer) error {
+func reportRust(trace io.Reader, buildDir, root, base string, host rustHost, out io.Writer) error {
 	diff, err := exec.Command("git", "diff", "-U0", "--inter-hunk-context=0", "--no-color", "--no-ext-diff", "--no-prefix", "--merge-base", base, "--", "*.rs").Output()
 	if err != nil {
 		return fmt.Errorf("cover: diff against %s: %w", base, err)
@@ -87,11 +91,11 @@ func reportRust(trace io.Reader, depsDir, root, base string, host rustHost, out 
 	if err != nil {
 		return err
 	}
-	built, err := builtSources(depsDir, root)
+	built, err := builtSources(buildDir, root)
 	if err != nil {
 		return err
 	}
-	unbuilt, err := rustNotBuilt(root, changed, built, host.cfg)
+	unbuilt, err := rustNotBuilt(root, changed, built, lines, host.cfg)
 	if err != nil {
 		return err
 	}
@@ -182,15 +186,20 @@ func unreached(files map[string]map[int]bool) map[string][]lineRange {
 	return out
 }
 
-// builtSources returns the repository-relative sources the dep-info files in dir name: every file a build into that directory compiled.
-// Each source also has a line of its own ending in a colon, which is what is read.
-func builtSources(dir, root string) (map[string]bool, error) {
-	infos, err := filepath.Glob(filepath.Join(dir, "*.d"))
-	if err != nil {
-		return nil, fmt.Errorf("cover: list dep-info files: %w", err)
+// builtSources returns the repository-relative sources the dep-info files under a build profile directory name: every file a build into it compiled.
+// Crates and their tests write dep-info into deps, build scripts into build/<package>-<hash>.
+// Each source also has a line of its own ending in a colon, which is what is read; rustc escapes a space in its path as a backslash and a space.
+func builtSources(buildDir, root string) (map[string]bool, error) {
+	var infos []string
+	for _, pattern := range []string{"deps/*.d", "build/*/*.d"} {
+		found, err := filepath.Glob(filepath.Join(buildDir, pattern))
+		if err != nil {
+			return nil, fmt.Errorf("cover: list dep-info files: %w", err)
+		}
+		infos = append(infos, found...)
 	}
 	if len(infos) == 0 {
-		return nil, fmt.Errorf("cover: %s holds no dep-info files", dir)
+		return nil, fmt.Errorf("cover: %s holds no dep-info files in deps or build/*", buildDir)
 	}
 	built := map[string]bool{}
 	for _, info := range infos {
@@ -203,6 +212,7 @@ func builtSources(dir, root string) (map[string]bool, error) {
 			if !ok {
 				continue
 			}
+			source = strings.ReplaceAll(source, `\ `, " ")
 			if filepath.IsAbs(source) {
 				if source, err = filepath.Rel(root, source); err != nil {
 					continue
@@ -216,8 +226,11 @@ func builtSources(dir, root string) (map[string]bool, error) {
 	return built, nil
 }
 
-// rustNotBuilt returns the changed files, sorted, that the coverage build leaves out in part or whole: a file no dep-info names, or one with a changed line inside an item whose cfg predicate is false for the host.
-func rustNotBuilt(root string, changed map[string][]lineRange, built map[string]bool, cfg map[string]bool) ([]string, error) {
+// rustNotBuilt returns the changed files, sorted, that the coverage build leaves out in part or whole: a file no dep-info names,
+// or one with a changed line inside an item whose cfg predicate is false or unknown for the host and none of whose lines the trace measures.
+// A measured line inside the item shows some build compiled it, so the item is not claimed; this covers cfg(not(test)) and cfg(feature = "...") code with executable lines.
+// measured holds the lines the trace lists per file, reached or not.
+func rustNotBuilt(root string, changed map[string][]lineRange, built map[string]bool, measured map[string]map[int]bool, cfg hostCfg) ([]string, error) {
 	var paths []string
 	for _, path := range slices.Sorted(maps.Keys(changed)) {
 		if !built[path] {
@@ -228,8 +241,13 @@ func rustNotBuilt(root string, changed map[string][]lineRange, built map[string]
 		if err != nil {
 			return nil, fmt.Errorf("cover: read %s: %w", path, err)
 		}
-		if slices.ContainsFunc(cfgOut(src, cfg), func(off lineRange) bool {
-			return slices.ContainsFunc(changed[path], func(c lineRange) bool { return max(c.first, off.first) <= min(c.last, off.last) })
+		if slices.ContainsFunc(cfgOut(src, cfg), func(item lineRange) bool {
+			for n := range measured[path] {
+				if item.first <= n && n <= item.last {
+					return false
+				}
+			}
+			return slices.ContainsFunc(changed[path], func(c lineRange) bool { return max(c.first, item.first) <= min(c.last, item.last) })
 		}) {
 			paths = append(paths, path)
 		}

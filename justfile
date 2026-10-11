@@ -68,7 +68,8 @@ cover-rs base: _dev-shell
     trace=$(mktemp)
     trap 'rm -f "$trace"' EXIT
     cargo llvm-cov nextest --locked --no-tests=pass --lcov --output-path "$trace" >&2
-    go run ./tools/cover --lcov "$trace" --deps "${CARGO_TARGET_DIR:-target}/llvm-cov-target/debug/deps" --base "$1"
+    target=${CARGO_LLVM_COV_TARGET_DIR:-${CARGO_TARGET_DIR:-target}/llvm-cov-target}
+    go run ./tools/cover --lcov "$trace" --build-dir "$target/debug" --base "$1"
 
 # Lint all Go packages as built for Linux and for macOS, and the Rust workspace with clippy for the host's target and aarch64 macOS, with optional Go lint flags
 [group('quality')]
@@ -320,12 +321,12 @@ _touched-packages pushed:
         [[ "$dir" == . ]] && echo . || echo "./$dir"
     done | sort -u
 
-# Print the Rust crates changed between a pushed head and HEAD, one per line: `--workspace` when Cargo.toml, Cargo.lock, rust-toolchain.toml or clippy.toml changed, else each crate with a changed file under crates/ that still has its Cargo.toml at HEAD
+# Print the Rust crates changed between a pushed head and HEAD, one per line: `--workspace` when Cargo.toml, Cargo.lock, rust-toolchain.toml, clippy.toml, .config/nextest.toml or .cargo/config.toml changed, files every crate's build or tests read, else each crate with a changed file under crates/ that still has its Cargo.toml at HEAD
 _touched-crates pushed:
     #!/usr/bin/env bash
     set -euo pipefail
     files=$(git diff --name-only --no-renames "$1" HEAD)
-    if grep -qxE 'Cargo\.toml|Cargo\.lock|rust-toolchain\.toml|clippy\.toml' <<<"$files"; then
+    if grep -qxE 'Cargo\.toml|Cargo\.lock|rust-toolchain\.toml|clippy\.toml|\.config/nextest\.toml|\.cargo/config(\.toml)?' <<<"$files"; then
         echo --workspace
         exit
     fi

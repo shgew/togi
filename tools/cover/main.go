@@ -46,15 +46,15 @@ func run(args []string, out, errOut io.Writer) error {
 	base := flags.String("base", "", "revision whose merge base with HEAD the working tree is compared against")
 	tags := flags.String("tags", "", "comma-separated build tags the coverage run used, as go test -tags takes them")
 	lcov := flags.String("lcov", "", "lcov trace written by cargo llvm-cov; reports changed Rust lines instead of Go lines")
-	deps := flags.String("deps", "", "directory of the dep-info files of the coverage build, with --lcov")
+	buildDir := flags.String("build-dir", "", "profile directory of the coverage build, whose deps and build subdirectories hold its dep-info files, with --lcov")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 	if *lcov != "" {
-		if *profilePath != "" || *tags != "" || *base == "" || *deps == "" || flags.NArg() != 0 {
-			return fmt.Errorf("cover: supply --lcov with --deps and --base only")
+		if *profilePath != "" || *tags != "" || *base == "" || *buildDir == "" || flags.NArg() != 0 {
+			return fmt.Errorf("cover: supply --lcov with --build-dir and --base only")
 		}
-		return runRust(*lcov, *deps, *base, out)
+		return runRust(*lcov, *buildDir, *base, out)
 	}
 	if *profilePath == "" || *base == "" || flags.NArg() != 0 {
 		return fmt.Errorf("cover: supply --profile and --base and no positional arguments")
