@@ -185,6 +185,7 @@ fn reset_lines_need_the_exact_prefix_and_a_reason() {
         "x86/amd: Previous system reset reason [0x00000001]: two\nlines",
         "prefix x86/amd: Previous system reset reason [0x00000001]: hardware watchdog timer expired",
         "Linux version 6.x",
+        "Linux version x.16",
         "Linux version 6.",
         "linux version 7.0",
     ] {

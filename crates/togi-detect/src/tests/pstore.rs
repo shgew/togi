@@ -220,6 +220,20 @@ fn entries_that_are_not_archive_directories_are_skipped() {
     directory(&root.path().join("-5/001"));
     directory(&root.path().join("+150/001"));
     directory(&root.path().join("150/1234"));
+    for planted in ["150/abc", "150/+12"] {
+        directory(&root.path().join(planted));
+        fs::write(
+            root.path().join(planted).join("dmesg.txt"),
+            b"Panic#9 Part1\nplanted",
+        )
+        .unwrap();
+    }
+    directory(&root.path().join("150/003"));
+    fs::write(
+        root.path().join("150/004"),
+        b"Panic#9 Part1\nnot a directory",
+    )
+    .unwrap();
     symlink(root.path().join("150/001"), root.path().join("150/002")).unwrap();
     let (mut kernel, _) = kernel_over(root.path(), three_boots());
     let got = kernel.saved_pstore(&boot(OLD)).unwrap().unwrap();

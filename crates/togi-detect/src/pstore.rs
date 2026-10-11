@@ -1,7 +1,7 @@
 use std::ffi::OsString;
 use std::io;
 use std::os::fd::{AsFd, OwnedFd};
-use std::os::unix::ffi::OsStringExt;
+use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::path::{Path, PathBuf};
 
 use rustix::fs::{AtFlags, Dir, FileType, Mode, OFlags, Stat, fstat, open, openat, statat};
@@ -245,13 +245,8 @@ impl Archive {
             let stamp_path = self.root.join(&stamp.name);
             let stamp_dir = open_directory(&self.directory, &stamp.name, &stamp_path)?;
             for (name, kind) in list(&stamp_dir, &stamp_path)? {
-                let Some(suffix) = name.to_str().filter(|text| text.len() == 3) else {
-                    continue;
-                };
-                if suffix.parse::<u16>().is_err() || !suffix.bytes().all(|b| b.is_ascii_digit()) {
-                    continue;
-                }
-                if !is_directory(&stamp_dir, &name, kind, &stamp_path)? {
+                let is_suffix = name.len() == 3 && name.as_bytes().iter().all(u8::is_ascii_digit);
+                if !is_suffix || !is_directory(&stamp_dir, &name, kind, &stamp_path)? {
                     continue;
                 }
                 let suffix_path = stamp_path.join(&name);
