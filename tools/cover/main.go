@@ -1,5 +1,5 @@
-// cover prints the lines changed since a base that no test reached, from a coverage profile and git diff,
-// and names the changed files the coverage run's platform and build tags leave out.
+// cover prints the lines changed since a base that no test reached, from a Go coverage profile or a cargo llvm-cov lcov trace and git diff,
+// and names the changed files the coverage run's platform and build tags, or Rust cfg predicates, leave out.
 package main
 
 import (
@@ -45,8 +45,16 @@ func run(args []string, out, errOut io.Writer) error {
 	profilePath := flags.String("profile", "", "coverage profile written by go test -coverprofile")
 	base := flags.String("base", "", "revision whose merge base with HEAD the working tree is compared against")
 	tags := flags.String("tags", "", "comma-separated build tags the coverage run used, as go test -tags takes them")
+	lcov := flags.String("lcov", "", "lcov trace written by cargo llvm-cov; reports changed Rust lines instead of Go lines")
+	buildDir := flags.String("build-dir", "", "profile directory of the coverage build, whose deps and build subdirectories hold its dep-info files, with --lcov")
 	if err := flags.Parse(args); err != nil {
 		return err
+	}
+	if *lcov != "" {
+		if *profilePath != "" || *tags != "" || *base == "" || *buildDir == "" || flags.NArg() != 0 {
+			return fmt.Errorf("cover: supply --lcov with --build-dir and --base only")
+		}
+		return runRust(*lcov, *buildDir, *base, out)
 	}
 	if *profilePath == "" || *base == "" || flags.NArg() != 0 {
 		return fmt.Errorf("cover: supply --profile and --base and no positional arguments")

@@ -35,7 +35,7 @@ type manifest struct {
 	PRFiles int           `json:"pr_files"`
 	PRLines int           `json:"pr_lines"`
 	Patches []patchStatus `json:"patches,omitempty"`
-	// Coverage is null until `just cover` output arrives.
+	// Coverage is null until `just cover` and `just cover-rs` output arrives.
 	Coverage *coverage `json:"coverage"`
 }
 
@@ -101,8 +101,10 @@ func (m manifest) included() []manifestFile {
 	return out
 }
 
-func (m manifest) changesGo() bool {
-	return slices.ContainsFunc(m.included(), func(f manifestFile) bool { return strings.HasSuffix(f.Path, ".go") })
+func (m manifest) changesCode() bool {
+	return slices.ContainsFunc(m.included(), func(f manifestFile) bool {
+		return strings.HasSuffix(f.Path, ".go") || strings.HasSuffix(f.Path, ".rs")
+	})
 }
 
 // reviewerCount applies the sizing rule of .omp/commands/review-pr.md to the included files: l lines added plus removed over f files.
@@ -124,7 +126,7 @@ func reviewerCount(l, f int) int {
 
 func ceilDiv(a, b int) int { return (a + b - 1) / b }
 
-var smallPaths = []string{"internal/smu", "internal/trial", "internal/session", "internal/journal", "nix"}
+var smallPaths = []string{"internal/smu", "internal/trial", "internal/session", "internal/journal", "crates/togi-smu", "crates/togi-trial", "crates/togi-session", "crates/togi-journal", "nix"}
 
 // isSmall applies the small-pull-request rule to the whole diff: at most 2 files and under 100 changed lines, every file counted, none under a protected path.
 func isSmall(files []fileDiff) bool {

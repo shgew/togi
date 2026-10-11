@@ -66,7 +66,7 @@ func runSnapshot(t tools, args []string) error {
 	fs.SetOutput(t.stderr)
 	previous := fs.String("previous", "", "URL of the previous review record comment, for a re-review")
 	previousBase := fs.String("previous-base", "", "full SHA of the base the pull request had at the previous record's head, for a record that does not name it (version 1, or 2 without base_sha)")
-	coverFile := fs.String("cover", "", "file with `just cover` output, or - for standard input")
+	coverFile := fs.String("cover", "", "file with `just cover` and `just cover-rs` output, or - for standard input")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -367,8 +367,8 @@ func printSummary(w io.Writer, dir string, m manifest) error {
 		for _, r := range m.Coverage.Ranges {
 			fmt.Fprintf(&b, "  %s:%d-%d\n", r.Path, r.First, r.Last)
 		}
-	case m.changesGo():
-		b.WriteString("uncovered: not recorded yet; run `just cover <base>` and pass it to `snapshot --cover`\n")
+	case m.changesCode():
+		b.WriteString("uncovered: not recorded yet; run `just cover <base>` for Go and `just cover-rs <base>` for Rust, and pass their output to `snapshot --cover`\n")
 	}
 	_, err := io.WriteString(w, b.String())
 	return err

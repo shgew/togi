@@ -60,6 +60,17 @@ cover base="": _dev-shell
     fi
     go run ./tools/cover --profile "$profile" --base "$1" --tags integration
 
+# Print changed Rust lines no test reached since a base, as `just cover` does for Go, and the changed files the run does not build (`just cover-rs origin/main`)
+[group('test')]
+cover-rs base: _dev-shell
+    #!/usr/bin/env bash
+    set -euo pipefail
+    trace=$(mktemp)
+    trap 'rm -f "$trace"' EXIT
+    cargo llvm-cov nextest --locked --no-tests=pass --lcov --output-path "$trace" >&2
+    target=${CARGO_LLVM_COV_TARGET_DIR:-${CARGO_TARGET_DIR:-target}/llvm-cov-target}
+    go run ./tools/cover --lcov "$trace" --build-dir "$target/debug" --base "$1"
+
 # Lint all Go packages as built for Linux and for macOS, and the Rust workspace with clippy for the host's target and aarch64 macOS, with optional Go lint flags
 [group('quality')]
 lint *args: _dev-shell
@@ -310,7 +321,20 @@ _touched-packages pushed:
         [[ "$dir" == . ]] && echo . || echo "./$dir"
     done | sort -u
 
-# Push a fix to a pull request under review: format, lint, run `just focus` on the packages changed since the last pushed head, then push as `just ship` does without the gate; the first push of a branch uses `just ship`
+# Print the Rust crates changed between a pushed head and HEAD, one per line: `--workspace` when Cargo.toml, Cargo.lock, rust-toolchain.toml, clippy.toml, .config/nextest.toml or .cargo/config.toml changed, files every crate's build or tests read, else each crate with a changed file under crates/ that still has its Cargo.toml at HEAD
+_touched-crates pushed:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    files=$(git diff --name-only --no-renames "$1" HEAD)
+    if grep -qxE 'Cargo\.toml|Cargo\.lock|rust-toolchain\.toml|clippy\.toml|\.config/nextest\.toml|\.cargo/config(\.toml)?' <<<"$files"; then
+        echo --workspace
+        exit
+    fi
+    { grep -oE '^crates/[^/]+/' <<<"$files" || true; } | sort -u | while IFS= read -r dir; do
+        git cat-file -e "HEAD:${dir}Cargo.toml" 2>/dev/null && basename "$dir"
+    done || true
+
+# Push a fix to a pull request under review: format, lint, run `just focus` on the Go packages and `just test-rs` on the Rust crates changed since the last pushed head, then push as `just ship` does without the gate; the first push of a branch uses `just ship`
 [group('github')]
 push-fix: (_push-ready "push-fix" "push the stack with gh stack push")
     #!/usr/bin/env bash
@@ -326,6 +350,16 @@ push-fix: (_push-ready "push-fix" "push the stack with gh stack push")
         echo "push-fix: no Go package changed since $pushed; nothing to focus" >&2
     else
         just focus "${packages[@]}"
+    fi
+    mapfile -t crates < <(just _touched-crates "$pushed")
+    if ((${#crates[@]} == 0)); then
+        echo "push-fix: no Rust crate changed since $pushed; nothing to test" >&2
+    elif [[ "${crates[0]}" == --workspace ]]; then
+        just test-rs --workspace
+    else
+        args=()
+        for crate in "${crates[@]}"; do args+=(-p "$crate"); done
+        just test-rs "${args[@]}"
     fi
     git push --force-with-lease --force-if-includes --set-upstream origin "refs/heads/$branch:refs/heads/$branch"
 

@@ -80,3 +80,40 @@ func TestRunNamesChangedFilesTheBuildLeavesOut(t *testing.T) {
 		t.Errorf("report (-want +got):\n%s", diff)
 	}
 }
+
+// TestReportRustReportsLinesAndFilesTheBuildLeavesOut gives reportRust a host of its own, as the flake's package check runs this tag without rustc.
+func TestReportRustReportsLinesAndFilesTheBuildLeavesOut(t *testing.T) {
+	git, writeFile := repository(t)
+	for _, dir := range []string{"crates/a/src", "target/debug/deps", "target/debug/build/a-1"} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeFile("crates/a/src/lib.rs", "fn a() -> u32 {\n    1\n}\n\n#[cfg(target_os = \"nowhere\")]\nfn gone() -> u32 {\n    1\n}\n")
+	writeFile("crates/a/build.rs", "fn main() {\n    let _ = 1;\n}\n")
+	writeFile("target/debug/deps/a.d", "crates/a/src/lib.rs:\n")
+	writeFile("target/debug/build/a-1/build_script_build.d", "crates/a/build.rs:\n")
+	git("add", ".")
+	git("commit", "-m", "Base")
+	writeFile("crates/a/src/lib.rs", "fn a() -> u32 {\n    2\n}\n\n#[cfg(target_os = \"nowhere\")]\nfn gone() -> u32 {\n    2\n}\n\nfn b() {\n    todo!();\n}\n")
+	writeFile("crates/a/build.rs", "fn main() {\n    let _ = 2;\n}\n")
+	root, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile("trace.info", "SF:"+root+"/crates/a/src/lib.rs\nDA:1,1\nDA:2,1\nDA:9,1\nDA:10,0\nend_of_record\nSF:"+root+"/crates/a/build.rs\nDA:1,1\nDA:2,1\nend_of_record\n")
+	trace, err := os.Open("trace.info")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer trace.Close()
+	host := rustHost{triple: "test-host", cfg: newHostCfg("unix", `target_os="linux"`)}
+	var out bytes.Buffer
+	if err := reportRust(trace, filepath.Join(root, "target/debug"), root, "HEAD", host, &out); err != nil {
+		t.Fatalf("reportRust: %v", err)
+	}
+	want := "crates/a/src/lib.rs:10\ncrates/a/src/lib.rs: not built for test-host\n"
+	if diff := cmp.Diff(want, out.String()); diff != "" {
+		t.Errorf("report (-want +got):\n%s", diff)
+	}
+}
