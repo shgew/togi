@@ -196,7 +196,7 @@ The example assumes the `togi-trial` account exists; [Privileges](#privileges) d
 
 | Key | Default | Valid |
 |---|---|---|
-| `start_offsets.<core>` | none | Offset override per core id, within [-50, 0] |
+| `start_offsets.<core>` | none | Offset override per core id: a canonical decimal key (`"3"`, not `"03"`, `"+3"` or `" 3"`) within 0..=15, and an integer offset within [-50, 0]; never clamped, never `null` |
 | `candidate_solo_limits.<core>` | none | Candidate solo limit in [-50, 0], starting search at that offset with a solo-limit check; not together with `start_offsets` for the same core. A carried failure point can clamp it |
 | `durations.search_trial_s` | 90 | [1, 86400] |
 | `durations.short_trial_s` | 120 | [1, 86400]; short R7 trials, hunt groups, deepening checks and reruns |
@@ -205,16 +205,16 @@ The example assumes the `togi-trial` account exists; [Privileges](#privileges) d
 | `durations.checking_all_core_s` | 1200 | [4, 86400]; R7 long trials: a quarter per CCD, remainder all-core |
 | `checking.cycle` | `["R7", "R7", "R7", "R2", "R2", "R2", "R6", "R5", "R1", "R1", "R1", "R3", "R3", "R3", "R4", "R4", "R4", "R6"]` | Non-empty regime list; a passed cycle is not necessarily full |
 | `evidence.miss` | 0.05 | Probability of missing the failure rate used by the pass rule; finite number strictly between 0 and 1 ([Evidence](tuner.md#evidence)) |
-| `evidence.rate` | 0.5 | Per-trial failure probability used by the pass rule; finite number strictly between 0 and 1; together with miss yields at most 1000 trials ([Evidence](tuner.md#evidence)) |
+| `evidence.rate` | 0.5 | Per-trial failure probability used by the pass rule; finite number strictly between 0 and 1; together with miss yields between 1 and 1000 trials ([Evidence](tuner.md#evidence)) |
 | `dead_ends.inconclusive_in_a_row` | 3 | [1, 100] |
 | `dead_ends.stray_crashes_in_a_row` | 3 | [1, 100] |
-| `backends.mprime` | not configured | Absolute path of the package (`bin/mprime` inside it) |
-| `backends.ycruncher` | not configured | Absolute path of the package (`lib/y-cruncher/Binaries` inside it) |
+| `backends.mprime` | not configured | Absolute path of the package (`bin/mprime` inside it); leave out or `null` for none, an empty string is an error |
+| `backends.ycruncher` | not configured | Absolute path of the package (`lib/y-cruncher/Binaries` inside it); leave out or `null` for none, an empty string is an error |
 | `backend_user` | not configured; module sets `"togi-trial"` | Existing account with non-root UID and primary GID; checked by hardware preflight |
 
-Unknown members, including members of nested objects, and out-of-range values are errors. TOML, JSON with comments and YAML are not accepted ([ADR 0050](../adr/0050-json-for-first-party-data-files.md)). When `--config` is not given and no file exists at the default path, the defaults apply.
+Unknown members, including members of nested objects, duplicate members, duplicate core keys and out-of-range values are errors. TOML, JSON with comments and YAML are not accepted ([ADR 0050](../adr/0050-json-for-first-party-data-files.md)). When `--config` is not given and no file exists at the default path, the defaults apply.
 
-`durations.confirmation_trial_s` was removed: a file still setting it fails with `durations.confirmation_trial_s was removed in togi 0.5.0: confirmation no longer exists; delete the key`. Invalid evidence values report `evidence.miss = %g: must be within (0, 1)` (likewise rate); an evidence pair requiring over 1000 trials reports `evidence: miss %g and rate %g need more than 1000 trials per step`.
+Evidence values outside (0, 1) are errors, as is an evidence pair whose trial count falls outside 1..=1000. `backend_user` is left out for none; an empty string is an error. A removed key is an unknown member like any other.
 
 The number of trials for a full evidence step is `ceil(ln(evidence.miss) / log1p(-evidence.rate))`, five at defaults. Durations and workload identity are part of the trial class, so a change to either never turns passes of a different class into valid evidence.
 

@@ -593,6 +593,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "togi-config"
+version = "0.0.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tempfile",
+ "test-case",
+ "thiserror",
+ "togi-machine",
+]
+
+[[package]]
 name = "togi-hostlock"
 version = "0.0.0"
 dependencies = [
