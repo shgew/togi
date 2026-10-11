@@ -422,7 +422,7 @@ fn r7_target_tie_earliest_profile() {
             (first, &at_first, second, &at_second)
         };
         let mut leading = vec![j.r7_fact(true, &[0, 1], &lead, lead_report)];
-        passes(&mut j, n, &[0, 1], &follow, follow_report);
+        let followed = passes(&mut j, n, &[0, 1], &follow, follow_report);
         leading.extend(passes(&mut j, n - 1, &[0, 1], &lead, lead_report));
         j.r7_fact(
             false,
@@ -437,7 +437,7 @@ fn r7_target_tie_earliest_profile() {
             .cause
             .iter()
             .copied()
-            .filter(|seq| j.run().r7.targets.contains(*seq))
+            .filter(|seq| leading.contains(seq) || followed.contains(seq))
             .collect();
         assert_eq!(cited, leading, "second leads {second_leads}");
     }
@@ -485,7 +485,7 @@ fn r7_target_cites_late_minimum() {
         .cause
         .iter()
         .copied()
-        .filter(|seq| j.run().r7.targets.contains(*seq))
+        .filter(|seq| first.contains(seq) || [middle, lowest, last].contains(seq))
         .collect();
     let mut want = first[..n - 1].to_vec();
     want.push(lowest);
@@ -496,9 +496,8 @@ fn r7_target_cites_late_minimum() {
 #[test]
 fn r7_missing_lane_is_not_zero() {
     let mut j = Journal::r7_session();
-    let unmeasured = j.r7_fact(true, &[0, 1], &ALL_30, &R7Report::default().top(&[0]));
-    assert!(!j.run().r7.targets.contains(unmeasured));
-    assert_eq!(j.run().r7.targets.len(), 0);
+    j.r7_fact(true, &[0, 1], &ALL_30, &R7Report::default().top(&[0]));
+    assert_eq!(j.run().r7.targets.groups(), 0);
     let source = j.r7_fact(true, &[0, 1], &ALL_30, &report(&[(1, 1.1)], &[1]));
     j.r7_fact(false, &[0, 1], &ALL_30, &R7Report::default().top(&[0]));
     let (decision, why) = r7_backoff(&j);
@@ -520,9 +519,8 @@ fn v_star_ignores_an_invalidated_pass() {
     let invalidated = |newer: usize| {
         let mut j = Journal::r7_session();
         let n = needed(&j);
-        let old = passes(&mut j, n, &[0, 1], &q, &at_q);
+        passes(&mut j, n, &[0, 1], &q, &at_q);
         j.r7_fact(false, &[0, 1], &q, &report(&[(0, 1.1), (1, 1.08)], &[0]));
-        assert!(old.iter().all(|&seq| !j.run().r7.targets.contains(seq)));
         let (decision, why) = r7_backoff(&j);
         assert_eq!(moved(&decision), (0, -25));
         assert_no_pass(&why, 1.1);
@@ -547,6 +545,36 @@ fn v_star_ignores_an_invalidated_pass() {
     assert_eq!(moved(&decision), (1, -25));
     assert!(fresh.iter().all(|seq| decision.cause.contains(seq)));
     j.assert_resumes();
+}
+
+#[test]
+fn v_star_returns_with_a_failure_the_reset_of_its_named_core_drops() {
+    let q = [-26, -30, -30, -30];
+    for (named, restored) in [(Some(3), true), (None, false)] {
+        let mut j = Journal::r7_session();
+        let n = needed(&j);
+        let at_q = report(&[(0, 1.115), (1, 1.08)], &[0]);
+        let old = passes(&mut j, n, &[0, 1], &q, &at_q);
+        let failing = report(&[(0, 1.1), (1, 1.08)], &[0]);
+        let failing = named.map_or(failing.clone(), |core| failing.named(core));
+        j.r7_fact(false, &[0, 1], &q, &failing);
+        j.reset(3);
+        j.r7_fact(
+            false,
+            &[0, 1],
+            &ALL_30,
+            &report(&[(0, 1.1), (1, 1.08)], &[0]),
+        );
+        let (decision, why) = r7_backoff(&j);
+        assert_eq!(moved(&decision).0, 0, "{named:?}");
+        if restored {
+            assert_toward(&why, 1.1, 1.115);
+            assert!(old.iter().all(|seq| decision.cause.contains(seq)));
+        } else {
+            assert_no_pass(&why, 1.1);
+        }
+        j.assert_resumes();
+    }
 }
 
 #[test]
@@ -576,13 +604,21 @@ fn as_of_order_is_frozen() {
     j.assert_resumes();
 }
 
-fn pass_volume(count: usize) -> (usize, usize, u64, u64, (u8, i64), usize) {
+fn varied(i: usize) -> R7Report {
+    let i = u32::try_from(i).unwrap();
+    let wobble = 1.0 + f64::from(i) * 0.000_001;
+    let other_ccd_mhz = 4000 + i;
+    report(&[(0, 1.115), (1, wobble)], &[0]).clocks(&[(0, 5000), (1, other_ccd_mhz)])
+}
+
+fn pass_volume(count: usize) -> (usize, usize, usize, u64, u64, (u8, i64), usize) {
     let mut j = Journal::r7_session();
     let q = [-26, -30, -30, -30];
-    let at_q = report(&[(0, 1.115), (1, 1.08)], &[0]);
-    passes(&mut j, count, &[0, 1], &q, &at_q);
+    for i in 0..count {
+        j.r7_fact(true, &[0, 1], &q, &varied(i));
+    }
     j.state.visits();
-    j.r7_fact(true, &[0, 1], &q, &at_q);
+    j.r7_fact(true, &[0, 1], &q, &varied(count));
     let folding = j.state.visits();
     j.r7_fact(
         false,
@@ -594,9 +630,9 @@ fn pass_volume(count: usize) -> (usize, usize, u64, u64, (u8, i64), usize) {
     let decision = j.next_decision();
     let deciding = j.state.visits();
     let targets = &j.run().r7.targets;
-    assert_eq!(targets.len(), count + 1);
     (
-        targets.shapes(),
+        targets.entries(),
+        targets.segments(),
         needed(&j),
         folding,
         deciding,
@@ -609,7 +645,43 @@ fn pass_volume(count: usize) -> (usize, usize, u64, u64, (u8, i64), usize) {
 fn r7_cost_pass_volume() {
     let small = pass_volume(100);
     let large = pass_volume(10_000);
-    assert_eq!(small.0, 1);
+    assert_eq!(small.0, 2);
+    assert_eq!(small.1, 2);
     assert_eq!(small, large);
-    assert_eq!(large.4, (0, -25));
+    assert_eq!(large.5, (0, -25));
+}
+
+#[test]
+fn r7_target_cites_more_earliest_passes_after_the_needed_count_increases() {
+    let mut j = Journal::r7_session();
+    let q = [-26, -30, -30, -30];
+    let passed = passes(
+        &mut j,
+        20,
+        &[0, 1],
+        &q,
+        &report(&[(0, 1.115), (1, 1.08)], &[0]),
+    );
+    let before = needed(&j);
+    j.load(&crate::testkit::config(
+        r#"{"evidence":{"miss":0.01,"rate":0.5}}"#,
+    ));
+    let after = needed(&j);
+    assert!(after > before && after <= passed.len());
+    j.r7_fact(
+        false,
+        &[0, 1],
+        &ALL_30,
+        &report(&[(0, 1.1), (1, 1.08)], &[0]),
+    );
+    let (decision, why) = r7_backoff(&j);
+    assert_toward(&why, 1.1, 1.115);
+    let cited: Vec<Seq> = decision
+        .cause
+        .iter()
+        .copied()
+        .filter(|seq| passed.contains(seq))
+        .collect();
+    assert_eq!(cited, passed[..after]);
+    j.assert_resumes();
 }

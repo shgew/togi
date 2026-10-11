@@ -72,7 +72,7 @@ pub struct Observation<'a> {
 
 #[cfg(test)]
 #[derive(Clone, Debug, Default)]
-struct Visits(std::cell::Cell<u64>);
+pub(crate) struct Visits(pub(crate) std::cell::Cell<u64>);
 
 #[cfg(test)]
 impl PartialEq for Visits {

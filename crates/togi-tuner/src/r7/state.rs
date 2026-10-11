@@ -27,9 +27,8 @@ pub(crate) struct R7 {
 
 impl Run {
     /// Folds the end of an R7 trial, live or carried: its measurement, a pass as a target and as
-    /// self-sufficiency and a restart of its load's strikes, a failure as invalidation of the
-    /// passes it rules out. A failed multi-core trial returns what its attribution reads, frozen
-    /// against the measurements folded so far.
+    /// self-sufficiency and a restart of its load's strikes. A failed multi-core trial returns
+    /// what its attribution reads, frozen against the measurements folded so far.
     pub(crate) fn r7_trial(
         &mut self,
         ended: Ended<'_>,
@@ -64,21 +63,24 @@ impl Run {
                     effective_top(telemetry.top, &order),
                     profile,
                 );
-                self.r7.targets.insert(PassRecord {
-                    seq,
-                    class,
-                    backend,
-                    profile: *profile,
-                    requests: *telemetry.requests,
-                    ccd_mhz: telemetry
-                        .clocks
-                        .iter()
-                        .map(|(&ccd, &mhz)| (ccd, i64::from(mhz)))
-                        .collect(),
-                });
+                self.r7.targets.insert(
+                    &self.topo,
+                    &self.evidence,
+                    &PassRecord {
+                        seq,
+                        class,
+                        backend,
+                        profile: *profile,
+                        requests: *telemetry.requests,
+                        ccd_mhz: telemetry
+                            .clocks
+                            .iter()
+                            .map(|(&ccd, &mhz)| (ccd, i64::from(mhz)))
+                            .collect(),
+                    },
+                );
             }
-            Outcome::Failure => self.r7.targets.invalidate(class, profile, seq),
-            Outcome::Inconclusive => {}
+            Outcome::Inconclusive | Outcome::Failure => {}
         }
         let failed = (outcome == Outcome::Failure && class.multi_r7())
             .then(|| FailedTrial::freeze(&self.r7.measurements, &self.topo, ended, order));

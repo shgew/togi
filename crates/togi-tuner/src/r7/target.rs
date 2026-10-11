@@ -1,4 +1,3 @@
-use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::num::NonZeroU16;
 
@@ -8,17 +7,7 @@ use togi_requests::{VOLTS_PER_COUNT, counts, top};
 use togi_journal::Seq;
 use togi_machine::WorkloadId;
 
-use crate::{BackendId, ClassKey, Depth, LoadKey, Profile, Topology};
-
-/// A passing R7 trial seen as a candidate for the voltage a backoff aims at.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) struct TargetPass {
-    pub(crate) seq: Seq,
-    pub(crate) profile: Profile,
-    pub(crate) top_request: f64,
-    /// The pass's median clock on the moved core's CCD, when it recorded one.
-    pub(crate) ccd_mhz: Option<i64>,
-}
+use crate::{BackendId, ClassKey, Depth, Evidence, LoadKey, Profile, Topology};
 
 /// Which passes may set the target, and what a candidate's request must beat.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -33,11 +22,11 @@ pub(crate) enum Basis {
 }
 
 impl Basis {
-    fn admits(self, pass: &TargetPass) -> bool {
+    fn admits(self, request: f64, mhz: Option<i64>) -> bool {
         match self {
-            Self::Unattributed { failing_top } => pass.top_request > failing_top,
+            Self::Unattributed { failing_top } => request > failing_top,
             Self::Named { failing_mhz } => {
-                failing_mhz.is_none_or(|failing| pass.ccd_mhz.unwrap_or(0) >= failing)
+                failing_mhz.is_none_or(|failing| mhz.unwrap_or(0) >= failing)
             }
         }
     }
@@ -52,73 +41,6 @@ pub(crate) struct Target {
     pub(crate) cited: Vec<Seq>,
 }
 
-struct Candidate {
-    volts: f64,
-    lowest: Seq,
-    seqs: Vec<Seq>,
-}
-
-impl Candidate {
-    fn add(&mut self, pass: &TargetPass) {
-        if pass
-            .top_request
-            .total_cmp(&self.volts)
-            .then(pass.seq.cmp(&self.lowest))
-            == Ordering::Less
-        {
-            self.volts = pass.top_request;
-            self.lowest = pass.seq;
-        }
-        self.seqs.push(pass.seq);
-    }
-
-    fn cited(&self, n: usize) -> Vec<Seq> {
-        let mut cited = self.seqs[..n].to_vec();
-        if !cited.contains(&self.lowest) {
-            cited[n - 1] = self.lowest;
-            cited.sort_unstable();
-        }
-        cited
-    }
-}
-
-/// The lowest top request of any profile with `n` admitted passes: the passes are grouped by
-/// profile, a profile's voltage is the lowest request among its passes, equal voltages go to the
-/// profile whose earliest pass is older. Voltages compare exactly.
-pub(crate) fn voltage_target(
-    passes: impl IntoIterator<Item = TargetPass>,
-    basis: Basis,
-    n: NonZeroU16,
-) -> Option<Target> {
-    let mut admitted: Vec<TargetPass> = passes
-        .into_iter()
-        .filter(|pass| basis.admits(pass))
-        .collect();
-    admitted.sort_unstable_by_key(|pass| pass.seq);
-    let mut index: HashMap<Profile, usize> = HashMap::new();
-    let mut candidates: Vec<Candidate> = Vec::new();
-    for pass in &admitted {
-        let at = *index.entry(pass.profile).or_insert_with(|| {
-            candidates.push(Candidate {
-                volts: pass.top_request,
-                lowest: pass.seq,
-                seqs: Vec::new(),
-            });
-            candidates.len() - 1
-        });
-        candidates[at].add(pass);
-    }
-    let n = usize::from(n.get());
-    candidates
-        .iter()
-        .filter(|candidate| candidate.seqs.len() >= n)
-        .min_by(|a, b| a.volts.total_cmp(&b.volts).then(a.seqs[0].cmp(&b.seqs[0])))
-        .map(|candidate| Target {
-            volts: candidate.volts,
-            cited: candidate.cited(n),
-        })
-}
-
 /// What a trial must tell the index about a passing R7 trial.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct PassRecord {
@@ -131,89 +53,237 @@ pub(crate) struct PassRecord {
     pub(crate) ccd_mhz: BTreeMap<CcdId, i64>,
 }
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-struct Shape {
-    class: ClassKey,
-    backend: BackendId,
-    profile: Profile,
-    requests: Vec<(CoreId, u64)>,
-    ccd_mhz: Vec<(CcdId, i64)>,
+/// The newest failure of `class` at a profile `profile` is not deeper than: a pass of that
+/// profile is valid only if it is newer.
+fn failure_floor(evidence: &Evidence, class: ClassKey, profile: &Profile) -> Option<Seq> {
+    evidence.newest_failure(class, profile, None).ok().flatten()
 }
 
-impl Shape {
-    fn of(pass: &PassRecord) -> Self {
-        Self {
-            class: pass.class,
-            backend: pass.backend,
-            profile: pass.profile,
-            requests: pass
-                .requests
-                .iter()
-                .map(|(core, volts)| (core, volts.to_bits()))
-                .collect(),
-            ccd_mhz: pass.ccd_mhz.iter().map(|(&ccd, &mhz)| (ccd, mhz)).collect(),
+/// Counts passes at one failure floor and retains the earliest witnesses up to the supported
+/// evidence threshold, so a changed configuration can cite earlier passes without a ledger scan.
+#[derive(Clone, Debug, PartialEq)]
+struct Segment {
+    floor: Option<Seq>,
+    count: u32,
+    first: Vec<Seq>,
+}
+
+/// The passes one request and clock summary stands for, oldest segment first.
+#[derive(Clone, Debug, Default, PartialEq)]
+struct Entry {
+    segments: Vec<Segment>,
+}
+
+impl Entry {
+    fn add(&mut self, seq: Seq, floor: Option<Seq>) {
+        match self.segments.last_mut() {
+            Some(last) if last.floor == floor => {
+                last.count = last.count.saturating_add(1);
+                if last.first.len() < usize::from(togi_config::TrialCount::MAX) {
+                    last.first.push(seq);
+                }
+            }
+            _ => self.segments.push(Segment {
+                floor,
+                count: 1,
+                first: vec![seq],
+            }),
         }
+    }
+
+    /// The count and first `n` seqs of the passes newer than `failure`, none when no pass is.
+    fn valid(&self, failure: Option<Seq>, n: usize) -> Option<(u64, Vec<Seq>)> {
+        let mut count = 0_u64;
+        let mut first: Vec<Seq> = Vec::new();
+        for segment in self
+            .segments
+            .iter()
+            .filter(|segment| segment.floor >= failure)
+        {
+            count += u64::from(segment.count);
+            let room = n.saturating_sub(first.len());
+            first.extend(segment.first.iter().take(room));
+        }
+        (count > 0).then_some((count, first))
     }
 }
 
-/// The passes with one shape: the same class, backend, profile, requests and clocks. Only their
-/// sequences differ, ascending.
-#[derive(Clone, Debug, PartialEq)]
-struct Group {
-    record: PassRecord,
-    seqs: Vec<Seq>,
-}
+/// A CCD, a request's exact bits and, for a named target, that CCD's clock: all one query reads
+/// of a pass.
+type Key = (CcdId, u64, Option<i64>);
 
 type GroupId = u32;
 
-/// The passes a voltage target may come from, grouped by shape and indexed by load and by loaded
-/// core. A target query visits the groups of its load, each contributing at most `n` passes, never
-/// the passes themselves. A pass is in the index while it counts as evidence: the fold removes it
-/// when a later failure of its class invalidates it ([`R7Targets::invalidate`]) or a reset
-/// discards it. Passes that carry no request lane never enter.
+/// The passes of one class, backend and profile, reduced to what a query reads: the highest
+/// request on each CCD for an unattributed target, the highest request of the whole load with
+/// the clock of each loaded CCD for a named one. Passes that differ in nothing else share an
+/// entry.
+#[derive(Clone, Debug, PartialEq)]
+struct Group {
+    class: ClassKey,
+    backend: BackendId,
+    profile: Profile,
+    ccd_top: BTreeMap<Key, Entry>,
+    load_top: BTreeMap<Key, Entry>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct Candidate {
+    volts: f64,
+    lowest: Seq,
+    count: u64,
+    first: Vec<Seq>,
+}
+
+impl Candidate {
+    fn add(&mut self, request: f64, count: u64, first: &[Seq], n: usize) {
+        let earliest = first[0];
+        if request
+            .total_cmp(&self.volts)
+            .then(earliest.cmp(&self.lowest))
+            == std::cmp::Ordering::Less
+        {
+            self.volts = request;
+            self.lowest = earliest;
+        }
+        self.count += count;
+        self.first.extend_from_slice(first);
+        self.first.sort_unstable();
+        self.first.truncate(n);
+    }
+
+    fn cited(&self, n: usize) -> Vec<Seq> {
+        let mut cited = self.first[..n].to_vec();
+        if !cited.contains(&self.lowest) {
+            cited[n - 1] = self.lowest;
+            cited.sort_unstable();
+        }
+        cited
+    }
+}
+
+/// The passes a voltage target may come from. Passes are grouped by class, backend and profile,
+/// and within a group by the request and clock summary a query reads, so its size follows the
+/// distinct summaries and the distinct failure floors they met, not the passes. A pass that a
+/// failure of its class rules out is not deleted: queries compare each segment's floor with the
+/// ledger's newest live failure, so a failure the ledger drops (a reset of the core it named)
+/// gives its passes back. A reset of a loaded core discards the groups of the loads it is in.
+/// Passes that carry no request lane never enter.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct R7Targets {
     next: GroupId,
     groups: BTreeMap<GroupId, Group>,
-    shapes: HashMap<Shape, GroupId>,
+    shapes: HashMap<(ClassKey, BackendId, Profile), GroupId>,
     by_load: HashMap<LoadKey, BTreeSet<GroupId>>,
     by_core: HashMap<(WorkloadId, CoreId), BTreeSet<GroupId>>,
+    #[cfg(test)]
+    visits: crate::evidence::Visits,
 }
 
 impl R7Targets {
-    /// The passes indexed.
+    /// The entries stored.
     #[cfg(test)]
-    pub(crate) fn len(&self) -> usize {
-        self.groups.values().map(|group| group.seqs.len()).sum()
+    pub(crate) fn entries(&self) -> usize {
+        self.groups
+            .values()
+            .map(|group| group.ccd_top.len() + group.load_top.len())
+            .sum()
     }
 
-    /// The distinct shapes indexed.
+    /// The segments stored.
     #[cfg(test)]
-    pub(crate) fn shapes(&self) -> usize {
+    pub(crate) fn segments(&self) -> usize {
+        self.groups
+            .values()
+            .flat_map(|group| group.ccd_top.values().chain(group.load_top.values()))
+            .map(|entry| entry.segments.len())
+            .sum()
+    }
+
+    /// The groups stored.
+    #[cfg(test)]
+    pub(crate) fn groups(&self) -> usize {
         self.groups.len()
     }
 
     #[cfg(test)]
-    pub(crate) fn contains(&self, seq: Seq) -> bool {
+    pub(crate) fn witnesses(&self) -> usize {
         self.groups
             .values()
-            .any(|group| group.seqs.binary_search(&seq).is_ok())
+            .flat_map(|group| group.ccd_top.values().chain(group.load_top.values()))
+            .flat_map(|entry| &entry.segments)
+            .map(|segment| segment.first.len())
+            .sum()
     }
 
-    /// Indexes a passing R7 trial that measured requests; any other pass is ignored. Returns
-    /// whether it was indexed.
-    pub(crate) fn insert(&mut self, pass: PassRecord) -> bool {
-        if pass.class.regime() != Regime::R7 || pass.requests.is_empty() {
+    #[cfg(test)]
+    pub(crate) fn take_visits(&self) -> u64 {
+        self.visits.0.replace(0)
+    }
+
+    #[cfg(test)]
+    fn visit(&self) {
+        self.visits.0.set(self.visits.0.get() + 1);
+    }
+
+    #[cfg(not(test))]
+    #[expect(clippy::unused_self, reason = "the test build counts visits here")]
+    fn visit(&self) {}
+
+    /// Indexes a passing R7 trial that measured requests, remembering the failure floor the
+    /// ledger holds for its profile now; any other pass is ignored. Returns whether it was indexed.
+    pub(crate) fn insert(
+        &mut self,
+        topology: &Topology,
+        evidence: &Evidence,
+        pass: &PassRecord,
+    ) -> bool {
+        if pass.class.regime() != Regime::R7 {
             return false;
         }
-        let shape = Shape::of(&pass);
-        if let Some(&id) = self.shapes.get(&shape) {
-            if let Some(group) = self.groups.get_mut(&id) {
-                let at = group.seqs.partition_point(|&seq| seq < pass.seq);
-                group.seqs.insert(at, pass.seq);
+        let Some(load_top) = top(&pass.requests) else {
+            return false;
+        };
+        let floor = failure_floor(evidence, pass.class, &pass.profile);
+        let shape = (pass.class, pass.backend, pass.profile);
+        let id = match self.shapes.get(&shape) {
+            Some(&id) => id,
+            None => self.open_group(pass),
+        };
+        let Some(group) = self.groups.get_mut(&id) else {
+            return false;
+        };
+        let mut ccd_tops: BTreeMap<CcdId, f64> = BTreeMap::new();
+        for (core, request) in pass.requests.iter() {
+            if let Some(ccd) = topology.ccd_of(core) {
+                ccd_tops
+                    .entry(ccd)
+                    .and_modify(|highest| *highest = highest.max(request))
+                    .or_insert(request);
             }
-            return true;
         }
+        for (&ccd, &highest) in &ccd_tops {
+            let key = (ccd, highest.to_bits(), None);
+            group.ccd_top.entry(key).or_default().add(pass.seq, floor);
+        }
+        let loaded: BTreeSet<CcdId> = pass
+            .class
+            .loaded()
+            .iter()
+            .filter_map(|core| topology.ccd_of(core))
+            .collect();
+        for ccd in loaded {
+            let key = (
+                ccd,
+                load_top.to_bits(),
+                Some(pass.ccd_mhz.get(&ccd).copied().unwrap_or(0)),
+            );
+            group.load_top.entry(key).or_default().add(pass.seq, floor);
+        }
+        true
+    }
+
+    fn open_group(&mut self, pass: &PassRecord) -> GroupId {
         let id = self.next;
         self.next += 1;
         let load = pass.class.load();
@@ -224,24 +294,28 @@ impl R7Targets {
                 .or_default()
                 .insert(id);
         }
-        self.shapes.insert(shape, id);
+        self.shapes
+            .insert((pass.class, pass.backend, pass.profile), id);
         self.groups.insert(
             id,
             Group {
-                seqs: vec![pass.seq],
-                record: pass,
+                class: pass.class,
+                backend: pass.backend,
+                profile: pass.profile,
+                ccd_top: BTreeMap::new(),
+                load_top: BTreeMap::new(),
             },
         );
-        true
+        id
     }
 
     fn drop_group(&mut self, id: GroupId) {
         let Some(group) = self.groups.remove(&id) else {
             return;
         };
-        let record = group.record;
-        self.shapes.remove(&Shape::of(&record));
-        let load = record.class.load();
+        self.shapes
+            .remove(&(group.class, group.backend, group.profile));
+        let load = group.class.load();
         if let Some(ids) = self.by_load.get_mut(&load) {
             ids.remove(&id);
             if ids.is_empty() {
@@ -259,40 +333,12 @@ impl R7Targets {
         }
     }
 
-    /// Removes the passes of `class` that a failure at `failure`, folded at `seq`, rules out:
-    /// those older than it at a profile `failure` is within. Newer passes of the class that
-    /// cover that profile qualify again as they arrive.
-    pub(crate) fn invalidate(&mut self, class: ClassKey, failure: &Profile, seq: Seq) {
-        let Some(ids) = self.by_load.get(&class.load()) else {
-            return;
-        };
-        let ruled_out: Vec<GroupId> = ids
-            .iter()
-            .copied()
-            .filter(|id| {
-                self.groups.get(id).is_some_and(|group| {
-                    group.record.class == class && failure.within(&group.record.profile)
-                })
-            })
-            .collect();
-        for id in ruled_out {
-            let emptied = self.groups.get_mut(&id).is_some_and(|group| {
-                let older = group.seqs.partition_point(|&pass| pass < seq);
-                group.seqs.drain(..older);
-                group.seqs.is_empty()
-            });
-            if emptied {
-                self.drop_group(id);
-            }
-        }
-    }
-
     /// Removes the passes whose load includes `core`.
     pub(crate) fn reset_core(&mut self, core: CoreId) {
         let doomed: Vec<GroupId> = self
             .groups
             .iter()
-            .filter(|(_, group)| group.record.class.loaded().contains(core))
+            .filter(|(_, group)| group.class.loaded().contains(core))
             .map(|(&id, _)| id)
             .collect();
         for id in doomed {
@@ -300,79 +346,114 @@ impl R7Targets {
         }
     }
 
-    fn candidates<'a>(
-        &'a self,
-        ids: &'a BTreeSet<GroupId>,
-        backend: BackendId,
-        n: NonZeroU16,
-        pass: impl Fn(&PassRecord) -> Option<(f64, Option<i64>, Profile)> + 'a,
-    ) -> impl Iterator<Item = TargetPass> + 'a {
-        let n = usize::from(n.get());
-        ids.iter()
+    /// The lowest request among the admitted entries of `ccd` that reaches `n` valid passes at
+    /// one profile, ties to the profile with the older pass. A pass is valid when no failure the
+    /// ledger holds for its class and profile is newer.
+    fn query(
+        &self,
+        ask: Ask<'_>,
+        ids: &BTreeSet<GroupId>,
+        ccd: CcdId,
+        basis: Basis,
+        entries: fn(&Group) -> &BTreeMap<Key, Entry>,
+    ) -> Option<Target> {
+        let needed = u64::from(ask.n.get());
+        let n = usize::from(ask.n.get());
+        let mut index: HashMap<Profile, usize> = HashMap::new();
+        let mut candidates: Vec<Candidate> = Vec::new();
+        for group in ids
+            .iter()
             .filter_map(|id| self.groups.get(id))
-            .filter(move |group| group.record.backend == backend)
-            .filter_map(move |group| {
-                let (top_request, ccd_mhz, profile) = pass(&group.record)?;
-                Some(group.seqs.iter().take(n).map(move |&seq| TargetPass {
-                    seq,
-                    profile,
-                    top_request,
-                    ccd_mhz,
-                }))
+            .filter(|group| group.backend == ask.backend)
+        {
+            self.visit();
+            let failure = failure_floor(ask.evidence, group.class, &group.profile);
+            let span = (ccd, 0, None)..=(ccd, u64::MAX, Some(i64::MAX));
+            for (&(_, bits, mhz), entry) in entries(group).range(span) {
+                self.visit();
+                let request = f64::from_bits(bits);
+                if !basis.admits(request, mhz) {
+                    continue;
+                }
+                #[cfg(test)]
+                for _ in &entry.segments {
+                    self.visit();
+                }
+                let Some((count, first)) = entry.valid(failure, n) else {
+                    continue;
+                };
+                if let Some(&at) = index.get(&group.profile) {
+                    candidates[at].add(request, count, &first, n);
+                } else {
+                    index.insert(group.profile, candidates.len());
+                    candidates.push(Candidate {
+                        volts: request,
+                        lowest: first[0],
+                        count,
+                        first,
+                    });
+                }
+            }
+        }
+        candidates
+            .iter()
+            .filter(|candidate| candidate.count >= needed)
+            .min_by(|a, b| {
+                a.volts
+                    .total_cmp(&b.volts)
+                    .then(a.first[0].cmp(&b.first[0]))
             })
-            .flatten()
+            .map(|candidate| Target {
+                volts: candidate.volts,
+                cited: candidate.cited(n),
+            })
     }
 
     /// The target for an unattributed failure of `load` that moves `moved`: its top request is
     /// the CCD's highest among the loaded cores, and only passes of exactly that load count.
     pub(crate) fn unattributed(
         &self,
-        topology: &Topology,
-        backend: BackendId,
+        ask: Ask<'_>,
         load: LoadKey,
         moved: CoreId,
         failing_top: f64,
-        n: NonZeroU16,
     ) -> Option<Target> {
-        let ccd = topology.ccd_of(moved)?;
+        let ccd = ask.topology.ccd_of(moved)?;
         let ids = self.by_load.get(&load)?;
-        let passes = self.candidates(ids, backend, n, |record| {
-            let on_ccd: PerCore<f64> = record
-                .requests
-                .iter()
-                .filter(|&(core, _)| topology.ccd_of(core) == Some(ccd))
-                .collect();
-            Some((
-                top(&on_ccd)?,
-                record.ccd_mhz.get(&ccd).copied(),
-                record.profile,
-            ))
-        });
-        voltage_target(passes, Basis::Unattributed { failing_top }, n)
+        self.query(
+            ask,
+            ids,
+            ccd,
+            Basis::Unattributed { failing_top },
+            |group| &group.ccd_top,
+        )
     }
 
     /// The target for a failure naming `core`: its passes under any load of `workload` that
     /// includes it, each at the highest request of its whole load.
     pub(crate) fn named(
         &self,
-        topology: &Topology,
-        backend: BackendId,
+        ask: Ask<'_>,
         workload: WorkloadId,
         core: CoreId,
         failing_mhz: Option<i64>,
-        n: NonZeroU16,
     ) -> Option<Target> {
-        let ccd = topology.ccd_of(core)?;
+        let ccd = ask.topology.ccd_of(core)?;
         let ids = self.by_core.get(&(workload, core))?;
-        let passes = self.candidates(ids, backend, n, |record| {
-            Some((
-                top(&record.requests)?,
-                record.ccd_mhz.get(&ccd).copied(),
-                record.profile,
-            ))
-        });
-        voltage_target(passes, Basis::Named { failing_mhz }, n)
+        self.query(ask, ids, ccd, Basis::Named { failing_mhz }, |group| {
+            &group.load_top
+        })
     }
+}
+
+/// What a target query reads besides the index: the machine, the ledger that says which passes
+/// still count, the backend whose passes count and the passes a target needs.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Ask<'a> {
+    pub(crate) topology: &'a Topology,
+    pub(crate) evidence: &'a Evidence,
+    pub(crate) backend: BackendId,
+    pub(crate) n: NonZeroU16,
 }
 
 const COUNT_ROUNDING_TOLERANCE: f64 = 1e-9;

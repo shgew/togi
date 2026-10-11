@@ -1,12 +1,11 @@
-use std::collections::BTreeMap;
 use std::num::{NonZeroU16, NonZeroU32};
 
 use proptest::array::uniform4;
 use proptest::prelude::*;
 use togi_journal::Seq;
 use togi_machine::WorkloadId;
-use togi_machine::{CcdId, CoreId, CoreInfo, CoreSet, PerCore, Regime, TargetOffset};
-use togi_requests::VOLTS_PER_COUNT;
+use togi_machine::{CcdId, Condition, CoreId, CoreInfo, CoreSet, PerCore, Regime, TargetOffset};
+use togi_requests::{VOLTS_PER_COUNT, top};
 
 use super::Applied;
 use super::escalation::{
@@ -16,8 +15,7 @@ use super::measurements::{Measurement, Measurements};
 use super::order::{Lane, RequestOrder, lowest_ranked};
 use super::status::SelfSufficiency;
 use super::target::{
-    Basis, OwnRequest, PassRecord, R7Targets, TargetPass, backoff_counts, backoff_move,
-    counts_above, voltage_target,
+    Ask, OwnRequest, PassRecord, R7Targets, Target, backoff_counts, backoff_move, counts_above,
 };
 use crate::tests::{core, off};
 use crate::{
@@ -352,41 +350,106 @@ mod order {
     }
 }
 
-mod target {
-    use super::*;
-
-    fn record(
-        targets: &mut R7Targets,
-        at: u64,
-        class: ClassKey,
-        profile: Profile,
-        lanes: &[(u8, f64)],
-        mhz: &[(u8, i64)],
-    ) {
-        assert!(targets.insert(PassRecord {
-            seq: seq(at),
-            class,
-            backend: backend(),
-            profile,
-            requests: requests(lanes),
-            ccd_mhz: mhz.iter().map(|&(ccd, m)| (CcdId(ccd), m)).collect(),
-        }));
+fn record(
+    at: u64,
+    class: ClassKey,
+    profile: Profile,
+    lanes: &[(u8, f64)],
+    mhz: &[(u8, i64)],
+) -> PassRecord {
+    PassRecord {
+        seq: seq(at),
+        class,
+        backend: backend(),
+        profile,
+        requests: requests(lanes),
+        ccd_mhz: mhz.iter().map(|&(ccd, m)| (CcdId(ccd), m)).collect(),
     }
+}
 
-    fn pass(at: u64, profile: Profile, top: f64) -> TargetPass {
-        TargetPass {
-            seq: seq(at),
-            profile,
-            top_request: top,
-            ccd_mhz: None,
+struct Fx {
+    topo: Topology,
+    evidence: Evidence,
+    targets: R7Targets,
+    n: NonZeroU16,
+}
+
+impl Fx {
+    fn new(n: u16) -> Self {
+        let topo = two_ccds();
+        Self {
+            evidence: Evidence::new(topo.all()),
+            targets: R7Targets::default(),
+            topo,
+            n: n_of(n),
         }
     }
+
+    fn profile(&self, values: &[i64]) -> Profile {
+        profile_of(&self.topo, values)
+    }
+
+    fn pass(&mut self, pass: &PassRecord) -> bool {
+        self.evidence
+            .record_pass(
+                Observation {
+                    seq: pass.seq,
+                    class: pass.class,
+                    profile: &pass.profile,
+                    condition: Condition::Together,
+                    named: None,
+                },
+                pass.backend,
+            )
+            .unwrap();
+        self.targets.insert(&self.topo, &self.evidence, pass)
+    }
+
+    fn fail(&mut self, at: u64, class: ClassKey, profile: Profile, named: Option<u8>) {
+        self.evidence
+            .record_failure(Observation {
+                seq: seq(at),
+                class,
+                profile: &profile,
+                condition: Condition::Together,
+                named: named.map(core),
+            })
+            .unwrap();
+    }
+
+    fn reset(&mut self, id: u8) {
+        self.evidence.reset_core(core(id));
+        self.targets.reset_core(core(id));
+    }
+
+    fn ask(&self, backend: BackendId) -> Ask<'_> {
+        Ask {
+            topology: &self.topo,
+            evidence: &self.evidence,
+            backend,
+            n: self.n,
+        }
+    }
+
+    fn unattributed(&self, load: LoadKey, moved: u8, failing_top: f64) -> Option<Target> {
+        self.targets
+            .unattributed(self.ask(backend()), load, core(moved), failing_top)
+    }
+
+    fn named(&self, workload: WorkloadId, id: u8, mhz: Option<i64>) -> Option<Target> {
+        self.targets
+            .named(self.ask(backend()), workload, core(id), mhz)
+    }
+}
+
+mod target {
+    use super::*;
 
     fn move_to(
         applied: i64,
         prior: Option<i64>,
         own: OwnRequest,
-        target: Option<&super::super::target::Target>,
+        target: Option<&Target>,
         rail: Option<f64>,
     ) -> i64 {
         let counts = backoff_counts(own, target, rail);
@@ -395,22 +458,18 @@ mod target {
 
     #[test]
     fn an_unattributed_target_rounds_up_to_whole_counts() {
-        let topo = two_ccds();
-        let mut targets = R7Targets::default();
-        let p = profile_of(&topo, &[-26, -30, -30, -30]);
+        let mut fx = Fx::new(3);
+        let p = fx.profile(&[-26, -30, -30, -30]);
         for at in 1..=3 {
-            record(
-                &mut targets,
+            fx.pass(&record(
                 at,
                 class(0, &[0, 1], 120),
                 p,
                 &[(0, 1.115), (1, 1.08)],
                 &[],
-            );
+            ));
         }
-        let target = targets
-            .unattributed(&topo, backend(), load(0, &[0, 1]), core(0), 1.1, n_of(3))
-            .unwrap();
+        let target = fx.unattributed(load(0, &[0, 1]), 0, 1.1).unwrap();
         assert!(close(target.volts, 1.115));
         assert_eq!(target.cited, [seq(1), seq(2), seq(3)]);
         assert_eq!(
@@ -421,96 +480,49 @@ mod target {
 
     #[test]
     fn an_unattributed_target_must_strictly_exceed_the_failing_top() {
-        let topo = two_ccds();
-        let mut targets = R7Targets::default();
-        let p = profile_of(&topo, &[-26, -30, -30, -30]);
-        record(
-            &mut targets,
+        let mut fx = Fx::new(1);
+        let p = fx.profile(&[-26, -30, -30, -30]);
+        fx.pass(&record(
             1,
             class(0, &[0, 1], 120),
             p,
             &[(0, 1.1), (1, 1.08)],
             &[],
-        );
-        let query = |failing_top| {
-            targets.unattributed(
-                &topo,
-                backend(),
-                load(0, &[0, 1]),
-                core(0),
-                failing_top,
-                n_of(1),
-            )
-        };
+        ));
+        let query = |failing_top| fx.unattributed(load(0, &[0, 1]), 0, failing_top);
         assert!(query(1.1).is_none());
         assert!(query(1.0999).is_some());
     }
 
     #[test]
     fn an_unattributed_target_uses_only_the_exact_load_and_the_moved_cores_ccd() {
-        let topo = two_ccds();
-        let mut targets = R7Targets::default();
-        let p = profile_of(&topo, &[-26, -30, -30, -30]);
-        record(
-            &mut targets,
+        let mut fx = Fx::new(1);
+        let p = fx.profile(&[-26, -30, -30, -30]);
+        fx.pass(&record(
             1,
             class(0, &[0, 1, 2, 3], 120),
             p,
             &[(0, 1.12), (1, 1.1), (2, 1.3), (3, 1.2)],
             &[],
-        );
-        assert!(
-            targets
-                .unattributed(&topo, backend(), load(0, &[0, 1]), core(0), 1.0, n_of(1))
-                .is_none()
-        );
-        let all = targets
-            .unattributed(
-                &topo,
-                backend(),
-                load(0, &[0, 1, 2, 3]),
-                core(0),
-                1.0,
-                n_of(1),
-            )
-            .unwrap();
+        ));
+        assert!(fx.unattributed(load(0, &[0, 1]), 0, 1.0).is_none());
+        let all = fx.unattributed(load(0, &[0, 1, 2, 3]), 0, 1.0).unwrap();
         assert!(close(all.volts, 1.12));
-        let other_ccd = targets
-            .unattributed(
-                &topo,
-                backend(),
-                load(0, &[0, 1, 2, 3]),
-                core(2),
-                1.0,
-                n_of(1),
-            )
-            .unwrap();
+        let other_ccd = fx.unattributed(load(0, &[0, 1, 2, 3]), 2, 1.0).unwrap();
         assert!(close(other_ccd.volts, 1.3));
     }
 
     #[test]
     fn an_all_core_failure_targets_each_ccd_separately() {
-        let topo = two_ccds();
-        let mut targets = R7Targets::default();
-        let p = profile_of(&topo, &[-25, -30, -20, -30]);
+        let mut fx = Fx::new(3);
+        let p = fx.profile(&[-25, -30, -20, -30]);
         let lanes = [(0, 1.118), (1, 1.09), (2, 1.236), (3, 1.19)];
         for at in 1..=3 {
-            record(
-                &mut targets,
-                at,
-                class(0, &[0, 1, 2, 3], 120),
-                p,
-                &lanes,
-                &[],
-            );
+            fx.pass(&record(at, class(0, &[0, 1, 2, 3], 120), p, &lanes, &[]));
         }
         let all = load(0, &[0, 1, 2, 3]);
-        let first = targets
-            .unattributed(&topo, backend(), all, core(0), 1.1, n_of(3))
-            .unwrap();
-        let second = targets
-            .unattributed(&topo, backend(), all, core(2), 1.2, n_of(3))
-            .unwrap();
+        let first = fx.unattributed(all, 0, 1.1).unwrap();
+        let second = fx.unattributed(all, 2, 1.2).unwrap();
         assert_eq!(
             move_to(-30, None, OwnRequest::Measured(1.1), Some(&first), None),
             -25
@@ -523,26 +535,24 @@ mod target {
 
     #[test]
     fn a_named_target_filters_on_the_failing_trials_clock() {
-        let topo = two_ccds();
         for (name, mhz, want) in [
             ("equal clock", Some(5000), -20),
             ("lower clock", Some(4900), -29),
             ("missing pass clock", None, -29),
         ] {
-            let mut targets = R7Targets::default();
-            let p = profile_of(&topo, &[-20, -30, -30, -30]);
+            let mut fx = Fx::new(3);
+            let p = fx.profile(&[-20, -30, -30, -30]);
             let clocks: Vec<(u8, i64)> = mhz.map(|m| (0, m)).into_iter().collect();
             for at in 1..=3 {
-                record(
-                    &mut targets,
+                fx.pass(&record(
                     at,
                     class(0, &[0, 1], 120),
                     p,
                     &[(0, 1.136), (1, 1.08)],
                     &clocks,
-                );
+                ));
             }
-            let target = targets.named(&topo, backend(), workload(0), core(0), Some(5000), n_of(3));
+            let target = fx.named(workload(0), 0, Some(5000));
             let to = move_to(-30, None, OwnRequest::Measured(1.1), target.as_ref(), None);
             assert_eq!(to, want, "{name}");
         }
@@ -550,123 +560,109 @@ mod target {
 
     #[test]
     fn a_named_target_without_a_failing_clock_applies_no_filter() {
-        let topo = two_ccds();
-        let mut targets = R7Targets::default();
-        let p = profile_of(&topo, &[-20, -30, -30, -30]);
-        record(
-            &mut targets,
+        let mut fx = Fx::new(1);
+        let p = fx.profile(&[-20, -30, -30, -30]);
+        fx.pass(&record(
             1,
             class(0, &[0, 1], 120),
             p,
             &[(0, 1.136), (1, 1.08)],
             &[],
-        );
-        let target = targets
-            .named(&topo, backend(), workload(0), core(0), None, n_of(1))
-            .unwrap();
+        ));
+        let target = fx.named(workload(0), 0, None).unwrap();
         assert!(close(target.volts, 1.136));
     }
 
     #[test]
     fn a_named_target_transfers_across_loads_and_takes_the_whole_loads_top() {
-        let topo = two_ccds();
-        let mut targets = R7Targets::default();
-        let p = profile_of(&topo, &[-30, -20, -30, -30]);
+        let mut fx = Fx::new(3);
+        let p = fx.profile(&[-30, -20, -30, -30]);
         let lanes = [(0, 1.09), (1, 1.118), (2, 1.1), (3, 1.09)];
         for at in 1..=3 {
-            record(
-                &mut targets,
-                at,
-                class(0, &[0, 1, 2, 3], 120),
-                p,
-                &lanes,
-                &[],
-            );
+            fx.pass(&record(at, class(0, &[0, 1, 2, 3], 120), p, &lanes, &[]));
         }
-        let target = targets
-            .named(&topo, backend(), workload(0), core(0), None, n_of(3))
-            .unwrap();
+        let target = fx.named(workload(0), 0, None).unwrap();
         assert!(close(target.volts, 1.118));
         assert_eq!(
             move_to(-30, None, OwnRequest::Measured(1.1), Some(&target), None),
             -25
         );
-        assert!(
-            targets
-                .named(&topo, backend(), workload(1), core(0), None, n_of(3))
-                .is_none()
-        );
+        assert!(fx.named(workload(1), 0, None).is_none());
     }
 
     #[test]
     fn a_named_target_may_undercut_the_failing_request_and_still_moves_one_count() {
-        let topo = two_ccds();
-        let mut targets = R7Targets::default();
-        let p = profile_of(&topo, &[-20, -30, -30, -30]);
-        record(
-            &mut targets,
+        let mut fx = Fx::new(1);
+        let p = fx.profile(&[-20, -30, -30, -30]);
+        fx.pass(&record(
             1,
             class(0, &[0, 1], 120),
             p,
             &[(0, 1.05), (1, 1.04)],
             &[],
-        );
-        let target = targets
-            .named(&topo, backend(), workload(0), core(0), None, n_of(1))
-            .unwrap();
+        ));
+        let target = fx.named(workload(0), 0, None).unwrap();
         assert_eq!(
             move_to(-30, None, OwnRequest::Measured(1.1), Some(&target), None),
             -29
         );
     }
 
+    fn lane(top: f64) -> [(u8, f64); 2] {
+        [(0, top), (1, 1.0)]
+    }
+
     #[test]
     fn a_profile_needs_n_passes_and_the_lowest_voltage_among_those_wins() {
-        let topo = two_ccds();
-        let low = profile_of(&topo, &[-20, -30, -30, -30]);
-        let high = profile_of(&topo, &[-10, -30, -30, -30]);
-        let passes = vec![
-            pass(1, low, 1.15),
-            pass(2, low, 1.15),
-            pass(3, high, 1.2),
-            pass(4, high, 1.2),
-            pass(5, high, 1.2),
-        ];
-        let basis = Basis::Unattributed { failing_top: 1.1 };
-        let target = voltage_target(passes.clone(), basis, n_of(3)).unwrap();
-        assert!(close(target.volts, 1.2));
-        assert_eq!(target.cited, [seq(3), seq(4), seq(5)]);
-        assert!(voltage_target(passes, basis, n_of(6)).is_none());
+        for (n, want) in [(3, Some(1.2)), (6, None)] {
+            let mut fx = Fx::new(n);
+            let low = fx.profile(&[-20, -30, -30, -30]);
+            let high = fx.profile(&[-10, -30, -30, -30]);
+            let tops = [(1, low, 1.15), (2, low, 1.15)];
+            let more = [(3, high, 1.2), (4, high, 1.2), (5, high, 1.2)];
+            for (at, profile, top) in tops.into_iter().chain(more) {
+                fx.pass(&record(
+                    at,
+                    class(0, &[0, 1], 120),
+                    profile,
+                    &lane(top),
+                    &[],
+                ));
+            }
+            let found = fx.unattributed(load(0, &[0, 1]), 0, 1.1);
+            assert_eq!(found.as_ref().map(|t| t.volts), want, "n {n}");
+            if let Some(target) = found {
+                assert_eq!(target.cited, [seq(3), seq(4), seq(5)]);
+            }
+        }
     }
 
     #[test]
     fn equal_voltages_go_to_the_profile_with_the_earlier_pass() {
-        let topo = two_ccds();
-        let a = profile_of(&topo, &[-20, -30, -30, -30]);
-        let b = profile_of(&topo, &[-21, -30, -30, -30]);
-        let passes = vec![
-            pass(2, a, 1.15),
-            pass(1, b, 1.15),
-            pass(4, a, 1.15),
-            pass(3, b, 1.15),
-        ];
-        let target =
-            voltage_target(passes, Basis::Unattributed { failing_top: 1.0 }, n_of(2)).unwrap();
+        let mut fx = Fx::new(2);
+        let a = fx.profile(&[-20, -30, -30, -30]);
+        let b = fx.profile(&[-21, -30, -30, -30]);
+        for (at, profile) in [(1, b), (2, a), (3, b), (4, a)] {
+            fx.pass(&record(
+                at,
+                class(0, &[0, 1], 120),
+                profile,
+                &lane(1.15),
+                &[],
+            ));
+        }
+        let target = fx.unattributed(load(0, &[0, 1]), 0, 1.0).unwrap();
         assert_eq!(target.cited, [seq(1), seq(3)]);
     }
 
     #[test]
     fn the_citation_keeps_the_pass_that_set_the_lowest_voltage() {
-        let topo = two_ccds();
-        let p = profile_of(&topo, &[-20, -30, -30, -30]);
-        let passes = vec![
-            pass(1, p, 1.136),
-            pass(2, p, 1.136),
-            pass(3, p, 1.136),
-            pass(4, p, 1.118),
-        ];
-        let target =
-            voltage_target(passes, Basis::Unattributed { failing_top: 1.1 }, n_of(3)).unwrap();
+        let mut fx = Fx::new(3);
+        let p = fx.profile(&[-20, -30, -30, -30]);
+        for (at, top) in [(1, 1.136), (2, 1.136), (3, 1.136), (4, 1.118)] {
+            fx.pass(&record(at, class(0, &[0, 1], 120), p, &lane(top), &[]));
+        }
+        let target = fx.unattributed(load(0, &[0, 1]), 0, 1.1).unwrap();
         assert!(close(target.volts, 1.118));
         assert_eq!(target.cited, [seq(1), seq(2), seq(4)]);
         assert_eq!(
@@ -676,151 +672,242 @@ mod target {
     }
 
     #[test]
-    fn a_failure_removes_the_older_passes_it_rules_out_of_the_index() {
-        let topo = two_ccds();
-        let mut targets = R7Targets::default();
-        let deep = profile_of(&topo, &[-26, -30, -30, -30]);
-        let shallow = profile_of(&topo, &[-20, -30, -30, -30]);
-        let lanes = [(0, 1.115), (1, 1.08)];
-        for at in 1..=2 {
-            record(&mut targets, at, class(0, &[0, 1], 120), deep, &lanes, &[]);
-            record(
-                &mut targets,
-                at + 2,
-                class(0, &[0, 1], 120),
-                shallow,
-                &lanes,
-                &[],
-            );
-        }
-        targets.invalidate(
-            class(0, &[0, 1], 120),
-            &profile_of(&topo, &[-24, -30, -30, -30]),
-            seq(10),
-        );
-        assert!(!targets.contains(seq(1)) && !targets.contains(seq(2)));
-        assert!(targets.contains(seq(3)) && targets.contains(seq(4)));
-        let other_class = class(0, &[0, 1], 240);
-        record(&mut targets, 11, other_class, deep, &lanes, &[]);
-        targets.invalidate(class(0, &[0, 1], 120), &deep, seq(12));
-        assert!(targets.contains(seq(11)));
+    fn a_failure_hides_the_older_passes_it_rules_out_until_newer_ones_arrive() {
+        let mut fx = Fx::new(1);
+        let deep = fx.profile(&[-26, -30, -30, -30]);
+        let shallow = fx.profile(&[-20, -30, -30, -30]);
+        let here = class(0, &[0, 1], 120);
+        let other = class(0, &[0, 1], 240);
+        fx.pass(&record(1, here, deep, &lane(1.115), &[]));
+        fx.pass(&record(2, here, shallow, &lane(1.136), &[]));
+        fx.pass(&record(3, other, deep, &lane(1.125), &[]));
+        let ask = |fx: &Fx| fx.unattributed(load(0, &[0, 1]), 0, 1.1).unwrap();
+        assert_eq!(ask(&fx).cited, [seq(1)]);
+        fx.fail(4, here, fx.profile(&[-24, -30, -30, -30]), None);
+        let hidden = ask(&fx);
+        assert!(close(hidden.volts, 1.125));
+        assert_eq!(hidden.cited, [seq(3)]);
+        fx.pass(&record(5, here, deep, &lane(1.115), &[]));
+        let revived = ask(&fx);
+        assert!(close(revived.volts, 1.115));
+        assert_eq!(revived.cited, [seq(5)]);
     }
 
     #[test]
     fn an_invalidated_pass_does_not_set_the_target() {
-        let topo = two_ccds();
-        let mut targets = R7Targets::default();
-        let low = profile_of(&topo, &[-26, -30, -30, -30]);
-        let high = profile_of(&topo, &[-20, -30, -30, -30]);
-        record(
-            &mut targets,
-            1,
-            class(0, &[0, 1], 120),
-            low,
-            &[(0, 1.115), (1, 1.08)],
-            &[],
-        );
-        record(
-            &mut targets,
-            2,
-            class(0, &[0, 1], 120),
-            high,
-            &[(0, 1.136), (1, 1.08)],
-            &[],
-        );
-        let ask = |targets: &R7Targets| {
-            targets.unattributed(&topo, backend(), load(0, &[0, 1]), core(0), 1.1, n_of(1))
-        };
-        assert!(close(ask(&targets).unwrap().volts, 1.115));
-        targets.invalidate(class(0, &[0, 1], 120), &low, seq(3));
-        assert!(close(ask(&targets).unwrap().volts, 1.136));
-        targets.invalidate(class(0, &[0, 1], 120), &high, seq(4));
-        assert!(ask(&targets).is_none());
+        let mut fx = Fx::new(1);
+        let low = fx.profile(&[-26, -30, -30, -30]);
+        let high = fx.profile(&[-20, -30, -30, -30]);
+        let here = class(0, &[0, 1], 120);
+        fx.pass(&record(1, here, low, &lane(1.115), &[]));
+        fx.pass(&record(2, here, high, &lane(1.136), &[]));
+        let ask = |fx: &Fx| fx.unattributed(load(0, &[0, 1]), 0, 1.1);
+        assert!(close(ask(&fx).unwrap().volts, 1.115));
+        fx.fail(3, here, low, None);
+        assert!(close(ask(&fx).unwrap().volts, 1.136));
+        fx.fail(4, here, high, None);
+        assert!(ask(&fx).is_none());
+    }
+
+    #[test]
+    fn a_failure_the_ledger_drops_gives_its_passes_back() {
+        for (named, restored) in [(Some(3), true), (None, false)] {
+            let mut fx = Fx::new(2);
+            let p = fx.profile(&[-26, -30, -30, -30]);
+            let here = class(0, &[0, 1], 120);
+            fx.pass(&record(1, here, p, &lane(1.115), &[]));
+            fx.pass(&record(2, here, p, &lane(1.115), &[]));
+            fx.fail(3, here, p, named);
+            assert!(fx.unattributed(load(0, &[0, 1]), 0, 1.1).is_none());
+            fx.reset(3);
+            let target = fx.unattributed(load(0, &[0, 1]), 0, 1.1);
+            assert_eq!(target.is_some(), restored, "named {named:?}");
+            if let Some(target) = target {
+                assert_eq!(target.cited, [seq(1), seq(2)]);
+            }
+        }
+    }
+
+    #[test]
+    fn a_restored_pass_still_counts_with_the_passes_that_followed_the_failure() {
+        let mut fx = Fx::new(3);
+        let p = fx.profile(&[-26, -30, -30, -30]);
+        let here = class(0, &[0, 1], 120);
+        fx.pass(&record(1, here, p, &lane(1.115), &[]));
+        fx.fail(2, here, p, Some(3));
+        fx.pass(&record(3, here, p, &lane(1.115), &[]));
+        fx.pass(&record(4, here, p, &lane(1.115), &[]));
+        assert!(fx.unattributed(load(0, &[0, 1]), 0, 1.1).is_none());
+        fx.reset(3);
+        let target = fx.unattributed(load(0, &[0, 1]), 0, 1.1).unwrap();
+        assert_eq!(target.cited, [seq(1), seq(3), seq(4)]);
     }
 
     #[test]
     fn a_pass_under_another_backend_does_not_count() {
-        let topo = two_ccds();
-        let mut targets = R7Targets::default();
-        let p = profile_of(&topo, &[-26, -30, -30, -30]);
-        let mut evidence = Evidence::new(topo.all());
-        let other = evidence.backend_id(togi_machine::Backend::Mprime, Some("elsewhere".as_ref()));
+        let mut fx = Fx::new(1);
+        let p = fx.profile(&[-26, -30, -30, -30]);
+        let other = fx
+            .evidence
+            .backend_id(togi_machine::Backend::Mprime, Some("elsewhere".as_ref()));
         assert_ne!(other, backend());
-        assert!(targets.insert(PassRecord {
-            seq: seq(1),
-            class: class(0, &[0, 1], 120),
+        assert!(fx.pass(&PassRecord {
             backend: other,
-            profile: p,
-            requests: requests(&[(0, 1.2), (1, 1.1)]),
-            ccd_mhz: BTreeMap::new(),
+            ..record(1, class(0, &[0, 1], 120), p, &[(0, 1.2), (1, 1.1)], &[])
         }));
-        let ask =
-            |backend| targets.unattributed(&topo, backend, load(0, &[0, 1]), core(0), 1.0, n_of(1));
+        let ask = |backend| {
+            fx.targets
+                .unattributed(fx.ask(backend), load(0, &[0, 1]), core(0), 1.0)
+        };
         assert!(ask(backend()).is_none());
         assert!(ask(other).is_some());
     }
 
     #[test]
     fn only_r7_passes_with_request_lanes_enter_the_index() {
-        let topo = two_ccds();
-        let mut targets = R7Targets::default();
-        let p = profile_of(&topo, &[-26, -30, -30, -30]);
-        let base = PassRecord {
-            seq: seq(1),
-            class: class(0, &[0, 1], 120),
-            backend: backend(),
-            profile: p,
-            requests: PerCore::default(),
-            ccd_mhz: BTreeMap::new(),
-        };
-        assert!(!targets.insert(base.clone()));
+        let mut fx = Fx::new(1);
+        let p = fx.profile(&[-26, -30, -30, -30]);
+        let base = record(1, class(0, &[0, 1], 120), p, &[], &[]);
+        assert!(!fx.pass(&base));
         let r6 = ClassKey::new(
             WorkloadId::new(Regime::R6, 0).unwrap(),
             set(&[0, 1]),
             Secs::new(NonZeroU32::new(120).unwrap()),
         );
-        assert!(!targets.insert(PassRecord {
+        assert!(!fx.pass(&PassRecord {
+            seq: seq(2),
             class: r6,
             requests: requests(&[(0, 1.1)]),
             ..base
         }));
-        assert_eq!(targets.len(), 0);
+        assert_eq!(fx.targets.groups(), 0);
     }
 
     #[test]
     fn a_reset_removes_the_passes_whose_load_includes_the_core() {
-        let topo = two_ccds();
-        let mut targets = R7Targets::default();
-        let p = profile_of(&topo, &[-26, -30, -30, -30]);
-        record(
-            &mut targets,
+        let mut fx = Fx::new(1);
+        let p = fx.profile(&[-26, -30, -30, -30]);
+        fx.pass(&record(
             1,
             class(0, &[0, 1], 120),
             p,
             &[(0, 1.1), (1, 1.1)],
             &[],
-        );
-        record(
-            &mut targets,
+        ));
+        fx.pass(&record(
             2,
             class(0, &[2, 3], 120),
             p,
             &[(2, 1.1), (3, 1.1)],
             &[],
+        ));
+        fx.reset(1);
+        assert!(fx.named(workload(0), 0, None).is_none());
+        assert!(fx.named(workload(0), 2, None).is_some());
+        assert_eq!(fx.targets.groups(), 1);
+    }
+
+    #[test]
+    fn a_request_from_a_core_outside_the_topology_sets_no_ccd_top() {
+        let query = |lanes: &[(u8, f64)]| {
+            let mut fx = Fx::new(1);
+            let p = fx.profile(&[-26, -30, -30, -30]);
+            fx.pass(&record(1, class(0, &[0, 1], 120), p, lanes, &[]));
+            fx.unattributed(load(0, &[0, 1]), 0, 1.1)
+        };
+        let alone = query(&[(0, 1.115), (1, 1.0)]);
+        assert!(alone.is_some());
+        assert_eq!(query(&[(0, 1.115), (1, 1.0), (9, 1.05)]), alone);
+    }
+
+    fn varied_lanes(at: u64) -> [(u8, f64); 4] {
+        let wobble = f64::from(u32::try_from(at).unwrap()) * 0.000_001;
+        [(0, 1.115), (1, 1.0 + wobble), (2, 1.2), (3, 1.05 + wobble)]
+    }
+
+    fn volume(count: u64) -> (usize, usize, usize, u64, Option<Target>, Option<Target>) {
+        let mut fx = Fx::new(3);
+        let p = fx.profile(&[-26, -30, -30, -30]);
+        let all = class(0, &[0, 1, 2, 3], 120);
+        for at in 1..=count {
+            fx.pass(&record(
+                at,
+                all,
+                p,
+                &varied_lanes(at),
+                &[(0, 5000), (1, 4000)],
+            ));
+        }
+        assert_eq!(
+            fx.targets.witnesses(),
+            4 * usize::try_from(count.min(u64::from(togi_config::TrialCount::MAX))).unwrap()
         );
-        targets.reset_core(core(1));
-        assert!(!targets.contains(seq(1)) && targets.contains(seq(2)));
-        assert!(
-            targets
-                .named(&topo, backend(), workload(0), core(0), None, n_of(1))
-                .is_none()
+        fx.targets.take_visits();
+        let unattributed = fx.unattributed(load(0, &[0, 1, 2, 3]), 0, 1.1);
+        let named = fx.named(workload(0), 1, Some(5000));
+        (
+            fx.targets.entries(),
+            fx.targets.segments(),
+            fx.targets.groups(),
+            fx.targets.take_visits(),
+            unattributed,
+            named,
+        )
+    }
+
+    #[test]
+    fn stored_size_and_query_cost_follow_distinct_evidence_not_pass_volume() {
+        let small = volume(100);
+        let large = volume(10_000);
+        assert_eq!(small.0, 4);
+        assert_eq!(small, large);
+        let unattributed = large.4.unwrap();
+        assert!(close(unattributed.volts, 1.115));
+        assert_eq!(unattributed.cited, [seq(1), seq(2), seq(3)]);
+        assert_eq!(
+            volume(u64::from(togi_config::TrialCount::MAX)),
+            volume(10_000)
         );
+    }
+
+    #[test]
+    fn witnesses_saturate_at_the_supported_threshold_and_survive_a_larger_requirement() {
+        let mut fx = Fx::new(1);
+        let p = fx.profile(&[-26, -30, -30, -30]);
+        let max = togi_config::TrialCount::MAX;
+        for at in 1..=u64::from(max) + 100 {
+            fx.pass(&record(at, class(0, &[0, 1], 120), p, &lane(1.115), &[]));
+        }
+        assert_eq!(fx.targets.witnesses(), 2 * usize::from(max));
+        fx.n = n_of(max);
+        let found = fx.unattributed(load(0, &[0, 1]), 0, 1.1).unwrap();
+        assert_eq!(
+            found.cited,
+            (1..=u64::from(max)).map(seq).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn a_failure_adds_one_segment_per_entry_not_one_per_pass() {
+        let mut fx = Fx::new(3);
+        let p = fx.profile(&[-26, -30, -30, -30]);
+        let here = class(0, &[0, 1], 120);
+        for at in 1..=50 {
+            fx.pass(&record(at, here, p, &lane(1.115), &[]));
+        }
+        let before = fx.targets.segments();
+        fx.fail(51, here, p, None);
+        for at in 52..=100 {
+            fx.pass(&record(at, here, p, &lane(1.115), &[]));
+        }
+        assert_eq!(fx.targets.segments(), 2 * before);
+        assert_eq!(fx.targets.entries(), before);
     }
 
     #[test]
     fn counts_follow_the_exact_rounding_rule() {
         let top = |volts: f64| {
-            Some(super::super::target::Target {
+            Some(Target {
                 volts,
                 cited: Vec::new(),
             })
@@ -849,7 +936,7 @@ mod target {
 
     #[test]
     fn an_offset_proxy_moves_one_count_whatever_the_target_and_rail() {
-        let target = Some(super::super::target::Target {
+        let target = Some(Target {
             volts: 1.5,
             cited: Vec::new(),
         });
@@ -871,7 +958,7 @@ mod target {
         assert_eq!(move_to(-30, None, own, None, Some(1.2)), -16);
         assert_eq!(backoff_counts(own, None, Some(1.15)), 1);
         assert_eq!(backoff_counts(own, None, Some(1.15 + VOLTS_PER_COUNT)), 2);
-        let far = Some(super::super::target::Target {
+        let far = Some(Target {
             volts: 1.236,
             cited: Vec::new(),
         });
@@ -1365,105 +1452,191 @@ mod props {
         }
     }
 
+    const SETS: [&[u8]; 2] = [&[0, 1], &[0, 1, 2, 3]];
+    const LEVELS: [i64; 3] = [-30, -20, -10];
+    const TOPS: [f64; 4] = [1.1, 1.115, 1.12, 1.15];
+    const FAILING_TOPS: [f64; 4] = [1.0, 1.1, 1.115, 1.13];
+    const DURATIONS: [u32; 2] = [120, 240];
+
     #[derive(Clone, Debug)]
     enum Event {
         Pass {
             duration: usize,
-            profile: [i64; 2],
-            top: f64,
+            set: usize,
+            levels: [usize; 4],
+            tops: [usize; 4],
+            mhz: [i64; 2],
         },
         Fail {
             duration: usize,
-            profile: [i64; 2],
+            set: usize,
+            levels: [usize; 4],
+            named: Option<u8>,
         },
+        Reset(u8),
     }
 
     fn event() -> impl Strategy<Value = Event> {
-        let level = prop_oneof![Just(-30_i64), Just(-20), Just(-10)];
+        let mhz = prop_oneof![Just(4900_i64), Just(5000)];
         prop_oneof![
-            3 => (0..2_usize, [level.clone(), level.clone()], 1.0..1.3_f64)
-                .prop_map(|(duration, profile, top)| Event::Pass { duration, profile, top }),
-            1 => (0..2_usize, [level.clone(), level]).prop_map(|(duration, profile)| Event::Fail { duration, profile }),
+            6 => (
+                0..DURATIONS.len(),
+                0..SETS.len(),
+                uniform4(0..LEVELS.len()),
+                uniform4(0..TOPS.len()),
+                [mhz.clone(), mhz],
+            )
+                .prop_map(|(duration, set, levels, tops, mhz)| Event::Pass {
+                    duration,
+                    set,
+                    levels,
+                    tops,
+                    mhz,
+                }),
+            2 => (
+                0..DURATIONS.len(),
+                0..SETS.len(),
+                uniform4(0..LEVELS.len()),
+                proptest::option::of(0..4_u8),
+            )
+                .prop_map(|(duration, set, levels, named)| Event::Fail {
+                    duration,
+                    set,
+                    levels,
+                    named,
+                }),
+            1 => (0..4_u8).prop_map(Event::Reset),
         ]
     }
 
+    fn scan(
+        fx: &Fx,
+        passes: &[PassRecord],
+        pick: impl Fn(&PassRecord) -> Option<f64>,
+    ) -> Option<(f64, Seq, Vec<Seq>)> {
+        let mut groups: Vec<(Profile, Vec<(Seq, f64)>)> = Vec::new();
+        for pass in passes {
+            let valid = fx
+                .evidence
+                .newest_failure(pass.class, &pass.profile, None)
+                .unwrap()
+                .is_none_or(|failure| failure < pass.seq);
+            let Some(top) = pick(pass).filter(|_| valid) else {
+                continue;
+            };
+            match groups
+                .iter_mut()
+                .find(|(profile, _)| *profile == pass.profile)
+            {
+                Some((_, found)) => found.push((pass.seq, top)),
+                None => groups.push((pass.profile, vec![(pass.seq, top)])),
+            }
+        }
+        let n = usize::from(fx.n.get());
+        groups
+            .into_iter()
+            .filter(|(_, found)| found.len() >= n)
+            .map(|(_, found)| {
+                let (lowest_seq, volts) = found
+                    .iter()
+                    .copied()
+                    .min_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)))
+                    .unwrap();
+                let mut seqs: Vec<Seq> = found.iter().map(|&(seq, _)| seq).collect();
+                seqs.sort_unstable();
+                seqs.truncate(n);
+                let earliest = seqs[0];
+                if !seqs.contains(&lowest_seq) {
+                    seqs[n - 1] = lowest_seq;
+                    seqs.sort_unstable();
+                }
+                (volts, earliest, seqs)
+            })
+            .min_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)))
+    }
+
     proptest! {
-        #![proptest_config(ProptestConfig::with_cases(128))]
+        #![proptest_config(crate::prop_tests::seeded(256))]
 
         #[test]
-        fn a_target_never_cites_a_pass_the_ledger_invalidated(
-            events in proptest::collection::vec(event(), 1..40),
+        fn the_index_answers_like_a_scan_of_every_pass(
+            n in 1..=3_u16,
+            events in proptest::collection::vec(event(), 1..60),
         ) {
-            let topo = two_ccds();
-            let durations = [120_u32, 240];
-            let mut evidence = Evidence::new(topo.all());
-            let mut targets = R7Targets::default();
-            let mut passes: Vec<(u64, ClassKey, Profile, f64)> = Vec::new();
+            let mut fx = Fx::new(n);
+            let mut passes: Vec<PassRecord> = Vec::new();
             for (at, event) in events.iter().enumerate() {
                 let at = u64::try_from(at).unwrap() + 1;
                 match event {
-                    Event::Pass { duration, profile, top } => {
-                        let key = class(0, &[0, 1], durations[*duration]);
-                        let p = profile_of(&topo, &[profile[0], profile[1], -30, -30]);
-                        evidence
-                            .record_pass(
-                                Observation {
-                                    seq: seq(at),
-                                    class: key,
-                                    profile: &p,
-                                    condition: togi_machine::Condition::Together,
-                                    named: None,
-                                },
-                                backend(),
-                            )
-                            .unwrap();
-                        assert!(targets.insert(PassRecord {
-                            seq: seq(at),
-                            class: key,
-                            backend: backend(),
-                            profile: p,
-                            requests: requests(&[(0, *top), (1, 1.0)]),
-                            ccd_mhz: BTreeMap::new(),
-                        }));
-                        passes.push((at, key, p, *top));
+                    Event::Pass { duration, set, levels, tops, mhz } => {
+                        let key = class(0, SETS[*set], DURATIONS[*duration]);
+                        let lanes: Vec<(u8, f64)> = SETS[*set]
+                            .iter()
+                            .map(|&id| (id, TOPS[tops[usize::from(id)]]))
+                            .collect();
+                        let levels = levels.map(|level| LEVELS[level]);
+                        let pass = record(
+                            at,
+                            key,
+                            fx.profile(&levels),
+                            &lanes,
+                            &[(0, mhz[0]), (1, mhz[1])],
+                        );
+                        fx.pass(&pass);
+                        passes.push(pass);
                     }
-                    Event::Fail { duration, profile } => {
-                        let key = class(0, &[0, 1], durations[*duration]);
-                        let p = profile_of(&topo, &[profile[0], profile[1], -30, -30]);
-                        evidence
-                            .record_failure(Observation {
-                                seq: seq(at),
-                                class: key,
-                                profile: &p,
-                                condition: togi_machine::Condition::Together,
-                                named: None,
-                            })
-                            .unwrap();
-                        targets.invalidate(key, &p, seq(at));
+                    Event::Fail { duration, set, levels, named } => {
+                        let key = class(0, SETS[*set], DURATIONS[*duration]);
+                        let levels = levels.map(|level| LEVELS[level]);
+                        fx.fail(at, key, fx.profile(&levels), *named);
+                    }
+                    Event::Reset(id) => {
+                        fx.reset(*id);
+                        passes.retain(|pass| !pass.class.loaded().contains(core(*id)));
                     }
                 }
             }
-            let mut best: Option<f64> = None;
-            for &(at, key, p, top) in &passes {
-                let valid = evidence
-                    .newest_failure(key, &p, None)
-                    .unwrap()
-                    .is_none_or(|failure| failure < seq(at));
-                prop_assert_eq!(targets.contains(seq(at)), valid);
-                if valid && top > 1.1 {
-                    best = Some(best.map_or(top, |b| b.min(top)));
-                }
-            }
-            let found = targets.unattributed(&topo, backend(), load(0, &[0, 1]), core(0), 1.1, n_of(1));
-            match (found, best) {
-                (None, None) => {}
-                (Some(target), Some(expected)) => {
-                    prop_assert!(close(target.volts, expected));
-                    for cited in &target.cited {
-                        prop_assert!(targets.contains(*cited));
+            for set in SETS {
+                let wanted = load(0, set);
+                for &moved in set {
+                    let ccd = fx.topo.ccd_of(core(moved));
+                    for failing in FAILING_TOPS {
+                        let expected = scan(&fx, &passes, |pass| {
+                            if pass.class.load() != wanted {
+                                return None;
+                            }
+                            let on_ccd: PerCore<f64> = pass
+                                .requests
+                                .iter()
+                                .filter(|&(id, _)| fx.topo.ccd_of(id) == ccd)
+                                .collect();
+                            top(&on_ccd).filter(|&highest| highest > failing)
+                        });
+                        let found = fx.unattributed(wanted, moved, failing);
+                        prop_assert_eq!(
+                            found.map(|t| (t.volts.to_bits(), t.cited)),
+                            expected.map(|(volts, _, cited)| (volts.to_bits(), cited)),
+                        );
                     }
                 }
-                (found, best) => prop_assert!(false, "{found:?} against {best:?}"),
+            }
+            for moved in 0..4_u8 {
+                let ccd = fx.topo.ccd_of(core(moved)).unwrap();
+                for failing in [None, Some(4900), Some(5000)] {
+                    let expected = scan(&fx, &passes, |pass| {
+                        if !pass.class.loaded().contains(core(moved)) {
+                            return None;
+                        }
+                        let clock = pass.ccd_mhz.get(&ccd).copied();
+                        let admitted = failing.is_none_or(|floor| clock.unwrap_or(0) >= floor);
+                        top(&pass.requests).filter(|_| admitted)
+                    });
+                    let found = fx.named(workload(0), moved, failing);
+                    prop_assert_eq!(
+                        found.map(|t| (t.volts.to_bits(), t.cited)),
+                        expected.map(|(volts, _, cited)| (volts.to_bits(), cited)),
+                    );
+                }
             }
         }
     }

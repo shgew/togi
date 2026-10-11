@@ -65,7 +65,7 @@ fn decide_visits(passes: usize) -> (u64, usize) {
     j.r7_failed(&[0, 1], &profile, &report());
     j.state.visits();
     let _ = j.state.decide();
-    (j.state.visits(), j.run().r7.targets.shapes())
+    (j.state.visits(), j.run().r7.targets.entries())
 }
 
 #[test]

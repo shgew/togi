@@ -9,7 +9,7 @@ use super::escalation::Escalation;
 use super::failed::FailedTrial;
 use super::order::lowest_ranked;
 use super::reason::{Basis, Note, R7Reason, ids};
-use super::target::{OwnRequest, Target, backoff_counts, backoff_move};
+use super::target::{Ask, OwnRequest, Target, backoff_counts, backoff_move};
 use crate::hunt::state::{Located, LocatedEnd};
 use crate::ledger::carried_clause;
 use crate::r7::failed::OpenFailure;
@@ -556,27 +556,23 @@ impl Run {
         let own = match failing.volts {
             Some(request) => {
                 let failing_top = charge.rail;
+                let ask = Ask {
+                    topology: &self.topo,
+                    evidence: &self.evidence,
+                    backend,
+                    n,
+                };
                 target = if charge.named {
                     let mhz = self
                         .ccd_of(id)
                         .and_then(|ccd| view.trial.clocks.get(&ccd).copied());
-                    self.r7.targets.named(
-                        &self.topo,
-                        backend,
-                        record.pending.class.workload(),
-                        id,
-                        mhz,
-                        n,
-                    )
+                    self.r7
+                        .targets
+                        .named(ask, record.pending.class.workload(), id, mhz)
                 } else {
-                    self.r7.targets.unattributed(
-                        &self.topo,
-                        backend,
-                        record.pending.class.load(),
-                        id,
-                        failing_top,
-                        n,
-                    )
+                    self.r7
+                        .targets
+                        .unattributed(ask, record.pending.class.load(), id, failing_top)
                 };
                 OwnRequest::Measured(request)
             }
