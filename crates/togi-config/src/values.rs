@@ -185,7 +185,24 @@ impl CheckingSchedule {
     pub fn iter(&self) -> std::iter::Copied<std::slice::Iter<'_, Regime>> {
         self.0.iter().copied()
     }
+
+    pub fn is_full(&self) -> bool {
+        FULL_CYCLE
+            .iter()
+            .all(|&(regime, least)| self.iter().filter(|&step| step == regime).count() >= least)
+    }
 }
+
+/// The steps of each regime a schedule needs for its passed cycle to count as full.
+pub const FULL_CYCLE: [(Regime, usize); 7] = [
+    (Regime::R1, 3),
+    (Regime::R2, 3),
+    (Regime::R3, 1),
+    (Regime::R4, 1),
+    (Regime::R5, 1),
+    (Regime::R6, 1),
+    (Regime::R7, 3),
+];
 
 impl Default for CheckingSchedule {
     fn default() -> Self {

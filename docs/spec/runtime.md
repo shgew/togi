@@ -209,7 +209,7 @@ The example assumes the `togi-trial` account exists; [Privileges](#privileges) d
 | `durations.checking_trial_s` | 120 | [1, 86400] |
 | `durations.checking_idle_s` | 900 | [1, 86400]; R6 |
 | `durations.checking_all_core_s` | 1200 | [4, 86400]; R7 long trials: a quarter per CCD, remainder all-core |
-| `checking.cycle` | `["R7", "R7", "R7", "R2", "R2", "R2", "R6", "R5", "R1", "R1", "R1", "R3", "R3", "R3", "R4", "R4", "R4", "R6"]` | Non-empty regime list; a passed cycle is not necessarily full |
+| `checking.cycle` | `["R7", "R7", "R7", "R2", "R2", "R2", "R6", "R5", "R1", "R1", "R1", "R3", "R3", "R3", "R4", "R4", "R4", "R6"]` | Non-empty regime list; a passed cycle is not necessarily full. The schedule is full when it has at least three each of R1, R2 and R7 and one each of R3, R4, R5 and R6 (`CheckingSchedule::is_full`); `run --cycles N` and `run --first-result` refuse a schedule that is not full, because phase 1 ends only at a passed full cycle, and the session and CLI do the refusal |
 | `evidence.miss` | 0.05 | Probability of missing the failure rate used by the pass rule; finite number strictly between 0 and 1 ([Evidence](tuner.md#evidence)) |
 | `evidence.rate` | 0.5 | Per-trial failure probability used by the pass rule; finite number strictly between 0 and 1; together with miss yields between 1 and 1000 trials ([Evidence](tuner.md#evidence)) |
 | `dead_ends.inconclusive_in_a_row` | 3 | [1, 100] |
