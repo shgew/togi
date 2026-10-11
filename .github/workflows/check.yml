@@ -33,7 +33,7 @@ jobs:
       - name: nix flake check --no-build
         run: nix flake check --no-build
       - id: list
-        name: List the checks
+        name: List the flake checks
         run: |
           echo "checks=$(nix eval --json .#checks.x86_64-linux --apply builtins.attrNames)" >> "$GITHUB_OUTPUT"
           echo "vm-checks=$(nix eval --json .#checks.x86_64-linux --apply 'checks: builtins.filter (name: checks.${name} ? driver) (builtins.attrNames checks)')" >> "$GITHUB_OUTPUT"
