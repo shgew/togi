@@ -287,7 +287,9 @@ async fn a_writer_that_cannot_start_ends_the_trial_with_a_storage_error() {
     local(async {
         let rig = rig_edit(TestBackend::new("/bin/true"), Timing::default(), |env| {
             env.storage = Some(Rc::new(|| {
-                Err(StorageError::Spawn(std::io::Error::other("no threads left")))
+                Err(StorageError::Spawn(std::io::Error::other(
+                    "no threads left",
+                )))
             }));
         });
         let handle = rig.start(spec(Regime::R1, &[0], secs(60))).await.unwrap();

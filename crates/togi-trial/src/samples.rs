@@ -274,7 +274,11 @@ mod tests {
             std::thread::sleep(Duration::from_millis(5));
         }
         assert!(matches!(
-            writer.finish(Duration::from_secs(5)).await.unwrap_err().errors(),
+            writer
+                .finish(Duration::from_secs(5))
+                .await
+                .unwrap_err()
+                .errors(),
             [StorageError::Create(_)]
         ));
     }

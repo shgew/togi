@@ -268,7 +268,9 @@ async fn off_thread<T: Send + 'static>(
 ) -> Result<T, ProcError> {
     match tokio::time::timeout_at(deadline, tokio::task::spawn_blocking(scan)).await {
         Ok(Ok(result)) => result,
-        Ok(Err(error)) => Err(ProcError::Observation(format!("the /proc scan failed: {error}"))),
+        Ok(Err(error)) => Err(ProcError::Observation(format!(
+            "the /proc scan failed: {error}"
+        ))),
         Err(_) => Err(ProcError::Observation(
             "the /proc scan did not finish before the deadline".to_owned(),
         )),

@@ -405,7 +405,10 @@ fn dropping_the_runner_tears_down_a_trial_whose_handle_was_never_dropped() {
     let trial = start(&mut runner, Regime::R1, &[0], secs(600));
     std::mem::forget(trial);
     drop(runner);
-    assert!(marker.exists(), "the supervisor terminated its workload before the runner ended");
+    assert!(
+        marker.exists(),
+        "the supervisor terminated its workload before the runner ended"
+    );
 }
 
 #[test]

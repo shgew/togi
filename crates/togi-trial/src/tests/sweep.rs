@@ -405,7 +405,10 @@ async fn a_failed_grace_observation_still_kills_and_stops_every_known_scope() {
         assert!(all.contains(&("togi-trial-a".to_owned(), "stop")));
         assert!(matches!(
             containment(&error).failures().first(),
-            Some(CleanupFailure::Observe { what: "a captured trial process", .. })
+            Some(CleanupFailure::Observe {
+                what: "a captured trial process",
+                ..
+            })
         ));
     })
     .await;
@@ -418,7 +421,10 @@ async fn a_verification_failure_keeps_the_earlier_kill_failure() {
         rig.fake.add_unit("togi-trial-a.scope");
         let mut listings = 0;
         rig.fake.on_systemd(move |call| match call {
-            Systemd::Kill { signal: KillSignal::Kill, .. } => Some(Reply::Output {
+            Systemd::Kill {
+                signal: KillSignal::Kill,
+                ..
+            } => Some(Reply::Output {
                 success: false,
                 text: "Access denied".into(),
             }),
@@ -433,10 +439,20 @@ async fn a_verification_failure_keeps_the_earlier_kill_failure() {
         });
         let error = sweep(&rig.env).await.err().unwrap();
         let failures = containment(&error).failures();
-        assert!(matches!(failures.first(), Some(CleanupFailure::KillScope { signal: "SIGKILL", .. })));
-        assert!(failures
-            .iter()
-            .any(|failure| matches!(failure, CleanupFailure::Observe { what: "the trial scope list", .. })));
+        assert!(matches!(
+            failures.first(),
+            Some(CleanupFailure::KillScope {
+                signal: "SIGKILL",
+                ..
+            })
+        ));
+        assert!(failures.iter().any(|failure| matches!(
+            failure,
+            CleanupFailure::Observe {
+                what: "the trial scope list",
+                ..
+            }
+        )));
     })
     .await;
 }
@@ -453,7 +469,10 @@ async fn a_hanging_process_scan_is_cut_at_the_shared_deadline_and_listed_scopes_
         assert!(calls(&rig).contains(&("togi-trial-a".to_owned(), "SIGKILL")));
         assert!(matches!(
             containment(&error).failures().first(),
-            Some(CleanupFailure::Observe { what: "the trial processes", .. })
+            Some(CleanupFailure::Observe {
+                what: "the trial processes",
+                ..
+            })
         ));
     })
     .await;

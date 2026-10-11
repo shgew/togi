@@ -108,7 +108,9 @@ impl Reader {
                     let event = Inbound::LogError {
                         instance,
                         stream,
-                        error: io::Error::other("the log writer fell behind; output bytes were dropped"),
+                        error: io::Error::other(
+                            "the log writer fell behind; output bytes were dropped",
+                        ),
                     };
                     if events.send(event).await.is_err() {
                         return;

@@ -576,7 +576,10 @@ impl Os for Fake {
             .map(|(process, _)| process.clone())
             .collect();
         for process in self.shared.processes.borrow().iter() {
-            let scope = process.scope.as_deref().map(|scope| format!("{scope}.scope"));
+            let scope = process
+                .scope
+                .as_deref()
+                .map(|scope| format!("{scope}.scope"));
             if let Some(scope) = scope.as_deref().and_then(ScopeName::from_unit) {
                 if !process.exited() {
                     found.push(ScopeProcess {

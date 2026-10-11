@@ -170,6 +170,9 @@ pub(crate) trait Os: 'static {
     /// finished by `deadline` is an observation failure.
     async fn scope_processes(&self, deadline: Instant) -> Result<Vec<ScopeProcess>, ProcError>;
     /// How many of `captured` still live, by pid and start time, under the same rule.
-    async fn survivors(&self, captured: &[ScopeProcess], deadline: Instant)
-    -> Result<usize, ProcError>;
+    async fn survivors(
+        &self,
+        captured: &[ScopeProcess],
+        deadline: Instant,
+    ) -> Result<usize, ProcError>;
 }

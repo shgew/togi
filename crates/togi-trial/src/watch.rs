@@ -480,7 +480,11 @@ mod tests {
         }
         let mut f = fixture();
         seed_backlog(&mut f);
-        std::fs::set_permissions(f.path(), std::os::unix::fs::PermissionsExt::from_mode(0)).unwrap();
+        std::fs::set_permissions(
+            f.path(),
+            std::os::unix::fs::PermissionsExt::from_mode(0o000),
+        )
+        .unwrap();
         assert!(matches!(f.poll().0, Poll::Failed(WatchError::Lost)));
     }
 
@@ -492,7 +496,11 @@ mod tests {
         let mut f = fixture();
         f.append(b"fine\n");
         assert!(matches!(f.poll().0, Poll::Drained));
-        std::fs::set_permissions(f.path(), std::os::unix::fs::PermissionsExt::from_mode(0)).unwrap();
+        std::fs::set_permissions(
+            f.path(),
+            std::os::unix::fs::PermissionsExt::from_mode(0o000),
+        )
+        .unwrap();
         assert!(matches!(f.poll().0, Poll::Failed(WatchError::Read(_))));
     }
 

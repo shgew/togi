@@ -137,7 +137,10 @@ pub(crate) fn recreate(
     id: &TrialId,
     identity: Option<BackendIdentity>,
 ) -> Result<Container, PrepareError> {
-    let TrialsRoot { path: root, dir: parent } = TrialsRoot::open(root, true)?;
+    let TrialsRoot {
+        path: root,
+        dir: parent,
+    } = TrialsRoot::open(root, true)?;
     let mode = Mode::from_raw_mode(if identity.is_some() { 0o711 } else { 0o755 });
     fchmod(&parent, mode).map_err(|error| directory_error("set the mode of", &root, error))?;
     let path = root.join(id.as_str());
@@ -236,7 +239,9 @@ impl TrialsRoot {
                 Mode::empty(),
             )?;
             let stat = rustix::fs::fstat(&fd)?;
-            if rustix::fs::FileType::from_raw_mode(stat.st_mode) != rustix::fs::FileType::RegularFile {
+            if rustix::fs::FileType::from_raw_mode(stat.st_mode)
+                != rustix::fs::FileType::RegularFile
+            {
                 return Err(Errno::INVAL);
             }
             Ok(File::from(fd))
@@ -428,7 +433,9 @@ mod tests {
         if rustix::process::geteuid().is_root() {
             return;
         }
-        let error = TrialsRoot::open(Path::new("/usr/bin"), false).err().unwrap();
+        let error = TrialsRoot::open(Path::new("/usr/bin"), false)
+            .err()
+            .unwrap();
         assert!(matches!(error, PrepareError::Untrusted { .. }), "{error}");
     }
 
@@ -442,21 +449,30 @@ mod tests {
         let victim = tmp.path().join("victim.jsonl");
         fs::write(&victim, "{\"elapsed_ms\":1}\n").unwrap();
         symlink(&victim, container.path.join("samples.jsonl")).unwrap();
-        assert!(root.samples(&id("t1")).is_none(), "a symlink is never followed");
+        assert!(
+            root.samples(&id("t1")).is_none(),
+            "a symlink is never followed"
+        );
         fs::remove_file(container.path.join("samples.jsonl")).unwrap();
         rustix::fs::mknodat(
             rustix::fs::CWD,
-            &container.path.join("samples.jsonl"),
+            container.path.join("samples.jsonl"),
             rustix::fs::FileType::Fifo,
             Mode::from_raw_mode(0o600),
             0,
         )
         .unwrap();
-        assert!(root.samples(&id("t1")).is_none(), "a FIFO is never opened for reading");
+        assert!(
+            root.samples(&id("t1")).is_none(),
+            "a FIFO is never opened for reading"
+        );
         fs::remove_file(container.path.join("samples.jsonl")).unwrap();
         fs::write(container.path.join("samples.jsonl"), "{\"elapsed_ms\":2}\n").unwrap();
         let mut text = String::new();
-        root.samples(&id("t1")).unwrap().read_to_string(&mut text).unwrap();
+        root.samples(&id("t1"))
+            .unwrap()
+            .read_to_string(&mut text)
+            .unwrap();
         assert_eq!(text, "{\"elapsed_ms\":2}\n");
     }
 
