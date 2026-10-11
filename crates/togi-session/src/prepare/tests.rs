@@ -5,6 +5,8 @@ use togi_machine::BiosContext;
 use togi_sim::MachineDefinition;
 use togi_sim::definition::ModelDef;
 
+use togi_carry::CarryError;
+
 use super::*;
 use crate::testing::{Bench, build, simulated};
 use crate::{Ended, Stop, run};
@@ -233,4 +235,43 @@ fn a_pending_carry_the_boundary_passed_is_dropped_without_a_carry() {
     let after = prepared(&bench, &next, Some(&context));
     assert!(after.carry.is_none());
     assert_eq!(marked(&after.journal), [(Marker::ResetAll, id)]);
+}
+
+#[test]
+fn an_older_journal_with_events_this_build_cannot_decode_is_archived_unread_before_the_carry_fails()
+{
+    let bench = bench();
+    let (id, context) = finished(&bench);
+    let mut garbled = bench.mem.contents("/state/events.jsonl").unwrap();
+    garbled.extend_from_slice(b"{\"seq\":99,\"kind\":\"from.the.future\",\"data\":{}}\n");
+    bench.mem.put("/state/events.jsonl", garbled.clone());
+    let next = Build {
+        ruleset: 2,
+        ..build()
+    };
+    let boot = bench.sim.seams().host.boot_id().unwrap();
+    let error = prepare(
+        simulated(&bench.mem),
+        &next,
+        boot,
+        bench.sim.now(),
+        Some(&context),
+        bench.defects,
+    )
+    .unwrap_err();
+    assert!(
+        matches!(error, PrepareError::Carry(CarryError::Open { session, .. }) if session == id),
+        "{error:?}"
+    );
+    assert_eq!(bench.mem.contents("/state/events.jsonl"), Some(Vec::new()));
+    assert_eq!(
+        bench.mem.contents(format!("/state/archive/{id}.jsonl")),
+        Some(garbled)
+    );
+    assert!(
+        bench
+            .mem
+            .contents(format!("/state/archive/{id}-carry-pending"))
+            .is_some()
+    );
 }

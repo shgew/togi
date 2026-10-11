@@ -11,8 +11,6 @@ use togi_journal::{
 };
 use togi_machine::{BiosContext, BootId};
 
-use crate::session::verdict;
-
 /// The journal a run appends to, and the evidence waiting to be carried into its session.
 #[derive(Debug)]
 pub struct Prepared {
@@ -63,27 +61,28 @@ pub fn prepare(
             carry: None,
         });
     }
+    let verdict = dir
+        .live_build()?
+        .map(|recorded| build.verdict(&recorded, Operation::Resume));
+    if verdict == Some(Verdict::Archive) {
+        dir.archive_unreadable(ArchiveKind::Transition)?;
+    }
     let journal = dir.open_at(boot.clone(), now)?;
     let stamp = Stamp {
         time: now,
         mono: None,
     };
-    let journal = match verdict(build, &journal, Operation::Resume) {
+    let journal = match verdict {
         Some(Verdict::Refuse(_)) => {
             return Ok(Prepared {
                 journal,
                 carry: None,
             });
         }
-        Some(Verdict::Archive) => {
-            let mut dir = journal.close()?;
-            dir.archive_unreadable(ArchiveKind::Transition)?;
-            dir.open_at(boot.clone(), now)?
-        }
         Some(Verdict::Use) if context_changed(&journal, context) => journal
             .archive(stamp, ArchiveKind::Transition, &[])?
             .open_at(boot.clone(), now)?,
-        Some(Verdict::Use) | None => journal,
+        Some(Verdict::Use | Verdict::Archive) | None => journal,
     };
     let Some(pending) = journal.dir().pending_carry()? else {
         return Ok(Prepared {
