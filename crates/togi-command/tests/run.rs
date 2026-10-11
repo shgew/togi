@@ -479,13 +479,13 @@ async fn real_process_dropping_the_future_kills_the_group() {
     let pid_file = dir.path().join("pid");
     let script = format!("sleep 60 & echo $! > {}; wait", pid_file.display());
     let invocation = sh(&script);
-    let abandoned = tokio::time::timeout(
-        Duration::from_millis(200),
-        run_for(&invocation, Duration::from_secs(60)),
-    )
-    .await;
-    assert!(abandoned.is_err());
-    assert_stops(wait_for_pid_file(&pid_file).await).await;
+    let mut run = Box::pin(run_for(&invocation, Duration::from_secs(60)));
+    let pid = tokio::select! {
+        result = &mut run => panic!("the run ended before it was dropped: {result:?}"),
+        pid = wait_for_pid_file(&pid_file) => pid,
+    };
+    drop(run);
+    assert_stops(pid).await;
 }
 
 #[tokio::test]

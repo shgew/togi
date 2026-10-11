@@ -9,7 +9,9 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 use rustix::io::Errno;
-use rustix::process::{Pid, Signal, WaitOptions, kill_process_group, waitpid};
+use rustix::process::{
+    Pid, Signal, WaitOptions, kill_process_group, test_kill_process_group, waitpid,
+};
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::process::{ChildStderr, ChildStdout};
 use tokio::time::Instant;
@@ -396,19 +398,22 @@ impl Leader {
     }
 
     /// Kills the group, then waits up to `REAP_GRACE` for the leader and hands it to a reaper
-    /// thread if it is still running. Returns `cause`, or `Error::Teardown` carrying it when the
-    /// group could not be signalled or the leader was not reaped in time.
+    /// thread if it is still running. Outside Linux, a refused kill of a leader reaped within the
+    /// grace is followed by a signal-0 probe of the group. Returns `cause`, or `Error::Teardown`
+    /// carrying it when `teardown_failure` finds the kill or the reap unsettled.
     async fn teardown(&mut self, invocation: &Invocation, cause: Error) -> Error {
-        let killed = self
-            .kill_group()
-            .map_err(|errno| (Operation::KillGroup, io::Error::from(errno)));
-        let reaped = self
-            .reap_within(REAP_GRACE)
-            .await
-            .map_err(|source| (Operation::Reap, source));
-        match killed.and(reaped) {
-            Ok(()) => cause,
-            Err((operation, source)) => Error::Teardown {
+        let group = self.group;
+        let killed = self.kill_group();
+        let reaped = self.reap_within(REAP_GRACE).await;
+        let probed = match (group, killed, &reaped) {
+            (Some(group), Err(Errno::PERM), Ok(())) if cfg!(not(target_os = "linux")) => {
+                Some(test_kill_process_group(group))
+            }
+            _ => None,
+        };
+        match teardown_failure(killed, reaped, probed) {
+            None => cause,
+            Some((operation, source)) => Error::Teardown {
                 program: invocation.program.clone(),
                 cause: Box::new(cause),
                 operation,
@@ -434,20 +439,18 @@ impl Leader {
         Ok(())
     }
 
-    /// A group that is gone leaves nothing to signal; any other failure keeps the group for a
-    /// retry on drop.
+    /// ESRCH means the group is gone and leaves nothing to signal; any other failure, EPERM
+    /// included, keeps the group for a retry on drop.
     fn kill_group(&mut self) -> Result<(), Errno> {
         let Some(group) = self.group else {
             return Ok(());
         };
         match signal_group(group) {
-            Err(errno) if !group_gone(errno, errno == Errno::PERM && leader_exited(self.pid)) => {
-                Err(errno)
-            }
-            _ => {
+            Ok(()) | Err(Errno::SRCH) => {
                 self.group = None;
                 Ok(())
             }
+            Err(errno) => Err(errno),
         }
     }
 
@@ -506,23 +509,25 @@ fn reap_blocking(pid: Pid) {
     while matches!(waitpid(Some(pid), WaitOptions::empty()), Err(Errno::INTR)) {}
 }
 
-/// ESRCH means the group is gone. Darwin's killpg returns EPERM instead when every member is a
-/// zombie, so EPERM counts as gone only once the leader is known to have exited.
-fn group_gone(errno: Errno, leader_exited: bool) -> bool {
-    errno == Errno::SRCH || (errno == Errno::PERM && leader_exited)
-}
-
-#[cfg(target_os = "linux")]
-fn leader_exited(_: Pid) -> bool {
-    false
-}
-
-/// Whether the leader has exited, without reaping it.
-#[cfg(not(target_os = "linux"))]
-fn leader_exited(pid: Pid) -> bool {
-    use rustix::process::{WaitId, WaitIdOptions, waitid};
-    let options = WaitIdOptions::EXITED | WaitIdOptions::NOWAIT | WaitIdOptions::NOHANG;
-    matches!(waitid(WaitId::Pid(pid), options), Ok(Some(_)))
+/// EPERM from the group kill means no member took the signal. On Linux that is a refusal, never
+/// an artifact of the leader exiting, so it is always a kill failure. XNU's `killpg1`
+/// (`bsd/kern/kern_sig.c`) also returns EPERM when every member is a zombie or refused by
+/// `proc_find`, which includes a leader past `proc_refdrain` in `proc_exit`
+/// (`bsd/kern/kern_exit.c`), so EPERM alone cannot tell an exiting leader from a member with other
+/// credentials. There it is settled only when the leader is reaped within the grace and the
+/// signal-0 `probed` group then answers ESRCH: reaping the last member empties the group. `probed`
+/// is `None` when no probe ran.
+fn teardown_failure(
+    killed: Result<(), Errno>,
+    reaped: io::Result<()>,
+    probed: Option<Result<(), Errno>>,
+) -> Option<(Operation, io::Error)> {
+    match (killed, reaped) {
+        (Ok(()), Ok(())) => None,
+        (Err(Errno::PERM), Ok(())) if probed == Some(Err(Errno::SRCH)) => None,
+        (Err(errno), _) => Some((Operation::KillGroup, io::Error::from(errno))),
+        (Ok(()), Err(source)) => Some((Operation::Reap, source)),
+    }
 }
 
 fn signal_group(group: Pid) -> Result<(), Errno> {
@@ -568,29 +573,69 @@ mod fault {
 }
 
 #[cfg(test)]
-mod group_tests {
+mod teardown_tests {
+    use std::io;
+
     use rustix::io::Errno;
 
-    use super::group_gone;
+    use super::{Operation, teardown_failure};
 
-    #[test]
-    fn esrch_is_gone() {
-        assert!(group_gone(Errno::SRCH, false));
+    fn timed_out() -> io::Result<()> {
+        Err(io::Error::new(io::ErrorKind::TimedOut, "not reaped"))
+    }
+
+    fn assert_kill_failure(failure: Option<(Operation, io::Error)>, errno: Errno) {
+        let (operation, source) = failure.expect("a kill failure");
+        assert_eq!(operation, Operation::KillGroup);
+        assert_eq!(source.raw_os_error(), Some(errno.raw_os_error()));
     }
 
     #[test]
-    fn eperm_with_exited_leader_is_gone() {
-        assert!(group_gone(Errno::PERM, true));
+    fn a_kill_and_a_reap_that_succeed_settle() {
+        assert!(teardown_failure(Ok(()), Ok(()), None).is_none());
     }
 
     #[test]
-    fn eperm_with_live_leader_is_an_error() {
-        assert!(!group_gone(Errno::PERM, false));
+    fn a_refusal_is_settled_by_a_reap_and_an_empty_group() {
+        let probed = Some(Err(Errno::SRCH));
+        assert!(teardown_failure(Err(Errno::PERM), Ok(()), probed).is_none());
     }
 
     #[test]
-    fn other_errno_is_an_error() {
-        assert!(!group_gone(Errno::INVAL, true));
+    fn a_refusal_with_a_signalable_member_left_is_a_kill_failure() {
+        let failure = teardown_failure(Err(Errno::PERM), Ok(()), Some(Ok(())));
+        assert_kill_failure(failure, Errno::PERM);
+    }
+
+    #[test]
+    fn a_refusal_with_a_refused_probe_is_a_kill_failure() {
+        let failure = teardown_failure(Err(Errno::PERM), Ok(()), Some(Err(Errno::PERM)));
+        assert_kill_failure(failure, Errno::PERM);
+    }
+
+    #[test]
+    fn a_refusal_without_a_probe_is_a_kill_failure() {
+        let failure = teardown_failure(Err(Errno::PERM), Ok(()), None);
+        assert_kill_failure(failure, Errno::PERM);
+    }
+
+    #[test]
+    fn a_refusal_with_no_reap_is_a_kill_failure() {
+        let failure = teardown_failure(Err(Errno::PERM), timed_out(), None);
+        assert_kill_failure(failure, Errno::PERM);
+    }
+
+    #[test]
+    fn any_other_kill_error_is_a_kill_failure_even_when_reaped() {
+        let failure = teardown_failure(Err(Errno::INVAL), Ok(()), Some(Err(Errno::SRCH)));
+        assert_kill_failure(failure, Errno::INVAL);
+    }
+
+    #[test]
+    fn a_kill_that_succeeds_with_no_reap_is_a_reap_failure() {
+        let (operation, source) = teardown_failure(Ok(()), timed_out(), None).unwrap();
+        assert_eq!(operation, Operation::Reap);
+        assert_eq!(source.kind(), io::ErrorKind::TimedOut);
     }
 }
 
@@ -780,6 +825,105 @@ mod tests {
         assert!(cleanup.is_some(), "the error hid a running group");
         drop(cleanup);
         assert_reaped_within(child, Duration::from_secs(5));
+    }
+
+    #[tokio::test]
+    async fn real_process_refused_kill_of_a_reaped_leader_is_a_kill_failure() {
+        fault::KILL.set(Some(fault::Kill {
+            deliver: true,
+            result: Err(Errno::PERM),
+        }));
+        let started = StdInstant::now();
+        let result = run_for(&sleep_60(), DEADLINE).await;
+        let elapsed = started.elapsed();
+        let child = spawned();
+        let cleanup = KillOnDrop::if_running(child);
+        match &result {
+            Err(Error::Teardown {
+                cause,
+                operation: Operation::KillGroup,
+                source,
+                ..
+            }) => {
+                assert!(matches!(**cause, Error::TimedOut { .. }), "{cause:?}");
+                assert_kill_failure(source);
+            }
+            other => panic!("{other:?}"),
+        }
+        assert!(elapsed < DEADLINE + SLACK, "{elapsed:?}");
+        assert!(cleanup.is_none(), "the child was left running");
+        assert!(reaped(child), "the child was left unreaped");
+        assert_eq!(
+            GUARD_SIGNALS.get(),
+            0,
+            "a rejected guard signalled a reaped id"
+        );
+    }
+
+    /// Kills a descendant that outlives its leader, which is not our child: its id stays valid
+    /// until this guard kills it, since nothing else ends it.
+    struct DescendantGuard(Pid);
+
+    impl Drop for DescendantGuard {
+        fn drop(&mut self) {
+            let _ = kill_process(self.0, Signal::KILL);
+        }
+    }
+
+    fn wait_for_pid_file(path: &std::path::Path) -> Pid {
+        let give_up = StdInstant::now() + Duration::from_secs(10);
+        loop {
+            if let Some(pid) = std::fs::read_to_string(path)
+                .ok()
+                .and_then(|text| text.trim().parse::<i32>().ok())
+                .and_then(Pid::from_raw)
+            {
+                return pid;
+            }
+            assert!(
+                StdInstant::now() < give_up,
+                "{} never appeared",
+                path.display()
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    /// A refusal on Linux is never the exit artifact: a leader that exits on its own within the
+    /// grace must not hide a group member the kill could not signal.
+    #[tokio::test]
+    async fn real_process_refused_kill_with_a_surviving_member_is_a_kill_failure() {
+        fault::KILL.set(Some(fault::Kill {
+            deliver: false,
+            result: Err(Errno::PERM),
+        }));
+        let dir = tempfile::tempdir().unwrap();
+        let pid_file = dir.path().join("member");
+        let invocation = Invocation::new("sh").arg("-c").arg(format!(
+            "sleep 60 & echo $! > {}; exit 0",
+            pid_file.display()
+        ));
+        let result = run_for(&invocation, DEADLINE).await;
+        let leader = spawned();
+        let member = DescendantGuard(wait_for_pid_file(&pid_file));
+        match &result {
+            Err(Error::Teardown {
+                cause,
+                operation: Operation::KillGroup,
+                source,
+                ..
+            }) => {
+                assert!(matches!(**cause, Error::TimedOut { .. }), "{cause:?}");
+                assert_kill_failure(source);
+            }
+            other => panic!("{other:?}"),
+        }
+        assert!(reaped(leader), "the leader was left unreaped");
+        assert!(
+            rustix::process::test_kill_process_group(leader).is_ok(),
+            "the group member did not survive"
+        );
+        drop(member);
     }
 
     #[tokio::test]
