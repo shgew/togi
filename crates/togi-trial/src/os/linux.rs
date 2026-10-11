@@ -290,7 +290,7 @@ const ABANDONED: u8 = 1;
 const DONE: u8 = 2;
 
 /// The `/proc` scans of one `Linux`, shared by its users: how many scans were abandoned at their
-/// deadline and are still blocked on the kernel.
+/// deadline or by their cancelled caller and are still blocked on the kernel.
 #[derive(Default)]
 struct Scans {
     abandoned: AtomicUsize,
@@ -311,11 +311,35 @@ impl Drop for Finished {
     }
 }
 
+/// Abandons the scan when its caller stops awaiting it, at the deadline or by cancellation, unless
+/// the scan already finished.
+struct Awaiting<'a> {
+    state: &'a AtomicU8,
+    scans: &'a Scans,
+}
+
+impl Drop for Awaiting<'_> {
+    fn drop(&mut self) {
+        if self.state.load(Ordering::Acquire) != RUNNING {
+            return;
+        }
+        self.scans.abandoned.fetch_add(1, Ordering::AcqRel);
+        if self
+            .state
+            .compare_exchange(RUNNING, ABANDONED, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            self.scans.abandoned.fetch_sub(1, Ordering::AcqRel);
+        }
+    }
+}
+
 impl Scans {
     /// Runs a `/proc` scan on tokio's blocking pool, so a slow read cannot stall the runtime
     /// thread, and gives up at `deadline` however long the pool queues it. A scan abandoned at its
-    /// deadline keeps its blocking thread until the kernel returns; while any such scan is still
-    /// running no new one is started, so a stuck `/proc` cannot pile up threads.
+    /// deadline or by its cancelled caller keeps its blocking thread until the kernel returns;
+    /// while any such scan is still running no new one is started, so a stuck `/proc` cannot pile
+    /// up threads.
     async fn run<T: Send + 'static>(
         self: &Arc<Self>,
         deadline: Instant,
@@ -325,6 +349,10 @@ impl Scans {
             return Err(ProcError::Stuck);
         }
         let state = Arc::new(AtomicU8::new(RUNNING));
+        let _awaiting = Awaiting {
+            state: &state,
+            scans: self,
+        };
         let finished = Finished {
             state: Arc::clone(&state),
             scans: Arc::clone(self),
@@ -336,22 +364,15 @@ impl Scans {
         match tokio::time::timeout_at(deadline, work).await {
             Ok(Ok(result)) => result,
             Ok(Err(_)) => Err(ProcError::ScanLost),
-            Err(_) => {
-                self.abandoned.fetch_add(1, Ordering::AcqRel);
-                if state
-                    .compare_exchange(RUNNING, ABANDONED, Ordering::AcqRel, Ordering::Acquire)
-                    .is_err()
-                {
-                    self.abandoned.fetch_sub(1, Ordering::AcqRel);
-                }
-                Err(ProcError::Deadline)
-            }
+            Err(_) => Err(ProcError::Deadline),
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::future::{Future as _, poll_fn};
+    use std::task::Poll;
     use std::time::Duration;
 
     use super::*;
@@ -400,6 +421,136 @@ mod tests {
 
     fn scans() -> Arc<Scans> {
         Arc::default()
+    }
+
+    #[test]
+    fn real_process_a_cancelled_scan_refuses_replacements_until_its_owner_finishes() {
+        for abort in [false, true] {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .max_blocking_threads(1)
+                .enable_all()
+                .build()
+                .unwrap();
+            let scans = scans();
+            let (release, blocked) = std::sync::mpsc::channel::<()>();
+            let (started, running) = tokio::sync::oneshot::channel();
+            runtime.block_on(async move {
+                let owner_scans = Arc::clone(&scans);
+                let awaiting = async move {
+                    owner_scans
+                        .run(Instant::now() + secs(60), move || {
+                            let _ = started.send(());
+                            blocked.recv().unwrap();
+                            Ok(())
+                        })
+                        .await
+                };
+                if abort {
+                    let owner = tokio::spawn(awaiting);
+                    running.await.unwrap();
+                    owner.abort();
+                    assert!(owner.await.unwrap_err().is_cancelled());
+                } else {
+                    let mut owner = Box::pin(awaiting);
+                    tokio::select! {
+                        () = async { running.await.unwrap() } => {}
+                        outcome = &mut owner => panic!("the owner was not blocked: {outcome:?}"),
+                    }
+                    drop(owner);
+                }
+                let ran = Arc::new(std::sync::atomic::AtomicBool::new(false));
+                let flag = Arc::clone(&ran);
+                let mut replacement = Box::pin(scans.run(Instant::now() + secs(60), move || {
+                    flag.store(true, Ordering::SeqCst);
+                    Ok(())
+                }));
+                let refused = poll_fn(|cx| {
+                    Poll::Ready(match replacement.as_mut().poll(cx) {
+                        Poll::Ready(result) => Some(result),
+                        Poll::Pending => None,
+                    })
+                })
+                .await;
+                drop(replacement);
+                let abandoned = scans.abandoned.load(Ordering::Acquire);
+                release.send(()).unwrap();
+                tokio::task::spawn_blocking(|| {}).await.unwrap();
+                let finished = scans.abandoned.load(Ordering::Acquire);
+                let resumed = scans.run(Instant::now() + secs(60), || Ok(7)).await;
+                assert_eq!(refused, Some(Err(ProcError::Stuck)), "abort: {abort}");
+                assert!(!ran.load(Ordering::SeqCst), "abort: {abort}");
+                assert_eq!(abandoned, 1, "abort: {abort}");
+                assert_eq!(finished, 0, "abort: {abort}");
+                assert_eq!(resumed, Ok(7), "abort: {abort}");
+            });
+        }
+    }
+
+    #[test]
+    fn real_process_cancelling_a_finished_scan_does_not_abandon_it() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .max_blocking_threads(1)
+            .enable_all()
+            .build()
+            .unwrap();
+        let scans = scans();
+        let (release, blocked) = std::sync::mpsc::channel::<()>();
+        let (started, running) = tokio::sync::oneshot::channel();
+        runtime.block_on(async move {
+            let mut owner = Box::pin(scans.run(Instant::now() + secs(60), move || {
+                let _ = started.send(());
+                blocked.recv().unwrap();
+                Ok(())
+            }));
+            tokio::select! {
+                () = async { running.await.unwrap() } => {}
+                outcome = &mut owner => panic!("the owner was not blocked: {outcome:?}"),
+            }
+            release.send(()).unwrap();
+            tokio::task::spawn_blocking(|| {}).await.unwrap();
+            assert_eq!(scans.abandoned.load(Ordering::Acquire), 0);
+            drop(owner);
+            assert_eq!(scans.abandoned.load(Ordering::Acquire), 0);
+            assert_eq!(scans.run(Instant::now() + secs(60), || Ok(7)).await, Ok(7));
+        });
+    }
+
+    #[test]
+    fn real_process_a_timed_out_scan_is_counted_once_and_released_once() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .max_blocking_threads(1)
+            .enable_all()
+            .build()
+            .unwrap();
+        let scans = scans();
+        let (release, blocked) = std::sync::mpsc::channel::<()>();
+        let (started, running) = tokio::sync::oneshot::channel();
+        runtime.block_on(async move {
+            let mut owner = Box::pin(scans.run(
+                Instant::now() + Duration::from_millis(100),
+                move || {
+                    let _ = started.send(());
+                    blocked.recv().unwrap();
+                    Ok(())
+                },
+            ));
+            let timed_out = owner.as_mut().await;
+            running.await.unwrap();
+            let before_drop = scans.abandoned.load(Ordering::Acquire);
+            drop(owner);
+            let after_drop = scans.abandoned.load(Ordering::Acquire);
+            let refused = scans.run(Instant::now() + secs(60), || Ok(())).await;
+            release.send(()).unwrap();
+            tokio::task::spawn_blocking(|| {}).await.unwrap();
+            let finished = scans.abandoned.load(Ordering::Acquire);
+            let resumed = scans.run(Instant::now() + secs(60), || Ok(7)).await;
+            assert_eq!(timed_out, Err(ProcError::Deadline));
+            assert_eq!(before_drop, 1);
+            assert_eq!(after_drop, 1);
+            assert_eq!(refused, Err(ProcError::Stuck));
+            assert_eq!(finished, 0);
+            assert_eq!(resumed, Ok(7));
+        });
     }
 
     #[test]
