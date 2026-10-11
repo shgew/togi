@@ -12,7 +12,7 @@ use togi_machine::{
 use crate::r7::escalation::{BackoffKind, ESCALATE_AFTER, Escalation, Strikes};
 use crate::r7::reason::{Note, R7Reason};
 use crate::r7::respond::{R7Response, R7Route};
-use crate::testkit::{Journal, R7Report, Start, build, fresh, infos, set};
+use crate::testkit::{Journal, R7Report, Start, build, fresh, infos, pairs, set};
 use crate::tests::{core, off};
 use crate::{Action, DecisionPayload, Load, LoadKey};
 
@@ -75,6 +75,10 @@ impl Journal {
     }
 
     fn load_trial(&mut self, load: EscalationLoad, outcome: Outcome) -> Seq {
+        self.load_trial_topped(load, outcome, &[load.top])
+    }
+
+    fn load_trial_topped(&mut self, load: EscalationLoad, outcome: Outcome, tops: &[u8]) -> Seq {
         let values = self.values();
         let plan = self.manual(
             Regime::R7,
@@ -89,7 +93,7 @@ impl Journal {
         let mut end = Self::end_payload(&trial, outcome, signal);
         if outcome == Outcome::Failure {
             end.duration_s = 41;
-            end.top_requesters = set(&[load.top]);
+            end.top_requesters = set(tops);
         } else {
             end.duration_s = 120;
         }
@@ -324,6 +328,41 @@ fn escalation_count_survives_resume() {
         fresh(&j.events).run().unwrap().r7.strikes,
         j.run().r7.strikes
     );
+}
+
+#[test]
+fn an_escalated_failure_reads_the_ranking_before_it_is_located() {
+    for chosen_shallower in [false, true] {
+        let ids = [0, 1, 2, 3];
+        let mut j = Journal::on(&ids, pairs(&ids), &[Start::has_room(-30); 4]);
+        j.profile_change(&[-30, -30, -30, -30]);
+        j.play("AA");
+        j.apply_backoff();
+        let failed = j.values();
+        j.load_trial_topped(escalation_load('a'), Outcome::Failure, &[0, 1]);
+        let Some(Action::Decide(attribution)) = j.skip_phases() else {
+            panic!("expected the attribution");
+        };
+        let failure = j.decide(attribution);
+        assert_eq!(j.skip_phases(), Some(Action::ReadRanking));
+        assert_eq!(j.run().r7_decision(), Some(R7Response::ReadRanking));
+        assert_eq!(j.run().locate_due(), None);
+        j.ranking(&[0, 1, 2, 3]);
+        if chosen_shallower {
+            j.place(1, failed[1] + 1);
+            assert_eq!(j.run().r7_decision(), None);
+            assert_eq!(j.run().locate_due(), None);
+            assert!(j.run().r7.open.contains_key(&failure));
+            j.place(1, failed[1]);
+        }
+        let (located, escalation, _) = j.located();
+        assert_eq!(located, failure, "{chosen_shallower}");
+        assert!(matches!(
+            escalation,
+            Escalation::Backoffs { failures: 2, .. }
+        ));
+        j.assert_resumes();
+    }
 }
 
 #[test]
