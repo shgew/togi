@@ -487,6 +487,8 @@ fn decoding_rejects_invalid_records() {
         r#"{"id":"test","count":0,"reason":"retry"} {}"#.to_owned(),
         r#"{"id":"test","count":0,"reason":"retry"}x"#.to_owned(),
         r#"{"id":"test","id":"other","count":0,"reason":"retry"}"#.to_owned(),
+        r#"{"id":"test","count":0,"count":1,"reason":"retry"}"#.to_owned(),
+        r#"{"id":"test","count":0,"reason":"retry","reason":"other"}"#.to_owned(),
         format!(r#"{{"id":"{long_id}","count":0,"reason":"retry"}}"#),
         format!(r#"{{"id":"test","count":0,"reason":"{long_reason}"}}"#),
         oversized,
