@@ -11,6 +11,7 @@ publish = false
 
 [workspace.dependencies]
 flate2 = "1"
+getrandom = { version = "0.4", features = ["std"] }
 jiff = { version = "0.2", default-features = false, features = ["std"] }
 nix = { version = "0.30", default-features = false, features = ["fs"] }
 proptest = "1"
