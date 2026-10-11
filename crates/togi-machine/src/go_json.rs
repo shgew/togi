@@ -144,6 +144,18 @@ pub(crate) fn write_json_string(out: &mut String, bytes: &[u8], escape_html: boo
     out.push('"');
 }
 
+/// Whether `serde_json` writes `text` as the same JSON string as
+/// `write_json_string`: for UTF-8 text the two escape quotes, backslashes and
+/// control characters alike, and differ only on U+2028, U+2029 and, with
+/// `escape_html`, `<`, `>` and `&`.
+pub(crate) fn serde_json_writes_as_go(text: &str, escape_html: bool) -> bool {
+    !text.chars().any(|ch| match ch {
+        '\u{2028}' | '\u{2029}' => true,
+        '<' | '>' | '&' => escape_html,
+        _ => false,
+    })
+}
+
 /// Whether the JSON object key `actual` names the field `expected` under Go's
 /// case folding (which maps U+212A to `k` and U+017F to `s`).
 pub(crate) fn field_eq(actual: &str, expected: &str) -> bool {

@@ -1122,3 +1122,78 @@ fn pstore_record_decodes_as_go_structs() {
     assert_eq!(decode("null"), PstoreRecord::default());
     assert!(serde_json::from_str::<PstoreRecord>(r#"{"lines":"x"}"#).is_err());
 }
+
+/// A map that serializes its entries in the order given, as Go's sorted map keys arrive.
+struct Entries<K, V>(Vec<(K, V)>);
+
+impl<K: Serialize, V: Serialize> Serialize for Entries<K, V> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_map(self.0.iter().map(|(key, value)| (key, value)))
+    }
+}
+
+#[test]
+fn vocabulary_map_keys_encode_as_go() {
+    // Go 1.27.1 json.Marshal of map[machine.Regime]int, map[machine.Signal]float64 (integral values),
+    // map[machine.Regime]map[machine.Signal]float64 and the other vocabulary types as keys.
+    fn encoded<K: Serialize, V: Serialize>(
+        entries: Vec<(K, V)>,
+    ) -> Result<String, serde_json::Error> {
+        serde_json::to_string(&Entries(entries))
+    }
+    assert_eq!(encoded(vec![(Regime::R1, 1)]).unwrap(), "{\"R1\":1}");
+    assert_eq!(
+        encoded(
+            ["", "R1", "R7", "future"]
+                .map(Regime::from)
+                .into_iter()
+                .zip(1..)
+                .collect()
+        )
+        .unwrap(),
+        "{\"\":1,\"R1\":2,\"R7\":3,\"future\":4}"
+    );
+    assert_eq!(
+        encoded(vec![(Signal::Crash, 3), (Signal::Stall, 1)]).unwrap(),
+        "{\"crash\":3,\"stall\":1}"
+    );
+    assert_eq!(
+        encoded(vec![(Regime::R7, Entries(vec![(Signal::Crash, 2)]))]).unwrap(),
+        "{\"R7\":{\"crash\":2}}"
+    );
+    assert_eq!(
+        encoded(vec![
+            (ResetKind::Watchdog, 1),
+            (ResetKind::from("future"), 2)
+        ])
+        .unwrap(),
+        "{\"watchdog\":1,\"future\":2}"
+    );
+    assert_eq!(
+        encoded(vec![(BankType::from("future"), 1), (BankType::Empty, 2)]).unwrap(),
+        "{\"future\":1,\"\":2}"
+    );
+    assert_eq!(
+        encoded(vec![(Condition::Alone, 1), (Condition::Empty, 2)]).unwrap(),
+        "{\"alone\":1,\"\":2}"
+    );
+    assert_eq!(
+        encoded(vec![(Backend::Mprime, 1), (Backend::from("other"), 2)]).unwrap(),
+        "{\"mprime\":1,\"other\":2}"
+    );
+    // A key serde cannot write as Go does is an error; as a value it keeps Go's bytes.
+    for special in ["a<b", "a\u{2028}"] {
+        assert!(
+            encoded(vec![(Regime::from(special), 1)]).is_err(),
+            "{special}"
+        );
+    }
+    assert_eq!(
+        serde_json::to_string(&Regime::from("a<b")).unwrap(),
+        "\"a\\u003cb\""
+    );
+    assert_eq!(
+        serde_json::to_string(&[Regime::from("a\u{2028}")]).unwrap(),
+        "[\"a\\u2028\"]"
+    );
+}

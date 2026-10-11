@@ -1,4 +1,4 @@
-use crate::go_json::write_json_string;
+use crate::go_json::{serde_json_writes_as_go, write_json_string};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt;
 
@@ -54,8 +54,14 @@ macro_rules! vocabulary {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { f.write_str(self.as_str()) }
         }
 
+        /// Writes the JSON string Go writes. Text `serde_json` would escape
+        /// differently from Go goes through `RawValue`, which cannot be a map
+        /// key: such a key is an error, never different bytes.
         impl Serialize for $name {
             fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+                if serde_json_writes_as_go(self.as_str(), true) {
+                    return serializer.serialize_str(self.as_str());
+                }
                 serde_json::value::RawValue::from_string(self.json(true))
                     .map_err(serde::ser::Error::custom)?
                     .serialize(serializer)
