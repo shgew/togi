@@ -186,21 +186,20 @@ impl Crashes<'_> {
             .iter()
             .map(|mce| open.is_some_and(|open| open.includes_mce(Some(mce.monotonic))))
             .collect();
-        let mut evidence = signalled || window.contains(&true);
         for (mce, inside) in own.iter().zip(window) {
             self.record(mce, crashed, !inside)?;
         }
         for mce in retained.iter().filter(|mce| !mce.corrected) {
-            evidence = true;
             self.record(mce, &next, false)?;
         }
 
         let state = self.state();
+        let causes = state.recorded_for(crashed, current);
         let applied = state.applied(crashed);
         let kind = classify_crash(&CrashFacts {
             in_trial,
             applied: applied.is_some(),
-            evidence,
+            evidence: signalled || !causes.is_empty(),
             reason: reason.clone(),
             confirmed,
         });
@@ -220,7 +219,6 @@ impl Crashes<'_> {
             inconclusive: matches!(kind, CrashKind::Inconclusive | CrashKind::Thermal),
             pstore: pstore.as_ref().ok().cloned().flatten(),
         };
-        let causes = state.recorded_for(crashed, current);
         let seq = self
             .recovery
             .appender

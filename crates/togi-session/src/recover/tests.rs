@@ -940,6 +940,24 @@ fn the_crashed_boots_own_machine_checks_are_the_trials_only_inside_its_window() 
 }
 
 #[test]
+fn a_machine_check_an_interrupted_recovery_journaled_still_fails_the_crash_when_the_kernel_forgot_it() {
+    let mut log = trial_log();
+    log.at("b0", 41_000);
+    let held = log.add(recorded_mce(20, false), &[]);
+    let mut h = Harness::new(&log, "b1");
+    h.reasons(&[("b0", Some(ResetKind::Watchdog)), ("b1", None)]);
+    h.recover().unwrap();
+    let (crash_event, crash) = h.crashes()[0];
+    assert!(!crash.inconclusive);
+    assert_eq!(crash_event.cause, [held]);
+    let (end_event, end) = h.ends()[0];
+    assert_eq!(end.outcome, Outcome::Failure);
+    assert!(end_event.cause.contains(&held));
+    assert_eq!(h.mces().len(), 1);
+    h.consistent();
+}
+
+#[test]
 fn a_machine_check_the_journal_already_holds_is_never_recorded_or_claimed_again() {
     let mut log = trial_log();
     log.at("b0", 41_000);
