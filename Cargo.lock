@@ -3,6 +3,10 @@
 version = 4
 
 [[package]]
+name = "togi-gocompat"
+version = "0.0.0"
+
+[[package]]
 name = "togi-placeholder"
 version = "0.0.0"
 
