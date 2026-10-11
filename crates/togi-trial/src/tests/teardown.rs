@@ -440,3 +440,46 @@ async fn a_detached_pipe_holder_beyond_a_failed_scope_kill_leaves_the_drain_unco
     })
     .await;
 }
+
+#[tokio::test(start_paused = true)]
+async fn a_pipe_setup_failure_rolls_back_as_unconfirmed_output() {
+    local(async {
+        let rig = rig();
+        rig.fake.fail_pipes();
+        let partial = rig
+            .start(spec(Regime::R1, &[0], secs(60)))
+            .await
+            .err()
+            .unwrap();
+        assert!(partial.value.is_none(), "unread output is never a confirmed drain");
+        assert!(matches!(partial.error, togi_machine::Error::Containment));
+        let process = rig.fake.process(0);
+        assert!(process.reaped.get(), "the launched child was still contained and reaped");
+        assert_eq!(kills(&rig.fake.systemd_calls()), ["togi-trial-t1"]);
+    })
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_launcher_whose_exit_watch_failed_is_still_killed_and_reaped_by_the_rollback() {
+    local(async {
+        let rig = rig();
+        rig.fake.on_launch(|_, _| {
+            Launch::FailRetained(
+                script(|mut ctx: ProcCtx| async move { ctx.until_killed().await }),
+                std::io::Error::other("pidfd_open failed"),
+            )
+        });
+        let begun = tokio::time::Instant::now();
+        let partial = rig
+            .start(spec(Regime::R1, &[0], secs(60)))
+            .await
+            .err()
+            .unwrap();
+        assert!(begun.elapsed() <= secs(15));
+        assert!(partial.value.is_some(), "the retained child was confirmed stopped");
+        assert!(matches!(crate_error(&partial.error), Some(Error::Launch { .. })));
+        assert!(rig.fake.process(0).reaped.get());
+    })
+    .await;
+}

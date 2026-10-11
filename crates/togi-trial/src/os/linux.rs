@@ -11,7 +11,7 @@ use tokio::io::unix::AsyncFd;
 use tokio::net::unix::pipe::Receiver;
 use tokio::time::Instant;
 
-use super::{Child, ExitInfo, GroupSignal, Os, Pipes, SignalError, Systemd};
+use super::{Child, ExitInfo, GroupSignal, LaunchFailure, Os, Pipes, SignalError, Systemd};
 use crate::id::ScopeName;
 use crate::launch::{LaunchCommand, scope_argv};
 use crate::procfs::{Proc, ProcError, ScopeProcess, Threads, Usage};
@@ -20,10 +20,19 @@ use crate::procfs::{Proc, ProcError, ScopeProcess, Threads, Usage};
 /// keeps its pid and process group until teardown reaps it.
 pub(crate) struct Leader {
     child: std::process::Child,
-    pidfd: AsyncFd<OwnedFd>,
+    watch: ExitWatch,
     pid: u32,
     group: Pid,
 }
+
+/// How the leader's exit is observed: by its pidfd, or, when that could not be set up, by polling
+/// `waitid(P_PID, WNOWAIT)` so the rollback can still confirm and reap it within its budget.
+enum ExitWatch {
+    Pidfd(AsyncFd<OwnedFd>),
+    Poll,
+}
+
+const EXIT_POLL: std::time::Duration = std::time::Duration::from_millis(50);
 
 fn io_pipe(file: impl Into<OwnedFd>) -> io::Result<super::Pipe> {
     let receiver = Receiver::from_file(std::fs::File::from(file.into()))?;
@@ -46,12 +55,24 @@ impl Child for Leader {
     }
 
     async fn exited(&self) -> io::Result<()> {
-        self.pidfd.readable().await.map(drop)
+        match &self.watch {
+            ExitWatch::Pidfd(pidfd) => pidfd.readable().await.map(drop),
+            ExitWatch::Poll => loop {
+                if self.exit()?.is_some() {
+                    return Ok(());
+                }
+                tokio::time::sleep(EXIT_POLL).await;
+            },
+        }
     }
 
     fn exit(&self) -> io::Result<Option<ExitInfo>> {
+        let id = match &self.watch {
+            ExitWatch::Pidfd(pidfd) => WaitId::PidFd(std::os::fd::AsFd::as_fd(pidfd.get_ref())),
+            ExitWatch::Poll => WaitId::Pid(self.group),
+        };
         let status = waitid(
-            WaitId::PidFd(std::os::fd::AsFd::as_fd(self.pidfd.get_ref())),
+            id,
             WaitIdOptions::EXITED | WaitIdOptions::NOWAIT | WaitIdOptions::NOHANG,
         )?;
         Ok(status.map(|status| {
@@ -154,29 +175,33 @@ impl Linux {
 impl Os for Linux {
     type Child = Leader;
 
-    fn launch(&self, command: &LaunchCommand) -> io::Result<Leader> {
-        let mut child = crate::launch::spawn(command)?;
+    fn launch(&self, command: &LaunchCommand) -> Result<Leader, LaunchFailure<Leader>> {
+        let child = crate::launch::spawn(command)?;
         let pid = child.id();
-        let group = i32::try_from(pid).ok().and_then(Pid::from_raw);
-        let opened = group
-            .ok_or_else(|| io::Error::from(io::ErrorKind::InvalidData))
-            .and_then(|group| {
-                let fd = pidfd_open(group, PidfdFlags::empty())?;
-                Ok((group, AsyncFd::with_interest(fd, Interest::READABLE)?))
-            });
+        let Some(group) = i32::try_from(pid).ok().and_then(Pid::from_raw) else {
+            return Err(io::Error::from(io::ErrorKind::InvalidData).into());
+        };
+        let opened = pidfd_open(group, PidfdFlags::empty())
+            .map_err(io::Error::from)
+            .and_then(|fd| AsyncFd::with_interest(fd, Interest::READABLE));
         match opened {
-            Ok((group, pidfd)) => Ok(Leader {
+            Ok(pidfd) => Ok(Leader {
                 child,
-                pidfd,
+                watch: ExitWatch::Pidfd(pidfd),
                 pid,
                 group,
             }),
-            Err(error) => {
-                if let Some(group) = group {
-                    let _ = kill_process_group(group, Signal::KILL);
-                }
-                let _ = child.wait();
-                Err(error)
+            Err(source) => {
+                let _ = kill_process_group(group, Signal::KILL);
+                Err(LaunchFailure {
+                    child: Some(Leader {
+                        child,
+                        watch: ExitWatch::Poll,
+                        pid,
+                        group,
+                    }),
+                    source,
+                })
             }
         }
     }
