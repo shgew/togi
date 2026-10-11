@@ -297,7 +297,7 @@ static R7: [Workload; 3] = [
     },
 ];
 
-pub fn workloads(regime: &Regime) -> &'static [Workload] {
+pub fn workloads(regime: Regime) -> &'static [Workload] {
     match regime {
         Regime::R1 => &R1,
         Regime::R2 => &R2,
@@ -306,11 +306,10 @@ pub fn workloads(regime: &Regime) -> &'static [Workload] {
         Regime::R5 => &R5,
         Regime::R6 => &R6,
         Regime::R7 => &R7,
-        Regime::Empty | Regime::Unknown(_) => &[],
     }
 }
 
-pub fn pick_workload(regime: &Regime, index: usize) -> &'static Workload {
+pub fn pick_workload(regime: Regime, index: usize) -> &'static Workload {
     let catalog = workloads(regime);
     &catalog[index % catalog.len()]
 }

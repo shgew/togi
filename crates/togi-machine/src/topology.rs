@@ -1,41 +1,11 @@
-use crate::go_json::{GoSlice, decode_fields, field_eq, for_each_char, scalar, write_json_string};
-use crate::{CcdId, CoreId, CpuId, PstoreRecord};
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use crate::{CcdId, CoreId, CpuId};
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct CoreInfo {
     pub core: CoreId,
     pub ccd: CcdId,
-    pub cpus: Option<Vec<CpuId>>,
-}
-
-/// Decodes as Go's `json.Unmarshal` does into `CoreInfo`: names match under
-/// Go's case folding, later duplicates update earlier ones, `null` leaves a
-/// number alone and empties `cpus`, unknown members are skipped. `core` stays
-/// checked to 0–15. Bytes Go wrote go through `json_text` first.
-impl<'de> Deserialize<'de> for CoreInfo {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let mut info = Self::default();
-        let mut cpus = GoSlice::<CpuId>::default();
-        decode_fields(
-            deserializer,
-            &mut (&mut info, &mut cpus),
-            "a core object or null",
-            |(info, cpus), key, raw| {
-                if field_eq(key, "core") {
-                    scalar(&mut info.core, raw)
-                } else if field_eq(key, "ccd") {
-                    scalar(&mut info.ccd, raw)
-                } else if field_eq(key, "cpus") {
-                    cpus.update(raw)
-                } else {
-                    Ok(())
-                }
-            },
-        )?;
-        info.cpus = cpus.into_option();
-        Ok(info)
-    }
+    pub cpus: Vec<CpuId>,
 }
 
 pub fn order(cores: &[CoreInfo]) -> Vec<CoreId> {
@@ -56,131 +26,30 @@ pub fn order(cores: &[CoreInfo]) -> Vec<CoreId> {
     result
 }
 
-/// Bytes a host reported, which need not be UTF-8.
-///
-/// Go carries them in a `string` and converts every invalid byte to U+FFFD
-/// when it writes or compares them; `normalized`, `json` and `Serialize` do
-/// the same, so a text that went through JSON compares equal to its
-/// normalization. The literal U+FFFD is the only form of a replacement.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct HostText(Vec<u8>);
-
-impl HostText {
-    pub fn new(bytes: impl Into<Vec<u8>>) -> Self {
-        Self(bytes.into())
-    }
-    pub fn bytes(&self) -> &[u8] {
-        &self.0
-    }
-
-    pub fn normalized(&self) -> String {
-        let mut result = String::new();
-        for_each_char(&self.0, |ch| result.push(ch));
-        result
-    }
-
-    /// The JSON string Go writes: `json.Marshal` with `escape_html`, the
-    /// journal writer without it.
-    pub fn json(&self, escape_html: bool) -> String {
-        let mut result = String::new();
-        write_json_string(&mut result, &self.0, escape_html);
-        result
-    }
-}
-
-impl From<&str> for HostText {
-    fn from(value: &str) -> Self {
-        Self(value.as_bytes().to_vec())
-    }
-}
-
-impl Serialize for HostText {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let raw = serde_json::value::RawValue::from_string(self.json(true))
-            .map_err(serde::ser::Error::custom)?;
-        raw.serialize(serializer)
-    }
-}
-
-/// Decodes a string, or `null` as empty. Bytes Go wrote go through
-/// `json_text` first.
-impl<'de> Deserialize<'de> for HostText {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        Ok(Self::new(
-            Option::<String>::deserialize(deserializer)?
-                .unwrap_or_default()
-                .into_bytes(),
-        ))
-    }
-}
-
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct BiosContext {
-    pub bios_version: HostText,
-    pub board: HostText,
-    pub cpu_model: HostText,
-    pub microcode: HostText,
+    pub bios_version: String,
+    pub board: String,
+    pub cpu_model: String,
+    pub microcode: String,
     pub boost_limit_mhz: i64,
 }
 
-/// Decodes as Go's `json.Unmarshal` does into `BIOSContext`. Bytes Go wrote
-/// go through `json_text` first.
-impl<'de> Deserialize<'de> for BiosContext {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let mut context = Self::default();
-        decode_fields(
-            deserializer,
-            &mut context,
-            "a BIOS context object or null",
-            |context, key, raw| {
-                if field_eq(key, "bios_version") {
-                    scalar(&mut context.bios_version, raw)
-                } else if field_eq(key, "board") {
-                    scalar(&mut context.board, raw)
-                } else if field_eq(key, "cpu_model") {
-                    scalar(&mut context.cpu_model, raw)
-                } else if field_eq(key, "microcode") {
-                    scalar(&mut context.microcode, raw)
-                } else if field_eq(key, "boost_limit_mhz") {
-                    scalar(&mut context.boost_limit_mhz, raw)
-                } else {
-                    Ok(())
-                }
-            },
-        )?;
-        Ok(context)
-    }
+/// A field of the BIOS context that differs from the one a session recorded.
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("{field} is {current}; the session recorded {recorded}")]
+pub struct ContextMismatch {
+    pub field: &'static str,
+    pub current: String,
+    pub recorded: String,
 }
 
-/// Decodes as Go's `json.Unmarshal` does into `PstoreRecord`. Bytes Go wrote
-/// go through `json_text` first.
-impl<'de> Deserialize<'de> for PstoreRecord {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let mut path = HostText::default();
-        let mut lines = GoSlice::<HostText>::default();
-        decode_fields(
-            deserializer,
-            &mut (&mut path, &mut lines),
-            "a pstore record object or null",
-            |(path, lines), key, raw| {
-                if field_eq(key, "path") {
-                    scalar(&mut **path, raw)
-                } else if field_eq(key, "lines") {
-                    lines.update(raw)
-                } else {
-                    Ok(())
-                }
-            },
-        )?;
-        Ok(Self {
-            path,
-            lines: lines.into_option(),
-        })
-    }
-}
-
-pub fn compare_context(recorded: &BiosContext, current: &BiosContext) -> (String, bool) {
-    for (name, before, after) in [
+/// Reports the first field of `current` that differs from `recorded`.
+pub fn compare_context(
+    recorded: &BiosContext,
+    current: &BiosContext,
+) -> Result<(), ContextMismatch> {
+    let texts = [
         (
             "bios_version",
             &recorded.bios_version,
@@ -189,26 +58,22 @@ pub fn compare_context(recorded: &BiosContext, current: &BiosContext) -> (String
         ("board", &recorded.board, &current.board),
         ("cpu_model", &recorded.cpu_model, &current.cpu_model),
         ("microcode", &recorded.microcode, &current.microcode),
-    ] {
-        let normalized = after.normalized();
-        if before.bytes() != normalized.as_bytes() {
-            return (
-                format!(
-                    "{name} is {normalized}; the session recorded {}",
-                    before.normalized()
-                ),
-                false,
-            );
+    ];
+    for (field, before, after) in texts {
+        if before != after {
+            return Err(ContextMismatch {
+                field,
+                current: after.clone(),
+                recorded: before.clone(),
+            });
         }
     }
     if recorded.boost_limit_mhz != current.boost_limit_mhz {
-        return (
-            format!(
-                "boost_limit_mhz is {}; the session recorded {}",
-                current.boost_limit_mhz, recorded.boost_limit_mhz
-            ),
-            false,
-        );
+        return Err(ContextMismatch {
+            field: "boost_limit_mhz",
+            current: current.boost_limit_mhz.to_string(),
+            recorded: recorded.boost_limit_mhz.to_string(),
+        });
     }
-    ("matches the session".to_owned(), true)
+    Ok(())
 }

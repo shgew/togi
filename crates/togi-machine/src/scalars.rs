@@ -1,4 +1,4 @@
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 
 pub const PER_CORE_MAX: usize = 16;
 pub const MIN_OFFSET: i64 = -50;
@@ -8,8 +8,10 @@ pub const MAX_OFFSET: i64 = 0;
 #[error("core {0} outside 0–15")]
 pub struct InvalidCore(pub i64);
 
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
-#[serde(transparent)]
+#[derive(
+    Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize,
+)]
+#[serde(try_from = "i64")]
 pub struct CoreId(u8);
 
 impl CoreId {
@@ -31,11 +33,10 @@ impl CoreId {
     }
 }
 
-/// Decodes a number checked to 0–15, or `null` as 0 as Go's `int` does.
-impl<'de> Deserialize<'de> for CoreId {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        Self::new(Option::<i64>::deserialize(deserializer)?.unwrap_or_default())
-            .map_err(serde::de::Error::custom)
+impl TryFrom<i64> for CoreId {
+    type Error = InvalidCore;
+    fn try_from(value: i64) -> Result<Self, InvalidCore> {
+        Self::new(value)
     }
 }
 
@@ -45,31 +46,17 @@ impl std::fmt::Display for CoreId {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[derive(
+    Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize,
+)]
 #[serde(transparent)]
 pub struct CcdId(pub i64);
 
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[derive(
+    Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize,
+)]
 #[serde(transparent)]
 pub struct CpuId(pub i64);
-
-/// Decodes a number, or `null` as 0 as Go's `int` does.
-impl<'de> Deserialize<'de> for CcdId {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        Ok(Self(
-            Option::<i64>::deserialize(deserializer)?.unwrap_or_default(),
-        ))
-    }
-}
-
-/// Decodes a number, or `null` as 0 as Go's `int` does.
-impl<'de> Deserialize<'de> for CpuId {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        Ok(Self(
-            Option::<i64>::deserialize(deserializer)?.unwrap_or_default(),
-        ))
-    }
-}
 
 #[derive(
     Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize,
@@ -86,8 +73,10 @@ pub struct InvalidTarget(pub i64);
 /// ```compile_fail
 /// let unsafe_target = togi_machine::TargetOffset(10);
 /// ```
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
-#[serde(transparent)]
+#[derive(
+    Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize,
+)]
+#[serde(try_from = "i64")]
 pub struct TargetOffset(i64);
 
 impl TargetOffset {
@@ -112,11 +101,9 @@ impl TargetOffset {
     }
 }
 
-impl<'de> Deserialize<'de> for TargetOffset {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        Self::new(i64::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+impl TryFrom<i64> for TargetOffset {
+    type Error = InvalidTarget;
+    fn try_from(value: i64) -> Result<Self, InvalidTarget> {
+        Self::new(value)
     }
 }
-
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct NanoDuration(pub i64);
