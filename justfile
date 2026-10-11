@@ -46,10 +46,10 @@ hardware *args:
 fuzz time="1m": _dev-shell
     go test -run '^$' -fuzz '^FuzzParse$' -fuzztime "$1" ./internal/journal
 
-# Fuzz the Rust journal reader for the given seconds (`just fuzz-journal 300`); needs cargo-fuzz
+# Fuzz the Rust journal reader for the given seconds (`just fuzz-journal 300`), seeded from fuzz/seeds
 [group('test')]
 fuzz-journal seconds="60": _dev-shell
-    cd crates/togi-journal && cargo fuzz run -s none reader -- -max_total_time="$1"
+    cd crates/togi-journal && mkdir -p fuzz/corpus/reader && cargo fuzz run -s none reader fuzz/corpus/reader fuzz/seeds/reader -- -max_total_time="$1"
 
 # Print code no test reaches: per function for the whole repo, or changed lines since a base (`just cover origin/main`)
 [group('test')]
