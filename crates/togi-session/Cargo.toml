@@ -13,6 +13,7 @@ thiserror.workspace = true
 togi-carry.workspace = true
 togi-config.workspace = true
 togi-defect.workspace = true
+togi-facts.workspace = true
 togi-journal.workspace = true
 togi-machine.workspace = true
 togi-render.workspace = true

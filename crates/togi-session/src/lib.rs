@@ -3,6 +3,7 @@
 //! the write transaction in [`write`] and the journal-failure emergency in [`emergency`].
 
 pub mod appender;
+mod begin;
 pub mod boot;
 mod defects;
 pub mod emergency;

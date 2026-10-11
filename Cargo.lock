@@ -842,6 +842,7 @@ dependencies = [
  "togi-carry",
  "togi-config",
  "togi-defect",
+ "togi-facts",
  "togi-journal",
  "togi-machine",
  "togi-render",

@@ -215,12 +215,15 @@ pub(crate) struct Bench {
 
 impl Bench {
     pub(crate) fn new(cores: i64) -> Self {
-        let definition = MachineDefinition {
+        Self::defined(&MachineDefinition {
             cores,
             ..MachineDefinition::default()
-        };
+        })
+    }
+
+    pub(crate) fn defined(definition: &MachineDefinition) -> Self {
         let sim = Simulator::new(
-            Model::new(&definition, 1).unwrap(),
+            Model::new(definition, 1).unwrap(),
             RunSettings {
                 seed: 1,
                 ..RunSettings::default()
