@@ -49,3 +49,27 @@ fn kind_names_round_trip() {
     }
     assert!("trial.nope".parse::<EventKind>().is_err());
 }
+
+proptest::proptest! {
+    #[test]
+    fn profiles_causes_and_mono_round_trip(
+        offsets in proptest::collection::vec(-50_i64..=0, 0..16),
+        causes in proptest::collection::btree_set(1_u64..1000, 0..5),
+        mono in proptest::option::of(0_u64..1_000_000),
+    ) {
+        let payload = Payload::from(ProfileApplied {
+            offsets: super::fixtures::profile(&offsets),
+            condition: togi_machine::Condition::Together,
+        });
+        let mut event = Event::new(
+            seq(1000),
+            stamp(mono.map(Duration::from_millis)),
+            boot(),
+            causes.into_iter().map(seq).collect(),
+            payload,
+        );
+        event.msg = "x".into();
+        let decoded = Event::decode(&event.encode().unwrap()).unwrap();
+        proptest::prop_assert_eq!(decoded, event);
+    }
+}

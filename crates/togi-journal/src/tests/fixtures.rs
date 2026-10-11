@@ -501,7 +501,7 @@ pub(crate) fn samples() -> Vec<Payload> {
         .into(),
         Combination {
             combination: ord(2),
-            members: vec![member(3, -40), member(11 % 16, -30)],
+            members: vec![member(3, -40), member(11, -30)],
             fallback: true,
             hunt: ord(4),
             reason: "observed".into(),
@@ -593,4 +593,42 @@ pub(crate) fn samples() -> Vec<Payload> {
         }
         .into(),
     ]
+}
+
+pub(crate) fn sample(kind: EventKind) -> Payload {
+    samples()
+        .into_iter()
+        .find(|payload| payload.kind() == kind)
+        .unwrap()
+}
+
+pub(crate) fn at(seq_no: u64, boot_name: &str, seconds: i64, cause: &[u64], payload: Payload) -> Event {
+    let base: Timestamp = "2026-10-02T01:00:00Z".parse().unwrap();
+    let time = base + jiff::SignedDuration::from_secs(seconds);
+    Event::new(
+        seq(seq_no),
+        Stamp { time, mono: None },
+        BootId::from(boot_name.to_owned()),
+        cause.iter().copied().map(seq).collect(),
+        payload,
+    )
+}
+
+pub(crate) fn intent(id: &str, core_id: Option<u8>, loaded: &[u8]) -> Payload {
+    let Payload::TrialIntent(mut intent) = sample(EventKind::TrialIntent) else {
+        unreachable!()
+    };
+    intent.trial = TrialId::from(id.to_owned());
+    intent.core = core_id.map(core);
+    intent.cores = set(loaded);
+    intent.into()
+}
+
+pub(crate) fn end(id: &str, core_id: Option<u8>) -> Payload {
+    let Payload::TrialEnd(mut end) = sample(EventKind::TrialEnd) else {
+        unreachable!()
+    };
+    end.trial = TrialId::from(id.to_owned());
+    end.core = core_id.map(core);
+    end.into()
 }

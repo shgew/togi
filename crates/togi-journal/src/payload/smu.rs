@@ -34,12 +34,12 @@ impl SmuCommand {
 
 /// The durable authorization of one SMU command, written only by the journal.
 ///
-/// ```compile_fail
+/// ```compile_fail,E0451
 /// let command = togi_journal::SmuCommand::SetAll { offset: togi_machine::TargetOffset::ZERO };
 /// let _ = togi_journal::SmuIntentRecord { command };
 /// ```
 ///
-/// ```compile_fail
+/// ```compile_fail,E0624
 /// let command = togi_journal::SmuCommand::SetAll { offset: togi_machine::TargetOffset::ZERO };
 /// let _ = togi_journal::SmuIntentRecord::new(command);
 /// ```
@@ -62,12 +62,12 @@ impl SmuIntentRecord {
 
 /// The result of one SMU command, written only by the journal.
 ///
-/// ```compile_fail
+/// ```compile_fail,E0451
 /// let command = togi_journal::SmuCommand::SetAll { offset: togi_machine::TargetOffset::ZERO };
 /// let _ = togi_journal::SmuWriteRecord { command };
 /// ```
 ///
-/// ```compile_fail
+/// ```compile_fail,E0624
 /// let command = togi_journal::SmuCommand::SetAll { offset: togi_machine::TargetOffset::ZERO };
 /// let _ = togi_journal::SmuWriteRecord::new(command);
 /// ```
