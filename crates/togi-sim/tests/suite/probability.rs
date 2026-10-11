@@ -154,6 +154,46 @@ fn a_tiny_rate_cannot_fail_inside_a_trial() {
 }
 
 #[test]
+fn a_window_count_whose_boosted_rate_overflows_is_scored_and_drawn_alike() {
+    // 1e308 · (1 + 10) overflows before the 1e-309 seconds it is multiplied by, yet the count is 1.1.
+    let window = 1e-309;
+    let onset = Onset {
+        window_s: window,
+        boost: 10.0,
+    };
+    let rate = 1e308;
+    let count = onset.failures(0.0, rate, window);
+    assert!((count - 1.1).abs() < 1e-9, "{count}");
+    assert_eq!(
+        onset.failures(0.0, rate, 2.0 * window),
+        count + rate * window
+    );
+    assert_eq!(onset.failures(0.0, rate, 0.0), 0.0);
+
+    // A draw is inside the window exactly when its count is at most the window's.
+    for (cumulative, inside) in [(0.5, true), (1.09, true), (1.11, false), (2.0, false)] {
+        let time = onset.failure_time(0.0, rate, cumulative);
+        assert_eq!(time <= window, inside, "{cumulative}: {time}");
+    }
+    let half = onset.failure_time(0.0, rate, count / 2.0);
+    assert!((half / window - 0.5).abs() < 1e-6, "{half}");
+    let after = onset.failure_time(0.0, rate, count + 1.0);
+    assert!(
+        (after / window - 1.0 - 1.0 / (rate * window)).abs() < 1e-6,
+        "{after}"
+    );
+
+    // The count exceeds f64::MAX only when it truly does.
+    let huge = Onset {
+        window_s: 1.0,
+        boost: 1e308,
+    };
+    assert!(huge.failures(0.0, 1e308, 1.0).is_infinite());
+    let drawn = huge.failure_time(0.0, 1e308, 1.0);
+    assert!((0.0..1e-300).contains(&drawn), "{drawn}");
+}
+
+#[test]
 fn a_boost_whose_exposure_overflows_still_scores_the_failures_it_draws() {
     let rate = 1e-309;
     let mut definition = machine(

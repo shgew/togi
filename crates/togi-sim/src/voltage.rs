@@ -179,16 +179,26 @@ fn resolve_core(
             .map(|signals| signal_mix(&path.key("signals"), signals))
             .transpose()?,
     };
-    // The largest voltage a request or a threshold can reach, at the deepest offset and the highest
-    // clock a trial reports, bounds the deficit and with it the hazard. A rate beyond `f64::MAX` is
-    // unrepresentable, so the core is refused rather than left to produce an infinite source.
-    let mhz = MAX_MHZ.max(reference_mhz);
-    let volts = core.base_v
-        + core.count_v * 50.0
-        + (core.clock_v_per_100mhz + core.threshold_clock_v_per_100mhz) * mhz / 100.0
-        + core.threshold_v;
-    let rate = mul_div(rail.rate, volts, rail.margin_v) / std::f64::consts::LN_2 + rail.rate;
-    if !rate.is_finite() {
+    // The rail is at least this core's own request, so the deficit at runtime is at most the
+    // requirement minus that request. Requirement and request are linear in the offset (-50..=0) and in
+    // the clock offset from the reference (1..=u32::MAX MHz, what a trial reports), so the largest
+    // deficit is at one of four corners, taken as one difference so that equal bases and slopes cancel.
+    // A voltage that is not finite, or a hazard beyond `f64::MAX` at the largest deficit, is
+    // unrepresentable: the core is refused rather than left to produce an infinite source.
+    let mut worst = f64::NEG_INFINITY;
+    for above in [1.0 - reference_mhz, MAX_MHZ - reference_mhz] {
+        for offset in [-50.0, 0.0] {
+            let request =
+                core.base_v + core.count_v * offset + core.clock_v_per_100mhz * above / 100.0;
+            let threshold = core.threshold_v + core.threshold_clock_v_per_100mhz * above / 100.0;
+            let deficit = threshold - request;
+            if !deficit.is_finite() {
+                return Err(path.error(Problem::Overflow));
+            }
+            worst = worst.max(deficit);
+        }
+    }
+    if worst > 0.0 && !softplus_rate(rail, worst).is_finite() {
         return Err(path.error(Problem::Overflow));
     }
     Ok(core)

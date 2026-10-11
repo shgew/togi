@@ -31,6 +31,12 @@ pub enum LoadError {
     },
     #[error("machine file {path}: parent: {source}")]
     Parent { path: PathBuf, source: Box<Self> },
+    #[error("machine file {path}: resolve directory {directory}: {source}")]
+    Directory {
+        path: PathBuf,
+        directory: PathBuf,
+        source: io::Error,
+    },
     #[error("machine file {path}: {source}")]
     Invalid {
         path: PathBuf,
@@ -265,13 +271,9 @@ fn load_overlay(
         let parent_dir = parent_path.parent().unwrap_or(Path::new(""));
         if !facts.is_empty() && !Path::new(facts).is_absolute() {
             let canonical = |directory: &Path| {
-                let directory = if directory.as_os_str().is_empty() {
-                    Path::new(".")
-                } else {
-                    directory
-                };
-                fs::canonicalize(directory).map_err(|source| LoadError::Read {
-                    path: directory.to_path_buf(),
+                canonical_dir(directory).map_err(|source| LoadError::Directory {
+                    path: path.to_path_buf(),
+                    directory: directory.to_path_buf(),
                     source,
                 })
             };
@@ -290,6 +292,15 @@ fn load_overlay(
     Ok(machine)
 }
 
+/// `directory` resolved through every symlink; the empty parent of a bare file name is the current directory.
+fn canonical_dir(directory: &Path) -> io::Result<PathBuf> {
+    if directory.as_os_str().is_empty() {
+        fs::canonicalize(".")
+    } else {
+        fs::canonicalize(directory)
+    }
+}
+
 /// `facts`, a path relative to canonical directory `to`, as a path relative to canonical directory `from`.
 /// Only the climb between the two directories is simplified: it is made of real directories, while a segment of
 /// `facts` itself may be a symlink, so `facts` is otherwise kept verbatim and never cleaned.
@@ -297,10 +308,12 @@ fn rebase(from: &Path, to: &Path, facts: &Path) -> Option<PathBuf> {
     let climb = relative(from, to)?;
     let mut parts: Vec<Component<'_>> = climb.components().collect();
     let mut rest = facts.components().peekable();
-    while rest
-        .next_if(|component| *component == Component::ParentDir)
-        .is_some()
+    while let Some(leading) =
+        rest.next_if(|component| matches!(component, Component::ParentDir | Component::CurDir))
     {
+        if leading == Component::CurDir {
+            continue;
+        }
         if matches!(parts.last(), Some(Component::Normal(_))) {
             parts.pop();
         } else {
@@ -367,5 +380,63 @@ mod tests {
         assert_eq!(go("a", "../x"), Some("../../x".into()));
         assert_eq!(go("..", "x"), None);
         assert_eq!(go("", "x/y"), Some("x/y".into()));
+    }
+
+    #[test]
+    fn a_directory_that_cannot_be_resolved_is_reported_with_the_overlay_file_that_needed_it() {
+        let missing = Path::new("/nonexistent-togi-sim-directory");
+        let source = canonical_dir(missing).expect_err("no such directory");
+        let error = LoadError::Directory {
+            path: PathBuf::from("overlays/leaf.json"),
+            directory: missing.to_path_buf(),
+            source,
+        };
+        let message = error.to_string();
+        assert!(
+            message.contains("overlays/leaf.json")
+                && message.contains("nonexistent-togi-sim-directory"),
+            "{message}"
+        );
+    }
+
+    #[test]
+    fn the_empty_directory_of_a_bare_file_name_is_the_current_directory() {
+        assert_eq!(Path::new("machine.json").parent(), Some(Path::new("")));
+        assert_eq!(
+            canonical_dir(Path::new("")).expect("the current directory"),
+            fs::canonicalize(".").expect("the current directory")
+        );
+    }
+
+    #[test]
+    fn rebase_climbs_past_the_shared_directories_and_keeps_the_rest_verbatim() {
+        let go = |from, to, facts| rebase(Path::new(from), Path::new(to), Path::new(facts));
+        for (from, to, facts, want) in [
+            (
+                "/d/overlays",
+                "/d/machines",
+                "../../facts/extract.gz",
+                "../../facts/extract.gz",
+            ),
+            ("/d/x/y", "/d/machines", "../facts/e", "../../facts/e"),
+            ("/d/overlays", "/d/machines", "./../facts/e", "../facts/e"),
+            ("/d", "/d/machines", "../facts/e", "facts/e"),
+            ("/a", "/a/b", "../../../x", "../../x"),
+            (
+                "/d/overlays",
+                "/d/machines",
+                "alias/../x",
+                "../machines/alias/../x",
+            ),
+        ] {
+            let got = go(from, to, facts).expect("a rebased path");
+            assert_eq!(got, Path::new(want), "{from} {to} {facts}");
+            // Without symlinks, both name the same file.
+            assert_eq!(
+                clean(&Path::new(from).join(&got)),
+                clean(&Path::new(to).join(facts)),
+                "{from} {to} {facts}"
+            );
+        }
     }
 }

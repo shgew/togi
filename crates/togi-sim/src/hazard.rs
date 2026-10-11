@@ -75,8 +75,9 @@ impl Onset {
 
     /// The expected failures of a source of `rate` that starts at `after_s` within a trial of
     /// `duration_s`: the boosted rate `rate · (1 + boost)` times the seconds inside the onset window, plus
-    /// `rate` times the seconds after it. Each phase is one rate-times-seconds product, so the count is
-    /// infinite only when the true count exceeds `f64::MAX`, and a phase with no seconds adds nothing.
+    /// `rate` times the seconds after it. Each phase is evaluated without an intermediate that overflows or
+    /// underflows, so the count is infinite only when the true count exceeds `f64::MAX`, and a phase with
+    /// no seconds adds nothing.
     pub fn failures(self, after_s: f64, rate: f64, duration_s: f64) -> f64 {
         let seconds = duration_s - after_s;
         if seconds <= 0.0 {
@@ -84,30 +85,61 @@ impl Onset {
         }
         let early = self.window_s - after_s;
         if early > 0.0 && self.boost > 0.0 {
-            let boosted = rate * (1.0 + self.boost);
             if seconds <= early {
-                return boosted * seconds;
+                return self.boosted(rate, seconds);
             }
-            return boosted * early + rate * (seconds - early);
+            return self.boosted(rate, early) + rate * (seconds - early);
         }
         rate * seconds
     }
 
     /// The time, in seconds into the trial, at which a source of `rate` that starts at `after_s` has
     /// accumulated `cumulative` expected failures: the inverse of [`failures`](Self::failures). Drawing
-    /// `cumulative` from an exponential distribution of mean 1 samples the source's failure time.
+    /// `cumulative` from an exponential distribution of mean 1 samples the source's failure time. The draw
+    /// lands inside the onset window exactly when `cumulative` is at most the window's count of failures.
     pub fn failure_time(self, after_s: f64, rate: f64, cumulative: f64) -> f64 {
         let early = self.window_s - after_s;
         if early > 0.0 && self.boost > 0.0 {
-            let boosted = rate * (1.0 + self.boost);
-            let seconds = cumulative / boosted;
-            if seconds <= early {
-                return after_s + seconds;
+            let window = self.boosted(rate, early);
+            if cumulative <= window {
+                return after_s + quotient(cumulative, rate, 1.0 + self.boost).min(early);
             }
-            return after_s + early + (cumulative - boosted * early) / rate;
+            return after_s + early + (cumulative - window) / rate;
         }
         after_s + cumulative / rate
     }
+
+    /// Failures of a source of `rate` over `seconds` inside the onset window.
+    fn boosted(self, rate: f64, seconds: f64) -> f64 {
+        product(rate, 1.0 + self.boost, seconds)
+    }
+}
+
+/// `a · b · c` for nonnegative factors, in the log domain when a partial product would overflow or
+/// underflow, so the result is infinite or zero only when the true product is.
+fn product(a: f64, b: f64, c: f64) -> f64 {
+    let partial = a * b;
+    let direct = partial * c;
+    if partial.is_normal() && direct.is_normal() {
+        return direct;
+    }
+    if a == 0.0 || b == 0.0 || c == 0.0 {
+        return 0.0;
+    }
+    (a.ln() + b.ln() + c.ln()).exp()
+}
+
+/// `c / (a · b)` for positive `a` and `b` and nonnegative `c`, by the same rule as [`product`].
+fn quotient(c: f64, a: f64, b: f64) -> f64 {
+    let divisor = a * b;
+    let direct = c / divisor;
+    if divisor.is_normal() && (direct.is_normal() || c == 0.0) {
+        return direct;
+    }
+    if c == 0.0 {
+        return 0.0;
+    }
+    (c.ln() - a.ln() - b.ln()).exp()
 }
 
 /// The most counts past a limit an offset can reach: a limit of 1 at offset -50 is 51 counts past it,

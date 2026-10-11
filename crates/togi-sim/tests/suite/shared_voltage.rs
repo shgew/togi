@@ -893,6 +893,45 @@ fn a_rail_whose_hazard_cannot_be_represented_is_refused() {
 }
 
 #[test]
+fn a_rail_whose_deficit_stays_small_is_accepted_however_large_its_rate() {
+    // Requests and requirements share a 1.2 V base and a default 0.0036 V per count, so a core asks at
+    // least 1.02 V of a 1.2 V requirement: the deficit is at most 0.18 V and every source rate is below
+    // 1.27e308, though the sum of the two voltages (2.58 V) over a 1 V margin would overflow.
+    let mut definition = rewrite_cores(committed_machine("shared-voltage.json"), |core| {
+        core.base_v = 1.2;
+        core.threshold_v = 1.2;
+        core.count_v = 0.0;
+        core.clock_v_per_100mhz = 0.0;
+        core.threshold_clock_v_per_100mhz = 0.0;
+    });
+    let rail = definition.shared_voltage.as_mut().expect("a rail");
+    rail.rate = 1e308;
+    rail.margin_v = 1.0;
+    let model = model(&definition);
+    let workload = r7_workload(0);
+    let two = load(r7(), workload, &[0, 1], 1.0);
+    let softplus =
+        |deficit: f64| 1e308 * (deficit + (-deficit).exp().ln_1p()) / std::f64::consts::LN_2;
+    for (offset, deficit) in [(0, 0.0), (-35, 0.126), (-50, 0.18)] {
+        let profile = offsets(&[offset; 16]);
+        let sources = model.sources(&profile, &two).expect("shape");
+        assert_eq!(sources.len(), 2, "{offset}");
+        for source in &sources {
+            assert!(source.rate.is_finite(), "{offset}: {source:?}");
+            close(source.rate / softplus(deficit), 1.0, 1e-9);
+        }
+        for id in [0, 1] {
+            let share = model
+                .r7_failure_share(&profile, &two, core(id))
+                .expect("shape");
+            close(share, 0.5, 1e-9);
+        }
+        assert_eq!(model.failure_probability(&profile, &two), Ok(1.0));
+    }
+    file::encode(&definition).expect("a machine that is valid encodes");
+}
+
+#[test]
 fn requirement_coefficients_are_finite_and_nonnegative_without_an_upper_bound() {
     let workload = r7_workload(0);
     let set = |coefficient: f64| {
