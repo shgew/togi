@@ -1,17 +1,19 @@
 use std::fs;
 use std::io::{self, Read, Write};
-use std::os::unix::fs::{FileTypeExt, symlink};
-use std::path::Path;
+use std::os::unix::fs::{FileTypeExt, PermissionsExt, symlink};
+use std::path::{Path, PathBuf};
 
 use flate2::Compression;
-use flate2::read::GzDecoder;
+use flate2::read::MultiGzDecoder;
 use flate2::write::GzEncoder;
 use nix::sys::stat::Mode;
 use nix::unistd::mkfifo;
+use rustix::io::Errno;
 use tempfile::TempDir;
 use test_case::test_case;
 
-use super::{Error, SAMPLES, compress, compress_file, open, sync_dir};
+use super::goerr;
+use super::{Cause, Error, PathError, SAMPLES, compress, compress_file, open, sync_dir};
 
 const SAMPLE_LINE: &str = "{\"elapsed_ms\":1000}\n";
 
@@ -29,7 +31,7 @@ fn write_gzip(path: &Path, content: &str) {
 
 fn gunzip(path: &Path) -> io::Result<String> {
     let mut text = String::new();
-    GzDecoder::new(fs::File::open(path)?).read_to_string(&mut text)?;
+    MultiGzDecoder::new(fs::File::open(path)?).read_to_string(&mut text)?;
     Ok(text)
 }
 
@@ -45,6 +47,18 @@ fn entries(dir: &Path) -> Vec<String> {
 fn write(path: &Path, content: &str) {
     fs::write(path, content).unwrap();
 }
+
+/// The directory as Go renders it in an error message.
+fn shown(dir: &TempDir) -> String {
+    goerr::clean(dir.path()).display().to_string()
+}
+
+fn sync_error(dir: &Path, errno: Errno) -> Cause {
+    PathError::from_errno("sync", dir, errno.raw_os_error()).into()
+}
+
+/// An errno Go's tables do not name, so Go renders it as `errno N`.
+const UNKNOWN_ERRNO: i32 = 4242;
 
 #[test_case(|dir| write(&dir.join("log"), "one\ntwo\n"), &["log.gz"], "one\ntwo\n"; "plain becomes compressed")]
 #[test_case(|_| {}, &[], ""; "missing file is skipped")]
@@ -121,9 +135,13 @@ fn compression_failure_retains_readable_plain_file() {
     write(&dir.path().join(SAMPLES), SAMPLE_LINE);
     let blocker = dir.path().join(format!("{SAMPLES}.gz"));
     fs::create_dir(&blocker).unwrap();
-    assert!(
-        compress(dir.path()).is_err(),
-        "blocked gzip publication succeeded"
+    let root = shown(&dir);
+    let errors = compress(dir.path()).unwrap_err();
+    assert_eq!(
+        errors.to_string(),
+        format!(
+            "compress {SAMPLES}: rename {root}/{SAMPLES}.gz.tmp {root}/{SAMPLES}.gz: file exists"
+        )
     );
     let data = read_trial_file(&dir.path().join(SAMPLES)).unwrap();
     assert_eq!(String::from_utf8(data).unwrap(), SAMPLE_LINE);
@@ -150,16 +168,19 @@ fn compression_sync_failure_after_publication_retains_plain_file() {
         assert_eq!(synced, dir.path());
         assert_eq!(fs::read_to_string(&path).unwrap(), SAMPLE_LINE);
         assert_eq!(gunzip(&gz).unwrap(), SAMPLE_LINE);
-        Err(io::Error::other("injected directory sync failure"))
+        Err(sync_error(synced, Errno::IO))
     })
     .unwrap_err();
     assert!(
-        matches!(&error, Error::SyncCompressed { source, .. } if source.to_string() == "injected directory sync failure"),
+        matches!(&error, Error::SyncCompressed { .. }),
         "compression with failed directory sync = {error:?}"
     );
     assert_eq!(
         error.to_string(),
-        format!("sync compressed {SAMPLES}: injected directory sync failure")
+        format!(
+            "sync compressed {SAMPLES}: sync {}: input/output error",
+            shown(&dir)
+        )
     );
     assert_eq!(fs::read_to_string(&path).unwrap(), SAMPLE_LINE);
     let data = read_trial_file(&path).unwrap();
@@ -231,23 +252,31 @@ fn compress_reports_each_failed_file_one_per_line_in_name_order() {
     let dir = TempDir::new().unwrap();
     for instance in ["b", "a"] {
         fs::create_dir(dir.path().join(instance)).unwrap();
-        write(&dir.path().join(instance).join("stdout.log"), "out\n");
-        fs::create_dir(dir.path().join(instance).join("stdout.log.gz")).unwrap();
+        write(&dir.path().join(instance).join("stdout.log"), "o\n");
+        write(&dir.path().join(instance).join("stderr.log"), "e\n");
     }
+    fs::create_dir(dir.path().join("a/stdout.log.gz")).unwrap();
+    fs::create_dir(dir.path().join("b/stderr.log.gz")).unwrap();
+    let root = shown(&dir);
     let errors = compress(dir.path()).unwrap_err();
-    let lines: Vec<String> = errors.to_string().lines().map(str::to_owned).collect();
-    assert_eq!(errors.errors().len(), 2);
-    assert_eq!(lines.len(), 2);
-    assert!(
-        lines
-            .iter()
-            .all(|line| line.starts_with("compress stdout.log: ")),
-        "{lines:?}"
+    assert_eq!(
+        errors.to_string(),
+        format!(
+            "compress stdout.log: rename {root}/a/stdout.log.gz.tmp {root}/a/stdout.log.gz: file exists\n\
+             compress stderr.log: rename {root}/b/stderr.log.gz.tmp {root}/b/stderr.log.gz: file exists"
+        )
     );
-    assert!(matches!(&errors.errors()[0], Error::Compress { .. }));
+    assert!(matches!(
+        errors.errors(),
+        [Error::Compress { .. }, Error::Compress { .. }]
+    ));
     assert_eq!(
         entries(&dir.path().join("a")),
-        ["stdout.log", "stdout.log.gz"]
+        ["stderr.log.gz", "stdout.log", "stdout.log.gz"]
+    );
+    assert_eq!(
+        entries(&dir.path().join("b")),
+        ["stderr.log", "stderr.log.gz", "stdout.log.gz"]
     );
 }
 
@@ -258,7 +287,10 @@ fn compress_of_a_file_reports_the_listing_failure() {
     write(&file, "x");
     let errors = compress(&file).unwrap_err();
     assert!(matches!(errors.errors(), [Error::List(_)]));
-    assert!(errors.to_string().starts_with("list trial files: "));
+    assert_eq!(
+        errors.to_string(),
+        format!("list trial files: open {}: not a directory", file.display())
+    );
 }
 
 #[test]
@@ -292,7 +324,13 @@ fn open_reports_missing_and_corrupt_files() {
     let missing = open(&dir.path().join("log")).unwrap_err();
     assert_eq!(missing.kind(), io::ErrorKind::NotFound);
     write(&dir.path().join("log.gz"), "torn");
-    assert!(read_trial_file(&dir.path().join("log")).is_err());
+    let torn = open(&dir.path().join("log")).unwrap_err();
+    assert_eq!(torn.kind(), io::ErrorKind::UnexpectedEof);
+    assert_eq!(torn.to_string(), "unexpected EOF");
+    write(&dir.path().join("log.gz"), "not gzip at all");
+    let bad = open(&dir.path().join("log")).unwrap_err();
+    assert_eq!(bad.kind(), io::ErrorKind::InvalidData);
+    assert_eq!(bad.to_string(), "gzip: invalid header");
 }
 
 #[test]
@@ -308,7 +346,102 @@ fn unremovable_stale_temporary_fails_before_anything_changes() {
         matches!(&error, Error::RemoveStale { name, .. } if name == "log.gz.tmp"),
         "{error:?}"
     );
+    let root = shown(&dir);
+    assert_eq!(
+        error.to_string(),
+        format!("remove stale log.gz.tmp: remove {root}/log.gz.tmp: directory not empty")
+    );
     assert_eq!(entries(dir.path()), ["log", "log.gz.tmp"]);
+}
+
+#[test]
+fn empty_stale_temporary_directory_is_removed_like_go_does() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("log");
+    write(&path, "plain\n");
+    fs::create_dir(dir.path().join("log.gz.tmp")).unwrap();
+    compress_file(&path, sync_dir).unwrap();
+    assert_eq!(entries(dir.path()), ["log.gz"]);
+    assert_eq!(gunzip(&dir.path().join("log.gz")).unwrap(), "plain\n");
+}
+
+#[test]
+fn error_paths_are_cleaned_like_filepath_join() {
+    let dir = TempDir::new().unwrap();
+    write(&dir.path().join(SAMPLES), SAMPLE_LINE);
+    fs::create_dir(dir.path().join(format!("{SAMPLES}.gz"))).unwrap();
+    let root = shown(&dir);
+    let unclean = PathBuf::from(format!("{}//./", dir.path().display()));
+    let errors = compress(&unclean).unwrap_err();
+    assert_eq!(
+        errors.to_string(),
+        format!(
+            "compress {SAMPLES}: rename {root}/{SAMPLES}.gz.tmp {root}/{SAMPLES}.gz: file exists"
+        )
+    );
+}
+
+#[test_case("a//b/./c/../d", "a/b/d", "d", "a/b"; "interior elements")]
+#[test_case("/../x", "/x", "x", "/"; "parent of root")]
+#[test_case("../x", "../x", "x", ".."; "leading parent")]
+#[test_case("x", "x", "x", "."; "bare name")]
+#[test_case("./", ".", ".", "."; "current directory")]
+fn go_path_helpers(path: &str, cleaned: &str, base: &str, dirname: &str) {
+    assert_eq!(goerr::clean(Path::new(path)), Path::new(cleaned));
+    assert_eq!(goerr::base(Path::new(cleaned)), base);
+    assert_eq!(goerr::dir(Path::new(cleaned)), Path::new(dirname));
+}
+
+/// Whether permission bits are enforced; a privileged user reads a mode 000 file and writes a read-only directory.
+fn permissions_enforced(dir: &Path) -> bool {
+    let probe = dir.join("probe");
+    write(&probe, "x");
+    fs::set_permissions(&probe, fs::Permissions::from_mode(0o000)).unwrap();
+    let enforced = fs::File::open(&probe).is_err();
+    fs::set_permissions(&probe, fs::Permissions::from_mode(0o600)).unwrap();
+    fs::remove_file(&probe).unwrap();
+    enforced
+}
+
+#[test]
+fn unreadable_source_reports_go_open_error() {
+    let dir = TempDir::new().unwrap();
+    if !permissions_enforced(dir.path()) {
+        return;
+    }
+    let path = dir.path().join(SAMPLES);
+    write(&path, SAMPLE_LINE);
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o000)).unwrap();
+    let errors = compress(dir.path()).unwrap_err();
+    assert_eq!(
+        errors.to_string(),
+        format!(
+            "open {SAMPLES}: open {}/{SAMPLES}: permission denied",
+            shown(&dir)
+        )
+    );
+    assert!(matches!(errors.errors(), [Error::Open { .. }]));
+}
+
+#[test]
+fn unwritable_directory_reports_go_create_error() {
+    let dir = TempDir::new().unwrap();
+    if !permissions_enforced(dir.path()) {
+        return;
+    }
+    write(&dir.path().join(SAMPLES), SAMPLE_LINE);
+    fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o555)).unwrap();
+    let result = compress(dir.path());
+    fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o755)).unwrap();
+    let errors = result.unwrap_err();
+    assert_eq!(
+        errors.to_string(),
+        format!(
+            "create {SAMPLES}.gz.tmp: open {}/{SAMPLES}.gz.tmp: permission denied",
+            shown(&dir)
+        )
+    );
+    assert!(matches!(errors.errors(), [Error::Create { .. }]));
 }
 
 #[test]
@@ -320,12 +453,15 @@ fn sync_failure_after_removal_leaves_only_the_compressed_file() {
     let error = compress_file(&path, |synced| {
         syncs += 1;
         if syncs == 2 {
-            return Err(io::Error::other("injected"));
+            return Err(PathError::from_errno("sync", synced, UNKNOWN_ERRNO).into());
         }
         sync_dir(synced)
     })
     .unwrap_err();
-    assert_eq!(error.to_string(), "sync removal of log: injected");
+    assert_eq!(
+        error.to_string(),
+        format!("sync removal of log: sync {}: errno 4242", shown(&dir))
+    );
     assert_eq!(entries(dir.path()), ["log.gz"]);
     assert_eq!(read_trial_file(&path).unwrap(), b"plain\n");
 }

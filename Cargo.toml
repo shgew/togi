@@ -11,6 +11,7 @@ publish = false
 
 [workspace.dependencies]
 flate2 = "1"
+miniz_oxide = { version = "0.9", default-features = false, features = ["with-alloc"] }
 nix = { version = "0.30", default-features = false, features = ["fs"] }
 rustix = { version = "1", features = ["fs"] }
 tempfile = "3"
