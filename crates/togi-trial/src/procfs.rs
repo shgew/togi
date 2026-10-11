@@ -110,7 +110,7 @@ pub(crate) struct Thread {
     pub(crate) cpu: u32,
 }
 
-#[derive(Debug, Eq, PartialEq, thiserror::Error)]
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub(crate) enum ProcError {
     /// The process or thread vanished while being read: normal, never a lost observation.
     #[error("process disappeared")]

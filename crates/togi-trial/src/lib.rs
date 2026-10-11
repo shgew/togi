@@ -10,6 +10,7 @@ mod files;
 mod id;
 mod identity;
 mod instance;
+mod judge;
 mod launch;
 mod os;
 mod output;
@@ -25,6 +26,8 @@ mod supervisor;
 mod sweep;
 mod teardown;
 mod timing;
+#[cfg(test)]
+mod testing;
 mod watch;
 
 pub use error::{CleanupFailure, Containment, Error, OutputFailure};
