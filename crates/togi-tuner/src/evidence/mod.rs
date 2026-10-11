@@ -177,7 +177,7 @@ impl Evidence {
     fn visit(&self) {}
 
     #[cfg(test)]
-    fn take_visits(&self) -> u64 {
+    pub(crate) fn take_visits(&self) -> u64 {
         self.visits.0.replace(0)
     }
 

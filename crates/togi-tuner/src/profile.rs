@@ -58,6 +58,10 @@ impl Profile {
         next
     }
 
+    pub fn offsets(&self) -> PerCore<TargetOffset> {
+        self.0
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = (CoreId, TargetOffset)> + '_ {
         self.0.iter()
     }

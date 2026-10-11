@@ -9,6 +9,7 @@ description = "Tuning rules: topology, profiles, failure points and combinations
 
 [dependencies]
 thiserror.workspace = true
+togi-config.workspace = true
 togi-journal.workspace = true
 togi-machine.workspace = true
 

@@ -8,6 +8,8 @@ use togi_machine::{CoreSet, Regime, WorkloadId};
 pub struct Secs(NonZeroU32);
 
 impl Secs {
+    pub(crate) const MIN: Self = Self(NonZeroU32::MIN);
+
     pub const fn new(secs: NonZeroU32) -> Self {
         Self(secs)
     }

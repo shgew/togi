@@ -31,6 +31,10 @@ impl CombinationId {
     pub const fn get(self) -> u32 {
         self.0.get()
     }
+
+    pub const fn non_zero(self) -> NonZeroU32 {
+        self.0
+    }
 }
 
 impl fmt::Display for CombinationId {
@@ -115,6 +119,7 @@ pub struct Constraints {
     failure_points: PerCore<FailurePoint>,
     combinations: Vec<Combination>,
     by_core: [Vec<usize>; PER_CORE_MAX],
+    recent: CoreSet,
 }
 
 impl Constraints {
@@ -124,7 +129,14 @@ impl Constraints {
             failure_points: PerCore::default(),
             combinations: Vec::new(),
             by_core: Default::default(),
+            recent: CoreSet::default(),
         }
+    }
+
+    /// The core whose latest update made its failure point shallower, or the members of the
+    /// latest combination.
+    pub const fn recent(&self) -> CoreSet {
+        self.recent
     }
 
     pub const fn failure_points(&self) -> &PerCore<FailurePoint> {
@@ -157,9 +169,40 @@ impl Constraints {
             None => true,
         };
         if keep {
-            self.failure_points.set(core, point);
+            self.set_point(core, Some(point));
         }
         Ok(())
+    }
+
+    /// Replaces the failure point of `core`, which a `core.phase` or `tuner.decision` records
+    /// whole; `None` clears it.
+    pub fn set_failure_point(
+        &mut self,
+        core: CoreId,
+        point: Option<FailurePoint>,
+    ) -> Result<(), ConstraintError> {
+        if !self.cores.contains(core) {
+            return Err(ConstraintError::UnknownCore(core));
+        }
+        self.set_point(core, point);
+        Ok(())
+    }
+
+    fn set_point(&mut self, core: CoreId, point: Option<FailurePoint>) {
+        let old = self.failure_points.get(core);
+        if let Some(point) = point {
+            let shallower = old.is_none_or(|old| point.offset().shallower_than(old.offset()));
+            if shallower {
+                self.recent = CoreSet::default();
+                self.recent.insert(core);
+            }
+        }
+        self.failure_points = self
+            .failure_points
+            .iter()
+            .filter(|&(owner, _)| owner != core)
+            .chain(point.map(|point| (core, point)))
+            .collect();
     }
 
     /// Adds a combination unless one with the same members exists, which keeps its place and id.
@@ -174,11 +217,13 @@ impl Constraints {
         if let Some((core, _)) = members.iter().find(|&(core, _)| !self.cores.contains(core)) {
             return Err(ConstraintError::UnknownCore(core));
         }
-        if let Some(same) = self
+        let same = self
             .combinations_with(first)
             .find(|combination| combination.members == members)
-        {
-            return Ok(Insertion::Duplicate(same.id));
+            .map(Combination::id);
+        if let Some(same) = same {
+            self.recent = members.iter().map(|(core, _)| core).collect();
+            return Ok(Insertion::Duplicate(same));
         }
         if self
             .combinations
@@ -187,6 +232,7 @@ impl Constraints {
         {
             return Err(ConstraintError::DuplicateId(id));
         }
+        self.recent = members.iter().map(|(core, _)| core).collect();
         let index = self.combinations.len();
         for (core, _) in members.iter() {
             self.by_core[core.index()].push(index);
@@ -205,18 +251,27 @@ impl Constraints {
             .collect();
         let cleared: Vec<CombinationId> =
             self.combinations_with(core).map(Combination::id).collect();
-        if cleared.is_empty() {
-            return cleared;
+        self.remove_combinations(&cleared);
+        cleared
+    }
+
+    /// Drops the combinations with these ids; ids that name none are ignored.
+    pub fn remove_combinations(&mut self, ids: &[CombinationId]) {
+        if !self
+            .combinations
+            .iter()
+            .any(|combination| ids.contains(&combination.id))
+        {
+            return;
         }
         self.combinations
-            .retain(|combination| combination.members.get(core).is_none());
+            .retain(|combination| !ids.contains(&combination.id));
         self.by_core = Default::default();
         for (index, combination) in self.combinations.iter().enumerate() {
             for (member, _) in combination.members.iter() {
                 self.by_core[member.index()].push(index);
             }
         }
-        cleared
     }
 
     /// The first failure point `profile` reaches in core order, else the first combination in
