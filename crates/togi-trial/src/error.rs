@@ -39,6 +39,8 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
+    #[error("start the output log writer")]
+    LogWriter(#[source] io::Error),
     #[error("signal instance {instance} with {signal}")]
     Signal {
         instance: String,
