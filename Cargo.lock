@@ -404,6 +404,7 @@ version = "0.10.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "65c9fb96cbc91e3478eaae79a69fcd3f1ae4ad052e471fe6732fff548984b4af"
 dependencies = [
+ "chacha20",
  "getrandom",
  "rand_core",
 ]
@@ -592,10 +593,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "togi-gocompat"
-version = "0.0.0"
-
-[[package]]
 name = "togi-hostlock"
 version = "0.0.0"
 dependencies = [
@@ -612,6 +609,7 @@ dependencies = [
  "flate2",
  "jiff",
  "proptest",
+ "rand",
  "serde",
  "serde_json",
  "tempfile",

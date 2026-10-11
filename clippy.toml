@@ -9,6 +9,9 @@ allow-print-in-tests = true
 # systemd-run, systemctl and grub-editenv in hardware, the simulator in bench, bench in
 # audit), the SMU seam's write methods and journal writes outside the journal crate.
 disallowed-methods = [
-    { path = "togi_machine::Smu::set_offset", reason = "Only the session write transaction and zero-only emergency write through the SMU seam" },
-    { path = "togi_machine::Smu::set_all_offsets", reason = "Only the session write transaction and zero-only emergency write through the SMU seam" },
+    { path = "togi_machine::Smu::set_offset", reason = "Only the session write transaction writes a core offset through the SMU seam" },
+    { path = "togi_machine::Smu::set_all_offsets", reason = "Only the session write transaction writes every offset through the SMU seam" },
+    { path = "togi_machine::Smu::emergency_zero", reason = "Only the session's journal-failure emergency zeroes every core, after a confirmed teardown" },
+    { path = "togi_machine::SmuValidated::checked", reason = "Only a host implementation that validated the SMU interface mints its proof" },
+    { path = "togi_machine::Stopped::confirmed", reason = "Only a seam implementation that confirmed every workload stopped mints a teardown proof" },
 ]
