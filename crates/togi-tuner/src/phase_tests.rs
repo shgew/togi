@@ -126,12 +126,17 @@ fn phases_run_to_a_conclusion_and_count_clean_cycles() {
     j.cycle_start(5, &[Regime::R1]);
     j.cycle_end(5, true, true);
     assert_eq!(j.run().phases.clean_cycles(), 2);
+    j.profile_change(&[-9]);
+    j.cycle_start(6, &[Regime::R1]);
+    j.cycle_end(6, true, true);
+    assert_eq!(j.run().phases.clean_cycles(), 3);
     j.assert_resumes();
     j.reset(0);
     let reset = j.next_decision();
     j.decide(reset);
     assert_eq!(j.run().phases.clean_cycles(), 0);
     assert_eq!(j.run().phases.phase1_end(), None);
+    assert_eq!(j.run().phases.concluded(), None);
 }
 
 #[test]
