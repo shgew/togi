@@ -687,6 +687,26 @@ pub(crate) fn parked_failure(j: &mut Journal, id: u8, offset: i64, profile: &[i6
     )
 }
 
+/// Runs a hunt group's parked trial, failing it with a crash after 5 s when `fail`, and records
+/// the failure's attribution.
+pub(crate) fn run_group(j: &mut Journal, plan: &crate::TrialPlan, fail: bool) {
+    assert_eq!(plan.condition, Condition::Parked, "{plan:?}");
+    if !fail {
+        j.trial(plan, Outcome::Pass);
+        return;
+    }
+    let (intent, trial) = j.intent(plan);
+    let mut end = Journal::end_payload(&trial, Outcome::Failure, Some(Signal::Crash));
+    end.duration_s = 5;
+    j.append(end.into(), &[intent]);
+    let attribution = j.next_decision();
+    assert!(
+        matches!(&attribution.payload, crate::DecisionPayload::Failure(f) if f.attribution == togi_journal::Attribution::Unattributed),
+        "{attribution:?}"
+    );
+    j.decide(attribution);
+}
+
 #[test]
 fn an_unattributed_hold_shows_only_the_cores_its_hunt_would_search() {
     let mut j = later_session(&[-10, -12]);

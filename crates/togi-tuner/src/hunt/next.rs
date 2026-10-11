@@ -593,7 +593,7 @@ impl Run {
         )
     }
 
-    fn combination_commitment(
+    pub(crate) fn combination_commitment(
         &self,
         hunt: &Active,
         recorded: &super::state::Recorded,
