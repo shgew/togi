@@ -189,6 +189,7 @@
           );
 
           checks = {
+            guard-demo = pkgs.runCommand "guard-demo" { } "touch $out";
             package = togi "dev";
             rust-clippy = craneLib.mkCargoDerivation (rustCheck {
               pnameSuffix = "-clippy";
