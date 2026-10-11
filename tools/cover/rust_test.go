@@ -463,6 +463,90 @@ func TestRustNotBuilt(t *testing.T) {
 	}
 }
 
+func TestRustNotBuiltClaimsNoModuleDeclarationItsFileBuilt(t *testing.T) {
+	t.Parallel()
+	const lib = "crates/a/src/lib.rs"
+	for _, tc := range []struct {
+		name  string
+		file  string
+		src   string
+		built map[string]bool
+		want  []string
+	}{
+		{
+			name:  "a cfg(test) module the test build compiled from its own file",
+			src:   "mod b;\n#[cfg(test)]\nmod tests;\n",
+			built: map[string]bool{lib: true, "crates/a/src/tests.rs": true},
+		},
+		{
+			name:  "a module in a directory",
+			src:   "#[cfg(test)]\npub(crate) mod tests;\n",
+			built: map[string]bool{lib: true, "crates/a/src/tests/mod.rs": true},
+		},
+		{
+			name:  "a cfg(test) module no dep-info names",
+			src:   "#[cfg(test)]\nmod tests;\n",
+			built: map[string]bool{lib: true},
+			want:  []string{lib},
+		},
+		{
+			name:  "a feature module whose file another crate's dep-info names",
+			src:   "#[cfg(feature = \"x\")]\nmod x;\n",
+			built: map[string]bool{lib: true, "crates/b/src/x.rs": true},
+			want:  []string{lib},
+		},
+		{
+			name:  "a module declared in a non-root file is not proven by a sibling file",
+			file:  "crates/a/src/foo.rs",
+			src:   "#[cfg(test)]\nmod tests;\n",
+			built: map[string]bool{"crates/a/src/foo.rs": true, "crates/a/src/tests.rs": true},
+			want:  []string{"crates/a/src/foo.rs"},
+		},
+		{
+			name:  "a module declared in a non-root file, found under the file's stem",
+			file:  "crates/a/src/foo.rs",
+			src:   "#[cfg(test)]\nmod tests;\n",
+			built: map[string]bool{"crates/a/src/foo.rs": true, "crates/a/src/foo/tests.rs": true},
+		},
+		{
+			name:  "a module whose path attribute names another file",
+			src:   "#[cfg(windows)]\n#[path = \"win.rs\"]\nmod imp;\n",
+			built: map[string]bool{lib: true, "crates/a/src/imp.rs": true},
+			want:  []string{lib},
+		},
+		{
+			name:  "a module whose cfg_attr path names another file",
+			src:   "#[cfg(windows)]\n#[cfg_attr(unix, path = \"x.rs\")]\nmod imp;\n",
+			built: map[string]bool{lib: true, "crates/a/src/imp.rs": true},
+			want:  []string{lib},
+		},
+		{
+			name:  "a module declared inside an inline module is not proven by a top-level file",
+			src:   "mod outer {\n    #[cfg(feature = \"x\")]\n    mod tests;\n}\n",
+			built: map[string]bool{lib: true, "crates/a/src/tests.rs": true},
+			want:  []string{lib},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			path := lib
+			if tc.file != "" {
+				path = tc.file
+			}
+			writeTree(t, root, map[string]string{path: tc.src})
+			changed := map[string][]lineRange{path: {{1, 3}}}
+			got, err := rustNotBuilt(root, changed, tc.built, map[string]map[int]bool{path: {}}, linuxHost())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("not built (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
 func TestRustNotBuiltNamesFilesNoDepInfoNames(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
