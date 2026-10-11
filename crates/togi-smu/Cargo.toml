@@ -1,0 +1,21 @@
+[package]
+name = "togi-smu"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "The only writer of Curve Optimizer offsets: CPU identity, topology, the ryzen_smu mailbox, slot mapping and the PM table"
+
+[features]
+hardware = []
+
+[dependencies]
+thiserror.workspace = true
+togi-machine.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true
