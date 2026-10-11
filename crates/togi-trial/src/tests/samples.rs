@@ -119,15 +119,15 @@ impl Storage for Blocking {
 fn blocked_open(
     gate: std::sync::mpsc::Receiver<()>,
     lines: Arc<Mutex<usize>>,
-) -> Rc<dyn Fn() -> Open> {
+) -> Rc<dyn Fn() -> Result<Open, StorageError>> {
     let slot = Mutex::new(Some((gate, lines)));
     Rc::new(move || {
         let parts = slot.lock().unwrap().take();
-        Box::new(move || {
+        Ok(Box::new(move || {
             let (gate, lines) =
                 parts.ok_or_else(|| StorageError::Create(std::io::Error::other("reused")))?;
             Ok(Box::new(Blocking { gate, lines }) as Box<dyn Storage>)
-        })
+        }) as Open)
     })
 }
 
@@ -189,7 +189,7 @@ async fn an_open_failure_ends_the_trial_early_without_delaying_teardown() {
         };
         let rig = rig_edit(TestBackend::new("/bin/true"), timing, |env| {
             env.storage = Some(Rc::new(|| {
-                Box::new(|| Err(StorageError::Create(std::io::Error::other("denied"))))
+                Ok(Box::new(|| Err(StorageError::Create(std::io::Error::other("denied")))) as Open)
             }));
         });
         let handle = rig.start(spec(Regime::R1, &[0], secs(30))).await.unwrap();
@@ -227,7 +227,7 @@ async fn a_write_failure_ends_the_trial_and_keeps_the_close_error_too() {
         };
         let rig = rig_edit(TestBackend::new("/bin/true"), timing, |env| {
             env.storage = Some(Rc::new(|| {
-                Box::new(|| Ok(Box::new(Failing) as Box<dyn Storage>))
+                Ok(Box::new(|| Ok(Box::new(Failing) as Box<dyn Storage>)) as Open)
             }));
         });
         let handle = rig.start(spec(Regime::R1, &[0], secs(30))).await.unwrap();
@@ -278,6 +278,45 @@ async fn cancelling_while_storage_setup_blocks_stops_the_workload_and_joins_the_
             script(|_: ProcCtx| async {}),
             Launch::Fail(std::io::Error::other("x")),
         );
+    })
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_writer_that_cannot_start_ends_the_trial_with_a_storage_error() {
+    local(async {
+        let rig = rig_edit(TestBackend::new("/bin/true"), Timing::default(), |env| {
+            env.storage = Some(Rc::new(|| {
+                Err(StorageError::Spawn(std::io::Error::other("no threads left")))
+            }));
+        });
+        let handle = rig.start(spec(Regime::R1, &[0], secs(60))).await.unwrap();
+        let run = finish(&handle).await;
+        assert!(run.finished.result.ran < secs(1));
+        assert!(matches!(
+            &run.finished.errors[..],
+            [Error::Storage(failure)] if matches!(failure.errors(), [StorageError::Spawn(_)])
+        ));
+        assert!(run.finished.teardown.is_ok());
+    })
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_stuck_writer_join_does_not_block_the_runtime_thread() {
+    local(async {
+        let (gate, gated) = std::sync::mpsc::channel::<()>();
+        let lines = Arc::new(Mutex::new(0));
+        let storage = blocked_open(gated, Arc::clone(&lines));
+        let rig = rig_edit(TestBackend::new("/bin/true"), Timing::default(), |env| {
+            env.storage = Some(storage);
+        });
+        let handle = rig.start(spec(Regime::R1, &[0], secs(3))).await.unwrap();
+        let wall = std::time::Instant::now();
+        let run = finish(&handle).await;
+        assert!(wall.elapsed() < secs(2), "the five-second join ran in virtual time");
+        assert!(matches!(&run.finished.errors[..], [Error::Storage(_)]));
+        drop(gate);
     })
     .await;
 }
