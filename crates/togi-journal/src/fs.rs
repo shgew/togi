@@ -7,7 +7,7 @@ use std::ffi::OsString;
 use std::fmt;
 use std::fs::{File, OpenOptions};
 use std::io::{self, Read, Write};
-use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
@@ -65,6 +65,8 @@ pub trait Fs: Send + Sync + fmt::Debug {
     fn rename_noreplace(&self, from: &Path, to: &Path) -> io::Result<()>;
     fn remove_file(&self, path: &Path) -> io::Result<()>;
     fn sync_dir(&self, path: &Path) -> io::Result<()>;
+    /// Sets the permission bits of the directory at `path`, opened without following a link.
+    fn set_dir_mode(&self, path: &Path, mode: u32) -> io::Result<()>;
     fn read_dir(&self, path: &Path) -> io::Result<Vec<DirEntry>>;
     /// The kind of the entry at `path` without following a link, or `None` when nothing is there.
     fn kind(&self, path: &Path) -> io::Result<Option<FileKind>>;
@@ -171,6 +173,15 @@ impl Fs for DiskFs {
             .sync_all()
     }
 
+    fn set_dir_mode(&self, path: &Path, mode: u32) -> io::Result<()> {
+        let dir = OpenOptions::new()
+            .read(true)
+            .custom_flags((OFlags::NOFOLLOW | OFlags::DIRECTORY).bits().cast_signed())
+            .open(path)?;
+        dir.set_permissions(std::fs::Permissions::from_mode(mode))?;
+        if self.synced { dir.sync_all() } else { Ok(()) }
+    }
+
     fn read_dir(&self, path: &Path) -> io::Result<Vec<DirEntry>> {
         std::fs::read_dir(path)?
             .map(|entry| {
@@ -226,6 +237,7 @@ pub enum Op {
     Rename,
     Remove,
     SyncDir,
+    SetMode,
     /// Opening or listing for reading.
     Read,
 }
@@ -312,6 +324,7 @@ enum Node {
 struct Tree {
     nodes: BTreeMap<PathBuf, Node>,
     data: HashMap<u64, Vec<u8>>,
+    handles: HashMap<u64, usize>,
     next_inode: u64,
     locks: HashSet<PathBuf>,
     faults: Vec<(Fault, u64)>,
@@ -362,6 +375,15 @@ impl Tree {
         }
     }
 
+    fn reclaim(&mut self, inode: u64) {
+        let open = self.handles.get(&inode).is_some_and(|count| *count > 0);
+        let linked = self.nodes.values().any(|node| matches!(node, Node::File(linked) if *linked == inode));
+        if !open && !linked {
+            self.data.remove(&inode);
+            self.handles.remove(&inode);
+        }
+    }
+
     fn new_file(&mut self, path: &Path) -> io::Result<u64> {
         self.parent_dir(path)?;
         let inode = self.next_inode;
@@ -402,6 +424,10 @@ impl Tree {
             }
             _ => {}
         }
+        let replaced = match self.node(to) {
+            Some(Node::File(inode)) => Some(*inode),
+            _ => None,
+        };
         let moved: Vec<(PathBuf, Node)> = self
             .nodes
             .range(from.to_path_buf()..)
@@ -413,6 +439,9 @@ impl Tree {
             let relative = path.strip_prefix(from).unwrap_or(Path::new(""));
             let destination = if relative.as_os_str().is_empty() { to.to_path_buf() } else { to.join(relative) };
             self.nodes.insert(destination, node);
+        }
+        if let Some(inode) = replaced {
+            self.reclaim(inode);
         }
         Ok(())
     }
@@ -467,6 +496,11 @@ impl MemFs {
     /// Every mutating operation attempted so far, in order, with the path it named first.
     pub fn log(&self) -> Vec<(Op, PathBuf)> {
         self.tree().log.clone()
+    }
+
+    /// The number of file bodies the filesystem still holds.
+    pub fn stored_files(&self) -> usize {
+        self.tree().data.len()
     }
 
     /// The bytes of the regular file at `path`.
@@ -545,6 +579,7 @@ impl MemFs {
 
     fn open_file(&self, path: &Path, mode: OpenMode) -> io::Result<Box<dyn FsFile>> {
         let inode = self.mutate(Op::Open, &[path], |tree| tree.open(path, mode))?;
+        *self.tree().handles.entry(inode).or_default() += 1;
         Ok(Box::new(MemFile { fs: self.clone(), path: path.to_path_buf(), inode }))
     }
 }
@@ -566,6 +601,16 @@ struct MemFile {
     fs: MemFs,
     path: PathBuf,
     inode: u64,
+}
+
+impl Drop for MemFile {
+    fn drop(&mut self) {
+        let mut tree = self.fs.tree();
+        if let Some(count) = tree.handles.get_mut(&self.inode) {
+            *count = count.saturating_sub(1);
+        }
+        tree.reclaim(self.inode);
+    }
 }
 
 impl FsFile for MemFile {
@@ -654,7 +699,9 @@ impl Fs for MemFs {
         self.mutate(Op::Remove, &[path], |tree| match tree.node(path) {
             Some(Node::Dir) => Err(io::Error::from(io::ErrorKind::IsADirectory)),
             Some(_) => {
-                tree.nodes.remove(path);
+                if let Some(Node::File(inode)) = tree.nodes.remove(path) {
+                    tree.reclaim(inode);
+                }
                 Ok(())
             }
             None => Err(io::Error::from(io::ErrorKind::NotFound)),
@@ -687,15 +734,32 @@ impl Fs for MemFs {
     }
 
     fn try_lock(&self, path: &Path) -> io::Result<Option<FsLock>> {
-        self.mutate(Op::Open, &[path], |tree| {
-            if tree.node(path).is_none() {
-                tree.new_file(path)?;
-            } else {
-                tree.file(path)?;
-            }
-            Ok(tree.locks.insert(path.to_path_buf()))
+        let mut tree = self.tree();
+        let effect = tree.check(Op::Open, &[path]);
+        if matches!(effect, Some(Effect::Before | Effect::Short)) {
+            return Err(injected(Op::Open));
+        }
+        if tree.node(path).is_none() {
+            tree.new_file(path)?;
+        } else {
+            tree.file(path)?;
+        }
+        if !tree.locks.insert(path.to_path_buf()) {
+            return Ok(None);
+        }
+        if effect.is_some() {
+            tree.locks.remove(path);
+            return Err(injected(Op::Open));
+        }
+        Ok(Some(FsLock(Box::new(MemLock { fs: self.clone(), path: path.to_path_buf() }))))
+    }
+
+    fn set_dir_mode(&self, path: &Path, _mode: u32) -> io::Result<()> {
+        self.mutate(Op::SetMode, &[path], |tree| match tree.node(path) {
+            Some(Node::Dir) => Ok(()),
+            Some(_) => Err(io::Error::from(io::ErrorKind::NotADirectory)),
+            None => Err(io::Error::from(io::ErrorKind::NotFound)),
         })
-        .map(|taken| taken.then(|| FsLock(Box::new(MemLock { fs: self.clone(), path: path.to_path_buf() }))))
     }
 }
 
@@ -889,5 +953,41 @@ mod tests {
         std::os::unix::fs::symlink(dir.path().join("real"), dir.path().join("link")).unwrap();
         assert!(DiskFs::default().open_read(&dir.path().join("link")).is_err());
         assert_eq!(DiskFs::default().kind(&dir.path().join("link")).unwrap(), Some(FileKind::Symlink));
+    }
+
+    #[test]
+    fn replaced_and_removed_files_release_their_bytes() {
+        let fs = MemFs::new();
+        dir(&fs, "/s");
+        for round in 0..100 {
+            let mut file = fs.create_truncate(Path::new("/s/.tmp")).unwrap();
+            file.write_all(b"document").unwrap();
+            drop(file);
+            fs.rename(Path::new("/s/.tmp"), Path::new("/s/state.json")).unwrap();
+            assert!(fs.stored_files() <= 2, "round {round}: {} stored", fs.stored_files());
+        }
+        fs.remove_file(Path::new("/s/state.json")).unwrap();
+        assert_eq!(fs.stored_files(), 0);
+    }
+
+    #[test]
+    fn an_open_handle_keeps_a_removed_file_until_it_drops() {
+        let fs = MemFs::new();
+        dir(&fs, "/s");
+        let mut file = fs.open_append(Path::new("/s/a")).unwrap();
+        fs.remove_file(Path::new("/s/a")).unwrap();
+        file.write_all(b"x").unwrap();
+        assert_eq!(fs.stored_files(), 1);
+        drop(file);
+        assert_eq!(fs.stored_files(), 0);
+    }
+
+    #[test]
+    fn a_lock_that_fails_after_taking_effect_is_not_held() {
+        let fs = MemFs::new();
+        dir(&fs, "/s");
+        fs.inject(Fault::after(Op::Open, 1));
+        assert!(fs.try_lock(Path::new("/s/lock")).is_err());
+        assert!(fs.try_lock(Path::new("/s/lock")).unwrap().is_some());
     }
 }

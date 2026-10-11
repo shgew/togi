@@ -265,7 +265,7 @@ fn a_failed_close_still_releases_the_lock() {
 #[test]
 fn state_is_published_through_the_journal_and_survives_a_reopen() {
     let fs = MemFs::new();
-    let journal = begin_default(&fs);
+    let mut journal = begin_default(&fs);
     journal.write_state(&vec![1, 2, 3]).unwrap();
     drop(journal);
     let journal = reopen(&fs, 2);
@@ -322,4 +322,24 @@ fn an_unreadable_archive_is_reported_not_taken_for_absence() {
     let dir = simulated(&fs);
     fs.put("/state/archive/20231114T221320Z.jsonl", "garbage\n");
     assert!(matches!(dir.boot_reason_recorded("r"), Err(crate::LookupError::File(_))));
+}
+
+fn end_with(median: Option<f64>) -> Payload {
+    let mut end: crate::TrialEnd =
+        serde_json::from_str(r#"{"trial":"0001","outcome":"pass","duration_s":1}"#).unwrap();
+    end.voltage_request_median_v = median;
+    Payload::TrialEnd(end)
+}
+
+#[test]
+fn a_payload_that_reads_back_different_is_refused_without_poison_or_seq() {
+    for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        let fs = MemFs::new();
+        let mut journal = begin_default(&fs);
+        let mutations = fs.mutations();
+        let refused = journal.append(stamp(1), end_with(Some(value)), &[]);
+        assert!(matches!(refused, Err(AppendError::Lossy)), "{value}");
+        assert_eq!(fs.mutations(), mutations);
+        assert_eq!(journal.append(stamp(2), end_with(Some(0.5)), &[]).unwrap().seq.get(), 2);
+    }
 }

@@ -242,3 +242,20 @@ fn an_appended_event_after_repair_is_durable_and_contiguous() {
     assert_eq!(recording.events().last().unwrap().seq.get(), 6);
     assert_eq!(recording.events()[4].kind(), EventKind::JournalTorn);
 }
+
+#[test]
+fn a_reopen_after_a_failed_repair_directory_sync_syncs_the_directory_again() {
+    let (bytes, _) = torn_sample();
+    let fs = MemFs::new();
+    fs.put("/state/events.jsonl", bytes);
+    let dir = simulated(&fs);
+    fs.inject(Fault::before(crate::fs::Op::SyncDir, 1));
+    assert!(dir.open(boot(2)).is_err());
+    fs.clear_faults();
+    let mark = fs.log().len();
+    let journal = reopen(&fs, 3);
+    assert_eq!(journal.events().len(), 5);
+    assert!(fs.log()[mark..]
+        .iter()
+        .any(|(op, path)| *op == crate::fs::Op::SyncDir && path == std::path::Path::new("/state")));
+}

@@ -42,9 +42,21 @@ mod support {
         journal.append(stamp(0), start(), &[]).unwrap();
         journal
     }
+
+    pub(crate) fn mode(path: &Path) -> u32 {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::metadata(path).unwrap().permissions().mode() & 0o777
+    }
+
+    pub(crate) fn current_umask() -> u32 {
+        let probe = tempfile::tempdir().unwrap();
+        let path = probe.path().join("probe");
+        std::fs::create_dir(&path).unwrap();
+        0o777 & !mode(&path)
+    }
 }
 
-use support::{begin, boot, note, stamp};
+use support::{begin, boot, mode, note, stamp};
 
 #[test]
 fn a_disk_journal_survives_close_reopen_state_and_archive() {
@@ -144,4 +156,33 @@ fn an_abrupt_exit_loses_no_acknowledged_event() {
     let journal = StateDir::lock(&state).unwrap().open(boot(2)).unwrap();
     assert_eq!(journal.events().len() as u64, APPENDS + 1);
     assert_eq!(journal.repaired(), None);
+}
+
+#[test]
+fn the_state_directory_is_traversable_whatever_it_was_before() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = tempfile::tempdir().unwrap();
+    let fresh = root.path().join("fresh/state");
+    drop(StateDir::lock(&fresh).unwrap());
+    assert_eq!(mode(&fresh), 0o711);
+
+    let existing = root.path().join("existing");
+    std::fs::create_dir(&existing).unwrap();
+    std::fs::set_permissions(&existing, std::fs::Permissions::from_mode(0o700)).unwrap();
+    drop(StateDir::lock(&existing).unwrap());
+    assert_eq!(mode(&existing), 0o711);
+    assert_eq!(mode(&root.path().join("fresh")), 0o755 & !support::current_umask());
+}
+
+#[test]
+fn a_symlinked_state_directory_is_refused_and_its_target_left_alone() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = tempfile::tempdir().unwrap();
+    let target = root.path().join("target");
+    std::fs::create_dir(&target).unwrap();
+    std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let link = root.path().join("link");
+    std::os::unix::fs::symlink(&target, &link).unwrap();
+    assert!(StateDir::lock(&link).is_err());
+    assert_eq!(mode(&target), 0o700);
 }

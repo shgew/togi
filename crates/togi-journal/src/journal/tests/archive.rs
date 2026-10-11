@@ -131,7 +131,7 @@ fn a_poisoned_journal_cannot_archive() {
 fn every_archive_step_failure_resumes_once_and_leaves_the_sources_immutable() {
     for kind in [ArchiveKind::ResetAll, ArchiveKind::Transition] {
         let expected = reference(kind);
-        for nth in 1..=40 {
+        for nth in 1..=60 {
             for fault in [Fault::any_before(nth), Fault::any_after(nth)] {
                 let fs = MemFs::new();
                 let journal = seeded(&fs);
@@ -198,7 +198,7 @@ fn archiving_nothing_archives_nothing() {
 #[test]
 fn an_unreadable_archive_resumes_through_every_step_failure() {
     for kind in [ArchiveKind::ResetAll, ArchiveKind::Transition] {
-        for nth in 1..=30 {
+        for nth in 1..=50 {
             for fault in [Fault::any_before(nth), Fault::any_after(nth)] {
                 let fs = MemFs::new();
                 let original = unreadable_fixture(&fs);
@@ -354,4 +354,92 @@ fn the_boundary_is_durable_before_a_recorded_reset_all_moves_anything() {
     assert_eq!(dir.archive_unreadable(ArchiveKind::ResetAll).unwrap(), Some(default_session()));
     assert_eq!(dir.reset_boundary().unwrap(), Some(default_session()));
     assert_eq!(fs.contents(ARCHIVED).unwrap(), recorded);
+}
+
+#[test]
+fn a_failed_archive_before_its_event_retries_to_completion() {
+    for kind in [ArchiveKind::ResetAll, ArchiveKind::Transition] {
+        let expected = reference(kind);
+        for nth in 1..=60 {
+            for fault in [Fault::any_before(nth), Fault::any_after(nth)] {
+                let fs = MemFs::new();
+                let journal = seeded(&fs);
+                fs.inject(fault.clone());
+                let _ = journal.archive(stamp(5), kind, &[]).map(drop);
+                fs.clear_faults();
+                let context = format!("{kind:?} {fault:?}");
+                let retry = reopen(&fs, 1);
+                if fs.contents(ARCHIVED).is_none() {
+                    retry.archive(stamp(5), kind, &[]).map(drop).unwrap_or_else(|error| panic!("{context}: {error}"));
+                }
+                assert_archived_intact(&fs, &expected, &context);
+            }
+        }
+    }
+}
+
+fn undecodable_fixture(fs: &MemFs) -> Vec<u8> {
+    unreadable_fixture(fs);
+    let text = String::from_utf8(live(fs)).unwrap().replace("session.warning", "invented.kind");
+    fs.put("/state/events.jsonl", text.clone());
+    text.into_bytes()
+}
+
+#[test]
+fn an_undecodable_journal_archive_retries_through_its_own_markers() {
+    for kind in [ArchiveKind::ResetAll, ArchiveKind::Transition] {
+        for nth in 1..=50 {
+            for fault in [Fault::any_before(nth), Fault::any_after(nth)] {
+                let fs = MemFs::new();
+                let original = undecodable_fixture(&fs);
+                assert!(simulated(&fs).open(boot(2)).is_err());
+                let mut dir = simulated(&fs);
+                fs.inject(fault.clone());
+                let _ = dir.archive_unreadable(kind);
+                fs.clear_faults();
+                let context = format!("{kind:?} {fault:?}");
+                dir.archive_unreadable(kind).unwrap_or_else(|error| panic!("{context}: {error}"));
+                drop(dir.open(boot(2)).unwrap_or_else(|error| panic!("{context}: {error}")));
+                assert_archived_intact(&fs, &original, &context);
+                match kind {
+                    ArchiveKind::Transition => assert!(fs.contents(CARRY).is_some(), "{context}"),
+                    ArchiveKind::ResetAll => assert!(fs.contents(RESET).is_some(), "{context}"),
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn reopening_after_a_moved_archive_syncs_the_archive_directory_before_the_next_writer() {
+    let reference = MemFs::new();
+    let journal = seeded(&reference);
+    let base = reference.log().len();
+    journal.archive(stamp(5), ArchiveKind::ResetAll, &[]).map(drop).unwrap();
+    let log = reference.log();
+    let moved = log[base..]
+        .iter()
+        .position(|(op, path)| *op == crate::fs::Op::Rename && path == std::path::Path::new("/state/events.jsonl"))
+        .unwrap();
+    let nth = u64::try_from(moved).unwrap() + 2;
+
+    let fs = MemFs::new();
+    let journal = seeded(&fs);
+    fs.inject(Fault::any_before(nth));
+    assert!(journal.archive(stamp(5), ArchiveKind::ResetAll, &[]).map(drop).is_err());
+    fs.clear_faults();
+    assert!(fs.contents(ARCHIVED).is_some());
+    let mark = fs.log().len();
+    let journal = reopen(&fs, 2);
+    assert!(journal.events().is_empty());
+    let log = fs.log();
+    let archive_sync = log[mark..]
+        .iter()
+        .position(|(op, path)| *op == crate::fs::Op::SyncDir && path == std::path::Path::new("/state/archive"))
+        .unwrap();
+    let writer = log[mark..]
+        .iter()
+        .position(|(op, path)| *op == crate::fs::Op::Open && path == std::path::Path::new("/state/events.jsonl"))
+        .unwrap();
+    assert!(archive_sync < writer);
 }

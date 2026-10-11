@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::sync::Arc;
 
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
@@ -58,7 +59,7 @@ fn locking_refuses_a_state_path_that_is_a_file() {
 #[test]
 fn state_round_trips_and_a_missing_one_reads_as_none() {
     let fs = MemFs::new();
-    let dir = dir(&fs);
+    let mut dir = dir(&fs);
     assert_eq!(dir.read_state::<Doc>().unwrap(), None);
     dir.write_state(&Doc { n: 7 }).unwrap();
     assert_eq!(dir.read_state::<Doc>().unwrap(), Some(Doc { n: 7 }));
@@ -80,7 +81,7 @@ fn state_publication_leaves_the_old_or_the_new_document_under_every_fault() {
         .chain([Fault::short_write(1)]);
     for fault in faults {
         let fs = MemFs::new();
-        let dir = dir(&fs);
+        let mut dir = dir(&fs);
         dir.write_state(&Doc { n: 1 }).unwrap();
         fs.inject(fault.clone());
         let failed = dir.write_state(&Doc { n: 2 }).is_err();
@@ -96,7 +97,7 @@ fn state_publication_leaves_the_old_or_the_new_document_under_every_fault() {
 #[test]
 fn a_failed_publication_never_replaces_the_state_with_a_partial_write() {
     let fs = MemFs::new();
-    let dir = dir(&fs);
+    let mut dir = dir(&fs);
     dir.write_state(&Doc { n: 1 }).unwrap();
     fs.fail_state_publication();
     assert!(dir.write_state(&Doc { n: 2 }).is_err());
@@ -106,7 +107,7 @@ fn a_failed_publication_never_replaces_the_state_with_a_partial_write() {
 #[test]
 fn the_directory_is_synced_after_the_state_rename() {
     let fs = MemFs::new();
-    let dir = dir(&fs);
+    let mut dir = dir(&fs);
     dir.write_state(&Doc { n: 1 }).unwrap();
     let log = fs.log();
     let rename = log.iter().rposition(|(op, _)| *op == Op::Rename).unwrap();
@@ -344,4 +345,40 @@ fn only_a_live_session_start_names_the_live_session() {
     assert_eq!(dir.live_session().unwrap(), Some(sid("20231114T221320Z")));
     fs.put("/state/events.jsonl", "{\"seq\":1,\"kind\":\"mce\",\"data\":{}}\n");
     assert!(matches!(dir.live_session(), Err(DirError::NotAJournal { .. })));
+}
+
+#[test]
+fn every_lock_syncs_the_whole_created_chain_again_after_a_failed_sync() {
+    let fs = MemFs::new();
+    let path = Path::new("/a/b/c");
+    fs.inject(Fault::before(Op::SyncDir, 1));
+    assert!(StateDir::lock_in(Arc::new(fs.clone()), path, false).is_err());
+    fs.clear_faults();
+    let mark = fs.log().len();
+    let held = StateDir::lock_in(Arc::new(fs.clone()), path, false).unwrap();
+    let log = fs.log();
+    let synced: Vec<&Path> =
+        log[mark..].iter().filter(|(op, _)| *op == Op::SyncDir).map(|(_, path)| path.as_path()).collect();
+    drop(held);
+    for expected in ["/", "/a", "/a/b"] {
+        assert!(synced.contains(&Path::new(expected)), "{expected} not synced in {synced:?}");
+    }
+}
+
+#[test]
+fn a_failed_lock_never_leaks_the_lock() {
+    let fs = MemFs::new();
+    fs.inject(Fault::after(Op::Open, 1).named("lock"));
+    assert!(crate::testing::try_simulated(&fs).is_err());
+    fs.clear_faults();
+    assert!(crate::testing::try_simulated(&fs).is_ok());
+}
+
+#[test]
+fn a_failed_mode_change_releases_the_lock() {
+    let fs = MemFs::new();
+    fs.inject(Fault::before(Op::SetMode, 1));
+    assert!(crate::testing::try_simulated(&fs).is_err());
+    fs.clear_faults();
+    assert!(crate::testing::try_simulated(&fs).is_ok());
 }

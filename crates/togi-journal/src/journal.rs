@@ -56,6 +56,8 @@ pub enum AppendError {
     Encode(#[source] serde_json::Error),
     #[error("the event would not read back: {0}")]
     Unreadable(#[source] crate::DecodeError),
+    #[error("the event would read back as a different payload")]
+    Lossy,
     #[error("the receipt belongs to another journal")]
     ForeignReceipt,
 }
@@ -183,7 +185,7 @@ impl Journal {
         &self.dir
     }
 
-    pub fn write_state<T: Serialize>(&self, state: &T) -> Result<(), StateError> {
+    pub fn write_state<T: Serialize>(&mut self, state: &T) -> Result<(), StateError> {
         self.dir.write_state(state)
     }
 
@@ -247,7 +249,8 @@ impl Journal {
         let line = encode(&event).map_err(AppendError::Encode)?;
         std::str::from_utf8(&line[..line.len() - 1])
             .map_err(|error| AppendError::Encode(serde::ser::Error::custom(error)))
-            .and_then(|text| Event::decode(text).map(drop).map_err(AppendError::Unreadable))?;
+            .and_then(|text| Event::decode(text).map_err(AppendError::Unreadable))
+            .and_then(|decoded| if decoded.payload == event.payload { Ok(()) } else { Err(AppendError::Lossy) })?;
         if let Err(failure) = self.writer.write(&line) {
             let failure = Arc::new(failure);
             self.poison = Some(Arc::clone(&failure));
@@ -287,7 +290,7 @@ impl Journal {
         if let Some(failure) = &self.poison {
             return Err(AppendError::Poisoned(Arc::clone(failure)).into());
         }
-        self.dir.check_free(&session)?;
+        self.dir.check_archive_free(&session)?;
         self.dir.mark_archive_kind(kind, &session)?;
         self.commit(stamp, Payload::SessionArchived(SessionArchived { session }), cause)?;
         self.writer.finish().map_err(|failure| ArchiveError::Flush(failure.source))?;

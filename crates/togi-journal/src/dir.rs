@@ -22,6 +22,7 @@ pub(crate) const STATE_FILE: &str = "state.json";
 pub(crate) const STATE_TMP: &str = ".state.json.tmp";
 pub(crate) const ARCHIVE_DIR: &str = "archive";
 pub(crate) const TRIALS_DIR: &str = "trials";
+const STATE_DIR_MODE: u32 = 0o711;
 const SIMULATED_ROOT: &str = "/state";
 
 #[derive(Debug, thiserror::Error)]
@@ -115,6 +116,7 @@ impl StateDir {
             .try_lock(&lock_path)
             .map_err(io_at("lock", &lock_path))?
             .ok_or_else(|| LockError::Held { path: path.to_path_buf() })?;
+        fs.set_dir_mode(path, STATE_DIR_MODE).map_err(io_at("set directory mode", path))?;
         Ok(Self { fs, path: path.to_path_buf(), buffered, _lock: lock })
     }
 
@@ -152,7 +154,16 @@ impl StateDir {
     }
 
     /// Publishes the document as `state.json`: a reader sees the old document or the new one, never a mix.
-    pub fn write_state<T: Serialize>(&self, state: &T) -> Result<(), StateError> {
+    ///
+    /// Publication takes `&mut self` because it shares one temporary file: two publications at once could truncate a
+    /// document the other has already renamed into place.
+    ///
+    /// ```compile_fail,E0596
+    /// fn publish(dir: &togi_journal::StateDir) {
+    ///     let _ = dir.write_state(&1);
+    /// }
+    /// ```
+    pub fn write_state<T: Serialize>(&mut self, state: &T) -> Result<(), StateError> {
         let mut bytes = serde_json::to_vec(state).map_err(StateError::Encode)?;
         bytes.push(b'\n');
         let tmp = self.join(STATE_TMP);
@@ -185,21 +196,29 @@ impl StateDir {
 }
 
 fn create_dirs(fs: &dyn Fs, path: &Path) -> Result<(), DirError> {
-    let mut missing = Vec::new();
+    let mut chain = Vec::new();
     for ancestor in path.ancestors().take_while(|ancestor| !ancestor.as_os_str().is_empty()) {
-        match fs.kind(ancestor).map_err(io_at("stat", ancestor))? {
-            Some(FileKind::Dir | FileKind::Symlink) => break,
+        let kind = fs.kind(ancestor).map_err(io_at("stat", ancestor))?;
+        match kind {
+            Some(FileKind::Dir | FileKind::Symlink) | None => chain.push((ancestor, kind)),
             Some(_) => return Err(DirError::NotADirectory { path: ancestor.to_path_buf() }),
-            None => missing.push(ancestor),
+        }
+        if kind == Some(FileKind::Symlink) {
+            break;
         }
     }
-    for dir in missing.into_iter().rev() {
-        match fs.create_dir(dir) {
-            Ok(()) => {}
-            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
-            Err(error) => return Err(io_at("create directory", dir)(error)),
+    for (dir, kind) in chain.iter().rev() {
+        if kind.is_none() {
+            match fs.create_dir(dir) {
+                Ok(()) => {}
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+                Err(error) => return Err(io_at("create directory", dir)(error)),
+            }
         }
-        let parent = dir.parent().filter(|parent| !parent.as_os_str().is_empty()).unwrap_or(Path::new("."));
+    }
+    for (dir, _) in &chain {
+        let Some(parent) = dir.parent() else { continue };
+        let parent = if parent.as_os_str().is_empty() { Path::new(".") } else { parent };
         fs.sync_dir(parent).map_err(io_at("sync directory", parent))?;
     }
     Ok(())

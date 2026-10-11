@@ -217,15 +217,28 @@ impl StateDir {
         Ok(Some(dropped))
     }
 
-    pub(crate) fn check_free(&self, session: &SessionId) -> Result<(), DirError> {
-        let taken = [self.archive_journal(session), self.archive_trials(session)]
+    /// Refuses a session whose archived journal or archived trial directory already exists. Its own transaction
+    /// markers do not count: they are how an interrupted archive resumes.
+    pub(crate) fn check_archive_free(&self, session: &SessionId) -> Result<(), DirError> {
+        for path in [self.archive_journal(session), self.archive_trials(session)] {
+            if self.kind_of(&path)?.is_some() {
+                return Err(DirError::ArchiveExists { session: *session });
+            }
+        }
+        Ok(())
+    }
+
+    /// Whether anything in `archive/` already carries the session's id, markers included.
+    pub(crate) fn id_reserved(&self, session: &SessionId) -> Result<bool, DirError> {
+        let paths = [self.archive_journal(session), self.archive_trials(session)]
             .into_iter()
-            .chain(Marker::ALL.into_iter().map(|marker| self.marker_path(marker, session)))
-            .map(|path| self.kind_of(&path))
-            .collect::<Result<Vec<_>, _>>()?
-            .iter()
-            .any(Option::is_some);
-        if taken { Err(DirError::ArchiveExists { session: *session }) } else { Ok(()) }
+            .chain(Marker::ALL.into_iter().map(|marker| self.marker_path(marker, session)));
+        for path in paths {
+            if self.kind_of(&path)?.is_some() {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     /// The marker a transaction of this kind leaves behind before anything is moved.
@@ -344,7 +357,9 @@ impl StateDir {
             self.finish_archive(&session)?;
             return Ok(Some(session));
         }
-        self.check_free(&session)?;
+        if self.kind_of(&self.marker_path(Marker::CompatPending, &session))?.is_none() {
+            self.check_archive_free(&session)?;
+        }
         self.mark_archive_kind(kind, &session)?;
         self.mark(Marker::CompatPending, &session)?;
         self.finish_archive(&session)?;

@@ -17,13 +17,10 @@ impl StateDir {
             candidate = boundary.next_suffix().ok_or(DirError::SessionIdsExhausted { after: boundary })?;
         }
         loop {
-            match self.check_free(&candidate) {
-                Ok(()) => return Ok(candidate),
-                Err(DirError::ArchiveExists { .. }) => {
-                    candidate = candidate.next_suffix().ok_or(DirError::SessionIdsExhausted { after: candidate })?;
-                }
-                Err(error) => return Err(error),
+            if !self.id_reserved(&candidate)? {
+                return Ok(candidate);
             }
+            candidate = candidate.next_suffix().ok_or(DirError::SessionIdsExhausted { after: candidate })?;
         }
     }
 }

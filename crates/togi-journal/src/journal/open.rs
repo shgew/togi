@@ -76,11 +76,13 @@ impl StateDir {
         if let Some(torn) = torn {
             repaired = self.repair(&bytes, &mut events, &torn, &boot, now)?;
         }
-        let existed = self.kind_of(&path)?.is_some();
-        let file = self.fs().open_append(&path).map_err(io_at("open journal", &path))?;
-        if !existed {
-            self.sync_dir(self.path())?;
+        let archive = self.archive_dir();
+        if self.kind_of(&archive)?.is_some() {
+            self.sync_dir(&archive)?;
         }
+        let mut file = self.fs().open_append(&path).map_err(io_at("open journal", &path))?;
+        file.sync().map_err(io_at("sync journal", &path))?;
+        self.sync_dir(self.path())?;
         let session = started_session(&events);
         let writer = Writer { file, buffer: Vec::new(), buffered: self.buffered() };
         Ok(Journal { writer, events, boot, id: JournalId::next(), repaired, session, poison: None, dir: self })
