@@ -17,7 +17,7 @@ use tokio::sync::mpsc::{
 };
 use tokio::time::{Instant, sleep, sleep_until};
 
-use crate::error::{Containment, Error, OutputFailure, StorageError};
+use crate::error::{CleanupFailure, Containment, Error, OutputFailure, StorageError};
 use crate::evidence::{Observation, Selector, Stream};
 use crate::files::{self, Container};
 use crate::id::ScopeName;
@@ -26,7 +26,7 @@ use crate::instance::{Flow, Inbound, LiveInstance, Observed, Reader, Run, dispat
 use crate::judge::Judge;
 use crate::logs::{LogWriter, LogsEnd, Wrap};
 use crate::launch::{self, Confinement};
-use crate::os::{Child as _, GroupSignal, Os, SignalError};
+use crate::os::{Child as _, GroupSignal, LaunchFailure, Os, SignalError};
 use crate::plan::{Load, TrialPlan};
 use crate::runner::Backends;
 use crate::samples::{Open, SamplesWriter};
@@ -353,11 +353,22 @@ async fn launch_all<O: Os>(
         if scoped {
             live.scopes.push(scope.clone());
         }
-        let mut child = env.os.launch(&command).map_err(|source| Error::Launch {
+        let launch_error = |source| Error::Launch {
             instance: label.clone(),
             scope: scope.to_string(),
             source,
-        })?;
+        };
+        let (mut child, mut failed) = match env.os.launch(&command) {
+            Ok(child) => (child, None),
+            Err(LaunchFailure {
+                child: Some(child),
+                source,
+            }) => (child, Some(launch_error(source))),
+            Err(LaunchFailure {
+                child: None,
+                source,
+            }) => return Err(launch_error(source)),
+        };
         let pid = child.pid();
         let pipes = child.take_pipes();
         let child = Rc::new(child);
@@ -385,7 +396,17 @@ async fn launch_all<O: Os>(
                     inbound.clone(),
                 ),
             ],
-            Err(_) => [Reader::absent(), Reader::absent()],
+            Err(source) => {
+                live.failures.record(CleanupFailure::ReadPipe {
+                    instance: label.clone(),
+                    stream: "stdout.log and stderr.log",
+                    source,
+                });
+                failed.get_or_insert(Error::PipeSetup {
+                    instance: label.clone(),
+                });
+                [Reader::absent(), Reader::absent()]
+            }
         };
         let cpus = u32::try_from(instance.cpus.len()).unwrap_or(u32::MAX);
         live.instances.push(LiveInstance {
@@ -412,6 +433,9 @@ async fn launch_all<O: Os>(
                 stall: Stall::new(env.timing.stall_grace, env.timing.stall_window, cpus),
             },
         });
+        if let Some(error) = failed {
+            return Err(error);
+        }
         if index == 0 {
             launched.argv = std::iter::once(files.plan.program.as_os_str())
                 .chain(files.plan.args.iter().map(std::ffi::OsString::as_os_str))

@@ -128,10 +128,35 @@ pub(crate) enum Systemd {
     },
 }
 
+/// A launch that failed; `child` is the launcher when it was spawned before the failure, so the
+/// rollback still owns, kills and reaps it.
+pub(crate) struct LaunchFailure<C> {
+    pub(crate) child: Option<C>,
+    pub(crate) source: io::Error,
+}
+
+impl<C> std::fmt::Debug for LaunchFailure<C> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LaunchFailure")
+            .field("retained", &self.child.is_some())
+            .field("source", &self.source)
+            .finish()
+    }
+}
+
+impl<C> From<io::Error> for LaunchFailure<C> {
+    fn from(source: io::Error) -> Self {
+        Self {
+            child: None,
+            source,
+        }
+    }
+}
+
 pub(crate) trait Os: 'static {
     type Child: Child;
 
-    fn launch(&self, command: &LaunchCommand) -> io::Result<Self::Child>;
+    fn launch(&self, command: &LaunchCommand) -> Result<Self::Child, LaunchFailure<Self::Child>>;
     fn in_scope(&self, pid: u32, scope: &ScopeName) -> Result<bool, ProcError>;
     fn usage(&self, pid: u32) -> Result<Usage, ProcError>;
     fn threads(&self, pid: u32) -> Result<Threads, ProcError>;

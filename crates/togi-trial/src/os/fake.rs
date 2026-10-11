@@ -20,7 +20,9 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use tokio::sync::watch;
 use tokio::time::{Instant, sleep_until};
 
-use super::{Child, ExitInfo, GroupSignal, KillSignal, Os, Pipes, SignalError, Systemd};
+use super::{
+    Child, ExitInfo, GroupSignal, KillSignal, LaunchFailure, Os, Pipes, SignalError, Systemd,
+};
 use crate::id::ScopeName;
 use crate::launch::LaunchCommand;
 use crate::procfs::{ProcError, ScopeProcess, Threads, Usage};
@@ -38,6 +40,8 @@ pub(crate) type ProcessScript = Box<dyn FnOnce(ProcCtx) -> Pin<Box<dyn Future<Ou
 pub(crate) enum Launch {
     Run(ProcessScript),
     Fail(io::Error),
+    /// The launcher runs `ProcessScript`, but setting up its exit watch failed afterwards.
+    FailRetained(ProcessScript, io::Error),
 }
 
 /// What the fake systemd answers to one call.
@@ -210,6 +214,7 @@ struct Shared {
     systemd_script: RefCell<SystemdScript>,
     units: RefCell<Vec<String>>,
     ready_default: Cell<bool>,
+    fail_pipes: Cell<bool>,
     signal_error_default: Cell<Option<SignalErrorKind>>,
     recovered: RefCell<Vec<(ScopeProcess, Recovered)>>,
     next_pid: Cell<u32>,
@@ -234,6 +239,7 @@ impl Default for Fake {
                 systemd_script: RefCell::new(Box::new(|_| None)),
                 units: RefCell::default(),
                 ready_default: Cell::new(true),
+                fail_pipes: Cell::new(false),
                 signal_error_default: Cell::new(None),
                 recovered: RefCell::default(),
                 next_pid: Cell::new(1000),
@@ -275,6 +281,11 @@ impl Fake {
     /// Every signal to a new process fails like this.
     pub(crate) fn set_signal_error_default(&self, kind: Option<SignalErrorKind>) {
         self.shared.signal_error_default.set(kind);
+    }
+
+    /// Taking the pipes of new processes fails, as when registering them with the reactor fails.
+    pub(crate) fn fail_pipes(&self) {
+        self.shared.fail_pipes.set(true);
     }
 
     /// Whether new processes start inside their scope.
@@ -396,12 +407,13 @@ fn exit_status(success: bool) -> ExitStatus {
 impl Os for Fake {
     type Child = FakeChild;
 
-    fn launch(&self, command: &LaunchCommand) -> io::Result<FakeChild> {
+    fn launch(&self, command: &LaunchCommand) -> Result<FakeChild, LaunchFailure<FakeChild>> {
         let index = self.shared.launches.borrow().len();
         self.shared.launches.borrow_mut().push(command.clone());
-        let script = match (self.shared.launch_script.borrow_mut())(index, command) {
-            Launch::Run(script) => script,
-            Launch::Fail(error) => return Err(error),
+        let (script, failure) = match (self.shared.launch_script.borrow_mut())(index, command) {
+            Launch::Run(script) => (script, None),
+            Launch::Fail(error) => return Err(error.into()),
+            Launch::FailRetained(script, error) => (script, Some(error)),
         };
         let pid = self.shared.next_pid.get();
         self.shared.next_pid.set(pid + 1);
@@ -435,18 +447,26 @@ impl Os for Fake {
             signals,
         };
         tokio::task::spawn_local(script(ctx));
-        let failure = Rc::clone(&shared.stdout_failure);
-        Ok(FakeChild {
-            shared,
-            pipes: Some(Pipes {
-                stdout: Box::pin(Flaky {
-                    inner: stdout_reader,
-                    failure,
-                }),
-                stderr: Box::pin(stderr_reader),
+        let flaky = Rc::clone(&shared.stdout_failure);
+        let pipes = (!self.shared.fail_pipes.get()).then(|| Pipes {
+            stdout: Box::pin(Flaky {
+                inner: stdout_reader,
+                failure: flaky,
             }),
+            stderr: Box::pin(stderr_reader),
+        });
+        let child = FakeChild {
+            shared,
+            pipes,
             exit,
-        })
+        };
+        match failure {
+            None => Ok(child),
+            Some(source) => Err(LaunchFailure {
+                child: Some(child),
+                source,
+            }),
+        }
     }
 
     fn in_scope(&self, pid: u32, scope: &ScopeName) -> Result<bool, ProcError> {

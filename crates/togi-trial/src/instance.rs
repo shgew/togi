@@ -67,7 +67,8 @@ pub(crate) struct Reader {
 }
 
 impl Reader {
-    /// A reader that never existed because the pipe could not be taken; it counts as closed.
+    /// A reader that never existed because the pipes could not be taken; the failure that caused it
+    /// is recorded separately, so its closing never confirms a drain.
     pub(crate) fn absent() -> Self {
         Self {
             task: tokio::task::spawn_local(async {}),
