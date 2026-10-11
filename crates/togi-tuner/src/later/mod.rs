@@ -235,10 +235,14 @@ impl Run {
     }
 
     /// The failure at `seq` when the later-failure rules apply to it: a live failure after the
-    /// conclusion, not a known-failure skip and not attributed at CO 0. An R7 failure some of
+    /// conclusion, not a located hunt's source, not a known-failure skip and not attributed at
+    /// CO 0. An R7 failure some of
     /// whose cores are still owed an answer is found through its open record.
     pub(crate) fn later_failure(&self, seq: Seq) -> Option<LaterFailure<'_>> {
         let concluded = self.phases.concluded()?;
+        if self.hunts.is_located(seq) {
+            return None;
+        }
         let record = self
             .failures
             .pending(seq)

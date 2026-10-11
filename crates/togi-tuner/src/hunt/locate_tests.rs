@@ -637,6 +637,50 @@ fn a_locate_reads_a_ranking_newer_than_the_last_round_plan() {
 }
 
 #[test]
+fn a_located_group_failure_naming_a_loaded_core_is_not_held() {
+    use crate::later_tests::{pass_cycles, start_cycle};
+    let mut j = Journal::r7_session();
+    j.loc_back_off(&top0());
+    pass_cycles(&mut j, 3);
+    start_cycle(&mut j);
+    assert!(
+        j.run().later_gate().is_some(),
+        "the later-failure gate is closed"
+    );
+    j.loc_fail_live(&top0());
+    let located = j.loc_run(|plan| {
+        if at(plan, 2) == 0 {
+            Verdict::Pass
+        } else {
+            Verdict::Named(0)
+        }
+    });
+    let end = hunt_end(&located.action);
+    assert_eq!((end.result, end.cores), (HuntOutcome::Loaded, set(&[0, 1])));
+    j.decide(decision(&located.action).clone());
+    let action = j.loc_act();
+    let step = backoff(&action);
+    assert_eq!(
+        (step.core, step.to_offset, step.failure_point),
+        (core(0), off(-29), Some(off(-30))),
+        "{step:?}"
+    );
+    j.decide(decision(&action).clone());
+    assert!(
+        !matches!(
+            j.state.decide(),
+            Some(Action::Decide(DecisionAction {
+                payload: DecisionPayload::TunerDecision(_),
+                ..
+            }))
+        ),
+        "the failure moved twice"
+    );
+    assert_eq!(j.run().later.strikes().count(), 0);
+    j.assert_resumes();
+}
+
+#[test]
 fn r7_passed_locate_hunts_the_unloaded_culprit() {
     let mut j = Journal::r7_session();
     let (_, failure, _) = j.loc_fail_escalated(&top0());
