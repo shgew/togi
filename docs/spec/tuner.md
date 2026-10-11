@@ -441,7 +441,7 @@ The shown profile never carries an unresolved failure (Q30): a held failure is s
 
 ## Defect list
 
-Known defects identify decisions made under earlier builds whose decisions cannot safely be rerun. On resume, their journal causes and build fixes stamps are matched as specified in `journal.md`. A too-cautious finding leaves checking running and `status` names the affected cores' individual reset commands. A too-aggressive finding stops unattended tuning until an operator has answered a terminal reset prompt. Resetting a core clears its failure point and the combinations naming it, then searches from its baseline.
+Known defects identify decisions made under earlier builds whose decisions cannot safely be rerun. The Rust registry starts empty (fixes stamp 0); the Go build's one entry is history. On resume, their journal causes and build fixes stamps are matched as specified in `journal.md`, and every matching failure cause is excluded from carry. A recorded finding this build does not list is honoured by its recorded direction. A too-cautious finding leaves checking running and `status` names the affected cores' individual reset commands. A too-aggressive finding stops unattended tuning until an operator has answered a terminal reset prompt. Resetting a core clears its failure point and the combinations naming it, then searches from its baseline.
 
 ## Reset
 

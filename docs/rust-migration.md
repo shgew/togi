@@ -156,6 +156,16 @@ The `togi-config` crate ports `internal/config` ([#749](https://github.com/shgew
 - **Review findings fixed.** The root and every section are now object-only, so a correctly sized positional array such as `{"durations":[60,null,null,null,null]}` is rejected; it used to set the search duration. A test now pins the parsed non-default `miss` and `rate`. This log entry was missing, and the pull request's Go-test map and list of Go bugs were corrected.
 - **Not measured.** Isolated compile times against Go, and agent cost.
 
+## Stage 3: `internal/defect` (#750, 2026-10-11)
+
+The `togi-defect` crate ports `internal/defect` and the pure part of `internal/session/defects.go` and the `status` reset guidance ([#750](https://github.com/shgew/togi/issues/750)): 447 lines of library and 726 of tests, against Go's 274 and 164 in `internal/defect`. No Go code is removed or changed. The 23 tests run in 0.013 s under `cargo nextest` on Linux; `go test -count=1 ./internal/defect` reports 0.005 s.
+
+- **Registry.** `KNOWN_DEFECTS` starts empty, so the fixes stamp is 0. Go's only entry, the power-off false failure, matched journals that only Go wrote, and Rust reads none. Clauses are data (decision kind, decision, cause kind) with no predicate closure; a `const` assertion and `DefectState::new` both refuse ids that are not strictly increasing.
+- **One fold.** `DefectState::fold` matches every payload kind exhaustively and does all the work as events arrive. The queries take `&self` and never walk events: each reads only registry entries (`new_findings`), recorded findings (`unanswered`, `reset_guidance`), pending resets (`missing_resets`) or excluded failures (`excluded_failures`), even when it returns nothing, so its cost is bounded by that retained evidence and never by the event count. `query_cost_independent_of_event_count` pins it: a test-only visit counter per element read shows the same count for every query with and without 5,000 extra warnings, failures and resets of uninvolved cores, on a scenario where every query returns something. The state keeps the seqs of cause kinds the registry names and nothing else, so with the empty registry it keeps none.
+- **Go bugs fixed.** A recorded too-aggressive finding whose id the build did not list was skipped, so unattended tuning carried on past it (T1); it is now a finding with its recorded direction. Only the first matching failure cause of a decision was excluded from carry (T2); now every one is. `Fixed()` panicked on an empty registry (T19). The Go index changed on query and assumed an append-only slice. Ids and seqs of 0 are now unrepresentable.
+- **Deleted.** The legacy block of resets recorded before an answer, and the Go power-off predicate with its fixture.
+- **Not measured.** Isolated compile times against Go, and agent cost.
+
 ## Stage 5: `togi-smu` (#762, 2026-10-11)
 
 - **`togi-smu`** ports `internal/smu`: `Driver` implements `togi_machine::Smu` (0xD5 read, 0x06 per-core write, 0x07 all-core write, `emergency_zero` as 0x07 with 0 behind `SmuValidated` and `&Stopped`). Targets are `TargetOffset`, so the clamp to [-50, 0] happens before any access; readbacks are raw sign-extended `ObservedOffset`s, never clamped.
@@ -167,6 +177,18 @@ The `togi-config` crate ports `internal/config` ([#749](https://github.com/shgew
 - **Size.** 2,053 lines of library and 3,004 of tests after the review fixes, against Go's 795 and 1,284. No Go code is removed or changed. The 81 unit tests run in 0.23 s under `cargo nextest` on Linux; Go's `go test ./internal/smu` takes 0.05 s.
 - **Review findings fixed.** Nine reviewers found five P1 defects. A PM-table read sends an RSMU command but ignored mailbox poisoning, so new and existing readers now share the poison and refuse. A job still queued when its caller timed out could start later, so a job is claimed before it reaches the transport and an abandoned one never does. The hardware CCD was the rank of the online cache keys, so a wholly offline CCD0 or swapped keys addressed the wrong core; slot mapping now requires `core_id / 8` to equal the CCD. Identity files over their read limit were truncated and accepted; they are refused. The hardware tests released the host lock while a timed-out worker could still write; they hold it until the process exits, and run one at a time. P2 fixes: refusals name every disagreeing sibling core and the stuck request, CPU-identity parse errors keep their cause, the PM reader's wait is pinned to the remaining budget through an injected wait, and the safety tests observe PM-file and identity-only accesses instead of asserting only refusals.
 - **Not measured.** Isolated compile times against Go and agent cost. The hardware tests were compiled, not run.
+
+## Stage 2: native `togi-render` (#706, 2026-10-11)
+
+The `togi-render` crate ports `internal/render`: about 400 lines of library and 1,040 of tests (`tests.rs` plus the inline test modules in `escape.rs` and `output.rs`) against Go's 232 and 380; no Go code is removed or changed. Its 43 tests run in 0.01 s under `cargo nextest` on Linux; `go test -count=1 ./internal/render` reports 0.002 s. What changed against Go, as built:
+
+- **Terminal detection.** Colour follows `std::io::IsTerminal`, not a character-device mode bit, so `/dev/null` is plain (Go coloured it). `JOURNAL_STREAM` is parsed once into a numeric device and inode and compared with `fstat` of the stream; a failed `fstat` is plain. `OutputFacts::detect` takes any `AsFd` and the two environment values, so the binary detects before it wraps the stream in a buffer.
+- **Errors.** `Renderer::write_event` writes one line and one newline and returns the `io::Error`; Go's `Log` dropped write errors. The time zone is a required `&TimeZone`, so Go's nil-location panic cannot happen.
+- **Styles.** `style_for` matches the typed `Payload` exhaustively, with no catch-all arm, so a new kind does not compile until it names its style; `hold` is plain.
+- **Streaming.** Escaping and lines are `Display` adapters (`Escaped`, `EventLine`, `StyledText`) that write into the caller's formatter, with no intermediate `String`. `escape_bytes` escapes malformed UTF-8 byte by byte without a lossy decode.
+- **Review findings fixed.** The review found that the style-table test left out several plain cases Go's tests pinned, and that nothing pinned how a hostile diagnostic is logged. The table now covers the session baseline, an unavailable host ranking, a skipped hunt group and a hunt group with probe and held members as plain. A new test pins that logging a diagnostic with terminal controls in its message and detail prints one escaped line, while the journal's message, detail and serialization stay raw. The size figures above were corrected to count all the test code.
+- **Moved out.** `PhaseWord` and the dashboard's IBM437 console folding belong to watch and status; the opaque-event path is gone with the journal's unknown kinds.
+- **Not measured.** Isolated compile times against Go, rendering throughput and agent cost.
 
 ## Stage 5: `togi-command` (#760, 2026-10-11)
 

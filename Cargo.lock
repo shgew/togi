@@ -694,6 +694,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "togi-defect"
+version = "0.0.0"
+dependencies = [
+ "jiff",
+ "togi-config",
+ "togi-journal",
+ "togi-machine",
+]
+
+[[package]]
 name = "togi-hostlock"
 version = "0.0.0"
 dependencies = [
@@ -741,6 +751,17 @@ dependencies = [
  "tempfile",
  "togi-backend",
  "togi-machine",
+]
+
+[[package]]
+name = "togi-render"
+version = "0.0.0"
+dependencies = [
+ "jiff",
+ "rustix",
+ "serde_json",
+ "tempfile",
+ "togi-journal",
 ]
 
 [[package]]
