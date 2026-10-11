@@ -1389,6 +1389,70 @@ fn hunt_duration_prior_respects_evidence_and_short_failures() {
 }
 
 #[test]
+fn hunt_duration_prior_is_vetoed_by_an_earlier_idle_failure() {
+    let session = "20230101T000000Z";
+    for (name, idle, want) in [
+        ("no idle failure", None, 600),
+        ("live idle failure", Some(false), 120),
+        ("carried idle failure", Some(true), 120),
+    ] {
+        let mut j = Journal::new(&[0, 1], &[Start::has_room(-30); 2]);
+        j.profile_change(&[-30, -30]);
+        j.ranking(&[0, 1]);
+        let passes: Vec<Seq> = (0..5)
+            .map(|_| {
+                j.carry(
+                    session,
+                    (Regime::R6, 0, &[0, 1], SHORT),
+                    Condition::Parked,
+                    &[-32, -32],
+                    Outcome::Pass,
+                )
+            })
+            .collect();
+        match idle {
+            Some(false) => {
+                let deep = j.profile(&[-40, -40]).offsets();
+                j.idle_failure(deep, Condition::Together);
+            }
+            Some(true) => {
+                j.carry_idle(session, &[-40, -40]);
+            }
+            None => {}
+        }
+        let failure = j.next_seq();
+        let start = HuntStart {
+            hunt: std::num::NonZeroU32::MIN,
+            failure,
+            trial: Some(togi_journal::TrialId::from("0001".to_owned())),
+            regime: Regime::R6,
+            workload: workloads(Regime::R6)[0].id(),
+            cores: set(&[0, 1]),
+            duration_s: 600,
+            failing: j.profile(&[-30, -30]).offsets(),
+            parked: j.profile(&[0, 0]).offsets(),
+            parked_seq: None,
+            candidates: set(&[0, 1]),
+            trials: 5,
+            trial_s: SHORT,
+            miss: 0.0,
+            rate: 0.0,
+            ranking: vec![core(0), core(1)],
+            reason: None,
+        };
+        let hunt = j.append(start.into(), &[]);
+        let (group, cause) = j.group_plan();
+        assert_eq!(group.duration_s, want, "{name}");
+        if want == 600 {
+            let mut cited = vec![hunt];
+            cited.extend(&passes);
+            assert_eq!(cause, cited, "{name}");
+        }
+        j.assert_resumes();
+    }
+}
+
+#[test]
 fn hunt_duration_escalation_only_for_longer_failure() {
     let part = |duration| (HuntStage::Part, duration, false);
     for (name, duration, expected) in [
