@@ -142,12 +142,13 @@ pub(crate) fn spawn(command: &LaunchCommand) -> std::io::Result<std::process::Ch
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .process_group(0);
-    // SAFETY: the closure only makes raw syscalls (setgroups, prctl, getppid) and builds io errors
-    // from errno values, so it neither allocates nor takes locks between fork and exec.
+    // SAFETY: between fork and exec the child has one thread, and the closure only makes rustix's
+    // direct syscalls (setgroups, sched_setaffinity, prctl, getppid; never glibc's setxid
+    // broadcast, which takes locks) and turns errno values into io errors without allocating.
     unsafe {
         launcher.pre_exec(move || {
             if root {
-                nix::unistd::setgroups(&[]).map_err(std::io::Error::from)?;
+                rustix::thread::set_thread_groups(&[])?;
             }
             if pin {
                 rustix::thread::sched_setaffinity(None, &pinned)?;
@@ -260,5 +261,103 @@ mod tests {
         assert_eq!(strings(&command.argv), ["/bin/true", "a"]);
         assert_eq!(command.cwd, std::path::Path::new("/tmp"));
         assert_eq!(command.pin, [CpuId(0)]);
+    }
+
+    #[cfg(target_os = "linux")]
+    mod attributes {
+        use super::*;
+
+        const ATTRIBUTES_HELPER: &str = "launch::tests::attributes::launch_attributes_helper";
+
+        #[test]
+        fn launch_attributes_helper() {
+            if !std::env::args().any(|arg| arg == "helper:launch-attributes") {
+                return;
+            }
+            for line in std::fs::read_to_string("/proc/self/status")
+                .unwrap()
+                .lines()
+            {
+                if line.starts_with("Groups:") || line.starts_with("Uid:") {
+                    println!("attr:{line}");
+                }
+            }
+            std::process::exit(0);
+        }
+
+        fn status_lines(status: &str) -> Vec<String> {
+            status
+                .lines()
+                .filter(|line| line.starts_with("Groups:") || line.starts_with("Uid:"))
+                .map(|line| format!("attr:{line}"))
+                .collect()
+        }
+
+        fn launched_attributes() -> Vec<String> {
+            let command = LaunchCommand {
+                argv: [
+                    std::env::current_exe().unwrap().into_os_string(),
+                    "--exact".into(),
+                    ATTRIBUTES_HELPER.into(),
+                    "--nocapture".into(),
+                    "--test-threads=1".into(),
+                    "helper:launch-attributes".into(),
+                ]
+                .to_vec(),
+                cwd: "/".into(),
+                pin: Vec::new(),
+            };
+            let child = spawn(&command).unwrap();
+            let output = child.wait_with_output().unwrap();
+            assert!(output.status.success(), "{output:?}");
+            String::from_utf8(output.stdout)
+                .unwrap()
+                .lines()
+                .filter_map(|line| line.find("attr:").map(|at| line[at..].to_owned()))
+                .collect()
+        }
+
+        #[test]
+        fn real_process_a_launcher_is_killed_when_its_forking_thread_dies() {
+            use std::os::unix::process::ExitStatusExt as _;
+            let command = LaunchCommand {
+                argv: vec!["/bin/sh".into(), "-c".into(), "exec sleep 20".into()],
+                cwd: "/".into(),
+                pin: Vec::new(),
+            };
+            let mut child = std::thread::spawn(move || spawn(&command).unwrap())
+                .join()
+                .unwrap();
+            let status = child.wait().unwrap();
+            assert_eq!(
+                status.signal(),
+                Some(rustix::process::Signal::KILL.as_raw()),
+                "{status:?}"
+            );
+        }
+
+        #[test]
+        fn real_process_an_unprivileged_launcher_keeps_its_credentials_and_never_attempts_setgroups()
+         {
+            if rustix::process::geteuid().is_root() {
+                return;
+            }
+            let own = status_lines(&std::fs::read_to_string("/proc/self/status").unwrap());
+            let attributes = launched_attributes();
+            assert_eq!(attributes, own, "{attributes:?}");
+        }
+
+        #[test]
+        fn real_process_a_root_launcher_clears_its_supplementary_groups() {
+            if !rustix::process::geteuid().is_root() {
+                return;
+            }
+            let attributes = launched_attributes();
+            let groups = attributes
+                .iter()
+                .find_map(|line| line.strip_prefix("attr:Groups:"))
+                .unwrap();
+            assert_eq!(groups.trim(), "", "{attributes:?}");
+        }
     }
 }

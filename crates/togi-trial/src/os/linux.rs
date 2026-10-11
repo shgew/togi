@@ -110,6 +110,8 @@ pub(crate) struct Linux {
     proc: Proc,
     user_manager: bool,
     systemctl: OsString,
+    #[cfg(test)]
+    pidfd_refused: bool,
 }
 
 impl Linux {
@@ -118,7 +120,16 @@ impl Linux {
             proc,
             user_manager,
             systemctl: "systemctl".into(),
+            #[cfg(test)]
+            pidfd_refused: false,
         }
+    }
+
+    /// Test construction: `pidfd_open` fails, so a launch takes the polling exit watch.
+    #[cfg(test)]
+    pub(crate) fn with_pidfd_refused(mut self) -> Self {
+        self.pidfd_refused = true;
+        self
     }
 
     /// Test construction: a stand-in for the `systemctl` binary.
@@ -181,9 +192,16 @@ impl Os for Linux {
         let Some(group) = i32::try_from(pid).ok().and_then(Pid::from_raw) else {
             return Err(io::Error::from(io::ErrorKind::InvalidData).into());
         };
-        let opened = pidfd_open(group, PidfdFlags::empty())
-            .map_err(io::Error::from)
-            .and_then(|fd| AsyncFd::with_interest(fd, Interest::READABLE));
+        #[cfg(test)]
+        let refused = self.pidfd_refused;
+        #[cfg(not(test))]
+        let refused = false;
+        let opened = if refused {
+            Err(io::Error::other("pidfd_open refused"))
+        } else {
+            pidfd_open(group, PidfdFlags::empty()).map_err(io::Error::from)
+        }
+        .and_then(|fd| AsyncFd::with_interest(fd, Interest::READABLE));
         match opened {
             Ok(pidfd) => Ok(Leader {
                 child,
@@ -274,5 +292,133 @@ async fn off_thread<T: Send + 'static>(
         Err(_) => Err(ProcError::Observation(
             "the /proc scan did not finish before the deadline".to_owned(),
         )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::*;
+
+    fn secs(n: u64) -> Duration {
+        Duration::from_secs(n)
+    }
+
+    fn current_thread() -> tokio::runtime::Runtime {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+    }
+
+    fn linux() -> Linux {
+        Linux::new(
+            Proc::new("/proc".into(), crate::procfs::ticks_per_second()),
+            false,
+        )
+    }
+
+    #[test]
+    fn real_process_a_launcher_whose_pidfd_could_not_be_opened_is_killed_polled_and_reaped() {
+        let os = linux().with_pidfd_refused();
+        let command = LaunchCommand {
+            argv: vec!["/bin/sh".into(), "-c".into(), "exec sleep 60".into()],
+            cwd: "/".into(),
+            pin: Vec::new(),
+        };
+        current_thread().block_on(async {
+            let begun = std::time::Instant::now();
+            let failure = os.launch(&command).err().unwrap();
+            assert!(begun.elapsed() < secs(5), "launch waited for the launcher");
+            assert_eq!(failure.source.to_string(), "pidfd_open refused");
+            let leader = failure.child.expect("the spawned launcher stays owned");
+            assert!(matches!(leader.watch, ExitWatch::Poll));
+            tokio::time::timeout(secs(10), leader.exited())
+                .await
+                .expect("the polling watch sees the group kill")
+                .unwrap();
+            assert_eq!(leader.exit().unwrap(), Some(ExitInfo::Signal(9)));
+            assert_eq!(leader.reap().unwrap(), ExitInfo::Signal(9));
+        });
+    }
+
+    fn deadline_error(outcome: Result<(), ProcError>) {
+        let Err(ProcError::Observation(text)) = outcome else {
+            panic!("expected a deadline observation error, got {outcome:?}");
+        };
+        assert!(text.contains("deadline"), "{text}");
+    }
+
+    #[test]
+    fn real_process_a_blocked_scan_neither_stalls_the_runtime_nor_outlives_its_deadline() {
+        let (release, blocked) = std::sync::mpsc::channel::<()>();
+        let runtime = current_thread();
+        let (ticks, elapsed, outcome) = runtime.block_on(async {
+            let begun = std::time::Instant::now();
+            let ticks = std::cell::Cell::new(0_u32);
+            let ticker = async {
+                loop {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                    ticks.set(ticks.get() + 1);
+                }
+            };
+            let scan = off_thread(Instant::now() + Duration::from_millis(300), move || {
+                let _ = blocked.recv_timeout(secs(30));
+                Ok(())
+            });
+            let outcome = tokio::select! {
+                outcome = scan => outcome,
+                () = ticker => unreachable!("the ticker never finishes"),
+            };
+            (ticks.get(), begun.elapsed(), outcome)
+        });
+        drop(release);
+        deadline_error(outcome);
+        assert!(
+            ticks >= 5,
+            "the runtime made progress during the scan: {ticks}"
+        );
+        assert!(elapsed >= Duration::from_millis(300), "{elapsed:?}");
+        assert!(
+            elapsed < secs(5),
+            "the wait ended at the deadline: {elapsed:?}"
+        );
+    }
+
+    #[test]
+    fn real_process_a_saturated_blocking_pool_cannot_extend_a_scan_deadline() {
+        let (release, blocked) = std::sync::mpsc::channel::<()>();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .max_blocking_threads(1)
+            .enable_all()
+            .build()
+            .unwrap();
+        let ran = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let (elapsed, outcome) = runtime.block_on(async {
+            let (started, running) = tokio::sync::oneshot::channel();
+            let hog = tokio::task::spawn_blocking(move || {
+                let _ = started.send(());
+                let _ = blocked.recv_timeout(secs(30));
+            });
+            running.await.unwrap();
+            let begun = std::time::Instant::now();
+            let flag = std::sync::Arc::clone(&ran);
+            let outcome = off_thread(Instant::now() + Duration::from_millis(300), move || {
+                flag.store(true, std::sync::atomic::Ordering::SeqCst);
+                Ok(())
+            })
+            .await;
+            let elapsed = begun.elapsed();
+            let _ = release.send(());
+            hog.await.unwrap();
+            (elapsed, outcome)
+        });
+        deadline_error(outcome);
+        assert!(elapsed >= Duration::from_millis(300), "{elapsed:?}");
+        assert!(
+            elapsed < secs(5),
+            "queue time extended the bound: {elapsed:?}"
+        );
     }
 }
