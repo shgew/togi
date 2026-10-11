@@ -15,7 +15,7 @@ pub use cancellation::{CancellationToken, OnCancel};
 pub use core_set::CoreSet;
 pub use error::{Error, Partial};
 pub use ids::{BootId, KernelCursor};
-pub use load::{LoadSchedule, Toggles};
+pub use load::{DutyPct, InvalidDutyPct, LoadSchedule, Toggles};
 pub use per_core::PerCore;
 pub use samples::{PmTable, PmTableReader, ReadSamples, TrialConditions, read_samples};
 pub use scalars::{

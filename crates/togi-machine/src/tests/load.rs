@@ -19,6 +19,10 @@ fn first(schedule: LoadSchedule, count: usize) -> Vec<Duration> {
     schedule.periods().take(count).collect()
 }
 
+fn duty(pct: u8) -> DutyPct {
+    DutyPct::new(pct).unwrap()
+}
+
 fn millis(value: u64) -> Duration {
     Duration::from_millis(value)
 }
@@ -34,18 +38,18 @@ fn only_load_step_regimes_have_a_schedule() {
     );
     assert_eq!(
         LoadSchedule::for_spec(&spec(Regime::R4, 0, 1)),
-        Some(LoadSchedule::Duty { pct: 50 })
+        Some(LoadSchedule::Duty { pct: duty(50) })
     );
 }
 
 #[test]
 fn duty_splits_each_hundred_milliseconds() {
     assert_eq!(
-        first(LoadSchedule::Duty { pct: 25 }, 4),
+        first(LoadSchedule::Duty { pct: duty(25) }, 4),
         [millis(25), millis(75), millis(25), millis(75)]
     );
     assert_eq!(
-        first(LoadSchedule::Duty { pct: 100 }, 2),
+        first(LoadSchedule::Duty { pct: duty(100) }, 2),
         [millis(100), Duration::ZERO]
     );
 }
@@ -72,7 +76,7 @@ fn toggles(stops: u32, conts: u32) -> Toggles {
 
 #[test]
 fn toggles_do_not_count_a_period_ending_at_the_run_length() {
-    let duty = |pct| LoadSchedule::Duty { pct };
+    let duty = |pct| LoadSchedule::Duty { pct: duty(pct) };
     for (schedule, ran, want) in [
         (duty(25), Duration::from_secs(1), toggles(10, 9)),
         (duty(50), Duration::from_secs(1), toggles(10, 9)),
@@ -101,7 +105,7 @@ fn random_stops_lead_continues_by_at_most_one() {
 #[test]
 fn schedules_read_as_text() {
     assert_eq!(
-        LoadSchedule::Duty { pct: 50 }.to_string(),
+        LoadSchedule::Duty { pct: duty(50) }.to_string(),
         "50% duty, 100 ms period"
     );
     assert_eq!(
@@ -118,7 +122,7 @@ fn schedules_round_trip_as_tagged_objects() {
             r#"{"kind":"random","seed":5}"#,
         ),
         (
-            LoadSchedule::Duty { pct: 40 },
+            LoadSchedule::Duty { pct: duty(40) },
             r#"{"kind":"duty","pct":40}"#,
         ),
     ] {
@@ -128,4 +132,12 @@ fn schedules_round_trip_as_tagged_objects() {
             schedule
         );
     }
+}
+
+#[test]
+fn duty_above_one_hundred_is_unrepresentable() {
+    assert_eq!(DutyPct::new(100).map(DutyPct::get), Some(100));
+    assert_eq!(DutyPct::new(101), None);
+    assert!(serde_json::from_str::<LoadSchedule>(r#"{"kind":"duty","pct":101}"#).is_err());
+    assert!(serde_json::from_str::<LoadSchedule>(r#"{"kind":"duty","pct":200}"#).is_err());
 }

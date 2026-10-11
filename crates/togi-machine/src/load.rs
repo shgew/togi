@@ -15,16 +15,57 @@ const RANDOM_PERIODS: [Duration; 5] = [
 
 const DUTY_PERIOD: Duration = Duration::from_millis(100);
 
+/// A duty cycle as a whole percentage from 0 to 100.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "u8", into = "u8")]
+pub struct DutyPct(u8);
+
+impl DutyPct {
+    pub const fn new(pct: u8) -> Option<Self> {
+        if pct <= 100 { Some(Self(pct)) } else { None }
+    }
+
+    pub const fn get(self) -> u8 {
+        self.0
+    }
+}
+
+/// A duty percentage above 100.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("duty percentage {0} is above 100")]
+pub struct InvalidDutyPct(u8);
+
+impl TryFrom<u8> for DutyPct {
+    type Error = InvalidDutyPct;
+
+    fn try_from(pct: u8) -> Result<Self, InvalidDutyPct> {
+        Self::new(pct).ok_or(InvalidDutyPct(pct))
+    }
+}
+
+impl From<DutyPct> for u8 {
+    fn from(pct: DutyPct) -> Self {
+        pct.0
+    }
+}
+
+impl fmt::Display for DutyPct {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 /// How a load-step trial alternates its workload between running and stopped.
 ///
 /// Each on period ends with `SIGSTOP` and each off period with `SIGCONT`. Random periods come from
-/// `rand::rngs::StdRng` seeded with the trial seed, so a schedule is reproducible only with the
-/// pinned `rand` version.
+/// `rand::rngs::StdRng` seeded with the trial seed. A recorded seed reproduces its stream with the
+/// build that recorded it, since `rand` is pinned to an exact version and the journal's build stamp
+/// identifies it; a `rand` bump changes the stream.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum LoadSchedule {
     Random { seed: u64 },
-    Duty { pct: u8 },
+    Duty { pct: DutyPct },
 }
 
 /// How many stop and continue signals a schedule has sent.
@@ -49,7 +90,7 @@ impl LoadSchedule {
     pub fn periods(&self) -> impl Iterator<Item = Duration> + use<> {
         match *self {
             Self::Duty { pct } => {
-                let on = DUTY_PERIOD * u32::from(pct.min(100)) / 100;
+                let on = DUTY_PERIOD * u32::from(pct.get()) / 100;
                 Periods::Duty {
                     on,
                     off: DUTY_PERIOD.saturating_sub(on),

@@ -21,8 +21,8 @@ pub enum Error {
 
 /// What a seam call accomplished before `error` ended it.
 ///
-/// Displays as `error` and reports `error`'s source, so `?` and error chains read the same as for
-/// the bare error.
+/// Displays as `error` and reports `error` as its source, so the named variant stays findable by
+/// walking the chain of whatever boxed error `?` produced.
 #[derive(Debug)]
 pub struct Partial<T> {
     pub value: T,
@@ -43,6 +43,6 @@ impl<T> fmt::Display for Partial<T> {
 
 impl<T: fmt::Debug> std::error::Error for Partial<T> {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        std::error::Error::source(&self.error)
+        Some(&self.error)
     }
 }

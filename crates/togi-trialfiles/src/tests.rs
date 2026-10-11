@@ -1,3 +1,4 @@
+use std::fmt::Write as _;
 use std::fs;
 use std::io::{self, Read, Write};
 use std::os::unix::fs::{FileTypeExt, PermissionsExt, symlink};
@@ -31,6 +32,41 @@ fn gunzip(path: &Path) -> io::Result<String> {
     let mut text = String::new();
     MultiGzDecoder::new(fs::File::open(path)?).read_to_string(&mut text)?;
     Ok(text)
+}
+
+fn gzip_bytes(content: &[u8]) -> Vec<u8> {
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(content).unwrap();
+    encoder.finish().unwrap()
+}
+
+/// Several hundred KiB of distinct lines, far beyond the 32 KiB DEFLATE window.
+fn large_log() -> Vec<u8> {
+    let mut log = String::new();
+    for i in 0_u64..20_000 {
+        writeln!(
+            log,
+            "{{\"line\":{i},\"value\":{}}}",
+            i * i * 7919 % 1_000_003
+        )
+        .unwrap();
+    }
+    log.into_bytes()
+}
+
+/// Reads the trial file chunk by chunk, keeping what was decoded before the stream ended or failed.
+fn read_prefix(path: &Path) -> (Vec<u8>, io::Result<()>) {
+    let mut reader = open(path).unwrap();
+    let mut data = Vec::new();
+    let mut buf = [0; 4096];
+    loop {
+        match reader.read(&mut buf) {
+            Ok(0) => return (data, Ok(())),
+            Ok(n) => data.extend_from_slice(&buf[..n]),
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+            Err(error) => return (data, Err(error)),
+        }
+    }
 }
 
 fn entries(dir: &Path) -> Vec<String> {
@@ -310,6 +346,64 @@ fn open_reports_missing_and_corrupt_files() {
 }
 
 #[test]
+fn compressed_log_larger_than_the_deflate_window_round_trips() {
+    let dir = TempDir::new().unwrap();
+    let log = large_log();
+    assert!(log.len() > 256 * 1024);
+    fs::write(dir.path().join(SAMPLES), &log).unwrap();
+    compress(dir.path()).unwrap();
+    assert_eq!(entries(dir.path()), [format!("{SAMPLES}.gz")]);
+    assert_eq!(read_trial_file(&dir.path().join(SAMPLES)).unwrap(), log);
+}
+
+#[test]
+fn gzip_truncated_inside_the_body_yields_a_prefix_then_an_error() {
+    let dir = TempDir::new().unwrap();
+    let log = large_log();
+    let gz = gzip_bytes(&log);
+    fs::write(dir.path().join("log.gz"), &gz[..gz.len() / 2]).unwrap();
+    let (prefix, end) = read_prefix(&dir.path().join("log"));
+    assert!(!prefix.is_empty());
+    assert!(prefix.len() < log.len());
+    assert!(log.starts_with(&prefix));
+    assert_eq!(end.unwrap_err().kind(), io::ErrorKind::UnexpectedEof);
+}
+
+#[test]
+fn corrupt_deflate_body_is_an_error() {
+    let dir = TempDir::new().unwrap();
+    let mut gz = gzip_bytes(b"one\ntwo\n");
+    // A fixed gzip header is 10 bytes; 0xFF there starts a final block of the reserved type 3.
+    gz[10] = 0xFF;
+    fs::write(dir.path().join("log.gz"), gz).unwrap();
+    let (_, end) = read_prefix(&dir.path().join("log"));
+    assert_eq!(end.unwrap_err().kind(), io::ErrorKind::InvalidInput);
+}
+
+#[test_case(8; "crc mismatch")]
+#[test_case(4; "isize mismatch")]
+fn gzip_trailer_mismatch_is_an_error(from_end: usize) {
+    let dir = TempDir::new().unwrap();
+    let mut gz = gzip_bytes(b"one\ntwo\n");
+    let at = gz.len() - from_end;
+    gz[at] ^= 0xFF;
+    fs::write(dir.path().join("log.gz"), gz).unwrap();
+    let (_, end) = read_prefix(&dir.path().join("log"));
+    assert_eq!(end.unwrap_err().kind(), io::ErrorKind::InvalidInput);
+}
+
+#[test]
+fn trailing_data_after_a_gzip_member_is_an_error() {
+    let dir = TempDir::new().unwrap();
+    let mut gz = gzip_bytes(b"one\ntwo\n");
+    gz.extend_from_slice(b"trailing garbage");
+    fs::write(dir.path().join("log.gz"), gz).unwrap();
+    let (prefix, end) = read_prefix(&dir.path().join("log"));
+    assert_eq!(prefix, b"one\ntwo\n");
+    assert_eq!(end.unwrap_err().kind(), io::ErrorKind::InvalidInput);
+}
+
+#[test]
 fn unremovable_stale_temporary_fails_before_anything_changes() {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("log");
@@ -323,6 +417,25 @@ fn unremovable_stale_temporary_fails_before_anything_changes() {
         "{error:?}"
     );
     assert_eq!(entries(dir.path()), ["log", "log.gz.tmp"]);
+}
+
+#[test]
+fn empty_stale_temporary_directory_is_refused_not_removed() {
+    let dir = TempDir::new().unwrap();
+    write(&dir.path().join(SAMPLES), SAMPLE_LINE);
+    let stale = dir.path().join(format!("{SAMPLES}.gz.tmp"));
+    fs::create_dir(&stale).unwrap();
+    let errors = compress(dir.path()).unwrap_err();
+    assert!(
+        matches!(errors.errors(), [Error::RemoveStale { path, .. }] if path == &stale),
+        "{errors:?}"
+    );
+    assert_eq!(
+        entries(dir.path()),
+        [SAMPLES.to_owned(), format!("{SAMPLES}.gz.tmp")]
+    );
+    let data = read_trial_file(&dir.path().join(SAMPLES)).unwrap();
+    assert_eq!(String::from_utf8(data).unwrap(), SAMPLE_LINE);
 }
 
 /// Whether permission bits are enforced; a privileged user reads a mode 000 file and writes a read-only directory.

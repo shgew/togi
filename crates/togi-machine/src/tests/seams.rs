@@ -1,6 +1,6 @@
 use crate::*;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
 
 #[test]
@@ -113,6 +113,21 @@ fn partial_propagates_with_question_mark_as_its_error() {
 }
 
 #[test]
+fn partial_keeps_its_named_error_findable_after_question_mark_into_a_boxed_error() {
+    fn propagate_boxed(
+        running: &mut dyn Running,
+    ) -> Result<TrialResult, Box<dyn std::error::Error + Send + Sync>> {
+        Ok(running.wait(&CancellationToken::new(), &mut NoReporter)?)
+    }
+    let error = propagate_boxed(&mut FailingRunning).unwrap_err();
+    let chain = std::iter::successors(Some(&*error as &(dyn std::error::Error + 'static)), |e| {
+        e.source()
+    });
+    let named = chain.into_iter().find_map(|e| e.downcast_ref::<Error>());
+    assert!(matches!(named, Some(Error::Cancelled)));
+}
+
+#[test]
 fn partial_reads_as_its_error() {
     let partial = Partial {
         value: 7_u8,
@@ -121,7 +136,10 @@ fn partial_reads_as_its_error() {
         )),
     };
     assert_eq!(partial.to_string(), "disk gone");
-    assert!(std::error::Error::source(&partial).is_none());
+    assert_eq!(
+        std::error::Error::source(&partial).map(ToString::to_string),
+        Some("disk gone".to_owned())
+    );
     let (value, error) = partial.into_parts();
     assert_eq!(value, 7);
     assert_eq!(error.to_string(), "disk gone");
@@ -132,7 +150,9 @@ fn partial_reads_as_its_error() {
         )),
     };
     assert_eq!(
-        std::error::Error::source(&wrapped).map(ToString::to_string),
+        std::error::Error::source(&wrapped)
+            .and_then(std::error::Error::source)
+            .map(ToString::to_string),
         std::error::Error::source(&wrapped.error).map(ToString::to_string)
     );
 }
@@ -298,4 +318,126 @@ fn callbacks_may_register_and_cancel_without_deadlock() {
     token.cancel();
     assert_eq!(count.load(Ordering::SeqCst), 1);
     assert!(nested.lock().unwrap().is_some());
+}
+
+struct CancelOnDrop(CancellationToken);
+
+impl Drop for CancelOnDrop {
+    fn drop(&mut self) {
+        self.0.cancel();
+    }
+}
+
+#[test]
+fn dropping_a_guard_whose_unrun_callback_cancels_the_token_does_not_deadlock() {
+    let token = CancellationToken::new();
+    let (count, callback) = counter();
+    let capture = CancelOnDrop(token.clone());
+    let run = callback();
+    let guard = token.on_cancel(move || {
+        let _keep = &capture;
+        run();
+    });
+    std::thread::spawn(move || drop(guard)).join().unwrap();
+    assert!(token.is_cancelled());
+    assert_eq!(count.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn dropping_a_guard_waits_for_a_callback_a_concurrent_cancel_already_claimed() {
+    let token = CancellationToken::new();
+    let (started_tx, started_rx) = std::sync::mpsc::channel();
+    let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+    let finished = Arc::new(AtomicBool::new(false));
+    let work_done = Arc::clone(&finished);
+    let guard = token.on_cancel(move || {
+        started_tx.send(()).unwrap();
+        release_rx.recv().unwrap();
+        work_done.store(true, Ordering::SeqCst);
+    });
+    let canceller = {
+        let token = token.clone();
+        std::thread::spawn(move || token.cancel())
+    };
+    started_rx.recv().unwrap();
+    let observed_done = Arc::clone(&finished);
+    let dropper = std::thread::spawn(move || {
+        drop(guard);
+        observed_done.load(Ordering::SeqCst)
+    });
+    release_tx.send(()).unwrap();
+    assert!(
+        dropper.join().unwrap(),
+        "the guard dropped while its callback was still running"
+    );
+    canceller.join().unwrap();
+}
+
+#[test]
+fn a_callback_may_drop_its_own_guard() {
+    let token = CancellationToken::new();
+    let stash = Arc::new(std::sync::Mutex::new(None));
+    let inside = Arc::clone(&stash);
+    let ran = Arc::new(AtomicBool::new(false));
+    let marked = Arc::clone(&ran);
+    *stash.lock().unwrap() = Some(token.on_cancel(move || {
+        drop(inside.lock().unwrap().take());
+        marked.store(true, Ordering::SeqCst);
+    }));
+    token.cancel();
+    assert!(ran.load(Ordering::SeqCst));
+    assert!(stash.lock().unwrap().is_none());
+}
+
+struct RankingHost;
+
+impl Host for RankingHost {
+    fn boot_id(&mut self) -> Result<BootId, Error> {
+        Err(Error::BootMissing)
+    }
+
+    fn topology(&mut self) -> Result<Vec<CoreInfo>, Error> {
+        Ok(Vec::new())
+    }
+
+    fn validate_smu(&mut self) -> Result<SmuValidated, Error> {
+        Err(Error::Crashed)
+    }
+
+    fn bios_context(&mut self) -> Result<BiosContext, Error> {
+        Err(Error::BootMissing)
+    }
+
+    fn ranking(&mut self) -> Result<Vec<CoreRank>, Partial<Vec<CoreRank>>> {
+        Err(Partial {
+            value: vec![CoreRank {
+                core: CoreId::new(1).unwrap(),
+                value: 7,
+            }],
+            error: Error::Crashed,
+        })
+    }
+
+    fn preflight(&mut self) -> Vec<Check> {
+        Vec::new()
+    }
+
+    fn watchdog(&mut self) -> Check {
+        Check::default()
+    }
+}
+
+#[test]
+fn ranking_values_survive_a_failed_read() {
+    let Err(partial) = RankingHost.ranking() else {
+        panic!("ranking succeeded");
+    };
+    assert_eq!(
+        partial.value,
+        [CoreRank {
+            core: CoreId::new(1).unwrap(),
+            value: 7,
+        }]
+    );
+    assert!(matches!(partial.error, Error::Crashed));
 }

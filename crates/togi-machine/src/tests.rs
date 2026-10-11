@@ -116,13 +116,13 @@ fn workload_regime_contracts() {
                     .any(|base_regime| workloads(*base_regime).contains(base))
             );
             if regime == Regime::R4 {
-                assert!([25, 50, 75].contains(&workload.duty_pct));
+                assert!([25, 50, 75].contains(&workload.duty_pct.get()));
                 assert_eq!(
                     workload.label,
                     format!("{} {}% duty", base.label, workload.duty_pct)
                 );
             } else {
-                assert_eq!(workload.duty_pct, 0);
+                assert_eq!(workload.duty_pct.get(), 0);
             }
             assert_eq!(pick_workload(regime, index + count * 3), workload);
         }

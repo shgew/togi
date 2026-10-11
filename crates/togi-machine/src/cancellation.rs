@@ -1,8 +1,21 @@
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Condvar, Mutex, MutexGuard, Weak};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError, Weak};
+use std::thread::{self, ThreadId};
 use std::time::Duration;
 
-type Slot = Arc<Mutex<Option<Box<dyn FnOnce() + Send>>>>;
+type Callback = Box<dyn FnOnce() + Send>;
+
+struct SlotState {
+    callback: Option<Callback>,
+    running_on: Option<ThreadId>,
+}
+
+struct SlotCell {
+    state: Mutex<SlotState>,
+    finished: Condvar,
+}
+
+type Slot = Arc<SlotCell>;
 
 #[derive(Default)]
 struct Callbacks {
@@ -11,14 +24,30 @@ struct Callbacks {
 }
 
 fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-fn run(slot: &Slot) {
-    let callback = locked(slot).take();
+/// Ends a running claim even when the callback panics, so a dropping guard never waits forever.
+struct Claim<'a>(&'a SlotCell);
+
+impl Drop for Claim<'_> {
+    fn drop(&mut self) {
+        locked(&self.0.state).running_on = None;
+        self.0.finished.notify_all();
+    }
+}
+
+fn run(slot: &SlotCell) {
+    let callback = {
+        let mut state = locked(&slot.state);
+        let callback = state.callback.take();
+        if callback.is_some() {
+            state.running_on = Some(thread::current().id());
+        }
+        callback
+    };
     if let Some(callback) = callback {
+        let _claim = Claim(slot);
         callback();
     }
 }
@@ -55,11 +84,25 @@ impl std::fmt::Debug for OnCancel {
 
 impl Drop for OnCancel {
     fn drop(&mut self) {
-        if let Some((state, id, slot)) = self.registration.take() {
-            drop(locked(&slot).take());
-            locked(&state.callbacks)
-                .slots
-                .retain(|(slot_id, _)| *slot_id != id);
+        let Some((state, id, slot)) = self.registration.take() else {
+            return;
+        };
+        let unrun = locked(&slot.state).callback.take();
+        locked(&state.callbacks)
+            .slots
+            .retain(|(slot_id, _)| *slot_id != id);
+        // Captured values may cancel this token when dropped, so no lock is held here.
+        drop(unrun);
+        let this_thread = thread::current().id();
+        let mut slot_state = locked(&slot.state);
+        while slot_state
+            .running_on
+            .is_some_and(|running| running != this_thread)
+        {
+            slot_state = slot
+                .finished
+                .wait(slot_state)
+                .unwrap_or_else(PoisonError::into_inner);
         }
     }
 }
@@ -106,8 +149,10 @@ impl CancellationToken {
 
     /// Runs `callback` exactly once when this token or an ancestor is cancelled: on the cancelling
     /// thread outside any lock, or at once on the calling thread if already cancelled. Dropping the
-    /// returned guard before then keeps it from ever starting; a callback a concurrent cancel has
-    /// already started still completes.
+    /// returned guard before then keeps it from ever starting. Once the drop returns the callback
+    /// is not running and never will start, unless the guard is dropped from inside the callback
+    /// itself; a drop that races a callback a concurrent cancel already claimed waits for it to
+    /// finish.
     pub fn on_cancel(&self, callback: impl FnOnce() + Send + 'static) -> OnCancel {
         let mut callbacks = locked(&self.state.callbacks);
         if self.is_cancelled() {
@@ -117,7 +162,13 @@ impl CancellationToken {
         }
         let id = callbacks.next_id;
         callbacks.next_id += 1;
-        let slot: Slot = Arc::new(Mutex::new(Some(Box::new(callback))));
+        let slot: Slot = Arc::new(SlotCell {
+            state: Mutex::new(SlotState {
+                callback: Some(Box::new(callback)),
+                running_on: None,
+            }),
+            finished: Condvar::new(),
+        });
         callbacks.slots.push((id, Arc::clone(&slot)));
         OnCancel {
             registration: Some((Arc::clone(&self.state), id, slot)),
