@@ -1,23 +1,26 @@
 use std::future::pending;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{RecvTimeoutError, channel};
 use std::time::Duration;
 
 use tokio::sync::mpsc::UnboundedReceiver;
-use tokio::time::{Instant, timeout_at};
+use tokio::sync::oneshot;
+use tokio::time::Instant;
 
 use crate::error::{Error, PrepareError};
 use crate::files::Chown;
+use crate::join::{Missing, report};
 use crate::supervisor::TrialCommand;
 
 type Entered = dyn Fn(&str) + Send + Sync;
 
-/// Runs a start's file preparation, which can block on storage, on its own thread so the runtime
-/// keeps handling cancellation and deadlines; the runtime waits on the blocking pool for at most
-/// the time left, under an absolute deadline of its own, as the log and samples writers are joined. One preparation runs at a time and its thread is
-/// never replaced while stuck or joined: a preparation abandoned at its deadline leaves the
-/// preparer busy until it returns, and the next one is refused rather than stacked on it.
+/// Runs the file preparation of a start (the trial directory, then each instance's files) on a
+/// std thread, because storage can block it and the runtime must keep handling cancellation and
+/// deadlines.
+///
+/// One preparation runs at a time. Its thread is never replaced while it is stuck and never
+/// joined: one that is abandoned at its deadline keeps the preparer busy until it returns, and a
+/// preparation asked for meanwhile is refused with `PrepareError::Busy`.
 #[derive(Clone, Default)]
 pub(crate) struct Preparer {
     busy: Arc<AtomicBool>,
@@ -36,9 +39,9 @@ impl Drop for Release {
 }
 
 impl Preparer {
-    /// Runs `work` and waits for it until `until`; a cancellation of the start ends the wait too.
-    /// `step` names the work in the error of a missed deadline, `bound` is the budget it was
-    /// part of.
+    /// Runs `work` and waits for what it reports until `until`; a cancellation of the start ends
+    /// the wait first. `step` names the work in the error of a missed deadline and `bound` is the
+    /// budget the deadline came from.
     pub(crate) async fn run<T: Send + 'static>(
         &self,
         step: &str,
@@ -55,7 +58,7 @@ impl Preparer {
             return Err(PrepareError::Busy.into());
         }
         let release = Release(Arc::clone(&self.busy));
-        let (done, result) = channel();
+        let (finished, done) = oneshot::channel();
         let entered = self.entered.clone();
         let name = step.to_owned();
         std::thread::Builder::new()
@@ -66,7 +69,7 @@ impl Preparer {
                 }
                 let outcome = work();
                 drop(release);
-                let _ = done.send(outcome);
+                let _ = finished.send(outcome);
             })
             .map_err(PrepareError::Spawn)?;
         let cancel = async {
@@ -79,20 +82,17 @@ impl Preparer {
             }
         };
         let remaining = until.saturating_duration_since(Instant::now());
-        let wait = tokio::task::spawn_blocking(move || result.recv_timeout(remaining));
-        let timed_out = || PrepareError::TimedOut {
-            what: step.to_owned(),
-            bound,
-        };
         tokio::select! {
             biased;
             () = cancel => Err(Error::Cancelled),
-            outcome = timeout_at(until, wait) => match outcome {
-                Ok(Ok(Ok(work))) => work.map_err(Error::from),
-                Ok(Ok(Err(RecvTimeoutError::Timeout))) | Err(_) => Err(timed_out().into()),
-                Ok(Ok(Err(RecvTimeoutError::Disconnected)) | Err(_)) => {
-                    Err(PrepareError::Vanished.into())
+            outcome = report(done, remaining) => match outcome {
+                Ok(work) => work.map_err(Error::from),
+                Err(Missing::TimedOut) => Err(PrepareError::TimedOut {
+                    what: step.to_owned(),
+                    bound,
                 }
+                .into()),
+                Err(Missing::Vanished) => Err(PrepareError::Vanished.into()),
             },
         }
     }
