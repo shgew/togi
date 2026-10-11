@@ -605,6 +605,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "togi-facts"
+version = "0.0.0"
+dependencies = [
+ "jiff",
+ "thiserror",
+ "togi-journal",
+ "togi-machine",
+]
+
+[[package]]
 name = "togi-hostlock"
 version = "0.0.0"
 dependencies = [

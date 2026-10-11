@@ -8,7 +8,7 @@ The ruleset is the hardcoded strategy: search strides, offset range, phases, evi
 
 The evidence epoch (`tuner.EvidenceEpoch`) separately versions compatibility of trial outcomes: workload content, the backend configuration togi generates, intended durations, and pass/failure detection (`workloads.md`). `session.start.build.evidence` records it; the build stamp requires it, so there is no default for a missing value. A transition drops passes from other epochs but keeps eligible failures. An epoch change is not a ruleset or journal-schema bump. A new backend build needs no epoch change: its backend identity changes (Evidence).
 
-Transitions record eligible same-BIOS trial and idle-failure facts before `session.carried` (`journal.md`, Transitions). The tuner treats carried legacy `record_only` R7 outcomes (written under ruleset 8) as ordinary evidence, with no aging; it does not carry profile offsets or clean cycles. Carried multi-core R7 failures are attributed and evaluated before the first trial.
+Transitions record eligible same-BIOS trial and idle-failure facts before `session.carried` (`journal.md`, Transitions). Every carried trial is ordinary evidence, with no aging; the tuner does not carry profile offsets or clean cycles. Carried multi-core R7 failures are attributed and evaluated before the first trial.
 
 Multi-core R7 means whole-CCD, partial and all-core loads. R1–R6 evidence and search, R6 idle failures, single-core failures and their hunts, failure points and combinations from those paths, and their first-failure rules are separate from it. The tuner charges an unattributed multi-core R7 failure to the loaded cores by voltage-targeted backoff and locates it on its unloaded cores only when that stops helping ([Escalation to a located hunt](#escalation-to-a-located-hunt), [Hunt](#hunt)), and reruns a failing trial with every core at CO 0 before any `failure_at_zero` dead end ([Dead ends](#dead-ends)).
 
@@ -78,7 +78,7 @@ Any failure during a trial run alone is attributed to the target, crashes includ
 
 ## Evidence
 
-All conclusive trials and facts enter the evidence rules, including former `record_only` R7 outcomes. Every multi-core R7 failure follows [R7 voltage-targeted backoff](#r7-voltage-targeted-backoff); other trials retain the first-failure rules.
+All conclusive trials and facts enter the evidence rules. Every multi-core R7 failure follows [R7 voltage-targeted backoff](#r7-voltage-targeted-backoff); other trials retain the first-failure rules.
 
 One trial is one workload launch, with no internal relaunch. The pass rule is `n = ceil(ln(evidence.miss) / log1p(-evidence.rate))` passing trials, five at the defaults (0.05, 0.5). Outside multi-core R7 the first failure rejects a step and restarts the consecutive pass count. The full count applies to a candidate solo limit's R1 and R2 classes, every hunt group and every phase-2 round check.
 
