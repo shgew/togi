@@ -6,7 +6,8 @@ use togi_machine::Condition;
 use super::{Check, Round};
 use crate::state::Run;
 use crate::{
-    ClassKey, Requirement, RequirementKind, TrialContext, TrialPlan, Window, WorkloadChoice,
+    ClassKey, Profile, Requirement, RequirementKind, TrialContext, TrialPlan, Window,
+    WorkloadChoice,
 };
 
 pub(super) fn round_requirement(round: &Round, check: &Check) -> Requirement {
@@ -36,15 +37,16 @@ impl Run {
         let loads_class = match check.condition {
             Condition::Alone => {
                 intent.cores.is_empty()
-                    && intent
-                        .core
-                        .is_some_and(|core| class.loaded().contains(core))
+                    && intent.core.is_some_and(|core| {
+                        class.loaded().contains(core) && intent.offset == check.profile.get(core)
+                    })
                     && class.loaded().len() == 1
             }
             Condition::Together | Condition::Parked => {
                 intent.core.is_none() && intent.cores == class.loaded()
             }
         };
+        let at_profile = Profile::new(&self.topo, intent.profile).ok() == Some(check.profile);
         let shaped = intent.round == Some(round.id())
             && intent.activity == Some(Activity::Deepening)
             && intent.condition == check.condition
@@ -53,6 +55,7 @@ impl Run {
             && intent.hunt.is_none()
             && intent.group.is_none()
             && !intent.rerun
+            && at_profile
             && loads_class;
         shaped.then(|| round_requirement(round, check))
     }

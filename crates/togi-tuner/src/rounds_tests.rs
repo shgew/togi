@@ -946,6 +946,45 @@ fn a_round_intent_is_scheduled_only_for_the_open_rounds_own_checks() {
 }
 
 #[test]
+fn a_round_intent_must_carry_the_checks_profile_and_target_offset() {
+    let mut j = solo_cores(&[-40, -40, -40, -40], -41);
+    drive(&mut j, 4000, |j| j.run().phases.phase1_end().is_some());
+    until_round_checks(&mut j, 4);
+    let plan = j.next_trial();
+    assert_eq!(plan.condition, Condition::Alone);
+    let trial = togi_journal::TrialId::from("9999".to_owned());
+    let own = plan.load.cores().first().unwrap();
+    let other = plan
+        .profile
+        .cores()
+        .iter()
+        .find(|&core| core != own)
+        .unwrap();
+    let mut cases = Vec::new();
+    let mut elsewhere = plan.intent(trial.clone(), 0);
+    elsewhere.profile = plan
+        .profile
+        .with(other, off(plan.profile.get(other).unwrap().get() - 1))
+        .offsets();
+    cases.push(elsewhere);
+    let mut offset = plan.intent(trial, 0);
+    offset.offset = offset.offset.map(|at| off(at.get() - 1));
+    cases.push(offset);
+    for intent in cases {
+        let trial = intent.trial.clone();
+        let event = j.event(intent.into(), &plan.cause);
+        let mut probe = j.state.clone();
+        assert_eq!(
+            probe.fold(&event),
+            Err(crate::FoldError::UnscheduledIntent(trial)),
+        );
+        assert_eq!(probe.run(), j.state.run());
+    }
+    let (_, _) = j.intent(&plan);
+    j.assert_resumes();
+}
+
+#[test]
 fn carried_passes_satisfy_every_round_check_and_are_cited() {
     let mut j = Journal::new(&[0], &[Start::has_room(-10)]);
     j.profile_change(&[-10]);
