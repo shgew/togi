@@ -1,0 +1,261 @@
+use std::time::Duration;
+
+use serde_json::json;
+use togi_machine::{Kernel as _, Partial};
+
+use super::support::{
+    CURRENT, MISSING, OLD, argv, at, boot, caused_by, core, exit, kernel, lines, locked, ok,
+};
+use crate::{BootIdError, DecodeError};
+
+const STATUS: &str = "[Hardware Error]: CPU:2 (1a:44:0) MC0_STATUS[Over|CE]: 0xdc204000000d0175";
+const NO_BOOT: &str = "No journal boot entry found\n";
+
+fn byte_array(text: &str) -> serde_json::Value {
+    json!(text.bytes().collect::<Vec<u8>>())
+}
+
+fn status_entry(wall: i64, monotonic: i64) -> Vec<u8> {
+    lines(&[json!({
+        "MESSAGE": STATUS,
+        "__REALTIME_TIMESTAMP": wall.to_string(),
+        "__MONOTONIC_TIMESTAMP": monotonic.to_string(),
+    })])
+}
+
+#[test]
+fn whole_boot_reads_the_grep_query_of_the_boot_without_hyphens() {
+    let (mut kernel, calls) = kernel(&[(1, &[2, 18])], |_| ok(status_entry(2_000_000, 2_000_000)));
+    let mces = kernel
+        .mces(
+            &boot("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"),
+            Duration::ZERO,
+        )
+        .unwrap();
+    assert_eq!(mces.len(), 1);
+    let calls = locked(&calls);
+    assert_eq!(
+        argv(&calls[0]),
+        [
+            "-k",
+            "-b",
+            OLD,
+            "-o",
+            "json",
+            "--output-fields=MESSAGE,__REALTIME_TIMESTAMP,__MONOTONIC_TIMESTAMP",
+            "--grep",
+            "Hardware Error",
+            "--no-pager",
+            "-q",
+        ]
+    );
+}
+
+#[test]
+fn a_message_may_be_a_byte_array() {
+    let out = lines(&[json!({
+        "MESSAGE": byte_array(STATUS),
+        "__REALTIME_TIMESTAMP": "2000000",
+        "__MONOTONIC_TIMESTAMP": "2000000",
+    })]);
+    let (mut kernel, _) = kernel(&[(1, &[2, 18])], move |_| ok(&out));
+    let mces = kernel.mces(&boot(OLD), Duration::from_secs(1)).unwrap();
+    assert_eq!(mces.len(), 1);
+    assert_eq!(mces[0].core, Some(core(1)));
+    assert_eq!(mces[0].time, at(2_000_000));
+    assert_eq!(mces[0].monotonic, Duration::from_secs(2));
+}
+
+#[test]
+fn the_monotonic_lower_bound_decides_which_checks_are_eligible() {
+    let mut out = status_entry(3_000_000, 1_000_000);
+    out.extend(status_entry(3_000_000, 2_000_000));
+    let (mut kernel, _) = kernel(&[(3, &[2])], move |_| ok(&out));
+    let got = kernel
+        .mces(&boot(OLD), Duration::from_millis(1500))
+        .unwrap();
+    assert_eq!(got.len(), 1);
+    assert_eq!(got[0].monotonic, Duration::from_secs(2));
+    assert_eq!(got[0].time, at(3_000_000));
+}
+
+#[test]
+fn missing_boot_no_match_and_failure_are_told_apart() {
+    let (mut missing, _) = kernel(&[], |_| exit(1, b"", NO_BOOT));
+    assert!(matches!(
+        missing.mces(&boot(MISSING), Duration::ZERO),
+        Err(togi_machine::Error::BootMissing)
+    ));
+    let (mut empty, _) = kernel(&[], |_| exit(1, b"", ""));
+    assert!(empty.mces(&boot(OLD), Duration::ZERO).unwrap().is_empty());
+    let (mut broken, _) = kernel(&[], |_| exit(2, b"", "permission denied\n"));
+    let error = broken.mces(&boot(OLD), Duration::ZERO).unwrap_err();
+    assert!(!matches!(error, togi_machine::Error::BootMissing));
+    assert!(error.to_string().contains(OLD), "{error}");
+    let (mut half_empty, _) = kernel(&[], |_| exit(1, b"{}\n", ""));
+    assert!(half_empty.mces(&boot(OLD), Duration::ZERO).is_err());
+    let (mut signalled, _) = kernel(&[], |_| {
+        Ok(togi_command::Output {
+            status: std::os::unix::process::ExitStatusExt::from_raw(9),
+            stdout: Vec::new(),
+            stderr: Vec::new(),
+        })
+    });
+    assert!(signalled.mces(&boot(OLD), Duration::ZERO).is_err());
+}
+
+#[test]
+fn an_exit_error_names_the_operation_status_and_stderr() {
+    let (kernel, _) = kernel(&[], |_| exit(2, b"", "  permission denied \n"));
+    let error = kernel
+        .read_whole_boot(
+            &crate::boot::JournalBoot::parse(OLD).unwrap(),
+            Duration::ZERO,
+        )
+        .unwrap_err();
+    let text = error.to_string();
+    assert!(text.contains("read the kernel log of boot"), "{text}");
+    assert!(text.contains("exit status: 2"), "{text}");
+    assert!(text.ends_with("permission denied"), "{text}");
+}
+
+#[test]
+fn a_boot_that_is_not_32_hex_digits_is_refused_before_any_command() {
+    let (mut kernel, calls) = kernel(&[], |_| ok(""));
+    for id in [
+        "",
+        "boot",
+        "1234-abcd",
+        "zzzzzzzzbbbbccccddddeeeeeeeeeeee",
+        &format!("{OLD}0"),
+    ] {
+        let error = kernel.mces(&boot(id), Duration::ZERO).unwrap_err();
+        assert!(
+            error.to_string().contains("is not a boot id"),
+            "{id}: {error}"
+        );
+    }
+    assert!(locked(&calls).is_empty());
+}
+
+#[test]
+fn malformed_entries_are_errors_not_clean_intervals() {
+    let bad_message =
+        json!({"MESSAGE": {}, "__REALTIME_TIMESTAMP": "1", "__MONOTONIC_TIMESTAMP": "1"});
+    let cases = [
+        ("object message", bad_message),
+        (
+            "no message",
+            json!({"__REALTIME_TIMESTAMP": "1", "__MONOTONIC_TIMESTAMP": "1"}),
+        ),
+        (
+            "byte over 255",
+            json!({"MESSAGE": [256], "__REALTIME_TIMESTAMP": "1", "__MONOTONIC_TIMESTAMP": "1"}),
+        ),
+        (
+            "wall clock text",
+            json!({"MESSAGE": "x", "__REALTIME_TIMESTAMP": "invalid", "__MONOTONIC_TIMESTAMP": "1"}),
+        ),
+        (
+            "wall clock number",
+            json!({"MESSAGE": "x", "__REALTIME_TIMESTAMP": 1, "__MONOTONIC_TIMESTAMP": "1"}),
+        ),
+        (
+            "wall clock missing",
+            json!({"MESSAGE": "x", "__MONOTONIC_TIMESTAMP": "1"}),
+        ),
+        (
+            "wall clock beyond jiff",
+            json!({"MESSAGE": "x", "__REALTIME_TIMESTAMP": "9223372036854775807", "__MONOTONIC_TIMESTAMP": "1"}),
+        ),
+        (
+            "wall clock overflow",
+            json!({"MESSAGE": "x", "__REALTIME_TIMESTAMP": "9223372036854775808", "__MONOTONIC_TIMESTAMP": "1"}),
+        ),
+        (
+            "monotonic text",
+            json!({"MESSAGE": "x", "__REALTIME_TIMESTAMP": "1", "__MONOTONIC_TIMESTAMP": "invalid"}),
+        ),
+        (
+            "monotonic negative",
+            json!({"MESSAGE": "x", "__REALTIME_TIMESTAMP": "1", "__MONOTONIC_TIMESTAMP": "-1"}),
+        ),
+        (
+            "monotonic missing",
+            json!({"MESSAGE": "x", "__REALTIME_TIMESTAMP": "1"}),
+        ),
+    ];
+    for (name, entry) in cases {
+        let out = lines(&[entry]);
+        let (mut kernel, _) = kernel(&[], move |_| ok(&out));
+        let error = kernel.mces(&boot(OLD), Duration::ZERO).unwrap_err();
+        assert!(
+            caused_by::<DecodeError>(&error).is_some(),
+            "{name}: {error:?}"
+        );
+    }
+    for out in [&b"{broken"[..], b"   \n", b"[]"] {
+        let (mut kernel, _) = kernel(&[], move |_| ok(out));
+        assert!(kernel.mces(&boot(OLD), Duration::ZERO).is_err(), "{out:?}");
+    }
+}
+
+#[test]
+fn empty_lines_are_ignored() {
+    let mut out = b"\n\n".to_vec();
+    out.extend(status_entry(2_000_000, 2_000_000));
+    out.extend(b"\n");
+    let (mut kernel, _) = kernel(&[(1, &[2])], move |_| ok(&out));
+    assert_eq!(kernel.mces(&boot(OLD), Duration::ZERO).unwrap().len(), 1);
+}
+
+#[test]
+fn a_status_with_an_impossible_cpu_is_an_error() {
+    let out = lines(&[json!({
+        "MESSAGE": "[Hardware Error]: CPU:70000 (1a:44:0) MC0_STATUS[Over|CE]: 0xdc204000000d0175",
+        "__REALTIME_TIMESTAMP": "1",
+        "__MONOTONIC_TIMESTAMP": "1",
+    })]);
+    let (mut kernel, _) = kernel(&[], move |_| ok(&out));
+    let error = kernel.mces(&boot(OLD), Duration::ZERO).unwrap_err();
+    assert!(
+        error.to_string().contains("cannot read the kernel log"),
+        "{error}"
+    );
+}
+
+#[test]
+fn a_boot_id_is_the_32_hex_digits_of_a_hyphenated_uuid() {
+    let uuid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\n";
+    assert_eq!(
+        crate::boot::checked(uuid).unwrap().as_str(),
+        "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    );
+    assert_eq!(crate::boot::checked(OLD).unwrap().as_str(), OLD);
+    for text in [
+        "",
+        "\n",
+        "not a boot id",
+        "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeee",
+    ] {
+        assert!(
+            matches!(crate::boot::checked(text), Err(BootIdError::Invalid(_))),
+            "{text:?}"
+        );
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn this_machine_has_a_boot_id() {
+    let id = crate::boot_id().unwrap();
+    assert!(crate::boot::JournalBoot::parse(id.as_str()).is_ok());
+}
+
+#[test]
+fn the_partial_of_a_failed_read_names_the_error() {
+    let (mut kernel, _) = kernel(&[], |_| exit(1, b"", NO_BOOT));
+    let Partial { value, error } = kernel.read_mces(&boot(CURRENT), None).unwrap_err();
+    assert!(value.is_empty());
+    assert!(matches!(error, togi_machine::Error::BootMissing));
+}

@@ -1,0 +1,27 @@
+[package]
+name = "togi-detect"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "Kernel-log machine checks, reset reasons and saved pstore dumps of a boot"
+
+[features]
+hardware = []
+
+[dependencies]
+jiff.workspace = true
+rustix = { workspace = true, features = ["process"] }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+togi-command.workspace = true
+togi-machine.workspace = true
+
+[dev-dependencies]
+nix.workspace = true
+tempfile.workspace = true
+
+[lints]
+workspace = true
