@@ -85,7 +85,7 @@ pub(crate) fn ticks_per_second() -> u64 {
 /// Whether some cgroup line ends in `/<scope>.scope`.
 pub(crate) fn in_scope(cgroup: &str, scope: &ScopeName) -> bool {
     let suffix = format!("/{}", scope.unit());
-    cgroup.lines().any(|line| line.trim().ends_with(&suffix))
+    cgroup.lines().any(|line| line.ends_with(&suffix))
 }
 
 /// The last trial scope named by a path component of any cgroup line.
@@ -94,7 +94,7 @@ pub(crate) fn scope_of(cgroup: &str) -> Option<ScopeName> {
         .lines()
         .filter_map(|line| line.splitn(3, ':').nth(2))
         .flat_map(|path| path.split('/'))
-        .filter_map(|component| ScopeName::from_unit(component.trim()))
+        .filter_map(ScopeName::from_unit)
         .next_back()
 }
 
@@ -371,6 +371,13 @@ mod tests {
             "0::/system.slice/xtogi-trial-a.scope\n",
             &scope("togi-trial-a")
         ));
+    }
+
+    #[test]
+    fn a_component_with_spaces_is_a_different_cgroup_not_a_trial_scope() {
+        assert_eq!(scope_of("0::/other/ togi-trial-a.scope /child\n"), None);
+        assert_eq!(scope_of("0::/other/togi-trial-a.scope \n"), None);
+        assert!(!in_scope("0::/other/togi-trial-a.scope \n", &scope("togi-trial-a")));
     }
 
     #[test]
