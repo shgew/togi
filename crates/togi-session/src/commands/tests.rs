@@ -73,3 +73,33 @@ fn resetting_everything_records_the_command_and_archives_the_session() {
     drop(dir);
     assert_eq!(simulated(&bench.mem).archives().unwrap(), [session]);
 }
+
+#[test]
+fn a_core_of_a_session_interrupted_before_its_phases_can_still_be_reset() {
+    let bench = Bench::new(2);
+    let mut session = bench.open();
+    assert_eq!(session.start().unwrap(), Control::Continue);
+    let Session { mut appender, .. } = session;
+    assert!(appender.recovery().phase(core(1)).is_none());
+    let before = kinds(&appender).len();
+    reset_core(&build(), &mut appender, core(1)).unwrap();
+    assert_eq!(kinds(&appender)[before..], ["command.reset"]);
+}
+
+#[test]
+fn resetting_everything_archives_across_a_ruleset_an_evidence_epoch_or_a_schema_mismatch() {
+    type Change = fn(&mut Build);
+    let changes: [(&str, Change); 3] = [
+        ("ruleset", |build| build.ruleset += 1),
+        ("evidence", |build| build.evidence += 1),
+        ("schema", |build| build.schema += 1),
+    ];
+    for (name, change) in changes {
+        let bench = Bench::new(2);
+        let appender = appender_after_a_run(&bench);
+        let mut other = build();
+        change(&mut other);
+        let (session, dir) = reset_all(&other, appender).expect(name);
+        assert_eq!(dir.archives().unwrap(), [session], "{name}");
+    }
+}

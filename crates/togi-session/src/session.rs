@@ -674,8 +674,9 @@ fn dead_end_stop(dead_end: DeadEnd, causes: Vec<Seq>, reboot: bool) -> Stop {
     }
 }
 
-/// Why this build may not append to the journal, judged by the build of its `session.start`.
-pub(crate) fn refusal(build: &Build, journal: &Journal) -> Option<togi_journal::Refusal> {
+/// What this build may do with the journal for `operation`, judged by the build of its `session.start`; `None` for a
+/// journal that has none.
+pub(crate) fn verdict(build: &Build, journal: &Journal, operation: Operation) -> Option<Verdict> {
     let recorded = journal
         .events()
         .iter()
@@ -683,7 +684,12 @@ pub(crate) fn refusal(build: &Build, journal: &Journal) -> Option<togi_journal::
             Payload::SessionStart(start) => Some(&start.build),
             _ => None,
         })?;
-    match build.verdict(recorded, Operation::Append) {
+    Some(build.verdict(recorded, operation))
+}
+
+/// Why this build may not append to the journal.
+pub(crate) fn refusal(build: &Build, journal: &Journal) -> Option<togi_journal::Refusal> {
+    match verdict(build, journal, Operation::Append)? {
         Verdict::Refuse(refusal) => Some(refusal),
         Verdict::Use | Verdict::Archive => None,
     }

@@ -3,14 +3,14 @@
 //! may hold offsets a crashed run left, and a shutdown would hide that crash from the next run.
 
 use togi_journal::{
-    ArchiveError, ArchiveKind, Build, CommandReset, Payload, Refusal, ResetTarget, SessionId,
-    Stamp, StateDir,
+    ArchiveError, ArchiveKind, Build, CommandReset, Operation, Payload, Refusal, ResetTarget,
+    SessionId, Stamp, StateDir, Verdict,
 };
 use togi_machine::CoreId;
 
 use crate::appender::Appender;
 use crate::error::AppendFailure;
-use crate::session::refusal;
+use crate::session::{refusal, verdict};
 
 #[derive(Debug, thiserror::Error)]
 pub enum CommandError {
@@ -41,7 +41,7 @@ pub fn reset_core(
     core: CoreId,
 ) -> Result<togi_journal::Seq, CommandError> {
     check(build, appender)?;
-    if appender.recovery().phase(core).is_none() {
+    if !appender.recovery().topology().contains_key(&core) {
         return Err(CommandError::NoSuchCore { core });
     }
     let payload = CommandReset {
@@ -51,11 +51,16 @@ pub fn reset_core(
 }
 
 /// Records the reset and archives the session; the journal is spent afterwards and its directory is handed back.
+/// A journal of another schema is archived without the record: this build cannot append to it.
 pub fn reset_all(
     build: &Build,
     mut appender: Appender,
 ) -> Result<(SessionId, StateDir), CommandError> {
-    check(build, &appender)?;
+    let operation =
+        verdict(build, appender.journal(), Operation::ResetAll).ok_or(CommandError::NoSession)?;
+    if let Verdict::Refuse(refusal) = operation {
+        return Err(refusal.into());
+    }
     let session = appender
         .journal()
         .events()
@@ -65,10 +70,13 @@ pub fn reset_all(
             _ => None,
         })
         .ok_or(CommandError::NoSession)?;
-    let payload = CommandReset {
-        target: ResetTarget::All,
-    };
-    let seq = appender.append(Payload::CommandReset(payload), &[])?;
+    let mut causes = Vec::new();
+    if operation == Verdict::Use {
+        let payload = CommandReset {
+            target: ResetTarget::All,
+        };
+        causes.push(appender.append(Payload::CommandReset(payload), &[])?);
+    }
     let clock = appender.clock();
     let stamp = Stamp {
         time: clock.now(),
@@ -76,7 +84,7 @@ pub fn reset_all(
     };
     let dir = appender
         .into_journal()
-        .archive(stamp, ArchiveKind::ResetAll, &[seq])?;
+        .archive(stamp, ArchiveKind::ResetAll, &causes)?;
     Ok((session, dir))
 }
 
