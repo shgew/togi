@@ -70,6 +70,14 @@ pub(super) fn own_identity() -> BackendIdentity {
 }
 
 pub(super) fn rig_with(backend: TestBackend, timing: Timing) -> Rig {
+    rig_edit(backend, timing, |_| {})
+}
+
+pub(super) fn rig_edit(
+    backend: TestBackend,
+    timing: Timing,
+    edit: impl FnOnce(&mut Env<Fake>),
+) -> Rig {
     let dir = tempfile::tempdir().unwrap();
     let fake = Fake::default();
     let roots = Roots {
@@ -78,7 +86,7 @@ pub(super) fn rig_with(backend: TestBackend, timing: Timing) -> Rig {
         powercap: dir.path().join("powercap"),
         proc: dir.path().join("proc"),
     };
-    let env = Rc::new(Env {
+    let mut env = Env {
         os: Rc::new(fake.clone()),
         timing,
         roots,
@@ -89,7 +97,10 @@ pub(super) fn rig_with(backend: TestBackend, timing: Timing) -> Rig {
         unscoped: false,
         user_manager: false,
         pm_table: None,
-    });
+        storage: None,
+    };
+    edit(&mut env);
+    let env = Rc::new(env);
     Rig { fake, env, dir }
 }
 
@@ -212,4 +223,12 @@ pub(super) fn burn(shared: &std::rc::Rc<ProcShared>, cpus: u32) {
             });
         }
     });
+}
+
+/// The crate's own error inside a seam error, when it carries one.
+pub(super) fn crate_error(error: &togi_machine::Error) -> Option<&crate::Error> {
+    match error {
+        togi_machine::Error::Other(inner) => inner.downcast_ref::<crate::Error>(),
+        _ => None,
+    }
 }

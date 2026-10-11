@@ -129,6 +129,7 @@ impl Runner {
             unscoped: settings.unscoped,
             user_manager: settings.user_manager,
             pm_table,
+            storage: None,
         })?;
         Ok(Self {
             dir,

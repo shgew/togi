@@ -195,6 +195,7 @@ struct Shared {
     systemd_script: RefCell<SystemdScript>,
     units: RefCell<Vec<ScopeName>>,
     ready_default: Cell<bool>,
+    signal_error_default: Cell<Option<SignalErrorKind>>,
     recovered: RefCell<Vec<(ScopeProcess, Rc<Cell<bool>>)>>,
     next_pid: Cell<u32>,
 }
@@ -218,6 +219,7 @@ impl Default for Fake {
                 systemd_script: RefCell::new(Box::new(|_| None)),
                 units: RefCell::default(),
                 ready_default: Cell::new(true),
+                signal_error_default: Cell::new(None),
                 recovered: RefCell::default(),
                 next_pid: Cell::new(1000),
             }),
@@ -247,6 +249,11 @@ impl Fake {
     /// Answers systemd calls; `None` falls back to the default (success, effect applied).
     pub(crate) fn on_systemd(&self, script: impl FnMut(&Systemd) -> Option<Reply> + 'static) {
         *self.shared.systemd_script.borrow_mut() = Box::new(script);
+    }
+
+    /// Every signal to a new process fails like this.
+    pub(crate) fn set_signal_error_default(&self, kind: Option<SignalErrorKind>) {
+        self.shared.signal_error_default.set(kind);
     }
 
     /// Whether new processes start inside their scope.
@@ -389,7 +396,7 @@ impl Os for Fake {
             signals: RefCell::default(),
             signal_times: RefCell::default(),
             stdout_failure: Rc::new(RefCell::new(PipeFailure::default())),
-            signal_error: RefCell::default(),
+            signal_error: RefCell::new(self.shared.signal_error_default.get()),
             reaped: Cell::new(false),
             exit: Cell::new(None),
             exited,
@@ -403,12 +410,13 @@ impl Os for Fake {
             signals,
         };
         tokio::task::spawn_local(script(ctx));
+        let failure = Rc::clone(&shared.stdout_failure);
         Ok(FakeChild {
             shared,
             pipes: Some(Pipes {
                 stdout: Box::pin(Flaky {
                     inner: stdout_reader,
-                    failure: Rc::clone(&shared.stdout_failure),
+                    failure,
                 }),
                 stderr: Box::pin(stderr_reader),
             }),
