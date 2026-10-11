@@ -306,6 +306,23 @@ impl State {
         self.run().map_or_else(Vec::new, Run::r7_status)
     }
 
+    /// The machine's cores, CCDs and walk order, once the session started and the state stands.
+    pub fn topology(&self) -> Option<&Topology> {
+        if self.poisoned {
+            return None;
+        }
+        self.run().map(|run| &run.topo)
+    }
+
+    /// The failure points and combinations folded so far, once the session started and the state
+    /// stands.
+    pub fn constraints(&self) -> Option<&Constraints> {
+        if self.poisoned {
+            return None;
+        }
+        self.run().map(|run| &run.constraints)
+    }
+
     #[cfg(test)]
     pub(crate) fn run_mut_for_test(&mut self) -> Option<&mut Run> {
         self.run.as_mut()

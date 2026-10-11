@@ -441,3 +441,16 @@ fn every_core_a_payload_names_must_be_in_the_topology() {
         );
     }
 }
+
+#[test]
+fn the_state_exposes_its_topology_and_constraints_until_it_is_poisoned() {
+    let mut state = State::new();
+    assert!(state.topology().is_none() && state.constraints().is_none());
+    let j = Journal::has_room(&[-10, -12]);
+    assert_eq!(j.state.topology().unwrap().all(), set(&[0, 1]));
+    assert!(j.state.constraints().unwrap().combinations().is_empty());
+    let mut poisoned = j.state.clone();
+    poisoned.fold(&j.events[0]).unwrap_err();
+    assert!(poisoned.topology().is_none() && poisoned.constraints().is_none());
+    let _ = &mut state;
+}
