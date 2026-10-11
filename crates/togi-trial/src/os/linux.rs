@@ -1,6 +1,8 @@
 use std::ffi::OsString;
 use std::io;
 use std::os::fd::OwnedFd;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 
 use rustix::process::{
     Pid, PidfdFlags, Signal, WaitId, WaitIdOptions, kill_process_group, pidfd_open, waitid,
@@ -110,6 +112,7 @@ pub(crate) struct Linux {
     proc: Proc,
     user_manager: bool,
     systemctl: OsString,
+    scans: Arc<Scans>,
     #[cfg(test)]
     pidfd_refused: bool,
 }
@@ -120,6 +123,7 @@ impl Linux {
             proc,
             user_manager,
             systemctl: "systemctl".into(),
+            scans: Arc::default(),
             #[cfg(test)]
             pidfd_refused: false,
         }
@@ -256,7 +260,9 @@ impl Os for Linux {
 
     async fn scope_processes(&self, deadline: Instant) -> Result<Vec<ScopeProcess>, ProcError> {
         let proc = self.proc.clone();
-        off_thread(deadline, move || proc.scope_processes()).await
+        self.scans
+            .run(deadline, move || proc.scope_processes())
+            .await
     }
 
     async fn survivors(
@@ -265,33 +271,82 @@ impl Os for Linux {
         deadline: Instant,
     ) -> Result<usize, ProcError> {
         let (proc, captured) = (self.proc.clone(), captured.to_vec());
-        off_thread(deadline, move || {
-            let mut alive = 0;
-            for process in &captured {
-                if proc.alive(process)? {
-                    alive += 1;
+        self.scans
+            .run(deadline, move || {
+                let mut alive = 0;
+                for process in &captured {
+                    if proc.alive(process)? {
+                        alive += 1;
+                    }
                 }
-            }
-            Ok(alive)
-        })
-        .await
+                Ok(alive)
+            })
+            .await
     }
 }
 
-/// Runs a `/proc` scan on tokio's blocking pool, so a slow read cannot stall the runtime thread,
-/// and gives up at `deadline`; the abandoned scan finishes on its own.
-async fn off_thread<T: Send + 'static>(
-    deadline: Instant,
-    scan: impl FnOnce() -> Result<T, ProcError> + Send + 'static,
-) -> Result<T, ProcError> {
-    match tokio::time::timeout_at(deadline, tokio::task::spawn_blocking(scan)).await {
-        Ok(Ok(result)) => result,
-        Ok(Err(error)) => Err(ProcError::Observation(format!(
-            "the /proc scan failed: {error}"
-        ))),
-        Err(_) => Err(ProcError::Observation(
-            "the /proc scan did not finish before the deadline".to_owned(),
-        )),
+const RUNNING: u8 = 0;
+const ABANDONED: u8 = 1;
+const DONE: u8 = 2;
+
+/// The `/proc` scans of one `Linux`, shared by its users: how many scans were abandoned at their
+/// deadline and are still blocked on the kernel.
+#[derive(Default)]
+struct Scans {
+    abandoned: AtomicUsize,
+}
+
+/// Marks one scan finished, whether its closure returned, panicked or was dropped unrun, and
+/// clears its share of the abandoned count if the runtime had already given up on it.
+struct Finished {
+    state: Arc<AtomicU8>,
+    scans: Arc<Scans>,
+}
+
+impl Drop for Finished {
+    fn drop(&mut self) {
+        if self.state.swap(DONE, Ordering::AcqRel) == ABANDONED {
+            self.scans.abandoned.fetch_sub(1, Ordering::AcqRel);
+        }
+    }
+}
+
+impl Scans {
+    /// Runs a `/proc` scan on tokio's blocking pool, so a slow read cannot stall the runtime
+    /// thread, and gives up at `deadline` however long the pool queues it. A scan abandoned at its
+    /// deadline keeps its blocking thread until the kernel returns; while any such scan is still
+    /// running no new one is started, so a stuck `/proc` cannot pile up threads.
+    async fn run<T: Send + 'static>(
+        self: &Arc<Self>,
+        deadline: Instant,
+        scan: impl FnOnce() -> Result<T, ProcError> + Send + 'static,
+    ) -> Result<T, ProcError> {
+        if self.abandoned.load(Ordering::Acquire) > 0 {
+            return Err(ProcError::Stuck);
+        }
+        let state = Arc::new(AtomicU8::new(RUNNING));
+        let finished = Finished {
+            state: Arc::clone(&state),
+            scans: Arc::clone(self),
+        };
+        let work = tokio::task::spawn_blocking(move || {
+            let _finished = finished;
+            scan()
+        });
+        match tokio::time::timeout_at(deadline, work).await {
+            Ok(Ok(result)) => result,
+            Ok(Err(_)) => Err(ProcError::ScanLost),
+            Err(_) => {
+                self.abandoned.fetch_add(1, Ordering::AcqRel);
+                if state
+                    .compare_exchange(RUNNING, ABANDONED, Ordering::AcqRel, Ordering::Acquire)
+                    .is_err()
+                {
+                    self.abandoned.fetch_sub(1, Ordering::AcqRel);
+                }
+                Err(ProcError::Deadline)
+            }
+        }
     }
 }
 
@@ -343,16 +398,14 @@ mod tests {
         });
     }
 
-    fn deadline_error(outcome: Result<(), ProcError>) {
-        let Err(ProcError::Observation(text)) = outcome else {
-            panic!("expected a deadline observation error, got {outcome:?}");
-        };
-        assert!(text.contains("deadline"), "{text}");
+    fn scans() -> Arc<Scans> {
+        Arc::default()
     }
 
     #[test]
     fn real_process_a_blocked_scan_neither_stalls_the_runtime_nor_outlives_its_deadline() {
         let (release, blocked) = std::sync::mpsc::channel::<()>();
+        let scans = scans();
         let runtime = current_thread();
         let (ticks, elapsed, outcome) = runtime.block_on(async {
             let begun = std::time::Instant::now();
@@ -363,7 +416,7 @@ mod tests {
                     ticks.set(ticks.get() + 1);
                 }
             };
-            let scan = off_thread(Instant::now() + Duration::from_millis(300), move || {
+            let scan = scans.run(Instant::now() + Duration::from_millis(300), move || {
                 let _ = blocked.recv_timeout(secs(30));
                 Ok(())
             });
@@ -374,7 +427,8 @@ mod tests {
             (ticks.get(), begun.elapsed(), outcome)
         });
         drop(release);
-        deadline_error(outcome);
+        drop(runtime);
+        assert_eq!(outcome, Err(ProcError::Deadline));
         assert!(
             ticks >= 5,
             "the runtime made progress during the scan: {ticks}"
@@ -394,7 +448,7 @@ mod tests {
             .enable_all()
             .build()
             .unwrap();
-        let ran = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let scans = scans();
         let (elapsed, outcome) = runtime.block_on(async {
             let (started, running) = tokio::sync::oneshot::channel();
             let hog = tokio::task::spawn_blocking(move || {
@@ -403,22 +457,85 @@ mod tests {
             });
             running.await.unwrap();
             let begun = std::time::Instant::now();
-            let flag = std::sync::Arc::clone(&ran);
-            let outcome = off_thread(Instant::now() + Duration::from_millis(300), move || {
-                flag.store(true, std::sync::atomic::Ordering::SeqCst);
-                Ok(())
-            })
-            .await;
+            let outcome = scans
+                .run(Instant::now() + Duration::from_millis(300), || Ok(()))
+                .await;
             let elapsed = begun.elapsed();
             let _ = release.send(());
             hog.await.unwrap();
             (elapsed, outcome)
         });
-        deadline_error(outcome);
+        assert_eq!(outcome, Err(ProcError::Deadline));
         assert!(elapsed >= Duration::from_millis(300), "{elapsed:?}");
         assert!(
             elapsed < secs(5),
             "queue time extended the bound: {elapsed:?}"
         );
+    }
+
+    #[test]
+    fn real_process_a_stuck_scan_refuses_new_scans_until_it_returns() {
+        let (release, blocked) = std::sync::mpsc::channel::<()>();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .max_blocking_threads(1)
+            .enable_all()
+            .build()
+            .unwrap();
+        let scans = scans();
+        runtime.block_on(async {
+            let stuck = scans
+                .run(Instant::now() + Duration::from_millis(100), move || {
+                    let _ = blocked.recv_timeout(secs(30));
+                    Ok(())
+                })
+                .await;
+            assert_eq!(stuck, Err(ProcError::Deadline));
+            let begun = std::time::Instant::now();
+            let ran = Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let flag = Arc::clone(&ran);
+            let refused = scans
+                .run(Instant::now() + secs(10), move || {
+                    flag.store(true, Ordering::SeqCst);
+                    Ok(())
+                })
+                .await;
+            assert_eq!(refused, Err(ProcError::Stuck));
+            assert!(begun.elapsed() < secs(1), "the refusal was immediate");
+            assert!(!ran.load(Ordering::SeqCst));
+            release.send(()).unwrap();
+            tokio::task::spawn_blocking(|| {}).await.unwrap();
+            let again = scans.run(Instant::now() + secs(10), || Ok(7)).await;
+            assert_eq!(again, Ok(7));
+        });
+    }
+
+    #[test]
+    fn real_process_healthy_scans_run_concurrently() {
+        let scans = scans();
+        let meet = Arc::new(std::sync::Barrier::new(2));
+        let both = current_thread().block_on(async {
+            let scan = |meet: Arc<std::sync::Barrier>| {
+                scans.run(Instant::now() + secs(10), move || {
+                    meet.wait();
+                    Ok(())
+                })
+            };
+            tokio::join!(scan(Arc::clone(&meet)), scan(meet))
+        });
+        assert_eq!(both, (Ok(()), Ok(())));
+    }
+
+    #[test]
+    fn real_process_a_scan_that_panics_is_a_lost_scan_and_does_not_block_the_next() {
+        let scans = scans();
+        let (lost, next) = current_thread().block_on(async {
+            let lost = scans
+                .run::<()>(Instant::now() + secs(10), || panic!("scan failed"))
+                .await;
+            let next = scans.run(Instant::now() + secs(10), || Ok(1)).await;
+            (lost, next)
+        });
+        assert_eq!(lost, Err(ProcError::ScanLost));
+        assert_eq!(next, Ok(1));
     }
 }

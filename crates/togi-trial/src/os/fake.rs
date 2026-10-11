@@ -634,7 +634,7 @@ impl Os for Fake {
         }
         if self.shared.hang_scans.get() {
             sleep_until(deadline).await;
-            return Err(ProcError::Observation("scan timed out".to_owned()));
+            return Err(ProcError::Deadline);
         }
         let mut found: Vec<ScopeProcess> = self
             .shared
@@ -672,7 +672,7 @@ impl Os for Fake {
         }
         if self.shared.hang_scans.get() {
             sleep_until(deadline).await;
-            return Err(ProcError::Observation("scan timed out".to_owned()));
+            return Err(ProcError::Deadline);
         }
         let recovered = self.shared.recovered.borrow();
         Ok(captured
@@ -696,9 +696,6 @@ fn clone_threads(threads: &Result<Threads, ProcError>) -> Result<Threads, ProcEr
                 .map(|e| ProcError::Observation(e.to_string()))
                 .collect(),
         }),
-        Err(error) => Err(match error {
-            ProcError::Gone => ProcError::Gone,
-            ProcError::Observation(text) => ProcError::Observation(text.clone()),
-        }),
+        Err(error) => Err(error.clone()),
     }
 }

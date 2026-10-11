@@ -117,6 +117,12 @@ pub(crate) enum ProcError {
     Gone,
     #[error("{0}")]
     Observation(String),
+    #[error("the /proc scan did not finish before its deadline")]
+    Deadline,
+    #[error("an earlier /proc scan is still blocked")]
+    Stuck,
+    #[error("the /proc scan thread failed before reporting")]
+    ScanLost,
 }
 
 /// What a thread listing found: readable threads stay evidence even when others failed.

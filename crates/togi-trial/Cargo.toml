@@ -12,7 +12,7 @@ hardware = []
 
 [dependencies]
 flate2.workspace = true
-nix = { workspace = true, features = ["user", "signal", "process"] }
+nix = { workspace = true, features = ["user", "signal"] }
 rustix = { workspace = true, features = ["fs", "process", "param", "pipe", "thread"] }
 serde_json.workspace = true
 thiserror.workspace = true
