@@ -229,11 +229,7 @@ impl Run {
             return self.search_action();
         }
         if !self.failures.queue_is_empty() {
-            return self
-                .hunt_skipped_decision()
-                .or_else(|| self.later_hunt_hold())
-                .map(Action::Decide)
-                .or_else(|| self.hunt_start_action());
+            return self.hunt_start_action();
         }
         if let Some(action) = self.locate_action() {
             return Some(action);

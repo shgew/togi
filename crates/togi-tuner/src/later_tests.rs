@@ -1,5 +1,5 @@
 use proptest::prelude::*;
-use togi_journal::{Activity, Decision, Outcome, Seq, TunerDecision};
+use togi_journal::{Activity, Decision, HuntEnd, HuntOutcome, Outcome, Seq, TunerDecision};
 use togi_machine::{Condition, Regime, Signal};
 
 use crate::later::WINDOW;
@@ -572,14 +572,119 @@ fn an_unattributed_first_failure_is_held_by_skipping_its_hunt() {
     j.assert_resumes();
 
     let second = idle_failure(&mut j);
-    let failure = j.run().later_failure(second).unwrap();
-    assert!(
-        j.run()
-            .later
-            .paired(second, failure.cycle, failure.record.class.loaded())
-            .is_some_and(|strike| strike.failure == first)
+    let start = drive_to_hunt_start(&mut j);
+    let crate::DecisionPayload::HuntStart(payload) = &start.payload else {
+        unreachable!()
+    };
+    assert_eq!(payload.failure, second);
+    assert_eq!(start.cause, [second, first]);
+    tokens(
+        payload.reason.as_deref().unwrap_or_default(),
+        &[&format!("#{first}"), &format!("#{second}")],
     );
-    assert_eq!(j.run().later_hunt_hold(), None);
+    let started = j.decide(start);
+    let paired = j.run().hunts.active.as_ref().unwrap().paired;
+    assert_eq!(paired.map(|strike| strike.failure), Some(first));
+    assert_eq!(strikes(&j), 0);
+    hunt_end(&mut j, started, HuntOutcome::Culprit, &[0]);
+    let (backoff, _) = next(&j);
+    assert_eq!(backoff.activity, Activity::Hunt);
+    tokens(
+        &backoff.reason,
+        &[&format!("after failures #{first} and #{second}")],
+    );
+    j.assert_resumes();
+}
+
+#[test]
+fn a_paired_hunt_ending_direct_names_both_failures_in_the_backoff() {
+    let mut j = later_session(&[-10, -12]);
+    start_cycle(&mut j);
+    let first = idle_failure(&mut j);
+    let hold = j.next_decision();
+    j.decide(hold);
+    let second = idle_failure(&mut j);
+    let start = drive_to_hunt_start(&mut j);
+    j.decide(start);
+    parked_failure(&mut j, 0, -10, &[-10, 0]);
+    let end = j.next_decision();
+    assert!(
+        matches!(&end.payload, crate::DecisionPayload::HuntEnd(end) if end.result == HuntOutcome::Direct),
+        "{end:?}"
+    );
+    j.decide(end);
+    let (backoff, cause) = next(&j);
+    assert_eq!(
+        (backoff.activity, backoff.core),
+        (Activity::Hunt, core(0)),
+        "{backoff:?}"
+    );
+    tokens(
+        &backoff.reason,
+        &[&format!("after failures #{first} and #{second}")],
+    );
+    j.decide(crate::DecisionAction::new(backoff, cause));
+    j.assert_resumes();
+}
+
+/// Decides every decision before the next hunt start, reading the ranking when asked, and
+/// returns the start undecided.
+pub(crate) fn drive_to_hunt_start(j: &mut Journal) -> crate::DecisionAction {
+    for _ in 0..50 {
+        match j.next() {
+            Action::Decide(decision)
+                if matches!(decision.payload, crate::DecisionPayload::HuntStart(_)) =>
+            {
+                return decision;
+            }
+            Action::Decide(decision) => {
+                j.decide(decision);
+            }
+            Action::ReadRanking => {
+                let ids: Vec<u8> = j.run().topo_ref().order().iter().map(|c| c.get()).collect();
+                j.ranking(&ids);
+            }
+            other @ Action::RunTrial(_) => panic!("expected a hunt start, got {other:?}"),
+        }
+    }
+    panic!("the hunt never started");
+}
+
+/// Records the end of hunt 1 with `result` over `cores`, citing its start.
+pub(crate) fn hunt_end(j: &mut Journal, start: Seq, result: HuntOutcome, cores: &[u8]) -> Seq {
+    j.append(
+        HuntEnd {
+            hunt: std::num::NonZeroU32::MIN,
+            result,
+            cores: crate::testkit::set(cores),
+            members: Vec::new(),
+            groups: 1,
+            reason: String::new(),
+        }
+        .into(),
+        &[start],
+    )
+}
+
+/// An attributed failure of core `id` at `offset` in a parked trial at `profile`.
+pub(crate) fn parked_failure(j: &mut Journal, id: u8, offset: i64, profile: &[i64]) -> Seq {
+    let profile = j.profile(profile).offsets();
+    j.failure(
+        togi_journal::Failure {
+            signal: Signal::ComputationError,
+            attribution: togi_journal::Attribution::Attributed,
+            core: Some(core(id)),
+            offset: Some(off(offset)),
+            trial: None,
+            regime: Some(Regime::R1),
+            condition: Some(Condition::Parked),
+            profile: Some(profile),
+            known_failure: None,
+            reason: None,
+            round: None,
+        },
+        &[],
+    )
 }
 
 #[test]

@@ -319,6 +319,16 @@ impl Run {
         ))
     }
 
+    /// The held failure the queued failure at `seq` is the second of, with the clause naming
+    /// both: its hunt cites the held failure last and consumes the hold.
+    pub(crate) fn later_hunt_pair(&self, seq: Seq) -> Option<(Seq, String)> {
+        let failure = self.later_failure(seq)?;
+        let strike = self
+            .later
+            .paired(seq, failure.cycle, failure.record.class.loaded())?;
+        Some((strike.failure, pair_clause(strike, &failure)))
+    }
+
     /// Holds the unattributed failure at the head of the hunt queue after the conclusion when no
     /// earlier held failure loads one of its cores and the gate is open: its hunt is skipped.
     pub(crate) fn later_hunt_hold(&self) -> Option<DecisionAction> {

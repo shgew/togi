@@ -158,6 +158,7 @@ impl Run {
             groups: Vec::new(),
             end: None,
             cut: Cut::default(),
+            paired: self.later.release(&event.cause, loaded),
         };
         self.hunts.next_id = self.hunts.next_id.max(start.hunt.get());
         self.last_plan_seq = Some(event.seq);

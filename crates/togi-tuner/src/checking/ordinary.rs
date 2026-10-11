@@ -99,7 +99,12 @@ impl Run {
         if to == core.offset {
             clauses.push("already shallower".to_owned());
         }
-        let reason = clauses.join("; ");
+        let mut reason = clauses.join("; ");
+        let mut cause = seq;
+        if let Some((end, paired)) = self.hunt_direct_end() {
+            cause = end;
+            reason.push_str(&paired);
+        }
         DecisionAction::new(
             TunerDecision {
                 core: id,
@@ -112,23 +117,8 @@ impl Run {
                 workloads: Vec::new(),
                 reason,
             },
-            vec![self.hunt_direct_end().unwrap_or(seq)],
+            vec![cause],
         )
-    }
-
-    /// The queued unattributed failure whose profile already reaches a recorded failure point or
-    /// combination is not hunted: nothing a hunt could find would add to what is known.
-    pub(crate) fn hunt_skipped_decision(&self) -> Option<DecisionAction> {
-        let seq = self.failures.queue().next()?;
-        let record = self.failures.pending(seq)?;
-        let reached = self.constraints.reaches(&record.profile).ok().flatten()?;
-        Some(DecisionAction::new(
-            HuntSkipped {
-                failure: seq,
-                reason: format!("its profile reaches {reached}"),
-            },
-            vec![seq],
-        ))
     }
 
     pub(crate) fn hunt_skipped(&mut self, event: &togi_journal::Event, skipped: &HuntSkipped) {

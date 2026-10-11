@@ -5,6 +5,7 @@ use togi_journal::{HuntEnd, HuntGroup, HuntOutcome, HuntStart, Seq};
 use togi_machine::{CoreId, CoreSet, PerCore, TargetOffset};
 
 use super::plan::{GroupOutcome, Plan};
+use crate::later::Strike;
 use crate::r7::failed::OpenFailure;
 use crate::{ClassKey, CombinationId, Profile, Ranking, Secs};
 
@@ -92,6 +93,7 @@ pub(crate) struct Active {
     pub(crate) groups: Vec<GroupRecord>,
     pub(crate) end: Option<Ended>,
     pub(crate) cut: Cut,
+    pub(crate) paired: Option<Strike>,
 }
 
 impl Active {
@@ -119,6 +121,19 @@ impl Active {
 
     pub(crate) fn latest(&self) -> Option<&GroupRecord> {
         self.groups.last()
+    }
+
+    /// The clause a paired hunt's commitment ends its reason with, naming both failures it
+    /// answers; empty for an unpaired hunt.
+    pub(crate) fn paired_clause(&self) -> String {
+        self.paired.map_or_else(String::new, |strike| {
+            let source = self.start.failure;
+            format!(
+                "; after failures #{} and #{}",
+                strike.failure.min(source),
+                strike.failure.max(source)
+            )
+        })
     }
 }
 

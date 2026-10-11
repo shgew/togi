@@ -542,10 +542,11 @@ impl Run {
                 failure_point: Some(point),
                 workloads: Vec::new(),
                 reason: format!(
-                    "hunt {} found core {:02}; failure point {}{discarded}",
+                    "hunt {} found core {:02}; failure point {}{discarded}{}",
                     hunt.id,
                     id.get(),
-                    point.get()
+                    point.get(),
+                    hunt.paired_clause()
                 ),
             },
             vec![end],
@@ -586,7 +587,7 @@ impl Run {
                 members,
                 fallback: end.payload.result == HuntOutcome::Fallback,
                 hunt: hunt.id,
-                reason,
+                reason: reason + &hunt.paired_clause(),
             },
             vec![end.seq],
         )
@@ -643,11 +644,12 @@ impl Run {
                     to,
                     vec![recorded.seq, seq],
                     format!(
-                        "combination {}: backing off core {:02} to {}, where hunt {} group {group} passed with the rest of the combination at its failing offsets",
+                        "combination {}: backing off core {:02} to {}, where hunt {} group {group} passed with the rest of the combination at its failing offsets{}",
                         recorded.id,
                         member.get(),
                         to.get(),
-                        hunt.id
+                        hunt.id,
+                        hunt.paired_clause()
                     ),
                 )
             }
@@ -656,9 +658,10 @@ impl Run {
                 to,
                 vec![recorded.seq],
                 format!(
-                    "combination {}: backing off core {:02} leaves {reach} counts reachable",
+                    "combination {}: backing off core {:02} leaves {reach} counts reachable{}",
                     recorded.id,
-                    member.get()
+                    member.get(),
+                    hunt.paired_clause()
                 ),
             ),
         };
@@ -705,9 +708,12 @@ impl Run {
         })
     }
 
-    pub(crate) fn hunt_direct_end(&self) -> Option<Seq> {
-        let end = self.hunts.active.as_ref()?.end.as_ref()?;
-        (end.payload.result == HuntOutcome::Direct).then_some(end.seq)
+    /// The direct end of the open hunt and its paired clause: the ordinary backoff that answers
+    /// the direct failure cites the end.
+    pub(crate) fn hunt_direct_end(&self) -> Option<(Seq, String)> {
+        let hunt = self.hunts.active.as_ref()?;
+        let end = hunt.end.as_ref()?;
+        (end.payload.result == HuntOutcome::Direct).then(|| (end.seq, hunt.paired_clause()))
     }
 
     pub(crate) fn hunt_cancel(
@@ -733,6 +739,9 @@ impl Run {
         ))
     }
 
+    /// The decision for the failure at the head of the hunt queue: skipped when its profile
+    /// reaches a recorded constraint, held when it is a first later failure, else its hunt,
+    /// paired with the held failure it is the second of.
     pub(crate) fn hunt_start_action(&self) -> Option<Action> {
         let seq = self.failures.queue().next()?;
         let record = self.failures.pending(seq)?;
@@ -748,6 +757,9 @@ impl Run {
                 vec![seq],
             )));
         }
+        if let Some(hold) = self.later_hunt_hold() {
+            return Some(Action::Decide(hold));
+        }
         if self.ranking_stale() {
             return Some(Action::ReadRanking);
         }
@@ -755,6 +767,14 @@ impl Run {
         let parked = park(&record.profile, self.hunts.passed_newest_first());
         let mut cause = vec![seq];
         cause.extend(parked.source);
+        let mut reason = record.failure.reason.clone();
+        if let Some((strike, clause)) = self.later_hunt_pair(seq) {
+            cause.push(strike);
+            reason = Some(match reason {
+                Some(known) if !known.is_empty() => format!("{known}; {clause}"),
+                _ => clause,
+            });
+        }
         let id = NonZeroU32::new(self.hunts.next_id + 1).unwrap_or(NonZeroU32::MIN);
         Some(Action::Decide(DecisionAction::new(
             HuntStart {
@@ -778,7 +798,7 @@ impl Run {
                     .as_ref()
                     .map(|ranked| ranked.ranking.order().to_vec())
                     .unwrap_or_default(),
-                reason: record.failure.reason.clone(),
+                reason,
             },
             cause,
         )))
