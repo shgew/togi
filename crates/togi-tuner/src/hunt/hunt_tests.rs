@@ -162,7 +162,7 @@ fn start_regime_hunt(
         trial_s: SHORT,
         miss: 0.0,
         rate: 0.0,
-        ranking: Vec::new(),
+        ranking: ids(count).into_iter().map(core).collect(),
         reason: None,
     };
     j.append(start.into(), &[])
@@ -2141,4 +2141,58 @@ fn hunt_plan_keeps_a_carried_failure_answer_after_later_live_failures() {
         "a later live failure rewrote group 1: {view:?}"
     );
     j.assert_resumes();
+}
+
+#[test]
+fn a_hunt_start_with_a_malformed_ranking_is_rejected_and_leaves_the_state() {
+    use crate::{FoldError, RankingError};
+    let mut j = limit_session(3);
+    fail_all_together(&mut j, SHORT);
+    let (start, cause) = j.hunt_start_payload();
+    let cases: [(&str, Vec<u8>, RankingError); 3] = [
+        ("duplicate", vec![0, 1, 1], RankingError::Duplicate(core(1))),
+        ("missing", vec![0, 1], RankingError::Missing(core(2))),
+        ("unknown", vec![0, 1, 2, 9], RankingError::Unknown(core(9))),
+    ];
+    for (name, order, error) in cases {
+        let mut malformed = start.clone();
+        malformed.ranking = order.into_iter().map(core).collect();
+        let event = j.event(malformed.into(), &cause);
+        let mut folded = j.state.clone();
+        assert_eq!(
+            folded.fold(&event),
+            Err(FoldError::Ranking(error)),
+            "{name}"
+        );
+        assert_eq!(folded.run(), j.state.run(), "{name}");
+    }
+    j.append(start.into(), &cause);
+    assert!(j.run().hunts.active.is_some());
+    j.assert_resumes();
+}
+
+#[test]
+fn a_rejected_core_phase_keeps_the_hunt_a_queued_reset_would_close() {
+    use crate::FoldError;
+    let mut j = hunt_of(2, SHORT);
+    let end = j.run_hunt(100, pass_all);
+    ended(&end, HuntOutcome::Fallback);
+    j.reset(0);
+    let transition = CoreTransition {
+        core: core(0),
+        from: None,
+        to: CorePhase::Search,
+        offset: off(-30),
+        pass: None,
+        failure_point: None,
+        check_solo_limit: true,
+        workloads: Vec::new(),
+        cleared_combination: Vec::new(),
+        reason: "test".to_owned(),
+    };
+    let event = j.event(transition.into(), &[]);
+    let mut folded = j.state.clone();
+    assert_eq!(folded.fold(&event), Err(FoldError::BadCandidate(core(0))));
+    assert_eq!(folded.run(), j.state.run());
+    assert!(j.run().hunts.active.as_ref().unwrap().end.is_some());
 }

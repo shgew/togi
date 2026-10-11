@@ -117,8 +117,7 @@ impl Run {
         let class = ClassKey::new(workload, loaded, duration);
         let needed = Self::hunt_needed(start.trials);
         let recent = self.constraints.recent();
-        let ranking = Ranking::new(&self.topo, start.ranking.clone())
-            .unwrap_or_else(|_| Ranking::ascending(&self.topo));
+        let ranking = Ranking::new(&self.topo, start.ranking.clone())?;
         let located = start.regime == Regime::R7
             && loaded.len() > 1
             && !start.candidates.iter().any(|core| loaded.contains(core));
@@ -410,7 +409,7 @@ impl Run {
                 .is_some_and(|recorded| already_broken(&recorded.members, &profile))
         });
         if broken {
-            self.hunts.active = None;
+            self.hunt_close();
         }
     }
 

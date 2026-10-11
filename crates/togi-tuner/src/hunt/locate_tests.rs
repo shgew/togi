@@ -445,6 +445,27 @@ fn escalated_located_hunt_retests_the_full_failing_profile_at_the_failed_duratio
 }
 
 #[test]
+fn an_already_broken_combination_retires_the_located_hunt_entry() {
+    let mut j = Journal::r7_session();
+    let (_, failure, _) = j.loc_fail_escalated(&top0());
+    let located = j.loc_run(joint_failure(120));
+    let end = hunt_end(&located.action);
+    assert_eq!(end.result, HuntOutcome::Combination, "{end:?}");
+    j.decide(decision(&located.action).clone());
+    assert!(j.run().hunts.is_located(failure));
+    j.profile_change(&[-30, -30, 0, -30]);
+    let action = j.loc_act();
+    let DecisionPayload::Combination(combination) = &decision(&action).payload else {
+        panic!("expected the combination, got {action:?}");
+    };
+    assert!(combination.reason.contains("no backoff"), "{combination:?}");
+    j.decide(decision(&action).clone());
+    assert!(j.run().hunts.active.is_none());
+    assert!(!j.run().hunts.is_located(failure));
+    j.assert_resumes();
+}
+
+#[test]
 fn reset_of_a_candidate_cancels_the_located_hunt() {
     let mut j = Journal::r7_session();
     let (_, failure, _) = j.loc_fail_escalated(&top0());
