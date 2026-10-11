@@ -1,10 +1,19 @@
+use std::collections::{BTreeMap, VecDeque};
 use std::num::NonZeroU32;
 
 use togi_journal::{CorePhase, Seq};
 use togi_machine::{CoreId, CoreSet};
 
+use crate::rounds::{Blame, Shape};
 use crate::state::Run;
 use crate::{Depth, FoldError, Profile};
+
+/// The round that moved a core to its current unverified offset, and where that round began.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct Mark {
+    pub(crate) round: NonZeroU32,
+    pub(crate) seq: Seq,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Settled {
@@ -12,6 +21,8 @@ struct Settled {
     first_confirmed: Profile,
     passed: Profile,
     finished: CoreSet,
+    moved: BTreeMap<CoreId, Mark>,
+    blames: VecDeque<Blame>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -74,6 +85,81 @@ impl Phases {
             .map_or_else(CoreSet::default, |settled| settled.finished)
     }
 
+    fn settled_mut(&mut self) -> Option<&mut Settled> {
+        match &mut self.stage {
+            Stage::One => None,
+            Stage::Rounds(settled)
+            | Stage::Confirming { settled, .. }
+            | Stage::Concluded { settled, .. } => Some(settled),
+        }
+    }
+
+    /// Phase 1 ended and phase 2 has not concluded.
+    pub(crate) fn in_phase2(&self) -> bool {
+        matches!(self.stage, Stage::Rounds(_) | Stage::Confirming { .. })
+    }
+
+    pub(crate) fn mark(&self, core: CoreId) -> Option<Mark> {
+        self.settled()
+            .and_then(|settled| settled.moved.get(&core).copied())
+    }
+
+    /// The oldest phase-2 failure still owed a blame.
+    pub(crate) fn blame(&self) -> Option<&Blame> {
+        self.settled().and_then(|settled| settled.blames.front())
+    }
+
+    pub(crate) fn push_blame(&mut self, blame: Blame) {
+        if let Some(settled) = self.settled_mut() {
+            settled.blames.push_back(blame);
+        }
+    }
+
+    /// Keeps the blames whose failure is still unresolved.
+    pub(crate) fn prune_blames(&mut self, unresolved: impl Fn(Seq) -> bool) {
+        if let Some(settled) = self.settled_mut() {
+            settled.blames.retain(|blame| unresolved(blame.failure()));
+        }
+    }
+
+    pub(crate) fn finish(&mut self, core: CoreId) {
+        if let Some(settled) = self.settled_mut() {
+            settled.finished.insert(core);
+        }
+    }
+
+    /// A round began from `offsets`: a core its profile deepens, still standing at the round's
+    /// baseline, is marked as moved by this round.
+    pub(crate) fn round_started(&mut self, round: &Shape, offsets: &Profile) {
+        let Some(settled) = self.settled_mut() else {
+            return;
+        };
+        for core in round.cores() {
+            if round.deepened(core) && offsets.get(core) == round.baseline().get(core) {
+                settled.moved.insert(
+                    core,
+                    Mark {
+                        round: round.id(),
+                        seq: round.start(),
+                    },
+                );
+            }
+        }
+    }
+
+    /// A round closed: a passed one verified its profile for its cores.
+    pub(crate) fn round_ended(&mut self, round: &Shape, passed: bool) {
+        let Some(settled) = self.settled_mut().filter(|_| passed) else {
+            return;
+        };
+        for core in round.cores() {
+            if let Some(offset) = round.profile().get(core) {
+                settled.passed = settled.passed.with(core, offset);
+            }
+            settled.moved.remove(&core);
+        }
+    }
+
     pub(crate) fn confirm_start(&self) -> Option<Seq> {
         match &self.stage {
             Stage::Confirming { start, .. } => Some(*start),
@@ -121,12 +207,16 @@ impl Phases {
                     first_confirmed: profile,
                     passed: profile,
                     finished: CoreSet::default(),
+                    moved: BTreeMap::new(),
+                    blames: VecDeque::new(),
                 });
             }
             Stage::One | Stage::Rounds(_) => {}
             Stage::Confirming { settled, .. } => {
+                let mut settled = settled.clone();
+                settled.blames.clear();
                 self.stage = Stage::Concluded {
-                    settled: settled.clone(),
+                    settled,
                     seq,
                     clean: 1,
                     last_cycle: cycle,
@@ -201,42 +291,28 @@ impl Run {
             .any(|&id| self.core(id).phase == Some(CorePhase::Search))
     }
 
-    /// Whether phase 2 owes a round: phase 1 ended, no confirmation began, nothing is searching or
-    /// queued for a hunt, and some core can move or must be checked again in place.
+    /// Whether a hunt is open. Phase 2 owes no round while one runs.
+    pub(crate) const fn hunt_open(&self) -> bool {
+        self.hunts.active.is_some()
+    }
+
+    /// Whether phase 2 owes a round: phase 1 ended, no confirmation began, no cycle is open,
+    /// nothing is searching, queued for a hunt or owed a rerun, and some core can move or must be
+    /// checked again in place.
     pub(crate) fn round_due(&self) -> bool {
         if self.phases.phase1_end().is_none()
             || self.phases.confirm_start().is_some()
             || self.phases.concluded().is_some()
+            || self.checking.open().is_some()
+            || self.rounds.active().is_some()
+            || self.hunt_open()
             || !self.failures.queue_is_empty()
+            || !self.reruns.is_empty()
             || self.any_searching()
         {
             return false;
         }
         self.phase2_moves(&self.offsets(), self.phases.passed())
             .is_some_and(|moves| !moves.moved.is_empty() || !moves.carried.is_empty())
-    }
-
-    pub(crate) fn checking_cycle(
-        &mut self,
-        event: &togi_journal::Event,
-        cycle: &togi_journal::CheckingCycle,
-    ) -> Result<(), FoldError> {
-        use togi_journal::CycleEvent;
-        match cycle.event {
-            CycleEvent::Start => {
-                self.phases.cycle_start(event.seq);
-                Ok(())
-            }
-            CycleEvent::End if cycle.passed && cycle.full => {
-                let searching = self.any_searching();
-                self.phases.passed_full_cycle(
-                    event.seq,
-                    cycle.cycle,
-                    searching,
-                    self.checking.profile(),
-                )
-            }
-            CycleEvent::End => Ok(()),
-        }
     }
 }

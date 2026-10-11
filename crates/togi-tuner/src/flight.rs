@@ -1,8 +1,9 @@
 use std::collections::BTreeMap;
 
 use togi_journal::{Event, Mce, Outcome, Seq, TrialEnd, TrialId, TrialIntent, TrialProgress};
-use togi_machine::{CoreId, CoreSet, Regime, Signal};
+use togi_machine::{Condition, CoreId, CoreSet, Regime, Signal};
 
+use crate::r7::failed::FailedTrial;
 use crate::requirement::Turn;
 use crate::state::Run;
 use crate::{BackendId, ClassKey, FoldError, Profile, Requirement, RequirementKind, StepNo};
@@ -32,7 +33,7 @@ pub(crate) struct OpenTrial {
     pub(crate) profile: Profile,
     pub(crate) class: ClassKey,
     pub(crate) requirement: Requirement,
-    pub(crate) turn: Turn,
+    pub(crate) turn: Option<Turn>,
     pub(crate) backend: BackendId,
     pub(crate) crashed: bool,
     pub(crate) mces: BTreeMap<Seq, CoreId>,
@@ -49,6 +50,8 @@ pub(crate) struct Awaiting {
     pub(crate) signal: Signal,
     pub(crate) core: Option<CoreId>,
     pub(crate) mces: CoreSet,
+    pub(crate) r7: Option<FailedTrial>,
+    pub(crate) zero: Option<Seq>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -85,10 +88,13 @@ impl Run {
         let class = self.class_of_intent(intent)?;
         let profile = Profile::new(&self.topo, intent.profile)?;
         self.require_cores(intent.core.into_iter().collect())?;
-        let (requirement, turn) = self.schedule_intent(intent, class)?;
-        self.search
-            .turn(self.topo.order().iter().position(|&id| id == turn.core));
+        let (requirement, turn) = self.schedule_intent(intent, class, &event.cause)?;
+        if let Some(turn) = turn {
+            self.search
+                .turn(self.topo.order().iter().position(|&id| id == turn.core));
+        }
         self.retry = None;
+        self.zero_intent(event, intent);
         self.flight.open = Some(OpenTrial {
             trial: intent.trial.clone(),
             seq: event.seq,
@@ -196,20 +202,28 @@ impl Run {
         };
         let history = self.history(&open);
         self.record_end(event.seq, &open, end)?;
-        if matches!(end.outcome, Outcome::Pass | Outcome::Failure) {
-            self.advance_rotation(Some(open.turn.core), open.intent.regime);
+        let cited = cited_mces(&open.mces, &event.cause);
+        let (failed, zero) = self.end_r7_and_zero(event.seq, &open, end, cited);
+        let conclusive = matches!(end.outcome, Outcome::Pass | Outcome::Failure);
+        if conclusive {
+            self.advance_rotation(open.intent.core, open.intent.regime);
         }
         self.flight.last_closed = Some(ClosedTrial {
             trial: open.trial.clone(),
             history,
         });
-        self.update_core(open.turn.core, |state| state.last_seq = Some(event.seq));
+        let class = open.class;
+        let together = open.intent.condition == Condition::Together;
+        if let Some(turn) = open.turn {
+            self.update_core(turn.core, |state| state.last_seq = Some(event.seq));
+        }
         match end.outcome {
             Outcome::Pass => self.record_step_pass(event.seq, &open),
             Outcome::Inconclusive => {
-                self.save_retry(&open);
+                self.save_retry(&open, zero);
                 self.revalidate_retry();
             }
+
             Outcome::Failure => {
                 let signal = end.signal.ok_or(FoldError::MissingSignal)?;
                 self.flight.awaiting = Some(Awaiting {
@@ -220,23 +234,36 @@ impl Run {
                     cause: event.cause.clone(),
                     signal,
                     core: end.core,
-                    mces: cited_mces(&open.mces, &event.cause),
+                    mces: cited,
+                    r7: failed,
+                    zero,
                 });
             }
         }
+        if conclusive {
+            self.cycle_evidence_changed(class);
+        }
+        if let (Outcome::Pass, true, Some(celsius)) = (end.outcome, together, end.tctl_max_c) {
+            self.checking.note_temperature(celsius, event.seq);
+        }
+        self.retire_reruns();
+        self.revalidate_retry();
         Ok(())
     }
 
     /// A search pass at the core's current offset, under the backend package its trial began with,
     /// is part of its unfinished step; a candidate check's passes are counted by the ledger alone.
     fn record_step_pass(&mut self, seq: Seq, open: &OpenTrial) {
-        let state = self.core(open.turn.core);
+        let Some(turn) = open.turn else {
+            return;
+        };
+        let state = self.core(turn.core);
         let current = state.phase == Some(togi_journal::CorePhase::Search)
-            && open.turn.offset == Some(state.offset);
+            && turn.offset == Some(state.offset);
         if current {
             self.search.record_pass(
-                open.turn.core,
-                open.turn.regime == Regime::R1,
+                turn.core,
+                turn.regime == Regime::R1,
                 open.intent.workload.backend(),
                 open.backend,
                 seq,

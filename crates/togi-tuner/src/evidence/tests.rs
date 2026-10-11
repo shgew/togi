@@ -197,6 +197,54 @@ fn idle_failure_leaves_partial_r6_and_other_regimes_alone() {
 }
 
 #[test]
+fn failed_before_admits_idle_failures_for_r6_only() {
+    let short = Secs::new(NonZeroU32::new(120).unwrap());
+    let mut fx = Fx::new(&[0, 1]);
+    let deep = fx.p(&[-40, -40]);
+    let live = fx.idle(&deep);
+    fx.carried_idle(&deep, "old");
+    let after = fx.tick();
+    let before = fx.tick();
+    for (regime, want) in [(Regime::R6, true), (Regime::R7, false), (Regime::R1, false)] {
+        assert_eq!(
+            fx.ev.failed_before(regime, short, None, before),
+            want,
+            "{regime:?}"
+        );
+    }
+    assert!(!fx.ev.failed_before(Regime::R6, short, None, live));
+    assert!(fx.ev.failed_before(Regime::R6, short, Some(live), before));
+    assert!(fx.ev.failed_before(Regime::R6, short, Some(after), before));
+}
+
+#[test]
+fn failed_before_idle_live_is_cut_by_the_reset_boundary_and_carried_is_not() {
+    let short = Secs::new(NonZeroU32::new(120).unwrap());
+    let deep = |fx: &Fx| fx.p(&[-40, -40]);
+    let mut live = Fx::new(&[0, 1]);
+    let p = deep(&live);
+    live.idle(&p);
+    let boundary = live.tick();
+    let before = live.tick();
+    assert!(live.ev.failed_before(Regime::R6, short, None, before));
+    assert!(
+        !live
+            .ev
+            .failed_before(Regime::R6, short, Some(boundary), before)
+    );
+    let mut carried = Fx::new(&[0, 1]);
+    let p = deep(&carried);
+    carried.carried_idle(&p, "old");
+    let boundary = carried.tick();
+    let before = carried.tick();
+    assert!(
+        carried
+            .ev
+            .failed_before(Regime::R6, short, Some(boundary), before)
+    );
+}
+
+#[test]
 fn monotonicity_warning() {
     let mut fx = Fx::new(&[0]);
     let k = class(Regime::R1, 0, &[0], 120);

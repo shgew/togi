@@ -114,18 +114,22 @@ impl Run {
         }
     }
 
-    fn decided(&mut self, core: CoreId, seq: Seq) {
+    fn decided(&mut self, core: CoreId, seq: Seq, answers_pending: bool) {
         self.search.clear(core);
-        self.retire_pending(core);
+        if answers_pending {
+            self.retire_pending(core);
+        }
         self.update_core(core, |state| {
-            state.pending = None;
+            if answers_pending {
+                state.pending = None;
+            }
             state.last_seq = Some(seq);
             state.last_decision = Some(seq);
         });
         if self
             .retry
             .as_ref()
-            .is_some_and(|retry| retry.turn.core == core)
+            .is_some_and(|retry| retry.turn.is_some_and(|turn| turn.core == core))
         {
             self.retry = None;
         }
@@ -141,6 +145,7 @@ impl Run {
         let check = Check::recorded(core, transition.check_solo_limit, &transition.workloads)?;
         self.constraints
             .set_failure_point(core, transition.failure_point.map(FailurePoint::new))?;
+        self.hunt_phase_reset(core);
         let cleared: Vec<CombinationId> = transition
             .cleared_combination
             .iter()
@@ -149,6 +154,7 @@ impl Run {
             .collect();
         self.constraints.remove_combinations(&cleared);
         let seq = event.seq;
+        let before = self.core(core).offset;
         let entering_search = transition.to == CorePhase::Search;
         self.update_core(core, |state| {
             if transition.from == Some(CorePhase::Search)
@@ -173,9 +179,13 @@ impl Run {
         });
         if entering_search {
             self.phases.reset();
+            self.later.reset();
+            self.rounds_reset();
         }
         self.failures.retire_all(&event.cause);
-        self.decided(core, seq);
+        self.prune_blames();
+        self.decided(core, seq, true);
+        self.later_moved(core, seq, before);
         Ok(())
     }
 
@@ -194,6 +204,17 @@ impl Run {
         self.constraints
             .set_failure_point(core, decision.failure_point.map(FailurePoint::new))?;
         let seq = event.seq;
+        let before = self.core(core).offset;
+        let hold = self.hold_strike(event, decision);
+        self.r7_decided(event, decision);
+        let yielded = self.phase2_yield(decision);
+        if decision.decision == togi_journal::Decision::Backoff
+            && decision.activity != togi_journal::Activity::Search
+            && decision.to_offset != decision.from_offset
+        {
+            self.queue_rerun(&event.cause);
+        }
+        self.hunt_decided(event, decision);
         self.update_core(core, |state| {
             state.offset = decision.to_offset;
             state.pass = decision.pass;
@@ -206,8 +227,15 @@ impl Run {
                 state.zero_seq = Some(seq);
             }
         });
-        self.failures.retire_all(&event.cause);
-        self.decided(core, seq);
+        if !yielded {
+            self.failures.retire_all(&event.cause);
+        }
+        self.decided(core, seq, !yielded);
+        self.phase2_backoff(decision, &event.cause);
+        self.prune_blames();
+        self.later_decided(event, decision, before, hold.as_ref());
+        self.retire_reruns();
+        self.revalidate_retry();
         Ok(())
     }
 }

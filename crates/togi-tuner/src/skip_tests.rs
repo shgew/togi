@@ -312,6 +312,41 @@ fn a_known_together_failure_infers_the_sole_nonzero_core() {
 }
 
 #[test]
+fn a_known_together_failure_backs_the_sole_nonzero_core_off_its_recorded_combination() {
+    let mut j = Journal::has_room(&[0, -20]);
+    j.carry(
+        SESSION,
+        (Regime::R6, 0, &[0, 1], 120),
+        Condition::Together,
+        &[0, -19],
+        Outcome::Failure,
+    );
+    let plan = j.manual(
+        Regime::R6,
+        0,
+        Load::Many(set(&[0, 1])),
+        Condition::Together,
+        &[0, -20],
+        120,
+    );
+    let Action::Decide(known) = skipped(&j, &plan) else {
+        panic!("the known failure skips the trial");
+    };
+    j.decide(known);
+    let backoff = j.next_decision();
+    let DecisionPayload::TunerDecision(backoff) = &backoff.payload else {
+        panic!("expected the backoff, got {backoff:?}");
+    };
+    assert_eq!(backoff.decision, togi_journal::Decision::Backoff);
+    assert_eq!(backoff.core, core(1));
+    assert_eq!(backoff.to_offset.get(), -18);
+    assert_eq!(
+        backoff.failure_point.map(togi_machine::TargetOffset::get),
+        Some(-19)
+    );
+}
+
+#[test]
 fn a_skipped_failure_adds_no_evidence() {
     let mut j = Journal::search_at(&[-20]);
     let duration = j.run().config.search_trial.get();

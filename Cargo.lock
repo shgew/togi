@@ -899,6 +899,7 @@ dependencies = [
  "togi-config",
  "togi-journal",
  "togi-machine",
+ "togi-requests",
 ]
 
 [[package]]

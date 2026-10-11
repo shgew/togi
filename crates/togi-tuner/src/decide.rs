@@ -1,7 +1,6 @@
 use togi_journal::{CorePhase, CoreTransition, DeadEnd, DeadEndCondition, ProfileChange, Seq};
 use togi_machine::TargetOffset;
 
-use crate::failures::Pending;
 use crate::state::Run;
 use crate::{Action, CombinationId, DecisionAction, Profile};
 
@@ -34,6 +33,15 @@ impl Run {
             let core = self.core(id);
             core.queued_reset.map(|queued| (id, core, queued))
         })?;
+        if let Some(cancel) = self.hunt_cancel(id, queued) {
+            return Some(cancel);
+        }
+        if let Some(end) = self
+            .round_reset_end(id, queued)
+            .or_else(|| self.cycle_reset_end(id, queued))
+        {
+            return Some(end);
+        }
         let cleared: Vec<CombinationId> = self
             .constraints
             .combinations_with(id)
@@ -103,26 +111,6 @@ impl Run {
         ))
     }
 
-    /// What a search core's attributed failure decides: it backs off or checks its solo limit.
-    pub(crate) fn pending_search_decision(&self) -> Option<DecisionAction> {
-        self.topo.order().iter().find_map(|&id| {
-            let core = self.core(id);
-            let seq = core.pending?;
-            if core.phase != Some(CorePhase::Search) {
-                return None;
-            }
-            let failed = self
-                .failures
-                .pending(seq)
-                .and_then(Pending::offset)
-                .unwrap_or(core.offset);
-            Some(DecisionAction::new(
-                self.search_failure(id, failed),
-                vec![seq],
-            ))
-        })
-    }
-
     /// The first non-search core whose has-room or at-limit phase disagrees with the profile.
     pub(crate) fn phase_decision(&self) -> Option<DecisionAction> {
         let profile = self.offsets();
@@ -189,24 +177,82 @@ impl Run {
         ))
     }
 
-    /// The next thing the tuner does, from the rules the folded state decides alone.
+    /// The next thing the tuner does, from the rules the folded state decides alone: first what
+    /// answers a failure or a reset, then the checking profile and the search, then a queued
+    /// failure, the reruns owed, and the open cycle or the next one.
     pub(crate) fn decide(&self) -> Option<Action> {
         if !self.ready() {
             return None;
         }
+        self.next_action()
+            .map(|action| self.skip_known_failure(action))
+    }
+
+    /// What answers a failure the ordinary way: the multi-core R7 response, else the attributed
+    /// failure of the first core with one pending.
+    pub(crate) fn ordinary_decision(&self) -> Option<Action> {
+        if let Some(response) = self.r7_decision() {
+            return Some(self.round_before_backoff(response));
+        }
+        self.pending_core_action()
+    }
+
+    fn next_action(&self) -> Option<Action> {
         let decision = self
             .attribution()
             .or_else(|| self.warning_decision())
             .or_else(|| self.queued_reset())
             .or_else(|| self.zero_point_dead_end())
-            .or_else(|| self.unattributed_zero_dead_end())
-            .or_else(|| self.pending_search_decision())
-            .or_else(|| self.phase_decision())
-            .or_else(|| self.profile_decision());
-        let action = match decision {
-            Some(decision) => Action::Decide(decision),
-            None => self.search_action()?,
-        };
-        Some(self.skip_known_failure(action))
+            .or_else(|| self.unattributed_zero_dead_end());
+        if let Some(decision) = decision {
+            return Some(Action::Decide(decision));
+        }
+        if let Some(decision) = self.phase2_blame_action() {
+            return Some(Action::Decide(decision));
+        }
+        if let Some(action) = self.ordinary_decision() {
+            return Some(self.later_decision(action));
+        }
+        if let Some(action) = self.hunt_next() {
+            return Some(action);
+        }
+        if let Some(decision) = self
+            .round_queue_close()
+            .or_else(|| self.round_move_action())
+        {
+            return Some(Action::Decide(decision));
+        }
+        if let Some(decision) = self.phase_decision().or_else(|| self.profile_decision()) {
+            return Some(Action::Decide(decision));
+        }
+        if self.any_searching() {
+            return self.search_action();
+        }
+        if !self.failures.queue_is_empty() {
+            return self.hunt_start_action();
+        }
+        if let Some(action) = self.locate_action() {
+            return Some(action);
+        }
+        if let Some(action) = self.rerun_action() {
+            return Some(action);
+        }
+        if self.rounds.active().is_some() {
+            return self
+                .round_check_action()
+                .map(|action| self.after_reruns(action));
+        }
+        if self.checking.open().is_some() {
+            return self.cycle_action().map(|action| self.after_reruns(action));
+        }
+        if self.round_due() {
+            if self.ranking_stale() {
+                return Some(Action::ReadRanking);
+            }
+            return self
+                .round_start_action()
+                .map(|action| self.after_reruns(action));
+        }
+        Some(self.after_reruns(self.cycle_start_action()))
     }
 }

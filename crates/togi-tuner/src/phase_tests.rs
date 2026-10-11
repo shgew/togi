@@ -105,6 +105,29 @@ fn phase1_never_deepens_and_ends_at_its_first_passed_full_cycle() {
 }
 
 #[test]
+fn no_deepening_round_is_proposed_during_phase_1() {
+    let mut j = Journal::new(&[0, 1], &[Start::solo(-10, -11), Start::solo(-10, -11)]);
+    j.profile_change(&[-10, -10]);
+    j.cycle_start(1, &[Regime::R1]);
+    j.cycle_end(1, true, false);
+    j.cycle_start(2, &[Regime::R1]);
+    let mut trials = 0;
+    for _ in 0..3 {
+        let action = j.step(&mut |_| Outcome::Pass);
+        match &action {
+            Action::Decide(decision) => assert!(
+                !matches!(decision.payload, DecisionPayload::DeepeningRound(_)),
+                "phase 1 deepened: {decision:?}"
+            ),
+            Action::RunTrial(_) => trials += 1,
+            Action::ReadRanking => {}
+        }
+    }
+    assert!(trials > 0);
+    assert_eq!(j.run().phases.phase1_end(), None);
+}
+
+#[test]
 fn phases_run_to_a_conclusion_and_count_clean_cycles() {
     let mut j = Journal::new(&[0], &[Start::solo(-10, -11)]);
     j.profile_change(&[-10]);
