@@ -15,3 +15,15 @@ pub(crate) use state::Hunts;
 #[cfg(test)]
 mod tests;
 
+#[cfg(test)]
+mod hunt_tests;
+#[cfg(test)]
+mod locate_tests;
+#[cfg(test)]
+mod property_tests;
+#[cfg(test)]
+mod provenance_tests;
+#[cfg(test)]
+mod smoke_tests;
+#[cfg(test)]
+mod support;
