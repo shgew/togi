@@ -39,6 +39,7 @@ dbg_macro = "deny"
 todo = "deny"
 print_stdout = "warn"
 print_stderr = "warn"
+allow_attributes = "warn"
 allow_attributes_without_reason = "warn"
 undocumented_unsafe_blocks = "deny"
 
