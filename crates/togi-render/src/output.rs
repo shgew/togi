@@ -141,9 +141,21 @@ mod tests {
 
     #[test]
     fn a_pseudo_terminal_is_a_terminal() {
+        use std::os::unix::fs::OpenOptionsExt as _;
+
         let flags = rustix::pty::OpenptFlags::RDWR | rustix::pty::OpenptFlags::NOCTTY;
         let master = rustix::pty::openpt(flags).unwrap();
-        let facts = OutputFacts::detect(&master, None, None);
+        rustix::pty::grantpt(&master).unwrap();
+        rustix::pty::unlockpt(&master).unwrap();
+        let slave_path = rustix::pty::ptsname(&master, Vec::new()).unwrap();
+        let slave = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .custom_flags(rustix::fs::OFlags::NOCTTY.bits().cast_signed())
+            .open(OsStr::from_bytes(slave_path.as_bytes()))
+            .unwrap();
+        let facts = OutputFacts::detect(&slave, None, None);
+        drop(master);
         assert_eq!(
             facts,
             OutputFacts {
