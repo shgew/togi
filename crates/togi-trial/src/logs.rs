@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, Write};
-use std::sync::mpsc::{Receiver, Sender, SyncSender, TrySendError, channel, sync_channel};
+use std::sync::mpsc::{
+    Receiver, RecvTimeoutError, Sender, SyncSender, TrySendError, channel, sync_channel,
+};
 use std::time::Duration;
 
 use crate::evidence::Stream;
@@ -36,7 +38,7 @@ pub(crate) struct LogWriter {
     queue: SyncSender<(Key, Vec<u8>)>,
     opens: Sender<(Key, Sink)>,
     wrap: Wrap,
-    done: tokio::sync::oneshot::Receiver<Vec<LogFailure>>,
+    done: Receiver<Vec<LogFailure>>,
 }
 
 /// What a pipe reader holds to append its consumed bytes to its log.
@@ -73,7 +75,7 @@ impl LogWriter {
     pub(crate) fn spawn(wrap: Option<Wrap>) -> io::Result<Self> {
         let (queue, writes) = sync_channel(QUEUE);
         let (opens, registered) = channel();
-        let (finished, done) = tokio::sync::oneshot::channel();
+        let (finished, done) = channel();
         std::thread::Builder::new()
             .name("togi-logs".to_owned())
             .spawn(move || {
@@ -98,17 +100,18 @@ impl LogWriter {
         }
     }
 
-    /// Closes the queue and waits at most `bound` for queued bytes to be written, without blocking
-    /// the runtime; a thread stuck in a write is abandoned.
+    /// Closes the queue and waits at most `bound` of real time for queued bytes to be written; the
+    /// wait runs on the blocking pool, never on the runtime thread, and a thread stuck in a write
+    /// is abandoned.
     pub(crate) async fn finish(self, bound: Duration) -> LogsEnd {
         let Self {
             queue, opens, done, ..
         } = self;
         drop((queue, opens));
-        match tokio::time::timeout(bound, done).await {
+        match tokio::task::spawn_blocking(move || done.recv_timeout(bound)).await {
             Ok(Ok(failures)) => LogsEnd::Done(failures),
-            Ok(Err(_)) => LogsEnd::Done(Vec::new()),
-            Err(_) => LogsEnd::TimedOut(bound),
+            Ok(Err(RecvTimeoutError::Timeout)) => LogsEnd::TimedOut(bound),
+            Ok(Err(RecvTimeoutError::Disconnected)) | Err(_) => LogsEnd::Done(Vec::new()),
         }
     }
 }
