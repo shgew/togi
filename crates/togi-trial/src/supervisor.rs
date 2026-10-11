@@ -771,10 +771,9 @@ impl<O: Os> Supervisor<O> {
                 });
             }
         }
-        let classify = !matches!(end, End::Cancelled | End::Stopped | End::Abandoned);
         while let Ok(event) = inbound.try_recv() {
             let flow = dispatch(&mut judge, &mut live.instances, &mut live.failures, event);
-            if let (Flow::Exited(instance), true) = (flow, classify) {
+            if let Flow::Exited(instance) = flow {
                 let detail = live.instances[instance]
                     .child
                     .as_ref()

@@ -324,3 +324,26 @@ async fn backend_failures_survive_thread_read_loss() {
     })
     .await;
 }
+
+#[tokio::test(start_paused = true)]
+async fn an_exit_queued_before_a_cancellation_is_still_an_unexpected_exit() {
+    local(async {
+        let rig = rig();
+        rig.fake.on_launch(|_, _| {
+            Launch::Run(script(|ctx: ProcCtx| async move {
+                ctx.exit(ExitInfo::Code(3));
+            }))
+        });
+        let cancel = CancellationToken::new();
+        let handle = rig
+            .start_with(&cancel, spec(Regime::R1, &[2], secs(60)))
+            .await
+            .unwrap();
+        cancel.cancel();
+        let run = finish(&handle).await;
+        assert!(matches!(run.finished.errors[..], [Error::Cancelled]));
+        let failure = run.finished.result.failure.unwrap();
+        assert_eq!((failure.signal, failure.core), (Signal::UnexpectedExit, core(2)));
+    })
+    .await;
+}
