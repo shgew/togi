@@ -261,9 +261,22 @@ impl From<Error> for togi_machine::Error {
 
 /// An error a trial keeps after reporting it, so every later report reads the same.
 #[cfg(target_os = "linux")]
-#[derive(Debug, thiserror::Error)]
-#[error(transparent)]
+#[derive(Debug)]
 pub(crate) struct Shared(Arc<Error>);
+
+#[cfg(target_os = "linux")]
+impl std::fmt::Display for Shared {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.0, f)
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl std::error::Error for Shared {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&*self.0)
+    }
+}
 
 #[cfg(target_os = "linux")]
 impl Shared {
@@ -282,11 +295,6 @@ impl Shared {
                 Seam::Other => togi_machine::Error::Other(Box::new(Self(Arc::clone(error)))),
             },
         }
-    }
-
-    #[cfg(test)]
-    pub(crate) fn error(&self) -> &Error {
-        &self.0
     }
 }
 

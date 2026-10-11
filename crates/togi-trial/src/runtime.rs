@@ -9,7 +9,7 @@ use tokio::task::LocalSet;
 
 use crate::error::Error;
 use crate::os::Os;
-use crate::supervisor::{Env, Handle, Supervised, TrialCommand, start};
+use crate::supervisor::{Env, Handle, TrialCommand, start};
 use crate::sweep;
 use crate::timing::Timing;
 
@@ -208,10 +208,9 @@ impl Task {
 }
 
 /// Ends everything in flight within one shared slot, so dropping the runtime never leaves a
-/// workload running: cancels the starts and sweeps still working and waits for them, since a
-/// cancelled start rolls back and a cancelled sweep finishes its cleanup, then has every
-/// supervisor tear its trial down. Whatever is still running at the end of the slot is
-/// reported, since nothing is left to contain it.
+/// workload running. Every live supervisor is asked to tear down at once, and the registry
+/// abandons any a pending start adds later, so rollbacks and teardowns overlap in the slot.
+/// Whatever is still running at the end of the slot is reported.
 async fn contain_all<O: Os>(env: &Env<O>, tasks: Vec<Task>) {
     let deadline = tokio::time::Instant::now() + env.timing.stop_bound();
     for task in &tasks {
@@ -219,6 +218,7 @@ async fn contain_all<O: Os>(env: &Env<O>, tasks: Vec<Task>) {
             cancel.cancel();
         }
     }
+    let mut live = env.supervisors.borrow_mut().close();
     for task in tasks {
         if tokio::time::timeout_at(deadline, task.handle)
             .await
@@ -230,15 +230,7 @@ async fn contain_all<O: Os>(env: &Env<O>, tasks: Vec<Task>) {
             ));
         }
     }
-    let live: Vec<Supervised> = env
-        .supervisors
-        .borrow_mut()
-        .drain(..)
-        .filter(|supervised| !supervised.task.is_finished())
-        .collect();
-    for supervised in &live {
-        let _ = supervised.commands.send(TrialCommand::Abandon);
-    }
+    live.extend(env.supervisors.borrow_mut().close());
     for supervised in live {
         if tokio::time::timeout_at(deadline, supervised.task)
             .await
@@ -250,6 +242,22 @@ async fn contain_all<O: Os>(env: &Env<O>, tasks: Vec<Task>) {
             ));
         }
     }
+}
+
+#[cfg(test)]
+pub(crate) async fn contain_pending<O: Os>(
+    env: &Env<O>,
+    handles: Vec<tokio::task::JoinHandle<()>>,
+) {
+    let tasks = handles
+        .into_iter()
+        .map(|handle| Task {
+            what: "start",
+            cancel: None,
+            handle,
+        })
+        .collect();
+    contain_all(env, tasks).await;
 }
 
 #[expect(

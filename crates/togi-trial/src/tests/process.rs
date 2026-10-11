@@ -596,11 +596,12 @@ fn crate_errors(error: &togi_machine::Error) -> Vec<&crate::Error> {
     let togi_machine::Error::Other(inner) = error else {
         return Vec::new();
     };
-    match inner.downcast_ref::<crate::error::Shared>() {
-        Some(shared) => match shared.error() {
-            crate::Error::Joined(joined) => joined.errors().iter().collect(),
-            other => vec![other],
-        },
+    match inner
+        .source()
+        .and_then(|source| source.downcast_ref::<crate::Error>())
+    {
+        Some(crate::Error::Joined(joined)) => joined.errors().iter().collect(),
+        Some(other) => vec![other],
         None => crate_error(error).into_iter().collect(),
     }
 }

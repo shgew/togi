@@ -10,12 +10,14 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use tempfile::TempDir;
+use togi_backend::{Backend, Line, Plan, Ready};
 use togi_machine::{
-    CancellationToken, CoreId, Partial, Regime, Reporter, Running, Sample, Signal, Stopped, Trials,
+    CancellationToken, CoreId, CpuId, Partial, PmTable, PmTableReader, Regime, Reporter, Running,
+    Sample, Signal, Stopped, Trials, Workload,
 };
 
 use super::harness::{
-    Run, crate_error, finish, local, nothing_runs, own_identity, rig, spec, topology,
+    Run, crate_error, finish, local, nothing_runs, own_identity, rig, rig_edit, spec, topology,
 };
 use crate::error::{CleanupFailure, Error, InvalidTrial};
 use crate::id::ScopeName;
@@ -800,11 +802,11 @@ fn a_cancelled_trial_keeps_the_output_failure_that_followed_its_cancellation() {
     else {
         panic!("a cancellation that carries an output failure must not read as a bare one");
     };
-    let shared = inner
-        .downcast_ref::<crate::error::Shared>()
-        .expect("the joined errors");
-    let Error::Joined(joined) = shared.error() else {
-        panic!("{shared}");
+    let Some(Error::Joined(joined)) = inner
+        .source()
+        .and_then(|source| source.downcast_ref::<Error>())
+    else {
+        panic!("{inner}");
     };
     assert!(
         matches!(joined.errors(), [Error::Cancelled, Error::Output(_)]),
@@ -1150,12 +1152,14 @@ async fn abandoned_during(phase: Phase, fault: bool) -> Abandoned {
 async fn abandoning_while_the_workload_ignores_term_still_kills_and_reaps_it() {
     local(async {
         let clean = abandoned_during(Phase::Reaping, false).await;
+        assert!(clean.run.finished.abandoned);
         assert!(clean.run.finished.teardown.is_ok());
         let process = clean.rig.fake.process(0);
         assert!(process.reaped.get());
         assert!(process.signals.borrow().contains(&GroupSignal::Kill));
 
         let faulty = abandoned_during(Phase::Reaping, true).await;
+        assert!(faulty.run.finished.abandoned);
         let containment = faulty.run.finished.teardown.unwrap_err();
         assert!(
             containment
@@ -1175,10 +1179,12 @@ async fn abandoning_while_the_workload_ignores_term_still_kills_and_reaps_it() {
 async fn abandoning_while_readers_drain_still_waits_for_them_and_never_proves_an_undrained_stop() {
     local(async {
         let clean = abandoned_during(Phase::Draining, false).await;
+        assert!(clean.run.finished.abandoned);
         assert!(clean.run.finished.teardown.is_ok());
         assert!(clean.rig.fake.process(0).reaped.get());
 
         let faulty = abandoned_during(Phase::Draining, true).await;
+        assert!(faulty.run.finished.abandoned);
         let containment = faulty.run.finished.teardown.unwrap_err();
         assert!(
             containment
@@ -1196,10 +1202,12 @@ async fn abandoning_while_readers_drain_still_waits_for_them_and_never_proves_an
 async fn abandoning_during_verification_still_waits_for_the_scope_to_empty() {
     local(async {
         let clean = abandoned_during(Phase::Verifying, false).await;
+        assert!(clean.run.finished.abandoned);
         assert!(clean.run.finished.teardown.is_ok());
         assert!(!clean.member.get());
 
         let faulty = abandoned_during(Phase::Verifying, true).await;
+        assert!(faulty.run.finished.abandoned);
         let containment = faulty.run.finished.teardown.unwrap_err();
         assert!(
             matches!(
@@ -1209,6 +1217,259 @@ async fn abandoning_during_verification_still_waits_for_the_scope_to_empty() {
             "{containment}"
         );
         assert!(faulty.member.get(), "the member outlived the teardown");
+    })
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn shutdown_overlaps_pending_rollback_and_live_teardown_in_one_slot() {
+    local(async {
+        let timing = Timing {
+            stop_grace: Duration::ZERO,
+            teardown: secs(8),
+            kill_slot: secs(6),
+            writer_join: secs(1),
+            margin: secs(1),
+            ..Timing::default()
+        };
+        let rig = super::harness::rig_with(TestBackend::new("/bin/true"), timing);
+        rig.fake.on_systemd(|call| match call {
+            Systemd::Kill { .. } => Some(Reply::Hang),
+            _ => None,
+        });
+        let live = rig.start(spec(Regime::R1, &[0], secs(600))).await.unwrap();
+        rig.fake.on_launch(|_, _| {
+            Launch::FailRetained(
+                script(|mut ctx: ProcCtx| async move { ctx.until_killed().await }),
+                std::io::Error::other("retained launch failure"),
+            )
+        });
+        let env = Rc::clone(&rig.env);
+        let (reply, rollback) = tokio::sync::oneshot::channel();
+        let pending = tokio::task::spawn_local(async move {
+            let mut pending = spec(Regime::R1, &[1], secs(600));
+            pending.id = "pending".into();
+            let result =
+                crate::supervisor::start(env, CancellationToken::new(), pending, nothing_runs())
+                    .await;
+            let _ = reply.send(result.err().unwrap());
+        });
+        let begun = tokio::time::Instant::now();
+        crate::runtime::contain_pending(&rig.env, vec![pending]).await;
+        let calls = rig.fake.systemd_calls();
+        let kills: Vec<_> = calls
+            .iter()
+            .filter_map(|(call, at)| match call {
+                Systemd::Kill { scope, .. } => Some((scope.as_str(), *at)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(kills.len(), 2, "{kills:?}");
+        assert!(
+            kills
+                .iter()
+                .all(|(_, at)| at.duration_since(begun) < secs(1)),
+            "both cleanup commands must start before either slow command finishes: {kills:?}"
+        );
+        assert!(tokio::time::Instant::now() - begun < timing.stop_bound());
+        let rollback = rollback.await.unwrap();
+        assert!(rollback.value.is_none());
+        let run = tokio::time::timeout(Duration::ZERO, finish(&live))
+            .await
+            .expect("live teardown completed before shutdown returned");
+        assert!(run.finished.abandoned);
+        assert!(run.finished.teardown.is_err());
+        assert!(rig.fake.process(0).reaped.get());
+        assert!(rig.fake.process(1).reaped.get());
+    })
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn shutdown_retains_and_abandons_a_supervisor_registered_by_a_pending_start() {
+    local(async {
+        let rig = rig();
+        let env = Rc::clone(&rig.env);
+        let (reply, answer) = tokio::sync::oneshot::channel();
+        let pending = tokio::task::spawn_local(async move {
+            tokio::time::sleep(secs(1)).await;
+            let handle = crate::supervisor::start(
+                env,
+                CancellationToken::new(),
+                spec(Regime::R1, &[0], secs(600)),
+                nothing_runs(),
+            )
+            .await
+            .unwrap();
+            let _ = reply.send(handle);
+        });
+        crate::runtime::contain_pending(&rig.env, vec![pending]).await;
+        let handle = answer.await.unwrap();
+        let run = tokio::time::timeout(Duration::ZERO, finish(&handle))
+            .await
+            .expect("late supervisor completed before shutdown returned");
+        assert!(run.finished.abandoned);
+        assert!(run.finished.teardown.is_ok());
+        assert!(rig.fake.process(0).reaped.get());
+    })
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_late_registration_is_abandoned_promptly_while_another_pending_start_stays_blocked() {
+    local(async {
+        let rig = rig();
+        let env = Rc::clone(&rig.env);
+        let (reply, answer) = tokio::sync::oneshot::channel();
+        let late = tokio::task::spawn_local(async move {
+            tokio::time::sleep(secs(1)).await;
+            let handle = crate::supervisor::start(
+                env,
+                CancellationToken::new(),
+                spec(Regime::R1, &[0], secs(600)),
+                nothing_runs(),
+            )
+            .await
+            .unwrap();
+            let _ = reply.send(handle);
+        });
+        let blocked = tokio::task::spawn_local(std::future::pending::<()>());
+        let env = Rc::clone(&rig.env);
+        let shutdown = tokio::task::spawn_local(async move {
+            crate::runtime::contain_pending(&env, vec![blocked, late]).await;
+        });
+        let handle = answer.await.unwrap();
+        let run = tokio::time::timeout(secs(1), finish(&handle)).await.expect(
+            "the late supervisor was abandoned while the blocked start still held shutdown",
+        );
+        assert!(run.finished.abandoned);
+        assert!(!shutdown.is_finished());
+        assert!(rig.fake.process(0).reaped.get());
+        shutdown.await.unwrap();
+    })
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_handle_dropped_after_the_last_abandon_check_still_reports_an_unconfirmed_teardown() {
+    local(async {
+        let rig = rig();
+        let survivor = rig.fake.add_recovered(crate::procfs::ScopeProcess {
+            scope: ScopeName::from_unit("togi-trial-t1.scope").unwrap(),
+            pid: 9000,
+            starttime: 1,
+        });
+        rig.fake.on_systemd(|call| match call {
+            Systemd::Kill { .. } => Some(Reply::Output {
+                success: true,
+                text: String::new(),
+            }),
+            _ => None,
+        });
+        let handle = rig.start(spec(Regime::R1, &[0], secs(600))).await.unwrap();
+        let commands = handle.commands.clone();
+        let held = Rc::new(std::cell::RefCell::new(Some(handle)));
+        crate::supervisor::after_abandon_snapshot({
+            let held = Rc::clone(&held);
+            move || drop(held.borrow_mut().take())
+        });
+        crate::supervisor::ABANDON_REPORTS.with_borrow_mut(Vec::clear);
+        commands.send(TrialCommand::Stop).unwrap();
+        tokio::time::timeout(secs(120), async {
+            while held.borrow().is_some() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("the supervisor reached its publication");
+        let reports = crate::supervisor::ABANDON_REPORTS.with_borrow(Clone::clone);
+        assert!(survivor.alive.get());
+        assert!(
+            matches!(
+                &reports[..],
+                [report] if report.contains("trial t1")
+                    && report.contains("teardown unconfirmed")
+                    && report.contains("togi-trial-t1")
+            ),
+            "{reports:?}"
+        );
+    })
+    .await;
+}
+
+#[derive(Debug)]
+struct BoomBackend(TestBackend);
+
+impl Backend for BoomBackend {
+    fn kind(&self) -> togi_machine::Backend {
+        self.0.kind()
+    }
+
+    fn check(&self) -> Result<Ready, togi_backend::Error> {
+        self.0.check()
+    }
+
+    fn plan(
+        &self,
+        workload: &Workload,
+        dir: &Path,
+        cpus: &[CpuId],
+    ) -> Result<Plan, togi_backend::Error> {
+        self.0.plan(workload, dir, cpus)
+    }
+
+    fn classify(&self, line: &str) -> Line {
+        assert!(!line.contains("BOOM"), "the classifier met BOOM");
+        self.0.classify(line)
+    }
+}
+
+struct PanickingReader;
+
+impl PmTableReader for PanickingReader {
+    fn pm_table(&self) -> Option<PmTable> {
+        panic!("the PM table reader failed");
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_supervision_panic_keeps_a_classifier_panic_from_the_final_output() {
+    local(async {
+        let backend = TestBackend::new("/bin/true");
+        let rig = rig_edit(backend.clone(), Timing::default(), |env| {
+            env.pm_table = Some(Arc::new(PanickingReader));
+            env.backends = Backends::new().with(Arc::new(BoomBackend(backend)));
+        });
+        rig.fake.on_launch(|_, _| {
+            Launch::Run(script(|mut ctx: ProcCtx| async move {
+                while let Some(delivery) = ctx.signals.recv().await {
+                    if matches!(delivery, Delivery::Group(GroupSignal::Term)) {
+                        ctx.print("BOOM\n").await;
+                        ctx.exit(ExitInfo::Signal(15));
+                        return;
+                    }
+                }
+            }))
+        });
+        let handle = rig.start(spec(Regime::R1, &[0], secs(600))).await.unwrap();
+        let begun = tokio::time::Instant::now();
+        let run = tokio::time::timeout(secs(300), finish(&handle))
+            .await
+            .expect("the supervisor published an end after both panics");
+        assert!(begun.elapsed() <= rig.env.timing.stop_bound() + Duration::from_millis(50));
+        assert!(run.finished.teardown.is_ok(), "the stop is still proven");
+        assert!(rig.fake.process(0).reaped.get());
+        assert!(
+            matches!(
+                &run.finished.errors[..],
+                [Error::Panicked { what: first }, Error::Panicked { what: second }]
+                    if first.contains("the PM table reader failed")
+                        && second.contains("the classifier met BOOM")
+            ),
+            "{:?}",
+            run.finished.errors
+        );
+        assert!(run.finished.result.inconclusive.is_some());
     })
     .await;
 }

@@ -8,7 +8,7 @@ use std::pin::pin;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{Receiver as StdReceiver, Sender as StdSender, channel};
+use std::sync::mpsc::{Receiver as StdReceiver, SendError, Sender as StdSender, channel};
 use std::task::Poll;
 use std::time::Duration;
 
@@ -64,7 +64,7 @@ pub(crate) struct Env<O: Os> {
     /// Test construction: what the output log thread writes to instead of the log files.
     pub(crate) log_sink: Option<Rc<dyn Fn() -> Wrap>>,
     /// Every supervisor started on this thread, so shutdown can have each tear its trial down.
-    pub(crate) supervisors: RefCell<Vec<Supervised>>,
+    pub(crate) supervisors: RefCell<Registry>,
     /// How a start's file preparation runs, off this thread.
     pub(crate) preparer: Preparer,
 }
@@ -87,6 +87,42 @@ pub(crate) struct Supervised {
     pub(crate) trial: String,
     pub(crate) commands: UnboundedSender<TrialCommand>,
     pub(crate) task: tokio::task::JoinHandle<()>,
+}
+
+/// The supervisors still running, and whether shutdown has begun, so a supervisor a pending
+/// start registers during shutdown is abandoned the moment it exists.
+#[derive(Default)]
+pub(crate) struct Registry {
+    supervised: Vec<Supervised>,
+    closed: bool,
+}
+
+impl Registry {
+    fn register(&mut self, supervised: Supervised) {
+        self.supervised
+            .retain(|supervised| !supervised.task.is_finished());
+        if self.closed {
+            let _ = supervised.commands.send(TrialCommand::Abandon);
+        }
+        self.supervised.push(supervised);
+    }
+
+    /// Abandons every supervisor still running and takes them all, including those registered
+    /// since an earlier close, which `register` already abandoned.
+    pub(crate) fn close(&mut self) -> Vec<Supervised> {
+        let already = std::mem::replace(&mut self.closed, true);
+        let live: Vec<Supervised> = self
+            .supervised
+            .drain(..)
+            .filter(|supervised| !supervised.task.is_finished())
+            .collect();
+        if !already {
+            for supervised in &live {
+                let _ = supervised.commands.send(TrialCommand::Abandon);
+            }
+        }
+        live
+    }
 }
 
 /// What the handle tells its supervisor.
@@ -326,14 +362,11 @@ pub(crate) async fn start<O: Os>(
     };
     let trial = supervisor.plan.id.to_string();
     let task = tokio::task::spawn_local(supervisor.run());
-    let mut supervisors = env.supervisors.borrow_mut();
-    supervisors.retain(|supervised| !supervised.task.is_finished());
-    supervisors.push(Supervised {
+    env.supervisors.borrow_mut().register(Supervised {
         trial,
         commands: commands_tx.clone(),
         task,
     });
-    drop(supervisors);
     Ok(Handle {
         commands: commands_tx,
         events: events_rx,
@@ -1017,11 +1050,11 @@ impl<O: Os> Supervisor<O> {
             .saturating_duration_since(started)
             .min(plan.duration);
         let abandoned_before = matches!(end, End::Abandoned);
-        let mut panicked = None;
+        let mut panics = Vec::new();
         match end {
             End::Cancelled => errors.push(Error::Cancelled),
             End::Toggle(error) => errors.push(error),
-            End::Panicked(what) => panicked = Some(what),
+            End::Panicked(what) => panics.push(what),
             End::Duration | End::Stopped | End::Abandoned | End::Evidence | End::Storage => {}
         }
         let budget = Budget::start(env.timing);
@@ -1034,13 +1067,13 @@ impl<O: Os> Supervisor<O> {
             .await
             .finish()
             .await;
-        if let Some(what) = panicked.take().or_else(|| judge.take_panic()) {
+        panics.extend(judge.take_panic());
+        for what in &panics {
             judge.observe(Observation::SamplingLoss {
                 instance: 0,
                 what: format!("trial supervision panicked: {what}"),
             });
             errors.push(Error::Panicked { what: what.clone() });
-            panicked = Some(what);
         }
         let bound = env.timing.writer_join;
         let samples = async {
@@ -1076,43 +1109,78 @@ impl<O: Os> Supervisor<O> {
             stops: toggles.stops,
             conts: toggles.conts,
         };
-        // The handle may have been dropped at any point of the teardown; nothing awaits between
-        // this look at the commands and the publication, so the last answer is the one reported.
         let abandoned = abandoned_before
             || std::iter::from_fn(|| commands.try_recv().ok())
                 .any(|command| matches!(command, TrialCommand::Abandon));
-        if abandoned {
-            report_abandoned(&plan, &ended.proof, panicked.as_deref());
+        #[cfg(test)]
+        if let Some(hook) = AFTER_ABANDON_SNAPSHOT.take() {
+            hook();
         }
-        let _ = events.send(Event::Finished(Box::new(Finished {
+        let finished = Finished {
             result,
             errors,
             teardown: ended.proof.map_err(Arc::new),
             abandoned,
-        })));
+        };
+        if abandoned {
+            report_abandoned(&plan, &finished.teardown, &panics);
+        }
+        if let Err(SendError(Event::Finished(undelivered))) =
+            events.send(Event::Finished(Box::new(finished)))
+            && !abandoned
+        {
+            report_abandoned(&plan, &undelivered.teardown, &panics);
+        }
     }
 }
 
+#[cfg(test)]
+thread_local! {
+    /// Runs once on the supervisor's thread right after it last looked for an abandonment and
+    /// before it publishes its end: where a handle dropped on another thread can land.
+    static AFTER_ABANDON_SNAPSHOT: std::cell::Cell<Option<Box<dyn FnOnce()>>> =
+        const { std::cell::Cell::new(None) };
+    /// What `report_abandoned` would have written to stderr.
+    pub(crate) static ABANDON_REPORTS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+}
+
+#[cfg(test)]
+pub(crate) fn after_abandon_snapshot(hook: impl FnOnce() + 'static) {
+    AFTER_ABANDON_SNAPSHOT.set(Some(Box::new(hook)));
+}
+
+fn report_abandoned(
+    plan: &TrialPlan,
+    teardown: &Result<Stopped, Arc<Containment>>,
+    panics: &[String],
+) {
+    let panic = panics.iter().fold(String::new(), |mut text, what| {
+        text.push_str("; supervision panicked: ");
+        text.push_str(what);
+        text
+    });
+    announce(&match teardown {
+        Ok(_) => format!(
+            "togi: trial {} was dropped while running; torn down{panic}",
+            plan.id
+        ),
+        Err(containment) => format!(
+            "togi: trial {} was dropped while running; teardown unconfirmed: {containment}{panic}",
+            plan.id
+        ),
+    });
+}
+
+#[cfg(not(test))]
 #[expect(
     clippy::print_stderr,
     reason = "an abandoned trial has no caller left to report to"
 )]
-fn report_abandoned(
-    plan: &TrialPlan,
-    proof: &Result<Stopped, Containment>,
-    panicked: Option<&str>,
-) {
-    let panic = panicked.map_or_else(String::new, |what| {
-        format!("; supervision panicked: {what}")
-    });
-    match proof {
-        Ok(_) => eprintln!(
-            "togi: trial {} was dropped while running; torn down{panic}",
-            plan.id
-        ),
-        Err(containment) => eprintln!(
-            "togi: trial {} was dropped while running; teardown unconfirmed: {containment}{panic}",
-            plan.id
-        ),
-    }
+fn announce(message: &str) {
+    eprintln!("{message}");
+}
+
+#[cfg(test)]
+fn announce(message: &str) {
+    ABANDON_REPORTS.with_borrow_mut(|reports| reports.push(message.to_owned()));
 }
