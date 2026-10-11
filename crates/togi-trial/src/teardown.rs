@@ -3,7 +3,9 @@ use std::rc::Rc;
 use togi_machine::Stopped;
 use tokio::sync::mpsc::Receiver;
 use tokio::task::JoinSet;
-use tokio::time::{Instant, sleep_until, timeout_at};
+use std::collections::BTreeSet;
+
+use tokio::time::{Instant, sleep, sleep_until, timeout_at};
 
 use crate::error::{CleanupFailure, Containment};
 use crate::evidence::Stream;
@@ -86,6 +88,9 @@ pub(crate) struct Live<O: Os> {
 pub(crate) struct Running;
 pub(crate) struct Reaped;
 pub(crate) struct ReadersDone;
+pub(crate) struct Verified;
+
+const VERIFY_POLL: std::time::Duration = std::time::Duration::from_millis(100);
 
 /// The teardown typestate: each step consumes the last, so the proof can only come from the end.
 pub(crate) struct Teardown<'a, O: Os, S> {
@@ -357,7 +362,70 @@ impl<'a, O: Os> Teardown<'a, O, Reaped> {
     }
 }
 
-impl<O: Os> Teardown<'_, O, ReadersDone> {
+impl<'a, O: Os> Teardown<'a, O, ReadersDone> {
+    /// A scope kill acknowledges delivery, not exit, so a descendant can outlive it: scans `/proc`
+    /// until no process remains in any known scope, within the absolute deadline. Writers count as
+    /// stopped only for instances whose scope was seen empty.
+    pub(crate) async fn verify(mut self) -> Teardown<'a, O, Verified> {
+        if !self.live.scoped || self.live.scopes.is_empty() {
+            return self.advance(Verified);
+        }
+        let deadline = self.budget.deadline();
+        let remaining = loop {
+            let left = match self.os.scope_processes(deadline).await {
+                Ok(members) => members
+                    .into_iter()
+                    .map(|member| member.scope)
+                    .filter(|scope| self.live.scopes.contains(scope))
+                    .collect::<BTreeSet<_>>(),
+                Err(error) => {
+                    self.failures.record(CleanupFailure::Observe {
+                        what: "the trial scope members",
+                        source: Box::new(error),
+                    });
+                    break None;
+                }
+            };
+            let late = Instant::now() > deadline;
+            if late && left.is_empty() {
+                self.failures.record(CleanupFailure::Observe {
+                    what: "the trial scope members",
+                    source: "the scan finished after the teardown deadline".into(),
+                });
+                break None;
+            }
+            if left.is_empty() || late || Instant::now() >= deadline {
+                break Some(left);
+            }
+            tokio::select! {
+                () = sleep(VERIFY_POLL) => {}
+                () = sleep_until(deadline) => {}
+            }
+        };
+        match remaining {
+            Some(left) => {
+                for scope in &left {
+                    self.failures.record(CleanupFailure::ScopeMembers {
+                        scope: scope.to_string(),
+                    });
+                }
+                for instance in &mut self.live.instances {
+                    if left.contains(&instance.scope) {
+                        instance.writers = None;
+                    }
+                }
+            }
+            None => {
+                for instance in &mut self.live.instances {
+                    instance.writers = None;
+                }
+            }
+        }
+        self.advance(Verified)
+    }
+}
+
+impl<O: Os> Teardown<'_, O, Verified> {
     /// Classifies the final partial lines of watched files whose writers are confirmed stopped,
     /// then mints the proof; this is the only place that does.
     pub(crate) fn finish(mut self) -> Ended {
@@ -384,7 +452,7 @@ impl<O: Os> Teardown<'_, O, ReadersDone> {
             None => {
                 #[expect(
                     clippy::disallowed_methods,
-                    reason = "teardown reached Ended: every leader reaped, every reader at end of input, every writer confirmed stopped"
+                    reason = "teardown reached Ended: every leader reaped, every reader at end of input, every scope seen empty"
                 )]
                 let stopped = Stopped::confirmed();
                 Ok(stopped)

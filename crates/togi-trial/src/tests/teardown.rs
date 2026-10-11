@@ -483,3 +483,84 @@ async fn a_launcher_whose_exit_watch_failed_is_still_killed_and_reaped_by_the_ro
     })
     .await;
 }
+
+#[tokio::test(start_paused = true)]
+async fn an_acknowledged_scope_kill_with_a_surviving_member_is_containment() {
+    local(async {
+        let mut backend = TestBackend::new("/bin/true");
+        backend.watched = vec!["results.txt"];
+        let rig = rig_with(backend, Timing::default());
+        rig.fake.on_launch(|_, command| {
+            let results = command.cwd.join("results.txt");
+            Launch::Run(script(move |mut ctx: ProcCtx| async move {
+                std::fs::write(results, "COMPUTE ERROR").unwrap();
+                ctx.until_killed().await;
+            }))
+        });
+        let survivor = rig.fake.add_recovered(crate::procfs::ScopeProcess {
+            scope: ScopeName::from_unit("togi-trial-t1.scope").unwrap(),
+            pid: 9000,
+            starttime: 1,
+        });
+        rig.fake.on_systemd(|call| match call {
+            Systemd::Kill { .. } => Some(Reply::Output {
+                success: true,
+                text: String::new(),
+            }),
+            _ => None,
+        });
+        let cancel = CancellationToken::new();
+        let handle = rig
+            .start_with(&cancel, spec(Regime::R1, &[0], secs(60)))
+            .await
+            .unwrap();
+        cancel.cancel();
+        let begun = tokio::time::Instant::now();
+        let run = finish(&handle).await;
+        assert!(begun.elapsed() <= secs(15) + Duration::from_millis(50));
+        let containment = run.finished.teardown.unwrap_err();
+        assert!(matches!(
+            containment.failures(),
+            [CleanupFailure::ScopeMembers { scope }] if scope == "togi-trial-t1"
+        ));
+        assert_eq!(
+            run.finished.result.failure, None,
+            "a watched partial is not classified while its writers may live"
+        );
+        assert!(survivor.alive.get());
+    })
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_member_that_exits_after_the_kill_is_waited_for_and_then_confirmed() {
+    local(async {
+        let rig = rig();
+        let survivor = rig.fake.add_recovered(crate::procfs::ScopeProcess {
+            scope: ScopeName::from_unit("togi-trial-t1.scope").unwrap(),
+            pid: 9001,
+            starttime: 1,
+        });
+        rig.fake.on_systemd(|call| match call {
+            Systemd::Kill { .. } => Some(Reply::Output {
+                success: true,
+                text: String::new(),
+            }),
+            _ => None,
+        });
+        let alive = survivor.alive.clone();
+        tokio::task::spawn_local(async move {
+            tokio::time::sleep(secs(5)).await;
+            alive.set(false);
+        });
+        let cancel = CancellationToken::new();
+        let handle = rig
+            .start_with(&cancel, spec(Regime::R1, &[0], secs(60)))
+            .await
+            .unwrap();
+        cancel.cancel();
+        let run = finish(&handle).await;
+        assert!(run.finished.teardown.is_ok());
+    })
+    .await;
+}
