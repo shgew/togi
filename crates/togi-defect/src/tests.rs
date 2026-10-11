@@ -1,3 +1,5 @@
+use std::num::NonZeroU32;
+
 use jiff::Timestamp;
 use togi_journal::{
     Activity, Attribution, Build, CommandReset, ConfigLoaded, Decision, DefectAnswer,
@@ -127,6 +129,7 @@ impl Log {
             &[],
             ConfigLoaded {
                 build: build(fixes),
+                config: togi_config::Config::default(),
                 path: "togi.json".into(),
                 file: false,
                 kernel_cursor: None,
@@ -186,7 +189,7 @@ impl Log {
         self.push(
             decisions,
             DefectFound {
-                id,
+                id: NonZeroU32::new(id).unwrap(),
                 title: "recorded".into(),
                 detail: "recorded detail".into(),
                 pr: 7,
@@ -201,7 +204,7 @@ impl Log {
         self.push(
             &[found],
             DefectAnswered {
-                id,
+                id: NonZeroU32::new(id).unwrap(),
                 cores: cores(at),
                 answer,
             },

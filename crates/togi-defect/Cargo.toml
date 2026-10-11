@@ -13,6 +13,7 @@ togi-machine.workspace = true
 
 [dev-dependencies]
 jiff.workspace = true
+togi-config.workspace = true
 
 [lints]
 workspace = true

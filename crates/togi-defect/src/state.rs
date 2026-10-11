@@ -203,9 +203,7 @@ impl DefectState {
     }
 
     fn fold_found(&mut self, seq: Seq, found: &DefectFound) {
-        let Some(id) = DefectId::new(found.id) else {
-            return;
-        };
+        let id = DefectId(found.id);
         if self.findings.contains_key(&id) {
             return;
         }
@@ -231,9 +229,7 @@ impl DefectState {
     }
 
     fn fold_answer(&mut self, seq: Seq, answered: &DefectAnswered) {
-        if let Some(id) = DefectId::new(answered.id) {
-            self.answered.insert(id);
-        }
+        self.answered.insert(DefectId(answered.id));
         if answered.answer == DefectAnswer::Yes && !answered.cores.is_empty() {
             self.pending_resets.insert(seq, answered.cores);
         }
