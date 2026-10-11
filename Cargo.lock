@@ -603,6 +603,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "togi-journal"
+version = "0.0.0"
+dependencies = [
+ "jiff",
+ "proptest",
+ "rustix",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "togi-machine",
+]
+
+[[package]]
 name = "togi-machine"
 version = "0.0.0"
 dependencies = [
