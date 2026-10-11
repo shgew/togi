@@ -969,6 +969,36 @@ fn a_rail_whose_common_clock_slopes_hide_its_deficit_at_the_clock_extremes_is_re
 }
 
 #[test]
+fn a_rail_whose_terms_round_before_they_cancel_is_refused() {
+    // Bases of 1e18 V and a reference of 1e20 MHz cancel at the extreme clocks, but at the actual 32768 MHz
+    // clock binary64 rounds the request to 128 V and the requirement to 256 V. Over a 1e-310 V margin that
+    // is no f64 rate, so the refusal bounds the rounding by the terms before they cancel.
+    let mut definition = rewrite_cores(committed_machine("shared-voltage.json"), |core| {
+        core.base_v = 1e18;
+        core.threshold_v = 1e18 - 128.0;
+        core.count_v = 0.0;
+        core.clock_v_per_100mhz = 1.0;
+        core.threshold_clock_v_per_100mhz = 1.0 - f64::EPSILON / 2.0;
+    });
+    let rail = definition.shared_voltage.as_mut().expect("a rail");
+    rail.rate = 1.0;
+    rail.margin_v = 1e-310;
+    for workload in rail.workload.values_mut() {
+        workload.reference_mhz = 1e20 + 16384.0;
+        workload.full_mhz = [32768.0; 2];
+        workload.idle_gain_mhz = 0.0;
+        workload.package_mhz_per_w = 0.0;
+        workload.balance_mhz_per_w = 0.0;
+    }
+    let error = invalid(&definition);
+    assert_eq!(error.problem, Problem::Overflow, "{error}");
+    assert!(
+        error.path.starts_with("shared_voltage.workload.") && error.path.ends_with(".core[0]"),
+        "{error}"
+    );
+}
+
+#[test]
 fn requirement_coefficients_are_finite_and_nonnegative_without_an_upper_bound() {
     let workload = r7_workload(0);
     let set = |coefficient: f64| {

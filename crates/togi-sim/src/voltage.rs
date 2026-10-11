@@ -183,10 +183,17 @@ fn resolve_core(
     // requirement minus that request. Both are linear in the offset (-50..=0) and in the clock offset
     // from the reference (1..=u32::MAX MHz, what a trial reports), so the largest deficit is at one of
     // four corners. It is formed from the differences of the bases and slopes, so a huge clock term common
-    // to both cannot round a small deficit away, plus the rounding the runtime's own subtraction of two
-    // voltages of at most the corners' magnitude can add. A voltage that is not finite, or a hazard
-    // beyond `f64::MAX` at the largest deficit, is unrepresentable: the core is refused rather than left
-    // to produce an infinite source.
+    // to both cannot round a small deficit away, plus the rounding the runtime's own evaluation can add,
+    // bounded by the magnitudes of the terms before they cancel. A voltage that is not finite, or a
+    // hazard beyond `f64::MAX` at the largest deficit, is unrepresentable: the core is refused rather
+    // than left to produce an infinite source.
+    let terms = core.base_v.abs()
+        + core.threshold_v.abs()
+        + 50.0 * core.count_v
+        + (core.clock_v_per_100mhz + core.threshold_clock_v_per_100mhz)
+            * (MAX_MHZ + reference_mhz.abs())
+            / 100.0;
+    let rounding = 8.0 * f64::EPSILON * terms;
     let mut worst = f64::NEG_INFINITY;
     for above in [1.0 - reference_mhz, MAX_MHZ - reference_mhz] {
         for offset in [-50.0, 0.0] {
@@ -198,7 +205,6 @@ fn resolve_core(
             }
             let exact = (core.threshold_v - core.base_v) - core.count_v * offset
                 + (core.threshold_clock_v_per_100mhz - core.clock_v_per_100mhz) * above / 100.0;
-            let rounding = 4.0 * f64::EPSILON * request.abs().max(threshold.abs());
             worst = worst.max(exact + rounding).max(threshold - request);
         }
     }
