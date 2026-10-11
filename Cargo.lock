@@ -652,6 +652,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "togi-defect"
+version = "0.0.0"
+dependencies = [
+ "jiff",
+ "togi-config",
+ "togi-journal",
+ "togi-machine",
+]
+
+[[package]]
 name = "togi-detect"
 version = "0.0.0"
 dependencies = [
@@ -664,6 +674,17 @@ dependencies = [
  "thiserror",
  "togi-command",
  "togi-hostlock",
+ "togi-machine",
+]
+
+[[package]]
+name = "togi-facts"
+version = "0.0.0"
+dependencies = [
+ "jiff",
+ "thiserror",
+ "togi-config",
+ "togi-journal",
  "togi-machine",
 ]
 
@@ -708,10 +729,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "togi-render"
+version = "0.0.0"
+dependencies = [
+ "jiff",
+ "rustix",
+ "serde_json",
+ "tempfile",
+ "togi-journal",
+]
+
+[[package]]
 name = "togi-requests"
 version = "0.0.0"
 dependencies = [
  "togi-machine",
+]
+
+[[package]]
+name = "togi-sim"
+version = "0.0.0"
+dependencies = [
+ "jiff",
+ "proptest",
+ "rand",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "togi-machine",
+ "togi-trialfiles",
 ]
 
 [[package]]

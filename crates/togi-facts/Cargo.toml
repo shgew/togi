@@ -1,0 +1,20 @@
+[package]
+name = "togi-facts"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "Decisive trial outcomes and idle failures of one session, projected from its journal in a single streaming pass"
+
+[dependencies]
+jiff.workspace = true
+thiserror.workspace = true
+togi-journal.workspace = true
+togi-machine.workspace = true
+
+[dev-dependencies]
+togi-config.workspace = true
+
+[lints]
+workspace = true
