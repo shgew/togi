@@ -72,7 +72,7 @@ The `togi-version` crate ports `version.go` ([#696](https://github.com/shgew/tog
 
 The `togi-gocompat` crate reproduces Go's float formatting byte for byte ([#697](https://github.com/shgew/togi/issues/697)), checked against vectors that Go's own output generates. It covers these Go format sites:
 
-- `encoding/json` of a `float64` (journal events, `state.json`, machine and facts files, bench results, caches) maps to `json_f64`.
+- `encoding/json` of a `float64` (journal events, machine and facts files, bench results, caches) maps to `json_f64`.
 - Explicit `(verb, precision)` pairs map to `format_float`: `f` with -1, 0, 1, 2, 3, 4 and 6, and `g` with -1, 6, 9 and 17. The runtime uses them in `internal/config/config.go`, `internal/sim/sim.go`, `internal/journal/payloads.go`, `internal/tuner/r7.go`, `internal/watch/story.go` and `internal/trial/run.go`, and the tools in `tools/bench`, `tools/fit`, `tools/forecast`, `tools/modelcheck`, `tools/stats` and `tools/audit`. Widths and `+` flags are padding and sign handling that the tool ports add.
 - `fmt` `%v` of a scalar float maps to `format_v`. The simulator's seed parts (hazard 6) would need it for float parts, although no caller passes one today. Composite `%v` (slices, maps) belongs to stage 4.
 - `encoding/json` of a `float32` (the PM-table arrays in samples, `internal/machine/pm_table.go`) is not covered and lands with its first consumer.
