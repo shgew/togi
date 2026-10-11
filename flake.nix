@@ -160,7 +160,7 @@
               };
             };
           comparison = import ./nix/comparison.nix {
-            inherit pkgs;
+            inherit pkgs lib;
             package = config.checks.package;
             goSource = lib.fileset.toSource {
               root = ./.;

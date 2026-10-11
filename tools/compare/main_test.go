@@ -20,7 +20,7 @@ func TestSuiteListsEveryRunWithItsEnsembleMember(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
-	if err := listSuite(path, &out, suiteLine); err != nil {
+	if err := listSuite(path, &out); err != nil {
 		t.Fatal(err)
 	}
 	dir := filepath.Dir(path)

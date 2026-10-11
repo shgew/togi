@@ -1,21 +1,49 @@
 {
   pkgs,
+  lib,
   package,
   goSource,
   revision,
 }:
 let
-  tools = package.overrideAttrs {
-    pname = "togi-comparison-tools";
-    src = goSource;
-    goModules = package.goModules;
-    subPackages = [
-      "tools/sim"
-      "tools/compare"
-    ];
-    doCheck = false;
-    postInstall = "";
+  goTool =
+    name: src: subPackage:
+    package.overrideAttrs {
+      pname = "togi-comparison-${name}";
+      inherit src;
+      goModules = package.goModules;
+      subPackages = [ subPackage ];
+      doCheck = false;
+      postInstall = "";
+    };
+  # The simulator's inputs only: a change to a test, a testdata file or another tool leaves the corpus alone.
+  simSource = lib.fileset.toSource {
+    root = ../.;
+    fileset = lib.fileset.difference (lib.fileset.intersection
+      (lib.fileset.unions [
+        ../go.mod
+        ../go.sum
+        ../version.txt
+        ../version.go
+        ../internal
+        ../tools/sim
+        ../tools/trialfacts
+        ../tools/bench/suite.json
+        ../tools/bench/machines
+        ../tools/bench/facts
+      ])
+      (
+        lib.fileset.fromSource (
+          lib.sources.cleanSourceWith {
+            src = ../.;
+            filter = path: type: type != "directory" || builtins.baseNameOf path != "testdata";
+          }
+        )
+      )
+    ) (lib.fileset.fileFilter (f: lib.hasSuffix "_test.go" f.name) ../.);
   };
+  sim = goTool "sim" simSource "tools/sim";
+  compare = goTool "compare" goSource "tools/compare";
   harness = pkgs.runCommand "togi-comparison-harness" { } ''
     install -D -m755 ${../tools/compare/harness.bash} $out/bin/harness
     patchShebangs $out/bin
@@ -24,22 +52,31 @@ let
   shellEnv = {
     nativeBuildInputs = [
       harness
-      tools
+      compare
       pkgs.zstd
     ];
-    COMPARE = "${tools}/bin/compare";
+    COMPARE = "${compare}/bin/compare";
     SOURCE = goSource;
     MANIFESTS = manifests;
   };
 
-  corpus = pkgs.runCommand "togi-comparison-corpus" shellEnv ''
-    cd ${goSource}
-    HARNESS_SIM=${tools}/bin/sim HARNESS_JOBS=$NIX_BUILD_CORES harness corpus $out
-    {
-      echo "go_sources_sha256 $(find . -type f | LC_ALL=C sort | xargs sha256sum | sha256sum | cut -d' ' -f1)"
-      echo "go_version ${pkgs.go_1_27.version}"
-    } > $out/reference
-  '';
+  corpus =
+    pkgs.runCommand "togi-comparison-corpus"
+      {
+        nativeBuildInputs = [
+          harness
+          pkgs.jq
+          pkgs.zstd
+        ];
+      }
+      ''
+        cd ${simSource}
+        HARNESS_SIM=${sim}/bin/sim HARNESS_JOBS=$NIX_BUILD_CORES harness corpus $out
+        {
+          echo "go_sources_sha256 $(find . -type f | LC_ALL=C sort | xargs sha256sum | sha256sum | cut -d' ' -f1)"
+          echo "go_version ${pkgs.go_1_27.version}"
+        } > $out/reference
+      '';
 
   expected = pkgs.runCommand "togi-comparison-expected" (shellEnv // { CORPUS = corpus; }) ''
     HARNESS_JOBS=$NIX_BUILD_CORES harness expect $out
@@ -53,7 +90,7 @@ let
         // {
           CORPUS = corpus;
           EXPECTED = expected;
-          SUBJECT = "${tools}/bin/compare";
+          SUBJECT = "${compare}/bin/compare";
           HARNESS_JOBS = "4";
         }
         // env
@@ -64,7 +101,7 @@ let
       '';
 
   flip = pkgs.writeShellScript "flip-subject" ''
-    ${tools}/bin/compare "$@"
+    ${compare}/bin/compare "$@"
     out=$3
     case $HARNESS_ID in
       fixture/cmd/togi/testdata/events.jsonl)
@@ -95,7 +132,10 @@ in
       touch $out
     '';
 
-    comparison-selftest = verify "selftest" { } "harness check";
+    comparison-selftest = verify "selftest" { } ''
+      harness check
+      echo ${corpus} ${expected} > $out
+    '';
 
     comparison-negative =
       verify "negative"

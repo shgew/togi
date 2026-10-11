@@ -30,12 +30,21 @@ plain() {
     esac
 }
 
+# Each session as tools/bench runs it: its directory, then the simulator flags. A scenario's machine for a seed is the
+# seed's index in its split modulo the machines of the scenario, the path resolved beside the suite file.
+runs() {
+    jq -r '.scenarios[] | . as $s | (if (.machines // [] | length) > 0 then .machines else [.machine // ""] end) as $m
+        | ("dev", "holdout") as $split | ($s[$split] // []) | to_entries[]
+        | "\($s.name)/\($split)-\(.value)\t--seed \(.value) --max-boots 1000"
+        + (if $m[.key % ($m | length)] != "" then " --machine tools/bench/\($m[.key % ($m | length)])" else "" end)
+        + (if $s.replay then " --replay-facts" else "" end)' tools/bench/suite.json
+}
+
 corpus() {
-    local out=$1 runs
-    runs=$("$COMPARE" runs tools/bench/suite.json)
+    local out=$1
     mkdir -p "$out/sessions"
     export HARNESS_SIM HARNESS_OUT=$out
-    printf '%s\n' "$runs" | tr '\t\n' ' \0' | xargs -0 -P "$jobs" -n1 "$self" session
+    runs | tr '\t\n' ' \0' | xargs -0 -P "$jobs" -n1 "$self" session
     for d in "$out"/sessions/*/*; do
         [[ -f $d/events.jsonl.zst ]] || { echo "corpus: no journal in $d" >&2; exit 1; }
     done
@@ -49,6 +58,7 @@ session() {
     # shellcheck disable=SC2086
     "$HARNESS_SIM" $flags --state-dir "$state" >"$state/log" 2>&1 || status=$?
     echo "$status" >"$HARNESS_OUT/sessions/$dir/exit"
+    echo "$flags" >"$HARNESS_OUT/sessions/$dir/flags"
     zstd -q -3 "$state/events.jsonl" -o "$HARNESS_OUT/sessions/$dir/events.jsonl.zst"
     rm -rf "$state"
 }
@@ -81,6 +91,12 @@ coverage() {
     [[ $want == "$have" ]] || { echo "check: expected output and manifests disagree:" >&2; diff <(echo "$want") <(echo "$have") >&2 || true; return 1; }
     have=$(cd "$CORPUS/sessions" && find . -name events.jsonl.zst -printf '%h\n' | sed 's|^\./|suite/|' | LC_ALL=C sort)
     [[ $(echo "$want" | grep '^suite/') == "$have" ]] || { echo "check: corpus and suite manifest disagree:" >&2; diff <(echo "$want" | grep '^suite/') <(echo "$have") >&2 || true; return 1; }
+    local scenario split seed machine flags
+    while IFS=$'\t' read -r scenario split seed machine; do
+        flags=$(<"$CORPUS/sessions/$scenario/$split-$seed/flags")
+        if [[ $machine == - ]]; then [[ $flags != *--machine* ]]; else [[ $flags == *" --machine $machine"* ]]; fi ||
+            { echo "check: corpus ran $scenario/$split-$seed with '$flags', the suite manifest says machine $machine" >&2; return 1; }
+    done <"$MANIFESTS/suite.txt"
     echo "coverage: $(echo "$want" | wc -l) journals"
 }
 

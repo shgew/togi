@@ -24,7 +24,6 @@ import (
 const usage = `usage:
   compare live|history JOURNAL OUTDIR  write OUTDIR/encoded.jsonl and OUTDIR/state.json for JOURNAL
   compare suite SUITE                  print the suite's sessions: scenario, split, seed and machine
-  compare runs SUITE                   print each session's directory and simulator flags, as tools/bench runs them
   compare fixtures ROOT                print each committed testdata JSONL file under ROOT: its kind, path and hash
   compare goldens ROOT                 print the path and hash of each golden file the comparison protects
   compare inputs ROOT                  print the path and hash of the suite file, machines and recorded facts`
@@ -39,9 +38,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	case len(args) == 3 && (args[0] == "live" || args[0] == "history"):
 		err = expect(args[0], args[1], args[2])
 	case len(args) == 2 && args[0] == "suite":
-		err = listSuite(args[1], stdout, suiteLine)
-	case len(args) == 2 && args[0] == "runs":
-		err = listSuite(args[1], stdout, runLine)
+		err = listSuite(args[1], stdout)
 	case len(args) == 2 && args[0] == "fixtures":
 		err = fixtures(args[1], stdout)
 	case len(args) == 2 && args[0] == "goldens":
@@ -113,7 +110,6 @@ type scenario struct {
 	Name     string   `json:"name"`
 	Machine  string   `json:"machine"`
 	Machines []string `json:"machines"`
-	Replay   bool     `json:"replay"`
 	Dev      []uint64 `json:"dev"`
 	Holdout  []uint64 `json:"holdout"`
 }
@@ -121,7 +117,6 @@ type scenario struct {
 type session struct {
 	scenario, split, machine string
 	seed                     uint64
-	replay                   bool
 }
 
 func suiteLine(s session) string {
@@ -132,20 +127,9 @@ func suiteLine(s session) string {
 	return fmt.Sprintf("%s\t%s\t%d\t%s", s.scenario, s.split, s.seed, machine)
 }
 
-func runLine(s session) string {
-	flags := []string{"--seed", fmt.Sprint(s.seed), "--max-boots", "1000"}
-	if s.machine != "" {
-		flags = append(flags, "--machine", s.machine)
-	}
-	if s.replay {
-		flags = append(flags, "--replay-facts")
-	}
-	return fmt.Sprintf("%s/%s-%d\t%s", s.scenario, s.split, s.seed, strings.Join(flags, " "))
-}
-
 // listSuite prints the suite's dev and holdout sessions, sorted, with each machine chosen as tools/bench chooses it:
 // the seed's index in its split modulo the scenario's machine ensemble, the path resolved beside the suite file.
-func listSuite(path string, w io.Writer, format func(session) string) error {
+func listSuite(path string, w io.Writer) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return err
@@ -171,7 +155,7 @@ func listSuite(path string, w io.Writer, format func(session) string) error {
 				if machine != "" && !filepath.IsAbs(machine) {
 					machine = filepath.Join(filepath.Dir(path), machine)
 				}
-				lines = append(lines, format(session{s.Name, group.split, machine, seed, s.Replay}))
+				lines = append(lines, suiteLine(session{s.Name, group.split, machine, seed}))
 			}
 		}
 	}
