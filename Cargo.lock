@@ -672,6 +672,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "togi-carry"
+version = "0.0.0"
+dependencies = [
+ "jiff",
+ "thiserror",
+ "togi-config",
+ "togi-defect",
+ "togi-facts",
+ "togi-journal",
+ "togi-machine",
+]
+
+[[package]]
 name = "togi-command"
 version = "0.0.0"
 dependencies = [
@@ -700,6 +713,22 @@ dependencies = [
  "jiff",
  "togi-config",
  "togi-journal",
+ "togi-machine",
+]
+
+[[package]]
+name = "togi-detect"
+version = "0.0.0"
+dependencies = [
+ "jiff",
+ "nix",
+ "rustix",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "togi-command",
+ "togi-hostlock",
  "togi-machine",
 ]
 
@@ -806,6 +835,22 @@ dependencies = [
  "thiserror",
  "togi-hostlock",
  "togi-machine",
+]
+
+[[package]]
+name = "togi-tool-trialfacts"
+version = "0.0.0"
+dependencies = [
+ "flate2",
+ "jiff",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "togi-facts",
+ "togi-journal",
+ "togi-machine",
+ "togi-sim",
 ]
 
 [[package]]

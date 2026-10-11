@@ -125,6 +125,19 @@ The `togi-sim` crate ports `internal/sim` ([#740](https://github.com/shgew/togi/
 - **Tests.** Every Go test of the package maps to a Rust test or a stated reason (mapping in the pull request). Draw-exact Go tests became properties: the failure share of a few thousand seeded trials within five binomial deviations of `failure_probability`, same seed and history giving the same transcript, retries reproducing the class outcome, unloaded draws keyed by the loaded set, telemetry changing no failure.
 - **Not measured.** Compile and test times against Go, and agent cost.
 
+## Stage 4: `tools/trialfacts` (#744, 2026-10-11)
+
+The `togi-tool-trialfacts` crate ports `tools/trialfacts` ([#744](https://github.com/shgew/togi/issues/744)): 827 lines of library and 1,405 of tests, against Go's 176 and 438. No Go code is removed or changed. It also adds `StateDir::recordings` and `Recording::into_events` to `togi-journal`: every archived journal oldest first, then the live one, which Go's `facts.ReadDir` did over paths.
+
+- **One record, one format.** `TrialFact` serializes to the field names the committed `tools/bench/facts/target.jsonl.gz` uses, so the Rust reader reads that Go-written asset unchanged and the suite's `--replay-facts` scenarios keep their oracle. A test reads all 3,297 records, checks the counts of outcomes, conditions, regimes, phases and rulesets, and checks that every record writes back to the same JSON value as its source line. Differences: a `build.evidence` field the Go extract did not have (absent reads as `None`); `record_only` and the `confirmation` phase survive only for reading the asset, since the Rust journal records neither; `phase` is omitted when the intent names no activity; and a failure outside any trial is `kind: "idle"` with no workload.
+- **Typed, not checked afterwards.** The class is `Class::Trial(TrialClass) | Class::Idle { loaded }`, the outcome is `togi_facts::Decisive` (a pass has no signal, a failure has one), the profile is a `Profile` of one to sixteen offsets in core-id order, loaded cores and requesters are a `CoreSet`. A record that contradicts itself (ruleset differs from its build, a pass with a signal, a failure without one, a regime that is not its workload's, an idle failure naming a workload, an unknown field even inside the context) is a read error naming its line.
+- **Strict file.** `read` takes one record per line from a gzip stream; `{}`, a blank line, two records on one line, trailing bytes after the gzip member, a truncated stream and an empty extract are errors and never a partial result. `write` refuses no facts and a non-finite voltage, writes to a temporary file beside the destination and renames it over, so a failed write leaves the old extract. The bytes are the same for the same facts.
+- **Extraction.** `extract(&StateDir)` folds each journal through `togi_facts::extract`, orders sessions by id and keeps each session's own decisive and idle facts (carried copies belong to the session they came from). A profile with a hole below its highest core, which the extract has no way to say, is refused rather than filled.
+- **Key and replay.** `ProfileClassKey` is `Copy + Hash` (profile and class), with no JSON. `Extracts` owns its cache, keyed by the joined path of the machine file's `facts`, and shares each read as an `Arc`; `replay_facts` keeps decisive trials with a context and feeds `togi_sim::replay::Replay`. Replay needs the machine to declare its BIOS context, as the simulator's documentation says.
+- **Go bugs fixed.** `ProfileClassKey` marshalled JSON into a string and dropped the error; `Read` accepted any JSON value stream and `{}`; a zero-value `Extracts` panicked on its first store. Sample-file telemetry backfill and the older-vocabulary translation are not ported: the Rust journal records the request summary, and no Go journal is read.
+- **Tests.** Every Go test maps to a Rust test or a stated reason (mapping in the pull request).
+- **Not measured.** Compile and test times against Go, and agent cost.
+
 ## Stage 5: `internal/hostlock` (#747, 2026-10-11)
 
 The `togi-hostlock` crate ports `internal/hostlock` ([#747](https://github.com/shgew/togi/issues/747)): 351 lines of library and 594 of tests, against Go's 148 and 400. No Go code is removed or changed. It builds on Linux and macOS only (`#![cfg(unix)]`), and the 20 tests run in 0.02 s under `cargo nextest` on Linux.
@@ -204,12 +217,13 @@ The `togi-defect` crate ports `internal/defect` and the pure part of `internal/s
 
 The `togi-render` crate ports `internal/render`: about 400 lines of library and 1,040 of tests (`tests.rs` plus the inline test modules in `escape.rs` and `output.rs`) against Go's 232 and 380; no Go code is removed or changed. Its 43 tests run in 0.01 s under `cargo nextest` on Linux; `go test -count=1 ./internal/render` reports 0.002 s. What changed against Go, as built:
 
-- **Terminal detection.** Colour follows `std::io::IsTerminal`, not a character-device mode bit, so `/dev/null` is plain (Go coloured it). `JOURNAL_STREAM` is parsed once into a numeric device and inode and compared with `fstat` of the stream; a failed `fstat` is plain. `OutputFacts::detect` takes any `AsFd` and the two environment values, so the binary detects before it wraps the stream in a buffer.
+- **Terminal detection.** Colour follows `std::io::IsTerminal`, not a character-device mode bit, so `/dev/null` is plain (Go coloured it). `JOURNAL_STREAM` is parsed once into a numeric device and inode and compared with `fstat` of the stream; a failed `fstat` only rules out the journald match. `OutputFacts::detect` takes any `AsFd` and the two environment values, so the binary detects before it wraps the stream in a buffer.
 - **Errors.** `Renderer::write_event` writes one line and one newline and returns the `io::Error`; Go's `Log` dropped write errors. The time zone is a required `&TimeZone`, so Go's nil-location panic cannot happen.
 - **Styles.** `style_for` matches the typed `Payload` exhaustively, with no catch-all arm, so a new kind does not compile until it names its style; `hold` is plain.
 - **Streaming.** Escaping and lines are `Display` adapters (`Escaped`, `EventLine`, `StyledText`) that write into the caller's formatter, with no intermediate `String`. `escape_bytes` escapes malformed UTF-8 byte by byte without a lossy decode.
 - **Review findings fixed.** The review found that the style-table test left out several plain cases Go's tests pinned, and that nothing pinned how a hostile diagnostic is logged. The table now covers the session baseline, an unavailable host ranking, a skipped hunt group and a hunt group with probe and held members as plain. A new test pins that logging a diagnostic with terminal controls in its message and detail prints one escaped line, while the journal's message, detail and serialization stay raw. The size figures above were corrected to count all the test code.
 - **Moved out.** `PhaseWord` and the dashboard's IBM437 console folding belong to watch and status; the opaque-event path is gone with the journal's unknown kinds.
+- **Fixed on main's macOS job.** The pty test failed intermittently on macOS: `detect` returned plain whenever the stream's identity could not be converted, and Darwin's `dev_t` is a signed 32-bit value that devfs fills with a per-boot device number, negative on some boots, so a real terminal lost its colour on those machines. Terminal detection no longer depends on the identity, which now only decides the journald match; the test detects on the pty's slave end.
 - **Not measured.** Isolated compile times against Go, rendering throughput and agent cost.
 
 ## Stage 5: `togi-command` (#760, 2026-10-11)
@@ -234,6 +248,19 @@ The `togi-facts` crate ports `internal/facts` ([#751](https://github.com/shgew/t
 - **Review findings fixed.** Eight reviewers found no P0 or P1 defect. Two P2 code defects: a `config.loaded` that changed the session's schema, ruleset or evidence epoch let an own fact's build disagree with its epoch, which a copy then lost because `trial.carried` derives the epoch from the build, so that `config.loaded` is now `FactsError::StampChanged`; and a `failure.carried` skipped the idle gate's condition and core-set checks, which it now applies. Eleven P2 test gaps were closed, so each claimed rule now has a test that fails when it regresses, and the spec's remaining `record_only` promises were removed. A spec finding on the tuner ledger's live-pass backend identity was left to the tuner's evidence pull request.
 - **Not measured.** Isolated compile times against Go, and agent cost.
 
+## Stage 3: `internal/carry` (#752, 2026-10-11)
+
+The `togi-carry` crate ports the selection logic of `internal/carry` ([#752](https://github.com/shgew/togi/issues/752)): 1,185 lines of library and 2,514 of tests, against Go's 737 and 2,399. No Go code is removed or changed. The 51 tests run in 0.04 s under `cargo nextest` on Linux; `go test -count=1 ./internal/carry` reports 0.43 s, most of it file I/O.
+
+- **Pure selection.** `select(chain, boundary, registry, archives)` takes the archive listing newest first, the permanent reset boundary and an `Archives` loader the session implements, and does no I/O of its own. Each source is folded once, in one pass, into a `SourceSummary` (togi-facts' `SessionFacts`, the source's defect exclusions and its seed candidates), read lazily and never when it is behind the boundary or past a `reset --all`. The result is a `PendingCarry`: the sources, the newest source's BIOS context, the merged seeds and the fact candidates, not yet checked against the current BIOS context, epoch or backends.
+- **Resolution.** `PendingCarry::resolve(current, backends, epoch)` selects the eligible facts and seeds from those candidates. Failure points and facts carry only when the newest source recorded the current BIOS context; a pass also needs the current epoch and its workload's current backend identity. `ResolvedCarry` is immutable and builds the `trial.carried`/`failure.carried` copies not already recorded and the `session.carried` commitment; the session appends the copies first and the commitment last, and clears the marker only after the commitment.
+- **Deleted as Go history.** `Prepare` taking a journal and the marker, lock and archive protocol (the journal's), schema translation, `record_only`, historical profile reconstruction, original-archive repair of backend and telemetry, and the in-place `ResolveFacts`.
+- **Go bugs fixed.** `command.reset --all` was ignored by candidate extraction, so a walk revived seeds from before it (T18); zero confirmation keyed only failure and hunt-end seqs, so a rerun citing a failed `trial.end`, `trial.carried` or `failure.carried` was never found (T21); a missing original archive lost a carried zero point, which is now confirmed by construction; `ResolveFacts` deleted passes in place, so a later backend could not restore them; an unguarded read of the first event; candidate and exclusion scans repeated over each source's events.
+- **Tests.** Each Go test maps to a Rust test, to a journal test or is obsolete with its reason in the pull request; the file-protocol tests belong to togi-journal.
+- **Regressions.** None known: no Go code changes, and nothing calls the crate until the session port.
+- **Review findings fixed.** Eight reviewers found no P0 or P1 defect. Code: two `Payload` matches (`settled`, `copied_identity`) used a wildcard arm and now list every variant, and an original read only for its defect decisions was accepted without a `session.start`, which is now an error. Tests: five P2 gaps were closed, so a `reset --all` clearing an in-flight crash point, the machine-core filter of `session.carried`, an unconfirmed zero failure reaching the resolved facts, the copy-forward stop during a defect recheck and the carried telemetry values each have a test that fails when they regress. This log entry had the copies and the commitment in the wrong order and overstated what `PendingCarry` hides. One finding was rejected: a source the listing names but the loader cannot find stays an error during a defect recheck, as it is during the walk.
+- **Not measured.** Isolated compile times against Go, and agent cost.
+
 ## Stage 5: `togi-backend`, `togi-mprime` and `togi-ycruncher` (#764, 2026-10-11)
 
 - **`togi-backend`** is the contract between the trial runner and the stress programs: `Backend::{kind, check, plan, classify}`, `Plan { program, args, inputs, watched }` and `Line`. An empty argv cannot be built (the program is a field of its own), and `inputs` and `watched` hold `FileName`s, validated single path components (no `/`, NUL, `.`, `..` or empty name), so the trial opens them relative to a directory descriptor and none can leave the instance directory. `check_executable` follows symlinks and wants a regular file with any execute bit; `Error::is_missing` and `From<Error> for togi_machine::Error` turn only absence (missing binary, missing or empty Binaries directory, no Zen 5 binary) into `BackendMissing`. A test-only function that spawns a process carries `#[expect(clippy::disallowed_methods)]`: the spawn inventory must reject it, so backends can never gain a spawn.
@@ -242,6 +269,134 @@ The `togi-facts` crate ports `internal/facts` ([#751](https://github.com/shgew/t
 - **Tests.** Every Go unit test of the three packages maps to Rust tests over the Go fixtures read in place, which the Rust flake checks' source set now includes, except the cases that wrote inputs, which no longer apply since the adapters write nothing. Plan outputs are compared whole, and new tests cover discovery order, unrelated entries, matching and non-matching non-UTF-8 names, bare `24-ZN5`, dangling and cyclic symlinks, a directory instead of a file, an unreadable Binaries directory, a missing Zen 5 binary and `FileName` validation. The hardware-tagged Go `TestHardwareWorkloads` has no counterpart here: it runs the workloads through the trial runner and the host lock, so it moves to the `togi-trial` hardware tests (#765).
 - **Measurements.** Against the base `60f6612`, the pull request changes 16 files, adding 2,198 lines and removing 1 (the reworded `docs/spec/workloads.md` sentence); no Go is removed. The 72 tests of the three crates take 0.5 s under nextest; the Go packages' tests take 0.003 s and 0.004 s under `go test`. No regression. Review found 2 P1 and 8 P2 problems. Fixed here: the fixture tests failed in the Nix check, whose source set left out the Go fixtures (both P1); regexes compiled with `expect` in production code; non-UTF-8 binary names dropped before matching, so a matching binary read as missing; an unreadable-directory test that passed when the check succeeded; and in this entry, a missing date and measurements, a claim that the trial already creates inputs exclusively, and a claim that every Go test has a counterpart. Deferred to #765: the compile-only hardware test of #764's Acceptance (two reviewers).
 - **Not measured.** Compile times against Go, and agent cost.
+
+## Stage 5: `togi-detect` (#763, 2026-10-11)
+
+The `togi-detect` crate ports `internal/detect` ([#763](https://github.com/shgew/togi/issues/763)) and implements `togi_machine::Kernel` as `Kernel::new(topology)`, plus `boot_id()`. It runs `journalctl` only through `togi-command` and reads the pstore archive through rustix descriptors.
+
+- **Shape.** `parse` is the one pure MCE parser (`Message` in, `Vec<Mce>` out) with a `CurrentRecord` and an `UnresolvedOwnership` state that keep their own lifetimes (#323), and the retrospective clearing of surplus bank lines stays specified behavior. Cores come from `CpuCoreMap`, built from the topology; a CPU listed twice is an error at construction, and an unknown CPU has no core. `journal` holds the argv builders, the serde row decoding and the one place that turns journalctl's exit status and stderr into `BootMissing`, `CursorMissing`, no match or a failure. `reset` holds the reset kinds, their priority, the 6.16 support rule and the succession proof. `pstore` holds the descriptor walk. `runner` holds the private `Journalctl` trait.
+- **Go bugs fixed.** A cursor read no longer returns a cursor past a row it could not decode: a failed read carries the checks read before the failure and no cursor. The pstore path checked and then reopened by name; the header and the tail now come from one opened descriptor. Go discarded the error of `strconv.Atoi` on the CPU, bank and kernel-version numbers, which its patterns capture as digits only; a value too large for an `int` returns the saturated maximum with a range error, and Go used that number (an overflowing kernel major satisfied `major > 6` and confirmed reset-reason support). The Rust code reads a CPU or bank number that does not fit, and a kernel version too large to represent, as a read failure. Go already rejected a `__REALTIME_TIMESTAMP`, `__MONOTONIC_TIMESTAMP` or `__SEQNUM` that is not a decimal number; Rust also rejects a wall-clock time outside the range of its timestamp type. A `Linux version` line that does not begin with two decimal numbers is ignored, as in Go: it confirms no reset-reason support and is no error. `exec.CommandContext` killed only the direct child; the whole group is killed at the deadline.
+- **Deadline.** The commands of one seam call share one 30 s budget (Go gave each command 30 s, so `reset_reason_after` could take four times that); a command starts with what is left and none starts once it is used up. Output is capped at 64 MiB per stream.
+- **Departures from Go, the port's call.**
+  - Boot ids are validated as 32 hex digits once, and hyphens are removed, so a malformed id is refused before any command.
+  - A non-zero status other than the empty exit 1 is an error. A MESSAGE byte array decodes lossily.
+  - A pstore directory writable by its group or others, an entry owned by neither root nor the caller, a symlinked `dmesg.txt` and a hard-linked one are errors (Go followed symlinks). Candidates are ordered by timestamp then suffix, so equal dump identities keep the earliest chunk deterministically.
+  - `boot_id()` returns the trimmed UUID; macOS reads `sysctl -n kern.bootsessionuuid` through `togi-command` with a 10 s bound.
+- **Tests.** All 32 non-hardware Go detector tests have a Rust equivalent over the same fixtures read in place, and the hardware one compiles only under the `hardware` feature. Where the mapping is not one to one, `TestMalformedKernelMessagesRetainOnlyEarlierEvidence` and `TestCursorReadErrorRetainsMCEEvidencedBeforeMalformedEntry` map to `malformed_messages_keep_only_earlier_evidence` and `a_malformed_entry_keeps_the_earlier_checks_and_no_cursor`, which also assert that a CPU's core attribution survives the malformed row. Additional tests cover the budget, the descriptor checks, the exit classification, the cursor rules, an invalid boot id on a cursor read, the diagnostics of reset and boundary errors, a malformed `__SEQNUM`, reset-reason precedence, the pstore tail at end of file and the directory walk when `d_type` is unknown. Real-process tests are named `real_process_*`: they run a fake `journalctl` program by absolute path that hangs, whose descendant holds the pipes, and that hangs on a later command; each ends at a 500 ms deadline and the process is gone afterwards.
+- **Measurements.** At the frozen review head `0230c2e9` against the base `60f6612e`, the crate adds 4,403 lines and removes none: 1,817 of library, 2,558 of tests (2,470 unit and 88 in the `hardware` integration test) and 28 of manifest. The pull request as a whole changes 23 files, adding 4,437 lines and removing 2 (two rewritten spec paragraphs in `docs/spec/workloads.md`). No Go is removed or changed: `internal/detect` keeps its 736 lines of library and 1,259 of tests until the cutover. The review fixes change these totals; the final diff is the pull request's. No behavior regression was found or intended; the Go-test mapping above is the check.
+- **Review findings.** At the frozen head the review found two P1 defects and several P2 ones, all fixed here. P1: the Rust flake source set left out `internal/detect/testdata`, so the `rust-nextest` check failed in CI; and journal rows decoded from positional arrays as well as objects, so rows are now object-only. P2: a non-numeric CPU or bank number in a status line was ignored instead of a read failure; test gaps (attribution after malformed rows, an invalid boot on a cursor read, diagnostics of reset and boundary errors, `__SEQNUM`, reset-reason precedence, the pstore tail at end of file and the `d_type` fallback); the process tests are now named `real_process_*` and their helpers were cleaned up; and the spec and this entry overstated the validation of kernel versions and the Go-test mapping, now corrected to what the code does.
+- **Not measured.** Compile and test times against Go, and agent cost.
+
+## Stage 2: pilot measurements (#708, 2026-10-11)
+
+The measurements [#637](https://github.com/shgew/togi/issues/637) asks for, taken at commit `8acbf3ca`, when the workspace had 6 crates (`togi-hostlock`, `togi-machine`, `togi-requests`, `togi-trialfiles`, `togi-tuningboot`, `togi-version`; 6,061 lines of Rust with their tests). The Go module had 42 packages. Each decision below uses #637's thresholds: a speed-up is adopted at 20% or more lower median wall time, and the build cap if four builds at once take longer than four in sequence, or swap or run out of memory.
+
+**Host and method.** The development host: 32 threads, 30.9 GiB, Linux; `/tmp` is tmpfs and every build ran there. rustc and cargo 1.99.0 (the pinned stable), mold, go 1.27.1, hyperfine 1.21.0, cargo-nextest 0.9.146; the Go build cache was a private directory and `GOFLAGS=-mod=mod`. A script waited for the one-minute load average to fall below 3 before each hyperfine batch and logged it; other agents shared the host, so every batch started at a load of 2.2 to 3.0 and none was isolated. The warmup run and prepare command are listed with each table. The times are hyperfine's mean ± standard deviation over the runs shown. Two batches broke the rules and were re-run: a Go-test batch that started at load 5.04, and an sccache clean build with a standard deviation of 29.8% (1.928 ± 0.574 s), re-run as the 10-run batch below. Earlier measurements at `fbc8e93c` (3 crates, before #738 rewrote the workspace) were discarded; only the Go clean build was identical either way.
+
+### Clean builds
+
+`hyperfine --runs 5 --warmup 1 --prepare 'cargo clean'` (Rust, start load 2.78) and `--prepare 'go clean -cache'` (Go, start load 2.80):
+
+| Command | Mean ± sd [s] | Min [s] | Max [s] |
+|:---|---:|---:|---:|
+| `cargo build --workspace --locked` | 1.847 ± 0.015 | 1.823 | 1.860 |
+| `cargo build --workspace --release --locked` | 1.966 ± 0.038 | 1.915 | 2.017 |
+| `cargo build --workspace --all-targets --locked` | 2.820 ± 0.049 | 2.760 | 2.893 |
+| `go build ./...` | 3.006 ± 0.036 | 2.968 | 3.048 |
+| `go test -count=1 -run '^$' ./...` (compiles every test) | 3.941 ± 0.014 | 3.929 | 3.959 |
+
+These are not like for like: Go compiled the whole module (about 52,000 lines of library and 75,000 of tests, counted on an older base, in 42 packages) and Rust 6,061 lines in 6 crates. 
+
+### The edit loop
+
+`hyperfine --runs 10 --warmup 2`, preparing each run by rewriting one line at the end of the crate's `lib.rs` (or of a Go file of the package) to a fresh timestamp; start loads 2.77 to 2.88 (listed per row):
+
+| Crate / package (start load Rust, Go) | `cargo check -p X --all-targets --locked` | `cargo nextest run -p X --locked` | `go build ./internal/P` | `go test ./internal/P` |
+|:---|---:|---:|---:|---:|
+| `togi-tuningboot` / `tuningboot` (2.88, 2.77) | 89.9 ± 2.3 ms | 370.6 ± 10.6 ms | 27.0 ± 1.0 ms | 108.1 ± 2.5 ms |
+| `togi-hostlock` / `hostlock` (2.77, 2.84) | 73.0 ± 3.1 ms | 240.9 ± 5.4 ms | 32.6 ± 1.0 ms | 121.1 ± 3.5 ms |
+| `togi-machine` / `machine` (2.77, 2.82) | 226.1 ± 7.6 ms | 684.9 ± 19.5 ms | 46.0 ± 1.6 ms | 273.9 ± 7.2 ms |
+
+By mean, `cargo check` takes 2.2 to 4.9 times a Go build, and `cargo nextest` 2.0 to 3.4 times a Go test. The Go packages are larger or smaller than the crates they correspond to, so this is not like for like either: the Rust loop is slower on togi today.
+
+### Speed-ups, on `togi-machine`
+
+The same edit loop (10 runs, warmup 2) and a clean `cargo build --workspace --all-targets --locked` (5 runs, warmup 1, prepare `rm -rf` of the variant's target directory) in a second copy of the tree, each variant with its own `CARGO_TARGET_DIR`. The nightly toolchain was `rust-bin.nightly.latest.minimal` from the flake's rust-overlay, rustc 1.101.0-nightly of 2026-10-10; the flag went in `CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-arg=-fuse-ld=mold -Zthreads=0"`. Each cell is the median, with the mean ± sd in parentheses (ms; clean in s). Start loads are 2.23 to 3.0:
+
+| Variant | check (10) | nextest (10) | clean debug all-targets (5) |
+|:---|---:|---:|---:|
+| stable (baseline; loads 2.23, 2.86) | 235.0 (236.1 ± 8.9) | 686.8 (685.7 ± 17.8) | 2.834 (2.829 ± 0.050) |
+| stable, `CARGO_INCREMENTAL=0` (control for sccache; loads 2.76, 2.87) | 227.3 (230.0 ± 7.1) | 671.5 (669.2 ± 9.1) | 2.804 (2.827 ± 0.068) |
+| nightly, no flag (control; loads 2.88, 2.83) | 236.9 (238.9 ± 5.0) | 699.6 (696.8 ± 15.2) | 2.929 (2.924 ± 0.029) |
+| **nightly `-Zthreads=0`** (loads 2.90, 2.99) | **130.0 (129.4 ± 6.2)** | **447.1 (450.5 ± 13.9)** | **1.997 (1.998 ± 0.024)** |
+| change against stable | −44.7% | −34.9% | −29.5% |
+| change against nightly with no flag | −45.1% | −36.1% | −31.8% |
+| sccache 0.18.0, `RUSTC_WRAPPER=sccache`, `CARGO_INCREMENTAL=0` (load 2.96) | 225.9 (227.2 ± 3.1) | 676.4 (679.7 ± 17.2) | see below |
+| change against stable | −3.9% | −1.5% | |
+
+sccache's clean builds, each batch's start load 2.83 to 2.88:
+
+| Batch | Without sccache | With sccache | Change |
+|:---|---:|---:|---:|
+| clean debug all-targets, cache warm from another directory (10 runs, warmup 2) | 2.783 ± 0.046 s | 1.645 ± 0.030 s | −41.1% on medians (2.782 s, 1.639 s) |
+| clean release, cache warm (5 runs, warmup 1) | 1.937 ± 0.030 s | 1.021 ± 0.013 s | −47.1% on medians |
+| clean debug all-targets, first build on a cold cache (5 runs, warmup 0; load 2.85) | 2.829 ± 0.050 s (baseline above) | 3.217 ± 0.054 s | +14.1% on medians |
+
+`-Zthreads=0` about doubles user CPU (clean build: 27.7 s of user time against 14.1 s). The cargo job count was swept on the clean debug all-targets build (5 runs, warmup 1, start load 2.83; mean ± sd): `-j1` 14.113 ± 0.047 s, `-j2` 7.376 ± 0.067 s, `-j4` 4.410 ± 0.049 s, `-j8` 2.793 ± 0.038 s, `-j16` 2.764 ± 0.102 s, `-j32` (the default) 2.778 ± 0.061 s. Capping the jobs of a single build gains nothing.
+
+### Concurrent heavy jobs
+
+N copies of the tree in separate directories, all started at once; hyperfine `--runs 5 --warmup 1`, preparing each run by deleting every copy's `target` directory (Rust); the wall time is the slowest copy's. "4 in sequence" runs four one-copy jobs one after another. Start loads 2.76 to 2.98. Mean ± sd [s]:
+
+| Workload | N=1 | N=2 | N=3 | N=4 | 4 in sequence |
+|:---|---:|---:|---:|---:|---:|
+| clean `cargo nextest run --workspace --locked --profile ci` | 3.092 ± 0.122 | 3.599 ± 0.061 | 4.166 ± 0.050 | 4.847 ± 0.050 | 11.842 ± 0.044 |
+| clean `cargo build --workspace --all-targets --locked` | 2.759 ± 0.019 | | | 4.643 ± 0.043 | 10.988 ± 0.044 |
+| clean `cargo build --workspace --release --locked` | 1.911 ± 0.019 | | | 3.074 ± 0.041 | 7.857 ± 0.042 |
+| `go test -count=1 ./...`, warm cache | 5.366 ± 0.097 | 8.692 ± 0.120 | 12.296 ± 0.151 | 15.730 ± 0.173 | 21.887 ± 0.412 |
+
+Four clean nextest jobs with `CARGO_BUILD_JOBS=8` took 4.823 ± 0.083 s (4.847 s without), and with the nightly flag 5.656 ± 0.244 s (medians 5.527 s and 4.870 s), against 2.131 ± 0.025 s for one job with the flag.
+
+`just gate` was run as N clones at once, each in its own directory with one unique comment added to a Go file so Nix rebuilt rather than reused the result (start loads 2.78 to 2.99); the table is the slowest job's wall time per repetition, all jobs exited 0, and the gate is today's (no comparison, no guard):
+
+| N | Runs [s] | Mean [s] |
+|---:|:---|---:|
+| 1 | 52.2, 51.9, 52.9, 58.3, 59.0 | 54.8 |
+| 2 | 58.0, 68.2, 67.6, 68.2, 67.3 | 65.9 |
+| 3 | 65.6, 80.0, 78.1, 79.0, 79.8 | 76.5 |
+| 4 | 93.6, 93.5, 92.3, 91.8 (the fifth repetition was cut off) | 92.8 |
+
+Per-job slowdown against N=1, from the means: gate 1.20, 1.40, 1.69 at N=2, 3, 4; `go test` 1.62, 2.29, 2.93; clean nextest 1.16, 1.35, 1.57. Four `go test` jobs together finished in 15.730 s against 21.887 s in sequence. Memory never ran short: `MemAvailable` fell no lower than 13.5 GiB of the 30.9 GiB (during four gate jobs). The memory counters are host-wide: swap in use grew by up to 0.4 GiB during the cargo jobs, up to 2.5 GiB during four `go test` jobs and up to 1.1 GiB during the gate, while other processes already held 7.1 to 13.0 GiB of swap when the jobs started. Host-wide counters cannot say whose pages moved, so the growth is not attributed to these jobs or to others. No test failed.
+
+### #627's limit
+
+Taken from `gh run list --workflow check.yml --branch main --event push` and `gh run view --json jobs`, for the last ten completed `main` runs (runs 38156387024, 38154629353, 38154014737, 38152528799, 38149653705, 38146522451, 38145539248, 38145163265, 38144243144 and 38143827873; Ubuntu jobs only; duration is `completedAt − startedAt`). The slowest Linux job of each run: 34, 38, 36, 35, 39, 39, 32, 40, 33 and 147 s. **The median is 37.0 s.** The `package` job's log shows the cache use: in nine of the ten runs it copied the `togi` output from the Cachix cache, and in the 147 s run it built `togi` and its Go modules. Over the 99 completed runs of every event from run 38080679799 to run 38145254993, the median slowest Linux job is 113 s (p90 175 s by nearest rank, max 195 s): 129 s for the 77 pull-request runs and 34 s for the 22 `main` runs. The macOS job, which is excluded, took a median of 312 s over the ten `main` runs (210 to 343 s). In the same 99 runs, counting the jobs that succeeded, the six Rust jobs (`rust-clippy`, `rust-nextest`, `rust-doc`, `rust-fmt`, `rust-deny`, `rust-shear`) took a median of 25 to 27 s when the cache hit (60 s or less: clippy 26 s over 54 runs, nextest 25 s over 50, doc 25 s over 54, fmt and deny 27 s over 63 each, shear 26 s over 62), and cold (over 60 s) a median of 69 s for clippy (9 runs, max 102 s), 70 s for nextest (13 runs, max 129 s) and 70 s for doc (9 runs, max 101 s); fmt, deny and shear were never cold (max 55, 52 and 57 s). A cold Rust job is below the cold Go `package` job (over 60 s: median 143.5 s over 50 runs, max 155 s). ADR 0058 deleted the comparison job this limit was to shard, so nothing consumes the limit now.
+
+### Go `Forecast` cost, a performance reference for the tuner's forecast (G6)
+
+The tuner's `Forecast(events)` replays the whole prefix from `New()` once for the base and once more for each premise branch, so one call costs (1 + branches) folds of the prefix and a session's calls cost quadratic time. This is the Go figure the Rust `forecast`, which copies the folded state per premise and never iterates events, is measured against; Go equality is not required.
+
+- **Session.** `go run ./tools/bench --split all --keep DIR` over the suite at `8acbf3ca` kept 220 journals. The longest is `target-r7-request-gap`, holdout seed 110: 40,592 events and 2,266 trial intents. (The stage 0 session, `flat-hazard` seed 102, is 27,879 events on this commit.)
+- **Command.** A throwaway program kept outside the repository read the journal with `journal.Read`, timed three full `tuner.New()` plus `journal.Replay` folds, then, for 800 prefix lengths drawn from a PCG(1, 2) stream and sorted, timed `Forecast(events[:p])` and the fold of that prefix alone. One process, one batch, one run per prefix; the process took 4.62 s of wall time, 5.83 s of user time and 69.1 MiB at peak. The load average was 4.67 when it started and 4.45 when it ended, above the load-3 rule, because the suite had just run on the same host.
+- **Full fold:** 7.75, 7.86 and 7.05 ms, 191, 194 and 174 ns per event.
+- **`Forecast` per prefix, 800 prefixes:** mean 3.86 ms (standard error 0.23 ms), median 1.92 ms, min 0.004 ms, max 39.5 ms; the mean over the last tenth of the session is 15.9 ms (88 prefixes). The fold of the same prefixes averaged 1.87 ms (max 8.2 ms); `Forecast` averaged 2.02 times its fold. Branches per call: median 0, maximum 5.
+- **Whole-session cost.** Calling `Forecast` at every prefix would cost 40,592 × 3.86 ms ≈ 157 s of one core (standard error ≈ 9 s, a sampling estimate). The dashboard calls it once per refresh on the full journal; that call was not timed. The nearest sampled figures are the last tenth's mean, 15.9 ms over 88 prefixes, and the largest sampled call, 39.5 ms at 39,600 events.
+
+### Decisions
+
+- **Nightly `-Zthreads=0`: adopt, as an opt-in dev shell only.** It clears the threshold on all three metrics against stable (−44.7%, −34.9%, −29.5%). CI and the package stay on stable, and the shell is for a host where it is the only heavy job: the flag about doubles CPU use and with four jobs at once it ran slower than stable (5.527 s against 4.870 s median). The change needs `flake.nix`, so it is filed as [#791](https://github.com/shgew/togi/issues/791) under #637.
+- **sccache: adopt for a clean build in a fresh worktree and for release builds, not for the edit loop.** Clean debug builds drop 41.1% and release builds 47.1% with a warm cache; the loop moves 3.9% and 1.5%, below the threshold, because sccache cannot cache incremental builds and the workspace crates. `CARGO_INCREMENTAL=0` by itself changes nothing in the loop. The first build on a cold cache costs 14.1% more. Filed as [#792](https://github.com/shgew/togi/issues/792).
+- **Build cap: reject.** Four builds at once finish in 4.643 s (debug all-targets), 3.074 s (release) and 4.847 s (nextest), against 10.988, 7.857 and 11.842 s in sequence, and `MemAvailable` never fell below 13.5 GiB; the rejection rests on these two. The swap condition is not established either way: host-wide swap grew by at most 0.4 GiB during the cargo jobs, and host-wide counters cannot attribute it. Capping a single build's jobs also gains nothing (`-j8` to `-j32` are within noise).
+- **Heavy-job cap: 2 concurrent (cargo build or nextest, VM tests, bench), unchanged from [ADR 0057](adr/0057-running-the-rust-migration-unattended.md).** The rule used here is the largest N whose per-job slowdown on the heaviest measured workload, `go test`, stays at or under 2 times, with no out-of-memory. `go test` slows 1.62 times at N=2, 2.29 times at N=3 and 2.93 times at N=4; the gate's 1.20, 1.40 and 1.69 and the cargo jobs' 1.16, 1.35 and 1.57 would allow 4, but a host runs a mix, and every mix with a Go test has to hold the 2. VM tests and bench were not measured.
+
+### Limits
+
+- The workspace is tiny: 6 crates, a clean build of under 3 s, and incremental builds of 0.07 to 0.7 s. Ratios here do not carry to the full port; the speed-ups especially will be measured again when the workspace is several times larger, and `-Zthreads=0` may gain more or less.
+- Not like for like against Go: the Go module is about 20 times larger in lines (52,000 library and 75,000 test lines on an older base, against 6,061 of Rust), in 42 packages against 6 crates.
+- One host, with `/tmp` on tmpfs, so disk speed is not in any figure. Other agents shared the host, so no run is isolated: starts at load 2.2 to 3.0, and the end-of-batch loads, which the batch itself raised (up to 95 after four concurrent `go test` jobs), are in the raw data, not shown. #637 asks for isolated loops with no sibling load; these runs do not meet that, and the re-run with no sibling load is [#796](https://github.com/shgew/togi/issues/796).
+- hyperfine ran commands through a shell, and the prepare step was a shell script. The nightly toolchain was a single dated snapshot (2026-10-10), and sccache a single version.
+- Run counts are 5 or 10, so every standard deviation is a small-sample estimate. The gate's fifth four-job repetition was cut off.
+- Not measured: bench concurrency, VM tests, `just gate` in sequence, any build on macOS, any run on a GitHub runner, and agent cost. The `Forecast` probe is one process on one session at a load above 3, and its whole-session figure is a sampling estimate, not a run of the call at every prefix.
 
 ## Stage 5: `togi-trial` (#765, 2026-10-11)
 
