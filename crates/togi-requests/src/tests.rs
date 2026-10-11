@@ -198,3 +198,22 @@ fn top_is_the_highest_request() {
     assert_eq!(top(&per_core(&[(3, 1.2), (1, 1.4), (7, 1.3)])), Some(1.4));
     assert_eq!(top(&per_core(&[(0, 1.4), (1, 1.4)])), Some(1.4));
 }
+
+#[test]
+fn summarize_skips_samples_with_a_non_finite_lane() {
+    let valid = |ms: i64| sample(ms, &[(0, 1.1), (1, 1.2)], &[(0, 5000), (1, 5000)]);
+    let broken = |ms: i64, bad: f32| sample(ms, &[(0, 1.1), (1, bad)], &[(0, 5000), (1, 5000)]);
+    let finite_only = |count: i64| (0..count).map(|index| valid(WARMUP_MS + index * 1000));
+    let noisy = |count: i64| {
+        finite_only(count)
+            .chain([f32::NAN, f32::INFINITY, f32::NEG_INFINITY].map(|bad| broken(WARMUP_MS, bad)))
+            .collect::<Vec<_>>()
+    };
+    let min = i64::try_from(MIN_SAMPLES).unwrap();
+    assert!(summarize(noisy(min - 1), cores(&[0, 1]), ccd_of).is_none());
+    let got = summarize(noisy(min), cores(&[0, 1]), ccd_of).unwrap();
+    assert_eq!(got, summarize(finite_only(min), cores(&[0, 1]), ccd_of).unwrap());
+    assert!(got.requests.iter().all(|(_, request)| request.is_finite()));
+    let unloaded = broken(WARMUP_MS, f32::NAN);
+    assert!(summarize(finite_only(min).chain([unloaded]), cores(&[0]), ccd_of).is_some());
+}

@@ -2,8 +2,9 @@
 //! request. Both CCDs share one core voltage, and the highest request among the loaded cores sets
 //! it.
 //!
-//! Inputs are finite by construction: samples arrive through serde_json, which cannot encode
-//! NaN or infinity, so `counts`, `groups` and `top` need no NaN handling.
+//! [`summarize`] skips a sample whose loaded-core voltage lanes are not all finite, so the
+//! requests it returns are finite. [`groups`], [`top`] and [`counts`] take finite inputs, which
+//! come from `summarize` or arithmetic on them.
 
 use std::collections::BTreeMap;
 
@@ -50,6 +51,12 @@ pub fn summarize(
         let Some(table) = &sample.pm_table else {
             continue;
         };
+        if !cores
+            .iter()
+            .all(|core| table.voltage_request_v[core.index()].is_finite())
+        {
+            continue;
+        }
         for mhz in per_ccd.values_mut() {
             mhz.clear();
         }
@@ -83,15 +90,18 @@ pub fn summarize(
     }
     for (ccd, mut mhz) in clocks {
         if mhz.len() >= MIN_SAMPLES {
-            telemetry.ccd_mhz.insert(ccd, to_i64(median(&mut mhz).round()));
+            telemetry
+                .ccd_mhz
+                .insert(ccd, to_i64(median(&mut mhz).round()));
         }
     }
     Some(telemetry)
 }
 
 /// Orders cores by request, highest first. Each group holds the highest remaining core and every
-/// remaining core within [`TIE_V`] of it.
+/// remaining core within [`TIE_V`] of it. Every request must be finite.
 pub fn groups(requests: &PerCore<f64>) -> Vec<CoreSet> {
+    debug_assert!(requests.iter().all(|(_, request)| request.is_finite()));
     let mut remaining: Vec<(CoreId, f64)> = requests.iter().collect();
     remaining.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
     let mut groups = Vec::new();
@@ -109,11 +119,15 @@ pub fn groups(requests: &PerCore<f64>) -> Vec<CoreSet> {
 }
 
 /// The counts shallower that raise a request from `v` to at least `target`, and at least one.
+/// Both must be finite.
 pub fn counts(v: f64, target: f64) -> i64 {
+    debug_assert!(v.is_finite() && target.is_finite());
     to_i64(((target - v) / VOLTS_PER_COUNT - COUNT_ROUNDING_TOLERANCE).ceil()).max(1)
 }
 
+/// The highest request. Every request must be finite.
 pub fn top(requests: &PerCore<f64>) -> Option<f64> {
+    debug_assert!(requests.iter().all(|(_, request)| request.is_finite()));
     requests.iter().map(|(_, request)| request).reduce(f64::max)
 }
 

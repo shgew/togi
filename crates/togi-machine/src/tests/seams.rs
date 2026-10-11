@@ -1,4 +1,6 @@
 use crate::*;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 #[test]
@@ -223,4 +225,74 @@ fn errors_wrap_external_causes() {
     ));
     assert_eq!(error.to_string(), "disk gone");
     assert_eq!(Error::Crashed.to_string(), "the simulated machine crashed");
+}
+
+fn counter() -> (Arc<AtomicUsize>, impl Fn() -> Box<dyn FnOnce() + Send> + 'static) {
+    let count = Arc::new(AtomicUsize::new(0));
+    let handle = Arc::clone(&count);
+    (count, move || {
+        let count = Arc::clone(&handle);
+        Box::new(move || {
+            count.fetch_add(1, Ordering::SeqCst);
+        })
+    })
+}
+
+#[test]
+fn on_cancel_fires_once() {
+    let token = CancellationToken::new();
+    let (count, callback) = counter();
+    let guard = token.on_cancel(callback());
+    assert_eq!(count.load(Ordering::SeqCst), 0);
+    token.cancel();
+    token.cancel();
+    assert_eq!(count.load(Ordering::SeqCst), 1);
+    drop(guard);
+    assert_eq!(count.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn on_cancel_fires_immediately_when_already_cancelled() {
+    let token = CancellationToken::new();
+    token.cancel();
+    let (count, callback) = counter();
+    let _guard = token.on_cancel(callback());
+    assert_eq!(count.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn ancestor_cancellation_fires_the_childs_callback() {
+    let parent = CancellationToken::new();
+    let child = parent.child_token();
+    let (count, callback) = counter();
+    let _guard = child.on_cancel(callback());
+    drop(child);
+    parent.cancel();
+    assert_eq!(count.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn dropped_guard_never_fires() {
+    let token = CancellationToken::new();
+    let (count, callback) = counter();
+    drop(token.on_cancel(callback()));
+    token.cancel();
+    assert_eq!(count.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn callbacks_may_register_and_cancel_without_deadlock() {
+    let token = CancellationToken::new();
+    let (count, callback) = counter();
+    let inner = token.clone();
+    let nested = Arc::new(std::sync::Mutex::new(None));
+    let stash = Arc::clone(&nested);
+    let late = callback();
+    let _guard = token.on_cancel(move || {
+        inner.cancel();
+        *stash.lock().unwrap() = Some(inner.on_cancel(late));
+    });
+    token.cancel();
+    assert_eq!(count.load(Ordering::SeqCst), 1);
+    assert!(nested.lock().unwrap().is_some());
 }

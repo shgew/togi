@@ -11,7 +11,7 @@ mod topology;
 mod vocab;
 mod workloads;
 
-pub use cancellation::CancellationToken;
+pub use cancellation::{CancellationToken, OnCancel};
 pub use core_set::CoreSet;
 pub use error::{Error, Partial};
 pub use ids::{BootId, KernelCursor};
