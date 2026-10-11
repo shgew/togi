@@ -10,7 +10,8 @@ use std::time::Duration;
 use test_case::test_case;
 use togi_backend::{Backend, Line, Plan, Ready};
 use togi_machine::{
-    CancellationToken, CpuId, LoadSchedule, PmTable, PmTableReader, Regime, Signal, Workload,
+    CancellationToken, CpuId, LoadSchedule, Partial, PmTable, PmTableReader, Regime, Signal,
+    Stopped, TrialSpec, Workload,
 };
 use tokio::time::Instant;
 
@@ -27,7 +28,7 @@ use crate::os::{ExitInfo, GroupSignal, LaunchFailure, Os, Systemd};
 use crate::procfs::{ProcError, ScopeProcess, Thread, Threads, Usage};
 use crate::runner::Backends;
 use crate::samples::{Open, Storage};
-use crate::supervisor::{Env, TrialCommand, start};
+use crate::supervisor::{Env, Handle, TrialCommand, start};
 use crate::testing::TestBackend;
 use crate::timing::Timing;
 
@@ -995,18 +996,80 @@ async fn an_ownership_failure_of_a_later_instance_rolls_the_earlier_one_back() {
 /// A preparation that blocks on the preparation thread, as a stuck filesystem write does, the
 /// first time it reaches `step`, until released.
 struct BlockedPreparation {
-    entered: Receiver<()>,
+    entered: Arc<tokio::sync::Notify>,
     release: Sender<()>,
 }
 
+impl BlockedPreparation {
+    /// Whether the preparation thread entered the step within `bound` of real time. The held
+    /// clock keeps paused time from jumping past a thread that runs in real time.
+    async fn entered(&self, bound: Duration) -> bool {
+        let _clock = crate::join::ClockHold::new(bound);
+        tokio::time::timeout(bound, self.entered.notified())
+            .await
+            .is_ok()
+    }
+
+    /// Starts `spec`, cancelling the start once the preparation entered the step or `bound` of
+    /// real time passed without it; `None` is the entry wait that the start outlasted.
+    async fn start_cancelled_on_entry(
+        &self,
+        rig: &Rig,
+        spec: TrialSpec,
+        bound: Duration,
+    ) -> (Result<Handle, Partial<Option<Stopped>>>, Option<bool>) {
+        let cancel = CancellationToken::new();
+        let start = rig.start_with(&cancel, spec);
+        let entry = self.entered(bound);
+        tokio::pin!(start, entry);
+        let mut entered = None;
+        loop {
+            tokio::select! {
+                result = &mut start => return (result, entered),
+                seen = &mut entry, if entered.is_none() => {
+                    entered = Some(seen);
+                    cancel.cancel();
+                }
+            }
+        }
+    }
+}
+
+/// Releases the blocked preparation if the operation it guards outlives `bound` of real time, so
+/// a regression ends in a failed assertion instead of a hang. Dropping it ends the watch.
+struct WallBound {
+    fired: Arc<AtomicBool>,
+    _done: Sender<()>,
+}
+
+impl WallBound {
+    fn new(release: Sender<()>, bound: Duration) -> Self {
+        let fired = Arc::new(AtomicBool::new(false));
+        let (done, finished) = channel::<()>();
+        let flag = Arc::clone(&fired);
+        std::thread::spawn(move || {
+            if finished.recv_timeout(bound) == Err(std::sync::mpsc::RecvTimeoutError::Timeout) {
+                flag.store(true, Ordering::Release);
+                let _ = release.send(());
+            }
+        });
+        Self { fired, _done: done }
+    }
+
+    fn fired(&self) -> bool {
+        self.fired.load(Ordering::Acquire)
+    }
+}
+
 fn blocked_preparation(step: &'static str, prepare: Duration) -> (Rig, BlockedPreparation) {
-    let (entered_tx, entered) = channel();
+    let entered = Arc::new(tokio::sync::Notify::new());
     let (release, release_rx) = channel();
     let release_rx = Mutex::new(release_rx);
     let first = AtomicBool::new(true);
+    let signal = Arc::clone(&entered);
     let hook = move |name: &str| {
         if name == step && first.swap(false, Ordering::AcqRel) {
-            let _ = entered_tx.send(());
+            signal.notify_one();
             let _ = release_rx.lock().unwrap().recv();
         }
     };
@@ -1036,7 +1099,10 @@ async fn a_preparation_stuck_past_its_budget_ends_the_start_with_a_typed_error()
             "{:?}",
             partial.error
         );
-        blocked.entered.try_recv().unwrap();
+        assert!(
+            blocked.entered(secs(5)).await,
+            "the preparation never entered"
+        );
         assert!(rig.fake.launches().is_empty());
         blocked.release.send(()).unwrap();
     })
@@ -1047,26 +1113,61 @@ async fn a_preparation_stuck_past_its_budget_ends_the_start_with_a_typed_error()
 async fn cancelling_while_a_preparation_is_stuck_ends_the_start_without_waiting_for_it() {
     local(async {
         let (rig, blocked) = blocked_preparation("the trial directory", secs(30));
-        let cancel = CancellationToken::new();
-        let began = std::time::Instant::now();
-        let (result, ()) = tokio::join!(
-            rig.start_with(&cancel, spec(Regime::R1, &[0], secs(5))),
-            async {
-                while blocked.entered.try_recv().is_err() {
-                    tokio::task::yield_now().await;
-                }
-                cancel.cancel();
-            }
+        let watch = WallBound::new(blocked.release.clone(), secs(30));
+        let (result, entered) = blocked
+            .start_cancelled_on_entry(&rig, spec(Regime::R1, &[0], secs(5)), secs(10))
+            .await;
+        assert!(
+            !watch.fired(),
+            "the cancelled start waited for the stuck thread"
         );
+        assert_eq!(entered, Some(true), "the preparation never entered");
         let partial = result.err().unwrap();
         assert!(matches!(partial.error, togi_machine::Error::Cancelled));
         assert!(partial.value.is_some());
-        assert!(
-            began.elapsed() < secs(10),
-            "the stuck thread was not waited for"
-        );
         assert!(rig.fake.launches().is_empty());
         blocked.release.send(()).unwrap();
+    })
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_entry_that_never_comes_is_a_finite_failure() {
+    local(async {
+        let (rig, blocked) = blocked_preparation("a step nothing runs", secs(30));
+        let watch = WallBound::new(blocked.release.clone(), secs(30));
+        let (result, entered) = blocked
+            .start_cancelled_on_entry(&rig, spec(Regime::R1, &[0], secs(1)), ms(50))
+            .await;
+        assert!(!watch.fired());
+        assert_eq!(entered, None, "the start ended before the entry wait did");
+        let handle = result.unwrap();
+        assert!(
+            !blocked.entered(ms(50)).await,
+            "an entry was reported for a step that never ran"
+        );
+        let run = finish(&handle).await;
+        assert!(run.finished.errors.is_empty(), "{:?}", run.finished.errors);
+    })
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_start_refused_before_preparing_ends_the_entry_wait_without_an_entry() {
+    local(async {
+        let (rig, blocked) = blocked_preparation("the trial directory", secs(30));
+        let watch = WallBound::new(blocked.release.clone(), secs(30));
+        let (result, entered) = blocked
+            .start_cancelled_on_entry(&rig, spec(Regime::R1, &[0], Duration::MAX), secs(10))
+            .await;
+        assert!(!watch.fired(), "the refused start did not end");
+        assert_eq!(entered, None);
+        let partial = result.err().unwrap();
+        assert!(matches!(
+            crate_error(&partial.error),
+            Some(Error::Invalid(InvalidTrial::UnrepresentableDuration))
+        ));
+        assert_eq!(rig.fake.process_count(), 0);
     })
     .await;
 }

@@ -400,6 +400,53 @@ async fn blocked_samples_setup_keeps_the_load_schedule_and_the_end_waits_for_the
     .await;
 }
 
+fn open_fails_when_released(
+    gate: Receiver<()>,
+    entered: Arc<tokio::sync::Notify>,
+) -> Rc<dyn Fn() -> Result<Open, StorageError>> {
+    let slot = std::cell::RefCell::new(Some(gate));
+    Rc::new(move || {
+        let gate = slot.borrow_mut().take().unwrap();
+        let entered = Arc::clone(&entered);
+        Ok(Box::new(move || {
+            entered.notify_one();
+            let _ = gate.recv();
+            Err(StorageError::Create(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "injected delayed open failure",
+            )))
+        }) as Open)
+    })
+}
+
+async fn notified_without_advancing(notify: &tokio::sync::Notify) {
+    let _clock = crate::join::ClockHold::new(secs(5));
+    tokio::time::timeout(secs(5), notify.notified())
+        .await
+        .expect("the writer did not report its transition");
+}
+
+struct TeardownNotified {
+    file: std::fs::File,
+    completed: Arc<tokio::sync::Notify>,
+}
+
+impl std::io::Write for TeardownNotified {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        std::io::Write::write(&mut self.file, bytes)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        std::io::Write::flush(&mut self.file)
+    }
+}
+
+impl Drop for TeardownNotified {
+    fn drop(&mut self) {
+        self.completed.notify_one();
+    }
+}
+
 fn open_fails_after(delay: Duration) -> Rc<dyn Fn() -> Result<Open, StorageError>> {
     Rc::new(move || {
         Ok(Box::new(move || {
@@ -440,9 +487,11 @@ async fn an_open_failure_before_the_deadline_ends_the_trial_when_it_happens() {
     .await;
 }
 
-#[tokio::test]
-async fn an_open_failure_after_the_deadline_neither_delays_teardown_nor_is_lost() {
+#[tokio::test(start_paused = true)]
+async fn samples_setup_blocked_past_the_join_bound_reports_timeout_after_teardown() {
     local(async {
+        let (release, gate) = channel();
+        let entered = Arc::new(tokio::sync::Notify::new());
         let timing = Timing {
             sample: Duration::from_millis(50),
             writer_join: Duration::from_millis(200),
@@ -450,30 +499,87 @@ async fn an_open_failure_after_the_deadline_neither_delays_teardown_nor_is_lost(
         };
         let duration = Duration::from_millis(400);
         let rig = rig_edit(TestBackend::new("/bin/true"), timing, |env| {
-            env.storage = Some(open_fails_after(Duration::from_millis(1500)));
+            env.storage = Some(open_fails_when_released(gate, Arc::clone(&entered)));
         });
         let handle = rig.start(spec(Regime::R1, &[0], duration)).await.unwrap();
-        let begun = tokio::time::Instant::now();
+        notified_without_advancing(&entered).await;
+        tokio::time::sleep(duration).await;
+        until_reaped(&rig).await;
+        let process = rig.fake.process(0);
+        assert!(process.signals.borrow().contains(&GroupSignal::Term));
+        assert!(process.reaped.get());
+        assert!(!ended(&handle), "the blocked writer was not joined");
+        let run = finish(&handle).await;
+        release.send(()).unwrap();
+        assert_eq!(run.finished.result.ran, duration);
+        assert_eq!(run.finished.result.failure, None);
+        assert_eq!(run.finished.result.inconclusive, None);
+        assert!(run.finished.result.escaped.is_empty());
+        assert!(
+            matches!(
+                &run.finished.errors[..],
+                [Error::Storage(failure)]
+                    if matches!(failure.errors(), [StorageError::JoinTimeout(bound)] if *bound == timing.writer_join)
+            ),
+            "{:?}",
+            run.finished.errors
+        );
+        assert!(run.finished.teardown.is_ok());
+    })
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_open_failure_during_the_post_teardown_join_keeps_the_original_create_error() {
+    local(async {
+        let (release, gate) = channel();
+        let entered = Arc::new(tokio::sync::Notify::new());
+        let teardown_completed = Arc::new(tokio::sync::Notify::new());
+        let timing = Timing {
+            sample: Duration::from_millis(50),
+            ..Timing::default()
+        };
+        let duration = Duration::from_millis(400);
+        let rig = rig_edit(TestBackend::new("/bin/true"), timing, |env| {
+            env.storage = Some(open_fails_when_released(gate, Arc::clone(&entered)));
+            let completed = Arc::clone(&teardown_completed);
+            env.log_sink = Some(Rc::new(move || {
+                let completed = Arc::clone(&completed);
+                Box::new(move |file| {
+                    Box::new(TeardownNotified {
+                        file,
+                        completed: Arc::clone(&completed),
+                    }) as crate::logs::Sink
+                })
+            }));
+        });
+        let handle = rig.start(spec(Regime::R1, &[0], duration)).await.unwrap();
+        notified_without_advancing(&entered).await;
+        tokio::time::sleep(duration).await;
+        until_reaped(&rig).await;
+        notified_without_advancing(&teardown_completed).await;
+        let process = rig.fake.process(0);
+        assert!(process.signals.borrow().contains(&GroupSignal::Term));
+        assert!(process.reaped.get());
+        assert!(!ended(&handle), "the end preceded the blocked Open result");
+        release.send(()).unwrap();
         let run = finish(&handle).await;
         assert_eq!(run.finished.result.ran, duration);
-        let terminated = rig
-            .fake
-            .process(0)
-            .signal_times
-            .borrow()
-            .iter()
-            .find(|(_, signal)| *signal == GroupSignal::Term)
-            .map(|(at, _)| at.duration_since(begun))
-            .unwrap();
-        assert!(
-            terminated < duration + Duration::from_millis(250),
-            "sample setup delayed the teardown past the deadline: {terminated:?}"
-        );
-        assert!(matches!(
-            &run.finished.errors[..],
-            [Error::Storage(failure)] if matches!(failure.errors(), [StorageError::JoinTimeout(_)])
-        ));
+        assert_eq!(run.finished.result.failure, None);
+        assert_eq!(run.finished.result.inconclusive, None);
+        assert!(run.finished.result.escaped.is_empty());
         assert!(run.finished.teardown.is_ok());
+        let [Error::Storage(failure)] = &run.finished.errors[..] else {
+            panic!(
+                "the delayed Create was discarded: {:?}",
+                run.finished.errors
+            );
+        };
+        let [StorageError::Create(source)] = failure.errors() else {
+            panic!("the original Create was replaced: {:?}", failure.errors());
+        };
+        assert_eq!(source.kind(), std::io::ErrorKind::PermissionDenied);
+        assert_eq!(source.to_string(), "injected delayed open failure");
     })
     .await;
 }
