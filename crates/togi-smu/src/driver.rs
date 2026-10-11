@@ -134,18 +134,6 @@ impl Driver {
         Self::with_stage(root, Stage::IdentityOnly { loaded })
     }
 
-    /// An identity-only driver handed the same transport and PM source `open` would build. It
-    /// ignores both, as `identity_only` does, so a test can observe that nothing reaches them.
-    #[cfg(test)]
-    pub(crate) fn identity_only_observed(
-        root: &Path,
-        transport: Box<dyn Transport>,
-        pm: Arc<dyn PmSource>,
-    ) -> Result<Self, Error> {
-        drop((transport, pm));
-        Self::identity_only(root)
-    }
-
     #[cfg(test)]
     pub(crate) fn with_transport(
         root: &Path,

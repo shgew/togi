@@ -18,5 +18,9 @@ togi-machine.workspace = true
 tempfile.workspace = true
 togi-hostlock.workspace = true
 
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+# inotify watches prove a driver opens none of the files it must not reach.
+rustix.workspace = true
+
 [lints]
 workspace = true

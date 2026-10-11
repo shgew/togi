@@ -640,6 +640,7 @@ dependencies = [
 name = "togi-smu"
 version = "0.0.0"
 dependencies = [
+ "rustix",
  "tempfile",
  "thiserror",
  "togi-hostlock",

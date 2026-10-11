@@ -1,9 +1,23 @@
 use crate::mailbox::{Command, MailboxError, Status, Transport};
 use crate::pm_table::{PmFile, PmSource};
+#[cfg(target_os = "linux")]
+use crate::pm_table::{TABLE_LEN, VERSION};
+#[cfg(target_os = "linux")]
+use crate::sysfs::DRIVER_DIR;
 use crate::{Driver, Error};
+#[cfg(target_os = "linux")]
+use rustix::fd::OwnedFd;
+#[cfg(target_os = "linux")]
+use rustix::fs::inotify;
+#[cfg(target_os = "linux")]
+use rustix::io::Errno;
+#[cfg(target_os = "linux")]
+use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::fs;
 use std::io;
+#[cfg(target_os = "linux")]
+use std::mem::MaybeUninit;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
@@ -111,6 +125,77 @@ impl Tree {
         self.put("sys/class/dmi/id/bios_version", "3.14\n");
         self.put("sys/class/dmi/id/board_vendor", "ASRock\n");
         self.put("sys/class/dmi/id/board_name", "X870E Taichi\n");
+    }
+
+    #[cfg(target_os = "linux")]
+    pub(super) fn put_bytes(&self, relative: &str, bytes: &[u8]) {
+        let path = self.path(relative);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, bytes).unwrap();
+    }
+
+    /// The mailbox and PM table files, answering as a healthy `ryzen_smu` driver would.
+    #[cfg(target_os = "linux")]
+    pub(super) fn hardware_files(&self) {
+        let driver = |name: &str| format!("{DRIVER_DIR}/{name}");
+        self.put_bytes(&driver("smu_args"), &[0; 24]);
+        self.put_bytes(&driver("rsmu_cmd"), &1_u32.to_le_bytes());
+        self.put_bytes(&driver("smn"), &[0; 4]);
+        self.put_bytes(&driver("pm_table_version"), &VERSION.to_le_bytes());
+        self.put_bytes(&driver("pm_table"), &[0; TABLE_LEN]);
+    }
+}
+
+/// The `ryzen_smu` files whose opening means hardware was reached: the mailbox and the PM table.
+#[cfg(target_os = "linux")]
+pub(super) const HARDWARE_FILES: [&str; 5] = [
+    "smu_args",
+    "rsmu_cmd",
+    "smn",
+    "pm_table_version",
+    "pm_table",
+];
+
+/// An inotify watch on every hardware file of a `Tree`: any open, read, write or attribute
+/// change of one is an event, so a driver that reached the real files cannot go unnoticed.
+#[cfg(target_os = "linux")]
+pub(super) struct Watch {
+    inotify: OwnedFd,
+    files: Vec<(i32, &'static str)>,
+}
+
+#[cfg(target_os = "linux")]
+impl Watch {
+    pub(super) fn hardware_files(tree: &Tree) -> Self {
+        let inotify =
+            inotify::init(inotify::CreateFlags::NONBLOCK | inotify::CreateFlags::CLOEXEC).unwrap();
+        let files = HARDWARE_FILES
+            .into_iter()
+            .map(|name| {
+                let path = tree.path(&format!("{DRIVER_DIR}/{name}"));
+                let watch = inotify::add_watch(&inotify, path, inotify::WatchFlags::ALL_EVENTS);
+                (watch.unwrap(), name)
+            })
+            .collect();
+        Self { inotify, files }
+    }
+
+    /// The watched files with an event since the last call, sorted.
+    pub(super) fn touched(&self) -> Vec<&'static str> {
+        let mut buffer = [MaybeUninit::uninit(); 1024];
+        let mut reader = inotify::Reader::new(&self.inotify, &mut buffer);
+        let mut touched = BTreeSet::new();
+        loop {
+            match reader.next() {
+                Err(Errno::AGAIN) => break,
+                Err(error) => panic!("reading the inotify queue: {error}"),
+                Ok(event) => {
+                    let file = self.files.iter().find(|(wd, _)| *wd == event.wd());
+                    touched.insert(file.map_or("an unknown watch", |(_, name)| *name));
+                }
+            }
+        }
+        touched.into_iter().collect()
     }
 }
 

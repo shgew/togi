@@ -1,3 +1,5 @@
+#[cfg(target_os = "linux")]
+use super::fixture::Watch;
 use super::fixture::{
     Fake, GENEROUS, Tree, accepted_unvalidated, forged_proof, open, read, smu_error, validated,
     write, write_all, zero_all,
@@ -5,14 +7,7 @@ use super::fixture::{
 use crate::mailbox::Command;
 use crate::pm_table::PmFile;
 use crate::{Driver, Error, Operation};
-use std::sync::Arc;
 use togi_machine::{ObservedOffset, PmTableReader, TargetOffset};
-
-/// The identity-only driver, handed the counting fake as its transport and PM source.
-fn observed_identity_only(tree: &Tree, fake: &Fake) -> Driver {
-    Driver::identity_only_observed(tree.root(), Box::new(fake.clone()), Arc::new(fake.clone()))
-        .unwrap()
-}
 
 #[test]
 fn nothing_reaches_the_mailbox_before_validation() {
@@ -129,6 +124,10 @@ fn emergency_zero_still_writes_when_slot_mapping_was_refused() {
 fn emergency_zero_needs_a_validated_driver_even_with_a_proof() {
     let tree = Tree::new(8, true);
     let fake = Fake::new();
+    #[cfg(target_os = "linux")]
+    tree.hardware_files();
+    #[cfg(target_os = "linux")]
+    let watch = Watch::hardware_files(&tree);
     let mut unvalidated = open(&tree, &fake);
     let error = zero_all(&mut unvalidated, forged_proof()).unwrap_err();
     assert!(matches!(
@@ -137,18 +136,17 @@ fn emergency_zero_needs_a_validated_driver_even_with_a_proof() {
             operation: Operation::EmergencyZero
         }
     ));
-    let mut identity = observed_identity_only(&tree, &fake);
+    assert_eq!(fake.hardware_calls(), 0);
+    let mut identity = Driver::identity_only(tree.root()).unwrap();
     let error = zero_all(&mut identity, forged_proof()).unwrap_err();
     assert!(matches!(smu_error(&error), Error::IdentityOnly { .. }));
-    assert_eq!(fake.hardware_calls(), 0);
+    #[cfg(target_os = "linux")]
+    assert_eq!(watch.touched(), Vec::<&str>::new());
 }
 
-#[test]
-fn an_identity_only_driver_reaches_neither_the_mailbox_nor_the_pm_files() {
-    let tree = Tree::new(8, true);
-    tree.identity_files();
-    let fake = Fake::new();
-    let mut driver = observed_identity_only(&tree, &fake);
+/// Every way into an identity-only driver: the checks that read identity files, then every entry
+/// point that would reach the hardware, including emergency zeroing with a forged proof.
+fn exercise_identity_only(driver: &mut Driver) {
     assert!(driver.check_cpu().ok);
     assert!(driver.check_driver().ok);
     assert!(matches!(
@@ -157,11 +155,84 @@ fn an_identity_only_driver_reaches_neither_the_mailbox_nor_the_pm_files() {
             operation: Operation::Validate
         }
     ));
-    assert_eq!(accepted_unvalidated(&mut driver), Vec::<&str>::new());
-    let error = zero_all(&mut driver, forged_proof()).unwrap_err();
+    assert_eq!(accepted_unvalidated(driver), Vec::<&str>::new());
+    let error = zero_all(driver, forged_proof()).unwrap_err();
     assert!(matches!(smu_error(&error), Error::IdentityOnly { .. }));
     assert!(driver.topology().is_ok());
-    assert_eq!(fake.hardware_calls(), 0);
+}
+
+#[test]
+fn an_identity_only_driver_refuses_every_entry_point() {
+    let tree = Tree::new(8, true);
+    tree.identity_files();
+    let mut driver = Driver::identity_only(tree.root()).unwrap();
+    exercise_identity_only(&mut driver);
+}
+
+/// The production `identity_only` constructor, with an inotify watch on every mailbox and PM
+/// table file: not one of them may be opened, read or written.
+#[cfg(target_os = "linux")]
+#[test]
+fn an_identity_only_driver_opens_no_mailbox_or_pm_table_file() {
+    let tree = Tree::new(8, true);
+    tree.identity_files();
+    tree.hardware_files();
+    let watch = Watch::hardware_files(&tree);
+    let mut driver = Driver::identity_only(tree.root()).unwrap();
+    assert_eq!(watch.touched(), Vec::<&str>::new(), "construction");
+    exercise_identity_only(&mut driver);
+    assert_eq!(watch.touched(), Vec::<&str>::new());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn an_unvalidated_driver_opens_no_mailbox_or_pm_table_file() {
+    let tree = Tree::new(8, true);
+    tree.hardware_files();
+    let watch = Watch::hardware_files(&tree);
+    let mut driver = Driver::open(tree.root()).unwrap();
+    assert_eq!(accepted_unvalidated(&mut driver), Vec::<&str>::new());
+    assert_eq!(watch.touched(), Vec::<&str>::new());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn a_driver_that_failed_its_identity_check_opens_no_mailbox_or_pm_table_file() {
+    let tree = Tree::new(8, true);
+    tree.put(
+        "proc/cpuinfo",
+        "cpu family : 25\nmodel : 68\nmodel name : Zen 3\n",
+    );
+    tree.hardware_files();
+    let watch = Watch::hardware_files(&tree);
+    let mut driver = Driver::open(tree.root()).unwrap();
+    assert!(matches!(
+        driver.validate().unwrap_err(),
+        Error::UnsupportedCpu { .. }
+    ));
+    assert_eq!(accepted_unvalidated(&mut driver), Vec::<&str>::new());
+    assert_eq!(watch.touched(), Vec::<&str>::new());
+}
+
+/// Positive control for the observer above: the same constructor and files, a validated driver
+/// that does reach them, and every one shows up.
+#[cfg(target_os = "linux")]
+#[test]
+fn the_file_observer_sees_a_validated_driver_reach_the_hardware_files() {
+    let tree = Tree::new(8, true);
+    tree.hardware_files();
+    let watch = Watch::hardware_files(&tree);
+    let mut driver = Driver::open(tree.root()).unwrap();
+    assert_eq!(watch.touched(), Vec::<&str>::new(), "opening");
+    let proof = driver.validate().unwrap();
+    assert_eq!(watch.touched(), ["smn"], "validation reads SMN registers");
+    let _ = zero_all(&mut driver, proof);
+    let reader = driver.pm_reader().unwrap();
+    assert!(reader.wait_idle(GENEROUS), "the PM read never finished");
+    assert_eq!(
+        watch.touched(),
+        ["pm_table", "pm_table_version", "rsmu_cmd", "smu_args"]
+    );
 }
 
 #[test]
