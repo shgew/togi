@@ -259,6 +259,10 @@ fn child_appends_then_aborts() {
 fn real_process_an_abrupt_exit_loses_no_acknowledged_event() {
     let root = tempfile::tempdir().unwrap();
     let state = root.path().join("state");
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "test helper re-executes the test binary"
+    )]
     let status = Command::new(std::env::current_exe().unwrap())
         .args(["--exact", CHILD, "--nocapture", "--test-threads=1"])
         .env(ENV, &state)
