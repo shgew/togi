@@ -1,5 +1,6 @@
 [workspace]
 members = ["crates/*"]
+exclude = ["crates/togi-journal/fuzz"]
 resolver = "3"
 
 [workspace.package]
@@ -12,7 +13,7 @@ publish = false
 [workspace.dependencies]
 flate2 = "1"
 getrandom = { version = "0.4", features = ["std"] }
-jiff = { version = "0.2", default-features = false, features = ["std"] }
+jiff = { version = "0.2", default-features = false, features = ["std", "serde"] }
 nix = { version = "0.30", default-features = false, features = ["fs"] }
 proptest = "1"
 rand = { version = "=0.10.3", default-features = false, features = ["std_rng"] }
@@ -22,6 +23,7 @@ serde_json = { version = "1", features = ["float_roundtrip", "raw_value"] }
 tempfile = "3"
 test-case = "3"
 thiserror = "2"
+togi-config = { path = "crates/togi-config", version = "0.0.0" }
 togi-hostlock = { path = "crates/togi-hostlock", version = "0.0.0" }
 togi-machine = { path = "crates/togi-machine", version = "0.0.0" }
 togi-trialfiles = { path = "crates/togi-trialfiles", version = "0.0.0" }

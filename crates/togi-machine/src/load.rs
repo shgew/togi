@@ -1,3 +1,4 @@
+use crate::object_only;
 use crate::{Regime, TrialSpec};
 use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
@@ -55,17 +56,19 @@ impl fmt::Display for DutyPct {
     }
 }
 
-/// How a load-step trial alternates its workload between running and stopped.
-///
-/// Each on period ends with `SIGSTOP` and each off period with `SIGCONT`. Random periods come from
-/// `rand::rngs::StdRng` seeded with the trial seed. A recorded seed reproduces its stream with the
-/// build that recorded it, since `rand` is pinned to an exact version and the journal's build stamp
-/// identifies it; a `rand` bump changes the stream.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum LoadSchedule {
-    Random { seed: u64 },
-    Duty { pct: DutyPct },
+object_only! {
+    /// How a load-step trial alternates its workload between running and stopped.
+    ///
+    /// Each on period ends with `SIGSTOP` and each off period with `SIGCONT`. Random periods come from
+    /// `rand::rngs::StdRng` seeded with the trial seed. A recorded seed reproduces its stream with the
+    /// build that recorded it, since `rand` is pinned to an exact version and the journal's build stamp
+    /// identifies it; a `rand` bump changes the stream.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+    #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+    pub enum LoadSchedule {
+        Random { seed: u64 },
+        Duty { pct: DutyPct },
+    }
 }
 
 /// How many stop and continue signals a schedule has sent.
@@ -80,7 +83,7 @@ impl LoadSchedule {
         match spec.regime {
             Regime::R3 => Some(Self::Random { seed: spec.seed }),
             Regime::R4 => Some(Self::Duty {
-                pct: spec.workload.duty_pct,
+                pct: spec.workload.workload().duty_pct,
             }),
             Regime::R1 | Regime::R2 | Regime::R5 | Regime::R6 | Regime::R7 => None,
         }

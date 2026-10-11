@@ -8,7 +8,7 @@ pub enum Error {
     #[error("backend binary missing")]
     BackendMissing,
     #[error("trial cleanup could not be confirmed")]
-    Containment,
+    Containment(#[source] Box<dyn std::error::Error + Send + Sync>),
     #[error("boot missing from the system journal")]
     BootMissing,
     #[error("kernel log cursor cannot be resumed")]
