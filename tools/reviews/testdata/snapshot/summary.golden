@@ -13,4 +13,4 @@ files: 8, included 4, excluded 4
   files/008.diff pkg/empty +0 -0
 L 8, F 4: 1 reviewers
 small pull request: false (whole diff 8 files, 12 lines)
-uncovered: not recorded yet; run `just cover <base>` and pass it to `snapshot --cover`
+uncovered: not recorded yet; run `just cover <base>` for Go and `just cover-rs <base>` for Rust, and pass their output to `snapshot --cover`

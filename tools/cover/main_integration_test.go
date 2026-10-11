@@ -80,3 +80,30 @@ func TestRunNamesChangedFilesTheBuildLeavesOut(t *testing.T) {
 		t.Errorf("report (-want +got):\n%s", diff)
 	}
 }
+
+func TestRunReportsRustLinesAndFilesTheBuildLeavesOut(t *testing.T) {
+	git, writeFile := repository(t)
+	if err := os.MkdirAll("crates/a/src", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll("deps", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile("crates/a/src/lib.rs", "fn a() -> u32 {\n    1\n}\n\n#[cfg(target_os = \"nowhere\")]\nfn gone() -> u32 {\n    1\n}\n")
+	writeFile("deps/a.d", "crates/a/src/lib.rs:\n")
+	git("add", ".")
+	git("commit", "-m", "Base")
+	writeFile("crates/a/src/lib.rs", "fn a() -> u32 {\n    2\n}\n\n#[cfg(target_os = \"nowhere\")]\nfn gone() -> u32 {\n    2\n}\n\nfn b() {\n    todo!();\n}\n")
+	root, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile("trace.info", "SF:"+root+"/crates/a/src/lib.rs\nDA:1,1\nDA:2,1\nDA:9,1\nDA:10,0\nend_of_record\n")
+	var out, errOut bytes.Buffer
+	if err := run([]string{"--lcov", "trace.info", "--deps", "deps", "--base", "HEAD"}, &out, &errOut); err != nil {
+		t.Fatalf("run: %v: %s", err, errOut.String())
+	}
+	if !strings.HasPrefix(out.String(), "crates/a/src/lib.rs:10\ncrates/a/src/lib.rs: not built for ") {
+		t.Errorf("report = %q, want line 10 uncovered, then lib.rs not built", out.String())
+	}
+}

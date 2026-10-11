@@ -73,7 +73,7 @@ type findingsInput struct {
 	// Reviewers cover every included file; a coordinator that reviewed a small pull request lists itself.
 	Reviewers []recordReviewer `json:"reviewers"`
 	Findings  []recordFinding  `json:"findings"`
-	// CoverageJudgment says how the uncovered ranges were judged; required when the diff changes Go code.
+	// CoverageJudgment says how the uncovered ranges were judged; required when the diff changes Go or Rust code.
 	CoverageJudgment string `json:"coverage_judgment"`
 	// Blocked names a blocker the findings do not show, such as an unresolved review thread or an open finding from an earlier record.
 	Blocked string `json:"blocked"`
@@ -171,16 +171,16 @@ func buildRecord(m manifest, in findingsInput) (recordModel, error) {
 	}
 	r.Findings = append(r.Findings, in.Findings...)
 	switch {
-	case m.changesGo():
+	case m.changesCode():
 		if m.Coverage == nil {
-			return recordModel{}, errors.New("the diff changes Go code but the snapshot has no coverage: run `just cover <base>` and pass it to `snapshot --cover`")
+			return recordModel{}, errors.New("the diff changes Go or Rust code but the snapshot has no coverage: run `just cover <base>` for Go, `just cover-rs <base>` for Rust, and pass the output to `snapshot --cover`")
 		}
 		if strings.TrimSpace(in.CoverageJudgment) == "" {
-			return recordModel{}, errors.New("coverage_judgment is required: the diff changes Go code")
+			return recordModel{}, errors.New("coverage_judgment is required: the diff changes Go or Rust code")
 		}
 		r.Coverage = &recordCoverage{Uncovered: len(m.Coverage.Ranges), Judgment: in.CoverageJudgment}
 	case in.CoverageJudgment != "":
-		return recordModel{}, errors.New("coverage_judgment given, but the diff changes no Go code")
+		return recordModel{}, errors.New("coverage_judgment given, but the diff changes no Go or Rust code")
 	}
 	slices.Sort(open)
 	var reasons []string
