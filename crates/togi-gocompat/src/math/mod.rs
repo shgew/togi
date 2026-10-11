@@ -14,6 +14,7 @@
 //! | `lgamma` | pure Go, no fusion, calling `archLog` | pure Go, fused, calling the pure-Go `log` |
 //! | `sin`, `cos` (inside `lgamma`) | pure Go, no fusion | pure Go, fused |
 //! | `floor`, `%` (inside `lgamma`) | `ROUNDSD` with SSE4.1, else `archFloor`, and pure Go `mod`, all exact | `FRINTMD` and pure Go `mod`, both exact |
+//! | `pow` | pure Go over this target's `exp` and `log` | pure Go over this target's `exp` and `log`, nothing fused |
 //!
 //! No transcendental libm function is called. Fused operations go through
 //! `f64::mul_add`, which is correctly rounded by contract, so its bits do not depend
@@ -32,6 +33,7 @@ mod go;
 mod lgamma;
 #[cfg(test)]
 mod lgamma_tests;
+mod pow;
 #[cfg(test)]
 mod tests;
 
@@ -96,4 +98,9 @@ pub fn lgamma(x: f64) -> (f64, i32) {
 #[must_use]
 pub fn lgamma(x: f64) -> (f64, i32) {
     lgamma::lgamma::<true>(x, go::log::<true>)
+}
+
+#[must_use]
+pub fn pow(x: f64, y: f64) -> f64 {
+    pow::pow(x, y, exp, log)
 }

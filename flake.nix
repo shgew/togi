@@ -216,10 +216,11 @@
                   cargoNextestExtraArgs = "--profile ci";
                 }
                 # main's macOS job builds only package and rust-nextest, so on aarch64-darwin rust-nextest
-                # depends on the native regeneration of the arm64 math vectors (#637).
+                # depends on the native regeneration of the arm64 math, Lgamma and Pow vectors (#637).
                 // lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
                   gocompatVectorsMath = config.checks.gocompat-vectors-math;
                   gocompatVectorsLgamma = config.checks.gocompat-vectors-lgamma;
+                  gocompatVectorsPow = config.checks.gocompat-vectors-pow;
                 }
               )
             );
@@ -449,6 +450,53 @@
                       ''
                         $TMPDIR/gocompat-vectors lgamma-arm64 $TMPDIR/vectors
                         cmp $TMPDIR/vectors/lgamma-arm64.txt crates/togi-gocompat/testdata/lgamma-arm64.txt
+                      ''
+                  )
+                  + ''
+                    touch "$out"
+                  ''
+                );
+            # Regenerates the Pow vectors from Go like gocompat-vectors-math does.
+            gocompat-vectors-pow =
+              pkgs.runCommand "togi-gocompat-vectors-pow"
+                {
+                  nativeBuildInputs = [
+                    pkgs.go_1_27
+                  ]
+                  ++ lib.optional pkgs.stdenv.hostPlatform.isLinux pkgs.qemu-user;
+                  src = lib.fileset.toSource {
+                    root = ./.;
+                    fileset = lib.fileset.unions [
+                      ./go.mod
+                      ./go.sum
+                      ./cmd
+                      ./internal
+                      ./tools
+                      ./crates/togi-gocompat/testdata
+                    ];
+                  };
+                }
+                (
+                  ''
+                    cd "$src"
+                    export HOME=$TMPDIR GOCACHE=$TMPDIR/go-cache GOPROXY=off GOTOOLCHAIN=local CGO_ENABLED=0
+                    go build -o $TMPDIR/gocompat-vectors ./tools/gocompat-vectors
+                    mkdir $TMPDIR/vectors
+                  ''
+                  + (
+                    if pkgs.stdenv.hostPlatform.isLinux then
+                      ''
+                        $TMPDIR/gocompat-vectors pow-amd64-fma $TMPDIR/vectors
+                        GODEBUG=cpu.fma=off $TMPDIR/gocompat-vectors pow-amd64-nofma $TMPDIR/vectors
+                        $TMPDIR/gocompat-vectors pow-arm64 $TMPDIR/vectors
+                        for f in pow-amd64-fma.txt pow-amd64-nofma.txt pow-arm64.txt; do
+                          cmp $TMPDIR/vectors/$f crates/togi-gocompat/testdata/$f
+                        done
+                      ''
+                    else
+                      ''
+                        $TMPDIR/gocompat-vectors pow-arm64 $TMPDIR/vectors
+                        cmp $TMPDIR/vectors/pow-arm64.txt crates/togi-gocompat/testdata/pow-arm64.txt
                       ''
                   )
                   + ''
