@@ -1,0 +1,35 @@
+[package]
+name = "togi-trial"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "Runs stress-program trials in confined systemd scopes and proves every one stopped"
+
+[features]
+hardware = []
+
+[dependencies]
+flate2.workspace = true
+nix = { workspace = true, features = ["user", "signal"] }
+rustix = { workspace = true, features = ["fs", "process", "param", "pipe", "thread"] }
+serde_json.workspace = true
+thiserror.workspace = true
+togi-backend.workspace = true
+togi-command.workspace = true
+togi-machine.workspace = true
+togi-trialfiles.workspace = true
+tokio = { workspace = true, features = ["io-util", "macros", "net", "rt", "sync", "time"] }
+
+[dev-dependencies]
+tempfile.workspace = true
+test-case.workspace = true
+togi-config.workspace = true
+togi-hostlock.workspace = true
+togi-mprime.workspace = true
+togi-ycruncher.workspace = true
+tokio = { workspace = true, features = ["test-util"] }
+
+[lints]
+workspace = true

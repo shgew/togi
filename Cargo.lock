@@ -854,6 +854,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "togi-trial"
+version = "0.0.0"
+dependencies = [
+ "flate2",
+ "nix",
+ "rustix",
+ "serde_json",
+ "tempfile",
+ "test-case",
+ "thiserror",
+ "togi-backend",
+ "togi-command",
+ "togi-config",
+ "togi-hostlock",
+ "togi-machine",
+ "togi-mprime",
+ "togi-trialfiles",
+ "togi-ycruncher",
+ "tokio",
+]
+
+[[package]]
 name = "togi-trialfiles"
 version = "0.0.0"
 dependencies = [
