@@ -90,15 +90,16 @@ func (s *inputSet) goTestLgamma() {
 
 // The call sites are tools/modelcheck's logChoose, which takes Lgamma of the
 // integers k+1, n-k+1 and n+1 for every k in [0, n] and each trial count n of a
-// group. lgammaInputs covers every integer up to 5000, the rest of the integers
-// up to 2^20 coarsely, and the other branches around them.
+// group. lgammaInputs covers every integer up to 2^14+1, so every call for
+// groups of up to 2^14 trials (including modelcheck's test with n=10000), the
+// rest of the integers up to 2^20 coarsely, and the other branches around them.
 func lgammaInputs() []float64 {
 	var s inputSet
 	s.specials()
-	for k := 1; k <= 5000; k++ {
+	for k := 1; k <= 1<<14+1; k++ {
 		s.add(float64(k))
 	}
-	for k := 5000; k <= 1<<20; k += 997 {
+	for k := 1<<14 + 1; k <= 1<<20; k += 997 {
 		s.add(float64(k))
 	}
 	for e := 10; e <= 64; e++ {

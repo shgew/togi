@@ -13,7 +13,7 @@
 //! | `log1p` | pure Go, no fusion | pure Go, fused |
 //! | `lgamma` | pure Go, no fusion, calling `archLog` | pure Go, fused, calling the pure-Go `log` |
 //! | `sin`, `cos` (inside `lgamma`) | pure Go, no fusion | pure Go, fused |
-//! | `floor`, `%` (inside `lgamma`) | `archFloor` (no CPU dispatch) and pure Go `mod`, both exact | `FRINTMD` and pure Go `mod`, both exact |
+//! | `floor`, `%` (inside `lgamma`) | `ROUNDSD` with SSE4.1, else `archFloor`, and pure Go `mod`, all exact | `FRINTMD` and pure Go `mod`, both exact |
 //!
 //! No transcendental libm function is called. Fused operations go through
 //! `f64::mul_add`, which is correctly rounded by contract, so its bits do not depend
