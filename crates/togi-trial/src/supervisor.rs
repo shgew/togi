@@ -510,6 +510,8 @@ async fn roll_back<O: Os>(
         .await
         .drain()
         .await
+        .verify()
+        .await
         .finish();
     match ended.proof {
         Ok(stopped) => Partial {
@@ -876,6 +878,8 @@ impl<O: Os> Supervisor<O> {
             .reap()
             .await
             .drain()
+            .await
+            .verify()
             .await
             .finish();
         let bound = env.timing.writer_join;

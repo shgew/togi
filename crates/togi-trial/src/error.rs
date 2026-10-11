@@ -159,6 +159,8 @@ pub enum CleanupFailure {
     WatchedLost { instance: String },
     #[error("backend exit and output drain not confirmed before the teardown deadline")]
     DrainDeadline,
+    #[error("a process remains in scope {scope} at the teardown deadline")]
+    ScopeMembers { scope: String },
     #[error("leftover trial unit or process remains at the sweep deadline")]
     Leftover,
     #[error("observe {what}")]
