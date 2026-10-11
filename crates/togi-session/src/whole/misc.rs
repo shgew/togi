@@ -148,11 +148,7 @@ fn a_resumed_checking_session_continues_its_numbering_on_new_boots_in_time_order
     let bench = bench();
     script(&bench, "0001", Signal::Crash, None, true);
     let crashed = one_cycle(&bench, |_| {});
-    assert!(
-        crashed.crashed(),
-        "{:?}",
-        crashed.errors
-    );
+    assert!(crashed.crashed(), "{:?}", crashed.errors);
     drop(crashed);
     bench.sim.reboot();
     let first = one_cycle(&bench, |_| {});
@@ -373,11 +369,7 @@ fn a_signal_during_the_kernel_log_retry_wait_stops_the_run_and_leaves_the_crashe
         false,
     );
     let crashed = one_cycle(&bench, |_| {});
-    assert!(
-        crashed.crashed(),
-        "{:?}",
-        crashed.errors
-    );
+    assert!(crashed.crashed(), "{:?}", crashed.errors);
     let crashed_boot = crashed.journal.events().last().unwrap().boot.clone();
     drop(crashed);
     bench.sim.reboot();

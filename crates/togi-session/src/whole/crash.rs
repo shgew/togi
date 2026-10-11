@@ -629,11 +629,7 @@ fn a_partial_crash_recovers_into_the_named_or_loaded_core_backoff_through_run() 
         let mut before = bench.input();
         before.policy.cycles = Some(NonZeroU32::MIN);
         let crashed = run(before);
-        assert!(
-            crashed.crashed(),
-            "{:?}",
-            crashed.errors
-        );
+        assert!(crashed.crashed(), "{:?}", crashed.errors);
         drop(crashed);
         bench.sim.reboot();
 

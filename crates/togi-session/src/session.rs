@@ -711,7 +711,8 @@ pub(crate) fn verdict(build: &Build, journal: &Journal, operation: Operation) ->
 pub(crate) fn refusal(build: &Build, journal: &Journal) -> Option<togi_journal::Refusal> {
     match verdict(build, journal, Operation::Append)? {
         Verdict::Refuse(refusal) => Some(refusal),
-        Verdict::Use | Verdict::Archive => None,
+        Verdict::Use => None,
+        Verdict::Archive => unreachable!("an append is refused or used, never archived"),
     }
 }
 
