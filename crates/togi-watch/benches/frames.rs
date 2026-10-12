@@ -59,10 +59,8 @@ fn frame(c: &mut Criterion, name: &str, events: &[Event]) {
             buf.reset();
             render(black_box(&journal), &SCREEN, now, &zone, &mut buf);
             bytes.clear();
-            CrosstermBackend::new(&mut bytes)
-                .draw(blank.diff(&buf).into_iter())
-                .expect("writing to memory");
-            black_box(bytes.len())
+            let drawn = CrosstermBackend::new(&mut bytes).draw(blank.diff(&buf).into_iter());
+            black_box((drawn.is_ok(), bytes.len()))
         });
     });
 }
