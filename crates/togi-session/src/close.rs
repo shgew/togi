@@ -29,10 +29,7 @@ impl Session {
         let mut stop = match run {
             Ok(stop) => Some(stop),
             Err(error) => {
-                if error.is_crash() {
-                    self.fault = Some(Fault::Crashed);
-                }
-                errors.push(error);
+                self.keep(&mut errors, error);
                 None
             }
         };
@@ -54,12 +51,12 @@ impl Session {
                 Ok(Some(dead_end)) => *stop = Some(dead_end),
                 Ok(None) => {}
                 Err(error) => {
-                    errors.push(error);
+                    self.keep(errors, error);
                     drain_failed = true;
                 }
             }
         }
-        if self.appender.failure().is_some() {
+        if self.fault.is_some() || self.appender.failure().is_some() {
             return;
         }
         let reached = if smu_dead_end(stop.as_ref()) {
@@ -73,8 +70,17 @@ impl Session {
             && !self.unreconciled()
             && let Err(error) = self.append_shutdown()
         {
-            errors.push(error);
+            self.keep(errors, error);
         }
+    }
+
+    /// Keeps an error of the run; one that says the machine went down latches the crash, so nothing after it
+    /// touches the machine, publishes or answers with the emergency as though it had not.
+    fn keep(&mut self, errors: &mut Vec<SessionError>, error: SessionError) {
+        if error.is_crash() {
+            self.fault = Some(Fault::Crashed);
+        }
+        errors.push(error);
     }
 
     fn restore_and_settle(
@@ -87,7 +93,7 @@ impl Session {
             Ok(restoration) if restoration.is_complete() => Reached::Settled,
             Ok(_) => Reached::Unsettled,
             Err(Flow::Fatal(error)) => {
-                errors.push(error);
+                self.keep(errors, error);
                 Reached::Unsettled
             }
             Err(Flow::DeadEnd(condition)) => {
@@ -104,7 +110,7 @@ impl Session {
                         Reached::Unsettled
                     }
                     Err(error) => {
-                        errors.push(error);
+                        self.keep(errors, error);
                         Reached::Unsettled
                     }
                 }

@@ -1,12 +1,16 @@
 use std::time::Duration;
 
 use jiff::Timestamp;
+use std::collections::BTreeMap;
 use togi_journal::fs::{Fault, Op};
 use togi_journal::{DeadEnd, DeadEndCondition, Event, Payload, SessionWarning, ShutdownReason};
+
 use togi_machine::{
     BankType, BootId, CpuId, Error, Kernel, KernelCursor, KernelRead, Partial, PstoreRecord,
-    ResetReason,
+    Regime, ResetReason, Signal,
 };
+use togi_sim::MachineDefinition;
+use togi_sim::definition::{CoreDef, JointDef, ModelDef, Weights};
 
 use crate::emergency::{Response, Withheld};
 use crate::session::Session;
@@ -542,4 +546,568 @@ fn a_decision_that_cannot_be_folded_gets_the_emergency_instead_of_the_restoratio
     };
     assert!(matches!(&emergency.response, Response::Zeroed(zeroed) if zeroed.is_clean()));
     assert_eq!(smu_offsets(&bench), [0, 0]);
+}
+
+/// A session that recorded no baseline, so its cleanup writes nothing to the SMU and appends only the `shutdown` the
+/// stop owes.
+fn settled(bench: &Bench) -> Session {
+    let mut session = swept(bench);
+    put(&mut session, &[-5, -5]);
+    session.validated = Some(session.host.validate_smu().unwrap());
+    session
+}
+
+fn fail_events_write(bench: &Bench, nth: u64) {
+    bench
+        .mem
+        .inject(Fault::before(Op::Write, nth).named("events.jsonl"));
+}
+
+#[test]
+fn a_crash_at_the_final_kernel_boundary_leaves_the_machine_alone_when_publication_and_its_warning_fail()
+ {
+    let bench = Bench::new(2);
+    let mut session = settled(&bench);
+    let run = Ok(signalled(&mut session));
+    session.kernel = Box::new(Unreadable);
+    let before = kinds(session.appender().journal().events());
+    bench.mem.fail_state_publication();
+    fail_events_write(&bench, 1);
+    let ended = close(session, run);
+    assert!(
+        matches!(ended.errors.as_slice(), [error] if error.is_crash()),
+        "{:?}",
+        ended.errors
+    );
+    assert!(ended.emergency.is_none(), "{:?}", ended.emergency);
+    assert_eq!(kinds(ended.journal.events()), before);
+    assert_eq!(smu_offsets(&bench), [-5, -5]);
+}
+
+#[test]
+fn an_append_failing_while_a_signal_drains_keeps_its_error_skips_the_restoration_and_gets_the_emergency()
+ {
+    for nth in [1, 2] {
+        let bench = Bench::new(2);
+        let mut session = failed_search(&bench, -5);
+        put(&mut session, &[-5, -5]);
+        let run = Ok(signalled(&mut session));
+        let before = session.appender().journal().events().len();
+        fail_events_write(&bench, nth);
+        let ended = close(session, run);
+        assert!(
+            matches!(ended.errors.as_slice(), [SessionError::Journal(_)]),
+            "nth {nth}: {:?}",
+            ended.errors
+        );
+        let events = ended.journal.events();
+        let drained = &events[before..];
+        assert_eq!(
+            drained.len(),
+            usize::try_from(nth).unwrap() - 1,
+            "nth {nth}: {:?}",
+            kinds(drained)
+        );
+        let kinds = kinds(events);
+        assert!(!kinds.contains(&"profile.restored"), "nth {nth}");
+        assert!(!kinds.contains(&"shutdown"), "nth {nth}");
+        let Some(emergency) = ended.emergency else {
+            panic!("nth {nth}: no emergency");
+        };
+        assert!(
+            matches!(&emergency.response, Response::Zeroed(zeroed) if zeroed.is_clean()),
+            "nth {nth}"
+        );
+        assert_eq!(smu_offsets(&bench), [0, 0], "nth {nth}");
+        assert!(ended.capsule.is_none(), "nth {nth}");
+    }
+}
+
+#[test]
+fn an_append_failing_while_a_signal_drains_withholds_the_emergency_without_a_validated_smu() {
+    let bench = Bench::new(2);
+    let mut session = failed_search(&bench, -5);
+    put(&mut session, &[-5, -5]);
+    let run = Ok(signalled(&mut session));
+    session.validated = None;
+    fail_events_write(&bench, 1);
+    let ended = close(session, run);
+    assert!(matches!(
+        ended.errors.as_slice(),
+        [SessionError::Journal(_)]
+    ));
+    assert!(matches!(
+        ended.emergency.unwrap().response,
+        Response::Withheld(Withheld::NoValidation)
+    ));
+    assert_eq!(smu_offsets(&bench), [-5, -5]);
+    assert!(!kinds(ended.journal.events()).contains(&"shutdown"));
+}
+
+#[test]
+fn a_final_publication_and_its_warning_both_failing_ends_the_run_with_the_emergency_and_no_capsule()
+{
+    let bench = Bench::new(2);
+    let mut session = settled(&bench);
+    let run = Ok(signalled(&mut session));
+    let before = session.appender().journal().events().len();
+    bench.mem.fail_state_publication();
+    fail_events_write(&bench, 2);
+    let ended = close(session, run);
+    assert_eq!(ended.stop, Some(Stop::Signal));
+    assert!(
+        matches!(ended.errors.as_slice(), [SessionError::Journal(_)]),
+        "{:?}",
+        ended.errors
+    );
+    let events = ended.journal.events();
+    assert_eq!(kinds(&events[before..]), ["shutdown"]);
+    let Some(emergency) = ended.emergency else {
+        panic!("no emergency");
+    };
+    assert!(matches!(&emergency.response, Response::Zeroed(zeroed) if zeroed.is_clean()));
+    assert_eq!(smu_offsets(&bench), [0, 0]);
+    assert!(ended.capsule.is_none());
+}
+
+#[test]
+fn a_final_publication_and_its_warning_both_failing_withholds_the_emergency_without_a_validated_smu()
+ {
+    let bench = Bench::new(2);
+    let mut session = settled(&bench);
+    let run = Ok(signalled(&mut session));
+    session.validated = None;
+    let before = session.appender().journal().events().len();
+    bench.mem.fail_state_publication();
+    fail_events_write(&bench, 2);
+    let ended = close(session, run);
+    assert!(matches!(
+        ended.errors.as_slice(),
+        [SessionError::Journal(_)]
+    ));
+    assert_eq!(kinds(&ended.journal.events()[before..]), ["shutdown"]);
+    assert!(matches!(
+        ended.emergency.unwrap().response,
+        Response::Withheld(Withheld::NoValidation)
+    ));
+    assert_eq!(smu_offsets(&bench), [-5, -5]);
+    assert!(ended.capsule.is_none());
+}
+
+/// Runs the restoration that fails at the SMU on `bench` and returns how many events it appended up to and
+/// including the `deadend` that records it.
+fn appends_before_the_restoration_dead_end() -> usize {
+    let bench = Bench::new(2);
+    let mut session = tuned(&bench);
+    let run = Ok(signalled(&mut session));
+    let before = session.appender().journal().events().len();
+    bench.sim.fail_write(1);
+    let ended = close(session, run);
+    let events = ended.journal.events();
+    events[before..]
+        .iter()
+        .position(|event| matches!(event.payload, Payload::DeadEnd(_)))
+        .unwrap()
+        + 1
+}
+
+#[test]
+fn a_dead_end_a_failed_restoration_cannot_record_keeps_that_error_records_no_shutdown_and_gets_the_emergency()
+ {
+    let nth = u64::try_from(appends_before_the_restoration_dead_end()).unwrap();
+    let bench = Bench::new(2);
+    let mut session = tuned(&bench);
+    let run = Ok(signalled(&mut session));
+    bench.sim.fail_write(1);
+    fail_events_write(&bench, nth);
+    let ended = close(session, run);
+    assert_eq!(ended.stop, Some(Stop::Signal));
+    assert!(
+        matches!(ended.errors.as_slice(), [SessionError::Journal(_)]),
+        "{:?}",
+        ended.errors
+    );
+    let kinds = kinds(ended.journal.events());
+    assert!(kinds.contains(&"smu.error"));
+    assert!(!kinds.contains(&"deadend"));
+    assert!(!kinds.contains(&"profile.restored"));
+    assert!(!kinds.contains(&"shutdown"));
+    let Some(emergency) = ended.emergency else {
+        panic!("no emergency");
+    };
+    assert!(matches!(&emergency.response, Response::Zeroed(zeroed) if zeroed.is_clean()));
+    assert_eq!(smu_offsets(&bench), [0, 0]);
+}
+
+#[test]
+fn a_dead_end_a_failed_restoration_cannot_record_withholds_the_emergency_without_a_validated_smu() {
+    let nth = u64::try_from(appends_before_the_restoration_dead_end()).unwrap();
+    let bench = Bench::new(2);
+    let mut session = tuned(&bench);
+    let run = Ok(signalled(&mut session));
+    bench.sim.fail_write(1);
+    fail_events_write(&bench, nth);
+    session.validated = None;
+    let ended = close(session, run);
+    assert!(matches!(
+        ended.errors.as_slice(),
+        [SessionError::Journal(_)]
+    ));
+    assert!(!kinds(ended.journal.events()).contains(&"shutdown"));
+    assert!(matches!(
+        ended.emergency.unwrap().response,
+        Response::Withheld(Withheld::NoValidation)
+    ));
+    assert_eq!(smu_offsets(&bench), [-5, -5]);
+}
+
+/// Applies `offsets` as the Alone condition's profile, the way a trial's setup does.
+fn put_alone(session: &mut Session, values: &[i64]) {
+    let target = crate::testing::offsets(values);
+    let mut check = crate::write::checker(session.appender.tuner());
+    crate::write::apply_profile(
+        &mut session.appender,
+        &mut *session.smu,
+        session.stopped.as_ref().unwrap(),
+        &mut session.hardware,
+        crate::write::ProfileRequest {
+            target: &target,
+            causes: &[],
+            record: crate::write::ProfileRecord::Applied(togi_machine::Condition::Alone),
+        },
+        &mut check,
+    )
+    .unwrap();
+}
+
+#[test]
+fn a_crash_at_the_restoration_intent_is_classified_by_the_condition_applied_before_it() {
+    let bench = Bench::new(2);
+    let mut session = swept(&bench);
+    recorded_baseline(&mut session, &[0, 0]);
+    put_alone(&mut session, &[-5, -5]);
+    session.validated = Some(session.host.validate_smu().unwrap());
+    let run = Ok(signalled(&mut session));
+    let baseline = session.appender().recovery().baseline().unwrap().0;
+    bench.sim.crash_at_write(1);
+    let ended = close(session, run);
+    assert!(ended.crashed(), "{:?}", ended.errors);
+    let events = ended.journal.events();
+    let restoring = events.last().unwrap();
+    assert!(matches!(restoring.payload, Payload::SmuIntent(_)));
+    assert_eq!(restoring.cause, [baseline]);
+    assert!(!kinds(events).contains(&"profile.restored"));
+    drop(ended);
+
+    bench.sim.reboot();
+    let input = bench.input();
+    input.cancel.cancel();
+    let resumed = crate::run(input);
+    let detected: Vec<_> = resumed
+        .journal
+        .events()
+        .iter()
+        .filter_map(|event| match &event.payload {
+            Payload::CrashDetected(detected) => Some(detected.condition),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(detected, [Some(togi_machine::Condition::Alone)]);
+}
+
+#[derive(Clone, Copy, Debug)]
+enum Edge {
+    TogetherTrialEnd,
+    TogetherFailure,
+    UnattributedTrialEnd,
+    UnattributedFailure,
+    ZeroTrialEnd,
+    ZeroFailure,
+    HuntEnd,
+    Combination,
+}
+
+fn edge_bench(edge: Edge) -> Bench {
+    let zero = matches!(edge, Edge::ZeroTrialEnd | Edge::ZeroFailure);
+    let joint = !matches!(edge, Edge::TogetherTrialEnd | Edge::TogetherFailure);
+    let mut bench = Bench::defined(&MachineDefinition {
+        cores: 4,
+        bios: Some(if zero {
+            vec![0; 4]
+        } else {
+            vec![-40, -40, 0, 0]
+        }),
+        ranking: Some(vec![4, 3, 2, 1]),
+        core: (0..4)
+            .map(|id| CoreDef {
+                id,
+                alone: [-31; 5],
+                together: [if id == 0 && !joint { -20 } else { -31 }; 7],
+                flat: 0.0,
+                idle: None,
+                workload: BTreeMap::new(),
+            })
+            .collect(),
+        joint: if joint {
+            let at = if zero { 0 } else { -30 };
+            vec![JointDef {
+                members: [(0, at), (1, at)].into(),
+                regimes: vec![Regime::R6],
+                rate: Some(1e6),
+                signal: Some(Signal::CorrectedMce),
+                ..JointDef::default()
+            }]
+        } else {
+            Vec::new()
+        },
+        model: ModelDef {
+            core_local_bank: if joint {
+                0.0
+            } else {
+                ModelDef::default().core_local_bank
+            },
+            signals: Weights::from([(Signal::ComputationError, 1.0)]),
+            ..ModelDef::default()
+        },
+        ..MachineDefinition::default()
+    });
+    let limit = if zero {
+        0
+    } else if joint {
+        -31
+    } else {
+        -30
+    };
+    let mut config = format!(
+        r#"{{"candidate_solo_limits": {{"0": {limit}, "1": {limit}, "2": {limit}, "3": {limit}}},"#
+    );
+    if joint {
+        config.push_str(r#""checking": {"cycle": ["R6"]},"#);
+    }
+    config.push_str(
+        r#""durations": {"search_trial_s": 1, "short_trial_s": 1, "checking_trial_s": 1, "checking_all_core_s": 4},
+        "evidence": {"rate": 0.95, "miss": 0.2}}"#,
+    );
+    bench.config = togi_config::Config::parse(&config).unwrap();
+    bench
+}
+
+/// The most lines of the run log a drive reads before it cancels the run, so a boundary that is never reached fails
+/// the test instead of running on.
+const LOG_LINES: usize = 3000;
+
+/// Cancels the run at the first log line `edge` names, or after [`LOG_LINES`] lines.
+struct CancelAt {
+    edge: Edge,
+    cancel: togi_machine::CancellationToken,
+    hit: std::rc::Rc<std::cell::Cell<bool>>,
+    lines: usize,
+    line: String,
+}
+
+impl Edge {
+    fn names(self, kind: &str, line: &str) -> bool {
+        let unattributed = line.contains(" unattributed ");
+        match (self, kind) {
+            (
+                Self::TogetherTrialEnd | Self::UnattributedTrialEnd | Self::ZeroTrialEnd,
+                "trial.end",
+            ) => line.contains(" FAIL "),
+            (Self::TogetherFailure, "failure") => !unattributed,
+            (Self::UnattributedFailure | Self::ZeroFailure, "failure") => unattributed,
+            (Self::HuntEnd, "hunt.end") => line.contains("combination"),
+            (Self::Combination, "combination") => true,
+            _ => false,
+        }
+    }
+
+    const fn zero(self) -> bool {
+        matches!(self, Self::ZeroTrialEnd | Self::ZeroFailure)
+    }
+
+    /// Whether the stop owes a back-off: a failure no single core owns, and one at zero, owes none.
+    const fn owes_a_move(self) -> bool {
+        !matches!(
+            self,
+            Self::UnattributedTrialEnd
+                | Self::UnattributedFailure
+                | Self::ZeroTrialEnd
+                | Self::ZeroFailure
+        )
+    }
+}
+
+impl std::io::Write for CancelAt {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.line.push_str(&String::from_utf8_lossy(bytes));
+        while let Some(end) = self.line.find('\n') {
+            let line: String = self.line.drain(..=end).collect();
+            self.lines += 1;
+            let kind = line.split_whitespace().nth(1).unwrap_or_default();
+            if self.edge.names(kind, &line) {
+                self.hit.set(true);
+                self.cancel.cancel();
+            }
+            if self.lines >= LOG_LINES {
+                self.cancel.cancel();
+            }
+        }
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// The first journal event `edge` names.
+fn edge_event(events: &[Event], edge: Edge) -> Option<usize> {
+    events.iter().position(|event| match &event.payload {
+        Payload::TrialEnd(end) => {
+            matches!(
+                edge,
+                Edge::TogetherTrialEnd | Edge::UnattributedTrialEnd | Edge::ZeroTrialEnd
+            ) && end.outcome == togi_journal::Outcome::Failure
+        }
+        Payload::Failure(failure) => {
+            let unattributed = failure.attribution == togi_journal::Attribution::Unattributed;
+            match edge {
+                Edge::TogetherFailure => !unattributed,
+                Edge::UnattributedFailure | Edge::ZeroFailure => unattributed,
+                _ => false,
+            }
+        }
+        Payload::HuntEnd(end) => {
+            edge_is(edge, Edge::HuntEnd) && end.result == togi_journal::HuntOutcome::Combination
+        }
+        Payload::Combination(_) => edge_is(edge, Edge::Combination),
+        _ => false,
+    })
+}
+
+fn edge_is(edge: Edge, other: Edge) -> bool {
+    std::mem::discriminant(&edge) == std::mem::discriminant(&other)
+}
+
+/// Stops a whole run at `edge` and returns what the stop did after it.
+fn stopped_at(edge: Edge) -> (Bench, Ended) {
+    let bench = edge_bench(edge);
+    let hit = std::rc::Rc::new(std::cell::Cell::new(false));
+    for _ in 0..40 {
+        let mut input = bench.input();
+        input.bootloader = Some(Box::new(crate::testing::MemBoot::default()));
+        input.log = Some(Box::new(CancelAt {
+            edge,
+            cancel: input.cancel.clone(),
+            hit: hit.clone(),
+            lines: 0,
+            line: String::new(),
+        }));
+        let ended = crate::run(input);
+        if ended.crashed() {
+            bench.sim.reboot();
+            continue;
+        }
+        assert!(hit.get(), "{edge:?} was never reached: {:?}", ended.errors);
+        return (bench, ended);
+    }
+    panic!("{edge:?}: the machine kept crashing");
+}
+
+#[test]
+fn a_stop_at_a_durable_boundary_drains_what_it_owes_and_starts_no_new_work() {
+    for edge in [
+        Edge::TogetherTrialEnd,
+        Edge::TogetherFailure,
+        Edge::UnattributedTrialEnd,
+        Edge::UnattributedFailure,
+        Edge::ZeroTrialEnd,
+        Edge::ZeroFailure,
+        Edge::HuntEnd,
+        Edge::Combination,
+    ] {
+        let (bench, ended) = stopped_at(edge);
+        assert!(ended.errors.is_empty(), "{edge:?}: {:?}", ended.errors);
+        assert!(ended.emergency.is_none(), "{edge:?}");
+        let events = ended.journal.events();
+        let boundary = edge_event(events, edge).unwrap();
+        let mut restored = None;
+        let mut moves = 0;
+        for event in &events[boundary + 1..] {
+            match &event.payload {
+                Payload::TrialIntent(_)
+                | Payload::HuntStart(_)
+                | Payload::HuntGroup(_)
+                | Payload::DeepeningRound(_)
+                | Payload::HostRanking(_) => {
+                    panic!("{edge:?}: new work during the drain: {event:?}")
+                }
+                Payload::TunerDecision(decision) => {
+                    assert!(
+                        matches!(
+                            decision.decision,
+                            togi_journal::Decision::Backoff
+                                | togi_journal::Decision::CheckSoloLimit
+                        ),
+                        "{edge:?}: a new move during the drain: {decision:?}"
+                    );
+                    moves += 1;
+                }
+                Payload::ProfileRestored(profile) => restored = Some(profile.offsets),
+                _ => {}
+            }
+        }
+        assert_eq!(moves, usize::from(edge.owes_a_move()), "{edge:?}");
+        let restored = restored.unwrap_or_else(|| {
+            if edge.zero() {
+                crate::testing::offsets(&[0; 4])
+            } else {
+                let mut smu = bench.sim.seams().smu;
+                let held: Vec<i64> = (0..4).map(|n| smu.offset(core(n)).unwrap().0).collect();
+                if matches!(edge, Edge::HuntEnd | Edge::Combination) {
+                    assert_eq!(held, [-30, -29, 0, 0], "{edge:?}");
+                }
+                crate::testing::offsets(&held)
+            }
+        });
+        for event in events {
+            match &event.payload {
+                Payload::Failure(failure) => {
+                    if let (Some(failed), Some(offset)) = (failure.core, failure.offset) {
+                        assert!(
+                            restored.get(failed).unwrap() > offset,
+                            "{edge:?}: {restored:?} reaches {failure:?}"
+                        );
+                    }
+                }
+                Payload::Combination(combination) => {
+                    let reaches = combination
+                        .members
+                        .iter()
+                        .all(|member| restored.get(member.core).unwrap() <= member.offset);
+                    assert!(!reaches, "{edge:?}: {restored:?} reaches {combination:?}");
+                }
+                _ => {}
+            }
+        }
+        let mut smu = bench.sim.seams().smu;
+        let actual: Vec<i64> = (0..4).map(|n| smu.offset(core(n)).unwrap().0).collect();
+        let want: Vec<i64> = (0..4)
+            .map(|n| restored.get(core(n)).unwrap().get())
+            .collect();
+        assert_eq!(actual, want, "{edge:?}");
+        if edge.zero() {
+            let Some(Stop::DeadEnd { dead_end, .. }) = &ended.stop else {
+                panic!("{edge:?}: {:?}", ended.stop);
+            };
+            assert_eq!(dead_end.condition, DeadEndCondition::FailureAtZero);
+            let cleared = events
+                .iter()
+                .filter(|event| matches!(event.payload, Payload::BootSavedEntry(_)))
+                .count();
+            assert_eq!(cleared, 1, "{edge:?}");
+        } else {
+            assert_eq!(ended.stop, Some(Stop::Signal), "{edge:?}");
+        }
+    }
 }
