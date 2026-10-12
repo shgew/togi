@@ -453,7 +453,7 @@ fn the_report_prints_the_suites_notes_before_the_summary_and_none_without_a_gate
     );
     fs::write(
         bench.path("suite.json"),
-        r#"{"gate":{"notes":["first","second"]},"scenarios":[{"name":"default","dev":[1]}]}"#,
+        r#"{"gate":{"id":"g","notes":["first","second"],"baseline":{"ruleset":1,"commits":["x"]},"split":"dev","gated":["default"],"quantiles":[0.5],"confidence":0.95,"resamples":10,"bootstrap_seed":1,"max_time_ratio":2},"scenarios":[{"name":"default","dev":[1]}]}"#,
     )
     .unwrap();
     let text = report_text(&run(&options));

@@ -14,6 +14,7 @@ use togi_tuner::{EVIDENCE_EPOCH, RULESET};
 use crate::cache::{self, Costs, RunCache};
 use crate::compare;
 use crate::error::{Error, RunError};
+use crate::gate::{self, Judgment};
 use crate::git::Tree;
 use crate::metrics::{self, Measured};
 use crate::pool;
@@ -62,10 +63,13 @@ pub struct Report {
     pub wall: Duration,
     /// Problems that did not stop the run.
     pub warnings: Vec<String>,
+    /// The registered gate's verdict, when the suite registers a gate and a baseline was given.
+    pub gate: Option<Judgment>,
 }
 
 impl Report {
-    /// Writes the report: the suite's notes, the summary, the model checks and, with a baseline, the comparison.
+    /// Writes the report: the suite's notes, the summary, the model checks and, with a baseline, the comparison
+    /// and the gate's verdict.
     pub fn write(&self, w: &mut impl io::Write) -> io::Result<()> {
         for note in &self.notes {
             writeln!(w, "suite: {note}")?;
@@ -74,6 +78,9 @@ impl Report {
         togi_tool_modelcheck::report(w, &self.checks)?;
         if let Some(baseline) = &self.baseline {
             compare::report(w, &self.records, baseline)?;
+        }
+        if let Some(judgment) = &self.gate {
+            judgment.write(w)?;
         }
         writeln!(
             w,
@@ -92,6 +99,7 @@ impl Report {
 pub fn execute(options: &Options, fleet: &Fleet) -> Result<Report, Error> {
     let started = Instant::now();
     let suite = Suite::load(&options.suite)?;
+    let gate = gate::load(&suite)?;
     let plan = suite.plan(options.selection)?;
     let (verdicts, checks) = model_checks(&plan)?;
     let baseline = options
@@ -157,6 +165,10 @@ pub fn execute(options: &Options, fleet: &Fleet) -> Result<Report, Error> {
         .flatten()
         .collect();
     set_scenario_shares(&mut records);
+    let judgment = gate.zip(baseline.as_deref()).map(|(resolved, baseline)| {
+        let verdict = resolved.judge(&records, baseline);
+        Judgment { resolved, verdict }
+    });
     if let Some(out) = &options.out {
         record::write(out, &records)?;
     }
@@ -169,6 +181,7 @@ pub fn execute(options: &Options, fleet: &Fleet) -> Result<Report, Error> {
         kept: root.kept(),
         wall: started.elapsed(),
         warnings,
+        gate: judgment,
     })
 }
 
