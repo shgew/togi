@@ -1,5 +1,5 @@
-use std::fs::{self, File};
-use std::process::{Command, Output, Stdio};
+use std::fs;
+use std::process::{Command, Output};
 
 use tempfile::tempdir;
 use togi_tool_trialfacts::read;
@@ -55,11 +55,11 @@ fn a_count_that_cannot_be_written_exits_one_and_names_the_write() {
     let state = state_dir(source.path(), true);
     let out = tempdir().unwrap();
     let output = out.path().join("facts.jsonl.gz");
-    let full = File::options().write(true).open("/dev/full").unwrap();
+    let full = fs::File::options().write(true).open("/dev/full").unwrap();
 
     let ran = Command::new(env!("CARGO_BIN_EXE_togi-tool-facts"))
         .args([state.as_os_str(), output.as_os_str()])
-        .stdout(Stdio::from(full))
+        .stdout(std::process::Stdio::from(full))
         .output()
         .unwrap();
 
