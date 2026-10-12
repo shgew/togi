@@ -236,6 +236,23 @@ pub struct TrialView {
 }
 
 impl TrialView {
+    /// How long a started trial is past its planned end without a recorded end, or zero. A crashed trial has no
+    /// end to be past; less than a second past is not past.
+    pub fn past_end(&self, now: Timestamp) -> Duration {
+        let Some(started) = self.started else {
+            return Duration::ZERO;
+        };
+        if self.crashed || self.duration.is_zero() {
+            return Duration::ZERO;
+        }
+        let past =
+            now.as_nanosecond() - started.as_nanosecond() - self.duration.as_nanos().cast_signed();
+        match u64::try_from(past) {
+            Ok(nanos) if nanos >= 1_000_000_000 => Duration::from_nanos(nanos),
+            _ => Duration::ZERO,
+        }
+    }
+
     /// The all-zero rerun of a failing trial, run before a `failure_at_zero` dead end.
     pub fn zero_rerun(&self) -> bool {
         self.rerun && self.condition == Condition::Parked && self.hunt.is_none()
@@ -468,7 +485,79 @@ pub struct Snapshot<'a> {
     pub carried: &'a BTreeSet<Seq>,
 }
 
+/// A started idle trial: nothing on the screen may change with the clock until its end is recorded, so drawing
+/// never wakes the idle cores.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IdleHold {
+    /// When the trial started.
+    pub started: Timestamp,
+    /// When it is planned to end. The hold lasts past it, until the end is recorded.
+    pub planned_end: Timestamp,
+}
+
 impl<'a> Snapshot<'a> {
+    /// The started idle (R6) trial that holds every frame, or `None` when none runs, the session stopped, met a
+    /// dead end, or the trial crashed.
+    pub fn idle_hold(&self) -> Option<IdleHold> {
+        let trial = self.trial?;
+        let started = trial.started?;
+        let live = self.session.is_some()
+            && self.dead_end.is_none()
+            && self.stopped.is_none()
+            && !trial.crashed
+            && trial.regime == Regime::R6
+            && !trial.duration.is_zero();
+        if !live {
+            return None;
+        }
+        let planned_end = started
+            .checked_add(jiff::SignedDuration::try_from(trial.duration).ok()?)
+            .ok()?;
+        Some(IdleHold {
+            started,
+            planned_end,
+        })
+    }
+
+    /// Whether no trial is in flight to show, or the session has stopped, met a dead end or just recovered from a
+    /// crash.
+    pub fn resting(&self) -> bool {
+        self.session.is_some()
+            && (self.dead_end.is_some()
+                || self.stopped.is_some()
+                || self.recover.is_some()
+                || self.crashed_trial()
+                || self.trial.is_none())
+    }
+
+    /// Whether the journal's tail is a trial whose boot a later boot has outlived: the trial crashed, and the next
+    /// run has yet to record it.
+    pub fn crashed_trial(&self) -> bool {
+        self.trial.is_some_and(|trial| trial.crashed)
+    }
+
+    /// The R7 workload the running trial, or else the cycle's current step, loads; `None` outside R7.
+    pub fn r7_workload(&self) -> Option<WorkloadId> {
+        if let Some(trial) = self.trial.filter(|trial| trial.regime == Regime::R7) {
+            return Some(trial.workload);
+        }
+        let cycle = self.cycle?;
+        let step = cycle.plan.steps.get(cycle.plan.current)?;
+        (step.regime == Regime::R7).then_some(step.workload)
+    }
+
+    /// The current R7 workload's top requesters, each with whether offsets stand in for its request.
+    pub fn r7_top(&self) -> BTreeMap<CoreId, bool> {
+        let Some(workload) = self.r7_workload() else {
+            return BTreeMap::new();
+        };
+        self.r7
+            .iter()
+            .filter(|status| status.workload == workload && status.top_requester)
+            .map(|status| (status.core, status.offset_proxy))
+            .collect()
+    }
+
     /// The log as the log view lists it, with nothing arrived since.
     pub fn log(&self) -> Log<'a> {
         Log {

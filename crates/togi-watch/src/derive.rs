@@ -2,7 +2,7 @@
 //! with what the journal recorded.
 
 use togi_journal::{Member, State as JournalState};
-use togi_machine::{CoreId, CoreSet, ObservedOffset, Regime};
+use togi_machine::{CoreId, CoreSet, ObservedOffset, Regime, TargetOffset};
 use togi_tuner::{
     CombinationId, CyclePlan, Forecast, GroupState, Limit, Projection, Reached, State as TunerState,
 };
@@ -278,7 +278,7 @@ fn fit_hunt(trial: &mut TrialView, plan: &togi_tuner::HuntPlan) {
     }
 }
 
-fn hunt_facts(
+pub(crate) fn hunt_facts(
     plan: &togi_tuner::HuntPlan,
     cycle: &CyclePlan,
     facts: &Facts,
@@ -410,16 +410,7 @@ fn core_views(
             trial_role(&mut v, trial, hunt, facts);
         }
         if let Some(hunt) = hunt {
-            for group in &hunt.groups {
-                let member = group.cores.contains(id) || group.probe.is_some_and(|p| p.core == id);
-                if matches!(group.outcome, GroupState::Failed)
-                    && member
-                    && let Some(offset) = group.profile.get(id)
-                    && !v.group_fails.contains(&offset)
-                {
-                    v.group_fails.push(offset);
-                }
-            }
+            v.group_fails = group_failures(hunt, id);
         }
         views.push(v);
     }
@@ -434,7 +425,7 @@ fn core_views(
     views
 }
 
-fn trial_role(
+pub(crate) fn trial_role(
     v: &mut CoreView,
     trial: &mut TrialView,
     hunt: Option<&togi_tuner::HuntPlan>,
@@ -529,4 +520,21 @@ fn combo_views(projection: &Projection, cores: &[CoreView], facts: &Facts) -> Ve
 
 fn ord(n: usize) -> u32 {
     u32::try_from(n).unwrap_or(u32::MAX)
+}
+
+/// The offsets at which a group trial of the running hunt failed with `core` loaded.
+pub(crate) fn group_failures(hunt: &togi_tuner::HuntPlan, core: CoreId) -> Vec<TargetOffset> {
+    let mut offsets = Vec::new();
+    for group in &hunt.groups {
+        let member =
+            group.cores.contains(core) || group.probe.is_some_and(|probe| probe.core == core);
+        if group.outcome == GroupState::Failed && member {
+            if let Some(offset) = group.profile.get(core) {
+                if !offsets.contains(&offset) {
+                    offsets.push(offset);
+                }
+            }
+        }
+    }
+    offsets
 }

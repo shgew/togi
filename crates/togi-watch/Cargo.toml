@@ -14,5 +14,9 @@ togi-journal.workspace = true
 togi-machine.workspace = true
 togi-tuner.workspace = true
 
+[dev-dependencies]
+serde_json.workspace = true
+togi-config.workspace = true
+
 [lints]
 workspace = true

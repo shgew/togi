@@ -12,3 +12,6 @@ pub mod history;
 pub mod model;
 pub mod screen;
 pub mod words;
+
+#[cfg(test)]
+mod tests;

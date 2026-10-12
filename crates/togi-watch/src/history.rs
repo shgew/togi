@@ -341,17 +341,37 @@ pub(crate) fn merge_probe_passes(history: Vec<Entry>) -> Vec<Entry> {
 }
 
 /// The kept history: entries in the order they happened, and how many older ones were let go.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub(crate) struct History {
     pub(crate) entries: Vec<Entry>,
     pub(crate) dropped: usize,
+    limit: usize,
+}
+
+impl Default for History {
+    fn default() -> Self {
+        Self {
+            entries: Vec::new(),
+            dropped: 0,
+            limit: HISTORY_LIMIT,
+        }
+    }
 }
 
 impl History {
+    /// A history that keeps every entry, to compare the retained one against in tests.
+    #[cfg(test)]
+    pub(crate) fn unbounded() -> Self {
+        Self {
+            limit: usize::MAX / 4,
+            ..Self::default()
+        }
+    }
+
     /// Appends a line, merging it into the one before, and lets the oldest go once twice the limit is kept.
     pub(crate) fn push(&mut self, line: Entry) {
         fold_entry(&mut self.entries, line);
-        if self.entries.len() > 2 * HISTORY_LIMIT {
+        if self.entries.len() > 2 * self.limit {
             self.compact();
         }
     }
@@ -362,7 +382,7 @@ impl History {
         };
         let mut kept = merge_probe_passes(std::mem::take(&mut self.entries));
         kept.push(last);
-        let mut drop = kept.len().saturating_sub(HISTORY_LIMIT);
+        let mut drop = kept.len().saturating_sub(self.limit);
         let n = kept.len();
         if n > 1 && mergeable_probe_passes(&kept[n - 2], &kept[n - 1]) {
             drop = drop.saturating_sub(1);
@@ -379,8 +399,8 @@ impl History {
     pub(crate) fn recent(&self) -> (Vec<Entry>, usize) {
         let mut kept = merge_probe_passes(self.entries.clone());
         let mut dropped = self.dropped;
-        if kept.len() > HISTORY_LIMIT {
-            let drop = kept.len() - HISTORY_LIMIT;
+        if kept.len() > self.limit {
+            let drop = kept.len() - self.limit;
             dropped += drop;
             kept.drain(..drop);
         }
