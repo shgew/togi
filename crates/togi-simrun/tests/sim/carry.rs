@@ -972,21 +972,40 @@ fn a_journal_with_an_unknown_kind_is_refused_untouched_by_the_build_that_wrote_i
 }
 
 #[test]
-fn an_older_journal_with_an_unknown_kind_is_archived_but_its_carry_cannot_be_read() {
+fn an_older_journal_with_an_unknown_kind_is_archived_and_carries_nothing() {
     let (bench, id, original) = journal_with_unknown_kind();
-    let error = simulate(next_input(&bench))
-        .err()
-        .expect("a carry that cannot read its source");
-    assert!(
-        matches!(
-            error,
-            SimError::Prepare {
-                source: PrepareError::Carry(_),
-                ..
-            }
-        ),
-        "{error}"
-    );
-    assert!(error.to_string().contains("retired.fact"), "{error}");
+    let run = || {
+        let mut input = next_input(&bench);
+        input.observer = Some(until_kind(EventKind::TrialEnd));
+        let finished = finish(input);
+        assert!(finished.errors.is_empty(), "{:?}", finished.errors);
+        assert_eq!(finished.stop, Some(Stop::Signal));
+        bench.events()
+    };
+    let first = run();
     assert_eq!(archived(&bench, id), Some(original));
+    let session = session_of(&first);
+    assert_ne!(session, id);
+    let carried: Vec<_> = first
+        .iter()
+        .filter_map(|event| match &event.payload {
+            Payload::SessionCarried(carried) => Some(carried),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        carried.iter().all(|carried| carried.carried.is_empty()),
+        "{carried:?}"
+    );
+
+    let next = run();
+    assert_eq!(session_of(&next), session);
+    assert!(next.len() > first.len());
+    let ends = |events: &[Event]| {
+        events
+            .iter()
+            .filter(|event| event.kind() == EventKind::TrialEnd)
+            .count()
+    };
+    assert_eq!(ends(&next), ends(&first) + 1);
 }

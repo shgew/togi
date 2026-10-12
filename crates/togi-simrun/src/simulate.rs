@@ -4,7 +4,9 @@ use std::num::NonZeroU32;
 use std::path::Path;
 use std::rc::Rc;
 
-use togi_journal::{Event, Journal, LockError, MemFs, Recording, StateDir};
+use togi_journal::{
+    Event, FileError, Journal, LockError, LookupError, MemFs, ReadError, Recording, StateDir,
+};
 use togi_session::{Ended, PublicationPolicy, ResumeCapsule, RunInput, prepare};
 
 use crate::input::{Finished, Persistence, Replay, SimInput, SimOutcome};
@@ -213,13 +215,22 @@ fn dump(memory: Option<&MemFs>, destination: &Path) -> Result<(), SimError> {
     }
 }
 
-/// The events of the live journal in `persistence`, after a simulation.
+/// The events of the live journal in `persistence`, after a simulation. Archives are not read, so one this build
+/// cannot decode does not hide the live session.
 pub fn events(persistence: &Persistence) -> Result<Vec<Event>, HistoryError> {
-    let recordings = lock(persistence)?.recordings()?;
-    Ok(recordings
-        .into_iter()
-        .next_back()
-        .map_or_else(Vec::new, Recording::into_events))
+    let live = lock(persistence)?.path().join("events.jsonl");
+    let read = match persistence {
+        Persistence::Memory(fs) => Recording::read_in(fs, &live),
+        Persistence::Files(_) => Recording::read(&live),
+    };
+    match read {
+        Ok(recording) => Ok(recording.into_events()),
+        Err(FileError {
+            source: ReadError::Io(error),
+            ..
+        }) if error.kind() == io::ErrorKind::NotFound => Ok(Vec::new()),
+        Err(error) => Err(LookupError::from(error).into()),
+    }
 }
 
 #[cfg(test)]
