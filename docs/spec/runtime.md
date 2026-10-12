@@ -73,7 +73,7 @@ Simulation is not part of `togi`: development programs live in `tools/` and are 
 
 ### Shared flags
 
-`--state-dir <path>` (default `/var/lib/togi`) is shared by every command and accepted before or after the command name. `--config <path>` (default `/etc/togi/config.json`) is a flag of `doctor`, `run` and `reset` and is accepted after the command name only: clap scopes a flag to its command, so `status`, `events`, `watch`, `completion` and `restart-limit` reject it, and so does `--config` before any command, as an unexpected argument (usage error, exit 2).
+`--state-dir <path>` (default `/var/lib/togi`) is shared by every command and accepted before or after the command name. `--config <path>` (default `/etc/togi/config.json`) is accepted before or after the command name only for `doctor`, `run` and `reset`. `status`, `events` and `watch` reject an explicit `--config`, before or after the command name, with the usage error `--config applies only to doctor, run and reset` (exit 2); so do `completion` and `restart-limit`.
 
 Top-level-only `togi --version` (or `-V`) prints `togi x.y.z+rev` to stdout and exits 0; `--version` after a command is an unexpected-argument usage error (exit 2). The version is read from root `version.txt` by the `togi-version` crate and the flake. The revision is the `TOGI_REV` environment variable at build time, which the flake sets for its package; without it, or with it empty, the revision is `dev`, as in every local cargo build. Cargo records no commit, so a local build never reports one, dirty or not.
 

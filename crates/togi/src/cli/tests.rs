@@ -2,7 +2,10 @@ use std::io::{self, Write};
 
 use clap::CommandFactory;
 
-use super::{BANNER, Cli, examples, run};
+use std::ffi::OsString;
+use std::os::unix::ffi::OsStringExt;
+
+use super::{BANNER, Cli, config_after_command, examples, run};
 use crate::exit::Exit;
 
 struct Run {
@@ -105,14 +108,6 @@ fn usage_errors_exit_2_with_stderr_only() {
             &["completion", "--shell", "bash"],
             "unexpected argument '--shell'",
         ),
-        (
-            &["--config", "c.json", "completion", "bash"],
-            "unexpected argument '--config'",
-        ),
-        (
-            &["completion", "bash", "--config", "c.json"],
-            "unexpected argument '--config'",
-        ),
     ] {
         let ran = togi(args);
         assert_eq!(ran.exit, Exit::Usage, "{args:?}");
@@ -120,6 +115,120 @@ fn usage_errors_exit_2_with_stderr_only() {
         assert!(ran.err.contains(text), "{args:?}: {}", ran.err);
         assert!(ran.err.contains("--help"), "{args:?}: {}", ran.err);
     }
+}
+
+#[test]
+fn config_is_rejected_with_the_scope_error_wherever_it_is_written() {
+    for args in [
+        &["--config", "c.json", "completion", "bash"][..],
+        &["--config=c.json", "completion", "bash"],
+        &[
+            "--state-dir",
+            "s",
+            "--config",
+            "c.json",
+            "completion",
+            "bash",
+        ],
+        &["completion", "bash", "--config", "c.json"],
+        &["completion", "--config=c.json", "bash"],
+        &["completion", "--config", "c.json", "bash"],
+        &["--config", "c.json"],
+        &["--config=c.json"],
+        &["--config"],
+        &["--config", "c.json", "--help"],
+        &["completion", "--config"],
+    ] {
+        let ran = togi(args);
+        assert_eq!(ran.exit, Exit::Usage, "{args:?}");
+        assert_eq!(ran.out, "", "{args:?}");
+        assert!(
+            ran.err
+                .starts_with("error: --config applies only to doctor, run and reset\n"),
+            "{args:?}: {}",
+            ran.err
+        );
+    }
+}
+
+#[test]
+fn the_scope_error_shows_the_usage_of_the_command_it_names() {
+    let ran = togi(&["--config", "c.json", "completion", "bash"]);
+    assert!(ran.err.contains("Usage: togi completion"), "{}", ran.err);
+    assert!(
+        !togi(&["--config", "c.json"])
+            .err
+            .contains("Usage: togi completion")
+    );
+}
+
+fn moved(args: &[&str]) -> Vec<String> {
+    config_after_command(args.iter().map(OsString::from).collect())
+        .into_iter()
+        .map(|arg| arg.into_string().unwrap())
+        .collect()
+}
+
+#[test]
+fn a_leading_config_moves_after_the_command_name() {
+    for (args, want) in [
+        (
+            &["togi", "--config", "c", "doctor"][..],
+            &["togi", "doctor", "--config", "c"][..],
+        ),
+        (
+            &["togi", "--config=c", "run", "--no-tui"],
+            &["togi", "run", "--config=c", "--no-tui"],
+        ),
+        (
+            &[
+                "togi",
+                "--state-dir",
+                "s",
+                "--config",
+                "c",
+                "reset",
+                "--all",
+            ],
+            &[
+                "togi",
+                "--state-dir",
+                "s",
+                "reset",
+                "--config",
+                "c",
+                "--all",
+            ],
+        ),
+        (
+            &["togi", "--config", "c", "--state-dir=s", "run"],
+            &["togi", "--state-dir=s", "run", "--config", "c"],
+        ),
+    ] {
+        assert_eq!(moved(args), want, "{args:?}");
+    }
+}
+
+#[test]
+fn other_arguments_are_left_as_they_are() {
+    for args in [
+        &["togi"][..],
+        &["togi", "doctor", "--config", "c"],
+        &["togi", "--config", "c"],
+        &["togi", "--config"],
+        &["togi", "--config", "c", "--help"],
+        &["togi", "--help", "--config", "c", "doctor"],
+        &["togi", "--state-dir", "s", "doctor"],
+    ] {
+        assert_eq!(moved(args), args, "{args:?}");
+    }
+    assert!(config_after_command(Vec::new()).is_empty());
+    let non_utf8 = vec![
+        OsString::from("togi"),
+        OsString::from_vec(vec![0xff]),
+        OsString::from("x"),
+    ];
+    assert_eq!(config_after_command(non_utf8.clone()), non_utf8);
 }
 
 #[test]

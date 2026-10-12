@@ -94,6 +94,8 @@ fn no_command_prints_the_wordmark_and_usage_on_stderr() {
     insta::assert_snapshot!(stderr(&ran));
 }
 
+const SCOPE: &str = "--config applies only to doctor, run and reset";
+
 #[test]
 fn usage_errors_exit_2_on_stderr_with_nothing_on_stdout() {
     for (args, text) in [
@@ -109,14 +111,10 @@ fn usage_errors_exit_2_on_stderr_with_nothing_on_stdout() {
             "invalid value 'tcsh' for '<SHELL>'",
         ),
         (&["completion", "bash", "zsh"], "unexpected argument 'zsh'"),
-        (
-            &["--config", "c.json", "completion", "bash"],
-            "unexpected argument '--config'",
-        ),
-        (
-            &["completion", "bash", "--config", "c.json"],
-            "unexpected argument '--config'",
-        ),
+        (&["--config", "c.json", "completion", "bash"], SCOPE),
+        (&["--config=c.json", "completion", "bash"], SCOPE),
+        (&["completion", "bash", "--config", "c.json"], SCOPE),
+        (&["--config", "c.json"], SCOPE),
     ] {
         let ran = togi(args);
         assert_eq!(ran.status.code(), Some(2), "{args:?}");

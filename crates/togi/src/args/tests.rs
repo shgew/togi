@@ -2,6 +2,8 @@ use std::path::Path;
 
 use clap::{Args, CommandFactory, Parser};
 
+use crate::cli::config_after_command;
+
 use super::{ConfigArgs, DEFAULT_CONFIG_PATH, DEFAULT_STATE_DIR, StateDirArgs};
 
 #[derive(Debug, Parser)]
@@ -86,7 +88,7 @@ fn config_defaults_and_reports_whether_it_was_given() {
 fn config_is_rejected_where_it_is_not_attached() {
     for args in [
         &["without-config", "--config", "/c.json"][..],
-        &["--config", "/c.json", "with-config"][..],
+        &["--config", "/c.json", "without-config"][..],
     ] {
         let error = parse(args).unwrap_err();
         assert_eq!(
@@ -94,6 +96,30 @@ fn config_is_rejected_where_it_is_not_attached() {
             clap::error::ErrorKind::UnknownArgument,
             "{args:?}"
         );
+    }
+}
+
+#[test]
+fn config_is_accepted_before_and_after_the_command_name_it_is_attached_to() {
+    for args in [
+        &["--config", "/c.json", "with-config"][..],
+        &["--config=/c.json", "with-config"],
+        &["with-config", "--config", "/c.json"],
+        &["with-config", "--config=/c.json"],
+        &["--state-dir", "/s", "--config", "/c.json", "with-config"],
+    ] {
+        let normalized = config_after_command(
+            std::iter::once("togi")
+                .chain(args.iter().copied())
+                .map(Into::into)
+                .collect(),
+        );
+        let top = Top::try_parse_from(normalized).unwrap();
+        let Sub::WithConfig(with) = top.command else {
+            panic!("wrong command")
+        };
+        assert!(with.config.is_explicit(), "{args:?}");
+        assert_eq!(with.config.path(), Path::new("/c.json"), "{args:?}");
     }
 }
 

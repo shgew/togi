@@ -3,7 +3,8 @@
 //! `--state-dir` is global on [`crate::cli::Cli`], so every command takes it before or after the
 //! command name and reads it from [`crate::cli::Context`]. `--config` belongs to `doctor`, `run`
 //! and `reset` only: each of them flattens [`ConfigArgs`] into its own `Args`, and the other
-//! commands reject it as an unknown flag.
+//! commands reject it with the usage error `--config applies only to doctor, run and reset`.
+//! [`crate::cli::config_after_command`] lets it be written before the command name as well.
 
 use std::path::{Path, PathBuf};
 

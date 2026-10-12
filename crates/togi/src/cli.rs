@@ -6,7 +6,7 @@ use std::io::Write;
 use std::path::Path;
 use std::sync::LazyLock;
 
-use clap::error::ErrorKind;
+use clap::error::{ContextKind, ContextValue, ErrorKind};
 use clap::{CommandFactory, Parser, Subcommand};
 
 use crate::args::StateDirArgs;
@@ -78,7 +78,8 @@ where
     I: IntoIterator<Item = T>,
     T: Into<OsString> + Clone,
 {
-    match Cli::try_parse_from(args) {
+    let args = config_after_command(args.into_iter().map(Into::into).collect());
+    match Cli::try_parse_from(&args) {
         Ok(cli) => {
             let mut ctx = Context {
                 state_dir: &cli.state_dir.state_dir,
@@ -87,7 +88,74 @@ where
             };
             cli.command.run(&mut ctx)
         }
-        Err(error) => report(&error, out, err),
+        Err(error) => report(&config_scope_error(error, &args), out, err),
+    }
+}
+
+/// The commands that take `--config`, as the usage error names them.
+const CONFIG_SCOPE: &str = "--config applies only to doctor, run and reset";
+
+/// Moves a `--config <path>` or `--config=<path>` written before the command name to just after
+/// it, so that it is the command's own flag wherever it was written. Only the flags `--config`
+/// and `--state-dir` may precede the command name; arguments of any other shape are left as
+/// they are, and so are arguments without a command name.
+#[must_use]
+pub fn config_after_command(args: Vec<OsString>) -> Vec<OsString> {
+    let mut leading = Vec::new();
+    let mut moved = Vec::new();
+    let mut index = 1;
+    while let Some(token) = args.get(index).and_then(|token| token.to_str()) {
+        let takes_value = |name: &str| token == name && index + 1 < args.len();
+        if takes_value("--config") {
+            moved.extend_from_slice(&args[index..index + 2]);
+            index += 2;
+        } else if token.starts_with("--config=") {
+            moved.push(args[index].clone());
+            index += 1;
+        } else if takes_value("--state-dir") {
+            leading.extend_from_slice(&args[index..index + 2]);
+            index += 2;
+        } else if token.starts_with("--state-dir=") {
+            leading.push(args[index].clone());
+            index += 1;
+        } else if token.starts_with('-') {
+            return args;
+        } else {
+            break;
+        }
+    }
+    if moved.is_empty() || index >= args.len() {
+        return args;
+    }
+    let mut normalized = vec![args[0].clone()];
+    normalized.extend(leading);
+    normalized.push(args[index].clone());
+    normalized.extend(moved);
+    normalized.extend_from_slice(&args[index + 1..]);
+    normalized
+}
+
+/// Words the unknown-flag error for `--config` as the scope rule: the flag belongs to three
+/// commands and every other command, and the top level, reject it.
+fn config_scope_error(error: clap::Error, args: &[OsString]) -> clap::Error {
+    let rejected = error.kind() == ErrorKind::UnknownArgument
+        && matches!(
+            error.get(ContextKind::InvalidArg),
+            Some(ContextValue::String(flag)) if flag == "--config" || flag.starts_with("--config=")
+        );
+    if !rejected {
+        return error;
+    }
+    let mut command = command();
+    command.build();
+    let name = args
+        .iter()
+        .skip(1)
+        .filter_map(|arg| arg.to_str())
+        .find(|arg| command.find_subcommand(arg).is_some());
+    match name.and_then(|name| command.find_subcommand_mut(name)) {
+        Some(subcommand) => subcommand.error(ErrorKind::UnknownArgument, CONFIG_SCOPE),
+        None => command.error(ErrorKind::UnknownArgument, CONFIG_SCOPE),
     }
 }
 
