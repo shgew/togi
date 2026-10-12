@@ -11,9 +11,9 @@ use togi_journal::{
     ShutdownReason,
 };
 use togi_machine::{
-    BootId, CancellationToken, Clock, Error, Kernel, KernelCursor, KernelRead, Partial,
-    PstoreRecord, Regime, ResetKind, ResetReason, Running, Signal, Stopped, Swept, TrialSpec,
-    Trials, workloads,
+    BootId, CancellationToken, Clock, CoreId, Error, Kernel, KernelCursor, KernelRead,
+    ObservedOffset, Partial, PstoreRecord, Regime, ResetKind, ResetReason, Running, Signal, Smu,
+    SmuValidated, Stopped, Swept, TargetOffset, TrialSpec, Trials, workloads,
 };
 use togi_sim::MachineDefinition;
 use togi_sim::definition::ModelDef;
@@ -429,9 +429,41 @@ fn a_signal_during_the_kernel_log_retry_wait_stops_the_run_and_leaves_the_crashe
 enum Touch {
     Sweep,
     Start,
+    Write,
 }
 
 type Timeline = Rc<RefCell<Vec<Touch>>>;
+
+/// Records every write that reaches the SMU, in the order it happens beside the trial seam's calls.
+struct WatchedSmu {
+    inner: Box<dyn Smu>,
+    timeline: Timeline,
+}
+
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the wrapper forwards every SMU write so the test can observe it"
+)]
+impl Smu for WatchedSmu {
+    fn offset(&mut self, core: CoreId) -> Result<ObservedOffset, Error> {
+        self.inner.offset(core)
+    }
+
+    fn set_offset(&mut self, core: CoreId, offset: TargetOffset) -> Result<(), Error> {
+        self.timeline.borrow_mut().push(Touch::Write);
+        self.inner.set_offset(core, offset)
+    }
+
+    fn set_all_offsets(&mut self, offset: TargetOffset) -> Result<(), Error> {
+        self.timeline.borrow_mut().push(Touch::Write);
+        self.inner.set_all_offsets(offset)
+    }
+
+    fn emergency_zero(&mut self, validated: SmuValidated, stopped: &Stopped) -> Result<(), Error> {
+        self.timeline.borrow_mut().push(Touch::Write);
+        self.inner.emergency_zero(validated, stopped)
+    }
+}
 
 struct WatchedTrials {
     inner: Box<dyn Trials>,
@@ -481,6 +513,10 @@ fn watched_run(bench: &Bench, tuning_boot: bool, sweep_fails: bool) -> (Ended, V
     if tuning_boot {
         input.bootloader = Some(Box::new(MemBoot::default()));
     }
+    input.machine.smu = Box::new(WatchedSmu {
+        inner: std::mem::replace(&mut input.machine.smu, bench.sim.seams().smu),
+        timeline: timeline.clone(),
+    });
     input.machine.trials = Box::new(WatchedTrials {
         inner: std::mem::replace(&mut input.machine.trials, bench.sim.seams().trials),
         timeline: timeline.clone(),
@@ -583,7 +619,28 @@ fn every_startup_runs_preflight_then_the_sweep_before_its_first_smu_write() {
                 } else {
                     assert!(check.ok, "{case}");
                     assert_eq!(ended.stop, Some(Stop::Signal), "{case}");
-                    assert_eq!(touched, [Touch::Sweep, Touch::Start], "{case}");
+                    let at = |wanted: Touch| touched.iter().position(|touch| *touch == wanted);
+                    assert_eq!(touched.first(), Some(&Touch::Sweep), "{case}: {touched:?}");
+                    assert_eq!(
+                        touched
+                            .iter()
+                            .filter(|touch| **touch == Touch::Sweep)
+                            .count(),
+                        1,
+                        "{case}: {touched:?}"
+                    );
+                    assert_eq!(
+                        touched
+                            .iter()
+                            .filter(|touch| **touch == Touch::Start)
+                            .count(),
+                        1,
+                        "{case}: {touched:?}"
+                    );
+                    assert!(
+                        at(Touch::Write).is_some_and(|write| write < at(Touch::Start).unwrap()),
+                        "no SMU write before the start: {case}: {touched:?}"
+                    );
                     let first_write = events.iter().position(is_smu_record).unwrap();
                     let start = events
                         .iter()
