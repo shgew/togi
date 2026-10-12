@@ -626,3 +626,32 @@ The `togi-tool-facts` crate ports `tools/facts` ([#819](https://github.com/shgew
 - **Recipe.** `just facts-rs STATE-DIR` runs the Rust tool next to the Go `facts` recipe and writes `tools/bench/facts/target.jsonl.gz`; it is a new line, and the Go recipe is unchanged ([#642](https://github.com/shgew/togi/issues/642)).
 - **Tests.** 12 tests run in about 16 ms of test time under `cargo nextest run -p togi-tool-facts`, against 2 ms for `go test -count=1 ./tools/facts`. About 80 lines of library and 400 of tests, against 45 of Go and 130 of tests. The fixture builds a journal in memory and dumps it to disk.
 - **Not measured.** Compile times against Go, agent cost, and the run on a Mac. No Go code is removed or changed.
+
+## Stage 5: `togi-simrun` (#743, #741, 2026-10-12)
+
+The `togi-simrun` crate ports `internal/simrun` ([#743](https://github.com/shgew/togi/issues/743)). `simulate(SimInput)` runs a session on the simulator:
+
+- each boot runs `togi_session::prepare`, then `togi_session::run`;
+- after a crash it reboots the simulated machine and resumes;
+- it returns when a run ends without a crash, or after `max_boots` boots.
+
+The state directory is in memory (`MemFs`) or on disk. `Replay::Warm` resumes from the crashed boot's capsule and `Replay::Cold` folds the journal again. Both modes verify the capsule against a fresh fold. An observer sees every appended event and can stop the run or arm the simulator's faults; it replaces Go's `Until` and `Wrap` journal wrappers.
+
+The crate also holds the tuner's simulation tests ([#741](https://github.com/shgew/togi/issues/741)): `forecast_sim_test.go` and `memo_test.go` become `tests/sim/forecast.rs` and `tests/sim/memo.rs`. They need whole simulated sessions. `togi-tuner` cannot take `togi-simrun` as a dev-dependency, because the cycle would build a second `togi-tuner` whose types do not unify with the first.
+
+Size: about 780 lines of library and 4,400 lines of integration tests. The crate's 73 tests run in about 21 s under `cargo nextest` on Linux. The memo recomputation and the default-machine memory-against-files checks take 15 to 21 s each.
+
+- **Go bugs fixed.**
+  - Cold-boot verification was a silent no-op; Rust verifies the capsule in both replay modes.
+  - Memory mode wrote disk files.
+  - A JSON round trip worked around aliasing.
+  - A failed log flush was discarded.
+  - A capped run was classified by matching `ErrBootCap` in the error chain. In Rust, a verification or publication failure on the last boot is an error and never `Capped`.
+  - A later process rebuilt the machine from the journals alone and lost three things: the pending machine checks, the reset reason the next boot reports, and the time between the last event and the crash. A capped simulation now leaves `machine.json` (`togi_sim::Persisted`), and `resume_simulator` continues from it.
+- **Defects found in other crates.**
+  - `togi-journal` committed whole-millisecond `mono` to disk but kept nanoseconds in memory, so a capsule diverged after a reopen. Fixed in [#804](https://github.com/shgew/togi/pull/804).
+  - An `OnFinish` run that crashed published no state document. Fixed with `ResumeCapsule::publish`.
+  - An undecodable archive blocked carry selection. Fixed in `togi-session`.
+- **`togi-sim` changes.** `Simulator::persisted` and `Simulator::restore`. `set_samples_dir` keeps the last trial's samples when the directory does not change.
+- **Not ported.** Go's older-schema carry cases and the "known events carry past an unknown kind" case. Rust has one schema and refuses unknown kinds; the remaining property, that an undecodable archive is archived and carries nothing, is pinned.
+- **Not measured.** Compile times, and the comparison with `go test ./internal/simrun`.
