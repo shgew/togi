@@ -80,9 +80,17 @@ impl BootHandoff {
         if self.progressed {
             return Ok(());
         }
-        self.progressed = true;
-        tuningboot::reset_count(&mut *self.bootloader).map_err(BootError::from)?;
+        self.reset_count_once()?;
         self.import(appender)
+    }
+
+    fn reset_count_once(&mut self) -> Result<(), BootError> {
+        if self.progressed {
+            return Ok(());
+        }
+        self.progressed = true;
+        tuningboot::reset_count(&mut *self.bootloader)?;
+        Ok(())
     }
 
     /// Acknowledges the pending reason in the journal, then clears it from the bootloader.
@@ -101,6 +109,7 @@ impl BootHandoff {
                 reason: pending.reason.to_string(),
             };
             appender.append(Payload::BootLeaveReason(leave), &[])?;
+            self.reset_count_once()?;
         }
         tuningboot::clear_reason(&mut *self.bootloader).map_err(BootError::from)?;
         self.pending = None;
