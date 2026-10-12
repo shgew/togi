@@ -64,6 +64,7 @@
             ./tools/bench/facts
             ./tools/bench/suite.json
             ./tools/bench/baseline.jsonl
+            ./tools/bench/gates
             # The backend crates' tests read the Go adapters' output fixtures in place.
             ./internal/backend/mprime/testdata
             ./internal/backend/ycruncher/testdata

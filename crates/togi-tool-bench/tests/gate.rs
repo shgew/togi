@@ -425,6 +425,16 @@ fn the_bootstrap_interval_is_reproducible_and_pinned() {
         .map(|seed| quantile_change(&spread, 0.9, 0.95, 500, seed).lo.to_bits())
         .collect();
     assert!(draws.len() > 1, "the seed must change the draws");
+
+    let irregular = quantile_change(&spread, 0.9, 0.95, 50, 1);
+    assert_eq!(irregular, quantile_change(&spread, 0.9, 0.95, 50, 1));
+    assert_eq!(
+        (irregular.lo.to_bits(), irregular.hi.to_bits()),
+        (13_836_380_987_672_703_793, 4_612_436_618_365_282_988),
+        "{irregular:?}"
+    );
+    let other = quantile_change(&spread, 0.9, 0.95, 50, 2);
+    assert_ne!((irregular.lo, irregular.hi), (other.lo, other.hi));
 }
 
 #[test]
@@ -600,6 +610,21 @@ fn an_invalid_gate_is_refused_with_its_reason() {
             "positive max_time_ratio",
         ),
         (
+            "baseline as an array",
+            |g| g["baseline"] = json!([10, ["abc"]]),
+            "expected an object",
+        ),
+        (
+            "repeated pooled",
+            |g| g["pooled"] = json!([SCENARIO, SCENARIO]),
+            "pooled scenario \"adv\" is listed twice",
+        ),
+        (
+            "repeated concluded",
+            |g| g["conclude"] = json!(["hand", "hand"]),
+            "concluded scenario \"hand\" is listed twice",
+        ),
+        (
             "bad split",
             |g| g["split"] = json!("x"),
             "unknown variant `x`",
@@ -649,6 +674,31 @@ fn an_invalid_gate_is_refused_with_its_reason() {
         let error = gate_error(edit);
         assert!(error.contains(want), "{name}: {error}");
     }
+}
+
+#[test]
+fn a_gate_decodes_from_an_object_only() {
+    let positional = json!([
+        "test",
+        "",
+        [],
+        {"ruleset": 10, "commits": ["abc"]},
+        "dev",
+        [SCENARIO],
+        [],
+        [],
+        [0.5],
+        0.95,
+        10,
+        1,
+        2.0
+    ]);
+    let error = serde_json::from_value::<gate::Gate>(positional)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("expected an object"), "{error}");
+    let object = serde_json::from_value::<gate::Gate>(gate_object()).unwrap();
+    assert_eq!(object.baseline.commits, ["abc"]);
 }
 
 #[test]

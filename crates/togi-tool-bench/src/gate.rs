@@ -11,7 +11,8 @@ use std::io;
 
 use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use togi_machine::object_only;
 
 use crate::record::{Record, Status};
 use crate::stats::{float, percentile};
@@ -61,7 +62,7 @@ pub enum GateError {
 }
 
 /// The seeds a gate is judged on.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GateSplit {
     Dev,
@@ -79,38 +80,40 @@ impl GateSplit {
     }
 }
 
-/// The recorded runs a gate is judged against: every baseline run must carry the ruleset and one of the
-/// commits, so a pull request that re-records some runs lists its recording commit here.
-#[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct GateBaseline {
-    pub ruleset: u32,
-    pub commits: Vec<String>,
-}
+object_only! {
+    /// The recorded runs a gate is judged against: every baseline run must carry the ruleset and one of the
+    /// commits, so a pull request that re-records some runs lists its recording commit here.
+    #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct GateBaseline {
+        pub ruleset: u32,
+        pub commits: Vec<String>,
+    }
 
-/// A ruleset's bench gate as the suite file registers it.
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Gate {
-    pub id: String,
-    /// The rationale, printed with the report.
-    #[serde(default)]
-    pub note: String,
-    /// Rationale for reviewers, printed by the run; never scored.
-    #[serde(default)]
-    pub notes: Vec<String>,
-    pub baseline: GateBaseline,
-    pub split: GateSplit,
-    pub gated: Vec<String>,
-    #[serde(default)]
-    pub pooled: Vec<String>,
-    #[serde(default)]
-    pub conclude: Vec<String>,
-    pub quantiles: Vec<f64>,
-    pub confidence: f64,
-    pub resamples: usize,
-    pub bootstrap_seed: u64,
-    pub max_time_ratio: f64,
+    /// A ruleset's bench gate as the suite file registers it.
+    #[derive(Clone, Debug, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct Gate {
+        pub id: String,
+        /// The rationale, printed with the report.
+        #[serde(default)]
+        pub note: String,
+        /// Rationale for reviewers, printed by the run; never scored.
+        #[serde(default)]
+        pub notes: Vec<String>,
+        pub baseline: GateBaseline,
+        pub split: GateSplit,
+        pub gated: Vec<String>,
+        #[serde(default)]
+        pub pooled: Vec<String>,
+        #[serde(default)]
+        pub conclude: Vec<String>,
+        pub quantiles: Vec<f64>,
+        pub confidence: f64,
+        pub resamples: usize,
+        pub bootstrap_seed: u64,
+        pub max_time_ratio: f64,
+    }
 }
 
 /// A gate checked against the suite's scenarios, with the seeds it requires of each.

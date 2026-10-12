@@ -5,68 +5,24 @@
     reason = "the tests run the built command and panic on a broken fixture"
 )]
 
+mod common;
 mod fake;
 mod session;
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Child, Command, Output, Stdio};
 use std::time::{Duration, Instant};
 
+use common::{isolate_git, repo};
 use fake::Bench;
 use rustix::process::{Pid, Signal, kill_process, test_kill_process};
-
-/// A git invocation that reads neither the user's nor the system's configuration.
-fn isolate_git(command: &mut Command, home: &Path) {
-    command
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
-        .env("HOME", home)
-        .env_remove("GIT_DIR")
-        .env_remove("GIT_WORK_TREE")
-        .env_remove("GIT_INDEX_FILE");
-}
-
-fn git(dir: &Path, home: &Path, args: &[&str]) {
-    let mut command = Command::new("git");
-    isolate_git(&mut command, home);
-    let output = command.current_dir(dir).args(args).output().unwrap();
-    assert!(output.status.success(), "{}", text(&output.stderr));
-}
-
-/// A clean repository with one commit, inside the bench's temporary directory but apart from its files, so
-/// the tests do not depend on the checkout they run from.
-fn repo(bench: &Bench) -> PathBuf {
-    let base = fs::canonicalize(bench.dir.path()).unwrap();
-    let dir = base.join("repo");
-    if !dir.join(".git").exists() {
-        fs::create_dir(&dir).unwrap();
-        let home = base.join("githome");
-        git(&dir, &home, &["init", "--quiet"]);
-        git(
-            &dir,
-            &home,
-            &[
-                "-c",
-                "user.name=bench",
-                "-c",
-                "user.email=bench@example.invalid",
-                "commit",
-                "--allow-empty",
-                "--quiet",
-                "--message",
-                "init",
-            ],
-        );
-    }
-    dir
-}
 
 fn plain_command(bench: &Bench) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_togi-tool-bench"));
     isolate_git(&mut command, &bench.path("githome"));
     command
-        .current_dir(repo(bench))
+        .current_dir(repo(bench.dir.path()))
         .arg("--suite")
         .arg(bench.path("suite.json"))
         .arg("--jobs")
@@ -379,13 +335,13 @@ fn the_tree_stamp_is_the_repository_the_bench_runs_in() {
 #[test]
 fn a_records_file_in_the_tree_named_through_dots_does_not_make_it_dirty() {
     let bench = Bench::new();
-    fs::create_dir(repo(&bench).join("sub")).unwrap();
-    fs::write(repo(&bench).join("out.jsonl"), "").unwrap();
+    fs::create_dir(repo(bench.dir.path()).join("sub")).unwrap();
+    fs::write(repo(bench.dir.path()).join("out.jsonl"), "").unwrap();
     let mut command = bench_command(&bench);
     with_sim(&mut command, &bench, 0);
     let output = run(command.arg("--out").arg("sub/../out.jsonl"));
     assert!(output.status.success(), "{}", text(&output.stderr));
-    let records = records_of(&repo(&bench).join("out.jsonl"));
+    let records = records_of(&repo(bench.dir.path()).join("out.jsonl"));
     assert!(records.iter().all(|record| record["dirty"] == false));
 }
 

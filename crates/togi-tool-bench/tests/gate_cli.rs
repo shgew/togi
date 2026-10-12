@@ -5,6 +5,7 @@
     reason = "the tests run the built command and panic on a broken fixture"
 )]
 
+mod common;
 mod fake;
 mod session;
 
@@ -12,6 +13,7 @@ use std::fs;
 use std::path::Path;
 use std::process::{Command, Output};
 
+use common::{isolate_git, repo};
 use fake::Bench;
 use serde_json::json;
 use togi_sim::file;
@@ -35,7 +37,9 @@ struct Invoked {
 
 fn invoke(bench: &Bench, suite: &Path, baseline: Option<&Path>, out: &Path) -> Invoked {
     let mut command = Command::new(env!("CARGO_BIN_EXE_togi-tool-bench"));
+    isolate_git(&mut command, &bench.path("githome"));
     command
+        .current_dir(repo(bench.dir.path()))
         .arg("--suite")
         .arg(suite)
         .args(["--split", "dev", "--jobs", "1", "--sim"])
