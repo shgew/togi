@@ -1874,6 +1874,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "togi-tool-replay"
+version = "0.0.0"
+dependencies = [
+ "clap",
+ "insta",
+ "jiff",
+ "ratatui",
+ "tempfile",
+ "thiserror",
+ "togi-journal",
+ "togi-machine",
+ "togi-tuner",
+ "togi-watch",
+ "togi-watchtest",
+]
+
+[[package]]
 name = "togi-tool-sim"
 version = "0.0.0"
 dependencies = [

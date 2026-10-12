@@ -147,6 +147,11 @@ sim-suite-rs *args: _dev-shell
 replay *args: _dev-shell
     go run ./tools/replay "$@"
 
+# Play a recorded journal through the dashboard on a fast-forward clock with the Rust tool
+[group('run')]
+replay-rs *args: _dev-shell
+    cargo run --release --locked -p togi-tool-replay -- "$@"
+
 # Summarize a current or archived journal for review
 [group('run')]
 stats *args: _dev-shell
