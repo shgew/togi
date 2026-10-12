@@ -624,6 +624,39 @@ fn a_current_journal_with_an_unknown_kind_exits_16_and_is_left_alone() {
 }
 
 #[test]
+fn a_hostile_unknown_kind_is_escaped_in_the_refusal_and_the_journal_is_left_alone() {
+    let host = Host::new();
+    let session = Session::new();
+    let mut text = session.text();
+    text = format!(
+        "{text}{{\"seq\":{},\"time\":\"2026-01-01T00:00:00Z\",\"boot\":\"b1a8cebe-21d1-14db-3741-5b5df946de05\",\"kind\":\"future.\\u001b[2J\\u202e\\nforged\",\"msg\":\"x\",\"data\":{{}}}}\n",
+        session.kinds().len() + 1
+    );
+    fs::write(session.journal(), &text).unwrap();
+    let ran = reset(&host, session.path(), &["--all"]);
+    assert_eq!(ran.exit, Exit::Incompatible, "{}", ran.err);
+    assert!(
+        ran.err.starts_with("togi reset: unknown kind \"future."),
+        "{}",
+        ran.err
+    );
+    assert!(ran.err.contains("forged"), "{}", ran.err);
+    assert!(
+        !ran.err.contains(['\u{1b}', '\u{202e}']),
+        "a control reached the terminal: {:?}",
+        ran.err
+    );
+    assert_eq!(
+        ran.err.matches('\n').count(),
+        1,
+        "the refusal is one line: {:?}",
+        ran.err
+    );
+    assert_eq!(session.text(), text);
+    assert!(!session.path().join("archive").exists());
+}
+
+#[test]
 fn a_current_journal_with_an_unknown_field_exits_16_and_is_left_alone() {
     for args in [&["--core", "0"][..], &["--all"]] {
         let host = Host::new();

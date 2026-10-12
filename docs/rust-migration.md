@@ -1598,3 +1598,132 @@ Stage 6 ([#641](https://github.com/shgew/togi/issues/641)) ported `internal/watc
 | #127: a skipped kind still counts in the seq order | held: `a_lenient_reader_still_checks_seq_causes_and_the_first_event_of_what_it_skips` (gap, late cause, first event) |
 | #121: the fuzz target's invariants and corpus | the reader fuzz target now also drives the lenient reader; its corpus is unchanged |
 | #132, #212, #535 | held as in the #826 and #869 entries: `--kind` is validated before the journal is read, the skipped report escapes hostile kinds (`an_unknown_kind_that_is_hostile_is_escaped_in_what_the_read_only_commands_say`), and the compatibility verdict is unchanged |
+
+## Stage 7: closing measurements (#831, 2026-10-12)
+
+Stage 7 ([#642](https://github.com/shgew/togi/issues/642)) ported the evaluation tools and the binary: `tools/modelcheck`, `tools/forecast`, `tools/facts`, `tools/fit`, `tools/stats`, `tools/bench`, the sweep of `tools/audit` and `cmd/togi`, and packaged the Rust binary. Sixteen pull requests carry it: [#841](https://github.com/shgew/togi/pull/841) (`togi-tool-modelcheck`), [#844](https://github.com/shgew/togi/pull/844) (`togi-tool-forecast`), [#832](https://github.com/shgew/togi/pull/832) (`togi-tool-facts`), [#852](https://github.com/shgew/togi/pull/852) (`togi-tool-fit`), [#851](https://github.com/shgew/togi/pull/851) (`togi-tool-stats`), [#857](https://github.com/shgew/togi/pull/857), [#862](https://github.com/shgew/togi/pull/862) and [#872](https://github.com/shgew/togi/pull/872) (`togi-tool-bench`: runs, metrics, comparison and cache; gate reports; `same`, `smoke` and `forecast`), [#866](https://github.com/shgew/togi/pull/866) (the bench refuses a simulator that is not a program, on every platform), [#870](https://github.com/shgew/togi/pull/870) (the `togi-tool-audit` sweep), [#861](https://github.com/shgew/togi/pull/861), [#869](https://github.com/shgew/togi/pull/869), [#879](https://github.com/shgew/togi/pull/879) and [#880](https://github.com/shgew/togi/pull/880) (`togi`: parsing, exits, version and completion; `reset`, `restart-limit` and `doctor`; `status`, `events` and `watch`; `run`, the dashboard and panics), [#867](https://github.com/shgew/togi/pull/867) (the Rust package) and [#878](https://github.com/shgew/togi/pull/878) (the slim bench baseline writer). Three more are counted apart below: [#860](https://github.com/shgew/togi/pull/860) (the dev profile at `opt-level = 1` for the whole workspace, [#859](https://github.com/shgew/togi/issues/859)), [#871](https://github.com/shgew/togi/pull/871) (the simulator publishes its state file only when a run stops, [#868](https://github.com/shgew/togi/issues/868)) and [#882](https://github.com/shgew/togi/pull/882) (ADR 0060). No Go code is removed or changed: the Go tools, recipes and package stay until the cutover ([#643](https://github.com/shgew/togi/issues/643)) and stage 9 ([#644](https://github.com/shgew/togi/issues/644)). This entry closes the stage with the measurements #642 asks for.
+
+- **Test mapping.** [`rust-migration-stage-7-tests.md`](rust-migration-stage-7-tests.md) maps each of the 305 Go test functions of the eight packages (`tools/modelcheck`, `forecast`, `facts`, `fit`, `stats`, `bench`, `audit` and `cmd/togi`, with the `integration` tag) to the Rust tests that pin the same behavior: 289 are pinned, 9 are obsolete under the native contract (each with its reason) and 7 are the stage-4 rows of `tools/audit`, repeated there with their status; none is pending. The inventory of Go tests and the measurements below are of `d1a4dd63`, `main` after #880 (the measurements in two cohorts, see Host and method); the mapping's Rust names were re-resolved after #899 (`dfa2ee21`, the lenient read-only decoding of #877) was merged into this branch, and every one resolves to a test that `cargo nextest list --workspace` reports on the branch. #899 removed three tests that pinned the refusal of an unknown kind in read-only words (`status`, `events` and `watch`, and the hostile-kind escape on stderr); the rows of `TestCommandsWithFutureKind`, `TestEventsUnfilteredUnknownKind` and `TestHumanJournalReadErrorEscapesUnknownKind` now cite the tests of the lenient behavior (`the_read_only_commands_skip_an_unknown_kind_and_ignore_an_unknown_field_and_say_so`, `an_unknown_kind_that_is_hostile_is_escaped_in_what_the_read_only_commands_say`), the writers' refusals staying as they were; the `reset` half of the hostile-kind row is pinned by `togi::reset::a_hostile_unknown_kind_is_escaped_in_the_refusal_and_the_journal_is_left_alone`, added after the measurements. One test is newer than the inventory: the closure review found that `TestRunHardwareRestoresCursorAndPaletteWhenSessionPanics` had no Rust proof (the panic test used a no-op surface, the real-dashboard test ran `TERM=xterm` and ended on SIGINT), and added `togi::run::pty::a_session_panic_over_the_real_linux_console_dashboard_restores_the_cursor_and_the_palette` (the real dashboard on `TERM=linux`, a panic injected after the cursor is hidden and the palette set, then the cursor, palette, input settings and panic message are checked). That test is newer than `d1a4dd63`: the measurements in this entry do not include it, nor the tests #899 changed, nor that `reset` test. There are no Benchmark, Fuzz or Example functions.
+- **The committed baseline stays Go (C3, [#538](https://github.com/shgew/togi/issues/538)).** [#878](https://github.com/shgew/togi/pull/878) adds `togi-tool-bench --baseline-out FILE` and `just bench-baseline-rs OUT`, which write the run's records without `model_check` and `wall_s`: 220 records in 168,505 bytes (the same run's full `--out` is 181,860), and 168,725 bytes on a rerun at the merged head, under the 200 kB the issue asks for. `tools/bench/baseline.jsonl` itself, the committed Go file, is not touched. It stays the Go file through the cutover ([#643](https://github.com/shgew/togi/issues/643)), because the Go bench's `--baseline`, the Go tests that pin it, `togi-tool-bench sanity` and the cutover's comparison of the Rust suite with Go's recorded scores all read it; it switches to a Rust recording in stage 9 ([#644](https://github.com/shgew/togi/issues/644)), when the Go bench is deleted.
+- **Temporary journals (U2, [#613](https://github.com/shgew/togi/issues/613)).** [ADR 0060](adr/0060-bench-children-keep-temporary-journals.md) ([#882](https://github.com/shgew/togi/pull/882)): bench, `same`, `smoke` and `audit` children keep running with a temporary `--state-dir` and the parent reads and parses each journal, instead of the digest #613 decided. The measurements are in [#868](https://github.com/shgew/togi/issues/868): after #871 the child writes 5.04 MB instead of 347.6 MB for a default session, the dev split's 110 sessions took 27.0 s of wall time against 37.5 s, and an in-memory child cost no less. The rejected options are in the ADR.
+- **The package ([#830](https://github.com/shgew/togi/issues/830), [#867](https://github.com/shgew/togi/pull/867)).** The flake gains `packages.togi-rs` and the check `rust-package` (`--version` and the four completion scripts); `packages.default` stays the Go build until the cutover. There are no Go tests to map: the change is the flake, a recipe and documentation, so the evidence is the pull request's log and body, recorded in [its entry](#stage-7-the-rust-package-867-2026-10-12). The Rust package's output is 1,360,000 B (closure 50,611,928 B) against the Go package's 12,690,568 B (53,058,064 B) at `3f3e78a7`, with only `--version`, `--help` and `completion` in the Rust binary then; CI's `rust-package` job took 107 s on `03e32522`. The darwin package was evaluated, not built.
+
+**Host and method.** Stage 4's method on the development host: 32 threads, 30.9 GiB, Linux; `/tmp` is tmpfs and every build ran there, with the cargo target directory on disk. rustc and cargo 1.99.0, mold 2.42.1, cargo-nextest 0.9.146, go 1.27.1, hyperfine 1.21.0. A `git archive` of the revision, a private `CARGO_TARGET_DIR` and Go build cache and `GOFLAGS=-mod=mod`, each crate and package built and tested once first, then every batch hyperfine `--warmup 1 --runs 10` with JSON export, the Rust and the Go command in one invocation, back to back; Go runs with `-tags integration`, as `just gate` does, so tagged tests count like Rust's integration tests. **Two revisions, each cohort at its own:** `togi-tool-modelcheck`, `togi-tool-forecast`, `togi-tool-facts`, `togi-tool-fit` and `togi-tool-stats` at `a3ccfe54` (`main` after #878), and `togi-tool-bench`, `togi-tool-audit` and `togi` at `d1a4dd63` (`main` after #880, every stage-7 pull request merged). The five crates and their Go packages are identical at the two revisions (their `git diff` is empty), so the first cohort is carried, not rerun; `togi-tool-audit` was not measured before the final revision. The host was loaded and shared: other agents' builds and tests ran throughout, and the one-minute load average at the batch boundaries was 5.2 to 51.9. The comparable figure is therefore CPU time, the mean user plus system time of the command and its children, which a busy host disturbs far less than wall time; wall time (median, with the minimum) is indicative only. Both cohorts are after [#860](https://github.com/shgew/togi/pull/860), which builds the measured crate itself at `opt-level = 1`, so these Rust figures are not comparable with stage 4's. **One batch was rerun.** In the first run of the final cohort the priming `cargo nextest run -p togi-tool-bench` failed one test of 285, `same::each_tree_is_built_and_its_own_simulator_run`, which failed the same way three times alone and so also failed that crate's test-time batch (no figure was kept for it from that run). The harness exports `CARGO_TARGET_DIR`, which the test's fixture builds inherit, so its three trees share one target directory and the test's "same source in another directory" check fails; with the variable unset and the directory given to nextest as `--target-dir`, the test passes, as in CI, whose sandbox exports none. The batch was rerun alone, after the other batches, on the same tree and target directory: one nextest run of the whole crate with `--target-dir` and the variable unset (285 passed), then the same two hyperfine commands as before (`--warmup 1 --runs 10 -N`; the Rust command with `--target-dir`, the Go command through `env` for its cache and module variables), started at load 12.6 and ended at load 45.9. The `togi-tool-bench` test-time row, Go side included, is from that rerun; the other rows, and every compile batch, ran as in every other batch with the variable set, which does not change what compiles.
+
+### Compile times
+
+The crate or package alone, its dependencies built, with stage 4's commands (`cargo clean -p C` before a Rust run, a one-line new source file in the package before a Go run). CPU seconds, mean of 10 runs; "×" is Rust over Go:
+
+| Crate / package | `cargo build` | `go build` | × | `nextest --no-run` | `go test -c` | × | `cargo build --release` |
+|:---|---:|---:|---:|---:|---:|---:|---:|
+| `togi-tool-modelcheck` / `tools/modelcheck` | 0.54 | 0.14 | 3.9 | 2.48 | 0.44 | 5.7 | 0.31 |
+| `togi-tool-forecast` / `tools/forecast` | 0.85 | 0.16 | 5.4 | 8.12 | 0.58 | 13.9 | 1.08 |
+| `togi-tool-facts` / `tools/facts` | 0.56 | 0.19 | 2.9 | 1.60 | 0.29 | 5.5 | 15.35 |
+| `togi-tool-fit` / `tools/fit` | 5.63 | 0.50 | 11.2 | 16.53 | 1.03 | 16.0 | 22.09 |
+| `togi-tool-stats` / `tools/stats` | 3.52 | 0.74 | 4.8 | 14.33 | 1.22 | 11.7 | 28.83 |
+| `togi-tool-bench` / `tools/bench` | 11.70 | 1.02 | 11.5 | 40.02 | 1.93 | 20.8 | 47.83 |
+| `togi-tool-audit` / `tools/audit` | 6.13 | 0.40 | 15.2 | 10.12 | 0.63 | 16.2 | 32.29 |
+| `togi` / `cmd/togi` | 4.97 | 0.78 | 6.4 | 23.19 | 1.84 | 12.6 | 90.79 |
+
+Rust takes 2.9 to 15.2 times Go's CPU to compile a crate and 5.5 to 20.8 times to build its tests. The release build of a crate with a binary relinks the workspace with thin LTO, as stage 4 found for `togi-tool-sim`: the two libraries cost 0.31 and 1.08 s, the six crates with a binary 15 to 91 s. Wall time, median (minimum) in seconds, indicative only:
+
+| Crate / package | `cargo build` | `go build` | `nextest --no-run` | `go test -c` | `cargo build --release` |
+|:---|---:|---:|---:|---:|---:|
+| `togi-tool-modelcheck` / `tools/modelcheck` | 0.24 (0.23) | 0.04 (0.04) | 0.95 (0.91) | 0.17 (0.17) | 0.17 (0.17) |
+| `togi-tool-forecast` / `tools/forecast` | 0.35 (0.34) | 0.04 (0.04) | 1.39 (1.33) | 0.20 (0.19) | 0.43 (0.42) |
+| `togi-tool-facts` / `tools/facts` | 0.30 (0.29) | 0.09 (0.09) | 0.46 (0.46) | 0.13 (0.12) | 1.68 (1.65) |
+| `togi-tool-fit` / `tools/fit` | 1.21 (1.19) | 0.15 (0.14) | 1.75 (1.69) | 0.27 (0.26) | 2.47 (2.45) |
+| `togi-tool-stats` / `tools/stats` | 1.15 (1.14) | 0.18 (0.17) | 1.86 (1.73) | 0.31 (0.29) | 2.35 (2.33) |
+| `togi-tool-bench` / `tools/bench` | 2.56 (2.36) | 0.41 (0.26) | 3.45 (3.35) | 0.67 (0.40) | 5.31 (3.80) |
+| `togi-tool-audit` / `tools/audit` | 1.47 (1.45) | 0.14 (0.13) | 1.99 (1.98) | 0.20 (0.20) | 2.97 (2.93) |
+| `togi` / `cmd/togi` | 1.08 (1.07) | 0.26 (0.25) | 2.46 (2.43) | 0.45 (0.43) | 3.90 (3.87) |
+
+### Test times
+
+Everything built; hyperfine `-N`. Rust: `cargo nextest run -p C --locked` (a process per test). Go: `go test -tags integration -count=1 -timeout 5m ./P` (one process per package). CPU seconds, mean of 10 runs, and wall time, median (minimum), indicative only; the test counts are `cargo nextest list`'s and Go's test functions:
+
+| Crate / package (Rust tests, Go tests) | nextest CPU | `go test` CPU | × CPU | nextest wall | `go test` wall |
+|:---|---:|---:|---:|---:|---:|
+| `togi-tool-modelcheck` / `tools/modelcheck` (26, 11) | 0.24 | 0.20 | 1.2 | 0.14 (0.12) | 0.10 (0.09) |
+| `togi-tool-forecast` / `tools/forecast` (75, 12) | 0.91 | 0.51 | 1.8 | 0.64 (0.61) | 0.27 (0.26) |
+| `togi-tool-facts` / `tools/facts` (12, 3) | 0.15 | 0.16 | 0.9 | 0.11 (0.11) | 0.08 (0.08) |
+| `togi-tool-fit` / `tools/fit` (61, 37) | 5.40 | 1.53 | 3.5 | 1.07 (1.04) | 1.08 (0.83) |
+| `togi-tool-stats` / `tools/stats` (57, 27) | 1.31 | 0.72 | 1.8 | 0.25 (0.24) | 0.28 (0.28) |
+| `togi-tool-bench` / `tools/bench` (285, 84) | 31.02 | 9.12 | 3.4 | 2.31 (2.28) | 6.46 (2.83) |
+| `togi-tool-audit` / `tools/audit` (67, 13) | 0.54 | 0.23 | 2.3 | 0.53 (0.52) | 0.10 (0.09) |
+| `togi` / `cmd/togi` (325, 118) | 25.19 | 2.16 | 11.7 | 2.71 (2.67) | 0.38 (0.37) |
+
+The Rust tests cost between 0.9 and 11.7 times Go's CPU: about the same for `facts` and `modelcheck`, 1.8 to 3.5 times for `forecast`, `fit` and `stats`, and 2.3 to 11.7 times for `audit`, `bench` and `togi`. `togi-tool-bench` runs the simulator and builds fixture trees with cargo (3.4 times), and `togi` is 11.7 times: its tests re-execute the binary and drive pseudo-terminals, signals and panics, which need a process each, against 118 Go functions that call functions in one process. Go's `tools/bench` wall time has a median of 6.46 s and a minimum of 2.83 s: that batch ran while the load average rose from 12.6 to 45.9, so read the minimum.
+
+### Lines of code
+
+Total lines, non-blank in parentheses, counted as in stage 4 (Rust test files are `tests/` directories, `tests.rs` and `*_tests.rs`, so inline test modules count as library; Go's `GoFiles` against `TestGoFiles` and `XTestGoFiles` with the `integration` tag):
+
+| Crate / package | Rust library | Rust tests | Go library | Go tests |
+|:---|---:|---:|---:|---:|
+| `togi-tool-modelcheck` / `tools/modelcheck` | 718 (667) | 650 (607) | 305 (283) | 301 (286) |
+| `togi-tool-forecast` / `tools/forecast` | 1,220 (1,140) | 2,307 (2,146) | 615 (573) | 608 (582) |
+| `togi-tool-facts` / `tools/facts` | 82 (74) | 396 (344) | 45 (41) | 132 (126) |
+| `togi-tool-fit` / `tools/fit` | 2,792 (2,644) | 2,939 (2,798) | 1,934 (1,840) | 1,973 (1,912) |
+| `togi-tool-stats` / `tools/stats` | 2,167 (2,035) | 2,934 (2,777) | 1,487 (1,395) | 1,073 (1,017) |
+| `togi-tool-bench` / `tools/bench` | 7,522 (7,075) | 7,527 (7,069) | 2,950 (2,807) | 3,629 (3,474) |
+| `togi-tool-audit` / `tools/audit` | 2,009 (1,872) | 2,999 (2,833) | 911 (882) | 624 (604) |
+| `togi` / `cmd/togi` | 4,311 (3,957) | 9,763 (9,024) | 2,594 (2,400) | 5,063 (4,825) |
+| **total** | **20,821** | **29,515** | **10,841** | **13,403** |
+
+The Rust library, with the inline tests it holds, is 1.9 times Go's and the Rust test files 2.2 times. `togi-tool-audit` is now the whole crate: the journal checks of stage 4 and the sweep and command of #870, against all of `tools/audit`, which also holds the bench sweep. The `togi` row counts only `crates/togi`; the pull requests that ported `cmd/togi` also changed `togi-session`, `togi-journal`, `togi-watch` and `togi-simrun`, whose lines are counted with their own stages.
+
+### Failures
+
+`check.yml` on the sixteen pull requests' branches (`gh run list --workflow check.yml --branch B` and `gh run view --json jobs`; every run is a `pull_request` run): 73 runs, 43 successes, 6 failures and 24 cancelled, each cancelled run superseded by a newer push to the same branch; each cancelled run's aggregate `check` job reports `failure` only because the jobs it depends on were cancelled. Every pull request's final head passed. The supporting pull requests, counted apart: #860, #871 and #882 had 7 runs, 5 successes, 0 failures and 2 cancelled (#871's, superseded). Per pull request: #832 2 runs, #841 5 (1 failure), #844 8 (1 failure, 3 cancelled), #851 6 (2 cancelled), #852 3 (1 cancelled), #857 1, #861 4 (2 cancelled), #862 2 (1 failure), #866 4 (2 cancelled), #867 4, #869 9 (1 failure, 5 cancelled), #870 7 (1 failure, 2 cancelled), #872 8 (1 failure, 4 cancelled), #878 2 (1 cancelled), #879 4 (2 cancelled), #880 4.
+
+- **A test that outran nextest's 120 s limit (2 failures).** #841 (`3913e441`) and #844 (`bcaf3c03`): `togi-session`'s `killing_the_run_at_every_durable_event_resumes_to_the_same_final_state` timed out in `rust-nextest`, a crate neither pull request touches. That is [#842](https://github.com/shgew/togi/issues/842), which [#845](https://github.com/shgew/togi/pull/845) fixed at 11:42Z; the next push of each, which merged `main`, passed.
+- **The sandbox has no checkout's files (2 failures).** #862 (`e81a82df`): four `togi-tool-bench` tests failed in `rust-nextest`: three `gate_cli` tests ran the binary, which asks git for the revision, in the checkout, and the check's sandbox has no `.git`; and `gate`'s archive test read `tools/bench/gates`, which the flake's Rust source set did not include. #872 (`bafecbcb`): 14 `forecast` tests failed with `fatal: not a git repository`, the forecast library reading the tree's revision from the working directory. Both were also review P1 findings, fixed in #862 by `5049a123` and in #872 by `835b512e` (the command reads git and passes the tree in; tests run in a repository of their own).
+- **clippy (2 failures).** #869 (`8276eaa6`, a work-in-progress push of review fixes): `rust-clippy` failed on a Linux-only test helper that was never used elsewhere (`session_start`, `dead_code` in the `cli` test target); `3105f63f` gates it to Linux. #870 (`f5a5bd3c`, also a work-in-progress push): an unused doc comment and `&Option<T>` instead of `Option<&T>` in `togi-tool-audit`; `406b4482` fixed both.
+- Failures caught before a push by the local gate are recorded nowhere and are not measured. Failing jobs of other workflows are not counted.
+
+### Review findings
+
+From each pull request's review records (the bot's machine-readable summaries; the author posts one record per reviewed head and a later record covers only what changed since the previous one, so findings are summed over records). A row counts one finding by one reviewer, not one distinct defect; "Reviewers" counts the reviewer entries of each record, so a reviewer who appears in two records of one pull request counts twice.
+
+| PR | Records | Reviewers | P0 | P1 | P2 | P3 | Fixed | Rejected | Deferred |
+|:---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| #832 `togi-tool-facts` | 1 | 4 | 0 | 0 | 1 | 4 | 5 | 0 | 0 |
+| #841 `togi-tool-modelcheck` | 1 | 5 | 0 | 0 | 3 | 1 | 4 | 0 | 0 |
+| #844 `togi-tool-forecast` | 2 | 10 | 0 | 0 | 7 | 12 | 19 | 0 | 0 |
+| #851 `togi-tool-stats` | 1 | 16 | 0 | 0 | 2 | 23 | 25 | 0 | 0 |
+| #852 `togi-tool-fit` | 1 | 16 | 0 | 0 | 5 | 7 | 12 | 0 | 0 |
+| #857 `togi-tool-bench` (a) | 1 | 16 | 0 | 4 | 20 | 31 | 54 | 1 | 0 |
+| #861 `togi` parser | 1 | 4 | 0 | 0 | 4 | 13 | 17 | 0 | 0 |
+| #862 bench gates | 1 | 5 | 0 | 3 | 3 | 6 | 12 | 0 | 0 |
+| #866 simulator spawn | 1 | 3 | 0 | 0 | 1 | 3 | 4 | 0 | 0 |
+| #867 package | 1 | 1 | 0 | 0 | 1 | 2 | 3 | 0 | 0 |
+| #869 `togi` reset, restart-limit, doctor | 1 | 13 | 0 | 2 | 21 | 41 | 62 | 2 | 0 |
+| #870 audit sweep | 1 | 8 | 0 | 0 | 3 | 23 | 26 | 0 | 0 |
+| #872 bench same, smoke, forecast | 1 | 11 | 0 | 1 | 6 | 17 | 24 | 0 | 0 |
+| #878 bench baseline writer | 1 | 2 | 0 | 0 | 1 | 2 | 3 | 0 | 0 |
+| #879 `togi` status, events, watch | 1 | 21 | 0 | 0 | 19 | 35 | 52 | 2 | 0 |
+| #880 `togi` run | 1 | 18 | 0 | 6 | 20 | 18 | 43 | 0 | 1 |
+| **total** | **17** | **153** | **0** | **16** | **117** | **238** | **365** | **5** | **1** |
+
+The supporting pull requests, counted apart (#860, #871, #882): 3 records, 5 reviewer entries, no P0 or P1, 2 P2 and 3 P3, all 5 fixed (#860's record has no findings).
+
+- **The 16 P1s.** Ten are about the check's sandbox or other platforms, not the behavior: in #857 the tree stamp read git, which the sandbox lacks (found by two reviewers, once as run tests that depend on the checkout's git metadata) and `tools/bench/baseline.jsonl` was missing from the flake's source set; in #862 the three gate findings above; in #872 the forecast's git read; in #869 and #880 tests of `doctor` and `run` that pass only on Linux, flagged for the macOS jobs. Six are behavior: #857's blocked signal mask leaking into the children of the bench (cargo and the simulator), and in #880 a panic before or after `Running::wait` that left the started workload unjoined, the panic hook killing the process on panics that `togi-trial` contains (found by two reviewers), the stop waiter that `run_after` did not release when it panicked (the #398 fallback), and an absorb panic during cleanup that was resumed uncontained. All 16 were fixed.
+- **Rejected (5), each accepted by its reviewer:** #857: judge small sanity groups by a Student-t quantile instead of 3 Welch standard errors (the documented rule is fresh seeds on a flag, and the docs now say a small-scenario flag is expected now and then by chance); #869: match Go's wording of `doctor`'s configuration error, and name the latest `config.loaded` build, as Go did, instead of the first line's in refusals (both recorded as native changes); #879: treat a closed stdout pipe as the end of output (a failed stdout write is exit 1 for every command, `runtime.md`) and omit the REGIME table when it has no rows (owner decision, [#826](https://github.com/shgew/togi/issues/826)).
+- **Deferred (1):** #880, a topology with more than three CCDs fails while folding the first session event instead of being refused before startup, an inherited `togi-session` behavior this pull request does not change: [#897](https://github.com/shgew/togi/issues/897).
+- **Rounds.** The bot's records are 17 for the sixteen pull requests: #844 has two, one for the whole diff and one for the commit that followed (a test fixture's new field); every other pull request's review ended in one record, which may cover several reviewer rounds. #880's record is explicit about four (its findings are tagged Round 1 to 4, and its coverage line lists two earlier freezes: 28 uncovered ranges at `93242d8d` and 25 at `ff2eb639`); the records of #852, #857, #861, #862, #869, #878 and #879 mention a first round and a fix round. Rounds inside a record are not recorded uniformly, so they are not summed beyond the 17 records.
+
+### What stays and what moves
+
+- **C3.** The committed `tools/bench/baseline.jsonl` stays the Go file until the cutover ([#643](https://github.com/shgew/togi/issues/643)) has compared the Rust suite with the Go scores in it, and switches to a Rust recording in stage 9 ([#644](https://github.com/shgew/togi/issues/644)) with the Go bench's retirement; the baseline stays Go through the cutover.
+- **U2.** Bench children keep temporary journals: ADR 0060.
+- **Go.** No Go package, test or recipe is removed or changed by stage 7; the Rust recipes (`audit-rs`, `bench-baseline-rs`, `fit-rs` and the others) sit beside them, and `packages.default` stays the Go package.
+
+### Limits
+
+- One host under heavy sibling load (one-minute load average 5.2 to 51.9 at the batch boundaries), so the wall times can be several times what a quiet host gives and are indicative only; CPU time is less disturbed but still includes cache and frequency effects of a busy machine. `/tmp` is tmpfs, so disk speed is in no figure of the source tree or the Go cache. Nothing ran on a Mac or on a GitHub runner.
+- Ten runs per command; hyperfine reports CPU time as a mean only, so it has no spread, and every wall-time spread is a small-sample estimate. hyperfine ran the compile commands and every prepare step through a shell.
+- Two cohorts at two revisions (the five carried crates at `a3ccfe54`, the three others at `d1a4dd63`), measured hours apart at different loads. The `togi-tool-bench` test-time row is from a rerun of that one batch with `CARGO_TARGET_DIR` unset (see Host and method); its Go side shares the batch with it.
+- The Go compile equivalent (a changed file in the package) is not the same operation as `cargo clean -p`, and the crates are not the same size as their packages (the Rust lines, library and tests together, are 1.5 to 3.3 times Go's, `fit` and `audit` the extremes).
+- CI counts cover `check.yml` runs of the pull requests' branches only. Review counts are the bot's records, not distinct defects, and rounds are not summed.
+- **Not measured.** Agent cost (the harness's recorded usage) and the agent time and elapsed wall time per pull request or for the stage; a run on a quiet host ([#796](https://github.com/shgew/togi/issues/796)); a Mac (darwin was only evaluated or checked with clippy); hardware (no run of `togi run` on the target machine: the SMU, the PM table and the boot paths ran against fakes and the simulator); a cold build of the Rust package.
