@@ -21,11 +21,18 @@ fn known_failure(action: &Action) -> Option<(togi_journal::Failure, Vec<togi_jou
     }
 }
 
+#[derive(Clone, Copy)]
+enum Source {
+    Carried,
+    Idle,
+    Trial,
+}
+
 #[test]
 fn skip_known_failure() {
     struct Case {
         name: &'static str,
-        live: bool,
+        source: Source,
         profile: [i64; 2],
         passes: i32,
         change: fn(&mut TrialPlan),
@@ -35,7 +42,15 @@ fn skip_known_failure() {
     let cases = [
         Case {
             name: "carried equal",
-            live: false,
+            source: Source::Carried,
+            profile: [-20, -20],
+            passes: 0,
+            change: same,
+            skip: true,
+        },
+        Case {
+            name: "live equal",
+            source: Source::Trial,
             profile: [-20, -20],
             passes: 0,
             change: same,
@@ -43,7 +58,7 @@ fn skip_known_failure() {
         },
         Case {
             name: "idle equal",
-            live: true,
+            source: Source::Idle,
             profile: [-20, -20],
             passes: 0,
             change: same,
@@ -51,7 +66,7 @@ fn skip_known_failure() {
         },
         Case {
             name: "shallower",
-            live: false,
+            source: Source::Carried,
             profile: [-19, -20],
             passes: 0,
             change: same,
@@ -59,7 +74,7 @@ fn skip_known_failure() {
         },
         Case {
             name: "one fewer covering passes",
-            live: false,
+            source: Source::Carried,
             profile: [-20, -20],
             passes: -1,
             change: same,
@@ -67,7 +82,7 @@ fn skip_known_failure() {
         },
         Case {
             name: "covered",
-            live: false,
+            source: Source::Carried,
             profile: [-20, -20],
             passes: 1,
             change: same,
@@ -75,7 +90,7 @@ fn skip_known_failure() {
         },
         Case {
             name: "deeper",
-            live: false,
+            source: Source::Carried,
             profile: [-21, -20],
             passes: 0,
             change: same,
@@ -83,7 +98,7 @@ fn skip_known_failure() {
         },
         Case {
             name: "incomparable",
-            live: false,
+            source: Source::Carried,
             profile: [-19, -21],
             passes: 0,
             change: same,
@@ -91,7 +106,7 @@ fn skip_known_failure() {
         },
         Case {
             name: "regime",
-            live: false,
+            source: Source::Carried,
             profile: [-20, -20],
             passes: 0,
             change: |plan| {
@@ -103,7 +118,7 @@ fn skip_known_failure() {
         },
         Case {
             name: "loaded cores",
-            live: false,
+            source: Source::Carried,
             profile: [-20, -20],
             passes: 0,
             change: |plan| plan.load = Load::Many(set(&[0])),
@@ -111,7 +126,7 @@ fn skip_known_failure() {
         },
         Case {
             name: "duration",
-            live: false,
+            source: Source::Carried,
             profile: [-20, -20],
             passes: 0,
             change: |plan| {
@@ -124,7 +139,7 @@ fn skip_known_failure() {
     for case in cases {
         let mut j = Journal::new(&[0, 1], &[Start::at_limit(-20), Start::at_limit(-20)]);
         j.profile_change(&[-20, -20]);
-        let duration = j.run().config.short_trial.get();
+        let duration = j.run().config.checking_idle.get();
         let mut plan = j.manual(
             Regime::R6,
             0,
@@ -133,16 +148,25 @@ fn skip_known_failure() {
             &[-20, -20],
             duration,
         );
-        let seq = if case.live {
-            j.idle_failure(j.profile(&case.profile).offsets(), Condition::Together)
-        } else {
-            j.carry(
+        let seq = match case.source {
+            Source::Trial => {
+                let mut old = plan.clone();
+                old.profile = j.profile(&case.profile);
+                let end = j.trial(&old, Outcome::Failure);
+                let attribution = j.run().attribution().unwrap_or_else(|| {
+                    panic!("{}: the failed trial awaits attribution", case.name)
+                });
+                assert_ne!(j.decide(attribution), end, "{}", case.name);
+                end
+            }
+            Source::Idle => j.idle_failure(j.profile(&case.profile).offsets(), Condition::Together),
+            Source::Carried => j.carry(
                 SESSION,
                 (Regime::R6, 0, &[0, 1], duration),
                 Condition::Together,
                 &case.profile,
                 Outcome::Failure,
-            )
+            ),
         };
         if case.passes != 0 {
             let count = usize::from(j.run().config.needed.get()) - usize::from(case.passes < 0);

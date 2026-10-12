@@ -123,3 +123,15 @@ pub use query::{NotReady, replay};
 pub use r7::query::R7CoreStatus;
 pub use state::State;
 pub use topology::{Ranking, RankingError, Topology, TopologyError};
+
+/// The strategy ruleset this build tunes by (`docs/spec/tuner.md`, Ruleset): search strides, offset range,
+/// phases, evidence, failure-point and combination rules, hunts and checking coverage. Bump it when any of
+/// them changes; a session started under another ruleset is archived into a seeded new session. It starts at
+/// 1 because the Rust build starts its own journal schema and never reads a Go journal (`journal.md`).
+pub const RULESET: u32 = 1;
+
+/// The evidence epoch this build records trial outcomes under (`docs/spec/tuner.md`, Ruleset): workload
+/// content, generated backend configuration, intended durations and pass/failure detection. Bump it when a
+/// change makes recorded passes incomparable with current trials; a transition then drops passes from other
+/// epochs and keeps eligible failures. It starts at 1 for the same reason as [`RULESET`].
+pub const EVIDENCE_EPOCH: u32 = 1;

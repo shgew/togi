@@ -446,7 +446,7 @@ fn confirmation_failure_reverts_deepened_cores_top_requester_first() {
 
 #[test]
 fn confirmation_resumes_across_revert_and_rerun() {
-    let mut j = solo_cores(&[-10, -10], -11);
+    let mut j = solo_cores(&[-10, -10], -11).resuming_every(1);
     drive(&mut j, 4000, |j| j.run().phases.phase1_end().is_some());
     until_confirmation(&mut j);
     crash(&mut j, &[-11, -11]);
