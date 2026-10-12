@@ -153,15 +153,7 @@ pub(crate) fn sixteen_core_evidence() -> Vec<TrialFact> {
             let mean_depth = total / 8;
             let failing = (ccd * 7 + mean_depth + rep * 11) % 20 < mean_depth / 5;
             seq += 1;
-            let mut record = fact(
-                session,
-                seq,
-                &offsets,
-                Regime::R7,
-                &loaded,
-                120,
-                failing,
-            );
+            let mut record = fact(session, seq, &offsets, Regime::R7, &loaded, 120, failing);
             if failing {
                 record.outcome = named_failure(loaded[usize::try_from(rep * 3 % 8).unwrap()]);
             }
