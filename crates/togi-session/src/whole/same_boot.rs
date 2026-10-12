@@ -276,6 +276,69 @@ fn every_smu_access_window_of_the_same_boot_restoration_converges() {
 }
 
 #[test]
+fn a_kill_after_every_durable_restoration_event_of_the_same_boot_converges() {
+    for pending in [false, true] {
+        let reference = SameBoot::new(pending);
+        let ended = reference.resume();
+        assert!(ended.errors.is_empty(), "{:?}", ended.errors);
+        let events = reference.since(&ended);
+        let restored = position(events, EventKind::ProfileRestored).unwrap();
+        let durable = [
+            EventKind::SmuReadback,
+            EventKind::SmuIntent,
+            EventKind::SmuWrite,
+            EventKind::ProfileRestored,
+        ];
+        let boundaries: Vec<(usize, EventKind)> = events[..=restored]
+            .iter()
+            .enumerate()
+            .map(|(index, event)| (index, event.kind()))
+            .filter(|(_, kind)| durable.contains(kind))
+            .collect();
+        for kind in durable {
+            assert!(boundaries.iter().any(|(_, k)| *k == kind), "{kind:?}");
+        }
+        for (index, kind) in boundaries {
+            let fixture = SameBoot::new(pending);
+            let boot = fixture.boot();
+            fixture.bench.mem.inject(
+                Fault::after(Op::Write, u64::try_from(index).unwrap() + 1).named("events.jsonl"),
+            );
+            let killed = fixture.resume();
+            fixture.bench.mem.clear_faults();
+            assert!(
+                format!("{:?}", killed.errors).contains("injected Write fault"),
+                "{kind:?} at {index}: {:?}",
+                killed.errors
+            );
+            drop(killed);
+            for _ in 0..2 {
+                let fired = kill_at(&fixture, 8, None);
+                let killed = fixture.resume();
+                assert!(fired.get() && killed.crashed(), "{:?}", killed.errors);
+                assert_eq!(fixture.boot(), boot);
+            }
+            fixture.bench.sim.interrupt_smu(|_: &SmuOperation| Ok(()));
+            let resumed = fixture.resume();
+            assert!(resumed.errors.is_empty(), "{:?}", resumed.errors);
+            assert_eq!(
+                resumed.journal.events()[fixture.left + index].kind(),
+                kind,
+                "the killed event stayed durable, pending {pending}"
+            );
+            assert_eq!(resumed.stop, ended.stop);
+            assert_eq!(
+                fixture.offsets(),
+                HELD,
+                "pending {pending}, {kind:?} at {index}"
+            );
+            assert!(fixture.bench.sim.violations().is_empty());
+            assert!(fixture.clears() <= 1);
+        }
+    }
+}
+
+#[test]
 fn a_different_boot_never_reconciles_what_the_same_boot_left() {
     for pending in [false, true] {
         let fixture = SameBoot::new(pending);

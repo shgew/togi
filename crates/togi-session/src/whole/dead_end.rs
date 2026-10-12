@@ -336,6 +336,47 @@ fn a_dead_end_resumed_after_its_saved_entry_was_recorded_only_shuts_down() {
 }
 
 #[test]
+fn a_dead_end_resumed_outside_the_tuning_boot_only_shuts_down_and_the_next_run_tunes() {
+    let reference = quiet();
+    reference.sim.corrupt_readback(core(0));
+    let finished = drive(&reference, Some(&SharedGrub::healthy()));
+    let dead_end = seq_of(finished.journal.events(), EventKind::DeadEnd);
+    drop(finished);
+
+    let bench = quiet();
+    bench.sim.corrupt_readback(core(0));
+    let grub = SharedGrub::healthy();
+    interrupt(&bench, Fault::after(Op::Write, dead_end));
+    let interrupted = drive(&bench, Some(&grub));
+    assert_interrupted(&interrupted);
+    drop(interrupted);
+
+    let resumed = drive(&bench, None);
+    assert!(resumed.errors.is_empty(), "{:?}", resumed.errors);
+    assert!(
+        matches!(&resumed.stop, Some(Stop::DeadEnd { dead_end, reboot: false, .. })
+            if dead_end.action == Some(DeadEndAction::ClearSavedEntry)),
+        "{:?}",
+        resumed.stop
+    );
+    assert_eq!(grub.clears(), 0);
+    assert_eq!(grub.saved(), "togi");
+    let events = resumed.journal.events();
+    assert_eq!(count_after(events, dead_end, EventKind::BootSavedEntry), 0);
+    assert_eq!(count_after(events, dead_end, EventKind::TrialIntent), 0);
+    assert_eq!(count_after(events, dead_end, EventKind::Shutdown), 1);
+    assert!(matches!(&events.last().unwrap().payload,
+        Payload::Shutdown(shutdown) if shutdown.reason == ShutdownReason::DeadEnd));
+    drop(resumed);
+
+    let next = drive(&bench, None);
+    assert!(next.errors.is_empty(), "{:?}", next.errors);
+    assert_eq!(next.stop, Some(Stop::Cycles));
+    assert!(count_after(next.journal.events(), dead_end, EventKind::TrialIntent) > 0);
+    assert!(bench.sim.violations().is_empty());
+}
+
+#[test]
 fn a_fully_recorded_dead_end_does_not_stop_the_next_run_from_checking_preflight_again() {
     let bench = quiet();
     bench.sim.fail_check("root", "uid 1000");
