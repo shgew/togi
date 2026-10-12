@@ -33,12 +33,12 @@ struct Replaying<'a, E> {
 
 /// A feed playing `events` from the first `start` of them at `speed` by the real time `elapsed` reads, and the clock
 /// its frames are drawn at, which only reads the time of the feed's last journal and never plays anything on.
-fn replaying<'a, E: FnMut() -> Duration>(
-    events: &'a [Event],
+fn replaying<E: FnMut() -> Duration>(
+    events: &[Event],
     start: usize,
     speed: Speed,
     elapsed: E,
-) -> (Replaying<'a, E>, impl Fn() -> Timestamp + use<E>) {
+) -> (Replaying<'_, E>, impl Fn() -> Timestamp + use<E>) {
     let mut playback = Playback::new(events, start, speed);
     let now = Rc::new(Cell::new(playback.advance(Duration::ZERO).1));
     let clock = {
