@@ -258,11 +258,7 @@ mod tests {
         tokio::task::yield_now().await;
         let start = tokio::time::Instant::now();
         assert!(matches!(l.events.recv().await, Some(Event::Changed)));
-        assert_eq!(
-            start.elapsed(),
-            4 * POLL,
-            "reported before the fourth look"
-        );
+        assert_eq!(start.elapsed(), 4 * POLL, "reported before the fourth look");
         drop(l.reloaded);
         assert_eq!(
             task.await.unwrap(),

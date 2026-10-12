@@ -65,7 +65,7 @@ enum Content {
     Starting,
     Problem(SourceError),
     /// The folded journal, how many of its events are in the model, and the last of them.
-    Ready(Box<Model>, usize, Event),
+    Ready(Box<Model>, usize, Box<Event>),
 }
 
 /// The journal view's list while it is scrolled back: the entries it held when the reader left the end. Events that
@@ -202,7 +202,7 @@ impl Source {
                     && folded
                         .checked_sub(1)
                         .and_then(|index| events.get(index))
-                        .is_some_and(|event| *event == before) =>
+                        .is_some_and(|event| *event == *before) =>
             {
                 (model, folded)
             }
@@ -225,7 +225,7 @@ impl Source {
                 break;
             }
         }
-        self.content = Content::Ready(model, events.len(), last);
+        self.content = Content::Ready(model, events.len(), Box::new(last));
     }
 
     /// Decides what the log view lists for this screen: the held list while it is scrolled back, else the live one.
