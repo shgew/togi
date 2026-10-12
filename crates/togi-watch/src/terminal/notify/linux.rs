@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::io;
 use std::mem::MaybeUninit;
-use std::os::fd::OwnedFd;
+use std::os::fd::{AsFd as _, BorrowedFd, OwnedFd};
 use std::os::unix::ffi::OsStrExt as _;
 use std::path::{Path, PathBuf};
 
@@ -124,20 +124,49 @@ impl Inotify {
             relevant |= self.is_relevant(event.wd(), event.events(), name);
         }
     }
-}
 
-impl Watch for Inotify {
-    fn polling(&self) -> bool {
-        self.polling
+    /// Watches what there is to watch for the journal, adding each watch with `add`, and drops every watch it no
+    /// longer needs. A directory toward the state directory made after the climb found it missing but before the
+    /// directory above it was watched made no event, so then the climb starts again, at most once a level.
+    fn arm_with(
+        &mut self,
+        mut add: impl FnMut(BorrowedFd<'_>, &Path, WatchFlags) -> Result<i32, Errno>,
+    ) -> Result<(), WatchError> {
+        let mut superseded = Vec::new();
+        let mut climbs = self.directory.components().count();
+        let climb = loop {
+            let climb = self.climb(&mut add)?;
+            climbs -= 1;
+            match &climb.passed {
+                Some(missing) if climbs > 0 && missing.is_dir() => {
+                    superseded.extend(climb.watches.into_keys());
+                }
+                _ => break climb,
+            }
+        };
+        let fd = self.fd.get_ref();
+        for wd in self.watches.keys().chain(&superseded) {
+            if !climb.watches.contains_key(wd) {
+                let _ = inotify::remove_watch(fd, *wd);
+            }
+        }
+        self.watches = climb.watches;
+        self.polling = climb.polling;
+        Ok(())
     }
 
-    fn arm(&mut self) -> Result<(), WatchError> {
-        let fd = self.fd.get_ref();
+    /// Climbs from the state directory to the first directory above it that can be watched.
+    fn climb(
+        &self,
+        add: &mut impl FnMut(BorrowedFd<'_>, &Path, WatchFlags) -> Result<i32, Errno>,
+    ) -> Result<Climb, WatchError> {
+        let fd = self.fd.get_ref().as_fd();
         let mut watches = HashMap::with_capacity(2);
         let mut polling = false;
+        let mut missing = None;
         let mut path = self.directory.clone();
         loop {
-            match inotify::add_watch(fd, &path, DIRECTORY) {
+            match add(fd, &path, DIRECTORY) {
                 Ok(wd) => {
                     watches.insert(wd, path.clone());
                     if path != self.directory {
@@ -145,7 +174,7 @@ impl Watch for Inotify {
                     }
                 }
                 Err(Errno::ACCESS) if path == self.directory => {
-                    match inotify::add_watch(fd, &self.journal, FILE) {
+                    match add(fd, &self.journal, FILE) {
                         Ok(wd) => {
                             watches.insert(wd, self.journal.clone());
                         }
@@ -155,9 +184,10 @@ impl Watch for Inotify {
                 }
                 Err(Errno::ACCESS) => {
                     polling = polling || watches.is_empty();
+                    missing = None;
                     break;
                 }
-                Err(Errno::NOENT | Errno::NOTDIR) => {}
+                Err(Errno::NOENT | Errno::NOTDIR) => missing = Some(path.clone()),
                 Err(errno) => return Err(failed("watch state directory", errno)),
             }
             let Some(parent) = path.parent() else {
@@ -168,14 +198,28 @@ impl Watch for Inotify {
             };
             path = parent.to_path_buf();
         }
-        for wd in self.watches.keys() {
-            if !watches.contains_key(wd) {
-                let _ = inotify::remove_watch(fd, *wd);
-            }
-        }
-        self.watches = watches;
-        self.polling = polling;
-        Ok(())
+        Ok(Climb {
+            watches,
+            polling,
+            passed: missing,
+        })
+    }
+}
+
+/// What one climb watched, and the missing directory it passed last before the directory it watched above it.
+struct Climb {
+    watches: HashMap<i32, PathBuf>,
+    polling: bool,
+    passed: Option<PathBuf>,
+}
+
+impl Watch for Inotify {
+    fn polling(&self) -> bool {
+        self.polling
+    }
+
+    fn arm(&mut self) -> Result<(), WatchError> {
+        self.arm_with(|fd, path, flags| inotify::add_watch(fd, path, flags))
     }
 
     async fn changed(&mut self) -> Result<(), WatchError> {
@@ -372,6 +416,36 @@ mod tests {
             .open(directory.join(JOURNAL))
             .unwrap();
         std::io::Write::write_all(&mut &file, b"two\n").unwrap();
+        arrives(&mut watcher).await;
+    }
+
+    #[tokio::test]
+    async fn a_directory_made_while_the_climb_passes_it_is_still_watched() {
+        let root = TempDir::new().unwrap();
+        let state = root.path().join("state");
+        let directory = state.join("nested");
+        let mut watcher = watcher_at(&directory);
+        fs::create_dir(&state).unwrap();
+        let mut made = false;
+        watcher
+            .arm_with(|fd, path, flags| {
+                let added = rustix::fs::inotify::add_watch(fd, path, flags);
+                if path == directory && !made {
+                    made = true;
+                    fs::create_dir(&directory).unwrap();
+                }
+                added
+            })
+            .unwrap();
+        let mut watched: Vec<_> = watcher.watches.values().cloned().collect();
+        watched.sort();
+        assert_eq!(
+            watched,
+            [state, directory.clone()],
+            "the directory made between its failed watch and its parent's is watched"
+        );
+        watcher.drain().unwrap();
+        journal_in(&directory, "one\n");
         arrives(&mut watcher).await;
     }
 
