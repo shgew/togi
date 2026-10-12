@@ -1032,6 +1032,7 @@ dependencies = [
  "togi-render",
  "togi-session",
  "togi-sim",
+ "togi-simrun",
  "togi-tuner",
 ]
 

@@ -1,11 +1,14 @@
 //! Forecasts over journals of whole simulated sessions: the real tuner decides when a run has concluded.
 #![expect(clippy::unwrap_used, reason = "helpers panic on a broken fixture")]
 
+use std::cell::Cell;
 use std::io;
 use std::num::NonZeroU32;
+use std::rc::Rc;
 
 use jiff::tz::TimeZone;
 use togi_config::Config;
+use togi_journal::fs::FileKind;
 use togi_journal::{
     Build, CycleEvent, Event, MemFs, Payload, SCHEMA, Seq, ShutdownReason, StateDir,
 };
@@ -14,7 +17,8 @@ use togi_render::Renderer;
 use togi_session::{ConfigSource, Ended, PublicationPolicy, RunInput, Stop, StopPolicy, run};
 use togi_sim::definition::ModelDef;
 use togi_sim::{MachineDefinition, Model, RunSettings, Simulator};
-use togi_tool_forecast::{Anchor, Session, Status, after, read_dir};
+use togi_simrun::{Observe, Observer, Persistence, Replay, SimInput, SimOutcome, resume_simulator};
+use togi_tool_forecast::{Anchor, Outcome, Session, Status, after, read_dir};
 use togi_tuner::{EVIDENCE_EPOCH, RULESET};
 
 struct Simulated {
@@ -29,6 +33,17 @@ impl Simulated {
 
     fn session(&self) -> Session {
         Session::from_events(self.events().to_vec()).unwrap()
+    }
+}
+
+fn build() -> Build {
+    Build {
+        version: "0.0.0".into(),
+        rev: None,
+        ruleset: RULESET,
+        schema: SCHEMA,
+        fixes: 0,
+        evidence: EVIDENCE_EPOCH,
     }
 }
 
@@ -62,14 +77,7 @@ fn simulate(cycles: u32) -> Simulated {
     let ended = run(RunInput {
         config: Config::parse(r#"{"start_offsets":{"0":-10,"1":-10}}"#).unwrap(),
         source: ConfigSource::default(),
-        build: Build {
-            version: "0.0.0".into(),
-            rev: None,
-            ruleset: RULESET,
-            schema: SCHEMA,
-            fixes: 0,
-            evidence: EVIDENCE_EPOCH,
-        },
+        build: build(),
         boot,
         journal,
         machine,
@@ -181,4 +189,170 @@ fn a_simulated_state_directory_reads_back_as_the_sessions_it_holds() {
     let early = stopped.session().anchor_at(first).unwrap();
     let outcome = after(&sessions, &early).unwrap();
     assert_eq!(outcome.status, Status::Concluded);
+}
+
+const HISTORY_SEED: u64 = 42;
+const RESUME_SEED: u64 = 1;
+const NEAR_LIMIT_RATE: f64 = 1e-5;
+
+fn simrun(simulator: Simulator, fs: &MemFs, cycles: Option<u32>, observer: Observer) -> SimOutcome {
+    togi_simrun::simulate(SimInput {
+        config: Config::default(),
+        source: ConfigSource::default(),
+        build: build(),
+        simulator,
+        persistence: Persistence::Memory(fs.clone()),
+        replay: Replay::Warm,
+        verify_every: None,
+        max_boots: NonZeroU32::new(1000).unwrap(),
+        policy: StopPolicy {
+            cycles: cycles.and_then(NonZeroU32::new),
+            ..StopPolicy::default()
+        },
+        write_samples: false,
+        defects: &[],
+        log: None,
+        renderer: Renderer::default(),
+        zone: TimeZone::UTC,
+        cancel: CancellationToken::new(),
+        observer: Some(observer),
+        dump_to: None,
+    })
+    .unwrap()
+}
+
+fn copy(fs: &MemFs) -> MemFs {
+    let copy = MemFs::new();
+    for (path, kind) in fs.entries() {
+        if kind == FileKind::File {
+            copy.put(&path, fs.contents(&path).unwrap());
+        }
+    }
+    copy
+}
+
+/// A copy of `history` resumed on a machine that also fails near its limits, with another seed.
+fn resume(history: &MemFs, seed: u64, cycles: Option<u32>, observer: Observer) -> MemFs {
+    let fs = copy(history);
+    let definition = MachineDefinition {
+        model: ModelDef {
+            near_limit_rate: NEAR_LIMIT_RATE,
+            ..ModelDef::default()
+        },
+        ..MachineDefinition::default()
+    };
+    let simulator = resume_simulator(
+        &Persistence::Memory(fs.clone()),
+        Model::new(&definition, seed).unwrap(),
+        seed,
+        None,
+    )
+    .unwrap();
+    simrun(simulator, &fs, cycles, observer);
+    fs
+}
+
+fn on_disk(fs: &MemFs) -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "writing a simulation's files to disk is the point"
+    )]
+    fs.dump_to(dir.path()).unwrap();
+    dir
+}
+
+fn is_cycle_start(event: &Event) -> bool {
+    matches!(&event.payload, Payload::CheckingCycle(c) if c.event == CycleEvent::Start)
+}
+
+struct Endless {
+    want: Outcome,
+    got: Outcome,
+    crashes: u32,
+}
+
+fn endless_after_the_cycles_one_run(seed: u64) -> Endless {
+    let history = MemFs::new();
+    let definition = MachineDefinition::default();
+    let simulator = Simulator::new(
+        Model::new(&definition, HISTORY_SEED).unwrap(),
+        RunSettings {
+            seed: HISTORY_SEED,
+            ..RunSettings::default()
+        },
+    );
+    let crashed: Observer = Box::new(|event| {
+        if matches!(event.payload, Payload::CrashDetected(_)) {
+            Observe::Stop
+        } else {
+            Observe::Continue
+        }
+    });
+    simrun(simulator, &history, Some(1), crashed);
+    let history_dir = on_disk(&history);
+    let anchor = Anchor::of(history_dir.path().join("state")).unwrap();
+    let starts = Rc::new(Cell::new(0));
+    let counted = Rc::clone(&starts);
+    let stopped = resume(
+        &history,
+        seed,
+        Some(1),
+        Box::new(move |event| {
+            if is_cycle_start(event) {
+                counted.set(counted.get() + 1);
+            }
+            Observe::Continue
+        }),
+    );
+    let until = starts.get() + 2;
+    let mut seen = 0;
+    let endless = resume(
+        &history,
+        seed,
+        None,
+        Box::new(move |event| {
+            if is_cycle_start(event) {
+                seen += 1;
+            }
+            if seen == until {
+                Observe::Stop
+            } else {
+                Observe::Continue
+            }
+        }),
+    );
+    let outcome = |fs: &MemFs| {
+        let dir = on_disk(fs);
+        let sessions = read_dir(dir.path().join("state"), Some(anchor.session)).unwrap();
+        (after(&sessions, &anchor).unwrap(), sessions)
+    };
+    let (want, _) = outcome(&stopped);
+    let (got, sessions) = outcome(&endless);
+    let crashes = sessions
+        .iter()
+        .flat_map(|session| {
+            session
+                .events()
+                .iter()
+                .filter(move |event| session.id() != anchor.session || event.seq > anchor.seq)
+        })
+        .filter(|event| matches!(event.payload, Payload::CrashDetected(_)))
+        .count();
+    Endless {
+        want,
+        got,
+        crashes: u32::try_from(crashes).unwrap(),
+    }
+}
+
+#[test]
+fn an_endless_run_scores_as_the_cycles_one_run_though_it_crashes_after_concluding() {
+    let Endless { want, got, crashes } = endless_after_the_cycles_one_run(RESUME_SEED);
+    assert_eq!(want.status, Status::Concluded);
+    assert_eq!(got, want);
+    assert!(
+        crashes > got.crashes,
+        "the endless run recorded {crashes} crashes after the anchor, none after its conclusion"
+    );
 }

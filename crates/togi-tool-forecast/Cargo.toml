@@ -24,6 +24,7 @@ tempfile.workspace = true
 togi-config.workspace = true
 togi-render.workspace = true
 togi-session.workspace = true
+togi-simrun.workspace = true
 
 [lints]
 workspace = true
