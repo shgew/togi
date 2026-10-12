@@ -7,7 +7,9 @@ use std::rc::Rc;
 use togi_journal::{
     Event, FileError, Journal, LockError, LookupError, MemFs, ReadError, Recording, StateDir,
 };
-use togi_session::{Ended, PublicationPolicy, ResumeCapsule, RunInput, SessionError, prepare};
+use togi_session::{
+    Ended, PublicationPolicy, ResumeCapsule, RunInput, SessionError, prepare, prepare_kept,
+};
 
 use crate::input::{Finished, Persistence, Replay, SimInput, SimOutcome};
 use crate::observe::{SharedLog, Slot, Tee, UserLog, hook};
@@ -72,27 +74,63 @@ fn simulate_checked(input: SimInput, check: &mut Check<'_>) -> Result<SimOutcome
     let user: SharedLog = Rc::new(RefCell::new(UserLog::new(log)));
     let slot: Slot = Rc::new(RefCell::new(observer));
     let mut resume: Option<ResumeCapsule> = None;
+    let mut kept: Option<Journal> = None;
     let mut outcome = None;
     let mut superseded = false;
     for number in 1..=max_boots.get() {
         let mut machine = simulator.seams();
-        let host = |source| SimError::Host {
-            boot: number,
-            source,
+        let identity = machine
+            .host
+            .boot_id()
+            .and_then(|boot| Ok((boot, machine.host.bios_context()?)));
+        let (boot, context) = match identity {
+            Ok(identity) => identity,
+            Err(source) => {
+                return Err(abandon(
+                    kept.take(),
+                    resume.as_ref(),
+                    SimError::Host {
+                        boot: number,
+                        source,
+                    },
+                ));
+            }
         };
-        let boot = machine.host.boot_id().map_err(host)?;
-        let context = machine.host.bios_context().map_err(host)?;
-        let prepared = prepare(
-            lock(&persistence)?,
-            &build,
-            boot.clone(),
-            simulator.now(),
-            Some(&context),
-            defects,
-        )
-        .map_err(|source| SimError::Prepare {
-            boot: number,
-            source,
+        let now = simulator.now();
+        let reopened = kept.is_some();
+        let prepared = match kept.take() {
+            Some(mut journal) => {
+                if journal.reboot(boot.clone()).is_ok() {
+                    prepare_kept(journal, &build, boot.clone(), now, Some(&context), defects)
+                } else {
+                    // The flush a reboot starts with failed and poisoned the journal: reopen the directory from what
+                    // the file holds, after publishing the state the crashed boot left pending, for the reopened
+                    // boot to compare with.
+                    let mut dir = close(journal, number)?;
+                    if let Some(capsule) = &resume {
+                        publish(capsule, &mut dir, number)?;
+                    }
+                    prepare(dir, &build, boot.clone(), now, Some(&context), defects)
+                }
+            }
+            None => prepare(
+                lock(&persistence)?,
+                &build,
+                boot.clone(),
+                now,
+                Some(&context),
+                defects,
+            ),
+        }
+        .map_err(|source| {
+            let error = SimError::Prepare {
+                boot: number,
+                source,
+            };
+            match &resume {
+                Some(capsule) if reopened => republish(&persistence, capsule, error),
+                _ => error,
+            }
         })?;
         let journal = prepared.journal;
         let opened = journal.events().len();
@@ -130,33 +168,55 @@ fn simulate_checked(input: SimInput, check: &mut Check<'_>) -> Result<SimOutcome
         let crash = ended.crashed();
         let appended = ended.journal.events().len() > opened;
         if due(number, max_boots, crash, verify_every) {
-            check(
+            let checked = check(
                 ended.capsule.as_ref(),
                 ended.journal.events(),
                 !crash && !ended.errors.is_empty(),
                 number,
-            )?;
+            );
+            if let Err(error) = checked {
+                let pending = ended.capsule.as_ref().filter(|_| crash);
+                return Err(abandon(Some(ended.journal), pending, error));
+            }
         }
         let Ended {
             stop,
             mut errors,
             emergency,
-            mut journal,
+            journal,
             capsule,
             panic: _,
         } = ended;
         errors.extend(user.borrow_mut().take_failure().map(SessionError::Log));
-        if crash && let Some(capsule) = &capsule {
-            capsule
-                .publish(&mut journal)
-                .map_err(|source| SimError::Publish {
-                    boot: number,
-                    source,
-                })?;
+        let failed = crash && errors.iter().any(|error| !error.is_crash());
+        // A warm reboot carries the open journal and the folds into the next boot, which adopts them, so the crashed
+        // boot leaves `state.json` pending until a boot ends the simulation; the last boot's capsule is published
+        // below, as is every cold boot's, which nothing adopts.
+        let keeps = crash
+            && !failed
+            && replay == Replay::Warm
+            && number < max_boots.get()
+            && capsule
+                .as_ref()
+                .is_some_and(|capsule| capsule.covers(&journal, defects));
+        if keeps {
+            if appended && !superseded {
+                if let Err(error) = machine::forget(&persistence, journal.dir()) {
+                    return Err(abandon(Some(journal), capsule.as_ref(), error));
+                }
+                superseded = true;
+            }
+            kept = Some(journal);
+            resume = capsule;
+            simulator.reboot();
+            continue;
         }
-        close(journal, number)?;
+        let mut dir = close(journal, number)?;
+        if crash && let Some(capsule) = &capsule {
+            publish(capsule, &mut dir, number)?;
+        }
         if appended && !superseded {
-            machine::forget(&persistence, &lock(&persistence)?)?;
+            machine::forget(&persistence, &dir)?;
             superseded = true;
         }
         if !crash {
@@ -168,14 +228,13 @@ fn simulate_checked(input: SimInput, check: &mut Check<'_>) -> Result<SimOutcome
             })));
             break;
         }
-        let failures: Vec<SessionError> = errors
-            .into_iter()
-            .filter(|error| !error.is_crash())
-            .collect();
-        if !failures.is_empty() {
+        if failed {
             return Err(SimError::Failed {
                 boot: number,
-                errors: failures,
+                errors: errors
+                    .into_iter()
+                    .filter(|error| !error.is_crash())
+                    .collect(),
             });
         }
         resume = capsule.filter(|_| replay == Replay::Warm);
@@ -215,11 +274,39 @@ fn verify(
     }
 }
 
-fn close(journal: Journal, boot: u32) -> Result<(), SimError> {
+fn close(journal: Journal, boot: u32) -> Result<StateDir, SimError> {
     journal
         .close()
-        .map(drop)
         .map_err(|source| SimError::Close { boot, source })
+}
+
+/// Ends a simulation on an error: closes the open journal, if any, after publishing the state its crashed boot left
+/// pending, as a normal exit does. `error` stays the one returned; a failure here is not reported over it.
+fn abandon(journal: Option<Journal>, pending: Option<&ResumeCapsule>, error: SimError) -> SimError {
+    if let Some(journal) = journal
+        && let Ok(mut dir) = journal.close()
+        && let Some(capsule) = pending
+    {
+        drop(capsule.publish(&mut dir));
+    }
+    error
+}
+
+/// [`abandon`] for a journal that [`prepare_kept`] consumed: publishes the pending state into the directory unless
+/// it no longer holds the journal, as when the failed preparation archived it, which took the state file along.
+fn republish(persistence: &Persistence, pending: &ResumeCapsule, error: SimError) -> SimError {
+    if let Ok(mut dir) = lock(persistence)
+        && matches!(dir.live_session(), Ok(Some(_)))
+    {
+        drop(pending.publish(&mut dir));
+    }
+    error
+}
+
+fn publish(capsule: &ResumeCapsule, dir: &mut StateDir, boot: u32) -> Result<(), SimError> {
+    capsule
+        .publish(dir)
+        .map_err(|source| SimError::Publish { boot, source })
 }
 
 #[expect(

@@ -78,6 +78,9 @@ impl Appender {
 
 impl Session {
     pub(crate) fn rebuild_state(&mut self) -> Result<(), SessionError> {
+        if self.appender.adopted {
+            return Ok(());
+        }
         if self.appender.journal().events().is_empty() {
             return Ok(());
         }

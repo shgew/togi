@@ -274,3 +274,29 @@ fn a_continuation_that_cannot_remove_the_superseded_machine_fails() {
     );
     assert_eq!(store.bytes(MACHINE), Some(saved));
 }
+
+#[test]
+fn a_continuation_that_fails_after_a_warm_crash_still_publishes_the_crashed_boots_state() {
+    let definition = hunt_machine(2);
+    let store = MemFs::new();
+    capped(&definition, 1, &store, 3);
+    let before = store.bytes("state.json");
+    let reference = MemFs::new();
+    capped(&definition, 1, &reference, 3);
+    let mut one_boot = input(resumed(&definition, 1, &reference), reference.persistence());
+    one_boot.max_boots = nz(1);
+    assert!(matches!(
+        simulate(one_boot).unwrap(),
+        SimOutcome::Capped { .. }
+    ));
+
+    let sim = resumed(&definition, 1, &store);
+    store.inject(Fault::before(Op::Remove, 1).named(MACHINE));
+    assert!(matches!(
+        simulate(input(sim, store.persistence())),
+        Err(SimError::Machine { .. })
+    ));
+
+    assert_ne!(store.bytes("state.json"), before);
+    assert_eq!(store.bytes("state.json"), reference.bytes("state.json"));
+}

@@ -36,7 +36,7 @@ pub use boot::BootError;
 pub use commands::{CommandError, reset_all, reset_core};
 pub use emergency::{Outcome as Emergency, Readback, Response, Withheld, Zeroed};
 pub use error::{AppendFailure, FoldError, JournalCause, JournalFailure, SessionError};
-pub use prepare::{PrepareError, Prepared, prepare};
+pub use prepare::{PrepareError, Prepared, prepare, prepare_kept};
 pub use publication::PublicationPolicy;
 pub use resume::{Divergence, DocumentDivergence, ResumeCapsule};
 pub use run::run;
