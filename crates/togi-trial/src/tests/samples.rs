@@ -456,37 +456,35 @@ impl Drop for TeardownNotified {
     }
 }
 
-fn open_fails_after(delay: Duration) -> Rc<dyn Fn() -> Result<Open, StorageError>> {
-    Rc::new(move || {
-        Ok(Box::new(move || {
-            std::thread::sleep(delay);
-            Err(StorageError::Create(std::io::Error::other(
-                "injected open failure",
-            )))
-        }) as Open)
-    })
-}
-
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn an_open_failure_before_the_deadline_ends_the_trial_when_it_happens() {
     local(async {
+        let (release, gate) = channel();
+        let entered = Arc::new(tokio::sync::Notify::new());
         let timing = Timing {
             sample: Duration::from_millis(50),
             ..Timing::default()
         };
         let rig = rig_edit(TestBackend::new("/bin/true"), timing, |env| {
-            env.storage = Some(open_fails_after(Duration::from_millis(150)));
+            env.storage = Some(open_fails_when_released(gate, Arc::clone(&entered)));
         });
+        let failed_at = Duration::from_millis(150);
         let handle = rig
             .start(spec(Regime::R1, &[0], Duration::from_millis(900)))
             .await
             .unwrap();
+        notified_without_advancing(&entered).await;
+        tokio::time::advance(failed_at).await;
+        let clock = crate::join::ClockHold::new(secs(5));
+        release.send(()).unwrap();
+        let process = rig.fake.process(0);
+        while !process.signals.borrow().contains(&GroupSignal::Term) {
+            tokio::task::yield_now().await;
+        }
+        drop(clock);
+        until_reaped(&rig).await;
         let run = finish(&handle).await;
-        let ran = run.finished.result.ran;
-        assert!(
-            ran >= Duration::from_millis(100) && ran < Duration::from_millis(900),
-            "{ran:?}"
-        );
+        assert_eq!(run.finished.result.ran, failed_at);
         assert!(matches!(
             &run.finished.errors[..],
             [Error::Storage(failure)] if matches!(failure.errors(), [StorageError::Create(_)])
@@ -615,8 +613,9 @@ async fn a_writer_that_cannot_start_ends_the_trial_with_a_storage_error() {
     .await;
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn a_stuck_writer_join_does_not_block_the_runtime_thread() {
+    const BURST: u32 = 1000;
     local(async {
         let (gate, gated) = std::sync::mpsc::channel::<()>();
         let lines = Arc::new(Mutex::new(0));
@@ -628,27 +627,35 @@ async fn a_stuck_writer_join_does_not_block_the_runtime_thread() {
         let rig = rig_edit(TestBackend::new("/bin/true"), timing, |env| {
             env.storage = Some(storage);
         });
-        let ticks = Rc::new(std::cell::Cell::new(0_u32));
-        let counter = Rc::clone(&ticks);
-        let ticker = tokio::task::spawn_local(async move {
-            loop {
-                tokio::time::sleep(Duration::from_millis(20)).await;
+        let duration = secs(2);
+        let handle = rig.start(spec(Regime::R1, &[0], duration)).await.unwrap();
+        tokio::time::sleep(duration).await;
+        until_reaped(&rig).await;
+        assert!(!ended(&handle), "the blocked writer was not joined");
+        let turns = Rc::new(std::cell::Cell::new(0_u32));
+        let counter = Rc::clone(&turns);
+        tokio::task::spawn_local(async move {
+            for _ in 0..BURST {
+                tokio::task::yield_now().await;
                 counter.set(counter.get() + 1);
             }
-        });
-        let handle = rig.start(spec(Regime::R1, &[0], secs(2))).await.unwrap();
-        let wall = std::time::Instant::now();
-        let run = finish(&handle).await;
-        ticker.abort();
-        let elapsed = wall.elapsed();
-        assert!(elapsed >= Duration::from_millis(2900), "{elapsed:?}");
-        let expected = u32::try_from(elapsed.as_millis() / 20).unwrap();
+        })
+        .await
+        .unwrap();
+        assert_eq!(turns.get(), BURST);
         assert!(
-            ticks.get() * 4 >= expected * 3,
-            "the runtime kept running during the join: {} of {expected} ticks",
-            ticks.get()
+            !ended(&handle),
+            "the runtime ran other tasks while the join was still pending"
         );
-        assert!(matches!(&run.finished.errors[..], [Error::Storage(_)]));
+        let run = finish(&handle).await;
+        assert!(
+            matches!(
+                &run.finished.errors[..],
+                [Error::Storage(failure)] if matches!(failure.errors(), [StorageError::JoinTimeout(_)])
+            ),
+            "{:?}",
+            run.finished.errors
+        );
         drop(gate);
     })
     .await;

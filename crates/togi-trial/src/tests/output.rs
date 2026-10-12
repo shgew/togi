@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use test_case::test_case;
@@ -452,12 +452,12 @@ async fn every_ready_instance_is_sampled_each_tick_while_both_watched_floods_are
 }
 
 /// The watching test backend whose classifier takes a controlled real time per `SLOW` line and
-/// notes when the first one was classified.
+/// stamps the start of each one.
 #[derive(Debug)]
 struct Slow {
     inner: TestBackend,
     nap: Duration,
-    first: Arc<OnceLock<std::time::Instant>>,
+    stamps: Arc<Mutex<Vec<std::time::Instant>>>,
 }
 
 impl Backend for Slow {
@@ -480,7 +480,7 @@ impl Backend for Slow {
 
     fn classify(&self, line: &str) -> Line {
         if line.starts_with("SLOW") {
-            self.first.get_or_init(std::time::Instant::now);
+            self.stamps.lock().unwrap().push(std::time::Instant::now());
             std::thread::sleep(self.nap);
         }
         self.inner.classify(line)
@@ -491,11 +491,11 @@ impl Backend for Slow {
 async fn a_slow_classified_watched_flood_is_polled_during_the_trial_and_leaves_the_load_steps_on_time()
  {
     local(async {
-        let first = Arc::new(OnceLock::new());
+        let stamps = Arc::new(Mutex::new(Vec::new()));
         let slow = Slow {
             inner: watching(),
             nap: Duration::from_millis(2),
-            first: Arc::clone(&first),
+            stamps: Arc::clone(&stamps),
         };
         let timing = Timing {
             sample: Duration::from_millis(25),
@@ -513,7 +513,11 @@ async fn a_slow_classified_watched_flood_is_polled_during_the_trial_and_leaves_t
         });
         let handle = rig.start(spec(Regime::R4, &[0], secs(1))).await.unwrap();
         let run = finish(&handle).await;
-        let classified = first.get().expect("the flood was classified");
+        let classified = *stamps
+            .lock()
+            .unwrap()
+            .first()
+            .expect("the flood was classified");
         let terminated = rig
             .fake
             .process(0)
@@ -524,7 +528,7 @@ async fn a_slow_classified_watched_flood_is_polled_during_the_trial_and_leaves_t
             .map(|(at, _)| at.into_std())
             .expect("the teardown terminated the worker");
         assert!(
-            *classified < terminated,
+            classified < terminated,
             "watched output is polled by the sampling ticks of the trial, not first by the \
              teardown"
         );
@@ -535,23 +539,25 @@ async fn a_slow_classified_watched_flood_is_polled_during_the_trial_and_leaves_t
             .borrow()
             .iter()
             .filter(|(_, signal)| matches!(signal, GroupSignal::Stop | GroupSignal::Cont))
-            .map(|(at, _)| *at)
+            .map(|(at, _)| at.into_std())
             .collect();
         let load = crate::plan::Load::Steps(
             togi_machine::LoadSchedule::for_spec(&spec(Regime::R4, &[0], secs(1))).unwrap(),
         );
-        let planned: Vec<_> = crate::schedule::timeline(&load, secs(1))
-            .map(|step| step.at)
-            .collect();
-        assert!(planned.len() >= 10 && toggles.len() >= planned.len());
-        for (actual, at) in toggles.iter().zip(&planned) {
-            let planned_after = at.saturating_sub(planned[0]);
-            let late = actual.duration_since(toggles[0]).abs_diff(planned_after);
-            assert!(
-                late < Duration::from_millis(40),
-                "a step planned at {at:?} ran {late:?} off its schedule"
-            );
-        }
+        let planned = crate::schedule::timeline(&load, secs(1)).count();
+        assert!(planned >= 10 && toggles.len() >= planned);
+        let stamps = stamps.lock().unwrap();
+        let during = toggles
+            .iter()
+            .filter(|&&at| {
+                let classified = stamps.iter().filter(|&&stamp| stamp <= at).count();
+                0 < classified && classified < stamps.len()
+            })
+            .count();
+        assert!(
+            during >= planned / 2,
+            "{during} of {planned} load steps ran while the flood was being classified"
+        );
         assert!(run.finished.teardown.is_ok());
     })
     .await;

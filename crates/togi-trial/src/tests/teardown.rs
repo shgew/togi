@@ -1,8 +1,8 @@
 //! Teardown, rollback and containment on the fake OS under paused time.
 
 use std::path::Path;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use test_case::test_case;
@@ -994,6 +994,7 @@ struct Naps {
     inner: TestBackend,
     nap: Duration,
     classified: Arc<AtomicUsize>,
+    last: Arc<Mutex<Option<std::time::Instant>>>,
 }
 
 impl Backend for Naps {
@@ -1016,6 +1017,7 @@ impl Backend for Naps {
 
     fn classify(&self, line: &str) -> Line {
         self.classified.fetch_add(1, Ordering::SeqCst);
+        *self.last.lock().unwrap() = Some(std::time::Instant::now());
         std::thread::sleep(self.nap);
         self.inner.classify(line)
     }
@@ -1031,10 +1033,12 @@ async fn slow_watched_output_of_many_files_is_bound_by_one_cleanup_budget(count:
         let mut inner = TestBackend::new("/bin/true");
         inner.watched = vec!["results.txt", "second.txt"];
         let classified = Arc::new(AtomicUsize::new(0));
+        let last = Arc::new(Mutex::new(None));
         let slow = Naps {
             inner: inner.clone(),
             nap: Duration::from_millis(20),
             classified: Arc::clone(&classified),
+            last: Arc::clone(&last),
         };
         let timing = Timing {
             stop_grace: Duration::from_millis(100),
@@ -1068,8 +1072,23 @@ async fn slow_watched_output_of_many_files_is_bound_by_one_cleanup_budget(count:
         let run = finish(&handle).await;
         let elapsed = begun.elapsed();
         assert!(
-            elapsed <= timing.teardown + Duration::from_millis(500),
-            "one absolute budget bounds the drain of every file: {elapsed:?}"
+            elapsed < timing.stop_bound(),
+            "the teardown outlived the spec's bound: {elapsed:?}"
+        );
+        let terminated = rig
+            .fake
+            .process(0)
+            .signal_times
+            .borrow()
+            .iter()
+            .find(|(_, signal)| matches!(signal, GroupSignal::Term))
+            .map(|(at, _)| at.into_std())
+            .expect("the teardown terminated the workers");
+        let last = last.lock().unwrap().expect("the backlog was classified");
+        assert!(
+            last <= terminated + timing.teardown,
+            "a line was classified after the one absolute budget ended: {:?} late",
+            last.saturating_duration_since(terminated + timing.teardown)
         );
         let containment = run.finished.teardown.unwrap_err();
         assert!(
