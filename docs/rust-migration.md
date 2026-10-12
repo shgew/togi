@@ -721,10 +721,12 @@ Some Rust tests have no Go counterpart. They pin behavior Go got wrong or did no
 
 `togi-watchtest` is a dev-dependency-only crate that builds the simulated session journals the watch tests read: the dashboard's frame tests, replay and stage 7's status tests. It replaces Go's `frames_test.go` helpers and the gzip recordings in `internal/watch/watchtest`, which Rust never reads.
 
-- `Scenario` names the 18 watch golden scenarios that have a journal. `Scenario::events()` cuts one from a `Base` simulation. Each of the 8 bases is simulated once per process (`OnceLock`) and `Base::simulate()` runs one afresh.
-- `simulate(machine, config, until, stop)` runs `togi-simrun` in memory. Every journal names `build()`: version `0.0.0`, no revision, and the tuner's current ruleset and evidence epoch, so a release's version bump changes no frame.
+- `Scenario` names the 18 watch golden scenarios that have a journal. `Scenario::events()` cuts one from a `Base` simulation. Each of the 8 bases is simulated once per process (`OnceLock`); `Base::simulate()` runs one afresh and `Scenario::events_from` cuts from it.
+- `simulate(machine, config, until, stop)` runs `togi-simrun` in memory. Every journal names `build()`: version `0.0.0`, no revision, and the tuner's current ruleset and evidence epoch, so a release's version bump changes no frame. `until` is optional, and without it no observer runs: simrun's observer copies the whole in-memory journal after every append to read the last line, which doubled the cost of a base.
 - `cut_at`, `cut_when`, `cut_trial`, `cut_passed_trial`, `cut_passed_checking_trial`, `hunt_with_unconfirmed_profile` and `before_crash_detected` are Go's cut helpers, returning `Result` in place of failing the test.
 - `install(dir, scenario)` writes `events.jsonl` through `togi-journal`'s writer, one open journal per boot, and returns the session's `Build`.
 - `cycle_completed_by_rerun()` is Go's fixture of the same name, built by answering the real tuner's `next()` with no simulator.
 
 Where the Rust simulator differs from Go's, a scenario is cut by the state its name claims, not by Go's event rule. `between` cuts after the first passed checking cycle trial: the first passed checking trial of the default session is a rerun. `unconfirmed` uses seed 43: Go's seed 30 never leaves a BIOS offset unconfirmed in the Rust simulator, and a scan of seeds 1 to 60 found one in seed 43 only.
+
+The later-hunt base runs once, through three clean cycles. Go simulated six cycles twice: once to find the first checking trial of cycle 4, then again with the burst of crashes scripted from that trial on. Trials before the burst run alike either way, so the burst's start is pinned (trial 1887) and the burst's own journal is checked to show it; three cycles reach the same hunt, and the `hunt-bios` cut is byte-identical to the six-cycle one.

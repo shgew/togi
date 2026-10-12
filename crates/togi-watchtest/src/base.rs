@@ -1,4 +1,3 @@
-use std::fmt;
 use std::sync::OnceLock;
 
 use togi_config::Config;
@@ -121,12 +120,6 @@ impl Base {
             .get_or_init(|| self.simulate().map_err(|error| error.to_string()))
             .as_deref()
             .map_err(|message| Error::Shared(message.clone()))
-    }
-}
-
-impl fmt::Display for Base {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Debug::fmt(self, f)
     }
 }
 

@@ -16,14 +16,6 @@ pub fn install(dir: &Path, scenario: Scenario) -> Result<Build, Error> {
     })
 }
 
-/// [`install`] for a journal that is not a scenario's, such as one of the named fixtures.
-pub fn install_events(dir: &Path, events: &[Event]) -> Result<Build, Error> {
-    write(dir, events).map_err(|source| Error::Install {
-        dir: dir.to_path_buf(),
-        source,
-    })
-}
-
 #[expect(
     clippy::disallowed_methods,
     reason = "test-support state directories need not survive a power loss, so the journal skips fsync"
@@ -33,13 +25,10 @@ fn lock(dir: &Path) -> Result<StateDir, togi_journal::LockError> {
 }
 
 fn write(dir: &Path, events: &[Event]) -> Result<Build, InstallError> {
-    let build = events
-        .iter()
-        .find_map(|event| match &event.payload {
-            Payload::SessionStart(start) => Some(start.build.clone()),
-            _ => None,
-        })
-        .ok_or(InstallError::NoSession)?;
+    let Some(Payload::SessionStart(start)) = events.first().map(|event| &event.payload) else {
+        return Err(InstallError::NoSession);
+    };
+    let build = start.build.clone();
     let mut state = lock(dir)?;
     for boot in events.chunk_by(|a, b| a.boot == b.boot) {
         let now = boot[0].time;

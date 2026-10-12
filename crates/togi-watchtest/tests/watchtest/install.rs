@@ -1,5 +1,5 @@
 use togi_journal::{Payload, Recording};
-use togi_watchtest::{Scenario, install};
+use togi_watchtest::{Error, Scenario, install};
 
 use crate::support::lines;
 
@@ -43,4 +43,13 @@ fn an_installed_multi_boot_scenario_keeps_every_boot_and_smu_event() {
             .iter()
             .any(|event| matches!(event.payload, Payload::SmuWrite(_)))
     );
+}
+
+#[test]
+fn installing_where_no_state_directory_can_be_made_is_an_error() {
+    let dir = tempfile::tempdir().expect("a temporary directory");
+    let file = dir.path().join("file");
+    std::fs::write(&file, b"").expect("a file");
+    let error = install(&file, Scenario::Confirm).expect_err("a file is not a directory");
+    assert!(matches!(error, Error::Install { dir, .. } if dir == file));
 }
