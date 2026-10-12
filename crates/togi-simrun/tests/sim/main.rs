@@ -12,6 +12,7 @@ mod first_result;
 mod forecast;
 mod hunt;
 mod interrupt;
+mod log;
 mod memo;
 mod memory;
 mod persistence;

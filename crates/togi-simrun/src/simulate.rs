@@ -7,10 +7,10 @@ use std::rc::Rc;
 use togi_journal::{
     Event, FileError, Journal, LockError, LookupError, MemFs, ReadError, Recording, StateDir,
 };
-use togi_session::{Ended, PublicationPolicy, ResumeCapsule, RunInput, prepare};
+use togi_session::{Ended, PublicationPolicy, ResumeCapsule, RunInput, SessionError, prepare};
 
 use crate::input::{Finished, Persistence, Replay, SimInput, SimOutcome};
-use crate::observe::{Slot, Tee, UserLog, Watch};
+use crate::observe::{SharedLog, Slot, Tee, UserLog, Watch};
 use crate::{HistoryError, SimError, machine};
 
 #[expect(
@@ -69,7 +69,7 @@ pub fn simulate(input: SimInput) -> Result<SimOutcome, SimError> {
         Persistence::Memory(_) => PublicationPolicy::OnFinish,
         Persistence::Files(_) => PublicationPolicy::Live,
     };
-    let user: UserLog = Rc::new(RefCell::new(log));
+    let user: SharedLog = Rc::new(RefCell::new(UserLog::new(log)));
     let slot: Slot = Rc::new(RefCell::new(observer));
     let mut resume: Option<ResumeCapsule> = None;
     let mut outcome = None;
@@ -97,10 +97,8 @@ pub fn simulate(input: SimInput) -> Result<SimOutcome, SimError> {
         if journal.events().is_empty() {
             simulator.forget_last_trial();
         }
-        if let (Some(seq), Some(log)) = (journal.repaired(), user.borrow_mut().as_mut()) {
-            if let Some(event) = journal.event(seq) {
-                let _ = renderer.write_event(log, event, &zone);
-            }
+        if let Some(event) = journal.repaired().and_then(|seq| journal.event(seq)) {
+            user.borrow_mut().write_event(renderer, event, &zone);
         }
         let run_cancel = cancel.child_token();
         let tee = Tee {
@@ -142,11 +140,12 @@ pub fn simulate(input: SimInput) -> Result<SimOutcome, SimError> {
         }
         let Ended {
             stop,
-            errors,
+            mut errors,
             emergency,
             mut journal,
             capsule,
         } = ended;
+        errors.extend(user.borrow_mut().take_failure().map(SessionError::Log));
         if crash
             && publication == PublicationPolicy::OnFinish
             && let Some(capsule) = &capsule
@@ -168,9 +167,20 @@ pub fn simulate(input: SimInput) -> Result<SimOutcome, SimError> {
             })));
             break;
         }
+        let failures: Vec<SessionError> = errors
+            .into_iter()
+            .filter(|error| !error.is_crash())
+            .collect();
+        if !failures.is_empty() {
+            return Err(SimError::Failed {
+                boot: number,
+                errors: failures,
+            });
+        }
         resume = capsule.filter(|_| replay == Replay::Warm);
         simulator.reboot();
     }
+    user.borrow_mut().flush().map_err(SimError::FlushLog)?;
     if outcome.is_none() {
         machine::save(&persistence, &lock(&persistence)?, &simulator.persisted())?;
     }

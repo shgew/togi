@@ -1,7 +1,7 @@
 use std::io;
 
 use togi_journal::{CloseError, LockError, LookupError, StateError};
-use togi_session::{Divergence, PrepareError};
+use togi_session::{Divergence, PrepareError, SessionError};
 
 #[derive(Debug, thiserror::Error)]
 pub enum SimError {
@@ -51,6 +51,13 @@ pub enum SimError {
     },
     #[error("encode the simulated machine: {0}")]
     EncodeMachine(#[source] serde_json::Error),
+    #[error("boot {boot} crashed and also failed: {}", listed(errors))]
+    Failed {
+        boot: u32,
+        errors: Vec<SessionError>,
+    },
+    #[error("flush the log: {0}")]
+    FlushLog(#[source] io::Error),
     #[error("samples are written under a state directory on disk; an in-memory one has none")]
     SamplesInMemory,
     #[error(
@@ -65,4 +72,12 @@ pub enum HistoryError {
     Lock(#[from] LockError),
     #[error(transparent)]
     Read(#[from] LookupError),
+}
+
+fn listed(errors: &[SessionError]) -> String {
+    errors
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join("; ")
 }
