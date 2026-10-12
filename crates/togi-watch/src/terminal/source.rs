@@ -286,6 +286,16 @@ impl Source {
     }
 }
 
+impl super::Feed for Source {
+    fn journal(&mut self, screen: &Screen) -> Journal<'_> {
+        Self::journal(self, screen)
+    }
+
+    fn reload(&mut self) -> bool {
+        Self::reload(self)
+    }
+}
+
 #[cfg(test)]
 impl Source {
     /// Where the model is, which changes only when a fresh one replaces it.
