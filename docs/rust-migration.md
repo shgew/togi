@@ -716,3 +716,15 @@ Every Go test function in `internal/simrun/*_test.go`, `internal/tuner/memo_test
 | `tuner/forecast_sim_test.go` `BenchmarkDashboardProjectionForecast` | none | No counterpart. This is a performance probe, not a behavior test: it times `Replay`, the dashboard queries and `Forecast` over the 16-core seed-1 journal. The Rust crates have no benchmark harness yet: no `[[bench]]` target and no criterion. Stage 3's closing measurements, under "Forecast cost, against Go's", measured the full `replay` fold and `forecast` against Go's figures, on a different session. They did not time the dashboard views. |
 
 Some Rust tests have no Go counterpart. They pin behavior Go got wrong or did not have: `log::a_log_that_fails_during_a_crashed_boot_fails_the_simulation_instead_of_capping_it`, `log::an_observer_sees_every_append_after_the_log_fails`, `simulate::tests::a_boot_that_ends_without_a_crash_is_always_checked`; the `split::` tests, which cover a capped simulation continuing in another process from `machine.json`, in memory too, and a snapshot that cannot be read or removed; and the `boundary::` tests, which cover rejected persistence options, a host failure at startup, the repaired-tail log line, `dump_to`, and reading the live journal back.
+
+## Stage 6: `togi-watchtest` (#834, 2026-10-12)
+
+`togi-watchtest` is a dev-dependency-only crate that builds the simulated session journals the watch tests read: the dashboard's frame tests, replay and stage 7's status tests. It replaces Go's `frames_test.go` helpers and the gzip recordings in `internal/watch/watchtest`, which Rust never reads.
+
+- `Scenario` names the 18 watch golden scenarios that have a journal. `Scenario::events()` cuts one from a `Base` simulation. Each of the 8 bases is simulated once per process (`OnceLock`) and `Base::simulate()` runs one afresh.
+- `simulate(machine, config, until, stop)` runs `togi-simrun` in memory. Every journal names `build()`: version `0.0.0`, no revision, and the tuner's current ruleset and evidence epoch, so a release's version bump changes no frame.
+- `cut_at`, `cut_when`, `cut_trial`, `cut_passed_trial`, `cut_passed_checking_trial`, `hunt_with_unconfirmed_profile` and `before_crash_detected` are Go's cut helpers, returning `Result` in place of failing the test.
+- `install(dir, scenario)` writes `events.jsonl` through `togi-journal`'s writer, one open journal per boot, and returns the session's `Build`.
+- `cycle_completed_by_rerun()` is Go's fixture of the same name, built by answering the real tuner's `next()` with no simulator.
+
+Where the Rust simulator differs from Go's, a scenario is cut by the state its name claims, not by Go's event rule. `between` cuts after the first passed checking cycle trial: the first passed checking trial of the default session is a rerun. `unconfirmed` uses seed 43: Go's seed 30 never leaves a BIOS offset unconfirmed in the Rust simulator, and a scan of seeds 1 to 60 found one in seed 43 only.
