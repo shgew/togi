@@ -1,13 +1,15 @@
 use std::fmt;
 use std::num::NonZeroU32;
 
+use serde::{Deserialize, Serialize};
 use togi_machine::{CoreId, CoreSet, PER_CORE_MAX, PerCore, TargetOffset};
 
 use crate::optimum::solve;
 use crate::{Depth, Profile, Ranking, Topology, TopologyMismatch};
 
 /// The shallowest offset a core failed at; reaching it or going deeper fails again.
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct FailurePoint(TargetOffset);
 
 impl FailurePoint {
@@ -20,7 +22,8 @@ impl FailurePoint {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct CombinationId(NonZeroU32);
 
 impl CombinationId {
@@ -44,7 +47,7 @@ impl fmt::Display for CombinationId {
 }
 
 /// Offsets at which the member cores fail together though each passes alone.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Combination {
     id: CombinationId,
     members: PerCore<TargetOffset>,
@@ -60,7 +63,7 @@ impl Combination {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum Reached {
     FailurePoint { core: CoreId, point: FailurePoint },
     Combination(CombinationId),
@@ -80,7 +83,7 @@ impl fmt::Display for Reached {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum Limit {
     Floor,
     Reached(Reached),

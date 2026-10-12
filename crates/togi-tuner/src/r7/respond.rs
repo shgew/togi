@@ -318,6 +318,7 @@ impl Run {
         })
     }
 
+    #[cfg(test)]
     /// Whether a failure is located before it is charged, for a located hunt to start.
     pub(crate) fn eligible_for_locate(&self, record: &OpenFailure) -> bool {
         self.locatable(&self.failed(record)).is_some()

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use togi_journal::Seq;
 use togi_machine::CoreId;
@@ -7,42 +8,181 @@ use crate::Profile;
 
 use super::{BackendId, SessionRef};
 
-/// Seqs in ascending order; each lookup is a binary search.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub(super) struct Seqs(Vec<Seq>);
+#[cfg(test)]
+thread_local! {
+    static COPIED: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
 
-impl Seqs {
-    pub(super) fn push(&mut self, seq: Seq) {
-        debug_assert!(self.0.last().is_none_or(|&last| last < seq));
-        self.0.push(seq);
+/// The elements copied on this thread, because a shared list was written, since the last call.
+#[cfg(test)]
+pub(crate) fn take_copied() -> u64 {
+    COPIED.with(|copied| copied.replace(0))
+}
+
+/// The list behind `shared`, copied first when another clone still holds it.
+pub(crate) fn unique<T: Clone>(shared: &mut Arc<Vec<T>>) -> &mut Vec<T> {
+    #[cfg(test)]
+    if Arc::strong_count(shared) > 1 {
+        let length = u64::try_from(shared.len()).unwrap_or(u64::MAX);
+        COPIED.with(|copied| copied.set(copied.get() + length));
+    }
+    Arc::make_mut(shared)
+}
+
+/// The most seqs a tail holds while its head is shared, so a clone copies at most this many per
+/// list. It exceeds the 1,000 trials the configuration lets a step require, so the passes of
+/// one step fold into a shared cell without settling it.
+pub(crate) const TAIL_CAP: usize = 1_024;
+
+/// Seqs in ascending order; each lookup is a binary search. A clone shares the `shared` head
+/// until a write reaches into it, and appends while it is shared go to the owned `tail`, which
+/// holds only seqs above the head and at most `TAIL_CAP` of them: the append that would pass
+/// the cap copies head and tail into a head nobody shares. Cloning a state therefore costs the
+/// cells and their tails, never the seqs behind them.
+#[derive(Debug, Default)]
+pub(super) struct Seqs {
+    shared: Arc<Vec<Seq>>,
+    tail: Vec<Seq>,
+}
+
+impl Clone for Seqs {
+    fn clone(&self) -> Self {
+        #[cfg(test)]
+        COPIED.with(|copied| copied.set(copied.get() + self.tail.len() as u64));
+        Self {
+            shared: Arc::clone(&self.shared),
+            tail: self.tail.clone(),
+        }
+    }
+}
+
+/// The seqs above a floor: a slice of the shared head followed by a slice of the tail.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct Run<'a> {
+    head: &'a [Seq],
+    tail: &'a [Seq],
+}
+
+impl Run<'_> {
+    pub(super) fn len(&self) -> usize {
+        self.head.len() + self.tail.len()
     }
 
-    /// Adds `seq` at its place; the seqs it moves past are the few recorded after it.
-    pub(super) fn insert(&mut self, seq: Seq) {
-        if let Err(at) = self.0.binary_search(&seq) {
-            self.0.insert(at, seq);
+    pub(super) fn get(&self, at: usize) -> Option<Seq> {
+        match at.checked_sub(self.head.len()) {
+            None => self.head.get(at),
+            Some(at) => self.tail.get(at),
         }
+        .copied()
+    }
+
+    pub(super) fn first(&self) -> Option<Seq> {
+        self.get(0)
+    }
+}
+
+impl PartialEq for Seqs {
+    fn eq(&self, other: &Self) -> bool {
+        self.shared
+            .iter()
+            .chain(&self.tail)
+            .eq(other.shared.iter().chain(&other.tail))
+    }
+}
+
+impl Eq for Seqs {}
+
+impl Seqs {
+    /// Folds the tail into the head once no clone shares the head.
+    fn settle(&mut self) {
+        if !self.tail.is_empty()
+            && let Some(head) = Arc::get_mut(&mut self.shared)
+        {
+            head.append(&mut self.tail);
+        }
+    }
+
+    pub(super) fn position(&self, seq: Seq) -> Result<usize, usize> {
+        match self.shared.binary_search(&seq) {
+            Err(at) if at == self.shared.len() => self
+                .tail
+                .binary_search(&seq)
+                .map(|found| at + found)
+                .map_err(|found| at + found),
+            found => found,
+        }
+    }
+
+    /// Settles the tail into a head of its own once it is full and a clone still shares the head.
+    fn make_room(&mut self) {
+        if self.tail.len() >= TAIL_CAP && Arc::strong_count(&self.shared) > 1 {
+            unique(&mut self.shared).append(&mut self.tail);
+        }
+    }
+
+    pub(super) fn push(&mut self, seq: Seq) {
+        self.make_room();
+        self.push_unbounded(seq);
+    }
+
+    /// Appends without settling a full tail, for a simulation that appends a bounded number
+    /// of seqs to a state it discards.
+    pub(super) fn push_unbounded(&mut self, seq: Seq) {
+        debug_assert!(self.last().is_none_or(|last| last < seq));
+        self.settle();
+        match Arc::get_mut(&mut self.shared) {
+            Some(head) => head.push(seq),
+            None => self.tail.push(seq),
+        }
+    }
+
+    /// Adds `seq` at its place, returning where it went unless it was here. A seq that lands
+    /// above everything the head holds goes to the tail; one that lands inside the head is
+    /// among the few recorded after it only when the head is not shared.
+    pub(super) fn insert(&mut self, seq: Seq) -> Option<usize> {
+        self.settle();
+        self.make_room();
+        let at = self.position(seq).err()?;
+        match at.checked_sub(self.shared.len()) {
+            Some(in_tail) => self.tail.insert(in_tail, seq),
+            None => unique(&mut self.shared).insert(at, seq),
+        }
+        Some(at)
     }
 
     pub(super) fn last(&self) -> Option<Seq> {
-        self.0.last().copied()
+        self.tail.last().or_else(|| self.shared.last()).copied()
     }
 
     /// The seqs above `floor`.
-    pub(super) fn after(&self, floor: Option<Seq>) -> &[Seq] {
-        let start = self.0.partition_point(|&seq| Some(seq) <= floor);
-        &self.0[start..]
+    pub(super) fn after(&self, floor: Option<Seq>) -> Run<'_> {
+        let start = self.shared.partition_point(|&seq| Some(seq) <= floor);
+        if start < self.shared.len() {
+            return Run {
+                head: &self.shared[start..],
+                tail: &self.tail,
+            };
+        }
+        let start = self.tail.partition_point(|&seq| Some(seq) <= floor);
+        Run {
+            head: &[],
+            tail: &self.tail[start..],
+        }
     }
 
-    /// Removes `seq`, saying whether it was here.
-    pub(super) fn remove(&mut self, seq: Seq) -> bool {
-        match self.0.binary_search(&seq) {
-            Ok(at) => {
-                self.0.remove(at);
-                true
-            }
-            Err(_) => false,
-        }
+    /// Removes `seq`, returning where it was.
+    pub(super) fn remove(&mut self, seq: Seq) -> Option<usize> {
+        let at = self.position(seq).ok()?;
+        match at.checked_sub(self.shared.len()) {
+            Some(in_tail) => self.tail.remove(in_tail),
+            None => unique(&mut self.shared).remove(at),
+        };
+        Some(at)
+    }
+
+    #[cfg(test)]
+    pub(super) fn shares_storage(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.shared, &other.shared)
     }
 }
 
@@ -51,32 +191,30 @@ impl Seqs {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(super) struct Carried {
     seqs: Seqs,
-    sources: Vec<SessionRef>,
+    sources: Arc<Vec<SessionRef>>,
 }
 
 impl Carried {
     pub(super) fn push(&mut self, seq: Seq, source: SessionRef) {
         self.seqs.push(seq);
-        self.sources.push(source);
+        unique(&mut self.sources).push(source);
     }
 
     /// Adds `seq` at its place unless it is here.
     pub(super) fn insert(&mut self, seq: Seq, source: SessionRef) {
-        if let Err(at) = self.seqs.0.binary_search(&seq) {
-            self.seqs.0.insert(at, seq);
-            self.sources.insert(at, source);
+        if let Some(at) = self.seqs.insert(seq) {
+            unique(&mut self.sources).insert(at, source);
         }
     }
 
     /// Removes `seq`, returning the session it came from.
     pub(super) fn remove(&mut self, seq: Seq) -> Option<SessionRef> {
-        let at = self.seqs.0.binary_search(&seq).ok()?;
-        self.seqs.0.remove(at);
-        Some(self.sources.remove(at))
+        let at = self.seqs.remove(seq)?;
+        Some(unique(&mut self.sources).remove(at))
     }
 
     pub(super) fn source(&self, seq: Seq) -> Option<&SessionRef> {
-        let at = self.seqs.0.binary_search(&seq).ok()?;
+        let at = self.seqs.position(seq).ok()?;
         self.sources.get(at)
     }
 
@@ -85,7 +223,7 @@ impl Carried {
     }
 
     /// The seqs above `floor`.
-    pub(super) fn after(&self, floor: Option<Seq>) -> &[Seq] {
+    pub(super) fn after(&self, floor: Option<Seq>) -> Run<'_> {
         self.seqs.after(floor)
     }
 }
@@ -219,4 +357,167 @@ pub(super) struct ClassCells {
     pub(super) failures: FailureCells,
     pub(super) passes: PassCells,
     pub(super) exposure: u32,
+}
+
+#[cfg(test)]
+mod tests {
+    use proptest::prelude::*;
+
+    use super::*;
+
+    #[derive(Clone, Debug)]
+    enum Op {
+        Push,
+        Insert(u32),
+        Remove(u32),
+        Fork,
+        Drop,
+    }
+
+    fn ops() -> impl Strategy<Value = Vec<Op>> {
+        proptest::collection::vec(
+            prop_oneof![
+                4 => Just(Op::Push),
+                2 => (0_u32..40).prop_map(Op::Insert),
+                2 => (0_u32..40).prop_map(Op::Remove),
+                2 => Just(Op::Fork),
+                1 => Just(Op::Drop),
+            ],
+            1..80,
+        )
+    }
+
+    fn s(value: u32) -> Seq {
+        Seq::new(u64::from(value) + 1).unwrap()
+    }
+
+    fn all(seqs: &Seqs) -> Vec<Seq> {
+        let run = seqs.after(None);
+        (0..run.len()).filter_map(|at| run.get(at)).collect()
+    }
+
+    proptest! {
+        #[test]
+        fn seqs_behave_like_an_ordered_set_across_clones(script in ops(), floor in 0_u32..60) {
+            let mut live = vec![(Seqs::default(), std::collections::BTreeSet::new())];
+            for op in script {
+                let at = live.len() - 1;
+                match op {
+                    Op::Push => {
+                        let (seqs, model) = &mut live[at];
+                        let next = model.last().map_or(0, |&last| last + 1);
+                        seqs.push(s(next));
+                        model.insert(next);
+                    }
+                    Op::Insert(raw) => {
+                        let (seqs, model) = &mut live[at];
+                        let placed = seqs.insert(s(raw));
+                        prop_assert_eq!(placed.is_some(), model.insert(raw));
+                        if let Some(index) = placed {
+                            prop_assert_eq!(model.iter().position(|&v| v == raw), Some(index));
+                        }
+                    }
+                    Op::Remove(raw) => {
+                        let (seqs, model) = &mut live[at];
+                        let removed = seqs.remove(s(raw));
+                        let index = model.iter().position(|&v| v == raw);
+                        prop_assert_eq!(removed, index);
+                        model.remove(&raw);
+                    }
+                    Op::Fork => live.push(live[at].clone()),
+                    Op::Drop if live.len() > 1 => {
+                        live.remove(0);
+                    }
+                    Op::Drop => {}
+                }
+                for (seqs, model) in &live {
+                    let want: Vec<Seq> = model.iter().map(|&v| s(v)).collect();
+                    prop_assert_eq!(all(seqs), want.clone());
+                    prop_assert_eq!(seqs.last(), want.last().copied());
+                    let above: Vec<Seq> = model
+                        .iter()
+                        .filter(|&&v| v > floor)
+                        .map(|&v| s(v))
+                        .collect();
+                    let run = seqs.after(Some(s(floor)));
+                    prop_assert_eq!(run.len(), above.len());
+                    prop_assert_eq!(run.first(), above.first().copied());
+                }
+                let (tip, tip_model) = live.last().unwrap();
+                let mut rebuilt = Seqs::default();
+                for &v in tip_model {
+                    rebuilt.push(s(v));
+                }
+                prop_assert!(tip == &rebuilt);
+            }
+        }
+    }
+
+    #[test]
+    fn appending_to_a_shared_list_copies_none_of_it() {
+        let mut seqs = Seqs::default();
+        for raw in 1..=1_000 {
+            seqs.push(s(raw));
+        }
+        let twin = seqs.clone();
+        take_copied();
+        for raw in 1_001..=1_010 {
+            seqs.push(s(raw));
+        }
+        assert_eq!(take_copied(), 0);
+        assert!(seqs.shares_storage(&twin));
+        assert_eq!(twin.last(), Some(s(1_000)));
+        assert_eq!(seqs.last(), Some(s(1_010)));
+        seqs.insert(s(0));
+        assert_eq!(take_copied(), 1_000);
+        assert!(!seqs.shares_storage(&twin));
+    }
+}
+
+#[cfg(test)]
+mod cap_tests {
+    use super::*;
+
+    fn s(value: u64) -> Seq {
+        Seq::new(value).unwrap()
+    }
+
+    #[test]
+    fn a_retained_clone_makes_the_tail_settle_once_it_is_full() {
+        let mut seqs = Seqs::default();
+        for raw in 1..=500 {
+            seqs.push(s(raw));
+        }
+        let retained = seqs.clone();
+        take_copied();
+        let appended = 3 * TAIL_CAP as u64;
+        for raw in 501..501 + appended {
+            seqs.push(s(raw));
+            assert!(seqs.tail.len() <= TAIL_CAP);
+        }
+        assert_eq!(take_copied(), 500);
+        assert_eq!(retained.last(), Some(s(500)));
+        assert_eq!(seqs.last(), Some(s(500 + appended)));
+        assert!(!seqs.shares_storage(&retained));
+        take_copied();
+        let twin = seqs.clone();
+        assert!(twin.tail.len() <= TAIL_CAP);
+        assert_eq!(take_copied(), twin.tail.len() as u64);
+        assert_eq!(twin, seqs);
+    }
+
+    #[test]
+    fn a_simulation_may_outgrow_the_cap_without_settling() {
+        let mut seqs = Seqs::default();
+        for raw in 1..=500 {
+            seqs.push(s(raw));
+        }
+        let retained = seqs.clone();
+        take_copied();
+        for raw in 501..501 + 2 * TAIL_CAP as u64 {
+            seqs.push_unbounded(s(raw));
+        }
+        assert_eq!(take_copied(), 0);
+        assert!(seqs.shares_storage(&retained));
+    }
 }

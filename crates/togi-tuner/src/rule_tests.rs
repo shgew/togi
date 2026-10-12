@@ -172,8 +172,8 @@ fn repeated_decisions_are_equal_and_leave_the_state_alone() {
     let mut seen = 0;
     for _ in 0..40 {
         let before = j.state.clone();
-        let first = j.state.decide();
-        let second = j.state.decide();
+        let first = j.state.next().ok();
+        let second = j.state.next().ok();
         assert_eq!(first, second);
         assert_eq!(j.state, before);
         let mut oracle = |_: &crate::TrialPlan| Outcome::Pass;
@@ -197,7 +197,7 @@ fn poisoned(j: &Journal, state: &mut State) {
         &[],
     );
     assert_eq!(state.fold(&next), Err(FoldError::Poisoned));
-    assert_eq!(state.decide(), None);
+    assert_eq!(state.next().ok(), None);
 }
 
 #[test]

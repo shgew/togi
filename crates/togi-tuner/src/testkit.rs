@@ -472,7 +472,7 @@ impl Journal {
 
     /// The tuner's next action, which the state must have.
     pub(crate) fn next(&self) -> Action {
-        self.state.decide().expect("the tuner has a next action")
+        self.state.next().expect("the tuner has a next action")
     }
 
     pub(crate) fn next_trial(&self) -> TrialPlan {
@@ -854,7 +854,7 @@ impl Journal {
     }
 
     pub(crate) fn warning(&self) -> Option<TunerWarning> {
-        match self.state.decide() {
+        match self.state.next().ok() {
             Some(Action::Decide(DecisionAction {
                 payload: crate::DecisionPayload::TunerWarning(warning),
                 ..
@@ -1073,7 +1073,7 @@ impl Journal {
     pub(crate) fn drain_backoffs(&mut self, limit: usize) -> Vec<(u8, i64)> {
         let mut moved = Vec::new();
         for _ in 0..limit {
-            let Some(Action::Decide(decision)) = self.state.decide() else {
+            let Some(Action::Decide(decision)) = self.state.next().ok() else {
                 break;
             };
             if let crate::DecisionPayload::TunerDecision(td) = &decision.payload {

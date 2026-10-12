@@ -449,7 +449,7 @@ fn a_skipped_unattributed_failure_is_queued_for_its_hunt_once() {
     assert_eq!(skipped.known_failure, Some(fact));
     j.decide(skip);
     assert!(j.run().failures.queue().any(|seq| seq == fact));
-    assert_eq!(j.state.decide(), Some(Action::ReadRanking));
+    assert_eq!(j.state.next().ok(), Some(Action::ReadRanking));
     j.assert_resumes();
 }
 
@@ -461,6 +461,7 @@ fn an_unattributed_failure_reaching_a_recorded_constraint_is_skipped_not_hunted(
         infos(&ids),
         &[Start::has_room(-10).fail(-12), Start::has_room(-10)],
     );
+    j.ranking(&ids);
     let change = j.next_decision();
     j.decide(change);
     let plan = r6(&j, &ids, &[-12, -10]);
@@ -492,7 +493,7 @@ fn an_unattributed_failure_that_reaches_nothing_waits_for_its_hunt() {
     let plan = r6(&j, &ids, &[-10, -10]);
     let failure = named_failure(&mut j, &plan, None);
     assert!(j.run().failures.queue().any(|seq| seq == failure));
-    assert_eq!(j.state.decide(), Some(Action::ReadRanking));
+    assert_eq!(j.state.next().ok(), Some(Action::ReadRanking));
 }
 
 #[test]
@@ -563,7 +564,7 @@ fn visits(passes: usize) -> (u64, u64) {
     j.state.visits();
     j.trial(&plan, Outcome::Pass);
     let folding = j.state.visits();
-    let _ = j.state.decide();
+    let _ = j.state.next().ok();
     (folding, j.state.visits())
 }
 
@@ -655,7 +656,7 @@ fn expected_counts(j: &Journal) -> BTreeMap<ClassKey, u32> {
 }
 
 fn drive(j: &mut Journal, ids: &[u8], byte: u8) -> bool {
-    match j.state.decide() {
+    match j.state.next().ok() {
         None => return false,
         Some(Action::Decide(decision)) => {
             let dead = matches!(decision.payload, DecisionPayload::DeadEnd(_));

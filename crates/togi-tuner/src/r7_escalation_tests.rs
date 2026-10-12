@@ -102,7 +102,7 @@ impl Journal {
 
     fn skip_phases(&mut self) -> Option<Action> {
         loop {
-            let action = self.state.decide()?;
+            let action = self.state.next().ok()?;
             match &action {
                 Action::Decide(decision)
                     if matches!(decision.payload, DecisionPayload::CorePhase(_)) =>
@@ -427,7 +427,7 @@ fn escalation_reset_drops_discarded_backoffs() {
         let offsets = j.values();
         j.reset(reset);
         for _ in 0..4 {
-            match j.state.decide() {
+            match j.state.next().ok() {
                 Some(Action::Decide(decision))
                     if matches!(decision.payload, DecisionPayload::CorePhase(_)) =>
                 {

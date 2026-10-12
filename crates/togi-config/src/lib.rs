@@ -30,8 +30,8 @@ pub use error::{
 };
 pub use overrides::InitialOverride;
 pub use values::{
-    Backends, CheckingSchedule, DeadEndPolicy, DeadEndThreshold, EvidencePolicy, Probability,
-    R7BudgetSeconds, TrialCount, TrialSeconds,
+    Backends, CheckingSchedule, DeadEndPolicy, DeadEndThreshold, EvidencePolicy, FULL_CYCLE,
+    Probability, R7BudgetSeconds, TrialCount, TrialSeconds,
 };
 
 #[cfg(test)]

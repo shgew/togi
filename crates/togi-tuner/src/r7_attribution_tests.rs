@@ -51,7 +51,7 @@ fn r7_attribution_and_tie_backoff() {
         j.r7_fact(false, cores, &values, &report);
         assert_eq!(j.drain_backoffs(8), want, "{name}");
         assert!(
-            !matches!(j.state.decide(), Some(Action::Decide(d)) if matches!(d.payload, DecisionPayload::HuntStart(_))),
+            !matches!(j.state.next().ok(), Some(Action::Decide(d)) if matches!(d.payload, DecisionPayload::HuntStart(_))),
             "{name}"
         );
         j.assert_resumes();
@@ -102,7 +102,7 @@ impl Journal {
 
     fn at_assert_no_hunt(&self) {
         assert!(
-            !matches!(self.state.decide(), Some(Action::Decide(d)) if matches!(d.payload, DecisionPayload::HuntStart(_)))
+            !matches!(self.state.next().ok(), Some(Action::Decide(d)) if matches!(d.payload, DecisionPayload::HuntStart(_)))
         );
     }
 
@@ -723,7 +723,7 @@ fn r7_failure_needs_no_move_during_a_deepening_round_while_the_named_core_is_sha
     let round_open = |j: &Journal| j.run().rounds.active().map(crate::rounds::Round::start);
     assert_eq!(j.run().r7_decision(), None);
     let held = loop {
-        match j.state.decide() {
+        match j.state.next().ok() {
             Some(Action::Decide(step))
                 if !matches!(&step.payload, DecisionPayload::DeepeningRound(_))
                     && !matches!(&step.payload, DecisionPayload::TunerDecision(td) if td.decision == Decision::Backoff) =>

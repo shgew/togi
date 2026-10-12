@@ -12,15 +12,15 @@ mod schedule;
 use std::collections::BTreeMap;
 use std::num::{NonZeroU16, NonZeroU32};
 
-use togi_journal::{CheckingChain, CheckingCycle, CheckingStep, CycleEvent, Event, Seq};
+use togi_journal::{CheckingChain, CheckingCycle, CheckingStep, CycleEvent, Event, Seq, TrialId};
 use togi_machine::Regime;
 
 use crate::state::Run;
-use crate::{ClassKey, FoldError, Profile, Topology, Window};
+use crate::{ClassKey, FoldError, Profile, RequirementKind, Topology, Window};
 
 pub(crate) use chains::{Node, R7Step};
 pub(crate) use reruns::Reruns;
-pub(crate) use schedule::{Quota, StepPlan};
+pub(crate) use schedule::{PartPlan, Quota, StepPlan};
 
 /// A cycle that is open: the schedule its start captured, the R7 occurrences that began, and for
 /// each class of the schedule the live passes since the start that cover the checking profile.
@@ -36,7 +36,7 @@ pub(crate) struct OpenCycle {
 }
 
 impl OpenCycle {
-    fn have(&self, class: ClassKey) -> u32 {
+    pub(crate) fn have(&self, class: ClassKey) -> u32 {
         self.valid.get(&class).copied().unwrap_or(0)
     }
 
@@ -44,16 +44,25 @@ impl OpenCycle {
         self.have(quota.class) >= quota.count
     }
 
+    pub(crate) fn plan(&self) -> &[StepPlan] {
+        &self.plan
+    }
+
+    pub(crate) fn chains_complete(&self, index: usize, topo: &Topology) -> bool {
+        self.plan.get(index).is_some_and(|step| {
+            step.regime != Regime::R7
+                || self.r7.get(&index).is_some_and(|started| {
+                    started.complete(topo.ccds().iter().map(|&(ccd, _)| ccd))
+                })
+        })
+    }
+
     fn first_incomplete(&self, topo: &Topology) -> usize {
         self.plan
             .iter()
             .enumerate()
             .position(|(index, step)| {
-                let chains = step.regime != Regime::R7
-                    || self.r7.get(&index).is_some_and(|started| {
-                        started.complete(topo.ccds().iter().map(|&(ccd, _)| ccd))
-                    });
-                !chains || !step.quotas().all(|quota| self.met(quota))
+                !self.chains_complete(index, topo) || !step.quotas().all(|quota| self.met(quota))
             })
             .unwrap_or(self.plan.len())
     }
@@ -64,10 +73,10 @@ impl OpenCycle {
     }
 }
 
-/// The cycle that ended last: its steps and how many of them were finished.
+/// The cycle that ended last as it stood when it ended, and how many of its steps were finished.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct Closed {
-    pub(crate) steps: Box<[Regime]>,
+    pub(crate) cycle: OpenCycle,
     pub(crate) steps_done: usize,
 }
 
@@ -76,6 +85,16 @@ pub(crate) struct Closed {
 pub(crate) struct Peak {
     pub(crate) celsius: i32,
     pub(crate) seq: Seq,
+}
+
+/// The part a cycle trial in flight runs as its intent stored it, kept when the schedule is
+/// rebuilt under it so the dashboard shows what the trial's requirement says.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct Pinned {
+    trial: TrialId,
+    pub(crate) step: usize,
+    pub(crate) part: usize,
+    pub(crate) plan: PartPlan,
 }
 
 /// The checking profile the last `profile.change` set, and the cycle checking is in.
@@ -88,9 +107,14 @@ pub(crate) struct Checking {
     closed: Option<Closed>,
     last_seq: Option<Seq>,
     peak: Option<Peak>,
+    pinned: Option<Pinned>,
 }
 
 impl Checking {
+    pub(crate) fn pinned(&self, trial: &TrialId) -> Option<&Pinned> {
+        self.pinned.as_ref().filter(|pinned| &pinned.trial == trial)
+    }
+
     pub(crate) fn profile(&self) -> Option<Profile> {
         self.profile
     }
@@ -160,7 +184,34 @@ fn step_index(step: NonZeroU32) -> usize {
 }
 
 impl Run {
-    fn cycle_count(&self, open: &OpenCycle, class: ClassKey) -> u32 {
+    /// The step and part indexes the open trial's stored requirement names, when it is a trial
+    /// of cycle `cycle`.
+    pub(crate) fn running_slot(&self, cycle: NonZeroU32) -> Option<(&TrialId, usize, usize)> {
+        let trial = self.flight.open.as_ref().filter(|trial| {
+            trial.requirement.kind == RequirementKind::Cycle && trial.intent.cycle == Some(cycle)
+        })?;
+        let step = usize::try_from(trial.requirement.step?.get().get()).ok()? - 1;
+        let part = usize::try_from(trial.requirement.part?.get().get()).ok()? - 1;
+        Some((&trial.trial, step, part))
+    }
+
+    fn pin_running_part(&mut self, open: &OpenCycle) {
+        let pinned = self
+            .running_slot(open.number)
+            .and_then(|(trial, step, part)| {
+                self.checking.pinned(trial).cloned().or_else(|| {
+                    Some(Pinned {
+                        trial: trial.clone(),
+                        step,
+                        part,
+                        plan: open.plan.get(step)?.parts.get(part)?.clone(),
+                    })
+                })
+            });
+        self.checking.pinned = pinned;
+    }
+
+    pub(crate) fn cycle_count(&self, open: &OpenCycle, class: ClassKey) -> u32 {
         let Some(profile) = self.checking.profile else {
             return 0;
         };
@@ -182,6 +233,7 @@ impl Run {
         let Some(mut open) = self.checking.open.take() else {
             return;
         };
+        self.pin_running_part(&open);
         open.plan = schedule::build(&self.config, &self.topo, &open.steps, &open.r7);
         open.valid = open
             .plan
@@ -266,7 +318,7 @@ impl Run {
                     } else {
                         open.done
                     },
-                    steps: open.steps,
+                    cycle: open,
                 });
                 self.checking.last_seq = Some(event.seq);
             }

@@ -53,6 +53,7 @@ pub(crate) struct Run {
     pub(crate) reruns: Reruns,
     pub(crate) later: Later,
     pub(crate) last_seq: Seq,
+    pub(crate) stopped: bool,
 }
 
 /// The tuner's state: one fold of the journal, with a substate per rule group. `fold` takes each
@@ -99,6 +100,7 @@ impl Run {
             reruns: Reruns::default(),
             later: Later::default(),
             last_seq: event.seq,
+            stopped: false,
         })
     }
 
@@ -108,6 +110,7 @@ impl Run {
     }
 
     fn config_loaded(&mut self, loaded: &ConfigLoaded) {
+        self.stopped = false;
         self.config = TunerConfig::from_loaded(loaded);
         for backend in [Backend::Mprime, Backend::Ycruncher] {
             self.evidence
@@ -150,6 +153,7 @@ impl Run {
     }
 
     fn dead_end(&mut self, event: &Event, dead_end: &DeadEnd) -> Result<(), FoldError> {
+        self.stopped = true;
         self.failures.retire_all(&event.cause);
         self.prune_blames();
         if dead_end.condition != DeadEndCondition::FailureAtZero {
@@ -232,9 +236,18 @@ impl State {
         self.run.as_ref()
     }
 
+    /// A copy for a simulation to fold forecast events into and discard.
+    pub(crate) fn speculative_copy(&self) -> Self {
+        let mut copy = self.clone();
+        if let Some(run) = copy.run.as_mut() {
+            run.evidence.speculate();
+        }
+        copy
+    }
+
     /// Folds the next journal event. A structural impossibility, such as a core outside the
     /// topology or an event that does not follow the last, is an error, and the state is
-    /// poisoned: every later `fold` fails and `decide` has nothing to say, because a state that
+    /// poisoned: every later `fold` fails and `next` has nothing to say, because a state that
     /// part-applied an event no longer stands for the journal.
     pub fn fold(&mut self, event: &Event) -> Result<(), FoldError> {
         if self.poisoned {
@@ -314,26 +327,22 @@ impl State {
             Payload::HuntStart(start) => self.run_mut()?.hunt_start(event, start)?,
             Payload::HuntGroup(group) => self.run_mut()?.hunt_group(event, group)?,
             Payload::HuntEnd(end) => self.run_mut()?.hunt_end(event, end)?,
-            Payload::Shutdown(_) => {
-                self.run_mut()?;
-            }
+            Payload::Shutdown(_) => self.run_mut()?.stopped = true,
         }
         self.run_mut()?.last_seq = event.seq;
         Ok(())
     }
 
-    /// The next decision or trial the folded state calls for, from the rules this state holds.
-    pub(crate) fn decide(&self) -> Option<crate::Action> {
-        if self.poisoned {
-            return None;
-        }
-        self.run()?.decide()
+    pub(crate) const fn poisoned(&self) -> bool {
+        self.poisoned
     }
 
     /// Per R7 workload, CCD and core, whether the core has passed as a top requester at its
     /// current offset or deeper under the current backend identity.
     pub fn r7_status(&self) -> Vec<crate::R7CoreStatus> {
-        self.run().map_or_else(Vec::new, Run::r7_status)
+        self.run()
+            .filter(|_| !self.poisoned())
+            .map_or_else(Vec::new, Run::r7_status)
     }
 
     /// The machine's cores, CCDs and walk order, once the session started and the state stands.

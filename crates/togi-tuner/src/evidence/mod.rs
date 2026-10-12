@@ -20,7 +20,10 @@ use crate::{ClassKey, Profile, TopologyMismatch};
 
 pub use backend::BackendId;
 use backend::Backends;
-use cells::{ClassCells, FailureCells};
+pub(crate) use cells::unique;
+use cells::{ClassCells, FailureCells, Run, Seqs};
+#[cfg(test)]
+pub(crate) use cells::{TAIL_CAP, take_copied};
 
 /// The session a carried fact came from.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -72,7 +75,7 @@ pub struct Observation<'a> {
 
 #[cfg(test)]
 #[derive(Clone, Debug, Default)]
-pub(crate) struct Visits(pub(crate) std::cell::Cell<u64>);
+pub(crate) struct Visits(pub(crate) std::sync::Arc<std::sync::atomic::AtomicU64>);
 
 #[cfg(test)]
 impl PartialEq for Visits {
@@ -96,11 +99,12 @@ pub struct Evidence {
     checking: Option<Profile>,
     exposure: BTreeMap<WorkloadId, u32>,
     last: Option<Seq>,
+    speculative: bool,
     #[cfg(test)]
     visits: Visits,
 }
 
-fn merge(runs: &[&[Seq]], needed: usize) -> Vec<Seq> {
+fn merge(runs: &[Run<'_>], needed: usize) -> Vec<Seq> {
     let mut heads = vec![0_usize; runs.len()];
     let mut out = Vec::with_capacity(needed);
     while out.len() < needed {
@@ -108,7 +112,7 @@ fn merge(runs: &[&[Seq]], needed: usize) -> Vec<Seq> {
             .iter()
             .zip(&heads)
             .enumerate()
-            .filter_map(|(at, (run, &head))| run.get(head).map(|&seq| (seq, at)))
+            .filter_map(|(at, (run, &head))| run.get(head).map(|seq| (seq, at)))
             .min();
         let Some((seq, at)) = next else { break };
         out.push(seq);
@@ -140,14 +144,31 @@ impl Evidence {
             checking: None,
             exposure: BTreeMap::new(),
             last: None,
+            speculative: false,
             #[cfg(test)]
             visits: Visits::default(),
         }
     }
 
+    /// Marks this ledger a simulation's own copy: it takes the few passes the simulation folds
+    /// into shared cells without settling their tails, so a simulation never copies a history.
+    pub(crate) fn speculate(&mut self) {
+        self.speculative = true;
+    }
+
+    fn append(speculative: bool, seqs: &mut Seqs, seq: Seq) {
+        if speculative {
+            seqs.push_unbounded(seq);
+        } else {
+            seqs.push(seq);
+        }
+    }
+
     #[cfg(test)]
     fn visit(&self) {
-        self.visits.0.set(self.visits.0.get() + 1);
+        self.visits
+            .0
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
     #[cfg(not(test))]
@@ -156,7 +177,31 @@ impl Evidence {
 
     #[cfg(test)]
     pub(crate) fn take_visits(&self) -> u64 {
-        self.visits.0.replace(0)
+        self.visits.0.swap(0, std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// How many of this ledger's lists of seqs share their storage with the same list of `other`,
+    /// and how many it has.
+    #[cfg(test)]
+    pub(crate) fn shared_with(&self, other: &Self) -> (usize, usize) {
+        let mut shared = 0;
+        let mut total = 0;
+        for (cells, twin) in self
+            .classes
+            .iter()
+            .filter_map(|(class, cells)| other.classes.get(class).map(|twin| (cells, twin)))
+        {
+            for (cell, other) in cells.passes.cells().iter().zip(twin.passes.cells()) {
+                total += 2;
+                shared += usize::from(cell.live.shares_storage(&other.live));
+                shared += usize::from(cell.live_non_alone.shares_storage(&other.live_non_alone));
+            }
+            for (cell, other) in cells.failures.cells().iter().zip(twin.failures.cells()) {
+                total += 1;
+                shared += usize::from(cell.live.shares_storage(&other.live));
+            }
+        }
+        (shared, total)
     }
 
     fn check(&self, profile: &Profile) -> Result<(), TopologyMismatch> {
@@ -294,14 +339,15 @@ impl Evidence {
             && self
                 .checking
                 .is_some_and(|checking| obs.profile.covers(&checking));
+        let speculative = self.speculative;
         let class = self.classes.entry(obs.class).or_default();
         let cell = class.passes.cell_mut(backend, named, *obs.profile);
         if let Some(source) = source {
             cell.carried.push(obs.seq, source);
         } else {
-            cell.live.push(obs.seq);
+            Self::append(speculative, &mut cell.live, obs.seq);
             if obs.condition != Condition::Alone {
-                cell.live_non_alone.push(obs.seq);
+                Self::append(speculative, &mut cell.live_non_alone, obs.seq);
             }
             if counts_exposure {
                 class.exposure += 1;
@@ -337,12 +383,13 @@ impl Evidence {
         let rules_out_checking = self
             .checking
             .is_some_and(|checking| obs.profile.within(&checking));
+        let speculative = self.speculative;
         let class = self.classes.entry(obs.class).or_default();
         let cell = class.failures.cell_mut(named, *obs.profile);
         if let Some(source) = source {
             cell.carried.push(obs.seq, source);
         } else {
-            cell.live.push(obs.seq);
+            Self::append(speculative, &mut cell.live, obs.seq);
         }
         if rules_out_checking {
             let dropped = std::mem::take(&mut class.exposure);
@@ -371,7 +418,7 @@ impl Evidence {
         let Some(from) = cells.failures.cell_at_mut((None, *profile)) else {
             return Ok(());
         };
-        let live = from.live.remove(seq);
+        let live = from.live.remove(seq).is_some();
         let source = if live { None } else { from.carried.remove(seq) };
         if !live && source.is_none() {
             return Ok(());
@@ -412,11 +459,12 @@ impl Evidence {
     ) -> Result<(), TopologyMismatch> {
         self.check(profile)?;
         self.advance(seq);
+        let speculative = self.speculative;
         let cell = self.idle.cell_mut(None, *profile);
         if let Some(source) = source {
             cell.carried.push(seq, source);
         } else {
-            cell.live.push(seq);
+            Self::append(speculative, &mut cell.live, seq);
         }
         if self
             .checking
@@ -481,6 +529,37 @@ impl Evidence {
         own.max(idle)
     }
 
+    fn live_in(&self, cells: &FailureCells, profile: &Profile, since: Option<Seq>) -> usize {
+        cells
+            .cells()
+            .iter()
+            .filter(|cell| {
+                self.visit();
+                cell.profile.within(profile)
+            })
+            .map(|cell| cell.live.after(since).len())
+            .sum()
+    }
+
+    pub(crate) fn live_failures(
+        &self,
+        class: ClassKey,
+        profile: &Profile,
+        since: Option<Seq>,
+    ) -> Result<u32, TopologyMismatch> {
+        self.check(profile)?;
+        let own = self
+            .classes
+            .get(&class)
+            .map_or(0, |cells| self.live_in(&cells.failures, profile, since));
+        let idle = if self.is_all_core_r6(class) {
+            self.live_in(&self.idle, profile, since)
+        } else {
+            0
+        };
+        Ok(u32::try_from(own + idle).unwrap_or(u32::MAX))
+    }
+
     /// The valid passes supporting `profile` in `window`, with the first `needed` of them.
     pub fn count(
         &self,
@@ -510,7 +589,7 @@ impl Evidence {
         };
         let live_floor = floor.max(since);
         let backend = self.backends.active(class.workload().backend());
-        let mut runs: Vec<&[Seq]> = Vec::new();
+        let mut runs: Vec<Run<'_>> = Vec::new();
         let mut valid = 0_usize;
         for cell in cells.passes.cells() {
             self.visit();
@@ -620,12 +699,12 @@ impl Evidence {
                 cell.live
                     .after(after)
                     .first()
-                    .is_some_and(|&seq| seq < before)
+                    .is_some_and(|seq| seq < before)
                     || cell
                         .carried
                         .after(None)
                         .first()
-                        .is_some_and(|&seq| seq < before)
+                        .is_some_and(|seq| seq < before)
             })
         };
         (regime == Regime::R6 && admitted(&self.idle))

@@ -654,3 +654,29 @@ fn load_rejects_a_file_that_is_not_utf8() {
 fn default_path_is_the_etc_file() {
     assert_eq!(DEFAULT_PATH, "/etc/togi/config.json");
 }
+
+#[test]
+fn the_default_schedule_is_full_and_a_short_one_is_not() {
+    assert!(CheckingSchedule::default().is_full());
+    let short = CheckingSchedule::new(vec![Regime::R1, Regime::R2]).unwrap();
+    assert!(!short.is_full());
+}
+
+#[test]
+fn a_schedule_is_full_at_each_regime_s_least_count_and_not_one_short() {
+    use Regime::{R1, R2, R3, R4, R5, R6, R7};
+    let least = vec![R1, R1, R1, R2, R2, R2, R3, R4, R5, R6, R7, R7, R7];
+    assert!(CheckingSchedule::new(least.clone()).unwrap().is_full());
+    let mut padded = least.clone();
+    padded.extend([R3, R5, R7]);
+    assert!(CheckingSchedule::new(padded).unwrap().is_full());
+    for regime in [R1, R2, R3, R4, R5, R6, R7] {
+        let at = least.iter().position(|&step| step == regime).unwrap();
+        let mut one_short = least.clone();
+        one_short.remove(at);
+        assert!(
+            !CheckingSchedule::new(one_short).unwrap().is_full(),
+            "{regime} one step short"
+        );
+    }
+}

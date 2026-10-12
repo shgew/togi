@@ -55,7 +55,7 @@ fn unpassed_cycle_steps_done_replays() {
     j.cycle_end(number, false, false);
     let closed = j.run().checking.closed().unwrap();
     assert_eq!(closed.steps_done, 1);
-    assert_eq!(closed.steps.len(), 2);
+    assert_eq!(closed.cycle.plan().len(), 2);
     j.assert_resumes();
 }
 

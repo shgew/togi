@@ -212,7 +212,7 @@ fn idle_monotonicity_chooses_earliest_passing_class() {
     };
     assert_eq!(w.passes, expected);
     assert_eq!(action.cause[0], failure);
-    assert_eq!(fresh(&j.events).decide(), Some(Action::Decide(action)));
+    assert_eq!(fresh(&j.events).next().ok(), Some(Action::Decide(action)));
 }
 
 #[test]
@@ -666,7 +666,7 @@ fn carried_pass_monotonicity_warning() {
     assert_eq!(action.cause, cause);
     assert_eq!(w.passes, facts);
     assert!(w.detail.contains(SESSION), "{}", w.detail);
-    assert_eq!(j.state.decide(), Some(Action::Decide(action)));
+    assert_eq!(j.state.next().ok(), Some(Action::Decide(action)));
 }
 
 #[test]
@@ -966,7 +966,7 @@ fn a_backend_update_restarts_an_unfinished_search_step() {
         }
         let assert_replays = |j: &Journal| {
             let action = j.next();
-            assert_eq!(fresh(&j.events).decide(), Some(action.clone()), "{name}");
+            assert_eq!(fresh(&j.events).next().ok(), Some(action.clone()), "{name}");
             action
         };
         let mut action = assert_replays(&j);
@@ -1240,7 +1240,7 @@ fn poisoned(j: &Journal, state: &mut crate::State) {
         &[],
     );
     assert_eq!(state.fold(&next), Err(FoldError::Poisoned));
-    assert_eq!(state.decide(), None);
+    assert_eq!(state.next().ok(), None);
 }
 
 fn carried_naming_outside(change: fn(&mut togi_journal::TrialCarried)) {
