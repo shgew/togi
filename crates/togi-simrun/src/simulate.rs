@@ -64,7 +64,6 @@ pub fn simulate(input: SimInput) -> Result<SimOutcome, SimError> {
         (Persistence::Files(_), true) => Some(lock(&persistence)?.trials_dir()),
     };
     simulator.set_samples_dir(samples);
-    machine::forget(&persistence, &lock(&persistence)?)?;
     let publication = match persistence {
         Persistence::Memory(_) => PublicationPolicy::OnFinish,
         Persistence::Files(_) => PublicationPolicy::Live,
@@ -73,6 +72,7 @@ pub fn simulate(input: SimInput) -> Result<SimOutcome, SimError> {
     let slot: Slot = Rc::new(RefCell::new(observer));
     let mut resume: Option<ResumeCapsule> = None;
     let mut outcome = None;
+    let mut superseded = false;
     for number in 1..=max_boots.get() {
         let mut machine = simulator.seams();
         let host = |source| SimError::Host {
@@ -94,6 +94,7 @@ pub fn simulate(input: SimInput) -> Result<SimOutcome, SimError> {
             source,
         })?;
         let journal = prepared.journal;
+        let opened = journal.events().len();
         if journal.events().is_empty() {
             simulator.forget_last_trial();
         }
@@ -130,6 +131,7 @@ pub fn simulate(input: SimInput) -> Result<SimOutcome, SimError> {
             report: Box::new(io::sink()),
         });
         let crash = ended.crashed();
+        let appended = ended.journal.events().len() > opened;
         if due(number, max_boots, crash, verify_every) {
             verify(
                 ended.capsule.as_ref(),
@@ -158,6 +160,10 @@ pub fn simulate(input: SimInput) -> Result<SimOutcome, SimError> {
                 })?;
         }
         close(journal, number)?;
+        if appended && !superseded {
+            machine::forget(&persistence, &lock(&persistence)?)?;
+            superseded = true;
+        }
         if !crash {
             outcome = Some(SimOutcome::Stopped(Box::new(Finished {
                 stop,

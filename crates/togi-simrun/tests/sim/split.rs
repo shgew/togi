@@ -1,5 +1,7 @@
 use std::path::Path;
 
+use togi_config::Config;
+use togi_session::SessionError;
 use togi_sim::{MachineDefinition, Model};
 use togi_simrun::{Persistence, SimOutcome, resume_simulator, simulate};
 
@@ -113,5 +115,40 @@ fn a_capped_simulation_keeps_its_pending_machine_checks_for_the_next_process() {
             .last()
             .is_some_and(|boot| !boot["mces"].as_array().unwrap().is_empty()),
         "{saved}"
+    );
+}
+
+#[test]
+fn a_continuation_that_starts_nothing_keeps_the_saved_machine() {
+    let definition = hunt_machine(2);
+    let whole = tempfile::tempdir().unwrap();
+    to_the_end(simulator(&definition, 1), whole.path());
+
+    let split = tempfile::tempdir().unwrap();
+    let saved = capped(&definition, 1, split.path(), 3);
+    let mut rejected = input(
+        resumed(&definition, 1, split.path()),
+        Persistence::Files(split.path().to_path_buf()),
+    );
+    rejected.config = Config::parse(r#"{"start_offsets": {"15": -10}}"#).unwrap();
+    let SimOutcome::Stopped(finished) = simulate(rejected).unwrap() else {
+        panic!("a refused configuration capped the simulation");
+    };
+    assert!(
+        matches!(
+            finished.errors.as_slice(),
+            [SessionError::NoSuchCore { .. }]
+        ),
+        "{:?}",
+        finished.errors
+    );
+    let kept: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(split.path().join(MACHINE)).unwrap()).unwrap();
+    assert_eq!(kept, saved);
+
+    to_the_end(resumed(&definition, 1, split.path()), split.path());
+    assert_eq!(
+        read(whole.path(), "events.jsonl"),
+        read(split.path(), "events.jsonl")
     );
 }
