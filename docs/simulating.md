@@ -182,6 +182,41 @@ Randomness is `rand`'s `StdRng`, one stream per typed domain seeded by a fixed s
 
 A trial's failure is the earliest strictly before the intended end of the sources `Model::visit_sources` lists (loaded and idle cores, shared-rail cores, CCDs, joints, the background), and the same list gives `Model::hazard`, `Model::failure_probability` and `Model::r7_failure_share`, so scores and draws cannot diverge. Each trial runs once: a second `wait` is an error, also after a cancelled one, and a trial of an earlier boot is `Error::Crashed`. A crash keeps the exposure the trial ran before it, also for a script that crashes after its signal. An SMU hook that crashes or reboots the machine before an access makes that access `Error::Crashed` without applying it.
 
+### The Rust simulation runner (`togi-simrun`)
+
+`crates/togi-simrun` is the native port of `internal/simrun`, the loop that runs whole sessions on the simulator. `simulate(SimInput)` boots the `Simulator` it is given and, on each boot:
+
+1. Reads the boot id and BIOS context.
+2. Locks the state directory and runs `togi_session::prepare`, which archives a build or BIOS transition and selects the carry.
+3. Hands the journal and the carry to `togi_session::run`.
+4. After a crash, reboots the machine and repeats.
+
+The loop ends when a run stops without a crash, which gives `SimOutcome::Stopped` with the run's stop, errors, emergency outcome and resume capsule, or after `max_boots` boots, which gives `SimOutcome::Capped`.
+
+The state directory is either in memory or on disk:
+
+- **`Persistence::Memory(MemFs)`** keeps it in a `togi_journal::MemFs`. `state.json` is published when a run finishes, and a crashed run publishes it from its capsule (`ResumeCapsule::publish`), so the next boot finds the document a live run would have left.
+- **`Persistence::Files(path)`** locks a directory on disk for each boot and publishes `state.json` after every event. Nothing is synced. A test that holds the directory's lock makes `simulate` fail with `SimError::Lock`.
+
+Both modes leave byte-identical `events.jsonl` and `state.json`; a test pins this on three machines.
+
+**Resume and verification.** `Replay::Warm` resumes each boot from the folds the crashed boot kept. `Replay::Cold` folds the whole journal again, as `togi run` does. Verification runs in both modes. It checks the capsule against a fresh fold of the journal (`ResumeCapsule::verify`) on these boots:
+
+- every boot that ends the simulation, by a stop or by the cap;
+- every `verify_every`th crashed boot.
+
+A divergence is `SimError::Diverged`, and a state that cannot be published is `SimError::Publish`. Neither is ever reported as a cap.
+
+**Observing the run.** An `observer` sees every appended event and may answer `Observe::Stop`, which cancels the run with `Stop::Signal`. It may also call the simulator's fault controls, such as `crash`, `next_reset` or `power_loss`. These two uses replace Go's `Until` and `Wrap` journal wrappers. An observer needs in-memory persistence. `write_samples` writes trial samples under the state directory's `trials/`, so it needs persistence on disk.
+
+**After a run.** These functions read the state directory:
+
+- `events` returns the live journal's events.
+- `history` and `history_in` return a `togi_sim::History` that continues a resumed machine's boot numbering and clock.
+- `recorded_config` and `recorded_config_in` return the configuration of the latest `config.loaded`, standing in for the file `togi run` would load.
+
+The tuner's simulation tests from `internal/tuner` (`forecast_sim_test.go` and `memo_test.go`) live in this crate's `tests/`, because they need whole simulated sessions. `togi-tuner` cannot take `togi-simrun` as a dev-dependency: that would build a second `togi-tuner` whose types do not unify with the first.
+
 ## Measured reference journals
 
 [`just stats`](reviewing.md) reports exposure and failures from real journals; it does not fit simulator defaults. These three archived sessions came from one Ryzen 9 9950X3D2 under one BIOS context. The session IDs identify the unmodified compressed fixtures in `internal/carry/testdata/`.
