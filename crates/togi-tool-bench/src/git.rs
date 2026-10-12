@@ -8,18 +8,19 @@ use crate::error::Error;
 pub struct Tree {
     /// The short revision of `HEAD`.
     pub commit: String,
-    /// Whether any file differs from `HEAD`, an untracked one included, other than the records file `out`.
+    /// Whether any file differs from `HEAD`, an untracked one included, other than the records files `outs`.
     pub dirty: bool,
 }
 
 /// Reads the working tree's revision and dirtiness from git, at run time: a bench has no build-time revision of
-/// the tree it measures. `out`, the file the run is about to write, does not make the tree dirty.
-pub fn inspect(out: Option<&Path>) -> Result<Tree, Error> {
+/// the tree it measures. `outs`, the files the run is about to write, do not make the tree dirty.
+pub fn inspect(outs: &[&Path]) -> Result<Tree, Error> {
     let commit = text(&git(&["rev-parse", "--short", "HEAD"])?);
     let root = PathBuf::from(text(&git(&["rev-parse", "--show-toplevel"])?));
-    let out = out
+    let outs = outs
+        .iter()
         .map(|path| std::path::absolute(path).map(|path| clean(&path)))
-        .transpose()
+        .collect::<Result<Vec<_>, _>>()
         .map_err(|error| Error::Git {
             command: "status".to_owned(),
             message: format!("resolve the output path: {error}"),
@@ -27,7 +28,7 @@ pub fn inspect(out: Option<&Path>) -> Result<Tree, Error> {
     let status = git(&["status", "--porcelain", "-z", "--untracked-files=all"])?;
     Ok(Tree {
         commit,
-        dirty: dirty(&status, &root, out.as_deref()),
+        dirty: dirty(&status, &root, &outs),
     })
 }
 
@@ -70,25 +71,30 @@ fn git(args: &[&str]) -> Result<Vec<u8>, Error> {
     }
 }
 
-/// Whether `git status --porcelain -z` names any path other than `out`. A rename or copy is followed by its
+/// Whether `git status --porcelain -z` names any path other than `outs`. A rename or copy is followed by its
 /// source path as one more entry.
-fn dirty(status: &[u8], root: &Path, out: Option<&Path>) -> bool {
+fn dirty(status: &[u8], root: &Path, outs: &[PathBuf]) -> bool {
     let mut entries = status.split(|&byte| byte == 0);
     while let Some(entry) = entries.next() {
         let Some(path) = entry.get(3..).filter(|path| !path.is_empty()) else {
             continue;
         };
-        if out != Some(&root.join(String::from_utf8_lossy(path).as_ref())) {
+        if !listed(outs, root, path) {
             return true;
         }
         if entry.iter().take(2).any(|code| matches!(code, b'R' | b'C'))
             && let Some(source) = entries.next()
-            && out != Some(&root.join(String::from_utf8_lossy(source).as_ref()))
+            && !listed(outs, root, source)
         {
             return true;
         }
     }
     false
+}
+
+fn listed(outs: &[PathBuf], root: &Path, path: &[u8]) -> bool {
+    let path = root.join(String::from_utf8_lossy(path).as_ref());
+    outs.contains(&path)
 }
 
 #[cfg(test)]
@@ -98,7 +104,8 @@ mod tests {
     const ROOT: &str = "/repo";
 
     fn dirty_at(status: &[u8], out: Option<&str>) -> bool {
-        dirty(status, Path::new(ROOT), out.map(Path::new))
+        let outs: Vec<PathBuf> = out.map(PathBuf::from).into_iter().collect();
+        dirty(status, Path::new(ROOT), &outs)
     }
 
     #[test]
@@ -119,6 +126,17 @@ mod tests {
             b"?? out.jsonl\0 M a.rs\0",
             Some("/repo/out.jsonl")
         ));
+    }
+
+    #[test]
+    fn each_of_several_output_files_is_set_aside() {
+        let outs = [
+            PathBuf::from("/repo/out.jsonl"),
+            PathBuf::from("/repo/base.jsonl"),
+        ];
+        let root = Path::new(ROOT);
+        assert!(!dirty(b"?? out.jsonl\0?? base.jsonl\0", root, &outs));
+        assert!(dirty(b"?? base.jsonl\0?? other.jsonl\0", root, &outs));
     }
 
     #[test]
