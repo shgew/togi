@@ -428,3 +428,85 @@ fn a_changed_topology_is_refused_before_finishing_a_prior_boots_dead_end() {
     assert_eq!(crate::testing::kinds_of(session.appender()), before);
     assert!(matches!(result, Err(SessionError::TopologyChanged { .. })));
 }
+
+struct ReasonUnreadable;
+
+impl togi_tuningboot::Environment for ReasonUnreadable {
+    fn get(&mut self, _name: &str) -> io::Result<Option<String>> {
+        Err(io::Error::other("GRUB environment unreadable"))
+    }
+
+    fn set(&mut self, _values: &[(&str, &str)]) -> io::Result<()> {
+        Err(io::Error::other("the bootloader must not be written"))
+    }
+
+    fn unset(&mut self, _names: &[&str]) -> io::Result<()> {
+        Err(io::Error::other("the bootloader must not be written"))
+    }
+}
+
+impl Bootloader for ReasonUnreadable {
+    fn clear_saved_entry(&mut self) -> io::Result<togi_tuningboot::SavedEntry> {
+        Err(io::Error::other("the bootloader must not be written"))
+    }
+}
+
+fn assert_returned_untouched(bench: &Bench, ended: &Ended, events: usize) {
+    assert_eq!(ended.stop, None);
+    assert!(ended.emergency.is_none());
+    assert!(ended.capsule.is_none());
+    assert_eq!(ended.journal.events().len(), events);
+    assert_eq!(smu_offsets(bench), [0, 0]);
+}
+
+#[test]
+fn a_tuning_boot_reason_that_cannot_be_read_returns_the_journal_untouched() {
+    let bench = Bench::new(2);
+    let mut first = bench.open();
+    first.start().unwrap();
+    let events = first.appender().journal().events().len();
+    drop(first);
+    let mut input = bench.input();
+    input.bootloader = Some(Box::new(ReasonUnreadable));
+    let ended = crate::run::run(input);
+    assert!(
+        matches!(ended.errors.as_slice(), [SessionError::Bootloader(_)]),
+        "{:?}",
+        ended.errors
+    );
+    assert_returned_untouched(&bench, &ended, events);
+}
+
+#[test]
+fn a_compatible_journal_that_cannot_be_folded_is_returned_untouched() {
+    let bench = Bench::new(2);
+    let mut first = crate::testing::begun(&bench);
+    let unfoldable = togi_journal::CoreTransition {
+        core: crate::testing::core(9),
+        from: None,
+        to: togi_journal::CorePhase::AtLimit,
+        offset: crate::testing::target(-6),
+        pass: None,
+        failure_point: None,
+        check_solo_limit: false,
+        workloads: Vec::new(),
+        cleared_combination: Vec::new(),
+        reason: "test".into(),
+    };
+    let error = first
+        .appender
+        .append(Payload::CorePhase(unfoldable), &[])
+        .unwrap_err();
+    assert!(matches!(error, crate::error::AppendFailure::Fold(_)));
+    let events = first.appender().journal().events().len();
+    drop(first);
+    let mut input = bench.input();
+    input.bootloader = Some(Box::new(crate::testing::MemBoot::default()));
+    let ended = crate::run::run(input);
+    assert!(
+        matches!(ended.errors.as_slice(), [SessionError::Fold(_)]),
+        "{:?}",
+        ended.errors
+    );
+    assert_returned_untouched(&bench, &ended, events);
+}
