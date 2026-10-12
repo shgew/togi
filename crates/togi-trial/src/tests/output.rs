@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use test_case::test_case;
@@ -13,7 +13,7 @@ use togi_backend::{Backend, Line, Plan, Ready};
 use togi_machine::{CancellationToken, CpuId, Regime, Signal, Workload};
 use tokio::io::AsyncWriteExt as _;
 
-use super::harness::{finish, local, rig_edit, rig_with, spec};
+use super::harness::{Landed, finish, local, rig_edit, rig_with, spec};
 use crate::error::{CleanupFailure, Error};
 use crate::os::fake::{Delivery, Launch, ProcCtx, Reply, SignalErrorKind, script};
 use crate::os::{ExitInfo, GroupSignal, Systemd};
@@ -394,7 +394,11 @@ async fn a_flooded_instance_does_not_skip_the_required_samples_of_its_neighbour(
 #[tokio::test(start_paused = true)]
 async fn every_ready_instance_is_sampled_each_tick_while_both_watched_floods_are_outstanding() {
     local(async {
-        let rig = rig_with(watching(), Timing::default());
+        let landed = Arc::new(Landed::default());
+        let landed_before = Arc::clone(&landed);
+        let rig = rig_edit(watching(), Timing::default(), |env| {
+            env.storage = Some(landed.storage(env.dir.join("t1/samples.jsonl")));
+        });
         rig.fake.on_launch(|_, command| {
             let file = results(command);
             Launch::Run(script(move |mut ctx: ProcCtx| async move {
@@ -407,7 +411,9 @@ async fn every_ready_instance_is_sampled_each_tick_while_both_watched_floods_are
         let (seen, cancelling) = (Rc::clone(&threads_seen), cancel.clone());
         rig.fake.on_threads(move |pid| {
             let mut seen = seen.borrow_mut();
-            *seen.entry(pid).or_default() += 1;
+            let count = seen.entry(pid).or_default();
+            *count += 1;
+            landed_before.wait_for(*count - 1);
             if seen.len() == 2 && seen.values().all(|&count| count == 3) {
                 cancelling.cancel();
             }
@@ -446,12 +452,12 @@ async fn every_ready_instance_is_sampled_each_tick_while_both_watched_floods_are
 }
 
 /// The watching test backend whose classifier takes a controlled real time per `SLOW` line and
-/// notes when the first one was classified.
+/// stamps the start of each one.
 #[derive(Debug)]
 struct Slow {
     inner: TestBackend,
     nap: Duration,
-    first: Arc<OnceLock<std::time::Instant>>,
+    stamps: Arc<Mutex<Vec<std::time::Instant>>>,
 }
 
 impl Backend for Slow {
@@ -474,7 +480,7 @@ impl Backend for Slow {
 
     fn classify(&self, line: &str) -> Line {
         if line.starts_with("SLOW") {
-            self.first.get_or_init(std::time::Instant::now);
+            self.stamps.lock().unwrap().push(std::time::Instant::now());
             std::thread::sleep(self.nap);
         }
         self.inner.classify(line)
@@ -485,11 +491,11 @@ impl Backend for Slow {
 async fn a_slow_classified_watched_flood_is_polled_during_the_trial_and_leaves_the_load_steps_on_time()
  {
     local(async {
-        let first = Arc::new(OnceLock::new());
+        let stamps = Arc::new(Mutex::new(Vec::new()));
         let slow = Slow {
             inner: watching(),
             nap: Duration::from_millis(2),
-            first: Arc::clone(&first),
+            stamps: Arc::clone(&stamps),
         };
         let timing = Timing {
             sample: Duration::from_millis(25),
@@ -505,15 +511,27 @@ async fn a_slow_classified_watched_flood_is_polled_during_the_trial_and_leaves_t
                 ctx.until_killed().await;
             }))
         });
-        let begun = std::time::Instant::now();
         let handle = rig.start(spec(Regime::R4, &[0], secs(1))).await.unwrap();
+        let started = std::time::Instant::now();
         let run = finish(&handle).await;
-        let classified = first.get().expect("the flood was classified");
+        let classified = *stamps
+            .lock()
+            .unwrap()
+            .first()
+            .expect("the flood was classified");
+        let terminated = rig
+            .fake
+            .process(0)
+            .signal_times
+            .borrow()
+            .iter()
+            .find(|(_, signal)| matches!(signal, GroupSignal::Term))
+            .map(|(at, _)| at.into_std())
+            .expect("the teardown terminated the worker");
         assert!(
-            classified.duration_since(begun) < Duration::from_millis(500),
+            classified < terminated,
             "watched output is polled by the sampling ticks of the trial, not first by the \
-             teardown: {:?}",
-            classified.duration_since(begun)
+             teardown"
         );
         let toggles: Vec<_> = rig
             .fake
@@ -522,7 +540,7 @@ async fn a_slow_classified_watched_flood_is_polled_during_the_trial_and_leaves_t
             .borrow()
             .iter()
             .filter(|(_, signal)| matches!(signal, GroupSignal::Stop | GroupSignal::Cont))
-            .map(|(at, _)| *at)
+            .map(|(at, _)| at.into_std())
             .collect();
         let load = crate::plan::Load::Steps(
             togi_machine::LoadSchedule::for_spec(&spec(Regime::R4, &[0], secs(1))).unwrap(),
@@ -531,12 +549,17 @@ async fn a_slow_classified_watched_flood_is_polled_during_the_trial_and_leaves_t
             .map(|step| step.at)
             .collect();
         assert!(planned.len() >= 10 && toggles.len() >= planned.len());
-        for (actual, at) in toggles.iter().zip(&planned) {
-            let planned_after = at.saturating_sub(planned[0]);
-            let late = actual.duration_since(toggles[0]).abs_diff(planned_after);
-            assert!(
-                late < Duration::from_millis(40),
-                "a step planned at {at:?} ran {late:?} off its schedule"
+        let stamps = stamps.lock().unwrap();
+        for (index, (toggle, at)) in toggles.iter().zip(&planned).enumerate() {
+            let due = started + *at + timing.sample;
+            let overtaken = stamps
+                .iter()
+                .filter(|&&stamp| due < stamp && stamp < *toggle)
+                .count();
+            assert_eq!(
+                overtaken, 0,
+                "step {index} planned at {at:?} waited for {overtaken} classifications that began \
+                 more than one sample after it was due"
             );
         }
         assert!(run.finished.teardown.is_ok());
@@ -827,7 +850,7 @@ async fn a_blocked_log_write_never_stalls_supervision_and_is_reported() {
         let handle = rig.start(spec(Regime::R1, &[0], secs(3))).await.unwrap();
         let wall = std::time::Instant::now();
         let run = finish(&handle).await;
-        assert!(wall.elapsed() < secs(10));
+        assert!(wall.elapsed() < rig.env.timing.wait_bound(secs(3)));
         assert_eq!(run.finished.result.ran, secs(3));
         assert!(run.finished.teardown.is_ok());
         let Some(Error::Output(output)) = run.finished.errors.last() else {

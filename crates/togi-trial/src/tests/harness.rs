@@ -210,6 +210,65 @@ pub(super) async fn finish(handle: &Handle) -> Run {
     }
 }
 
+/// The samples the writer thread has appended to a real file. The writer runs in real time, and
+/// under a paused clock the ticks come microseconds apart, so a test that counts samples on disk
+/// holds each tick until the previous sample has landed; the supervisor itself never waits.
+#[derive(Default)]
+pub(super) struct Landed {
+    count: std::sync::Mutex<usize>,
+    appended: std::sync::Condvar,
+}
+
+struct Landing {
+    file: std::fs::File,
+    landed: Arc<Landed>,
+}
+
+impl crate::samples::Storage for Landing {
+    fn append(&mut self, line: &[u8]) -> std::io::Result<()> {
+        std::io::Write::write_all(&mut self.file, line)?;
+        self.file.sync_all()?;
+        *self.landed.count.lock().unwrap() += 1;
+        self.landed.appended.notify_all();
+        Ok(())
+    }
+
+    fn close(self: Box<Self>) -> std::io::Result<()> {
+        self.file.sync_all()
+    }
+}
+
+impl Landed {
+    /// Storage that creates `path` and counts each appended line.
+    pub(super) fn storage(
+        self: &Arc<Self>,
+        path: std::path::PathBuf,
+    ) -> Rc<dyn Fn() -> Result<crate::samples::Open, crate::error::StorageError>> {
+        let landed = Arc::clone(self);
+        Rc::new(move || {
+            let (path, landed) = (path.clone(), Arc::clone(&landed));
+            Ok(Box::new(move || {
+                let file =
+                    std::fs::File::create_new(path).map_err(crate::error::StorageError::Create)?;
+                Ok(Box::new(Landing { file, landed }) as Box<dyn crate::samples::Storage>)
+            }) as crate::samples::Open)
+        })
+    }
+
+    /// Blocks the runtime thread, and with it the paused clock, until `lines` have landed.
+    pub(super) fn wait_for(&self, lines: usize) {
+        let count = self.count.lock().unwrap();
+        let (_count, waited) = self
+            .appended
+            .wait_timeout_while(count, Duration::from_secs(60), |count| *count < lines)
+            .unwrap();
+        assert!(
+            !waited.timed_out(),
+            "the writer never appended {lines} samples"
+        );
+    }
+}
+
 pub(super) async fn local<F: Future>(test: F) -> F::Output {
     LocalSet::new().run_until(test).await
 }

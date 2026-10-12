@@ -177,6 +177,10 @@ pub(crate) fn seq_after(last: Option<&Event>) -> Option<Seq> {
 }
 
 impl Journal {
+    pub const fn dir(&self) -> &StateDir {
+        &self.dir
+    }
+
     pub fn events(&self) -> &[Event] {
         &self.events
     }

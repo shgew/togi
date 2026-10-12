@@ -590,15 +590,34 @@ async fn an_output_flood_neither_skips_load_steps_nor_delays_the_deadline() {
         rig.fake.on_launch(flooding);
         let trial = spec(Regime::R4, &[0], secs(1));
         let schedule = LoadSchedule::for_spec(&trial).unwrap();
-        let begun = std::time::Instant::now();
         let handle = rig.start(trial).await.unwrap();
+        let started = tokio::time::Instant::now();
         let run = finish(&handle).await;
+        let ended = tokio::time::Instant::now();
+        let term = rig
+            .fake
+            .process(0)
+            .signal_times
+            .borrow()
+            .iter()
+            .find(|(_, signal)| matches!(signal, GroupSignal::Term))
+            .map(|(at, _)| at.duration_since(started))
+            .expect("the teardown terminated the flooding worker");
         let expected = schedule.toggles(secs(1));
         assert_eq!(
             (run.finished.result.stops, run.finished.result.conts),
             (expected.stops, expected.conts)
         );
-        assert!(begun.elapsed() < secs(3), "{:?}", begun.elapsed());
+        let timing = rig.env.timing;
+        assert!(
+            term < secs(1) + Duration::from_millis(500),
+            "the flood delayed the deadline: {term:?}"
+        );
+        assert!(
+            ended.duration_since(started) < timing.wait_bound(secs(1)),
+            "the end outlived the spec's bound: {:?}",
+            ended.duration_since(started)
+        );
         assert!(run.finished.teardown.is_ok());
     })
     .await;
