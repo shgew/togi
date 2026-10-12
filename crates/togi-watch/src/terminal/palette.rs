@@ -8,7 +8,7 @@ use crate::screen::Colours;
 
 /// The dashboard's shade for each of the console's 16 colour slots, which the console lets a program redefine
 /// (`ESC ] P n rrggbb`). The console's default grey and its bold handling are too dim at low monitor brightness.
-pub const CONSOLE_PALETTE: [(u8, u8, u8); 16] = [
+pub(super) const CONSOLE_PALETTE: [(u8, u8, u8); 16] = [
     (0x00, 0x00, 0x00),
     (0xaa, 0x33, 0x33),
     (0x33, 0xaa, 0x55),
@@ -42,7 +42,7 @@ pub(super) fn set() -> String {
 
 /// The colour profile of an output: none for `NO_COLOR` or journald, the console's 16 colours for `TERM=linux`,
 /// every colour otherwise.
-pub fn colours_for(facts: OutputFacts, term: Option<&OsStr>) -> Colours {
+pub(super) fn colours_for(facts: OutputFacts, term: Option<&OsStr>) -> Colours {
     if facts.no_color || facts.journald {
         Colours::None
     } else if term == Some(OsStr::new("linux")) {

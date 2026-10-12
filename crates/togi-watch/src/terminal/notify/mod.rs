@@ -242,7 +242,7 @@ mod tests {
             drive(&mut watch, &mut handshake).await;
             watch.arms
         });
-        tokio::time::advance(POLL * 4 - Duration::from_millis(1)).await;
+        tokio::time::advance(Duration::from_millis(3999)).await;
         tokio::task::yield_now().await;
         assert!(l.events.try_recv().is_err(), "reported before the journal could be watched");
         tokio::time::advance(Duration::from_millis(1)).await;
@@ -261,7 +261,7 @@ mod tests {
             drive(&mut watch, &mut handshake).await;
             watch.arms
         });
-        tokio::time::advance(Duration::from_secs(6 * 3600)).await;
+        tokio::time::advance(Duration::from_hours(6)).await;
         tokio::task::yield_now().await;
         assert!(l.events.try_recv().is_err());
         l.frozen.send_replace(false);

@@ -60,7 +60,7 @@ enum Content {
     Starting,
     Problem(SourceError),
     /// The folded journal, and how many of its events are in the model.
-    Ready(Model, usize),
+    Ready(Box<Model>, usize),
 }
 
 /// The journal view's list while it is scrolled back: the entries it held when the reader left the end. Events that
@@ -184,7 +184,7 @@ impl Source {
             {
                 (model, folded)
             }
-            _ => (Model::new(), 0),
+            _ => (Box::new(Model::new()), 0),
         };
         for event in &events[folded..] {
             if model.fold(event).is_err() {
@@ -220,19 +220,30 @@ impl Source {
             Content::Missing => Journal::Missing,
             Content::Starting => Journal::Starting,
             Content::Problem(error) => Journal::Problem(error),
-            Content::Ready(model, _) => match model.problem() {
-                Some(error) => Journal::Problem(error),
-                None => {
-                    let snapshot = model.snapshot();
-                    let live = snapshot.log();
-                    let log = self.held.as_ref().map_or(live, |held| Log {
-                        entries: &held.entries,
-                        total: held.total,
-                        arrived: live.total.saturating_sub(held.total),
-                    });
-                    Journal::Ready { snapshot, log }
+            Content::Ready(model, _) => {
+                if let Some(error) = model.problem() {
+                    return Journal::Problem(error);
                 }
-            },
+                let snapshot = model.snapshot();
+                let live = snapshot.log();
+                let log = self.held.as_ref().map_or(live, |held| Log {
+                    entries: &held.entries,
+                    total: held.total,
+                    arrived: live.total.saturating_sub(held.total),
+                });
+                Journal::Ready { snapshot, log }
+            }
+        }
+    }
+}
+
+impl Source {
+    /// Consumes the source and returns why the journal cannot be shown, if it cannot.
+    pub(super) fn into_problem(self) -> Option<SourceError> {
+        match self.content {
+            Content::Problem(error) => Some(error),
+            Content::Ready(model, _) => model.problem().cloned().map(SourceError::Fold),
+            Content::Missing | Content::Starting => None,
         }
     }
 }

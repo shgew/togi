@@ -109,7 +109,7 @@ mod tests {
         clock.schedule(Hold::Never, NOW);
         clock.schedule(Hold::Frozen, NOW);
         assert!(!clock.is_armed());
-        assert!(!wakes(&mut clock, Duration::from_secs(6 * 3600)).await);
+        assert!(!wakes(&mut clock, Duration::from_hours(6)).await);
     }
 
     #[tokio::test(start_paused = true)]

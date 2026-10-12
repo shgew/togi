@@ -196,15 +196,39 @@ pub fn run(
         operation: "open terminal",
         source,
     })?;
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(Error::Runtime)?;
     let raw = match keys {
         Some(fd) => RawMode::enter(fd).map_err(Error::Keys)?,
         None => None,
     };
-    let keys = keys.filter(|_| raw.is_some());
+    drive(
+        backend,
+        live,
+        keys.filter(|_| raw.is_some()),
+        colours,
+        Timestamp::now,
+        render,
+    )
+}
+
+/// Whether the console's palette is redefined for a colour profile: only the Linux console's own is.
+fn uses_palette(colours: Colours) -> bool {
+    colours == Colours::Console
+}
+
+/// [`run`] on any backend, with the terminal's raw mode and colour profile already decided by the caller.
+fn drive<B: console::Console>(
+    backend: B,
+    live: &Live<'_>,
+    keys: Option<BorrowedFd<'_>>,
+    colours: Colours,
+    now: impl Fn() -> Timestamp,
+    mut render: impl FnMut(&Journal<'_>, &Screen, Timestamp, &mut Buffer) -> Drawn,
+) -> Result<(), Error> {
+    let now = &now;
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(Error::Runtime)?;
     std::thread::scope(|scope| {
         runtime.block_on(async {
             let (events, mut queue) = mpsc::unbounded_channel();
@@ -233,18 +257,17 @@ pub fn run(
             let _notifier = Abort(tokio::spawn(async move {
                 notify::drive(&mut watcher, &mut handshake).await;
             }));
-            let _reader = match keys {
+            let reader = match keys {
                 Some(fd) => Some(Reader::start(scope, fd, events.clone()).map_err(Error::Keys)?),
                 None => None,
             };
-            let mut render = render;
             show::show(
                 backend,
                 show::Options {
-                    palette: colours == Colours::Console,
-                    keys: _reader.is_some(),
+                    palette: uses_palette(colours),
+                    keys: reader.is_some(),
                     colours,
-                    now: Timestamp::now,
+                    now,
                     reloaded: Some(reloaded),
                     frozen: Some(frozen),
                 },
@@ -252,7 +275,7 @@ pub fn run(
                 |screen, buf| {
                     let mut source = source.borrow_mut();
                     let journal = source.journal(screen);
-                    render(&journal, screen, Timestamp::now(), buf)
+                    render(&journal, screen, now(), buf)
                 },
                 || source.borrow_mut().reload(),
             )
@@ -309,7 +332,7 @@ fn write_plain(buffer: &Buffer, out: &mut impl Write) -> io::Result<()> {
                 continue;
             }
             let symbol = buffer[(x, y)].symbol();
-            skip = unicode_width::UnicodeWidthStr::width(symbol).saturating_sub(1);
+            skip = ratatui::text::Span::raw(symbol).width().saturating_sub(1);
             text.push_str(symbol);
         }
         text.truncate(text[start..].trim_end().len() + start);

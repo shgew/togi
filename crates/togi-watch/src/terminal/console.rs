@@ -149,7 +149,8 @@ impl<B: Console> Drop for Session<B> {
         let _ = backend.write_all(b"\x1b[0m");
         let _ = backend.clear_region(ClearType::All);
         let _ = backend.set_cursor_position(Position::ORIGIN);
-        let _ = backend.show_cursor();
+        let _ = self.terminal.show_cursor();
+        let backend = self.terminal.backend_mut();
         if self.palette {
             let _ = backend.write_all(palette::RESET.as_bytes());
         }
