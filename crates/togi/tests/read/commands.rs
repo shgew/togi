@@ -161,6 +161,7 @@ fn an_unknown_kind_as_the_first_event_is_never_skipped() {
     crate::support::rewrite_first_line(dir.path(), |event| {
         event["kind"] = UNKNOWN_KIND.into();
     });
+    let before = crate::fixture::snapshot(dir.path());
     for command in ["status", "events", "watch"] {
         let args = if command == "watch" {
             one_frame_watch(&[])
@@ -169,11 +170,10 @@ fn an_unknown_kind_as_the_first_event_is_never_skipped() {
         };
         let ran = togi(dir.path(), &args);
         assert_eq!(ran.status.code(), Some(1), "{command}");
-        let said = text(&ran.stderr);
-        assert!(
-            said.contains("session.start") || said.contains(UNKNOWN_KIND),
-            "{command}: {said}"
-        );
+        assert_eq!(text(&ran.stdout), "", "{command}");
+        // The first line is not a header of this build, whatever its kind: the refusal does not say which build.
+        crate::fixture::assert_refusal(command, text(&ran.stderr), dir.path());
+        assert_eq!(crate::fixture::snapshot(dir.path()), before, "{command}");
     }
 }
 

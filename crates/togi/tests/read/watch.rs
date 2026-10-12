@@ -14,11 +14,11 @@ use rustix::termios::{LocalModes, Winsize, tcgetattr, tcsetwinsize};
 use togi_watchtest::Scenario;
 
 use crate::support::{
-    append_between_trial_mce, append_event, journal, rewrite_first_line, session, text, togi,
+    append_between_trial_mce, append_event, journal, lines, rewrite_first_line, session, text, togi,
 };
 
-const BOUND: Duration = Duration::from_secs(30);
-const HIDE_CURSOR: &[u8] = b"\x1b[?25l";
+pub(crate) const BOUND: Duration = Duration::from_secs(30);
+pub(crate) const HIDE_CURSOR: &[u8] = b"\x1b[?25l";
 const SHOW_CURSOR: &[u8] = b"\x1b[?25h";
 
 #[test]
@@ -48,8 +48,10 @@ fn without_a_terminal_one_frame_of_the_requested_size_is_printed() {
 
 #[test]
 fn an_unreadable_journal_prints_the_problem_frame_and_exits_one() {
-    let dir = tempfile::tempdir().unwrap();
-    std::fs::write(journal(dir.path()), "not json\n").unwrap();
+    // A header of this build, then a line that is not an event: unreadable, not another build's journal.
+    let dir = session(Scenario::Search);
+    let header = lines(dir.path()).swap_remove(0);
+    std::fs::write(journal(dir.path()), format!("{header}\nnot json\n")).unwrap();
     let ran = togi(dir.path(), &["watch", "--width", "100", "--height", "30"]);
     assert_eq!(ran.status.code(), Some(1));
     assert!(!text(&ran.stdout).trim().is_empty(), "the frame is printed");
@@ -162,7 +164,7 @@ fn watch_help() {
     insta::assert_snapshot!(text(&ran.stdout));
 }
 
-struct Helper(Child);
+pub(crate) struct Helper(pub(crate) Child);
 
 impl Drop for Helper {
     fn drop(&mut self) {
@@ -171,7 +173,7 @@ impl Drop for Helper {
     }
 }
 
-fn read_more(master: &OwnedFd, seen: &mut Vec<u8>, deadline: Instant) -> bool {
+pub(crate) fn read_more(master: &OwnedFd, seen: &mut Vec<u8>, deadline: Instant) -> bool {
     let remaining = deadline.saturating_duration_since(Instant::now());
     if remaining.is_zero() {
         return false;
@@ -195,7 +197,7 @@ fn read_more(master: &OwnedFd, seen: &mut Vec<u8>, deadline: Instant) -> bool {
     }
 }
 
-fn contains(haystack: &[u8], needle: &[u8]) -> bool {
+pub(crate) fn contains(haystack: &[u8], needle: &[u8]) -> bool {
     haystack
         .windows(needle.len())
         .any(|window| window == needle)

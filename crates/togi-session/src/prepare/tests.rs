@@ -436,7 +436,7 @@ fn a_broken_archive_layout_or_live_header_refuses_the_preparation_and_leaves_the
                 matches!(&error, PrepareError::Dir(DirError::ArchiveExists { session }) if *session == id)
             }
             "invalid session header" => {
-                matches!(&error, PrepareError::Dir(DirError::NotAJournal { .. }))
+                matches!(&error, PrepareError::Dir(DirError::ForeignJournal { .. }))
             }
             _ => matches!(&error, PrepareError::Dir(_)),
         };
