@@ -804,6 +804,64 @@ The later-hunt base runs once, through three clean cycles. Go simulated six cycl
 - **Measured.** Against `c9ba3004`: 1198 lines of library (with the manifest) and 803 of tests, none removed, next to Go's 441 test-helper lines (`frames_test.go` lines 27-336, `watchtest/fixture.go`, and the two fixtures of `cycle_resume_test.go`), which built journals and pinned nothing. On a 32-thread host at load 17 to 21, in the debug profile after #845 (dependencies, `togi-journal` and `togi-tuner` at `opt-level = 1`): the base simulations take 0.19 s (dead end) to 0.95 s (later hunt); the suite takes 2.5 to 5.2 s with nextest's parallelism, and the slowest test, the later-hunt determinism test, 2.2 s run alone and 5.1 s under `cargo llvm-cov` (`just cover-rs`). Before #845 the suite took 8.9 s and its slowest test 8.5 s (11.7 s under `cargo llvm-cov`). Review round 1 found 5 issues, all fixed: the crashed-cycle base's property unpinned, Go's impossible dead-end journal, `install` appending over an existing journal, these missing measurements, and a `cut_when` test that could not tell the state before the fold from the state after it.
 - **Not measured.** Compile times against Go, and agent cost.
 
+## Stage 7: `tools/fit` (#818, 2026-10-12)
+
+The `togi-tool-fit` crate ports `tools/fit` ([#818](https://github.com/shgew/togi/issues/818)): a command crate, a library of 2,708 lines and a clap `main.rs` of 84, against Go's 1,934 lines of library and command; 2,939 lines of tests (61 tests) against Go's 1,973 (37 tests). No Go code is removed or changed; the recipes `fit-rs`, `fit-shared-voltage-rs` and `forward-rs` sit beside `fit`, `fit-shared-voltage` and `forward`.
+
+- **Determinism across threads.** Every search step builds a vector of candidates and scores them with `par_iter().map().collect()`, so each result has its own index; the winner is then picked by a sequential fold with a strict `< score - 1e-9` test, in candidate order. A score sums its observations in index order on one thread, and no float is summed across threads. The joint candidates, the prefix fits of the forward check and the ensemble's members use the same index-slot pattern, and the first error is taken in index order; every fit runs to completion after a failure, so the error reported does not depend on which thread failed first. `--jobs` builds a pool of that size around the whole run (Go's `--jobs` bounded only the whole fits). `tests/fit/determinism.rs` runs one ensemble with its forward-chained check, and the shared-voltage anchor, on explicit pools of 1, 2 and all CPUs and compares the machine files, the reports and the forward rows; replacing the in-order observation sum with a rayon `sum` fails both.
+- **Design calls.**
+  - The machine being fitted is a `MachineDefinition`, rebuilt into a `Model` for each candidate; a candidate the model refuses (an overflowing rate) has infinite loss, so a search never keeps it, and the final machine is rebuilt with the error returned.
+  - `Likelihood` is one struct with the optional shared-voltage terms (the threshold prior and the named-core failure share) instead of Go's embedded `voltageLikelihood`. Here every step minimizes the same objective, which fixes a Go bug (below). The anchor's likelihood on the committed extract is unchanged to 17 digits.
+  - The bootstrap draws come from `StdRng` seeded `seed + n`, so refits 1 to 8 differ from the committed files; machine files are the simulator crate's own encoding.
+  - Facts are typed: a trial's workload is in the catalog, offsets are in range and a failure always names a signal, so Go's checks for those and the "failure without a signal is skipped" rule are gone; a BIOS context with an empty field is kept as is, which drops Go's "every field set" requirement of the anchor.
+  - `togi-tool-modelcheck` supplies the checker. Report lines, the elapsed times (printed by `main.rs` after the report) and the notes follow Rust's formats; `docs/benchmarking.md` has a section on the differences.
+- **Go bugs fixed.** The anchor's shared steps (hazard shape, flat, idle, limit-rate shift) called Go's embedded raw `score`, without the threshold prior and the named-core term, while the voltage steps, the constrained rate search and the convergence test (`previous - score < 1e-5`) used the full objective. A shared step could therefore lower the raw loss while raising the measured objective, and the sweep then stopped early. Every step now minimizes the objective the sweep measures; `the_shared_steps_minimize_the_objective_the_anchor_sweep_converges_on` fails if a shared step reverts to the raw one. The committed extract's anchor likelihood is unchanged.
+- **Measured.** On the committed extract at this head, the pooled line of `togi-tool-fit`'s forward-chained check prints the Go tool's to the digit (`log_loss/trial fit=0.6089`, `flagged/eligible=13/23`, `failures_p<0.01=88`); `target-fit-0` reaches negative log likelihood 209.517088 and the anchor 283.79098647702926, both the committed values. Wall time: `just fit` 4.5 s in Go against 4.7 s in Rust and `--forward-only` 2.9 s against 2.1 s, on one 16-core host each, one run each. `go test -count=1 ./tools/fit` took 0.76 s (37 tests); `cargo nextest run -p togi-tool-fit` ran 61 tests in 13.0 s on a built debug tree on a busy host, the longest the anchor's pool-size determinism test at 13.0 s and the ensemble's at 6.3 s.
+- **Review findings fixed.** Round 1 found no code defect; it found that the shared objective above was a Go bug fix without a test, and test gaps: the anchor was never run on more than one pool size, the constrained rate search's rate-raising branch was never reached, the restarted constrained refits were not checked to be unflagged with their resample's loss, and an anchor with an empty BIOS field was not checked to replay. Each gap now has a test that fails on the broken behavior. It also found that this entry's test times were not from one run (a 2.1 s test in a 2.0 s run); they are re-measured above.
+- **Not measured.** Compile times against Go, agent cost, and a Mac: not run on a Mac.
+
+## Stage 5: close (#768, 2026-10-12)
+
+Stage 5 ([#640](https://github.com/shgew/togi/issues/640)) closes with its nine crates on `main` at `113b73ee`: `togi-hostlock`, `togi-command`, `togi-smu`, `togi-backend`, `togi-mprime`, `togi-ycruncher`, `togi-detect`, `togi-trial` and `togi-hardware`. This pull request adds the recipe for the Rust hardware tests and the stage's measurements. No Go is removed or changed.
+
+- **Stage 4 suite check.** `just sim-suite-rs --jobs 8` on `main` at `97eba4cc` (with this pull request's recipe and log entry, which change no code): all 220 suite sessions ended `clean` and `togi-tool-sim check --shards 1` passed, in 128 s of wall time including the release build, on the 32-thread development host at a load of 32 to 36. CI's `rust-sim-suite-0` to `-3` run the same suite on every pull request.
+- **The recipe.** `just hardware-rs` sits beside `just hardware`. It enters the dev shell itself, since `sudo` drops it, and runs `cargo test --locked --no-fail-fast --features hardware --test hardware` for `togi-smu`, `togi-detect`, `togi-trial` and `togi-hardware` with `RUST_TEST_THREADS=1`: cargo runs the binaries one after another, all of them even after one fails, and each runs one test at a time, and each test that needs the host takes the host lock. Trial's `cached_errors` binary needs an ordinary account (`BackendIdentity` refuses uid 0), so the recipe adds it only when it does not run as root; such a run fails the tests that need root. As root it builds in a target directory under root's home, so it leaves no root-owned files in the checkout's `target/`. The recipe refuses outside Linux. `just hardware-rs --no-run` builds the binaries and starts none. The owner runs it as root on the target machine at the cutover ([#643](https://github.com/shgew/togi/issues/643)); the VM check of `togi-trial` ran its tests under real systemd, and the SMU tests have run nowhere.
+- **Hardware-feature tests built.** `just hardware-rs --no-run` and `cargo test --locked -p togi-trial -p togi-hardware --features hardware --no-run` each built every binary. `--list` shows 2 tests in `togi-smu`, 1 in `togi-detect`, 12 in the `togi-trial` `hardware` binary, 2 in its `cached_errors` and 1 in `togi-hardware`. None ran.
+- **Test counts and times.** One `cargo nextest run --locked -p <crate>` per crate on Linux, as an ordinary user, on a warm build with other jobs on the host, one run each; Go is `go test -count=1` of the matching package, all in one invocation (its packages run in parallel). Go's `internal/backend` has no test files, and `togi-command` has no Go package.
+
+| Crate | Rust tests | Rust time [s] | Go package | Go time [s] |
+|:---|---:|---:|:---|---:|
+| `togi-hostlock` | 20 | 0.005 | `internal/hostlock` | 0.002 |
+| `togi-command` | 38 | 6.252 | none | none |
+| `togi-smu` | 85 | 0.222 | `internal/smu` | 0.057 |
+| `togi-backend` | 16 | 0.004 | `internal/backend` | no tests |
+| `togi-mprime` | 20 | 0.208 | `internal/backend/mprime` | 0.004 |
+| `togi-ycruncher` | 36 | 0.459 | `internal/backend/ycruncher` | 0.004 |
+| `togi-detect` | 85 | 1.021 | `internal/detect` | 0.003 |
+| `togi-trial` | 440 | 8.623 | `internal/trial` | 0.125 |
+| `togi-hardware` | 101 | 0.313 | `internal/hardware` | 0.005 |
+| Total | 841 | 17.107 | | 0.200 |
+
+The counts, times and sizes are at `113b73ee`. Since then only [#807](https://github.com/shgew/togi/pull/807) changed a stage 5 crate: `togi-trial` gained 136 test lines and kept 440 tests, which ran in 8.8 s on `97eba4cc` at a load of 36.
+
+- **Size.** Library and test lines of each crate, counted as the `togi-trial` entry counts: each source file is split at its `#[cfg(test)]` module, matching braces, and the module, files of modules declared under `#[cfg(test)]` (such as `togi-trial`'s `src/os/fake.rs`), files named `tests.rs` or `testing.rs`, `src/tests/` and `tests/` are tests. Go's are the `.go` and `_test.go` files of the package.
+
+| Crate | Rust library | Rust tests | Go library | Go tests |
+|:---|---:|---:|---:|---:|
+| `togi-hostlock` | 351 | 598 | 148 | 400 |
+| `togi-command` | 553 | 1,038 | 0 | 0 |
+| `togi-smu` | 2,043 | 3,209 | 795 | 1,284 |
+| `togi-backend` | 246 | 250 | 60 | 130 |
+| `togi-mprime` | 186 | 399 | 84 | 228 |
+| `togi-ycruncher` | 263 | 722 | 136 | 324 |
+| `togi-detect` | 1,833 | 2,976 | 736 | 1,259 |
+| `togi-trial` | 7,469 | 16,285 | 2,200 | 6,195 |
+| `togi-hardware` | 1,548 | 2,299 | 467 | 877 |
+| Total | 14,492 | 27,776 | 4,626 | 10,697 |
+
+- **Reading them.** The nine crates hold 3.1 times Go's library lines and 2.6 times its test lines, counting `togi-command`, which has no Go package. Their 841 tests run in 17.1 s, 6.3 s of it in `togi-command` (its entry says why) and 8.6 s in `togi-trial`; Go's seven packages take 0.2 s together, the longest, `internal/trial`, 0.125 s. The comparison is of suites, not of the code under test: the Rust tests start real processes that the Go unit tests do not, and the counts and times were not normalised for that.
+- **Not measured.** Compile times against Go, agent cost, changed-line coverage of the stage as a whole, and any run of the recipe, since it was only built. Nothing ran on real hardware and the suite was not run on a Mac. The NixOS VM check of the trial scope was not rerun here; CI runs it as `vm-trial-scope-rs` ([#809](https://github.com/shgew/togi/pull/809)).
+
 ## Stage 7: `tools/bench` (a) (#821, 2026-10-12)
 
 The `togi-tool-bench` crate ports the runs, metrics, summary, comparison and cache of `tools/bench` ([#821](https://github.com/shgew/togi/issues/821)); the gates ([#822](https://github.com/shgew/togi/issues/822)) and `--same`, `--smoke` and `--forecast` ([#823](https://github.com/shgew/togi/issues/823)) stay with the Go bench, and the module and record boundaries leave room for them (the gate is kept as raw JSON in the suite, and a run has a `smoke` flag). It builds `togi-tool-sim` from the tree with cargo and starts it as a subprocess per run, as Go builds `tools/sim`; `--sim PATH` replaces it. `just bench-rs` runs it; the Go recipes are unchanged. 3,351 lines of library with its unit tests and about 2,350 of tests (117 tests, 16 insta snapshots), against Go's 1,407 lines in `main.go`, `metrics.go`, `compare.go`, `cache.go` and `suite_notes.go` (which also dispatch the gate and `--same` modes) and 1,524 in the in-scope test files.
