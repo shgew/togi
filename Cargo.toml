@@ -47,7 +47,6 @@ togi-trial = { path = "crates/togi-trial", version = "0.0.0" }
 togi-trialfiles = { path = "crates/togi-trialfiles", version = "0.0.0" }
 togi-tuner = { path = "crates/togi-tuner", version = "0.0.0" }
 togi-tuningboot = { path = "crates/togi-tuningboot", version = "0.0.0" }
-togi-watchtest = { path = "crates/togi-watchtest", version = "0.0.0" }
 togi-ycruncher = { path = "crates/togi-ycruncher", version = "0.0.0" }
 tokio = { version = "1", default-features = false }
 
