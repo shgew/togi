@@ -1,6 +1,7 @@
 mod build;
 mod filter;
 mod fixtures;
+mod lenient;
 mod message;
 mod object_only;
 mod session_id;
