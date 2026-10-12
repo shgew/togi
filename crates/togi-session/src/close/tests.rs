@@ -45,7 +45,10 @@ fn close(session: Session, run: Result<Stop, SessionError>) -> Ended {
 }
 
 fn failed_search(bench: &Bench, offset: i64) -> Session {
-    let mut session = swept(bench);
+    failed_search_on(swept(bench), bench, offset)
+}
+
+fn failed_search_on(mut session: Session, bench: &Bench, offset: i64) -> Session {
     session.config = togi_config::Config::parse(&format!(
         r#"{{"start_offsets":{{"0":{offset},"1":{offset}}}}}"#
     ))
@@ -293,6 +296,63 @@ fn drained_commitments_are_recorded_before_the_restoration() {
     let restored = kinds.iter().position(|&kind| kind == "shutdown").unwrap();
     assert!(drained < restored);
     assert_eq!(ended.stop, Some(Stop::Signal));
+}
+
+/// A bootloader whose saved entry cannot be cleared because the code clearing it panics.
+#[derive(Default)]
+struct PanicsClearing(crate::testing::MemBoot);
+
+impl togi_tuningboot::Environment for PanicsClearing {
+    fn get(&mut self, name: &str) -> std::io::Result<Option<String>> {
+        self.0.get(name)
+    }
+
+    fn set(&mut self, values: &[(&str, &str)]) -> std::io::Result<()> {
+        self.0.set(values)
+    }
+
+    fn unset(&mut self, names: &[&str]) -> std::io::Result<()> {
+        self.0.unset(names)
+    }
+}
+
+impl togi_tuningboot::Bootloader for PanicsClearing {
+    fn clear_saved_entry(&mut self) -> std::io::Result<togi_tuningboot::SavedEntry> {
+        panic!("a bug clearing the saved entry");
+    }
+}
+
+/// Go `TestRunOwnerEveryExit`, panic mode, for the one step of a clean stop the run's own catch does not cover.
+#[test]
+fn a_panic_draining_a_signalled_stop_still_restores_the_offsets_with_readback_and_is_handed_back() {
+    let bench = Bench::new(2);
+    let mut input = bench.input();
+    input.bootloader = Some(Box::new(PanicsClearing::default()));
+    let Ok(mut session) = Session::open(input) else {
+        panic!("open");
+    };
+    assert_eq!(session.start().unwrap(), crate::session::Control::Continue);
+    assert_eq!(session.sweep().unwrap(), crate::session::Control::Continue);
+    let mut session = failed_search_on(session, &bench, 0);
+    put(&mut session, &[-5, -5]);
+    let run = Ok(signalled(&mut session));
+    let mut ended = session.close(run);
+    let panic = ended.panic.take().expect("the panic is handed back");
+    assert_eq!(panic.message(), "a bug clearing the saved entry");
+    assert!(matches!(
+        ended.errors.as_slice(),
+        [SessionError::Panicked(message)] if message == "a bug clearing the saved entry"
+    ));
+    let kinds = kinds(ended.journal.events());
+    assert!(
+        kinds.contains(&"deadend"),
+        "the drain got as far as the dead end"
+    );
+    assert!(kinds.contains(&"profile.restored"), "{kinds:?}");
+    assert!(!kinds.contains(&"shutdown"), "no clean stop is claimed");
+    assert_eq!(smu_offsets(&bench), [0, 0]);
+    let readbacks = kinds.iter().filter(|&&kind| kind == "smu.readback").count();
+    assert!(readbacks > 0, "the restoration was read back");
 }
 
 #[test]
@@ -1110,4 +1170,50 @@ fn a_stop_at_a_durable_boundary_drains_what_it_owes_and_starts_no_new_work() {
             assert_eq!(ended.stop, Some(Stop::Signal), "{edge:?}");
         }
     }
+}
+
+/// Go `TestRunOwnerEveryExit`, panic mode, for a panic that is the only failure and strikes the restoration's own
+/// append: the cleanup must not unwind out of the close with the tuned offsets still on the machine.
+#[test]
+fn a_panic_taking_in_the_restoration_intent_of_an_ordinary_stop_gets_the_emergency_and_is_handed_back()
+ {
+    let bench = Bench::new(2);
+    let armed = std::rc::Rc::new(std::cell::Cell::new(false));
+    let flag = armed.clone();
+    let mut input = bench.input();
+    input.on_append = Some(Box::new(move |event| {
+        assert!(
+            !(flag.get() && event.kind() == togi_journal::EventKind::SmuIntent),
+            "a bug taking in the restoration intent"
+        );
+    }));
+    let Ok(mut session) = Session::open(input) else {
+        panic!("open");
+    };
+    assert_eq!(session.start().unwrap(), crate::session::Control::Continue);
+    assert_eq!(session.sweep().unwrap(), crate::session::Control::Continue);
+    recorded_baseline(&mut session, &[0, 0]);
+    put(&mut session, &[-5, -5]);
+    session.validated = Some(session.host.validate_smu().unwrap());
+    let run = Ok(signalled(&mut session));
+    armed.set(true);
+    let mut ended = session.close(run);
+    let panic = ended.panic.take().expect("the panic is handed back");
+    assert_eq!(panic.message(), "a bug taking in the restoration intent");
+    assert!(matches!(
+        ended.errors.as_slice(),
+        [SessionError::Panicked(message)] if message == "a bug taking in the restoration intent"
+    ));
+    let kinds = kinds(ended.journal.events());
+    assert!(!kinds.contains(&"profile.restored"), "{kinds:?}");
+    assert!(!kinds.contains(&"shutdown"), "no clean stop is claimed");
+    assert!(
+        matches!(
+            ended.emergency.as_ref().map(|outcome| &outcome.response),
+            Some(Response::Zeroed(zeroed)) if zeroed.is_clean()
+        ),
+        "{:?}",
+        ended.emergency
+    );
+    assert_eq!(smu_offsets(&bench), [0, 0]);
 }

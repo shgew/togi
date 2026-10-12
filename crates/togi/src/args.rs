@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 
 use clap::{Args, ValueHint};
 use togi_config::{Config, LoadError};
+use togi_session::ConfigSource;
 
 pub use togi_config::DEFAULT_PATH as DEFAULT_CONFIG_PATH;
 
@@ -63,18 +64,35 @@ impl ConfigArgs {
     ///
     /// The file cannot be read or is not a valid configuration.
     pub fn load(&self, default: &Path) -> Result<Config, LoadError> {
-        read(self.path(default), self.is_explicit())
+        self.load_with_source(default).map(|(config, _)| config)
+    }
+
+    /// [`ConfigArgs::load`], with where the configuration came from, as a session records it.
+    ///
+    /// # Errors
+    ///
+    /// The file cannot be read or is not a valid configuration.
+    pub fn load_with_source(&self, default: &Path) -> Result<(Config, ConfigSource), LoadError> {
+        let path = self.path(default);
+        let (config, file) = read(path, self.is_explicit())?;
+        let source = ConfigSource {
+            path: path.display().to_string(),
+            file,
+        };
+        Ok((config, source))
     }
 }
 
-fn read(path: &Path, explicit: bool) -> Result<Config, LoadError> {
+/// The configuration at `path` and whether a file supplied it: a missing file that was not asked for
+/// is the default configuration.
+fn read(path: &Path, explicit: bool) -> Result<(Config, bool), LoadError> {
     match Config::load(path) {
         Err(LoadError::Read { source, .. })
             if !explicit && source.kind() == std::io::ErrorKind::NotFound =>
         {
-            Ok(Config::default())
+            Ok((Config::default(), false))
         }
-        loaded => loaded,
+        loaded => loaded.map(|config| (config, true)),
     }
 }
 

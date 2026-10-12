@@ -1,0 +1,47 @@
+---
+source: crates/togi/tests/cli/main.rs
+expression: stdout(&ran)
+---
+Start or resume the tuning session in the foreground
+
+Searches for each core's solo limit, hunts the core or combination behind unattributed failures with parked trials, checks the profile from one count shallower than each solo limit (phase 1), moves cores back toward their solo limits one count per round and confirms the result with a full cycle (phase 2), then keeps checking it with full cycles. After a crash the next run attributes it from the journal and continues. On resume, known defects affecting past decisions name the cores; a run at a terminal offers to reset them. An unanswered too-aggressive defect stops an unattended run. It needs root.
+
+A journal from an older ruleset, schema or evidence epoch, and no newer one, is archived. A newer ruleset, schema or evidence epoch stops the run before another event is written; reset --all archives that session. Journal lines are colored on terminals and in the system journal unless the environment asks for no colour.
+
+Only one run or reset can own this machine, even with different state directories. A busy /run/lock/togi.lock stops the command before any hardware access or event.
+
+When stdin and stderr are terminals, run shows the session as the watch dashboard instead of one line per event, and prints the outcome when it stops: the restored offsets and why it stopped, or the dead end or error; events.jsonl still records every event. --no-tui prints the lines instead.
+
+--tuning-boot runs the unattended service with an armed hardware watchdog. The first durable journal append resets its consecutive restart-limit count and records a pending leave reason once. Dead ends and incompatible journals persist a short leave reason before clearing the saved GRUB entry.
+
+Usage: togi run [OPTIONS]
+
+Options:
+      --config <path>
+          JSON configuration file [default: /etc/togi/config.json]
+
+      --state-dir <path>
+          State directory
+          
+          [default: /var/lib/togi]
+
+      --cycles <N>
+          Stop after N clean cycles, each a passed full cycle ending at or after phase 2's confirmation cycle (default endless)
+
+      --first-result
+          Stop once the BIOS profile is first confirmed, after phase 1's passed cycle and before phase 2 moves a core
+
+      --tuning-boot <file>
+          Run as the tuning boot service: persist a leave reason before clearing the saved boot entry in this GRUB environment file, and reboot after a boot loop
+
+      --no-tui
+          Print one line per event instead of the dashboard on a terminal
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+Examples:
+  sudo togi run                  Tune this machine until a signal or a dead end
+  sudo togi run --cycles 1       Stop once phase 2's confirmation cycle has passed
+  sudo togi run --first-result   Stop at the first confirmed BIOS profile, after phase 1's passed cycle
+  sudo togi run --no-tui         Print one line per event instead of the dashboard
