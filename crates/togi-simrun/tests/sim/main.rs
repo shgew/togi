@@ -4,6 +4,7 @@
 mod support;
 
 mod cap;
+mod carry;
 mod common;
 mod config;
 mod crash;
