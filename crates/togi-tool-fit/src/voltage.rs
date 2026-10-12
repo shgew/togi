@@ -522,7 +522,7 @@ impl Likelihood<'_> {
             .is_some_and(|model| checker.accepts(model).unwrap_or(false))
     }
 
-    fn constrain_time_rate(
+    pub(crate) fn constrain_time_rate(
         &mut self,
         records: &[TrialFact],
         field: fn(&mut SharedVoltageDef) -> &mut f64,

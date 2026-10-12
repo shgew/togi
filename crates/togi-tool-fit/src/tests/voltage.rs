@@ -1,13 +1,15 @@
 use togi_facts::Decisive;
 use togi_machine::{CcdId, CoreId, Regime, pick_workload, workloads};
-use togi_sim::{Load, Model};
+use togi_sim::{Load, MachineDefinition, Model};
 use togi_tool_modelcheck::Checker;
 use togi_tool_trialfacts::TrialFact;
 
 use super::{crash, fact, failure, repeated};
 use crate::evidence::{aggregate, initial_config, load_of};
 use crate::likelihood::Likelihood;
-use crate::voltage::{fit_shared_voltage, named_failures, sync_ycruncher, voltage_config};
+use crate::voltage::{
+    NamedFailure, fit_shared_voltage, named_failures, sync_ycruncher, voltage_config,
+};
 
 fn loaded_16() -> Vec<i64> {
     (0..16).collect()
@@ -359,5 +361,106 @@ fn a_rate_that_is_too_low_for_a_group_is_raised_into_its_interval() {
     assert!(checker.accepts(l.model.as_ref().unwrap()).unwrap());
     assert!(
         l.cfg.shared_voltage.as_ref().unwrap().rate > cfg.shared_voltage.as_ref().unwrap().rate
+    );
+}
+
+#[test]
+fn a_rate_bisection_midpoint_below_the_feasible_interval_is_raised_into_it() {
+    let template = fact(
+        &[-25; 16],
+        Regime::R7,
+        &[0, 1, 2, 3, 4, 5, 6, 7],
+        120,
+        Decisive::Pass,
+    );
+    let records = repeated(&template, 20, 8);
+    let cfg = shared_machine(&records, 1.135);
+    let obs = aggregate(&records);
+    let named = [];
+    let checker = Checker::new(&Model::new(&cfg, 0).unwrap(), &records).unwrap();
+    let accepts = |rate: f64| {
+        let mut def = cfg.clone();
+        def.shared_voltage.as_mut().unwrap().rate = rate;
+        checker.accepts(&Model::new(&def, 0).unwrap()).unwrap()
+    };
+    let mut repaired = Likelihood::new(cfg.clone(), &obs, None, Some(&named));
+    assert!(repaired.constrain_rate(&records).unwrap());
+    let (mut infeasible, mut lowest) = (
+        cfg.shared_voltage.as_ref().unwrap().rate,
+        repaired.cfg.shared_voltage.as_ref().unwrap().rate,
+    );
+    assert!(!accepts(infeasible) && accepts(lowest));
+    for _ in 0..60 {
+        let mid = f64::midpoint(infeasible, lowest);
+        if accepts(mid) {
+            lowest = mid;
+        } else {
+            infeasible = mid;
+        }
+    }
+    let ceiling = 1.5 * lowest;
+    assert!(
+        !accepts(f64::midpoint(1e-5, ceiling)),
+        "the first midpoint must lie below the feasible interval"
+    );
+    let mut l = Likelihood::new(cfg.clone(), &obs, None, Some(&named));
+    assert!(
+        l.constrain_time_rate(&records, |v| &mut v.rate, 1e-5, ceiling)
+            .unwrap(),
+        "the search must raise a too-low midpoint until a group interval admits it"
+    );
+    let rate = l.cfg.shared_voltage.as_ref().unwrap().rate;
+    assert!(
+        (lowest..=ceiling).contains(&rate),
+        "{lowest} <= {rate} <= {ceiling}"
+    );
+    assert!(checker.accepts(l.model.as_ref().unwrap()).unwrap());
+}
+
+#[test]
+fn the_shared_steps_minimize_the_objective_the_anchor_sweep_converges_on() {
+    let template = fact(
+        &[-30; 16],
+        Regime::R7,
+        &[0, 1, 2, 3, 4, 5, 6, 7],
+        120,
+        Decisive::Pass,
+    );
+    let mut records = repeated(&template, 20, 8);
+    for record in &mut records[..8] {
+        record.outcome = Decisive::Failure {
+            signal: togi_machine::Signal::ComputationError,
+            core: Some(CoreId::new(0).unwrap()),
+            stalled: None,
+        };
+    }
+    let cfg = shared_machine(&records, 1.135);
+    let obs = aggregate(&records);
+    let named = named_failures(&records);
+    assert_eq!(named.len(), 8);
+    let measured = |def: &MachineDefinition| {
+        let l = Likelihood::new(def.clone(), &obs, None, Some(&named));
+        l.score(&l.all())
+    };
+    let flat_step = |named: Option<&[NamedFailure]>| {
+        let mut l = Likelihood::new(cfg.clone(), &obs, None, named);
+        l.fit_flat();
+        l.cfg
+    };
+    let merged = flat_step(Some(&named));
+    let raw_only = flat_step(None);
+    let unloaded_flat = |def: &MachineDefinition| def.core[8].flat;
+    let (start, after_merged, after_raw) = (measured(&cfg), measured(&merged), measured(&raw_only));
+    assert!(
+        after_merged <= start,
+        "a shared step raised the measured objective: {start} -> {after_merged}"
+    );
+    assert!(
+        unloaded_flat(&raw_only) > unloaded_flat(&merged),
+        "the raw likelihood alone must buy the failures with unloaded-core hazard the named cores refute"
+    );
+    assert!(
+        after_raw > start && after_raw > after_merged,
+        "the raw-only step must worsen the measured objective: {start} -> {after_raw} vs {after_merged}"
     );
 }

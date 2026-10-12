@@ -190,6 +190,39 @@ fn the_ensemble_report_and_files_are_the_same_on_one_thread_and_on_many() {
             assert!(fits.iter().all(|f| f.flagged.len() == 1));
         } else {
             assert_eq!(unseeded, 0);
+            let shared = TargetOffset::new(-10).unwrap();
+            for (n, fitted) in fits.iter().enumerate() {
+                assert!(
+                    fitted.flagged.is_empty(),
+                    "member {n} is flagged after the restart: {:?}",
+                    fitted.flagged
+                );
+                for group in &fitted.constrained {
+                    assert!(
+                        group.flagged && (group.depth, group.n, group.k) == (shared, 30, 1),
+                        "member {n} is constrained by a group other than the -10 n=30 k=1 one: {group:?}"
+                    );
+                }
+                assert!(fitted.constrained.len() <= 1, "member {n}");
+            }
+            let members: Vec<usize> = fits
+                .iter()
+                .enumerate()
+                .filter(|(_, f)| !f.constrained.is_empty())
+                .map(|(n, _)| n)
+                .collect();
+            let failure_free: Vec<usize> = fits
+                .iter()
+                .enumerate()
+                .skip(1)
+                .filter(|(_, f)| failures(&f.sample) == 0)
+                .map(|(n, _)| n)
+                .collect();
+            assert_eq!(
+                members, failure_free,
+                "exactly the resamples that never drew the failure are constrained: {}",
+                serial.0
+            );
         }
         for (n, fitted) in fits.iter().enumerate() {
             let flagged: Vec<&Group> = fitted.check.flagged().collect();
@@ -226,6 +259,13 @@ fn the_ensemble_report_and_files_are_the_same_on_one_thread_and_on_many() {
                     failures(&fitted.sample),
                     0,
                     "only a failure-free resample is flagged here"
+                );
+                let trials = f64::from(u32::try_from(fitted.sample.len()).unwrap());
+                let loss = -trials * (-p).ln_1p();
+                assert!(
+                    (fitted.loss - loss).abs() < 1e-4,
+                    "refit {n} loss {} is not the failure-free likelihood {loss} at its written prediction {p}",
+                    fitted.loss
                 );
                 assert!(
                     notes

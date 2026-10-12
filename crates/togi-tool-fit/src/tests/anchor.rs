@@ -246,6 +246,40 @@ fn an_anchor_is_checked_deterministic_and_replayable_from_its_own_provenance() {
 }
 
 #[test]
+fn an_anchor_keeps_an_empty_bios_field_and_replays_the_facts_that_carry_it() {
+    let mut records = anchor_records();
+    for record in &mut records {
+        record.context.as_mut().unwrap().microcode.clear();
+    }
+    let fixture = fixture(&records);
+    let (result, report) = run(&fixture, |got| Ok(anchor_config(got)));
+    result.unwrap();
+    assert!(report.contains("Wrote IN-SAMPLE anchor"), "{report}");
+    let path = fixture.out.join("target-shared-voltage.json");
+    let cfg = file::load(&path).unwrap();
+    let bios = Model::new(&cfg, 0).unwrap().bios_context().clone();
+    let want = records[0].context.clone().unwrap();
+    assert_eq!(want.microcode, "");
+    assert_eq!(bios, want);
+    let mut extracts = Extracts::new();
+    let checked = check(&path, &cfg, &mut extracts).unwrap();
+    assert_eq!(
+        (checked.status, checked.groups.len()),
+        (Status::Ok, 1),
+        "{checked:?}"
+    );
+    let replay = extracts.replay(&path, &cfg).unwrap();
+    let class = match records[0].class {
+        Class::Trial(class) => class,
+        Class::Idle { .. } => unreachable!("the fixture is a trial"),
+    };
+    assert!(
+        replay.has_answer(&bios, &load_of(&class), records[0].profile.as_slice()),
+        "the anchor cannot answer the facts whose microcode is empty"
+    );
+}
+
+#[test]
 fn a_flagged_anchor_prints_its_scores_and_never_writes() {
     for existing in [false, true] {
         let fixture = fixture(&anchor_records());
