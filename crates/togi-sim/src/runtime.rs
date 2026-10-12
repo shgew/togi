@@ -4,16 +4,19 @@
 
 use jiff::{SignedDuration, Timestamp};
 use rand::RngExt;
+use serde::Serialize;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
 use std::time::Duration;
 use togi_machine::{
     BankType, BiosContext, BootId, CoreId, CpuId, Mce, ResetKind, ResetReason, TargetOffset,
+    object_only,
 };
 
 use crate::faults::Faults;
 use crate::model::{Model, Script};
+use crate::persisted::{Persisted, PersistedBoot, PersistedMce, RestoreError};
 use crate::random::{Domain, stream};
 use crate::replay::Replay;
 use crate::samples::LastTrial;
@@ -59,13 +62,16 @@ pub struct RunSettings {
     pub replay: Option<Replay>,
 }
 
-/// A machine check waiting for the next boot to log it.
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct PendingMce {
-    pub core: CoreId,
-    pub bank: u16,
-    pub bank_type: BankType,
-    pub corrected: bool,
+object_only! {
+    /// A machine check waiting for the next boot to log it.
+    #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub(crate) struct PendingMce {
+        pub core: CoreId,
+        pub bank: u16,
+        pub bank_type: BankType,
+        pub corrected: bool,
+    }
 }
 
 pub(crate) struct Runtime {
@@ -133,6 +139,83 @@ impl Runtime {
         };
         runtime.start_boot();
         runtime
+    }
+
+    pub(crate) fn restore(
+        model: Model,
+        replay: Option<Replay>,
+        persisted: Persisted,
+    ) -> Result<Self, RestoreError> {
+        if persisted.regs.len() != model.bios().len() {
+            return Err(RestoreError::Cores {
+                persisted: persisted.regs.len(),
+                model: model.bios().len(),
+            });
+        }
+        if persisted.boots.is_empty() {
+            return Err(RestoreError::NoBoot);
+        }
+        let mut boots = Vec::with_capacity(persisted.boots.len());
+        let mut logs = HashMap::new();
+        let mut reasons = HashMap::new();
+        for boot in persisted.boots {
+            boots.push(boot.id.clone());
+            reasons.insert(boot.id.clone(), boot.reason.into());
+            if !boot.mces.is_empty() {
+                logs.insert(boot.id, boot.mces.into_iter().map(Mce::from).collect());
+            }
+        }
+        Ok(Self {
+            seed: persisted.seed,
+            replay,
+            epoch: persisted.epoch,
+            clock: persisted.clock,
+            boot_at: persisted.boot_at,
+            wall_offset: persisted.wall_offset,
+            boot_number: persisted.boot_number,
+            boots,
+            regs: persisted.regs,
+            crashed: persisted.crashed,
+            logs,
+            queued: persisted.queued,
+            reasons,
+            next_reset: persisted.next_reset,
+            bios: persisted.bios,
+            scripts: model.scripts().clone(),
+            violations: Vec::new(),
+            faults: Faults::default(),
+            samples: persisted.samples,
+            samples_dir: None,
+            model,
+        })
+    }
+
+    pub(crate) fn persisted(&self) -> Persisted {
+        Persisted {
+            seed: self.seed,
+            epoch: self.epoch,
+            clock: self.clock,
+            boot_at: self.boot_at,
+            wall_offset: self.wall_offset,
+            boot_number: self.boot_number,
+            boots: self
+                .boots
+                .iter()
+                .filter_map(|id| {
+                    Some(PersistedBoot {
+                        id: id.clone(),
+                        reason: self.reasons.get(id)?.into(),
+                        mces: self.mces(id).iter().map(PersistedMce::from).collect(),
+                    })
+                })
+                .collect(),
+            regs: self.regs.clone(),
+            crashed: self.crashed,
+            queued: self.queued.clone(),
+            next_reset: self.next_reset,
+            bios: self.bios.clone(),
+            samples: self.samples.clone(),
+        }
     }
 
     fn start_boot(&mut self) {
