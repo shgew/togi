@@ -109,9 +109,9 @@ impl Run {
         &self.topo
     }
 
-    fn config_loaded(&mut self, loaded: &ConfigLoaded) {
+    fn config_loaded(&mut self, loaded: &ConfigLoaded) -> Result<(), FoldError> {
+        let config = TunerConfig::from_loaded(loaded)?;
         self.stopped = false;
-        let config = TunerConfig::from_loaded(loaded);
         let new_schedule = !self.config.same_schedule(&config);
         self.config = config;
         let mut switched = Vec::new();
@@ -133,6 +133,7 @@ impl Run {
         }
         self.retire_reruns();
         self.revalidate_retry();
+        Ok(())
     }
 
     fn baseline(&mut self, baseline: &SessionBaseline) -> Result<(), FoldError> {
@@ -289,7 +290,7 @@ impl State {
                 self.run = Some(Run::start(event, start)?);
                 return Ok(());
             }
-            Payload::ConfigLoaded(loaded) => self.run_mut()?.config_loaded(loaded),
+            Payload::ConfigLoaded(loaded) => self.run_mut()?.config_loaded(loaded)?,
             Payload::SessionBaseline(baseline) => self.run_mut()?.baseline(baseline)?,
             Payload::CommandReset(reset) => self.run_mut()?.command_reset(event, *reset)?,
             Payload::CorePhase(transition) => self.run_mut()?.core_phase(event, transition)?,

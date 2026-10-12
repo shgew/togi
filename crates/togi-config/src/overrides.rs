@@ -1,10 +1,10 @@
 use std::{collections::BTreeMap, fmt};
 
 use serde::{
-    Deserialize, Deserializer, Serialize, Serializer,
+    Deserialize, Deserializer,
     de::{MapAccess, Visitor},
 };
-use togi_machine::{CoreId, TargetOffset};
+use togi_machine::{CoreId, PerCore, TargetOffset};
 
 use crate::error::ConfigError;
 
@@ -104,19 +104,23 @@ pub(crate) fn resolve(
     Ok(resolved)
 }
 
-pub(crate) struct Table<'a> {
-    pub(crate) overrides: &'a BTreeMap<CoreId, InitialOverride>,
-    pub(crate) select: fn(InitialOverride) -> Option<TargetOffset>,
+pub(crate) fn table(
+    overrides: &BTreeMap<CoreId, InitialOverride>,
+    select: fn(InitialOverride) -> Option<TargetOffset>,
+) -> PerCore<TargetOffset> {
+    overrides
+        .iter()
+        .filter_map(|(core, value)| Some((*core, select(*value)?)))
+        .collect()
 }
 
-impl Serialize for Table<'_> {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_map(
-            self.overrides
-                .iter()
-                .filter_map(|(core, value)| Some((*core, (self.select)(*value)?))),
-        )
-    }
+pub(crate) fn raw_map(offsets: &PerCore<TargetOffset>) -> RawCoreMap {
+    RawCoreMap(
+        offsets
+            .iter()
+            .map(|(core, offset)| (core.get().to_string(), offset.get()))
+            .collect(),
+    )
 }
 
 pub(crate) const fn start_only(value: InitialOverride) -> Option<TargetOffset> {

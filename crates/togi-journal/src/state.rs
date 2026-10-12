@@ -215,10 +215,9 @@ impl State {
             }
             Payload::ConfigLoaded(config) => {
                 self.dead_end = None;
-                let backends = config.config.backends();
                 self.backends = BackendPaths {
-                    mprime: backends.mprime().map(Path::to_path_buf),
-                    ycruncher: backends.ycruncher().map(Path::to_path_buf),
+                    mprime: config.config.backends.mprime.clone(),
+                    ycruncher: config.config.backends.ycruncher.clone(),
                 };
                 if let Some(session) = &mut self.session {
                     session.build.version.clone_from(&config.build.version);

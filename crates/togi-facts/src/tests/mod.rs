@@ -79,7 +79,7 @@ pub(super) fn refreshed(base: &Build, version: &str) -> Build {
 pub(super) fn config_loaded(build: Build) -> ConfigLoaded {
     ConfigLoaded {
         build,
-        config: togi_config::Config::default(),
+        config: togi_config::Config::default().snapshot(),
         path: "config.json".into(),
         file: false,
         kernel_cursor: None,
@@ -87,11 +87,12 @@ pub(super) fn config_loaded(build: Build) -> ConfigLoaded {
     }
 }
 
-pub(super) fn config_with_backends(mprime: &str, ycruncher: &str) -> togi_config::Config {
+pub(super) fn config_with_backends(mprime: &str, ycruncher: &str) -> togi_journal::ConfigSnapshot {
     togi_config::Config::parse(&format!(
         r#"{{"backends":{{"mprime":"{mprime}","ycruncher":"{ycruncher}"}}}}"#
     ))
     .unwrap()
+    .snapshot()
 }
 
 pub(super) fn start(id: SessionId, cores: &[i64], evidence: u32) -> SessionStart {

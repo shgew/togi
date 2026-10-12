@@ -304,9 +304,9 @@ fn an_idle_class_has_no_workload_on_the_wire() {
 }
 
 #[test]
-fn a_config_that_does_not_validate_is_refused() {
+fn a_config_that_does_not_fit_the_snapshot_is_refused() {
     let mut line = line_of(super::fixtures::sample(EventKind::ConfigLoaded));
-    line["data"]["config"]["backends"]["mprime"] = json!("relative/path");
+    line["data"]["config"]["start_offsets"] = json!({"3": 10});
     let error = Event::decode(&line.to_string()).unwrap_err();
     assert!(
         matches!(

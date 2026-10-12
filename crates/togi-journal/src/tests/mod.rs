@@ -1,4 +1,5 @@
 mod build;
+mod config_snapshot;
 mod filter;
 mod fixtures;
 mod message;

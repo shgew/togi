@@ -1,3 +1,4 @@
+mod config;
 mod domain;
 mod message;
 mod session;
@@ -10,6 +11,9 @@ use std::str::FromStr;
 
 use serde::{Serialize, Serializer};
 
+pub use config::{
+    ConfigBackends, ConfigChecking, ConfigDeadEnds, ConfigDurations, ConfigEvidence, ConfigSnapshot,
+};
 pub use domain::{
     Activity, Attribution, CorePhase, CycleEvent, DeadEndAction, DeadEndCondition, Decision,
     DefectAnswer, DefectDirection, HuntOutcome, HuntStage, Inference, Notice, Outcome, RetryTarget,

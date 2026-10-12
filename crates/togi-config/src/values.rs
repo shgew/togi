@@ -3,7 +3,6 @@ use std::{
     time::Duration,
 };
 
-use serde::Serialize;
 use togi_machine::{Backend, Regime};
 
 use crate::error::{EmptySchedule, ProbabilityError, RangeError, RelativeBackendPath, TrialsError};
@@ -11,8 +10,7 @@ use crate::error::{EmptySchedule, ProbabilityError, RangeError, RelativeBackendP
 macro_rules! bounded {
     ($(#[$doc:meta])* $name:ident, $min:expr, $max:expr) => {
         $(#[$doc])*
-        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
-        #[serde(transparent)]
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub struct $name(u32);
 
         impl $name {
@@ -75,8 +73,7 @@ impl R7BudgetSeconds {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Serialize)]
-#[serde(transparent)]
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
 pub struct Probability(f64);
 
 impl Probability {
@@ -116,11 +113,10 @@ impl TrialCount {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct EvidencePolicy {
     miss: Probability,
     rate: Probability,
-    #[serde(skip)]
     trials: TrialCount,
 }
 
@@ -165,8 +161,7 @@ impl Default for EvidencePolicy {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-#[serde(transparent)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckingSchedule(Vec<Regime>);
 
 impl CheckingSchedule {
@@ -221,7 +216,7 @@ impl<'a> IntoIterator for &'a CheckingSchedule {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct DeadEndPolicy {
     inconclusive_in_a_row: DeadEndThreshold,
     stray_crashes_in_a_row: DeadEndThreshold,
@@ -253,7 +248,7 @@ impl Default for DeadEndPolicy {
     }
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Backends {
     mprime: Option<PathBuf>,
     ycruncher: Option<PathBuf>,
