@@ -229,6 +229,25 @@ A divergence is `SimError::Diverged`, and a state that cannot be published is `S
 
 The tuner's simulation tests from `internal/tuner` (`forecast_sim_test.go` and `memo_test.go`) live in this crate's `tests/`, because they need whole simulated sessions. `togi-tuner` cannot take `togi-simrun` as a dev-dependency: that would build a second `togi-tuner` whose types do not unify with the first.
 
+### The Rust simulator command (`togi-tool-sim`)
+
+`crates/togi-tool-sim` builds the `togi-tool-sim` command, the native `tools/sim`. It runs from a source checkout like the Go one:
+
+```sh
+cargo run --release -p togi-tool-sim -- [--seed N] [--machine FILE] [--replay-facts] [--cycles N] [--state-dir DIR] [--samples] [--max-boots N] [--verify-every N] [--cold-boots]
+cargo run --release -p togi-tool-sim -- suite --suite tools/bench/suite.json [--shards N] [--shard I] --out DIR [--max-boots N]
+cargo run --release -p togi-tool-sim -- check --suite tools/bench/suite.json --shards N DIR
+```
+
+The flags and exit statuses of a session are Go's: 0 for a stop other than a dead end, 1 for an error or a dead end (`sim: dead end CONDITION: DETAIL`, then each cited event as an `  evidence: ` line), 2 for a usage error and 3 when `--max-boots` ends an unfinished session. A machine file and its replay facts are loaded before any state directory is created or locked, so invalid input leaves none. Without `--state-dir` a temporary `togi-sim-*` directory is created, kept and announced on the first line. A directory that holds a journal resumes under its recorded configuration, on the machine a capped invocation left in `machine.json` (whose seed wins over `--seed`), or else on a fresh machine after the recorded boots. The session runs on `Persistence::Files`. SIGINT, SIGTERM and SIGHUP cancel the session, which stops in order with `shutdown` reason `signal`. Everything, help included, goes to stderr: at once on a terminal, otherwise through a 64 KiB buffer, and a failed write or final flush of that log fails the command with status 1 (Go dropped the flush error). It differs from Go in:
+
+- the build it records: version and revision from `togi-version`, ruleset 1 and evidence epoch 1;
+- `--replay-facts` without `--machine` is refused as needing a machine file, before any state;
+- clap's diagnostics replace Go's flag-package text, and `--cycles`, `--max-boots` and `--verify-every` refuse a negative number as an invalid value;
+- `--cycles` is not yet checked against a recorded checking cycle that is not full.
+
+`suite` runs every session of one shard of the suite (`togi_tool_sim::shard`, equal cost per session) in this process, each in its own in-memory state directory with warm resumes, the capsule verified after every crash and `--max-boots` (default 1000) as the cap. A session is `clean` only when it stopped for its clean cycle, its last boot's capsule matched a fresh fold of the journal, `togi_tuner::replay` folds the whole journal and `togi-tool-audit` finds no violation in any journal of the directory. Otherwise it is `failed`, `capped`, `dead_end`, `stopped` (another stop reason), `verify_failed`, `replay_failed` or `audit_violations`, with its detail. Each session's line on stderr gives its id, its wall time and its outcome. The shard's results go to `DIR/shard-I.jsonl`, one JSON object per session, and the command exits 1 unless every session was clean. `check` reads a directory that must hold only `shard-I.jsonl` files and checks them against the suite's own run ids and the stated shard count: a shard with no manifest, a manifest outside the count, a session missing, reported twice or unknown to the suite, and every session that was not clean are all named, and any of them exits 1.
+
 ## Measured reference journals
 
 [`just stats`](reviewing.md) reports exposure and failures from real journals; it does not fit simulator defaults. These three archived sessions came from one Ryzen 9 9950X3D2 under one BIOS context. The session IDs identify the unmodified compressed fixtures in `internal/carry/testdata/`.
