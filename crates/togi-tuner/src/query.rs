@@ -36,6 +36,9 @@ impl State {
 
     /// The next decision, trial or ranking read the folded state calls for.
     ///
+    /// It only reads: it returns the same answer until the caller records that action's event and
+    /// folds it, so a caller loops by folding each answer before it asks again.
+    ///
     /// ```compile_fail
     /// use togi_journal::Event;
     /// use togi_tuner::State;
@@ -66,8 +69,11 @@ impl State {
         self.ready()?.next()
     }
 
-    /// The decisions that must be recorded before the tuner may stop: never a trial or a ranking
-    /// read.
+    /// The next decision that must be recorded before the tuner may stop: never a trial or a
+    /// ranking read, and `None` once nothing is owed.
+    ///
+    /// It only reads: it returns the same decision until the caller records it and folds the event,
+    /// so a `drain` loop folds each decision in its body; one that does not fold never ends.
     pub fn drain(&self) -> Option<DecisionAction> {
         self.ready().ok()?.drain()
     }
