@@ -1,0 +1,36 @@
+---
+source: crates/togi-watch/src/frames/snapshots.rs
+expression: body
+---
+│ togi   16:53:43   session 40h53m   52 failures · 8 crashes   last observed failure 16:53, a moment ago
+│ ■ SOLO ─ ■ P1 ─ ► P2 ─ CLEAN 0 ─ ○ CYCLE 2 paused at 8/18
+│
+│ ▌  The failed load runs again on the new profile; cycle 2 waits at step 8 until the rerun passes.
+│
+│  R5   both threads  on 01   mprime SSE 4K-21K · 2 workers                                         RERUN AFTER BACKOFF
+│ ██████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  1:20 left  0/5 ► · · · ·
+│
+│ 5/5 pass → step 8   pass → rerun   core named → backs off
+│
+│ CCD 0 one loaded 0  2 counts/cell       -50 fail            CCD 1 idle       0  2 counts/cell       -50 fail
+│   00 -33 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█          -35             08 -16 AT LIMIT ▄▄▄▄▄▄▄▄█·                  -17
+│ ► 01 -15 AT LIMIT ▄▄▄▄▄▄▄█·                   -16             09 -10 HAS ROOM ▄▄▄▄▄█                      -12
+│   02 -30 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█·           -31             10  -7 AT LIMIT ▄▄▄█··                       -8 top
+│   03 -13 AT LIMIT ▄▄▄▄▄▄█·                    -14 top         11 -12 AT LIMIT ▄▄▄▄▄▄█·                    -13
+│   04 -25 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄█··             -26             12 -33 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█          -35
+│   05 -23 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄█                -24             13 -24 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄█               -26
+│   06 -25 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄█·              -26             14 -11 HAS ROOM ▄▄▄▄▄▄█                     -13
+│   07 -20 HAS ROOM ▄▄▄▄▄▄▄▄▄▄█                 -22             15 -18 AT LIMIT ▄▄▄▄▄▄▄▄▄█·                 -19
+│
+│ BIOS PROFILE ──────────────────── UNCONFIRMED since #8397   WHAT HAPPENED ─────────────────────────────── l: last 400
+│ slot      0    1    2    3    4    5    6    7
+│ CCD 0   -33  -15* -30  -13  -25  -23  -25  -20              16:53  backoff  core 01 -16 → -15
+│ CCD 1   -16  -10   -7  -12  -33  -24  -11  -18              16:53  fail     core 01 fails at -16
+│ * not confirmed: a passed cycle confirms it, unless held    16:53  fail     R5 both threads on core 01 at -16...
+│                                                             16:52  pass     R5 both threads on core 08 at -16...
+│ R7 ────────────── top ───────────── self-sufficient ─────   16:50  pass     R5 both threads on core 00 at -33...
+│ mprime AVX2       03 10 by offset   01-11 13-15             16:48  pass     R6 idle + bursts on 00-15 · passed...
+│ mprime AVX-512    03 10 by offset   01-11 13-15             16:33  pass     R2 heavy vector on core 15 at -18...
+│ y-cruncher FFTv4  03 10 by offset   01-11 13-15             +1004 more
+│
+│  ?  help    l  log    esc  back    q  close view

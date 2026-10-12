@@ -1,0 +1,3133 @@
+//! Function-level tests of the narration. Whole-frame assertions belong to the integration of the frames.
+
+use std::collections::{BTreeMap, BTreeSet};
+use std::num::{NonZeroU16, NonZeroU32};
+use std::sync::LazyLock;
+use std::time::Duration;
+
+use jiff::Timestamp;
+use jiff::tz::TimeZone;
+use togi_journal::{
+    Activity, CheckingChain, CheckingStep, Combination, CycleEvent, DeadEnd, DeadEndCondition,
+    Decision, Failure, HuntEnd, HuntOutcome, HuntStart, Member, Outcome, ShutdownReason,
+    TunerDecision,
+};
+use togi_machine::{
+    CcdId, Condition, CoreId, CoreSet, ObservedOffset, PerCore, Regime, ResetKind, Signal,
+    workloads,
+};
+use togi_tuner::{
+    Between, Branch, ClassKey, CyclePart, CyclePlan, CycleStep, DecisionPayload, Forecast,
+    GroupState, HuntGroup, HuntPart, HuntPlan, Load, PartNo, PhaseNo, PhasePlan, Premise, Profile,
+    R7CoreStatus, Requirement, RequirementKind, RerunPlan, Secs, StepNo, Topology, TrialContext,
+    TrialPlan, Uncertainty, Window, WorkloadChoice,
+};
+
+use super::outcome::{
+    OutcomeRow, compact_next, decision_phrases, fit_phrases, next_trial_words, outcome_rows,
+    tight_next, zero_words,
+};
+use super::{
+    crash_evidence, known_words, last_lines, narrator_lines, operation, outcome_lines,
+    problem_story, resting_band, split_words, starting_story, story, trial_where,
+};
+use crate::frames::colours::Paint;
+use crate::frames::fit::{inert, plain};
+use crate::frames::scene::Scene;
+use crate::frames::testing::{assert_frame_bounds, draw_checked, rows_of, screen};
+use crate::frames::{draw::rows, layout::Layout};
+use crate::model::{
+    Confirm, CoreState, CoreView, Count, CyclePlace, CycleView, DeadEndView, HuntCause, HuntFacts,
+    HuntPlace, HuntShape, HuntView, Model, RecoveryView, SessionView, Snapshot, StopView,
+    TrialEndView, TrialView,
+};
+use crate::screen::{Colours, View};
+use crate::tests::kit::{core, infos, nz, off, seq, set};
+
+static UTC: LazyLock<TimeZone> = LazyLock::new(|| TimeZone::UTC);
+
+fn ts(secs: i64) -> Timestamp {
+    Timestamp::from_second(1_700_000_000 + secs).expect("a timestamp")
+}
+
+fn secs(s: u64) -> Duration {
+    Duration::from_secs(s)
+}
+
+struct Fx {
+    model: Model,
+    session: Option<SessionView>,
+    cores: Vec<CoreView>,
+    trial: Option<TrialView>,
+    last: Option<TrialEndView>,
+    forecast: Forecast,
+    cycle: Option<(CyclePlan, Vec<Vec<u32>>, Option<StepNo>)>,
+    hunt: Option<(HuntPlan, HuntFacts)>,
+    phases: Option<PhasePlan>,
+    recover: Option<RecoveryView>,
+    stopped: Option<StopView>,
+    dead_end: Option<DeadEndView>,
+    order: Vec<CoreId>,
+    shapes: BTreeMap<u32, HuntShape>,
+    carried: BTreeSet<togi_journal::Seq>,
+    r7: Vec<R7CoreStatus>,
+    clean_cycles: u32,
+}
+
+impl Fx {
+    fn new() -> Self {
+        Self {
+            model: Model::new(),
+            session: Some(SessionView {
+                start: ts(0),
+                activity: None,
+            }),
+            cores: Vec::new(),
+            trial: None,
+            last: None,
+            forecast: Forecast::default(),
+            cycle: None,
+            hunt: None,
+            phases: None,
+            recover: None,
+            stopped: None,
+            dead_end: None,
+            order: Vec::new(),
+            shapes: BTreeMap::new(),
+            carried: BTreeSet::new(),
+            r7: Vec::new(),
+            clean_cycles: 0,
+        }
+    }
+
+    fn without_session() -> Self {
+        Self {
+            session: None,
+            ..Self::new()
+        }
+    }
+
+    fn with_cores(mut self, cores: &[(u8, u8)]) -> Self {
+        self.cores = cores.iter().map(|&(id, ccd)| core_view(id, ccd)).collect();
+        self.order = cores.iter().map(|&(id, _)| core(id)).collect();
+        self
+    }
+
+    fn snap(&self) -> Snapshot<'_> {
+        let mut s = self.model.snapshot();
+        s.session = self.session.as_ref();
+        s.cores = &self.cores;
+        s.trial = self.trial.as_ref();
+        s.last = self.last.as_ref();
+        s.forecast = &self.forecast;
+        s.cycle = self.cycle.as_ref().map(|(plan, hunts, resume)| CycleView {
+            plan,
+            step_hunts: hunts,
+            resume: *resume,
+        });
+        s.hunt = self
+            .hunt
+            .as_ref()
+            .map(|(plan, facts)| HuntView { plan, facts });
+        s.phases = self.phases.as_ref();
+        s.recover = self.recover.as_ref();
+        s.stopped = self.stopped.as_ref();
+        s.dead_end = self.dead_end.as_ref();
+        s.order = &self.order;
+        s.shapes = &self.shapes;
+        s.carried = &self.carried;
+        s.r7 = &self.r7;
+        s.clean_cycles = self.clean_cycles;
+        s
+    }
+
+    fn scene(&self, now: Timestamp) -> Scene<'_> {
+        Scene::new(self.snap(), now, &UTC, Colours::None)
+    }
+
+    fn rows(&self) -> Vec<String> {
+        let scene = self.scene(ts(1000));
+        outcome_rows(&scene)
+            .iter()
+            .map(|row| format!("{} | {}", row.label, fit_phrases(&row.phrases, 400)))
+            .collect()
+    }
+
+    fn row_set(&self) -> Vec<OutcomeRow> {
+        outcome_rows(&self.scene(ts(1000)))
+    }
+}
+
+fn core_view(id: u8, ccd: u8) -> CoreView {
+    CoreView {
+        id: core(id),
+        ccd: CcdId(ccd),
+        state: CoreState::AtLimit,
+        queued: None,
+        applied: ObservedOffset(0),
+        profile: off(0),
+        solo: None,
+        pass: None,
+        next: None,
+        fail: None,
+        holder: None,
+        gave_back: None,
+        group_fails: Vec::new(),
+        returns_to: None,
+        confirm: None,
+        loaded: false,
+        judged: false,
+    }
+}
+
+fn trial(regime: Regime, condition: Condition, cores: &[u8]) -> TrialView {
+    TrialView {
+        id: "t1".to_owned().into(),
+        regime,
+        workload: workloads(regime)[0].id(),
+        cores: set(cores),
+        parked: CoreSet::default(),
+        idle: CoreSet::default(),
+        condition,
+        activity: Some(Activity::Checking),
+        profile: PerCore::default(),
+        started: Some(ts(1000)),
+        crashed: false,
+        duration: secs(120),
+        partial: false,
+        rerun: false,
+        retry: false,
+        cycle: None,
+        hunt: None,
+        core: None,
+        offset: None,
+        round: None,
+        count: Count::default(),
+    }
+}
+
+fn in_cycle(mut trial: TrialView, cycle: u32, step: u32, part: u32, parts: u32) -> TrialView {
+    trial.cycle = Some(CyclePlace {
+        cycle,
+        step: Some(step),
+        part: Some(part),
+        parts,
+    });
+    trial
+}
+
+fn counted(mut trial: TrialView, passed: u32, index: u32, of: u32) -> TrialView {
+    trial.count = Count { passed, index, of };
+    trial
+}
+
+fn alone(regime: Regime, id: u8, offset: i64) -> TrialView {
+    let mut trial = trial(regime, Condition::Alone, &[id]);
+    trial.core = Some(core(id));
+    trial.offset = Some(off(offset));
+    trial
+}
+
+fn part(cores: &[u8], ccd: Option<u8>, full: bool, running: bool) -> CyclePart {
+    CyclePart {
+        cores: set(cores),
+        ccd: ccd.map(CcdId),
+        full,
+        partial: !full,
+        short: 1,
+        short_s: 120,
+        long: 0,
+        long_s: 0,
+        passed: 0,
+        failed: 0,
+        done: false,
+        running,
+    }
+}
+
+fn step(regime: Regime, parts: Vec<CyclePart>) -> CycleStep {
+    CycleStep {
+        regime,
+        workload: workloads(regime)[0].id(),
+        parts,
+        chains_complete: false,
+        done: false,
+    }
+}
+
+fn cycle_plan(number: u32, steps: Vec<CycleStep>, current: usize) -> CyclePlan {
+    CyclePlan {
+        number: NonZeroU32::new(number),
+        open: true,
+        steps,
+        current,
+        paused: false,
+    }
+}
+
+fn step_no(n: u32) -> StepNo {
+    StepNo::new(nz(n))
+}
+
+fn plan(
+    regime: Regime,
+    load: Load,
+    condition: Condition,
+    context: TrialContext,
+    length: u32,
+) -> TrialPlan {
+    let topology = Topology::new(&infos(&[(0, 0), (1, 0), (2, 1), (3, 1)])).expect("a topology");
+    let workload = workloads(regime)[0].id();
+    let secs = Secs::new(nz(length));
+    TrialPlan {
+        regime,
+        workload: WorkloadChoice::Frozen(workload),
+        load,
+        condition,
+        activity: Activity::Checking,
+        profile: Profile::alone(&topology, core(3), off(-16)),
+        duration: secs,
+        context,
+        requirement: Requirement {
+            kind: RequirementKind::Cycle,
+            class: ClassKey::new(workload, load.cores(), secs),
+            window: Window::Live { since: None },
+            needed: NonZeroU16::new(1).expect("one"),
+            step: None,
+            part: None,
+        },
+        retry: false,
+        cause: Vec::new(),
+    }
+}
+
+fn cycle_ctx(cycle: u32, step: u32) -> TrialContext {
+    TrialContext::Cycle {
+        cycle: nz(cycle),
+        step: step_no(step),
+        part: PartNo::new(nz(1)),
+    }
+}
+
+fn many(cores: &[u8]) -> Load {
+    Load::Many(set(cores))
+}
+
+fn branch(premise: Premise) -> Branch {
+    Branch {
+        premise,
+        passes: 0,
+        all_pass: None,
+        decisions: Vec::new(),
+        next: None,
+        next_step: None,
+        resume: None,
+        uncertainty: None,
+        without_telemetry: false,
+        offset_order: false,
+        at_zero: false,
+        top_requester: false,
+    }
+}
+
+fn backoff(core_id: u8, from: i64, to: i64, point: Option<i64>) -> TunerDecision {
+    TunerDecision {
+        core: core(core_id),
+        activity: Activity::Checking,
+        decision: Decision::Backoff,
+        from_offset: off(from),
+        to_offset: off(to),
+        pass: None,
+        failure_point: point.map(off),
+        workloads: Vec::new(),
+        reason: String::new(),
+    }
+}
+
+fn failure(core_id: Option<u8>) -> Failure {
+    let mut failure = crate::tests::kit::failure(Signal::ComputationError, None);
+    failure.core = core_id.map(core);
+    failure
+}
+
+fn hunt_plan() -> HuntPlan {
+    HuntPlan {
+        number: 1,
+        regime: Regime::R7,
+        failure: seq(1),
+        trial: None,
+        candidates: set(&[0, 2]),
+        cut: 0,
+        parts: Vec::new(),
+        groups: Vec::new(),
+        probes: Vec::new(),
+        rerun: RerunPlan {
+            regime: Regime::R7,
+            cores: CoreSet::default(),
+            short: 0,
+            short_s: 0,
+            long: 0,
+            long_s: 0,
+        },
+    }
+}
+
+fn cause() -> HuntCause {
+    HuntCause {
+        at: None,
+        trial: None,
+        end: None,
+        signal: None,
+        core: None,
+        known: false,
+        carried: false,
+        regime: None,
+        rerun_of: false,
+        trial_number: 1,
+    }
+}
+
+fn text(lines: &[ratatui::text::Line<'static>]) -> Vec<String> {
+    lines.iter().map(plain).collect()
+}
+
+fn said(story: &super::Story) -> String {
+    story.lines.join("\n")
+}
+
+fn end_view(outcome: Outcome, signal: Option<Signal>) -> TrialEndView {
+    TrialEndView {
+        id: "t0".to_owned().into(),
+        at: ts(900),
+        regime: Some(Regime::R1),
+        cores: set(&[0, 1]),
+        outcome,
+        signal,
+        core: None,
+        duration: secs(600),
+        planned: Some(secs(600)),
+        last_sample: None,
+        stalled: None,
+        tctl_max_c: None,
+        voltage_v: None,
+    }
+}
+
+mod the_story {
+    use super::*;
+
+    #[test]
+    fn no_trial_yet_does_not_claim_one_ended() {
+        let mut fx = Fx::new();
+        let first = story(&fx.scene(ts(10)));
+        assert!(said(&first).contains("No trial has run yet"));
+        assert!(!said(&first).contains("has ended"));
+        fx.last = Some(end_view(Outcome::Pass, None));
+        let after = story(&fx.scene(ts(10)));
+        assert!(said(&after).contains("The last trial has ended"));
+        assert_eq!(after.label, "TOGI");
+    }
+
+    #[test]
+    fn a_missing_journal_is_no_session_yet() {
+        let fx = Fx::without_session();
+        let said = story(&fx.scene(ts(0)));
+        assert_eq!(said.label, "NO SESSION YET");
+        assert!(said.lines[0].contains("togi run"));
+        assert!(said.brief.is_empty());
+    }
+
+    #[test]
+    fn starting_checks_the_machine_before_the_first_trial() {
+        let starting = starting_story();
+        assert_eq!(starting.label, "STARTING");
+        assert!(starting.lines[0].starts_with("Checking the machine and the journal"));
+    }
+
+    #[test]
+    fn an_unreadable_journal_is_not_a_missing_one() {
+        let error = std::io::Error::other("journal line 1: invalid character 'g'");
+        let live = problem_story(&error, false);
+        let once = problem_story(&error, true);
+        for story in [&live, &once] {
+            assert_eq!(story.label, "JOURNAL UNREADABLE");
+            assert_eq!(
+                story.lines[0],
+                "can't read journal: journal line 1: invalid character 'g'"
+            );
+            assert_eq!(story.paint, Paint::Bad);
+        }
+        assert!(live.lines[1].contains("I'll retry when the journal changes"));
+        assert_eq!(once.lines.len(), 1, "a one-frame print promises no retry");
+        let missing = story(&Fx::without_session().scene(ts(0)));
+        assert_ne!(missing.label, live.label);
+        assert!(!missing.lines[0].contains("can't read journal"));
+    }
+
+    #[test]
+    fn the_error_text_is_escaped_visibly_at_output() {
+        let error = std::io::Error::other("bad \u{1b}[31m byte\u{7}");
+        let problem = problem_story(&error, true);
+        assert!(
+            problem.lines[0].contains('\u{1b}'),
+            "the story keeps the raw text"
+        );
+        let drawn = text(&narrator_lines(&problem, 120, 4, false, Colours::None)).join("");
+        assert!(!drawn.contains('\u{1b}') && !drawn.contains('\u{7}'));
+        assert!(drawn.contains(inert("\u{1b}[31m").as_ref()));
+    }
+
+    #[test]
+    fn a_trial_intent_does_not_claim_the_offsets_are_set() {
+        let mut fx = Fx::new();
+        let mut waiting = trial(Regime::R6, Condition::Together, &[0, 1]);
+        waiting.started = None;
+        fx.trial = Some(waiting);
+        let said = story(&fx.scene(ts(5)));
+        let all = said.lines.join(" ");
+        assert!(all.contains("intent is recorded") && all.contains("being applied"));
+        assert!(!all.contains("offsets are set"));
+        assert!(
+            fx.scene(ts(5)).hold.is_none(),
+            "an unstarted idle trial holds nothing"
+        );
+    }
+
+    #[test]
+    fn a_crashed_trial_is_not_narrated_as_running() {
+        let mut fx = Fx::new();
+        let mut crashed = alone(Regime::R1, 0, -25);
+        crashed.crashed = true;
+        crashed.id = "trial-B".to_owned().into();
+        fx.trial = Some(crashed);
+        let said = story(&fx.scene(ts(5000)));
+        assert_eq!(said.label, "CRASHED");
+        assert_eq!(said.paint, Paint::Hunt);
+        assert!(said.lines[0].contains("Trial trial-B crashed"));
+        assert!(said.lines[0].contains("togi run records the crash"));
+        for bad in [
+            "I'm finding",
+            "I'm confirming",
+            "past its planned end",
+            "left",
+        ] {
+            assert!(!said.lines[0].contains(bad), "{bad}");
+        }
+        let band = resting_band(&fx.scene(ts(5000)));
+        assert_eq!(band.title, "CRASHED, NOT YET RECOVERED");
+        assert!(band.lines[0].starts_with("trial trial-B · "));
+        assert!(band.lines[0].contains("started "));
+        assert!(band.lines[2].contains("togi run records the crash"));
+    }
+
+    #[test]
+    fn a_prior_recovery_does_not_mask_a_later_boot_crash() {
+        let mut fx = Fx::new();
+        let mut crashed = alone(Regime::R1, 0, -20);
+        crashed.crashed = true;
+        crashed.id = "trial-B".to_owned().into();
+        crashed.started = None;
+        fx.trial = Some(crashed);
+        fx.recover = Some(RecoveryView {
+            crash_at: ts(50),
+            reset: None,
+            trial: Some(alone(Regime::R1, 0, -25)),
+            end: Some(end_view(Outcome::Failure, Some(Signal::Crash))),
+        });
+        let scene = fx.scene(ts(100));
+        assert_eq!(story(&scene).label, "CRASHED");
+        let band = resting_band(&scene);
+        assert_eq!(band.title, "CRASHED, NOT YET RECOVERED");
+        assert!(band.lines.join(" ").contains("trial trial-B"));
+        assert!(
+            !band.lines[0].contains(" · started "),
+            "an unstarted trial has no start"
+        );
+    }
+
+    #[test]
+    fn a_command_shutdown_does_not_mask_an_unrecovered_crash() {
+        let mut fx = Fx::new();
+        let mut crashed = alone(Regime::R1, 0, -20);
+        crashed.crashed = true;
+        fx.trial = Some(crashed);
+        fx.stopped = Some(StopView {
+            at: ts(60),
+            reason: ShutdownReason::Command,
+            saved: false,
+        });
+        let scene = fx.scene(ts(100));
+        assert_eq!(story(&scene).label, "CRASHED");
+        assert_eq!(resting_band(&scene).title, "CRASHED, NOT YET RECOVERED");
+    }
+
+    #[test]
+    fn a_trial_past_its_end_says_how_long_without_claiming_a_crash() {
+        let mut fx = Fx::new();
+        fx.trial = Some(alone(Regime::R1, 0, -25));
+        let before = story(&fx.scene(ts(1000 + 119)));
+        assert!(!before.lines[0].contains("past"));
+        let past = story(&fx.scene(ts(1000 + 120 + 42)));
+        assert_eq!(
+            past.lines[0],
+            "0:42 past its planned end, no trial end recorded. Its deadline or watchdog may still be running."
+        );
+        assert_eq!(past.brief, "");
+        for bad in ["crashed", "togi run records", "nothing recorded since"] {
+            assert!(!past.lines[0].contains(bad), "{bad}");
+        }
+    }
+
+    #[test]
+    fn an_idle_trial_holds_the_story_until_its_end_is_recorded() {
+        let mut fx = Fx::new();
+        let mut idle = in_cycle(trial(Regime::R6, Condition::Together, &[0, 1]), 1, 2, 1, 1);
+        idle.duration = secs(900);
+        fx.trial = Some(idle);
+        let first = story(&fx.scene(ts(1000 + 1)));
+        assert_eq!(first.label, "CYCLE 1");
+        assert!(first.lines[0].starts_with("Step 2 leaves every core idle for 15 minutes"));
+        assert!(
+            first.lines[1].contains(&format!(
+                "holds still until {}",
+                fx.scene(ts(1)).wall_minute(ts(1900))
+            )),
+            "{:?}",
+            first.lines
+        );
+        for at in [1000 + 899, 1000 + 900 + 42, 1000 + 7200] {
+            assert_eq!(
+                story(&fx.scene(ts(at))),
+                first,
+                "the idle story never moves with the clock"
+            );
+        }
+        assert!(
+            first
+                .lines
+                .iter()
+                .all(|line| !line.contains("left") && !line.contains("past its"))
+        );
+        let mut crashed = fx.trial.clone().expect("a trial");
+        crashed.crashed = true;
+        fx.trial = Some(crashed);
+        assert!(
+            fx.scene(ts(1000 + 3000)).hold.is_none(),
+            "a crashed idle trial holds nothing"
+        );
+        assert_eq!(story(&fx.scene(ts(1000 + 3000))).label, "CRASHED");
+    }
+
+    #[test]
+    fn a_stopped_session_says_why_and_whether_the_offsets_were_restored() {
+        let mut fx = Fx::new();
+        fx.stopped = Some(StopView {
+            at: ts(100),
+            reason: ShutdownReason::Cycles,
+            saved: true,
+        });
+        let said = story(&fx.scene(ts(200)));
+        assert_eq!(said.label, "STOPPED");
+        assert!(
+            said.lines[0].starts_with(
+                "The requested clean cycles are complete, so I restored safer offsets"
+            )
+        );
+        let band = resting_band(&fx.scene(ts(200)));
+        assert_eq!(band.title, "STOPPED");
+        assert_eq!(
+            band.lines,
+            [
+                format!(
+                    "{} · requested clean cycles completed",
+                    crate::frames::scene::wall_second(&UTC, ts(100))
+                ),
+                "Rows show the saved profile, not applied now.".to_owned()
+            ]
+        );
+        for (reason, saved, want) in [
+            (
+                ShutdownReason::FirstResult,
+                false,
+                "stopped at the first result as asked",
+            ),
+            (
+                ShutdownReason::Cycles,
+                false,
+                "The requested clean cycles are complete, so I've stopped",
+            ),
+            (
+                ShutdownReason::Signal,
+                true,
+                "I restored safer offsets before stopping",
+            ),
+            (
+                ShutdownReason::Signal,
+                false,
+                "I've stopped. Everything I learned is in the journal",
+            ),
+        ] {
+            fx.stopped = Some(StopView {
+                at: ts(100),
+                reason,
+                saved,
+            });
+            assert!(said_of(&fx).contains(want), "{reason:?} {saved}");
+        }
+    }
+
+    fn said_of(fx: &Fx) -> String {
+        story(&fx.scene(ts(200))).lines.join(" ")
+    }
+
+    #[test]
+    fn a_dead_end_preserves_the_recorded_cause() {
+        for (condition, detail, wrong) in [
+            (
+                DeadEndCondition::NoEvidence,
+                "kernel log unreadable: permission denied",
+                "installed",
+            ),
+            (
+                DeadEndCondition::Containment,
+                "termination unconfirmed",
+                "termination confirmed",
+            ),
+            (
+                DeadEndCondition::ThermalTrip,
+                "firmware reported a thermal trip",
+                "wrong result",
+            ),
+            (
+                DeadEndCondition::FailureAtZero,
+                "core 03 failed at 0",
+                "installed",
+            ),
+        ] {
+            let mut fx = Fx::new();
+            fx.dead_end = Some(DeadEndView {
+                at: ts(10),
+                condition,
+                detail: detail.to_owned(),
+            });
+            let scene = fx.scene(ts(20));
+            let band = resting_band(&scene);
+            assert_eq!(band.title, "DEAD END");
+            assert_eq!(band.paint, Paint::Bad);
+            assert_eq!(
+                band.lines,
+                [format!(
+                    "{}: {detail}",
+                    condition.as_str().replace('_', " ")
+                )]
+            );
+            assert!(!band.lines[0].contains(wrong));
+            let said = story(&scene);
+            assert_eq!(said.label, "DEAD END");
+            assert_eq!(said.paint, Paint::Bad);
+        }
+        let mut fx = Fx::new();
+        fx.dead_end = Some(DeadEndView {
+            at: ts(1),
+            condition: DeadEndCondition::Smu,
+            detail: String::new(),
+        });
+        fx.stopped = Some(StopView {
+            at: ts(2),
+            reason: ShutdownReason::DeadEnd,
+            saved: true,
+        });
+        assert_eq!(
+            resting_band(&fx.scene(ts(3)))
+                .lines
+                .last()
+                .map(String::as_str),
+            Some("Rows show the saved profile, not applied now.")
+        );
+    }
+
+    #[test]
+    fn a_dead_end_detail_stays_raw_in_the_band_and_out_of_the_narration() {
+        let mut fx = Fx::new();
+        fx.dead_end = Some(DeadEndView {
+            at: ts(1),
+            condition: DeadEndCondition::NoEvidence,
+            detail: "bad \u{1b}[2J".to_owned(),
+        });
+        let band = resting_band(&fx.scene(ts(2)));
+        assert!(band.lines[0].contains('\u{1b}'));
+        let narrated = said(&story(&fx.scene(ts(2))));
+        assert!(!narrated.contains("bad") && !narrated.contains('\u{1b}'));
+    }
+
+    #[test]
+    fn deepening_checks_say_how_they_load() {
+        let mut fx = Fx::new().with_cores(&[(0, 0), (1, 0)]);
+        let mut round = alone(Regime::R1, 0, -11);
+        round.round = Some(1);
+        round.activity = Some(Activity::Deepening);
+        fx.trial = Some(round.clone());
+        fx.phases = Some(PhasePlan {
+            phase: PhaseNo::Two,
+            phase1_end: None,
+            concluded: None,
+            confirming: false,
+            rounds_left: 2,
+            round: Some(1),
+            candidates: Vec::new(),
+        });
+        let scene = fx.scene(ts(1010));
+        let said = story(&scene);
+        assert_eq!(said.label, "PHASE 2 · ROUND 1");
+        assert!(said.lines[0].contains("Core 00 runs alone at its proposed -11"));
+        assert!(
+            !said
+                .lines
+                .join(" ")
+                .contains("solo limit, one turn at a time")
+        );
+        assert_eq!(
+            plain(&operation(&scene, &round)),
+            "PHASE 2 · ROUND 1 · CORE 00 AT -11 · LIGHT"
+        );
+        let together = {
+            let mut t = trial(Regime::R7, Condition::Together, &[0, 1]);
+            t.round = Some(1);
+            t
+        };
+        fx.trial = Some(together.clone());
+        let scene = fx.scene(ts(1010));
+        let said = story(&scene);
+        assert_eq!(said.label, "PHASE 2 · ROUND 1");
+        assert!(said.lines[0].starts_with("Round 1 checks again the offsets kept from the round that ended unpassed; at most 2 rounds left"));
+        assert!(!said.lines.join(" ").contains(" alone at "));
+        assert_eq!(plain(&operation(&scene, &together)), "PHASE 2 · ROUND 1");
+    }
+
+    #[test]
+    fn a_round_names_the_cores_it_moves() {
+        let mut fx = Fx::new().with_cores(&[(0, 0), (1, 0), (2, 1)]);
+        let mut together = trial(Regime::R7, Condition::Together, &[0, 1, 2]);
+        together.round = Some(2);
+        fx.trial = Some(together);
+        let candidate = |id: u8, moving| togi_tuner::Candidate {
+            core: core(id),
+            offset: off(-10),
+            solo_limit: None,
+            gap: 1,
+            carried: false,
+            moving,
+        };
+        fx.phases = Some(PhasePlan {
+            phase: PhaseNo::Two,
+            phase1_end: None,
+            concluded: None,
+            confirming: false,
+            rounds_left: 1,
+            round: Some(2),
+            candidates: vec![candidate(0, true), candidate(1, false), candidate(2, true)],
+        });
+        let said = story(&fx.scene(ts(1010)));
+        assert!(said.lines[0].starts_with("Round 2 moves cores 00, 02 one count toward their solo limits; at most 1 round left, then one full cycle."));
+        assert_eq!(said.brief, "Checking round 2's proposed profile.");
+    }
+
+    #[test]
+    fn a_search_trial_says_what_it_is_finding_or_confirming() {
+        let mut fx = Fx::new().with_cores(&[(0, 0), (3, 1)]);
+        fx.trial = Some(alone(Regime::R1, 3, -16));
+        let said = story(&fx.scene(ts(1010)));
+        assert_eq!(said.label, "SOLO LIMITS");
+        assert_eq!(
+            said.lines[0],
+            "I'm finding core 03's solo limit, one turn at a time, now at -16."
+        );
+        assert_eq!(said.brief, said.lines[0]);
+        let tight = text(&narrator_lines(&said, 60, 2, false, Colours::None)).join(" ");
+        assert!(
+            tight.contains("now at -16.") && !tight.contains("..."),
+            "{tight}"
+        );
+        assert_eq!(
+            plain(&operation(
+                &fx.scene(ts(1010)),
+                fx.trial.as_ref().expect("a trial")
+            )),
+            "SEARCH CORE 03 AT -16 · LIGHT"
+        );
+        fx.cores[1].confirm = Some(Confirm {
+            offset: off(-15),
+            light: 1,
+            heavy: 0,
+            needed: 5,
+        });
+        let said = story(&fx.scene(ts(1010)));
+        assert_eq!(
+            said.lines[0],
+            "-15 is core 03's candidate solo limit, and I'm confirming it."
+        );
+        fx.cores[1].fail = Some(off(-16));
+        let said = story(&fx.scene(ts(1010)));
+        assert_eq!(
+            said.lines[0],
+            "Core 03 failed at -16, so -15 is its candidate solo limit, and I'm confirming it."
+        );
+        assert_eq!(
+            plain(&operation(
+                &fx.scene(ts(1010)),
+                fx.trial.as_ref().expect("a trial")
+            )),
+            "CONFIRM CORE 03 AT -16 · LIGHT"
+        );
+    }
+
+    #[test]
+    fn a_partial_explains_that_it_is_ordinary_evidence() {
+        let mut fx = Fx::new();
+        let mut partial = in_cycle(trial(Regime::R7, Condition::Together, &[1]), 1, 1, 1, 2);
+        partial.partial = true;
+        fx.trial = Some(partial.clone());
+        let said = story(&fx.scene(ts(1010)));
+        let all = said.lines.join("\n");
+        for want in [
+            "top-requester groups",
+            "A backoff re-derives it",
+            "an unchanged loaded set keeps its passes",
+            "Passes and failures count as ordinary evidence",
+        ] {
+            assert!(all.contains(want), "lost {want}: {all}");
+        }
+        assert_eq!(
+            said.brief,
+            "Step 1, R7 partial loads 01; passes and failures count."
+        );
+        let op = plain(&operation(&fx.scene(ts(1010)), &partial));
+        assert!(
+            op.contains("PARTIAL") && !op.contains("RECORD ONLY"),
+            "{op}"
+        );
+    }
+
+    #[test]
+    fn a_checking_step_says_where_it_runs_and_what_counts() {
+        let mut fx = Fx::new();
+        let checking = in_cycle(
+            trial(Regime::R2, Condition::Together, &[0, 1, 2, 3]),
+            2,
+            3,
+            2,
+            4,
+        );
+        fx.trial = Some(checking);
+        let said = story(&fx.scene(ts(1010)));
+        assert_eq!(said.label, "CYCLE 2");
+        assert_eq!(
+            said.lines[0],
+            format!(
+                "Step 3 is R2 heavy vector with {}.",
+                crate::words::workload_display(workloads(Regime::R2)[0].id())
+            )
+        );
+        assert_eq!(said.lines[1], "Part 2 of 4 loads 00-03 for 2 minutes.");
+        assert_eq!(
+            said.brief,
+            "Step 3, R2 heavy vector: part 2 of 4 loads 00-03 for 2 minutes."
+        );
+        fx.clean_cycles = 2;
+        let said = story(&fx.scene(ts(1010)));
+        assert_eq!(
+            said.lines[1],
+            "2 clean cycles count for this profile. Passing trials cannot prove it will never fail."
+        );
+        fx.clean_cycles = 1;
+        assert!(
+            story(&fx.scene(ts(1010))).lines[1]
+                .starts_with("1 clean cycle counts for this profile.")
+        );
+        fx.clean_cycles = 0;
+        fx.phases = Some(PhasePlan {
+            phase: PhaseNo::One,
+            phase1_end: None,
+            concluded: None,
+            confirming: false,
+            rounds_left: 0,
+            round: None,
+            candidates: Vec::new(),
+        });
+        fx.trial = Some(in_cycle(
+            trial(Regime::R1, Condition::Together, &[0, 1]),
+            1,
+            1,
+            1,
+            1,
+        ));
+        assert!(
+            story(&fx.scene(ts(1010))).lines[1]
+                .contains("Phase 1's cycle: its pass confirms the first BIOS profile.")
+        );
+    }
+
+    #[test]
+    fn phase_2s_confirmation_cycle_says_its_pass_concludes_phase_2() {
+        let mut fx = Fx::new();
+        fx.phases = Some(PhasePlan {
+            phase: PhaseNo::Two,
+            phase1_end: None,
+            concluded: None,
+            confirming: true,
+            rounds_left: 0,
+            round: None,
+            candidates: Vec::new(),
+        });
+        fx.trial = Some(in_cycle(
+            trial(Regime::R1, Condition::Together, &[0, 1]),
+            3,
+            1,
+            1,
+            1,
+        ));
+        assert_eq!(
+            story(&fx.scene(ts(1010))).lines[1],
+            "Every core runs at its profile offset. Phase 2's confirmation cycle: its pass concludes phase 2."
+        );
+    }
+
+    #[test]
+    fn an_all_zero_rerun_is_named_for_what_it_decides() {
+        let mut fx = Fx::new();
+        let mut rerun = trial(Regime::R6, Condition::Parked, &[0, 1, 2]);
+        rerun.rerun = true;
+        fx.trial = Some(rerun.clone());
+        let scene = fx.scene(ts(1010));
+        let said = story(&scene);
+        assert_eq!(said.label, "RERUN AT CO 0");
+        assert_eq!(plain(&operation(&scene, &rerun)), "RERUN AT CO 0");
+        assert!(said.lines[0].starts_with("A failure at CO 0 would stop tuning."));
+        assert_eq!(
+            said.brief,
+            "The failed load runs again with every core at CO 0 before tuning stops."
+        );
+    }
+
+    #[test]
+    fn a_rerun_names_the_step_checking_resumes_at() {
+        let mut fx = Fx::new();
+        let mut rerun = in_cycle(trial(Regime::R7, Condition::Together, &[0, 1]), 1, 1, 1, 1);
+        rerun.rerun = true;
+        fx.trial = Some(rerun.clone());
+        let steps = vec![
+            step(Regime::R1, vec![part(&[0, 1], None, true, false)]),
+            step(Regime::R2, vec![part(&[0, 1], None, true, false)]),
+            step(Regime::R7, vec![part(&[0, 1], None, true, false)]),
+        ];
+        fx.cycle = Some((
+            cycle_plan(1, steps, 0),
+            vec![Vec::new(); 3],
+            Some(step_no(3)),
+        ));
+        let said = story(&fx.scene(ts(1010)));
+        assert_eq!(said.label, "RERUN");
+        assert_eq!(
+            said.lines[1],
+            "Cycle 1 waits at step 3 until the rerun passes."
+        );
+        assert!(
+            said.brief
+                .ends_with("; cycle 1 waits at step 3 until the rerun passes.")
+        );
+        assert_eq!(
+            plain(&operation(&fx.scene(ts(1010)), &rerun)),
+            "RERUN AFTER BACKOFF"
+        );
+        fx.cycle.as_mut().expect("a cycle").2 = None;
+        assert_eq!(
+            story(&fx.scene(ts(1010))).lines[1],
+            "Cycle 1 waits at step 1 until the rerun passes."
+        );
+        fx.cycle.as_mut().expect("a cycle").0.current = 3;
+        let said = story(&fx.scene(ts(1010)));
+        assert_eq!(
+            said.lines.len(),
+            1,
+            "a cycle with every step done waits at no step"
+        );
+        assert_eq!(said.brief, "The failed load runs again on the new profile.");
+    }
+
+    #[test]
+    fn a_rerun_that_completes_the_cycle_names_no_step_of_the_next() {
+        let built = togi_watchtest::cycle_completed_by_rerun().expect("the rerun journals");
+        assert!(!built.running.is_empty());
+        for (n, events) in built.running.iter().enumerate() {
+            let model = crate::model::project(events);
+            let snap = model.snapshot();
+            let scene = Scene::new(snap, ts(5000), &UTC, Colours::None);
+            let said = story(&scene);
+            assert_eq!(said.label, "RERUN", "rerun {}", n + 1);
+            assert!(
+                said.lines
+                    .iter()
+                    .any(|line| line == "Cycle 1 waits at step 2 until the rerun passes."),
+                "rerun {}: {:?}",
+                n + 1,
+                said.lines
+            );
+            assert!(
+                said.lines
+                    .iter()
+                    .all(|line| !line.contains("waits at step 1 "))
+            );
+        }
+        for (what, events) in [("passed", &built.passed), ("ended", &built.ended)] {
+            let model = crate::model::project(events);
+            let view = model.snapshot().cycle.expect("cycle 1");
+            assert_eq!(view.plan.number, NonZeroU32::new(1), "{what}");
+            assert_eq!(
+                (view.resume_step() + 1).min(view.plan.steps.len()),
+                2,
+                "{what}: the stage line names the step checking resumes at"
+            );
+        }
+    }
+
+    #[test]
+    fn a_hunt_cause_brief_agrees_with_the_named_core() {
+        let mut crashed = trial(Regime::R7, Condition::Together, &[0, 1]);
+        crashed.duration = secs(600);
+        for (trial, signal) in [
+            (Some(crashed.clone()), Some(Signal::Crash)),
+            (Some(crashed.clone()), Some(Signal::ComputationError)),
+            (None, Some(Signal::Crash)),
+        ] {
+            let mut c = cause();
+            c.trial = trial;
+            c.signal = signal;
+            c.core = Some(core(9));
+            let (_, named, brief) = super::super::hunt_cause_story(&c);
+            assert!(named.starts_with("Core 09 was named"), "{named}");
+            assert!(brief.ends_with("; core 09 named."), "{brief}");
+            c.core = None;
+            let (_, named, brief) = super::super::hunt_cause_story(&c);
+            assert!(named.starts_with("No core was named"), "{named}");
+            assert!(brief.ends_with("; no core named."), "{brief}");
+        }
+    }
+
+    #[test]
+    fn a_hunt_cause_names_what_failed_and_how_late() {
+        let mut crashed = trial(Regime::R7, Condition::Together, &[0, 1]);
+        crashed.duration = secs(600);
+        let mut c = cause();
+        c.trial = Some(crashed.clone());
+        c.signal = Some(Signal::ComputationError);
+        let (sentence, _, brief) = super::super::hunt_cause_story(&c);
+        assert_eq!(
+            sentence,
+            "The 10-minute all-core trial on 00 01 ended with wrong result."
+        );
+        assert!(brief.starts_with("Wrong result in R7 all-core on 00 01"));
+        c.signal = Some(Signal::Crash);
+        c.rerun_of = true;
+        let mut end = end_view(Outcome::Failure, Some(Signal::Crash));
+        end.last_sample = Some(secs(500));
+        end.planned = Some(secs(600));
+        c.end = Some(end);
+        let (sentence, _, brief) = super::super::hunt_cause_story(&c);
+        assert_eq!(
+            sentence,
+            "The machine crashed late in the rerun of the 10-minute all-core trial on 00 01 and rebooted."
+        );
+        assert!(
+            brief.starts_with("Crashed late in R7 all-core on 00 01"),
+            "{brief}"
+        );
+        c.end = None;
+        let (sentence, _, brief) = super::super::hunt_cause_story(&c);
+        assert!(
+            sentence.starts_with("The machine crashed during the rerun"),
+            "{sentence}"
+        );
+        assert!(brief.starts_with("Crashed in R7"), "{brief}");
+        let mut idle = cause();
+        idle.signal = Some(Signal::Crash);
+        assert_eq!(
+            super::super::hunt_cause_story(&idle).0,
+            "The machine crashed while idle, with no trial running, and rebooted."
+        );
+        idle.signal = Some(Signal::ComputationError);
+        assert!(
+            super::super::hunt_cause_story(&idle)
+                .0
+                .contains("wrong result")
+        );
+    }
+
+    #[test]
+    fn a_carried_idle_failure_cause_is_not_a_trial() {
+        let mut c = cause();
+        c.known = true;
+        c.carried = true;
+        let words = known_words(&c);
+        assert!(
+            !words.contains("trial") && words.contains("idle failure"),
+            "{words}"
+        );
+        assert_eq!(
+            words,
+            "an idle failure is already recorded at these offsets, carried from an earlier session"
+        );
+        c.regime = Some(Regime::R7);
+        assert_eq!(
+            known_words(&c),
+            "R7 all-core already failed at these offsets in a carried trial"
+        );
+        c.carried = false;
+        assert_eq!(
+            known_words(&c),
+            "R7 all-core already failed at these offsets"
+        );
+        let (sentence, _, brief) = super::super::hunt_cause_story(&c);
+        assert_eq!(sentence, "R7 all-core already failed at these offsets.");
+        assert_eq!(brief, sentence);
+    }
+
+    fn hunting(parked_zero: bool, parts: Vec<HuntPart>) -> Fx {
+        let mut fx = Fx::new().with_cores(&[(0, 0), (1, 0), (2, 1)]);
+        let mut plan = hunt_plan();
+        plan.parts = parts;
+        let mut facts = HuntFacts {
+            started: Some(ts(990)),
+            cause: cause(),
+            parked_zero,
+            group_signals: Vec::new(),
+        };
+        facts.cause.signal = Some(Signal::ComputationError);
+        fx.hunt = Some((plan, facts));
+        fx
+    }
+
+    fn running_part(failing: &[u8], parked: &[u8]) -> HuntPart {
+        HuntPart {
+            failing: set(failing),
+            parked: set(parked),
+            trials: 1,
+            duration_s: 120,
+            group: Some(1),
+            outcome: Some(GroupState::Running),
+            running: true,
+        }
+    }
+
+    #[test]
+    fn a_split_parks_at_zero_only_when_the_profile_does() {
+        let mut fx = hunting(true, vec![running_part(&[0], &[1, 2])]);
+        let mut running = trial(Regime::R7, Condition::Together, &[0]);
+        running.profile = crate::tests::kit::offsets(&[-10, 0, -30]);
+        fx.trial = Some(running.clone());
+        let scene = fx.scene(ts(1010));
+        let hunt = scene.s.hunt.expect("a hunt");
+        let words = split_words(&scene, hunt, &running);
+        assert!(
+            !words.contains("at 0"),
+            "core 02 stays at -30, yet the split says {words:?}"
+        );
+        running.profile = crate::tests::kit::offsets(&[-10, 0, 0]);
+        fx.trial = Some(running.clone());
+        let scene = fx.scene(ts(1010));
+        let hunt = scene.s.hunt.expect("a hunt");
+        assert_eq!(
+            split_words(&scene, hunt, &running),
+            "00 at their failing offsets, 01 02 parked at 0"
+        );
+    }
+
+    #[test]
+    fn a_hunt_without_a_running_part_says_how_the_rest_is_parked() {
+        let mut fx = hunting(false, Vec::new());
+        let running = trial(Regime::R7, Condition::Together, &[0]);
+        fx.trial = Some(running.clone());
+        let scene = fx.scene(ts(1010));
+        let hunt = scene.s.hunt.expect("a hunt");
+        assert_eq!(
+            split_words(&scene, hunt, &running),
+            "part of 00 02 at its offsets, the rest parked"
+        );
+    }
+
+    #[test]
+    fn a_hunt_story_gives_its_cause_then_how_it_splits() {
+        let mut fx = hunting(true, vec![running_part(&[0], &[1, 2])]);
+        let mut running = trial(Regime::R7, Condition::Together, &[0]);
+        running.parked = set(&[1, 2]);
+        running.profile = crate::tests::kit::offsets(&[-10, 0, 0]);
+        running.hunt = Some(HuntPlace {
+            hunt: 1,
+            group: 1,
+            part: Some(1),
+            parts: 2,
+            cut: 1,
+            probe: None,
+        });
+        fx.trial = Some(running.clone());
+        fx.hunt.as_mut().expect("a hunt").1.cause.trial =
+            Some(trial(Regime::R7, Condition::Together, &[0, 2]));
+        let scene = fx.scene(ts(1010));
+        let said = story(&scene);
+        assert_eq!(said.label, "HUNT 1");
+        assert_eq!(said.paint, Paint::Hunt);
+        assert!(
+            said.lines[0]
+                .starts_with("The 2-minute all-core trial on 00 02 ended with wrong result.")
+        );
+        assert!(
+            said.lines[1].starts_with(
+                "No core was named: I rerun that load with 00 at their failing offsets"
+            )
+        );
+        assert!(
+            said.brief.ends_with("Rerunning it with 01 02 parked."),
+            "{}",
+            said.brief
+        );
+        assert_eq!(plain(&operation(&scene, &running)), "HUNT 1 · PART 1 OF 2");
+        running.hunt = Some(HuntPlace {
+            hunt: 1,
+            group: 3,
+            part: Some(2),
+            parts: 3,
+            cut: 3,
+            probe: None,
+        });
+        assert_eq!(
+            plain(&operation(&scene, &running)),
+            "HUNT 1 · RE-CUT 2 · PART 2 OF 3"
+        );
+        running.hunt = Some(HuntPlace {
+            hunt: 1,
+            group: 3,
+            part: None,
+            parts: 0,
+            cut: 0,
+            probe: Some(Member {
+                core: core(2),
+                offset: off(-12),
+            }),
+        });
+        assert_eq!(
+            plain(&operation(&scene, &running)),
+            "HUNT 1 · GROUP 3 · CORE 02 AT -12"
+        );
+        running.hunt = Some(HuntPlace {
+            hunt: 1,
+            group: 3,
+            part: None,
+            parts: 0,
+            cut: 0,
+            probe: None,
+        });
+        assert_eq!(plain(&operation(&scene, &running)), "HUNT 1 · GROUP 3");
+    }
+
+    #[test]
+    fn a_member_probe_names_the_group_and_the_member() {
+        let mut fx = hunting(false, Vec::new());
+        let (plan, facts) = fx.hunt.as_mut().expect("a hunt");
+        plan.groups.push(HuntGroup {
+            number: 1,
+            cores: set(&[0, 2]),
+            profile: PerCore::default(),
+            stage: togi_journal::HuntStage::Part,
+            probe: None,
+            held: Vec::new(),
+            outcome: GroupState::Failed,
+            passed: 0,
+            needed: 5,
+            carried: false,
+            running: false,
+        });
+        facts.group_signals.push((1, Signal::Crash));
+        let mut probing = trial(Regime::R7, Condition::Together, &[0]);
+        probing.hunt = Some(HuntPlace {
+            hunt: 1,
+            group: 2,
+            part: None,
+            parts: 0,
+            cut: 0,
+            probe: Some(Member {
+                core: core(2),
+                offset: off(-12),
+            }),
+        });
+        fx.trial = Some(probing);
+        let said = story(&fx.scene(ts(1010)));
+        assert_eq!(said.label, "HUNT 1");
+        assert_eq!(
+            said.lines[0],
+            "00 02 crashed together at their offsets, and every smaller part of them that was tested passed."
+        );
+        assert!(said.lines[1].ends_with("Now core 02."));
+        assert_eq!(said.brief, "Probing members of 00 02: core 02 at -12.");
+    }
+
+    #[test]
+    fn a_probe_says_failed_unless_its_group_crashed() {
+        for (signal, verb) in [
+            (Signal::Crash, "crashed"),
+            (Signal::ComputationError, "failed"),
+        ] {
+            let mut fx = hunting(false, Vec::new());
+            let (plan, facts) = fx.hunt.as_mut().expect("a hunt");
+            plan.groups.push(HuntGroup {
+                number: 1,
+                cores: set(&[0, 2]),
+                profile: PerCore::default(),
+                stage: togi_journal::HuntStage::Part,
+                probe: None,
+                held: Vec::new(),
+                outcome: GroupState::Failed,
+                passed: 0,
+                needed: 5,
+                carried: false,
+                running: false,
+            });
+            facts.group_signals.push((1, signal));
+            facts.cause.signal = Some(Signal::Crash);
+            let mut probing = trial(Regime::R7, Condition::Together, &[0]);
+            probing.hunt = Some(HuntPlace {
+                hunt: 1,
+                group: 2,
+                part: None,
+                parts: 0,
+                cut: 0,
+                probe: Some(Member {
+                    core: core(2),
+                    offset: off(-12),
+                }),
+            });
+            fx.trial = Some(probing);
+            let said = story(&fx.scene(ts(1010)));
+            assert!(
+                said.lines[0].starts_with(&format!("00 02 {verb} together at their offsets")),
+                "{}",
+                said.lines[0]
+            );
+        }
+    }
+
+    #[test]
+    fn a_locating_hunt_reruns_its_load_with_the_candidates_at_zero() {
+        let mut fx = hunting(false, Vec::new());
+        fx.hunt.as_mut().expect("a hunt").0.groups.push(HuntGroup {
+            number: 1,
+            cores: set(&[0, 2]),
+            profile: PerCore::default(),
+            stage: togi_journal::HuntStage::Locate,
+            probe: None,
+            held: Vec::new(),
+            outcome: GroupState::Running,
+            passed: 0,
+            needed: 5,
+            carried: false,
+            running: true,
+        });
+        let mut locating = trial(Regime::R7, Condition::Together, &[1]);
+        locating.hunt = Some(HuntPlace {
+            hunt: 1,
+            group: 1,
+            part: None,
+            parts: 0,
+            cut: 0,
+            probe: None,
+        });
+        fx.trial = Some(locating);
+        let said = story(&fx.scene(ts(1010)));
+        assert_eq!(said.label, "HUNT 1");
+        assert_eq!(
+            said.lines[0],
+            "With no trial running and the offsets applied, the machine reported a wrong result."
+        );
+        assert_eq!(
+            said.lines[1],
+            "No core was named: I rerun that load with 00 02 at 0 and the loaded cores at their offsets: a pass puts the failure on the idle cores."
+        );
+        assert_eq!(
+            said.brief,
+            "Wrong result while idle; no core named. Rerunning it with 00 02 at 0."
+        );
+    }
+
+    #[test]
+    fn a_hunt_after_a_recovery_speaks_of_the_hunt_not_the_recovery() {
+        let mut fx = hunting(true, Vec::new());
+        fx.recover = Some(RecoveryView {
+            crash_at: ts(980),
+            reset: None,
+            trial: None,
+            end: None,
+        });
+        let said = story(&fx.scene(ts(1010)));
+        assert_eq!(said.label, "HUNT 1");
+        assert!(said.lines[0].starts_with("I look for the cause among 00 02"));
+        assert!(said.lines[1].ends_with("the rest parked at 0."));
+        fx.hunt.as_mut().expect("a hunt").1.started = Some(ts(970));
+        let said = story(&fx.scene(ts(1010)));
+        assert_eq!(said.label, "RECOVERED");
+        fx.recover.as_mut().expect("recovery").end = Some({
+            let mut end = end_view(Outcome::Failure, Some(Signal::Crash));
+            end.core = Some(core(4));
+            end
+        });
+        let said = story(&fx.scene(ts(1010)));
+        assert_eq!(
+            said.lines[1],
+            "Core 04 was named: its failure point is recorded and it backs off."
+        );
+        assert_eq!(said.brief, said.lines[0]);
+    }
+
+    #[test]
+    fn the_stage_label_names_the_stage_with_no_trial_to_speak_of() {
+        let mut fx = Fx::new();
+        assert_eq!(story(&fx.scene(ts(1))).label, "TOGI");
+        fx.cycle = Some((cycle_plan(3, Vec::new(), 0), Vec::new(), None));
+        assert_eq!(story(&fx.scene(ts(1))).label, "CYCLE 3");
+        fx.session.as_mut().expect("a session").activity = Some(Activity::Deepening);
+        assert_eq!(story(&fx.scene(ts(1))).label, "PHASE 2");
+        let fx = hunting(false, Vec::new());
+        assert_eq!(story(&fx.scene(ts(1))).label, "HUNT 1");
+    }
+}
+
+mod the_narrator {
+    use super::*;
+
+    #[test]
+    fn the_narrator_wraps_under_its_text() {
+        let long = "word ".repeat(15);
+        let said = super::super::Story {
+            label: "HUNT 6".to_owned(),
+            lines: vec![long],
+            brief: String::new(),
+            paint: Paint::Running,
+        };
+        let lines = text(&narrator_lines(&said, 60, 2, false, Colours::None));
+        assert_eq!(lines.len(), 2, "{lines:?}");
+        let first = lines[0].find("word").expect("text on the first row");
+        assert_eq!(
+            first,
+            lines[1].find("word").expect("text on the second row")
+        );
+        assert!(first > lines[0].find("HUNT 6").expect("the label"));
+        assert!(lines[0].starts_with("▌  HUNT 6   "));
+        assert!(
+            lines[1].starts_with(&format!("▌{}word", " ".repeat(11))),
+            "{:?}",
+            lines[1]
+        );
+    }
+
+    #[test]
+    fn a_story_too_tall_for_its_rows_falls_back_to_its_brief_then_to_cut_lines() {
+        let said = super::super::Story {
+            label: "CYCLE 1".to_owned(),
+            lines: vec![
+                "one two three four five six seven eight nine ten".to_owned(),
+                "eleven twelve thirteen fourteen fifteen".to_owned(),
+            ],
+            brief: "a short line".to_owned(),
+            paint: Paint::Running,
+        };
+        let rows_of_text = |height| text(&narrator_lines(&said, 30, height, false, Colours::None));
+        let full = rows_of_text(10);
+        assert!(full.len() > 2);
+        assert_eq!(rows_of_text(1).len(), 1);
+        assert!(rows_of_text(1)[0].contains("a short line"));
+        let mut cut = said.clone();
+        cut.brief.clear();
+        let cut_rows = text(&narrator_lines(&cut, 30, 2, false, Colours::None));
+        assert_eq!(cut_rows.len(), 2);
+        assert!(
+            cut_rows.iter().all(|row| row.chars().count() <= 30),
+            "{cut_rows:?}"
+        );
+        assert!(cut_rows[0].contains("...") && cut_rows[1].contains("..."));
+    }
+
+    #[test]
+    fn a_compact_screen_shows_the_brief_or_the_first_line_without_a_label() {
+        let said = super::super::Story {
+            label: "RERUN".to_owned(),
+            lines: vec!["first".to_owned(), "second".to_owned()],
+            brief: "the brief".to_owned(),
+            paint: Paint::Running,
+        };
+        assert_eq!(
+            text(&narrator_lines(&said, 40, 1, true, Colours::None)),
+            ["▌  the brief"]
+        );
+        let mut plain_story = said.clone();
+        plain_story.brief.clear();
+        assert_eq!(
+            text(&narrator_lines(&plain_story, 40, 1, true, Colours::None)),
+            ["▌  first"]
+        );
+        let cut = text(&narrator_lines(&said, 10, 1, true, Colours::None));
+        assert!(
+            cut[0].starts_with("▌  ") && cut[0].chars().count() <= 10,
+            "{cut:?}"
+        );
+    }
+
+    #[test]
+    fn the_bar_and_the_label_take_the_stories_paint() {
+        let said = super::super::Story {
+            label: "DEAD END".to_owned(),
+            lines: vec!["x".to_owned()],
+            brief: String::new(),
+            paint: Paint::Bad,
+        };
+        let lines = narrator_lines(&said, 40, 1, false, Colours::Full);
+        let bad = Paint::Bad.style(Colours::Full);
+        assert_eq!(lines[0].spans[0].style, bad);
+        assert_eq!(lines[0].spans[2].style, bad);
+        assert_eq!(lines[0].spans[3].style, Paint::Text.style(Colours::Full));
+        let none = narrator_lines(&said, 40, 1, false, Colours::None);
+        assert!(
+            none[0]
+                .spans
+                .iter()
+                .all(|span| span.style == ratatui::style::Style::new())
+        );
+    }
+
+    #[test]
+    fn a_narrated_frame_stays_inside_its_bounds() {
+        let said = super::super::Story {
+            label: "NO SESSION YET".to_owned(),
+            lines: vec!["Nothing has been recorded yet. ".repeat(6)],
+            brief: String::new(),
+            paint: Paint::Running,
+        };
+        for (w, h) in [(80, 24), (120, 33), (20, 8)] {
+            let sc = screen(View::Main, w, h, Colours::None, true);
+            let (buf, _) = draw_checked(&sc, |sc, buf| {
+                let layout = Layout::new(sc);
+                rows(
+                    buf,
+                    layout.body,
+                    narrator_lines(
+                        &said,
+                        usize::from(layout.body.width),
+                        usize::from(layout.body.height),
+                        false,
+                        sc.colours,
+                    ),
+                    sc.colours,
+                );
+                crate::screen::Drawn {
+                    scroll: 0,
+                    hold: crate::screen::Hold::Never,
+                }
+            });
+            assert_frame_bounds(&buf, &sc);
+            assert!(rows_of(&buf).iter().any(|row| row.contains('▌')), "{w}x{h}");
+        }
+    }
+}
+
+mod the_trial_band {
+    use super::*;
+
+    #[test]
+    fn where_a_trial_loads_follows_its_kind() {
+        let mut fx = Fx::new().with_cores(&[(0, 0), (1, 0), (2, 1), (3, 1)]);
+        let solo = alone(Regime::R1, 3, -16);
+        assert_eq!(
+            trial_where(&fx.scene(ts(1)), &solo),
+            "on core 03 alone at -16"
+        );
+        let together = trial(Regime::R2, Condition::Together, &[0, 1, 2, 3]);
+        assert_eq!(trial_where(&fx.scene(ts(1)), &together), "on 00-03");
+        let full = in_cycle(
+            trial(Regime::R7, Condition::Together, &[0, 1, 2, 3]),
+            1,
+            1,
+            1,
+            2,
+        );
+        assert_eq!(trial_where(&fx.scene(ts(1)), &full), "on 00-03, every CCD");
+        let part = in_cycle(trial(Regime::R7, Condition::Together, &[0, 1]), 1, 1, 1, 2);
+        assert_eq!(trial_where(&fx.scene(ts(1)), &part), "on 00 01");
+        fx.cores.clear();
+        assert_eq!(trial_where(&fx.scene(ts(1)), &full), "on 00-03");
+    }
+
+    #[test]
+    fn a_hunt_trial_says_which_cores_it_parks_and_which_it_moves() {
+        let mut fx = Fx::new().with_cores(&[(0, 0), (1, 0), (2, 1)]);
+        fx.shapes.insert(
+            1,
+            HuntShape {
+                failing: crate::tests::kit::offsets(&[-10, -20, -30]),
+                parked: crate::tests::kit::offsets(&[0, 0, 0]),
+            },
+        );
+        let mut hunting = trial(Regime::R7, Condition::Together, &[0, 1]);
+        hunting.hunt = Some(HuntPlace {
+            hunt: 1,
+            group: 1,
+            part: Some(1),
+            parts: 2,
+            cut: 1,
+            probe: None,
+        });
+        hunting.profile = crate::tests::kit::offsets(&[-10, -20, 0]);
+        assert_eq!(
+            trial_where(&fx.scene(ts(1)), &hunting),
+            "on 00 01 · 02 parked at 0, idle"
+        );
+        hunting.profile = crate::tests::kit::offsets(&[-10, 0, 0]);
+        assert_eq!(
+            trial_where(&fx.scene(ts(1)), &hunting),
+            "on 00 01 · 00 at failing offsets, 01 02 parked at 0"
+        );
+        hunting.profile = crate::tests::kit::offsets(&[-10, -20, -12]);
+        assert_eq!(
+            trial_where(&fx.scene(ts(1)), &hunting),
+            "on 00 01 · core 02 at -12"
+        );
+        hunting.profile = crate::tests::kit::offsets(&[-10, -20, -30]);
+        assert_eq!(
+            trial_where(&fx.scene(ts(1)), &hunting),
+            "on 00 01 · 00-02 at failing offsets"
+        );
+    }
+
+    #[test]
+    fn a_core_the_split_does_not_judge_is_in_neither_list() {
+        let mut fx = Fx::new().with_cores(&[(0, 0), (1, 0), (2, 1)]);
+        fx.shapes.insert(
+            1,
+            HuntShape {
+                failing: crate::tests::kit::offsets(&[-10, -20, -30]),
+                parked: crate::tests::kit::offsets(&[0, -20, 0]),
+            },
+        );
+        let mut hunting = trial(Regime::R7, Condition::Together, &[0, 1]);
+        hunting.hunt = Some(HuntPlace {
+            hunt: 1,
+            group: 1,
+            part: Some(1),
+            parts: 2,
+            cut: 1,
+            probe: None,
+        });
+        hunting.profile = crate::tests::kit::offsets(&[-10, -20, 0]);
+        assert_eq!(
+            trial_where(&fx.scene(ts(1)), &hunting),
+            "on 00 01 · 00 at failing offsets, 02 parked at 0, idle"
+        );
+    }
+
+    #[test]
+    fn the_operation_names_the_cycle_step_and_part() {
+        let fx = Fx::new();
+        let scene = fx.scene(ts(1));
+        let step = in_cycle(trial(Regime::R2, Condition::Together, &[0]), 2, 3, 1, 1);
+        assert_eq!(plain(&operation(&scene, &step)), "CYCLE 2 · STEP 3");
+        let parted = in_cycle(trial(Regime::R2, Condition::Together, &[0]), 2, 3, 4, 6);
+        assert_eq!(
+            plain(&operation(&scene, &parted)),
+            "CYCLE 2 · STEP 3 · PART 4"
+        );
+        let line = operation(&scene, &parted);
+        assert_eq!(line.spans.len(), 1);
+        let coloured = Scene::new(fx.snap(), ts(1), &UTC, Colours::Full);
+        assert_eq!(
+            operation(&coloured, &parted).spans[0].style,
+            Paint::Running.style(Colours::Full)
+        );
+        let mut hunting = trial(Regime::R7, Condition::Together, &[0]);
+        hunting.hunt = Some(HuntPlace {
+            hunt: 2,
+            group: 1,
+            part: None,
+            parts: 0,
+            cut: 0,
+            probe: None,
+        });
+        assert_eq!(
+            operation(&coloured, &hunting).spans[0].style,
+            Paint::Hunt.style(Colours::Full)
+        );
+    }
+
+    #[test]
+    fn crash_evidence_names_what_falls_short_of_a_core() {
+        assert_eq!(crash_evidence(None), "");
+        let mut end = end_view(Outcome::Failure, Some(Signal::Crash));
+        assert_eq!(crash_evidence(Some(&end)), "");
+        end.last_sample = Some(secs(125));
+        assert_eq!(
+            crash_evidence(Some(&end)),
+            "the last sample came 2:05 into the trial"
+        );
+        end.stalled = Some(core(4));
+        assert_eq!(
+            crash_evidence(Some(&end)),
+            "core 04's worker had stalled by the last sample, 2:05 into the trial"
+        );
+        end.signal = Some(Signal::ComputationError);
+        assert_eq!(crash_evidence(Some(&end)), "");
+    }
+}
+
+mod the_resting_band {
+    use super::*;
+
+    #[test]
+    fn between_trials_names_the_last_outcome_and_what_comes_next_not_a_countdown() {
+        let mut fx = Fx::new().with_cores(&[(0, 0), (1, 0)]);
+        fx.last = Some(end_view(Outcome::Pass, None));
+        let band = resting_band(&fx.scene(ts(2000)));
+        assert_eq!(band.title, "BETWEEN TRIALS");
+        assert_eq!(band.paint, Paint::Grey);
+        assert_eq!(band.lines[0], "last: PASS after 10:00 · R1 light on 00 01");
+        assert_eq!(band.lines[1], "next: deciding");
+        assert!(band.lines.iter().all(|line| !line.contains("left")));
+        fx.forecast.between = Some(Between {
+            next: Some(plan(
+                Regime::R7,
+                many(&[0, 1]),
+                Condition::Together,
+                cycle_ctx(1, 2),
+                300,
+            )),
+            ..Between::default()
+        });
+        let band = resting_band(&fx.scene(ts(2000)));
+        assert_eq!(
+            band.lines[1],
+            format!(
+                "next: step 2: R7 all-core with {}",
+                crate::words::workload_display(workloads(Regime::R7)[0].id())
+            )
+        );
+        fx.forecast.between = Some(Between {
+            uncertainty: Some(Uncertainty::NeedsRanking),
+            ..Between::default()
+        });
+        assert_eq!(
+            resting_band(&fx.scene(ts(2000))).lines[1],
+            "next: read the core ranking before deciding"
+        );
+        fx.last = None;
+        assert_eq!(resting_band(&fx.scene(ts(2000))).lines.len(), 1);
+    }
+
+    #[test]
+    fn a_recovery_says_what_the_crash_ended_how_late_and_what_runs_next() {
+        let mut fx = Fx::new();
+        let mut end = end_view(Outcome::Failure, Some(Signal::Crash));
+        end.last_sample = Some(secs(100));
+        end.planned = Some(secs(600));
+        end.stalled = Some(core(1));
+        fx.recover = Some(RecoveryView {
+            crash_at: ts(3600),
+            reset: Some(ResetKind::PowerLoss),
+            trial: Some(in_cycle(
+                trial(Regime::R7, Condition::Together, &[0, 1]),
+                1,
+                2,
+                1,
+                1,
+            )),
+            end: Some(end),
+        });
+        let band = resting_band(&fx.scene(ts(4000)));
+        assert_eq!(band.title, "RECOVERED FROM A CRASH");
+        assert_eq!(band.paint, Paint::Hunt);
+        assert_eq!(
+            band.lines[0],
+            "crash in R7 all-core on 00 01 · cycle 1 step 2 · no core named"
+        );
+        assert_eq!(
+            band.lines[1],
+            format!(
+                "early in the trial · last sample 1:40 of 10:00 · core 01's worker had stalled by then · detected {} after a power loss reset",
+                crate::frames::scene::wall_second(&UTC, ts(3600))
+            )
+        );
+        assert_eq!(band.lines[2], "next: deciding");
+        fx.recover
+            .as_mut()
+            .expect("recovery")
+            .end
+            .as_mut()
+            .expect("an end")
+            .core = Some(core(1));
+        assert!(resting_band(&fx.scene(ts(4000))).lines[0].ends_with("· core 01 named"));
+        fx.recover.as_mut().expect("recovery").trial = None;
+        fx.recover.as_mut().expect("recovery").reset = Some(ResetKind::Unknown);
+        let band = resting_band(&fx.scene(ts(4000)));
+        assert!(band.lines[0].starts_with("crash with no trial in flight · detected "));
+        assert!(!band.lines[0].contains("reset"));
+    }
+
+    #[test]
+    fn the_last_trial_reads_as_a_word_and_its_measurements() {
+        let mut fx = Fx::new();
+        assert!(last_lines(&fx.scene(ts(1))).is_empty());
+        let mut end = end_view(Outcome::Pass, None);
+        end.tctl_max_c = Some(81);
+        end.voltage_v = Some(1.1234);
+        fx.last = Some(end.clone());
+        let lines = last_lines(&fx.scene(ts(1)));
+        assert_eq!(
+            text(&lines),
+            ["last trial      PASS  10:00 on 00 01 · Tctl max 81°C · 1.12 V median"]
+        );
+        let full = Scene::new(fx.snap(), ts(1), &UTC, Colours::Full);
+        assert_eq!(
+            last_lines(&full)[0].spans[1].style,
+            Paint::Good.style(Colours::Full)
+        );
+        for (outcome, signal, word, paint) in [
+            (
+                Outcome::Failure,
+                Some(Signal::ComputationError),
+                "FAILURE",
+                Paint::Bad,
+            ),
+            (Outcome::Failure, Some(Signal::Crash), "CRASH", Paint::Bad),
+            (Outcome::Inconclusive, None, "INCONCLUSIVE", Paint::Hunt),
+        ] {
+            fx.last = Some(end_view(outcome, signal));
+            let full = Scene::new(fx.snap(), ts(1), &UTC, Colours::Full);
+            let line = &last_lines(&full)[0];
+            assert_eq!(line.spans[1].content, word);
+            assert_eq!(line.spans[1].style, paint.style(Colours::Full));
+        }
+        fx.last = Some(end_view(Outcome::Failure, Some(Signal::ComputationError)));
+        assert_eq!(
+            text(&last_lines(&fx.scene(ts(1))))[0],
+            "last trial      FAILURE  10:00 on 00 01 · wrong result"
+        );
+        fx.last = Some(end_view(Outcome::Failure, Some(Signal::Crash)));
+        assert_eq!(
+            text(&last_lines(&fx.scene(ts(1))))[0],
+            "last trial      CRASH  on 00 01"
+        );
+    }
+}
+
+mod the_outcome_lines {
+    use super::*;
+
+    fn same_part_fx() -> Fx {
+        let mut fx = Fx::new().with_cores(&[(0, 0), (1, 0), (2, 1)]);
+        let running = counted(
+            in_cycle(trial(Regime::R7, Condition::Together, &[1, 2]), 1, 1, 1, 1),
+            0,
+            1,
+            4,
+        );
+        fx.trial = Some(running);
+        fx
+    }
+
+    #[test]
+    fn branches_merge_and_name_the_next_trial_of_the_same_part() {
+        let mut fx = same_part_fx();
+        let next = plan(
+            Regime::R7,
+            many(&[1, 2]),
+            Condition::Together,
+            cycle_ctx(1, 1),
+            120,
+        );
+        let long = plan(
+            Regime::R7,
+            many(&[1, 2]),
+            Condition::Together,
+            cycle_ctx(1, 1),
+            300,
+        );
+        let mut pass = branch(Premise::Pass);
+        pass.passes = 1;
+        pass.next = Some(next.clone());
+        let mut all = branch(Premise::AllPass);
+        all.passes = 3;
+        all.next = Some(long);
+        let mut named = branch(Premise::Named(core(1)));
+        named.next = Some(next.clone());
+        let mut unnamed = branch(Premise::Unnamed);
+        unnamed.next = Some(next);
+        fx.forecast.branches = vec![pass, all, named, unnamed];
+        assert_eq!(
+            fx.rows(),
+            [
+                "if 3 of 4 pass | next: trial 4 of 4 · 5m",
+                "if it fails | next: this load again",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_passing_outcome_names_the_next_part_or_step() {
+        let mut fx = Fx::new().with_cores(&[(0, 0), (1, 0), (3, 1)]);
+        let steps = vec![
+            step(
+                Regime::R2,
+                vec![part(&[1], None, true, false), part(&[3], None, true, false)],
+            ),
+            step(Regime::R6, vec![part(&[1, 3], None, true, false)]),
+        ];
+        fx.cycle = Some((cycle_plan(1, steps, 0), vec![Vec::new(); 2], None));
+        let per_core = |id: u8, part_no: u32| {
+            counted(
+                in_cycle(alone(Regime::R2, id, -16), 1, 1, part_no, 2),
+                0,
+                1,
+                1,
+            )
+        };
+        let mut pass = branch(Premise::Pass);
+        pass.passes = 1;
+        fx.trial = Some(per_core(1, 1));
+        pass.next = Some(plan(
+            Regime::R2,
+            Load::Single(core(3)),
+            Condition::Together,
+            cycle_ctx(1, 1),
+            120,
+        ));
+        fx.forecast.branches = vec![pass.clone()];
+        assert_eq!(
+            fx.rows(),
+            ["if it passes | part 1 is done → next: part 2: core 03 at -16, 2m"]
+        );
+        assert_eq!(fx.row_set()[0].compact, "→ part 2: core 03");
+        fx.trial = Some(per_core(3, 2));
+        pass.next = Some(plan(
+            Regime::R6,
+            many(&[1, 3]),
+            Condition::Together,
+            cycle_ctx(1, 2),
+            900,
+        ));
+        fx.forecast.branches = vec![pass];
+        let idle = crate::words::workload_display(workloads(Regime::R6)[0].id());
+        assert_eq!(
+            fx.rows(),
+            [format!(
+                "if it passes | step 1 is done → next: step 2: R6 idle + bursts with {idle}"
+            )]
+        );
+        assert_eq!(fx.row_set()[0].compact, "→ step 2");
+    }
+
+    #[test]
+    fn the_forecast_names_the_all_zero_rerun_after_a_rerun() {
+        let mut fx = Fx::new().with_cores(&[(0, 0), (1, 0)]);
+        let mut rerun = trial(Regime::R6, Condition::Together, &[0, 1]);
+        rerun.rerun = true;
+        fx.trial = Some(rerun);
+        let ctx = TrialContext::Rerun { failure: seq(1) };
+        let mut again = plan(Regime::R6, many(&[0, 1]), Condition::Together, ctx, 120);
+        again.retry = true;
+        let zero = plan(
+            Regime::R6,
+            many(&[0, 1]),
+            Condition::Parked,
+            TrialContext::ZeroRerun { failure: seq(1) },
+            120,
+        );
+        let mut inconclusive = branch(Premise::Inconclusive);
+        inconclusive.next = Some(again);
+        let mut named = branch(Premise::Named(core(0)));
+        named.at_zero = true;
+        named.decisions = vec![DecisionPayload::Failure(failure(Some(0)))];
+        named.next = Some(zero);
+        named.without_telemetry = true;
+        fx.forecast.branches = vec![inconclusive, named];
+        let rows = fx.rows();
+        assert_eq!(rows.len(), 2, "{rows:?}");
+        assert!(
+            rows.iter()
+                .any(|row| row.ends_with("the same trial runs again")),
+            "{rows:?}"
+        );
+        assert!(
+            rows.iter().any(|row| row
+                .ends_with("next: rerun R6 idle + bursts on 00 01 with every core at 0 · 2m")),
+            "{rows:?}"
+        );
+    }
+
+    #[test]
+    fn r7_evidence_stays_out_of_the_forecast() {
+        let mut fx = Fx::new();
+        fx.cycle = Some((cycle_plan(1, Vec::new(), 0), Vec::new(), None));
+        let w = workloads(Regime::R7)[0].id();
+        fx.r7 = vec![
+            R7CoreStatus {
+                core: core(0),
+                ccd: CcdId(0),
+                workload: w,
+                top_requester: true,
+                offset_proxy: false,
+                self_sufficient: true,
+                passes: 0,
+            },
+            R7CoreStatus {
+                core: core(1),
+                ccd: CcdId(0),
+                workload: w,
+                top_requester: false,
+                offset_proxy: false,
+                self_sufficient: false,
+                passes: 0,
+            },
+        ];
+        assert!(
+            fx.row_set().is_empty(),
+            "evidence must not invent forecast branches"
+        );
+        fx.trial = Some(trial(Regime::R7, Condition::Together, &[0, 1]));
+        assert!(outcome_lines(&fx.scene(ts(1)), 100, false).is_empty());
+        assert!(outcome_lines(&fx.scene(ts(1)), 100, true).is_empty());
+    }
+
+    fn r7_fx() -> (Fx, TrialPlan) {
+        let mut fx = Fx::new().with_cores(&[(0, 0), (1, 0), (2, 0), (3, 0)]);
+        let running = counted(
+            in_cycle(trial(Regime::R7, Condition::Together, &[0, 1]), 1, 1, 1, 1),
+            0,
+            1,
+            4,
+        );
+        fx.trial = Some(running);
+        let next = plan(
+            Regime::R7,
+            many(&[0, 1]),
+            Condition::Together,
+            cycle_ctx(1, 1),
+            120,
+        );
+        (fx, next)
+    }
+
+    #[test]
+    fn a_backoff_forecast_is_conditional_on_earlier_requests() {
+        for (fallback, want) in [
+            (false, "core 00 -31 → -30 per earlier requests"),
+            (true, "core 00 -31 → -30 per offset order"),
+        ] {
+            let (mut fx, next) = r7_fx();
+            let mut pass = branch(Premise::Pass);
+            pass.next = Some(next.clone());
+            pass.without_telemetry = true;
+            let mut unnamed = branch(Premise::Unnamed);
+            unnamed.decisions = vec![DecisionPayload::TunerDecision(backoff(0, -31, -30, None))];
+            unnamed.next = Some(next);
+            unnamed.without_telemetry = true;
+            unnamed.offset_order = fallback;
+            fx.forecast.branches = vec![pass, unnamed];
+            let rows = fx.row_set();
+            assert_eq!(rows.len(), 2);
+            assert!(
+                !fit_phrases(&rows[0].phrases, 200).contains("per "),
+                "a pass decides nothing from requests"
+            );
+            assert_eq!(rows[0].basis, None);
+            let backoff_row = fit_phrases(&rows[1].phrases, 200);
+            assert!(backoff_row.starts_with(want), "{backoff_row}");
+            let basis = rows[1].basis.expect("a basis");
+            let compact = text(&outcome_lines(&fx.scene(ts(1)), 118, true));
+            assert!(
+                compact[0].contains(&format!("backoffs {basis}")),
+                "{compact:?}"
+            );
+            let narrow = text(&outcome_lines(&fx.scene(ts(1)), 70, true));
+            assert!(
+                narrow[0].contains(basis) || narrow[0].contains('?'),
+                "the basis stays on screen: {narrow:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn only_a_backoff_or_a_derived_partial_states_its_request_basis() {
+        let (mut fx, next) = r7_fx();
+        let mut pass = branch(Premise::AllPass);
+        pass.passes = 4;
+        pass.decisions = vec![DecisionPayload::CheckingCycle(crate::tests::kit::cycle(
+            2,
+            CycleEvent::Start,
+        ))];
+        pass.next = Some(next.clone());
+        pass.without_telemetry = true;
+        let mut unnamed = branch(Premise::Unnamed);
+        unnamed.decisions = vec![DecisionPayload::TunerDecision(backoff(0, -31, -30, None))];
+        unnamed.next = Some(next);
+        unnamed.without_telemetry = true;
+        unnamed.offset_order = true;
+        fx.forecast.branches = vec![pass, unnamed];
+        let rows = fx.row_set();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].basis, None);
+        assert!(
+            !fit_phrases(&rows[0].phrases, 200).contains("per "),
+            "{:?}",
+            rows[0].phrases
+        );
+        assert_eq!(rows[1].basis, Some("per offset order"));
+        let compact = text(&outcome_lines(&fx.scene(ts(1)), 118, true));
+        assert!(
+            compact[0].ends_with("backoffs per offset order"),
+            "{compact:?}"
+        );
+    }
+
+    #[test]
+    fn every_r7_named_outcome_keeps_a_row() {
+        let mut fx = Fx::new().with_cores(&[(0, 0), (1, 0), (2, 0), (3, 0)]);
+        let running = counted(
+            in_cycle(
+                trial(Regime::R7, Condition::Together, &[0, 1, 2, 3]),
+                1,
+                1,
+                1,
+                1,
+            ),
+            0,
+            1,
+            4,
+        );
+        fx.trial = Some(running);
+        let rerun = plan(
+            Regime::R7,
+            many(&[0, 1, 2, 3]),
+            Condition::Together,
+            TrialContext::Rerun { failure: seq(1) },
+            120,
+        );
+        let same = plan(
+            Regime::R7,
+            many(&[0, 1, 2, 3]),
+            Condition::Together,
+            cycle_ctx(1, 1),
+            120,
+        );
+        let mv = |core_id| DecisionPayload::TunerDecision(backoff(core_id, -30, -16, Some(-30)));
+        let mut pass = branch(Premise::Pass);
+        pass.next = Some(same.clone());
+        pass.without_telemetry = true;
+        let mut named0 = branch(Premise::Named(core(0)));
+        named0.decisions = vec![DecisionPayload::Failure(failure(Some(0))), mv(0)];
+        named0.next = Some(rerun.clone());
+        named0.without_telemetry = true;
+        let mut named2 = branch(Premise::Named(core(2)));
+        named2.at_zero = true;
+        named2.decisions = vec![DecisionPayload::Failure(failure(Some(2))), mv(1)];
+        named2.next = Some(rerun.clone());
+        named2.without_telemetry = true;
+        let mut named3 = branch(Premise::Named(core(3)));
+        named3.at_zero = true;
+        named3.top_requester = true;
+        named3.decisions = vec![
+            DecisionPayload::Failure(failure(Some(3))),
+            DecisionPayload::DeadEnd(DeadEnd {
+                condition: DeadEndCondition::FailureAtZero,
+                core: None,
+                detail: String::new(),
+                action: None,
+            }),
+        ];
+        named3.without_telemetry = true;
+        let mut unnamed = branch(Premise::Unnamed);
+        unnamed.decisions = vec![DecisionPayload::Failure(failure(None)), mv(1)];
+        unnamed.next = Some(rerun);
+        unnamed.without_telemetry = true;
+        let mut inconclusive = branch(Premise::Inconclusive);
+        inconclusive.next = Some(same);
+        fx.forecast.branches = vec![pass, named0, named2, named3, unnamed, inconclusive];
+        assert_eq!(
+            fx.rows(),
+            [
+                "if it passes | next: trial 2 of 4",
+                "if another core is named | its failure point is recorded → it backs off per earlier requests → next: rerun R7 all-core on 00-03 · 2m · a top requester at 0: tuning stops",
+                "if none or a core at 0 is named | core 01 -30 → -16 per earlier requests → next: rerun R7 all-core on 00-03 · 2m",
+            ]
+        );
+        let compact = text(&outcome_lines(&fx.scene(ts(1)), 118, true));
+        assert!(compact[0].contains("+1 at 0"), "{compact:?}");
+        assert!(
+            compact[0].contains("none or core at 0 named → backs off"),
+            "{compact:?}"
+        );
+    }
+
+    #[test]
+    fn a_pass_forecast_names_the_derived_partial_and_its_basis() {
+        let mut fx = Fx::new().with_cores(&[(0, 0), (1, 0), (2, 0), (3, 0)]);
+        let full_part = {
+            let mut part = part(&[0, 1, 2, 3], Some(0), true, true);
+            part.short = 4;
+            part
+        };
+        let rest = part(&[0, 1, 2, 3, 4, 5, 6, 7], None, false, false);
+        fx.cycle = Some((
+            cycle_plan(1, vec![step(Regime::R7, vec![full_part, rest])], 0),
+            vec![Vec::new()],
+            None,
+        ));
+        let running = counted(
+            in_cycle(
+                trial(Regime::R7, Condition::Together, &[0, 1, 2, 3]),
+                1,
+                1,
+                1,
+                2,
+            ),
+            3,
+            4,
+            4,
+        );
+        fx.trial = Some(running);
+        let partial = plan(
+            Regime::R7,
+            many(&[0, 1, 2]),
+            Condition::Together,
+            cycle_ctx(1, 1),
+            120,
+        );
+        for (sources, basis) in [
+            (vec![seq(5)], "per earlier requests"),
+            (Vec::new(), "per offset order"),
+        ] {
+            let mut chain = CheckingChain {
+                cycle: nz(1),
+                step: nz(1),
+                ccd: CcdId(0),
+                workload: workloads(Regime::R7)[0].id(),
+                groups: Vec::new(),
+                cores: set(&[0, 1, 2]),
+                source_seqs: sources,
+                profile: PerCore::default(),
+                part: nz(1),
+                rederived: None,
+            };
+            chain.source_seqs.dedup();
+            let mut pass = branch(Premise::Pass);
+            pass.passes = 1;
+            pass.decisions = vec![DecisionPayload::CheckingChain(chain)];
+            pass.next = Some(partial.clone());
+            pass.without_telemetry = true;
+            pass.offset_order = basis == "per offset order";
+            fx.forecast.branches = vec![pass];
+            let rows = fx.row_set();
+            let line = fit_phrases(&rows[0].phrases, 400);
+            assert_eq!(rows[0].basis, Some(basis));
+            assert!(
+                line.contains(&format!("CCD 0 partial on 00-02 {basis}")),
+                "{line}"
+            );
+            assert!(
+                line.contains("next: step 1: R7 all-core on 00-02 with"),
+                "{line}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_named_zero_core_moving_its_ccd_records_no_own_failure_point() {
+        let fx = Fx::new();
+        let moved = DecisionPayload::TunerDecision(backoff(1, -30, -16, Some(-30)));
+        let phrases = decision_phrases(
+            &fx.scene(ts(1)),
+            &[DecisionPayload::Failure(failure(Some(2))), moved],
+            true,
+        );
+        assert_eq!(fit_phrases(&phrases, 400), "core 01 -30 → -16");
+        let own = DecisionPayload::TunerDecision(backoff(2, -30, -29, Some(-30)));
+        let phrases = decision_phrases(
+            &fx.scene(ts(1)),
+            &[DecisionPayload::Failure(failure(Some(2))), own],
+            true,
+        );
+        assert_eq!(
+            fit_phrases(&phrases, 400),
+            "its failure point is recorded → it backs off"
+        );
+    }
+
+    #[test]
+    fn zero_offset_cores_on_different_ccds_are_named_apart() {
+        let mut fx = Fx::new().with_cores(&[(0, 0), (1, 0), (2, 1), (3, 1)]);
+        fx.trial = Some(trial(Regime::R7, Condition::Together, &[0, 1, 2, 3]));
+        let mut a = branch(Premise::Named(core(1)));
+        a.at_zero = true;
+        let mut b = branch(Premise::Named(core(2)));
+        b.at_zero = true;
+        fx.forecast.branches = vec![a, b];
+        let scene = fx.scene(ts(1));
+        let words: Vec<_> = scene
+            .s
+            .forecast
+            .branches
+            .iter()
+            .map(|branch| zero_words(&scene, branch))
+            .collect();
+        assert_eq!(words, ["a CCD 0 core at 0", "a CCD 1 core at 0"]);
+        fx.forecast.branches.pop();
+        let scene = fx.scene(ts(1));
+        assert_eq!(
+            zero_words(&scene, &scene.s.forecast.branches[0]),
+            "a core at 0",
+            "cores at 0 on one CCD need no CCD"
+        );
+        fx.forecast.branches[0].top_requester = true;
+        let scene = fx.scene(ts(1));
+        assert_eq!(
+            zero_words(&scene, &scene.s.forecast.branches[0]),
+            "a top requester at 0"
+        );
+    }
+
+    fn next_words(load: Load, condition: Condition) -> (String, String) {
+        let mut fx = Fx::new();
+        fx.trial = None;
+        let mut next = plan(
+            Regime::R1,
+            load,
+            condition,
+            TrialContext::Search {
+                core: core(3),
+                regime: Regime::R1,
+                offset: off(-16),
+            },
+            120,
+        );
+        next.regime = Regime::R1;
+        let scene = fx.scene(ts(1));
+        let words = next_trial_words(&scene, &next, None, None);
+        let mut pass = branch(Premise::Pass);
+        pass.next = Some(next);
+        fx.forecast.branches = vec![pass];
+        let compact = outcome_rows(&fx.scene(ts(1)))[0].compact.clone();
+        (words, compact)
+    }
+
+    #[test]
+    fn tight_next_keeps_trial_targets() {
+        for (load, condition, full, short) in [
+            (
+                Load::Single(core(3)),
+                Condition::Alone,
+                "on core 03 alone at -16",
+                "on core 03",
+            ),
+            (
+                Load::Single(core(3)),
+                Condition::Together,
+                "on core 03 at -16",
+                "on core 03",
+            ),
+            (many(&[3]), Condition::Together, "on 03", "on 03"),
+            (
+                many(&[0, 1, 2, 8, 9, 10, 15]),
+                Condition::Together,
+                "on 00-02 08-10 15",
+                "on 00-02 08-10 15",
+            ),
+        ] {
+            let (words, compact) = next_words(load, condition);
+            assert_eq!(words, format!("R1 light {full}"));
+            assert_eq!(compact, format!("→ R1 light {full}"));
+            assert_eq!(tight_next(&compact), format!("→ R1 {short}"));
+        }
+        for regime in [
+            Regime::R2,
+            Regime::R3,
+            Regime::R4,
+            Regime::R5,
+            Regime::R6,
+            Regime::R7,
+        ] {
+            let text = format!(
+                "→ {regime} {} on core 03 alone at -16",
+                crate::words::kind_words(regime)
+            );
+            assert_eq!(
+                tight_next(&text),
+                format!("→ {regime} on core 03"),
+                "{text}"
+            );
+        }
+    }
+
+    #[test]
+    fn tight_next_leaves_non_core_outcomes_unchanged() {
+        for text in [
+            "→ R2 heavy vector",
+            "→ R6 idle + bursts",
+            "→ R2 heavy vector on no cores",
+            "→ step 3",
+            "→ part 2",
+            "→ group 4",
+            "→ rerun",
+            "→ no next trial projected",
+        ] {
+            assert_eq!(tight_next(text), text);
+        }
+        let mut fx = Fx::new();
+        let next = plan(
+            Regime::R2,
+            many(&[0]),
+            Condition::Together,
+            cycle_ctx(1, 3),
+            120,
+        );
+        let mut pass = branch(Premise::Pass);
+        pass.next = Some(next);
+        fx.forecast.branches = vec![pass];
+        let compact = outcome_rows(&fx.scene(ts(1)))[0].compact.clone();
+        assert_eq!(compact, "→ step 3");
+        assert_eq!(tight_next(&compact), compact);
+    }
+
+    #[test]
+    fn what_comes_next_shortens_to_its_position() {
+        for (next, want) in [
+            ("next: part 2: full CCD 0 on 00-07, 5m", "part 2"),
+            ("next: part 4: core 09 at -26, 2m", "part 4: core 09"),
+            ("next: part 3: 00-02, 1m", "part 3: 00-02,"),
+            ("next: hunt 2 group 8: R7 all-core on 00-03", "group 8"),
+            ("next: step 3: R7 all-core with mprime", "step 3"),
+            ("next: rerun R7 all-core on 00-03 · 2m", "rerun"),
+            (
+                "next: rerun R6 idle + bursts on 00 01 with every core at 0 · 2m",
+                "rerun at CO 0",
+            ),
+            ("the same trial runs again", "the same trial runs again"),
+        ] {
+            assert_eq!(compact_next(next), want, "{next}");
+        }
+    }
+
+    #[test]
+    fn phrases_leave_out_minor_ones_then_the_middle_until_the_line_fits() {
+        let ps = |items: &[(&str, bool)]| {
+            items
+                .iter()
+                .map(|&(text, minor)| super::super::outcome::Phrase {
+                    text: text.to_owned(),
+                    minor,
+                })
+                .collect::<Vec<_>>()
+        };
+        let phrases = ps(&[
+            ("first", false),
+            ("minor note", true),
+            ("middle", false),
+            ("last", false),
+        ]);
+        assert_eq!(
+            fit_phrases(&phrases, 100),
+            "first → minor note → middle → last"
+        );
+        assert_eq!(fit_phrases(&phrases, 28), "first → ... → middle → last");
+        assert_eq!(fit_phrases(&phrases, 16), "first → ... → last");
+        assert_eq!(
+            fit_phrases(&phrases, 1),
+            "first → ... → last",
+            "the first and the last are never left out"
+        );
+    }
+
+    #[test]
+    fn a_forecast_says_only_what_it_knows() {
+        let mut fx = Fx::new();
+        fx.trial = Some(counted(
+            in_cycle(trial(Regime::R1, Condition::Together, &[0]), 1, 1, 1, 1),
+            0,
+            1,
+            1,
+        ));
+        let mut ranking = branch(Premise::Pass);
+        ranking.uncertainty = Some(Uncertainty::NeedsRanking);
+        let mut history = branch(Premise::Unnamed);
+        history.uncertainty = Some(Uncertainty::NeedsHistory);
+        let mut recurring = branch(Premise::Inconclusive);
+        recurring.uncertainty = Some(Uncertainty::RecurringPlan);
+        fx.forecast.branches = vec![ranking, history, recurring];
+        let rows = fx.rows();
+        for want in [
+            "read the core ranking before deciding",
+            "complete hunt history needed before deciding",
+            "the hunt would repeat this plan; nothing further is projected",
+        ] {
+            assert!(
+                rows.iter().any(|row| row.ends_with(want)),
+                "lost {want}: {rows:?}"
+            );
+        }
+        let nothing = branch(Premise::Named(core(0)));
+        fx.forecast.branches = vec![nothing];
+        assert!(
+            fx.rows()
+                .iter()
+                .any(|row| row.ends_with("no next trial projected")),
+            "{:?}",
+            fx.rows()
+        );
+        let mut stopped = branch(Premise::Unnamed);
+        stopped.decisions = vec![DecisionPayload::TunerDecision(backoff(0, -31, -30, None))];
+        stopped.uncertainty = Some(Uncertainty::Stopped { after: 1 });
+        fx.forecast.branches = vec![stopped];
+        assert_eq!(fx.rows(), ["if none is named | core 00 -31 → -30"]);
+    }
+
+    #[test]
+    fn a_tuner_hold_is_worded_as_a_hold() {
+        let fx = Fx::new();
+        let mut hold = backoff(4, -20, -20, None);
+        hold.decision = Decision::Hold;
+        let phrases = decision_phrases(
+            &fx.scene(ts(1)),
+            &[DecisionPayload::TunerDecision(hold.clone())],
+            false,
+        );
+        assert_eq!(fit_phrases(&phrases, 100), "core 04 holds at -20");
+        let phrases = decision_phrases(
+            &fx.scene(ts(1)),
+            &[
+                DecisionPayload::Failure(failure(Some(4))),
+                DecisionPayload::TunerDecision(hold),
+            ],
+            true,
+        );
+        assert!(
+            fit_phrases(&phrases, 200).ends_with("core 04 holds at -20"),
+            "a hold is no backoff: {phrases:?}"
+        );
+    }
+
+    #[test]
+    fn decisions_read_in_the_order_the_tuner_records_them() {
+        let fx = Fx::new();
+        let hunt_start = |hunt, cores: &[u8]| {
+            let mut start = crate::tests::kit::hunt_start(hunt, cores);
+            start.failing = crate::tests::kit::offsets(&[-10, -20]);
+            start
+        };
+        let decisions = vec![
+            DecisionPayload::HuntStart(hunt_start(2, &[0, 1])),
+            DecisionPayload::HuntGroup(carried(2, 1, togi_journal::Inference::Pass)),
+            DecisionPayload::HuntGroup(carried(2, 2, togi_journal::Inference::Pass)),
+            DecisionPayload::HuntGroup(carried(2, 3, togi_journal::Inference::Failure)),
+            DecisionPayload::HuntGroup(skipped(2, 4)),
+            DecisionPayload::HuntEnd(crate::tests::kit::hunt_end(
+                2,
+                HuntOutcome::Combination,
+                &[0, 1],
+            )),
+            DecisionPayload::Combination(crate::tests::kit::combination(
+                3,
+                2,
+                &[(0, -10), (1, -20)],
+                false,
+            )),
+            DecisionPayload::CheckingStep(CheckingStep {
+                cycle: nz(1),
+                step: nz(3),
+                profile: PerCore::default(),
+            }),
+            DecisionPayload::CheckingCycle(crate::tests::kit::cycle(2, CycleEvent::Start)),
+            DecisionPayload::DeadEnd(DeadEnd {
+                condition: DeadEndCondition::NoEvidence,
+                core: None,
+                detail: String::new(),
+                action: None,
+            }),
+        ];
+        let phrases = decision_phrases(&fx.scene(ts(1)), &decisions, false);
+        let texts: Vec<_> = phrases
+            .iter()
+            .map(|phrase| (phrase.text.as_str(), phrase.minor))
+            .collect();
+        assert_eq!(
+            texts,
+            [
+                ("hunt 2 starts over 00 01", true),
+                ("groups 1-2 answered by existing evidence", true),
+                ("group 3 failed on existing evidence", false),
+                ("group 4 skipped", false),
+                ("hunt 2 keeps 00 01 together", false),
+                ("C3 over 00 01", false),
+                ("step 2 is done", false),
+                ("cycle 2 starts", true),
+                ("tuning stops: no evidence", false),
+            ]
+        );
+    }
+
+    fn carried(
+        hunt: u32,
+        group: u32,
+        inferred: togi_journal::Inference,
+    ) -> togi_journal::HuntGroup {
+        let mut g = crate::tests::kit::hunt_group(hunt, group, &[0, 1]);
+        g.inferred = Some(inferred);
+        g
+    }
+
+    fn skipped(hunt: u32, group: u32) -> togi_journal::HuntGroup {
+        let mut g = crate::tests::kit::hunt_group(hunt, group, &[0, 1]);
+        g.skipped = true;
+        g
+    }
+
+    #[test]
+    fn a_known_failure_names_the_skipped_trial_and_whether_it_was_carried() {
+        let mut fx = Fx::new().with_cores(&[(0, 0), (1, 0)]);
+        let mut known = crate::tests::kit::failure(Signal::Crash, None);
+        known.regime = Some(Regime::R7);
+        known.known_failure = Some(seq(9));
+        let decisions = vec![
+            DecisionPayload::Failure(known.clone()),
+            DecisionPayload::HuntStart(crate::tests::kit::hunt_start(1, &[0, 1])),
+        ];
+        let scene = fx.scene(ts(1));
+        assert_eq!(
+            fit_phrases(&decision_phrases(&scene, &decisions, false), 400)
+                .split(" → ")
+                .next(),
+            Some("R7 all-core on 00-02 at these offsets already crashed")
+        );
+        fx.carried.insert(seq(9));
+        known.signal = Signal::ComputationError;
+        let decisions = vec![DecisionPayload::Failure(known)];
+        let text = fit_phrases(&decision_phrases(&fx.scene(ts(1)), &decisions, false), 400);
+        assert_eq!(
+            text,
+            "R7 all-core at these offsets already failed in a carried trial"
+        );
+        let mut ordinary = trial(Regime::R7, Condition::Together, &[0, 1]);
+        ordinary.cycle = Some(CyclePlace {
+            cycle: 1,
+            step: Some(1),
+            part: Some(1),
+            parts: 2,
+        });
+        fx.trial = Some(ordinary);
+        fx.cycle = Some((
+            cycle_plan(
+                1,
+                vec![step(
+                    Regime::R7,
+                    vec![part(&[0, 1, 2], Some(0), true, true)],
+                )],
+                0,
+            ),
+            vec![Vec::new()],
+            None,
+        ));
+        let mut again = crate::tests::kit::failure(Signal::ComputationError, None);
+        again.regime = Some(Regime::R7);
+        again.known_failure = Some(seq(9));
+        let decisions = vec![
+            DecisionPayload::Failure(again),
+            DecisionPayload::HuntStart(crate::tests::kit::hunt_start(1, &[0, 1])),
+        ];
+        let text = fit_phrases(&decision_phrases(&fx.scene(ts(1)), &decisions, false), 400);
+        assert!(
+            text.starts_with("full CCD 0 at these offsets already failed in a carried trial"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn an_idle_known_failure_is_named_idle_not_by_an_empty_regime() {
+        let mut fx = Fx::new().with_cores(&[(0, 0), (1, 0)]);
+        let mut known = crate::tests::kit::failure(Signal::ComputationError, None);
+        known.known_failure = Some(seq(9));
+        let decisions = vec![DecisionPayload::Failure(known)];
+        let words =
+            |fx: &Fx| fit_phrases(&decision_phrases(&fx.scene(ts(1)), &decisions, false), 400);
+        assert_eq!(words(&fx), "idle at these offsets already failed");
+        fx.carried.insert(seq(9));
+        assert_eq!(
+            words(&fx),
+            "idle at these offsets already failed in a carried trial"
+        );
+    }
+
+    #[test]
+    fn a_core_leaving_its_search_records_its_solo_limit_and_a_restart_is_unnamed_only() {
+        use crate::tests::kit::{Start, transition};
+        use togi_journal::CorePhase;
+        let fx = Fx::new();
+        let phrases = |decision: Start, named: bool| {
+            fit_phrases(
+                &decision_phrases(
+                    &fx.scene(ts(1)),
+                    &[DecisionPayload::CorePhase(transition(1, decision))],
+                    named,
+                ),
+                400,
+            )
+        };
+        let exit = Start {
+            from: Some(CorePhase::Search),
+            to: CorePhase::AtLimit,
+            offset: -27,
+            pass: Some(-28),
+            fail: None,
+        };
+        assert_eq!(phrases(exit, false), "core 01 solo limit -28");
+        assert_eq!(phrases(exit, true), "core 01 solo limit -28");
+        let no_pass = Start { pass: None, ..exit };
+        assert_eq!(phrases(no_pass, false), "");
+        let restart = Start {
+            from: Some(CorePhase::AtLimit),
+            to: CorePhase::Search,
+            offset: -27,
+            pass: None,
+            fail: None,
+        };
+        assert_eq!(phrases(restart, false), "core 01 starts its search over");
+        assert_eq!(phrases(restart, true), "");
+    }
+
+    #[test]
+    fn a_passing_part_names_the_next_part_of_a_multi_part_step() {
+        let mut fx = Fx::new().with_cores(&[(0, 0), (1, 0), (2, 1), (3, 1)]);
+        let steps = vec![step(
+            Regime::R7,
+            vec![
+                part(&[0, 1], Some(0), true, true),
+                part(&[2, 3], Some(1), true, false),
+            ],
+        )];
+        fx.cycle = Some((cycle_plan(1, steps, 0), vec![Vec::new()], None));
+        fx.trial = Some(counted(
+            in_cycle(trial(Regime::R7, Condition::Together, &[0, 1]), 1, 1, 1, 2),
+            0,
+            1,
+            1,
+        ));
+        let mut pass = branch(Premise::Pass);
+        pass.passes = 1;
+        pass.next = Some(plan(
+            Regime::R7,
+            many(&[2, 3]),
+            Condition::Together,
+            cycle_ctx(1, 1),
+            300,
+        ));
+        fx.forecast.branches = vec![pass];
+        assert_eq!(
+            fx.rows(),
+            ["if it passes | part 1 is done → next: part 2: full CCD 1 on 02 03, 5m"]
+        );
+        assert_eq!(fx.row_set()[0].compact, "→ part 2");
+    }
+
+    #[test]
+    fn a_rotating_workload_is_the_same_requirement_but_another_frozen_one_is_not() {
+        let mut fx = Fx::new().with_cores(&[(0, 0), (3, 1)]);
+        fx.trial = Some(alone(Regime::R1, 3, -16));
+        let search = TrialContext::Search {
+            core: core(3),
+            regime: Regime::R1,
+            offset: off(-16),
+        };
+        let mut next = plan(
+            Regime::R1,
+            Load::Single(core(3)),
+            Condition::Alone,
+            search,
+            120,
+        );
+        let mut unnamed = branch(Premise::Unnamed);
+        next.workload = WorkloadChoice::Rotate;
+        unnamed.next = Some(next.clone());
+        fx.forecast.branches = vec![unnamed.clone()];
+        assert_eq!(fx.rows(), ["if none is named | next: this load again"]);
+        next.workload = WorkloadChoice::Frozen(workloads(Regime::R2)[0].id());
+        unnamed.next = Some(next);
+        fx.forecast.branches = vec![unnamed];
+        let rows = fx.rows();
+        assert!(
+            rows[0].starts_with("if none is named | next: ")
+                && !rows[0].contains("this load again"),
+            "{rows:?}"
+        );
+    }
+
+    #[test]
+    fn a_combination_outcome_is_named_by_its_decisions() {
+        let (mut fx, next) = r7_fx();
+        let mut pass = branch(Premise::Pass);
+        pass.decisions = vec![
+            DecisionPayload::HuntStart(HuntStart {
+                ..crate::tests::kit::hunt_start(4, &[0, 1])
+            }),
+            DecisionPayload::Combination(Combination {
+                ..crate::tests::kit::combination(2, 4, &[(0, -10), (1, -20)], false)
+            }),
+        ];
+        pass.next = Some(next);
+        fx.forecast.branches = vec![pass];
+        let rows = fx.row_set();
+        assert_eq!(rows[0].compact, "→ hunt 4");
+        let mut hunt_end = branch(Premise::Unnamed);
+        hunt_end.decisions = vec![DecisionPayload::HuntEnd(HuntEnd {
+            ..crate::tests::kit::hunt_end(4, HuntOutcome::Direct, &[1])
+        })];
+        fx.forecast.branches = vec![hunt_end];
+        assert_eq!(fx.row_set()[0].compact, "→ hunt ends");
+    }
+
+    #[test]
+    fn rows_are_ordered_by_premise_and_a_hunt_puts_the_unnamed_first() {
+        let (mut fx, next) = r7_fx();
+        let build = |premise| {
+            let mut b = branch(premise);
+            b.next = Some(next.clone());
+            b
+        };
+        let mut unnamed = build(Premise::Unnamed);
+        unnamed.decisions = vec![DecisionPayload::Failure(failure(None))];
+        let mut named = build(Premise::Named(core(0)));
+        named.decisions = vec![
+            DecisionPayload::Failure(failure(Some(0))),
+            DecisionPayload::TunerDecision(backoff(0, -30, -29, None)),
+        ];
+        fx.forecast.branches = vec![unnamed.clone(), named.clone()];
+        let labels: Vec<_> = fx.row_set().iter().map(|row| row.label.clone()).collect();
+        assert_eq!(labels, ["if a core is named", "if none is named"]);
+        let mut hunting = hunting_fx();
+        hunting.trial = fx.trial.clone();
+        hunting.forecast.branches = vec![unnamed, named];
+        let labels: Vec<_> = hunting
+            .row_set()
+            .iter()
+            .map(|row| row.label.clone())
+            .collect();
+        assert_eq!(labels, ["if none is named", "if a core is named"]);
+    }
+
+    fn hunting_fx() -> Fx {
+        let mut fx = Fx::new().with_cores(&[(0, 0), (1, 0), (2, 0), (3, 0)]);
+        fx.hunt = Some((
+            hunt_plan(),
+            HuntFacts {
+                started: None,
+                cause: cause(),
+                parked_zero: false,
+                group_signals: Vec::new(),
+            },
+        ));
+        fx
+    }
+
+    #[test]
+    fn outcome_rows_draw_with_their_label_in_twenty_one_cells() {
+        let (mut fx, next) = r7_fx();
+        let mut pass = branch(Premise::Pass);
+        pass.next = Some(next);
+        fx.forecast.branches = vec![pass];
+        let wide = text(&outcome_lines(&fx.scene(ts(1)), 100, false));
+        assert_eq!(wide.len(), 1);
+        assert!(
+            wide[0].starts_with("if it passes         next: trial 2 of 4"),
+            "{wide:?}"
+        );
+        let full = Scene::new(fx.snap(), ts(1), &UTC, Colours::Full);
+        let lines = outcome_lines(&full, 100, false);
+        assert_eq!(lines[0].spans[0].style, Paint::Good.style(Colours::Full));
+        assert_eq!(lines[0].spans[1].style, Paint::Text.style(Colours::Full));
+        let narrow = outcome_lines(&fx.scene(ts(1)), 30, false);
+        assert!(crate::frames::fit::line_width(&narrow[0]) <= 30);
+        let compact = text(&outcome_lines(&fx.scene(ts(1)), 100, true));
+        assert_eq!(compact, ["pass → trial 2 of 4"]);
+    }
+
+    #[test]
+    fn no_outcome_lines_when_nothing_runs() {
+        let (mut fx, next) = r7_fx();
+        let mut pass = branch(Premise::Pass);
+        pass.next = Some(next);
+        fx.forecast.branches = vec![pass];
+        fx.stopped = Some(StopView {
+            at: ts(1),
+            reason: ShutdownReason::Signal,
+            saved: false,
+        });
+        assert!(outcome_lines(&fx.scene(ts(5)), 100, false).is_empty());
+        fx.stopped = None;
+        fx.trial.as_mut().expect("a trial").crashed = true;
+        assert!(outcome_lines(&fx.scene(ts(5)), 100, true).is_empty());
+        fx.trial = None;
+        assert!(outcome_lines(&fx.scene(ts(5)), 100, false).is_empty());
+    }
+}
+
+mod the_simulated_sessions {
+    use togi_watchtest::Scenario;
+
+    use super::*;
+
+    fn scene_of(model: &Model, events_end: Timestamp) -> Scene<'_> {
+        Scene::new(model.snapshot(), events_end, &UTC, Colours::None)
+    }
+
+    fn model_of(scenario: Scenario) -> (Model, Timestamp) {
+        let events = scenario.events().expect("the scenario's journal");
+        let at = events.last().expect("an event").time;
+        (crate::model::project(&events), at)
+    }
+
+    #[test]
+    fn a_crashed_trial_and_its_recovery_are_told_apart() {
+        let (model, at) = model_of(Scenario::Crashed);
+        let scene = scene_of(&model, at);
+        assert_eq!(story(&scene).label, "CRASHED");
+        assert_eq!(resting_band(&scene).title, "CRASHED, NOT YET RECOVERED");
+        let (model, at) = model_of(Scenario::Recovering);
+        let scene = scene_of(&model, at);
+        let band = resting_band(&scene);
+        assert_eq!(band.title, "RECOVERED FROM A CRASH");
+        assert!(band.lines[0].starts_with("crash in "), "{:?}", band.lines);
+        assert!(band.lines.last().expect("a line").starts_with("next:"));
+    }
+
+    #[test]
+    fn between_trials_the_last_outcome_and_the_next_trial_are_named() {
+        let (model, at) = model_of(Scenario::Between);
+        let scene = scene_of(&model, at);
+        let band = resting_band(&scene);
+        assert_eq!(band.title, "BETWEEN TRIALS");
+        assert!(
+            band.lines[0].starts_with("last: PASS after "),
+            "{:?}",
+            band.lines
+        );
+        assert!(
+            band.lines[1].starts_with("next: ") || band.lines[1] == "next: deciding",
+            "{:?}",
+            band.lines
+        );
+        assert!(band.lines.iter().all(|line| !line.contains("left")));
+        assert_eq!(last_lines(&scene).len(), 1);
+        assert!(outcome_lines(&scene, 100, false).is_empty());
+    }
+
+    #[test]
+    fn a_stopped_session_labels_saved_not_applied_offsets() {
+        let (model, at) = model_of(Scenario::Stopped);
+        let scene = scene_of(&model, at);
+        let band = resting_band(&scene);
+        assert_eq!(band.title, "STOPPED");
+        assert_eq!(story(&scene).label, "STOPPED");
+        assert!(model.snapshot().stopped.is_some_and(|stop| stop.saved));
+        assert!(
+            band.lines
+                .iter()
+                .any(|line| line == "Rows show the saved profile, not applied now.")
+        );
+    }
+
+    #[test]
+    fn a_dead_end_session_keeps_its_recorded_detail() {
+        let (model, at) = model_of(Scenario::Deadend);
+        let scene = scene_of(&model, at);
+        let detail = model
+            .snapshot()
+            .dead_end
+            .expect("a dead end")
+            .detail
+            .clone();
+        let band = resting_band(&scene);
+        assert_eq!(band.title, "DEAD END");
+        assert!(band.lines[0].ends_with(&detail), "{:?}", band.lines);
+        assert_eq!(story(&scene).label, "DEAD END");
+    }
+
+    #[test]
+    fn a_running_checking_trial_has_a_story_and_outcome_rows_the_forecast_backs() {
+        let (model, at) = model_of(Scenario::Checking);
+        let scene = scene_of(&model, at + jiff::SignedDuration::from_secs(5));
+        let said = story(&scene);
+        assert!(
+            said.label.starts_with("CYCLE ") || said.label.starts_with("RERUN"),
+            "{}",
+            said.label
+        );
+        let snapshot = model.snapshot();
+        let rows = outcome_rows(&scene);
+        assert!(!rows.is_empty() && rows.len() <= super::super::outcome::ROW_LIMIT);
+        assert!(rows.len() <= snapshot.forecast.branches.len());
+        let trial = snapshot.trial.expect("a running trial");
+        assert!(!plain(&operation(&scene, trial)).is_empty());
+        assert!(trial_where(&scene, trial).starts_with("on "));
+        for width in [80, 120] {
+            for compact in [false, true] {
+                for line in outcome_lines(&scene, width, compact) {
+                    let cells = crate::frames::fit::line_width(&line);
+                    assert!(cells <= width, "{cells} > {width}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_hunt_session_names_its_cause_and_its_split() {
+        let (model, at) = model_of(Scenario::Hunt);
+        let scene = scene_of(&model, at + jiff::SignedDuration::from_secs(5));
+        let said = story(&scene);
+        assert!(said.label.starts_with("HUNT "), "{}", said.label);
+        assert_eq!(said.paint, Paint::Hunt);
+        assert!(
+            said.lines.len() == 2 && said.lines[1].contains("I rerun that load"),
+            "{:?}",
+            said.lines
+        );
+        let trial = model.snapshot().trial.expect("a hunt trial");
+        assert!(plain(&operation(&scene, trial)).starts_with("HUNT "));
+    }
+
+    #[test]
+    fn an_idle_session_holds_still_and_says_when_it_ends() {
+        let (model, at) = model_of(Scenario::Idle);
+        let first = scene_of(&model, at + jiff::SignedDuration::from_secs(1));
+        assert!(first.hold.is_some());
+        let said = story(&first);
+        assert!(
+            said.lines[1].starts_with("This screen holds still until "),
+            "{:?}",
+            said.lines
+        );
+        for later in [600, 7200] {
+            let scene = scene_of(&model, at + jiff::SignedDuration::from_secs(later));
+            assert_eq!(story(&scene), said);
+        }
+    }
+
+    #[test]
+    fn a_session_between_phases_names_a_solo_search_in_its_labels() {
+        let (model, at) = model_of(Scenario::Search);
+        let scene = scene_of(&model, at + jiff::SignedDuration::from_secs(5));
+        let said = story(&scene);
+        assert_eq!(said.label, "SOLO LIMITS");
+        assert!(
+            said.lines[0].contains("solo limit") || said.lines[0].contains("candidate"),
+            "{:?}",
+            said.lines
+        );
+    }
+}

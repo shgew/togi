@@ -1,0 +1,36 @@
+---
+source: crates/togi-watch/src/frames/snapshots.rs
+expression: body
+---
+│ togi   21:51:32   session 69h51m   60 failures · 15 crashes   last observed failure 21:50, a moment ago
+│ ■ SOLO ─ ►  HUNT 4   part 1 of 2 ─ ■ P1 ─ ■ P2 ─ CLEAN 2 ─ ○ CYCLE 4 paused at 4/18
+│
+│ ▌  Crashed early in R2 heavy vector on 00; no core named. Rerunning it with 00 parked.
+│
+│  R2   heavy vector load  on 00 · 01-15 at failing offsets, 00 parked at 0                        HUNT 4 · PART 1 OF 2
+│ ██████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  1:20 left  3/5 ■ ■ ■ ► ·
+│
+│ 5/5 pass → part 2: 01-15   none named → group 2   core named → rerun at CO 0
+│
+│ CCD 0 one loaded 0  2 counts/cell       -50 fail  back      CCD 1 judged     0  2 counts/cell       -50 fail
+│ ► 00   0 PARKED   ···········█··              -24  -23        08  -5 MEMBER   ▄▄▄█                         -7
+│   01 -15 MEMBER   ▄▄▄▄▄▄▄█·                   -16             09 -33 MEMBER   ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█·          -34
+│   02 -24 MEMBER   ▄▄▄▄▄▄▄▄▄▄▄▄█               -25             10 -13 MEMBER   ▄▄▄▄▄▄█··                   -14
+│   03 -24 MEMBER   ▄▄▄▄▄▄▄▄▄▄▄▄█               -25             11  -7 MEMBER   ▄▄▄█·                        -8
+│   04 -13 MEMBER   ▄▄▄▄▄▄█·                    -14             12 -14 MEMBER   ▄▄▄▄▄▄▄█·                   -15
+│   05  -8 MEMBER   ▄▄▄▄█                        -9             13 -35 MEMBER   ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█·         -36
+│   06 -37 MEMBER   ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█        -39             14 -12 MEMBER   ▄▄▄▄▄▄█·                    -13
+│   07 -29 MEMBER   ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█            -31             15 -13 MEMBER   ▄▄▄▄▄▄▄█                    -15
+│
+│ BIOS PROFILE ─────────────────── UNCONFIRMED since #10993   WHAT HAPPENED ─────────────────────────────── l: last 400
+│ slot      0    1    2    3    4    5    6    7
+│ CCD 0   -22* -14* -23* -23* -12*  -7* -36* -28*             21:50  hunt     #4 started · part 1: 01-15 at failing...
+│ CCD 1    -4* -32* -12*  -6* -13* -34* -11* -12*             21:50  crash    R2 heavy vector on core 00 at -23...
+│ * not confirmed: a passed cycle confirms it, unless held    21:49  hold     core 03 holds at -24
+│                                                             21:49  fail     core 03 fails at -24
+│ HUNT 4 ────────────────────────────────────── 21:50 · 40s   21:49  fail     R2 heavy vector on core 00 at -23...
+│ cause      crash in R2 heavy vector on 00, no core named    21:49  crash    with the offsets applied, rebooted
+│ ► part 1/2 01-15 at failing offsets  trial 4/5              21:47  hunt     not needed, these offsets already...
+│ +4 more                                                     +1616 more
+│
+│  ?  help    l  log    esc  back    q  close view
