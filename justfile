@@ -88,7 +88,7 @@ lint *args: _dev-shell
 fmt:
     nix fmt
 
-# Run every non-VM flake check but cargo-deny's advisory audit, which only the rust-deny flake check runs, cheapest first, using warm dev-shell Go and Rust caches
+# Run every non-VM flake check but the rust-sim-suite-* shards, which only CI runs (`just sim-suite-rs` or `just check-one rust-sim-suite-0` reproduces them), and cargo-deny's advisory audit, which only the rust-deny flake check runs, cheapest first, using warm dev-shell Go and Rust caches
 [group('quality')]
 gate: _dev-shell
     #!/usr/bin/env bash
@@ -111,12 +111,12 @@ gate: _dev-shell
         go test -c -tags hardware -o /dev/null ./internal/trial
     fi
 
-# Run every flake check this host builds: package, race, lint, fmt, changes, module, the rust-* checks (clippy, nextest, doc, fmt, deny, shear) and, on Linux, trial-scope-tests and the VM tests
+# Run every flake check this host builds: package, race, lint, fmt, changes, module, the rust-* checks (clippy, nextest, doc, fmt, deny, shear) and, on Linux, trial-scope-tests, the rust-sim-suite-* shards and the VM tests
 [group('nix')]
 check *args:
     nix flake check "$@"
 
-# Build named flake checks: package, race, lint, fmt, changes, module, rust-clippy, rust-nextest, rust-doc, rust-fmt, rust-deny, rust-shear or, on Linux, trial-scope-tests, vm and vm-restart-limit (`just check-one race`)
+# Build named flake checks: package, race, lint, fmt, changes, module, rust-clippy, rust-nextest, rust-doc, rust-fmt, rust-deny, rust-shear or, on Linux, trial-scope-tests, rust-sim-suite-<i>, vm and vm-restart-limit (`just check-one race`)
 [group('nix')]
 check-one +names:
     nix build --no-link $(printf '.#checks.{{ system }}.%s ' "$@")
