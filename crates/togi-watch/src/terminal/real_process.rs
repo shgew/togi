@@ -29,7 +29,7 @@ use togi_machine::{BootId, CcdId, CoreId, CoreInfo, CpuId};
 use togi_watchtest::{Scenario, install};
 use tokio::signal::unix::{SignalKind, signal};
 
-use super::{Error, Stop, run, run_after_with, run_with};
+use super::{Error, Stop, run, run_after, run_after_with, run_with};
 use crate::screen::{Drawn, Hold, Journal, Screen, View};
 
 /// The full name of the helper test, which is how the test binary is told to run only it.
