@@ -71,7 +71,7 @@ pub type Until = Box<dyn FnMut(&Event) -> bool>;
 /// Runs a simulated session through `stop` or until `until` reports true for an appended event, and returns its
 /// journal at the current ruleset. Its `config.loaded` names [`build`], so a release's version bump leaves the
 /// journal unchanged. An `until` stop is a signal: the journal ends with the shutdown it records. Without `until` no
-/// observer runs, because simrun's observer reads the in-memory journal back after every append.
+/// observer runs.
 pub fn simulate(
     machine: Simulator,
     config: Config,
