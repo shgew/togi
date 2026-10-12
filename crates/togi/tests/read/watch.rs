@@ -7,6 +7,7 @@ use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use rustix::event::{PollFd, PollFlags, Timespec, poll};
+use rustix::io::{FdFlags, fcntl_setfd};
 use rustix::process::{Pid, Signal, kill_process};
 use rustix::pty::{OpenptFlags, grantpt, openpt, ptsname, unlockpt};
 use rustix::termios::{LocalModes, Winsize, tcgetattr, tcsetwinsize};
@@ -169,7 +170,8 @@ fn sighup_ends_a_live_watch_with_the_terminal_restored() {
 
 fn a_signal_ends_a_live_watch_with_the_terminal_restored(signal: Signal) {
     let dir = session(Scenario::Checking);
-    let master = openpt(OpenptFlags::RDWR | OpenptFlags::NOCTTY | OpenptFlags::CLOEXEC).unwrap();
+    let master = openpt(OpenptFlags::RDWR | OpenptFlags::NOCTTY).unwrap();
+    fcntl_setfd(&master, FdFlags::CLOEXEC).unwrap();
     grantpt(&master).unwrap();
     unlockpt(&master).unwrap();
     let slave_path = PathBuf::from(OsString::from_vec(
