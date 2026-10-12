@@ -371,11 +371,15 @@ impl StateDir {
         let Some((line, complete)) = first_line(self.fs(), &path)? else {
             return Ok(None);
         };
+        if !complete {
+            return match header::classify(&line) {
+                Some(_) => Ok(None),
+                None => Err(DirError::ForeignJournal { path }),
+            };
+        }
         match peek_session(&line, "session.start") {
-            Some(_) if !complete => Ok(None),
             Some(Ok(session)) => Ok(Some(session)),
             Some(Err(source)) => Err(DirError::BadSession { path, source }),
-            None if !complete && !header::foreign_unterminated(&line) => Ok(None),
             None => Err(DirError::ForeignJournal { path }),
         }
     }
@@ -475,16 +479,10 @@ pub fn recorded_build_in(fs: &dyn Fs, dir: &Path) -> Result<Option<Build>, DirEr
     let Some((line, complete)) = first_line(fs, &path)? else {
         return Ok(None);
     };
-    if !complete {
-        return if header::foreign_unterminated(&line) {
-            Err(DirError::ForeignJournal { path })
-        } else {
-            Ok(None)
-        };
+    match header::classify(&line) {
+        Some(build) => Ok(complete.then_some(build)),
+        None => Err(DirError::ForeignJournal { path }),
     }
-    header::classify(&line)
-        .map(Some)
-        .ok_or(DirError::ForeignJournal { path })
 }
 
 fn peek_session(

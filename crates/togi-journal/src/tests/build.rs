@@ -447,14 +447,15 @@ mod recorded {
     }
 
     #[test]
-    fn a_first_line_cut_short_is_not_another_builds_journal() {
+    fn a_first_line_cut_short_is_refused_like_a_foreign_one_and_the_message_pins_both_readings() {
         let fs = MemFs::new();
         fs.put("/state/events.jsonl", "{\"seq\":1,\"kind\":\"sess");
-        assert!(
-            recorded_build_in(&fs, Path::new("/state"))
-                .unwrap()
-                .is_none()
-        );
+        let truncated = recorded_build_in(&fs, Path::new("/state")).unwrap_err();
+        fs.put("/state/events.jsonl", go_first_line_without_newline());
+        let go = recorded_build_in(&fs, Path::new("/state")).unwrap_err();
+        let expected = "/state/events.jsonl: first line is not a complete header of this build; either another build's journal or a header torn by a crash; see docs/howto.md#go-to-rust-cutover";
+        assert_eq!(truncated.to_string(), expected);
+        assert_eq!(go.to_string(), expected);
     }
 }
 

@@ -49,6 +49,14 @@ fn anything_that_is_not_a_session_start_with_a_session_and_a_build_is_not_a_head
             START.replace("\"session\":\"20231114T221320Z\",", ""),
         ),
         (
+            "a session no Rust header could carry",
+            START.replace("20231114T221320Z", "not-a-session"),
+        ),
+        (
+            "a session that is not a string",
+            START.replace("\"20231114T221320Z\"", "7"),
+        ),
+        (
             "build is not an object",
             START.replace(
                 "\"build\":{\"version\":\"1\",\"ruleset\":3,\"schema\":1,\"evidence\":2}",

@@ -270,7 +270,14 @@ fn archiving_nothing_archives_nothing() {
     let mut dir = simulated(&fs);
     assert_eq!(dir.archive_unreadable(ArchiveKind::ResetAll).unwrap(), None);
     fs.put("/state/events.jsonl", "{\"seq\":1,\"ti");
-    assert_eq!(dir.archive_unreadable(ArchiveKind::ResetAll).unwrap(), None);
+    assert!(matches!(
+        dir.archive_unreadable(ArchiveKind::ResetAll),
+        Err(crate::DirError::ForeignJournal { .. })
+    ));
+    assert_eq!(
+        fs.contents("/state/events.jsonl").unwrap(),
+        b"{\"seq\":1,\"ti"
+    );
 }
 
 #[test]

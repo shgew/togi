@@ -32,7 +32,7 @@ pub enum ReadError {
         source: UnknownKind,
     },
     #[error(
-        "holds another build's journal; not a Rust journal header; see docs/howto.md#go-to-rust-cutover"
+        "first line is not a complete header of this build; either another build's journal or a header torn by a crash; see docs/howto.md#go-to-rust-cutover"
     )]
     Foreign,
     #[error("line 1: the first event is {}, not session.start", found.as_str())]
@@ -151,7 +151,7 @@ impl<R: BufRead> Iterator for EventReader<R> {
         }
         if self.line.last() != Some(&b'\n') {
             self.done = true;
-            if self.lines == 0 && header::foreign_unterminated(&self.line) {
+            if self.lines == 0 && header::classify(&self.line).is_none() {
                 return Some(Err(ReadError::Foreign));
             }
             self.torn = Some(std::mem::take(&mut self.line));
