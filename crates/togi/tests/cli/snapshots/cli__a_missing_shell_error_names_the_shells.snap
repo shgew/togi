@@ -1,0 +1,10 @@
+---
+source: crates/togi/tests/cli/main.rs
+expression: stderr(&ran)
+---
+error: the following required arguments were not provided:
+  <SHELL>
+
+Usage: togi completion <SHELL>
+
+For more information, try '--help'.
