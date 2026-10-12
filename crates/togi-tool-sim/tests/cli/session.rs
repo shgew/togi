@@ -143,10 +143,10 @@ fn build() -> Build {
     Build {
         version: togi_version::version().to_owned(),
         rev: (!rev.is_empty()).then(|| rev.to_owned()),
-        ruleset: 1,
+        ruleset: togi_tuner::RULESET,
         schema: SCHEMA,
         fixes: 0,
-        evidence: 1,
+        evidence: togi_tuner::EVIDENCE_EPOCH,
     }
 }
 
