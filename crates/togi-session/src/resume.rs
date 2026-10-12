@@ -1,7 +1,7 @@
 //! The state a run hands the next run so that it need not fold the journal again.
 
 use togi_defect::Entry;
-use togi_journal::{Event, Journal, Seq, SessionId, StateError};
+use togi_journal::{Event, Journal, Seq, SessionId, StateDir, StateError};
 
 use crate::appender::Folds;
 use crate::error::FoldError;
@@ -63,21 +63,26 @@ impl ResumeCapsule {
         }
     }
 
-    /// The folds, when this capsule was made from exactly `journal` and judged by the same `defects`.
-    pub(crate) fn adopt(self, journal: &Journal, defects: &'static [Entry]) -> Option<Folds> {
-        (self.session == journal.session()
+    /// Whether this capsule was made from exactly `journal` and judged by the same `defects`.
+    #[must_use]
+    pub fn covers(&self, journal: &Journal, defects: &'static [Entry]) -> bool {
+        self.session == journal.session()
             && self.last == last_seq(journal.events())
-            && std::ptr::eq(self.defects, defects))
-        .then_some(self.folds)
+            && std::ptr::eq(self.defects, defects)
+    }
+
+    /// The folds, when [`ResumeCapsule::covers`] the journal.
+    pub(crate) fn adopt(self, journal: &Journal, defects: &'static [Entry]) -> Option<Folds> {
+        self.covers(journal, defects).then_some(self.folds)
     }
 
     /// Writes the state document a live run publishes after its last append, for a run that ended without publishing.
     ///
     /// # Errors
     ///
-    /// The journal's state file write error.
-    pub fn publish(&self, journal: &mut Journal) -> Result<(), StateError> {
-        journal.write_state(&StateDocumentRef::of(&self.folds))
+    /// The state file write error.
+    pub fn publish(&self, dir: &mut StateDir) -> Result<(), StateError> {
+        dir.write_state(&StateDocumentRef::of(&self.folds))
     }
 
     /// Checks every part against the fold of `events` from nothing, naming the first part that differs.
