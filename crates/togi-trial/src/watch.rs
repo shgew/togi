@@ -1119,4 +1119,20 @@ mod tests {
         assert_eq!(lines.len(), 60_000 - seen + 1);
         assert_eq!(lines.last().map(String::as_str), Some("tail"));
     }
+
+    #[tokio::test]
+    async fn a_fifo_replacing_a_file_with_unread_backlog_loses_the_backlog() {
+        let mut f = fixture();
+        seed(&mut f).await;
+        fs::remove_file(f.path()).unwrap();
+        rustix::fs::mknodat(
+            rustix::fs::CWD,
+            f.path(),
+            FileType::Fifo,
+            Mode::from_raw_mode(0o600),
+            0,
+        )
+        .unwrap();
+        assert!(matches!(f.poll().await.0, Poll::Failed(WatchError::Lost)));
+    }
 }
