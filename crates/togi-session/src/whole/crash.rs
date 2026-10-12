@@ -132,7 +132,7 @@ fn interrupted(bench: &Bench, after: usize, fate: Fate) -> Ended {
         let end = RunEnd { ended, base };
         if armed && end.ended.capsule.is_none() {
             drop(end);
-            assert_eq!(durable(bench).len(), after);
+            assert_eq!(durable_lines(bench), after);
             fired = true;
             if matches!(fate, Fate::Crashed) {
                 bench.sim.crash();
@@ -151,6 +151,18 @@ fn interrupted(bench: &Bench, after: usize, fate: Fate) -> Ended {
         bench.sim.reboot();
     }
     panic!("no stop after {BOOTS} boots");
+}
+
+/// The complete lines of the journal on disk, counted without decoding them.
+fn durable_lines(bench: &Bench) -> usize {
+    let bytes = bench
+        .mem
+        .contents("/state/events.jsonl")
+        .unwrap_or_default();
+    bytes
+        .split_inclusive(|&byte| byte == b'\n')
+        .filter(|line| line.ends_with(b"\n"))
+        .count()
 }
 
 fn durable(bench: &Bench) -> Vec<Event> {
@@ -197,26 +209,15 @@ struct Summary {
     dead_end: bool,
 }
 
-fn summary(events: &[Event]) -> Summary {
-    let facts = togi_journal::State::replay(events).unwrap();
-    let projection = togi_tuner::replay(events).unwrap().project();
-    Summary {
-        cores: projection.cores,
-        clean_cycles: projection.clean_cycles,
-        cycle: projection.checking.cycle,
-        dead_end: facts.dead_end.is_some(),
-    }
-}
-
 /// The journal folds, nothing it opened is left open, the machine holds the safe target the restoration bounds, and
-/// no trial ran alone beside a nonzero offset.
-fn assert_settled(bench: &Bench, ended: &Ended) {
+/// no trial ran alone beside a nonzero offset. Returns what the folded journal leaves.
+fn assert_settled(bench: &Bench, ended: &Ended) -> Summary {
     let events = ended.journal.events();
     let facts = togi_journal::State::replay(events).unwrap();
     assert!(facts.open.is_empty(), "{:?}", facts.open);
     let tuner = togi_tuner::replay(events).unwrap();
-    let held: PerCore<TargetOffset> = tuner
-        .project()
+    let projection = tuner.project();
+    let held: PerCore<TargetOffset> = projection
         .cores
         .iter()
         .map(|view| (view.core, view.offset))
@@ -245,6 +246,12 @@ fn assert_settled(bench: &Bench, ended: &Ended) {
         "{:?}",
         bench.sim.violations()
     );
+    Summary {
+        cores: projection.cores,
+        clean_cycles: projection.clean_cycles,
+        cycle: projection.checking.cycle,
+        dead_end: facts.dead_end.is_some(),
+    }
 }
 
 fn reference(bench: &Bench) -> Ended {
@@ -260,9 +267,11 @@ fn all_points(events: &[Event]) -> Vec<usize> {
 
 #[test]
 fn killing_the_run_at_every_durable_event_resumes_to_the_same_final_state() {
-    let reference = reference(&bench());
+    let bench_of_reference = bench();
+    let reference = drive(&bench_of_reference);
+    assert_eq!(reference.stop, Some(Stop::Cycles));
+    let want = assert_settled(&bench_of_reference, &reference);
     let events = reference.journal.events();
-    let want = summary(events);
     let first_start = events
         .iter()
         .position(|event| matches!(event.payload, Payload::TrialStart(_)))
@@ -275,8 +284,7 @@ fn killing_the_run_at_every_durable_event_resumes_to_the_same_final_state() {
         let bench = bench();
         let ended = interrupted(&bench, k, Fate::Killed);
         assert_eq!(ended.stop, Some(Stop::Cycles), "killed at #{k}");
-        assert_settled(&bench, &ended);
-        assert_eq!(summary(ended.journal.events()), want, "killed at #{k}");
+        assert_eq!(assert_settled(&bench, &ended), want, "killed at #{k}");
         if k == first_start {
             let end = ended
                 .journal
