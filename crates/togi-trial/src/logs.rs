@@ -195,17 +195,45 @@ mod tests {
         }
     }
 
-    struct Stuck(std::sync::mpsc::Receiver<()>);
+    /// Signals `entered` each time a write starts, then blocks until `release` yields or closes.
+    struct Stuck {
+        entered: std::sync::mpsc::Sender<()>,
+        release: std::sync::mpsc::Receiver<()>,
+    }
 
     impl Write for Stuck {
         fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-            let _ = self.0.recv();
+            let _ = self.entered.send(());
+            let _ = self.release.recv();
             Ok(bytes.len())
         }
 
         fn flush(&mut self) -> io::Result<()> {
             Ok(())
         }
+    }
+
+    /// A log writer whose one sink is `Stuck`; returns the writer, the release gate and the
+    /// receiver of the entered signals.
+    fn stuck_writer() -> (
+        LogWriter,
+        std::sync::mpsc::Sender<()>,
+        std::sync::mpsc::Receiver<()>,
+    ) {
+        let (gate, release) = std::sync::mpsc::channel();
+        let (entered, entries) = std::sync::mpsc::channel();
+        let stuck = Mutex::new(Some(Stuck { entered, release }));
+        let writer = LogWriter::spawn(Some(Box::new(move |_| {
+            Box::new(stuck.lock().unwrap().take().unwrap()) as Sink
+        })))
+        .unwrap();
+        (writer, gate, entries)
+    }
+
+    fn await_entry(entries: &std::sync::mpsc::Receiver<()>) {
+        entries
+            .recv_timeout(Duration::from_secs(5))
+            .expect("the log thread never entered its write");
     }
 
     fn file() -> File {
@@ -251,22 +279,25 @@ mod tests {
 
     #[tokio::test]
     async fn a_stuck_write_drops_bytes_without_waiting_and_the_join_is_bounded() {
-        let (gate, stuck) = std::sync::mpsc::channel();
-        let stuck = Mutex::new(Some(stuck));
-        let writer = LogWriter::spawn(Some(Box::new(move |_| {
-            Box::new(Stuck(stuck.lock().unwrap().take().unwrap())) as Sink
-        })))
-        .unwrap();
+        let (writer, gate, entries) = stuck_writer();
         let mut log = writer.open(0, Stream::Stdout, file());
+        log.append(b"x").unwrap();
+        await_entry(&entries);
+        // The thread holds one chunk and cannot take another, so exactly QUEUE more fit.
         let started = std::time::Instant::now();
-        let mut dropped = 0;
-        for _ in 0..(QUEUE + 10) {
-            if log.append(b"x").is_err() {
-                dropped += 1;
-            }
-        }
-        assert_eq!(dropped, 1, "only the first drop of a run is reported");
+        let results: Vec<bool> = (0..(QUEUE + 10))
+            .map(|_| log.append(b"x").is_ok())
+            .collect();
         assert!(started.elapsed() < Duration::from_secs(1));
+        assert!(
+            results[..QUEUE].iter().all(|ok| *ok),
+            "the queue holds QUEUE chunks"
+        );
+        assert!(!results[QUEUE], "the first drop is reported");
+        assert!(
+            results[QUEUE + 1..].iter().all(|ok| *ok),
+            "only the first drop of a run is reported"
+        );
         drop(log);
         assert!(matches!(
             writer.finish(Duration::from_millis(100)).await,
@@ -278,13 +309,8 @@ mod tests {
     #[test]
     fn a_stuck_write_is_abandoned_at_the_join_bound_while_the_blocking_pool_is_saturated() {
         let (runtime, release) = crate::join::saturated_pool();
-        let (gate, stuck) = std::sync::mpsc::channel();
-        runtime.block_on(async {
-            let stuck = Mutex::new(Some(stuck));
-            let writer = LogWriter::spawn(Some(Box::new(move |_| {
-                Box::new(Stuck(stuck.lock().unwrap().take().unwrap())) as Sink
-            })))
-            .unwrap();
+        let (gate, release) = runtime.block_on(async {
+            let (writer, gate, _entries) = stuck_writer();
             let mut log = writer.open(0, Stream::Stdout, file());
             log.append(b"x").unwrap();
             drop(log);
@@ -295,6 +321,7 @@ mod tests {
             .await
             .expect("the join outlived its bound behind the blocking pool");
             assert!(matches!(ended, LogsEnd::TimedOut(_)));
+            (gate, release)
         });
         drop((gate, release));
     }
