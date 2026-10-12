@@ -181,6 +181,7 @@ fn each_decision_has_its_tag_tone_and_phrases() {
         );
         assert_eq!(decision_phrase(&d, None), phrase, "{kind}");
         let payload = Payload::from(d);
+        assert_decision_words(&payload);
         let table = words(EventKind::TunerDecision);
         let Tagging::By(of) = table.tag else {
             panic!("a decision is tagged by its payload");
