@@ -69,10 +69,6 @@ fn simulate_checked(input: SimInput, check: &mut Check<'_>) -> Result<SimOutcome
         (Persistence::Files(_), true) => Some(lock(&persistence)?.trials_dir()),
     };
     simulator.set_samples_dir(samples);
-    let publication = match persistence {
-        Persistence::Memory(_) => PublicationPolicy::OnFinish,
-        Persistence::Files(_) => PublicationPolicy::Live,
-    };
     let user: SharedLog = Rc::new(RefCell::new(UserLog::new(log)));
     let slot: Slot = Rc::new(RefCell::new(observer));
     let mut resume: Option<ResumeCapsule> = None;
@@ -115,7 +111,7 @@ fn simulate_checked(input: SimInput, check: &mut Check<'_>) -> Result<SimOutcome
             journal,
             machine,
             policy,
-            publication,
+            publication: PublicationPolicy::OnFinish,
             bootloader: None,
             prompt: None,
             defects,
@@ -150,10 +146,7 @@ fn simulate_checked(input: SimInput, check: &mut Check<'_>) -> Result<SimOutcome
             panic: _,
         } = ended;
         errors.extend(user.borrow_mut().take_failure().map(SessionError::Log));
-        if crash
-            && publication == PublicationPolicy::OnFinish
-            && let Some(capsule) = &capsule
-        {
+        if crash && let Some(capsule) = &capsule {
             capsule
                 .publish(&mut journal)
                 .map_err(|source| SimError::Publish {
