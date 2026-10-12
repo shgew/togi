@@ -803,3 +803,32 @@ The later-hunt base runs once, through three clean cycles. Go simulated six cycl
 
 - **Measured.** Against `c9ba3004`: 1198 lines of library (with the manifest) and 803 of tests, none removed, next to Go's 441 test-helper lines (`frames_test.go` lines 27-336, `watchtest/fixture.go`, and the two fixtures of `cycle_resume_test.go`), which built journals and pinned nothing. On a 32-thread host at load 17 to 21, in the debug profile after #845 (dependencies, `togi-journal` and `togi-tuner` at `opt-level = 1`): the base simulations take 0.19 s (dead end) to 0.95 s (later hunt); the suite takes 2.5 to 5.2 s with nextest's parallelism, and the slowest test, the later-hunt determinism test, 2.2 s run alone and 5.1 s under `cargo llvm-cov` (`just cover-rs`). Before #845 the suite took 8.9 s and its slowest test 8.5 s (11.7 s under `cargo llvm-cov`). Review round 1 found 5 issues, all fixed: the crashed-cycle base's property unpinned, Go's impossible dead-end journal, `install` appending over an existing journal, these missing measurements, and a `cut_when` test that could not tell the state before the fold from the state after it.
 - **Not measured.** Compile times against Go, and agent cost.
+
+## Stage 7: `tools/bench` (a) (#821, 2026-10-12)
+
+The `togi-tool-bench` crate ports the runs, metrics, summary, comparison and cache of `tools/bench` ([#821](https://github.com/shgew/togi/issues/821)); the gates ([#822](https://github.com/shgew/togi/issues/822)) and `--same`, `--smoke` and `--forecast` ([#823](https://github.com/shgew/togi/issues/823)) stay with the Go bench, and the module and record boundaries leave room for them (the gate is kept as raw JSON in the suite, and a run has a `smoke` flag). It builds `togi-tool-sim` from the tree with cargo and starts it as a subprocess per run, as Go builds `tools/sim`; `--sim PATH` replaces it. `just bench-rs` runs it; the Go recipes are unchanged. 3,351 lines of library with its unit tests and about 2,350 of tests (117 tests, 16 insta snapshots), against Go's 1,407 lines in `main.go`, `metrics.go`, `compare.go`, `cache.go` and `suite_notes.go` (which also dispatch the gate and `--same` modes) and 1,524 in the in-scope test files.
+
+- **Own formats.** Records, summary, comparison and cache are Rust's: a strict record with every field required, `model_check` reduced to counts, `evidence` and `ruleset` from `togi_tuner`. The Go `baseline.jsonl` is not rewritten. The cache key binds the simulator binary's hash, the bench's own executable's hash, `--max-boots`, the suite file, each machine file with its overlays and facts extract, and the run's identity; it lives in `togi/bench-rs`, apart from Go's `togi/bench`, whose `costs.json` differs.
+- **Deliberate differences.** Real answers come from `togi_facts::extract`, which counts a decisive trial whether or not its `trial.start` was journaled; Go required it. Overlay machines extend by the same rules the simulator reads them with. Records are in suite order whatever `--jobs` is.
+- **Go bugs fixed.** None found.
+- **Sanity benchmark.** `togi-tool-bench sanity` compares per-metric means of a Rust run of all 220 runs (dev and holdout) with `tools/bench/baseline.jsonl` (Go ruleset 11, recorded at `5145f657`; no tuner or simulator change in Go since). The band per metric is in `sanity.rs`: a line is flagged when the means differ by more than an absolute floor and a relative share of Go's mean and by more than 3 Welch standard errors. 220 of 220 runs concluded; 1 of 149 comparisons is flagged. Whole-suite means, Rust against Go:
+
+  | Metric | Rust | Go | Δ | z |
+  |---|---|---|---|---|
+  | concluded | 1.0000 | 1.0000 | 0 | 0.00 |
+  | sim_hours | 59.5356 | 59.7824 | −0.4% | −0.19 |
+  | first_passed_cycle_h | 39.2914 | 39.6406 | −0.9% | −0.35 |
+  | passed_cycles | 2.0000 | 2.0000 | 0 | 0.00 |
+  | crashes | 115.4636 | 117.4182 | −1.7% | −0.20 |
+  | trials | 1717.6682 | 1720.2318 | −0.1% | −0.07 |
+  | trial_hours | 54.7243 | 54.9058 | −0.3% | −0.17 |
+  | hunts | 26.4909 | 26.3182 | +0.7% | 0.06 |
+  | combinations | 0.7818 | 0.6227 | +25.5% | 0.67 |
+  | depth | −518.2318 | −515.6864 | −0.5% | −0.19 |
+  | real_answer_share | 0.1450 | 0.1425 | +1.7% | 0.19 |
+  | worst_r7_hazard_per_h (96 runs) | 3.0275 | 3.0224 | +0.2% | 0.02 |
+  | **hazard_max_per_h** | 0.3545 | 1.1415 | −68.9% | −3.14 (flagged) |
+
+  `combinations` is a count near zero (0.78 against 0.62 per run, z 0.67): inside the spread. `hazard_max_per_h` is the one flag. It is the largest steady-state hazard of a run's final profile: mostly 0, with a few runs ending one step past a limit at 10 to 16 per hour. In the committed `target` scenario Go had 4 or 5 of 36 runs end that way (an R2 all-core hazard near 9.6 per hour) and Rust none; the lower means of `target-shared-voltage`, `target-r7-vf-boost` and `target-r7-request-gap` point the same way. To tell a bug from an unlucky tail, 72 fresh `target` seeds (1001 to 1072, the 9-fit ensemble, replayed) were run through both benches: median hours 51.8 (Rust) and 51.96 (Go), mean hours 52.10 and 52.11, mean depth −659.74 and −659.24, maximum hazard 16.27 in both, runs with hazard above 0.1 per hour 10 and 16, mean hazard 0.77 and 1.28. Pooled with the suite's 36 `target` runs, 12 of 108 Rust runs and 21 of 108 Go runs end with a hazard, the same direction and not significant. The hours, depth and every other metric agree, and the worst R7 hazard, which shares the model code, agrees to 0.2%, so the flag is read as sampling noise in a tail metric, not a defect; no Rust finding to report to a crate owner.
+- **Measured.** Final code, release build, `--jobs 8`, a cold cache, 32-thread host at load 9.9 before and 9.2 after: 76.2 s wall for the 220 runs, 416 MB maximum resident set of the bench (an earlier run at load 33 to 40 took 119.7 s); the two runs print the same sanity table. `cargo nextest run -p togi-tool-bench` ran 117 tests in 1.1 s on a built tree, and `go test -count=1 ./tools/bench` took 0.96 s (including the gate, `--same` and forecast tests this crate does not port).
+- **Not measured.** Compile times against Go, agent cost, and the run on a Mac.

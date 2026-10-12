@@ -97,10 +97,11 @@ fn main() -> ExitCode {
             Some(Command::Sanity(args)) => sanity_check(&args),
         },
         Err(error) => {
-            let _ = write!(io::stderr(), "{}", error.render());
             if error.use_stderr() {
+                let _ = write!(io::stderr(), "{}", error.render());
                 ExitCode::from(USAGE)
             } else {
+                let _ = write!(io::stdout(), "{}", error.render());
                 ExitCode::SUCCESS
             }
         }
