@@ -182,6 +182,12 @@ bench-rs *args: _dev-shell
 audit *args: _dev-shell
     go run ./tools/audit "$@"
 
+# Sweep every simulated scenario with the Rust bench and simulator and audit the retained journals, or audit given state directories (`just audit-rs --seeds 50 --jobs 8 --keep runs`)
+[group('run')]
+audit-rs *args: _dev-shell
+    cargo build --release --locked -p togi-tool-bench
+    cargo run --release --locked -p togi-tool-audit -- "$@"
+
 # Prove simulated session decisions are unchanged from a base revision; stops at the first difference (`--keep-going` counts them all)
 [group('run')]
 same base="origin/main" *args: _dev-shell
@@ -208,6 +214,11 @@ bench-baseline: _dev-shell
     go run ./tools/bench --split all --out "$full"
     nu --stdin -c '$in | lines | each { from json | reject -o model_check wall_s partial_seconds | to json --raw } | to text' <"$full" >"$slim"
     mv "$slim" tools/bench/baseline.jsonl
+
+# Record a Rust bench baseline over all seeds to OUT, without model checks or wall times; the committed Go baseline stays until stage 9 (`just bench-baseline-rs /tmp/baseline-rs.jsonl`)
+[group('run')]
+bench-baseline-rs out: _dev-shell
+    cargo run --release --locked -p togi-tool-bench -- --split all --baseline-out "$1"
 
 # Regenerate privacy-safe real facts from a copied state directory
 [group('run')]

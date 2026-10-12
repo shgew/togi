@@ -709,6 +709,7 @@ dependencies = [
  "portable-atomic",
  "portable-atomic-util",
  "serde_core",
+ "windows-link",
 ]
 
 [[package]]
@@ -1519,10 +1520,26 @@ dependencies = [
  "clap_complete",
  "clap_complete_nushell",
  "insta",
+ "jiff",
+ "rustix",
+ "serde_json",
  "tempfile",
+ "togi-command",
  "togi-config",
+ "togi-defect",
+ "togi-detect",
+ "togi-hardware",
+ "togi-hostlock",
  "togi-journal",
+ "togi-machine",
+ "togi-render",
+ "togi-session",
+ "togi-sim",
+ "togi-smu",
+ "togi-tuner",
+ "togi-tuningboot",
  "togi-version",
+ "togi-watchtest",
 ]
 
 [[package]]
@@ -1765,12 +1782,18 @@ dependencies = [
 name = "togi-tool-audit"
 version = "0.0.0"
 dependencies = [
+ "clap",
+ "insta",
+ "rustix",
  "serde",
  "serde_json",
+ "signal-hook 0.4.5",
+ "tempfile",
  "thiserror",
  "togi-journal",
  "togi-machine",
  "togi-tuner",
+ "togi-version",
 ]
 
 [[package]]

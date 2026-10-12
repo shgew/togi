@@ -1,0 +1,48 @@
+---
+source: crates/togi-tool-audit/tests/audit/sweep.rs
+expression: suite
+---
+{
+  "scenarios": [
+    {
+      "dev": [
+        1,
+        2,
+        3
+      ],
+      "name": "default"
+    },
+    {
+      "dev": [
+        1,
+        2,
+        3
+      ],
+      "machine": "/suites/machines/one.json",
+      "name": "single"
+    },
+    {
+      "dev": [
+        1,
+        2,
+        3
+      ],
+      "machine": "/elsewhere/abs.json",
+      "name": "absolute"
+    },
+    {
+      "dev": [
+        1,
+        2,
+        3
+      ],
+      "machines": [
+        "",
+        "/suites/machines/two.json",
+        "/elsewhere/abs.json"
+      ],
+      "name": "ensemble",
+      "replay": true
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+---
+source: crates/togi-tool-audit/tests/audit/sweep.rs
+expression: errors
+---
+[
+    "run records are empty",
+    "decode run records [tmp]/records.jsonl line 1: missing field `seed` at line 1 column 16",
+    "decode run records [tmp]/records.jsonl line 1: invalid type: sequence, expected an object at line 1 column 0",
+    "invalid run record for scenario \"\" seed 1",
+    "invalid run record for scenario \"..\" seed 1",
+    "invalid run record for scenario \".\" seed 1",
+    "invalid run record for scenario \"a/b\" seed 1",
+    "invalid run record for scenario \"../a\" seed 1",
+    "invalid run record for scenario \"a\" seed 1",
+]
