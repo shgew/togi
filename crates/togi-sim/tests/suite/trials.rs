@@ -755,7 +755,13 @@ fn replay_of(context: BiosContext, signal: Signal) -> Replay {
 }
 
 fn replayed(signal: Signal) -> (Rig, crate::common::Waited, crate::common::Recorder) {
-    let mut definition = machine(2, flat_cores(2, -50, -50));
+    replayed_by(machine(2, flat_cores(2, -50, -50)), signal)
+}
+
+fn replayed_by(
+    mut definition: MachineDefinition,
+    signal: Signal,
+) -> (Rig, crate::common::Waited, crate::common::Recorder) {
     definition.bios = Some(vec![-20, -21]);
     let model = model(&definition);
     let replay = replay_of(model.bios_context().clone(), signal);
@@ -798,6 +804,19 @@ fn a_replayed_crash_or_uncorrected_machine_check_happens_at_its_recorded_exposur
         };
         assert_eq!(reason.kind, Some(kind));
     }
+}
+
+#[test]
+fn a_replayed_crash_resets_by_watchdog_whatever_the_models_reset_mix() {
+    let mut definition = machine(2, flat_cores(2, -50, -50));
+    definition.model.reset = Weights::from([(ResetKind::ThermalTrip, 1.0)]);
+    let (mut rig, waited, _) = replayed_by(definition, Signal::Crash);
+    assert!(crashed(&waited));
+    assert_eq!(rig.sim.monotonic(), Duration::from_secs(7));
+    rig.sim.reboot();
+    let boot = rig.boot();
+    let reason = rig.machine.kernel.reset_reason(&boot).expect("a reason");
+    assert_eq!(reason.kind, Some(ResetKind::Watchdog));
 }
 
 #[test]
