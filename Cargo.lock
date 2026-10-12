@@ -715,6 +715,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "signal-hook"
+version = "0.4.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b29ffa27d3d59a049bb328258de100f8012848d1b08d444e08bbc02ac468435e"
+dependencies = [
+ "libc",
+ "signal-hook-registry",
+]
+
+[[package]]
 name = "signal-hook-registry"
 version = "1.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1080,6 +1090,37 @@ dependencies = [
  "togi-journal",
  "togi-machine",
  "togi-tuner",
+]
+
+[[package]]
+name = "togi-tool-bench"
+version = "0.0.0"
+dependencies = [
+ "clap",
+ "insta",
+ "jiff",
+ "proptest",
+ "rand",
+ "rustix",
+ "serde",
+ "serde_json",
+ "sha2",
+ "signal-hook",
+ "tempfile",
+ "thiserror",
+ "togi-config",
+ "togi-facts",
+ "togi-journal",
+ "togi-machine",
+ "togi-render",
+ "togi-requests",
+ "togi-session",
+ "togi-sim",
+ "togi-simrun",
+ "togi-tool-modelcheck",
+ "togi-tool-trialfacts",
+ "togi-tuner",
+ "togi-version",
 ]
 
 [[package]]

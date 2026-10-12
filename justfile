@@ -162,6 +162,11 @@ stats-rs *args: _dev-shell
 bench *args: _dev-shell
     go run ./tools/bench "$@"
 
+# Benchmark simulated session conclusions with the Rust bench, which builds and runs the Rust simulator (`just bench-rs --split dev --baseline records.jsonl`, or `just bench-rs sanity --records records.jsonl` against the Go scores)
+[group('run')]
+bench-rs *args: _dev-shell
+    cargo run --release --locked -p togi-tool-bench -- "$@"
+
 # Sweep every simulated scenario and audit its retained journals, or audit given state directories
 [group('run')]
 audit *args: _dev-shell
