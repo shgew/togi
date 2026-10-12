@@ -159,7 +159,7 @@ fn run_with(args: &Args, ctx: &mut Context<'_>, facts: OutputFacts, zone: &TimeZ
     if let Err(error) = ctx.out.flush() {
         return fail(ctx, "events", format!("write output: {error}"));
     }
-    read::report_torn(ctx, "events", &recording);
+    read::report(ctx, "events", &recording);
     Exit::Ok
 }
 

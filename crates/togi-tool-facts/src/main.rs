@@ -19,16 +19,21 @@ struct Cli {
 fn main() -> ExitCode {
     let cli = Cli::parse();
     match generate(&cli.state_dir, &cli.output) {
-        Ok(count) => match writeln!(std::io::stdout(), "extracted {count} facts") {
-            Ok(()) => ExitCode::SUCCESS,
-            Err(error) => {
-                let _ = writeln!(
-                    std::io::stderr(),
-                    "togi-tool-facts: write the count: {error}"
-                );
-                ExitCode::FAILURE
+        Ok(generated) => {
+            for skipped in &generated.skipped {
+                let _ = writeln!(std::io::stderr(), "togi-tool-facts: {skipped}");
             }
-        },
+            match writeln!(std::io::stdout(), "extracted {} facts", generated.count) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(error) => {
+                    let _ = writeln!(
+                        std::io::stderr(),
+                        "togi-tool-facts: write the count: {error}"
+                    );
+                    ExitCode::FAILURE
+                }
+            }
+        }
         Err(error) => {
             let _ = writeln!(std::io::stderr(), "togi-tool-facts: {error}");
             ExitCode::FAILURE

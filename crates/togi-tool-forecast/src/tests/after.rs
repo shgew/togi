@@ -266,7 +266,7 @@ fn an_unreplayable_session_holding_a_cycle_start_is_not_concluded_by_it() {
 #[test]
 fn a_journal_that_does_not_follow_itself_is_a_fold_error() {
     let mut all = before();
-    all.extend(events(7, [crash()]));
+    all.extend(events(2, [crash()]));
     let skipping = Session::from_events(all).unwrap();
     let anchor = skipping
         .anchor_at(togi_journal::Seq::new(4).unwrap())

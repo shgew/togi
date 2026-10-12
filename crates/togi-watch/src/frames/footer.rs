@@ -2,6 +2,7 @@
 
 use ratatui::buffer::Buffer;
 use ratatui::text::{Line, Span};
+use togi_render::escape_text;
 
 use super::colours::Paint;
 use super::draw::put;
@@ -79,19 +80,34 @@ pub fn key_hints(view: View, width: usize, after: &[Clause], colours: Colours) -
     fit_clauses(width, &clauses)
 }
 
-/// Draws the key hints on the footer row when the reader has keys; `after` follows the keys.
+/// The footer clause for what the lenient read of the journal skipped or ignored: the report whole, then a short
+/// pointer to the command that prints it, and never left out.
+#[must_use]
+pub(super) fn skipped_clause(skipped: &str, colours: Colours) -> Clause {
+    let amber =
+        |text: &str| Line::styled(escape_text(text).to_string(), Paint::Hunt.style(colours));
+    Clause::new(
+        "   ",
+        vec![
+            Form::new(amber(skipped), 20),
+            Form::new(amber("skipped journal content: togi events"), 0),
+        ],
+    )
+}
+
+/// Draws the footer row: the key hints when the reader has keys, with `after` following them; without keys,
+/// `after` alone.
 pub fn footer(screen: &Screen, after: &[Clause], buf: &mut Buffer) {
-    if !screen.keys {
-        return;
-    }
     let layout = Layout::new(screen);
-    let hints = key_hints(
-        screen.view,
-        usize::from(layout.footer.width),
-        after,
-        screen.colours,
-    );
-    put(buf, layout.footer, 0, 0, &hints);
+    let width = usize::from(layout.footer.width);
+    let line = if screen.keys {
+        key_hints(screen.view, width, after, screen.colours)
+    } else if after.is_empty() {
+        return;
+    } else {
+        fit_clauses(width, after)
+    };
+    put(buf, layout.footer, 0, 0, &line);
 }
 
 #[cfg(test)]
@@ -100,7 +116,7 @@ mod tests {
     use ratatui::layout::Rect;
     use ratatui::style::Style;
 
-    use super::{footer, key_hints};
+    use super::{footer, key_hints, skipped_clause};
     use crate::frames::colours::Paint;
     use crate::frames::fit::{Clause, Form, display_width, plain};
     use crate::frames::layout::Layout;
@@ -108,6 +124,20 @@ mod tests {
     use crate::screen::{Colours, Drawn, Hold, View};
 
     const VIEWS: [View; 3] = [View::Main, View::Help, View::Log];
+
+    #[test]
+    fn the_skipped_report_follows_the_keys_whole_and_then_as_a_pointer_that_keeps_them() {
+        let report = "skipped 1 event of a kind this build does not know (future.thing at line 3)";
+        let after = [skipped_clause(report, Colours::None)];
+        let wide = plain(&key_hints(View::Main, 200, &after, Colours::None));
+        assert!(wide.contains(report), "{wide}");
+        let narrow = plain(&key_hints(View::Main, 100, &after, Colours::None));
+        assert!(narrow.contains("togi events"), "{narrow}");
+        let fields: Vec<&str> = narrow.split_whitespace().collect();
+        for key in ["?", "l", "esc", "q"] {
+            assert!(fields.contains(&key), "{narrow}");
+        }
+    }
 
     fn draw_footer(view: View, width: u16, height: u16, colours: Colours) -> (Buffer, Rect) {
         let sc = screen(view, width, height, colours, true);

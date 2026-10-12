@@ -76,7 +76,7 @@ pub fn run(_args: &Args, ctx: &mut Context<'_>) -> Exit {
     {
         return fail(ctx, "status", format!("write output: {error}"));
     }
-    read::report_torn(ctx, "status", &recording);
+    read::report(ctx, "status", &recording);
     Exit::Ok
 }
 

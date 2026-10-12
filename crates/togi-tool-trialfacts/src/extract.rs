@@ -3,8 +3,8 @@ use std::path::Path;
 
 use togi_facts::{Decisive, Fact, FactsError, Observation, SessionFacts};
 use togi_journal::{
-    Build, LookupError, Operation, Payload, Recording, Refusal, SCHEMA, Seq, SessionId, StateDir,
-    Verdict,
+    Build, LookupError, Operation, Payload, Recording, Refusal, SCHEMA, Seq, SessionId, Skipped,
+    StateDir, Verdict,
 };
 use togi_machine::{CoreSet, PerCore};
 
@@ -39,26 +39,39 @@ pub enum ExtractError {
     NoFacts,
 }
 
+/// The facts of a state directory and what reading its journals passed over to get them.
+#[derive(Debug)]
+pub struct Extracted {
+    pub facts: Vec<TrialFact>,
+    /// Each session whose journal held events or fields this build does not know, in session order, with what
+    /// the read skipped or ignored; empty when every journal was read whole.
+    pub skipped: Vec<(SessionId, Skipped)>,
+}
+
 /// The facts of every session in the state directory, archived ones oldest first and then the live one, each
-/// session's in journal order. Extract from a copy of the directory, never the live state: reading takes the
-/// directory's writer lock.
-pub fn extract(dir: &StateDir) -> Result<Vec<TrialFact>, ExtractError> {
-    from_recordings(dir.recordings()?)
+/// session's in journal order. The journals are history, so they are read leniently: an event of a kind this
+/// build does not know is skipped and an unknown field ignored, and [`Extracted::skipped`] says so. Extract from
+/// a copy of the directory, never the live state: reading takes the directory's writer lock.
+pub fn extract(dir: &StateDir) -> Result<Extracted, ExtractError> {
+    from_recordings(dir.recordings_lenient()?)
 }
 
 /// [`extract`] on the state directory at `path`.
-pub fn extract_dir(path: impl AsRef<Path>) -> Result<Vec<TrialFact>, ExtractError> {
+pub fn extract_dir(path: impl AsRef<Path>) -> Result<Extracted, ExtractError> {
     extract(&StateDir::lock(path)?)
 }
 
 /// The facts of journals read one by one, in session order. A journal without events is skipped; one whose
 /// schema this build cannot read as history is refused before extraction; no facts at all is an error, since
-/// an empty extract is no evidence.
+/// an empty extract is no evidence. Each recording's [`skipped`](Recording::skipped) is reported under its
+/// session.
 pub fn from_recordings(
     recordings: impl IntoIterator<Item = Recording>,
-) -> Result<Vec<TrialFact>, ExtractError> {
+) -> Result<Extracted, ExtractError> {
     let mut sessions = Vec::new();
+    let mut skipped = Vec::new();
     for recording in recordings {
+        let passed_over = recording.skipped().clone();
         let events = recording.into_events();
         let Some(Payload::SessionStart(start)) = events.first().map(|event| &event.payload) else {
             continue;
@@ -74,8 +87,12 @@ pub fn from_recordings(
         let facts = togi_facts::extract(session, events.into_iter().map(Ok::<_, Infallible>))
             .map_err(|source| ExtractError::Facts { session, source })?;
         sessions.push(facts);
+        if !passed_over.is_empty() {
+            skipped.push((session, passed_over));
+        }
     }
     sessions.sort_by_key(|session| session.id);
+    skipped.sort_by_key(|(session, _)| *session);
     let mut records = Vec::new();
     for session in &sessions {
         for fact in &session.facts {
@@ -85,7 +102,10 @@ pub fn from_recordings(
     if records.is_empty() {
         return Err(ExtractError::NoFacts);
     }
-    Ok(records)
+    Ok(Extracted {
+        facts: records,
+        skipped,
+    })
 }
 
 fn record(session: &SessionFacts, fact: &Fact) -> Result<TrialFact, ExtractError> {

@@ -10,10 +10,7 @@ use togi_machine::{Condition, CoreSet, PerCore, Regime, Signal};
 use togi_watchtest::{Base, Scenario, cut_trial, cut_when};
 use unicode_width::UnicodeWidthStr as _;
 
-use crate::support::{
-    UNKNOWN_KIND, append_between_trial_mce, append_event, append_unknown_kind,
-    assert_unknown_kind_refusal, session, text, togi,
-};
+use crate::support::{append_between_trial_mce, append_event, session, text, togi};
 
 #[test]
 fn scenarios_render_the_status() {
@@ -409,15 +406,6 @@ fn the_regime_table_keeps_its_regime_column() {
         rows[1].split_whitespace().collect::<Vec<_>>(),
         ["R7", "mprime-avx2-36k-248k-allcore", "6"]
     );
-}
-
-#[test]
-fn an_event_of_an_unknown_kind_is_refused_in_read_only_words_by_status() {
-    let dir = session(Scenario::Search);
-    let line = append_unknown_kind(dir.path(), UNKNOWN_KIND);
-    let ran = togi(dir.path(), &["status"]);
-    assert_unknown_kind_refusal("status", &ran, line);
-    assert_eq!(text(&ran.stdout).is_empty(), "status" != "watch");
 }
 
 pub(super) fn installed(events: &[Event]) -> tempfile::TempDir {

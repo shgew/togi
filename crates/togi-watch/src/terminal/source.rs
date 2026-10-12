@@ -172,7 +172,7 @@ impl Source {
     }
 
     fn load(&mut self, appended: bool) {
-        let recording = match Recording::read(&self.path) {
+        let recording = match Recording::read_lenient(&self.path) {
             Ok(recording) => recording,
             Err(error) if is_not_found(&error) => {
                 self.content = self.absent();
@@ -225,6 +225,8 @@ impl Source {
                 break;
             }
         }
+        let skipped = recording.skipped();
+        model.set_skipped((!skipped.is_empty()).then(|| skipped.to_string()));
         self.content = Content::Ready(model, events.len(), Box::new(last));
     }
 
@@ -400,6 +402,39 @@ mod tests {
 
     fn journal_of(message: &str) -> Vec<crate::terminal::testing::TestEvent> {
         vec![session_start(1), warning(2, message)]
+    }
+
+    #[test]
+    fn an_event_of_an_unknown_kind_is_skipped_and_reported_in_the_snapshot() {
+        let dir = TempDir::new().unwrap();
+        write_journal(dir.path(), &journal_of("original"));
+        let mut file = fs::OpenOptions::new()
+            .append(true)
+            .open(dir.path().join("events.jsonl"))
+            .unwrap();
+        writeln!(
+            file,
+            r#"{{"seq":3,"time":"2026-01-01T00:00:00Z","boot":"boot-1","kind":"future.thing","msg":"x","data":{{}}}}"#
+        )
+        .unwrap();
+        append(dir.path(), &[warning(4, "after")]);
+        let mut source = Source::new(dir.path(), None);
+        assert!(source.reload());
+        let Journal::Ready { snapshot, log } = source.journal(&main_screen()) else {
+            panic!("the journal is not shown");
+        };
+        assert_eq!(
+            snapshot.skipped,
+            Some("skipped 1 event of a kind this build does not know (future.thing at line 3)")
+        );
+        assert!(log.entries.iter().any(|entry| entry.msg == "after"));
+
+        append(dir.path(), &[warning(5, "later")]);
+        assert!(source.reload());
+        let Journal::Ready { snapshot, .. } = source.journal(&main_screen()) else {
+            panic!("the journal is not shown");
+        };
+        assert!(snapshot.skipped.is_some(), "the report outlives a reload");
     }
 
     #[test]

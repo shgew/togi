@@ -71,11 +71,11 @@ fn every_session_extracts_oldest_first_and_only_the_whitelist_survives() {
     passing_session(&mut w, NEW, 6);
     let dir = w.close();
 
-    let facts = extract(&dir).unwrap();
+    let facts = extract(&dir).unwrap().facts;
     assert_eq!(facts, [passed(OLD, 1), passed(NEW, 6)]);
 
     let first = encoded(&facts);
-    assert_eq!(first, encoded(&extract(&dir).unwrap()));
+    assert_eq!(first, encoded(&extract(&dir).unwrap().facts));
     let plain = gunzip(&first);
     for private in [
         BOOT,
@@ -105,7 +105,7 @@ fn facts_follow_session_order_not_archive_order() {
     passing_session(&mut w, NEW, 1);
     let mut w = w.archive();
     passing_session(&mut w, OLD, 1);
-    let facts = extract(&w.close()).unwrap();
+    let facts = extract(&w.close()).unwrap().facts;
     let sessions: Vec<_> = facts.iter().map(|fact| fact.session.to_string()).collect();
     assert_eq!(sessions, [OLD, NEW]);
 }
@@ -118,12 +118,67 @@ fn a_state_directory_on_disk_extracts_like_its_memory_image() {
     let mut w = w.archive();
     passing_session(&mut w, NEW, 1);
     let dir = w.close();
-    let want = extract(&dir).unwrap();
+    let want = extract(&dir).unwrap().facts;
     drop(dir);
 
     let disk = tempfile::tempdir().unwrap();
     fs.dump_to(disk.path()).unwrap();
-    assert_eq!(extract_dir(disk.path().join("state")).unwrap(), want);
+    assert_eq!(extract_dir(disk.path().join("state")).unwrap().facts, want);
+}
+
+/// Inserts an event of a kind no build knows after the event `after` of the live journal and renumbers the lines
+/// behind it, so the journal is whole but for what a strict read would refuse.
+fn splice_unknown_event(fs: &MemFs, after: u64) {
+    let path = "/state/events.jsonl";
+    let text = String::from_utf8(fs.contents(path).unwrap()).unwrap();
+    let mut lines = Vec::new();
+    for line in text.lines() {
+        let mut line: serde_json::Value = serde_json::from_str(line).unwrap();
+        let seq = line["seq"].as_u64().unwrap();
+        if seq > after {
+            line["seq"] = (seq + 1).into();
+        }
+        if seq == after {
+            let mut unknown = line.clone();
+            unknown["seq"] = (seq + 1).into();
+            unknown["kind"] = "future.thing".into();
+            unknown["data"] = serde_json::json!({});
+            lines.push(line);
+            lines.push(unknown);
+        } else {
+            lines.push(line);
+        }
+    }
+    let spliced: String = lines.iter().map(|line| line.to_string() + "\n").collect();
+    fs.put(path, spliced);
+}
+
+#[test]
+fn an_event_of_an_unknown_kind_in_the_middle_is_skipped_and_reported() {
+    let fs = MemFs::new();
+    let mut w = Writer::open(&fs);
+    w.begin(OLD, 1, &[0, 1]);
+    w.trial(alone("1", 0, -10, &[-10, 0]), end("1", Outcome::Pass, 90));
+    w.trial(alone("2", 0, -10, &[-10, 0]), end("2", Outcome::Pass, 90));
+    drop(w.close());
+    let whole = extract(&lock(&fs)).unwrap();
+    assert!(whole.skipped.is_empty());
+
+    splice_unknown_event(&fs, 4);
+    let extracted = extract(&lock(&fs)).unwrap();
+
+    let mut want = whole.facts;
+    want[1].seq = want[1].seq.next().unwrap();
+    assert_eq!(extracted.facts, want);
+    let [(session, skipped)] = extracted.skipped.as_slice() else {
+        panic!("expected one session with skips: {:?}", extracted.skipped);
+    };
+    assert_eq!(session.to_string(), OLD);
+    let [event] = skipped.events() else {
+        panic!("expected one skipped event: {skipped}");
+    };
+    assert_eq!((event.seq.get(), event.kind.as_str()), (5, "future.thing"));
+    assert!(skipped.to_string().contains("future.thing"), "{skipped}");
 }
 
 #[test]
@@ -147,7 +202,7 @@ fn partial_r7_facts_keep_their_class_and_measurements() {
     w.trial(r7("failure", &[0]), failure);
     w.trial(r7("full", &[0, 1]), end("full", Outcome::Pass, 120));
 
-    let facts = extract(&w.close()).unwrap();
+    let facts = extract(&w.close()).unwrap().facts;
     let class = |cores: &[i64]| {
         Class::Trial(TrialClass {
             workload: workload(Regime::R7, 0),
@@ -209,7 +264,7 @@ fn a_failure_outside_any_trial_is_an_idle_fact_of_the_session_cores() {
         reason: Some("private reason".into()),
         round: None,
     }));
-    let facts = extract(&w.close()).unwrap();
+    let facts = extract(&w.close()).unwrap().facts;
     let idle = TrialFact {
         class: Class::Idle {
             loaded: set(&[0, 1]),
@@ -300,7 +355,7 @@ fn a_different_ruleset_or_evidence_epoch_is_still_history() {
     w.trial(alone("1", 0, -10, &[-10, 0]), end("1", Outcome::Pass, 90));
     let mut expected = passed(OLD, 9);
     expected.build.evidence = Some(7);
-    assert_eq!(extract(&w.close()).unwrap(), [expected]);
+    assert_eq!(extract(&w.close()).unwrap().facts, [expected]);
 }
 
 #[test]
@@ -315,7 +370,7 @@ fn hunt_and_deepening_activities_extract_as_their_phases() {
         let mut intent = alone("1", 0, -10, &[-10, 0]);
         intent.activity = Some(activity);
         w.trial(intent, end("1", Outcome::Pass, 90));
-        let facts = extract(&w.close()).unwrap();
+        let facts = extract(&w.close()).unwrap().facts;
         assert_eq!(facts.len(), 1, "{name}");
         assert_eq!(facts[0].phase, Some(phase), "{name}");
         let plain = gunzip(&encoded(&facts));
