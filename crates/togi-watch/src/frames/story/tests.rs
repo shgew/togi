@@ -747,7 +747,7 @@ mod the_story {
     }
 
     #[test]
-    fn a_dead_end_detail_stays_raw_in_the_band_and_is_escaped_where_drawn() {
+    fn a_dead_end_detail_stays_raw_in_the_band_and_out_of_the_narration() {
         let mut fx = Fx::new();
         fx.dead_end = Some(DeadEndView {
             at: ts(1),
@@ -756,8 +756,8 @@ mod the_story {
         });
         let band = resting_band(&fx.scene(ts(2)));
         assert!(band.lines[0].contains('\u{1b}'));
-        let narrated = narrator_lines(&story(&fx.scene(ts(2))), 100, 3, false, Colours::None);
-        assert!(!text(&narrated).join("").contains('\u{1b}'));
+        let narrated = said(&story(&fx.scene(ts(2))));
+        assert!(!narrated.contains("bad") && !narrated.contains('\u{1b}'));
     }
 
     #[test]
@@ -842,7 +842,12 @@ mod the_story {
             said.lines[0],
             "I'm finding core 03's solo limit, one turn at a time, now at -16."
         );
-        assert_eq!(said.brief, "");
+        assert_eq!(said.brief, said.lines[0]);
+        let tight = text(&narrator_lines(&said, 60, 2, false, Colours::None)).join(" ");
+        assert!(
+            tight.contains("now at -16.") && !tight.contains("..."),
+            "{tight}"
+        );
         assert_eq!(
             plain(&operation(
                 &fx.scene(ts(1010)),
@@ -963,6 +968,31 @@ mod the_story {
     }
 
     #[test]
+    fn phase_2s_confirmation_cycle_says_its_pass_concludes_phase_2() {
+        let mut fx = Fx::new();
+        fx.phases = Some(PhasePlan {
+            phase: PhaseNo::Two,
+            phase1_end: None,
+            concluded: None,
+            confirming: true,
+            rounds_left: 0,
+            round: None,
+            candidates: Vec::new(),
+        });
+        fx.trial = Some(in_cycle(
+            trial(Regime::R1, Condition::Together, &[0, 1]),
+            3,
+            1,
+            1,
+            1,
+        ));
+        assert_eq!(
+            story(&fx.scene(ts(1010))).lines[1],
+            "Every core runs at its profile offset. Phase 2's confirmation cycle: its pass concludes phase 2."
+        );
+    }
+
+    #[test]
     fn an_all_zero_rerun_is_named_for_what_it_decides() {
         let mut fx = Fx::new();
         let mut rerun = trial(Regime::R6, Condition::Parked, &[0, 1, 2]);
@@ -1048,9 +1078,16 @@ mod the_story {
                     .all(|line| !line.contains("waits at step 1 "))
             );
         }
-        let model = crate::model::project(&built.passed);
-        let view = model.snapshot().cycle.expect("cycle 1");
-        assert!(view.resume_step() <= 2);
+        for (what, events) in [("passed", &built.passed), ("ended", &built.ended)] {
+            let model = crate::model::project(events);
+            let view = model.snapshot().cycle.expect("cycle 1");
+            assert_eq!(view.plan.number, NonZeroU32::new(1), "{what}");
+            assert_eq!(
+                (view.resume_step() + 1).min(view.plan.steps.len()),
+                2,
+                "{what}: the stage line names the step checking resumes at"
+            );
+        }
     }
 
     #[test]
@@ -1333,6 +1370,93 @@ mod the_story {
     }
 
     #[test]
+    fn a_probe_says_failed_unless_its_group_crashed() {
+        for (signal, verb) in [
+            (Signal::Crash, "crashed"),
+            (Signal::ComputationError, "failed"),
+        ] {
+            let mut fx = hunting(false, Vec::new());
+            let (plan, facts) = fx.hunt.as_mut().expect("a hunt");
+            plan.groups.push(HuntGroup {
+                number: 1,
+                cores: set(&[0, 2]),
+                profile: PerCore::default(),
+                stage: togi_journal::HuntStage::Part,
+                probe: None,
+                held: Vec::new(),
+                outcome: GroupState::Failed,
+                passed: 0,
+                needed: 5,
+                carried: false,
+                running: false,
+            });
+            facts.group_signals.push((1, signal));
+            facts.cause.signal = Some(Signal::Crash);
+            let mut probing = trial(Regime::R7, Condition::Together, &[0]);
+            probing.hunt = Some(HuntPlace {
+                hunt: 1,
+                group: 2,
+                part: None,
+                parts: 0,
+                cut: 0,
+                probe: Some(Member {
+                    core: core(2),
+                    offset: off(-12),
+                }),
+            });
+            fx.trial = Some(probing);
+            let said = story(&fx.scene(ts(1010)));
+            assert!(
+                said.lines[0].starts_with(&format!("00 02 {verb} together at their offsets")),
+                "{}",
+                said.lines[0]
+            );
+        }
+    }
+
+    #[test]
+    fn a_locating_hunt_reruns_its_load_with_the_candidates_at_zero() {
+        let mut fx = hunting(false, Vec::new());
+        fx.hunt.as_mut().expect("a hunt").0.groups.push(HuntGroup {
+            number: 1,
+            cores: set(&[0, 2]),
+            profile: PerCore::default(),
+            stage: togi_journal::HuntStage::Locate,
+            probe: None,
+            held: Vec::new(),
+            outcome: GroupState::Running,
+            passed: 0,
+            needed: 5,
+            carried: false,
+            running: true,
+        });
+        let mut locating = trial(Regime::R7, Condition::Together, &[1]);
+        locating.hunt = Some(HuntPlace {
+            hunt: 1,
+            group: 1,
+            part: None,
+            parts: 0,
+            cut: 0,
+            probe: None,
+        });
+        fx.trial = Some(locating);
+        let said = story(&fx.scene(ts(1010)));
+        assert_eq!(said.label, "HUNT 1");
+        assert_eq!(
+            said.lines[0],
+            "With no trial running and the offsets applied, the machine reported a wrong result."
+        );
+        assert_eq!(
+            said.lines[1],
+            "No core was named: I rerun that load with 00 02 at 0 and the loaded cores at their offsets: a pass puts the failure on the idle cores."
+        );
+        assert_eq!(
+            said.brief,
+            "Wrong result while idle; no core named. Rerunning it with 00 02 at 0."
+        );
+    }
+
+    #[test]
     fn a_hunt_after_a_recovery_speaks_of_the_hunt_not_the_recovery() {
         let mut fx = hunting(true, Vec::new());
         fx.recover = Some(RecoveryView {
@@ -1576,6 +1700,32 @@ mod the_trial_band {
         assert_eq!(
             trial_where(&fx.scene(ts(1)), &hunting),
             "on 00 01 · 00-02 at failing offsets"
+        );
+    }
+
+    #[test]
+    fn a_core_the_split_does_not_judge_is_in_neither_list() {
+        let mut fx = Fx::new().with_cores(&[(0, 0), (1, 0), (2, 1)]);
+        fx.shapes.insert(
+            1,
+            HuntShape {
+                failing: crate::tests::kit::offsets(&[-10, -20, -30]),
+                parked: crate::tests::kit::offsets(&[0, -20, 0]),
+            },
+        );
+        let mut hunting = trial(Regime::R7, Condition::Together, &[0, 1]);
+        hunting.hunt = Some(HuntPlace {
+            hunt: 1,
+            group: 1,
+            part: Some(1),
+            parts: 2,
+            cut: 1,
+            probe: None,
+        });
+        hunting.profile = crate::tests::kit::offsets(&[-10, -20, 0]);
+        assert_eq!(
+            trial_where(&fx.scene(ts(1)), &hunting),
+            "on 00 01 · 00 at failing offsets, 02 parked at 0, idle"
         );
     }
 
@@ -2008,6 +2158,39 @@ mod the_outcome_lines {
     }
 
     #[test]
+    fn only_a_backoff_or_a_derived_partial_states_its_request_basis() {
+        let (mut fx, next) = r7_fx();
+        let mut pass = branch(Premise::AllPass);
+        pass.passes = 4;
+        pass.decisions = vec![DecisionPayload::CheckingCycle(crate::tests::kit::cycle(
+            2,
+            CycleEvent::Start,
+        ))];
+        pass.next = Some(next.clone());
+        pass.without_telemetry = true;
+        let mut unnamed = branch(Premise::Unnamed);
+        unnamed.decisions = vec![DecisionPayload::TunerDecision(backoff(0, -31, -30, None))];
+        unnamed.next = Some(next);
+        unnamed.without_telemetry = true;
+        unnamed.offset_order = true;
+        fx.forecast.branches = vec![pass, unnamed];
+        let rows = fx.row_set();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].basis, None);
+        assert!(
+            !fit_phrases(&rows[0].phrases, 200).contains("per "),
+            "{:?}",
+            rows[0].phrases
+        );
+        assert_eq!(rows[1].basis, Some("per offset order"));
+        let compact = text(&outcome_lines(&fx.scene(ts(1)), 118, true));
+        assert!(
+            compact[0].ends_with("backoffs per offset order"),
+            "{compact:?}"
+        );
+    }
+
+    #[test]
     fn every_r7_named_outcome_keeps_a_row() {
         let mut fx = Fx::new().with_cores(&[(0, 0), (1, 0), (2, 0), (3, 0)]);
         let running = counted(
@@ -2379,24 +2562,32 @@ mod the_outcome_lines {
         history.uncertainty = Some(Uncertainty::NeedsHistory);
         let mut recurring = branch(Premise::Inconclusive);
         recurring.uncertainty = Some(Uncertainty::RecurringPlan);
-        let nothing = branch(Premise::Named(core(0)));
-        fx.forecast.branches = vec![ranking, history, recurring, nothing];
+        fx.forecast.branches = vec![ranking, history, recurring];
         let rows = fx.rows();
+        for want in [
+            "read the core ranking before deciding",
+            "complete hunt history needed before deciding",
+            "the hunt would repeat this plan; nothing further is projected",
+        ] {
+            assert!(
+                rows.iter().any(|row| row.ends_with(want)),
+                "lost {want}: {rows:?}"
+            );
+        }
+        let nothing = branch(Premise::Named(core(0)));
+        fx.forecast.branches = vec![nothing];
         assert!(
-            rows.iter()
-                .any(|row| row.ends_with("read the core ranking before deciding")),
-            "{rows:?}"
-        );
-        assert!(
-            rows.iter()
-                .any(|row| row.ends_with("complete hunt history needed before deciding")),
-            "{rows:?}"
-        );
-        assert!(
-            rows.iter()
+            fx.rows()
+                .iter()
                 .any(|row| row.ends_with("no next trial projected")),
-            "{rows:?}"
+            "{:?}",
+            fx.rows()
         );
+        let mut stopped = branch(Premise::Unnamed);
+        stopped.decisions = vec![DecisionPayload::TunerDecision(backoff(0, -31, -30, None))];
+        stopped.uncertainty = Some(Uncertainty::Stopped { after: 1 });
+        fx.forecast.branches = vec![stopped];
+        assert_eq!(fx.rows(), ["if none is named | core 00 -31 → -30"]);
     }
 
     #[test]
@@ -2559,6 +2750,125 @@ mod the_outcome_lines {
     }
 
     #[test]
+    fn an_idle_known_failure_is_named_idle_not_by_an_empty_regime() {
+        let mut fx = Fx::new().with_cores(&[(0, 0), (1, 0)]);
+        let mut known = crate::tests::kit::failure(Signal::ComputationError, None);
+        known.known_failure = Some(seq(9));
+        let decisions = vec![DecisionPayload::Failure(known)];
+        let words =
+            |fx: &Fx| fit_phrases(&decision_phrases(&fx.scene(ts(1)), &decisions, false), 400);
+        assert_eq!(words(&fx), "idle at these offsets already failed");
+        fx.carried.insert(seq(9));
+        assert_eq!(
+            words(&fx),
+            "idle at these offsets already failed in a carried trial"
+        );
+    }
+
+    #[test]
+    fn a_core_leaving_its_search_records_its_solo_limit_and_a_restart_is_unnamed_only() {
+        use crate::tests::kit::{Start, transition};
+        use togi_journal::CorePhase;
+        let fx = Fx::new();
+        let phrases = |decision: Start, named: bool| {
+            fit_phrases(
+                &decision_phrases(
+                    &fx.scene(ts(1)),
+                    &[DecisionPayload::CorePhase(transition(1, decision))],
+                    named,
+                ),
+                400,
+            )
+        };
+        let exit = Start {
+            from: Some(CorePhase::Search),
+            to: CorePhase::AtLimit,
+            offset: -27,
+            pass: Some(-28),
+            fail: None,
+        };
+        assert_eq!(phrases(exit, false), "core 01 solo limit -28");
+        assert_eq!(phrases(exit, true), "core 01 solo limit -28");
+        let no_pass = Start { pass: None, ..exit };
+        assert_eq!(phrases(no_pass, false), "");
+        let restart = Start {
+            from: Some(CorePhase::AtLimit),
+            to: CorePhase::Search,
+            offset: -27,
+            pass: None,
+            fail: None,
+        };
+        assert_eq!(phrases(restart, false), "core 01 starts its search over");
+        assert_eq!(phrases(restart, true), "");
+    }
+
+    #[test]
+    fn a_passing_part_names_the_next_part_of_a_multi_part_step() {
+        let mut fx = Fx::new().with_cores(&[(0, 0), (1, 0), (2, 1), (3, 1)]);
+        let steps = vec![step(
+            Regime::R7,
+            vec![
+                part(&[0, 1], Some(0), true, true),
+                part(&[2, 3], Some(1), true, false),
+            ],
+        )];
+        fx.cycle = Some((cycle_plan(1, steps, 0), vec![Vec::new()], None));
+        fx.trial = Some(counted(
+            in_cycle(trial(Regime::R7, Condition::Together, &[0, 1]), 1, 1, 1, 2),
+            0,
+            1,
+            1,
+        ));
+        let mut pass = branch(Premise::Pass);
+        pass.passes = 1;
+        pass.next = Some(plan(
+            Regime::R7,
+            many(&[2, 3]),
+            Condition::Together,
+            cycle_ctx(1, 1),
+            300,
+        ));
+        fx.forecast.branches = vec![pass];
+        assert_eq!(
+            fx.rows(),
+            ["if it passes | part 1 is done → next: part 2: full CCD 1 on 02 03, 5m"]
+        );
+        assert_eq!(fx.row_set()[0].compact, "→ part 2");
+    }
+
+    #[test]
+    fn a_rotating_workload_is_the_same_requirement_but_another_frozen_one_is_not() {
+        let mut fx = Fx::new().with_cores(&[(0, 0), (3, 1)]);
+        fx.trial = Some(alone(Regime::R1, 3, -16));
+        let search = TrialContext::Search {
+            core: core(3),
+            regime: Regime::R1,
+            offset: off(-16),
+        };
+        let mut next = plan(
+            Regime::R1,
+            Load::Single(core(3)),
+            Condition::Alone,
+            search,
+            120,
+        );
+        let mut unnamed = branch(Premise::Unnamed);
+        next.workload = WorkloadChoice::Rotate;
+        unnamed.next = Some(next.clone());
+        fx.forecast.branches = vec![unnamed.clone()];
+        assert_eq!(fx.rows(), ["if none is named | next: this load again"]);
+        next.workload = WorkloadChoice::Frozen(workloads(Regime::R2)[0].id());
+        unnamed.next = Some(next);
+        fx.forecast.branches = vec![unnamed];
+        let rows = fx.rows();
+        assert!(
+            rows[0].starts_with("if none is named | next: ")
+                && !rows[0].contains("this load again"),
+            "{rows:?}"
+        );
+    }
+
+    #[test]
     fn a_combination_outcome_is_named_by_its_decisions() {
         let (mut fx, next) = r7_fx();
         let mut pass = branch(Premise::Pass);
@@ -2641,8 +2951,8 @@ mod the_outcome_lines {
         let lines = outcome_lines(&full, 100, false);
         assert_eq!(lines[0].spans[0].style, Paint::Good.style(Colours::Full));
         assert_eq!(lines[0].spans[1].style, Paint::Text.style(Colours::Full));
-        let narrow = text(&outcome_lines(&fx.scene(ts(1)), 30, false));
-        assert!(narrow[0].chars().count() <= 30 + 21);
+        let narrow = outcome_lines(&fx.scene(ts(1)), 30, false);
+        assert!(crate::frames::fit::line_width(&narrow[0]) <= 30);
         let compact = text(&outcome_lines(&fx.scene(ts(1)), 100, true));
         assert_eq!(compact, ["pass → trial 2 of 4"]);
     }
