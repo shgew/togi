@@ -588,14 +588,11 @@ fn real_process_a_signal_before_the_bench_starts_stops_it_as_soon_as_it_does() {
         &format!("echo $$ > '{}'\nexec sleep 60\n", pids.display()),
     );
     fs::remove_file(fake.path("suite.json")).unwrap();
-    rustix::fs::mknodat(
-        rustix::fs::CWD,
-        fake.path("suite.json"),
-        rustix::fs::FileType::Fifo,
-        rustix::fs::Mode::from_raw_mode(0o600),
-        0,
-    )
-    .unwrap();
+    let made = Command::new("mkfifo")
+        .arg(fake.path("suite.json"))
+        .status()
+        .unwrap();
+    assert!(made.success());
     let mut child = sweep_in(&fake, &bench, false).spawn().unwrap();
     let suite = fake.path("suite.json");
     let writer = std::thread::spawn(move || fs::OpenOptions::new().write(true).open(suite));
