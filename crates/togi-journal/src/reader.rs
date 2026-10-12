@@ -151,6 +151,9 @@ impl<R: BufRead> Iterator for EventReader<R> {
         }
         if self.line.last() != Some(&b'\n') {
             self.done = true;
+            if self.lines == 0 && header::foreign_unterminated(&self.line) {
+                return Some(Err(ReadError::Foreign));
+            }
             self.torn = Some(std::mem::take(&mut self.line));
             return None;
         }

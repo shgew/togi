@@ -401,6 +401,61 @@ mod recorded {
             b"{\"seq\":1}\nrest\n"
         );
     }
+
+    /// The Go build's journal of a session that only started, first line alone, without its newline.
+    fn go_first_line_without_newline() -> String {
+        let go =
+            include_str!("../../../../internal/journal/testdata/20260927T221954Z-config.jsonl");
+        go.lines().next().unwrap().to_owned()
+    }
+
+    #[test]
+    fn an_unterminated_first_line_that_is_not_a_rust_header_is_another_builds_journal() {
+        for (name, bytes) in [
+            ("go first line", go_first_line_without_newline()),
+            ("garbage", "garbage".to_owned()),
+            ("a complete object", "{\"seq\":1}".to_owned()),
+        ] {
+            let fs = MemFs::new();
+            fs.put("/state/events.jsonl", bytes.clone());
+            let mutations = fs.mutations();
+            assert!(
+                matches!(
+                    recorded_build_in(&fs, Path::new("/state")),
+                    Err(DirError::ForeignJournal { .. })
+                ),
+                "{name}"
+            );
+            assert_eq!(fs.mutations(), mutations, "{name}");
+            assert_eq!(
+                fs.contents("/state/events.jsonl").unwrap(),
+                bytes.as_bytes(),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_zero_byte_journal_has_no_build() {
+        let fs = MemFs::new();
+        fs.put("/state/events.jsonl", "");
+        assert!(
+            recorded_build_in(&fs, Path::new("/state"))
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn a_first_line_cut_short_is_not_another_builds_journal() {
+        let fs = MemFs::new();
+        fs.put("/state/events.jsonl", "{\"seq\":1,\"kind\":\"sess");
+        assert!(
+            recorded_build_in(&fs, Path::new("/state"))
+                .unwrap()
+                .is_none()
+        );
+    }
 }
 
 #[test]

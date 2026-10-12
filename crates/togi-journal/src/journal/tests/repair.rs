@@ -304,6 +304,20 @@ fn a_journal_that_does_not_begin_with_session_start_is_another_builds_and_refuse
 }
 
 #[test]
+fn open_refuses_an_unterminated_foreign_first_line_and_changes_nothing() {
+    for bytes in [&b"garbage"[..], b"{\"seq\":1}"] {
+        let fs = MemFs::new();
+        fs.put("/state/events.jsonl", bytes.to_vec());
+        let Err(OpenError::Read(error)) = simulated(&fs).open(boot(2)) else {
+            panic!("an unterminated foreign first line must be refused by open");
+        };
+        assert!(matches!(error.source, ReadError::Foreign), "{error}");
+        // Opening takes the state lock first; the journal itself is never repaired.
+        assert_eq!(live(&fs), bytes);
+    }
+}
+
+#[test]
 fn an_unknown_kind_is_refused_before_any_repair() {
     let mut bytes = sample(&MemFs::new());
     let line = String::from_utf8(

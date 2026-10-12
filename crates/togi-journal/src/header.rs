@@ -54,5 +54,17 @@ pub(crate) fn classify(line: &[u8]) -> Option<Build> {
     })
 }
 
+/// Whether an unterminated first line is another build's journal rather than a first write that was cut short. A
+/// line whose JSON simply ends early may be the start of a Rust header a crash tore, which the journal repairs by
+/// truncating it; a line that is complete JSON or cannot be the start of JSON, and is not a header, is not, and
+/// nothing may repair it.
+pub(crate) fn foreign_unterminated(line: &[u8]) -> bool {
+    let cut_short = matches!(
+        serde_json::from_slice::<serde::de::IgnoredAny>(line),
+        Err(error) if error.is_eof()
+    );
+    !cut_short && classify(line).is_none()
+}
+
 #[cfg(test)]
 mod tests;

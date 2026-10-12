@@ -368,12 +368,14 @@ impl StateDir {
     /// that is not a `session.start` is another build's journal.
     pub fn live_session(&self) -> Result<Option<SessionId>, DirError> {
         let path = self.join(EVENTS_FILE);
-        let Some(line) = first_line(self.fs(), &path)? else {
+        let Some((line, complete)) = first_line(self.fs(), &path)? else {
             return Ok(None);
         };
         match peek_session(&line, "session.start") {
+            Some(_) if !complete => Ok(None),
             Some(Ok(session)) => Ok(Some(session)),
             Some(Err(source)) => Err(DirError::BadSession { path, source }),
+            None if !complete && !header::foreign_unterminated(&line) => Ok(None),
             None => Err(DirError::ForeignJournal { path }),
         }
     }
@@ -438,8 +440,9 @@ impl StateDir {
     }
 }
 
-/// The first complete line of the journal at `path`; `None` without one.
-fn first_line(fs: &dyn Fs, path: &Path) -> Result<Option<Vec<u8>>, DirError> {
+/// The first line of the journal at `path` without its newline, and whether the newline was there; `None` when the
+/// journal is missing or has no byte.
+fn first_line(fs: &dyn Fs, path: &Path) -> Result<Option<(Vec<u8>, bool)>, DirError> {
     let reader = match fs.open_read(path) {
         Ok(reader) => reader,
         Err(error) if not_found(&error) => return Ok(None),
@@ -449,15 +452,19 @@ fn first_line(fs: &dyn Fs, path: &Path) -> Result<Option<Vec<u8>>, DirError> {
     BufReader::new(reader)
         .read_until(b'\n', &mut line)
         .map_err(io_at("read journal", path))?;
-    if line.pop() != Some(b'\n') {
+    if line.is_empty() {
         return Ok(None);
     }
-    Ok(Some(line))
+    let complete = line.last() == Some(&b'\n');
+    if complete {
+        line.pop();
+    }
+    Ok(Some((line, complete)))
 }
 
 /// The build stamp of the live journal in the state directory `dir`, decoded from its first complete line alone,
-/// without taking the lock or writing; `None` when there is no journal or no complete first line. A first line that
-/// is not a Rust journal header is another build's journal, and no event after it is read.
+/// without taking the lock or writing; `None` when there is no journal or no complete first line. A first line,
+/// complete or not, that is not a Rust journal header is another build's journal, and no event after it is read.
 pub fn recorded_build(dir: &Path) -> Result<Option<Build>, DirError> {
     recorded_build_in(&DiskFs::default(), dir)
 }
@@ -465,13 +472,19 @@ pub fn recorded_build(dir: &Path) -> Result<Option<Build>, DirError> {
 /// [`recorded_build`] over `fs`.
 pub fn recorded_build_in(fs: &dyn Fs, dir: &Path) -> Result<Option<Build>, DirError> {
     let path = dir.join(EVENTS_FILE);
-    let Some(line) = first_line(fs, &path)? else {
+    let Some((line, complete)) = first_line(fs, &path)? else {
         return Ok(None);
     };
-    match header::classify(&line) {
-        Some(build) => Ok(Some(build)),
-        None => Err(DirError::ForeignJournal { path }),
+    if !complete {
+        return if header::foreign_unterminated(&line) {
+            Err(DirError::ForeignJournal { path })
+        } else {
+            Ok(None)
+        };
     }
+    header::classify(&line)
+        .map(Some)
+        .ok_or(DirError::ForeignJournal { path })
 }
 
 fn peek_session(

@@ -274,6 +274,46 @@ fn a_rust_header_this_build_cannot_decode_is_not_another_builds_journal() {
     ));
 }
 
+#[test]
+fn an_unterminated_first_line_that_is_not_a_rust_header_is_refused_not_torn() {
+    let go = include_str!("../../../../internal/journal/testdata/20260927T221954Z-config.jsonl")
+        .lines()
+        .next()
+        .unwrap()
+        .to_owned();
+    for (name, bytes) in [("go", go), ("garbage", "garbage".to_owned())] {
+        let mut reader = EventReader::new(bytes.as_bytes());
+        assert!(
+            matches!(reader.next(), Some(Err(ReadError::Foreign))),
+            "{name}"
+        );
+        assert!(reader.next().is_none(), "{name}");
+        assert_eq!(reader.accepted(), 0, "{name}");
+        assert!(reader.torn().is_none(), "{name}");
+        assert!(
+            matches!(Recording::parse(bytes.as_bytes()), Err(ReadError::Foreign)),
+            "{name}"
+        );
+        let fs = MemFs::new();
+        fs.put("/j.jsonl", bytes.clone());
+        let mutations = fs.mutations();
+        let error = Recording::read_in(&fs, Path::new("/j.jsonl")).unwrap_err();
+        assert!(matches!(error.source, ReadError::Foreign), "{name}");
+        assert_eq!(fs.mutations(), mutations, "{name}");
+        assert_eq!(fs.contents("/j.jsonl").unwrap(), bytes.as_bytes(), "{name}");
+    }
+}
+
+#[test]
+fn an_unterminated_rust_header_is_still_a_torn_tail() {
+    let bytes = recorded(&MemFs::new());
+    let first = bytes.split_inclusive(|byte| *byte == b'\n').next().unwrap();
+    let torn = &first[..first.len() - 1];
+    let mut reader = EventReader::new(torn);
+    assert!(reader.next().is_none());
+    assert_eq!(reader.torn(), Some(torn));
+}
+
 /// A reader that serves `data` and then fails instead of reporting end of input.
 struct FailingAfter {
     data: Vec<u8>,
