@@ -143,6 +143,10 @@ impl Checking {
         self.peak
     }
 
+    pub(crate) fn note_pass(&mut self, seq: Seq) {
+        self.last_seq = Some(seq);
+    }
+
     pub(crate) fn note_temperature(&mut self, celsius: i32, seq: Seq) {
         if self.peak.is_none_or(|peak| celsius > peak.celsius) {
             self.peak = Some(Peak { celsius, seq });
