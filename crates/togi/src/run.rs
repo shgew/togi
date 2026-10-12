@@ -20,9 +20,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use clap::{Args as ClapArgs, ValueHint};
 use togi_defect::KNOWN_DEFECTS;
 use togi_hostlock::HostLock;
-use togi_journal::{
-    Build, EventKind, Operation, Recording, Seq, StateDir, Verdict, recorded_build,
-};
+use togi_journal::{Build, Operation, Recording, StateDir, Verdict, recorded_build};
 use togi_machine::CancellationToken;
 use togi_render::{Renderer, Style, escape_text};
 use togi_session::{
@@ -223,7 +221,7 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
     });
     let hidden = Hidden::default();
     let suppressed = Rc::new(Cell::new(false));
-    let hidden_closing: Rc<RefCell<Vec<Seq>>> = Rc::default();
+    let hidden_closing: Rc<RefCell<outcome::HiddenClosing>> = Rc::default();
     let (log, report): (Box<dyn Write>, Box<dyn Write>) = match &dashboard {
         Some(dashboard) => (
             dashboard.gate_with_status(ctx.system.stderr(), Rc::clone(&suppressed)),
@@ -257,13 +255,9 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
             let hidden_closing = Rc::clone(&hidden_closing);
             Box::new(move |event: &togi_journal::Event| {
                 // The log line of this event was just written: `suppressed` is what the gate decided for it.
-                if matches!(
-                    event.kind(),
-                    EventKind::ProfileRestored | EventKind::Shutdown
-                ) && suppressed.get()
-                {
-                    hidden_closing.borrow_mut().push(event.seq);
-                }
+                hidden_closing
+                    .borrow_mut()
+                    .appended(event.kind(), event.seq, suppressed.get());
             }) as togi_session::AppendHook
         }),
         renderer,
@@ -297,7 +291,7 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
             renderer,
             &zone,
             ended.journal.events(),
-            &hidden_closing.borrow(),
+            hidden_closing.borrow().seqs(),
         );
     }
     let result = outcome::conclude(

@@ -3,7 +3,7 @@
 use std::io::Write;
 
 use jiff::tz::TimeZone;
-use togi_journal::{Event, Seq};
+use togi_journal::{Event, EventKind, Seq};
 use togi_render::{Renderer, Style, escape_text};
 use togi_session::{SessionError, Stop};
 
@@ -87,6 +87,42 @@ pub(super) fn conclude(
 
 fn find(events: &[Event], seq: Seq) -> Option<&Event> {
     events.iter().find(|event| event.seq == seq)
+}
+
+/// The closing events (`profile.restored`, `shutdown`) of the run's stop that the dashboard kept off the screen,
+/// told event by event as they are appended.
+///
+/// A restoration belongs to the stop only if nothing but the closing sequence's own events follows it: a
+/// same-boot resume restores at its startup and then goes on to work, and that restoration is not the stop's. The
+/// closing sequence's own events are the `shutdown` and what its kernel-log read records first, warnings and
+/// machine checks. A line the dashboard did not keep off the screen, because it had given way to event lines,
+/// was printed then and is not tracked.
+#[derive(Debug, Default)]
+pub(super) struct HiddenClosing(Vec<Seq>);
+
+impl HiddenClosing {
+    /// Takes in an appended event, and whether the dashboard kept its line off the screen.
+    pub(super) fn appended(&mut self, kind: EventKind, seq: Seq, hidden: bool) {
+        match kind {
+            EventKind::ProfileRestored => {
+                self.0.clear();
+                if hidden {
+                    self.0.push(seq);
+                }
+            }
+            EventKind::Shutdown => {
+                if hidden {
+                    self.0.push(seq);
+                }
+            }
+            EventKind::SessionWarning | EventKind::Mce => {}
+            _ => self.0.clear(),
+        }
+    }
+
+    pub(super) fn seqs(&self) -> &[Seq] {
+        &self.0
+    }
 }
 
 /// The lines of the events in `hidden`, which the dashboard kept off the screen, in journal order.

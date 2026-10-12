@@ -7,10 +7,12 @@ use std::fs;
 use togi_cli::Exit;
 use togi_hostlock::{HostLock, Policy};
 use togi_journal::{EventKind, Payload, ShutdownReason, StateDir};
-use togi_machine::{CoreId, Machine};
+use togi_machine::{CoreId, Machine, TargetOffset};
 use togi_render::OutputFacts;
 
-use crate::support::{Fake, biased, interrupt_on_first_write, signal_on_first_write};
+use crate::support::{
+    Fake, biased, interrupt_at_first_trial, interrupt_on_first_write, signal_on_first_write,
+};
 
 fn interrupted() -> Fake {
     let mut fake = Fake::new();
@@ -624,6 +626,53 @@ fn the_dashboard_hides_event_lines_and_the_clean_stop_prints_the_restoration_and
     assert!(!err.contains("trial.intent"), "{err}");
     assert!(err.trim_end().ends_with("stopped by signal"), "{err}");
     assert!(err.contains(" shutdown "), "{err}");
+}
+
+#[test]
+fn a_restoration_the_dashboard_hid_at_a_resumes_startup_is_not_repeated_by_the_clean_stop() {
+    // A run in the same boot left offsets applied, so the resume restores them at its startup, while the
+    // dashboard shows, and then goes on to work: only the restoration and the shutdown of its own stop belong
+    // on stderr once it ends.
+    let mut first = Fake::on(biased(1000, -5));
+    first_run(&mut first);
+    first
+        .sim
+        .seams()
+        .smu
+        .set_all_offsets(TargetOffset::new(-20).unwrap())
+        .unwrap();
+    let earlier = first.events().len();
+
+    let mut fake = Fake::in_dir(first.sim.clone(), &first.dir);
+    fake.interactive = true;
+    fake.wrap = Box::new(interrupt_at_first_trial);
+    let (exit, _, err) = fake.run(&["run"]);
+    assert_eq!(exit, Exit::Ok, "{err}");
+
+    let events = fake.events();
+    let resumed = &events[earlier..];
+    let restored: Vec<usize> = resumed
+        .iter()
+        .enumerate()
+        .filter(|(_, event)| event.kind() == EventKind::ProfileRestored)
+        .map(|(index, _)| index)
+        .collect();
+    let [startup, closing] = restored[..] else {
+        panic!("the resume restored {} times: {restored:?}", restored.len());
+    };
+    assert!(
+        resumed[startup + 1..closing]
+            .iter()
+            .any(|event| event.kind() != EventKind::SessionWarning),
+        "work followed the startup restoration, so it is not the closing one"
+    );
+    assert_eq!(err.matches(" profile.restored ").count(), 1, "{err}");
+    assert_eq!(err.matches(" shutdown ").count(), 1, "{err}");
+    assert!(
+        err.find(" profile.restored ") < err.find(" shutdown "),
+        "{err}"
+    );
+    assert!(!err.contains("trial.intent"), "{err}");
 }
 
 #[test]

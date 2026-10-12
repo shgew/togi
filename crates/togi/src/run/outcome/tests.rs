@@ -1,14 +1,14 @@
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use togi_journal::{
-    DeadEnd, DeadEndCondition, Dimension, Event, Payload, Refusal, Seq, Shutdown, ShutdownReason,
-    Stamp,
+    DeadEnd, DeadEndCondition, Dimension, Event, EventKind, Payload, Refusal, Seq, Shutdown,
+    ShutdownReason, Stamp,
 };
 use togi_machine::{BootId, PerCore};
 use togi_render::{OutputFacts, Renderer};
 use togi_session::{SessionError, Stop};
 
-use super::{conclude, print_hidden};
+use super::{HiddenClosing, conclude, print_hidden};
 use crate::exit::Exit;
 
 fn event(seq: u64, payload: Payload) -> Event {
@@ -220,5 +220,87 @@ fn only_the_events_the_dashboard_hid_are_printed_each_once_in_journal_order() {
             .map(|line| line.split_whitespace().nth(1).unwrap())
             .collect();
         assert_eq!(kinds, want, "{name}: {text}");
+    }
+}
+
+/// What a run appends, as `(kind, hidden by the dashboard)`, and the sequence numbers (1-based positions) the
+/// tracker holds for the summary at the end.
+#[test]
+fn only_the_closing_events_of_the_stop_the_dashboard_hid_are_tracked() {
+    use EventKind::{Mce, ProfileRestored, SessionWarning, Shutdown, TrialIntent};
+    type Run<'a> = &'a [(EventKind, bool)];
+    let table: [(&str, Run, &[u64]); 9] = [
+        (
+            "an ordinary stop",
+            &[
+                (TrialIntent, true),
+                (ProfileRestored, true),
+                (Shutdown, true),
+            ],
+            &[2, 3],
+        ),
+        (
+            "warnings and machine checks of the shutdown's own read",
+            &[
+                (ProfileRestored, true),
+                (SessionWarning, true),
+                (Mce, true),
+                (Shutdown, true),
+            ],
+            &[1, 4],
+        ),
+        (
+            "a resume's restoration at startup, then work, then the stop's own",
+            &[
+                (ProfileRestored, true),
+                (TrialIntent, true),
+                (ProfileRestored, true),
+                (Shutdown, true),
+            ],
+            &[3, 4],
+        ),
+        (
+            "a resume's restoration at startup, then work, and a stop that restores nothing",
+            &[
+                (ProfileRestored, true),
+                (TrialIntent, true),
+                (Shutdown, true),
+            ],
+            &[3],
+        ),
+        (
+            "a restoration at startup that no work follows is the stop's",
+            &[(ProfileRestored, true), (Shutdown, true)],
+            &[1, 2],
+        ),
+        (
+            "the dashboard gave way between the two: the live shutdown is not tracked",
+            &[(ProfileRestored, true), (Shutdown, false)],
+            &[1],
+        ),
+        (
+            "the dashboard gave way before the stop: nothing was hidden",
+            &[(ProfileRestored, false), (Shutdown, false)],
+            &[],
+        ),
+        (
+            "a startup restoration the dashboard hid, then the fallback, then a live stop",
+            &[
+                (ProfileRestored, true),
+                (TrialIntent, false),
+                (ProfileRestored, false),
+                (Shutdown, false),
+            ],
+            &[],
+        ),
+        ("no event", &[], &[]),
+    ];
+    for (name, run, want) in table {
+        let mut closing = HiddenClosing::default();
+        for (seq, (kind, hidden)) in (1..).zip(run) {
+            closing.appended(*kind, Seq::new(seq).unwrap(), *hidden);
+        }
+        let held: Vec<u64> = closing.seqs().iter().map(|seq| seq.get()).collect();
+        assert_eq!(held, want, "{name}");
     }
 }

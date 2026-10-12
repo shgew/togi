@@ -17,8 +17,9 @@ use togi_config::Config;
 use togi_hardware::{Diagnosis, Error, RebootError};
 use togi_hostlock::{HostLock, Policy};
 use togi_machine::{
-    BiosContext, BootId, CoreId, Error as MachineError, Machine, ObservedOffset, Smu, SmuValidated,
-    Stopped, TargetOffset,
+    BiosContext, BootId, CancellationToken, CoreId, Error as MachineError, Machine, ObservedOffset,
+    Partial, Running, Smu, SmuValidated, Stopped, Swept, TargetOffset, TrialConditions, TrialSpec,
+    Trials,
 };
 use togi_render::OutputFacts;
 use togi_sim::{Model, RunSettings, Simulator, file};
@@ -457,6 +458,52 @@ pub(crate) fn signal_on_first_write(machine: Machine, signal: rustix::process::S
         smu: Box::new(InterruptingSmu {
             inner: machine.smu,
             signal,
+            sent: false,
+        }),
+        ..machine
+    }
+}
+
+/// Sends the process SIGINT when the session starts its first trial: after its startup, so after any restoration
+/// a same-boot resume made before it went on to work.
+struct InterruptingTrials {
+    inner: Box<dyn Trials>,
+    sent: bool,
+}
+
+impl Trials for InterruptingTrials {
+    fn sweep(&mut self, cancel: &CancellationToken) -> Result<Swept, MachineError> {
+        self.inner.sweep(cancel)
+    }
+
+    fn start(
+        &mut self,
+        cancel: &CancellationToken,
+        spec: TrialSpec,
+        ready: Stopped,
+    ) -> Result<Box<dyn Running>, Partial<Option<Stopped>>> {
+        if !self.sent {
+            self.sent = true;
+            rustix::process::kill_process(rustix::process::getpid(), rustix::process::Signal::INT)
+                .unwrap();
+        }
+        self.inner.start(cancel, spec, ready)
+    }
+
+    fn ended(&mut self, id: &str) -> Result<(), MachineError> {
+        self.inner.ended(id)
+    }
+
+    fn samples<'a>(&'a self, id: &'a str) -> Box<dyn Iterator<Item = TrialConditions> + 'a> {
+        self.inner.samples(id)
+    }
+}
+
+/// The machine, interrupted by SIGINT when its first trial starts.
+pub(crate) fn interrupt_at_first_trial(machine: Machine) -> Machine {
+    Machine {
+        trials: Box::new(InterruptingTrials {
+            inner: machine.trials,
             sent: false,
         }),
         ..machine
