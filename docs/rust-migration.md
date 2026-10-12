@@ -734,4 +734,3 @@ The two `togi-session` crash sweeps hit nextest's 120 s limit on GitHub runners 
 - **Cost.** An incremental dev rebuild after a one-line change (`cargo build --tests -p <crate>`, hyperfine, 6 runs, 1 warmup) goes from 2.26 ± 0.03 s to 3.81 ± 0.06 s for `togi-journal`, and from 4.62 ± 0.04 s to 8.44 ± 0.99 s for `togi-tuner`.
 - **Coverage.** `just cover-rs` still reports changed lines correctly at opt-level 1. A throwaway function was added to each of `togi-journal` and `togi-tuner`, with a test that took one branch, and then dropped. For both crates the tool reported exactly the two lines of the untaken branch and none of the lines the test reached.
 - **Not measured.** The times on GitHub runners themselves, which the pull request's checks show.
-||||||| 26fe01aa
