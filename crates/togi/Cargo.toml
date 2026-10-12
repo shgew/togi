@@ -1,0 +1,30 @@
+[package]
+name = "togi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "Finds and tests per-core Curve Optimizer offsets on Zen 5 desktop CPUs"
+
+[lib]
+name = "togi_cli"
+
+[[bin]]
+name = "togi"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+clap_complete.workspace = true
+clap_complete_nushell.workspace = true
+togi-config.workspace = true
+togi-journal.workspace = true
+togi-version.workspace = true
+
+[dev-dependencies]
+insta.workspace = true
+tempfile.workspace = true
+
+[lints]
+workspace = true

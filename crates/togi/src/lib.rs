@@ -1,0 +1,28 @@
+//! The `togi` command line: argument parsing, exit statuses, `--version` and `completion`.
+//!
+//! [`run`] parses the arguments with clap, runs the chosen command against the given streams and
+//! returns an [`Exit`]; `main` writes to the process's own streams and turns the result into the
+//! process status.
+//!
+//! # Adding a command
+//!
+//! A command is one module and one variant:
+//!
+//! 1. Write `src/<name>.rs` with a `#[derive(clap::Args)] pub struct Args` for its flags and
+//!    `pub fn run(args: Args, ctx: &mut Context<'_>) -> Exit`. Flatten [`args::ConfigArgs`] into
+//!    `Args` if the command reads the configuration; `--state-dir` is already global and arrives
+//!    as `ctx.state_dir`. Write output through `ctx.out` and `ctx.err`, and return the status
+//!    from [`Exit`].
+//! 2. Add `pub mod <name>;` here and one variant to [`cli::Command`] holding the module's `Args`,
+//!    (the first paragraph of the struct's doc comment is the summary clap lists), and one arm to [`cli::Command::run`].
+//!
+//! Completions and help follow from the clap definition, so nothing else lists the command, and
+//! the snapshot tests show the new text for review.
+
+pub mod args;
+pub mod cli;
+pub mod completion;
+pub mod exit;
+
+pub use cli::run;
+pub use exit::Exit;

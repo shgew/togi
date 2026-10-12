@@ -1,0 +1,30 @@
+---
+source: crates/togi/tests/cli/main.rs
+expression: stdout(&ran)
+---
+Print a shell completion script
+
+Print the completion script for one shell to stdout. It completes command names, each command's flags and their values where a value has a known set or kind, such as paths for `--state-dir`. The Nix package installs all four scripts; regenerate a script you saved yourself after updating togi.
+
+Usage: togi completion [OPTIONS] <SHELL>
+
+Arguments:
+  <SHELL>
+          The shell to print the script for
+          
+          [possible values: bash, zsh, fish, nushell]
+
+Options:
+      --state-dir <path>
+          State directory
+          
+          [default: /var/lib/togi]
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+Examples:
+  source <(togi completion bash)              Load completions in bash, such as from ~/.bashrc
+  source <(togi completion zsh)               Load completions in zsh after compinit
+  togi completion fish | source               Load completions in fish
+  togi completion nushell | save -f togi.nu   Write a script for nushell's source command
