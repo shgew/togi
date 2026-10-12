@@ -212,3 +212,6 @@ impl From<ProfileFailure> for Flow {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;
