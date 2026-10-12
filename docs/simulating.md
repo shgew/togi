@@ -179,7 +179,7 @@ A journal does not hold everything the next boot observes. `Simulator::persisted
 - the registers and BIOS context;
 - the last trial's samples.
 
-Draws are keyed by seed and typed parts, so no generator state is kept. Armed faults, added scripts and recorded violations are not kept. A snapshot for another number of cores is `RestoreError::Cores`. Go rebuilt a later process's machine from the journals alone, so it lost the pending machine checks, the reset reason and the time between the last event and the crash.
+Draws are keyed by seed and typed parts, so no generator state is kept. Armed faults, added scripts and recorded violations are not kept. A snapshot decodes from objects only, as a machine file does, and a snapshot for another number of cores is `RestoreError::Cores`. Go rebuilt a later process's machine from the journals alone, so it lost the pending machine checks, the reset reason and the time between the last event and the crash.
 
 The machine-file format is the same document, with these differences:
 
@@ -202,7 +202,7 @@ A trial's failure is the earliest strictly before the intended end of the source
 3. Hands the journal and the carry to `togi_session::run`.
 4. After a crash, reboots the machine and repeats.
 
-The loop ends when a run stops without a crash, which gives `SimOutcome::Stopped` with the run's stop, errors, emergency outcome and resume capsule, or after `max_boots` boots, which gives `SimOutcome::Capped`.
+The loop ends when a run stops without a crash, which gives `SimOutcome::Stopped` with the run's stop, errors, emergency outcome and resume capsule, or after `max_boots` boots, which gives `SimOutcome::Capped`. A boot whose journal starts empty begins a new session, so the simulator forgets the last trial's samples (`Simulator::forget_last_trial`), and a new trial that reuses an earlier session's trial id reads none.
 
 The state directory is either in memory or on disk:
 
@@ -216,15 +216,15 @@ Both modes leave byte-identical `events.jsonl` and `state.json`; a test pins thi
 - every boot that ends the simulation, by a stop or by the cap;
 - every `verify_every`th crashed boot.
 
-A divergence is `SimError::Diverged`, and a state that cannot be published is `SimError::Publish`. Neither is ever reported as a cap.
+A divergence is `SimError::Diverged`, and a state that cannot be published is `SimError::Publish`. A crashed boot that also failed in another way, such as a failed log write, is `SimError::Failed` with those errors. A log that cannot be flushed at the end is `SimError::FlushLog`. None of these is ever reported as a cap. In a run that stops, a failed log write is `SessionError::Log` among its errors.
 
-**Observing the run.** An `observer` sees every appended event and may answer `Observe::Stop`, which cancels the run with `Stop::Signal`. It may also call the simulator's fault controls, such as `crash`, `next_reset` or `power_loss`. These two uses replace Go's `Until` and `Wrap` journal wrappers. An observer needs in-memory persistence. `write_samples` writes trial samples under the state directory's `trials/`, so it needs persistence on disk.
+**Observing the run.** An `observer` sees every appended event and may answer `Observe::Stop`, which cancels the run with `Stop::Signal`. It keeps seeing events after the caller's log fails. It may also call the simulator's fault controls, such as `crash`, `next_reset` or `power_loss`. These two uses replace Go's `Until` and `Wrap` journal wrappers. An observer needs in-memory persistence. `write_samples` writes trial samples under the state directory's `trials/`, so it needs persistence on disk.
 
 **After a run.** These functions read the state directory:
 
 - `events` returns the live journal's events.
 - `history` and `history_in` return a `togi_sim::History` that continues a resumed machine's boot numbering and clock.
-- `resume_simulator` returns the simulator a later process continues with. A capped simulation leaves its machine as `machine.json` in the state directory, and the later process restores it. Without `machine.json`, it builds a fresh machine from `history`. The next `simulate` removes the file. A test pins that a simulation capped and continued by a second process leaves the same `events.jsonl` and `state.json` as an uninterrupted one. A machine rebuilt from the journals alone does not.
+- `resume_simulator` returns the simulator a later process continues with. A capped simulation leaves its machine as `machine.json` in the state directory, and the later process restores it. Without `machine.json`, it builds a fresh machine from `history`. A later `simulate` removes the file after its first boot that appends to the journal, so a continuation refused before it starts, by a configuration naming a missing core for example, leaves the machine for the next try. A test pins that a simulation capped and continued by a second process leaves the same `events.jsonl` and `state.json` as an uninterrupted one. A machine rebuilt from the journals alone does not.
 - `recorded_config` and `recorded_config_in` return the configuration of the latest `config.loaded`, standing in for the file `togi run` would load.
 
 The tuner's simulation tests from `internal/tuner` (`forecast_sim_test.go` and `memo_test.go`) live in this crate's `tests/`, because they need whole simulated sessions. `togi-tuner` cannot take `togi-simrun` as a dev-dependency: that would build a second `togi-tuner` whose types do not unify with the first.
