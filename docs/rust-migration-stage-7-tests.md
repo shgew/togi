@@ -4,11 +4,11 @@ Every `func Test*`, `Benchmark*`, `Fuzz*` and `Example*` in the Go packages that
 
 The pull requests that ported each package are #841 (modelcheck), #844 (forecast), #832 (facts), #852 (fit), #851 (stats), #857 (bench runs, metrics, comparison and cache), #862 (bench gate reports), #866 (the bench's simulator check), #872 (`--same`, `--smoke` and `--forecast` of the bench), #878 (the bench's slim baseline projection, `--baseline-out`), #861 (`togi` argument parsing, exits, version and completion), #869 (`reset`, `restart-limit`, `doctor`), #870 (the `tools/audit` sweep), #879 (`status`, `events` and `watch`, closing issue #826) and #880 (`run`, the dashboard owner and panic handling, closing issue #829). Each row follows the Go-to-Rust mapping of the pull request that ported its command; a `cmd/togi` test that no mapping names is assigned by the command it drives. Every row is settled: none is pending.
 
-Rust names are `crate::module::fn`; an integration test binary adds its name after the crate (`togi_tool_bench::gate::…`, `togi::read::status::…`, `togi::run::lifecycle::…`), and a unit test of the library has no binary segment (`togi::table::tests::…`). Each name resolves to a test that `cargo nextest list --workspace` reports on `main` at d1a4dd63; a parameterised `#[test_case]` function counts by its name. One exception: `togi::run::pty::a_session_panic_over_the_real_linux_console_dashboard_restores_the_cursor_and_the_palette` was added by the closure review after d1a4dd63 and is not in that listing.
+Rust names are `crate::module::fn`; an integration test binary adds its name after the crate (`togi_tool_bench::gate::…`, `togi::read::status::…`, `togi::run::lifecycle::…`), and a unit test of the library has no binary segment (`togi::table::tests::…`). The Go inventory was taken on `main` at d1a4dd63 (after #880), where every Rust name then cited resolved in `cargo nextest list --workspace`. The citations were updated after `main` at dfa2ee21 (#899, the lenient read-only decoding of [#877](https://github.com/shgew/togi/issues/877)) was merged into this branch: each name now resolves to a test that `cargo nextest list --workspace` reports on the branch, which also has the closure review's `togi::run::pty::a_session_panic_over_the_real_linux_console_dashboard_restores_the_cursor_and_the_palette` that d1a4dd63 did not. #899 removed the tests of three rows (`TestCommandsWithFutureKind`, `TestEventsUnfilteredUnknownKind`, `TestHumanJournalReadErrorEscapesUnknownKind`), which pinned the earlier native refusal of an unknown kind in read-only words; those rows now cite the tests of the read-only commands' current behavior, which skip the kind and say so. The `reset` half of the hostile-kind row is pinned by `togi::reset::a_hostile_unknown_kind_is_escaped_in_the_refusal_and_the_journal_is_left_alone`, added after the measurements. A parameterised `#[test_case]` function counts by its name.
 
 Status:
 
-- **A**: a Rust test pins the behavior. Where the port changed a detail deliberately (clap's wording of a usage error, one `command.reset` without a `shutdown`, an unknown event kind refused in read-only words), the row maps the tests that pin the native behavior of the same intent.
+- **A**: a Rust test pins the behavior. Where the port changed a detail deliberately (clap's wording of a usage error, one `command.reset` without a `shutdown`, an unknown event kind that `status`, `events` and `watch` skip and report instead of showing it), the row maps the tests that pin the native behavior of the same intent.
 - **O(reason)**: obsolete under the native contract; the reason says what the Go test pinned and what replaced it, and the Rust tests listed, if any, pin the replacement.
 - **S4**: ported in stage 4; the row and its status are in `docs/rust-migration-stage-4-tests.md`, and its tests are repeated here.
 
@@ -457,7 +457,7 @@ Status:
 | `TestResetAllArchivesDifferentRulesetNormally` | `togi::reset::reset_all_of_another_ruleset_archives_it_normally` | A |
 | `TestResetAllCompletesRecordedOldSchemaArchive` | `togi::reset::a_journal_that_already_records_its_archive_is_only_moved` | A |
 | `TestUnknownKindsBeforeRunConfigAndReset` | `togi::reset::a_current_journal_with_an_unknown_kind_exits_16_and_is_left_alone`<br>`togi::reset::an_unknown_kind_keeps_a_pending_carry_and_refuses_an_older_ruleset_too`<br>`togi::run::lifecycle::an_unknown_event_kind_in_a_current_journal_is_refused_before_the_config_naming_the_kind`<br>`togi::run::lifecycle::an_unknown_event_kind_in_the_tuning_boot_leaves_its_own_reason_and_clears_the_saved_entry`<br>`togi::run::lifecycle::an_unknown_kind_in_an_older_journal_does_not_refuse_the_run_before_the_config_is_read` | A |
-| `TestCommandsWithFutureKind` | `togi::reset::a_current_journal_with_an_unknown_kind_exits_16_and_is_left_alone`<br>`togi::doctor::an_unknown_event_kind_in_a_current_journal_exits_16_naming_it`<br>`togi::doctor::the_unknown_kind_refusal_is_red_bold_on_a_terminal_like_the_stamp_refusal`<br>`togi::run::lifecycle::an_unknown_event_kind_in_a_current_journal_is_refused_before_the_config_naming_the_kind`<br>`togi::read::status::an_event_of_an_unknown_kind_is_refused_in_read_only_words_by_status`<br>`togi::read::events::an_event_of_an_unknown_kind_is_refused_in_read_only_words_by_events`<br>`togi::read::watch::an_event_of_an_unknown_kind_is_refused_in_read_only_words_by_watch` | A |
+| `TestCommandsWithFutureKind` | `togi::reset::a_current_journal_with_an_unknown_kind_exits_16_and_is_left_alone`<br>`togi::doctor::an_unknown_event_kind_in_a_current_journal_exits_16_naming_it`<br>`togi::doctor::the_unknown_kind_refusal_is_red_bold_on_a_terminal_like_the_stamp_refusal`<br>`togi::run::lifecycle::an_unknown_event_kind_in_a_current_journal_is_refused_before_the_config_naming_the_kind`<br>`togi::read::commands::the_read_only_commands_skip_an_unknown_kind_and_ignore_an_unknown_field_and_say_so` | A |
 | `TestReadCommandsRefuseHistoricalSchemaFixture` | `togi::read::events::an_older_schema_is_refused_too`<br>`togi::read::events::a_newer_schema_is_refused_with_advice` | A |
 
 ### `cmd/togi/completion_integration_test.go` (1)
@@ -520,7 +520,7 @@ Status:
 | `TestEventsErrors` | `togi::read::events::flag_value_errors_are_usage_errors`<br>`togi::read::events::a_valid_filter_with_no_match_prints_nothing_and_exits_zero` | A |
 | `TestEventsKindValidation` | `togi::read::events::kind_errors_are_usage_errors_before_the_journal_is_read` | A |
 | `TestEventsKindQueries` | `togi::read::events::filters_narrow_the_readable_lines`<br>`togi::read::events::a_valid_filter_with_no_match_prints_nothing_and_exits_zero` | A |
-| `TestEventsUnfilteredUnknownKind` | `togi::read::events::an_event_of_an_unknown_kind_is_refused_in_read_only_words_by_events` | A |
+| `TestEventsUnfilteredUnknownKind` | `togi::read::commands::the_read_only_commands_skip_an_unknown_kind_and_ignore_an_unknown_field_and_say_so` | A |
 | `TestReadCommandsReportTornTail` | `togi::read::events::a_torn_tail_is_reported_after_the_events` | A |
 
 ### `cmd/togi/hostlock_test.go` (9)
@@ -639,7 +639,7 @@ Status:
 | Go test | Rust test(s) | status |
 |---|---|---|
 | `TestHumanJournalBoundaries` | `togi_render::escape::tests::range_boundaries_escape_exactly_the_listed_characters`<br>`togi_render::tests::write_event_ends_with_exactly_one_newline`<br>`togi_render::tests::write_event_appends_one_line_per_call` | A |
-| `TestHumanJournalReadErrorEscapesUnknownKind` | `togi::read::commands::a_hostile_unknown_kind_is_escaped_in_the_spec_form_on_stderr` | A |
+| `TestHumanJournalReadErrorEscapesUnknownKind` | `togi::read::commands::an_unknown_kind_that_is_hostile_is_escaped_in_what_the_read_only_commands_say`<br>`togi::reset::a_hostile_unknown_kind_is_escaped_in_the_refusal_and_the_journal_is_left_alone` | A |
 | `TestHumanProjectedFieldsEscapeControls` | `togi::read::status::a_between_trial_mce_is_listed_as_evidence_and_escaped`<br>`togi::read::events::a_between_trial_mce_is_listed_and_its_controls_are_escaped`<br>`togi_render::escape::tests::every_c0_control_and_del_is_escaped` | A |
 
 ### `cmd/togi/version_test.go` (2)
