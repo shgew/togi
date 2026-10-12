@@ -511,15 +511,22 @@ async fn a_slow_classified_watched_flood_is_polled_during_the_trial_and_leaves_t
                 ctx.until_killed().await;
             }))
         });
-        let begun = std::time::Instant::now();
         let handle = rig.start(spec(Regime::R4, &[0], secs(1))).await.unwrap();
         let run = finish(&handle).await;
         let classified = first.get().expect("the flood was classified");
+        let terminated = rig
+            .fake
+            .process(0)
+            .signal_times
+            .borrow()
+            .iter()
+            .find(|(_, signal)| matches!(signal, GroupSignal::Term))
+            .map(|(at, _)| at.into_std())
+            .expect("the teardown terminated the worker");
         assert!(
-            classified.duration_since(begun) < Duration::from_millis(500),
+            *classified < terminated,
             "watched output is polled by the sampling ticks of the trial, not first by the \
-             teardown: {:?}",
-            classified.duration_since(begun)
+             teardown"
         );
         let toggles: Vec<_> = rig
             .fake
@@ -833,7 +840,7 @@ async fn a_blocked_log_write_never_stalls_supervision_and_is_reported() {
         let handle = rig.start(spec(Regime::R1, &[0], secs(3))).await.unwrap();
         let wall = std::time::Instant::now();
         let run = finish(&handle).await;
-        assert!(wall.elapsed() < secs(10));
+        assert!(wall.elapsed() < rig.env.timing.wait_bound(secs(3)));
         assert_eq!(run.finished.result.ran, secs(3));
         assert!(run.finished.teardown.is_ok());
         let Some(Error::Output(output)) = run.finished.errors.last() else {
