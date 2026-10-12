@@ -36,6 +36,10 @@ fn a_session_resumed_in_a_new_process_ends_where_an_uninterrupted_one_does() {
 fn same(whole: &Path, split: &Path, name: &str) {
     let whole = fs::read_to_string(whole.join(name)).unwrap();
     let split = fs::read_to_string(split.join(name)).unwrap();
+    same_text(name, &whole, &split);
+}
+
+fn same_text(name: &str, whole: &str, split: &str) {
     if let Some((line, (expected, found))) = whole
         .lines()
         .zip(split.lines())
@@ -48,4 +52,17 @@ fn same(whole: &Path, split: &Path, name: &str) {
         );
     }
     assert_eq!(whole.lines().count(), split.lines().count(), "{name} lines");
+    assert!(whole == split, "{name} differs outside its lines' text");
+}
+
+#[test]
+#[should_panic(expected = "differs outside its lines' text")]
+fn files_that_differ_only_in_their_final_newline_differ() {
+    same_text("events.jsonl", "{\"seq\":1}\n", "{\"seq\":1}");
+}
+
+#[test]
+#[should_panic(expected = "differs outside its lines' text")]
+fn files_that_differ_only_in_line_endings_differ() {
+    same_text("events.jsonl", "{\"seq\":1}\n", "{\"seq\":1}\r\n");
 }
