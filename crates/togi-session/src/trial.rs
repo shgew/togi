@@ -118,3 +118,6 @@ impl Reporter for Journaled<'_> {
         }));
     }
 }
+
+#[cfg(test)]
+mod tests;
