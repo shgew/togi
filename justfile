@@ -126,6 +126,16 @@ check-one +names:
 sim seed="1" *args: _dev-shell
     go run ./tools/sim --seed "$1" "${@:2}"
 
+# Run a simulated session with the Rust simulator, flags as `sim` takes them (`just sim-rs --seed 7 --max-boots 20`)
+[group('run')]
+sim-rs *args: _dev-shell
+    cargo run --release --locked -p togi-tool-sim -- "$@"
+
+# Run every session of the simulator suite with the Rust simulator and check that each ended clean
+[group('run')]
+sim-suite-rs *args: _dev-shell
+    out=$(mktemp -d); cargo run --release --locked -p togi-tool-sim -- suite --suite tools/bench/suite.json --out "$out" "$@" && cargo run --release --locked -p togi-tool-sim -- check --suite tools/bench/suite.json --shards 1 "$out"
+
 # Play a recorded journal through the dashboard on a fast-forward clock
 [group('run')]
 replay *args: _dev-shell

@@ -99,7 +99,7 @@ jobs:
 
   check:
     if: always()
-    needs: [build, macos]
+    needs: [eval, build, macos]
     runs-on: ubuntu-26.04
     steps:
       - name: Every check passed
@@ -110,3 +110,11 @@ jobs:
         run: |
           test "$BUILD" = success
           test "$MACOS" = "$MACOS_EXPECTED"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Every simulator suite shard was built
+        env:
+          CHECKS: ${{ needs.eval.outputs.checks }}
+        run: |
+          want=$(jq -ce '.shards as $n | select($n >= 1) | [range($n) | "rust-sim-suite-\(.)"]' nix/sim-suite.json)
+          got=$(jq -c '[.[] | select(startswith("rust-sim-suite-"))] | sort_by(ltrimstr("rust-sim-suite-") | tonumber)' <<<"$CHECKS")
+          test "$got" = "$want" || { echo "suite shards built: $got; nix/sim-suite.json expects: $want"; exit 1; }
