@@ -223,6 +223,8 @@ impl Backend for Recording {
 
 const BOOT: &str = "boot-1";
 
+pub(super) type TestEvent = Event;
+
 fn event(seq: u64, payload: Payload) -> Event {
     Event::new(
         togi_journal::Seq::new(seq).unwrap(),

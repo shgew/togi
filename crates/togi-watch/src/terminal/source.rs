@@ -7,7 +7,9 @@ use std::os::unix::fs::MetadataExt as _;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use togi_journal::{FileError, ReadError, Recording};
+use togi_journal::{
+    Build, FileError, Operation, Payload, ReadError, Recording, Refusal, SCHEMA, Verdict,
+};
 
 use crate::history::LogEntry;
 use crate::model::{FoldError, Model};
@@ -26,6 +28,9 @@ pub enum SourceError {
     /// The journal cannot be read or does not decode.
     #[error(transparent)]
     Read(#[from] FileError),
+    /// The journal was written by a build whose schema this one cannot show.
+    #[error(transparent)]
+    Incompatible(#[from] Refusal),
     /// The journal decodes, but its events do not fold into a session.
     #[error(transparent)]
     Fold(#[from] FoldError),
@@ -80,6 +85,21 @@ pub(super) struct Source {
     stat_error: Option<String>,
     content: Content,
     held: Option<HeldLog>,
+    /// How many times the model was built from the first event on.
+    #[cfg(test)]
+    rebuilt: usize,
+}
+
+/// This build, as far as showing a journal goes: only its schema decides whether a journal can be shown.
+fn shown_build() -> Build {
+    Build {
+        version: String::new(),
+        rev: None,
+        ruleset: 0,
+        schema: SCHEMA,
+        fixes: 0,
+        evidence: 0,
+    }
 }
 
 fn is_not_found(error: &FileError) -> bool {
@@ -95,6 +115,8 @@ impl Source {
             stat_error: None,
             content: Content::Missing,
             held: None,
+            #[cfg(test)]
+            rebuilt: 0,
         }
     }
 
@@ -186,7 +208,17 @@ impl Source {
             }
             _ => (Box::new(Model::new()), 0),
         };
+        #[cfg(test)]
+        if folded == 0 {
+            self.rebuilt += 1;
+        }
         for event in &events[folded..] {
+            if let Payload::SessionStart(start) = &event.payload {
+                if let Verdict::Refuse(refusal) = shown_build().verdict(&start.build, Operation::Inspect) {
+                    self.content = Content::Problem(refusal.into());
+                    return;
+                }
+            }
             if model.fold(event).is_err() {
                 break;
             }
@@ -245,5 +277,456 @@ impl Source {
             Content::Ready(model, _) => model.problem().cloned().map(SourceError::Fold),
             Content::Missing | Content::Starting => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::io::Write as _;
+    use std::path::Path;
+
+    use tempfile::TempDir;
+
+    use super::{Content, Source};
+    use crate::history::LOG_LIMIT;
+    use crate::screen::{Colours, Journal, Screen, View};
+    use crate::terminal::testing::{
+        lines, session_start, session_with_warnings, warning, write_bytes, write_journal,
+    };
+
+    /// What a frame would be drawn from.
+    #[derive(Debug, PartialEq, Eq)]
+    enum Shown {
+        Missing,
+        Starting,
+        Problem(String),
+        Ready {
+            messages: Vec<String>,
+            total: usize,
+            arrived: usize,
+        },
+    }
+
+    fn screen(view: View, scroll: usize) -> Screen {
+        Screen {
+            view,
+            keys: true,
+            scroll,
+            width: 120,
+            height: 33,
+            one_frame: false,
+            colours: Colours::None,
+        }
+    }
+
+    fn main_screen() -> Screen {
+        screen(View::Main, 0)
+    }
+
+    const FOLLOWING: usize = usize::MAX;
+
+    fn show(source: &mut Source, screen: &Screen) -> Shown {
+        match source.journal(screen) {
+            Journal::Missing => Shown::Missing,
+            Journal::Starting => Shown::Starting,
+            Journal::Problem(error) => Shown::Problem(error.to_string()),
+            Journal::Ready { log, .. } => Shown::Ready {
+                messages: log.entries.iter().map(|entry| entry.msg.clone()).collect(),
+                total: log.total,
+                arrived: log.arrived,
+            },
+        }
+    }
+
+    fn ready(shown: &Shown) -> (&[String], usize, usize) {
+        match shown {
+            Shown::Ready {
+                messages,
+                total,
+                arrived,
+            } => (messages, *total, *arrived),
+            other => panic!("not a journal: {other:?}"),
+        }
+    }
+
+    fn contains(source: &mut Source, text: &str) -> bool {
+        let shown = show(source, &main_screen());
+        ready(&shown).0.iter().any(|message| message == text)
+    }
+
+    fn append(dir: &Path, events: &[crate::terminal::testing::TestEvent]) {
+        let mut file = fs::OpenOptions::new()
+            .append(true)
+            .open(dir.join("events.jsonl"))
+            .unwrap();
+        file.write_all(&lines(events)).unwrap();
+    }
+
+    fn touch(dir: &Path, seconds: u64) {
+        let file = fs::File::options()
+            .write(true)
+            .open(dir.join("events.jsonl"))
+            .unwrap();
+        file.set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(seconds))
+            .unwrap();
+    }
+
+    fn replace(dir: &Path, bytes: &[u8]) {
+        let temporary = dir.join("replacement");
+        fs::write(&temporary, bytes).unwrap();
+        let file = fs::File::options().write(true).open(&temporary).unwrap();
+        file.set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(2000))
+            .unwrap();
+        fs::rename(&temporary, dir.join("events.jsonl")).unwrap();
+    }
+
+    fn journal_of(message: &str) -> Vec<crate::terminal::testing::TestEvent> {
+        vec![session_start(1), warning(2, message)]
+    }
+
+    #[test]
+    fn reload_follows_a_replaced_grown_rewritten_removed_and_restored_journal() {
+        let dir = TempDir::new().unwrap();
+        let mut source = Source::new(dir.path(), None);
+        assert!(source.reload());
+        assert_eq!(show(&mut source, &main_screen()), Shown::Missing);
+
+        write_journal(dir.path(), &journal_of("original"));
+        assert!(source.reload());
+        assert!(contains(&mut source, "original"));
+
+        replace(dir.path(), &lines(&journal_of("replaced")));
+        assert!(source.reload(), "a replacement of the same size and time is a new file");
+        assert!(contains(&mut source, "replaced") && !contains(&mut source, "original"));
+
+        append(dir.path(), &[warning(3, "appended")]);
+        assert!(source.reload(), "growth is a change");
+        assert!(contains(&mut source, "appended") && contains(&mut source, "replaced"));
+
+        let grown = fs::read_to_string(dir.path().join("events.jsonl")).unwrap();
+        write_bytes(dir.path(), grown.replace("appended", "modified").as_bytes());
+        touch(dir.path(), 2001);
+        assert!(source.reload(), "a new modification time is a change");
+        assert!(contains(&mut source, "modified") && !contains(&mut source, "appended"));
+
+        fs::remove_file(dir.path().join("events.jsonl")).unwrap();
+        assert!(source.reload());
+        assert_eq!(show(&mut source, &main_screen()), Shown::Missing);
+
+        write_journal(dir.path(), &journal_of("restored"));
+        assert!(source.reload());
+        assert!(contains(&mut source, "restored"));
+    }
+
+    #[test]
+    fn an_unchanged_journal_and_an_unchanged_absence_are_not_reloaded() {
+        let dir = TempDir::new().unwrap();
+        let mut source = Source::new(dir.path(), None);
+        assert!(source.reload());
+        assert!(!source.reload(), "an unchanged missing journal was reloaded");
+        write_journal(dir.path(), &journal_of("original"));
+        assert!(source.reload());
+        assert!(!source.reload(), "an unchanged journal was reloaded");
+    }
+
+    #[test]
+    fn an_append_folds_only_the_new_events_and_a_replacement_builds_a_fresh_model() {
+        let dir = TempDir::new().unwrap();
+        write_journal(dir.path(), &session_with_warnings(5));
+        let mut source = Source::new(dir.path(), None);
+        source.reload();
+        assert_eq!(source.rebuilt, 1);
+        append(dir.path(), &[warning(7, "w7")]);
+        source.reload();
+        append(dir.path(), &[warning(8, "w8")]);
+        source.reload();
+        assert_eq!(source.rebuilt, 1, "an append rebuilt the model");
+        assert!(matches!(&source.content, Content::Ready(_, 8)));
+        replace(dir.path(), &lines(&session_with_warnings(2)));
+        source.reload();
+        assert_eq!(source.rebuilt, 2);
+        assert!(matches!(&source.content, Content::Ready(_, 3)));
+        write_bytes(dir.path(), &lines(&session_with_warnings(1)));
+        source.reload();
+        assert_eq!(source.rebuilt, 3, "a truncation rebuilt nothing");
+    }
+
+    #[test]
+    fn a_journal_of_a_newer_schema_is_a_problem_not_a_session() {
+        let dir = TempDir::new().unwrap();
+        let text = String::from_utf8(lines(&journal_of("newer"))).unwrap();
+        let newer = text.replace("\"schema\":1", "\"schema\":2");
+        assert_ne!(text, newer);
+        write_bytes(dir.path(), newer.as_bytes());
+        let mut source = Source::new(dir.path(), None);
+        source.reload();
+        let Shown::Problem(text) = show(&mut source, &main_screen()) else {
+            panic!("a newer journal was shown");
+        };
+        assert_eq!(text, "the journal's schema is 2; this build's is 1");
+    }
+
+    #[test]
+    fn a_journal_that_does_not_decode_is_a_problem_until_it_does() {
+        let dir = TempDir::new().unwrap();
+        let mut source = Source::new(dir.path(), None);
+        source.reload();
+        write_bytes(dir.path(), b"not json\n");
+        assert!(source.reload());
+        let Shown::Problem(text) = show(&mut source, &main_screen()) else {
+            panic!("an undecodable journal was shown");
+        };
+        assert!(text.contains("line 1"), "{text}");
+        assert!(!source.reload(), "an unchanged problem was reloaded");
+        write_journal(dir.path(), &journal_of("live journal recovered"));
+        assert!(source.reload());
+        assert!(contains(&mut source, "live journal recovered"));
+    }
+
+    #[test]
+    fn a_journal_the_model_cannot_fold_is_a_problem_and_the_error_of_a_one_frame_print() {
+        let dir = TempDir::new().unwrap();
+        write_journal(dir.path(), &[session_start(1), session_start(2)]);
+        let mut source = Source::new(dir.path(), None);
+        source.reload();
+        assert_eq!(
+            show(&mut source, &main_screen()),
+            Shown::Problem("event #2 is a second session.start".into())
+        );
+        let problem = source.into_problem().unwrap();
+        assert_eq!(problem.to_string(), "event #2 is a second session.start");
+    }
+
+    #[test]
+    fn missing_and_unreadable_are_distinct() {
+        let dir = TempDir::new().unwrap();
+        let mut source = Source::new(dir.path(), None);
+        source.reload();
+        assert_eq!(show(&mut source, &main_screen()), Shown::Missing);
+        assert!(source.into_problem().is_none());
+
+        fs::create_dir(dir.path().join("events.jsonl")).unwrap();
+        let mut source = Source::new(dir.path(), None);
+        source.reload();
+        assert!(
+            matches!(show(&mut source, &main_screen()), Shown::Problem(_)),
+            "a journal that cannot be read was shown as missing"
+        );
+        assert!(source.into_problem().is_some());
+
+        if !rustix::process::geteuid().is_root() {
+            let hidden = TempDir::new().unwrap();
+            let inner = hidden.path().join("state");
+            fs::create_dir(&inner).unwrap();
+            write_journal(&inner, &journal_of("hidden"));
+            fs::set_permissions(&inner, std::os::unix::fs::PermissionsExt::from_mode(0o000)).unwrap();
+            let mut source = Source::new(&inner, None);
+            source.reload();
+            let shown = show(&mut source, &main_screen());
+            fs::set_permissions(&inner, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+            assert!(matches!(shown, Shown::Problem(_)), "{shown:?}");
+        }
+    }
+
+    #[test]
+    fn an_empty_journal_has_no_session_yet() {
+        let dir = TempDir::new().unwrap();
+        write_bytes(dir.path(), b"");
+        let mut source = Source::new(dir.path(), None);
+        source.reload();
+        assert_eq!(show(&mut source, &main_screen()), Shown::Missing);
+    }
+
+    #[test]
+    fn a_run_in_progress_starts_with_the_run_not_the_journal_it_found() {
+        let dir = TempDir::new().unwrap();
+        let mut source = Source::new(dir.path(), Some(2));
+        source.reload();
+        assert_eq!(show(&mut source, &main_screen()), Shown::Starting);
+        write_journal(dir.path(), &journal_of("from an earlier run"));
+        assert!(source.reload());
+        assert_eq!(show(&mut source, &main_screen()), Shown::Starting, "an earlier run's journal was shown");
+        append(dir.path(), &[warning(3, "this run")]);
+        assert!(source.reload());
+        assert!(contains(&mut source, "this run"));
+        assert!(contains(&mut source, "from an earlier run"));
+    }
+
+    #[test]
+    fn a_run_in_progress_still_reports_a_journal_it_cannot_read() {
+        let dir = TempDir::new().unwrap();
+        write_bytes(dir.path(), b"not json\n");
+        let mut source = Source::new(dir.path(), Some(0));
+        source.reload();
+        assert!(matches!(show(&mut source, &main_screen()), Shown::Problem(_)));
+    }
+
+    fn scrolled_back(dir: &TempDir, warnings: u64) -> (Source, Screen) {
+        write_journal(dir.path(), &session_with_warnings(warnings));
+        let mut source = Source::new(dir.path(), None);
+        assert!(source.reload());
+        show(&mut source, &screen(View::Log, FOLLOWING));
+        let back = screen(View::Log, 0);
+        show(&mut source, &back);
+        (source, back)
+    }
+
+    #[test]
+    fn a_scrolled_back_log_holds_its_list_and_counts_arrivals() {
+        let dir = TempDir::new().unwrap();
+        let full = u64::try_from(LOG_LIMIT).unwrap() + 50;
+        write_journal(dir.path(), &session_with_warnings(full));
+        let mut source = Source::new(dir.path(), None);
+        source.reload();
+        let following = screen(View::Log, FOLLOWING);
+        let shown = show(&mut source, &following);
+        assert_eq!(ready(&shown).2, 0, "a view at the end counts arrivals");
+
+        let back = screen(View::Log, 0);
+        let held = show(&mut source, &back);
+        let (held_rows, held_total, _) = ready(&held);
+        let held_rows = held_rows.to_vec();
+        assert_eq!(held_rows.len(), LOG_LIMIT);
+
+        append(dir.path(), &[warning(full + 2, "arrival")]);
+        source.reload();
+        let one = show(&mut source, &back);
+        assert_eq!((ready(&one).0, ready(&one).1, ready(&one).2), (&held_rows[..], held_total, 1));
+
+        for seq in full + 3..full + 10 {
+            append(dir.path(), &[warning(seq, "arrival")]);
+        }
+        source.reload();
+        let many = show(&mut source, &back);
+        assert_eq!((ready(&many).0, ready(&many).1, ready(&many).2), (&held_rows[..], held_total, 8));
+
+        let end = show(&mut source, &following);
+        let (rows, total, arrived) = ready(&end);
+        assert_eq!(rows.last().map(String::as_str), Some("arrival"));
+        assert_eq!((total, arrived), (held_total + 8, 0), "a view back at the end counts arrivals");
+
+        let again = show(&mut source, &back);
+        assert_eq!(ready(&again).2, 0, "a new hold starts with arrivals");
+        assert_eq!(ready(&again).1, held_total + 8, "scrolling back again holds the list as it is now");
+    }
+
+    #[test]
+    fn closing_a_scrolled_back_log_lets_go_of_its_list() {
+        let dir = TempDir::new().unwrap();
+        let (mut source, back) = scrolled_back(&dir, 450);
+        let _ = back;
+        append(dir.path(), &[warning(452, "latest")]);
+        source.reload();
+        show(&mut source, &main_screen());
+        let reopened = show(&mut source, &screen(View::Log, FOLLOWING));
+        let (rows, _, arrived) = ready(&reopened);
+        assert_eq!(rows.last().map(String::as_str), Some("latest"));
+        assert_eq!(arrived, 0);
+    }
+
+    #[test]
+    fn a_scrolled_back_log_drops_its_list_when_the_journal_goes_away_or_breaks() {
+        for unavailable in ["missing", "malformed", "empty"] {
+            for redraw in [false, true] {
+                let dir = TempDir::new().unwrap();
+                let (mut source, back) = scrolled_back(&dir, 40);
+                append(dir.path(), &[warning(42, "old arrival")]);
+                source.reload();
+                assert_eq!(ready(&show(&mut source, &back)).2, 1);
+                let path = dir.path().join("events.jsonl");
+                match unavailable {
+                    "missing" => fs::remove_file(&path).unwrap(),
+                    "malformed" => {
+                        let mut text = fs::read(&path).unwrap();
+                        text.extend_from_slice(b"not json\n");
+                        write_bytes(dir.path(), &text);
+                    }
+                    _ => write_bytes(dir.path(), b""),
+                }
+                assert!(source.reload(), "{unavailable}");
+                if redraw {
+                    let shown = show(&mut source, &back);
+                    assert_eq!(
+                        matches!(shown, Shown::Problem(_)),
+                        unavailable == "malformed",
+                        "{unavailable}: {shown:?}"
+                    );
+                    assert!(!matches!(shown, Shown::Ready { .. }), "unavailable journal kept old rows");
+                }
+                assert!(!source.reload(), "unchanged unavailable journal was reloaded again");
+                let mut recovered = session_with_warnings(40);
+                recovered.push(warning(42, "recovered"));
+                write_journal(dir.path(), &recovered);
+                assert!(source.reload());
+                let shown = show(&mut source, &back);
+                let (rows, _, arrived) = ready(&shown);
+                assert!(rows.iter().any(|row| row == "recovered"), "{unavailable}");
+                assert!(!rows.iter().any(|row| row == "old arrival"), "{unavailable}");
+                assert_eq!(arrived, 0, "{unavailable}/{redraw}: the recovered journal inherited arrivals");
+            }
+        }
+    }
+
+    #[test]
+    fn a_scrolled_back_log_drops_its_list_when_the_journal_is_replaced_or_truncated() {
+        for operation in ["replace", "shrink"] {
+            for warnings in [41_u64, 42] {
+                let dir = TempDir::new().unwrap();
+                let (mut source, back) = scrolled_back(&dir, 40);
+                append(dir.path(), &[warning(42, "old arrival")]);
+                source.reload();
+                assert_eq!(ready(&show(&mut source, &back)).2, 1);
+                let mut changed = session_with_warnings(warnings);
+                changed.push(warning(warnings + 2, "replaced"));
+                match operation {
+                    "replace" => replace(dir.path(), &lines(&changed)),
+                    _ => write_bytes(dir.path(), &lines(&changed[..3])),
+                }
+                assert!(source.reload(), "{operation}/{warnings}");
+                let shown = show(&mut source, &back);
+                let (rows, total, arrived) = ready(&shown);
+                assert!(!rows.iter().any(|row| row == "old arrival"), "{operation}/{warnings}");
+                assert_eq!(arrived, 0, "{operation}/{warnings}: the changed journal inherited arrivals");
+                assert_eq!(total, rows.len(), "the list is the changed journal's own");
+            }
+        }
+    }
+
+    #[test]
+    fn a_second_session_start_is_a_fold_problem_that_drops_the_held_list() {
+        let dir = TempDir::new().unwrap();
+        let (mut source, back) = scrolled_back(&dir, 40);
+        append(dir.path(), &[session_start(42)]);
+        assert!(source.reload());
+        assert!(matches!(show(&mut source, &back), Shown::Problem(_)));
+        assert!(source.held.is_none());
+    }
+
+    #[test]
+    fn a_scrolled_back_log_holds_through_appends() {
+        let dir = TempDir::new().unwrap();
+        let (mut source, back) = scrolled_back(&dir, 40);
+        let before = show(&mut source, &back);
+        let (rows, total, _) = ready(&before);
+        let rows = rows.to_vec();
+        for (count, event) in [
+            warning(42, "ordinary arrival"),
+            warning(43, "another arrival"),
+            warning(44, "latest arrival"),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            append(dir.path(), &[event]);
+            assert!(source.reload());
+            let shown = show(&mut source, &back);
+            let (held, held_total, arrived) = ready(&shown);
+            assert_eq!(held, &rows[..], "arrival {} moved the held rows", count + 1);
+            assert_eq!((held_total, arrived), (total, count + 1));
+        }
+        let end = show(&mut source, &screen(View::Log, FOLLOWING));
+        assert_eq!(ready(&end).0.last().map(String::as_str), Some("latest arrival"));
+        assert_eq!(ready(&end).2, 0);
     }
 }
