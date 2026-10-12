@@ -1222,6 +1222,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "togi-watchtest"
+version = "0.0.0"
+dependencies = [
+ "jiff",
+ "tempfile",
+ "thiserror",
+ "togi-config",
+ "togi-journal",
+ "togi-machine",
+ "togi-render",
+ "togi-session",
+ "togi-sim",
+ "togi-simrun",
+ "togi-tuner",
+]
+
+[[package]]
 name = "togi-ycruncher"
 version = "0.0.0"
 dependencies = [
