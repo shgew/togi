@@ -196,6 +196,17 @@ fn real_process_helper() {
             let stdout = std::io::stdout();
             run(&state_dir, stdout.as_fd(), Some(stdin.as_fd()))
         }
+        "frames_after" => {
+            let stdin = std::io::stdin();
+            let stdout = std::io::stdout();
+            run_after(
+                &state_dir,
+                0,
+                &Stop::new(),
+                stdout.as_fd(),
+                Some(stdin.as_fd()),
+            )
+        }
         "twice" => once().and_then(|()| {
             say(SECOND);
             once()
@@ -981,6 +992,25 @@ fn real_process_a_running_trial_redraws_the_dashboard_s_clock() {
         "the clock of a running trial stood still"
     );
     helper.signal(Signal::TERM);
+    pty.drain();
+    let status = helper.finish();
+    assert_restored(&pty, status, false);
+}
+
+#[test]
+fn real_process_run_after_draws_the_dashboard_s_starting_frame() {
+    let state = TempDir::new().unwrap();
+    let mut pty = Pty::open(160, 45);
+    let helper = Helper::start(
+        &pty,
+        state.path(),
+        Launch {
+            mode: "frames_after",
+            ..PLAIN
+        },
+    );
+    pty.wait_for(0, "the starting frame", |bytes| end_of(bytes, b"STARTING"));
+    rustix::io::write(&pty.master, b"q").unwrap();
     pty.drain();
     let status = helper.finish();
     assert_restored(&pty, status, false);
