@@ -173,15 +173,40 @@ func TestSameChanges(t *testing.T) {
 func TestReviewerCount(t *testing.T) {
 	t.Parallel()
 	tests := []struct{ l, f, want int }{
-		{0, 0, 0},
+		{0, 0, 0}, {5000, 0, 0},
 		{99, 30, 1}, {100, 1, 1}, {100, 2, 1}, {100, 3, 2}, {499, 30, 2},
-		{500, 3, 1}, {500, 9, 3}, {500, 30, 4}, {1999, 30, 4},
+		{499, 3, 2}, {500, 3, 2}, {499, 9, 2}, {500, 1, 1}, {500, 2, 1},
+		{500, 9, 3}, {500, 30, 4}, {1999, 30, 4},
+		{1999, 4, 2}, {2000, 4, 2}, {1999, 7, 3}, {2000, 7, 3},
 		{2000, 13, 4}, {2000, 30, 4}, {2000, 5, 2}, {4999, 40, 4}, {4999, 9, 3},
+		{4999, 3, 2}, {5000, 3, 2}, {4999, 4, 2}, {5000, 4, 2}, {4999, 7, 3}, {5000, 7, 4},
 		{5000, 40, 8}, {5000, 6, 3}, {5000, 30, 8}, {5000, 10, 5}, {9000, 3, 2},
+		{5000, 16, 8}, {5000, 17, 8}, {9000, 100, 8},
 	}
 	for _, tt := range tests {
 		if got := reviewerCount(tt.l, tt.f); got != tt.want {
 			t.Errorf("reviewerCount(L=%d, F=%d) = %d, want %d", tt.l, tt.f, got, tt.want)
+		}
+	}
+}
+
+// TestReviewerCountNondecreasing pins that more changed lines never mean fewer reviewers for a fixed file count: it walks every line count 0..6000 for F 0..64, which crosses every tier boundary (100, 500, 5000) at every file count, and checks the top caps.
+func TestReviewerCountNondecreasing(t *testing.T) {
+	t.Parallel()
+	for f := 0; f <= 64; f++ {
+		prev := reviewerCount(0, f)
+		for l := 1; l <= 6000; l++ {
+			got := reviewerCount(l, f)
+			if got < prev {
+				t.Fatalf("reviewerCount(L=%d, F=%d) = %d, below %d at L=%d", l, f, got, prev, l-1)
+			}
+			if f > 0 && (got < 1 || got > f || got > 8) {
+				t.Fatalf("reviewerCount(L=%d, F=%d) = %d, want 1..min(F, 8)", l, f, got)
+			}
+			if l < 5000 && got > 4 {
+				t.Fatalf("reviewerCount(L=%d, F=%d) = %d, above the 4 cap below 5000 lines", l, f, got)
+			}
+			prev = got
 		}
 	}
 }
