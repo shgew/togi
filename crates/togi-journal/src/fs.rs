@@ -420,6 +420,7 @@ struct Tree {
     faults: Vec<(Fault, u64)>,
     mutations: u64,
     log: Vec<(Op, PathBuf)>,
+    reads: Vec<PathBuf>,
 }
 
 impl Tree {
@@ -433,6 +434,8 @@ impl Tree {
                     .map(|path| path.to_path_buf())
                     .unwrap_or_default(),
             ));
+        } else if let Some(path) = paths.first() {
+            self.reads.push(path.to_path_buf());
         }
         let mut fired = None;
         self.faults.retain_mut(|(fault, seen)| {
@@ -604,6 +607,11 @@ impl MemFs {
     /// Every mutating operation attempted so far, in order, with the path it named first.
     pub fn log(&self) -> Vec<(Op, PathBuf)> {
         self.tree().log.clone()
+    }
+
+    /// Every path opened or listed for reading so far, in order, which the mutation log leaves out.
+    pub fn reads(&self) -> Vec<PathBuf> {
+        self.tree().reads.clone()
     }
 
     /// The number of file bodies the filesystem still holds.

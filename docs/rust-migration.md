@@ -727,7 +727,78 @@ Every Go test function in `internal/simrun/*_test.go`, `internal/tuner/memo_test
 | `tuner/forecast_sim_test.go` `TestForecastMatchesSimulatedTrials` | `forecast::seed_1_two_cores`<br>`forecast::seed_7_two_cores_crash_joint`<br>`forecast::seed_1_default_cores_every_eighth` | Go's three cases: seed 1 with 2 cores, seed 7 with 2 cores and a crash joint, and seed 1 with 16 cores checking every eighth intent. |
 | `tuner/forecast_sim_test.go` `BenchmarkDashboardProjectionForecast` | none | No counterpart. This is a performance probe, not a behavior test: it times `Replay`, the dashboard queries and `Forecast` over the 16-core seed-1 journal. The Rust crates have no benchmark harness yet: no `[[bench]]` target and no criterion. Stage 3's closing measurements, under "Forecast cost, against Go's", measured the full `replay` fold and `forecast` against Go's figures, on a different session. They did not time the dashboard views. |
 
-Some Rust tests have no Go counterpart. They pin behavior Go got wrong or did not have: `log::a_log_that_fails_during_a_crashed_boot_fails_the_simulation_instead_of_capping_it`, `log::an_observer_sees_every_append_after_the_log_fails`, `log::an_observer_sees_the_journal_in_order_across_boots` and its log, failing-log and on-disk variants, `log::a_stopped_observer_is_not_called_again_and_the_run_is_cancelled_once`, `simulate::tests::a_boot_that_ends_without_a_crash_is_always_checked`; three `persistence::` tests that pin when a state directory on disk gets `state.json`: at a stop, at a signal and from a crashed run's capsule, never during a run; the `split::` tests, which cover a capped simulation continuing in another process from `machine.json`, in memory too, and a snapshot that cannot be read or removed; and the `boundary::` tests, which cover rejected persistence options, a host failure at startup, the repaired-tail log line, `dump_to`, and reading the live journal back.
+Some Rust tests have no Go counterpart. They pin behavior Go got wrong or did not have: `log::a_log_that_fails_during_a_crashed_boot_fails_the_simulation_instead_of_capping_it`, `log::an_observer_sees_every_append_after_the_log_fails`, `log::an_observer_sees_the_journal_in_order_across_boots` and its log, failing-log and on-disk variants, `log::a_stopped_observer_is_not_called_again_and_the_run_is_cancelled_once`, `simulate::tests::a_boot_that_ends_without_a_crash_is_always_checked`; the `persistence::` tests that pin when a state directory on disk gets `state.json`: a warm simulation gets it only when it stops (`a_warm_simulation_on_disk_gets_state_json_only_when_it_stops`), a cold one at every crashed boot (`a_cold_simulation_on_disk_gets_state_json_at_every_crashed_boot`), a capped one keeps the crashed run's and a signalled one publishes it at its stop, never during a run; the `split::` tests, which cover a capped simulation continuing in another process from `machine.json`, in memory too, and a snapshot that cannot be read or removed; and the `boundary::` tests, which cover rejected persistence options, a host failure at startup, the repaired-tail log line, `dump_to`, and reading the live journal back.
+
+## Stage 4: simulated reboot keeps the journal (#873, 2026-10-12)
+
+Go resumed a simulated reboot from the crashed boot's memory: no journal re-read, and `state.json` left pending after a crash until the invocation ended (`TestCrashLeavesDeferredStateUnwrittenInWarm`). Rust's `simulate` read and parsed all of `events.jsonl` at every boot, in memory and on disk, and published `state.json` at every crash, which the next boot then read back to compare.
+
+A warm reboot now carries state forward:
+
+- `Journal::reboot` keeps the open journal across a simulated reboot: it writes the buffer through, sets the new boot and a new `JournalId`, so no receipt of the crashed boot verifies, clears `repaired`, and reads nothing. A poisoned journal is not rebooted; the simulation closes it and takes the `lock` and `prepare` path.
+- `togi_session::prepare_kept` makes `prepare`'s decisions from the open journal's events. A journal `prepare` would archive before opening (at the reset boundary, a build that only differs, a build this build refuses) is closed and handed to `prepare`, so the directory work is the same code. A table test pins `prepare_kept` against `prepare` on the same directory for an empty journal, a plain resume, a build archive, a context change, a settled and an unsettled carry and a reset boundary.
+- A run that adopts a capsule skips `rebuild_state`: the boot before it left `state.json` pending on purpose. `ResumeCapsule::covers` is the adoption test, and `ResumeCapsule::publish` writes into a `StateDir`.
+- With `Replay::Warm` a crash publishes nothing; the last boot's capsule is published when a run stops or `max_boots` caps the simulation, when a warm boot cannot keep the journal (its flush at the reboot failed, or the capsule does not cover it) and on any error exit after a warm crash, as Go's deferred `TakePending` did. `Replay::Cold` publishes at every crash, since nothing adopts there.
+
+`events.jsonl` and the final `state.json` stay byte-identical to the cold path (`warm_cold` and `persistence` tests, unchanged). New tests: `reboot::a_warm_simulation_reads_the_journal_once_however_many_boots_it_runs` counts reads of `events.jsonl` through `MemFs::reads`, `reboot::a_warm_simulation_publishes_state_json_once_at_its_stop_or_its_cap` counts publications, with cold counterparts, and `togi-journal` and `togi-session` pin `reboot`, `prepare_kept` and the adoption.
+
+Measured with release `togi-tool-sim --seed 102 --machine tools/bench/machines/flat-hazard.json --cycles 20 --state-dir D` (87,846 events, a 36.7 MB journal, about 290 crashes), on a shared host, three runs each:
+
+| | before | after |
+|---|---|---|
+| wall time | 36.8 s, 19.2 s, 18.3 s | 1.5 s, 1.5 s, 1.4 s |
+| `read` calls (`strace -f -c`) | 1,767 | 9 |
+| `rename` calls | 294 | 1 |
+| `write` calls | 9,147 | 8,854 |
+
+`events.jsonl` and `state.json` of the two builds compare byte-identical. The per-`smu.intent` flush stays, a measured deviation from Go, which flushes its journal buffer only on close, read-back or a full buffer: Rust issues a `write` at every intent, so this session makes 8,854 `write` calls, but they cost 3 ms of syscall time in a 3 s run, so dropping the flush would not show.
+
+CI suite, `rust-sim-suite-0` to `rust-sim-suite-3`: release `togi-tool-sim suite --suite tools/bench/suite.json --shards 4 --shard I --jobs 32`, the command `flake.nix` runs, timed with GNU `time` at the shard level, three runs of each shard on a 32-thread shared host under varying load (load average 12 to 29), the base at 34c29cd4 and the head at 28f3d96d, each built apart:
+
+| shard | wall before, three runs | wall after | CPU (user + sys) before | CPU after |
+|---|---|---|---|---|
+| 0 | 14.2, 18.5, 18.7 s | 3.7, 3.9, 3.6 s | 224, 230, 241 s | 57, 59, 56 s |
+| 1 | 14.4, 19.2, 15.3 s | 3.7, 4.0, 3.9 s | 220, 250, 229 s | 56, 55, 55 s |
+| 2 | 16.8, 19.0, 15.4 s | 3.9, 4.3, 4.3 s | 225, 244, 225 s | 57, 56, 57 s |
+| 3 | 13.6, 19.9, 16.2 s | 3.6, 3.8, 4.1 s | 213, 240, 220 s | 55, 54, 60 s |
+
+The slowest shard takes 16.8, 19.9 and 18.7 s before and 3.9, 4.3 and 4.3 s after; the four shards together take 883, 964 and 914 CPU seconds before and 225, 224 and 228 after. Each shard has 55 sessions and every one ends `clean`, on both builds.
+
+The slowest sessions, as `suite` reports each one's time (median of the three runs):
+
+| session | before | after |
+|---|---|---|
+| `target-r7-request-gap/holdout-105` | 14.5 s | 2.6 s |
+| `target-r7-request-gap/holdout-104` | 14.5 s | 2.3 s |
+| `target-r7-request-gap/dev-5` | 14.0 s | 3.1 s |
+| `target-r7-request-gap/holdout-107` | 13.9 s | 3.5 s |
+| `target-r7-request-gap/holdout-112` | 13.8 s | 2.1 s |
+| `flat-hazard/dev-3` | 9.5 s | 3.5 s |
+
+Before, the six slowest sessions were all `target-r7-request-gap`; after, the slowest is `flat-hazard/dev-3` at 3.5 s, then `target-r7-request-gap/holdout-107` at 3.5 s. A session's own time includes contention with the others of its shard, so the figures compare builds, not absolute costs. The sum over the 220 sessions of the median times falls from 965 s to 240 s.
+
+The same sessions alone, one at a time, with nothing else of the suite running: the release `togi-tool-sim suite --suite S --shards 1 --shard 0 --out D --jobs 1`, where `S` is a suite file of just that session (its scenario's name, machine and `replay` from `tools/bench/suite.json`, and its one seed). `suite` has no session filter, and this runs the suite's own `execute` path: in-memory state directory, `Replay::Warm`, the resume state checked after every crash, one cycle. Timed with GNU `time -f '%e %U %S'`, three runs each on the shared host, base 34c29cd4 and head 28f3d96d; every run ended `clean`. CPU is user plus sys, wall is the process's elapsed time, three runs listed in order, median in bold:
+
+| session | wall before | wall after | CPU before | CPU after |
+|---|---|---|---|---|
+| `target-r7-request-gap/holdout-105` | 6.24, 6.41, 6.21 s (**6.24**) | 1.70, 1.69, 1.70 s (**1.70**) | 6.19, 6.37, 6.14 s (**6.19**) | 1.68, 1.66, 1.68 s (**1.68**) |
+| `target-r7-request-gap/holdout-104` | 5.54, 5.50, 5.56 s (**5.54**) | 1.47, 1.48, 1.46 s (**1.47**) | 5.50, 5.46, 5.46 s (**5.46**) | 1.46, 1.46, 1.45 s (**1.46**) |
+| `target-r7-request-gap/dev-5` | 8.86, 8.30, 8.34 s (**8.34**) | 2.17, 2.18, 2.17 s (**2.17**) | 8.78, 8.25, 8.31 s (**8.31**) | 2.16, 2.17, 2.15 s (**2.16**) |
+| `target-r7-request-gap/holdout-107` | 9.09, 9.00, 9.00 s (**9.00**) | 2.35, 2.52, 2.39 s (**2.39**) | 9.05, 8.95, 8.95 s (**8.95**) | 2.33, 2.49, 2.37 s (**2.37**) |
+| `target-r7-request-gap/holdout-112` | 5.54, 5.61, 5.57 s (**5.57**) | 1.48, 1.48, 1.47 s (**1.48**) | 5.52, 5.57, 5.54 s (**5.54**) | 1.47, 1.48, 1.47 s (**1.47**) |
+| `flat-hazard/dev-3` | 5.33, 5.38, 5.93 s (**5.38**) | 2.46, 2.50, 2.92 s (**2.50**) | 5.30, 5.35, 5.90 s (**5.35**) | 2.44, 2.48, 2.90 s (**2.48**) |
+
+Alone, a session is CPU-bound (user plus sys is within 0.1 s of wall in every run), and each falls 2.2 to 3.9 times in CPU and in wall. After, `flat-hazard/dev-3` (2.50 s) and `target-r7-request-gap/holdout-107` (2.39 s) are the slowest alone too, as in the shards; before, `holdout-107` and `dev-5` (9.00 and 8.34 s) lead alone, and `flat-hazard/dev-3` is the cheapest of the six (5.38 s), so its 9.5 s in a shard was mostly contention. The in-shard times above are inflated by load; the alone times are the sessions' cost.
+
+Byte identity across the suite: all 220 sessions of the four shards ran again on each build with their in-memory state directories dumped to disk, and every session's `events.jsonl`, `state.json` and `lock` compare byte-identical between the builds (`cmp` on each file, `diff -r` on the trees: 0 of 220 sessions differ), as do the four shard manifests.
+
+Tests, `cargo nextest run -p togi-simrun -p togi-session -p togi-journal`, on the same shared host: 808 tests before, 822 after, all passing; the run takes 2.7 s and 3.2 s before and 2.8 s and 2.1 s after. A first run recompiled the three crates in 14.3 s before and 13.5 s after, with their dependencies already built. The pull request changes 25 files, adding 708 lines and removing 169 (`git diff --shortstat 34c29cd4 28f3d96d`).
+
+Regressions: none found. The `read` and `rename` counts fall, the `write` count falls by 3 %, and the suite and the tests take no longer.
+
+Review findings, all fixed: a warm crash left the state pending when the simulation then ended on an error, which Go's deferred `TakePending` wrote, so every error exit now publishes it; the failed flush at a reboot, which poisons the journal, had no test (`a_reboot_whose_sync_fails_poisons_the_journal_and_keeps_its_boot` pins it); `TestSetBootPreservesEarlierBootEvidence` had no row in the Go-test mapping; and `simulating.md` contradicted itself and the code on when a warm crash publishes `state.json`.
+
+Not measured: peak memory of the suite (the journal is now held open and its events parsed once, so the resident set may differ), a run on macOS, the `togi run` path (unchanged, so not timed), and compile times of a clean build.
 
 ## Stage 4: crash-sweep test time (#842, 2026-10-12)
 
