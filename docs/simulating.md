@@ -218,7 +218,7 @@ Both modes leave byte-identical `events.jsonl` and `state.json`; a test pins thi
 
 A divergence is `SimError::Diverged`, and a state that cannot be published is `SimError::Publish`. A crashed boot that also failed in another way, such as a failed log write, is `SimError::Failed` with those errors. A log that cannot be flushed at the end is `SimError::FlushLog`. None of these is ever reported as a cap. In a run that stops, a failed log write is `SessionError::Log` among its errors.
 
-**Observing the run.** An `observer` sees every appended event and may answer `Observe::Stop`, which cancels the run with `Stop::Signal`. It keeps seeing events after the caller's log fails. It may also call the simulator's fault controls, such as `crash`, `next_reset` or `power_loss`. These two uses replace Go's `Until` and `Wrap` journal wrappers. An observer needs in-memory persistence. `write_samples` writes trial samples under the state directory's `trials/`, so it needs persistence on disk.
+**Observing the run.** An `observer` sees every appended event and may answer `Observe::Stop`, which cancels the run with `Stop::Signal`. It is called once per event, in order, at constant cost, and it keeps seeing events after the caller's log fails. It may also call the simulator's fault controls, such as `crash`, `next_reset` or `power_loss`. These two uses replace Go's `Until` and `Wrap` journal wrappers. An observer works with either persistence. `write_samples` writes trial samples under the state directory's `trials/`, so it needs persistence on disk.
 
 **After a run.** These functions read the state directory:
 

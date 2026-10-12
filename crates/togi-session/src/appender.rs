@@ -13,6 +13,9 @@ use crate::error::{AppendFailure, FoldError, JournalFailure};
 use crate::recovery::RecoveryState;
 use crate::resume::ResumeCapsule;
 
+/// Called with each event right after it is durable, where its log line is written.
+pub type AppendHook = Box<dyn FnMut(&Event)>;
+
 /// A journal that does not fold into the run's state, handed back with the reason.
 #[derive(Debug)]
 pub(crate) struct Unresumed {
@@ -78,6 +81,7 @@ pub(crate) struct Appender {
     zone: TimeZone,
     log: Option<Box<dyn Write>>,
     log_failure: Option<io::Error>,
+    on_append: Option<AppendHook>,
     latched: Option<JournalFailure>,
     trial: Option<CancellationToken>,
     handoff: Option<BootHandoff>,
@@ -125,6 +129,7 @@ impl Appender {
             zone,
             log: None,
             log_failure: None,
+            on_append: None,
             latched: None,
             trial: None,
             handoff: None,
@@ -142,6 +147,12 @@ impl Appender {
     #[must_use]
     pub(crate) fn with_log(mut self, log: Box<dyn Write>) -> Self {
         self.log = Some(log);
+        self
+    }
+
+    #[must_use]
+    pub(crate) fn with_on_append(mut self, hook: AppendHook) -> Self {
+        self.on_append = Some(hook);
         self
     }
 
@@ -273,6 +284,9 @@ impl Appender {
                 &mut self.log_failure,
                 event,
             );
+            if let Some(hook) = self.on_append.as_mut() {
+                hook(event);
+            }
             if let Err(error) = self.folds.apply(event) {
                 self.latch(JournalFailure::fold(error.clone()));
                 return Err(error.into());
