@@ -184,8 +184,12 @@ fn future_event(seq: u64) -> Value {
 }
 
 fn write_journal(dir: &Path, lines: &[Value]) {
+    use std::fmt::Write as _;
     fs::create_dir_all(dir).unwrap();
-    let journal: String = lines.iter().map(|line| format!("{line}\n")).collect();
+    let mut journal = String::new();
+    for line in lines {
+        writeln!(journal, "{line}").unwrap();
+    }
     fs::write(dir.join("events.jsonl"), journal).unwrap();
 }
 
