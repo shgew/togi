@@ -1,14 +1,16 @@
+use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 
 use jiff::tz::TimeZone;
 use togi_config::Config;
 use togi_journal::{Build, EventKind, MemFs, SCHEMA};
-use togi_machine::CancellationToken;
+use togi_machine::{CancellationToken, Signal};
 use togi_render::Renderer;
 use togi_session::{ConfigSource, Divergence, StopPolicy};
+use togi_sim::definition::{CoreDef, ModelDef, Weights};
 use togi_sim::{MachineDefinition, Model, RunSettings, Simulator};
 
-use super::{due, events, simulate, verify};
+use super::{due, events, simulate, simulate_checked, verify};
 use crate::{Observe, Persistence, Replay, SimError, SimInput, SimOutcome};
 
 fn nz(n: u32) -> NonZeroU32 {
@@ -35,18 +37,13 @@ fn a_boot_that_ends_without_a_crash_is_always_checked() {
     assert!(!due(1, nz(3), true, None));
 }
 
-#[test]
-fn a_resume_state_that_differs_from_the_journal_fails_the_simulation() {
-    let fs = MemFs::new();
-    let simulator = Simulator::new(
-        Model::new(&MachineDefinition::default(), 1).unwrap(),
-        RunSettings {
-            seed: 1,
-            ..RunSettings::default()
-        },
-    );
-    let persistence = Persistence::Memory(fs);
-    let outcome = simulate(SimInput {
+fn sim_input(
+    simulator: Simulator,
+    persistence: Persistence,
+    replay: Replay,
+    verify_every: Option<NonZeroU32>,
+) -> SimInput {
+    SimInput {
         config: Config::default(),
         source: ConfigSource::default(),
         build: Build {
@@ -58,9 +55,9 @@ fn a_resume_state_that_differs_from_the_journal_fails_the_simulation() {
             evidence: 1,
         },
         simulator,
-        persistence: persistence.clone(),
-        replay: Replay::Warm,
-        verify_every: None,
+        persistence,
+        replay,
+        verify_every,
         max_boots: nz(3),
         policy: StopPolicy {
             cycles: Some(nz(1)),
@@ -72,16 +69,103 @@ fn a_resume_state_that_differs_from_the_journal_fails_the_simulation() {
         renderer: Renderer::default(),
         zone: TimeZone::UTC,
         cancel: CancellationToken::new(),
-        observer: Some(Box::new(|event| {
-            if event.kind() == EventKind::TrialEnd {
-                Observe::Stop
-            } else {
-                Observe::Continue
-            }
-        })),
+        observer: None,
         dump_to: None,
-    })
+    }
+}
+
+/// Two cores that crash every trial past -10, so each of the first three boots crashes.
+fn crashing() -> Simulator {
+    let definition = MachineDefinition {
+        cores: 2,
+        core: (0..2)
+            .map(|id| CoreDef {
+                id,
+                alone: [-10; 5],
+                together: [-10, -10, -10, -10, -10, -10, -50],
+                flat: 0.0,
+                idle: None,
+                workload: BTreeMap::new(),
+            })
+            .collect(),
+        model: ModelDef {
+            past_limit_rate: 1.0,
+            signals: Weights::from([(Signal::Crash, 1.0)]),
+            crash_mce: 0.0,
+            ..ModelDef::default()
+        },
+        ..MachineDefinition::default()
+    };
+    Simulator::new(
+        Model::new(&definition, 1).unwrap(),
+        RunSettings {
+            seed: 1,
+            ..RunSettings::default()
+        },
+    )
+}
+
+fn checked_boots(replay: Replay, every: Option<NonZeroU32>) -> Vec<u32> {
+    let mut boots = Vec::new();
+    let outcome = simulate_checked(
+        sim_input(crashing(), Persistence::Memory(MemFs::new()), replay, every),
+        &mut |capsule, events, latched, boot| {
+            boots.push(boot);
+            verify(capsule, events, latched, boot)
+        },
+    )
     .unwrap();
+    assert!(matches!(outcome, SimOutcome::Capped { .. }));
+    boots
+}
+
+#[test]
+fn a_capped_simulation_checks_the_boots_its_cadence_names_in_either_replay() {
+    for replay in [Replay::Warm, Replay::Cold] {
+        assert_eq!(checked_boots(replay, None), [3], "{replay:?}");
+        assert_eq!(checked_boots(replay, Some(nz(1))), [1, 2, 3], "{replay:?}");
+        assert_eq!(checked_boots(replay, Some(nz(2))), [2, 3], "{replay:?}");
+    }
+}
+
+#[test]
+fn a_failed_check_of_the_last_boot_fails_the_simulation_instead_of_capping_it() {
+    for replay in [Replay::Warm, Replay::Cold] {
+        let mut boots = Vec::new();
+        let outcome = simulate_checked(
+            sim_input(crashing(), Persistence::Memory(MemFs::new()), replay, None),
+            &mut |_, _, _, boot| {
+                boots.push(boot);
+                Err(SimError::NoCapsule { boot })
+            },
+        );
+        assert!(
+            matches!(outcome, Err(SimError::NoCapsule { boot: 3 })),
+            "{replay:?}"
+        );
+        assert_eq!(boots, [3], "{replay:?}");
+    }
+}
+
+#[test]
+fn a_resume_state_that_differs_from_the_journal_fails_the_simulation() {
+    let simulator = Simulator::new(
+        Model::new(&MachineDefinition::default(), 1).unwrap(),
+        RunSettings {
+            seed: 1,
+            ..RunSettings::default()
+        },
+    );
+    let persistence = Persistence::Memory(MemFs::new());
+    let mut input = sim_input(simulator, persistence.clone(), Replay::Warm, None);
+    input.observer = Some(Box::new(|event| {
+        if event.kind() == EventKind::TrialEnd {
+            Observe::Stop
+        } else {
+            Observe::Continue
+        }
+    }));
+    let outcome = simulate(input).unwrap();
     let SimOutcome::Stopped(finished) = outcome else {
         panic!("the run did not stop at its first trial end");
     };

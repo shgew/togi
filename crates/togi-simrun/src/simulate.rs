@@ -32,6 +32,14 @@ pub(crate) fn lock(persistence: &Persistence) -> Result<StateDir, LockError> {
 /// A state directory that cannot be locked, opened, closed or dumped, a resume capsule that differs from a fresh
 /// fold of its journal, or a boot that left none to check.
 pub fn simulate(input: SimInput) -> Result<SimOutcome, SimError> {
+    simulate_checked(input, &mut verify)
+}
+
+type Check<'a> =
+    dyn FnMut(Option<&ResumeCapsule>, &[Event], bool, u32) -> Result<(), SimError> + 'a;
+
+/// [`simulate`], checking each due boot's resume state with `check`.
+fn simulate_checked(input: SimInput, check: &mut Check<'_>) -> Result<SimOutcome, SimError> {
     let SimInput {
         config,
         source,
@@ -133,7 +141,7 @@ pub fn simulate(input: SimInput) -> Result<SimOutcome, SimError> {
         let crash = ended.crashed();
         let appended = ended.journal.events().len() > opened;
         if due(number, max_boots, crash, verify_every) {
-            verify(
+            check(
                 ended.capsule.as_ref(),
                 ended.journal.events(),
                 !crash && !ended.errors.is_empty(),
