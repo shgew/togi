@@ -1,5 +1,5 @@
 use std::fs::{self, File};
-use std::io::{ErrorKind, Write as _};
+use std::io::{ErrorKind, Read as _, Write as _};
 use std::num::NonZeroU32;
 use std::os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _};
 use std::path::{Path, PathBuf};
@@ -10,7 +10,7 @@ use std::time::Duration;
 use sha2::{Digest, Sha256};
 use togi_journal::{FileError, Payload, ReadError, Recording, ShutdownReason};
 
-use crate::error::{Error, RunError};
+use crate::error::{Error, RunError, Unrunnable};
 use crate::process::{self, Fleet};
 use crate::suite::RunSpec;
 
@@ -67,9 +67,20 @@ impl Simulator {
             Some(path) => path.to_path_buf(),
             None => build()?,
         };
-        let bytes = fs::read(&original).map_err(|source| Error::NoSimulator {
+        let (bytes, mode) = File::open(&original)
+            .and_then(|mut file| {
+                let mode = file.metadata()?.permissions().mode();
+                let mut bytes = Vec::new();
+                file.read_to_end(&mut bytes)?;
+                Ok((bytes, mode))
+            })
+            .map_err(|source| Error::NoSimulator {
+                path: original.clone(),
+                source,
+            })?;
+        check_runnable(&bytes, mode).map_err(|reason| Error::Unrunnable {
             path: original.clone(),
-            source,
+            reason,
         })?;
         let failed = |source| Error::WriteFile {
             what: "copy the simulator to",
@@ -209,4 +220,75 @@ fn executable(messages: &[u8]) -> Option<PathBuf> {
                 .is_some_and(|kinds| kinds.iter().any(|kind| kind == "bin"))
         })
         .find_map(|message| message["executable"].as_str().map(PathBuf::from))
+}
+
+/// Refuses what `exec` would not load. Rust's `Command` runs `execvp` on some platforms and settings, and
+/// `execvp` hands a file the kernel rejects with ENOEXEC to `/bin/sh` as a script, so a text file with the
+/// execute bit would run as shell code. Checking the bytes the bench is about to copy and run keeps that
+/// fallback out of reach on every platform.
+fn check_runnable(bytes: &[u8], mode: u32) -> Result<(), Unrunnable> {
+    const MAGICS: [&[u8]; 8] = [
+        b"\x7fELF",
+        b"#!",
+        &[0xfe, 0xed, 0xfa, 0xce],
+        &[0xfe, 0xed, 0xfa, 0xcf],
+        &[0xce, 0xfa, 0xed, 0xfe],
+        &[0xcf, 0xfa, 0xed, 0xfe],
+        &[0xca, 0xfe, 0xba, 0xbe],
+        &[0xbe, 0xba, 0xfe, 0xca],
+    ];
+    if mode & 0o111 == 0 {
+        return Err(Unrunnable::NotExecutable);
+    }
+    if MAGICS.iter().any(|magic| bytes.starts_with(magic)) {
+        Ok(())
+    } else {
+        Err(Unrunnable::NotAProgram)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_executable_files_in_a_program_format_pass() {
+        for bytes in [
+            &b"\x7fELF\x02\x01"[..],
+            b"#!/bin/sh\n",
+            &[0xcf, 0xfa, 0xed, 0xfe, 0x0c],
+            &[0xca, 0xfe, 0xba, 0xbe, 0, 0],
+        ] {
+            assert_eq!(check_runnable(bytes, 0o755), Ok(()), "{bytes:?}");
+        }
+    }
+
+    #[test]
+    fn a_file_the_kernel_would_hand_to_a_shell_is_refused() {
+        for bytes in [
+            &b"not a program"[..],
+            b"echo hi\n",
+            b"",
+            b"\x7fEL",
+            b" #!/bin/sh",
+        ] {
+            assert_eq!(
+                check_runnable(bytes, 0o755),
+                Err(Unrunnable::NotAProgram),
+                "{bytes:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_file_without_an_execute_bit_is_refused_whatever_it_holds() {
+        assert_eq!(
+            check_runnable(b"#!/bin/sh\n", 0o644),
+            Err(Unrunnable::NotExecutable)
+        );
+        assert_eq!(
+            check_runnable(b"junk", 0o600),
+            Err(Unrunnable::NotExecutable)
+        );
+    }
 }

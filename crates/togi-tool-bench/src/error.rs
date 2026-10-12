@@ -58,6 +58,8 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
+    #[error("start the simulator {}: {reason}", path.display())]
+    Unrunnable { path: PathBuf, reason: Unrunnable },
     #[error("build the simulator: {message}")]
     BuildSimulator { message: String },
     #[error("git {command}: {message}")]
@@ -70,6 +72,15 @@ pub enum Error {
     },
     #[error("interrupted")]
     Interrupted,
+}
+
+/// Why a simulator file is not something the bench starts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum Unrunnable {
+    #[error("not executable")]
+    NotExecutable,
+    #[error("not an ELF or Mach-O executable or a #! script")]
+    NotAProgram,
 }
 
 /// What stopped one run of the suite. These are harness errors: a session's own outcome, a dead end or a boot
