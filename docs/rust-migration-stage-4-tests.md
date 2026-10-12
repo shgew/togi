@@ -18,11 +18,11 @@ Status:
 | tuningboot | 8 | 8 | 0 | 0 | 0 |
 | sim | 107 | 100 | 2 | 5 | 0 |
 | trialfacts | 9 | 9 | 0 | 0 | 0 |
-| session | 165 | 152 | 8 | 5 | 0 |
+| session | 165 | 152 | 9 | 4 | 0 |
 | simrun and the two tuner files | 46 | 45 | 0 | 0 | 1 |
 | audit | 13 | 6 | 0 | 1 | 6 |
 | tool sim | 10 | 9 | 0 | 1 | 0 |
-| **total** | **358** | **329** | **10** | **12** | **7** |
+| **total** | **358** | **329** | **11** | **11** | **7** |
 
 ## tuningboot
 
@@ -308,7 +308,7 @@ Status:
 | `TestTuningBootReasonSurvivesEveryImportBoundary` | `togi_session::boot::tests::the_pending_reason_is_journaled_then_cleared`<br>`togi_session::boot::tests::a_reason_whose_event_failed_stays_pending_and_is_imported_by_the_next_run`<br>`togi_session::boot::tests::a_reason_durable_before_its_clearing_failed_is_not_journaled_twice`<br>`togi_session::boot::tests::a_reason_an_archived_journal_holds_is_cleared_without_a_new_event` | A |
 | `TestTuningBootGRUBProgressFailuresAreNotJournalFailures` | `togi_session::boot::tests::bootloader_failures_are_ordinary_errors_and_the_journal_keeps_working` | A |
 | `TestDeadEndWritesBoundedReasonAndReportsWriteFailure` | `togi_session::boot::tests::leaving_for_a_dead_end_saves_a_bounded_reason_then_clears_the_saved_entry`<br>`togi_session::boot::tests::a_reason_that_cannot_be_saved_never_changes_whether_the_entry_was_cleared` | A |
-| `TestTuningBootReasonSurvivesResumedDeadEnd` | `togi_session::boot::tests::a_resumed_dead_end_acknowledges_the_pending_tuning_boot_reason_once_and_leaves_its_own`<br>`togi_session::boot::tests::a_resumed_dead_end_whose_pending_reason_cannot_be_acknowledged_stops_before_the_grub_handoff` | A |
+| `TestTuningBootReasonSurvivesResumedDeadEnd` | `togi_session::boot::tests::a_resumed_dead_end_acknowledges_the_pending_tuning_boot_reason_once_and_leaves_its_own`<br>`togi_session::boot::tests::a_resumed_dead_end_whose_pending_reason_cannot_be_acknowledged_stops_before_the_grub_handoff`<br>`togi_session::boot::tests::a_resumed_dead_end_whose_saved_entry_append_fails_keeps_the_acknowledgement_and_its_own_reason` | A |
 | `TestBootLeaveReasonPreservesShutdownCompletion` | `togi_session::recovery::tests::a_warning_or_leave_reason_never_replaces_a_shutdown`<br>`togi_session::recovery::tests::a_boot_without_a_shutdown_crashed_unless_it_is_current_or_a_crash_was_recorded` | A |
 | `TestRestartLimitSequenceDemo` | `togi_tuningboot::tests::two_retries_then_exhaustion_clears_saved_entry_and_stays_at_three`<br>`togi_session::boot::tests::the_pending_reason_is_journaled_then_cleared` | X |
 | `TestResumedDeadEndReasonErrorsStopBeforeGRUBHandoff` | `togi_session::boot::tests::a_resumed_dead_end_whose_pending_reason_cannot_be_acknowledged_stops_before_the_grub_handoff` | A |
@@ -355,7 +355,7 @@ Status:
 |---|---|---|
 | `TestResetCore` | `togi_session::commands::reset_core_appends_the_command_and_nothing_else`<br>`togi_session::commands::a_reset_core_is_consumed_by_the_resumed_session_which_retunes_it_to_its_limit`<br>`togi_session::commands::tests::resetting_a_core_appends_only_the_command_and_no_shutdown` | A |
 | `TestResetAll` | `togi_session::commands::reset_all_archives_the_session_and_the_directory_starts_empty`<br>`togi_session::commands::tests::resetting_everything_records_the_command_and_archives_the_session`<br>`togi_journal::dir::tests::a_session_id_is_the_utc_second_until_it_is_taken` | A |
-| `TestResetAllRefusesAnExistingArchive` | `togi_session::commands::reset_all_that_cannot_archive_fails_and_releases_the_lock` | O(archiving allocates a free session id, so no existing archive can collide; an archive that fails is the test listed) |
+| `TestResetAllRefusesAnExistingArchive` | `togi_session::commands::reset_all_that_cannot_archive_fails_and_releases_the_lock`<br>`togi_journal::journal::tests::archive::an_archive_that_already_exists_is_refused_before_anything_is_recorded` | X |
 | `TestResetRefusalsLeaveJournalUnchanged` | `togi_session::commands::tests::resetting_in_an_empty_journal_is_no_session`<br>`togi_session::commands::reset_all_of_an_empty_journal_is_no_session_and_releases_the_lock`<br>`togi_session::commands::tests::resetting_a_core_with_another_build_is_refused_before_the_journal_is_folded`<br>`togi_session::commands::tests::resetting_a_core_the_session_lacks_is_refused_and_appends_nothing`<br>`togi_session::commands::reset_core_refuses_a_core_the_session_lacks_and_leaves_the_journal_alone` | A |
 | `TestResetCoreAppendFailurePreservesDurablePrefix` | `togi_session::commands::a_failed_reset_core_append_keeps_the_durable_prefix_and_only_a_synced_command_survives` | A |
 
@@ -503,7 +503,7 @@ Status:
 | `TestCorrectedMCESelectionSurvivesWallJump` | `togi_simrun::sim::crash::a_wall_clock_jump_does_not_lose_a_trials_corrected_mce`<br>`togi_sim::suite::trials::scripts_drive_outcomes_and_the_wall_and_monotonic_clocks_apart`<br>`togi_session::evidence::tests::a_kernel_machine_check_belongs_to_a_trial_inside_its_window_both_ends_inclusive` | X |
 | `TestInterruptedTrialDurationUsesMonotonicTimeAfterWallJump` | `togi_session::recovery::tests::an_open_trial_ran_from_its_start_to_its_last_record_by_the_monotonic_clock_whatever_the_wall_did`<br>`togi_session::recover::tests::an_interrupted_trial_ran_until_its_last_own_sample_and_another_trials_sample_adds_nothing` | A |
 | `TestCrashRecoveryLastSample` | `togi_session::recover::tests::a_crashed_trials_end_carries_the_last_complete_sample_and_ignores_a_torn_one`<br>`togi_session::evidence::tests::a_summary_fills_an_end_with_the_stall_of_a_failure_and_the_last_sample_of_a_crash` | A |
-| `TestReplayCrashRecoveryPreservesFact` | `togi_sim::suite::trials::a_replayed_crash_or_uncorrected_machine_check_happens_at_its_recorded_exposure`<br>`togi_sim::suite::replay::every_failure_signal_the_extract_can_hold_is_accepted_and_a_zero_exposure_is_valid`<br>`togi_session::recover::tests::the_reset_after_a_crash_decides_what_an_open_trial_ended_as`<br>`togi_session::recovery::tests::an_open_trial_ran_from_its_start_to_its_last_record_by_the_monotonic_clock_whatever_the_wall_did` | X |
+| `TestReplayCrashRecoveryPreservesFact` | `togi_sim::suite::trials::a_replayed_crash_or_uncorrected_machine_check_happens_at_its_recorded_exposure`<br>`togi_sim::suite::trials::a_replayed_crash_resets_by_watchdog_whatever_the_models_reset_mix`<br>`togi_sim::suite::replay::every_failure_signal_the_extract_can_hold_is_accepted_and_a_zero_exposure_is_valid`<br>`togi_session::recover::tests::the_reset_after_a_crash_decides_what_an_open_trial_ended_as`<br>`togi_session::recovery::tests::an_open_trial_ran_from_its_start_to_its_last_record_by_the_monotonic_clock_whatever_the_wall_did` | X |
 | `TestReplayMachineCheckKeepsBankAttribution` | `togi_sim::suite::trials::a_replayed_uncorrected_machine_check_names_a_bank_by_the_models_probability`<br>`togi_tuner::r7_attribution_tests::r7_live_named_and_mce_attribution`<br>`togi_tuner::fold_tests::mces_outside_the_open_trials_core_local_window_are_not_remembered` | X |
 | `TestTrialRequestedVoltageAllRegimes` | `togi_session::evidence::tests::the_requested_voltage_is_the_loaded_cores_highest_request_by_median_and_minimum`<br>`togi_session::evidence::tests::a_summary_fills_an_end_with_the_stall_of_a_failure_and_the_last_sample_of_a_crash`<br>`togi_session::evidence::tests::request_telemetry_needs_twenty_samples_after_the_warmup_and_every_loaded_core_on_a_known_ccd` | A |
 | `TestCrashRecoveryRequestedVoltage` | `togi_session::recover::tests::a_recovered_trials_end_carries_the_request_telemetry_of_its_loaded_cores` | A |

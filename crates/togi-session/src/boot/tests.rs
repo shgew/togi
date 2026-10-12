@@ -608,3 +608,44 @@ fn a_resumed_dead_end_acknowledges_the_pending_tuning_boot_reason_once_and_leave
         );
     }
 }
+
+#[test]
+fn a_resumed_dead_end_whose_saved_entry_append_fails_keeps_the_acknowledgement_and_its_own_reason()
+{
+    let grub = Grub::with_count("2");
+    let prior = exhausted();
+    let (bench, mut session) = resumed_dead_end(&grub, &prior);
+    // The first write acknowledges the prior reason; the second is the saved-entry append.
+    bench
+        .mem
+        .inject(Fault::before(Op::Write, 2).named("events.jsonl"));
+    let error = session.resume_dead_end().unwrap_err();
+    assert!(matches!(error, SessionError::Journal(_)), "{error:?}");
+    let events = session.appender().journal().events();
+    assert!(
+        !events
+            .iter()
+            .any(|event| matches!(event.payload, Payload::BootSavedEntry(_))),
+        "the saved-entry append was interrupted"
+    );
+    let acknowledged: Vec<_> = events
+        .iter()
+        .filter_map(|event| match &event.payload {
+            Payload::BootLeaveReason(leave) => Some(leave.reason_id.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        acknowledged,
+        [prior.id.to_string()],
+        "the prior reason is in the journal once"
+    );
+    let pending = togi_tuningboot::read_reason(&mut grub.clone())
+        .unwrap()
+        .expect("the dead end's own reason is saved");
+    assert_ne!(pending.id, prior.id);
+    assert_eq!(
+        pending.reason.as_str(),
+        "dead end boot_loop: interrupted handoff"
+    );
+}
