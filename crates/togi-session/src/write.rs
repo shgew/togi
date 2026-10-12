@@ -6,8 +6,7 @@
 //! back into the journal. Only a readback that agrees makes a slot [`Slot::Known`], and the [`Verified`] it returns
 //! is what a trial needs to start.
 //!
-//! Neither [`CheckedWrite`] nor [`Verified`] can be built outside this module, and [`apply`] takes the proof that
-//! no workload runs.
+//! [`Verified`] cannot be built outside this module and [`apply`] takes the proof that no workload runs.
 
 use togi_journal::{Payload, ProfileApplied, ProfileRestored, Seq, SmuCommand, SmuOp, SmuReadback};
 use togi_machine::{
@@ -16,6 +15,90 @@ use togi_machine::{
 
 use crate::appender::Appender;
 use crate::error::{AppendFailure, JournalFailure};
+
+/// The two authority boundaries of a hardware write, in one file with no dependency on the rest of the crate so
+/// that the doctests below compile it whole and each negative case fails on the missing authority itself, not on a
+/// private module: the SMU write seam needs a [`togi_journal::SmuIntentReceipt`], which only the journal issues
+/// once the intent is durable, and a trial start needs an `Authorized` from a `Verified`, which only [`apply`] and
+/// [`apply_profile`] build.
+///
+/// A command cannot reach the seam without the receipt of its durable intent:
+///
+/// ```compile_fail,E0308
+/// mod authority { include!("write/authority.rs"); }
+/// fn write(smu: &mut dyn togi_machine::Smu, command: togi_journal::SmuCommand) {
+///     let _ = authority::execute(smu, command);
+/// }
+/// ```
+///
+/// The same call with the receipt compiles:
+///
+/// ```
+/// mod authority { include!("write/authority.rs"); }
+/// fn write(smu: &mut dyn togi_machine::Smu, receipt: &togi_journal::SmuIntentReceipt) {
+///     let _ = authority::execute(smu, receipt);
+/// }
+/// ```
+///
+/// A trial cannot start without an authorization, nor from the verified result itself unauthorized:
+///
+/// ```compile_fail,E0308
+/// mod authority { include!("write/authority.rs"); }
+/// fn start(
+///     trials: &mut dyn togi_machine::Trials,
+///     cancel: &togi_machine::CancellationToken,
+///     spec: togi_machine::TrialSpec,
+///     ready: togi_machine::Stopped,
+/// ) {
+///     let _ = authority::start(trials, cancel, (), spec, ready);
+/// }
+/// ```
+///
+/// ```compile_fail,E0308
+/// mod authority { include!("write/authority.rs"); }
+/// fn start(
+///     trials: &mut dyn togi_machine::Trials,
+///     cancel: &togi_machine::CancellationToken,
+///     verified: &authority::Verified,
+///     spec: togi_machine::TrialSpec,
+///     ready: togi_machine::Stopped,
+/// ) {
+///     let _ = authority::start(trials, cancel, verified, spec, ready);
+/// }
+/// ```
+///
+/// ```
+/// mod authority { include!("write/authority.rs"); }
+/// fn start(
+///     trials: &mut dyn togi_machine::Trials,
+///     cancel: &togi_machine::CancellationToken,
+///     verified: &authority::Verified,
+///     spec: togi_machine::TrialSpec,
+///     ready: togi_machine::Stopped,
+/// ) {
+///     let _ = authority::start(trials, cancel, authority::authorize(verified), spec, ready);
+/// }
+/// ```
+///
+/// Neither proof can be forged:
+///
+/// ```compile_fail,E0451
+/// mod authority { include!("write/authority.rs"); }
+/// fn forge() -> authority::Authorized<'static> {
+///     authority::Authorized { readbacks: &[] }
+/// }
+/// ```
+///
+/// ```compile_fail,E0451
+/// mod authority { include!("write/authority.rs"); }
+/// fn forge() -> authority::Verified {
+///     authority::Verified { readbacks: Vec::new(), targets: Vec::new(), profile: None }
+/// }
+/// ```
+pub(crate) mod authority;
+
+pub(crate) use authority::Verified;
+use authority::execute;
 
 /// What the profile a write would leave reaches: a failure point or a combination.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
@@ -208,33 +291,6 @@ pub(crate) struct CheckedWrite<'h> {
     command: SmuCommand,
 }
 
-/// Proof that every command of a transaction reached the machine and its readbacks agreed.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct Verified {
-    readbacks: Vec<Seq>,
-    targets: Vec<(CoreId, TargetOffset)>,
-    profile: Option<Seq>,
-}
-
-impl Verified {
-    /// The `smu.readback` events that confirmed it, oldest first.
-    pub(crate) fn readbacks(&self) -> &[Seq] {
-        &self.readbacks
-    }
-
-    /// The offsets confirmed, by core.
-    #[cfg(test)]
-    pub(crate) fn targets(&self) -> &[(CoreId, TargetOffset)] {
-        &self.targets
-    }
-
-    /// The `profile.applied` or `profile.restored` that recorded a profile transaction.
-    #[cfg(test)]
-    pub(crate) const fn profile(&self) -> Option<Seq> {
-        self.profile
-    }
-}
-
 #[derive(Debug, thiserror::Error)]
 pub enum WriteFailure {
     /// An append failed: the journal accepts nothing more, so the session answers with the emergency zeroing. After
@@ -272,17 +328,6 @@ impl From<AppendFailure> for WriteFailure {
     }
 }
 
-#[expect(
-    clippy::disallowed_methods,
-    reason = "the write transaction is the only caller of the SMU write seam"
-)]
-fn execute(smu: &mut dyn Smu, command: SmuCommand) -> Result<(), Error> {
-    match command {
-        SmuCommand::Set { core, offset } => smu.set_offset(core, offset),
-        SmuCommand::SetAll { offset } => smu.set_all_offsets(offset),
-    }
-}
-
 /// Runs one checked write: intent, command, `smu.write`, then a readback of every core it touched.
 ///
 /// The slots of those cores are unknown from before the command goes out until a readback confirms the target, so
@@ -306,7 +351,7 @@ pub(crate) fn apply(
     for &core in &touched {
         hardware.slots.set(core, Slot::Unknown);
     }
-    if let Err(error) = execute(smu, command) {
+    if let Err(error) = execute(smu, &receipt) {
         return Err(failed(
             appender,
             command.op(),
@@ -350,11 +395,11 @@ pub(crate) fn apply(
         hardware.slots.set(core, Slot::Known(target));
         readbacks.push(seq);
     }
-    Ok(Verified {
+    Ok(Verified::new(
         readbacks,
-        targets: touched.into_iter().map(|core| (core, target)).collect(),
-        profile: None,
-    })
+        touched.into_iter().map(|core| (core, target)).collect(),
+        None,
+    ))
 }
 
 fn failed(
@@ -509,11 +554,11 @@ pub(crate) fn apply_profile(
         ProfileRecord::Restored => Payload::ProfileRestored(ProfileRestored { offsets: *target }),
     };
     let profile = appender.append(payload, &readbacks)?;
-    Ok(Verified {
+    Ok(Verified::new(
         readbacks,
-        targets: target.iter().collect(),
-        profile: Some(profile),
-    })
+        target.iter().collect(),
+        Some(profile),
+    ))
 }
 
 #[cfg(test)]
