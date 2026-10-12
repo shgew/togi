@@ -808,4 +808,89 @@ mod tests {
         assert!(recorder.restored());
         assert_eq!(recorder.raw().last().map(String::as_str), Some(crate::terminal::palette::RESET));
     }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_shrinking_terminal_is_cleared_and_repainted_whole() {
+        local(async {
+            let recorder = Recorder::new(100, 20);
+            let h = Harness::start(&recorder, &Setup::default());
+            h.script.fill.set(true);
+            settle().await;
+            let clears = recorder.clears();
+            recorder.resize(60, 10);
+            h.send(Event::Resize).await;
+            assert!(recorder.clears() > clears);
+            assert_eq!(recorder.draws().last().unwrap().len(), 59 * 9);
+            let clears = recorder.clears();
+            advance(Duration::from_secs(1)).await;
+            settle().await;
+            assert_eq!(recorder.clears(), clears, "the tick after the resize cleared again");
+            h.send(Event::Cancel).await;
+            h.finish().await.unwrap();
+        })
+        .await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_live_journal_problem_stays_on_screen_and_recovers_when_the_journal_does() {
+        use crate::terminal::source::Source;
+        use crate::terminal::testing::{session_with_warnings, write_bytes, write_journal};
+        use std::cell::RefCell;
+
+        local(async {
+            let dir = tempfile::TempDir::new().unwrap();
+            let source = Rc::new(RefCell::new(Source::new(dir.path(), None)));
+            source.borrow_mut().reload();
+            let recorder = Recorder::new(160, 40);
+            let (events, mut queue) = mpsc::unbounded_channel();
+            let shown: Rc<RefCell<Vec<String>>> = Rc::default();
+            let frame_source = source.clone();
+            let frame_shown = shown.clone();
+            let reload_source = source.clone();
+            let options = Options {
+                palette: false,
+                keys: false,
+                colours: Colours::None,
+                now: || EPOCH,
+                reloaded: None,
+                frozen: None,
+            };
+            let backend = recorder.backend();
+            let task = spawn_local(async move {
+                show(
+                    backend,
+                    options,
+                    &mut queue,
+                    move |screen, _: &mut Buffer| {
+                        let mut source = frame_source.borrow_mut();
+                        let text = match source.journal(screen) {
+                            crate::screen::Journal::Missing => "no session yet".to_owned(),
+                            crate::screen::Journal::Starting => "starting".to_owned(),
+                            crate::screen::Journal::Problem(error) => error.to_string(),
+                            crate::screen::Journal::Ready { log, .. } => format!("{} events", log.total),
+                        };
+                        frame_shown.borrow_mut().push(text);
+                        Drawn { scroll: 0, hold: Hold::Frozen }
+                    },
+                    move || reload_source.borrow_mut().reload(),
+                )
+                .await
+            });
+            settle().await;
+            write_bytes(dir.path(), b"not json\n");
+            events.send(Event::Changed).unwrap();
+            settle().await;
+            write_journal(dir.path(), &session_with_warnings(2));
+            events.send(Event::Changed).unwrap();
+            settle().await;
+            events.send(Event::Cancel).unwrap();
+            task.await.unwrap().unwrap();
+            let shown = shown.borrow();
+            assert_eq!(shown.len(), 3, "one frame per journal change: {shown:?}");
+            assert_eq!(shown[0], "no session yet");
+            assert!(shown[1].contains("line 1"), "{shown:?}");
+            assert_eq!(shown[2], "3 events");
+        })
+        .await;
+    }
 }

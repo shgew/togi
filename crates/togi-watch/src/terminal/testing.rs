@@ -47,6 +47,7 @@ pub(super) struct Recorder {
     faults: Rc<StdCell<Faults>>,
     size_reads: Rc<StdCell<usize>>,
     draws: Rc<StdCell<usize>>,
+    clear_calls: Rc<StdCell<usize>>,
 }
 
 impl Recorder {
@@ -57,6 +58,7 @@ impl Recorder {
             faults: Rc::default(),
             size_reads: Rc::default(),
             draws: Rc::default(),
+            clear_calls: Rc::default(),
         }
     }
 
@@ -192,7 +194,9 @@ impl Backend for Recording {
     }
 
     fn clear_region(&mut self, clear_type: ClearType) -> io::Result<()> {
-        if self.0.faults.get().clear && self.0.clears() == 0 {
+        let call = self.0.clear_calls.get() + 1;
+        self.0.clear_calls.set(call);
+        if self.0.faults.get().clear && call == 1 {
             return Err(failure());
         }
         self.0.push(Op::Clear(format!("{clear_type:?}")));

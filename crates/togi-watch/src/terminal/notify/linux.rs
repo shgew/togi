@@ -196,3 +196,211 @@ impl Watch for Inotify {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::ffi::OsStr;
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt as _;
+    use std::path::Path;
+    use std::time::Duration;
+
+    use rustix::fs::inotify::{ReadFlags, WatchFlags};
+    use tempfile::TempDir;
+    use tokio::time::timeout;
+
+    use super::{DIRECTORY, FILE, Inotify, JOURNAL, open};
+    use crate::terminal::notify::Watch as _;
+
+    /// A real wait is bounded by this; it only passes when a change that was made never arrives.
+    const BOUND: Duration = Duration::from_secs(20);
+
+    async fn arrives(watcher: &mut Inotify) {
+        timeout(BOUND, watcher.changed())
+            .await
+            .expect("the change never arrived")
+            .unwrap();
+    }
+
+    fn watcher_at(directory: &Path) -> Inotify {
+        let runtime = tokio::runtime::Handle::current();
+        let _guard = runtime.enter();
+        open(directory).unwrap()
+    }
+
+    fn is_root() -> bool {
+        rustix::process::geteuid().is_root()
+    }
+
+    fn journal_in(directory: &Path, text: &str) {
+        fs::write(directory.join(JOURNAL), text).unwrap();
+    }
+
+    #[test]
+    fn notifications_never_ask_for_the_events_of_reading_the_journal() {
+        for flags in [DIRECTORY, FILE] {
+            assert!(!flags.intersects(
+                WatchFlags::OPEN | WatchFlags::ACCESS | WatchFlags::CLOSE_NOWRITE
+            ));
+        }
+        assert!(DIRECTORY.contains(WatchFlags::ONLYDIR));
+    }
+
+    #[tokio::test]
+    async fn relevance_follows_the_journal_the_directory_and_what_is_above_it() {
+        let root = TempDir::new().unwrap();
+        let directory = root.path().join("state");
+        fs::create_dir(&directory).unwrap();
+        let watcher = watcher_at(&directory);
+        let watched_below = |name: &str| watcher.is_relevant(&directory, ReadFlags::CREATE, Some(OsStr::new(name)));
+        assert!(watched_below(JOURNAL));
+        assert!(!watched_below("events.jsonl.tmp"));
+        assert!(!watched_below("state.json"));
+        assert!(!watcher.is_relevant(&directory, ReadFlags::MODIFY, None));
+        assert!(watcher.is_relevant(&directory, ReadFlags::DELETE_SELF, None));
+        assert!(watcher.is_relevant(&directory, ReadFlags::MOVE_SELF, None));
+        assert!(watcher.is_relevant(&directory, ReadFlags::IGNORED, None));
+        assert!(watcher.is_relevant(&directory, ReadFlags::QUEUE_OVERFLOW, None));
+        let parent = root.path();
+        assert!(watcher.is_relevant(parent, ReadFlags::CREATE, Some(OsStr::new("state"))));
+        assert!(!watcher.is_relevant(parent, ReadFlags::CREATE, Some(OsStr::new("other"))));
+        assert!(!watcher.is_relevant(parent, ReadFlags::CREATE, None));
+        let file = directory.join(JOURNAL);
+        assert!(watcher.is_relevant(&file, ReadFlags::MODIFY, None));
+    }
+
+    #[tokio::test]
+    async fn an_existing_state_directory_is_watched_with_its_parent_and_never_polled() {
+        let root = TempDir::new().unwrap();
+        let directory = root.path().join("state");
+        fs::create_dir(&directory).unwrap();
+        let watcher = watcher_at(&directory);
+        assert!(!watcher.polling());
+        let mut watched: Vec<_> = watcher.watches.values().cloned().collect();
+        watched.sort();
+        assert_eq!(watched, [root.path().to_path_buf(), directory]);
+    }
+
+    #[tokio::test]
+    async fn an_append_reaches_the_loop() {
+        let root = TempDir::new().unwrap();
+        journal_in(root.path(), "one\n");
+        let mut watcher = watcher_at(root.path());
+        let mut file = fs::OpenOptions::new().append(true).open(root.path().join(JOURNAL)).unwrap();
+        std::io::Write::write_all(&mut file, b"two\n").unwrap();
+        arrives(&mut watcher).await;
+    }
+
+    #[tokio::test]
+    async fn a_replacement_reaches_the_loop() {
+        let root = TempDir::new().unwrap();
+        journal_in(root.path(), "one\n");
+        let mut watcher = watcher_at(root.path());
+        fs::write(root.path().join("replacement"), "two\n").unwrap();
+        fs::rename(root.path().join("replacement"), root.path().join(JOURNAL)).unwrap();
+        arrives(&mut watcher).await;
+    }
+
+    #[tokio::test]
+    async fn a_removal_reaches_the_loop() {
+        let root = TempDir::new().unwrap();
+        journal_in(root.path(), "one\n");
+        let mut watcher = watcher_at(root.path());
+        fs::remove_file(root.path().join(JOURNAL)).unwrap();
+        arrives(&mut watcher).await;
+    }
+
+    #[tokio::test]
+    async fn a_creation_reaches_the_loop_and_is_watched_afterwards() {
+        let root = TempDir::new().unwrap();
+        let mut watcher = watcher_at(root.path());
+        journal_in(root.path(), "one\n");
+        arrives(&mut watcher).await;
+        fs::write(root.path().join(JOURNAL), "one\ntwo\n").unwrap();
+        arrives(&mut watcher).await;
+    }
+
+    #[tokio::test]
+    async fn a_missing_state_directory_is_waited_for_through_its_nearest_parent() {
+        let root = TempDir::new().unwrap();
+        let directory = root.path().join("state").join("nested");
+        let mut watcher = watcher_at(&directory);
+        assert!(!watcher.polling());
+        fs::create_dir_all(&directory).unwrap();
+        journal_in(&directory, "one\n");
+        arrives(&mut watcher).await;
+        let mut watched: Vec<_> = watcher.watches.values().cloned().collect();
+        watched.sort();
+        assert_eq!(
+            watched,
+            [directory.parent().unwrap().to_path_buf(), directory.clone()],
+            "the directory is watched itself once it exists"
+        );
+        let file = fs::OpenOptions::new().append(true).open(directory.join(JOURNAL)).unwrap();
+        std::io::Write::write_all(&mut &file, b"two\n").unwrap();
+        arrives(&mut watcher).await;
+    }
+
+    #[tokio::test]
+    async fn a_replaced_state_directory_reaches_the_loop() {
+        let root = TempDir::new().unwrap();
+        let directory = root.path().join("state");
+        fs::create_dir(&directory).unwrap();
+        journal_in(&directory, "one\n");
+        let mut watcher = watcher_at(&directory);
+        fs::rename(&directory, root.path().join("state-old")).unwrap();
+        fs::create_dir(&directory).unwrap();
+        journal_in(&directory, "two\n");
+        arrives(&mut watcher).await;
+        fs::write(directory.join(JOURNAL), "two\nthree\n").unwrap();
+        arrives(&mut watcher).await;
+    }
+
+    #[tokio::test]
+    async fn a_state_directory_that_can_only_be_traversed_is_watched_through_the_journal() {
+        if is_root() {
+            return;
+        }
+        let root = TempDir::new().unwrap();
+        journal_in(root.path(), "one\n");
+        fs::set_permissions(root.path(), fs::Permissions::from_mode(0o311)).unwrap();
+        let mut watcher = watcher_at(root.path());
+        assert!(!watcher.polling());
+        assert!(watcher.watches.values().any(|path| path.ends_with(JOURNAL)));
+        let mut file = fs::OpenOptions::new().append(true).open(root.path().join(JOURNAL)).unwrap();
+        std::io::Write::write_all(&mut file, b"two\n").unwrap();
+        arrives(&mut watcher).await;
+        fs::write(root.path().join("replacement"), "three\n").unwrap();
+        fs::rename(root.path().join("replacement"), root.path().join(JOURNAL)).unwrap();
+        arrives(&mut watcher).await;
+        fs::set_permissions(root.path(), fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_traverse_only_directory_without_a_journal_is_polled_until_one_can_be_watched() {
+        if is_root() {
+            return;
+        }
+        let root = TempDir::new().unwrap();
+        let directory = root.path().join("state");
+        fs::create_dir(&directory).unwrap();
+        fs::set_permissions(&directory, fs::Permissions::from_mode(0o311)).unwrap();
+        let mut watcher = watcher_at(&directory);
+        assert!(watcher.polling(), "nothing announces the journal's creation");
+        journal_in(&directory, "one\n");
+        watcher.arm().unwrap();
+        assert!(!watcher.polling());
+        fs::set_permissions(&directory, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_state_directory_below_a_file_is_waited_for_through_the_files_parent() {
+        let root = TempDir::new().unwrap();
+        let file = root.path().join("file");
+        fs::write(&file, "x").unwrap();
+        let runtime = tokio::runtime::Handle::current();
+        let _guard = runtime.enter();
+        let watcher = open(&file.join("state"));
+        assert!(watcher.is_ok(), "the file's parent is watched instead: ENOTDIR climbs");
+    }
+}

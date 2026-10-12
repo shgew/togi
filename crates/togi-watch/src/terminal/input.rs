@@ -265,4 +265,67 @@ pub(super) mod tests {
         assert_eq!(sent, 1);
         assert_eq!(script.timeouts.len(), 1);
     }
+
+    mod pipes {
+        use std::os::fd::{AsFd as _, OwnedFd};
+
+        use tokio::sync::mpsc::unbounded_channel;
+
+        use crate::terminal::Event;
+        use crate::terminal::input::Reader;
+        use crate::terminal::keys::Key;
+
+        fn pipe() -> (OwnedFd, OwnedFd) {
+            rustix::pipe::pipe_with(rustix::pipe::PipeFlags::CLOEXEC).unwrap()
+        }
+
+        #[test]
+        fn a_reader_on_a_real_pipe_decodes_split_sequences_and_reports_the_end() {
+            let (read, write) = pipe();
+            let (events, mut queue) = unbounded_channel();
+            std::thread::scope(|scope| {
+                let reader = Reader::start(scope, read.as_fd(), events).unwrap();
+                rustix::io::write(&write, b"\x1b[").unwrap();
+                rustix::io::write(&write, b"Aj").unwrap();
+                drop(write);
+                let mut keys = Vec::new();
+                loop {
+                    match queue.blocking_recv() {
+                        Some(Event::Key(key)) => keys.push(key),
+                        Some(Event::InputClosed) => break,
+                        other => panic!("{other:?}"),
+                    }
+                }
+                assert_eq!(keys, [Key::Up, Key::Char('j')]);
+                drop(reader);
+            });
+        }
+
+        #[test]
+        fn stopping_an_idle_reader_joins_it_and_leaves_the_callers_pipe_alone() {
+            let (read, write) = pipe();
+            let (events, mut queue) = unbounded_channel();
+            std::thread::scope(|scope| {
+                let reader = Reader::start(scope, read.as_fd(), events).unwrap();
+                drop(reader);
+            });
+            assert!(matches!(queue.blocking_recv(), Some(Event::InputClosed) | None));
+            rustix::io::write(&write, b"remaining input").unwrap();
+            let mut buf = [0_u8; 15];
+            assert_eq!(rustix::io::read(&read, &mut buf).unwrap(), 15);
+            assert_eq!(&buf, b"remaining input");
+        }
+
+        #[test]
+        fn a_lone_escape_becomes_the_esc_key_after_the_timeout() {
+            let (read, write) = pipe();
+            let (events, mut queue) = unbounded_channel();
+            std::thread::scope(|scope| {
+                let reader = Reader::start(scope, read.as_fd(), events).unwrap();
+                rustix::io::write(&write, b"\x1b").unwrap();
+                assert!(matches!(queue.blocking_recv(), Some(Event::Key(Key::Esc))));
+                drop(reader);
+            });
+        }
+    }
 }
