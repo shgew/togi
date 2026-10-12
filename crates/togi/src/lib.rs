@@ -1,6 +1,6 @@
 //! The `togi` command line: argument parsing, exit statuses, `--version` and `completion`.
 //!
-//! [`run`] parses the arguments with clap, runs the chosen command against the given streams and
+//! [`run()`] parses the arguments with clap, runs the chosen command against the given streams and
 //! returns an [`Exit`]; `main` writes to the process's own streams and turns the result into the
 //! process status.
 //!

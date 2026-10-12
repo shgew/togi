@@ -86,7 +86,7 @@ where
     run_with(args, out, err, &Real)
 }
 
-/// [`run`] against the given host instead of the real one.
+/// [`run()`] against the given host instead of the real one.
 pub fn run_with<I, T>(
     args: I,
     out: &mut dyn Write,
