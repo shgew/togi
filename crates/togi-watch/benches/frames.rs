@@ -1,14 +1,16 @@
 //! Frame time and fold time of the dashboard on simulated sessions.
 //!
 //! `frame` draws one 240x67 main-view frame of the longest scenario's folded journal, and of the first R7
-//! checking trial, which has the most panels; `project` folds the checking journal from nothing, as Go's
-//! `BenchmarkProject` did.
+//! checking trial, which has the most panels, into a buffer; `frame-bytes` also encodes the whole frame as the
+//! terminal bytes a first draw writes, as Go's `RenderView` produced styled strings; `project` folds the checking
+//! journal from nothing, as Go's `BenchmarkProject` did.
 
 use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use jiff::SignedDuration;
 use jiff::tz::TimeZone;
+use ratatui::backend::{Backend, CrosstermBackend};
 use ratatui::buffer::Buffer;
 use togi_journal::Event;
 use togi_watch::frames::{frame_area, render};
@@ -48,6 +50,19 @@ fn frame(c: &mut Criterion, name: &str, events: &[Event]) {
         b.iter(|| {
             buf.reset();
             black_box(render(black_box(&journal), &SCREEN, now, &zone, &mut buf))
+        });
+    });
+    let blank = Buffer::empty(frame_area(&SCREEN));
+    let mut bytes = Vec::with_capacity(1 << 16);
+    c.bench_function(&format!("frame-bytes/{name}"), |b| {
+        b.iter(|| {
+            buf.reset();
+            render(black_box(&journal), &SCREEN, now, &zone, &mut buf);
+            bytes.clear();
+            CrosstermBackend::new(&mut bytes)
+                .draw(blank.diff(&buf).into_iter())
+                .expect("writing to memory");
+            black_box(bytes.len())
         });
     });
 }
