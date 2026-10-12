@@ -85,9 +85,6 @@ pub(super) struct Source {
     stat_error: Option<String>,
     content: Content,
     held: Option<HeldLog>,
-    /// How many times the model was built from the first event on.
-    #[cfg(test)]
-    rebuilt: usize,
 }
 
 /// This build, as far as showing a journal goes: only its schema decides whether a journal can be shown.
@@ -115,8 +112,6 @@ impl Source {
             stat_error: None,
             content: Content::Missing,
             held: None,
-            #[cfg(test)]
-            rebuilt: 0,
         }
     }
 
@@ -208,10 +203,6 @@ impl Source {
             }
             _ => (Box::new(Model::new()), 0),
         };
-        #[cfg(test)]
-        if folded == 0 {
-            self.rebuilt += 1;
-        }
         for event in &events[folded..] {
             if let Payload::SessionStart(start) = &event.payload {
                 if let Verdict::Refuse(refusal) =
@@ -282,6 +273,17 @@ impl Source {
             Content::Problem(error) => Some(error),
             Content::Ready(model, _) => model.problem().cloned().map(SourceError::Fold),
             Content::Missing | Content::Starting => None,
+        }
+    }
+}
+
+#[cfg(test)]
+impl Source {
+    /// Where the model is, which changes only when a fresh one replaces it.
+    fn model_address(&self) -> Option<usize> {
+        match &self.content {
+            Content::Ready(model, _) => Some(std::ptr::from_ref::<Model>(model) as usize),
+            _ => None,
         }
     }
 }
@@ -448,20 +450,30 @@ mod tests {
         write_journal(dir.path(), &session_with_warnings(5));
         let mut source = Source::new(dir.path(), None);
         source.reload();
-        assert_eq!(source.rebuilt, 1);
+        let first = source.model_address().unwrap();
         append(dir.path(), &[warning(7, "w7")]);
         source.reload();
         append(dir.path(), &[warning(8, "w8")]);
         source.reload();
-        assert_eq!(source.rebuilt, 1, "an append rebuilt the model");
-        assert!(matches!(&source.content, Content::Ready(_, 8)));
+        assert_eq!(
+            source.model_address(),
+            Some(first),
+            "an append rebuilt the model"
+        );
+        assert!(matches!(&source.content, Content::Ready(model, 8) if model.problem().is_none()));
         replace(dir.path(), &lines(&session_with_warnings(2)));
         source.reload();
-        assert_eq!(source.rebuilt, 2);
+        let replaced = source.model_address().unwrap();
+        assert_ne!(replaced, first);
         assert!(matches!(&source.content, Content::Ready(_, 3)));
         write_bytes(dir.path(), &lines(&session_with_warnings(1)));
         source.reload();
-        assert_eq!(source.rebuilt, 3, "a truncation rebuilt nothing");
+        assert_ne!(
+            source.model_address(),
+            Some(replaced),
+            "a truncation kept the model"
+        );
+        assert!(matches!(&source.content, Content::Ready(_, 2)));
     }
 
     #[test]
