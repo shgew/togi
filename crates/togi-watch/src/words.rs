@@ -11,11 +11,13 @@ use std::borrow::Cow;
 use std::time::Duration;
 
 use togi_journal::{
-    Activity, Attribution, CheckingChain, CheckingCycle, Combination, CorePhase, CoreTransition,
-    CycleEvent, DeadEnd, Decision, DeepeningRound, EventKind, Failure, HuntEnd, HuntGroup,
-    HuntOutcome, HuntStart, Inference, Mce, Payload, RoundEvent, TrialEnd, TunerDecision,
+    Activity, Attribution, CheckingChain, CheckingCycle, CheckingStep, Combination, CorePhase,
+    CoreTransition, CycleEvent, DeadEnd, Decision, DeepeningRound, EventKind, Failure, HuntEnd,
+    HuntGroup, HuntOutcome, HuntStart, Inference, Mce, Payload, RoundEvent, TrialEnd,
+    TunerDecision,
 };
 use togi_machine::{CoreId, Regime, Signal, TargetOffset, WorkloadId};
+use togi_tuner::DecisionPayload;
 
 /// The tag of a line of what happened: one short word per kind of event, in a column of its own, so the eye finds
 /// a crash without reading the sentence beside it.
@@ -603,6 +605,79 @@ fn hunt_start_phrase(d: &HuntStart) -> String {
     )
 }
 
+fn backs_off(d: &TunerDecision) -> Option<String> {
+    (d.decision == Decision::Backoff).then(|| "backs off".to_owned())
+}
+
+fn hunt_brief(d: &HuntStart) -> String {
+    format!("hunt {}", d.hunt.get())
+}
+
+fn combination_brief(d: &Combination) -> String {
+    format!("C{}", d.combination.get())
+}
+
+fn combination_phrase(d: &Combination) -> String {
+    format!(
+        "C{} over {}",
+        d.combination.get(),
+        core_ids(d.members.iter().map(|m| m.core))
+    )
+}
+
+const HUNT_ENDS: &str = "hunt ends";
+const TUNING_STOPS: &str = "tuning stops";
+const NO_HUNT: &str = "no hunt: these offsets reach a known failure";
+
+fn step_phrase(d: &CheckingStep) -> Option<String> {
+    (d.step.get() > 1).then(|| format!("step {} is done", d.step.get() - 1))
+}
+
+/// The compact entry of a forecast decision: the [`Words::compact`] of the event it would be, without making one.
+#[must_use]
+pub fn decision_brief(decision: &DecisionPayload) -> Option<String> {
+    match decision {
+        DecisionPayload::TunerDecision(d) => backs_off(d),
+        DecisionPayload::HuntStart(d) => Some(hunt_brief(d)),
+        DecisionPayload::HuntEnd(_) => Some(HUNT_ENDS.to_owned()),
+        DecisionPayload::Combination(d) => Some(combination_brief(d)),
+        DecisionPayload::DeadEnd(_) => Some(TUNING_STOPS.to_owned()),
+        DecisionPayload::Failure(_)
+        | DecisionPayload::TunerWarning(_)
+        | DecisionPayload::CorePhase(_)
+        | DecisionPayload::ProfileChange(_)
+        | DecisionPayload::CheckingCycle(_)
+        | DecisionPayload::CheckingStep(_)
+        | DecisionPayload::CheckingChain(_)
+        | DecisionPayload::HuntGroup(_)
+        | DecisionPayload::HuntSkipped(_)
+        | DecisionPayload::DeepeningRound(_) => None,
+    }
+}
+
+/// The detailed entry of a forecast decision whose words need no context: the [`Words::detailed`] of the event it
+/// would be, without making one, and `None` where the table says [`Phrase::Contextual`].
+#[must_use]
+pub fn decision_detail(decision: &DecisionPayload) -> Option<String> {
+    match decision {
+        DecisionPayload::TunerDecision(d) => Some(decision_phrase(d, None)),
+        DecisionPayload::CorePhase(d) => core_phase_phrase(d),
+        DecisionPayload::CheckingStep(d) => step_phrase(d),
+        DecisionPayload::CheckingCycle(d) => Some(cycle_phrase(d)),
+        DecisionPayload::CheckingChain(d) => Some(chain_phrase(d)),
+        DecisionPayload::HuntStart(d) => Some(hunt_start_phrase(d)),
+        DecisionPayload::HuntSkipped(_) => Some(NO_HUNT.to_owned()),
+        DecisionPayload::Combination(d) => Some(combination_phrase(d)),
+        DecisionPayload::DeepeningRound(d) => Some(round_phrase(d)),
+        DecisionPayload::DeadEnd(d) => Some(dead_end_phrase(d)),
+        DecisionPayload::Failure(_)
+        | DecisionPayload::TunerWarning(_)
+        | DecisionPayload::ProfileChange(_)
+        | DecisionPayload::HuntGroup(_)
+        | DecisionPayload::HuntEnd(_) => None,
+    }
+}
+
 fn group_tag(d: &HuntGroup) -> Tag {
     if d.skipped || d.inferred.is_some() {
         Tag::Skip
@@ -777,8 +852,7 @@ pub fn words(kind: EventKind) -> Words {
                 Payload::TunerDecision(d) => decision_line(d).tag,
                 _ => Tag::Backoff,
             }),
-            compact: Brief::Of(of!(TunerDecision, |d| (d.decision == Decision::Backoff)
-                .then(|| "backs off".to_owned()))),
+            compact: Brief::Of(of!(TunerDecision, |d| backs_off(d))),
             detailed: Phrase::Of(of!(TunerDecision, |d| Some(decision_phrase(d, None)))),
             ..Words::SILENT
         },
@@ -802,8 +876,7 @@ pub fn words(kind: EventKind) -> Words {
         EventKind::CheckingStep => Words {
             history: History::Contextual,
             tag: Tagging::Fixed(Tag::Step),
-            detailed: Phrase::Of(of!(CheckingStep, |d| (d.step.get() > 1)
-                .then(|| format!("step {} is done", d.step.get() - 1)))),
+            detailed: Phrase::Of(of!(CheckingStep, |d| step_phrase(d))),
             ..Words::SILENT
         },
         EventKind::CheckingChain => Words {
@@ -820,7 +893,7 @@ pub fn words(kind: EventKind) -> Words {
         EventKind::HuntStart => Words {
             history: History::Contextual,
             tag: Tagging::Fixed(Tag::Hunt),
-            compact: Brief::Of(of!(HuntStart, |d| Some(format!("hunt {}", d.hunt.get())))),
+            compact: Brief::Of(of!(HuntStart, |d| Some(hunt_brief(d)))),
             detailed: Phrase::Of(of!(HuntStart, |d| Some(hunt_start_phrase(d)))),
             ..Words::SILENT
         },
@@ -836,7 +909,7 @@ pub fn words(kind: EventKind) -> Words {
         EventKind::HuntEnd => Words {
             history: History::Contextual,
             tag: Tagging::Fixed(Tag::Hunt),
-            compact: Brief::Of(|_| Some("hunt ends".to_owned())),
+            compact: Brief::Of(|_| Some(HUNT_ENDS.to_owned())),
             detailed: Phrase::Contextual,
             ..Words::SILENT
         },
@@ -849,9 +922,7 @@ pub fn words(kind: EventKind) -> Words {
                 })
             }),
             tag: Tagging::Fixed(Tag::Hunt),
-            detailed: Phrase::Of(|_| {
-                Some("no hunt: these offsets reach a known failure".to_owned())
-            }),
+            detailed: Phrase::Of(|_| Some(NO_HUNT.to_owned())),
             ..Words::SILENT
         },
         EventKind::Combination => Words {
@@ -861,15 +932,8 @@ pub fn words(kind: EventKind) -> Words {
                 tone: Tone::Combo,
             }))),
             tag: Tagging::Fixed(Tag::Combo),
-            compact: Brief::Of(of!(Combination, |d| Some(format!(
-                "C{}",
-                d.combination.get()
-            )))),
-            detailed: Phrase::Of(of!(Combination, |d| Some(format!(
-                "C{} over {}",
-                d.combination.get(),
-                core_ids(d.members.iter().map(|m| m.core))
-            )))),
+            compact: Brief::Of(of!(Combination, |d| Some(combination_brief(d)))),
+            detailed: Phrase::Of(of!(Combination, |d| Some(combination_phrase(d)))),
             ..Words::SILENT
         },
         EventKind::DeepeningRound => Words {
@@ -895,7 +959,7 @@ pub fn words(kind: EventKind) -> Words {
                 tone: Tone::Bad,
             }))),
             tag: Tagging::Fixed(Tag::Stop),
-            compact: Brief::Of(|_| Some("tuning stops".to_owned())),
+            compact: Brief::Of(|_| Some(TUNING_STOPS.to_owned())),
             detailed: Phrase::Of(of!(DeadEnd, |d| Some(dead_end_phrase(d)))),
             ..Words::SILENT
         },

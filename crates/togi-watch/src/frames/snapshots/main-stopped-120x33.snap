@@ -1,0 +1,36 @@
+---
+source: crates/togi-watch/src/frames/snapshots.rs
+expression: body
+---
+│ togi   23:32:41   session 47h32m   57 failures · 12 crashes   last observed failure 08:32, 15h00m ago
+│ ■ SOLO ─ ■ P1 ─ ■ P2 ─ CLEAN 1 ─ ■ CYCLE 2
+│
+│ ▌  The requested clean cycles are complete, so I restored safer offsets and stopped. togi run picks up where I...
+│
+│ STOPPED  23:32:01 · requested clean cycles completed
+│ Rows show the saved profile, not applied now.
+│
+│ CCD 0 idle       0  2 counts/cell       -50 fail            CCD 1 idle       0  2 counts/cell       -50 fail
+│   00 -23 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄█··              -24             08  -5 HAS ROOM ▄▄▄█                         -7
+│   01 -15 AT LIMIT ▄▄▄▄▄▄▄█·                   -16             09 -33 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█·          -34
+│   02 -24 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄█               -25             10 -13 AT LIMIT ▄▄▄▄▄▄█··                   -14
+│   03 -24 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄█               -25             11  -7 AT LIMIT ▄▄▄█·                        -8
+│   04 -13 AT LIMIT ▄▄▄▄▄▄█·                    -14             12 -14 AT LIMIT ▄▄▄▄▄▄▄█·                   -15
+│   05  -8 AT LIMIT ▄▄▄▄█                        -9             13 -35 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█·         -36
+│   06 -37 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█        -39             14 -12 AT LIMIT ▄▄▄▄▄▄█·                    -13
+│   07 -29 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█            -31             15 -13 HAS ROOM ▄▄▄▄▄▄▄█                    -15
+│
+│ BIOS PROFILE ──────────────────────────── confirmed #9133   WHAT HAPPENED ─────────────────────────────── l: last 400
+│ slot      0    1    2    3    4    5    6    7
+│ CCD 0   -23  -15  -24  -24  -13   -8  -37  -29              23:32  stop     stopped
+│ CCD 1    -5  -33  -13   -7  -14  -35  -12  -13              23:32  cycle    cycle 2 passed, a full cycle of every...
+│                                                             23:32  pass     R6 idle + bursts on 00-15 · passed...
+│ CYCLE 2 ────────────────────────────── 18 steps · 18 done   23:17  pass     R4 partial load on core 15 at -13...
+│ +18 more                                                    23:15  pass     R4 partial load on core 07 at -29...
+│                                                             23:13  pass     R4 partial load on core 14 at -12...
+│ R7 ────────────── top ───────────── self-sufficient ─────   23:11  pass     R4 partial load on core 06 at -37...
+│ mprime AVX2       05 08 by offset   00-05 07-12 14 15       23:09  pass     R4 partial load on core 13 at -35...
+│ mprime AVX-512    05 08 by offset   00-05 07-12 14 15       23:07  pass     R4 partial load on core 05 at -8...
+│ y-cruncher FFTv4  05 08 by offset   00-05 07-12 14 15       +1238 more
+│
+│  ?  help    l  log    esc  back    q  close view

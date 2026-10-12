@@ -1,0 +1,36 @@
+---
+source: crates/togi-watch/src/frames/snapshots.rs
+expression: body
+---
+│ togi   18:36:38   session 18h36m   40 failures · 7 crashes   last observed failure 18:35, a moment ago
+│ ■ SOLO ─ ►  HUNT 1   part 1 of 2 ─ ○ P1 ─ ○ P2 ─ CLEAN 0 ─ ○ CYCLE 1 paused at 4/18
+│
+│ ▌  Corrected hardware error in R2 heavy vector on 05; no core named. Rerunning it with 05 parked.
+│
+│  R2   heavy vector load  on 05 · 00-04 06-15 at failing offsets, 05 parked at 0                  HUNT 1 · PART 1 OF 2
+│ ██████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  1:20 left  0/5 ► · · · ·
+│
+│ 5/5 pass → part 2: 00-04   none named → group 2   core named → rerun at CO 0
+│
+│ CCD 0 one loaded 0  2 counts/cell       -50 fail  back      CCD 1 judged     0  2 counts/cell       -50 fail
+│   00 -25 MEMBER   ▄▄▄▄▄▄▄▄▄▄▄▄█·              -26             08  -5 MEMBER   ▄▄▄█                         -7
+│   01 -15 MEMBER   ▄▄▄▄▄▄▄█·                   -16             09 -34 MEMBER   ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█          -36
+│   02 -25 MEMBER   ▄▄▄▄▄▄▄▄▄▄▄▄▄█              -27             10 -15 MEMBER   ▄▄▄▄▄▄▄█·                   -16
+│   03 -24 MEMBER   ▄▄▄▄▄▄▄▄▄▄▄▄█               -26             11  -7 MEMBER   ▄▄▄█·                        -8
+│   04 -15 MEMBER   ▄▄▄▄▄▄▄▄█                   -17             12 -14 MEMBER   ▄▄▄▄▄▄▄█·                   -15
+│ ► 05   0 PARKED   ·····█                      -11   -9        13 -37 MEMBER   ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█        -39
+│   06 -37 MEMBER   ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█        -39             14 -15 MEMBER   ▄▄▄▄▄▄▄▄█                   -17
+│   07 -29 MEMBER   ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█            -31             15 -13 MEMBER   ▄▄▄▄▄▄▄█                    -15
+│
+│ HUNT 1 ────────────────────────────────────── 18:35 · 40s   WHAT HAPPENED ─────────────────────────────── l: last 400
+│
+│ cause      corrected hardware error in R2 heavy vector...   18:35  hunt     #1 started · part 1: 00-04 06-15 at...
+│ ► part 1/2 00-04 06-15 at failing... trial 1/5              18:35  fail     R2 heavy vector on core 05 at -9...
+│   part 2/2 05 at failing offsets     if part 1 passes       18:33  note     checking cycle 1 R7 step 3 CCD 1...
+│                                                             18:33  note     checking cycle 1 R7 step 3 CCD 1...
+│ then       1  record a failure point or a combination       18:33  pass     R7 partial CCD 1 on 09 10 13 14 · 4...
+│            2  back off past it                              18:22  note     checking cycle 1 R7 step 3 CCD 1...
+│            3  rerun R2 heavy vector: 5 x 2m                 18:22  note     checking cycle 1 R7 step 3 CCD 1...
+│                                                             +394 more
+│
+│  ?  help    l  log    esc  back    q  close view
