@@ -1110,7 +1110,7 @@ The `togi-tool-bench` crate ports the runs, metrics, summary, comparison and cac
 
 ## Stage 7: `cmd/togi` `status` and `events` (#826, 2026-10-12)
 
-`togi status` and `togi events` read the journal without the lock and print it ([#826](https://github.com/shgew/togi/issues/826)); `watch` follows when `togi_watch::terminal` has merged. One module each in `crates/togi/src`, with `read.rs` (the build check, the read and the torn-tail notice both share) and `table.rs` (word wrapping and aligned tables at 80 columns).
+`togi status` and `togi events` read the journal without the lock and print it ([#826](https://github.com/shgew/togi/issues/826)); `watch` runs `togi_watch::terminal` (`run` on a terminal, `one_frame` otherwise). One module each in `crates/togi/src`, with `read.rs` (the build check, the read and the torn-tail notice both share) and `table.rs` (word wrapping and aligned tables at 80 columns).
 
 - **What reads what.** `status` folds the events through `togi_watch::model` (queued resets, combinations, hunt facts, R7 status), the journal's own state (session, in flight, dead end, last decisions) and `togi_tuner::State::project` (phase, failure points, BIOS profile, deepening, exposure, Tctl peak), and scans the events for what no fold keeps (carried and between-trial notes, hunt and combination sequence numbers, unanswered too-cautious defects). `events` filters with `togi_journal::Filter`; its `--kind` value parser takes the names from `KindSelector::names()`, so all four completion scripts list them.
 - **Two additive commits to crates this PR does not own.** `togi_journal::recorded_build{,_in}` (the build stamp from the first line alone, shared with `StateDir::live_build`, so a journal of a newer schema is refused before any event is decoded) and `CheckingView::exposure` in `togi-tuner` (the evidence's per-workload exposure; a `WorkloadId` already names its regime, so the table keeps Go's REGIME column).
@@ -1138,7 +1138,10 @@ The `togi-tool-bench` crate ports the runs, metrics, summary, comparison and cac
 | `TestEventsUnfilteredUnknownKind` | changed: `read::events::an_event_of_an_unknown_kind_is_a_read_error` |
 | `TestReadCommandsReportTornTail` | `read::events::a_torn_tail_is_reported_after_the_events` |
 | `TestHumanJournalBoundaries`, `TestHumanJournalReadErrorEscapesUnknownKind` | `togi-render`'s tests (the escape and the line rules) and `read::events::an_event_of_an_unknown_kind_is_a_read_error` |
-| `TestWatchWithoutJournal`, `TestWatchProblemFrame`, `TestWatchEscapesJournalControls` | with `watch` (not in this commit range) |
+| `TestWatchWithoutJournal` | `read::watch::a_missing_journal_prints_no_session_yet_and_exits_zero` |
+| `TestWatchProblemFrame` | `read::watch::an_unreadable_journal_prints_the_problem_frame_and_exits_one`, `without_a_terminal_one_frame_of_the_requested_size_is_printed`, `the_frame_size_must_be_at_least_one` |
+| `TestWatchEscapesJournalControls` | `read::watch::journal_controls_are_escaped_in_the_frame_and_the_diagnostic` |
+| (acceptance of #826, no Go test) | `read::watch::sigint_ends_a_live_watch_with_the_terminal_restored` (pty; SIGINT ends `watch` with the cursor shown and the terminal modes as before) |
 
 - **Measurements** (host load about 120 at the time, so CPU time is the figure; `cargo build -p togi` after touching `lib.rs`, dependencies built, 3 runs; `go build` after appending a comment to `main.go`; tests as the whole package of each side):
 

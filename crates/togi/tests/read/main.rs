@@ -7,3 +7,4 @@
 mod events;
 mod status;
 mod support;
+mod watch;

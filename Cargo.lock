@@ -1520,6 +1520,7 @@ dependencies = [
  "clap_complete_nushell",
  "insta",
  "jiff",
+ "rustix",
  "serde_json",
  "tempfile",
  "togi-config",

@@ -29,6 +29,7 @@ togi-version.workspace = true
 togi-watch.workspace = true
 
 [dev-dependencies]
+rustix = { workspace = true, features = ["event", "pty", "termios"] }
 insta.workspace = true
 tempfile.workspace = true
 togi-watchtest.workspace = true

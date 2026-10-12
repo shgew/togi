@@ -27,6 +27,7 @@ pub mod exit;
 pub mod read;
 pub mod status;
 mod table;
+pub mod watch;
 
 pub use cli::run;
 pub use exit::Exit;

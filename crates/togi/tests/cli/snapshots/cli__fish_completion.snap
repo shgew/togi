@@ -34,6 +34,7 @@ complete -c togi -n "__fish_togi_needs_command" -s V -l version -d 'Print versio
 complete -c togi -n "__fish_togi_needs_command" -f -a "completion" -d 'Print a shell completion script'
 complete -c togi -n "__fish_togi_needs_command" -f -a "events" -d 'Print the journal, one readable line per event'
 complete -c togi -n "__fish_togi_needs_command" -f -a "status" -d 'Show the session at a glance'
+complete -c togi -n "__fish_togi_needs_command" -f -a "watch" -d 'Show the session as a read-only dashboard'
 complete -c togi -n "__fish_togi_needs_command" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
 complete -c togi -n "__fish_togi_using_subcommand completion" -l state-dir -d 'State directory' -r -f -a "(__fish_complete_directories)"
 complete -c togi -n "__fish_togi_using_subcommand completion" -s h -l help -d 'Print help (see more with \'--help\')'
@@ -115,7 +116,12 @@ complete -c togi -n "__fish_togi_using_subcommand events" -l json -d 'Print raw,
 complete -c togi -n "__fish_togi_using_subcommand events" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c togi -n "__fish_togi_using_subcommand status" -l state-dir -d 'State directory' -r -f -a "(__fish_complete_directories)"
 complete -c togi -n "__fish_togi_using_subcommand status" -s h -l help -d 'Print help (see more with \'--help\')'
-complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from completion events status help" -f -a "completion" -d 'Print a shell completion script'
-complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from completion events status help" -f -a "events" -d 'Print the journal, one readable line per event'
-complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from completion events status help" -f -a "status" -d 'Show the session at a glance'
-complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from completion events status help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
+complete -c togi -n "__fish_togi_using_subcommand watch" -l width -d 'Frame width in columns when stdout is not a terminal' -r
+complete -c togi -n "__fish_togi_using_subcommand watch" -l height -d 'Frame height in rows when stdout is not a terminal' -r
+complete -c togi -n "__fish_togi_using_subcommand watch" -l state-dir -d 'State directory' -r -f -a "(__fish_complete_directories)"
+complete -c togi -n "__fish_togi_using_subcommand watch" -s h -l help -d 'Print help (see more with \'--help\')'
+complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from completion events status watch help" -f -a "completion" -d 'Print a shell completion script'
+complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from completion events status watch help" -f -a "events" -d 'Print the journal, one readable line per event'
+complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from completion events status watch help" -f -a "status" -d 'Show the session at a glance'
+complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from completion events status watch help" -f -a "watch" -d 'Show the session as a read-only dashboard'
+complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from completion events status watch help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'

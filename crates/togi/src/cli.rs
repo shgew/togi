@@ -11,7 +11,7 @@ use clap::{CommandFactory, Parser, Subcommand};
 
 use crate::args::StateDirArgs;
 use crate::exit::Exit;
-use crate::{completion, events, status};
+use crate::{completion, events, status, watch};
 
 const BANNER: &str = "   __              _\n  / /_____  ____ _(_)\n / __/ __ \\/ __ `/ /\n/ /_/ /_/ / /_/ / /\n\\__/\\____/\\__, /_/\n         /____/\n\n  per-core Curve Optimizer\n\n";
 
@@ -43,6 +43,7 @@ pub enum Command {
     Completion(completion::Args),
     Events(events::Args),
     Status(status::Args),
+    Watch(watch::Args),
 }
 
 impl Command {
@@ -52,6 +53,7 @@ impl Command {
             Self::Completion(args) => completion::run(&args, ctx),
             Self::Events(args) => events::run(&args, ctx),
             Self::Status(args) => status::run(&args, ctx),
+            Self::Watch(args) => watch::run(&args, ctx),
         }
     }
 }
