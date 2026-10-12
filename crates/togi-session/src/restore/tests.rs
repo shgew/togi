@@ -23,6 +23,21 @@ fn the_baseline_is_kept_no_deeper_than_the_tuner_holds_nor_than_a_failure_point(
 }
 
 #[test]
+fn a_failure_point_at_zero_restores_every_core_to_zero() {
+    let cores: CoreSet = [core(0), core(1), core(2)].into_iter().collect();
+    let points: PerCore<FailurePoint> = [(core(1), FailurePoint::new(target(0)))]
+        .into_iter()
+        .collect();
+    let restored = restore_target(
+        &observed(&[-20, -3, -30]),
+        &offsets(&[-10, -8, -40]),
+        Some(&points),
+        cores,
+    );
+    assert_eq!(restored, offsets(&[0, 0, 0]));
+}
+
+#[test]
 fn a_baseline_no_write_could_have_set_is_clamped_and_a_missing_one_is_zero() {
     let cores: CoreSet = [core(0), core(1)].into_iter().collect();
     let restored = restore_target(&observed(&[7]), &PerCore::default(), None, cores);

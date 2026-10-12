@@ -17,6 +17,7 @@ use togi_machine::{
 use togi_sim::definition::{CoreDef, JointDef, ModelDef};
 use togi_sim::faults::{HookPhase, SmuOp, SmuOperation};
 use togi_sim::{MachineDefinition, Simulator};
+use togi_tuner::DecisionPayload;
 use togi_tuningboot::{Bootloader, Environment, SavedEntry};
 
 use crate::session::{Control, Session};
@@ -84,9 +85,16 @@ impl SameBoot {
 
     /// The killed run also appended what `more` appends after the offsets it left.
     fn killed(pending: bool, more: impl FnOnce(&Bench, &mut Session)) -> Self {
+        Self::killed_from(
+            r#"{"start_offsets":{"0":-30,"1":-29,"2":-19,"3":-5}}"#,
+            pending,
+            more,
+        )
+    }
+
+    fn killed_from(config: &str, pending: bool, more: impl FnOnce(&Bench, &mut Session)) -> Self {
         let mut bench = quiet(4, Some(BIOS.to_vec()));
-        bench.config =
-            Config::parse(r#"{"start_offsets":{"0":-30,"1":-29,"2":-19,"3":-5}}"#).unwrap();
+        bench.config = Config::parse(config).unwrap();
         let mut session = begun(&bench);
         put(&mut session, &LEFT);
         more(&bench, &mut session);
@@ -286,6 +294,121 @@ fn a_different_boot_never_reconciles_what_the_same_boot_left() {
             );
         }
     }
+}
+
+/// A killed run that left a confirmed failure at CO 0 on core 2: drained but not recorded, or recorded as the
+/// dead end the next boot has pending.
+fn zero_failure(record: bool) -> SameBoot {
+    SameBoot::killed_from(
+        r#"{"start_offsets":{"0":-30,"1":-29,"2":0,"3":-5}}"#,
+        false,
+        |bench, session| {
+            session.validated = Some(session.host.validate_smu().unwrap());
+            bench
+                .sim
+                .script_trial(
+                    "0001",
+                    togi_sim::model::Script {
+                        signal: Some(Signal::ComputationError),
+                        at_s: 1.0,
+                        core: core(2),
+                        reset: None,
+                        then_crash: false,
+                    },
+                )
+                .unwrap();
+            let plan = search_plan(session, core(2), Regime::R1);
+            run_plan(session, plan).unwrap();
+            if record {
+                for _ in 0..16 {
+                    let action = session
+                        .appender()
+                        .tuner()
+                        .drain()
+                        .expect("the failure at CO 0 owes a dead end");
+                    let dead_end = matches!(action.payload, DecisionPayload::DeadEnd(_));
+                    session
+                        .appender
+                        .append(action.payload.into(), &action.cause)
+                        .unwrap();
+                    if dead_end {
+                        return;
+                    }
+                }
+                panic!("no dead end among the first 16 owed decisions");
+            }
+        },
+    )
+}
+
+fn assert_zero_dead_end_finished(fixture: &SameBoot, ended: &Ended) {
+    assert!(ended.errors.is_empty(), "{:?}", ended.errors);
+    let Some(Stop::DeadEnd { dead_end, .. }) = ended.stop.as_ref() else {
+        panic!("{:?}", ended.stop);
+    };
+    assert_eq!(dead_end.condition, DeadEndCondition::FailureAtZero);
+    assert_eq!(dead_end.core, Some(core(2)));
+    let events = fixture.since(ended);
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| event.kind() == EventKind::DeadEnd)
+            .count(),
+        usize::from(
+            position(&ended.journal.events()[..fixture.left], EventKind::DeadEnd).is_none()
+        )
+    );
+    assert_eq!(
+        ended.journal.events().last().unwrap().kind(),
+        EventKind::Shutdown
+    );
+}
+
+#[test]
+fn a_same_boot_resume_finishes_a_dead_end_it_drains_without_deepening_any_core() {
+    let fixture = zero_failure(false);
+    let ended = fixture.resume();
+    assert_zero_dead_end_finished(&fixture, &ended);
+    let events = fixture.since(&ended);
+    let recorded = position(events, EventKind::DeadEnd).unwrap();
+    let shutdown = position(events, EventKind::Shutdown).unwrap();
+    assert!(recorded < shutdown, "{recorded} {shutdown}");
+    assert_eq!(fixture.offsets(), [0, 0, 0, 0]);
+}
+
+#[test]
+fn a_pending_zero_dead_end_finishes_on_the_same_boot_and_every_later_run_stops_at_it_cleanly() {
+    let fixture = zero_failure(true);
+    let ended = fixture.resume();
+    assert_zero_dead_end_finished(&fixture, &ended);
+    assert_eq!(fixture.offsets(), [0, 0, 0, 0]);
+    let mut seen = ended.journal.events().len();
+    drop(ended);
+    for _ in 0..2 {
+        let again = fixture.resume();
+        assert!(again.errors.is_empty(), "{:?}", again.errors);
+        assert!(
+            matches!(&again.stop, Some(Stop::DeadEnd { dead_end, .. })
+                if dead_end.condition == DeadEndCondition::FailureAtZero),
+            "{:?}",
+            again.stop
+        );
+        let later = &again.journal.events()[seen..];
+        let count = |kind| later.iter().filter(|event| event.kind() == kind).count();
+        assert_eq!(count(EventKind::DeadEnd), 1);
+        assert_eq!(count(EventKind::SmuIntent), 0);
+        assert_eq!(later.last().unwrap().kind(), EventKind::Shutdown);
+        assert_eq!(fixture.offsets(), [0, 0, 0, 0]);
+        seen = again.journal.events().len();
+    }
+}
+
+#[test]
+fn a_pending_zero_dead_end_from_another_boot_finishes_without_refusal_and_leaves_zero() {
+    let fixture = zero_failure(true);
+    fixture.bench.sim.reboot();
+    let ended = fixture.resume();
+    assert_zero_dead_end_finished(&fixture, &ended);
 }
 
 #[test]

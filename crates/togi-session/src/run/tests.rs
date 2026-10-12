@@ -208,6 +208,61 @@ fn a_whole_session_dispatches_a_failure_at_zero_dead_end() {
 }
 
 #[test]
+fn a_failure_at_zero_in_the_loop_restores_every_core_to_zero_and_ends_in_its_shutdown() {
+    let bench = Bench::defined(&MachineDefinition {
+        cores: 2,
+        bios: Some(vec![-20, -20]),
+        model: ModelDef {
+            past_limit_rate: 0.0,
+            ..ModelDef::default()
+        },
+        ..MachineDefinition::default()
+    });
+    let mut input = bench.input();
+    input.config = togi_config::Config::parse(r#"{"start_offsets":{"0":0,"1":-10}}"#).unwrap();
+    bench
+        .sim
+        .script_trial(
+            "0001",
+            togi_sim::model::Script {
+                signal: Some(Signal::ComputationError),
+                at_s: 1.0,
+                core: core(0),
+                reset: None,
+                then_crash: false,
+            },
+        )
+        .unwrap();
+    let ended = run(input);
+    assert!(ended.errors.is_empty(), "{:?}", ended.errors);
+    assert!(
+        matches!(ended.stop, Some(Stop::DeadEnd { ref dead_end, .. })
+        if dead_end.condition == togi_journal::DeadEndCondition::FailureAtZero),
+        "{:?}",
+        ended.stop
+    );
+    let events = ended.journal.events();
+    let restored = events.iter().rev().find_map(|event| match &event.payload {
+        Payload::ProfileRestored(restored) => Some(restored.offsets),
+        _ => None,
+    });
+    if let Some(restored) = restored {
+        assert!(
+            restored.iter().all(|(_, offset)| offset.get() == 0),
+            "{restored:?}"
+        );
+    }
+    assert!(matches!(
+        &events.last().unwrap().payload,
+        Payload::Shutdown(shutdown) if shutdown.reason == ShutdownReason::DeadEnd
+    ));
+    let mut smu = bench.sim.seams().smu;
+    assert_eq!(smu.offset(core(0)).unwrap().0, 0);
+    assert_eq!(smu.offset(core(1)).unwrap().0, 0);
+    assert!(bench.sim.violations().is_empty());
+}
+
+#[test]
 fn together_trials_carry_the_checking_profile_the_tuner_stands_at() {
     let bench = Bench::defined(&MachineDefinition {
         cores: 2,

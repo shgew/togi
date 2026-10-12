@@ -15,9 +15,17 @@ pub(crate) fn restore_target(
     failure_points: Option<&PerCore<FailurePoint>>,
     cores: CoreSet,
 ) -> PerCore<TargetOffset> {
+    let zero_point = failure_points.is_some_and(|points| {
+        points
+            .iter()
+            .any(|(_, point)| point.offset() == TargetOffset::ZERO)
+    });
     cores
         .iter()
         .map(|core| {
+            if zero_point {
+                return (core, TargetOffset::ZERO);
+            }
             let mut target = baseline.get(core).map_or(TargetOffset::ZERO, |observed| {
                 TargetOffset::clamped(observed.0)
             });
