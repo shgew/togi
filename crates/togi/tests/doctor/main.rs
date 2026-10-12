@@ -438,3 +438,12 @@ fn another_platform_stops_before_the_journal_the_lock_and_every_check() {
     assert_eq!(ran.exit, Exit::Error);
     assert!(!host.lock.exists(), "the host lock file was created");
 }
+
+#[test]
+fn a_closed_stdout_is_an_error() {
+    let session = Session::new();
+    let host = host_with(ready());
+    let ran = host.run_to_closed_stdout(session.path(), &["doctor"]);
+    assert_eq!(ran.exit, Exit::Error, "{}", ran.err);
+    assert!(ran.err.contains("write output"), "{}", ran.err);
+}

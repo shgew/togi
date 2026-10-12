@@ -568,3 +568,79 @@ fn a_missing_default_config_is_silent() {
     assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
     assert_eq!(ran.err, "");
 }
+
+#[test]
+fn infrastructure_failures_exit_1() {
+    let session = Session::new();
+    let mut host = Host::new();
+    host.lock = host
+        .lock
+        .parent()
+        .unwrap()
+        .join("missing")
+        .join("togi.lock");
+    let ran = reset(&host, session.path(), &["--core", "0"]);
+    assert_eq!(ran.exit, Exit::Error, "{}", ran.err);
+
+    let mut host = Host::new();
+    host.boot_fails = true;
+    let ran = reset(&host, session.path(), &["--core", "0"]);
+    assert_eq!(ran.exit, Exit::Error, "{}", ran.err);
+
+    let host = Host::new();
+    let file = session.path().join("events.jsonl");
+    let ran = reset(&host, &file, &["--all"]);
+    assert_eq!(ran.exit, Exit::Error, "{}", ran.err);
+}
+
+#[test]
+fn a_closed_stdout_is_an_error() {
+    let host = Host::new();
+    let session = Session::new();
+    let ran = host.run_to_closed_stdout(session.path(), &["reset", "--core", "1"]);
+    assert_eq!(ran.exit, Exit::Error, "{}", ran.err);
+    assert!(ran.err.contains("write output"), "{}", ran.err);
+}
+
+#[test]
+fn start_offsets_are_not_solo_limits() {
+    let (scenario, core, point) = failing_scenario();
+    let host = Host::new();
+    let cfg = tempfile::tempdir().unwrap();
+    let path = cfg.path().join("config.json");
+    let other = (core.get() + 1) % 16;
+    fs::write(
+        &path,
+        format!(
+            r#"{{"start_offsets":{{"{other}":-5}},"candidate_solo_limits":{{"{}":{}}}}}"#,
+            core.get(),
+            point
+        ),
+    )
+    .unwrap();
+    let session = Session::of(scenario);
+    let ran = reset(
+        &host,
+        session.path(),
+        &["--all", "--config", path.to_str().unwrap()],
+    );
+    assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
+    assert_eq!(ran.err.lines().count(), 1, "{}", ran.err);
+}
+
+#[test]
+fn a_core_in_range_but_not_in_the_session_exits_2() {
+    let host = Host::new();
+    let state = tempfile::tempdir().unwrap();
+    let start = format!(
+        "{{\"seq\":1,\"time\":\"2026-01-01T00:00:00Z\",\"boot\":\"b1a8cebe-21d1-14db-3741-5b5df946de05\",\"kind\":\"session.start\",\"msg\":\"x\",\"data\":{{\"build\":{{\"version\":\"0.0.0\",\"ruleset\":1,\"schema\":1,\"fixes\":0,\"evidence\":1}},\"session\":\"{SESSION}\",\"cores\":[{{\"core\":0,\"ccd\":0,\"cpus\":[0,1]}},{{\"core\":1,\"ccd\":0,\"cpus\":[2,3]}}]}}}}\n"
+    );
+    fs::write(state.path().join("events.jsonl"), &start).unwrap();
+    let ran = reset(&host, state.path(), &["--core", "5"]);
+    assert_eq!(ran.exit, Exit::Usage, "{}", ran.err);
+    assert!(ran.err.contains("no such core"), "{}", ran.err);
+    assert_eq!(
+        fs::read_to_string(state.path().join("events.jsonl")).unwrap(),
+        start
+    );
+}

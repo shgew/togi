@@ -88,6 +88,7 @@ impl Bootloader for Env {
 
 pub struct Host {
     pub linux: bool,
+    pub boot_fails: bool,
     pub root: bool,
     pub lock: PathBuf,
     pub boot: String,
@@ -112,6 +113,7 @@ impl Host {
             .unwrap();
         Self {
             linux: true,
+            boot_fails: false,
             root: true,
             lock: dir.path().join("togi.lock"),
             boot: "0123456789abcdef0123456789abcdef".into(),
@@ -139,6 +141,32 @@ impl Host {
 
     pub fn steps(&self) -> Vec<String> {
         self.steps.borrow().clone()
+    }
+
+    pub fn run_to_closed_stdout(&self, state_dir: &Path, args: &[&str]) -> Ran {
+        struct Closed;
+        impl io::Write for Closed {
+            fn write(&mut self, _: &[u8]) -> io::Result<usize> {
+                Err(io::Error::other("closed"))
+            }
+            fn flush(&mut self) -> io::Result<()> {
+                Err(io::Error::other("closed"))
+            }
+        }
+        let mut err = Vec::new();
+        let exit = togi_cli::run_with(
+            ["togi", "--state-dir", state_dir.to_str().unwrap()]
+                .into_iter()
+                .chain(args.iter().copied()),
+            &mut Closed,
+            &mut err,
+            self,
+        );
+        Ran {
+            exit,
+            out: String::new(),
+            err: String::from_utf8(err).unwrap(),
+        }
     }
 
     pub fn run(&self, state_dir: &Path, args: &[&str]) -> Ran {
@@ -177,6 +205,9 @@ impl System for Host {
     }
 
     fn boot_id(&self) -> Result<BootId, togi_detect::Error> {
+        if self.boot_fails {
+            return Err(togi_detect::Error::InvalidBootId { id: "none".into() });
+        }
         Ok(BootId::from(self.boot.clone()))
     }
 

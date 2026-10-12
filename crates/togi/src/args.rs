@@ -65,14 +65,18 @@ impl ConfigArgs {
     ///
     /// The file cannot be read or is not a valid configuration.
     pub fn load(&self) -> Result<Config, LoadError> {
-        match Config::load(self.path()) {
-            Err(LoadError::Read { source, .. })
-                if !self.is_explicit() && source.kind() == std::io::ErrorKind::NotFound =>
-            {
-                Ok(Config::default())
-            }
-            loaded => loaded,
+        read(self.path(), self.is_explicit())
+    }
+}
+
+fn read(path: &Path, explicit: bool) -> Result<Config, LoadError> {
+    match Config::load(path) {
+        Err(LoadError::Read { source, .. })
+            if !explicit && source.kind() == std::io::ErrorKind::NotFound =>
+        {
+            Ok(Config::default())
         }
+        loaded => loaded,
     }
 }
 
