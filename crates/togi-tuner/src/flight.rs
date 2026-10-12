@@ -244,8 +244,11 @@ impl Run {
         if conclusive {
             self.cycle_evidence_changed(class);
         }
-        if let (Outcome::Pass, true, Some(celsius)) = (end.outcome, together, end.tctl_max_c) {
-            self.checking.note_temperature(celsius, event.seq);
+        if end.outcome == Outcome::Pass && together {
+            self.checking.note_pass(event.seq);
+            if let Some(celsius) = end.tctl_max_c {
+                self.checking.note_temperature(celsius, event.seq);
+            }
         }
         self.retire_reruns();
         self.revalidate_retry();

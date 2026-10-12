@@ -1242,3 +1242,56 @@ fn chains_of_repeated_workload_steps_keep_the_schedule_equal_to_a_rebuild() {
     }
     panic!("the cycle never ended");
 }
+
+#[test]
+fn a_chain_cites_the_passing_together_trial_that_justified_it() {
+    let mut j = chain_journal();
+    let last = pass_part(&mut j, &[0, 1, 2, 3], &[]);
+    let chain = decided(same_next(&j));
+    assert!(
+        matches!(chain.payload, DecisionPayload::CheckingChain(_)),
+        "{chain:?}"
+    );
+    assert!(chain.cause.contains(&last), "{:?}", chain.cause);
+}
+
+#[test]
+fn checking_cites_the_last_passing_together_trial_not_an_inconclusive_one() {
+    let mut j = chain_journal();
+    let plan = j.next_trial();
+    let passed = run(&mut j, &plan, Outcome::Pass, &FULL_REQUESTS, None);
+    let plan = j.next_trial();
+    assert_eq!(plan.cause, vec![passed]);
+    run(&mut j, &plan, Outcome::Inconclusive, &[], None);
+    assert_eq!(j.next_trial().cause, vec![passed]);
+    let start = j.run().checking.open().unwrap().start;
+    let mut last = passed;
+    for _ in 0..2_000 {
+        let action = same_next(&j);
+        if cycle_end(&action).is_some() {
+            assert_eq!(decided(action).cause, vec![start, last]);
+            return;
+        }
+        last = match action {
+            Action::Decide(decision) => j.decide(decision),
+            Action::RunTrial(plan) => {
+                assert_eq!(plan.cause, vec![last], "{plan:?}");
+                run(&mut j, &plan, Outcome::Pass, &FULL_REQUESTS, None)
+            }
+            other @ Action::ReadRanking => panic!("unexpected action {other:?}"),
+        };
+    }
+    panic!("the cycle never ended");
+}
+
+#[test]
+fn only_a_passing_together_end_advances_the_checking_last_seq() {
+    let mut j = chain_journal();
+    let before = j.run().checking.last_seq();
+    let plan = j.next_trial();
+    run(&mut j, &plan, Outcome::Inconclusive, &[], None);
+    assert_eq!(j.run().checking.last_seq(), before);
+    let plan = j.next_trial();
+    run(&mut j, &plan, Outcome::Failure, &[], None);
+    assert_eq!(j.run().checking.last_seq(), before);
+}
