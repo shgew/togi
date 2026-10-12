@@ -337,9 +337,11 @@ fn a_hunt_caused_by_a_carried_trial() {
     let cause = hunt_cause(carried_trial().into());
     assert!(cause.known && cause.carried);
     assert_eq!(cause.regime, Some(Regime::R7));
-    assert!(
-        cause.trial.is_none() && cause.signal.is_none(),
-        "no trial ran"
+    assert!(cause.trial.is_none(), "no trial ran");
+    assert_eq!(
+        cause.signal,
+        Some(Signal::ComputationError),
+        "the carried payload records the signal"
     );
 }
 
@@ -349,6 +351,7 @@ fn a_hunt_caused_by_a_carried_idle_failure() {
     assert!(cause.known && cause.carried);
     assert_eq!(cause.regime, None, "an idle crash is not a trial");
     assert_eq!(cause.core, Some(core(1)));
+    assert_eq!(cause.signal, Some(Signal::Crash));
 }
 
 /// Runs the tuner against failing together trials until a parked group trial of a hunt is running.

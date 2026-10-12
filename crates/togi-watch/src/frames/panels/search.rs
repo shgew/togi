@@ -14,7 +14,7 @@ use super::super::layout::SizeClass;
 use super::super::measure::Tables;
 use super::super::scene::{Scene, regime_list};
 use super::table::{cell, stage_marker, table_row};
-use crate::words::{core_ids, noun, plural};
+use crate::words::{candidate_word, core_ids, noun, plural};
 
 type Shape = (TargetOffset, Option<TargetOffset>, u32, bool);
 
@@ -259,11 +259,7 @@ pub(super) fn phase2_lines(scene: &Scene<'_>, width: usize) -> (Vec<Line<'static
         }
     }
     for ((offset, solo, gap, moving), cores) in shapes {
-        let note = if moving {
-            "  moving"
-        } else {
-            "  checked again in place"
-        };
+        let note = format!("  {}", candidate_word(moving));
         let solo = solo.map_or_else(|| "-".to_owned(), |solo| solo.get().to_string());
         out.push(cut_styled(
             &Line::from(vec![

@@ -7,6 +7,8 @@ use clap::{Args as ClapArgs, ValueEnum};
 use clap_complete::Generator;
 use clap_complete_nushell::Nushell;
 
+use togi_journal::KindSelector;
+
 use crate::cli::{Context, command, examples};
 use crate::exit::Exit;
 
@@ -54,9 +56,9 @@ pub struct Args {
 #[must_use]
 pub fn script(shell: Shell) -> Vec<u8> {
     match shell {
-        Shell::Bash => generate(clap_complete::Shell::Bash),
-        Shell::Zsh => generate(clap_complete::Shell::Zsh),
-        Shell::Fish => generate(clap_complete::Shell::Fish),
+        Shell::Bash => comma_kinds(&generate(clap_complete::Shell::Bash), &bash_kinds),
+        Shell::Zsh => comma_kinds(&generate(clap_complete::Shell::Zsh), &zsh_kinds),
+        Shell::Fish => comma_kinds(&generate(clap_complete::Shell::Fish), &fish_kinds),
         Shell::Nushell => generate(Nushell),
     }
 }
@@ -67,6 +69,64 @@ fn generate(generator: impl Generator) -> Vec<u8> {
     let mut script = Vec::new();
     clap_complete::generate(generator, &mut command, name, &mut script);
     script
+}
+
+/// Rewrites the one whole-value `events --kind` list clap generates into a completer of the item
+/// after the last comma, which clap's static generators cannot express. The tests pin that the
+/// list was found, so a clap upgrade that changes its form fails them instead of losing the
+/// completion.
+fn comma_kinds(script: &[u8], rewrite: &dyn Fn(&str, &str) -> String) -> Vec<u8> {
+    let kinds = KindSelector::names().join(" ");
+    rewrite(&String::from_utf8_lossy(script), &kinds).into_bytes()
+}
+
+/// Bash splits words on `=` but not on `,`, so `cur` is the whole list typed so far.
+fn bash_kinds(script: &str, kinds: &str) -> String {
+    script.replacen(
+        &format!(r#"COMPREPLY=($(compgen -W "{kinds}" -- "${{cur}}"))"#),
+        &format!(
+            r#"local prefix=""
+                    if [[ ${{cur}} == *,* ]]; then
+                        prefix="${{cur%,*}},"
+                    fi
+                    COMPREPLY=($(compgen -P "${{prefix}}" -W "{kinds}" -- "${{cur##*,}}"))"#
+        ),
+        1,
+    )
+}
+
+fn zsh_kinds(script: &str, kinds: &str) -> String {
+    script.replacen(
+        &format!(":kinds:({kinds})"),
+        &format!(":kinds:_sequence compadd - {kinds}"),
+        1,
+    )
+}
+
+/// Fish filters the candidates against the whole token, so each one repeats the items before the
+/// last comma.
+fn fish_kinds(script: &str, kinds: &str) -> String {
+    let clap_list: Vec<String> = kinds
+        .split(' ')
+        .map(|kind| format!(r"{kind}\t''"))
+        .collect();
+    let rewritten = script.replacen(
+        &format!(r#"-a "{}""#, clap_list.join("\n")),
+        "-a '(__togi_kinds)'",
+        1,
+    );
+    format!(
+        r#"function __togi_kinds
+    set -l token (commandline -ct)
+    set token (string replace -r -- '^--?[^=]*=' '' "$token")
+    set -l prefix (string replace -r -- '[^,]*$' '' "$token")
+    for kind in {kinds}
+        echo "$prefix$kind"
+    end
+end
+
+{rewritten}"#
+    )
 }
 
 /// Writes the script to stdout in one piece, so a failed write is one error and never a script
