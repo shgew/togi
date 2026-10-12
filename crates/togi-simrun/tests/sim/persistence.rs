@@ -183,6 +183,11 @@ fn a_state_directory_on_disk_gets_state_json_only_when_a_run_ends() {
     let mut published = seen.iter().map(|(_, state)| state).collect::<Vec<_>>();
     published.dedup();
     assert_eq!(published.len(), boots, "one publication per crashed boot");
+    let journal = std::fs::read_to_string(dir.path().join("events.jsonl")).unwrap();
+    assert!(
+        !journal.contains("\"state.rebuilt\""),
+        "a boot found no published state.json and rebuilt it"
+    );
     assert!(dir.path().join("state.json").exists());
 }
 
