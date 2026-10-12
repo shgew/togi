@@ -10,7 +10,7 @@ use togi_session::{ConfigSource, Divergence, StopPolicy};
 use togi_sim::definition::{CoreDef, ModelDef, Weights};
 use togi_sim::{MachineDefinition, Model, RunSettings, Simulator};
 
-use super::{due, events, simulate, simulate_checked, verify};
+use super::{due, events, lock, simulate, simulate_checked, verify};
 use crate::{Observe, Persistence, Replay, SimError, SimInput, SimOutcome};
 
 fn nz(n: u32) -> NonZeroU32 {
@@ -191,4 +191,31 @@ fn a_resume_state_that_differs_from_the_journal_fails_the_simulation() {
         Err(SimError::NoCapsule { boot: 3 })
     ));
     verify(None, &journal, true, 3).unwrap();
+}
+
+#[test]
+fn a_failed_check_after_a_warm_crash_still_publishes_the_crashed_boots_state() {
+    let fs = MemFs::new();
+    let projected = MemFs::new();
+    let outcome = simulate_checked(
+        sim_input(
+            crashing(),
+            Persistence::Memory(fs.clone()),
+            Replay::Warm,
+            Some(nz(1)),
+        ),
+        &mut |capsule, events, latched, boot| {
+            verify(capsule, events, latched, boot)?;
+            if boot < 2 {
+                return Ok(());
+            }
+            let mut dir = lock(&Persistence::Memory(projected.clone())).unwrap();
+            capsule.unwrap().publish(&mut dir).unwrap();
+            Err(SimError::NoCapsule { boot })
+        },
+    );
+    assert!(matches!(outcome, Err(SimError::NoCapsule { boot: 2 })));
+    let published = fs.contents("/state/state.json");
+    assert!(published.is_some());
+    assert_eq!(published, projected.contents("/state/state.json"));
 }

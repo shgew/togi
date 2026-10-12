@@ -266,7 +266,12 @@ fn the_boot_after_a_crash_resumes_the_same_from_a_capsule_or_a_replay() {
     let resumed = one_cycle(&warm, Some(capsule));
 
     let cold = bench();
-    drop(crashed(&cold));
+    let Ended {
+        journal, capsule, ..
+    } = crashed(&cold);
+    let mut dir = journal.close().unwrap();
+    capsule.unwrap().publish(&mut dir).unwrap();
+    drop(dir);
     cold.sim.reboot();
     let replayed = one_cycle(&cold, None);
 
@@ -283,15 +288,17 @@ fn a_crashed_runs_capsule_publishes_what_a_live_run_had_and_the_next_boot_rebuil
     let deferred = bench();
     let mut crashed = crashed(&deferred);
     let capsule = crashed.capsule.take().unwrap();
-    capsule.publish(&mut crashed.journal).unwrap();
-    let published: StateDocument = crashed.journal.read_state().unwrap().unwrap();
+    let text = journal_text(&crashed);
+    let mut dir = crashed.journal.close().unwrap();
+    capsule.publish(&mut dir).unwrap();
+    let published: StateDocument = dir.read_state().unwrap().unwrap();
+    drop(dir);
 
     let live = bench();
     let live_crashed = crashed_publishing(&live, crate::PublicationPolicy::Live);
     let had: StateDocument = live_crashed.journal.read_state().unwrap().unwrap();
     assert_eq!(published, had);
-    assert_eq!(journal_text(&crashed), journal_text(&live_crashed));
-    drop(crashed);
+    assert_eq!(text, journal_text(&live_crashed));
 
     deferred.sim.reboot();
     let resumed = one_cycle(&deferred, None);
@@ -337,4 +344,57 @@ fn the_state_a_crashed_run_left_unwritten_is_published_by_the_next_boot_when_no_
         saved.facts,
         togi_journal::State::replay(resumed.journal.events()).unwrap()
     );
+}
+
+fn state_reads(bench: &Bench) -> usize {
+    bench
+        .mem
+        .reads()
+        .iter()
+        .filter(|path| path.file_name().is_some_and(|name| name == "state.json"))
+        .count()
+}
+
+fn state_publications(bench: &Bench) -> usize {
+    bench
+        .mem
+        .log()
+        .iter()
+        .filter(|(op, path)| {
+            *op == togi_journal::fs::Op::Rename
+                && path
+                    .file_name()
+                    .is_some_and(|name| name == ".state.json.tmp")
+        })
+        .count()
+}
+
+#[test]
+fn a_run_that_adopts_a_capsule_neither_reads_nor_rebuilds_the_state_a_crash_left_pending() {
+    let bench = bench();
+    let capsule = crashed(&bench).capsule.unwrap();
+    assert_eq!(state_publications(&bench), 0);
+    bench.sim.reboot();
+    let resumed = one_cycle(&bench, Some(capsule));
+    assert!(resumed.errors.is_empty(), "{:?}", resumed.errors);
+    assert_eq!(state_reads(&bench), 0);
+    assert_eq!(state_publications(&bench), 1, "only the run's own end");
+    assert!(
+        resumed
+            .journal
+            .events()
+            .iter()
+            .all(|event| !matches!(event.payload, Payload::StateRebuilt(_)))
+    );
+}
+
+#[test]
+fn a_run_that_cannot_adopt_a_capsule_reads_the_state_and_rebuilds_what_a_crash_left_pending() {
+    let bench = bench();
+    let capsule = crashed(&bench).capsule.unwrap();
+    bench.sim.reboot();
+    let resumed = one_cycle(&bench, None);
+    assert!(capsule.adopt(&resumed.journal, &[]).is_none());
+    assert!(state_reads(&bench) > 0);
+    assert_eq!(state_publications(&bench), 2, "the rebuild and the end");
 }
