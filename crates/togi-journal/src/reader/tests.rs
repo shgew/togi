@@ -42,14 +42,18 @@ fn the_reader_accepts_a_small_buffer() {
 #[test]
 fn the_first_error_ends_the_stream() {
     let mut bytes = recorded(&MemFs::new());
-    bytes.splice(0..0, b"garbage\n".iter().copied());
+    bytes.extend_from_slice(b"{\"seq\":9,\"kind\":\"session.warning\"}\n");
     let mut reader = EventReader::new(bytes.as_slice());
+    for _ in 0..4 {
+        reader.next().unwrap().unwrap();
+    }
+    let accepted = reader.accepted();
     assert!(matches!(
         reader.next(),
-        Some(Err(ReadError::Decode { line: 1, .. }))
+        Some(Err(ReadError::Decode { line: 5, .. }))
     ));
     assert!(reader.next().is_none());
-    assert_eq!(reader.accepted(), 0);
+    assert_eq!(reader.accepted(), accepted);
 }
 
 #[test]
@@ -115,7 +119,7 @@ fn a_recording_reports_the_file_it_could_not_read() {
     assert_eq!(error.path, Path::new("/nowhere.jsonl"));
     fs.put("/bad.jsonl", "nope\n");
     let error = Recording::read_in(&fs, Path::new("/bad.jsonl")).unwrap_err();
-    assert!(matches!(error.source, ReadError::Decode { line: 1, .. }));
+    assert!(matches!(error.source, ReadError::Foreign));
 }
 
 #[test]
@@ -218,25 +222,56 @@ fn the_first_of_two_differing_contexts_wins() {
 }
 
 #[test]
-fn a_contiguous_journal_that_does_not_begin_with_session_start_is_refused() {
-    let bytes = non_start_first_line(&recorded(&MemFs::new()));
+fn a_first_line_that_is_not_a_rust_header_is_another_builds_journal_and_nothing_after_it_is_read() {
+    let good = recorded(&MemFs::new());
+    let kinds = [
+        ("not session.start", non_start_first_line(&good)),
+        ("not json", b"garbage\n".to_vec()),
+        ("flat session.start", flat_first_line()),
+    ];
+    for (name, mut bytes) in kinds {
+        bytes.extend_from_slice(&good);
+        let mut reader = EventReader::new(bytes.as_slice());
+        assert!(
+            matches!(reader.next(), Some(Err(ReadError::Foreign))),
+            "{name}"
+        );
+        assert!(reader.next().is_none(), "{name}");
+        assert_eq!(reader.accepted(), 0, "{name}");
+        assert!(
+            matches!(Recording::parse(&bytes), Err(ReadError::Foreign)),
+            "{name}"
+        );
+        let fs = MemFs::new();
+        fs.put("/j.jsonl", bytes);
+        let error = recorded_context_in(&fs, Path::new("/j.jsonl")).unwrap_err();
+        assert!(matches!(error.source, ReadError::Foreign), "{name}");
+        let text = error.to_string();
+        assert!(text.starts_with("/j.jsonl: "), "{text}");
+        assert!(text.contains("docs/howto.md#go-to-rust-cutover"), "{text}");
+    }
+}
+
+/// The Go build's `session.start`: its fields sit beside `kind`, with no `data` and no `build` object.
+fn flat_first_line() -> Vec<u8> {
+    br#"{"seq":1,"time":"2026-09-27T22:19:54Z","boot":"b","kind":"session.start","msg":"m","ruleset":3,"schema":2,"session":"20260927T221954Z","cores":[]}
+"#
+    .to_vec()
+}
+
+#[test]
+fn a_rust_header_this_build_cannot_decode_is_not_another_builds_journal() {
+    let good = recorded(&MemFs::new());
+    let first = good.split_inclusive(|byte| *byte == b'\n').next().unwrap();
+    let mut line: serde_json::Value = serde_json::from_slice(first).unwrap();
+    line["data"]["build"]["channel"] = "later".into();
+    let mut bytes = serde_json::to_vec(&line).unwrap();
+    bytes.push(b'\n');
     let mut reader = EventReader::new(bytes.as_slice());
     assert!(matches!(
         reader.next(),
-        Some(Err(ReadError::FirstEvent {
-            found: EventKind::SessionWarning
-        }))
+        Some(Err(ReadError::Decode { line: 1, .. }))
     ));
-    assert!(reader.next().is_none());
-    assert_eq!(reader.accepted(), 0);
-    assert!(matches!(
-        Recording::parse(&bytes),
-        Err(ReadError::FirstEvent { .. })
-    ));
-    let fs = MemFs::new();
-    fs.put("/j.jsonl", bytes);
-    let error = recorded_context_in(&fs, Path::new("/j.jsonl")).unwrap_err();
-    assert!(matches!(error.source, ReadError::FirstEvent { .. }));
 }
 
 /// A reader that serves `data` and then fails instead of reporting end of input.

@@ -8,7 +8,8 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use togi_journal::{
-    Build, Event, FileError, Operation, Payload, ReadError, Recording, Refusal, SCHEMA, Verdict,
+    Build, DirError, Event, FileError, Operation, Payload, ReadError, Recording, Refusal, SCHEMA,
+    Verdict,
 };
 
 use crate::history::LogEntry;
@@ -31,6 +32,9 @@ pub enum SourceError {
     /// The journal was written by a build whose schema this one cannot show.
     #[error(transparent)]
     Incompatible(#[from] Refusal),
+    /// The journal is another build's: its first line is not a Rust journal header, and nothing after it is read.
+    #[error(transparent)]
+    Foreign(DirError),
     /// The journal decodes, but its events do not fold into a session.
     #[error(transparent)]
     Fold(#[from] FoldError),
@@ -178,6 +182,14 @@ impl Source {
                 self.content = self.absent();
                 return;
             }
+            Err(FileError {
+                path,
+                source: ReadError::Foreign,
+            }) => {
+                self.content =
+                    Content::Problem(SourceError::Foreign(DirError::ForeignJournal { path }));
+                return;
+            }
             Err(error) => {
                 self.content = Content::Problem(error.into());
                 return;
@@ -284,6 +296,20 @@ impl Source {
             Content::Missing | Content::Starting => None,
         }
     }
+
+    /// Takes the error that ends the dashboard instead of being shown, which is another build's journal. Every other
+    /// problem stays to be shown and retried when the journal changes.
+    pub(super) fn refusal(&mut self) -> Option<SourceError> {
+        match &self.content {
+            Content::Problem(SourceError::Foreign(_)) => {
+                match std::mem::replace(&mut self.content, Content::Missing) {
+                    Content::Problem(error) => Some(error),
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
+    }
 }
 
 impl super::Feed for Source {
@@ -293,6 +319,10 @@ impl super::Feed for Source {
 
     fn reload(&mut self) -> bool {
         Self::reload(self)
+    }
+
+    fn refusal(&mut self) -> Option<SourceError> {
+        Self::refusal(self)
     }
 }
 
@@ -315,11 +345,12 @@ mod tests {
 
     use tempfile::TempDir;
 
-    use super::{Content, Source};
+    use super::{Content, Source, SourceError};
     use crate::history::LOG_LIMIT;
     use crate::screen::{Colours, Journal, Screen, View};
     use crate::terminal::testing::{
-        lines, session_start, session_with_warnings, warning, write_bytes, write_journal,
+        go_journal, lines, session_start, session_with_warnings, undecodable_journal, warning,
+        write_bytes, write_journal,
     };
 
     /// What a frame would be drawn from.
@@ -547,12 +578,12 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let mut source = Source::new(dir.path(), None);
         source.reload();
-        write_bytes(dir.path(), b"not json\n");
+        write_bytes(dir.path(), &undecodable_journal());
         assert!(source.reload());
         let Shown::Problem(text) = show(&mut source, &main_screen()) else {
             panic!("an undecodable journal was shown");
         };
-        assert!(text.contains("line 1"), "{text}");
+        assert!(text.contains("line 2"), "{text}");
         assert!(!source.reload(), "an unchanged problem was reloaded");
         write_journal(dir.path(), &journal_of("live journal recovered"));
         assert!(source.reload());
@@ -637,13 +668,61 @@ mod tests {
     #[test]
     fn a_run_in_progress_still_reports_a_journal_it_cannot_read() {
         let dir = TempDir::new().unwrap();
-        write_bytes(dir.path(), b"not json\n");
+        write_bytes(dir.path(), &undecodable_journal());
         let mut source = Source::new(dir.path(), Some(0));
         source.reload();
         assert!(matches!(
             show(&mut source, &main_screen()),
             Shown::Problem(_)
         ));
+    }
+
+    #[test]
+    fn another_builds_journal_is_a_refusal_the_source_hands_over_once() {
+        for since in [None, Some(0)] {
+            let dir = TempDir::new().unwrap();
+            write_bytes(dir.path(), &go_journal());
+            let mut source = Source::new(dir.path(), since);
+            assert!(source.reload());
+            let Shown::Problem(text) = show(&mut source, &main_screen()) else {
+                panic!("another build's journal was shown");
+            };
+            assert!(text.contains("events.jsonl"), "{text}");
+            assert!(text.contains("docs/howto.md#go-to-rust-cutover"), "{text}");
+            assert!(!text.contains("line"), "no later line was read: {text}");
+            let refusal = source.refusal().unwrap();
+            assert!(matches!(
+                refusal,
+                SourceError::Foreign(togi_journal::DirError::ForeignJournal { .. })
+            ));
+            assert_eq!(refusal.to_string(), text);
+            assert!(source.refusal().is_none());
+        }
+    }
+
+    #[test]
+    fn every_other_problem_stays_to_be_shown_and_is_not_a_refusal() {
+        let dir = TempDir::new().unwrap();
+        write_bytes(dir.path(), &undecodable_journal());
+        let mut source = Source::new(dir.path(), None);
+        source.reload();
+        assert!(matches!(
+            show(&mut source, &main_screen()),
+            Shown::Problem(_)
+        ));
+        assert!(source.refusal().is_none());
+        assert!(source.into_problem().is_some());
+    }
+
+    #[test]
+    fn a_journal_that_turns_into_another_builds_after_a_missing_one_is_a_refusal() {
+        let dir = TempDir::new().unwrap();
+        let mut source = Source::new(dir.path(), None);
+        source.reload();
+        assert!(source.refusal().is_none());
+        write_bytes(dir.path(), &go_journal());
+        assert!(source.reload());
+        assert!(source.refusal().is_some());
     }
 
     fn scrolled_back(dir: &TempDir, warnings: u64) -> (Source, Screen) {

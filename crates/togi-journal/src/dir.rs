@@ -60,12 +60,11 @@ pub enum DirError {
         #[source]
         source: crate::session_id::InvalidSessionId,
     },
-    #[error("{} holds an unreadable build stamp: {source}", path.display())]
-    BadBuild {
-        path: PathBuf,
-        #[source]
-        source: serde_json::Error,
-    },
+    #[error(
+        "{} holds another build's journal; not a Rust journal header; see docs/howto.md#go-to-rust-cutover",
+        path.display()
+    )]
+    ForeignJournal { path: PathBuf },
     #[error("{0} markers are permanent")]
     PermanentMarker(Marker),
 }

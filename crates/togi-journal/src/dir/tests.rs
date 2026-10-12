@@ -439,7 +439,7 @@ fn only_a_live_session_start_names_the_live_session() {
     );
     assert!(matches!(
         dir.live_session(),
-        Err(DirError::NotAJournal { .. })
+        Err(DirError::ForeignJournal { .. })
     ));
 }
 
@@ -608,25 +608,22 @@ fn the_live_build_comes_from_the_first_line_alone() {
 }
 
 #[test]
-fn a_garbled_first_line_has_no_live_build() {
+fn a_garbled_first_line_is_another_builds_journal() {
     let fs = MemFs::new();
     let dir = dir(&fs);
-    fs.put(
-        "/state/events.jsonl",
+    for first in [
         "{\"seq\":1,\"kind\":\"mce\",\"data\":{}}\n",
-    );
-    assert!(matches!(
-        dir.live_build(),
-        Err(DirError::NotAJournal { .. })
-    ));
-    fs.put(
-        "/state/events.jsonl",
         "{\"seq\":1,\"kind\":\"session.start\",\"data\":{\"session\":\"20231114T221320Z\"}}\n",
-    );
-    assert!(matches!(dir.live_build(), Err(DirError::BadBuild { .. })));
-    fs.put("/state/events.jsonl", "not json\n");
-    assert!(matches!(
-        dir.live_build(),
-        Err(DirError::NotAJournal { .. })
-    ));
+        "not json\n",
+    ] {
+        fs.put("/state/events.jsonl", first);
+        let error = dir.live_build().unwrap_err();
+        assert!(matches!(error, DirError::ForeignJournal { .. }), "{first}");
+        assert!(
+            error
+                .to_string()
+                .contains("docs/howto.md#go-to-rust-cutover"),
+            "{error}"
+        );
+    }
 }

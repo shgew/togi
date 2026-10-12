@@ -291,28 +291,15 @@ fn a_gap_and_a_forward_cause_are_refused() {
 }
 
 #[test]
-fn a_contiguous_journal_that_does_not_begin_with_session_start_is_refused() {
+fn a_journal_that_does_not_begin_with_session_start_is_another_builds_and_refused() {
     let bytes = non_start_first_line(&sample(&MemFs::new()));
-    assert!(matches!(
-        Recording::parse(&bytes),
-        Err(ReadError::FirstEvent {
-            found: EventKind::SessionWarning
-        })
-    ));
+    assert!(matches!(Recording::parse(&bytes), Err(ReadError::Foreign)));
     let fs = MemFs::new();
     fs.put("/state/events.jsonl", bytes.clone());
     let Err(OpenError::Read(error)) = simulated(&fs).open(boot(2)) else {
-        panic!("a journal without session.start first must be refused by open");
+        panic!("another build's journal must be refused by open");
     };
-    assert!(
-        matches!(
-            error.source,
-            ReadError::FirstEvent {
-                found: EventKind::SessionWarning
-            }
-        ),
-        "{error}"
-    );
+    assert!(matches!(error.source, ReadError::Foreign), "{error}");
     assert_eq!(live(&fs), bytes);
 }
 

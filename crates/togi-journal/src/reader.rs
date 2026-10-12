@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use crate::dir::{DirError, EVENTS_FILE, StateDir, not_found};
 use crate::event::{Event, Seq};
 use crate::fs::{DiskFs, Fs};
+use crate::header;
 use crate::payload::{EventKind, Payload, SessionContext, UnknownKind};
 
 #[derive(Debug, thiserror::Error)]
@@ -30,6 +31,10 @@ pub enum ReadError {
         #[source]
         source: UnknownKind,
     },
+    #[error(
+        "holds another build's journal; not a Rust journal header; see docs/howto.md#go-to-rust-cutover"
+    )]
+    Foreign,
     #[error("line 1: the first event is {}, not session.start", found.as_str())]
     FirstEvent { found: EventKind },
     #[error("line {line}: cause {cause} does not precede seq {seq}")]
@@ -91,6 +96,9 @@ impl<R: BufRead> EventReader<R> {
         self.lines += 1;
         let line = self.lines;
         let bytes = &self.line[..self.line.len() - 1];
+        if line == 1 && header::classify(bytes).is_none() {
+            return Err(ReadError::Foreign);
+        }
         let event: Event =
             serde_json::from_slice(bytes).map_err(|source| match unknown_kind(bytes) {
                 Some(unknown) => ReadError::UnknownKind {
@@ -105,11 +113,6 @@ impl<R: BufRead> EventReader<R> {
                 line,
                 expected,
                 found: event.seq,
-            });
-        }
-        if line == 1 && !matches!(event.payload, Payload::SessionStart(_)) {
-            return Err(ReadError::FirstEvent {
-                found: event.payload.kind(),
             });
         }
         if let Some(&cause) = event

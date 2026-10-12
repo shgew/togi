@@ -158,10 +158,7 @@ fn open_refuses_a_journal_line_without_a_kind_and_leaves_the_file_unchanged() {
     let Err(OpenError::Read(error)) = simulated(&fs).open(boot(2)) else {
         panic!("a journal line without a kind must be refused by open");
     };
-    assert!(
-        matches!(error.source, ReadError::Decode { line: 1, .. }),
-        "{error}"
-    );
+    assert!(matches!(error.source, ReadError::Foreign), "{error}");
     assert_eq!(live(&fs), bytes);
 }
 

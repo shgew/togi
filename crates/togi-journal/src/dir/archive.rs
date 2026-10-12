@@ -11,6 +11,7 @@ use togi_machine::serde_object::{self, Object};
 use super::{DirError, EVENTS_FILE, STATE_FILE, STATE_TMP, StateDir, TRIALS_DIR, io_at, not_found};
 use crate::build::Build;
 use crate::fs::{DiskFs, FileKind, Fs};
+use crate::header;
 use crate::session_id::SessionId;
 
 const JOURNAL_SUFFIX: &str = ".jsonl";
@@ -72,16 +73,6 @@ struct Peek {
     kind: String,
     #[serde(default, deserialize_with = "serde_object::deserialize")]
     data: PeekData,
-}
-
-#[derive(Deserialize)]
-struct BuildLine {
-    data: BuildData,
-}
-
-#[derive(Deserialize)]
-struct BuildData {
-    build: Build,
 }
 
 #[derive(Default, Deserialize)]
@@ -373,7 +364,8 @@ impl StateDir {
         Ok(())
     }
 
-    /// The session the live journal belongs to, read from its first complete line; `None` without one.
+    /// The session the live journal belongs to, read from its first complete line; `None` without one. A first line
+    /// that is not a `session.start` is another build's journal.
     pub fn live_session(&self) -> Result<Option<SessionId>, DirError> {
         let path = self.join(EVENTS_FILE);
         let Some(line) = first_line(self.fs(), &path)? else {
@@ -382,7 +374,7 @@ impl StateDir {
         match peek_session(&line, "session.start") {
             Some(Ok(session)) => Ok(Some(session)),
             Some(Err(source)) => Err(DirError::BadSession { path, source }),
-            None => Err(DirError::NotAJournal { path }),
+            None => Err(DirError::ForeignJournal { path }),
         }
     }
 
@@ -464,7 +456,8 @@ fn first_line(fs: &dyn Fs, path: &Path) -> Result<Option<Vec<u8>>, DirError> {
 }
 
 /// The build stamp of the live journal in the state directory `dir`, decoded from its first complete line alone,
-/// without taking the lock or writing; `None` when there is no journal or no complete first line.
+/// without taking the lock or writing; `None` when there is no journal or no complete first line. A first line that
+/// is not a Rust journal header is another build's journal, and no event after it is read.
 pub fn recorded_build(dir: &Path) -> Result<Option<Build>, DirError> {
     recorded_build_in(&DiskFs::default(), dir)
 }
@@ -472,21 +465,12 @@ pub fn recorded_build(dir: &Path) -> Result<Option<Build>, DirError> {
 /// [`recorded_build`] over `fs`.
 pub fn recorded_build_in(fs: &dyn Fs, dir: &Path) -> Result<Option<Build>, DirError> {
     let path = dir.join(EVENTS_FILE);
-    let path = path.as_path();
-    let Some(line) = first_line(fs, path)? else {
+    let Some(line) = first_line(fs, &path)? else {
         return Ok(None);
     };
-    if peek_session(&line, "session.start").is_none() {
-        return Err(DirError::NotAJournal {
-            path: path.to_path_buf(),
-        });
-    }
-    match serde_json::from_slice::<Object<BuildLine>>(&line) {
-        Ok(Object(start)) => Ok(Some(start.data.build)),
-        Err(source) => Err(DirError::BadBuild {
-            path: path.to_path_buf(),
-            source,
-        }),
+    match header::classify(&line) {
+        Some(build) => Ok(Some(build)),
+        None => Err(DirError::ForeignJournal { path }),
     }
 }
 

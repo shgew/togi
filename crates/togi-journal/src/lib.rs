@@ -10,6 +10,7 @@ mod dir;
 mod event;
 mod filter;
 pub mod fs;
+mod header;
 mod journal;
 mod payload;
 mod reader;

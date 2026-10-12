@@ -296,21 +296,110 @@ mod recorded {
     }
 
     #[test]
-    fn a_first_event_that_is_not_session_start_is_not_a_journal() {
+    fn a_first_event_that_is_not_session_start_is_another_builds_journal() {
         let other = at(1, "boot-a", 0, &[], sample(EventKind::SmuIntent));
         let line = serde_json::to_string(&other).unwrap();
         assert!(matches!(
             build_of(&format!("{line}\n")),
-            Err(DirError::NotAJournal { .. })
+            Err(DirError::ForeignJournal { .. })
         ));
     }
 
     #[test]
-    fn a_malformed_first_line_is_not_a_journal() {
+    fn a_malformed_first_line_is_another_builds_journal() {
         assert!(matches!(
             build_of("garbage\n"),
-            Err(DirError::NotAJournal { .. })
+            Err(DirError::ForeignJournal { .. })
         ));
+    }
+
+    #[test]
+    fn a_session_start_without_its_data_session_or_build_is_another_builds_journal() {
+        let start = serde_json::to_value(first_event()).unwrap();
+        let mut flat = start.clone();
+        flat.as_object_mut().unwrap().remove("data");
+        let mut no_build = start.clone();
+        no_build["data"].as_object_mut().unwrap().remove("build");
+        let mut no_session = start.clone();
+        no_session["data"]
+            .as_object_mut()
+            .unwrap()
+            .remove("session");
+        let mut listed = start.clone();
+        listed["data"] = serde_json::json!([]);
+        let mut bad_stamp = start;
+        bad_stamp["data"]["build"]["schema"] = "one".into();
+        for (name, line) in [
+            ("flat", flat),
+            ("no build", no_build),
+            ("no session", no_session),
+            ("array data", listed),
+            ("bad stamp", bad_stamp),
+        ] {
+            assert!(
+                matches!(
+                    build_of(&format!("{line}\n")),
+                    Err(DirError::ForeignJournal { .. })
+                ),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_go_journal_header_is_another_builds_journal() {
+        let go = r#"{"seq":1,"time":"2026-09-27T22:19:54.468855707Z","boot":"b","kind":"session.start","msg":"session started","version":"0.3.0","rev":"d1d77d5","ruleset":3,"schema":2,"fixes":1,"session":"20260927T221954Z","cores":[]}"#;
+        let error = build_of(&format!("{go}\n")).unwrap_err();
+        let text = error.to_string();
+        assert!(matches!(error, DirError::ForeignJournal { .. }), "{text}");
+        assert!(text.contains("/state/events.jsonl"), "{text}");
+        assert!(text.contains("docs/howto.md#go-to-rust-cutover"), "{text}");
+    }
+
+    #[test]
+    fn a_newer_builds_additions_to_the_header_are_not_another_builds_journal() {
+        let mut start = serde_json::to_value(first_event()).unwrap();
+        start["data"]["build"]["channel"] = "nightly".into();
+        start["data"]["build"]["schema"] = (SCHEMA + 1).into();
+        start["data"]["added"] = serde_json::json!({"later": true});
+        start["added"] = 1.into();
+        let build = build_of(&format!("{start}\n")).unwrap().unwrap();
+        assert_eq!(build.schema, SCHEMA + 1);
+        start["data"]["build"]["schema"] = SCHEMA.into();
+        assert_eq!(
+            build_of(&format!("{start}\n")).unwrap().unwrap().schema,
+            SCHEMA
+        );
+    }
+
+    #[test]
+    fn the_header_is_judged_before_any_later_line_is_read() {
+        let line = serde_json::to_string(&first_event()).unwrap();
+        let fs = MemFs::new();
+        fs.put("/state/events.jsonl", format!("{line}\n\u{0}garbage\n"));
+        assert!(
+            recorded_build_in(&fs, Path::new("/state"))
+                .unwrap()
+                .is_some()
+        );
+        fs.put("/state/events.jsonl", format!("garbage\n{line}\n"));
+        assert!(matches!(
+            recorded_build_in(&fs, Path::new("/state")),
+            Err(DirError::ForeignJournal { .. })
+        ));
+    }
+
+    #[test]
+    fn a_foreign_first_line_is_refused_without_writing() {
+        let fs = MemFs::new();
+        fs.put("/state/events.jsonl", "{\"seq\":1}\nrest\n");
+        let mutations = fs.mutations();
+        assert!(recorded_build_in(&fs, Path::new("/state")).is_err());
+        assert_eq!(fs.mutations(), mutations);
+        assert_eq!(
+            fs.contents("/state/events.jsonl").unwrap(),
+            b"{\"seq\":1}\nrest\n"
+        );
     }
 }
 
