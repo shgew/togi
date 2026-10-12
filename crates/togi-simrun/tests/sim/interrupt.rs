@@ -13,9 +13,9 @@ use togi_journal::{
 use togi_machine::{BootId, CoreId, Regime, ResetKind, Signal};
 use togi_session::Stop;
 use togi_sim::definition::JointDef;
-use togi_sim::faults::SmuOperation;
+use togi_sim::faults::{SmuOp, SmuOperation};
 use togi_sim::{History, MachineDefinition, Model, RunSettings, Simulator};
-use togi_simrun::{Observe, Replay};
+use togi_simrun::{Observe, Replay, SimError, SimOutcome, simulate};
 
 use crate::common::{Bench, finish, hunt_machine, nz};
 
@@ -397,30 +397,67 @@ impl Case {
         case
     }
 
-    /// Runs a boot that loses power at append `at`: the `at`th append of the boot is written and then reported
-    /// failed, so it is the boot's final event; at 0 the first append fails unwritten.
+    /// Runs a boot that loses power the moment its `at`th append lands, before any cleanup can touch the SMU, and
+    /// asserts that append is the boot's final event and that nothing wrote the SMU afterwards. Power is lost
+    /// before the first append when `at` is 0. A write fault only keeps the already crashed boot from journaling more.
     fn lose_power_at_append(&self, bench: &Bench, at: usize) {
-        let fault = match u64::try_from(at).unwrap() {
-            0 => Fault::before(Op::Write, 1),
-            nth => Fault::after(Op::Write, nth),
-        };
-        bench.fs.inject(fault.named("events.jsonl"));
+        let label = format!("{} {}", self.name, Interruption::Append(at).label());
+        let landed = Rc::new(Cell::new(false));
+        let writes_after = Rc::new(Cell::new(0_usize));
+        let (flag, writes) = (Rc::clone(&landed), Rc::clone(&writes_after));
+        bench.sim.interrupt_smu(move |operation: &SmuOperation| {
+            if flag.get() && operation.op != SmuOp::Read {
+                writes.set(writes.get() + 1);
+            }
+            Ok(())
+        });
         let mut input = bench.input();
         input.config = quick();
         input.policy.cycles = None;
         input.replay = Replay::Cold;
-        input.max_boots = nz(MAX_BOOTS);
-        let ended = finish(input);
+        input.max_boots = nz(1);
+        if at == 0 {
+            bench.sim.power_loss();
+        } else {
+            let (sim, fs, landed, mut appended) = (
+                bench.sim.clone(),
+                bench.fs.clone(),
+                Rc::clone(&landed),
+                0_usize,
+            );
+            input.observer = Some(Box::new(move |_| {
+                appended += 1;
+                if appended == at {
+                    sim.power_loss();
+                    landed.set(true);
+                    fs.inject(Fault::before(Op::Write, 1).named("events.jsonl"));
+                }
+                Observe::Continue
+            }));
+        }
+        let rebooted = match simulate(input) {
+            Ok(SimOutcome::Capped { .. }) => true,
+            Ok(SimOutcome::Stopped(finished)) if !finished.errors.is_empty() => false,
+            Err(SimError::Failed { .. } | SimError::Host { .. }) => false,
+            other => panic!(
+                "{label}: the boot did not end on the crash: {:?}",
+                other.map(drop)
+            ),
+        };
         bench.fs.clear_faults();
-        let label = format!("{} {}", self.name, Interruption::Append(at).label());
-        assert!(!ended.errors.is_empty(), "{label}: the append did not fail");
         assert_eq!(
             bench.events().len(),
             self.prefix_len + at,
             "{label}: the boot did not end at the selected append"
         );
-        bench.sim.power_loss();
-        bench.sim.reboot();
+        assert_eq!(
+            writes_after.get(),
+            0,
+            "{label}: cleanup wrote the SMU after power was lost"
+        );
+        if !rebooted {
+            bench.sim.reboot();
+        }
     }
 
     fn fork(&self) -> Bench {
