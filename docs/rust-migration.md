@@ -452,3 +452,116 @@ The `togi-hardware` crate ports `internal/hardware` ([#767](https://github.com/s
 - **Tests.** Each Go test of `internal/hardware` maps to Rust tests, or the pull request says why it does not; the four privilege tests, the five `real_process_*` tests of the `grub-editenv` runner, the `reboot` tests and the three probe-error tests have no Go counterpart. The 101 tests run in 0.33 s under `cargo nextest` on Linux; `go test -count=1 ./internal/hardware` reports 0.005 s. The `hardware` feature adds one integration test, `diagnosing_leaves_every_offset_unchanged` (`TestHardwareDiagnoseLeavesOffsets`), which takes the host lock, reads every offset before and after a privileged diagnosis and needs the real SMU. It compiles in clippy with all features and was not run.
 - **Size.** 1,548 lines of library and 2,299 of tests (the unit test modules, `src/tests/` and `tests/hardware.rs`) against Go's 467 and 877. No Go is removed or changed.
 - **Not measured.** Compile times against Go and agent cost. Nothing ran on real hardware, and nothing ran on a Mac: the `aarch64-apple-darwin` check is clippy from Linux, which covers the `Unsupported` path.
+
+## Stage 3: closing measurements (#759, 2026-10-12)
+
+Stage 3 ([#638](https://github.com/shgew/togi/issues/638)) ported `internal/config`, `internal/defect`, `internal/facts`, `internal/carry` and `internal/tuner` in seven pull requests: [#770](https://github.com/shgew/togi/pull/770) (`togi-config`), [#775](https://github.com/shgew/togi/pull/775) (`togi-defect`), [#776](https://github.com/shgew/togi/pull/776) (`togi-facts`), [#783](https://github.com/shgew/togi/pull/783) (`togi-carry`), [#777](https://github.com/shgew/togi/pull/777) (tuner G1 and G2), [#799](https://github.com/shgew/togi/pull/799) (tuner G3 to G5) and [#801](https://github.com/shgew/togi/pull/801) (tuner G6). This entry closes it with the measurements #637 asks for, taken at commit `113b73ee` (`main` after #801).
+
+- **Test mapping.** [`rust-migration-stage-3-tests.md`](rust-migration-stage-3-tests.md) maps each of the 341 Go test functions of the five packages to the Rust tests that pin the same behavior: 314 are pinned by a Rust test, 12 by `togi-journal`'s tests, 11 are obsolete under the native contract (each with its reason) and 4 belong to the stage 4 simulator. Every Rust name resolves to a test that `cargo nextest list` reports on `113b73ee`.
+- **Two journal tests added.** The carry tests `TestPrepareRefusesALineWithoutAKind` and the directory case of `TestPrepareRefusesBrokenArchiveLayoutWithoutChangingJournal` had no Rust twin. `togi-journal` now pins that a line without a `kind` is an envelope error and that opening such a journal refuses it and leaves the file unchanged, and that an archive whose target path is a directory is refused before anything is recorded, with the live journal unchanged. No library change was needed.
+- **Ruleset and evidence epoch.** `togi_tuner::RULESET` and `togi_tuner::EVIDENCE_EPOCH` are exported, both 1, for the session to stamp `session.start`; `tuner.md` and `workloads.md` name them in place of Go's `tuner.Ruleset` and `tuner.EvidenceEpoch`.
+
+**Host and method.** The development host: 32 threads, 30.9 GiB, Linux; `/tmp` is tmpfs and every build ran there. rustc and cargo 1.99.0, mold 2.42.1, cargo-nextest 0.9.146, go 1.27.1, hyperfine 1.21.0. One script ran every batch in sequence under the shared gate lock, on a `git archive` of `113b73ee` with a private `CARGO_TARGET_DIR` and Go build cache and `GOFLAGS=-mod=mod`, after building each crate and package once. Every batch is hyperfine `--warmup 1 --runs 7` with JSON export; before each batch the script waited for the one-minute load average to fall below 3 (for at most 5 minutes) and logged it before and after. Every batch started at a load of 1.47 to 2.92; the load average was 1.51 when the run began and 2.00 when it ended, and other agents shared the host. The times are hyperfine's mean ± standard deviation in ms.
+
+### Compile times
+
+The crate or package alone, its dependencies built. Rust: `--prepare 'cargo clean -p C'` (or `cargo clean -p C --release`), then `cargo build -p C --locked`, `cargo nextest run -p C --locked --no-run` (library and test binaries) or the release build. Go: `go clean -cache` would drop every dependency too, so each run's prepare step writes a one-line file into the package that declares a new exported variable with a fresh value; Go then recompiles the package and relinks, and takes every dependency from the cache. The command is `go build ./internal/P` or `go test -c -o <scratch> ./internal/P`. These are not the same operation: a cleaned crate drops its own artifacts, the Go package gets a changed source file. "×" is the Rust mean over the Go mean.
+
+| Crate / package | `cargo build` | `go build` | × | `nextest --no-run` | `go test -c` | × | `cargo build --release` |
+|:---|---:|---:|---:|---:|---:|---:|---:|
+| `togi-config` / `config` | 174.0 ± 3.6 | 35.1 ± 0.8 | 5.0 | 419.5 ± 24.6 | 155.2 ± 2.7 | 2.7 | 243.8 ± 23.3 |
+| `togi-defect` / `defect` | 121.5 ± 1.4 | 30.4 ± 1.1 | 4.0 | 294.6 ± 7.6 | 161.4 ± 2.7 | 1.8 | 198.2 ± 2.8 |
+| `togi-facts` / `facts` | 104.6 ± 1.6 | 51.3 ± 1.4 | 2.0 | 346.0 ± 5.0 | 198.3 ± 3.2 | 1.7 | 139.3 ± 2.9 |
+| `togi-carry` / `carry` | 158.1 ± 1.4 | 51.7 ± 1.1 | 3.1 | 498.3 ± 7.7 | 224.5 ± 4.7 | 2.2 | 255.4 ± 4.9 |
+| `togi-tuner` / `tuner` | 1432.6 ± 16.6 | 207.4 ± 3.6 | 6.9 | 4430.6 ± 15.4 | 766.2 ± 22.3 | 5.8 | 2193.8 ± 18.7 |
+
+Rust compiles each crate 2.0 to 6.9 times slower than Go compiles its package, and builds its tests 1.7 to 5.8 times slower; the tuner, the largest, is the slowest relative to Go.
+
+### Test times
+
+Everything built; hyperfine `-N`. Rust: `cargo nextest run -p C --locked` (a process per test). Go: `go test -count=1 -timeout 5m ./internal/P` (one process per package; `-count=1` skips the test cache). Mean ± sd and median, in ms:
+
+| Crate / package (Rust tests) | nextest | median | `go test` | median | × |
+|:---|---:|---:|---:|---:|---:|
+| `togi-config` / `config` (152) | 104.2 ± 3.8 | 106.0 | 83.7 ± 1.5 | 83.9 | 1.25 |
+| `togi-defect` / `defect` (23) | 137.1 ± 79.7 | 94.4 | 196.2 ± 131.4 | 100.6 | 0.70 |
+| `togi-facts` / `facts` (34) | 102.4 ± 5.4 | 101.8 | 95.6 ± 1.8 | 95.7 | 1.07 |
+| `togi-carry` / `carry` (51) | 114.5 ± 6.0 | 116.4 | 522.5 ± 13.0 | 525.4 | 0.22 |
+| `togi-tuner` / `tuner` (731) | 3672.0 ± 45.0 | 3662.5 | 3488.7 ± 193.2 | 3375.6 | 1.05 |
+
+The defect batch is noisy: the load average rose from 2.78 to 5.28 during it, two of the seven Rust runs took 210 and 288 ms against about 90 ms for the rest, and the first three Go runs took 408, 319 and 259 ms against about 95 ms; its medians are the better figure. The test counts are `cargo nextest list`'s (a `#[test_case]` function counts once per case); Go has 4, 5, 15, 45 and 272 test functions in these packages, many of them table-driven.
+
+### Lines of code
+
+Total lines, non-blank in parentheses. Rust test files are `tests/` directories, `tests.rs` and `*_tests.rs`; inline `#[cfg(test)]` modules count as library, so the Rust test figure is a lower bound. Go: `GoFiles` against `TestGoFiles` and `XTestGoFiles` from `go list -json`.
+
+| Crate / package | Rust library | Rust tests | Go library | Go tests |
+|:---|---:|---:|---:|---:|
+| `togi-config` / `config` | 886 (774) | 682 (625) | 228 (209) | 168 (161) |
+| `togi-defect` / `defect` | 447 (403) | 726 (659) | 274 (248) | 164 (156) |
+| `togi-facts` / `facts` | 891 (840) | 1,736 (1,641) | 403 (376) | 664 (640) |
+| `togi-carry` / `carry` | 1,185 (1,110) | 2,524 (2,326) | 737 (702) | 2,399 (2,285) |
+| `togi-tuner` / `tuner` | 17,804 (16,519) | 30,105 (28,624) | 7,239 (6,801) | 11,823 (11,357) |
+| **total** | **21,213** | **35,773** | **8,881** | **15,218** |
+
+### Forecast cost, against Go's
+
+The same shape as "Go `Forecast` cost" above. A throwaway program kept outside the repository, built `--release` against `togi-tuner` and `togi-journal` at `113b73ee`, read a journal with `Recording::read`, timed three full `replay` folds, then, for 800 prefix lengths drawn from `StdRng::seed_from_u64(1)` and sorted, timed the fold of that prefix alone and one `forecast()` on the state it folded to. It calls nothing else on the state. One process, one batch, one run per prefix; 8.94 s of wall time, 35.0 MiB at peak (`VmHWM`), at a load average of 2.18 when it started and 2.00 when it ended.
+
+- **Session.** Rust reads no Go journal, so the session is not Go's: `target-r7-request-gap`, holdout seed 110, run by the stage 4 simulated session on its unmerged branch (Rust-written, 27,801 events, 1,941 trial intents, 233 boots, stopped after one clean cycle). Go's figure is the same scenario and seed but a Go session of 40,592 events and 2,266 intents. Not like for like: a different implementation of the session, with a different event mix and length.
+- **Full fold:** 39.64, 39.08 and 39.05 ms; 1,426, 1,406 and 1,405 ns per event (Go: 191, 194 and 174 ns per event on its journal).
+- **`forecast` per prefix, 800 prefixes:** mean 0.3563 ms (standard error 0.0141 ms), median 0.2008 ms, min 0.0001 ms, max 4.2018 ms at 24,460 events; the mean over the last tenth of the session is 0.9000 ms (71 prefixes). The fold of the same prefixes averaged 10.5095 ms (max 38.7036 ms); `forecast` averaged 0.034 times its fold (Go: 2.02 times). Branches per call: median 0, maximum 5.
+- **Whole-session cost.** Calling `forecast` at every prefix would cost 27,801 × 0.3563 ms ≈ 9.9 s of one core (standard error ≈ 0.4 s, a sampling estimate), against Go's ≈ 157 s on its longer session. Per call, the Rust forecast's mean is 0.09 times Go's and its median 0.10 times. The session ends stopped, so `forecast` on the full journal returns at once (0.0001 ms, no branches) and is not the dashboard's cost on a running session.
+- **The fold.** On these two journals the Rust fold costs about 7.6 times Go's per event (means of the three folds). Folding carries the work Go deferred to the queries (ADR 0059), and the journals differ, so this is not a per-event comparison of the same work; it is a figure to check again when both implementations fold the same session.
+
+### Failures
+
+`check.yml` on the seven pull requests' branches (`gh run list` and `gh run view --json jobs`): 26 runs, 20 successes, 0 failures and 6 cancelled, all by a newer push to the same branch; each cancelled run's aggregate `check` job reports `failure` only because the jobs it depends on were cancelled. Every pull request's final head passed. Failures caught before a push by the local gate are recorded nowhere and are not measured.
+
+### Review findings
+
+From each pull request's review record (the bot's machine-readable summary). A row counts one finding by one reviewer, not one distinct defect; some defects were found by two.
+
+| PR | Reviewers | P0 | P1 | P2 | P3 | Fixed | Rejected | Deferred |
+|:---|---:|---:|---:|---:|---:|---:|---:|---:|
+| #770 `togi-config` | 3 | 0 | 0 | 8 | 1 | 8 | 1 | 0 |
+| #775 `togi-defect` | 4 | 0 | 0 | 3 | 0 | 3 | 0 | 0 |
+| #776 `togi-facts` | 8 | 0 | 0 | 16 | 0 | 15 | 1 | 0 |
+| #783 `togi-carry` | 8 | 0 | 0 | 12 | 0 | 11 | 1 | 0 |
+| #777 tuner G1, G2 | 16 | 0 | 2 | 15 | 0 | 17 | 0 | 0 |
+| #799 tuner G3 to G5 | 17 | 0 | 0 | 13 | 1 | 14 | 0 | 0 |
+| #801 tuner G6 | 16 | 0 | 0 | 11 | 0 | 11 | 0 | 0 |
+| **total** | **72** | **0** | **2** | **78** | **2** | **79** | **3** | **0** |
+
+- The two P1s were both in #777: an inconclusive `trial.end` after a `config.loaded` that changed the duration saved a retry under the old plan, so the next planned intent failed `UnscheduledIntent` and poisoned a valid session; and only the front of the carried idle-failure queue was checked for an all-zero dead end, so the tuner could schedule an R1 trial behind it.
+- The three rejections were each accepted by their reviewer: spec lines for the Rust config rules (#770), a `tuner.md` sentence left to the tuner's evidence pull request (#776), and a copied failure whose original archive is listed but cannot be read, which is an error by design (#783).
+- Pre-review passes fixed findings before review opened: 8 listed in #799's body, and 4 P2 for #801 that are in neither its body nor this log until now (deep-copying retained evidence per forecast premise, recurring-plan detection confused with the drain limit, an untested cursor rotation, and a recurrence test that accepted the wrong answer). The first of these came back in #801's review twice, as described in its entry.
+- Review rounds are recorded only for #801 (at least three passes: the first and two fix rounds); for the others they are not measured.
+
+### Agent cost
+
+The harness's recorded usage of every assistant message, summed per transcript up to 2026-10-12T08:41:42Z: the stage's agent trees (four coordinators in turn and all their children, scouts, writers, pre-reviewers, the review coordinators, reviewers and fixers included), the main session excluded. Cost is the recorded `cost.total` at the harness's configured prices, not an invoice.
+
+| Model | Messages | Input tokens | Output tokens | Cache read | Cache write | Cost [USD] |
+|:---|---:|---:|---:|---:|---:|---:|
+| `anthropic/claude-opus-5-5` | 2,893 | 109,035 | 2,105,321 | 388,021,156 | 13,052,449 | 224.57 |
+| `anthropic/claude-sonnet-5-5` | 2,677 | 5,405 | 3,147,061 | 576,770,986 | 12,778,221 | 140.27 |
+| `openai-codex/gpt-6.1-sol` | 2,039 | 14,876,615 | 890,506 | 161,749,888 | 0 | 54.83 |
+| **total** | **7,609** | **14,991,055** | **6,142,888** | **1,126,542,030** | **25,830,670** | **419.67** |
+
+- Cache reads are 96.0% of the 1,173,506,643 recorded tokens. The seven merged pull requests and the work before them cost $402.78; this closing issue had cost $16.90 at the cut-off and is still open.
+- Review (each pull request's review coordinator with its reviewers and fixers): $90.92 over 2,615 messages, from $4.56 (#775) to $21.63 (#801). Pre-review passes cost $6.61, and the fixers of their findings $31.89, outside that figure. The reviewers of #770 to #799 ran `gpt-6.1-sol`; #801's record names no model.
+- Side calls the harness records separately (task-completion probes and small classifier and search calls): 4,279 calls, $1.35, not in the totals.
+- The main session coordinated every stage in parallel, so its cost is not split by stage and is not counted.
+
+### Wall time
+
+From the first "Started on branch" comment on each pull request's issue to its merge: #770 1.17 h, #775 0.40 h, #776 0.67 h, #783 0.46 h, #777 0.70 h, #799 3.35 h, #801 13.19 h (4.49 h without an 8.70 h overnight stop). The stage ran from the first claim to the last merge in 17.12 h, 8.42 h without the stop; the pull requests overlapped, so their times do not add. Several crates were written before their claim comment, so these are lower bounds.
+
+### Limits
+
+- One host, not isolated: other agents ran on it, every batch started at a load of 1.47 to 2.92, and the defect test batch was disturbed (load 5.28 at its end). The run with no sibling load is still [#796](https://github.com/shgew/togi/issues/796). `/tmp` is tmpfs, so disk speed is in no figure. Nothing ran on a Mac or on a GitHub runner.
+- Seven runs per command, so every standard deviation is a small-sample estimate. hyperfine ran the compile commands and every prepare step through a shell.
+- The Go compile equivalent (a changed file in the package) is not the same operation as `cargo clean -p`, and the crates are not the same size as their packages (the Rust lines, library and tests together, are 1.2 to 4.0 times Go's).
+- The forecast probe ran on a different session from Go's (Rust-written by an unmerged branch, 27,801 events against 40,592), sampled 800 prefixes rather than timing every one, ran once, and used a different random stream; per-call and per-event figures are comparable in shape only.
+- Agent cost: figures are at the cut-off; the trees are selected by name, so scouts and design work that served several pull requests are counted with them and there is no per-pull-request split beyond review. The session was killed twice during the stage (out of memory, by a runaway test in another stage's uncommitted work); a response in flight at a kill was never written, so its usage is missing. Review rounds before #801 and local gate failures are recorded nowhere and are not measured.
