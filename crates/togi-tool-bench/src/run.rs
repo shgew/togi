@@ -32,6 +32,8 @@ pub struct Options {
     pub selection: Selection,
     /// Where to write one record per run.
     pub out: Option<PathBuf>,
+    /// Where to write the records as a baseline file keeps them: without model checks and wall times.
+    pub baseline_out: Option<PathBuf>,
     /// A records file to compare the run with.
     pub baseline: Option<PathBuf>,
     /// A directory to keep the runs' state directories under; keeping them skips the cache.
@@ -172,6 +174,9 @@ pub fn execute(options: &Options, fleet: &Fleet) -> Result<Report, Error> {
     if let Some(out) = &options.out {
         record::write(out, &records)?;
     }
+    if let Some(path) = &options.baseline_out {
+        record::write_baseline(path, &records)?;
+    }
     Ok(Report {
         notes: suite.notes(),
         records,
@@ -243,7 +248,11 @@ impl Job<'_> {
                         .push(format!("write the run cache for {}: {error}", spec.name()));
                 }
                 if let Some(costs) = self.costs {
-                    costs.set(self.simulator.digest(), &spec.name(), record.wall_s);
+                    costs.set(
+                        self.simulator.digest(),
+                        &spec.name(),
+                        record.wall_s.unwrap_or_default(),
+                    );
                 }
             }
             record
@@ -302,7 +311,7 @@ fn record_of(
             .and_then(|machine| verdicts.get(&machine.path))
             .copied(),
         exit_code: session.exit,
-        wall_s: session.wall.as_secs_f64(),
+        wall_s: Some(session.wall.as_secs_f64()),
         sim_hours,
         first_passed_cycle_h,
         passed_cycles,

@@ -117,12 +117,12 @@ gate: _dev-shell
         go test -c -tags hardware -o /dev/null ./internal/trial
     fi
 
-# Run every flake check this host builds: package, race, lint, fmt, changes, module, the rust-* checks (clippy, nextest, doc, fmt, deny, shear) and, on Linux, trial-scope-tests, the rust-sim-suite-* shards and the VM tests
+# Run every flake check this host builds: package, race, lint, fmt, changes, module, the rust-* checks (clippy, nextest, doc, fmt, deny, shear, package) and, on Linux, trial-scope-tests, the rust-sim-suite-* shards and the VM tests
 [group('nix')]
 check *args:
     nix flake check "$@"
 
-# Build named flake checks: package, race, lint, fmt, changes, module, rust-clippy, rust-nextest, rust-doc, rust-fmt, rust-deny, rust-shear or, on Linux, trial-scope-tests, rust-sim-suite-<i>, vm and vm-restart-limit (`just check-one race`)
+# Build named flake checks: package, race, lint, fmt, changes, module, rust-clippy, rust-nextest, rust-doc, rust-fmt, rust-deny, rust-shear, rust-package or, on Linux, trial-scope-tests, rust-sim-suite-<i>, vm and vm-restart-limit (`just check-one race`)
 [group('nix')]
 check-one +names:
     nix build --no-link $(printf '.#checks.{{ system }}.%s ' "$@")
@@ -131,6 +131,11 @@ check-one +names:
 [group('run')]
 sim seed="1" *args: _dev-shell
     go run ./tools/sim --seed "$1" "${@:2}"
+
+# Run the Rust togi binary built from this tree, flags as `togi` takes them (`just togi-rs completion zsh`); a local build reports the revision `dev`
+[group('run')]
+togi-rs *args: _dev-shell
+    cargo run --release --locked -p togi -- "$@"
 
 # Run a simulated session with the Rust simulator, flags as `sim` takes them (`just sim-rs --seed 7 --max-boots 20`)
 [group('run')]
@@ -198,6 +203,11 @@ bench-baseline: _dev-shell
     go run ./tools/bench --split all --out "$full"
     nu --stdin -c '$in | lines | each { from json | reject -o model_check wall_s partial_seconds | to json --raw } | to text' <"$full" >"$slim"
     mv "$slim" tools/bench/baseline.jsonl
+
+# Record a Rust bench baseline over all seeds to OUT, without model checks or wall times; the committed Go baseline stays until stage 9 (`just bench-baseline-rs /tmp/baseline-rs.jsonl`)
+[group('run')]
+bench-baseline-rs out: _dev-shell
+    cargo run --release --locked -p togi-tool-bench -- --split all --baseline-out "$1"
 
 # Regenerate privacy-safe real facts from a copied state directory
 [group('run')]
