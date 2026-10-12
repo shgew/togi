@@ -53,6 +53,8 @@ The module also creates the unprivileged `togi-trial` system user and group and 
 
 To move to a newer release, change the tag in `url`, run `nix flake update togi` and rebuild. An update whose changelog line starts with **BREAKING** starts a seeded session on the next run ([section 7](#7-after-a-breaking-update)).
 
+The flake also builds the Rust `togi` as `inputs.togi.packages.${pkgs.stdenv.hostPlatform.system}.togi-rs`, beside the Go package that `default` still names until the cutover ([#643](https://github.com/shgew/togi/issues/643)). So far the Rust binary only prints its version and the completion scripts, so it does not replace the Go package yet. From a checkout, `nix build .#togi-rs` builds it, `just togi-rs ARGS` runs it and `just check-one rust-package` checks its version and completion scripts. The Go recipes keep running unchanged.
+
 mprime and y-cruncher come from the host's `nixpkgs`. Updating one of them, for example with `nix flake update nixpkgs`, can cost that backend's passes: [Evidence](spec/tuner.md#evidence) says when a pass still counts. Update the backends when the extra trials are worth it, not as routine.
 
 ### Host lock and delegated hardware tests
