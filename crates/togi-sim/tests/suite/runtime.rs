@@ -581,6 +581,24 @@ fn a_persisted_machine_for_other_cores_is_refused() {
     );
 }
 
+#[test]
+fn a_persisted_machine_without_boots_is_refused() {
+    let definition = two_cores(ModelDef::default());
+    let rig = Rig::new(&definition, 1);
+    let mut value = serde_json::to_value(rig.sim.persisted()).expect("an encoded machine");
+    let boots = value
+        .get_mut("boots")
+        .and_then(serde_json::Value::as_array_mut)
+        .expect("a boots array");
+    assert!(!boots.is_empty());
+    boots.clear();
+    let persisted = serde_json::from_value(value).expect("a decoded machine");
+    let error = Simulator::restore(model(&definition), None, persisted)
+        .err()
+        .expect("a refusal");
+    assert_eq!(error, togi_sim::RestoreError::NoBoot);
+}
+
 fn positional(object: &serde_json::Value, fields: &[&str]) -> serde_json::Value {
     let map = object.as_object().expect("an object");
     assert_eq!(map.len(), fields.len(), "{object}");
