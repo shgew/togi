@@ -227,25 +227,82 @@ impl Run {
             .map_or(0, |count| count.valid)
     }
 
-    /// Recomputes the open cycle's schedule and every count from its steps, chains, durations and
-    /// the evidence; asked when one of those changes.
-    pub(crate) fn rebuild_cycle(&mut self) {
+    /// Pins the part a trial in flight runs, as a rebuild of the schedule would.
+    pub(crate) fn repin(&mut self) {
+        let Some(open) = self.checking.open.take() else {
+            return;
+        };
+        self.pin_running_part(&open);
+        self.checking.open = Some(open);
+    }
+
+    /// Rebuilds the open cycle's schedule after something it is built from changed: the chains of
+    /// the steps `changed`, or, with `None`, anything (its steps, the durations of the
+    /// configuration). Only the steps the change reaches are built again. A class the new
+    /// schedule shares with the old keeps its count, which only evidence, the profile and the
+    /// backends change; a class it adds is counted, and one it drops is forgotten.
+    pub(crate) fn replan(&mut self, changed: Option<&[usize]>) {
         let Some(mut open) = self.checking.open.take() else {
             return;
         };
         self.pin_running_part(&open);
-        open.plan = schedule::build(&self.config, &self.topo, &open.steps, &open.r7);
-        open.valid = open
-            .plan
-            .iter()
-            .flat_map(StepPlan::quotas)
-            .map(|quota| (quota.class, self.cycle_count(&open, quota.class)))
-            .collect();
+        let dirty: Vec<usize> = match changed {
+            Some(changed) => schedule::dirty(&open.plan, changed),
+            None => (0..open.steps.len()).collect(),
+        };
+        let classes = |plan: &[StepPlan]| -> Vec<ClassKey> {
+            dirty
+                .iter()
+                .filter_map(|&index| plan.get(index))
+                .flat_map(StepPlan::quotas)
+                .map(|quota| quota.class)
+                .collect()
+        };
+        let before = classes(&open.plan);
+        if changed.is_some() {
+            schedule::rebuild(
+                &self.config,
+                &self.topo,
+                &open.steps,
+                &open.r7,
+                &mut open.plan,
+                &dirty,
+            );
+        } else {
+            open.plan = schedule::build(&self.config, &self.topo, &open.steps, &open.r7);
+        }
+        let mut now = classes(&open.plan);
+        now.sort_unstable();
+        now.dedup();
+        for class in before {
+            let kept = now.binary_search(&class).is_ok()
+                || open
+                    .plan
+                    .iter()
+                    .enumerate()
+                    .filter(|(index, _)| dirty.binary_search(index).is_err())
+                    .flat_map(|(_, plan)| plan.quotas())
+                    .any(|quota| quota.class == class);
+            if !kept {
+                open.valid.remove(&class);
+            }
+        }
+        for class in now {
+            if !open.valid.contains_key(&class) {
+                let count = self.cycle_count(&open, class);
+                open.valid.insert(class, count);
+            }
+        }
         open.done = open.first_incomplete(&self.topo);
         self.checking.open = Some(open);
     }
 
-    fn refresh_cycle(&mut self, touched: impl Fn(ClassKey) -> bool) {
+    pub(crate) fn refresh_cycle(&mut self, touched: impl Fn(ClassKey) -> bool) {
+        self.refresh_where(|_, _, class| touched(class));
+    }
+
+    /// Recounts the classes of the open cycle that `wanted` names, and what it finishes.
+    fn refresh_where(&mut self, wanted: impl Fn(&Self, &OpenCycle, ClassKey) -> bool) {
         let Some(mut open) = self.checking.open.take() else {
             return;
         };
@@ -253,7 +310,7 @@ impl Run {
             .valid
             .keys()
             .copied()
-            .filter(|&class| touched(class))
+            .filter(|&class| wanted(self, &open, class))
             .collect();
         for class in classes {
             let count = self.cycle_count(&open, class);
@@ -263,9 +320,29 @@ impl Run {
         self.checking.open = Some(open);
     }
 
+    /// The counting profile changed: a class counts passes only if one of its cells covers the
+    /// profile, so the classes that had passes counted, or whose cells can cover it, are recounted.
+    fn refresh_for_profile(&mut self) {
+        self.refresh_where(|run, open, class| {
+            open.have(class) > 0
+                || run
+                    .checking
+                    .profile
+                    .is_some_and(|profile| run.evidence.may_cover(class, &profile))
+        });
+    }
+
     /// A trial of `class` ended with evidence, or a carried failure of it came in.
     pub(crate) fn cycle_evidence_changed(&mut self, class: ClassKey) {
-        self.refresh_cycle(|tracked| tracked == class);
+        let Some(mut open) = self.checking.open.take() else {
+            return;
+        };
+        if open.valid.contains_key(&class) {
+            let count = self.cycle_count(&open, class);
+            open.valid.insert(class, count);
+        }
+        open.done = open.first_incomplete(&self.topo);
+        self.checking.open = Some(open);
     }
 
     /// An idle failure invalidates every all-core R6 class.
@@ -298,7 +375,7 @@ impl Run {
                 });
                 self.checking.last_cycle = Some(cycle.cycle);
                 self.checking.last_seq = Some(event.seq);
-                self.rebuild_cycle();
+                self.replan(None);
             }
             CycleEvent::End => {
                 if cycle.passed && cycle.full {
@@ -344,7 +421,7 @@ impl Run {
         };
         open.r7.insert(index, R7Step::new(event.seq));
         self.checking.last_seq = Some(event.seq);
-        self.rebuild_cycle();
+        self.replan(Some(&[index]));
         self.revalidate_retry();
         Ok(())
     }
@@ -390,22 +467,48 @@ impl Run {
             current.as_ref(),
         );
         self.checking.last_seq = Some(event.seq);
-        self.rebuild_cycle();
+        self.replan(Some(&[index]));
         self.revalidate_retry();
         Ok(())
     }
 
-    /// The checking profile changed: derived chains stand only where they were derived.
+    /// The checking profile changed: derived chains stand only where they were derived, and a
+    /// count is of the passes covering the profile.
     pub(crate) fn checking_profile(&mut self, event: &Event, profile: Profile) {
         self.checking.profile = Some(profile);
         self.checking.seq = Some(event.seq);
         self.checking.last_seq = Some(event.seq);
         self.checking.peak = None;
+        let mut started = Vec::new();
         if let Some(open) = self.checking.open.as_mut() {
-            for started in open.r7.values_mut() {
-                started.retarget(&profile);
+            for (&index, chains) in &mut open.r7 {
+                chains.retarget(&profile);
+                started.push(index);
             }
         }
-        self.rebuild_cycle();
+        if started.is_empty() {
+            self.repin();
+        } else {
+            self.replan(Some(&started));
+        }
+        self.refresh_for_profile();
+    }
+
+    #[cfg(test)]
+    pub(crate) fn debug_rebuild_cycle(
+        &self,
+    ) -> Option<(Vec<StepPlan>, BTreeMap<ClassKey, u32>, usize)> {
+        let open = self.checking.open.as_ref()?;
+        let plan = schedule::build(&self.config, &self.topo, &open.steps, &open.r7);
+        let valid = plan
+            .iter()
+            .flat_map(StepPlan::quotas)
+            .map(|quota| (quota.class, self.cycle_count(open, quota.class)))
+            .collect();
+        let mut scratch = open.clone();
+        scratch.plan.clone_from(&plan);
+        scratch.valid.clone_from(&valid);
+        let done = scratch.first_incomplete(&self.topo);
+        Some((plan, valid, done))
     }
 }

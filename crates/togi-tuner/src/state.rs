@@ -111,12 +111,26 @@ impl Run {
 
     fn config_loaded(&mut self, loaded: &ConfigLoaded) {
         self.stopped = false;
-        self.config = TunerConfig::from_loaded(loaded);
+        let config = TunerConfig::from_loaded(loaded);
+        let new_schedule = !self.config.same_schedule(&config);
+        self.config = config;
+        let mut switched = Vec::new();
         for backend in [Backend::Mprime, Backend::Ycruncher] {
-            self.evidence
-                .set_backend(backend, self.config.backend_path(backend));
+            if self
+                .evidence
+                .set_backend(backend, self.config.backend_path(backend))
+            {
+                switched.push(backend);
+            }
         }
-        self.rebuild_cycle();
+        if new_schedule {
+            self.replan(None);
+        } else {
+            self.repin();
+        }
+        if !switched.is_empty() {
+            self.refresh_cycle(|class| switched.contains(&class.workload().backend()));
+        }
         self.retire_reruns();
         self.revalidate_retry();
     }

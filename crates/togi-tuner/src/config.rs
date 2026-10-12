@@ -61,6 +61,14 @@ impl TunerConfig {
         }
     }
 
+    /// Whether `other` sets the same durations a checking schedule is built from.
+    pub(crate) fn same_schedule(&self, other: &Self) -> bool {
+        self.short_trial == other.short_trial
+            && self.checking_trial == other.checking_trial
+            && self.checking_idle == other.checking_idle
+            && self.checking_all_core == other.checking_all_core
+    }
+
     pub(crate) fn backend_path(&self, backend: Backend) -> Option<&Path> {
         match backend {
             Backend::Mprime => self.mprime.as_deref(),

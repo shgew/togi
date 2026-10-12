@@ -7,7 +7,9 @@ use togi_journal::{
 };
 use togi_machine::{BankType, Condition, CoreId, CoreSet, CpuId, PerCore, Regime, Signal};
 
-use crate::testkit::{Journal, Start, config, infos, pairs, set};
+use crate::testkit::{
+    Journal, MPRIME_NEW, MPRIME_OLD, Start, YCRUNCHER_NEW, YCRUNCHER_OLD, config, infos, pairs, set,
+};
 use crate::tests::core;
 use crate::{
     Action, ClassKey, DecisionAction, DecisionPayload, Load, Profile, Secs, TrialContext, TrialPlan,
@@ -842,4 +844,68 @@ fn carried_passes_never_fulfill_a_checking_cycle_step() {
     assert_eq!(j.run().checking.open().unwrap().steps_done(), 0);
     assert_eq!(finish_cycle(&mut j).event, CycleEvent::End);
     j.assert_resumes();
+}
+
+fn changed_config(byte: u8, other: u8) -> String {
+    let pick = |from: &[u32]| from[usize::from(other) % from.len()];
+    match byte % 4 {
+        0 => format!(
+            r#"{{"durations":{{"short_trial_s":{},"checking_all_core_s":{}}}}}"#,
+            pick(&[30, 45, 60]),
+            pick(&[90, 120, 180]),
+        ),
+        1 => format!(
+            r#"{{"durations":{{"checking_trial_s":{},"checking_idle_s":{}}}}}"#,
+            pick(&[60, 90, 120]),
+            pick(&[30, 60, 90]),
+        ),
+        2 => format!(
+            r#"{{"backends":{{"mprime":"{}","ycruncher":"{}"}}}}"#,
+            pick_path(other, &[MPRIME_OLD, MPRIME_NEW]),
+            pick_path(other >> 1, &[YCRUNCHER_OLD, YCRUNCHER_NEW]),
+        ),
+        _ => "{}".to_owned(),
+    }
+}
+
+fn pick_path(byte: u8, paths: &[&'static str]) -> &'static str {
+    paths[usize::from(byte) % paths.len()]
+}
+
+proptest! {
+    #![proptest_config(crate::prop_tests::seeded(40))]
+
+    #[test]
+    fn the_cycle_and_exposure_kept_at_fold_equal_a_rebuild_from_scratch(
+        script in proptest::collection::vec((any::<u8>(), any::<u8>(), any::<u8>()), 1..160),
+    ) {
+        let ids = [0_u8, 1, 2, 3];
+        let mut j = Journal::on(&ids, pairs(&ids), &[Start::has_room(-20); 4]);
+        for (op, byte, other) in script {
+            match op % 12 {
+                0 => {
+                    j.load(&config(&changed_config(byte, other)));
+                }
+                1 => {
+                    let depth = -i64::from(10 + byte % 30);
+                    j.profile_change(&[depth, depth, depth, depth]);
+                }
+                _ => {
+                    if !drive(&mut j, &ids, byte) {
+                        break;
+                    }
+                }
+            }
+            let run = j.run();
+            if let Some(open) = run.checking.open() {
+                let (plan, valid, done) = run.debug_rebuild_cycle().unwrap();
+                prop_assert_eq!(open.plan(), plan.as_slice());
+                prop_assert_eq!(run.checking.counts().unwrap(), &valid);
+                prop_assert_eq!(open.steps_done(), done);
+            }
+            let [maintained, rebuilt] = run.evidence.debug_rebuild();
+            prop_assert_eq!(maintained, rebuilt);
+        }
+        j.assert_resumes();
+    }
 }

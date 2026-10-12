@@ -107,21 +107,36 @@ impl Profile {
     /// Whether every core here is at least as deep as in `other`: a pass here supports `other`.
     /// Profiles of different cores are incomparable.
     pub fn covers(&self, other: &Self) -> bool {
-        self.iter().all(|(core, offset)| {
-            other
-                .get(core)
-                .is_some_and(|theirs| !offset.shallower_than(theirs))
-        }) && self.cores() == other.cores()
+        self.0.len() == other.0.len()
+            && self.iter().all(|(core, offset)| {
+                other
+                    .get(core)
+                    .is_some_and(|theirs| !offset.shallower_than(theirs))
+            })
     }
 
     /// Whether every core here is at most as deep as in `other`: a failure here rules `other` out.
     /// Profiles of different cores are incomparable.
     pub fn within(&self, other: &Self) -> bool {
-        self.iter().all(|(core, offset)| {
-            other
-                .get(core)
-                .is_some_and(|theirs| !offset.deeper_than(theirs))
-        }) && self.cores() == other.cores()
+        self.0.len() == other.0.len()
+            && self.iter().all(|(core, offset)| {
+                other
+                    .get(core)
+                    .is_some_and(|theirs| !offset.deeper_than(theirs))
+            })
+    }
+
+    /// Every core at the deeper of its offsets here and in `other`: a profile covering both.
+    #[must_use]
+    pub(crate) fn deeper(&self, other: &Self) -> Self {
+        Self(
+            self.iter()
+                .map(|(core, offset)| {
+                    let theirs = other.get(core).filter(|&theirs| theirs.deeper_than(offset));
+                    (core, theirs.unwrap_or(offset))
+                })
+                .collect(),
+        )
     }
 
     /// The sum of the offsets; the more negative, the deeper.
