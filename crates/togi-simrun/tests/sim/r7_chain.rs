@@ -28,7 +28,7 @@ fn simulation_runs_full_first_offset_fallback_chains() {
     );
     let mut got = Vec::new();
     let (mut chains, mut passes) = (0, 0);
-    let (mut step, mut previous) = (None, None);
+    let (mut step, mut previous, mut last_end, mut last_pass) = (None, None, None, None);
     for event in &events {
         match &event.payload {
             Payload::TrialIntent(intent)
@@ -36,7 +36,13 @@ fn simulation_runs_full_first_offset_fallback_chains() {
             {
                 got.push(intent.cores.iter().map(CoreId::get).collect::<Vec<_>>());
             }
-            Payload::TrialEnd(end) if end.outcome == Outcome::Pass => passes += 1,
+            Payload::TrialEnd(end) => {
+                last_end = Some(event.seq);
+                if end.outcome == Outcome::Pass {
+                    passes += 1;
+                    last_pass = Some(event.seq);
+                }
+            }
             Payload::CheckingStep(_) => {
                 step = Some(event.seq);
                 passes = 0;
@@ -50,15 +56,21 @@ fn simulation_runs_full_first_offset_fallback_chains() {
                     "chain {chains} derived before its predecessor passed"
                 );
                 passes = 0;
-                assert!(
-                    step.is_some_and(|step| event.cause.contains(&step)),
-                    "chain {chains} does not cite its step: cause {:?}, step {step:?}",
-                    event.cause
+                assert_eq!(
+                    last_end, last_pass,
+                    "chain {chains} followed a trial end that did not pass"
                 );
+                let step = step.expect("a checking step before its chains");
+                let cited = last_pass.expect("a passing predecessor");
+                assert_eq!(
+                    event.cause,
+                    [step, cited],
+                    "chain {chains} must cite its step and its predecessor's passing trial end"
+                );
+                // Go's cause names no earlier chain; the predecessor is linked through its passing trial end.
                 assert!(
-                    previous.is_none_or(|previous| event.cause.contains(&previous)),
-                    "chain {chains} does not cite the chain before it: cause {:?}, previous {previous:?}",
-                    event.cause
+                    previous.is_none_or(|previous| cited > previous),
+                    "chain {chains} cites a trial end from before the chain it follows: {cited:?}, previous {previous:?}"
                 );
                 previous = Some(event.seq);
                 assert!(

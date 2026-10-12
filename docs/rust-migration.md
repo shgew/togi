@@ -698,7 +698,7 @@ Every Go test function in `internal/simrun/*_test.go`, `internal/tuner/memo_test
 | `memory_test.go` `TestInMemoryCrashBeforeFirstProjectionReplaysDurableStart` | `memory::a_crash_right_after_session_start_is_replayed_once` |  |
 | `memory_test.go` `TestInMemoryResumeReadsMatchingDiskProjection` | `memory::a_resume_reads_the_projection_the_earlier_run_published` |  |
 | `memory_test.go` `TestInMemoryInvalidConfigLeavesNoProjection` | `memory::an_invalid_config_begins_no_session_and_publishes_no_projection` |  |
-| `r7_chain_test.go` `TestR7SimulationRunsFullFirstOffsetFallbackChains` | `r7_chain::simulation_runs_full_first_offset_fallback_chains` | Weaker than Go in one assertion until #839: Go required each chain's cause to cite the passing predecessor's `trial.end`, and the Rust tuner omits it from `CheckingChain`'s cause. The fix for #839 adds that assertion. |
+| `r7_chain_test.go` `TestR7SimulationRunsFullFirstOffsetFallbackChains` | `r7_chain::simulation_runs_full_first_offset_fallback_chains` | Each chain's cause is exactly its step and the passing predecessor's `trial.end`, as in Go. Go names no earlier chain in the cause, so the Rust test requires the cited `trial.end` to follow the previous chain instead. |
 | `simrun_test.go` `TestSixteenCoresReachCleanCycle` | `sixteen::sixteen_cores_reach_a_clean_cycle` |  |
 | `simrun_test.go` `TestSimulatorRefusesAnotherJournalWriter` | `cap::a_held_lock_refuses_the_simulation_before_any_journal_or_offset_change` |  |
 | `simrun_test.go` `TestBootCapLeavesPartialSessionInJournal` | `cap::boot_cap_leaves_a_partial_session_in_the_journal` |  |
