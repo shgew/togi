@@ -79,18 +79,21 @@ pub(in crate::terminal) fn open(directory: &Path) -> Result<Inotify, WatchError>
 }
 
 impl Inotify {
-    /// Whether an event is about the journal: it, the state directory, or one of the directories above it that is
-    /// watched for the state directory's sake.
-    fn is_relevant(&self, watched: &Path, flags: ReadFlags, name: Option<&OsStr>) -> bool {
+    /// Whether an event is about the journal: a lost queue, or an event of the journal, the state directory, or
+    /// one of the directories above it that is watched for the state directory's sake.
+    fn is_relevant(&self, wd: i32, flags: ReadFlags, name: Option<&OsStr>) -> bool {
         if flags.contains(ReadFlags::QUEUE_OVERFLOW) {
             return true;
         }
+        let Some(watched) = self.watches.get(&wd) else {
+            return false;
+        };
         if flags.intersects(ReadFlags::IGNORED | ReadFlags::DELETE_SELF | ReadFlags::MOVE_SELF)
-            || watched == self.journal
+            || *watched == self.journal
         {
             return true;
         }
-        if watched == self.directory {
+        if *watched == self.directory {
             return name == Some(OsStr::new(JOURNAL));
         }
         let first = self
@@ -118,11 +121,7 @@ impl Inotify {
             let name = event
                 .file_name()
                 .map(|name| OsStr::from_bytes(name.to_bytes()));
-            if event.events().contains(ReadFlags::QUEUE_OVERFLOW) {
-                relevant = true;
-            } else if let Some(watched) = self.watches.get(&event.wd()) {
-                relevant |= self.is_relevant(watched, event.events(), name);
-            }
+            relevant |= self.is_relevant(event.wd(), event.events(), name);
         }
     }
 }
@@ -236,6 +235,16 @@ mod tests {
         fs::write(directory.join(JOURNAL), text).unwrap();
     }
 
+    /// Makes a directory listable again when dropped, so that a test that fails leaves no directory behind that
+    /// cannot be removed.
+    struct Restore<'a>(&'a Path);
+
+    impl Drop for Restore<'_> {
+        fn drop(&mut self) {
+            let _ = fs::set_permissions(self.0, fs::Permissions::from_mode(0o755));
+        }
+    }
+
     #[test]
     fn notifications_never_ask_for_the_events_of_reading_the_journal() {
         for flags in [DIRECTORY, FILE] {
@@ -252,23 +261,40 @@ mod tests {
         let root = TempDir::new().unwrap();
         let directory = root.path().join("state");
         fs::create_dir(&directory).unwrap();
-        let watcher = watcher_at(&directory);
+        let mut watcher = watcher_at(&directory);
+        let wd_of = |watcher: &Inotify, path: &Path| {
+            *watcher
+                .watches
+                .iter()
+                .find(|(_, watched)| *watched == path)
+                .unwrap()
+                .0
+        };
+        let state = wd_of(&watcher, &directory);
         let watched_below =
-            |name: &str| watcher.is_relevant(&directory, ReadFlags::CREATE, Some(OsStr::new(name)));
+            |name: &str| watcher.is_relevant(state, ReadFlags::CREATE, Some(OsStr::new(name)));
         assert!(watched_below(JOURNAL));
         assert!(!watched_below("events.jsonl.tmp"));
         assert!(!watched_below("state.json"));
-        assert!(!watcher.is_relevant(&directory, ReadFlags::MODIFY, None));
-        assert!(watcher.is_relevant(&directory, ReadFlags::DELETE_SELF, None));
-        assert!(watcher.is_relevant(&directory, ReadFlags::MOVE_SELF, None));
-        assert!(watcher.is_relevant(&directory, ReadFlags::IGNORED, None));
-        assert!(watcher.is_relevant(&directory, ReadFlags::QUEUE_OVERFLOW, None));
-        let parent = root.path();
+        assert!(!watcher.is_relevant(state, ReadFlags::MODIFY, None));
+        assert!(watcher.is_relevant(state, ReadFlags::DELETE_SELF, None));
+        assert!(watcher.is_relevant(state, ReadFlags::MOVE_SELF, None));
+        assert!(watcher.is_relevant(state, ReadFlags::IGNORED, None));
+        let parent = wd_of(&watcher, root.path());
         assert!(watcher.is_relevant(parent, ReadFlags::CREATE, Some(OsStr::new("state"))));
         assert!(!watcher.is_relevant(parent, ReadFlags::CREATE, Some(OsStr::new("other"))));
         assert!(!watcher.is_relevant(parent, ReadFlags::CREATE, None));
-        let file = directory.join(JOURNAL);
-        assert!(watcher.is_relevant(&file, ReadFlags::MODIFY, None));
+        assert!(
+            watcher.is_relevant(-1, ReadFlags::QUEUE_OVERFLOW, None),
+            "a lost queue may have held a change of the journal"
+        );
+        let unknown = i32::MAX;
+        assert!(
+            !watcher.is_relevant(unknown, ReadFlags::DELETE_SELF, None),
+            "an event of a watch that is gone"
+        );
+        watcher.watches.insert(unknown, directory.join(JOURNAL));
+        assert!(watcher.is_relevant(unknown, ReadFlags::MODIFY, None));
     }
 
     #[tokio::test]
@@ -372,6 +398,7 @@ mod tests {
         let root = TempDir::new().unwrap();
         journal_in(root.path(), "one\n");
         fs::set_permissions(root.path(), fs::Permissions::from_mode(0o311)).unwrap();
+        let _restore = Restore(root.path());
         let mut watcher = watcher_at(root.path());
         assert!(!watcher.polling());
         assert!(watcher.watches.values().any(|path| path.ends_with(JOURNAL)));
@@ -384,7 +411,6 @@ mod tests {
         fs::write(root.path().join("replacement"), "three\n").unwrap();
         fs::rename(root.path().join("replacement"), root.path().join(JOURNAL)).unwrap();
         arrives(&mut watcher).await;
-        fs::set_permissions(root.path(), fs::Permissions::from_mode(0o755)).unwrap();
     }
 
     #[tokio::test]
@@ -396,6 +422,7 @@ mod tests {
         let directory = root.path().join("state");
         fs::create_dir(&directory).unwrap();
         fs::set_permissions(&directory, fs::Permissions::from_mode(0o311)).unwrap();
+        let _restore = Restore(&directory);
         let mut watcher = watcher_at(&directory);
         assert!(
             watcher.polling(),
@@ -404,7 +431,35 @@ mod tests {
         journal_in(&directory, "one\n");
         watcher.arm().unwrap();
         assert!(!watcher.polling());
-        fs::set_permissions(&directory, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    #[tokio::test]
+    async fn an_unreadable_ancestor_is_polled_behind_only_while_the_state_directory_is_missing() {
+        if is_root() {
+            return;
+        }
+        let root = TempDir::new().unwrap();
+        let locked = root.path().join("locked");
+        fs::create_dir(&locked).unwrap();
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o311)).unwrap();
+        let _restore = Restore(&locked);
+        let directory = locked.join("state");
+        let mut watcher = watcher_at(&directory);
+        assert!(
+            watcher.polling(),
+            "nothing can announce the state directory's creation"
+        );
+        fs::create_dir(&directory).unwrap();
+        journal_in(&directory, "one\n");
+        watcher.arm().unwrap();
+        assert!(
+            !watcher.polling(),
+            "the state directory's own watch sees the journal"
+        );
+        assert_eq!(
+            watcher.watches.values().cloned().collect::<Vec<_>>(),
+            [directory]
+        );
     }
 
     #[tokio::test]
