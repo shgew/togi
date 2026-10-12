@@ -1,0 +1,36 @@
+---
+source: crates/togi-tool-audit/tests/audit/sweep.rs
+expression: found
+---
+[
+    (
+        Some(
+            "a",
+        ),
+        Some(
+            1,
+        ),
+        Some(
+            "live",
+        ),
+        Some(
+            3,
+        ),
+        "avoidance",
+    ),
+    (
+        Some(
+            "a",
+        ),
+        Some(
+            1,
+        ),
+        Some(
+            "live",
+        ),
+        Some(
+            3,
+        ),
+        "termination",
+    ),
+]
