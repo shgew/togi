@@ -1,0 +1,22 @@
+[package]
+name = "togi-tool-facts"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "The facts command: extracts the privacy-safe trial facts of a copied state directory into a gzip extract"
+
+[dependencies]
+clap.workspace = true
+thiserror.workspace = true
+togi-tool-trialfacts.workspace = true
+
+[dev-dependencies]
+jiff.workspace = true
+tempfile.workspace = true
+togi-journal.workspace = true
+togi-machine.workspace = true
+
+[lints]
+workspace = true
