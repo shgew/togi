@@ -57,12 +57,7 @@ fn at_says_once_on_stderr_what_it_skipped_and_still_prints_the_frame() {
     let planted = plant::plant(dir.path());
     let path = dir.path().join("events.jsonl");
     let bytes = std::fs::read(&path).unwrap();
-    let ran = replay(&[
-        "--state-dir",
-        dir.path().to_str().unwrap(),
-        "--at",
-        "99999",
-    ]);
+    let ran = replay(&["--state-dir", dir.path().to_str().unwrap(), "--at", "99999"]);
     assert_eq!(ran.status.code(), Some(0));
     let stderr = text(ran.stderr);
     assert_eq!(stderr.lines().count(), 1, "{stderr}");

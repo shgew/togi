@@ -140,13 +140,9 @@ mod tests {
     ) {
         let elapsed = Elapsed::new(Cell::new(already));
         let reads = Rc::clone(&elapsed);
-        let (feed, clock) = replaying(
-            events,
-            start,
-            Speed::new(speed).unwrap(),
-            None,
-            move || reads.get(),
-        );
+        let (feed, clock) = replaying(events, start, Speed::new(speed).unwrap(), None, move || {
+            reads.get()
+        });
         (feed, clock, elapsed)
     }
 

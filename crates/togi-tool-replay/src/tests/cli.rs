@@ -177,7 +177,8 @@ fn at_a_sequence_number_beyond_the_recording_prints_its_last_frame() {
 }
 
 #[test]
-fn at_draws_a_recording_with_an_unknown_kind_and_fields_as_the_known_events_alone_and_leaves_it_as_it_is() {
+fn at_draws_a_recording_with_an_unknown_kind_and_fields_as_the_known_events_alone_and_leaves_it_as_it_is()
+ {
     let (dir, mut args) = state_dir(Scenario::Checking);
     let planted = plant(dir.path());
     let path = dir.path().join("events.jsonl");
