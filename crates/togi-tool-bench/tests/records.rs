@@ -3,7 +3,9 @@
 mod common;
 
 use common::record;
-use togi_tool_bench::{Error, ModelCheck, Record, Status, read_records, write_records};
+use togi_tool_bench::{
+    Error, ModelCheck, Record, Status, read_records, write_baseline_records, write_records,
+};
 
 fn read_text(text: &str) -> Result<Vec<Record>, Error> {
     let dir = tempfile::tempdir().unwrap();
@@ -74,6 +76,71 @@ fn complete(scenario: &str, seed: u64) -> Record {
         worst_r7_hazard_per_h: Some(0.5),
         ..record(scenario, seed)
     }
+}
+
+/// A record with every optional field present, as a full `--out` file writes it.
+fn measured(scenario: &str, seed: u64) -> Record {
+    Record {
+        wall_s: Some(12.5),
+        ..complete(scenario, seed)
+    }
+}
+
+#[test]
+fn the_baseline_writer_leaves_out_the_model_check_and_the_wall_time_and_nothing_else() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("baseline.jsonl");
+    let records = vec![measured("a", 1), measured("a", 2)];
+    write_baseline_records(&path, &records).unwrap();
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert_eq!(text.lines().count(), 2);
+    assert!(text.ends_with('\n'));
+    for line in text.lines() {
+        let object: serde_json::Map<String, serde_json::Value> =
+            serde_json::from_str(line).unwrap();
+        let kept: Vec<&str> = FIELDS
+            .iter()
+            .copied()
+            .filter(|name| object.contains_key(*name))
+            .collect();
+        let want: Vec<&str> = FIELDS
+            .iter()
+            .copied()
+            .filter(|name| !matches!(*name, "model_check" | "wall_s"))
+            .collect();
+        assert_eq!(kept, want);
+        assert_eq!(object.len(), want.len(), "{line}");
+    }
+    assert_eq!(
+        records[0].model_check.map(|check| check.flagged_groups),
+        Some(2),
+        "the writer does not change the records it is given"
+    );
+}
+
+#[test]
+fn a_baseline_file_round_trips_through_the_reader() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("baseline.jsonl");
+    let records = vec![measured("a", 1), record("b", 2), measured("b", 3)];
+    write_baseline_records(&path, &records).unwrap();
+    let read = read_records(&path, "baseline").unwrap();
+    let want: Vec<Record> = records.iter().map(Record::baseline).collect();
+    assert_eq!(read, want);
+    assert!(
+        read.iter()
+            .all(|r| r.wall_s.is_none() && r.model_check.is_none())
+    );
+    assert_eq!(read[0].worst_r7_hazard_per_h, Some(0.5));
+    assert_eq!(read[0].machine.as_deref(), Some("machine.json"));
+}
+
+#[test]
+fn a_full_file_and_a_baseline_file_both_read_but_an_absent_wall_time_is_not_a_default() {
+    let mut value = serde_json::to_value(measured("a", 1)).unwrap();
+    assert_eq!(read_text(&value.to_string()).unwrap()[0].wall_s, Some(12.5));
+    value.as_object_mut().unwrap().remove("wall_s");
+    assert_eq!(read_text(&value.to_string()).unwrap()[0].wall_s, None);
 }
 
 const FIELDS: [&str; 28] = [
