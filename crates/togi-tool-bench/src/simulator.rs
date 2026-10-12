@@ -230,8 +230,8 @@ fn executable(messages: &[u8]) -> Option<PathBuf> {
 /// - a binary in this host's format: ELF, or on Apple platforms a thin 64-bit little-endian Mach-O of type
 ///   `MH_EXECUTE` or a fat file;
 /// - or a `#!` script whose first line ends within [`SHEBANG_LIMIT`] bytes and names an interpreter that
-///   `interpreter` finds to be an executable binary in this host's format, as the kernel allows no nested
-///   interpreters.
+///   `interpreter` finds to be an executable binary in this host's format, as XNU allows no nested
+///   interpreters; Linux would run one, but the bench refuses it on every platform alike.
 ///
 /// The slices of a fat file are not inspected, so a fat file with no slice for this host, or another format
 /// sharing the fat magic, still reaches the kernel.
@@ -298,7 +298,7 @@ fn host_binary(bytes: &[u8]) -> bool {
             .get(12..16)
             .is_some_and(|filetype| filetype == MH_EXECUTE.to_le_bytes());
     }
-    bytes.starts_with(&[0xca, 0xfe, 0xba, 0xbe]) || bytes.starts_with(&[0xca, 0xfe, 0xba, 0xbf])
+    bytes.starts_with(&[0xca, 0xfe, 0xba, 0xbe])
 }
 
 #[cfg(not(target_vendor = "apple"))]
