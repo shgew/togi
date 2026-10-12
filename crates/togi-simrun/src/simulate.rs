@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::io;
+use std::num::NonZeroU32;
 use std::path::Path;
 use std::rc::Rc;
 
@@ -125,10 +126,13 @@ pub fn simulate(input: SimInput) -> Result<SimOutcome, SimError> {
             report: Box::new(io::sink()),
         });
         let crash = ended.crashed();
-        let last = number == max_boots.get();
-        let due = !crash || last || verify_every.is_some_and(|every| number % every.get() == 0);
-        if due {
-            verify(&ended, number)?;
+        if due(number, max_boots, crash, verify_every) {
+            verify(
+                ended.capsule.as_ref(),
+                ended.journal.events(),
+                !crash && !ended.errors.is_empty(),
+                number,
+            )?;
         }
         let Ended {
             stop,
@@ -167,13 +171,27 @@ pub fn simulate(input: SimInput) -> Result<SimOutcome, SimError> {
     Ok(outcome.unwrap_or(SimOutcome::Capped { boots: max_boots }))
 }
 
-fn verify(ended: &Ended, boot: u32) -> Result<(), SimError> {
-    match &ended.capsule {
+/// Whether boot `number` checks its resume state: every boot that ends the simulation, by a stop or by the cap, and
+/// every `every`th boot.
+fn due(number: u32, max_boots: NonZeroU32, crashed: bool, every: Option<NonZeroU32>) -> bool {
+    !crashed
+        || number == max_boots.get()
+        || every.is_some_and(|every| number.is_multiple_of(every.get()))
+}
+
+/// `latched` is a run that ended on a journal failure other than a crash, which leaves no capsule.
+fn verify(
+    capsule: Option<&ResumeCapsule>,
+    events: &[Event],
+    latched: bool,
+    boot: u32,
+) -> Result<(), SimError> {
+    match capsule {
         Some(capsule) => capsule
-            .verify(ended.journal.events())
+            .verify(events)
             .map_err(|source| SimError::Diverged { boot, source }),
-        None if ended.errors.is_empty() || ended.crashed() => Err(SimError::NoCapsule { boot }),
-        None => Ok(()),
+        None if latched => Ok(()),
+        None => Err(SimError::NoCapsule { boot }),
     }
 }
 
@@ -203,3 +221,6 @@ pub fn events(persistence: &Persistence) -> Result<Vec<Event>, HistoryError> {
         .next_back()
         .map_or_else(Vec::new, Recording::into_events))
 }
+
+#[cfg(test)]
+mod tests;

@@ -1,11 +1,11 @@
 use std::collections::BTreeSet;
 use std::io::ErrorKind;
 
-use togi_journal::{LockError, Payload, StateDir};
+use togi_journal::{EventKind, LockError, Payload, StateDir};
 use togi_machine::CoreId;
-use togi_simrun::{Persistence, SimError, SimOutcome, simulate};
+use togi_simrun::{Observe, Persistence, SimError, SimOutcome, simulate};
 
-use crate::common::{Bench, hunt_machine, nz, simulator};
+use crate::common::{Bench, hunt_machine, nz, simulator, state_json};
 
 #[test]
 fn boot_cap_leaves_a_partial_session_in_the_journal() {
@@ -29,6 +29,32 @@ fn boot_cap_leaves_a_partial_session_in_the_journal() {
         serde_json::from_slice(&crate::common::state_json(&bench.fs).unwrap()).unwrap();
     let last = events.last().unwrap().seq.get();
     assert_eq!(state["facts"]["last_seq"], serde_json::json!(last));
+}
+
+#[test]
+fn a_cap_whose_last_state_cannot_be_published_is_an_error_not_a_cap() {
+    let bench = Bench::new(&hunt_machine(2), 1);
+    let mut input = bench.input();
+    input.max_boots = nz(3);
+    let fs = bench.fs.clone();
+    let mut crashes = 0;
+    input.observer = Some(Box::new(move |event| {
+        if event.kind() == EventKind::CrashDetected {
+            crashes += 1;
+            if crashes == 2 {
+                fs.fail_state_publication();
+            }
+        }
+        Observe::Continue
+    }));
+    let error = simulate(input).err().unwrap();
+    assert!(
+        matches!(error, SimError::Publish { boot: 3, .. }),
+        "{error}"
+    );
+    let state: serde_json::Value = serde_json::from_slice(&state_json(&bench.fs).unwrap()).unwrap();
+    let last = bench.events().last().unwrap().seq.get();
+    assert!(state["facts"]["last_seq"].as_u64().unwrap() < last);
 }
 
 #[test]
