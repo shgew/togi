@@ -255,14 +255,14 @@ mod tests {
             drive(&mut watch, &mut handshake).await;
             watch.arms
         });
-        tokio::time::advance(Duration::from_millis(3999)).await;
         tokio::task::yield_now().await;
-        assert!(
-            l.events.try_recv().is_err(),
-            "reported before the journal could be watched"
-        );
-        tokio::time::advance(Duration::from_millis(1)).await;
+        let start = tokio::time::Instant::now();
         assert!(matches!(l.events.recv().await, Some(Event::Changed)));
+        assert_eq!(
+            start.elapsed(),
+            4 * POLL,
+            "reported before the fourth look"
+        );
         drop(l.reloaded);
         assert_eq!(
             task.await.unwrap(),
@@ -281,12 +281,18 @@ mod tests {
             drive(&mut watch, &mut handshake).await;
             watch.arms
         });
+        tokio::task::yield_now().await;
         tokio::time::advance(Duration::from_hours(6)).await;
         tokio::task::yield_now().await;
         assert!(l.events.try_recv().is_err());
         l.frozen.send_replace(false);
-        tokio::time::advance(POLL).await;
+        let unfrozen = tokio::time::Instant::now();
         assert!(matches!(l.events.recv().await, Some(Event::Changed)));
+        assert_eq!(
+            unfrozen.elapsed(),
+            POLL,
+            "the interval did not start when the frame thawed"
+        );
         drop(l.reloaded);
         assert_eq!(task.await.unwrap(), 1, "nothing was looked at while frozen");
     }
@@ -302,11 +308,17 @@ mod tests {
             drive(&mut watch, &mut handshake).await;
             watch.arms
         });
+        let start = tokio::time::Instant::now();
         assert!(matches!(l.events.recv().await, Some(Event::Changed)));
         l.reloaded.send(()).unwrap();
         assert!(
             matches!(l.events.recv().await, Some(Event::Changed)),
             "the journal that appeared meanwhile is reported at once"
+        );
+        assert_eq!(
+            start.elapsed(),
+            Duration::ZERO,
+            "the look waited for the interval"
         );
         drop(l.reloaded);
         assert_eq!(task.await.unwrap(), 1);
