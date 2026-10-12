@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use togi_journal::{
-    Build, FileError, Operation, Payload, ReadError, Recording, Refusal, SCHEMA, Verdict,
+    Build, Event, FileError, Operation, Payload, ReadError, Recording, Refusal, SCHEMA, Verdict,
 };
 
 use crate::history::LogEntry;
@@ -64,8 +64,8 @@ enum Content {
     Missing,
     Starting,
     Problem(SourceError),
-    /// The folded journal, and how many of its events are in the model.
-    Ready(Box<Model>, usize),
+    /// The folded journal, how many of its events are in the model, and the last of them.
+    Ready(Box<Model>, usize, Event),
 }
 
 /// The journal view's list while it is scrolled back: the entries it held when the reader left the end. Events that
@@ -146,7 +146,7 @@ impl Source {
         }
         self.identity = Some(now);
         self.load(appended);
-        if !matches!(&self.content, Content::Ready(model, _) if model.problem().is_none()) {
+        if !matches!(&self.content, Content::Ready(model, ..) if model.problem().is_none()) {
             self.held = None;
         }
         true
@@ -191,15 +191,24 @@ impl Source {
             self.content = Content::Starting;
             return;
         }
-        if events.is_empty() {
+        let Some(last) = events.last().cloned() else {
             self.content = Content::Missing;
             return;
-        }
+        };
         let (mut model, folded) = match std::mem::replace(&mut self.content, Content::Missing) {
-            Content::Ready(model, folded)
-                if appended && model.problem().is_none() && folded <= events.len() =>
+            Content::Ready(model, folded, before)
+                if appended
+                    && model.problem().is_none()
+                    && folded
+                        .checked_sub(1)
+                        .and_then(|index| events.get(index))
+                        .is_some_and(|event| *event == before) =>
             {
                 (model, folded)
+            }
+            Content::Ready(..) if appended => {
+                self.held = None;
+                (Box::new(Model::new()), 0)
             }
             _ => (Box::new(Model::new()), 0),
         };
@@ -216,12 +225,12 @@ impl Source {
                 break;
             }
         }
-        self.content = Content::Ready(model, events.len());
+        self.content = Content::Ready(model, events.len(), last);
     }
 
     /// Decides what the log view lists for this screen: the held list while it is scrolled back, else the live one.
     fn hold(&mut self, screen: &Screen) {
-        let Content::Ready(model, _) = &self.content else {
+        let Content::Ready(model, ..) = &self.content else {
             self.held = None;
             return;
         };
@@ -249,7 +258,7 @@ impl Source {
             Content::Missing => Journal::Missing,
             Content::Starting => Journal::Starting,
             Content::Problem(error) => Journal::Problem(error),
-            Content::Ready(model, _) => {
+            Content::Ready(model, ..) => {
                 if let Some(error) = model.problem() {
                     return Journal::Problem(error);
                 }
@@ -271,7 +280,7 @@ impl Source {
     pub(super) fn into_problem(self) -> Option<SourceError> {
         match self.content {
             Content::Problem(error) => Some(error),
-            Content::Ready(model, _) => model.problem().cloned().map(SourceError::Fold),
+            Content::Ready(model, ..) => model.problem().cloned().map(SourceError::Fold),
             Content::Missing | Content::Starting => None,
         }
     }
@@ -282,7 +291,7 @@ impl Source {
     /// Where the model is, which changes only when a fresh one replaces it.
     fn model_address(&self) -> Option<usize> {
         match &self.content {
-            Content::Ready(model, _) => Some(std::ptr::from_ref::<Model>(model) as usize),
+            Content::Ready(model, ..) => Some(std::ptr::from_ref::<Model>(model) as usize),
             _ => None,
         }
     }
@@ -460,12 +469,14 @@ mod tests {
             Some(first),
             "an append rebuilt the model"
         );
-        assert!(matches!(&source.content, Content::Ready(model, 8) if model.problem().is_none()));
+        assert!(
+            matches!(&source.content, Content::Ready(model, 8, _) if model.problem().is_none())
+        );
         replace(dir.path(), &lines(&session_with_warnings(2)));
         source.reload();
         let replaced = source.model_address().unwrap();
         assert_ne!(replaced, first);
-        assert!(matches!(&source.content, Content::Ready(_, 3)));
+        assert!(matches!(&source.content, Content::Ready(_, 3, _)));
         write_bytes(dir.path(), &lines(&session_with_warnings(1)));
         source.reload();
         assert_ne!(
@@ -473,7 +484,37 @@ mod tests {
             Some(replaced),
             "a truncation kept the model"
         );
-        assert!(matches!(&source.content, Content::Ready(_, 2)));
+        assert!(matches!(&source.content, Content::Ready(_, 2, _)));
+    }
+
+    #[test]
+    fn a_journal_rewritten_in_place_to_a_longer_one_builds_a_fresh_model_and_drops_the_held_list() {
+        use std::os::unix::fs::MetadataExt as _;
+        let dir = TempDir::new().unwrap();
+        let (mut source, back) = scrolled_back(&dir, 40);
+        let first = source.model_address().unwrap();
+        let path = dir.path().join("events.jsonl");
+        let before = fs::metadata(&path).unwrap();
+        let mut rewritten = vec![session_start(1)];
+        rewritten.extend((2..42).map(|seq| warning(seq, &format!("rewritten {seq}"))));
+        write_bytes(dir.path(), &lines(&rewritten));
+        let after = fs::metadata(&path).unwrap();
+        assert_eq!(
+            (after.ino(), after.modified().unwrap()),
+            (before.ino(), before.modified().unwrap())
+        );
+        assert!(after.len() > before.len());
+        assert!(source.reload());
+        assert_ne!(
+            source.model_address(),
+            Some(first),
+            "the rewritten journal was folded onto the old model"
+        );
+        let shown = show(&mut source, &back);
+        let (rows, total, arrived) = ready(&shown);
+        assert!(rows.iter().any(|row| row == "rewritten 41"), "{rows:?}");
+        assert!(!rows.iter().any(|row| row == "w41"), "{rows:?}");
+        assert_eq!((total, arrived), (rows.len(), 0));
     }
 
     #[test]
@@ -596,13 +637,27 @@ mod tests {
     }
 
     fn scrolled_back(dir: &TempDir, warnings: u64) -> (Source, Screen) {
-        write_journal(dir.path(), &session_with_warnings(warnings));
+        scrolled_back_over(dir, &session_with_warnings(warnings))
+    }
+
+    fn scrolled_back_over(
+        dir: &TempDir,
+        events: &[crate::terminal::testing::TestEvent],
+    ) -> (Source, Screen) {
+        write_journal(dir.path(), events);
         let mut source = Source::new(dir.path(), None);
         assert!(source.reload());
         show(&mut source, &screen(View::Log, FOLLOWING));
         let back = screen(View::Log, 0);
         show(&mut source, &back);
         (source, back)
+    }
+
+    /// The journal's inode, size and modification time.
+    fn file_identity(dir: &TempDir) -> (u64, u64, std::time::SystemTime) {
+        use std::os::unix::fs::MetadataExt as _;
+        let metadata = fs::metadata(dir.path().join("events.jsonl")).unwrap();
+        (metadata.ino(), metadata.len(), metadata.modified().unwrap())
     }
 
     #[test]
@@ -708,13 +763,22 @@ mod tests {
                     !source.reload(),
                     "unchanged unavailable journal was reloaded again"
                 );
+                let before = (unavailable != "missing").then(|| file_identity(&dir));
                 let mut recovered = session_with_warnings(40);
-                recovered.push(warning(42, "recovered"));
+                recovered.push(warning(42, &format!("recovered {}", "padding ".repeat(4))));
                 write_journal(dir.path(), &recovered);
+                if let Some((inode, size, _)) = before {
+                    let (now_inode, now_size, _) = file_identity(&dir);
+                    assert_eq!(now_inode, inode, "{unavailable}");
+                    assert!(now_size > size, "{unavailable}: the recovery did not grow");
+                }
                 assert!(source.reload());
                 let shown = show(&mut source, &back);
                 let (rows, _, arrived) = ready(&shown);
-                assert!(rows.iter().any(|row| row == "recovered"), "{unavailable}");
+                assert!(
+                    rows.iter().any(|row| row.starts_with("recovered ")),
+                    "{unavailable}/{redraw}: {rows:?}"
+                );
                 assert!(
                     !rows.iter().any(|row| row == "old arrival"),
                     "{unavailable}"
@@ -732,19 +796,39 @@ mod tests {
         for operation in ["replace", "shrink"] {
             for warnings in [41_u64, 42] {
                 let dir = TempDir::new().unwrap();
-                let (mut source, back) = scrolled_back(&dir, 40);
+                let mut padded = vec![session_start(1)];
+                padded.extend(
+                    (2..42).map(|seq| warning(seq, &format!("w{seq} {}", "padding ".repeat(40)))),
+                );
+                let (mut source, back) = scrolled_back_over(&dir, &padded);
                 append(dir.path(), &[warning(42, "old arrival")]);
                 source.reload();
                 assert_eq!(ready(&show(&mut source, &back)).2, 1);
                 let mut changed = session_with_warnings(warnings);
                 changed.push(warning(warnings + 2, "replaced"));
-                match operation {
-                    "replace" => replace(dir.path(), &lines(&changed)),
-                    _ => write_bytes(dir.path(), &lines(&changed[..3])),
+                if operation == "replace" {
+                    replace(dir.path(), &lines(&changed));
+                } else {
+                    let (inode, size, modified) = file_identity(&dir);
+                    write_bytes(dir.path(), &lines(&changed));
+                    fs::File::options()
+                        .write(true)
+                        .open(dir.path().join("events.jsonl"))
+                        .unwrap()
+                        .set_modified(modified)
+                        .unwrap();
+                    let (now_inode, now_size, now_modified) = file_identity(&dir);
+                    assert_eq!((now_inode, now_modified), (inode, modified));
+                    assert!(now_size < size, "the rewrite did not shrink the journal");
                 }
                 assert!(source.reload(), "{operation}/{warnings}");
                 let shown = show(&mut source, &back);
                 let (rows, total, arrived) = ready(&shown);
+                assert_eq!(
+                    total,
+                    usize::try_from(warnings).unwrap() + 2,
+                    "{operation}/{warnings}: {rows:?}"
+                );
                 assert!(
                     !rows.iter().any(|row| row == "old arrival"),
                     "{operation}/{warnings}"
