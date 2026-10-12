@@ -199,7 +199,7 @@ CI runs every session of `tools/bench/suite.json`, dev and holdout alike, on the
 - it stopped for its clean cycle: `shutdown` reason `cycles`, never a dead end, a signal or the 1000-boot cap;
 - its resume state matched a fresh fold of the journal after every crash and at the end;
 - `togi_tuner::replay` folds its whole journal;
-- `togi-tool-audit` finds no violation in any journal of its state directory.
+- `togi-tool-audit` finds no violation in any journal of its state directory, and its published `state.json` equals a fresh fold of the live journal.
 
 The aggregating `check` job reads N from `nix/sim-suite.json` and fails unless the build matrix held exactly `rust-sim-suite-0` to `rust-sim-suite-<N-1>`, so a deleted or renamed shard fails the required check rather than vanishing from the matrix. The suite declares no expected dead end, and none is to be invented to pass the gate. `just sim-suite-rs` runs the same suite locally in one shard and checks it; [`togi-tool-sim`](simulating.md#the-rust-simulator-command-togi-tool-sim) also has a test that splits one session across processes by `--max-boots` and requires the same journal and `state.json` as an uninterrupted run.
 
