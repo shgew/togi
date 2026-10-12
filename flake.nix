@@ -253,6 +253,7 @@
                 pkgs.golangci-lint
                 pkgs.just
                 pkgs.nixfmt
+                pkgs.bashInteractive
                 pkgs.nushell
                 rustToolchain
                 pkgs.cargo-deny
@@ -282,6 +283,7 @@
               cargoNextestExtraArgs = "--profile ci";
               nativeCheckInputs = [
                 pkgs.gitMinimal
+                pkgs.bashInteractive
                 pkgs.nushell
               ];
             });

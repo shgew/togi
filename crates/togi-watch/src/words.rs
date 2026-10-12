@@ -17,7 +17,7 @@ use togi_journal::{
     TunerDecision,
 };
 use togi_machine::{CoreId, Regime, Signal, TargetOffset, WorkloadId};
-use togi_tuner::DecisionPayload;
+use togi_tuner::{DecisionPayload, GroupState};
 
 /// The tag of a line of what happened: one short word per kind of event, in a column of its own, so the eye finds
 /// a crash without reading the sentence beside it.
@@ -163,6 +163,25 @@ pub fn phase_word(phase: impl Into<Phase>) -> &'static str {
         Phase::Core(CorePhase::HasRoom) => "HAS ROOM",
         Phase::Core(CorePhase::AtLimit) => "AT LIMIT",
         Phase::Activity(activity) => activity.as_str(),
+    }
+}
+
+/// How a hunt group's outcome reads in the dashboard and `togi status`.
+pub const fn group_word(state: GroupState) -> &'static str {
+    match state {
+        GroupState::Running => "running",
+        GroupState::Passed => "passed",
+        GroupState::Failed => "failed",
+        GroupState::Skipped => "skipped",
+    }
+}
+
+/// What a phase-2 candidate does next: it moves, or its limit is checked again in place.
+pub const fn candidate_word(moving: bool) -> &'static str {
+    if moving {
+        "moving"
+    } else {
+        "checked again in place"
     }
 }
 

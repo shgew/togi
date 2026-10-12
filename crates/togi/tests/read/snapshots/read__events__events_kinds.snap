@@ -1,0 +1,6 @@
+---
+source: crates/togi/tests/read/events.rs
+expression: text(&ran.stdout)
+---
+00:00:00 session.start  session 20260101T000000Z started by togi 0.0.0 (schema 1, ruleset 1, evidence epoch 1, fixes 0, 16 cores)
+00:00:00 session.baseline baseline profile [00: 0, 01: 0, 02: 0, 03: 0, 04: 0, 05: 0, 06: 0, 07: 0, 08: 0, 09: 0, 10: 0, 11: 0, 12: 0, 13: 0, 14: 0, 15: 0]

@@ -1,0 +1,7 @@
+---
+source: crates/togi/tests/read/events.rs
+expression: text(&ran.stdout)
+---
+00:00:00 trial.intent   trial 0001 core 00 CO 0 R1 mprime SSE 4K-21K 90 s alone
+00:00:00 trial.start    trial 0001 started pid 1001 in scope togi-trial-0001 on cpu 0
+00:01:30 trial.end      trial 0001 PASS 90 s | Tctl max 62°C

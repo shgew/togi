@@ -122,6 +122,7 @@ fn a_nested_key_this_build_does_not_write_or_leaves_out_is_a_violation() {
         "bios_profile",
         "r7_status",
         "clean_cycles",
+        "last_clean_cycle",
         "first_result",
         "requirement",
         "trial_history",
