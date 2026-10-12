@@ -10,6 +10,13 @@ use crate::testkit::{Journal, R7Report, Start, fresh, pairs, quads, set};
 use crate::tests::core;
 use crate::{Action, DecisionPayload, Load, State, TrialContext, TrialPlan};
 
+fn forecast_unchanged(state: &State) -> Forecast {
+    let before = state.clone();
+    let forecast = state.forecast();
+    assert_eq!(*state, before, "forecast changed the state");
+    forecast
+}
+
 fn topology(count: u8) -> Vec<CoreInfo> {
     let ids: Vec<u8> = (0..count).collect();
     match count {
@@ -107,7 +114,7 @@ fn trial_pass(j: &mut Journal, plan: &TrialPlan) {
 fn forecast_partial_failure_requires_backoff() {
     let mut j = partial_in_flight();
     start(&mut j);
-    let forecast = j.state.forecast();
+    let forecast = forecast_unchanged(&j.state);
     let mut seen = Vec::new();
     for branch in &forecast.branches {
         seen.push(branch.premise);
@@ -141,7 +148,7 @@ fn forecast_all_pass_counts_partial_passes() {
     let first = j.next_trial();
     trial_pass(&mut j, &first);
     start(&mut j);
-    let forecast = j.state.forecast();
+    let forecast = forecast_unchanged(&j.state);
     let pass = branch(&forecast, Premise::Pass);
     let all = branch(&forecast, Premise::AllPass);
     assert_eq!(all.passes, 2);
@@ -154,7 +161,7 @@ fn forecast_needs_ranking_without_recorded_read() {
     let mut j = room(&[-20; 4]);
     let plan = j.r7_plan(&[0, 1], &[-20; 4]);
     j.intent(&plan);
-    let forecast = j.state.forecast();
+    let forecast = forecast_unchanged(&j.state);
     let unnamed = branch(&forecast, Premise::Unnamed);
     assert_eq!(unnamed.uncertainty, Some(Uncertainty::NeedsRanking));
     assert!(unnamed.next.is_none());
@@ -172,7 +179,7 @@ fn forecast_single_loaded_together_may_be_unattributed() {
         120,
     );
     j.intent(&plan);
-    let forecast = j.state.forecast();
+    let forecast = forecast_unchanged(&j.state);
     let unnamed = branch(&forecast, Premise::Unnamed);
     assert!(matches!(
         &unnamed.decisions[0],
@@ -189,7 +196,7 @@ fn forecast_inconclusive_retains_trial() {
             Journal::search_at(&[-20])
         };
         let plan = start(&mut j);
-        let forecast = j.state.forecast();
+        let forecast = forecast_unchanged(&j.state);
         let inconclusive = branch(&forecast, Premise::Inconclusive);
         assert!(inconclusive.decisions.is_empty(), "{inconclusive:?}");
         let mut want = plan.clone();
@@ -202,6 +209,10 @@ fn forecast_inconclusive_retains_trial() {
         assert_eq!(next.context, want.context);
         assert_eq!(next.profile, want.profile);
         assert_eq!(next.duration, want.duration);
+        assert_eq!(next.load, want.load);
+        assert_eq!(next.condition, want.condition);
+        assert_eq!(next.regime, want.regime);
+        assert_eq!(next.activity, want.activity);
     }
 }
 
@@ -211,7 +222,7 @@ fn forecast_reuses_recorded_ranking() {
     j.ranking(&[1, 0, 2, 3]);
     let plan = j.r7_plan(&[0, 1], &[-20, -20, 0, 0]);
     j.intent(&plan);
-    let forecast = j.state.forecast();
+    let forecast = forecast_unchanged(&j.state);
     let unnamed = branch(&forecast, Premise::Unnamed);
     assert_eq!(unnamed.uncertainty, None, "{unnamed:?}");
     let next = unnamed.next.as_ref().expect("a settled branch");
@@ -226,7 +237,11 @@ fn forecast_waits_for_initial_core_phases() {
     let j = Journal::on(&[0, 1], topology(2), &[Start::search(-20)]);
     for n in 1..=j.events.len() {
         let state = fresh(&j.events[..n]);
-        assert_eq!(state.forecast(), Forecast::default(), "prefix {n}");
+        assert_eq!(
+            forecast_unchanged(&state),
+            Forecast::default(),
+            "prefix {n}"
+        );
         assert!(
             state
                 .phase_plan()
@@ -251,7 +266,7 @@ fn forecast_all_pass_stays_within_its_requirement() {
             Action::ReadRanking => panic!("ranking read"),
         };
         let (_, trial) = j.intent(&plan);
-        let forecast = j.state.forecast();
+        let forecast = forecast_unchanged(&j.state);
         let pass = forecast
             .branches
             .iter()
@@ -295,7 +310,7 @@ fn forecast_names_core_at_zero_separately() {
         j.run().config.checking_idle.get(),
     );
     j.intent(&plan);
-    let forecast = j.state.forecast();
+    let forecast = forecast_unchanged(&j.state);
     let named = named(&forecast);
     let cores: Vec<Premise> = named.iter().map(|b| b.premise).collect();
     assert_eq!(cores, [Premise::Named(core(0)), Premise::Named(core(1))]);
@@ -320,7 +335,7 @@ fn forecast_r7_premises_fold_distinct_outcomes_without_invented_telemetry() {
     let decision = j.next_decision();
     j.decide(decision);
     let plan = start(&mut j);
-    let forecast = j.state.forecast();
+    let forecast = forecast_unchanged(&j.state);
     let want = [
         (Premise::Pass, None, None),
         (Premise::AllPass, None, None),
@@ -362,14 +377,11 @@ fn forecast_r7_premises_fold_distinct_outcomes_without_invented_telemetry() {
             )),
             "{branch:?}"
         );
-        if dead_end(branch) {
-            assert!(branch.next.is_none());
-        } else {
-            assert!(
-                branch.next.is_some() && branch.uncertainty.is_none(),
-                "{branch:?}"
-            );
-        }
+        assert!(!dead_end(branch), "{branch:?}");
+        assert!(
+            branch.next.is_some() && branch.uncertainty.is_none(),
+            "{branch:?}"
+        );
         if backoff(branch).is_some() {
             let next = branch.next.as_ref().unwrap();
             assert!(rerun(next) && next.load == plan.load, "{branch:?}");
@@ -446,7 +458,7 @@ fn forecast_r7_unnamed_uses_offset_fallback_without_requests() {
     j.ranking(&[0, 1, 2, 3]);
     let plan = j.r7_plan(&[0, 1], &[0, -30, 0, 0]);
     j.intent(&plan);
-    let forecast = j.state.forecast();
+    let forecast = forecast_unchanged(&j.state);
     let unnamed = branch(&forecast, Premise::Unnamed);
     assert!(!dead_end(unnamed));
     assert!(unnamed.next.as_ref().is_some_and(rerun), "{unnamed:?}");
@@ -468,7 +480,7 @@ fn forecast_r7_names_a_core_at_zero_on_each_ccd() {
     );
     let plan = j.r7_plan(&all, &[0, 0, 0, -30]);
     j.intent(&plan);
-    let forecast = j.state.forecast();
+    let forecast = forecast_unchanged(&j.state);
     let got: Vec<_> = named(&forecast)
         .into_iter()
         .map(|b| {
@@ -510,7 +522,7 @@ fn forecast_r7_basis_follows_the_running_loads_measurement() {
     let plan = j.next_trial();
     assert_eq!(plan.load, Load::Many(partial));
     let (intent, trial) = j.intent(&plan);
-    let unmeasured = j.state.forecast();
+    let unmeasured = forecast_unchanged(&j.state);
     let unnamed = branch(&unmeasured, Premise::Unnamed);
     assert!(
         unnamed.offset_order,
@@ -523,7 +535,7 @@ fn forecast_r7_basis_follows_the_running_loads_measurement() {
     let plan = j.next_trial();
     assert_eq!(plan.load, Load::Many(partial));
     j.intent(&plan);
-    let measured = j.state.forecast();
+    let measured = forecast_unchanged(&j.state);
     let unnamed = branch(&measured, Premise::Unnamed);
     assert!(!unnamed.offset_order, "{unnamed:?}");
 }
@@ -544,7 +556,7 @@ fn forecast_unmeasured_chain_ending_follows_offset_order() {
             }
         };
         let (intent, trial) = j.intent(&plan);
-        let forecast = j.state.forecast();
+        let forecast = forecast_unchanged(&j.state);
         let pass = branch(&forecast, Premise::Pass);
         for decision in &pass.decisions {
             if let DecisionPayload::CheckingChain(chain) = decision {
@@ -573,7 +585,7 @@ fn forecast_resume_names_no_step_of_a_later_cycle() {
     let cycle_of = |j: &Journal| j.run().checking.last_cycle().map(std::num::NonZero::get);
     for _ in 0..200 {
         if failed_r6 {
-            let forecast = j.state.forecast();
+            let forecast = forecast_unchanged(&j.state);
             let between_trials = forecast.between.clone().unwrap_or_default();
             if cycle_of(&j) == Some(1) {
                 assert_eq!(between_trials.resume, None, "{between_trials:?}");
@@ -612,7 +624,7 @@ fn forecast_resume_names_no_step_of_a_later_cycle() {
         };
         if rerun(&plan) {
             let (intent, trial) = j.intent(&plan);
-            let forecast = j.state.forecast();
+            let forecast = forecast_unchanged(&j.state);
             let pass = branch(&forecast, Premise::Pass);
             assert_eq!(pass.resume, None);
             reruns.push(forecast.clone());
@@ -666,7 +678,7 @@ fn stopped_journal(stop: Payload) -> Journal {
     let mut j = room(&[-20; 4]);
     let plan = j.r7_plan(&[0, 1], &[-20; 4]);
     j.intent(&plan);
-    assert!(!j.state.forecast().branches.is_empty());
+    assert!(!forecast_unchanged(&j.state).branches.is_empty());
     j.append(stop, &[]);
     j
 }
@@ -700,10 +712,10 @@ fn forecast_is_empty_after_shutdown_and_deadend_despite_trailing_warning() {
     ];
     for stop in stops {
         let mut j = stopped_journal(stop);
-        assert_eq!(j.state.forecast(), Forecast::default());
+        assert_eq!(forecast_unchanged(&j.state), Forecast::default());
         j.append(warning(), &[]);
-        assert_eq!(j.state.forecast(), Forecast::default());
-        assert_eq!(fresh(&j.events).forecast(), Forecast::default());
+        assert_eq!(forecast_unchanged(&j.state), Forecast::default());
+        assert_eq!(forecast_unchanged(&fresh(&j.events)), Forecast::default());
     }
 }
 
@@ -719,13 +731,14 @@ fn forecast_resumes_after_a_new_config_following_shutdown() {
         .into(),
     );
     j.load(&togi_config::Config::default());
-    assert!(j.state.forecast().between.is_some() || !j.state.forecast().branches.is_empty());
+    let forecast = forecast_unchanged(&j.state);
+    assert!(forecast.between.is_some() || !forecast.branches.is_empty());
 }
 
 #[test]
 fn hunt_probe_without_recorded_checking_profile_forecast() {
     let j = crate::dashboard_tests::probe_without_checking_profile();
-    let forecast = j.state.forecast();
+    let forecast = forecast_unchanged(&j.state);
     let all = branch(&forecast, Premise::AllPass);
     assert_eq!(all.passes, 5);
     assert_eq!(all.all_pass, Some(AllPass::Complete));
@@ -741,7 +754,7 @@ fn forecast_all_pass_that_stops_early_keeps_the_passes_it_folded() {
     j.decide(decision);
     let plan = j.r7_plan(&[0, 1], &[-20; 4]);
     j.intent(&plan);
-    let forecast = j.state.forecast();
+    let forecast = forecast_unchanged(&j.state);
     let all = branch(&forecast, Premise::AllPass);
     assert_eq!(all.passes, 1);
     assert_eq!(
@@ -758,8 +771,8 @@ fn forecast_leaves_state_unchanged() {
     start(&mut j);
     let before: State = j.state.clone();
     let events = j.events.len();
-    let first = j.state.forecast();
-    assert_eq!(j.state.forecast(), first);
+    let first = forecast_unchanged(&j.state);
+    assert_eq!(forecast_unchanged(&j.state), first);
     assert_eq!(j.events.len(), events);
     assert_eq!(j.state.next().ok(), before.next().ok());
     assert_eq!(j.state, before);
@@ -849,7 +862,7 @@ fn forecast_detects_recurring_hunt_plan() {
     plan.activity = Activity::Hunt;
     j.intent(&plan);
     let before = j.state.clone();
-    let forecast = j.state.forecast();
+    let forecast = forecast_unchanged(&j.state);
     let unnamed = branch(&forecast, Premise::Unnamed);
     assert_eq!(unnamed.uncertainty, Some(Uncertainty::RecurringPlan));
     assert!(unnamed.next.is_none());
@@ -879,7 +892,7 @@ fn stored_requirement_survives_crash_and_changed_config_forecast() {
         r#"{"evidence":{"miss":0.001},"durations":{"search_trial_s":61}}"#,
     ));
     assert_eq!(j.state.requirement().unwrap(), before);
-    let forecast = j.state.forecast();
+    let forecast = forecast_unchanged(&j.state);
     assert!(!forecast.branches.is_empty());
     assert!(
         !forecast
@@ -901,10 +914,10 @@ fn stored_requirement_survives_crash_and_changed_config_forecast() {
         .into(),
         &[],
     );
-    let crashed = j.state.forecast();
+    let crashed = forecast_unchanged(&j.state);
     assert!(crashed.branches.is_empty());
     assert!(crashed.between.is_some());
-    assert_eq!(fresh(&j.events).forecast(), crashed);
+    assert_eq!(forecast_unchanged(&fresh(&j.events)), crashed);
 }
 
 #[test]
@@ -927,7 +940,7 @@ fn forecast_folds_the_recorded_ranking_again_when_a_later_plan_left_it_stale() {
     );
     j.intent(&plan);
     assert!(j.run().ranking_stale());
-    let forecast = j.state.forecast();
+    let forecast = forecast_unchanged(&j.state);
     let unnamed = branch(&forecast, Premise::Unnamed);
     assert_eq!(unnamed.uncertainty, None, "{unnamed:?}");
     assert!(matches!(
@@ -938,5 +951,5 @@ fn forecast_folds_the_recorded_ranking_again_when_a_later_plan_left_it_stale() {
             DecisionPayload::HuntGroup(_)
         ]
     ));
-    assert_eq!(fresh(&j.events).forecast(), forecast);
+    assert_eq!(forecast_unchanged(&fresh(&j.events)), forecast);
 }
