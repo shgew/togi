@@ -10,7 +10,7 @@ use ratatui::buffer::Cell;
 use ratatui::layout::{Position, Rect, Size};
 
 use super::Error;
-use super::palette;
+use crate::frames::console_palette;
 
 /// A ratatui backend that also takes raw bytes, for the sequences ratatui has no call for.
 pub(super) trait Console: Backend<Error = io::Error> + Write {}
@@ -105,6 +105,19 @@ pub(super) fn terminal_error(operation: &'static str) -> impl Fn(io::Error) -> E
     move |source| Error::Terminal { operation, source }
 }
 
+/// Resets the Linux console's palette to its defaults.
+pub(super) const RESET_PALETTE: &str = "\x1b]R";
+
+/// The sequence that sets the Linux console's 16 colour slots to [`console_palette`] (`ESC ] P n rrggbb`).
+pub(super) fn set_palette() -> String {
+    use std::fmt::Write as _;
+    let mut sequence = String::new();
+    for (slot, (red, green, blue)) in console_palette().iter().enumerate() {
+        let _ = write!(sequence, "\x1b]P{slot:X}{red:02x}{green:02x}{blue:02x}");
+    }
+    sequence
+}
+
 /// The terminal while the dashboard owns it. Entering clears the screen, hides the cursor and, on the Linux
 /// console, redefines its colours. Dropping restores all of it, on a normal exit, an error and a panic alike.
 pub(super) struct Session<B: Console> {
@@ -123,7 +136,7 @@ impl<B: Console> Session<B> {
     fn clear(&mut self) -> io::Result<()> {
         let backend = self.terminal.backend_mut();
         if self.palette {
-            backend.write_all(palette::set().as_bytes())?;
+            backend.write_all(set_palette().as_bytes())?;
         }
         backend.hide_cursor()?;
         let size = self.terminal.size()?;
@@ -152,8 +165,21 @@ impl<B: Console> Drop for Session<B> {
         let _ = self.terminal.show_cursor();
         let backend = self.terminal.backend_mut();
         if self.palette {
-            let _ = backend.write_all(palette::RESET.as_bytes());
+            let _ = backend.write_all(RESET_PALETTE.as_bytes());
         }
         let _ = Backend::flush(backend);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::set_palette;
+
+    #[test]
+    fn the_palette_sets_every_slot_in_hex() {
+        let set = set_palette();
+        assert_eq!(set.matches("\x1b]P").count(), 16);
+        assert!(set.starts_with("\x1b]P0000000\x1b]P1aa3333"));
+        assert!(set.ends_with("\x1b]PFffffff"));
     }
 }

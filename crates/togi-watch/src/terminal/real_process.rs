@@ -1,11 +1,10 @@
-#![cfg(target_os = "linux")]
-#![expect(clippy::unwrap_used, reason = "helpers panic on a broken fixture")]
-
-//! The dashboard in a real process on a pseudo-terminal: real signals, a real keyboard and real inotify.
+//! The dashboard in a real process on a pseudo-terminal: real signals, a real keyboard, real inotify and the
+//! dashboard's own frames.
 //!
-//! The helper process is this test binary run again on one test, `real_process_helper`, which does nothing
-//! unless it is started by another test. The test that started it kills it on every path, and every wait is
-//! bounded.
+//! The helper process is this test binary run again on one test, [`HELPER`], which does nothing unless it is
+//! started by another test. The test that started it kills it on every path, and every wait is bounded. The
+//! helper draws a stand-in frame that tells the test what is on screen, or, in the `frames` mode, the frames of
+//! public [`run`](super::run).
 
 use std::ffi::OsString;
 use std::fs::{self, File};
@@ -27,9 +26,14 @@ use rustix::termios::{LocalModes, Winsize, tcgetattr, tcsetwinsize};
 use tempfile::TempDir;
 use togi_journal::{Build, Event, Payload, SCHEMA, Seq, SessionStart, SessionWarning, Stamp};
 use togi_machine::{BootId, CcdId, CoreId, CoreInfo, CpuId};
-use togi_watch::screen::{Drawn, Hold, Journal, Screen, View};
-use togi_watch::terminal::{Stop, run, run_after};
+use togi_watchtest::{Scenario, install};
 use tokio::signal::unix::{SignalKind, signal};
+
+use super::{Error, Stop, run, run_after_with, run_with};
+use crate::screen::{Drawn, Hold, Journal, Screen, View};
+
+/// The full name of the helper test, which is how the test binary is told to run only it.
+const HELPER: &str = "terminal::real_process::real_process_helper";
 
 const STATE_DIR: &str = "TOGI_WATCH_TEST_STATE_DIR";
 const MODE: &str = "TOGI_WATCH_TEST_MODE";
@@ -89,7 +93,7 @@ fn integrated(
     state_dir: &Path,
     received: &Arc<AtomicUsize>,
     render: impl FnMut(&Journal<'_>, &Screen, Timestamp, &mut Buffer) -> Drawn,
-) -> Result<(), togi_watch::terminal::Error> {
+) -> Result<(), Error> {
     let stop = Stop::new();
     let (listening, ready) = std::sync::mpsc::channel();
     let (finish, finished) = tokio::sync::oneshot::channel::<()>();
@@ -128,7 +132,7 @@ fn integrated(
     ready.recv().unwrap();
     let stdin = std::io::stdin();
     let stdout = std::io::stdout();
-    let outcome = run_after(
+    let outcome = run_after_with(
         state_dir,
         0,
         &stop,
@@ -178,7 +182,7 @@ fn real_process_helper() {
     let once = || {
         let stdin = std::io::stdin();
         let stdout = std::io::stdout();
-        run(
+        run_with(
             &state_dir,
             stdout.as_fd(),
             Some(stdin.as_fd()),
@@ -187,6 +191,11 @@ fn real_process_helper() {
     };
     let outcome = match mode.as_str() {
         "integrated" => integrated(&state_dir, &received, frame(Arc::clone(&received), hold)),
+        "frames" => {
+            let stdin = std::io::stdin();
+            let stdout = std::io::stdout();
+            run(&state_dir, stdout.as_fd(), Some(stdin.as_fd()))
+        }
         "twice" => once().and_then(|()| {
             say(SECOND);
             once()
@@ -309,6 +318,19 @@ impl Pty {
             }
         }
     }
+
+    /// Whether the terminal receives nothing for `quiet` at some point before `bound` passes.
+    fn falls_quiet(&mut self, quiet: Duration, bound: Duration) -> bool {
+        let end = Instant::now() + bound;
+        loop {
+            match self.pump(Instant::now() + quiet) {
+                Pumped::Deadline => return true,
+                Pumped::Data if Instant::now() >= end => return false,
+                Pumped::Data => {}
+                Pumped::End => panic!("the helper closed the terminal"),
+            }
+        }
+    }
 }
 
 /// What one read of the terminal found.
@@ -375,12 +397,7 @@ impl Helper {
         let slave = pty.slave();
         let mut command = Command::new(std::env::current_exe().unwrap());
         command
-            .args([
-                "real_process_helper",
-                "--exact",
-                "--nocapture",
-                "--test-threads=1",
-            ])
+            .args([HELPER, "--exact", "--nocapture", "--test-threads=1"])
             .env(STATE_DIR, state_dir)
             .env("TERM", launch.term)
             .env(MODE, launch.mode)
@@ -909,12 +926,7 @@ fn real_process_a_helper_that_cannot_open_its_terminal_fails_instead_of_hanging(
     )]
     let helper = Helper(
         Command::new(std::env::current_exe().unwrap())
-            .args([
-                "real_process_helper",
-                "--exact",
-                "--nocapture",
-                "--test-threads=1",
-            ])
+            .args([HELPER, "--exact", "--nocapture", "--test-threads=1"])
             .env(STATE_DIR, state.path())
             .stdin(Stdio::from(pty.slave()))
             .stdout(Stdio::null())
@@ -923,4 +935,53 @@ fn real_process_a_helper_that_cannot_open_its_terminal_fails_instead_of_hanging(
     );
     pty.drain();
     assert!(!helper.finish().success());
+}
+
+/// Longer than two of the header clock's ticks.
+const QUIET: Duration = Duration::from_millis(2500);
+
+/// The dashboard's own frames of `scenario` in a helper, once `shown` is on screen.
+fn dashboard(scenario: Scenario, shown: &str) -> (TempDir, Pty, Helper) {
+    let state = TempDir::new().unwrap();
+    install(state.path(), scenario).unwrap();
+    let mut pty = Pty::open(160, 45);
+    let helper = Helper::start(
+        &pty,
+        state.path(),
+        Launch {
+            mode: "frames",
+            ..PLAIN
+        },
+    );
+    pty.wait_for(0, shown, |bytes| end_of(bytes, shown.as_bytes()));
+    (state, pty, helper)
+}
+
+#[test]
+fn real_process_a_started_idle_trial_holds_the_dashboard_still() {
+    let (_state, mut pty, helper) = dashboard(Scenario::Idle, "this screen holds still");
+    let first = pty.seen.len();
+    assert!(
+        pty.falls_quiet(QUIET, QUIET * 2),
+        "the idle frame was redrawn: {:?}",
+        String::from_utf8_lossy(&pty.seen[first..])
+    );
+    assert!(contains(&pty.seen, b"screen paused"));
+    helper.signal(Signal::TERM);
+    pty.drain();
+    let status = helper.finish();
+    assert_restored(&pty, status, false);
+}
+
+#[test]
+fn real_process_a_running_trial_redraws_the_dashboard_s_clock() {
+    let (_state, mut pty, helper) = dashboard(Scenario::Checking, "SOLO LIMITS");
+    assert!(
+        !pty.falls_quiet(QUIET, QUIET),
+        "the clock of a running trial stood still"
+    );
+    helper.signal(Signal::TERM);
+    pty.drain();
+    let status = helper.finish();
+    assert_restored(&pty, status, false);
 }
