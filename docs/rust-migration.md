@@ -1150,6 +1150,35 @@ The `frames` module of `togi-watch` draws the `togi watch` dashboard ([#835](htt
 - **Tests.** Every Go test of `frames_test.go`, `render_test.go` (except `TestPress` and `TestDecodeKeys`, the loop's), `fit_test.go`, `r7_status_test.go`, `story_test.go`, `narration_test.go`, `cycle_resume_test.go`, `history_render_test.go` and `log_render_test.go`, and `TestHistoryPanelCountsEveryEntryItLeavesOut`, maps to a Rust test or a stated reason in the pull request. Every frame a test renders passes the bounds check. The crate's 569 tests take about 6.5 s under `cargo nextest run -p togi-watch`. `just cover-rs origin/main` lists 81 uncovered changed lines in `frames/`, 12 of them in test files, and two panic arms of the pseudo-terminal helpers.
 - **Not measured.** Compile times, agent cost, and the frame time on the Linux console.
 
+## Stage 7: the Rust package (#867, 2026-10-12)
+
+The flake gains `packages.togi-rs`, the Rust `togi` in the release profile with its four completion scripts installed, and the check `rust-package`, which builds it with the revision `dev` and checks `--version` and that each completion script names `togi` ([#830](https://github.com/shgew/togi/issues/830), pull request [#867](https://github.com/shgew/togi/pull/867)). `packages.default` stays the Go build until the cutover ([#643](https://github.com/shgew/togi/issues/643)). `togi-rs` and the simulator binary of the `rust-sim-suite-<i>` checks share one dependency derivation, `togi-release-deps` (crane's `buildDepsOnly` with `-p togi -p togi-tool-sim`), which replaces the simulator's own `togi-tool-sim-deps`. Compared with the crates `togi-tool-sim-deps` built in #861's CI log, `togi-release-deps` in #867's log also builds `clap_complete`, `clap_complete_nushell`, `insta`, `similar` and `togi` itself (the `Checking` and `Compiling` lines of shard 0 in the two logs).
+
+- **Package size.** `nix path-info -s -S` on the outputs of `nix build --no-link --print-out-paths .#togi-rs .#default` at `3f3e78a7`, the pull request's head merged with `main`:
+
+  | package | output | closure |
+  |---|---:|---:|
+  | `togi-rs` (Rust) | 1,360,000 B | 50,611,928 B |
+  | `default` (Go) | 12,690,568 B | 53,058,064 B |
+
+  The Rust binary holds only `--version`, `--help` and `completion` so far, so its size says nothing yet about the finished command. `nix path-info -r` lists glibc and the `xgcc` libgcc in both closures, the gcc 16.2.0 `libgcc` and `lib` in Rust's only, and tzdata in Go's only.
+- **Build in one store.** From `nix log` of the local builds. `togi-release-deps` runs three cargo passes, `cargo check --release --all-targets`, `cargo build --release` and `cargo test --release --no-run`, whose `Finished` lines read 2.54 s, 2.98 s and 3.17 s (a log read from the Nix daemon; the derivation was not rebuilt). With it in the store, one `nix build` of `.#togi-rs` and of the simulator's `togi-tool-sim` derivation, the two building concurrently, compiled workspace crates only and no dependency: `togi-rs` 6 crates, `Finished` in 7.10 s; `togi-tool-sim` 18 crates, 16.49 s.
+- **CI.** Job durations are `completedAt` minus `startedAt` from `gh run view <id> --json jobs`; cargo times are the `Finished` lines of the job logs.
+
+  | job | #867, run 38263442579 on `03e32522` | #861, run 38260500290 on `dbbded33` |
+  |---|---:|---:|
+  | `rust-package` | 107 s | (none) |
+  | `rust-sim-suite-0` | 268 s | 231 s |
+  | `rust-sim-suite-1` | 259 s | 253 s |
+  | `rust-sim-suite-2` | 268 s | 259 s |
+  | `rust-sim-suite-3` | 262 s | 183 s |
+
+  The most recent `main` push run before this pull request, 38261731768 on its base `bcf21d46`, took 23, 27, 29 and 41 s for the four shards and is no comparison: shard 0's log builds no derivation and fetches one path of 0.5 KiB, so those checks' outputs were already in the Cachix cache from #861's pull-request run. The table compares with #861's last pull-request run instead, which built them. In shard 0, the three dependency passes took 7.47 s, 11.93 s and 0.15 s for `togi-tool-sim-deps` there and 9.77 s, 14.52 s and 5.10 s for `togi-release-deps` here, and `togi-tool-sim` took 42.38 s there and 45.52 s here. In shards 1 to 3 of #867, `togi-release-deps` took 9.60 to 9.85 s, 14.41 to 14.57 s and 4.88 to 5.24 s; in the `rust-package` job 10.23 s, 14.67 s and 5.09 s, then `togi-rs` 11.64 s.
+
+  The shared derivation saves work only within one Nix store. Each CI matrix job builds in its own store, and Cachix receives only each check's output closure, so each of the four shards and the `rust-package` job built `togi-release-deps` itself (each log has its own `building` line for the same derivation). The simulator shards now also build the extra dependencies above.
+- **Not measured.** A cold local build of `togi-release-deps` (its cargo times are those of the log the daemon held), the run on a Mac, and agent cost.
+
+
 ## Stage 7: `cmd/togi` reset, restart-limit and doctor (#828, 2026-10-12)
 
 The `togi` crate gains the three administration commands ([#828](https://github.com/shgew/togi/issues/828)): `reset --core N | --all`, `restart-limit --tuning-boot <grubenv>` and `doctor`, one module each (`reset.rs`, `restart_limit.rs`, `doctor.rs`), one variant and one arm in `cli.rs`.
