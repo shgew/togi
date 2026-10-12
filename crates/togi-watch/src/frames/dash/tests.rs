@@ -7,7 +7,10 @@ use ratatui::layout::Rect;
 use ratatui::text::Line;
 use togi_journal::ShutdownReason;
 use togi_machine::{CcdId, Condition, CoreSet, ObservedOffset, PerCore, Regime, WorkloadId};
-use togi_tuner::{CombinationId, CyclePlan, Limit, R7CoreStatus, Reached};
+use togi_tuner::{
+    CombinationId, CyclePlan, CycleStep, HuntPlan, Limit, PhaseNo, PhasePlan, R7CoreStatus,
+    Reached, RerunPlan,
+};
 
 use super::ccd::{ccd_role, gauge, note_line, state_word};
 use super::header::{header, status_header};
@@ -22,11 +25,11 @@ use crate::frames::notes::top_note;
 use crate::frames::scene::Scene;
 use crate::frames::testing::rows_of;
 use crate::model::{
-    CoreState, CoreView, Count, CycleView, IdleHold, Model, SessionView, Snapshot, StopView,
-    TrialView,
+    CoreState, CoreView, Count, CycleView, HuntCause, HuntFacts, HuntView, IdleHold, Model,
+    SessionView, Snapshot, StopView, TrialView,
 };
 use crate::screen::Colours;
-use crate::tests::kit::{core, off};
+use crate::tests::kit::{core, off, seq};
 
 fn at(text: &str) -> Timestamp {
     text.parse().expect("a timestamp")
@@ -245,6 +248,142 @@ fn the_stage_line_marks_what_runs_and_what_stopped() {
     assert_eq!(line_width(&none), 0);
 }
 
+fn cycle_step(done: bool) -> CycleStep {
+    CycleStep {
+        regime: Regime::R1,
+        workload: WorkloadId::new(Regime::R1, 0).expect("a workload"),
+        parts: Vec::new(),
+        chains_complete: true,
+        done,
+    }
+}
+
+fn hunt_plan() -> HuntPlan {
+    HuntPlan {
+        number: 1,
+        regime: Regime::R7,
+        failure: seq(1),
+        trial: None,
+        candidates: CoreSet::default(),
+        cut: 0,
+        parts: Vec::new(),
+        groups: Vec::new(),
+        probes: Vec::new(),
+        rerun: RerunPlan {
+            regime: Regime::R7,
+            cores: CoreSet::default(),
+            short: 0,
+            short_s: 0,
+            long: 0,
+            long_s: 0,
+        },
+    }
+}
+
+fn hunt_facts() -> HuntFacts {
+    HuntFacts {
+        started: None,
+        cause: HuntCause {
+            at: None,
+            trial: None,
+            end: None,
+            signal: None,
+            core: None,
+            known: false,
+            carried: false,
+            regime: None,
+            rerun_of: false,
+            trial_number: 0,
+        },
+        parked_zero: false,
+        group_signals: Vec::new(),
+    }
+}
+
+#[test]
+fn a_cycle_with_every_step_done_names_no_step_it_pauses_at() {
+    let model = Model::new();
+    let start = at("2026-10-12T10:00:00Z");
+    let view = session(start);
+    let mut plan = CyclePlan {
+        number: std::num::NonZeroU32::new(1),
+        open: true,
+        steps: vec![cycle_step(true), cycle_step(true)],
+        current: 2,
+        paused: true,
+    };
+    let mut s = model.snapshot();
+    s.session = Some(&view);
+    let line = |plan: &CyclePlan, class| {
+        let mut s = s;
+        s.cycle = Some(CycleView {
+            plan,
+            step_hunts: &[],
+            resume: None,
+        });
+        plain(&stage_line(
+            &scene(&s, start, &TimeZone::UTC, Colours::Full),
+            class,
+            false,
+        ))
+    };
+    for class in [SizeClass::Wide, SizeClass::Compact] {
+        let done = line(&plan, class);
+        assert!(done.ends_with("■ CYCLE 1"), "{done}");
+        assert!(!done.contains("paused"), "{done}");
+    }
+    plan.steps[1].done = false;
+    plan.current = 1;
+    let open = line(&plan, SizeClass::Wide);
+    assert!(open.ends_with("○ CYCLE 1  paused at step 2 of 2"), "{open}");
+}
+
+#[test]
+fn a_hunt_in_phase_two_holds_the_stage_without_running_it() {
+    let model = Model::new();
+    let start = at("2026-10-12T10:00:00Z");
+    let view = session(start);
+    let phases = PhasePlan {
+        phase: PhaseNo::Two,
+        phase1_end: Some(seq(10)),
+        concluded: None,
+        confirming: false,
+        rounds_left: 2,
+        round: Some(3),
+        candidates: Vec::new(),
+    };
+    let plan = hunt_plan();
+    let facts = hunt_facts();
+    let mut s = model.snapshot();
+    s.session = Some(&view);
+    s.phases = Some(&phases);
+    let line = |hunting: bool| {
+        let mut s = s;
+        if hunting {
+            s.hunt = Some(HuntView {
+                plan: &plan,
+                facts: &facts,
+            });
+        }
+        plain(&stage_line(
+            &scene(&s, start, &TimeZone::UTC, Colours::Full),
+            SizeClass::Wide,
+            false,
+        ))
+    };
+    let hunting = line(true);
+    assert!(
+        hunting.contains("○ PHASE 2  round 3 · at most 2 left"),
+        "{hunting}"
+    );
+    assert!(!hunting.contains("► PHASE 2"), "{hunting}");
+    let quiet = line(false);
+    assert!(
+        quiet.contains("► PHASE 2  round 3 · at most 2 left"),
+        "{quiet}"
+    );
+}
+
 #[test]
 fn a_summary_stage_line_ends_in_the_trials_time() {
     let model = Model::new();
@@ -347,6 +486,11 @@ fn every_state_has_its_word() {
     assert_eq!(state_word(CoreState::AtLimit), "AT LIMIT");
     assert_eq!(state_word(CoreState::Probe), "PROBE");
     assert_eq!(state_word(CoreState::Waiting), "WAITING");
+    assert_eq!(state_word(CoreState::Confirm), "CONFIRM");
+    assert_eq!(state_word(CoreState::Found), "FOUND");
+    assert_eq!(state_word(CoreState::Suspect), "SUSPECT");
+    assert_eq!(state_word(CoreState::Member), "MEMBER");
+    assert_eq!(state_word(CoreState::Parked), "PARKED");
 }
 
 #[test]
@@ -386,6 +530,62 @@ fn a_ccd_role_counts_load_and_probes() {
                 },
             ],
             "members, one probed shallower than its failing offset",
+        ),
+        (
+            "parked and every core still loaded",
+            vec![
+                CoreView {
+                    loaded: true,
+                    ..core_view(0, 0, CoreState::Parked)
+                },
+                CoreView {
+                    loaded: true,
+                    ..core_view(1, 0, CoreState::Parked)
+                },
+            ],
+            "parked at 0, still under load",
+        ),
+        (
+            "every suspect loaded",
+            vec![
+                CoreView {
+                    loaded: true,
+                    ..core_view(0, 0, CoreState::Suspect)
+                },
+                CoreView {
+                    loaded: true,
+                    ..core_view(1, 0, CoreState::Suspect)
+                },
+            ],
+            "suspects at their failing offsets",
+        ),
+        (
+            "every member loaded and none probed",
+            vec![
+                CoreView {
+                    loaded: true,
+                    ..core_view(0, 0, CoreState::Member)
+                },
+                CoreView {
+                    loaded: true,
+                    ..core_view(1, 0, CoreState::Member)
+                },
+            ],
+            "members at their failing offsets",
+        ),
+        (
+            "every core loaded in mixed states",
+            vec![
+                CoreView {
+                    loaded: true,
+                    ..core_view(0, 0, CoreState::Suspect)
+                },
+                CoreView {
+                    loaded: true,
+                    ..core_view(1, 0, CoreState::Member)
+                },
+            ],
+            "all under load",
         ),
     ] {
         let mut s = model.snapshot();
