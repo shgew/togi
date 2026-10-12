@@ -25,6 +25,7 @@ tempfile = "3"
 test-case = "3"
 thiserror = "2"
 togi-backend = { path = "crates/togi-backend", version = "0.0.0" }
+togi-carry = { path = "crates/togi-carry", version = "0.0.0" }
 togi-command = { path = "crates/togi-command", version = "0.0.0" }
 togi-config = { path = "crates/togi-config", version = "0.0.0" }
 togi-defect = { path = "crates/togi-defect", version = "0.0.0" }
@@ -34,11 +35,13 @@ togi-hostlock = { path = "crates/togi-hostlock", version = "0.0.0" }
 togi-journal = { path = "crates/togi-journal", version = "0.0.0" }
 togi-machine = { path = "crates/togi-machine", version = "0.0.0" }
 togi-mprime = { path = "crates/togi-mprime", version = "0.0.0" }
+togi-render = { path = "crates/togi-render", version = "0.0.0" }
 togi-requests = { path = "crates/togi-requests", version = "0.0.0" }
 togi-sim = { path = "crates/togi-sim", version = "0.0.0" }
 togi-smu = { path = "crates/togi-smu", version = "0.0.0" }
 togi-trial = { path = "crates/togi-trial", version = "0.0.0" }
 togi-trialfiles = { path = "crates/togi-trialfiles", version = "0.0.0" }
+togi-tuner = { path = "crates/togi-tuner", version = "0.0.0" }
 togi-tuningboot = { path = "crates/togi-tuningboot", version = "0.0.0" }
 togi-ycruncher = { path = "crates/togi-ycruncher", version = "0.0.0" }
 tokio = { version = "1", default-features = false }

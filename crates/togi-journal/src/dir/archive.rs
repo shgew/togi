@@ -9,6 +9,7 @@ use serde::Deserialize;
 use togi_machine::serde_object::{self, Object};
 
 use super::{DirError, EVENTS_FILE, STATE_FILE, STATE_TMP, StateDir, TRIALS_DIR, io_at, not_found};
+use crate::build::Build;
 use crate::fs::FileKind;
 use crate::session_id::SessionId;
 
@@ -71,6 +72,16 @@ struct Peek {
     kind: String,
     #[serde(default, deserialize_with = "serde_object::deserialize")]
     data: PeekData,
+}
+
+#[derive(Deserialize)]
+struct BuildLine {
+    data: BuildData,
+}
+
+#[derive(Deserialize)]
+struct BuildData {
+    build: Build,
 }
 
 #[derive(Default, Deserialize)]
@@ -362,8 +373,8 @@ impl StateDir {
         Ok(())
     }
 
-    /// The session the live journal belongs to, read from its first complete line; `None` without one.
-    pub fn live_session(&self) -> Result<Option<SessionId>, DirError> {
+    /// The first complete line of the live journal; `None` without one.
+    fn live_first_line(&self) -> Result<Option<(PathBuf, Vec<u8>)>, DirError> {
         let path = self.join(EVENTS_FILE);
         let reader = match self.fs().open_read(&path) {
             Ok(reader) => reader,
@@ -377,10 +388,33 @@ impl StateDir {
         if line.pop() != Some(b'\n') {
             return Ok(None);
         }
+        Ok(Some((path, line)))
+    }
+
+    /// The session the live journal belongs to, read from its first complete line; `None` without one.
+    pub fn live_session(&self) -> Result<Option<SessionId>, DirError> {
+        let Some((path, line)) = self.live_first_line()? else {
+            return Ok(None);
+        };
         match peek_session(&line, "session.start") {
             Some(Ok(session)) => Ok(Some(session)),
             Some(Err(source)) => Err(DirError::BadSession { path, source }),
             None => Err(DirError::NotAJournal { path }),
+        }
+    }
+
+    /// The build stamp of the live journal's `session.start`, decoded from its first complete line alone, so a
+    /// journal whose later events this build cannot decode still has one; `None` without a live journal.
+    pub fn live_build(&self) -> Result<Option<Build>, DirError> {
+        let Some((path, line)) = self.live_first_line()? else {
+            return Ok(None);
+        };
+        if peek_session(&line, "session.start").is_none() {
+            return Err(DirError::NotAJournal { path });
+        }
+        match serde_json::from_slice::<Object<BuildLine>>(&line) {
+            Ok(Object(start)) => Ok(Some(start.data.build)),
+            Err(source) => Err(DirError::BadBuild { path, source }),
         }
     }
 
