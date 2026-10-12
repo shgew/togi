@@ -17,6 +17,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use jiff::Timestamp;
+use jiff::tz::TimeZone;
 use tempfile::TempDir;
 use togi_cli::Exit;
 use togi_cli::system::System;
@@ -217,6 +218,10 @@ impl System for Host {
 
     fn monotonic(&self) -> Duration {
         Duration::from_secs(1)
+    }
+
+    fn zone(&self) -> TimeZone {
+        TimeZone::UTC
     }
 
     fn diagnose(

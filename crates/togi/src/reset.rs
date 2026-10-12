@@ -9,7 +9,8 @@ use clap::Args as ClapArgs;
 use togi_config::{Config, InitialOverride};
 use togi_hostlock::{Error as HostLockError, HostLock};
 use togi_journal::{
-    ArchiveKind, Event, LockError, Marker, Operation, SessionId, StateDir, Verdict,
+    ArchiveKind, Build, Event, Journal, LockError, Marker, OpenError, Operation, Recording,
+    SessionId, StateDir, Verdict,
 };
 use togi_machine::{BootId, CoreId};
 use togi_render::escape_text;
@@ -18,7 +19,9 @@ use togi_session::{CommandError, reset_all, reset_core};
 use crate::args::ConfigArgs;
 use crate::cli::{Context, examples};
 use crate::exit::Exit;
-use crate::report::{chain, current_build, emit, exit_with, fail, refusal_message};
+use crate::report::{
+    chain, current_build, emit, exit_with, fail, log_events, refusal_message, unknown_kind_message,
+};
 use crate::system::SystemClock;
 
 static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
@@ -123,15 +126,15 @@ fn pending_marker(state_dir: &Path) -> bool {
 fn reset_one(ctx: &mut Context<'_>, dir: StateDir, boot: BootId, core: u8) -> Exit {
     let system = ctx.system;
     let build = current_build();
-    match dir.live_build() {
-        Ok(Some(recorded)) => {
-            if let Verdict::Refuse(refusal) = build.verdict(&recorded, Operation::Append) {
-                let message = refusal_message(&refusal, &recorded, &build);
-                return exit_with(ctx, COMMAND, message, Exit::Incompatible);
-            }
-        }
-        Ok(None) => {}
+    let recorded = match dir.live_build() {
+        Ok(recorded) => recorded,
         Err(error) => return fail(ctx, COMMAND, chain(&error)),
+    };
+    if let Some(recorded) = &recorded
+        && let Verdict::Refuse(refusal) = build.verdict(recorded, Operation::Append)
+    {
+        let message = refusal_message(&refusal, recorded, &build);
+        return exit_with(ctx, COMMAND, message, Exit::Incompatible);
     }
     let Ok(id) = CoreId::try_from(core) else {
         return exit_with(
@@ -143,9 +146,13 @@ fn reset_one(ctx: &mut Context<'_>, dir: StateDir, boot: BootId, core: u8) -> Ex
     };
     let mut journal = match dir.open_at(boot, system.now()) {
         Ok(journal) => journal,
-        Err(error) => return fail(ctx, COMMAND, chain(&error)),
+        Err(error) => return open_failure(ctx, &error, recorded.as_ref(), &build),
     };
-    if let Err(error) = reset_core(&build, &mut journal, &mut SystemClock(system), id) {
+    log_torn(ctx, &journal);
+    let opened = journal.events().len();
+    let reset = reset_core(&build, &mut journal, &mut SystemClock(system), id);
+    log_events(ctx, &journal.events()[opened..]);
+    if let Err(error) = reset {
         return command_failure(ctx, &error);
     }
     if let Err(error) = journal.close() {
@@ -155,6 +162,38 @@ fn reset_one(ctx: &mut Context<'_>, dir: StateDir, boot: BootId, core: u8) -> Ex
         "reset of core {core:02} queued; the next togi run restarts its search from the baseline"
     );
     emit(ctx, queued).map_or_else(|exit| exit, |()| Exit::Ok)
+}
+
+fn open_failure(
+    ctx: &mut Context<'_>,
+    error: &OpenError,
+    recorded: Option<&Build>,
+    build: &Build,
+) -> Exit {
+    if let (OpenError::Read(file), Some(recorded)) = (error, recorded)
+        && let Some(message) = unknown_kind_message(file, recorded, build)
+    {
+        return exit_with(ctx, COMMAND, message, Exit::Incompatible);
+    }
+    fail(ctx, COMMAND, chain(error))
+}
+
+fn log_archived(ctx: &mut Context<'_>, session: &SessionId, opened: usize) {
+    let path = ctx
+        .state_dir
+        .join("archive")
+        .join(format!("{session}.jsonl"));
+    if let Ok(recording) = Recording::read(&path)
+        && let Some(recorded) = recording.events().get(opened..)
+    {
+        log_events(ctx, recorded);
+    }
+}
+
+fn log_torn(ctx: &mut Context<'_>, journal: &Journal) {
+    if let Some(event) = journal.repaired().and_then(|seq| journal.event(seq)) {
+        log_events(ctx, std::slice::from_ref(event));
+    }
 }
 
 fn command_failure(ctx: &mut Context<'_>, error: &CommandError) -> Exit {
@@ -206,11 +245,16 @@ fn reset_everything(ctx: &mut Context<'_>, args: &Args, mut dir: StateDir, boot:
         Verdict::Use => {
             let journal = match dir.open_at(boot, system.now()) {
                 Ok(journal) => journal,
-                Err(error) => return fail(ctx, COMMAND, chain(&error)),
+                Err(error) => return open_failure(ctx, &error, Some(&recorded), &build),
             };
+            log_torn(ctx, &journal);
+            let opened = journal.events().len();
             let warnings = solo_limit_warnings(journal.events(), &args.config);
             match reset_all(&build, journal, &mut SystemClock(system)) {
-                Ok((session, _)) => (session, warnings),
+                Ok((session, _)) => {
+                    log_archived(ctx, &session, opened);
+                    (session, warnings)
+                }
                 Err(error) => return command_failure(ctx, &error),
             }
         }

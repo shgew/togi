@@ -5,8 +5,8 @@ use std::error::Error;
 use std::fmt::{Display, Write as _};
 
 use togi_defect::{KNOWN_DEFECTS, fixed_stamp};
-use togi_journal::{Build, Refusal, SCHEMA};
-use togi_render::escape_text;
+use togi_journal::{Build, Event, FileError, ReadError, Refusal, SCHEMA};
+use togi_render::{Renderer, escape_text};
 use togi_tuner::{EVIDENCE_EPOCH, RULESET};
 
 use crate::cli::Context;
@@ -80,4 +80,27 @@ pub fn exit_with(ctx: &mut Context<'_>, command: &str, message: impl Display, ex
 /// [`exit_with`] for [`Exit::Error`].
 pub fn fail(ctx: &mut Context<'_>, command: &str, message: impl Display) -> Exit {
     exit_with(ctx, command, message, Exit::Error)
+}
+
+/// What to tell of a journal that holds an event kind this build does not know; `None` when `error`
+/// is anything else.
+#[must_use]
+pub fn unknown_kind_message(
+    error: &FileError,
+    recorded: &Build,
+    current: &Build,
+) -> Option<String> {
+    matches!(error.source, ReadError::UnknownKind { .. }).then(|| {
+        format!(
+            "{error}; this journal was written by {recorded} and this build is {current}. Install the build that wrote it to continue this session, or run togi reset --all to archive it and start over."
+        )
+    })
+}
+
+/// Writes the lines of `events` to stderr, in local time and without colour.
+pub fn log_events(ctx: &mut Context<'_>, events: &[Event]) {
+    let zone = ctx.system.zone();
+    for event in events {
+        let _ = Renderer::default().write_event(&mut *ctx.err, event, &zone);
+    }
 }

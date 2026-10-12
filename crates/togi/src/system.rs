@@ -16,6 +16,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use jiff::Timestamp;
+use jiff::tz::TimeZone;
 use rustix::time::{ClockId, clock_gettime};
 use togi_config::Config;
 use togi_hardware::{Diagnosis, Grub, RebootError};
@@ -43,6 +44,9 @@ pub trait System {
 
     /// Time since boot.
     fn monotonic(&self) -> Duration;
+
+    /// The zone event lines are shown in.
+    fn zone(&self) -> TimeZone;
 
     /// The checks `run` makes at startup, without writing anything.
     fn diagnose(
@@ -104,6 +108,10 @@ impl System for Real {
             u64::try_from(now.tv_sec).unwrap_or_default(),
             u32::try_from(now.tv_nsec).unwrap_or_default(),
         )
+    }
+
+    fn zone(&self) -> TimeZone {
+        TimeZone::system()
     }
 
     fn diagnose(

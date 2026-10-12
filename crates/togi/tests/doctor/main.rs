@@ -447,3 +447,29 @@ fn a_closed_stdout_is_an_error() {
     assert_eq!(ran.exit, Exit::Error, "{}", ran.err);
     assert!(ran.err.contains("write output"), "{}", ran.err);
 }
+
+#[test]
+fn an_unknown_event_kind_in_a_current_journal_exits_16_naming_it() {
+    let session = Session::new();
+    let mut text = session.text();
+    text = format!(
+        "{text}{{\"seq\":{},\"time\":\"2026-01-01T00:00:00Z\",\"boot\":\"b1a8cebe-21d1-14db-3741-5b5df946de05\",\"kind\":\"future.fact\",\"msg\":\"x\",\"data\":{{}}}}\n",
+        session.kinds().len() + 1
+    );
+    fs::write(session.journal(), text).unwrap();
+    let host = host_with(ready());
+    let ran = doctor(&host, session.path(), &[]);
+    assert_eq!(ran.exit, Exit::Incompatible, "{}", ran.err);
+    assert_eq!(ran.out, "");
+    assert!(
+        ran.err.contains("unknown event kind \"future.fact\""),
+        "{}",
+        ran.err
+    );
+    assert!(
+        ran.err.contains("this journal was written by togi"),
+        "{}",
+        ran.err
+    );
+    assert_eq!(host.calls.get(), 0);
+}

@@ -13,7 +13,9 @@ use togi_render::{Renderer, Style, escape_text};
 use crate::args::ConfigArgs;
 use crate::cli::{Context, examples};
 use crate::exit::Exit;
-use crate::report::{chain, current_build, emit, exit_with, fail, refusal_message};
+use crate::report::{
+    chain, current_build, emit, exit_with, fail, refusal_message, unknown_kind_message,
+};
 
 static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
     examples(&[
@@ -139,7 +141,12 @@ fn recorded_context(
         Verdict::Use => {}
     }
     let path = ctx.state_dir.join("events.jsonl");
-    let recording = Recording::read(&path).map_err(|error| fail(ctx, COMMAND, chain(&error)))?;
+    let recording = Recording::read(&path).map_err(|error| {
+        match unknown_kind_message(&error, &recorded, &current) {
+            Some(message) => exit_with(ctx, COMMAND, message, Exit::Incompatible),
+            None => fail(ctx, COMMAND, chain(&error)),
+        }
+    })?;
     Ok(recording
         .events()
         .iter()

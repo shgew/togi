@@ -43,7 +43,7 @@ fn reset_core_queues_one_command_in_the_current_boot() {
         ran.out,
         "reset of core 03 queued; the next togi run restarts its search from the baseline\n"
     );
-    assert_eq!(ran.err, "");
+    assert_eq!(ran.err, "00:00:00 command.reset  reset core 03\n");
     let after = session.kinds();
     assert_eq!(after[..before.len()], before[..]);
     assert_eq!(&after[before.len()..], ["command.reset"]);
@@ -120,7 +120,18 @@ fn reset_all_archives_the_session_and_marks_the_boundary() {
             "session {SESSION} archived to archive/{SESSION}.jsonl; the next togi run starts a new session\n"
         )
     );
-    assert_eq!(ran.err, "");
+    let logged: Vec<&str> = ran.err.lines().collect();
+    assert_eq!(logged.len(), 2, "{}", ran.err);
+    assert!(
+        logged[0].starts_with("00:00:00 command.reset "),
+        "{}",
+        ran.err
+    );
+    assert!(
+        logged[1].starts_with("00:00:00 session.archived "),
+        "{}",
+        ran.err
+    );
     assert!(!session.journal().exists());
     let archived =
         fs::read_to_string(archive(session.path(), &format!("{SESSION}.jsonl"))).unwrap();
@@ -391,7 +402,7 @@ fn an_invalid_or_missing_config_never_stops_the_archive() {
         assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
         assert!(
             ran.err
-                .starts_with("warning: cannot check candidate solo limits: "),
+                .contains("warning: cannot check candidate solo limits: "),
             "{}",
             ran.err
         );
@@ -504,7 +515,7 @@ fn a_journal_that_already_records_its_archive_is_only_moved() {
 }
 
 #[test]
-fn a_current_journal_with_an_unknown_kind_is_refused_and_left_alone() {
+fn a_current_journal_with_an_unknown_kind_exits_16_and_is_left_alone() {
     for args in [&["--core", "0"][..], &["--all"]] {
         let host = Host::new();
         let session = Session::new();
@@ -515,8 +526,17 @@ fn a_current_journal_with_an_unknown_kind_is_refused_and_left_alone() {
         );
         fs::write(session.journal(), &text).unwrap();
         let ran = reset(&host, session.path(), args);
-        assert_eq!(ran.exit, Exit::Error, "{args:?}: {}", ran.err);
-        assert!(ran.err.contains("future.fact"), "{args:?}: {}", ran.err);
+        assert_eq!(ran.exit, Exit::Incompatible, "{args:?}: {}", ran.err);
+        assert!(
+            ran.err.contains("unknown event kind \"future.fact\""),
+            "{args:?}: {}",
+            ran.err
+        );
+        assert!(
+            ran.err.contains("this journal was written by togi"),
+            "{args:?}: {}",
+            ran.err
+        );
         assert_eq!(session.text(), text, "{args:?}");
         assert!(!session.path().join("archive").exists(), "{args:?}");
     }
@@ -560,7 +580,7 @@ fn a_missing_default_config_is_silent() {
     let session = Session::new();
     let ran = reset(&host, session.path(), &["--all"]);
     assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
-    assert_eq!(ran.err, "");
+    assert!(!ran.err.contains("warning"), "{}", ran.err);
 }
 
 #[test]
@@ -619,7 +639,12 @@ fn start_offsets_are_not_solo_limits() {
         &["--all", "--config", path.to_str().unwrap()],
     );
     assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
-    assert_eq!(ran.err.lines().count(), 1, "{}", ran.err);
+    let warnings: Vec<&str> = ran
+        .err
+        .lines()
+        .filter(|line| line.starts_with("warning"))
+        .collect();
+    assert_eq!(warnings.len(), 1, "{}", ran.err);
 }
 
 #[test]
@@ -636,5 +661,28 @@ fn a_core_in_range_but_not_in_the_session_exits_2() {
     assert_eq!(
         fs::read_to_string(state.path().join("events.jsonl")).unwrap(),
         start
+    );
+}
+
+#[test]
+fn a_torn_tail_is_repaired_and_logged_before_the_reset() {
+    let host = Host::new();
+    let session = Session::new();
+    let mut text = session.text();
+    text.push_str("{\"seq\":");
+    fs::write(session.journal(), text).unwrap();
+    let ran = reset(&host, session.path(), &["--core", "1"]);
+    assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
+    let logged: Vec<&str> = ran.err.lines().collect();
+    assert_eq!(logged.len(), 2, "{}", ran.err);
+    assert!(
+        logged[0].starts_with("00:00:00 journal.torn "),
+        "{}",
+        ran.err
+    );
+    assert!(
+        logged[1].starts_with("00:00:00 command.reset "),
+        "{}",
+        ran.err
     );
 }
