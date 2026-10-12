@@ -22,6 +22,7 @@ regex = "1"
 rustix = { version = "1", features = ["fs", "process"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip", "raw_value"] }
+sha2 = "0.11"
 tempfile = "3"
 test-case = "3"
 thiserror = "2"
