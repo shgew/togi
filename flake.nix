@@ -251,7 +251,10 @@
             });
             rust-nextest = craneLib.cargoNextest (rustCheck {
               cargoNextestExtraArgs = "--profile ci";
-              nativeCheckInputs = [ pkgs.gitMinimal ];
+              nativeCheckInputs = [
+                pkgs.gitMinimal
+                pkgs.nushell
+              ];
             });
             rust-doc = craneLib.cargoDocTest (rustCheck { });
             rust-fmt = craneLib.cargoFmt rustArgs;

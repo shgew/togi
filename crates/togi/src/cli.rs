@@ -95,43 +95,66 @@ where
 /// The commands that take `--config`, as the usage error names them.
 const CONFIG_SCOPE: &str = "--config applies only to doctor, run and reset";
 
+/// The flags written before the command name, as [`split_leading`] finds them.
+struct Leading {
+    /// The `--state-dir` flags with their values.
+    state_dir: Vec<OsString>,
+    /// The `--config` flags with their values.
+    config: Vec<OsString>,
+    /// The index of the command name, or the length when no command follows.
+    command: usize,
+}
+
+/// Reads the leading flags. Only `--config` and `--state-dir` may precede the command name, each
+/// with a value; `None` when an argument of any other shape comes first. The value of either flag
+/// is never taken for the command name.
+fn split_leading(args: &[OsString]) -> Option<Leading> {
+    let mut leading = Leading {
+        state_dir: Vec::new(),
+        config: Vec::new(),
+        command: 1,
+    };
+    while let Some(token) = args.get(leading.command).and_then(|token| token.to_str()) {
+        let index = leading.command;
+        let takes_value = |name: &str| token == name && index + 1 < args.len();
+        if takes_value("--config") {
+            leading.config.extend_from_slice(&args[index..index + 2]);
+            leading.command += 2;
+        } else if token.starts_with("--config=") {
+            leading.config.push(args[index].clone());
+            leading.command += 1;
+        } else if takes_value("--state-dir") {
+            leading.state_dir.extend_from_slice(&args[index..index + 2]);
+            leading.command += 2;
+        } else if token.starts_with("--state-dir=") {
+            leading.state_dir.push(args[index].clone());
+            leading.command += 1;
+        } else if token.starts_with('-') {
+            return None;
+        } else {
+            break;
+        }
+    }
+    Some(leading)
+}
+
 /// Moves a `--config <path>` or `--config=<path>` written before the command name to just after
 /// it, so that it is the command's own flag wherever it was written. Only the flags `--config`
 /// and `--state-dir` may precede the command name; arguments of any other shape are left as
 /// they are, and so are arguments without a command name.
 #[must_use]
 pub fn config_after_command(args: Vec<OsString>) -> Vec<OsString> {
-    let mut leading = Vec::new();
-    let mut moved = Vec::new();
-    let mut index = 1;
-    while let Some(token) = args.get(index).and_then(|token| token.to_str()) {
-        let takes_value = |name: &str| token == name && index + 1 < args.len();
-        if takes_value("--config") {
-            moved.extend_from_slice(&args[index..index + 2]);
-            index += 2;
-        } else if token.starts_with("--config=") {
-            moved.push(args[index].clone());
-            index += 1;
-        } else if takes_value("--state-dir") {
-            leading.extend_from_slice(&args[index..index + 2]);
-            index += 2;
-        } else if token.starts_with("--state-dir=") {
-            leading.push(args[index].clone());
-            index += 1;
-        } else if token.starts_with('-') {
-            return args;
-        } else {
-            break;
-        }
-    }
-    if moved.is_empty() || index >= args.len() {
+    let Some(leading) = split_leading(&args) else {
+        return args;
+    };
+    if leading.config.is_empty() || leading.command >= args.len() {
         return args;
     }
     let mut normalized = vec![args[0].clone()];
-    normalized.extend(leading);
-    normalized.push(args[index].clone());
-    normalized.extend(moved);
-    normalized.extend_from_slice(&args[index + 1..]);
+    normalized.extend(leading.state_dir);
+    normalized.push(args[leading.command].clone());
+    normalized.extend(leading.config);
+    normalized.extend_from_slice(&args[leading.command + 1..]);
     normalized
 }
 
@@ -148,11 +171,10 @@ fn config_scope_error(error: clap::Error, args: &[OsString]) -> clap::Error {
     }
     let mut command = command();
     command.build();
-    let name = args
-        .iter()
-        .skip(1)
-        .filter_map(|arg| arg.to_str())
-        .find(|arg| command.find_subcommand(arg).is_some());
+    let name = split_leading(args)
+        .and_then(|leading| args.get(leading.command))
+        .and_then(|arg| arg.to_str())
+        .filter(|name| command.find_subcommand(name).is_some());
     match name.and_then(|name| command.find_subcommand_mut(name)) {
         Some(subcommand) => subcommand.error(ErrorKind::UnknownArgument, CONFIG_SCOPE),
         None => command.error(ErrorKind::UnknownArgument, CONFIG_SCOPE),
@@ -170,8 +192,18 @@ fn report(error: &clap::Error, out: &mut dyn Write, err: &mut dyn Write) -> Exit
             }
         };
     }
-    if error.kind() == ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand {
-        let _ = err.write_all(BANNER.as_bytes());
+    match error.kind() {
+        ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand => {
+            let _ = err.write_all(BANNER.as_bytes());
+        }
+        // Flags without a command, such as `--state-dir /x`: the same wordmark and help as no
+        // arguments at all, in place of clap's error text.
+        ErrorKind::MissingSubcommand => {
+            let _ = err.write_all(BANNER.as_bytes());
+            let _ = err.write_all(command().render_help().to_string().as_bytes());
+            return Exit::Usage;
+        }
+        _ => {}
     }
     let _ = err.write_all(text.as_bytes());
     Exit::Usage
