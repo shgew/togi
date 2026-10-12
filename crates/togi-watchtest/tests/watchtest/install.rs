@@ -1,5 +1,5 @@
 use togi_journal::{Payload, Recording};
-use togi_watchtest::{Error, Scenario, install};
+use togi_watchtest::{Error, InstallError, Scenario, install};
 
 use crate::support::lines;
 
@@ -52,4 +52,18 @@ fn installing_where_no_state_directory_can_be_made_is_an_error() {
     std::fs::write(&file, b"").expect("a file");
     let error = install(&file, Scenario::Confirm).expect_err("a file is not a directory");
     assert!(matches!(error, Error::Install { dir, .. } if dir == file));
+}
+
+#[test]
+fn installing_over_a_journal_is_refused_and_leaves_it_as_it_was() {
+    let dir = tempfile::tempdir().expect("a temporary directory");
+    install(dir.path(), Scenario::Confirm).expect("the scenario installs");
+    let journal = dir.path().join("events.jsonl");
+    let before = std::fs::read(&journal).expect("the journal reads");
+    let error = install(dir.path(), Scenario::Confirm).expect_err("a journal is already there");
+    assert!(
+        matches!(&error, Error::Install { dir: named, source: InstallError::NotEmpty } if named == dir.path()),
+        "{error}"
+    );
+    assert_eq!(std::fs::read(&journal).expect("the journal reads"), before);
 }

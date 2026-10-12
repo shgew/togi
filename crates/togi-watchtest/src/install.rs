@@ -7,7 +7,8 @@ use crate::error::InstallError;
 use crate::{Error, Scenario};
 
 /// Writes the scenario's journal as `events.jsonl` in `dir` through the journal's own writer, one open journal per
-/// boot, and returns the build its session started under.
+/// boot, and returns the build its session started under. A directory that already holds a journal is refused, since
+/// the writer would append the scenario after it.
 pub fn install(dir: &Path, scenario: Scenario) -> Result<Build, Error> {
     let events = scenario.events()?;
     write(dir, &events).map_err(|source| Error::Install {
@@ -30,6 +31,9 @@ fn write(dir: &Path, events: &[Event]) -> Result<Build, InstallError> {
     };
     let build = start.build.clone();
     let mut state = lock(dir)?;
+    if state.path().join("events.jsonl").exists() {
+        return Err(InstallError::NotEmpty);
+    }
     for boot in events.chunk_by(|a, b| a.boot == b.boot) {
         let now = boot[0].time;
         let mut journal = state.open_at(boot[0].boot.clone(), now)?;

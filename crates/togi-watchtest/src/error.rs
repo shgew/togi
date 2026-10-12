@@ -66,6 +66,8 @@ pub enum InstallError {
     Dir(#[from] DirError),
     #[error("an smu.write at #{seq} follows no smu.intent")]
     OrphanWrite { seq: u64 },
+    #[error("the directory already holds a journal")]
+    NotEmpty,
     #[error("the journal does not open with session.start")]
     NoSession,
 }
