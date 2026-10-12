@@ -17,7 +17,7 @@ use togi_machine::{BootId, Machine};
 use togi_render::{OutputFacts, Renderer};
 use togi_tuningboot::Bootloader;
 
-use crate::dashboard::{Stop, Surface};
+use crate::dashboard::{Surface, Watch};
 
 /// The host, as far as the commands that reach hardware depend on it.
 pub trait System {
@@ -116,15 +116,7 @@ impl System for Real {
     }
 
     fn surface(&self) -> Arc<dyn Surface> {
-        Arc::new(Unavailable)
-    }
-}
-
-struct Unavailable;
-
-impl Surface for Unavailable {
-    fn draw(&self, _: &Path, _: u64, _: &Stop) -> Result<(), String> {
-        Err("no dashboard is built in".to_owned())
+        Arc::new(Watch)
     }
 }
 

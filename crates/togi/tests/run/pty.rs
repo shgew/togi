@@ -89,7 +89,11 @@ fn helper() {
     let mut fake = Fake::in_dir(simulator(1000), &dir);
     fake.real_stderr = true;
     fake.interactive = true;
-    fake.surface = std::sync::Arc::new(Scripted(|_: &Stop| Ok(())));
+    if std::env::var(SCENARIO).is_ok_and(|scenario| scenario == "real") {
+        fake.surface = std::sync::Arc::new(togi_cli::dashboard::Watch);
+    } else {
+        fake.surface = std::sync::Arc::new(Scripted(|_: &Stop| Ok(())));
+    }
     let panics = std::env::var(SCENARIO).is_ok_and(|scenario| scenario == "panic");
     fake.wrap = Box::new(move |machine| Machine {
         trials: Box::new(Endless(machine.trials, panics)),
@@ -218,5 +222,79 @@ fn a_session_panic_stops_the_dashboard_and_gives_the_terminal_back_before_the_pa
         String::from_utf8_lossy(&seen).contains("panic: injected panic while the dashboard shows"),
         "{}",
         String::from_utf8_lossy(&seen)
+    );
+}
+
+const HIDE_CURSOR: &[u8] = b"\x1b[?25l";
+const SHOW_CURSOR: &[u8] = b"\x1b[?25h";
+
+fn contains(haystack: &[u8], needle: &[u8]) -> bool {
+    haystack
+        .windows(needle.len())
+        .any(|window| window == needle)
+}
+
+#[test]
+fn ctrl_c_stops_a_run_that_shows_the_real_dashboard_and_the_cursor_comes_back() {
+    let dir = TempDir::new().unwrap();
+    let (master, slave) = open_pty();
+    let mut child = Command::new(std::env::current_exe().unwrap())
+        .args(["pty::helper", "--exact", "--nocapture", "--test-threads=1"])
+        .env(SCENARIO, "real")
+        .env(DIR, dir.path())
+        .env("TERM", "xterm-256color")
+        .env_remove("NO_COLOR")
+        .stdin(Stdio::from(slave.try_clone().unwrap()))
+        .stdout(Stdio::null())
+        .stderr(Stdio::from(slave))
+        .spawn()
+        .unwrap();
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::<u8>::new()));
+    let reader = {
+        let seen = seen.clone();
+        let master = rustix::io::dup(&master).unwrap();
+        std::thread::spawn(move || {
+            let mut chunk = [0_u8; 4096];
+            while let Ok(read) = rustix::io::read(&master, &mut chunk) {
+                if read == 0 {
+                    break;
+                }
+                seen.lock().unwrap().extend_from_slice(&chunk[..read]);
+            }
+        })
+    };
+    wait_until("a trial to run", || {
+        events_of(dir.path())
+            .iter()
+            .any(|event| event.kind() == EventKind::TrialStart)
+    });
+    wait_until("the dashboard to draw", || {
+        contains(&seen.lock().unwrap(), HIDE_CURSOR)
+    });
+
+    kill_process(Pid::from_child(&child), Signal::INT).unwrap();
+    let status = wait_for_exit(&mut child);
+    assert_eq!(status.code(), Some(0));
+    drop(child);
+    reader.join().unwrap();
+
+    let seen = seen.lock().unwrap();
+    let hidden = seen
+        .windows(HIDE_CURSOR.len())
+        .rposition(|window| window == HIDE_CURSOR)
+        .unwrap();
+    assert!(
+        contains(&seen[hidden..], SHOW_CURSOR),
+        "the cursor is shown again after the last time it was hidden"
+    );
+    assert!(matches!(
+        &events_of(dir.path()).last().unwrap().payload,
+        Payload::Shutdown(shutdown) if shutdown.reason == ShutdownReason::Signal
+    ));
+    let restored = tcgetattr(&master).unwrap();
+    assert!(
+        restored
+            .local_modes
+            .contains(LocalModes::ECHO | LocalModes::ICANON)
     );
 }

@@ -57,6 +57,32 @@ pub trait Surface: Send + Sync {
     fn draw(&self, state_dir: &Path, since: u64, stop: &Stop) -> Result<(), String>;
 }
 
+/// The `watch` dashboard of `togi-watch`, drawn on stderr. It takes no keys, and listens only for SIGWINCH:
+/// `run` keeps its own listener for the signals that stop it.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Watch;
+
+impl Surface for Watch {
+    fn draw(&self, state_dir: &Path, since: u64, stop: &Stop) -> Result<(), String> {
+        let ended = togi_watch::terminal::Stop::new();
+        thread::scope(|scope| {
+            scope.spawn(|| {
+                stop.wait();
+                ended.stop();
+            });
+            let drawn = togi_watch::terminal::run_after(
+                state_dir,
+                since,
+                &ended,
+                rustix::stdio::stderr(),
+                None,
+            );
+            stop.stop();
+            drawn.map_err(|error| error.to_string())
+        })
+    }
+}
+
 /// The terminal's input with echo and line buffering off. Dropping it puts the previous settings back.
 struct QuietInput<'a> {
     fd: BorrowedFd<'a>,
