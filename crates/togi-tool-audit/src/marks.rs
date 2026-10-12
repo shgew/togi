@@ -55,6 +55,7 @@ pub(crate) struct Marks {
     hunts: BTreeMap<NonZeroU32, PerCore<TargetOffset>>,
     zero_named: BTreeMap<Seq, CoreId>,
     trials: BTreeMap<TrialId, Loaded>,
+    charged_to_named: BTreeSet<Seq>,
 }
 
 impl Marks {
@@ -85,6 +86,23 @@ impl Marks {
     fn cancel(&mut self, failure: Seq) {
         for points in self.points.values_mut() {
             points.retain(|point| point.failure != Some(failure));
+        }
+    }
+
+    /// A decision citing a failure says which core the failure counts against. Charged to its named core, the
+    /// failure keeps its point there for good; charged only elsewhere (a phase-2 blame, a confirmation revert, an R7
+    /// top-group backoff) or held, it records none on the named core, and the decision's own failure point stands.
+    fn answer(&mut self, failure: Seq, decision: Decision, charged: CoreId) {
+        let named = self
+            .points
+            .get(&charged)
+            .is_some_and(|points| points.iter().any(|point| point.failure == Some(failure)));
+        if decision == Decision::Hold {
+            self.cancel(failure);
+        } else if named {
+            self.charged_to_named.insert(failure);
+        } else if !self.charged_to_named.contains(&failure) {
+            self.cancel(failure);
         }
     }
 
@@ -128,10 +146,8 @@ impl Marks {
                 }
             }
             Payload::TunerDecision(decision) => {
-                if decision.decision == Decision::Hold {
-                    if let Some(&held) = event.cause.first() {
-                        self.cancel(held);
-                    }
+                if let Some(&cited) = event.cause.first() {
+                    self.answer(cited, decision.decision, decision.core);
                 }
                 self.mark(decision.core, decision.failure_point, seq, None);
             }

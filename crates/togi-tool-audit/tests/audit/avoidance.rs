@@ -190,6 +190,43 @@ fn a_held_failure_records_no_point() {
 }
 
 #[test]
+fn a_failure_counts_against_the_core_its_decision_charges() {
+    run(vec![
+        case(
+            "charged to another core, the named core keeps no point",
+            vec![
+                failure(2, 8, -20),
+                cause(decision(3, 0, "backoff", Some(-30)), &[2]),
+                applied(4, [-25, -20]),
+            ],
+            InProgress,
+            &[],
+        ),
+        case(
+            "the charged core's own point stands",
+            vec![
+                failure(2, 8, -20),
+                cause(decision(3, 0, "backoff", Some(-30)), &[2]),
+                applied(4, [-30, 0]),
+            ],
+            InProgress,
+            &[(4, Avoidance)],
+        ),
+        case(
+            "charged to its named core once, the point survives a later charge elsewhere",
+            vec![
+                failure(2, 8, -20),
+                cause(decision(3, 8, "backoff", None), &[2]),
+                cause(decision(4, 0, "backoff", Some(-30)), &[2]),
+                applied(5, [-25, -20]),
+            ],
+            InProgress,
+            &[(5, Avoidance)],
+        ),
+    ]);
+}
+
+#[test]
 fn a_reset_clears_the_marks_once_search_restarts() {
     run(vec![
         case(
