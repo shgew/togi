@@ -35,6 +35,7 @@ impl Reruns {
         self.fifo.is_empty()
     }
 
+    #[cfg(test)]
     pub(crate) fn owed(&self) -> impl Iterator<Item = Obligation> + '_ {
         self.fifo.iter().copied()
     }

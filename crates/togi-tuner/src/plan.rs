@@ -1,5 +1,6 @@
 use std::num::{NonZeroU16, NonZeroU32};
 
+use serde::{Deserialize, Serialize};
 use togi_journal::{
     Activity, CheckingChain, CheckingCycle, CheckingStep, Combination, CoreTransition, DeadEnd,
     DeepeningRound, Failure, HuntEnd, HuntGroup, HuntSkipped, HuntStart, Payload, ProfileChange,
@@ -12,7 +13,8 @@ use crate::{ClassKey, Profile, Secs, Window};
 macro_rules! ordinal {
     ($(#[$meta:meta])* $name:ident) => {
         $(#[$meta])*
-        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+        #[serde(transparent)]
         pub struct $name(NonZeroU32);
 
         impl $name {

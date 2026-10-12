@@ -1,4 +1,4 @@
-use togi_journal::{HuntOutcome, Seq};
+use togi_journal::Seq;
 use togi_machine::{CoreId, CoreSet, PerCore, TargetOffset};
 
 use crate::r7::Applied;
@@ -51,7 +51,9 @@ pub(crate) enum End {
 }
 
 impl End {
-    pub(crate) fn outcome(self) -> HuntOutcome {
+    #[cfg(test)]
+    pub(crate) fn outcome(self) -> togi_journal::HuntOutcome {
+        use togi_journal::HuntOutcome;
         match self {
             Self::Culprit(_) => HuntOutcome::Culprit,
             Self::Combination(_) => HuntOutcome::Combination,

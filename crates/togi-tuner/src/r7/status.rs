@@ -94,6 +94,7 @@ impl SelfSufficiency {
             .map_or(0, |cell| cell.total.at_least(bucket(current)))
     }
 
+    #[cfg(test)]
     pub(crate) fn is_self_sufficient(
         &self,
         backend: BackendId,

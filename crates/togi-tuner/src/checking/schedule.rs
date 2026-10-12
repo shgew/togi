@@ -217,11 +217,7 @@ pub(crate) fn build(
 /// What a cycle of `steps` covers, against the coverage a full cycle needs.
 pub(crate) fn coverage(steps: &[Regime]) -> (bool, Vec<String>) {
     let mut missing = Vec::new();
-    for regime in togi_machine::REGIMES {
-        let want = match regime {
-            Regime::R1 | Regime::R2 | Regime::R7 => 3,
-            Regime::R3 | Regime::R4 | Regime::R5 | Regime::R6 => 1,
-        };
+    for (regime, want) in togi_config::FULL_CYCLE {
         let got = steps.iter().filter(|&&step| step == regime).count();
         if got < want {
             missing.push(format!("{regime}: {} more steps", want - got));

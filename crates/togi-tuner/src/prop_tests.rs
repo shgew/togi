@@ -85,8 +85,8 @@ proptest! {
                 continue;
             }
             let before = j.state.clone();
-            let first = j.state.decide();
-            prop_assert_eq!(&first, &j.state.decide());
+            let first = j.state.next().ok();
+            prop_assert_eq!(&first, &j.state.next().ok());
             prop_assert_eq!(&before, &j.state);
             let mut oracle = |_: &TrialPlan| outcome(byte);
             let action = j.step(&mut oracle);
@@ -107,7 +107,7 @@ fn visits_per_event(passes: usize) -> (u64, u64) {
     j.state.visits();
     j.trial(&plan, Outcome::Pass);
     let folding = j.state.visits();
-    let _ = j.state.decide();
+    let _ = j.state.next().ok();
     (folding, j.state.visits())
 }
 

@@ -238,7 +238,7 @@ fn phase_decision_names_the_limit_a_core_reaches() {
 #[test]
 fn nothing_is_decided_before_every_core_has_a_phase_or_while_one_searches() {
     let j = Journal::new(&[0, 1], &[Start::has_room(-10)]);
-    assert_eq!(j.state.decide(), None);
+    assert_eq!(j.state.next().ok(), None);
     let j = Journal::search_at(&[-10]);
     assert!(j.run().profile_decision().is_none());
     let j = Journal::has_room(&[-10]);
@@ -722,7 +722,7 @@ fn a_profile_change_naming_a_foreign_profile_is_refused() {
 #[test]
 fn kinds_later_groups_own_change_no_tuner_state() {
     let mut j = Journal::search_at(&[-10]);
-    let before = (j.run().core(core(0)), j.state.decide());
+    let before = (j.run().core(core(0)), j.state.next().ok());
     let notice = togi_journal::SessionNotice {
         notice: Notice::NonzeroBaseline,
         cores: CoreSet::default(),
@@ -740,7 +740,7 @@ fn kinds_later_groups_own_change_no_tuner_state() {
     };
     for payload in [Payload::from(notice), ranking.into(), shutdown.into()] {
         j.append(payload, &[]);
-        assert_eq!((j.run().core(core(0)), j.state.decide()), before);
+        assert_eq!((j.run().core(core(0)), j.state.next().ok()), before);
     }
     j.assert_resumes();
 }

@@ -729,14 +729,19 @@ fn repeated_parked_core_probe_returns_to_binary_parts_after_pass() {
                     let mut cited = vec![hunt];
                     cited.extend(&prior);
                     assert_eq!(decision.cause, cited);
-                    let singleton = |j: &Journal| {
+                    let singleton = |j: &Journal, when: &str| {
                         let next = active_plan(j).next_group().unwrap();
                         assert_eq!(next.stage, GroupStage::Repeated);
                         assert_eq!(core_ids(next.cores), [3]);
+                        let parts = j.state.hunt_plan().unwrap().parts;
+                        assert!(
+                            parts.len() == 1 && core_ids(parts[0].failing) == [3],
+                            "{when}, the dashboard plan shows the corroborated core alone: {parts:?}"
+                        );
                     };
-                    singleton(&j);
+                    singleton(&j, "before the singleton is recorded");
                     j.decide(decision.clone());
-                    singleton(&j);
+                    singleton(&j, "while the singleton runs");
                     for _ in 0..5 {
                         let plan = j.next_trial();
                         j.trial(&plan, Outcome::Pass);
@@ -754,6 +759,8 @@ fn repeated_parked_core_probe_returns_to_binary_parts_after_pass() {
                     };
                     j.decide(normal);
                     assert_eq!(active_plan(&j).parts().len(), 2);
+                    let parts = j.state.hunt_plan().unwrap().parts;
+                    assert_eq!(parts.len(), 2, "back to halves: {parts:?}");
                     j.assert_resumes();
                     return;
                 }
@@ -2720,6 +2727,24 @@ fn an_already_broken_combination_ends_without_starting_member_probes() {
     assert_eq!(end.cores, set(&[0, 1]));
     assert!(end.members.is_empty());
     assert!(!end.reason.contains("member probes"));
+    j.assert_resumes();
+}
+
+#[test]
+fn an_already_broken_combination_shows_every_member_done_in_the_plan() {
+    let mut j = before_first_member_probe();
+    let ladder = |j: &Journal| -> Vec<(togi_machine::CoreId, i64, bool)> {
+        j.state
+            .hunt_plan()
+            .unwrap()
+            .probes
+            .iter()
+            .map(|probe| (probe.member, probe.offset.get(), probe.done))
+            .collect()
+    };
+    assert!(ladder(&j).iter().any(|&(_, _, done)| !done));
+    j.profile_change(&[-29, -30, -30, -30]);
+    assert_eq!(ladder(&j), [(core(0), -30, true), (core(1), -30, true)]);
     j.assert_resumes();
 }
 

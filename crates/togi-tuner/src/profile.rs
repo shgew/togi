@@ -1,5 +1,6 @@
 use std::hash::{Hash, Hasher};
 
+use serde::{Deserialize, Serialize};
 use togi_machine::{CoreId, CoreSet, PerCore, TargetOffset};
 
 use crate::{Depth, Topology};
@@ -32,7 +33,8 @@ impl TopologyMismatch {
 
 /// An offset for every core of a topology; `with` leaves the profile unchanged for a core it does
 /// not hold.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct Profile(PerCore<TargetOffset>);
 
 impl Profile {

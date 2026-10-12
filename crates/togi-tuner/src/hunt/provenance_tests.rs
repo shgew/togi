@@ -519,7 +519,7 @@ fn assert_fixed_group(where_: &str, group: &HuntGroup) {
 }
 
 fn assert_fixed_plan(where_: &str, state: &crate::State) {
-    if let Some(Action::Decide(decision)) = state.decide() {
+    if let Ok(Action::Decide(decision)) = state.next() {
         if let DecisionPayload::HuntGroup(group) = &decision.payload {
             assert_fixed_group(where_, group);
         }
@@ -600,7 +600,11 @@ fn hunt_keeps_one_part_order_when_recent_moves_mid_hunt() {
         let mut finished = false;
         for _ in 0..400 {
             let prefix = fresh(&j.events);
-            assert_eq!(prefix.decide(), j.state.decide(), "resume at event prefix");
+            assert_eq!(
+                prefix.next().ok(),
+                j.state.next().ok(),
+                "resume at event prefix"
+            );
             assert_fixed_plan("live", &j.state);
             assert_fixed_plan("replay", &prefix);
             let action = j.step(&mut oracle);

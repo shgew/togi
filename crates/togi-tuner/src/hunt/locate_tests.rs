@@ -129,7 +129,7 @@ impl Journal {
 
     fn loc_poll(&mut self) -> Option<Action> {
         for _ in 0..8 {
-            match self.state.decide()? {
+            match self.state.next().ok()? {
                 Action::ReadRanking => {
                     let ids = self.loc_ids();
                     self.ranking(&ids);
@@ -286,7 +286,7 @@ impl Journal {
     }
 
     fn loc_end_cycle_for_reset(&mut self, id: u8) {
-        let Some(Action::Decide(decision)) = self.state.decide() else {
+        let Some(Action::Decide(decision)) = self.state.next().ok() else {
             return;
         };
         let DecisionPayload::CheckingCycle(cycle) = &decision.payload else {
@@ -330,7 +330,7 @@ impl Journal {
     }
 
     fn loc_assert_resumed_next(&self) {
-        assert_eq!(self.resumed().state.decide(), self.state.decide());
+        assert_eq!(self.resumed().state.next().ok(), self.state.next().ok());
         self.assert_resumes();
     }
 }
@@ -385,6 +385,9 @@ fn located_hunt_retests_the_full_failing_profile_before_ending_loaded() {
     let end = hunt_end(&located.action).clone();
     assert_eq!(end.result, HuntOutcome::Loaded, "{end:?}");
     assert_eq!((end.cores, end.groups), (set(&[0, 1]), 4));
+    let finished = j.state.hunt_plan().expect("the hunt is still active");
+    assert!(finished.parts.is_empty() && finished.probes.is_empty());
+    assert_eq!(finished.cut, 0);
     let ended = j.decide(decision(&located.action).clone());
     let action = j.loc_act();
     let move_ = backoff(&action);
@@ -668,7 +671,7 @@ fn a_located_group_failure_naming_a_loaded_core_is_not_held() {
     j.decide(decision(&action).clone());
     assert!(
         !matches!(
-            j.state.decide(),
+            j.state.next().ok(),
             Some(Action::Decide(DecisionAction {
                 payload: DecisionPayload::TunerDecision(_),
                 ..
@@ -1225,7 +1228,7 @@ fn reset_after_hunt_end_drops_commitment() {
     assert_eq!((phase.core, phase.to), (core(0), CorePhase::Search));
     j.decide(decision(&action).clone());
     assert!(j.run().hunts.active.is_none());
-    if let Some(Action::Decide(next)) = j.state.decide() {
+    if let Ok(Action::Decide(next)) = j.state.next() {
         assert!(
             !matches!(&next.payload, DecisionPayload::TunerDecision(td) if td.activity == Activity::Hunt),
             "the reset core received a hunt commitment: {next:?}"
@@ -1250,10 +1253,10 @@ fn hunt_group_retry_belongs_to_its_group() {
     let again = j.next_trial();
     assert!(again.retry, "{again:?}");
     assert_eq!(again.context, first.context);
-    assert_eq!(fresh(&j.events).decide(), Some(Action::RunTrial(again)));
+    assert_eq!(fresh(&j.events).next().ok(), Some(Action::RunTrial(again)));
     j.reset(0);
     for _ in 0..10 {
-        match j.state.decide() {
+        match j.state.next().ok() {
             Some(Action::RunTrial(plan)) => {
                 assert!(!plan.retry, "a reset left the hunt retry: {plan:?}");
                 break;
@@ -1375,7 +1378,7 @@ fn hunt_retry_stays_with_its_group() {
     );
     assert_eq!(values(plan.profile), p2);
     assert_eq!(plan.cause, [second_seq]);
-    assert_eq!(fresh(&j.events).decide(), Some(want));
+    assert_eq!(fresh(&j.events).next().ok(), Some(want));
     j.assert_resumes();
 }
 
@@ -1672,6 +1675,20 @@ fn carried_evidence_before_the_hunt_establishes_a_member_probe() {
         assert!(view.carried, "passes={passes}: {view:?}");
         if passes {
             assert_eq!(view.passed, u32::try_from(needed).unwrap());
+        }
+        let plan = j.state.hunt_plan().expect("the hunt is still active");
+        let ladder = plan
+            .probes
+            .iter()
+            .find(|probe| probe.member == first.core)
+            .expect("the probed member is on the plan");
+        if passes {
+            assert_eq!(ladder.passed_at, [first.offset], "{ladder:?}");
+            assert_eq!(ladder.carried, [first.offset], "{ladder:?}");
+        } else {
+            assert!(ladder.passed_at.is_empty(), "{ladder:?}");
+            assert!(ladder.carried.is_empty(), "{ladder:?}");
+            assert!(ladder.failed_at.contains(&first.offset), "{ladder:?}");
         }
         let next = j.next();
         let following = hunt_group(&next);
