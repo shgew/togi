@@ -1041,6 +1041,13 @@ name = "togi-version"
 version = "0.0.0"
 
 [[package]]
+name = "togi-watch"
+version = "0.0.0"
+dependencies = [
+ "jiff",
+]
+
+[[package]]
 name = "togi-ycruncher"
 version = "0.0.0"
 dependencies = [
