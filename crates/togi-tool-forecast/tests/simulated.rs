@@ -118,10 +118,35 @@ fn a_run_that_goes_on_past_its_conclusion_scores_as_the_cycles_one_run_with_the_
     assert_eq!(want.status, Status::Concluded);
     assert_eq!(got, want);
     assert!(want.hours > 0.0);
-    assert!(want.profile.iter().all(|(_, offset)| offset.0 <= 0));
     assert_eq!(
         want.depth,
         want.profile.iter().map(|(_, o)| o.0).sum::<i64>()
+    );
+    let terminal = stopped
+        .events()
+        .iter()
+        .position(|event| {
+            matches!(&event.payload, Payload::Shutdown(s) if s.reason == ShutdownReason::Cycles)
+        })
+        .unwrap();
+    let recorded: Vec<_> = stopped.events()[..terminal]
+        .iter()
+        .rev()
+        .find_map(|event| match &event.payload {
+            Payload::ProfileChange(change) => Some(change.to),
+            _ => None,
+        })
+        .unwrap()
+        .iter()
+        .map(|(core, offset)| (core, offset.observed()))
+        .collect();
+    let projected: Vec<_> = want.profile.iter().collect();
+    assert_eq!(projected, recorded);
+    let configured: Vec<_> = want.profile.iter().map(|_| -10).collect();
+    assert_ne!(
+        want.profile.iter().map(|(_, o)| o.0).collect::<Vec<_>>(),
+        configured,
+        "the checking profile goes past the start offsets, which a baseline would not"
     );
 }
 

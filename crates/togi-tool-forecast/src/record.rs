@@ -2,7 +2,8 @@ use std::fs;
 use std::io::Write;
 use std::path::Path;
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
+use togi_machine::object_only;
 use togi_tuner::{EVIDENCE_EPOCH, RULESET};
 
 use crate::error::Error;
@@ -10,41 +11,50 @@ use crate::outcome::Outcome;
 use crate::session::Anchor;
 use crate::summary::{Summary, summarize};
 
-/// A machine file or facts extract the ensemble read, with its content hash.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct File {
-    /// Relative to the suite.
-    pub path: String,
-    /// SHA-256 in lower-case hex.
-    pub sha256: String,
+object_only! {
+    /// A machine file or facts extract the ensemble read, with its content hash.
+    #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct File {
+        /// Relative to the suite.
+        pub path: String,
+        /// SHA-256 in lower-case hex.
+        pub sha256: String,
+    }
 }
 
-/// One simulated run of the ensemble.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Run {
-    pub machine: String,
-    pub seed: u64,
-    pub split: String,
-    pub outcome: Outcome,
+object_only! {
+    /// One simulated run of the ensemble.
+    #[derive(Clone, Debug, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct Run {
+        pub machine: String,
+        pub seed: u64,
+        pub split: String,
+        pub outcome: Outcome,
+    }
 }
 
-/// A committed forecast: the anchor it starts after, the build it was made by, the ensemble and its summary.
-/// It holds the anchor's identity and simulated outcomes only, no journal content, and is the same for the same
-/// inputs: no wall times and no local paths.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Record {
-    pub anchor: Anchor,
-    /// The short revision of the tree the forecast was made from.
-    pub commit: String,
-    /// Whether that tree had uncommitted changes.
-    pub dirty: bool,
-    /// The tuner ruleset the simulated runs followed.
-    pub ruleset: u32,
-    /// The evidence epoch the simulated runs recorded under.
-    pub evidence: u32,
-    pub files: Vec<File>,
-    pub runs: Vec<Run>,
-    pub summary: Summary,
+object_only! {
+    /// A committed forecast: the anchor it starts after, the build it was made by, the ensemble and its summary.
+    /// It holds the anchor's identity and simulated outcomes only, no journal content, and is the same for the same
+    /// inputs: no wall times and no local paths.
+    #[derive(Clone, Debug, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct Record {
+        pub anchor: Anchor,
+        /// The short revision of the tree the forecast was made from.
+        pub commit: String,
+        /// Whether that tree had uncommitted changes.
+        pub dirty: bool,
+        /// The tuner ruleset the simulated runs followed.
+        pub ruleset: u32,
+        /// The evidence epoch the simulated runs recorded under.
+        pub evidence: u32,
+        pub files: Vec<File>,
+        pub runs: Vec<Run>,
+        pub summary: Summary,
+    }
 }
 
 impl Record {

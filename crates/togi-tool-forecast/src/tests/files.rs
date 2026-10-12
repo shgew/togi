@@ -1,10 +1,12 @@
+use std::fmt::Write;
 use std::fs;
 use std::path::Path;
 
 use sha2::{Digest, Sha256};
 use togi_journal::{Event, Seq};
+use togi_tuner::RULESET;
 
-use super::support::{A, B, build, crash, events, id, start, start_with};
+use super::support::{A, B, baseline, build, crash, events, id, start, start_with};
 use crate::{Anchor, Error, Session, read_dir};
 
 const C: &str = "20261007T020000Z";
@@ -90,7 +92,9 @@ fn a_directory_without_journals_holds_no_session() {
 fn an_archive_that_cannot_be_listed_is_an_error() {
     let dir = tempfile::tempdir().unwrap();
     fs::write(dir.path().join("archive"), b"a file, not a directory").unwrap();
-    assert!(matches!(read_dir(dir.path(), None), Err(Error::Io { .. })));
+    let error = read_dir(dir.path(), None).unwrap_err();
+    assert!(matches!(error, Error::ListArchive { .. }), "{error}");
+    assert!(error.to_string().starts_with("list archive "), "{error}");
 }
 
 #[test]
@@ -145,7 +149,9 @@ fn the_anchor_is_the_last_complete_event_of_the_live_journal() {
 #[test]
 fn the_anchor_of_an_empty_or_missing_live_journal_is_an_error() {
     let dir = tempfile::tempdir().unwrap();
-    assert!(matches!(Anchor::of(dir.path()), Err(Error::Io { .. })));
+    let error = Anchor::of(dir.path()).unwrap_err();
+    assert!(matches!(error, Error::ReadJournal { .. }), "{error}");
+    assert!(error.to_string().starts_with("read journal "), "{error}");
     fs::write(dir.path().join("events.jsonl"), b"").unwrap();
     let error = Anchor::of(dir.path()).unwrap_err();
     assert!(matches!(error, Error::NoEvents { .. }), "{error}");
@@ -180,8 +186,13 @@ fn the_hash_covers_the_lines_as_the_file_holds_them() {
     );
     fs::write(dir.path().join("events.jsonl"), &reordered).unwrap();
     let anchor = Anchor::of(dir.path()).unwrap();
-    let digest = Sha256::digest(&reordered);
-    assert_eq!(anchor.sha256, format!("{digest:x}"));
+    let digest = Sha256::digest(&reordered)
+        .iter()
+        .fold(String::new(), |mut out, byte| {
+            let _ = write!(out, "{byte:02x}");
+            out
+        });
+    assert_eq!(anchor.sha256, digest);
     let canonical = Session::from_events(all)
         .unwrap()
         .anchor_at(Seq::new(3).unwrap())
@@ -232,4 +243,26 @@ fn an_event_that_cannot_be_encoded_is_an_error() {
         "{error}"
     );
     assert!(error.to_string().starts_with("encode event 2: "), "{error}");
+}
+
+#[test]
+fn a_journal_of_another_ruleset_reads_as_one_session_that_cannot_be_replayed() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut stale = build("abc1234");
+    stale.ruleset = RULESET - 1;
+    let payloads = [start_with(A, stale), baseline([-10, -20])];
+    fs::write(dir.path().join("events.jsonl"), lines(&events(1, payloads))).unwrap();
+    let sessions = read_dir(dir.path(), None).unwrap();
+    assert_eq!(sessions.len(), 1);
+    assert!(!sessions[0].replayable());
+    let anchor = Anchor::of(dir.path()).unwrap();
+    let error = crate::after(&sessions, &anchor).unwrap_err();
+    assert!(matches!(error, Error::NotReplayable { .. }), "{error}");
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "session {A} cannot be replayed: the journal's ruleset is {}; this build's is {RULESET}",
+            RULESET - 1
+        )
+    );
 }

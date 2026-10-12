@@ -1,8 +1,9 @@
 use togi_journal::{Build, Event, Seq};
+use togi_machine::ObservedOffset;
 use togi_tuner::{EVIDENCE_EPOCH, RULESET};
 
 use super::support::{
-    A, B, build, config_loaded, config_loaded_by, crash, events, extend, run, session,
+    A, B, build, config_loaded, config_loaded_by, crash, events, extend, offsets, run, session,
     shutdown_cycles, start, start_with,
 };
 use crate::{Error, Flag, Placement, Record, Score, Session, Status};
@@ -217,6 +218,74 @@ fn a_run_over_other_cores_than_the_forecast_is_refused() {
 }
 
 #[test]
+fn a_run_over_other_cores_than_the_forecast_is_refused_though_their_count_matches() {
+    let base = before("abc1234");
+    let mut other = run(Status::Concluded, 0.0, 0, 0, &[]);
+    other.outcome.profile = offsets(&[(0, ObservedOffset(-10)), (2, ObservedOffset(-20))]);
+    other.outcome.depth = -30;
+    let record = anchored(&base, "abc1234", vec![other]);
+    let error = record
+        .score(&[extend(&base, 3, [shutdown_cycles()])])
+        .unwrap_err();
+    assert_eq!(error.to_string(), "run has cores [0, 1], forecast [0, 2]");
+    assert!(matches!(error, Error::ScoreCores { .. }));
+}
+
+fn placed(score: &Score<'_>, metric: &str) -> (Placement, bool, Option<f64>) {
+    let row = score
+        .rows
+        .iter()
+        .find(|row| row.metric.kind.to_string() == metric)
+        .unwrap();
+    (row.placement, row.bound, row.percentile)
+}
+
+fn above_the_run() -> Vec<crate::Run> {
+    vec![
+        run(Status::Concluded, 5.0, 1, 1, &[-5, -20]),
+        run(Status::Concluded, 6.0, 2, 1, &[-6, -20]),
+        run(Status::Concluded, 7.0, 3, 1, &[-7, -20]),
+    ]
+}
+
+#[test]
+fn a_concluded_value_below_the_10th_percentile_is_placed_below() {
+    let base = before("abc1234");
+    let record = anchored(&base, "abc1234", above_the_run());
+    let score = record
+        .score(&[extend(&base, 3, [shutdown_cycles()])])
+        .unwrap();
+    for metric in ["core 00", "depth", "hours", "crashes", "hunts"] {
+        assert_eq!(
+            placed(&score, metric),
+            (Placement::Below, false, Some(0.0)),
+            "{metric}"
+        );
+    }
+    assert_eq!(placed(&score, "core 01").0, Placement::Inside);
+}
+
+#[test]
+fn a_censored_bound_below_the_10th_percentile_is_open_not_below() {
+    let base = before("abc1234");
+    let record = anchored(&base, "abc1234", above_the_run());
+    let score = record
+        .score(&[extend(&base, 3, [config_loaded("abc1234")])])
+        .unwrap();
+    for metric in ["hours", "crashes", "hunts"] {
+        assert_eq!(
+            placed(&score, metric),
+            (Placement::Open, true, Some(0.0)),
+            "{metric}"
+        );
+    }
+    assert_eq!(
+        placed(&score, "core 00"),
+        (Placement::Below, false, Some(0.0))
+    );
+}
+
+#[test]
 fn a_dirty_forecast_and_another_ruleset_or_evidence_epoch_are_flagged() {
     let base = before("abc1234");
     let mut record = anchored(
@@ -282,9 +351,13 @@ fn a_build_without_a_revision_or_a_dirty_one_is_never_the_forecasts_commit() {
     assert_eq!(
         score.flags,
         [Flag::Revision {
-            rev: String::new(),
+            rev: None,
             commit: "abc1234".to_owned()
         }]
+    );
+    assert_eq!(
+        score.flags[0].to_string(),
+        "a build without a revision ran after the anchor; the forecast is at commit abc1234"
     );
     let abbreviated = anchored(
         &base,
@@ -308,7 +381,7 @@ fn builds_cover_the_scored_span() {
     let in_effect = build("0123456");
     let forecast = build("abc1234");
     let flag = Flag::Revision {
-        rev: "0123456".to_owned(),
+        rev: Some("0123456".to_owned()),
         commit: "abc1234".to_owned(),
     };
     let cases: Vec<Case> = vec![
@@ -444,7 +517,9 @@ fn a_score_refuses_sessions_with_another_ruleset_at_its_terminal_session() {
     record.anchor = anchor_session.anchor_at(Seq::new(2).unwrap()).unwrap();
     assert_eq!(
         record.score(&[anchor_session]).unwrap_err().to_string(),
-        format!("session {A}, ruleset 0, cannot be replayed by this build's ruleset {RULESET}")
+        format!(
+            "session {A} cannot be replayed: the journal's ruleset is 0; this build's is {RULESET}"
+        )
     );
 }
 

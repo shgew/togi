@@ -148,6 +148,102 @@ fn a_record_with_an_unknown_status_is_refused_on_reading() {
     ));
 }
 
+fn read_value(json: &serde_json::Value) -> Error {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("forecast.json");
+    fs::write(&path, serde_json::to_vec(json).unwrap()).unwrap();
+    Record::read(&path).unwrap_err()
+}
+
+fn positional(object: &serde_json::Value, keys: &[&str]) -> serde_json::Value {
+    keys.iter().map(|key| object[*key].clone()).collect()
+}
+
+fn at_index<'a>(json: &'a mut serde_json::Value, path: &[&str]) -> &'a mut serde_json::Value {
+    path.iter()
+        .fold(json, |value, key| match key.parse::<usize>() {
+            Ok(index) => &mut value[index],
+            Err(_) => &mut value[*key],
+        })
+}
+
+#[test]
+fn a_correctly_sized_array_is_refused_for_every_object_of_a_record() {
+    let whole = serde_json::to_value(record()).unwrap();
+    let anchor = ["session", "seq", "time", "sha256"].as_slice();
+    let run = ["machine", "seed", "split", "outcome"].as_slice();
+    let outcome = ["status", "hours", "crashes", "hunts", "profile", "depth"].as_slice();
+    let range = ["min", "p10", "median", "p90", "max"].as_slice();
+    let summary = [
+        "runs",
+        "concluded",
+        "dead_ends",
+        "censored",
+        "hours",
+        "crashes",
+        "hunts",
+        "depth",
+        "cores",
+    ]
+    .as_slice();
+    let cases: [(&str, Vec<&str>, &[&str]); 7] = [
+        (
+            "record",
+            vec![],
+            &[
+                "anchor", "commit", "dirty", "ruleset", "evidence", "files", "runs", "summary",
+            ],
+        ),
+        ("anchor", vec!["anchor"], anchor),
+        ("file", vec!["files", "0"], &["path", "sha256"]),
+        ("run", vec!["runs", "0"], run),
+        ("outcome", vec!["runs", "0", "outcome"], outcome),
+        ("summary", vec!["summary"], summary),
+        ("range", vec!["summary", "crashes"], range),
+    ];
+    for (name, path, keys) in cases {
+        let mut json = whole.clone();
+        let object = at_index(&mut json, &path);
+        *object = positional(object, keys);
+        let error = read_value(&json);
+        assert!(
+            matches!(error, Error::DecodeRecord { .. }),
+            "{name}: {error}"
+        );
+        assert!(
+            error.to_string().contains("expected an object"),
+            "{name}: {error}"
+        );
+    }
+}
+
+#[test]
+fn an_unknown_key_is_refused_in_every_object_of_a_record() {
+    let whole = serde_json::to_value(record()).unwrap();
+    let cases: [(&str, Vec<&str>); 7] = [
+        ("record", vec![]),
+        ("anchor", vec!["anchor"]),
+        ("file", vec!["files", "0"]),
+        ("run", vec!["runs", "0"]),
+        ("outcome", vec!["runs", "0", "outcome"]),
+        ("summary", vec!["summary"]),
+        ("range", vec!["summary", "crashes"]),
+    ];
+    for (name, path) in cases {
+        let mut json = whole.clone();
+        at_index(&mut json, &path)["hourz"] = serde_json::json!(1);
+        let error = read_value(&json);
+        assert!(
+            matches!(error, Error::DecodeRecord { .. }),
+            "{name}: {error}"
+        );
+        assert!(
+            error.to_string().contains("unknown field `hourz`"),
+            "{name}: {error}"
+        );
+    }
+}
+
 struct Full;
 
 impl std::io::Write for Full {

@@ -55,9 +55,9 @@ pub enum Flag {
     DirtyForecast {
         commit: String,
     },
-    /// Another build revision ran after the anchor.
+    /// Another build revision, or a build without one, ran after the anchor.
     Revision {
-        rev: String,
+        rev: Option<String>,
         commit: String,
     },
     Ruleset {
@@ -79,9 +79,16 @@ impl fmt::Display for Flag {
                     "the forecast was made from a dirty tree at commit {commit}"
                 )
             }
-            Self::Revision { rev, commit } => write!(
+            Self::Revision {
+                rev: Some(rev),
+                commit,
+            } => write!(
                 f,
                 "build revision {rev} ran after the anchor; the forecast is at commit {commit}"
+            ),
+            Self::Revision { rev: None, commit } => write!(
+                f,
+                "a build without a revision ran after the anchor; the forecast is at commit {commit}"
             ),
             Self::Ruleset { ran, forecast } => write!(
                 f,
@@ -162,10 +169,10 @@ impl Record {
             });
         }
         for build in builds {
-            let rev = build.rev.as_deref().unwrap_or_default();
+            let rev = build.rev.as_deref().filter(|rev| !rev.is_empty());
             if !same_revision(rev, &self.commit) {
                 flags.push(Flag::Revision {
-                    rev: rev.to_owned(),
+                    rev: rev.map(str::to_owned),
                     commit: self.commit.clone(),
                 });
             }
@@ -207,8 +214,11 @@ fn row(metric: Metric, actual: f64, censored: bool) -> Row {
 
 /// Whether a build's short revision names the forecast's commit, either of which may be abbreviated. A dirty
 /// build, or one without a revision, names none.
-fn same_revision(rev: &str, commit: &str) -> bool {
-    if rev.is_empty() || commit.is_empty() || rev.ends_with("-dirty") {
+fn same_revision(rev: Option<&str>, commit: &str) -> bool {
+    let Some(rev) = rev else {
+        return false;
+    };
+    if commit.is_empty() || rev.ends_with("-dirty") {
         return false;
     }
     rev.starts_with(commit) || commit.starts_with(rev)

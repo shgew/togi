@@ -1,14 +1,20 @@
 use std::io;
 use std::path::PathBuf;
 
-use togi_journal::{FileError, Seq, SessionId};
+use togi_journal::{FileError, Refusal, Seq, SessionId};
 use togi_machine::CoreSet;
 
 /// Why a forecast could not be read, replayed, summarized or scored.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("{}: {source}", path.display())]
-    Io {
+    #[error("read journal {}: {source}", path.display())]
+    ReadJournal {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("list archive {}: {source}", path.display())]
+    ListArchive {
         path: PathBuf,
         #[source]
         source: io::Error,
@@ -33,13 +39,10 @@ pub enum Error {
         "anchor changed: session {session} through event {seq} differs from the forecast's copy"
     )]
     ChangedAnchor { session: SessionId, seq: Seq },
-    #[error(
-        "session {session}, ruleset {recorded}, cannot be replayed by this build's ruleset {current}"
-    )]
+    #[error("session {session} cannot be replayed: {refusal}")]
     NotReplayable {
         session: SessionId,
-        recorded: u32,
-        current: u32,
+        refusal: Refusal,
     },
     #[error("session {session}: {source}")]
     JournalFold {

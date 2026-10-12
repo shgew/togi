@@ -1,23 +1,26 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use serde::{Deserialize, Serialize};
-use togi_machine::{CoreId, CoreSet};
+use serde::Serialize;
+use togi_machine::{CoreId, CoreSet, object_only};
 
 use crate::error::Error;
 use crate::outcome::Status;
 use crate::record::Run;
 
-/// An ensemble's values for one quantity: the median, the 10th to 90th percentile and the extremes. Percentiles
-/// use the nearest rank, so each is a value some run produced; the median of an even count averages the middle
-/// two.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Range {
-    pub min: f64,
-    pub p10: f64,
-    pub median: f64,
-    pub p90: f64,
-    pub max: f64,
+object_only! {
+    /// An ensemble's values for one quantity: the median, the 10th to 90th percentile and the extremes. Percentiles
+    /// use the nearest rank, so each is a value some run produced; the median of an even count averages the middle
+    /// two.
+    #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct Range {
+        pub min: f64,
+        pub p10: f64,
+        pub median: f64,
+        pub p90: f64,
+        pub max: f64,
+    }
 }
 
 impl Range {
@@ -177,19 +180,22 @@ pub fn metrics(runs: &[Run]) -> Result<Vec<Metric>, Error> {
     Ok(all)
 }
 
-/// The ensemble's statuses and ranges, as [`metrics`] computes them.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Summary {
-    pub runs: usize,
-    pub concluded: usize,
-    pub dead_ends: usize,
-    pub censored: usize,
-    /// Over concluded runs only; `None` when none concluded.
-    pub hours: Option<Range>,
-    pub crashes: Range,
-    pub hunts: Range,
-    pub depth: Range,
-    pub cores: BTreeMap<CoreId, Range>,
+object_only! {
+    /// The ensemble's statuses and ranges, as [`metrics`] computes them.
+    #[derive(Clone, Debug, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct Summary {
+        pub runs: usize,
+        pub concluded: usize,
+        pub dead_ends: usize,
+        pub censored: usize,
+        /// Over concluded runs only; `None` when none concluded.
+        pub hours: Option<Range>,
+        pub crashes: Range,
+        pub hunts: Range,
+        pub depth: Range,
+        pub cores: BTreeMap<CoreId, Range>,
+    }
 }
 
 /// Counts the runs by status and ranges each metric.

@@ -4,9 +4,8 @@ use std::num::NonZeroU32;
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use togi_journal::{Build, CycleEvent, Event, Payload, SessionId, ShutdownReason, State};
-use togi_machine::{ObservedOffset, PerCore};
+use togi_machine::{ObservedOffset, PerCore, object_only};
 use togi_sim::REBOOT_TIME;
-use togi_tuner::RULESET;
 
 use crate::error::Error;
 use crate::session::{Anchor, Session};
@@ -23,22 +22,25 @@ pub enum Status {
     Censored,
 }
 
-/// What a run did after the anchor, through its first terminal point: a conclusion or a dead end. Events after
-/// that point are ignored.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Outcome {
-    pub status: Status,
-    /// Hours from the anchor to the terminal point, or to the last event of a run that has none.
-    pub hours: f64,
-    /// `crash.detected` events.
-    pub crashes: u32,
-    /// Hunts that ran a trial; a hunt answered by carried facts alone runs none.
-    pub hunts: u32,
-    /// The profile of the session holding the terminal point, or of the newest session: its checking profile, or
-    /// its baseline before it has one. Offsets are as the journal recorded them, whatever the hardware range.
-    pub profile: PerCore<ObservedOffset>,
-    /// The sum of the profile's offsets.
-    pub depth: i64,
+object_only! {
+    /// What a run did after the anchor, through its first terminal point: a conclusion or a dead end. Events after
+    /// that point are ignored.
+    #[derive(Clone, Debug, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct Outcome {
+        pub status: Status,
+        /// Hours from the anchor to the terminal point, or to the last event of a run that has none.
+        pub hours: f64,
+        /// `crash.detected` events.
+        pub crashes: u32,
+        /// Hunts that ran a trial; a hunt answered by carried facts alone runs none.
+        pub hunts: u32,
+        /// The profile of the session holding the terminal point, or of the newest session: its checking profile, or
+        /// its baseline before it has one. Offsets are as the journal recorded them, whatever the hardware range.
+        pub profile: PerCore<ObservedOffset>,
+        /// The sum of the profile's offsets.
+        pub depth: i64,
+    }
 }
 
 /// How simulated hours differ from real ones. Forecasts report simulated hours as they are.
@@ -129,11 +131,10 @@ pub(crate) fn follow<R: Replay>(sessions: &[Session], anchor: &Anchor) -> Result
         }
     }
     let (session, tuner, state) = &held;
-    if !session.replayable() {
+    if let Some(refusal) = session.refusal() {
         return Err(Error::NotReplayable {
             session: session.id(),
-            recorded: session.build().ruleset,
-            current: RULESET,
+            refusal,
         });
     }
     let profile = tuner.profile().unwrap_or_else(|| baseline(state));

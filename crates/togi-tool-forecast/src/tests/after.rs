@@ -1,4 +1,4 @@
-use togi_journal::{CycleEvent, Event, Payload};
+use togi_journal::{CycleEvent, Dimension, Event, Payload, Refusal};
 
 use super::support::{
     A, B, build, config_loaded, crash, cycle, dead_end, events, extend, hunt_end, hunt_start, id,
@@ -201,15 +201,49 @@ fn an_unreplayable_newest_session_cannot_project_a_profile() {
     assert_eq!(
         error.to_string(),
         format!(
-            "session {A}, ruleset 0, cannot be replayed by this build's ruleset {}",
+            "session {A} cannot be replayed: the journal's ruleset is 0; this build's is {}",
             togi_tuner::RULESET
         )
     );
     assert!(matches!(
         error,
         Error::NotReplayable {
-            recorded: 0,
-            current: togi_tuner::RULESET,
+            refusal: Refusal {
+                dimension: Dimension::Ruleset,
+                recorded: 0,
+                current: togi_tuner::RULESET,
+            },
+            ..
+        }
+    ));
+}
+
+#[test]
+fn a_newer_schema_with_this_builds_ruleset_is_refused_for_its_schema() {
+    let mut newer = build("abc1234");
+    newer.schema = togi_journal::SCHEMA + 1;
+    let only = session(
+        1,
+        [start_with(A, newer), super::support::baseline([-10, -20])],
+    );
+    assert!(!only.replayable());
+    let anchor = only.anchor_at(togi_journal::Seq::new(2).unwrap()).unwrap();
+    let error = after(&[only], &anchor).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "session {A} cannot be replayed: the journal's schema is {}; this build's is {}",
+            togi_journal::SCHEMA + 1,
+            togi_journal::SCHEMA
+        )
+    );
+    assert!(matches!(
+        error,
+        Error::NotReplayable {
+            refusal: Refusal {
+                dimension: Dimension::Schema,
+                ..
+            },
             ..
         }
     ));

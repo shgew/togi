@@ -3,12 +3,13 @@ use std::io;
 use std::path::Path;
 
 use jiff::Timestamp;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use sha2::{Digest, Sha256};
 use togi_journal::{
-    Build, Event, EventReader, FileError, Operation, Payload, ReadError, SCHEMA, Seq, SessionId,
-    Verdict,
+    Build, Event, EventReader, FileError, Operation, Payload, ReadError, Refusal, SCHEMA, Seq,
+    SessionId, Verdict,
 };
+use togi_machine::object_only;
 use togi_tuner::{EVIDENCE_EPOCH, RULESET};
 
 use crate::error::Error;
@@ -17,15 +18,18 @@ const ARCHIVE_DIR: &str = "archive";
 const LIVE_JOURNAL: &str = "events.jsonl";
 const JOURNAL_SUFFIX: &str = ".jsonl";
 
-/// The last event of the copied live journal; a forecast describes only what follows it.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct Anchor {
-    pub session: SessionId,
-    pub seq: Seq,
-    pub time: Timestamp,
-    /// SHA-256, in lower-case hex, of the anchor session's journal lines through the anchor event, newlines
-    /// included, exactly as the file holds them.
-    pub sha256: String,
+object_only! {
+    /// The last event of the copied live journal; a forecast describes only what follows it.
+    #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct Anchor {
+        pub session: SessionId,
+        pub seq: Seq,
+        pub time: Timestamp,
+        /// SHA-256, in lower-case hex, of the anchor session's journal lines through the anchor event, newlines
+        /// included, exactly as the file holds them.
+        pub sha256: String,
+    }
 }
 
 impl Anchor {
@@ -73,7 +77,7 @@ pub struct Session {
     build: Build,
     events: Vec<Event>,
     prefixes: Vec<[u8; 32]>,
-    replayable: bool,
+    refusal: Option<Refusal>,
 }
 
 impl Session {
@@ -94,7 +98,12 @@ impl Session {
     /// this build's ([`togi_tuner::RULESET`]). A session that cannot be replayed can still be counted over, but
     /// not folded, so it cannot hold a forecast's terminal point or supply its profile.
     pub const fn replayable(&self) -> bool {
-        self.replayable
+        self.refusal.is_none()
+    }
+
+    /// Why this build's tuner cannot replay the session, if it cannot.
+    pub(crate) const fn refusal(&self) -> Option<Refusal> {
+        self.refusal
     }
 
     /// A session of events held in memory, as the journal would write them: each line is the event's own
@@ -116,7 +125,7 @@ impl Session {
     /// The session a journal holds; `None` for a journal without a complete line. Bytes after the last newline
     /// are a torn tail and never an event.
     pub fn read(path: &Path) -> Result<Option<Self>, Error> {
-        let bytes = fs::read(path).map_err(|source| Error::Io {
+        let bytes = fs::read(path).map_err(|source| Error::ReadJournal {
             path: path.to_path_buf(),
             source,
         })?;
@@ -168,13 +177,16 @@ impl Session {
             fixes: 0,
             evidence: EVIDENCE_EPOCH,
         };
-        let replayable = matches!(reader.verdict(&build, Operation::Replay), Verdict::Use);
+        let refusal = match reader.verdict(&build, Operation::Replay) {
+            Verdict::Refuse(refusal) => Some(refusal),
+            Verdict::Use | Verdict::Archive => None,
+        };
         Some(Self {
             id,
             build,
             events,
             prefixes,
-            replayable,
+            refusal,
         })
     }
 
@@ -205,7 +217,7 @@ pub fn read_dir(dir: impl AsRef<Path>, from: Option<SessionId>) -> Result<Vec<Se
     match fs::read_dir(&archive) {
         Ok(entries) => {
             for entry in entries {
-                let entry = entry.map_err(|source| Error::Io {
+                let entry = entry.map_err(|source| Error::ListArchive {
                     path: archive.clone(),
                     source,
                 })?;
@@ -221,7 +233,7 @@ pub fn read_dir(dir: impl AsRef<Path>, from: Option<SessionId>) -> Result<Vec<Se
         }
         Err(error) if error.kind() == io::ErrorKind::NotFound => {}
         Err(source) => {
-            return Err(Error::Io {
+            return Err(Error::ListArchive {
                 path: archive,
                 source,
             });
@@ -238,7 +250,7 @@ pub fn read_dir(dir: impl AsRef<Path>, from: Option<SessionId>) -> Result<Vec<Se
     }
     match Session::read(&dir.join(LIVE_JOURNAL)) {
         Ok(live) => sessions.extend(live),
-        Err(Error::Io { source, .. }) if source.kind() == io::ErrorKind::NotFound => {}
+        Err(Error::ReadJournal { source, .. }) if source.kind() == io::ErrorKind::NotFound => {}
         Err(error) => return Err(error),
     }
     Ok(sessions)

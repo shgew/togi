@@ -38,7 +38,7 @@ just stats --state-dir COPY-AFTER-THE-RUN --forecast tools/bench/forecasts/<sess
 
 The run ends at its first terminal point after the anchor: a `checking.cycle` start once the replayed tuner has seen a clean cycle, which is where `togi run --cycles 1` shuts down instead (that start itself is not counted); a `shutdown` with reason `cycles`; or a `deadend`. A real tuning boot runs without `--cycles` and keeps checking after its conclusion, so it scores the same as a `--cycles 1` run with the same history. Nothing after the terminal point counts: no crashes, hunts, dead ends, profile changes or builds. Crashes, hunts that ran a trial, hours, the profile and the depth are those at the terminal point, with the profile the tuner projects for the session holding it, which may be a new session started after the anchor, after a transition. A run with no terminal point is censored and measured through its newest session's last event.
 
-The session holding the terminal point, or the newest session of a censored run, must be replayable: its journal must decode with its configuration and record this build's ruleset, so the tuner can project its profile. A current-schema journal of another ruleset is refused.
+The session holding the terminal point, or the newest session of a censored run, must be replayable: its journal must decode with its configuration and record this build's ruleset, so the tuner can project its profile. A current-schema journal of another ruleset is refused; so is, by the Rust tool, a journal of a newer schema, and its message names which of the two differs.
 
 - The header names the forecast's commit, ruleset and runs by status; the anchor; the run's status and hours after the anchor; and every build that ran from the anchor through the terminal point: the build in effect at the anchor when its invocation wrote events after the anchor before any new `session.start` or `config.loaded`, then each build those events stamp. `Flag:` lines mark what makes the forecast less comparable: a build revision other than the forecast's commit (short revisions match as prefixes; a `-dirty` build never matches), another ruleset or evidence epoch (Rust forecasts), or a forecast made from a dirty tree. Flags do not stop the score.
 - Each core's offset, the depth, hours, crashes and hunts show the actual value; `inside`: `yes` within the forecast's 10th to 90th percentile, else `below` or `above`; the error, actual minus the forecast median; the percentile, the share of forecast runs below the value plus half of those equal to it; and the forecast's median and ranges. Forecast hours cover only its concluded runs; with none, the hours row shows `-` in every forecast column.
@@ -46,6 +46,8 @@ The session holding the terminal point, or the newest session of a censored run,
 - Real hours include real crash recovery, which the simulated hours do not model (`just forecast` states the bias); the score reports both as they are.
 
 The goldens `forecast-concluded.golden`, `forecast-censored.golden` and `forecast-unconcluded.golden` score a simulated session, stopped at its first crash and resumed with another seed, against a fixed forecast, the last one without a concluded run; `go test ./tools/stats -update` re-renders them from a fresh simulation.
+
+`just stats --forecast` scores the records the Go `just forecast` writes. The Rust `stats --forecast` scores those the Rust `bench --forecast` writes and refuses a Go-written record ([forecasting](benchmarking.md#forecasting-a-real-run)).
 
 ## Retros
 
