@@ -1,0 +1,33 @@
+---
+source: crates/togi/tests/cli/main.rs
+expression: "help(\"reset\")"
+---
+Reset one core, or archive the whole session
+
+Reset one core, so the next run restarts its search from the baseline, or archive the whole session, so the next run starts a new one that carries nothing from it. Give exactly one of the two. --core clears its failure point and every combination that includes it. --all warns if a configured candidate solo limit reached a failure point in the archived session; missing or invalid configuration does not prevent archiving.
+
+--core refuses a different journal ruleset, schema or evidence epoch; --all archives any of them. Only one run or reset can own this machine, even with different state directories. A busy host lock stops reset before it changes the session.
+
+Usage: togi reset [OPTIONS] <--core <N>|--all>
+
+Options:
+      --core <N>
+          Reset core N: clear its failure point and every combination that includes it, and restart its search from the baseline
+
+      --state-dir <path>
+          State directory
+          
+          [default: /var/lib/togi]
+
+      --all
+          Archive the session; the next run starts a new one
+
+      --config <path>
+          JSON configuration file [default: /etc/togi/config.json]
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+Examples:
+  sudo togi reset --core 3   Search core 3 again from its baseline
+  sudo togi reset --all      Archive the session and start over

@@ -13,7 +13,7 @@ use togi_render::{Renderer, Style, escape_text};
 use crate::args::ConfigArgs;
 use crate::cli::{Context, examples};
 use crate::exit::Exit;
-use crate::report::{chain, current_build, emit, fail, refusal_message};
+use crate::report::{chain, current_build, emit, exit_with, fail, refusal_message};
 
 static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
     examples(&[
@@ -22,9 +22,9 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
     ])
 });
 
-/// Check whether this machine is ready for `togi run`
+/// Check whether this machine is ready for a run
 ///
-/// Make run's preflight checks, check the hardware watchdog and, when a session is recorded,
+/// Make the preflight checks of run, check the hardware watchdog and, when a session is recorded,
 /// whether the BIOS context still matches it, without starting a session. Writes no journal
 /// event, changes no offset and leaves GRUB alone. As root it makes every check and takes the host
 /// lock, so a running run or reset stops it. Without root it checks the CPU, the `ryzen_smu` driver
@@ -60,10 +60,7 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
     };
     let config = match args.config.load() {
         Ok(config) => config,
-        Err(error) => {
-            let _ = writeln!(ctx.err, "togi {COMMAND}: {error}");
-            return Exit::Usage;
-        }
+        Err(error) => return exit_with(ctx, COMMAND, error, Exit::Usage),
     };
     let privileged = system.privileged();
     let _lock = if privileged {
@@ -71,8 +68,7 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
         match HostLock::acquire(path, policy) {
             Ok(lock) => Some(lock),
             Err(error @ LockError::Busy { .. }) => {
-                let _ = writeln!(ctx.err, "togi {COMMAND}: {error}");
-                return Exit::Locked;
+                return exit_with(ctx, COMMAND, error, Exit::Locked);
             }
             Err(error) => return fail(ctx, COMMAND, error),
         }
@@ -81,7 +77,7 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
     };
     let diagnosis = match system.diagnose(&config, recorded.as_ref(), privileged) {
         Ok(diagnosis) => diagnosis,
-        Err(error) => return fail(ctx, COMMAND, escape_text(&chain(&error))),
+        Err(error) => return fail(ctx, COMMAND, chain(&error)),
     };
     let (table, failed) = table(&diagnosis);
     if let Err(exit) = ctx.out.write_all(table.as_bytes()).map_err(|error| {
@@ -93,7 +89,7 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
         return fail(
             ctx,
             COMMAND,
-            format!("read BIOS context: {}", escape_text(&chain(error))),
+            format!("read BIOS context: {}", chain(error)),
         );
     }
     if !failed.is_empty() {
@@ -129,7 +125,7 @@ fn recorded_context(
     let recorded = match recorded_build(ctx.state_dir) {
         Ok(Some(recorded)) => recorded,
         Ok(None) => return Ok(None),
-        Err(error) => return Err(fail(ctx, COMMAND, escape_text(&chain(&error)))),
+        Err(error) => return Err(fail(ctx, COMMAND, chain(&error))),
     };
     match current.verdict(&recorded, Operation::Resume) {
         Verdict::Archive => return Ok(None),
@@ -146,7 +142,7 @@ fn recorded_context(
     }
     let path = ctx.state_dir.join("events.jsonl");
     let recording = Recording::read(&path)
-        .map_err(|error| fail(ctx, COMMAND, escape_text(&chain(&error))))?;
+        .map_err(|error| fail(ctx, COMMAND, chain(&error)))?;
     Ok(recording.events().iter().find_map(|event| match &event.payload {
         togi_journal::Payload::SessionContext(context) => Some(context.bios_context()),
         _ => None,

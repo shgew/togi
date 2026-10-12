@@ -12,12 +12,13 @@ use togi_journal::{
     ArchiveKind, Event, LockError, Marker, Operation, SessionId, StateDir, Verdict,
 };
 use togi_machine::{BootId, CoreId};
+use togi_render::escape_text;
 use togi_session::{CommandError, reset_all, reset_core};
 
 use crate::args::ConfigArgs;
 use crate::cli::{Context, examples};
 use crate::exit::Exit;
-use crate::report::{chain, current_build, emit, fail, refusal_message};
+use crate::report::{chain, current_build, emit, exit_with, fail, refusal_message};
 use crate::system::SystemClock;
 
 static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
@@ -97,8 +98,7 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
 }
 
 fn locked(ctx: &mut Context<'_>, error: &dyn std::error::Error) -> Exit {
-    let _ = writeln!(ctx.err, "togi {COMMAND}: {error}");
-    Exit::Locked
+    exit_with(ctx, COMMAND, error, Exit::Locked)
 }
 
 fn no_session(ctx: &mut Context<'_>) -> Exit {
@@ -121,16 +121,14 @@ fn reset_one(ctx: &mut Context<'_>, dir: StateDir, boot: BootId, core: u8) -> Ex
         Ok(Some(recorded)) => {
             if let Verdict::Refuse(refusal) = build.verdict(&recorded, Operation::Append) {
                 let message = refusal_message(&refusal, &recorded, &build);
-                let _ = writeln!(ctx.err, "togi {COMMAND}: {message}");
-                return Exit::Incompatible;
+                return exit_with(ctx, COMMAND, message, Exit::Incompatible);
             }
         }
         Ok(None) => {}
         Err(error) => return fail(ctx, COMMAND, chain(&error)),
     }
     let Ok(id) = CoreId::try_from(core) else {
-        let _ = writeln!(ctx.err, "togi {COMMAND}: core {core:02} does not exist");
-        return Exit::Usage;
+        return exit_with(ctx, COMMAND, format!("core {core:02} does not exist"), Exit::Usage);
     };
     let mut journal = match dir.open_at(boot, system.now()) {
         Ok(journal) => journal,
@@ -151,14 +149,8 @@ fn reset_one(ctx: &mut Context<'_>, dir: StateDir, boot: BootId, core: u8) -> Ex
 fn command_failure(ctx: &mut Context<'_>, error: &CommandError) -> Exit {
     match error {
         CommandError::NoSession => no_session(ctx),
-        CommandError::NoSuchCore { .. } => {
-            let _ = writeln!(ctx.err, "togi {COMMAND}: {error}");
-            Exit::Usage
-        }
-        CommandError::Compatibility(_) => {
-            let _ = writeln!(ctx.err, "togi {COMMAND}: {error}");
-            Exit::Incompatible
-        }
+        CommandError::NoSuchCore { .. } => exit_with(ctx, COMMAND, error, Exit::Usage),
+        CommandError::Compatibility(_) => exit_with(ctx, COMMAND, error, Exit::Incompatible),
         _ => fail(ctx, COMMAND, chain(error)),
     }
 }
@@ -198,8 +190,7 @@ fn reset_everything(ctx: &mut Context<'_>, args: &Args, mut dir: StateDir, boot:
         }
         Verdict::Refuse(refusal) => {
             let message = refusal_message(&refusal, &recorded, &build);
-            let _ = writeln!(ctx.err, "togi {COMMAND}: {message}");
-            return Exit::Incompatible;
+            return exit_with(ctx, COMMAND, message, Exit::Incompatible);
         }
         Verdict::Use => {
             let journal = match dir.open_at(boot, system.now()) {
@@ -220,7 +211,7 @@ fn reset_everything(ctx: &mut Context<'_>, args: &Args, mut dir: StateDir, boot:
         return exit;
     }
     for warning in warnings {
-        let _ = writeln!(ctx.err, "{warning}");
+        let _ = writeln!(ctx.err, "{}", escape_text(&warning));
     }
     Exit::Ok
 }

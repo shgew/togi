@@ -32,8 +32,25 @@ complete -c togi -n "__fish_togi_needs_command" -l state-dir -d 'State directory
 complete -c togi -n "__fish_togi_needs_command" -s h -l help -d 'Print help'
 complete -c togi -n "__fish_togi_needs_command" -s V -l version -d 'Print version'
 complete -c togi -n "__fish_togi_needs_command" -f -a "completion" -d 'Print a shell completion script'
+complete -c togi -n "__fish_togi_needs_command" -f -a "doctor" -d 'Check whether this machine is ready for a run'
+complete -c togi -n "__fish_togi_needs_command" -f -a "reset" -d 'Reset one core, or archive the whole session'
+complete -c togi -n "__fish_togi_needs_command" -f -a "restart-limit" -d 'Recover after the tuning service reaches its restart limit'
 complete -c togi -n "__fish_togi_needs_command" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
 complete -c togi -n "__fish_togi_using_subcommand completion" -l state-dir -d 'State directory' -r -f -a "(__fish_complete_directories)"
 complete -c togi -n "__fish_togi_using_subcommand completion" -s h -l help -d 'Print help (see more with \'--help\')'
-complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from completion help" -f -a "completion" -d 'Print a shell completion script'
-complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from completion help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
+complete -c togi -n "__fish_togi_using_subcommand doctor" -l config -d 'JSON configuration file [default: /etc/togi/config.json]' -r -F
+complete -c togi -n "__fish_togi_using_subcommand doctor" -l state-dir -d 'State directory' -r -f -a "(__fish_complete_directories)"
+complete -c togi -n "__fish_togi_using_subcommand doctor" -s h -l help -d 'Print help (see more with \'--help\')'
+complete -c togi -n "__fish_togi_using_subcommand reset" -l core -d 'Reset core N: clear its failure point and every combination that includes it, and restart its search from the baseline' -r
+complete -c togi -n "__fish_togi_using_subcommand reset" -l config -d 'JSON configuration file [default: /etc/togi/config.json]' -r -F
+complete -c togi -n "__fish_togi_using_subcommand reset" -l state-dir -d 'State directory' -r -f -a "(__fish_complete_directories)"
+complete -c togi -n "__fish_togi_using_subcommand reset" -l all -d 'Archive the session; the next run starts a new one'
+complete -c togi -n "__fish_togi_using_subcommand reset" -s h -l help -d 'Print help (see more with \'--help\')'
+complete -c togi -n "__fish_togi_using_subcommand restart-limit" -l tuning-boot -d 'GRUB environment file for retry state and the saved tuning entry' -r -F
+complete -c togi -n "__fish_togi_using_subcommand restart-limit" -l state-dir -d 'State directory' -r -f -a "(__fish_complete_directories)"
+complete -c togi -n "__fish_togi_using_subcommand restart-limit" -s h -l help -d 'Print help (see more with \'--help\')'
+complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from completion doctor reset restart-limit help" -f -a "completion" -d 'Print a shell completion script'
+complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from completion doctor reset restart-limit help" -f -a "doctor" -d 'Check whether this machine is ready for a run'
+complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from completion doctor reset restart-limit help" -f -a "reset" -d 'Reset one core, or archive the whole session'
+complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from completion doctor reset restart-limit help" -f -a "restart-limit" -d 'Recover after the tuning service reaches its restart limit'
+complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from completion doctor reset restart-limit help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'

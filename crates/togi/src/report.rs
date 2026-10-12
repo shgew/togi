@@ -6,6 +6,7 @@ use std::fmt::{Display, Write as _};
 
 use togi_defect::{KNOWN_DEFECTS, fixed_stamp};
 use togi_journal::{Build, Refusal, SCHEMA};
+use togi_render::escape_text;
 use togi_tuner::{EVIDENCE_EPOCH, RULESET};
 
 use crate::cli::Context;
@@ -66,8 +67,13 @@ pub fn emit(ctx: &mut Context<'_>, text: impl Display) -> Result<(), Exit> {
     writeln!(ctx.out, "{text}").map_err(|error| ctx.error(format!("write output: {error}")))
 }
 
-/// Writes `togi <command>: <message>` to stderr and returns [`Exit::Error`].
+/// Writes `togi <command>: <message>` to stderr, the message escaped, and returns `exit`.
+pub fn exit_with(ctx: &mut Context<'_>, command: &str, message: impl Display, exit: Exit) -> Exit {
+    let _ = writeln!(ctx.err, "togi {command}: {}", escape_text(&message.to_string()));
+    exit
+}
+
+/// [`exit_with`] for [`Exit::Error`].
 pub fn fail(ctx: &mut Context<'_>, command: &str, message: impl Display) -> Exit {
-    let _ = writeln!(ctx.err, "togi {command}: {message}");
-    Exit::Error
+    exit_with(ctx, command, message, Exit::Error)
 }
