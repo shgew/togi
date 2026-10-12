@@ -203,6 +203,8 @@ CI runs every session of `tools/bench/suite.json`, dev and holdout alike, on the
 
 The aggregating `check` job reads N from `nix/sim-suite.json` and fails unless the build matrix held exactly `rust-sim-suite-0` to `rust-sim-suite-<N-1>`, so a deleted or renamed shard fails the required check rather than vanishing from the matrix. The suite declares no expected dead end, and none is to be invented to pass the gate. `just sim-suite-rs` runs the same suite locally in one shard and checks it; [`togi-tool-sim`](simulating.md#the-rust-simulator-command-togi-tool-sim) also has a test that splits one session across processes by `--max-boots` and requires the same journal and `state.json` as an uninterrupted run.
 
+The shards run only in CI; `just gate` does not run them. `just sim-suite-rs` reproduces the whole suite, and `just check-one rust-sim-suite-<i>` reproduces shard `i`. Raise N in `nix/sim-suite.json` whenever a shard's CI job (`completedAt − startedAt` in `gh run view --json jobs`) is slower than the slowest job of the same run that is not a shard. That keeps the suite within [#627](https://github.com/shgew/togi/issues/627)'s limit that a job is never slower than the current slowest one. The `build` job's `timeout-minutes: 45` stops a session that never concludes, instead of holding a runner for six hours.
+
 This gate is separate from `just bench`: it proves that every session concludes cleanly on the Rust code, not that a tuner change concludes sooner or keeps its depth. Bench scoring, `just same`, `just smoke` and `just audit` still run the Go simulator until [#642](https://github.com/shgew/togi/issues/642).
 
 ## What each check proves
