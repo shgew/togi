@@ -1,6 +1,7 @@
 //! The one path an event takes into the journal.
 
 use std::io::{self, Write};
+use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 
 use jiff::tz::TimeZone;
 use togi_defect::{DefectState, Entry, KNOWN_DEFECTS};
@@ -275,21 +276,36 @@ impl Appender {
         failure
     }
 
+    /// Takes a durable event into the run: its log line, the append hook and the folds. A panic out of any of them
+    /// leaves the event durable and the run's state without it, so it latches the appender like a fold that failed
+    /// and is then resumed.
     fn absorb(&mut self, seq: Seq) -> Result<(), AppendFailure> {
         if let Some(event) = self.journal.event(seq) {
-            log_line(
-                self.renderer,
-                &self.zone,
-                &mut self.log,
-                &mut self.log_failure,
-                event,
-            );
-            if let Some(hook) = self.on_append.as_mut() {
-                hook(event);
-            }
-            if let Err(error) = self.folds.apply(event) {
-                self.latch(JournalFailure::fold(error.clone()));
-                return Err(error.into());
+            let taken = catch_unwind(AssertUnwindSafe(|| {
+                log_line(
+                    self.renderer,
+                    &self.zone,
+                    &mut self.log,
+                    &mut self.log_failure,
+                    event,
+                );
+                if let Some(hook) = self.on_append.as_mut() {
+                    hook(event);
+                }
+                self.folds.apply(event)
+            }));
+            match taken {
+                Ok(Ok(())) => {}
+                Ok(Err(error)) => {
+                    self.latch(JournalFailure::fold(error.clone()));
+                    return Err(error.into());
+                }
+                Err(payload) => {
+                    self.latch(JournalFailure::interrupted(crate::session::message_of(
+                        &*payload,
+                    )));
+                    resume_unwind(payload);
+                }
             }
         }
         if let Some(mut handoff) = self.handoff.take() {

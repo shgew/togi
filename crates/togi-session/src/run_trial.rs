@@ -40,6 +40,13 @@ struct Trial<'p> {
     alone: Option<CoreId>,
 }
 
+/// How the wait for a started workload ended, before the workload is joined.
+struct Waiting {
+    result: Result<TrialResult, Partial<TrialResult>>,
+    /// The first report the journal refused, if any.
+    reported: Option<crate::error::AppendFailure>,
+}
+
 /// How the workload and its wait went, as far as the trial's end is concerned.
 struct Waited {
     result: TrialResult,
@@ -285,7 +292,47 @@ impl Session {
             }
         };
         self.appender.watch_trial(Some(token.clone()));
+        let mut running = running;
+        let window = catch_unwind(AssertUnwindSafe(|| {
+            self.watch_started(&mut *running, &mut trial, &token, &cites)
+        }));
+        let (scheduled, waiting) = match window {
+            Ok(Ok(window)) => window,
+            Ok(Err(flow)) => {
+                self.reap(running);
+                return Err(flow);
+            }
+            Err(payload) => {
+                self.reap(running);
+                resume_unwind(payload);
+            }
+        };
+        let waited = self.join(running, waiting)?;
+        if scheduled && waited.error.is_none() {
+            let signal = TrialSignal {
+                trial: trial.id.clone(),
+                schedule: None,
+                stops: waited.result.stops,
+                conts: waited.result.conts,
+            };
+            self.appender
+                .append(Payload::TrialSignal(signal), &[trial.start])?;
+        }
+        self.end_trial(&trial, &token, waited, "trial runner failed")
+    }
+
+    /// Everything between the workload's start and its join that can unwind or fail: the start record, the signal
+    /// schedule and the wait while its reports are journaled. The caller holds the workload, so a panic or a failure
+    /// here is followed by its join. Returns whether a signal schedule was recorded, and how the wait went.
+    fn watch_started(
+        &mut self,
+        running: &mut dyn Running,
+        trial: &mut Trial<'_>,
+        token: &CancellationToken,
+        cites: &[Seq],
+    ) -> Step<(bool, Waiting)> {
         let started = running.started();
+        let scheduled = started.schedule.is_some();
         let record = TrialStart {
             trial: trial.id.clone(),
             window_start_ns: u64::try_from(trial.since.as_nanos()).ok(),
@@ -309,13 +356,7 @@ impl Session {
                 Vec::new()
             },
         };
-        match self.appender.append(Payload::TrialStart(record), &cites) {
-            Ok(seq) => trial.start = seq,
-            Err(failure) => {
-                self.reap(running);
-                return Err(failure.into());
-            }
-        }
+        trial.start = self.appender.append(Payload::TrialStart(record), cites)?;
         if let Some(schedule) = started.schedule {
             let signal = TrialSignal {
                 trial: trial.id.clone(),
@@ -323,48 +364,22 @@ impl Session {
                 stops: 0,
                 conts: 0,
             };
-            if let Err(failure) = self
-                .appender
-                .append(Payload::TrialSignal(signal), &[trial.start])
-            {
-                self.reap(running);
-                return Err(failure.into());
-            }
-        }
-        let waited = self.watch(running, &trial, &token)?;
-        if started.schedule.is_some() && waited.error.is_none() {
-            let signal = TrialSignal {
-                trial: trial.id.clone(),
-                schedule: None,
-                stops: waited.result.stops,
-                conts: waited.result.conts,
-            };
             self.appender
                 .append(Payload::TrialSignal(signal), &[trial.start])?;
         }
-        self.end_trial(&trial, &token, waited, "trial runner failed")
+        let mut report = Journaled::new(&mut self.appender, &trial.id, trial.start, token);
+        let result = running.wait(token, &mut report);
+        let reported = report.into_failure();
+        Ok((scheduled, Waiting { result, reported }))
     }
 
-    /// Waits for the workload while its reports are journaled, then joins it and takes the proof that nothing runs
-    /// from it, unless its containment is unconfirmed. A report that could not be journaled ends the trial here:
-    /// the journal accepts nothing more.
-    fn watch(
-        &mut self,
-        mut running: Box<dyn Running>,
-        trial: &Trial<'_>,
-        token: &CancellationToken,
-    ) -> Step<Waited> {
-        let mut report = Journaled::new(&mut self.appender, &trial.id, trial.start, token);
-        let waited = catch_unwind(AssertUnwindSafe(|| running.wait(token, &mut report)));
-        let waited = match waited {
-            Ok(waited) => waited,
-            Err(payload) => {
-                drop(report);
-                self.reap(running);
-                resume_unwind(payload);
-            }
-        };
-        let reported = report.into_failure();
+    /// Joins the workload and takes the proof that nothing runs from it, unless its containment is unconfirmed. A
+    /// report that could not be journaled ends the trial here: the journal accepts nothing more.
+    fn join(&mut self, running: Box<dyn Running>, waiting: Waiting) -> Step<Waited> {
+        let Waiting {
+            result: waited,
+            reported,
+        } = waiting;
         self.appender.watch_trial(None);
         let stopping = running.stop();
         let (result, mut error) = match waited {
@@ -401,16 +416,20 @@ impl Session {
         })
     }
 
-    /// Joins a workload a failed record left running, and keeps the proof if it gives one.
+    /// Joins a workload a failed record or a panic left running, and keeps the proof if it gives one. A join that
+    /// cannot confirm the stop is kept for the close to report, beside the error that ended the run.
     fn reap(&mut self, running: Box<dyn Running>) {
         self.appender.watch_trial(None);
         match running.stop() {
             Ok(stopped) => self.stopped = Some(stopped),
-            Err(Error::Crashed) => {
-                self.fault.get_or_insert(Fault::Crashed);
-            }
-            Err(_) => {
-                self.fault.get_or_insert(Fault::Containment);
+            Err(error) => {
+                let fault = if matches!(error, Error::Crashed) {
+                    Fault::Crashed
+                } else {
+                    Fault::Containment
+                };
+                self.fault.get_or_insert(fault);
+                self.unconfirmed.push(error);
             }
         }
     }

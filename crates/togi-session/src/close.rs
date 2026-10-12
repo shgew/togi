@@ -6,13 +6,15 @@
 //! offsets are back where the run found them and whose owed decisions were all recorded. A decision that cannot be
 //! recorded is an error of the run, but it never leaves the offsets on the machine.
 
+use std::panic::{AssertUnwindSafe, catch_unwind};
+
 use togi_journal::{DeadEndCondition, Payload};
 use togi_machine::{PerCore, TargetOffset};
 use togi_tuner::DecisionPayload;
 
 use crate::emergency::{self, Access, Withheld};
 use crate::error::{Flow, JournalFailure, SessionError};
-use crate::session::{Ended, Fault, Session, Stop};
+use crate::session::{Ended, Fault, Panic, Session, Stop, message_of};
 
 /// How far the cleanup of a run that may still touch the machine got.
 enum Reached {
@@ -33,25 +35,43 @@ impl Session {
                 None
             }
         };
+        for error in std::mem::take(&mut self.unconfirmed) {
+            self.keep(&mut errors, SessionError::Machine(error));
+        }
+        let mut panic = None;
         if self.fault.is_none() && self.appender.failure().is_none() {
-            self.clean_up(&mut stop, &mut errors);
+            self.clean_up(&mut stop, &mut errors, &mut panic);
         }
         let emergency = self
             .appender
             .failure()
             .cloned()
             .map(|failure| self.answer(&failure));
-        self.finish(stop, errors, emergency)
+        let mut ended = self.finish(stop, errors, emergency);
+        ended.panic = panic;
+        ended
     }
 
-    fn clean_up(&mut self, stop: &mut Option<Stop>, errors: &mut Vec<SessionError>) {
+    /// Restores the machine and records the shutdown. A panic out of the drain of a signalled stop is kept as an
+    /// error and in `panic` for the caller to resume, and the restoration still runs; no shutdown follows it.
+    fn clean_up(
+        &mut self,
+        stop: &mut Option<Stop>,
+        errors: &mut Vec<SessionError>,
+        panic: &mut Option<Panic>,
+    ) {
         let mut drain_failed = false;
         if matches!(stop, Some(Stop::Signal)) {
-            match self.record_drained() {
-                Ok(Some(dead_end)) => *stop = Some(dead_end),
-                Ok(None) => {}
-                Err(error) => {
+            match catch_unwind(AssertUnwindSafe(|| self.record_drained())) {
+                Ok(Ok(Some(dead_end))) => *stop = Some(dead_end),
+                Ok(Ok(None)) => {}
+                Ok(Err(error)) => {
                     self.keep(errors, error);
+                    drain_failed = true;
+                }
+                Err(payload) => {
+                    errors.push(SessionError::Panicked(message_of(&*payload).to_owned()));
+                    *panic = Some(Panic::new(payload));
                     drain_failed = true;
                 }
             }

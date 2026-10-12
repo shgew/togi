@@ -239,6 +239,9 @@ pub(crate) struct Session {
     pub(crate) unreadable: Option<KernelUnreadable>,
     /// Why the machine may no longer be touched, once it may not.
     pub(crate) fault: Option<Fault>,
+    /// What a join of a workload after a failed record or a panic reported when it could not confirm the stop; the
+    /// close reports it after the error that ended the run.
+    pub(crate) unconfirmed: Vec<togi_machine::Error>,
     /// The `shutdown` the cleanup records once the machine is restored.
     pub(crate) shutdown: Option<Shutdown>,
     /// The write transaction that last put the machine in the state the next trial starts on; `None` once a write
@@ -357,6 +360,7 @@ impl Session {
             recovery_cancelled: false,
             unreadable: None,
             fault: None,
+            unconfirmed: Vec::new(),
             shutdown: None,
             confirmed: None,
         })

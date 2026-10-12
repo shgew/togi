@@ -323,17 +323,31 @@ fn a_tuner_without_a_next_action_ends_the_run_with_a_typed_error() {
     assert!(bench.sim.violations().is_empty());
 }
 
-struct PanicsWhileWaiting {
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+/// Where a [`Rigged`] workload misbehaves; it always counts its joins.
+#[derive(Clone, Copy, Default)]
+struct Rigged {
+    panic_in_started: bool,
+    panic_in_wait: bool,
+    /// What its join reports instead of stopping the workload.
+    stop_error: Option<fn() -> Error>,
+}
+
+struct RiggedTrials {
     inner: Box<dyn Trials>,
-    stopped: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    rigged: Rigged,
+    joins: Arc<AtomicUsize>,
 }
 
-struct PanickingRunning {
+struct RiggedRunning {
     inner: Box<dyn Running>,
-    stopped: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    rigged: Rigged,
+    joins: Arc<AtomicUsize>,
 }
 
-impl Trials for PanicsWhileWaiting {
+impl Trials for RiggedTrials {
     fn sweep(&mut self, cancel: &CancellationToken) -> Result<Swept, Error> {
         self.inner.sweep(cancel)
     }
@@ -344,9 +358,10 @@ impl Trials for PanicsWhileWaiting {
         spec: TrialSpec,
         stopped: Stopped,
     ) -> Result<Box<dyn Running>, Partial<Option<Stopped>>> {
-        Ok(Box::new(PanickingRunning {
+        Ok(Box::new(RiggedRunning {
             inner: self.inner.start(cancel, spec, stopped)?,
-            stopped: self.stopped.clone(),
+            rigged: self.rigged,
+            joins: self.joins.clone(),
         }))
     }
 
@@ -362,67 +377,216 @@ impl Trials for PanicsWhileWaiting {
     }
 }
 
-impl Running for PanickingRunning {
+impl Running for RiggedRunning {
     fn started(&self) -> togi_machine::Started {
+        assert!(!self.rigged.panic_in_started, "a bug reading the start");
         self.inner.started()
     }
 
     fn wait(
         &mut self,
-        _: &CancellationToken,
-        _: &mut dyn togi_machine::Reporter,
+        cancel: &CancellationToken,
+        reporter: &mut dyn togi_machine::Reporter,
     ) -> Result<togi_machine::TrialResult, Partial<togi_machine::TrialResult>> {
-        panic!("a bug while the trial runs");
+        assert!(!self.rigged.panic_in_wait, "a bug while the trial runs");
+        self.inner.wait(cancel, reporter)
     }
 
     fn stop(self: Box<Self>) -> Result<Stopped, Error> {
-        self.stopped
-            .store(true, std::sync::atomic::Ordering::SeqCst);
-        self.inner.stop()
+        self.joins.fetch_add(1, Ordering::SeqCst);
+        match self.rigged.stop_error {
+            Some(error) => Err(error()),
+            None => self.inner.stop(),
+        }
     }
 }
 
-#[test]
-fn a_panic_while_a_trial_runs_joins_its_teardown_and_restores_the_offsets_before_it_is_handed_back()
-{
-    let bench = Bench::defined(&MachineDefinition {
+fn two_cores_at_minus_ten() -> Bench {
+    Bench::defined(&MachineDefinition {
         cores: 2,
         bios: Some(vec![-10, -10]),
         ..MachineDefinition::default()
-    });
+    })
+}
+
+/// The run of `bench` with its workload rigged and `on_append` hooked in; returns the joins of the workload.
+fn run_rigged(
+    bench: &Bench,
+    rigged: Rigged,
+    on_append: Option<crate::AppendHook>,
+) -> (Ended, Arc<AtomicUsize>) {
     let mut input = bench.input();
-    let joined = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-    input.machine.trials = Box::new(PanicsWhileWaiting {
+    let joins = Arc::new(AtomicUsize::new(0));
+    input.machine.trials = Box::new(RiggedTrials {
         inner: bench.sim.seams().trials,
-        stopped: joined.clone(),
+        rigged,
+        joins: joins.clone(),
     });
-    let mut ended = run(input);
-    assert!(joined.load(std::sync::atomic::Ordering::SeqCst));
-    let panic = ended.panic.take().expect("the panic is handed back");
-    assert_eq!(panic.message(), "a bug while the trial runs");
-    assert!(matches!(
-        ended.errors.as_slice(),
-        [SessionError::Panicked(message)] if message == "a bug while the trial runs"
-    ));
+    input.on_append = on_append;
+    (run(input), joins)
+}
+
+fn restored(ended: &Ended) -> bool {
+    ended
+        .journal
+        .events()
+        .iter()
+        .any(|event| event.kind() == togi_journal::EventKind::ProfileRestored)
+}
+
+fn assert_offsets(bench: &Bench, value: i64) {
     let mut smu = bench.sim.seams().smu;
     for id in 0..2 {
-        assert_eq!(
-            smu.offset(core(id)).unwrap().0,
-            -10,
-            "core {id} is back at the boot offset"
-        );
+        assert_eq!(smu.offset(core(id)).unwrap().0, value, "core {id}");
     }
+}
+
+fn assert_handed_back(ended: &mut Ended, message: &str) {
+    let panic = ended.panic.take().expect("the panic is handed back");
+    assert_eq!(panic.message(), message);
     assert!(
         ended
-            .journal
-            .events()
+            .errors
             .iter()
-            .any(|event| event.kind() == togi_journal::EventKind::ProfileRestored)
+            .any(|error| matches!(error, SessionError::Panicked(seen) if seen == message)),
+        "{:?}",
+        ended.errors
     );
     assert!(
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| panic.resume())).is_err(),
         "resuming propagates the original panic"
     );
+}
+
+fn panics_at(kind: togi_journal::EventKind) -> crate::AppendHook {
+    Box::new(move |event| assert!(event.kind() != kind, "a bug taking in {kind:?}"))
+}
+
+#[test]
+fn a_panic_while_a_trial_runs_joins_its_teardown_and_restores_the_offsets_before_it_is_handed_back()
+{
+    let bench = two_cores_at_minus_ten();
+    let rigged = Rigged {
+        panic_in_wait: true,
+        ..Rigged::default()
+    };
+    let (mut ended, joins) = run_rigged(&bench, rigged, None);
+    assert_eq!(joins.load(Ordering::SeqCst), 1);
+    assert_handed_back(&mut ended, "a bug while the trial runs");
+    assert_offsets(&bench, -10);
+    assert!(restored(&ended));
+}
+
+/// Go `TestRunOwnerEveryExit`, panic mode: `Started` panics with the workload running.
+#[test]
+fn a_panic_after_the_workload_started_and_before_its_wait_still_joins_it_and_restores_the_offsets()
+{
+    let bench = two_cores_at_minus_ten();
+    let rigged = Rigged {
+        panic_in_started: true,
+        ..Rigged::default()
+    };
+    let (mut ended, joins) = run_rigged(&bench, rigged, None);
+    assert_eq!(
+        joins.load(Ordering::SeqCst),
+        1,
+        "the workload was joined once"
+    );
+    assert_handed_back(&mut ended, "a bug reading the start");
+    assert_offsets(&bench, -10);
+    assert!(restored(&ended));
+    assert!(
+        !ended
+            .journal
+            .events()
+            .iter()
+            .any(|event| event.kind() == togi_journal::EventKind::Shutdown),
+        "no clean shutdown is claimed after a panic"
+    );
+}
+
+#[test]
+fn a_panic_taking_in_the_trial_start_joins_the_workload_and_answers_with_the_emergency() {
+    let bench = two_cores_at_minus_ten();
+    let hook = panics_at(togi_journal::EventKind::TrialStart);
+    let (mut ended, joins) = run_rigged(&bench, Rigged::default(), Some(hook));
+    assert_eq!(
+        joins.load(Ordering::SeqCst),
+        1,
+        "the workload was joined once"
+    );
+    assert_handed_back(&mut ended, "a bug taking in TrialStart");
+    assert_emergency_zeroed(&bench, &ended);
+}
+
+/// What a latched appender leaves: the emergency zeroed the machine, and nothing was restored or published from the
+/// folds that missed a durable event.
+fn assert_emergency_zeroed(bench: &Bench, ended: &Ended) {
+    assert!(
+        matches!(
+            ended.emergency.as_ref().map(|outcome| &outcome.response),
+            Some(crate::Response::Zeroed(zeroed)) if zeroed.is_clean()
+        ),
+        "{:?}",
+        ended.emergency
+    );
+    assert_offsets(bench, 0);
+    assert!(!restored(ended));
+    assert!(
+        ended
+            .journal
+            .read_state::<crate::publication::StateDocument>()
+            .unwrap()
+            .is_none(),
+        "no state is published from stale folds"
+    );
+    assert!(ended.capsule.is_none());
+}
+
+#[test]
+fn a_panic_taking_in_an_event_after_it_is_durable_latches_the_appender_instead_of_restoring_from_stale_folds()
+ {
+    let bench = two_cores_at_minus_ten();
+    let hook = panics_at(togi_journal::EventKind::TrialProgress);
+    let (mut ended, joins) = run_rigged(&bench, Rigged::default(), Some(hook));
+    assert!(joins.load(Ordering::SeqCst) >= 1, "the workload was joined");
+    assert_handed_back(&mut ended, "a bug taking in TrialProgress");
+    assert_emergency_zeroed(&bench, &ended);
+}
+
+#[test]
+fn a_panic_whose_teardown_cannot_be_confirmed_reports_both_and_restores_nothing() {
+    for (stop_error, crashed) in [
+        (
+            (|| Error::Containment("workload still running".into())) as fn() -> Error,
+            false,
+        ),
+        (|| Error::Crashed, true),
+    ] {
+        let bench = two_cores_at_minus_ten();
+        let rigged = Rigged {
+            panic_in_wait: true,
+            stop_error: Some(stop_error),
+            ..Rigged::default()
+        };
+        let (mut ended, joins) = run_rigged(&bench, rigged, None);
+        assert_eq!(joins.load(Ordering::SeqCst), 1);
+        assert!(
+            matches!(
+                ended.errors.as_slice(),
+                [SessionError::Panicked(_), SessionError::Machine(error)]
+                    if matches!(error, Error::Crashed) == crashed
+            ),
+            "{:?}",
+            ended.errors
+        );
+        assert_eq!(ended.crashed(), crashed);
+        assert!(ended.panic.take().is_some());
+        assert!(
+            !restored(&ended),
+            "an unconfirmed teardown restores nothing"
+        );
+    }
 }
 
 struct PanicsWhileSweeping;
