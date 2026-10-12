@@ -2,37 +2,40 @@
 //! kernel logs and the reset it is about to report.
 
 use jiff::{SignedDuration, Timestamp};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::time::Duration;
 use togi_machine::{
     BankType, BiosContext, BootId, CoreId, CpuId, Mce, ResetKind, ResetReason, TargetOffset,
+    object_only,
 };
 
 use crate::runtime::PendingMce;
 use crate::samples::LastTrial;
 
-/// The state of a [`Simulator`](crate::Simulator) that a later process continues from with
-/// [`Simulator::restore`](crate::Simulator::restore): its seed, clocks, boots with their reset reasons and kernel
-/// logs, the machine checks and reset waiting for the next boot, its registers, BIOS context and the last trial's
-/// samples. Draws are keyed by seed and typed parts, so no generator state is kept. Armed faults, scripts added
-/// with [`Simulator::script_trial`](crate::Simulator::script_trial), recorded violations and the samples
-/// directory are not kept.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Persisted {
-    pub(crate) seed: u64,
-    pub(crate) epoch: Timestamp,
-    pub(crate) clock: Duration,
-    pub(crate) boot_at: Duration,
-    pub(crate) wall_offset: SignedDuration,
-    pub(crate) boot_number: u32,
-    pub(crate) boots: Vec<PersistedBoot>,
-    pub(crate) regs: Vec<TargetOffset>,
-    pub(crate) crashed: bool,
-    pub(crate) queued: Vec<PendingMce>,
-    pub(crate) next_reset: Option<ResetKind>,
-    pub(crate) bios: BiosContext,
-    pub(crate) samples: LastTrial,
+object_only! {
+    /// The state of a [`Simulator`](crate::Simulator) that a later process continues from with
+    /// [`Simulator::restore`](crate::Simulator::restore): its seed, clocks, boots with their reset reasons and
+    /// kernel logs, the machine checks and reset waiting for the next boot, its registers, BIOS context and the
+    /// last trial's samples. Draws are keyed by seed and typed parts, so no generator state is kept. Armed
+    /// faults, scripts added with [`Simulator::script_trial`](crate::Simulator::script_trial), recorded
+    /// violations and the samples directory are not kept.
+    #[derive(Clone, Debug, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct Persisted {
+        pub(crate) seed: u64,
+        pub(crate) epoch: Timestamp,
+        pub(crate) clock: Duration,
+        pub(crate) boot_at: Duration,
+        pub(crate) wall_offset: SignedDuration,
+        pub(crate) boot_number: u32,
+        pub(crate) boots: Vec<PersistedBoot>,
+        pub(crate) regs: Vec<TargetOffset>,
+        pub(crate) crashed: bool,
+        pub(crate) queued: Vec<PendingMce>,
+        pub(crate) next_reset: Option<ResetKind>,
+        pub(crate) bios: BiosContext,
+        pub(crate) samples: LastTrial,
+    }
 }
 
 /// A machine that cannot continue from a [`Persisted`] state.
@@ -44,20 +47,24 @@ pub enum RestoreError {
     NoBoot,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct PersistedBoot {
-    pub id: BootId,
-    pub reason: PersistedReason,
-    pub mces: Vec<PersistedMce>,
+object_only! {
+    #[derive(Clone, Debug, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub(crate) struct PersistedBoot {
+        pub id: BootId,
+        pub reason: PersistedReason,
+        pub mces: Vec<PersistedMce>,
+    }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct PersistedReason {
-    pub kind: Option<ResetKind>,
-    pub raw: Vec<String>,
-    pub supported: bool,
+object_only! {
+    #[derive(Clone, Debug, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub(crate) struct PersistedReason {
+        pub kind: Option<ResetKind>,
+        pub raw: Vec<String>,
+        pub supported: bool,
+    }
 }
 
 impl From<&ResetReason> for PersistedReason {
@@ -80,17 +87,19 @@ impl From<PersistedReason> for ResetReason {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct PersistedMce {
-    pub cpu: CpuId,
-    pub core: Option<CoreId>,
-    pub bank: u16,
-    pub bank_type: BankType,
-    pub corrected: bool,
-    pub time: Timestamp,
-    pub monotonic: Duration,
-    pub lines: Vec<String>,
+object_only! {
+    #[derive(Clone, Debug, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub(crate) struct PersistedMce {
+        pub cpu: CpuId,
+        pub core: Option<CoreId>,
+        pub bank: u16,
+        pub bank_type: BankType,
+        pub corrected: bool,
+        pub time: Timestamp,
+        pub monotonic: Duration,
+        pub lines: Vec<String>,
+    }
 }
 
 impl From<&Mce> for PersistedMce {

@@ -1,12 +1,12 @@
 //! Conditions samples of the last trial, generated lazily: one per simulated second, strictly before the
 //! trial's end. Memory holds the snapshot that generates them, never the series.
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::fs;
 use std::io::{self, BufWriter, Write};
 use std::path::Path;
 use std::time::Duration;
-use togi_machine::{CoreId, CoreSet, PerCore, PmTable, TrialConditions};
+use togi_machine::{CoreId, CoreSet, PerCore, PmTable, TrialConditions, object_only};
 
 use crate::voltage::VoltageState;
 
@@ -15,17 +15,19 @@ const TICK: Duration = Duration::from_secs(1);
 const STALL_LEAD: Duration = Duration::from_secs(2);
 const CCD_SIZE: usize = 8;
 
-/// What the samples of one trial are generated from.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct LastTrial {
-    pub id: Option<String>,
-    pub cores: CoreSet,
-    pub threads: u8,
-    pub ran: Duration,
-    /// The core whose worker stopped before the machine crashed.
-    pub stalled: Option<CoreId>,
-    pub voltage: Option<VoltageState>,
+object_only! {
+    /// What the samples of one trial are generated from.
+    #[derive(Clone, Debug, Default, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub(crate) struct LastTrial {
+        pub id: Option<String>,
+        pub cores: CoreSet,
+        pub threads: u8,
+        pub ran: Duration,
+        /// The core whose worker stopped before the machine crashed.
+        pub stalled: Option<CoreId>,
+        pub voltage: Option<VoltageState>,
+    }
 }
 
 impl LastTrial {

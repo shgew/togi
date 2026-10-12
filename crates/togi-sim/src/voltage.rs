@@ -5,8 +5,8 @@
 //! limit hazards, the joints and the CCD residual. Telemetry for any other trial is computed from the
 //! same equations without changing its hazards.
 
-use serde::{Deserialize, Serialize};
-use togi_machine::{CoreId, Regime, TargetOffset, workloads};
+use serde::Serialize;
+use togi_machine::{CoreId, Regime, TargetOffset, object_only, workloads};
 
 use crate::definition::{DEFAULT_COUNT_V, SharedVoltageDef, VoltageCoreDef, VoltageWorkloadDef};
 use crate::error::{InvalidMachine, Path, Problem, ShapeError};
@@ -56,18 +56,20 @@ pub struct VoltageCore {
     pub signals: Option<SignalMix>,
 }
 
-/// The rail at one profile and load.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct VoltageState {
-    /// The voltage each core requests; unloaded cores request `idle_v`.
-    pub requests: [f32; CORES],
-    /// Whole-MHz clock of each CCD, 0 when none of its cores is loaded.
-    pub clocks: [u32; 2],
-    /// The rail: the highest request of a loaded core.
-    pub rail: f64,
-    /// Failures per second of each core; 0 for unloaded cores.
-    pub rates: [f64; CORES],
+object_only! {
+    /// The rail at one profile and load.
+    #[derive(Clone, Debug, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct VoltageState {
+        /// The voltage each core requests; unloaded cores request `idle_v`.
+        pub requests: [f32; CORES],
+        /// Whole-MHz clock of each CCD, 0 when none of its cores is loaded.
+        pub clocks: [u32; 2],
+        /// The rail: the highest request of a loaded core.
+        pub rail: f64,
+        /// Failures per second of each core; 0 for unloaded cores.
+        pub rates: [f64; CORES],
+    }
 }
 
 impl Voltage {

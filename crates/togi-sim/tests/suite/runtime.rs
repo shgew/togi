@@ -580,3 +580,100 @@ fn a_persisted_machine_for_other_cores_is_refused() {
         }
     );
 }
+
+fn positional(object: &serde_json::Value, fields: &[&str]) -> serde_json::Value {
+    let map = object.as_object().expect("an object");
+    assert_eq!(map.len(), fields.len(), "{object}");
+    serde_json::Value::Array(fields.iter().map(|field| map[*field].clone()).collect())
+}
+
+fn refuses_positional(machine: &serde_json::Value, pointer: &str, fields: &[&str]) {
+    serde_json::from_value::<togi_sim::Persisted>(machine.clone()).expect("a decoded machine");
+    let mut value = machine.clone();
+    let target = value
+        .pointer_mut(pointer)
+        .unwrap_or_else(|| panic!("{pointer} in {machine}"));
+    let array = positional(target, fields);
+    *target = array;
+    assert!(
+        serde_json::from_value::<togi_sim::Persisted>(value).is_err(),
+        "{pointer} decoded from a positional array"
+    );
+}
+
+#[test]
+fn a_persisted_machine_decodes_only_from_objects() {
+    let definition = two_cores(ModelDef {
+        crash_mce: 1.0,
+        ..sharp(Signal::Crash)
+    });
+    let mut rig = Rig::new(&definition, 1);
+    rig.boot();
+    assert!(crashed(&rig.alone(0, -12, Regime::R2, 0)));
+    let mut crashed_machine =
+        serde_json::to_value(rig.sim.persisted()).expect("an encoded machine");
+    refuses_positional(
+        &crashed_machine,
+        "",
+        &[
+            "seed",
+            "epoch",
+            "clock",
+            "boot_at",
+            "wall_offset",
+            "boot_number",
+            "boots",
+            "regs",
+            "crashed",
+            "queued",
+            "next_reset",
+            "bios",
+            "samples",
+        ],
+    );
+    refuses_positional(&crashed_machine, "/boots/0", &["id", "reason", "mces"]);
+    refuses_positional(
+        &crashed_machine,
+        "/boots/0/reason",
+        &["kind", "raw", "supported"],
+    );
+    refuses_positional(
+        &crashed_machine,
+        "/queued/0",
+        &["core", "bank", "bank_type", "corrected"],
+    );
+    refuses_positional(
+        &crashed_machine,
+        "/samples",
+        &["id", "cores", "threads", "ran", "stalled", "voltage"],
+    );
+    crashed_machine["samples"]["voltage"] = serde_json::json!({
+        "requests": vec![1.0; 16],
+        "clocks": [4000, 0],
+        "rail": 1.0,
+        "rates": vec![0.0; 16],
+    });
+    refuses_positional(
+        &crashed_machine,
+        "/samples/voltage",
+        &["requests", "clocks", "rail", "rates"],
+    );
+
+    rig.sim.reboot();
+    let rebooted = serde_json::to_value(rig.sim.persisted()).expect("an encoded machine");
+    let last = rebooted["boots"].as_array().expect("boots").len() - 1;
+    refuses_positional(
+        &rebooted,
+        &format!("/boots/{last}/mces/0"),
+        &[
+            "cpu",
+            "core",
+            "bank",
+            "bank_type",
+            "corrected",
+            "time",
+            "monotonic",
+            "lines",
+        ],
+    );
+}

@@ -4,13 +4,14 @@
 
 use jiff::{SignedDuration, Timestamp};
 use rand::RngExt;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
 use std::time::Duration;
 use togi_machine::{
     BankType, BiosContext, BootId, CoreId, CpuId, Mce, ResetKind, ResetReason, TargetOffset,
+    object_only,
 };
 
 use crate::faults::Faults;
@@ -61,14 +62,16 @@ pub struct RunSettings {
     pub replay: Option<Replay>,
 }
 
-/// A machine check waiting for the next boot to log it.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct PendingMce {
-    pub core: CoreId,
-    pub bank: u16,
-    pub bank_type: BankType,
-    pub corrected: bool,
+object_only! {
+    /// A machine check waiting for the next boot to log it.
+    #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub(crate) struct PendingMce {
+        pub core: CoreId,
+        pub bank: u16,
+        pub bank_type: BankType,
+        pub corrected: bool,
+    }
 }
 
 pub(crate) struct Runtime {
