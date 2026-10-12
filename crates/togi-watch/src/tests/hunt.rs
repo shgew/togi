@@ -310,6 +310,7 @@ fn a_failed_probe_marks_the_probed_member() {
             None,
             Vec::new(),
         ),
+        group(4, &[1], &[-20], GroupState::Failed, None, Vec::new()),
     ]);
     assert_eq!(group_failures(&hunt, core(0)), [off(-20), off(-15)]);
     assert_eq!(group_failures(&hunt, core(1)), []);

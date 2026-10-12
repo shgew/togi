@@ -596,6 +596,7 @@ fn a_phrase_applies_only_to_its_own_kind() {
         EventKind::Failure,
         EventKind::TunerDecision,
         EventKind::HuntGroup,
+        EventKind::CorePhase,
     ] {
         let Tagging::By(of) = words(kind).tag else {
             panic!("{kind} is tagged by its payload");

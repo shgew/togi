@@ -215,17 +215,20 @@ impl Facts {
                 live: 0,
             },
         );
-        if let Some(last) = self.history.entries.last_mut() {
-            if last.key == Some(Key::KnownFailure) && last.hunt.is_none() {
-                last.hunt = Some(hunt);
-                last.text = last.text.replacen(
-                    " at these",
-                    &format!(" on {} at these", core_ids(d.cores)),
-                    1,
-                );
-                let _ = write!(last.text, " → hunt {hunt}");
-                return None;
-            }
+        if let Some(last) = self
+            .history
+            .entries
+            .last_mut()
+            .filter(|last| last.key == Some(Key::KnownFailure) && last.hunt.is_none())
+        {
+            last.hunt = Some(hunt);
+            last.text = last.text.replacen(
+                " at these",
+                &format!(" on {} at these", core_ids(d.cores)),
+                1,
+            );
+            let _ = write!(last.text, " → hunt {hunt}");
+            return None;
         }
         let mut line = entry(
             at,
