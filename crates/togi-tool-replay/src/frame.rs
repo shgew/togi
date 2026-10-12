@@ -75,7 +75,7 @@ pub fn draw(
     Ok(text(&buffer, frame.colour))
 }
 
-fn text(buffer: &Buffer, colour: bool) -> String {
+pub(crate) fn text(buffer: &Buffer, colour: bool) -> String {
     let area = buffer.area;
     let mut out = String::new();
     for y in area.top()..area.bottom() {

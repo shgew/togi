@@ -142,6 +142,31 @@ fn at_prints_one_frame_of_the_recording_in_the_system_time_zone() {
 }
 
 #[test]
+fn every_page_can_be_printed() {
+    let (_dir, args) = state_dir(Scenario::Checking);
+    let events = Scenario::Checking.events().unwrap();
+    for (name, view) in [
+        ("main", View::Main),
+        ("help", View::Help),
+        ("log", View::Log),
+    ] {
+        let mut args = args.clone();
+        args.extend(["--at", "30", "--view", name].map(String::from));
+        let mut out = Vec::new();
+        run(&Cli::try_parse_from(&args).unwrap(), &mut out).unwrap();
+        let frame = Frame {
+            view,
+            width: 240,
+            height: 67,
+            colour: false,
+            after: SignedDuration::ZERO,
+        };
+        let want = draw(&events, prefix(&events, 30), &frame, &TimeZone::system()).unwrap();
+        assert_eq!(String::from_utf8(out).unwrap(), want, "{name}");
+    }
+}
+
+#[test]
 fn at_a_sequence_number_beyond_the_recording_prints_its_last_frame() {
     let (_dir, mut args) = state_dir(Scenario::Checking);
     args.extend(["--at", "99999999"].map(String::from));

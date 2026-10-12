@@ -1881,6 +1881,7 @@ dependencies = [
  "insta",
  "jiff",
  "ratatui",
+ "rustix",
  "tempfile",
  "thiserror",
  "togi-journal",

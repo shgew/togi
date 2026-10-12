@@ -4,6 +4,8 @@
     reason = "the tests install a recording, run the built command and panic on a broken fixture"
 )]
 
+mod live;
+
 use std::process::{Command, Output};
 
 use tempfile::tempdir;

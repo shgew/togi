@@ -122,10 +122,10 @@ mod tests {
     }
 
     fn logged(feed: &mut Replaying<'_>) -> usize {
-        match feed.journal(&screen()) {
-            Journal::Ready { log, .. } => log.total,
-            other => panic!("{other:?}"),
-        }
+        let Journal::Ready { log, .. } = feed.journal(&screen()) else {
+            panic!("not ready")
+        };
+        log.total
     }
 
     #[test]

@@ -1,5 +1,8 @@
 use jiff::tz::TimeZone;
 use jiff::{SignedDuration, Timestamp};
+use ratatui::buffer::Buffer;
+use ratatui::layout::Rect;
+use ratatui::style::{Color, Modifier, Style};
 use togi_journal::Event;
 use togi_watch::screen::View;
 use togi_watchtest::Scenario;
@@ -230,5 +233,96 @@ fn every_scenario_can_be_replayed_to_its_last_event() {
             "{}",
             scenario.name()
         );
+    }
+}
+
+fn written(colour: bool, rows: &[&[(&str, Style)]]) -> String {
+    let mut buffer = Buffer::empty(Rect::new(0, 0, 12, u16::try_from(rows.len()).unwrap()));
+    for (y, row) in (0..).zip(rows) {
+        let mut x = 0;
+        for &(piece, style) in *row {
+            buffer.set_string(x, y, piece, style);
+            x += u16::try_from(piece.chars().count()).unwrap();
+        }
+    }
+    crate::frame::text(&buffer, colour)
+}
+
+#[test]
+fn text_without_colour_trims_each_row_and_keeps_wide_glyphs_whole() {
+    let red = Style::new().fg(Color::Red).bg(Color::Blue);
+    let body = written(
+        false,
+        &[
+            &[("a b", Style::default()), ("   ", red)],
+            &[("漢字x", Style::default())],
+            &[],
+        ],
+    );
+    assert_eq!(body, "a b\n漢字x\n\n");
+}
+
+#[test]
+fn colour_writes_one_sequence_per_change_of_style_and_resets_at_the_end_of_a_row() {
+    let plain = Style::default();
+    let bold_red = Style::new()
+        .fg(Color::Red)
+        .bg(Color::Blue)
+        .add_modifier(Modifier::BOLD | Modifier::UNDERLINED);
+    let all = Style::new().add_modifier(
+        Modifier::DIM | Modifier::ITALIC | Modifier::REVERSED | Modifier::CROSSED_OUT,
+    );
+    let body = written(
+        true,
+        &[
+            &[("a", plain), ("b", bold_red), ("c", bold_red), ("d", plain)],
+            &[("e", all)],
+            &[(
+                "f",
+                Style::new().fg(Color::Indexed(200)).bg(Color::Rgb(1, 2, 3)),
+            )],
+            &[
+                ("g", Style::new().bg(Color::Green)),
+                (" ", Style::new().bg(Color::Green)),
+            ],
+        ],
+    );
+    assert_eq!(
+        body,
+        "a\x1b[0;1;4;31;44mbc\x1b[0md\n\
+         \x1b[0;2;3;7;9me\x1b[0m\n\
+         \x1b[0;38;5;200;48;2;1;2;3mf\x1b[0m\n\
+         \x1b[0;42mg \x1b[0m\n"
+    );
+}
+
+#[test]
+fn every_colour_slot_has_its_own_code_as_a_foreground_and_a_background() {
+    let slots = [
+        (Color::Black, 0),
+        (Color::Red, 1),
+        (Color::Green, 2),
+        (Color::Yellow, 3),
+        (Color::Blue, 4),
+        (Color::Magenta, 5),
+        (Color::Cyan, 6),
+        (Color::Gray, 7),
+        (Color::DarkGray, 8),
+        (Color::LightRed, 9),
+        (Color::LightGreen, 10),
+        (Color::LightYellow, 11),
+        (Color::LightBlue, 12),
+        (Color::LightMagenta, 13),
+        (Color::LightCyan, 14),
+        (Color::White, 15),
+    ];
+    for (color, slot) in slots {
+        let (fg, bg) = if slot < 8 {
+            (30 + slot, 40 + slot)
+        } else {
+            (82 + slot, 92 + slot)
+        };
+        let body = written(true, &[&[("x", Style::new().fg(color).bg(color))]]);
+        assert_eq!(body, format!("\x1b[0;{fg};{bg}mx\x1b[0m\n"), "{color:?}");
     }
 }
