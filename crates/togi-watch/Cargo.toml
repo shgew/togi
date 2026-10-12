@@ -18,10 +18,15 @@ togi-tuner.workspace = true
 unicode-width.workspace = true
 
 [dev-dependencies]
+criterion.workspace = true
 insta.workspace = true
 serde_json.workspace = true
 togi-config.workspace = true
 togi-watchtest.workspace = true
+
+[[bench]]
+name = "frames"
+harness = false
 
 [lints]
 workspace = true
