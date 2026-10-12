@@ -26,8 +26,18 @@ fn every_script_completes_the_command_and_its_shared_flag() {
 }
 
 #[test]
-fn no_script_offers_config_before_a_command_takes_it() {
+fn every_script_completes_config_for_the_commands_that_take_it() {
     for &shell in Shell::value_variants() {
-        assert!(!text(shell).contains("--config"), "{shell:?}");
+        assert!(text(shell).contains("config"), "{shell:?}");
     }
+}
+
+#[test]
+fn the_top_level_command_does_not_define_config() {
+    assert!(
+        crate::cli::command()
+            .get_arguments()
+            .all(|arg| arg.get_id() != "path"),
+        "--config belongs to the commands that read the configuration"
+    );
 }

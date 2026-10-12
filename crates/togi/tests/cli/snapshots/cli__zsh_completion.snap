@@ -33,7 +33,19 @@ _togi() {
         (( CURRENT += 1 ))
         curcontext="${curcontext%:*:*}:togi-command-$line[1]:"
         case $line[1] in
-            (completion)
+            (run)
+_arguments "${_arguments_options[@]}" : \
+'--config=[JSON configuration file \[default\: /etc/togi/config.json\]]:path:_files' \
+'(--first-result)--cycles=[Stop after N clean cycles, each a passed full cycle ending at or after phase 2'\''s confirmation cycle (default endless)]:N:_default' \
+'--tuning-boot=[Run as the tuning boot service\: persist a leave reason before clearing the saved boot entry in this GRUB environment file, and reboot after a boot loop]:file:_files' \
+'--state-dir=[State directory]:path:_files -/' \
+'--first-result[Stop once the BIOS profile is first confirmed, after phase 1'\''s passed cycle and before phase 2 moves a core]' \
+'--no-tui[Print one line per event instead of the dashboard on a terminal]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+&& ret=0
+;;
+(completion)
 _arguments "${_arguments_options[@]}" : \
 '--state-dir=[State directory]:path:_files -/' \
 '-h[Print help (see more with '\''--help'\'')]' \
@@ -53,7 +65,11 @@ _arguments "${_arguments_options[@]}" : \
         (( CURRENT += 1 ))
         curcontext="${curcontext%:*:*}:togi-help-command-$line[1]:"
         case $line[1] in
-            (completion)
+            (run)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(completion)
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
@@ -73,6 +89,7 @@ esac
 (( $+functions[_togi_commands] )) ||
 _togi_commands() {
     local commands; commands=(
+'run:Start or resume the tuning session in the foreground' \
 'completion:Print a shell completion script' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
@@ -86,6 +103,7 @@ _togi__subcmd__completion_commands() {
 (( $+functions[_togi__subcmd__help_commands] )) ||
 _togi__subcmd__help_commands() {
     local commands; commands=(
+'run:Start or resume the tuning session in the foreground' \
 'completion:Print a shell completion script' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
@@ -100,6 +118,16 @@ _togi__subcmd__help__subcmd__completion_commands() {
 _togi__subcmd__help__subcmd__help_commands() {
     local commands; commands=()
     _describe -t commands 'togi help help commands' commands "$@"
+}
+(( $+functions[_togi__subcmd__help__subcmd__run_commands] )) ||
+_togi__subcmd__help__subcmd__run_commands() {
+    local commands; commands=()
+    _describe -t commands 'togi help run commands' commands "$@"
+}
+(( $+functions[_togi__subcmd__run_commands] )) ||
+_togi__subcmd__run_commands() {
+    local commands; commands=()
+    _describe -t commands 'togi run commands' commands "$@"
 }
 
 if [ "$funcstack[1]" = "_togi" ]; then

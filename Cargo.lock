@@ -871,10 +871,23 @@ dependencies = [
  "clap_complete",
  "clap_complete_nushell",
  "insta",
+ "jiff",
+ "rustix",
  "tempfile",
  "togi-config",
+ "togi-defect",
+ "togi-detect",
+ "togi-hardware",
+ "togi-hostlock",
  "togi-journal",
+ "togi-machine",
+ "togi-render",
+ "togi-session",
+ "togi-sim",
+ "togi-tuner",
+ "togi-tuningboot",
  "togi-version",
+ "tokio",
 ]
 
 [[package]]

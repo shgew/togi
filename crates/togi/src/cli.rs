@@ -12,6 +12,7 @@ use clap::{CommandFactory, Parser, Subcommand};
 use crate::args::StateDirArgs;
 use crate::completion;
 use crate::exit::Exit;
+use crate::system::{Real, System};
 
 const BANNER: &str = "   __              _\n  / /_____  ____ _(_)\n / __/ __ \\/ __ `/ /\n/ /_/ /_/ / /_/ / /\n\\__/\\____/\\__, /_/\n         /____/\n\n  per-core Curve Optimizer\n\n";
 
@@ -40,6 +41,7 @@ pub struct Cli {
 /// of that struct's doc comment is the summary `togi --help` lists.
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    Run(crate::run::Args),
     Completion(completion::Args),
 }
 
@@ -47,6 +49,7 @@ impl Command {
     /// Runs the command and returns the exit status.
     pub fn run(self, ctx: &mut Context<'_>) -> Exit {
         match self {
+            Self::Run(args) => crate::run::run(&args, ctx),
             Self::Completion(args) => completion::run(&args, ctx),
         }
     }
@@ -60,6 +63,8 @@ pub struct Context<'a> {
     pub out: &'a mut dyn Write,
     /// Standard error.
     pub err: &'a mut dyn Write,
+    /// The host: platform, locks, machine and terminal.
+    pub system: &'a dyn System,
 }
 
 impl Context<'_> {
@@ -78,6 +83,20 @@ where
     I: IntoIterator<Item = T>,
     T: Into<OsString> + Clone,
 {
+    run_with(args, out, err, &Real)
+}
+
+/// [`run`] against the given host instead of the real one.
+pub fn run_with<I, T>(
+    args: I,
+    out: &mut dyn Write,
+    err: &mut dyn Write,
+    system: &dyn System,
+) -> Exit
+where
+    I: IntoIterator<Item = T>,
+    T: Into<OsString> + Clone,
+{
     let args = config_after_command(args.into_iter().map(Into::into).collect());
     match Cli::try_parse_from(&args) {
         Ok(cli) => {
@@ -85,6 +104,7 @@ where
                 state_dir: &cli.state_dir.state_dir,
                 out,
                 err,
+                system,
             };
             cli.command.run(&mut ctx)
         }

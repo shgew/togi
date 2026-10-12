@@ -20,9 +20,16 @@
 //! the snapshot tests show the new text for review.
 
 pub mod args;
+pub mod build;
 pub mod cli;
 pub mod completion;
+pub mod dashboard;
 pub mod exit;
+pub mod panics;
+pub mod run;
+pub mod signals;
+pub mod system;
 
-pub use cli::run;
+pub use cli::{run, run_with};
 pub use exit::Exit;
+pub use panics::{main_with, run_process};
