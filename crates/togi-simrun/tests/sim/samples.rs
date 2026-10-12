@@ -1,8 +1,8 @@
-use togi_journal::{Event, EventKind, Payload, SessionId, TrialEnd};
+use togi_journal::{Event, EventKind, MemFs, Payload, SessionId, TrialEnd};
 use togi_machine::BiosContext;
-use togi_simrun::{Persistence, events, simulate};
+use togi_simrun::{Observer, Persistence, events, simulate};
 
-use crate::common::{hunt_machine, input, simulator};
+use crate::common::{hunt_machine, input, simulator, until_kind};
 
 fn trial_end<'a>(events: &'a [Event], trial: &str) -> Option<&'a TrialEnd> {
     events.iter().find_map(|event| match &event.payload {
@@ -21,19 +21,23 @@ fn session_id(events: &[Event]) -> &SessionId {
         .unwrap()
 }
 
-#[test]
-fn a_new_sessions_trial_gets_no_samples_from_an_earlier_invocation() {
-    let dir = tempfile::tempdir().unwrap();
-    let persistence = Persistence::Files(dir.path().to_path_buf());
+/// Runs a session, to its end or, with `observer`, until it stops, changes the BIOS so the next invocation starts
+/// a new session, and crashes that session's trial 0001 before it starts. Returns both sessions' events.
+fn a_new_session_after_an_earlier_one(
+    persistence: &Persistence,
+    write_samples: bool,
+    observer: Option<Observer>,
+) -> (Vec<Event>, Vec<Event>) {
     let sim = simulator(&hunt_machine(4), 1);
-    let run = || {
+    let run = |observer: Option<Observer>| {
         let mut input = input(sim.clone(), persistence.clone());
-        input.write_samples = true;
+        input.write_samples = write_samples;
         input.verify_every = None;
+        input.observer = observer;
         simulate(input).unwrap();
     };
-    run();
-    let first = events(&persistence).unwrap();
+    run(observer);
+    let first = events(persistence).unwrap();
     assert!(trial_end(&first, "0001").is_some());
     assert!(
         sim.seams().trials.samples("0001").next().is_some(),
@@ -49,9 +53,9 @@ fn a_new_sessions_trial_gets_no_samples_from_an_earlier_invocation() {
     });
     sim.reboot();
     sim.crash_before_apply(1);
-    run();
+    run(None);
 
-    let second = events(&persistence).unwrap();
+    let second = events(persistence).unwrap();
     assert_ne!(session_id(&first), session_id(&second));
     let is_trial_0001 = |event: &Event| match &event.payload {
         Payload::TrialIntent(intent) => intent.trial.as_str() == "0001",
@@ -80,6 +84,17 @@ fn a_new_sessions_trial_gets_no_samples_from_an_earlier_invocation() {
         (None, None, None),
         "trial 0001 never ran but recorded the earlier session's samples: {end:?}"
     );
+    (first, second)
+}
+
+#[test]
+fn a_new_sessions_trial_gets_no_samples_from_an_earlier_invocation() {
+    let dir = tempfile::tempdir().unwrap();
+    let (first, _) = a_new_session_after_an_earlier_one(
+        &Persistence::Files(dir.path().to_path_buf()),
+        true,
+        None,
+    );
     let archived = dir
         .path()
         .join("archive")
@@ -89,5 +104,14 @@ fn a_new_sessions_trial_gets_no_samples_from_an_earlier_invocation() {
         togi_machine::read_samples(&archived).next().is_some(),
         "the earlier session's samples of trial 0001 are not in its archive at {}",
         archived.display()
+    );
+}
+
+#[test]
+fn a_new_in_memory_sessions_trial_gets_no_samples_from_an_earlier_one() {
+    a_new_session_after_an_earlier_one(
+        &Persistence::Memory(MemFs::new()),
+        false,
+        Some(until_kind(EventKind::TrialEnd)),
     );
 }

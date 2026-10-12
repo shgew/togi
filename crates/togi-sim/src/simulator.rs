@@ -194,6 +194,11 @@ impl Simulator {
         }
     }
 
+    /// Forgets the last trial's samples, so a trial of a new session that reuses its id reads none.
+    pub fn forget_last_trial(&self) {
+        self.shared.borrow_mut().samples = crate::samples::LastTrial::default();
+    }
+
     /// The state a later process continues this machine from with [`restore`](Self::restore).
     pub fn persisted(&self) -> Persisted {
         self.shared.borrow().persisted()

@@ -94,6 +94,9 @@ pub fn simulate(input: SimInput) -> Result<SimOutcome, SimError> {
             source,
         })?;
         let journal = prepared.journal;
+        if journal.events().is_empty() {
+            simulator.forget_last_trial();
+        }
         if let (Some(seq), Some(log)) = (journal.repaired(), user.borrow_mut().as_mut()) {
             if let Some(event) = journal.event(seq) {
                 let _ = renderer.write_event(log, event, &zone);
