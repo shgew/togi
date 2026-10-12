@@ -123,6 +123,12 @@ fn cycle_stage(scene: &Scene<'_>, name: &str, short: bool) -> Vec<Span<'static>>
     let steps = plan.steps.len();
     let resume = cycle.resume_step();
     let at = (resume + 1).min(steps);
+    if steps > 0 && resume >= steps && (plan.paused || scene.s.hunt.is_some()) {
+        return vec![
+            scene.paint(Paint::Good, "■ "),
+            scene.paint(Paint::Text, name),
+        ];
+    }
     if plan.paused || scene.s.hunt.is_some() {
         let mut out = vec![
             scene.paint(Paint::Hunt, "○ "),
