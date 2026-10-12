@@ -219,3 +219,107 @@ fn the_clean_stop_repeats_the_restoration_and_the_shutdown_the_dashboard_hid() {
         .collect();
     assert_eq!(kinds, ["profile.restored", "shutdown"], "{text}");
 }
+
+#[derive(Clone, Copy)]
+enum Journaled {
+    Restored,
+    Shutdown,
+    Warning,
+    Change,
+    Config,
+}
+
+fn journaled(seq: u64, kind: Journaled) -> Event {
+    let payload = match kind {
+        Journaled::Restored => Payload::ProfileRestored(togi_journal::ProfileRestored {
+            offsets: PerCore::default(),
+        }),
+        Journaled::Shutdown => Payload::Shutdown(Shutdown {
+            reason: ShutdownReason::Signal,
+            kernel_cursor: None,
+            kernel_error: None,
+            cycles: None,
+        }),
+        Journaled::Warning => Payload::SessionWarning(SessionWarning {
+            operation: "check".to_owned(),
+            trial: None,
+            error: "w".to_owned(),
+        }),
+        Journaled::Change => Payload::ProfileChange(togi_journal::ProfileChange {
+            from: None,
+            to: PerCore::default(),
+        }),
+        Journaled::Config => Payload::ConfigLoaded(togi_journal::ConfigLoaded {
+            build: togi_journal::Build {
+                version: "0".to_owned(),
+                rev: None,
+                ruleset: 1,
+                schema: 1,
+                fixes: 0,
+                evidence: 1,
+            },
+            config: togi_config::Config::default(),
+            path: "config.json".to_owned(),
+            file: false,
+            kernel_cursor: None,
+            kernel_error: None,
+        }),
+    };
+    event(seq, payload)
+}
+
+#[test]
+fn the_clean_stop_prints_only_the_closing_lines_of_this_run() {
+    use Journaled::{Change, Config, Restored, Shutdown, Warning};
+    const BOTH: &[&str] = &["profile.restored", "shutdown"];
+    let table: [(&str, &[Journaled], &[&str]); 9] = [
+        ("ordinary restore", &[Config, Restored, Shutdown], BOTH),
+        (
+            "interleaved and trailing warnings",
+            &[Config, Restored, Warning, Shutdown, Warning, Warning],
+            BOTH,
+        ),
+        (
+            "later work excludes an earlier restore",
+            &[Restored, Warning, Change, Shutdown, Warning],
+            &["shutdown"],
+        ),
+        (
+            "a new run excludes the previous run's closing lines",
+            &[Restored, Shutdown, Config, Warning],
+            &[],
+        ),
+        (
+            "a previous shutdown bounds the closing suffix",
+            &[Restored, Shutdown, Warning, Shutdown, Warning],
+            &["shutdown"],
+        ),
+        (
+            "shutdown without restore",
+            &[Shutdown, Warning],
+            &["shutdown"],
+        ),
+        (
+            "restore without shutdown",
+            &[Restored, Warning],
+            &["profile.restored"],
+        ),
+        ("warnings only", &[Warning, Warning], &[]),
+        ("empty", &[], &[]),
+    ];
+    for (name, journal, want) in table {
+        let events: Vec<Event> = journal
+            .iter()
+            .zip(1..)
+            .map(|(kind, seq)| journaled(seq, *kind))
+            .collect();
+        let mut err = Vec::new();
+        print_clean_stop(&mut err, Renderer::default(), &TimeZone::UTC, &events);
+        let text = String::from_utf8(err).unwrap();
+        let kinds: Vec<&str> = text
+            .lines()
+            .map(|line| line.split_whitespace().nth(1).unwrap())
+            .collect();
+        assert_eq!(kinds, want, "{name}: {text}");
+    }
+}

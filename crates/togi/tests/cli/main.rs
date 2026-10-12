@@ -263,6 +263,22 @@ fn run_help() {
 }
 
 #[test]
+fn the_cycles_example_is_worded_the_same_in_the_top_level_and_run_help() {
+    let row = |text: &str| {
+        let rows: Vec<String> = text
+            .lines()
+            .filter(|line| line.contains("sudo togi run --cycles 1"))
+            .map(|line| line.split_whitespace().collect::<Vec<_>>().join(" "))
+            .collect();
+        assert_eq!(rows.len(), 1, "{text}");
+        rows.into_iter().next().unwrap()
+    };
+    let top = togi(&["--help"]);
+    let run = togi(&["run", "--help"]);
+    assert_eq!(row(stdout(&top)), row(stdout(&run)));
+}
+
+#[test]
 fn run_usage_errors_exit_2_before_anything_is_touched() {
     let state = tempfile::tempdir().unwrap();
     let state = state.path().join("state");
@@ -276,6 +292,7 @@ fn run_usage_errors_exit_2_before_anything_is_touched() {
         (&["run", "--cycles", "many"], "must be a positive integer"),
         (&["run", "--cycles"], "a value is required"),
         (&["run", "--bogus"], "unexpected argument '--bogus'"),
+        (&["run", "--version"], "unexpected argument '--version'"),
     ] {
         let mut all = vec!["--state-dir", state];
         all.extend_from_slice(args);
@@ -287,7 +304,9 @@ fn run_usage_errors_exit_2_before_anything_is_touched() {
     assert!(!std::path::Path::new(state).exists());
 }
 
+/// These reach `run`'s platform check on `Real`, which refuses anything but Linux before it reads the config.
 #[test]
+#[cfg(target_os = "linux")]
 fn run_reads_its_config_wherever_the_flag_is_written() {
     let dir = tempfile::tempdir().unwrap();
     let state = dir.path().join("state");
@@ -310,6 +329,7 @@ fn run_reads_its_config_wherever_the_flag_is_written() {
 }
 
 #[test]
+#[cfg(target_os = "linux")]
 fn run_with_an_invalid_config_is_a_usage_error() {
     let dir = tempfile::tempdir().unwrap();
     let config = dir.path().join("config.json");
@@ -329,10 +349,12 @@ fn run_with_an_invalid_config_is_a_usage_error() {
     );
 }
 
+#[cfg(target_os = "linux")]
 const NEWER_JOURNAL: &str = r#"{"seq":1,"time":"2026-01-01T00:00:00Z","boot":"b","mono_ms":0,"kind":"session.start","msg":"session started","data":{"build":{"version":"9.9.9","rev":"x","ruleset":1,"schema":1,"fixes":0,"evidence":2},"session":"20260101T000000Z","cores":[]}}
 "#;
 
 #[test]
+#[cfg(target_os = "linux")]
 fn run_refuses_a_journal_from_a_newer_evidence_epoch_before_the_config_and_appends_nothing() {
     let dir = tempfile::tempdir().unwrap();
     let state = dir.path().join("state");

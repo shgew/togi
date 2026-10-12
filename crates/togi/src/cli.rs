@@ -18,8 +18,18 @@ const BANNER: &str = "   __              _\n  / /_____  ____ _(_)\n / __/ __ \\/
 
 static VERSION: LazyLock<String> = LazyLock::new(togi_version::string);
 
-static EXAMPLES: LazyLock<String> =
-    LazyLock::new(|| examples(&[("togi completion zsh", "Print the completion script for zsh")]));
+/// The example `togi --help` and `togi run --help` both show for stopping after the confirmation cycle.
+pub const CYCLES_EXAMPLE: (&str, &str) = (
+    "sudo togi run --cycles 1",
+    "Stop once phase 2's confirmation cycle has passed",
+);
+
+static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
+    examples(&[
+        CYCLES_EXAMPLE,
+        ("togi completion zsh", "Print the completion script for zsh"),
+    ])
+});
 
 /// Finds and tests per-core Curve Optimizer offsets on Zen 5 desktop CPUs.
 #[derive(Debug, Parser)]

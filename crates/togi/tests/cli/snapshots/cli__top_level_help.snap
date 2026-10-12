@@ -20,4 +20,5 @@ Options:
   -V, --version           Print version
 
 Examples:
-  togi completion zsh   Print the completion script for zsh
+  sudo togi run --cycles 1   Stop once phase 2's confirmation cycle has passed
+  togi completion zsh        Print the completion script for zsh

@@ -1,13 +1,17 @@
 use std::cell::RefCell;
+use std::fs::File;
 use std::io::{self, Write};
+use std::os::fd::{AsFd as _, OwnedFd};
 use std::rc::Rc;
 
+use rustix::io::{Errno, write};
+use rustix::pty::{OpenptFlags, grantpt, openpt, ptsname, unlockpt};
 use togi_defect::{DefectId, FindingView};
 use togi_journal::{DefectDirection, Seq};
 use togi_machine::{CancellationToken, CoreId, CoreSet};
 use togi_session::PromptError;
 
-use super::{Answers, ask, parse_answer};
+use super::{Answers, ask, parse_answer, read_line, readable};
 
 #[test]
 fn only_a_complete_line_saying_y_or_yes_is_a_yes() {
@@ -138,4 +142,123 @@ fn a_run_stopped_while_the_question_is_open_ends_the_wait_without_an_answer() {
         &finding(&[3], &decisions),
     );
     assert!(matches!(answer, Err(PromptError::Cancelled)));
+}
+
+struct Failing {
+    cancel_first: Option<CancellationToken>,
+}
+
+impl Answers for Failing {
+    fn line(&mut self, _: &CancellationToken) -> io::Result<Option<String>> {
+        if let Some(cancel) = &self.cancel_first {
+            cancel.cancel();
+        }
+        Err(io::Error::from_raw_os_error(5))
+    }
+
+    fn discard(&mut self) {}
+}
+
+#[test]
+fn an_answer_that_could_not_be_read_is_no_unless_the_run_was_stopped() {
+    let decisions = [];
+    let mut out = Shared::default();
+    let no = ask(
+        &mut out,
+        &mut Failing { cancel_first: None },
+        &CancellationToken::new(),
+        &finding(&[3], &decisions),
+    );
+    assert!(matches!(no, Ok(false)));
+
+    let cancel = CancellationToken::new();
+    let stopped = ask(
+        &mut out,
+        &mut Failing {
+            cancel_first: Some(cancel.clone()),
+        },
+        &cancel,
+        &finding(&[3], &decisions),
+    );
+    assert!(matches!(stopped, Err(PromptError::Cancelled)));
+}
+
+fn terminal() -> (OwnedFd, File) {
+    let master = openpt(OpenptFlags::RDWR | OpenptFlags::NOCTTY).unwrap();
+    grantpt(&master).unwrap();
+    unlockpt(&master).unwrap();
+    let name = ptsname(&master, Vec::new()).unwrap();
+    let slave = File::options()
+        .read(true)
+        .write(true)
+        .open(std::str::from_utf8(name.as_bytes()).unwrap())
+        .unwrap();
+    (master, slave)
+}
+
+const EOF_KEY: &[u8] = b"\x04";
+
+#[test]
+fn a_typed_line_is_read_whole_on_a_terminal() {
+    let (master, slave) = terminal();
+    write(&master, b"yes\n").unwrap();
+    let line = read_line(slave.as_fd(), &CancellationToken::new(), readable).unwrap();
+    assert_eq!(line.as_deref(), Some("yes\n"));
+}
+
+#[test]
+fn a_signal_that_interrupts_the_wait_is_a_wake_up_not_an_error() {
+    let (_master, slave) = terminal();
+    let cancel = CancellationToken::new();
+    let mut waits = 0;
+    let line = read_line(slave.as_fd(), &cancel, |_| {
+        waits += 1;
+        if waits == 1 {
+            return Err(Errno::INTR);
+        }
+        cancel.cancel();
+        Ok(false)
+    })
+    .unwrap();
+    assert_eq!(line, None);
+    assert_eq!(waits, 2);
+}
+
+#[test]
+fn a_part_of_a_line_does_not_keep_a_stop_waiting() {
+    let (master, slave) = terminal();
+    write(&master, b"abc").unwrap();
+    write(&master, EOF_KEY).unwrap();
+    let cancel = CancellationToken::new();
+    let mut waits = 0;
+    let line = read_line(slave.as_fd(), &cancel, |fd| {
+        waits += 1;
+        if waits > 2 {
+            cancel.cancel();
+            return Ok(false);
+        }
+        readable(fd)
+    })
+    .unwrap();
+    assert_eq!(line, None);
+    assert_eq!(waits, 3);
+}
+
+#[test]
+fn the_end_of_the_input_after_a_part_of_a_line_is_that_part_and_no() {
+    let (master, slave) = terminal();
+    write(&master, b"yes").unwrap();
+    write(&master, EOF_KEY).unwrap();
+    write(&master, EOF_KEY).unwrap();
+    let line = read_line(slave.as_fd(), &CancellationToken::new(), readable).unwrap();
+    assert_eq!(line.as_deref(), Some("yes"));
+    assert!(!parse_answer("yes"));
+}
+
+#[test]
+fn the_end_of_the_input_with_nothing_typed_is_no_line() {
+    let (master, slave) = terminal();
+    write(&master, EOF_KEY).unwrap();
+    let line = read_line(slave.as_fd(), &CancellationToken::new(), readable).unwrap();
+    assert_eq!(line, None);
 }
