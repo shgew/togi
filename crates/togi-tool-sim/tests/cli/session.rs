@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 use std::io::{BufRead as _, BufReader, Read as _};
 use std::num::NonZeroU32;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use jiff::tz::TimeZone;
 use nix::sys::signal::{Signal, kill};
@@ -205,4 +205,34 @@ fn a_resume_runs_under_the_configuration_the_journal_recorded() {
         .collect();
     assert!(loaded.len() >= 2, "{} config.loaded events", loaded.len());
     assert!(loaded.iter().all(|config| *config == recorded));
+}
+
+fn files(dir: &Path) -> Vec<(PathBuf, Vec<u8>)> {
+    let mut found = Vec::new();
+    for path in entries(dir) {
+        if path.is_dir() {
+            found.extend(files(&path));
+        } else {
+            found.push((path.clone(), std::fs::read(&path).unwrap()));
+        }
+    }
+    found
+}
+
+#[test]
+fn a_recorded_checking_cycle_that_is_not_full_refuses_cycles_before_touching_the_state() {
+    let state = tempfile::tempdir().unwrap();
+    let short = Config::parse(r#"{"checking":{"cycle":["R1","R2"]}}"#).unwrap();
+    assert!(!short.checking_cycle().is_full());
+    record(state.path(), short);
+    let before = files(state.path());
+    let ran = sim([
+        "--state-dir".as_ref(),
+        state.path().as_os_str(),
+        "--max-boots".as_ref(),
+        "5".as_ref(),
+    ]);
+    assert_eq!(ran.code, Some(2), "{}", ran.stderr);
+    assert!(ran.stderr.contains("is not full"), "{}", ran.stderr);
+    assert_eq!(files(state.path()), before);
 }

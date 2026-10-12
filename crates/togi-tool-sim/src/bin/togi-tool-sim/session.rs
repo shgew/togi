@@ -19,13 +19,17 @@ const FAILED: u8 = 1;
 const CAPPED: u8 = 3;
 
 /// Runs one session, resuming the journal of an existing state directory. Exit status 0 for a stop other than a
-/// dead end, 1 for an error or a dead end, 3 when the boot cap ends an unfinished session.
+/// dead end, 1 for an error or a dead end, 2 when the recorded checking cycle is not full and `--cycles` could
+/// never be met, 3 when the boot cap ends an unfinished session.
 pub(crate) fn run(args: SessionArgs, log: &mut Log) -> u8 {
     match simulate(args, log) {
         Ok(code) => code,
         Err(error) => {
             let _ = writeln!(log, "sim: {error}");
-            FAILED
+            match error {
+                Error::ScheduleNotFull => crate::USAGE,
+                _ => FAILED,
+            }
         }
     }
 }
@@ -44,6 +48,10 @@ enum Error {
     Signals(#[source] io::Error),
     #[error(transparent)]
     Simulate(#[from] togi_simrun::SimError),
+    #[error(
+        "--cycles counts passed full cycles, and the checking cycle this state directory recorded is not full"
+    )]
+    ScheduleNotFull,
 }
 
 fn simulate(args: SessionArgs, log: &mut Log) -> Result<u8, Error> {
@@ -63,6 +71,9 @@ fn simulate(args: SessionArgs, log: &mut Log) -> Result<u8, Error> {
         dir
     };
     let config = togi_simrun::recorded_config(&dir, Config::default())?;
+    if !config.checking_cycle().is_full() {
+        return Err(Error::ScheduleNotFull);
+    }
     let persistence = Persistence::Files(dir.clone());
     let simulator = togi_simrun::resume_simulator(&persistence, model, args.seed, replay)?;
     let renderer = Renderer::new(OutputFacts::detect(
