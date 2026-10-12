@@ -113,6 +113,7 @@ fn a_schema_refusal_is_red_bold_priority_3_when_stderr_is_the_system_journal() {
 #[test]
 fn the_read_only_commands_succeed_while_another_process_holds_the_host_lock_and_never_take_it() {
     let session = crate::host::Session::of(Scenario::Search);
+    let before = state_files(session.path());
     let commands: [(&str, Vec<&str>); 3] = [
         ("status", vec!["status"]),
         ("events", vec!["events"]),
@@ -131,10 +132,26 @@ fn the_read_only_commands_succeed_while_another_process_holds_the_host_lock_and_
             );
             assert_eq!(ran.err, "", "{command}");
             assert!(!ran.out.is_empty(), "{command}");
+            assert_eq!(state_files(session.path()), before, "{command} while held");
         }
         let _ = std::fs::remove_file(&host.lock);
         let ran = host.run(session.path(), &args);
         assert_eq!(ran.exit, togi_cli::Exit::Ok, "{command}: {}", ran.err);
         assert!(!host.lock.exists(), "{command} created the host lock");
+        assert_eq!(
+            state_files(session.path()),
+            before,
+            "{command} without lock"
+        );
     }
+}
+
+fn state_files(dir: &std::path::Path) -> Vec<(String, Vec<u8>)> {
+    crate::host::files(dir)
+        .into_iter()
+        .filter_map(|name| {
+            let path = dir.join(&name);
+            path.is_file().then(|| (name, std::fs::read(path).unwrap()))
+        })
+        .collect()
 }

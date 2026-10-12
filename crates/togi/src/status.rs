@@ -11,9 +11,9 @@ use togi_journal::{
 };
 use togi_machine::{CoreId, CoreSet, Regime};
 use togi_render::escape_text;
-use togi_tuner::{GroupState, PhaseNo, Projection};
+use togi_tuner::{PhaseNo, Projection};
 use togi_watch::model::Snapshot;
-use togi_watch::words::{noun, phase_word};
+use togi_watch::words::{candidate_word, group_word, noun, phase_word};
 
 use crate::cli::{Context, examples};
 use crate::exit::Exit;
@@ -221,15 +221,6 @@ fn missing_coverage(steps: &[Regime]) -> Vec<String> {
             (got < least).then(|| format!("{regime}: {} more steps", least - got))
         })
         .collect()
-}
-
-fn group_word(state: GroupState) -> &'static str {
-    match state {
-        GroupState::Running => "running",
-        GroupState::Passed => "passed",
-        GroupState::Failed => "failed",
-        GroupState::Skipped => "skipped",
-    }
 }
 
 impl Status<'_> {
@@ -601,12 +592,10 @@ impl Status<'_> {
                     ["CANDIDATE", "OFFSET", "SOLO", "GAP", "STATE"].map(String::from),
                 )];
                 for candidate in &plan.candidates {
-                    let state = if candidate.moving {
-                        "moving"
-                    } else if candidate.carried {
-                        "checked again in place"
-                    } else {
+                    let state = if !candidate.moving && !candidate.carried {
                         "waits"
+                    } else {
+                        candidate_word(candidate.moving)
                     };
                     rows.push(Row::new([
                         format!("{:02}", candidate.core.get()),

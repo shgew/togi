@@ -51,6 +51,72 @@ fn filters_narrow_the_readable_lines() {
 }
 
 #[test]
+fn kind_filters_select_the_carried_facts_they_name() {
+    use togi_journal::{Attribution, Failure, FailureCarried, Payload, TrialClass};
+    use togi_machine::{Condition, Regime, Signal};
+
+    use crate::status::{carried_pass, fact_source, installed, last_intent, then};
+
+    let base = Scenario::Between.events().unwrap();
+    let intent = last_intent(&base);
+    let failure = FailureCarried {
+        source: fact_source(&base, None),
+        class: TrialClass {
+            regime: Regime::R6,
+            workload: None,
+            cores: intent.cores,
+            duration_s: 0,
+        },
+        failure: Failure {
+            signal: Signal::Crash,
+            attribution: Attribution::Unattributed,
+            core: None,
+            offset: None,
+            trial: None,
+            regime: Some(Regime::R6),
+            condition: Some(Condition::Together),
+            profile: Some(intent.profile),
+            known_failure: None,
+            reason: None,
+            round: None,
+        },
+    };
+    let carried: Vec<(Vec<_>, Payload)> = vec![
+        (vec![], carried_pass(&base, &intent).into()),
+        (vec![], failure.into()),
+    ];
+    let dir = installed(&then(&base, carried));
+    let kinds_of = |filter: &str| -> Vec<String> {
+        let ran = togi(dir.path(), &["events", "--kind", filter, "--json"]);
+        assert_eq!(ran.status.code(), Some(0), "{filter}");
+        text(&ran.stdout)
+            .lines()
+            .map(|line| {
+                let event: serde_json::Value = serde_json::from_str(line).unwrap();
+                event["kind"].as_str().unwrap().to_owned()
+            })
+            .collect()
+    };
+    let carried_only = |kinds: Vec<String>, wanted: &[&str]| {
+        let carried: Vec<String> = kinds
+            .into_iter()
+            .filter(|kind| kind.ends_with(".carried"))
+            .collect();
+        assert_eq!(carried, wanted);
+    };
+    carried_only(kinds_of("trial"), &["trial.carried"]);
+    carried_only(kinds_of("trial.carried"), &["trial.carried"]);
+    carried_only(kinds_of("failure"), &["failure.carried"]);
+    carried_only(kinds_of("failure.carried"), &["failure.carried"]);
+    carried_only(
+        kinds_of("trial,failure"),
+        &["trial.carried", "failure.carried"],
+    );
+    assert_eq!(kinds_of("trial.carried"), ["trial.carried"]);
+    assert_eq!(kinds_of("failure.carried"), ["failure.carried"]);
+}
+
+#[test]
 fn a_time_window_is_inclusive_since_and_exclusive_until() {
     let dir = session(Scenario::Search);
     let all = togi(dir.path(), &["events", "--json"]);

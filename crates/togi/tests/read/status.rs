@@ -420,7 +420,7 @@ fn an_event_of_an_unknown_kind_is_refused_in_read_only_words_by_status() {
     assert_eq!(text(&ran.stdout).is_empty(), "status" != "watch");
 }
 
-fn installed(events: &[Event]) -> tempfile::TempDir {
+pub(super) fn installed(events: &[Event]) -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     togi_watchtest::install_events(dir.path(), events).unwrap();
     dir
@@ -443,7 +443,7 @@ fn next_seq(events: &[Event]) -> Seq {
 }
 
 /// `events` followed by `extra` payloads, each with the causes named, on the last event's boot.
-fn then(events: &[Event], extra: Vec<(Vec<Seq>, Payload)>) -> Vec<Event> {
+pub(super) fn then(events: &[Event], extra: Vec<(Vec<Seq>, Payload)>) -> Vec<Event> {
     let mut events = events.to_vec();
     for (cause, payload) in extra {
         let last = events.last().unwrap();
@@ -470,7 +470,7 @@ fn first_hunt_start(events: &[Event]) -> HuntStart {
         .unwrap()
 }
 
-fn last_intent(events: &[Event]) -> TrialIntent {
+pub(super) fn last_intent(events: &[Event]) -> TrialIntent {
     events
         .iter()
         .rev()
@@ -481,7 +481,7 @@ fn last_intent(events: &[Event]) -> TrialIntent {
         .unwrap()
 }
 
-fn fact_source(events: &[Event], trial: Option<&str>) -> FactSource {
+pub(super) fn fact_source(events: &[Event], trial: Option<&str>) -> FactSource {
     let Payload::SessionStart(start) = &events[0].payload else {
         unreachable!("a journal starts with its session");
     };
@@ -497,7 +497,7 @@ fn fact_source(events: &[Event], trial: Option<&str>) -> FactSource {
 }
 
 /// A carried pass of the class and profile `intent` ran.
-fn carried_pass(events: &[Event], intent: &TrialIntent) -> TrialCarried {
+pub(super) fn carried_pass(events: &[Event], intent: &TrialIntent) -> TrialCarried {
     TrialCarried {
         source: fact_source(events, Some("origin")),
         class: TrialClass {
@@ -849,6 +849,25 @@ fn a_journal_the_fold_rejects_is_an_error_with_nothing_on_stdout() {
     );
 }
 
+#[test]
+fn a_session_with_no_search_hunt_round_or_checking_plan_says_checking_has_not_started() {
+    let base = Base::Session.events().unwrap();
+    let events = cut_when(base, |state, _| {
+        let projection = state.project();
+        projection
+            .cores
+            .iter()
+            .all(|core| core.phase != Some(togi_journal::CorePhase::Search))
+            && projection.hunt_plan.is_none()
+            && projection.deepening.is_none()
+            && projection.cycle_plan.steps.is_empty()
+    })
+    .unwrap();
+    let shown = status_of(installed(events).path());
+    assert!(shown.contains("checking not started"), "{shown}");
+}
+
+#[cfg(target_os = "linux")]
 #[test]
 fn a_failed_write_to_stdout_is_an_error() {
     let dir = session(Scenario::Search);
