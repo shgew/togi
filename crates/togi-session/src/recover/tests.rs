@@ -9,7 +9,7 @@ use jiff::tz::TimeZone;
 use togi_journal::{
     Activity, BackendRetry, CorePhase, CoreTransition, CrashDetected, DeadEndCondition, Event,
     Failure, Mce, Outcome, Payload, RetryTarget, Seq, TrialEnd, TrialId, TrialIntent,
-    TrialProgress, fs::Fault, fs::MemFs, fs::Op,
+    TrialProgress, TrialSample, fs::Fault, fs::MemFs, fs::Op,
 };
 use togi_machine::{
     BankType, BootId, CancellationToken, Clock, Condition, CoreSet, CpuId, Error, Kernel,
@@ -67,6 +67,7 @@ impl Clock for TestClock {
 enum Pstore {
     Record(PstoreRecord),
     Fails,
+    Crashes,
 }
 
 #[derive(Default)]
@@ -146,6 +147,7 @@ impl Kernel for TestKernel {
             None => Ok(None),
             Some(Pstore::Record(record)) => Ok(Some(record.clone())),
             Some(Pstore::Fails) => Err(Error::Other("pstore unreadable".into())),
+            Some(Pstore::Crashes) => Err(Error::Crashed),
         }
     }
 }
@@ -1245,6 +1247,30 @@ fn a_run_cut_short_in_a_retry_wait_waits_the_same_attempt_again_without_a_new_re
 }
 
 #[test]
+fn a_kernel_retry_that_cannot_be_recorded_fails_before_any_wait_or_further_read() {
+    let mut h = Harness::new(&trial_log(), "b1");
+    h.reasons(&[
+        ("b0", Some(ResetKind::Watchdog)),
+        ("b1", Some(ResetKind::Watchdog)),
+    ]);
+    {
+        let mut script = h.kernel.borrow_mut();
+        script.failing = Some(boot("b0"));
+        script.failures = 1;
+    }
+    let before = h.events().to_vec();
+    h.mem.inject(Fault::before(Op::Write, 1));
+    assert!(matches!(
+        h.recover(),
+        Err(Flow::Fatal(SessionError::Journal(_)))
+    ));
+    assert!(h.sleeps().is_empty());
+    assert_eq!(h.kernel.borrow().reads, [boot("b0")]);
+    h.reopen();
+    assert_eq!(h.events(), before);
+}
+
+#[test]
 fn a_machine_that_crashes_while_the_kernel_log_is_read_is_fatal_and_records_nothing() {
     let mut h = Harness::new(&trial_log(), "b1");
     h.kernel.borrow_mut().crashed = true;
@@ -1306,6 +1332,26 @@ fn a_saved_pstore_record_is_attached_an_absent_one_is_fine_and_an_unreadable_one
     unreadable.consistent();
 }
 
+#[test]
+fn a_machine_that_crashes_while_the_saved_pstore_is_read_is_fatal_and_records_no_crash() {
+    let mut h = Harness::new(&trial_log(), "b1");
+    h.reasons(&[
+        ("b0", Some(ResetKind::Watchdog)),
+        ("b1", Some(ResetKind::Watchdog)),
+    ]);
+    h.kernel
+        .borrow_mut()
+        .pstore
+        .insert(boot("b0"), Pstore::Crashes);
+    let before = h.events().len();
+    assert!(fatal_crash(&h.recover()));
+    assert!(h.crashes().is_empty());
+    assert!(h.warnings().is_empty());
+    assert!(h.ends().is_empty());
+    assert!(h.ended().is_empty());
+    assert_eq!(h.events().len(), before);
+}
+
 fn crashed_trial_with(samples: &str) -> Harness {
     let mut h = Harness::new(&trial_log(), "b1");
     h.reasons(&[
@@ -1349,6 +1395,32 @@ fn a_crashed_trials_end_carries_the_last_complete_sample_and_ignores_a_torn_one(
         (None, None, None)
     );
     assert_eq!(h.ended(), ["0001"]);
+}
+
+#[test]
+fn an_interrupted_trial_ran_until_its_last_own_sample_and_another_trials_sample_adds_nothing() {
+    for (sampled, ran_s) in [("0001", 59), ("0002", 29)] {
+        let mut log = trial_log();
+        log.mono(70_000).add(
+            Payload::TrialSample(TrialSample {
+                trial: trial_id(sampled),
+                warning: "sample".into(),
+                pid: 1,
+                tid: 1,
+                cpu: CpuId(0),
+            }),
+            &[],
+        );
+        let mut h = Harness::new(&log, "b1");
+        h.reasons(&[
+            ("b0", Some(ResetKind::Watchdog)),
+            ("b1", Some(ResetKind::Watchdog)),
+        ]);
+        assert_eq!(h.recover().unwrap(), Recovered::Done);
+        let ends = h.ends();
+        assert_eq!(ends.len(), 1, "{sampled}");
+        assert_eq!(ends[0].1.duration_s, ran_s, "{sampled}");
+    }
 }
 
 #[test]

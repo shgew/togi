@@ -642,6 +642,35 @@ fn an_open_trial_ran_from_its_start_to_its_last_record_by_the_monotonic_clock_wh
 }
 
 #[test]
+fn a_sample_of_the_open_trial_is_its_last_activity_and_another_trials_sample_is_not() {
+    let mut log = Log::new();
+    log.baseline(&[(0, 0), (8, 0)]);
+    let intent = log.mono(10_000).trial_intent("0001", None, Regime::R7);
+    let start = log
+        .mono(10_000)
+        .started("0001", Some(10_000_000_000), intent);
+    let sample = |trial: &str| {
+        Payload::TrialSample(togi_journal::TrialSample {
+            trial: TrialId::from(trial.to_owned()),
+            warning: "sample".into(),
+            pid: 1,
+            tid: 1,
+            cpu: togi_machine::CpuId(0),
+        })
+    };
+    log.mono(40_000).add(sample("0001"), &[start]);
+    assert_eq!(
+        log.state().open_trial().unwrap().ran(),
+        Duration::from_secs(30)
+    );
+    log.mono(90_000).add(sample("0002"), &[start]);
+    assert_eq!(
+        log.state().open_trial().unwrap().ran(),
+        Duration::from_secs(30)
+    );
+}
+
+#[test]
 fn without_monotonic_times_the_wall_clock_gives_the_duration() {
     let mut log = Log::new();
     log.baseline(&[(0, 0), (8, 0)]);
