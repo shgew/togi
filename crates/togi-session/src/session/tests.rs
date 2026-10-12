@@ -52,16 +52,33 @@ fn a_missing_watchdog_is_warned_about_outside_the_tuning_boot() {
     );
 }
 
+fn smu_offsets(bench: &Bench) -> Vec<i64> {
+    let mut smu = bench.sim.seams().smu;
+    (0..2)
+        .map(|n| smu.offset(crate::testing::core(n)).unwrap().0)
+        .collect()
+}
+
 #[test]
 fn a_configured_core_the_machine_lacks_is_refused() {
-    let mut bench = Bench::new(2);
-    bench.config = togi_config::Config::parse(r#"{"start_offsets":{"5":-5}}"#).unwrap();
-    let mut session = bench.open();
-    assert!(matches!(
-        session.start(),
-        Err(SessionError::NoSuchCore { core }) if core == crate::testing::core(5)
-    ));
-    assert!(crate::testing::kinds_of(session.appender()).is_empty());
+    for source in ["start_offsets", "candidate_solo_limits"] {
+        let mut bench = Bench::new(2);
+        bench.config =
+            togi_config::Config::parse(&format!(r#"{{"{source}":{{"5":-10}}}}"#)).unwrap();
+        let before = smu_offsets(&bench);
+        let ended = crate::run::run(bench.input());
+        assert!(
+            matches!(
+                ended.errors.as_slice(),
+                [SessionError::NoSuchCore { core }] if *core == crate::testing::core(5)
+            ),
+            "{source}: {:?}",
+            ended.errors
+        );
+        assert_eq!(ended.stop, None, "{source}");
+        assert!(ended.journal.events().is_empty(), "{source}");
+        assert_eq!(smu_offsets(&bench), before, "{source}");
+    }
 }
 
 #[test]
