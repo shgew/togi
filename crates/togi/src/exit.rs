@@ -31,7 +31,9 @@ pub enum Exit {
     Containment,
     /// Dead end `preflight`.
     Preflight,
-    /// The journal's schema, ruleset or evidence epoch is newer than this build's.
+    /// The journal was written by an incompatible build: a newer schema, ruleset or evidence
+    /// epoch, unknown event kinds on a current-build journal, or, for `reset --core`, any
+    /// different one.
     Incompatible,
     /// Dead end `defect`.
     Defect,
