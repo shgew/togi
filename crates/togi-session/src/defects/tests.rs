@@ -4,10 +4,10 @@ use std::num::NonZeroU32;
 use std::rc::Rc;
 
 use togi_defect::{Clause, DefectId, Entry};
+use togi_journal::fs::{Fault, Op};
 use togi_journal::{
     Activity, Decision, DefectAnswer, DefectDirection, EventKind, SessionWarning, TunerDecision,
 };
-use togi_journal::fs::{Fault, Op};
 use togi_machine::TargetOffset;
 use togi_sim::MachineDefinition;
 use togi_sim::definition::ModelDef;
@@ -355,12 +355,12 @@ fn tuned_with_an_unlisted_finding_over_two_cores(bench: &Bench) -> Seq {
         .unwrap()
 }
 
-fn yes_for_both_cores(asked: &Rc<Cell<u32>>) -> Option<Box<dyn Prompt>> {
-    Some(Box::new(Counted {
+fn yes_for_both_cores(asked: &Rc<Cell<u32>>) -> Box<dyn Prompt> {
+    Box::new(Counted {
         answer: true,
         cores: vec![core(0), core(1)],
         asked: Rc::clone(asked),
-    }))
+    })
 }
 
 type Recorded = (Seq, Payload, Vec<Seq>);
@@ -380,7 +380,7 @@ fn after(bench: &Bench, found: Seq) -> Vec<Recorded> {
 
 fn opened_with(bench: &Bench, asked: &Rc<Cell<u32>>) -> Session {
     let mut input = bench.input();
-    input.prompt = yes_for_both_cores(asked);
+    input.prompt = Some(yes_for_both_cores(asked));
     let Ok(mut session) = Session::open(input) else {
         panic!("open");
     };

@@ -1,15 +1,17 @@
 #![expect(clippy::unwrap_used, reason = "helpers panic on a broken fixture")]
 
 use std::io;
+use std::num::NonZeroU32;
 
 use jiff::tz::TimeZone;
 use togi_journal::fs::{Fault, Op};
-use togi_journal::{Build, Journal, MemFs, Payload, ResetTarget, SCHEMA, StateDir};
+use togi_journal::{Build, CorePhase, Journal, MemFs, Payload, ResetTarget, SCHEMA, StateDir};
 use togi_machine::{CancellationToken, CoreId};
 use togi_render::Renderer;
 use togi_session::{
     CommandError, ConfigSource, PublicationPolicy, RunInput, StopPolicy, reset_all, reset_core, run,
 };
+use togi_sim::definition::ModelDef;
 use togi_sim::{MachineDefinition, Model, RunSettings, Simulator};
 
 fn build() -> Build {
@@ -36,12 +38,15 @@ fn dir(mem: &MemFs) -> StateDir {
 }
 
 fn simulator() -> Simulator {
-    let definition = MachineDefinition {
+    simulator_of(&MachineDefinition {
         cores: 2,
         ..MachineDefinition::default()
-    };
+    })
+}
+
+fn simulator_of(definition: &MachineDefinition) -> Simulator {
     Simulator::new(
-        Model::new(&definition, 1).unwrap(),
+        Model::new(definition, 1).unwrap(),
         RunSettings {
             seed: 1,
             ..RunSettings::default()
@@ -188,4 +193,118 @@ fn a_failed_reset_core_append_keeps_the_durable_prefix_and_only_a_synced_command
             assert_eq!(after, before, "{fault:?}");
         }
     }
+}
+
+#[test]
+fn a_failed_reset_all_append_returns_an_append_error_releases_the_lock_and_archives_nothing() {
+    for (fault, survives) in [(Op::Write, false), (Op::Sync, true)] {
+        let (sim, mem) = (simulator(), MemFs::new());
+        let journal = started(&sim, &mem);
+        let before = kinds(&journal);
+        mem.inject(Fault::before(fault, 1).named("events.jsonl"));
+        let error = reset_all(&build(), journal, &mut *sim.seams().clock).unwrap_err();
+        assert!(
+            matches!(error, CommandError::Append(_)),
+            "{fault:?}: {error:?}"
+        );
+        mem.clear_faults();
+        let boot = sim.seams().host.boot_id().unwrap();
+        let state = dir(&mem);
+        assert!(state.archives().unwrap().is_empty(), "{fault:?}");
+        let reopened = state.open_at(boot, sim.now()).unwrap();
+        let after = kinds(&reopened);
+        assert_eq!(after[..before.len()], before[..], "{fault:?}");
+        if survives {
+            assert_eq!(after[before.len()..], ["command.reset"], "{fault:?}");
+            let event = reopened.events().last().unwrap();
+            assert!(matches!(
+                &event.payload,
+                Payload::CommandReset(reset) if reset.target == ResetTarget::All
+            ));
+        } else {
+            assert_eq!(after, before, "{fault:?}");
+        }
+    }
+}
+
+#[test]
+fn reset_all_of_an_empty_journal_is_no_session_and_releases_the_lock() {
+    let (sim, mem) = (simulator(), MemFs::new());
+    let boot = sim.seams().host.boot_id().unwrap();
+    let journal = dir(&mem).open_at(boot.clone(), sim.now()).unwrap();
+    assert!(journal.events().is_empty());
+    let error = reset_all(&build(), journal, &mut *sim.seams().clock).unwrap_err();
+    assert!(matches!(error, CommandError::NoSession), "{error:?}");
+    let state = dir(&mem);
+    assert!(state.archives().unwrap().is_empty());
+    assert!(state.open_at(boot, sim.now()).unwrap().events().is_empty());
+}
+
+fn phases_of(journal: &Journal, core: CoreId) -> Vec<(Option<CorePhase>, CorePhase, i64)> {
+    journal
+        .events()
+        .iter()
+        .filter_map(|event| match &event.payload {
+            Payload::CorePhase(phase) if phase.core == core => {
+                Some((phase.from, phase.to, phase.offset.get()))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_reset_core_is_consumed_by_the_resumed_session_which_retunes_it_to_its_limit() {
+    let steady = MachineDefinition {
+        cores: 2,
+        model: ModelDef {
+            past_limit_rate: 0.0,
+            crash_mce: 0.0,
+            ..ModelDef::default()
+        },
+        ..MachineDefinition::default()
+    };
+    let (sim, mem) = (simulator_of(&steady), MemFs::new());
+    let mut first = input(&sim, &mem);
+    first.policy.cycles = Some(NonZeroU32::MIN);
+    let ended = run(first);
+    assert!(ended.errors.is_empty(), "{:?}", ended.errors);
+    let mut journal = ended.journal;
+    let limit = phases_of(&journal, core(1))
+        .into_iter()
+        .rev()
+        .find(|(_, to, _)| *to == CorePhase::AtLimit)
+        .map(|(_, _, offset)| offset)
+        .unwrap();
+    let reset = reset_core(&build(), &mut journal, &mut *sim.seams().clock, core(1)).unwrap();
+    drop(journal);
+
+    sim.reboot();
+    let mut second = input(&sim, &mem);
+    second.policy.cycles = NonZeroU32::new(2);
+    let ended = run(second);
+    assert!(ended.errors.is_empty(), "{:?}", ended.errors);
+    let events = ended.journal.events();
+    let restart = events.iter().find(|event| {
+        matches!(&event.payload, Payload::CorePhase(phase)
+            if phase.core == core(1)
+                && phase.from == Some(CorePhase::AtLimit)
+                && phase.to == CorePhase::Search)
+    });
+    let restart = restart.expect("core 1 restarts its search");
+    assert_eq!(restart.cause, [reset]);
+    assert!(restart.seq > reset);
+    let last = phases_of(&ended.journal, core(1)).pop().unwrap();
+    assert_eq!((last.1, last.2), (CorePhase::AtLimit, limit));
+    let untouched = phases_of(&ended.journal, core(0));
+    assert!(
+        untouched
+            .iter()
+            .all(|(from, to, _)| !(*from == Some(CorePhase::AtLimit) && *to == CorePhase::Search))
+    );
+    let cycles = events
+        .iter()
+        .filter(|event| matches!(event.payload, Payload::CheckingCycle(_)) && event.seq > reset)
+        .count();
+    assert!(cycles > 0, "a checking cycle completes after the reset");
 }
