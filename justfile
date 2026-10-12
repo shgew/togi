@@ -203,15 +203,30 @@ facts-rs state_dir: _dev-shell
 fit *args: _dev-shell
     go run ./tools/fit "$@"
 
+# Fit the target-machine bootstrap ensemble with the Rust tool; the result does not depend on --jobs
+[group('run')]
+fit-rs *args: _dev-shell
+    cargo run --release --locked -p togi-tool-fit -- "$@"
+
 # Fit the all-facts IN-SAMPLE shared-voltage anchor; not forward-validated
 [group('run')]
 fit-shared-voltage *args: _dev-shell
     go run ./tools/fit --shared-voltage-in-sample "$@"
 
+# Fit the all-facts IN-SAMPLE shared-voltage anchor with the Rust tool; not forward-validated
+[group('run')]
+fit-shared-voltage-rs *args: _dev-shell
+    cargo run --release --locked -p togi-tool-fit -- --shared-voltage-in-sample "$@"
+
 # Run only the forward-chained check of the target fit, writing no machine files (`just forward --seal 1`)
 [group('run')]
 forward *args: _dev-shell
     go run ./tools/fit --forward-only "$@"
+
+# Run only the forward-chained check with the Rust tool, writing no machine files (`just forward-rs --seal 1`)
+[group('run')]
+forward-rs *args: _dev-shell
+    cargo run --release --locked -p togi-tool-fit -- --forward-only "$@"
 
 # Start the release workflow on main and follow it: unless an issue, open or closed, is labeled needs-hardware, once check passes on main, it commits the release, builds the package, pushes to main and publishes
 [group('release')]

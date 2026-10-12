@@ -19,6 +19,7 @@ jiff = { version = "0.2", default-features = false, features = ["std", "serde"] 
 nix = { version = "0.30", default-features = false, features = ["fs"] }
 proptest = "1"
 rand = { version = "=0.10.3", default-features = false, features = ["std_rng"] }
+rayon = "1"
 regex = "1"
 rustix = { version = "1", features = ["fs", "process"] }
 serde = { version = "1", features = ["derive"] }
@@ -46,6 +47,7 @@ togi-simrun = { path = "crates/togi-simrun", version = "0.0.0" }
 togi-smu = { path = "crates/togi-smu", version = "0.0.0" }
 togi-tool-audit = { path = "crates/togi-tool-audit", version = "0.0.0" }
 togi-tool-forecast = { path = "crates/togi-tool-forecast", version = "0.0.0" }
+togi-tool-modelcheck = { path = "crates/togi-tool-modelcheck", version = "0.0.0" }
 togi-tool-trialfacts = { path = "crates/togi-tool-trialfacts", version = "0.0.0" }
 togi-trial = { path = "crates/togi-trial", version = "0.0.0" }
 togi-trialfiles = { path = "crates/togi-trialfiles", version = "0.0.0" }
