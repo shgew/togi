@@ -192,6 +192,19 @@ This is not a CI check: it needs two builds. `just bench` cannot prove equality 
 
 To control concurrency, caching or retention directly, use `go run ./tools/bench --same DIR [--suite FILE] [--jobs N] [--max-boots N] [--timeout 30m] [--smoke] [--keep-going] [--no-cache] [--cache DIR] [--keep DIR]`. A relative suite path resolves inside each tree. This mode skips metrics, model checks and the bench summary; explicitly setting `--split`, `--baseline` or `--out` is a usage error. `--no-cache` ignores cached digests and runs every session on both trees, still recording them; `--keep` implies it and retains every run, in separate `base/` and `head/` sets under a new directory. Without `--keep`, runs go in a new directory under `runs` in the cache directory, which `--cache DIR` moves. SIGINT and SIGTERM kill the simulators and remove the temporary directories, and a failed run keeps only its own directory.
 
+## The Rust suite gate
+
+CI runs every session of `tools/bench/suite.json`, dev and holdout alike, on the Rust simulator (`togi-tool-sim`, [Simulating](simulating.md#the-rust-simulator-command-togi-tool-sim)) as the flake checks `rust-sim-suite-0` to `rust-sim-suite-<N-1>`. `nix/sim-suite.json` declares N. Each check builds the release `togi-tool-sim`, runs its shard of the suite (the partition gives shard sizes that differ by at most one) with one session per core, and then checks its manifest against exactly the run ids the partition gives that shard. A session passes only when it is `clean`:
+
+- it stopped for its clean cycle: `shutdown` reason `cycles`, never a dead end, a signal or the 1000-boot cap;
+- its resume state matched a fresh fold of the journal after every crash and at the end;
+- `togi_tuner::replay` folds its whole journal;
+- `togi-tool-audit` finds no violation in any journal of its state directory.
+
+The aggregating `check` job reads N from `nix/sim-suite.json` and fails unless the build matrix held exactly `rust-sim-suite-0` to `rust-sim-suite-<N-1>`, so a deleted or renamed shard fails the required check rather than vanishing from the matrix. The suite declares no expected dead end, and none is to be invented to pass the gate. `just sim-suite-rs` runs the same suite locally in one shard and checks it; [`togi-tool-sim`](simulating.md#the-rust-simulator-command-togi-tool-sim) also has a test that splits one session across processes by `--max-boots` and requires the same journal and `state.json` as an uninterrupted run.
+
+This gate is separate from `just bench`: it proves that every session concludes cleanly on the Rust code, not that a tuner change concludes sooner or keeps its depth. Bench scoring, `just same`, `just smoke` and `just audit` still run the Go simulator until [#642](https://github.com/shgew/togi/issues/642).
+
 ## What each check proves
 
 Cite a check as evidence only for the packages it exercises. `just gate` runs the integration tag, the race set and `module`; `just check` runs every flake check the host builds, including the Linux-only `trial-scope-tests`, `vm` and `vm-restart-limit`.
@@ -209,6 +222,7 @@ Cite a check as evidence only for the packages it exercises. `just gate` runs th
 | `just smoke` | One session per scenario of both trees' `tools/sim`, the suite's `smoke` list, compared as `just same` does | The same simulated paths as `just same`, on the sessions with the most crashes and longest histories of each scenario | Anything `just same` does not prove, and the paths the other sessions reach: run `just same` before relying on it |
 | `just bench` | Simulated sessions for the chosen split (dev by default) and the model checks; with `--baseline FILE`, a comparison with that baseline by metric thresholds and, when the suite registers one, [the gate](#the-gate) | The same simulated paths as `just same` | Unchanged decisions (one changed decision with unchanged totals can pass), or anything about the packages the simulator replaces |
 | `just hardware` | On the target machine, `go test -tags hardware -p 1 ./...` | Every ordinary test, plus the hardware tests: both real backends running each R1 and R2 catalog workload on core 2 in a real scope; detect reading the real kernel log; smu's driver checks, writing each core's current offset back and reading it, its BIOS context and PM table; hardware's diagnosis leaving offsets unchanged; trial's scope tests with helper backends | R3 to R7 workloads or multi-core loads on real backends, a new offset written to the SMU, the host's full preflight or ranking, or a tuning session: those need `togi doctor` or `togi run` evidence from the target machine |
+| `rust-sim-suite-<i>` | Shard `i` of the 220 suite sessions on the release `togi-tool-sim`, as [above](#the-rust-suite-gate); the `check` job requires every shard `nix/sim-suite.json` declares | The Rust session, tuner, carry, journal and simulator on the paths the suite reaches: each session concludes, resumes warm state equal to a cold fold, replays through the tuner and passes the invariant audit | Better or equal tuning (bench scoring does that), Go behavior, or anything about the packages the simulator replaces |
 
 ## What a run records
 
