@@ -14,7 +14,7 @@ use crate::testkit::{Journal, Start, fresh, set};
 use crate::tests::{core, off};
 use crate::{
     Action, BiosProfile, Confirmed, DecisionPayload, Depth, Load, Profile, State, TrialHistory,
-    TrialPlan,
+    TrialPlan, WorkloadChoice,
 };
 
 fn project(j: &Journal) -> Projection {
@@ -148,6 +148,10 @@ fn cycle_start_invalidates_projected_checking() {
             seq: peak,
         })
     );
+    let WorkloadChoice::Frozen(workload) = plan.workload else {
+        panic!("a cycle trial's workload is frozen");
+    };
+    assert_eq!(closed.checking.exposure, [(workload, 1)]);
     assert_eq!(closed.cycle_plan.number, NonZeroU32::new(1));
     assert!(!closed.cycle_plan.open);
     assert_eq!(closed.cycle_plan.current, closed.cycle_plan.steps.len());

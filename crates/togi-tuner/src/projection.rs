@@ -32,6 +32,7 @@ pub struct CheckingView {
     pub profile_seq: Option<Seq>,
     pub cycle: Option<NonZeroU32>,
     pub peak: Option<TemperaturePeak>,
+    pub exposure: Vec<(WorkloadId, u32)>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -109,6 +110,7 @@ impl State {
                 celsius: peak.celsius,
                 seq: peak.seq,
             }),
+            exposure: run.evidence.exposures().collect(),
         });
         let deepening = run.and_then(|run| {
             let round = run.rounds.active()?;
