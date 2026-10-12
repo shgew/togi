@@ -1,7 +1,7 @@
 use togi_journal::{Activity, Outcome};
 use togi_journal::{EventKind, Payload};
 use togi_sim::MachineDefinition;
-use togi_tuner::PhaseNo;
+use togi_tuner::State;
 use togi_watchtest::{
     Base, Error, Scenario, Stop, before_crash_detected, crash_trial, cut_at,
     cut_passed_checking_trial, cut_trial, cut_when, default_machine,
@@ -44,20 +44,30 @@ fn a_cut_nothing_accepts_is_an_error() {
 #[test]
 fn cut_when_hands_over_the_tuner_state_after_the_event() {
     let events = Scenario::Search.events().expect("the scenario builds");
+    let mut state = State::new();
+    let first_planned = events
+        .iter()
+        .position(|event| {
+            state.fold(event).expect("the journal folds");
+            state.phase_plan().is_some()
+        })
+        .expect("the session plans its phases");
+    assert!(
+        State::new().phase_plan().is_none(),
+        "the plan comes from folding an event"
+    );
     let mut seen = Vec::new();
     let cut = cut_when(&events, |state, event| {
         seen.push(event.seq);
-        state
-            .phase_plan()
-            .is_some_and(|plan| plan.phase == PhaseNo::One)
-            && event.kind() == EventKind::TrialEnd
+        state.phase_plan().is_some()
     })
-    .expect("a trial ended in phase 1");
+    .expect("the session plans its phases");
     assert_eq!(
-        seen.len(),
         cut.len(),
-        "the accept sees every event in order"
+        first_planned + 1,
+        "the cut ends on the event whose fold made the plan"
     );
+    assert_eq!(seen, cut.iter().map(|event| event.seq).collect::<Vec<_>>());
 }
 
 #[test]
