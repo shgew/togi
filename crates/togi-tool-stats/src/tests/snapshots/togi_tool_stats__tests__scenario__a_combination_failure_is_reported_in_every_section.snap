@@ -1,0 +1,120 @@
+---
+source: crates/togi-tool-stats/src/tests/scenario.rs
+expression: log.report()
+---
+Session
+field     value
+id        20260101T000000Z
+rulesets  1
+builds    1.2.3+abc
+events    29
+first     2026-01-01T00:00:00Z
+last      2026-01-01T00:10:01Z
+
+Runs
+run  start                 end                   build      trials  crashes  ended
+1    2026-01-01T00:00:00Z  2026-01-01T00:10:01Z  1.2.3+abc  4       1        cycles
+
+Time
+activity / condition / regime / outcome      trial seconds  hours
+search / alone / R7 / inconclusive           60             0.017
+checking / together / R7 / pass              120            0.033
+checking / together / R7 / failure           30             0.008
+hunt / parked / R7 / failure                 60             0.017
+crash downtime (last evidence to next boot)  87.000         0.024
+
+Failures
+regime  workload                      signal  attribution   count
+R7      mprime-avx2-36k-248k-allcore  crash   unattributed  1
+
+Exposure
+regime  workload                      trials  hours  failures
+R7      mprime-avx2-36k-248k-allcore  4       0.075  2
+
+Unattributed crashes by loaded CCD
+CCD(s)  count
+0,1     1
+
+Crash timing (last evidence)
+seconds  count
+0        0
+1-29     0
+30-59    1
+60-119   0
+120+     0
+
+Reset reasons
+reason    count
+watchdog  1
+
+Recovery gap
+count  min seconds  median seconds  max seconds
+1      99.000       99.000          99.000
+
+Hunts
+hunt  start                 hours  failing trial  parked offsets  candidates  planned/run/inferred/skipped  trials  crashes  result       members/culprit  commitment
+1     2026-01-01T00:05:40Z  0.044  0002           loaded-held     2           2/1/1/0                       2       0        combination  01:-22,03:-22    03 -22->-19
+
+Checking
+metric                      count
+cycles started              1
+cycles ended                1
+full cycles                 1
+reruns                      0
+reruns failing first trial  0
+
+Checking steps and together outcomes
+cycle  regime  loaded cores  outcome  trials
+0001   R7      00,01,02,03   pass     1
+0001   R7      00,01,02,03   failure  1
+
+Evidence quality
+warning                                        count
+monotonicity                                   1
+decisions resting on a single carried failure  0
+
+Failures after prior passes
+trial class  failures with prior passes
+
+Prior evidence per hunt group
+hunt  group  stage  prior passes  required  established  passes again  failures again  trials  hours
+1     1      part   0             1         false        0             1               1       0.017
+
+Prior evidence by hunt and stage
+hunt  stage  ran groups  established groups  passed again  failed again  redundant trials  redundant hours
+0001  part   1           0                   0             0             0                 0.000
+
+R7 voltage-targeted backoffs
+seq  decision  core  from  to   counts  causes  reason
+22   backoff   03    -22   -19  3       21,13   request 1.090 V\nto 1.100 V
+
+R7 chain derivations
+seq  cycle  step  CCD  workload                      part  request groups  loaded cores  sources
+23   1      2     1    mprime-avx2-36k-248k-allcore  2     03 > 02         02            13
+
+Failure rate by depth
+regime / workload / loaded cores / duration       shallowest offset  trials  failures  rate
+R7/mprime-avx2-36k-248k-allcore/00,01,02,03/120s  -22                1       1         100.0%
+R7/mprime-avx2-36k-248k-allcore/00,01,02,03/120s  -20                1       0         0.0%
+R7/mprime-avx2-36k-248k-allcore/01,03/60s         -22                1       1         100.0%
+
+R7 voltage requests
+field                               count
+failures without request telemetry  2
+
+R7 trials by top request (4 mV bins)
+class                                             top request V   trials  failures
+R7/mprime-avx2-36k-248k-allcore/00,01,02,03/120s  [1.100, 1.104)  1       0
+
+R7 trials by top requester
+class                                             core  trials  failures
+R7/mprime-avx2-36k-248k-allcore/00,01,02,03/120s  01    1       0
+R7/mprime-avx2-36k-248k-allcore/00,01,02,03/120s  03    1       0
+
+Inconclusive trials
+trial  condition  reason
+0004   alone      run on\nanother core
+
+Tctl
+regime  max C  passing trials
+R7      62     1

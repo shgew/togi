@@ -324,6 +324,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "insta"
+version = "1.49.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b67d3d2e287e4b86c10b3f3b641033d1f89b74bdb39d05f34952e2b9a6fe21cd"
+dependencies = [
+ "once_cell",
+ "similar",
+ "tempfile",
+]
+
+[[package]]
 name = "itoa"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -667,6 +678,12 @@ name = "simd-adler32"
 version = "0.3.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a219298ac11a56ea9a6d2120044824d6f01aeb034955e7af7bc16858527deea"
+
+[[package]]
+name = "similar"
+version = "2.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbbb5d9659141646ae647b42fe094daf6c6192d1620870b449d9557f748b2daa"
 
 [[package]]
 name = "socket2"
@@ -1050,6 +1067,28 @@ dependencies = [
  "togi-machine",
  "togi-sim",
  "togi-tool-trialfacts",
+]
+
+[[package]]
+name = "togi-tool-stats"
+version = "0.0.0"
+dependencies = [
+ "clap",
+ "insta",
+ "jiff",
+ "proptest",
+ "tempfile",
+ "thiserror",
+ "togi-config",
+ "togi-journal",
+ "togi-machine",
+ "togi-render",
+ "togi-requests",
+ "togi-session",
+ "togi-sim",
+ "togi-simrun",
+ "togi-tool-forecast",
+ "togi-tuner",
 ]
 
 [[package]]

@@ -136,6 +136,11 @@ replay *args: _dev-shell
 stats *args: _dev-shell
     go run ./tools/stats "$@"
 
+# Summarize a current or archived journal for review with the Rust tool
+[group('run')]
+stats-rs *args: _dev-shell
+    cargo run --release --locked -p togi-tool-stats -- "$@"
+
 # Benchmark simulated session conclusions and compare against a baseline
 [group('run')]
 bench *args: _dev-shell
