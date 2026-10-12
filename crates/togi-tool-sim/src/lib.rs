@@ -7,7 +7,7 @@ mod shard;
 mod suite;
 
 pub use coverage::{
-    CoverageError, ManifestError, Outcome, Problem, RunResult, ShardManifest, check,
+    CoverageError, ExpectedShard, ManifestError, Outcome, Problem, RunResult, ShardManifest, check,
     encode_manifest, parse_manifest,
 };
 pub use run::{Run, RunId, Split};

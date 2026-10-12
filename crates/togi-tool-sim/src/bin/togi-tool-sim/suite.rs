@@ -17,7 +17,8 @@ use togi_sim::{RunSettings, Simulator};
 use togi_simrun::{Persistence, Replay, SimError, SimInput, SimOutcome};
 use togi_tool_audit::{Completion, audit_recordings};
 use togi_tool_sim::{
-    Outcome, Run, RunResult, ShardManifest, Suite, encode_manifest, parse_manifest, shard,
+    ExpectedShard, Outcome, Run, RunResult, ShardManifest, Suite, encode_manifest, parse_manifest,
+    shard,
 };
 use togi_tool_trialfacts::Extracts;
 
@@ -159,11 +160,20 @@ fn shard_of(name: &str) -> Option<usize> {
 
 fn check_manifests(args: &CheckArgs) -> Result<(), Error> {
     let runs = Suite::load(&args.suite)?.runs();
-    let (runs, shards) = match args.shard {
-        Some(index) => (shard(&runs, args.shards, index)?, index..index + 1),
-        None => (runs, 0..args.shards.get()),
+    let indices = match args.shard {
+        Some(index) => index..index + 1,
+        None => 0..args.shards.get(),
     };
-    let expected: Vec<_> = runs.into_iter().map(|run| run.id).collect();
+    let mut expected = Vec::new();
+    for index in indices {
+        expected.push(ExpectedShard {
+            shard: index,
+            runs: shard(&runs, args.shards, index)?
+                .into_iter()
+                .map(|run| run.id)
+                .collect(),
+        });
+    }
     let read = |path: &Path, source| Error::Read {
         path: path.to_path_buf(),
         source,
@@ -188,7 +198,7 @@ fn check_manifests(args: &CheckArgs) -> Result<(), Error> {
         manifests.push(ShardManifest { shard, results });
     }
     manifests.sort_by_key(|manifest| manifest.shard);
-    Ok(togi_tool_sim::check(&expected, shards, &manifests)?)
+    Ok(togi_tool_sim::check(&expected, &manifests)?)
 }
 
 /// Runs one session of the suite and judges it: clean only when it stopped after its cycles, the last boot's

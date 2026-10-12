@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
@@ -109,6 +109,13 @@ pub struct ShardManifest {
     pub results: Vec<RunResult>,
 }
 
+/// The runs the suite's partition gives one shard, derived without looking at any manifest.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExpectedShard {
+    pub shard: usize,
+    pub runs: Vec<RunId>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum Problem {
     #[error("shard {shard} has no manifest")]
@@ -123,6 +130,12 @@ pub enum Problem {
     DuplicateRun { id: RunId, shards: Vec<usize> },
     #[error("shard {shard} reports run {id}, which is not one of the runs checked")]
     UnexpectedRun { id: RunId, shard: usize },
+    #[error("shard {shard} reports run {id}, which the partition gives shard {owner}")]
+    WrongShard {
+        id: RunId,
+        shard: usize,
+        owner: usize,
+    },
     #[error("run {id} in shard {shard}: {outcome}")]
     Unclean {
         id: RunId,
@@ -148,21 +161,15 @@ impl fmt::Display for CoverageError {
 
 impl std::error::Error for CoverageError {}
 
-/// Proves the suite ran completely and cleanly. `expected` is the run ids and `expected_shards` the shards that ran
-/// them, both derived from the suite and its partition without looking at the manifests, so a shard whose manifest
-/// is absent is a problem rather than invisible: `0..count` for the whole suite, one index for a single shard's own
-/// check. Every missing shard, missing run, duplicate, unexpected id and unclean outcome is reported, not only the
-/// first.
-pub fn check(
-    expected: &[RunId],
-    expected_shards: impl IntoIterator<Item = usize>,
-    manifests: &[ShardManifest],
-) -> Result<(), CoverageError> {
+/// Proves the suite ran completely and cleanly. `expected` is every shard checked with the runs the partition gives
+/// it, all derived from the suite and never from the manifests present, so a shard whose manifest is absent is a
+/// problem rather than invisible: every shard for the whole suite, one for a single shard's own check. Each run must
+/// come from the shard that owns it. Every missing shard, missing run, duplicate, run in the wrong shard, unexpected
+/// id and unclean outcome is reported, not only the first.
+pub fn check(expected: &[ExpectedShard], manifests: &[ShardManifest]) -> Result<(), CoverageError> {
     let mut problems = Vec::new();
-    let mut manifested: BTreeMap<usize, usize> = expected_shards
-        .into_iter()
-        .map(|shard| (shard, 0))
-        .collect();
+    let mut manifested: BTreeMap<usize, usize> =
+        expected.iter().map(|shard| (shard.shard, 0)).collect();
     for manifest in manifests {
         match manifested.get_mut(&manifest.shard) {
             Some(count) => *count += 1,
@@ -184,8 +191,11 @@ pub fn check(
             reported.entry(&result.id).or_default().push(manifest.shard);
         }
     }
-    let known: BTreeSet<&RunId> = expected.iter().collect();
-    for id in expected {
+    let owners: BTreeMap<&RunId, usize> = expected
+        .iter()
+        .flat_map(|shard| shard.runs.iter().map(|id| (id, shard.shard)))
+        .collect();
+    for id in expected.iter().flat_map(|shard| &shard.runs) {
         if !reported.contains_key(id) {
             problems.push(Problem::MissingRun { id: id.clone() });
         }
@@ -197,12 +207,18 @@ pub fn check(
                 shards: shards.clone(),
             });
         }
-        if !known.contains(id) {
-            for &shard in shards {
-                problems.push(Problem::UnexpectedRun {
+        for &shard in shards {
+            match owners.get(id) {
+                None => problems.push(Problem::UnexpectedRun {
                     id: (*id).clone(),
                     shard,
-                });
+                }),
+                Some(&owner) if owner != shard => problems.push(Problem::WrongShard {
+                    id: (*id).clone(),
+                    shard,
+                    owner,
+                }),
+                Some(_) => {}
             }
         }
     }

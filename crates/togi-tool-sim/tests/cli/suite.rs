@@ -70,6 +70,21 @@ fn every_shard_runs_its_sessions_clean_and_the_check_proves_coverage() {
     let ran = check(&suite, &out);
     assert_eq!(ran.code, Some(0), "{}", ran.stderr);
 
+    let swap = out.join("swap");
+    fs::rename(out.join("shard-0.jsonl"), &swap).unwrap();
+    fs::rename(out.join("shard-1.jsonl"), out.join("shard-0.jsonl")).unwrap();
+    fs::rename(&swap, out.join("shard-1.jsonl")).unwrap();
+    let ran = check(&suite, &out);
+    assert_eq!(ran.code, Some(1));
+    assert!(
+        ran.stderr.contains("which the partition gives shard"),
+        "{}",
+        ran.stderr
+    );
+    fs::rename(out.join("shard-0.jsonl"), &swap).unwrap();
+    fs::rename(out.join("shard-1.jsonl"), out.join("shard-0.jsonl")).unwrap();
+    fs::rename(&swap, out.join("shard-1.jsonl")).unwrap();
+
     fs::remove_file(out.join("shard-1.jsonl")).unwrap();
     let ran = check(&suite, &out);
     assert_eq!(ran.code, Some(1));

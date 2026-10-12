@@ -1,8 +1,8 @@
 use togi_journal::{DeadEndCondition, ShutdownReason};
 use togi_tool_audit::{Check, Violation};
 use togi_tool_sim::{
-    CoverageError, Outcome, Problem, RunId, RunResult, ShardManifest, check, encode_manifest,
-    parse_manifest,
+    CoverageError, ExpectedShard, Outcome, Problem, RunId, RunResult, ShardManifest, check,
+    encode_manifest, parse_manifest,
 };
 
 fn id(text: &str) -> RunId {
@@ -24,10 +24,20 @@ fn manifest(shard: usize, results: Vec<RunResult>) -> ShardManifest {
     ShardManifest { shard, results }
 }
 
-fn expected() -> Vec<RunId> {
-    ["a/dev-1", "a/dev-2", "b/dev-1", "b/holdout-9"]
-        .map(id)
-        .to_vec()
+fn owned(shard: usize, runs: &[&str]) -> ExpectedShard {
+    ExpectedShard {
+        shard,
+        runs: runs.iter().copied().map(id).collect(),
+    }
+}
+
+fn expected(shards: usize) -> Vec<ExpectedShard> {
+    let mut expected = vec![
+        owned(0, &["a/dev-1", "b/dev-1"]),
+        owned(1, &["a/dev-2", "b/holdout-9"]),
+    ];
+    expected.extend((2..shards).map(|shard| owned(shard, &[])));
+    expected
 }
 
 fn complete() -> Vec<ShardManifest> {
@@ -38,21 +48,19 @@ fn complete() -> Vec<ShardManifest> {
 }
 
 fn problems(manifests: &[ShardManifest], shards: usize) -> Vec<Problem> {
-    check(&expected(), 0..shards, manifests)
-        .unwrap_err()
-        .problems
+    check(&expected(shards), manifests).unwrap_err().problems
 }
 
 #[test]
 fn a_complete_clean_suite_passes() {
-    check(&expected(), 0..2, &complete()).unwrap();
+    check(&expected(2), &complete()).unwrap();
 }
 
 #[test]
 fn manifests_may_arrive_in_any_order() {
     let mut manifests = complete();
     manifests.reverse();
-    check(&expected(), 0..2, &manifests).unwrap();
+    check(&expected(2), &manifests).unwrap();
 }
 
 #[test]
@@ -79,7 +87,7 @@ fn a_shard_with_no_runs_still_needs_its_manifest() {
     );
     let mut with_empty = complete();
     with_empty.push(manifest(2, Vec::new()));
-    check(&expected(), 0..3, &with_empty).unwrap();
+    check(&expected(3), &with_empty).unwrap();
 }
 
 #[test]
@@ -94,13 +102,13 @@ fn a_manifest_for_a_shard_outside_the_count_is_unexpected() {
 
 #[test]
 fn a_single_shard_is_checked_against_its_own_runs_alone() {
-    let ids = [id("a/dev-2"), id("b/holdout-9")];
+    let ids = [owned(1, &["a/dev-2", "b/holdout-9"])];
     let own = complete().remove(1);
-    check(&ids, [1], std::slice::from_ref(&own)).unwrap();
+    check(&ids, std::slice::from_ref(&own)).unwrap();
     let mut short = own.clone();
     short.results.pop();
     assert_eq!(
-        check(&ids, [1], &[short]).unwrap_err().problems,
+        check(&ids, &[short]).unwrap_err().problems,
         vec![Problem::MissingRun {
             id: id("b/holdout-9")
         }]
@@ -108,7 +116,7 @@ fn a_single_shard_is_checked_against_its_own_runs_alone() {
     let mut extra = own.clone();
     extra.results.push(clean("a/dev-1"));
     assert_eq!(
-        check(&ids, [1], &[extra]).unwrap_err().problems,
+        check(&ids, &[extra]).unwrap_err().problems,
         vec![Problem::UnexpectedRun {
             id: id("a/dev-1"),
             shard: 1
@@ -117,11 +125,49 @@ fn a_single_shard_is_checked_against_its_own_runs_alone() {
     let mut renumbered = own;
     renumbered.shard = 0;
     assert_eq!(
-        check(&ids, [1], &[renumbered]).unwrap_err().problems[..2],
+        check(&ids, &[renumbered]).unwrap_err().problems[..2],
         [
             Problem::UnexpectedShard { shard: 0 },
             Problem::MissingShard { shard: 1 }
         ]
+    );
+}
+
+#[test]
+fn each_run_must_come_from_the_shard_that_owns_it() {
+    let swapped = vec![
+        manifest(0, vec![clean("a/dev-2"), clean("b/holdout-9")]),
+        manifest(1, vec![clean("a/dev-1"), clean("b/dev-1")]),
+    ];
+    let wrong = |text: &str, shard, owner| Problem::WrongShard {
+        id: id(text),
+        shard,
+        owner,
+    };
+    assert_eq!(
+        problems(&swapped, 2),
+        vec![
+            wrong("a/dev-1", 1, 0),
+            wrong("a/dev-2", 0, 1),
+            wrong("b/dev-1", 1, 0),
+            wrong("b/holdout-9", 0, 1),
+        ]
+    );
+    let crowded = vec![
+        manifest(
+            0,
+            vec![
+                clean("a/dev-1"),
+                clean("b/dev-1"),
+                clean("a/dev-2"),
+                clean("b/holdout-9"),
+            ],
+        ),
+        manifest(1, Vec::new()),
+    ];
+    assert_eq!(
+        problems(&crowded, 2),
+        vec![wrong("a/dev-2", 0, 1), wrong("b/holdout-9", 0, 1)]
     );
 }
 
@@ -151,10 +197,17 @@ fn a_run_reported_by_two_shards_is_a_duplicate() {
     manifests[1].results.push(clean("a/dev-1"));
     assert_eq!(
         problems(&manifests, 2),
-        vec![Problem::DuplicateRun {
-            id: id("a/dev-1"),
-            shards: vec![0, 1]
-        }]
+        vec![
+            Problem::DuplicateRun {
+                id: id("a/dev-1"),
+                shards: vec![0, 1]
+            },
+            Problem::WrongShard {
+                id: id("a/dev-1"),
+                shard: 1,
+                owner: 0
+            },
+        ]
     );
 }
 
