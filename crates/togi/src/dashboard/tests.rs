@@ -102,6 +102,28 @@ fn event_lines_are_dropped_only_while_the_dashboard_shows() {
 }
 
 #[test]
+fn the_gate_says_for_each_event_line_whether_it_kept_it_off_the_screen() {
+    use std::io::Write as _;
+    let sink = Sink::default();
+    let dashboard = super::Dashboard::new(
+        std::sync::Arc::new(UntilStopped),
+        std::path::Path::new("."),
+        0,
+    );
+    let kept = std::rc::Rc::new(std::cell::Cell::new(false));
+    let mut lines = dashboard.gate_with_status(Box::new(sink.clone()), std::rc::Rc::clone(&kept));
+    writeln!(lines, "before").unwrap();
+    assert!(!kept.get());
+    dashboard.show();
+    writeln!(lines, "while showing").unwrap();
+    assert!(kept.get());
+    dashboard.hide();
+    writeln!(lines, "after").unwrap();
+    assert!(!kept.get());
+    assert_eq!(&*sink.0.lock().unwrap(), b"before\nafter\n");
+}
+
+#[test]
 fn input_typed_while_the_dashboard_showed_is_dropped_when_the_input_is_given_back() {
     let (master, slave) = terminal();
     let quiet = QuietInput::enter(slave.as_fd()).unwrap().unwrap();

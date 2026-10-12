@@ -1,14 +1,14 @@
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use togi_journal::{
-    DeadEnd, DeadEndCondition, Dimension, Event, Payload, Refusal, Seq, SessionWarning, Shutdown,
-    ShutdownReason, Stamp,
+    DeadEnd, DeadEndCondition, Dimension, Event, Payload, Refusal, Seq, Shutdown, ShutdownReason,
+    Stamp,
 };
 use togi_machine::{BootId, PerCore};
 use togi_render::{OutputFacts, Renderer};
 use togi_session::{SessionError, Stop};
 
-use super::{conclude, print_clean_stop};
+use super::{conclude, print_hidden};
 use crate::exit::Exit;
 
 fn event(seq: u64, payload: Payload) -> Event {
@@ -176,145 +176,44 @@ fn a_run_that_ended_without_a_stop_or_an_error_is_a_failure() {
     assert_eq!(outcome.exit, Exit::Error);
 }
 
-#[test]
-fn the_clean_stop_repeats_the_restoration_and_the_shutdown_the_dashboard_hid() {
-    let restored = event(
-        2,
-        Payload::ProfileRestored(togi_journal::ProfileRestored {
-            offsets: PerCore::default(),
-        }),
-    );
-    let shutdown = event(
-        3,
-        Payload::Shutdown(Shutdown {
-            reason: ShutdownReason::Signal,
-            kernel_cursor: None,
-            kernel_error: None,
-            cycles: None,
-        }),
-    );
-    let warning = event(
-        4,
-        Payload::SessionWarning(SessionWarning {
-            operation: "check".to_owned(),
-            trial: None,
-            error: "late".to_owned(),
-        }),
-    );
-    let before = event(
-        1,
-        Payload::SessionWarning(SessionWarning {
-            operation: "check".to_owned(),
-            trial: None,
-            error: "early".to_owned(),
-        }),
-    );
-    let events = [before, restored, shutdown, warning];
-    let mut err = Vec::new();
-    print_clean_stop(&mut err, Renderer::default(), &TimeZone::UTC, &events);
-    let text = String::from_utf8(err).unwrap();
-    let kinds: Vec<&str> = text
-        .lines()
-        .map(|line| line.split_whitespace().nth(1).unwrap())
-        .collect();
-    assert_eq!(kinds, ["profile.restored", "shutdown"], "{text}");
-}
-
-#[derive(Clone, Copy)]
-enum Journaled {
-    Restored,
-    Shutdown,
-    Warning,
-    Change,
-    Config,
-}
-
-fn journaled(seq: u64, kind: Journaled) -> Event {
-    let payload = match kind {
-        Journaled::Restored => Payload::ProfileRestored(togi_journal::ProfileRestored {
-            offsets: PerCore::default(),
-        }),
-        Journaled::Shutdown => Payload::Shutdown(Shutdown {
-            reason: ShutdownReason::Signal,
-            kernel_cursor: None,
-            kernel_error: None,
-            cycles: None,
-        }),
-        Journaled::Warning => Payload::SessionWarning(SessionWarning {
-            operation: "check".to_owned(),
-            trial: None,
-            error: "w".to_owned(),
-        }),
-        Journaled::Change => Payload::ProfileChange(togi_journal::ProfileChange {
-            from: None,
-            to: PerCore::default(),
-        }),
-        Journaled::Config => Payload::ConfigLoaded(togi_journal::ConfigLoaded {
-            build: togi_journal::Build {
-                version: "0".to_owned(),
-                rev: None,
-                ruleset: 1,
-                schema: 1,
-                fixes: 0,
-                evidence: 1,
-            },
-            config: togi_config::Config::default(),
-            path: "config.json".to_owned(),
-            file: false,
-            kernel_cursor: None,
-            kernel_error: None,
-        }),
-    };
-    event(seq, payload)
+fn closing(seq: u64, shutdown: bool) -> Event {
+    event(
+        seq,
+        if shutdown {
+            Payload::Shutdown(Shutdown {
+                reason: ShutdownReason::Signal,
+                kernel_cursor: None,
+                kernel_error: None,
+                cycles: None,
+            })
+        } else {
+            Payload::ProfileRestored(togi_journal::ProfileRestored {
+                offsets: PerCore::default(),
+            })
+        },
+    )
 }
 
 #[test]
-fn the_clean_stop_prints_only_the_closing_lines_of_this_run() {
-    use Journaled::{Change, Config, Restored, Shutdown, Warning};
-    const BOTH: &[&str] = &["profile.restored", "shutdown"];
-    let table: [(&str, &[Journaled], &[&str]); 9] = [
-        ("ordinary restore", &[Config, Restored, Shutdown], BOTH),
-        (
-            "interleaved and trailing warnings",
-            &[Config, Restored, Warning, Shutdown, Warning, Warning],
-            BOTH,
-        ),
-        (
-            "later work excludes an earlier restore",
-            &[Restored, Warning, Change, Shutdown, Warning],
-            &["shutdown"],
-        ),
-        (
-            "a new run excludes the previous run's closing lines",
-            &[Restored, Shutdown, Config, Warning],
-            &[],
-        ),
-        (
-            "a previous shutdown bounds the closing suffix",
-            &[Restored, Shutdown, Warning, Shutdown, Warning],
-            &["shutdown"],
-        ),
-        (
-            "shutdown without restore",
-            &[Shutdown, Warning],
-            &["shutdown"],
-        ),
-        (
-            "restore without shutdown",
-            &[Restored, Warning],
-            &["profile.restored"],
-        ),
-        ("warnings only", &[Warning, Warning], &[]),
-        ("empty", &[], &[]),
+fn only_the_events_the_dashboard_hid_are_printed_each_once_in_journal_order() {
+    let events = [closing(1, false), closing(2, true), closing(3, true)];
+    let table: [(&str, &[u64], &[&str]); 5] = [
+        ("both", &[2, 1], &["profile.restored", "shutdown"]),
+        ("only the restoration", &[1], &["profile.restored"]),
+        ("only the shutdown", &[2], &["shutdown"]),
+        ("neither", &[], &[]),
+        ("an unknown sequence number", &[9], &[]),
     ];
-    for (name, journal, want) in table {
-        let events: Vec<Event> = journal
-            .iter()
-            .zip(1..)
-            .map(|(kind, seq)| journaled(seq, *kind))
-            .collect();
+    for (name, hidden, want) in table {
+        let hidden: Vec<Seq> = hidden.iter().map(|seq| Seq::new(*seq).unwrap()).collect();
         let mut err = Vec::new();
-        print_clean_stop(&mut err, Renderer::default(), &TimeZone::UTC, &events);
+        print_hidden(
+            &mut err,
+            Renderer::default(),
+            &TimeZone::UTC,
+            &events,
+            &hidden,
+        );
         let text = String::from_utf8(err).unwrap();
         let kinds: Vec<&str> = text
             .lines()

@@ -5,9 +5,12 @@
 //! puts everything back however it ends: [`Dashboard::hide`], a drop while a panic unwinds, or the surface
 //! failing or panicking, in which case `run` falls back to event lines and the session goes on.
 
+use std::cell::Cell;
+use std::fmt;
 use std::io::{self, Write};
 use std::os::fd::BorrowedFd;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::thread::{self, JoinHandle};
@@ -171,9 +174,19 @@ impl Dashboard {
     /// A writer that drops what it is given while the dashboard shows, and forwards it to `inner` otherwise.
     #[must_use]
     pub fn gate(&self, inner: Box<dyn Write>) -> Box<dyn Write> {
+        self.gate_with_status(inner, Rc::new(Cell::new(false)))
+    }
+
+    /// Tracks the gate's actual decision for each formatted event, not its later visibility.
+    pub(crate) fn gate_with_status(
+        &self,
+        inner: Box<dyn Write>,
+        suppressed: Rc<Cell<bool>>,
+    ) -> Box<dyn Write> {
         Box::new(Gate {
             visible: Arc::clone(&self.visible),
             inner,
+            suppressed,
         })
     }
 
@@ -262,9 +275,20 @@ impl Drop for Dashboard {
 struct Gate {
     visible: Arc<AtomicBool>,
     inner: Box<dyn Write>,
+    suppressed: Rc<Cell<bool>>,
 }
 
 impl Write for Gate {
+    fn write_fmt(&mut self, args: fmt::Arguments<'_>) -> io::Result<()> {
+        let suppressed = self.visible.load(Ordering::SeqCst);
+        self.suppressed.set(suppressed);
+        if suppressed {
+            Ok(())
+        } else {
+            self.inner.write_fmt(args)
+        }
+    }
+
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         if self.visible.load(Ordering::SeqCst) {
             return Ok(buf.len());

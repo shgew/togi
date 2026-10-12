@@ -9,6 +9,7 @@
 //! done and its outcome reported, and is resumed after the dashboard, the journal and the host lock are put
 //! away, in that order.
 
+use std::cell::{Cell, RefCell};
 use std::io::{self, Write};
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
@@ -19,7 +20,9 @@ use std::sync::{Arc, Mutex, PoisonError};
 use clap::{Args as ClapArgs, ValueHint};
 use togi_defect::KNOWN_DEFECTS;
 use togi_hostlock::HostLock;
-use togi_journal::{Build, Operation, Recording, StateDir, Verdict, recorded_build};
+use togi_journal::{
+    Build, EventKind, Operation, Recording, Seq, StateDir, Verdict, recorded_build,
+};
 use togi_machine::CancellationToken;
 use togi_render::{Renderer, Style, escape_text};
 use togi_session::{
@@ -219,9 +222,11 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
         Rc::new(Dashboard::new(ctx.system.surface(), ctx.state_dir, since))
     });
     let hidden = Hidden::default();
+    let suppressed = Rc::new(Cell::new(false));
+    let hidden_closing: Rc<RefCell<Vec<Seq>>> = Rc::default();
     let (log, report): (Box<dyn Write>, Box<dyn Write>) = match &dashboard {
         Some(dashboard) => (
-            dashboard.gate(ctx.system.stderr()),
+            dashboard.gate_with_status(ctx.system.stderr(), Rc::clone(&suppressed)),
             Box::new(hidden.clone()),
         ),
         None => (ctx.system.stderr(), ctx.system.stderr()),
@@ -248,7 +253,19 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
         resume: None,
         carry: prepared.carry,
         log: Some(log),
-        on_append: None,
+        on_append: dashboard.as_ref().map(|_| {
+            let hidden_closing = Rc::clone(&hidden_closing);
+            Box::new(move |event: &togi_journal::Event| {
+                // The log line of this event was just written: `suppressed` is what the gate decided for it.
+                if matches!(
+                    event.kind(),
+                    EventKind::ProfileRestored | EventKind::Shutdown
+                ) && suppressed.get()
+                {
+                    hidden_closing.borrow_mut().push(event.seq);
+                }
+            }) as togi_session::AppendHook
+        }),
         renderer,
         zone: zone.clone(),
         cancel,
@@ -258,9 +275,6 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
         dashboard.show();
     }
     let mut ended = togi_session::run(input);
-    let on_screen = dashboard
-        .as_ref()
-        .is_some_and(|dashboard| dashboard.is_showing());
     if let Some(dashboard) = &dashboard {
         dashboard.hide();
         let _ = ctx.err.write_all(&hidden.take());
@@ -277,8 +291,14 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
     let clean = panic.is_none()
         && ended.errors.is_empty()
         && !matches!(ended.stop, Some(togi_session::Stop::DeadEnd { .. }));
-    if on_screen && clean {
-        outcome::print_clean_stop(ctx.err, renderer, &zone, ended.journal.events());
+    if clean {
+        outcome::print_hidden(
+            ctx.err,
+            renderer,
+            &zone,
+            ended.journal.events(),
+            &hidden_closing.borrow(),
+        );
     }
     let result = outcome::conclude(
         ctx.err,

@@ -89,30 +89,16 @@ fn find(events: &[Event], seq: Seq) -> Option<&Event> {
     events.iter().find(|event| event.seq == seq)
 }
 
-/// The closing `profile.restored` and `shutdown` lines of a clean stop, which the dashboard kept off the
-/// screen.
-pub(super) fn print_clean_stop(
+/// The lines of the events in `hidden`, which the dashboard kept off the screen, in journal order.
+pub(super) fn print_hidden(
     err: &mut dyn Write,
     renderer: Renderer,
     zone: &TimeZone,
     events: &[Event],
+    hidden: &[Seq],
 ) {
-    use togi_journal::EventKind;
-    let mut restored = None;
-    let mut shutdown = None;
-    for (index, event) in events.iter().enumerate().rev() {
-        match event.kind() {
-            EventKind::SessionWarning => {}
-            EventKind::ProfileRestored => {
-                restored = Some(index);
-                break;
-            }
-            EventKind::Shutdown if shutdown.is_none() => shutdown = Some(index),
-            _ => break,
-        }
-    }
-    for index in [restored, shutdown].into_iter().flatten() {
-        let _ = writeln!(err, "{}", renderer.line(&events[index], zone));
+    for event in events.iter().filter(|event| hidden.contains(&event.seq)) {
+        let _ = writeln!(err, "{}", renderer.line(event, zone));
     }
 }
 

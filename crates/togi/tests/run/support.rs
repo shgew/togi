@@ -186,6 +186,9 @@ pub(crate) struct Fake {
     pub(crate) reboots: Cell<u32>,
     /// Whether the host lock and the journal's lock were free when the reboot was requested.
     pub(crate) free_at_reboot: Cell<Option<(bool, bool)>>,
+    /// Run once when the host lock is asked for, which is after the run's first, lock-free read of its journal and
+    /// before its second, under both locks.
+    pub(crate) at_host_lock: RefCell<Option<Box<dyn FnOnce()>>>,
     pub(crate) calls: RefCell<Vec<&'static str>>,
 }
 
@@ -229,6 +232,7 @@ impl Fake {
             boots_read: Cell::new(0),
             reboots: Cell::new(0),
             free_at_reboot: Cell::new(None),
+            at_host_lock: RefCell::default(),
             calls: RefCell::default(),
         }
     }
@@ -294,7 +298,7 @@ impl System for Fake {
         self.calls.borrow_mut().push("check_platform");
         assert!(
             !self.panic_in_platform,
-            "injected panic before the host lock"
+            "injected panic before the host lock\x1b[31m"
         );
         if self.supported {
             Ok(())
@@ -309,6 +313,10 @@ impl System for Fake {
 
     fn host_lock(&self) -> (&Path, Policy) {
         self.calls.borrow_mut().push("host_lock");
+        let change = self.at_host_lock.borrow_mut().take();
+        if let Some(change) = change {
+            change();
+        }
         (&self.lock, self.policy)
     }
 

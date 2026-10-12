@@ -13,16 +13,16 @@ use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use tempfile::TempDir;
 use togi_journal::EventKind;
 use togi_machine::{
-    CancellationToken, CoreId, Error as MachineError, Machine, ObservedOffset, Partial, Reporter,
-    Running, Smu, SmuValidated, Started, Stopped, Swept, TargetOffset, TrialResult, TrialSpec,
-    Trials,
+    BootId, CancellationToken, CoreId, Error as MachineError, Kernel, KernelCursor, KernelRead,
+    Machine, Mce, ObservedOffset, Partial, PstoreRecord, Reporter, ResetReason, Running, Smu,
+    SmuValidated, Started, Stopped, Swept, TargetOffset, TrialResult, TrialSpec, Trials,
 };
 
 use crate::support::{Fake, biased};
@@ -32,6 +32,10 @@ const DIR: &str = "TOGI_RUN_TEST_DIR";
 const ORDER: &str = "order.log";
 const RELEASE: &str = "release";
 const FALLBACK: &str = "printing events instead";
+/// What the hook prints for the probe panic the cases raise while the dashboard still owns the screen: it holds
+/// the line back until the dashboard has let go, so it comes after the fallback line and only once event lines
+/// flow again.
+const PROBE: &str = "togi: panic on thread probe: the dashboard has let go";
 
 /// What the cases write down in the order it happened, for the parent to read.
 #[derive(Clone)]
@@ -312,8 +316,104 @@ impl togi_cli::dashboard::Surface for SaysWhenItStops {
     }
 }
 
+/// A dashboard that draws until `cue`, then fails as a drawing that returns an error does.
+struct FailsOnCue(Arc<AtomicBool>);
+
+impl togi_cli::dashboard::Surface for FailsOnCue {
+    fn draw(&self, _: &Path, _: u64, stop: &togi_cli::dashboard::Stop) -> Result<(), String> {
+        while !self.0.load(Ordering::SeqCst) {
+            if stop.is_stopped() {
+                return Ok(());
+            }
+            thread::sleep(Duration::from_millis(1));
+        }
+        Err("the dashboard fell over".to_owned())
+    }
+}
+
+/// Fails the dashboard and returns once the parent has seen the probe line, which the hook prints only after
+/// the dashboard has let go of the screen: event lines flow again from then on, and the fallback line is out.
+fn fail_the_dashboard(cue: &AtomicBool, dir: &Path) {
+    let probe = thread::Builder::new()
+        .name("probe".to_owned())
+        .spawn(|| panic!("the dashboard has let go"))
+        .unwrap();
+    assert!(probe.join().is_err());
+    cue.store(true, Ordering::SeqCst);
+    wait_for_release(dir);
+}
+
+/// The kernel log of a run whose dashboard fails once the journal holds `kind`: on the first read after that,
+/// or, with `at_drop`, when the session lets go of the machine, which is after its last event.
+struct FailsTheDashboard {
+    inner: Box<dyn Kernel>,
+    journal: PathBuf,
+    kind: &'static str,
+    at_drop: bool,
+    cue: Arc<AtomicBool>,
+    dir: PathBuf,
+    failed: bool,
+}
+
+impl FailsTheDashboard {
+    fn fail_if_the_journal_holds_the_kind(&mut self) {
+        if self.failed {
+            return;
+        }
+        let text = fs::read_to_string(&self.journal).unwrap_or_default();
+        if text.contains(self.kind) {
+            self.failed = true;
+            fail_the_dashboard(&self.cue, &self.dir);
+        }
+    }
+}
+
+impl Drop for FailsTheDashboard {
+    fn drop(&mut self) {
+        if self.at_drop {
+            self.fail_if_the_journal_holds_the_kind();
+        }
+    }
+}
+
+impl Kernel for FailsTheDashboard {
+    fn mces(&mut self, boot: &BootId, since: Duration) -> Result<Vec<Mce>, MachineError> {
+        self.inner.mces(boot, since)
+    }
+
+    fn read_mces(
+        &mut self,
+        boot: &BootId,
+        after: Option<&KernelCursor>,
+    ) -> Result<KernelRead, Partial<Vec<Mce>>> {
+        if !self.at_drop {
+            self.fail_if_the_journal_holds_the_kind();
+        }
+        self.inner.read_mces(boot, after)
+    }
+
+    fn reset_reason(&mut self, boot: &BootId) -> Result<ResetReason, MachineError> {
+        self.inner.reset_reason(boot)
+    }
+
+    fn reset_reason_after(&mut self, boot: &BootId) -> Result<ResetReason, MachineError> {
+        self.inner.reset_reason_after(boot)
+    }
+
+    fn saved_pstore(&mut self, boot: &BootId) -> Result<Option<PstoreRecord>, MachineError> {
+        self.inner.saved_pstore(boot)
+    }
+}
+
+/// The soft limit on file sizes the process had before [`refuse_journal_growth`] lowered it.
+static FSIZE: OnceLock<rustix::process::Rlimit> = OnceLock::new();
+
+/// What the child writes once the limit is lifted again, to show it can: more than the journal ever held.
+const GROWN_AFTER_THE_FAILURE: &str = "grown-after-the-failure";
+const GROWN_LEN: usize = 1 << 20;
+
 /// Makes the next append to the journal fail, as a full disk does: the process may not grow a file past the size
-/// the journal has now.
+/// the journal has now. [`allow_growth_again`] lifts it.
 fn refuse_journal_growth(journal: &Path) {
     use rustix::process::{Resource, Signal, getrlimit, setrlimit};
     use tokio::signal::unix::{SignalKind, signal};
@@ -332,9 +432,19 @@ fn refuse_journal_growth(journal: &Path) {
         });
     });
     ready.recv().unwrap();
-    let mut limit = getrlimit(Resource::Fsize);
+    let before = getrlimit(Resource::Fsize);
+    FSIZE.set(before).unwrap();
+    let mut limit = before;
     limit.current = Some(fs::metadata(journal).unwrap().len());
     setrlimit(Resource::Fsize, limit).unwrap();
+}
+
+/// Puts the limit [`refuse_journal_growth`] lowered back, once the failure it caused has been seen: the process
+/// writes its coverage profile when it exits, and a profile cut short by the limit is corrupt.
+fn allow_growth_again() {
+    if let Some(limit) = FSIZE.get() {
+        rustix::process::setrlimit(rustix::process::Resource::Fsize, *limit).unwrap();
+    }
 }
 
 /// The child: runs `togi run` for the scenario named in the environment and exits with its status. Does nothing
@@ -452,6 +562,33 @@ fn helper() {
                 logging(machine, &order, Some(action))
             });
         }
+        "fallback_between_the_closing_events" | "fallback_after_the_closing_events" => {
+            let after = scenario == "fallback_after_the_closing_events";
+            let cue = Arc::new(AtomicBool::new(false));
+            fake.interactive = true;
+            fake.surface = Arc::new(FailsOnCue(Arc::clone(&cue)));
+            let order = order.clone();
+            let dir = dir.clone();
+            fake.wrap = Box::new(move |machine| {
+                let machine = logging(machine, &order, Some(Box::new(interrupt)));
+                Machine {
+                    kernel: Box::new(FailsTheDashboard {
+                        inner: machine.kernel,
+                        journal: dir.join("state/events.jsonl"),
+                        kind: if after {
+                            "\"kind\":\"shutdown\""
+                        } else {
+                            "\"kind\":\"profile.restored\""
+                        },
+                        at_drop: after,
+                        cue: Arc::clone(&cue),
+                        dir: dir.clone(),
+                        failed: false,
+                    }),
+                    ..machine
+                }
+            });
+        }
         other => panic!("unknown scenario {other}"),
     }
     let args: Vec<OsString> = fake
@@ -460,6 +597,10 @@ fn helper() {
         .map(Into::into)
         .collect();
     let exit = togi_cli::run_process(args, &fake);
+    if FSIZE.get().is_some() {
+        allow_growth_again();
+        fs::write(dir.join(GROWN_AFTER_THE_FAILURE), vec![0_u8; GROWN_LEN]).unwrap();
+    }
     let end = Instant::now() + Duration::from_secs(10);
     while scenario == "lock_order"
         && !fs::read_to_string(dir.join(ORDER))
@@ -543,9 +684,9 @@ fn run(scenario: &str) -> Child {
     }
 }
 
-/// Runs a scenario that waits for the parent to see the dashboard's fallback line before it stops the run, so
-/// everything the child prints after that line was printed while the session was still running.
-fn run_released_by_the_fallback(scenario: &str) -> Child {
+/// Runs a scenario that waits for the parent to see `line` on stderr before it goes on, so everything the child
+/// prints after that line was printed while the session was still running.
+fn run_released_by(scenario: &str, line: &str) -> Child {
     let dir = TempDir::new().unwrap();
     let mut child = command(scenario, dir.path())
         .stdout(Stdio::null())
@@ -554,13 +695,13 @@ fn run_released_by_the_fallback(scenario: &str) -> Child {
         .unwrap();
     let mut stderr = String::new();
     let mut released = false;
-    for line in BufReader::new(child.stderr.take().unwrap()).lines() {
-        let line = line.unwrap();
-        if !released && line.contains(FALLBACK) {
+    for text in BufReader::new(child.stderr.take().unwrap()).lines() {
+        let text = text.unwrap();
+        if !released && text.contains(line) {
             released = true;
             fs::write(dir.path().join(RELEASE), "").unwrap();
         }
-        stderr.push_str(&line);
+        stderr.push_str(&text);
         stderr.push('\n');
     }
     Child {
@@ -577,7 +718,7 @@ fn a_panic_before_the_host_lock_exits_two_with_a_panic_line() {
     assert!(
         child
             .stderr
-            .contains("panic: injected panic before the host lock"),
+            .contains("panic: injected panic before the host lock\\x1b[31m"),
         "{}",
         child.stderr
     );
@@ -706,7 +847,7 @@ fn a_worker_that_dies_of_a_panic_ends_the_run_through_the_owner_not_the_hook() {
 
 #[test]
 fn a_panic_in_the_dashboard_falls_back_to_event_lines_while_the_run_goes_on() {
-    let child = run_released_by_the_fallback("dashboard");
+    let child = run_released_by("dashboard", FALLBACK);
     assert_eq!(child.status, Some(0), "{}", child.stderr);
     assert!(
         child.stderr.contains(
@@ -730,6 +871,45 @@ fn a_panic_in_the_dashboard_falls_back_to_event_lines_while_the_run_goes_on() {
     assert_eq!(child.count(" shutdown "), 1, "{}", child.stderr);
     assert!(fallback < child.at(" shutdown "), "{}", child.stderr);
     assert!(child.events().contains(&EventKind::Shutdown));
+}
+
+#[test]
+fn a_dashboard_that_gives_way_between_the_restoration_and_the_shutdown_shows_each_closing_line_once()
+ {
+    let child = run_released_by("fallback_between_the_closing_events", PROBE);
+    assert_eq!(child.status, Some(0), "{}", child.stderr);
+    // The restoration was recorded while the dashboard still showed, so the gate dropped its line and the run
+    // prints it when it ends; the shutdown came after the fallback, so the gate printed it.
+    assert_eq!(child.count(" profile.restored "), 1, "{}", child.stderr);
+    assert_eq!(child.count(" shutdown "), 1, "{}", child.stderr);
+    let fallback = child.at(FALLBACK);
+    assert!(
+        fallback < child.at(" profile.restored "),
+        "{}",
+        child.stderr
+    );
+    assert!(fallback < child.at(" shutdown "), "{}", child.stderr);
+    let events = child.events();
+    assert!(events.contains(&EventKind::ProfileRestored), "{events:?}");
+    assert!(events.contains(&EventKind::Shutdown), "{events:?}");
+}
+
+#[test]
+fn a_dashboard_that_gives_way_after_the_last_event_shows_both_closing_lines_once_in_order() {
+    let child = run_released_by("fallback_after_the_closing_events", PROBE);
+    assert_eq!(child.status, Some(0), "{}", child.stderr);
+    assert_eq!(child.count(" profile.restored "), 1, "{}", child.stderr);
+    assert_eq!(child.count(" shutdown "), 1, "{}", child.stderr);
+    assert!(
+        child.at(FALLBACK) < child.at(" profile.restored "),
+        "{}",
+        child.stderr
+    );
+    assert!(
+        child.at(" profile.restored ") < child.at(" shutdown "),
+        "{}",
+        child.stderr
+    );
 }
 
 #[test]
@@ -762,4 +942,13 @@ fn the_emergency_report_of_a_journal_failure_is_printed_after_the_dashboard_stop
         child.stderr
     );
     assert_eq!(child.count("journal write failed"), 2, "{}", child.stderr);
+    // The limit that made the append fail is lifted again before the child exits, so that it can write its
+    // coverage profile, which a limit left in place cuts short.
+    let grown = child.dir.path().join(GROWN_AFTER_THE_FAILURE);
+    assert_eq!(
+        fs::metadata(&grown).map(|meta| meta.len()).ok(),
+        Some(GROWN_LEN as u64),
+        "{}",
+        child.stderr
+    );
 }

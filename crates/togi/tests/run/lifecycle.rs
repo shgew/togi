@@ -346,14 +346,29 @@ fn a_failed_smu_write_is_the_smu_dead_end_and_exits_eleven() {
     );
 }
 
+/// `text` with an event of a kind this build does not know at its end.
+fn with_a_future_kind(text: &str) -> String {
+    let next = text.lines().count() + 1;
+    format!(
+        "{text}{}\n",
+        r#"{"seq":N,"time":"2026-01-01T00:00:00Z","boot":"b","kind":"future.thing","msg":"x","data":{}}"#
+            .replace('N', &next.to_string())
+    )
+}
+
 fn append_future_kind(fake: &Fake) -> Vec<u8> {
     let path = fake.state_dir().join("events.jsonl");
-    let mut text = fs::read_to_string(&path).unwrap();
-    let next = text.lines().count() + 1;
-    text.push_str(&r#"{"seq":N,"time":"2026-01-01T00:00:00Z","boot":"b","kind":"future.thing","msg":"x","data":{}}"#.replace('N', &next.to_string()));
-    text.push('\n');
+    let text = with_a_future_kind(&fs::read_to_string(&path).unwrap());
     fs::write(&path, &text).unwrap();
     text.into_bytes()
+}
+
+/// Has the journal replaced by `text` when the run asks for the host lock: after its first read of the journal,
+/// which holds no lock, and before its second, under both locks. A refusal the first read missed can only come
+/// from the second.
+fn replace_the_journal_at_the_host_lock(fake: &Fake, text: String) {
+    let path = fake.state_dir().join("events.jsonl");
+    *fake.at_host_lock.borrow_mut() = Some(Box::new(move || fs::write(&path, text).unwrap()));
 }
 
 fn first_run(fake: &mut Fake) {
@@ -400,6 +415,100 @@ fn an_unknown_event_kind_in_the_tuning_boot_leaves_its_own_reason_and_clears_the
             .is_some_and(|reason| reason.contains("unknown event kind")),
         "{:?}",
         state.values
+    );
+}
+
+/// What the locked read of a journal changed after the first read must do: refuse with status 16 naming
+/// `reason`, before the boot id is read or the hardware opened, leave the journal exactly as `changed`, and in the
+/// tuning boot leave `leave` as the reason and clear the saved entry, without a reboot.
+fn assert_refused_under_the_locks(
+    fake: &Fake,
+    changed: &str,
+    (exit, err): (Exit, &str),
+    reason: &str,
+    leave: &str,
+    before: (u32, u32, usize),
+) {
+    assert_eq!(exit, Exit::Incompatible, "{err}");
+    assert!(err.contains(reason), "{err}");
+    assert_eq!(
+        fs::read(fake.state_dir().join("events.jsonl")).unwrap(),
+        changed.as_bytes(),
+        "the refused journal is left as it was found"
+    );
+    let (opened, boots, calls) = before;
+    assert_eq!(
+        (fake.opened.get(), fake.boots_read.get()),
+        (opened, boots),
+        "neither the boot id nor the hardware is touched"
+    );
+    assert_eq!(
+        fake.calls.borrow()[calls..],
+        ["check_platform", "host_lock"],
+        "the first read passed, so only the locked one can have refused"
+    );
+    let state = fake.grub.state();
+    assert_eq!(state.cleared, 1, "{:?}", state.values);
+    assert!(
+        state
+            .values
+            .get("togi_leave_reason")
+            .is_some_and(|text| text.contains(leave)),
+        "{:?}",
+        state.values
+    );
+    assert_eq!(fake.reboots.get(), 0);
+}
+
+#[test]
+fn a_journal_that_became_newer_after_the_first_read_is_refused_under_the_locks() {
+    let mut fake = Fake::new();
+    first_run(&mut fake);
+    let path = fake.state_dir().join("events.jsonl");
+    let text = fs::read_to_string(&path).unwrap();
+    let newer = text.replacen(r#""evidence":1"#, r#""evidence":2"#, 1);
+    assert_ne!(newer, text);
+    replace_the_journal_at_the_host_lock(&fake, newer.clone());
+    fake.grub = crate::support::Grub::with_saved_entry("tuning");
+    let grubenv = fake.grubenv();
+    let before = (
+        fake.opened.get(),
+        fake.boots_read.get(),
+        fake.calls.borrow().len(),
+    );
+    let (exit, _, err) = fake.run(&["run", "--tuning-boot", grubenv.to_str().unwrap()]);
+    assert_refused_under_the_locks(
+        &fake,
+        &newer,
+        (exit, &err),
+        "evidence epoch",
+        "journal incompatible",
+        before,
+    );
+}
+
+#[test]
+fn a_journal_that_gained_an_unknown_kind_after_the_first_read_is_refused_under_the_locks() {
+    let mut fake = Fake::new();
+    first_run(&mut fake);
+    let path = fake.state_dir().join("events.jsonl");
+    let changed = with_a_future_kind(&fs::read_to_string(&path).unwrap());
+    replace_the_journal_at_the_host_lock(&fake, changed.clone());
+    fake.grub = crate::support::Grub::with_saved_entry("tuning");
+    let grubenv = fake.grubenv();
+    let before = (
+        fake.opened.get(),
+        fake.boots_read.get(),
+        fake.calls.borrow().len(),
+    );
+    let (exit, _, err) = fake.run(&["run", "--tuning-boot", grubenv.to_str().unwrap()]);
+    assert_refused_under_the_locks(
+        &fake,
+        &changed,
+        (exit, &err),
+        r#"unknown kind "future.thing""#,
+        "unknown event kind",
+        before,
     );
 }
 
