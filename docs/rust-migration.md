@@ -784,3 +784,45 @@ The `togi-watch` crate begins with the model of the `togi watch` dashboard ([#83
 - **Tests.** The Go tests of `snapshot_test.go` and `history_test.go` map as the pull request lists. The tests of `story_test.go`, `narration_test.go`, `cycle_resume_test.go` and `r7_status_test.go` that assert a model fact (the idle hold, the past-end clock, the unrecovered crash, the resume step, the R7 top requesters) are ported here; those that assert wording wait for the narration ([#835](https://github.com/shgew/togi/issues/835)). At the pull request head, `just cover-rs` against the base reports one changed line no test reaches, `crates/togi-watch/src/describe.rs:84`: the `_ => None` arm of the contextual history dispatch, which no kind the table marks contextual reaches.
 - **Spec.** `docs/spec/runtime.md` is unchanged: the Dashboard section says what the dashboard shows, and no behaviour it describes changed.
 - **Not measured.** Compile times, the comparison with `go test ./internal/watch`, agent cost, and the cost of a snapshot on a long recorded session.
+
+## Stage 5: close (#768, 2026-10-12)
+
+Stage 5 ([#640](https://github.com/shgew/togi/issues/640)) closes with its nine crates on `main` at `113b73ee`: `togi-hostlock`, `togi-command`, `togi-smu`, `togi-backend`, `togi-mprime`, `togi-ycruncher`, `togi-detect`, `togi-trial` and `togi-hardware`. This pull request adds the recipe for the Rust hardware tests and the stage's measurements. No Go is removed or changed.
+
+- **Stage 4 suite check.** `just sim-suite-rs --jobs 8` on `main` at `97eba4cc` (with this pull request's recipe and log entry, which change no code): all 220 suite sessions ended `clean` and `togi-tool-sim check --shards 1` passed, in 128 s of wall time including the release build, on the 32-thread development host at a load of 32 to 36. CI's `rust-sim-suite-0` to `-3` run the same suite on every pull request.
+- **The recipe.** `just hardware-rs` sits beside `just hardware`. It enters the dev shell itself, since `sudo` drops it, and runs `cargo test --locked --features hardware --test hardware` for `togi-smu`, `togi-detect`, `togi-trial` and `togi-hardware` with `RUST_TEST_THREADS=1`: cargo runs the binaries one after another and each runs one test at a time, and each test that needs the host takes the host lock. Trial's `cached_errors` binary needs an ordinary account (`BackendIdentity` refuses uid 0), so the recipe adds it only when it does not run as root. The recipe refuses outside Linux. `just hardware-rs --no-run` builds the binaries and starts none. The owner runs it as root on the target machine at the cutover ([#643](https://github.com/shgew/togi/issues/643)); the VM check of `togi-trial` ran its tests under real systemd, and the SMU tests have run nowhere.
+- **Hardware-feature tests built.** `just hardware-rs --no-run` and `cargo test --locked -p togi-trial -p togi-hardware --features hardware --no-run` each built every binary. `--list` shows 2 tests in `togi-smu`, 1 in `togi-detect`, 12 in the `togi-trial` `hardware` binary, 2 in its `cached_errors` and 1 in `togi-hardware`. None ran.
+- **Test counts and times.** One `cargo nextest run --locked -p <crate>` per crate on Linux, as an ordinary user, on a warm build with other jobs on the host, one run each; Go is `go test -count=1` of the matching package, all in one invocation (its packages run in parallel). Go's `internal/backend` has no test files, and `togi-command` has no Go package.
+
+| Crate | Rust tests | Rust time [s] | Go package | Go time [s] |
+|:---|---:|---:|:---|---:|
+| `togi-hostlock` | 20 | 0.005 | `internal/hostlock` | 0.002 |
+| `togi-command` | 38 | 6.252 | none | none |
+| `togi-smu` | 85 | 0.222 | `internal/smu` | 0.057 |
+| `togi-backend` | 16 | 0.004 | `internal/backend` | no tests |
+| `togi-mprime` | 20 | 0.208 | `internal/backend/mprime` | 0.004 |
+| `togi-ycruncher` | 36 | 0.459 | `internal/backend/ycruncher` | 0.004 |
+| `togi-detect` | 85 | 1.021 | `internal/detect` | 0.003 |
+| `togi-trial` | 440 | 8.623 | `internal/trial` | 0.125 |
+| `togi-hardware` | 101 | 0.313 | `internal/hardware` | 0.005 |
+| Total | 841 | 17.107 | | 0.200 |
+
+The counts, times and sizes are at `113b73ee`. Since then only [#807](https://github.com/shgew/togi/pull/807) changed a stage 5 crate: `togi-trial` gained 136 test lines and kept 440 tests, which ran in 8.8 s on `97eba4cc` at a load of 36.
+
+- **Size.** Library and test lines of each crate, counted as the `togi-trial` entry counts: each source file is split at its `#[cfg(test)]` module, and the module, files named `tests.rs` or `testing.rs`, `src/tests/` and `tests/` are tests. Go's are the `.go` and `_test.go` files of the package.
+
+| Crate | Rust library | Rust tests | Go library | Go tests |
+|:---|---:|---:|---:|---:|
+| `togi-hostlock` | 351 | 598 | 148 | 400 |
+| `togi-command` | 553 | 1,038 | 0 | 0 |
+| `togi-smu` | 2,023 | 3,229 | 795 | 1,284 |
+| `togi-backend` | 246 | 250 | 60 | 130 |
+| `togi-mprime` | 186 | 399 | 84 | 228 |
+| `togi-ycruncher` | 263 | 722 | 136 | 324 |
+| `togi-detect` | 1,833 | 2,976 | 736 | 1,259 |
+| `togi-trial` | 7,881 | 15,873 | 2,200 | 6,195 |
+| `togi-hardware` | 1,548 | 2,299 | 467 | 877 |
+| Total | 14,884 | 27,384 | 4,626 | 10,697 |
+
+- **Reading them.** The nine crates hold 3.2 times Go's library lines and 2.6 times its test lines, counting `togi-command`, which has no Go package. Their 841 tests run in 17.1 s, 6.3 s of it in `togi-command` (its entry says why) and 8.6 s in `togi-trial`; Go's seven packages take 0.2 s together, the longest, `internal/trial`, 0.125 s. The comparison is of suites, not of the code under test: the Rust tests start real processes that the Go unit tests do not, and the counts and times were not normalised for that.
+- **Not measured.** Compile times against Go, agent cost, changed-line coverage of the stage as a whole, and any run of the recipe, since it was only built. Nothing ran on real hardware and the suite was not run on a Mac. The NixOS VM check of the trial scope was not rerun here; CI runs it as `vm-trial-scope-rs` ([#809](https://github.com/shgew/togi/pull/809)).
