@@ -975,13 +975,25 @@ dependencies = [
 name = "togi-tool-sim"
 version = "0.0.0"
 dependencies = [
+ "clap",
+ "jiff",
+ "nix",
  "serde",
  "serde_json",
  "tempfile",
  "thiserror",
+ "togi-config",
+ "togi-defect",
  "togi-journal",
+ "togi-machine",
+ "togi-render",
+ "togi-session",
  "togi-sim",
+ "togi-simrun",
  "togi-tool-audit",
+ "togi-tool-trialfacts",
+ "togi-tuner",
+ "togi-version",
 ]
 
 [[package]]

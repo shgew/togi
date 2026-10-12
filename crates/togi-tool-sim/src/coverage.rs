@@ -8,14 +8,17 @@ use togi_tool_audit::Violation;
 
 use crate::run::RunId;
 
-/// How one run ended. Only `Clean` passes the suite: the simulator exited zero on a cycles shutdown, its final
-/// verification matched, the journal replayed and the audit found nothing.
+/// How one run ended. Only `Clean` passes the suite: the session stopped after its clean cycles, the resume state
+/// of its last boot matched a fresh fold of the journal, the tuner replays the journal and the audit found nothing.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Outcome {
     Clean,
-    Exit {
-        code: Option<i32>,
+    Failed {
+        detail: String,
+    },
+    Capped {
+        boots: u32,
     },
     DeadEnd {
         condition: DeadEndCondition,
@@ -39,8 +42,10 @@ impl fmt::Display for Outcome {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Clean => f.write_str("clean"),
-            Self::Exit { code: Some(code) } => write!(f, "exited with status {code}"),
-            Self::Exit { code: None } => f.write_str("was killed by a signal"),
+            Self::Failed { detail } => write!(f, "failed: {detail}"),
+            Self::Capped { boots } => {
+                write!(f, "reached the cap of {boots} boots without stopping")
+            }
             Self::DeadEnd { condition, detail } => write!(f, "dead end {condition}: {detail}"),
             Self::Stopped { reason } => {
                 write!(f, "stopped for {reason} instead of completing its cycles")

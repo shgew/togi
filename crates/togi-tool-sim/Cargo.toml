@@ -5,18 +5,28 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 publish.workspace = true
-description = "The simulator suite check: suite expansion into runs, shard partition and the coverage check over shard manifests"
+description = "The simulator command: one simulated tuning session, and the suite check that runs every session of the suite by shard and proves their coverage"
 
 [dependencies]
+clap.workspace = true
+jiff.workspace = true
+nix = { workspace = true, features = ["signal"] }
 serde.workspace = true
 serde_json.workspace = true
-thiserror.workspace = true
-togi-journal.workspace = true
-togi-tool-audit.workspace = true
-
-[dev-dependencies]
 tempfile.workspace = true
+thiserror.workspace = true
+togi-config.workspace = true
+togi-defect.workspace = true
+togi-journal.workspace = true
+togi-machine.workspace = true
+togi-render.workspace = true
+togi-session.workspace = true
 togi-sim.workspace = true
+togi-simrun.workspace = true
+togi-tool-audit.workspace = true
+togi-tool-trialfacts.workspace = true
+togi-tuner.workspace = true
+togi-version.workspace = true
 
 [lints]
 workspace = true

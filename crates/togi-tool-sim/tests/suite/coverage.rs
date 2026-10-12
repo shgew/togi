@@ -165,8 +165,10 @@ fn only_a_clean_outcome_passes() {
         reason: "reason".to_owned(),
     };
     let unclean = vec![
-        Outcome::Exit { code: Some(1) },
-        Outcome::Exit { code: None },
+        Outcome::Failed {
+            detail: "d".to_owned(),
+        },
+        Outcome::Capped { boots: 1000 },
         Outcome::DeadEnd {
             condition: DeadEndCondition::FailureAtZero,
             detail: "d".to_owned(),
@@ -209,7 +211,7 @@ fn every_offender_is_reported_at_once() {
     let manifests = vec![manifest(
         0,
         vec![
-            result("a/dev-1", Outcome::Exit { code: Some(2) }),
+            result("a/dev-1", Outcome::Capped { boots: 2 }),
             clean("ghost/dev-1"),
         ],
     )];
@@ -224,7 +226,7 @@ fn every_offender_is_reported_at_once() {
         "b/dev-1",
         "b/holdout-9",
         "ghost/dev-1",
-        "exited with status 2",
+        "reached the cap of 2 boots",
     ] {
         assert!(text.contains(needle), "{needle} not in {text}");
     }
@@ -234,7 +236,7 @@ fn every_offender_is_reported_at_once() {
 fn a_manifest_round_trips_one_result_per_line() {
     let results = vec![
         clean("a/dev-1"),
-        result("a/dev-2", Outcome::Exit { code: None }),
+        result("a/dev-2", Outcome::Capped { boots: 3 }),
         result(
             "b/dev-1",
             Outcome::DeadEnd {
