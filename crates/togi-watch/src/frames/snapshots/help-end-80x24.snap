@@ -5,12 +5,12 @@ expression: body
 │ togi   09:48:31   session 9h48m   31 failures · 7 crashes
 │ ■ SOLO ─ ► P1 ─ ○ P2 ─ CLEAN 0 ─ ► CYCLE 1 ─ 1:20 left
 │
+│ │ suspect          a core a hunt keeps at its failing offset
+│ │ parked           a core a hunt holds shallower than its failing offset
 │ │ partial part     an R7 part with the top requesters idle
 │ │ top requester    the loaded core with the highest voltage request, setting
-│ │                  the shared core voltage; marked top on the CCD tables, by
-│ │                  offset when offsets stand in for requests
-│ │ self-sufficient  observed passing as top requester for this R7 workload;
-│ │                  evidence, not a guarantee
+│ │                  the shared core voltage; marked top on the CCD tables
+│ │ self-sufficient  observed passing as top requester for this R7 workload
 │ │ cycle            one pass through the checking schedule
 │ │
 │ │
