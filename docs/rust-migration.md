@@ -627,7 +627,7 @@ The `togi-tool-facts` crate ports `tools/facts` ([#819](https://github.com/shgew
 - **Tests.** 12 tests run in about 16 ms of test time under `cargo nextest run -p togi-tool-facts`, against 2 ms for `go test -count=1 ./tools/facts`. About 80 lines of library and 400 of tests, against 45 of Go and 130 of tests. The fixture builds a journal in memory and dumps it to disk.
 - **Not measured.** Compile times against Go, agent cost, and the run on a Mac. No Go code is removed or changed.
 
-## Stage 5: `togi-simrun` (#743, #741, 2026-10-12)
+## Stage 4: `togi-simrun` (#743, #741, 2026-10-12)
 
 The `togi-simrun` crate ports `internal/simrun` ([#743](https://github.com/shgew/togi/issues/743)). `simulate(SimInput)` runs a session on the simulator:
 
@@ -659,5 +659,60 @@ Size: about 750 lines of library, 200 lines of unit tests and 4,600 lines of int
   - An in-memory simulation's next session read the last trial's samples of the earlier session.
   - A persisted machine decoded from positional arrays.
 - **`togi-sim` changes.** `Simulator::persisted`, `Simulator::restore` (objects only) and `Simulator::forget_last_trial`. `set_samples_dir` keeps the last trial's samples when the directory does not change.
-- **Not ported.** Go's older-schema carry cases and the "known events carry past an unknown kind" case. Rust has one schema and refuses unknown kinds; the remaining property, that an undecodable archive is archived and carries nothing, is pinned.
+- **Not ported.** Go's older-schema carry cases and the "known events carry past an unknown kind" case. Rust has one schema and refuses unknown kinds; the remaining property, that an undecodable archive is archived and carries nothing, is pinned. The table below gives the Rust tests for each Go test, or the reason a Go test has none.
 - **Not measured.** Compile times, and the comparison with `go test ./internal/simrun`.
+
+### Go tests and their Rust tests
+
+Every Go test function in `internal/simrun/*_test.go`, `internal/tuner/memo_test.go` and `internal/tuner/forecast_sim_test.go` is listed below: 46 functions, and the 74 Rust tests that port them. Go paths are relative to `internal/simrun`, or to `internal` for the two tuner files. Rust names are nextest names. Integration tests are in the `sim` binary (`tests/sim/<module>.rs`), and `simulate::tests::` names are library unit tests.
+
+| Go test | Rust tests | Notes |
+|:---|:---|:---|
+| `carry_test.go` `TestTransitionWithUnknownKinds` | `carry::a_journal_with_an_unknown_kind_is_refused_untouched_by_the_build_that_wrote_it`<br>`carry::an_older_journal_with_an_unknown_kind_is_archived_and_carries_nothing` | The current-build case maps to the first test; the older-ruleset case maps to the second test, which checks that the journal is archived and carries nothing. Not ported: the older-schema and schema-2 cases, because Rust has one schema and never reads or translates a Go journal. Also not ported: Go's carry of known events past an unknown kind, including the interrupted older-ruleset case, because Rust refuses unknown kinds and an undecodable archive supplies no carry evidence. |
+| `carry_test.go` `TestARulesetTransitionSeedsTheNextSession` | `carry::a_ruleset_transition_seeds_the_next_session` |  |
+| `carry_test.go` `TestAPreviousRulesetSessionTransitionsToASeededSession` | `carry::a_previous_ruleset_session_transitions_to_a_seeded_session` |  |
+| `carry_test.go` `TestAPreviousRulesetTransitionStartsPhaseOneWithNothingConfirmed` | `carry::a_ruleset_transition_starts_phase_one_with_nothing_confirmed` |  |
+| `carry_test.go` `TestARulesetTransitionAfterABIOSChangeCarriesOnlySoloLimits` | `carry::a_ruleset_transition_after_a_bios_change_carries_only_solo_limits` |  |
+| `carry_test.go` `TestBIOSChangeArchivesAndChecksSoloLimits` | `carry::a_bios_change_archives_and_checks_solo_limits` |  |
+| `carry_test.go` `TestAConfiguredCandidateSoloLimitStopsShortOfACarriedFailurePoint` | `carry::a_configured_candidate_solo_limit_stops_short_of_a_carried_failure_point` |  |
+| `carry_test.go` `TestACarriedFailurePointAtZeroDeadEndsTheCore` | `carry::a_carried_failure_point_at_zero_dead_ends_the_core` |  |
+| `carry_test.go` `TestBIOSArchiveInterruptedBeforeMoveResumesCarry` | `carry::a_bios_archive_interrupted_before_the_move_resumes_the_carry` |  |
+| `carry_test.go` `TestRulesetTransitionCarriesCulpritAndDirectHuntFailurePoints` | `carry::a_ruleset_transition_carries_a_culprit_hunt_failure_point`<br>`carry::a_ruleset_transition_carries_a_direct_hunt_failure_point` | One test per hunt kind. |
+| `carry_test.go` `TestCurrentRulesetChecksCarriedSoloLimitsButCompletesFullCyclesWithLivePasses` | `carry::a_transition_checks_carried_solo_limits_but_completes_full_cycles_with_live_passes` |  |
+| `carry_test.go` `TestCurrentRulesetStartsHuntFromCarriedTogetherFailure` | `carry::a_transition_starts_a_hunt_from_a_carried_together_failure` |  |
+| `crash_test.go` `TestResetReasonPowerButtonAndThermal` | `crash::a_power_button_reset_during_a_trial_is_a_conclusive_failure`<br>`crash::a_thermal_trip_reset_during_a_trial_dead_ends_without_a_failure` | One test per reset reason. |
+| `crash_test.go` `TestThermalTripWhileTrialRunningDeadEnds` | `crash::a_thermal_trip_while_a_trial_runs_dead_ends` |  |
+| `crash_test.go` `TestPowerButtonBetweenTrialsIsInconclusive` | `crash::a_power_button_between_trials_is_inconclusive` |  |
+| `crash_test.go` `TestClockJumpDoesNotLoseTrialMCE` | `crash::a_wall_clock_jump_does_not_lose_a_trials_corrected_mce` |  |
+| `hunt_test.go` `TestHuntAllZeroParkedOffsets` | `hunt::a_hunt_without_a_clean_cycle_parks_every_offset_at_zero` |  |
+| `hunt_test.go` `TestHuntCulpritAfterCleanCycleParkedOffsets` | `hunt::a_hunt_after_a_clean_cycle_parks_the_offsets_of_that_cycle_and_finds_the_culprit` |  |
+| `hunt_test.go` `TestParkedOffsetBackendFailureRaisesParkedOffsets` | `hunt::a_failure_at_a_held_cores_parked_offset_raises_the_parked_offsets_of_the_next_hunt` |  |
+| `hunt_test.go` `TestHuntCombination` | `hunt::a_joint_crash_makes_a_combination_instead_of_single_core_failure_points` |  |
+| `hunt_test.go` `TestHuntJointMisleadingMCE` | `hunt::a_joint_crash_with_a_misleading_core_local_mce_blames_that_core_only` |  |
+| `hunt_test.go` `TestDelayedHuntEscalates` | `hunt::a_hunt_of_a_joint_that_fails_after_six_idle_minutes_escalates`<br>`hunt::a_hunt_of_a_joint_that_fails_at_the_short_duration_boundary_escalates` | One test per Go case. |
+| `hunt_test.go` `TestScriptedJointAndIdleLimits` | `hunt::a_scripted_sharp_joint_limit_is_found_in_ranking_order`<br>`hunt::a_scripted_idle_only_limit_outside_the_loaded_cores_is_found_by_r1` | One test per scripted limit. |
+| `hunt_test.go` `TestIdleOnlyHazardReachesCleanCycle` | `hunt::an_idle_only_hazard_reaches_a_clean_cycle_at_seed_1`<br>`hunt::an_idle_only_hazard_reaches_a_clean_cycle_at_seed_2` | One test per seed. |
+| `memory_test.go` `TestInMemoryJournalMatchesFileBacked` | `persistence::shared_voltage_1000`<br>`persistence::default_machine_1`<br>`persistence::target_fit_0_1` | The same three machine and seed cases, capped at 20 boots. Each compares the stop, the cap, the journal lines and `state.json`. |
+| `memory_test.go` `TestWarmResumeMatchesColdReplay` | `warm_cold::flat_hazard_102`<br>`warm_cold::flat_hazard_7`<br>`warm_cold::misleading_mce_3`<br>`warm_cold::shared_voltage_1000` | The same four machine and seed cases. Each runs at least 20 boots and verifies the capsule after every crash. |
+| `memory_test.go` `TestInMemoryProjectionFailureWarnsAfterStop` | `memory::a_failed_projection_warns_after_the_stop_and_does_not_fail_the_session` |  |
+| `memory_test.go` `TestInMemoryCrashBeforeFirstProjectionReplaysDurableStart` | `memory::a_crash_right_after_session_start_is_replayed_once` |  |
+| `memory_test.go` `TestInMemoryResumeReadsMatchingDiskProjection` | `memory::a_resume_reads_the_projection_the_earlier_run_published` |  |
+| `memory_test.go` `TestInMemoryInvalidConfigLeavesNoProjection` | `memory::an_invalid_config_begins_no_session_and_publishes_no_projection` |  |
+| `r7_chain_test.go` `TestR7SimulationRunsFullFirstOffsetFallbackChains` | `r7_chain::simulation_runs_full_first_offset_fallback_chains` |  |
+| `simrun_test.go` `TestSixteenCoresReachCleanCycle` | `sixteen::sixteen_cores_reach_a_clean_cycle` |  |
+| `simrun_test.go` `TestSimulatorRefusesAnotherJournalWriter` | `cap::a_held_lock_refuses_the_simulation_before_any_journal_or_offset_change` |  |
+| `simrun_test.go` `TestBootCapLeavesPartialSessionInJournal` | `cap::boot_cap_leaves_a_partial_session_in_the_journal` |  |
+| `simrun_test.go` `TestBootCapVerifiesWarmStateOnceAndReportsFailure` | `simulate::tests::a_capped_simulation_checks_each_crashed_boot_at_most_once`<br>`simulate::tests::a_capped_simulation_checks_the_boots_its_cadence_names_in_either_replay`<br>`simulate::tests::a_failed_check_of_the_last_boot_fails_the_simulation_instead_of_capping_it`<br>`simulate::tests::a_resume_state_that_differs_from_the_journal_fails_the_simulation` | These are unit tests in `src/simulate/tests.rs`. |
+| `simrun_test.go` `TestBootCapWithFailedFlushIsNotErrBootCap` | `cap::a_cap_whose_last_state_cannot_be_published_is_an_error_not_a_cap`<br>`log::a_log_that_cannot_flush_fails_the_simulation` | The first test covers the failed state write on the last boot, and the second covers a failed log flush. The Go wrapper's out-of-range `LastSeq` warning is not copied: Rust has no journal wrapper that could inject it. |
+| `simrun_test.go` `TestNewSessionTrialGetsNoSamplesFromAnEarlierInvocation` | `samples::a_new_sessions_trial_gets_no_samples_from_an_earlier_invocation`<br>`samples::a_new_in_memory_sessions_trial_gets_no_samples_from_an_earlier_one` | One test with files on disk and one in memory. |
+| `simrun_test.go` `TestJournalUntilCancelsAfterFirstMatchingAppend` | `stop::an_observer_stops_the_run_after_the_first_matching_append` | An observer replaces Go's `Until`. |
+| `simrun_test.go` `TestRecordedConfigResumesRecordedPassesAndDurations` | `config::a_resume_under_the_recorded_configuration_repeats_the_recorded_trials`<br>`config::recorded_passes_count_only_under_the_recorded_backends` |  |
+| `simrun_test.go` `TestRecordedConfigWithoutJournalIsFresh` | `config::a_journal_without_a_recorded_configuration_gives_the_fresh_one` |  |
+| `simrun_test.go` `TestFirstResultStopsAfterPhaseOnesPassedCycle` | `first_result::the_first_result_stops_after_phase_ones_passed_cycle` |  |
+| `smu_matrix_test.go` `TestPowerLossDuringHuntResume` | `interrupt::power_loss_during_hunt_resume_0`<br>`interrupt::power_loss_during_hunt_resume_1`<br>`interrupt::power_loss_during_hunt_resume_2`<br>`interrupt::power_loss_during_hunt_resume_3` | Together the four tests interrupt at every durable append and every SMU write of Go's matrix: test `_i` takes every fourth point, starting at point `i`. |
+| `smu_matrix_test.go` `TestPowerLossDuringDeepeningResume` | `interrupt::power_loss_during_deepening_resume_0`<br>`interrupt::power_loss_during_deepening_resume_1`<br>`interrupt::power_loss_during_deepening_resume_2`<br>`interrupt::power_loss_during_deepening_resume_3` | Together the four tests interrupt at every durable append and every SMU write of Go's matrix: test `_i` takes every fourth point, starting at point `i`. |
+| `tuner/memo_test.go` `TestMemosMatchRecomputation` | `memo::flat_hazard_7`<br>`memo::target_shared_voltage_2`<br>`memo::target_r7_request_gap_1`<br>`memo::misleading_mce_3`<br>`memo::late_onset_1` | The same five machine, seed and boot cases. Each checks full state and projection equality every 64 events and at the end, and that `next` agrees at each asked boundary. Go's memo epochs are obsolete: Rust queries are read-only and fold work into the event that changes its input. |
+| `tuner/forecast_sim_test.go` `TestForecastMatchesSimulatedTrials` | `forecast::seed_1_two_cores`<br>`forecast::seed_7_two_cores_crash_joint`<br>`forecast::seed_1_default_cores_every_eighth` | Go's three cases: seed 1 with 2 cores, seed 7 with 2 cores and a crash joint, and seed 1 with 16 cores checking every eighth intent. |
+| `tuner/forecast_sim_test.go` `BenchmarkDashboardProjectionForecast` | none | No counterpart. This is a performance probe, not a behavior test: it times `Replay`, the dashboard queries and `Forecast` over the 16-core seed-1 journal. The Rust crates have no benchmark harness yet: no `[[bench]]` target and no criterion. Stage 3's closing measurements, under "Forecast cost, against Go's", measured the full `replay` fold and `forecast` against Go's figures, on a different session. They did not time the dashboard views. |
+
+Six Rust tests have no Go counterpart. They pin behavior Go got wrong or did not have: `log::a_log_that_fails_during_a_crashed_boot_fails_the_simulation_instead_of_capping_it`, `log::an_observer_sees_every_append_after_the_log_fails`, `simulate::tests::a_boot_that_ends_without_a_crash_is_always_checked`, and the three `split::` tests, which cover a capped simulation continuing in another process from `machine.json`.
