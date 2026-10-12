@@ -52,3 +52,21 @@ pub(crate) fn first_trial(dir: &Path) -> String {
     let event: serde_json::Value = serde_json::from_str(first).unwrap();
     event["data"]["trial"].as_str().unwrap().to_owned()
 }
+
+pub(crate) fn append_event(dir: &Path, kind: &str, msg: &str, data: &serde_json::Value) {
+    use std::io::Write as _;
+    let last: serde_json::Value = serde_json::from_str(lines(dir).last().unwrap()).unwrap();
+    let event = serde_json::json!({
+        "seq": last["seq"].as_u64().unwrap() + 1,
+        "time": "2026-02-01T00:00:00Z",
+        "boot": last["boot"],
+        "kind": kind,
+        "msg": msg,
+        "data": data,
+    });
+    let mut file = std::fs::OpenOptions::new()
+        .append(true)
+        .open(journal(dir))
+        .unwrap();
+    writeln!(file, "{event}").unwrap();
+}

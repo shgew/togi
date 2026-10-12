@@ -94,3 +94,6 @@ pub(crate) fn table(out: &mut String, rows: &[Row]) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

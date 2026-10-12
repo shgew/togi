@@ -313,3 +313,19 @@ mod recorded {
         ));
     }
 }
+
+#[test]
+fn an_unreadable_journal_is_an_io_error() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("events.jsonl");
+    std::fs::write(&path, "x\n").unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0)).unwrap();
+    if std::fs::File::open(&path).is_ok() {
+        return;
+    }
+    assert!(matches!(
+        crate::recorded_build(dir.path()),
+        Err(crate::DirError::Io { .. })
+    ));
+}
