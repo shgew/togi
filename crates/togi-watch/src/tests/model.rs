@@ -864,3 +864,29 @@ fn an_event_the_tuner_refuses_is_a_problem() {
     let later = script.event(warning("later"), &[]);
     assert_eq!(model.fold(&later), Err(error));
 }
+
+#[test]
+fn a_reset_in_a_later_boot_leaves_the_crashed_trial_unrecovered() {
+    let mut script = searching();
+    let plan = script.plan();
+    let (_, trial) = script.intent(&plan);
+    script.start(&trial);
+    script.boot = "reset-boot".to_owned();
+    let reset = script.append(
+        Payload::CommandReset(togi_journal::CommandReset {
+            target: togi_journal::ResetTarget::Core(core(0)),
+        }),
+        &[],
+    );
+    script.append(shutdown(ShutdownReason::Command), &[reset]);
+    let model = script.model();
+    let snap = model.snapshot();
+    let crashed = snap.trial.expect("the outlived trial");
+    assert_eq!(crashed.id, trial);
+    assert!(crashed.crashed && crashed.started.is_some());
+    assert!(snap.recover.is_none(), "nothing recovered it");
+    assert_eq!(
+        snap.stopped.map(|stop| stop.reason),
+        Some(ShutdownReason::Command)
+    );
+}
