@@ -34,11 +34,16 @@ pub mod args;
 pub mod cli;
 pub mod completion;
 pub mod doctor;
+pub mod events;
 pub mod exit;
+pub mod read;
 pub mod report;
 pub mod reset;
 pub mod restart_limit;
+pub mod status;
 pub mod system;
+mod table;
+pub mod watch;
 
 pub use cli::{run, run_with};
 pub use exit::Exit;
