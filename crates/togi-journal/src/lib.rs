@@ -23,7 +23,10 @@ mod testing;
 mod tests;
 
 pub use build::{Build, Dimension, Operation, Refusal, SCHEMA, Verdict};
-pub use dir::{ArchiveKind, DirError, Lifetime, LockError, Marker, StateDir, StateError};
+pub use dir::{
+    ArchiveKind, DirError, Lifetime, LockError, Marker, StateDir, StateError, recorded_build,
+    recorded_build_in,
+};
 pub use event::{DecodeError, Event, Seq, Stamp};
 pub use filter::{Filter, InvalidKindSelector, KindSelector};
 pub use fs::MemFs;

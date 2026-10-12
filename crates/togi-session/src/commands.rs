@@ -14,7 +14,7 @@ pub enum CommandError {
     NoSession,
     #[error(transparent)]
     Compatibility(#[from] Refusal),
-    #[error("reset core {core:02}: the session has no such core")]
+    #[error("reset core {}: no such core", core.get())]
     NoSuchCore { core: CoreId },
     #[error(transparent)]
     Append(#[from] AppendError),

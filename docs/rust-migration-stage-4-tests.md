@@ -467,7 +467,7 @@ Status:
 
 | Go test | Rust test(s) | status |
 |---|---|---|
-| `TestRunOwnerEveryExit` | `togi_session::whole::dead_end::every_stop_and_error_exit_joins_the_trial_restores_the_hardware_publishes_the_state_and_returns_the_journal`<br>`togi_session::close::tests::a_cleanup_error_follows_the_error_that_ended_the_run` | A |
+| `TestRunOwnerEveryExit` | `togi_session::whole::dead_end::every_stop_and_error_exit_joins_the_trial_restores_the_hardware_publishes_the_state_and_returns_the_journal`<br>`togi_session::close::tests::a_cleanup_error_follows_the_error_that_ended_the_run`<br>Panic mode (the Go test panics in `Started()`, recovers it and asserts the workload joined before `Close`, both offsets 0 at `Close` and the panic propagated; Go's defers did that cleanup): `togi_session::run::tests::a_panic_after_the_workload_started_and_before_its_wait_still_joins_it_and_restores_the_offsets` (the same window as Go: a panic in `Running::started`), `a_panic_taking_in_the_trial_start_joins_the_workload_and_answers_with_the_emergency`, `a_panic_while_a_trial_runs_joins_its_teardown_and_restores_the_offsets_before_it_is_handed_back` (a panic in `wait`), `a_panic_during_startup_is_handed_back_with_the_journal_closed_out_and_no_offset_written`<br>`togi_session::close::tests::a_panic_draining_a_signalled_stop_still_restores_the_offsets_with_readback_and_is_handed_back`<br>`togi::run::panics::a_panic_after_hardware_setup_runs_the_owner_cleanup_in_order_then_exits_two`<br>`togi::run::panics::a_panic_closes_the_journal_before_the_host_lock_is_released`<br>Rust differs from Go in what it does with the panic, not in the cleanup: the session hands the panic back (`Ended.panic`) and `run` exits 2 with a `panic:` line where Go re-panicked. Beyond Go's mode, the Rust tests also pin a teardown whose stop cannot be confirmed (`togi_session::run::tests::a_panic_whose_teardown_cannot_be_confirmed_reports_both_and_restores_nothing`: both errors reported, nothing restored) and a panic in the appender after an event is durable (`togi_session::appender::tests::a_panic_taking_in_a_durable_event_latches_the_appender_and_still_unwinds`, with `togi_session::run::tests::a_panic_taking_in_an_event_after_it_is_durable_latches_the_appender_instead_of_restoring_from_stale_folds` at run level: the emergency, no `ProfileRestored`) | A |
 | `TestRunOwnerSkipsRestoreUntilWorkloadJoined` | `togi_session::close::tests::without_the_proof_that_every_workload_stopped_nothing_is_restored_or_recorded`<br>`togi_session::restore::tests::without_the_proof_that_nothing_runs_nothing_is_written` | A |
 
 ### `internal/session/parked_application_test.go` (3)
@@ -615,7 +615,7 @@ Status:
 | `TestWarmVerifyNamesWhatDiffersFromAReplay` | `togi_session::resume::tests::verify_names_the_part_that_differs`<br>`togi_session::resume::tests::the_document_check_rejects_a_document_other_than_the_cold_folds` | A |
 | `TestWarmVerifyRejectsAStateThatMissesEvents` | `togi_session::resume::tests::verify_rejects_a_capsule_that_misses_events` | A |
 | `TestWarmIsAdoptedOnlyWhenItCoversTheJournal` | `togi_session::resume::tests::a_capsule_is_adopted_only_when_it_covers_exactly_the_journal` | A |
-| `TestCrashLeavesDeferredStateUnwrittenInWarm` | `togi_session::resume::tests::a_crash_leaves_the_state_unwritten_and_the_capsule_holding_what_the_boot_folded`<br>`togi_session::resume::tests::a_crashed_runs_capsule_publishes_what_a_live_run_had_and_the_next_boot_rebuilds_nothing` | A |
+| `TestCrashLeavesDeferredStateUnwrittenInWarm` | `togi_session::resume::tests::a_crash_leaves_the_state_unwritten_and_the_capsule_holding_what_the_boot_folded`<br>`togi_session::resume::tests::a_crashed_runs_capsule_publishes_what_a_live_run_had_and_the_next_boot_rebuilds_nothing`<br>`togi_simrun::sim::reboot::a_warm_simulation_publishes_state_json_once_at_its_stop_or_its_cap`<br>`togi_simrun::sim::persistence::a_warm_simulation_on_disk_gets_state_json_only_when_it_stops`<br>`togi_session::resume::tests::a_run_that_adopts_a_capsule_neither_reads_nor_rebuilds_the_state_a_crash_left_pending` | A |
 | `TestPendingStateIsTakenOnceAndWrittenWhenNotAdopted` | `togi_session::resume::tests::the_state_a_crashed_run_left_unwritten_is_published_by_the_next_boot_when_no_capsule_is_adopted` | A |
 | `TestWarmStoreDropsStateTheRunnerSetOutsideTheFold` | — | O(a capsule holds only state folded from events, by type; Go runner fields outside the fold do not exist) |
 | `TestDeferredStateIsWrittenBeforeAJournalOnlyAppendAndWhenTheRunEnds` | `togi_session::publication::tests::deferred_state_is_written_before_the_journal_leaves_the_run`<br>`togi_session::publication::tests::on_finish_publishes_the_state_once_after_the_final_event`<br>`togi_session::publication::tests::live_publishes_after_every_append_and_the_last_state_covers_the_final_event` | A |
@@ -724,6 +724,16 @@ These two `internal/tuner` files need whole simulated sessions, so #812 ports th
 | Go test | Rust test(s) | status |
 |---|---|---|
 | `TestMemosMatchRecomputation` | `togi_simrun::sim::memo::flat_hazard_7`<br>`togi_simrun::sim::memo::target_shared_voltage_2`<br>`togi_simrun::sim::memo::target_r7_request_gap_1`<br>`togi_simrun::sim::memo::misleading_mce_3`<br>`togi_simrun::sim::memo::late_onset_1` | A |
+
+## journal (#873)
+
+`internal/journal` was ported in stage 2. Its test below maps to the stage-4 pull request that adds `Journal::reboot` (#873), the Rust counterpart of Go's `SetBoot`; the summary table does not count it.
+
+### `internal/journal/journal_test.go` (1)
+
+| Go test | Rust test(s) | status |
+|---|---|---|
+| `TestSetBootPreservesEarlierBootEvidence` | `togi_journal::journal::tests::a_reboot_keeps_the_events_and_appends_as_the_new_boot_without_reading_the_file` | A |
 
 ## audit
 

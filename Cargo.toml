@@ -40,6 +40,7 @@ togi-config = { path = "crates/togi-config", version = "0.0.0" }
 togi-defect = { path = "crates/togi-defect", version = "0.0.0" }
 togi-detect = { path = "crates/togi-detect", version = "0.0.0" }
 togi-facts = { path = "crates/togi-facts", version = "0.0.0" }
+togi-hardware = { path = "crates/togi-hardware", version = "0.0.0" }
 togi-hostlock = { path = "crates/togi-hostlock", version = "0.0.0" }
 togi-journal = { path = "crates/togi-journal", version = "0.0.0" }
 togi-machine = { path = "crates/togi-machine", version = "0.0.0" }
@@ -59,6 +60,7 @@ togi-trialfiles = { path = "crates/togi-trialfiles", version = "0.0.0" }
 togi-tuner = { path = "crates/togi-tuner", version = "0.0.0" }
 togi-tuningboot = { path = "crates/togi-tuningboot", version = "0.0.0" }
 togi-version = { path = "crates/togi-version", version = "0.0.0" }
+togi-watch = { path = "crates/togi-watch", version = "0.0.0" }
 togi-watchtest = { path = "crates/togi-watchtest", version = "0.0.0" }
 togi-ycruncher = { path = "crates/togi-ycruncher", version = "0.0.0" }
 tokio = { version = "1", default-features = false }

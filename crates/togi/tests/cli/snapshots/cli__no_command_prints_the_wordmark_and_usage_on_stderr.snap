@@ -16,8 +16,15 @@ Finds and tests per-core Curve Optimizer offsets on Zen 5 desktop CPUs
 Usage: togi [OPTIONS] <COMMAND>
 
 Commands:
-  completion  Print a shell completion script
-  help        Print this message or the help of the given subcommand(s)
+  run            Start or resume the tuning session in the foreground
+  completion     Print a shell completion script
+  doctor         Check whether this machine is ready for a run
+  events         Print the journal, one readable line per event
+  reset          Reset one core, or archive the whole session
+  restart-limit  Recover after the tuning service reaches its restart limit
+  status         Show the session at a glance
+  watch          Show the session as a read-only dashboard
+  help           Print this message or the help of the given subcommand(s)
 
 Options:
       --state-dir <path>  State directory [default: /var/lib/togi]
@@ -25,4 +32,5 @@ Options:
   -V, --version           Print version
 
 Examples:
-  togi completion zsh   Print the completion script for zsh
+  sudo togi run --cycles 1   Stop once phase 2's confirmation cycle has passed
+  togi completion zsh        Print the completion script for zsh

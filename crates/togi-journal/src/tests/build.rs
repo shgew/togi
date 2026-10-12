@@ -253,3 +253,79 @@ fn build_wire_accepts_a_missing_fixes_field() {
         .is_err()
     );
 }
+
+mod recorded {
+    use std::path::Path;
+
+    use super::*;
+    use crate::fs::MemFs;
+    use crate::tests::fixtures::{at, sample};
+    use crate::{DirError, Event, EventKind, SCHEMA, recorded_build_in};
+
+    fn first_event() -> Event {
+        at(1, "boot-a", 0, &[], sample(EventKind::SessionStart))
+    }
+
+    fn build_of(contents: &str) -> Result<Option<Build>, DirError> {
+        let fs = MemFs::new();
+        fs.put("/state/events.jsonl", contents);
+        recorded_build_in(&fs, Path::new("/state"))
+    }
+
+    #[test]
+    fn a_missing_journal_has_no_build() {
+        let fs = MemFs::new();
+        assert!(
+            recorded_build_in(&fs, Path::new("/state"))
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn the_first_line_alone_gives_the_build() {
+        let line = serde_json::to_string(&first_event()).unwrap();
+        let build = build_of(&format!("{line}\n{{not json")).unwrap().unwrap();
+        assert_eq!(build.schema, SCHEMA);
+    }
+
+    #[test]
+    fn an_unterminated_first_line_has_no_build() {
+        let line = serde_json::to_string(&first_event()).unwrap();
+        assert!(build_of(&line).unwrap().is_none());
+    }
+
+    #[test]
+    fn a_first_event_that_is_not_session_start_is_not_a_journal() {
+        let other = at(1, "boot-a", 0, &[], sample(EventKind::SmuIntent));
+        let line = serde_json::to_string(&other).unwrap();
+        assert!(matches!(
+            build_of(&format!("{line}\n")),
+            Err(DirError::NotAJournal { .. })
+        ));
+    }
+
+    #[test]
+    fn a_malformed_first_line_is_not_a_journal() {
+        assert!(matches!(
+            build_of("garbage\n"),
+            Err(DirError::NotAJournal { .. })
+        ));
+    }
+}
+
+#[test]
+fn an_unreadable_journal_is_an_io_error() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("events.jsonl");
+    std::fs::write(&path, "x\n").unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000)).unwrap();
+    if std::fs::File::open(&path).is_ok() {
+        return;
+    }
+    assert!(matches!(
+        crate::recorded_build(dir.path()),
+        Err(crate::DirError::Io { .. })
+    ));
+}

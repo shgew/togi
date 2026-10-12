@@ -709,6 +709,7 @@ dependencies = [
  "portable-atomic",
  "portable-atomic-util",
  "serde_core",
+ "windows-link",
 ]
 
 [[package]]
@@ -1519,10 +1520,29 @@ dependencies = [
  "clap_complete",
  "clap_complete_nushell",
  "insta",
+ "jiff",
+ "rustix",
+ "serde_json",
  "tempfile",
+ "togi-command",
  "togi-config",
+ "togi-defect",
+ "togi-detect",
+ "togi-hardware",
+ "togi-hostlock",
  "togi-journal",
+ "togi-machine",
+ "togi-render",
+ "togi-session",
+ "togi-sim",
+ "togi-smu",
+ "togi-tuner",
+ "togi-tuningboot",
  "togi-version",
+ "togi-watch",
+ "togi-watchtest",
+ "tokio",
+ "unicode-width",
 ]
 
 [[package]]
@@ -1804,6 +1824,7 @@ dependencies = [
  "togi-session",
  "togi-sim",
  "togi-simrun",
+ "togi-tool-forecast",
  "togi-tool-modelcheck",
  "togi-tool-trialfacts",
  "togi-tuner",
@@ -1877,6 +1898,24 @@ dependencies = [
  "togi-machine",
  "togi-sim",
  "togi-tool-trialfacts",
+]
+
+[[package]]
+name = "togi-tool-replay"
+version = "0.0.0"
+dependencies = [
+ "clap",
+ "insta",
+ "jiff",
+ "ratatui",
+ "rustix",
+ "tempfile",
+ "thiserror",
+ "togi-journal",
+ "togi-machine",
+ "togi-tuner",
+ "togi-watch",
+ "togi-watchtest",
 ]
 
 [[package]]

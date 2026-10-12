@@ -184,4 +184,29 @@ mod tests {
         }
         assert!(framer.line.capacity() <= 2 * LINE_LIMIT);
     }
+
+    #[test]
+    fn limit_lines_end_wherever_their_terminator_lands_and_an_overrun_split_across_chunks_exceeds()
+    {
+        let cap = vec![b'x'; LINE_LIMIT];
+        let capped = || line(&"x".repeat(LINE_LIMIT));
+        let joined = |parts: &[&[u8]]| parts.concat();
+        let (out, mut framer) = frames(&[&cap, b"\n"]);
+        assert_eq!((out, framer.finish()), (vec![capped()], None));
+        let (out, mut framer) = frames(&[&joined(&[&cap, b"\r"])]);
+        assert_eq!((out, framer.finish()), (vec![capped()], None));
+        let (out, mut framer) = frames(&[&joined(&[&cap, b"\n", &cap, b"\r"])]);
+        assert_eq!((out, framer.finish()), (vec![capped(), capped()], None));
+        let (out, mut framer) = frames(&[&cap[..4095], &cap[4095..], b"\r", b"\nnext\nlast"]);
+        assert_eq!(out, [capped(), line(""), line("next")]);
+        assert_eq!(framer.finish().as_deref(), Some("last"));
+
+        let (out, mut framer) = frames(&[&cap, b"x"]);
+        assert_eq!(out, [Frame::Exceeded]);
+        assert_eq!(framer.oversized(), Some(&cap[..]));
+        assert_eq!(framer.finish(), None);
+        let (out, framer) = frames(&[&joined(&[b"first\n", &cap, b"x\nCOMPUTE ERROR\n"])]);
+        assert_eq!(out, [line("first"), Frame::Exceeded]);
+        assert_eq!(framer.oversized(), Some(&cap[..]));
+    }
 }

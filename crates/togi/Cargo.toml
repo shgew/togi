@@ -18,13 +18,34 @@ path = "src/main.rs"
 clap.workspace = true
 clap_complete.workspace = true
 clap_complete_nushell.workspace = true
+jiff = { workspace = true, features = ["tz-system", "tzdb-zoneinfo"] }
+rustix = { workspace = true, features = ["event", "stdio", "termios", "time"] }
+serde_json.workspace = true
+tokio = { workspace = true, features = ["macros", "rt", "signal"] }
 togi-config.workspace = true
+togi-defect.workspace = true
+togi-detect.workspace = true
+togi-hardware.workspace = true
+togi-hostlock.workspace = true
 togi-journal.workspace = true
+togi-machine.workspace = true
+togi-render.workspace = true
+togi-session.workspace = true
+togi-tuner.workspace = true
+togi-tuningboot.workspace = true
 togi-version.workspace = true
+togi-watch.workspace = true
+unicode-width.workspace = true
 
 [dev-dependencies]
 insta.workspace = true
+rustix = { workspace = true, features = ["event", "pty", "process", "termios"] }
 tempfile.workspace = true
+togi-command.workspace = true
+tokio = { workspace = true, features = ["rt"] }
+togi-sim.workspace = true
+togi-smu.workspace = true
+togi-watchtest.workspace = true
 
 [lints]
 workspace = true

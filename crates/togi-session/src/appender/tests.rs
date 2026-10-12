@@ -97,3 +97,37 @@ fn an_event_the_run_cannot_fold_latches_the_appender_and_cancels_the_trial() {
     ));
     assert_eq!(rig.events().len(), before + 1);
 }
+
+/// A panic out of the log line, the append hook or the folds leaves a durable event the run's state may not have:
+/// the appender latches, cancels the trial and refuses everything after, and the panic still unwinds.
+#[test]
+fn a_panic_taking_in_a_durable_event_latches_the_appender_and_still_unwinds() {
+    let mut rig = Rig::new(2);
+    rig.appender.on_append = Some(Box::new(|_| panic!("a bug in the hook")));
+    let token = togi_machine::CancellationToken::new();
+    rig.appender.watch_trial(Some(token.clone()));
+    let before = rig.events().len();
+    let payload = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        drop(rig.appender.append(unscheduled(), &[]));
+    }))
+    .unwrap_err();
+    assert_eq!(
+        crate::session::message_of(&*payload),
+        "a bug in the hook",
+        "the original panic unwinds"
+    );
+    assert!(matches!(
+        rig.appender.failure().map(JournalFailure::cause),
+        Some(JournalCause::Interrupted(message)) if message == "a bug in the hook"
+    ));
+    assert!(token.is_cancelled());
+    assert!(matches!(
+        rig.appender.append(unscheduled(), &[]),
+        Err(AppendFailure::Journal(_))
+    ));
+    assert_eq!(
+        rig.events().len(),
+        before + 1,
+        "the event is durable, nothing after it"
+    );
+}

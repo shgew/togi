@@ -637,4 +637,141 @@ mod tests {
         assert!(proc.alive(&process).is_err());
         assert_eq!(proc.alive(&ScopeProcess { pid: 31, ..process }), Ok(false));
     }
+
+    #[test]
+    fn a_stat_excerpt_is_exactly_the_first_256_bytes_and_says_when_it_was_cut() {
+        let message = |text: &str| parse_stat(text).unwrap_err().to_string();
+        assert_eq!(
+            message("123 (worker\n"),
+            r#"malformed /proc stat (no closing parenthesis): "123 (worker\n""#
+        );
+        assert_eq!(
+            message("123 (worker) R 1\n"),
+            r#"malformed /proc stat (too few fields): "123 (worker) R 1\n""#
+        );
+        let exact = "x".repeat(256);
+        assert_eq!(
+            message(&exact),
+            format!("malformed /proc stat (no closing parenthesis): \"{exact}\"")
+        );
+        assert_eq!(
+            message(&"x".repeat(300)),
+            format!("malformed /proc stat (no closing parenthesis): \"{exact}\" (truncated)")
+        );
+        assert_eq!(
+            message(&format!("1 (w){}", "x".repeat(300))),
+            format!(
+                "malformed /proc stat (too few fields): \"1 (w){}\" (truncated)",
+                "x".repeat(251)
+            )
+        );
+        assert_eq!(
+            message(&format!("{}é", "x".repeat(255))),
+            format!(
+                "malformed /proc stat (no closing parenthesis): \"{}\" (truncated)",
+                "x".repeat(255)
+            )
+        );
+    }
+
+    #[test]
+    fn a_captured_process_that_left_its_scope_stays_alive_until_its_start_time_changes() {
+        let (dir, proc) = fixture();
+        write(
+            &dir,
+            "20/cgroup",
+            "0::/system.slice/togi-trial-x.scope/descendant\n",
+        );
+        write(
+            &dir,
+            "20/stat",
+            &stat_line("name with spaces", 'S', &[(22, "100")]),
+        );
+        let found = proc.scope_processes().unwrap();
+        assert_eq!(
+            found,
+            [ScopeProcess {
+                scope: scope("togi-trial-x"),
+                pid: 20,
+                starttime: 100
+            }]
+        );
+        write(&dir, "20/cgroup", "0::/elsewhere\n");
+        assert!(proc.scope_processes().unwrap().is_empty());
+        assert_eq!(
+            proc.alive(&found[0]),
+            Ok(true),
+            "leaving the scope does not end the captured process"
+        );
+        write(
+            &dir,
+            "20/stat",
+            &stat_line("name with spaces", 'S', &[(22, "101")]),
+        );
+        assert_eq!(
+            proc.alive(&found[0]),
+            Ok(false),
+            "a reused pid is not the captured process"
+        );
+    }
+
+    #[test]
+    fn each_numeric_stat_field_that_is_not_a_number_is_a_lost_observation_not_a_disappearance() {
+        let (dir, proc) = fixture();
+        for (pid, field) in [(60, 14), (61, 15), (62, 39)] {
+            write(
+                &dir,
+                &format!("{pid}/stat"),
+                &stat_line("w", 'R', &[(field, "bad")]),
+            );
+            assert!(
+                matches!(proc.usage(pid), Err(ProcError::Observation(_))),
+                "field {field}"
+            );
+        }
+    }
+
+    #[test]
+    fn thread_ids_that_are_not_positive_numbers_are_lost_observations_beside_the_readable_one() {
+        let (dir, proc) = fixture();
+        for name in ["bad", "-1", "0"] {
+            write(
+                &dir,
+                &format!("10/task/{name}/stat"),
+                &stat_line("w", 'R', &[(39, "7")]),
+            );
+        }
+        write(&dir, "10/task/123/stat", &stat_line("w", 'R', &[(39, "7")]));
+        let found = proc.threads(10).unwrap();
+        assert_eq!(found.threads, [Thread { tid: 123, cpu: 7 }]);
+        assert_eq!(found.errors.len(), 3);
+        assert!(
+            found
+                .errors
+                .iter()
+                .all(|error| matches!(error, ProcError::Observation(_)))
+        );
+    }
+
+    #[test]
+    fn a_scope_process_with_an_invalid_start_time_fails_the_scan() {
+        let (dir, proc) = fixture();
+        write(&dir, "42/cgroup", "0::/togi-trial-1.scope\n");
+        for start in ["-1", "bad"] {
+            write(&dir, "42/stat", &stat_line("w", 'S', &[(22, start)]));
+            assert!(
+                matches!(proc.scope_processes(), Err(ProcError::Observation(_))),
+                "{start}"
+            );
+        }
+        let process = ScopeProcess {
+            scope: scope("togi-trial-1"),
+            pid: 42,
+            starttime: 100,
+        };
+        assert!(matches!(
+            proc.alive(&process),
+            Err(ProcError::Observation(_))
+        ));
+    }
 }

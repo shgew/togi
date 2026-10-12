@@ -279,6 +279,110 @@ fn a_receipt_is_refused_by_another_journal_and_by_a_reopened_one() {
 }
 
 #[test]
+fn a_reboot_keeps_the_events_and_appends_as_the_new_boot_without_reading_the_file() {
+    let fs = MemFs::new();
+    let mut journal = begin_default(&fs);
+    journal.append(stamp(1), note("before"), &[]).unwrap();
+    let reads = fs.reads().len();
+    journal.reboot(boot(2)).unwrap();
+    assert_eq!(fs.reads().len(), reads, "a reboot reads nothing");
+    assert_eq!(journal.boot(), &boot(2));
+    assert_eq!(journal.events().len(), 2);
+    journal.append(stamp(2), note("after"), &[]).unwrap();
+    let boots: Vec<_> = journal
+        .events()
+        .iter()
+        .map(|event| event.boot.clone())
+        .collect();
+    assert_eq!(boots, [boot(1), boot(1), boot(2)]);
+    journal.close().unwrap();
+    let on_disk = Recording::parse(&live(&fs)).unwrap();
+    assert_eq!(on_disk.events().len(), 3);
+    assert_eq!(on_disk.events()[2].boot, boot(2));
+}
+
+#[test]
+fn a_receipt_from_before_a_reboot_is_refused() {
+    let fs = MemFs::new();
+    let mut journal = begin_default(&fs);
+    let receipt = journal.append_smu_intent(stamp(1), command(), &[]).unwrap();
+    journal.reboot(boot(2)).unwrap();
+    assert!(matches!(
+        journal.append_smu_write(stamp(2), receipt),
+        Err(AppendError::ForeignReceipt)
+    ));
+    let receipt = journal.append_smu_intent(stamp(3), command(), &[]).unwrap();
+    let written = journal.append_smu_write(stamp(4), receipt).unwrap();
+    assert_eq!(written.intent().get(), 3);
+}
+
+#[test]
+fn a_reboot_forgets_the_repair_the_open_recorded() {
+    let fs = MemFs::new();
+    let mut bytes = sample(&fs);
+    bytes.extend_from_slice(b"{\"seq\":99999,\"tim");
+    fs.put(crate::testing::path("events.jsonl"), bytes);
+    let mut journal = reopen(&fs, 2);
+    assert!(journal.repaired().is_some());
+    journal.reboot(boot(3)).unwrap();
+    assert_eq!(journal.repaired(), None);
+}
+
+#[test]
+fn a_reboot_writes_the_buffer_through() {
+    let root = tempfile::tempdir().unwrap();
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the test needs the buffered journal an unsynced state directory has"
+    )]
+    let dir = StateDir::lock_unsynced(root.path()).unwrap();
+    let mut journal = dir.open(boot(1)).unwrap();
+    journal
+        .append(stamp(0), start(default_session()), &[])
+        .unwrap();
+    let path = root.path().join("events.jsonl");
+    assert!(
+        std::fs::read(&path).unwrap().is_empty(),
+        "the event is buffered"
+    );
+    journal.reboot(boot(2)).unwrap();
+    let written = Recording::parse(&std::fs::read(&path).unwrap()).unwrap();
+    assert_eq!(written.events().len(), 1);
+}
+
+#[test]
+fn a_poisoned_journal_is_not_rebooted() {
+    let fs = MemFs::new();
+    let mut journal = begin_default(&fs);
+    fs.inject(Fault::before(Op::Write, 1));
+    assert!(journal.append(stamp(1), note("lost"), &[]).is_err());
+    let mutations = fs.mutations();
+    assert!(matches!(
+        journal.reboot(boot(2)),
+        Err(AppendError::Poisoned(_))
+    ));
+    assert_eq!(fs.mutations(), mutations);
+    assert_eq!(journal.boot(), &boot(1));
+}
+
+#[test]
+fn a_reboot_whose_sync_fails_poisons_the_journal_and_keeps_its_boot() {
+    let fs = MemFs::new();
+    let mut journal = begin_default(&fs);
+    journal.append(stamp(1), note("before"), &[]).unwrap();
+    fs.inject(Fault::before(Op::Sync, 1));
+    assert!(matches!(
+        journal.reboot(boot(2)),
+        Err(AppendError::Failed(_))
+    ));
+    assert_eq!(journal.boot(), &boot(1));
+    assert!(matches!(
+        journal.append(stamp(2), note("after"), &[]),
+        Err(AppendError::Poisoned(_))
+    ));
+}
+
+#[test]
 fn a_write_or_fsync_failure_poisons_without_further_io_and_the_survivor_replays_once() {
     let cases = [
         (Fault::before(Op::Write, 1), 1, "write never happened"),

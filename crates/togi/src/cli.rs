@@ -10,15 +10,26 @@ use clap::error::{ContextKind, ContextValue, ErrorKind};
 use clap::{CommandFactory, Parser, Subcommand};
 
 use crate::args::StateDirArgs;
-use crate::completion;
 use crate::exit::Exit;
+use crate::system::{Real, System};
+use crate::{completion, doctor, events, reset, restart_limit, status, watch};
 
 const BANNER: &str = "   __              _\n  / /_____  ____ _(_)\n / __/ __ \\/ __ `/ /\n/ /_/ /_/ / /_/ / /\n\\__/\\____/\\__, /_/\n         /____/\n\n  per-core Curve Optimizer\n\n";
 
 static VERSION: LazyLock<String> = LazyLock::new(togi_version::string);
 
-static EXAMPLES: LazyLock<String> =
-    LazyLock::new(|| examples(&[("togi completion zsh", "Print the completion script for zsh")]));
+/// The example `togi --help` and `togi run --help` both show for stopping after the confirmation cycle.
+pub const CYCLES_EXAMPLE: (&str, &str) = (
+    "sudo togi run --cycles 1",
+    "Stop once phase 2's confirmation cycle has passed",
+);
+
+static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
+    examples(&[
+        CYCLES_EXAMPLE,
+        ("togi completion zsh", "Print the completion script for zsh"),
+    ])
+});
 
 /// Finds and tests per-core Curve Optimizer offsets on Zen 5 desktop CPUs.
 #[derive(Debug, Parser)]
@@ -40,14 +51,28 @@ pub struct Cli {
 /// of that struct's doc comment is the summary `togi --help` lists.
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    Run(crate::run::Args),
     Completion(completion::Args),
+    Doctor(doctor::Args),
+    Events(events::Args),
+    Reset(reset::Args),
+    RestartLimit(restart_limit::Args),
+    Status(status::Args),
+    Watch(watch::Args),
 }
 
 impl Command {
     /// Runs the command and returns the exit status.
     pub fn run(self, ctx: &mut Context<'_>) -> Exit {
         match self {
+            Self::Run(args) => crate::run::run(&args, ctx),
             Self::Completion(args) => completion::run(&args, ctx),
+            Self::Doctor(args) => doctor::run(&args, ctx),
+            Self::Events(args) => events::run(&args, ctx),
+            Self::Reset(args) => reset::run(&args, ctx),
+            Self::RestartLimit(args) => restart_limit::run(&args, ctx),
+            Self::Status(args) => status::run(&args, ctx),
+            Self::Watch(args) => watch::run(&args, ctx),
         }
     }
 }
@@ -60,6 +85,8 @@ pub struct Context<'a> {
     pub out: &'a mut dyn Write,
     /// Standard error.
     pub err: &'a mut dyn Write,
+    /// The host the command runs on.
+    pub system: &'a dyn System,
 }
 
 impl Context<'_> {
@@ -78,6 +105,21 @@ where
     I: IntoIterator<Item = T>,
     T: Into<OsString> + Clone,
 {
+    run_with(args, out, err, &Real)
+}
+
+/// [`run()`] on `system` instead of the host: how a test stands for another platform, takes the host
+/// lock on a temporary file or answers the hardware checks. See [`crate::system`].
+pub fn run_with<I, T>(
+    args: I,
+    out: &mut dyn Write,
+    err: &mut dyn Write,
+    system: &dyn System,
+) -> Exit
+where
+    I: IntoIterator<Item = T>,
+    T: Into<OsString> + Clone,
+{
     let args = config_after_command(args.into_iter().map(Into::into).collect());
     match Cli::try_parse_from(&args) {
         Ok(cli) => {
@@ -85,6 +127,7 @@ where
                 state_dir: &cli.state_dir.state_dir,
                 out,
                 err,
+                system,
             };
             cli.command.run(&mut ctx)
         }

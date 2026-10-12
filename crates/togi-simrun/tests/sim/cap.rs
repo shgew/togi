@@ -52,9 +52,10 @@ fn a_cap_whose_last_state_cannot_be_published_is_an_error_not_a_cap() {
         matches!(error, SimError::Publish { boot: 3, .. }),
         "{error}"
     );
-    let state: serde_json::Value = serde_json::from_slice(&state_json(&bench.fs).unwrap()).unwrap();
-    let last = bench.events().last().unwrap().seq.get();
-    assert!(state["facts"]["last_seq"].as_u64().unwrap() < last);
+    assert!(
+        state_json(&bench.fs).is_none(),
+        "a warm simulation publishes nothing before its last boot"
+    );
 }
 
 #[test]

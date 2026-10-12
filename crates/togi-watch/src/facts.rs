@@ -225,7 +225,7 @@ impl Facts {
                     event.seq,
                     FailureFacts {
                         at: None,
-                        signal: None,
+                        signal: carried.signal,
                         core: None,
                         known: true,
                         carried: true,
@@ -238,7 +238,7 @@ impl Facts {
                     event.seq,
                     FailureFacts {
                         at: None,
-                        signal: None,
+                        signal: Some(carried.failure.signal),
                         core: carried.failure.core,
                         known: true,
                         carried: true,
