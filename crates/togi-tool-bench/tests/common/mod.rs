@@ -17,7 +17,7 @@ pub(crate) fn record(scenario: &str, seed: u64) -> Record {
         status: Status::Concluded,
         model_check: None,
         exit_code: 0,
-        wall_s: 0.0,
+        wall_s: Some(0.0),
         sim_hours: 10.0,
         first_passed_cycle_h: None,
         passed_cycles: 0,
