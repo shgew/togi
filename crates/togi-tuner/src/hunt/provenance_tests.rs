@@ -541,6 +541,34 @@ fn assert_fixed_plan(where_: &str, state: &crate::State) {
             );
         }
     }
+    let Some(plan) = state.hunt_plan() else {
+        return;
+    };
+    if plan.parts.len() < 2 {
+        return;
+    }
+    let mut failing: Vec<Vec<u8>> = Vec::new();
+    for part in &plan.parts {
+        let cores: Vec<u8> = part.failing.iter().map(togi_machine::CoreId::get).collect();
+        if let Some(number) = part.group {
+            let group = plan.groups.iter().find(|group| group.number == number);
+            assert!(
+                group.is_some_and(|group| group.cores == part.failing),
+                "{where_}: dashboard part {cores:?} claims group {number}, which ran other cores: {:?}",
+                plan.groups
+            );
+        }
+        failing.push(cores);
+    }
+    let orders = [
+        part_order(HuntStage::Part, 2),
+        part_order(HuntStage::Part, 4),
+        part_order(HuntStage::Complement, 4),
+    ];
+    assert!(
+        orders.contains(&failing),
+        "{where_}: dashboard parts {failing:?} are not the order fixed at hunt.start"
+    );
 }
 
 fn crashed_application(j: &mut Journal, id: u8) {

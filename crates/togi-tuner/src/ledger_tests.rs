@@ -666,6 +666,7 @@ fn carried_pass_monotonicity_warning() {
     assert_eq!(action.cause, cause);
     assert_eq!(w.passes, facts);
     assert!(w.detail.contains(SESSION), "{}", w.detail);
+    assert_eq!(j.state.drain(), Some(action.clone()));
     assert_eq!(j.state.next().ok(), Some(Action::Decide(action)));
 }
 

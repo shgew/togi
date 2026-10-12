@@ -321,17 +321,27 @@ fn rerun_repeated_commitment_cites_latest_failure() {
 fn rerun_fifo_and_shared_duration() {
     let mut j = session(
         &[-10, -11, -12, -13],
-        r#"{"checking":{"cycle":["R1","R6"]},"durations":{"checking_idle_s":600}}"#,
+        r#"{"checking":{"cycle":["R1","R1","R6","R6"]},"durations":{"checking_idle_s":600}}"#,
     );
     let n = usize::from(needed(&j));
-    let r1 = until_trial(&mut j);
+    let first_step = until_trial(&mut j);
+    let r1 = TrialPlan {
+        workload: WorkloadChoice::Frozen(pick_workload(Regime::R1, 1).id()),
+        context: TrialContext::Cycle {
+            cycle: NonZeroU32::MIN,
+            step: crate::StepNo::new(NonZeroU32::new(2).unwrap()),
+            part: crate::PartNo::new(NonZeroU32::MIN),
+        },
+        ..first_step
+    };
     assert_eq!(r1.load, Load::Single(core(0)));
     let first = commit(&mut j, &r1, 0);
     let all = set(&[0, 1, 2, 3]);
     let r6 = TrialPlan {
+        workload: WorkloadChoice::Frozen(pick_workload(Regime::R6, 1).id()),
         context: TrialContext::Cycle {
             cycle: NonZeroU32::MIN,
-            step: crate::StepNo::new(NonZeroU32::new(2).unwrap()),
+            step: crate::StepNo::new(NonZeroU32::new(4).unwrap()),
             part: crate::PartNo::new(NonZeroU32::MIN),
         },
         profile: checking(&j),
@@ -348,6 +358,11 @@ fn rerun_fifo_and_shared_duration() {
         } else {
             (Regime::R6, Load::Many(all), second)
         };
+        assert_eq!(
+            plan.workload,
+            WorkloadChoice::Frozen(pick_workload(regime, 1).id()),
+            "trial {at}"
+        );
         let duration = if at == 2 * n { 600 } else { 120 };
         assert_eq!(plan.regime, regime, "trial {at}");
         assert_eq!(plan.load, load, "trial {at}");
