@@ -14,7 +14,7 @@ use crate::args::ConfigArgs;
 use crate::cli::{Context, examples};
 use crate::exit::Exit;
 use crate::report::{
-    chain, current_build, emit, exit_with, fail, refusal_message, unknown_kind_message,
+    chain, current_build, emit, exit_with, fail, refusal_message, unknown_event_message,
 };
 
 static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
@@ -142,7 +142,7 @@ fn recorded_context(
     }
     let path = ctx.state_dir.join("events.jsonl");
     let recording = Recording::read(&path).map_err(|error| {
-        match unknown_kind_message(&error, &recorded, &current) {
+        match unknown_event_message(&error, &recorded, &current) {
             Some(message) => refuse(ctx, renderer, &message),
             None => fail(ctx, COMMAND, chain(&error)),
         }

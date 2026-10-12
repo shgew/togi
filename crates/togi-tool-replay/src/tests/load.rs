@@ -4,6 +4,7 @@ use std::path::Path;
 use tempfile::tempdir;
 use togi_watchtest::{Scenario, install};
 
+use super::plant::{UNKNOWN_KIND, plant};
 use crate::{Error, load};
 
 fn installed(scenario: Scenario) -> tempfile::TempDir {
@@ -23,8 +24,63 @@ fn rewrite_first_line(dir: &Path, from: &str, to: &str) {
 #[test]
 fn the_events_of_a_recording_are_read_whole() {
     let dir = installed(Scenario::Checking);
-    let events = load::events(dir.path()).unwrap();
-    assert_eq!(events, Scenario::Checking.events().unwrap());
+    let loaded = load::events(dir.path()).unwrap();
+    assert_eq!(loaded.events, Scenario::Checking.events().unwrap());
+    assert_eq!(loaded.skipped, None);
+}
+
+#[test]
+fn an_unknown_kind_in_the_middle_is_skipped_unknown_fields_are_ignored_and_the_report_says_which() {
+    let dir = installed(Scenario::Checking);
+    let planted = plant(dir.path());
+    let path = dir.path().join("events.jsonl");
+    let bytes = fs::read(&path).unwrap();
+    let before: Vec<_> = fs::read_dir(dir.path())
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+
+    let loaded = load::events(dir.path()).unwrap();
+    let known: Vec<_> = Scenario::Checking
+        .events()
+        .unwrap()
+        .into_iter()
+        .filter(|event| event.seq.get() != planted.kind_line as u64)
+        .collect();
+    assert_eq!(loaded.events, known);
+    assert!(
+        loaded
+            .events
+            .iter()
+            .any(|event| event.seq.get() > planted.kind_line as u64)
+    );
+    let report = loaded.skipped.unwrap();
+    assert!(report.starts_with(&planted.skipped_kind()), "{report}");
+    for ignored in planted.ignored_fields() {
+        assert!(report.contains(&ignored), "{report}");
+    }
+    assert!(!report.contains('\n'), "{report}");
+
+    assert_eq!(fs::read(&path).unwrap(), bytes);
+    let after: Vec<_> = fs::read_dir(dir.path())
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    assert_eq!(after, before);
+}
+
+#[test]
+fn an_unknown_kind_on_the_first_line_is_still_an_error() {
+    let dir = installed(Scenario::Checking);
+    rewrite_first_line(
+        dir.path(),
+        "\"kind\":\"session.start\"",
+        &format!("\"kind\":\"{UNKNOWN_KIND}\""),
+    );
+    assert!(matches!(
+        load::events(dir.path()).unwrap_err(),
+        Error::Read(_)
+    ));
 }
 
 #[test]
@@ -43,8 +99,12 @@ fn reading_leaves_the_journal_and_its_unfinished_last_line_as_they_are() {
         names
     };
     let before = listing();
-    let events = load::events(dir.path()).unwrap();
-    assert_eq!(events.len(), Scenario::Checking.events().unwrap().len());
+    let loaded = load::events(dir.path()).unwrap();
+    assert_eq!(
+        loaded.events.len(),
+        Scenario::Checking.events().unwrap().len()
+    );
+    assert_eq!(loaded.skipped, None);
     assert_eq!(fs::read(&path).unwrap(), bytes);
     assert_eq!(listing(), before);
 }

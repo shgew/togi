@@ -9,11 +9,10 @@
 //! absent or `null` is not configured and an empty one is rejected as not absolute; an empty
 //! `backend_user` is rejected.
 //!
-//! The serde shape of [`Config`] is part of the journal schema: `config.loaded` embeds it, and
-//! reading the event validates it again. Serialization writes every setting, with unset backend
-//! paths and `backend_user` as `null`, and leaves out the evidence trial count, which
-//! deserialization recomputes from `miss` and `rate`. A change to the shape is a journal schema
-//! decision.
+//! The journal records a configuration as a `togi_journal::ConfigSnapshot`, a shape the journal
+//! owns, so a change here cannot change the journal format. [`Config::snapshot`] writes every
+//! effective setting into it; [`Config::from_snapshot`] reads one back and validates it again as a
+//! configuration file is validated.
 //!
 //! The crate does no I/O except [`Config::load`], and checks nothing against the machine: the
 //! session checks override cores against the topology, and preflight checks the backend account.

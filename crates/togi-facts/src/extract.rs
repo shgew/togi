@@ -37,7 +37,7 @@ struct Backends {
 
 impl Backends {
     fn recorded(loaded: &ConfigLoaded) -> Self {
-        let paths = loaded.config.backends();
+        let paths = &loaded.config.backends;
         let identity = |backend| {
             paths.path(backend).map(|path| BackendIdentity {
                 backend,

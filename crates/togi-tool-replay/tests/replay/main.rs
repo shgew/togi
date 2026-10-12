@@ -5,6 +5,8 @@
 )]
 
 mod live;
+#[path = "../../src/tests/plant.rs"]
+mod plant;
 
 use std::process::{Command, Output};
 
@@ -46,6 +48,27 @@ fn at_prints_a_frame_of_a_recording_and_nothing_else() {
 
     let coloured = replay(&["--state-dir", state, "--at", "20", "--color"]);
     assert!(text(coloured.stdout).contains('\x1b'));
+}
+
+#[test]
+fn at_says_once_on_stderr_what_it_skipped_and_still_prints_the_frame() {
+    let dir = tempdir().unwrap();
+    install(dir.path(), Scenario::Checking).unwrap();
+    let planted = plant::plant(dir.path());
+    let path = dir.path().join("events.jsonl");
+    let bytes = std::fs::read(&path).unwrap();
+    let ran = replay(&["--state-dir", dir.path().to_str().unwrap(), "--at", "99999"]);
+    assert_eq!(ran.status.code(), Some(0));
+    let stderr = text(ran.stderr);
+    assert_eq!(stderr.lines().count(), 1, "{stderr}");
+    let report = stderr.strip_prefix("togi-tool-replay: ").unwrap();
+    assert!(report.starts_with(&planted.skipped_kind()), "{stderr}");
+    for ignored in planted.ignored_fields() {
+        assert!(report.contains(&ignored), "{stderr}");
+    }
+    let frame = text(ran.stdout);
+    assert!(frame.contains("togi"), "{frame}");
+    assert_eq!(std::fs::read(&path).unwrap(), bytes);
 }
 
 #[test]

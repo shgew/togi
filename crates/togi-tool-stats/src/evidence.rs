@@ -282,10 +282,10 @@ pub(crate) fn single_carried_failure_decisions(events: &[Event], since: Option<T
     count
 }
 
-/// The event numbered `seq`: a journal numbers its events from 1 without gaps.
+/// The event numbered `seq`; none for a number a lenient read skipped. Events ascend by seq.
 pub(crate) fn event_at(events: &[Event], seq: Seq) -> Option<&Event> {
-    let at = usize::try_from(seq.get().checked_sub(1)?).ok()?;
-    events.get(at).filter(|event| event.seq == seq)
+    let at = events.binary_search_by_key(&seq, |event| event.seq).ok()?;
+    events.get(at)
 }
 
 /// A multi-core class's trials counted by the shallowest loaded offset.

@@ -4,7 +4,7 @@ use std::process::{Command, Output};
 use tempfile::tempdir;
 use togi_tool_trialfacts::read;
 
-use crate::fixture::{corrupt_state_dir, state_dir};
+use crate::fixture::{SESSION, corrupt_state_dir, state_dir};
 
 fn facts(args: &[&std::ffi::OsStr]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_togi-tool-facts"))
@@ -29,6 +29,46 @@ fn the_command_prints_the_count_and_writes_the_extract() {
     );
     assert_eq!(String::from_utf8(ran.stderr).unwrap(), "");
     assert_eq!(read(&output).unwrap().len(), 1);
+}
+
+#[test]
+fn an_event_of_an_unknown_kind_is_skipped_named_on_stderr_and_does_not_fail_the_command() {
+    let source = tempdir().unwrap();
+    let state = state_dir(source.path(), true);
+    let journal = state.join("events.jsonl");
+    let mut lines = Vec::new();
+    for (index, text) in fs::read_to_string(&journal).unwrap().lines().enumerate() {
+        let mut line: serde_json::Value = serde_json::from_str(text).unwrap();
+        if index >= 2 {
+            line["seq"] = (line["seq"].as_u64().unwrap() + 1).into();
+        }
+        lines.push(line.clone());
+        if index == 1 {
+            line["seq"] = 3.into();
+            line["kind"] = "future.thing".into();
+            line["data"] = serde_json::json!({});
+            lines.push(line);
+        }
+    }
+    let spliced: String = lines.iter().map(|line| line.to_string() + "\n").collect();
+    fs::write(&journal, spliced).unwrap();
+    let out = tempdir().unwrap();
+    let output = out.path().join("facts.jsonl.gz");
+
+    let ran = facts(&[state.as_os_str(), output.as_os_str()]);
+
+    assert_eq!(ran.status.code(), Some(0));
+    assert_eq!(
+        String::from_utf8(ran.stdout).unwrap(),
+        "extracted 1 facts\n"
+    );
+    assert_eq!(
+        String::from_utf8(ran.stderr).unwrap(),
+        format!(
+            "togi-tool-facts: session {SESSION}: skipped 1 event of a kind this build does not know (future.thing at line 3)\n"
+        )
+    );
+    assert_eq!(read(&output).unwrap()[0].seq.get(), 5);
 }
 
 #[test]

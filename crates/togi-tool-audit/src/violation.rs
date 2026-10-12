@@ -1,7 +1,7 @@
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
-use togi_journal::{Seq, SessionId};
+use togi_journal::{Seq, SessionId, Skipped};
 use togi_machine::object_only;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -70,6 +70,8 @@ pub enum Source {
 pub struct JournalAudit {
     pub source: Source,
     pub violations: Vec<Violation>,
+    /// What the lenient read of this journal skipped or ignored.
+    pub skipped: Skipped,
 }
 
 #[derive(Debug, Default)]

@@ -152,10 +152,30 @@ fn an_archive_that_cannot_be_read_is_an_error_naming_the_archive() {
     text.extend_from_slice(b"{\"seq\":2}\n");
     fs.put("/state/archive/20251231T000000Z.jsonl", text);
     fs.put("/state/events.jsonl", journal(vec![stop(2)]));
-    assert!(matches!(
-        audit_recordings(&open(&fs), Finished),
-        Err(AuditError::Archive(_))
-    ));
+    let error = audit_recordings(&open(&fs), Finished).unwrap_err();
+    assert!(matches!(error, AuditError::Journal(_)));
+    assert!(error.to_string().contains("20251231T000000Z.jsonl"));
+}
+
+#[test]
+fn an_unknown_kind_in_the_middle_is_reported_and_leaves_no_violation() {
+    let fs = MemFs::new();
+    let mut text = bytes(&[header()]);
+    text.extend_from_slice(
+        br#"{"seq":2,"time":"2026-01-01T00:00:00Z","boot":"b","kind":"future.thing","msg":"m","data":{}}"#,
+    );
+    text.push(b'\n');
+    text.extend(bytes(&[cause(stop(3), &[2])]));
+    fs.put("/state/events.jsonl", text);
+    let audits = audit_recordings(&open(&fs), InProgress).unwrap();
+    assert_eq!(audits.len(), 1);
+    assert!(audits[0].violations.is_empty());
+    let skipped = audits[0].skipped.events();
+    assert_eq!(skipped.len(), 1);
+    assert_eq!(
+        (skipped[0].seq.get(), skipped[0].kind.as_str()),
+        (2, "future.thing")
+    );
 }
 
 #[test]

@@ -8,11 +8,30 @@ fn rebuilt(seq: u64, fields: &[&str]) -> togi_journal::Event {
     event(seq, "state.rebuilt", json!({"fields": fields}))
 }
 
+fn snapshot() -> serde_json::Value {
+    json!({
+        "start_offsets": {},
+        "candidate_solo_limits": {},
+        "durations": {
+            "search_trial_s": 90,
+            "short_trial_s": 120,
+            "checking_trial_s": 120,
+            "checking_idle_s": 900,
+            "checking_all_core_s": 1200
+        },
+        "evidence": {"miss": 0.05, "rate": 0.5},
+        "checking": {"cycle": ["R7", "R2", "R1"]},
+        "dead_ends": {"inconclusive_in_a_row": 3, "stray_crashes_in_a_row": 3},
+        "backends": {"mprime": null, "ycruncher": null},
+        "backend_user": null
+    })
+}
+
 fn config_loaded(seq: u64, fixes: u32) -> togi_journal::Event {
     event(
         seq,
         "config.loaded",
-        json!({"build": build(fixes), "config": {}, "path": "", "file": false}),
+        json!({"build": build(fixes), "config": snapshot(), "path": "", "file": false}),
     )
 }
 

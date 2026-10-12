@@ -6,6 +6,7 @@ use tempfile::tempdir;
 use togi_watch::screen::View;
 use togi_watchtest::{Scenario, install};
 
+use super::plant::plant;
 use crate::{Cli, Error, Frame, draw, prefix, run};
 
 fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
@@ -173,6 +174,35 @@ fn at_a_sequence_number_beyond_the_recording_prints_its_last_frame() {
     let mut out = Vec::new();
     run(&Cli::try_parse_from(&args).unwrap(), &mut out).unwrap();
     assert!(!out.is_empty());
+}
+
+#[test]
+fn at_draws_a_recording_with_an_unknown_kind_and_fields_as_the_known_events_alone_and_leaves_it_as_it_is()
+ {
+    let (dir, mut args) = state_dir(Scenario::Checking);
+    let planted = plant(dir.path());
+    let path = dir.path().join("events.jsonl");
+    let bytes = std::fs::read(&path).unwrap();
+    let all = Scenario::Checking.events().unwrap();
+    let known: Vec<_> = all
+        .iter()
+        .filter(|event| event.seq.get() != planted.kind_line as u64)
+        .cloned()
+        .collect();
+    let at = all.last().unwrap().seq.get();
+    args.extend(["--at", &at.to_string()].map(String::from));
+    let mut out = Vec::new();
+    run(&Cli::try_parse_from(&args).unwrap(), &mut out).unwrap();
+    let frame = Frame {
+        view: View::Main,
+        width: 240,
+        height: 67,
+        colour: false,
+        after: SignedDuration::ZERO,
+    };
+    let want = draw(&known, prefix(&known, at), &frame, &TimeZone::system()).unwrap();
+    assert_eq!(String::from_utf8(out).unwrap(), want);
+    assert_eq!(std::fs::read(&path).unwrap(), bytes);
 }
 
 struct Broken;

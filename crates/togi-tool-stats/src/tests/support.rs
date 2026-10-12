@@ -158,7 +158,7 @@ impl Log {
 pub(super) fn config_loaded(build: Build) -> ConfigLoaded {
     ConfigLoaded {
         build,
-        config: Config::default(),
+        config: Config::default().snapshot(),
         path: "/etc/togi/config.json".to_owned(),
         file: false,
         kernel_cursor: None,

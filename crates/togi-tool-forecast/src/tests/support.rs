@@ -120,7 +120,7 @@ pub(super) fn config_loaded(rev: &str) -> Payload {
 pub(super) fn config_loaded_by(build: Build) -> Payload {
     Payload::ConfigLoaded(ConfigLoaded {
         build,
-        config: Config::default(),
+        config: Config::default().snapshot(),
         path: "/etc/togi/config.json".to_owned(),
         file: false,
         kernel_cursor: None,

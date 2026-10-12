@@ -473,3 +473,245 @@ fn an_archived_recording_ignores_a_torn_tail_and_names_an_unreadable_file() {
     let error = simulated(&fs).archived_recording(&broken).unwrap_err();
     assert!(error.path.ends_with(format!("{broken}.jsonl")));
 }
+
+/// One complete journal line of `kind` with `data`, after the four events of [`recorded`].
+fn line(seq: u64, kind: &str, cause: &str, data: &str) -> Vec<u8> {
+    format!(
+        "{{\"seq\":{seq},\"time\":\"2026-01-01T00:00:00Z\",\"boot\":\"b\",{cause}\"kind\":\"{kind}\",\"msg\":\"x\",\"data\":{data}}}\n"
+    )
+    .into_bytes()
+}
+
+const ARCHIVED: &str = r#"{"session":"20231114T221320Z"}"#;
+
+fn archived_with(extra: &str) -> String {
+    format!(r#"{{"session":"20231114T221320Z",{extra}}}"#)
+}
+
+fn recorded_then(lines: &[Vec<u8>]) -> Vec<u8> {
+    let mut bytes = recorded(&MemFs::new());
+    for line in lines {
+        bytes.extend_from_slice(line);
+    }
+    bytes
+}
+
+#[test]
+fn a_strict_reader_refuses_an_unknown_field_naming_its_line_kind_and_path() {
+    let bytes = recorded_then(&[line(
+        5,
+        "session.archived",
+        "",
+        &archived_with(r#""extra":1"#),
+    )]);
+    let error = EventReader::new(bytes.as_slice())
+        .find_map(Result::err)
+        .unwrap();
+    assert!(
+        matches!(&error, ReadError::UnknownField { line: 5, kind: EventKind::SessionArchived, field } if field == "data.extra"),
+        "{error:?}"
+    );
+    assert_eq!(
+        error.to_string(),
+        r#"line 5: session.archived event: unknown field "data.extra""#
+    );
+    let error = Recording::parse(&bytes).unwrap_err();
+    assert!(matches!(error, ReadError::UnknownField { line: 5, .. }));
+}
+
+#[test]
+fn a_lenient_reader_skips_unknown_kinds_and_ignores_unknown_fields_and_says_so() {
+    let bytes = recorded_then(&[
+        line(5, "future.thing", "", r#"{"x":1}"#),
+        line(
+            6,
+            "session.archived",
+            r#""cause":[5],"#,
+            &archived_with(r#""extra":1"#),
+        ),
+    ]);
+    let mut reader = EventReader::lenient(bytes.as_slice());
+    let seqs: Vec<u64> = reader
+        .by_ref()
+        .map(|event| event.unwrap().seq.get())
+        .collect();
+    assert_eq!(seqs, [1, 2, 3, 4, 6]);
+    assert_eq!(reader.accepted(), bytes.len() as u64);
+    let skipped = reader.skipped();
+    assert_eq!(skipped.events().len(), 1);
+    assert_eq!(
+        (
+            skipped.events()[0].line,
+            skipped.events()[0].seq.get(),
+            skipped.events()[0].kind.as_str()
+        ),
+        (5, 5, "future.thing")
+    );
+    assert_eq!(skipped.ignored().len(), 1);
+    assert_eq!(
+        (
+            skipped.ignored()[0].line,
+            skipped.ignored()[0].fields.as_slice()
+        ),
+        (6, &["data.extra".to_owned()][..])
+    );
+    assert!(EventReader::new(bytes.as_slice()).skipped().is_empty());
+}
+
+#[test]
+fn a_lenient_recording_finds_events_by_seq_around_a_skipped_one() {
+    let bytes = recorded_then(&[
+        line(5, "future.thing", "", "{}"),
+        line(6, "session.archived", r#""cause":[5],"#, ARCHIVED),
+        line(7, "future.thing", "", "{}"),
+        line(8, "session.archived", r#""cause":[6,7],"#, ARCHIVED),
+    ]);
+    assert!(Recording::parse(&bytes).is_err());
+    let recording = Recording::parse_with(&bytes, crate::event::Decoding::Lenient).unwrap();
+    assert_eq!(recording.events().len(), 6);
+    assert_eq!(recording.skipped().events().len(), 2);
+    for event in recording.events() {
+        assert_eq!(recording.event(event.seq), Some(event));
+    }
+    for skipped in [5, 7, 9] {
+        assert!(
+            recording.event(Seq::new(skipped).unwrap()).is_none(),
+            "seq {skipped}"
+        );
+    }
+    let sixth = recording.event(Seq::new(6).unwrap()).unwrap();
+    assert_eq!(sixth.cause, [Seq::new(5).unwrap()]);
+    let eighth = recording.event(Seq::new(8).unwrap()).unwrap();
+    assert_eq!(eighth.cause, [Seq::new(6).unwrap(), Seq::new(7).unwrap()]);
+}
+
+#[test]
+fn a_lenient_reader_still_checks_seq_causes_and_the_first_event_of_what_it_skips() {
+    let gap = recorded_then(&[line(6, "future.thing", "", "{}")]);
+    assert!(matches!(
+        EventReader::lenient(gap.as_slice()).find_map(Result::err),
+        Some(ReadError::Gap {
+            line: 5,
+            expected: 5,
+            ..
+        })
+    ));
+
+    let late = recorded_then(&[line(5, "future.thing", r#""cause":[5],"#, "{}")]);
+    assert!(matches!(
+        EventReader::lenient(late.as_slice()).find_map(Result::err),
+        Some(ReadError::Cause { line: 5, .. })
+    ));
+
+    let first = line(1, "future.thing", "", "{}");
+    let error = EventReader::lenient(first.as_slice())
+        .find_map(Result::err)
+        .unwrap();
+    assert!(
+        matches!(&error, ReadError::UnknownKind { line: 1, source } if source.0 == "future.thing"),
+        "{error:?}"
+    );
+
+    let mut first_known = non_start_first_line(&recorded(&MemFs::new()));
+    first_known.extend(line(2, "future.thing", "", "{}"));
+    assert!(matches!(
+        EventReader::lenient(first_known.as_slice()).next(),
+        Some(Err(ReadError::FirstEvent { .. }))
+    ));
+
+    let bad = recorded_then(&[line(5, "shutdown", "", r#"{"reason":7}"#)]);
+    assert!(matches!(
+        EventReader::lenient(bad.as_slice()).find_map(Result::err),
+        Some(ReadError::Decode { line: 5, .. })
+    ));
+
+    let broken = recorded_then(&[b"garbage\n".to_vec(), line(6, "future.thing", "", "{}")]);
+    let mut reader = EventReader::lenient(broken.as_slice());
+    assert!(matches!(
+        reader.by_ref().find_map(Result::err),
+        Some(ReadError::Decode { line: 5, .. })
+    ));
+    assert!(reader.next().is_none());
+}
+
+#[test]
+fn the_skipped_report_is_one_line_naming_kinds_lines_and_fields() {
+    let bytes = recorded_then(&[
+        line(5, "future.thing", "", "{}"),
+        line(6, "session.archived", "", &archived_with(r#""extra":1"#)),
+        line(7, "other.kind", "", "{}"),
+        line(
+            8,
+            "session.archived",
+            "",
+            &archived_with(r#""extra":1,"more":2"#),
+        ),
+        line(9, "future.thing", "", "{}"),
+    ]);
+    let recording = Recording::parse_with(&bytes, crate::event::Decoding::Lenient).unwrap();
+    assert_eq!(
+        recording.skipped().to_string(),
+        "skipped 3 events of kinds this build does not know (future.thing at lines 5, 9; other.kind at line 7); \
+         ignored unknown fields: session.archived data.extra (line 6); session.archived data.extra, data.more (line 8)"
+    );
+}
+
+#[test]
+fn the_skipped_report_is_empty_singular_and_escaped_as_the_case_may_be() {
+    let mut report = Skipped::new();
+    assert!(report.is_empty());
+    assert_eq!(report.to_string(), "");
+    report.skip(5, Seq::new(5).unwrap(), "future.thing".into());
+    assert!(!report.is_empty());
+    assert_eq!(
+        report.to_string(),
+        "skipped 1 event of a kind this build does not know (future.thing at line 5)"
+    );
+    let mut hostile = Skipped::new();
+    hostile.skip(2, Seq::new(2).unwrap(), "bad\u{1b}[31mkind".into());
+    hostile.ignore(
+        3,
+        Seq::new(3).unwrap(),
+        "trial.end",
+        vec!["data.a\nb".into()],
+    );
+    let text = hostile.to_string();
+    assert!(!text.contains('\u{1b}') && !text.contains('\n'), "{text:?}");
+    assert_eq!(
+        text,
+        r#"skipped 1 event of a kind this build does not know ("bad\u{1b}[31mkind" at line 2); ignored unknown fields: trial.end "data.a\nb" (line 3)"#
+    );
+}
+
+#[test]
+fn the_lenient_entry_points_read_files_and_directories() {
+    use crate::testing::{session, simulated};
+
+    let fs = MemFs::new();
+    let id = session("20231113T000000Z");
+    fs.put(format!("/state/archive/{id}.jsonl"), journal_of(id));
+    let live = recorded_then(&[line(5, "future.thing", "", "{}")]);
+    fs.put("/state/events.jsonl", live);
+    let dir = simulated(&fs);
+
+    let error = dir.recordings().unwrap_err();
+    assert!(
+        matches!(&error, LookupError::File(file) if matches!(file.source, ReadError::UnknownKind { line: 5, .. })),
+        "{error}"
+    );
+    let recordings = dir.recordings_lenient().unwrap();
+    assert_eq!(recordings.len(), 2);
+    assert!(recordings[0].skipped().is_empty());
+    assert_eq!(recordings[1].skipped().events().len(), 1);
+
+    let path = Path::new("/state/events.jsonl");
+    assert!(Recording::read_in(&fs, path).is_err());
+    assert_eq!(
+        Recording::read_in_lenient(&fs, path)
+            .unwrap()
+            .skipped()
+            .events()
+            .len(),
+        1
+    );
+}

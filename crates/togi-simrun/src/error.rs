@@ -68,6 +68,8 @@ pub enum HistoryError {
     Lock(#[from] LockError),
     #[error(transparent)]
     Read(#[from] LookupError),
+    #[error("the configuration the journal recorded: {0}")]
+    Config(#[from] togi_config::ConfigError),
 }
 
 fn listed(errors: &[SessionError]) -> String {

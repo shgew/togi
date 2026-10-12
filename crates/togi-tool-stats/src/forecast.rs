@@ -1,21 +1,38 @@
 use std::path::Path;
 
-use togi_tool_forecast::{Metric, Record, Row, Score, Status, read_dir, recovery_bias};
+use togi_journal::{SessionId, Skipped};
+use togi_tool_forecast::{Metric, Record, Row, Score, Status, read_dir_lenient, recovery_bias};
 
 use crate::error::Error;
 use crate::report::{optional, stamp};
 use crate::table::{Table, row};
 
-/// Scores the run recorded in `state_dir` after the forecast's anchor and renders the score.
-pub fn score(state_dir: impl AsRef<Path>, forecast: impl AsRef<Path>) -> Result<String, Error> {
+/// A rendered score and what reading the state directory skipped.
+#[derive(Debug)]
+pub struct Scored {
+    pub text: String,
+    /// Each session whose journal had events skipped or fields ignored, oldest first.
+    pub skipped: Vec<(SessionId, Skipped)>,
+}
+
+/// Scores the run recorded in `state_dir` after the forecast's anchor and renders the score. The journals are
+/// read leniently: `skipped` says what that left out.
+pub fn score(state_dir: impl AsRef<Path>, forecast: impl AsRef<Path>) -> Result<Scored, Error> {
     let forecast = forecast.as_ref();
     let record = Record::read(forecast)?;
-    let sessions = read_dir(state_dir, Some(record.anchor.session))?;
+    let sessions = read_dir_lenient(state_dir, Some(record.anchor.session))?;
     let score = record.score(&sessions).map_err(|source| Error::Score {
         path: forecast.display().to_string(),
         source,
     })?;
-    Ok(render_score(&score))
+    Ok(Scored {
+        text: render_score(&score),
+        skipped: sessions
+            .iter()
+            .filter(|session| !session.skipped().is_empty())
+            .map(|session| (session.id(), session.skipped().clone()))
+            .collect(),
+    })
 }
 
 fn status_name(status: Status) -> &'static str {

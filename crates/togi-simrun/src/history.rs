@@ -43,7 +43,8 @@ pub fn history_in(dir: &StateDir) -> Result<History, HistoryError> {
 }
 
 /// The configuration a resume of `dir` runs under: the one the latest `config.loaded` recorded, standing in for the
-/// file `togi run` would load; `fresh` when no journal recorded one.
+/// file `togi run` would load; `fresh` when no journal recorded one. A recorded configuration this build would
+/// refuse as a file is an error.
 pub fn recorded_config(dir: &Path, fresh: Config) -> Result<Config, HistoryError> {
     recorded_config_in(&locked(dir)?, fresh)
 }
@@ -54,7 +55,7 @@ pub fn recorded_config_in(dir: &StateDir, fresh: Config) -> Result<Config, Histo
     for recording in dir.recordings()? {
         for event in recording.events() {
             if let Payload::ConfigLoaded(loaded) = &event.payload {
-                recorded = loaded.config.clone();
+                recorded = Config::from_snapshot(&loaded.config)?;
             }
         }
     }
