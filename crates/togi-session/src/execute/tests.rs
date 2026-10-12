@@ -1,4 +1,6 @@
+use std::cell::Cell;
 use std::num::NonZeroU32;
+use std::rc::Rc;
 
 use togi_journal::{
     CheckingCycle, CycleEvent, DeadEnd, DeadEndCondition, DeepeningRound, Payload, RoundEvent,
@@ -7,11 +9,12 @@ use togi_journal::{
 use togi_machine::{
     BiosContext, BootId, Check, CoreInfo, CoreRank, Error, Host, Partial, SmuValidated,
 };
+use togi_sim::faults::SmuOperation;
 use togi_tuner::{Action, DecisionAction, DecisionPayload};
 
 use super::*;
-use crate::session::{Control, Stop, StopPolicy};
-use crate::testing::{Bench, begun, core, run_action};
+use crate::session::{Control, Fault, Stop, StopPolicy};
+use crate::testing::{Bench, begun, core, put, run_action};
 
 fn count(value: u32) -> NonZeroU32 {
     NonZeroU32::new(value).unwrap()
@@ -340,4 +343,33 @@ fn a_cancelled_run_reads_no_ranking() {
         Control::Stop(Stop::Signal)
     );
     assert_eq!(session.appender().journal().events().len(), before);
+}
+
+#[test]
+fn a_crash_under_the_ranking_ends_the_run_and_cleanup_touches_nothing() {
+    let bench = Bench::new(2);
+    let mut session = begun(&bench);
+    put(&mut session, &[-5, -5]);
+    let inner = std::mem::replace(&mut session.host, bench.sim.seams().host);
+    session.host = Box::new(Ranked {
+        inner,
+        ranks: Err((ranks(&[3, 1]), || Error::Crashed)),
+    });
+    let before = session.appender().journal().events().len();
+    let accesses = Rc::new(Cell::new(0_u32));
+    let counted = Rc::clone(&accesses);
+    bench.sim.interrupt_smu(move |_: &SmuOperation| {
+        counted.set(counted.get() + 1);
+        Ok(())
+    });
+
+    let error = run_action(&mut session, Action::ReadRanking).unwrap_err();
+    assert!(error.is_crash(), "{error:?}");
+    assert_eq!(session.fault, Some(Fault::Crashed));
+    assert_eq!(session.appender().journal().events().len(), before);
+
+    let ended = session.close(Err(error));
+    assert!(ended.errors[0].is_crash());
+    assert_eq!(ended.journal.events().len(), before);
+    assert_eq!(accesses.get(), 0);
 }

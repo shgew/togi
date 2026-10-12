@@ -4,7 +4,7 @@ use togi_journal::{CycleEvent, HostRanking, Payload, RoundEvent, Seq};
 use togi_machine::{CoreId, CoreRank, PerCore};
 use togi_tuner::{Action, DecisionAction, DecisionPayload, Profile};
 
-use crate::error::{Flow, Step};
+use crate::error::{Flow, SessionError, Step};
 use crate::session::{Control, Fault, Outcome, Session, Stop, StopPolicy};
 
 /// What only the tuner knows when it asks for an action: the profile it stands at, the event that profile came from,
@@ -89,6 +89,9 @@ impl Session {
         }
         let (ranks, error) = match self.host.ranking() {
             Ok(ranks) => (ranks, None),
+            Err(partial) if matches!(partial.error, togi_machine::Error::Crashed) => {
+                return Err(SessionError::from(partial.error).into());
+            }
             Err(partial) => (partial.value, Some(partial.error.to_string())),
         };
         let values: PerCore<i64> = ranks.iter().map(|rank| (rank.core, rank.value)).collect();
