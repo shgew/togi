@@ -639,19 +639,25 @@ The state directory is in memory (`MemFs`) or on disk. `Replay::Warm` resumes fr
 
 The crate also holds the tuner's simulation tests ([#741](https://github.com/shgew/togi/issues/741)): `forecast_sim_test.go` and `memo_test.go` become `tests/sim/forecast.rs` and `tests/sim/memo.rs`. They need whole simulated sessions. `togi-tuner` cannot take `togi-simrun` as a dev-dependency, because the cycle would build a second `togi-tuner` whose types do not unify with the first.
 
-Size: about 780 lines of library and 4,400 lines of integration tests. The crate's 73 tests run in about 21 s under `cargo nextest` on Linux. The memo recomputation and the default-machine memory-against-files checks take 15 to 21 s each.
+Size: about 750 lines of library, 200 lines of unit tests and 4,600 lines of integration tests. The crate's 80 tests run in about 22 s under `cargo nextest` on Linux. The memo recomputation and the default-machine memory-against-files checks take 15 to 21 s each.
 
 - **Go bugs fixed.**
   - Cold-boot verification was a silent no-op; Rust verifies the capsule in both replay modes.
   - Memory mode wrote disk files.
   - A JSON round trip worked around aliasing.
-  - A failed log flush was discarded.
+  - A failed log flush was discarded. Rust flushes the caller's log when the simulation ends, and a flush failure is `SimError::FlushLog`.
   - A capped run was classified by matching `ErrBootCap` in the error chain. In Rust, a verification or publication failure on the last boot is an error and never `Capped`.
   - A later process rebuilt the machine from the journals alone and lost three things: the pending machine checks, the reset reason the next boot reports, and the time between the last event and the crash. A capped simulation now leaves `machine.json` (`togi_sim::Persisted`), and `resume_simulator` continues from it.
 - **Defects found in other crates.**
   - `togi-journal` committed whole-millisecond `mono` to disk but kept nanoseconds in memory, so a capsule diverged after a reopen. Fixed in [#804](https://github.com/shgew/togi/pull/804).
   - An `OnFinish` run that crashed published no state document. Fixed with `ResumeCapsule::publish`.
   - An undecodable archive blocked carry selection. Fixed in `togi-session`.
-- **`togi-sim` changes.** `Simulator::persisted` and `Simulator::restore`. `set_samples_dir` keeps the last trial's samples when the directory does not change.
+- **Review fixes before merge.**
+  - A crashed boot's other errors, such as a failed log write, are `SimError::Failed`; they were dropped.
+  - The observer kept no events after the caller's log failed.
+  - `machine.json` was removed before a continuation made progress.
+  - An in-memory simulation's next session read the last trial's samples of the earlier session.
+  - A persisted machine decoded from positional arrays.
+- **`togi-sim` changes.** `Simulator::persisted`, `Simulator::restore` (objects only) and `Simulator::forget_last_trial`. `set_samples_dir` keeps the last trial's samples when the directory does not change.
 - **Not ported.** Go's older-schema carry cases and the "known events carry past an unknown kind" case. Rust has one schema and refuses unknown kinds; the remaining property, that an undecodable archive is archived and carries nothing, is pinned.
 - **Not measured.** Compile times, and the comparison with `go test ./internal/simrun`.
