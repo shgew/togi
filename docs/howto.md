@@ -203,7 +203,9 @@ To start over with nothing carried, run `sudo togi reset --all` instead of `togi
 
 ## Go to Rust cutover
 
-This step is for the one-time switch from the Go build to the Rust build, and it is the exception to [section 7](#7-after-a-breaking-update): the Rust build does not archive, carry from or read a Go session. A Go journal in `/var/lib/togi` is not a session written by an earlier build that a transition can seed from; it is another build's file. Every Rust `togi run`, `status`, `events` and `watch` that finds it exits 1 with `<state dir>/events.jsonl holds another build's journal; not a Rust journal header; see docs/howto.md#go-to-rust-cutover`, reads no further, takes no lock and changes no file in the state directory ([Commands](spec/runtime.md#commands)). Rebooting into the tuning boot does not help, and `togi reset --all` is not the way out: do the move below.
+This step is for the one-time switch from the Go build to the Rust build, and it is the exception to [section 7](#7-after-a-breaking-update): the Rust build does not archive, carry from or read a Go session. A Go journal in `/var/lib/togi` is not a session written by an earlier build that a transition can seed from; it is another build's file. Every Rust `togi run`, `status`, `events` and `watch` whose state directory has a first journal line that is not a complete header of this build exits 1 with `<state dir>/events.jsonl holds another build's journal or a torn first header; not a Rust journal header; see docs/howto.md#go-to-rust-cutover` (the wording of the error itself is the authority), reads no further, takes no lock and changes no file in the state directory ([Commands](spec/runtime.md#commands)). The message does not say the journal is Go's, because it cannot know: a Go journal and a Rust header torn by a crash before its first newline look the same. Rebooting into the tuning boot does not help, and `togi reset --all` is not the way out. Find which case you have with the check below, then do the matching procedure.
+
+Which one is it? Run `sudo head -c 300 /var/lib/togi/events.jsonl; echo` and `sudo wc -l < /var/lib/togi/events.jsonl`. A Go journal has complete lines (`wc -l` is 1 or more), and `/var/lib/togi` usually holds Go's `state.json` and `archive/`: do the cutover below. A Rust header torn by a crash has no newline (`wc -l` prints 0), is cut off inside the first JSON object (it starts `{"seq":1` and has no `"build"` in the tail) and has no Go `state.json` beside it: do [the torn first header procedure](#a-torn-first-header-of-the-rust-build) instead. If you cannot tell, treat it as the Go case and move the whole directory: nothing is lost either way.
 
 Cut over, as root, before the first Rust boot:
 
@@ -221,6 +223,15 @@ Roll back, as root, if the Rust build must go:
 4. Boot the NixOS generation that holds the Go build, the one from before the cutover, from the boot menu, or set the Go package again and rebuild. Then pick "NixOS - togi". The Go build resumes its own session in the restored directory.
 
 The only state directory is `/var/lib/togi`, used by one build at a time. The backup and the aside copy are plain directories under `/var/lib`, never a second state directory for either build: no `--state-dir` and no `-rs` suffix.
+
+### A torn first header of the Rust build
+
+A crash while the very first journal line was being written can leave `events.jsonl` holding part of the Rust `session.start` and no newline. The Rust build cannot tell that from another build's journal, so it refuses it and repairs nothing automatically. Nothing recorded a session yet, so no tuning progress is in the file. Do not edit the file, and never type a header by hand: a made-up `session.start` would carry a build stamp, boot and `seq` that nothing wrote.
+
+1. Stop every writer: `sudo systemctl stop togi.service` and any `togi run` started by hand (check `pgrep -x togi` prints nothing). Do not boot "NixOS - togi" again until step 4.
+2. Keep the file as it is, moved out of the way without overwriting: pick a free name such as `/var/lib/togi/events.jsonl.torn-20261012`, check it with `sudo sh -c 'test ! -e NAME && test ! -L NAME && echo free'`, then `sudo mv -n /var/lib/togi/events.jsonl NAME` and confirm that `events.jsonl` is gone and `NAME` exists, as in the cutover steps (`mv -n` can exit 0 when it skips). Leave `archive/`, `trials/`, `lock`, `state.json` and everything else in place: a later session still carries from the archives, and the journal rebuilds `state.json`.
+3. Check with `sudo togi status`: it now reports no session yet, not a refusal. If it still refuses, the file was not a torn header after all: put it back and use the cutover steps above.
+4. Reboot and pick "NixOS - togi", or run `sudo togi run`. A new session starts. The kept file is evidence for a bug report and nothing reads it.
 
 ## 8. When the tuning boot does not reach togi
 
