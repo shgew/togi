@@ -17,7 +17,7 @@ run  start                 end                   build      trials  crashes  end
 
 Time
 activity / condition / regime / outcome      trial seconds  hours
-search / alone / R7 / inconclusive           60             0.017
+search / alone / R1 / inconclusive           60             0.017
 checking / together / R7 / pass              120            0.033
 checking / together / R7 / failure           30             0.008
 hunt / parked / R7 / failure                 60             0.017
@@ -29,7 +29,8 @@ R7      mprime-avx2-36k-248k-allcore  crash   unattributed  1
 
 Exposure
 regime  workload                      trials  hours  failures
-R7      mprime-avx2-36k-248k-allcore  4       0.075  2
+R1      mprime-sse-4k-21k             1       0.017  0
+R7      mprime-avx2-36k-248k-allcore  3       0.058  2
 
 Unattributed crashes by loaded CCD
 CCD(s)  count

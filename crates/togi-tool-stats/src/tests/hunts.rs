@@ -5,7 +5,7 @@ use togi_machine::{Condition, Regime};
 
 use super::support::{
     Log, cycle, decision, end, hunt_end, hunt_group, hunt_start, intent, nz, profile, rendered,
-    seq, trial, trial_start,
+    seq, set, trial, trial_start,
 };
 use crate::hunts::{StepKey, compute_hunts, parked_label, render_hunts};
 use crate::project::Projection;
@@ -79,6 +79,10 @@ fn an_open_hunt_runs_to_the_journals_last_event() {
     log.at(0).add(hunt_start(1, "t", 1));
     log.at(3600).add(hunt_start(2, "t", 1));
     log.at(7200).add(hunt_end(2, HuntOutcome::Cancelled));
+    log.at(8000).add(hunt_start(3, "t", 1));
+    let mut culprit = hunt_end(3, HuntOutcome::Culprit);
+    culprit.cores = set(&[1]);
+    log.at(8600).add(culprit);
     log.at(9000).add(cycle(1, CycleEvent::Start, false));
     let journal = log.journal();
     let p = Projection::new(&journal);
@@ -87,7 +91,7 @@ fn an_open_hunt_runs_to_the_journals_last_event() {
         .iter()
         .map(|h| h.end_time.duration_since(h.time).as_secs())
         .collect();
-    assert_eq!(hours, [9000, 3600]);
+    assert_eq!(hours, [9000, 3600, 600]);
     let text = rendered(|table| render_hunts(table, &compute_hunts(&p, None)));
     let rows: Vec<Vec<&str>> = text
         .lines()
@@ -100,6 +104,7 @@ fn an_open_hunt_runs_to_the_journals_last_event() {
         [
             ("2.500".to_owned(), "open".to_owned(), "-".to_owned()),
             ("1.000".to_owned(), "cancelled".to_owned(), "-".to_owned()),
+            ("0.167".to_owned(), "culprit".to_owned(), "01".to_owned()),
         ],
         "{text}"
     );

@@ -348,7 +348,7 @@ fn combination() -> Log {
         passes: Vec::new(),
         detail: String::new(),
     });
-    let mut searched = intent("0004", Regime::R7, &[], &[-21, 0, 0, 0]);
+    let mut searched = intent("0004", Regime::R1, &[], &[-21, 0, 0, 0]);
     searched.core = Some(super::support::core(0));
     searched.offset = Some(target(-21));
     searched.activity = Some(Activity::Search);
@@ -525,6 +525,27 @@ fn a_failure_that_names_neither_a_regime_nor_a_trial_shows_dashes() {
     assert_eq!(
         row.split_whitespace().collect::<Vec<_>>(),
         ["-", "-", "crash", "unattributed", "1"],
+        "{text}"
+    );
+}
+
+#[test]
+fn an_inconclusive_trial_without_a_reason_shows_a_dash() {
+    let mut log = Log::new(&[(0, 0)]);
+    trial(
+        &mut log,
+        intent("0001", Regime::R1, &[0], &[0]),
+        Outcome::Inconclusive,
+    );
+    let text = log.report();
+    let row = text
+        .lines()
+        .skip_while(|line| *line != "Inconclusive trials")
+        .nth(2)
+        .unwrap();
+    assert_eq!(
+        row.split_whitespace().collect::<Vec<_>>(),
+        ["0001", "together", "-"],
         "{text}"
     );
 }
