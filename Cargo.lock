@@ -1595,6 +1595,7 @@ dependencies = [
  "tempfile",
  "test-case",
  "thiserror",
+ "togi-journal",
  "togi-machine",
 ]
 
@@ -1670,6 +1671,7 @@ dependencies = [
 name = "togi-journal"
 version = "0.0.0"
 dependencies = [
+ "insta",
  "jiff",
  "proptest",
  "rustix",
@@ -1678,7 +1680,6 @@ dependencies = [
  "serde_path_to_error",
  "tempfile",
  "thiserror",
- "togi-config",
  "togi-machine",
 ]
 

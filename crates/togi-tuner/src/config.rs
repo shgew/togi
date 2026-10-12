@@ -5,7 +5,7 @@ use togi_config::Config;
 use togi_journal::ConfigLoaded;
 use togi_machine::{Backend, Regime};
 
-use crate::Secs;
+use crate::{FoldError, Secs};
 
 /// What the tuner reads from the operator configuration: the trial durations, the checking
 /// cycle, the pass count and the backend packages.
@@ -25,9 +25,11 @@ pub(crate) struct TunerConfig {
 }
 
 impl TunerConfig {
-    /// What a `config.loaded` event stands for.
-    pub(crate) fn from_loaded(loaded: &ConfigLoaded) -> Self {
-        Self::from_config(&loaded.config)
+    /// What a `config.loaded` event stands for, or why its recorded configuration is not one this build accepts.
+    pub(crate) fn from_loaded(loaded: &ConfigLoaded) -> Result<Self, FoldError> {
+        let config = Config::from_snapshot(&loaded.config)
+            .map_err(|error| FoldError::Config(error.to_string()))?;
+        Ok(Self::from_config(&config))
     }
 
     /// The configuration in force before any `config.loaded`: the defaults.

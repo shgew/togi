@@ -347,8 +347,13 @@ fn backend_paths_follow_the_latest_config_loaded() {
     let Payload::ConfigLoaded(mut config) = sample(EventKind::ConfigLoaded) else {
         unreachable!()
     };
-    config.config =
-        togi_config::Config::parse(r#"{"backends":{"ycruncher":"/nix/store/y"}}"#).unwrap();
+    config.config = ConfigSnapshot {
+        backends: ConfigBackends {
+            mprime: None,
+            ycruncher: Some("/nix/store/y".into()),
+        },
+        ..super::fixtures::bare_config()
+    };
     let state = replay(&[
         start(),
         at(2, "boot-a", 1, &[], sample(EventKind::ConfigLoaded)),

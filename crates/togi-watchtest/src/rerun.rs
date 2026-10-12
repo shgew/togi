@@ -88,7 +88,7 @@ impl Fixture {
         fixture.add(
             ConfigLoaded {
                 build: build(),
-                config,
+                config: config.snapshot(),
                 path: DEFAULT_PATH.to_owned(),
                 file: false,
                 kernel_cursor: None,

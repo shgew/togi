@@ -203,7 +203,7 @@ fn a_resume_runs_under_the_configuration_the_journal_recorded() {
     let loaded: Vec<Config> = live_events(state.path())
         .into_iter()
         .filter_map(|event| match event.payload {
-            Payload::ConfigLoaded(loaded) => Some(loaded.config),
+            Payload::ConfigLoaded(loaded) => Some(Config::from_snapshot(&loaded.config).unwrap()),
             _ => None,
         })
         .collect();
