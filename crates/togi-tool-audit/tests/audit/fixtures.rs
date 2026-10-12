@@ -279,3 +279,23 @@ pub(crate) fn run(cases: Vec<Case>) {
         );
     }
 }
+
+/// Writes `events` as the live journal of a state directory on disk, with the `state.json` a run publishes at its
+/// last event.
+pub(crate) fn write_state_dir(dir: &std::path::Path, events: &[Event]) {
+    std::fs::create_dir_all(dir).unwrap();
+    let journal: String = events
+        .iter()
+        .map(|event| event.encode().unwrap() + "\n")
+        .collect();
+    std::fs::write(dir.join("events.jsonl"), journal).unwrap();
+    let document = json!({
+        "facts": togi_journal::State::replay(events).unwrap(),
+        "tuner": togi_tuner::replay(events).unwrap().project(),
+    });
+    std::fs::write(
+        dir.join("state.json"),
+        serde_json::to_vec(&document).unwrap(),
+    )
+    .unwrap();
+}
