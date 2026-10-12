@@ -229,6 +229,26 @@ A divergence is `SimError::Diverged`, and a state that cannot be published is `S
 
 The tuner's simulation tests from `internal/tuner` (`forecast_sim_test.go` and `memo_test.go`) live in this crate's `tests/`, because they need whole simulated sessions. `togi-tuner` cannot take `togi-simrun` as a dev-dependency: that would build a second `togi-tuner` whose types do not unify with the first.
 
+### The Rust simulator command (`togi-tool-sim`)
+
+`crates/togi-tool-sim` builds the `togi-tool-sim` command, the native `tools/sim`. It runs from a source checkout like the Go one:
+
+```sh
+just sim-rs [--seed N] [--machine FILE] [--replay-facts] [--cycles N] [--state-dir DIR] [--samples] [--max-boots N] [--verify-every N] [--cold-boots]
+just sim-suite-rs [--jobs N] [--max-boots N]   # the whole suite in one shard, then its check
+cargo run --release -p togi-tool-sim -- suite --suite tools/bench/suite.json [--shards N] [--shard I] [--jobs N] --out DIR [--max-boots N]
+cargo run --release -p togi-tool-sim -- check --suite tools/bench/suite.json --shards N [--shard I] DIR
+```
+
+The flags and exit statuses of a session are Go's: 0 for a stop other than a dead end, 1 for an error or a dead end (`sim: dead end CONDITION: DETAIL`, then each cited event as an `  evidence: ` line), 2 for a usage error and 3 when `--max-boots` ends an unfinished session. A machine file and its replay facts are loaded before any state directory is created or locked, so invalid input leaves none. Without `--state-dir` a temporary `togi-sim-*` directory is created, kept and announced on the first line. A directory that holds a journal resumes under its recorded configuration, on the machine a capped invocation left in `machine.json` (whose seed wins over `--seed`), or else on a fresh machine after the recorded boots. The session runs on `Persistence::Files`. SIGINT, SIGTERM and SIGHUP cancel the session, which stops in order with `shutdown` reason `signal`. Everything, help included, goes to stderr: at once on a terminal, otherwise through a 64 KiB buffer, and a failed write or final flush of that log fails the command with status 1 (Go dropped the flush error). It differs from Go in:
+
+- the build it records: version and revision from `togi-version`, `togi_tuner::RULESET` and `togi_tuner::EVIDENCE_EPOCH`;
+- `--replay-facts` without `--machine` is refused as needing a machine file, before any state;
+- clap's diagnostics replace Go's flag-package text, and `--cycles`, `--max-boots` and `--verify-every` refuse a negative number as an invalid value;
+- a state directory whose recorded checking cycle is not full refuses `--cycles` with status 2 before the session starts, as `run --cycles` does ([Runtime](spec/runtime.md)): only a passed full cycle is clean, so the session could never stop. Go's `tools/sim` did not check it.
+
+`suite` runs every session of one shard of the suite (`togi_tool_sim::shard`, equal cost per session) in this process, `--jobs` sessions at a time (default the available parallelism), each in its own in-memory state directory with warm resumes, the capsule verified after every crash and `--max-boots` (default 1000) as the cap. Sessions share nothing, so the manifest is the same for any `--jobs`; the full suite peaked at 416 MiB resident with `--jobs 4`. A session is `clean` only when it stopped for its clean cycle, its last boot's capsule matched a fresh fold of the journal, `togi_tuner::replay` folds the whole journal and `togi-tool-audit` finds no violation in any journal of the directory or in its published `state.json`, which must exist, be at the journal's last event and be written exactly as this build writes the fresh fold. Otherwise it is `failed`, `capped`, `dead_end`, `stopped` (another stop reason), `verify_failed`, `replay_failed` or `audit_violations`, with its detail. Each session's line on stderr, in the order sessions finish, gives its id, its wall time and its outcome. The shard's results go to `DIR/shard-I.jsonl` in suite order, one JSON object per session, and the command exits 1 unless every session was clean. `check` reads a directory that must hold only `shard-I.jsonl` files and checks each shard's manifest against exactly the runs the suite's partition gives that shard, for every shard of the stated count or, with `--shard I`, for that shard alone: a shard with no manifest, a manifest that is not expected, a session missing, reported twice, reported by a shard that does not own it or not among those checked, and every session that was not clean are all named, and any of them exits 1. CI runs the suite this way as the [Rust suite gate](benchmarking.md#the-rust-suite-gate).
+
 ## Measured reference journals
 
 [`just stats`](reviewing.md) reports exposure and failures from real journals; it does not fit simulator defaults. These three archived sessions came from one Ryzen 9 9950X3D2 under one BIOS context. The session IDs identify the unmodified compressed fixtures in `internal/carry/testdata/`.

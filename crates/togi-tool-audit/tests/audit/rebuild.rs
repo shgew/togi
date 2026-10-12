@@ -1,0 +1,84 @@
+use serde_json::json;
+use togi_tool_audit::Check::{Replay, Termination};
+use togi_tool_audit::Completion::{Finished, InProgress};
+
+use crate::fixtures::*;
+
+fn rebuilt(seq: u64, fields: &[&str]) -> togi_journal::Event {
+    event(seq, "state.rebuilt", json!({"fields": fields}))
+}
+
+fn config_loaded(seq: u64, fixes: u32) -> togi_journal::Event {
+    event(
+        seq,
+        "config.loaded",
+        json!({"build": build(fixes), "config": {}, "path": "", "file": false}),
+    )
+}
+
+#[test]
+fn a_rebuild_disagreeing_with_a_current_snapshot_is_a_violation() {
+    run(vec![
+        case("no rebuild", vec![phase(2, 0, None)], InProgress, &[]),
+        case(
+            "a snapshot behind the journal is stale, not wrong",
+            vec![rebuilt(2, &["cores", "last_seq"])],
+            InProgress,
+            &[],
+        ),
+        case(
+            "the same build disagreeing with its own snapshot",
+            vec![rebuilt(2, &["cores"]), config_loaded(3, 0)],
+            InProgress,
+            &[(2, Replay)],
+        ),
+        case(
+            "a build change explains the disagreement",
+            vec![rebuilt(2, &["bios", "phases"]), config_loaded(3, 1)],
+            InProgress,
+            &[],
+        ),
+        case(
+            "a run that shuts down without recording its build",
+            vec![rebuilt(2, &["cores"]), stop(3)],
+            InProgress,
+            &[(2, Replay)],
+        ),
+        case(
+            "a run that dead-ends without recording its build",
+            vec![rebuilt(2, &["cores"]), dead_end(3, "d")],
+            InProgress,
+            &[(2, Replay)],
+        ),
+        case(
+            "a run archived without recording its build",
+            vec![rebuilt(2, &["cores"]), archived(3)],
+            InProgress,
+            &[(2, Replay)],
+        ),
+        case(
+            "a later boot without the build",
+            vec![rebuilt(2, &["cores"]), boot(phase(3, 0, None), "c")],
+            InProgress,
+            &[(2, Replay)],
+        ),
+        case(
+            "a finished journal ending on one",
+            vec![rebuilt(2, &["cores"])],
+            Finished,
+            &[(2, Replay), (2, Termination)],
+        ),
+        case(
+            "an open journal may be read before its build is recorded",
+            vec![rebuilt(2, &["cores"])],
+            InProgress,
+            &[],
+        ),
+        case(
+            "a stale snapshot then shutdown",
+            vec![rebuilt(2, &["cores", "last_seq"]), stop(3)],
+            InProgress,
+            &[],
+        ),
+    ]);
+}
