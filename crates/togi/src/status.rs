@@ -5,10 +5,11 @@ use std::fmt::Write as _;
 use std::sync::LazyLock;
 
 use clap::Args as ClapArgs;
+use togi_config::FULL_CYCLE;
 use togi_journal::{
     CorePhase, DefectDirection, Event, Payload, ResetTarget, Seq, State as JournalState,
 };
-use togi_machine::{CoreId, CoreSet};
+use togi_machine::{CoreId, CoreSet, Regime};
 use togi_render::escape_text;
 use togi_tuner::{GroupState, PhaseNo, Projection};
 use togi_watch::model::Snapshot;
@@ -187,6 +188,17 @@ fn cores_of(cores: impl IntoIterator<Item = CoreId>) -> String {
     }
 }
 
+/// What a cycle of `steps` lacks of the coverage a full cycle needs, one entry per regime.
+fn missing_coverage(steps: &[Regime]) -> Vec<String> {
+    FULL_CYCLE
+        .iter()
+        .filter_map(|&(regime, least)| {
+            let got = steps.iter().filter(|&&step| step == regime).count();
+            (got < least).then(|| format!("{regime}: {} more steps", least - got))
+        })
+        .collect()
+}
+
 fn group_word(state: GroupState) -> &'static str {
     match state {
         GroupState::Running => "running",
@@ -266,7 +278,9 @@ impl Status<'_> {
             .filter(|core| core.phase == Some(CorePhase::Search))
             .count();
         let plan = &self.projection.cycle_plan;
-        let activity = if let Some(hunt) = &self.projection.hunt_plan {
+        let activity = if searching > 0 {
+            format!("search: {searching} cores left")
+        } else if let Some(hunt) = &self.projection.hunt_plan {
             let group = hunt.groups.last().map_or(0, |group| group.number);
             format!("hunt {}, group {group}", hunt.number)
         } else if let Some(round) = &self.projection.deepening {
@@ -282,9 +296,14 @@ impl Status<'_> {
             )
         } else if let Some(number) = plan.number.filter(|_| !plan.steps.is_empty()) {
             let done = plan.steps.iter().filter(|step| step.done).count();
-            format!("checking cycle {number}, steps {done}/{}", plan.steps.len())
-        } else if searching > 0 {
-            format!("search: {searching} cores left")
+            let mut text = format!("checking cycle {number}, steps {done}/{}", plan.steps.len());
+            let steps: Vec<_> = plan.steps.iter().map(|step| step.regime).collect();
+            let missing = missing_coverage(&steps);
+            if !missing.is_empty() {
+                text.push_str(", not full: ");
+                text.push_str(&missing.join("; "));
+            }
+            text
         } else {
             "checking not started".to_owned()
         };
@@ -351,7 +370,7 @@ impl Status<'_> {
                     .map_or("-".to_owned(), |point| point.get().to_string()),
                 model
                     .and_then(|core| core.queued)
-                    .map_or("-".to_owned(), |seq| format!("#{seq}")),
+                    .map_or("-".to_owned(), |_| "reset".to_owned()),
             ]);
             let combos: Vec<String> = self
                 .snap
@@ -644,3 +663,6 @@ impl Status<'_> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

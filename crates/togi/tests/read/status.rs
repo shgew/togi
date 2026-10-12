@@ -185,3 +185,29 @@ fn carried_events_leave_the_core_table_unchanged() {
     assert_eq!(table(&before.stdout), table(&after.stdout));
     assert!(text(&after.stdout).contains("carried: [#"));
 }
+
+#[test]
+fn a_queued_reset_shows_in_the_queued_column_until_the_search_restarts() {
+    let dir = session(Scenario::Stopped);
+    let queued = |dir: &std::path::Path| {
+        let ran = togi(dir, &["status"]);
+        assert_eq!(ran.status.code(), Some(0), "{}", text(&ran.stderr));
+        text(&ran.stdout)
+            .lines()
+            .find(|line| line.starts_with("03 "))
+            .unwrap()
+            .to_owned()
+    };
+    assert!(queued(dir.path()).ends_with(" -"));
+    append_event(
+        dir.path(),
+        "command.reset",
+        "reset core 3",
+        &serde_json::json!({"target": {"core": 3}}),
+    );
+    assert!(
+        queued(dir.path()).ends_with(" reset"),
+        "{}",
+        queued(dir.path())
+    );
+}
