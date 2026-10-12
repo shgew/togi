@@ -134,10 +134,11 @@ in
       assert machine.succeed("stat -c '%U:%G:%a' /run/lock/togi.lock").strip() == "root:togi-hardware:660"
       machine.fail("runuser -u unrelated -- touch /run/lock/unrelated-lock")
       machine.fail("runuser -u unrelated -- flock --nonblock /run/lock/togi.lock true")
-      machine.fail(
-          f"runuser -u unrelated -- togi-trial-tests-rs {pin} {flags} > /run/unrelated-lock-output 2>&1"
+      unrelated_status, unrelated_output = machine.execute(
+          f"runuser -u unrelated -- togi-trial-tests-rs {pin} {flags} 2>&1"
       )
-      machine.succeed("grep -qi 'permission denied' /run/unrelated-lock-output")
+      assert unrelated_status != 0, unrelated_output
+      assert "permission denied" in unrelated_output.lower(), unrelated_output
       machine.succeed("chown unrelated /run/lock/togi.lock")
       foreign_identity = machine.succeed("stat -c '%d:%i:%u:%g:%a' /run/lock/togi.lock").strip()
       machine.succeed("systemd-tmpfiles --create --prefix=/run/lock/togi.lock")
