@@ -11,6 +11,7 @@ mod facts;
 pub mod history;
 pub mod model;
 pub mod screen;
+pub mod terminal;
 pub mod words;
 
 #[cfg(test)]
