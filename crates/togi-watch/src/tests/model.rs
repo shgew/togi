@@ -2,8 +2,8 @@ use std::time::Duration;
 
 use jiff::Timestamp;
 use togi_journal::{
-    CorePhase, DeadEndCondition, Outcome, Payload, ProfileRestored, Shutdown, ShutdownReason,
-    TrialId,
+    Activity, CorePhase, DeadEndCondition, Outcome, Payload, ProfileRestored, Shutdown,
+    ShutdownReason, TrialId,
 };
 use togi_machine::{Condition, ObservedOffset, Regime};
 use togi_tuner::{Action, PhaseNo};
@@ -788,4 +788,79 @@ fn a_running_rerun_names_the_step_checking_resumes_at() {
         checked > 0 && skipped > 0,
         "the session must hold a rerun whose next cycle trial is past the plan's current step: {checked} reruns, {skipped} past it"
     );
+}
+
+#[test]
+fn a_fold_after_a_snapshot_shows_the_new_event() {
+    let mut script = searching();
+    let mut model = script.model();
+    let before = {
+        let snap = model.snapshot();
+        assert!(snap.trial.is_none());
+        snap.log_total
+    };
+    let plan = script.plan();
+    let (_, trial) = script.intent(&plan);
+    model.fold(script.events.last().unwrap()).unwrap();
+    let snap = model.snapshot();
+    assert_eq!(snap.trial.map(|t| &t.id), Some(&trial), "the open trial");
+    assert_eq!(snap.log_total, before + 1);
+}
+
+#[test]
+fn the_session_does_what_its_last_intent_or_decision_did() {
+    let mut h = Hist::three();
+    assert_eq!(h.facts.session.as_ref().unwrap().activity, None);
+    h.push(
+        intent(
+            "c1",
+            Regime::R7,
+            Condition::Together,
+            &[-20, -30, -10],
+            &[0, 1, 2],
+        )
+        .into(),
+    );
+    assert_eq!(
+        h.facts.session.as_ref().unwrap().activity,
+        Some(Activity::Checking)
+    );
+    h.push(
+        togi_journal::TunerDecision {
+            core: core(0),
+            activity: Activity::Search,
+            decision: togi_journal::Decision::StepDeeper,
+            from_offset: off(-20),
+            to_offset: off(-25),
+            pass: None,
+            failure_point: None,
+            workloads: Vec::new(),
+            reason: String::new(),
+        }
+        .into(),
+    );
+    assert_eq!(
+        h.facts.session.as_ref().unwrap().activity,
+        Some(Activity::Search)
+    );
+}
+
+#[test]
+fn an_event_the_tuner_refuses_is_a_problem() {
+    let mut script = searching();
+    let plan = script.plan();
+    let (intent, trial) = script.intent(&plan);
+    script.start(&trial);
+    let mut model = script.model();
+    let unsigned = script.event(
+        end_payload(&trial, Outcome::Failure, None).into(),
+        &[intent],
+    );
+    let error = model.fold(&unsigned).unwrap_err();
+    assert!(matches!(error, FoldError::Tuner(_)), "{error:?}");
+    let snap = model.snapshot();
+    assert!(snap.session.is_none() && snap.history.is_empty());
+    assert_eq!(snap.log_total, 0);
+    let later = script.event(warning("later"), &[]);
+    assert_eq!(model.fold(&later), Err(error));
 }
