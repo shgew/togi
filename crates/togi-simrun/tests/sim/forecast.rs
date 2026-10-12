@@ -117,7 +117,6 @@ fn comparable(decision: DecisionPayload) -> DecisionPayload {
             p.into()
         }
         DecisionPayload::HuntSkipped(mut p) => {
-            p.failure = Seq::FIRST;
             p.reason.clear();
             p.into()
         }
