@@ -46,7 +46,8 @@ in
     nodes.machine = {
       imports = [ tuningBoot ];
       console.font = "Lat2-Terminus16";
-      virtualisation.cores = 4;
+      # The guest reports each vCPU as its own CCD and the tuner refuses a topology of more than three.
+      virtualisation.cores = 3;
       services.togi.hardwareTestGroup = "togi-hardware";
       users.groups.togi-hardware = { };
       users.users.togi-hardware = {
