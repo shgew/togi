@@ -11,6 +11,7 @@ mod crash;
 mod first_result;
 mod forecast;
 mod hunt;
+mod interrupt;
 mod memo;
 mod memory;
 mod persistence;
