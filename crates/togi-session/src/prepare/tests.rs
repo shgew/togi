@@ -1,4 +1,5 @@
 use std::num::NonZeroU32;
+use togi_journal::{Dimension, Refusal};
 
 use togi_journal::{Build, Journal, Marker, Payload, SessionId, StateDir};
 use togi_machine::BiosContext;
@@ -146,17 +147,101 @@ fn a_journal_of_another_ruleset_is_archived_unread_and_prepare_repeats_the_same_
 }
 
 #[test]
-fn a_journal_this_build_refuses_stays_for_the_run_to_refuse() {
+fn an_interrupted_bios_archive_is_finished_and_prepare_repeats_the_same_carry() {
     let bench = bench();
     let (id, context) = finished(&bench);
+    let changed = BiosContext {
+        bios_version: "other".into(),
+        ..context
+    };
+    let clean = self::bench();
+    finished(&clean);
+    let expected = prepared(&clean, &build(), Some(&changed)).carry.unwrap();
+
+    let boot = bench.sim.seams().host.boot_id().unwrap();
+    let live = simulated(&bench.mem)
+        .open_at(boot, bench.sim.now())
+        .unwrap();
+    let before = bench.mem.contents("/state/events.jsonl").unwrap();
+    bench
+        .mem
+        .inject(Fault::before(Op::Rename, 1).named("events.jsonl"));
+    let stamp = Stamp {
+        time: bench.sim.now(),
+        mono: None,
+    };
+    live.archive(stamp, ArchiveKind::Transition, &[])
+        .unwrap_err();
+    let interrupted = bench.mem.contents("/state/events.jsonl").unwrap();
+    assert!(interrupted.starts_with(&before));
+    assert!(interrupted.len() > before.len());
+    let dir = simulated(&bench.mem);
+    assert_eq!(dir.live_session().unwrap(), Some(id));
+    assert_eq!(dir.markers().unwrap(), [(Marker::CarryPending, id)]);
+    assert!(dir.archives().unwrap().is_empty());
+    drop(dir);
+
+    let first = prepared(&bench, &build(), Some(&changed));
+    assert!(first.journal.events().is_empty());
+    assert_eq!(archived(&first.journal), [id]);
+    assert_eq!(marked(&first.journal), [(Marker::CarryPending, id)]);
+    assert_eq!(
+        bench.mem.contents(format!("/state/archive/{id}.jsonl")),
+        Some(interrupted)
+    );
+    let carry = first.carry.clone().unwrap();
+    assert_eq!(carry.sources()[0].session, id);
+    assert_eq!(carry, expected);
+    drop(first.journal.close().unwrap());
+
+    let again = prepared(&bench, &build(), Some(&changed));
+    assert_eq!(archived(&again.journal), [id]);
+    assert_eq!(again.carry, Some(carry));
+}
+
+#[test]
+fn a_journal_this_build_refuses_is_refused_before_it_is_opened_and_left_unchanged() {
     let older = Build {
         ruleset: 0,
         ..build()
     };
-    let prepared = prepared(&bench, &older, Some(&context));
-    assert_eq!(session_of(&prepared.journal), id);
-    assert!(archived(&prepared.journal).is_empty());
-    assert!(prepared.carry.is_none());
+    let tails: [&[u8]; 3] = [
+        b"",
+        b"{\"seq\":99,\"kind\":\"journal.torn",
+        b"{\"seq\":99,\"kind\":\"from.the.future\",\"data\":{}}\n",
+    ];
+    for tail in tails {
+        let bench = bench();
+        let (_, context) = finished(&bench);
+        let mut live = bench.mem.contents("/state/events.jsonl").unwrap();
+        live.extend_from_slice(tail);
+        bench.mem.put("/state/events.jsonl", live.clone());
+        let boot = bench.sim.seams().host.boot_id().unwrap();
+        let error = prepare(
+            simulated(&bench.mem),
+            &older,
+            boot,
+            bench.sim.now(),
+            Some(&context),
+            bench.defects,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(
+                error,
+                PrepareError::Refused(Refusal {
+                    dimension: Dimension::Ruleset,
+                    current: 0,
+                    ..
+                })
+            ),
+            "{error:?}"
+        );
+        assert_eq!(bench.mem.contents("/state/events.jsonl"), Some(live));
+        let dir = simulated(&bench.mem);
+        assert!(dir.archives().unwrap().is_empty());
+        assert!(dir.markers().unwrap().is_empty());
+    }
 }
 
 #[test]
@@ -311,4 +396,61 @@ fn an_archive_that_cannot_be_read_still_fails_the_carry() {
         matches!(&error, PrepareError::Carry(CarryError::Open { session, .. }) if *session == id),
         "{error:?}"
     );
+}
+
+#[test]
+fn a_broken_archive_layout_or_live_header_refuses_the_preparation_and_leaves_the_live_journal_unchanged()
+ {
+    let next = Build {
+        ruleset: 2,
+        ..build()
+    };
+    for layout in [
+        "archive is a file",
+        "archive target is a directory",
+        "invalid session header",
+    ] {
+        let bench = bench();
+        let (id, context) = finished(&bench);
+        match layout {
+            "archive is a file" => bench.mem.put("/state/archive", ""),
+            "archive target is a directory" => {
+                bench.mem.put(format!("/state/archive/{id}.jsonl/keep"), "");
+            }
+            _ => bench.mem.put("/state/events.jsonl", "not JSON\n"),
+        }
+        let before = bench.mem.contents("/state/events.jsonl").unwrap();
+        let boot = bench.sim.seams().host.boot_id().unwrap();
+        let error = prepare(
+            simulated(&bench.mem),
+            &next,
+            boot,
+            bench.sim.now(),
+            Some(&context),
+            bench.defects,
+        )
+        .unwrap_err();
+        let expected = match layout {
+            "archive target is a directory" => {
+                matches!(&error, PrepareError::Dir(DirError::ArchiveExists { session }) if *session == id)
+            }
+            "invalid session header" => {
+                matches!(&error, PrepareError::Dir(DirError::NotAJournal { .. }))
+            }
+            _ => matches!(&error, PrepareError::Dir(_)),
+        };
+        assert!(expected, "{layout}: {error:?}");
+        assert_eq!(
+            bench.mem.contents("/state/events.jsonl"),
+            Some(before),
+            "{layout}"
+        );
+        assert!(
+            bench
+                .mem
+                .contents(format!("/state/archive/{id}.jsonl"))
+                .is_none(),
+            "{layout}"
+        );
+    }
 }

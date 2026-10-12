@@ -9,7 +9,7 @@ use togi_carry::{Archives, CarryError, PendingCarry, select, settled};
 use togi_defect::Entry;
 use togi_journal::{
     ArchiveError, ArchiveKind, Build, CloseError, DirError, Event, FileError, Journal, Marker,
-    OpenError, Operation, Payload, ReadError, SessionId, Stamp, StateDir, Verdict,
+    OpenError, Operation, Payload, ReadError, Refusal, SessionId, Stamp, StateDir, Verdict,
 };
 use togi_machine::{BiosContext, BootId};
 
@@ -32,13 +32,17 @@ pub enum PrepareError {
     Archive(#[from] ArchiveError),
     #[error("select the carry: {0}")]
     Carry(#[from] CarryError<FileError>),
+    #[error("the live journal is left for the build that wrote it: {0}")]
+    Refused(Refusal),
 }
 
 /// Opens the directory's journal for `boot`, first archiving what a run cannot resume.
 ///
 /// A live journal that ends at or before the reset boundary is archived unread and its carry marker dropped. A
 /// journal whose build only differs from this one's, or whose recorded BIOS context differs from `context`, is
-/// archived as a transition; one this build refuses stays for the run to refuse. The newest pending carry then
+/// archived as a transition. One this build refuses, a newer schema, ruleset or evidence epoch, is judged from its
+/// first line alone and returned as [`PrepareError::Refused`] before anything opens it: opening would record a
+/// torn tail in it and decode events only the build that wrote it may read. The newest pending carry then
 /// becomes the carry unless the boundary passed it or the live journal already committed it, in which case its
 /// marker is cleared.
 ///
@@ -66,8 +70,12 @@ pub fn prepare(
     let verdict = dir
         .live_build()?
         .map(|recorded| build.verdict(&recorded, Operation::Resume));
-    if verdict == Some(Verdict::Archive) {
-        dir.archive_unreadable(ArchiveKind::Transition)?;
+    match verdict {
+        Some(Verdict::Refuse(refusal)) => return Err(PrepareError::Refused(refusal)),
+        Some(Verdict::Archive) => {
+            dir.archive_unreadable(ArchiveKind::Transition)?;
+        }
+        Some(Verdict::Use) | None => {}
     }
     let journal = dir.open_at(boot.clone(), now)?;
     let stamp = Stamp {
@@ -75,16 +83,10 @@ pub fn prepare(
         mono: None,
     };
     let journal = match verdict {
-        Some(Verdict::Refuse(_)) => {
-            return Ok(Prepared {
-                journal,
-                carry: None,
-            });
-        }
         Some(Verdict::Use) if context_changed(&journal, context) => journal
             .archive(stamp, ArchiveKind::Transition, &[])?
             .open_at(boot.clone(), now)?,
-        Some(Verdict::Use | Verdict::Archive) | None => journal,
+        _ => journal,
     };
     let Some(pending) = journal.dir().pending_carry()? else {
         return Ok(Prepared {
