@@ -373,6 +373,11 @@ fn a_missing_or_unrunnable_simulator_is_an_error() {
             0o755,
         ),
         (
+            "script-with-a-blank-interpreter",
+            format!("#!\necho ran > {}\n", ran.display()),
+            0o755,
+        ),
+        (
             "script-without-the-execute-bit",
             format!("#!/bin/sh\necho ran > {}\n", ran.display()),
             0o644,
