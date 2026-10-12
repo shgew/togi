@@ -4,12 +4,15 @@ use std::time::Duration;
 
 use togi_config::Config;
 use togi_journal::fs::{Fault as FsFault, Op};
-use togi_journal::{DeadEndCondition, Outcome as Verdict, Payload, ShutdownReason, TrialEnd};
+use togi_journal::{
+    DeadEndCondition, Outcome as Verdict, Payload, ShutdownReason, TrialEnd, TrialInstance,
+    TrialStart,
+};
 use togi_machine::{
-    Backend, BankType, BootId, CancellationToken, Clock, CpuId, Error, Kernel, KernelCursor,
-    KernelRead, Machine, Mce, Partial, PmTable, PstoreRecord, Regime, Reporter, ResetReason,
-    Running, Signal, Started, Stopped, TrialConditions, TrialFailure, TrialResult, TrialSpec,
-    Trials,
+    Backend, BankType, BootId, CancellationToken, Clock, CpuId, Error, Instance, Kernel,
+    KernelCursor, KernelRead, LoadSchedule, Machine, Mce, Partial, PmTable, PstoreRecord, Regime,
+    Reporter, ResetReason, Running, Signal, Started, Stopped, TrialConditions, TrialFailure,
+    TrialResult, TrialSpec, Trials,
 };
 use togi_sim::faults::{HookPhase, SmuOp, SmuOperation};
 
@@ -29,7 +32,15 @@ struct KernelLog {
     mces: Vec<Mce>,
     reads: usize,
     loss: Option<(usize, fn() -> Error)>,
+    answers: Vec<(usize, Answer)>,
     clock: Box<dyn Clock>,
+}
+
+/// A read answered with exactly this, whatever the log holds: a fresh machine check labelled `mce`, if any, and
+/// `error`.
+struct Answer {
+    mce: Option<&'static str>,
+    error: fn() -> Error,
 }
 
 type Log = Rc<RefCell<KernelLog>>;
@@ -44,22 +55,33 @@ fn add_mce_before(log: &Log, corrected: bool, label: &str) {
 
 fn stamp_mce(log: &Log, corrected: bool, label: &str, ago: Duration) {
     let mut log = log.borrow_mut();
-    let mce = Mce {
+    let mce = mce_now(&*log.clock, corrected, label, ago);
+    log.mces.push(mce);
+}
+
+fn mce_now(clock: &dyn Clock, corrected: bool, label: &str, ago: Duration) -> Mce {
+    Mce {
         cpu: CpuId(0),
         core: Some(core(0)),
         bank: 0,
         bank_type: BankType::LoadStore,
         corrected,
-        time: log.clock.now(),
-        monotonic: log.clock.monotonic().saturating_sub(ago),
+        time: clock.now(),
+        monotonic: clock.monotonic().saturating_sub(ago),
         lines: vec![label.to_owned()],
-    };
-    log.mces.push(mce);
+    }
 }
 
 fn lose_read(log: &Log, nth: usize, error: fn() -> Error) {
     let mut log = log.borrow_mut();
     log.loss = Some((log.reads + nth, error));
+}
+
+/// Answers the `nth` read from now with `answer`.
+fn answer_read(log: &Log, nth: usize, answer: Answer) {
+    let mut log = log.borrow_mut();
+    let at = log.reads + nth;
+    log.answers.push((at, answer));
 }
 
 struct LogKernel {
@@ -86,6 +108,19 @@ impl Kernel for LogKernel {
     ) -> Result<KernelRead, Partial<Vec<Mce>>> {
         let mut log = self.log.borrow_mut();
         log.reads += 1;
+        let reads = log.reads;
+        if let Some(at) = log.answers.iter().position(|(nth, _)| *nth == reads) {
+            let (_, answer) = log.answers.swap_remove(at);
+            let value = answer
+                .mce
+                .map(|label| mce_now(&*log.clock, true, label, Duration::ZERO))
+                .into_iter()
+                .collect();
+            return Err(Partial {
+                value,
+                error: (answer.error)(),
+            });
+        }
         let start = match after {
             None => Some(0),
             Some(cursor) => cursor
@@ -165,6 +200,12 @@ struct Rigging {
     cancel: Option<CancellationToken>,
     on_start: Option<Rc<dyn Fn()>>,
     samples: Option<Vec<togi_machine::TrialConditions>>,
+    instances: Option<Vec<Instance>>,
+    schedule: Option<LoadSchedule>,
+    /// Makes the start fail with this error and hand back no proof that nothing runs.
+    start_error: Option<fn() -> Error>,
+    /// Runs once the workload's wait has returned, before it is stopped.
+    after_wait: Option<Rc<dyn Fn()>>,
 }
 
 type Rigs = Rc<RefCell<Rigging>>;
@@ -193,6 +234,12 @@ impl Trials for Rigged {
         if let Some(hook) = self.rigs.borrow().on_start.clone() {
             hook();
         }
+        if let Some(error) = self.rigs.borrow().start_error {
+            return Err(Partial {
+                value: None,
+                error: error(),
+            });
+        }
         let inner = self.inner.start(cancel, spec, ready)?;
         Ok(Box::new(RiggedRunning {
             inner,
@@ -217,7 +264,14 @@ impl Trials for Rigged {
 
 impl Running for RiggedRunning {
     fn started(&self) -> Started {
-        self.inner.started()
+        let mut started = self.inner.started();
+        if let Some(instances) = self.rigs.borrow().instances.clone() {
+            started.instances = instances;
+        }
+        if let Some(schedule) = self.rigs.borrow().schedule {
+            started.schedule = Some(schedule);
+        }
+        started
     }
 
     fn wait(
@@ -226,6 +280,9 @@ impl Running for RiggedRunning {
         report: &mut dyn Reporter,
     ) -> Result<TrialResult, Partial<TrialResult>> {
         let simulated = self.inner.wait(cancel, report);
+        if let Some(hook) = self.rigs.borrow().after_wait.clone() {
+            hook();
+        }
         let rigs = self.rigs.borrow();
         if let Some(token) = &rigs.cancel {
             token.cancel();
@@ -263,7 +320,15 @@ struct Rigged3 {
     bench: Bench,
 }
 
-fn rigged(bench: Bench) -> Rigged3 {
+fn rig_input(
+    bench: &Bench,
+) -> (
+    crate::session::RunInput,
+    Log,
+    Rigs,
+    Rc<RefCell<Vec<Duration>>>,
+    Pending,
+) {
     let mut input = bench.input();
     let machine = std::mem::replace(&mut input.machine, bench.sim.seams());
     let Machine {
@@ -277,6 +342,7 @@ fn rigged(bench: Bench) -> Rigged3 {
         mces: Vec::new(),
         reads: 0,
         loss: None,
+        answers: Vec::new(),
         clock: bench.sim.seams().clock,
     }));
     let rigs = Rigs::default();
@@ -299,6 +365,11 @@ fn rigged(bench: Bench) -> Rigged3 {
             inner: kernel,
         }),
     };
+    (input, log, rigs, waits, fail_sleep)
+}
+
+fn rigged(bench: Bench) -> Rigged3 {
+    let (input, log, rigs, waits, fail_sleep) = rig_input(&bench);
     let mut session = match Session::open(input) {
         Ok(session) => session,
         Err(ended) => panic!("open: {:?}", ended.errors),
@@ -428,6 +499,60 @@ fn a_trial_start_cites_its_intent_and_the_readbacks_that_proved_the_profile() {
             .any(|event| event.seq == *seq && matches!(event.payload, Payload::SmuReadback(_)))
     }));
     assert!(start.cause.len() > 1);
+}
+
+fn trial_start(session: &Session) -> TrialStart {
+    session
+        .appender()
+        .journal()
+        .events()
+        .iter()
+        .find_map(|event| match &event.payload {
+            Payload::TrialStart(start) => Some(start.clone()),
+            _ => None,
+        })
+        .unwrap()
+}
+
+#[test]
+fn a_joint_trial_start_records_every_instance_and_a_single_one_is_left_out() {
+    let two = vec![
+        Instance {
+            core: core(0),
+            cpus: vec![CpuId(0)],
+            pid: 4101,
+            scope: "togi-trial-0001-a.scope".into(),
+        },
+        Instance {
+            core: core(1),
+            cpus: vec![CpuId(2), CpuId(3)],
+            pid: 4102,
+            scope: "togi-trial-0001-b.scope".into(),
+        },
+    ];
+    let mut rig = rigged(Bench::new(2));
+    rig.rigs.borrow_mut().instances = Some(two.clone());
+    trial(&mut rig).unwrap();
+    let want: Vec<TrialInstance> = two
+        .into_iter()
+        .map(|instance| TrialInstance {
+            core: instance.core,
+            cpus: instance.cpus,
+            pid: instance.pid,
+            scope: instance.scope,
+        })
+        .collect();
+    assert_eq!(trial_start(&rig.session).instances, want);
+
+    let mut rig = rigged(Bench::new(2));
+    rig.rigs.borrow_mut().instances = Some(vec![Instance {
+        core: core(0),
+        cpus: vec![CpuId(0)],
+        pid: 4101,
+        scope: "togi-trial-0001-a.scope".into(),
+    }]);
+    trial(&mut rig).unwrap();
+    assert!(trial_start(&rig.session).instances.is_empty());
 }
 
 #[test]
@@ -748,6 +873,95 @@ fn a_partial_kernel_read_with_a_machine_check_outranks_the_read_error() {
     assert_eq!(end.outcome, Verdict::Failure);
     assert_eq!(end.signal, Some(Signal::CorrectedMce));
     assert!(end.kernel_error.is_some());
+}
+
+#[test]
+fn partial_machine_check_evidence_outranks_a_failed_or_successful_reanchor() {
+    let fresh_failures: [Option<fn() -> Error>; 2] =
+        [None, Some(|| Error::Other("reanchor failed".into()))];
+    for fresh in fresh_failures {
+        let mut rig = rigged(Bench::new(2));
+        answer_read(
+            &rig.log,
+            2,
+            Answer {
+                mce: Some("partial evidence"),
+                error: || Error::CursorMissing,
+            },
+        );
+        if let Some(error) = fresh {
+            answer_read(&rig.log, 3, Answer { mce: None, error });
+        }
+        let before = rig.log.borrow().reads;
+        trial(&mut rig).unwrap();
+        assert_eq!(rig.log.borrow().reads - before, 3, "{fresh:?}");
+        let end = ends(&rig.session).pop().unwrap();
+        assert_eq!(end.outcome, Verdict::Failure, "{fresh:?}");
+        assert_eq!(end.signal, Some(Signal::CorrectedMce), "{fresh:?}");
+        assert!(cites_trial_mce(&rig.session, &end, true), "{fresh:?}");
+        let kernel_error = end.kernel_error.unwrap();
+        assert!(
+            kernel_error.contains("kernel log cursor cannot be resumed"),
+            "{kernel_error}"
+        );
+        assert_eq!(
+            kernel_error.contains("reanchor failed"),
+            fresh.is_some(),
+            "{kernel_error}"
+        );
+    }
+}
+
+#[test]
+fn a_crash_on_the_fresh_read_of_a_reanchor_never_invents_a_pass() {
+    let mut rig = rigged(Bench::new(2));
+    answer_read(
+        &rig.log,
+        2,
+        Answer {
+            mce: None,
+            error: || Error::CursorMissing,
+        },
+    );
+    answer_read(
+        &rig.log,
+        3,
+        Answer {
+            mce: None,
+            error: || Error::Crashed,
+        },
+    );
+    let error = trial(&mut rig).unwrap_err();
+    assert!(error.is_crash(), "{error:?}");
+    assert_eq!(kind_count(&rig.session, "trial.start"), 1);
+    assert!(ends(&rig.session).is_empty());
+
+    let mut rig = rigged(Bench::new(2));
+    rig.rigs.borrow_mut().result = Some(failing_with(Signal::ComputationError));
+    answer_read(
+        &rig.log,
+        2,
+        Answer {
+            mce: None,
+            error: || Error::CursorMissing,
+        },
+    );
+    answer_read(
+        &rig.log,
+        3,
+        Answer {
+            mce: None,
+            error: || Error::Crashed,
+        },
+    );
+    let error = trial(&mut rig).unwrap_err();
+    assert!(error.is_crash(), "{error:?}");
+    let ends = ends(&rig.session);
+    assert_eq!(ends.len(), 1);
+    assert_eq!(ends[0].outcome, Verdict::Failure);
+    assert_eq!(ends[0].signal, Some(Signal::ComputationError));
+    assert!(ends[0].interrupted);
+    assert!(ends[0].reason.as_deref().unwrap().contains("crashed"));
 }
 
 #[test]
@@ -1152,5 +1366,263 @@ fn a_trial_loads_the_first_cpu_of_each_joint_core_and_as_many_of_a_lone_core_as_
     assert!(matches!(
         rig.session.assign(&missing, workload),
         Err(SessionError::NoSuchTrialCore { core: found }) if found == core(9)
+    ));
+}
+
+/// What a whole run did, and how often it touched the SMU once its first trial's workload had started.
+struct Whole {
+    ended: crate::Ended,
+    smu_after_start: usize,
+}
+
+#[derive(Clone, Copy, Default)]
+struct Faults {
+    /// The journal write, counted from the workload's start, that fails.
+    write_at_start: Option<u64>,
+    /// The journal write, counted from the return of the workload's wait, that fails.
+    write_after_wait: Option<u64>,
+}
+
+fn whole(faults: Faults, rigging: impl FnOnce(&mut Rigging)) -> Whole {
+    let bench = Bench::new(2);
+    let (input, _log, rigs, _waits, _fail_sleep) = rig_input(&bench);
+    let armed = Rc::new(Cell::new(false));
+    let touched = Rc::new(Cell::new(0_usize));
+    {
+        let (armed, touched) = (armed.clone(), touched.clone());
+        bench.sim.interrupt_smu(move |_: &SmuOperation| {
+            if armed.get() {
+                touched.set(touched.get() + 1);
+            }
+            Ok(())
+        });
+    }
+    {
+        let mut rigs = rigs.borrow_mut();
+        let (mem, flag) = (bench.mem.clone(), armed.clone());
+        rigs.on_start = Some(Rc::new(move || {
+            flag.set(true);
+            if let Some(nth) = faults.write_at_start {
+                mem.inject(FsFault::before(Op::Write, nth));
+            }
+        }));
+        if let Some(nth) = faults.write_after_wait {
+            let mem = bench.mem.clone();
+            rigs.after_wait = Some(Rc::new(move || mem.inject(FsFault::before(Op::Write, nth))));
+        }
+        rigging(&mut rigs);
+    }
+    let ended = crate::run(input);
+    Whole {
+        ended,
+        smu_after_start: touched.get(),
+    }
+}
+
+impl Whole {
+    fn kinds(&self) -> Vec<&'static str> {
+        self.ended
+            .journal
+            .events()
+            .iter()
+            .map(|event| event.kind().as_str())
+            .collect()
+    }
+
+    fn withheld(&self) -> Option<crate::Withheld> {
+        match self
+            .ended
+            .emergency
+            .as_ref()
+            .map(|emergency| &emergency.response)
+        {
+            Some(crate::Response::Withheld(withheld)) => Some(*withheld),
+            _ => None,
+        }
+    }
+
+    /// The run ended without recording anything after the failure it started from.
+    fn leaves_the_machine_and_the_journal_alone(&self) {
+        assert_eq!(self.smu_after_start, 0, "{:?}", self.kinds());
+        let kinds = self.kinds();
+        for forbidden in ["shutdown", "profile.restored", "smu.intent", "smu.write"] {
+            let after = kinds.iter().skip_while(|kind| **kind != "trial.intent");
+            let after = after.skip_while(|kind| **kind != "trial.start" && **kind != "trial.end");
+            assert!(
+                !after.clone().any(|kind| *kind == forbidden),
+                "{forbidden} after the trial began: {kinds:?}"
+            );
+        }
+    }
+}
+
+fn contained() -> Error {
+    Error::Containment("workload still running".into())
+}
+
+#[test]
+fn a_failed_start_record_and_a_failed_join_leave_the_machine_alone() {
+    for (name, stop, signal, want) in [
+        (
+            "start, containment",
+            contained as fn() -> Error,
+            false,
+            crate::Withheld::TeardownUnconfirmed,
+        ),
+        (
+            "start, crash",
+            || Error::Crashed,
+            false,
+            crate::Withheld::Crashed,
+        ),
+        (
+            "signal, containment",
+            contained,
+            true,
+            crate::Withheld::TeardownUnconfirmed,
+        ),
+        (
+            "signal, crash",
+            || Error::Crashed,
+            true,
+            crate::Withheld::Crashed,
+        ),
+    ] {
+        let run = whole(
+            Faults {
+                write_at_start: Some(if signal { 2 } else { 1 }),
+                ..Faults::default()
+            },
+            |rigging| {
+                rigging.stop_error = Some(stop);
+                if signal {
+                    rigging.schedule = Some(LoadSchedule::Random { seed: 1 });
+                }
+            },
+        );
+        let kinds = run.kinds();
+        assert!(!run.ended.errors.is_empty(), "{name}");
+        assert_eq!(run.ended.stop, None, "{name}");
+        assert_eq!(run.withheld(), Some(want), "{name}: {kinds:?}");
+        assert!(
+            kinds.contains(&"trial.start") == signal,
+            "{name}: {kinds:?}"
+        );
+        assert!(!kinds.contains(&"trial.signal"), "{name}: {kinds:?}");
+        assert!(!kinds.contains(&"trial.end"), "{name}: {kinds:?}");
+        run.leaves_the_machine_and_the_journal_alone();
+    }
+}
+
+#[test]
+fn a_failed_start_record_of_a_joined_workload_zeroes_the_machine_as_the_emergency() {
+    let run = whole(
+        Faults {
+            write_at_start: Some(1),
+            ..Faults::default()
+        },
+        |_| {},
+    );
+    assert!(
+        matches!(
+            run.ended
+                .emergency
+                .as_ref()
+                .map(|emergency| &emergency.response),
+            Some(crate::Response::Zeroed(_))
+        ),
+        "{:?}",
+        run.kinds()
+    );
+    assert!(run.smu_after_start > 0);
+}
+
+fn containment_dead_end(run: &Whole) -> TrialEnd {
+    assert!(run.ended.errors.is_empty(), "{:?}", run.ended.errors);
+    assert!(
+        matches!(&run.ended.stop, Some(Stop::DeadEnd { dead_end, .. })
+            if dead_end.condition == DeadEndCondition::Containment),
+        "{:?}",
+        run.ended.stop
+    );
+    assert!(run.ended.emergency.is_none());
+    run.leaves_the_machine_and_the_journal_alone();
+    let end = run
+        .ended
+        .journal
+        .events()
+        .iter()
+        .find_map(|event| match &event.payload {
+            Payload::TrialEnd(end) => Some(end.clone()),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(end.outcome, Verdict::Inconclusive);
+    assert!(end.containment_error.is_some());
+    end
+}
+
+#[test]
+fn a_start_that_returns_no_proof_dead_ends_on_containment_and_the_machine_is_left_alone() {
+    let run = whole(Faults::default(), |rigging| {
+        rigging.start_error = Some(contained);
+    });
+    containment_dead_end(&run);
+
+    let run = whole(
+        Faults {
+            write_at_start: Some(1),
+            ..Faults::default()
+        },
+        |rigging| rigging.start_error = Some(contained),
+    );
+    assert!(!run.ended.errors.is_empty());
+    assert_eq!(run.withheld(), Some(crate::Withheld::TeardownUnconfirmed));
+    assert!(!run.kinds().contains(&"trial.end"), "{:?}", run.kinds());
+    run.leaves_the_machine_and_the_journal_alone();
+}
+
+#[test]
+fn a_containment_error_from_the_wait_withholds_the_proof_a_successful_stop_gives() {
+    let run = whole(Faults::default(), |rigging| {
+        rigging.wait_error = Some(contained);
+    });
+    containment_dead_end(&run);
+
+    let run = whole(
+        Faults {
+            write_after_wait: Some(1),
+            ..Faults::default()
+        },
+        |rigging| rigging.wait_error = Some(contained),
+    );
+    assert!(!run.ended.errors.is_empty());
+    assert_eq!(run.withheld(), Some(crate::Withheld::TeardownUnconfirmed));
+    assert!(!run.kinds().contains(&"trial.end"), "{:?}", run.kinds());
+    run.leaves_the_machine_and_the_journal_alone();
+
+    let mut rig = rigged(Bench::new(2));
+    rig.rigs.borrow_mut().wait_error = Some(contained);
+    trial(&mut rig).unwrap();
+    assert!(rig.session.stopped.is_none());
+    assert_eq!(rig.session.fault, Some(Fault::Containment));
+    assert!(matches!(
+        trial(&mut rig).unwrap_err(),
+        SessionError::Unproven
+    ));
+}
+
+#[test]
+fn a_start_that_returns_no_proof_latches_the_containment_and_holds_no_proof() {
+    let mut rig = rigged(Bench::new(2));
+    rig.rigs.borrow_mut().start_error = Some(contained);
+    trial(&mut rig).unwrap();
+    assert!(rig.session.stopped.is_none());
+    assert_eq!(rig.session.fault, Some(Fault::Containment));
+    let end = ends(&rig.session).pop().unwrap();
+    assert!(end.containment_error.is_some());
+    assert!(matches!(
+        trial(&mut rig).unwrap_err(),
+        SessionError::Unproven
     ));
 }
