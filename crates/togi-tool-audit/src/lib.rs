@@ -24,10 +24,10 @@ use togi_journal::{
     DirError, Event, FileError, LookupError, Recording, SessionId, StateDir, StateError,
 };
 
-pub use interrupt::{INTERRUPTED, Interrupt};
+pub use interrupt::{Holding, INTERRUPTED, Interrupt};
 pub use report::{
     Finding, Kind, Record, RecordError, Report, Split, Status, audit as audit_directories,
-    audit_directory, check_records, read_records, run_directory, timing,
+    audit_directory, audit_holding, check_records, read_records, run_directory, timing,
 };
 pub use sweep::{Evidence, RunError, Sweep, SweepError, sweep_suite};
 pub use violation::{Check, Completion, JournalAudit, Source, Violation};

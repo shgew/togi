@@ -291,6 +291,16 @@ pub struct Report {
 /// Audits `dirs`, attributing each directory a record keeps to that run, after the records' own timing checks.
 /// Every spelling of one directory, relative or absolute, with `.` or `..` components, shares a record.
 pub fn audit(dirs: &[PathBuf], records: &[Record], root: &Path) -> std::io::Result<Report> {
+    audit_holding(dirs, records, root, || ())
+}
+
+/// [`audit`], with `hold()` called before each directory is audited and its result kept until that directory is done.
+pub fn audit_holding<G>(
+    dirs: &[PathBuf],
+    records: &[Record],
+    root: &Path,
+    hold: impl Fn() -> G,
+) -> std::io::Result<Report> {
     let mut by_dir = BTreeMap::new();
     for record in records {
         by_dir.insert(lexical(&run_directory(root, record))?, record);
@@ -302,7 +312,9 @@ pub fn audit(dirs: &[PathBuf], records: &[Record], root: &Path) -> std::io::Resu
     };
     for dir in dirs {
         let record = by_dir.get(&lexical(dir)?);
+        let guard = hold();
         let (mut found, journals) = audit_directory(dir, record.is_some());
+        drop(guard);
         report.journals += journals;
         for finding in &mut found {
             if let Some(record) = record {

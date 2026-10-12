@@ -5,7 +5,8 @@ use std::process::ExitCode;
 
 use clap::Parser;
 use togi_tool_audit::{
-    Evidence, Finding, INTERRUPTED, Interrupt, Sweep, audit_directories, read_records,
+    Evidence, Finding, INTERRUPTED, Interrupt, Sweep, audit_directories, audit_holding,
+    read_records,
 };
 
 const USAGE: u8 = 2;
@@ -78,6 +79,7 @@ fn interrupted() -> ExitCode {
 
 fn run(cli: Cli) -> ExitCode {
     let mut scratch = None;
+    let mut watching = None;
     let (records, root) = match (&cli.records, &cli.root) {
         (Some(records), Some(root)) => (records.clone(), root.clone()),
         _ if cli.dirs.is_empty() => {
@@ -110,6 +112,7 @@ fn run(cli: Cli) -> ExitCode {
                         return interrupted();
                     }
                     scratch = held;
+                    watching = Some(interrupt);
                     (records, root)
                 }
                 Err(_) if interrupt.signalled() => return interrupted(),
@@ -118,8 +121,10 @@ fn run(cli: Cli) -> ExitCode {
         }
         _ => return audit_only(&cli.dirs),
     };
-    let code = audit_records(&records, &root, cli.dirs);
+    let code = audit_records(&records, &root, cli.dirs, watching.as_deref());
+    let held = watching.as_deref().map(Interrupt::hold);
     drop(scratch);
+    drop(held);
     code
 }
 
@@ -127,7 +132,12 @@ fn audit_only(dirs: &[PathBuf]) -> ExitCode {
     report(audit_directories(dirs, &[], Path::new("")))
 }
 
-fn audit_records(records: &Path, root: &Path, mut dirs: Vec<PathBuf>) -> ExitCode {
+fn audit_records(
+    records: &Path,
+    root: &Path,
+    mut dirs: Vec<PathBuf>,
+    interrupt: Option<&Interrupt>,
+) -> ExitCode {
     let records = match read_records(records) {
         Ok(records) => records,
         Err(error) => return fail(&error),
@@ -138,7 +148,9 @@ fn audit_records(records: &Path, root: &Path, mut dirs: Vec<PathBuf>) -> ExitCod
             .map(|record| togi_tool_audit::run_directory(root, record))
             .collect();
     }
-    report(audit_directories(&dirs, &records, root))
+    report(audit_holding(&dirs, &records, root, || {
+        interrupt.map(Interrupt::hold)
+    }))
 }
 
 fn report(audited: io::Result<togi_tool_audit::Report>) -> ExitCode {

@@ -214,7 +214,11 @@ fn a_failed_bench_names_the_evidence_and_audits_nothing() {
     assert_eq!(output.status.code(), Some(1));
     assert!(text(&output.stdout).is_empty());
     let stderr = text(&output.stderr);
-    assert!(stderr.contains("bench sweep (evidence"), "{stderr}");
+    let kept = format!(
+        "bench sweep (evidence {}/sweep-",
+        fake.path("evidence").display()
+    );
+    assert!(stderr.contains(&kept), "{stderr}");
     assert!(stderr.contains("exit status: 1"), "{stderr}");
 }
 
@@ -389,7 +393,7 @@ fn exit_of(child: &mut Child) -> Output {
 }
 
 #[test]
-fn a_signal_stops_the_bench_and_removes_the_scratch_without_blocking_its_signals() {
+fn real_process_a_signal_stops_the_bench_and_removes_the_scratch_without_blocking_its_signals() {
     for (signal, keep) in [
         (Signal::TERM, false),
         (Signal::INT, false),
@@ -462,7 +466,7 @@ fn a_signal_stops_the_bench_and_removes_the_scratch_without_blocking_its_signals
 }
 
 #[test]
-fn a_signal_while_the_audit_reads_the_evidence_removes_the_scratch_and_exits() {
+fn real_process_a_signal_while_the_audit_reads_the_evidence_removes_the_scratch_and_exits() {
     use std::os::unix::fs::FileTypeExt as _;
 
     for (signal, keep) in [
@@ -534,4 +538,140 @@ fn a_signal_while_the_audit_reads_the_evidence_removes_the_scratch_and_exits() {
         );
         assert_eq!(evidence.exists(), keep, "{signal:?} keep={keep}");
     }
+}
+
+const ARGS: &str = "while [ $# -gt 0 ]; do case \"$1\" in --keep) keep=\"$2\";; --out) out=\"$2\";; esac; shift; done\n";
+
+fn scripted_bench(fake: &Fake, body: &str) -> PathBuf {
+    let bench = fake.path("bench");
+    fs::write(&bench, format!("#!/bin/sh\n{ARGS}{body}")).unwrap();
+    fs::set_permissions(&bench, fs::Permissions::from_mode(0o755)).unwrap();
+    fs::write(
+        fake.path("suite.json"),
+        r#"{"scenarios":[{"name":"s","machine":"m.json"}]}"#,
+    )
+    .unwrap();
+    bench
+}
+
+fn sweep_in(fake: &Fake, bench: &Path, keep: bool) -> Command {
+    let mut audit = command();
+    audit
+        .env("TMPDIR", fake.path("tmp"))
+        .arg("--bench")
+        .arg(bench)
+        .arg("--suite")
+        .arg(fake.path("suite.json"))
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped());
+    if keep {
+        audit.arg("--keep").arg(fake.path("evidence"));
+    }
+    fs::create_dir_all(fake.path("tmp")).unwrap();
+    audit
+}
+
+fn signal(child: &Child, signal: Signal) {
+    kill_process(
+        Pid::from_raw(i32::try_from(child.id()).unwrap()).unwrap(),
+        signal,
+    )
+    .unwrap();
+}
+
+#[test]
+fn real_process_a_signal_before_the_bench_starts_stops_it_as_soon_as_it_does() {
+    let fake = Fake::new();
+    let pids = fake.path("pids.txt");
+    let bench = scripted_bench(
+        &fake,
+        &format!("echo $$ > '{}'\nexec sleep 60\n", pids.display()),
+    );
+    fs::remove_file(fake.path("suite.json")).unwrap();
+    rustix::fs::mknodat(
+        rustix::fs::CWD,
+        fake.path("suite.json"),
+        rustix::fs::FileType::Fifo,
+        rustix::fs::Mode::from_raw_mode(0o600),
+        0,
+    )
+    .unwrap();
+    let mut child = sweep_in(&fake, &bench, false).spawn().unwrap();
+    let suite = fake.path("suite.json");
+    let writer = std::thread::spawn(move || fs::OpenOptions::new().write(true).open(suite));
+    wait_for("the audit to open the suite", || writer.is_finished());
+    let mut held = writer.join().unwrap().unwrap();
+    signal(&child, Signal::TERM);
+    std::thread::sleep(Duration::from_millis(300));
+    std::io::Write::write_all(
+        &mut held,
+        br#"{"scenarios":[{"name":"s","machine":"m.json"}]}"#,
+    )
+    .unwrap();
+    drop(held);
+    let output = exit_of(&mut child);
+    let stderr = text(&output.stderr);
+    assert_eq!(output.status.code(), Some(1), "{stderr}");
+    assert!(stderr.contains("interrupted"), "{stderr}");
+    if let Ok(started) = fs::read_to_string(&pids) {
+        let pid = Pid::from_raw(started.trim().parse().unwrap()).unwrap();
+        assert!(
+            test_kill_process(pid).is_err(),
+            "the bench is still running"
+        );
+    }
+    assert_eq!(fs::read_dir(fake.path("tmp")).unwrap().count(), 0);
+}
+
+#[test]
+fn real_process_an_interrupted_sweep_is_interrupted_even_when_the_bench_exits_cleanly() {
+    let fake = Fake::new();
+    let ready = fake.path("ready");
+    let bench = scripted_bench(
+        &fake,
+        &format!(
+            "sleep 60 &\nchild=$!\ntrap 'kill $child; mkdir -p \"$keep/bench-1\"; : > \"$out\"; exit 0' TERM\necho ready > '{}'\nwait $child\n",
+            ready.display()
+        ),
+    );
+    let mut child = sweep_in(&fake, &bench, false).spawn().unwrap();
+    wait_for("the bench to trap TERM", || ready.exists());
+    signal(&child, Signal::TERM);
+    let output = exit_of(&mut child);
+    let stderr = text(&output.stderr);
+    assert_eq!(output.status.code(), Some(1), "{stderr}");
+    assert!(stderr.contains("interrupted"), "{stderr}");
+    assert!(!stderr.contains("violations="), "{stderr}");
+    assert_eq!(fs::read_dir(fake.path("tmp")).unwrap().count(), 0);
+}
+
+#[test]
+fn a_bench_that_keeps_no_run_root_fails_the_sweep() {
+    let fake = Fake::new();
+    let bench = scripted_bench(&fake, ": > \"$out\"\n");
+    let output = run(&mut sweep_in(&fake, &bench, false));
+    let stderr = text(&output.stderr);
+    assert_eq!(output.status.code(), Some(1), "{stderr}");
+    let failure = stderr
+        .lines()
+        .find(|line| line.contains("find the retained bench root"))
+        .unwrap_or_else(|| panic!("{stderr}"));
+    assert!(
+        failure.ends_with(
+            "find the retained bench root (evidence removed; rerun with --keep DIR to retain it): got 0 roots"
+        ),
+        "{failure}"
+    );
+    assert!(!failure.contains("togi-audit-"), "{failure}");
+    assert_eq!(fs::read_dir(fake.path("tmp")).unwrap().count(), 0);
+
+    let kept = run(&mut sweep_in(&fake, &bench, true));
+    let stderr = text(&kept.stderr);
+    assert_eq!(kept.status.code(), Some(1), "{stderr}");
+    let want = format!(
+        "find the retained bench root (evidence {}/sweep-",
+        fake.path("evidence").display()
+    );
+    assert!(stderr.contains(&want), "{stderr}");
+    assert!(stderr.contains("got 0 roots"), "{stderr}");
 }

@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 
 use togi_journal::Event;
 use togi_tool_audit::{
-    Finding, Kind, Record, Split, Status, audit_directories, check_records, read_records,
-    run_directory, sweep_suite, timing,
+    Finding, Kind, Record, Split, Status, audit_directories, audit_holding, check_records,
+    read_records, run_directory, sweep_suite, timing,
 };
 
 use crate::fixtures::*;
@@ -304,4 +304,92 @@ fn auditing_a_directory_creates_its_lock_file_and_sets_its_mode() {
         fs::metadata(&dir).unwrap().permissions().mode() & 0o777,
         0o711
     );
+}
+
+#[test]
+fn a_violation_in_an_archived_journal_names_the_archive() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("state");
+    write_state_dir(&dir, &clean());
+    fs::create_dir(dir.join("archive")).unwrap();
+    let archive: String = dirty()
+        .iter()
+        .map(|event| event.encode().unwrap() + "\n")
+        .collect();
+    fs::write(dir.join("archive/20251231T000000Z.jsonl"), archive).unwrap();
+    let report = audit_directories(&[dir], &[], Path::new("")).unwrap();
+    assert_eq!(report.journals, 2);
+    let journals: Vec<_> = report
+        .findings
+        .iter()
+        .map(|finding| finding.journal.as_deref())
+        .collect();
+    assert_eq!(
+        journals,
+        [Some("20251231T000000Z")],
+        "{:?}",
+        report.findings
+    );
+    assert_eq!(
+        report.findings[0].check,
+        Kind::Audit(togi_tool_audit::Check::Avoidance)
+    );
+}
+
+#[test]
+fn a_run_directory_is_named_as_the_bench_names_it() {
+    let mut rec = record("a", Status::Concluded, 1.0);
+    rec.split = Split::Holdout;
+    rec.seed = 3;
+    assert_eq!(
+        run_directory(Path::new("root"), &rec),
+        Path::new("root/a/holdout-3")
+    );
+    rec.split = Split::Dev;
+    assert_eq!(
+        run_directory(Path::new("root"), &rec),
+        Path::new("root/a/dev-3")
+    );
+}
+
+#[test]
+fn each_directory_is_audited_while_the_hook_holds_its_guard() {
+    use std::cell::{Cell, RefCell};
+
+    struct Guard<'a> {
+        dirs: &'a [PathBuf],
+        released: &'a Cell<usize>,
+        seen: &'a RefCell<Vec<usize>>,
+    }
+    impl Drop for Guard<'_> {
+        fn drop(&mut self) {
+            let locked = self
+                .dirs
+                .iter()
+                .filter(|dir| dir.join("lock").exists())
+                .count();
+            self.seen.borrow_mut().push(locked);
+            self.released.set(self.released.get() + 1);
+        }
+    }
+
+    let tmp = tempfile::tempdir().unwrap();
+    let dirs: Vec<PathBuf> = ["one", "two", "three"]
+        .iter()
+        .map(|name| tmp.path().join(name))
+        .collect();
+    for dir in &dirs {
+        write_state_dir(dir, &clean());
+    }
+    let released = Cell::new(0);
+    let seen = RefCell::new(Vec::new());
+    let report = audit_holding(&dirs, &[], Path::new(""), || Guard {
+        dirs: &dirs,
+        released: &released,
+        seen: &seen,
+    })
+    .unwrap();
+    assert_eq!(report.directories, 3);
+    assert_eq!(released.get(), 3);
+    assert_eq!(*seen.borrow(), [1, 2, 3], "the guard outlives each audit");
 }
