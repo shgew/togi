@@ -62,6 +62,7 @@
             ./internal/detect/testdata
             ./tools/bench/machines
             ./tools/bench/facts
+            ./tools/bench/suite.json
             # The backend crates' tests read the Go adapters' output fixtures in place.
             ./internal/backend/mprime/testdata
             ./internal/backend/ycruncher/testdata
@@ -94,6 +95,43 @@
               doInstallCargoArtifacts = false;
               nativeBuildInputs = rustArgs.nativeBuildInputs ++ args.nativeBuildInputs;
             };
+          simSuite = lib.importJSON ./nix/sim-suite.json;
+          simRelease = rustArgs // {
+            pname = "togi-tool-sim";
+            CARGO_PROFILE = "release";
+            CARGO_PROFILE_RELEASE_LTO = "false";
+            cargoExtraArgs = "--locked -p togi-tool-sim";
+          };
+          togiToolSim = craneLib.buildPackage (
+            simRelease
+            // {
+              cargoArtifacts = craneLib.buildDepsOnly simRelease;
+              doCheck = false;
+            }
+          );
+          simSuiteSource = lib.fileset.toSource {
+            root = ./.;
+            fileset = lib.fileset.unions [
+              ./tools/bench/suite.json
+              ./tools/bench/machines
+              ./tools/bench/facts
+            ];
+          };
+          simSuiteShard =
+            shard:
+            pkgs.runCommand "togi-rust-sim-suite-${toString shard}" { } ''
+              sim=${togiToolSim}/bin/togi-tool-sim
+              suite=${simSuiteSource}/tools/bench/suite.json
+              jobs=''${NIX_BUILD_CORES:-0}
+              [ "$jobs" -ge 1 ] || jobs=$(nproc)
+              "$sim" suite --suite "$suite" --shards ${toString simSuite.shards} --shard ${toString shard} --jobs "$jobs" --out "$out"
+              "$sim" check --suite "$suite" --shards ${toString simSuite.shards} --shard ${toString shard} "$out"
+            '';
+          simSuiteChecks = lib.listToAttrs (
+            map (shard: lib.nameValuePair "rust-sim-suite-${toString shard}" (simSuiteShard shard)) (
+              lib.range 0 (simSuite.shards - 1)
+            )
+          );
           advisoryDb = pkgs.runCommand "advisory-db" { nativeBuildInputs = [ pkgs.gitMinimal ]; } ''
             cp -r ${inputs.advisory-db} $out
             chmod -R +w $out
@@ -373,6 +411,7 @@
               vm-restart-limit = vm.restart-limit;
               vm-trial-scope-rs = vm.trial-scope-rs;
             }
+            // simSuiteChecks
           );
 
           formatter = pkgs.treefmt.withConfig {

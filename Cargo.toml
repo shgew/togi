@@ -15,12 +15,13 @@ clap = { version = "4", default-features = false, features = ["std", "derive", "
 criterion = { version = "0.7", default-features = false, features = ["cargo_bench_support"] }
 flate2 = "1"
 getrandom = { version = "0.4", features = ["std"] }
-insta = "1"
+insta = { version = "1", default-features = false }
 jiff = { version = "0.2", default-features = false, features = ["std", "serde"] }
 nix = { version = "0.30", default-features = false, features = ["fs"] }
 proptest = "1"
 rand = { version = "=0.10.3", default-features = false, features = ["std_rng"] }
 ratatui = { version = "0.30", default-features = false, features = ["std"] }
+rayon = "1"
 regex = "1"
 rustix = { version = "1", features = ["fs", "process"] }
 serde = { version = "1", features = ["derive"] }
@@ -46,11 +47,15 @@ togi-session = { path = "crates/togi-session", version = "0.0.0" }
 togi-sim = { path = "crates/togi-sim", version = "0.0.0" }
 togi-simrun = { path = "crates/togi-simrun", version = "0.0.0" }
 togi-smu = { path = "crates/togi-smu", version = "0.0.0" }
+togi-tool-audit = { path = "crates/togi-tool-audit", version = "0.0.0" }
+togi-tool-forecast = { path = "crates/togi-tool-forecast", version = "0.0.0" }
+togi-tool-modelcheck = { path = "crates/togi-tool-modelcheck", version = "0.0.0" }
 togi-tool-trialfacts = { path = "crates/togi-tool-trialfacts", version = "0.0.0" }
 togi-trial = { path = "crates/togi-trial", version = "0.0.0" }
 togi-trialfiles = { path = "crates/togi-trialfiles", version = "0.0.0" }
 togi-tuner = { path = "crates/togi-tuner", version = "0.0.0" }
 togi-tuningboot = { path = "crates/togi-tuningboot", version = "0.0.0" }
+togi-version = { path = "crates/togi-version", version = "0.0.0" }
 togi-watchtest = { path = "crates/togi-watchtest", version = "0.0.0" }
 togi-ycruncher = { path = "crates/togi-ycruncher", version = "0.0.0" }
 tokio = { version = "1", default-features = false }
@@ -89,16 +94,8 @@ allow_attributes_without_reason = "warn"
 undocumented_unsafe_blocks = "deny"
 
 [profile.dev]
+opt-level = 1
 debug = "line-tables-only"
-
-[profile.dev.package."*"]
-opt-level = 1
-
-[profile.dev.package.togi-journal]
-opt-level = 1
-
-[profile.dev.package.togi-tuner]
-opt-level = 1
 
 [profile.release]
 lto = "thin"

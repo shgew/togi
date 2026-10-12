@@ -1,0 +1,28 @@
+[package]
+name = "togi-tool-fit"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "The fit command: fits simulated machines to the real trial facts and checks the fit forward on later sessions"
+
+[dependencies]
+clap.workspace = true
+rand.workspace = true
+rayon.workspace = true
+thiserror.workspace = true
+togi-facts.workspace = true
+togi-journal.workspace = true
+togi-machine.workspace = true
+togi-sim.workspace = true
+togi-tool-modelcheck.workspace = true
+togi-tool-trialfacts.workspace = true
+
+[dev-dependencies]
+insta.workspace = true
+proptest.workspace = true
+tempfile.workspace = true
+
+[lints]
+workspace = true

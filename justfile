@@ -41,6 +41,12 @@ hardware *args:
     @[[ "{{ os() }}" == linux ]] || { echo 'just hardware needs Linux: run it on the target machine' >&2; exit 1; }
     nix develop --command env TMPDIR=/tmp go test -tags hardware -p 1 ./... "$@"
 
+# Run the Rust hardware tests of smu, detect, trial and hardware one binary and one test at a time, every binary even after one fails, on the target machine (Linux only), entering the dev shell itself because sudo drops it; as root, as the SMU needs, it builds under root's home and skips trial's `cached_errors`, which refuses uid 0 (`just hardware-rs --no-run` only builds them)
+[group('test')]
+hardware-rs *args:
+    @[[ "{{ os() }}" == linux ]] || { echo 'just hardware-rs needs Linux: run it on the target machine' >&2; exit 1; }
+    tests=(--test hardware); [[ "$(id -u)" == 0 ]] || tests+=(--test cached_errors); [[ "$(id -u)" != 0 ]] || export CARGO_TARGET_DIR=~root/.cache/togi/hardware-rs-target; nix develop --command env TMPDIR=/tmp RUST_TEST_THREADS=1 cargo test --locked --no-fail-fast -p togi-smu -p togi-detect -p togi-trial -p togi-hardware --features hardware "${tests[@]}" "$@"
+
 # Fuzz the journal parser for the given time (`just fuzz 5m`); failures land in internal/journal/testdata/fuzz
 [group('test')]
 fuzz time="1m": _dev-shell
@@ -88,7 +94,7 @@ lint *args: _dev-shell
 fmt:
     nix fmt
 
-# Run every non-VM flake check but cargo-deny's advisory audit, which only the rust-deny flake check runs, cheapest first, using warm dev-shell Go and Rust caches
+# Run every non-VM flake check but the rust-sim-suite-* shards, which CI and `just check` on Linux run (`just sim-suite-rs` or `just check-one rust-sim-suite-<i>` reproduces them), and cargo-deny's advisory audit, which only the rust-deny flake check runs, cheapest first, using warm dev-shell Go and Rust caches
 [group('quality')]
 gate: _dev-shell
     #!/usr/bin/env bash
@@ -111,12 +117,12 @@ gate: _dev-shell
         go test -c -tags hardware -o /dev/null ./internal/trial
     fi
 
-# Run every flake check this host builds: package, race, lint, fmt, changes, module, the rust-* checks (clippy, nextest, doc, fmt, deny, shear) and, on Linux, trial-scope-tests and the VM tests
+# Run every flake check this host builds: package, race, lint, fmt, changes, module, the rust-* checks (clippy, nextest, doc, fmt, deny, shear) and, on Linux, trial-scope-tests, the rust-sim-suite-* shards and the VM tests
 [group('nix')]
 check *args:
     nix flake check "$@"
 
-# Build named flake checks: package, race, lint, fmt, changes, module, rust-clippy, rust-nextest, rust-doc, rust-fmt, rust-deny, rust-shear or, on Linux, trial-scope-tests, vm and vm-restart-limit (`just check-one race`)
+# Build named flake checks: package, race, lint, fmt, changes, module, rust-clippy, rust-nextest, rust-doc, rust-fmt, rust-deny, rust-shear or, on Linux, trial-scope-tests, rust-sim-suite-<i>, vm and vm-restart-limit (`just check-one race`)
 [group('nix')]
 check-one +names:
     nix build --no-link $(printf '.#checks.{{ system }}.%s ' "$@")
@@ -125,6 +131,16 @@ check-one +names:
 [group('run')]
 sim seed="1" *args: _dev-shell
     go run ./tools/sim --seed "$1" "${@:2}"
+
+# Run a simulated session with the Rust simulator, flags as `sim` takes them (`just sim-rs --seed 7 --max-boots 20`)
+[group('run')]
+sim-rs *args: _dev-shell
+    cargo run --release --locked -p togi-tool-sim -- "$@"
+
+# Run every session of the simulator suite with the Rust simulator and check that each ended clean
+[group('run')]
+sim-suite-rs *args: _dev-shell
+    out=$(mktemp -d); cargo run --release --locked -p togi-tool-sim -- suite --suite tools/bench/suite.json --out "$out" "$@" && cargo run --release --locked -p togi-tool-sim -- check --suite tools/bench/suite.json --shards 1 "$out"
 
 # Play a recorded journal through the dashboard on a fast-forward clock
 [group('run')]
@@ -135,6 +151,11 @@ replay *args: _dev-shell
 [group('run')]
 stats *args: _dev-shell
     go run ./tools/stats "$@"
+
+# Summarize a current or archived journal for review with the Rust tool
+[group('run')]
+stats-rs *args: _dev-shell
+    cargo run --release --locked -p togi-tool-stats -- "$@"
 
 # Benchmark simulated session conclusions and compare against a baseline
 [group('run')]
@@ -188,15 +209,30 @@ facts-rs state_dir: _dev-shell
 fit *args: _dev-shell
     go run ./tools/fit "$@"
 
+# Fit the target-machine bootstrap ensemble with the Rust tool; the result does not depend on --jobs
+[group('run')]
+fit-rs *args: _dev-shell
+    cargo run --release --locked -p togi-tool-fit -- "$@"
+
 # Fit the all-facts IN-SAMPLE shared-voltage anchor; not forward-validated
 [group('run')]
 fit-shared-voltage *args: _dev-shell
     go run ./tools/fit --shared-voltage-in-sample "$@"
 
+# Fit the all-facts IN-SAMPLE shared-voltage anchor with the Rust tool; not forward-validated
+[group('run')]
+fit-shared-voltage-rs *args: _dev-shell
+    cargo run --release --locked -p togi-tool-fit -- --shared-voltage-in-sample "$@"
+
 # Run only the forward-chained check of the target fit, writing no machine files (`just forward --seal 1`)
 [group('run')]
 forward *args: _dev-shell
     go run ./tools/fit --forward-only "$@"
+
+# Run only the forward-chained check with the Rust tool, writing no machine files (`just forward-rs --seal 1`)
+[group('run')]
+forward-rs *args: _dev-shell
+    cargo run --release --locked -p togi-tool-fit -- --forward-only "$@"
 
 # Start the release workflow on main and follow it: unless an issue, open or closed, is labeled needs-hardware, once check passes on main, it commits the release, builds the package, pushes to main and publishes
 [group('release')]
