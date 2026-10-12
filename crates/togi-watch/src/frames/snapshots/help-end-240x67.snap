@@ -8,46 +8,46 @@ expression: body
 │
 │    READING THE SCREEN ─────────────────────────────────────────────────────────────    WHAT TOGI DOES ───────────────────────────────────────────────────────────    WORDS ─────────────────────────────────────────────────────────────────
 │
-│    ► 04  -28  AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄░░░░░░░█                -36         SOLO LIMITS   Search: each core alone, the rest at 0, finds its solo          SEARCH           finding its solo limit with light and heavy-vector
-│                        at its limit: one count deeper reaches C5                                     limit. The stage counts the cores whose solo limit is found                      trials alone
-│                                                                                                      and names the core being searched or confirmed.                 CONFIRM          checking its candidate solo limit with repeated light
-│    ► 00  -26  HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·····█                    -32                                                                                                        and heavy-vector trials alone
-│                        has room: backed off after a hunt, may deepen                   PHASE 1       Search, then the first full cycle with every core one count     FOUND            solo limit checked; waiting at 0 until every core has
-│                                                                                                      shallower than its solo limit. Its pass confirms the first                       one
-│      09    0  PARKED   ···············································█    -48                       BIOS profile.                                                   WAITING          at 0, waiting for its first search turn
-│                        parked at 0 by a hunt; returns to -47                                                                                                         MEMBER           kept with its hunt group at its failing offset;
-│                                                                                        HUNT          An amber detour: parked trials that find the core or                             another member may be probed
-│    ► 00  -26  PROBE    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▀ ▀▀ █                    -32                       combination behind a failure. The hunt panel shows its          offset           Curve Optimizer counts, 0 to -50; deeper is more
-│                        probe: the group failed with core 00 at -30, -29, -27                         groups and member probes.                                                        negative
-│                                                                                                                                                                      trial            one launch of one workload on its target
-│    ►         the core carries load in this trial                                       PHASE 2       Rounds that move each candidate one count toward its solo       solo limit       the deepest offset a core confirmed under load alone
-│    ▄▄▄       offset applied now, or saved after a stop restored the hardware; white                  limit, as far as its failure points and combinations permit,    failure point    the shallowest offset where a core failed on its own
-│              when this trial judges the core                                                         then one confirmation cycle. A round lists its candidates,                       account
-│    grey ▄▄▄  the same depth, grey when the core is not judged                                        their gaps and the most rounds left if none fails.              combination      offsets at which a group of cores failed together.
-│    ···       depth it reached but does not use now: given back, parked, waiting                                                                                                       Unresolved: no smaller group was shown to fail
-│    ░░░       depth a combination blocks now                                            BIOS PROFILE  The profile to enter in BIOS, one row per CCD in slot order.    at its limit     a core at -50, or one count deeper reaches a failure
-│    █         its failure point: this core failed there on its own account                            A * marks an offset not yet confirmed: the profile changed                       point or combination
-│    ▀         a group trial failed with this core at that offset                                      after the last passed full cycle. A passed full cycle           has room         a core past search that is not at its limit
-│    cyan      running now                                                                             confirms it, except for a core a held failure still shows       suspect          a core a hunt keeps at its failing offset
-│    amber     a hunt, and what it paused                                                              stepped back: that offset stays marked until the hold           parked           a core a hunt holds shallower than its failing offset
-│    red       failures, past and present                                                              expires (the core then shows its held offset again) or a        partial part     an R7 part with the top requesters idle
-│    green     passed, done                                                                            second failure steps it back for good.                          top requester    the loaded core with the highest voltage request,
-│    magenta   combinations                                                                                                                                                             setting the shared core voltage; marked top on the CCD
-│    grey      idle, parked, still to come                                               CYCLE         Checking: every core at its offset together, through the                         tables, by offset when offsets stand in for requests
-│                                                                                                      steps of a cycle. The stage shows the cycle's number and        self-sufficient  observed passing as top requester for this R7
-│                                                                                                      step; the cycle panel lists its steps and R7 parts.                              workload; evidence, not a guarantee
-│    THE TOP LINE ───────────────────────────────────────────────────────────────────                                                                                  cycle            one pass through the checking schedule
-│                                                                                        CLEAN CYCLES  The count of clean cycles still valid for the current
-│    failures       failure decisions, including trials skipped because they already                   profile; checking repeats cycles until stopped.
-│                   failed                                                                                                                                             KINDS OF LOAD ─────────────────────────────────────────────────────────
-│    crashes        boots that ended without a clean shutdown                            R6            During idle trials this screen holds still, clock included,
-│    last observed  the last failure seen in this session that changed what togi                       so it cannot wake the cores.                                    R1 light          one light thread: compiling, browsing
-│                   does; skips do not count                                                                                                                           R2 heavy vector   one AVX2/AVX-512 thread: encoding, rendering
-│    q              closes this view only; tuning keeps running                          NO ETA        A hunt can start at any time, so togi shows only what is        R3 load steps     load switching on and off: current steps
-│                                                                                                      scheduled and the time left in the current trial.               R4 partial load   light load at 25-75% duty: bursty work
-│                                                                                                                                                                      R5 both threads   both threads of one core: SMT pressure
-│                                                                                        RULES         How togi decides what to do:                                    R6 idle + bursts  idle with short wake-ups: idle and boost
-│                                                                                                      https://github.com/shgew/togi/blob/main/docs/spec/tuner.md      R7 all-core       a CCD, part of one, or every core: power and heat
+│    ► 04  -28  AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄░░░░░░░█                -36         SOLO LIMITS   The cores whose solo limit is found, and the core being         SEARCH           finding its solo limit with light and heavy-vector
+│                        at its limit: it cannot go deeper                                             searched or confirmed.                                                           trials alone
+│                                                                                                                                                                      CONFIRM          checking its candidate solo limit with repeated light
+│    ► 00  -26  HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·····█                    -32         PHASE 1       The first full cycle, run on the profile the solo limits                         and heavy-vector trials alone
+│                        has room: backed off after a hunt, may deepen                                 give.                                                           FOUND            solo limit checked; waiting at 0 until every core has
+│                                                                                                                                                                                       one
+│      09    0  PARKED   ···············································█    -48         HUNT          An amber detour: parked trials that find the core or            WAITING          at 0, waiting for its first search turn
+│                        parked at 0 by a hunt; returns to -47                                         combination behind a failure. The hunt panel shows its          MEMBER           kept with its hunt group at its failing offset;
+│                                                                                                      groups and member probes.                                                        another member may be probed
+│    ► 00  -26  PROBE    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▀ ▀▀ █                    -32                                                                                       offset           Curve Optimizer counts, 0 to -50; deeper is more
+│                        probe: the group failed with core 00 at -30, -29, -27           PHASE 2       Deepening: its rounds and its confirmation cycle. A round                        negative
+│                                                                                                      lists its candidates and their gaps.                            trial            one launch of one workload on its target
+│    ►         the core carries load in this trial                                                                                                                     solo limit       the deepest offset a core confirmed under load alone
+│    ▄▄▄       offset applied now, or saved after a stop restored the hardware; white    BIOS PROFILE  The profile to enter in BIOS, one row per CCD in slot order.    failure point    the shallowest offset where a core failed on its own
+│              when this trial judges the core                                                         A * marks an offset not yet confirmed.                                           account
+│    grey ▄▄▄  the same depth, grey when the core is not judged                                                                                                        combination      offsets at which a group of cores failed together
+│    ···       depth it reached but does not use now: given back, parked, waiting        CYCLE         Checking: every core at its offset together, through the        at its limit     a core that cannot go deeper
+│    ░░░       depth a combination blocks now                                                          steps of a cycle. The stage shows the cycle's number and        has room         a core that can still go deeper
+│    █         its failure point: this core failed there on its own account                            step; the cycle panel lists its steps and R7 parts.             suspect          a core a hunt keeps at its failing offset
+│    ▀         a group trial failed with this core at that offset                                                                                                      parked           a core a hunt holds shallower than its failing offset
+│    cyan      running now                                                               CLEAN CYCLES  The count of clean cycles for the current profile.              partial part     an R7 part with the top requesters idle
+│    amber     a hunt, and what it paused                                                                                                                              top requester    the loaded core with the highest voltage request,
+│    red       failures, past and present                                                R6            During idle trials this screen holds still, clock included,                      setting the shared core voltage; marked top on the CCD
+│    green     passed, done                                                                            so it cannot wake the cores.                                                     tables
+│    magenta   combinations                                                                                                                                            self-sufficient  observed passing as top requester for this R7 workload
+│    grey      idle, parked, still to come                                               NO ETA        A hunt can start at any time, so togi shows only what is        cycle            one pass through the checking schedule
+│                                                                                                      scheduled and the time left in the current trial.
+│
+│    THE TOP LINE ───────────────────────────────────────────────────────────────────    RULES         How togi decides what to do:                                    KINDS OF LOAD ─────────────────────────────────────────────────────────
+│                                                                                                      https://github.com/shgew/togi/blob/main/docs/spec/tuner.md
+│    failures       failure decisions, including trials skipped because they already                                                                                   R1 light          one light thread: compiling, browsing
+│                   failed                                                                                                                                             R2 heavy vector   one AVX2/AVX-512 thread: encoding, rendering
+│    crashes        boots that ended without a clean shutdown                                                                                                          R3 load steps     load switching on and off: current steps
+│    last observed  the last failure seen in this session that changed what togi                                                                                       R4 partial load   light load at 25-75% duty: bursty work
+│                   does; skips do not count                                                                                                                           R5 both threads   both threads of one core: SMT pressure
+│    q              closes this view only; tuning keeps running                                                                                                        R6 idle + bursts  idle with short wake-ups: idle and boost
+│                                                                                                                                                                      R7 all-core       a CCD, part of one, or every core: power and heat
+│
+│
+│
 │
 │
 │

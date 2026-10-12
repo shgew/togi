@@ -21,6 +21,7 @@ use crate::screen::{Colours, Journal, Screen, View};
 const MAIN_SIZES: [(u16, u16); 3] = [(240, 67), (160, 45), (120, 33)];
 const VIEW_SIZES: [(u16, u16); 3] = [(80, 24), (160, 45), (240, 67)];
 const WIDE: (u16, u16) = (240, 67);
+const WIDE_ONLY: [(u16, u16); 1] = [WIDE];
 
 fn check(name: &str, body: &str) {
     insta::with_settings!({ snapshot_suffix => "", prepend_module_to_snapshot => false }, {
@@ -170,10 +171,10 @@ fn shapes_without_colour(scenario: Scenario, buf: &Buffer) {
     }
 }
 
-fn main_views(scenario: Scenario) {
+fn main_views(scenario: Scenario, sizes: &[(u16, u16)]) {
     let (model, now) = scenario_model(scenario);
     let journal = ready(&model);
-    for size in MAIN_SIZES {
+    for &size in sizes {
         let name = format!("main-{}-{}x{}", scenario.name(), size.0, size.1);
         let buf = text(
             &name,
@@ -188,37 +189,45 @@ fn main_views(scenario: Scenario) {
 }
 
 macro_rules! main_view_tests {
-    ($($test:ident: $scenario:ident),* $(,)?) => {
+    ($($test:ident: $scenario:ident in $sizes:ident),* $(,)?) => {
         const LISTED: &[Scenario] = &[$(Scenario::$scenario),*];
 
         $(
             #[test]
             fn $test() {
-                main_views(Scenario::$scenario);
+                main_views(Scenario::$scenario, &$sizes);
             }
         )*
     };
 }
 
+// A cut keeps a snapshot at every main size only when it draws a size-dependent panel no other kept cut draws;
+// the rest keep the wide one, and `every_scenario_fits_the_frame_at_every_main_size` still draws them all.
+// search: the turns table. checking: the cycle and partial tables. hunt: the hunt plan and its parts. member_probe:
+// the probe rows. round: the deepening checks. idle: the planned end. recovering: the band after a crash.
+// combination: the compact member columns. hunt_bios: the hunt's evidence rows and the unconfirmed profile.
+// The wide-only cuts draw panels a kept cut already draws: confirm the turns table (search), confirmation and
+// concluded the cycle table (checking), unconfirmed the unconfirmed profile (hunt_bios), and between, stopped,
+// first_result, deadend and crashed a band or a plain cycle table.
 main_view_tests! {
-    search: Search,
-    confirm: Confirm,
-    checking: Checking,
-    hunt: Hunt,
-    member_probe: MemberProbe,
-    round: Round,
-    confirmation: Confirmation,
-    concluded: Concluded,
-    unconfirmed: Unconfirmed,
-    hunt_bios: HuntBios,
-    idle: Idle,
-    crashed: Crashed,
-    recovering: Recovering,
-    combination: Combination,
-    between: Between,
-    deadend: Deadend,
-    first_result: FirstResult,
-    stopped: Stopped,
+    search: Search in MAIN_SIZES,
+    confirm: Confirm in WIDE_ONLY,
+    checking: Checking in MAIN_SIZES,
+    hunt: Hunt in MAIN_SIZES,
+    member_probe: MemberProbe in MAIN_SIZES,
+    round: Round in MAIN_SIZES,
+    confirmation: Confirmation in WIDE_ONLY,
+    concluded: Concluded in WIDE_ONLY,
+    unconfirmed: Unconfirmed in WIDE_ONLY,
+    hunt_bios: HuntBios in MAIN_SIZES,
+    idle: Idle in MAIN_SIZES,
+    crashed: Crashed in WIDE_ONLY,
+    recovering: Recovering in MAIN_SIZES,
+    combination: Combination in MAIN_SIZES,
+    between: Between in WIDE_ONLY,
+    deadend: Deadend in WIDE_ONLY,
+    first_result: FirstResult in WIDE_ONLY,
+    stopped: Stopped in WIDE_ONLY,
 }
 
 #[test]
@@ -230,6 +239,22 @@ fn every_scenario_has_a_main_view_snapshot() {
             "{} has no test",
             scenario.name()
         );
+    }
+}
+
+#[test]
+fn every_scenario_fits_the_frame_at_every_main_size() {
+    for scenario in Scenario::ALL {
+        let (model, now) = scenario_model(scenario);
+        let journal = ready(&model);
+        for size in MAIN_SIZES {
+            let sc = screen_of(View::Main, size, Colours::None, 0, false);
+            let (buf, _) = render_checked(&journal, &sc, now);
+            assert_glyphs_drawable(
+                &buf,
+                &format!("main-{}-{}x{}", scenario.name(), size.0, size.1),
+            );
+        }
     }
 }
 
