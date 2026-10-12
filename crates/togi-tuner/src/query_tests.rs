@@ -380,7 +380,41 @@ fn forecast_appends_to_the_open_trials_cell_without_copying_its_history() {
         large_copied, small_copied,
         "a synthetic pass copied the passes its cell already held"
     );
-    assert_eq!(small_copied, 0);
+    assert_eq!(
+        small_copied, 1,
+        "only the Pass premise's own pass, cloned once for its resume"
+    );
+}
+
+fn forecast_after_retained_clone_cost(passes: usize) -> (u64, u64) {
+    let (mut journal, plan) = repeated_evidence(1);
+    let retained = journal.state.clone();
+    for _ in 0..passes {
+        journal.trial(&plan, Outcome::Pass);
+    }
+    journal.intent(&plan);
+    journal.state.visits();
+    crate::evidence::take_copied();
+    let forecast = journal.state.forecast();
+    let copied = crate::evidence::take_copied();
+    let visits = journal.state.visits();
+    assert_eq!(forecast.branches[0].premise, Premise::Pass);
+    assert_ne!(journal.state, retained);
+    (visits, copied)
+}
+
+#[test]
+fn forecast_cost_does_not_grow_with_passes_since_a_retained_clone() {
+    let (small, small_copied) = forecast_after_retained_clone_cost(100);
+    let (large, large_copied) = forecast_after_retained_clone_cost(10_000);
+    assert_eq!(large, small);
+    let clones_per_forecast = 5;
+    let bound = clones_per_forecast * 2 * crate::evidence::TAIL_CAP as u64;
+    assert!(
+        small_copied <= bound && large_copied <= bound,
+        "forecasting copied the passes recorded since another clone was retained: \
+         {small_copied} after 100, {large_copied} after 10,000, at most {bound} allowed"
+    );
 }
 
 #[test]

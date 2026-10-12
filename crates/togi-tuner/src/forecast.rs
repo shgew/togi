@@ -428,7 +428,7 @@ impl Run {
 impl State {
     fn simulation(&self) -> Sim {
         Sim {
-            state: self.clone(),
+            state: self.speculative_copy(),
             ranking: self.run().and_then(|run| {
                 run.ranking
                     .as_ref()

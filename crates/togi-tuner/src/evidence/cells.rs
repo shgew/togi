@@ -29,14 +29,31 @@ pub(crate) fn unique<T: Clone>(shared: &mut Arc<Vec<T>>) -> &mut Vec<T> {
     Arc::make_mut(shared)
 }
 
+/// The most seqs a tail holds while its head is shared, so a clone copies at most this many per
+/// list. It exceeds the 1,000 trials the configuration lets a step require, so the passes of
+/// one step fold into a shared cell without settling it.
+pub(crate) const TAIL_CAP: usize = 1_024;
+
 /// Seqs in ascending order; each lookup is a binary search. A clone shares the `shared` head
 /// until a write reaches into it, and appends while it is shared go to the owned `tail`, which
-/// holds only seqs above the head. Cloning a state therefore costs the cells, and recording
-/// into a cell a clone still shares costs the new seqs, not the seqs the cell already held.
-#[derive(Clone, Debug, Default)]
+/// holds only seqs above the head and at most `TAIL_CAP` of them: the append that would pass
+/// the cap copies head and tail into a head nobody shares. Cloning a state therefore costs the
+/// cells and their tails, never the seqs behind them.
+#[derive(Debug, Default)]
 pub(super) struct Seqs {
     shared: Arc<Vec<Seq>>,
     tail: Vec<Seq>,
+}
+
+impl Clone for Seqs {
+    fn clone(&self) -> Self {
+        #[cfg(test)]
+        COPIED.with(|copied| copied.set(copied.get() + self.tail.len() as u64));
+        Self {
+            shared: Arc::clone(&self.shared),
+            tail: self.tail.clone(),
+        }
+    }
 }
 
 /// The seqs above a floor: a slice of the shared head followed by a slice of the tail.
@@ -96,7 +113,21 @@ impl Seqs {
         }
     }
 
+    /// Settles the tail into a head of its own once it is full and a clone still shares the head.
+    fn make_room(&mut self) {
+        if self.tail.len() >= TAIL_CAP && Arc::strong_count(&self.shared) > 1 {
+            unique(&mut self.shared).append(&mut self.tail);
+        }
+    }
+
     pub(super) fn push(&mut self, seq: Seq) {
+        self.make_room();
+        self.push_unbounded(seq);
+    }
+
+    /// Appends without settling a full tail, for a simulation that appends a bounded number
+    /// of seqs to a state it discards.
+    pub(super) fn push_unbounded(&mut self, seq: Seq) {
         debug_assert!(self.last().is_none_or(|last| last < seq));
         self.settle();
         match Arc::get_mut(&mut self.shared) {
@@ -110,6 +141,7 @@ impl Seqs {
     /// among the few recorded after it only when the head is not shared.
     pub(super) fn insert(&mut self, seq: Seq) -> Option<usize> {
         self.settle();
+        self.make_room();
         let at = self.position(seq).err()?;
         match at.checked_sub(self.shared.len()) {
             Some(in_tail) => self.tail.insert(in_tail, seq),
@@ -439,5 +471,53 @@ mod tests {
         seqs.insert(s(0));
         assert_eq!(take_copied(), 1_000);
         assert!(!seqs.shares_storage(&twin));
+    }
+}
+
+#[cfg(test)]
+mod cap_tests {
+    use super::*;
+
+    fn s(value: u64) -> Seq {
+        Seq::new(value).unwrap()
+    }
+
+    #[test]
+    fn a_retained_clone_makes_the_tail_settle_once_it_is_full() {
+        let mut seqs = Seqs::default();
+        for raw in 1..=500 {
+            seqs.push(s(raw));
+        }
+        let retained = seqs.clone();
+        take_copied();
+        let appended = 3 * TAIL_CAP as u64;
+        for raw in 501..501 + appended {
+            seqs.push(s(raw));
+            assert!(seqs.tail.len() <= TAIL_CAP);
+        }
+        assert_eq!(take_copied(), 500);
+        assert_eq!(retained.last(), Some(s(500)));
+        assert_eq!(seqs.last(), Some(s(500 + appended)));
+        assert!(!seqs.shares_storage(&retained));
+        take_copied();
+        let twin = seqs.clone();
+        assert!(twin.tail.len() <= TAIL_CAP);
+        assert_eq!(take_copied(), twin.tail.len() as u64);
+        assert_eq!(twin, seqs);
+    }
+
+    #[test]
+    fn a_simulation_may_outgrow_the_cap_without_settling() {
+        let mut seqs = Seqs::default();
+        for raw in 1..=500 {
+            seqs.push(s(raw));
+        }
+        let retained = seqs.clone();
+        take_copied();
+        for raw in 501..501 + 2 * TAIL_CAP as u64 {
+            seqs.push_unbounded(s(raw));
+        }
+        assert_eq!(take_copied(), 0);
+        assert!(seqs.shares_storage(&retained));
     }
 }

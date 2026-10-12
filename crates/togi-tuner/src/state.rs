@@ -236,6 +236,15 @@ impl State {
         self.run.as_ref()
     }
 
+    /// A copy for a simulation to fold forecast events into and discard.
+    pub(crate) fn speculative_copy(&self) -> Self {
+        let mut copy = self.clone();
+        if let Some(run) = copy.run.as_mut() {
+            run.evidence.speculate();
+        }
+        copy
+    }
+
     /// Folds the next journal event. A structural impossibility, such as a core outside the
     /// topology or an event that does not follow the last, is an error, and the state is
     /// poisoned: every later `fold` fails and `next` has nothing to say, because a state that

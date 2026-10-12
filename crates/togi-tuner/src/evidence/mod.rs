@@ -20,10 +20,10 @@ use crate::{ClassKey, Profile, TopologyMismatch};
 
 pub use backend::BackendId;
 use backend::Backends;
-#[cfg(test)]
-pub(crate) use cells::take_copied;
 pub(crate) use cells::unique;
-use cells::{ClassCells, FailureCells, Run};
+use cells::{ClassCells, FailureCells, Run, Seqs};
+#[cfg(test)]
+pub(crate) use cells::{TAIL_CAP, take_copied};
 
 /// The session a carried fact came from.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -99,6 +99,7 @@ pub struct Evidence {
     checking: Option<Profile>,
     exposure: BTreeMap<WorkloadId, u32>,
     last: Option<Seq>,
+    speculative: bool,
     #[cfg(test)]
     visits: Visits,
 }
@@ -143,8 +144,23 @@ impl Evidence {
             checking: None,
             exposure: BTreeMap::new(),
             last: None,
+            speculative: false,
             #[cfg(test)]
             visits: Visits::default(),
+        }
+    }
+
+    /// Marks this ledger a simulation's own copy: it takes the few passes the simulation folds
+    /// into shared cells without settling their tails, so a simulation never copies a history.
+    pub(crate) fn speculate(&mut self) {
+        self.speculative = true;
+    }
+
+    fn append(speculative: bool, seqs: &mut Seqs, seq: Seq) {
+        if speculative {
+            seqs.push_unbounded(seq);
+        } else {
+            seqs.push(seq);
         }
     }
 
@@ -323,14 +339,15 @@ impl Evidence {
             && self
                 .checking
                 .is_some_and(|checking| obs.profile.covers(&checking));
+        let speculative = self.speculative;
         let class = self.classes.entry(obs.class).or_default();
         let cell = class.passes.cell_mut(backend, named, *obs.profile);
         if let Some(source) = source {
             cell.carried.push(obs.seq, source);
         } else {
-            cell.live.push(obs.seq);
+            Self::append(speculative, &mut cell.live, obs.seq);
             if obs.condition != Condition::Alone {
-                cell.live_non_alone.push(obs.seq);
+                Self::append(speculative, &mut cell.live_non_alone, obs.seq);
             }
             if counts_exposure {
                 class.exposure += 1;
@@ -366,12 +383,13 @@ impl Evidence {
         let rules_out_checking = self
             .checking
             .is_some_and(|checking| obs.profile.within(&checking));
+        let speculative = self.speculative;
         let class = self.classes.entry(obs.class).or_default();
         let cell = class.failures.cell_mut(named, *obs.profile);
         if let Some(source) = source {
             cell.carried.push(obs.seq, source);
         } else {
-            cell.live.push(obs.seq);
+            Self::append(speculative, &mut cell.live, obs.seq);
         }
         if rules_out_checking {
             let dropped = std::mem::take(&mut class.exposure);
@@ -441,11 +459,12 @@ impl Evidence {
     ) -> Result<(), TopologyMismatch> {
         self.check(profile)?;
         self.advance(seq);
+        let speculative = self.speculative;
         let cell = self.idle.cell_mut(None, *profile);
         if let Some(source) = source {
             cell.carried.push(seq, source);
         } else {
-            cell.live.push(seq);
+            Self::append(speculative, &mut cell.live, seq);
         }
         if self
             .checking
