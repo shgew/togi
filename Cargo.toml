@@ -90,16 +90,8 @@ allow_attributes_without_reason = "warn"
 undocumented_unsafe_blocks = "deny"
 
 [profile.dev]
+opt-level = 1
 debug = "line-tables-only"
-
-[profile.dev.package."*"]
-opt-level = 1
-
-[profile.dev.package.togi-journal]
-opt-level = 1
-
-[profile.dev.package.togi-tuner]
-opt-level = 1
 
 [profile.release]
 lto = "thin"
