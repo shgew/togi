@@ -22,6 +22,7 @@ regex = "1"
 rustix = { version = "1", features = ["fs", "process"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip", "raw_value"] }
+sha2 = "0.11"
 tempfile = "3"
 test-case = "3"
 thiserror = "2"
@@ -40,6 +41,7 @@ togi-render = { path = "crates/togi-render", version = "0.0.0" }
 togi-requests = { path = "crates/togi-requests", version = "0.0.0" }
 togi-session = { path = "crates/togi-session", version = "0.0.0" }
 togi-sim = { path = "crates/togi-sim", version = "0.0.0" }
+togi-simrun = { path = "crates/togi-simrun", version = "0.0.0" }
 togi-smu = { path = "crates/togi-smu", version = "0.0.0" }
 togi-tool-trialfacts = { path = "crates/togi-tool-trialfacts", version = "0.0.0" }
 togi-trial = { path = "crates/togi-trial", version = "0.0.0" }
