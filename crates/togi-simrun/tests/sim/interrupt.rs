@@ -397,22 +397,28 @@ impl Case {
         case
     }
 
-    fn lose_power_before_first_append(&self, bench: &Bench) {
-        bench
-            .fs
-            .inject(Fault::before(Op::Write, 1).named("events.jsonl"));
+    /// Runs a boot that loses power at append `at`: the `at`th append of the boot is written and then reported
+    /// failed, so it is the boot's final event; at 0 the first append fails unwritten.
+    fn lose_power_at_append(&self, bench: &Bench, at: usize) {
+        let fault = match u64::try_from(at).unwrap() {
+            0 => Fault::before(Op::Write, 1),
+            nth => Fault::after(Op::Write, nth),
+        };
+        bench.fs.inject(fault.named("events.jsonl"));
         let mut input = bench.input();
         input.config = quick();
         input.policy.cycles = None;
+        input.replay = Replay::Cold;
         input.max_boots = nz(MAX_BOOTS);
         let ended = finish(input);
         bench.fs.clear_faults();
-        assert!(
-            !ended.errors.is_empty(),
-            "{}: the first append did not fail",
-            self.name
+        let label = format!("{} {}", self.name, Interruption::Append(at).label());
+        assert!(!ended.errors.is_empty(), "{label}: the append did not fail");
+        assert_eq!(
+            bench.events().len(),
+            self.prefix_len + at,
+            "{label}: the boot did not end at the selected append"
         );
-        assert_eq!(bench.events().len(), self.prefix_len);
         bench.sim.power_loss();
         bench.sim.reboot();
     }
@@ -467,6 +473,16 @@ impl Case {
         let accesses: Rc<RefCell<Vec<SmuOperation>>> = Rc::default();
         let interrupted = Rc::new(Cell::new(false));
         let closed = Rc::new(Cell::new(false));
+        let mut closing = false;
+        if let Interruption::Append(at) = interruption {
+            interrupted.set(true);
+            self.lose_power_at_append(&bench, at);
+            for event in &bench.events()[self.prefix_len..] {
+                if !closed.get() && (self.closer)(event, &mut closing) {
+                    closed.set(true);
+                }
+            }
+        }
         let mut input = bench.input();
         input.config = quick();
         input.policy.cycles = None;
@@ -474,10 +490,6 @@ impl Case {
         input.max_boots = nz(MAX_BOOTS);
         let cancel = input.cancel.clone();
 
-        if matches!(interruption, Interruption::Append(0)) {
-            interrupted.set(true);
-            self.lose_power_before_first_append(&bench);
-        }
         let sim = bench.sim.clone();
         let (seen, fired) = (Rc::clone(&accesses), Rc::clone(&interrupted));
         bench.sim.interrupt_smu(move |operation: &SmuOperation| {
@@ -490,28 +502,12 @@ impl Case {
             }
             Ok(())
         });
-        let (sim, fired, done) = (
-            bench.sim.clone(),
-            Rc::clone(&interrupted),
-            Rc::clone(&closed),
-        );
-        let (closer, mut closing, mut appended) = (self.closer, false, 0_usize);
+        let (closer, done) = (self.closer, Rc::clone(&closed));
         input.observer = Some(Box::new(move |event| {
-            appended += 1;
-            let crashed_before = fired.get();
             if !done.get() && closer(event, &mut closing) {
                 done.set(true);
             }
-            if matches!(interruption, Interruption::Append(at) if at == appended) && !crashed_before
-            {
-                fired.set(true);
-                sim.power_loss();
-            }
-            let settled = match interruption {
-                Interruption::Append(_) => crashed_before,
-                Interruption::Never | Interruption::Smu(_) => true,
-            };
-            if done.get() && settled {
+            if done.get() {
                 cancel.cancel();
             }
             Observe::Continue
