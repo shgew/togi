@@ -325,6 +325,7 @@ fn administration_usage_errors_exit_2_before_touching_anything() {
     );
 }
 
+#[cfg(target_os = "linux")]
 fn session_start(schema: u32) -> String {
     format!(
         "{{\"seq\":1,\"time\":\"2026-01-01T00:00:00Z\",\"boot\":\"b1a8cebe-21d1-14db-3741-5b5df946de05\",\"kind\":\"session.start\",\"msg\":\"x\",\"data\":{{\"build\":{{\"version\":\"9.9.9\",\"ruleset\":1,\"schema\":{schema},\"fixes\":0,\"evidence\":1}},\"session\":\"20260101T000000Z\",\"cores\":[]}}}}\n"
