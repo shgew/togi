@@ -726,6 +726,60 @@ async fn a_watched_poll_that_uses_the_rest_of_the_duration_leaves_no_required_sa
     .await;
 }
 
+#[tokio::test]
+async fn a_watched_poll_that_uses_the_rest_of_the_duration_still_drains_a_quiet_instances_final_error()
+ {
+    local(async {
+        let mut inner = TestBackend::new("/bin/true");
+        inner.watched = vec!["results.txt"];
+        let mut odd = Odd::new(inner.clone());
+        odd.nap = ms(150);
+        let timing = Timing {
+            sample: ms(100),
+            ..Timing::default()
+        };
+        let rig = rig_edit(inner, timing, |env| {
+            env.backends = Backends::new().with(Arc::new(odd));
+        });
+        // The first instance keeps the poll busy past the deadline; the second is quiet and
+        // leaves a computation error without its line terminator.
+        rig.fake.on_launch(|index, command| {
+            let results = command.cwd.join("results.txt");
+            let text = if index == 0 {
+                "SLOW one\nSLOW two\n"
+            } else {
+                "COMPUTE ERROR"
+            };
+            Launch::Run(script(move |mut ctx: ProcCtx| async move {
+                ctx.write_file(results, text).unwrap();
+                ctx.until_killed().await;
+            }))
+        });
+        let handle = rig.start(spec(Regime::R7, &[1, 5], ms(200))).await.unwrap();
+        // Threads on a CPU neither instance was given: sampled after the deadline they would be an
+        // escape that ends the trial and overrides the evidence the teardown recovers.
+        for index in 0..2 {
+            *rig.fake.process(index).threads.borrow_mut() = Ok(Threads {
+                threads: vec![Thread { tid: 9, cpu: 6 }],
+                errors: Vec::new(),
+            });
+        }
+        let run = finish(&handle).await;
+        let result = &run.finished.result;
+        let failure = result.failure.unwrap();
+        assert_eq!(
+            (failure.signal, failure.core),
+            (Signal::ComputationError, core(5))
+        );
+        assert_eq!(result.escaped, []);
+        assert_eq!(result.inconclusive, None);
+        assert_eq!(result.ran, ms(200));
+        assert_eq!(run.signals(), [(core(5), Signal::ComputationError)]);
+        assert!(run.finished.teardown.is_ok());
+    })
+    .await;
+}
+
 /// Every error of a joined start failure, in order.
 fn joined(error: &togi_machine::Error) -> Vec<&Error> {
     match crate_error(error) {
@@ -1576,6 +1630,29 @@ async fn a_handle_that_stays_is_not_reported_abandoned() {
         let handle = rig.start(spec(Regime::R1, &[0], secs(2))).await.unwrap();
         let run = finish(&handle).await;
         assert!(!run.finished.abandoned);
+    })
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_usage_read_that_finds_the_exiting_process_gone_leaves_an_unexpected_exit_not_a_loss() {
+    local(async {
+        let rig = rig();
+        rig.fake.on_launch(|_, _| {
+            Launch::Run(script(|ctx: ProcCtx| async move {
+                tokio::time::sleep(Duration::from_millis(1500)).await;
+                ctx.exit(ExitInfo::Code(0));
+            }))
+        });
+        let handle = rig.start(spec(Regime::R1, &[0], secs(5))).await.unwrap();
+        *rig.fake.process(0).usage.borrow_mut() = Err(ProcError::Gone);
+        let run = finish(&handle).await;
+        assert_eq!(
+            run.finished.result.failure.map(|f| f.signal),
+            Some(Signal::UnexpectedExit)
+        );
+        assert_eq!(run.finished.result.inconclusive, None);
+        assert!(run.finished.teardown.is_ok());
     })
     .await;
 }

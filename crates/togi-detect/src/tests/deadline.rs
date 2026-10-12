@@ -121,3 +121,19 @@ fn a_used_up_budget_runs_nothing() {
     assert!(matches!(error, Error::BudgetExhausted { .. }));
     assert!(locked(&calls).is_empty());
 }
+
+#[test]
+fn every_seam_call_that_times_out_keeps_the_timeout_as_its_cause() {
+    let timed_out_cause = |error: &(dyn std::error::Error + 'static)| {
+        caused_by::<togi_command::Error>(error)
+            .is_some_and(|source| matches!(source, togi_command::Error::TimedOut { .. }))
+    };
+    let (mut kernel, _) = kernel(&[], |_| timed_out());
+    let partial = kernel.read_mces(&boot(OLD), None).unwrap_err();
+    assert!(partial.value.is_empty());
+    assert!(timed_out_cause(&partial), "{partial:?}");
+    let error = kernel.reset_reason(&boot(OLD)).unwrap_err();
+    assert!(timed_out_cause(&error), "{error:?}");
+    let error = kernel.reset_reason_after(&boot(OLD)).unwrap_err();
+    assert!(timed_out_cause(&error), "{error:?}");
+}
