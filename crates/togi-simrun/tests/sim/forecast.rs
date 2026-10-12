@@ -87,7 +87,6 @@ fn comparable(decision: DecisionPayload) -> DecisionPayload {
             p.signal = Signal::Crash;
             p.trial = None;
             p.reason = None;
-            p.known_failure = None;
             p.into()
         }
         DecisionPayload::TunerDecision(mut p) => {
@@ -100,10 +99,6 @@ fn comparable(decision: DecisionPayload) -> DecisionPayload {
         }
         DecisionPayload::CheckingCycle(mut p) => {
             p.reason = None;
-            p.into()
-        }
-        DecisionPayload::CheckingChain(mut p) => {
-            p.source_seqs.clear();
             p.into()
         }
         DecisionPayload::HuntStart(mut p) => {
@@ -145,7 +140,9 @@ fn comparable(decision: DecisionPayload) -> DecisionPayload {
             p.detail.clear();
             p.into()
         }
-        other @ (DecisionPayload::CheckingStep(_) | DecisionPayload::ProfileChange(_)) => other,
+        other @ (DecisionPayload::CheckingStep(_)
+        | DecisionPayload::CheckingChain(_)
+        | DecisionPayload::ProfileChange(_)) => other,
     }
 }
 
