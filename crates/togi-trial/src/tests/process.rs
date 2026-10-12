@@ -673,7 +673,7 @@ fn real_process_a_helper_that_pins_itself_elsewhere_is_an_escape() {
     let mut escaping = runner("escape", false, timing(), dir.path());
     let outcome = run(&mut escaping, spec(Regime::R1, &[0], secs(10)));
     outcome.assert_clean("escape");
-    assert_eq!(outcome.result.escaped.len(), 1);
+    assert_eq!(outcome.result.escaped, [CpuId(allowed_cpus()[1])]);
     assert_eq!(outcome.result.failure, None);
 }
 

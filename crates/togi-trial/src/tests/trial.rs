@@ -1579,3 +1579,26 @@ async fn a_handle_that_stays_is_not_reported_abandoned() {
     })
     .await;
 }
+
+#[tokio::test(start_paused = true)]
+async fn a_usage_read_that_finds_the_exiting_process_gone_leaves_an_unexpected_exit_not_a_loss() {
+    local(async {
+        let rig = rig();
+        rig.fake.on_launch(|_, _| {
+            Launch::Run(script(|ctx: ProcCtx| async move {
+                tokio::time::sleep(Duration::from_millis(1500)).await;
+                ctx.exit(ExitInfo::Code(0));
+            }))
+        });
+        let handle = rig.start(spec(Regime::R1, &[0], secs(5))).await.unwrap();
+        *rig.fake.process(0).usage.borrow_mut() = Err(ProcError::Gone);
+        let run = finish(&handle).await;
+        assert_eq!(
+            run.finished.result.failure.map(|f| f.signal),
+            Some(Signal::UnexpectedExit)
+        );
+        assert_eq!(run.finished.result.inconclusive, None);
+        assert!(run.finished.teardown.is_ok());
+    })
+    .await;
+}

@@ -327,3 +327,31 @@ fn an_invalid_identity_fails_validation_publishes_nothing_and_touches_no_hardwar
     assert!(!host.pm.is_published());
     assert_eq!(watch.touched(), Vec::<&str>::new());
 }
+
+#[test]
+fn a_supported_cpu_with_no_driver_loaded_is_refused_and_skips_every_gated_check() {
+    let tree = Tree::new();
+    std::fs::remove_dir_all(tree.path("sys/kernel/ryzen_smu_drv")).unwrap();
+    let scope = Scope::creating();
+    let mut host = host(&tree, Privilege::Root, resolved_account(), scope.clone());
+    let checks = host.preflight();
+    assert_eq!(names(&checks), ALL_CHECKS);
+    assert!(find(&checks, "root").ok);
+    assert!(find(&checks, "cpu").ok);
+    let driver = find(&checks, "ryzen_smu");
+    assert!(!driver.ok);
+    assert!(
+        driver.detail.contains("ryzen_smu is not loaded"),
+        "{}",
+        driver.detail
+    );
+    for name in &ALL_CHECKS[3..] {
+        let check = find(&checks, name);
+        assert!(!check.ok, "{name}");
+        assert_eq!(
+            check.detail, "needs passing cpu and ryzen_smu checks",
+            "{name}"
+        );
+    }
+    assert_eq!(scope.calls.get(), 0);
+}

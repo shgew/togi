@@ -681,3 +681,51 @@ async fn a_log_writer_that_cannot_start_is_refused_with_its_error_the_proof_and_
     })
     .await;
 }
+
+#[tokio::test(start_paused = true)]
+async fn the_trial_keeps_the_highest_tctl_it_saw_and_leaves_out_a_ccd_that_reads_as_no_number() {
+    local(async {
+        let landed = Arc::new(Landed::default());
+        let rig = rig_edit(TestBackend::new("/bin/true"), Timing::default(), |env| {
+            env.storage = Some(landed.storage(env.dir.join("t1/samples.jsonl")));
+        });
+        let tick = std::cell::Cell::new(0);
+        let before_tick = Arc::clone(&landed);
+        rig.fake.on_threads(move |_| {
+            tick.set(tick.get() + 1);
+            before_tick.wait_for(tick.get() - 1);
+        });
+        write(&rig, "hwmon/hwmon0/name", "k10temp\n");
+        write(&rig, "hwmon/hwmon0/temp1_label", "Tctl\n");
+        write(&rig, "hwmon/hwmon0/temp1_input", "71000\n");
+        write(&rig, "hwmon/hwmon0/temp2_label", "Tccd1\n");
+        write(&rig, "hwmon/hwmon0/temp2_input", "65000\n");
+        write(&rig, "hwmon/hwmon0/temp3_label", "Tccd2\n");
+        write(&rig, "hwmon/hwmon0/temp3_input", "not a temperature\n");
+        let handle = rig.start(spec(Regime::R1, &[2], secs(3))).await.unwrap();
+        let dir = rig.dir.path().to_owned();
+        tokio::task::spawn_local(async move {
+            tokio::time::sleep(Duration::from_millis(1500)).await;
+            std::fs::write(dir.join("hwmon/hwmon0/temp1_input"), "72000\n").unwrap();
+        });
+        let run = finish(&handle).await;
+        assert!(run.finished.errors.is_empty(), "{:?}", run.finished.errors);
+        assert_eq!(run.finished.result.tctl_max_c, Some(72));
+        let samples: Vec<_> =
+            togi_machine::read_samples(&rig.dir.path().join("trials/t1")).collect();
+        assert_eq!(
+            samples
+                .iter()
+                .map(|sample| sample.tctl_c)
+                .collect::<Vec<_>>(),
+            [Some(71), Some(72)]
+        );
+        for sample in &samples {
+            assert_eq!(
+                sample.tccd_c,
+                Some(std::collections::BTreeMap::from([("Tccd1".to_owned(), 65)]))
+            );
+        }
+    })
+    .await;
+}
