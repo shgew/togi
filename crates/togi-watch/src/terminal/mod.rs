@@ -552,12 +552,17 @@ mod tests {
             ("SIGHUP", Signal::HUP),
         ] {
             let recorder = Recorder::new(80, 12);
+            let stop = Stop::new();
             let live = Config {
                 state_dir: state.path(),
                 since: None,
-                stop: None,
+                stop: Some(&stop),
                 terminating: true,
             };
+            let watchdog = Watchdog::start({
+                let stop = stop.clone();
+                move || stop.stop()
+            });
             let mut sent = false;
             run_drive(
                 &recorder,
@@ -569,10 +574,11 @@ mod tests {
                         sent = true;
                         kill_process(getpid(), signal).unwrap();
                     }
-                    plain(journal, screen, now, buf)
+                    frozen(journal, screen, now, buf)
                 },
             )
             .unwrap();
+            assert!(!watchdog.fired(), "{name} did not end the dashboard");
             assert!(recorder.restored(), "{name}");
             assert_eq!(
                 recorder.raw().last().map(String::as_str),
