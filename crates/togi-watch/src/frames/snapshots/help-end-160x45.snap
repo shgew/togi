@@ -6,6 +6,7 @@ expression: body
 │
 │  ■ SOLO LIMITS  16/16  ───  ► PHASE 1  ───  ○ PHASE 2  ───  CLEAN CYCLES 0  ───  ► CYCLE 1  step 1 of 18 · part 1 of 3 · trial 1 of 4  ───  1:20 left
 │
+│  │ R6            During idle trials this screen holds still, clock included, so it cannot wake the cores.
 │  │
 │  │ NO ETA        A hunt can start at any time, so togi shows only what is scheduled and the time left in the current trial.
 │  │
@@ -16,22 +17,21 @@ expression: body
 │  │
 │  │ SEARCH           finding its solo limit with light and heavy-vector trials alone
 │  │ CONFIRM          checking its candidate solo limit with repeated light and heavy-vector trials alone
-│  │ FOUND            solo limit checked; waiting at 0 until every core has one
+│  │ FOUND            solo limit checked; waiting at 0
 │  │ WAITING          at 0, waiting for its first search turn
 │  │ MEMBER           kept with its hunt group at its failing offset; another member may be probed
 │  │ offset           Curve Optimizer counts, 0 to -50; deeper is more negative
 │  │ trial            one launch of one workload on its target
 │  │ solo limit       the deepest offset a core confirmed under load alone
 │  │ failure point    the shallowest offset where a core failed on its own account
-│  │ combination      offsets at which a group of cores failed together. Unresolved: no smaller group was shown to fail
-│  │ at its limit     a core at -50, or one count deeper reaches a failure point or combination
-│  │ has room         a core past search that is not at its limit
+│  │ combination      offsets at which a group of cores failed together
+│  │ at its limit     a core that cannot go deeper
+│  │ has room         a core that can still go deeper
 │  │ suspect          a core a hunt keeps at its failing offset
 │  │ parked           a core a hunt holds shallower than its failing offset
-│  │ partial part     an R7 part with the top requesters idle
-│  │ top requester    the loaded core with the highest voltage request, setting the shared core voltage; marked top on the CCD tables, by offset when offsets
-│  █                  stand in for requests
-│  █ self-sufficient  observed passing as top requester for this R7 workload; evidence, not a guarantee
+│  █ partial part     an R7 part with the top requesters idle
+│  █ top requester    the loaded core with the highest voltage request, setting the shared core voltage; marked top on the CCD tables
+│  █ self-sufficient  observed passing as top requester for this R7 workload
 │  █ cycle            one pass through the checking schedule
 │  █
 │  █
