@@ -136,6 +136,7 @@ mod tests {
         arms: usize,
         changes: VecDeque<Result<(), WatchError>>,
         left_missing: bool,
+        fail_arm: bool,
     }
 
     impl Fake {
@@ -146,6 +147,7 @@ mod tests {
                 arms: 0,
                 changes: VecDeque::new(),
                 left_missing: false,
+                fail_arm: false,
             }
         }
 
@@ -156,6 +158,7 @@ mod tests {
                 arms: 0,
                 changes: changes.into_iter().collect(),
                 left_missing: false,
+                fail_arm: false,
             }
         }
     }
@@ -167,6 +170,9 @@ mod tests {
 
         fn arm(&mut self) -> Result<(), WatchError> {
             self.arms += 1;
+            if self.fail_arm {
+                return Err(io_error());
+            }
             self.polling = self.arms < self.appears_after;
             Ok(())
         }
@@ -318,5 +324,73 @@ mod tests {
             .unwrap()
             .unwrap();
         assert!(l.events.recv().await.is_none());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_look_that_finds_the_journal_still_missing_goes_back_to_polling() {
+        let mut l = handshake();
+        let mut handshake = l.handshake.take().unwrap();
+        let mut watch = Fake::watching([Ok(())]);
+        watch.left_missing = true;
+        watch.appears_after = 3;
+        let task = tokio::spawn(async move {
+            drive(&mut watch, &mut handshake).await;
+            watch.arms
+        });
+        assert!(matches!(l.events.recv().await, Some(Event::Changed)));
+        l.reloaded.send(()).unwrap();
+        tokio::time::advance(POLL).await;
+        tokio::task::yield_now().await;
+        assert!(
+            l.events.try_recv().is_err(),
+            "reported while it was still missing"
+        );
+        tokio::time::advance(POLL).await;
+        assert!(matches!(l.events.recv().await, Some(Event::Changed)));
+        drop(l.reloaded);
+        assert_eq!(task.await.unwrap(), 3);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_failed_look_after_a_change_is_delivered_and_ends_the_notifier() {
+        let mut l = handshake();
+        let mut handshake = l.handshake.take().unwrap();
+        let mut watch = Fake::watching([Ok(())]);
+        watch.left_missing = true;
+        watch.fail_arm = true;
+        let task = tokio::spawn(async move { drive(&mut watch, &mut handshake).await });
+        assert!(matches!(l.events.recv().await, Some(Event::Changed)));
+        l.reloaded.send(()).unwrap();
+        assert!(matches!(l.events.recv().await, Some(Event::Failed(_))));
+        timeout(Duration::from_secs(1), task)
+            .await
+            .unwrap()
+            .unwrap();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_failed_look_while_polling_is_delivered_and_ends_the_notifier() {
+        let mut l = handshake();
+        let mut handshake = l.handshake.take().unwrap();
+        let mut watch = Fake::polling(5);
+        watch.fail_arm = true;
+        let task = tokio::spawn(async move { drive(&mut watch, &mut handshake).await });
+        tokio::time::advance(POLL).await;
+        assert!(matches!(l.events.recv().await, Some(Event::Failed(_))));
+        timeout(Duration::from_secs(1), task)
+            .await
+            .unwrap()
+            .unwrap();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_loop_that_is_gone_ends_the_notifier_at_its_next_change() {
+        let mut l = handshake();
+        let mut handshake = l.handshake.take().unwrap();
+        let mut watch = Fake::watching([Ok(())]);
+        drop(l.events);
+        timeout(Duration::from_secs(1), drive(&mut watch, &mut handshake))
+            .await
+            .unwrap();
     }
 }
