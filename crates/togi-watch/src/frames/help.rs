@@ -72,11 +72,11 @@ const TUNING: Section = Section {
     items: &[
         (
             "SOLO LIMITS",
-            "Search: each core alone, the rest at 0, finds its solo limit. The stage counts the cores whose solo limit is found and names the core being searched or confirmed.",
+            "The cores whose solo limit is found, and the core being searched or confirmed.",
         ),
         (
             "PHASE 1",
-            "Search, then the first full cycle with every core one count shallower than its solo limit. Its pass confirms the first BIOS profile.",
+            "The first full cycle, run on the profile the solo limits give.",
         ),
         (
             "HUNT",
@@ -84,11 +84,11 @@ const TUNING: Section = Section {
         ),
         (
             "PHASE 2",
-            "Rounds that move each candidate one count toward its solo limit, as far as its failure points and combinations permit, then one confirmation cycle. A round lists its candidates, their gaps and the most rounds left if none fails.",
+            "Deepening: its rounds and its confirmation cycle. A round lists its candidates and their gaps.",
         ),
         (
             "BIOS PROFILE",
-            "The profile to enter in BIOS, one row per CCD in slot order. A * marks an offset not yet confirmed: the profile changed after the last passed full cycle. A passed full cycle confirms it, except for a core a held failure still shows stepped back: that offset stays marked until the hold expires (the core then shows its held offset again) or a second failure steps it back for good.",
+            "The profile to enter in BIOS, one row per CCD in slot order. A * marks an offset not yet confirmed.",
         ),
         (
             "CYCLE",
@@ -96,7 +96,7 @@ const TUNING: Section = Section {
         ),
         (
             "CLEAN CYCLES",
-            "The count of clean cycles still valid for the current profile; checking repeats cycles until stopped.",
+            "The count of clean cycles for the current profile.",
         ),
         (
             "R6",
@@ -124,10 +124,7 @@ const WORDS: Section = Section {
             "CONFIRM",
             "checking its candidate solo limit with repeated light and heavy-vector trials alone",
         ),
-        (
-            "FOUND",
-            "solo limit checked; waiting at 0 until every core has one",
-        ),
+        ("FOUND", "solo limit checked; waiting at 0"),
         ("WAITING", "at 0, waiting for its first search turn"),
         (
             "MEMBER",
@@ -148,13 +145,10 @@ const WORDS: Section = Section {
         ),
         (
             "combination",
-            "offsets at which a group of cores failed together. Unresolved: no smaller group was shown to fail",
+            "offsets at which a group of cores failed together",
         ),
-        (
-            "at its limit",
-            "a core at -50, or one count deeper reaches a failure point or combination",
-        ),
-        ("has room", "a core past search that is not at its limit"),
+        ("at its limit", "a core that cannot go deeper"),
+        ("has room", "a core that can still go deeper"),
         ("suspect", "a core a hunt keeps at its failing offset"),
         (
             "parked",
@@ -163,11 +157,11 @@ const WORDS: Section = Section {
         ("partial part", "an R7 part with the top requesters idle"),
         (
             "top requester",
-            "the loaded core with the highest voltage request, setting the shared core voltage; marked top on the CCD tables, by offset when offsets stand in for requests",
+            "the loaded core with the highest voltage request, setting the shared core voltage; marked top on the CCD tables",
         ),
         (
             "self-sufficient",
-            "observed passing as top requester for this R7 workload; evidence, not a guarantee",
+            "observed passing as top requester for this R7 workload",
         ),
         ("cycle", "one pass through the checking schedule"),
     ],
@@ -323,7 +317,7 @@ fn reading(width: usize, colours: Colours) -> Vec<Line<'static>> {
             offset: -28,
             failure: -36,
             state: "AT LIMIT",
-            note: "at its limit: one count deeper reaches C5",
+            note: "at its limit: it cannot go deeper",
             gauge: gauge(
                 colours,
                 &[
@@ -629,6 +623,30 @@ mod tests {
             "voltage-targeted counts",
             "halfway",
             "then both",
+            "one count shallower",
+            "one count toward",
+            "one count deeper",
+            "Its pass confirms",
+            "as far as its failure points",
+            "most rounds left",
+            "if none fails",
+            "then one confirmation cycle",
+            "passed full cycle confirms",
+            "after the last passed",
+            "held failure",
+            "hold expires",
+            "second failure",
+            "still valid",
+            "repeats until stopped",
+            "Unresolved",
+            "no smaller group",
+            "-50, or",
+            "past search",
+            "by offset when offsets",
+            "stand in for requests",
+            "not a guarantee",
+            "evidence, not",
+            "until every core has one",
         ] {
             assert!(
                 !words.contains(rule),
@@ -669,7 +687,7 @@ mod tests {
             for explanation in [
                 "SEARCH finding its solo limit with light and heavy-vector trials alone",
                 "CONFIRM checking its candidate solo limit with repeated light and heavy-vector trials alone",
-                "FOUND solo limit checked; waiting at 0 until every core has one",
+                "FOUND solo limit checked; waiting at 0 WAITING",
                 "WAITING at 0, waiting for its first search turn",
                 "MEMBER kept with its hunt group at its failing offset; another member may be probed",
             ] {
