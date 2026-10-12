@@ -1,6 +1,6 @@
 use std::ffi::OsStr;
 use std::fs::{self, File};
-use std::io::{self, ErrorKind, Read as _, Write as _};
+use std::io::{self, ErrorKind, Read as _, Seek as _, Write as _};
 use std::num::NonZeroU32;
 use std::os::unix::ffi::OsStrExt as _;
 use std::os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _};
@@ -67,7 +67,7 @@ impl Simulator {
     pub fn locate(explicit: Option<&Path>) -> Result<Self, Error> {
         let original = match explicit {
             Some(path) => path.to_path_buf(),
-            None => build(None, None)?,
+            None => build()?,
         };
         let (bytes, mode) = File::open(&original)
             .and_then(|mut file| {
@@ -214,15 +214,59 @@ impl Launched {
     }
 }
 
-/// Builds `togi-tool-sim` as the Go bench builds `tools/sim`, and returns the binary cargo reports: from the
-/// tree the bench runs in, or from `tree`, with `target` as cargo's target directory when given. Cargo's own
-/// progress goes to this process's stderr.
+/// Builds `togi-tool-sim` in the tree the bench runs in, as the Go bench builds `tools/sim`, and returns the
+/// binary cargo reports. Cargo's own progress goes to this process's stderr.
 #[expect(
     clippy::disallowed_methods,
     reason = "the bench builds the simulator it benchmarks with cargo"
 )]
-pub(crate) fn build(tree: Option<&Path>, target: Option<&Path>) -> Result<PathBuf, Error> {
-    let failed = |message: String| Error::BuildSimulator { message };
+fn build() -> Result<PathBuf, Error> {
+    let output = cargo_build(None)
+        .stdin(Stdio::null())
+        .stderr(Stdio::inherit())
+        .output()
+        .map_err(|error| build_failed(format!("run cargo: {error}")))?;
+    if !output.status.success() {
+        return Err(build_failed(format!("cargo build {}", output.status)));
+    }
+    built(&output.stdout)
+}
+
+/// Builds `togi-tool-sim` in `tree` as [`build`] does, with `target` as cargo's target directory when given,
+/// in a process group of its own that `fleet` stops when it is cancelled.
+pub(crate) fn build_in(
+    fleet: &Fleet,
+    tree: &Path,
+    target: Option<&Path>,
+) -> Result<PathBuf, Error> {
+    let unkept = |error: io::Error| build_failed(format!("keep cargo's messages: {error}"));
+    let mut messages = tempfile::tempfile().map_err(unkept)?;
+    let mut command = cargo_build(target);
+    command
+        .current_dir(tree)
+        .stdin(Stdio::null())
+        .stdout(messages.try_clone().map_err(unkept)?)
+        .stderr(Stdio::inherit());
+    let finished =
+        process::run(fleet, &mut command, Duration::MAX).map_err(|error| match error {
+            RunError::Start(error) => build_failed(format!("run cargo: {error}")),
+            error => build_failed(format!("cargo build: {error}")),
+        })?;
+    if finished.exit != 0 {
+        return Err(build_failed(format!(
+            "cargo build exit status: {}",
+            finished.exit
+        )));
+    }
+    let mut bytes = Vec::new();
+    messages
+        .rewind()
+        .and_then(|()| messages.read_to_end(&mut bytes))
+        .map_err(unkept)?;
+    built(&bytes)
+}
+
+fn cargo_build(target: Option<&Path>) -> Command {
     let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
     let mut command = Command::new(cargo);
     command.args([
@@ -233,22 +277,19 @@ pub(crate) fn build(tree: Option<&Path>, target: Option<&Path>) -> Result<PathBu
         BINARY,
         "--message-format=json-render-diagnostics",
     ]);
-    if let Some(tree) = tree {
-        command.current_dir(tree);
-    }
     if let Some(target) = target {
         command.arg("--target-dir").arg(target);
     }
-    let output = command
-        .stdin(Stdio::null())
-        .stderr(Stdio::inherit())
-        .output()
-        .map_err(|error| failed(format!("run cargo: {error}")))?;
-    if !output.status.success() {
-        return Err(failed(format!("cargo build {}", output.status)));
-    }
-    executable(&output.stdout)
-        .ok_or_else(|| failed(format!("cargo reported no {BINARY} executable")))
+    command
+}
+
+fn build_failed(message: String) -> Error {
+    Error::BuildSimulator { message }
+}
+
+fn built(messages: &[u8]) -> Result<PathBuf, Error> {
+    executable(messages)
+        .ok_or_else(|| build_failed(format!("cargo reported no {BINARY} executable")))
 }
 
 /// The executable of the `togi-tool-sim` binary in cargo's JSON build messages.

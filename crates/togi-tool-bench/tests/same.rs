@@ -340,6 +340,10 @@ fn each_tree_is_built_and_its_own_simulator_run() {
 }
 
 fn command(trees: &Trees) -> Command {
+    command_with_cache(trees, &trees.path("cache"))
+}
+
+fn command_with_cache(trees: &Trees, cache: &Path) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_togi-tool-bench"));
     command
         .arg("same")
@@ -349,8 +353,29 @@ fn command(trees: &Trees) -> Command {
         .arg("--suite")
         .arg("suite.json")
         .arg("--cache")
-        .arg(trees.path("cache"));
+        .arg(cache);
     command
+}
+
+/// A `cargo` that logs its directory and arguments, reports `simulator` as the binary it built, then runs `after`.
+fn fake_cargo(trees: &Trees, simulator: &Path, after: &str) -> PathBuf {
+    let path = trees.path("cargo");
+    let script = format!(
+        "#!/bin/sh\necho \"$PWD $@\" >> '{log}'\nprintf '%s\\n' '{{\"reason\":\"compiler-artifact\",\"target\":{{\"name\":\"togi-tool-sim\",\"kind\":[\"bin\"]}},\"executable\":\"{simulator}\"}}'\n{after}\n",
+        log = trees.path("cargo.log").display(),
+        simulator = simulator.display(),
+    );
+    fs::write(&path, script).unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+    path
+}
+
+fn cargo_runs(trees: &Trees) -> Vec<String> {
+    fs::read_to_string(trees.path("cargo.log"))
+        .unwrap_or_default()
+        .lines()
+        .map(str::to_owned)
+        .collect()
 }
 
 fn text(bytes: &[u8]) -> String {
@@ -459,4 +484,85 @@ fn a_full_run_leaves_no_run_directory_and_no_copy_of_a_simulator_behind() {
         assert!(left.is_empty(), "smoke={smoke}: {left:?}");
         assert!(!trees.path("cache/runs").exists(), "smoke={smoke}");
     }
+}
+
+#[test]
+fn a_termination_during_the_build_fails_the_command_instead_of_reporting_equality() {
+    let trees = Trees::new(SUITE, SUITE);
+    let sim = trees.simulator("sim", &recorded(None), 0);
+    let cargo = fake_cargo(&trees, &sim, "kill -TERM $PPID\nsleep 60");
+    let temporary = trees.path("tmp");
+    fs::create_dir_all(&temporary).unwrap();
+    let output = command(&trees)
+        .env("CARGO", &cargo)
+        .env("TMPDIR", &temporary)
+        .output()
+        .unwrap();
+    let stderr = text(&output.stderr);
+    assert_eq!(output.status.code(), Some(1), "{stderr}");
+    assert!(stderr.contains("interrupted"), "{stderr}");
+    assert!(output.stdout.is_empty(), "{}", text(&output.stdout));
+    assert_eq!(
+        cargo_runs(&trees).len(),
+        1,
+        "the head built after the interrupt"
+    );
+    let left: Vec<_> = fs::read_dir(&temporary).unwrap().collect();
+    assert!(left.is_empty(), "{left:?}");
+}
+
+#[test]
+fn a_relative_cache_directory_holds_the_base_target_directory_of_the_bench_not_of_the_tree() {
+    let trees = Trees::new(SUITE, SUITE);
+    let sim = trees.simulator("sim", &recorded(None), 0);
+    let cargo = fake_cargo(&trees, &sim, "");
+    let output = command_with_cache(&trees, Path::new("relative-cache"))
+        .current_dir(trees.dir.path())
+        .env("CARGO", &cargo)
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{}", text(&output.stderr));
+    let target = trees
+        .dir
+        .path()
+        .canonicalize()
+        .unwrap()
+        .join("relative-cache/same-target");
+    let runs = cargo_runs(&trees);
+    assert_eq!(runs.len(), 2, "{runs:?}");
+    assert!(
+        runs[0].contains(&format!("--target-dir {}", target.display())),
+        "{runs:?}"
+    );
+}
+
+#[test]
+fn a_failed_session_exits_one_and_names_the_only_directory_it_left_in_the_temporary_directory() {
+    let trees = Trees::new(SUITE, SUITE);
+    let base = trees.simulator("base-sim", &recorded(None), 0);
+    let head = trees.simulator("head-sim", "", 1);
+    let temporary = trees.path("tmp");
+    fs::create_dir_all(&temporary).unwrap();
+    let output = command(&trees)
+        .env("TMPDIR", &temporary)
+        .arg("--base-sim")
+        .arg(&base)
+        .arg("--head-sim")
+        .arg(&head)
+        .output()
+        .unwrap();
+    let stderr = text(&output.stderr);
+    assert_eq!(output.status.code(), Some(1), "{stderr}");
+    assert!(output.stdout.is_empty(), "{}", text(&output.stdout));
+    let kept = stderr
+        .lines()
+        .find_map(|line| line.strip_prefix("togi-tool-bench: kept the runs in "))
+        .unwrap_or_else(|| panic!("no kept-runs line: {stderr}"));
+    let kept = PathBuf::from(kept);
+    assert!(kept.is_dir(), "{kept:?}");
+    let left: Vec<_> = fs::read_dir(&temporary)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect();
+    assert_eq!(left, [kept]);
 }
