@@ -5,12 +5,13 @@ use std::os::fd::AsFd as _;
 use std::sync::LazyLock;
 
 use clap::{Args as ClapArgs, ValueHint};
+use togi_journal::{DirError, recorded_build};
 use togi_watch::terminal::{self, ONE_FRAME_SIZE, SourceError};
 
 use crate::cli::{Context, examples};
 use crate::exit::Exit;
 use crate::read::unknown_kind;
-use crate::report::fail;
+use crate::report::{chain, fail};
 
 static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
     examples(&[
@@ -43,8 +44,10 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 /// On a terminal it fills the screen until interrupted; otherwise it prints one frame of --width
 /// by --height and exits. An unreadable or incompatible journal appears in the frame and on
 /// stderr, and one-frame watch exits 1; live watch keeps showing the problem and retries when the
-/// journal changes. A missing journal (no session yet) is not an error. The tuning boot shows it
-/// on tty1. `NO_COLOR` turns colour off.
+/// journal changes. A journal another build wrote, whose first line is not a togi journal header,
+/// is refused before any frame: exit 1 with the cutover step on stderr, live or not. A missing
+/// journal (no session yet) is not an error. The tuning boot shows it on tty1. `NO_COLOR` turns
+/// colour off.
 #[derive(ClapArgs, Debug)]
 #[command(after_help = EXAMPLES.as_str())]
 pub struct Args {
@@ -71,6 +74,10 @@ pub struct Args {
 
 /// Runs `togi watch`.
 pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
+    // Another build's journal is refused before the terminal is touched and before any frame: no frame, no retry.
+    if let Err(error @ DirError::ForeignJournal { .. }) = recorded_build(ctx.state_dir) {
+        return fail(ctx, "watch", chain(&error));
+    }
     let result = if stdout().is_terminal() {
         let out = stdout();
         let keys = stdin();

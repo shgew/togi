@@ -18,8 +18,8 @@ use crate::support::{
     assert_unknown_kind_refusal, journal, rewrite_first_line, session, text, togi,
 };
 
-const BOUND: Duration = Duration::from_secs(30);
-const HIDE_CURSOR: &[u8] = b"\x1b[?25l";
+pub(crate) const BOUND: Duration = Duration::from_secs(30);
+pub(crate) const HIDE_CURSOR: &[u8] = b"\x1b[?25l";
 const SHOW_CURSOR: &[u8] = b"\x1b[?25h";
 
 #[test]
@@ -163,7 +163,7 @@ fn watch_help() {
     insta::assert_snapshot!(text(&ran.stdout));
 }
 
-struct Helper(Child);
+pub(crate) struct Helper(pub(crate) Child);
 
 impl Drop for Helper {
     fn drop(&mut self) {
@@ -172,7 +172,7 @@ impl Drop for Helper {
     }
 }
 
-fn read_more(master: &OwnedFd, seen: &mut Vec<u8>, deadline: Instant) -> bool {
+pub(crate) fn read_more(master: &OwnedFd, seen: &mut Vec<u8>, deadline: Instant) -> bool {
     let remaining = deadline.saturating_duration_since(Instant::now());
     if remaining.is_zero() {
         return false;
@@ -196,7 +196,7 @@ fn read_more(master: &OwnedFd, seen: &mut Vec<u8>, deadline: Instant) -> bool {
     }
 }
 
-fn contains(haystack: &[u8], needle: &[u8]) -> bool {
+pub(crate) fn contains(haystack: &[u8], needle: &[u8]) -> bool {
     haystack
         .windows(needle.len())
         .any(|window| window == needle)
