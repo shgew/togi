@@ -12,6 +12,8 @@ publish = false
 
 [workspace.dependencies]
 clap = { version = "4", default-features = false, features = ["std", "derive", "help", "usage", "error-context"] }
+clap_complete = { version = "4", default-features = false }
+clap_complete_nushell = { version = "4", default-features = false }
 flate2 = "1"
 getrandom = { version = "0.4", features = ["std"] }
 insta = { version = "1", default-features = false }
