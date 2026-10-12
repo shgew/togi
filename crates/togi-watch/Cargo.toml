@@ -9,6 +9,10 @@ description = "The togi watch dashboard: the incremental journal model, history,
 
 [dependencies]
 jiff.workspace = true
+thiserror.workspace = true
+togi-journal.workspace = true
+togi-machine.workspace = true
+togi-tuner.workspace = true
 
 [lints]
 workspace = true

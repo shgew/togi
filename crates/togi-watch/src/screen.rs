@@ -7,6 +7,9 @@
 
 use jiff::Timestamp;
 
+use crate::history::LogEntry;
+use crate::model::Snapshot;
+
 /// Which page the dashboard shows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum View {
@@ -37,7 +40,8 @@ pub struct Screen {
     pub view: View,
     /// Whether the reader can press keys, so the frames show key hints.
     pub keys: bool,
-    /// Lines scrolled down from the top of the view.
+    /// Lines scrolled down from the top of the view. `usize::MAX` means following the end; the frames clamp any
+    /// scroll at or past the extent to the end.
     pub scroll: usize,
     /// Terminal columns.
     pub width: u16,
@@ -67,4 +71,38 @@ pub struct Drawn {
     pub scroll: usize,
     /// How long the frame stays true.
     pub hold: Hold,
+}
+
+/// The journal list the log view shows: the model's own, or one the loop held when the reader scrolled back.
+#[derive(Debug, Clone, Copy)]
+pub struct Log<'a> {
+    /// The lines, oldest first.
+    pub entries: &'a [LogEntry],
+    /// Every event the log lists, kept or not.
+    pub total: usize,
+    /// How many events arrived after the list was held.
+    pub arrived: usize,
+}
+
+/// What the loop knows about the journal, which the frames draw from.
+#[expect(
+    clippy::large_enum_variant,
+    reason = "one is built per frame and borrowed; the snapshot is a bag of references"
+)]
+#[derive(Debug, Clone, Copy)]
+pub enum Journal<'a> {
+    /// There is no journal.
+    Missing,
+    /// A journal a session is about to append to, before it has recorded anything: nothing in it describes this
+    /// run.
+    Starting,
+    /// The journal cannot be read or folded.
+    Problem(&'a (dyn std::error::Error + 'a)),
+    /// The journal, folded.
+    Ready {
+        /// The facts.
+        snapshot: Snapshot<'a>,
+        /// The log list.
+        log: Log<'a>,
+    },
 }

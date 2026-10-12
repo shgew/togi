@@ -1045,6 +1045,10 @@ name = "togi-watch"
 version = "0.0.0"
 dependencies = [
  "jiff",
+ "thiserror",
+ "togi-journal",
+ "togi-machine",
+ "togi-tuner",
 ]
 
 [[package]]
