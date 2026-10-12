@@ -51,7 +51,10 @@ pub use error::{Error, RunError, Unrunnable};
 pub use git::{Tree, inspect};
 pub use metrics::{Measured, measure};
 pub use process::Fleet;
-pub use record::{ModelCheck, Record, Status, read as read_records, write as write_records};
+pub use record::{
+    ModelCheck, Record, Status, read as read_records, write as write_records,
+    write_baseline as write_baseline_records,
+};
 pub use run::{Options, Report, execute, set_scenario_shares};
 pub use simulator::{Session, Simulator};
 pub use suite::{Machine, Plan, RunSpec, Selection, Split, Suite, SuiteError};

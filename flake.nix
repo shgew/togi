@@ -98,16 +98,25 @@
               nativeBuildInputs = rustArgs.nativeBuildInputs ++ args.nativeBuildInputs;
             };
           simSuite = lib.importJSON ./nix/sim-suite.json;
-          simRelease = rustArgs // {
-            pname = "togi-tool-sim";
+          rustRelease = rustArgs // {
             CARGO_PROFILE = "release";
             CARGO_PROFILE_RELEASE_LTO = "false";
+          };
+          simRelease = rustRelease // {
+            pname = "togi-tool-sim";
             cargoExtraArgs = "--locked -p togi-tool-sim";
           };
+          rustReleaseDeps = craneLib.buildDepsOnly (
+            rustRelease
+            // {
+              pname = "togi-release";
+              cargoExtraArgs = "--locked -p togi -p togi-tool-sim";
+            }
+          );
           togiToolSim = craneLib.buildPackage (
             simRelease
             // {
-              cargoArtifacts = craneLib.buildDepsOnly simRelease;
+              cargoArtifacts = rustReleaseDeps;
               doCheck = false;
             }
           );
@@ -175,11 +184,26 @@
             go test -p $NIX_BUILD_CORES ${flags} -shuffle=on -tags integration ${packages}
             runHook postCheck
           '';
+          version = lib.fileContents ./version.txt;
+          rev = inputs.self.shortRev or inputs.self.dirtyShortRev or "dev";
+          installCompletions = lib.optionalString (pkgs.stdenv.buildPlatform.canExecute pkgs.stdenv.hostPlatform) ''
+            installShellCompletion --cmd togi \
+              --bash <($out/bin/togi completion bash) \
+              --zsh <($out/bin/togi completion zsh) \
+              --fish <($out/bin/togi completion fish) \
+              --nushell <($out/bin/togi completion nushell)
+          '';
+          meta = {
+            description = "Per-core Curve Optimizer tuner for Zen 5 desktop CPUs";
+            license = lib.licenses.gpl3Plus;
+            mainProgram = "togi";
+            platforms = [ system ];
+          };
           togi =
             rev:
             pkgs.buildGo127Module {
               pname = "togi";
-              version = lib.fileContents ./version.txt;
+              inherit version meta;
               src = lib.fileset.toSource {
                 root = ./.;
                 fileset = goFiles;
@@ -194,24 +218,28 @@
               ldflags = [ "-X github.com/shgew/togi.rev=${rev}" ];
               subPackages = [ "cmd/togi" ];
               checkPhase = testPhase "" "./...";
-              postInstall = lib.optionalString (pkgs.stdenv.buildPlatform.canExecute pkgs.stdenv.hostPlatform) ''
-                installShellCompletion --cmd togi \
-                  --bash <($out/bin/togi completion bash) \
-                  --zsh <($out/bin/togi completion zsh) \
-                  --fish <($out/bin/togi completion fish) \
-                  --nushell <($out/bin/togi completion nushell)
-              '';
-              meta = {
-                description = "Per-core Curve Optimizer tuner for Zen 5 desktop CPUs";
-                license = lib.licenses.gpl3Plus;
-                mainProgram = "togi";
-                platforms = [ system ];
-              };
+              postInstall = installCompletions;
             };
+          togiRust =
+            rev:
+            craneLib.buildPackage (
+              rustRelease
+              // {
+                pname = "togi-rs";
+                inherit version meta;
+                cargoExtraArgs = "--locked -p togi";
+                cargoArtifacts = rustReleaseDeps;
+                doCheck = false;
+                TOGI_REV = rev;
+                nativeBuildInputs = rustArgs.nativeBuildInputs ++ [ pkgs.installShellFiles ];
+                postInstall = installCompletions;
+              }
+            );
         in
         {
           packages = {
-            default = togi (inputs.self.shortRev or inputs.self.dirtyShortRev or "dev");
+            default = togi rev;
+            togi-rs = togiRust rev;
           };
 
           devShells.default = pkgs.mkShell (
@@ -277,6 +305,19 @@
               nativeBuildInputs = [ pkgs.cargo-shear ];
               buildPhaseCargoCommand = "cargo shear";
             });
+            rust-package =
+              let
+                package = togiRust "dev";
+              in
+              pkgs.runCommand "togi-rust-package" { } ''
+                togi=${lib.getExe package}
+                test "$("$togi" --version)" = "togi ${version}+dev"
+                for shell in bash zsh fish nushell; do
+                  "$togi" completion "$shell" > "$shell"
+                  grep -q togi "$shell"
+                done
+                touch "$out"
+              '';
             race = config.checks.package.overrideAttrs {
               pname = "togi-race";
               src = lib.fileset.toSource {
