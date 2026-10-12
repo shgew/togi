@@ -2,7 +2,7 @@
 
 use std::fmt;
 use std::io::{self, BufRead, BufReader};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use serde::Deserialize;
@@ -10,7 +10,7 @@ use togi_machine::serde_object::{self, Object};
 
 use super::{DirError, EVENTS_FILE, STATE_FILE, STATE_TMP, StateDir, TRIALS_DIR, io_at, not_found};
 use crate::build::Build;
-use crate::fs::FileKind;
+use crate::fs::{DiskFs, FileKind, Fs};
 use crate::session_id::SessionId;
 
 const JOURNAL_SUFFIX: &str = ".jsonl";
@@ -373,27 +373,10 @@ impl StateDir {
         Ok(())
     }
 
-    /// The first complete line of the live journal; `None` without one.
-    fn live_first_line(&self) -> Result<Option<(PathBuf, Vec<u8>)>, DirError> {
-        let path = self.join(EVENTS_FILE);
-        let reader = match self.fs().open_read(&path) {
-            Ok(reader) => reader,
-            Err(error) if not_found(&error) => return Ok(None),
-            Err(error) => return Err(io_at("read journal", &path)(error)),
-        };
-        let mut line = Vec::new();
-        BufReader::new(reader)
-            .read_until(b'\n', &mut line)
-            .map_err(io_at("read journal", &path))?;
-        if line.pop() != Some(b'\n') {
-            return Ok(None);
-        }
-        Ok(Some((path, line)))
-    }
-
     /// The session the live journal belongs to, read from its first complete line; `None` without one.
     pub fn live_session(&self) -> Result<Option<SessionId>, DirError> {
-        let Some((path, line)) = self.live_first_line()? else {
+        let path = self.join(EVENTS_FILE);
+        let Some(line) = first_line(self.fs(), &path)? else {
             return Ok(None);
         };
         match peek_session(&line, "session.start") {
@@ -406,16 +389,7 @@ impl StateDir {
     /// The build stamp of the live journal's `session.start`, decoded from its first complete line alone, so a
     /// journal whose later events this build cannot decode still has one; `None` without a live journal.
     pub fn live_build(&self) -> Result<Option<Build>, DirError> {
-        let Some((path, line)) = self.live_first_line()? else {
-            return Ok(None);
-        };
-        if peek_session(&line, "session.start").is_none() {
-            return Err(DirError::NotAJournal { path });
-        }
-        match serde_json::from_slice::<Object<BuildLine>>(&line) {
-            Ok(Object(start)) => Ok(Some(start.data.build)),
-            Err(source) => Err(DirError::BadBuild { path, source }),
-        }
+        recorded_build_in(self.fs(), self.path())
     }
 
     /// Archives a journal this build cannot read, without appending to it. A journal that already records its own
@@ -469,6 +443,50 @@ impl StateDir {
                 return Ok(true);
             }
         }
+    }
+}
+
+/// The first complete line of the journal at `path`; `None` without one.
+fn first_line(fs: &dyn Fs, path: &Path) -> Result<Option<Vec<u8>>, DirError> {
+    let reader = match fs.open_read(path) {
+        Ok(reader) => reader,
+        Err(error) if not_found(&error) => return Ok(None),
+        Err(error) => return Err(io_at("read journal", path)(error)),
+    };
+    let mut line = Vec::new();
+    BufReader::new(reader)
+        .read_until(b'\n', &mut line)
+        .map_err(io_at("read journal", path))?;
+    if line.pop() != Some(b'\n') {
+        return Ok(None);
+    }
+    Ok(Some(line))
+}
+
+/// The build stamp of the live journal in the state directory `dir`, decoded from its first complete line alone,
+/// without taking the lock or writing; `None` when there is no journal or no complete first line.
+pub fn recorded_build(dir: &Path) -> Result<Option<Build>, DirError> {
+    recorded_build_in(&DiskFs::default(), dir)
+}
+
+/// [`recorded_build`] over `fs`.
+pub fn recorded_build_in(fs: &dyn Fs, dir: &Path) -> Result<Option<Build>, DirError> {
+    let path = dir.join(EVENTS_FILE);
+    let path = path.as_path();
+    let Some(line) = first_line(fs, path)? else {
+        return Ok(None);
+    };
+    if peek_session(&line, "session.start").is_none() {
+        return Err(DirError::NotAJournal {
+            path: path.to_path_buf(),
+        });
+    }
+    match serde_json::from_slice::<Object<BuildLine>>(&line) {
+        Ok(Object(start)) => Ok(Some(start.data.build)),
+        Err(source) => Err(DirError::BadBuild {
+            path: path.to_path_buf(),
+            source,
+        }),
     }
 }
 

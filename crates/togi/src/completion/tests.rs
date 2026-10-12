@@ -26,8 +26,24 @@ fn every_script_completes_the_command_and_its_shared_flag() {
 }
 
 #[test]
-fn no_script_offers_config_before_a_command_takes_it() {
+fn only_the_commands_that_read_the_configuration_offer_it() {
+    let root = crate::cli::command();
+    let takes_config = |command: &clap::Command| {
+        command
+            .get_arguments()
+            .any(|arg| arg.get_long() == Some("config"))
+    };
+    assert!(!takes_config(&root));
+    let offering: Vec<&str> = root
+        .get_subcommands()
+        .filter(|command| takes_config(command))
+        .map(clap::Command::get_name)
+        .collect();
+    assert_eq!(offering, ["doctor", "reset"]);
     for &shell in Shell::value_variants() {
-        assert!(!text(shell).contains("--config"), "{shell:?}");
+        let script = text(shell);
+        for word in ["config", "tuning-boot", "core", "all"] {
+            assert!(script.contains(word), "{shell:?} lacks {word}");
+        }
     }
 }

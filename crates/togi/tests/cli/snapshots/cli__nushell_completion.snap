@@ -22,12 +22,47 @@ module completions {
     shell: string@"nu-complete togi completion shell" # The shell to print the script for
   ]
 
+  # Check whether this machine is ready for a run
+  export extern "togi doctor" [
+    --config: path            # JSON configuration file [default: /etc/togi/config.json]
+    --state-dir: directory    # State directory
+    --help(-h)                # Print help (see more with '--help')
+  ]
+
+  # Reset one core, or archive the whole session
+  export extern "togi reset" [
+    --core: string            # Reset core N: clear its failure point and every combination that includes it, and restart its search from the baseline
+    --all                     # Archive the session; the next run starts a new one
+    --config: path            # JSON configuration file [default: /etc/togi/config.json]
+    --state-dir: directory    # State directory
+    --help(-h)                # Print help (see more with '--help')
+  ]
+
+  # Recover after the tuning service reaches its restart limit
+  export extern "togi restart-limit" [
+    --tuning-boot: path       # GRUB environment file for retry state and the saved tuning entry
+    --state-dir: directory    # State directory
+    --help(-h)                # Print help (see more with '--help')
+  ]
+
   # Print this message or the help of the given subcommand(s)
   export extern "togi help" [
   ]
 
   # Print a shell completion script
   export extern "togi help completion" [
+  ]
+
+  # Check whether this machine is ready for a run
+  export extern "togi help doctor" [
+  ]
+
+  # Reset one core, or archive the whole session
+  export extern "togi help reset" [
+  ]
+
+  # Recover after the tuning service reaches its restart limit
+  export extern "togi help restart-limit" [
   ]
 
   # Print this message or the help of the given subcommand(s)

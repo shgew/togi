@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use crate::dir::{DirError, EVENTS_FILE, StateDir, not_found};
 use crate::event::{Event, Seq};
 use crate::fs::{DiskFs, Fs};
-use crate::payload::{EventKind, Payload, SessionContext};
+use crate::payload::{EventKind, Payload, SessionContext, UnknownKind};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ReadError {
@@ -23,6 +23,12 @@ pub enum ReadError {
         line: u64,
         expected: u64,
         found: Seq,
+    },
+    #[error("line {line}: {source}")]
+    UnknownKind {
+        line: u64,
+        #[source]
+        source: UnknownKind,
     },
     #[error("line 1: the first event is {}, not session.start", found.as_str())]
     FirstEvent { found: EventKind },
@@ -84,8 +90,15 @@ impl<R: BufRead> EventReader<R> {
     fn decode(&mut self) -> Result<Event, ReadError> {
         self.lines += 1;
         let line = self.lines;
-        let event: Event = serde_json::from_slice(&self.line[..self.line.len() - 1])
-            .map_err(|source| ReadError::Decode { line, source })?;
+        let bytes = &self.line[..self.line.len() - 1];
+        let event: Event =
+            serde_json::from_slice(bytes).map_err(|source| match unknown_kind(bytes) {
+                Some(unknown) => ReadError::UnknownKind {
+                    line,
+                    source: unknown,
+                },
+                None => ReadError::Decode { line, source },
+            })?;
         let expected = line;
         if event.seq.get() != expected {
             return Err(ReadError::Gap {
@@ -316,3 +329,11 @@ impl StateDir {
 
 #[cfg(test)]
 mod tests;
+
+/// The kind of a record whose envelope is sound but whose `kind` this build does not know.
+fn unknown_kind(line: &[u8]) -> Option<UnknownKind> {
+    match Event::decode(std::str::from_utf8(line).ok()?) {
+        Err(crate::event::DecodeError::UnknownKind(unknown)) => Some(unknown),
+        _ => None,
+    }
+}
