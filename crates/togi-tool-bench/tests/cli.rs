@@ -5,8 +5,8 @@
     reason = "the tests run the built command and panic on a broken fixture"
 )]
 
-mod common;
 mod fake;
+mod git;
 mod session;
 
 use std::fs;
@@ -14,8 +14,8 @@ use std::path::Path;
 use std::process::{Child, Command, Output, Stdio};
 use std::time::{Duration, Instant};
 
-use common::{isolate_git, repo};
 use fake::Bench;
+use git::{isolate_git, repo};
 use rustix::process::{Pid, Signal, kill_process, test_kill_process};
 
 fn plain_command(bench: &Bench) -> Command {

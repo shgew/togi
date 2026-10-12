@@ -5,16 +5,16 @@
     reason = "the tests run the built command and panic on a broken fixture"
 )]
 
-mod common;
 mod fake;
+mod git;
 mod session;
 
 use std::fs;
 use std::path::Path;
 use std::process::{Command, Output};
 
-use common::{isolate_git, repo};
 use fake::Bench;
+use git::{isolate_git, repo};
 use serde_json::json;
 use togi_sim::file;
 use togi_tool_bench::{Record, read_records, write_records};
