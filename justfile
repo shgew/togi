@@ -178,6 +178,11 @@ bench-baseline: _dev-shell
 facts state_dir: _dev-shell
     go run ./tools/facts "$1" tools/bench/facts/target.jsonl.gz
 
+# Regenerate privacy-safe real facts from a copied state directory with the Rust tool
+[group('run')]
+facts-rs state_dir: _dev-shell
+    cargo run --release --locked -p togi-tool-facts -- "$1" tools/bench/facts/target.jsonl.gz
+
 # Fit the target-machine bootstrap ensemble from the committed evidence
 [group('run')]
 fit *args: _dev-shell
