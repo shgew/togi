@@ -25,11 +25,22 @@ use crate::support::{Fake, Scripted, simulator};
 const SCENARIO: &str = "TOGI_RUN_TEST_PTY";
 const DIR: &str = "TOGI_RUN_TEST_PTY_DIR";
 const BOUND: Duration = Duration::from_secs(30);
+/// The file in [`DIR`] that lets a `real-panic` trial panic.
+const GO: &str = "panic-now";
 
-/// A trial that runs until the run is cancelled.
-struct Endless(Box<dyn Trials>, bool);
+/// A trial that runs until the run is cancelled, or panics as [`Panic`] says.
+struct Endless(Box<dyn Trials>, Panic);
 
-struct EndlessRunning(Box<dyn Running>, bool);
+struct EndlessRunning(Box<dyn Running>, Panic);
+
+/// When a trial's wait panics.
+#[derive(Clone)]
+enum Panic {
+    Never,
+    Now,
+    /// Once the file exists: the test makes it after it saw the dashboard draw.
+    Once(PathBuf),
+}
 
 impl Trials for Endless {
     fn sweep(&mut self, cancel: &CancellationToken) -> Result<Swept, MachineError> {
@@ -44,7 +55,7 @@ impl Trials for Endless {
     ) -> Result<Box<dyn Running>, Partial<Option<Stopped>>> {
         Ok(Box::new(EndlessRunning(
             self.0.start(cancel, spec, ready)?,
-            self.1,
+            self.1.clone(),
         )))
     }
 
@@ -70,7 +81,14 @@ impl Running for EndlessRunning {
         cancel: &CancellationToken,
         report: &mut dyn Reporter,
     ) -> Result<TrialResult, Partial<TrialResult>> {
-        assert!(!self.1, "injected panic while the dashboard shows");
+        match &self.1 {
+            Panic::Never => {}
+            Panic::Now => panic!("injected panic while the dashboard shows"),
+            Panic::Once(go) => {
+                wait_until("the test to see the dashboard", || go.exists());
+                panic!("injected panic while the dashboard shows");
+            }
+        }
         cancel.wait();
         self.0.wait(cancel, report)
     }
@@ -89,14 +107,19 @@ fn helper() {
     let mut fake = Fake::in_dir(simulator(1000), &dir);
     fake.real_stderr = true;
     fake.interactive = true;
-    if std::env::var(SCENARIO).is_ok_and(|scenario| scenario == "real") {
+    let scenario = std::env::var(SCENARIO).unwrap_or_default();
+    if matches!(scenario.as_str(), "real" | "real-panic") {
         fake.surface = std::sync::Arc::new(togi_cli::dashboard::Watch);
     } else {
         fake.surface = std::sync::Arc::new(Scripted(|_: &Stop| Ok(())));
     }
-    let panics = std::env::var(SCENARIO).is_ok_and(|scenario| scenario == "panic");
+    let panic = match scenario.as_str() {
+        "panic" => Panic::Now,
+        "real-panic" => Panic::Once(dir.join(GO)),
+        _ => Panic::Never,
+    };
     fake.wrap = Box::new(move |machine| Machine {
-        trials: Box::new(Endless(machine.trials, panics)),
+        trials: Box::new(Endless(machine.trials, panic.clone())),
         ..machine
     });
     let args: Vec<OsString> = fake
@@ -296,5 +319,79 @@ fn ctrl_c_stops_a_run_that_shows_the_real_dashboard_and_the_cursor_comes_back() 
         restored
             .local_modes
             .contains(LocalModes::ECHO | LocalModes::ICANON)
+    );
+}
+
+const PALETTE_SET: &[u8] = b"\x1b]P0000000";
+const PALETTE_RESET: &[u8] = b"\x1b]R";
+
+fn last(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack
+        .windows(needle.len())
+        .rposition(|window| window == needle)
+}
+
+/// The Go `TestRunHardwareRestoresCursorAndPaletteWhenSessionPanics`: the real dashboard on the Linux console
+/// hides the cursor and sets the palette, then the session panics and both are restored before the panic shows.
+#[test]
+fn a_session_panic_over_the_real_linux_console_dashboard_restores_the_cursor_and_the_palette() {
+    let dir = TempDir::new().unwrap();
+    let (master, slave) = open_pty();
+    let mut child = Command::new(std::env::current_exe().unwrap())
+        .args(["pty::helper", "--exact", "--nocapture", "--test-threads=1"])
+        .env(SCENARIO, "real-panic")
+        .env(DIR, dir.path())
+        .env("TERM", "linux")
+        .env_remove("NO_COLOR")
+        .env_remove("JOURNAL_STREAM")
+        .stdin(Stdio::from(slave.try_clone().unwrap()))
+        .stdout(Stdio::null())
+        .stderr(Stdio::from(slave))
+        .spawn()
+        .unwrap();
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::<u8>::new()));
+    let reader = {
+        let seen = seen.clone();
+        let master = rustix::io::dup(&master).unwrap();
+        std::thread::spawn(move || {
+            let mut chunk = [0_u8; 4096];
+            while let Ok(read) = rustix::io::read(&master, &mut chunk) {
+                if read == 0 {
+                    break;
+                }
+                seen.lock().unwrap().extend_from_slice(&chunk[..read]);
+            }
+        })
+    };
+    wait_until("the dashboard to hide the cursor and set the palette", || {
+        let seen = seen.lock().unwrap();
+        contains(&seen, HIDE_CURSOR) && contains(&seen, PALETTE_SET)
+    });
+    std::fs::write(dir.path().join(GO), b"").unwrap();
+    let status = wait_for_exit(&mut child);
+    assert_eq!(status.code(), Some(2));
+    drop(child);
+    reader.join().unwrap();
+
+    let seen = seen.lock().unwrap();
+    let text = String::from_utf8_lossy(&seen);
+    assert!(
+        last(&seen, SHOW_CURSOR) > last(&seen, HIDE_CURSOR),
+        "the cursor is shown again after the last time it was hidden: {text:?}"
+    );
+    assert!(
+        last(&seen, PALETTE_RESET) > last(&seen, b"\x1b]P"),
+        "the palette is reset after the last time it was set: {text:?}"
+    );
+    assert!(
+        text.contains("panic: injected panic while the dashboard shows"),
+        "{text:?}"
+    );
+    let restored = tcgetattr(&master).unwrap();
+    assert!(
+        restored
+            .local_modes
+            .contains(LocalModes::ECHO | LocalModes::ICANON),
+        "the previous input settings are back"
     );
 }

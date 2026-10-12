@@ -4,7 +4,7 @@ Every `func Test*`, `Benchmark*`, `Fuzz*` and `Example*` in the Go packages that
 
 The pull requests that ported each package are #841 (modelcheck), #844 (forecast), #832 (facts), #852 (fit), #851 (stats), #857 (bench runs, metrics, comparison and cache), #862 (bench gate reports), #866 (the bench's simulator check), #872 (`--same`, `--smoke` and `--forecast` of the bench), #878 (the bench's slim baseline projection, `--baseline-out`), #861 (`togi` argument parsing, exits, version and completion), #869 (`reset`, `restart-limit`, `doctor`), #870 (the `tools/audit` sweep), #879 (`status`, `events` and `watch`, closing issue #826) and #880 (`run`, the dashboard owner and panic handling, closing issue #829). Each row follows the Go-to-Rust mapping of the pull request that ported its command; a `cmd/togi` test that no mapping names is assigned by the command it drives. Every row is settled: none is pending.
 
-Rust names are `crate::module::fn`; an integration test binary adds its name after the crate (`togi_tool_bench::gate::…`, `togi::read::status::…`, `togi::run::lifecycle::…`), and a unit test of the library has no binary segment (`togi::table::tests::…`). Each name resolves to a test that `cargo nextest list --workspace` reports on `main` at d1a4dd63; a parameterised `#[test_case]` function counts by its name.
+Rust names are `crate::module::fn`; an integration test binary adds its name after the crate (`togi_tool_bench::gate::…`, `togi::read::status::…`, `togi::run::lifecycle::…`), and a unit test of the library has no binary segment (`togi::table::tests::…`). Each name resolves to a test that `cargo nextest list --workspace` reports on `main` at d1a4dd63; a parameterised `#[test_case]` function counts by its name. One exception: `togi::run::pty::a_session_panic_over_the_real_linux_console_dashboard_restores_the_cursor_and_the_palette` was added by the closure review after d1a4dd63 and is not in that listing.
 
 Status:
 
@@ -632,7 +632,7 @@ Status:
 | `TestDiscardInputDropsTypedAhead` | `togi::dashboard::tests::typed_ahead_input_is_dropped`<br>`togi::dashboard::tests::input_typed_while_the_dashboard_showed_is_dropped_when_the_input_is_given_back` | A |
 | `TestRunHardwareRestoresTerminalWhenSessionPanics` | `togi::run::pty::a_session_panic_stops_the_dashboard_and_gives_the_terminal_back_before_the_panic_propagates` | A |
 | `TestRunHardwareFirstFrameIsThisRunsNotThePreviousOnes` | `togi::run::lifecycle::the_dashboard_starts_after_the_last_event_of_the_earlier_run`<br>`togi::run::lifecycle::the_dashboard_starts_after_the_journal_is_open` | A |
-| `TestRunHardwareRestoresCursorAndPaletteWhenSessionPanics` | `togi::run::pty::ctrl_c_stops_a_run_that_shows_the_real_dashboard_and_the_cursor_comes_back`<br>`togi::run::pty::a_session_panic_stops_the_dashboard_and_gives_the_terminal_back_before_the_panic_propagates` | A |
+| `TestRunHardwareRestoresCursorAndPaletteWhenSessionPanics` | `togi::run::pty::a_session_panic_over_the_real_linux_console_dashboard_restores_the_cursor_and_the_palette` | A |
 
 ### `cmd/togi/terminal_test.go` (3)
 
