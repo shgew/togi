@@ -1170,6 +1170,19 @@ name = "togi-version"
 version = "0.0.0"
 
 [[package]]
+name = "togi-watch"
+version = "0.0.0"
+dependencies = [
+ "jiff",
+ "serde_json",
+ "thiserror",
+ "togi-config",
+ "togi-journal",
+ "togi-machine",
+ "togi-tuner",
+]
+
+[[package]]
 name = "togi-ycruncher"
 version = "0.0.0"
 dependencies = [
