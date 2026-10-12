@@ -392,27 +392,26 @@ fn a_parked_hunt_trial_shows_its_roles() {
         .iter()
         .find(|g| g.outcome == GroupState::Running)
         .expect("a running group");
-    for core in snap.cores {
-        assert_eq!(core.loaded, running.cores.contains(core.id));
-        let member = group.cores.contains(core.id);
-        let want = if member {
-            true
-        } else {
-            core.loaded && !running.parked.contains(core.id)
-        };
-        assert_eq!(core.judged, want, "core {}", core.id);
-    }
+    assert!(group.cores.is_empty(), "a locate group has no members");
     assert!(
         hunt.locating(),
         "a hunt starts by rerunning its failed load with the other cores at 0"
     );
-    let candidate = &snap.cores[2];
-    assert_eq!(candidate.state, CoreState::Parked);
-    assert_eq!(candidate.returns_to, Some(candidate.profile));
-    assert!(
-        snap.cores[..2].iter().all(|c| c.loaded && !c.judged),
-        "every loaded core is parked at its offset"
+    let roles: Vec<_> = snap
+        .cores
+        .iter()
+        .map(|c| (c.id.get(), c.loaded, c.judged, c.state))
+        .collect();
+    assert_eq!(
+        roles,
+        [
+            (0, true, false, CoreState::AtLimit),
+            (1, true, false, CoreState::AtLimit),
+            (2, false, false, CoreState::Parked),
+        ],
+        "the loaded cores hold their failing offsets, the candidate is parked at 0, and no member is judged"
     );
+    assert_eq!(snap.cores[2].returns_to, Some(snap.cores[2].profile));
     let cause = &hunt.facts.cause;
     assert_eq!(cause.signal, Some(Signal::ComputationError));
     assert!(cause.trial.is_some() && cause.end.is_some());
@@ -692,4 +691,84 @@ fn a_trial_outside_the_hunt_is_left_alone() {
         "only a parked trial has roles of its own"
     );
     assert_eq!(core.state, CoreState::Waiting);
+}
+
+/// Eight cores on two CCDs failing together, until a hunt group with members runs parked.
+fn hunting_members() -> (Script, togi_journal::TrialId) {
+    let cores: Vec<(u8, u8)> = (0..8).map(|id| (id, id / 4)).collect();
+    let mut script = Script::new(&cores, &[Start::at_limit(-30, -31); 8]);
+    script.append(
+        togi_journal::ProfileChange {
+            from: None,
+            to: (0..8).map(|id| (core(id), off(-30))).collect(),
+        }
+        .into(),
+        &[],
+    );
+    script.ranking();
+    for _ in 0..300 {
+        if let (Ok(Action::RunTrial(plan)), Some(hunt)) =
+            (script.shadow.next(), script.shadow.hunt_plan())
+        {
+            let members = hunt.groups.iter().any(|g| {
+                g.outcome == GroupState::Running
+                    && !g.cores.is_empty()
+                    && g.stage != HuntStage::Locate
+            });
+            if plan.condition == Condition::Parked && members {
+                let (_, trial) = script.intent(&plan);
+                script.start(&trial);
+                return (script, trial);
+            }
+        }
+        script.step(|plan| {
+            if plan.condition == Condition::Together {
+                Outcome::Failure
+            } else {
+                Outcome::Pass
+            }
+        });
+    }
+    panic!("no hunt group with members ran");
+}
+
+#[test]
+fn a_parked_group_judges_its_members_and_not_the_parked_cores() {
+    let (script, trial) = hunting_members();
+    let model = script.model();
+    let snap = model.snapshot();
+    let running = snap.trial.expect("the group trial");
+    assert_eq!(running.id, trial);
+    let hunt = snap.hunt.expect("the hunt");
+    let group = hunt
+        .plan
+        .groups
+        .iter()
+        .find(|g| g.outcome == GroupState::Running)
+        .expect("the running group");
+    let mut members = 0;
+    for core in snap.cores {
+        if group.cores.contains(core.id) {
+            members += 1;
+            assert!(core.judged, "member {} is judged", core.id);
+            assert!(
+                matches!(core.state, CoreState::Member | CoreState::Probe),
+                "member {}: {:?}",
+                core.id,
+                core.state
+            );
+        } else if running.parked.contains(core.id) {
+            assert!(!core.judged, "parked core {} is not judged", core.id);
+            if hunt.plan.candidates.contains(core.id) {
+                assert_eq!(core.state, CoreState::Parked);
+            }
+        }
+    }
+    assert!(members > 0);
+    assert!(
+        snap.cores
+            .iter()
+            .any(|c| running.parked.contains(c.id) && !group.cores.contains(c.id)),
+        "the group parks some cores"
+    );
 }
