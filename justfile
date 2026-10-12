@@ -177,6 +177,12 @@ bench-rs *args: _dev-shell
 audit *args: _dev-shell
     go run ./tools/audit "$@"
 
+# Sweep every simulated scenario with the Rust bench and simulator and audit the retained journals, or audit given state directories (`just audit-rs --seeds 50 --jobs 8 --keep runs`)
+[group('run')]
+audit-rs *args: _dev-shell
+    cargo build --release --locked -p togi-tool-bench
+    cargo run --release --locked -p togi-tool-audit -- "$@"
+
 # Prove simulated session decisions are unchanged from a base revision; stops at the first difference (`--keep-going` counts them all)
 [group('run')]
 same base="origin/main" *args: _dev-shell
