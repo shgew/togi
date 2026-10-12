@@ -151,33 +151,6 @@
             git add --all
             git -c user.name=nix -c user.email=nix@localhost commit --quiet --message advisory-db
           '';
-          shippedFiles =
-            lib.fileset.difference
-              (lib.fileset.intersection goFiles (
-                lib.fileset.fromSource (
-                  lib.sources.cleanSourceWith {
-                    src = ./.;
-                    filter = path: type: type != "directory" || builtins.baseNameOf path != "testdata";
-                  }
-                )
-              ))
-              (
-                lib.fileset.unions [
-                  ./tools
-                  ./internal/sim
-                  ./internal/simrun
-                  (lib.fileset.fileFilter (f: lib.hasSuffix "_test.go" f.name) ./.)
-                ]
-              );
-          shippedPackage = config.checks.package.overrideAttrs {
-            src = lib.fileset.toSource {
-              root = ./.;
-              fileset = shippedFiles;
-            };
-            # Keep the full dependency set and its hash when tools-only imports disappear.
-            goModules = config.checks.package.goModules;
-            doCheck = false;
-          };
           testPhase = flags: packages: ''
             runHook preCheck
             export GOFLAGS=''${GOFLAGS//-trimpath/}
@@ -237,10 +210,7 @@
             );
         in
         {
-          packages = {
-            default = togi rev;
-            togi-rs = togiRust rev;
-          };
+          packages.default = togiRust rev;
 
           devShells.default = pkgs.mkShell (
             {
@@ -309,7 +279,8 @@
               let
                 package = togiRust "dev";
               in
-              pkgs.runCommand "togi-rust-package" { } ''
+              # `package` lets the module check and the VM tests use this dev build from any system.
+              pkgs.runCommand "togi-rust-package" { passthru = { inherit package; }; } ''
                 togi=${lib.getExe package}
                 test "$("$togi" --version)" = "togi ${version}+dev"
                 for shell in bash zsh fish nushell; do
@@ -391,48 +362,18 @@
             module = import ./nix/module-test.nix {
               pkgs = inputs.nixpkgs.legacyPackages.x86_64-linux;
               hostPkgs = pkgs;
-              package = inputs.self.checks.x86_64-linux.package;
+              package = inputs.self.checks.x86_64-linux.rust-package.package;
             };
           }
           // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux (
             let
               vm = import ./nix/vm-test.nix {
                 inherit pkgs;
-                trialTests = config.checks.trial-scope-tests;
                 trialTestsRs = config.checks.trial-scope-tests-rs;
-                package = shippedPackage;
+                package = config.checks.rust-package.package;
               };
             in
             {
-              trial-scope-tests = shippedPackage.overrideAttrs {
-                pname = "togi-trial-scope-tests";
-                src = lib.fileset.toSource {
-                  root = ./.;
-                  fileset = lib.fileset.unions [
-                    shippedFiles
-                    (lib.fileset.fileFilter (
-                      f: lib.hasPrefix "hardware_" f.name && lib.hasSuffix "_test.go" f.name
-                    ) ./internal/trial)
-                    ./internal/trial/helper_test.go
-                    ./internal/trial/trial_test.go
-                    ./internal/trial/fake_test.go
-                  ];
-                };
-                buildPhase = ''
-                  runHook preBuild
-                  go test -c -tags hardware -o togi-trial-tests ./internal/trial
-                  runHook postBuild
-                '';
-                doCheck = false;
-                # The test binary has no bin/togi to print completion scripts.
-                postInstall = "";
-                installPhase = ''
-                  runHook preInstall
-                  mkdir -p "$out/bin"
-                  cp togi-trial-tests "$out/bin/"
-                  runHook postInstall
-                '';
-              };
               trial-scope-tests-rs = craneLib.mkCargoDerivation (rustCheck {
                 pnameSuffix = "-trial-scope-tests";
                 doInstallCargoArtifacts = false;

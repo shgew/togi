@@ -1,7 +1,6 @@
 {
   pkgs,
   package,
-  trialTests,
   trialTestsRs,
 }:
 let
@@ -10,8 +9,7 @@ let
     builtins.elemAt (pkgs.lib.splitString "\nPY\n" (builtins.elemAt (pkgs.lib.splitString "<<'PY'\n" (builtins.readFile ../docs/howto.md)) 1)) 0
   );
   # Both VM tests share this node: the NixOS module with the tuning specialisation, GRUB on a virtual disk
-  # and an i6300esb watchdog that resets the machine. Their nodes disable DHCP. The package excludes tools,
-  # the simulator, test files and testdata, so edits there reuse the cached image and result.
+  # and an i6300esb watchdog that resets the machine. Their nodes disable DHCP.
   tuningBoot =
     { pkgs, lib, ... }:
     {
@@ -38,10 +36,10 @@ let
     };
 in
 {
-  # Runs the trial package's hardware-tagged scope tests (trial-scope-tests) as root under real systemd,
-  # without stress backends or SMU access; edits to those retained tests or helpers rebuild this VM. Only
-  # the tuning specialisation's watchdog is overridden, to 10s (the module check pins the shipped 30s);
-  # the test still freezes PID 1 and observes the real hardware watchdog reset.
+  # Runs the shipped package under real systemd with a GRUB tuning boot and the retained trial scope tests
+  # (trial-scope-tests-rs) as root and as the delegated hardware user, without stress backends or SMU
+  # access. Only the tuning specialisation's watchdog is overridden, to 10s (the module check pins the
+  # shipped 30s); the test still freezes PID 1 and observes the real hardware watchdog reset.
   tuning-boot = pkgs.testers.runNixOSTest {
     name = "togi-tuning-boot";
 
@@ -59,7 +57,7 @@ in
       systemd.services."user@".serviceConfig.Delegate = "cpu cpuset io memory pids";
       environment.etc."togi-test-lock-provision.py".source = documentedLockProvision;
       environment.systemPackages = [
-        trialTests
+        trialTestsRs
         pkgs.util-linux
         pkgs.python3
       ];
@@ -69,11 +67,27 @@ in
       import json
       import time
 
+      hardware = "hardware:: --skip hardware::helper --skip every_r1_and_r2_workload_passes"
+      pin = "hardware::a_helper_cannot_pin_outside_its_scope"
+      flags = "--test-threads 1 --nocapture"
+      scopes = "systemctl {manager} list-units --all 'togi-*.scope' --plain --no-legend"
+
+
+      def run_scope_tests(prefix, selection, manager):
+          log = "/tmp/scope-tests.log"
+          status, _ = machine.execute(f"{prefix} togi-trial-tests-rs {selection} {flags} > {log} 2>&1")
+          output = machine.succeed(f"cat {log}")
+          machine.log(output)
+          assert status == 0, output
+          left = machine.succeed(f"{prefix} {scopes.format(manager=manager)}").strip()
+          assert left == "", left
+
+
       machine.start(allow_reboot=True)
       machine.wait_for_unit("multi-user.target")
       assert json.loads(machine.succeed("cat /etc/togi/config.json"))["backend_user"] == "togi-trial"
       machine.log(machine.wait_until_succeeds("systemd-analyze critical-chain multi-user.target"))
-      machine.succeed("togi-trial-tests -test.run '^TestHardwareScope' -test.v -test.timeout 180s")
+      run_scope_tests("", hardware, "")
       lock_identity = machine.succeed("stat -c '%d:%i' /run/lock/togi.lock").strip()
       assert machine.succeed("stat -c '%U:%G:%a' /run/lock/togi.lock").strip() == "root:togi-hardware:660"
       provision = "python3 /etc/togi-test-lock-provision.py"
@@ -121,10 +135,9 @@ in
       machine.fail("runuser -u unrelated -- touch /run/lock/unrelated-lock")
       machine.fail("runuser -u unrelated -- flock --nonblock /run/lock/togi.lock true")
       machine.fail(
-          "runuser -u unrelated -- togi-trial-tests -test.run '^TestHardwareScope$' "
-          "-test.timeout 60s > /run/unrelated-lock-output 2>&1"
+          f"runuser -u unrelated -- togi-trial-tests-rs {pin} {flags} > /run/unrelated-lock-output 2>&1"
       )
-      machine.succeed("grep -q 'permission denied' /run/unrelated-lock-output")
+      machine.succeed("grep -qi 'permission denied' /run/unrelated-lock-output")
       machine.succeed("chown unrelated /run/lock/togi.lock")
       foreign_identity = machine.succeed("stat -c '%d:%i:%u:%g:%a' /run/lock/togi.lock").strip()
       machine.succeed("systemd-tmpfiles --create --prefix=/run/lock/togi.lock")
@@ -132,7 +145,7 @@ in
           "togi --state-dir /tmp/foreign-lock-state reset --all 2>&1"
       )
       assert foreign_status == 1, foreign_output
-      assert "lock is owned by another user" in foreign_output, foreign_output
+      assert "is owned by another user" in foreign_output, foreign_output
       assert machine.succeed("stat -c '%d:%i:%u:%g:%a' /run/lock/togi.lock").strip() == foreign_identity
       machine.succeed("test ! -e /tmp/foreign-lock-state; chown root /run/lock/togi.lock")
       machine.succeed("chmod 0640 /run/lock/togi.lock")
@@ -140,17 +153,17 @@ in
           "runuser -u togi-hardware -- togi --state-dir /tmp/readonly-lock-state reset --all 2>&1"
       )
       assert readonly_status == 1, readonly_output
-      assert "lock owner must restrict legacy permissions" in readonly_output, readonly_output
+      assert "only its owner may restrict them" in readonly_output, readonly_output
       assert machine.succeed("stat -c '%a' /run/lock/togi.lock").strip() == "640"
       machine.succeed("test ! -e /tmp/readonly-lock-state; chmod 0660 /run/lock/togi.lock")
       machine.succeed("loginctl enable-linger togi-hardware")
       delegated_uid = machine.succeed("id -u togi-hardware").strip()
       machine.wait_for_unit(f"user@{delegated_uid}.service")
-      machine.succeed(
+      delegated_prefix = (
           f"runuser -u togi-hardware -- env XDG_RUNTIME_DIR=/run/user/{delegated_uid} "
-          f"DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{delegated_uid}/bus "
-          "togi-trial-tests -test.run '^TestHardwareScope$' -test.v -test.timeout 60s"
+          f"DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{delegated_uid}/bus"
       )
+      run_scope_tests(delegated_prefix, pin, "--user")
       assert machine.succeed("stat -c '%d:%i' /run/lock/togi.lock").strip() == lock_identity
       assert machine.succeed("stat -c '%U:%G:%a' /run/lock/togi.lock").strip() == "root:togi-hardware:660"
       normal_system = machine.succeed("readlink -f /run/current-system").strip()
@@ -189,20 +202,24 @@ in
           for line in machine.succeed("togi events --json --kind deadend,boot.saved_entry").splitlines()
       ]
       assert any(
-          e["kind"] == "deadend" and e["condition"] == "preflight" and e["action"] == "clear_saved_entry"
+          e["kind"] == "deadend"
+          and e["data"]["condition"] == "preflight"
+          and e["data"]["action"] == "clear_saved_entry"
           for e in events
       ), events
       assert any(
-          e["kind"] == "boot.saved_entry" and e["before"] == "NixOS - togi" and e["after"] == ""
+          e["kind"] == "boot.saved_entry"
+          and e["data"]["before"] == "NixOS - togi"
+          and e["data"]["after"] == ""
           for e in events
       ), events
       preflight = [
           json.loads(line)
           for line in machine.succeed("togi events --json --kind preflight.check").splitlines()
       ]
-      watchdog = [e for e in preflight if e["check"] == "watchdog"]
-      assert len(watchdog) == 1 and watchdog[0]["ok"], preflight
-      assert preflight[0]["check"] == "watchdog", preflight
+      watchdog = [e for e in preflight if e["data"]["check"] == "watchdog"]
+      assert len(watchdog) == 1 and watchdog[0]["data"]["ok"], preflight
+      assert preflight[0]["data"]["check"] == "watchdog", preflight
       machine.log(f"armed watchdog preflight: {watchdog[0]}")
       machine.succeed("test -z \"$(togi events --json --kind smu.intent,trial.intent)\"")
       machine.wait_for_unit("togi-watch.service")
@@ -359,10 +376,10 @@ in
     '';
   };
 
-  # Systemd's restart-limit recovery with a stub package, so Go-only changes reuse the cached result: `run`
-  # and `restart-limit` exit 2 and other invocations sleep. It checks three failed starts, the fallback
-  # leave reason when `restart-limit` itself fails, recovery to the normal generation, GRUB's saved entry
-  # clearing and host-lock ownership.
+  # Systemd's restart-limit recovery with a stub package, so changes to the real binary reuse the cached
+  # result: `run` and `restart-limit` exit 2 and other invocations sleep. It checks three failed starts, the
+  # fallback leave reason when `restart-limit` itself fails, recovery to the normal generation, GRUB's saved
+  # entry clearing and host-lock ownership.
   restart-limit = pkgs.testers.runNixOSTest {
     name = "togi-restart-limit";
 
