@@ -124,10 +124,7 @@ const WORDS: Section = Section {
             "CONFIRM",
             "checking its candidate solo limit with repeated light and heavy-vector trials alone",
         ),
-        (
-            "FOUND",
-            "solo limit checked; waiting at 0 until every core has one",
-        ),
+        ("FOUND", "solo limit checked; waiting at 0"),
         ("WAITING", "at 0, waiting for its first search turn"),
         (
             "MEMBER",
@@ -649,6 +646,7 @@ mod tests {
             "stand in for requests",
             "not a guarantee",
             "evidence, not",
+            "until every core has one",
         ] {
             assert!(
                 !words.contains(rule),
@@ -689,7 +687,7 @@ mod tests {
             for explanation in [
                 "SEARCH finding its solo limit with light and heavy-vector trials alone",
                 "CONFIRM checking its candidate solo limit with repeated light and heavy-vector trials alone",
-                "FOUND solo limit checked; waiting at 0 until every core has one",
+                "FOUND solo limit checked; waiting at 0 WAITING",
                 "WAITING at 0, waiting for its first search turn",
                 "MEMBER kept with its hunt group at its failing offset; another member may be probed",
             ] {

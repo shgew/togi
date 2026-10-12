@@ -163,7 +163,7 @@ Status:
 | Go test | Rust test(s) | status |
 |---|---|---|
 | `TestHelpWideUsesThreeColumns` | `togi_watch::frames::help::tests::wide_help_uses_three_columns` | A |
-| `TestHelpLinksTunerSpecAndStatesNoRule` | `togi_watch::frames::help::tests::help_links_the_tuner_spec_and_states_no_rule`<br>(#539 is decided: the help says what the screen shows and links the tuner spec, and states no rule. The Rust test checks the link and that 28 rule phrases removed from WHAT TOGI DOES and WORDS are gone; it checked five before this change) | A |
+| `TestHelpLinksTunerSpecAndStatesNoRule` | `togi_watch::frames::help::tests::help_links_the_tuner_spec_and_states_no_rule`<br>(#539 is decided: the help says what the screen shows and links the tuner spec, and states no rule. The Rust test checks the link and that 29 rule phrases removed from WHAT TOGI DOES and WORDS are gone, including the FOUND exit condition `until every core has one`; it checked five before this change) | A |
 | `TestHelpNarrowScrollsOneColumn` | `togi_watch::frames::help::tests::narrow_help_scrolls_one_column` | A |
 | `TestLogFollowsNewEntriesOnlyAtEnd` | `togi_watch::frames::panels::log::tests::the_view_follows_new_entries_only_at_the_end`<br>`togi_watch::frames::panels::log::tests::a_scroll_at_or_past_the_extent_shows_the_end`<br>`togi_watch::terminal::keys::tests::log_reaching_its_end_by_page_follows_it` | A |
 | `TestHelpLogBodiesFitSmallRectangles` | `togi_watch::frames::help::tests::help_bodies_fit_small_rectangles`<br>`togi_watch::frames::panels::log::tests::log_bodies_fit_small_rectangles` | A |

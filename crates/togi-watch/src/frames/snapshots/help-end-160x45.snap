@@ -17,7 +17,7 @@ expression: body
 │  │
 │  │ SEARCH           finding its solo limit with light and heavy-vector trials alone
 │  │ CONFIRM          checking its candidate solo limit with repeated light and heavy-vector trials alone
-│  │ FOUND            solo limit checked; waiting at 0 until every core has one
+│  │ FOUND            solo limit checked; waiting at 0
 │  │ WAITING          at 0, waiting for its first search turn
 │  │ MEMBER           kept with its hunt group at its failing offset; another member may be probed
 │  │ offset           Curve Optimizer counts, 0 to -50; deeper is more negative
