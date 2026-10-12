@@ -8,14 +8,29 @@ use tokio::time::{Instant, Interval, MissedTickBehavior, Sleep};
 
 use crate::screen::Hold;
 
-/// What wakes the loop for the clock. Nothing is armed until a frame says how long it stays true.
+/// What wakes the loop for the clock. Nothing is armed until a frame says how long it stays true, and a paced clock
+/// also wakes at a steady interval whatever the frame says.
 #[derive(Debug, Default)]
 pub(super) struct Clock {
     ticker: Option<Interval>,
     timer: Option<Pin<Box<Sleep>>>,
+    pace: Option<Interval>,
 }
 
 impl Clock {
+    /// A clock that also wakes every `tick`, if given.
+    pub(super) fn paced(tick: Option<Duration>) -> Self {
+        let pace = tick.map(|tick| {
+            let mut pace = tokio::time::interval_at(Instant::now() + tick, tick);
+            pace.set_missed_tick_behavior(MissedTickBehavior::Delay);
+            pace
+        });
+        Self {
+            pace,
+            ..Self::default()
+        }
+    }
+
     /// Arms the clock for a frame that stays true for `hold`, as of `now`.
     ///
     /// A frozen frame arms nothing at all. A frame held until a future instant wakes once at that instant. Any
@@ -49,15 +64,31 @@ impl Clock {
         self.ticker.is_some() || self.timer.is_some()
     }
 
-    /// Completes when the armed timer or ticker fires; never completes when nothing is armed.
+    /// Completes when the armed timer or ticker fires, or the pace does; never completes when nothing is armed.
     pub(super) async fn wake(&mut self) {
-        if let Some(timer) = self.timer.as_mut() {
-            timer.await;
-            self.timer = None;
-        } else if let Some(ticker) = self.ticker.as_mut() {
-            ticker.tick().await;
-        } else {
-            std::future::pending::<()>().await;
+        let Self {
+            ticker,
+            timer,
+            pace,
+        } = self;
+        let held = async {
+            if let Some(sleep) = timer.as_mut() {
+                sleep.await;
+                *timer = None;
+            } else if let Some(ticker) = ticker.as_mut() {
+                ticker.tick().await;
+            } else {
+                std::future::pending::<()>().await;
+            }
+        };
+        match pace {
+            Some(pace) => {
+                tokio::select! {
+                    () = held => {}
+                    _ = pace.tick() => {}
+                }
+            }
+            None => held.await,
         }
     }
 }
