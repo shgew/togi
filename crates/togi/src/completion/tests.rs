@@ -39,7 +39,7 @@ fn only_the_commands_that_read_the_configuration_offer_it() {
         .filter(|command| takes_config(command))
         .map(clap::Command::get_name)
         .collect();
-    assert_eq!(offering, ["doctor", "reset"]);
+    assert_eq!(offering, ["run", "doctor", "reset"]);
     for &shell in Shell::value_variants() {
         let script = text(shell);
         for word in ["config", "tuning-boot", "core", "all"] {

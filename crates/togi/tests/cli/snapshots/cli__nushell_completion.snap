@@ -11,6 +11,17 @@ module completions {
     --version(-V)             # Print version
   ]
 
+  # Start or resume the tuning session in the foreground
+  export extern "togi run" [
+    --config: path            # JSON configuration file [default: /etc/togi/config.json]
+    --cycles: string          # Stop after N clean cycles, each a passed full cycle ending at or after phase 2's confirmation cycle (default endless)
+    --first-result            # Stop once the BIOS profile is first confirmed, after phase 1's passed cycle and before phase 2 moves a core
+    --tuning-boot: path       # Run as the tuning boot service: persist a leave reason before clearing the saved boot entry in this GRUB environment file, and reboot after a boot loop
+    --no-tui                  # Print one line per event instead of the dashboard on a terminal
+    --state-dir: directory    # State directory
+    --help(-h)                # Print help (see more with '--help')
+  ]
+
   def "nu-complete togi completion shell" [] {
     [ "bash" "zsh" "fish" "nushell" ]
   }
@@ -77,6 +88,10 @@ module completions {
 
   # Print this message or the help of the given subcommand(s)
   export extern "togi help" [
+  ]
+
+  # Start or resume the tuning session in the foreground
+  export extern "togi help run" [
   ]
 
   # Print a shell completion script
