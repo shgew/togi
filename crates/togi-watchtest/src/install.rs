@@ -10,8 +10,12 @@ use crate::{Error, Scenario};
 /// boot, and returns the build its session started under. A directory that already holds a journal is refused, since
 /// the writer would append the scenario after it.
 pub fn install(dir: &Path, scenario: Scenario) -> Result<Build, Error> {
-    let events = scenario.events()?;
-    write(dir, &events).map_err(|source| Error::Install {
+    install_events(dir, &scenario.events()?)
+}
+
+/// [`install`] for a journal the caller simulated, such as with [`crate::simulate`].
+pub fn install_events(dir: &Path, events: &[Event]) -> Result<Build, Error> {
+    write(dir, events).map_err(|source| Error::Install {
         dir: dir.to_path_buf(),
         source,
     })

@@ -53,6 +53,39 @@ fn the_first_error_ends_the_stream() {
 }
 
 #[test]
+fn an_unknown_kind_is_its_own_error_with_its_line_and_kind() {
+    let mut bytes = recorded(&MemFs::new());
+    bytes.extend_from_slice(
+        br#"{"seq":5,"time":"2026-01-01T00:00:00Z","boot":"b","kind":"future.thing","msg":"x","data":{}}"#,
+    );
+    bytes.push(b'\n');
+    let error = EventReader::new(bytes.as_slice())
+        .find_map(Result::err)
+        .unwrap();
+    assert!(
+        matches!(&error, ReadError::UnknownKind { line: 5, source } if source.0 == "future.thing"),
+        "{error:?}"
+    );
+    assert_eq!(
+        error.to_string(),
+        r#"line 5: unknown event kind "future.thing""#
+    );
+}
+
+#[test]
+fn a_known_kind_with_a_bad_payload_and_a_broken_line_stay_decode_errors() {
+    let mut bytes = recorded(&MemFs::new());
+    bytes.extend_from_slice(
+        br#"{"seq":5,"time":"2026-01-01T00:00:00Z","boot":"b","kind":"shutdown","msg":"x","data":{"reason":7}}"#,
+    );
+    bytes.push(b'\n');
+    assert!(matches!(
+        EventReader::new(bytes.as_slice()).find_map(Result::err),
+        Some(ReadError::Decode { line: 5, .. })
+    ));
+}
+
+#[test]
 fn recordings_index_events_by_seq() {
     let recording = Recording::parse(&recorded(&MemFs::new())).unwrap();
     for event in recording.events() {
