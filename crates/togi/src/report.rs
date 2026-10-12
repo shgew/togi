@@ -25,15 +25,6 @@ pub fn current_build() -> Build {
     }
 }
 
-/// Go's name for a build: its version and revision, or that it predates version stamps.
-fn name(build: &Build) -> String {
-    if build.version.is_empty() {
-        "a togi build from before version stamps".to_owned()
-    } else {
-        build.to_string()
-    }
-}
-
 /// Why `current` may not use a journal `recorded` wrote, with what to do about it.
 #[must_use]
 pub fn refusal_message(refusal: &Refusal, recorded: &Build, current: &Build) -> String {
@@ -43,10 +34,8 @@ pub fn refusal_message(refusal: &Refusal, recorded: &Build, current: &Build) -> 
         ..
     } = refusal;
     let mut written = format!(
-        "this journal was written by {} (schema {}, ruleset {}",
-        name(recorded),
-        recorded.schema,
-        recorded.ruleset
+        "this journal was written by {recorded} (schema {}, ruleset {}",
+        recorded.schema, recorded.ruleset
     );
     if *dimension == Dimension::Evidence {
         let _ = write!(written, ", evidence epoch {}", recorded.evidence);
@@ -54,21 +43,13 @@ pub fn refusal_message(refusal: &Refusal, recorded: &Build, current: &Build) -> 
     let newer = recorded.schema > current.schema
         || recorded.ruleset > current.ruleset
         || recorded.evidence > current.evidence;
-    let mut text = format!(
-        "{written}); this build, {}, uses {dimension} {used}. ",
-        name(current)
-    );
+    let mut text = format!("{written}); this build, {current}, uses {dimension} {used}. ");
     if newer {
-        if recorded.version.is_empty() {
-            text.push_str("Install the togi build that wrote it to continue this session");
-        } else {
-            let _ = write!(
-                text,
-                "Install togi {} to continue this session",
-                recorded.version
-            );
-        }
-        text.push_str(", or run togi reset --all to archive it and start over.");
+        let _ = write!(
+            text,
+            "Install togi {} to continue this session, or run togi reset --all to archive it and start over.",
+            recorded.version
+        );
     } else {
         text.push_str(
             "togi run archives it and starts a new session that carries its candidate solo limits and failure points; togi reset --all archives it and starts over.",
@@ -125,14 +106,8 @@ pub fn unknown_kind_message(
         return None;
     };
     Some(format!(
-        "unknown kind {:?} in journal written by {} (schema {}, ruleset {}); this build, {} (schema {}, ruleset {}), cannot safely modify it; install the build that wrote it",
-        source.0,
-        name(recorded),
-        recorded.schema,
-        recorded.ruleset,
-        name(current),
-        current.schema,
-        current.ruleset,
+        "unknown kind {:?} in journal written by {recorded} (schema {}, ruleset {}); this build, {current} (schema {}, ruleset {}), cannot safely modify it; install the build that wrote it",
+        source.0, recorded.schema, recorded.ruleset, current.schema, current.ruleset,
     ))
 }
 

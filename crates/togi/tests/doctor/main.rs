@@ -96,6 +96,11 @@ fn a_ready_machine_prints_the_table_and_ready() {
     let before = (files(session.path()), session.text());
     let ran = doctor(&host, session.path(), &[]);
     assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
+    assert_eq!(
+        host.lock_busy_in_diagnose.get(),
+        Some(true),
+        "the host lock was not held during the checks"
+    );
     assert_eq!(ran.err, "");
     assert_eq!((files(session.path()), session.text()), before);
     insta::assert_snapshot!("ready", ran.out);
@@ -289,6 +294,10 @@ fn a_journal_run_would_refuse_exits_16_before_any_lock_or_check() {
     ] {
         let session = Session::new();
         session.rewrite_first_line(from, to);
+        session.rewrite_first_line(
+            "\"version\":\"0.0.0\"",
+            "\"version\":\"0.0.0\",\"rev\":\"abc1234\"",
+        );
         let before = (files(session.path()), session.text());
         let host = host_with(ready());
         let ran = doctor(&host, session.path(), &[]);
@@ -296,7 +305,7 @@ fn a_journal_run_would_refuse_exits_16_before_any_lock_or_check() {
         assert_eq!(ran.out, "", "{name}");
         assert!(
             ran.err.starts_with(&format!(
-                "togi doctor: this journal was written by togi 0.0.0 {written}; this build, togi "
+                "togi doctor: this journal was written by togi 0.0.0+abc1234 {written}; this build, togi "
             )),
             "{name}: {}",
             ran.err
@@ -337,6 +346,20 @@ fn an_unreadable_journal_exits_1() {
         let causes = ran.err.matches("expected").count();
         assert!(causes <= 1, "{name}: a cause is repeated: {}", ran.err);
     }
+}
+
+#[test]
+fn the_default_config_comes_from_the_host() {
+    let host = host_with(ready());
+    fs::write(&host.config, "{").unwrap();
+    let (_dir, state) = missing_state();
+    let ran = doctor(&host, &state, &[]);
+    assert_eq!(ran.exit, Exit::Usage, "{}", ran.err);
+    assert!(
+        ran.err.contains(&host.config.display().to_string()),
+        "{}",
+        ran.err
+    );
 }
 
 #[test]

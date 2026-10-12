@@ -22,7 +22,8 @@
 //! # The host seam
 //!
 //! A command reaches the machine only through [`system::System`]: the platform, privileges, host
-//! lock, boot id, clock, hardware checks, GRUB, the retry marker and the reboot. [`run`] uses the
+//! lock, default configuration file, boot id, clock, hardware checks, GRUB, the retry marker and
+//! the reboot. [`run`] uses the
 //! real host; [`run_with`] takes any other, so a test on Linux can stand for another platform
 //! (`check_platform` returning [`togi_hardware::Error::Unsupported`]), hold the host lock on a
 //! temporary file or answer the hardware checks without touching hardware. `run` and `doctor` ask

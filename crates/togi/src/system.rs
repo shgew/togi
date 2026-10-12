@@ -1,11 +1,12 @@
 //! The machine a command runs on, as one seam.
 //!
-//! Every command reaches the host through [`System`]: the platform, the host lock, the boot id,
-//! the clock, the hardware checks, GRUB, the reboot, the machine `run` tunes and the process's own
-//! terminal, stderr and dashboard. [`Real`] is the host; [`crate::run`] uses
-//! it. [`crate::run_with`] takes any other, so a test on Linux can stand for another platform
-//! (`check_platform` fails with [`togi_hardware::Error::Unsupported`]), hold the host lock on a
-//! temporary file, or answer the hardware checks without touching hardware.
+//! Every command reaches the host through [`System`]: the platform, the host lock, the default
+//! configuration file, the boot id, the clock, the hardware checks, GRUB, the reboot, the machine
+//! `run` tunes and the process's own terminal, stderr and dashboard. [`Real`] is the host;
+//! [`crate::run`] uses it. [`crate::run_with`] takes any other, so a test on Linux can stand for
+//! another platform (`check_platform` fails with [`togi_hardware::Error::Unsupported`]), hold the
+//! host lock on a temporary file, read the configuration from a temporary default path, or answer
+//! the hardware checks without touching hardware.
 //!
 //! A command that must stop on a platform other than Linux asks [`System::check_platform`] before
 //! it reads the boot id, opens the journal, takes the host lock or makes a check.
@@ -39,6 +40,9 @@ pub trait System {
 
     /// The host lock file and the ownership it must have.
     fn host_lock(&self) -> (&Path, Policy);
+
+    /// The configuration file read when `--config` is absent.
+    fn config_path(&self) -> &Path;
 
     /// The identifier of the current boot.
     fn boot_id(&self) -> Result<BootId, togi_detect::Error>;
@@ -114,6 +118,10 @@ impl System for Real {
             Policy::Private
         };
         (Path::new(togi_hostlock::DEFAULT_PATH), policy)
+    }
+
+    fn config_path(&self) -> &Path {
+        Path::new(togi_config::DEFAULT_PATH)
     }
 
     fn boot_id(&self) -> Result<BootId, togi_detect::Error> {

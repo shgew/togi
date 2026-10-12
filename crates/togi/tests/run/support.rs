@@ -169,6 +169,8 @@ pub(crate) struct Fake {
     pub(crate) real_stderr: bool,
     temp: Option<TempDir>,
     pub(crate) lock: PathBuf,
+    /// The default configuration file: absent unless a test writes it.
+    pub(crate) default_config: PathBuf,
     pub(crate) supported: bool,
     pub(crate) interactive: bool,
     pub(crate) stderr: Capture,
@@ -199,6 +201,7 @@ impl Fake {
         Self {
             sim,
             lock: dir.join("togi.lock"),
+            default_config: dir.join("default-config.json"),
             dir: dir.to_owned(),
             panic_in_platform: false,
             policy: Policy::Private,
@@ -254,6 +257,22 @@ impl Fake {
         (exit, String::from_utf8(out).unwrap(), stderr)
     }
 
+    /// `togi --state-dir <state> <args>` with no `--config`, so the host's default configuration
+    /// file ([`System::config_path`]) is the one read.
+    pub(crate) fn run_on_default_config(&self, args: &[&str]) -> (togi_cli::Exit, String) {
+        let mut all = vec![
+            "togi".to_owned(),
+            "--state-dir".to_owned(),
+            self.state_dir().display().to_string(),
+        ];
+        all.extend(args.iter().map(|arg| (*arg).to_owned()));
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        let exit = togi_cli::run_with(all, &mut out, &mut err, self);
+        let mut stderr = String::from_utf8(err).unwrap();
+        stderr.push_str(&self.stderr.text());
+        (exit, stderr)
+    }
+
     pub(crate) fn events(&self) -> Vec<togi_journal::Event> {
         togi_journal::Recording::read(&self.state_dir().join("events.jsonl"))
             .map(togi_journal::Recording::into_events)
@@ -273,6 +292,10 @@ impl System for Fake {
         } else {
             Err(Error::Unsupported)
         }
+    }
+
+    fn config_path(&self) -> &Path {
+        &self.default_config
     }
 
     fn host_lock(&self) -> (&Path, Policy) {

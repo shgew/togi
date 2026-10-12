@@ -151,6 +151,40 @@ fn a_missing_explicit_config_is_a_usage_error() {
     assert!(err.contains("cannot read config"), "{err}");
 }
 
+/// The configuration `config.loaded` recorded: the path, and whether a file supplied it.
+fn recorded_config(fake: &Fake) -> (String, bool) {
+    fake.events()
+        .iter()
+        .find_map(|event| match &event.payload {
+            Payload::ConfigLoaded(loaded) => Some((loaded.path.clone(), loaded.file)),
+            _ => None,
+        })
+        .unwrap()
+}
+
+#[test]
+fn a_missing_default_config_is_the_default_configuration_and_is_recorded_as_no_file() {
+    let fake = interrupted();
+    let (exit, err) = fake.run_on_default_config(&["run", "--no-tui"]);
+    assert_eq!(exit, Exit::Ok, "{err}");
+    assert_eq!(
+        recorded_config(&fake),
+        (fake.default_config.display().to_string(), false)
+    );
+}
+
+#[test]
+fn a_default_config_that_exists_is_read_and_recorded_as_a_file() {
+    let fake = interrupted();
+    fs::write(&fake.default_config, "{}").unwrap();
+    let (exit, err) = fake.run_on_default_config(&["run", "--no-tui"]);
+    assert_eq!(exit, Exit::Ok, "{err}");
+    assert_eq!(
+        recorded_config(&fake),
+        (fake.default_config.display().to_string(), true)
+    );
+}
+
 #[test]
 fn the_config_flag_may_precede_the_command_name() {
     let fake = Fake::new();

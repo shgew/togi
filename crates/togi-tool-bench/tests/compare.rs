@@ -5,7 +5,7 @@ mod common;
 use common::record;
 use togi_tool_bench::compare::{Pair, Verdict, compare, pairing, report};
 use togi_tool_bench::summary;
-use togi_tool_bench::{Record, Split, Status, set_scenario_shares};
+use togi_tool_bench::{ModelCheck, Record, Split, Status, set_scenario_shares};
 
 fn pair<'a>(candidate: &'a Record, baseline: &'a Record) -> Pair<'a> {
     Pair {
@@ -30,6 +30,46 @@ fn text(write: impl FnOnce(&mut Vec<u8>) -> std::io::Result<()>) -> String {
     let mut out = Vec::new();
     write(&mut out).unwrap();
     String::from_utf8(out).unwrap()
+}
+
+#[test]
+fn a_baseline_file_compares_exactly_as_the_full_records_do() {
+    let full: Vec<Record> = (1..=6_u32)
+        .map(|n| Record {
+            seed: u64::from(n),
+            wall_s: Some(30.0 + f64::from(n)),
+            model_check: Some(ModelCheck {
+                eligible_groups: 3,
+                flagged_groups: 1,
+                idle_failures: 0,
+            }),
+            machine: Some("m.json".to_owned()),
+            worst_r7_hazard_per_h: Some(0.25),
+            sim_hours: 10.0 + f64::from(n),
+            ..base()
+        })
+        .collect();
+    let candidate: Vec<Record> = full
+        .iter()
+        .map(|run| Record {
+            wall_s: Some(1.0),
+            model_check: None,
+            depth: run.depth + 9,
+            crashes: 2,
+            sim_hours: run.sim_hours * 1.5,
+            worst_r7_hazard_per_h: Some(0.5),
+            ..run.clone()
+        })
+        .collect();
+    let slim: Vec<Record> = full.iter().map(Record::baseline).collect();
+    let against_full = text(|out| report(out, &candidate, &full));
+    let against_slim = text(|out| report(out, &candidate, &slim));
+    assert!(against_full.contains("verdict: "), "{against_full}");
+    assert!(
+        against_full.contains("max_worst_r7_hazard_delta"),
+        "{against_full}"
+    );
+    assert_eq!(against_slim, against_full);
 }
 
 type Edit = (&'static str, fn(&mut Record), Verdict, [usize; 4]);

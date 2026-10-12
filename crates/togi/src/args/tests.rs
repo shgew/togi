@@ -72,7 +72,10 @@ fn config_defaults_and_reports_whether_it_was_given() {
         panic!("wrong command");
     };
     assert!(!absent.config.is_explicit());
-    assert_eq!(absent.config.path(), Path::new(DEFAULT_CONFIG_PATH));
+    assert_eq!(
+        absent.config.path(Path::new("/d.json")),
+        Path::new("/d.json")
+    );
 
     let Sub::WithConfig(given) = parse(&["with-config", "--config", "/c.json"])
         .unwrap()
@@ -81,7 +84,10 @@ fn config_defaults_and_reports_whether_it_was_given() {
         panic!("wrong command");
     };
     assert!(given.config.is_explicit());
-    assert_eq!(given.config.path(), Path::new("/c.json"));
+    assert_eq!(
+        given.config.path(Path::new("/d.json")),
+        Path::new("/c.json")
+    );
 }
 
 #[test]
@@ -119,7 +125,11 @@ fn config_is_accepted_before_and_after_the_command_name_it_is_attached_to() {
             panic!("wrong command")
         };
         assert!(with.config.is_explicit(), "{args:?}");
-        assert_eq!(with.config.path(), Path::new("/c.json"), "{args:?}");
+        assert_eq!(
+            with.config.path(Path::new("/d.json")),
+            Path::new("/c.json"),
+            "{args:?}"
+        );
     }
 }
 
@@ -150,4 +160,56 @@ fn a_missing_file_is_the_default_configuration_unless_it_was_asked_for() {
         super::read(&missing, false),
         Err(togi_config::LoadError::Parse { .. })
     ));
+}
+
+fn config_args(path: Option<&Path>) -> ConfigArgs {
+    ConfigArgs {
+        path: path.map(Path::to_path_buf),
+    }
+}
+
+#[test]
+fn load_reads_the_default_the_caller_names_and_the_given_file_over_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let default = dir.path().join("default.json");
+    let given = dir.path().join("given.json");
+    std::fs::write(&default, "{").unwrap();
+    std::fs::write(&given, "{}").unwrap();
+    assert!(matches!(
+        config_args(None).load(&default),
+        Err(togi_config::LoadError::Parse { .. })
+    ));
+    assert_eq!(
+        config_args(Some(&given)).load(&default).unwrap(),
+        togi_config::Config::default()
+    );
+}
+
+#[test]
+fn a_default_that_cannot_be_read_for_another_reason_than_absence_is_an_error() {
+    let dir = tempfile::tempdir().unwrap();
+    assert!(matches!(
+        config_args(None).load(dir.path()),
+        Err(togi_config::LoadError::Read { .. })
+    ));
+}
+
+#[test]
+fn load_with_source_names_the_file_read_and_whether_one_supplied_the_configuration() {
+    let dir = tempfile::tempdir().unwrap();
+    let default = dir.path().join("default.json");
+    let given = dir.path().join("given.json");
+    std::fs::write(&given, "{}").unwrap();
+    let (_, source) = config_args(None).load_with_source(&default).unwrap();
+    assert_eq!(
+        (source.path.as_str(), source.file),
+        (default.to_str().unwrap(), false)
+    );
+    let (_, source) = config_args(Some(&given))
+        .load_with_source(&default)
+        .unwrap();
+    assert_eq!(
+        (source.path.as_str(), source.file),
+        (given.to_str().unwrap(), true)
+    );
 }

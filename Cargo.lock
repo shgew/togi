@@ -1524,6 +1524,7 @@ dependencies = [
  "rustix",
  "serde_json",
  "tempfile",
+ "togi-command",
  "togi-config",
  "togi-defect",
  "togi-detect",

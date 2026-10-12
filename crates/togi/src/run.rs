@@ -155,7 +155,7 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
         }
     }
 
-    let (config, source) = match args.config.load_with_source() {
+    let (config, source) = match args.config.load_with_source(ctx.system.config_path()) {
         Ok(loaded) => loaded,
         Err(error) => return exit_with(ctx, COMMAND, error, Exit::Usage),
     };
