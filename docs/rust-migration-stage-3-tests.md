@@ -2,7 +2,7 @@
 
 Every `func Test*`, `Benchmark*`, `Fuzz*` and `Example*` in the Go packages ported in stage 3 (#638) is mapped to the Rust tests that pin the same behavior: `internal/config` → `togi-config`, `internal/defect` → `togi-defect`, `internal/facts` → `togi-facts`, `internal/carry` → `togi-carry`, `internal/tuner` → `togi-tuner`. There are no Fuzz or Example functions and one Benchmark.
 
-Rust names are `crate::module::fn`, each resolved to a test that `cargo nextest list` reports on `main` at 113b73ee (a parameterised `#[test_case]` function counts by its name). The pull requests that ported each package are #770 (config), #775 (defect), #776 (facts), #783 (carry), #777 (tuner G1, G2), #799 (tuner G3 to G5) and #801 (tuner G6: projection, forecast and dashboard).
+Rust names are `crate::module::fn`, each resolved to a test that `cargo nextest list` reports on `main` at 113b73ee with this pull request's three `togi-journal` tests added (02559d73: `togi_journal::tests::strict::a_line_without_a_kind_is_an_envelope_error`, `togi_journal::tests::strict::open_refuses_a_journal_line_without_a_kind_and_leaves_the_file_unchanged` and `togi_journal::journal::tests::archive::an_archive_target_that_is_a_directory_is_refused_before_anything_is_recorded`); a parameterised `#[test_case]` function counts by its name. The pull requests that ported each package are #770 (config), #775 (defect), #776 (facts), #783 (carry), #777 (tuner G1, G2), #799 (tuner G3 to G5) and #801 (tuner G6: projection, forecast and dashboard).
 
 Status:
 
@@ -269,7 +269,7 @@ Nine `internal/session` tests that #770 and #775 also map (one config, eight def
 | `TestCheckingCarriesDeeperPassAcrossBackoff` | `togi_tuner::rerun_tests::checking_carries_deeper_pass_across_backoff` | A |
 | `TestTogetherSingleNonzeroAttribution` | `togi_tuner::checking_tests::together_single_nonzero_attribution` | A |
 | `TestCycleStartInvalidatesProjectedChecking` | `togi_tuner::projection_tests::cycle_start_invalidates_projected_checking` | A — cache invalidation is obsolete; the observable behaviour is kept |
-| `TestTogetherMultipleMCECoresRemainUnattributed` | `togi_tuner::checking_tests::together_multiple_mce_cores_remain_unattributed` | A |
+| `TestTogetherMultipleMCECoresRemainUnattributed` | `togi_tuner::checking_tests::together_multiple_mce_cores_remain_unattributed`<br>`togi_tuner::rule_tests::together_failures_name_the_core_the_end_or_one_cited_mce_names` | A |
 | `TestRerunDerivedCommitments` | `togi_tuner::rerun_tests::rerun_derived_commitments`<br>`togi_tuner::hunt::locate_tests::rerun_derived_hunt_commitments` | A |
 | `TestRerunFIFOAndSharedDuration` | `togi_tuner::rerun_tests::rerun_fifo_and_shared_duration` | A |
 | `TestRepeatedCycleClassesAddTrials` | `togi_tuner::checking_tests::repeated_cycle_classes_add_trials` | A |
@@ -499,7 +499,7 @@ Nine `internal/session` tests that #770 and #775 also map (one config, eight def
 | `TestConfirmationFailureRevertsDeepenedCoresTopRequesterFirst` | `togi_tuner::rounds_tests::confirmation_failure_reverts_deepened_cores_top_requester_first` | A |
 | `TestConfirmationResumesAcrossRevertAndRerun` | `togi_tuner::rounds_tests::confirmation_resumes_across_revert_and_rerun` | A |
 | `TestPhase2BlameInDrainMatchesNext` | `togi_tuner::drain_tests::phase2_blame_in_drain_matches_next` | A |
-| `TestRoundFailureBlamesTopRequestGroupOfAnR7Load` | `togi_tuner::rounds_tests::a_failed_r7_round_check_blames_the_least_preferred_loaded_core`<br>`togi_tuner::rounds::blame::tests::a_multi_core_r7_failure_without_an_open_record_is_charged_by_depth_not_by_requests` | A |
+| `TestRoundFailureBlamesTopRequestGroupOfAnR7Load` | `togi_tuner::rounds_tests::a_failed_r7_round_check_blames_the_least_preferred_loaded_core`<br>`togi_tuner::rounds::blame::tests::a_multi_core_r7_failure_without_an_open_record_is_charged_by_depth_not_by_requests`<br>`togi_tuner::r7_escalation_tests::deepening_hold_and_named_backoffs_are_never_counted` | A |
 | `TestYieldedMoverIsFinishedAndNeverMovesAgain` | `togi_tuner::rounds_tests::a_yielded_mover_is_finished_and_never_moves_again` | A |
 | `TestConfirmationFailureRevertsTheDeepestMovedCoreFirst` | `togi_tuner::rounds_tests::confirmation_failure_reverts_the_deepest_moved_core_first` | A |
 | `TestIdleFailureAfterTheMovedProfileIsAppliedBlamesTheDeepenedCores` | `togi_tuner::rounds_tests::an_idle_failure_after_the_moved_profile_is_applied_blames_the_deepened_cores` | A |
@@ -548,7 +548,7 @@ Nine `internal/session` tests that #770 and #775 also map (one config, eight def
 | `TestR7AllCoreFailureSkipsCCDAtZero` | `togi_tuner::r7_attribution_tests::r7_all_core_failure_skips_ccd_at_zero` | A |
 | `TestR7OffsetStandInMovesOneCount` | `togi_tuner::r7_target_tests::r7_offset_stand_in_moves_one_count` | A |
 | `TestR7FailureNeedsNoMoveWhileMovedCoreIsShallower` | `togi_tuner::r7_attribution_tests::r7_failure_needs_no_move_while_moved_core_is_shallower`<br>`togi_tuner::r7_attribution_tests::r7_failure_needs_no_move_during_a_deepening_round_while_the_named_core_is_shallower` | A |
-| `TestR7NamedIdleZeroCoreCountsAgainstLoadedCCD` | `togi_tuner::r7_attribution_tests::r7_named_idle_zero_core_counts_against_loaded_ccd` | A |
+| `TestR7NamedIdleZeroCoreCountsAgainstLoadedCCD` | `togi_tuner::r7_attribution_tests::r7_named_idle_zero_core_counts_against_loaded_ccd`<br>`togi_tuner::r7_attribution_tests::r7_named_idle_zero_core_on_loaded_ccd_at_zero_waits_to_be_located` | A |
 | `TestR7EscalatedFailureLocatesWithIdleCoresAtZero` | `togi_tuner::hunt::locate_tests::r7_escalated_failure_locates_with_idle_cores_at_zero` | A |
 | `TestR7PassedLocateHuntsTheUnloadedCulprit` | `togi_tuner::hunt::locate_tests::r7_passed_locate_hunts_the_unloaded_culprit` | A |
 | `TestR7FailedLocateKeepsTheVoltageTargetedBackoff` | `togi_tuner::hunt::locate_tests::r7_failed_locate_keeps_the_voltage_targeted_backoff` | A |
@@ -612,13 +612,13 @@ Nine `internal/session` tests that #770 and #775 also map (one config, eight def
 |---|---|---|
 | `TestConstraints` | `togi_tuner::tests::constraints_reach_and_at_limit`<br>`togi_tuner::tests::constraints_check_failure_points_before_combinations_in_core_order` | A — the `SoleNonzero` index cases are gone: `sole_nonzero` returns a `CoreId` |
 | `TestTogetherCrashNamesTheSoleNonzeroCoreByID` | `togi_tuner::tests::together_crash_names_the_sole_nonzero_core_by_id`<br>`togi_tuner::rule_tests::together_failures_name_the_core_the_end_or_one_cited_mce_names`<br>`togi_tuner::checking_tests::together_crash_names_sole_nonzero_core_by_id` | A |
-| `TestOptimum` | `togi_tuner::tests::optimum_with_staircase_combinations`<br>`togi_tuner::tests::four_core_cycle_needs_global_yield`<br>`togi_tuner::tests::optimum_keeps_failure_point_outside_safe_bounds` | A |
+| `TestOptimum` | `togi_tuner::tests::optimum`<br>`togi_tuner::tests::optimum_with_staircase_combinations`<br>`togi_tuner::tests::four_core_cycle_needs_global_yield`<br>`togi_tuner::tests::optimum_keeps_failure_point_outside_safe_bounds` | A |
 | `TestOptimumWithStaircaseCombinations` | `togi_tuner::tests::optimum_with_staircase_combinations`<br>`togi_tuner::tests::four_core_cycle_needs_global_yield`<br>`togi_tuner::tests::optimum_keeps_failure_point_outside_safe_bounds` | A |
 | `TestOptimumMatchesExhaustiveSearch` | `togi_tuner::tests::optimum_matches_exhaustive_search` | A |
 | `TestOptimumWithAccumulatedCombinations` | `togi_tuner::optimum_tests::optimum_with_accumulated_combinations` | A — a bound on search nodes replaces wall time |
 | `TestFourCoreCycleNeedsGlobalYield` | `togi_tuner::tests::optimum_with_staircase_combinations`<br>`togi_tuner::tests::four_core_cycle_needs_global_yield`<br>`togi_tuner::tests::optimum_keeps_failure_point_outside_safe_bounds` | A |
 | `TestClassifyCrash` | `togi_tuner::tests::classify_crash_cases`<br>`togi_tuner::tests::other_reset_kinds_classify_by_what_was_applied` | A |
-| `TestDirectFailureAtZero` | `togi_tuner::ledger_tests::a_carried_all_zero_idle_failure_stops_before_any_trial`<br>`togi_tuner::zero_tests::direct_failure_at_zero` | A |
+| `TestDirectFailureAtZero` | `togi_tuner::ledger_tests::a_carried_all_zero_idle_failure_stops_before_any_trial`<br>`togi_tuner::zero_tests::direct_failure_at_zero`<br>`togi_tuner::hunt::locate_tests::direct_failure_at_zero_in_a_hunt_group` | A |
 | `TestThermalReasonYieldsToMCEEvidence` | `togi_tuner::tests::thermal_reason_yields_to_mce_evidence`<br>`togi_tuner::rule_tests::thermal_reason_yields_to_mce_evidence` | A |
 | `TestOptimumKeepsFailurePointOutsideSafeBounds` | `togi_tuner::tests::optimum_with_staircase_combinations`<br>`togi_tuner::tests::four_core_cycle_needs_global_yield`<br>`togi_tuner::tests::optimum_keeps_failure_point_outside_safe_bounds` | A |
 | `TestCarriedZeroFailurePointStopsBeforeTrial` | `togi_tuner::rule_tests::persistent_zero_point_stops_before_trial`<br>`togi_tuner::rule_tests::an_alone_failure_at_zero_is_a_dead_end` | A |
@@ -650,8 +650,8 @@ Nine `internal/session` tests that #770 and #775 also map (one config, eight def
 
 | Go test | Rust test(s) | status |
 |---|---|---|
-| `TestCarriedUnconfirmedFailureAtZeroIsHunted` | `togi_tuner::ledger_tests::a_carried_all_zero_idle_failure_stops_before_any_trial`<br>`togi_tuner::zero_tests::carried_unconfirmed_failure_at_zero_is_hunted` | A |
-| `TestCarriedFailureAtZeroWithAllZeroProfileDeadEnds` | `togi_tuner::ledger_tests::a_carried_all_zero_idle_failure_stops_before_any_trial`<br>`togi_tuner::zero_tests::carried_failure_at_zero_with_all_zero_profile_dead_ends` | A |
+| `TestCarriedUnconfirmedFailureAtZeroIsHunted` | `togi_tuner::ledger_tests::a_carried_all_zero_idle_failure_stops_before_any_trial`<br>`togi_tuner::zero_tests::carried_unconfirmed_failure_at_zero_is_hunted`<br>`togi_carry::tests::zero::only_confirmed_zero_failure_points`<br>`togi_carry::tests::zero::zero_proof_persisted_in_seed` | A |
+| `TestCarriedFailureAtZeroWithAllZeroProfileDeadEnds` | `togi_tuner::ledger_tests::a_carried_all_zero_idle_failure_stops_before_any_trial`<br>`togi_tuner::zero_tests::carried_failure_at_zero_with_all_zero_profile_dead_ends`<br>`togi_carry::tests::zero::only_confirmed_zero_failure_points`<br>`togi_carry::tests::zero::zero_proof_persisted_in_seed` | A |
 
 ### `internal/tuner/zero_test.go` (2)
 
