@@ -38,6 +38,7 @@ use std::io::{self, Write};
 use std::os::fd::BorrowedFd;
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Duration;
 
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
@@ -127,14 +128,28 @@ impl Stop {
     }
 }
 
-/// How the loop is run, and what ends it.
+/// How the dashboard is run: what drives its reloads and redraws, and what ends it.
 #[derive(Debug, Clone, Copy)]
-struct Config<'a> {
-    state_dir: &'a Path,
-    since: Option<u64>,
-    stop: Option<&'a Stop>,
+pub struct Config<'a> {
+    /// The state directory whose changes make the loop ask its [`Feed`] to reload, or `None` when the feed changes
+    /// by itself and is only asked to draw.
+    pub watch: Option<&'a Path>,
+    /// A redraw at least this often, whatever the frame's [`Hold`](crate::screen::Hold) says, for a feed that
+    /// changes with time.
+    pub tick: Option<Duration>,
+    /// Another thread's way to end the dashboard.
+    pub stop: Option<&'a Stop>,
     /// Whether SIGINT, SIGTERM and SIGHUP end the dashboard.
-    terminating: bool,
+    pub terminating: bool,
+}
+
+/// The journal a dashboard shows, which the caller owns.
+pub trait Feed {
+    /// The journal for a frame of `screen`.
+    fn journal(&mut self, screen: &Screen) -> Journal<'_>;
+    /// Reloads after the watched directory changed, and reports whether what is shown changed. It is also called
+    /// once before the first frame.
+    fn reload(&mut self) -> bool;
 }
 
 /// Aborts its task when dropped.
@@ -190,26 +205,42 @@ pub fn run(
     out: BorrowedFd<'_>,
     keys: Option<BorrowedFd<'_>>,
 ) -> Result<(), Error> {
-    run_with(state_dir, out, keys, dashboard())
+    run_rendered(state_dir, out, keys, dashboard())
+}
+
+/// [`run`] on a journal and a clock the caller owns, which stays the only loop there is: the frames draw `feed`'s
+/// journal at the time `now` gives, in the system's time zone, and `config` says what drives the redraws and what
+/// ends the dashboard. The terminal, the keys and the signals behave as for [`run`], with SIGINT, SIGTERM and
+/// SIGHUP ending it only when `config.terminating` is set.
+pub fn run_with(
+    feed: impl Feed,
+    config: &Config<'_>,
+    now: impl Fn() -> Timestamp,
+    out: BorrowedFd<'_>,
+    keys: Option<BorrowedFd<'_>>,
+) -> Result<(), Error> {
+    start(feed, config, out, keys, now, dashboard())
 }
 
 /// [`run`] with `render` drawing each frame of the journal on a screen into a buffer one row and one column smaller
 /// than the terminal, and reporting how long the frame stays true.
-fn run_with(
+fn run_rendered(
     state_dir: &Path,
     out: BorrowedFd<'_>,
     keys: Option<BorrowedFd<'_>>,
     render: impl FnMut(&Journal<'_>, &Screen, Timestamp, &mut Buffer) -> Drawn,
 ) -> Result<(), Error> {
     start(
+        Source::new(state_dir, None),
         &Config {
-            state_dir,
-            since: None,
+            watch: Some(state_dir),
+            tick: None,
             stop: None,
             terminating: true,
         },
         out,
         keys,
+        Timestamp::now,
         render,
     )
 }
@@ -225,11 +256,11 @@ pub fn run_after(
     out: BorrowedFd<'_>,
     keys: Option<BorrowedFd<'_>>,
 ) -> Result<(), Error> {
-    run_after_with(state_dir, since, stop, out, keys, dashboard())
+    run_after_rendered(state_dir, since, stop, out, keys, dashboard())
 }
 
-/// [`run_after`] with `render` drawing each frame, as for [`run_with`].
-fn run_after_with(
+/// [`run_after`] with `render` drawing each frame, as for [`run_rendered`].
+fn run_after_rendered(
     state_dir: &Path,
     since: u64,
     stop: &Stop,
@@ -238,14 +269,16 @@ fn run_after_with(
     render: impl FnMut(&Journal<'_>, &Screen, Timestamp, &mut Buffer) -> Drawn,
 ) -> Result<(), Error> {
     start(
+        Source::new(state_dir, Some(since)),
         &Config {
-            state_dir,
-            since: Some(since),
+            watch: Some(state_dir),
+            tick: None,
             stop: Some(stop),
             terminating: false,
         },
         out,
         keys,
+        Timestamp::now,
         render,
     )
 }
@@ -257,9 +290,11 @@ fn dashboard() -> impl FnMut(&Journal<'_>, &Screen, Timestamp, &mut Buffer) -> D
 }
 
 fn start(
+    feed: impl Feed,
     config: &Config<'_>,
     out: BorrowedFd<'_>,
     keys: Option<BorrowedFd<'_>>,
+    now: impl Fn() -> Timestamp,
     render: impl FnMut(&Journal<'_>, &Screen, Timestamp, &mut Buffer) -> Drawn,
 ) -> Result<(), Error> {
     let facts = togi_render::OutputFacts::detect(
@@ -278,10 +313,11 @@ fn start(
     };
     drive(
         backend,
+        feed,
         config,
         keys.filter(|_| raw.is_some()),
         colours,
-        Timestamp::now,
+        now,
         render,
     )
 }
@@ -294,6 +330,7 @@ fn uses_palette(colours: Colours) -> bool {
 /// [`run`] on any backend, with the terminal's raw mode and colour profile already decided by the caller.
 fn drive<B: console::Console>(
     backend: B,
+    feed: impl Feed,
     live: &Config<'_>,
     keys: Option<BorrowedFd<'_>>,
     colours: Colours,
@@ -320,20 +357,25 @@ fn drive<B: console::Console>(
             });
             let (reloaded, acknowledged) = mpsc::unbounded_channel();
             let (frozen, frozen_changes) = watch::channel(false);
-            let source = std::cell::RefCell::new(Source::new(live.state_dir, live.since));
-            let mut watcher = notify::open(live.state_dir)?;
-            source.borrow_mut().reload();
-            if watcher.polling() {
-                watcher.arm()?;
-            }
-            let mut handshake = Handshake {
-                changes: events.clone(),
-                reloaded: acknowledged,
-                frozen: frozen_changes,
+            let feed = std::cell::RefCell::new(feed);
+            let mut watcher = live.watch.map(notify::open).transpose()?;
+            feed.borrow_mut().reload();
+            let _notifier = match watcher.take() {
+                Some(mut watcher) => {
+                    if watcher.polling() {
+                        watcher.arm()?;
+                    }
+                    let mut handshake = Handshake {
+                        changes: events.clone(),
+                        reloaded: acknowledged,
+                        frozen: frozen_changes,
+                    };
+                    Some(Abort(tokio::spawn(async move {
+                        notify::drive(&mut watcher, &mut handshake).await;
+                    })))
+                }
+                None => None,
             };
-            let _notifier = Abort(tokio::spawn(async move {
-                notify::drive(&mut watcher, &mut handshake).await;
-            }));
             let reader = match keys {
                 Some(fd) => Some(Reader::start(scope, fd, events.clone()).map_err(Error::Keys)?),
                 None => None,
@@ -345,16 +387,17 @@ fn drive<B: console::Console>(
                     keys: reader.is_some(),
                     colours,
                     now,
+                    tick: live.tick,
                     reloaded: Some(reloaded),
                     frozen: Some(frozen),
                 },
                 &mut queue,
                 |screen, buf| {
-                    let mut source = source.borrow_mut();
-                    let journal = source.journal(screen);
+                    let mut feed = feed.borrow_mut();
+                    let journal = feed.journal(screen);
                     render(&journal, screen, now(), buf)
                 },
-                || source.borrow_mut().reload(),
+                || feed.borrow_mut().reload(),
             )
             .await
         })
@@ -376,7 +419,7 @@ pub fn one_frame(
     one_frame_with(state_dir, width, height, out, dashboard())
 }
 
-/// [`one_frame`] with `render` drawing the frame, as for [`run_with`].
+/// [`one_frame`] with `render` drawing the frame, as for [`run_rendered`].
 fn one_frame_with(
     state_dir: &Path,
     width: u16,
@@ -449,8 +492,8 @@ mod tests {
     use super::console::RESET_PALETTE;
     use super::testing::{Faults, Recorder, session_with_warnings, write_journal};
     use super::{
-        Colours, Config, Drawn, Error, ONE_FRAME_SIZE, SourceError, Stop, View, drive, one_frame,
-        one_frame_with, uses_palette,
+        Colours, Config, Drawn, Error, Feed, ONE_FRAME_SIZE, Source, SourceError, Stop, View,
+        drive, one_frame, one_frame_with, uses_palette,
     };
     use crate::screen::{Hold, Journal, Screen};
 
@@ -492,8 +535,10 @@ mod tests {
         colours: Colours,
         render: impl FnMut(&Journal<'_>, &Screen, Timestamp, &mut Buffer) -> Drawn,
     ) -> Result<(), Error> {
+        let feed = Source::new(live.watch.expect("a watched directory"), None);
         drive(
             recorder.backend(),
+            feed,
             live,
             keys.map(AsFd::as_fd),
             colours,
@@ -503,6 +548,77 @@ mod tests {
     }
 
     use std::os::fd::AsFd;
+
+    struct Counting {
+        reloads: std::rc::Rc<std::cell::Cell<u32>>,
+        journals: std::rc::Rc<std::cell::Cell<u32>>,
+    }
+
+    impl Feed for Counting {
+        fn journal(&mut self, _: &Screen) -> Journal<'_> {
+            self.journals.set(self.journals.get() + 1);
+            Journal::Missing
+        }
+
+        fn reload(&mut self) -> bool {
+            self.reloads.set(self.reloads.get() + 1);
+            false
+        }
+    }
+
+    #[test]
+    fn a_caller_owned_feed_and_clock_drive_the_one_loop_with_no_directory_watched() {
+        let _serial = super::signals::tests::serial();
+        let reloads = std::rc::Rc::new(std::cell::Cell::new(0));
+        let journals = std::rc::Rc::new(std::cell::Cell::new(0));
+        let feed = Counting {
+            reloads: reloads.clone(),
+            journals: journals.clone(),
+        };
+        let stop = Stop::new();
+        let config = Config {
+            watch: None,
+            tick: Some(std::time::Duration::from_millis(10)),
+            stop: Some(&stop),
+            terminating: false,
+        };
+        let reads = std::cell::Cell::new(0_i64);
+        let clock = || {
+            reads.set(reads.get() + 1);
+            Timestamp::from_second(reads.get()).unwrap()
+        };
+        let watchdog = Watchdog::start({
+            let stop = stop.clone();
+            move || stop.stop()
+        });
+        let mut drawn_at = Vec::new();
+        let recorder = Recorder::new(80, 12);
+        drive(
+            recorder.backend(),
+            feed,
+            &config,
+            None,
+            Colours::None,
+            clock,
+            |journal, screen, now, buf| {
+                assert!(matches!(journal, Journal::Missing));
+                drawn_at.push(now);
+                if drawn_at.len() == 3 {
+                    stop.stop();
+                }
+                frozen(journal, screen, now, buf)
+            },
+        )
+        .unwrap();
+        assert!(!watchdog.fired(), "a frozen frame was never redrawn");
+        assert_eq!(reloads.get(), 1, "one reload before the first frame");
+        assert_eq!(journals.get(), 3, "the feed was asked for each frame");
+        assert!(
+            drawn_at.windows(2).all(|pair| pair[0] < pair[1]),
+            "frames are drawn at the caller's clock: {drawn_at:?}"
+        );
+        assert!(recorder.restored());
+    }
 
     #[test]
     fn the_reader_is_joined_on_every_exit() {
@@ -520,8 +636,8 @@ mod tests {
             let (read, write) = pipe();
             let stop = Stop::new();
             let live = Config {
-                state_dir: state.path(),
-                since: None,
+                watch: Some(state.path()),
+                tick: None,
                 stop: Some(&stop),
                 terminating: false,
             };
@@ -595,8 +711,8 @@ mod tests {
             let recorder = Recorder::new(80, 12);
             let stop = Stop::new();
             let live = Config {
-                state_dir: state.path(),
-                since: None,
+                watch: Some(state.path()),
+                tick: None,
                 stop: Some(&stop),
                 terminating: true,
             };
@@ -679,8 +795,8 @@ mod tests {
         let recorder = Recorder::new(80, 12);
         let stop = Stop::new();
         let live = Config {
-            state_dir: state.path(),
-            since: None,
+            watch: Some(state.path()),
+            tick: None,
             stop: Some(&stop),
             terminating: true,
         };
@@ -721,8 +837,8 @@ mod tests {
         stop.stop();
         let recorder = Recorder::new(80, 12);
         let live = Config {
-            state_dir: state.path(),
-            since: None,
+            watch: Some(state.path()),
+            tick: None,
             stop: Some(&stop),
             terminating: false,
         };
@@ -737,8 +853,8 @@ mod tests {
         let stop = Stop::new();
         let recorder = Recorder::new(80, 12);
         let live = Config {
-            state_dir: state.path(),
-            since: None,
+            watch: Some(state.path()),
+            tick: None,
             stop: Some(&stop),
             terminating: true,
         };
@@ -773,8 +889,8 @@ mod tests {
             let stop = Stop::new();
             stop.stop();
             let live = Config {
-                state_dir: state.path(),
-                since: None,
+                watch: Some(state.path()),
+                tick: None,
                 stop: Some(&stop),
                 terminating: false,
             };
@@ -800,8 +916,8 @@ mod tests {
         let stop = Stop::new();
         stop.stop();
         let live = Config {
-            state_dir: state.path(),
-            since: None,
+            watch: Some(state.path()),
+            tick: None,
             stop: Some(&stop),
             terminating: false,
         };
