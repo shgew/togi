@@ -1,7 +1,6 @@
 use std::fmt;
 
-use jiff::SignedDuration;
-use togi_journal::{Activity, DeadEnd, DeadEndCondition, Event, EventKind, Payload, Stamp};
+use togi_journal::{Activity, Event, EventKind, Payload};
 use togi_machine::Regime;
 use togi_tuner::PhaseNo;
 
@@ -44,7 +43,8 @@ pub enum Scenario {
     Combination,
     /// The first passed checking cycle trial has ended and the next has not begun.
     Between,
-    /// The session recorded a dead end after a checking trial started.
+    /// The session has recorded a dead end without evidence, after its R7 checking trial ended and the next trial found
+    /// no backend.
     Deadend,
     /// The session stopped at its first confirmed BIOS profile.
     FirstResult,
@@ -103,6 +103,7 @@ impl Scenario {
         match self {
             Self::Confirm | Self::MemberProbe | Self::Round => Base::Probe,
             Self::Combination => Base::Combination,
+            Self::Deadend => Base::DeadEnd,
             Self::Concluded => Base::Concluded,
             Self::Unconfirmed => Base::Unconfirmed,
             Self::HuntBios => Base::LaterHunt,
@@ -115,7 +116,6 @@ impl Scenario {
             | Self::Crashed
             | Self::Recovering
             | Self::Between
-            | Self::Deadend
             | Self::Stopped => Base::Session,
         }
     }
@@ -191,11 +191,7 @@ impl Scenario {
             Self::Crashed => before_crash_detected(events)?,
             Self::Recovering => cut_at(events, |event| event.kind() == EventKind::CrashDetected)?,
             Self::Stopped | Self::Combination | Self::FirstResult => events,
-            Self::Deadend => {
-                let mut cut = checking_r7(events)?.to_vec();
-                cut.push(dead_end_after(&cut)?);
-                return Ok(cut);
-            }
+            Self::Deadend => cut_at(events, |event| event.kind() == EventKind::DeadEnd)?,
         };
         Ok(cut.to_vec())
     }
@@ -211,30 +207,4 @@ fn checking_r7(events: &[Event]) -> Result<&[Event], Error> {
     cut_trial(events, |intent| {
         intent.activity == Some(Activity::Checking) && intent.regime == Regime::R7
     })
-}
-
-fn dead_end_after(events: &[Event]) -> Result<Event, Error> {
-    let last = events
-        .last()
-        .ok_or(Error::NoCut("an empty journal has no last event"))?;
-    let seq = last
-        .seq
-        .next()
-        .ok_or_else(|| Error::Fixture("the journal has no seq left".into()))?;
-    let time = last
-        .time
-        .checked_add(SignedDuration::from_mins(1))
-        .map_err(|error| Error::Fixture(error.to_string()))?;
-    Ok(Event::new(
-        seq,
-        Stamp { time, mono: None },
-        last.boot.clone(),
-        Vec::new(),
-        Payload::DeadEnd(DeadEnd {
-            condition: DeadEndCondition::NoEvidence,
-            core: None,
-            detail: "five trials in a row proved nothing".to_owned(),
-            action: None,
-        }),
-    ))
 }

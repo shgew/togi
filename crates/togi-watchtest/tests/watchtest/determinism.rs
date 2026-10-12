@@ -39,6 +39,7 @@ determinism! {
     probe_and_its_scenarios_build_byte_identical_journals_twice: Probe,
     combination_and_its_scenarios_build_byte_identical_journals_twice: Combination,
     crashed_cycle_and_its_scenarios_build_byte_identical_journals_twice: CrashedCycle,
+    dead_end_and_its_scenarios_build_byte_identical_journals_twice: DeadEnd,
 }
 
 #[test]

@@ -173,20 +173,44 @@ fn the_default_session_scenarios_reach_the_state_their_names_claim() {
 }
 
 #[test]
-fn the_dead_end_scenario_records_a_dead_end_after_a_running_checking_trial() {
+fn the_dead_end_scenario_ends_on_a_dead_end_the_runner_cited_after_the_trial_ended() {
     let events = cut(Scenario::Deadend);
     let (dead, before) = events.split_last().expect("events");
-    let intent = running_trial(before);
-    assert_eq!(intent.activity, Some(Activity::Checking));
-    assert_eq!(intent.regime, Regime::R7);
     let Payload::DeadEnd(dead_end) = &dead.payload else {
         panic!("the journal ends on {:?}", dead.kind());
     };
     assert_eq!(dead_end.condition, DeadEndCondition::NoEvidence);
-    let last = before.last().expect("events");
-    assert_eq!(dead.seq.get(), last.seq.get() + 1);
-    assert!(dead.time > last.time);
-    assert_eq!(dead.boot, last.boot);
+    assert!(
+        togi_journal::State::replay(&events)
+            .expect("the journal folds")
+            .in_flight()
+            .is_none(),
+        "no trial is open beside the dead end"
+    );
+    assert!(!dead.cause.is_empty(), "the dead end cites its evidence");
+    for cause in &dead.cause {
+        let cited = &before[usize::try_from(cause.get() - 1).expect("seq fits")];
+        let Payload::TrialEnd(end) = &cited.payload else {
+            panic!("the dead end cites {:?}", cited.kind());
+        };
+        assert_eq!(end.outcome, Outcome::Inconclusive);
+        assert!(end.backend_missing);
+    }
+    let checked_r7 = before.iter().any(|event| {
+        matches!(&event.payload, Payload::TrialEnd(end) if {
+            let intent = intent_of(before, &end.trial);
+            intent.activity == Some(Activity::Checking) && intent.regime == Regime::R7 && intent.cycle.is_some()
+        })
+    });
+    assert!(
+        checked_r7,
+        "an R7 checking cycle trial ended before the dead end"
+    );
+    assert!(
+        !before
+            .iter()
+            .any(|event| event.kind() == EventKind::DeadEnd)
+    );
     fold(&events);
 }
 

@@ -2,10 +2,10 @@ use std::sync::OnceLock;
 
 use togi_config::Config;
 use togi_journal::{Activity, Event, Payload};
-use togi_machine::Regime;
+use togi_machine::{Backend, Regime};
 
 use crate::Error;
-use crate::simulate::{Stop, crash_trial, default_machine, probe_machine, simulate};
+use crate::simulate::{Stop, Until, crash_trial, default_machine, probe_machine, simulate};
 
 /// The seed whose default machine, run through three clean cycles, leaves a core's BIOS offset unconfirmed after a
 /// failure. [INFERENCE: other seeds steer clear of it; found by scanning seeds 1 to 60. The Go simulator's seed 30
@@ -40,10 +40,13 @@ pub enum Base {
     /// The default machine on seed 5 through its first clean cycle, whose checking crashes are followed by a backoff
     /// that moves the cycle on.
     CrashedCycle,
+    /// The default machine, seed 1, whose mprime backend goes missing once the first R7 checking cycle trial has
+    /// started: that trial ends, the next mprime trial cannot start, and the session dead-ends without evidence.
+    DeadEnd,
 }
 
 impl Base {
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
         Self::Session,
         Self::Concluded,
         Self::Unconfirmed,
@@ -52,6 +55,7 @@ impl Base {
         Self::Probe,
         Self::Combination,
         Self::CrashedCycle,
+        Self::DeadEnd,
     ];
 
     /// Simulates the session afresh. [`Base::events`] is the same journal, simulated once per process.
@@ -109,12 +113,14 @@ impl Base {
                 None,
                 Stop::cycles(1),
             ),
+            Self::DeadEnd => dead_end(),
         }
     }
 
     /// The simulated journal, simulated once per process.
     pub fn events(self) -> Result<&'static [Event], Error> {
-        static CELLS: [OnceLock<Result<Vec<Event>, String>>; 8] = [const { OnceLock::new() }; 8];
+        static CELLS: [OnceLock<Result<Vec<Event>, String>>; Base::ALL.len()] =
+            [const { OnceLock::new() }; Base::ALL.len()];
         let index = Self::ALL.iter().position(|base| *base == self).unwrap_or(0);
         CELLS[index]
             .get_or_init(|| self.simulate().map_err(|error| error.to_string()))
@@ -150,4 +156,28 @@ fn later_hunt() -> Result<Vec<Event>, Error> {
         )));
     }
     Ok(events)
+}
+
+fn dead_end() -> Result<Vec<Event>, Error> {
+    let machine = default_machine(1)?;
+    let fault = machine.clone();
+    let mut checking_r7 = false;
+    let mut armed = false;
+    let arm: Until = Box::new(move |event| {
+        match &event.payload {
+            Payload::TrialIntent(intent) => {
+                checking_r7 = intent.activity == Some(Activity::Checking)
+                    && intent.regime == Regime::R7
+                    && intent.cycle.is_some()
+                    && !intent.rerun;
+            }
+            Payload::TrialStart(_) if checking_r7 && !armed => {
+                fault.miss_backend(Backend::Mprime);
+                armed = true;
+            }
+            _ => {}
+        }
+        false
+    });
+    simulate(machine, Config::default(), Some(arm), Stop::cycles(1))
 }
