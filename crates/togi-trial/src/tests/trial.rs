@@ -610,7 +610,7 @@ async fn an_output_flood_neither_skips_load_steps_nor_delays_the_deadline() {
         );
         let timing = rig.env.timing;
         assert!(
-            term < secs(1) + timing.margin,
+            term < secs(1) + Duration::from_millis(500),
             "the flood delayed the deadline: {term:?}"
         );
         assert!(

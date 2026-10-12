@@ -512,6 +512,7 @@ async fn a_slow_classified_watched_flood_is_polled_during_the_trial_and_leaves_t
             }))
         });
         let handle = rig.start(spec(Regime::R4, &[0], secs(1))).await.unwrap();
+        let started = std::time::Instant::now();
         let run = finish(&handle).await;
         let classified = *stamps
             .lock()
@@ -544,20 +545,23 @@ async fn a_slow_classified_watched_flood_is_polled_during_the_trial_and_leaves_t
         let load = crate::plan::Load::Steps(
             togi_machine::LoadSchedule::for_spec(&spec(Regime::R4, &[0], secs(1))).unwrap(),
         );
-        let planned = crate::schedule::timeline(&load, secs(1)).count();
-        assert!(planned >= 10 && toggles.len() >= planned);
+        let planned: Vec<_> = crate::schedule::timeline(&load, secs(1))
+            .map(|step| step.at)
+            .collect();
+        assert!(planned.len() >= 10 && toggles.len() >= planned.len());
         let stamps = stamps.lock().unwrap();
-        let during = toggles
-            .iter()
-            .filter(|&&at| {
-                let classified = stamps.iter().filter(|&&stamp| stamp <= at).count();
-                0 < classified && classified < stamps.len()
-            })
-            .count();
-        assert!(
-            during >= planned / 2,
-            "{during} of {planned} load steps ran while the flood was being classified"
-        );
+        for (index, (toggle, at)) in toggles.iter().zip(&planned).enumerate() {
+            let due = started + *at + timing.sample;
+            let overtaken = stamps
+                .iter()
+                .filter(|&&stamp| due < stamp && stamp < *toggle)
+                .count();
+            assert_eq!(
+                overtaken, 0,
+                "step {index} planned at {at:?} waited for {overtaken} classifications that began \
+                 more than one sample after it was due"
+            );
+        }
         assert!(run.finished.teardown.is_ok());
     })
     .await;
