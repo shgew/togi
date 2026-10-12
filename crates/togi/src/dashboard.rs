@@ -15,6 +15,7 @@ use std::thread::{self, JoinHandle};
 use rustix::termios::{
     LocalModes, OptionalActions, QueueSelector, Termios, tcflush, tcgetattr, tcsetattr,
 };
+use togi_render::escape_text;
 
 use crate::panics;
 
@@ -65,22 +66,31 @@ pub struct Watch;
 impl Surface for Watch {
     fn draw(&self, state_dir: &Path, since: u64, stop: &Stop) -> Result<(), String> {
         let ended = togi_watch::terminal::Stop::new();
-        thread::scope(|scope| {
-            scope.spawn(|| {
-                stop.wait();
-                ended.stop();
-            });
-            let drawn = togi_watch::terminal::run_after(
-                state_dir,
-                since,
-                &ended,
-                rustix::stdio::stderr(),
-                None,
-            );
-            stop.stop();
-            drawn.map_err(|error| error.to_string())
+        draw_until(stop, &ended, || {
+            togi_watch::terminal::run_after(state_dir, since, &ended, rustix::stdio::stderr(), None)
         })
+        .map_err(|error| error.to_string())
     }
+}
+
+/// Runs `draw`, which ends when `ended` does, while a helper ends `ended` once `stop` is stopped. `stop` is
+/// stopped when `draw` returns or panics: a panic unwinds into the scope, which joins the helper before it
+/// goes on, so the helper must not wait for a stop only a later `hide` would give.
+fn draw_until<T>(stop: &Stop, ended: &togi_watch::terminal::Stop, draw: impl FnOnce() -> T) -> T {
+    struct Release<'a>(&'a Stop);
+    impl Drop for Release<'_> {
+        fn drop(&mut self) {
+            self.0.stop();
+        }
+    }
+    thread::scope(|scope| {
+        scope.spawn(|| {
+            stop.wait();
+            ended.stop();
+        });
+        let _release = Release(stop);
+        draw()
+    })
 }
 
 /// The terminal's input with echo and line buffering off. Dropping it puts the previous settings back.
@@ -123,6 +133,17 @@ struct Showing {
     quiet: Option<QuietInput<'static>>,
 }
 
+type Notice = Arc<dyn Fn(&str) + Send + Sync>;
+
+/// Says on stderr that the dashboard gave way to event lines.
+fn print_fallback(message: &str) {
+    let _ = writeln!(
+        io::stderr(),
+        "togi run: dashboard: {}; printing events instead",
+        escape_text(message)
+    );
+}
+
 /// Starts the dashboard and ends it on every exit.
 pub struct Dashboard {
     surface: Arc<dyn Surface>,
@@ -130,6 +151,7 @@ pub struct Dashboard {
     since: u64,
     visible: Arc<AtomicBool>,
     showing: Mutex<Option<Showing>>,
+    notice: Notice,
 }
 
 impl Dashboard {
@@ -142,6 +164,7 @@ impl Dashboard {
             since,
             visible: Arc::new(AtomicBool::new(false)),
             showing: Mutex::new(None),
+            notice: Arc::new(print_fallback),
         }
     }
 
@@ -162,11 +185,13 @@ impl Dashboard {
         }
         let quiet = QuietInput::enter(rustix::stdio::stdin()).ok().flatten();
         let stop = Stop::default();
+        panics::screen_owned(true);
         self.visible.store(true, Ordering::SeqCst);
         let surface = Arc::clone(&self.surface);
         let state_dir = self.state_dir.clone();
         let since = self.since;
         let visible = Arc::clone(&self.visible);
+        let notice = Arc::clone(&self.notice);
         let thread_stop = stop.clone();
         let thread = thread::Builder::new()
             .name("togi-dashboard".to_owned())
@@ -177,11 +202,10 @@ impl Dashboard {
                     Ok(Err(message)) | Err(message) => Some(message),
                 };
                 if let Some(message) = failed {
+                    // The notice comes first: event lines flow again only once it is out.
+                    notice(&message);
                     visible.store(false, Ordering::SeqCst);
-                    let _ = writeln!(
-                        io::stderr(),
-                        "togi run: dashboard: {message}; printing events instead"
-                    );
+                    panics::screen_owned(false);
                 }
             });
         match thread {
@@ -194,12 +218,17 @@ impl Dashboard {
             }
             Err(error) => {
                 self.visible.store(false, Ordering::SeqCst);
-                let _ = writeln!(
-                    io::stderr(),
-                    "togi run: dashboard: {error}; printing events instead"
-                );
+                panics::screen_owned(false);
+                (self.notice)(&error.to_string());
             }
         }
+    }
+
+    /// Whether the dashboard is still on the screen: it has been shown and neither [`Self::hide`] nor a failure
+    /// of its surface has ended it.
+    #[must_use]
+    pub fn is_showing(&self) -> bool {
+        self.visible.load(Ordering::SeqCst)
     }
 
     /// Ends the dashboard, waits for it, and puts the terminal's input back.
@@ -220,6 +249,7 @@ impl Dashboard {
             let _ = thread.join();
             drop(quiet);
         }
+        panics::screen_owned(false);
     }
 }
 

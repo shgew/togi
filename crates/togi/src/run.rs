@@ -1,15 +1,17 @@
 //! `togi run`: start or resume the tuning session in the foreground.
 //!
-//! The order of a run is fixed by `docs/spec/runtime.md`. The platform is checked first, then the journal's
-//! compatibility (a refusal appends nothing), then the configuration. The process's own signal listener
-//! starts, the host lock is taken, and only then the boot id read, the hardware opened, the carry prepared
-//! and the session run. Once the host lock is held and the hardware set up, the session owns the cleanup of
-//! every exit; a panic in it comes back with that cleanup done, and is resumed after the dashboard, the
-//! journal and the host lock are put away, in that order.
+//! The order of a run is fixed by `docs/spec/runtime.md`. The platform is checked first. What reading alone
+//! decides comes next, before any lock: a journal this build may not append to (a refusal appends nothing) and
+//! the configuration. Then the process's own signal listener starts and the host lock and the journal's lock
+//! are taken, in that order, as `reset` does; the journal is judged again under them. Only then is the boot id
+//! read, the hardware opened, the carry prepared and the session run. Once the host lock is held and the
+//! hardware set up, the session owns the cleanup of every exit; a panic in it comes back with that cleanup
+//! done and its outcome reported, and is resumed after the dashboard, the journal and the host lock are put
+//! away, in that order.
 
 use std::io::{self, Write};
 use std::num::NonZeroU32;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::LazyLock;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -17,10 +19,12 @@ use std::sync::{Arc, Mutex, PoisonError};
 use clap::{Args as ClapArgs, ValueHint};
 use togi_defect::KNOWN_DEFECTS;
 use togi_hostlock::HostLock;
-use togi_journal::{Operation, Recording, StateDir, Verdict};
+use togi_journal::{Build, Operation, Recording, StateDir, Verdict, recorded_build};
 use togi_machine::CancellationToken;
 use togi_render::{Renderer, Style, escape_text};
-use togi_session::{PrepareError, Prompt, PublicationPolicy, RunInput, StopPolicy, prepare};
+use togi_session::{
+    PrepareError, Prompt, PublicationPolicy, RunInput, SessionError, StopPolicy, prepare,
+};
 use togi_tuningboot::{Bootloader, LeaveReason, RestartCount};
 
 use crate::args::ConfigArgs;
@@ -39,10 +43,7 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
             "sudo togi run",
             "Tune this machine until a signal or a dead end",
         ),
-        (
-            "sudo togi run --cycles 1",
-            "Stop once phase 2's confirmation cycle has passed",
-        ),
+        crate::cli::CYCLES_EXAMPLE,
         (
             "sudo togi run --first-result",
             "Stop at the first confirmed BIOS profile, after phase 1's passed cycle",
@@ -120,41 +121,23 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
         .as_deref()
         .map(|grubenv| ctx.system.bootloader(grubenv));
 
-    let dir = match StateDir::lock(ctx.state_dir) {
-        Ok(dir) => dir,
-        Err(error @ togi_journal::LockError::Held { .. }) => {
-            return exit_with(ctx, COMMAND, error, Exit::Locked);
-        }
-        Err(error) => return exit_with(ctx, COMMAND, error, Exit::Error),
-    };
-    let recorded = match dir.live_build() {
+    // What a run can decide from reading alone comes first, before any lock: a journal this build may not
+    // append to, and the configuration. Neither writes anything, so neither needs the host lock, except the
+    // tuning boot's refusal, which clears the boot entry. The same journal is judged again under the locks.
+    let unlocked = match recorded_build(ctx.state_dir) {
         Ok(recorded) => recorded,
         Err(error) => return exit_with(ctx, COMMAND, error, Exit::Error),
     };
-    if let Some(recorded) = &recorded {
-        match build.verdict(recorded, Operation::Resume) {
-            Verdict::Refuse(refusal) => {
-                let refused = Refused {
-                    message: refusal_message(&refusal, recorded, &build),
-                    leave_reason: INCOMPATIBLE,
-                };
-                return refuse(ctx, &refused, bootloader.as_deref_mut(), renderer, None);
-            }
-            Verdict::Use => {
-                if let Err(error) = Recording::read(&ctx.state_dir.join(JOURNAL_FILE))
-                    && let Some(message) = unknown_kind_message(&error, recorded, &build)
-                {
-                    let refused = Refused {
-                        message,
-                        leave_reason: "unknown event kind",
-                    };
-                    return refuse(ctx, &refused, bootloader.as_deref_mut(), renderer, None);
-                }
-            }
-            Verdict::Archive => {}
-        }
+    if let Some(refused) = refusal(&build, unlocked.as_ref(), ctx.state_dir) {
+        let _lock = match bootloader {
+            Some(_) => match take_host_lock(ctx) {
+                Ok(lock) => Some(lock),
+                Err(exit) => return exit,
+            },
+            None => None,
+        };
+        return refuse(ctx, &refused, bootloader.as_deref_mut(), renderer);
     }
-
     let (config, source) = match args.config.load_with_source(ctx.system.config_path()) {
         Ok(loaded) => loaded,
         Err(error) => return exit_with(ctx, COMMAND, error, Exit::Usage),
@@ -173,14 +156,27 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
         }
     };
 
-    let (lock_path, policy) = ctx.system.host_lock();
-    let lock = match HostLock::acquire(lock_path, policy) {
+    // The host lock, then the journal's lock: `reset` takes them in this order too, so the two commands cannot
+    // each hold the lock the other waits for.
+    let lock = match take_host_lock(ctx) {
         Ok(lock) => lock,
-        Err(error @ togi_hostlock::Error::Busy { .. }) => {
+        Err(exit) => return exit,
+    };
+    let dir = match StateDir::lock(ctx.state_dir) {
+        Ok(dir) => dir,
+        Err(error @ togi_journal::LockError::Held { .. }) => {
             return exit_with(ctx, COMMAND, error, Exit::Locked);
         }
         Err(error) => return exit_with(ctx, COMMAND, error, Exit::Error),
     };
+    let recorded = match dir.live_build() {
+        Ok(recorded) => recorded,
+        Err(error) => return exit_with(ctx, COMMAND, error, Exit::Error),
+    };
+    if let Some(refused) = refusal(&build, recorded.as_ref(), ctx.state_dir) {
+        return refuse(ctx, &refused, bootloader.as_deref_mut(), renderer);
+    }
+
     let boot = match ctx.system.boot_id() {
         Ok(boot) => boot,
         Err(error) => return exit_with(ctx, COMMAND, error, Exit::Error),
@@ -211,13 +207,7 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
                 ),
                 leave_reason: INCOMPATIBLE,
             };
-            return refuse(
-                ctx,
-                &refused,
-                bootloader.as_deref_mut(),
-                renderer,
-                Some(&lock),
-            );
+            return refuse(ctx, &refused, bootloader.as_deref_mut(), renderer);
         }
         Err(error) => return exit_with(ctx, COMMAND, error, Exit::Error),
     };
@@ -268,18 +258,26 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
         dashboard.show();
     }
     let mut ended = togi_session::run(input);
+    let on_screen = dashboard
+        .as_ref()
+        .is_some_and(|dashboard| dashboard.is_showing());
     if let Some(dashboard) = &dashboard {
         dashboard.hide();
         let _ = ctx.err.write_all(&hidden.take());
     }
-    if let Some(panic) = ended.panic.take() {
-        let _ = ended.journal.close();
-        drop(lock);
-        panic.resume();
+    // A panic is reported by the process's entry point once everything here is put away. What the session's
+    // cleanup left (a dead end, errors of its own) is reported here, as on any other exit, after the dashboard
+    // let go of the screen and before the panic resumes.
+    let panic = ended.panic.take();
+    if panic.is_some() {
+        ended
+            .errors
+            .retain(|error| !matches!(error, SessionError::Panicked(_)));
     }
-    let clean =
-        ended.errors.is_empty() && !matches!(ended.stop, Some(togi_session::Stop::DeadEnd { .. }));
-    if dashboard.is_some() && clean {
+    let clean = panic.is_none()
+        && ended.errors.is_empty()
+        && !matches!(ended.stop, Some(togi_session::Stop::DeadEnd { .. }));
+    if on_screen && clean {
         outcome::print_clean_stop(ctx.err, renderer, &zone, ended.journal.events());
     }
     let result = outcome::conclude(
@@ -290,52 +288,114 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
         &ended.errors,
         ended.journal.events(),
     );
+    let dead_end = ended
+        .stop
+        .as_ref()
+        .filter(|stop| matches!(stop, togi_session::Stop::DeadEnd { .. }));
+    if panic.is_some()
+        && !ended.errors.is_empty()
+        && let Some(dead_end) = dead_end
+    {
+        outcome::conclude(
+            ctx.err,
+            renderer,
+            &zone,
+            Some(dead_end),
+            &[],
+            ended.journal.events(),
+        );
+    }
+    let reboot_asked = matches!(
+        dead_end,
+        Some(togi_session::Stop::DeadEnd { reboot: true, .. })
+    );
     let mut exit = result.exit;
     if let Err(error) = ended.journal.close() {
-        let _ = writeln!(ctx.err, "togi run: close the journal: {error}");
+        let _ = writeln!(
+            ctx.err,
+            "togi run: close the journal: {}",
+            escape_text(&error.to_string())
+        );
         if exit == Exit::Ok {
             exit = Exit::Error;
         }
     }
     drop(lock);
-    if result.reboot {
+    if panic.is_some() && reboot_asked {
+        let _ = writeln!(
+            ctx.err,
+            "togi: a dead end asked for a reboot into the normal system; not rebooting after a panic"
+        );
+    } else if result.reboot {
         let _ = writeln!(ctx.err, "togi: rebooting into the normal system");
         if let Err(error) = ctx.system.reboot() {
-            let _ = writeln!(ctx.err, "togi: systemctl reboot: {error}");
+            let _ = writeln!(
+                ctx.err,
+                "togi: systemctl reboot: {}",
+                escape_text(&error.to_string())
+            );
         }
+    }
+    if let Some(panic) = panic {
+        panic.resume();
     }
     exit
 }
 
+/// Takes the host lock, or says why not and how the run exits.
+fn take_host_lock(ctx: &mut Context<'_>) -> Result<HostLock, Exit> {
+    let (path, policy) = ctx.system.host_lock();
+    match HostLock::acquire(path, policy) {
+        Ok(lock) => Ok(lock),
+        Err(error @ togi_hostlock::Error::Busy { .. }) => {
+            Err(exit_with(ctx, COMMAND, error, Exit::Locked))
+        }
+        Err(error) => Err(exit_with(ctx, COMMAND, error, Exit::Error)),
+    }
+}
+
+/// Why the journal of `state_dir`, written by `recorded`, may not be appended to by `build`: a newer schema,
+/// ruleset or evidence epoch, or a kind of event this build does not know in a journal it otherwise reads.
+fn refusal(build: &Build, recorded: Option<&Build>, state_dir: &Path) -> Option<Refused> {
+    let recorded = recorded?;
+    match build.verdict(recorded, Operation::Resume) {
+        Verdict::Refuse(refusal) => Some(Refused {
+            message: refusal_message(&refusal, recorded, build),
+            leave_reason: INCOMPATIBLE,
+        }),
+        Verdict::Use => Recording::read(&state_dir.join(JOURNAL_FILE))
+            .err()
+            .and_then(|error| unknown_kind_message(&error, recorded, build))
+            .map(|message| Refused {
+                message,
+                leave_reason: "unknown event kind",
+            }),
+        Verdict::Archive => None,
+    }
+}
+
 /// A journal this build may not append to: prints why, and in the tuning boot persists a leave reason and
-/// clears the saved boot entry, under the host lock, without appending anything. Never reboots.
+/// clears the saved boot entry, without appending anything. Called with the host lock held whenever there is a
+/// boot entry to touch, so the entry is never touched without it. Never reboots.
 fn refuse(
     ctx: &mut Context<'_>,
     refused: &Refused,
     bootloader: Option<&mut (dyn Bootloader + '_)>,
     renderer: Renderer,
-    held: Option<&HostLock>,
 ) -> Exit {
     let line = format!("togi {COMMAND}: {}", escape_text(&refused.message));
     let _ = writeln!(ctx.err, "{}", renderer.text(Style::RedBold, &line));
     let Some(bootloader) = bootloader else {
         return Exit::Incompatible;
     };
-    let _lock;
-    if held.is_none() {
-        let (path, policy) = ctx.system.host_lock();
-        _lock = match HostLock::acquire(path, policy) {
-            Ok(lock) => lock,
-            Err(error @ togi_hostlock::Error::Busy { .. }) => {
-                return exit_with(ctx, COMMAND, error, Exit::Locked);
-            }
-            Err(error) => return exit_with(ctx, COMMAND, error, Exit::Error),
-        };
-    }
     let reason = LeaveReason::new(refused.leave_reason, RestartCount::ZERO)
         .and_then(|reason| togi_tuningboot::write_reason(bootloader, &reason));
     if let Err(error) = reason {
-        let _ = writeln!(ctx.err, "togi: persist GRUB leave reason: {error}");
+        let _ = writeln!(
+            ctx.err,
+            "togi: persist GRUB leave reason: {}",
+            escape_text(&error.to_string())
+        );
     }
     match bootloader.clear_saved_entry() {
         Ok(entry) => {
@@ -348,7 +408,8 @@ fn refuse(
         Err(error) => {
             let _ = writeln!(
                 ctx.err,
-                "togi: clear GRUB saved entry: {error}; no reboot requested"
+                "togi: clear GRUB saved entry: {}; no reboot requested",
+                escape_text(&error.to_string())
             );
         }
     }

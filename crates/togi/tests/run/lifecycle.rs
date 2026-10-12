@@ -7,9 +7,10 @@ use std::fs;
 use togi_cli::Exit;
 use togi_hostlock::{HostLock, Policy};
 use togi_journal::{EventKind, Payload, ShutdownReason, StateDir};
-use togi_machine::Machine;
+use togi_machine::{CoreId, Machine};
+use togi_render::OutputFacts;
 
-use crate::support::{Fake, interrupt_on_first_write, signal_on_first_write};
+use crate::support::{Fake, biased, interrupt_on_first_write, signal_on_first_write};
 
 fn interrupted() -> Fake {
     let mut fake = Fake::new();
@@ -53,20 +54,50 @@ fn an_unsupported_platform_is_reported_before_anything_else_is_touched() {
     assert_eq!((fake.boots_read.get(), fake.opened.get()), (0, 0));
 }
 
-#[test]
-fn sigint_stops_a_run_cleanly_with_the_offsets_restored_and_the_shutdown_recorded() {
-    let fake = interrupted();
-    let (exit, out, err) = fake.run(&["run", "--no-tui"]);
-    assert_eq!(exit, Exit::Ok, "{err}");
-    assert_eq!(out, "");
-    assert!(err.contains("session.start"), "{err}");
+/// Every core's offset on the simulated machine, read back through its SMU.
+fn offsets(fake: &Fake) -> Vec<i64> {
+    let mut smu = fake.sim.seams().smu;
+    (0..16)
+        .map(|core| smu.offset(CoreId::new(core).unwrap()).unwrap().0)
+        .collect()
+}
+
+/// A run stopped by a signal restored what it had written (`profile.restored` before the final shutdown), and
+/// the machine reads back at its boot offsets.
+fn assert_stopped_by_a_signal_with_the_offsets_restored(fake: &Fake, boot: i64, what: &str) {
     let events = fake.events();
     let last = events.last().unwrap();
     assert!(
         matches!(&last.payload, Payload::Shutdown(shutdown) if shutdown.reason == ShutdownReason::Signal),
-        "{}",
+        "{what}: {}",
         last.kind().as_str()
     );
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(&event.payload, Payload::SmuIntent(_))),
+        "{what}: the run wrote nothing, so restoring it proves nothing"
+    );
+    let restored = events
+        .iter()
+        .rposition(|event| event.kind() == EventKind::ProfileRestored)
+        .unwrap_or_else(|| panic!("{what}: no profile.restored"));
+    assert!(
+        restored + 1 < events.len(),
+        "{what}: restored after the shutdown"
+    );
+    assert_eq!(offsets(fake), vec![boot; 16], "{what}: not restored");
+}
+
+#[test]
+fn sigint_stops_a_run_cleanly_with_the_offsets_restored_and_the_shutdown_recorded() {
+    let mut fake = Fake::on(biased(1000, -5));
+    fake.wrap = Box::new(interrupt_on_first_write);
+    let (exit, out, err) = fake.run(&["run", "--no-tui"]);
+    assert_eq!(exit, Exit::Ok, "{err}");
+    assert_eq!(out, "");
+    assert!(err.contains("session.start"), "{err}");
+    assert_stopped_by_a_signal_with_the_offsets_restored(&fake, -5, "SIGINT");
     assert_eq!(fake.opened.get(), 1);
 }
 
@@ -128,7 +159,78 @@ fn a_tuning_boot_refusal_does_not_touch_the_boot_entry_without_the_host_lock() {
     let (exit, _, err) = fake.run(&["run", "--tuning-boot", grubenv.to_str().unwrap()]);
     drop(held);
     assert_eq!(exit, Exit::Locked, "{err}");
-    assert_eq!(fake.grub.state().cleared, 0);
+    let state = fake.grub.state();
+    assert_eq!(state.cleared, 0);
+    assert!(
+        state.log.is_empty(),
+        "neither a leave reason nor a clear may be written: {:?}",
+        state.log
+    );
+    assert_eq!(
+        state.values.keys().collect::<Vec<_>>(),
+        ["saved_entry"],
+        "{:?}",
+        state.values
+    );
+}
+
+#[test]
+fn a_tuning_boot_refusal_does_not_touch_the_boot_entry_when_the_host_lock_is_not_safe() {
+    if rustix::process::geteuid().is_root() {
+        return;
+    }
+    let mut fake = Fake::new();
+    seed_newer_epoch(&mut fake);
+    fake.grub = crate::support::Grub::with_saved_entry("tuning");
+    fake.policy = Policy::Host;
+    let grubenv = fake.grubenv();
+    let (exit, _, err) = fake.run(&["run", "--tuning-boot", grubenv.to_str().unwrap()]);
+    assert_eq!(exit, Exit::Error, "{err}");
+    assert!(err.starts_with("togi run: host lock"), "{err}");
+    let state = fake.grub.state();
+    assert_eq!(state.cleared, 0);
+    assert!(state.log.is_empty(), "{:?}", state.log);
+}
+
+#[test]
+fn a_refusal_under_journald_is_printed_at_err_priority_in_bold_red() {
+    let mut fake = Fake::new();
+    seed_newer_epoch(&mut fake);
+    fake.facts = OutputFacts {
+        journald: true,
+        ..OutputFacts::default()
+    };
+    let (exit, _, err) = fake.run(&["run"]);
+    assert_eq!(exit, Exit::Incompatible, "{err}");
+    assert!(
+        err.starts_with("<3>\x1b[1;31mtogi run: "),
+        "the refusal lost its journald priority or its style: {err:?}"
+    );
+}
+
+#[test]
+fn the_host_lock_is_taken_before_the_journals_lock_as_reset_does() {
+    let fake = Fake::new();
+    let held = HostLock::acquire(&fake.lock, Policy::Private).unwrap();
+    let (exit, _, err) = fake.run(&["run", "--no-tui"]);
+    drop(held);
+    assert_eq!(exit, Exit::Locked, "{err}");
+    assert!(
+        !fake.state_dir().exists(),
+        "the journal's lock was taken while the host lock was busy"
+    );
+
+    let fake = Fake::new();
+    let held = StateDir::lock(fake.state_dir()).unwrap();
+    let (exit, _, err) = fake.run(&["run", "--no-tui"]);
+    drop(held);
+    assert_eq!(exit, Exit::Locked, "{err}");
+    assert_eq!(
+        *fake.calls.borrow(),
+        ["check_platform", "host_lock"],
+        "the host lock was not taken before the journal's"
+    );
+    assert_eq!(fake.opened.get(), 0);
 }
 
 #[test]
@@ -416,27 +518,41 @@ fn the_dashboard_hides_event_lines_and_the_clean_stop_prints_the_restoration_and
 }
 
 #[test]
-fn the_dashboard_starts_after_the_journal_is_open_and_after_the_last_event_of_the_earlier_run() {
+fn the_dashboard_starts_after_the_last_event_of_the_earlier_run() {
     let mut first = Fake::new();
     first_run(&mut first);
     let earlier = first.events().len() as u64;
 
     let seen = std::sync::Arc::new(std::sync::Mutex::new(None));
-    let record = seen.clone();
     let mut fake = Fake::in_dir(first.sim.clone(), &first.dir);
     fake.interactive = true;
     fake.wrap = Box::new(interrupt_on_first_write);
-    fake.surface = std::sync::Arc::new(Records { seen: record });
+    fake.surface = std::sync::Arc::new(Records { seen: seen.clone() });
     let (exit, _, err) = fake.run(&["run"]);
     assert_eq!(exit, Exit::Ok, "{err}");
-    let (since, journal_existed) = seen.lock().unwrap().unwrap();
-    assert!(
-        journal_existed,
-        "the dashboard started before the journal was open"
-    );
+    let (since, _) = seen.lock().unwrap().unwrap();
     assert_eq!(
         since, earlier,
         "it must say STARTING until an event after the earlier run's last"
+    );
+}
+
+#[test]
+fn the_dashboard_starts_after_the_journal_is_open() {
+    // A fresh state directory holds no `events.jsonl` until the run's `prepare` opens it.
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let mut fake = Fake::new();
+    fake.interactive = true;
+    fake.wrap = Box::new(interrupt_on_first_write);
+    fake.surface = std::sync::Arc::new(Records { seen: seen.clone() });
+    assert!(!fake.state_dir().join("events.jsonl").exists());
+    let (exit, _, err) = fake.run(&["run"]);
+    assert_eq!(exit, Exit::Ok, "{err}");
+    let (since, journal_existed) = seen.lock().unwrap().unwrap();
+    assert_eq!(since, 0);
+    assert!(
+        journal_existed,
+        "the dashboard started before the journal was open"
     );
 }
 
@@ -460,17 +576,11 @@ impl togi_cli::dashboard::Surface for Records {
 #[test]
 fn sighup_and_sigterm_stop_a_run_cleanly_like_sigint() {
     for signal in [rustix::process::Signal::HUP, rustix::process::Signal::TERM] {
-        let mut fake = Fake::new();
+        let mut fake = Fake::on(biased(1000, -5));
         fake.wrap = Box::new(move |machine| signal_on_first_write(machine, signal));
         let (exit, _, err) = fake.run(&["run", "--no-tui"]);
         assert_eq!(exit, Exit::Ok, "{signal:?}: {err}");
-        let events = fake.events();
-        let last = events.last().unwrap();
-        assert!(
-            matches!(&last.payload, Payload::Shutdown(shutdown) if shutdown.reason == ShutdownReason::Signal),
-            "{signal:?}: {}",
-            last.kind().as_str()
-        );
+        assert_stopped_by_a_signal_with_the_offsets_restored(&fake, -5, &format!("{signal:?}"));
     }
 }
 
@@ -682,7 +792,7 @@ fn a_failure_after_the_dashboard_showed_stops_and_joins_it_before_the_diagnostic
 }
 
 #[test]
-fn a_journal_that_cannot_be_opened_never_shows_the_dashboard() {
+fn a_journal_that_is_not_a_journal_never_shows_the_dashboard() {
     let mut fake = Fake::new();
     fake.interactive = true;
     let seen = std::sync::Arc::new(std::sync::Mutex::new(None));
@@ -692,4 +802,125 @@ fn a_journal_that_cannot_be_opened_never_shows_the_dashboard() {
     let (exit, _, err) = fake.run(&["run"]);
     assert_eq!(exit, Exit::Error, "{err}");
     assert!(seen.lock().unwrap().is_none(), "the dashboard drew");
+}
+
+#[test]
+fn a_journal_that_cannot_be_opened_never_shows_the_dashboard() {
+    // The state directory's `archive` is a file, so `prepare` fails after the hardware is open and before any
+    // journal exists; with the dashboard moved before `prepare` it would have drawn by then.
+    let mut fake = Fake::new();
+    fake.interactive = true;
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(None));
+    fake.surface = std::sync::Arc::new(Records { seen: seen.clone() });
+    fs::create_dir_all(fake.state_dir()).unwrap();
+    fs::write(fake.state_dir().join("archive"), "not a directory").unwrap();
+    let (exit, _, err) = fake.run(&["run"]);
+    assert_eq!(exit, Exit::Error, "{err}");
+    assert_eq!(
+        (fake.opened.get(), fake.events().len()),
+        (1, 0),
+        "it must fail in prepare, after the hardware was opened: {err}"
+    );
+    assert!(seen.lock().unwrap().is_none(), "the dashboard drew");
+}
+
+/// Leaves `fake`'s state directory with a journal of an earlier boot that ended in a boot-loop dead end whose
+/// action clears the saved entry and reboots, not yet carried out, and puts the machine on a new boot.
+fn seed_a_pending_boot_loop_dead_end(fake: &mut Fake) {
+    fake.sim.fail_write(1);
+    let (exit, _, err) = fake.run(&["run", "--no-tui"]);
+    assert_eq!(exit, Exit::Smu, "{err}");
+    let path = fake.state_dir().join("events.jsonl");
+    let text = fs::read_to_string(&path).unwrap();
+    let before: Vec<&str> = text
+        .lines()
+        .take_while(|line| !line.contains(r#""kind":"trial.intent""#))
+        .collect();
+    let field = |line: &str, name: &str| -> String {
+        let at = line.find(name).unwrap() + name.len();
+        line[at..]
+            .chars()
+            .take_while(|c| *c != '"' && *c != ',' && *c != '}')
+            .collect()
+    };
+    let boot = field(before[0], r#""boot":""#);
+    let baseline = before
+        .iter()
+        .find(|line| line.contains(r#""kind":"session.baseline""#))
+        .unwrap();
+    let cause = field(baseline, r#""seq":"#);
+    let next = before.len() + 1;
+    let dead_end = format!(
+        r#"{{"seq":{next},"time":"2026-01-01T00:00:00Z","boot":"{boot}","mono_ms":0,"cause":[{cause}],"kind":"deadend","msg":"dead end boot_loop: three crashes before application","data":{{"condition":"boot_loop","detail":"three crashes before application","action":"clear_saved_entry_and_reboot"}}}}"#
+    );
+    fs::write(&path, format!("{}\n{dead_end}\n", before.join("\n"))).unwrap();
+    fake.sim.reboot();
+}
+
+#[test]
+fn a_tuning_boot_dead_end_that_asks_for_a_reboot_closes_the_journal_and_releases_the_lock_before_it_reboots()
+ {
+    let mut fake = Fake::new();
+    seed_a_pending_boot_loop_dead_end(&mut fake);
+    fake.grub = crate::support::Grub::with_saved_entry("tuning");
+    let grubenv = fake.grubenv();
+    let (exit, _, err) = fake.run(&[
+        "run",
+        "--no-tui",
+        "--tuning-boot",
+        grubenv.to_str().unwrap(),
+    ]);
+    assert_eq!(exit, Exit::BootLoop, "{err}");
+    assert!(err.contains("togi: dead end boot_loop:"), "{err}");
+    assert!(
+        err.find("togi: dead end boot_loop:") < err.find("togi: rebooting into the normal system"),
+        "{err}"
+    );
+    assert!(
+        err.contains("togi: rebooting into the normal system"),
+        "{err}"
+    );
+    assert_eq!(fake.reboots.get(), 1);
+    assert_eq!(
+        fake.free_at_reboot.get(),
+        Some((true, true)),
+        "the host lock and the journal's lock must be free when the reboot is requested"
+    );
+    assert_eq!(fake.grub.state().cleared, 1);
+    assert_eq!(
+        fake.events().last().map(togi_journal::Event::kind),
+        Some(EventKind::Shutdown)
+    );
+}
+
+#[test]
+fn a_tuning_boot_dead_end_whose_reboot_fails_reports_it_and_keeps_the_dead_end_status() {
+    let mut fake = Fake::new();
+    seed_a_pending_boot_loop_dead_end(&mut fake);
+    fake.grub = crate::support::Grub::with_saved_entry("tuning");
+    fake.fail_reboot = true;
+    let grubenv = fake.grubenv();
+    let (exit, _, err) = fake.run(&[
+        "run",
+        "--no-tui",
+        "--tuning-boot",
+        grubenv.to_str().unwrap(),
+    ]);
+    assert_eq!(exit, Exit::BootLoop, "{err}");
+    assert!(
+        err.contains(
+            "togi: systemctl reboot: systemctl reboot exited with exit status: 1: Failed to reboot"
+        ),
+        "{err}"
+    );
+    assert_eq!(fake.reboots.get(), 1);
+}
+
+#[test]
+fn a_dead_end_that_asks_for_no_reboot_does_not_reboot() {
+    let mut fake = Fake::new();
+    seed_a_pending_boot_loop_dead_end(&mut fake);
+    let (exit, _, err) = fake.run(&["run", "--no-tui"]);
+    assert_eq!(exit, Exit::BootLoop, "{err}");
+    assert_eq!(fake.reboots.get(), 0, "{err}");
 }

@@ -173,6 +173,10 @@ pub(crate) struct Fake {
     pub(crate) default_config: PathBuf,
     pub(crate) supported: bool,
     pub(crate) interactive: bool,
+    /// What the host says about its stderr: terminal, colour, journald.
+    pub(crate) facts: OutputFacts,
+    /// Whether `systemctl reboot` fails.
+    pub(crate) fail_reboot: bool,
     pub(crate) stderr: Capture,
     pub(crate) grub: Grub,
     pub(crate) surface: Arc<dyn Surface>,
@@ -180,6 +184,8 @@ pub(crate) struct Fake {
     pub(crate) opened: Cell<u32>,
     pub(crate) boots_read: Cell<u32>,
     pub(crate) reboots: Cell<u32>,
+    /// Whether the host lock and the journal's lock were free when the reboot was requested.
+    pub(crate) free_at_reboot: Cell<Option<(bool, bool)>>,
     pub(crate) calls: RefCell<Vec<&'static str>>,
 }
 
@@ -210,6 +216,8 @@ impl Fake {
             temp: None,
             supported: true,
             interactive: false,
+            facts: OutputFacts::default(),
+            fail_reboot: false,
             stderr: Capture::default(),
             grub: Grub::default(),
             surface: Arc::new(Scripted(|stop: &Stop| {
@@ -220,6 +228,7 @@ impl Fake {
             opened: Cell::new(0),
             boots_read: Cell::new(0),
             reboots: Cell::new(0),
+            free_at_reboot: Cell::new(None),
             calls: RefCell::default(),
         }
     }
@@ -319,6 +328,16 @@ impl System for Fake {
 
     fn reboot(&self) -> Result<(), RebootError> {
         self.reboots.set(self.reboots.get() + 1);
+        self.free_at_reboot.set(Some((
+            HostLock::acquire(&self.lock, self.policy).is_ok(),
+            togi_journal::StateDir::lock(self.state_dir()).is_ok(),
+        )));
+        if self.fail_reboot {
+            return Err(RebootError::Exit {
+                status: std::os::unix::process::ExitStatusExt::from_raw(1 << 8),
+                stderr: "Failed to reboot".to_owned(),
+            });
+        }
         Ok(())
     }
 
@@ -346,7 +365,7 @@ impl System for Fake {
     }
 
     fn stderr_facts(&self) -> OutputFacts {
-        OutputFacts::default()
+        self.facts
     }
 
     fn privileged(&self) -> bool {

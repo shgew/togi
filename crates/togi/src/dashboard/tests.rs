@@ -121,3 +121,92 @@ fn input_typed_while_the_dashboard_showed_is_dropped_when_the_input_is_given_bac
         "typed-ahead keys must not reach the shell after the run"
     );
 }
+
+fn wait_until(what: &str, mut done: impl FnMut() -> bool) {
+    let end = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while !done() {
+        assert!(
+            std::time::Instant::now() < end,
+            "timed out waiting for {what}"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+}
+
+/// A surface built the way [`super::Watch`] is, with the scoped helper that waits for the dashboard's stop,
+/// whose drawing panics at once.
+struct PanicsWhileDrawing;
+
+impl super::Surface for PanicsWhileDrawing {
+    fn draw(&self, _: &std::path::Path, _: u64, stop: &super::Stop) -> Result<(), String> {
+        let ended = togi_watch::terminal::Stop::new();
+        super::draw_until(stop, &ended, || -> Result<(), String> {
+            panic!("injected panic while drawing")
+        })
+    }
+}
+
+/// Every notice and every forwarded event line, in the order they reached the operator.
+#[derive(Clone, Default)]
+struct Said(std::sync::Arc<std::sync::Mutex<Vec<String>>>);
+
+impl Said {
+    fn push(&self, what: &str, text: &str) {
+        self.0.lock().unwrap().push(format!("{what}: {text}"));
+    }
+
+    fn all(&self) -> Vec<String> {
+        self.0.lock().unwrap().clone()
+    }
+}
+
+impl std::io::Write for Said {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.push("line", String::from_utf8_lossy(buf).trim_end());
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+#[test]
+fn a_panic_while_drawing_falls_back_to_event_lines_at_once_not_when_the_dashboard_is_hidden() {
+    use std::io::Write as _;
+    let said = Said::default();
+    let mut dashboard = super::Dashboard::new(
+        std::sync::Arc::new(PanicsWhileDrawing),
+        std::path::Path::new("."),
+        0,
+    );
+    let notices = said.clone();
+    dashboard.notice = std::sync::Arc::new(move |message| notices.push("notice", message));
+    let mut lines = dashboard.gate(Box::new(said.clone()));
+    dashboard.show();
+    wait_until("the fallback to event lines", || !dashboard.is_showing());
+    lines.write_all(b"event after the panic\n").unwrap();
+    assert_eq!(
+        said.all(),
+        [
+            "notice: injected panic while drawing",
+            "line: event after the panic"
+        ],
+        "the fallback waited for the dashboard to be hidden"
+    );
+    dashboard.hide();
+}
+
+#[test]
+fn drawing_that_returns_stops_the_helper_and_the_dashboard_is_still_showing_until_it_is_hidden() {
+    let dashboard = super::Dashboard::new(
+        std::sync::Arc::new(UntilStopped),
+        std::path::Path::new("."),
+        0,
+    );
+    assert!(!dashboard.is_showing());
+    dashboard.show();
+    assert!(dashboard.is_showing());
+    dashboard.hide();
+    assert!(!dashboard.is_showing());
+}
