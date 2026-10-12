@@ -3,7 +3,8 @@ use std::num::NonZeroU32;
 
 use togi_config::Config;
 use togi_journal::{
-    Activity, CycleEvent, Decision, Event, HuntOutcome, HuntStage, Outcome, Payload, TrialIntent,
+    Activity, CycleEvent, Decision, Event, Failure, HuntOutcome, HuntStage, Outcome, Payload,
+    TrialIntent,
 };
 use togi_machine::{Condition, CoreId, CoreSet, PerCore, Regime, Signal, TargetOffset};
 use togi_session::Stop;
@@ -185,9 +186,9 @@ fn idle_budgets(definition: &MachineDefinition, core: usize) -> (usize, usize) {
     (hunts, 2 * definition.core.len() + 3 * hunts)
 }
 
-fn idle_failures(events: &[Event], core: CoreId, idle: i64) -> usize {
+fn idle_failures(events: &[Event], core: CoreId, idle: i64) -> Vec<&Failure> {
     let mut intents = BTreeMap::new();
-    let mut failures = 0;
+    let mut failures = Vec::new();
     for event in events {
         match &event.payload {
             Payload::TrialIntent(intent) => {
@@ -205,7 +206,7 @@ fn idle_failures(events: &[Event], core: CoreId, idle: i64) -> usize {
                     && !intent.cores.contains(core)
                     && intent.core != Some(core)
                 {
-                    failures += 1;
+                    failures.push(failure);
                 }
             }
             _ => {}
@@ -580,7 +581,10 @@ fn a_scripted_idle_only_limit_outside_the_loaded_cores_is_found_by_r1() {
         [-10, -10, -10, -5]
     );
     assert!(
-        idle_failures(&events, core(3), -5) > 0,
+        idle_failures(&events, core(3), -5)
+            .iter()
+            .any(|failure| failure.core == Some(core(3))
+                && failure.signal == Signal::ComputationError),
         "no named R1 idle-limit failure outside the loaded cores"
     );
 }
@@ -597,7 +601,7 @@ fn idle_only_hazard(seed: u64) {
         [-10, -10, -10, -5]
     );
     assert!(
-        idle_failures(&events, core(3), -5) > 0,
+        !idle_failures(&events, core(3), -5).is_empty(),
         "the idle-only hazard never failed outside the loaded cores"
     );
 }
