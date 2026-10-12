@@ -1,0 +1,116 @@
+---
+source: crates/togi-watch/src/frames/snapshots.rs
+expression: body
+---
+legend: t=Text g=Grey w=White c=Running a=Hunt p=Good f=Bad m=Combination k=Track h=Chip l=Lamp u=Current
+│  togi   09:48:31   session 9h48m   31 failures · 7 crashes   last observed failure 07:34, 2h14m ago
+~  gggg   wwwwwwww   ggggggggttttt   ttggggggggggggtgggggggg   ggggggggggggggggggggggtttttggggggggggg
+│
+│  ■ SOLO LIMITS  16/16  ───  ► PHASE 1  ───  ○ PHASE 2  ───  CLEAN CYCLES 0  ───  ► CYCLE 1  step 1 of 18 · part 1 of 3 · trial 1 of 4  ───  1:20 left
+~  pptttttttttttgggggggttkkkttccwwwwwwwttkkkttgggggggggttkkkttggggggggggggggttkkkttccwwwwwwwtttttttttttttttttttttttttttttttttttttttttttttkkkttwwwwwwwww
+│
+│    READING THE SCREEN ─────────────────────────────────────────────────────────────    WHAT TOGI DOES ───────────────────────────────────────────────────────────    WORDS ─────────────────────────────────────────────────────────────────
+~    wwwwwwwwwwwwwwwwww ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg    wwwwwwwwwwwwww ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg    wwwww ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg
+│
+│    ► 04  -28  AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄░░░░░░░█                -36         SOLO LIMITS   Search: each core alone, the rest at 0, finds its solo          SEARCH           finding its solo limit with light and heavy-vector
+~    wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwmmmmmmmf                fff         wwwwwwwwwww   tttttttttttttttttttttttttttttttttttttttttttttttttttttt          wwwwww           tttttttttttttttttttttttttttttttttttttttttttttttttt
+│                        at its limit: one count deeper reaches C5                                     limit. The stage counts the cores whose solo limit is found                      trials alone
+~                        ggggggggggggggggggggggggggggggggggggggggg                                     ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                      tttttttttttt
+│                                                                                                      and names the core being searched or confirmed.                 CONFIRM          checking its candidate solo limit with repeated light
+~                                                                                                      ttttttttttttttttttttttttttttttttttttttttttttttt                 wwwwwww          ttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│    ► 00  -26  HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·····█                    -32                                                                                                        and heavy-vector trials alone
+~    wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwgggggf                    fff                                                                                                        ttttttttttttttttttttttttttttt
+│                        has room: backed off after a hunt, may deepen                   PHASE 1       Search, then the first full cycle with every core one count     FOUND            solo limit checked; waiting at 0 until every core has
+~                        ggggggggggggggggggggggggggggggggggggggggggggg                   wwwwwww       ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt     wwwww            ttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│                                                                                                      shallower than its solo limit. Its pass confirms the first                       one
+~                                                                                                      tttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                       ttt
+│      09    0  PARKED   ···············································█    -48                       BIOS profile.                                                   WAITING          at 0, waiting for its first search turn
+~    wwwwwwwwwwwwwwwwwwwwgggggggggggggggggggggggggggggggggggggggggggggggf    fff                       ttttttttttttt                                                   wwwwwww          ttttttttttttttttttttttttttttttttttttttt
+│                        parked at 0 by a hunt; returns to -47                                                                                                         MEMBER           kept with its hunt group at its failing offset;
+~                        ggggggggggggggggggggggggggggggggggggg                                                                                                         wwwwww           ttttttttttttttttttttttttttttttttttttttttttttttt
+│                                                                                        HUNT          An amber detour: parked trials that find the core or                             another member may be probed
+~                                                                                        wwww          tttttttttttttttttttttttttttttttttttttttttttttttttttt                             tttttttttttttttttttttttttttt
+│    ► 00  -26  PROBE    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▀ ▀▀ █                    -32                       combination behind a failure. The hunt panel shows its          offset           Curve Optimizer counts, 0 to -50; deeper is more
+~    wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwffffff                    fff                       tttttttttttttttttttttttttttttttttttttttttttttttttttttt          wwwwww           tttttttttttttttttttttttttttttttttttttttttttttttt
+│                        probe: the group failed with core 00 at -30, -29, -27                         groups and member probes.                                                        negative
+~                        ggggggggggggggggggggggggggggggggggggggggggggggggggggg                         ttttttttttttttttttttttttt                                                        tttttttt
+│                                                                                                                                                                      trial            one launch of one workload on its target
+~                                                                                                                                                                      wwwww            tttttttttttttttttttttttttttttttttttttttt
+│    ►         the core carries load in this trial                                       PHASE 2       Rounds that move each candidate one count toward its solo       solo limit       the deepest offset a core confirmed under load alone
+~    w         ttttttttttttttttttttttttttttttttttt                                       wwwwwww       ttttttttttttttttttttttttttttttttttttttttttttttttttttttttt       wwwwwwwwww       tttttttttttttttttttttttttttttttttttttttttttttttttttt
+│    ▄▄▄       offset applied now, or saved after a stop restored the hardware; white                  limit, as far as its failure points and combinations permit,    failure point    the shallowest offset where a core failed on its own
+~    www       tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                  tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt    wwwwwwwwwwwww    tttttttttttttttttttttttttttttttttttttttttttttttttttt
+│              when this trial judges the core                                                         then one confirmation cycle. A round lists its candidates,                       account
+~              ttttttttttttttttttttttttttttttt                                                         tttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                       ttttttt
+│    grey ▄▄▄  the same depth, grey when the core is not judged                                        their gaps and the most rounds left if none fails.              combination      offsets at which a group of cores failed together.
+~    wwwwwwww  tttttttttttttttttttttttttttttttttttttttttttttttt                                        tttttttttttttttttttttttttttttttttttttttttttttttttt              wwwwwwwwwww      tttttttttttttttttttttttttttttttttttttttttttttttttt
+│    ···       depth it reached but does not use now: given back, parked, waiting                                                                                                       Unresolved: no smaller group was shown to fail
+~    www       tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                                                                                                       tttttttttttttttttttttttttttttttttttttttttttttt
+│    ░░░       depth a combination blocks now                                            BIOS PROFILE  The profile to enter in BIOS, one row per CCD in slot order.    at its limit     a core at -50, or one count deeper reaches a failure
+~    www       tttttttttttttttttttttttttttttt                                            wwwwwwwwwwww  tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt    wwwwwwwwwwww     tttttttttttttttttttttttttttttttttttttttttttttttttttt
+│    █         its failure point: this core failed there on its own account                            A * marks an offset not yet confirmed: the profile changed                       point or combination
+~    w         tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                            tttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                       tttttttttttttttttttt
+│    ▀         a group trial failed with this core at that offset                                      after the last passed full cycle. A passed full cycle           has room         a core past search that is not at its limit
+~    w         tttttttttttttttttttttttttttttttttttttttttttttttttt                                      ttttttttttttttttttttttttttttttttttttttttttttttttttttt           wwwwwwww         ttttttttttttttttttttttttttttttttttttttttttt
+│    cyan      running now                                                                             confirms it, except for a core a held failure still shows       suspect          a core a hunt keeps at its failing offset
+~    wwww      ttttttttttt                                                                             ttttttttttttttttttttttttttttttttttttttttttttttttttttttttt       wwwwwww          ttttttttttttttttttttttttttttttttttttttttt
+│    amber     a hunt, and what it paused                                                              stepped back: that offset stays marked until the hold           parked           a core a hunt holds shallower than its failing offset
+~    wwwww     tttttttttttttttttttttttttt                                                              ttttttttttttttttttttttttttttttttttttttttttttttttttttt           wwwwww           ttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│    red       failures, past and present                                                              expires (the core then shows its held offset again) or a        partial part     an R7 part with the top requesters idle
+~    www       tttttttttttttttttttttttttt                                                              tttttttttttttttttttttttttttttttttttttttttttttttttttttttt        wwwwwwwwwwww     ttttttttttttttttttttttttttttttttttttttt
+│    green     passed, done                                                                            second failure steps it back for good.                          top requester    the loaded core with the highest voltage request,
+~    wwwww     tttttttttttt                                                                            tttttttttttttttttttttttttttttttttttttt                          wwwwwwwwwwwww    ttttttttttttttttttttttttttttttttttttttttttttttttt
+│    magenta   combinations                                                                                                                                                             setting the shared core voltage; marked top on the CCD
+~    wwwwwww   tttttttttttt                                                                                                                                                             tttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│    grey      idle, parked, still to come                                               CYCLE         Checking: every core at its offset together, through the                         tables, by offset when offsets stand in for requests
+~    wwww      ttttttttttttttttttttttttttt                                               wwwww         tttttttttttttttttttttttttttttttttttttttttttttttttttttttt                         tttttttttttttttttttttttttttttttttttttttttttttttttttt
+│                                                                                                      steps of a cycle. The stage shows the cycle's number and        self-sufficient  observed passing as top requester for this R7
+~                                                                                                      tttttttttttttttttttttttttttttttttttttttttttttttttttttttt        wwwwwwwwwwwwwww  ttttttttttttttttttttttttttttttttttttttttttttt
+│                                                                                                      step; the cycle panel lists its steps and R7 parts.                              workload; evidence, not a guarantee
+~                                                                                                      ttttttttttttttttttttttttttttttttttttttttttttttttttt                              ttttttttttttttttttttttttttttttttttt
+│    THE TOP LINE ───────────────────────────────────────────────────────────────────                                                                                  record only      a trial whose result is kept but changes no decision
+~    wwwwwwwwwwww ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg                                                                                  wwwwwwwwwww      tttttttttttttttttttttttttttttttttttttttttttttttttttt
+│                                                                                        CLEAN CYCLES  The count of clean cycles still valid for the current           cycle            one pass through the checking schedule
+~                                                                                        wwwwwwwwwwww  ttttttttttttttttttttttttttttttttttttttttttttttttttttt           wwwww            tttttttttttttttttttttttttttttttttttttt
+│    failures       failure decisions, including trials skipped because they already                   profile; checking repeats cycles until stopped.
+~    wwwwwwww       tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                   ttttttttttttttttttttttttttttttttttttttttttttttt
+│                   failed
+~                   tttttt
+│    crashes        boots that ended without a clean shutdown                            R6            During idle trials this screen holds still, clock included,     KINDS OF LOAD ─────────────────────────────────────────────────────────
+~    wwwwwww        ttttttttttttttttttttttttttttttttttttttttt                            ww            ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt     wwwwwwwwwwwww ggggggggggggggggggggggggggggggggggggggggggggggggggggggggg
+│    last observed  the last failure seen in this session that changed what togi                       so it cannot wake the cores.
+~    wwwwwwwwwwwww  tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                       tttttttttttttttttttttttttttt
+│                   does; record-only results and skips do not count                                                                                                   R1 light          one light thread: compiling, browsing
+~                   tttttttttttttttttttttttttttttttttttttttttttttttt                                                                                                   wwwwwwww          ttttttttttttttttttttttttttttttttttttt
+│    q              closes this view only; tuning keeps running                          NO ETA        A hunt can start at any time, so togi shows only what is        R2 heavy vector   one AVX2/AVX-512 thread: encoding, rendering
+~    w              ttttttttttttttttttttttttttttttttttttttttttt                          wwwwww        tttttttttttttttttttttttttttttttttttttttttttttttttttttttt        wwwwwwwwwwwwwww   tttttttttttttttttttttttttttttttttttttttttttt
+│                                                                                                      scheduled and the time left in the current trial.               R3 load steps     load switching on and off: current steps
+~                                                                                                      ttttttttttttttttttttttttttttttttttttttttttttttttt               wwwwwwwwwwwww     tttttttttttttttttttttttttttttttttttttttt
+│                                                                                                                                                                      R4 partial load   light load at 25-75% duty: bursty work
+~                                                                                                                                                                      wwwwwwwwwwwwwww   tttttttttttttttttttttttttttttttttttttt
+│                                                                                        RULES         How togi decides what to do:                                    R5 both threads   both threads of one core: SMT pressure
+~                                                                                        wwwww         tttttttttttttttttttttttttttt                                    wwwwwwwwwwwwwww   tttttttttttttttttttttttttttttttttttttt
+│                                                                                                      https://github.com/shgew/togi/blob/main/docs/spec/tuner.md      R6 idle + bursts  idle with short wake-ups: idle and boost
+~                                                                                                      tttttttttttttttttttttttttttttttttttttttttttttttttttttttttt      wwwwwwwwwwwwwwww  tttttttttttttttttttttttttttttttttttttttt
+│                                                                                                                                                                      R7 all-core       a CCD, part of one, or every core: power and heat
+~                                                                                                                                                                      wwwwwwwwwww       ttttttttttttttttttttttttttttttttttttttttttttttttt
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│   ?  help    l  log    esc  back    q  close view
+~  uuu gggg   hhh ggg   hhhhh gggg   hhh gggggggggg

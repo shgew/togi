@@ -5,18 +5,23 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 publish.workspace = true
-description = "The togi watch dashboard: the incremental journal model, history, words and the frame seam"
+description = "The togi watch dashboard: the incremental journal model, history, words and the frames"
 
 [dependencies]
 jiff.workspace = true
+ratatui.workspace = true
 thiserror.workspace = true
 togi-journal.workspace = true
 togi-machine.workspace = true
+togi-render.workspace = true
 togi-tuner.workspace = true
+unicode-width.workspace = true
 
 [dev-dependencies]
+insta.workspace = true
 serde_json.workspace = true
 togi-config.workspace = true
+togi-watchtest.workspace = true
 
 [lints]
 workspace = true

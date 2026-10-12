@@ -1,0 +1,48 @@
+---
+source: crates/togi-watch/src/frames/snapshots.rs
+expression: body
+---
+│  togi   06:50:01   session 30h49m   56 failures · 11 crashes   last observed failure 04:43, 2h06m ago
+│
+│  ■ SOLO LIMITS  16/16  ───  ■ PHASE 1  ───  ○ PHASE 2  at most 1 round left  ───  CLEAN CYCLES 0  ───  ■ CYCLE 1
+│
+│  ▌  STOPPED   The BIOS profile is confirmed, so I stopped at the first...        last trial      PASS  15:00 on 00-15 · Tctl max 72°C
+│
+│
+│  STOPPED ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+│  06:49:21 · stopped at the first confirmed result
+│  Rows show the saved profile, not applied now.
+│
+│  CCD 0               0  2 counts/cell       -50 fail pt  not under load          CCD 1               0  2 counts/cell       -50 fail pt  not under load
+│    00  -23  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄█··               -24                             08   -5  HAS ROOM  ▄▄▄█                          -7
+│    01  -15  AT LIMIT  ▄▄▄▄▄▄▄█·                    -16                             09  -33  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█·           -34
+│    02  -24  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄█                -25                             10  -13  AT LIMIT  ▄▄▄▄▄▄█··                    -14
+│    03  -24  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄█                -26                             11   -7  AT LIMIT  ▄▄▄█·                         -8
+│    04  -13  AT LIMIT  ▄▄▄▄▄▄█·                     -14                             12  -14  AT LIMIT  ▄▄▄▄▄▄▄█·                    -15
+│    05   -8  AT LIMIT  ▄▄▄▄█                         -9                             13  -35  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█·          -36
+│    06  -37  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█         -39                             14  -12  AT LIMIT  ▄▄▄▄▄▄█·                     -13
+│    07  -29  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█             -31                             15  -13  HAS ROOM  ▄▄▄▄▄▄▄█                     -15
+│
+│  BIOS PROFILE ────────────────────────── confirmed by the cycle ending #7128     WHAT HAPPENED ───────────────────────────────────────────────── l: last 400
+│  slot      0    1    2    3    4    5    6    7
+│  CCD 0   -23  -15  -24  -24  -13   -8  -37  -29                                  06:49  stop     stopped
+│  CCD 1    -5  -33  -13   -7  -14  -35  -12  -13                                  06:49  cycle    cycle 1 passed, a full cycle of every kind of test
+│                                                                                  06:49  pass     R6 idle + bursts on 00-15 · passed · Tctl max 72°C
+│  CYCLE 1 ──────────────────────────────────────────────── 18 steps · 18 done     06:34  pass     R4 partial load on core 15 at -13 · passed · Tctl max 64°C
+│                                                                                  06:32  pass     R4 partial load on core 07 at -29 · passed · Tctl max 76°C
+│    #  kind              where               schedule      result                 06:30  pass     R4 partial load on core 14 at -12 · passed · Tctl max 76°C
+│  ■  1 R7 all-core       2 CCDs · 13 parts   13 parts      done                   06:28  pass     R4 partial load on core 06 at -37 · passed · Tctl max 72°C
+│  ■  2 R7 all-core       2 CCDs · 13 parts   13 parts      done                   06:26  pass     R4 partial load on core 13 at -35 · passed · Tctl max 75°C
+│  ■  3 R7 all-core       2 CCDs · 13 parts   13 parts      done                   06:24  pass     R4 partial load on core 05 at -8 · passed · Tctl max 70°C
+│  ■  4 R2 heavy vector   one core at a time  16 x 2m       done · hunt 1          06:22  pass     R4 partial load on core 12 at -14 · passed · Tctl max 64°C
+│  ■  5 R2 heavy vector   one core at a time  16 x 2m       done                   06:20  pass     R4 partial load on core 04 at -13 · passed · Tctl max 67°C
+│  ■  6 R2 heavy vector   one core at a time  16 x 2m       done                   06:18  pass     R4 partial load on core 11 at -7 · passed · Tctl max 68°C
+│  ■  7 R6 idle + bursts  all cores idle      15m           done                   06:16  pass     R4 partial load on core 03 at -24 · passed · Tctl max 63°C
+│  +11 more                                                                        06:14  pass     R4 partial load on core 10 at -13 · passed · Tctl max 62°C
+│                                                                                  06:12  pass     R4 partial load on core 02 at -24 · passed · Tctl max 76°C
+│  R7 ───────────────────── top requesters ───── self-sufficient ─────────────     06:10  pass     R4 partial load on core 09 at -33 · passed · Tctl max 62°C
+│  mprime AVX2 36K-248K     05 08 by offset      00-05 07-12 14 15                 06:08  pass     R4 partial load on core 01 at -15 · passed · Tctl max 72°C
+│  mprime AVX-512 36K-248K  05 08 by offset      00-05 07-12 14 15                 06:06  pass     R4 partial load on core 08 at -5 · passed · Tctl max 62°C
+│  y-cruncher FFTv4         05 08 by offset      00-05 07-12 14 15                 +921 more
+│
+│   ?  help    l  log    esc  back    q  close view

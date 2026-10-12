@@ -1,0 +1,70 @@
+---
+source: crates/togi-watch/src/frames/snapshots.rs
+expression: body
+---
+│  togi   01:41:10   session 1h41m   0 failures · 0 crashes
+│
+│  ○ SOLO LIMITS  0 of 16 found  ───  ○ PHASE 1  ───  ○ PHASE 2  ───  CLEAN CYCLES 0  ───  ○ CYCLE
+│
+│  ▌  CRASHED   Trial 0067 crashed: a later boot has written events. togi run records the crash.                           last trial      PASS  1:30 on core 00 · Tctl max 62°C
+│
+│
+│  CRASHED, NOT YET RECOVERED ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+│  trial 0067 · core 08 · R1 light at -10 · started 01:39:00
+│  A later boot has written events, so the machine restarted before this trial recorded its end.
+│  togi run records the crash and picks up from the journal.
+│
+│  CCD 0               0       -10       -20       -30       -40       -50 fail pt  waiting at 0                           CCD 1               0       -10       -20       -30       -40       -50 fail pt  not under load
+│    00    0  SEARCH    ··········                                                  passed -10 · next -15                    08  -10  SEARCH    ▄▄▄▄▄▄▄▄▄▄                                                  passed -5 · next -10
+│    01    0  SEARCH    ·····                                                       passed -5 · next -10                     09    0  SEARCH    ·····                                                       passed -5 · next -10
+│    02    0  SEARCH    ·····                                                       passed -5 · next -10                     10    0  SEARCH    ·····                                                       passed -5 · next -10
+│    03    0  SEARCH    ·····                                                       passed -5 · next -10                     11    0  SEARCH    ·····                                                       passed -5 · next -10
+│    04    0  SEARCH    ·····                                                       passed -5 · next -10                     12    0  SEARCH    ·····                                                       passed -5 · next -10
+│    05    0  SEARCH    ·····                                                       passed -5 · next -10                     13    0  SEARCH    ·····                                                       passed -5 · next -10
+│    06    0  SEARCH    ·····                                                       passed -5 · next -10                     14    0  SEARCH    ·····                                                       passed -5 · next -10
+│    07    0  SEARCH    ·····                                                       passed -5 · next -10                     15    0  SEARCH    ·····                                                       passed -5 · next -10
+│
+│  BIOS PROFILE ──────────────────────────────────────────────────────────────────────────────────────────────────────     WHAT HAPPENED ─────────────────────────────────────────────────────────────────── newest first · l: last 400 events
+│  none confirmed yet: phase 1 has not passed a full cycle
+│                                                                                                                          01:40  resume   session resumed
+│  TURNS ──────────────────────────────────────────────────────────────────────────── one core per turn, in this order     01:39  step     core 00 passed -10, next -15
+│                                                                                                                          01:36  step     core 15 passed -5, next -10
+│    core   this turn                      at     workload                  so far                                         01:33  step     core 07 passed -5, next -10
+│    01     search step: light, then heavy -10    y-cruncher SNT + SVT      passed -5 · next -10                           01:30  step     core 14 passed -5, next -10
+│    09     search step: light, then heavy -10    y-cruncher SNT + SVT      passed -5 · next -10                           01:27  step     core 06 passed -5, next -10
+│    02     search step: light, then heavy -10    y-cruncher SNT + SVT      passed -5 · next -10                           01:24  step     core 13 passed -5, next -10
+│    10     search step: light, then heavy -10    y-cruncher SNT + SVT      passed -5 · next -10                           01:21  step     core 05 passed -5, next -10
+│    03     search step: light, then heavy -10    y-cruncher SNT + SVT      passed -5 · next -10                           01:18  step     core 12 passed -5, next -10
+│    11     search step: light, then heavy -10    y-cruncher SNT + SVT      passed -5 · next -10                           01:15  step     core 04 passed -5, next -10
+│    04     search step: light, then heavy -10    y-cruncher SNT + SVT      passed -5 · next -10                           01:12  step     core 11 passed -5, next -10
+│    12     search step: light, then heavy -10    y-cruncher SNT + SVT      passed -5 · next -10                           01:09  step     core 03 passed -5, next -10
+│    05     search step: light, then heavy -10    y-cruncher SNT + SVT      passed -5 · next -10                           01:06  step     core 10 passed -5, next -10
+│    13     search step: light, then heavy -10    y-cruncher SNT + SVT      passed -5 · next -10                           01:03  step     core 02 passed -5, next -10
+│    06     search step: light, then heavy -10    y-cruncher SNT + SVT      passed -5 · next -10                           01:00  step     core 09 passed -5, next -10
+│    14     search step: light, then heavy -10    y-cruncher SNT + SVT      passed -5 · next -10                           00:57  step     core 01 passed -5, next -10
+│    07     search step: light, then heavy -10    y-cruncher SNT + SVT      passed -5 · next -10                           00:54  step     core 08 passed -5, next -10
+│    15     search step: light, then heavy -10    y-cruncher SNT + SVT      passed -5 · next -10                           00:51  step     core 00 passed -5, next -10
+│    00     search step: light, then heavy -15    mprime SSE 4K-21K         passed -10 · next -15                          00:48  step     core 15 passed 0, next -5
+│    08     search step: light, then heavy -10    y-cruncher SNT + SVT      passed -5 · next -10                           00:45  step     core 07 passed 0, next -5
+│                                                                                                                          00:42  step     core 14 passed 0, next -5
+│                                                                                                                          00:39  step     core 06 passed 0, next -5
+│                                                                                                                          00:36  step     core 13 passed 0, next -5
+│                                                                                                                          00:33  step     core 05 passed 0, next -5
+│                                                                                                                          00:30  step     core 12 passed 0, next -5
+│                                                                                                                          00:27  step     core 04 passed 0, next -5
+│                                                                                                                          00:24  step     core 11 passed 0, next -5
+│                                                                                                                          00:21  step     core 03 passed 0, next -5
+│                                                                                                                          00:18  step     core 10 passed 0, next -5
+│                                                                                                                          00:15  step     core 02 passed 0, next -5
+│                                                                                                                          00:12  step     core 09 passed 0, next -5
+│                                                                                                                          00:09  step     core 01 passed 0, next -5
+│                                                                                                                          00:06  step     core 08 passed 0, next -5
+│                                                                                                                          00:03  step     core 00 passed 0, next -5
+│                                                                                                                          00:00  start    session started on 16 cores
+│
+│
+│
+│
+│
+│
+│   ?  help    l  log    esc  back    q  close view
