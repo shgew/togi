@@ -142,11 +142,17 @@ fn a_run_that_goes_on_past_its_conclusion_scores_as_the_cycles_one_run_with_the_
         .collect();
     let projected: Vec<_> = want.profile.iter().collect();
     assert_eq!(projected, recorded);
-    let configured: Vec<_> = want.profile.iter().map(|_| -10).collect();
+    let baseline = stopped
+        .events()
+        .iter()
+        .find_map(|event| match &event.payload {
+            Payload::SessionBaseline(baseline) => Some(baseline.offsets),
+            _ => None,
+        })
+        .unwrap();
     assert_ne!(
-        want.profile.iter().map(|(_, o)| o.0).collect::<Vec<_>>(),
-        configured,
-        "the checking profile goes past the start offsets, which a baseline would not"
+        want.profile, baseline,
+        "the checking profile is not the session baseline, which a fallback would return"
     );
 }
 
