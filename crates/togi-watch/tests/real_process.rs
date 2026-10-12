@@ -1,6 +1,5 @@
 #![cfg(target_os = "linux")]
 #![expect(clippy::unwrap_used, reason = "helpers panic on a broken fixture")]
-#![expect(unsafe_code, reason = "reading a signal action takes a sigaction call")]
 
 //! The dashboard in a real process on a pseudo-terminal: real signals, a real keyboard and real inotify.
 //!
@@ -18,7 +17,6 @@ use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use jiff::Timestamp;
-use nix::sys::signal::{SaFlags, SigAction, SigHandler, SigSet, Signal as NixSignal, sigaction};
 use ratatui::buffer::Buffer;
 use rustix::event::{PollFd, PollFlags, Timespec, poll};
 use rustix::process::{Pid, Signal, kill_process};
@@ -33,6 +31,7 @@ use togi_watch::terminal::{Stop, run, run_after};
 
 const STATE_DIR: &str = "TOGI_WATCH_TEST_STATE_DIR";
 const MODE: &str = "TOGI_WATCH_TEST_MODE";
+const FROZEN: &str = "TOGI_WATCH_TEST_FROZEN";
 const RESTORED: &[u8] = b"SIGNALS-RESTORED";
 const BOUND: Duration = Duration::from_secs(30);
 const SHOW_CURSOR: &[u8] = b"\x1b[?25h";
@@ -40,49 +39,63 @@ const HIDE_CURSOR: &[u8] = b"\x1b[?25l";
 const PALETTE_SET: &[u8] = b"\x1b]P0000000";
 const PALETTE_RESET: &[u8] = b"\x1b]R";
 
-/// The helper: shows the dashboard of the state directory it is given, drawing each state as a row of one
-/// character, so that the test can tell which state is on screen from the bytes the terminal received.
-const SIGNALS: [NixSignal; 4] = [
-    NixSignal::SIGINT,
-    NixSignal::SIGTERM,
-    NixSignal::SIGHUP,
-    NixSignal::SIGWINCH,
-];
+const SIGNALS: [Signal; 4] = [Signal::INT, Signal::TERM, Signal::HUP, Signal::WINCH];
 
-/// What now happens on a signal, found by replacing the action with the default and putting it back. Only the
-/// handler and whether it restarts system calls are compared: the kernel's bookkeeping bits of an action differ
-/// between reads.
-fn disposition(signal: NixSignal) -> (SigHandler, bool) {
-    let default = SigAction::new(SigHandler::SigDfl, SaFlags::empty(), SigSet::empty());
-    // SAFETY: the action is put back at once, and it is the one sigaction returned.
-    unsafe {
-        let current = sigaction(signal, &default).unwrap();
-        sigaction(signal, &current).unwrap();
-        (
-            current.handler(),
-            current.flags().contains(SaFlags::SA_RESTART),
-        )
-    }
+/// What a signal does, as far as the kernel tells: it is ignored, caught by a handler, or neither.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Action {
+    Default,
+    Ignore,
+    Catch,
+}
+
+/// What each of [`SIGNALS`] does now, read from the ignored and caught masks in `/proc/self/status`.
+fn dispositions() -> [Action; 4] {
+    let status = fs::read_to_string("/proc/self/status").unwrap();
+    let mask = |name: &str| {
+        let hex = status
+            .lines()
+            .find_map(|line| line.strip_prefix(name))
+            .unwrap();
+        u64::from_str_radix(hex.trim(), 16).unwrap()
+    };
+    let (ignored, caught) = (mask("SigIgn:"), mask("SigCgt:"));
+    SIGNALS.map(|signal| {
+        let bit = 1_u64 << (signal.as_raw() - 1);
+        if ignored & bit != 0 {
+            Action::Ignore
+        } else if caught & bit != 0 {
+            Action::Catch
+        } else {
+            Action::Default
+        }
+    })
 }
 
 /// The helper: shows the dashboard of the state directory it is given, drawing each state as a row of one
-/// character, so that the test can tell which state is on screen from the bytes the terminal received. It checks
-/// that every signal action is what it was when the dashboard is gone, and in the mode `after_return` it then
-/// waits for a signal.
+/// character, so that the test can tell which state is on screen from the bytes the terminal received. Its frames
+/// are frozen when it is told so, so that only a signal, a key or a journal change draws again. It checks that
+/// every signal action is what it was when the dashboard is gone, and in the mode `after_return` it then waits
+/// for a signal.
 #[test]
 fn real_process_helper() {
     let Some(state_dir) = std::env::var_os(STATE_DIR) else {
         return;
     };
     let mode = std::env::var(MODE).unwrap_or_default();
+    let hold = if std::env::var_os(FROZEN).is_some() {
+        Hold::Frozen
+    } else {
+        Hold::Never
+    };
     let stdin = std::io::stdin();
     let stdout = std::io::stdout();
-    let before = SIGNALS.map(disposition);
+    let before = dispositions();
     let mut during_ok = true;
     let render = |journal: &Journal<'_>, screen: &Screen, _: Timestamp, buf: &mut Buffer| {
         if mode == "integrated" {
-            let now = SIGNALS.map(disposition);
-            during_ok &= now[..3] == before[..3] && now[3] != before[3];
+            let now = dispositions();
+            during_ok &= now[..3] == before[..3] && now[3] == Action::Catch;
         }
         let state = match journal {
             Journal::Missing => 'M',
@@ -101,10 +114,7 @@ fn real_process_helper() {
             buf[(x, 0)].set_char(state);
             buf[(x, 1)].set_char(view);
         }
-        Drawn {
-            scroll: 0,
-            hold: Hold::Never,
-        }
+        Drawn { scroll: 0, hold }
     };
     let outcome = if mode == "integrated" {
         run_after(
@@ -127,7 +137,7 @@ fn real_process_helper() {
         eprintln!("helper: {error}");
         std::process::exit(3);
     }
-    if SIGNALS.map(disposition) != before {
+    if dispositions() != before {
         std::process::exit(4);
     }
     if !during_ok {
@@ -186,11 +196,11 @@ impl Pty {
             .unwrap()
     }
 
-    /// Reads what the terminal has received. False at the end of the stream or when `deadline` passes.
-    fn pump(&mut self, deadline: Instant) -> bool {
+    /// Reads what the terminal has received, if anything arrives before `deadline`.
+    fn pump(&mut self, deadline: Instant) -> Pumped {
         let remaining = deadline.saturating_duration_since(Instant::now());
         if remaining.is_zero() {
-            return false;
+            return Pumped::Deadline;
         }
         let timeout = Timespec {
             tv_sec: i64::try_from(remaining.as_secs()).unwrap(),
@@ -198,15 +208,16 @@ impl Pty {
         };
         let mut fds = [PollFd::new(&self.master, PollFlags::IN)];
         if poll(&mut fds, Some(&timeout)).unwrap() == 0 {
-            return false;
+            return Pumped::Deadline;
         }
         let mut buf = [0_u8; 8192];
         match rustix::io::read(&self.master, &mut buf) {
-            Ok(0) | Err(_) => false,
+            Ok(0) | Err(rustix::io::Errno::IO) => Pumped::End,
             Ok(read) => {
                 self.seen.extend_from_slice(&buf[..read]);
-                true
+                Pumped::Data
             }
+            Err(errno) => panic!("reading the terminal failed: {errno}"),
         }
     }
 
@@ -217,19 +228,39 @@ impl Pty {
             if found(&self.seen[from..]) {
                 return self.seen.len();
             }
+            let pumped = self.pump(deadline);
             assert!(
-                self.pump(deadline),
-                "the terminal never showed {what}; it received {:?}",
+                pumped == Pumped::Data,
+                "the terminal never showed {what} ({pumped:?}); it received {:?}",
                 String::from_utf8_lossy(&self.seen[from..])
             );
         }
     }
 
-    /// Reads until the helper has closed the terminal.
+    /// Reads until the helper has closed the terminal, which it must do before the bound passes.
     fn drain(&mut self) {
         let deadline = Instant::now() + BOUND;
-        while self.pump(deadline) {}
+        let from = self.seen.len();
+        loop {
+            match self.pump(deadline) {
+                Pumped::Data => {}
+                Pumped::End => return,
+                Pumped::Deadline => panic!(
+                    "the helper kept the terminal open for {BOUND:?}; it received {:?}",
+                    String::from_utf8_lossy(&self.seen[from..])
+                ),
+            }
+        }
     }
+}
+
+/// What one read of the terminal found.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Pumped {
+    Data,
+    /// Every descriptor of the terminal's other side is closed: the helper is gone or going.
+    End,
+    Deadline,
 }
 
 /// A run of at least eight of the same character: a row of a state the helper drew.
@@ -251,21 +282,35 @@ fn count_of(bytes: &[u8], needle: &[u8]) -> usize {
         .count()
 }
 
+/// How a helper is started: the terminal type it is told, its mode, whether its frames are frozen, and whether
+/// its keys come from the terminal or from `/dev/null`.
+#[derive(Clone, Copy)]
+struct Launch<'a> {
+    term: &'a str,
+    mode: &'a str,
+    frozen: bool,
+    keys: bool,
+}
+
+const PLAIN: Launch<'static> = Launch {
+    term: "xterm-256color",
+    mode: "",
+    frozen: false,
+    keys: true,
+};
+
 /// The helper process, killed and reaped on every path.
 struct Helper(Child);
 
 impl Helper {
-    fn start(pty: &Pty, state_dir: &Path, term: &str) -> Self {
-        Self::start_in_mode(pty, state_dir, term, "")
-    }
-
     #[expect(
         clippy::disallowed_methods,
         reason = "the test's helper process: this test binary run again on a pseudo-terminal"
     )]
-    fn start_in_mode(pty: &Pty, state_dir: &Path, term: &str, mode: &str) -> Self {
+    fn start(pty: &Pty, state_dir: &Path, launch: Launch<'_>) -> Self {
         let slave = pty.slave();
-        let child = Command::new(std::env::current_exe().unwrap())
+        let mut command = Command::new(std::env::current_exe().unwrap());
+        command
             .args([
                 "real_process_helper",
                 "--exact",
@@ -273,15 +318,22 @@ impl Helper {
                 "--test-threads=1",
             ])
             .env(STATE_DIR, state_dir)
-            .env("TERM", term)
-            .env(MODE, mode)
+            .env("TERM", launch.term)
+            .env(MODE, launch.mode)
             .env_remove("NO_COLOR")
             .env_remove("JOURNAL_STREAM")
-            .stdin(Stdio::from(slave.try_clone().unwrap()))
-            .stdout(Stdio::from(slave))
-            .spawn()
-            .unwrap();
-        Self(child)
+            .stdin(if launch.keys {
+                Stdio::from(slave.try_clone().unwrap())
+            } else {
+                Stdio::null()
+            })
+            .stdout(Stdio::from(slave));
+        if launch.frozen {
+            command.env(FROZEN, "1");
+        } else {
+            command.env_remove(FROZEN);
+        }
+        Self(command.spawn().unwrap())
     }
 
     fn signal(&self, signal: Signal) {
@@ -387,7 +439,7 @@ fn assert_restored(pty: &Pty, status: std::process::ExitStatus, console: bool) {
 fn end_with(signal: Signal, term: &str, console: bool) {
     let state = TempDir::new().unwrap();
     let mut pty = Pty::open(80, 24);
-    let helper = Helper::start(&pty, state.path(), term);
+    let helper = Helper::start(&pty, state.path(), Launch { term, ..PLAIN });
     pty.wait_for(0, "the first frame", |bytes| state_shown(bytes, 'M'));
     assert!(
         contains(&pty.seen, HIDE_CURSOR),
@@ -428,7 +480,11 @@ fn real_process_a_signal_on_the_linux_console_restores_the_palette_too() {
 fn real_process_sigwinch_repaints_at_the_new_size() {
     let state = TempDir::new().unwrap();
     let mut pty = Pty::open(80, 24);
-    let helper = Helper::start(&pty, state.path(), "xterm-256color");
+    let frozen = Launch {
+        frozen: true,
+        ..PLAIN
+    };
+    let helper = Helper::start(&pty, state.path(), frozen);
     let first = pty.wait_for(0, "the first frame", |bytes| state_shown(bytes, 'M'));
     assert!(!contains(&pty.seen, &"M".repeat(99).into_bytes()));
     pty.resize(100, 30);
@@ -450,7 +506,7 @@ fn real_process_sigwinch_repaints_at_the_new_size() {
 fn real_process_keys_switch_views_and_q_quits() {
     let state = TempDir::new().unwrap();
     let mut pty = Pty::open(80, 24);
-    let helper = Helper::start(&pty, state.path(), "xterm-256color");
+    let helper = Helper::start(&pty, state.path(), PLAIN);
     let first = pty.wait_for(0, "the first frame", |bytes| state_shown(bytes, 'a'));
     rustix::io::write(&pty.master, b"?").unwrap();
     let help = pty.wait_for(first, "the help view", |bytes| state_shown(bytes, 'b'));
@@ -480,7 +536,7 @@ fn journal_change(
     fs::create_dir(&state).unwrap();
     setup(&state);
     let mut pty = Pty::open(80, 24);
-    let helper = Helper::start(&pty, &state, "xterm-256color");
+    let helper = Helper::start(&pty, &state, PLAIN);
     let first = pty.wait_for(0, "the first state", |bytes| {
         state_shown(bytes, expect_first)
     });
@@ -553,7 +609,7 @@ fn real_process_inotify_a_missing_state_directory_is_waited_for() {
     let root = TempDir::new().unwrap();
     let state = root.path().join("state").join("nested");
     let mut pty = Pty::open(80, 24);
-    let helper = Helper::start(&pty, &state, "xterm-256color");
+    let helper = Helper::start(&pty, &state, PLAIN);
     let first = pty.wait_for(0, "no session", |bytes| state_shown(bytes, 'M'));
     fs::create_dir_all(&state).unwrap();
     write_journal(&state, 1);
@@ -570,7 +626,7 @@ fn real_process_inotify_a_replaced_state_directory_is_noticed() {
     fs::create_dir(&state).unwrap();
     write_journal(&state, 0);
     let mut pty = Pty::open(80, 24);
-    let helper = Helper::start(&pty, &state, "xterm-256color");
+    let helper = Helper::start(&pty, &state, PLAIN);
     let first = pty.wait_for(0, "the first journal", |bytes| state_shown(bytes, '1'));
     fs::rename(&state, root.path().join("state-old")).unwrap();
     fs::create_dir(&state).unwrap();
@@ -581,6 +637,16 @@ fn real_process_inotify_a_replaced_state_directory_is_noticed() {
     helper.signal(Signal::TERM);
     pty.drain();
     helper.finish();
+}
+
+/// Makes a directory listable again when dropped, so that a test that fails leaves no directory behind that
+/// cannot be removed.
+struct Restore<'a>(&'a Path);
+
+impl Drop for Restore<'_> {
+    fn drop(&mut self) {
+        let _ = fs::set_permissions(self.0, std::os::unix::fs::PermissionsExt::from_mode(0o755));
+    }
 }
 
 #[test]
@@ -597,8 +663,9 @@ fn real_process_inotify_a_traverse_only_state_directory_is_watched_through_the_j
         .open(state.join("events.jsonl"))
         .unwrap();
     fs::set_permissions(&state, std::os::unix::fs::PermissionsExt::from_mode(0o311)).unwrap();
+    let _restore = Restore(&state);
     let mut pty = Pty::open(80, 24);
-    let helper = Helper::start(&pty, &state, "xterm-256color");
+    let helper = Helper::start(&pty, &state, PLAIN);
     let first = pty.wait_for(0, "the first journal", |bytes| state_shown(bytes, '1'));
     let rest = journal_lines(1);
     let line: Vec<&[u8]> = rest.split_inclusive(|byte| *byte == b'\n').collect();
@@ -608,14 +675,45 @@ fn real_process_inotify_a_traverse_only_state_directory_is_watched_through_the_j
     helper.signal(Signal::TERM);
     pty.drain();
     helper.finish();
-    fs::set_permissions(&state, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+}
+
+#[test]
+fn real_process_keys_that_are_not_a_terminal_leave_the_dashboard_running() {
+    let state = TempDir::new().unwrap();
+    let mut pty = Pty::open(80, 24);
+    let helper = Helper::start(
+        &pty,
+        state.path(),
+        Launch {
+            keys: false,
+            ..PLAIN
+        },
+    );
+    let first = pty.wait_for(0, "no session", |bytes| state_shown(bytes, 'M'));
+    write_journal(state.path(), 1);
+    pty.wait_for(
+        first,
+        "the journal written after the first frame",
+        |bytes| state_shown(bytes, '2'),
+    );
+    helper.signal(Signal::TERM);
+    pty.drain();
+    let status = helper.finish();
+    assert_restored(&pty, status, false);
 }
 
 #[test]
 fn real_process_run_puts_every_signal_action_back_and_a_later_sigint_takes_the_default() {
     let state = TempDir::new().unwrap();
     let mut pty = Pty::open(80, 24);
-    let helper = Helper::start_in_mode(&pty, state.path(), "xterm-256color", "after_return");
+    let helper = Helper::start(
+        &pty,
+        state.path(),
+        Launch {
+            mode: "after_return",
+            ..PLAIN
+        },
+    );
     let first = pty.wait_for(0, "the first frame", |bytes| state_shown(bytes, 'M'));
     rustix::io::write(&pty.master, b"q").unwrap();
     pty.wait_for(
@@ -637,7 +735,15 @@ fn real_process_run_puts_every_signal_action_back_and_a_later_sigint_takes_the_d
 fn real_process_run_after_handles_only_sigwinch() {
     let state = TempDir::new().unwrap();
     let mut pty = Pty::open(80, 24);
-    let helper = Helper::start_in_mode(&pty, state.path(), "xterm-256color", "integrated");
+    let helper = Helper::start(
+        &pty,
+        state.path(),
+        Launch {
+            mode: "integrated",
+            frozen: true,
+            ..PLAIN
+        },
+    );
     let first = pty.wait_for(0, "the first frame", |bytes| state_shown(bytes, 'S'));
     pty.resize(100, 30);
     helper.signal(Signal::WINCH);
@@ -654,7 +760,14 @@ fn real_process_run_after_handles_only_sigwinch() {
 fn real_process_run_after_leaves_sigint_to_its_caller() {
     let state = TempDir::new().unwrap();
     let mut pty = Pty::open(80, 24);
-    let helper = Helper::start_in_mode(&pty, state.path(), "xterm-256color", "integrated");
+    let helper = Helper::start(
+        &pty,
+        state.path(),
+        Launch {
+            mode: "integrated",
+            ..PLAIN
+        },
+    );
     pty.wait_for(0, "the first frame", |bytes| state_shown(bytes, 'S'));
     helper.signal(Signal::INT);
     pty.drain();
@@ -670,22 +783,25 @@ fn real_process_the_helper_does_nothing_unless_started_by_a_test() {
 #[test]
 fn real_process_a_helper_that_cannot_open_its_terminal_fails_instead_of_hanging() {
     let state = TempDir::new().unwrap();
-    let pty = Pty::open(80, 24);
+    let mut pty = Pty::open(80, 24);
     #[expect(
         clippy::disallowed_methods,
         reason = "the test's helper process: this test binary run again"
     )]
-    let status = Command::new(std::env::current_exe().unwrap())
-        .args([
-            "real_process_helper",
-            "--exact",
-            "--nocapture",
-            "--test-threads=1",
-        ])
-        .env(STATE_DIR, state.path())
-        .stdin(Stdio::from(pty.slave()))
-        .stdout(Stdio::null())
-        .status()
-        .unwrap();
-    assert!(!status.success());
+    let helper = Helper(
+        Command::new(std::env::current_exe().unwrap())
+            .args([
+                "real_process_helper",
+                "--exact",
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .env(STATE_DIR, state.path())
+            .stdin(Stdio::from(pty.slave()))
+            .stdout(Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
+    pty.drain();
+    assert!(!helper.finish().success());
 }

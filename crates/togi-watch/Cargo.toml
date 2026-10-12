@@ -17,10 +17,9 @@ togi-journal.workspace = true
 togi-machine.workspace = true
 togi-render.workspace = true
 togi-tuner.workspace = true
-tokio = { workspace = true, features = ["macros", "net", "rt", "signal", "sync", "time"] }
+tokio = { workspace = true, features = ["macros", "net", "rt", "sync", "time"] }
 
 [dev-dependencies]
-nix = { workspace = true, features = ["signal"] }
 rustix = { workspace = true, features = ["event", "fs", "process", "pty", "termios"] }
 serde_json.workspace = true
 tempfile.workspace = true
