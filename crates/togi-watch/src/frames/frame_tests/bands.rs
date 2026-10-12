@@ -17,13 +17,13 @@ use crate::frames::testing::rows_of;
 use crate::screen::{Hold, Screen, View};
 use crate::tests::kit::{Script, crash, end_payload, offsets, warning};
 
-fn stage_line(buf: &Buffer, screen: &Screen) -> String {
+pub(super) fn stage_line(buf: &Buffer, screen: &Screen) -> String {
     rows_of(buf)[usize::from(Layout::new(screen).stage.y)]
         .trim()
         .to_owned()
 }
 
-fn summary_screen() -> Screen {
+pub(super) fn summary_screen() -> Screen {
     Screen {
         view: View::Log,
         ..main_screen(240, 67)
