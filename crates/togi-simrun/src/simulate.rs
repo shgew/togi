@@ -4,7 +4,7 @@ use std::path::Path;
 use std::rc::Rc;
 
 use togi_journal::{Event, Journal, LockError, MemFs, Recording, StateDir};
-use togi_session::{Ended, PublicationPolicy, ResumeCapsule, RunInput, SessionError};
+use togi_session::{Ended, PublicationPolicy, ResumeCapsule, RunInput, prepare};
 
 use crate::input::{Finished, Persistence, Replay, SimInput, SimOutcome};
 use crate::observe::{Slot, Tee, UserLog, Watch};
@@ -19,10 +19,6 @@ fn lock(persistence: &Persistence) -> Result<StateDir, LockError> {
         Persistence::Memory(fs) => StateDir::simulated(fs.clone())?,
         Persistence::Files(path) => StateDir::lock_unsynced(path)?,
     })
-}
-
-fn crashed(ended: &Ended) -> bool {
-    ended.errors.iter().any(SessionError::is_crash)
 }
 
 /// Boots the simulated machine, runs the session on it and reboots it after every crash, until a run ends without
@@ -75,16 +71,25 @@ pub fn simulate(input: SimInput) -> Result<SimOutcome, SimError> {
     let mut outcome = None;
     for number in 1..=max_boots.get() {
         let mut machine = simulator.seams();
-        let boot = machine.host.boot_id().map_err(|source| SimError::Host {
+        let host = |source| SimError::Host {
+            boot: number,
+            source,
+        };
+        let boot = machine.host.boot_id().map_err(host)?;
+        let context = machine.host.bios_context().map_err(host)?;
+        let prepared = prepare(
+            lock(&persistence)?,
+            &build,
+            boot.clone(),
+            simulator.now(),
+            Some(&context),
+            defects,
+        )
+        .map_err(|source| SimError::Prepare {
             boot: number,
             source,
         })?;
-        let journal = lock(&persistence)?
-            .open_at(boot.clone(), simulator.now())
-            .map_err(|source| SimError::Open {
-                boot: number,
-                source,
-            })?;
+        let journal = prepared.journal;
         if let (Some(seq), Some(log)) = (journal.repaired(), user.borrow_mut().as_mut()) {
             if let Some(event) = journal.event(seq) {
                 let _ = renderer.write_event(log, event, &zone);
@@ -112,14 +117,14 @@ pub fn simulate(input: SimInput) -> Result<SimOutcome, SimError> {
             prompt: None,
             defects,
             resume: resume.take(),
-            carry: None,
+            carry: prepared.carry,
             log: Some(Box::new(tee)),
             renderer,
             zone: zone.clone(),
             cancel: run_cancel,
             report: Box::new(io::sink()),
         });
-        let crash = crashed(&ended);
+        let crash = ended.crashed();
         let last = number == max_boots.get();
         let due = !crash || last || verify_every.is_some_and(|every| number % every.get() == 0);
         if due {
@@ -129,9 +134,20 @@ pub fn simulate(input: SimInput) -> Result<SimOutcome, SimError> {
             stop,
             errors,
             emergency,
-            journal,
+            mut journal,
             capsule,
         } = ended;
+        if crash
+            && publication == PublicationPolicy::OnFinish
+            && let Some(capsule) = &capsule
+        {
+            capsule
+                .publish(&mut journal)
+                .map_err(|source| SimError::Publish {
+                    boot: number,
+                    source,
+                })?;
+        }
         close(journal, number)?;
         if !crash {
             outcome = Some(SimOutcome::Stopped(Box::new(Finished {
@@ -156,7 +172,7 @@ fn verify(ended: &Ended, boot: u32) -> Result<(), SimError> {
         Some(capsule) => capsule
             .verify(ended.journal.events())
             .map_err(|source| SimError::Diverged { boot, source }),
-        None if ended.errors.is_empty() || crashed(ended) => Err(SimError::NoCapsule { boot }),
+        None if ended.errors.is_empty() || ended.crashed() => Err(SimError::NoCapsule { boot }),
         None => Ok(()),
     }
 }

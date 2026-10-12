@@ -1,17 +1,17 @@
 use std::io;
 
-use togi_journal::{CloseError, LockError, LookupError, OpenError};
-use togi_session::Divergence;
+use togi_journal::{CloseError, LockError, LookupError, StateError};
+use togi_session::{Divergence, PrepareError};
 
 #[derive(Debug, thiserror::Error)]
 pub enum SimError {
     #[error("lock the state directory: {0}")]
     Lock(#[from] LockError),
-    #[error("open the journal for boot {boot}: {source}")]
-    Open {
+    #[error("prepare the journal for boot {boot}: {source}")]
+    Prepare {
         boot: u32,
         #[source]
-        source: OpenError,
+        source: PrepareError,
     },
     #[error("read the boot id or BIOS context of boot {boot}: {source}")]
     Host {
@@ -29,6 +29,12 @@ pub enum SimError {
     },
     #[error("boot {boot} left no resume state to verify: the run latched a journal failure")]
     NoCapsule { boot: u32 },
+    #[error("publish the state document boot {boot} left unwritten: {source}")]
+    Publish {
+        boot: u32,
+        #[source]
+        source: StateError,
+    },
     #[error("close the journal of boot {boot}: {source}")]
     Close {
         boot: u32,
