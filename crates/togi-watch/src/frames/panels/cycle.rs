@@ -31,7 +31,8 @@ fn seconds(n: u32) -> String {
 }
 
 /// The cycle within `height` rows: it leaves out the rows above the focus from the top, then the blank under
-/// the rule.
+/// the rule. With no step open it keeps every row, but gives up the blank under the rule when it is too tall,
+/// so a `+N more` under it does not count that blank.
 pub(super) fn cycle_lines(
     scene: &Scene<'_>,
     cycle: &CycleView<'_>,
@@ -134,6 +135,9 @@ pub(super) fn cycle_lines(
         }
     }
     let Some(at) = focus else {
+        if out.len() > height {
+            out.remove(1);
+        }
         return CycleRows { lines: out, focus };
     };
     let excess = (at + 1).saturating_sub(height);
