@@ -1,6 +1,5 @@
 use std::collections::BTreeSet;
-use std::ffi::OsStr;
-use std::fs::{self, OpenOptions};
+use std::fs;
 use std::io::{BufRead as _, BufReader, Read as _};
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
@@ -253,11 +252,16 @@ fn a_recorded_checking_cycle_that_is_not_full_refuses_cycles_before_touching_the
 }
 
 /// Runs the simulator with a standard error that is no terminal and refuses every write, as a full disk does.
-fn sim_with_full_log(args: &[&OsStr]) -> Option<i32> {
-    let full = OpenOptions::new().write(true).open("/dev/full").unwrap();
+#[cfg(target_os = "linux")]
+fn sim_with_full_log(args: &[&std::ffi::OsStr]) -> Option<i32> {
+    let full = fs::OpenOptions::new()
+        .write(true)
+        .open("/dev/full")
+        .unwrap();
     command().args(args).stderr(full).status().unwrap().code()
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn a_log_that_cannot_be_flushed_fails_a_command_that_otherwise_succeeds() {
     assert_eq!(
