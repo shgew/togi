@@ -962,6 +962,111 @@ mod tests {
     }
 
     #[test]
+    fn parts_that_have_not_run_or_have_concluded_say_so() {
+        let facts = hunt_facts();
+        let state_rows = |plan: &togi_tuner::HuntPlan| {
+            with_hunt(plan, &facts, |scene, hunt| {
+                texts(&part_lines(
+                    scene,
+                    hunt,
+                    &Tables::new(SizeClass::Wide, 100),
+                    100,
+                    SizeClass::Wide,
+                ))
+            })
+        };
+        let waiting = hunt_plan(
+            Vec::new(),
+            vec![
+                part(&[0], &[1], None, None, false),
+                part(&[1], &[0], None, None, false),
+            ],
+        );
+        let rows = state_rows(&waiting);
+        assert!(
+            rows[1].contains("1 of 2") && rows[1].ends_with("next"),
+            "{rows:?}"
+        );
+        assert!(rows[2].ends_with("if part 1 passes"), "{rows:?}");
+        let concluded = hunt_plan(
+            vec![
+                group(1, &[0], GroupState::Passed),
+                group(2, &[1], GroupState::Failed),
+            ],
+            vec![
+                part(&[0], &[1], Some(1), Some(GroupState::Passed), false),
+                part(&[1], &[0], Some(2), Some(GroupState::Failed), false),
+            ],
+        );
+        let rows = state_rows(&concluded);
+        assert!(
+            rows[1].contains("1 of 2") && rows[1].ends_with("passed"),
+            "{rows:?}"
+        );
+        assert!(
+            rows[2].contains("2 of 2") && rows[2].ends_with("failed"),
+            "{rows:?}"
+        );
+    }
+
+    #[test]
+    fn the_probe_list_between_trials_names_the_next_member_and_folds_the_rest() {
+        let mut plan = hunt_plan(Vec::new(), Vec::new());
+        plan.probes = vec![
+            probe(0, -15, false, true),
+            probe(1, -10, false, false),
+            probe(2, -10, false, false),
+            probe(3, -10, false, false),
+        ];
+        let facts = hunt_facts();
+        let rows = with_hunt(&plan, &facts, |scene, hunt| {
+            texts(&probe_lines(
+                scene,
+                hunt,
+                &Tables::new(SizeClass::Wide, 100),
+                SizeClass::Wide,
+            ))
+        });
+        assert_eq!(rows.len(), 4, "{rows:?}");
+        assert!(
+            rows[1].trim_start().starts_with("00") && rows[1].ends_with("done"),
+            "{rows:?}"
+        );
+        assert!(
+            rows[2].trim_start().starts_with("01") && rows[2].ends_with("next"),
+            "{rows:?}"
+        );
+        assert!(
+            rows[3].contains("02 03") && rows[3].ends_with("waiting"),
+            "{rows:?}"
+        );
+    }
+
+    #[test]
+    fn a_hunt_with_groups_and_no_parts_draws_its_locate_row() {
+        let mut locating = group(1, &[0, 1, 2], GroupState::Running);
+        locating.stage = HuntStage::Locate;
+        let plan = hunt_plan(vec![locating], Vec::new());
+        let facts = hunt_facts();
+        let rows = with_hunt(&plan, &facts, |scene, hunt| {
+            texts(&hunt_lines(
+                scene,
+                hunt,
+                &Tables::new(SizeClass::Wide, 120),
+                120,
+                SizeClass::Wide,
+            ))
+        });
+        let at = rows
+            .iter()
+            .position(|row| row.starts_with("parts"))
+            .unwrap_or_else(|| panic!("no parts row in {rows:?}"));
+        assert!(rows[at - 1].trim().is_empty(), "{rows:?}");
+        assert!(rows[at].contains("locate: 00-02 at 0"), "{rows:?}");
+        assert!(rows[at].ends_with("running · 0/5 passed"), "{rows:?}");
+    }
+
+    #[test]
     fn groups_that_ended_alike_read_as_one_row() {
         let mut plan = hunt_plan(
             vec![
