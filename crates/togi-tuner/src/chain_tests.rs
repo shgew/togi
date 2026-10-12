@@ -1193,3 +1193,41 @@ fn a_profile_change_recounts_the_classes_that_can_cover_it_not_the_ledger() {
     };
     assert_eq!(visits(100), visits(10_000));
 }
+
+#[test]
+fn chains_of_repeated_workload_steps_keep_the_schedule_equal_to_a_rebuild() {
+    let repeats = togi_machine::workloads(Regime::R7).len() + 2;
+    let cycle = format!(
+        r#"{{"checking":{{"cycle":[{}]}}}}"#,
+        vec![r#""R7""#; repeats].join(",")
+    );
+    let mut j = journal(two_ccds(), &STARTS, Some(&cycle));
+    let mut chains = 0;
+    for _ in 0..2_000 {
+        let run_state = j.run();
+        let (plan, valid, done) = run_state.debug_rebuild_cycle().unwrap();
+        let open = run_state.checking.open().unwrap();
+        assert_eq!(open.plan(), plan.as_slice());
+        assert_eq!(run_state.checking.counts().unwrap(), &valid);
+        assert_eq!(open.steps_done(), done);
+        let action = j.next();
+        if cycle_end(&action).is_some() {
+            assert!(chains > 0, "no chain was recorded");
+            return;
+        }
+        match action {
+            Action::Decide(decision) => {
+                chains += usize::from(matches!(
+                    decision.payload,
+                    DecisionPayload::CheckingChain(_)
+                ));
+                j.decide(decision);
+            }
+            Action::RunTrial(plan) => {
+                run(&mut j, &plan, Outcome::Pass, &FULL_REQUESTS, None);
+            }
+            other @ Action::ReadRanking => panic!("unexpected action {other:?}"),
+        }
+    }
+    panic!("the cycle never ended");
+}

@@ -124,7 +124,7 @@ impl Run {
             }
         }
         if new_schedule {
-            self.replan();
+            self.replan(None);
         } else {
             self.repin();
         }
