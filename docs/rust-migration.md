@@ -1149,7 +1149,6 @@ The `togi-tool-bench` crate ports the runs, metrics, summary, comparison and cac
 
   The Rust tests simulate the scenario sessions once per test binary process (the simulator of `togi-watchtest`); Go reads checked-in fixtures, which is most of the difference.
 - **Not measured.** The run on a Mac (the crate is clippy-clean for `aarch64-apple-darwin` from Linux), agent cost, and a clean-build compile time.
-||||||| c00ee982
 
 ## Stage 6: the watch terminal loop (#836, 2026-10-12)
 
