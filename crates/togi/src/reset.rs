@@ -46,8 +46,9 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 /// invalid configuration does not prevent archiving.
 ///
 /// --core refuses a different journal ruleset, schema or evidence epoch; --all archives any of
-/// them. Both forms refuse unknown event kinds; install the build that wrote them. Only one run or reset can own this machine, even with different state directories. A busy
-/// host lock stops reset before it changes the session.
+/// them. --core, and --all on a journal of the same schema, refuse an unknown event kind or field;
+/// install the build that wrote them. Only one run or reset can own this machine, even with
+/// different state directories. A busy host lock stops reset before it changes the session.
 #[derive(ClapArgs, Debug)]
 #[command(after_help = EXAMPLES.as_str())]
 pub struct Args {

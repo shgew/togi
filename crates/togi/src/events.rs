@@ -35,10 +35,11 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 ///
 /// Oldest first. Filters combine, so you can narrow the journal to one core, one trial or a time
 /// window. A different ruleset warns before rendering, including `--json`; a different schema is
-/// refused. A kind selector must name a known exact kind or group; an unknown name and an
-/// explicitly empty list are usage errors (exit 2). A valid filter with no matches prints nothing
-/// and exits 0. Readable lines are colored on terminals and in the system journal unless `NO_COLOR`
-/// is set.
+/// refused. An event of a kind this build does not know is skipped and an unknown field is
+/// ignored, `--json` included; stderr says which, after the output. A kind selector must name a
+/// known exact kind or group; an unknown name and an explicitly empty list are usage errors
+/// (exit 2). A valid filter with no matches prints nothing and exits 0. Readable lines are colored
+/// on terminals and in the system journal unless `NO_COLOR` is set.
 #[derive(ClapArgs, Debug)]
 #[command(after_help = EXAMPLES.as_str())]
 pub struct Args {
