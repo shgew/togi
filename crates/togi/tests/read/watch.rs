@@ -15,7 +15,7 @@ use togi_watchtest::Scenario;
 
 use crate::support::{
     UNKNOWN_KIND, append_between_trial_mce, append_event, append_unknown_kind,
-    assert_unknown_kind_refusal, journal, rewrite_first_line, session, text, togi,
+    assert_unknown_kind_refusal, journal, lines, rewrite_first_line, session, text, togi,
 };
 
 pub(crate) const BOUND: Duration = Duration::from_secs(30);
@@ -49,8 +49,10 @@ fn without_a_terminal_one_frame_of_the_requested_size_is_printed() {
 
 #[test]
 fn an_unreadable_journal_prints_the_problem_frame_and_exits_one() {
-    let dir = tempfile::tempdir().unwrap();
-    std::fs::write(journal(dir.path()), "not json\n").unwrap();
+    // A header of this build, then a line that is not an event: unreadable, not another build's journal.
+    let dir = session(Scenario::Search);
+    let header = lines(dir.path()).swap_remove(0);
+    std::fs::write(journal(dir.path()), format!("{header}\nnot json\n")).unwrap();
     let ran = togi(dir.path(), &["watch", "--width", "100", "--height", "30"]);
     assert_eq!(ran.status.code(), Some(1));
     assert!(!text(&ran.stdout).trim().is_empty(), "the frame is printed");

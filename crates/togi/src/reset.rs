@@ -9,8 +9,8 @@ use clap::{Args as ClapArgs, ValueHint};
 use togi_config::{Config, InitialOverride};
 use togi_hostlock::{Error as HostLockError, HostLock};
 use togi_journal::{
-    ArchiveKind, Build, Event, Journal, LockError, Marker, OpenError, Operation, Recording,
-    SessionId, StateDir, Verdict, recorded_build,
+    ArchiveKind, Build, DirError, Event, Journal, LockError, Marker, OpenError, Operation,
+    Recording, SessionId, StateDir, Verdict, recorded_build,
 };
 use togi_machine::{BootId, CoreId};
 use togi_render::escape_text;
@@ -97,8 +97,13 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
     {
         return fail(ctx, COMMAND, format!("no journal at {}", journal.display()));
     }
-    if matches!(recorded_build(ctx.state_dir), Ok(None)) && !(all && pending_marker(ctx.state_dir))
-    {
+    // Read alone, before the journal lock: another build's journal, or a header torn by a crash, is refused without
+    // creating the lock file, as the read-only commands refuse it.
+    let recorded = recorded_build(ctx.state_dir);
+    if let Err(error @ DirError::ForeignJournal { .. }) = &recorded {
+        return fail(ctx, COMMAND, chain(error));
+    }
+    if matches!(recorded, Ok(None)) && !(all && pending_marker(ctx.state_dir)) {
         return no_session(ctx);
     }
     let boot = match system.boot_id() {

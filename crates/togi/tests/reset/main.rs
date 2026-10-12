@@ -104,22 +104,49 @@ fn no_journal_or_no_session_exits_1_without_creating_state() {
         assert!(ran.err.contains("no journal at"), "{}", ran.err);
         assert_eq!(files(state.path()), Vec::<String>::new(), "{args:?}");
 
-        for content in ["", "{\"seq\":"] {
-            fs::write(state.path().join("events.jsonl"), content).unwrap();
-            let before = files(state.path());
-            let ran = reset(&host, state.path(), args);
-            assert_eq!(ran.exit, Exit::Error, "{args:?}");
-            assert_eq!(
-                ran.err,
-                format!("togi reset: no session in {}\n", state.path().display())
-            );
-            assert_eq!(files(state.path()), before, "{args:?}: {content:?}");
-            assert_eq!(
-                fs::read_to_string(state.path().join("events.jsonl")).unwrap(),
-                content,
-                "{args:?}"
-            );
-        }
+        let content = "";
+        fs::write(state.path().join("events.jsonl"), content).unwrap();
+        let before = files(state.path());
+        let ran = reset(&host, state.path(), args);
+        assert_eq!(ran.exit, Exit::Error, "{args:?}");
+        assert_eq!(
+            ran.err,
+            format!("togi reset: no session in {}\n", state.path().display())
+        );
+        assert_eq!(files(state.path()), before, "{args:?}: {content:?}");
+        assert_eq!(
+            fs::read_to_string(state.path().join("events.jsonl")).unwrap(),
+            content,
+            "{args:?}"
+        );
+    }
+}
+
+#[test]
+fn a_malformed_first_line_is_refused_as_ambiguous_without_changing_state() {
+    for args in [&["--core", "0"][..], &["--all"]] {
+        let host = Host::new();
+        let state = tempfile::tempdir().unwrap();
+        let content = "{\"seq\":";
+        fs::write(state.path().join("events.jsonl"), content).unwrap();
+        let before = files(state.path());
+        let ran = reset(&host, state.path(), args);
+        assert_eq!(ran.exit, Exit::Error, "{args:?}");
+        assert_eq!(ran.out, "", "{args:?}");
+        assert_eq!(
+            ran.err,
+            format!(
+                "togi reset: {}: first line is not a complete header of this build; either another build's journal or a header torn by a crash; see docs/howto.md#go-to-rust-cutover\n",
+                state.path().join("events.jsonl").display()
+            ),
+            "{args:?}"
+        );
+        assert_eq!(files(state.path()), before, "{args:?}: no lock file");
+        assert_eq!(
+            fs::read_to_string(state.path().join("events.jsonl")).unwrap(),
+            content,
+            "{args:?}"
+        );
     }
 }
 
