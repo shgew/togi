@@ -149,7 +149,7 @@ fn a_missing_file_is_the_default_configuration_unless_it_was_asked_for() {
     let missing = dir.path().join("config.json");
     assert_eq!(
         super::read(&missing, false).unwrap(),
-        togi_config::Config::default()
+        (togi_config::Config::default(), false)
     );
     assert!(matches!(
         super::read(&missing, true),
@@ -192,4 +192,24 @@ fn a_default_that_cannot_be_read_for_another_reason_than_absence_is_an_error() {
         config_args(None).load(dir.path()),
         Err(togi_config::LoadError::Read { .. })
     ));
+}
+
+#[test]
+fn load_with_source_names_the_file_read_and_whether_one_supplied_the_configuration() {
+    let dir = tempfile::tempdir().unwrap();
+    let default = dir.path().join("default.json");
+    let given = dir.path().join("given.json");
+    std::fs::write(&given, "{}").unwrap();
+    let (_, source) = config_args(None).load_with_source(&default).unwrap();
+    assert_eq!(
+        (source.path.as_str(), source.file),
+        (default.to_str().unwrap(), false)
+    );
+    let (_, source) = config_args(Some(&given))
+        .load_with_source(&default)
+        .unwrap();
+    assert_eq!(
+        (source.path.as_str(), source.file),
+        (given.to_str().unwrap(), true)
+    );
 }

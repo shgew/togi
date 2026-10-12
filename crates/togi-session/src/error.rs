@@ -15,6 +15,9 @@ pub enum JournalCause {
     Append(#[source] AppendError),
     #[error("an event is durable but the run's state does not take it in: {0}")]
     Fold(#[source] FoldError),
+    /// A panic unwound while a durable event was being logged and folded, so the run's state may lack it.
+    #[error("an event is durable but a panic interrupted the run taking it in: {0}")]
+    Interrupted(String),
 }
 
 /// The first failure that latched a run's journal. Cloning shares the original cause.
@@ -29,6 +32,10 @@ impl JournalFailure {
 
     pub(crate) fn fold(error: FoldError) -> Self {
         Self(Arc::new(JournalCause::Fold(error)))
+    }
+
+    pub(crate) fn interrupted(message: &str) -> Self {
+        Self(Arc::new(JournalCause::Interrupted(message.to_owned())))
     }
 
     pub fn cause(&self) -> &JournalCause {
@@ -123,6 +130,9 @@ pub enum SessionError {
         #[source]
         source: io::Error,
     },
+    /// The run panicked; its cleanup ran before the panic was handed back.
+    #[error("panic: {0}")]
+    Panicked(String),
     /// A profile the run built is one it may not put on the machine, or not one of this machine.
     #[error("put a profile on the machine: {0}")]
     Profile(#[source] ProfileFailure),

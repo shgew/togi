@@ -141,7 +141,7 @@ fn simulate_checked(input: SimInput, check: &mut Check<'_>) -> Result<SimOutcome
             user.borrow_mut().write_event(renderer, event, &zone);
         }
         let run_cancel = cancel.child_token();
-        let ended = togi_session::run(RunInput {
+        let mut ended = togi_session::run(RunInput {
             config: config.clone(),
             source: source.clone(),
             build: build.clone(),
@@ -162,6 +162,12 @@ fn simulate_checked(input: SimInput, check: &mut Check<'_>) -> Result<SimOutcome
             cancel: run_cancel,
             report: Box::new(io::sink()),
         });
+        if let Some(panic) = ended.panic.take() {
+            // The journal has no drop flush: close it so a file-backed boot keeps the events it buffered and the
+            // writer lock is released. A close failure is not reported over the panic being resumed.
+            drop(ended.journal.close());
+            panic.resume();
+        }
         let crash = ended.crashed();
         let appended = ended.journal.events().len() > opened;
         if due(number, max_boots, crash, verify_every) {
@@ -182,6 +188,7 @@ fn simulate_checked(input: SimInput, check: &mut Check<'_>) -> Result<SimOutcome
             emergency,
             journal,
             capsule,
+            panic: _,
         } = ended;
         errors.extend(user.borrow_mut().take_failure().map(SessionError::Log));
         let failed = crash && errors.iter().any(|error| !error.is_crash());

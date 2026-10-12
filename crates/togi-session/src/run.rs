@@ -1,19 +1,35 @@
+use std::panic::{AssertUnwindSafe, catch_unwind};
+
 use togi_machine::{PerCore, TargetOffset};
 
 use crate::SessionError;
 use crate::execute::TunerValues;
-use crate::session::{Control, Ended, Outcome, RunInput, Session, Stop};
+use crate::session::{Control, Ended, Outcome, Panic, RunInput, Session, Stop, message_of};
 
+/// Runs the session. A panic in it is caught only to take the cleanup every exit takes: the run is cancelled, the
+/// workload joined, the offsets restored unless that join is unconfirmed, and the journal handed back with the
+/// panic in [`Ended::panic`] for the caller to resume.
 pub fn run(input: RunInput) -> Ended {
     let mut session = match Session::open(input) {
         Ok(session) => session,
         Err(ended) => return *ended,
     };
-    let result = session.startup().and_then(|control| match control {
-        Control::Stop(stop) => Ok(stop),
-        Control::Continue => session.tune(),
-    });
-    session.close(result)
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        session.startup().and_then(|control| match control {
+            Control::Stop(stop) => Ok(stop),
+            Control::Continue => session.tune(),
+        })
+    }));
+    match result {
+        Ok(result) => session.close(result),
+        Err(payload) => {
+            session.cancel.cancel();
+            let message = message_of(&*payload).to_owned();
+            let mut ended = session.close(Err(SessionError::Panicked(message)));
+            ended.panic = Some(Panic::new(payload));
+            ended
+        }
+    }
 }
 
 impl Session {
