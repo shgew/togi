@@ -34,7 +34,7 @@ impl Fleet {
         self.cancelled.load(Ordering::SeqCst)
     }
 
-    fn stopping(&self) -> bool {
+    pub(crate) fn stopping(&self) -> bool {
         self.cancelled() || self.aborted.load(Ordering::SeqCst)
     }
 

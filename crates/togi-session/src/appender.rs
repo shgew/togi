@@ -88,6 +88,9 @@ pub(crate) struct Appender {
     defects: &'static [Entry],
     pub(crate) publication: Option<crate::publication::PublicationPolicy>,
     pub(crate) publishing: bool,
+    /// The folds came from a capsule that covers the journal: the run before it left `state.json` pending on purpose,
+    /// so there is nothing to rebuild.
+    pub(crate) adopted: bool,
 }
 
 impl Appender {
@@ -114,6 +117,7 @@ impl Appender {
         capsule: Option<ResumeCapsule>,
     ) -> Result<Self, Box<Unresumed>> {
         let adopted = capsule.and_then(|capsule| capsule.adopt(&journal, defects));
+        let was_adopted = adopted.is_some();
         let folds = match adopted {
             Some(folds) => folds,
             None => match Folds::replay_with(defects, journal.events()) {
@@ -136,6 +140,7 @@ impl Appender {
             defects,
             publication: None,
             publishing: false,
+            adopted: was_adopted,
         })
     }
 
