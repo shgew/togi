@@ -210,21 +210,6 @@ pub const fn signal_words(signal: Signal) -> &'static str {
     }
 }
 
-/// How a failure signal reads when it names `n` repeated failures of one kind, as a merged line counts them.
-pub const fn signal_plural(signal: Signal, n: u32) -> &'static str {
-    if n == 1 {
-        return signal_words(signal);
-    }
-    match signal {
-        Signal::ComputationError => "computation errors",
-        Signal::UnexpectedExit => "unexpected exits",
-        Signal::Stall => "stalls",
-        Signal::CorrectedMce => "corrected hardware errors",
-        Signal::UncorrectedMce => "uncorrected hardware errors",
-        Signal::Crash => "crashes",
-    }
-}
-
 /// The name of a workload as the screen shows it: its base workload's label when it is a variant, else its own.
 pub fn workload_display(workload: WorkloadId) -> &'static str {
     let entry = workload.workload();

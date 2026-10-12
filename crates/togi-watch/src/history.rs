@@ -5,7 +5,7 @@ use std::fmt::Write as _;
 
 use jiff::Timestamp;
 use togi_journal::{Inference, Seq};
-use togi_machine::{CoreId, Signal, TargetOffset};
+use togi_machine::{CoreId, TargetOffset};
 
 use crate::words::{Tag, Tone, core_ids, plural};
 
@@ -100,8 +100,6 @@ pub struct Entry {
     pub count: u32,
     /// The answer of merged carried groups.
     pub inferred: Option<Inference>,
-    /// The signal of a failure the sentence names.
-    pub signal: Option<Signal>,
 }
 
 /// One raw line of the journal, as the log view lists it.
@@ -141,7 +139,6 @@ impl Entry {
             offset: None,
             count: 0,
             inferred: None,
-            signal: None,
         }
     }
 

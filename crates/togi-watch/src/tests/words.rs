@@ -11,8 +11,8 @@ use super::kit::*;
 use crate::words::{
     Brief, History, Phrase, Tag, Tagging, age, carried_groups, core_ids, core_list, cores_text,
     decision_line, decision_phrase, failure_line, hunt_end_phrase, kind_words, lateness,
-    load_words, noun, on_cores, phase_line, phase_word, plural, regime_words, signal_plural,
-    signal_words, solo_limit, tag_word, trial_end_tag, words, workload_display,
+    load_words, noun, on_cores, phase_line, phase_word, plural, regime_words, signal_words,
+    solo_limit, tag_word, trial_end_tag, words, workload_display,
 };
 use togi_journal::{
     CheckingChain, CheckingStep, DeadEnd, DeadEndCondition, DeepeningRound, HuntSkipped, RoundEvent,
@@ -271,33 +271,15 @@ fn the_regime_and_signal_words() {
     }
     assert_eq!(load_words(Regime::R6), "idle + bursts");
     assert_eq!(load_words(Regime::R2), "heavy vector load");
-    for (signal, one, many) in [
-        (
-            Signal::ComputationError,
-            "wrong result",
-            "computation errors",
-        ),
-        (
-            Signal::UnexpectedExit,
-            "the stress program quit",
-            "unexpected exits",
-        ),
-        (Signal::Stall, "the stress program stalled", "stalls"),
-        (
-            Signal::CorrectedMce,
-            "corrected hardware error",
-            "corrected hardware errors",
-        ),
-        (
-            Signal::UncorrectedMce,
-            "uncorrected hardware error",
-            "uncorrected hardware errors",
-        ),
-        (Signal::Crash, "crash", "crashes"),
+    for (signal, words) in [
+        (Signal::ComputationError, "wrong result"),
+        (Signal::UnexpectedExit, "the stress program quit"),
+        (Signal::Stall, "the stress program stalled"),
+        (Signal::CorrectedMce, "corrected hardware error"),
+        (Signal::UncorrectedMce, "uncorrected hardware error"),
+        (Signal::Crash, "crash"),
     ] {
-        assert_eq!(signal_words(signal), one);
-        assert_eq!(signal_plural(signal, 1), one);
-        assert_eq!(signal_plural(signal, 2), many);
+        assert_eq!(signal_words(signal), words);
     }
 }
 
