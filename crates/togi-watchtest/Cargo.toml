@@ -1,0 +1,26 @@
+[package]
+name = "togi-watchtest"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "Deterministic simulated session journals for the dashboard, replay and status tests"
+
+[dependencies]
+jiff.workspace = true
+thiserror.workspace = true
+togi-config.workspace = true
+togi-journal.workspace = true
+togi-machine.workspace = true
+togi-render.workspace = true
+togi-session.workspace = true
+togi-sim.workspace = true
+togi-simrun.workspace = true
+togi-tuner.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true
