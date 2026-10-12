@@ -185,6 +185,8 @@ Leave reasons survive in GRUB as one pending `togi_leave_reason` record. To insp
 
 ## 7. After a breaking update
 
+**The Go to Rust switch is the exception to everything below.** The Rust build neither archives nor carries from a Go session, so the advice that the next run archives the old session does not apply to it: move the Go state directory aside first, as [Go to Rust cutover](#go-to-rust-cutover) says.
+
 For the schema-4 vocabulary update, use `checking.cycle`, `durations.short_trial_s` and `togi run --cycles N`; rename the old settings and flag as listed in [ADR 0037](adr/0037-cycles-and-trials.md). The old names are refused. The next successful run archives the schema-3 session and carries its eligible evidence; no manual reset is needed.
 
 An update whose changelog line starts with **BREAKING** changes the tuning rules or the journal format, so it cannot continue a session written by an earlier build. If the line also renames configuration keys or `togi run` flags, rename them first in `services.togi.settings` (or `/etc/togi/config.json`) and in anything that runs `togi run`: togi refuses the old names, and `togi run` exits 2 before it archives anything. The session needs nothing by hand: rebuild, then reboot and pick "NixOS - togi". Starting from the tuning boot is especially important after a breaking update: an in-session run without an active hardware watchdog can freeze until a manual reset. The first run archives the old session to `/var/lib/togi/archive/` and starts a new one seeded from it ([Transitions](spec/journal.md#transitions), [Session start](spec/tuner.md#session-start)).
@@ -198,6 +200,27 @@ If the BIOS context changed (BIOS version, microcode, board, CPU or boost limit)
 A configured `candidate_solo_limits` or `start_offsets` value for a core and a carried failure point combine by the precedence in [Session start](spec/tuner.md#session-start). A carried failure at 0 can stop the new session at a dead end for that core, as the old one did, until you fix the cause and run `sudo togi reset --core N` ([Dead ends](spec/tuner.md#dead-ends)).
 
 To start over with nothing carried, run `sudo togi reset --all` instead of `togi run`. A session written by a newer ruleset or journal schema than the installed build's is still refused: install that build again, or archive the session with `sudo togi reset --all`.
+
+## Go to Rust cutover
+
+This step is for the one-time switch from the Go build to the Rust build, and it is the exception to [section 7](#7-after-a-breaking-update): the Rust build does not archive, carry from or read a Go session. A Go journal in `/var/lib/togi` is not a session written by an earlier build that a transition can seed from; it is another build's file. Every Rust `togi run`, `status`, `events` and `watch` that finds it exits 1 with `<state dir>/events.jsonl holds another build's journal; not a Rust journal header; see docs/howto.md#go-to-rust-cutover`, reads no further, takes no lock and changes no file in the state directory ([Commands](spec/runtime.md#commands)). Rebooting into the tuning boot does not help, and `togi reset --all` is not the way out: do the move below.
+
+Cut over, as root, before the first Rust boot:
+
+1. Stop the Go build's tuning. Run `sudo systemctl stop togi.service`, and do not boot "NixOS - togi" again until step 5. A Go `togi run` still going writes to the directory you are about to move.
+2. Check that the backup name is free: `test ! -e /var/lib/togi-go && echo free`. If it prints nothing, something already sits there, perhaps a backup of an earlier attempt. Never overwrite it: choose another name for the backup and keep that name for the rollback, or stop and look at what is there.
+3. Move the Go state aside: `sudo mv -T /var/lib/togi /var/lib/togi-go`. `mv -T` fails instead of moving the directory into an existing `/var/lib/togi-go`. Nothing in it is deleted, edited or read by the Rust build, and the Go build's session, archives and `state.json` stay there as they were.
+4. Rebuild with the Rust package: set `services.togi.package = inputs.togi.packages.${pkgs.stdenv.hostPlatform.system}.togi-rs;` (the flake output named in [section 1](#1-install-the-module)), or leave it at `default` once `default` names the Rust build.
+5. Reboot and pick "NixOS - togi". The Rust build finds no `/var/lib/togi`, creates it and starts a fresh session with nothing carried over from Go ([Session start](spec/tuner.md#session-start)). Nothing converts the Go journal, so the Go session's progress is not in the new one.
+
+Roll back, as root, if the Rust build must go:
+
+1. Stop the Rust build: `sudo systemctl stop togi.service`, and do not boot "NixOS - togi" again until step 4.
+2. Move the Rust state aside, never over the Go directory and never deleting it: `sudo mv -T /var/lib/togi "/var/lib/togi-rust-$(date -u +%Y%m%dT%H%M%SZ)"`. The new name is free by construction (`mv -T` fails if it is not), and the Rust session stays there for inspection. Do not restore on top of an existing `/var/lib/togi`: `mv` would put the Go directory inside it.
+3. Restore the Go directory: `sudo test ! -e /var/lib/togi && sudo mv -T /var/lib/togi-go /var/lib/togi`. Use the backup name you chose in cutover step 2 if it was not `togi-go`.
+4. Boot the NixOS generation that holds the Go build, the one from before the cutover, from the boot menu, or set the Go package again and rebuild. Then pick "NixOS - togi". The Go build resumes its own session in the restored directory.
+
+The only state directory is `/var/lib/togi`, used by one build at a time. The backup and the aside copy are plain directories under `/var/lib`, never a second state directory for either build: no `--state-dir` and no `-rs` suffix.
 
 ## 8. When the tuning boot does not reach togi
 
