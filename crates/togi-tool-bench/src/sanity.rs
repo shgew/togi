@@ -5,7 +5,8 @@
 //! metric over a scenario's seeds. For every scenario, and for all runs together, each metric's mean over the
 //! runs both sides have is compared. A metric is flagged only when the means differ by more than its [`Band`]
 //! and by more than [`Z`] standard errors (Welch's two-sample statistic): a large difference that the seeds'
-//! own spread does not explain.
+//! own spread does not explain. A group of one run has no spread, so it is never flagged; the share of runs that
+//! concluded is flagged by its size alone.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -17,6 +18,10 @@ use serde::Deserialize;
 use crate::error::Error;
 use crate::record::{Record, Status};
 use crate::stats::float;
+
+/// The metric a run either has or lacks: a drop in the share of runs that concluded is flagged by its size alone,
+/// since a share of zeros and ones has no spread to judge it by.
+const CONCLUDED: &str = "concluded";
 
 /// A mean difference is flagged only beyond this many standard errors.
 pub const Z: f64 = 3.0;
@@ -165,68 +170,107 @@ struct Metric {
 /// every run pins down narrow ones.
 const METRICS: [Metric; 13] = [
     Metric {
-        name: "concluded",
-        band: Band { rel: 0.0, abs: 0.05 },
+        name: CONCLUDED,
+        band: Band {
+            rel: 0.0,
+            abs: 0.05,
+        },
         value: |r| Some(r.concluded),
     },
     Metric {
         name: "sim_hours",
-        band: Band { rel: 0.15, abs: 1.0 },
+        band: Band {
+            rel: 0.15,
+            abs: 1.0,
+        },
         value: |r| Some(r.sim_hours),
     },
     Metric {
         name: "first_passed_cycle_h",
-        band: Band { rel: 0.15, abs: 1.0 },
+        band: Band {
+            rel: 0.15,
+            abs: 1.0,
+        },
         value: |r| r.first_passed_cycle_h,
     },
     Metric {
         name: "passed_cycles",
-        band: Band { rel: 0.15, abs: 0.2 },
+        band: Band {
+            rel: 0.15,
+            abs: 0.2,
+        },
         value: |r| Some(r.passed_cycles),
     },
     Metric {
         name: "crashes",
-        band: Band { rel: 0.25, abs: 2.0 },
+        band: Band {
+            rel: 0.25,
+            abs: 2.0,
+        },
         value: |r| Some(r.crashes),
     },
     Metric {
         name: "trials",
-        band: Band { rel: 0.15, abs: 20.0 },
+        band: Band {
+            rel: 0.15,
+            abs: 20.0,
+        },
         value: |r| Some(r.trials),
     },
     Metric {
         name: "trial_hours",
-        band: Band { rel: 0.15, abs: 1.0 },
+        band: Band {
+            rel: 0.15,
+            abs: 1.0,
+        },
         value: |r| Some(r.trial_hours),
     },
     Metric {
         name: "hunts",
-        band: Band { rel: 0.30, abs: 1.0 },
+        band: Band {
+            rel: 0.30,
+            abs: 1.0,
+        },
         value: |r| Some(r.hunts),
     },
     Metric {
         name: "combinations",
-        band: Band { rel: 0.50, abs: 0.5 },
+        band: Band {
+            rel: 0.50,
+            abs: 0.5,
+        },
         value: |r| Some(r.combinations),
     },
     Metric {
         name: "depth",
-        band: Band { rel: 0.08, abs: 5.0 },
+        band: Band {
+            rel: 0.08,
+            abs: 5.0,
+        },
         value: |r| Some(r.depth),
     },
     Metric {
         name: "real_answer_share",
-        band: Band { rel: 0.0, abs: 0.05 },
+        band: Band {
+            rel: 0.0,
+            abs: 0.05,
+        },
         value: |r| Some(r.real_answer_share),
     },
     Metric {
         name: "hazard_max_per_h",
-        band: Band { rel: 0.25, abs: 0.02 },
+        band: Band {
+            rel: 0.25,
+            abs: 0.02,
+        },
         value: |r| Some(r.hazard_max_per_h),
     },
     Metric {
         name: "worst_r7_hazard_per_h",
-        band: Band { rel: 0.25, abs: 0.2 },
+        band: Band {
+            rel: 0.25,
+            abs: 0.2,
+        },
         value: |r| r.worst_r7_hazard_per_h,
     },
 ];
@@ -313,15 +357,16 @@ fn line(scenario: &str, metric: &Metric, rust: &[f64], go: &[f64]) -> Line {
     let (rust_mean, go_mean) = (mean(rust), mean(go));
     let diff = rust_mean - go_mean;
     let error = (variance(rust) / float(rust.len()) + variance(go) / float(go.len())).sqrt();
-    let z = if error > 0.0 {
-        diff / error
-    } else if diff == 0.0 {
+    let z = if rust.len() < 2 || go.len() < 2 || diff == 0.0 {
         0.0
+    } else if error > 0.0 {
+        diff / error
     } else {
         f64::INFINITY.copysign(diff)
     };
     let Band { rel, abs } = metric.band;
-    let flagged = diff.abs() > abs && diff.abs() > rel * go_mean.abs() && z.abs() > Z;
+    let beyond_spread = metric.name == CONCLUDED || z.abs() > Z;
+    let flagged = diff.abs() > abs && diff.abs() > rel * go_mean.abs() && beyond_spread;
     Line {
         scenario: scenario.to_owned(),
         metric: metric.name,

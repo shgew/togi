@@ -26,7 +26,12 @@ pub enum Status {
 impl Status {
     /// The status of a simulator that exited with `exit`, given what its session left behind: whether its journal
     /// holds events, whether one is a dead end, and whether its log reports one.
-    pub const fn of(exit: i32, has_events: bool, journal_dead_end: bool, log_dead_end: bool) -> Self {
+    pub const fn of(
+        exit: i32,
+        has_events: bool,
+        journal_dead_end: bool,
+        log_dead_end: bool,
+    ) -> Self {
         match exit {
             0 if has_events => Self::Concluded,
             1 if journal_dead_end || log_dead_end => Self::DeadEnd,
@@ -146,8 +151,7 @@ pub fn write(path: &Path, records: &[Record]) -> Result<(), Error> {
     {
         let mut out = BufWriter::new(file.as_file_mut());
         for record in records {
-            serde_json::to_writer(&mut out, record)
-                .map_err(|error| failed(error.into()))?;
+            serde_json::to_writer(&mut out, record).map_err(|error| failed(error.into()))?;
             out.write_all(b"\n").map_err(failed)?;
         }
         out.flush().map_err(failed)?;

@@ -71,7 +71,7 @@ struct RunArgs {
     /// Run every session instead of reusing cached ones.
     #[arg(long)]
     no_cache: bool,
-    /// The simulator command; default the togi-tool-sim beside this executable.
+    /// Use this simulator command instead of building togi-tool-sim from the tree.
     #[arg(long, value_name = "FILE")]
     sim: Option<PathBuf>,
 }
@@ -82,7 +82,11 @@ struct SanityArgs {
     #[arg(long, value_name = "FILE")]
     records: PathBuf,
     /// The Go bench's recorded scores.
-    #[arg(long, value_name = "FILE", default_value = "tools/bench/baseline.jsonl")]
+    #[arg(
+        long,
+        value_name = "FILE",
+        default_value = "tools/bench/baseline.jsonl"
+    )]
     go: PathBuf,
 }
 
@@ -118,7 +122,9 @@ fn bench(args: RunArgs) -> ExitCode {
     } else {
         match args.cache.or_else(default_cache) {
             Some(cache) => Some(cache),
-            None => return fail(&"no cache directory: set HOME or XDG_CACHE_HOME, or pass --cache"),
+            None => {
+                return fail(&"no cache directory: set HOME or XDG_CACHE_HOME, or pass --cache");
+            }
         }
     };
     let options = Options {
@@ -149,7 +155,11 @@ fn bench(args: RunArgs) -> ExitCode {
         let _ = writeln!(stderr, "togi-tool-bench: {warning}");
     }
     if let Some(kept) = &report.kept {
-        let _ = writeln!(stderr, "togi-tool-bench: kept the runs in {}", kept.display());
+        let _ = writeln!(
+            stderr,
+            "togi-tool-bench: kept the runs in {}",
+            kept.display()
+        );
     }
     match report.write(&mut io::stdout().lock()) {
         Ok(()) => ExitCode::SUCCESS,

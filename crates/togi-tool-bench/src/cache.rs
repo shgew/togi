@@ -187,21 +187,19 @@ impl Costs {
         }
         let mut data = self.data();
         data.latest.insert(session.to_owned(), wall);
-        let at = match data.scopes.iter().position(|s| s.key == scope) {
-            Some(at) => at,
-            None => {
-                data.scopes.insert(
-                    0,
-                    CostScope {
-                        key: scope.to_owned(),
-                        wall: BTreeMap::new(),
-                    },
-                );
-                data.scopes.truncate(KEPT_COST_SCOPES);
-                0
-            }
-        };
-        data.scopes[at].wall.insert(session.to_owned(), wall);
+        if !data.scopes.iter().any(|s| s.key == scope) {
+            data.scopes.insert(
+                0,
+                CostScope {
+                    key: scope.to_owned(),
+                    wall: BTreeMap::new(),
+                },
+            );
+            data.scopes.truncate(KEPT_COST_SCOPES);
+        }
+        if let Some(entry) = data.scopes.iter_mut().find(|s| s.key == scope) {
+            entry.wall.insert(session.to_owned(), wall);
+        }
     }
 
     pub fn get(&self, scope: &str, session: &str) -> Option<f64> {

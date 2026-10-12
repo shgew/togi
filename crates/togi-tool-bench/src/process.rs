@@ -65,7 +65,11 @@ pub(crate) struct Finished {
     clippy::disallowed_methods,
     reason = "the bench's one call site that spawns the simulator"
 )]
-pub(crate) fn run(fleet: &Fleet, command: &mut Command, limit: Duration) -> Result<Finished, RunError> {
+pub(crate) fn run(
+    fleet: &Fleet,
+    command: &mut Command,
+    limit: Duration,
+) -> Result<Finished, RunError> {
     if fleet.cancelled() {
         return Err(RunError::Interrupted);
     }

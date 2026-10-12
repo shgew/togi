@@ -253,11 +253,7 @@ fn comparison_line(w: &mut impl io::Write, label: &str, c: &Comparison) -> io::R
 
 /// Writes the comparison of `candidate` with `baseline`: a line per scenario and the verdict line. A candidate or
 /// baseline run without a match, among the baseline runs of the candidate's splits, is warned about.
-pub fn report(
-    w: &mut impl io::Write,
-    candidate: &[Record],
-    baseline: &[Record],
-) -> io::Result<()> {
+pub fn report(w: &mut impl io::Write, candidate: &[Record], baseline: &[Record]) -> io::Result<()> {
     writeln!(
         w,
         "comparison: overall ratio weights scenarios equally; CI resamples pairs within each scenario ({RESAMPLES}, fixed seed). V1=lost conclusion; V2=hazard increase >0.01/h; V3=mean depth increase >1 or pair >5; V4=target ratio >1. Positive depth delta is shallower."
@@ -274,7 +270,10 @@ pub fn report(
     }
     let pairs = pairing(candidate, baseline);
     let splits: BTreeSet<_> = candidate.iter().map(|r| r.split).collect();
-    let comparable = baseline.iter().filter(|r| splits.contains(&r.split)).count();
+    let comparable = baseline
+        .iter()
+        .filter(|r| splits.contains(&r.split))
+        .count();
     if pairs.len() != candidate.len() || pairs.len() != comparable {
         writeln!(
             w,

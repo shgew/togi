@@ -200,9 +200,7 @@ impl Suite {
                         .map(|name| machines.load(&scenario.name, name, &self.base))
                         .transpose()?;
                     let replay = match (&machine, scenario.replay) {
-                        (Some(machine), true) => {
-                            Some(machines.replay(&scenario.name, machine)?)
-                        }
+                        (Some(machine), true) => Some(machines.replay(&scenario.name, machine)?),
                         (None, true) => {
                             return Err(Error::ReplayWithoutMachine {
                                 scenario: scenario.name.clone(),
@@ -366,7 +364,11 @@ impl Machines {
         for file in files {
             inputs.push(sum(file, base)?);
         }
-        if let Some(facts) = definition.facts.as_deref().filter(|facts| !facts.is_empty()) {
+        if let Some(facts) = definition
+            .facts
+            .as_deref()
+            .filter(|facts| !facts.is_empty())
+        {
             let facts = path.parent().unwrap_or_else(|| Path::new("")).join(facts);
             inputs.push(sum(facts, base)?);
         }
@@ -403,7 +405,13 @@ impl Machines {
 }
 
 fn sum(path: PathBuf, base: &Path) -> Result<(PathBuf, Option<String>), Error> {
-    let name = path.strip_prefix(base).unwrap_or(&path).to_path_buf();
+    let resolved = base.canonicalize().ok();
+    let name = path
+        .strip_prefix(base)
+        .ok()
+        .or_else(|| path.strip_prefix(resolved.as_deref()?).ok())
+        .unwrap_or(&path)
+        .to_path_buf();
     match fs::read(&path) {
         Ok(bytes) => Ok((name, Some(hex(&Sha256::digest(bytes))))),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok((name, None)),

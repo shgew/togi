@@ -60,15 +60,14 @@ pub enum Error {
         scenario: String,
         seed: u64,
     },
-    #[error(
-        "find the simulator: {}: {source}; build it with `cargo build --release -p togi-tool-sim` or name it with --sim",
-        path.display()
-    )]
+    #[error("read the simulator {}: {source}", path.display())]
     NoSimulator {
         path: PathBuf,
         #[source]
         source: io::Error,
     },
+    #[error("build the simulator: {message}")]
+    BuildSimulator { message: String },
     #[error("git {command}: {message}")]
     Git { command: String, message: String },
     #[error("{run}: {source}")]

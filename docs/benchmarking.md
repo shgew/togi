@@ -379,6 +379,23 @@ The Rust crate `togi-tool-forecast` defines its own record, which the Rust `benc
 
 `--split`, `--baseline` and `--same` are usage errors with `--forecast`. `--keep DIR` retains every run directory under a new directory in DIR. Without it, each successful run is deleted as it finishes; a forecast whose runs failed keeps the failed runs and prints where, and a forecast that fails after every run succeeded, such as on writing `--out`, removes its run directory and prints none.
 
+## The Rust bench
+
+`just bench-rs` runs `togi-tool-bench`, the Rust port of the runs, metrics, summary, comparison and cache of `tools/bench` ([#821](https://github.com/shgew/togi/issues/821)); `just bench` still runs the Go bench. The gates, `--same`, `--smoke` and `--forecast` stay with the Go bench until [#822](https://github.com/shgew/togi/issues/822) and [#823](https://github.com/shgew/togi/issues/823).
+
+```sh
+just bench-rs --split dev --baseline BEFORE.jsonl --out AFTER.jsonl
+just bench-rs sanity --records AFTER.jsonl
+```
+
+The suite is `tools/bench/suite.json`, read by the same rules as the Go bench (strict keys, a machine file per scenario, a replay oracle for `replay: true`). A run builds `togi-tool-sim` from this tree with `cargo build --release --locked` and starts it as a subprocess for every run with the flags `just sim-rs` takes; `--sim PATH` runs a given binary instead. `--jobs` (default: the CPU count) bounds the simulators at once, `--timeout SECONDS` is the hang safety limit of one run (an overrun is a harness error, not a run outcome), and `--max-boots` (default 1000) is the boot cap that makes a run censored. `--keep DIR` retains every run directory and skips the cache. The records come out in suite order whatever `--jobs` is, so they do not depend on scheduling. Ctrl-C stops the simulators that are running, discards kept run directories and exits non-zero.
+
+The record is the Rust bench's own JSON Lines format, not the Go one: every field is required, an unknown key is refused, `final_profile` is an array of per-core offsets, `hazard_per_h` an object by regime, `model_check` counts `eligible_groups`, `flagged_groups` and `idle_failures` (the flagged groups themselves are in the printed report), and `evidence` and `ruleset` are the build's `togi_tuner::EVIDENCE_EPOCH` and `RULESET`. A run's real answers come from the same extraction as the facts extract, so a decisive trial counts whether or not its `trial.start` was journaled; Go counted only started trials. The comparison, summary and verdict rules (V1–V4, the equal-scenario-weight bootstrap seeded with 1, 10000 resamples) are Go's. A record file with a run twice, or of the Go format, is refused: `--baseline` takes Rust records only, and the committed `tools/bench/baseline.jsonl` stays Go's.
+
+The cache holds finished records under `$XDG_CACHE_HOME/togi/bench-rs` (or `~/.cache/togi/bench-rs`; `--cache DIR` and `--no-cache` override), a directory per tree key and the eight most recently used kept. The tree key binds the simulator binary's SHA-256, the bench's own executable's SHA-256 and `--max-boots`; an entry also binds the suite file's bytes, the run's scenario, split and seed, the replay flag, and the bytes of the machine file, every file it extends and its facts extract. Any change misses. A cache hit restamps the commit and dirty flag, so a cached record is the one a fresh run would write.
+
+`togi-tool-bench sanity --records FILE` compares a Rust run of the whole suite with the scores in `tools/bench/baseline.jsonl`. The two benches draw from different random streams, so no seed equals its Go run; what must agree is each metric's mean over a scenario's seeds. A line is flagged when the means differ by more than the metric's absolute floor and its relative band and by more than 3 standard errors (Welch), so only a difference the seeds' spread does not explain counts; a lost conclusion is flagged by its size alone. The bands are in `crates/togi-tool-bench/src/sanity.rs`. It exits 1 when any line is flagged: a flag is a question to answer, not a gate.
+
 ## Checking a machine against real evidence
 
 A machine file may declare `"facts": "../facts/target.jsonl.gz"`, resolved relative to the machine JSON file. Every `target-fit-*.json` declares the committed target-machine extract. Files without `facts` are not checked.

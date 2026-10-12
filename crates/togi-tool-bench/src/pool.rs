@@ -72,7 +72,11 @@ mod tests {
         let started = AtomicUsize::new(0);
         let errors = run(1, &[3, 1, 2, 0], |i| {
             started.fetch_add(1, Ordering::SeqCst);
-            if i == 1 { Err(format!("job {i}")) } else { Ok(()) }
+            if i == 1 {
+                Err(format!("job {i}"))
+            } else {
+                Ok(())
+            }
         });
         assert_eq!(errors, [(1, "job 1".to_owned())]);
         assert_eq!(started.load(Ordering::SeqCst), 2);
@@ -82,7 +86,7 @@ mod tests {
     fn errors_are_sorted_by_index_whatever_the_order_they_occurred_in() {
         let errors = run(1, &[], |_| Err::<(), _>(()));
         assert!(errors.is_empty());
-        let errors = run(4, &[5, 4], |i| Err::<(), _>(i));
+        let errors = run(4, &[5, 4], Err::<(), _>);
         assert!(errors.windows(2).all(|pair| pair[0].0 < pair[1].0));
         assert!(!errors.is_empty());
     }

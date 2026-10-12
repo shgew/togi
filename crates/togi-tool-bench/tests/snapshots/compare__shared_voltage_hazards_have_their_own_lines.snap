@@ -1,0 +1,16 @@
+---
+source: crates/togi-tool-bench/tests/compare.rs
+expression: out
+---
+summary: time, crashes and depth include all run statuses; hazard is steady-state failures/hour with all cores loaded.
+summary: censored runs reached the simulator's boot cap without concluding; their time and crashes are lower bounds.
+scenario          runs concluded censored median_h mean_h median_crashes mean_depth max_hazard/h real_answer_share
+summary: worst_r7_hazard/h is the maximum shared-voltage final-profile hazard over every R7 workload, full CCD loads, request-ordered partials with at least two cores, and all-core; absent on machines without a shared rail.
+shared               3         3        0    2.000    2.000            0.0       0.00     0.000000          0.000000
+shared worst_r7_hazard/h=0.500000 worst_r7_runs=2
+TOTAL                3         3        0    2.000    2.000            0.0       0.00     0.000000          0.000000
+TOTAL worst_r7_hazard/h=0.500000 worst_r7_runs=2
+comparison: overall ratio weights scenarios equally; CI resamples pairs within each scenario (10000, fixed seed). V1=lost conclusion; V2=hazard increase >0.01/h; V3=mean depth increase >1 or pair >5; V4=target ratio >1. Positive depth delta is shallower.
+comparison: worst R7 hazard deltas use only pairs with shared-voltage metrics on both sides; missing is unavailable, not zero. Diagnostic only, not a verdict gate.
+comparison: WARNING 1 candidate and 1 baseline runs in the same splits unmatched; 0 paired
+verdict: NEUTRAL ratio=1.000 ci=[1.000,1.000] pairs=0 timed=0 faster=0 slower=0 equal=0 crash_delta=0.000 depth_delta=0.000 max_hazard_delta=0.000000 real_answer_share=0.000000 baseline_real_answer_share=0.000000 violations=V1:0,V2:0,V3:0,V4:0

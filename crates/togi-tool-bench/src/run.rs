@@ -41,7 +41,7 @@ pub struct Options {
     pub max_boots: NonZeroU32,
     /// The cache directory of finished runs and their costs; none runs every session.
     pub cache: Option<PathBuf>,
-    /// The simulator command; none takes the one beside the running executable.
+    /// The simulator command; none builds `togi-tool-sim` from the tree.
     pub simulator: Option<PathBuf>,
 }
 
@@ -73,7 +73,12 @@ impl Report {
         if let Some(baseline) = &self.baseline {
             compare::report(w, &self.records, baseline)?;
         }
-        writeln!(w, "cache: {} of {} runs cached", self.cached, self.records.len())?;
+        writeln!(
+            w,
+            "cache: {} of {} runs cached",
+            self.cached,
+            self.records.len()
+        )?;
         writeln!(w, "harness_wall_s={:.3}", self.wall.as_secs_f64())
     }
 }
@@ -422,7 +427,7 @@ fn run_root(keep: Option<&Path>) -> Result<Root, Error> {
 }
 
 /// Sets each record's share of real answers over its whole scenario.
-pub(crate) fn set_scenario_shares(records: &mut [Record]) {
+pub fn set_scenario_shares(records: &mut [Record]) {
     let mut totals: BTreeMap<String, (u32, u32)> = BTreeMap::new();
     for record in records.iter() {
         let total = totals.entry(record.scenario.clone()).or_default();

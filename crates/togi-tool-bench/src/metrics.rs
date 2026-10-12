@@ -14,7 +14,6 @@ use togi_sim::{Load, Model};
 use crate::error::RunError;
 use crate::stats::share;
 
-const HALF_CCD: usize = 8;
 const CORES_PER_CCD: usize = 8;
 const R7_CORES: usize = 16;
 
@@ -158,11 +157,7 @@ fn targets(profile: &PerCore<ObservedOffset>, cores: usize) -> Vec<TargetOffset>
         .collect()
 }
 
-fn real_answers(
-    events: &[Event],
-    model: &Model,
-    replay: Option<&Replay>,
-) -> Result<u32, RunError> {
+fn real_answers(events: &[Event], model: &Model, replay: Option<&Replay>) -> Result<u32, RunError> {
     let Some(replay) = replay else {
         return Ok(0);
     };
@@ -210,7 +205,7 @@ fn worst_r7_hazard_per_h(model: &Model, profile: &[TargetOffset]) -> Result<Opti
     let mut worst = 0.0_f64;
     for workload in workloads(Regime::R7) {
         for ccd in 0..R7_CORES / CORES_PER_CCD {
-            let mut loaded: Vec<CoreId> = (0..HALF_CCD)
+            let mut loaded: Vec<CoreId> = (0..CORES_PER_CCD)
                 .filter_map(|index| core(ccd * CORES_PER_CCD + index))
                 .collect();
             while loaded.len() >= 2 {
@@ -249,4 +244,75 @@ pub(crate) fn next_partial(cores: &[CoreId], lanes: &[f32; R7_CORES]) -> Vec<Cor
         .copied()
         .filter(|core| f64::from(lanes[core.index()]) < top - TIE_V)
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cores(ids: &[i64]) -> Vec<CoreId> {
+        ids.iter().map(|&id| CoreId::new(id).unwrap()).collect()
+    }
+
+    fn lanes(requests: &[(usize, f32)]) -> [f32; R7_CORES] {
+        let mut lanes = [0.0; R7_CORES];
+        for &(core, request) in requests {
+            lanes[core] = request;
+        }
+        lanes
+    }
+
+    fn ids(cores: &[CoreId]) -> Vec<u8> {
+        cores.iter().map(|core| core.get()).collect()
+    }
+
+    #[test]
+    fn the_partial_chain_drops_one_tie_group_at_a_time_down_to_two_cores() {
+        let requests = lanes(&[
+            (0, 1.3),
+            (1, 1.2995),
+            (2, 1.2),
+            (3, 1.14),
+            (4, 1.13),
+            (5, 1.12),
+            (6, 1.11),
+            (7, 1.1),
+        ]);
+        let mut loaded = cores(&[0, 1, 2, 3, 4, 5, 6, 7]);
+        let mut chain = Vec::new();
+        while loaded.len() >= 2 {
+            chain.push(ids(&loaded));
+            loaded = next_partial(&loaded, &requests);
+        }
+        assert_eq!(
+            chain,
+            [
+                vec![0, 1, 2, 3, 4, 5, 6, 7],
+                vec![2, 3, 4, 5, 6, 7],
+                vec![3, 4, 5, 6, 7],
+                vec![4, 5, 6, 7],
+                vec![5, 6, 7],
+                vec![6, 7],
+            ]
+        );
+        assert_eq!(ids(&loaded), [7]);
+    }
+
+    #[test]
+    fn a_tie_is_never_split_to_reach_a_two_core_load() {
+        let requests = lanes(&[(0, 1.3), (1, 1.2995), (7, 1.1)]);
+        assert_eq!(ids(&next_partial(&cores(&[0, 1, 7]), &requests)), [7]);
+    }
+
+    #[test]
+    fn negative_requests_still_shed_their_top_group() {
+        let requests = lanes(&[(0, -0.022), (1, -0.0225), (2, -0.05)]);
+        assert_eq!(ids(&next_partial(&cores(&[0, 1, 2]), &requests)), [2]);
+    }
+
+    #[test]
+    fn all_cores_within_the_tie_leave_nothing() {
+        let requests = lanes(&[(0, 1.0), (1, 1.0005)]);
+        assert!(next_partial(&cores(&[0, 1]), &requests).is_empty());
+    }
 }

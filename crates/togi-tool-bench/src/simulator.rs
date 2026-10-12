@@ -47,12 +47,11 @@ impl Session {
 }
 
 impl Simulator {
-    /// The simulator at `explicit`, or the `togi-tool-sim` beside the running executable, where a workspace build
-    /// puts it.
+    /// The simulator at `explicit`, or the `togi-tool-sim` built from this tree.
     pub fn locate(explicit: Option<&Path>) -> Result<Self, Error> {
         let binary = match explicit {
             Some(path) => path.to_path_buf(),
-            None => beside_current_exe(),
+            None => build()?,
         };
         let bytes = fs::read(&binary).map_err(|source| Error::NoSimulator {
             path: binary.clone(),
@@ -80,7 +79,9 @@ impl Simulator {
         max_boots: NonZeroU32,
         limit: Duration,
     ) -> Result<Session, RunError> {
-        let dir = root.join(&spec.scenario).join(format!("{}-{}", spec.split, spec.seed));
+        let dir = root
+            .join(&spec.scenario)
+            .join(format!("{}-{}", spec.split, spec.seed));
         fs::create_dir_all(&dir).map_err(|source| RunError::Directory {
             path: dir.clone(),
             source,
@@ -108,10 +109,7 @@ impl Simulator {
         if spec.replay.is_some() {
             command.arg("--replay-facts");
         }
-        command
-            .stdin(Stdio::null())
-            .stdout(log)
-            .stderr(again);
+        command.stdin(Stdio::null()).stdout(log).stderr(again);
         let finished = process::run(fleet, &mut command, limit)?;
         let events = match Recording::read(&dir.join(JOURNAL)) {
             Ok(recording) => recording.into_events(),
@@ -135,9 +133,46 @@ impl Simulator {
     }
 }
 
-fn beside_current_exe() -> PathBuf {
-    std::env::current_exe()
-        .ok()
-        .and_then(|exe| exe.parent().map(|dir| dir.join(BINARY)))
-        .unwrap_or_else(|| PathBuf::from(BINARY))
+/// Builds `togi-tool-sim` from the tree the bench runs in, as the Go bench builds `tools/sim`, and returns the
+/// binary cargo reports. Cargo's own progress goes to this process's stderr.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the bench builds the simulator it benchmarks with cargo"
+)]
+fn build() -> Result<PathBuf, Error> {
+    let failed = |message: String| Error::BuildSimulator { message };
+    let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+    let output = Command::new(cargo)
+        .args([
+            "build",
+            "--release",
+            "--locked",
+            "-p",
+            BINARY,
+            "--message-format=json-render-diagnostics",
+        ])
+        .stdin(Stdio::null())
+        .stderr(Stdio::inherit())
+        .output()
+        .map_err(|error| failed(format!("run cargo: {error}")))?;
+    if !output.status.success() {
+        return Err(failed(format!("cargo build {}", output.status)));
+    }
+    executable(&output.stdout)
+        .ok_or_else(|| failed(format!("cargo reported no {BINARY} executable")))
+}
+
+/// The executable of the `togi-tool-sim` binary in cargo's JSON build messages.
+fn executable(messages: &[u8]) -> Option<PathBuf> {
+    messages
+        .split(|&byte| byte == b'\n')
+        .filter_map(|line| serde_json::from_slice::<serde_json::Value>(line).ok())
+        .filter(|message| message["reason"] == "compiler-artifact")
+        .filter(|message| message["target"]["name"] == BINARY)
+        .filter(|message| {
+            message["target"]["kind"]
+                .as_array()
+                .is_some_and(|kinds| kinds.iter().any(|kind| kind == "bin"))
+        })
+        .find_map(|message| message["executable"].as_str().map(PathBuf::from))
 }

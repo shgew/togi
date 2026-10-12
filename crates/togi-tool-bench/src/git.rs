@@ -100,12 +100,18 @@ mod tests {
     #[test]
     fn the_records_file_alone_does_not_make_the_tree_dirty() {
         assert!(!dirty_at(b"?? out.jsonl\0", Some("/repo/out.jsonl")));
-        assert!(dirty_at(b"?? out.jsonl\0 M a.rs\0", Some("/repo/out.jsonl")));
+        assert!(dirty_at(
+            b"?? out.jsonl\0 M a.rs\0",
+            Some("/repo/out.jsonl")
+        ));
     }
 
     #[test]
     fn a_rename_counts_its_source_path_too() {
         assert!(dirty_at(b"R  new.rs\0old.rs\0", Some("/repo/new.rs")));
-        assert!(!dirty_at(b"R  out.jsonl\0out.jsonl\0", Some("/repo/out.jsonl")));
+        assert!(!dirty_at(
+            b"R  out.jsonl\0out.jsonl\0",
+            Some("/repo/out.jsonl")
+        ));
     }
 }
