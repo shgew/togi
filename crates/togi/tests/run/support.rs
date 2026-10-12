@@ -82,6 +82,9 @@ pub(crate) struct Grub(Arc<Mutex<GrubState>>);
 pub(crate) struct GrubState {
     pub(crate) values: BTreeMap<String, String>,
     pub(crate) cleared: u32,
+    pub(crate) fail_set: bool,
+    pub(crate) fail_clear: bool,
+    pub(crate) log: Vec<&'static str>,
 }
 
 impl Grub {
@@ -104,6 +107,10 @@ impl Environment for Grub {
     }
 
     fn set(&mut self, values: &[(&str, &str)]) -> io::Result<()> {
+        self.state().log.push("set");
+        if self.state().fail_set {
+            return Err(io::Error::other("environment block is read-only"));
+        }
         for (name, value) in values {
             self.state()
                 .values
@@ -123,7 +130,11 @@ impl Environment for Grub {
 impl Bootloader for Grub {
     fn clear_saved_entry(&mut self) -> io::Result<SavedEntry> {
         let mut state = self.state();
+        state.log.push("clear");
         state.cleared += 1;
+        if state.fail_clear {
+            return Err(io::Error::other("grub-editenv failed"));
+        }
         let before = state.values.remove("saved_entry").unwrap_or_default();
         Ok(SavedEntry {
             before,
@@ -149,6 +160,8 @@ pub(crate) struct Fake {
     pub(crate) sim: Simulator,
     pub(crate) dir: PathBuf,
     pub(crate) panic_in_platform: bool,
+    pub(crate) policy: Policy,
+    pub(crate) open_error: bool,
     pub(crate) real_stderr: bool,
     temp: Option<TempDir>,
     pub(crate) lock: PathBuf,
@@ -183,6 +196,8 @@ impl Fake {
             lock: dir.join("togi.lock"),
             dir: dir.to_owned(),
             panic_in_platform: false,
+            policy: Policy::Private,
+            open_error: false,
             real_stderr: false,
             temp: None,
             supported: true,
@@ -251,7 +266,7 @@ impl System for Fake {
 
     fn host_lock(&self) -> (&Path, Policy) {
         self.calls.borrow_mut().push("host_lock");
-        (&self.lock, Policy::Private)
+        (&self.lock, self.policy)
     }
 
     fn boot_id(&self) -> Result<BootId, togi_detect::Error> {
@@ -274,6 +289,12 @@ impl System for Fake {
 
     fn open_machine(&self, _: &Config, _: &Path, _: &HostLock) -> Result<Machine, Error> {
         self.opened.set(self.opened.get() + 1);
+        if self.open_error {
+            return Err(Error::NeedsRoot {
+                operation: "open the SMU driver",
+                uid: 1000,
+            });
+        }
         Ok((self.wrap)(self.sim.seams()))
     }
 
@@ -346,5 +367,50 @@ pub(crate) fn interrupt_on_first_write(machine: Machine) -> Machine {
             sent: false,
         }),
         ..machine
+    }
+}
+
+/// A host whose identity never validates, counting how often the BIOS context is read anyway.
+pub(crate) struct UnvalidatedHost {
+    pub(crate) inner: Box<dyn togi_machine::Host>,
+    pub(crate) bios_reads: Arc<std::sync::atomic::AtomicU32>,
+}
+
+impl togi_machine::Host for UnvalidatedHost {
+    fn boot_id(&mut self) -> Result<BootId, MachineError> {
+        self.inner.boot_id()
+    }
+
+    fn topology(&mut self) -> Result<Vec<togi_machine::CoreInfo>, MachineError> {
+        self.inner.topology()
+    }
+
+    fn validate_smu(&mut self) -> Result<SmuValidated, MachineError> {
+        Err(MachineError::Other("unsupported CPU model".into()))
+    }
+
+    fn bios_context(&mut self) -> Result<togi_machine::BiosContext, MachineError> {
+        self.bios_reads
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.inner.bios_context()
+    }
+
+    fn ranking(
+        &mut self,
+    ) -> Result<Vec<togi_machine::CoreRank>, togi_machine::Partial<Vec<togi_machine::CoreRank>>>
+    {
+        self.inner.ranking()
+    }
+
+    fn preflight(&mut self) -> Vec<togi_machine::Check> {
+        vec![togi_machine::Check {
+            name: "cpu".to_owned(),
+            detail: "unsupported CPU model".to_owned(),
+            ok: false,
+        }]
+    }
+
+    fn watchdog(&mut self) -> togi_machine::Check {
+        self.inner.watchdog()
     }
 }

@@ -7,10 +7,10 @@
 //! every exit; a panic in it comes back with that cleanup done, and is resumed after the dashboard, the
 //! journal and the host lock are put away, in that order.
 
-use std::fmt::Display;
+use std::fmt::{self, Display};
 use std::io::{self, Write};
 use std::num::NonZeroU32;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::LazyLock;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -20,7 +20,9 @@ use jiff::tz::TimeZone;
 use togi_config::{Config, LoadError};
 use togi_defect::KNOWN_DEFECTS;
 use togi_hostlock::HostLock;
-use togi_journal::{Operation, Refusal, StateDir, Verdict};
+use togi_journal::{
+    Build, FileError, Operation, ReadError, Recording, Refusal, StateDir, UnknownKind, Verdict,
+};
 use togi_machine::CancellationToken;
 use togi_render::{Renderer, Style};
 use togi_session::{
@@ -132,11 +134,28 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
         Err(error) => return failure(ctx, Exit::Error, error),
     };
     match dir.live_build() {
-        Ok(Some(recorded)) => {
-            if let Verdict::Refuse(refusal) = build.verdict(&recorded, Operation::Resume) {
-                return refuse(ctx, &refusal, bootloader.as_deref_mut(), renderer, None);
+        Ok(Some(recorded)) => match build.verdict(&recorded, Operation::Resume) {
+            Verdict::Refuse(refusal) => {
+                return refuse(
+                    ctx,
+                    Refused::Stamp(&refusal),
+                    bootloader.as_deref_mut(),
+                    renderer,
+                    None,
+                );
             }
-        }
+            Verdict::Use => {
+                if let Some(unknown) = unknown_kind(&ctx.state_dir.join(JOURNAL_FILE)) {
+                    let refused = Refused::Kind {
+                        unknown: &unknown,
+                        written_by: &recorded,
+                        this: &build,
+                    };
+                    return refuse(ctx, refused, bootloader.as_deref_mut(), renderer, None);
+                }
+            }
+            Verdict::Archive => {}
+        },
         Ok(None) => {}
         Err(error) => return failure(ctx, Exit::Error, error),
     }
@@ -190,7 +209,7 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
         Err(PrepareError::Refused(refusal)) => {
             return refuse(
                 ctx,
-                &refusal,
+                Refused::Stamp(&refusal),
                 bootloader.as_deref_mut(),
                 renderer,
                 Some(&lock),
@@ -296,12 +315,12 @@ fn failure(ctx: &mut Context<'_>, exit: Exit, message: impl Display) -> Exit {
 /// clears the saved boot entry, under the host lock, without appending anything. Never reboots.
 fn refuse(
     ctx: &mut Context<'_>,
-    refusal: &Refusal,
+    refused: Refused<'_>,
     bootloader: Option<&mut (dyn Bootloader + '_)>,
     renderer: Renderer,
     held: Option<&HostLock>,
 ) -> Exit {
-    let line = format!("togi run: {refusal}");
+    let line = format!("togi run: {refused}");
     let _ = writeln!(ctx.err, "{}", renderer.text(Style::RedBold, &line));
     let Some(bootloader) = bootloader else {
         return Exit::Incompatible;
@@ -317,7 +336,7 @@ fn refuse(
             Err(error) => return failure(ctx, Exit::Error, error),
         };
     }
-    let reason = LeaveReason::new("journal incompatible", RestartCount::ZERO)
+    let reason = LeaveReason::new(refused.leave_reason(), RestartCount::ZERO)
         .and_then(|reason| togi_tuningboot::write_reason(bootloader, &reason));
     if let Err(error) = reason {
         let _ = writeln!(ctx.err, "togi: persist GRUB leave reason: {error}");
@@ -338,6 +357,57 @@ fn refuse(
         }
     }
     Exit::Incompatible
+}
+
+const JOURNAL_FILE: &str = "events.jsonl";
+
+/// Why a journal may not be appended to.
+#[derive(Clone, Copy)]
+enum Refused<'a> {
+    /// Its build stamp is newer than this build's.
+    Stamp(&'a Refusal),
+    /// A current journal holds an event kind this build does not know.
+    Kind {
+        unknown: &'a UnknownKind,
+        written_by: &'a Build,
+        this: &'a Build,
+    },
+}
+
+impl Refused<'_> {
+    const fn leave_reason(&self) -> &'static str {
+        match self {
+            Self::Stamp(_) => "journal incompatible",
+            Self::Kind { .. } => "unknown event kind",
+        }
+    }
+}
+
+impl Display for Refused<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Stamp(refusal) => write!(f, "{refusal}"),
+            Self::Kind {
+                unknown,
+                written_by,
+                this,
+            } => write!(
+                f,
+                "the journal holds an event this build cannot read ({unknown}); it was written by {written_by} and this is {this}; install the build that wrote it"
+            ),
+        }
+    }
+}
+
+/// The unknown kind a readable current journal holds, if it holds one.
+fn unknown_kind(path: &Path) -> Option<UnknownKind> {
+    match Recording::read(path) {
+        Err(FileError {
+            source: ReadError::UnknownKind { source, .. },
+            ..
+        }) => Some(source),
+        _ => None,
+    }
 }
 
 /// What the session wrote to its report while the dashboard was up, kept for after it.

@@ -6,6 +6,7 @@
 //! failing or panicking, in which case `run` falls back to event lines and the session goes on.
 
 use std::io::{self, Write};
+use std::os::fd::BorrowedFd;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, PoisonError};
@@ -57,38 +58,43 @@ pub trait Surface: Send + Sync {
 }
 
 /// The terminal's input with echo and line buffering off. Dropping it puts the previous settings back.
-struct QuietInput {
+struct QuietInput<'a> {
+    fd: BorrowedFd<'a>,
     saved: Termios,
 }
 
-impl QuietInput {
-    fn enter() -> io::Result<Option<Self>> {
-        let stdin = rustix::stdio::stdin();
-        let Ok(saved) = tcgetattr(stdin) else {
+impl<'a> QuietInput<'a> {
+    /// Turns echo and line buffering off on `fd`, leaving its signal keys on; `None` when it is not a terminal.
+    fn enter(fd: BorrowedFd<'a>) -> io::Result<Option<Self>> {
+        let Ok(saved) = tcgetattr(fd) else {
             return Ok(None);
         };
         let mut quiet = saved.clone();
         quiet.local_modes &= !(LocalModes::ECHO | LocalModes::ICANON);
-        tcsetattr(stdin, OptionalActions::Flush, &quiet)?;
-        Ok(Some(Self { saved }))
+        tcsetattr(fd, OptionalActions::Flush, &quiet)?;
+        Ok(Some(Self { fd, saved }))
     }
 }
 
-impl Drop for QuietInput {
+impl Drop for QuietInput<'_> {
     fn drop(&mut self) {
-        let _ = tcsetattr(rustix::stdio::stdin(), OptionalActions::Flush, &self.saved);
+        let _ = tcsetattr(self.fd, OptionalActions::Flush, &self.saved);
     }
 }
 
 /// Drops what typed ahead of a question, so only an answer typed after it counts.
 pub fn discard_typed_ahead() {
-    let _ = tcflush(rustix::stdio::stdin(), QueueSelector::IFlush);
+    discard_on(rustix::stdio::stdin());
+}
+
+fn discard_on(fd: BorrowedFd<'_>) {
+    let _ = tcflush(fd, QueueSelector::IFlush);
 }
 
 struct Showing {
     stop: Stop,
     thread: JoinHandle<()>,
-    quiet: Option<QuietInput>,
+    quiet: Option<QuietInput<'static>>,
 }
 
 /// Starts the dashboard and ends it on every exit.
@@ -128,7 +134,7 @@ impl Dashboard {
         if showing.is_some() {
             return;
         }
-        let quiet = QuietInput::enter().ok().flatten();
+        let quiet = QuietInput::enter(rustix::stdio::stdin()).ok().flatten();
         let stop = Stop::default();
         self.visible.store(true, Ordering::SeqCst);
         let surface = Arc::clone(&self.surface);
@@ -217,3 +223,6 @@ impl Write for Gate {
         self.inner.flush()
     }
 }
+
+#[cfg(test)]
+mod tests;

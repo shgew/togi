@@ -7,6 +7,7 @@ use std::fs;
 use togi_cli::Exit;
 use togi_hostlock::{HostLock, Policy};
 use togi_journal::{EventKind, Payload, ShutdownReason, StateDir};
+use togi_machine::Machine;
 
 use crate::support::{Fake, interrupt_on_first_write};
 
@@ -207,4 +208,217 @@ fn a_failed_smu_write_is_the_smu_dead_end_and_exits_eleven() {
             .iter()
             .any(|event| event.kind() == EventKind::DeadEnd)
     );
+}
+
+fn append_future_kind(fake: &Fake) -> Vec<u8> {
+    let path = fake.state_dir().join("events.jsonl");
+    let mut text = fs::read_to_string(&path).unwrap();
+    let next = text.lines().count() + 1;
+    text.push_str(&r#"{"seq":N,"time":"2026-01-01T00:00:00Z","boot":"b","kind":"future.thing","msg":"x","data":{}}"#.replace('N', &next.to_string()));
+    text.push('\n');
+    fs::write(&path, &text).unwrap();
+    text.into_bytes()
+}
+
+fn first_run(fake: &mut Fake) {
+    let wrap = std::mem::replace(&mut fake.wrap, Box::new(interrupt_on_first_write));
+    let (exit, _, err) = fake.run(&["run", "--no-tui"]);
+    fake.wrap = wrap;
+    assert_eq!(exit, Exit::Ok, "{err}");
+}
+
+#[test]
+fn an_unknown_event_kind_in_a_current_journal_is_refused_before_the_config_naming_the_kind() {
+    let mut fake = Fake::new();
+    first_run(&mut fake);
+    let before = append_future_kind(&fake);
+    let missing = fake.dir.join("missing.json");
+    let (exit, _, err) = fake.run(&["run", "--config", missing.to_str().unwrap()]);
+    assert_eq!(exit, Exit::Incompatible, "{err}");
+    assert!(
+        err.contains(r#"unknown event kind "future.thing""#),
+        "{err}"
+    );
+    assert!(err.contains("install the build that wrote it"), "{err}");
+    assert_eq!(
+        fs::read(fake.state_dir().join("events.jsonl")).unwrap(),
+        before
+    );
+}
+
+#[test]
+fn an_unknown_event_kind_in_the_tuning_boot_leaves_its_own_reason_and_clears_the_saved_entry() {
+    let mut fake = Fake::new();
+    first_run(&mut fake);
+    append_future_kind(&fake);
+    fake.grub = crate::support::Grub::with_saved_entry("tuning");
+    let grubenv = fake.grubenv();
+    let (exit, _, err) = fake.run(&["run", "--tuning-boot", grubenv.to_str().unwrap()]);
+    assert_eq!(exit, Exit::Incompatible, "{err}");
+    let state = fake.grub.state();
+    assert_eq!(state.cleared, 1);
+    assert!(
+        state
+            .values
+            .get("togi_leave_reason")
+            .is_some_and(|reason| reason.contains("unknown event kind")),
+        "{:?}",
+        state.values
+    );
+}
+
+#[test]
+fn a_journal_that_is_not_a_journal_is_an_error_and_is_left_alone() {
+    let fake = Fake::new();
+    fs::create_dir_all(fake.state_dir()).unwrap();
+    let path = fake.state_dir().join("events.jsonl");
+    fs::write(&path, "not json\n").unwrap();
+    let (exit, _, err) = fake.run(&["run", "--no-tui"]);
+    assert_eq!(exit, Exit::Error, "{err}");
+    assert!(err.starts_with("togi run: "), "{err}");
+    assert_eq!(fs::read_to_string(&path).unwrap(), "not json\n");
+    assert_eq!(fake.opened.get(), 0);
+}
+
+#[test]
+fn the_refusal_persists_its_reason_before_it_clears_the_entry() {
+    let mut fake = Fake::new();
+    seed_newer_epoch(&mut fake);
+    fake.grub = crate::support::Grub::with_saved_entry("tuning");
+    let grubenv = fake.grubenv();
+    let (exit, _, _) = fake.run(&["run", "--tuning-boot", grubenv.to_str().unwrap()]);
+    assert_eq!(exit, Exit::Incompatible);
+    let state = fake.grub.state();
+    assert_eq!(state.log, ["set", "clear"]);
+    assert!(
+        state.values["togi_leave_reason"].contains("journal incompatible"),
+        "{:?}",
+        state.values
+    );
+}
+
+#[test]
+fn the_refusal_still_clears_the_entry_when_the_reason_cannot_be_written() {
+    let mut fake = Fake::new();
+    seed_newer_epoch(&mut fake);
+    fake.grub = crate::support::Grub::with_saved_entry("tuning");
+    fake.grub.state().fail_set = true;
+    let grubenv = fake.grubenv();
+    let (exit, _, err) = fake.run(&["run", "--tuning-boot", grubenv.to_str().unwrap()]);
+    assert_eq!(exit, Exit::Incompatible, "{err}");
+    assert!(err.contains("togi: persist GRUB leave reason:"), "{err}");
+    assert_eq!(fake.grub.state().cleared, 1);
+}
+
+#[test]
+fn the_refusal_reports_a_failed_clear_and_requests_no_reboot() {
+    let mut fake = Fake::new();
+    seed_newer_epoch(&mut fake);
+    fake.grub = crate::support::Grub::with_saved_entry("tuning");
+    fake.grub.state().fail_clear = true;
+    let grubenv = fake.grubenv();
+    let (exit, _, err) = fake.run(&["run", "--tuning-boot", grubenv.to_str().unwrap()]);
+    assert_eq!(exit, Exit::Incompatible, "{err}");
+    assert!(
+        err.contains("togi: clear GRUB saved entry:") && err.contains("no reboot requested"),
+        "{err}"
+    );
+    assert_eq!(fake.reboots.get(), 0);
+}
+
+#[test]
+fn a_hardware_that_cannot_be_opened_is_reported_as_an_error() {
+    let mut fake = Fake::new();
+    fake.open_error = true;
+    let (exit, _, err) = fake.run(&["run", "--no-tui"]);
+    assert_eq!(exit, Exit::Error);
+    assert!(err.starts_with("togi run: open the SMU driver"), "{err}");
+    assert!(fake.events().is_empty());
+}
+
+#[test]
+fn a_host_lock_that_is_not_safe_is_refused_before_hardware() {
+    if rustix::process::geteuid().is_root() {
+        return;
+    }
+    let mut fake = Fake::new();
+    fake.policy = Policy::Host;
+    let (exit, _, err) = fake.run(&["run", "--no-tui"]);
+    assert_eq!(exit, Exit::Error, "{err}");
+    assert!(err.starts_with("togi run: host lock"), "{err}");
+    assert_eq!((fake.boots_read.get(), fake.opened.get()), (0, 0));
+    assert!(fake.events().is_empty());
+}
+
+#[test]
+fn the_bios_context_is_not_read_from_a_machine_whose_identity_is_not_validated() {
+    let bios_reads = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+    let mut fake = Fake::new();
+    let seen = bios_reads.clone();
+    fake.wrap = Box::new(move |machine| Machine {
+        host: Box::new(crate::support::UnvalidatedHost {
+            inner: machine.host,
+            bios_reads: seen.clone(),
+        }),
+        ..machine
+    });
+    let (exit, _, err) = fake.run(&["run", "--no-tui"]);
+    assert_eq!(exit, Exit::Preflight, "{err}");
+    assert!(err.contains("unsupported CPU model"), "{err}");
+    assert_eq!(bios_reads.load(std::sync::atomic::Ordering::SeqCst), 0);
+}
+
+#[test]
+fn the_dashboard_hides_event_lines_and_the_clean_stop_prints_the_restoration_and_shutdown() {
+    let mut fake = Fake::new();
+    fake.interactive = true;
+    fake.wrap = Box::new(interrupt_on_first_write);
+    let (exit, _, err) = fake.run(&["run"]);
+    assert_eq!(exit, Exit::Ok, "{err}");
+    assert!(!err.contains("session.start"), "{err}");
+    assert!(!err.contains("trial.intent"), "{err}");
+    assert!(err.trim_end().ends_with("stopped by signal"), "{err}");
+    assert!(err.contains(" shutdown "), "{err}");
+}
+
+#[test]
+fn the_dashboard_starts_after_the_journal_is_open_and_after_the_last_event_of_the_earlier_run() {
+    let mut first = Fake::new();
+    first_run(&mut first);
+    let earlier = first.events().len() as u64;
+
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let record = seen.clone();
+    let mut fake = Fake::in_dir(first.sim.clone(), &first.dir);
+    fake.interactive = true;
+    fake.wrap = Box::new(interrupt_on_first_write);
+    fake.surface = std::sync::Arc::new(Records { seen: record });
+    let (exit, _, err) = fake.run(&["run"]);
+    assert_eq!(exit, Exit::Ok, "{err}");
+    let (since, journal_existed) = seen.lock().unwrap().unwrap();
+    assert!(
+        journal_existed,
+        "the dashboard started before the journal was open"
+    );
+    assert_eq!(
+        since, earlier,
+        "it must say STARTING until an event after the earlier run's last"
+    );
+}
+
+struct Records {
+    seen: std::sync::Arc<std::sync::Mutex<Option<(u64, bool)>>>,
+}
+
+impl togi_cli::dashboard::Surface for Records {
+    fn draw(
+        &self,
+        state_dir: &std::path::Path,
+        since: u64,
+        stop: &togi_cli::dashboard::Stop,
+    ) -> Result<(), String> {
+        *self.seen.lock().unwrap() = Some((since, state_dir.join("events.jsonl").exists()));
+        stop.wait();
+        Ok(())
+    }
 }

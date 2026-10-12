@@ -27,9 +27,9 @@ const DIR: &str = "TOGI_RUN_TEST_PTY_DIR";
 const BOUND: Duration = Duration::from_secs(30);
 
 /// A trial that runs until the run is cancelled.
-struct Endless(Box<dyn Trials>);
+struct Endless(Box<dyn Trials>, bool);
 
-struct EndlessRunning(Box<dyn Running>);
+struct EndlessRunning(Box<dyn Running>, bool);
 
 impl Trials for Endless {
     fn sweep(&mut self, cancel: &CancellationToken) -> Result<Swept, MachineError> {
@@ -42,7 +42,10 @@ impl Trials for Endless {
         spec: TrialSpec,
         ready: Stopped,
     ) -> Result<Box<dyn Running>, Partial<Option<Stopped>>> {
-        Ok(Box::new(EndlessRunning(self.0.start(cancel, spec, ready)?)))
+        Ok(Box::new(EndlessRunning(
+            self.0.start(cancel, spec, ready)?,
+            self.1,
+        )))
     }
 
     fn ended(&mut self, id: &str) -> Result<(), MachineError> {
@@ -67,6 +70,7 @@ impl Running for EndlessRunning {
         cancel: &CancellationToken,
         report: &mut dyn Reporter,
     ) -> Result<TrialResult, Partial<TrialResult>> {
+        assert!(!self.1, "injected panic while the dashboard shows");
         cancel.wait();
         self.0.wait(cancel, report)
     }
@@ -86,8 +90,9 @@ fn helper() {
     fake.real_stderr = true;
     fake.interactive = true;
     fake.surface = std::sync::Arc::new(Scripted(|_: &Stop| Ok(())));
-    fake.wrap = Box::new(|machine| Machine {
-        trials: Box::new(Endless(machine.trials)),
+    let panics = std::env::var(SCENARIO).is_ok_and(|scenario| scenario == "panic");
+    fake.wrap = Box::new(move |machine| Machine {
+        trials: Box::new(Endless(machine.trials, panics)),
         ..machine
     });
     let args: Vec<OsString> = fake
@@ -100,7 +105,7 @@ fn helper() {
 }
 
 fn open_pty() -> (OwnedFd, File) {
-    let master = openpt(OpenptFlags::RDWR | OpenptFlags::NOCTTY | OpenptFlags::CLOEXEC).unwrap();
+    let master = openpt(OpenptFlags::RDWR | OpenptFlags::NOCTTY).unwrap();
     grantpt(&master).unwrap();
     unlockpt(&master).unwrap();
     let slave = PathBuf::from(OsString::from(
@@ -130,7 +135,7 @@ fn ctrl_c_reaches_runs_own_listener_after_the_dashboard_closed_and_the_session_s
     let (master, slave) = open_pty();
     let mut child = Command::new(std::env::current_exe().unwrap())
         .args(["pty::helper", "--exact", "--nocapture", "--test-threads=1"])
-        .env(SCENARIO, "1")
+        .env(SCENARIO, "run")
         .env(DIR, dir.path())
         .stdin(Stdio::from(slave.try_clone().unwrap()))
         .stdout(Stdio::null())
@@ -183,4 +188,35 @@ fn wait_for_exit(child: &mut std::process::Child) -> std::process::ExitStatus {
         }
         std::thread::sleep(Duration::from_millis(20));
     }
+}
+
+#[test]
+fn a_session_panic_stops_the_dashboard_and_gives_the_terminal_back_before_the_panic_propagates() {
+    let dir = TempDir::new().unwrap();
+    let (master, slave) = open_pty();
+    let mut child = Command::new(std::env::current_exe().unwrap())
+        .args(["pty::helper", "--exact", "--nocapture", "--test-threads=1"])
+        .env(SCENARIO, "panic")
+        .env(DIR, dir.path())
+        .stdin(Stdio::from(slave.try_clone().unwrap()))
+        .stdout(Stdio::null())
+        .stderr(Stdio::from(slave))
+        .spawn()
+        .unwrap();
+    let status = wait_for_exit(&mut child);
+    assert_eq!(status.code(), Some(2));
+    let restored = tcgetattr(&master).unwrap();
+    assert!(
+        restored.local_modes.contains(LocalModes::ECHO)
+            && restored.local_modes.contains(LocalModes::ICANON),
+        "the previous input settings are back"
+    );
+    let mut chunk = [0_u8; 4096];
+    let read = rustix::io::read(&master, &mut chunk).unwrap();
+    let seen = chunk[..read].to_vec();
+    assert!(
+        String::from_utf8_lossy(&seen).contains("panic: injected panic while the dashboard shows"),
+        "{}",
+        String::from_utf8_lossy(&seen)
+    );
 }

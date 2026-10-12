@@ -5,7 +5,7 @@ use rustix::pty::{OpenptFlags, grantpt, openpt, ptsname, unlockpt};
 use super::both_terminals;
 
 fn terminal() -> (rustix::fd::OwnedFd, File) {
-    let master = openpt(OpenptFlags::RDWR | OpenptFlags::NOCTTY | OpenptFlags::CLOEXEC).unwrap();
+    let master = openpt(OpenptFlags::RDWR | OpenptFlags::NOCTTY).unwrap();
     grantpt(&master).unwrap();
     unlockpt(&master).unwrap();
     let name = ptsname(&master, Vec::new()).unwrap();
