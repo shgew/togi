@@ -155,9 +155,11 @@ fn envelope_failure(line: &str, source: serde_json::Error) -> Failure {
             let tracked = serde_path_to_error::deserialize::<_, Object<Envelope>>(
                 &mut serde_json::Deserializer::from_str(line),
             );
-            tracked
-                .err()
-                .and_then(|error| unknown::locate(line, &[], &error))
+            tracked.err().and_then(|error| {
+                unknown::locate(line, &[], &error, |text| {
+                    serde_json::from_str::<Object<Envelope>>(text).map(drop)
+                })
+            })
         })
         .flatten();
     let error = DecodeError::Envelope { kind, source };
@@ -174,9 +176,11 @@ fn envelope_failure(line: &str, source: serde_json::Error) -> Failure {
 fn payload_failure(line: &str, kind: EventKind, data: &str, source: serde_json::Error) -> Failure {
     let unknown = is_unknown_field(&source)
         .then(|| {
-            Payload::decode_tracked(kind, data)
-                .err()
-                .and_then(|error| unknown::locate(line, &[Step::Key("data".to_owned())], &error))
+            Payload::decode_tracked(kind, data).err().and_then(|error| {
+                unknown::locate(line, &[Step::Key("data".to_owned())], &error, |text| {
+                    Payload::decode(kind, text).map(drop)
+                })
+            })
         })
         .flatten();
     let error = DecodeError::Payload { kind, source };

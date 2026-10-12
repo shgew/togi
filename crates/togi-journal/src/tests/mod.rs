@@ -8,4 +8,5 @@ mod object_only;
 mod session_id;
 mod state;
 mod strict;
+mod unknown;
 mod wire;

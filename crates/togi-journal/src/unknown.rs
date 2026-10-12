@@ -33,15 +33,22 @@ pub(crate) fn is_unknown_field(error: &serde_json::Error) -> bool {
     error.is_data() && error.to_string().starts_with(REFUSAL)
 }
 
-/// The field that `error` refused, found in `line`. `prefix` is where the decoded value sits in `line`.
+/// The field that `error` refused, found in `line`. `prefix` is where the decoded value sits in `line`, and `decode`
+/// decodes that value again, as the decode that failed did.
 ///
-/// serde buffers an internally tagged enum before decoding it, so the path of a field refused inside one ends at the
-/// enum's object and does not name the field; the field is then looked up among that object's keys. A field refused
-/// deeper inside such an enum's variant is not found.
+/// The path of a refused field ends at its key, except inside an internally tagged enum: serde buffers one before
+/// decoding it, so the path of a field refused anywhere in it, at any depth, ends at the enum's object. The refused
+/// field is therefore one of the keys the error names: the last step of the path, if its parent holds that key, and
+/// every key of that name under the object the path ends at. When there is more than one, some are fields the type
+/// knows, so each is tried by renaming it to a name no type has and decoding again. A decode meets keys in the order
+/// the line has them, and the candidates are in that order: renaming one met before the refused field, or the
+/// refused field itself, makes the decode refuse the new name, and renaming one met after it does not. The refused
+/// field is the last candidate whose renaming is refused.
 pub(crate) fn locate(
     line: &str,
     prefix: &[Step],
     error: &serde_path_to_error::Error<serde_json::Error>,
+    decode: impl Fn(&str) -> serde_json::Result<()>,
 ) -> Option<Unknown> {
     let message = error.inner().to_string();
     let refused = message.strip_prefix(REFUSAL)?;
@@ -54,26 +61,78 @@ pub(crate) fn locate(
             Segment::Unknown => return None,
         });
     }
-    if let Some(Step::Key(key)) = steps.last()
+    let mut candidates = Vec::new();
+    if steps.len() > prefix.len()
+        && let Some(Step::Key(key)) = steps.last()
         && names(refused, key)
     {
-        let field = key.clone();
-        steps.pop();
-        if keys_at(line, &steps)?.contains(&field) {
-            return Some(Unknown {
-                container: steps,
-                field,
+        let container = &steps[..steps.len() - 1];
+        if keys_at(line, container)?.contains(key) {
+            candidates.push(Unknown {
+                container: container.to_vec(),
+                field: key.clone(),
             });
         }
-        steps.push(Step::Key(field));
     }
-    let field = keys_at(line, &steps)?
-        .into_iter()
-        .find(|key| names(refused, key))?;
-    Some(Unknown {
-        container: steps,
-        field,
+    collect(
+        at(line, &steps)?.get(),
+        &mut steps,
+        refused,
+        &mut candidates,
+    );
+    if candidates.len() <= 1 {
+        return candidates.pop();
+    }
+    candidates.into_iter().rev().find(|candidate| {
+        let renamed = rewrite(
+            line,
+            &candidate.container,
+            &candidate.field,
+            Edit::Rename(PROBE),
+        );
+        renamed
+            .and_then(|renamed| at(&renamed, prefix))
+            .and_then(|value| decode(value.get()).err())
+            .and_then(|error| {
+                let message = error.to_string();
+                let refused = message.strip_prefix(REFUSAL)?;
+                names(refused, PROBE).then_some(())
+            })
+            .is_some()
     })
+}
+
+/// The key a field is renamed to when it is tried; no journal type has a field of this name.
+const PROBE: &str = "\u{0}togi unknown field probe";
+
+/// Every key `refused` names in the objects under `text`, which sits at `path` in the line, in the order a decode
+/// meets them. Of a key an object repeats, only the first is listed or entered: a decode refuses the repeat before it
+/// gets past it.
+fn collect(text: &str, path: &mut Vec<Step>, refused: &str, found: &mut Vec<Unknown>) {
+    if let Some(pairs) = members(text) {
+        let mut seen: Vec<&str> = Vec::new();
+        for (key, value) in &pairs {
+            if seen.contains(&key.as_str()) {
+                continue;
+            }
+            seen.push(key);
+            if names(refused, key) {
+                found.push(Unknown {
+                    container: path.clone(),
+                    field: key.clone(),
+                });
+            }
+            path.push(Step::Key(key.clone()));
+            collect(value.get(), path, refused, found);
+            path.pop();
+        }
+    } else if let Some(items) = elements(text) {
+        for (index, item) in items.iter().enumerate() {
+            path.push(Step::Index(index));
+            collect(item.get(), path, refused, found);
+            path.pop();
+        }
+    }
 }
 
 /// Whether `refused`, the text after serde's refusal prefix, starts with `key` as the whole field name.
@@ -102,7 +161,7 @@ impl Unknown {
     /// `line` without the field; every other byte of every other value is kept, duplicate keys included. `None` when
     /// the line holds no such field at that place.
     pub(crate) fn remove_from(&self, line: &str) -> Option<String> {
-        rewrite(line, &self.container, &self.field)
+        rewrite(line, &self.container, &self.field, Edit::Remove)
     }
 }
 
@@ -198,25 +257,42 @@ fn array(elements: &[Box<RawValue>]) -> String {
     text.push(']');
     text
 }
+/// What [`rewrite`] does to a field: cut every occurrence of it, or rename its first occurrence.
+#[derive(Clone, Copy)]
+enum Edit<'a> {
+    Remove,
+    Rename(&'a str),
+}
 
-fn rewrite(text: &str, steps: &[Step], field: &str) -> Option<String> {
+fn rewrite(text: &str, steps: &[Step], field: &str, edit: Edit<'_>) -> Option<String> {
     match steps.split_first() {
         None => {
             let mut pairs = members(text)?;
-            let before = pairs.len();
-            pairs.retain(|(key, _)| key != field);
-            (pairs.len() != before).then(|| object(&pairs))?
+            match edit {
+                Edit::Remove => {
+                    let before = pairs.len();
+                    pairs.retain(|(key, _)| key != field);
+                    if pairs.len() == before {
+                        return None;
+                    }
+                }
+                Edit::Rename(name) => {
+                    let slot = pairs.iter_mut().find(|(key, _)| key == field)?;
+                    name.clone_into(&mut slot.0);
+                }
+            }
+            object(&pairs)
         }
         Some((Step::Key(key), rest)) => {
             let mut pairs = members(text)?;
             let slot = pairs.iter_mut().find(|(name, _)| name == key)?;
-            slot.1 = RawValue::from_string(rewrite(slot.1.get(), rest, field)?).ok()?;
+            slot.1 = RawValue::from_string(rewrite(slot.1.get(), rest, field, edit)?).ok()?;
             object(&pairs)
         }
         Some((Step::Index(index), rest)) => {
             let mut items = elements(text)?;
             let slot = items.get_mut(*index)?;
-            *slot = RawValue::from_string(rewrite(slot.get(), rest, field)?).ok()?;
+            *slot = RawValue::from_string(rewrite(slot.get(), rest, field, edit)?).ok()?;
             Some(array(&items))
         }
     }
