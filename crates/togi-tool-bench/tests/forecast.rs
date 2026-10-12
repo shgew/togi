@@ -17,19 +17,25 @@ use std::process::Command;
 use std::rc::Rc;
 use std::time::Duration;
 
+mod git;
+
+use git::{isolate_git, repo};
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use sha2::{Digest as _, Sha256};
 use togi_config::Config;
 use togi_journal::fs::FileKind;
-use togi_journal::{Build, Event, MemFs, Payload, Recording, SCHEMA, Seq, SessionId};
-use togi_machine::{CancellationToken, CoreId, ObservedOffset, PerCore};
+use togi_journal::{
+    Build, DeadEnd, DeadEndCondition, Event, MemFs, Payload, Recording, SCHEMA, Seq, SessionId,
+    Shutdown, ShutdownReason, Stamp, StateDir,
+};
+use togi_machine::{BootId, CancellationToken, CoreId, ObservedOffset, PerCore};
 use togi_render::Renderer;
 use togi_session::{ConfigSource, StopPolicy};
 use togi_sim::{MachineDefinition, Model, RunSettings, Simulator};
 use togi_simrun::{Observe, Observer, Persistence, Replay, SimInput, resume_simulator, simulate};
-use togi_tool_bench::Fleet;
 use togi_tool_bench::forecast::{ForecastError, Options, Report, execute};
+use togi_tool_bench::{Fleet, Tree};
 use togi_tool_forecast::{Anchor, Outcome, Record, Run, Status};
 use togi_tuner::{EVIDENCE_EPOCH, RULESET};
 
@@ -156,7 +162,9 @@ impl Fixture {
                 + 1;
             let text = fs::read_to_string(&journal).unwrap();
             let lines: Vec<&str> = text.split_inclusive('\n').take(keep).collect();
-            fs::write(&journal, lines.concat()).unwrap();
+            let cut = lines.concat();
+            fs::write(&journal, &cut).unwrap();
+            history.put("/state/events.jsonl", cut);
         }
         let fixture = Self {
             dir: tempfile::tempdir().unwrap(),
@@ -171,6 +179,17 @@ impl Fixture {
                 resume_simulator(&Persistence::Memory(resumed.clone()), model, seed, None).unwrap();
             simrun(simulator, &resumed, Box::new(|_| Observe::Continue));
             let dir = on_disk(&resumed);
+            let full = events(&dir.path().join("state/events.jsonl"));
+            let copied = events(&fixture.state().join("events.jsonl")).len();
+            if in_flight {
+                assert!(
+                    !matches!(
+                        full[copied].payload,
+                        Payload::SmuIntent(_) | Payload::TrialEnd(_) | Payload::Shutdown(_)
+                    ),
+                    "seed {seed} resumed a copy that was cut short, not the one the forecast gets"
+                );
+            }
             fs::copy(
                 dir.path().join("state/events.jsonl"),
                 fixture.fulls().join(format!("{seed}.jsonl")),
@@ -240,6 +259,10 @@ exit {exit}
         Options {
             state: self.state(),
             suite: self.path("suite.json"),
+            tree: Tree {
+                commit: "0123abc".to_owned(),
+                dirty: false,
+            },
             out: None,
             keep: None,
             jobs: NonZeroUsize::new(3).unwrap(),
@@ -382,6 +405,61 @@ fn exit_one_is_a_dead_end_only_when_this_run_reached_one() {
             .iter()
             .all(|run| run.outcome.status == Status::DeadEnd)
     );
+}
+
+#[test]
+fn a_dead_end_the_copy_already_holds_is_not_the_runs_own() {
+    let fixture = Fixture::new(false);
+    let mut journal = StateDir::lock(fixture.state())
+        .unwrap()
+        .open_at(
+            BootId::from("dead-end-fixture".to_owned()),
+            "2030-01-01T00:00:00Z".parse().unwrap(),
+        )
+        .unwrap();
+    let stamp = Stamp {
+        time: "2030-01-01T00:00:01Z".parse().unwrap(),
+        mono: None,
+    };
+    let dead_end = journal
+        .append(
+            stamp,
+            Payload::DeadEnd(DeadEnd {
+                condition: DeadEndCondition::ThermalTrip,
+                core: None,
+                detail: "thermal trip".to_owned(),
+                action: None,
+            }),
+            &[],
+        )
+        .unwrap()
+        .seq;
+    journal
+        .append(
+            stamp,
+            Payload::Shutdown(Shutdown {
+                reason: ShutdownReason::DeadEnd,
+                kernel_cursor: None,
+                kernel_error: None,
+                cycles: None,
+            }),
+            &[dead_end],
+        )
+        .unwrap();
+    journal.close().unwrap();
+    let anchor = Anchor::of(fixture.state()).unwrap();
+    assert!(anchor.seq > dead_end, "the anchor follows the dead end");
+    let failed = execute(
+        &fixture.options(fixture.simulator("exit 1", 0)),
+        &Fleet::new(),
+    )
+    .unwrap_err();
+    assert!(matches!(*failed.error, ForecastError::Runs(_)), "{failed}");
+    assert!(
+        failed.to_string().contains("simulator failed with exit 1"),
+        "{failed}"
+    );
+    fs::remove_dir_all(failed.kept.unwrap()).unwrap();
 }
 
 #[test]
@@ -604,6 +682,59 @@ fn the_record_lists_each_machine_file_the_ensemble_reads_once_by_suite_relative_
     );
 }
 
+#[test]
+fn a_machine_the_suite_names_by_absolute_path_is_named_relative_to_the_suite() {
+    let fixture = Fixture::new(false);
+    let bench = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tools/bench");
+    fs::create_dir_all(fixture.path("machines")).unwrap();
+    fs::create_dir_all(fixture.path("facts")).unwrap();
+    fs::copy(
+        bench.join("machines/target-fit-0.json"),
+        fixture.path("machines/target-fit-0.json"),
+    )
+    .unwrap();
+    fs::copy(
+        bench.join("facts/target.jsonl.gz"),
+        fixture.path("facts/target.jsonl.gz"),
+    )
+    .unwrap();
+    let absolute = fixture.path("machines/target-fit-0.json");
+    fs::write(
+        fixture.path("suite.json"),
+        format!(
+            r#"{{"scenarios":[{{"name":"target","machine":{:?},"dev":[1,2],"holdout":[101]}}]}}"#,
+            absolute.to_str().unwrap()
+        ),
+    )
+    .unwrap();
+    let report = execute(&fixture.options(fixture.simulator("", 0)), &Fleet::new()).unwrap();
+    let local = fixture.dir.path().to_str().unwrap();
+    assert!(
+        report
+            .record
+            .runs
+            .iter()
+            .all(|run| run.machine == "machines/target-fit-0.json")
+    );
+    let [check] = report.checks.as_slice() else {
+        panic!("{:?}", report.checks);
+    };
+    assert_eq!(check.machine, Path::new("machines/target-fit-0.json"));
+    assert_eq!(
+        check.extract,
+        Path::new("machines/../facts/target.jsonl.gz")
+    );
+    let (record, table) = written(&report);
+    assert!(!String::from_utf8(record).unwrap().contains(local));
+    assert!(!table.contains(local), "{table}");
+    assert!(table.contains("\nmachines/target-fit-0.json: "), "{table}");
+    assert_eq!(
+        table.matches("machines/target-fit-0.json: ").count(),
+        1,
+        "{table}"
+    );
+}
+
 fn literal_run(
     split: &str,
     seed: u64,
@@ -665,7 +796,9 @@ fn the_report_names_the_anchor_the_runs_by_status_and_each_metric_s_range() {
 
 fn command(fixture: &Fixture) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_togi-tool-bench"));
+    isolate_git(&mut command, &fixture.path("githome"));
     command
+        .current_dir(repo(fixture.dir.path()))
         .arg("forecast")
         .arg(fixture.state())
         .arg("--suite")
@@ -762,10 +895,11 @@ fn a_full_forecast_leaves_no_run_directory_behind() {
     let fixture = Fixture::new(false);
     let temporary = fixture.path("tmp");
     fs::create_dir_all(&temporary).unwrap();
+    let seen = fixture.path("seen");
     let output = command(&fixture)
         .env("TMPDIR", &temporary)
         .arg("--sim")
-        .arg(fixture.simulator("", 0))
+        .arg(fixture.simulator(&format!("echo \"$dir\" >> '{}'", seen.display()), 0))
         .output()
         .unwrap();
     assert!(
@@ -773,9 +907,90 @@ fn a_full_forecast_leaves_no_run_directory_behind() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
+    let seen = fs::read_to_string(seen).unwrap();
+    assert_eq!(seen.lines().count(), 3);
+    assert!(
+        seen.lines()
+            .all(|dir| Path::new(dir).starts_with(&temporary)),
+        "the runs were not made under TMPDIR: {seen}"
+    );
     let left: Vec<_> = fs::read_dir(&temporary)
         .unwrap()
         .map(|entry| entry.unwrap().file_name())
         .collect();
     assert!(left.is_empty(), "{left:?}");
+}
+
+/// Runs `forecast` under a private `TMPDIR` and returns what the failed command left there.
+fn leftovers_of_a_failed_command(fixture: &Fixture, simulator: PathBuf, out: &Path) -> Vec<String> {
+    let temporary = fixture.path("tmp");
+    fs::create_dir_all(&temporary).unwrap();
+    let output = command(fixture)
+        .env("TMPDIR", &temporary)
+        .arg("--sim")
+        .arg(simulator)
+        .arg("--out")
+        .arg(out)
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    fs::read_dir(&temporary)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect()
+}
+
+#[test]
+fn a_forecast_that_fails_to_write_its_record_leaves_no_run_directory_behind() {
+    let fixture = Fixture::new(false);
+    let blocker = fixture.path("file");
+    fs::write(&blocker, "").unwrap();
+    let left = leftovers_of_a_failed_command(
+        &fixture,
+        fixture.simulator("", 0),
+        &blocker.join("forecast.json"),
+    );
+    assert!(left.is_empty(), "{left:?}");
+}
+
+#[test]
+fn an_interrupted_forecast_leaves_no_run_directory_behind() {
+    let fixture = Fixture::new(false);
+    let left = leftovers_of_a_failed_command(
+        &fixture,
+        fixture.simulator("kill -INT $PPID; sleep 5", 0),
+        &fixture.path("forecast.json"),
+    );
+    assert!(left.is_empty(), "{left:?}");
+}
+
+#[test]
+fn the_command_says_where_the_runs_of_a_failed_forecast_are_kept() {
+    let fixture = Fixture::new(false);
+    let temporary = fixture.path("tmp");
+    fs::create_dir_all(&temporary).unwrap();
+    let output = command(&fixture)
+        .env("TMPDIR", &temporary)
+        .arg("--sim")
+        .arg(fixture.simulator("[ \"$seed\" = 2 ] && exit 2", 0))
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    let kept = stderr
+        .lines()
+        .find_map(|line| line.strip_prefix("togi-tool-bench: kept the runs in "))
+        .unwrap_or_else(|| panic!("{stderr}"));
+    assert!(Path::new(kept).starts_with(&temporary), "{kept}");
+    assert_eq!(run_dirs(Path::new(kept)), ["target/dev-2"]);
+
+    let output = command(&fixture)
+        .env("TMPDIR", &temporary)
+        .arg("--sim")
+        .arg(fixture.simulator("", 0))
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert!(!String::from_utf8_lossy(&output.stderr).contains("kept the runs"));
+    fs::remove_dir_all(kept).unwrap();
 }

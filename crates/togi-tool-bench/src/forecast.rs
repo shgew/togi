@@ -21,12 +21,13 @@ use togi_tool_modelcheck::Check;
 use togi_tool_trialfacts::Extracts;
 
 use crate::error::{Error, RunError};
+use crate::git::Tree;
+use crate::pool;
 use crate::process::Fleet;
 use crate::record::Status as RunStatus;
 use crate::run::check_machine;
 use crate::simulator::Simulator;
-use crate::suite::{RunSpec, Selection, Suite};
-use crate::{git, pool};
+use crate::suite::{Machine, RunSpec, Selection, Suite};
 
 /// The suite scenario whose runs form the forecast's ensemble.
 pub const SCENARIO: &str = "target";
@@ -42,6 +43,8 @@ pub struct Options {
     /// The copy of the real run's state directory.
     pub state: PathBuf,
     pub suite: PathBuf,
+    /// The tree the forecast runs from, stamped on the record.
+    pub tree: Tree,
     /// Writes the record here.
     pub out: Option<PathBuf>,
     /// Keeps every run's directory under a new directory in this one.
@@ -236,8 +239,10 @@ pub fn execute(options: &Options, fleet: &Fleet) -> Result<Report, Failed> {
     let runs = ensemble(&options.suite).map_err(fail)?;
     let checks = model_checks(&runs).map_err(fail)?;
     let files = ensemble_files(&runs).map_err(fail)?;
-    let tree = git::inspect(options.out.as_deref())
-        .map_err(ForecastError::from)
+    let machines = runs
+        .iter()
+        .map(|spec| spec.machine.as_deref().map(machine_name).transpose())
+        .collect::<Result<Vec<_>, _>>()
         .map_err(fail)?;
     let simulator = Simulator::locate(options.simulator.as_deref())
         .map_err(ForecastError::from)
@@ -260,21 +265,24 @@ pub fn execute(options: &Options, fleet: &Fleet) -> Result<Report, Failed> {
     let outcomes = result.map_err(finish)?;
     let ran = runs
         .iter()
+        .zip(machines)
         .zip(outcomes)
-        .map(|(spec, outcome)| Run {
-            machine: spec
-                .machine
-                .as_ref()
-                .map(|machine| machine.name.clone())
-                .unwrap_or_default(),
+        .map(|((spec, machine), outcome)| Run {
+            machine: machine.unwrap_or_default(),
             seed: spec.seed,
             split: spec.split.to_string(),
             outcome,
         })
         .collect();
-    let record = Record::new(anchor, tree.commit, tree.dirty, files, ran)
-        .map_err(|error| ForecastError::Summary(Box::new(error)))
-        .map_err(finish)?;
+    let record = Record::new(
+        anchor,
+        options.tree.commit.clone(),
+        options.tree.dirty,
+        files,
+        ran,
+    )
+    .map_err(|error| ForecastError::Summary(Box::new(error)))
+    .map_err(finish)?;
     if let Some(out) = &options.out {
         write_record(out, &record).map_err(finish)?;
     }
@@ -309,19 +317,40 @@ fn ensemble(suite: &Path) -> Result<Vec<RunSpec>, ForecastError> {
     Ok(runs)
 }
 
-/// The model check of each distinct machine the ensemble runs that names a facts extract.
+/// The model check of each distinct machine the ensemble runs that names a facts extract, naming the machine and
+/// its extract as the record does.
 fn model_checks(runs: &[RunSpec]) -> Result<Vec<Check>, ForecastError> {
     let mut extracts = Extracts::new();
     let mut seen = BTreeSet::new();
     let mut checks = Vec::new();
     for machine in runs.iter().filter_map(|spec| spec.machine.as_ref()) {
         if seen.insert(&machine.path)
-            && let Some(check) = check_machine(machine, &mut extracts)?
+            && let Some(mut check) = check_machine(machine, &mut extracts)?
         {
+            let name = PathBuf::from(machine_name(machine)?);
+            if let Some(facts) = machine.definition.facts.as_deref() {
+                check.extract = name.parent().unwrap_or_else(|| Path::new("")).join(facts);
+            }
+            check.machine = name;
             checks.push(check);
         }
     }
     Ok(checks)
+}
+
+/// The machine file by its path relative to the suite's directory, the first of its inputs: the suite may name it
+/// by an absolute path, which must reach neither the record nor the report.
+fn machine_name(machine: &Machine) -> Result<String, ForecastError> {
+    let path = machine
+        .inputs
+        .first()
+        .map_or(machine.path.as_path(), |(path, _)| path.as_path());
+    match (path.is_absolute(), path.to_str()) {
+        (false, Some(name)) => Ok(name.replace('\\', "/")),
+        _ => Err(ForecastError::EnsembleFile {
+            path: path.to_path_buf(),
+        }),
+    }
 }
 
 /// Each machine file the runs load, parents included, and each facts extract they read, in first-use order, by

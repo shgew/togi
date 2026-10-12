@@ -7,8 +7,8 @@ use std::thread;
 use std::time::Duration;
 
 use clap::Args;
-use togi_tool_bench::Fleet;
 use togi_tool_bench::forecast::{Options, execute};
+use togi_tool_bench::{Fleet, inspect};
 
 use crate::{cancel_on_signals, fail};
 
@@ -45,9 +45,14 @@ pub(crate) fn run(args: ForecastArgs) -> ExitCode {
     if let Err(error) = cancel_on_signals(&fleet) {
         return fail(&format!("watch for signals: {error}"));
     }
+    let tree = match inspect(args.out.as_deref()) {
+        Ok(tree) => tree,
+        Err(error) => return fail(&error),
+    };
     let options = Options {
         state: args.state,
         suite: args.suite,
+        tree,
         out: args.out,
         keep: args.keep,
         jobs: args
