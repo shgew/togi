@@ -606,11 +606,20 @@ fn a_started_idle_trial_holds_every_frame_until_its_end_is_recorded() {
             .unwrap()
     );
     script.boot = "next".to_owned();
+    script.append(warning("a later boot wrote this"), &[]);
+    let model = script.model();
+    let snap = model.snapshot();
+    assert!(snap.crashed_trial(), "the trial's boot was outlived");
+    assert!(snap.recover.is_none(), "no crash is recorded yet");
+    assert!(
+        snap.idle_hold().is_none(),
+        "a later boot releases the hold before the crash is recorded"
+    );
     script.append(crash("boot", Some(intent)).into(), &[]);
     let model = script.model();
     assert!(
         model.snapshot().idle_hold().is_none(),
-        "a later boot removes the hold"
+        "a recorded crash releases the hold"
     );
     let _ = Duration::ZERO;
 }
