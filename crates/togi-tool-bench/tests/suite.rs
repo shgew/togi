@@ -30,6 +30,12 @@ fn plan(suite: &str, selection: Selection) -> Result<Vec<String>, Error> {
 fn an_invalid_suite_is_refused_with_the_reason() {
     let cases = [
         ("syntax", "[", "decode suite"),
+        ("unknown key", r#"{"extra":true}"#, "unknown field"),
+        (
+            "unknown scenario key",
+            r#"{"scenarios":[{"name":"x","dev":[1],"extra":1}]}"#,
+            "unknown field",
+        ),
         (
             "positional suite",
             r#"[null,[{"name":"x","dev":[1]}]]"#,

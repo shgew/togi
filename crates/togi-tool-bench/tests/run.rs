@@ -562,7 +562,7 @@ fn a_failed_cache_write_is_a_warning_and_the_records_are_kept() {
 #[test]
 fn the_first_failure_stops_the_running_simulators_and_is_what_the_run_reports() {
     let bench = Bench::new();
-    let failing_then_slow = format!(r#"if [ "$2" = 1 ]; then {DAMAGE}; fi; sleep 30"#);
+    let failing_then_slow = format!(r#"if [ "$2" = 2 ]; then {DAMAGE}; fi; sleep 30"#);
     let mut options = bench.options(bench.simulator("sim", 0, "", &failing_then_slow));
     options.jobs = NonZeroUsize::new(2).unwrap();
     options.cache = None;
@@ -570,7 +570,7 @@ fn the_first_failure_stops_the_running_simulators_and_is_what_the_run_reports() 
     let error = execute(&options, &Fleet::new()).unwrap_err();
     assert!(began.elapsed() < Duration::from_secs(20), "{error}");
     assert!(
-        matches!(&error, Error::Run { run, source } if run == "default/dev-1" && matches!(**source, RunError::Journal(_))),
+        matches!(&error, Error::Run { run, source } if run == "default/dev-2" && matches!(**source, RunError::Journal(_))),
         "{error}"
     );
 }

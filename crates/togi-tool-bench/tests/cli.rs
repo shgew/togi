@@ -429,7 +429,7 @@ fn a_termination_stops_the_bench_and_its_simulators_without_blocking_their_signa
     let bench = Bench::new();
     let pids = bench.path("pids.txt");
     let before = format!(
-        "echo $$ >> '{pids}'\ngrep SigBlk /proc/self/status > '{dir}/sigblk.'$$ 2>/dev/null\nexec sleep 60",
+        "if [ -r /proc/$$/status ]; then while read -r line; do case $line in SigBlk*) echo \"$line\";; esac; done < /proc/$$/status > '{dir}/sigblk.'$$; fi\necho $$ >> '{pids}'\nexec sleep 60",
         pids = pids.display(),
         dir = bench.dir.path().display(),
     );
