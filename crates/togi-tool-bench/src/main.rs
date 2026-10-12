@@ -51,7 +51,7 @@ struct RunArgs {
     /// Write one JSON record per run to this file.
     #[arg(long, value_name = "FILE")]
     out: Option<PathBuf>,
-    /// Compare the run with the records in this file.
+    /// Compare the run with the records in this file and, when the suite registers a gate, judge it and exit 1 unless it passes.
     #[arg(long, value_name = "FILE")]
     baseline: Option<PathBuf>,
     /// Keep each run's state directory under a new directory in DIR; keeping skips the cache.
@@ -168,10 +168,13 @@ fn bench(args: RunArgs) -> ExitCode {
             kept.display()
         );
     }
-    match report.write(&mut io::stdout().lock()) {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(error) => fail(&format!("write the report: {error}")),
+    if let Err(error) = report.write(&mut io::stdout().lock()) {
+        return fail(&format!("write the report: {error}"));
     }
+    if report.gate.as_ref().is_some_and(|gate| !gate.passed()) {
+        return fail(&"gate failed");
+    }
+    ExitCode::SUCCESS
 }
 
 fn sanity_check(args: &SanityArgs) -> ExitCode {
