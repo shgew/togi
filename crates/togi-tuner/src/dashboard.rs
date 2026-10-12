@@ -219,21 +219,9 @@ impl Run {
         let finished =
             !open && closed.is_some_and(|closed| closed.steps_done == cycle.plan().len());
         let running = self
-            .flight
-            .open
-            .as_ref()
-            .filter(|trial| {
-                trial.requirement.kind == RequirementKind::Cycle
-                    && trial.intent.cycle == Some(cycle.number)
-            })
-            .and_then(|trial| {
-                let step = trial.requirement.step?.get().get();
-                let part = trial.requirement.part?.get().get();
-                Some((
-                    usize::try_from(step).ok()? - 1,
-                    usize::try_from(part).ok()? - 1,
-                ))
-            });
+            .running_slot(cycle.number)
+            .map(|(trial, step, part)| (trial, (step, part)));
+        let pinned = running.and_then(|(trial, _)| self.checking.pinned(trial));
         let checking = self.checking.profile();
         let steps: Vec<CycleStep> = cycle
             .plan()
@@ -244,7 +232,10 @@ impl Run {
                     .parts
                     .iter()
                     .enumerate()
-                    .map(|(at, part)| {
+                    .map(|(at, planned)| {
+                        let is_running = running.is_some_and(|(_, slot)| slot == (index, at));
+                        let stored = pinned.filter(|_| is_running);
+                        let part = stored.map_or(planned, |pinned| &pinned.plan);
                         let ccd = part
                             .cores
                             .iter()
@@ -271,7 +262,7 @@ impl Run {
                             passed: 0,
                             failed: 0,
                             done: true,
-                            running: running == Some((index, at)),
+                            running: is_running,
                         };
                         for quota in part.quotas.iter().filter(|quota| quota.count > 0) {
                             let secs = quota.class.duration().get();
@@ -282,7 +273,11 @@ impl Run {
                                 view.long = quota.count;
                                 view.long_s = secs;
                             }
-                            let passed = cycle.have(quota.class);
+                            let passed = if stored.is_some() {
+                                self.cycle_count(cycle, quota.class)
+                            } else {
+                                cycle.have(quota.class)
+                            };
                             view.passed += passed;
                             view.failed += checking.map_or(0, |profile| {
                                 self.evidence

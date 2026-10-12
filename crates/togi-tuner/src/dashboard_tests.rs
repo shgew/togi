@@ -724,7 +724,7 @@ type Cut<'a> = (HuntStage, &'a [u8], u32, u32, u32, u32);
 #[test]
 fn hunt_cut_counts_splits_across_the_hunt() {
     let all: &[u8] = &[0, 1, 2, 3];
-    let sequences: [(&str, Vec<Cut<'_>>); 2] = [
+    let sequences: [(&str, Vec<Cut<'_>>); 3] = [
         (
             "first split, its complements included, then a finer cut",
             vec![
@@ -743,6 +743,16 @@ fn hunt_cut_counts_splits_across_the_hunt() {
                 (HuntStage::Part, all, 2, 1, 60, 2),
                 (HuntStage::Part, all, 4, 0, 60, 3),
                 (HuntStage::Part, all, 4, 1, 60, 3),
+            ],
+        ),
+        (
+            "the same set and granularity at another trial length is a new cut",
+            vec![
+                (HuntStage::Part, all, 2, 0, 60, 1),
+                (HuntStage::Part, all, 2, 1, 60, 1),
+                (HuntStage::Complement, all, 2, 0, 60, 1),
+                (HuntStage::Part, all, 2, 0, 120, 2),
+                (HuntStage::Part, all, 2, 1, 120, 2),
             ],
         ),
     ];
@@ -767,6 +777,52 @@ fn hunt_cut_counts_splits_across_the_hunt() {
         }
         j.assert_resumes();
     }
+}
+
+#[test]
+fn hunt_plan_cut_counts_an_upcoming_distinct_set_as_a_new_cut() {
+    let mut j = hunt_of(4, SHORT);
+    let mut oracle = |plan: &TrialPlan| {
+        if at(plan, 0) <= -30 && at(plan, 1) <= -30 {
+            Outcome::Failure
+        } else {
+            Outcome::Pass
+        }
+    };
+    let mut last: Option<(togi_machine::CoreSet, u32)> = None;
+    let (mut want, mut same_granularity_new_set) = (0, false);
+    for _ in 0..300 {
+        if j.state.hunt_plan().is_none() {
+            break;
+        }
+        let action = j.next();
+        if let Some(group) = group_of(&action).filter(|group| {
+            group.probe.is_none() && matches!(group.stage, HuntStage::Part | HuntStage::Complement)
+        }) {
+            let signature = (group.set, group.granularity);
+            if last != Some(signature) {
+                same_granularity_new_set |= last.is_some_and(|(_, g)| g == group.granularity);
+                want += 1;
+                last = Some(signature);
+            }
+            assert_eq!(
+                j.state.hunt_plan().unwrap().cut,
+                want,
+                "upcoming group {group:?}"
+            );
+            assert_eq!(fresh(&j.events).hunt_plan().unwrap().cut, want);
+        }
+        if matches!(action, Action::RunTrial(_))
+            && j.state.hunt_plan().is_some_and(|plan| plan.cut != 0)
+        {
+            assert_eq!(j.state.hunt_plan().unwrap().cut, want, "running group");
+        }
+        j.step(&mut oracle);
+    }
+    assert!(
+        same_granularity_new_set && want == 2,
+        "the hunt never cut a distinct set at the same granularity (cuts {want})"
+    );
 }
 
 fn repeated_session() -> Journal {
@@ -1588,6 +1644,76 @@ fn crash_recovery_keeps_the_running_part() {
     let end = Journal::end_payload(&trial, Outcome::Failure, Some(togi_machine::Signal::Crash));
     j.append(end.into(), &[intent]);
     assert_eq!(running(&j), 0, "the part still runs after its trial ended");
+}
+
+#[test]
+fn config_reload_keeps_the_running_parts_stored_requirement() {
+    let ids = ids(8);
+    let starts: Vec<Start> = STARTS
+        .iter()
+        .map(|&offset| Start::has_room(offset))
+        .collect();
+    let mut j = Journal::on(&ids, two_ccds(), &starts);
+    j.ranking(&ids);
+    decide_next(&mut j);
+    j.cycle_start(1, &[Regime::R1]);
+    let plan = trial_after_decisions(&mut j);
+    let (intent, trial) = j.intent(&plan);
+    let running = |j: &Journal| -> Option<(usize, CyclePart)> {
+        let projection = j.state.project();
+        assert_eq!(fresh(&j.events).project(), projection);
+        let parts = &projection.cycle_plan.steps[0].parts;
+        parts
+            .iter()
+            .position(|part| part.running)
+            .map(|at| (at, parts[at].clone()))
+    };
+    let (at, stored) = running(&j).expect("the trial's part is not running");
+    let secs = j.run().config.checking_trial.get();
+    assert!(
+        stored.short_s == secs && stored.short == 1 && stored.passed == 0,
+        "{stored:?}"
+    );
+    let changed = secs + 1;
+    j.load(&config(&format!(
+        r#"{{"durations":{{"checking_trial_s":{changed}}}}}"#
+    )));
+    assert_eq!(
+        running(&j),
+        Some((at, stored.clone())),
+        "config reload reinterpreted the running part"
+    );
+    j.append(
+        togi_journal::CrashDetected {
+            previous_boot: togi_machine::BootId::from("b".to_owned()),
+            in_flight: Some(intent),
+            stray: false,
+            condition: None,
+            reset_reason: None,
+            reset_reason_raw: Vec::new(),
+            inconclusive: false,
+            pstore: None,
+        }
+        .into(),
+        &[],
+    );
+    assert_eq!(
+        running(&j),
+        Some((at, stored)),
+        "crash.detected reinterpreted the running part"
+    );
+    let end = Journal::end_payload(&trial, Outcome::Failure, Some(togi_machine::Signal::Crash));
+    j.append(end.into(), &[intent]);
+    assert_eq!(
+        running(&j),
+        None,
+        "the part still runs after its trial ended"
+    );
+    let rebuilt = &parts(&j, 0)[at];
+    assert!(
+        rebuilt.short_s == changed && rebuilt.passed == 0,
+        "the ended part kept the old requirement: {rebuilt:?}"
+    );
 }
 
 #[test]
