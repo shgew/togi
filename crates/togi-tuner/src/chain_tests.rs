@@ -83,6 +83,16 @@ fn cycle_end(action: &Action) -> Option<bool> {
 /// under `cycle` (the default cycle when `None`), the first cycle open with its first R7 step
 /// begun.
 fn journal(cores: Vec<CoreInfo>, offsets: &[i64], cycle: Option<&str>) -> Journal {
+    seeded_journal(cores, offsets, cycle, |_| {})
+}
+
+/// As `journal`, with `seed` appending its records before the cycle opens.
+fn seeded_journal(
+    cores: Vec<CoreInfo>,
+    offsets: &[i64],
+    cycle: Option<&str>,
+    seed: impl FnOnce(&mut Journal),
+) -> Journal {
     let ids: Vec<u8> = cores.iter().map(|info| info.core.get()).collect();
     let starts: Vec<Start> = offsets
         .iter()
@@ -93,6 +103,7 @@ fn journal(cores: Vec<CoreInfo>, offsets: &[i64], cycle: Option<&str>) -> Journa
     if let Some(cycle) = cycle {
         j.load(&testkit::config(cycle));
     }
+    seed(&mut j);
     for _ in 0..3 {
         let next = j.next_decision();
         assert!(
@@ -1133,20 +1144,20 @@ fn ccd_count_above_three_is_refused_at_session_start() {
 }
 
 /// A cycle open with its first R7 step begun and `cells` pass cells in one of its classes, none
-/// at a profile that covers the checking profile.
+/// at a profile that covers the checking profile, carried before the cycle opened.
 fn crowded(cells: u32) -> Journal {
-    let mut j = chain_journal();
-    for at in 0..cells {
-        let digit = |place: u32| -i64::from(at / 10_u32.pow(place) % 10 + 1);
-        j.carry(
-            "20230101T000000Z",
-            (Regime::R7, 0, &[0, 1, 2, 3], SHORT),
-            Condition::Together,
-            &[digit(0), digit(1), digit(2), digit(3), -1, -1, -1, -1],
-            Outcome::Pass,
-        );
-    }
-    j
+    seeded_journal(two_ccds(), &STARTS, Some(r7_only()), |j| {
+        for at in 0..cells {
+            let digit = |place: u32| -i64::from(at / 10_u32.pow(place) % 10 + 1);
+            j.carry(
+                "20230101T000000Z",
+                (Regime::R7, 0, &[0, 1, 2, 3], SHORT),
+                Condition::Together,
+                &[digit(0), digit(1), digit(2), digit(3), -1, -1, -1, -1],
+                Outcome::Pass,
+            );
+        }
+    })
 }
 
 fn folded_visits(mut j: Journal, event: impl FnOnce(&mut Journal)) -> u64 {
