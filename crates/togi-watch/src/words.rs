@@ -15,7 +15,7 @@ use togi_journal::{
     CycleEvent, DeadEnd, Decision, DeepeningRound, EventKind, Failure, HuntEnd, HuntGroup,
     HuntOutcome, HuntStart, Inference, Mce, Payload, RoundEvent, TrialEnd, TunerDecision,
 };
-use togi_machine::{CoreId, Regime, Signal, WorkloadId};
+use togi_machine::{CoreId, Regime, Signal, TargetOffset, WorkloadId};
 
 /// The tag of a line of what happened: one short word per kind of event, in a column of its own, so the eye finds
 /// a crash without reading the sentence beside it.
@@ -181,7 +181,9 @@ pub const fn regime_words(regime: Regime) -> &'static str {
 pub const fn load_words(regime: Regime) -> &'static str {
     match regime {
         Regime::R6 => "idle + bursts",
-        _ => regime_words(regime),
+        Regime::R1 | Regime::R2 | Regime::R3 | Regime::R4 | Regime::R5 | Regime::R7 => {
+            regime_words(regime)
+        }
     }
 }
 
@@ -314,10 +316,10 @@ pub fn lateness(last_sample: Option<Duration>, planned: Option<Duration>) -> &'s
     }
 }
 
-/// The offset a core passed alone. A search exit's offset is the margin one count shallower, so the pass is the
-/// limit; an exit with no pass has only its offset.
-pub fn solo_limit(transition: &CoreTransition) -> i64 {
-    transition.pass.unwrap_or(transition.offset).get()
+/// The offset a core passed alone, the solo limit a search exit records. A search exit's offset is the margin one
+/// count shallower, so the pass is the limit; an exit with no pass has no solo limit.
+pub fn solo_limit(transition: &CoreTransition) -> Option<i64> {
+    transition.pass.map(TargetOffset::get)
 }
 
 /// The words of a tuner decision as the history tells it.
@@ -367,17 +369,21 @@ pub fn phase_line(d: &CoreTransition) -> Option<Line> {
             text: format!("core {core:02} starts over from {}", d.offset.get()),
             tone: Tone::Warn,
         }),
-        (Some(CorePhase::Search), _) => Some(Line {
-            tag: Tag::Limit,
-            text: format!("core {core:02} solo limit {}", solo_limit(d)),
-            tone: Tone::Good,
-        }),
+        (Some(CorePhase::Search), CorePhase::HasRoom | CorePhase::AtLimit) => {
+            solo_limit(d).map(|limit| Line {
+                tag: Tag::Limit,
+                text: format!("core {core:02} solo limit {limit}"),
+                tone: Tone::Good,
+            })
+        }
         (Some(CorePhase::AtLimit), CorePhase::HasRoom) => Some(Line {
             tag: Tag::Room,
             text: format!("core {core:02} has room again at {}", d.offset.get()),
             tone: Tone::Plain,
         }),
-        _ => None,
+        (None, CorePhase::Search | CorePhase::HasRoom | CorePhase::AtLimit)
+        | (Some(CorePhase::HasRoom), CorePhase::HasRoom | CorePhase::AtLimit)
+        | (Some(CorePhase::AtLimit), CorePhase::AtLimit) => None,
     }
 }
 
@@ -459,9 +465,12 @@ pub fn combination_text(d: &Combination) -> String {
 pub fn trial_end_tag(d: &TrialEnd) -> Tag {
     match (d.outcome, d.signal) {
         (togi_journal::Outcome::Pass, _) => Tag::Pass,
-        (_, Some(Signal::Crash)) => Tag::Crash,
+        (
+            togi_journal::Outcome::Failure | togi_journal::Outcome::Inconclusive,
+            Some(Signal::Crash),
+        ) => Tag::Crash,
         (togi_journal::Outcome::Failure, _) => Tag::Fail,
-        _ => Tag::Unclear,
+        (togi_journal::Outcome::Inconclusive, _) => Tag::Unclear,
     }
 }
 
@@ -522,6 +531,31 @@ pub fn decision_phrase(d: &TunerDecision, failed: Option<CoreId>) -> String {
         Decision::Deepen => format!("core {core:02} deepens {from} → {to}"),
         Decision::Yield => format!("core {core:02} yields {from} → {to}"),
         Decision::Hold => format!("core {core:02} holds at {from}"),
+    }
+}
+
+/// The tag of a core's move to `phase` that has no history line of its own, such as a core entering its search
+/// at the start of a session.
+const fn phase_tag(phase: CorePhase) -> Tag {
+    match phase {
+        CorePhase::Search => Tag::Step,
+        CorePhase::HasRoom => Tag::Room,
+        CorePhase::AtLimit => Tag::Limit,
+    }
+}
+
+fn core_phase_phrase(d: &CoreTransition) -> Option<String> {
+    let core = d.core.get();
+    match (d.from, d.to) {
+        (Some(CorePhase::Search), CorePhase::HasRoom | CorePhase::AtLimit) => {
+            solo_limit(d).map(|limit| format!("core {core:02} solo limit {limit}"))
+        }
+        (Some(_), CorePhase::Search) => Some(format!("core {core:02} starts its search over")),
+        (None, CorePhase::Search) => Some(format!("core {core:02} starts its search")),
+        (
+            None | Some(CorePhase::HasRoom | CorePhase::AtLimit),
+            CorePhase::HasRoom | CorePhase::AtLimit,
+        ) => None,
     }
 }
 
@@ -751,22 +785,12 @@ pub fn words(kind: EventKind) -> Words {
         EventKind::CorePhase => Words {
             history: History::Contextual,
             tag: Tagging::By(|payload| match payload {
-                Payload::CorePhase(d) => phase_line(d).map_or(Tag::Limit, |line| line.tag),
+                Payload::CorePhase(d) => {
+                    phase_line(d).map_or_else(|| phase_tag(d.to), |line| line.tag)
+                }
                 _ => Tag::Limit,
             }),
-            detailed: Phrase::Of(of!(CorePhase, |d| match (d.from, d.to) {
-                (Some(CorePhase::Search), to) if to != CorePhase::Search => {
-                    Some(format!(
-                        "core {:02} solo limit {}",
-                        d.core.get(),
-                        solo_limit(d)
-                    ))
-                }
-                (_, CorePhase::Search) => {
-                    Some(format!("core {:02} starts its search over", d.core.get()))
-                }
-                _ => None,
-            })),
+            detailed: Phrase::Of(of!(CorePhase, |d| core_phase_phrase(d))),
             ..Words::SILENT
         },
         EventKind::CheckingCycle => Words {

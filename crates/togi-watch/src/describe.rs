@@ -15,7 +15,7 @@ use crate::facts::{Facts, HuntStartFacts, trial_cores};
 use crate::history::{Entry, EntryKind, Key};
 use crate::words::{
     History, Tag, Tone, age, core_ids, kind_words, lateness, on_cores, phase_line, plural,
-    signal_words, solo_limit, words, workload_display,
+    signal_words, words, workload_display,
 };
 
 fn seconds_between(from: Timestamp, to: Timestamp) -> std::time::Duration {
@@ -145,7 +145,11 @@ impl Facts {
     }
 
     fn core_phase(&mut self, at: Timestamp, d: &CoreTransition) -> Option<Entry> {
-        if self.carrying && d.from == Some(CorePhase::Search) && d.to != CorePhase::Search {
+        if self.carrying
+            && d.from == Some(CorePhase::Search)
+            && d.to != CorePhase::Search
+            && d.pass.is_some()
+        {
             if let Some(session) = self
                 .history
                 .entries
@@ -162,7 +166,7 @@ impl Facts {
         if line.tag == Tag::Limit {
             line.kind = EntryKind::Limits;
             line.cores = vec![d.core];
-            line.offset = Some(togi_machine::TargetOffset::clamped(solo_limit(d)));
+            line.offset = d.pass;
             line.key = Some(Key::Limit);
         }
         Some(line)
@@ -530,8 +534,8 @@ impl Facts {
         }
         match (intent.rerun, intent.condition) {
             (true, Condition::Parked) => format!("rerun of {text} with every core at 0"),
-            (true, _) => format!("rerun of {text}"),
-            _ => text,
+            (true, Condition::Alone | Condition::Together) => format!("rerun of {text}"),
+            (false, Condition::Alone | Condition::Together | Condition::Parked) => text,
         }
     }
 }

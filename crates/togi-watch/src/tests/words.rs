@@ -201,22 +201,38 @@ fn phase(from: Option<CorePhase>, to: CorePhase, offset: i64, pass: Option<i64>)
 #[test]
 fn a_solo_limit_is_the_offset_the_core_passed_alone() {
     let exit = phase(Some(CorePhase::Search), CorePhase::HasRoom, -19, Some(-20));
-    assert_eq!(solo_limit(&exit), -20);
-    let bare = phase(Some(CorePhase::Search), CorePhase::HasRoom, -9, None);
-    assert_eq!(solo_limit(&bare), -9);
+    assert_eq!(solo_limit(&exit), Some(-20));
     assert_eq!(phase_line(&exit).unwrap().text, "core 01 solo limit -20");
+    let bare = phase(Some(CorePhase::Search), CorePhase::HasRoom, -9, None);
+    assert_eq!(
+        solo_limit(&bare),
+        None,
+        "an exit with no pass has no solo limit"
+    );
+    assert!(phase_line(&bare).is_none());
     let again = phase(Some(CorePhase::AtLimit), CorePhase::Search, 0, None);
     assert_eq!(
         phase_line(&again).unwrap().text,
         "core 01 starts over from 0"
     );
     let room = phase(Some(CorePhase::AtLimit), CorePhase::HasRoom, -12, None);
-    assert_eq!(phase_line(&room).unwrap().tag, Tag::Room);
-    let first = phase(None, CorePhase::HasRoom, -12, None);
-    assert!(
-        phase_line(&first).is_none(),
-        "the other changes show on the core's row"
+    assert_eq!(
+        phase_line(&room).map(|line| (line.tag, line.text)),
+        Some((Tag::Room, "core 01 has room again at -12".to_owned()))
     );
+    for (from, to) in [
+        (None, CorePhase::Search),
+        (None, CorePhase::HasRoom),
+        (None, CorePhase::AtLimit),
+        (Some(CorePhase::HasRoom), CorePhase::HasRoom),
+        (Some(CorePhase::HasRoom), CorePhase::AtLimit),
+        (Some(CorePhase::AtLimit), CorePhase::AtLimit),
+    ] {
+        assert!(
+            phase_line(&phase(from, to, -12, None)).is_none(),
+            "{from:?} → {to:?} shows on the core's row"
+        );
+    }
 }
 
 #[test]
@@ -227,6 +243,8 @@ fn trial_ends_are_tagged_by_how_they_ended() {
     assert_eq!(end(Failure, Some(Signal::Crash)), Tag::Crash);
     assert_eq!(end(Failure, Some(Signal::Stall)), Tag::Fail);
     assert_eq!(end(Inconclusive, None), Tag::Unclear);
+    assert_eq!(end(Inconclusive, Some(Signal::Stall)), Tag::Unclear);
+    assert_eq!(end(Inconclusive, Some(Signal::Crash)), Tag::Crash);
 }
 
 #[test]
@@ -269,8 +287,14 @@ fn the_regime_and_signal_words() {
         assert_eq!(regime_words(regime), sentence);
         assert_eq!(kind_words(regime), kind);
     }
-    assert_eq!(load_words(Regime::R6), "idle + bursts");
-    assert_eq!(load_words(Regime::R2), "heavy vector load");
+    for regime in togi_machine::REGIMES {
+        let expected = if regime == Regime::R6 {
+            "idle + bursts"
+        } else {
+            regime_words(regime)
+        };
+        assert_eq!(load_words(regime), expected);
+    }
     for (signal, words) in [
         (Signal::ComputationError, "wrong result"),
         (Signal::UnexpectedExit, "the stress program quit"),
@@ -520,31 +544,55 @@ fn steps_hunts_and_stops_have_phrases() {
 
 #[test]
 fn core_phases_have_phrases() {
-    let phase = |from, to| -> Payload {
+    let phase = |from, to, pass: Option<i64>| -> Payload {
         let mut start = Start::search(-12);
-        (start.from, start.to) = (from, to);
+        (start.from, start.to, start.pass) = (from, to, pass);
         transition(1, start).into()
     };
+    let search = Some(CorePhase::Search);
     assert_eq!(
-        phrase(&phase(Some(CorePhase::Search), CorePhase::HasRoom)).as_deref(),
-        Some("core 01 solo limit -12")
+        phrase(&phase(search, CorePhase::HasRoom, Some(-13))).as_deref(),
+        Some("core 01 solo limit -13")
     );
     assert_eq!(
-        phrase(&phase(Some(CorePhase::AtLimit), CorePhase::Search)).as_deref(),
+        phrase(&phase(search, CorePhase::AtLimit, None)),
+        None,
+        "an exit with no pass names no solo limit"
+    );
+    assert_eq!(
+        phrase(&phase(Some(CorePhase::AtLimit), CorePhase::Search, None)).as_deref(),
         Some("core 01 starts its search over")
     );
     assert_eq!(
-        phrase(&phase(Some(CorePhase::AtLimit), CorePhase::HasRoom)),
+        phrase(&phase(None, CorePhase::Search, None)).as_deref(),
+        Some("core 01 starts its search"),
+        "the first start is not a start over"
+    );
+    assert_eq!(
+        phrase(&phase(Some(CorePhase::AtLimit), CorePhase::HasRoom, None)),
         None
     );
+    assert_eq!(phrase(&phase(None, CorePhase::HasRoom, None)), None);
     let Tagging::By(tag) = words(EventKind::CorePhase).tag else {
         panic!("a core phase is tagged by its payload");
     };
-    assert_eq!(
-        tag(&phase(Some(CorePhase::Search), CorePhase::HasRoom)),
-        Tag::Limit
-    );
-    assert_eq!(tag(&phase(None, CorePhase::HasRoom)), Tag::Limit);
+    for (from, to, pass, word) in [
+        (search, CorePhase::HasRoom, Some(-13), Tag::Limit),
+        (search, CorePhase::HasRoom, None, Tag::Room),
+        (search, CorePhase::AtLimit, None, Tag::Limit),
+        (None, CorePhase::Search, None, Tag::Step),
+        (None, CorePhase::HasRoom, None, Tag::Room),
+        (None, CorePhase::AtLimit, None, Tag::Limit),
+        (
+            Some(CorePhase::AtLimit),
+            CorePhase::HasRoom,
+            None,
+            Tag::Room,
+        ),
+        (Some(CorePhase::HasRoom), CorePhase::Search, None, Tag::Step),
+    ] {
+        assert_eq!(tag(&phase(from, to, pass)), word, "{from:?} → {to:?}");
+    }
 }
 
 #[test]

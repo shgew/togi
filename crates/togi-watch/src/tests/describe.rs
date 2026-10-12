@@ -10,7 +10,7 @@ use super::kit::*;
 
 fn phase(id: u8, from: CorePhase, to: CorePhase, offset: i64) -> Payload {
     let mut start = Start::search(offset);
-    (start.from, start.to) = (Some(from), to);
+    (start.from, start.to, start.pass) = (Some(from), to, Some(offset));
     transition(id, start).into()
 }
 
@@ -68,6 +68,9 @@ fn solo_limits_found_before_the_first_trial_are_counted_on_the_session_line() {
     );
     h.push(phase(0, CorePhase::Search, CorePhase::HasRoom, -20));
     h.push(phase(1, CorePhase::Search, CorePhase::AtLimit, -25));
+    let mut bare = Start::search(-9);
+    (bare.from, bare.to) = (Some(CorePhase::Search), CorePhase::AtLimit);
+    h.push(transition(2, bare).into());
     assert_eq!(
         h.sentences(),
         ["start: session started · 2 solo limits carried from the last session"]

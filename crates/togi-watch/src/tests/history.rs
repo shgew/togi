@@ -352,7 +352,7 @@ fn deepening_history_separates_deeper_and_yielded_members() {
         (2, CorePhase::AtLimit, -10),
     ] {
         let mut start = Start::has_room(offset);
-        start.from = Some(CorePhase::Search);
+        (start.from, start.pass) = (Some(CorePhase::Search), Some(offset));
         start.to = to;
         h.push(transition(id, start).into());
     }
