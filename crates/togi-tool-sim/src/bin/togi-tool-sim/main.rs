@@ -91,6 +91,9 @@ struct SuiteArgs {
     /// Fail a session still running after N simulated boots.
     #[arg(long, value_name = "N", default_value = "1000")]
     max_boots: NonZeroU32,
+    /// Run N sessions at once; default the available parallelism. The manifest does not depend on it.
+    #[arg(long, value_name = "N")]
+    jobs: Option<NonZeroUsize>,
 }
 
 #[derive(Debug, Args)]
@@ -100,7 +103,10 @@ struct CheckArgs {
     /// The number of shards the suite was split into; every one must have a manifest.
     #[arg(long, value_name = "N")]
     shards: NonZeroUsize,
-    /// The directory holding every shard's shard-I.jsonl and nothing else.
+    /// Check only this shard's manifest, against exactly the runs the partition gives it.
+    #[arg(long, value_name = "I")]
+    shard: Option<usize>,
+    /// The directory holding the shards' shard-I.jsonl and nothing else.
     manifests: PathBuf,
 }
 

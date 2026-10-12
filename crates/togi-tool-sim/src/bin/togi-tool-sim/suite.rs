@@ -1,7 +1,10 @@
 use std::fs;
 use std::io::{self, Write as _};
-use std::num::NonZeroU32;
+use std::num::{NonZeroU32, NonZeroUsize};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::mpsc;
+use std::thread;
 use std::time::Instant;
 
 use jiff::tz::TimeZone;
@@ -86,22 +89,53 @@ fn run_shard(args: &SuiteArgs, log: &mut Log) -> Result<bool, Error> {
     let cancel = CancellationToken::new();
     signals::cancel_on_signals(cancel.clone()).map_err(Error::Signals)?;
     let runs = shard(&Suite::load(&args.suite)?.runs(), args.shards, args.shard)?;
-    let mut extracts = Extracts::new();
-    let mut results = Vec::with_capacity(runs.len());
-    for run in runs {
-        let started = Instant::now();
-        let outcome = execute(&run, args.max_boots, &mut extracts, &cancel);
-        let _ = writeln!(
-            log,
-            "sim: {} {:.3}s {outcome}",
-            run.id,
-            started.elapsed().as_secs_f64()
-        );
-        results.push(RunResult {
+    let jobs = args
+        .jobs
+        .unwrap_or_else(|| thread::available_parallelism().unwrap_or(NonZeroUsize::MIN))
+        .get()
+        .min(runs.len());
+    let mut outcomes: Vec<Option<Outcome>> = vec![None; runs.len()];
+    let next = AtomicUsize::new(0);
+    let (sender, finished) = mpsc::channel();
+    thread::scope(|scope| {
+        for _ in 0..jobs {
+            let (sender, runs, next, cancel) = (sender.clone(), &runs, &next, &cancel);
+            scope.spawn(move || {
+                let mut extracts = Extracts::new();
+                loop {
+                    let index = next.fetch_add(1, Ordering::Relaxed);
+                    let Some(run) = runs.get(index) else {
+                        break;
+                    };
+                    let started = Instant::now();
+                    let outcome = execute(run, args.max_boots, &mut extracts, cancel);
+                    if sender.send((index, started.elapsed(), outcome)).is_err() {
+                        break;
+                    }
+                }
+            });
+        }
+        drop(sender);
+        for (index, elapsed, outcome) in finished {
+            let _ = writeln!(
+                log,
+                "sim: {} {:.3}s {outcome}",
+                runs[index].id,
+                elapsed.as_secs_f64()
+            );
+            outcomes[index] = Some(outcome);
+        }
+    });
+    let results: Vec<RunResult> = runs
+        .into_iter()
+        .zip(outcomes)
+        .map(|(run, outcome)| RunResult {
             id: run.id,
-            outcome,
-        });
-    }
+            outcome: outcome.unwrap_or_else(|| Outcome::Failed {
+                detail: "the run never reported an outcome".to_owned(),
+            }),
+        })
+        .collect();
     let clean = results
         .iter()
         .all(|result| result.outcome == Outcome::Clean);
@@ -124,11 +158,12 @@ fn shard_of(name: &str) -> Option<usize> {
 }
 
 fn check_manifests(args: &CheckArgs) -> Result<(), Error> {
-    let expected: Vec<_> = Suite::load(&args.suite)?
-        .runs()
-        .into_iter()
-        .map(|run| run.id)
-        .collect();
+    let runs = Suite::load(&args.suite)?.runs();
+    let (runs, shards) = match args.shard {
+        Some(index) => (shard(&runs, args.shards, index)?, index..index + 1),
+        None => (runs, 0..args.shards.get()),
+    };
+    let expected: Vec<_> = runs.into_iter().map(|run| run.id).collect();
     let read = |path: &Path, source| Error::Read {
         path: path.to_path_buf(),
         source,
@@ -153,7 +188,7 @@ fn check_manifests(args: &CheckArgs) -> Result<(), Error> {
         manifests.push(ShardManifest { shard, results });
     }
     manifests.sort_by_key(|manifest| manifest.shard);
-    Ok(togi_tool_sim::check(&expected, args.shards, &manifests)?)
+    Ok(togi_tool_sim::check(&expected, shards, &manifests)?)
 }
 
 /// Runs one session of the suite and judges it: clean only when it stopped after its cycles, the last boot's

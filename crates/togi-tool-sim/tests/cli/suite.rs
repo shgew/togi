@@ -124,3 +124,68 @@ fn a_shard_outside_the_count_is_refused() {
     assert_eq!(ran.code, Some(1), "{}", ran.stderr);
     assert!(!out.exists());
 }
+
+#[test]
+fn the_manifest_does_not_depend_on_the_number_of_jobs() {
+    let root = tempfile::tempdir().unwrap();
+    let suite = suite(root.path());
+    let mut manifests = Vec::new();
+    for jobs in ["1", "3"] {
+        let out = root.path().join(format!("jobs-{jobs}"));
+        let ran = sim([
+            "suite",
+            "--suite",
+            &suite,
+            "--out",
+            out.to_str().unwrap(),
+            "--jobs",
+            jobs,
+        ]);
+        assert_eq!(ran.code, Some(0), "{}", ran.stderr);
+        assert_eq!(ran.stderr.lines().count(), 3, "{}", ran.stderr);
+        manifests.push(fs::read(out.join("shard-0.jsonl")).unwrap());
+    }
+    assert_eq!(manifests[0], manifests[1]);
+}
+
+#[test]
+fn a_shard_is_checked_alone_against_exactly_its_own_runs() {
+    let root = tempfile::tempdir().unwrap();
+    let suite = suite(root.path());
+    let out = root.path().join("manifests");
+    let ran = run_shard(&suite, &out, "1", &[]);
+    assert_eq!(ran.code, Some(0), "{}", ran.stderr);
+    let alone = |shard: &str| {
+        sim([
+            "check",
+            "--suite",
+            &suite,
+            "--shards",
+            "2",
+            "--shard",
+            shard,
+            out.to_str().unwrap(),
+        ])
+    };
+    assert_eq!(alone("1").code, Some(0));
+    assert_eq!(check(&suite, &out).code, Some(1));
+    let ran = alone("0");
+    assert_eq!(ran.code, Some(1));
+    assert!(
+        ran.stderr.contains("shard 0 has no manifest"),
+        "{}",
+        ran.stderr
+    );
+    let path = out.join("shard-1.jsonl");
+    let mut text = fs::read_to_string(&path).unwrap();
+    text.push_str("{\"id\":\"default/dev-1\",\"outcome\":{\"kind\":\"clean\"}}\n");
+    fs::write(&path, text).unwrap();
+    let ran = alone("1");
+    assert_eq!(ran.code, Some(1));
+    assert!(
+        ran.stderr
+            .contains("reports run default/dev-1, which is not one of the runs checked"),
+        "{}",
+        ran.stderr
+    );
+}

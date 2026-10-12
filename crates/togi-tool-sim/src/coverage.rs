@@ -1,6 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
-use std::num::NonZeroUsize;
 
 use serde::{Deserialize, Serialize};
 use togi_journal::{DeadEndCondition, ShutdownReason};
@@ -114,15 +113,15 @@ pub struct ShardManifest {
 pub enum Problem {
     #[error("shard {shard} has no manifest")]
     MissingShard { shard: usize },
-    #[error("shard {shard} is outside the {count} expected shards")]
-    UnexpectedShard { shard: usize, count: NonZeroUsize },
+    #[error("shard {shard} has a manifest but is not one of the expected shards")]
+    UnexpectedShard { shard: usize },
     #[error("shard {shard} has more than one manifest")]
     DuplicateShard { shard: usize },
     #[error("run {id} is in no manifest")]
     MissingRun { id: RunId },
     #[error("run {id} is reported {} times, by shards {shards:?}", shards.len())]
     DuplicateRun { id: RunId, shards: Vec<usize> },
-    #[error("shard {shard} reports run {id}, which the suite does not have")]
+    #[error("shard {shard} reports run {id}, which is not one of the runs checked")]
     UnexpectedRun { id: RunId, shard: usize },
     #[error("run {id} in shard {shard}: {outcome}")]
     Unclean {
@@ -149,27 +148,30 @@ impl fmt::Display for CoverageError {
 
 impl std::error::Error for CoverageError {}
 
-/// Proves the suite ran completely and cleanly. `expected` is the suite's own run ids and `expected_shards` the shard
-/// count the partition used, both derived without looking at the manifests, so a shard whose manifest is absent is a
-/// problem rather than invisible. Every missing shard, missing run, duplicate, unexpected id and unclean outcome is
-/// reported, not only the first.
+/// Proves the suite ran completely and cleanly. `expected` is the run ids and `expected_shards` the shards that ran
+/// them, both derived from the suite and its partition without looking at the manifests, so a shard whose manifest
+/// is absent is a problem rather than invisible: `0..count` for the whole suite, one index for a single shard's own
+/// check. Every missing shard, missing run, duplicate, unexpected id and unclean outcome is reported, not only the
+/// first.
 pub fn check(
     expected: &[RunId],
-    expected_shards: NonZeroUsize,
+    expected_shards: impl IntoIterator<Item = usize>,
     manifests: &[ShardManifest],
 ) -> Result<(), CoverageError> {
     let mut problems = Vec::new();
-    let mut manifested = vec![0_usize; expected_shards.get()];
+    let mut manifested: BTreeMap<usize, usize> = expected_shards
+        .into_iter()
+        .map(|shard| (shard, 0))
+        .collect();
     for manifest in manifests {
-        match manifested.get_mut(manifest.shard) {
+        match manifested.get_mut(&manifest.shard) {
             Some(count) => *count += 1,
             None => problems.push(Problem::UnexpectedShard {
                 shard: manifest.shard,
-                count: expected_shards,
             }),
         }
     }
-    for (shard, &count) in manifested.iter().enumerate() {
+    for (&shard, &count) in &manifested {
         match count {
             0 => problems.push(Problem::MissingShard { shard }),
             1 => {}

@@ -1,5 +1,3 @@
-use std::num::NonZeroUsize;
-
 use togi_journal::{DeadEndCondition, ShutdownReason};
 use togi_tool_audit::{Check, Violation};
 use togi_tool_sim::{
@@ -9,10 +7,6 @@ use togi_tool_sim::{
 
 fn id(text: &str) -> RunId {
     serde_json::from_value(serde_json::Value::String(text.to_owned())).unwrap()
-}
-
-fn count(value: usize) -> NonZeroUsize {
-    NonZeroUsize::new(value).unwrap()
 }
 
 fn result(text: &str, outcome: Outcome) -> RunResult {
@@ -44,21 +38,21 @@ fn complete() -> Vec<ShardManifest> {
 }
 
 fn problems(manifests: &[ShardManifest], shards: usize) -> Vec<Problem> {
-    check(&expected(), count(shards), manifests)
+    check(&expected(), 0..shards, manifests)
         .unwrap_err()
         .problems
 }
 
 #[test]
 fn a_complete_clean_suite_passes() {
-    check(&expected(), count(2), &complete()).unwrap();
+    check(&expected(), 0..2, &complete()).unwrap();
 }
 
 #[test]
 fn manifests_may_arrive_in_any_order() {
     let mut manifests = complete();
     manifests.reverse();
-    check(&expected(), count(2), &manifests).unwrap();
+    check(&expected(), 0..2, &manifests).unwrap();
 }
 
 #[test]
@@ -85,7 +79,7 @@ fn a_shard_with_no_runs_still_needs_its_manifest() {
     );
     let mut with_empty = complete();
     with_empty.push(manifest(2, Vec::new()));
-    check(&expected(), count(3), &with_empty).unwrap();
+    check(&expected(), 0..3, &with_empty).unwrap();
 }
 
 #[test]
@@ -94,10 +88,40 @@ fn a_manifest_for_a_shard_outside_the_count_is_unexpected() {
     manifests.push(manifest(5, Vec::new()));
     assert_eq!(
         problems(&manifests, 2),
-        vec![Problem::UnexpectedShard {
-            shard: 5,
-            count: count(2)
+        vec![Problem::UnexpectedShard { shard: 5 }]
+    );
+}
+
+#[test]
+fn a_single_shard_is_checked_against_its_own_runs_alone() {
+    let ids = [id("a/dev-2"), id("b/holdout-9")];
+    let own = complete().remove(1);
+    check(&ids, [1], std::slice::from_ref(&own)).unwrap();
+    let mut short = own.clone();
+    short.results.pop();
+    assert_eq!(
+        check(&ids, [1], &[short]).unwrap_err().problems,
+        vec![Problem::MissingRun {
+            id: id("b/holdout-9")
         }]
+    );
+    let mut extra = own.clone();
+    extra.results.push(clean("a/dev-1"));
+    assert_eq!(
+        check(&ids, [1], &[extra]).unwrap_err().problems,
+        vec![Problem::UnexpectedRun {
+            id: id("a/dev-1"),
+            shard: 1
+        }]
+    );
+    let mut renumbered = own;
+    renumbered.shard = 0;
+    assert_eq!(
+        check(&ids, [1], &[renumbered]).unwrap_err().problems[..2],
+        [
+            Problem::UnexpectedShard { shard: 0 },
+            Problem::MissingShard { shard: 1 }
+        ]
     );
 }
 
