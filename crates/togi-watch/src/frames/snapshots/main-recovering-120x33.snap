@@ -1,0 +1,36 @@
+---
+source: crates/togi-watch/src/frames/snapshots.rs
+expression: body
+---
+│ togi   01:41:10   session 1h41m   0 failures · 1 crash
+│ ► SOLO  0 of 16 found ─ ○ P1 ─ ○ P2 ─ CLEAN 0 ─ ○ CYCLE
+│
+│ ▌  I picked up from the journal after the reboot; nothing it recorded is lost.
+│
+│ RECOVERED FROM A CRASH  crash in core 08 · R1 light at -10
+│ detected 01:40:30 after a watchdog reset
+│ next: R1 light on core 01 alone at -10
+│
+│ CCD 0 waiting    0  2 counts/cell       -50 fail            CCD 1 idle       0  2 counts/cell       -50 fail
+│   00   0 SEARCH   ·····                           → -15       08 -10 SEARCH   ▄▄▄▄▄                           → -10
+│   01   0 SEARCH   ···                             → -10       09   0 SEARCH   ···                             → -10
+│   02   0 SEARCH   ···                             → -10       10   0 SEARCH   ···                             → -10
+│   03   0 SEARCH   ···                             → -10       11   0 SEARCH   ···                             → -10
+│   04   0 SEARCH   ···                             → -10       12   0 SEARCH   ···                             → -10
+│   05   0 SEARCH   ···                             → -10       13   0 SEARCH   ···                             → -10
+│   06   0 SEARCH   ···                             → -10       14   0 SEARCH   ···                             → -10
+│   07   0 SEARCH   ···                             → -10       15   0 SEARCH   ···                             → -10
+│
+│ TURNS ────────────────── one core per turn, in this order   WHAT HAPPENED ─────────────────────────────── l: last 400
+│
+│   01  search step: light...      -10  p -5 · next -10       01:40  crash    with the offsets applied, rebooted
+│   09  search step: light...      -10  p -5 · next -10       01:39  step     core 00 passed -10, next -15
+│   02  search step: light...      -10  p -5 · next -10       01:36  step     core 15 passed -5, next -10
+│   10  search step: light...      -10  p -5 · next -10       01:33  step     core 07 passed -5, next -10
+│   03  search step: light...      -10  p -5 · next -10       01:30  step     core 14 passed -5, next -10
+│   11  search step: light...      -10  p -5 · next -10       01:27  step     core 06 passed -5, next -10
+│   04  search step: light...      -10  p -5 · next -10       01:24  step     core 13 passed -5, next -10
+│   12  search step: light...      -10  p -5 · next -10       01:21  step     core 05 passed -5, next -10
+│ +8 more                                                     +27 more
+│
+│  ?  help    l  log    esc  back    q  close view

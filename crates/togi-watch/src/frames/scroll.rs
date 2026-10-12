@@ -1,0 +1,164 @@
+//! Scrolling a long body inside a rectangle, with a scrollbar thumb.
+//!
+//! A scroll at or past the extent shows the end, so `usize::MAX` follows it.
+
+use ratatui::text::{Line, Span};
+
+use super::colours::Paint;
+use super::fit::truncate_styled;
+use crate::screen::Colours;
+
+/// The scrollbar column: a track of `page` rows with a thumb as tall as the page is of the whole, placed where
+/// `top` is of `scrolled`. A page that needs no scrolling shows no bar.
+#[must_use]
+pub fn scrollbar(
+    page: usize,
+    total: usize,
+    top: usize,
+    scrolled: usize,
+    colours: Colours,
+) -> Vec<Span<'static>> {
+    if scrolled == 0 || total == 0 {
+        return vec![Span::raw(" "); page];
+    }
+    let thumb = (page * page / total).max(1).min(page);
+    let start = top * (page - thumb) / scrolled.max(1);
+    (0..page)
+        .map(|row| {
+            if (start..start + thumb).contains(&row) {
+                Paint::Text.span(colours, "█")
+            } else {
+                Paint::Grey.span(colours, "│")
+            }
+        })
+        .collect()
+}
+
+/// `lines` as a page of `height` rows scrolled `scroll` lines down, each `width` cells wide with the scrollbar
+/// in its first two. Returns the page and how far the lines can scroll.
+#[must_use]
+pub fn scroll_body_with_bar(
+    lines: &[Line<'static>],
+    width: usize,
+    height: usize,
+    scroll: usize,
+    colours: Colours,
+) -> (Vec<Line<'static>>, usize) {
+    let scrolled = lines.len().saturating_sub(height);
+    let top = scroll.min(scrolled);
+    let bar = scrollbar(height, lines.len(), top, scrolled, colours);
+    let body = &lines[top..lines.len().min(top + height)];
+    let page = body
+        .iter()
+        .zip(bar)
+        .map(|(line, bar)| {
+            let mut row = vec![bar, Span::raw(" ")];
+            row.extend(truncate_styled(line, width.saturating_sub(2)).spans);
+            truncate_styled(&Line::from(row), width)
+        })
+        .collect();
+    (page, scrolled)
+}
+
+#[cfg(test)]
+mod tests {
+    use ratatui::text::Line;
+
+    use super::{scroll_body_with_bar, scrollbar};
+    use crate::frames::fit::plain;
+    use crate::screen::Colours;
+
+    #[test]
+    fn the_scrollbar_thumb_tracks_the_page() {
+        for (name, page, total, top, scrolled, want) in [
+            ("a page that fits shows no bar", 4, 3, 0, 0, "    "),
+            (
+                "the top puts the thumb at the top",
+                10,
+                40,
+                0,
+                30,
+                "██││││││││",
+            ),
+            (
+                "the end puts the thumb at the bottom",
+                10,
+                40,
+                30,
+                30,
+                "││││││││██",
+            ),
+            (
+                "halfway puts it in the middle",
+                10,
+                40,
+                15,
+                30,
+                "││││██││││",
+            ),
+            (
+                "a long view keeps a one-row thumb",
+                10,
+                1000,
+                990,
+                990,
+                "│││││││││█",
+            ),
+        ] {
+            let bar: String = scrollbar(page, total, top, scrolled, Colours::Full)
+                .iter()
+                .map(|span| span.content.as_ref())
+                .collect();
+            assert_eq!(bar, want, "{name}");
+        }
+    }
+
+    #[test]
+    fn a_zero_height_page_has_no_bar() {
+        assert!(scrollbar(0, 40, 0, 30, Colours::Full).is_empty());
+    }
+
+    fn numbered(count: usize) -> Vec<Line<'static>> {
+        (0..count)
+            .map(|n| Line::from(format!("row {n:02}")))
+            .collect()
+    }
+
+    #[test]
+    fn a_scroll_at_or_past_the_extent_shows_the_end() {
+        let lines = numbered(30);
+        let (end, extent) = scroll_body_with_bar(&lines, 20, 10, usize::MAX, Colours::None);
+        assert_eq!(extent, 20);
+        for scroll in [20, 21, 1000] {
+            assert_eq!(
+                scroll_body_with_bar(&lines, 20, 10, scroll, Colours::None).0,
+                end,
+                "scroll {scroll}"
+            );
+        }
+        assert_eq!(plain(&end[9]), "█ row 29");
+        let (top, _) = scroll_body_with_bar(&lines, 20, 10, 0, Colours::None);
+        assert_eq!(plain(&top[0]), "█ row 00");
+        let (middle, _) = scroll_body_with_bar(&lines, 20, 10, 5, Colours::None);
+        assert_eq!(plain(&middle[0]), "│ row 05");
+    }
+
+    #[test]
+    fn a_body_that_fits_has_blank_bar_columns_and_rows_clipped_to_the_width() {
+        let (page, extent) = scroll_body_with_bar(&numbered(3), 5, 10, 0, Colours::None);
+        assert_eq!(extent, 0);
+        assert_eq!(
+            page.iter().map(plain).collect::<Vec<_>>(),
+            ["  row", "  row", "  row"]
+        );
+        assert!(
+            scroll_body_with_bar(&numbered(3), 5, 0, 0, Colours::None)
+                .0
+                .is_empty()
+        );
+        assert_eq!(
+            plain(&scroll_body_with_bar(&numbered(3), 1, 3, 0, Colours::None).0[0]),
+            " "
+        );
+    }
+}

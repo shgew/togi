@@ -738,8 +738,8 @@ mod tests {
                     assert_eq!(outcome.is_err(), exit == "failure");
                     let raw = recorder.raw();
                     if palette {
-                        assert_eq!(raw.first().unwrap(), &crate::terminal::palette::set());
-                        assert_eq!(raw.last().unwrap(), crate::terminal::palette::RESET);
+                        assert_eq!(raw.first().unwrap(), &super::super::console::set_palette());
+                        assert_eq!(raw.last().unwrap(), super::super::console::RESET_PALETTE);
                     } else {
                         assert!(!raw.iter().any(|text| text.contains("\x1b]")), "{raw:?}");
                     }
@@ -860,7 +860,7 @@ mod tests {
                 let raw = recorder.raw();
                 assert_eq!(
                     raw.last().map(String::as_str),
-                    Some(crate::terminal::palette::RESET),
+                    Some(super::super::console::RESET_PALETTE),
                     "{operation}: the palette was not restored"
                 );
             }
@@ -930,7 +930,7 @@ mod tests {
         assert!(recorder.restored());
         assert_eq!(
             recorder.raw().last().map(String::as_str),
-            Some(crate::terminal::palette::RESET)
+            Some(super::super::console::RESET_PALETTE)
         );
     }
 

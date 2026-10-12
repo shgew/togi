@@ -6,6 +6,7 @@ mod session;
 
 use std::fs;
 use std::num::{NonZeroU32, NonZeroUsize};
+use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -363,12 +364,38 @@ fn a_missing_or_unrunnable_simulator_is_an_error() {
     let bench = Bench::new();
     let error = execute(&bench.options(bench.path("missing")), &Fleet::new()).unwrap_err();
     assert!(error.to_string().contains("read the simulator"), "{error}");
-    let plain = bench.path("plain");
-    fs::write(&plain, "not a program").unwrap();
-    let mut options = bench.options(plain);
-    options.cache = None;
-    let error = execute(&options, &Fleet::new()).unwrap_err();
-    assert!(error.to_string().contains("start the simulator"), "{error}");
+    let ran = bench.path("ran.txt");
+    let cases = [
+        ("plain", "not a program".to_owned(), 0o644),
+        (
+            "plain-executable",
+            format!("echo ran > {}\n", ran.display()),
+            0o755,
+        ),
+        (
+            "script-with-a-blank-interpreter",
+            format!("#!\necho ran > {}\n", ran.display()),
+            0o755,
+        ),
+        (
+            "script-without-the-execute-bit",
+            format!("#!/bin/sh\necho ran > {}\n", ran.display()),
+            0o644,
+        ),
+    ];
+    for (name, text, mode) in cases {
+        let file = bench.path(name);
+        fs::write(&file, text).unwrap();
+        fs::set_permissions(&file, fs::Permissions::from_mode(mode)).unwrap();
+        let mut options = bench.options(file);
+        options.cache = None;
+        let error = execute(&options, &Fleet::new()).unwrap_err();
+        assert!(
+            error.to_string().contains("start the simulator"),
+            "{name}: {error}"
+        );
+    }
+    assert!(!ran.exists());
 }
 
 #[test]
@@ -426,7 +453,7 @@ fn the_report_prints_the_suites_notes_before_the_summary_and_none_without_a_gate
     );
     fs::write(
         bench.path("suite.json"),
-        r#"{"gate":{"notes":["first","second"]},"scenarios":[{"name":"default","dev":[1]}]}"#,
+        r#"{"gate":{"id":"g","notes":["first","second"],"baseline":{"ruleset":1,"commits":["x"]},"split":"dev","gated":["default"],"quantiles":[0.5],"confidence":0.95,"resamples":10,"bootstrap_seed":1,"max_time_ratio":2},"scenarios":[{"name":"default","dev":[1]}]}"#,
     )
     .unwrap();
     let text = report_text(&run(&options));

@@ -1,0 +1,559 @@
+//! The search turns, the BIOS profile and the open phase 2 round.
+
+use std::collections::BTreeMap;
+use std::fmt::Write as _;
+
+use ratatui::text::{Line, Span};
+use togi_journal::Seq;
+use togi_machine::{CcdId, CoreId, TargetOffset};
+
+use super::super::colours::Paint;
+use super::super::dash::note_line;
+use super::super::fit::{cut_styled, plain, rule};
+use super::super::layout::SizeClass;
+use super::super::measure::Tables;
+use super::super::scene::{Scene, regime_list};
+use super::table::{cell, stage_marker, table_row};
+use crate::words::{core_ids, noun, plural};
+
+type Shape = (TargetOffset, Option<TargetOffset>, u32, bool);
+
+/// The search's turns, one core per turn, with the solo limits already found under them.
+pub(super) fn turn_lines(
+    scene: &Scene<'_>,
+    t: &Tables,
+    width: usize,
+    class: SizeClass,
+) -> Vec<Line<'static>> {
+    let mut out = vec![
+        rule(
+            width,
+            &cell(scene, Paint::Grey, "TURNS"),
+            &cell(scene, Paint::Grey, "one core per turn, in this order"),
+            scene.style(Paint::Track),
+        ),
+        Line::default(),
+    ];
+    if class != SizeClass::Compact {
+        out.push(table_row(
+            &t.turns,
+            &[
+                Line::default(),
+                cell(scene, Paint::Grey, "core"),
+                cell(scene, Paint::Grey, "this turn"),
+                cell(scene, Paint::Grey, "at"),
+                cell(scene, Paint::Grey, "workload"),
+                cell(scene, Paint::Grey, "so far"),
+            ],
+        ));
+    }
+    for turn in scene.s.turns {
+        let (mut marker, mut style, mut faint) = (Line::default(), Paint::Text, Paint::Grey);
+        if turn.running && scene.trial_runs() {
+            marker = Line::from(stage_marker(scene, "►"));
+            (style, faint) = (Paint::White, Paint::Text);
+        }
+        let mut what = if turn.step == 1 {
+            "search step: 1 count deeper".to_owned()
+        } else {
+            format!("search step: {}", regime_list(&turn.regimes))
+        };
+        let mut so_far = "none yet".to_owned();
+        if let Some(core) = scene.core(turn.core) {
+            if let Some(n) = core.confirm.filter(|_| turn.confirm) {
+                what = format!(
+                    "confirm: light trial {} of {}",
+                    (n.light + 1).min(n.needed),
+                    n.needed
+                );
+                if n.light >= n.needed && n.heavy >= n.needed {
+                    "records the solo limit".clone_into(&mut what);
+                } else if n.light >= n.needed {
+                    what = format!("confirm: heavy trial {} of {}", n.heavy + 1, n.needed);
+                }
+                so_far = format!(
+                    "light {}/{}, heavy {}/{}",
+                    n.light, n.needed, n.heavy, n.needed
+                );
+            } else {
+                let note = plain(&note_line(scene, core, t.turns[5].w));
+                if !note.is_empty() {
+                    so_far = note;
+                }
+            }
+        }
+        out.push(table_row(
+            &t.turns,
+            &[
+                marker,
+                cell(scene, style, format!("{:02}", turn.core.get())),
+                cell(scene, style, what),
+                cell(scene, style, turn.offset.get().to_string()),
+                cell(scene, Paint::Grey, turn.workload.workload().label),
+                cell(scene, faint, so_far),
+            ],
+        ));
+    }
+    let found: Vec<CoreId> = scene
+        .s
+        .cores
+        .iter()
+        .filter(|core| core.solo.is_some())
+        .map(|core| core.id)
+        .collect();
+    if !found.is_empty() {
+        out.push(Line::default());
+        out.push(cut_styled(
+            &Line::from(vec![
+                Span::raw("  "),
+                scene.paint(Paint::Grey, "waiting for the cycles  "),
+                scene.paint(Paint::Text, core_ids(found)),
+                scene.paint(Paint::Grey, "  · solo limits found"),
+            ]),
+            width,
+        ));
+    }
+    out
+}
+
+/// The profile to enter in BIOS, one row per CCD in slot order, with a star on every unconfirmed offset. The
+/// compact layout has no rows to spare for saying that phase 1 has confirmed nothing: its phase 1 stage says so.
+pub(super) fn bios_lines(scene: &Scene<'_>, width: usize, class: SizeClass) -> Vec<Line<'static>> {
+    if scene.s.phases.is_none() {
+        return Vec::new();
+    }
+    let compact = class == SizeClass::Compact;
+    let track = scene.style(Paint::Track);
+    let Some(bios) = scene.s.bios else {
+        if compact {
+            return Vec::new();
+        }
+        return vec![
+            rule(
+                width,
+                &cell(scene, Paint::Grey, "BIOS PROFILE"),
+                &Line::default(),
+                track,
+            ),
+            cut_styled(
+                &cell(
+                    scene,
+                    Paint::Grey,
+                    "none confirmed yet: phase 1 has not passed a full cycle",
+                ),
+                width,
+            ),
+        ];
+    };
+    let confirmed = bios.confirmed.map_or(0, |confirmed| confirmed.seq.get());
+    let mut right = if compact {
+        cell(scene, Paint::Grey, format!("confirmed #{confirmed}"))
+    } else {
+        cell(
+            scene,
+            Paint::Grey,
+            format!("confirmed by the cycle ending #{confirmed}"),
+        )
+    };
+    if !bios.unconfirmed.is_empty() {
+        let since = bios.since().map_or(0, Seq::get);
+        let text = if compact {
+            format!("UNCONFIRMED since #{since}")
+        } else {
+            format!(
+                "UNCONFIRMED since #{since} · cores {}",
+                core_ids(bios.unconfirmed.iter().map(|mark| mark.core))
+            )
+        };
+        right = cell(scene, Paint::Hunt, text);
+    }
+    let mut out = vec![rule(
+        width,
+        &cell(scene, Paint::Grey, "BIOS PROFILE"),
+        &right,
+        track,
+    )];
+    let mut cells: BTreeMap<CcdId, Vec<Span<'static>>> = BTreeMap::new();
+    let mut slots: BTreeMap<CcdId, Vec<u8>> = BTreeMap::new();
+    for core in scene.s.cores {
+        let Some(offset) = bios.shown.get(core.id) else {
+            continue;
+        };
+        let held = bios.unconfirmed.iter().any(|mark| mark.core == core.id);
+        let span = if held {
+            scene.paint(Paint::Hunt, format!("{:4}*", offset.get()))
+        } else {
+            scene.paint(Paint::Text, format!("{:4} ", offset.get()))
+        };
+        cells.entry(core.ccd).or_default().push(span);
+        slots.entry(core.ccd).or_default().push(core.id.get() % 8);
+    }
+    if let Some(first) = slots.values().next() {
+        let header = first.iter().fold(String::new(), |mut header, slot| {
+            let _ = write!(header, "{slot:4} ");
+            header
+        });
+        out.push(Line::from(vec![
+            scene.paint(Paint::Grey, "slot   "),
+            scene.paint(Paint::Grey, header),
+        ]));
+    }
+    for (ccd, cells) in cells {
+        let mut spans = vec![scene.paint(Paint::Grey, format!("CCD {}  ", ccd.0))];
+        spans.extend(cells);
+        out.push(Line::from(spans));
+    }
+    if !bios.unconfirmed.is_empty() {
+        out.push(cut_styled(
+            &Line::from(vec![
+                scene.paint(Paint::Hunt, "* "),
+                scene.paint(
+                    Paint::Grey,
+                    "not confirmed: a passed cycle confirms it, unless held",
+                ),
+            ]),
+            width,
+        ));
+    }
+    out
+}
+
+/// The open round: its candidates with their gaps, the bound on what is left, and its checks. Also how many
+/// leading rows are the heading, the bound and the candidates, which the panel keeps first.
+pub(super) fn phase2_lines(scene: &Scene<'_>, width: usize) -> (Vec<Line<'static>>, usize) {
+    let Some(phases) = scene.s.phases else {
+        return (Vec::new(), 0);
+    };
+    let round = phases.round.unwrap_or(0);
+    let mut out = vec![
+        rule(
+            width,
+            &cell(scene, Paint::Grey, format!("PHASE 2 · ROUND {round}")),
+            &Line::default(),
+            scene.style(Paint::Track),
+        ),
+        Line::default(),
+        cut_styled(
+            &cell(
+                scene,
+                Paint::Grey,
+                format!(
+                    "at most {} left, then one full cycle",
+                    plural(phases.rounds_left as usize, "round")
+                ),
+            ),
+            width,
+        ),
+    ];
+    let mut shapes: Vec<(Shape, Vec<CoreId>)> = Vec::new();
+    for candidate in &phases.candidates {
+        let shape = (
+            candidate.offset,
+            candidate.solo_limit,
+            candidate.gap,
+            candidate.moving,
+        );
+        match shapes.iter_mut().find(|(known, _)| *known == shape) {
+            Some((_, cores)) => cores.push(candidate.core),
+            None => shapes.push((shape, vec![candidate.core])),
+        }
+    }
+    for ((offset, solo, gap, moving), cores) in shapes {
+        let note = if moving {
+            "  moving"
+        } else {
+            "  checked again in place"
+        };
+        let solo = solo.map_or_else(|| "-".to_owned(), |solo| solo.get().to_string());
+        out.push(cut_styled(
+            &Line::from(vec![
+                scene.paint(
+                    Paint::Text,
+                    format!(
+                        "{} {}  {} → solo {solo}  gap {gap}",
+                        noun(cores.len(), "core"),
+                        core_ids(cores.iter().copied()),
+                        offset.get()
+                    ),
+                ),
+                scene.paint(Paint::Grey, note),
+            ]),
+            width,
+        ));
+    }
+    let head = out.len();
+    out.push(Line::default());
+    out.push(cell(scene, Paint::Grey, "CHECKS"));
+    for check in scene.s.deepening.iter().flat_map(|round| &round.checks) {
+        out.push(cut_styled(
+            &Line::from(vec![
+                scene.paint(
+                    Paint::Text,
+                    format!(
+                        "{} on {}  {}/{} passed",
+                        check.regime,
+                        core_ids(check.cores.iter()),
+                        check.passed,
+                        check.needed
+                    ),
+                ),
+                Span::raw("  "),
+                scene.paint(Paint::Grey, check.workload.workload().label),
+            ]),
+            width,
+        ));
+    }
+    (out, head)
+}
+
+#[cfg(test)]
+mod tests {
+    use jiff::tz::TimeZone;
+    use togi_machine::Regime;
+    use togi_tuner::{
+        BiosProfile, Candidate, DeepeningCheck, DeepeningView, PhasePlan, Profile, SearchTurn,
+    };
+
+    use super::super::super::layout::SizeClass;
+    use super::super::super::measure::Tables;
+    use super::super::fixtures::{bios, core_view, phases, scene, texts, topology};
+    use super::{bios_lines, phase2_lines, turn_lines};
+    use crate::model::{Confirm, CoreState, Model};
+    use crate::tests::kit::{core, nz, off, seq, set};
+
+    fn confirm_turn(light: u32, heavy: u32) -> Vec<String> {
+        let mut view = core_view(11, 1);
+        view.state = CoreState::Confirm;
+        view.confirm = Some(Confirm {
+            offset: off(-7),
+            light,
+            heavy,
+            needed: 5,
+        });
+        let cores = [view];
+        let turns = [SearchTurn {
+            core: core(11),
+            confirm: true,
+            regimes: vec![Regime::R1],
+            offset: off(-7),
+            workload: togi_machine::workloads(Regime::R1)[0].id(),
+            step: 1,
+            light,
+            heavy,
+            needed: 5,
+            running: false,
+        }];
+        let model = Model::new();
+        let mut s = model.snapshot();
+        s.cores = &cores;
+        s.turns = &turns;
+        let zone = TimeZone::UTC;
+        let scene = scene(&s, &zone);
+        let mut all = Vec::new();
+        for class in [SizeClass::Wide, SizeClass::Medium] {
+            all.extend(texts(&turn_lines(
+                &scene,
+                &Tables::new(class, 80),
+                80,
+                class,
+            )));
+        }
+        all
+    }
+
+    #[test]
+    fn a_complete_confirmation_turn_records_the_solo_limit() {
+        for (name, light, heavy, want) in [
+            ("first light", 0, 0, "confirm: light trial 1 of 5"),
+            ("last light", 4, 0, "confirm: light trial 5 of 5"),
+            ("first heavy", 5, 0, "confirm: heavy trial 1 of 5"),
+            ("last heavy", 5, 4, "confirm: heavy trial 5 of 5"),
+            ("complete", 5, 5, "records the solo limit"),
+        ] {
+            let text = confirm_turn(light, heavy);
+            assert_eq!(
+                text.iter().filter(|row| row.contains(want)).count(),
+                2,
+                "{name}: both classes say {want:?}:\n{}",
+                text.join("\n")
+            );
+        }
+        let text = confirm_turn(2, 0).join("\n");
+        assert!(text.contains("light 2/5, heavy 0/5"), "{text}");
+    }
+
+    #[test]
+    fn the_turns_say_which_cores_already_have_their_solo_limit() {
+        let mut running = core_view(11, 1);
+        running.state = CoreState::Confirm;
+        let mut found = core_view(3, 0);
+        found.solo = Some(off(-20));
+        let mut other = core_view(5, 0);
+        other.solo = Some(off(-18));
+        let turn = |core_id: u8| SearchTurn {
+            core: core(core_id),
+            confirm: false,
+            regimes: vec![Regime::R1],
+            offset: off(-7),
+            workload: togi_machine::workloads(Regime::R1)[0].id(),
+            step: 1,
+            light: 0,
+            heavy: 0,
+            needed: 5,
+            running: false,
+        };
+        let turns = [turn(11)];
+        let model = Model::new();
+        let zone = TimeZone::UTC;
+        let rows = |cores: &[crate::model::CoreView]| {
+            let mut s = model.snapshot();
+            s.cores = cores;
+            s.turns = &turns;
+            let scene = scene(&s, &zone);
+            texts(&turn_lines(
+                &scene,
+                &Tables::new(SizeClass::Wide, 80),
+                80,
+                SizeClass::Wide,
+            ))
+        };
+        let before = rows(std::slice::from_ref(&running));
+        assert!(
+            before
+                .iter()
+                .all(|row| !row.contains("waiting for the cycles")),
+            "{before:?}"
+        );
+        let after = rows(&[running, found, other]);
+        let n = after.len();
+        assert_eq!(after[n - 2], "", "{after:?}");
+        assert_eq!(
+            after[n - 1],
+            "  waiting for the cycles  03 05  · solo limits found"
+        );
+    }
+
+    fn bios_rows(
+        bios: Option<&BiosProfile>,
+        phases: Option<&PhasePlan>,
+        class: SizeClass,
+    ) -> Vec<String> {
+        let cores = [core_view(0, 0), core_view(1, 0), core_view(8, 1)];
+        let model = Model::new();
+        let mut s = model.snapshot();
+        s.cores = &cores;
+        s.bios = bios;
+        s.phases = phases;
+        let zone = TimeZone::UTC;
+        let scene = scene(&s, &zone);
+        texts(&bios_lines(&scene, 80, class))
+    }
+
+    #[test]
+    fn the_bios_profile_stars_what_a_cycle_has_not_confirmed() {
+        let plan = phases(None);
+        let held = bios(true);
+        let rows = bios_rows(Some(&held), Some(&plan), SizeClass::Wide);
+        assert!(rows[0].starts_with("BIOS PROFILE"));
+        assert!(
+            rows[0].ends_with("UNCONFIRMED since #15 · cores 01"),
+            "{}",
+            rows[0]
+        );
+        assert_eq!(rows[1].trim_end(), "slot      0    1");
+        assert_eq!(rows[2].trim_end(), "CCD 0   -20  -25*");
+        assert_eq!(rows[3].trim_end(), "CCD 1   -10");
+        assert_eq!(
+            rows[4],
+            "* not confirmed: a passed cycle confirms it, unless held"
+        );
+        let rows = bios_rows(Some(&held), Some(&plan), SizeClass::Compact);
+        assert!(rows[0].ends_with("UNCONFIRMED since #15"), "{}", rows[0]);
+        let confirmed = bios(false);
+        let rows = bios_rows(Some(&confirmed), Some(&plan), SizeClass::Wide);
+        assert!(
+            rows[0].ends_with("confirmed by the cycle ending #12"),
+            "{}",
+            rows[0]
+        );
+        assert_eq!(rows.len(), 4);
+        let rows = bios_rows(Some(&confirmed), Some(&plan), SizeClass::Compact);
+        assert!(rows[0].ends_with("confirmed #12"), "{}", rows[0]);
+    }
+
+    #[test]
+    fn before_a_confirmed_profile_the_bios_panel_says_so_or_stays_out() {
+        let plan = phases(None);
+        let rows = bios_rows(None, Some(&plan), SizeClass::Wide);
+        assert_eq!(rows.len(), 2);
+        assert!(rows[0].starts_with("BIOS PROFILE"));
+        assert_eq!(
+            rows[1],
+            "none confirmed yet: phase 1 has not passed a full cycle"
+        );
+        assert!(bios_rows(None, Some(&plan), SizeClass::Compact).is_empty());
+        let held = bios(false);
+        assert!(bios_rows(Some(&held), None, SizeClass::Wide).is_empty());
+    }
+
+    #[test]
+    fn the_round_lists_its_candidates_by_shape_and_its_checks() {
+        let topology = topology();
+        let profile = Profile::new(
+            &topology,
+            [0u8, 1, 8].iter().map(|&id| (core(id), off(-30))).collect(),
+        )
+        .expect("a profile");
+        let candidate = |id: u8, moving: bool| Candidate {
+            core: core(id),
+            offset: off(-30),
+            solo_limit: Some(off(-25)),
+            gap: 5,
+            carried: false,
+            moving,
+        };
+        let mut plan = phases(Some(3));
+        plan.candidates = vec![candidate(0, false), candidate(1, false), candidate(8, true)];
+        let round = DeepeningView {
+            round: nz(3),
+            seq: seq(20),
+            target: profile,
+            profile,
+            cores: set(&[0, 1, 8]),
+            checks: vec![DeepeningCheck {
+                regime: Regime::R1,
+                workload: togi_machine::workloads(Regime::R1)[0].id(),
+                cores: set(&[0, 1]),
+                condition: togi_machine::Condition::Alone,
+                profile,
+                needed: 5,
+                passed: 2,
+                failed: 0,
+                running: true,
+            }],
+        };
+        let model = Model::new();
+        let mut s = model.snapshot();
+        s.phases = Some(&plan);
+        s.deepening = Some(&round);
+        let zone = TimeZone::UTC;
+        let scene = scene(&s, &zone);
+        let (rows, head) = phase2_lines(&scene, 100);
+        let rows = texts(&rows);
+        assert!(rows[0].starts_with("PHASE 2 · ROUND 3"));
+        assert_eq!(rows[2], "at most 2 rounds left, then one full cycle");
+        assert_eq!(
+            rows[3],
+            "cores 00 01  -30 → solo -25  gap 5  checked again in place"
+        );
+        assert_eq!(rows[4], "core 08  -30 → solo -25  gap 5  moving");
+        assert_eq!(head, 5);
+        assert_eq!(rows[5], "");
+        assert_eq!(rows[6], "CHECKS");
+        assert!(
+            rows[7].starts_with("R1 on 00 01  2/5 passed  "),
+            "{}",
+            rows[7]
+        );
+    }
+}

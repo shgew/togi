@@ -2,6 +2,6 @@ mod derive;
 mod describe;
 mod history;
 mod hunt;
-mod kit;
+pub(crate) mod kit;
 mod model;
 mod words;
