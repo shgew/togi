@@ -2,11 +2,12 @@ use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 use std::rc::Rc;
+use std::time::Duration;
 
 use togi_config::Config;
 use togi_journal::fs::{Fault, Op};
 use togi_journal::{
-    Activity, Attribution, Decision, Event, Outcome, Payload, Seq, TrialId, TrialIntent,
+    Activity, Attribution, Decision, Event, Outcome, Payload, Seq, TrialEnd, TrialId, TrialIntent,
 };
 use togi_machine::{
     CancellationToken, Condition, CoreSet, Error, Partial, PerCore, Regime, Running, Signal,
@@ -355,48 +356,80 @@ fn assert_crash_is_accounted_for(events: &[Event], k: usize) {
     let detected = crash_detected_for(events, &hit.boot)
         .unwrap_or_else(|| panic!("no crash.detected for the boot of #{k}"));
     let mut open: Option<&TrialIntent> = None;
-    let mut ended_by_crash = true;
+    let mut durable_end: Option<&TrialEnd> = None;
+    let mut started: Option<Duration> = None;
+    let mut last: Option<Duration> = None;
     for event in &events[..k] {
         match &event.payload {
             Payload::TrialIntent(intent) => {
                 open = Some(intent);
-                ended_by_crash = true;
+                durable_end = None;
+                started = None;
+                last = None;
+            }
+            Payload::TrialStart(_) => {
+                started = event.mono;
+                last = event.mono;
+            }
+            Payload::TrialProgress(_) | Payload::TrialSignal(_) | Payload::TrialSample(_)
+                if started.is_some() =>
+            {
+                last = event.mono;
             }
             Payload::TrialEnd(end) if open.is_some_and(|intent| intent.trial == end.trial) => {
-                ended_by_crash = false;
+                durable_end = Some(end);
             }
             _ => {}
         }
     }
     let intent = open.unwrap_or_else(|| panic!("#{k} has no trial.intent before it"));
-    if !ended_by_crash {
-        return;
-    }
-    let closed = events[k..]
-        .iter()
-        .find_map(|event| match &event.payload {
-            Payload::TrialEnd(end) if end.trial == intent.trial => Some(end),
-            _ => None,
-        })
-        .unwrap_or_else(|| panic!("trial {} left open after #{k}", intent.trial));
-    assert_eq!(closed.outcome, Outcome::Failure, "{closed:?}");
-    let citing = events.iter().find_map(|event| match &event.payload {
-        Payload::Failure(failure) if event.cause.contains(&detected) => Some(failure),
-        _ => None,
-    });
-    let failure = citing.unwrap_or_else(|| {
-        let same: Vec<_> = events
+    let ended_by_crash = durable_end.is_none();
+    if ended_by_crash {
+        let closed = events[k..]
             .iter()
-            .filter_map(|event| match &event.payload {
-                Payload::Failure(failure) if failure.trial.as_ref() == Some(&intent.trial) => {
-                    Some(failure)
-                }
+            .find_map(|event| match &event.payload {
+                Payload::TrialEnd(end) if end.trial == intent.trial => Some(end),
                 _ => None,
             })
-            .collect();
-        assert_eq!(same.len(), 1, "crash at #{k}: {same:?}");
-        same[0]
-    });
+            .unwrap_or_else(|| panic!("trial {} left open after #{k}", intent.trial));
+        let ran = match (started, last) {
+            (Some(started), Some(last)) => last.saturating_sub(started),
+            _ => Duration::ZERO,
+        };
+        assert_eq!(
+            u64::from(closed.duration_s),
+            ran.as_secs(),
+            "crash at #{k}: {closed:?}"
+        );
+        assert_eq!(closed.outcome, Outcome::Failure, "{closed:?}");
+    }
+    let failure = if ended_by_crash || durable_end.is_some_and(|end| end.outcome == Outcome::Failure)
+    {
+        let citing = events.iter().find_map(|event| match &event.payload {
+            Payload::Failure(failure) if event.cause.contains(&detected) => Some(failure),
+            _ => None,
+        });
+        Some(citing.unwrap_or_else(|| {
+            let same: Vec<_> = events
+                .iter()
+                .filter_map(|event| match &event.payload {
+                    Payload::Failure(failure)
+                        if failure.trial.as_ref() == Some(&intent.trial) =>
+                    {
+                        Some(failure)
+                    }
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(same.len(), 1, "crash at #{k}: {same:?}");
+            same[0]
+        }))
+    } else {
+        None
+    };
+    let Some(failure) = failure.filter(|_| ended_by_crash) else {
+        return;
+    };
     assert_eq!(failure.trial.as_ref(), Some(&intent.trial), "#{k}");
     match intent.condition {
         Condition::Alone => {
