@@ -416,16 +416,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "togi-config"
-version = "0.0.0"
-dependencies = [
- "serde",
- "serde_json",
- "thiserror",
- "togi-machine",
-]
-
-[[package]]
 name = "togi-journal"
 version = "0.0.0"
 dependencies = [
@@ -435,7 +425,6 @@ dependencies = [
  "serde_json",
  "serde_path_to_error",
  "thiserror",
- "togi-config",
  "togi-machine",
 ]
 
