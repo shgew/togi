@@ -890,3 +890,42 @@ fn a_reset_in_a_later_boot_leaves_the_crashed_trial_unrecovered() {
         Some(ShutdownReason::Command)
     );
 }
+
+#[test]
+fn a_trial_reporting_progress_past_its_planned_end_is_still_running() {
+    let mut script = searching();
+    let plan = script.plan();
+    assert_ne!(plan.regime, Regime::R6);
+    let (_, trial) = script.intent(&plan);
+    let started = script.start(&trial);
+    let planned_end = at(started)
+        .checked_add(jiff::SignedDuration::from_secs(i64::from(
+            plan.duration.get(),
+        )))
+        .unwrap();
+    let mut progress = script.event(
+        togi_journal::TrialProgress {
+            trial: trial.clone(),
+            detail: "still running".to_owned(),
+            signal: None,
+            core: None,
+        }
+        .into(),
+        &[],
+    );
+    progress.time = planned_end
+        .checked_add(jiff::SignedDuration::from_secs(10))
+        .unwrap();
+    script.shadow.fold(&progress).unwrap();
+    script.events.push(progress);
+    let model = script.model();
+    let snap = model.snapshot();
+    let running = snap.trial.expect("the overdue trial");
+    assert_eq!(running.id, trial);
+    assert!(!running.crashed && running.started.is_some());
+    assert!(snap.recover.is_none() && snap.stopped.is_none());
+    let now = planned_end
+        .checked_add(jiff::SignedDuration::from_secs(42))
+        .unwrap();
+    assert_eq!(running.past_end(now), Duration::from_secs(42));
+}
