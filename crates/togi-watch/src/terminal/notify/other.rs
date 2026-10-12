@@ -8,6 +8,10 @@ use crate::terminal::WatchError;
 
 pub(in crate::terminal) struct Poller;
 
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "the same signature as the Linux adapter, which can fail"
+)]
 pub(in crate::terminal) fn open(_directory: &Path) -> Result<Poller, WatchError> {
     Ok(Poller)
 }

@@ -314,9 +314,16 @@ pub fn one_frame(
         width.saturating_sub(1),
         height.saturating_sub(1),
     ));
-    render(&source.journal(&screen), &screen, Timestamp::now(), &mut buffer);
+    render(
+        &source.journal(&screen),
+        &screen,
+        Timestamp::now(),
+        &mut buffer,
+    );
     write_plain(&buffer, out).map_err(Error::Output)?;
-    source.into_problem().map_or(Ok(()), |error| Err(error.into()))
+    source
+        .into_problem()
+        .map_or(Ok(()), |error| Err(error.into()))
 }
 
 /// Writes the text of a buffer, a line per row, with no styling and without trailing spaces.
@@ -344,7 +351,7 @@ fn write_plain(buffer: &Buffer, out: &mut impl Write) -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use std::os::fd::{AsFd as _, OwnedFd};
+    use std::os::fd::OwnedFd;
     use std::panic::AssertUnwindSafe;
 
     use jiff::Timestamp;
@@ -354,13 +361,13 @@ mod tests {
 
     use super::testing::{Faults, Recorder, session_with_warnings, write_journal};
     use super::{
-        Colours, Drawn, Error, Live, ONE_FRAME_SIZE, SourceError, Stop, View, drive, one_frame, palette,
-        uses_palette,
+        Colours, Drawn, Error, Live, ONE_FRAME_SIZE, SourceError, Stop, View, drive, one_frame,
+        palette, uses_palette,
     };
     use crate::screen::{Hold, Journal, Screen};
 
     fn pipe() -> (OwnedFd, OwnedFd) {
-        rustix::pipe::pipe_with(rustix::pipe::PipeFlags::CLOEXEC).unwrap()
+        super::input::pipe().unwrap()
     }
 
     fn plain(_: &Journal<'_>, _: &Screen, _: Timestamp, buf: &mut Buffer) -> Drawn {
@@ -404,7 +411,15 @@ mod tests {
     #[test]
     fn the_reader_is_joined_on_every_exit() {
         let state = TempDir::new().unwrap();
-        for exit in ["quit", "end of input", "stop", "clear error", "size error", "draw error", "panic"] {
+        for exit in [
+            "quit",
+            "end of input",
+            "stop",
+            "clear error",
+            "size error",
+            "draw error",
+            "panic",
+        ] {
             let (read, write) = pipe();
             let stop = Stop::new();
             let live = Live {
@@ -413,9 +428,18 @@ mod tests {
                 stop: Some(&stop),
             };
             let faults = match exit {
-                "clear error" => Faults { clear: true, ..Faults::default() },
-                "size error" => Faults { size_from: Some(3), ..Faults::default() },
-                "draw error" => Faults { draw_from: Some(1), ..Faults::default() },
+                "clear error" => Faults {
+                    clear: true,
+                    ..Faults::default()
+                },
+                "size error" => Faults {
+                    size_from: Some(3),
+                    ..Faults::default()
+                },
+                "draw error" => Faults {
+                    draw_from: Some(1),
+                    ..Faults::default()
+                },
                 _ => Faults::default(),
             };
             let recorder = Recorder::failing(80, 12, faults);
@@ -433,15 +457,24 @@ mod tests {
                 Some(write)
             };
             let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
-                run_drive(&recorder, &live, Some(&read), Colours::None, |journal, screen, now, buf| {
-                    assert!(exit != "panic", "frame panic");
-                    plain(journal, screen, now, buf)
-                })
+                run_drive(
+                    &recorder,
+                    &live,
+                    Some(&read),
+                    Colours::None,
+                    |journal, screen, now, buf| {
+                        assert!(exit != "panic", "frame panic");
+                        plain(journal, screen, now, buf)
+                    },
+                )
             }));
             match exit {
                 "panic" => assert!(result.is_err()),
                 "clear error" | "size error" | "draw error" => {
-                    assert!(matches!(result.unwrap(), Err(Error::Terminal { .. })), "{exit}");
+                    assert!(
+                        matches!(result.unwrap(), Err(Error::Terminal { .. })),
+                        "{exit}"
+                    );
                 }
                 _ => result.unwrap().unwrap(),
             }
@@ -455,7 +488,11 @@ mod tests {
     #[test]
     fn each_of_the_three_signals_ends_the_dashboard_and_restores_the_terminal() {
         let state = TempDir::new().unwrap();
-        for (name, signal) in [("SIGINT", Signal::INT), ("SIGTERM", Signal::TERM), ("SIGHUP", Signal::HUP)] {
+        for (name, signal) in [
+            ("SIGINT", Signal::INT),
+            ("SIGTERM", Signal::TERM),
+            ("SIGHUP", Signal::HUP),
+        ] {
             let recorder = Recorder::new(80, 12);
             let live = Live {
                 state_dir: state.path(),
@@ -463,16 +500,26 @@ mod tests {
                 stop: None,
             };
             let mut sent = false;
-            run_drive(&recorder, &live, None, Colours::Console, |journal, screen, now, buf| {
-                if !sent {
-                    sent = true;
-                    kill_process(getpid(), signal).unwrap();
-                }
-                plain(journal, screen, now, buf)
-            })
+            run_drive(
+                &recorder,
+                &live,
+                None,
+                Colours::Console,
+                |journal, screen, now, buf| {
+                    if !sent {
+                        sent = true;
+                        kill_process(getpid(), signal).unwrap();
+                    }
+                    plain(journal, screen, now, buf)
+                },
+            )
             .unwrap();
             assert!(recorder.restored(), "{name}");
-            assert_eq!(recorder.raw().last().map(String::as_str), Some(palette::RESET), "{name}: the palette");
+            assert_eq!(
+                recorder.raw().last().map(String::as_str),
+                Some(palette::RESET),
+                "{name}: the palette"
+            );
         }
     }
 
@@ -487,17 +534,23 @@ mod tests {
         };
         let mut sizes = Vec::new();
         let probe = recorder.clone();
-        run_drive(&recorder, &live, None, Colours::None, |journal, screen, now, buf| {
-            sizes.push((screen.width, screen.height));
-            match sizes.len() {
-                1 => {
-                    probe.resize(100, 30);
-                    kill_process(getpid(), Signal::WINCH).unwrap();
+        run_drive(
+            &recorder,
+            &live,
+            None,
+            Colours::None,
+            |journal, screen, now, buf| {
+                sizes.push((screen.width, screen.height));
+                match sizes.len() {
+                    1 => {
+                        probe.resize(100, 30);
+                        kill_process(getpid(), Signal::WINCH).unwrap();
+                    }
+                    _ => kill_process(getpid(), Signal::TERM).unwrap(),
                 }
-                _ => kill_process(getpid(), Signal::TERM).unwrap(),
-            }
-            plain(journal, screen, now, buf)
-        })
+                plain(journal, screen, now, buf)
+            },
+        )
         .unwrap();
         assert_eq!(sizes, [(80, 12), (100, 30)]);
         assert_eq!(recorder.clears(), 3, "entry, the resize, and leaving");
@@ -530,13 +583,19 @@ mod tests {
         };
         let other = stop.clone();
         let mut frames = 0;
-        run_drive(&recorder, &live, None, Colours::None, |journal, screen, now, buf| {
-            frames += 1;
-            std::thread::scope(|scope| {
-                scope.spawn(|| other.stop());
-            });
-            plain(journal, screen, now, buf)
-        })
+        run_drive(
+            &recorder,
+            &live,
+            None,
+            Colours::None,
+            |journal, screen, now, buf| {
+                frames += 1;
+                std::thread::scope(|scope| {
+                    scope.spawn(|| other.stop());
+                });
+                plain(journal, screen, now, buf)
+            },
+        )
         .unwrap();
         assert_eq!(frames, 1);
         assert!(recorder.restored());
@@ -580,13 +639,19 @@ mod tests {
             stop: Some(&stop),
         };
         let mut seen = Vec::new();
-        run_drive(&recorder, &live, None, Colours::None, |journal, screen, now, buf| {
-            seen.push(match journal {
-                Journal::Ready { log, .. } => log.total,
-                _ => 0,
-            });
-            plain(journal, screen, now, buf)
-        })
+        run_drive(
+            &recorder,
+            &live,
+            None,
+            Colours::None,
+            |journal, screen, now, buf| {
+                seen.push(match journal {
+                    Journal::Ready { log, .. } => log.total,
+                    _ => 0,
+                });
+                plain(journal, screen, now, buf)
+            },
+        )
         .unwrap();
         assert_eq!(seen, [4]);
     }
@@ -599,10 +664,20 @@ mod tests {
             Journal::Problem(error) => format!("problem: {error}"),
             Journal::Ready { log, .. } => format!("{} events", log.total),
         };
-        let style = ratatui::style::Style::default().fg(ratatui::style::Color::Red).bold();
+        let style = ratatui::style::Style::default()
+            .fg(ratatui::style::Color::Red)
+            .bold();
         buf.set_string(0, 0, words, style);
         buf.set_string(0, 1, "日本  ", style);
-        buf.set_string(0, 2, format!("{}x{} one_frame={} keys={}", screen.width, screen.height, screen.one_frame, screen.keys), style);
+        buf.set_string(
+            0,
+            2,
+            format!(
+                "{}x{} one_frame={} keys={}",
+                screen.width, screen.height, screen.one_frame, screen.keys
+            ),
+            style,
+        );
         Drawn {
             scroll: 0,
             hold: Hold::Never,
@@ -615,7 +690,10 @@ mod tests {
         let mut out = Vec::new();
         one_frame(state.path(), 40, 6, &mut out, describe).unwrap();
         let text = String::from_utf8(out).unwrap();
-        assert_eq!(text, "no session yet\n日本\n40x6 one_frame=true keys=false\n\n\n");
+        assert_eq!(
+            text,
+            "no session yet\n日本\n40x6 one_frame=true keys=false\n\n\n"
+        );
         assert!(!text.contains('\x1b'));
     }
 
@@ -625,16 +703,25 @@ mod tests {
         let mut out = Vec::new();
         let mut area = None;
         let mut screen_seen = None;
-        one_frame(state.path(), 30, 9, &mut out, |journal, screen, now, buf| {
-            area = Some(buf.area);
-            screen_seen = Some(*screen);
-            describe(journal, screen, now, buf)
-        })
+        one_frame(
+            state.path(),
+            30,
+            9,
+            &mut out,
+            |journal, screen, now, buf| {
+                area = Some(buf.area);
+                screen_seen = Some(*screen);
+                describe(journal, screen, now, buf)
+            },
+        )
         .unwrap();
         assert_eq!(area, Some(ratatui::layout::Rect::new(0, 0, 29, 8)));
         assert_eq!(String::from_utf8(out).unwrap().lines().count(), 8);
         let screen = screen_seen.unwrap();
-        assert_eq!((screen.colours, screen.view, screen.scroll), (Colours::None, View::Main, 0));
+        assert_eq!(
+            (screen.colours, screen.view, screen.scroll),
+            (Colours::None, View::Main, 0)
+        );
     }
 
     #[test]
@@ -660,14 +747,23 @@ mod tests {
         let text = String::from_utf8(out).unwrap();
         assert!(text.starts_with("problem: "), "{text}");
         assert!(text.contains("line 1"), "{text}");
-        assert!(matches!(&error, Error::Journal(SourceError::Read(_))), "{error:?}");
+        assert!(
+            matches!(&error, Error::Journal(SourceError::Read(_))),
+            "{error:?}"
+        );
         assert!(error.to_string().contains("line 1"));
     }
 
     #[test]
     fn one_frame_of_a_journal_that_cannot_fold_returns_that_error_too() {
         let state = TempDir::new().unwrap();
-        write_journal(state.path(), &[super::testing::session_start(1), super::testing::session_start(2)]);
+        write_journal(
+            state.path(),
+            &[
+                super::testing::session_start(1),
+                super::testing::session_start(2),
+            ],
+        );
         let mut out = Vec::new();
         let error = one_frame(state.path(), 80, 6, &mut out, describe).unwrap_err();
         assert!(matches!(error, Error::Journal(SourceError::Fold(_))));

@@ -214,7 +214,9 @@ impl Source {
         }
         for event in &events[folded..] {
             if let Payload::SessionStart(start) = &event.payload {
-                if let Verdict::Refuse(refusal) = shown_build().verdict(&start.build, Operation::Inspect) {
+                if let Verdict::Refuse(refusal) =
+                    shown_build().verdict(&start.build, Operation::Inspect)
+                {
                     self.content = Content::Problem(refusal.into());
                     return;
                 }
@@ -237,7 +239,11 @@ impl Source {
             return;
         }
         let live = model.snapshot().log();
-        if self.held.as_ref().is_none_or(|held| live.total < held.total) {
+        if self
+            .held
+            .as_ref()
+            .is_none_or(|held| live.total < held.total)
+        {
             self.held = Some(HeldLog {
                 entries: live.entries.to_vec(),
                 total: live.total,
@@ -397,7 +403,10 @@ mod tests {
         assert!(contains(&mut source, "original"));
 
         replace(dir.path(), &lines(&journal_of("replaced")));
-        assert!(source.reload(), "a replacement of the same size and time is a new file");
+        assert!(
+            source.reload(),
+            "a replacement of the same size and time is a new file"
+        );
         assert!(contains(&mut source, "replaced") && !contains(&mut source, "original"));
 
         append(dir.path(), &[warning(3, "appended")]);
@@ -424,7 +433,10 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let mut source = Source::new(dir.path(), None);
         assert!(source.reload());
-        assert!(!source.reload(), "an unchanged missing journal was reloaded");
+        assert!(
+            !source.reload(),
+            "an unchanged missing journal was reloaded"
+        );
         write_journal(dir.path(), &journal_of("original"));
         assert!(source.reload());
         assert!(!source.reload(), "an unchanged journal was reloaded");
@@ -520,11 +532,13 @@ mod tests {
             let inner = hidden.path().join("state");
             fs::create_dir(&inner).unwrap();
             write_journal(&inner, &journal_of("hidden"));
-            fs::set_permissions(&inner, std::os::unix::fs::PermissionsExt::from_mode(0o000)).unwrap();
+            fs::set_permissions(&inner, std::os::unix::fs::PermissionsExt::from_mode(0o000))
+                .unwrap();
             let mut source = Source::new(&inner, None);
             source.reload();
             let shown = show(&mut source, &main_screen());
-            fs::set_permissions(&inner, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+            fs::set_permissions(&inner, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+                .unwrap();
             assert!(matches!(shown, Shown::Problem(_)), "{shown:?}");
         }
     }
@@ -546,7 +560,11 @@ mod tests {
         assert_eq!(show(&mut source, &main_screen()), Shown::Starting);
         write_journal(dir.path(), &journal_of("from an earlier run"));
         assert!(source.reload());
-        assert_eq!(show(&mut source, &main_screen()), Shown::Starting, "an earlier run's journal was shown");
+        assert_eq!(
+            show(&mut source, &main_screen()),
+            Shown::Starting,
+            "an earlier run's journal was shown"
+        );
         append(dir.path(), &[warning(3, "this run")]);
         assert!(source.reload());
         assert!(contains(&mut source, "this run"));
@@ -559,7 +577,10 @@ mod tests {
         write_bytes(dir.path(), b"not json\n");
         let mut source = Source::new(dir.path(), Some(0));
         source.reload();
-        assert!(matches!(show(&mut source, &main_screen()), Shown::Problem(_)));
+        assert!(matches!(
+            show(&mut source, &main_screen()),
+            Shown::Problem(_)
+        ));
     }
 
     fn scrolled_back(dir: &TempDir, warnings: u64) -> (Source, Screen) {
@@ -592,23 +613,37 @@ mod tests {
         append(dir.path(), &[warning(full + 2, "arrival")]);
         source.reload();
         let one = show(&mut source, &back);
-        assert_eq!((ready(&one).0, ready(&one).1, ready(&one).2), (&held_rows[..], held_total, 1));
+        assert_eq!(
+            (ready(&one).0, ready(&one).1, ready(&one).2),
+            (&held_rows[..], held_total, 1)
+        );
 
         for seq in full + 3..full + 10 {
             append(dir.path(), &[warning(seq, "arrival")]);
         }
         source.reload();
         let many = show(&mut source, &back);
-        assert_eq!((ready(&many).0, ready(&many).1, ready(&many).2), (&held_rows[..], held_total, 8));
+        assert_eq!(
+            (ready(&many).0, ready(&many).1, ready(&many).2),
+            (&held_rows[..], held_total, 8)
+        );
 
         let end = show(&mut source, &following);
         let (rows, total, arrived) = ready(&end);
         assert_eq!(rows.last().map(String::as_str), Some("arrival"));
-        assert_eq!((total, arrived), (held_total + 8, 0), "a view back at the end counts arrivals");
+        assert_eq!(
+            (total, arrived),
+            (held_total + 8, 0),
+            "a view back at the end counts arrivals"
+        );
 
         let again = show(&mut source, &back);
         assert_eq!(ready(&again).2, 0, "a new hold starts with arrivals");
-        assert_eq!(ready(&again).1, held_total + 8, "scrolling back again holds the list as it is now");
+        assert_eq!(
+            ready(&again).1,
+            held_total + 8,
+            "scrolling back again holds the list as it is now"
+        );
     }
 
     #[test]
@@ -652,9 +687,15 @@ mod tests {
                         unavailable == "malformed",
                         "{unavailable}: {shown:?}"
                     );
-                    assert!(!matches!(shown, Shown::Ready { .. }), "unavailable journal kept old rows");
+                    assert!(
+                        !matches!(shown, Shown::Ready { .. }),
+                        "unavailable journal kept old rows"
+                    );
                 }
-                assert!(!source.reload(), "unchanged unavailable journal was reloaded again");
+                assert!(
+                    !source.reload(),
+                    "unchanged unavailable journal was reloaded again"
+                );
                 let mut recovered = session_with_warnings(40);
                 recovered.push(warning(42, "recovered"));
                 write_journal(dir.path(), &recovered);
@@ -662,8 +703,14 @@ mod tests {
                 let shown = show(&mut source, &back);
                 let (rows, _, arrived) = ready(&shown);
                 assert!(rows.iter().any(|row| row == "recovered"), "{unavailable}");
-                assert!(!rows.iter().any(|row| row == "old arrival"), "{unavailable}");
-                assert_eq!(arrived, 0, "{unavailable}/{redraw}: the recovered journal inherited arrivals");
+                assert!(
+                    !rows.iter().any(|row| row == "old arrival"),
+                    "{unavailable}"
+                );
+                assert_eq!(
+                    arrived, 0,
+                    "{unavailable}/{redraw}: the recovered journal inherited arrivals"
+                );
             }
         }
     }
@@ -686,8 +733,14 @@ mod tests {
                 assert!(source.reload(), "{operation}/{warnings}");
                 let shown = show(&mut source, &back);
                 let (rows, total, arrived) = ready(&shown);
-                assert!(!rows.iter().any(|row| row == "old arrival"), "{operation}/{warnings}");
-                assert_eq!(arrived, 0, "{operation}/{warnings}: the changed journal inherited arrivals");
+                assert!(
+                    !rows.iter().any(|row| row == "old arrival"),
+                    "{operation}/{warnings}"
+                );
+                assert_eq!(
+                    arrived, 0,
+                    "{operation}/{warnings}: the changed journal inherited arrivals"
+                );
                 assert_eq!(total, rows.len(), "the list is the changed journal's own");
             }
         }
@@ -726,7 +779,10 @@ mod tests {
             assert_eq!((held_total, arrived), (total, count + 1));
         }
         let end = show(&mut source, &screen(View::Log, FOLLOWING));
-        assert_eq!(ready(&end).0.last().map(String::as_str), Some("latest arrival"));
+        assert_eq!(
+            ready(&end).0.last().map(String::as_str),
+            Some("latest arrival")
+        );
         assert_eq!(ready(&end).2, 0);
     }
 }

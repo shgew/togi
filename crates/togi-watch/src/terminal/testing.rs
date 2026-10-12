@@ -9,9 +9,7 @@ use jiff::Timestamp;
 use ratatui::backend::{Backend, ClearType, WindowSize};
 use ratatui::buffer::Cell;
 use ratatui::layout::{Position, Size};
-use togi_journal::{
-    Build, Event, Payload, SCHEMA, SessionId, SessionStart, SessionWarning, Stamp,
-};
+use togi_journal::{Build, Event, Payload, SCHEMA, SessionId, SessionStart, SessionWarning, Stamp};
 use togi_machine::{BootId, CcdId, CoreId, CoreInfo, CpuId};
 
 /// One thing the loop did to the terminal.
@@ -137,7 +135,8 @@ pub(super) struct Recording(Recorder);
 
 impl Write for Recording {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.0.push(Op::Raw(String::from_utf8_lossy(buf).into_owned()));
+        self.0
+            .push(Op::Raw(String::from_utf8_lossy(buf).into_owned()));
         Ok(buf.len())
     }
 
@@ -159,7 +158,13 @@ impl Backend for Recording {
     {
         let number = self.0.draws.get() + 1;
         self.0.draws.set(number);
-        if self.0.faults.get().draw_from.is_some_and(|from| number >= from) {
+        if self
+            .0
+            .faults
+            .get()
+            .draw_from
+            .is_some_and(|from| number >= from)
+        {
             return Err(failure());
         }
         let cells = content
@@ -206,7 +211,13 @@ impl Backend for Recording {
     fn size(&self) -> io::Result<Size> {
         let number = self.0.size_reads.get() + 1;
         self.0.size_reads.set(number);
-        if self.0.faults.get().size_from.is_some_and(|from| number >= from) {
+        if self
+            .0
+            .faults
+            .get()
+            .size_from
+            .is_some_and(|from| number >= from)
+        {
             return Err(failure());
         }
         Ok(self.0.size.get())

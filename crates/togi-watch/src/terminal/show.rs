@@ -5,8 +5,8 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use tokio::sync::{mpsc, watch};
 
-use super::Event;
 use super::Error;
+use super::Event;
 use super::clock::Clock;
 use super::console::{Console, Session, terminal_error};
 use super::keys::press;
@@ -189,7 +189,6 @@ mod tests {
     }
 
     struct Harness {
-        recorder: Recorder,
         script: Rc<Script>,
         events: mpsc::UnboundedSender<Event>,
         acknowledged: mpsc::UnboundedReceiver<()>,
@@ -273,7 +272,6 @@ mod tests {
                 .await
             });
             Self {
-                recorder: recorder.clone(),
                 script,
                 events,
                 acknowledged,
@@ -398,9 +396,16 @@ mod tests {
                 h.script.fill.set(true);
                 h.send(Event::Resize).await;
                 for cells in recorder.draws() {
-                    assert!(cells.iter().all(|(x, y, _)| *x < width - 1 && *y < height - 1));
+                    assert!(
+                        cells
+                            .iter()
+                            .all(|(x, y, _)| *x < width - 1 && *y < height - 1)
+                    );
                 }
-                assert_eq!(h.script.areas.borrow()[0], Rect::new(0, 0, width - 1, height - 1));
+                assert_eq!(
+                    h.script.areas.borrow()[0],
+                    Rect::new(0, 0, width - 1, height - 1)
+                );
                 h.send(Event::Cancel).await;
                 h.finish().await.unwrap();
             }
@@ -447,7 +452,11 @@ mod tests {
             assert_eq!(recorder.clears(), 1, "startup cleared the screen once");
             recorder.resize(100, 20);
             h.send(Event::Resize).await;
-            assert_eq!(recorder.clears(), 2, "a resize cleared the screen once more");
+            assert_eq!(
+                recorder.clears(),
+                2,
+                "a resize cleared the screen once more"
+            );
             assert_eq!((h.last().width, h.last().height), (100, 20));
             assert_eq!(recorder.draws().last().unwrap().len(), 99 * 19);
             h.send(Event::Cancel).await;
@@ -542,7 +551,9 @@ mod tests {
             advance(Duration::from_secs(1)).await;
             settle().await;
             check(2, 0);
-            h.script.hold.set(Hold::Until(h.now() + SignedDuration::from_secs(20)));
+            h.script
+                .hold
+                .set(Hold::Until(h.now() + SignedDuration::from_secs(20)));
             h.send(Event::Changed).await;
             check(3, 1);
             advance(Duration::from_secs(5)).await;
@@ -618,7 +629,11 @@ mod tests {
                 let screen = h.last();
                 assert_eq!((screen.view, screen.scroll), (view, scroll), "{key:?}");
                 assert!(screen.keys);
-                assert_eq!(recorder.clears() - clears, usize::from(repainted), "{key:?}");
+                assert_eq!(
+                    recorder.clears() - clears,
+                    usize::from(repainted),
+                    "{key:?}"
+                );
             }
             h.script.scroll.set(25);
             advance(Duration::from_secs(1)).await;
@@ -629,7 +644,11 @@ mod tests {
             h.script.scroll.set(30);
             advance(Duration::from_secs(1)).await;
             settle().await;
-            assert_eq!(h.last().scroll, follow, "a followed log stays at the end as it grows");
+            assert_eq!(
+                h.last().scroll,
+                follow,
+                "a followed log stays at the end as it grows"
+            );
             for (key, view) in [
                 (Key::Esc, View::Main),
                 (Key::Char('h'), View::Help),
@@ -655,11 +674,24 @@ mod tests {
         local(async {
             for colours in [Colours::Full, Colours::Console, Colours::None] {
                 let recorder = Recorder::new(90, 30);
-                let h = Harness::start(&recorder, &Setup { palette: false, keys: false, colours });
+                let h = Harness::start(
+                    &recorder,
+                    &Setup {
+                        palette: false,
+                        keys: false,
+                        colours,
+                    },
+                );
                 settle().await;
                 let screen = h.last();
                 assert_eq!(
-                    (screen.width, screen.height, screen.keys, screen.one_frame, screen.colours),
+                    (
+                        screen.width,
+                        screen.height,
+                        screen.keys,
+                        screen.one_frame,
+                        screen.colours
+                    ),
                     (90, 30, false, false, colours)
                 );
                 h.send(Event::Cancel).await;
@@ -675,7 +707,13 @@ mod tests {
             for palette in [true, false] {
                 for exit in ["cancel", "input closed", "quit", "failure"] {
                     let recorder = Recorder::new(80, 12);
-                    let h = Harness::start(&recorder, &Setup { palette, ..Setup::default() });
+                    let h = Harness::start(
+                        &recorder,
+                        &Setup {
+                            palette,
+                            ..Setup::default()
+                        },
+                    );
                     settle().await;
                     let result = match exit {
                         "cancel" => Event::Cancel,
@@ -728,7 +766,10 @@ mod tests {
             }))
             .await;
             let error = h.finish().await.unwrap_err();
-            assert_eq!(error.to_string(), "watch journal: read journal notifications: overflow");
+            assert_eq!(
+                error.to_string(),
+                "watch journal: read journal notifications: overflow"
+            );
             assert!(recorder.restored());
         })
         .await;
@@ -738,18 +779,49 @@ mod tests {
     async fn terminal_failures_name_the_operation_keep_the_cause_and_restore_what_was_set_up() {
         local(async {
             let cases = [
-                ("clear terminal", Faults { clear: true, ..Faults::default() }, false),
-                ("read terminal size", Faults { size_from: Some(3), ..Faults::default() }, true),
-                ("draw frame", Faults { draw_from: Some(1), ..Faults::default() }, true),
+                (
+                    "clear terminal",
+                    Faults {
+                        clear: true,
+                        ..Faults::default()
+                    },
+                    false,
+                ),
+                (
+                    "read terminal size",
+                    Faults {
+                        size_from: Some(3),
+                        ..Faults::default()
+                    },
+                    true,
+                ),
+                (
+                    "draw frame",
+                    Faults {
+                        draw_from: Some(1),
+                        ..Faults::default()
+                    },
+                    true,
+                ),
             ];
             for (operation, faults, redraw) in cases {
                 let recorder = Recorder::failing(80, 12, faults);
-                let h = Harness::start(&recorder, &Setup { palette: true, ..Setup::default() });
+                let h = Harness::start(
+                    &recorder,
+                    &Setup {
+                        palette: true,
+                        ..Setup::default()
+                    },
+                );
                 if redraw {
                     advance(Duration::from_secs(1)).await;
                 }
                 let error = h.finish().await.unwrap_err();
-                let Error::Terminal { operation: got, source } = &error else {
+                let Error::Terminal {
+                    operation: got,
+                    source,
+                } = &error
+                else {
                     panic!("{error:?}");
                 };
                 assert_eq!(*got, operation);
@@ -768,13 +840,29 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn a_failed_redraw_size_read_is_reported_after_a_good_first_frame() {
         local(async {
-            let recorder = Recorder::failing(80, 12, Faults { size_from: Some(5), ..Faults::default() });
+            let recorder = Recorder::failing(
+                80,
+                12,
+                Faults {
+                    size_from: Some(5),
+                    ..Faults::default()
+                },
+            );
             let h = Harness::start(&recorder, &Setup::default());
             settle().await;
             assert_eq!(h.frames(), 1);
             h.events.send(Event::Resize).unwrap();
             let error = h.finish().await.unwrap_err();
-            assert!(matches!(error, Error::Terminal { operation: "read terminal size", .. }), "{error:?}");
+            assert!(
+                matches!(
+                    error,
+                    Error::Terminal {
+                        operation: "read terminal size",
+                        ..
+                    }
+                ),
+                "{error:?}"
+            );
             assert!(recorder.restored());
         })
         .await;
@@ -783,7 +871,10 @@ mod tests {
     #[test]
     fn a_panic_in_the_frame_restores_the_terminal_before_it_propagates() {
         let recorder = Recorder::new(80, 12);
-        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
         let (events, mut queue) = mpsc::unbounded_channel();
         let backend = recorder.backend();
         let caught = std::panic::catch_unwind(AssertUnwindSafe(|| {
@@ -806,7 +897,10 @@ mod tests {
         let payload = caught.unwrap_err();
         assert_eq!(payload.downcast_ref::<&str>(), Some(&"session panic"));
         assert!(recorder.restored());
-        assert_eq!(recorder.raw().last().map(String::as_str), Some(crate::terminal::palette::RESET));
+        assert_eq!(
+            recorder.raw().last().map(String::as_str),
+            Some(crate::terminal::palette::RESET)
+        );
     }
 
     #[tokio::test(start_paused = true)]
@@ -824,7 +918,11 @@ mod tests {
             let clears = recorder.clears();
             advance(Duration::from_secs(1)).await;
             settle().await;
-            assert_eq!(recorder.clears(), clears, "the tick after the resize cleared again");
+            assert_eq!(
+                recorder.clears(),
+                clears,
+                "the tick after the resize cleared again"
+            );
             h.send(Event::Cancel).await;
             h.finish().await.unwrap();
         })
@@ -867,10 +965,15 @@ mod tests {
                             crate::screen::Journal::Missing => "no session yet".to_owned(),
                             crate::screen::Journal::Starting => "starting".to_owned(),
                             crate::screen::Journal::Problem(error) => error.to_string(),
-                            crate::screen::Journal::Ready { log, .. } => format!("{} events", log.total),
+                            crate::screen::Journal::Ready { log, .. } => {
+                                format!("{} events", log.total)
+                            }
                         };
                         frame_shown.borrow_mut().push(text);
-                        Drawn { scroll: 0, hold: Hold::Frozen }
+                        Drawn {
+                            scroll: 0,
+                            hold: Hold::Frozen,
+                        }
                     },
                     move || reload_source.borrow_mut().reload(),
                 )

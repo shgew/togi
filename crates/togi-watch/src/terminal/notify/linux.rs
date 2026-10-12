@@ -239,9 +239,10 @@ mod tests {
     #[test]
     fn notifications_never_ask_for_the_events_of_reading_the_journal() {
         for flags in [DIRECTORY, FILE] {
-            assert!(!flags.intersects(
-                WatchFlags::OPEN | WatchFlags::ACCESS | WatchFlags::CLOSE_NOWRITE
-            ));
+            assert!(
+                !flags
+                    .intersects(WatchFlags::OPEN | WatchFlags::ACCESS | WatchFlags::CLOSE_NOWRITE)
+            );
         }
         assert!(DIRECTORY.contains(WatchFlags::ONLYDIR));
     }
@@ -252,7 +253,8 @@ mod tests {
         let directory = root.path().join("state");
         fs::create_dir(&directory).unwrap();
         let watcher = watcher_at(&directory);
-        let watched_below = |name: &str| watcher.is_relevant(&directory, ReadFlags::CREATE, Some(OsStr::new(name)));
+        let watched_below =
+            |name: &str| watcher.is_relevant(&directory, ReadFlags::CREATE, Some(OsStr::new(name)));
         assert!(watched_below(JOURNAL));
         assert!(!watched_below("events.jsonl.tmp"));
         assert!(!watched_below("state.json"));
@@ -286,7 +288,10 @@ mod tests {
         let root = TempDir::new().unwrap();
         journal_in(root.path(), "one\n");
         let mut watcher = watcher_at(root.path());
-        let mut file = fs::OpenOptions::new().append(true).open(root.path().join(JOURNAL)).unwrap();
+        let mut file = fs::OpenOptions::new()
+            .append(true)
+            .open(root.path().join(JOURNAL))
+            .unwrap();
         std::io::Write::write_all(&mut file, b"two\n").unwrap();
         arrives(&mut watcher).await;
     }
@@ -336,7 +341,10 @@ mod tests {
             [directory.parent().unwrap().to_path_buf(), directory.clone()],
             "the directory is watched itself once it exists"
         );
-        let file = fs::OpenOptions::new().append(true).open(directory.join(JOURNAL)).unwrap();
+        let file = fs::OpenOptions::new()
+            .append(true)
+            .open(directory.join(JOURNAL))
+            .unwrap();
         std::io::Write::write_all(&mut &file, b"two\n").unwrap();
         arrives(&mut watcher).await;
     }
@@ -367,7 +375,10 @@ mod tests {
         let mut watcher = watcher_at(root.path());
         assert!(!watcher.polling());
         assert!(watcher.watches.values().any(|path| path.ends_with(JOURNAL)));
-        let mut file = fs::OpenOptions::new().append(true).open(root.path().join(JOURNAL)).unwrap();
+        let mut file = fs::OpenOptions::new()
+            .append(true)
+            .open(root.path().join(JOURNAL))
+            .unwrap();
         std::io::Write::write_all(&mut file, b"two\n").unwrap();
         arrives(&mut watcher).await;
         fs::write(root.path().join("replacement"), "three\n").unwrap();
@@ -386,7 +397,10 @@ mod tests {
         fs::create_dir(&directory).unwrap();
         fs::set_permissions(&directory, fs::Permissions::from_mode(0o311)).unwrap();
         let mut watcher = watcher_at(&directory);
-        assert!(watcher.polling(), "nothing announces the journal's creation");
+        assert!(
+            watcher.polling(),
+            "nothing announces the journal's creation"
+        );
         journal_in(&directory, "one\n");
         watcher.arm().unwrap();
         assert!(!watcher.polling());
@@ -401,6 +415,9 @@ mod tests {
         let runtime = tokio::runtime::Handle::current();
         let _guard = runtime.enter();
         let watcher = open(&file.join("state"));
-        assert!(watcher.is_ok(), "the file's parent is watched instead: ENOTDIR climbs");
+        assert!(
+            watcher.is_ok(),
+            "the file's parent is watched instead: ENOTDIR climbs"
+        );
     }
 }

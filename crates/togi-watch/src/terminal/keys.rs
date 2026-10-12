@@ -206,28 +206,152 @@ mod tests {
     fn press_maps_every_key_of_go_test_press() {
         let follow = usize::MAX;
         let cases = [
-            Case { name: "? opens the help at its top", from: screen(View::Main, 3, 0), key: Key::Char('?'), scrolled: 0, view: View::Help, scroll: 0 },
-            Case { name: "? closes the help", from: screen(View::Help, 4, 0), key: Key::Char('?'), scrolled: 9, view: View::Main, scroll: 0 },
-            Case { name: "L opens the log at its end", from: screen(View::Main, 0, 0), key: Key::Char('L'), scrolled: 0, view: View::Log, scroll: follow },
-            Case { name: "l closes the log", from: screen(View::Log, 0, 0), key: Key::Char('l'), scrolled: 0, view: View::Main, scroll: 0 },
-            Case { name: "l from the help opens the log", from: screen(View::Help, 2, 0), key: Key::Char('l'), scrolled: 9, view: View::Log, scroll: follow },
-            Case { name: "Esc returns to the main view", from: screen(View::Log, 5, 0), key: Key::Esc, scrolled: 9, view: View::Main, scroll: 0 },
-            Case { name: "down scrolls the help one line", from: screen(View::Help, 0, 0), key: Key::Down, scrolled: 9, view: View::Help, scroll: 1 },
-            Case { name: "j stops at the end", from: screen(View::Help, 9, 0), key: Key::Char('j'), scrolled: 9, view: View::Help, scroll: 9 },
-            Case { name: "up from the log's end leaves it", from: screen(View::Log, follow, 0), key: Key::Up, scrolled: 9, view: View::Log, scroll: 8 },
-            Case { name: "down to the log's end follows it again", from: screen(View::Log, 8, 0), key: Key::Down, scrolled: 9, view: View::Log, scroll: follow },
-            Case { name: "page down moves a screen less eight lines", from: screen(View::Help, 0, 30), key: Key::PageDown, scrolled: 90, view: View::Help, scroll: 22 },
-            Case { name: "page up stops at the top", from: screen(View::Help, 5, 30), key: Key::PageUp, scrolled: 90, view: View::Help, scroll: 0 },
-            Case { name: "g goes to the top", from: screen(View::Log, follow, 0), key: Key::Char('g'), scrolled: 9, view: View::Log, scroll: 0 },
-            Case { name: "End goes to the help's end", from: screen(View::Help, 0, 0), key: Key::End, scrolled: 9, view: View::Help, scroll: 9 },
-            Case { name: "a scroll beyond the content clamps first", from: screen(View::Help, 50, 0), key: Key::Up, scrolled: 9, view: View::Help, scroll: 8 },
-            Case { name: "the main view does not scroll", from: screen(View::Main, 0, 0), key: Key::Down, scrolled: 0, view: View::Main, scroll: 0 },
-            Case { name: "other keys change nothing", from: screen(View::Help, 2, 0), key: Key::Char('x'), scrolled: 9, view: View::Help, scroll: 2 },
+            Case {
+                name: "? opens the help at its top",
+                from: screen(View::Main, 3, 0),
+                key: Key::Char('?'),
+                scrolled: 0,
+                view: View::Help,
+                scroll: 0,
+            },
+            Case {
+                name: "? closes the help",
+                from: screen(View::Help, 4, 0),
+                key: Key::Char('?'),
+                scrolled: 9,
+                view: View::Main,
+                scroll: 0,
+            },
+            Case {
+                name: "L opens the log at its end",
+                from: screen(View::Main, 0, 0),
+                key: Key::Char('L'),
+                scrolled: 0,
+                view: View::Log,
+                scroll: follow,
+            },
+            Case {
+                name: "l closes the log",
+                from: screen(View::Log, 0, 0),
+                key: Key::Char('l'),
+                scrolled: 0,
+                view: View::Main,
+                scroll: 0,
+            },
+            Case {
+                name: "l from the help opens the log",
+                from: screen(View::Help, 2, 0),
+                key: Key::Char('l'),
+                scrolled: 9,
+                view: View::Log,
+                scroll: follow,
+            },
+            Case {
+                name: "Esc returns to the main view",
+                from: screen(View::Log, 5, 0),
+                key: Key::Esc,
+                scrolled: 9,
+                view: View::Main,
+                scroll: 0,
+            },
+            Case {
+                name: "down scrolls the help one line",
+                from: screen(View::Help, 0, 0),
+                key: Key::Down,
+                scrolled: 9,
+                view: View::Help,
+                scroll: 1,
+            },
+            Case {
+                name: "j stops at the end",
+                from: screen(View::Help, 9, 0),
+                key: Key::Char('j'),
+                scrolled: 9,
+                view: View::Help,
+                scroll: 9,
+            },
+            Case {
+                name: "up from the log's end leaves it",
+                from: screen(View::Log, follow, 0),
+                key: Key::Up,
+                scrolled: 9,
+                view: View::Log,
+                scroll: 8,
+            },
+            Case {
+                name: "down to the log's end follows it again",
+                from: screen(View::Log, 8, 0),
+                key: Key::Down,
+                scrolled: 9,
+                view: View::Log,
+                scroll: follow,
+            },
+            Case {
+                name: "page down moves a screen less eight lines",
+                from: screen(View::Help, 0, 30),
+                key: Key::PageDown,
+                scrolled: 90,
+                view: View::Help,
+                scroll: 22,
+            },
+            Case {
+                name: "page up stops at the top",
+                from: screen(View::Help, 5, 30),
+                key: Key::PageUp,
+                scrolled: 90,
+                view: View::Help,
+                scroll: 0,
+            },
+            Case {
+                name: "g goes to the top",
+                from: screen(View::Log, follow, 0),
+                key: Key::Char('g'),
+                scrolled: 9,
+                view: View::Log,
+                scroll: 0,
+            },
+            Case {
+                name: "End goes to the help's end",
+                from: screen(View::Help, 0, 0),
+                key: Key::End,
+                scrolled: 9,
+                view: View::Help,
+                scroll: 9,
+            },
+            Case {
+                name: "a scroll beyond the content clamps first",
+                from: screen(View::Help, 50, 0),
+                key: Key::Up,
+                scrolled: 9,
+                view: View::Help,
+                scroll: 8,
+            },
+            Case {
+                name: "the main view does not scroll",
+                from: screen(View::Main, 0, 0),
+                key: Key::Down,
+                scrolled: 0,
+                view: View::Main,
+                scroll: 0,
+            },
+            Case {
+                name: "other keys change nothing",
+                from: screen(View::Help, 2, 0),
+                key: Key::Char('x'),
+                scrolled: 9,
+                view: View::Help,
+                scroll: 2,
+            },
         ];
         for case in cases {
             let (got, quit) = press(case.from, case.key, case.scrolled);
             assert!(!quit, "{}: quit", case.name);
-            assert_eq!((got.view, got.scroll), (case.view, case.scroll), "{}", case.name);
+            assert_eq!(
+                (got.view, got.scroll),
+                (case.view, case.scroll),
+                "{}",
+                case.name
+            );
             assert_eq!(
                 (got.width, got.height, got.keys),
                 (case.from.width, case.from.height, true),
@@ -310,9 +434,17 @@ mod tests {
         ] {
             for split in 1..bytes.len() {
                 let mut decoder = Decoder::default();
-                assert_eq!(decoder.push(&bytes.as_bytes()[..split]), [], "{bytes:?}/{split}");
+                assert_eq!(
+                    decoder.push(&bytes.as_bytes()[..split]),
+                    [],
+                    "{bytes:?}/{split}"
+                );
                 assert!(decoder.is_pending(), "{bytes:?}/{split}");
-                assert_eq!(decoder.push(&bytes.as_bytes()[split..]), [want], "{bytes:?}/{split}");
+                assert_eq!(
+                    decoder.push(&bytes.as_bytes()[split..]),
+                    [want],
+                    "{bytes:?}/{split}"
+                );
                 assert!(!decoder.is_pending());
             }
         }
@@ -339,7 +471,11 @@ mod tests {
             assert_eq!(decoder.push(prefix.as_bytes()), []);
             assert_eq!(decoder.flush(), want, "{prefix:?}");
             assert!(!decoder.is_pending());
-            assert_eq!(decoder.push(b"j"), [Key::Char('j')], "the key after a flush is not swallowed");
+            assert_eq!(
+                decoder.push(b"j"),
+                [Key::Char('j')],
+                "the key after a flush is not swallowed"
+            );
         }
     }
 

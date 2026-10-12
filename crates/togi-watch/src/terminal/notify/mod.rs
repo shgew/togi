@@ -226,11 +226,18 @@ mod tests {
         assert!(matches!(l.events.recv().await, Some(Event::Changed)));
         tokio::time::advance(Duration::from_secs(60)).await;
         tokio::task::yield_now().await;
-        assert!(l.events.try_recv().is_err(), "the second change came before the reload was acknowledged");
+        assert!(
+            l.events.try_recv().is_err(),
+            "the second change came before the reload was acknowledged"
+        );
         l.reloaded.send(()).unwrap();
         assert!(matches!(l.events.recv().await, Some(Event::Changed)));
         drop(l.reloaded);
-        assert_eq!(task.await.unwrap(), 0, "the notifier ended once the loop was gone");
+        assert_eq!(
+            task.await.unwrap(),
+            0,
+            "the notifier ended once the loop was gone"
+        );
     }
 
     #[tokio::test(start_paused = true)]
@@ -244,11 +251,18 @@ mod tests {
         });
         tokio::time::advance(Duration::from_millis(3999)).await;
         tokio::task::yield_now().await;
-        assert!(l.events.try_recv().is_err(), "reported before the journal could be watched");
+        assert!(
+            l.events.try_recv().is_err(),
+            "reported before the journal could be watched"
+        );
         tokio::time::advance(Duration::from_millis(1)).await;
         assert!(matches!(l.events.recv().await, Some(Event::Changed)));
         drop(l.reloaded);
-        assert_eq!(task.await.unwrap(), 4, "three looks while missing, one that found it");
+        assert_eq!(
+            task.await.unwrap(),
+            4,
+            "three looks while missing, one that found it"
+        );
     }
 
     #[tokio::test(start_paused = true)]
@@ -284,7 +298,10 @@ mod tests {
         });
         assert!(matches!(l.events.recv().await, Some(Event::Changed)));
         l.reloaded.send(()).unwrap();
-        assert!(matches!(l.events.recv().await, Some(Event::Changed)), "the journal that appeared meanwhile is reported at once");
+        assert!(
+            matches!(l.events.recv().await, Some(Event::Changed)),
+            "the journal that appeared meanwhile is reported at once"
+        );
         drop(l.reloaded);
         assert_eq!(task.await.unwrap(), 1);
     }
@@ -296,7 +313,10 @@ mod tests {
         let mut watch = Fake::watching([Err(io_error()), Ok(())]);
         let task = tokio::spawn(async move { drive(&mut watch, &mut handshake).await });
         assert!(matches!(l.events.recv().await, Some(Event::Failed(_))));
-        timeout(Duration::from_secs(1), task).await.unwrap().unwrap();
+        timeout(Duration::from_secs(1), task)
+            .await
+            .unwrap()
+            .unwrap();
         assert!(l.events.recv().await.is_none());
     }
 }

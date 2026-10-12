@@ -100,7 +100,10 @@ mod tests {
         assert!(!wakes(&mut clock, Duration::from_secs(9)).await);
         assert!(wakes(&mut clock, Duration::from_secs(1)).await);
         clock.schedule(Hold::Until(after(10)), after(10));
-        assert!(wakes(&mut clock, Duration::from_millis(1001)).await, "a passed hold ticks");
+        assert!(
+            wakes(&mut clock, Duration::from_millis(1001)).await,
+            "a passed hold ticks"
+        );
     }
 
     #[tokio::test(start_paused = true)]

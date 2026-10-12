@@ -55,7 +55,11 @@ pub(super) fn read_keys(source: &mut impl Source, mut send: impl FnMut(Key) -> b
                     return;
                 }
             }
-            Err(error) if matches!(error.kind(), io::ErrorKind::Interrupted | io::ErrorKind::WouldBlock) => {}
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::Interrupted | io::ErrorKind::WouldBlock
+                ) => {}
             Err(_) => return,
         }
     }
@@ -106,6 +110,14 @@ impl Source for FdSource<'_> {
     }
 }
 
+/// A pipe that no child process inherits. `pipe2` is not available on every platform, so the flag is set after.
+pub(super) fn pipe() -> io::Result<(OwnedFd, OwnedFd)> {
+    let (read, write) = rustix::pipe::pipe()?;
+    rustix::io::fcntl_setfd(&read, rustix::io::FdFlags::CLOEXEC)?;
+    rustix::io::fcntl_setfd(&write, rustix::io::FdFlags::CLOEXEC)?;
+    Ok((read, write))
+}
+
 /// A running keyboard reader. Dropping it wakes and joins the reader thread.
 pub(super) struct Reader<'scope> {
     wake: OwnedFd,
@@ -120,7 +132,7 @@ impl<'scope> Reader<'scope> {
         input: BorrowedFd<'env>,
         events: UnboundedSender<Event>,
     ) -> io::Result<Self> {
-        let (wake_read, wake) = rustix::pipe::pipe_with(rustix::pipe::PipeFlags::CLOEXEC)?;
+        let (wake_read, wake) = pipe()?;
         let thread = scope.spawn(move || {
             let mut source = FdSource::new(input, wake_read.as_fd());
             read_keys(&mut source, |key| events.send(Event::Key(key)).is_ok());
@@ -276,7 +288,7 @@ pub(super) mod tests {
         use crate::terminal::keys::Key;
 
         fn pipe() -> (OwnedFd, OwnedFd) {
-            rustix::pipe::pipe_with(rustix::pipe::PipeFlags::CLOEXEC).unwrap()
+            crate::terminal::input::pipe().unwrap()
         }
 
         #[test]
@@ -309,7 +321,10 @@ pub(super) mod tests {
                 let reader = Reader::start(scope, read.as_fd(), events).unwrap();
                 drop(reader);
             });
-            assert!(matches!(queue.blocking_recv(), Some(Event::InputClosed) | None));
+            assert!(matches!(
+                queue.blocking_recv(),
+                Some(Event::InputClosed) | None
+            ));
             rustix::io::write(&write, b"remaining input").unwrap();
             let mut buf = [0_u8; 15];
             assert_eq!(rustix::io::read(&read, &mut buf).unwrap(), 15);

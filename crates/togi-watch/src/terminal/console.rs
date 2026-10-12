@@ -9,8 +9,8 @@ use ratatui::backend::{Backend, ClearType, CrosstermBackend, WindowSize};
 use ratatui::buffer::Cell;
 use ratatui::layout::{Position, Rect, Size};
 
-use super::palette;
 use super::Error;
+use super::palette;
 
 /// A ratatui backend that also takes raw bytes, for the sequences ratatui has no call for.
 pub(super) trait Console: Backend<Error = io::Error> + Write {}
