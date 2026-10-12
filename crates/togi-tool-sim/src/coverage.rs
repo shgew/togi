@@ -3,6 +3,7 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 use togi_journal::{DeadEndCondition, ShutdownReason};
+use togi_machine::object_only;
 use togi_tool_audit::Violation;
 
 use crate::run::RunId;
@@ -64,11 +65,14 @@ impl fmt::Display for Outcome {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct RunResult {
-    pub id: RunId,
-    pub outcome: Outcome,
+object_only! {
+    #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct RunResult {
+        pub id: RunId,
+        #[serde(deserialize_with = "togi_machine::serde_object::deserialize")]
+        pub outcome: Outcome,
+    }
 }
 
 #[derive(Debug, thiserror::Error)]

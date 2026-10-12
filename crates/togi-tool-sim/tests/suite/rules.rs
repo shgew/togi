@@ -177,3 +177,19 @@ fn replay_is_carried_to_every_run_of_its_scenario() {
     let replay: Vec<bool> = suite.runs().iter().map(|run| run.replay).collect();
     assert_eq!(replay, [true, true, false]);
 }
+
+#[test]
+fn a_suite_and_its_scenarios_are_objects_never_positional_arrays() {
+    let object = r#"{"scenarios":[{"name":"x","machine":"","machines":[],"replay":false,"dev":[1],"holdout":[],"smoke":[]}]}"#;
+    assert_eq!(parse(object).unwrap().runs().len(), 1);
+    for (case, text) in [
+        ("suite", r#"[[{"name":"x","dev":[1]}]]"#),
+        ("scenario", r#"{"scenarios":[["x","",[],false,[1],[],[]]]}"#),
+        ("both", r#"[[["x","",[],false,[1],[],[]]]]"#),
+    ] {
+        assert!(
+            matches!(parse(text), Err(SuiteError::Decode(_))),
+            "{case}: {text}"
+        );
+    }
+}

@@ -364,3 +364,21 @@ fn blank_lines_in_a_manifest_are_skipped() {
     assert_eq!(parse_manifest(text).unwrap(), vec![clean("a/dev-1")]);
     assert_eq!(parse_manifest("").unwrap(), Vec::new());
 }
+
+#[test]
+fn a_manifest_line_is_an_object_never_a_positional_array() {
+    let violations = |violation: &str| {
+        format!(
+            r#"{{"id":"a/dev-1","outcome":{{"kind":"audit_violations","violations":[{violation}]}}}}"#
+        )
+    };
+    let object = violations(r#"{"seq":1,"check":"avoidance","reason":"r"}"#);
+    assert_eq!(parse_manifest(&object).unwrap().len(), 1);
+    for text in [
+        r#"["a/dev-1",{"kind":"clean"}]"#.to_owned(),
+        r#"{"id":"a/dev-1","outcome":["clean"]}"#.to_owned(),
+        violations(r#"[1,"avoidance","r"]"#),
+    ] {
+        assert_eq!(parse_manifest(&text).unwrap_err().line, 1, "{text}");
+    }
+}

@@ -1,7 +1,8 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use serde::Deserialize;
+use serde::Serialize;
+use togi_machine::object_only;
 
 use crate::run::{Run, RunId, Split};
 
@@ -33,28 +34,30 @@ pub enum SuiteError {
     NoRuns,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct SuiteFile {
-    scenarios: Vec<Scenario>,
-}
+object_only! {
+    #[derive(Debug, Serialize)]
+    #[serde(deny_unknown_fields)]
+    struct SuiteFile {
+        scenarios: Vec<Scenario>,
+    }
 
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Scenario {
-    name: String,
-    #[serde(default)]
-    machine: String,
-    #[serde(default)]
-    machines: Vec<String>,
-    #[serde(default)]
-    replay: bool,
-    #[serde(default)]
-    dev: Vec<u64>,
-    #[serde(default)]
-    holdout: Vec<u64>,
-    #[serde(default)]
-    smoke: Vec<u64>,
+    #[derive(Debug, Serialize)]
+    #[serde(deny_unknown_fields)]
+    struct Scenario {
+        name: String,
+        #[serde(default)]
+        machine: String,
+        #[serde(default)]
+        machines: Vec<String>,
+        #[serde(default)]
+        replay: bool,
+        #[serde(default)]
+        dev: Vec<u64>,
+        #[serde(default)]
+        holdout: Vec<u64>,
+        #[serde(default)]
+        smoke: Vec<u64>,
+    }
 }
 
 /// A validated suite: every scenario name is a safe unique component, no seed repeats within a scenario, every smoke

@@ -2,6 +2,7 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 use togi_journal::{Seq, SessionId};
+use togi_machine::object_only;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -33,11 +34,14 @@ impl fmt::Display for Check {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct Violation {
-    pub seq: Seq,
-    pub check: Check,
-    pub reason: String,
+object_only! {
+    #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct Violation {
+        pub seq: Seq,
+        pub check: Check,
+        pub reason: String,
+    }
 }
 
 impl fmt::Display for Violation {
