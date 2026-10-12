@@ -151,6 +151,15 @@ impl SameBoot {
         self.bench.sim.seams().host.boot_id().unwrap()
     }
 
+    /// The events a reader of the directory finds, which is what survives a kill.
+    fn durable(&self) -> Vec<Event> {
+        crate::testing::simulated(&self.bench.mem)
+            .open_at(self.boot(), self.bench.sim.now())
+            .unwrap()
+            .events()
+            .to_vec()
+    }
+
     fn since<'a>(&self, ended: &'a Ended) -> &'a [Event] {
         &ended.journal.events()[self.left..]
     }
@@ -298,20 +307,29 @@ fn a_kill_after_every_durable_restoration_event_of_the_same_boot_converges() {
         for kind in durable {
             assert!(boundaries.iter().any(|(_, k)| *k == kind), "{kind:?}");
         }
+        let mut mixed = false;
         for (index, kind) in boundaries {
             let fixture = SameBoot::new(pending);
             let boot = fixture.boot();
-            fixture.bench.mem.inject(
-                Fault::after(Op::Write, u64::try_from(index).unwrap() + 1).named("events.jsonl"),
-            );
+            let durable_events = fixture.left + index + 1;
+            kill_after_durable(&fixture, index + 1);
             let killed = fixture.resume();
             fixture.bench.mem.clear_faults();
-            assert!(
-                format!("{:?}", killed.errors).contains("injected Write fault"),
-                "{kind:?} at {index}: {:?}",
-                killed.errors
-            );
+            assert!(killed.capsule.is_none(), "{kind:?} at {index}");
             drop(killed);
+            assert_eq!(fixture.durable().len(), durable_events);
+            assert_eq!(fixture.durable()[durable_events - 1].kind(), kind);
+            let partial = fixture.offsets();
+            mixed |= partial != LEFT && partial != HELD;
+            for (n, &offset) in partial.iter().enumerate() {
+                assert!(
+                    offset == LEFT[n] || offset == HELD[n],
+                    "pending {pending}, {kind:?} at {index}: core {n} at {offset} in {partial:?}"
+                );
+            }
+            if kind == EventKind::ProfileRestored {
+                assert_eq!(partial, HELD);
+            }
             for _ in 0..2 {
                 let fired = kill_at(&fixture, 8, None);
                 let killed = fixture.resume();
@@ -335,7 +353,35 @@ fn a_kill_after_every_durable_restoration_event_of_the_same_boot_converges() {
             assert!(fixture.bench.sim.violations().is_empty());
             assert!(fixture.clears() <= 1);
         }
+        assert!(
+            mixed,
+            "no kill left a partial restoration, pending {pending}"
+        );
     }
+}
+
+/// Kills the next run right after its `nth` journal append from now is on disk: that append reports a failure as the
+/// process dies, and from then on every SMU access fails as well, so nothing the dying process would still do
+/// reaches the hardware.
+fn kill_after_durable(fixture: &SameBoot, nth: usize) {
+    let mem = fixture.bench.mem.clone();
+    let synced = move || {
+        mem.log()
+            .iter()
+            .filter(|(op, path)| *op == Op::Write && path.ends_with("events.jsonl"))
+            .count()
+    };
+    let base = synced();
+    fixture
+        .bench
+        .mem
+        .inject(Fault::after(Op::Write, u64::try_from(nth).unwrap()).named("events.jsonl"));
+    fixture.bench.sim.interrupt_smu(move |_: &SmuOperation| {
+        if synced() - base >= nth {
+            return Err(Error::Crashed);
+        }
+        Ok(())
+    });
 }
 
 #[test]
