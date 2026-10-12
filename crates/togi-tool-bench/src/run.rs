@@ -352,7 +352,10 @@ fn model_checks(plan: &Plan) -> Result<(BTreeMap<PathBuf, ModelCheck>, Vec<Check
     Ok((verdicts, checks))
 }
 
-fn check_machine(machine: &Machine, extracts: &mut Extracts) -> Result<Option<Check>, Error> {
+pub(crate) fn check_machine(
+    machine: &Machine,
+    extracts: &mut Extracts,
+) -> Result<Option<Check>, Error> {
     let Some(facts) = machine
         .definition
         .facts
