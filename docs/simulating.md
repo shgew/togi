@@ -206,8 +206,10 @@ The loop ends when a run stops without a crash, which gives `SimOutcome::Stopped
 
 The state directory is either in memory or on disk:
 
-- **`Persistence::Memory(MemFs)`** keeps it in a `togi_journal::MemFs`. `state.json` is published when a run finishes, and a crashed run publishes it from its capsule (`ResumeCapsule::publish`), so the next boot finds the document a live run would have left.
-- **`Persistence::Files(path)`** locks a directory on disk for each boot and publishes `state.json` after every event. Nothing is synced. A test that holds the directory's lock makes `simulate` fail with `SimError::Lock`.
+- **`Persistence::Memory(MemFs)`** keeps it in a `togi_journal::MemFs`.
+- **`Persistence::Files(path)`** locks a directory on disk for each boot. Nothing is synced. A test that holds the directory's lock makes `simulate` fail with `SimError::Lock`.
+
+Both modes publish `state.json` only when a run ends, never after each event (`PublicationPolicy::OnFinish`). A run that stops, by its stop policy, a dead end or a signal, publishes it as its last step. A crashed run publishes it from its capsule (`ResumeCapsule::publish`), so the next boot finds the document a live run would have left, and a capped simulation leaves the last crashed run's. One default `togi-tool-sim --state-dir` session with 12 crashes renames `state.json` 13 times.
 
 Both modes leave byte-identical `events.jsonl` and `state.json`; a test pins this on three machines.
 
