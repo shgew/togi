@@ -8,7 +8,6 @@ use std::fmt::Write as _;
 use std::time::Duration;
 
 use ratatui::text::{Line, Span};
-use togi_journal::Payload;
 use togi_machine::{Condition, CoreId, CoreSet, WorkloadId};
 use togi_tuner::{
     Branch, DecisionPayload, Load, Premise, TrialContext, TrialPlan, Uncertainty, WorkloadChoice,
@@ -21,8 +20,8 @@ use super::super::terms::part_name;
 use super::shape_words;
 use crate::model::{HuntShape, TrialView};
 use crate::words::{
-    Brief, Phrase as Wording, carried_groups, core_ids, decision_phrase, hunt_end_phrase,
-    kind_words, solo_limit, words, workload_display,
+    carried_groups, core_ids, decision_brief, decision_detail, decision_phrase, hunt_end_phrase,
+    kind_words, solo_limit, workload_display,
 };
 
 /// How many outcome lines the trial band holds.
@@ -507,10 +506,8 @@ fn outcome_words(
     }
     let mut compact = String::new();
     for decision in &branch.decisions {
-        if matches!(decision, DecisionPayload::DeadEnd(_)) {
-            "tuning stops".clone_into(&mut compact);
-        } else if compact.is_empty() {
-            if let Some(words) = brief_of(decision) {
+        if matches!(decision, DecisionPayload::DeadEnd(_)) || compact.is_empty() {
+            if let Some(words) = decision_brief(decision) {
                 compact = words;
             }
         }
@@ -579,22 +576,6 @@ fn next_words(
         }
     }
     format!("next: {}", next_trial_words(scene, next, trial, shape))
-}
-
-fn brief_of(decision: &DecisionPayload) -> Option<String> {
-    let payload = Payload::from(decision.clone());
-    match words(payload.kind()).compact {
-        Brief::Of(of) => of(&payload),
-        Brief::Silent => None,
-    }
-}
-
-fn table_phrase(decision: &DecisionPayload) -> Option<String> {
-    let payload = Payload::from(decision.clone());
-    match words(payload.kind()).detailed {
-        Wording::Of(of) => of(&payload),
-        Wording::Silent | Wording::Contextual => None,
-    }
 }
 
 fn duration_of(plan: &TrialPlan) -> Duration {
@@ -926,7 +907,7 @@ pub(super) fn decision_phrases(
                 }
             }
             decision @ DecisionPayload::HuntStart(_) => {
-                push(table_phrase(decision).unwrap_or_default(), true);
+                push(decision_detail(decision).unwrap_or_default(), true);
             }
             DecisionPayload::HuntGroup(group) => {
                 if group.skipped {
@@ -956,7 +937,7 @@ pub(super) fn decision_phrases(
                 push(text, minor);
             }
             decision @ DecisionPayload::Combination(_) => {
-                push(table_phrase(decision).unwrap_or_default(), false);
+                push(decision_detail(decision).unwrap_or_default(), false);
             }
             DecisionPayload::TunerDecision(decision) => {
                 if named
@@ -993,11 +974,11 @@ pub(super) fn decision_phrases(
             | DecisionPayload::DeepeningRound(_)
             | DecisionPayload::DeadEnd(_)
             | DecisionPayload::HuntSkipped(_)) => {
-                push(table_phrase(decision).unwrap_or_default(), false);
+                push(decision_detail(decision).unwrap_or_default(), false);
             }
             decision @ DecisionPayload::CheckingCycle(cycle) => {
                 let minor = cycle.event == togi_journal::CycleEvent::Start;
-                push(table_phrase(decision).unwrap_or_default(), minor);
+                push(decision_detail(decision).unwrap_or_default(), minor);
             }
             DecisionPayload::TunerWarning(_) | DecisionPayload::ProfileChange(_) => {}
         }
