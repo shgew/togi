@@ -523,11 +523,7 @@ struct Scripted {
 }
 
 impl Kernel for Scripted {
-    fn mces(
-        &mut self,
-        boot: &BootId,
-        since: Duration,
-    ) -> Result<Vec<togi_machine::Mce>, Error> {
+    fn mces(&mut self, boot: &BootId, since: Duration) -> Result<Vec<togi_machine::Mce>, Error> {
         self.inner.mces(boot, since)
     }
 
@@ -572,18 +568,8 @@ fn partial(mces: Vec<togi_machine::Mce>, error: Error) -> Read {
     Err(Partial { value: mces, error })
 }
 
-/// A session that resumes the boot's journal, whose recorded kernel cursor is returned, over a kernel that answers
-/// `script`.
-fn scripted(bench: &Bench, script: Vec<Read>) -> (Session, KernelCursor, Seen) {
-    let mut first = bench.open();
-    first.start().unwrap();
-    let cursor = first
-        .appender()
-        .recovery()
-        .kernel_cursor(&first.boot)
-        .cloned()
-        .expect("startup records the kernel cursor");
-    drop(first);
+/// A session that opens the bench's journal on the simulator's current boot over a kernel that answers `script`.
+fn resumed_over(bench: &Bench, script: Vec<Read>) -> (Session, Seen) {
     let mut input = bench.input();
     let seen = Seen::default();
     let inner = input.machine.kernel;
@@ -595,6 +581,21 @@ fn scripted(bench: &Bench, script: Vec<Read>) -> (Session, KernelCursor, Seen) {
     let Ok(session) = Session::open(input) else {
         panic!("open");
     };
+    (session, seen)
+}
+
+/// The same, after a first session recorded a kernel cursor, which is returned.
+fn scripted(bench: &Bench, script: Vec<Read>) -> (Session, KernelCursor, Seen) {
+    let mut first = bench.open();
+    first.start().unwrap();
+    let cursor = first
+        .appender()
+        .recovery()
+        .kernel_cursor(&first.boot)
+        .cloned()
+        .expect("startup records the kernel cursor");
+    drop(first);
+    let (session, seen) = resumed_over(bench, script);
     (session, cursor, seen)
 }
 
@@ -652,11 +653,7 @@ fn the_machine_checks_of_both_partial_reads_survive_a_failed_reanchor() {
         .events()
         .iter()
         .filter_map(|event| match &event.payload {
-            Payload::Mce(mce) => Some((
-                mce.lines.clone(),
-                mce.trial.clone(),
-                mce.between_trials,
-            )),
+            Payload::Mce(mce) => Some((mce.lines.clone(), mce.trial.clone(), mce.between_trials)),
             _ => None,
         })
         .collect();
@@ -667,4 +664,66 @@ fn the_machine_checks_of_both_partial_reads_survive_a_failed_reanchor() {
             (vec!["after the window".to_owned()], None, true),
         ]
     );
+}
+
+#[test]
+fn a_reopened_session_resumes_its_own_boots_cursor_and_files_the_tail_between_trials() {
+    use togi_machine::Regime;
+
+    for reboot in [false, true] {
+        let bench = Bench::new(2);
+        let mut first = crate::testing::begun(&bench);
+        let plan = crate::testing::search_plan(&first, crate::testing::core(0), Regime::R1);
+        assert_eq!(
+            crate::testing::run_plan(&mut first, plan).unwrap(),
+            Control::Continue
+        );
+        let recorded = first
+            .appender()
+            .recovery()
+            .kernel_cursor(&first.boot)
+            .cloned()
+            .expect("the trial recorded the kernel cursor");
+        drop(first);
+        if reboot {
+            bench.sim.reboot();
+        }
+        let tail = machine_check(bench.sim.monotonic(), 3, "after the last trial");
+        let resumed = KernelCursor::from("resumed".to_owned());
+        let (mut session, seen) = resumed_over(
+            &bench,
+            vec![Ok(togi_machine::KernelRead {
+                mces: vec![tail],
+                cursor: resumed.clone(),
+            })],
+        );
+        assert_eq!(session.same_boot(), !reboot);
+        assert_eq!(session.start().unwrap(), Control::Continue);
+        let expected = (!reboot).then(|| recorded.as_str().to_owned());
+        assert_eq!(*seen.borrow(), [expected], "reboot={reboot}");
+        let events = session.appender().journal().events();
+        let found: Vec<_> = events
+            .iter()
+            .filter_map(|event| match &event.payload {
+                Payload::Mce(mce) => Some(mce),
+                _ => None,
+            })
+            .collect();
+        let [mce] = found.as_slice() else {
+            panic!("reboot={reboot}: {found:?}");
+        };
+        assert!(
+            mce.between_trials && mce.trial.is_none() && mce.from_boot.is_none(),
+            "reboot={reboot}: {mce:?}"
+        );
+        let loaded = events
+            .iter()
+            .rev()
+            .find_map(|event| match &event.payload {
+                Payload::ConfigLoaded(loaded) => Some(loaded),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(loaded.kernel_cursor, Some(resumed), "reboot={reboot}");
+    }
 }
