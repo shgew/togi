@@ -1,0 +1,97 @@
+---
+source: crates/togi-tool-stats/src/tests/scenario.rs
+expression: "Log::new(&[(0, 0)]).report()"
+---
+Session
+field     value
+id        20260101T000000Z
+rulesets  1
+builds    test+fixed
+events    1
+first     2026-01-01T00:00:00Z
+last      2026-01-01T00:00:00Z
+
+Runs
+run  start  end  build  trials  crashes  ended
+
+Time
+activity / condition / regime / outcome      trial seconds  hours
+crash downtime (last evidence to next boot)  0.000          0.000
+
+Failures
+regime  workload  signal  attribution  count
+
+Exposure
+regime  workload  trials  hours  failures
+
+Unattributed crashes by loaded CCD
+CCD(s)  count
+
+Crash timing (last evidence)
+seconds  count
+0        0
+1-29     0
+30-59    0
+60-119   0
+120+     0
+
+Reset reasons
+reason  count
+
+Recovery gap
+count  min seconds  median seconds  max seconds
+0      -            -               -
+
+Hunts
+hunt  start  hours  failing trial  parked offsets  candidates  planned/run/inferred/skipped  trials  crashes  result  members/culprit  commitment
+
+Checking
+metric                      count
+cycles started              0
+cycles ended                0
+full cycles                 0
+reruns                      0
+reruns failing first trial  0
+
+Checking steps and together outcomes
+cycle  regime  loaded cores  outcome  trials
+
+Evidence quality
+warning                                        count
+decisions resting on a single carried failure  0
+
+Failures after prior passes
+trial class  failures with prior passes
+
+Prior evidence per hunt group
+hunt  group  stage  prior passes  required  established  passes again  failures again  trials  hours
+
+Prior evidence by hunt and stage
+hunt  stage  ran groups  established groups  passed again  failed again  redundant trials  redundant hours
+
+R7 voltage-targeted backoffs
+seq  decision  core  from  to  counts  causes  reason
+
+R7 chain derivations
+seq  cycle  step  CCD  workload  part  request groups  loaded cores  sources
+
+Failure rate by depth
+regime / workload / loaded cores / duration  shallowest offset  trials  failures  rate
+
+R7 voltage requests
+field                               count
+failures without request telemetry  0
+
+R7 trials by top request (4 mV bins)
+class  top request V  trials  failures
+none
+
+R7 trials by top requester
+class  core  trials  failures
+none
+
+Inconclusive trials
+trial  condition  reason
+
+Tctl
+regime  max C  passing trials
