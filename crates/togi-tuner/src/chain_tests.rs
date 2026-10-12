@@ -1295,3 +1295,38 @@ fn only_a_passing_together_end_advances_the_checking_last_seq() {
     run(&mut j, &plan, Outcome::Failure, &[], None);
     assert_eq!(j.run().checking.last_seq(), before);
 }
+
+#[test]
+fn a_passing_alone_end_leaves_the_checking_last_seq() {
+    let mut alone = Journal::search_at(&[-10]);
+    let before = alone.run().checking.last_seq();
+    let search = alone.next_trial();
+    assert_eq!(search.condition, Condition::Alone, "{search:?}");
+    run(&mut alone, &search, Outcome::Pass, &[], None);
+    assert_eq!(alone.run().checking.last_seq(), before);
+}
+
+#[test]
+fn a_passing_parked_end_leaves_the_checking_last_seq() {
+    let mut zero = Journal::has_room(&[0, -10]);
+    let failing = zero.manual(
+        Regime::R5,
+        0,
+        Load::Single(core(0)),
+        Condition::Together,
+        &[0, -10],
+        SHORT,
+    );
+    run(&mut zero, &failing, Outcome::Failure, &[], Some(0));
+    let attribution = zero.next_decision();
+    zero.decide(attribution);
+    let before = zero.run().checking.last_seq();
+    let rerun = zero.next_trial();
+    assert_eq!(rerun.condition, Condition::Parked, "{rerun:?}");
+    assert!(
+        matches!(rerun.context, TrialContext::ZeroRerun { .. }),
+        "{rerun:?}"
+    );
+    run(&mut zero, &rerun, Outcome::Pass, &[], None);
+    assert_eq!(zero.run().checking.last_seq(), before);
+}
