@@ -267,11 +267,37 @@ fn a_rust_header_this_build_cannot_decode_is_not_another_builds_journal() {
     line["data"]["build"]["channel"] = "later".into();
     let mut bytes = serde_json::to_vec(&line).unwrap();
     bytes.push(b'\n');
-    let mut reader = EventReader::new(bytes.as_slice());
-    assert!(matches!(
-        reader.next(),
-        Some(Err(ReadError::Decode { line: 1, .. }))
-    ));
+    bytes.extend_from_slice(&good[first.len()..]);
+
+    // The classifier ignores the additive field, so a strict reader refuses the header by name, never as Foreign.
+    let error = EventReader::new(bytes.as_slice())
+        .next()
+        .unwrap()
+        .unwrap_err();
+    assert!(
+        matches!(&error, ReadError::UnknownField { line: 1, kind: EventKind::SessionStart, field } if field == "data.build.channel"),
+        "{error:?}"
+    );
+    let error = Recording::parse(&bytes).unwrap_err();
+    assert!(
+        matches!(&error, ReadError::UnknownField { line: 1, kind: EventKind::SessionStart, field } if field == "data.build.channel"),
+        "{error:?}"
+    );
+
+    // A lenient reader accepts the same header and reports the field it ignored.
+    let mut reader = EventReader::lenient(bytes.as_slice());
+    assert!(reader.by_ref().all(|event| event.is_ok()));
+    assert_eq!(reader.accepted(), bytes.len() as u64);
+    let skipped = reader.skipped();
+    assert!(skipped.events().is_empty());
+    assert_eq!(skipped.ignored().len(), 1);
+    assert_eq!(
+        (
+            skipped.ignored()[0].line,
+            skipped.ignored()[0].fields.as_slice()
+        ),
+        (1, &["data.build.channel".to_owned()][..])
+    );
 }
 
 #[test]
