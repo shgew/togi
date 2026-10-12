@@ -820,6 +820,63 @@ The `togi-tool-fit` crate ports `tools/fit` ([#818](https://github.com/shgew/tog
 - **Review findings fixed.** Round 1 found no code defect; it found that the shared objective above was a Go bug fix without a test, and test gaps: the anchor was never run on more than one pool size, the constrained rate search's rate-raising branch was never reached, the restarted constrained refits were not checked to be unflagged with their resample's loss, and an anchor with an empty BIOS field was not checked to replay. Each gap now has a test that fails on the broken behavior. It also found that this entry's test times were not from one run (a 2.1 s test in a 2.0 s run); they are re-measured above.
 - **Not measured.** Compile times against Go, agent cost, and a Mac: not run on a Mac.
 
+## Stage 5: close (#768, 2026-10-12)
+
+Stage 5 ([#640](https://github.com/shgew/togi/issues/640)) closes with its nine crates on `main` at `113b73ee`: `togi-hostlock`, `togi-command`, `togi-smu`, `togi-backend`, `togi-mprime`, `togi-ycruncher`, `togi-detect`, `togi-trial` and `togi-hardware`. This pull request adds the recipe for the Rust hardware tests and the stage's measurements. No Go is removed or changed.
+
+- **Stage 4 suite check.** `just sim-suite-rs --jobs 8` on `main` at `97eba4cc` (with this pull request's recipe and log entry, which change no code): all 220 suite sessions ended `clean` and `togi-tool-sim check --shards 1` passed, in 128 s of wall time including the release build, on the 32-thread development host at a load of 32 to 36. CI's `rust-sim-suite-0` to `-3` run the same suite on every pull request.
+- **The recipe.** `just hardware-rs` sits beside `just hardware`. It enters the dev shell itself, since `sudo` drops it, and runs `cargo test --locked --no-fail-fast --features hardware --test hardware` for `togi-smu`, `togi-detect`, `togi-trial` and `togi-hardware` with `RUST_TEST_THREADS=1`: cargo runs the binaries one after another, all of them even after one fails, and each runs one test at a time, and each test that needs the host takes the host lock. Trial's `cached_errors` binary needs an ordinary account (`BackendIdentity` refuses uid 0), so the recipe adds it only when it does not run as root; such a run fails the tests that need root. As root it builds in a target directory under root's home, so it leaves no root-owned files in the checkout's `target/`. The recipe refuses outside Linux. `just hardware-rs --no-run` builds the binaries and starts none. The owner runs it as root on the target machine at the cutover ([#643](https://github.com/shgew/togi/issues/643)); the VM check of `togi-trial` ran its tests under real systemd, and the SMU tests have run nowhere.
+- **Hardware-feature tests built.** `just hardware-rs --no-run` and `cargo test --locked -p togi-trial -p togi-hardware --features hardware --no-run` each built every binary. `--list` shows 2 tests in `togi-smu`, 1 in `togi-detect`, 12 in the `togi-trial` `hardware` binary, 2 in its `cached_errors` and 1 in `togi-hardware`. None ran.
+- **Test counts and times.** One `cargo nextest run --locked -p <crate>` per crate on Linux, as an ordinary user, on a warm build with other jobs on the host, one run each; Go is `go test -count=1` of the matching package, all in one invocation (its packages run in parallel). Go's `internal/backend` has no test files, and `togi-command` has no Go package.
+
+| Crate | Rust tests | Rust time [s] | Go package | Go time [s] |
+|:---|---:|---:|:---|---:|
+| `togi-hostlock` | 20 | 0.005 | `internal/hostlock` | 0.002 |
+| `togi-command` | 38 | 6.252 | none | none |
+| `togi-smu` | 85 | 0.222 | `internal/smu` | 0.057 |
+| `togi-backend` | 16 | 0.004 | `internal/backend` | no tests |
+| `togi-mprime` | 20 | 0.208 | `internal/backend/mprime` | 0.004 |
+| `togi-ycruncher` | 36 | 0.459 | `internal/backend/ycruncher` | 0.004 |
+| `togi-detect` | 85 | 1.021 | `internal/detect` | 0.003 |
+| `togi-trial` | 440 | 8.623 | `internal/trial` | 0.125 |
+| `togi-hardware` | 101 | 0.313 | `internal/hardware` | 0.005 |
+| Total | 841 | 17.107 | | 0.200 |
+
+The counts, times and sizes are at `113b73ee`. Since then only [#807](https://github.com/shgew/togi/pull/807) changed a stage 5 crate: `togi-trial` gained 136 test lines and kept 440 tests, which ran in 8.8 s on `97eba4cc` at a load of 36.
+
+- **Size.** Library and test lines of each crate, counted as the `togi-trial` entry counts: each source file is split at its `#[cfg(test)]` module, matching braces, and the module, files of modules declared under `#[cfg(test)]` (such as `togi-trial`'s `src/os/fake.rs`), files named `tests.rs` or `testing.rs`, `src/tests/` and `tests/` are tests. Go's are the `.go` and `_test.go` files of the package.
+
+| Crate | Rust library | Rust tests | Go library | Go tests |
+|:---|---:|---:|---:|---:|
+| `togi-hostlock` | 351 | 598 | 148 | 400 |
+| `togi-command` | 553 | 1,038 | 0 | 0 |
+| `togi-smu` | 2,043 | 3,209 | 795 | 1,284 |
+| `togi-backend` | 246 | 250 | 60 | 130 |
+| `togi-mprime` | 186 | 399 | 84 | 228 |
+| `togi-ycruncher` | 263 | 722 | 136 | 324 |
+| `togi-detect` | 1,833 | 2,976 | 736 | 1,259 |
+| `togi-trial` | 7,469 | 16,285 | 2,200 | 6,195 |
+| `togi-hardware` | 1,548 | 2,299 | 467 | 877 |
+| Total | 14,492 | 27,776 | 4,626 | 10,697 |
+
+- **Reading them.** The nine crates hold 3.1 times Go's library lines and 2.6 times its test lines, counting `togi-command`, which has no Go package. Their 841 tests run in 17.1 s, 6.3 s of it in `togi-command` (its entry says why) and 8.6 s in `togi-trial`; Go's seven packages take 0.2 s together, the longest, `internal/trial`, 0.125 s. The comparison is of suites, not of the code under test: the Rust tests start real processes that the Go unit tests do not, and the counts and times were not normalised for that.
+- **Not measured.** Compile times against Go, agent cost, changed-line coverage of the stage as a whole, and any run of the recipe, since it was only built. Nothing ran on real hardware and the suite was not run on a Mac. The NixOS VM check of the trial scope was not rerun here; CI runs it as `vm-trial-scope-rs` ([#809](https://github.com/shgew/togi/pull/809)).
+
+## Stage 7: `tools/stats` (#820, 2026-10-12)
+
+The `togi-tool-stats` crate ports `tools/stats` ([#820](https://github.com/shgew/togi/issues/820)): `togi-tool-stats [--state-dir DIR | --journal FILE] [--since TIME]` prints the review report of a current or archived journal, and `--forecast FILE` scores the run in `--state-dir` against a forecast instead. The library is `Journal::read` (or `Journal::new` over events), `report(&Journal, since)` and `score(state_dir, forecast)`, each returning the text; `main.rs` is the clap parser, the stdout write and the exit statuses (0, 1 with `togi-tool-stats: <error>` on stderr, 2 on a usage error). `just stats-rs` runs it next to the Go `stats` recipe, which is unchanged.
+
+- **Design calls.**
+  - It projects the journal's events directly (`togi-journal`'s `Recording`, so an unfinished last line is ignored and a journal that does not follow itself is an error). It does not use `togi-facts`, which validates what a tuning session needs (one decisive end per trial, a signal on every failure) and clones every event to do it; a review tool over a damaged journal should still report. `togi-facts` is not a dependency, against the Go package's import of `internal/facts`.
+  - It reads no trial samples. A Rust `trial.end` carries the request telemetry the session summarized from the samples when it ended the trial, after a crash too, so Go's recovery of telemetry for ruleset-8 ends has nothing left to do. `togi-requests` supplies the top request; `togi-tuner` supplies `Profile` and `Topology` for the depth comparisons the evidence check needs, in place of `tuner.AtLeastDeep`.
+  - The report is built as one string and written once, so a failed write is one error and exit status 1 and never a half report; Go kept the first write error of a section-by-section stream.
+  - Tables are grouped by the vocabulary's own order (`R1`..`R7`, the activities and outcomes as declared), not by the alphabetical order of Go's strings. The Time table groups by the trial's activity, which replaces Go's phase. The R7 backoff report lists every backoff of a multi-core R7 failure: the Go ruleset-9 gate is gone with the Go rulesets. Legacy fallbacks for journals older than the profile and the cores of an intent (an absent profile, an R6 or R7 trial with no cores loading every core) are gone with the Go journals.
+  - Goldens are insta snapshots of journals the tests build, so a tuner change leaves them alone; two tests over a simulated hunting session (cores 1 and 3 crash together) check the report against the journal's own events, not against bytes.
+- **Go bugs fixed.** Go listed rulesets sorted as strings, so ruleset 10 sorted before 5; Rust sorts numerically (`rulesets_are_listed_in_numeric_order_and_builds_by_name`). Go printed an empty cell for the regime of a failure that names neither a regime nor a trial; Rust prints `-` (`a_failure_that_names_neither_a_regime_nor_a_trial_shows_dashes`). Go printed an inconclusive trial's reason raw, so a multi-line reason broke the table; Rust escapes it (`a_combination_failure_is_reported_in_every_section`) and prints `-` when there is none (`an_inconclusive_trial_without_a_reason_shows_a_dash`). Go sorted trial classes by their label text, so `120s` listed before `60s`; Rust orders them by catalog workload, loaded cores and numeric duration (`class_tables_list_workloads_in_catalog_order_and_durations_numerically`, `r7_request_tables_list_durations_numerically`), and prints hunt and cycle numbers unpadded.
+- **Spec.** `docs/reviewing.md` gains "The Rust tool" with every difference from the Go output above; the Go text is unchanged until stage 9.
+- **Tests.** 57 tests (the unit tests, 9 over the binary and a simulated session) run in about 1.0 s wall under `cargo nextest run -p togi-tool-stats`, against 0.2 s for `go test -count=1 ./tools/stats` (27 tests). Library 2,167 lines and tests 2,934 lines plus 575 of snapshots, against Go's 1,487 and 1,073.
+- **Not measured.** Compile times against Go, agent cost, and the run on a Mac (the crate is clippy-clean for `aarch64-apple-darwin` from Linux).
+
 ## Stage 6: the watch terminal loop (#836, 2026-10-12)
 
 The `terminal` module of `togi-watch` ports the loop of `internal/watch` ([#836](https://github.com/shgew/togi/issues/836), part of [#641](https://github.com/shgew/togi/issues/641)): `terminal::run` and `terminal::run_after` show the live dashboard, `terminal::one_frame` prints one frame without a terminal, and the source, notification, key decoding, signals and `TERM=linux` palette are its private modules. Each public call drives its own current-thread tokio runtime and returns with no task and no thread still running. The loop is generic over a frame callback, so it is tested with fake frames and a recording ratatui backend under tokio's paused time; the frames of [#835](https://github.com/shgew/togi/issues/835) are composed with it in their own pull request.
