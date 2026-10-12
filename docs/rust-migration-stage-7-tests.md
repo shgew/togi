@@ -1,34 +1,30 @@
 # Stage 7 Go-test mapping
 
-Every `func Test*`, `Benchmark*`, `Fuzz*` and `Example*` in the Go packages that stage 7 (#642) has ported so far is mapped to the Rust tests that pin the same behavior: `tools/modelcheck` → `togi-tool-modelcheck`, `tools/forecast` → `togi-tool-forecast`, `tools/facts` → `togi-tool-facts`, `tools/fit` → `togi-tool-fit`, `tools/stats` → `togi-tool-stats`, `tools/bench` → `togi-tool-bench` and `cmd/togi` → `togi`. `tools/audit` → `togi-tool-audit` is listed too: stage 4 ported its journal audit and #870 ports its sweep. There are no Benchmark, Fuzz or Example functions.
+Every `func Test*`, `Benchmark*`, `Fuzz*` and `Example*` in the Go packages that stage 7 (#642) ported is mapped to the Rust tests that pin the same behavior: `tools/modelcheck` → `togi-tool-modelcheck`, `tools/forecast` → `togi-tool-forecast`, `tools/facts` → `togi-tool-facts`, `tools/fit` → `togi-tool-fit`, `tools/stats` → `togi-tool-stats`, `tools/bench` → `togi-tool-bench` and `cmd/togi` → `togi`. `tools/audit` → `togi-tool-audit` is listed too: stage 4 ported its journal audit and stage 7 its sweep. There are no Benchmark, Fuzz or Example functions. Go is the statement of intent, not an oracle: a row is **O** where the Go test pinned a Go format or behavior the native contract replaced.
 
-The pull requests that ported each package are #841 (modelcheck), #844 (forecast), #832 (facts), #852 (fit), #851 (stats), #857 (bench runs, metrics, comparison and cache), #862 (bench gate reports), #866 (the bench's simulator check) and #861 (`togi` argument parsing, exits, version and completion). The rest of `tools/bench` (`--same`, `--smoke`, `--forecast`) is #872, the `tools/audit` sweep is #870, and the rest of `cmd/togi` is #869 (`reset`, `restart-limit`, `doctor`), #826 (`status`, `events`, `watch`) and #829 (`run`, the dashboard owner and panic handling). Their rows stay in these tables, pending, so a merge only changes their status. #826 and #829 have no pull request yet; a `cmd/togi` test that neither #869's nor #826's mapping names is assigned by the command it drives.
+The pull requests that ported each package are #841 (modelcheck), #844 (forecast), #832 (facts), #852 (fit), #851 (stats), #857 (bench runs, metrics, comparison and cache), #862 (bench gate reports), #866 (the bench's simulator check), #872 (`--same`, `--smoke` and `--forecast` of the bench), #878 (the bench's slim baseline projection, `--baseline-out`), #861 (`togi` argument parsing, exits, version and completion), #869 (`reset`, `restart-limit`, `doctor`), #870 (the `tools/audit` sweep), #879 (`status`, `events` and `watch`, closing issue #826) and #880 (`run`, the dashboard owner and panic handling, closing issue #829). Each row follows the Go-to-Rust mapping of the pull request that ported its command; a `cmd/togi` test that no mapping names is assigned by the command it drives. Every row is settled: none is pending.
 
-Rust names are `crate::module::fn`; an integration test binary adds its name after the crate (`togi_tool_bench::gate::…`). Each name resolves to a test that `cargo nextest list --workspace` reports on `main` at 30305764; a parameterised `#[test_case]` function counts by its name.
+Rust names are `crate::module::fn`; an integration test binary adds its name after the crate (`togi_tool_bench::gate::…`, `togi::read::status::…`, `togi::run::lifecycle::…`), and a unit test of the library has no binary segment (`togi::table::tests::…`). Each name resolves to a test that `cargo nextest list --workspace` reports on `main` at d1a4dd63; a parameterised `#[test_case]` function counts by its name.
 
 Status:
 
-- **A**: a Rust test pins the behavior.
-- **A; rest P(#N)**: the tests listed pin the part whose commands are ported; the rows of the commands not yet ported (for example `status` or `run` in a table that covers every command) move with the pull request or issue named. Counted under A.
-- **O(reason)**: obsolete under the native contract.
+- **A**: a Rust test pins the behavior. Where the port changed a detail deliberately (clap's wording of a usage error, one `command.reset` without a `shutdown`, an unknown event kind refused in read-only words), the row maps the tests that pin the native behavior of the same intent.
+- **O(reason)**: obsolete under the native contract; the reason says what the Go test pinned and what replaced it, and the Rust tests listed, if any, pin the replacement.
 - **S4**: ported in stage 4; the row and its status are in `docs/rust-migration-stage-4-tests.md`, and its tests are repeated here.
-- **P(#N)**: pending; the open pull request or the issue named maps it. Several numbers: each maps its own command's part.
 
 ## Summary
 
-| Package | Go tests | A | O | S4 | P |
-|---|---:|---:|---:|---:|---:|
-| modelcheck | 11 | 11 | 0 | 0 | 0 |
-| forecast | 12 | 12 | 0 | 0 | 0 |
-| facts | 3 | 3 | 0 | 0 | 0 |
-| fit | 37 | 35 | 2 | 0 | 0 |
-| stats | 27 | 26 | 1 | 0 | 0 |
-| bench | 84 | 51 | 1 | 0 | 32 |
-| audit | 13 | 0 | 0 | 7 | 6 |
-| togi | 118 | 14 | 2 | 0 | 102 |
-| **total** | **305** | **152** | **6** | **7** | **140** |
-
-The pending rows by owner (a row with several owners counts for each): #826 37, #829 36, #869 32, #870 6, #872 32.
+| Package | Go tests | A | O | S4 |
+|---|---:|---:|---:|---:|
+| modelcheck | 11 | 11 | 0 | 0 |
+| forecast | 12 | 12 | 0 | 0 |
+| facts | 3 | 3 | 0 | 0 |
+| fit | 37 | 35 | 2 | 0 |
+| stats | 27 | 26 | 1 | 0 |
+| bench | 84 | 83 | 1 | 0 |
+| audit | 13 | 6 | 0 | 7 |
+| togi | 118 | 113 | 5 | 0 |
+| **total** | **305** | **289** | **9** | **7** |
 
 ## modelcheck
 
@@ -247,9 +243,11 @@ The pending rows by owner (a row with several owners counts for each): #826 37, 
 
 | Go test | Rust test(s) | status |
 |---|---|---|
-| `TestReadResultsIgnoresRetiredFields` | `togi_tool_bench::sanity::go_scores_ignore_the_fields_the_rust_bench_does_not_compare` | A |
-| `TestComparisonIgnoresProjectedFields` | `togi_tool_bench::records::a_record_is_an_object_with_exactly_the_fields_the_format_names` | O(the Rust record is strict and holds no projected fields to ignore; its field set is pinned by the test listed) |
+| `TestReadResultsIgnoresRetiredFields` | `togi_tool_bench::records::a_record_is_an_object_with_exactly_the_fields_the_format_names`<br>`togi_tool_bench::sanity::go_scores_ignore_the_fields_the_rust_bench_does_not_compare` | O(inverted on purpose: the Rust record refuses an unknown key such as Go's `partial_seconds`, pinned by the first test; only the reader of the committed Go scores tolerates them, pinned by the second) |
+| `TestComparisonIgnoresProjectedFields` | `togi_tool_bench::compare::a_baseline_file_compares_exactly_as_the_full_records_do`<br>`togi_tool_bench::gate::a_baseline_file_is_judged_exactly_as_the_full_records_are`<br>`togi_tool_bench::run::the_baseline_file_holds_the_runs_records_without_wall_times_and_compares_as_they_do` | A |
 | `TestCommittedBaselineIsSlim` | `togi_tool_bench::records::the_baseline_writer_leaves_out_the_model_check_and_the_wall_time_and_nothing_else`<br>`togi_tool_bench::records::a_baseline_file_round_trips_through_the_reader`<br>`togi_tool_bench::compare::a_baseline_file_compares_exactly_as_the_full_records_do` | A |
+
+`TestCommittedBaselineIsSlim` pins the committed Go file `tools/bench/baseline.jsonl`, which #878 leaves untouched and which stays a Go test until the Go bench is deleted (stage 9, #644). The Rust tests listed pin the slim projection that `--baseline-out` writes; the committed file has not migrated to a Rust recording.
 
 ### `tools/bench/bench_test.go` (6)
 
@@ -266,10 +264,10 @@ The pending rows by owner (a row with several owners counts for each): #826 37, 
 
 | Go test | Rust test(s) | status |
 |---|---|---|
-| `TestCacheKey` | `togi_tool_bench::cache::a_runs_inputs_bind_the_suite_the_run_and_every_file_of_its_machine`<br>`togi_tool_bench::cache::flipping_replay_changes_the_inputs`<br>`togi_tool_bench::cache::equal_files_in_another_directory_give_the_same_inputs`<br>`togi_tool_bench::cache::the_tree_key_binds_both_binaries_and_the_boot_cap`<br>`togi_tool_bench::cache::the_bench_hashes_its_own_executable`<br>`togi_tool_bench::cache::a_declared_facts_extract_is_an_input` | A |
+| `TestCacheKey` | `togi_tool_bench::cache::a_runs_inputs_bind_the_suite_the_run_and_every_file_of_its_machine`<br>`togi_tool_bench::cache::flipping_replay_changes_the_inputs`<br>`togi_tool_bench::cache::equal_files_in_another_directory_give_the_same_inputs`<br>`togi_tool_bench::cache::the_tree_key_binds_both_binaries_and_the_boot_cap`<br>`togi_tool_bench::cache::the_bench_hashes_its_own_executable`<br>`togi_tool_bench::cache::a_declared_facts_extract_is_an_input`<br>`togi_tool_bench::same::tests::the_digest_key_changes_with_the_simulator_and_the_boot_cap`<br>`togi_tool_bench::same::tests::a_session_s_inputs_change_with_its_identity_and_replay`<br>`togi_tool_bench::same::tests::a_session_s_inputs_change_with_any_file_of_its_machine` | A |
 | `TestRunInputsHashEveryMachineFile` | `togi_tool_bench::cache::every_file_an_overlay_extends_is_an_input`<br>`togi_tool_bench::run::a_changed_machine_file_misses_the_cache_and_another_run_hits` | A |
 | `TestSessionCacheMissesWhenOnlyOverlayGrandparentChanges` | `togi_tool_bench::cache::an_equal_overlay_chain_in_another_tree_hits_and_only_its_grandparent_changing_misses` | A |
-| `TestSessionCache` | `togi_tool_bench::cache::a_record_comes_back_only_for_the_inputs_it_was_made_from`<br>`togi_tool_bench::cache::an_entry_for_another_run_or_a_damaged_one_is_a_miss`<br>`togi_tool_bench::run::a_second_run_over_the_same_inputs_comes_from_the_cache`<br>`togi_tool_bench::run::a_changed_suite_file_misses_the_cache`<br>`togi_tool_bench::run::another_boot_cap_misses_the_cache`<br>`togi_tool_bench::run::another_simulator_binary_misses_the_cache`<br>`togi_tool_bench::run::a_failed_cache_write_is_a_warning_and_the_records_are_kept`<br>`togi_tool_bench::run::keeping_the_runs_skips_the_cache_and_leaves_their_directories` | A |
+| `TestSessionCache` | `togi_tool_bench::cache::a_record_comes_back_only_for_the_inputs_it_was_made_from`<br>`togi_tool_bench::cache::an_entry_for_another_run_or_a_damaged_one_is_a_miss`<br>`togi_tool_bench::run::a_second_run_over_the_same_inputs_comes_from_the_cache`<br>`togi_tool_bench::run::a_changed_suite_file_misses_the_cache`<br>`togi_tool_bench::run::another_boot_cap_misses_the_cache`<br>`togi_tool_bench::run::another_simulator_binary_misses_the_cache`<br>`togi_tool_bench::run::a_failed_cache_write_is_a_warning_and_the_records_are_kept`<br>`togi_tool_bench::run::keeping_the_runs_skips_the_cache_and_leaves_their_directories`<br>`togi_tool_bench::same::tests::a_digest_record_holds_only_for_the_inputs_that_made_it`<br>`togi_tool_bench::same::tests::a_corrupt_digest_record_misses` | A |
 | `TestOpenSessionCachePrunesLeastRecentlyUsed` | `togi_tool_bench::cache::opening_a_cache_keeps_the_seven_most_recently_used_others`<br>`togi_tool_bench::cache::reopening_a_cache_marks_it_recently_used` | A |
 | `TestCostTable` | `togi_tool_bench::cache::costs_are_kept_per_scope_with_the_latest_run_as_the_fallback`<br>`togi_tool_bench::cache::costs_round_trip_through_their_file_and_a_damaged_file_is_empty`<br>`togi_tool_bench::cache::a_cost_that_is_not_a_positive_finite_time_is_not_kept`<br>`togi_tool_bench::cache::sessions_start_longest_first_and_the_unknown_ones_before_them` | A |
 | `TestCostTableSurvivesScopeWithoutWall` | `togi_tool_bench::cache::costs_survive_a_scope_that_has_none_and_keep_the_eight_latest_scopes` | A |
@@ -280,18 +278,18 @@ The pending rows by owner (a row with several owners counts for each): #826 37, 
 
 | Go test | Rust test(s) | status |
 |---|---|---|
-| `TestForecastFromSimulatedCopy` | — | P(#872) |
-| `TestForecastReportRendersRecordedForecasts` | — | P(#872) |
-| `TestForecastFailsOnFailedRun` | — | P(#872) |
-| `TestForecastRejectsDeadEndBeforeAnchor` | — | P(#872) |
-| `TestCopyStateCopiesSessionBearingArchive` | — | P(#872) |
-| `TestCopyStateRejectsIrregularArchiveEntry` | — | P(#872) |
-| `TestFailedForecastKeepsOnlyFailedRuns` | — | P(#872) |
-| `TestRelativeToResolvesMixedPaths` | — | P(#872) |
-| `TestForecastReportNamesMachinesRelativeToSuite` | — | P(#872) |
-| `TestEnsembleFilesListEveryMachineFile` | — | P(#872) |
+| `TestForecastFromSimulatedCopy` | `togi_tool_bench::forecast::a_forecast_counts_only_what_follows_the_anchor_and_leaves_the_copy_alone` | A |
+| `TestForecastReportRendersRecordedForecasts` | `togi_tool_bench::forecast::the_report_names_the_anchor_the_runs_by_status_and_each_metric_s_range` | A |
+| `TestForecastFailsOnFailedRun` | `togi_tool_bench::forecast::a_run_that_fails_or_does_not_conclude_fails_the_forecast` | A |
+| `TestForecastRejectsDeadEndBeforeAnchor` | `togi_tool_bench::forecast::a_dead_end_the_copy_already_holds_is_not_the_runs_own`<br>`togi_tool_bench::forecast::exit_one_is_a_dead_end_only_when_this_run_reached_one` | A |
+| `TestCopyStateCopiesSessionBearingArchive` | `togi_tool_bench::forecast::only_the_files_a_resumed_session_reads_are_copied` | A |
+| `TestCopyStateRejectsIrregularArchiveEntry` | `togi_tool_bench::forecast::an_archive_entry_that_is_not_a_regular_file_fails_naming_it` | A |
+| `TestFailedForecastKeepsOnlyFailedRuns` | `togi_tool_bench::forecast::a_failed_forecast_keeps_only_the_failed_runs_and_says_where`<br>`togi_tool_bench::forecast::a_forecast_that_fails_after_every_run_succeeded_keeps_nothing`<br>`togi_tool_bench::forecast::an_interrupt_stops_starting_runs_and_fails_as_interrupted`<br>`togi_tool_bench::forecast::a_forecast_that_fails_to_write_its_record_leaves_no_run_directory_behind`<br>`togi_tool_bench::forecast::an_interrupted_forecast_leaves_no_run_directory_behind`<br>`togi_tool_bench::forecast::the_command_says_where_the_runs_of_a_failed_forecast_are_kept` | A |
+| `TestRelativeToResolvesMixedPaths` | `togi_tool_bench::forecast::a_machine_the_suite_names_by_absolute_path_is_named_relative_to_the_suite`<br>`togi_tool_bench::forecast::a_relative_suite_naming_its_machine_by_absolute_path_names_it_relative_to_the_suite` | A |
+| `TestForecastReportNamesMachinesRelativeToSuite` | `togi_tool_bench::forecast::a_machine_the_suite_names_by_absolute_path_is_named_relative_to_the_suite` | A |
+| `TestEnsembleFilesListEveryMachineFile` | `togi_tool_bench::forecast::the_record_lists_each_machine_file_the_ensemble_reads_once_by_suite_relative_path` | A |
 | `TestLoadRunsSharesMachineFiles` | `togi_tool_bench::suite::a_machine_shared_by_runs_is_read_once` | A |
-| `TestForecastRejectsConflictingFlags` | — | P(#872) |
+| `TestForecastRejectsConflictingFlags` | `togi_tool_bench::forecast::bench_flags_that_judge_a_run_are_usage_errors_with_forecast`<br>`togi_tool_bench::forecast::the_command_prints_the_forecast_and_writes_the_record` | A |
 
 ### `tools/bench/gate_archive_test.go` (3)
 
@@ -349,27 +347,27 @@ The pending rows by owner (a row with several owners counts for each): #826 37, 
 
 | Go test | Rust test(s) | status |
 |---|---|---|
-| `TestNormalizeBuild` | — | P(#872) |
-| `TestBuildComparisonPreservesDecisions` | — | P(#872) |
-| `TestFirstJournalDifference` | — | P(#872) |
-| `TestCompareJournals` | — | P(#872) |
-| `TestSameReport` | — | P(#872) |
-| `TestSameExitCodesAndSplits` | — | P(#872) |
-| `TestSameKeepsOnlyDifferingRuns` | — | P(#872) |
-| `TestSameRemovesMatchingRunsBeforeNextPair` | — | P(#872) |
-| `TestSameKeepsFailedPairs` | — | P(#872) |
-| `TestSameRejectsMissingJournals` | — | P(#872) |
-| `TestSameRejectsEmptyJournals` | — | P(#872) |
-| `TestSameRejectsExplicitBenchFlags` | — | P(#872) |
-| `TestJournalDigest` | — | P(#872) |
-| `TestSameCachesBothSides` | — | P(#872) |
-| `TestSameRerunsOnlyTheSideItNeedsToShowADifference` | — | P(#872) |
-| `TestSameStopsAtTheFirstDifference` | — | P(#872) |
-| `TestSameInterruptRemovesRuns` | — | P(#872) |
-| `TestSameKeepsJournalsOfCachedSidesOfDifferingSessions` | — | P(#872) |
-| `TestSameFailFastReportsOneDifferenceWhenSessionsRace` | — | P(#872) |
-| `TestSameCancelledRerunLeavesNothingBehind` | — | P(#872) |
-| `TestSameReportsCPUTimeWithoutFailing` | — | P(#872) |
+| `TestNormalizeBuild` | `togi_tool_bench::same::tests::normalizing_removes_only_the_build_stamp_of_a_session_start`<br>`togi_tool_bench::same::tests::normalizing_takes_the_description_out_of_both_config_messages`<br>`togi_tool_bench::same::tests::normalizing_leaves_every_other_event_byte_for_byte`<br>`togi_tool_bench::same::tests::a_stamped_event_that_does_not_decode_is_an_error` | A |
+| `TestBuildComparisonPreservesDecisions` | `togi_tool_bench::same::tests::a_build_only_difference_is_not_a_difference`<br>`togi_tool_bench::same::tests::the_first_difference_is_the_first_line_that_differs`<br>`togi_tool_bench::same::a_build_stamp_alone_is_not_a_difference_and_a_decision_is` | A |
+| `TestFirstJournalDifference` | `togi_tool_bench::same::tests::the_first_difference_is_the_first_line_that_differs` | A |
+| `TestCompareJournals` | `togi_tool_bench::same::tests::directories_differ_in_the_journal_one_side_lacks_but_not_in_other_files`<br>`togi_tool_bench::same::tests::a_side_without_journals_or_events_cannot_be_compared` | A |
+| `TestSameReport` | `togi_tool_bench::same::tests::the_report_names_each_differing_session_and_the_sessions_one_tree_lacks` | A |
+| `TestSameExitCodesAndSplits` | `togi_tool_bench::same::tests::a_session_is_identified_by_its_split_and_judged_by_its_exit_status`<br>`togi_tool_bench::same::the_command_exits_zero_for_equal_trees_and_one_for_a_difference` | A |
+| `TestSameKeepsOnlyDifferingRuns` | `togi_tool_bench::same::tests::only_differing_sessions_keep_their_runs_unless_asked_to_keep_all` | A |
+| `TestSameRemovesMatchingRunsBeforeNextPair` | `togi_tool_bench::same::tests::a_matching_session_is_removed_before_the_next_one_starts` | A |
+| `TestSameKeepsFailedPairs` | `togi_tool_bench::same::tests::a_failed_run_stops_the_comparison_and_leaves_its_own_diagnostics`<br>`togi_tool_bench::same::a_failed_session_exits_one_and_names_the_only_directory_it_left_in_the_temporary_directory` | A |
+| `TestSameRejectsMissingJournals` | `togi_tool_bench::same::tests::sessions_without_journals_or_events_never_compare_equal`<br>`togi_tool_bench::same::a_simulator_that_leaves_no_journal_fails_the_comparison_and_keeps_the_runs` | A |
+| `TestSameRejectsEmptyJournals` | `togi_tool_bench::same::tests::sessions_without_journals_or_events_never_compare_equal` | A |
+| `TestSameRejectsExplicitBenchFlags` | `togi_tool_bench::same::bench_flags_that_judge_a_run_are_usage_errors_with_same` | A |
+| `TestJournalDigest` | `togi_tool_bench::same::tests::the_digest_names_every_journal_and_ignores_the_build_and_other_files`<br>`togi_tool_bench::same::tests::no_journals_or_only_empty_ones_have_no_digest` | A |
+| `TestSameCachesBothSides` | `togi_tool_bench::same::tests::both_sides_are_cached_and_a_fresh_run_ignores_the_cache`<br>`togi_tool_bench::same::a_second_comparison_of_the_same_binaries_runs_nothing_again` | A |
+| `TestSameRerunsOnlyTheSideItNeedsToShowADifference` | `togi_tool_bench::same::tests::a_difference_reruns_only_the_sides_that_have_no_run_to_show` | A |
+| `TestSameStopsAtTheFirstDifference` | `togi_tool_bench::same::tests::the_comparison_stops_at_the_first_difference_unless_told_to_go_on` | A |
+| `TestSameInterruptRemovesRuns` | `togi_tool_bench::same::tests::an_interrupt_removes_every_run_and_reports_nothing`<br>`togi_tool_bench::same::a_termination_during_the_build_fails_the_command_instead_of_reporting_equality` | A |
+| `TestSameKeepsJournalsOfCachedSidesOfDifferingSessions` | `togi_tool_bench::same::tests::a_differing_session_keeps_the_journals_of_its_cached_sides` | A |
+| `TestSameFailFastReportsOneDifferenceWhenSessionsRace` | `togi_tool_bench::same::tests::sessions_that_race_to_a_difference_report_one_when_stopping_at_the_first` | A |
+| `TestSameCancelledRerunLeavesNothingBehind` | `togi_tool_bench::same::tests::a_rerun_cancelled_for_an_interrupt_leaves_its_directory_nowhere` | A |
+| `TestSameReportsCPUTimeWithoutFailing` | `togi_tool_bench::same::tests::the_time_of_the_compared_sessions_is_reported_without_failing` | A |
 
 ### `tools/bench/shared_voltage_test.go` (6)
 
@@ -401,7 +399,7 @@ The pending rows by owner (a row with several owners counts for each): #826 37, 
 | `TestProjectedState` | `togi_tool_audit::audit::snapshot::a_current_state_document_equals_a_fresh_fold_of_its_journal`<br>`togi_tool_audit::audit::snapshot::a_current_document_that_disagrees_with_the_journal_is_a_violation`<br>`togi_tool_audit::audit::snapshot::a_document_from_another_sequence_is_stale_and_not_compared` | S4 |
 | `TestDirectoryJournals` | `togi_tool_audit::audit::directory::archives_may_end_anywhere_and_only_the_live_run_must_conclude`<br>`togi_tool_audit::audit::directory::a_violation_is_attributed_to_its_own_journal` | S4 |
 | `TestOlderRulesetSnapshot` | — | S4 |
-| `TestRecordLookupIgnoresPathSpelling` | — | P(#870) |
+| `TestRecordLookupIgnoresPathSpelling` | `togi_tool_audit::audit::sweep::a_directory_is_audited_with_the_run_it_belongs_to_whatever_its_spelling`<br>`togi_tool_audit::audit::sweep::a_directory_is_audited_with_its_run_whatever_dots_its_path_has`<br>`togi_tool_audit::command::a_run_directory_is_found_whatever_dots_its_root_is_spelled_with`<br>`togi_tool_audit::command::a_retained_sweep_is_audited_again_from_its_records` | A |
 
 ### `tools/audit/edge_test.go` (3)
 
@@ -415,11 +413,11 @@ The pending rows by owner (a row with several owners counts for each): #826 37, 
 
 | Go test | Rust test(s) | status |
 |---|---|---|
-| `TestTimingChecks` | — | P(#870) |
-| `TestSweepSuite` | — | P(#870) |
-| `TestSweepSuiteWire` | — | P(#870) |
-| `TestLoadSweepSuiteRejects` | — | P(#870) |
-| `TestUsage` | — | P(#870) |
+| `TestTimingChecks` | `togi_tool_audit::audit::sweep::timing_flags_a_run_over_ten_times_its_scenario_median`<br>`togi_tool_audit::audit::sweep::timing_names_the_run_directory_and_its_median` | A |
+| `TestSweepSuite` | `togi_tool_audit::audit::sweep::the_sweep_suite_is_dev_only_over_seeds_one_to_n_with_absolute_machines`<br>`togi_tool_audit::command::a_sweep_runs_the_bench_keeps_its_runs_and_audits_them` | A |
+| `TestSweepSuiteWire` | `togi_tool_audit::audit::sweep::the_sweep_suite_is_dev_only_over_seeds_one_to_n_with_absolute_machines`<br>`togi_tool_audit::command::a_sweep_runs_the_bench_keeps_its_runs_and_audits_them` | A |
+| `TestLoadSweepSuiteRejects` | `togi_tool_audit::audit::sweep::a_suite_that_cannot_be_swept_is_refused`<br>`togi_tool_audit::command::a_missing_suite_file_fails_before_running_the_bench` | A |
+| `TestUsage` | `togi_tool_audit::command::help_goes_to_stdout_and_a_bad_flag_exits_two` | A |
 
 ## togi
 
@@ -427,117 +425,117 @@ The pending rows by owner (a row with several owners counts for each): #826 37, 
 
 | Go test | Rust test(s) | status |
 |---|---|---|
-| `TestCarriedEventsLeaveStatusUnchanged` | — | P(#826) |
+| `TestCarriedEventsLeaveStatusUnchanged` | `togi::read::status::carried_facts_add_self_sufficiency_evidence_but_no_live_regime_exposure`<br>`togi::read::events::kind_filters_select_the_carried_facts_they_name` | A |
 
 ### `cmd/togi/cli_text_test.go` (9)
 
 | Go test | Rust test(s) | status |
 |---|---|---|
 | `TestHelpExamplesShareOneDescriptionColumn` | `togi::cli::tests::examples_start_every_description_in_one_column`<br>`togi::cli::tests::every_help_examples_block_shares_one_description_column` | A |
-| `TestCyclesExampleWordedOnce` | — | P(#829) |
+| `TestCyclesExampleWordedOnce` | `togi::cli::the_cycles_example_is_worded_the_same_in_the_top_level_and_run_help` | A |
 | `TestFlagErrorsSpellFlagsWithTwoDashes` | `togi::cli::tests::usage_errors_exit_2_with_stderr_only` | O(it pinned the rewording of Go's `flag` messages; clap words its own, pinned by the usage-error test listed) |
 | `TestFlagErrorsPreserveQuotedValues` | — | O(the same rewording, whose parser could mistake a submitted value for its own text; clap's errors carry the value as data) |
-| `TestConfigOnCommandsWithoutConfigIsAUsageError` | `togi::cli::tests::config_is_rejected_with_the_scope_error_wherever_it_is_written`<br>`togi::cli::tests::the_scope_error_shows_the_usage_of_the_command_it_names`<br>`togi::args::tests::config_is_rejected_where_it_is_not_attached`<br>`togi::cli::usage_errors_exit_2_on_stderr_with_nothing_on_stdout` | A; rest P(#826) |
-| `TestStatusFitsEightyColumns` | — | P(#826) |
-| `TestWrapLines` | — | P(#826) |
-| `TestStatusHuntLabelsAccumulatedPassEvidence` | — | P(#826) |
-| `TestStatusWideTablesWrapWithoutDroppingValues` | — | P(#826) |
+| `TestConfigOnCommandsWithoutConfigIsAUsageError` | `togi::cli::tests::config_is_rejected_with_the_scope_error_wherever_it_is_written`<br>`togi::cli::tests::the_scope_error_shows_the_usage_of_the_command_it_names`<br>`togi::args::tests::config_is_rejected_where_it_is_not_attached`<br>`togi::cli::usage_errors_exit_2_on_stderr_with_nothing_on_stdout`<br>`togi::read::commands::config_is_a_usage_error_before_or_after_the_command_name` | A |
+| `TestStatusFitsEightyColumns` | `togi::read::status::status_fits_eighty_columns` | A |
+| `TestWrapLines` | `togi::table::tests::text_wraps_at_the_width_and_continues_under_the_rest_prefix`<br>`togi::table::tests::wide_text_wraps_by_terminal_cells`<br>`togi::table::tests::a_word_wider_than_the_room_overflows_instead_of_splitting` | A |
+| `TestStatusHuntLabelsAccumulatedPassEvidence` | `togi::read::status::scenarios_render_the_status`<br>`togi::read::status::pass_evidence_above_need_is_shown_uncapped` | A |
+| `TestStatusWideTablesWrapWithoutDroppingValues` | `togi::table::tests::a_row_wider_than_the_width_wraps_without_dropping_a_value`<br>`togi::table::tests::a_wide_cell_pads_to_its_cells_not_its_characters`<br>`togi::table::tests::wide_decision_notes_wrap_under_their_row_within_the_width` | A |
 
 ### `cmd/togi/compat_test.go` (14)
 
 | Go test | Rust test(s) | status |
 |---|---|---|
-| `TestReadCommandsHandleIncompatibleJournal` | — | P(#826) |
-| `TestReadCommandsStyleSchemaRefusalInJournal` | — | P(#826) |
-| `TestResetAllArchivesUnrecognizedSchema` | — | P(#869) |
-| `TestResetCoreRefusesDifferentRuleset` | — | P(#869) |
-| `TestResetCoreExitCodeForEveryStampMismatch` | — | P(#869) |
-| `TestRunChecksCompatibilityBeforeConfig` | — | P(#829) |
-| `TestRunStillRejectsInvalidConfigForCompatibleJournal` | — | P(#829) |
-| `TestIncompatibleArchiveRefusesCollisionAndResumesPendingMove` | — | P(#869) |
-| `TestResetAllCompletesRenamedIncompatibleArchive` | — | P(#869) |
-| `TestResetAllArchivesDifferentRulesetNormally` | — | P(#869) |
-| `TestResetAllCompletesRecordedOldSchemaArchive` | — | P(#869) |
-| `TestUnknownKindsBeforeRunConfigAndReset` | — | P(#829, #869) |
-| `TestCommandsWithFutureKind` | — | P(#826, #829, #869) |
-| `TestReadCommandsRefuseHistoricalSchemaFixture` | — | P(#826) |
+| `TestReadCommandsHandleIncompatibleJournal` | `togi::read::events::a_missing_journal_is_an_error_naming_the_file`<br>`togi::read::events::a_file_that_is_not_a_journal_is_an_error`<br>`togi::read::events::a_newer_schema_is_refused_with_advice`<br>`togi::read::events::an_older_schema_is_refused_too`<br>`togi::read::events::a_different_ruleset_warns_and_still_renders`<br>`togi::read::status::a_missing_journal_is_an_error_naming_the_file`<br>`togi::read::status::a_journal_without_a_session_is_an_error` | A |
+| `TestReadCommandsStyleSchemaRefusalInJournal` | `togi::read::commands::a_schema_refusal_is_red_bold_priority_3_when_stderr_is_the_system_journal` | A |
+| `TestResetAllArchivesUnrecognizedSchema` | `togi::reset::reset_all_of_an_unrecognized_schema_archives_it_unread` | A |
+| `TestResetCoreRefusesDifferentRuleset` | `togi::reset::reset_core_refuses_every_stamp_mismatch_with_exit_16_and_appends_nothing` | A |
+| `TestResetCoreExitCodeForEveryStampMismatch` | `togi::reset::reset_core_refuses_every_stamp_mismatch_with_exit_16_and_appends_nothing` | A |
+| `TestRunChecksCompatibilityBeforeConfig` | `togi::run::lifecycle::a_journal_with_a_newer_evidence_epoch_is_refused_before_the_config_is_read`<br>`togi::run::lifecycle::an_unknown_event_kind_in_a_current_journal_is_refused_before_the_config_naming_the_kind`<br>`togi::cli::run_refuses_a_journal_from_a_newer_evidence_epoch_before_the_config_and_appends_nothing` | A |
+| `TestRunStillRejectsInvalidConfigForCompatibleJournal` | `togi::run::lifecycle::an_invalid_config_is_a_usage_error_for_a_compatible_journal`<br>`togi::cli::run_with_an_invalid_config_is_a_usage_error` | A |
+| `TestIncompatibleArchiveRefusesCollisionAndResumesPendingMove` | `togi::reset::an_incompatible_archive_refuses_a_collision_and_resumes_a_pending_move` | A |
+| `TestResetAllCompletesRenamedIncompatibleArchive` | `togi::reset::reset_all_completes_an_interrupted_incompatible_archive` | A |
+| `TestResetAllArchivesDifferentRulesetNormally` | `togi::reset::reset_all_of_another_ruleset_archives_it_normally` | A |
+| `TestResetAllCompletesRecordedOldSchemaArchive` | `togi::reset::a_journal_that_already_records_its_archive_is_only_moved` | A |
+| `TestUnknownKindsBeforeRunConfigAndReset` | `togi::reset::a_current_journal_with_an_unknown_kind_exits_16_and_is_left_alone`<br>`togi::reset::an_unknown_kind_keeps_a_pending_carry_and_refuses_an_older_ruleset_too`<br>`togi::run::lifecycle::an_unknown_event_kind_in_a_current_journal_is_refused_before_the_config_naming_the_kind`<br>`togi::run::lifecycle::an_unknown_event_kind_in_the_tuning_boot_leaves_its_own_reason_and_clears_the_saved_entry`<br>`togi::run::lifecycle::an_unknown_kind_in_an_older_journal_does_not_refuse_the_run_before_the_config_is_read` | A |
+| `TestCommandsWithFutureKind` | `togi::reset::a_current_journal_with_an_unknown_kind_exits_16_and_is_left_alone`<br>`togi::doctor::an_unknown_event_kind_in_a_current_journal_exits_16_naming_it`<br>`togi::doctor::the_unknown_kind_refusal_is_red_bold_on_a_terminal_like_the_stamp_refusal`<br>`togi::run::lifecycle::an_unknown_event_kind_in_a_current_journal_is_refused_before_the_config_naming_the_kind`<br>`togi::read::status::an_event_of_an_unknown_kind_is_refused_in_read_only_words_by_status`<br>`togi::read::events::an_event_of_an_unknown_kind_is_refused_in_read_only_words_by_events`<br>`togi::read::watch::an_event_of_an_unknown_kind_is_refused_in_read_only_words_by_watch` | A |
+| `TestReadCommandsRefuseHistoricalSchemaFixture` | `togi::read::events::an_older_schema_is_refused_too`<br>`togi::read::events::a_newer_schema_is_refused_with_advice` | A |
 
 ### `cmd/togi/completion_integration_test.go` (1)
 
 | Go test | Rust test(s) | status |
 |---|---|---|
-| `TestNushellCompletionLoads` | `togi::cli::nushell_loads_the_script_without_warnings` | A; rest P(#826) |
+| `TestNushellCompletionLoads` | `togi::cli::nushell_loads_the_script_without_warnings` | A |
 
 ### `cmd/togi/completion_test.go` (3)
 
 | Go test | Rust test(s) | status |
 |---|---|---|
 | `TestCompletionScripts` | `togi::cli::bash_completion`<br>`togi::cli::zsh_completion`<br>`togi::cli::fish_completion`<br>`togi::cli::nushell_completion` | A |
-| `TestCompletionCoversCommands` | `togi::completion::tests::every_script_completes_the_command_and_its_shared_flag`<br>`togi::cli::tests::the_definition_is_consistent`<br>`togi::completion::tests::the_shells_are_the_four_the_spec_lists` | A; rest P(#826) |
+| `TestCompletionCoversCommands` | `togi::completion::tests::every_script_completes_the_command_and_its_shared_flag`<br>`togi::cli::tests::the_definition_is_consistent`<br>`togi::completion::tests::the_shells_are_the_four_the_spec_lists`<br>`togi::completion::tests::only_the_commands_that_read_the_configuration_offer_it` | A |
 | `TestCompletionExitCodes` | `togi::cli::tests::usage_errors_exit_2_with_stderr_only`<br>`togi::cli::tests::a_bad_shell_lists_the_supported_ones`<br>`togi::cli::a_missing_shell_error_names_the_argument`<br>`togi::cli::tests::state_dir_before_or_after_the_command_is_accepted`<br>`togi::cli::completion_help` | A |
 
 ### `cmd/togi/config_flags_test.go` (4)
 
 | Go test | Rust test(s) | status |
 |---|---|---|
-| `TestCommandHelpConfigScope` | `togi::args::tests::config_is_accepted_before_and_after_the_command_name_it_is_attached_to`<br>`togi::cli::tests::a_leading_config_moves_after_the_command_name`<br>`togi::cli::tests::other_arguments_are_left_as_they_are`<br>`togi::args::tests::config_defaults_and_reports_whether_it_was_given`<br>`togi::args::tests::the_config_help_names_the_default_path`<br>`togi::completion::tests::no_script_offers_config_before_a_command_takes_it` | A; rest P(#826, #829, #869) |
-| `TestReadOnlyCommandsRejectConfig` | `togi::cli::tests::config_is_rejected_with_the_scope_error_wherever_it_is_written`<br>`togi::cli::tests::the_scope_error_shows_the_usage_of_the_command_it_names`<br>`togi::args::tests::config_is_rejected_where_it_is_not_attached`<br>`togi::cli::usage_errors_exit_2_on_stderr_with_nothing_on_stdout` | A; rest P(#826, #869) |
-| `TestWriteCommandsAcceptConfigPlacements` | `togi::args::tests::config_is_accepted_before_and_after_the_command_name_it_is_attached_to`<br>`togi::cli::tests::a_leading_config_moves_after_the_command_name`<br>`togi::cli::tests::other_arguments_are_left_as_they_are`<br>`togi::args::tests::config_defaults_and_reports_whether_it_was_given`<br>`togi::args::tests::the_config_help_names_the_default_path`<br>`togi::completion::tests::no_script_offers_config_before_a_command_takes_it` | A; rest P(#829, #869) |
-| `TestLeadingConfigRejectionPrecedesCommandArguments` | `togi::cli::tests::config_is_rejected_with_the_scope_error_wherever_it_is_written`<br>`togi::cli::tests::the_scope_error_shows_the_usage_of_the_command_it_names`<br>`togi::args::tests::config_is_rejected_where_it_is_not_attached`<br>`togi::cli::usage_errors_exit_2_on_stderr_with_nothing_on_stdout` | A; rest P(#826) |
+| `TestCommandHelpConfigScope` | `togi::args::tests::config_is_accepted_before_and_after_the_command_name_it_is_attached_to`<br>`togi::cli::tests::a_leading_config_moves_after_the_command_name`<br>`togi::cli::tests::other_arguments_are_left_as_they_are`<br>`togi::args::tests::config_defaults_and_reports_whether_it_was_given`<br>`togi::args::tests::the_config_help_names_the_default_path`<br>`togi::cli::only_doctor_and_reset_list_config`<br>`togi::completion::tests::only_the_commands_that_read_the_configuration_offer_it` | A |
+| `TestReadOnlyCommandsRejectConfig` | `togi::cli::tests::config_is_rejected_with_the_scope_error_wherever_it_is_written`<br>`togi::cli::tests::the_scope_error_shows_the_usage_of_the_command_it_names`<br>`togi::args::tests::config_is_rejected_where_it_is_not_attached`<br>`togi::cli::usage_errors_exit_2_on_stderr_with_nothing_on_stdout`<br>`togi::read::commands::config_is_a_usage_error_before_or_after_the_command_name`<br>`togi::restart_limit::the_state_directory_flag_is_accepted_after_the_command_and_config_never` | A |
+| `TestWriteCommandsAcceptConfigPlacements` | `togi::args::tests::config_is_accepted_before_and_after_the_command_name_it_is_attached_to`<br>`togi::cli::tests::a_leading_config_moves_after_the_command_name`<br>`togi::cli::tests::other_arguments_are_left_as_they_are`<br>`togi::args::tests::config_defaults_and_reports_whether_it_was_given`<br>`togi::args::tests::the_config_help_names_the_default_path`<br>`togi::completion::tests::only_the_commands_that_read_the_configuration_offer_it`<br>`togi::doctor::config_is_accepted_before_and_after_the_command`<br>`togi::reset::config_is_accepted_before_and_after_the_command`<br>`togi::run::lifecycle::the_config_flag_may_precede_the_command_name`<br>`togi::cli::run_reads_its_config_wherever_the_flag_is_written` | A |
+| `TestLeadingConfigRejectionPrecedesCommandArguments` | `togi::cli::tests::config_is_rejected_with_the_scope_error_wherever_it_is_written`<br>`togi::cli::tests::the_scope_error_shows_the_usage_of_the_command_it_names`<br>`togi::args::tests::config_is_rejected_where_it_is_not_attached`<br>`togi::cli::usage_errors_exit_2_on_stderr_with_nothing_on_stdout`<br>`togi::read::commands::the_config_error_comes_before_the_arguments_of_the_command` | A |
 
 ### `cmd/togi/dashboard_test.go` (2)
 
 | Go test | Rust test(s) | status |
 |---|---|---|
-| `TestDashboardEventVisibility` | — | P(#829) |
-| `TestDashboardPanicFallsBackToEventLines` | — | P(#829) |
+| `TestDashboardEventVisibility` | `togi::dashboard::tests::event_lines_are_dropped_only_while_the_dashboard_shows`<br>`togi::run::lifecycle::the_dashboard_hides_event_lines_and_the_clean_stop_prints_the_restoration_and_shutdown` | A |
+| `TestDashboardPanicFallsBackToEventLines` | `togi::dashboard::tests::a_panic_while_drawing_falls_back_to_event_lines_at_once_not_when_the_dashboard_is_hidden`<br>`togi::run::panics::a_panic_in_the_dashboard_falls_back_to_event_lines_while_the_run_goes_on`<br>`togi::run::panics::a_dashboard_that_gives_way_between_the_restoration_and_the_shutdown_shows_each_closing_line_once`<br>`togi::run::panics::a_dashboard_that_gives_way_after_the_last_event_shows_both_closing_lines_once_in_order` | A |
 
 ### `cmd/togi/deadline_test.go` (1)
 
 | Go test | Rust test(s) | status |
 |---|---|---|
-| `TestRebootTimeout` | — | P(#869) |
+| `TestRebootTimeout` | `togi_hardware::reboot::tests::asks_systemd_for_a_plain_reboot_within_thirty_seconds` | A |
 
 ### `cmd/togi/doctor_test.go` (4)
 
 | Go test | Rust test(s) | status |
 |---|---|---|
-| `TestDoctorOutput` | — | P(#869) |
-| `TestDoctorExitCodes` | — | P(#869) |
-| `TestDoctorPassesRecordedContext` | — | P(#869) |
-| `TestDoctorNotReadyStyle` | — | P(#869) |
+| `TestDoctorOutput` | `togi::doctor::a_ready_machine_prints_the_table_and_ready`<br>`togi::doctor::a_failed_check_names_itself_and_exits_15`<br>`togi::doctor::a_changed_context_is_a_warning_not_a_failure`<br>`togi::doctor::without_root_it_takes_no_lock_and_says_what_it_skipped` | A |
+| `TestDoctorExitCodes` | `togi::doctor::a_failed_check_names_itself_and_exits_15`<br>`togi::doctor::a_journal_run_would_refuse_exits_16_before_any_lock_or_check`<br>`togi::doctor::an_unreadable_journal_exits_1`<br>`togi::doctor::a_configuration_error_exits_2`<br>`togi::doctor::a_busy_host_lock_exits_3_only_for_root`<br>`togi::doctor::a_host_lock_that_cannot_be_opened_exits_1`<br>`togi::doctor::an_unprivileged_failed_check_exits_15_and_another_platform_exits_1`<br>`togi::doctor::a_failed_diagnosis_exits_1`<br>`togi::doctor::a_bios_context_that_cannot_be_read_follows_the_table_with_exit_1`<br>`togi::doctor::another_platform_stops_before_the_journal_the_lock_and_every_check`<br>`togi::cli::doctor_refuses_a_newer_journal_with_exit_16_before_any_check`<br>`togi::cli::doctor_exits_1_for_an_unreadable_journal_and_2_for_a_bad_config` | A |
+| `TestDoctorPassesRecordedContext` | `togi::doctor::the_recorded_context_reaches_the_checks_only_for_a_journal_run_would_continue`<br>`togi::doctor::a_current_journal_before_its_session_context_passes_no_context` | A |
+| `TestDoctorNotReadyStyle` | `togi::doctor::the_failed_style_follows_the_terminal_and_the_environment` | A |
 
 ### `cmd/togi/epoch_test.go` (1)
 
 | Go test | Rust test(s) | status |
 |---|---|---|
-| `TestRunRefusesNewerEvidenceEpochBeforeConfig` | — | P(#829) |
+| `TestRunRefusesNewerEvidenceEpochBeforeConfig` | `togi::run::lifecycle::a_journal_with_a_newer_evidence_epoch_is_refused_before_the_config_is_read`<br>`togi::cli::run_refuses_a_journal_from_a_newer_evidence_epoch_before_the_config_and_appends_nothing` | A |
 
 ### `cmd/togi/events_test.go` (7)
 
 | Go test | Rust test(s) | status |
 |---|---|---|
-| `TestEvents` | — | P(#826) |
-| `TestEventsJSONUncoloredInSystemJournal` | — | P(#826) |
-| `TestEventsErrors` | — | P(#826) |
-| `TestEventsKindValidation` | — | P(#826) |
-| `TestEventsKindQueries` | — | P(#826) |
-| `TestEventsUnfilteredUnknownKind` | — | P(#826) |
-| `TestReadCommandsReportTornTail` | — | P(#826) |
+| `TestEvents` | `togi::read::events::filters_narrow_the_readable_lines`<br>`togi::read::events::a_time_window_is_inclusive_since_and_exclusive_until`<br>`togi::read::events::json_prints_the_journal_lines_unchanged` | A |
+| `TestEventsJSONUncoloredInSystemJournal` | `togi::read::events::human_lines_are_styled_for_the_system_journal_and_json_is_not` | A |
+| `TestEventsErrors` | `togi::read::events::flag_value_errors_are_usage_errors`<br>`togi::read::events::a_valid_filter_with_no_match_prints_nothing_and_exits_zero` | A |
+| `TestEventsKindValidation` | `togi::read::events::kind_errors_are_usage_errors_before_the_journal_is_read` | A |
+| `TestEventsKindQueries` | `togi::read::events::filters_narrow_the_readable_lines`<br>`togi::read::events::a_valid_filter_with_no_match_prints_nothing_and_exits_zero` | A |
+| `TestEventsUnfilteredUnknownKind` | `togi::read::events::an_event_of_an_unknown_kind_is_refused_in_read_only_words_by_events` | A |
+| `TestReadCommandsReportTornTail` | `togi::read::events::a_torn_tail_is_reported_after_the_events` | A |
 
 ### `cmd/togi/hostlock_test.go` (9)
 
 | Go test | Rust test(s) | status |
 |---|---|---|
-| `TestResetRefusesHostLock` | — | P(#869) |
-| `TestResetBelowProtectedSharedAncestorHonorsHostLock` | — | P(#869) |
-| `TestRunRefusesHostLockBeforeHardwareAndCarry` | — | P(#829) |
-| `TestRunRefusesUnsafeHostLockBeforeHardwareAndCarry` | — | P(#829) |
-| `TestStartupRefusalDoesNotClearGRUBWithoutHostLock` | — | P(#829) |
-| `TestRunRefusesIdentityBeforeBIOSOrSMUAccess` | — | P(#829) |
-| `TestRunReportsConstructionError` | — | P(#829) |
-| `TestRunOpensJournalBeforeShowingDashboard` | — | P(#829) |
-| `TestReadOnlyCommandsDoNotTakeHostLock` | — | P(#826) |
+| `TestResetRefusesHostLock` | `togi::reset::a_busy_host_lock_exits_3_naming_it_before_anything_changes` | A |
+| `TestResetBelowProtectedSharedAncestorHonorsHostLock` | `togi_hostlock::policy::tests::directory_authorization_matrix` | O(the lock path is `System::host_lock`, not a flag, so `togi` has no ancestor case of its own; the ancestor rules are pinned by `togi-hostlock`, listed) |
+| `TestRunRefusesHostLockBeforeHardwareAndCarry` | `togi::run::lifecycle::a_busy_host_lock_stops_the_run_before_hardware_and_any_event`<br>`togi::run::lifecycle::a_busy_journal_lock_is_exit_three`<br>`togi::run::lifecycle::the_host_lock_is_taken_before_the_boot_id_is_read_and_the_hardware_opened`<br>`togi::run::lifecycle::the_host_lock_is_taken_before_the_journals_lock_as_reset_does` | A |
+| `TestRunRefusesUnsafeHostLockBeforeHardwareAndCarry` | `togi::run::lifecycle::a_host_lock_that_is_not_safe_is_refused_before_hardware` | A |
+| `TestStartupRefusalDoesNotClearGRUBWithoutHostLock` | `togi::run::lifecycle::a_tuning_boot_refusal_does_not_touch_the_boot_entry_without_the_host_lock`<br>`togi::run::lifecycle::a_tuning_boot_refusal_does_not_touch_the_boot_entry_when_the_host_lock_is_not_safe` | A |
+| `TestRunRefusesIdentityBeforeBIOSOrSMUAccess` | `togi::run::lifecycle::the_bios_context_is_not_read_from_a_machine_whose_identity_is_not_validated`<br>`togi::run::lifecycle::the_host_lock_is_taken_before_the_boot_id_is_read_and_the_hardware_opened` | A |
+| `TestRunReportsConstructionError` | `togi::run::lifecycle::a_hardware_that_cannot_be_opened_is_reported_as_an_error` | A |
+| `TestRunOpensJournalBeforeShowingDashboard` | `togi::run::lifecycle::the_dashboard_starts_after_the_journal_is_open`<br>`togi::run::lifecycle::a_journal_that_cannot_be_opened_never_shows_the_dashboard`<br>`togi::run::lifecycle::a_journal_that_is_not_a_journal_never_shows_the_dashboard` | A |
+| `TestReadOnlyCommandsDoNotTakeHostLock` | `togi::read::commands::the_read_only_commands_succeed_while_another_process_holds_the_host_lock_and_never_take_it` | A |
 
 ### `cmd/togi/main_test.go` (1)
 
@@ -549,119 +547,119 @@ The pending rows by owner (a row with several owners counts for each): #826 37, 
 
 | Go test | Rust test(s) | status |
 |---|---|---|
-| `TestResetAllPathsCannotReviveFactsSoloLimitsOrFailurePoints` | — | P(#869) |
+| `TestResetAllPathsCannotReviveFactsSoloLimitsOrFailurePoints` | `togi::reset::reset_all_archives_the_session_and_marks_the_boundary`<br>`togi::reset::reset_all_of_an_unrecognized_schema_archives_it_unread`<br>`togi::reset::a_pending_carry_is_dropped_without_a_journal`<br>`togi_journal::dir::tests::pending_markers_clear_but_the_reset_boundary_is_permanent`<br>`togi_journal::dir::tests::a_fault_anywhere_in_dropping_a_carry_never_loses_the_boundary_or_the_carry`<br>`togi_journal::dir::tests::an_id_always_follows_the_reset_boundary_whatever_the_clock_says` | A |
 
 ### `cmd/togi/reset_test.go` (11)
 
 | Go test | Rust test(s) | status |
 |---|---|---|
-| `TestCommandsRefuseWhileLocked` | — | P(#869) |
-| `TestResetAllCandidateSoloLimits` | — | P(#869) |
-| `TestResetLogsTheEventsItRecords` | — | P(#869) |
-| `TestResetAllSkipsUnavailableConfig` | — | P(#869) |
-| `TestResetAllDropsAPendingCarry` | — | P(#869) |
-| `TestResetAllFindsPendingMarkersInPatternLikeStateDir` | — | P(#869) |
-| `TestResetAllWarnsAcrossRulesets` | — | P(#869) |
-| `TestResetAllCannotInterruptLockedTransition` | — | P(#869) |
-| `TestMissingSessionRefusals` | — | P(#869) |
-| `TestResetCoreCommandOutcome` | — | P(#869) |
-| `TestResetErrorEscapesDiagnostic` | — | P(#869) |
+| `TestCommandsRefuseWhileLocked` | `togi::reset::a_busy_host_lock_exits_3_naming_it_before_anything_changes`<br>`togi::reset::a_held_state_directory_lock_exits_3_and_changes_nothing`<br>`togi::doctor::a_busy_host_lock_exits_3_only_for_root`<br>`togi::read::commands::the_read_only_commands_succeed_while_another_process_holds_the_host_lock_and_never_take_it` | A |
+| `TestResetAllCandidateSoloLimits` | `togi::reset::reset_all_warns_for_each_solo_limit_at_or_past_its_failure_point`<br>`togi::reset::start_offsets_are_not_solo_limits`<br>`togi::reset::a_solo_limit_on_a_core_without_a_failure_point_does_not_warn`<br>`togi::reset::a_core_that_failed_at_zero_warns_with_the_remove_it_remedy` | A |
+| `TestResetLogsTheEventsItRecords` | `togi::reset::reset_core_queues_one_command_in_the_current_boot`<br>`togi::reset::reset_all_archives_the_session_and_marks_the_boundary`<br>`togi::reset::a_torn_tail_is_repaired_and_logged_before_the_reset`<br>`togi::reset::a_torn_tail_under_all_logs_the_repair_the_reset_and_the_archive`<br>`togi::reset::a_failed_archive_still_logs_the_events_it_recorded` | A |
+| `TestResetAllSkipsUnavailableConfig` | `togi::reset::an_invalid_or_missing_config_never_stops_the_archive`<br>`togi::reset::a_missing_default_config_is_silent`<br>`togi::reset::an_invalid_default_config_is_silent_and_the_archive_succeeds`<br>`togi::reset::the_default_config_comes_from_the_host`<br>`togi::args::tests::a_missing_file_is_the_default_configuration_unless_it_was_asked_for`<br>`togi::args::tests::a_default_that_cannot_be_read_for_another_reason_than_absence_is_an_error`<br>`togi::args::tests::load_reads_the_default_the_caller_names_and_the_given_file_over_it` | A |
+| `TestResetAllDropsAPendingCarry` | `togi::reset::a_pending_carry_is_dropped_without_a_journal`<br>`togi::reset::a_pending_carry_is_dropped_with_a_live_journal_and_an_empty_one` | A |
+| `TestResetAllFindsPendingMarkersInPatternLikeStateDir` | `togi::reset::pending_markers_are_found_in_a_state_directory_named_like_a_pattern`<br>`togi::reset::a_pending_carry_is_dropped_with_a_live_journal_and_an_empty_one` | A |
+| `TestResetAllWarnsAcrossRulesets` | `togi::reset::solo_limits_are_checked_across_rulesets_and_skipped_across_schemas` | A |
+| `TestResetAllCannotInterruptLockedTransition` | `togi::reset::a_held_writer_lock_leaves_a_pending_carry_alone` | A |
+| `TestMissingSessionRefusals` | `togi::reset::no_journal_or_no_session_exits_1_without_creating_state` | A |
+| `TestResetCoreCommandOutcome` | `togi::reset::reset_core_queues_one_command_in_the_current_boot`<br>`togi::reset::reset_core_of_a_core_the_session_lacks_exits_2_and_changes_nothing`<br>`togi::reset::a_core_in_range_but_not_in_the_session_exits_2`<br>`togi::reset::exactly_one_of_core_and_all_and_a_core_number` | A |
+| `TestResetErrorEscapesDiagnostic` | `togi::reset::error_text_escapes_control_characters` | A |
 
 ### `cmd/togi/restart_limit_test.go` (4)
 
 | Go test | Rust test(s) | status |
 |---|---|---|
-| `TestRestartLimitCommandBootActions` | — | P(#869) |
-| `TestRestartLimitHelpAndUsageHaveNoSideEffects` | — | P(#869) |
-| `TestRestartLimitFailuresStopOrRemoveRetryMarker` | — | P(#869) |
-| `TestRestartLimitDispatchRejectsConfig` | — | P(#869) |
+| `TestRestartLimitCommandBootActions` | `togi::restart_limit::every_count_picks_its_boot_action_in_order` | A |
+| `TestRestartLimitHelpAndUsageHaveNoSideEffects` | `togi::restart_limit::usage_errors_and_help_touch_nothing`<br>`togi::cli::restart_limit_help`<br>`togi::cli::administration_usage_errors_exit_2_before_touching_anything` | A |
+| `TestRestartLimitFailuresStopOrRemoveRetryMarker` | `togi::restart_limit::a_failure_stops_at_its_step_and_leaves_the_marker_right`<br>`togi::restart_limit::a_marker_that_cannot_be_removed_after_a_failed_reboot_is_reported`<br>`togi::restart_limit::a_reboot_that_cannot_run_reports_the_cause_and_removes_the_retry_marker` | A |
+| `TestRestartLimitDispatchRejectsConfig` | `togi::restart_limit::the_state_directory_flag_is_accepted_after_the_command_and_config_never`<br>`togi::cli::administration_usage_errors_exit_2_before_touching_anything` | A |
 
 ### `cmd/togi/run_test.go` (17)
 
 | Go test | Rust test(s) | status |
 |---|---|---|
-| `TestRunFlagsCycleLimit` | — | P(#829) |
-| `TestRunDeadEndEvidencePriority` | — | P(#829) |
-| `TestParseDefectAnswer` | — | P(#829) |
-| `TestDefectPromptRejectsCharacterDevicesThatAreNotTerminals` | — | P(#829) |
-| `TestDefectPromptAnswersOnlyInputTypedAfterTheQuestion` | — | P(#829) |
-| `TestDefectPromptReturnsWhenRunIsStopped` | — | P(#829) |
-| `TestCompatibilityRefusalClearsGRUBAndUsesErrPriority` | — | P(#829) |
-| `TestPrintCleanStop` | — | P(#829) |
-| `TestRunRejectsInvalidCycles` | — | P(#829) |
-| `TestRunRejectsOldCyclesFlag` | — | P(#829) |
-| `TestRunResultExitCodes` | `togi::exit::tests::dead_ends_map_by_name`<br>`togi::exit::tests::each_dead_end_has_its_own_code_between_10_and_18` | A; rest P(#829) |
-| `TestRunMalformedJournalRefusal` | — | P(#829) |
-| `TestCompatibilityRefusalReportsFailedClear` | — | P(#829) |
-| `TestRunRefusalPersistsFixedReasonBeforeClearing` | — | P(#829) |
-| `TestRunRefusalStillClearsAfterReasonWriteFailure` | — | P(#829) |
-| `TestRunFirstResultFlag` | — | P(#829) |
-| `TestRunRefusesFirstResultWithCycles` | — | P(#829) |
+| `TestRunFlagsCycleLimit` | `togi::run::tests::the_cycle_limit_is_endless_by_default_and_takes_a_positive_count`<br>`togi::cli::run_usage_errors_exit_2_before_anything_is_touched` | A |
+| `TestRunDeadEndEvidencePriority` | `togi::run::outcome::tests::every_dead_end_exits_with_its_own_status_and_prints_its_detail`<br>`togi::run::outcome::tests::a_refused_journal_is_exit_sixteen_and_beats_a_dead_end`<br>`togi::run::outcome::tests::the_summary_and_each_evidence_line_are_whole_decorated_lines_in_the_system_journal` | A |
+| `TestParseDefectAnswer` | `togi::run::prompt::tests::only_a_complete_line_saying_y_or_yes_is_a_yes`<br>`togi::run::prompt::tests::the_question_names_every_core_and_a_no_or_end_of_input_is_no`<br>`togi::run::prompt::tests::an_answer_that_could_not_be_read_is_no_unless_the_run_was_stopped` | A |
+| `TestDefectPromptRejectsCharacterDevicesThatAreNotTerminals` | `togi::system::tests::a_character_device_that_is_not_a_terminal_is_not_a_terminal` | A |
+| `TestDefectPromptAnswersOnlyInputTypedAfterTheQuestion` | `togi::run::prompt::tests::only_input_typed_after_the_question_is_the_answer`<br>`togi::run::prompt::tests::a_typed_line_is_read_whole_on_a_terminal` | A |
+| `TestDefectPromptReturnsWhenRunIsStopped` | `togi::run::prompt::tests::a_run_stopped_while_the_question_is_open_ends_the_wait_without_an_answer`<br>`togi::run::prompt::tests::a_signal_that_interrupts_the_wait_is_a_wake_up_not_an_error` | A |
+| `TestCompatibilityRefusalClearsGRUBAndUsesErrPriority` | `togi::run::lifecycle::a_refusal_under_journald_is_printed_at_err_priority_in_bold_red`<br>`togi::run::lifecycle::a_refused_journal_in_the_tuning_boot_leaves_a_reason_and_clears_the_saved_entry`<br>`togi::run::lifecycle::a_refused_journal_without_the_tuning_boot_leaves_the_boot_entry_alone` | A |
+| `TestPrintCleanStop` | `togi::run::outcome::tests::only_the_closing_events_of_the_stop_the_dashboard_hid_are_tracked`<br>`togi::run::outcome::tests::only_the_events_the_dashboard_hid_are_printed_each_once_in_journal_order`<br>`togi::run::lifecycle::a_restoration_the_dashboard_hid_at_a_resumes_startup_is_not_repeated_by_the_clean_stop`<br>`togi::dashboard::tests::the_gate_says_for_each_event_line_whether_it_kept_it_off_the_screen` | A |
+| `TestRunRejectsInvalidCycles` | `togi::run::tests::a_cycle_limit_that_is_not_a_positive_count_is_refused`<br>`togi::cli::run_usage_errors_exit_2_before_anything_is_touched` | A |
+| `TestRunRejectsOldCyclesFlag` | `togi::run::tests::the_old_cycle_flag_is_unknown`<br>`togi::cli::run_usage_errors_exit_2_before_anything_is_touched` | A |
+| `TestRunResultExitCodes` | `togi::exit::tests::dead_ends_map_by_name`<br>`togi::exit::tests::each_dead_end_has_its_own_code_between_10_and_18`<br>`togi::run::outcome::tests::every_dead_end_exits_with_its_own_status_and_prints_its_detail`<br>`togi::run::outcome::tests::a_run_that_ended_without_a_stop_or_an_error_is_a_failure`<br>`togi::run::outcome::tests::a_signal_the_cycles_and_the_first_result_exit_zero_in_silence` | A |
+| `TestRunMalformedJournalRefusal` | `togi::run::lifecycle::a_journal_that_is_not_a_journal_is_an_error_and_is_left_alone` | A |
+| `TestCompatibilityRefusalReportsFailedClear` | `togi::run::lifecycle::the_refusal_reports_a_failed_clear_and_requests_no_reboot` | A |
+| `TestRunRefusalPersistsFixedReasonBeforeClearing` | `togi::run::lifecycle::the_refusal_persists_its_reason_before_it_clears_the_entry` | A |
+| `TestRunRefusalStillClearsAfterReasonWriteFailure` | `togi::run::lifecycle::the_refusal_still_clears_the_entry_when_the_reason_cannot_be_written` | A |
+| `TestRunFirstResultFlag` | `togi::run::tests::the_first_result_stands_alone`<br>`togi::cli::run_usage_errors_exit_2_before_anything_is_touched` | A |
+| `TestRunRefusesFirstResultWithCycles` | `togi::run::tests::the_first_result_stands_alone`<br>`togi::cli::run_usage_errors_exit_2_before_anything_is_touched` | A |
 
 ### `cmd/togi/status_hunt_signal_test.go` (1)
 
 | Go test | Rust test(s) | status |
 |---|---|---|
-| `TestStatusHuntShowsDecisiveFailureSignal` | — | P(#826) |
+| `TestStatusHuntShowsDecisiveFailureSignal` | `togi::read::status::a_hunt_names_the_decisive_failure_signal`<br>`togi::read::status::a_hunt_opened_by_a_carried_trial_names_the_carried_signal`<br>`togi::read::status::a_hunt_opened_by_a_carried_idle_failure_names_the_carried_signal`<br>`togi_watch::tests::hunt::a_hunt_caused_by_a_carried_trial`<br>`togi_watch::tests::hunt::a_hunt_caused_by_a_carried_idle_failure` | A |
 
 ### `cmd/togi/status_r7_test.go` (1)
 
 | Go test | Rust test(s) | status |
 |---|---|---|
-| `TestStatusR7SelfSufficiencyAndTopRequester` | — | P(#826) |
+| `TestStatusR7SelfSufficiencyAndTopRequester` | `togi::read::status::scenarios_render_the_status`<br>`togi_tuner::r7_escalation_tests::r7_status_separates_workloads_offsets_and_top_requesters`<br>`togi_tuner::r7_escalation_tests::r7_status_ignores_failed_starts_as_top_requester`<br>`togi_tuner::r7_escalation_tests::r7_status_cost` | A |
 
 ### `cmd/togi/status_test.go` (11)
 
 | Go test | Rust test(s) | status |
 |---|---|---|
-| `TestStatus` | — | P(#826) |
-| `TestHistoricalTierChangeReadOnlyViews` | — | P(#826) |
-| `TestBetweenTrialMCEReadOnlyViews` | — | P(#826) |
-| `TestStatusCombinationAndOpenHunt` | — | P(#826) |
-| `TestStatusPhases` | — | P(#826) |
-| `TestStatusShowsUnresetDefectResetCommands` | — | P(#826) |
-| `TestStatusExceptionalActivity` | — | P(#826) |
-| `TestStatusRecordOnlyPartial` | — | P(#826) |
-| `TestWriteStatusWrapsWideBIOS` | — | P(#826) |
-| `TestWriteStatusWrapsWideDecisionNotes` | — | P(#826) |
-| `TestWriteStatusPreservesUnicodeWords` | — | P(#826) |
+| `TestStatus` | `togi::read::status::scenarios_render_the_status` | A |
+| `TestHistoricalTierChangeReadOnlyViews` | `togi::read::events::an_older_schema_is_refused_too` | O(the Rust journal has no historical tiers, so there is no tier change to view; an older journal is refused, pinned by the test listed) |
+| `TestBetweenTrialMCEReadOnlyViews` | `togi::read::status::a_between_trial_mce_is_listed_as_evidence_and_escaped`<br>`togi::read::events::a_between_trial_mce_is_listed_and_its_controls_are_escaped`<br>`togi::read::watch::a_between_trial_mce_shows_in_the_frame` | A |
+| `TestStatusCombinationAndOpenHunt` | `togi::read::status::scenarios_render_the_status`<br>`togi::read::status::hunt_group_columns_stay_aligned_when_a_group_lists_sixteen_cores`<br>`togi::read::status::a_located_hunt_names_the_held_loaded_cores_as_its_parked_source` | A |
+| `TestStatusPhases` | `togi::read::status::scenarios_render_the_status`<br>`togi::read::status::a_concluded_phase_names_the_latest_clean_cycle_not_the_running_cycle`<br>`togi::read::status::a_phase_two_round_with_completed_checks_counts_them`<br>`togi_tuner::projection_tests::the_last_clean_cycle_follows_clean_cycles_not_the_latest_started_cycle` | A |
+| `TestStatusShowsUnresetDefectResetCommands` | `togi::read::status::a_too_cautious_defect_lists_reset_commands_until_each_affected_core_is_reset`<br>`togi::read::status::a_reset_of_every_core_removes_the_defect` | A |
+| `TestStatusExceptionalActivity` | `togi::read::status::scenarios_render_the_status`<br>`togi::read::status::a_fallback_combination_names_the_hunt_it_covered_every_candidate_of`<br>`togi::read::status::a_queued_reset_shows_in_the_queued_column_until_the_search_restarts`<br>`togi::read::status::a_short_checking_cycle_names_the_coverage_it_lacks`<br>`togi::status::tests::a_short_cycle_names_each_regime_it_lacks` | A |
+| `TestStatusRecordOnlyPartial` | `togi_watch::frames::help::tests::help_glosses_no_record_only_trial` | O(the Rust journal has no record-only trials, so the partial has no record-only state to show; the test listed pins that the help glosses none) |
+| `TestWriteStatusWrapsWideBIOS` | `togi::read::status::wide_bios_fields_wrap_by_terminal_cells_and_stay_whole` | A |
+| `TestWriteStatusWrapsWideDecisionNotes` | `togi::table::tests::wide_decision_notes_wrap_under_their_row_within_the_width`<br>`togi::table::tests::notes_wrap_under_their_row_and_do_not_widen_the_table` | A |
+| `TestWriteStatusPreservesUnicodeWords` | `togi::table::tests::unicode_words_are_kept_whole`<br>`togi::table::tests::a_wide_word_that_exactly_fills_the_room_stays_on_the_first_line`<br>`togi::table::tests::a_combining_word_that_exactly_fills_the_room_stays_on_the_first_line` | A |
 
 ### `cmd/togi/terminal_linux_test.go` (5)
 
 | Go test | Rust test(s) | status |
 |---|---|---|
-| `TestDashboardQuietsInputUntilItStops` | — | P(#829) |
-| `TestDiscardInputDropsTypedAhead` | — | P(#829) |
-| `TestRunHardwareRestoresTerminalWhenSessionPanics` | — | P(#829) |
-| `TestRunHardwareFirstFrameIsThisRunsNotThePreviousOnes` | — | P(#829) |
-| `TestRunHardwareRestoresCursorAndPaletteWhenSessionPanics` | — | P(#829) |
+| `TestDashboardQuietsInputUntilItStops` | `togi::dashboard::tests::echo_and_line_buffering_stay_off_until_the_input_is_given_back_and_the_signal_keys_stay_on`<br>`togi::dashboard::tests::a_stream_that_is_not_a_terminal_is_left_alone` | A |
+| `TestDiscardInputDropsTypedAhead` | `togi::dashboard::tests::typed_ahead_input_is_dropped`<br>`togi::dashboard::tests::input_typed_while_the_dashboard_showed_is_dropped_when_the_input_is_given_back` | A |
+| `TestRunHardwareRestoresTerminalWhenSessionPanics` | `togi::run::pty::a_session_panic_stops_the_dashboard_and_gives_the_terminal_back_before_the_panic_propagates` | A |
+| `TestRunHardwareFirstFrameIsThisRunsNotThePreviousOnes` | `togi::run::lifecycle::the_dashboard_starts_after_the_last_event_of_the_earlier_run`<br>`togi::run::lifecycle::the_dashboard_starts_after_the_journal_is_open` | A |
+| `TestRunHardwareRestoresCursorAndPaletteWhenSessionPanics` | `togi::run::pty::ctrl_c_stops_a_run_that_shows_the_real_dashboard_and_the_cursor_comes_back`<br>`togi::run::pty::a_session_panic_stops_the_dashboard_and_gives_the_terminal_back_before_the_panic_propagates` | A |
 
 ### `cmd/togi/terminal_test.go` (3)
 
 | Go test | Rust test(s) | status |
 |---|---|---|
-| `TestHumanJournalBoundaries` | — | P(#826) |
-| `TestHumanJournalReadErrorEscapesUnknownKind` | — | P(#826) |
-| `TestHumanProjectedFieldsEscapeControls` | — | P(#826) |
+| `TestHumanJournalBoundaries` | `togi_render::escape::tests::range_boundaries_escape_exactly_the_listed_characters`<br>`togi_render::tests::write_event_ends_with_exactly_one_newline`<br>`togi_render::tests::write_event_appends_one_line_per_call` | A |
+| `TestHumanJournalReadErrorEscapesUnknownKind` | `togi::read::commands::a_hostile_unknown_kind_is_escaped_in_the_spec_form_on_stderr` | A |
+| `TestHumanProjectedFieldsEscapeControls` | `togi::read::status::a_between_trial_mce_is_listed_as_evidence_and_escaped`<br>`togi::read::events::a_between_trial_mce_is_listed_and_its_controls_are_escaped`<br>`togi_render::escape::tests::every_c0_control_and_del_is_escaped` | A |
 
 ### `cmd/togi/version_test.go` (2)
 
 | Go test | Rust test(s) | status |
 |---|---|---|
-| `TestVersion` | `togi::cli::tests::version_is_the_togi_version_on_stdout_only`<br>`togi::cli::tests::version_after_a_command_is_a_usage_error`<br>`togi::cli::version_prints_the_version_and_revision_on_stdout`<br>`togi::cli::a_local_build_reports_the_dev_revision`<br>`togi::cli::version_after_a_command_is_a_usage_error`<br>`togi::cli::completion_reads_and_writes_nothing_in_the_state_directory` | A; rest P(#826, #829) |
+| `TestVersion` | `togi::cli::tests::version_is_the_togi_version_on_stdout_only`<br>`togi::cli::tests::version_after_a_command_is_a_usage_error`<br>`togi::cli::version_prints_the_version_and_revision_on_stdout`<br>`togi::cli::a_local_build_reports_the_dev_revision`<br>`togi::cli::version_after_a_command_is_a_usage_error`<br>`togi::cli::completion_reads_and_writes_nothing_in_the_state_directory`<br>`togi::cli::run_usage_errors_exit_2_before_anything_is_touched` | A |
 | `TestVersionInTopLevelUsageOnly` | `togi::cli::top_level_help`<br>`togi::cli::completion_help` | A |
 
 ### `cmd/togi/watch_test.go` (4)
 
 | Go test | Rust test(s) | status |
 |---|---|---|
-| `TestWatchWithoutJournal` | — | P(#826) |
-| `TestWatchProblemFrame` | — | P(#826) |
-| `TestWatchEscapesJournalControls` | — | P(#826) |
-| `TestStatusEscapesJournalMessages` | — | P(#826) |
+| `TestWatchWithoutJournal` | `togi::read::watch::a_missing_journal_prints_no_session_yet_and_exits_zero` | A |
+| `TestWatchProblemFrame` | `togi::read::watch::an_unreadable_journal_prints_the_problem_frame_and_exits_one`<br>`togi::read::watch::an_incompatible_journal_prints_the_refusal_frame_and_exits_one`<br>`togi::read::watch::without_a_terminal_one_frame_of_the_requested_size_is_printed`<br>`togi::read::watch::the_frame_size_must_be_at_least_one` | A |
+| `TestWatchEscapesJournalControls` | `togi::read::watch::journal_controls_are_escaped_in_the_frame_and_the_diagnostic` | A |
+| `TestStatusEscapesJournalMessages` | `togi::read::status::controls_in_an_in_flight_message_are_escaped`<br>`togi::read::status::controls_in_a_carried_session_message_are_escaped`<br>`togi::read::status::controls_in_a_decision_message_are_escaped`<br>`togi::read::status::controls_in_bios_context_fields_are_escaped` | A |
 
 ### `cmd/togi/watchdog_test.go` (1)
 
 | Go test | Rust test(s) | status |
 |---|---|---|
-| `TestRunWatchdogWarning` | — | P(#829) |
+| `TestRunWatchdogWarning` | `togi_session::session::tests::a_missing_watchdog_is_warned_about_outside_the_tuning_boot`<br>`togi::run::lifecycle::a_missing_watchdog_is_journaled_as_a_warning_before_the_first_offset_write_with_the_dashboard_up` | A |
