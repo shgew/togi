@@ -53,13 +53,20 @@ impl Appender {
             Ok(()) => Ok(true),
             Err(error) => {
                 self.publishing = true;
+                let durable: Vec<_> = self
+                    .journal
+                    .events()
+                    .last()
+                    .map(|event| event.seq)
+                    .into_iter()
+                    .collect();
                 let result = self.append(
                     Payload::SessionWarning(SessionWarning {
                         operation: "write state projection".into(),
                         trial: None,
                         error: error.to_string(),
                     }),
-                    &[],
+                    &durable,
                 );
                 self.publishing = false;
                 result?;

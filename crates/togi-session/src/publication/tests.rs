@@ -13,13 +13,26 @@ fn state_write_failure_warns_continues_and_rebuilds() {
     let old = bench.mem.contents("/state/state.json").unwrap();
     bench.mem.fail_state_publication();
     session.begin().unwrap();
-    assert!(kinds_of(&session.appender).contains(&"session.warning"));
+    let events = session.appender.journal().events();
+    let warnings: Vec<usize> = (0..events.len())
+        .filter(|&at| matches!(events[at].payload, Payload::SessionWarning(_)))
+        .collect();
+    assert_eq!(warnings.len(), 1);
+    let at = warnings[0];
+    assert!(at > 0);
+    assert_eq!(events[at].cause, [events[at - 1].seq]);
     assert!(session.appender.failure().is_none());
     session.appender.publication = Some(PublicationPolicy::OnFinish);
+    let before_failed = bench.mem.contents("/state/state.json").unwrap();
+    let last = session.appender.journal().events().last().unwrap().seq;
     bench.mem.fail_state_publication();
     assert!(!session.appender.publish_state().unwrap());
     let preserved = bench.mem.contents("/state/state.json").unwrap();
+    assert_eq!(preserved, before_failed);
     assert_ne!(preserved, old);
+    let warning = session.appender.journal().events().last().unwrap();
+    assert!(matches!(warning.payload, Payload::SessionWarning(_)));
+    assert_eq!(warning.cause, [last]);
     session.record_shutdown(&Stop::Signal);
     bench.mem.fail_state_publication();
     let ended = session.close(Ok(Stop::Signal));
