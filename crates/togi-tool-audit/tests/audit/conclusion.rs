@@ -105,6 +105,35 @@ fn a_shutdown_agrees_with_the_events_that_led_to_it() {
             &[(4, Termination)],
         ),
         case(
+            "a cycles shutdown while a dead end awaits its own shutdown",
+            vec![
+                cycle_end(2, true, true),
+                dead_end(3, "d"),
+                shutdown(4, json!({"reason": "cycles", "cycles": 1})),
+            ],
+            Finished,
+            &[(4, Termination)],
+        ),
+        case(
+            "a first-result shutdown while a dead end awaits its own shutdown",
+            vec![
+                dead_end(2, "d"),
+                shutdown(3, json!({"reason": "first_result"})),
+            ],
+            Finished,
+            &[(3, Termination)],
+        ),
+        case(
+            "a signal interrupts a dead end, and the next run completes it",
+            vec![
+                dead_end(2, "d"),
+                shutdown(3, json!({"reason": "signal"})),
+                shutdown(4, json!({"reason": "dead_end"})),
+            ],
+            Finished,
+            &[],
+        ),
+        case(
             "a cycles shutdown after the requested passed full cycles",
             vec![
                 cycle_end(2, true, true),

@@ -22,7 +22,7 @@ pub(crate) fn audit(events: &[Event], completion: Completion) -> Vec<Violation> 
         auditor.fold(event);
     }
     if completion == Completion::Finished {
-        auditor.writes.flush(&mut auditor.findings);
+        auditor.writes.finish(&mut auditor.findings);
         auditor.flush_rebuild();
         if let Some(last) = events.last() {
             if !auditor.conclusion.stopped {
@@ -139,7 +139,24 @@ impl<'a> Auditor<'a> {
                             "shutdown for a dead end follows no dead end",
                         );
                     }
-                    ShutdownReason::Cycles => match shutdown.cycles {
+                    ShutdownReason::Cycles
+                    | ShutdownReason::FirstResult
+                    | ShutdownReason::Command
+                        if conclusion.dead_end_pending =>
+                    {
+                        self.findings.add(
+                            event.seq,
+                            Check::Termination,
+                            format!(
+                                "shutdown for {} while a recorded dead end awaits its own shutdown",
+                                shutdown.reason
+                            ),
+                        );
+                    }
+                    _ => {}
+                }
+                if shutdown.reason == ShutdownReason::Cycles {
+                    match shutdown.cycles {
                         None => self.findings.add(
                             event.seq,
                             Check::Termination,
@@ -156,10 +173,11 @@ impl<'a> Auditor<'a> {
                             );
                         }
                         Some(_) => {}
-                    },
-                    _ => {}
+                    }
                 }
-                conclusion.dead_end_pending = false;
+                if shutdown.reason != ShutdownReason::Signal {
+                    conclusion.dead_end_pending = false;
+                }
                 conclusion.stopped = true;
             }
             Payload::SessionArchived(_) => conclusion.stopped = true,

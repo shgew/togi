@@ -1,4 +1,5 @@
 use serde_json::json;
+use togi_journal::Event;
 use togi_tool_audit::Check::WriteProtocol;
 use togi_tool_audit::Completion::{Finished, InProgress};
 
@@ -200,6 +201,77 @@ fn a_readback_matches_the_write_it_cites() {
                     &[2],
                 ),
             ],
+            InProgress,
+            &[],
+        ),
+    ]);
+}
+
+#[test]
+fn a_mismatching_readback_ends_the_session_in_an_smu_dead_end() {
+    let mismatch = || {
+        vec![
+            intent(2, set(0, -5)),
+            write(3, set(0, -5), 2),
+            cause(
+                event(
+                    4,
+                    "smu.readback",
+                    json!({"core": 0, "offset": -3, "expected": -5}),
+                ),
+                &[3],
+            ),
+        ]
+    };
+    let then = |rest: Vec<Event>| {
+        let mut events = mismatch();
+        events.extend(rest);
+        events
+    };
+    let smu_dead_end = |seq| {
+        cause(
+            event(
+                seq,
+                "deadend",
+                json!({"condition": "smu", "detail": "readback -3, expected -5"}),
+            ),
+            &[4],
+        )
+    };
+    run(vec![
+        case(
+            "the smu dead end and its shutdown follow the mismatch",
+            then(vec![
+                smu_dead_end(5),
+                shutdown(6, json!({"reason": "dead_end"})),
+            ]),
+            Finished,
+            &[],
+        ),
+        case(
+            "an ordinary shutdown follows the mismatch",
+            then(vec![stop(5)]),
+            Finished,
+            &[(4, WriteProtocol)],
+        ),
+        case(
+            "another dead end does not answer the mismatch",
+            then(vec![
+                dead_end(5, "d"),
+                shutdown(6, json!({"reason": "dead_end"})),
+            ]),
+            Finished,
+            &[(4, WriteProtocol)],
+        ),
+        case(
+            "tuning continues with another write",
+            then(vec![intent(5, set(0, -6))]),
+            InProgress,
+            &[(5, WriteProtocol)],
+        ),
+        case(
+            "a crash before the dead end leaves it to the next boot",
+            then(vec![boot(smu_dead_end(5), "b2")]),
             InProgress,
             &[],
         ),

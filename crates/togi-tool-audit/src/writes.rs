@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use togi_journal::{Event, Payload, Seq, SmuCommand, SmuReadback};
+use togi_journal::{DeadEndCondition, Event, Payload, Seq, SmuCommand, SmuReadback};
 use togi_machine::{CoreId, ObservedOffset, PerCore, TargetOffset};
 
 use crate::auditor::Seen;
@@ -14,6 +14,7 @@ pub(crate) struct Writes {
     registers: BTreeMap<CoreId, i64>,
     pending: BTreeMap<Seq, BTreeSet<CoreId>>,
     used_intents: BTreeSet<Seq>,
+    mismatch: Option<Seq>,
 }
 
 impl Writes {
@@ -39,6 +40,28 @@ impl Writes {
         marks: &Marks,
         findings: &mut Findings,
     ) {
+        if let Some(mismatch) = self.mismatch {
+            match &event.payload {
+                Payload::DeadEnd(dead_end) if dead_end.condition == DeadEndCondition::Smu => {
+                    self.mismatch = None;
+                }
+                Payload::SmuIntent(_)
+                | Payload::SmuWrite(_)
+                | Payload::TrialStart(_)
+                | Payload::ProfileApplied(_) => {
+                    findings.add(
+                        event.seq,
+                        Check::WriteProtocol,
+                        format!(
+                            "{} continues tuning after the mismatching readback at seq {mismatch}, which must end in an smu dead end",
+                            event.kind()
+                        ),
+                    );
+                    self.mismatch = None;
+                }
+                _ => {}
+            }
+        }
         match &event.payload {
             Payload::SessionBaseline(baseline) => {
                 self.baseline = baseline.offsets;
@@ -119,6 +142,12 @@ impl Writes {
         findings: &mut Findings,
     ) {
         self.registers.insert(readback.core, readback.offset.0);
+        if readback
+            .expected
+            .is_some_and(|expected| expected.get() != readback.offset.0)
+        {
+            self.mismatch.get_or_insert(event.seq);
+        }
         for cause in &event.cause {
             let Some(Payload::SmuWrite(record)) = seen.get(cause).map(|earlier| &earlier.payload)
             else {
@@ -169,6 +198,18 @@ impl Writes {
                     "SMU write has no following readback for cores [{}]",
                     cores.join(", ")
                 ),
+            );
+        }
+    }
+
+    /// A finished run must have ended the session at an smu dead end after a readback that differed from its write.
+    pub(crate) fn finish(&mut self, findings: &mut Findings) {
+        self.flush(findings);
+        if let Some(mismatch) = self.mismatch.take() {
+            findings.add(
+                mismatch,
+                Check::WriteProtocol,
+                "the run finished without the smu dead end this mismatching readback requires",
             );
         }
     }
