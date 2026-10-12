@@ -6,7 +6,7 @@
 # and push each check's output when CACHIX_AUTH_TOKEN is available, so a check whose inputs are unchanged
 # passes without running; the checks build the package with the revision `dev` so that a new commit alone
 # changes none of them (ADR 0021).
-# The release workflow only builds the package on the release commit.
+# The release workflow builds the default package and runs Rust nextest on the release commit.
 name: check
 
 on:
