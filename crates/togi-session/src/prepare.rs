@@ -2,12 +2,14 @@
 //! machine's BIOS context can no longer continue it, the markers of earlier archives settled, and the evidence a
 //! transition carries into the new session.
 
+use std::collections::BTreeSet;
+
 use jiff::Timestamp;
 use togi_carry::{Archives, CarryError, PendingCarry, select, settled};
 use togi_defect::Entry;
 use togi_journal::{
     ArchiveError, ArchiveKind, Build, CloseError, DirError, Event, FileError, Journal, Marker,
-    OpenError, Operation, Payload, SessionId, Stamp, StateDir, Verdict,
+    OpenError, Operation, Payload, ReadError, SessionId, Stamp, StateDir, Verdict,
 };
 use togi_machine::{BiosContext, BootId};
 
@@ -100,7 +102,7 @@ pub fn prepare(
         });
     }
     let dir = journal.dir();
-    let chain: Vec<SessionId> = std::iter::once(pending)
+    let mut chain: Vec<SessionId> = std::iter::once(pending)
         .chain(
             dir.archives()?
                 .into_iter()
@@ -108,7 +110,22 @@ pub fn prepare(
                 .filter(|session| *session < pending),
         )
         .collect();
-    let carry = select(&chain, boundary, defects, &mut Archived(dir))?;
+    let mut archived = Archived {
+        dir,
+        undecodable: BTreeSet::new(),
+    };
+    let carry = loop {
+        match select(&chain, boundary, defects, &mut archived) {
+            Ok(carry) => break carry,
+            Err(CarryError::Missing { session }) if archived.undecodable.contains(&session) => {
+                match chain.iter().position(|member| *member == session) {
+                    Some(0) | None => break None,
+                    Some(at) => chain.truncate(at),
+                }
+            }
+            Err(error) => return Err(error.into()),
+        }
+    };
     Ok(Prepared { journal, carry })
 }
 
@@ -126,17 +143,33 @@ fn context_changed(journal: &Journal, current: Option<&BiosContext>) -> bool {
         .is_some_and(|recorded| recorded != *current)
 }
 
-struct Archived<'a>(&'a StateDir);
+/// The archives of a state directory as carry reads them. An archive this build cannot decode supplies no evidence:
+/// it reads as absent and is remembered, so the walk ends before it.
+struct Archived<'a> {
+    dir: &'a StateDir,
+    undecodable: BTreeSet<SessionId>,
+}
 
 impl Archives for Archived<'_> {
     type Error = FileError;
     type Events = Vec<Result<Event, FileError>>;
 
     fn events(&mut self, session: SessionId) -> Result<Option<Self::Events>, FileError> {
-        Ok(self
-            .0
-            .archived_recording(&session)?
-            .map(|recording| recording.into_events().into_iter().map(Ok).collect()))
+        match self.dir.archived_recording(&session) {
+            Ok(recording) => Ok(
+                recording.map(|recording| recording.into_events().into_iter().map(Ok).collect())
+            ),
+            Err(
+                error @ FileError {
+                    source: ReadError::Io(_),
+                    ..
+                },
+            ) => Err(error),
+            Err(_) => {
+                self.undecodable.insert(session);
+                Ok(None)
+            }
+        }
     }
 }
 

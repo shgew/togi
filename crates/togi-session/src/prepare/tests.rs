@@ -6,6 +6,7 @@ use togi_sim::MachineDefinition;
 use togi_sim::definition::ModelDef;
 
 use togi_carry::CarryError;
+use togi_journal::fs::{Fault, Op};
 
 use super::*;
 use crate::testing::{Bench, build, simulated};
@@ -238,7 +239,7 @@ fn a_pending_carry_the_boundary_passed_is_dropped_without_a_carry() {
 }
 
 #[test]
-fn an_older_journal_with_events_this_build_cannot_decode_is_archived_unread_before_the_carry_fails()
+fn an_older_journal_with_events_this_build_cannot_decode_is_archived_unread_and_supplies_no_carry()
 {
     let bench = bench();
     let (id, context) = finished(&bench);
@@ -249,6 +250,53 @@ fn an_older_journal_with_events_this_build_cannot_decode_is_archived_unread_befo
         ruleset: 2,
         ..build()
     };
+    let prepared = prepared(&bench, &next, Some(&context));
+    assert!(prepared.carry.is_none());
+    assert!(prepared.journal.events().is_empty());
+    assert_eq!(archived(&prepared.journal), [id]);
+    assert_eq!(marked(&prepared.journal), [(Marker::CarryPending, id)]);
+    assert_eq!(
+        bench.mem.contents(format!("/state/archive/{id}.jsonl")),
+        Some(garbled)
+    );
+}
+
+#[test]
+fn an_older_archive_this_build_cannot_decode_ends_the_walk_without_failing_the_carry() {
+    let next = Build {
+        ruleset: 2,
+        ..build()
+    };
+    let clean = bench();
+    let (_, context) = finished(&clean);
+    let expected = prepared(&clean, &next, Some(&context)).carry.unwrap();
+
+    let behind = bench();
+    finished(&behind);
+    behind
+        .mem
+        .put("/state/archive/20200101T000000Z.jsonl", "not json\n");
+    let got = prepared(&behind, &next, Some(&context));
+    assert_eq!(got.carry, Some(expected));
+}
+
+#[test]
+fn an_archive_that_cannot_be_read_still_fails_the_carry() {
+    let bench = bench();
+    let (id, context) = finished(&bench);
+    let next = Build {
+        ruleset: 2,
+        ..build()
+    };
+    drop(
+        prepared(&bench, &next, Some(&context))
+            .journal
+            .close()
+            .unwrap(),
+    );
+    bench
+        .mem
+        .inject(Fault::before(Op::Read, 1).named(format!("{id}.jsonl")));
     let boot = bench.sim.seams().host.boot_id().unwrap();
     let error = prepare(
         simulated(&bench.mem),
@@ -260,18 +308,7 @@ fn an_older_journal_with_events_this_build_cannot_decode_is_archived_unread_befo
     )
     .unwrap_err();
     assert!(
-        matches!(error, PrepareError::Carry(CarryError::Open { session, .. }) if session == id),
+        matches!(&error, PrepareError::Carry(CarryError::Open { session, .. }) if *session == id),
         "{error:?}"
-    );
-    assert_eq!(bench.mem.contents("/state/events.jsonl"), Some(Vec::new()));
-    assert_eq!(
-        bench.mem.contents(format!("/state/archive/{id}.jsonl")),
-        Some(garbled)
-    );
-    assert!(
-        bench
-            .mem
-            .contents(format!("/state/archive/{id}-carry-pending"))
-            .is_some()
     );
 }
