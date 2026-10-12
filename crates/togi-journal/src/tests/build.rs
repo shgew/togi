@@ -404,8 +404,7 @@ mod recorded {
 
     /// The Go build's journal of a session that only started, first line alone, without its newline.
     fn go_first_line_without_newline() -> String {
-        let go =
-            include_str!("../../../../internal/journal/testdata/20260927T221954Z-config.jsonl");
+        let go = include_str!("../../testdata/20260927T221954Z-config.jsonl");
         go.lines().next().unwrap().to_owned()
     }
 

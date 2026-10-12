@@ -302,7 +302,9 @@ fn a_rust_header_this_build_cannot_decode_is_not_another_builds_journal() {
 
 #[test]
 fn an_unterminated_first_line_that_is_not_a_rust_header_is_refused_not_torn() {
-    let go = include_str!("../../../../internal/journal/testdata/20260927T221954Z-config.jsonl")
+    // `testdata/20260927T221954Z-config.jsonl` is the Go build's journal from
+    // `internal/journal/testdata`, with its boot ids replaced by synthetic ones.
+    let go = include_str!("../../testdata/20260927T221954Z-config.jsonl")
         .lines()
         .next()
         .unwrap()
@@ -737,7 +739,7 @@ fn a_lenient_reader_still_checks_seq_causes_and_the_first_event_of_what_it_skips
 #[test]
 fn strict_and_lenient_alike_refuse_a_first_line_that_is_not_a_complete_rust_header_and_change_nothing()
  {
-    let go = include_str!("../../../../internal/journal/testdata/20260927T221954Z-config.jsonl");
+    let go = include_str!("../../testdata/20260927T221954Z-config.jsonl");
     let go_first = go.lines().next().unwrap();
     let cases: [(&str, Vec<u8>); 6] = [
         ("a Go journal", go.as_bytes().to_vec()),
