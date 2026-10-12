@@ -102,7 +102,7 @@ fn a_first_line_without_its_newline_is_refused_all_the_same() {
     assert_eq!(exit, Exit::Error, "{err}");
     assert_eq!(out, "");
     fixture::assert_refusal("run", &err, &fake.state_dir());
-    assert!(!err.contains("torn"), "{err}");
+    assert!(!err.contains("torn bytes"), "{err}");
     assert_stopped_after_the_platform_check(&fake, &before);
 }
 

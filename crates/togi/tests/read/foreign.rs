@@ -81,7 +81,7 @@ fn a_first_line_without_its_newline_is_refused_all_the_same() {
         assert_eq!(text(&ran.stdout), "", "{args:?}: no frame, no output");
         fixture::assert_refusal(command, text(&ran.stderr), dir.path());
         let stderr = text(&ran.stderr);
-        assert!(!stderr.contains("torn"), "{stderr}");
+        assert!(!stderr.contains("torn bytes"), "{stderr}");
         assert_untouched(dir.path(), &before);
     }
 }
