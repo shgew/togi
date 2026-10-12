@@ -326,3 +326,29 @@ fn every_colour_slot_has_its_own_code_as_a_foreground_and_a_background() {
         assert_eq!(body, format!("\x1b[0;{fg};{bg}mx\x1b[0m\n"), "{color:?}");
     }
 }
+
+#[test]
+fn a_started_idle_trial_is_drawn_the_same_however_long_after_the_event() {
+    let events = scenario(Scenario::Idle);
+    let at = |after| {
+        let frame = Frame {
+            after: SignedDuration::from_secs(after),
+            ..frame(View::Main, (240, 67))
+        };
+        text(&events, events.len(), &frame)
+    };
+    assert_eq!(at(0), at(3 * 3600));
+}
+
+#[test]
+fn a_running_trial_shows_the_time_that_has_passed() {
+    let events = scenario(Scenario::Checking);
+    let at = |after| {
+        let frame = Frame {
+            after: SignedDuration::from_secs(after),
+            ..frame(View::Main, (240, 67))
+        };
+        text(&events, events.len(), &frame)
+    };
+    assert_ne!(at(1), at(89));
+}

@@ -96,3 +96,22 @@ fn a_journal_that_does_not_decode_is_an_error() {
         Error::Read(_)
     ));
 }
+
+#[test]
+fn a_refusal_comes_before_any_later_event_is_decoded() {
+    let dir = installed(Scenario::Checking);
+    let current = togi_tuner::RULESET;
+    rewrite_first_line(
+        dir.path(),
+        &format!("\"ruleset\":{current}"),
+        &format!("\"ruleset\":{}", current + 1),
+    );
+    let path = dir.path().join("events.jsonl");
+    let mut text = fs::read_to_string(&path).unwrap();
+    text.push_str("not an event\n");
+    fs::write(&path, text).unwrap();
+    assert!(matches!(
+        load::events(dir.path()).unwrap_err(),
+        Error::Refused(_)
+    ));
+}
