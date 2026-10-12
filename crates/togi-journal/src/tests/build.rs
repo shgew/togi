@@ -320,7 +320,7 @@ fn an_unreadable_journal_is_an_io_error() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("events.jsonl");
     std::fs::write(&path, "x\n").unwrap();
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0)).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000)).unwrap();
     if std::fs::File::open(&path).is_ok() {
         return;
     }
