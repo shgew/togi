@@ -7,7 +7,6 @@ use super::super::fit::{cut_styled, rule};
 use super::super::scene::Scene;
 use super::table::cell;
 use crate::history::{Entry, LOG_LIMIT};
-use crate::words::Tag;
 
 /// The cells of a row before its sentence: the time, a gap, the tag column and a gap.
 const PREFIX: usize = 16;
@@ -66,34 +65,11 @@ fn row(scene: &Scene<'_>, entry: &Entry, width: usize) -> Line<'static> {
     let mut spans = vec![
         scene.paint(Paint::Grey, scene.wall_minute(entry.at)),
         Span::raw("  "),
-        scene.paint(tag_paint(entry.tag), format!("{:<8}", entry.tag.word())),
+        scene.paint(Paint::from(entry.tone), format!("{:<8}", entry.tag.word())),
         Span::raw(" "),
     ];
     spans.extend(cut_styled(&sentence, width.saturating_sub(PREFIX)).spans);
     Line::from(spans)
-}
-
-/// How a tag is drawn, by the kind of event it names, so the eye finds a crash or a hunt down the column:
-/// passes green, failures and crashes red, a hunt and what it does to cores amber, a combination magenta,
-/// bookkeeping grey. The entry's own tone is not used: it colours the sentence's alarm, which the row draws red.
-fn tag_paint(tag: Tag) -> Paint {
-    match tag {
-        Tag::Pass => Paint::Good,
-        Tag::Crash | Tag::Fail => Paint::Bad,
-        Tag::Hunt | Tag::Group | Tag::Backoff | Tag::Probe | Tag::Mce | Tag::Note | Tag::Hold => {
-            Paint::Hunt
-        }
-        Tag::Combo => Paint::Combination,
-        Tag::Start | Tag::Skip | Tag::Resume | Tag::Reset => Paint::Grey,
-        Tag::Unclear
-        | Tag::Step
-        | Tag::Limit
-        | Tag::Room
-        | Tag::Cycle
-        | Tag::Round
-        | Tag::Stop
-        | Tag::Confirm => Paint::Text,
-    }
 }
 
 #[cfg(test)]
@@ -104,7 +80,7 @@ mod tests {
     use super::super::super::colours::Paint;
     use super::super::super::fit::{cut_words, line_width, plain};
     use super::super::fixtures::{at, scene, texts};
-    use super::{history, tag_paint};
+    use super::history;
     use crate::history::{Entry, HISTORY_LIMIT};
     use crate::model::Model;
     use crate::screen::Colours;
@@ -360,28 +336,30 @@ mod tests {
     }
 
     #[test]
-    fn a_tag_is_drawn_by_the_kind_of_event_it_names() {
-        for (tag, paint) in [
-            (Tag::Pass, Paint::Good),
-            (Tag::Crash, Paint::Bad),
-            (Tag::Fail, Paint::Bad),
-            (Tag::Hunt, Paint::Hunt),
-            (Tag::Group, Paint::Hunt),
-            (Tag::Backoff, Paint::Hunt),
-            (Tag::Probe, Paint::Hunt),
-            (Tag::Mce, Paint::Hunt),
-            (Tag::Note, Paint::Hunt),
-            (Tag::Hold, Paint::Hunt),
-            (Tag::Combo, Paint::Combination),
-            (Tag::Start, Paint::Grey),
-            (Tag::Skip, Paint::Grey),
-            (Tag::Resume, Paint::Grey),
-            (Tag::Reset, Paint::Grey),
-            (Tag::Step, Paint::Text),
-            (Tag::Limit, Paint::Text),
-            (Tag::Stop, Paint::Text),
+    fn a_tag_is_painted_by_its_entry_s_tone() {
+        for (tone, paint) in [
+            (Tone::Plain, Paint::Text),
+            (Tone::Good, Paint::Good),
+            (Tone::Bad, Paint::Bad),
+            (Tone::Warn, Paint::Hunt),
+            (Tone::Hunt, Paint::Hunt),
+            (Tone::Combo, Paint::Combination),
         ] {
-            assert_eq!(tag_paint(tag), paint, "{tag:?}");
+            let kept = [Entry::line(at(1000), Tag::Note, "x".to_owned(), tone)];
+            let model = Model::new();
+            let mut s = model.snapshot();
+            s.history = &kept;
+            let zone = TimeZone::UTC;
+            let colourful = super::super::super::scene::Scene {
+                colours: Colours::Full,
+                ..scene(&s, &zone)
+            };
+            let rows = history(&colourful, 100, 4);
+            assert_eq!(
+                rows[2].spans[2].style,
+                paint.style(Colours::Full),
+                "{tone:?}"
+            );
         }
     }
 }
