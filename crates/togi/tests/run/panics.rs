@@ -155,6 +155,34 @@ fn logging(machine: Machine, order: &Order, first_write: Option<Box<dyn FnMut()>
     }
 }
 
+/// What a panic in the trial leaves behind, with the order its teardown ran in noted by `order`.
+fn panicking(machine: Machine, order: &Order) -> Machine {
+    let machine = logging(machine, order, None);
+    Machine {
+        trials: Box::new(PanickingTrials {
+            inner: machine.trials,
+            order: order.clone(),
+        }),
+        ..machine
+    }
+}
+
+/// Blocks on the host lock from another descriptor, and when it is released notes whether the journal's lock
+/// was already free: the journal must be closed before the host lock goes.
+fn watch_the_locks(dir: &Path, order: &Order) {
+    let host = File::open(dir.join("togi.lock")).unwrap();
+    let journal = dir.join("state/lock");
+    let order = order.clone();
+    thread::spawn(move || {
+        host.lock().unwrap();
+        let line = match File::open(&journal).unwrap().try_lock() {
+            Ok(()) => "journal_closed_before_host_lock_released",
+            Err(_) => "journal_held_when_host_lock_released",
+        };
+        order.note(line);
+    });
+}
+
 /// A dashboard that panics once the journal records the run's baseline, so the events after it are the ones the
 /// fallback to event lines must show.
 struct PanicsOnceTheRunHasBegun;
@@ -190,15 +218,14 @@ fn helper() {
         "before_the_host_lock" => fake.panic_in_platform = true,
         "after_hardware_setup" => {
             let order = order.clone();
+            fake.wrap = Box::new(move |machine| panicking(machine, &order));
+        }
+        "lock_order" => {
+            let order = order.clone();
+            let dir = dir.clone();
             fake.wrap = Box::new(move |machine| {
-                let machine = logging(machine, &order, None);
-                Machine {
-                    trials: Box::new(PanickingTrials {
-                        inner: machine.trials,
-                        order: order.clone(),
-                    }),
-                    ..machine
-                }
+                watch_the_locks(&dir, &order);
+                panicking(machine, &order)
             });
         }
         "worker_thread" => {
@@ -244,6 +271,14 @@ fn helper() {
         .map(Into::into)
         .collect();
     let exit = togi_cli::run_process(args, &fake);
+    let end = std::time::Instant::now() + Duration::from_secs(10);
+    while scenario == "lock_order"
+        && !fs::read_to_string(dir.join(ORDER))
+            .is_ok_and(|text| text.contains("host_lock_released"))
+        && std::time::Instant::now() < end
+    {
+        thread::sleep(Duration::from_millis(1));
+    }
     std::process::exit(i32::from(exit.code()));
 }
 
@@ -371,12 +406,31 @@ fn a_panic_in_the_dashboard_falls_back_to_event_lines_and_the_run_goes_on() {
     let child = run("dashboard");
     assert_eq!(child.status, Some(0), "{}", child.stderr);
     assert!(
-        child
-            .stderr
-            .contains("dashboard: injected panic in the dashboard; printing events instead"),
+        child.stderr.contains(
+            "togi run: dashboard: injected panic in the dashboard; printing events instead"
+        ),
         "{}",
         child.stderr
     );
     assert!(child.stderr.contains("shutdown"), "{}", child.stderr);
     assert!(child.events().contains(&EventKind::Shutdown));
+}
+
+#[test]
+fn a_panic_closes_the_journal_before_the_host_lock_is_released() {
+    let child = run("lock_order");
+    assert_eq!(child.status, Some(2), "{}", child.stderr);
+    let order = child.order();
+    assert!(
+        order
+            .iter()
+            .any(|line| line == "journal_closed_before_host_lock_released"),
+        "{order:?}"
+    );
+    assert!(
+        !order
+            .iter()
+            .any(|line| line == "journal_held_when_host_lock_released"),
+        "{order:?}"
+    );
 }

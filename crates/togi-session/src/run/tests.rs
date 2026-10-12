@@ -424,3 +424,62 @@ fn a_panic_while_a_trial_runs_joins_its_teardown_and_restores_the_offsets_before
         "resuming propagates the original panic"
     );
 }
+
+struct PanicsWhileSweeping;
+
+impl Trials for PanicsWhileSweeping {
+    fn sweep(&mut self, _: &CancellationToken) -> Result<Swept, Error> {
+        panic!("a bug during startup");
+    }
+
+    fn start(
+        &mut self,
+        _: &CancellationToken,
+        _: TrialSpec,
+        _: Stopped,
+    ) -> Result<Box<dyn Running>, Partial<Option<Stopped>>> {
+        unreachable!("the run panicked before any trial");
+    }
+
+    fn ended(&mut self, _: &str) -> Result<(), Error> {
+        Ok(())
+    }
+
+    fn samples<'a>(
+        &'a self,
+        _: &'a str,
+    ) -> Box<dyn Iterator<Item = togi_machine::TrialConditions> + 'a> {
+        Box::new(std::iter::empty())
+    }
+}
+
+#[test]
+fn a_panic_during_startup_is_handed_back_with_the_journal_closed_out_and_no_offset_written() {
+    let bench = Bench::defined(&MachineDefinition {
+        cores: 2,
+        bios: Some(vec![-10, -10]),
+        ..MachineDefinition::default()
+    });
+    let mut input = bench.input();
+    input.machine.trials = Box::new(PanicsWhileSweeping);
+    let mut ended = run(input);
+    let panic = ended.panic.take().expect("the panic is handed back");
+    assert_eq!(panic.message(), "a bug during startup");
+    assert!(matches!(
+        ended.errors.as_slice(),
+        [SessionError::Panicked(message)] if message == "a bug during startup"
+    ));
+    assert!(
+        !ended
+            .journal
+            .events()
+            .iter()
+            .any(|event| event.kind() == togi_journal::EventKind::Shutdown),
+        "no clean shutdown is claimed for a run that never proved the workload stopped"
+    );
+    assert!(bench.sim.violations().is_empty());
+    let mut smu = bench.sim.seams().smu;
+    for id in 0..2 {
+        assert_eq!(smu.offset(core(id)).unwrap().0, -10, "core {id} untouched");
+    }
+}

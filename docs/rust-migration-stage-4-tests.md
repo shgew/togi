@@ -467,7 +467,7 @@ Status:
 
 | Go test | Rust test(s) | status |
 |---|---|---|
-| `TestRunOwnerEveryExit` | `togi_session::whole::dead_end::every_stop_and_error_exit_joins_the_trial_restores_the_hardware_publishes_the_state_and_returns_the_journal`<br>`togi_session::close::tests::a_cleanup_error_follows_the_error_that_ended_the_run` | A |
+| `TestRunOwnerEveryExit` | `togi_session::whole::dead_end::every_stop_and_error_exit_joins_the_trial_restores_the_hardware_publishes_the_state_and_returns_the_journal`<br>`togi_session::close::tests::a_cleanup_error_follows_the_error_that_ended_the_run`<br>Panic mode, which the Go test did not have (Go had only defers and no `recover`, so a session panic left the offsets applied, the journal open and the host lock held; the Rust cleanup on a panic is a deliberate addition of #642 that fixes that bug): `togi_session::run::tests::a_panic_while_a_trial_runs_joins_its_teardown_and_restores_the_offsets_before_it_is_handed_back`<br>`togi_session::run::tests::a_panic_during_startup_is_handed_back_with_the_journal_closed_out_and_no_offset_written`<br>`togi::run::panics::a_panic_after_hardware_setup_runs_the_owner_cleanup_in_order_then_exits_two`<br>`togi::run::panics::a_panic_closes_the_journal_before_the_host_lock_is_released` | A |
 | `TestRunOwnerSkipsRestoreUntilWorkloadJoined` | `togi_session::close::tests::without_the_proof_that_every_workload_stopped_nothing_is_restored_or_recorded`<br>`togi_session::restore::tests::without_the_proof_that_nothing_runs_nothing_is_written` | A |
 
 ### `internal/session/parked_application_test.go` (3)
