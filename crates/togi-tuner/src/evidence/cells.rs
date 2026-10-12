@@ -352,11 +352,24 @@ impl PassCells {
     }
 }
 
+/// A class's cells, the exposure its live passes add, and `reach`: per core, the deepest offset of
+/// any of its pass cells, so that no pass cell covers a profile `reach` does not cover.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(super) struct ClassCells {
     pub(super) failures: FailureCells,
     pub(super) passes: PassCells,
     pub(super) exposure: u32,
+    pub(super) reach: Option<Profile>,
+}
+
+impl ClassCells {
+    pub(super) fn reach_of(passes: &PassCells) -> Option<Profile> {
+        passes
+            .cells()
+            .iter()
+            .map(|cell| cell.profile)
+            .reduce(|reach, profile| reach.deeper(&profile))
+    }
 }
 
 #[cfg(test)]

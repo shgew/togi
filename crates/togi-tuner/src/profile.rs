@@ -124,6 +124,19 @@ impl Profile {
         }) && self.cores() == other.cores()
     }
 
+    /// Every core at the deeper of its offsets here and in `other`: a profile covering both.
+    #[must_use]
+    pub(crate) fn deeper(&self, other: &Self) -> Self {
+        Self(
+            self.iter()
+                .map(|(core, offset)| {
+                    let theirs = other.get(core).filter(|&theirs| theirs.deeper_than(offset));
+                    (core, theirs.unwrap_or(offset))
+                })
+                .collect(),
+        )
+    }
+
     /// The sum of the offsets; the more negative, the deeper.
     pub fn total(&self) -> i32 {
         self.iter().map(|(_, offset)| offset.signed()).sum()

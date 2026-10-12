@@ -222,17 +222,31 @@ impl Evidence {
     }
 
     /// Switches the package a backend runs from; passes recorded under other packages stop
-    /// counting until the package returns.
-    pub fn set_backend(&mut self, backend: Backend, path: Option<&Path>) {
+    /// counting until the package returns. Whether the active package changed.
+    pub fn set_backend(&mut self, backend: Backend, path: Option<&Path>) -> bool {
+        let before = self.backends.active(backend);
         self.backends.set(backend, path);
-        self.rebuild_exposure();
+        let changed = self.backends.active(backend) != before;
+        if changed {
+            self.recount_exposure(|key| key.workload().backend() == backend);
+        }
+        changed
     }
 
     pub fn set_checking_profile(&mut self, profile: Profile) -> Result<(), TopologyMismatch> {
         self.check(&profile)?;
         self.checking = Some(profile);
-        self.rebuild_exposure();
+        self.recount_exposure(|_| true);
         Ok(())
+    }
+
+    /// Whether any pass cell of `class` can cover `profile`: when none can, the class has no
+    /// valid pass there, and no cell is looked into to say so.
+    pub(crate) fn may_cover(&self, class: ClassKey, profile: &Profile) -> bool {
+        self.classes
+            .get(&class)
+            .and_then(|cells| cells.reach)
+            .is_some_and(|reach| reach.covers(profile))
     }
 
     /// Live, non-alone passes of `workload` under the active backend that cover the checking
@@ -341,6 +355,7 @@ impl Evidence {
                 .is_some_and(|checking| obs.profile.covers(&checking));
         let speculative = self.speculative;
         let class = self.classes.entry(obs.class).or_default();
+        let known = class.passes.cells().len();
         let cell = class.passes.cell_mut(backend, named, *obs.profile);
         if let Some(source) = source {
             cell.carried.push(obs.seq, source);
@@ -353,6 +368,13 @@ impl Evidence {
                 class.exposure += 1;
                 *self.exposure.entry(obs.class.workload()).or_default() += 1;
             }
+        }
+        if class.passes.cells().len() > known {
+            class.reach = Some(
+                class
+                    .reach
+                    .map_or(*obs.profile, |reach| reach.deeper(obs.profile)),
+            );
         }
         Ok(())
     }
@@ -736,6 +758,7 @@ impl Evidence {
             };
             cells.failures.remove_named(core);
             cells.passes.remove_named(core);
+            cells.reach = ClassCells::reach_of(&cells.passes);
         }
         if self.all.contains(core) {
             self.idle = FailureCells::default();
@@ -756,23 +779,79 @@ impl Evidence {
         u32::try_from(total).unwrap_or(u32::MAX)
     }
 
+    /// Every class's exposure, and the sum per workload, computed from the cells alone.
+    fn exposure_from_scratch(&self) -> (BTreeMap<ClassKey, u32>, BTreeMap<WorkloadId, u32>) {
+        let mut per_class = BTreeMap::new();
+        let mut per_workload = BTreeMap::new();
+        let Some(checking) = self.checking else {
+            return (per_class, per_workload);
+        };
+        for (&key, cells) in &self.classes {
+            let n = self.class_exposure(key, cells, &checking);
+            per_class.insert(key, n);
+            if n > 0 {
+                *per_workload.entry(key.workload()).or_default() += n;
+            }
+        }
+        (per_class, per_workload)
+    }
+
     fn rebuild_exposure(&mut self) {
-        self.exposure.clear();
+        let (per_class, per_workload) = self.exposure_from_scratch();
+        for (key, class) in &mut self.classes {
+            class.exposure = per_class.get(key).copied().unwrap_or(0);
+        }
+        self.exposure = per_workload;
+    }
+
+    /// Recounts the exposure of the classes `affects` names that can have any: a class whose
+    /// passes cover neither the checking profile now nor, by its standing exposure, before has
+    /// none, and is not looked into. The sums per workload move by what each class changed.
+    fn recount_exposure(&mut self, affects: impl Fn(ClassKey) -> bool) {
         let Some(checking) = self.checking else {
             return;
         };
-        let counts: Vec<(ClassKey, u32)> = self
+        let changed: Vec<(ClassKey, u32, u32)> = self
             .classes
             .iter()
-            .map(|(&key, cells)| (key, self.class_exposure(key, cells, &checking)))
+            .filter(|&(&key, cells)| {
+                affects(key)
+                    && (cells.exposure > 0
+                        || cells.reach.is_some_and(|reach| reach.covers(&checking)))
+            })
+            .filter_map(|(&key, cells)| {
+                let now = self.class_exposure(key, cells, &checking);
+                (now != cells.exposure).then_some((key, cells.exposure, now))
+            })
             .collect();
-        for (key, n) in counts {
+        for (key, before, now) in changed {
             if let Some(class) = self.classes.get_mut(&key) {
-                class.exposure = n;
+                class.exposure = now;
             }
-            if n > 0 {
-                *self.exposure.entry(key.workload()).or_default() += n;
+            if now > before {
+                *self.exposure.entry(key.workload()).or_default() += now - before;
+            } else {
+                remove_exposure(&mut self.exposure, key.workload(), before - now);
             }
         }
+    }
+
+    /// The per-class and per-workload exposure as maintained, and as a rebuild from the cells
+    /// gives it.
+    #[cfg(test)]
+    pub(crate) fn debug_rebuild(
+        &self,
+    ) -> [(BTreeMap<ClassKey, u32>, BTreeMap<WorkloadId, u32>); 2] {
+        let maintained = (
+            self.classes
+                .iter()
+                .filter(|(_, cells)| cells.exposure > 0)
+                .map(|(&key, cells)| (key, cells.exposure))
+                .collect(),
+            self.exposure.clone(),
+        );
+        let (mut per_class, per_workload) = self.exposure_from_scratch();
+        per_class.retain(|_, n| *n > 0);
+        [maintained, (per_class, per_workload)]
     }
 }

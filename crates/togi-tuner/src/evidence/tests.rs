@@ -875,6 +875,49 @@ fn visits_scale_with_distinct_cells() {
     assert_eq!(fx.ev.take_visits(), 8);
 }
 
+#[test]
+fn backend_and_profile_changes_visit_only_classes_that_can_have_exposure() {
+    let visits = |unrelated: u32| {
+        let mut fx = Fx::new(&[0, 1]);
+        let own = class(Regime::R1, 0, &[0], 60);
+        let backend = own.workload().backend();
+        let checking = fx.p(&[-10, -10]);
+        fx.ev.set_checking_profile(checking).unwrap();
+        let shallow = fx.p(&[-5, -5]);
+        for secs in 0..unrelated {
+            fx.pass(class(Regime::R1, 0, &[0], 1000 + secs), &shallow);
+        }
+        fx.pass(own, &checking);
+        assert_eq!(fx.ev.exposure(own.workload()), 1);
+        fx.ev.take_visits();
+        assert!(!fx.ev.set_backend(backend, None));
+        let unchanged = fx.ev.take_visits();
+        let new = match backend {
+            Backend::Mprime => MPRIME_NEW,
+            Backend::Ycruncher => YCRUNCHER_NEW,
+        };
+        assert!(fx.ev.set_backend(backend, Some(Path::new(new))));
+        let switched = fx.ev.take_visits();
+        assert_eq!(fx.ev.exposure(own.workload()), 0);
+        assert!(!fx.ev.set_backend(backend, Some(Path::new(new))));
+        assert_eq!(fx.ev.take_visits(), 0);
+        fx.ev.set_backend(backend, None);
+        fx.ev.take_visits();
+        fx.ev.set_checking_profile(fx.p(&[-12, -12])).unwrap();
+        let moved = fx.ev.take_visits();
+        let [maintained, rebuilt] = fx.ev.debug_rebuild();
+        assert_eq!(maintained, rebuilt);
+        (unchanged, switched, moved)
+    };
+    let small = visits(100);
+    assert_eq!(small.0, 0, "an unchanged backend path rebuilds no exposure");
+    assert!(
+        small.1 > 0 && small.2 > 0,
+        "the class that can have exposure is recounted"
+    );
+    assert_eq!(visits(10_000), small);
+}
+
 #[derive(Clone, Debug)]
 enum RawOp {
     Pass {
@@ -1353,6 +1396,11 @@ fn run(scenario: &Scenario) {
                 "exposure after {op:?}"
             );
         }
+        let [maintained, rebuilt] = fx.ev.debug_rebuild();
+        assert_eq!(
+            maintained, rebuilt,
+            "exposure drifted from a rebuild after {op:?}"
+        );
     }
     for e in &oracle.entries {
         assert_eq!(
