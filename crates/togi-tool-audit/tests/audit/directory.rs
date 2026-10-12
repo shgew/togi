@@ -23,6 +23,18 @@ fn journal(body: Vec<Event>) -> Vec<u8> {
     bytes(&events)
 }
 
+/// Puts the live journal of `body` in `fs`, with the `state.json` a finished run publishes for it.
+fn live(fs: &MemFs, body: Vec<Event>) {
+    let mut events = vec![header()];
+    events.extend(body);
+    fs.put("/state/events.jsonl", bytes(&events));
+    let document = serde_json::json!({
+        "facts": togi_journal::State::replay(&events).unwrap(),
+        "tuner": togi_tuner::replay(&events).unwrap().project(),
+    });
+    fs.put("/state/state.json", serde_json::to_vec(&document).unwrap());
+}
+
 fn open(fs: &MemFs) -> StateDir {
     StateDir::simulated(fs.clone()).unwrap()
 }
@@ -38,7 +50,7 @@ fn archives_may_end_anywhere_and_only_the_live_run_must_conclude() {
         "/state/archive/20251231T000000Z.jsonl",
         journal(vec![intent(2, set(0, -5)), write(3, set(0, -5), 2)]),
     );
-    fs.put("/state/events.jsonl", journal(vec![stop(2)]));
+    live(&fs, vec![stop(2)]);
     let audits = audit_recordings(&open(&fs), Finished).unwrap();
     assert_eq!(audits.len(), 2);
     assert_eq!(
@@ -97,7 +109,7 @@ fn a_directory_with_archives_only_audits_them_and_an_unfinished_live_journal_is_
         Source::Archived(session("20251231T000000Z"))
     );
 
-    fs.put("/state/events.jsonl", journal(vec![phase(2, 0, None)]));
+    live(&fs, vec![phase(2, 0, None)]);
     let audits = audit_recordings(&open(&fs), Finished).unwrap();
     assert_eq!(
         audits[1]

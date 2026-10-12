@@ -109,7 +109,7 @@ fn run_shard(args: &SuiteArgs, log: &mut Log) -> Result<bool, Error> {
                         break;
                     };
                     let started = Instant::now();
-                    let outcome = execute(run, args.max_boots, &mut extracts, cancel);
+                    let outcome = execute(run, MemFs::new(), args.max_boots, &mut extracts, cancel);
                     if sender.send((index, started.elapsed(), outcome)).is_err() {
                         break;
                     }
@@ -203,9 +203,11 @@ fn check_manifests(args: &CheckArgs) -> Result<(), Error> {
 
 /// Runs one session of the suite and judges it: clean only when it stopped after its cycles, the last boot's
 /// resume state matched a fresh fold of the journal (the simulation checks that after every crash too), the tuner
-/// replays the journal, and the audit finds no violation in any of the directory's journals.
+/// replays the journal, and the audit finds no violation in any of the directory's journals and a published
+/// `state.json` at the journal's last event. `fs` is the session's fresh in-memory state directory.
 fn execute(
     run: &Run,
+    fs: MemFs,
     max_boots: NonZeroU32,
     extracts: &mut Extracts,
     cancel: &CancellationToken,
@@ -219,7 +221,6 @@ fn execute(
                 };
             }
         };
-    let fs = MemFs::new();
     let persistence = Persistence::Memory(fs.clone());
     let simulated = togi_simrun::simulate(SimInput {
         config: Config::default(),
@@ -341,4 +342,58 @@ fn judge(persistence: &Persistence, fs: MemFs) -> Outcome {
 )]
 fn open(fs: MemFs) -> Result<StateDir, togi_journal::LockError> {
     StateDir::simulated(fs)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::num::NonZeroU32;
+    use std::path::Path;
+
+    use togi_journal::MemFs;
+    use togi_journal::fs::Fs as _;
+    use togi_machine::CancellationToken;
+    use togi_tool_audit::Check;
+    use togi_tool_sim::{Outcome, Run, Split};
+    use togi_tool_trialfacts::Extracts;
+
+    use togi_simrun::Persistence;
+
+    use super::{execute, judge};
+
+    fn outcome(fs: MemFs) -> Outcome {
+        let run = Run {
+            id: serde_json::from_value(serde_json::Value::String("default/dev-1".to_owned()))
+                .unwrap_or_else(|_: serde_json::Error| unreachable!("a run id is a string")),
+            scenario: "default".to_owned(),
+            split: Split::Dev,
+            seed: 1,
+            machine: None,
+            replay: false,
+            smoke: false,
+        };
+        execute(
+            &run,
+            fs,
+            NonZeroU32::new(1000).unwrap(),
+            &mut Extracts::new(),
+            &CancellationToken::new(),
+        )
+    }
+
+    #[test]
+    fn a_finished_session_without_its_final_state_document_is_not_clean() {
+        let fs = MemFs::new();
+        assert_eq!(outcome(fs.clone()), Outcome::Clean);
+        fs.remove_file(Path::new("/state/state.json")).unwrap();
+        let judged = judge(&Persistence::Memory(fs.clone()), fs);
+        let Outcome::AuditViolations { violations } = judged else {
+            panic!("a finished session without a state.json must not be judged clean: {judged}");
+        };
+        assert!(
+            violations
+                .iter()
+                .any(|violation| violation.check == Check::Projection),
+            "{violations:?}"
+        );
+    }
 }

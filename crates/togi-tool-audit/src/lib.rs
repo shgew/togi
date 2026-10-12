@@ -39,8 +39,8 @@ pub fn audit(events: &[Event], completion: Completion) -> Vec<Violation> {
 }
 
 /// Audits every journal of a state directory, the archived sessions oldest first and then the live one, whose
-/// published `state.json` must also equal a fresh fold of it. Archives may end anywhere; `live` says whether the
-/// live journal's run is finished.
+/// published `state.json` must also equal a fresh fold of it, and for a finished run be published at its last event.
+/// Archives may end anywhere; `live` says whether the live journal's run is finished.
 pub fn audit_recordings(dir: &StateDir, live: Completion) -> Result<Vec<JournalAudit>, AuditError> {
     let archives = dir.archives()?;
     let mut audits = Vec::with_capacity(archives.len() + 1);
@@ -55,7 +55,7 @@ pub fn audit_recordings(dir: &StateDir, live: Completion) -> Result<Vec<JournalA
     }
     if let Some(recording) = live_recording(dir, audits.len())? {
         let mut violations = audit(recording.events(), live);
-        violations.extend(snapshot::audit(dir, recording.events())?);
+        violations.extend(snapshot::audit(dir, recording.events(), live)?);
         audits.push(JournalAudit {
             source: Source::Live,
             violations,
