@@ -956,6 +956,7 @@ dependencies = [
  "thiserror",
  "togi-journal",
  "togi-machine",
+ "togi-tuner",
 ]
 
 [[package]]
