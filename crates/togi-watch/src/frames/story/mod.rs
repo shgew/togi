@@ -171,11 +171,11 @@ fn trial_story(scene: &Scene<'_>, trial: &TrialView) -> Story {
         return Story::new(
             "SOLO LIMITS",
             vec![
-                text,
+                text.clone(),
                 "One core at a time with the rest at 0, so any failure belongs to the loaded core."
                     .to_owned(),
             ],
-            "",
+            text,
             Paint::Running,
         );
     }

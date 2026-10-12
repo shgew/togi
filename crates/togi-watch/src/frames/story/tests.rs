@@ -842,7 +842,12 @@ mod the_story {
             said.lines[0],
             "I'm finding core 03's solo limit, one turn at a time, now at -16."
         );
-        assert_eq!(said.brief, "");
+        assert_eq!(said.brief, said.lines[0]);
+        let tight = text(&narrator_lines(&said, 60, 2, false, Colours::None)).join(" ");
+        assert!(
+            tight.contains("now at -16.") && !tight.contains("..."),
+            "{tight}"
+        );
         assert_eq!(
             plain(&operation(
                 &fx.scene(ts(1010)),
