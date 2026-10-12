@@ -88,7 +88,7 @@ lint *args: _dev-shell
 fmt:
     nix fmt
 
-# Run every non-VM flake check but the rust-sim-suite-* shards, which only CI runs (`just sim-suite-rs` or `just check-one rust-sim-suite-0` reproduces them), and cargo-deny's advisory audit, which only the rust-deny flake check runs, cheapest first, using warm dev-shell Go and Rust caches
+# Run every non-VM flake check but the rust-sim-suite-* shards, which CI and `just check` on Linux run (`just sim-suite-rs` or `just check-one rust-sim-suite-<i>` reproduces them), and cargo-deny's advisory audit, which only the rust-deny flake check runs, cheapest first, using warm dev-shell Go and Rust caches
 [group('quality')]
 gate: _dev-shell
     #!/usr/bin/env bash
