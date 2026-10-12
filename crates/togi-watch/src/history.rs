@@ -377,11 +377,9 @@ impl History {
     }
 
     fn compact(&mut self) {
-        let Some(last) = self.entries.pop() else {
-            return;
-        };
+        let last = self.entries.split_off(self.entries.len().saturating_sub(1));
         let mut kept = merge_probe_passes(std::mem::take(&mut self.entries));
-        kept.push(last);
+        kept.extend(last);
         let mut drop = kept.len().saturating_sub(self.limit);
         let n = kept.len();
         if n > 1 && mergeable_probe_passes(&kept[n - 2], &kept[n - 1]) {

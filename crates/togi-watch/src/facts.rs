@@ -137,6 +137,10 @@ impl Facts {
                 });
             }
             Payload::ConfigLoaded(_) => self.configs += 1,
+            Payload::CheckingCycle(cycle) if cycle.event == togi_journal::CycleEvent::Start => {
+                self.cycle_steps
+                    .insert(cycle.cycle.get(), cycle.steps.clone());
+            }
             Payload::SmuIntent(_) => self.restored = false,
             Payload::SmuReadback(readback) => {
                 self.applied.insert(readback.core, readback.offset);

@@ -9,11 +9,15 @@ use togi_machine::{CoreId, Regime, Signal};
 
 use super::kit::*;
 use crate::words::{
-    Brief, History, Phrase, Tag, Tagging, age, core_ids, core_list, cores_text, decision_line,
-    decision_phrase, hunt_end_phrase, kind_words, lateness, load_words, noun, on_cores, phase_line,
-    phase_word, plural, regime_words, signal_plural, signal_words, solo_limit, tag_word,
-    trial_end_tag, words, workload_display,
+    Brief, History, Phrase, Tag, Tagging, age, carried_groups, core_ids, core_list, cores_text,
+    decision_line, decision_phrase, failure_line, hunt_end_phrase, kind_words, lateness,
+    load_words, noun, on_cores, phase_line, phase_word, plural, regime_words, signal_plural,
+    signal_words, solo_limit, tag_word, trial_end_tag, words, workload_display,
 };
+use togi_journal::{
+    CheckingChain, CheckingStep, DeadEnd, DeadEndCondition, DeepeningRound, HuntSkipped, RoundEvent,
+};
+use togi_machine::CcdId;
 
 /// The kinds with no words of their own: not in the history, in the log under their kind name, in no story.
 const SILENT: &[EventKind] = &[
@@ -105,7 +109,7 @@ fn the_history_line_of_a_kind_is_its_tag() {
     assert_eq!(tag_word(&crash("boot", None).into()), "crash");
 }
 
-fn decision(kind: Decision, from: i64, to: i64) -> TunerDecision {
+pub(super) fn decision(kind: Decision, from: i64, to: i64) -> TunerDecision {
     TunerDecision {
         core: core(3),
         activity: Activity::Checking,
@@ -365,4 +369,292 @@ fn a_variant_workload_shows_its_base() {
             }
         }
     }
+}
+
+fn phrase(payload: &Payload) -> Option<String> {
+    let Phrase::Of(of) = words(payload.kind()).detailed else {
+        panic!("{} has no phrase of its own", payload.kind());
+    };
+    of(payload)
+}
+
+fn compact(payload: &Payload) -> Option<String> {
+    let Brief::Of(of) = words(payload.kind()).compact else {
+        panic!("{} has no compact words", payload.kind());
+    };
+    of(payload)
+}
+
+fn history_line(payload: &Payload) -> Option<crate::words::Line> {
+    let History::Line(of) = words(payload.kind()).history else {
+        panic!("{} has no line of its own", payload.kind());
+    };
+    of(payload)
+}
+
+#[test]
+fn chains_cycles_and_rounds_have_phrases() {
+    let chain = |cores: &[u8]| -> Payload {
+        CheckingChain {
+            cycle: nz(1),
+            step: nz(1),
+            ccd: CcdId(1),
+            workload: togi_machine::workloads(Regime::R7)[0].id(),
+            groups: Vec::new(),
+            cores: set(cores),
+            source_seqs: Vec::new(),
+            profile: offsets(&[0]),
+            part: nz(1),
+            rederived: None,
+        }
+        .into()
+    };
+    assert_eq!(phrase(&chain(&[])).as_deref(), Some("CCD 1 partials end"));
+    assert_eq!(
+        phrase(&chain(&[2, 3])).as_deref(),
+        Some("CCD 1 partial on 02 03")
+    );
+
+    let ended = |passed, full| -> Payload {
+        let mut end = cycle(2, togi_journal::CycleEvent::End);
+        (end.passed, end.full) = (passed, full);
+        end.missing = vec!["R2".to_owned(), "R5".to_owned()];
+        end.reason = Some("a failure".to_owned());
+        end.into()
+    };
+    let start: Payload = cycle(2, togi_journal::CycleEvent::Start).into();
+    assert_eq!(phrase(&start).as_deref(), Some("cycle 2 starts"));
+    assert_eq!(
+        phrase(&ended(true, true)).as_deref(),
+        Some("cycle 2 passed, a full cycle")
+    );
+    assert_eq!(
+        phrase(&ended(true, false)).as_deref(),
+        Some("cycle 2 passed")
+    );
+    assert_eq!(
+        phrase(&ended(false, false)).as_deref(),
+        Some("cycle 2 ends")
+    );
+    let line = |payload: &Payload| history_line(payload).unwrap().text;
+    assert_eq!(line(&start), "cycle 2 started · 0 steps");
+    assert_eq!(
+        line(&ended(true, true)),
+        "cycle 2 passed, a full cycle of every kind of test"
+    );
+    assert_eq!(
+        line(&ended(true, false)),
+        "cycle 2 passed but missing R2, R5"
+    );
+    assert_eq!(line(&ended(false, false)), "cycle 2 ended early: a failure");
+
+    let round = |event, passed| -> Payload {
+        DeepeningRound {
+            round: nz(4),
+            event,
+            base: offsets(&[]),
+            base_seq: None,
+            target: offsets(&[]),
+            profile: offsets(&[]),
+            cores: set(&[]),
+            ranking: Vec::new(),
+            trials: None,
+            trial_s: None,
+            passed,
+            reason: None,
+        }
+        .into()
+    };
+    assert_eq!(
+        phrase(&round(RoundEvent::Start, false)).as_deref(),
+        Some("deepening round 4 starts")
+    );
+    assert_eq!(
+        phrase(&round(RoundEvent::End, true)).as_deref(),
+        Some("deepening round 4 passed")
+    );
+    assert_eq!(
+        phrase(&round(RoundEvent::End, false)).as_deref(),
+        Some("deepening round 4 ends")
+    );
+}
+
+#[test]
+fn steps_hunts_and_stops_have_phrases() {
+    let step = |n| -> Payload {
+        CheckingStep {
+            cycle: nz(1),
+            step: nz(n),
+            profile: offsets(&[]),
+        }
+        .into()
+    };
+    assert_eq!(phrase(&step(1)), None);
+    assert_eq!(phrase(&step(3)).as_deref(), Some("step 2 is done"));
+
+    let start: Payload = hunt_start(2, &[0, 2]).into();
+    assert_eq!(phrase(&start).as_deref(), Some("hunt 2 starts over 00 02"));
+    assert_eq!(compact(&start).as_deref(), Some("hunt 2"));
+    let end: Payload = hunt_end(2, HuntOutcome::Fallback, &[0]).into();
+    assert_eq!(compact(&end).as_deref(), Some("hunt ends"));
+
+    let skipped: Payload = HuntSkipped {
+        failure: seq(1),
+        reason: String::new(),
+    }
+    .into();
+    assert_eq!(
+        phrase(&skipped).as_deref(),
+        Some("no hunt: these offsets reach a known failure")
+    );
+    assert_eq!(
+        history_line(&skipped).unwrap().text,
+        "not needed, these offsets already reach a known failure"
+    );
+
+    let combo: Payload = combination(3, 1, &[(0, -30), (2, -28)], false).into();
+    assert_eq!(compact(&combo).as_deref(), Some("C3"));
+    assert_eq!(phrase(&combo).as_deref(), Some("C3 over 00 02"));
+    assert_eq!(history_line(&combo).unwrap().text, "C3: 00 -30  02 -28");
+    let fallback: Payload = combination(4, 2, &[(0, -30), (2, -28)], true).into();
+    assert_eq!(
+        history_line(&fallback).unwrap().text,
+        "C4 over 00 02 · hunt 2 unresolved"
+    );
+
+    let stop: Payload = DeadEnd {
+        condition: DeadEndCondition::FailureAtZero,
+        core: None,
+        detail: "x".to_owned(),
+        action: None,
+    }
+    .into();
+    assert_eq!(compact(&stop).as_deref(), Some("tuning stops"));
+    assert_eq!(
+        phrase(&stop).as_deref(),
+        Some("tuning stops: failure at zero")
+    );
+}
+
+#[test]
+fn core_phases_have_phrases() {
+    let phase = |from, to| -> Payload {
+        let mut start = Start::search(-12);
+        (start.from, start.to) = (from, to);
+        transition(1, start).into()
+    };
+    assert_eq!(
+        phrase(&phase(Some(CorePhase::Search), CorePhase::HasRoom)).as_deref(),
+        Some("core 01 solo limit -12")
+    );
+    assert_eq!(
+        phrase(&phase(Some(CorePhase::AtLimit), CorePhase::Search)).as_deref(),
+        Some("core 01 starts its search over")
+    );
+    assert_eq!(
+        phrase(&phase(Some(CorePhase::AtLimit), CorePhase::HasRoom)),
+        None
+    );
+    let Tagging::By(tag) = words(EventKind::CorePhase).tag else {
+        panic!("a core phase is tagged by its payload");
+    };
+    assert_eq!(
+        tag(&phase(Some(CorePhase::Search), CorePhase::HasRoom)),
+        Tag::Limit
+    );
+    assert_eq!(tag(&phase(None, CorePhase::HasRoom)), Tag::Limit);
+}
+
+#[test]
+fn a_phrase_applies_only_to_its_own_kind() {
+    let other: Payload = warning("x");
+    for kind in [
+        EventKind::TunerDecision,
+        EventKind::CorePhase,
+        EventKind::CheckingCycle,
+        EventKind::CheckingStep,
+        EventKind::CheckingChain,
+        EventKind::HuntStart,
+        EventKind::Combination,
+        EventKind::DeepeningRound,
+        EventKind::DeadEnd,
+        EventKind::Mce,
+    ] {
+        let table = words(kind);
+        if let Phrase::Of(of) = table.detailed {
+            assert_eq!(of(&other), None, "{kind}");
+        }
+        if let (Brief::Of(of), false) = (table.compact, kind == EventKind::DeadEnd) {
+            assert_eq!(of(&other), None, "{kind}");
+        }
+        if let (History::Line(of), false) = (table.history, kind == EventKind::CheckingChain) {
+            assert_eq!(of(&other), None, "{kind}");
+        }
+    }
+    for kind in [
+        EventKind::TrialEnd,
+        EventKind::Failure,
+        EventKind::TunerDecision,
+        EventKind::HuntGroup,
+    ] {
+        let Tagging::By(of) = words(kind).tag else {
+            panic!("{kind} is tagged by its payload");
+        };
+        let _ = of(&other);
+    }
+}
+
+#[test]
+fn a_hunt_group_is_tagged_by_how_it_was_answered() {
+    let Tagging::By(tag) = words(EventKind::HuntGroup).tag else {
+        panic!("a group is tagged by its payload");
+    };
+    let plain = hunt_group(1, 1, &[0]);
+    assert_eq!(tag(&plain.clone().into()), Tag::Group);
+    let mut probe = plain.clone();
+    probe.probe = Some(togi_journal::Member {
+        core: core(0),
+        offset: off(-1),
+    });
+    assert_eq!(tag(&probe.into()), Tag::Probe);
+    let mut inferred = plain.clone();
+    inferred.inferred = Some(togi_journal::Inference::Pass);
+    assert_eq!(tag(&inferred.into()), Tag::Skip);
+    let mut skipped = plain;
+    skipped.skipped = true;
+    assert_eq!(tag(&skipped.into()), Tag::Skip);
+    assert_eq!(
+        carried_groups(2, 2, togi_journal::Inference::Pass),
+        ("group 2 answered by existing evidence".to_owned(), true)
+    );
+    assert_eq!(
+        carried_groups(2, 4, togi_journal::Inference::Failure),
+        ("groups 2-4 failed on existing evidence".to_owned(), false)
+    );
+}
+
+#[test]
+fn every_tag_has_a_word() {
+    for (tag, word) in [
+        (Tag::Unclear, "unclear"),
+        (Tag::Reset, "reset"),
+        (Tag::Mce, "mce"),
+        (Tag::Note, "note"),
+        (Tag::Confirm, "confirm"),
+        (Tag::Resume, "resume"),
+        (Tag::Hold, "hold"),
+    ] {
+        assert_eq!(tag.word(), word);
+    }
+}
+
+#[test]
+fn an_idle_failure_is_worded_but_a_crash_is_not() {
+    let idle = failure(Signal::Stall, None);
+    assert_eq!(
+        failure_line(&idle).unwrap().text,
+        "idle with the offsets applied, the stress program stalled"
+    );
+    assert!(failure_line(&failure(Signal::Crash, None)).is_none());
+    assert!(failure_line(&failure(Signal::Stall, Some("t1"))).is_none());
 }

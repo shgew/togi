@@ -599,3 +599,78 @@ fn a_prior_recovery_does_not_mask_a_later_boot_crash() {
     assert!(snap.recover.is_none());
     assert!(snap.resting());
 }
+
+#[test]
+fn a_crash_ending_a_cycle_trial_says_which_trial_of_its_part_it_was() {
+    let mut script = Script::at_limit();
+    let plan = script.next_trial();
+    let (intent, trial) = script.intent(&plan);
+    script.start(&trial);
+    script.boot = "next".to_owned();
+    let crashed = script.append(crash("boot", Some(intent)).into(), &[]);
+    let mut over = end_payload(&trial, Outcome::Failure, Some(togi_machine::Signal::Crash));
+    over.last_sample_s = Some(100);
+    script.append(over.into(), &[crashed]);
+    let model = script.model();
+    let history = model.snapshot().history;
+    let ended = history
+        .iter()
+        .find(|entry| entry.tag == crate::words::Tag::Crash)
+        .expect("one crash line");
+    assert!(
+        ended.text.contains(" · rebooted · late in trial 1 of "),
+        "{}",
+        ended.text
+    );
+    assert_eq!(
+        history
+            .iter()
+            .filter(|entry| entry.tag == crate::words::Tag::Crash)
+            .count(),
+        1,
+        "the trial's end takes the place of the reboot line"
+    );
+}
+
+#[test]
+fn only_an_idle_trial_holds_and_only_r7_names_requesters() {
+    let mut script = Script::at_limit();
+    let plan = script.next_trial();
+    let (_, trial) = script.intent(&plan);
+    script.start(&trial);
+    let model = script.model();
+    let snap = model.snapshot();
+    assert!(
+        snap.idle_hold().is_none(),
+        "an R7 trial is not an idle hold"
+    );
+    assert_eq!(snap.r7_workload(), Some(plan_workload(&snap)));
+    let search = searching();
+    let model = search.model();
+    let snap = model.snapshot();
+    assert_eq!(snap.r7_workload(), None);
+    assert!(snap.r7_top().is_empty());
+}
+
+fn plan_workload(snap: &crate::model::Snapshot<'_>) -> togi_machine::WorkloadId {
+    snap.trial.expect("the running trial").workload
+}
+
+#[test]
+fn a_reset_queued_for_a_core_shows_on_that_core() {
+    let mut script = searching();
+    let seq = script.append(
+        Payload::CommandReset(togi_journal::CommandReset {
+            target: togi_journal::ResetTarget::Core(core(1)),
+        }),
+        &[],
+    );
+    let model = script.model();
+    let snap = model.snapshot();
+    assert_eq!(snap.cores[1].queued, Some(seq));
+    assert_eq!(snap.cores[0].queued, None);
+    assert_eq!(
+        snap.history.first().map(|entry| entry.tag.word()),
+        Some("reset")
+    );
+}

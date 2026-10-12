@@ -210,7 +210,7 @@ fn new_trial(
 }
 
 /// Finds the step and part of its checking cycle a trial loads, and which trial of that part it is.
-fn place_in_cycle(plan: &CyclePlan, trial: &mut TrialView) {
+pub(crate) fn place_in_cycle(plan: &CyclePlan, trial: &mut TrialView) {
     let Some(place) = trial.cycle else {
         return;
     };
@@ -257,7 +257,7 @@ fn place_in_cycle(plan: &CyclePlan, trial: &mut TrialView) {
     }
 }
 
-fn fit_hunt(trial: &mut TrialView, plan: &togi_tuner::HuntPlan) {
+pub(crate) fn fit_hunt(trial: &mut TrialView, plan: &togi_tuner::HuntPlan) {
     let Some(place) = &mut trial.hunt else {
         return;
     };

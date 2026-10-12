@@ -13,8 +13,7 @@ use std::time::Duration;
 use togi_journal::{
     Activity, Attribution, CheckingChain, CheckingCycle, Combination, CorePhase, CoreTransition,
     CycleEvent, DeadEnd, Decision, DeepeningRound, EventKind, Failure, HuntEnd, HuntGroup,
-    HuntOutcome, HuntStage, HuntStart, Inference, Mce, Payload, RoundEvent, TrialEnd,
-    TunerDecision,
+    HuntOutcome, HuntStart, Inference, Mce, Payload, RoundEvent, TrialEnd, TunerDecision,
 };
 use togi_machine::{CoreId, Regime, Signal, WorkloadId};
 
@@ -229,16 +228,7 @@ pub const fn signal_plural(signal: Signal, n: u32) -> &'static str {
 /// The name of a workload as the screen shows it: its base workload's label when it is a variant, else its own.
 pub fn workload_display(workload: WorkloadId) -> &'static str {
     let entry = workload.workload();
-    if !entry.base.is_empty() {
-        if let Some(base) = togi_machine::workload_by_id(entry.base) {
-            return base.label;
-        }
-    }
-    if entry.label.is_empty() {
-        entry.id
-    } else {
-        entry.label
-    }
+    togi_machine::workload_by_id(entry.base).map_or(entry.label, |base| base.label)
 }
 
 /// `word` in the number `n` takes, without the number.
@@ -935,16 +925,5 @@ pub fn carried_groups(first: u32, last: u32, inferred: Inference) -> (String, bo
         (format!("{groups} answered by existing evidence"), true)
     } else {
         (format!("{groups} failed on existing evidence"), false)
-    }
-}
-
-/// The words of a hunt stage, as a hunt group's header says it.
-pub const fn stage_words(stage: HuntStage) -> &'static str {
-    match stage {
-        HuntStage::Part => "part",
-        HuntStage::Complement => "complement",
-        HuntStage::Full => "full",
-        HuntStage::Locate => "locate",
-        HuntStage::Probe => "probe",
     }
 }

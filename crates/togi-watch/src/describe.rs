@@ -12,7 +12,7 @@ use togi_journal::{
 use togi_machine::{Condition, CoreId, Regime, Signal};
 
 use crate::facts::{Facts, HuntStartFacts, trial_cores};
-use crate::history::{Entry, EntryKind, Key, fold_entry};
+use crate::history::{Entry, EntryKind, Key};
 use crate::words::{
     History, Tag, Tone, age, core_ids, kind_words, lateness, on_cores, phase_line, plural,
     signal_words, solo_limit, words, workload_display,
@@ -465,15 +465,7 @@ impl Facts {
                         let previous = &self.history.entries[i];
                         line.reboot = previous.reboot;
                         line.at = previous.at;
-                        self.history.entries[i] = line.clone();
-                        let last = self.history.entries.len() - 1;
-                        if i == last && i > 0 {
-                            let mut merged = self.history.entries[..i].to_vec();
-                            fold_entry(&mut merged, line);
-                            if merged.len() == i {
-                                self.history.entries = merged;
-                            }
-                        }
+                        self.history.entries[i] = line;
                         return None;
                     }
                 }

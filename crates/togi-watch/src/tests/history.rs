@@ -9,7 +9,7 @@ use togi_journal::{
 use togi_machine::{BankType, BootId, Condition, CpuId, Regime, Signal};
 
 use super::kit::*;
-use crate::history::{Entry, EntryKind, HISTORY_LIMIT, Key};
+use crate::history::{Entry, EntryKind, HISTORY_LIMIT, Key, fold_entry};
 use crate::model::Count;
 use crate::words::{Tag, Tone};
 
@@ -742,4 +742,101 @@ fn history_bounds_and_counts_what_it_leaves_out() {
         entries[0].text,
         warning(&(2 * HISTORY_LIMIT + 4).to_string()).message()
     );
+}
+
+#[test]
+fn a_single_pass_is_one_passed_line() {
+    let mut h = Hist::three();
+    h.push(
+        intent(
+            "p1",
+            Regime::R7,
+            Condition::Together,
+            &[-20, -30, -10],
+            &[0, 1, 2],
+        )
+        .into(),
+    );
+    h.push(end_payload(&TrialId::from("p1".to_owned()), Outcome::Pass, None).into());
+    assert_eq!(h.sentences()[1], "pass: R7 all-core on 00-02 · passed");
+}
+
+#[test]
+fn a_reset_and_an_mce_have_lines() {
+    let mut h = Hist::three();
+    h.push(
+        togi_journal::Mce {
+            cpu: togi_machine::CpuId(3),
+            core: Some(core(1)),
+            bank: 1,
+            bank_type: togi_machine::BankType::ExecutionUnit,
+            corrected: false,
+            monotonic_ns: None,
+            from_boot: None,
+            trial: None,
+            between_trials: true,
+            lines: Vec::new(),
+        }
+        .into(),
+    );
+    assert_eq!(
+        h.sentences()[1],
+        "mce: core 01 uncorrected error between trials (recorded only)"
+    );
+    h.push(
+        togi_journal::CommandReset {
+            target: togi_journal::ResetTarget::All,
+        }
+        .into(),
+    );
+    assert_eq!(h.sentences()[2], "reset: requested from the command line");
+}
+
+fn plain(text: &str) -> Entry {
+    Entry::line(at(seq(1)), Tag::Note, text.to_owned(), Tone::Plain)
+}
+
+#[test]
+fn an_alarm_the_text_lacks_is_left_out_of_the_sentence() {
+    let mut line = plain("abc");
+    line.alarm = Some("zzz".to_owned());
+    assert_eq!(
+        line.sentence(),
+        ("abc".to_owned(), String::new(), String::new())
+    );
+    line.alarm = Some("b".to_owned());
+    assert_eq!(
+        line.sentence(),
+        ("a".to_owned(), "b".to_owned(), "c".to_owned())
+    );
+}
+
+#[test]
+fn lines_merge_only_with_a_line_that_continues_them() {
+    let mut history = Vec::new();
+    fold_entry(&mut history, plain("first"));
+    assert_eq!(history.len(), 1, "the first line has nothing to merge into");
+
+    let group = |first: u32| {
+        let mut line = plain("");
+        line.kind = EntryKind::Groups;
+        line.key = Some(Key::Carried {
+            hunt: 1,
+            inferred: Inference::Pass,
+        });
+        (line.first_group, line.last_group) = (first, first);
+        line
+    };
+    fold_entry(&mut history, group(1));
+    fold_entry(&mut history, group(2));
+    assert_eq!(history.len(), 2);
+    assert_eq!((history[1].first_group, history[1].last_group), (1, 2));
+    fold_entry(&mut history, group(4));
+    assert_eq!(history.len(), 3, "group 4 does not continue group 2");
+
+    let mut known = plain("known");
+    known.key = Some(Key::KnownFailure);
+    fold_entry(&mut history, known.clone());
+    fold_entry(&mut history, known);
+    assert_eq!(history.len(), 5, "a plain line never merges");
 }

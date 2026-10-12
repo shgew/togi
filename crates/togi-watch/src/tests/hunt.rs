@@ -36,7 +36,12 @@ fn core_view(id: u8) -> CoreView {
     }
 }
 
-fn trial_view(loaded: &[u8], profile: &[i64], started: bool, condition: Condition) -> TrialView {
+pub(super) fn trial_view(
+    loaded: &[u8],
+    profile: &[i64],
+    started: bool,
+    condition: Condition,
+) -> TrialView {
     TrialView {
         id: togi_journal::TrialId::from("probe".to_owned()),
         regime: Regime::R7,
@@ -62,7 +67,7 @@ fn trial_view(loaded: &[u8], profile: &[i64], started: bool, condition: Conditio
     }
 }
 
-fn group(
+pub(super) fn group(
     number: u32,
     cores: &[u8],
     profile: &[i64],
@@ -89,7 +94,7 @@ fn group(
     }
 }
 
-fn plan(groups: Vec<HuntGroup>) -> HuntPlan {
+pub(super) fn plan(groups: Vec<HuntGroup>) -> HuntPlan {
     HuntPlan {
         number: 1,
         regime: Regime::R7,
@@ -438,7 +443,7 @@ fn zero_rerun_is_the_all_zero_rerun_of_a_failing_trial() {
     assert!(!trial.zero_rerun(), "a hunt trial");
 }
 
-fn step(regime: Regime, done: bool) -> CycleStep {
+pub(super) fn step(regime: Regime, done: bool) -> CycleStep {
     CycleStep {
         regime,
         workload: workloads(regime)[0].id(),
@@ -634,4 +639,24 @@ fn resting_when_no_trial_runs() {
     let (_, trial) = script.intent(&plan);
     script.start(&trial);
     assert!(!script.model().snapshot().resting(), "a trial runs");
+}
+
+#[test]
+fn a_hunt_is_filed_under_the_cycle_step_that_started_it() {
+    let mut h = Hist::three();
+    let mut plan = intent(
+        "c1",
+        Regime::R7,
+        Condition::Together,
+        &[-20, -30, -10],
+        &[0, 1, 2],
+    );
+    plan.cycle = Some(nz(1));
+    h.push(plan.into());
+    let id = togi_journal::TrialId::from("c1".to_owned());
+    h.facts.steps.insert(id.clone(), 2);
+    let mut start = hunt_start(7, &[0, 2]);
+    start.trial = Some(id);
+    h.push(start.into());
+    assert_eq!(h.facts.check_hunts.get(&(1, 2)), Some(&vec![7]));
 }
