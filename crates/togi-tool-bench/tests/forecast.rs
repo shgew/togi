@@ -729,7 +729,7 @@ fn absolute_machine_suite(fixture: &Fixture) {
         fixture.path("facts/target.jsonl.gz"),
     )
     .unwrap();
-    let absolute = fixture.path("machines/target-fit-0.json");
+    let absolute = fs::canonicalize(fixture.path("machines/target-fit-0.json")).unwrap();
     fs::write(
         fixture.path("suite.json"),
         format!(
