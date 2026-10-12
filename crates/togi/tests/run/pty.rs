@@ -363,10 +363,13 @@ fn a_session_panic_over_the_real_linux_console_dashboard_restores_the_cursor_and
             }
         })
     };
-    wait_until("the dashboard to hide the cursor and set the palette", || {
-        let seen = seen.lock().unwrap();
-        contains(&seen, HIDE_CURSOR) && contains(&seen, PALETTE_SET)
-    });
+    wait_until(
+        "the dashboard to hide the cursor and set the palette",
+        || {
+            let seen = seen.lock().unwrap();
+            contains(&seen, HIDE_CURSOR) && contains(&seen, PALETTE_SET)
+        },
+    );
     std::fs::write(dir.path().join(GO), b"").unwrap();
     let status = wait_for_exit(&mut child);
     assert_eq!(status.code(), Some(2));
