@@ -430,3 +430,33 @@ fn an_absolute_suite_path_is_read_from_the_same_file_in_both_trees() {
         report(&done)
     );
 }
+
+#[test]
+fn a_full_run_leaves_no_run_directory_and_no_copy_of_a_simulator_behind() {
+    let trees = Trees::new(SUITE, SUITE);
+    let journal = recorded(None);
+    let base = trees.simulator("base-sim", &journal, 0);
+    let head = trees.simulator("head-sim", &stamped_by_another_build(&journal), 0);
+    let temporary = trees.path("tmp");
+    fs::create_dir_all(&temporary).unwrap();
+    for smoke in [false, true] {
+        let mut run = command(&trees);
+        run.env("TMPDIR", &temporary)
+            .arg("--no-cache")
+            .arg("--base-sim")
+            .arg(&base)
+            .arg("--head-sim")
+            .arg(&head);
+        if smoke {
+            run.arg("--smoke");
+        }
+        let output = run.output().unwrap();
+        assert!(output.status.success(), "{}", text(&output.stderr));
+        let left: Vec<_> = fs::read_dir(&temporary)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        assert!(left.is_empty(), "smoke={smoke}: {left:?}");
+        assert!(!trees.path("cache/runs").exists(), "smoke={smoke}");
+    }
+}

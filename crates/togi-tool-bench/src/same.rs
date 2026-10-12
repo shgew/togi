@@ -267,10 +267,7 @@ pub fn execute(options: &Options, fleet: &Fleet) -> Result<Report, Failed> {
     let [base_cache, head_cache] = caches;
     let caches = [base_cache.map_err(fail)?, head_cache.map_err(fail)?];
     let costs = Costs::load(options.cache.join("costs.json"));
-    let parent = options
-        .keep
-        .clone()
-        .unwrap_or_else(|| options.cache.join("runs"));
+    let parent = options.keep.clone().unwrap_or_else(std::env::temp_dir);
     let root = fs::create_dir_all(&parent)
         .and_then(|()| {
             tempfile::Builder::new()

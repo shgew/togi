@@ -756,3 +756,26 @@ fn a_suite_that_does_not_parse_fails_as_a_suite_error() {
     let failed = execute(&fixture.options(fixture.simulator("", 0)), &Fleet::new()).unwrap_err();
     assert!(matches!(*failed.error, ForecastError::Bench(_)), "{failed}");
 }
+
+#[test]
+fn a_full_forecast_leaves_no_run_directory_behind() {
+    let fixture = Fixture::new(false);
+    let temporary = fixture.path("tmp");
+    fs::create_dir_all(&temporary).unwrap();
+    let output = command(&fixture)
+        .env("TMPDIR", &temporary)
+        .arg("--sim")
+        .arg(fixture.simulator("", 0))
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let left: Vec<_> = fs::read_dir(&temporary)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    assert!(left.is_empty(), "{left:?}");
+}
