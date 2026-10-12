@@ -349,6 +349,20 @@ fn an_unreadable_journal_exits_1() {
 }
 
 #[test]
+fn the_default_config_comes_from_the_host() {
+    let host = host_with(ready());
+    fs::write(&host.config, "{").unwrap();
+    let (_dir, state) = missing_state();
+    let ran = doctor(&host, &state, &[]);
+    assert_eq!(ran.exit, Exit::Usage, "{}", ran.err);
+    assert!(
+        ran.err.contains(&host.config.display().to_string()),
+        "{}",
+        ran.err
+    );
+}
+
+#[test]
 fn a_configuration_error_exits_2() {
     let cfg = tempfile::tempdir().unwrap();
     let bad = cfg.path().join("bad.json");
