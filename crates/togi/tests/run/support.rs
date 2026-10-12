@@ -26,6 +26,8 @@ use togi_tuningboot::{Bootloader, Environment, SavedEntry};
 
 pub(crate) const MACHINE: &str = "shared-voltage";
 
+const CONFIG: &str = "config.json";
+
 pub(crate) fn simulator(seed: u64) -> Simulator {
     biased(seed, 0)
 }
@@ -193,6 +195,7 @@ impl Fake {
 
     /// A host whose files live in `dir`.
     pub(crate) fn in_dir(sim: Simulator, dir: &Path) -> Self {
+        std::fs::write(dir.join(CONFIG), "{}").unwrap();
         Self {
             sim,
             lock: dir.join("togi.lock"),
@@ -226,12 +229,18 @@ impl Fake {
         self.dir.join("grubenv")
     }
 
+    /// `togi --state-dir <state> [--config <config>] <args>`: unless `args` name a configuration, the empty one in this
+    /// host's directory, so no test reads the machine's own `/etc/togi/config.json`.
     pub(crate) fn arguments(&self, args: &[&str]) -> Vec<String> {
         let mut all = vec![
             "togi".to_owned(),
             "--state-dir".to_owned(),
             self.state_dir().display().to_string(),
         ];
+        if !args.iter().any(|arg| arg.starts_with("--config")) {
+            all.push("--config".to_owned());
+            all.push(self.dir.join(CONFIG).display().to_string());
+        }
         all.extend(args.iter().map(|arg| (*arg).to_owned()));
         all
     }
