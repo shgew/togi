@@ -226,6 +226,15 @@ fn known_failure_sharing_a_zero_rerun_trial_is_routed() {
     assert_eq!(j.run().core(core(1)).pending, Some(fact));
     assert_eq!(j.run().core(core(0)).pending, None);
     assert_eq!(j.diagnostic(failure), Some(&Diagnostic::Passed { end }));
+    let backoff = j.next_decision();
+    let DecisionPayload::TunerDecision(backoff) = &backoff.payload else {
+        panic!("the skipped known failure did not back off core 01: {backoff:?}");
+    };
+    assert_eq!(backoff.core, core(1));
+    assert_eq!(backoff.decision, togi_journal::Decision::Backoff);
+    assert_eq!(backoff.from_offset, off(-20));
+    assert_eq!(backoff.to_offset, off(-18));
+    assert_eq!(backoff.failure_point, Some(off(-19)));
     j.assert_resumes();
 }
 

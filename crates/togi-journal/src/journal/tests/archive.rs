@@ -139,6 +139,25 @@ fn an_archive_that_already_exists_is_refused_before_anything_is_recorded() {
 }
 
 #[test]
+fn an_archive_target_that_is_a_directory_is_refused_before_anything_is_recorded() {
+    let fs = MemFs::new();
+    let journal = seeded(&fs);
+    fs.put(format!("{ARCHIVED}/kept"), "x");
+    let before = live(&fs);
+    let mutations = fs.mutations();
+    let error = journal
+        .archive(stamp(5), ArchiveKind::ResetAll, &[])
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        ArchiveError::Dir(DirError::ArchiveExists { .. })
+    ));
+    assert_eq!(fs.mutations(), mutations);
+    assert_eq!(live(&fs), before);
+    assert_eq!(fs.contents(format!("{ARCHIVED}/kept")).unwrap(), b"x");
+}
+
+#[test]
 fn a_journal_with_no_session_has_nothing_to_archive() {
     let fs = MemFs::new();
     let journal = simulated(&fs).open(boot(1)).unwrap();

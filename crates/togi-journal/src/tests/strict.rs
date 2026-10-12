@@ -1,6 +1,8 @@
 use serde_json::{Value, json};
 
 use super::fixtures::{at, samples};
+use crate::fs::MemFs;
+use crate::testing::{boot, live, simulated};
 use crate::*;
 
 fn line_of(payload: Payload) -> Value {
@@ -127,6 +129,40 @@ fn envelope_errors_without_a_known_kind_do_not_invent_one() {
         "{error}"
     );
     assert!(error.to_string().starts_with("malformed event:"), "{error}");
+}
+
+fn kindless_first_line() -> String {
+    corrupted_first_line(|line| {
+        line.as_object_mut().unwrap().remove("kind");
+    })
+}
+
+#[test]
+fn a_line_without_a_kind_is_an_envelope_error() {
+    let error = Event::decode(&kindless_first_line()).unwrap_err();
+    assert!(
+        matches!(error, DecodeError::Envelope { kind: None, .. }),
+        "{error}"
+    );
+    let message = error.to_string();
+    assert!(message.starts_with("malformed event:"), "{message}");
+    assert!(message.contains("kind"), "{message}");
+}
+
+#[test]
+fn open_refuses_a_journal_line_without_a_kind_and_leaves_the_file_unchanged() {
+    let mut bytes = kindless_first_line().into_bytes();
+    bytes.push(b'\n');
+    let fs = MemFs::new();
+    fs.put("/state/events.jsonl", bytes.clone());
+    let Err(OpenError::Read(error)) = simulated(&fs).open(boot(2)) else {
+        panic!("a journal line without a kind must be refused by open");
+    };
+    assert!(
+        matches!(error.source, ReadError::Decode { line: 1, .. }),
+        "{error}"
+    );
+    assert_eq!(live(&fs), bytes);
 }
 
 #[test]
