@@ -1,0 +1,28 @@
+---
+source: crates/togi/tests/cli/main.rs
+expression: stderr(&ran)
+---
+   __              _
+  / /_____  ____ _(_)
+ / __/ __ \/ __ `/ /
+/ /_/ /_/ / /_/ / /
+\__/\____/\__, /_/
+         /____/
+
+  per-core Curve Optimizer
+
+Finds and tests per-core Curve Optimizer offsets on Zen 5 desktop CPUs
+
+Usage: togi [OPTIONS] <COMMAND>
+
+Commands:
+  completion  Print a shell completion script
+  help        Print this message or the help of the given subcommand(s)
+
+Options:
+      --state-dir <path>  State directory [default: /var/lib/togi]
+  -h, --help              Print help
+  -V, --version           Print version
+
+Examples:
+  togi completion zsh   Print the completion script for zsh
