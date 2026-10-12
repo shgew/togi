@@ -17,7 +17,7 @@ use super::super::story::{crash_evidence, known_words};
 use super::super::terms::{cycle_place, recut_words, trial_name};
 use super::table::{cell, field_row, overlay, stage_marker, table_row};
 use crate::model::HuntView;
-use crate::words::{age, core_ids, kind_words, plural, signal_words};
+use crate::words::{age, core_ids, group_word, kind_words, plural, signal_words};
 
 fn seconds(n: u32) -> String {
     short_duration(Duration::from_secs(u64::from(n)))
@@ -210,9 +210,9 @@ fn part_lines(
         } else if part.group.is_none() {
             state = cell(scene, Paint::Grey, "next");
         } else if part.outcome == Some(GroupState::Passed) {
-            state = cell(scene, Paint::Good, "passed");
+            state = cell(scene, Paint::Good, group_word(GroupState::Passed));
         } else if part.outcome == Some(GroupState::Failed) {
-            state = cell(scene, Paint::Bad, "failed");
+            state = cell(scene, Paint::Bad, group_word(GroupState::Failed));
         }
         let mut name = format!("{} of {}", i + 1, plan.parts.len());
         let mut cores = core_ids(part.failing.iter());
@@ -377,11 +377,10 @@ fn group_lines(
 /// How a group's outcome reads; a failed group says it crashed when its trial did.
 fn outcome_words(outcome: GroupState, signal: Option<Signal>) -> &'static str {
     match outcome {
-        GroupState::Passed => "passed",
         GroupState::Failed if signal == Some(Signal::Crash) => "crashed",
-        GroupState::Failed => "failed",
-        GroupState::Running => "running",
-        GroupState::Skipped => "skipped",
+        GroupState::Passed | GroupState::Failed | GroupState::Running | GroupState::Skipped => {
+            group_word(outcome)
+        }
     }
 }
 

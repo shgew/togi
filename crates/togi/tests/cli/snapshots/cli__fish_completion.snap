@@ -2,6 +2,15 @@
 source: crates/togi/tests/cli/main.rs
 expression: "completion(\"fish\")"
 ---
+function __togi_kinds
+    set -l token (commandline -ct)
+    set token (string replace -r -- '^--?[^=]*=' '' "$token")
+    set -l prefix (string replace -r -- '[^,]*$' '' "$token")
+    for kind in backend backend.retry boot boot.leave_reason boot.saved_entry checking checking.chain checking.cycle checking.step combination command command.reset config config.loaded core core.phase crash crash.detected deadend deepening deepening.round defect defect.answered defect.found failure failure.carried host host.ranking hunt hunt.end hunt.group hunt.skipped hunt.start journal journal.torn mce preflight preflight.check profile profile.applied profile.change profile.restored session session.archived session.baseline session.carried session.context session.notice session.start session.warning shutdown smu smu.error smu.intent smu.readback smu.write state state.rebuilt trial trial.carried trial.end trial.intent trial.progress trial.sample trial.signal trial.start tuner tuner.decision tuner.warning
+        echo "$prefix$kind"
+    end
+end
+
 # Print an optspec for argparse to handle cmd's options that are independent of any subcommand.
 function __fish_togi_global_optspecs
     string join \n state-dir= h/help V/version
@@ -34,8 +43,11 @@ complete -c togi -n "__fish_togi_needs_command" -s V -l version -d 'Print versio
 complete -c togi -n "__fish_togi_needs_command" -f -a "run" -d 'Start or resume the tuning session in the foreground'
 complete -c togi -n "__fish_togi_needs_command" -f -a "completion" -d 'Print a shell completion script'
 complete -c togi -n "__fish_togi_needs_command" -f -a "doctor" -d 'Check whether this machine is ready for a run'
+complete -c togi -n "__fish_togi_needs_command" -f -a "events" -d 'Print the journal, one readable line per event'
 complete -c togi -n "__fish_togi_needs_command" -f -a "reset" -d 'Reset one core, or archive the whole session'
 complete -c togi -n "__fish_togi_needs_command" -f -a "restart-limit" -d 'Recover after the tuning service reaches its restart limit'
+complete -c togi -n "__fish_togi_needs_command" -f -a "status" -d 'Show the session at a glance'
+complete -c togi -n "__fish_togi_needs_command" -f -a "watch" -d 'Show the session as a read-only dashboard'
 complete -c togi -n "__fish_togi_needs_command" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
 complete -c togi -n "__fish_togi_using_subcommand run" -l config -d 'JSON configuration file [default: /etc/togi/config.json]' -r -F
 complete -c togi -n "__fish_togi_using_subcommand run" -l cycles -d 'Stop after N clean cycles, each a passed full cycle ending at or after phase 2\'s confirmation cycle (default endless)' -r
@@ -49,6 +61,14 @@ complete -c togi -n "__fish_togi_using_subcommand completion" -s h -l help -d 'P
 complete -c togi -n "__fish_togi_using_subcommand doctor" -l config -d 'JSON configuration file [default: /etc/togi/config.json]' -r -F
 complete -c togi -n "__fish_togi_using_subcommand doctor" -l state-dir -d 'State directory' -r -f -a "(__fish_complete_directories)"
 complete -c togi -n "__fish_togi_using_subcommand doctor" -s h -l help -d 'Print help (see more with \'--help\')'
+complete -c togi -n "__fish_togi_using_subcommand events" -l core -d 'Only events naming core N, and the outcomes of trials that load it' -r -f
+complete -c togi -n "__fish_togi_using_subcommand events" -l kind -d 'Only these comma-separated known kinds, or groups such as trial for every trial.* kind' -r -f -a '(__togi_kinds)'
+complete -c togi -n "__fish_togi_using_subcommand events" -l trial -d 'Only events of trial ID' -r -f
+complete -c togi -n "__fish_togi_using_subcommand events" -l since -d 'Only events at or after this RFC 3339 time' -r -f
+complete -c togi -n "__fish_togi_using_subcommand events" -l until -d 'Only events before this RFC 3339 time' -r -f
+complete -c togi -n "__fish_togi_using_subcommand events" -l state-dir -d 'State directory' -r -f -a "(__fish_complete_directories)"
+complete -c togi -n "__fish_togi_using_subcommand events" -l json -d 'Print raw, uncolored JSON events'
+complete -c togi -n "__fish_togi_using_subcommand events" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c togi -n "__fish_togi_using_subcommand reset" -l core -d 'Reset core N: clear its failure point and every combination that includes it, and restart its search from the baseline' -r -f
 complete -c togi -n "__fish_togi_using_subcommand reset" -l config -d 'JSON configuration file [default: /etc/togi/config.json]' -r -F
 complete -c togi -n "__fish_togi_using_subcommand reset" -l state-dir -d 'State directory' -r -f -a "(__fish_complete_directories)"
@@ -57,9 +77,18 @@ complete -c togi -n "__fish_togi_using_subcommand reset" -s h -l help -d 'Print 
 complete -c togi -n "__fish_togi_using_subcommand restart-limit" -l tuning-boot -d 'GRUB environment file for retry state and the saved tuning entry' -r -F
 complete -c togi -n "__fish_togi_using_subcommand restart-limit" -l state-dir -d 'State directory' -r -f -a "(__fish_complete_directories)"
 complete -c togi -n "__fish_togi_using_subcommand restart-limit" -s h -l help -d 'Print help (see more with \'--help\')'
-complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from run completion doctor reset restart-limit help" -f -a "run" -d 'Start or resume the tuning session in the foreground'
-complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from run completion doctor reset restart-limit help" -f -a "completion" -d 'Print a shell completion script'
-complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from run completion doctor reset restart-limit help" -f -a "doctor" -d 'Check whether this machine is ready for a run'
-complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from run completion doctor reset restart-limit help" -f -a "reset" -d 'Reset one core, or archive the whole session'
-complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from run completion doctor reset restart-limit help" -f -a "restart-limit" -d 'Recover after the tuning service reaches its restart limit'
-complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from run completion doctor reset restart-limit help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
+complete -c togi -n "__fish_togi_using_subcommand status" -l state-dir -d 'State directory' -r -f -a "(__fish_complete_directories)"
+complete -c togi -n "__fish_togi_using_subcommand status" -s h -l help -d 'Print help (see more with \'--help\')'
+complete -c togi -n "__fish_togi_using_subcommand watch" -l width -d 'Frame width in columns, 1 to 1000, when stdout is not a terminal' -r -f
+complete -c togi -n "__fish_togi_using_subcommand watch" -l height -d 'Frame height in rows, 1 to 1000, when stdout is not a terminal' -r -f
+complete -c togi -n "__fish_togi_using_subcommand watch" -l state-dir -d 'State directory' -r -f -a "(__fish_complete_directories)"
+complete -c togi -n "__fish_togi_using_subcommand watch" -s h -l help -d 'Print help (see more with \'--help\')'
+complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from run completion doctor events reset restart-limit status watch help" -f -a "run" -d 'Start or resume the tuning session in the foreground'
+complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from run completion doctor events reset restart-limit status watch help" -f -a "completion" -d 'Print a shell completion script'
+complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from run completion doctor events reset restart-limit status watch help" -f -a "doctor" -d 'Check whether this machine is ready for a run'
+complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from run completion doctor events reset restart-limit status watch help" -f -a "events" -d 'Print the journal, one readable line per event'
+complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from run completion doctor events reset restart-limit status watch help" -f -a "reset" -d 'Reset one core, or archive the whole session'
+complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from run completion doctor events reset restart-limit status watch help" -f -a "restart-limit" -d 'Recover after the tuning service reaches its restart limit'
+complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from run completion doctor events reset restart-limit status watch help" -f -a "status" -d 'Show the session at a glance'
+complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from run completion doctor events reset restart-limit status watch help" -f -a "watch" -d 'Show the session as a read-only dashboard'
+complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from run completion doctor events reset restart-limit status watch help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'

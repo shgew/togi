@@ -323,3 +323,36 @@ fn a_row_with_an_impossible_cpu_stops_the_read_without_a_cursor() {
     let partial = unresumable(out, None);
     assert_eq!(partial.value.len(), 1);
 }
+
+#[test]
+fn a_failed_read_keeps_the_error_kind_and_the_command_cause() {
+    let (mut seek, _) = kernel(&[], |_| exit(1, b"", "Failed to seek to cursor"));
+    let partial = seek
+        .read_mces(&boot(OLD), Some(&cursor("saved")))
+        .unwrap_err();
+    assert!(matches!(partial.error, togi_machine::Error::CursorMissing));
+    assert!(partial.value.is_empty());
+
+    let (mut missing, _) = kernel(&[], |_| exit(1, b"", "No journal boot entry found"));
+    let partial = missing
+        .read_mces(&boot(OLD), Some(&cursor("saved")))
+        .unwrap_err();
+    assert!(matches!(partial.error, togi_machine::Error::BootMissing));
+    assert!(partial.value.is_empty());
+
+    let (mut transport, _) = kernel(&[], |_| {
+        Err(crate::runner::RunError::Command(
+            togi_command::Error::Spawn {
+                program: "journalctl".into(),
+                source: std::io::Error::other("journal unavailable"),
+            },
+        ))
+    });
+    let partial = transport.read_mces(&boot(OLD), None).unwrap_err();
+    assert!(partial.value.is_empty());
+    assert!(
+        caused_by::<togi_command::Error>(&partial)
+            .is_some_and(|source| matches!(source, togi_command::Error::Spawn { .. })),
+        "{partial:?}"
+    );
+}

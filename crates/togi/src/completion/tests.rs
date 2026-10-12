@@ -47,3 +47,58 @@ fn only_the_commands_that_read_the_configuration_offer_it() {
         }
     }
 }
+
+/// The list the journal accepts for `--kind`, as the scripts embed it.
+fn kinds() -> String {
+    let names = togi_journal::KindSelector::names();
+    assert!(names.contains(&"session") && names.contains(&"session.start"));
+    names.join(" ")
+}
+
+#[test]
+fn bash_kind_completion_splits_on_the_last_comma_over_the_journal_kinds() {
+    let script = text(Shell::Bash);
+    assert!(
+        script.contains(&format!(
+            r#"COMPREPLY=($(compgen -P "${{prefix}}" -W "{}" -- "${{cur##*,}}"))"#,
+            kinds()
+        )),
+        "{script}"
+    );
+    assert!(!script.contains(&format!(r#"-W "{}" -- "${{cur}}""#, kinds())));
+}
+
+#[test]
+fn zsh_kind_completion_is_a_comma_separated_sequence_of_the_journal_kinds() {
+    let script = text(Shell::Zsh);
+    assert!(
+        script.contains(&format!(":kinds:_sequence compadd - {}", kinds())),
+        "{script}"
+    );
+    assert!(!script.contains(&format!(":kinds:({})", kinds())));
+}
+
+#[test]
+fn fish_kind_completion_prefixes_each_kind_with_the_items_before_the_last_comma() {
+    let script = text(Shell::Fish);
+    assert!(
+        script.contains(&format!("    for kind in {}\n", kinds())),
+        "{script}"
+    );
+    assert!(script.contains("-l kind -d"), "{script}");
+    assert!(script.contains("-a '(__togi_kinds)'"), "{script}");
+    assert!(!script.contains("-a \"backend"), "{script}");
+}
+
+#[test]
+fn nushell_kind_completion_lists_the_journal_kinds_as_one_value() {
+    let script = text(Shell::Nushell);
+    let quoted: Vec<String> = togi_journal::KindSelector::names()
+        .iter()
+        .map(|kind| format!("\"{kind}\""))
+        .collect();
+    assert!(
+        script.contains(&format!("[ {} ]", quoted.join(" "))),
+        "{script}"
+    );
+}

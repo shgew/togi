@@ -1542,6 +1542,7 @@ dependencies = [
  "togi-watch",
  "togi-watchtest",
  "tokio",
+ "unicode-width",
 ]
 
 [[package]]

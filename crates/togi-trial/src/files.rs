@@ -980,4 +980,80 @@ mod tests {
             "output\n"
         );
     }
+
+    #[test]
+    fn both_retained_logs_survive_a_symlink_swap_of_their_paths() {
+        let tmp = crate::testing::tempdir();
+        let container = recreate(&tmp.path().join("trials"), &id("t1"), None).unwrap();
+        let mut files = container
+            .instance(&work(), &TestBackend::new("/bin/true"), &workload(), None)
+            .unwrap();
+        for (log, text) in [("stdout.log", "out\n"), ("stderr.log", "err\n")] {
+            let victim = tmp.path().join(format!("victim-{log}"));
+            fs::write(&victim, "protected journal\n").unwrap();
+            fs::rename(
+                files.path.join(log),
+                files.path.join(format!("{log}.retained")),
+            )
+            .unwrap();
+            symlink(&victim, files.path.join(log)).unwrap();
+            let file = if log == "stdout.log" {
+                &mut files.stdout
+            } else {
+                &mut files.stderr
+            };
+            file.write_all(text.as_bytes()).unwrap();
+            assert_eq!(fs::read_to_string(&victim).unwrap(), "protected journal\n");
+            assert_eq!(
+                fs::read_to_string(files.path.join(format!("{log}.retained"))).unwrap(),
+                text
+            );
+        }
+    }
+
+    #[test_case(false; "a work directory holding the symlinks")]
+    #[test_case(true; "a work directory that is itself a symlink")]
+    fn a_reused_trial_directory_never_writes_through_old_input_or_log_symlinks(linked: bool) {
+        let tmp = crate::testing::tempdir();
+        let victim = tmp.path().join("control");
+        fs::write(&victim, "protected control\n").unwrap();
+        let root = tmp.path().join("trials");
+        fs::create_dir(&root).unwrap();
+        fs::set_permissions(&root, fs::Permissions::from_mode(0o755)).unwrap();
+        let old = root.join("t1");
+        fs::create_dir(&old).unwrap();
+        let planted = if linked {
+            let target = tmp.path().join("attacker");
+            fs::create_dir(&target).unwrap();
+            symlink(&target, old.join("work")).unwrap();
+            target
+        } else {
+            fs::create_dir(old.join("work")).unwrap();
+            old.join("work")
+        };
+        for name in ["prime.txt", "local.txt", "stdout.log", "stderr.log"] {
+            symlink(&victim, planted.join(name)).unwrap();
+        }
+        let container = recreate(&root, &id("t1"), Some(own_identity())).unwrap();
+        let files = container
+            .instance(&work(), &with_inputs(), &workload(), Some(own_identity()))
+            .unwrap();
+        assert_eq!(fs::read_to_string(&victim).unwrap(), "protected control\n");
+        for (name, text) in [("prime.txt", "a"), ("local.txt", "b")] {
+            let path = files.path.join(name);
+            assert!(fs::symlink_metadata(&path).unwrap().is_file(), "{name}");
+            assert_eq!(fs::read_to_string(path).unwrap(), text);
+        }
+        for name in ["stdout.log", "stderr.log"] {
+            assert!(
+                fs::symlink_metadata(files.path.join(name))
+                    .unwrap()
+                    .is_file(),
+                "{name}"
+            );
+        }
+        if linked {
+            assert_eq!(fs::read_dir(&planted).unwrap().count(), 4);
+        }
+    }
 }

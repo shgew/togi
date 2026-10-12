@@ -9,7 +9,7 @@ use tokio::time::{Instant, sleep};
 use super::harness::{local, rig, rig_edit};
 use crate::error::{CleanupFailure, Error};
 use crate::id::ScopeName;
-use crate::os::fake::Reply;
+use crate::os::fake::{Reply, ScanFault};
 use crate::os::{KillSignal, Os, Systemd};
 use crate::procfs::ScopeProcess;
 use crate::supervisor::Env;
@@ -1877,4 +1877,151 @@ mod killed_owner {
         let clean = Armed(Some(fake(Freeze::Frozen, |_| Vec::new())));
         assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| drop(clean))).is_ok());
     }
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_captured_process_that_outlives_the_term_holds_the_kill_back_for_the_whole_grace() {
+    local(async {
+        let rig = rig();
+        rig.fake.add_unit("togi-trial-a.scope");
+        let _stubborn = rig.fake.add_recovered(process("togi-trial-b", 4242));
+        let begun = Instant::now();
+        let (_detail, _stopped) = sweep(&rig.env).await.unwrap();
+        let at = |wanted: KillSignal| -> Vec<Duration> {
+            rig.fake
+                .systemd_calls()
+                .iter()
+                .filter(
+                    |(call, _)| matches!(call, Systemd::Kill { signal, .. } if *signal == wanted),
+                )
+                .map(|(_, at)| at.duration_since(begun))
+                .collect()
+        };
+        assert_eq!(at(KillSignal::Cont), [Duration::ZERO; 2]);
+        assert_eq!(at(KillSignal::Term), [Duration::ZERO; 2]);
+        assert_eq!(at(KillSignal::Kill), [secs(3); 2]);
+    })
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_failed_initial_process_scan_is_containment_and_the_listed_scopes_are_still_killed() {
+    local(async {
+        let rig = rig();
+        rig.fake.add_unit("togi-trial-a.scope");
+        rig.fake.fault_scans(ScanFault::Fail);
+        let error = sweep(&rig.env).await.err().unwrap();
+        let failures = containment(&error).failures();
+        assert!(
+            matches!(
+                failures.first(),
+                Some(failure @ CleanupFailure::Observe { what: "the trial processes", .. })
+                    if std::error::Error::source(failure)
+                        .is_some_and(|source| source.to_string() == "scan failed")
+            ),
+            "{failures:?}"
+        );
+        let all = calls(&rig);
+        assert!(
+            all.contains(&("togi-trial-a".to_owned(), "SIGKILL")),
+            "{all:?}"
+        );
+        assert!(
+            all.contains(&("togi-trial-a".to_owned(), "stop")),
+            "{all:?}"
+        );
+        assert!(rig.fake.units().is_empty());
+    })
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_hung_verification_listing_is_containment_inside_the_shared_deadline() {
+    local(async {
+        let rig = rig();
+        for name in ["togi-trial-a", "togi-trial-b", "togi-trial-c"] {
+            rig.fake.add_unit(&format!("{name}.scope"));
+        }
+        let mut listings = 0;
+        rig.fake.on_systemd(move |call| match call {
+            Systemd::ListScopes => {
+                listings += 1;
+                (listings > 1).then_some(Reply::Hang)
+            }
+            _ => None,
+        });
+        let begun = Instant::now();
+        let error = sweep(&rig.env).await.err().unwrap();
+        assert!(begun.elapsed() <= secs(15), "{:?}", begun.elapsed());
+        let failures = containment(&error).failures();
+        assert!(
+            matches!(
+                failures,
+                [CleanupFailure::Observe {
+                    what: "the trial scope list",
+                    ..
+                }]
+            ),
+            "{failures:?}"
+        );
+        let all = calls(&rig);
+        assert_eq!(all.iter().filter(|(_, w)| *w == "SIGKILL").count(), 3);
+        assert_eq!(all.iter().filter(|(_, w)| *w == "stop").count(), 3);
+    })
+    .await;
+}
+
+#[test_case::test_case(KillSignal::Cont; "only the continue signals hang")]
+#[test_case::test_case(KillSignal::Term; "only the terminate signals hang")]
+#[tokio::test(start_paused = true)]
+async fn a_hung_signal_of_either_kind_is_containment_inside_the_grace_and_ends_in_kill_and_stop(
+    hung: KillSignal,
+) {
+    local(async {
+        let rig = rig();
+        for name in ["togi-trial-a", "togi-trial-b", "togi-trial-c"] {
+            rig.fake.add_unit(&format!("{name}.scope"));
+        }
+        rig.fake.on_systemd(move |call| match call {
+            Systemd::Kill { signal, .. } if *signal == hung => Some(Reply::Hang),
+            _ => None,
+        });
+        let begun = Instant::now();
+        let error = sweep(&rig.env).await.err().unwrap();
+        assert_eq!(begun.elapsed(), rig.env.timing.stop_grace);
+        let all = calls(&rig);
+        for signal in ["SIGCONT", "SIGTERM", "SIGKILL"] {
+            assert_eq!(
+                all.iter().filter(|(_, w)| *w == signal).count(),
+                3,
+                "{signal}"
+            );
+        }
+        assert_eq!(all.iter().filter(|(_, w)| *w == "stop").count(), 3);
+        for (call, at) in rig.fake.systemd_calls() {
+            if matches!(
+                call,
+                Systemd::Kill {
+                    signal: KillSignal::Kill,
+                    ..
+                }
+            ) {
+                assert_eq!(at.duration_since(begun), rig.env.timing.stop_grace);
+            }
+        }
+        let failures = containment(&error).failures();
+        assert_eq!(
+            failures
+                .iter()
+                .filter(|failure| matches!(
+                    failure,
+                    CleanupFailure::KillScope { signal, .. } if *signal == hung.name()
+                ))
+                .count(),
+            3,
+            "{failures:?}"
+        );
+        assert!(rig.fake.units().is_empty(), "cleanup still ran to the end");
+    })
+    .await;
 }
