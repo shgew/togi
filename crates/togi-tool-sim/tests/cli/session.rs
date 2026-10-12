@@ -186,8 +186,11 @@ fn record(dir: &Path, config: Config) {
 #[test]
 fn a_resume_runs_under_the_configuration_the_journal_recorded() {
     let state = tempfile::tempdir().unwrap();
-    let recorded = Config::parse(r#"{"durations":{"search_trial_s":60}}"#).unwrap();
-    assert_ne!(recorded, Config::default());
+    let recorded = Config::parse(
+        r#"{"durations":{"search_trial_s":60},"backends":{"mprime":"/nix/store/recorded-mprime","ycruncher":"/nix/store/recorded-ycruncher"}}"#,
+    )
+    .unwrap();
+    assert_ne!(recorded.backends(), Config::default().backends());
     record(state.path(), recorded.clone());
     let ran = sim([
         "--state-dir".as_ref(),
@@ -204,7 +207,17 @@ fn a_resume_runs_under_the_configuration_the_journal_recorded() {
         })
         .collect();
     assert!(loaded.len() >= 2, "{} config.loaded events", loaded.len());
-    assert!(loaded.iter().all(|config| *config == recorded));
+    for config in &loaded {
+        assert_eq!(
+            config.backends().mprime(),
+            Some(Path::new("/nix/store/recorded-mprime"))
+        );
+        assert_eq!(
+            config.backends().ycruncher(),
+            Some(Path::new("/nix/store/recorded-ycruncher"))
+        );
+        assert_eq!(*config, recorded);
+    }
 }
 
 fn files(dir: &Path) -> Vec<(PathBuf, Vec<u8>)> {
