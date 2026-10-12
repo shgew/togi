@@ -344,3 +344,49 @@ fn a_fitter_that_returns_no_shared_voltage_model_is_refused() {
     let (result, _) = run(&fixture, |records| Ok((initial_config(records), 0.0)));
     assert!(matches!(result, Err(Error::NotSharedVoltage)));
 }
+
+#[test]
+fn only_r7_trials_enter_the_r7_line_of_the_report() {
+    let mut records = anchor_records();
+    records.push(fact(&[-10; 16], Regime::R1, &[0], 60, Decisive::Pass));
+    let fixture = fixture(&records);
+    let (result, report) = run(&fixture, |records| Ok(anchor_config(records)));
+    result.unwrap();
+    assert!(
+        report.contains("All trials in-sample (record only): trials=21 "),
+        "{report}"
+    );
+    assert!(
+        report.contains("R7 in-sample (record only): trials=20 observed=10 "),
+        "{report}"
+    );
+}
+
+#[test]
+fn an_anchor_that_cannot_be_written_is_an_error_and_leaves_the_destination_alone() {
+    for directory in [false, true] {
+        let fixture = fixture(&anchor_records());
+        let path = fixture.out.join("target-shared-voltage.json");
+        let conflict = if directory {
+            path.clone()
+        } else {
+            fixture.out.clone()
+        };
+        if directory {
+            fs::create_dir_all(&conflict).unwrap();
+        } else {
+            fs::write(&conflict, "preserve").unwrap();
+        }
+        let (result, report) = run(&fixture, |records| Ok(anchor_config(records)));
+        let error = result.unwrap_err();
+        assert!(
+            matches!(&error, Error::Io { action, .. } if action.starts_with(if directory { "write" } else { "create" })),
+            "{error}"
+        );
+        assert!(!report.contains("Wrote IN-SAMPLE anchor"), "{report}");
+        assert_eq!(conflict.is_dir(), directory);
+        if !directory {
+            assert_eq!(fs::read_to_string(&conflict).unwrap(), "preserve");
+        }
+    }
+}

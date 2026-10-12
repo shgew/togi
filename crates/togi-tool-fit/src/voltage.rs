@@ -221,9 +221,6 @@ fn fit_clocks(v: &mut SharedVoltageDef, records: &[TrialFact], id: &str) {
         let mut zero = [false; 2];
         for core in class.loaded {
             let ccd = core.index() / 8;
-            if ccd > 1 {
-                continue;
-            }
             counts[ccd] += 1;
             zero[ccd] = zero[ccd]
                 || fact

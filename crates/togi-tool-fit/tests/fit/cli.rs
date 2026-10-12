@@ -162,3 +162,38 @@ fn an_ensemble_run_writes_the_machine_files_and_prints_the_report() {
     assert!(stdout.contains("Forward-chained check"), "{stdout}");
     assert!(stdout.contains("Fit elapsed: "), "{stdout}");
 }
+
+#[test]
+fn the_shared_voltage_anchor_is_fitted_checked_and_written() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut facts = Vec::new();
+    for i in 0..149_u64 {
+        let offset = if i >= 29 { -30 } else { 0 };
+        let loaded: Vec<i64> = (0..16).collect();
+        facts.push(fact(
+            "20260101T000000Z",
+            i + 1,
+            &[offset; 16],
+            Regime::R7,
+            &loaded,
+            600,
+            i == 0,
+        ));
+    }
+    let extract = write_extract(dir.path(), &facts);
+    let out = dir.path().join("machines");
+    let ran = fit(&[
+        "--facts",
+        extract.to_str().unwrap(),
+        "--out",
+        out.to_str().unwrap(),
+        "--shared-voltage-in-sample",
+    ]);
+    let stdout = text(&ran.stdout);
+    assert_eq!(ran.status.code(), Some(0), "{stdout}{}", text(&ran.stderr));
+    assert!(out.join("target-shared-voltage.json").is_file());
+    assert!(stdout.contains("Wrote IN-SAMPLE anchor: "), "{stdout}");
+    assert!(stdout.contains("Fit elapsed: "), "{stdout}");
+    assert!(!stdout.contains("Forward-chained"), "{stdout}");
+    assert!(!out.join("target-fit-0.json").exists());
+}

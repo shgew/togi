@@ -200,8 +200,12 @@ fn the_regime_rows_show_mean_log_loss_in_regime_order() {
         pooled: ForwardScore::default(),
     };
     let mut out = Vec::new();
-    report_forward(&mut out, &check, 0).unwrap();
+    report_forward(&mut out, &check, 2).unwrap();
     let text = String::from_utf8(out).unwrap();
+    assert!(
+        text.contains("Sealed newest sessions: 2 (neither fitted nor scored)\nPooled: "),
+        "{text}"
+    );
     assert!(
         text.contains(
             "  R1 trials=1 observed=0 predicted=0.3 log_loss/trial fit=0.3000 constant=0.6000\n  R7 trials=2 observed=1 predicted=0.5 log_loss/trial fit=0.5000 constant=1.0000\n"

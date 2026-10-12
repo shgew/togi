@@ -347,3 +347,21 @@ fn an_encoded_machine_retains_the_fit_evidence_and_parameters() {
     decoded.notes.clear();
     assert_eq!(decoded, cfg);
 }
+
+#[test]
+fn the_extract_path_a_machine_declares_is_relative_to_its_directory_and_cleaned() {
+    use crate::paths::facts_reference;
+    let reference =
+        |out: &str, facts: &str| facts_reference(Path::new(out), Path::new(facts)).unwrap();
+    assert_eq!(
+        reference("/a/b/./c/../machines", "/a/facts/x.gz"),
+        "../../facts/x.gz"
+    );
+    assert_eq!(reference("/a/machines", "/a/machines/sub/x.gz"), "sub/x.gz");
+    assert_eq!(reference("/a/machines", "/a/machines"), "");
+    let cwd = std::env::current_dir().unwrap();
+    assert_eq!(
+        reference("machines", cwd.join("facts.gz").to_str().unwrap()),
+        "../facts.gz"
+    );
+}
