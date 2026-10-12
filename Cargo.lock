@@ -744,6 +744,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "togi-hardware"
+version = "0.0.0"
+dependencies = [
+ "jiff",
+ "rustix",
+ "tempfile",
+ "thiserror",
+ "togi-backend",
+ "togi-command",
+ "togi-config",
+ "togi-detect",
+ "togi-hostlock",
+ "togi-machine",
+ "togi-mprime",
+ "togi-smu",
+ "togi-trial",
+ "togi-tuningboot",
+ "togi-ycruncher",
+]
+
+[[package]]
 name = "togi-hostlock"
 version = "0.0.0"
 dependencies = [
