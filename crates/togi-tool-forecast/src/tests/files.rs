@@ -221,3 +221,15 @@ fn an_anchor_serializes_as_plain_json() {
     assert_eq!(json["sha256"].as_str().unwrap().len(), 64);
     assert_eq!(serde_json::from_value::<Anchor>(json).unwrap(), anchor);
 }
+
+#[test]
+fn an_event_that_cannot_be_encoded_is_an_error() {
+    let mut payloads = events(1, start(A, "abc1234"));
+    payloads[1].mono = Some(std::time::Duration::MAX);
+    let error = Session::from_events(payloads).unwrap_err();
+    assert!(
+        matches!(error, Error::Encode { seq, .. } if seq == Seq::new(2).unwrap()),
+        "{error}"
+    );
+    assert!(error.to_string().starts_with("encode event 2: "), "{error}");
+}

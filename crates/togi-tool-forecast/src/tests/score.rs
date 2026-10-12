@@ -447,3 +447,18 @@ fn a_score_refuses_sessions_with_another_ruleset_at_its_terminal_session() {
         format!("session {A}, ruleset 0, cannot be replayed by this build's ruleset {RULESET}")
     );
 }
+
+#[test]
+fn placements_display_as_the_report_columns_show_them() {
+    let shown: Vec<_> = [
+        Placement::Inside,
+        Placement::Below,
+        Placement::Above,
+        Placement::Open,
+        Placement::Unforecast,
+    ]
+    .iter()
+    .map(ToString::to_string)
+    .collect();
+    assert_eq!(shown, ["yes", "below", "above", "open", "-"]);
+}

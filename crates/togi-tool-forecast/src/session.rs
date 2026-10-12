@@ -36,11 +36,7 @@ impl Anchor {
         let session = Session::read(&dir.join(LIVE_JOURNAL))?.ok_or_else(|| Error::NoEvents {
             dir: dir.to_path_buf(),
         })?;
-        let last = session.events.last().map(|event| event.seq);
-        last.and_then(|seq| session.anchor_at(seq))
-            .ok_or_else(|| Error::NoEvents {
-                dir: dir.to_path_buf(),
-            })
+        Ok(session.anchor_through(session.events.len() - 1))
     }
 
     /// The index of the anchor's session among `sessions` and of the anchor event in it, with the journal
@@ -185,12 +181,16 @@ impl Session {
     /// The anchor at event `seq` of the session; `None` when it has no such event.
     pub fn anchor_at(&self, seq: Seq) -> Option<Anchor> {
         let at = self.events.iter().position(|event| event.seq == seq)?;
-        Some(Anchor {
+        Some(self.anchor_through(at))
+    }
+
+    fn anchor_through(&self, at: usize) -> Anchor {
+        Anchor {
             session: self.id,
-            seq,
+            seq: self.events[at].seq,
             time: self.events[at].time,
             sha256: hex(&self.prefixes[at]),
-        })
+        }
     }
 }
 
