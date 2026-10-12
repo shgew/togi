@@ -1,0 +1,48 @@
+---
+source: crates/togi-watch/src/frames/snapshots.rs
+expression: body
+---
+│  togi   09:48:45   session 9h48m   32 failures · 7 crashes   last observed failure 09:48, a moment ago
+│
+│  ■ SOLO LIMITS  16/16  ───  ○ PHASE 1  ───  ○ PHASE 2  ───  CLEAN CYCLES 0  ───  ○ CYCLE 1  paused at step 1 of 18, part 1
+│
+│  ▌  DEAD END   I couldn't obtain usable failure evidence, so I can't...          last trial      INCONCLUSIVE  0:00 on 00-07
+│
+│
+│  DEAD END ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+│  no evidence: backend mprime is missing: setup failed: backend binary missing
+│
+│  CCD 0               0  2 counts/cell       -50 fail pt  not under load          CCD 1               0  2 counts/cell       -50 fail pt  not under load
+│    00  -25  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄█·               -26                             08   -5  HAS ROOM  ▄▄▄█                          -7   top by offset
+│    01  -16  HAS ROOM  ▄▄▄▄▄▄▄▄█                    -18                             09  -34  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█           -36
+│    02  -25  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄█               -27                             10  -17  HAS ROOM  ▄▄▄▄▄▄▄▄▄█                   -19
+│    03  -24  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄█                -26                             11   -9  HAS ROOM  ▄▄▄▄▄█                       -11
+│    04  -15  HAS ROOM  ▄▄▄▄▄▄▄▄█                    -17                             12  -16  HAS ROOM  ▄▄▄▄▄▄▄▄█                    -18
+│    05   -9  HAS ROOM  ▄▄▄▄▄█                       -11   top by offset             13  -37  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█         -39
+│    06  -37  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█         -39                             14  -15  HAS ROOM  ▄▄▄▄▄▄▄▄█                    -17
+│    07  -29  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█             -31                             15  -13  HAS ROOM  ▄▄▄▄▄▄▄█                     -15
+│
+│  BIOS PROFILE ──────────────────────────────────────────────────────────────     WHAT HAPPENED ───────────────────────────────────────────────── l: last 400
+│  none confirmed yet: phase 1 has not passed a full cycle
+│                                                                                  09:48  stop     dead end: backend mprime is missing: setup failed...
+│  CYCLE 1 ───────────────────────────────────────────────── 18 steps · 0 done     09:48  unclear  rerun of R7 all-core on 00-07 · setup failed: backend...
+│                                                                                  09:48  backoff  core 00 -26 → -25
+│    #  kind              where               schedule      result                 09:48  fail     core 00 fails at -26
+│  ○  1 R7 all-core       2 CCDs · 3+ parts   3+ parts      paused at part 1       09:48  fail     R7 full CCD 0 on 00-07 · the stress program quit · core...
+│       ├ full CCD 0      00-07               3 x 2m + 5m                          09:47  step     cycle 1 step 1: R7 all-core, mprime AVX2 36K-248K
+│       ├ full CCD 1      08-15               3 x 2m + 5m                          09:47  cycle    cycle 1 started · 18 steps
+│       ├ full CCD 0+1    00-15               3 x 2m + 10m                         09:47  limit    cores 06, 13 solo limit -38
+│       └ partials may follow                                                      09:38  limit    core 09 solo limit -35
+│  ○  2 R7 all-core       2 CCDs · 3+ parts   3+ parts                             09:38  limit    core 00 solo limit -27
+│  ○  3 R7 all-core       2 CCDs · 3+ parts   3+ parts                             09:38  limit    core 07 solo limit -30
+│  ○  4 R2 heavy vector   one core at a time  16 x 2m                              09:35  limit    core 10 solo limit -18
+│  ○  5 R2 heavy vector   one core at a time  16 x 2m                              09:35  limit    core 02 solo limit -26
+│  ○  6 R2 heavy vector   one core at a time  16 x 2m                              09:32  limit    core 15 solo limit -14
+│  +12 more                                                                        09:28  limit    core 12 solo limit -17
+│                                                                                  09:28  limit    core 03 solo limit -25
+│  R7 ───────────────────── top requesters ───── self-sufficient ─────────────     09:23  limit    core 01 solo limit -17
+│  mprime AVX2 36K-248K     05 08 by offset      none yet                          09:19  limit    cores 04, 14 solo limit -16
+│  mprime AVX-512 36K-248K  05 08 by offset      none yet                          08:38  limit    cores 05, 11 solo limit -10
+│  y-cruncher FFTv4         05 08 by offset      none yet                          +201 more
+│
+│   ?  help    l  log    esc  back    q  close view

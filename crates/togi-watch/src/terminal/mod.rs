@@ -24,7 +24,9 @@ mod console;
 mod input;
 mod keys;
 mod notify;
-mod palette;
+#[cfg(test)]
+#[cfg(target_os = "linux")]
+mod real_process;
 mod show;
 mod signals;
 mod source;
@@ -38,11 +40,13 @@ use std::path::Path;
 use std::sync::Arc;
 
 use jiff::Timestamp;
+use jiff::tz::TimeZone;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use tokio::sync::{Notify, mpsc, watch};
 use tokio::task::JoinHandle;
 
+use crate::frames;
 use crate::screen::{Colours, Drawn, Journal, Screen, View};
 use console::Tty;
 use input::Reader;
@@ -174,15 +178,24 @@ impl Drop for RawMode<'_> {
 
 /// Shows the dashboard of the journal in `state_dir` on `out` until the viewer quits or SIGINT, SIGTERM or
 /// SIGHUP arrives. When `keys` is a terminal, keys switch views and scroll: `?` explains the screen, `l` shows the
-/// event log, the arrow and page keys scroll, `q` quits.
-///
-/// `render` draws one frame of the journal on a screen into a buffer one row and one column smaller than the
-/// terminal, and reports how long the frame stays true.
+/// event log, the arrow and page keys scroll, `q` quits. Frames are drawn by [`frames::render`] in the system's
+/// time zone, in the colour profile [`frames::colours_for`] chooses for `out`, `NO_COLOR`, `JOURNAL_STREAM` and
+/// `TERM`.
 ///
 /// It listens for SIGINT, SIGTERM, SIGHUP and SIGWINCH (which redraws) through tokio, whose listeners stay
 /// registered for the rest of the process: once it has run, these signals no longer take their default action, so
 /// the caller keeps its own listener for SIGINT, SIGTERM and SIGHUP for the process's lifetime.
 pub fn run(
+    state_dir: &Path,
+    out: BorrowedFd<'_>,
+    keys: Option<BorrowedFd<'_>>,
+) -> Result<(), Error> {
+    run_with(state_dir, out, keys, dashboard())
+}
+
+/// [`run`] with `render` drawing each frame of the journal on a screen into a buffer one row and one column smaller
+/// than the terminal, and reporting how long the frame stays true.
+fn run_with(
     state_dir: &Path,
     out: BorrowedFd<'_>,
     keys: Option<BorrowedFd<'_>>,
@@ -211,6 +224,17 @@ pub fn run_after(
     stop: &Stop,
     out: BorrowedFd<'_>,
     keys: Option<BorrowedFd<'_>>,
+) -> Result<(), Error> {
+    run_after_with(state_dir, since, stop, out, keys, dashboard())
+}
+
+/// [`run_after`] with `render` drawing each frame, as for [`run_with`].
+fn run_after_with(
+    state_dir: &Path,
+    since: u64,
+    stop: &Stop,
+    out: BorrowedFd<'_>,
+    keys: Option<BorrowedFd<'_>>,
     render: impl FnMut(&Journal<'_>, &Screen, Timestamp, &mut Buffer) -> Drawn,
 ) -> Result<(), Error> {
     start(
@@ -226,6 +250,12 @@ pub fn run_after(
     )
 }
 
+/// The dashboard's frames: [`frames::render`] in the system's time zone.
+fn dashboard() -> impl FnMut(&Journal<'_>, &Screen, Timestamp, &mut Buffer) -> Drawn {
+    let zone = TimeZone::system();
+    move |journal, screen, now, buf| frames::render(journal, screen, now, &zone, buf)
+}
+
 fn start(
     config: &Config<'_>,
     out: BorrowedFd<'_>,
@@ -237,7 +267,7 @@ fn start(
         std::env::var_os("NO_COLOR").as_deref(),
         std::env::var_os("JOURNAL_STREAM").as_deref(),
     );
-    let colours = palette::colours_for(facts, std::env::var_os("TERM").as_deref());
+    let colours = frames::colours_for(facts, std::env::var_os("TERM").as_deref());
     let backend = Tty::new(&out).map_err(|source| Error::Terminal {
         operation: "open terminal",
         source,
@@ -334,10 +364,20 @@ fn drive<B: console::Console>(
 /// The width and height of a one-frame print unless told otherwise.
 pub const ONE_FRAME_SIZE: (u16, u16) = (240, 67);
 
-/// Prints one frame of `width` by `height` to `out`, without styling. A missing journal prints `no session yet`
-/// as the frames say it. A journal that cannot be read or folded prints its problem frame first, and is then
-/// returned as the error.
+/// Prints one frame of `width` by `height` of the journal in `state_dir` to `out`, drawn by [`frames::render`] in
+/// the system's time zone, without styling. A missing journal prints `NO SESSION YET` as the frames say it. A
+/// journal that cannot be read or folded prints its problem frame first, and is then returned as the error.
 pub fn one_frame(
+    state_dir: &Path,
+    width: u16,
+    height: u16,
+    out: &mut impl Write,
+) -> Result<(), Error> {
+    one_frame_with(state_dir, width, height, out, dashboard())
+}
+
+/// [`one_frame`] with `render` drawing the frame, as for [`run_with`].
+fn one_frame_with(
     state_dir: &Path,
     width: u16,
     height: u16,
@@ -406,10 +446,11 @@ mod tests {
     use rustix::process::{Signal, getpid, kill_process};
     use tempfile::TempDir;
 
+    use super::console::RESET_PALETTE;
     use super::testing::{Faults, Recorder, session_with_warnings, write_journal};
     use super::{
         Colours, Config, Drawn, Error, ONE_FRAME_SIZE, SourceError, Stop, View, drive, one_frame,
-        palette, uses_palette,
+        one_frame_with, uses_palette,
     };
     use crate::screen::{Hold, Journal, Screen};
 
@@ -582,7 +623,7 @@ mod tests {
             assert!(recorder.restored(), "{name}");
             assert_eq!(
                 recorder.raw().last().map(String::as_str),
-                Some(palette::RESET),
+                Some(RESET_PALETTE),
                 "{name}: the palette"
             );
         }
@@ -743,7 +784,7 @@ mod tests {
             assert_eq!(palette, colours == Colours::Console, "{colours:?}");
             assert_eq!(uses_palette(colours), colours == Colours::Console);
             assert_eq!(
-                raw.iter().any(|text| text == super::palette::RESET),
+                raw.iter().any(|text| text == RESET_PALETTE),
                 colours == Colours::Console,
                 "{colours:?}: restored"
             );
@@ -814,7 +855,7 @@ mod tests {
     fn one_frame_of_a_missing_journal_prints_the_frame_without_styling_and_succeeds() {
         let state = TempDir::new().unwrap();
         let mut out = Vec::new();
-        one_frame(state.path(), 40, 6, &mut out, describe).unwrap();
+        one_frame_with(state.path(), 40, 6, &mut out, describe).unwrap();
         let text = String::from_utf8(out).unwrap();
         assert_eq!(
             text,
@@ -829,7 +870,7 @@ mod tests {
         let mut out = Vec::new();
         let mut area = None;
         let mut screen_seen = None;
-        one_frame(
+        one_frame_with(
             state.path(),
             30,
             9,
@@ -860,7 +901,7 @@ mod tests {
         let state = TempDir::new().unwrap();
         write_journal(state.path(), &session_with_warnings(2));
         let mut out = Vec::new();
-        one_frame(state.path(), 40, 6, &mut out, describe).unwrap();
+        one_frame_with(state.path(), 40, 6, &mut out, describe).unwrap();
         assert!(String::from_utf8(out).unwrap().starts_with("3 events\n"));
     }
 
@@ -869,7 +910,7 @@ mod tests {
         let state = TempDir::new().unwrap();
         super::testing::write_bytes(state.path(), b"not json\n");
         let mut out = Vec::new();
-        let error = one_frame(state.path(), 80, 6, &mut out, describe).unwrap_err();
+        let error = one_frame_with(state.path(), 400, 6, &mut out, describe).unwrap_err();
         let text = String::from_utf8(out).unwrap();
         assert!(text.starts_with("problem: "), "{text}");
         assert!(text.contains("line 1"), "{text}");
@@ -891,7 +932,7 @@ mod tests {
             ],
         );
         let mut out = Vec::new();
-        let error = one_frame(state.path(), 80, 6, &mut out, describe).unwrap_err();
+        let error = one_frame_with(state.path(), 80, 6, &mut out, describe).unwrap_err();
         assert!(matches!(error, Error::Journal(SourceError::Fold(_))));
         assert!(String::from_utf8(out).unwrap().starts_with("problem: "));
     }
@@ -908,7 +949,42 @@ mod tests {
             }
         }
         let state = TempDir::new().unwrap();
-        let error = one_frame(state.path(), 10, 6, &mut Broken, describe).unwrap_err();
+        let error = one_frame_with(state.path(), 10, 6, &mut Broken, describe).unwrap_err();
         assert!(matches!(error, Error::Output(_)));
+    }
+
+    #[test]
+    fn one_frame_prints_the_dashboard_frame_without_styling() {
+        let state = TempDir::new().unwrap();
+        let mut out = Vec::new();
+        one_frame(state.path(), 120, 33, &mut out).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(text.contains("NO SESSION YET"), "{text}");
+        assert_eq!(text.lines().count(), 32);
+        assert!(!text.contains('\x1b'), "{text}");
+        togi_watchtest::install(state.path(), togi_watchtest::Scenario::Idle).unwrap();
+        let mut out = Vec::new();
+        one_frame(state.path(), 120, 33, &mut out).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(text.contains("this screen holds still"), "{text}");
+        assert!(
+            text.lines().all(|line| line.chars().count() <= 119),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn one_frame_prints_the_dashboard_s_problem_frame_and_returns_the_error() {
+        let state = TempDir::new().unwrap();
+        super::testing::write_bytes(state.path(), b"not json\n");
+        let mut out = Vec::new();
+        let error = one_frame(state.path(), 120, 33, &mut out).unwrap_err();
+        let text = String::from_utf8(out).unwrap();
+        assert!(text.contains("JOURNAL UNREADABLE"), "{text}");
+        assert!(!text.contains('\x1b'), "{text}");
+        assert!(
+            matches!(error, Error::Journal(SourceError::Read(_))),
+            "{error:?}"
+        );
     }
 }
