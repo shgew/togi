@@ -1676,6 +1676,20 @@ fn carried_evidence_before_the_hunt_establishes_a_member_probe() {
         if passes {
             assert_eq!(view.passed, u32::try_from(needed).unwrap());
         }
+        let plan = j.state.hunt_plan().expect("the hunt is still active");
+        let ladder = plan
+            .probes
+            .iter()
+            .find(|probe| probe.member == first.core)
+            .expect("the probed member is on the plan");
+        if passes {
+            assert_eq!(ladder.passed_at, [first.offset], "{ladder:?}");
+            assert_eq!(ladder.carried, [first.offset], "{ladder:?}");
+        } else {
+            assert!(ladder.passed_at.is_empty(), "{ladder:?}");
+            assert!(ladder.carried.is_empty(), "{ladder:?}");
+            assert!(ladder.failed_at.contains(&first.offset), "{ladder:?}");
+        }
         let next = j.next();
         let following = hunt_group(&next);
         assert_eq!(following.inferred, None, "passes={passes}: {following:?}");

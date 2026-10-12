@@ -729,14 +729,19 @@ fn repeated_parked_core_probe_returns_to_binary_parts_after_pass() {
                     let mut cited = vec![hunt];
                     cited.extend(&prior);
                     assert_eq!(decision.cause, cited);
-                    let singleton = |j: &Journal| {
+                    let singleton = |j: &Journal, when: &str| {
                         let next = active_plan(j).next_group().unwrap();
                         assert_eq!(next.stage, GroupStage::Repeated);
                         assert_eq!(core_ids(next.cores), [3]);
+                        let parts = j.state.hunt_plan().unwrap().parts;
+                        assert!(
+                            parts.len() == 1 && core_ids(parts[0].failing) == [3],
+                            "{when}, the dashboard plan shows the corroborated core alone: {parts:?}"
+                        );
                     };
-                    singleton(&j);
+                    singleton(&j, "before the singleton is recorded");
                     j.decide(decision.clone());
-                    singleton(&j);
+                    singleton(&j, "while the singleton runs");
                     for _ in 0..5 {
                         let plan = j.next_trial();
                         j.trial(&plan, Outcome::Pass);
@@ -754,6 +759,8 @@ fn repeated_parked_core_probe_returns_to_binary_parts_after_pass() {
                     };
                     j.decide(normal);
                     assert_eq!(active_plan(&j).parts().len(), 2);
+                    let parts = j.state.hunt_plan().unwrap().parts;
+                    assert_eq!(parts.len(), 2, "back to halves: {parts:?}");
                     j.assert_resumes();
                     return;
                 }
