@@ -40,7 +40,7 @@ struct Cli {
     /// The simulator command the bench runs; default the bench builds togi-tool-sim.
     #[arg(long, value_name = "FILE")]
     sim: Option<PathBuf>,
-    /// Bench run records for the termination and wall-time checks.
+    /// Bench run records for the bench-status and wall-time checks.
     #[arg(long, value_name = "FILE", requires = "root")]
     records: Option<PathBuf>,
     /// The bench run root holding SCENARIO/SPLIT-SEED; requires --records.

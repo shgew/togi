@@ -8,7 +8,7 @@
 //! baselines report the hardware, which may hold firmware offsets outside that range, and are not bounded.
 //!
 //! The `togi-tool-audit` command sweeps: it runs `togi-tool-bench` over a generated suite of every scenario with
-//! seeds `1..=N`, keeps each run's state directory, and audits them with the runs' termination and wall times. Given
+//! seeds `1..=N`, keeps each run's state directory, and audits them with the runs' bench statuses and wall times. Given
 //! state directories instead, it audits those.
 
 mod auditor;

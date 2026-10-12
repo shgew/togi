@@ -105,16 +105,16 @@ pub enum RunError {
     },
     #[error("locate the bench: {0}")]
     Locate(String),
-    #[error("bench sweep ({}): {status}", evidence(.dir))]
+    #[error("bench sweep ({}): {status}", evidence(.dir.as_deref()))]
     Bench {
         dir: Option<PathBuf>,
         status: String,
     },
-    #[error("find the retained bench root ({}): got {found} roots", evidence(.dir))]
+    #[error("find the retained bench root ({}): got {found} roots", evidence(.dir.as_deref()))]
     Roots { dir: Option<PathBuf>, found: usize },
 }
 
-fn evidence(dir: &Option<PathBuf>) -> String {
+fn evidence(dir: Option<&Path>) -> String {
     match dir {
         Some(dir) => format!("evidence {}", dir.display()),
         None => "evidence removed; rerun with --keep DIR to retain it".into(),

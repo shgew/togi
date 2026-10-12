@@ -460,3 +460,78 @@ fn a_signal_stops_the_bench_and_removes_the_scratch_without_blocking_its_signals
         );
     }
 }
+
+#[test]
+fn a_signal_while_the_audit_reads_the_evidence_removes_the_scratch_and_exits() {
+    use std::os::unix::fs::FileTypeExt as _;
+
+    for (signal, keep) in [
+        (Signal::TERM, false),
+        (Signal::HUP, false),
+        (Signal::INT, false),
+        (Signal::TERM, true),
+    ] {
+        let fake = Fake::new();
+        let scratch = fake.path("tmp");
+        fs::create_dir(&scratch).unwrap();
+        let bench = fake.path("bench");
+        fs::write(
+            &bench,
+            "#!/bin/sh\nwhile [ $# -gt 0 ]; do case \"$1\" in --keep) keep=\"$2\";; --out) out=\"$2\";; esac; shift; done\nmkdir -p \"$keep/bench-1\"\nmkfifo \"$out\"\n",
+        )
+        .unwrap();
+        fs::set_permissions(&bench, fs::Permissions::from_mode(0o755)).unwrap();
+        fs::write(
+            fake.path("suite.json"),
+            r#"{"scenarios":[{"name":"s","machine":"m.json"}]}"#,
+        )
+        .unwrap();
+        let evidence = fake.path("evidence");
+        let mut audit = command();
+        audit
+            .env("TMPDIR", &scratch)
+            .arg("--bench")
+            .arg(&bench)
+            .arg("--suite")
+            .arg(fake.path("suite.json"))
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped());
+        if keep {
+            audit.arg("--keep").arg(&evidence);
+        }
+        let mut child = audit.spawn().unwrap();
+        let base = if keep { &evidence } else { &scratch };
+        let mut pipe = None;
+        wait_for("the bench to make the records pipe", || {
+            pipe = fs::read_dir(base)
+                .ok()
+                .and_then(|mut entries| entries.next())
+                .map(|entry| entry.unwrap().path().join("records.jsonl"))
+                .filter(|path| {
+                    fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_fifo())
+                });
+            pipe.is_some()
+        });
+        let pipe = pipe.unwrap();
+        let writer = std::thread::spawn(move || fs::OpenOptions::new().write(true).open(pipe));
+        wait_for("the audit to open the records", || writer.is_finished());
+        let held = writer.join().unwrap().unwrap();
+        kill_process(
+            Pid::from_raw(i32::try_from(child.id()).unwrap()).unwrap(),
+            signal,
+        )
+        .unwrap();
+        let output = exit_of(&mut child);
+        drop(held);
+        let stderr = text(&output.stderr);
+        assert_eq!(output.status.code(), Some(1), "{signal:?}: {stderr}");
+        assert!(stderr.contains("interrupted"), "{stderr}");
+        assert!(!stderr.contains("violations="), "{stderr}");
+        assert_eq!(
+            fs::read_dir(&scratch).unwrap().count(),
+            0,
+            "{signal:?} keep={keep}"
+        );
+        assert_eq!(evidence.exists(), keep, "{signal:?} keep={keep}");
+    }
+}

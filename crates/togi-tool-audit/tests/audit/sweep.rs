@@ -287,3 +287,21 @@ fn the_reported_check_spellings_are_pinned() {
         .collect();
     assert_eq!(spelled, ["wall_time", "bench_status", "unreadable"]);
 }
+
+#[test]
+fn auditing_a_directory_creates_its_lock_file_and_sets_its_mode() {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("state");
+    write_state_dir(&dir, &clean());
+    fs::set_permissions(&dir, fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(!dir.join("lock").exists());
+    let report = audit_directories(std::slice::from_ref(&dir), &[], Path::new("")).unwrap();
+    assert!(report.findings.is_empty(), "{:?}", report.findings);
+    assert!(dir.join("lock").is_file());
+    assert_eq!(
+        fs::metadata(&dir).unwrap().permissions().mode() & 0o777,
+        0o711
+    );
+}

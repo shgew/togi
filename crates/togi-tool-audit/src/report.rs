@@ -56,9 +56,9 @@ pub struct Finding {
     pub reason: String,
 }
 
-/// The members of a bench run record the audit reads; the bench's other members are ignored, so the audit follows
-/// the bench's file by its subprocess interface alone.
 object_only! {
+    /// The members of a bench run record the audit reads; the bench's other members are ignored, so the audit
+    /// follows the bench's file by its subprocess interface alone.
     #[derive(Clone, Debug, PartialEq)]
     pub struct Record {
         pub scenario: String,
