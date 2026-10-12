@@ -170,6 +170,17 @@ Computation errors, stalls, unexpected exits and crashes stop at the selected ti
 
 `crates/togi-sim` is the native port of `internal/sim`; it takes over when `tools/sim` does. It is a library: `Model::new(&MachineDefinition, seed)` validates a machine file's document, and a `Simulator` built from a `Model` and `RunSettings { seed, history, replay }` hands the session its seams (`Simulator::seams`, a `togi_machine::Machine`) and offers the controls tests use: `jump_wall`, `crash`, `next_reset`, `power_loss`, `reboot`, the fault arms (`fail_write`, `crash_at_write`, `crash_before_apply`, `corrupt_readback`, `fail_setup`, `miss_backend`, `escape`, `fail_check`), `script_trial`, `set_bios_context`, `set_samples_dir` and `interrupt_smu`, whose hook sees every SMU access before and after its effect. `History` (boots, last event time, BIOS context) replaces Go's `Resume`: a machine starts one reboot after the last event and numbers its boots after the recorded ones.
 
+A journal does not hold everything the next boot observes. `Simulator::persisted` returns a serializable `Persisted` snapshot of the machine, and `Simulator::restore` continues the machine from it. The snapshot holds:
+
+- the seed;
+- the clocks;
+- every boot with its reset reason and kernel log, as journald keeps them;
+- the machine checks and the reset waiting for the next boot;
+- the registers and BIOS context;
+- the last trial's samples.
+
+Draws are keyed by seed and typed parts, so no generator state is kept. Armed faults, added scripts and recorded violations are not kept. A snapshot decodes from objects only, as a machine file does, and a snapshot for another number of cores is `RestoreError::Cores`. Go rebuilt a later process's machine from the journals alone, so it lost the pending machine checks, the reset reason and the time between the last event and the crash.
+
 The machine-file format is the same document, with these differences:
 
 - **Strict validation.** `Model::new` checks every number: finite, in range, `growth` positive, probabilities in 0 to 1, weights nonnegative with a positive total (reset weights too, so an empty reset map is an error, not a silent watchdog), `onset_boost` and `onset_s` nonnegative. It refuses a hazard that cannot be represented: a largest limit rate (the near-limit rate, or the past-limit rate grown to the deepest offset) that is not finite, a core whose `flat` plus that rate is not finite, a CCD exponent that is not finite or above 700, and a rail whose worst-case hazard is not finite. Hazard rates and failure counts are otherwise evaluated without overflowing intermediates, and growth powers and onset counts without underflowing ones, so every source of an accepted machine has a finite rate and scores and draws agree; other arithmetic, such as the rail's clock and power model, is plain floating point, so absurd coefficients give absurd clocks and rates near the smallest float may round to zero. Fields are checked in document order, nested ones too, and an error names the field (`joint[2].members.3`). Decoding comes first, so a document missing a required field (a core without `alone`) is a parse error even when its core count is also wrong. Go left most of these unchecked.
@@ -181,6 +192,42 @@ The machine-file format is the same document, with these differences:
 Randomness is `rand`'s `StdRng`, one stream per typed domain seeded by a fixed splitmix64 fold over the run seed, the domain and its key parts. A loaded core's draws are keyed by the core, regime, condition, its applied offset and the trial index, never the trial ID or another core's offset, so a retry reproduces its class outcome; an unloaded core's draws also name the loaded *set*, whatever its order. Telemetry has its own domains and consumes no failure draw. The loaded set is a `CoreSet`, so a joint's failure is attributed to its lowest loaded member and a CCD's to the lowest loaded core on that CCD, not the first in the caller's order. Seeds and streams are not Go's: the same seed gives different limits and failures than the Go simulator.
 
 A trial's failure is the earliest strictly before the intended end of the sources `Model::visit_sources` lists (loaded and idle cores, shared-rail cores, CCDs, joints, the background), and the same list gives `Model::hazard`, `Model::failure_probability` and `Model::r7_failure_share`, so scores and draws cannot diverge. Each trial runs once: a second `wait` is an error, also after a cancelled one, and a trial of an earlier boot is `Error::Crashed`. A crash keeps the exposure the trial ran before it, also for a script that crashes after its signal. An SMU hook that crashes or reboots the machine before an access makes that access `Error::Crashed` without applying it.
+
+### The Rust simulation runner (`togi-simrun`)
+
+`crates/togi-simrun` is the native port of `internal/simrun`, the loop that runs whole sessions on the simulator. `simulate(SimInput)` boots the `Simulator` it is given and, on each boot:
+
+1. Reads the boot id and BIOS context.
+2. Locks the state directory and runs `togi_session::prepare`, which archives a build or BIOS transition and selects the carry.
+3. Hands the journal and the carry to `togi_session::run`.
+4. After a crash, reboots the machine and repeats.
+
+The loop ends when a run stops without a crash, which gives `SimOutcome::Stopped` with the run's stop, errors, emergency outcome and resume capsule, or after `max_boots` boots, which gives `SimOutcome::Capped`. A boot whose journal starts empty begins a new session, so the simulator forgets the last trial's samples (`Simulator::forget_last_trial`), and a new trial that reuses an earlier session's trial id reads none.
+
+The state directory is either in memory or on disk:
+
+- **`Persistence::Memory(MemFs)`** keeps it in a `togi_journal::MemFs`. `state.json` is published when a run finishes, and a crashed run publishes it from its capsule (`ResumeCapsule::publish`), so the next boot finds the document a live run would have left.
+- **`Persistence::Files(path)`** locks a directory on disk for each boot and publishes `state.json` after every event. Nothing is synced. A test that holds the directory's lock makes `simulate` fail with `SimError::Lock`.
+
+Both modes leave byte-identical `events.jsonl` and `state.json`; a test pins this on three machines.
+
+**Resume and verification.** `Replay::Warm` resumes each boot from the folds the crashed boot kept. `Replay::Cold` folds the whole journal again, as `togi run` does. Verification runs in both modes. It checks the capsule against a fresh fold of the journal (`ResumeCapsule::verify`) on these boots:
+
+- every boot that ends the simulation, by a stop or by the cap;
+- every `verify_every`th crashed boot.
+
+A divergence is `SimError::Diverged`, and a state that cannot be published is `SimError::Publish`. A crashed boot that also failed in another way, such as a failed log write, is `SimError::Failed` with those errors. A log that cannot be flushed at the end is `SimError::FlushLog`. None of these is ever reported as a cap. In a run that stops, a failed log write is `SessionError::Log` among its errors.
+
+**Observing the run.** An `observer` sees every appended event and may answer `Observe::Stop`, which cancels the run with `Stop::Signal`. It keeps seeing events after the caller's log fails. It may also call the simulator's fault controls, such as `crash`, `next_reset` or `power_loss`. These two uses replace Go's `Until` and `Wrap` journal wrappers. An observer needs in-memory persistence. `write_samples` writes trial samples under the state directory's `trials/`, so it needs persistence on disk.
+
+**After a run.** These functions read the state directory:
+
+- `events` returns the live journal's events.
+- `history` and `history_in` return a `togi_sim::History` that continues a resumed machine's boot numbering and clock.
+- `resume_simulator` returns the simulator a later process continues with. A capped simulation leaves its machine as `machine.json` in the state directory, and the later process restores it. Without `machine.json`, it builds a fresh machine from `history`. A later `simulate` removes the file after its first boot that appends to the journal, so a continuation refused before it starts, by a configuration naming a missing core for example, leaves the machine for the next try. A test pins that a simulation capped and continued by a second process leaves the same `events.jsonl` and `state.json` as an uninterrupted one. A machine rebuilt from the journals alone does not.
+- `recorded_config` and `recorded_config_in` return the configuration of the latest `config.loaded`, standing in for the file `togi run` would load.
+
+The tuner's simulation tests from `internal/tuner` (`forecast_sim_test.go` and `memo_test.go`) live in this crate's `tests/`, because they need whole simulated sessions. `togi-tuner` cannot take `togi-simrun` as a dev-dependency: that would build a second `togi-tuner` whose types do not unify with the first.
 
 ## Measured reference journals
 

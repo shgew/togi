@@ -522,3 +522,176 @@ fn a_simulator_can_be_built_without_run_settings() {
     let mut machine = simulator.seams();
     assert!(machine.host.boot_id().is_ok());
 }
+
+#[test]
+fn a_restored_machine_reports_what_the_crashed_one_left_for_its_next_boot() {
+    let definition = two_cores(ModelDef {
+        crash_mce: 1.0,
+        ..sharp(Signal::Crash)
+    });
+    let mut rig = Rig::new(&definition, 1);
+    let crashed_boot = rig.boot();
+    assert!(crashed(&rig.alone(0, -12, Regime::R2, 0)));
+    let text = serde_json::to_string(&rig.sim.persisted()).expect("an encoded machine");
+    let restored = Simulator::restore(
+        model(&definition),
+        None,
+        serde_json::from_str(&text).expect("a decoded machine"),
+    )
+    .expect("a restored machine");
+    assert_eq!(restored.persisted(), rig.sim.persisted());
+
+    let next_boot = |sim: &Simulator| {
+        sim.reboot();
+        let mut machine = sim.seams();
+        let boot = machine.host.boot_id().expect("a booted machine");
+        let reason = machine.kernel.reset_reason(&boot).expect("a reason");
+        let after = machine
+            .kernel
+            .reset_reason_after(&crashed_boot)
+            .expect("the reason after the crashed boot");
+        let mces = machine.kernel.mces(&boot, Duration::ZERO).expect("a log");
+        (boot, reason, after, mces, sim.now(), sim.monotonic())
+    };
+    let want = next_boot(&rig.sim);
+    assert_eq!(next_boot(&restored), want);
+    assert_ne!(want.0, crashed_boot);
+    assert!(want.1.kind.is_some(), "{:?}", want.1);
+    assert!(
+        want.3
+            .iter()
+            .any(|mce| !mce.corrected && mce.core == Some(core(0))),
+        "{:?}",
+        want.3
+    );
+}
+
+#[test]
+fn a_persisted_machine_for_other_cores_is_refused() {
+    let rig = Rig::new(&two_cores(ModelDef::default()), 1);
+    let error = Simulator::restore(model(&machine(4, vec![])), None, rig.sim.persisted())
+        .err()
+        .expect("a refusal");
+    assert_eq!(
+        error,
+        togi_sim::RestoreError::Cores {
+            persisted: 2,
+            model: 4
+        }
+    );
+}
+
+#[test]
+fn a_persisted_machine_without_boots_is_refused() {
+    let definition = two_cores(ModelDef::default());
+    let rig = Rig::new(&definition, 1);
+    let mut value = serde_json::to_value(rig.sim.persisted()).expect("an encoded machine");
+    let boots = value
+        .get_mut("boots")
+        .and_then(serde_json::Value::as_array_mut)
+        .expect("a boots array");
+    assert!(!boots.is_empty());
+    boots.clear();
+    let persisted = serde_json::from_value(value).expect("a decoded machine");
+    let error = Simulator::restore(model(&definition), None, persisted)
+        .err()
+        .expect("a refusal");
+    assert_eq!(error, togi_sim::RestoreError::NoBoot);
+}
+
+fn positional(object: &serde_json::Value, fields: &[&str]) -> serde_json::Value {
+    let map = object.as_object().expect("an object");
+    assert_eq!(map.len(), fields.len(), "{object}");
+    serde_json::Value::Array(fields.iter().map(|field| map[*field].clone()).collect())
+}
+
+fn refuses_positional(machine: &serde_json::Value, pointer: &str, fields: &[&str]) {
+    serde_json::from_value::<togi_sim::Persisted>(machine.clone()).expect("a decoded machine");
+    let mut value = machine.clone();
+    let target = value
+        .pointer_mut(pointer)
+        .unwrap_or_else(|| panic!("{pointer} in {machine}"));
+    let array = positional(target, fields);
+    *target = array;
+    assert!(
+        serde_json::from_value::<togi_sim::Persisted>(value).is_err(),
+        "{pointer} decoded from a positional array"
+    );
+}
+
+#[test]
+fn a_persisted_machine_decodes_only_from_objects() {
+    let definition = two_cores(ModelDef {
+        crash_mce: 1.0,
+        ..sharp(Signal::Crash)
+    });
+    let mut rig = Rig::new(&definition, 1);
+    rig.boot();
+    assert!(crashed(&rig.alone(0, -12, Regime::R2, 0)));
+    let mut crashed_machine =
+        serde_json::to_value(rig.sim.persisted()).expect("an encoded machine");
+    refuses_positional(
+        &crashed_machine,
+        "",
+        &[
+            "seed",
+            "epoch",
+            "clock",
+            "boot_at",
+            "wall_offset",
+            "boot_number",
+            "boots",
+            "regs",
+            "crashed",
+            "queued",
+            "next_reset",
+            "bios",
+            "samples",
+        ],
+    );
+    refuses_positional(&crashed_machine, "/boots/0", &["id", "reason", "mces"]);
+    refuses_positional(
+        &crashed_machine,
+        "/boots/0/reason",
+        &["kind", "raw", "supported"],
+    );
+    refuses_positional(
+        &crashed_machine,
+        "/queued/0",
+        &["core", "bank", "bank_type", "corrected"],
+    );
+    refuses_positional(
+        &crashed_machine,
+        "/samples",
+        &["id", "cores", "threads", "ran", "stalled", "voltage"],
+    );
+    crashed_machine["samples"]["voltage"] = serde_json::json!({
+        "requests": vec![1.0; 16],
+        "clocks": [4000, 0],
+        "rail": 1.0,
+        "rates": vec![0.0; 16],
+    });
+    refuses_positional(
+        &crashed_machine,
+        "/samples/voltage",
+        &["requests", "clocks", "rail", "rates"],
+    );
+
+    rig.sim.reboot();
+    let rebooted = serde_json::to_value(rig.sim.persisted()).expect("an encoded machine");
+    let last = rebooted["boots"].as_array().expect("boots").len() - 1;
+    refuses_positional(
+        &rebooted,
+        &format!("/boots/{last}/mces/0"),
+        &[
+            "cpu",
+            "core",
+            "bank",
+            "bank_type",
+            "corrected",
+            "time",
+            "monotonic",
+            "lines",
+        ],
+    );
+}
