@@ -13,4 +13,5 @@ mod ranges;
 mod rebuild;
 mod references;
 mod snapshot;
+mod sweep;
 mod writes;
