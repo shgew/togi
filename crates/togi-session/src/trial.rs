@@ -1,45 +1,12 @@
 //! Starting a trial and journaling what it reports.
 
 use togi_journal::{Payload, Seq, TrialId, TrialProgress, TrialSample};
-use togi_machine::{
-    CancellationToken, CoreId, Partial, Reporter, Running, Sample, Signal, Stopped, TrialSpec,
-    Trials,
-};
+use togi_machine::{CancellationToken, CoreId, Reporter, Sample, Signal};
 
 use crate::appender::Appender;
 use crate::error::AppendFailure;
-use crate::write::Verified;
 
-/// The right to start a trial on the profile a [`Verified`] write transaction confirmed. The trial's records cite
-/// the readbacks that confirmed it. Only [`authorize`] makes one, and only from a [`Verified`].
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct Authorized<'v> {
-    readbacks: &'v [Seq],
-}
-
-impl Authorized<'_> {
-    pub(crate) const fn readbacks(&self) -> &[Seq] {
-        self.readbacks
-    }
-}
-
-pub(crate) fn authorize(verified: &Verified) -> Authorized<'_> {
-    Authorized {
-        readbacks: verified.readbacks(),
-    }
-}
-
-/// Starts a trial: the only caller of the seam's `start`, which takes the proof that nothing else runs and gives it
-/// back only with a failed start whose rollback confirmed it.
-pub(crate) fn start(
-    trials: &mut dyn Trials,
-    cancel: &CancellationToken,
-    _authorized: Authorized<'_>,
-    spec: TrialSpec,
-    ready: Stopped,
-) -> Result<Box<dyn Running>, Partial<Option<Stopped>>> {
-    trials.start(cancel, spec, ready)
-}
+pub(crate) use crate::write::authority::{authorize, start};
 
 /// Journals what a running trial reports, each event citing the trial's start. The first append that fails is kept,
 /// later reports are dropped, and the trial is cancelled.
