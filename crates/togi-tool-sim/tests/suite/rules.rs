@@ -13,7 +13,7 @@ fn invalid_suites_are_refused() {
         ("syntax", "{".into(), |e| matches!(e, SuiteError::Decode(_))),
         (
             "unknown suite key",
-            r#"{"scenarios":[],"gate":1}"#.into(),
+            r#"{"scenarios":[],"gates":1}"#.into(),
             |e| matches!(e, SuiteError::Decode(_)),
         ),
         (
@@ -176,6 +176,19 @@ fn replay_is_carried_to_every_run_of_its_scenario() {
             .unwrap();
     let replay: Vec<bool> = suite.runs().iter().map(|run| run.replay).collect();
     assert_eq!(replay, [true, true, false]);
+}
+
+#[test]
+fn a_gate_object_is_accepted_and_ignored_but_never_anything_else() {
+    let gated =
+        parse(r#"{"gate":{"id":"g","split":"dev"},"scenarios":[{"name":"x","dev":[1]}]}"#).unwrap();
+    assert_eq!(gated.runs().len(), 1);
+    for text in [
+        r#"{"gate":1,"scenarios":[{"name":"x","dev":[1]}]}"#,
+        r#"{"gate":["g"],"scenarios":[{"name":"x","dev":[1]}]}"#,
+    ] {
+        assert!(matches!(parse(text), Err(SuiteError::Decode(_))), "{text}");
+    }
 }
 
 #[test]

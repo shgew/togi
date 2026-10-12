@@ -38,6 +38,9 @@ object_only! {
     #[derive(Debug, Serialize)]
     #[serde(deny_unknown_fields)]
     struct SuiteFile {
+        /// The bench's gate (docs/benchmarking.md §The gate); the simulator does not judge it.
+        #[serde(default)]
+        gate: Option<serde_json::Map<String, serde_json::Value>>,
         scenarios: Vec<Scenario>,
     }
 

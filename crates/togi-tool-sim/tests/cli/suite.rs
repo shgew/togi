@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::Path;
 
+use togi_journal::DeadEndCondition;
 use togi_tool_sim::{Outcome, parse_manifest};
 
 use crate::common::{entries, sim};
@@ -138,6 +139,58 @@ fn a_shard_outside_the_count_is_refused() {
     let ran = run_shard(&suite, &out, "2", &[]);
     assert_eq!(ran.code, Some(1), "{}", ran.stderr);
     assert!(!out.exists());
+}
+
+#[test]
+fn a_shard_the_count_cannot_hold_is_refused_by_check() {
+    let root = tempfile::tempdir().unwrap();
+    let suite = suite(root.path());
+    let manifests = root.path().join("manifests");
+    fs::create_dir(&manifests).unwrap();
+    for shard in ["2", "3", &usize::MAX.to_string()] {
+        let ran = sim([
+            "check",
+            "--suite",
+            suite.as_str(),
+            "--shards",
+            "2",
+            "--shard",
+            shard,
+            manifests.to_str().unwrap(),
+        ]);
+        assert_eq!(ran.code, Some(1), "shard {shard}: {}", ran.stderr);
+    }
+}
+
+#[test]
+fn a_session_that_dead_ends_fails_its_shard_and_is_recorded() {
+    let root = tempfile::tempdir().unwrap();
+    let mut machine: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(crate::common::machines().join("flat-hazard.json")).unwrap(),
+    )
+    .unwrap();
+    machine["core"][0]["alone"] = serde_json::json!([1, 1, 1, 1, 1]);
+    fs::write(root.path().join("machine.json"), machine.to_string()).unwrap();
+    let suite = root.path().join("suite.json");
+    fs::write(
+        &suite,
+        r#"{"scenarios":[{"name":"doomed","machine":"machine.json","dev":[1]}]}"#,
+    )
+    .unwrap();
+    let out = root.path().join("manifests");
+    let ran = run_shard(suite.to_str().unwrap(), &out, "0", &[]);
+    assert_eq!(ran.code, Some(1), "{}", ran.stderr);
+    let results = parse_manifest(&fs::read_to_string(out.join("shard-0.jsonl")).unwrap()).unwrap();
+    assert!(
+        results.iter().any(|result| matches!(
+            result.outcome,
+            Outcome::DeadEnd {
+                condition: DeadEndCondition::FailureAtZero,
+                ..
+            }
+        )),
+        "{results:?}"
+    );
 }
 
 #[test]

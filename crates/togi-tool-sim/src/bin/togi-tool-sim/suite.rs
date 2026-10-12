@@ -161,8 +161,8 @@ fn shard_of(name: &str) -> Option<usize> {
 fn check_manifests(args: &CheckArgs) -> Result<(), Error> {
     let runs = Suite::load(&args.suite)?.runs();
     let indices = match args.shard {
-        Some(index) => index..index + 1,
-        None => 0..args.shards.get(),
+        Some(index) => index..=index,
+        None => 0..=args.shards.get() - 1,
     };
     let mut expected = Vec::new();
     for index in indices {
