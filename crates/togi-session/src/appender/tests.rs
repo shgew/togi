@@ -1,3 +1,6 @@
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use jiff::tz::TimeZone;
 use togi_journal::{Activity, Payload, TrialId, TrialIntent};
 use togi_machine::{Condition, CoreSet, PerCore, Regime, pick_workload};
@@ -37,6 +40,19 @@ fn every_append_folds_into_the_recovery_the_tuner_and_the_defect_state() {
     rig.start_at_zero();
     assert!(rig.appender.tuner().topology().is_some());
     assert_fold_consistent(&rig.appender);
+}
+
+#[test]
+fn the_append_hook_sees_every_event_once_in_order() {
+    let mut rig = Rig::new(2);
+    let seen = Rc::new(RefCell::new(Vec::new()));
+    let sink = Rc::clone(&seen);
+    rig.appender.on_append = Some(Box::new(move |event| sink.borrow_mut().push(event.clone())));
+    let before = rig.events().len();
+    rig.start_at_zero();
+    let appended = &rig.events()[before..];
+    assert!(!appended.is_empty());
+    assert_eq!(*seen.borrow(), appended);
 }
 
 #[test]
