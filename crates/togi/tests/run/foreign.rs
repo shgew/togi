@@ -94,6 +94,19 @@ fn the_refusal_comes_from_the_first_line_alone_whatever_follows_it() {
 }
 
 #[test]
+fn a_first_line_without_its_newline_is_refused_all_the_same() {
+    let (fake, bad, _) = go_host();
+    fixture::keep_only_the_unterminated_first_line(&fake.state_dir());
+    let before = fixture::snapshot(&fake.dir);
+    let (exit, out, err) = fake.run(&["run", "--no-tui", "--config", bad.to_str().unwrap()]);
+    assert_eq!(exit, Exit::Error, "{err}");
+    assert_eq!(out, "");
+    fixture::assert_refusal("run", &err, &fake.state_dir());
+    assert!(!err.contains("torn"), "{err}");
+    assert_stopped_after_the_platform_check(&fake, &before);
+}
+
+#[test]
 fn an_unsupported_platform_is_still_reported_first() {
     let (mut fake, bad, before) = go_host();
     fake.supported = false;

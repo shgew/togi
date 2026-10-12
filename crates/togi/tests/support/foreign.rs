@@ -103,3 +103,13 @@ pub(crate) fn append_unreadable_line(state: &Path) {
         .write_all(b"{\"seq\":13,\"kind\":\"future.thing\",\"data\":{}}\nnot json\n")
         .unwrap();
 }
+
+/// Cuts the installed journal down to its first line without the final newline: a Go journal torn after its first
+/// line, which a Rust build must still refuse as another build's journal, not treat as a torn tail or an empty journal.
+pub(crate) fn keep_only_the_unterminated_first_line(state: &Path) {
+    let path = state.join("events.jsonl");
+    let text = fs::read_to_string(&path).unwrap();
+    let (first, _) = text.split_once('\n').unwrap();
+    assert!(first.starts_with("{\"seq\":1,"), "{first}");
+    fs::write(&path, first).unwrap();
+}

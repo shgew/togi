@@ -70,6 +70,23 @@ fn the_refusal_comes_from_the_first_line_alone_whatever_follows_it() {
 }
 
 #[test]
+fn a_first_line_without_its_newline_is_refused_all_the_same() {
+    for (command, args) in COMMANDS {
+        let dir = tempfile::tempdir().unwrap();
+        fixture::install(dir.path());
+        fixture::keep_only_the_unterminated_first_line(dir.path());
+        let before = fixture::snapshot(dir.path());
+        let ran = togi(dir.path(), args);
+        assert_eq!(ran.status.code(), Some(1), "{args:?}: {}", text(&ran.stderr));
+        assert_eq!(text(&ran.stdout), "", "{args:?}: no frame, no output");
+        fixture::assert_refusal(command, text(&ran.stderr), dir.path());
+        let stderr = text(&ran.stderr);
+        assert!(!stderr.contains("torn"), "{stderr}");
+        assert_untouched(dir.path(), &before);
+    }
+}
+
+#[test]
 fn live_watch_refuses_before_it_takes_the_terminal() {
     let (dir, before) = go_state();
     let master = openpt(OpenptFlags::RDWR | OpenptFlags::NOCTTY).unwrap();
