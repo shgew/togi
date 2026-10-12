@@ -31,7 +31,8 @@ fn seconds(n: u32) -> String {
 }
 
 /// The cycle within `height` rows: it leaves out the rows above the focus from the top, then the blank under
-/// the rule.
+/// the rule. With no step open it keeps every row, but gives up the blank under the rule when it is too tall,
+/// so a `+N more` under it does not count that blank.
 pub(super) fn cycle_lines(
     scene: &Scene<'_>,
     cycle: &CycleView<'_>,
@@ -134,6 +135,9 @@ pub(super) fn cycle_lines(
         }
     }
     let Some(at) = focus else {
+        if out.len() > height {
+            out.remove(1);
+        }
         return CycleRows { lines: out, focus };
     };
     let excess = (at + 1).saturating_sub(height);
@@ -172,7 +176,7 @@ fn step_position(scene: &Scene<'_>, step: &CycleStep) -> String {
         return format!("part {part} of {}", step.parts.len());
     }
     match scene.s.trial {
-        Some(trial) if trial.count.of > 0 => {
+        Some(trial) if trial.count.of > 0 && scene.trial_runs() => {
             format!("trial {} of {}", trial.count.index, trial.count.of)
         }
         _ => String::new(),
@@ -450,13 +454,13 @@ mod tests {
     use super::super::super::layout::SizeClass;
     use super::super::super::measure::Tables;
     use super::super::fixtures::{
-        core_view, cycle_part, cycle_plan, cycle_step, hunt_facts, hunt_plan, scene, texts,
+        at, core_view, cycle_part, cycle_plan, cycle_step, hunt_facts, hunt_plan, scene, texts,
         trial_view,
     };
     use super::{combination_lines, cycle_lines};
-    use crate::model::{ComboView, CycleView, HuntView, Model};
+    use crate::model::{ComboView, CycleView, HuntView, Model, SessionView, StopView};
     use crate::tests::kit::{core, nz, off, set};
-    use togi_journal::Member;
+    use togi_journal::{Member, ShutdownReason};
     use togi_tuner::CombinationId;
 
     fn plan() -> CyclePlan {
@@ -618,6 +622,10 @@ mod tests {
     }
 
     fn combination_rows(members: &[u8], class: SizeClass) -> Vec<String> {
+        combination_rows_of(&combos(members), class)
+    }
+
+    fn combination_rows_of(combos: &[ComboView], class: SizeClass) -> Vec<String> {
         let cores: Vec<_> = (0..16)
             .map(|id| {
                 let mut view = core_view(id, id / 8);
@@ -625,11 +633,10 @@ mod tests {
                 view
             })
             .collect();
-        let combos = combos(members);
         let model = Model::new();
         let mut s = model.snapshot();
         s.cores = &cores;
-        s.combos = &combos;
+        s.combos = combos;
         let zone = TimeZone::UTC;
         let scene = scene(&s, &zone);
         texts(&combination_lines(
@@ -675,5 +682,112 @@ mod tests {
         let compact = combination_rows(&[0, 2], SizeClass::Compact);
         assert_eq!(compact.len(), 3, "{compact:?}");
         assert!(compact[2].starts_with("C1"));
+    }
+
+    #[test]
+    fn a_step_row_names_no_trial_once_the_session_has_stopped() {
+        let single = cycle_plan(
+            vec![cycle_step(
+                Regime::R6,
+                vec![cycle_part(&[0], None, true, true, false)],
+                false,
+                true,
+            )],
+            0,
+            false,
+        );
+        let model = Model::new();
+        let trial = trial_view(1, 1);
+        let session = SessionView {
+            start: at(0),
+            activity: None,
+        };
+        let stopped = StopView {
+            at: at(1),
+            reason: ShutdownReason::Signal,
+            saved: false,
+        };
+        let step_row = |stop: Option<&StopView>| {
+            let mut s = model.snapshot();
+            s.session = Some(&session);
+            s.trial = Some(&trial);
+            s.stopped = stop;
+            let zone = TimeZone::UTC;
+            let scene = scene(&s, &zone);
+            let cycle = CycleView {
+                plan: &single,
+                step_hunts: &[],
+                resume: None,
+            };
+            let drawn = cycle_lines(
+                &scene,
+                &cycle,
+                &Tables::new(SizeClass::Wide, 120),
+                120,
+                SizeClass::Wide,
+                40,
+            );
+            texts(&drawn.lines)[3].clone()
+        };
+        assert!(step_row(None).ends_with("trial 1 of 1"));
+        let row = step_row(Some(&stopped));
+        assert!(row.contains("R6") && !row.contains("trial"), "{row}");
+    }
+
+    #[test]
+    fn a_part_says_how_many_trials_failed_or_have_passed_so_far() {
+        let mut failing = cycle_part(&[0], None, true, false, false);
+        failing.failed = 1;
+        let mut partway = cycle_part(&[1], None, true, false, false);
+        partway.short = 2;
+        partway.passed = 1;
+        let plan = cycle_plan(
+            vec![cycle_step(Regime::R3, vec![failing, partway], false, true)],
+            0,
+            false,
+        );
+        let (rows, _) = cycle_rows(&plan, &[], 40, false);
+        let first = rows
+            .iter()
+            .find(|row| row.contains("core 00"))
+            .expect("part 1");
+        let second = rows
+            .iter()
+            .find(|row| row.contains("core 01"))
+            .expect("part 2");
+        assert!(first.ends_with("1 failed"), "{rows:?}");
+        assert!(second.ends_with("1/2 passed"), "{rows:?}");
+    }
+
+    #[test]
+    fn a_combination_without_a_member_leaves_its_cell_blank_and_says_what_is_clear() {
+        let mut all = combos(&[0, 2]);
+        all.push(ComboView {
+            id: CombinationId::new(nz(2)),
+            members: vec![
+                Member {
+                    core: core(2),
+                    offset: off(-25),
+                },
+                Member {
+                    core: core(3),
+                    offset: off(-25),
+                },
+            ],
+            hunt: 8,
+            probed: false,
+            fallback: false,
+            holds: None,
+            clear: set(&[2]),
+        });
+        let rows = combination_rows_of(&all, SizeClass::Wide);
+        let header = &rows[2];
+        let end = |id: &str| header.find(id).expect("a member column") + id.len();
+        let second = &rows[4];
+        assert!(second.starts_with("C2"), "{rows:?}");
+        assert_eq!(&second[end("00") - 3..end("00")], "   ", "{rows:?}");
+        assert_eq!(&second[end("02") - 3..end("02")], "-25", "{rows:?}");
+        assert_eq!(&second[end("03") - 3..end("03")], "-25", "{rows:?}");
+        assert!(second.ends_with("clear: 02 shallower"), "{rows:?}");
     }
 }

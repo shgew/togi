@@ -297,6 +297,37 @@ mod tests {
         assert!(none.iter().all(|row| !row.starts_with("R7")));
     }
 
+    #[test]
+    fn a_cut_finished_cycle_never_counts_more_than_its_steps() {
+        let steps: Vec<_> = (0..18)
+            .map(|_| {
+                cycle_step(
+                    Regime::R1,
+                    vec![cycle_part(&[0], None, true, false, true)],
+                    true,
+                    true,
+                )
+            })
+            .collect();
+        let plan = cycle_plan(steps, 18, false);
+        let cores = [core_view(0, 0)];
+        let model = Model::new();
+        let mut s = model.snapshot();
+        s.cores = &cores;
+        s.cycle = Some(CycleView {
+            plan: &plan,
+            step_hunts: &[],
+            resume: None,
+        });
+        let zone = TimeZone::UTC;
+        let scene = scene(&s, &zone);
+        let mut m = measured(&scene, 80, 24);
+        m.context.height = 5;
+        let rows = texts(&activity_under(&scene, &m, &r7(2)));
+        assert!(rows[0].starts_with("CYCLE 2"), "{rows:?}");
+        assert_eq!(rows[1], "+18 more", "{rows:?}");
+    }
+
     fn round_fixture(r7: &[Line<'static>], height: usize) -> Vec<String> {
         let candidates = (0..4u8)
             .map(|id| togi_tuner::Candidate {
