@@ -1171,3 +1171,49 @@ fn a_stop_at_a_durable_boundary_drains_what_it_owes_and_starts_no_new_work() {
         }
     }
 }
+
+/// Go `TestRunOwnerEveryExit`, panic mode, for a panic that is the only failure and strikes the restoration's own
+/// append: the cleanup must not unwind out of the close with the tuned offsets still on the machine.
+#[test]
+fn a_panic_taking_in_the_restoration_intent_of_an_ordinary_stop_gets_the_emergency_and_is_handed_back()
+ {
+    let bench = Bench::new(2);
+    let armed = std::rc::Rc::new(std::cell::Cell::new(false));
+    let flag = armed.clone();
+    let mut input = bench.input();
+    input.on_append = Some(Box::new(move |event| {
+        assert!(
+            !(flag.get() && event.kind() == togi_journal::EventKind::SmuIntent),
+            "a bug taking in the restoration intent"
+        );
+    }));
+    let Ok(mut session) = Session::open(input) else {
+        panic!("open");
+    };
+    assert_eq!(session.start().unwrap(), crate::session::Control::Continue);
+    assert_eq!(session.sweep().unwrap(), crate::session::Control::Continue);
+    recorded_baseline(&mut session, &[0, 0]);
+    put(&mut session, &[-5, -5]);
+    session.validated = Some(session.host.validate_smu().unwrap());
+    let run = Ok(signalled(&mut session));
+    armed.set(true);
+    let mut ended = session.close(run);
+    let panic = ended.panic.take().expect("the panic is handed back");
+    assert_eq!(panic.message(), "a bug taking in the restoration intent");
+    assert!(matches!(
+        ended.errors.as_slice(),
+        [SessionError::Panicked(message)] if message == "a bug taking in the restoration intent"
+    ));
+    let kinds = kinds(ended.journal.events());
+    assert!(!kinds.contains(&"profile.restored"), "{kinds:?}");
+    assert!(!kinds.contains(&"shutdown"), "no clean stop is claimed");
+    assert!(
+        matches!(
+            ended.emergency.as_ref().map(|outcome| &outcome.response),
+            Some(Response::Zeroed(zeroed)) if zeroed.is_clean()
+        ),
+        "{:?}",
+        ended.emergency
+    );
+    assert_eq!(smu_offsets(&bench), [0, 0]);
+}

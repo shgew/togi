@@ -40,7 +40,15 @@ impl Session {
         }
         let mut panic = None;
         if self.fault.is_none() && self.appender.failure().is_none() {
-            self.clean_up(&mut stop, &mut errors, &mut panic);
+            let cleanup = catch_unwind(AssertUnwindSafe(|| {
+                self.clean_up(&mut stop, &mut errors, &mut panic);
+            }));
+            if let Err(payload) = cleanup {
+                let message = message_of(&*payload).to_owned();
+                self.appender.interrupt(&message);
+                errors.push(SessionError::Panicked(message));
+                panic.get_or_insert_with(|| Panic::new(payload));
+            }
         }
         let emergency = self
             .appender

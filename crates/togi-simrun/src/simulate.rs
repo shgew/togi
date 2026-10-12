@@ -163,6 +163,9 @@ fn simulate_checked(input: SimInput, check: &mut Check<'_>) -> Result<SimOutcome
             report: Box::new(io::sink()),
         });
         if let Some(panic) = ended.panic.take() {
+            // The journal has no drop flush: close it so a file-backed boot keeps the events it buffered and the
+            // writer lock is released. A close failure is not reported over the panic being resumed.
+            drop(ended.journal.close());
             panic.resume();
         }
         let crash = ended.crashed();

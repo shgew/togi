@@ -377,9 +377,17 @@ impl Trials for RiggedTrials {
     }
 }
 
+thread_local! {
+    /// Set by a workload whose `started` panics, for a hook that must strike the cleanup after it.
+    static STARTED_PANICKED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
 impl Running for RiggedRunning {
     fn started(&self) -> togi_machine::Started {
-        assert!(!self.rigged.panic_in_started, "a bug reading the start");
+        if self.rigged.panic_in_started {
+            STARTED_PANICKED.set(true);
+            panic!("a bug reading the start");
+        }
         self.inner.started()
     }
 
@@ -503,6 +511,37 @@ fn a_panic_after_the_workload_started_and_before_its_wait_still_joins_it_and_res
             .any(|event| event.kind() == togi_journal::EventKind::Shutdown),
         "no clean shutdown is claimed after a panic"
     );
+}
+
+/// Go `TestRunOwnerEveryExit`, panic mode, twice: `Started` panics with the workload running, and the cleanup that
+/// follows panics again taking in the restoration's intent. The offsets are zeroed with readback, the first panic is
+/// handed back and the second is reported.
+#[test]
+fn a_second_panic_taking_in_the_restoration_intent_after_a_started_panic_gets_the_emergency_and_reports_both()
+ {
+    let bench = two_cores_at_minus_ten();
+    let rigged = Rigged {
+        panic_in_started: true,
+        ..Rigged::default()
+    };
+    let hook: crate::AppendHook = Box::new(|event| {
+        assert!(
+            !(STARTED_PANICKED.get() && event.kind() == togi_journal::EventKind::SmuIntent),
+            "a bug taking in the restoration intent"
+        );
+    });
+    let (mut ended, joins) = run_rigged(&bench, rigged, Some(hook));
+    assert_eq!(joins.load(Ordering::SeqCst), 1);
+    assert!(
+        ended.errors.iter().any(|error| matches!(
+            error,
+            SessionError::Panicked(seen) if seen == "a bug taking in the restoration intent"
+        )),
+        "{:?}",
+        ended.errors
+    );
+    assert_handed_back(&mut ended, "a bug reading the start");
+    assert_emergency_zeroed(&bench, &ended);
 }
 
 #[test]

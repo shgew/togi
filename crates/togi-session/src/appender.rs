@@ -281,6 +281,12 @@ impl Appender {
         failure
     }
 
+    /// Latches a panic that unwound out of a cleanup step, unless a failure already latched, so the emergency
+    /// answers it.
+    pub(crate) fn interrupt(&mut self, message: &str) {
+        self.latch(JournalFailure::interrupted(message));
+    }
+
     /// Takes a durable event into the run: its log line, the append hook and the folds. A panic out of any of them
     /// leaves the event durable and the run's state without it, so it latches the appender like a fold that failed
     /// and is then resumed.
