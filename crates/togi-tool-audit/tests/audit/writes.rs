@@ -277,3 +277,33 @@ fn a_mismatching_readback_ends_the_session_in_an_smu_dead_end() {
         ),
     ]);
 }
+
+#[test]
+fn a_mismatching_readback_of_a_set_all_write_leaves_its_other_cores_unread() {
+    run(vec![case(
+        "the session stops reading at the first mismatch and ends in the smu dead end",
+        vec![
+            intent(2, set_all(-5)),
+            write(3, set_all(-5), 2),
+            cause(
+                event(
+                    4,
+                    "smu.readback",
+                    json!({"core": 0, "offset": -3, "expected": -5}),
+                ),
+                &[3],
+            ),
+            cause(
+                event(
+                    5,
+                    "deadend",
+                    json!({"condition": "smu", "detail": "readback -3, expected -5"}),
+                ),
+                &[4],
+            ),
+            shutdown(6, json!({"reason": "dead_end"})),
+        ],
+        Finished,
+        &[],
+    )]);
+}

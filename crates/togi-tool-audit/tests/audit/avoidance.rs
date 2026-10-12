@@ -1,5 +1,6 @@
 use serde_json::json;
 use togi_journal::Event;
+use togi_tool_audit::Check;
 use togi_tool_audit::Check::Avoidance;
 use togi_tool_audit::Completion::InProgress;
 
@@ -75,6 +76,28 @@ fn failure_points_and_combinations_are_avoided_by_applied_profiles() {
             ],
             InProgress,
             &[],
+        ),
+        case(
+            "an SMU write one count shallower than a point is safe",
+            vec![
+                phase(2, 0, Some(-30)),
+                intent(3, set(0, -29)),
+                write(4, set(0, -29), 3),
+                readback(5, 0, -29, Some(4)),
+            ],
+            InProgress,
+            &[],
+        ),
+        case(
+            "an SMU write at a point reaches it",
+            vec![
+                phase(2, 0, Some(-30)),
+                intent(3, set(0, -30)),
+                write(4, set(0, -30), 3),
+                readback(5, 0, -30, Some(4)),
+            ],
+            InProgress,
+            &[(4, Avoidance)],
         ),
     ]);
 }
@@ -227,6 +250,75 @@ fn a_failure_counts_against_the_core_its_decision_charges() {
     ]);
 }
 
+fn carried_source() -> serde_json::Value {
+    json!({
+        "session": "20251231T000000Z",
+        "seq": 7,
+        "build": build(0),
+        "time": "2026-01-01T00:00:00Z",
+        "boot": "b",
+    })
+}
+
+fn carried_trial(cores: &[u8]) -> Vec<Event> {
+    vec![event(
+        2,
+        "trial.carried",
+        json!({
+            "source": carried_source(),
+            "class": {"regime": "R7", "cores": cores, "duration_s": 60},
+            "condition": "together",
+            "profile": offsets([-30, 0]),
+            "outcome": "failure",
+            "duration_s": 60,
+        }),
+    )]
+}
+
+fn carried_failure(cores: &[u8]) -> Vec<Event> {
+    vec![event(
+        2,
+        "failure.carried",
+        json!({
+            "source": carried_source(),
+            "class": {"regime": "R7", "cores": cores, "duration_s": 60},
+            "failure": {"signal": "computation_error", "attribution": "attributed"},
+        }),
+    )]
+}
+
+fn earlier_failure(cores: &[u8]) -> Vec<Event> {
+    vec![
+        trial_intent(2, "0001", "R7", "together", cores),
+        failure_with(
+            3,
+            json!({"core": 9, "offset": -5, "trial": "0001", "regime": "R7", "condition": "together"}),
+        ),
+    ]
+}
+
+/// A multi-core R7 failure of core 8 that cites the last of `source`, a decision of core 0 that cites the failure,
+/// and a profile at core 8's point; core 0 is charged in place of core 8 only if the source's cores include it.
+fn known_failure_case(name: &'static str, source: Vec<Event>, moves: bool) -> Case {
+    let cited = source.len() as u64 + 1;
+    let mut events = source;
+    events.push(cause(
+        failure_with(
+            cited + 1,
+            json!({"core": 8, "offset": -20, "regime": "R7", "condition": "together", "known_failure": cited}),
+        ),
+        &[cited],
+    ));
+    events.push(cause(decision(cited + 2, 0, "backoff", None), &[cited + 1]));
+    events.push(applied(cited + 3, [-25, -20]));
+    let want: &[(u64, Check)] = if moves {
+        &[]
+    } else {
+        &[(cited + 3, Avoidance)]
+    };
+    case(name, events, InProgress, want)
+}
+
 #[test]
 fn a_failure_moves_to_another_core_only_on_grounds_the_journal_records() {
     let r7 = |loaded: &[u8], rest: Vec<Event>| {
@@ -294,6 +386,36 @@ fn a_failure_moves_to_another_core_only_on_grounds_the_journal_records() {
             ),
             InProgress,
             &[(5, Avoidance)],
+        ),
+        known_failure_case(
+            "a known failure takes its loaded cores from a trial.carried, so the charge moves to a core in it",
+            carried_trial(&[0, 8]),
+            true,
+        ),
+        known_failure_case(
+            "a known failure's trial.carried class leaves a core outside it unmoved",
+            carried_trial(&[8, 9]),
+            false,
+        ),
+        known_failure_case(
+            "a known failure takes its loaded cores from a failure.carried, so the charge moves to a core in it",
+            carried_failure(&[0, 8]),
+            true,
+        ),
+        known_failure_case(
+            "a known failure's failure.carried class leaves a core outside it unmoved",
+            carried_failure(&[8, 9]),
+            false,
+        ),
+        known_failure_case(
+            "a known failure takes its loaded cores from an earlier failure's trial, so the charge moves to a core in it",
+            earlier_failure(&[0, 8]),
+            true,
+        ),
+        known_failure_case(
+            "a known failure's earlier failure's trial leaves a core outside it unmoved",
+            earlier_failure(&[8, 9]),
+            false,
         ),
     ]);
 }

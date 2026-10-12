@@ -27,6 +27,15 @@ fn a_cause_names_an_existing_earlier_event() {
             InProgress,
             &[(2, Cause)],
         ),
+        case(
+            "a missing earlier cause",
+            vec![
+                phase(3, 0, None),
+                cause(decision(4, 0, "backoff", None), &[2]),
+            ],
+            InProgress,
+            &[(3, Sequence), (4, Cause)],
+        ),
     ]);
 }
 

@@ -147,6 +147,10 @@ impl Writes {
             .is_some_and(|expected| expected.get() != readback.offset.0)
         {
             self.mismatch.get_or_insert(event.seq);
+            // The session stops reading at a mismatch, so the mismatch obligation covers the write's other cores.
+            for cause in &event.cause {
+                self.pending.remove(cause);
+            }
         }
         for cause in &event.cause {
             let Some(Payload::SmuWrite(record)) = seen.get(cause).map(|earlier| &earlier.payload)
