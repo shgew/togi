@@ -11,9 +11,11 @@
 //!   ids replaced the same way.
 //! - `state.json` is shaped by hand from `internal/journal/state.go` (`State`, `SessionInfo`, `CoreState`,
 //!   `BIOSContext`) with synthetic values. A Rust build never reads it.
-//! - `.events.jsonl.tmp`, `trials/` and the rest of `archive/` are hand-made stand-ins for the files the Go
-//!   journal keeps next to its journal (`eventsTmpFile`, `trialsDir`, `archiveDir` and `trialsSuffix` in
-//!   `internal/journal/journal.go`). There is no `lock` file: a refusal must not create one.
+//! - `.events.jsonl.tmp`, `trials/20260927T221954Z-0001.log`, `archive/20260926T151414Z-trials/artifact` and
+//!   `archive/20260926T151414Z-compat-pending` are hand-made, empty or synthetic stand-ins for the files the Go
+//!   journal keeps next to its journal. Their names and places follow `eventsTmpFile`, `trialsDir`, `archiveDir`,
+//!   `trialsSuffix` and the `-compat-pending` archive marker in `internal/journal/journal.go`; their contents are
+//!   not Go output. There is no `lock` file: a refusal must not create one.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -53,7 +55,7 @@ pub(crate) enum Entry {
     File { bytes: Vec<u8>, modified: SystemTime },
 }
 
-/// Every file, directory and symbolic link under `root`, and `root` itself, by path relative to it.
+/// Every file and directory under `root`, and `root` itself, by path relative to it.
 pub(crate) type Snapshot = BTreeMap<String, Entry>;
 
 pub(crate) fn snapshot(root: &Path) -> Snapshot {
