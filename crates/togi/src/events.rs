@@ -43,7 +43,7 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 #[command(after_help = EXAMPLES.as_str())]
 pub struct Args {
     /// Only events naming core N, and the outcomes of trials that load it
-    #[arg(long, value_name = "N", value_parser = parse_core)]
+    #[arg(long, value_name = "N", value_parser = parse_core, value_hint = clap::ValueHint::Other)]
     core: Option<CoreId>,
 
     /// Only these comma-separated known kinds, or groups such as trial for every trial.* kind
@@ -51,15 +51,15 @@ pub struct Args {
     kind: Vec<Vec<KindSelector>>,
 
     /// Only events of trial ID
-    #[arg(long, value_name = "ID")]
+    #[arg(long, value_name = "ID", value_hint = clap::ValueHint::Other)]
     trial: Option<String>,
 
     /// Only events at or after this RFC 3339 time
-    #[arg(long, value_name = "time", value_parser = parse_time)]
+    #[arg(long, value_name = "time", value_parser = parse_time, value_hint = clap::ValueHint::Other)]
     since: Option<Timestamp>,
 
     /// Only events before this RFC 3339 time
-    #[arg(long, value_name = "time", value_parser = parse_time)]
+    #[arg(long, value_name = "time", value_parser = parse_time, value_hint = clap::ValueHint::Other)]
     until: Option<Timestamp>,
 
     /// Print raw, uncolored JSON events

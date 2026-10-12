@@ -2,7 +2,7 @@
 source: crates/togi/tests/read/status.rs
 expression: text(&ran.stdout)
 ---
-hunt 4, group 1 | phase 2 concluded: clean cycles 2, latest cycle 4
+hunt 4, group 1 | phase 2 concluded: clean cycles 2, latest clean cycle 3
 session 20260101T000000Z started 2026-01-01T00:00:00Z
 BIOS SIM.1 on togi simulator, Simulated Zen 5 16-Core Processor, microcode 0x0,
   boost limit 5700 MHz
@@ -174,8 +174,9 @@ CORE  CCD  SELF-SUFFICIENT               TOP REQUESTER
 
 hunt 4 [#11163]: unattributed crash in R2 trial 1889; parked offsets all-zero
   candidates 00 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15
-GROUP CORES OUTCOME PASS EVIDENCE NEED
-G1     01 02 03 04 05 06 07 08 09 10 11 12 13 14 15  running  3              5
+GROUP  CORES     OUTCOME  PASS EVIDENCE  NEED
+G1     15 cores  running  3              5
+  cores 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15
 
 REGIME  WORKLOAD                         TRIALS
 R1      mprime-sse-4k-21k                48

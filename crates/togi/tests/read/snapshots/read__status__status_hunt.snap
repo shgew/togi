@@ -199,8 +199,9 @@ CORE  CCD  SELF-SUFFICIENT               TOP REQUESTER
 hunt 1 [#4901]: unattributed corrected_mce in R2 trial 0603; parked offsets
   all-zero
   candidates 00 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15
-GROUP CORES OUTCOME PASS EVIDENCE NEED
-G1     00 01 02 03 04 06 07 08 09 10 11 12 13 14 15  running  0              5
+GROUP  CORES     OUTCOME  PASS EVIDENCE  NEED
+G1     15 cores  running  0              5
+  cores 00 01 02 03 04 06 07 08 09 10 11 12 13 14 15
 
 REGIME  WORKLOAD                         TRIALS
 R2      mprime-avx2-36k-248k             18

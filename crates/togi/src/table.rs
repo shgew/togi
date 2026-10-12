@@ -2,11 +2,13 @@
 
 use std::fmt::Write as _;
 
-/// The width in characters `status` fits; a word wider than the room overflows rather than split.
+use unicode_width::UnicodeWidthStr as _;
+
+/// The width in terminal cells `status` fits; a word wider than the room overflows rather than split.
 const WIDTH: usize = 80;
 
 fn width(text: &str) -> usize {
-    text.chars().count()
+    text.width()
 }
 
 /// Appends `text` wrapped to [`WIDTH`]: the first line starts with `first`, the rest with `rest`.
@@ -75,10 +77,10 @@ pub(crate) fn table(out: &mut String, rows: &[Row]) {
     for row in rows {
         let mut line = String::new();
         for (column, cell) in row.cells.iter().enumerate() {
-            if column + 1 == row.cells.len() {
-                line.push_str(cell);
-            } else {
-                let _ = write!(line, "{cell:<pad$}  ", pad = widths[column]);
+            line.push_str(cell);
+            if column + 1 < row.cells.len() {
+                let pad = widths[column] - width(cell) + 2;
+                let _ = write!(line, "{:pad$}", "");
             }
         }
         if width(&line) > WIDTH {

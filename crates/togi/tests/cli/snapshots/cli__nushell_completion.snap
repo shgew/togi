@@ -69,8 +69,8 @@ module completions {
 
   # Show the session as a read-only dashboard
   export extern "togi watch" [
-    --width: string           # Frame width in columns when stdout is not a terminal
-    --height: string          # Frame height in rows when stdout is not a terminal
+    --width: string           # Frame width in columns, 1 to 1000, when stdout is not a terminal
+    --height: string          # Frame height in rows, 1 to 1000, when stdout is not a terminal
     --state-dir: directory    # State directory
     --help(-h)                # Print help (see more with '--help')
   ]

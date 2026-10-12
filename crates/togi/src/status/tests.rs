@@ -1,6 +1,6 @@
 use togi_machine::Regime;
 
-use super::missing_coverage;
+use super::{missing_coverage, rounds};
 
 #[test]
 fn a_full_cycle_lacks_nothing() {
@@ -35,4 +35,11 @@ fn a_short_cycle_names_each_regime_it_lacks() {
             "R7: 3 more steps",
         ]
     );
+}
+
+#[test]
+fn rounds_agree_with_their_count() {
+    assert_eq!(rounds(1), "1 round");
+    assert_eq!(rounds(2), "2 rounds");
+    assert_eq!(rounds(3), "3 rounds");
 }

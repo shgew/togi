@@ -11,12 +11,12 @@ use crate::exit::Exit;
 use crate::report::{chain, current_build, fail, refusal_message};
 
 /// What a read-only command says of an event kind this build does not know; `None` when `error` is
-/// anything else.
+/// anything else. The kind goes in raw: the command's `fail` escapes it in the spec's human form.
 #[must_use]
 pub fn unknown_kind(error: &FileError) -> Option<String> {
     match &error.source {
         ReadError::UnknownKind { line, source } => Some(format!(
-            "line {line}: unknown event kind {:?}; this build does not know it",
+            "line {line}: unknown event kind \"{}\"; this build does not know it",
             source.0
         )),
         _ => None,

@@ -211,49 +211,50 @@ CORE  CCD  SELF-SUFFICIENT              TOP REQUESTER
 
 hunt 1 [#1833]: unattributed crash in R6 trial 0245; parked offsets all-zero
   candidates 00 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15
-GROUP CORES OUTCOME PASS EVIDENCE NEED
-G1 00 01 02 03 04 05 06 07 passed 5 5
-G2 08 09 10 11 12 13 14 15 passed 5 5
-G3 00 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 failed 0 5
-G4 00 01 02 03 passed 5 5
-G5 04 05 06 07 passed 5 5
-G6 08 09 10 11 passed 5 5
-G7 12 13 14 15 passed 5 5
-G8 04 05 06 07 08 09 10 11 12 13 14 15 passed 5 5
-G9 00 01 02 03 08 09 10 11 12 13 14 15 failed 0 5
-G10 00 01 02 03 passed 5 5
-G11 08 09 10 11 passed 10 5
-G12 12 13 14 15 passed 10 5
-G13 08 09 10 11 12 13 14 15 passed 10 5
-G14 00 01 02 03 12 13 14 15 passed 5 5
-G15 00 01 02 03 08 09 10 11 failed 0 5
-G16 00 01 02 03 passed 10 5
-G17 08 09 10 11 passed 10 5
-G18 00 01 passed 10 5
-G19 02 03 passed 10 5
-G20 08 09 passed 10 5
-G21 10 11 passed 10 5
-G22 02 03 08 09 10 11 failed 0 5
-G23 02 03 passed 10 5
-G24 08 09 passed 10 5
-G25 10 11 passed 10 5
-G26 08 09 10 11 passed 10 5
-G27 02 03 10 11 failed 0 5
-G28 02 03 passed 10 5
-G29 10 11 passed 10 5
-G30 02 passed 10 5
-G31 03 passed 10 5
-G32 10 passed 10 5
-G33 11 passed 10 5
-G34 03 10 11 failed 0 5
-G35 03 passed 10 5
-G36 10 passed 10 5
-G37 11 passed 10 5
-G38 10 11 passed 10 5
-G39 03 11 failed 0 5
-G40 03 passed 10 5
-G41 11 passed 10 5
-G42 probe running 0 5
+GROUP  CORES                                OUTCOME  PASS EVIDENCE  NEED
+G1     00 01 02 03 04 05 06 07              passed   5              5
+G2     08 09 10 11 12 13 14 15              passed   5              5
+G3     16 cores                             failed   0              5
+  cores 00 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15
+G4     00 01 02 03                          passed   5              5
+G5     04 05 06 07                          passed   5              5
+G6     08 09 10 11                          passed   5              5
+G7     12 13 14 15                          passed   5              5
+G8     04 05 06 07 08 09 10 11 12 13 14 15  passed   5              5
+G9     00 01 02 03 08 09 10 11 12 13 14 15  failed   0              5
+G10    00 01 02 03                          passed   5              5
+G11    08 09 10 11                          passed   10             5
+G12    12 13 14 15                          passed   10             5
+G13    08 09 10 11 12 13 14 15              passed   10             5
+G14    00 01 02 03 12 13 14 15              passed   5              5
+G15    00 01 02 03 08 09 10 11              failed   0              5
+G16    00 01 02 03                          passed   10             5
+G17    08 09 10 11                          passed   10             5
+G18    00 01                                passed   10             5
+G19    02 03                                passed   10             5
+G20    08 09                                passed   10             5
+G21    10 11                                passed   10             5
+G22    02 03 08 09 10 11                    failed   0              5
+G23    02 03                                passed   10             5
+G24    08 09                                passed   10             5
+G25    10 11                                passed   10             5
+G26    08 09 10 11                          passed   10             5
+G27    02 03 10 11                          failed   0              5
+G28    02 03                                passed   10             5
+G29    10 11                                passed   10             5
+G30    02                                   passed   10             5
+G31    03                                   passed   10             5
+G32    10                                   passed   10             5
+G33    11                                   passed   10             5
+G34    03 10 11                             failed   0              5
+G35    03                                   passed   10             5
+G36    10                                   passed   10             5
+G37    11                                   passed   10             5
+G38    10 11                                passed   10             5
+G39    03 11                                failed   0              5
+G40    03                                   passed   10             5
+G41    11                                   passed   10             5
+G42    probe                                running  0              5
   probe 03 at -9 with 11 at -10
 
 REGIME  WORKLOAD                         TRIALS

@@ -1,3 +1,5 @@
+use std::num::NonZeroU32;
+
 use serde::{Deserialize, Serialize};
 use togi_journal::Seq;
 use togi_machine::{CoreId, CoreSet, MIN_OFFSET, PerCore, TargetOffset};
@@ -173,6 +175,10 @@ impl State {
 
     pub fn clean_cycles(&self) -> u32 {
         standing(self).map_or(0, |run| run.phases.clean_cycles())
+    }
+
+    pub fn last_clean_cycle(&self) -> Option<NonZeroU32> {
+        standing(self)?.phases.last_clean_cycle()
     }
 
     pub fn first_result(&self) -> bool {

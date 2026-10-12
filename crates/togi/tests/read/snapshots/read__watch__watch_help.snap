@@ -19,12 +19,12 @@ Options:
           [default: /var/lib/togi]
 
       --width <columns>
-          Frame width in columns when stdout is not a terminal
+          Frame width in columns, 1 to 1000, when stdout is not a terminal
           
           [default: 240]
 
       --height <rows>
-          Frame height in rows when stdout is not a terminal
+          Frame height in rows, 1 to 1000, when stdout is not a terminal
           
           [default: 67]
 

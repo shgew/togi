@@ -4,16 +4,57 @@ use std::process::{Command, Output};
 use tempfile::TempDir;
 use togi_watchtest::Scenario;
 
-pub(crate) fn togi(state: &Path, args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_togi"))
+/// The built command over `state`, with no colour preference, no journal stream and UTC.
+pub(crate) fn command(state: &Path, args: &[&str]) -> Command {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_togi"));
+    command
         .arg("--state-dir")
         .arg(state)
         .args(args)
         .env_remove("NO_COLOR")
         .env_remove("JOURNAL_STREAM")
-        .env("TZ", "UTC")
-        .output()
-        .unwrap()
+        .env("TZ", "UTC");
+    command
+}
+
+pub(crate) fn togi(state: &Path, args: &[&str]) -> Output {
+    command(state, args).output().unwrap()
+}
+
+/// Which of the command's streams `JOURNAL_STREAM` names.
+#[derive(Clone, Copy)]
+pub(crate) enum Journald {
+    Stdout,
+    Stderr,
+}
+
+/// Runs the command with stdout and stderr as files and `JOURNAL_STREAM` naming `stream`, as
+/// systemd starts a service whose output goes to the journal.
+pub(crate) fn togi_in_journal(state: &Path, args: &[&str], stream: Journald) -> Output {
+    use std::os::unix::fs::MetadataExt as _;
+    use std::process::Stdio;
+
+    let capture = tempfile::tempdir().unwrap();
+    let (out_path, err_path) = (capture.path().join("out"), capture.path().join("err"));
+    let (out, err) = (
+        std::fs::File::create(&out_path).unwrap(),
+        std::fs::File::create(&err_path).unwrap(),
+    );
+    let named = match stream {
+        Journald::Stdout => out.metadata().unwrap(),
+        Journald::Stderr => err.metadata().unwrap(),
+    };
+    let status = command(state, args)
+        .env("JOURNAL_STREAM", format!("{}:{}", named.dev(), named.ino()))
+        .stdout(Stdio::from(out))
+        .stderr(Stdio::from(err))
+        .status()
+        .unwrap();
+    Output {
+        status,
+        stdout: std::fs::read(out_path).unwrap(),
+        stderr: std::fs::read(err_path).unwrap(),
+    }
 }
 
 pub(crate) fn text(bytes: &[u8]) -> &str {
@@ -85,19 +126,22 @@ pub(crate) fn append_between_trial_mce(dir: &Path) {
     );
 }
 
-/// The wording a read-only command uses for the event `append_unknown_kind` adds, as one line.
+/// The kind `assert_unknown_kind_refusal` expects; no build knows it.
+pub(crate) const UNKNOWN_KIND: &str = "future.thing";
+
+/// The wording a read-only command uses for an event of [`UNKNOWN_KIND`], as one line.
 pub(crate) fn assert_unknown_kind_refusal(command: &str, ran: &std::process::Output, line: usize) {
     assert_eq!(ran.status.code(), Some(1), "{command}");
     let expected = format!(
-        "togi {command}: line {line}: unknown event kind \"future.thing\"; this build does not know it\n"
+        "togi {command}: line {line}: unknown event kind \"{UNKNOWN_KIND}\"; this build does not know it\n"
     );
     assert_eq!(text(&ran.stderr), expected, "{command}");
     assert!(!text(&ran.stderr).contains("modify"), "{command}");
 }
 
-/// Appends an event of a kind no build knows; returns its line number.
-pub(crate) fn append_unknown_kind(dir: &Path) -> usize {
+/// Appends an event of `kind`, which no build should know; returns its line number.
+pub(crate) fn append_unknown_kind(dir: &Path, kind: &str) -> usize {
     let line = lines(dir).len() + 1;
-    append_event(dir, "future.thing", "x", &serde_json::json!({}));
+    append_event(dir, kind, "x", &serde_json::json!({}));
     line
 }

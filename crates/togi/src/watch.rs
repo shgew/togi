@@ -4,7 +4,7 @@ use std::io::{IsTerminal as _, stdin, stdout};
 use std::os::fd::AsFd as _;
 use std::sync::LazyLock;
 
-use clap::Args as ClapArgs;
+use clap::{Args as ClapArgs, ValueHint};
 use togi_watch::terminal::{self, ONE_FRAME_SIZE, SourceError};
 
 use crate::cli::{Context, examples};
@@ -48,21 +48,23 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 #[derive(ClapArgs, Debug)]
 #[command(after_help = EXAMPLES.as_str())]
 pub struct Args {
-    /// Frame width in columns when stdout is not a terminal
+    /// Frame width in columns, 1 to 1000, when stdout is not a terminal
     #[arg(
         long,
         value_name = "columns",
+        value_hint = ValueHint::Other,
         default_value_t = ONE_FRAME_SIZE.0,
-        value_parser = clap::value_parser!(u16).range(1..),
+        value_parser = clap::value_parser!(u16).range(1..=1000),
     )]
     width: u16,
 
-    /// Frame height in rows when stdout is not a terminal
+    /// Frame height in rows, 1 to 1000, when stdout is not a terminal
     #[arg(
         long,
         value_name = "rows",
+        value_hint = ValueHint::Other,
         default_value_t = ONE_FRAME_SIZE.1,
-        value_parser = clap::value_parser!(u16).range(1..),
+        value_parser = clap::value_parser!(u16).range(1..=1000),
     )]
     height: u16,
 }

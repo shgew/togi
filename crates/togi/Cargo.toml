@@ -34,6 +34,7 @@ togi-tuner.workspace = true
 togi-tuningboot.workspace = true
 togi-version.workspace = true
 togi-watch.workspace = true
+unicode-width.workspace = true
 
 [dev-dependencies]
 rustix = { workspace = true, features = ["event", "pty", "termios"] }

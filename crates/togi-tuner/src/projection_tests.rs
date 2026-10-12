@@ -126,6 +126,33 @@ fn project_fills_phases_and_bios() {
 }
 
 #[test]
+fn the_last_clean_cycle_follows_clean_cycles_not_the_latest_started_cycle() {
+    let mut j = Journal::new(&[0], &[Start::solo(-10, -11)]);
+    assert_eq!(project(&j).last_clean_cycle, None);
+    j.profile_change(&[-10]);
+    j.cycle_start(1, &[Regime::R1]);
+    j.cycle_end(1, true, true);
+    assert_eq!(project(&j).last_clean_cycle, None, "phase 1 is never clean");
+    j.cycle_start(2, &[Regime::R1]);
+    j.cycle_end(2, true, true);
+    let concluded = project(&j);
+    assert_eq!(concluded.clean_cycles, 1);
+    assert_eq!(concluded.last_clean_cycle, NonZeroU32::new(2));
+    j.cycle_start(3, &[Regime::R1]);
+    let started = project(&j);
+    assert_eq!(started.checking.cycle, NonZeroU32::new(3));
+    assert_eq!(started.last_clean_cycle, NonZeroU32::new(2));
+    j.cycle_end(3, true, false);
+    assert_eq!(project(&j).last_clean_cycle, NonZeroU32::new(2));
+    j.cycle_start(4, &[Regime::R1]);
+    j.cycle_end(4, true, true);
+    let latest = project(&j);
+    assert_eq!(latest.clean_cycles, 2);
+    assert_eq!(latest.last_clean_cycle, NonZeroU32::new(4));
+    assert_roundtrip(&latest);
+}
+
+#[test]
 fn cycle_start_invalidates_projected_checking() {
     let mut j = Journal::new(&[3], &[Start::has_room(-10)]);
     let profile_seq = j.profile_change(&[-10]);

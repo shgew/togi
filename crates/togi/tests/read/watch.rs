@@ -14,8 +14,8 @@ use rustix::termios::{LocalModes, Winsize, tcgetattr, tcsetwinsize};
 use togi_watchtest::Scenario;
 
 use crate::support::{
-    append_between_trial_mce, append_event, append_unknown_kind, assert_unknown_kind_refusal,
-    journal, session, text, togi,
+    UNKNOWN_KIND, append_between_trial_mce, append_event, append_unknown_kind,
+    assert_unknown_kind_refusal, journal, rewrite_first_line, session, text, togi,
 };
 
 const BOUND: Duration = Duration::from_secs(30);
@@ -62,6 +62,26 @@ fn an_unreadable_journal_prints_the_problem_frame_and_exits_one() {
 }
 
 #[test]
+fn an_incompatible_journal_prints_the_refusal_frame_and_exits_one() {
+    let dir = session(Scenario::Search);
+    rewrite_first_line(dir.path(), |event| {
+        event["data"]["build"]["schema"] = 99.into();
+    });
+    let ran = togi(dir.path(), &["watch", "--width", "240", "--height", "67"]);
+    assert_eq!(ran.status.code(), Some(1));
+    let refusal = format!(
+        "the journal's schema is 99; this build's is {}",
+        togi_journal::SCHEMA
+    );
+    assert!(
+        text(&ran.stdout).contains(&refusal),
+        "{}",
+        text(&ran.stdout)
+    );
+    assert_eq!(text(&ran.stderr), format!("togi watch: {refusal}\n"));
+}
+
+#[test]
 fn journal_controls_are_escaped_in_the_frame_and_the_diagnostic() {
     let dir = session(Scenario::Search);
     append_event(
@@ -71,15 +91,39 @@ fn journal_controls_are_escaped_in_the_frame_and_the_diagnostic() {
         &serde_json::json!({"operation": "x\u{1b}[31m", "error": "e\u{7}"}),
     );
     let ran = togi(dir.path(), &["watch", "--width", "240", "--height", "67"]);
+    assert_eq!(ran.status.code(), Some(0), "{}", text(&ran.stderr));
     assert!(!text(&ran.stdout).contains('\u{1b}'));
-    assert!(!text(&ran.stderr).contains('\u{1b}'));
+    assert!(
+        text(&ran.stdout).contains("x\\x1b[31m: e\\x07"),
+        "{}",
+        text(&ran.stdout)
+    );
+    assert_eq!(text(&ran.stderr), "");
 
-    let broken = tempfile::tempdir().unwrap();
-    std::fs::write(journal(broken.path()), "{\"kind\":\"x\u{1b}[2J\"}\n").unwrap();
-    let ran = togi(broken.path(), &["watch"]);
+    let broken = session(Scenario::Search);
+    append_event(
+        broken.path(),
+        "session.warning",
+        "x",
+        &serde_json::json!({"operation": "x", "bad\u{1b}[2J": 1}),
+    );
+    let ran = togi(
+        broken.path(),
+        &["watch", "--width", "240", "--height", "67"],
+    );
     assert_eq!(ran.status.code(), Some(1));
     assert!(!text(&ran.stdout).contains('\u{1b}'));
     assert!(!text(&ran.stderr).contains('\u{1b}'));
+    assert!(
+        text(&ran.stdout).contains("bad\\x1b[2J"),
+        "{}",
+        text(&ran.stdout)
+    );
+    assert!(
+        text(&ran.stderr).contains("bad\\x1b[2J"),
+        "{}",
+        text(&ran.stderr)
+    );
 }
 
 #[test]
@@ -99,7 +143,12 @@ fn a_between_trial_mce_shows_in_the_frame() {
 #[test]
 fn the_frame_size_must_be_at_least_one() {
     let dir = tempfile::tempdir().unwrap();
-    for args in [["watch", "--width", "0"], ["watch", "--height", "0"]] {
+    for args in [
+        ["watch", "--width", "0"],
+        ["watch", "--height", "0"],
+        ["watch", "--width", "1001"],
+        ["watch", "--height", "1001"],
+    ] {
         let ran = togi(dir.path(), &args);
         assert_eq!(ran.status.code(), Some(2), "{args:?}");
         assert_eq!(text(&ran.stdout), "");
@@ -237,24 +286,21 @@ fn a_signal_ends_a_live_watch_with_the_terminal_restored(signal: Signal) {
             "watch did not end within {BOUND:?} of {signal:?}"
         );
     };
-    while read_more(
-        &master,
-        &mut seen,
-        Instant::now() + Duration::from_millis(100),
-    ) {}
+    while !contains(&seen[shown_at..], SHOW_CURSOR) {
+        assert!(
+            read_more(&master, &mut seen, deadline),
+            "the cursor is not shown again after {signal:?}; the terminal received {:?}",
+            String::from_utf8_lossy(&seen)
+        );
+    }
     assert_eq!(status.code(), Some(0), "{signal:?} is a normal end");
-    assert!(
-        contains(&seen[..], SHOW_CURSOR) && seen.len() > shown_at,
-        "the cursor is shown again: {:?}",
-        String::from_utf8_lossy(&seen)
-    );
     assert_eq!(tcgetattr(&slave).unwrap().local_modes, before);
 }
 
 #[test]
 fn an_event_of_an_unknown_kind_is_refused_in_read_only_words_by_watch() {
     let dir = session(Scenario::Search);
-    let line = append_unknown_kind(dir.path());
+    let line = append_unknown_kind(dir.path(), UNKNOWN_KIND);
     let ran = togi(dir.path(), &["watch", "--width", "100", "--height", "30"]);
     assert_unknown_kind_refusal("watch", &ran, line);
     assert_eq!(text(&ran.stdout).is_empty(), "watch" != "watch");

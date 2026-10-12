@@ -21,6 +21,10 @@ use crate::read;
 use crate::report::fail;
 use crate::table::{Row, table, wrap};
 
+/// The widest a hunt group's core list may be and stay in its table cell: the other columns take 37
+/// of the 80 cells, so a wider list moves to a note under the row.
+const GROUP_CORES_MAX: usize = 43;
+
 static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
     examples(&[
         ("togi status", "The session in the default state directory"),
@@ -41,8 +45,9 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 /// valid trials and the Tctl peak since the last profile change, and between-trial MCEs without
 /// treating them as failures. It shows each core's observed self-sufficiency for each R7 workload
 /// and the CCD's current top requesters, with offsets standing in only when request telemetry is
-/// absent, and lists reset commands for unanswered too-cautious defects. Read-only, rendered from
-/// the journal. A different ruleset warns before rendering; a different schema is refused.
+/// absent, and lists reset commands for too-cautious defects until each affected core is reset.
+/// Read-only, rendered from the journal. A different ruleset warns before rendering; a different
+/// schema is refused.
 #[derive(ClapArgs, Debug)]
 #[command(after_help = EXAMPLES.as_str())]
 pub struct Args {}
@@ -80,12 +85,20 @@ enum Problem {
     Replay(String),
 }
 
+/// Where a hunt's parked offsets came from, as the journal's own message tells them apart.
+#[derive(Clone)]
+enum Parked {
+    Zero,
+    CycleEnd(Seq),
+    Held(CoreSet),
+}
+
 /// What the events say that no fold keeps: notes, hunt and combination sequence numbers, defects.
 #[derive(Default)]
 struct Scan {
     carried: Vec<(Seq, String)>,
     between: Vec<(Seq, String)>,
-    hunt_start: BTreeMap<u32, (Seq, Option<Seq>)>,
+    hunt_start: BTreeMap<u32, (Seq, Parked)>,
     combination_seq: BTreeMap<u32, Seq>,
     defects: Vec<Defect>,
 }
@@ -108,8 +121,15 @@ impl Scan {
                     scan.between.push((event.seq, event.msg.clone()));
                 }
                 Payload::HuntStart(start) => {
+                    let parked = if let Some(seq) = start.parked_seq {
+                        Parked::CycleEnd(seq)
+                    } else if start.parked.iter().any(|(_, offset)| offset.get() != 0) {
+                        Parked::Held(start.cores)
+                    } else {
+                        Parked::Zero
+                    };
                     scan.hunt_start
-                        .insert(start.hunt.get(), (event.seq, start.parked_seq));
+                        .insert(start.hunt.get(), (event.seq, parked));
                 }
                 Payload::Combination(combination) => {
                     scan.combination_seq
@@ -185,6 +205,11 @@ fn cores_of(cores: impl IntoIterator<Item = CoreId>) -> String {
     } else {
         ids.join(" ")
     }
+}
+
+/// `count` rounds with the noun in agreement.
+fn rounds(count: u32) -> String {
+    format!("{count} {}", noun(count as usize, "round"))
 }
 
 /// What a cycle of `steps` lacks of the coverage a full cycle needs, one entry per regime.
@@ -317,18 +342,16 @@ impl Status<'_> {
         Some(match plan.phase {
             PhaseNo::One => "phase 1".to_owned(),
             PhaseNo::Concluded => format!(
-                "phase 2 concluded: clean cycles {}, latest cycle {}",
+                "phase 2 concluded: clean cycles {}, latest clean cycle {}",
                 self.projection.clean_cycles,
                 self.projection
-                    .checking
-                    .cycle
+                    .last_clean_cycle
                     .map_or(0, std::num::NonZero::get)
             ),
             PhaseNo::Two if plan.confirming => "phase 2: confirmation cycle".to_owned(),
             PhaseNo::Two => format!(
-                "phase 2: at most {} {} left, then one full cycle",
-                plan.rounds_left,
-                noun(plan.rounds_left as usize, "round")
+                "phase 2: at most {} left, then one full cycle",
+                rounds(plan.rounds_left)
             ),
         })
     }
@@ -491,13 +514,20 @@ impl Status<'_> {
             return;
         };
         let plan = hunt.plan;
-        let (start_seq, parked_seq) = self
+        let (start_seq, parked) = self
             .scan
             .hunt_start
             .get(&plan.number)
-            .copied()
-            .unwrap_or((plan.failure, None));
-        let parked = parked_seq.map_or("all-zero".to_owned(), |seq| format!("cycle end #{seq}"));
+            .cloned()
+            .unwrap_or((plan.failure, Parked::Zero));
+        let parked = match parked {
+            Parked::Zero => "parked offsets all-zero".to_owned(),
+            Parked::CycleEnd(seq) => format!("parked offsets cycle end #{seq}"),
+            Parked::Held(loaded) => format!(
+                "loaded cores {} held at their failing offsets, the rest parked at 0",
+                cores_of(loaded)
+            ),
+        };
         let signal = hunt
             .facts
             .cause
@@ -505,7 +535,7 @@ impl Status<'_> {
             .map_or("failure", |signal| signal.as_str());
         let trial = plan.trial.as_ref().map_or("-", |trial| trial.as_str());
         let text = format!(
-            "hunt {} [#{start_seq}]: unattributed {} in {} trial {}; parked offsets {parked}",
+            "hunt {} [#{start_seq}]: unattributed {} in {} trial {}; {parked}",
             plan.number,
             esc(signal),
             esc(plan.regime.as_str()),
@@ -530,12 +560,18 @@ impl Status<'_> {
                     .map(|member| format!("{:02} at {}", member.core.get(), member.offset.get()))
                     .collect();
                 "probe".clone_into(&mut cores);
-                note = Some(format!(
-                    "{:02} at {} with {}",
-                    probe.core.get(),
-                    probe.offset.get(),
-                    held.join(", ")
+                note = Some((
+                    "probe",
+                    format!(
+                        "{:02} at {} with {}",
+                        probe.core.get(),
+                        probe.offset.get(),
+                        held.join(", ")
+                    ),
                 ));
+            } else if cores.len() > GROUP_CORES_MAX {
+                let listed = std::mem::replace(&mut cores, format!("{} cores", group.cores.len()));
+                note = Some(("cores", listed));
             }
             let mut row = Row::new([
                 format!("G{}", group.number),
@@ -544,8 +580,8 @@ impl Status<'_> {
                 group.passed.to_string(),
                 group.needed.to_string(),
             ]);
-            if let Some(note) = note {
-                row = row.note("probe", note);
+            if let Some((label, text)) = note {
+                row = row.note(label, text);
             }
             rows.push(row);
         }
@@ -589,9 +625,8 @@ impl Status<'_> {
                 "no core can move: the confirmation cycle is all that is left".to_owned()
             } else {
                 format!(
-                    "worst case if no round fails: {} {} left, then one full cycle",
-                    plan.rounds_left,
-                    noun(plan.rounds_left as usize, "round")
+                    "worst case if no round fails: {} left, then one full cycle",
+                    rounds(plan.rounds_left)
                 )
             };
             self.line("\n", "  ", &text);
