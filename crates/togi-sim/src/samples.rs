@@ -1,6 +1,7 @@
 //! Conditions samples of the last trial, generated lazily: one per simulated second, strictly before the
 //! trial's end. Memory holds the snapshot that generates them, never the series.
 
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::{self, BufWriter, Write};
 use std::path::Path;
@@ -15,7 +16,8 @@ const STALL_LEAD: Duration = Duration::from_secs(2);
 const CCD_SIZE: usize = 8;
 
 /// What the samples of one trial are generated from.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct LastTrial {
     pub id: Option<String>,
     pub cores: CoreSet,

@@ -522,3 +522,61 @@ fn a_simulator_can_be_built_without_run_settings() {
     let mut machine = simulator.seams();
     assert!(machine.host.boot_id().is_ok());
 }
+
+#[test]
+fn a_restored_machine_reports_what_the_crashed_one_left_for_its_next_boot() {
+    let definition = two_cores(ModelDef {
+        crash_mce: 1.0,
+        ..sharp(Signal::Crash)
+    });
+    let mut rig = Rig::new(&definition, 1);
+    let crashed_boot = rig.boot();
+    assert!(crashed(&rig.alone(0, -12, Regime::R2, 0)));
+    let text = serde_json::to_string(&rig.sim.persisted()).expect("an encoded machine");
+    let restored = Simulator::restore(
+        model(&definition),
+        None,
+        serde_json::from_str(&text).expect("a decoded machine"),
+    )
+    .expect("a restored machine");
+    assert_eq!(restored.persisted(), rig.sim.persisted());
+
+    let next_boot = |sim: &Simulator| {
+        sim.reboot();
+        let mut machine = sim.seams();
+        let boot = machine.host.boot_id().expect("a booted machine");
+        let reason = machine.kernel.reset_reason(&boot).expect("a reason");
+        let after = machine
+            .kernel
+            .reset_reason_after(&crashed_boot)
+            .expect("the reason after the crashed boot");
+        let mces = machine.kernel.mces(&boot, Duration::ZERO).expect("a log");
+        (boot, reason, after, mces, sim.now(), sim.monotonic())
+    };
+    let want = next_boot(&rig.sim);
+    assert_eq!(next_boot(&restored), want);
+    assert_ne!(want.0, crashed_boot);
+    assert!(want.1.kind.is_some(), "{:?}", want.1);
+    assert!(
+        want.3
+            .iter()
+            .any(|mce| !mce.corrected && mce.core == Some(core(0))),
+        "{:?}",
+        want.3
+    );
+}
+
+#[test]
+fn a_persisted_machine_for_other_cores_is_refused() {
+    let rig = Rig::new(&two_cores(ModelDef::default()), 1);
+    let error = Simulator::restore(model(&machine(4, vec![])), None, rig.sim.persisted())
+        .err()
+        .expect("a refusal");
+    assert_eq!(
+        error,
+        togi_sim::RestoreError::Cores {
+            persisted: 2,
+            model: 4
+        }
+    );
+}

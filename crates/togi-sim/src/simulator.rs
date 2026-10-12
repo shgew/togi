@@ -10,6 +10,8 @@ use togi_machine::{Backend, BiosContext, CoreId, Machine, ResetKind};
 use crate::adapters::{SimClock, SimHost, SimKernel, SimSmu};
 use crate::faults::SmuHook;
 use crate::model::{Model, Script};
+use crate::persisted::{Persisted, RestoreError};
+use crate::replay::Replay;
 use crate::runtime::{RunSettings, Runtime, Shared};
 use crate::trials::SimTrials;
 
@@ -182,10 +184,33 @@ impl Simulator {
     }
 
     /// Writes each trial's samples under `dir/<trial id>/samples.jsonl`, compressed by
-    /// [`Trials::ended`](togi_machine::Trials::ended), instead of keeping the last trial's in memory.
+    /// [`Trials::ended`](togi_machine::Trials::ended), instead of keeping the last trial's in memory. Setting the
+    /// directory it already has keeps the last trial's samples.
     pub fn set_samples_dir(&self, dir: Option<PathBuf>) {
         let mut runtime = self.shared.borrow_mut();
-        runtime.samples_dir = dir;
-        runtime.samples = crate::samples::LastTrial::default();
+        if runtime.samples_dir != dir {
+            runtime.samples_dir = dir;
+            runtime.samples = crate::samples::LastTrial::default();
+        }
+    }
+
+    /// The state a later process continues this machine from with [`restore`](Self::restore).
+    pub fn persisted(&self) -> Persisted {
+        self.shared.borrow().persisted()
+    }
+
+    /// The machine `persisted` describes, running `model` and answering from `replay`.
+    ///
+    /// # Errors
+    ///
+    /// A persisted state for another number of cores, or one without a boot.
+    pub fn restore(
+        model: Model,
+        replay: Option<Replay>,
+        persisted: Persisted,
+    ) -> Result<Self, RestoreError> {
+        Ok(Self {
+            shared: Rc::new(RefCell::new(Runtime::restore(model, replay, persisted)?)),
+        })
     }
 }

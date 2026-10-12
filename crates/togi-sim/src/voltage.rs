@@ -5,6 +5,7 @@
 //! limit hazards, the joints and the CCD residual. Telemetry for any other trial is computed from the
 //! same equations without changing its hazards.
 
+use serde::{Deserialize, Serialize};
 use togi_machine::{CoreId, Regime, TargetOffset, workloads};
 
 use crate::definition::{DEFAULT_COUNT_V, SharedVoltageDef, VoltageCoreDef, VoltageWorkloadDef};
@@ -56,7 +57,8 @@ pub struct VoltageCore {
 }
 
 /// The rail at one profile and load.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct VoltageState {
     /// The voltage each core requests; unloaded cores request `idle_v`.
     pub requests: [f32; CORES],
