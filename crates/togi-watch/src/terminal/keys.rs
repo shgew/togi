@@ -452,12 +452,15 @@ mod tests {
 
     #[test]
     fn a_byte_by_byte_arrow_is_one_key() {
-        let mut decoder = Decoder::default();
-        let keys: Vec<Key> = b"\x1b[Aj"
-            .iter()
-            .flat_map(|byte| decoder.push(&[*byte]))
-            .collect();
-        assert_eq!(keys, [Key::Up, Key::Char('j')]);
+        for arrow in [&b"\x1b[A"[..], b"\x1bOA"] {
+            let mut decoder = Decoder::default();
+            let keys: Vec<Key> = arrow
+                .iter()
+                .chain(b"j")
+                .flat_map(|byte| decoder.push(&[*byte]))
+                .collect();
+            assert_eq!(keys, [Key::Up, Key::Char('j')], "{arrow:?}");
+        }
     }
 
     #[test]

@@ -110,7 +110,15 @@ impl Source for FdSource<'_> {
     }
 }
 
-/// A pipe that no child process inherits. `pipe2` is not available on every platform, so the flag is set after.
+/// A pipe that no child process inherits, made with the flag in one call so a fork on another thread cannot
+/// catch it without.
+#[cfg(not(target_vendor = "apple"))]
+pub(super) fn pipe() -> io::Result<(OwnedFd, OwnedFd)> {
+    Ok(rustix::pipe::pipe_with(rustix::pipe::PipeFlags::CLOEXEC)?)
+}
+
+/// A pipe that no child process inherits. Apple platforms have no `pipe2`, so the flag is set after.
+#[cfg(target_vendor = "apple")]
 pub(super) fn pipe() -> io::Result<(OwnedFd, OwnedFd)> {
     let (read, write) = rustix::pipe::pipe()?;
     rustix::io::fcntl_setfd(&read, rustix::io::FdFlags::CLOEXEC)?;
@@ -232,6 +240,22 @@ pub(super) mod tests {
     }
 
     #[test]
+    fn an_ss3_arrow_byte_by_byte_waits_after_each_byte_and_is_one_key() {
+        let (keys, timeouts) = keys([
+            Step::Data(b"\x1b"),
+            Step::Data(b"O"),
+            Step::Data(b"A"),
+            Step::Eof,
+        ]);
+        assert_eq!(keys, [Key::Up]);
+        assert_eq!(
+            timeouts,
+            [None, Some(ESCAPE_TIMEOUT), Some(ESCAPE_TIMEOUT), None],
+            "each fragment waits the whole timeout again"
+        );
+    }
+
+    #[test]
     fn a_quiet_escape_prefix_times_out_into_esc_or_nothing_and_keeps_the_next_key() {
         for (prefix, want) in [
             (&b"\x1b"[..], vec![Key::Esc]),
@@ -280,8 +304,9 @@ pub(super) mod tests {
 
     mod pipes {
         use std::os::fd::{AsFd as _, OwnedFd};
+        use std::time::Duration;
 
-        use tokio::sync::mpsc::unbounded_channel;
+        use tokio::sync::mpsc::{UnboundedReceiver, unbounded_channel};
 
         use crate::terminal::Event;
         use crate::terminal::input::Reader;
@@ -291,18 +316,41 @@ pub(super) mod tests {
             crate::terminal::input::pipe().unwrap()
         }
 
+        /// The next event, or a failure if none comes within five seconds.
+        fn receive(queue: &mut UnboundedReceiver<Event>) -> Option<Event> {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_time()
+                .build()
+                .unwrap()
+                .block_on(async {
+                    tokio::time::timeout(Duration::from_secs(5), queue.recv()).await
+                })
+                .unwrap_or_else(|_| panic!("the reader sent nothing within five seconds"))
+        }
+
         #[test]
-        fn a_reader_on_a_real_pipe_decodes_split_sequences_and_reports_the_end() {
+        fn both_ends_of_a_pipe_are_closed_on_exec() {
+            let (read, write) = pipe();
+            for end in [&read, &write] {
+                assert!(
+                    rustix::io::fcntl_getfd(end)
+                        .unwrap()
+                        .contains(rustix::io::FdFlags::CLOEXEC)
+                );
+            }
+        }
+
+        #[test]
+        fn a_reader_on_a_real_pipe_decodes_a_sequence_and_reports_the_end() {
             let (read, write) = pipe();
             let (events, mut queue) = unbounded_channel();
             std::thread::scope(|scope| {
                 let reader = Reader::start(scope, read.as_fd(), events).unwrap();
-                rustix::io::write(&write, b"\x1b[").unwrap();
-                rustix::io::write(&write, b"Aj").unwrap();
+                rustix::io::write(&write, b"\x1b[Aj").unwrap();
                 drop(write);
                 let mut keys = Vec::new();
                 loop {
-                    match queue.blocking_recv() {
+                    match receive(&mut queue) {
                         Some(Event::Key(key)) => keys.push(key),
                         Some(Event::InputClosed) => break,
                         other => panic!("{other:?}"),
@@ -322,7 +370,7 @@ pub(super) mod tests {
                 drop(reader);
             });
             assert!(matches!(
-                queue.blocking_recv(),
+                receive(&mut queue),
                 Some(Event::InputClosed) | None
             ));
             rustix::io::write(&write, b"remaining input").unwrap();
@@ -338,7 +386,7 @@ pub(super) mod tests {
             std::thread::scope(|scope| {
                 let reader = Reader::start(scope, read.as_fd(), events).unwrap();
                 rustix::io::write(&write, b"\x1b").unwrap();
-                assert!(matches!(queue.blocking_recv(), Some(Event::Key(Key::Esc))));
+                assert!(matches!(receive(&mut queue), Some(Event::Key(Key::Esc))));
                 drop(reader);
             });
         }
