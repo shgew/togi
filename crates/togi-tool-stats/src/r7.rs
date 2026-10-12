@@ -236,10 +236,10 @@ const BIN_ROUNDING_TOLERANCE: f64 = 1e-9;
 #[derive(Debug, Default, Eq, PartialEq)]
 pub(crate) struct RequestMetrics {
     pub(crate) missing_failures: u32,
-    /// By class label and the bin's number of 4 mV steps.
-    pub(crate) bins: BTreeMap<(String, i64), RequestCounts>,
-    /// By class label and requester core.
-    pub(crate) requesters: BTreeMap<(String, u8), RequestCounts>,
+    /// By class and the bin's number of 4 mV steps.
+    pub(crate) bins: BTreeMap<(Class, i64), RequestCounts>,
+    /// By class and requester core.
+    pub(crate) requesters: BTreeMap<(Class, u8), RequestCounts>,
 }
 
 pub(crate) fn requests(p: &Projection<'_>, since: Option<Timestamp>) -> RequestMetrics {
@@ -253,14 +253,14 @@ pub(crate) fn requests(p: &Projection<'_>, since: Option<Timestamp>) -> RequestM
             m.missing_failures += u32::from(measurement.failed);
             continue;
         }
-        let label = measurement.class.label();
+        let class = measurement.class;
         m.bins
-            .entry((label.clone(), bin(top)))
+            .entry((class, bin(top)))
             .or_default()
             .count(measurement.failed);
         for core in measurement.top_requesters {
             m.requesters
-                .entry((label.clone(), core.get()))
+                .entry((class, core.get()))
                 .or_default()
                 .count(measurement.failed);
         }
@@ -302,7 +302,7 @@ pub(crate) fn render_requests(table: &mut Table, m: &RequestMetrics) {
         let low = bin_volts(*bin);
         row!(
             table,
-            class,
+            class.label(),
             format!("[{low:.3}, {:.3})", low + 1.0 / BINS_PER_VOLT),
             counts.trials,
             counts.failures
@@ -318,7 +318,7 @@ pub(crate) fn render_requests(table: &mut Table, m: &RequestMetrics) {
     for ((class, core), counts) in &m.requesters {
         row!(
             table,
-            class,
+            class.label(),
             format!("{core:02}"),
             counts.trials,
             counts.failures

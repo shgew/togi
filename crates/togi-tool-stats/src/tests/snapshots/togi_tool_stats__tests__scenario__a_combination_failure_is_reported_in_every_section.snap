@@ -53,7 +53,7 @@ count  min seconds  median seconds  max seconds
 
 Hunts
 hunt  start                 hours  failing trial  parked offsets  candidates  planned/run/inferred/skipped  trials  crashes  result       members/culprit  commitment
-1     2026-01-01T00:05:40Z  0.044  0002           loaded-held     2           2/1/1/0                       2       0        combination  01:-22,03:-22    03 -22->-19
+1     2026-01-01T00:05:40Z  0.044  0002           all-zero        2           2/1/1/0                       1       0        combination  01:-22,03:-22    03 -22->-19
 
 Checking
 metric                      count
@@ -65,8 +65,8 @@ reruns failing first trial  0
 
 Checking steps and together outcomes
 cycle  regime  loaded cores  outcome  trials
-0001   R7      00,01,02,03   pass     1
-0001   R7      00,01,02,03   failure  1
+1      R7      00,01,02,03   pass     1
+1      R7      00,01,02,03   failure  1
 
 Evidence quality
 warning                                        count
@@ -82,7 +82,7 @@ hunt  group  stage  prior passes  required  established  passes again  failures 
 
 Prior evidence by hunt and stage
 hunt  stage  ran groups  established groups  passed again  failed again  redundant trials  redundant hours
-0001  part   1           0                   0             0             0                 0.000
+1     part   1           0                   0             0             0                 0.000
 
 R7 voltage-targeted backoffs
 seq  decision  core  from  to   counts  causes  reason
@@ -90,7 +90,7 @@ seq  decision  core  from  to   counts  causes  reason
 
 R7 chain derivations
 seq  cycle  step  CCD  workload                      part  request groups  loaded cores  sources
-23   1      2     1    mprime-avx2-36k-248k-allcore  2     03 > 02         02            13
+23   1      2     1    mprime-avx2-36k-248k-allcore  2     03 > 02         02            6
 
 Failure rate by depth
 regime / workload / loaded cores / duration       shallowest offset  trials  failures  rate

@@ -244,7 +244,7 @@ fn combination() -> Log {
     passing.top_requesters = set(&[1, 3]);
     log.at(60).add(all_core("0001", &[-20, -20, -20, -20]));
     log.at(61).add(trial_start("0001"));
-    log.at(181).add(passing);
+    let passed = log.at(181).add(passing);
     let crashed = log.at(200).add(all_core("0002", &[-22, -22, -22, -22]));
     log.at(201).add(trial_start("0002"));
     log.at(231).add(TrialProgress {
@@ -273,13 +273,13 @@ fn combination() -> Log {
     start.workload = workload(Regime::R7, 0);
     start.cores = set(&[0, 1, 2, 3]);
     start.failure = failed;
-    start.parked = profile(&[-20, -20, -20, -20]);
+    start.parked = profile(&[0, 0, 0, 0]);
     start.failing = profile(&[-22, -22, -22, -22]);
     start.candidates = set(&[1, 3]);
     start.trials = 1;
     log.at(340).add_caused(&[failed], start);
     let hunted = |id: &str, group: u32, cores: &[i64]| {
-        let mut planned = intent(id, Regime::R7, cores, &[-20, -22, -20, -22]);
+        let mut planned = intent(id, Regime::R7, cores, &[0, -22, 0, -22]);
         planned.activity = Some(Activity::Hunt);
         planned.condition = Condition::Parked;
         planned.hunt = Some(nz(1));
@@ -337,7 +337,7 @@ fn combination() -> Log {
         workload: workload(Regime::R7, 0),
         groups: vec![set(&[3]), set(&[2])],
         cores: set(&[2]),
-        source_seqs: vec![failed],
+        source_seqs: vec![passed],
         profile: profile(&[-20, -20, -20, -19]),
         part: nz(2),
         rederived: None,
@@ -348,14 +348,15 @@ fn combination() -> Log {
         passes: Vec::new(),
         detail: String::new(),
     });
-    let mut inconclusive = hunted("0004", 3, &[0]);
-    inconclusive.core = Some(super::support::core(0));
-    inconclusive.cores = CoreSet::default();
-    inconclusive.activity = Some(Activity::Search);
-    inconclusive.condition = Condition::Alone;
+    let mut searched = intent("0004", Regime::R7, &[], &[-21, 0, 0, 0]);
+    searched.core = Some(super::support::core(0));
+    searched.offset = Some(target(-21));
+    searched.activity = Some(Activity::Search);
+    searched.condition = Condition::Alone;
+    searched.duration_s = 60;
     let mut unclear = end("0004", Outcome::Inconclusive);
     unclear.reason = Some("run on\nanother core".to_owned());
-    log.at(520).add(inconclusive);
+    log.at(520).add(searched);
     log.add(trial_start("0004"));
     log.add(unclear);
     log.at(600).add(cycle(1, CycleEvent::End, true));
@@ -444,6 +445,24 @@ fn r7_backoffs_and_chains_are_listed_with_their_causes_and_sources() {
         vec![multi, solo],
         1,
     ));
+    let carried_failure = |cores: &[i64]| {
+        let mut fact = super::evidence::carried(Outcome::Failure);
+        fact.class = togi_journal::TrialClass {
+            regime: Regime::R7,
+            workload: Some(workload(Regime::R7, 0)),
+            cores: set(cores),
+            duration_s: 120,
+        };
+        fact
+    };
+    let carried_multi = log.add(carried_failure(&[0, 1]));
+    log.add_caused(&[carried_multi], decision(Decision::Backoff, 0, -20, -16));
+    let carried_single = log.add(carried_failure(&[1]));
+    log.add_caused(&[carried_single], decision(Decision::Backoff, 1, -20, -19));
+    log.add(intent("0003", Regime::R7, &[0, 1], &[0, 0]));
+    log.add(trial_start("0003"));
+    let ended = log.add(end("0003", Outcome::Failure));
+    log.add_caused(&[ended], decision(Decision::Backoff, 0, -20, -15));
     let journal = log.journal();
     let p = Projection::new(&journal);
     let r = crate::r7::decisions(p.events, None);
@@ -452,8 +471,8 @@ fn r7_backoffs_and_chains_are_listed_with_their_causes_and_sources() {
             .iter()
             .map(|b| (b.seq.get(), b.steps))
             .collect::<Vec<_>>(),
-        [(4, 3)],
-        "only the multi-core R7 failure's backoff is voltage-targeted"
+        [(4, 3), (11, 4), (17, 5)],
+        "only backoffs of multi-core R7 failures are voltage-targeted: live, carried or ended"
     );
     assert_eq!(
         r.chains.iter().map(|c| c.seq.get()).collect::<Vec<_>>(),

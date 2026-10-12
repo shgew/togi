@@ -89,7 +89,7 @@ pub(crate) struct StageReuse {
 pub(crate) struct EvidenceMetrics {
     pub(crate) warnings: BTreeMap<WarningKind, u32>,
     pub(crate) single_carried: u32,
-    pub(crate) contradictions: BTreeMap<String, u32>,
+    pub(crate) contradictions: BTreeMap<Class, u32>,
     pub(crate) groups: Vec<GroupReuse>,
     pub(crate) stages: BTreeMap<(u32, HuntStage), StageReuse>,
 }
@@ -107,7 +107,7 @@ pub(crate) fn compute(p: &Projection<'_>, since: Option<Timestamp>) -> EvidenceM
         .filter(|t| selected(t.time, since) && t.failed())
     {
         if prior_passes(p, t.intent, t.profile, t.seq) > 0 {
-            *m.contradictions.entry(t.class.label()).or_default() += 1;
+            *m.contradictions.entry(t.class).or_default() += 1;
         }
     }
     for hunt in p.hunts.iter().filter(|h| selected(h.time, since)) {
@@ -169,7 +169,7 @@ pub(crate) fn render(table: &mut Table, m: &EvidenceMetrics) {
         &["trial class", "failures with prior passes"],
     );
     for (class, count) in &m.contradictions {
-        row!(table, class, count);
+        row!(table, class.label(), count);
     }
     table.section(
         "Prior evidence per hunt group",
@@ -217,7 +217,7 @@ pub(crate) fn render(table: &mut Table, m: &EvidenceMetrics) {
     for ((hunt, stage), s) in &m.stages {
         row!(
             table,
-            format!("{hunt:04}"),
+            hunt,
             stage,
             s.groups,
             s.established,
@@ -291,7 +291,7 @@ pub(crate) fn event_at(events: &[Event], seq: Seq) -> Option<&Event> {
 /// A multi-core class's trials counted by the shallowest loaded offset.
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) struct DepthRate {
-    pub(crate) class: String,
+    pub(crate) class: Class,
     pub(crate) depth: i64,
     pub(crate) trials: u32,
     pub(crate) failures: u32,
@@ -305,7 +305,7 @@ struct DepthClass {
 }
 
 pub(crate) fn depth(p: &Projection<'_>, since: Option<Timestamp>) -> Vec<DepthRate> {
-    let mut classes: BTreeMap<String, DepthClass> = BTreeMap::new();
+    let mut classes: BTreeMap<Class, DepthClass> = BTreeMap::new();
     for t in p
         .trials
         .iter()
@@ -314,7 +314,7 @@ pub(crate) fn depth(p: &Projection<'_>, since: Option<Timestamp>) -> Vec<DepthRa
         let Some(depth) = shallowest(t) else {
             continue;
         };
-        let class = classes.entry(t.class.label()).or_default();
+        let class = classes.entry(t.class).or_default();
         let (trials, failures) = class.depths.entry(depth).or_default();
         *trials += 1;
         if t.failed() {
@@ -325,12 +325,12 @@ pub(crate) fn depth(p: &Projection<'_>, since: Option<Timestamp>) -> Vec<DepthRa
     classes
         .into_iter()
         .filter(|(_, class)| class.failing)
-        .flat_map(|(label, class)| {
-            class
+        .flat_map(|(class, depths)| {
+            depths
                 .depths
                 .into_iter()
                 .map(move |(depth, (trials, failures))| DepthRate {
-                    class: label.clone(),
+                    class,
                     depth,
                     trials,
                     failures,
@@ -362,7 +362,7 @@ pub(crate) fn render_depth(table: &mut Table, rates: &[DepthRate]) {
     for r in rates {
         row!(
             table,
-            r.class,
+            r.class.label(),
             r.depth,
             r.trials,
             r.failures,

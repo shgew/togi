@@ -236,7 +236,11 @@ fn a_failure_after_a_prior_pass_is_listed_by_class() {
     let p = Projection::new(&journal);
     let m = compute(&p, None);
     assert_eq!(
-        m.evidence.contradictions.into_iter().collect::<Vec<_>>(),
+        m.evidence
+            .contradictions
+            .into_iter()
+            .map(|(class, count)| (class.label(), count))
+            .collect::<Vec<_>>(),
         [("R6/mprime-sse-4k-21k-idle/00,01/120s".to_owned(), 1)]
     );
 }
@@ -294,9 +298,11 @@ fn the_failure_rate_by_depth_lists_multi_core_classes_that_failed() {
     trial(&mut log, planned("e", &[0], &[-5, 0, 0]), Outcome::Failure);
     let journal = log.journal();
     let rates = compute(&Projection::new(&journal), None).depth;
+    let labels: Vec<_> = rates.iter().map(|r| r.class.label()).collect();
     let got: Vec<_> = rates
         .iter()
-        .map(|r| (r.class.as_str(), r.depth, r.trials, r.failures))
+        .zip(&labels)
+        .map(|(r, label)| (label.as_str(), r.depth, r.trials, r.failures))
         .collect();
     assert_eq!(
         got,
@@ -527,4 +533,72 @@ fn a_chain_through_hunt_events_is_followed_to_its_failures() {
     assert_eq!(chain(&[3]), 0, "a live failure added");
     assert_eq!(chain(&[4]), 0, "a second carried failure added");
     assert_eq!(chain(&[1, 5]), 1, "one failure through several paths");
+}
+
+/// Classes of two R4 workloads whose catalog order differs from their alphabetical order, each at 90 s and 120 s.
+const CATALOG_ORDER: [&str; 4] = [
+    "R4/ycruncher-bkt-sftv4-duty50/00,01/90s",
+    "R4/ycruncher-bkt-sftv4-duty50/00,01/120s",
+    "R4/mprime-sse-4k-21k-duty50/00,01/90s",
+    "R4/mprime-sse-4k-21k-duty50/00,01/120s",
+];
+
+#[test]
+fn class_tables_list_workloads_in_catalog_order_and_durations_numerically() {
+    let mut log = Log::new(&[(0, 0), (1, 0)]);
+    for (n, (index, duration)) in [(3, 120), (1, 120), (3, 90), (1, 90)]
+        .into_iter()
+        .enumerate()
+    {
+        for (outcome, tag) in [(Outcome::Pass, "p"), (Outcome::Failure, "f")] {
+            let mut planned = intent(&format!("{tag}{n}"), Regime::R4, &[0, 1], &[-10, -10]);
+            planned.workload = workload(Regime::R4, index);
+            planned.duration_s = duration;
+            trial(&mut log, planned, outcome);
+        }
+    }
+    let journal = log.journal();
+    let p = Projection::new(&journal);
+    let m = compute(&p, None);
+    let contradictions: Vec<_> = m
+        .evidence
+        .contradictions
+        .keys()
+        .map(|c| c.label())
+        .collect();
+    assert_eq!(contradictions, CATALOG_ORDER);
+    let depth: Vec<_> = m.depth.iter().map(|r| r.class.label()).collect();
+    assert_eq!(depth, CATALOG_ORDER);
+}
+
+#[test]
+fn r7_request_tables_list_durations_numerically() {
+    let mut log = Log::new(&[(0, 0), (1, 0)]);
+    for (n, duration) in [120, 90].into_iter().enumerate() {
+        let id = n.to_string();
+        let mut planned = intent(&id, Regime::R7, &[0, 1], &[0, 0]);
+        planned.duration_s = duration;
+        log.add(planned);
+        log.add(super::support::trial_start(&id));
+        let mut ended = super::support::end(&id, Outcome::Pass);
+        ended.voltage_requests_v = [(set(&[0]).iter().next().unwrap(), 1.0)]
+            .into_iter()
+            .collect::<PerCore<f64>>();
+        ended.top_requesters = set(&[0]);
+        log.add(ended);
+    }
+    let journal = log.journal();
+    let m = crate::r7::requests(&Projection::new(&journal), None);
+    let bins: Vec<_> = m.bins.keys().map(|(class, _)| class.label()).collect();
+    let requesters: Vec<_> = m
+        .requesters
+        .keys()
+        .map(|(class, _)| class.label())
+        .collect();
+    let want = [
+        "R7/mprime-avx2-36k-248k-allcore/00,01/90s",
+        "R7/mprime-avx2-36k-248k-allcore/00,01/120s",
+    ];
+    assert_eq!(bins, want);
+    assert_eq!(requesters, want);
 }

@@ -1,10 +1,12 @@
 ---
 source: crates/togi-tool-stats/src/tests/scenario.rs
-expression: "super::support::rendered(|table| crate::r7::render_decisions(table, &r))"
+expression: "super::support::rendered(|table| { crate::r7::render_decisions(table, &r); })"
 ---
 R7 voltage-targeted backoffs
 seq  decision  core  from  to   counts  causes  reason
 4    backoff   00    -20   -17  3       3       request 1.100 V\nto 1.110 V
+11   backoff   00    -20   -16  4       10      
+17   backoff   00    -20   -15  5       16      
 
 R7 chain derivations
 seq  cycle  step  CCD  workload                      part  request groups  loaded cores  sources

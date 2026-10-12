@@ -27,7 +27,7 @@ impl Class {
         }
     }
 
-    /// `R7/workload/00,01/120s`; labels sort by regime, workload, loaded cores and duration.
+    /// `R7/workload/00,01/120s`.
     pub(crate) fn label(self) -> String {
         format!(
             "{}/{}/{}/{}s",
@@ -36,6 +36,26 @@ impl Class {
             core_list(self.cores),
             self.duration_s
         )
+    }
+}
+
+impl Ord for Class {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.workload
+            .cmp(&other.workload)
+            .then_with(|| {
+                self.cores
+                    .iter()
+                    .map(CoreId::get)
+                    .cmp(other.cores.iter().map(CoreId::get))
+            })
+            .then(self.duration_s.cmp(&other.duration_s))
+    }
+}
+
+impl PartialOrd for Class {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
     }
 }
 

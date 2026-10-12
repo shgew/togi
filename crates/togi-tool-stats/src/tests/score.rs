@@ -139,6 +139,13 @@ fn flags_name_what_makes_the_forecast_less_comparable() {
     insta::assert_snapshot!(scored(&record, log.events));
 }
 
+#[test]
+fn a_journal_with_nothing_after_the_anchor_scores_no_builds() {
+    let log = opening(Some("abc"));
+    let record = record(&log, "abc", false, ensemble(true));
+    insta::assert_snapshot!(scored(&record, log.events));
+}
+
 fn state_dir(log: &Log) -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     let mut text = String::new();

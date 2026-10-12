@@ -128,6 +128,10 @@ impl Log {
     /// An event citing `cause`, then one second on.
     pub(super) fn add_caused(&mut self, cause: &[Seq], payload: impl Into<Payload>) -> Seq {
         let number = Seq::new(self.events.len() as u64 + 1).unwrap();
+        assert!(
+            cause.iter().all(|&c| c < number),
+            "every cause precedes the event it explains: {cause:?} for #{number}"
+        );
         self.events.push(Event::new(
             number,
             Stamp {

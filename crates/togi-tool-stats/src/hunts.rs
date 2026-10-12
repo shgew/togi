@@ -76,7 +76,17 @@ pub(crate) fn render_hunts(table: &mut Table, hunts: &[HuntMetrics<'_>]) {
         let h = m.hunt;
         let (result, members) = match h.result {
             None => ("open".to_owned(), "-".to_owned()),
-            Some(end) if end.members.is_empty() => (end.result.to_string(), core_list(end.cores)),
+            Some(end) if end.members.is_empty() => {
+                let cores = core_list(end.cores);
+                (
+                    end.result.to_string(),
+                    if cores.is_empty() {
+                        "-".to_owned()
+                    } else {
+                        cores
+                    },
+                )
+            }
             Some(end) => {
                 let mut members: Vec<_> = end.members.iter().collect();
                 members.sort_by_key(|member| member.core);
@@ -186,7 +196,7 @@ pub(crate) fn render_checking(table: &mut Table, m: &CheckingMetrics) {
         let cycle = if key.rerun {
             "rerun".to_owned()
         } else {
-            format!("{:04}", key.cycle)
+            key.cycle.to_string()
         };
         row!(
             table,

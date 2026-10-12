@@ -25,7 +25,7 @@ fn a_simulated_sessions_report_agrees_with_its_events() {
         .filter(|event| matches!(event.payload, Payload::CrashDetected(_)))
         .count();
     assert!(crashes > 0, "the machine never crashed");
-    let text = report(&Journal::new(events).unwrap(), None);
+    let text = report(&Journal::new(events.clone()).unwrap(), None);
 
     let runs = rows(&text, "Runs");
     let column = |at: usize| -> usize {
@@ -39,11 +39,51 @@ fn a_simulated_sessions_report_agrees_with_its_events() {
         .map(|row| row[2].parse::<usize>().unwrap())
         .sum();
     assert!(exposure <= intents && exposure > 0, "{text}");
-    let hunts = rows(&text, "Hunts");
-    assert!(!hunts.is_empty(), "the crash was never hunted:\n{text}");
-    for hunt in &hunts {
-        assert_ne!(hunt[10], "open", "{text}");
-    }
+    let ended: Vec<_> = events
+        .iter()
+        .filter_map(|event| match &event.payload {
+            Payload::HuntEnd(end) => Some(end),
+            _ => None,
+        })
+        .map(|end| {
+            let members = if end.members.is_empty() {
+                let cores: Vec<String> = end
+                    .cores
+                    .iter()
+                    .map(|c| format!("{:02}", c.get()))
+                    .collect();
+                if cores.is_empty() {
+                    "-".to_owned()
+                } else {
+                    cores.join(",")
+                }
+            } else {
+                let mut members: Vec<_> = end.members.iter().collect();
+                members.sort_by_key(|member| member.core);
+                let labels: Vec<String> = members
+                    .iter()
+                    .map(|member| format!("{:02}:{}", member.core.get(), member.offset.get()))
+                    .collect();
+                labels.join(",")
+            };
+            (end.hunt.get(), end.result.to_string(), members)
+        })
+        .collect();
+    assert!(!ended.is_empty(), "the crash was never hunted");
+    let mut hunts: Vec<_> = rows(&text, "Hunts")
+        .iter()
+        .map(|hunt| {
+            (
+                hunt[0].parse::<u32>().unwrap(),
+                hunt[9].to_owned(),
+                hunt[10].to_owned(),
+            )
+        })
+        .collect();
+    hunts.sort();
+    let mut ended = ended;
+    ended.sort();
+    assert_eq!(hunts, ended, "{text}");
     let timing: usize = rows(&text, "Crash timing (last evidence)")
         .iter()
         .map(|row| row[1].parse::<usize>().unwrap())

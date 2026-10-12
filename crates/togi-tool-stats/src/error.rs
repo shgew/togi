@@ -1,5 +1,3 @@
-use std::io;
-
 use togi_journal::FileError;
 use togi_tuner::TopologyError;
 
@@ -21,6 +19,4 @@ pub enum Error {
         #[source]
         source: togi_tool_forecast::Error,
     },
-    #[error("write the report: {0}")]
-    Write(#[from] io::Error),
 }

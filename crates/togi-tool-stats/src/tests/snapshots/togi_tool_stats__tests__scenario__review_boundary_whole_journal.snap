@@ -52,7 +52,7 @@ count  min seconds  median seconds  max seconds
 
 Hunts
 hunt  start                 hours  failing trial  parked offsets  candidates  planned/run/inferred/skipped  trials  crashes  result       members/culprit  commitment
-1     2026-01-01T00:12:00Z  0.033  trigger        #7              2           1/0/0/1                       0       0        cancelled                     none
+1     2026-01-01T00:12:00Z  0.033  trigger        #7              2           1/0/0/1                       0       0        cancelled    -                none
 2     2026-01-01T00:15:00Z  0.250  trigger        #7              2           3/3/0/0                       3       0        combination  00:-10,01:-10    none
 
 Checking
@@ -65,8 +65,8 @@ reruns failing first trial  0
 
 Checking steps and together outcomes
 cycle  regime  loaded cores  outcome  trials
-0001   R6      00,01         pass     1
-0001   R6      00,01         failure  1
+1      R6      00,01         pass     1
+1      R6      00,01         failure  1
 
 Evidence quality
 warning                                        count
@@ -85,7 +85,7 @@ hunt  group  stage  prior passes  required  established  passes again  failures 
 
 Prior evidence by hunt and stage
 hunt  stage  ran groups  established groups  passed again  failed again  redundant trials  redundant hours
-0002  part   3           3                   1             1             3                 0.050
+2     part   3           3                   1             1             3                 0.050
 
 R7 voltage-targeted backoffs
 seq  decision  core  from  to  counts  causes  reason
@@ -95,8 +95,8 @@ seq  cycle  step  CCD  workload  part  request groups  loaded cores  sources
 
 Failure rate by depth
 regime / workload / loaded cores / duration  shallowest offset  trials  failures  rate
-R6/mprime-sse-4k-21k-idle/00,01/120s         -11                1       1         100.0%
 R6/mprime-sse-4k-21k-idle/00,01/60s          -10                4       1         25.0%
+R6/mprime-sse-4k-21k-idle/00,01/120s         -11                1       1         100.0%
 
 R7 voltage requests
 field                               count

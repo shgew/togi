@@ -131,7 +131,21 @@ fn a_crash_keeps_its_stronger_signal_in_every_metric() {
             .journal();
         let p = Projection::new(&journal);
         let m = compute(&p, None);
-        assert_eq!(m.recovery.count, 1, "{signal}");
+        assert_eq!(
+            m.recovery,
+            RecoveryGap {
+                count: 1,
+                shortest: 80.0,
+                median: 80.0,
+                longest: 80.0
+            },
+            "{signal}"
+        );
+        assert!(
+            (m.time.downtime_s - 70.0).abs() < 1e-9,
+            "{signal}: downtime {}",
+            m.time.downtime_s
+        );
         assert_eq!(m.failures.timing, [0, 1, 0, 0, 0], "{signal}");
         assert_eq!(m.hunts[0].crashes, 1, "{signal}");
         assert_eq!(

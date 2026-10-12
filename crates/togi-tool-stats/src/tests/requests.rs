@@ -178,8 +178,12 @@ fn carried_facts_count_once_per_source_and_only_with_both_request_fields() {
     let p = Projection::new(&journal);
     let label = "R7/mprime-avx2-36k-248k-allcore/00,01/120s".to_owned();
     let got = requests(&p, None);
+    assert_eq!(got.missing_failures, 0);
     assert_eq!(
-        got.bins.into_iter().collect::<Vec<_>>(),
+        got.bins
+            .into_iter()
+            .map(|((class, bin), counts)| ((class.label(), bin), counts))
+            .collect::<Vec<_>>(),
         [(
             (label.clone(), 300),
             RequestCounts {
@@ -189,7 +193,10 @@ fn carried_facts_count_once_per_source_and_only_with_both_request_fields() {
         )]
     );
     assert_eq!(
-        got.requesters.into_iter().collect::<Vec<_>>(),
+        got.requesters
+            .into_iter()
+            .map(|((class, core), counts)| ((class.label(), core), counts))
+            .collect::<Vec<_>>(),
         [(
             (label, 1),
             RequestCounts {

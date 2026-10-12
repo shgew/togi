@@ -81,7 +81,7 @@ hunt  group  stage  prior passes  required  established  passes again  failures 
 
 Prior evidence by hunt and stage
 hunt  stage  ran groups  established groups  passed again  failed again  redundant trials  redundant hours
-0002  part   3           3                   1             1             3                 0.050
+2     part   3           3                   1             1             3                 0.050
 
 R7 voltage-targeted backoffs
 seq  decision  core  from  to  counts  causes  reason

@@ -4,10 +4,10 @@ use togi_journal::{
 use togi_machine::{Condition, Regime};
 
 use super::support::{
-    Log, cycle, decision, end, hunt_end, hunt_group, hunt_start, intent, nz, profile, seq, trial,
-    trial_start,
+    Log, cycle, decision, end, hunt_end, hunt_group, hunt_start, intent, nz, profile, rendered,
+    seq, trial, trial_start,
 };
-use crate::hunts::{StepKey, parked_label};
+use crate::hunts::{StepKey, compute_hunts, parked_label, render_hunts};
 use crate::project::Projection;
 use crate::report::compute;
 
@@ -34,8 +34,8 @@ fn commitment(result: HuntOutcome, combination: bool, cause: u64) -> Option<Stri
 
 #[test]
 fn a_hunt_commits_only_to_a_backoff_that_cites_its_end_or_combination() {
-    assert_eq!(commitment(HuntOutcome::Cancelled, false, 99), None);
-    assert_eq!(commitment(HuntOutcome::Culprit, false, 99), None);
+    assert_eq!(commitment(HuntOutcome::Cancelled, false, 2), None);
+    assert_eq!(commitment(HuntOutcome::Culprit, false, 2), None);
     assert_eq!(
         commitment(HuntOutcome::Culprit, false, 3).as_deref(),
         Some("00 -10->-9")
@@ -88,6 +88,21 @@ fn an_open_hunt_runs_to_the_journals_last_event() {
         .map(|h| h.end_time.duration_since(h.time).as_secs())
         .collect();
     assert_eq!(hours, [9000, 3600]);
+    let text = rendered(|table| render_hunts(table, &compute_hunts(&p, None)));
+    let rows: Vec<Vec<&str>> = text
+        .lines()
+        .skip(2)
+        .map(|line| line.split_whitespace().collect())
+        .collect();
+    let columns = |row: &[&str]| (row[2].to_owned(), row[9].to_owned(), row[10].to_owned());
+    assert_eq!(
+        rows.iter().map(|row| columns(row)).collect::<Vec<_>>(),
+        [
+            ("2.500".to_owned(), "open".to_owned(), "-".to_owned()),
+            ("1.000".to_owned(), "cancelled".to_owned(), "-".to_owned()),
+        ],
+        "{text}"
+    );
 }
 
 #[test]
@@ -126,13 +141,26 @@ fn hunt_groups_are_counted_as_planned_run_inferred_and_skipped() {
 #[test]
 fn reruns_group_by_the_obligation_that_recorded_them() {
     let mut log = Log::new(&[(0, 0), (1, 0)]);
-    for (i, cause) in [100, 100, 100, 100, 100, 100, 200].into_iter().enumerate() {
+    let first = trial(
+        &mut log,
+        intent("first", Regime::R6, &[0, 1], &[0, 0]),
+        Outcome::Failure,
+    );
+    let second = trial(
+        &mut log,
+        intent("second", Regime::R6, &[0, 1], &[0, 0]),
+        Outcome::Failure,
+    );
+    for (i, cause) in [first, first, first, first, first, first, second]
+        .into_iter()
+        .enumerate()
+    {
         let id = i.to_string();
         let mut rerun = intent(&id, Regime::R6, &[0, 1], &[0, 0]);
         rerun.activity = Some(Activity::Checking);
         rerun.condition = Condition::Alone;
         rerun.rerun = true;
-        log.add_caused(&[seq(cause)], rerun);
+        log.add_caused(&[cause], rerun);
         log.add(trial_start(&id));
         log.add(end(
             &id,
