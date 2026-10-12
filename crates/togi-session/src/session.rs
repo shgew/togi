@@ -24,7 +24,7 @@ use togi_machine::{
 use togi_render::Renderer;
 use togi_tuningboot::Bootloader;
 
-use crate::appender::{Appender, Unresumed};
+use crate::appender::{AppendHook, Appender, Unresumed};
 use crate::boot::{self, BootHandoff};
 use crate::emergency::{self, SweepCleared};
 use crate::error::{Flow, SessionError, Step};
@@ -87,6 +87,8 @@ pub struct RunInput {
     pub carry: Option<PendingCarry>,
     /// Receives each appended event's line.
     pub log: Option<Box<dyn Write>>,
+    /// Called with every appended event once, in order, after it is durable and its log line is written.
+    pub on_append: Option<AppendHook>,
     pub renderer: Renderer,
     pub zone: TimeZone,
     pub cancel: CancellationToken,
@@ -226,6 +228,7 @@ impl Session {
             resume,
             carry,
             log,
+            on_append,
             renderer,
             zone,
             cancel,
@@ -276,6 +279,9 @@ impl Session {
             };
         if let Some(log) = log {
             appender = appender.with_log(log);
+        }
+        if let Some(hook) = on_append {
+            appender = appender.with_on_append(hook);
         }
         if let Some(handoff) = handoff {
             appender = appender.with_handoff(handoff);

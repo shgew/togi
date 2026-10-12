@@ -60,10 +60,6 @@ pub enum SimError {
     FlushLog(#[source] io::Error),
     #[error("samples are written under a state directory on disk; an in-memory one has none")]
     SamplesInMemory,
-    #[error(
-        "an observer reads events from the in-memory journal, which a state directory on disk does not give"
-    )]
-    ObserverOnDisk,
 }
 
 #[derive(Debug, thiserror::Error)]
