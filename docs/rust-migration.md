@@ -777,6 +777,19 @@ The slowest sessions, as `suite` reports each one's time (median of the three ru
 
 Before, the six slowest sessions were all `target-r7-request-gap`; after, the slowest is `flat-hazard/dev-3` at 3.5 s, then `target-r7-request-gap/holdout-107` at 3.5 s. A session's own time includes contention with the others of its shard, so the figures compare builds, not absolute costs. The sum over the 220 sessions of the median times falls from 965 s to 240 s.
 
+The same sessions alone, one at a time, with nothing else of the suite running: the release `togi-tool-sim suite --suite S --shards 1 --shard 0 --out D --jobs 1`, where `S` is a suite file of just that session (its scenario's name, machine and `replay` from `tools/bench/suite.json`, and its one seed). `suite` has no session filter, and this runs the suite's own `execute` path: in-memory state directory, `Replay::Warm`, the resume state checked after every crash, one cycle. Timed with GNU `time -f '%e %U %S'`, three runs each on the shared host, base 34c29cd4 and head 28f3d96d; every run ended `clean`. CPU is user plus sys, wall is the process's elapsed time, three runs listed in order, median in bold:
+
+| session | wall before | wall after | CPU before | CPU after |
+|---|---|---|---|---|
+| `target-r7-request-gap/holdout-105` | 6.24, 6.41, 6.21 s (**6.24**) | 1.70, 1.69, 1.70 s (**1.70**) | 6.19, 6.37, 6.14 s (**6.19**) | 1.68, 1.66, 1.68 s (**1.68**) |
+| `target-r7-request-gap/holdout-104` | 5.54, 5.50, 5.56 s (**5.54**) | 1.47, 1.48, 1.46 s (**1.47**) | 5.50, 5.46, 5.46 s (**5.46**) | 1.46, 1.46, 1.45 s (**1.46**) |
+| `target-r7-request-gap/dev-5` | 8.86, 8.30, 8.34 s (**8.34**) | 2.17, 2.18, 2.17 s (**2.17**) | 8.78, 8.25, 8.31 s (**8.31**) | 2.16, 2.17, 2.15 s (**2.16**) |
+| `target-r7-request-gap/holdout-107` | 9.09, 9.00, 9.00 s (**9.00**) | 2.35, 2.52, 2.39 s (**2.39**) | 9.05, 8.95, 8.95 s (**8.95**) | 2.33, 2.49, 2.37 s (**2.37**) |
+| `target-r7-request-gap/holdout-112` | 5.54, 5.61, 5.57 s (**5.57**) | 1.48, 1.48, 1.47 s (**1.48**) | 5.52, 5.57, 5.54 s (**5.54**) | 1.47, 1.48, 1.47 s (**1.47**) |
+| `flat-hazard/dev-3` | 5.33, 5.38, 5.93 s (**5.38**) | 2.46, 2.50, 2.92 s (**2.50**) | 5.30, 5.35, 5.90 s (**5.35**) | 2.44, 2.48, 2.90 s (**2.48**) |
+
+Alone, a session is CPU-bound (user plus sys is within 0.1 s of wall in every run), and each falls 2.2 to 3.9 times in CPU and in wall. After, `flat-hazard/dev-3` (2.50 s) and `target-r7-request-gap/holdout-107` (2.39 s) are the slowest alone too, as in the shards; before, `holdout-107` and `dev-5` (9.00 and 8.34 s) lead alone, and `flat-hazard/dev-3` is the cheapest of the six (5.38 s), so its 9.5 s in a shard was mostly contention. The in-shard times above are inflated by load; the alone times are the sessions' cost.
+
 Byte identity across the suite: all 220 sessions of the four shards ran again on each build with their in-memory state directories dumped to disk, and every session's `events.jsonl`, `state.json` and `lock` compare byte-identical between the builds (`cmp` on each file, `diff -r` on the trees: 0 of 220 sessions differ), as do the four shard manifests.
 
 Tests, `cargo nextest run -p togi-simrun -p togi-session -p togi-journal`, on the same shared host: 808 tests before, 822 after, all passing; the run takes 2.7 s and 3.2 s before and 2.8 s and 2.1 s after. A first run recompiled the three crates in 14.3 s before and 13.5 s after, with their dependencies already built. The pull request changes 25 files, adding 708 lines and removing 169 (`git diff --shortstat 34c29cd4 28f3d96d`).

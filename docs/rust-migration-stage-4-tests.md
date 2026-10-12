@@ -733,7 +733,7 @@ These two `internal/tuner` files need whole simulated sessions, so #812 ports th
 
 | Go test | Rust test(s) | status |
 |---|---|---|
-| `TestSetBootPreservesEarlierBootEvidence` | `togi_journal::journal::tests::a_reboot_keeps_the_events_and_appends_as_the_new_boot_without_reading_the_file` | X |
+| `TestSetBootPreservesEarlierBootEvidence` | `togi_journal::journal::tests::a_reboot_keeps_the_events_and_appends_as_the_new_boot_without_reading_the_file` | A |
 
 ## audit
 
