@@ -42,14 +42,18 @@ fn the_reader_accepts_a_small_buffer() {
 #[test]
 fn the_first_error_ends_the_stream() {
     let mut bytes = recorded(&MemFs::new());
-    bytes.splice(0..0, b"garbage\n".iter().copied());
+    bytes.extend_from_slice(b"{\"seq\":9,\"kind\":\"session.warning\"}\n");
     let mut reader = EventReader::new(bytes.as_slice());
+    for _ in 0..4 {
+        reader.next().unwrap().unwrap();
+    }
+    let accepted = reader.accepted();
     assert!(matches!(
         reader.next(),
-        Some(Err(ReadError::Decode { line: 1, .. }))
+        Some(Err(ReadError::Decode { line: 5, .. }))
     ));
     assert!(reader.next().is_none());
-    assert_eq!(reader.accepted(), 0);
+    assert_eq!(reader.accepted(), accepted);
 }
 
 #[test]
@@ -115,7 +119,7 @@ fn a_recording_reports_the_file_it_could_not_read() {
     assert_eq!(error.path, Path::new("/nowhere.jsonl"));
     fs.put("/bad.jsonl", "nope\n");
     let error = Recording::read_in(&fs, Path::new("/bad.jsonl")).unwrap_err();
-    assert!(matches!(error.source, ReadError::Decode { line: 1, .. }));
+    assert!(matches!(error.source, ReadError::Foreign));
 }
 
 #[test]
@@ -218,25 +222,124 @@ fn the_first_of_two_differing_contexts_wins() {
 }
 
 #[test]
-fn a_contiguous_journal_that_does_not_begin_with_session_start_is_refused() {
-    let bytes = non_start_first_line(&recorded(&MemFs::new()));
-    let mut reader = EventReader::new(bytes.as_slice());
-    assert!(matches!(
-        reader.next(),
-        Some(Err(ReadError::FirstEvent {
-            found: EventKind::SessionWarning
-        }))
-    ));
+fn a_first_line_that_is_not_a_rust_header_is_another_builds_journal_and_nothing_after_it_is_read() {
+    let good = recorded(&MemFs::new());
+    let kinds = [
+        ("not session.start", non_start_first_line(&good)),
+        ("not json", b"garbage\n".to_vec()),
+        ("flat session.start", flat_first_line()),
+    ];
+    for (name, mut bytes) in kinds {
+        bytes.extend_from_slice(&good);
+        let mut reader = EventReader::new(bytes.as_slice());
+        assert!(
+            matches!(reader.next(), Some(Err(ReadError::Foreign))),
+            "{name}"
+        );
+        assert!(reader.next().is_none(), "{name}");
+        assert_eq!(reader.accepted(), 0, "{name}");
+        assert!(
+            matches!(Recording::parse(&bytes), Err(ReadError::Foreign)),
+            "{name}"
+        );
+        let fs = MemFs::new();
+        fs.put("/j.jsonl", bytes);
+        let error = recorded_context_in(&fs, Path::new("/j.jsonl")).unwrap_err();
+        assert!(matches!(error.source, ReadError::Foreign), "{name}");
+        let text = error.to_string();
+        assert!(text.starts_with("/j.jsonl: "), "{text}");
+        assert!(text.contains("docs/howto.md#go-to-rust-cutover"), "{text}");
+    }
+}
+
+/// The Go build's `session.start`: its fields sit beside `kind`, with no `data` and no `build` object.
+fn flat_first_line() -> Vec<u8> {
+    br#"{"seq":1,"time":"2026-09-27T22:19:54Z","boot":"b","kind":"session.start","msg":"m","ruleset":3,"schema":2,"session":"20260927T221954Z","cores":[]}
+"#
+    .to_vec()
+}
+
+#[test]
+fn a_rust_header_this_build_cannot_decode_is_not_another_builds_journal() {
+    let good = recorded(&MemFs::new());
+    let first = good.split_inclusive(|byte| *byte == b'\n').next().unwrap();
+    let mut line: serde_json::Value = serde_json::from_slice(first).unwrap();
+    line["data"]["build"]["channel"] = "later".into();
+    let mut bytes = serde_json::to_vec(&line).unwrap();
+    bytes.push(b'\n');
+    bytes.extend_from_slice(&good[first.len()..]);
+
+    // The classifier ignores the additive field, so a strict reader refuses the header by name, never as Foreign.
+    let error = EventReader::new(bytes.as_slice())
+        .next()
+        .unwrap()
+        .unwrap_err();
+    assert!(
+        matches!(&error, ReadError::UnknownField { line: 1, kind: EventKind::SessionStart, field } if field == "data.build.channel"),
+        "{error:?}"
+    );
+    let error = Recording::parse(&bytes).unwrap_err();
+    assert!(
+        matches!(&error, ReadError::UnknownField { line: 1, kind: EventKind::SessionStart, field } if field == "data.build.channel"),
+        "{error:?}"
+    );
+
+    // A lenient reader accepts the same header and reports the field it ignored.
+    let mut reader = EventReader::lenient(bytes.as_slice());
+    assert!(reader.by_ref().all(|event| event.is_ok()));
+    assert_eq!(reader.accepted(), bytes.len() as u64);
+    let skipped = reader.skipped();
+    assert!(skipped.events().is_empty());
+    assert_eq!(skipped.ignored().len(), 1);
+    assert_eq!(
+        (
+            skipped.ignored()[0].line,
+            skipped.ignored()[0].fields.as_slice()
+        ),
+        (1, &["data.build.channel".to_owned()][..])
+    );
+}
+
+#[test]
+fn an_unterminated_first_line_that_is_not_a_rust_header_is_refused_not_torn() {
+    // `testdata/20260927T221954Z-config.jsonl` is the Go build's journal from
+    // `internal/journal/testdata`, with its boot ids replaced by synthetic ones.
+    let go = include_str!("../../testdata/20260927T221954Z-config.jsonl")
+        .lines()
+        .next()
+        .unwrap()
+        .to_owned();
+    for (name, bytes) in [("go", go), ("garbage", "garbage".to_owned())] {
+        let mut reader = EventReader::new(bytes.as_bytes());
+        assert!(
+            matches!(reader.next(), Some(Err(ReadError::Foreign))),
+            "{name}"
+        );
+        assert!(reader.next().is_none(), "{name}");
+        assert_eq!(reader.accepted(), 0, "{name}");
+        assert!(reader.torn().is_none(), "{name}");
+        assert!(
+            matches!(Recording::parse(bytes.as_bytes()), Err(ReadError::Foreign)),
+            "{name}"
+        );
+        let fs = MemFs::new();
+        fs.put("/j.jsonl", bytes.clone());
+        let mutations = fs.mutations();
+        let error = Recording::read_in(&fs, Path::new("/j.jsonl")).unwrap_err();
+        assert!(matches!(error.source, ReadError::Foreign), "{name}");
+        assert_eq!(fs.mutations(), mutations, "{name}");
+        assert_eq!(fs.contents("/j.jsonl").unwrap(), bytes.as_bytes(), "{name}");
+    }
+}
+
+#[test]
+fn an_unterminated_rust_header_is_still_a_torn_tail() {
+    let bytes = recorded(&MemFs::new());
+    let first = bytes.split_inclusive(|byte| *byte == b'\n').next().unwrap();
+    let torn = &first[..first.len() - 1];
+    let mut reader = EventReader::new(torn);
     assert!(reader.next().is_none());
-    assert_eq!(reader.accepted(), 0);
-    assert!(matches!(
-        Recording::parse(&bytes),
-        Err(ReadError::FirstEvent { .. })
-    ));
-    let fs = MemFs::new();
-    fs.put("/j.jsonl", bytes);
-    let error = recorded_context_in(&fs, Path::new("/j.jsonl")).unwrap_err();
-    assert!(matches!(error.source, ReadError::FirstEvent { .. }));
+    assert_eq!(reader.torn(), Some(torn));
 }
 
 /// A reader that serves `data` and then fails instead of reporting end of input.
@@ -603,20 +706,19 @@ fn a_lenient_reader_still_checks_seq_causes_and_the_first_event_of_what_it_skips
         Some(ReadError::Cause { line: 5, .. })
     ));
 
+    // A first line that is not a complete Rust header is refused before it is decoded, so a lenient reader never
+    // skips an unknown first kind and never reports a known one that is not session.start.
     let first = line(1, "future.thing", "", "{}");
     let error = EventReader::lenient(first.as_slice())
         .find_map(Result::err)
         .unwrap();
-    assert!(
-        matches!(&error, ReadError::UnknownKind { line: 1, source } if source.0 == "future.thing"),
-        "{error:?}"
-    );
+    assert!(matches!(&error, ReadError::Foreign), "{error:?}");
 
     let mut first_known = non_start_first_line(&recorded(&MemFs::new()));
     first_known.extend(line(2, "future.thing", "", "{}"));
     assert!(matches!(
         EventReader::lenient(first_known.as_slice()).next(),
-        Some(Err(ReadError::FirstEvent { .. }))
+        Some(Err(ReadError::Foreign))
     ));
 
     let bad = recorded_then(&[line(5, "shutdown", "", r#"{"reason":7}"#)]);
@@ -632,6 +734,69 @@ fn a_lenient_reader_still_checks_seq_causes_and_the_first_event_of_what_it_skips
         Some(ReadError::Decode { line: 5, .. })
     ));
     assert!(reader.next().is_none());
+}
+
+#[test]
+fn strict_and_lenient_alike_refuse_a_first_line_that_is_not_a_complete_rust_header_and_change_nothing()
+ {
+    let go = include_str!("../../testdata/20260927T221954Z-config.jsonl");
+    let go_first = go.lines().next().unwrap();
+    let cases: [(&str, Vec<u8>); 6] = [
+        ("a Go journal", go.as_bytes().to_vec()),
+        (
+            "a Go first line without its newline",
+            go_first.as_bytes().to_vec(),
+        ),
+        (
+            "a truncated first line",
+            br#"{"seq":1,"kind":"sess"#.to_vec(),
+        ),
+        ("garbage", b"garbage".to_vec()),
+        ("an unknown first kind", line(1, "future.thing", "", "{}")),
+        ("an unknown first kind without its newline", {
+            let mut unknown = line(1, "future.thing", "", "{}");
+            assert_eq!(unknown.pop(), Some(b'\n'));
+            unknown
+        }),
+    ];
+    for (name, bytes) in cases {
+        for decoding in [
+            crate::event::Decoding::Strict,
+            crate::event::Decoding::Lenient,
+        ] {
+            let mut reader = match decoding {
+                crate::event::Decoding::Strict => EventReader::new(bytes.as_slice()),
+                crate::event::Decoding::Lenient => EventReader::lenient(bytes.as_slice()),
+            };
+            assert!(
+                matches!(reader.next(), Some(Err(ReadError::Foreign))),
+                "{name} {decoding:?}"
+            );
+            assert!(reader.next().is_none(), "{name} {decoding:?}");
+            assert_eq!(reader.accepted(), 0, "{name} {decoding:?}");
+            assert!(reader.torn().is_none(), "{name} {decoding:?}");
+            assert!(reader.skipped().is_empty(), "{name} {decoding:?}");
+            assert!(
+                matches!(
+                    Recording::parse_with(&bytes, decoding),
+                    Err(ReadError::Foreign)
+                ),
+                "{name} {decoding:?}"
+            );
+        }
+        let fs = MemFs::new();
+        fs.put("/state/events.jsonl", bytes.clone());
+        let mutations = fs.mutations();
+        let path = Path::new("/state/events.jsonl");
+        for error in [
+            Recording::read_in(&fs, path).unwrap_err(),
+            Recording::read_in_lenient(&fs, path).unwrap_err(),
+        ] {
+            assert!(matches!(error.source, ReadError::Foreign), "{name}");
+        }
+        assert_eq!(fs.mutations(), mutations, "{name}");
+        assert_eq!(fs.contents("/state/events.jsonl").unwrap(), bytes, "{name}");
+    }
 }
 
 #[test]

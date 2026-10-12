@@ -1,0 +1,268 @@
+{
+ "schema": 2,
+ "session": {
+  "id": "20260927T221954Z",
+  "start": "2026-09-27T22:19:54.468855707Z",
+  "bios_context": {
+   "bios_version": "0000",
+   "board": "Synthetic Board",
+   "cpu_model": "Synthetic Zen 5 CPU",
+   "microcode": "0x00000000",
+   "boost_limit_mhz": 0
+  },
+  "baseline": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ]
+ },
+ "last_seq": 12,
+ "phase": "search",
+ "cores": [
+  {
+   "core": 0,
+   "ccd": 0,
+   "cpus": [
+    0,
+    16
+   ],
+   "baseline": 0,
+   "offset": 0,
+   "phase": "search",
+   "pass": null,
+   "failure_point": null,
+   "last_decision": null
+  },
+  {
+   "core": 1,
+   "ccd": 0,
+   "cpus": [
+    1,
+    17
+   ],
+   "baseline": 0,
+   "offset": 0,
+   "phase": "search",
+   "pass": null,
+   "failure_point": null,
+   "last_decision": null
+  },
+  {
+   "core": 2,
+   "ccd": 0,
+   "cpus": [
+    2,
+    18
+   ],
+   "baseline": 0,
+   "offset": 0,
+   "phase": "search",
+   "pass": null,
+   "failure_point": null,
+   "last_decision": null
+  },
+  {
+   "core": 3,
+   "ccd": 0,
+   "cpus": [
+    3,
+    19
+   ],
+   "baseline": 0,
+   "offset": 0,
+   "phase": "search",
+   "pass": null,
+   "failure_point": null,
+   "last_decision": null
+  },
+  {
+   "core": 4,
+   "ccd": 0,
+   "cpus": [
+    4,
+    20
+   ],
+   "baseline": 0,
+   "offset": 0,
+   "phase": "search",
+   "pass": null,
+   "failure_point": null,
+   "last_decision": null
+  },
+  {
+   "core": 5,
+   "ccd": 0,
+   "cpus": [
+    5,
+    21
+   ],
+   "baseline": 0,
+   "offset": 0,
+   "phase": "search",
+   "pass": null,
+   "failure_point": null,
+   "last_decision": null
+  },
+  {
+   "core": 6,
+   "ccd": 0,
+   "cpus": [
+    6,
+    22
+   ],
+   "baseline": 0,
+   "offset": 0,
+   "phase": "search",
+   "pass": null,
+   "failure_point": null,
+   "last_decision": null
+  },
+  {
+   "core": 7,
+   "ccd": 0,
+   "cpus": [
+    7,
+    23
+   ],
+   "baseline": 0,
+   "offset": 0,
+   "phase": "search",
+   "pass": null,
+   "failure_point": null,
+   "last_decision": null
+  },
+  {
+   "core": 8,
+   "ccd": 1,
+   "cpus": [
+    8,
+    24
+   ],
+   "baseline": 0,
+   "offset": 0,
+   "phase": "search",
+   "pass": null,
+   "failure_point": null,
+   "last_decision": null
+  },
+  {
+   "core": 9,
+   "ccd": 1,
+   "cpus": [
+    9,
+    25
+   ],
+   "baseline": 0,
+   "offset": 0,
+   "phase": "search",
+   "pass": null,
+   "failure_point": null,
+   "last_decision": null
+  },
+  {
+   "core": 10,
+   "ccd": 1,
+   "cpus": [
+    10,
+    26
+   ],
+   "baseline": 0,
+   "offset": 0,
+   "phase": "search",
+   "pass": null,
+   "failure_point": null,
+   "last_decision": null
+  },
+  {
+   "core": 11,
+   "ccd": 1,
+   "cpus": [
+    11,
+    27
+   ],
+   "baseline": 0,
+   "offset": 0,
+   "phase": "search",
+   "pass": null,
+   "failure_point": null,
+   "last_decision": null
+  },
+  {
+   "core": 12,
+   "ccd": 1,
+   "cpus": [
+    12,
+    28
+   ],
+   "baseline": 0,
+   "offset": 0,
+   "phase": "search",
+   "pass": null,
+   "failure_point": null,
+   "last_decision": null
+  },
+  {
+   "core": 13,
+   "ccd": 1,
+   "cpus": [
+    13,
+    29
+   ],
+   "baseline": 0,
+   "offset": 0,
+   "phase": "search",
+   "pass": null,
+   "failure_point": null,
+   "last_decision": null
+  },
+  {
+   "core": 14,
+   "ccd": 1,
+   "cpus": [
+    14,
+    30
+   ],
+   "baseline": 0,
+   "offset": 0,
+   "phase": "search",
+   "pass": null,
+   "failure_point": null,
+   "last_decision": null
+  },
+  {
+   "core": 15,
+   "ccd": 1,
+   "cpus": [
+    15,
+    31
+   ],
+   "baseline": 0,
+   "offset": 0,
+   "phase": "search",
+   "pass": null,
+   "failure_point": null,
+   "last_decision": null
+  }
+ ],
+ "in_flight": null,
+ "dead_end": null,
+ "checking": null,
+ "combinations": [],
+ "hunt": null,
+ "deepening": null,
+ "phases": null,
+ "bios": null
+}

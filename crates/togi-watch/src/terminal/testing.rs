@@ -320,3 +320,19 @@ pub(super) fn write_bytes(directory: &Path, bytes: &[u8]) {
     file.set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(2000))
         .unwrap();
 }
+
+/// A journal of this build whose second line does not decode: a problem to show, and to retry when it changes.
+pub(super) fn undecodable_journal() -> Vec<u8> {
+    let mut bytes = lines(&[session_start(1)]);
+    bytes.extend_from_slice(b"not json\n");
+    bytes
+}
+
+/// The first line of a Go build's journal, which has no `data` or `build` object, and a line after it that nothing
+/// may read.
+pub(super) fn go_journal() -> Vec<u8> {
+    br#"{"seq":1,"time":"2026-09-27T22:19:54Z","boot":"b","kind":"session.start","msg":"m","ruleset":3,"schema":2,"session":"20260927T221954Z","cores":[]}
+not json
+"#
+    .to_vec()
+}

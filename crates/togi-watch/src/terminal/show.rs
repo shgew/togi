@@ -967,7 +967,9 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn a_live_journal_problem_stays_on_screen_and_recovers_when_the_journal_does() {
         use crate::terminal::source::Source;
-        use crate::terminal::testing::{session_with_warnings, write_bytes, write_journal};
+        use crate::terminal::testing::{
+            session_with_warnings, undecodable_journal, write_bytes, write_journal,
+        };
         use std::cell::RefCell;
 
         local(async {
@@ -1016,7 +1018,7 @@ mod tests {
                 .await
             });
             settle().await;
-            write_bytes(dir.path(), b"not json\n");
+            write_bytes(dir.path(), &undecodable_journal());
             events.send(Event::Changed).unwrap();
             settle().await;
             write_journal(dir.path(), &session_with_warnings(2));
@@ -1027,7 +1029,7 @@ mod tests {
             let shown = shown.borrow();
             assert_eq!(shown.len(), 3, "one frame per journal change: {shown:?}");
             assert_eq!(shown[0], "no session yet");
-            assert!(shown[1].contains("line 1"), "{shown:?}");
+            assert!(shown[1].contains("line 2"), "{shown:?}");
             assert_eq!(shown[2], "3 events");
         })
         .await;

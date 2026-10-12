@@ -150,6 +150,11 @@ pub trait Feed {
     /// Reloads after the watched directory changed, and reports whether what is shown changed. It is also called
     /// once before the first frame.
     fn reload(&mut self) -> bool;
+    /// Takes the error that ends the dashboard rather than being shown, after a reload. A feed whose journal can
+    /// always be shown has none.
+    fn refusal(&mut self) -> Option<SourceError> {
+        None
+    }
 }
 
 /// Aborts its task when dropped.
@@ -230,8 +235,10 @@ fn run_rendered(
     keys: Option<BorrowedFd<'_>>,
     render: impl FnMut(&Journal<'_>, &Screen, Timestamp, &mut Buffer) -> Drawn,
 ) -> Result<(), Error> {
+    let mut source = Source::new(state_dir, None);
+    refuse_foreign(&mut source)?;
     start(
-        Source::new(state_dir, None),
+        source,
         &Config {
             watch: Some(state_dir),
             tick: None,
@@ -243,6 +250,15 @@ fn run_rendered(
         Timestamp::now,
         render,
     )
+}
+
+/// Loads the journal for a dashboard that has not touched the terminal yet, and refuses another build's journal
+/// before it does.
+fn refuse_foreign(source: &mut Source) -> Result<(), Error> {
+    source.reload();
+    source
+        .refusal()
+        .map_or(Ok(()), |refusal| Err(refusal.into()))
 }
 
 /// [`run`] for a journal a run is about to append to, which takes its cancellation from the caller. Until the
@@ -268,8 +284,10 @@ fn run_after_rendered(
     keys: Option<BorrowedFd<'_>>,
     render: impl FnMut(&Journal<'_>, &Screen, Timestamp, &mut Buffer) -> Drawn,
 ) -> Result<(), Error> {
+    let mut source = Source::new(state_dir, Some(since));
+    refuse_foreign(&mut source)?;
     start(
-        Source::new(state_dir, Some(since)),
+        source,
         &Config {
             watch: Some(state_dir),
             tick: None,
@@ -358,8 +376,12 @@ fn drive<B: console::Console>(
             let (reloaded, acknowledged) = mpsc::unbounded_channel();
             let (frozen, frozen_changes) = watch::channel(false);
             let feed = std::cell::RefCell::new(feed);
+            let refused = std::cell::RefCell::new(None);
             let mut watcher = live.watch.map(notify::open).transpose()?;
             feed.borrow_mut().reload();
+            if let Some(refusal) = feed.borrow_mut().refusal() {
+                return Err(refusal.into());
+            }
             let _notifier = match watcher.take() {
                 Some(mut watcher) => {
                     if watcher.polling() {
@@ -380,7 +402,7 @@ fn drive<B: console::Console>(
                 Some(fd) => Some(Reader::start(scope, fd, events.clone()).map_err(Error::Keys)?),
                 None => None,
             };
-            show::show(
+            let shown = show::show(
                 backend,
                 show::Options {
                     palette: uses_palette(colours),
@@ -397,9 +419,24 @@ fn drive<B: console::Console>(
                     let journal = feed.journal(screen);
                     render(&journal, screen, now(), buf)
                 },
-                || feed.borrow_mut().reload(),
+                || {
+                    let mut feed = feed.borrow_mut();
+                    let changed = feed.reload();
+                    match feed.refusal() {
+                        Some(refusal) => {
+                            *refused.borrow_mut() = Some(refusal);
+                            let _ = events.send(Event::Cancel);
+                            false
+                        }
+                        None => changed,
+                    }
+                },
             )
-            .await
+            .await;
+            match refused.take() {
+                Some(refusal) => Err(refusal.into()),
+                None => shown,
+            }
         })
     })
 }
@@ -429,6 +466,9 @@ fn one_frame_with(
 ) -> Result<(), Error> {
     let mut source = Source::new(state_dir, None);
     source.reload();
+    if let Some(refusal) = source.refusal() {
+        return Err(refusal.into());
+    }
     let screen = Screen {
         view: View::Main,
         keys: false,
@@ -1024,17 +1064,17 @@ mod tests {
     #[test]
     fn one_frame_of_an_unreadable_journal_prints_its_problem_frame_then_returns_the_error() {
         let state = TempDir::new().unwrap();
-        super::testing::write_bytes(state.path(), b"not json\n");
+        super::testing::write_bytes(state.path(), &super::testing::undecodable_journal());
         let mut out = Vec::new();
         let error = one_frame_with(state.path(), 400, 6, &mut out, describe).unwrap_err();
         let text = String::from_utf8(out).unwrap();
         assert!(text.starts_with("problem: "), "{text}");
-        assert!(text.contains("line 1"), "{text}");
+        assert!(text.contains("line 2"), "{text}");
         assert!(
             matches!(&error, Error::Journal(SourceError::Read(_))),
             "{error:?}"
         );
-        assert!(error.to_string().contains("line 1"));
+        assert!(error.to_string().contains("line 2"));
     }
 
     #[test]
@@ -1092,7 +1132,7 @@ mod tests {
     #[test]
     fn one_frame_prints_the_dashboard_s_problem_frame_and_returns_the_error() {
         let state = TempDir::new().unwrap();
-        super::testing::write_bytes(state.path(), b"not json\n");
+        super::testing::write_bytes(state.path(), &super::testing::undecodable_journal());
         let mut out = Vec::new();
         let error = one_frame(state.path(), 120, 33, &mut out).unwrap_err();
         let text = String::from_utf8(out).unwrap();
@@ -1101,6 +1141,97 @@ mod tests {
         assert!(
             matches!(error, Error::Journal(SourceError::Read(_))),
             "{error:?}"
+        );
+    }
+
+    #[test]
+    fn one_frame_of_another_builds_journal_prints_nothing_and_leaves_the_file_alone() {
+        let state = TempDir::new().unwrap();
+        super::testing::write_bytes(state.path(), &super::testing::go_journal());
+        let path = state.path().join("events.jsonl");
+        let before = (
+            std::fs::read(&path).unwrap(),
+            std::fs::metadata(&path).unwrap(),
+        );
+        for width in [120, 400] {
+            let mut out = Vec::new();
+            let error = one_frame(state.path(), width, 33, &mut out).unwrap_err();
+            assert!(out.is_empty(), "a refusal drew a frame");
+            assert!(
+                matches!(error, Error::Journal(SourceError::Foreign(_))),
+                "{error:?}"
+            );
+            let text = error.to_string();
+            assert!(text.contains("events.jsonl"), "{text}");
+            assert!(text.contains("docs/howto.md#go-to-rust-cutover"), "{text}");
+        }
+        let after = (
+            std::fs::read(&path).unwrap(),
+            std::fs::metadata(&path).unwrap(),
+        );
+        assert_eq!(before.0, after.0);
+        assert_eq!(before.1.modified().unwrap(), after.1.modified().unwrap());
+        assert_eq!(std::fs::read_dir(state.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn a_dashboard_refuses_another_builds_journal_before_it_draws_anything() {
+        let _serial = super::signals::tests::serial();
+        let state = TempDir::new().unwrap();
+        super::testing::write_bytes(state.path(), &super::testing::go_journal());
+        let recorder = Recorder::new(80, 12);
+        let stop = Stop::new();
+        let live = Config {
+            watch: Some(state.path()),
+            tick: None,
+            stop: Some(&stop),
+            terminating: false,
+        };
+        let error = run_drive(&recorder, &live, None, Colours::None, plain).unwrap_err();
+        assert!(
+            matches!(error, Error::Journal(SourceError::Foreign(_))),
+            "{error:?}"
+        );
+        assert!(recorder.ops().is_empty(), "{:?}", recorder.ops());
+    }
+
+    #[test]
+    fn a_live_dashboard_ends_with_the_refusal_when_another_builds_journal_arrives() {
+        let _serial = super::signals::tests::serial();
+        let state = TempDir::new().unwrap();
+        let recorder = Recorder::new(80, 12);
+        let stop = Stop::new();
+        let live = Config {
+            watch: Some(state.path()),
+            tick: None,
+            stop: Some(&stop),
+            terminating: false,
+        };
+        let (done, finished) = std::sync::mpsc::channel::<()>();
+        let (path, stopper) = (state.path(), &stop);
+        let result = std::thread::scope(|scope| {
+            scope.spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(300));
+                super::testing::write_bytes(path, &super::testing::go_journal());
+                if finished
+                    .recv_timeout(std::time::Duration::from_secs(20))
+                    .is_err()
+                {
+                    stopper.stop();
+                }
+            });
+            let result = run_drive(&recorder, &live, None, Colours::None, plain);
+            done.send(()).unwrap();
+            result
+        });
+        let error = result.unwrap_err();
+        assert!(
+            matches!(error, Error::Journal(SourceError::Foreign(_))),
+            "{error:?}"
+        );
+        assert!(
+            recorder.restored(),
+            "the terminal was left as the dashboard set it"
         );
     }
 }

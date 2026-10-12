@@ -8,6 +8,7 @@ use serde::de::Error as _;
 use crate::dir::{DirError, EVENTS_FILE, StateDir, not_found};
 use crate::event::{DecodeError, Decoded, Decoding, Event, Read, Seq, decode};
 use crate::fs::{DiskFs, Fs};
+use crate::header;
 use crate::payload::{EventKind, Payload, SessionContext, UnknownKind};
 use crate::skipped::Skipped;
 
@@ -33,6 +34,10 @@ pub enum ReadError {
         #[source]
         source: UnknownKind,
     },
+    #[error(
+        "first line is not a complete header of this build; either another build's journal or a header torn by a crash; see docs/howto.md#go-to-rust-cutover"
+    )]
+    Foreign,
     #[error("line {line}: {kind} event: unknown field {field:?}")]
     UnknownField {
         line: u64,
@@ -136,6 +141,11 @@ impl<R: BufRead> EventReader<R> {
         self.lines += 1;
         let line = self.lines;
         let bytes = &self.line[..self.line.len() - 1];
+        // The first line is classified before anything decodes it, strict or lenient: a line that is not a complete
+        // header of this build is refused, never read as an unknown kind or an unknown field.
+        if line == 1 && header::classify(bytes).is_none() {
+            return Err(ReadError::Foreign);
+        }
         let text = std::str::from_utf8(bytes).map_err(|error| ReadError::Decode {
             line,
             source: serde_json::Error::custom(error),
@@ -145,11 +155,6 @@ impl<R: BufRead> EventReader<R> {
         match decoded {
             Decoded::Event(event) => {
                 check_seq(line, event.seq)?;
-                if line == 1 && !matches!(event.payload, Payload::SessionStart(_)) {
-                    return Err(ReadError::FirstEvent {
-                        found: event.payload.kind(),
-                    });
-                }
                 check_causes(line, event.seq, &event.cause)?;
                 self.skipped
                     .ignore(line, event.seq, event.kind().as_str(), ignored);
@@ -157,12 +162,6 @@ impl<R: BufRead> EventReader<R> {
             }
             Decoded::Unrecognized(unrecognized) => {
                 check_seq(line, unrecognized.seq)?;
-                if line == 1 {
-                    return Err(ReadError::UnknownKind {
-                        line,
-                        source: UnknownKind(unrecognized.kind),
-                    });
-                }
                 check_causes(line, unrecognized.seq, &unrecognized.cause)?;
                 self.skipped
                     .ignore(line, unrecognized.seq, &unrecognized.kind, ignored);
@@ -210,6 +209,9 @@ impl<R: BufRead> Iterator for EventReader<R> {
             }
             if self.line.last() != Some(&b'\n') {
                 self.done = true;
+                if self.lines == 0 && header::classify(&self.line).is_none() {
+                    return Some(Err(ReadError::Foreign));
+                }
                 self.torn = Some(std::mem::take(&mut self.line));
                 return None;
             }

@@ -77,10 +77,13 @@ fn an_envelope_line_that_is_an_array_is_refused() {
         "{error}"
     );
     assert_expected_an_object(&error.to_string());
-    let read = EventReader::new(format!("{array}\n").as_bytes())
-        .next()
-        .unwrap()
-        .unwrap_err();
+    let header = at(1, "boot-a", 0, &[], sample(EventKind::SessionStart))
+        .encode()
+        .unwrap();
+    let journal = format!("{header}\n{array}\n");
+    let mut reader = EventReader::new(journal.as_bytes());
+    reader.next().unwrap().unwrap();
+    let read = reader.next().unwrap().unwrap_err();
     assert_expected_an_object(&read.to_string());
     assert_expected_an_object(
         &serde_json::from_str::<Event>(&array)
