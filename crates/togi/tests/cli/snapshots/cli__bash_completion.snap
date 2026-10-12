@@ -23,14 +23,26 @@ _togi() {
             togi,completion)
                 cmd="togi__subcmd__completion"
                 ;;
+            togi,events)
+                cmd="togi__subcmd__events"
+                ;;
             togi,help)
                 cmd="togi__subcmd__help"
+                ;;
+            togi,status)
+                cmd="togi__subcmd__status"
                 ;;
             togi__subcmd__help,completion)
                 cmd="togi__subcmd__help__subcmd__completion"
                 ;;
+            togi__subcmd__help,events)
+                cmd="togi__subcmd__help__subcmd__events"
+                ;;
             togi__subcmd__help,help)
                 cmd="togi__subcmd__help__subcmd__help"
+                ;;
+            togi__subcmd__help,status)
+                cmd="togi__subcmd__help__subcmd__status"
                 ;;
             *)
                 ;;
@@ -39,7 +51,7 @@ _togi() {
 
     case "${cmd}" in
         togi)
-            opts="-h -V --state-dir --help --version completion help"
+            opts="-h -V --state-dir --help --version completion events status help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -80,8 +92,49 @@ _togi() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
+        togi__subcmd__events)
+            opts="-h --core --kind --trial --since --until --json --state-dir --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --core)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --kind)
+                    COMPREPLY=($(compgen -W "backend backend.retry boot boot.leave_reason boot.saved_entry checking checking.chain checking.cycle checking.step combination command command.reset config config.loaded core core.phase crash crash.detected deadend deepening deepening.round defect defect.answered defect.found failure failure.carried host host.ranking hunt hunt.end hunt.group hunt.skipped hunt.start journal journal.torn mce preflight preflight.check profile profile.applied profile.change profile.restored session session.archived session.baseline session.carried session.context session.notice session.start session.warning shutdown smu smu.error smu.intent smu.readback smu.write state state.rebuilt trial trial.carried trial.end trial.intent trial.progress trial.sample trial.signal trial.start tuner tuner.decision tuner.warning" -- "${cur}"))
+                    return 0
+                    ;;
+                --trial)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --since)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --until)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --state-dir)
+                    COMPREPLY=()
+                    if [[ "${BASH_VERSINFO[0]}" -ge 4 ]]; then
+                        compopt -o plusdirs
+                    fi
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
         togi__subcmd__help)
-            opts="completion help"
+            opts="completion events status help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -108,6 +161,20 @@ _togi() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
+        togi__subcmd__help__subcmd__events)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
         togi__subcmd__help__subcmd__help)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
@@ -115,6 +182,41 @@ _togi() {
                 return 0
             fi
             case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        togi__subcmd__help__subcmd__status)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        togi__subcmd__status)
+            opts="-h --state-dir --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --state-dir)
+                    COMPREPLY=()
+                    if [[ "${BASH_VERSINFO[0]}" -ge 4 ]]; then
+                        compopt -o plusdirs
+                    fi
+                    return 0
+                    ;;
                 *)
                     COMPREPLY=()
                     ;;

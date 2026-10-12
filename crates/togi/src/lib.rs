@@ -22,7 +22,11 @@
 pub mod args;
 pub mod cli;
 pub mod completion;
+pub mod events;
 pub mod exit;
+pub mod read;
+pub mod status;
+mod table;
 
 pub use cli::run;
 pub use exit::Exit;

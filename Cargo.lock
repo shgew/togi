@@ -871,10 +871,17 @@ dependencies = [
  "clap_complete",
  "clap_complete_nushell",
  "insta",
+ "jiff",
+ "serde_json",
  "tempfile",
  "togi-config",
  "togi-journal",
+ "togi-machine",
+ "togi-render",
+ "togi-tuner",
  "togi-version",
+ "togi-watch",
+ "togi-watchtest",
 ]
 
 [[package]]

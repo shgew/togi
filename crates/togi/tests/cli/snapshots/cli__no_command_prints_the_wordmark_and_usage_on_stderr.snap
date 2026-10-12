@@ -17,6 +17,8 @@ Usage: togi [OPTIONS] <COMMAND>
 
 Commands:
   completion  Print a shell completion script
+  events      Print the journal, one readable line per event
+  status      Show the session at a glance
   help        Print this message or the help of the given subcommand(s)
 
 Options:

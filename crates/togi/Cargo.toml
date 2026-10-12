@@ -18,13 +18,20 @@ path = "src/main.rs"
 clap.workspace = true
 clap_complete.workspace = true
 clap_complete_nushell.workspace = true
+jiff.workspace = true
+serde_json.workspace = true
 togi-config.workspace = true
 togi-journal.workspace = true
+togi-machine.workspace = true
+togi-render.workspace = true
+togi-tuner.workspace = true
 togi-version.workspace = true
+togi-watch.workspace = true
 
 [dev-dependencies]
 insta.workspace = true
 tempfile.workspace = true
+togi-watchtest.workspace = true
 
 [lints]
 workspace = true

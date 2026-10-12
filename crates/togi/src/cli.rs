@@ -10,8 +10,8 @@ use clap::error::{ContextKind, ContextValue, ErrorKind};
 use clap::{CommandFactory, Parser, Subcommand};
 
 use crate::args::StateDirArgs;
-use crate::completion;
 use crate::exit::Exit;
+use crate::{completion, events, status};
 
 const BANNER: &str = "   __              _\n  / /_____  ____ _(_)\n / __/ __ \\/ __ `/ /\n/ /_/ /_/ / /_/ / /\n\\__/\\____/\\__, /_/\n         /____/\n\n  per-core Curve Optimizer\n\n";
 
@@ -41,6 +41,8 @@ pub struct Cli {
 #[derive(Debug, Subcommand)]
 pub enum Command {
     Completion(completion::Args),
+    Events(events::Args),
+    Status(status::Args),
 }
 
 impl Command {
@@ -48,6 +50,8 @@ impl Command {
     pub fn run(self, ctx: &mut Context<'_>) -> Exit {
         match self {
             Self::Completion(args) => completion::run(&args, ctx),
+            Self::Events(args) => events::run(&args, ctx),
+            Self::Status(args) => status::run(&args, ctx),
         }
     }
 }
