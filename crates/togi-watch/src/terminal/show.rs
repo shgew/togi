@@ -422,14 +422,23 @@ mod tests {
             h.events.send(Event::Resize).unwrap();
             settle().await;
             let before = recorder.draws().len();
-            *h.script.lines.borrow_mut() = vec!["first".into(), "short ".into(), "third".into()];
+            *h.script.lines.borrow_mut() = vec!["first".into(), "short".into(), "third".into()];
             advance(Duration::from_secs(1)).await;
             settle().await;
             let draws = recorder.draws();
             assert_eq!(draws.len(), before + 1);
             let changed = draws.last().unwrap();
             assert!(changed.iter().all(|cell| cell.1 == 2), "{changed:?}");
-            assert_eq!(row(changed, 2).trim_end(), "hort");
+            assert_eq!(row(changed, 2), "hort ", "the stale last letter stayed");
+            *h.script.lines.borrow_mut() = vec!["first".into()];
+            advance(Duration::from_secs(1)).await;
+            settle().await;
+            let mut shorter = recorder.draws().last().unwrap().clone();
+            shorter.sort();
+            let blanks: Vec<_> = (0..5)
+                .flat_map(|x| (2..4).map(move |y| (x, y, " ".to_owned())))
+                .collect();
+            assert_eq!(shorter, blanks, "rows the frame left out were not blanked");
             advance(Duration::from_secs(1)).await;
             settle().await;
             assert!(
@@ -785,7 +794,7 @@ mod tests {
                         clear: true,
                         ..Faults::default()
                     },
-                    false,
+                    0,
                 ),
                 (
                     "read terminal size",
@@ -793,7 +802,7 @@ mod tests {
                         size_from: Some(3),
                         ..Faults::default()
                     },
-                    true,
+                    0,
                 ),
                 (
                     "draw frame",
@@ -801,10 +810,26 @@ mod tests {
                         draw_from: Some(1),
                         ..Faults::default()
                     },
-                    true,
+                    0,
+                ),
+                (
+                    "read terminal size",
+                    Faults {
+                        size_from: Some(5),
+                        ..Faults::default()
+                    },
+                    1,
+                ),
+                (
+                    "draw frame",
+                    Faults {
+                        draw_from: Some(2),
+                        ..Faults::default()
+                    },
+                    1,
                 ),
             ];
-            for (operation, faults, redraw) in cases {
+            for (operation, faults, good_frames) in cases {
                 let recorder = Recorder::failing(80, 12, faults);
                 let h = Harness::start(
                     &recorder,
@@ -813,7 +838,13 @@ mod tests {
                         ..Setup::default()
                     },
                 );
-                if redraw {
+                settle().await;
+                assert_eq!(
+                    recorder.draws().len(),
+                    good_frames,
+                    "{operation}: the first frame"
+                );
+                if good_frames > 0 {
                     advance(Duration::from_secs(1)).await;
                 }
                 let error = h.finish().await.unwrap_err();
