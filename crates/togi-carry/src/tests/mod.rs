@@ -195,10 +195,10 @@ impl Source {
         }
     }
 
-    pub(super) fn config_loaded(&mut self, build: Build, config: Config) -> Seq {
+    pub(super) fn config_loaded(&mut self, build: Build, config: &Config) -> Seq {
         self.add(ConfigLoaded {
             build,
-            config,
+            config: config.snapshot(),
             path: "config.json".into(),
             file: true,
             kernel_cursor: None,
@@ -211,7 +211,7 @@ impl Source {
             fixes,
             ..self.build.clone()
         };
-        self.config_loaded(build, Config::default())
+        self.config_loaded(build, &Config::default())
     }
 
     pub(super) fn backends(&mut self, mprime: &str, ycruncher: &str) -> Seq {
@@ -219,7 +219,7 @@ impl Source {
             r#"{{"backends":{{"mprime":"{mprime}","ycruncher":"{ycruncher}"}}}}"#
         ))
         .unwrap();
-        self.config_loaded(self.build.clone(), config)
+        self.config_loaded(self.build.clone(), &config)
     }
 
     pub(super) fn next_trial(&mut self) -> TrialId {

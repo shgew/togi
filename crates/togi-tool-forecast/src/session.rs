@@ -7,7 +7,7 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 use togi_journal::{
     Build, Event, EventReader, FileError, Operation, Payload, ReadError, Refusal, SCHEMA, Seq,
-    SessionId, Verdict,
+    SessionId, Skipped, Verdict,
 };
 use togi_machine::object_only;
 use togi_tuner::{EVIDENCE_EPOCH, RULESET};
@@ -78,6 +78,14 @@ pub struct Session {
     events: Vec<Event>,
     prefixes: Vec<[u8; 32]>,
     refusal: Option<Refusal>,
+    skipped: Skipped,
+}
+
+/// How a journal is decoded: strictly, or leniently as `journal.md` describes for read-only consumers.
+#[derive(Clone, Copy)]
+enum Reading {
+    Strict,
+    Lenient,
 }
 
 impl Session {
@@ -92,6 +100,11 @@ impl Session {
 
     pub fn events(&self) -> &[Event] {
         &self.events
+    }
+
+    /// What a lenient read of the journal skipped or ignored; empty after a strict one.
+    pub const fn skipped(&self) -> &Skipped {
+        &self.skipped
     }
 
     /// Whether this build's tuner can replay the session: the journal's schema is not newer and its ruleset is
@@ -119,17 +132,27 @@ impl Session {
             bytes.push(b'\n');
             ends.push(bytes.len());
         }
-        Self::new(events, &bytes, &ends).ok_or(Error::NotStarted)
+        Self::new(events, &bytes, &ends, Skipped::default()).ok_or(Error::NotStarted)
     }
 
     /// The session a journal holds; `None` for a journal without a complete line. Bytes after the last newline
     /// are a torn tail and never an event.
     pub fn read(path: &Path) -> Result<Option<Self>, Error> {
+        Self::read_with(path, Reading::Strict)
+    }
+
+    /// [`read`](Self::read) skipping events of kinds this build does not know and ignoring unknown fields;
+    /// [`skipped`](Self::skipped) says what it did.
+    pub fn read_lenient(path: &Path) -> Result<Option<Self>, Error> {
+        Self::read_with(path, Reading::Lenient)
+    }
+
+    fn read_with(path: &Path, reading: Reading) -> Result<Option<Self>, Error> {
         let bytes = fs::read(path).map_err(|source| Error::ReadJournal {
             path: path.to_path_buf(),
             source,
         })?;
-        Self::parse(&bytes).map_err(|source| {
+        Self::parse(&bytes, reading).map_err(|source| {
             Error::Journal(FileError {
                 path: path.to_path_buf(),
                 source,
@@ -137,8 +160,11 @@ impl Session {
         })
     }
 
-    fn parse(bytes: &[u8]) -> Result<Option<Self>, ReadError> {
-        let mut reader = EventReader::new(bytes);
+    fn parse(bytes: &[u8], reading: Reading) -> Result<Option<Self>, ReadError> {
+        let mut reader = match reading {
+            Reading::Strict => EventReader::new(bytes),
+            Reading::Lenient => EventReader::lenient(bytes),
+        };
         let mut events = Vec::new();
         let mut ends = Vec::new();
         while let Some(event) = reader.next() {
@@ -149,12 +175,12 @@ impl Session {
             return Ok(None);
         };
         let found = first.kind();
-        Self::new(events, bytes, &ends)
+        Self::new(events, bytes, &ends, reader.skipped().clone())
             .map(Some)
             .ok_or(ReadError::FirstEvent { found })
     }
 
-    fn new(events: Vec<Event>, bytes: &[u8], ends: &[usize]) -> Option<Self> {
+    fn new(events: Vec<Event>, bytes: &[u8], ends: &[usize], skipped: Skipped) -> Option<Self> {
         let Some(Payload::SessionStart(start)) = events.first().map(|event| &event.payload) else {
             return None;
         };
@@ -187,6 +213,7 @@ impl Session {
             events,
             prefixes,
             refusal,
+            skipped,
         })
     }
 
@@ -211,7 +238,24 @@ impl Session {
 /// appending. An archived file whose name is not a session id is not a journal; a journal without a complete
 /// line holds no session; a journal that fails the reader's checks is an error naming the file.
 pub fn read_dir(dir: impl AsRef<Path>, from: Option<SessionId>) -> Result<Vec<Session>, Error> {
-    let dir = dir.as_ref();
+    read_dir_with(dir.as_ref(), from, Reading::Strict)
+}
+
+/// [`read_dir`] for a state directory nobody is resuming, such as an operator's: events of kinds this build does
+/// not know are skipped and unknown fields ignored, and each session's [`skipped`](Session::skipped) says what
+/// was.
+pub fn read_dir_lenient(
+    dir: impl AsRef<Path>,
+    from: Option<SessionId>,
+) -> Result<Vec<Session>, Error> {
+    read_dir_with(dir.as_ref(), from, Reading::Lenient)
+}
+
+fn read_dir_with(
+    dir: &Path,
+    from: Option<SessionId>,
+    reading: Reading,
+) -> Result<Vec<Session>, Error> {
     let archive = dir.join(ARCHIVE_DIR);
     let mut ids = Vec::new();
     match fs::read_dir(&archive) {
@@ -246,9 +290,9 @@ pub fn read_dir(dir: impl AsRef<Path>, from: Option<SessionId>) -> Result<Vec<Se
         .filter(|&id| from.is_none_or(|from| id >= from))
     {
         let path = archive.join(format!("{id}{JOURNAL_SUFFIX}"));
-        sessions.extend(Session::read(&path)?);
+        sessions.extend(Session::read_with(&path, reading)?);
     }
-    match Session::read(&dir.join(LIVE_JOURNAL)) {
+    match Session::read_with(&dir.join(LIVE_JOURNAL), reading) {
         Ok(live) => sessions.extend(live),
         Err(Error::ReadJournal { source, .. }) if source.kind() == io::ErrorKind::NotFound => {}
         Err(error) => return Err(error),

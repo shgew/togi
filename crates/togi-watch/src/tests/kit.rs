@@ -73,7 +73,7 @@ pub(crate) fn session_start(cores: &[(u8, u8)]) -> Payload {
 pub(crate) fn config_loaded() -> Payload {
     ConfigLoaded {
         build: build(),
-        config: Config::default(),
+        config: Config::default().snapshot(),
         path: "/etc/togi/config.json".to_owned(),
         file: false,
         kernel_cursor: None,

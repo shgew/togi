@@ -1,6 +1,6 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
-use togi_journal::{Build, CycleEvent, Event, Payload, Seq, ShutdownReason};
+use togi_journal::{Build, CycleEvent, Event, Payload, Seq, ShutdownReason, Skipped};
 use togi_machine::{BootId, CoreId};
 
 use crate::marks::Marks;
@@ -16,8 +16,13 @@ struct Conclusion {
     passed_full_cycles: u32,
 }
 
-pub(crate) fn audit(events: &[Event], completion: Completion) -> Vec<Violation> {
-    let mut auditor = Auditor::default();
+/// `skipped` names the events a lenient read passed over: a gap they fill is no sequence violation, and a cause
+/// naming one of them is an existing earlier sequence.
+pub(crate) fn audit(events: &[Event], skipped: &Skipped, completion: Completion) -> Vec<Violation> {
+    let mut auditor = Auditor {
+        skipped: skipped.events().iter().map(|event| event.seq).collect(),
+        ..Auditor::default()
+    };
     for event in events {
         auditor.fold(event);
     }
@@ -44,6 +49,7 @@ struct Auditor<'a> {
     cores: Vec<CoreId>,
     previous: Option<Seq>,
     seen: Seen<'a>,
+    skipped: BTreeSet<Seq>,
     marks: Marks,
     writes: Writes,
     conclusion: Conclusion,
@@ -80,7 +86,10 @@ impl<'a> Auditor<'a> {
     }
 
     fn check_sequence(&mut self, event: &Event) {
-        let expected = self.previous.map_or(Some(Seq::FIRST), Seq::next);
+        let mut expected = self.previous.map_or(Some(Seq::FIRST), Seq::next);
+        while let Some(seq) = expected.filter(|seq| self.skipped.contains(seq)) {
+            expected = seq.next();
+        }
         if expected != Some(event.seq) {
             self.findings.add(
                 event.seq,
@@ -104,7 +113,8 @@ impl<'a> Auditor<'a> {
 
     fn check_causes(&mut self, event: &Event) {
         for cause in &event.cause {
-            if !self.seen.contains_key(cause) || *cause >= event.seq {
+            let known = self.seen.contains_key(cause) || self.skipped.contains(cause);
+            if !known || *cause >= event.seq {
                 self.findings.add(
                     event.seq,
                     Check::Cause,

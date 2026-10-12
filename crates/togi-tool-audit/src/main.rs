@@ -161,6 +161,15 @@ fn report(audited: io::Result<togi_tool_audit::Report>) -> ExitCode {
     if let Err(error) = write_findings(&audited.findings) {
         return fail(&format!("write the report: {error}"));
     }
+    for skip in &audited.skipped {
+        let _ = writeln!(
+            io::stderr(),
+            "togi-tool-audit: {:?} {}: {}",
+            skip.directory.to_string_lossy(),
+            skip.journal,
+            skip.skipped
+        );
+    }
     let _ = writeln!(
         io::stderr(),
         "togi-tool-audit: directories={} journals={} violations={}",

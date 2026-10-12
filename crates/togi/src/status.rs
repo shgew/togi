@@ -48,6 +48,9 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 /// absent, and lists reset commands for too-cautious defects until each affected core is reset.
 /// Read-only, rendered from the journal. A different ruleset warns before rendering; a different
 /// schema is refused.
+///
+/// An event of a kind this build does not know is skipped and an unknown field is ignored; stderr
+/// says which, after the output.
 #[derive(ClapArgs, Debug)]
 #[command(after_help = EXAMPLES.as_str())]
 pub struct Args {}
@@ -76,7 +79,7 @@ pub fn run(_args: &Args, ctx: &mut Context<'_>) -> Exit {
     {
         return fail(ctx, "status", format!("write output: {error}"));
     }
-    read::report_torn(ctx, "status", &recording);
+    read::report(ctx, "status", &recording);
     Exit::Ok
 }
 

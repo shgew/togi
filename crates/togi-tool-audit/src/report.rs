@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use togi_journal::{Seq, StateDir};
+use togi_journal::{Seq, Skipped, StateDir};
 use togi_machine::object_only;
 
 use crate::{Check, Completion, Source, audit_recordings};
@@ -229,11 +229,20 @@ const fn status(status: Status) -> &'static str {
     }
 }
 
-/// The journals of one state directory: how many were read and what they violate. The live journal of a
-/// simulated run must also have concluded. The audit holds the directory's writer lock, so a directory a live
-/// process holds is refused. Taking the lock creates the directory's `lock` file and sets the directory's mode to
-/// 0711; the audit writes nothing else.
-pub fn audit_directory(dir: &Path, simulated: bool) -> (Vec<Finding>, usize) {
+/// What a lenient read left out of one journal of a state directory.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct JournalSkip {
+    pub directory: PathBuf,
+    /// `live`, or the archived session's id.
+    pub journal: String,
+    pub skipped: Skipped,
+}
+
+/// The journals of one state directory: how many were read, what they violate and what was left out of them. The
+/// live journal of a simulated run must also have concluded. The audit holds the directory's writer lock, so a
+/// directory a live process holds is refused. Taking the lock creates the directory's `lock` file and sets the
+/// directory's mode to 0711; the audit writes nothing else.
+pub fn audit_directory(dir: &Path, simulated: bool) -> (Vec<Finding>, usize, Vec<JournalSkip>) {
     let unreadable = |reason: String| Finding {
         directory: dir.to_path_buf(),
         scenario: None,
@@ -244,7 +253,7 @@ pub fn audit_directory(dir: &Path, simulated: bool) -> (Vec<Finding>, usize) {
         reason,
     };
     if !dir.is_dir() {
-        return (vec![unreadable("not a directory".into())], 0);
+        return (vec![unreadable("not a directory".into())], 0, Vec::new());
     }
     let completion = if simulated {
         Completion::Finished
@@ -256,15 +265,23 @@ pub fn audit_directory(dir: &Path, simulated: bool) -> (Vec<Finding>, usize) {
         .and_then(|state| audit_recordings(&state, completion).map_err(|error| error.to_string()));
     let audits = match audits {
         Ok(audits) => audits,
-        Err(reason) => return (vec![unreadable(reason)], 0),
+        Err(reason) => return (vec![unreadable(reason)], 0, Vec::new()),
     };
     let journals = audits.len();
     let mut found = Vec::new();
+    let mut skips = Vec::new();
     for audit in audits {
         let journal = match audit.source {
             Source::Archived(session) => session.to_string(),
             Source::Live => "live".into(),
         };
+        if !audit.skipped.is_empty() {
+            skips.push(JournalSkip {
+                directory: dir.to_path_buf(),
+                journal: journal.clone(),
+                skipped: audit.skipped,
+            });
+        }
         for violation in audit.violations {
             found.push(Finding {
                 directory: dir.to_path_buf(),
@@ -277,7 +294,7 @@ pub fn audit_directory(dir: &Path, simulated: bool) -> (Vec<Finding>, usize) {
             });
         }
     }
-    (found, journals)
+    (found, journals, skips)
 }
 
 /// The outcome of auditing a set of directories.
@@ -286,6 +303,7 @@ pub struct Report {
     pub directories: usize,
     pub journals: usize,
     pub findings: Vec<Finding>,
+    pub skipped: Vec<JournalSkip>,
 }
 
 /// Audits `dirs`, attributing each directory a record keeps to that run, after the records' own timing checks.
@@ -313,7 +331,7 @@ pub fn audit_holding<G>(
     for dir in dirs {
         let record = by_dir.get(&lexical(dir)?);
         let guard = hold();
-        let (mut found, journals) = audit_directory(dir, record.is_some());
+        let (mut found, journals, mut skips) = audit_directory(dir, record.is_some());
         drop(guard);
         report.journals += journals;
         for finding in &mut found {
@@ -323,6 +341,7 @@ pub fn audit_holding<G>(
             }
         }
         report.findings.append(&mut found);
+        report.skipped.append(&mut skips);
     }
     Ok(report)
 }

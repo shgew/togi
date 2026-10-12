@@ -94,20 +94,24 @@ pub fn fail(ctx: &mut Context<'_>, command: &str, message: impl Display) -> Exit
     exit_with(ctx, command, message, Exit::Error)
 }
 
-/// What to tell of a journal that holds an event kind this build does not know; `None` when `error`
-/// is anything else.
+/// What to tell of a journal that holds an event this build cannot decode strictly: a kind it does not know or a field
+/// it does not know; `None` when `error` is anything else.
 #[must_use]
-pub fn unknown_kind_message(
+pub fn unknown_event_message(
     error: &FileError,
     recorded: &Build,
     current: &Build,
 ) -> Option<String> {
-    let ReadError::UnknownKind { source, .. } = &error.source else {
-        return None;
+    let unknown = match &error.source {
+        ReadError::UnknownKind { source, .. } => format!("unknown kind {:?}", source.0),
+        ReadError::UnknownField { kind, field, .. } => {
+            format!("unknown field {field:?} of a {kind} event")
+        }
+        _ => return None,
     };
     Some(format!(
-        "unknown kind {:?} in journal written by {recorded} (schema {}, ruleset {}); this build, {current} (schema {}, ruleset {}), cannot safely modify it; install the build that wrote it",
-        source.0, recorded.schema, recorded.ruleset, current.schema, current.ruleset,
+        "{unknown} in journal written by {recorded} (schema {}, ruleset {}); this build, {current} (schema {}, ruleset {}), cannot safely modify it; install the build that wrote it",
+        recorded.schema, recorded.ruleset, current.schema, current.ruleset,
     ))
 }
 

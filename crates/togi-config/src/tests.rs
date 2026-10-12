@@ -2,6 +2,7 @@ use std::{io, path::Path, time::Duration};
 
 use serde_json::{Value, json};
 use test_case::test_case;
+use togi_journal::ConfigSnapshot;
 use togi_machine::{Backend, CoreId, Regime, TargetOffset};
 
 use crate::*;
@@ -536,15 +537,6 @@ fn constructors_enforce_their_invariants() {
 }
 
 #[test]
-fn round_trips_through_serde() {
-    for config in [Config::default(), customised()] {
-        let text = serde_json::to_string(&config).unwrap();
-        assert_eq!(serde_json::from_str::<Config>(&text).unwrap(), config);
-        assert_eq!(Config::parse(&text).unwrap(), config);
-    }
-}
-
-#[test]
 fn customised_values_survive() {
     let config = customised();
     assert_eq!(
@@ -563,8 +555,8 @@ fn customised_values_survive() {
 }
 
 #[test]
-fn serialization_writes_every_field() {
-    let value = serde_json::to_value(Config::default()).unwrap();
+fn the_default_snapshot_writes_every_setting() {
+    let value = serde_json::to_value(Config::default().snapshot()).unwrap();
     assert_eq!(
         value,
         json!({
@@ -590,19 +582,73 @@ fn serialization_writes_every_field() {
 }
 
 #[test]
-fn serialization_splits_overrides_into_the_two_wire_maps() {
-    let value = serde_json::to_value(customised()).unwrap();
-    assert_eq!(value["start_offsets"], json!({"3": -10, "15": 0}));
-    assert_eq!(value["candidate_solo_limits"], json!({"2": -36}));
-    assert_eq!(value["backends"]["mprime"], Value::from("/opt/mprime"));
-    assert_eq!(value["backend_user"], Value::from("togi-trial"));
+fn a_customised_snapshot_carries_every_effective_value() {
+    let value = serde_json::to_value(customised().snapshot()).unwrap();
+    assert_eq!(
+        value,
+        json!({
+            "start_offsets": {"3": -10, "15": 0},
+            "candidate_solo_limits": {"2": -36},
+            "durations": {
+                "search_trial_s": 60,
+                "short_trial_s": 86400,
+                "checking_trial_s": 1,
+                "checking_idle_s": 7200,
+                "checking_all_core_s": 4
+            },
+            "evidence": {"miss": 0.001, "rate": 0.25},
+            "checking": {"cycle": ["R6", "R1", "R6"]},
+            "dead_ends": {"inconclusive_in_a_row": 1, "stray_crashes_in_a_row": 100},
+            "backends": {"mprime": "/opt/mprime", "ycruncher": "/opt/y-cruncher"},
+            "backend_user": "togi-trial"
+        })
+    );
 }
 
 #[test]
-fn deserializing_the_journal_shape_validates_again() {
-    let mut value = serde_json::to_value(Config::default()).unwrap();
-    value["durations"]["search_trial_s"] = json!(0);
-    assert!(serde_json::from_value::<Config>(value).is_err());
+fn a_snapshot_reads_back_to_the_same_configuration() {
+    for config in [Config::default(), customised()] {
+        let snapshot = config.snapshot();
+        assert_eq!(Config::from_snapshot(&snapshot).unwrap(), config);
+        let wire = serde_json::to_string(&snapshot).unwrap();
+        let decoded = serde_json::from_str::<ConfigSnapshot>(&wire).unwrap();
+        assert_eq!(decoded, snapshot);
+        assert_eq!(Config::from_snapshot(&decoded).unwrap(), config);
+    }
+}
+
+#[test]
+fn a_snapshot_the_configuration_would_refuse_is_refused_when_read_back() {
+    let mut cases = Vec::new();
+    let mut snapshot = Config::default().snapshot();
+    snapshot.durations.search_trial_s = 0;
+    cases.push(("search_trial_s", snapshot));
+    let mut snapshot = Config::default().snapshot();
+    snapshot.durations.checking_all_core_s = 3;
+    cases.push(("checking_all_core_s", snapshot));
+    let mut snapshot = Config::default().snapshot();
+    snapshot.evidence.miss = 1.0;
+    cases.push(("miss", snapshot));
+    let mut snapshot = Config::default().snapshot();
+    snapshot.checking.cycle.clear();
+    cases.push(("checking.cycle", snapshot));
+    let mut snapshot = Config::default().snapshot();
+    snapshot.dead_ends.stray_crashes_in_a_row = 101;
+    cases.push(("stray_crashes_in_a_row", snapshot));
+    let mut snapshot = Config::default().snapshot();
+    snapshot.backends.mprime = Some("relative/path".into());
+    cases.push(("mprime", snapshot));
+    let mut snapshot = Config::default().snapshot();
+    snapshot.backend_user = Some(String::new());
+    cases.push(("backend_user", snapshot));
+    let mut snapshot = Config::default().snapshot();
+    snapshot.start_offsets.set(core(4), offset(-5));
+    snapshot.candidate_solo_limits.set(core(4), offset(-9));
+    cases.push(("start_offsets.4", snapshot));
+    for (needle, snapshot) in cases {
+        let message = Config::from_snapshot(&snapshot).unwrap_err().to_string();
+        assert!(message.contains(needle), "{needle}: {message}");
+    }
 }
 
 #[test]

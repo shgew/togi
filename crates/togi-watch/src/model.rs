@@ -484,6 +484,8 @@ pub struct Snapshot<'a> {
     pub shapes: &'a BTreeMap<u32, HuntShape>,
     /// The sequence numbers of trials carried from earlier sessions.
     pub carried: &'a BTreeSet<Seq>,
+    /// What the lenient read of the journal skipped or ignored, in one line; shown whatever else is on screen.
+    pub skipped: Option<&'a str>,
 }
 
 /// A started idle trial: nothing on the screen may change with the clock until its end is recorded, so drawing
@@ -576,6 +578,7 @@ pub struct Model {
     tuner: TunerState,
     facts: Facts,
     problem: Option<FoldError>,
+    skipped: Option<String>,
     derived: OnceCell<Derived>,
 }
 
@@ -583,6 +586,12 @@ impl Model {
     /// A model of a journal with no events.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Sets what the lenient read of the journal skipped or ignored, as the journal crate's report says it; `None`
+    /// when it skipped nothing. The frames show it as long as it is set.
+    pub fn set_skipped(&mut self, skipped: Option<String>) {
+        self.skipped = skipped;
     }
 
     /// Folds the next event of the journal. A refusal turns the model into a problem state: the facts folded so
@@ -680,6 +689,7 @@ impl Model {
             order: &derived.order,
             shapes: &facts.shapes,
             carried: &facts.carried,
+            skipped: self.skipped.as_deref(),
         }
     }
 }

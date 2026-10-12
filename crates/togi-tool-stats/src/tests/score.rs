@@ -173,7 +173,7 @@ fn a_state_directory_is_scored_from_the_anchor_through_the_forecast_file() {
     log.at(7200).add(shutdown(ShutdownReason::Cycles));
     let state = state_dir(&log);
     let forecast = write(&record, state.path());
-    let text = score(state.path(), &forecast).unwrap();
+    let text = score(state.path(), &forecast).unwrap().text;
     assert!(text.contains(", unchanged\n"), "{text}");
     assert!(text.contains("\nForecast score\n"), "{text}");
     assert_eq!(text, scored(&record, log.events.clone()));

@@ -267,12 +267,15 @@ fn a_second_start_is_a_fold_error() {
 }
 
 #[test]
-fn gaps_and_a_late_first_event_are_fold_errors() {
-    let gap = at(3, "boot-a", 1, &[], sample(EventKind::SessionContext));
+fn an_event_that_does_not_come_after_the_last_is_a_fold_error_and_a_hole_is_not() {
+    let hole = at(3, "boot-a", 1, &[], sample(EventKind::SessionContext));
+    let state = replay(&[start(), hole]).unwrap();
+    assert_eq!(state.last_seq, Seq::new(3));
+    let again = at(1, "boot-a", 1, &[], sample(EventKind::SessionContext));
     assert_eq!(
-        replay(&[start(), gap]).unwrap_err(),
+        replay(&[start(), again]).unwrap_err(),
         FoldError::Gap {
-            seq: Seq::new(3).unwrap(),
+            seq: Seq::FIRST,
             after: Some(Seq::FIRST)
         }
     );
@@ -347,8 +350,13 @@ fn backend_paths_follow_the_latest_config_loaded() {
     let Payload::ConfigLoaded(mut config) = sample(EventKind::ConfigLoaded) else {
         unreachable!()
     };
-    config.config =
-        togi_config::Config::parse(r#"{"backends":{"ycruncher":"/nix/store/y"}}"#).unwrap();
+    config.config = ConfigSnapshot {
+        backends: ConfigBackends {
+            mprime: None,
+            ycruncher: Some("/nix/store/y".into()),
+        },
+        ..super::fixtures::bare_config()
+    };
     let state = replay(&[
         start(),
         at(2, "boot-a", 1, &[], sample(EventKind::ConfigLoaded)),

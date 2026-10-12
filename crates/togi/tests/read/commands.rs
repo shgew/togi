@@ -5,7 +5,10 @@ use togi_hostlock::{HostLock, Policy};
 use togi_watchtest::Scenario;
 
 use crate::host::Host;
-use crate::support::{Journald, append_unknown_kind, session, text, togi, togi_in_journal};
+use crate::support::{
+    Journald, UNKNOWN_KIND, append_unknown_field, append_unknown_kind,
+    insert_unknown_kind_before_last, session, text, togi, togi_in_journal,
+};
 
 const SCOPE: &str = "error: --config applies only to doctor, run and reset";
 
@@ -65,27 +68,111 @@ fn the_config_error_comes_before_the_arguments_of_the_command() {
 /// The kind of the hostile event: ESC, a bidi override and a newline, as JSON escapes write them.
 const HOSTILE_KIND: &str = "future.\u{1b}[2J\u{202e}\nforged";
 
+/// A frame wide enough to show the whole report of what was skipped.
+const WIDE_WATCH: [&str; 5] = ["watch", "--width", "400", "--height", "40"];
+
+fn skipped_report(kind: &str, kind_line: usize, field_line: usize) -> String {
+    format!(
+        "skipped 1 event of a kind this build does not know ({kind} at line {kind_line}); ignored unknown fields: session.warning data.extra (line {field_line})"
+    )
+}
+
 #[test]
-fn a_hostile_unknown_kind_is_escaped_in_the_spec_form_on_stderr() {
+fn the_read_only_commands_skip_an_unknown_kind_and_ignore_an_unknown_field_and_say_so() {
+    let dir = session(Scenario::Search);
+    let known = crate::support::lines(dir.path()).len();
+    let kind_line = insert_unknown_kind_before_last(dir.path(), UNKNOWN_KIND);
+    let field_line = append_unknown_field(dir.path(), "extra");
+    let before = state_files(dir.path());
+    let report = skipped_report(UNKNOWN_KIND, kind_line, field_line);
+
+    let ran = togi(dir.path(), &["status"]);
+    assert_eq!(ran.status.code(), Some(0), "{}", text(&ran.stderr));
+    assert!(!ran.stdout.is_empty());
+    assert_eq!(text(&ran.stderr), format!("togi status: {report}\n"));
+
+    let ran = togi(dir.path(), &["events"]);
+    assert_eq!(ran.status.code(), Some(0), "{}", text(&ran.stderr));
+    assert_eq!(text(&ran.stdout).lines().count(), known + 1);
+    assert!(!text(&ran.stdout).contains(UNKNOWN_KIND));
+    assert_eq!(text(&ran.stderr), format!("togi events: {report}\n"));
+
+    let ran = togi(dir.path(), &["events", "--json"]);
+    assert_eq!(ran.status.code(), Some(0), "{}", text(&ran.stderr));
+    let kinds: Vec<String> = text(&ran.stdout)
+        .lines()
+        .map(|line| {
+            let event: serde_json::Value = serde_json::from_str(line).unwrap();
+            event["kind"].as_str().unwrap().to_owned()
+        })
+        .collect();
+    assert_eq!(kinds.len(), known + 1);
+    assert!(!kinds.iter().any(|kind| kind == UNKNOWN_KIND));
+    assert_eq!(text(&ran.stderr), format!("togi events: {report}\n"));
+
+    let ran = togi(dir.path(), &WIDE_WATCH);
+    assert_eq!(ran.status.code(), Some(0), "{}", text(&ran.stderr));
+    assert_eq!(text(&ran.stderr), "");
+    assert!(text(&ran.stdout).contains(&report), "{}", text(&ran.stdout));
+
+    assert_eq!(
+        state_files(dir.path()),
+        before,
+        "the journal is left as it was"
+    );
+}
+
+#[test]
+fn an_unknown_kind_that_is_hostile_is_escaped_in_what_the_read_only_commands_say() {
     let dir = session(Scenario::Search);
     let line = append_unknown_kind(dir.path(), HOSTILE_KIND);
     let commands: [(&str, Vec<&str>); 3] = [
         ("status", vec!["status"]),
         ("events", vec!["events"]),
-        ("watch", one_frame_watch(&[])),
+        ("watch", WIDE_WATCH.to_vec()),
     ];
     for (command, args) in commands {
         let ran = togi(dir.path(), &args);
-        assert_eq!(ran.status.code(), Some(1), "{command}");
-        let expected = format!(
-            "togi {command}: line {line}: unknown event kind \"future.\\x1b[2J\\u202e\\nforged\"; this build does not know it\n"
+        assert_eq!(ran.status.code(), Some(0), "{command}");
+        let said = format!(
+            "skipped 1 event of a kind this build does not know ({HOSTILE_KIND:?} at line {line})"
         );
-        assert_eq!(text(&ran.stderr), expected, "{command}");
+        if command == "watch" {
+            assert_eq!(text(&ran.stderr), "", "{command}");
+            assert!(text(&ran.stdout).contains(&said), "{command}");
+        } else {
+            assert_eq!(text(&ran.stderr), format!("togi {command}: {said}\n"));
+        }
+        for stream in [&ran.stdout, &ran.stderr] {
+            assert!(
+                !stream
+                    .iter()
+                    .any(|byte| byte.is_ascii_control() && *byte != b'\n'),
+                "{command}"
+            );
+        }
+        assert!(!ran.stderr.trim_ascii_end().contains(&b'\n'), "{command}");
+    }
+}
+
+#[test]
+fn an_unknown_kind_as_the_first_event_is_never_skipped() {
+    let dir = session(Scenario::Search);
+    crate::support::rewrite_first_line(dir.path(), |event| {
+        event["kind"] = UNKNOWN_KIND.into();
+    });
+    for command in ["status", "events", "watch"] {
+        let args = if command == "watch" {
+            one_frame_watch(&[])
+        } else {
+            vec![command]
+        };
+        let ran = togi(dir.path(), &args);
+        assert_eq!(ran.status.code(), Some(1), "{command}");
+        let said = text(&ran.stderr);
         assert!(
-            !ran.stderr
-                .iter()
-                .any(|byte| byte.is_ascii_control() && *byte != b'\n'),
-            "{command}"
+            said.contains("session.start") || said.contains(UNKNOWN_KIND),
+            "{command}: {said}"
         );
     }
 }

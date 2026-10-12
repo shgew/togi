@@ -129,7 +129,7 @@ impl Log {
             &[],
             ConfigLoaded {
                 build: build(fixes),
-                config: togi_config::Config::default(),
+                config: togi_config::Config::default().snapshot(),
                 path: "togi.json".into(),
                 file: false,
                 kernel_cursor: None,

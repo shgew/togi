@@ -1,0 +1,5 @@
+---
+source: crates/togi-journal/src/tests/config_snapshot.rs
+expression: "&encoded"
+---
+{"seq":2,"time":"2026-10-02T01:14:07.12Z","boot":"e8f9aaaa-bbbb-cccc-dddd-eeeeeeeeeeee","cause":[1],"kind":"config.loaded","msg":"config loaded from /etc/togi/config.json by togi 0.1.0+abc1234 (schema 1, ruleset 10, fixes 2)","data":{"build":{"version":"0.1.0","rev":"abc1234","ruleset":10,"schema":1,"fixes":2,"evidence":1},"config":{"start_offsets":{"3":-10,"15":0},"candidate_solo_limits":{"2":-36},"durations":{"search_trial_s":60,"short_trial_s":86400,"checking_trial_s":1,"checking_idle_s":7200,"checking_all_core_s":4},"evidence":{"miss":0.001,"rate":0.25},"checking":{"cycle":["R6","R1","R6"]},"dead_ends":{"inconclusive_in_a_row":1,"stray_crashes_in_a_row":100},"backends":{"mprime":"/opt/mprime","ycruncher":"/opt/y-cruncher"},"backend_user":"togi-trial"},"path":"/etc/togi/config.json","file":true,"kernel_cursor":"cursor-1","kernel_error":"journal unavailable"}}

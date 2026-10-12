@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::fmt;
 use std::num::NonZeroU64;
 use std::time::Duration;
@@ -10,6 +11,7 @@ use serde_json::value::RawValue;
 use togi_machine::{BootId, serde_object::Object};
 
 use crate::payload::{EventKind, Payload, UnknownKind};
+use crate::unknown::{self, Step, Unknown, is_unknown_field};
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -71,12 +73,26 @@ pub enum DecodeError {
     },
     #[error("{0}")]
     UnknownKind(#[source] UnknownKind),
+    #[error("{kind} event: unknown field {field:?}")]
+    UnknownField {
+        kind: EventKind,
+        /// Where the field sits in the line: `extra` in the envelope, `data.extra` in the payload.
+        field: String,
+    },
     #[error("{kind} event: {source}")]
     Payload {
         kind: EventKind,
         #[source]
         source: serde_json::Error,
     },
+}
+
+/// How a line is decoded. Strict refuses what this build does not know: an unknown kind or an unknown field.
+/// Lenient reads past both and reports them; every other fault is an error in both.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Decoding {
+    Strict,
+    Lenient,
 }
 
 #[derive(Deserialize)]
@@ -94,20 +110,161 @@ struct Envelope {
     data: Box<RawValue>,
 }
 
-impl Envelope {
-    fn into_event(self) -> Result<Event, DecodeError> {
-        let kind: EventKind = self.kind.parse().map_err(DecodeError::UnknownKind)?;
-        let payload = Payload::decode(kind, self.data.get())
-            .map_err(|source| DecodeError::Payload { kind, source })?;
-        Ok(Event {
-            seq: self.seq,
-            time: self.time,
-            boot: self.boot,
-            mono: self.mono_ms.map(Duration::from_millis),
-            cause: self.cause,
-            msg: self.msg,
-            payload,
+/// An event whose envelope is sound and whose kind this build does not know.
+pub(crate) struct Unrecognized {
+    pub(crate) seq: Seq,
+    pub(crate) cause: Vec<Seq>,
+    pub(crate) kind: String,
+}
+
+impl Unrecognized {
+    fn into_error(self) -> DecodeError {
+        DecodeError::UnknownKind(UnknownKind(self.kind))
+    }
+}
+
+#[expect(
+    clippy::large_enum_variant,
+    reason = "a decoded event is moved out once; boxing it would allocate for every line read"
+)]
+pub(crate) enum Decoded {
+    Event(Event),
+    Unrecognized(Unrecognized),
+}
+
+/// A decoded line and the unknown fields that were cut out of it to decode it.
+pub(crate) struct Read {
+    pub(crate) decoded: Decoded,
+    pub(crate) ignored: Vec<String>,
+}
+
+/// Why one decode attempt failed. An unknown field carries the error to report when it cannot be cut out.
+enum Failure {
+    Error(DecodeError),
+    Unknown {
+        unknown: Unknown,
+        kind: Option<EventKind>,
+        error: DecodeError,
+    },
+}
+
+fn envelope_failure(line: &str, source: serde_json::Error) -> Failure {
+    let kind = known_kind(line);
+    let unknown = (is_unknown_field(&source))
+        .then(|| {
+            let tracked = serde_path_to_error::deserialize::<_, Object<Envelope>>(
+                &mut serde_json::Deserializer::from_str(line),
+            );
+            tracked.err().and_then(|error| {
+                unknown::locate(line, &[], &error, |text| {
+                    serde_json::from_str::<Object<Envelope>>(text).map(drop)
+                })
+            })
         })
+        .flatten();
+    let error = DecodeError::Envelope { kind, source };
+    match unknown {
+        Some(unknown) => Failure::Unknown {
+            unknown,
+            kind,
+            error,
+        },
+        None => Failure::Error(error),
+    }
+}
+
+fn payload_failure(line: &str, kind: EventKind, data: &str, source: serde_json::Error) -> Failure {
+    let unknown = is_unknown_field(&source)
+        .then(|| {
+            Payload::decode_tracked(kind, data).err().and_then(|error| {
+                unknown::locate(line, &[Step::Key("data".to_owned())], &error, |text| {
+                    Payload::decode(kind, text).map(drop)
+                })
+            })
+        })
+        .flatten();
+    let error = DecodeError::Payload { kind, source };
+    match unknown {
+        Some(unknown) => Failure::Unknown {
+            unknown,
+            kind: Some(kind),
+            error,
+        },
+        None => Failure::Error(error),
+    }
+}
+
+fn decode_once(line: &str) -> Result<Decoded, Failure> {
+    let envelope = match serde_json::from_str::<Object<Envelope>>(line) {
+        Ok(Object(envelope)) => envelope,
+        Err(source) => return Err(envelope_failure(line, source)),
+    };
+    let Ok(kind) = envelope.kind.parse::<EventKind>() else {
+        return Ok(Decoded::Unrecognized(Unrecognized {
+            seq: envelope.seq,
+            cause: envelope.cause,
+            kind: envelope.kind,
+        }));
+    };
+    let payload = Payload::decode(kind, envelope.data.get())
+        .map_err(|source| payload_failure(line, kind, envelope.data.get(), source))?;
+    Ok(Decoded::Event(Event {
+        seq: envelope.seq,
+        time: envelope.time,
+        boot: envelope.boot,
+        mono: envelope.mono_ms.map(Duration::from_millis),
+        cause: envelope.cause,
+        msg: envelope.msg,
+        payload,
+    }))
+}
+
+/// Decodes one line; the one decode that strict and lenient reads share.
+///
+/// The line is decoded as written. Only when that meets an unknown field is the field cut out and the rest decoded
+/// again, so the common line costs one pass. Strict refuses at the first unknown field of a line whose kind it knows.
+/// Otherwise the loop ends once every unknown field is out, and strict then refuses what was cut or skipped.
+pub(crate) fn decode(line: &str, decoding: Decoding) -> Result<Read, DecodeError> {
+    let mut text = Cow::Borrowed(line);
+    let mut ignored = Vec::new();
+    let decoded = loop {
+        match decode_once(&text) {
+            Ok(decoded) => break decoded,
+            Err(Failure::Error(error)) => return Err(error),
+            Err(Failure::Unknown {
+                unknown,
+                kind,
+                error,
+            }) => {
+                if let (Decoding::Strict, Some(kind)) = (decoding, kind) {
+                    return Err(DecodeError::UnknownField {
+                        kind,
+                        field: unknown.path(),
+                    });
+                }
+                let Some(stripped) = unknown.remove_from(&text) else {
+                    return Err(error);
+                };
+                ignored.push(unknown.path());
+                text = Cow::Owned(stripped);
+            }
+        }
+    };
+    if decoding == Decoding::Lenient {
+        return Ok(Read { decoded, ignored });
+    }
+    match decoded {
+        Decoded::Unrecognized(unrecognized) => Err(unrecognized.into_error()),
+        Decoded::Event(event) => match ignored.into_iter().next() {
+            Some(field) => Err(DecodeError::UnknownField {
+                kind: event.kind(),
+                field,
+            }),
+            None => Ok(Read {
+                decoded: Decoded::Event(event),
+                ignored: Vec::new(),
+            }),
+        },
     }
 }
 
@@ -129,12 +286,9 @@ impl Event {
     }
 
     pub fn decode(line: &str) -> Result<Self, DecodeError> {
-        match serde_json::from_str::<Object<Envelope>>(line) {
-            Ok(Object(envelope)) => envelope.into_event(),
-            Err(source) => Err(DecodeError::Envelope {
-                kind: known_kind(line),
-                source,
-            }),
+        match decode(line, Decoding::Strict)?.decoded {
+            Decoded::Event(event) => Ok(event),
+            Decoded::Unrecognized(unrecognized) => Err(unrecognized.into_error()),
         }
     }
 

@@ -3,10 +3,13 @@
 use std::io::{self, BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
+use serde::de::Error as _;
+
 use crate::dir::{DirError, EVENTS_FILE, StateDir, not_found};
-use crate::event::{Event, Seq};
+use crate::event::{DecodeError, Decoded, Decoding, Event, Read, Seq, decode};
 use crate::fs::{DiskFs, Fs};
 use crate::payload::{EventKind, Payload, SessionContext, UnknownKind};
+use crate::skipped::Skipped;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ReadError {
@@ -30,6 +33,13 @@ pub enum ReadError {
         #[source]
         source: UnknownKind,
     },
+    #[error("line {line}: {kind} event: unknown field {field:?}")]
+    UnknownField {
+        line: u64,
+        kind: EventKind,
+        /// Where the field sits in the line: `extra` in the envelope, `data.extra` in the payload.
+        field: String,
+    },
     #[error("line 1: the first event is {}, not session.start", found.as_str())]
     FirstEvent { found: EventKind },
     #[error("line {line}: cause {cause} does not precede seq {seq}")]
@@ -52,27 +62,56 @@ pub enum LookupError {
     File(#[from] FileError),
 }
 
+impl ReadError {
+    fn from_decode(line: u64, error: DecodeError) -> Self {
+        match error {
+            DecodeError::UnknownKind(source) => Self::UnknownKind { line, source },
+            DecodeError::UnknownField { kind, field } => Self::UnknownField { line, kind, field },
+            error @ (DecodeError::Envelope { .. } | DecodeError::Payload { .. }) => Self::Decode {
+                line,
+                source: serde_json::Error::custom(error),
+            },
+        }
+    }
+}
+
 /// Streams the complete lines of a journal as events, checking what a journal promises: seqs count up from 1, the
 /// first event is `session.start`, and every cause precedes its event. Bytes after the last newline are a torn tail,
 /// never an event. The first error ends the stream.
+///
+/// [`new`](Self::new) reads strictly: an event of a kind this build does not know, or with a field it does not know,
+/// is an error. [`lenient`](Self::lenient) skips the former and ignores the latter, and [`skipped`](Self::skipped)
+/// says what it did; every other fault is still an error. A skipped event still has its place in the seq order.
 #[derive(Debug)]
 pub struct EventReader<R> {
     reader: R,
+    decoding: Decoding,
     line: Vec<u8>,
     lines: u64,
     accepted: u64,
     torn: Option<Vec<u8>>,
+    skipped: Skipped,
     done: bool,
 }
 
 impl<R: BufRead> EventReader<R> {
     pub const fn new(reader: R) -> Self {
+        Self::with(reader, Decoding::Strict)
+    }
+
+    pub const fn lenient(reader: R) -> Self {
+        Self::with(reader, Decoding::Lenient)
+    }
+
+    const fn with(reader: R, decoding: Decoding) -> Self {
         Self {
             reader,
+            decoding,
             line: Vec::new(),
             lines: 0,
             accepted: 0,
             torn: None,
+            skipped: Skipped::new(),
             done: false,
         }
     }
@@ -87,43 +126,68 @@ impl<R: BufRead> EventReader<R> {
         self.torn.as_deref()
     }
 
-    fn decode(&mut self) -> Result<Event, ReadError> {
+    /// What a lenient reader has skipped or ignored so far; always empty for a strict one.
+    pub const fn skipped(&self) -> &Skipped {
+        &self.skipped
+    }
+
+    /// The next line as an event; `None` for a skipped one.
+    fn decode(&mut self) -> Result<Option<Event>, ReadError> {
         self.lines += 1;
         let line = self.lines;
         let bytes = &self.line[..self.line.len() - 1];
-        let event: Event =
-            serde_json::from_slice(bytes).map_err(|source| match unknown_kind(bytes) {
-                Some(unknown) => ReadError::UnknownKind {
-                    line,
-                    source: unknown,
-                },
-                None => ReadError::Decode { line, source },
-            })?;
-        let expected = line;
-        if event.seq.get() != expected {
-            return Err(ReadError::Gap {
-                line,
-                expected,
-                found: event.seq,
-            });
+        let text = std::str::from_utf8(bytes).map_err(|error| ReadError::Decode {
+            line,
+            source: serde_json::Error::custom(error),
+        })?;
+        let Read { decoded, ignored } =
+            decode(text, self.decoding).map_err(|error| ReadError::from_decode(line, error))?;
+        match decoded {
+            Decoded::Event(event) => {
+                check_seq(line, event.seq)?;
+                if line == 1 && !matches!(event.payload, Payload::SessionStart(_)) {
+                    return Err(ReadError::FirstEvent {
+                        found: event.payload.kind(),
+                    });
+                }
+                check_causes(line, event.seq, &event.cause)?;
+                self.skipped
+                    .ignore(line, event.seq, event.kind().as_str(), ignored);
+                Ok(Some(event))
+            }
+            Decoded::Unrecognized(unrecognized) => {
+                check_seq(line, unrecognized.seq)?;
+                if line == 1 {
+                    return Err(ReadError::UnknownKind {
+                        line,
+                        source: UnknownKind(unrecognized.kind),
+                    });
+                }
+                check_causes(line, unrecognized.seq, &unrecognized.cause)?;
+                self.skipped
+                    .ignore(line, unrecognized.seq, &unrecognized.kind, ignored);
+                self.skipped.skip(line, unrecognized.seq, unrecognized.kind);
+                Ok(None)
+            }
         }
-        if line == 1 && !matches!(event.payload, Payload::SessionStart(_)) {
-            return Err(ReadError::FirstEvent {
-                found: event.payload.kind(),
-            });
-        }
-        if let Some(&cause) = event
-            .cause
-            .iter()
-            .find(|cause| cause.get() >= event.seq.get())
-        {
-            return Err(ReadError::Cause {
-                line,
-                seq: event.seq,
-                cause,
-            });
-        }
-        Ok(event)
+    }
+}
+
+fn check_seq(line: u64, seq: Seq) -> Result<(), ReadError> {
+    if seq.get() == line {
+        return Ok(());
+    }
+    Err(ReadError::Gap {
+        line,
+        expected: line,
+        found: seq,
+    })
+}
+
+fn check_causes(line: u64, seq: Seq, causes: &[Seq]) -> Result<(), ReadError> {
+    match causes.iter().find(|cause| cause.get() >= seq.get()) {
+        Some(&cause) => Err(ReadError::Cause { line, seq, cause }),
+        None => Ok(()),
     }
 }
 
@@ -131,32 +195,38 @@ impl<R: BufRead> Iterator for EventReader<R> {
     type Item = Result<Event, ReadError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.done {
-            return None;
-        }
-        self.line.clear();
-        match self.reader.read_until(b'\n', &mut self.line) {
-            Err(error) => {
-                self.done = true;
-                return Some(Err(error.into()));
+        while !self.done {
+            self.line.clear();
+            match self.reader.read_until(b'\n', &mut self.line) {
+                Err(error) => {
+                    self.done = true;
+                    return Some(Err(error.into()));
+                }
+                Ok(0) => {
+                    self.done = true;
+                    return None;
+                }
+                Ok(_) => {}
             }
-            Ok(0) => {
+            if self.line.last() != Some(&b'\n') {
                 self.done = true;
+                self.torn = Some(std::mem::take(&mut self.line));
                 return None;
             }
-            Ok(_) => {}
+            match self.decode() {
+                Ok(event) => {
+                    self.accepted += self.line.len() as u64;
+                    if let Some(event) = event {
+                        return Some(Ok(event));
+                    }
+                }
+                Err(error) => {
+                    self.done = true;
+                    return Some(Err(error));
+                }
+            }
         }
-        if self.line.last() != Some(&b'\n') {
-            self.done = true;
-            self.torn = Some(std::mem::take(&mut self.line));
-            return None;
-        }
-        let event = self.decode();
-        match &event {
-            Ok(_) => self.accepted += self.line.len() as u64,
-            Err(_) => self.done = true,
-        }
-        Some(event)
+        None
     }
 }
 
@@ -168,10 +238,16 @@ pub struct Torn {
 }
 
 /// A journal read whole, without taking the lock and without writing anything.
+///
+/// [`read`](Self::read) and [`read_in`](Self::read_in) read strictly. The `_lenient` readers skip events of kinds this
+/// build does not know and ignore unknown fields, and [`skipped`](Self::skipped) says what they did. A skipped event
+/// is not in [`events`](Self::events), so seqs there may skip numbers; [`event`](Self::event) finds events by seq
+/// all the same.
 #[derive(Clone, Debug)]
 pub struct Recording {
     events: Vec<Event>,
     torn: Option<Torn>,
+    skipped: Skipped,
 }
 
 impl Recording {
@@ -180,22 +256,42 @@ impl Recording {
     }
 
     pub fn read_in(fs: &dyn Fs, path: &Path) -> Result<Self, FileError> {
+        Self::read_with(fs, path, Decoding::Strict)
+    }
+
+    pub fn read_lenient(path: &Path) -> Result<Self, FileError> {
+        Self::read_in_lenient(&DiskFs::default(), path)
+    }
+
+    pub fn read_in_lenient(fs: &dyn Fs, path: &Path) -> Result<Self, FileError> {
+        Self::read_with(fs, path, Decoding::Lenient)
+    }
+
+    fn read_with(fs: &dyn Fs, path: &Path, decoding: Decoding) -> Result<Self, FileError> {
         let file_error = |source: ReadError| FileError {
             path: path.to_path_buf(),
             source,
         };
         let bytes = fs.read(path).map_err(|error| file_error(error.into()))?;
-        Self::parse(&bytes).map_err(file_error)
+        Self::parse_with(&bytes, decoding).map_err(file_error)
     }
 
     pub(crate) fn parse(bytes: &[u8]) -> Result<Self, ReadError> {
-        let mut reader = EventReader::new(bytes);
+        Self::parse_with(bytes, Decoding::Strict)
+    }
+
+    pub(crate) fn parse_with(bytes: &[u8], decoding: Decoding) -> Result<Self, ReadError> {
+        let mut reader = EventReader::with(bytes, decoding);
         let events = reader.by_ref().collect::<Result<Vec<_>, _>>()?;
         let torn = reader.torn().map(|tail| Torn {
             offset: reader.accepted(),
             bytes: tail.to_vec(),
         });
-        Ok(Self { events, torn })
+        Ok(Self {
+            events,
+            torn,
+            skipped: reader.skipped,
+        })
     }
 
     pub fn events(&self) -> &[Event] {
@@ -203,11 +299,25 @@ impl Recording {
     }
 
     pub fn event(&self, seq: Seq) -> Option<&Event> {
-        self.events.get(usize::try_from(seq.get() - 1).ok()?)
+        let skipped = self.skipped.events();
+        let before = skipped.partition_point(|skipped| skipped.seq < seq);
+        if skipped
+            .get(before)
+            .is_some_and(|skipped| skipped.seq == seq)
+        {
+            return None;
+        }
+        let index = usize::try_from(seq.get() - 1).ok()?.checked_sub(before)?;
+        self.events.get(index)
     }
 
     pub const fn torn(&self) -> Option<&Torn> {
         self.torn.as_ref()
+    }
+
+    /// What a lenient read skipped or ignored; always empty after a strict one.
+    pub const fn skipped(&self) -> &Skipped {
+        &self.skipped
     }
 
     pub fn into_events(self) -> Vec<Event> {
@@ -306,11 +416,22 @@ impl StateDir {
     /// Every journal of the directory read whole: the archived sessions oldest first, then the live journal when
     /// there is one. Only complete lines count.
     pub fn recordings(&self) -> Result<Vec<Recording>, LookupError> {
+        self.recordings_with(Decoding::Strict)
+    }
+
+    /// [`recordings`](Self::recordings) read leniently: each recording's [`skipped`](Recording::skipped) says what
+    /// was skipped or ignored in it.
+    pub fn recordings_lenient(&self) -> Result<Vec<Recording>, LookupError> {
+        self.recordings_with(Decoding::Lenient)
+    }
+
+    fn recordings_with(&self, decoding: Decoding) -> Result<Vec<Recording>, LookupError> {
         let mut recordings = Vec::new();
         for session in self.archives()? {
-            recordings.push(Recording::read_in(
+            recordings.push(Recording::read_with(
                 self.fs(),
                 &self.archive_journal(&session),
+                decoding,
             )?);
         }
         let live = self.join(EVENTS_FILE);
@@ -319,7 +440,9 @@ impl StateDir {
             source,
         };
         match self.fs().read(&live) {
-            Ok(bytes) => recordings.push(Recording::parse(&bytes).map_err(file_error)?),
+            Ok(bytes) => {
+                recordings.push(Recording::parse_with(&bytes, decoding).map_err(file_error)?);
+            }
             Err(error) if not_found(&error) => {}
             Err(error) => return Err(file_error(error.into()).into()),
         }
@@ -329,11 +452,3 @@ impl StateDir {
 
 #[cfg(test)]
 mod tests;
-
-/// The kind of a record whose envelope is sound but whose `kind` this build does not know.
-fn unknown_kind(line: &[u8]) -> Option<UnknownKind> {
-    match Event::decode(std::str::from_utf8(line).ok()?) {
-        Err(crate::event::DecodeError::UnknownKind(unknown)) => Some(unknown),
-        _ => None,
-    }
-}

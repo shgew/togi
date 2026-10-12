@@ -1039,7 +1039,7 @@ fn config_loaded(cursor: Option<&str>, error: Option<&str>) -> togi_journal::Con
             fixes: 4,
             ..build()
         },
-        config: togi_config::Config::parse("{}").unwrap(),
+        config: togi_config::Config::parse("{}").unwrap().snapshot(),
         path: String::new(),
         file: false,
         kernel_cursor: cursor.map(|text| KernelCursor::from(text.to_owned())),

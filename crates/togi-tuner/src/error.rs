@@ -60,4 +60,6 @@ pub enum FoldError {
     UnknownCcd(togi_machine::CcdId),
     #[error("hunt {0} has no candidate to narrow")]
     NoCandidates(std::num::NonZeroU32),
+    #[error("config.loaded records a configuration this build refuses: {0}")]
+    Config(String),
 }

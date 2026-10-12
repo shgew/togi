@@ -400,6 +400,31 @@ fn an_unknown_event_kind_in_a_current_journal_is_refused_before_the_config_namin
 }
 
 #[test]
+fn an_unknown_event_field_in_a_current_journal_is_refused_naming_its_path_and_writes_nothing() {
+    let mut fake = Fake::new();
+    first_run(&mut fake);
+    let path = fake.state_dir().join("events.jsonl");
+    let text = fs::read_to_string(&path).unwrap();
+    let next = text.lines().count() + 1;
+    let before = format!(
+        r#"{text}{{"seq":{next},"time":"2026-01-01T00:00:00Z","boot":"b","kind":"session.warning","msg":"x","data":{{"operation":"x","error":"y","future_field":1}}}}"#
+    ) + "\n";
+    fs::write(&path, &before).unwrap();
+    let missing = fake.dir.join("missing.json");
+    let (exit, _, err) = fake.run(&["run", "--config", missing.to_str().unwrap()]);
+    assert_eq!(exit, Exit::Incompatible, "{err}");
+    assert!(
+        err.contains(r#"unknown field "data.future_field" of a session.warning event"#),
+        "{err}"
+    );
+    assert!(
+        err.contains("cannot safely modify it; install the build that wrote it"),
+        "{err}"
+    );
+    assert_eq!(fs::read(&path).unwrap(), before.into_bytes());
+}
+
+#[test]
 fn an_unknown_event_kind_in_the_tuning_boot_leaves_its_own_reason_and_clears_the_saved_entry() {
     let mut fake = Fake::new();
     first_run(&mut fake);
