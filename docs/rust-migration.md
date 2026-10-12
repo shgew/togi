@@ -626,3 +626,21 @@ The `togi-tool-facts` crate ports `tools/facts` ([#819](https://github.com/shgew
 - **Recipe.** `just facts-rs STATE-DIR` runs the Rust tool next to the Go `facts` recipe and writes `tools/bench/facts/target.jsonl.gz`; it is a new line, and the Go recipe is unchanged ([#642](https://github.com/shgew/togi/issues/642)).
 - **Tests.** 12 tests run in about 16 ms of test time under `cargo nextest run -p togi-tool-facts`, against 2 ms for `go test -count=1 ./tools/facts`. About 80 lines of library and 400 of tests, against 45 of Go and 130 of tests. The fixture builds a journal in memory and dumps it to disk.
 - **Not measured.** Compile times against Go, agent cost, and the run on a Mac. No Go code is removed or changed.
+
+## Stage 4: crash-sweep test time (#842, 2026-10-12)
+
+The two `togi-session` crash sweeps hit nextest's 120 s limit on GitHub runners ([#842](https://github.com/shgew/togi/issues/842)). `killing_the_run_at_every_durable_event_resumes_to_the_same_final_state` kills a run at each of the 809 durable events of a one-cycle session, and `a_crash_at_every_trial_event_leaves_a_resumable_journal` crashes one at each of 664 trial events. Each point drives a whole session again, about 85 ms in the dev profile, so the cost is quadratic in the journal length. A perf profile of the sweep put about 32 % of the time in `Journal::commit` decoding each written line again, 22 % in `StateDir::open_at` parsing the journal at every boot, 20 % in the tuner fold and 12 % in encoding: nearly all of it unoptimized serde_json.
+
+- **Change.** Dependencies, `togi-journal` and `togi-tuner` build at `opt-level = 1` in the dev profile; debug assertions and overflow checks stay on. The sweeps count durable lines without decoding them and fold each swept journal once. Every durable event is still a kill point and every trial event a crash point.
+- **Measurements.** 4 CPUs (`taskset -c 0-3`), `cargo nextest run -p togi-session --profile ci`, two runs each, on a shared host:
+
+  | | before | test changes | test changes + opt-level 1 |
+  |---|---|---|---|
+  | `killing_the_run_at_every_durable_event_…` | 27.3 s, 27.9 s | 26.0 s, 24.6 s | 9.3 s, 9.3 s |
+  | `a_crash_at_every_trial_event_…` | 25.8 s, 25.7 s | 25.5 s, 25.3 s | 8.6 s, 8.4 s |
+  | whole `togi-session` suite | 30.2 s, 30.3 s | 28.3 s, 27.2 s | 10.1 s, 10.0 s |
+
+  An earlier run of the base under heavier host load took 48.1 s and 38.8 s.
+- **Cost.** An incremental dev rebuild after a one-line change (`cargo build --tests -p <crate>`, hyperfine, 6 runs, 1 warmup) goes from 2.26 ± 0.03 s to 3.81 ± 0.06 s for `togi-journal`, and from 4.62 ± 0.04 s to 8.44 ± 0.99 s for `togi-tuner`.
+- **Coverage.** `just cover-rs` still reports changed lines correctly at opt-level 1. A throwaway function was added to each of `togi-journal` and `togi-tuner`, with a test that took one branch, and then dropped. For both crates the tool reported exactly the two lines of the untaken branch and none of the lines the test reached.
+- **Not measured.** The times on GitHub runners themselves, which the pull request's checks show.
