@@ -131,6 +131,43 @@ pub struct Ended {
     /// journal failure, which leaves the journal's last state unproven. A crashed run keeps its capsule: the folds
     /// follow every append, whatever was published.
     pub capsule: Option<ResumeCapsule>,
+    /// The panic that ended the run, once the cleanup after it finished: the caller closes what it holds and then
+    /// resumes it, so the panic still propagates.
+    pub panic: Option<Panic>,
+}
+
+/// The payload of a panic that unwound out of a run.
+pub struct Panic(Box<dyn std::any::Any + Send>);
+
+impl Panic {
+    pub(crate) fn new(payload: Box<dyn std::any::Any + Send>) -> Self {
+        Self(payload)
+    }
+
+    /// The panic's message, when it carries a string.
+    #[must_use]
+    pub fn message(&self) -> &str {
+        message_of(&*self.0)
+    }
+
+    /// Propagates the original panic.
+    pub fn resume(self) -> ! {
+        std::panic::resume_unwind(self.0)
+    }
+}
+
+impl std::fmt::Debug for Panic {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("Panic").field(&self.message()).finish()
+    }
+}
+
+pub(crate) fn message_of(payload: &(dyn std::any::Any + Send)) -> &str {
+    payload
+        .downcast_ref::<&str>()
+        .copied()
+        .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+        .unwrap_or("non-string panic payload")
 }
 
 impl Ended {
@@ -202,6 +239,9 @@ pub(crate) struct Session {
     pub(crate) unreadable: Option<KernelUnreadable>,
     /// Why the machine may no longer be touched, once it may not.
     pub(crate) fault: Option<Fault>,
+    /// What a join of a workload after a failed record or a panic reported when it could not confirm the stop; the
+    /// close reports it after the error that ended the run.
+    pub(crate) unconfirmed: Vec<togi_machine::Error>,
     /// The `shutdown` the cleanup records once the machine is restored.
     pub(crate) shutdown: Option<Shutdown>,
     /// The write transaction that last put the machine in the state the next trial starts on; `None` once a write
@@ -241,6 +281,7 @@ impl Session {
                 emergency: None,
                 journal,
                 capsule: None,
+                panic: None,
             })
         };
         if let Some(refusal) = refusal(&build, &journal) {
@@ -256,6 +297,7 @@ impl Session {
                 emergency: None,
                 journal,
                 capsule: None,
+                panic: None,
             }));
         }
         let handoff = match bootloader.map(BootHandoff::read).transpose() {
@@ -318,6 +360,7 @@ impl Session {
             recovery_cancelled: false,
             unreadable: None,
             fault: None,
+            unconfirmed: Vec::new(),
             shutdown: None,
             confirmed: None,
         })

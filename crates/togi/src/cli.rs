@@ -18,8 +18,18 @@ const BANNER: &str = "   __              _\n  / /_____  ____ _(_)\n / __/ __ \\/
 
 static VERSION: LazyLock<String> = LazyLock::new(togi_version::string);
 
-static EXAMPLES: LazyLock<String> =
-    LazyLock::new(|| examples(&[("togi completion zsh", "Print the completion script for zsh")]));
+/// The example `togi --help` and `togi run --help` both show for stopping after the confirmation cycle.
+pub const CYCLES_EXAMPLE: (&str, &str) = (
+    "sudo togi run --cycles 1",
+    "Stop once phase 2's confirmation cycle has passed",
+);
+
+static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
+    examples(&[
+        CYCLES_EXAMPLE,
+        ("togi completion zsh", "Print the completion script for zsh"),
+    ])
+});
 
 /// Finds and tests per-core Curve Optimizer offsets on Zen 5 desktop CPUs.
 #[derive(Debug, Parser)]
@@ -41,6 +51,7 @@ pub struct Cli {
 /// of that struct's doc comment is the summary `togi --help` lists.
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    Run(crate::run::Args),
     Completion(completion::Args),
     Doctor(doctor::Args),
     Events(events::Args),
@@ -54,6 +65,7 @@ impl Command {
     /// Runs the command and returns the exit status.
     pub fn run(self, ctx: &mut Context<'_>) -> Exit {
         match self {
+            Self::Run(args) => crate::run::run(&args, ctx),
             Self::Completion(args) => completion::run(&args, ctx),
             Self::Doctor(args) => doctor::run(&args, ctx),
             Self::Events(args) => events::run(&args, ctx),
@@ -96,7 +108,7 @@ where
     run_with(args, out, err, &Real)
 }
 
-/// [`run`] on `system` instead of the host: how a test stands for another platform, takes the host
+/// [`run()`] on `system` instead of the host: how a test stands for another platform, takes the host
 /// lock on a temporary file or answers the hardware checks. See [`crate::system`].
 pub fn run_with<I, T>(
     args: I,

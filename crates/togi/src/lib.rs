@@ -1,6 +1,6 @@
 //! The `togi` command line: argument parsing, exit statuses, `--version` and `completion`.
 //!
-//! [`run`] parses the arguments with clap, runs the chosen command against the given streams and
+//! [`run()`] parses the arguments with clap, runs the chosen command against the given streams and
 //! returns an [`Exit`]; `main` writes to the process's own streams and turns the result into the
 //! process status.
 //!
@@ -33,13 +33,17 @@
 pub mod args;
 pub mod cli;
 pub mod completion;
+pub mod dashboard;
 pub mod doctor;
 pub mod events;
 pub mod exit;
+pub mod panics;
 pub mod read;
 pub mod report;
 pub mod reset;
 pub mod restart_limit;
+pub mod run;
+pub mod signals;
 pub mod status;
 pub mod system;
 mod table;
@@ -47,3 +51,4 @@ pub mod watch;
 
 pub use cli::{run, run_with};
 pub use exit::Exit;
+pub use panics::{main_with, run_process};

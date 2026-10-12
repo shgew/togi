@@ -1,20 +1,21 @@
 //! The machine a command runs on, as one seam.
 //!
 //! Every command reaches the host through [`System`]: the platform, the host lock, the default
-//! configuration file, the boot id, the clock, the hardware checks, GRUB and the reboot. [`Real`]
-//! is the host; [`crate::run`] uses it. [`crate::run_with`] takes any other, so a test on Linux
-//! can stand for another platform (`check_platform` fails with
-//! [`togi_hardware::Error::Unsupported`]), hold the host lock on a temporary file, read the
-//! configuration from a temporary default path, or answer the hardware checks without touching
-//! hardware.
+//! configuration file, the boot id, the clock, the hardware checks, GRUB, the reboot, the machine
+//! `run` tunes and the process's own terminal, stderr and dashboard. [`Real`] is the host;
+//! [`crate::run`] uses it. [`crate::run_with`] takes any other, so a test on Linux can stand for
+//! another platform (`check_platform` fails with [`togi_hardware::Error::Unsupported`]), hold the
+//! host lock on a temporary file, read the configuration from a temporary default path, or answer
+//! the hardware checks without touching hardware.
 //!
 //! A command that must stop on a platform other than Linux asks [`System::check_platform`] before
 //! it reads the boot id, opens the journal, takes the host lock or makes a check.
 
 use std::fs::OpenOptions;
-use std::io;
+use std::io::{self, IsTerminal, Write};
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
+use std::sync::Arc;
 use std::time::Duration;
 
 use jiff::Timestamp;
@@ -22,10 +23,12 @@ use jiff::tz::TimeZone;
 use rustix::time::{ClockId, clock_gettime};
 use togi_config::Config;
 use togi_hardware::{Diagnosis, Grub, RebootError};
-use togi_hostlock::Policy;
-use togi_machine::{BiosContext, BootId, CancellationToken, Clock, Error};
+use togi_hostlock::{HostLock, Policy};
+use togi_machine::{BiosContext, BootId, CancellationToken, Clock, Error, Machine};
 use togi_render::OutputFacts;
 use togi_tuningboot::{Bootloader, RETRY_MARKER};
+
+use crate::dashboard::{Surface, Watch};
 
 /// What a command needs from the host.
 pub trait System {
@@ -75,6 +78,24 @@ pub trait System {
 
     /// What decides whether stderr is coloured.
     fn stderr_facts(&self) -> OutputFacts;
+
+    /// The machine `run` tunes, assembled under the held host lock.
+    fn open_machine(
+        &self,
+        config: &Config,
+        state_dir: &Path,
+        lock: &HostLock,
+    ) -> Result<Machine, togi_hardware::Error>;
+
+    /// Whether stdin and stderr are both terminals.
+    fn interactive(&self) -> bool;
+
+    /// A handle on standard error that outlives the command's borrowed streams: the event lines of
+    /// a run and the report of its emergency.
+    fn stderr(&self) -> Box<dyn Write>;
+
+    /// What draws the dashboard when `run` shows one.
+    fn surface(&self) -> Arc<dyn Surface>;
 }
 
 /// The host the process runs on.
@@ -163,6 +184,34 @@ impl System for Real {
             std::env::var_os("JOURNAL_STREAM").as_deref(),
         )
     }
+
+    fn open_machine(
+        &self,
+        config: &Config,
+        state_dir: &Path,
+        lock: &HostLock,
+    ) -> Result<Machine, togi_hardware::Error> {
+        togi_hardware::open(config, state_dir, lock)
+    }
+
+    fn interactive(&self) -> bool {
+        both_terminals(&io::stdin(), &io::stderr())
+    }
+
+    fn stderr(&self) -> Box<dyn Write> {
+        Box::new(io::stderr())
+    }
+
+    fn surface(&self) -> Arc<dyn Surface> {
+        Arc::new(Watch)
+    }
+}
+
+/// Whether both streams are terminals, as a terminal ioctl says: a character device such as
+/// `/dev/null` is not.
+#[must_use]
+pub fn both_terminals(stdin: &impl IsTerminal, stderr: &impl IsTerminal) -> bool {
+    stdin.is_terminal() && stderr.is_terminal()
 }
 
 /// The clock of a [`System`], for the session functions that stamp the events they append.

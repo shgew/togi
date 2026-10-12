@@ -9,23 +9,25 @@
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
-use std::io;
+use std::io::{self, Write};
 use std::os::unix::process::ExitStatusExt;
 use std::path::{Path, PathBuf};
 use std::process::ExitStatus;
 use std::rc::Rc;
+use std::sync::Arc;
 use std::time::Duration;
 
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use tempfile::TempDir;
 use togi_cli::Exit;
+use togi_cli::dashboard::Surface;
 use togi_cli::system::System;
 use togi_config::Config;
 use togi_hardware::{Diagnosis, RebootError};
 use togi_hostlock::{Error as LockError, HostLock, Policy};
 use togi_journal::Payload;
-use togi_machine::{BiosContext, BootId};
+use togi_machine::{BiosContext, BootId, Machine};
 use togi_render::OutputFacts;
 use togi_tuningboot::{Bootloader, Environment, SavedEntry};
 use togi_watchtest::{Scenario, install};
@@ -300,6 +302,27 @@ impl System for Host {
 
     fn stderr_facts(&self) -> OutputFacts {
         self.facts
+    }
+
+    fn open_machine(
+        &self,
+        _: &Config,
+        _: &Path,
+        _: &HostLock,
+    ) -> Result<Machine, togi_hardware::Error> {
+        panic!("only run opens the machine")
+    }
+
+    fn interactive(&self) -> bool {
+        panic!("only run asks whether the terminal is interactive")
+    }
+
+    fn stderr(&self) -> Box<dyn Write> {
+        panic!("only run keeps a handle on stderr")
+    }
+
+    fn surface(&self) -> Arc<dyn Surface> {
+        panic!("only run draws the dashboard")
     }
 }
 

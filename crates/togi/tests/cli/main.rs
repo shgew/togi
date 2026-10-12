@@ -307,6 +307,137 @@ fn bash_completes_the_item_after_a_comma_in_events_kind() {
     assert!(bash_complete("trial,zzz").is_empty());
 }
 
+#[test]
+fn run_help() {
+    let ran = togi(&["run", "--help"]);
+    assert_eq!(ran.status.code(), Some(0));
+    assert_eq!(stderr(&ran), "");
+    insta::assert_snapshot!(stdout(&ran));
+}
+
+#[test]
+fn the_cycles_example_is_worded_the_same_in_the_top_level_and_run_help() {
+    let row = |text: &str| {
+        let rows: Vec<String> = text
+            .lines()
+            .filter(|line| line.contains("sudo togi run --cycles 1"))
+            .map(|line| line.split_whitespace().collect::<Vec<_>>().join(" "))
+            .collect();
+        assert_eq!(rows.len(), 1, "{text}");
+        rows.into_iter().next().unwrap()
+    };
+    let top = togi(&["--help"]);
+    let run = togi(&["run", "--help"]);
+    assert_eq!(row(stdout(&top)), row(stdout(&run)));
+}
+
+#[test]
+fn run_usage_errors_exit_2_before_anything_is_touched() {
+    let state = tempfile::tempdir().unwrap();
+    let state = state.path().join("state");
+    let state = state.to_str().unwrap();
+    for (args, text) in [
+        (
+            &["run", "--first-result", "--cycles", "1"][..],
+            "cannot be used with",
+        ),
+        (&["run", "--cycles", "0"], "must be a positive integer"),
+        (&["run", "--cycles", "many"], "must be a positive integer"),
+        (&["run", "--cycles"], "a value is required"),
+        (&["run", "--bogus"], "unexpected argument '--bogus'"),
+        (&["run", "--version"], "unexpected argument '--version'"),
+    ] {
+        let mut all = vec!["--state-dir", state];
+        all.extend_from_slice(args);
+        let ran = togi(&all);
+        assert_eq!(ran.status.code(), Some(2), "{args:?}");
+        assert_eq!(stdout(&ran), "", "{args:?}");
+        assert!(stderr(&ran).contains(text), "{args:?}: {}", stderr(&ran));
+    }
+    assert!(!std::path::Path::new(state).exists());
+}
+
+/// These reach `run`'s platform check on `Real`, which refuses anything but Linux before it reads the config.
+#[test]
+#[cfg(target_os = "linux")]
+fn run_reads_its_config_wherever_the_flag_is_written() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path().join("state");
+    let missing = dir.path().join("missing.json");
+    for args in [
+        vec!["run", "--config", missing.to_str().unwrap()],
+        vec!["--config", missing.to_str().unwrap(), "run"],
+    ] {
+        let mut all = vec!["--state-dir", state.to_str().unwrap()];
+        all.extend(args.iter().copied());
+        let ran = togi(&all);
+        assert_eq!(ran.status.code(), Some(2), "{args:?}: {}", stderr(&ran));
+        assert_eq!(stdout(&ran), "", "{args:?}");
+        assert!(
+            stderr(&ran).starts_with("togi run: cannot read config"),
+            "{args:?}: {}",
+            stderr(&ran)
+        );
+    }
+}
+
+#[test]
+#[cfg(target_os = "linux")]
+fn run_with_an_invalid_config_is_a_usage_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config.json");
+    std::fs::write(&config, r#"{"bogus": 1}"#).unwrap();
+    let ran = togi(&[
+        "run",
+        "--state-dir",
+        dir.path().join("state").to_str().unwrap(),
+        "--config",
+        config.to_str().unwrap(),
+    ]);
+    assert_eq!(ran.status.code(), Some(2), "{}", stderr(&ran));
+    assert!(
+        stderr(&ran).starts_with("togi run: invalid config"),
+        "{}",
+        stderr(&ran)
+    );
+}
+
+#[cfg(target_os = "linux")]
+const NEWER_JOURNAL: &str = r#"{"seq":1,"time":"2026-01-01T00:00:00Z","boot":"b","mono_ms":0,"kind":"session.start","msg":"session started","data":{"build":{"version":"9.9.9","rev":"x","ruleset":1,"schema":1,"fixes":0,"evidence":2},"session":"20260101T000000Z","cores":[]}}
+"#;
+
+#[test]
+#[cfg(target_os = "linux")]
+fn run_refuses_a_journal_from_a_newer_evidence_epoch_before_the_config_and_appends_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path().join("state");
+    std::fs::create_dir_all(&state).unwrap();
+    std::fs::write(state.join("events.jsonl"), NEWER_JOURNAL).unwrap();
+    let missing = dir.path().join("missing.json");
+    let ran = togi(&[
+        "run",
+        "--state-dir",
+        state.to_str().unwrap(),
+        "--config",
+        missing.to_str().unwrap(),
+    ]);
+    assert_eq!(ran.status.code(), Some(16), "{}", stderr(&ran));
+    assert_eq!(stdout(&ran), "");
+    assert!(
+        stderr(&ran).starts_with(
+            "togi run: this journal was written by togi 9.9.9+x (schema 1, ruleset 1, evidence epoch 2); this build, togi "
+        ) && stderr(&ran).ends_with(
+            ", uses evidence epoch 1. Install togi 9.9.9 to continue this session, or run togi reset --all to archive it and start over.\n"
+        ),
+        "{}",
+        stderr(&ran)
+    );
+    assert_eq!(
+        std::fs::read_to_string(state.join("events.jsonl")).unwrap(),
+        NEWER_JOURNAL
+    );
+}
+
 fn help(command: &str) -> String {
     let ran = togi(&[command, "--help"]);
     assert_eq!(ran.status.code(), Some(0), "{command}");

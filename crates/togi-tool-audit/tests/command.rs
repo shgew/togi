@@ -18,6 +18,7 @@ use std::time::{Duration, Instant};
 
 use fixtures::{applied, header, phase, stop, write_state_dir};
 use rustix::process::{Pid, Signal, kill_process, test_kill_process};
+use serde_json::{Value, json};
 use togi_journal::Event;
 
 const RECORDS: &str = r#"{"scenario":"s","seed":1,"split":"dev","status":"concluded","wall_s":1.0}
@@ -164,6 +165,104 @@ fn given_directories_are_audited_without_a_sweep() {
     assert_eq!(both.status.code(), Some(1));
     assert!(text(&both.stderr).contains("directories=2 journals=2 violations=1"));
     insta::assert_debug_snapshot!(brief(&text(&both.stdout)));
+}
+
+/// The line `event` is written as, to edit into one this build does not wholly know.
+fn line(event: &Event) -> Value {
+    serde_json::from_str(&event.encode().unwrap()).unwrap()
+}
+
+/// The session's `session.start` with a field this build does not know, nested in its first core.
+fn header_with_unknown_field() -> Value {
+    let mut header = line(&header());
+    header["data"]["cores"][0]["wild"] = json!(2);
+    header
+}
+
+fn future_event(seq: u64) -> Value {
+    json!({"seq": seq, "time": "2026-01-01T00:00:00Z", "boot": "b", "kind": "future.thing", "msg": "m", "data": {}})
+}
+
+fn write_journal(dir: &Path, lines: &[Value]) {
+    fs::create_dir_all(dir).unwrap();
+    let journal: String = lines.iter().map(|line| format!("{line}\n")).collect();
+    fs::write(dir.join("events.jsonl"), journal).unwrap();
+}
+
+/// What the command says a lenient read of `dir`'s live journal left out of the journals this file writes.
+fn skip_report(dir: &Path, kind_line: u64) -> String {
+    format!(
+        "togi-tool-audit: {:?} live: skipped 1 event of a kind this build does not know (future.thing at line \
+         {kind_line}); ignored unknown fields: session.start data.cores[0].wild (line 1)",
+        dir.to_string_lossy()
+    )
+}
+
+#[test]
+fn a_given_directory_reports_what_its_lenient_read_left_out_and_is_still_audited() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("bad");
+    write_journal(
+        &dir,
+        &[
+            header_with_unknown_field(),
+            future_event(2),
+            line(&phase(3, 0, Some(-30))),
+            line(&applied(4, [-30, 0])),
+        ],
+    );
+    let output = run(command().arg(&dir));
+    let stderr = text(&output.stderr);
+    assert_eq!(output.status.code(), Some(1), "{stderr}");
+    assert_eq!(
+        brief(&text(&output.stdout)),
+        [
+            "- - journal=\"live\" seq=4 \"avoidance\": \"core 0 offset -30 reaches failure point -30 recorded at seq 3 \
+             (tuner.md: P[c] <= fail[c])\""
+        ]
+    );
+    assert!(
+        stderr.lines().any(|line| line == skip_report(&dir, 2)),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("directories=1 journals=1 violations=1"),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn a_recorded_run_reports_what_its_lenient_read_left_out_and_is_still_audited() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("bench-1");
+    let dir = root.join("s/dev-1");
+    write_state_dir(&dir, &[header(), stop(2)]);
+    write_journal(
+        &dir,
+        &[header_with_unknown_field(), line(&stop(2)), future_event(3)],
+    );
+    let records = tmp.path().join("records.jsonl");
+    fs::write(
+        &records,
+        r#"{"scenario":"s","seed":1,"split":"dev","status":"concluded","wall_s":1.0}"#,
+    )
+    .unwrap();
+    let output = run(command()
+        .arg("--records")
+        .arg(&records)
+        .arg("--root")
+        .arg(&root));
+    let stderr = text(&output.stderr);
+    assert_eq!(output.status.code(), Some(0), "{stderr}");
+    assert!(text(&output.stdout).is_empty());
+    assert!(
+        stderr.lines().any(|line| line == skip_report(&dir, 3)),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("directories=1 journals=1 violations=0"),
+        "{stderr}"
+    );
 }
 
 #[test]
