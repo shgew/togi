@@ -5,10 +5,11 @@ use std::os::fd::AsFd as _;
 use std::sync::LazyLock;
 
 use clap::Args as ClapArgs;
-use togi_watch::terminal::{self, ONE_FRAME_SIZE};
+use togi_watch::terminal::{self, ONE_FRAME_SIZE, SourceError};
 
 use crate::cli::{Context, examples};
 use crate::exit::Exit;
+use crate::read::unknown_kind;
 use crate::report::fail;
 
 static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
@@ -77,6 +78,10 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
     };
     match result {
         Ok(()) => Exit::Ok,
+        Err(terminal::Error::Journal(SourceError::Read(error))) => {
+            let message = unknown_kind(&error).unwrap_or_else(|| error.to_string());
+            fail(ctx, "watch", message)
+        }
         Err(error) => fail(ctx, "watch", error),
     }
 }

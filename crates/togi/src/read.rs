@@ -8,7 +8,20 @@ use togi_render::{Renderer, Style, escape_text};
 
 use crate::cli::Context;
 use crate::exit::Exit;
-use crate::report::{chain, current_build, fail, refusal_message, unknown_kind_message};
+use crate::report::{chain, current_build, fail, refusal_message};
+
+/// What a read-only command says of an event kind this build does not know; `None` when `error` is
+/// anything else.
+#[must_use]
+pub fn unknown_kind(error: &FileError) -> Option<String> {
+    match &error.source {
+        ReadError::UnknownKind { line, source } => Some(format!(
+            "line {line}: unknown event kind {:?}; this build does not know it",
+            source.0
+        )),
+        _ => None,
+    }
+}
 
 fn notice(ctx: &mut Context<'_>, style: Style, message: &str) {
     let renderer = Renderer::new(ctx.system.stderr_facts());
@@ -48,21 +61,12 @@ pub fn open(ctx: &mut Context<'_>, command: &str) -> Result<Recording, Exit> {
         }
     }
     let path = ctx.state_dir.join("events.jsonl");
-    Recording::read(&path).map_err(|error| match (&error, &recorded) {
-        (
-            FileError {
-                source: ReadError::Io(io),
-                ..
-            },
-            _,
-        ) if io.kind() == ErrorKind::NotFound => {
-            fail(ctx, command, format!("no journal at {}", path.display()))
+    Recording::read(&path).map_err(|error| {
+        if matches!(&error.source, ReadError::Io(io) if io.kind() == ErrorKind::NotFound) {
+            return fail(ctx, command, format!("no journal at {}", path.display()));
         }
-        (_, Some(recorded)) => match unknown_kind_message(&error, recorded, &current) {
-            Some(message) => fail(ctx, command, message),
-            None => fail(ctx, command, chain(&error)),
-        },
-        _ => fail(ctx, command, chain(&error)),
+        let message = unknown_kind(&error).unwrap_or_else(|| chain(&error));
+        fail(ctx, command, message)
     })
 }
 

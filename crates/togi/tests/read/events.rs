@@ -4,8 +4,8 @@ use jiff::Timestamp;
 use togi_watchtest::Scenario;
 
 use crate::support::{
-    BETWEEN_TRIAL_MCE, append_between_trial_mce, first_trial, journal, lines, rewrite_first_line,
-    session, text, togi,
+    BETWEEN_TRIAL_MCE, append_between_trial_mce, append_unknown_kind, assert_unknown_kind_refusal,
+    first_trial, journal, lines, rewrite_first_line, session, text, togi,
 };
 
 #[test]
@@ -194,31 +194,6 @@ fn a_different_ruleset_warns_and_still_renders() {
 }
 
 #[test]
-fn an_event_of_an_unknown_kind_is_a_read_error() {
-    let dir = session(Scenario::Search);
-    let mut file = std::fs::OpenOptions::new()
-        .append(true)
-        .open(journal(dir.path()))
-        .unwrap();
-    let last: serde_json::Value = serde_json::from_str(lines(dir.path()).last().unwrap()).unwrap();
-    let seq = last["seq"].as_u64().unwrap() + 1;
-    writeln!(
-        file,
-        r#"{{"seq":{seq},"time":"2026-01-02T00:00:00Z","boot":"{}","kind":"future.thing","msg":"x","data":{{}}}}"#,
-        last["boot"].as_str().unwrap()
-    )
-    .unwrap();
-    let ran = togi(dir.path(), &["events"]);
-    assert_eq!(ran.status.code(), Some(1));
-    assert_eq!(text(&ran.stdout), "");
-    assert!(
-        text(&ran.stderr).contains("future.thing"),
-        "{}",
-        text(&ran.stderr)
-    );
-}
-
-#[test]
 fn a_torn_tail_is_reported_after_the_events() {
     let dir = session(Scenario::Search);
     let whole = lines(dir.path()).len();
@@ -292,4 +267,13 @@ fn a_between_trial_mce_is_listed_and_its_controls_are_escaped() {
         event["msg"], BETWEEN_TRIAL_MCE,
         "--json keeps the journal's text"
     );
+}
+
+#[test]
+fn an_event_of_an_unknown_kind_is_refused_in_read_only_words_by_events() {
+    let dir = session(Scenario::Search);
+    let line = append_unknown_kind(dir.path());
+    let ran = togi(dir.path(), &["events"]);
+    assert_unknown_kind_refusal("events", &ran, line);
+    assert_eq!(text(&ran.stdout).is_empty(), "events" != "watch");
 }

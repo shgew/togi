@@ -84,3 +84,20 @@ pub(crate) fn append_between_trial_mce(dir: &Path) {
         }),
     );
 }
+
+/// The wording a read-only command uses for the event `append_unknown_kind` adds, as one line.
+pub(crate) fn assert_unknown_kind_refusal(command: &str, ran: &std::process::Output, line: usize) {
+    assert_eq!(ran.status.code(), Some(1), "{command}");
+    let expected = format!(
+        "togi {command}: line {line}: unknown event kind \"future.thing\"; this build does not know it\n"
+    );
+    assert_eq!(text(&ran.stderr), expected, "{command}");
+    assert!(!text(&ran.stderr).contains("modify"), "{command}");
+}
+
+/// Appends an event of a kind no build knows; returns its line number.
+pub(crate) fn append_unknown_kind(dir: &Path) -> usize {
+    let line = lines(dir).len() + 1;
+    append_event(dir, "future.thing", "x", &serde_json::json!({}));
+    line
+}

@@ -12,7 +12,10 @@ use rustix::pty::{OpenptFlags, grantpt, openpt, ptsname, unlockpt};
 use rustix::termios::{LocalModes, Winsize, tcgetattr, tcsetwinsize};
 use togi_watchtest::Scenario;
 
-use crate::support::{append_between_trial_mce, append_event, journal, session, text, togi};
+use crate::support::{
+    append_between_trial_mce, append_event, append_unknown_kind, assert_unknown_kind_refusal,
+    journal, session, text, togi,
+};
 
 const BOUND: Duration = Duration::from_secs(30);
 const HIDE_CURSOR: &[u8] = b"\x1b[?25l";
@@ -244,4 +247,13 @@ fn a_signal_ends_a_live_watch_with_the_terminal_restored(signal: Signal) {
         String::from_utf8_lossy(&seen)
     );
     assert_eq!(tcgetattr(&slave).unwrap().local_modes, before);
+}
+
+#[test]
+fn an_event_of_an_unknown_kind_is_refused_in_read_only_words_by_watch() {
+    let dir = session(Scenario::Search);
+    let line = append_unknown_kind(dir.path());
+    let ran = togi(dir.path(), &["watch", "--width", "100", "--height", "30"]);
+    assert_unknown_kind_refusal("watch", &ran, line);
+    assert_eq!(text(&ran.stdout).is_empty(), "watch" != "watch");
 }
