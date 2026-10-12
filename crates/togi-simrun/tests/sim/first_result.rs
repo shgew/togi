@@ -2,7 +2,7 @@ use togi_journal::{CycleEvent, EventKind, Payload, ShutdownReason};
 use togi_session::{Stop, StopPolicy};
 use togi_tuner::PhaseNo;
 
-use crate::common::{Bench, finish, machine_file, nz};
+use crate::common::{Bench, finish, machine_file, nz, state_json};
 
 fn run(bench: &Bench, policy: StopPolicy) -> Option<Stop> {
     let mut input = bench.input();
@@ -63,17 +63,20 @@ fn the_first_result_stops_after_phase_ones_passed_cycle() {
         "offsets were not restored before the shutdown"
     );
 
-    let projection = togi_tuner::replay(&events).unwrap().project();
-    let bios = projection.bios_profile.unwrap();
+    let replayed = togi_tuner::replay(&events).unwrap().project();
+    let state: serde_json::Value = serde_json::from_slice(&state_json(&bench.fs).unwrap()).unwrap();
+    let published: togi_tuner::Projection = serde_json::from_value(state["tuner"].clone()).unwrap();
+    let bios = published.bios_profile.as_ref().unwrap();
     assert_eq!(
-        bios.confirmed.map(|confirmed| confirmed.seq),
+        bios.confirmed.as_ref().map(|confirmed| confirmed.seq),
         Some(events[phase_one_end].seq)
     );
     assert!(bios.unconfirmed.is_empty(), "{:?}", bios.unconfirmed);
     assert_eq!(
-        projection.phase_plan.map(|plan| plan.phase),
+        published.phase_plan.as_ref().map(|plan| plan.phase),
         Some(PhaseNo::Two)
     );
+    assert_eq!(published, replayed);
 
     let resumed = bench.resumed(&definition, 1000);
     assert_eq!(run(&resumed, FIRST_RESULT), Some(Stop::FirstResult));
