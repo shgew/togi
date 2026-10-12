@@ -163,7 +163,14 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
     let cancel = CancellationToken::new();
     let _listening = match signals::listen(&cancel) {
         Ok(listening) => listening,
-        Err(error) => return exit_with(ctx, COMMAND, format!("listen for signals: {error}"), Exit::Error),
+        Err(error) => {
+            return exit_with(
+                ctx,
+                COMMAND,
+                format!("listen for signals: {error}"),
+                Exit::Error,
+            );
+        }
     };
 
     let (lock_path, policy) = ctx.system.host_lock();

@@ -17,8 +17,8 @@ use togi_config::Config;
 use togi_hardware::{Diagnosis, Error, RebootError};
 use togi_hostlock::{HostLock, Policy};
 use togi_machine::{
-    BiosContext, BootId, CoreId, Error as MachineError, Machine, ObservedOffset, Smu, SmuValidated, Stopped,
-    TargetOffset,
+    BiosContext, BootId, CoreId, Error as MachineError, Machine, ObservedOffset, Smu, SmuValidated,
+    Stopped, TargetOffset,
 };
 use togi_render::OutputFacts;
 use togi_sim::{Model, RunSettings, Simulator, file};
@@ -327,12 +327,7 @@ impl System for Fake {
         TimeZone::UTC
     }
 
-    fn diagnose(
-        &self,
-        _: &Config,
-        _: Option<&BiosContext>,
-        _: bool,
-    ) -> Result<Diagnosis, Error> {
+    fn diagnose(&self, _: &Config, _: Option<&BiosContext>, _: bool) -> Result<Diagnosis, Error> {
         panic!("run does not diagnose")
     }
 
