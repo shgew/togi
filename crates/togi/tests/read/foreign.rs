@@ -87,6 +87,24 @@ fn a_first_line_without_its_newline_is_refused_all_the_same() {
 }
 
 #[test]
+fn a_truncated_header_of_this_build_is_refused_in_the_same_words() {
+    for newline in [false, true] {
+        for (command, args) in COMMANDS {
+            let dir = tempfile::tempdir().unwrap();
+            fixture::keep_only_a_truncated_rust_header(dir.path(), newline);
+            let before = fixture::snapshot(dir.path());
+            let ran = togi(dir.path(), args);
+            let stderr = text(&ran.stderr);
+            assert_eq!(ran.status.code(), Some(1), "{args:?}, newline {newline}: {stderr}");
+            assert_eq!(text(&ran.stdout), "", "{args:?}: no frame, no output");
+            fixture::assert_refusal(command, stderr, dir.path());
+            assert!(!stderr.contains("torn bytes"), "{stderr}");
+            assert_untouched(dir.path(), &before);
+        }
+    }
+}
+
+#[test]
 fn live_watch_refuses_before_it_takes_the_terminal() {
     let (dir, before) = go_state();
     let master = openpt(OpenptFlags::RDWR | OpenptFlags::NOCTTY).unwrap();

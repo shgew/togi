@@ -107,6 +107,24 @@ fn a_first_line_without_its_newline_is_refused_all_the_same() {
 }
 
 #[test]
+fn a_truncated_header_of_this_build_is_refused_in_the_same_words() {
+    for newline in [false, true] {
+        let fake = Fake::new();
+        let bad = fake.dir.join("invalid.json");
+        fs::write(&bad, "{ not a configuration").unwrap();
+        fs::create_dir(fake.state_dir()).unwrap();
+        fixture::keep_only_a_truncated_rust_header(&fake.state_dir(), newline);
+        let before = fixture::snapshot(&fake.dir);
+        let (exit, out, err) = fake.run(&["run", "--no-tui", "--config", bad.to_str().unwrap()]);
+        assert_eq!(exit, Exit::Error, "newline {newline}: {err}");
+        assert_eq!(out, "");
+        fixture::assert_refusal("run", &err, &fake.state_dir());
+        assert!(!err.contains("torn bytes"), "{err}");
+        assert_stopped_after_the_platform_check(&fake, &before);
+    }
+}
+
+#[test]
 fn an_unsupported_platform_is_still_reported_first() {
     let (mut fake, bad, before) = go_host();
     fake.supported = false;

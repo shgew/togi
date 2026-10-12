@@ -79,8 +79,17 @@ pub(crate) fn snapshot(root: &Path) -> Snapshot {
     seen
 }
 
-/// `stderr` of `command` names `state`'s `events.jsonl`, the cutover step in `docs/howto.md`, and says the journal
-/// is another build's.
+/// What a refusal says of `state`'s journal: the first line is not a complete header of this build, which is either
+/// another build's journal or a header torn by a crash, so it does not claim to know which.
+pub(crate) fn refusal_message(state: &Path) -> String {
+    format!(
+        "{}: first line is not a complete header of this build; either another build's journal or a header torn by a crash; see {CUTOVER}",
+        state.join("events.jsonl").display()
+    )
+}
+
+/// `stderr` of `command` is `togi <command>: ` and exactly [`refusal_message`], which names `state`'s `events.jsonl`,
+/// another build's journal and the cutover step in `docs/howto.md`.
 pub(crate) fn assert_refusal(command: &str, stderr: &str, state: &Path) {
     let journal = state.join("events.jsonl").display().to_string();
     assert!(
@@ -90,6 +99,11 @@ pub(crate) fn assert_refusal(command: &str, stderr: &str, state: &Path) {
     for wanted in [journal.as_str(), CUTOVER, "another build's journal"] {
         assert!(stderr.contains(wanted), "{command}: no {wanted:?} in {stderr}");
     }
+    let message = refusal_message(state);
+    assert!(
+        stderr.contains(&message),
+        "{command}: not {message:?} in {stderr}"
+    );
 }
 
 /// Appends to the installed journal a line a Rust build would refuse for another reason, to show it is never read.
@@ -112,4 +126,20 @@ pub(crate) fn keep_only_the_unterminated_first_line(state: &Path) {
     let (first, _) = text.split_once('\n').unwrap();
     assert!(first.starts_with("{\"seq\":1,"), "{first}");
     fs::write(&path, first).unwrap();
+}
+
+/// Replaces the installed journal with the first half of the first line of a journal this build wrote, as a crash
+/// during the very first write leaves it, with the final newline when `newline` and without it otherwise. The
+/// installed journal is made in a scratch directory, so the state directory gains no lock or state file.
+pub(crate) fn keep_only_a_truncated_rust_header(state: &Path, newline: bool) {
+    let scratch = tempfile::tempdir().unwrap();
+    togi_watchtest::install(scratch.path(), togi_watchtest::Scenario::Search).unwrap();
+    let text = fs::read_to_string(scratch.path().join("events.jsonl")).unwrap();
+    let (first, _) = text.split_once('\n').unwrap();
+    assert!(first.contains("\"session.start\""), "{first}");
+    let mut kept = first.as_bytes()[..first.len() / 2].to_vec();
+    if newline {
+        kept.push(b'\n');
+    }
+    fs::write(state.join("events.jsonl"), kept).unwrap();
 }
