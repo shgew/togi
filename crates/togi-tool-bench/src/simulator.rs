@@ -67,7 +67,7 @@ impl Simulator {
     pub fn locate(explicit: Option<&Path>) -> Result<Self, Error> {
         let original = match explicit {
             Some(path) => path.to_path_buf(),
-            None => build()?,
+            None => build(None, None)?,
         };
         let (bytes, mode) = File::open(&original)
             .and_then(|mut file| {
@@ -126,6 +126,34 @@ impl Simulator {
         max_boots: NonZeroU32,
         limit: Duration,
     ) -> Result<Session, RunError> {
+        let launched = self.launch(fleet, root, spec, max_boots, limit)?;
+        let events = match Recording::read(&launched.dir.join(JOURNAL)) {
+            Ok(recording) => recording.into_events(),
+            Err(FileError {
+                source: ReadError::Io(error),
+                ..
+            }) if error.kind() == ErrorKind::NotFound => Vec::new(),
+            Err(error) => return Err(RunError::Journal(error)),
+        };
+        Ok(Session {
+            dir: launched.dir,
+            exit: launched.exit,
+            wall: launched.wall,
+            events,
+            log: launched.log,
+        })
+    }
+
+    /// Runs `spec` in the state directory below `root` that this call creates, as [`run`](Self::run) does, but
+    /// reads no journal: a caller that resumes a copied state directory or digests the files reads them itself.
+    pub(crate) fn launch(
+        &self,
+        fleet: &Fleet,
+        root: &Path,
+        spec: &RunSpec,
+        max_boots: NonZeroU32,
+        limit: Duration,
+    ) -> Result<Launched, RunError> {
         let dir = root
             .join(&spec.scenario)
             .join(format!("{}-{}", spec.split, spec.seed));
@@ -158,46 +186,60 @@ impl Simulator {
         }
         command.stdin(Stdio::null()).stdout(log).stderr(again);
         let finished = process::run(fleet, &mut command, limit)?;
-        let events = match Recording::read(&dir.join(JOURNAL)) {
-            Ok(recording) => recording.into_events(),
-            Err(FileError {
-                source: ReadError::Io(error),
-                ..
-            }) if error.kind() == ErrorKind::NotFound => Vec::new(),
-            Err(error) => return Err(RunError::Journal(error)),
-        };
         let log = fs::read(&log_path).map_err(|source| RunError::Read {
             what: "log",
             source,
         })?;
-        Ok(Session {
+        Ok(Launched {
             dir,
             exit: finished.exit,
             wall: finished.wall,
-            events,
             log: String::from_utf8_lossy(&log).into_owned(),
         })
     }
 }
 
-/// Builds `togi-tool-sim` from the tree the bench runs in, as the Go bench builds `tools/sim`, and returns the
-/// binary cargo reports. Cargo's own progress goes to this process's stderr.
+/// What a simulator process left besides its journal.
+#[derive(Debug)]
+pub(crate) struct Launched {
+    pub dir: PathBuf,
+    pub exit: i32,
+    pub wall: Duration,
+    pub log: String,
+}
+
+impl Launched {
+    pub(crate) fn log_dead_end(&self) -> bool {
+        self.log.contains(DEAD_END_LINE)
+    }
+}
+
+/// Builds `togi-tool-sim` as the Go bench builds `tools/sim`, and returns the binary cargo reports: from the
+/// tree the bench runs in, or from `tree`, with `target` as cargo's target directory when given. Cargo's own
+/// progress goes to this process's stderr.
 #[expect(
     clippy::disallowed_methods,
     reason = "the bench builds the simulator it benchmarks with cargo"
 )]
-fn build() -> Result<PathBuf, Error> {
+pub(crate) fn build(tree: Option<&Path>, target: Option<&Path>) -> Result<PathBuf, Error> {
     let failed = |message: String| Error::BuildSimulator { message };
     let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
-    let output = Command::new(cargo)
-        .args([
-            "build",
-            "--release",
-            "--locked",
-            "-p",
-            BINARY,
-            "--message-format=json-render-diagnostics",
-        ])
+    let mut command = Command::new(cargo);
+    command.args([
+        "build",
+        "--release",
+        "--locked",
+        "-p",
+        BINARY,
+        "--message-format=json-render-diagnostics",
+    ]);
+    if let Some(tree) = tree {
+        command.current_dir(tree);
+    }
+    if let Some(target) = target {
+        command.arg("--target-dir").arg(target);
+    }
+    let output = command
         .stdin(Stdio::null())
         .stderr(Stdio::inherit())
         .output()

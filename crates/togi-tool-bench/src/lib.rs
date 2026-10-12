@@ -16,7 +16,11 @@
 //!
 //! Records, the summary, the comparison and the cache are this crate's own formats: JSON Lines of [`Record`],
 //! plain text reports, and one JSON file per cached run. The gate of a ruleset is the `gate` object of the suite
-//! file, typed and judged by [`gate`]; `--same`, `--smoke` and `--forecast` are separate modules of later changes.
+//! file, typed and judged by [`gate`].
+//!
+//! Two modes do not measure the suite. [`same`] proves two trees decide the same on every simulated session, or
+//! only the suite's smoke sessions, by comparing their journals. [`forecast`] resumes copies of a real run's
+//! state directory on the simulator with the suite's `target` scenario and summarizes what the runs did.
 //!
 //! ```
 //! use togi_tool_bench::{Selection, Suite};
@@ -34,6 +38,7 @@
 pub mod cache;
 pub mod compare;
 mod error;
+pub mod forecast;
 pub mod gate;
 mod git;
 mod metrics;
@@ -41,6 +46,7 @@ mod pool;
 mod process;
 mod record;
 mod run;
+pub mod same;
 pub mod sanity;
 mod simulator;
 mod stats;
