@@ -14,6 +14,8 @@ use std::os::fd::{AsFd as _, OwnedFd};
 use std::os::unix::ffi::OsStringExt as _;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use jiff::Timestamp;
@@ -22,81 +24,41 @@ use rustix::event::{PollFd, PollFlags, Timespec, poll};
 use rustix::process::{Pid, Signal, kill_process};
 use rustix::pty::{OpenptFlags, grantpt, openpt, ptsname, unlockpt};
 use rustix::termios::{LocalModes, Winsize, tcgetattr, tcsetwinsize};
-use std::os::unix::process::ExitStatusExt as _;
 use tempfile::TempDir;
 use togi_journal::{Build, Event, Payload, SCHEMA, Seq, SessionStart, SessionWarning, Stamp};
 use togi_machine::{BootId, CcdId, CoreId, CoreInfo, CpuId};
 use togi_watch::screen::{Drawn, Hold, Journal, Screen, View};
 use togi_watch::terminal::{Stop, run, run_after};
+use tokio::signal::unix::{SignalKind, signal};
 
 const STATE_DIR: &str = "TOGI_WATCH_TEST_STATE_DIR";
 const MODE: &str = "TOGI_WATCH_TEST_MODE";
 const FROZEN: &str = "TOGI_WATCH_TEST_FROZEN";
-const RESTORED: &[u8] = b"SIGNALS-RESTORED";
+const RETURNED: &[u8] = b"DASHBOARD-RETURNED";
+const SECOND: &[u8] = b"SECOND-DASHBOARD";
+const LISTENING: &[u8] = b"CALLER-LISTENING";
+const RECEIVED: &[u8] = b"CALLER-RECEIVED-SIGINT";
 const BOUND: Duration = Duration::from_secs(30);
 const SHOW_CURSOR: &[u8] = b"\x1b[?25h";
 const HIDE_CURSOR: &[u8] = b"\x1b[?25l";
 const PALETTE_SET: &[u8] = b"\x1b]P0000000";
 const PALETTE_RESET: &[u8] = b"\x1b]R";
 
-const SIGNALS: [Signal; 4] = [Signal::INT, Signal::TERM, Signal::HUP, Signal::WINCH];
-
-/// What a signal does, as far as the kernel tells: it is ignored, caught by a handler, or neither.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Action {
-    Default,
-    Ignore,
-    Catch,
+/// Writes a marker the test waits for to the terminal.
+fn say(marker: &[u8]) {
+    let mut out = std::io::stdout();
+    out.write_all(marker).unwrap();
+    out.flush().unwrap();
 }
 
-/// What each of [`SIGNALS`] does now, read from the ignored and caught masks in `/proc/self/status`.
-fn dispositions() -> [Action; 4] {
-    let status = fs::read_to_string("/proc/self/status").unwrap();
-    let mask = |name: &str| {
-        let hex = status
-            .lines()
-            .find_map(|line| line.strip_prefix(name))
-            .unwrap();
-        u64::from_str_radix(hex.trim(), 16).unwrap()
-    };
-    let (ignored, caught) = (mask("SigIgn:"), mask("SigCgt:"));
-    SIGNALS.map(|signal| {
-        let bit = 1_u64 << (signal.as_raw() - 1);
-        if ignored & bit != 0 {
-            Action::Ignore
-        } else if caught & bit != 0 {
-            Action::Catch
-        } else {
-            Action::Default
-        }
-    })
-}
-
-/// The helper: shows the dashboard of the state directory it is given, drawing each state as a row of one
-/// character, so that the test can tell which state is on screen from the bytes the terminal received. Its frames
-/// are frozen when it is told so, so that only a signal, a key or a journal change draws again. It checks that
-/// every signal action is what it was when the dashboard is gone, and in the mode `after_return` it then waits
-/// for a signal.
-#[test]
-fn real_process_helper() {
-    let Some(state_dir) = std::env::var_os(STATE_DIR) else {
-        return;
-    };
-    let mode = std::env::var(MODE).unwrap_or_default();
-    let hold = if std::env::var_os(FROZEN).is_some() {
-        Hold::Frozen
-    } else {
-        Hold::Never
-    };
-    let stdin = std::io::stdin();
-    let stdout = std::io::stdout();
-    let before = dispositions();
-    let mut during_ok = true;
-    let render = |journal: &Journal<'_>, screen: &Screen, _: Timestamp, buf: &mut Buffer| {
-        if mode == "integrated" {
-            let now = dispositions();
-            during_ok &= now[..3] == before[..3] && now[3] == Action::Catch;
-        }
+/// The helper's frame: each state as a row of one character, the view as a second row, and a third row of how
+/// many signals the caller's own listeners have received, so that the test can tell what is on screen from the
+/// bytes the terminal received.
+fn frame(
+    received: Arc<AtomicUsize>,
+    hold: Hold,
+) -> impl FnMut(&Journal<'_>, &Screen, Timestamp, &mut Buffer) -> Drawn {
+    move |journal, screen, _, buf| {
         let state = match journal {
             Journal::Missing => 'M',
             Journal::Starting => 'S',
@@ -110,44 +72,133 @@ fn real_process_helper() {
             View::Help => 'b',
             View::Log => 'c',
         };
+        let count = u32::try_from(received.load(Ordering::SeqCst)).unwrap();
+        let count = char::from_digit(count, 10).unwrap();
         for x in 0..buf.area.width {
             buf[(x, 0)].set_char(state);
             buf[(x, 1)].set_char(view);
+            buf[(x, 2)].set_char(count);
         }
         Drawn { scroll: 0, hold }
+    }
+}
+
+/// `run_after` as `togi run` uses it: the caller keeps its own listeners for SIGINT, SIGTERM and SIGHUP, counts
+/// what they receive, and stops the dashboard on SIGINT.
+fn integrated(
+    state_dir: &Path,
+    received: &Arc<AtomicUsize>,
+    render: impl FnMut(&Journal<'_>, &Screen, Timestamp, &mut Buffer) -> Drawn,
+) -> Result<(), togi_watch::terminal::Error> {
+    let stop = Stop::new();
+    let (listening, ready) = std::sync::mpsc::channel();
+    let (finish, finished) = tokio::sync::oneshot::channel::<()>();
+    let caller = std::thread::spawn({
+        let stop = stop.clone();
+        let received = Arc::clone(received);
+        move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            runtime.block_on(async move {
+                let mut interrupt = signal(SignalKind::interrupt()).unwrap();
+                let mut terminate = signal(SignalKind::terminate()).unwrap();
+                let mut hangup = signal(SignalKind::hangup()).unwrap();
+                listening.send(()).unwrap();
+                let mut finished = finished;
+                loop {
+                    tokio::select! {
+                        _ = interrupt.recv() => {
+                            received.fetch_add(1, Ordering::SeqCst);
+                            stop.stop();
+                        }
+                        _ = terminate.recv() => {
+                            received.fetch_add(1, Ordering::SeqCst);
+                        }
+                        _ = hangup.recv() => {
+                            received.fetch_add(1, Ordering::SeqCst);
+                        }
+                        _ = &mut finished => return,
+                    }
+                }
+            });
+        }
+    });
+    ready.recv().unwrap();
+    let stdin = std::io::stdin();
+    let stdout = std::io::stdout();
+    let outcome = run_after(
+        state_dir,
+        0,
+        &stop,
+        stdout.as_fd(),
+        Some(stdin.as_fd()),
+        render,
+    );
+    let _ = finish.send(());
+    caller.join().unwrap();
+    outcome
+}
+
+/// After the dashboard: waits for a line on the keyboard, then makes the listener a caller keeps for SIGINT and
+/// waits for one.
+fn after_return() {
+    say(RETURNED);
+    let mut line = String::new();
+    std::io::stdin().read_line(&mut line).unwrap();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let mut interrupt = signal(SignalKind::interrupt()).unwrap();
+        say(LISTENING);
+        interrupt.recv().await;
+    });
+    say(RECEIVED);
+}
+
+/// The helper: shows the dashboard of the state directory it is given, with frames frozen when it is told so, so
+/// that only a signal, a key or a journal change draws again. Its modes: none, one `run`; `twice`, a `run` and
+/// then another; `after_return`, a `run` and then [`after_return`]; `integrated`, [`integrated`].
+#[test]
+fn real_process_helper() {
+    let Some(state_dir) = std::env::var_os(STATE_DIR) else {
+        return;
     };
-    let outcome = if mode == "integrated" {
-        run_after(
-            Path::new(&state_dir),
-            0,
-            &Stop::new(),
-            stdout.as_fd(),
-            Some(stdin.as_fd()),
-            render,
-        )
+    let state_dir = PathBuf::from(state_dir);
+    let mode = std::env::var(MODE).unwrap_or_default();
+    let hold = if std::env::var_os(FROZEN).is_some() {
+        Hold::Frozen
     } else {
+        Hold::Never
+    };
+    let received = Arc::new(AtomicUsize::new(0));
+    let once = || {
+        let stdin = std::io::stdin();
+        let stdout = std::io::stdout();
         run(
-            Path::new(&state_dir),
+            &state_dir,
             stdout.as_fd(),
             Some(stdin.as_fd()),
-            render,
+            frame(Arc::clone(&received), hold),
         )
+    };
+    let outcome = match mode.as_str() {
+        "integrated" => integrated(&state_dir, &received, frame(Arc::clone(&received), hold)),
+        "twice" => once().and_then(|()| {
+            say(SECOND);
+            once()
+        }),
+        _ => once(),
     };
     if let Err(error) = outcome {
         eprintln!("helper: {error}");
         std::process::exit(3);
     }
-    if dispositions() != before {
-        std::process::exit(4);
-    }
-    if !during_ok {
-        std::process::exit(5);
-    }
     if mode == "after_return" {
-        let mut out = std::io::stdout();
-        out.write_all(RESTORED).unwrap();
-        out.flush().unwrap();
-        let _ = std::io::Read::read(&mut std::io::stdin(), &mut [0_u8; 1]);
+        after_return();
     }
 }
 
@@ -703,7 +754,7 @@ fn real_process_keys_that_are_not_a_terminal_leave_the_dashboard_running() {
 }
 
 #[test]
-fn real_process_run_puts_every_signal_action_back_and_a_later_sigint_takes_the_default() {
+fn real_process_after_run_a_sigint_neither_kills_the_process_nor_escapes_a_callers_listener() {
     let state = TempDir::new().unwrap();
     let mut pty = Pty::open(80, 24);
     let helper = Helper::start(
@@ -716,19 +767,49 @@ fn real_process_run_puts_every_signal_action_back_and_a_later_sigint_takes_the_d
     );
     let first = pty.wait_for(0, "the first frame", |bytes| state_shown(bytes, 'M'));
     rustix::io::write(&pty.master, b"q").unwrap();
-    pty.wait_for(
-        first,
-        "the helper's report that the actions are back",
-        |bytes| contains(bytes, RESTORED),
+    let returned = pty.wait_for(first, "the dashboard's return", |bytes| {
+        contains(bytes, RETURNED)
+    });
+    helper.signal(Signal::INT);
+    rustix::io::write(&pty.master, b"\n").unwrap();
+    let listening = pty.wait_for(
+        returned,
+        "the caller's listener, after a SIGINT with no listener of its own",
+        |bytes| contains(bytes, LISTENING),
     );
+    helper.signal(Signal::INT);
+    pty.wait_for(listening, "the SIGINT at the caller's listener", |bytes| {
+        contains(bytes, RECEIVED)
+    });
+    pty.drain();
+    let status = helper.finish();
+    assert_restored(&pty, status, false);
+}
+
+#[test]
+fn real_process_a_second_run_in_the_process_still_cancels_on_sigint() {
+    let state = TempDir::new().unwrap();
+    let mut pty = Pty::open(80, 24);
+    let helper = Helper::start(
+        &pty,
+        state.path(),
+        Launch {
+            mode: "twice",
+            ..PLAIN
+        },
+    );
+    let first = pty.wait_for(0, "the first dashboard", |bytes| state_shown(bytes, 'M'));
+    rustix::io::write(&pty.master, b"q").unwrap();
+    let second = pty.wait_for(first, "the second dashboard's start", |bytes| {
+        contains(bytes, SECOND)
+    });
+    pty.wait_for(second, "the second dashboard", |bytes| {
+        state_shown(bytes, 'M')
+    });
     helper.signal(Signal::INT);
     pty.drain();
     let status = helper.finish();
-    assert_eq!(
-        status.signal(),
-        Some(Signal::INT.as_raw()),
-        "a SIGINT after the dashboard took no default action: {status:?}"
-    );
+    assert_restored(&pty, status, false);
 }
 
 #[test]
@@ -757,7 +838,7 @@ fn real_process_run_after_handles_only_sigwinch() {
 }
 
 #[test]
-fn real_process_run_after_leaves_sigint_to_its_caller() {
+fn real_process_run_after_leaves_sigint_sigterm_and_sighup_to_its_caller() {
     let state = TempDir::new().unwrap();
     let mut pty = Pty::open(80, 24);
     let helper = Helper::start(
@@ -768,11 +849,21 @@ fn real_process_run_after_leaves_sigint_to_its_caller() {
             ..PLAIN
         },
     );
-    pty.wait_for(0, "the first frame", |bytes| state_shown(bytes, 'S'));
+    let mut seen = pty.wait_for(0, "the first frame", |bytes| {
+        state_shown(bytes, 'S') && state_shown(bytes, '0')
+    });
+    for (signal, count) in [(Signal::TERM, '1'), (Signal::HUP, '2')] {
+        helper.signal(signal);
+        seen = pty.wait_for(
+            seen,
+            &format!("a frame after {signal:?} counting it at the caller"),
+            |bytes| state_shown(bytes, count),
+        );
+    }
     helper.signal(Signal::INT);
     pty.drain();
     let status = helper.finish();
-    assert_eq!(status.signal(), Some(Signal::INT.as_raw()));
+    assert_restored(&pty, status, false);
 }
 
 #[test]

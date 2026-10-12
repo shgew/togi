@@ -8,7 +8,9 @@
 //! - It is cleared once on entry, and again, whole, on a resize or a view change.
 //! - Frames are drawn into the screen less its last row and last column, which are never written, so nothing
 //!   scrolls. ratatui writes only the cells that changed.
-//! - Signal handlers are installed for the call only, and the actions they replaced are put back on every exit.
+//! - SIGWINCH redraws, and for [`run`] SIGINT, SIGTERM and SIGHUP end the dashboard. The listeners are tokio's,
+//!   which stay registered for the rest of the process: once a dashboard has run, none of these signals takes its
+//!   default action, so a caller keeps its own listener for SIGINT, SIGTERM and SIGHUP.
 //! - The cursor is hidden while the dashboard shows, and on the Linux console (`TERM=linux`) its 16 colours are
 //!   redefined. Both are restored on every exit: quitting, a signal, an error and a panic.
 //!
@@ -73,7 +75,7 @@ pub enum Error {
     /// The keyboard could not be set up.
     #[error("read keys: {0}")]
     Keys(#[source] io::Error),
-    /// The signal handlers could not be installed.
+    /// The signals could not be listened for.
     #[error("watch signals: {0}")]
     Signals(#[source] io::Error),
     /// The runtime could not be started.
@@ -177,8 +179,9 @@ impl Drop for RawMode<'_> {
 /// `render` draws one frame of the journal on a screen into a buffer one row and one column smaller than the
 /// terminal, and reports how long the frame stays true.
 ///
-/// The four signals' handlers (SIGWINCH redraws) are installed for the call and the previous actions put back on
-/// every exit, so only one dashboard at a time can show in a process.
+/// It listens for SIGINT, SIGTERM, SIGHUP and SIGWINCH (which redraws) through tokio, whose listeners stay
+/// registered for the rest of the process: once it has run, these signals no longer take their default action, so
+/// the caller keeps its own listener for SIGINT, SIGTERM and SIGHUP for the process's lifetime.
 pub fn run(
     state_dir: &Path,
     out: BorrowedFd<'_>,
@@ -193,7 +196,6 @@ pub fn run(
             terminating: true,
         },
         out,
-        || Tty::new(&out),
         keys,
         render,
     )
@@ -202,7 +204,7 @@ pub fn run(
 /// [`run`] for a journal a run is about to append to, which takes its cancellation from the caller. Until the
 /// journal holds an event after sequence number `since`, the last one before the run, the screen says the run is
 /// starting instead of showing what an earlier run left in it. It ends when the viewer quits or `stop` is used,
-/// and leaves SIGINT, SIGTERM and SIGHUP to the caller; only SIGWINCH is handled, and put back on exit.
+/// and leaves SIGINT, SIGTERM and SIGHUP to the caller: it listens only for SIGWINCH.
 pub fn run_after(
     state_dir: &Path,
     since: u64,
@@ -219,29 +221,24 @@ pub fn run_after(
             terminating: false,
         },
         out,
-        || Tty::new(&out),
         keys,
         render,
     )
 }
 
-/// Takes the signals first, so a second dashboard waits before it touches the terminal, then opens the terminal
-/// with `open` and puts `keys` into raw mode for the call.
-fn start<B: console::Console>(
+fn start(
     config: &Config<'_>,
     out: BorrowedFd<'_>,
-    open: impl FnOnce() -> io::Result<B>,
     keys: Option<BorrowedFd<'_>>,
     render: impl FnMut(&Journal<'_>, &Screen, Timestamp, &mut Buffer) -> Drawn,
 ) -> Result<(), Error> {
-    let signals = signals::install(config.terminating).map_err(Error::Signals)?;
     let facts = togi_render::OutputFacts::detect(
         &out,
         std::env::var_os("NO_COLOR").as_deref(),
         std::env::var_os("JOURNAL_STREAM").as_deref(),
     );
     let colours = palette::colours_for(facts, std::env::var_os("TERM").as_deref());
-    let backend = open().map_err(|source| Error::Terminal {
+    let backend = Tty::new(&out).map_err(|source| Error::Terminal {
         operation: "open terminal",
         source,
     })?;
@@ -252,7 +249,6 @@ fn start<B: console::Console>(
     drive(
         backend,
         config,
-        &signals,
         keys.filter(|_| raw.is_some()),
         colours,
         Timestamp::now,
@@ -265,12 +261,10 @@ fn uses_palette(colours: Colours) -> bool {
     colours == Colours::Console
 }
 
-/// [`run`] on any backend, with the signals taken and the terminal's raw mode and colour profile decided by the
-/// caller.
+/// [`run`] on any backend, with the terminal's raw mode and colour profile already decided by the caller.
 fn drive<B: console::Console>(
     backend: B,
     live: &Config<'_>,
-    signals: &signals::Installed,
     keys: Option<BorrowedFd<'_>>,
     colours: Colours,
     now: impl Fn() -> Timestamp,
@@ -284,7 +278,8 @@ fn drive<B: console::Console>(
     std::thread::scope(|scope| {
         runtime.block_on(async {
             let (events, mut queue) = mpsc::unbounded_channel();
-            let _signals = Abort(signals.listen(events.clone()).map_err(Error::Signals)?);
+            let _signals =
+                Abort(signals::listen(live.terminating, events.clone()).map_err(Error::Signals)?);
             let _stop = live.stop.map(|stop| {
                 let stop = stop.clone();
                 let events = events.clone();
@@ -414,7 +409,7 @@ mod tests {
     use super::testing::{Faults, Recorder, session_with_warnings, write_journal};
     use super::{
         Colours, Config, Drawn, Error, ONE_FRAME_SIZE, SourceError, Stop, View, drive, one_frame,
-        palette, start, uses_palette,
+        palette, uses_palette,
     };
     use crate::screen::{Hold, Journal, Screen};
 
@@ -456,55 +451,14 @@ mod tests {
         colours: Colours,
         render: impl FnMut(&Journal<'_>, &Screen, Timestamp, &mut Buffer) -> Drawn,
     ) -> Result<(), Error> {
-        let signals = super::signals::install(live.terminating).unwrap();
         drive(
             recorder.backend(),
             live,
-            &signals,
             keys.map(AsFd::as_fd),
             colours,
             Timestamp::now,
             render,
         )
-    }
-
-    #[test]
-    fn the_terminal_is_opened_only_once_the_dashboard_owns_the_signals() {
-        let _serial = super::signals::tests::serial();
-        let state = TempDir::new().unwrap();
-        let (_read, write) = pipe();
-        let mut opened = false;
-        let error = start(
-            &Config {
-                state_dir: state.path(),
-                since: None,
-                stop: None,
-                terminating: true,
-            },
-            write.as_fd(),
-            || {
-                opened = super::signals::tests::owned();
-                Err::<super::testing::Recording, _>(std::io::Error::other("no terminal"))
-            },
-            None,
-            plain,
-        )
-        .unwrap_err();
-        assert!(
-            opened,
-            "the terminal was opened before the signals were taken"
-        );
-        assert!(matches!(
-            error,
-            Error::Terminal {
-                operation: "open terminal",
-                ..
-            }
-        ));
-        assert!(
-            !super::signals::tests::owned(),
-            "a failed start kept the signals"
-        );
     }
 
     use std::os::fd::AsFd;
