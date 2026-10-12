@@ -23,7 +23,7 @@ use backend::Backends;
 #[cfg(test)]
 pub(crate) use cells::take_copied;
 pub(crate) use cells::unique;
-use cells::{ClassCells, FailureCells};
+use cells::{ClassCells, FailureCells, Run};
 
 /// The session a carried fact came from.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -103,7 +103,7 @@ pub struct Evidence {
     visits: Visits,
 }
 
-fn merge(runs: &[&[Seq]], needed: usize) -> Vec<Seq> {
+fn merge(runs: &[Run<'_>], needed: usize) -> Vec<Seq> {
     let mut heads = vec![0_usize; runs.len()];
     let mut out = Vec::with_capacity(needed);
     while out.len() < needed {
@@ -111,7 +111,7 @@ fn merge(runs: &[&[Seq]], needed: usize) -> Vec<Seq> {
             .iter()
             .zip(&heads)
             .enumerate()
-            .filter_map(|(at, (run, &head))| run.get(head).map(|&seq| (seq, at)))
+            .filter_map(|(at, (run, &head))| run.get(head).map(|seq| (seq, at)))
             .min();
         let Some((seq, at)) = next else { break };
         out.push(seq);
@@ -400,7 +400,7 @@ impl Evidence {
         let Some(from) = cells.failures.cell_at_mut((None, *profile)) else {
             return Ok(());
         };
-        let live = from.live.remove(seq);
+        let live = from.live.remove(seq).is_some();
         let source = if live { None } else { from.carried.remove(seq) };
         if !live && source.is_none() {
             return Ok(());
@@ -570,7 +570,7 @@ impl Evidence {
         };
         let live_floor = floor.max(since);
         let backend = self.backends.active(class.workload().backend());
-        let mut runs: Vec<&[Seq]> = Vec::new();
+        let mut runs: Vec<Run<'_>> = Vec::new();
         let mut valid = 0_usize;
         for cell in cells.passes.cells() {
             self.visit();
@@ -680,12 +680,12 @@ impl Evidence {
                 cell.live
                     .after(after)
                     .first()
-                    .is_some_and(|&seq| seq < before)
+                    .is_some_and(|seq| seq < before)
                     || cell
                         .carried
                         .after(None)
                         .first()
-                        .is_some_and(|&seq| seq < before)
+                        .is_some_and(|seq| seq < before)
             })
         };
         (regime == Regime::R6 && admitted(&self.idle))

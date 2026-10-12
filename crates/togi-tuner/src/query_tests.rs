@@ -355,8 +355,36 @@ fn forecast_clone_not_replay() {
     assert!(small_copied < 100, "{small_copied}");
 }
 
+fn forecast_own_cell_cost(passes: usize) -> (u64, u64) {
+    let (mut journal, plan) = repeated_evidence(passes);
+    journal.intent(&plan);
+    journal.state.visits();
+    let before = journal.state.clone();
+    crate::evidence::take_copied();
+    let forecast = journal.state.forecast();
+    let copied = crate::evidence::take_copied();
+    let visits = journal.state.visits();
+    let pass = &forecast.branches[0];
+    assert_eq!(pass.premise, Premise::Pass);
+    assert_eq!(pass.passes, 1);
+    assert_eq!(journal.state, before);
+    (visits, copied)
+}
+
 #[test]
-fn a_cloned_state_shares_its_evidence_until_one_side_writes_a_cell() {
+fn forecast_appends_to_the_open_trials_cell_without_copying_its_history() {
+    let (small, small_copied) = forecast_own_cell_cost(100);
+    let (large, large_copied) = forecast_own_cell_cost(10_000);
+    assert_eq!(large, small);
+    assert_eq!(
+        large_copied, small_copied,
+        "a synthetic pass copied the passes its cell already held"
+    );
+    assert_eq!(small_copied, 0);
+}
+
+#[test]
+fn a_cloned_state_shares_its_evidence_while_either_side_appends() {
     let (mut journal, _) = repeated_evidence(10_000);
     let second = journal.next_trial();
     assert_second_regime(&second);
@@ -374,12 +402,12 @@ fn a_cloned_state_shares_its_evidence_until_one_side_writes_a_cell() {
     crate::evidence::take_copied();
     journal.trial(&second, Outcome::Pass);
     let copied = crate::evidence::take_copied();
-    let (kept, total) = shared(&journal);
     assert_eq!(
-        (kept, total, copied),
-        (total - 1, total, 1),
-        "writing one pass of the second class must un-share only that class's list, and copy it alone"
+        (shared(&journal), copied),
+        ((total, total), 0),
+        "appending a pass must keep sharing the history and copy none of it"
     );
+    assert_ne!(journal.state, snapshot, "the append reached the clone");
 }
 
 #[test]
