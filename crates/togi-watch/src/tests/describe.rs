@@ -355,6 +355,19 @@ fn a_trial_is_named_by_what_it_ran() {
     assert_eq!(
         t.run(
             |i| {
+                i.regime = Regime::R1;
+                i.condition = Condition::Alone;
+                i.cores = set(&[0]);
+            },
+            |_| {}
+        )
+        .as_deref(),
+        Some("fail: R1 light on core 00 at -20 · wrong result"),
+        "an alone trial that recorded no offset is named by its profile"
+    );
+    assert_eq!(
+        t.run(
+            |i| {
                 i.condition = Condition::Alone;
                 i.core = Some(core(0));
                 i.cores = set(&[0]);
@@ -551,4 +564,29 @@ fn the_kinds_with_a_line_of_their_own() {
         .into(),
     );
     assert_eq!(last(&h), "stop: stopped");
+}
+
+#[test]
+fn a_hunt_group_with_no_hunt_start_keeps_no_count() {
+    let mut h = Hist::three();
+    h.push(hunt_group(5, 1, &[0]).into());
+    assert_eq!(h.sentences().len(), 1);
+    assert!(h.facts.hunt_starts.is_empty());
+}
+
+#[test]
+fn a_hunt_line_the_history_has_dropped_is_not_renamed() {
+    let mut h = Hist::new(&[(0, 0), (1, 0), (2, 1)]);
+    h.facts.history.limit = 2;
+    h.push(hunt_start(1, &[0, 2]).into());
+    for n in 0..8 {
+        h.push(warning(&format!("warning {n}")));
+    }
+    h.push(hunt_group(1, 1, &[0]).into());
+    assert!(
+        h.sentences()
+            .iter()
+            .all(|line| !line.contains("#1 started"))
+    );
+    assert_eq!(h.facts.hunt_starts[&1].live, 1);
 }

@@ -7,9 +7,8 @@ use togi_tuner::{
     CombinationId, CyclePlan, Forecast, GroupState, Limit, Projection, Reached, State as TunerState,
 };
 
-use crate::describe::part_layout;
 use crate::facts::{Facts, secs, trial_cores};
-use crate::history::{Entry, Key};
+use crate::history::Entry;
 use crate::model::{
     ComboView, Confirm, CoreState, CoreView, Count, CyclePlace, HuntCause, HuntFacts, HuntPlace,
     RecoveryView, TrialView,
@@ -118,26 +117,7 @@ impl Derived {
                     .collect()
             })
             .unwrap_or_default();
-        let (mut history, history_dropped) = facts.history.recent();
-        if let (Some(plan), Some(_)) = (&projection.hunt_plan, &hunt) {
-            if let Some(first) = plan.parts.first() {
-                let named = facts
-                    .hunt_starts
-                    .get(&plan.number)
-                    .is_some_and(|start| start.named);
-                if !named {
-                    for line in &mut history {
-                        if line.key == Some(Key::HuntStart) && line.hunt == Some(plan.number) {
-                            line.text = format!(
-                                "#{} started · part 1: {}",
-                                plan.number,
-                                part_layout(first.failing, plan.candidates)
-                            );
-                        }
-                    }
-                }
-            }
-        }
+        let (history, history_dropped) = facts.history.recent();
         let order = journal.cores.iter().map(|core| core.core).collect();
         Self {
             projection,
@@ -499,8 +479,8 @@ fn combo_views(projection: &Projection, cores: &[CoreView], facts: &Facts) -> Ve
                 holds: None,
                 clear: CoreSet::default(),
             };
-            for member in &members {
-                let Some(core) = cores.iter().find(|core| core.id == member.core) else {
+            for core in cores {
+                let Some(member) = members.iter().find(|member| member.core == core.id) else {
                     continue;
                 };
                 if core.profile.get() > member.offset.get() {

@@ -345,7 +345,7 @@ pub(crate) fn merge_probe_passes(history: Vec<Entry>) -> Vec<Entry> {
 pub(crate) struct History {
     pub(crate) entries: Vec<Entry>,
     pub(crate) dropped: usize,
-    limit: usize,
+    pub(crate) limit: usize,
 }
 
 impl Default for History {

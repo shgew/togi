@@ -302,6 +302,14 @@ fn a_failed_probe_marks_the_probed_member() {
             Some(member(0, -15)),
             vec![member(2, -10)],
         ),
+        group(
+            3,
+            &[0],
+            &[-20, -30, -10],
+            GroupState::Failed,
+            None,
+            Vec::new(),
+        ),
     ]);
     assert_eq!(group_failures(&hunt, core(0)), [off(-20), off(-15)]);
     assert_eq!(group_failures(&hunt, core(1)), []);
@@ -659,4 +667,19 @@ fn a_hunt_is_filed_under_the_cycle_step_that_started_it() {
     start.trial = Some(id);
     h.push(start.into());
     assert_eq!(h.facts.check_hunts.get(&(1, 2)), Some(&vec![7]));
+}
+
+#[test]
+fn a_trial_outside_the_hunt_is_left_alone() {
+    let hunt = plan(Vec::new());
+    let mut trial = trial_view(&[0], &[-20], true, Condition::Together);
+    crate::derive::fit_hunt(&mut trial, &hunt);
+    assert!(trial.hunt.is_none());
+    let mut core = core_view(0);
+    trial_role(&mut core, &mut trial, Some(&hunt), &Facts::default());
+    assert!(
+        core.loaded && core.judged,
+        "only a parked trial has roles of its own"
+    );
+    assert_eq!(core.state, CoreState::Waiting);
 }

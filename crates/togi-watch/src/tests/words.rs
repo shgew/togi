@@ -657,4 +657,7 @@ fn an_idle_failure_is_worded_but_a_crash_is_not() {
     );
     assert!(failure_line(&failure(Signal::Crash, None)).is_none());
     assert!(failure_line(&failure(Signal::Stall, Some("t1"))).is_none());
+    let mut unnamed = failure(Signal::Stall, Some("t1"));
+    unnamed.attribution = togi_journal::Attribution::Attributed;
+    assert!(failure_line(&unnamed).is_none(), "attributed to no core");
 }
