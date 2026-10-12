@@ -13,7 +13,7 @@ use togi_backend::{Backend, Line, Plan, Ready};
 use togi_machine::{CancellationToken, CpuId, Regime, Signal, Workload};
 use tokio::io::AsyncWriteExt as _;
 
-use super::harness::{finish, local, rig_edit, rig_with, spec};
+use super::harness::{Landed, finish, local, rig_edit, rig_with, spec};
 use crate::error::{CleanupFailure, Error};
 use crate::os::fake::{Delivery, Launch, ProcCtx, Reply, SignalErrorKind, script};
 use crate::os::{ExitInfo, GroupSignal, Systemd};
@@ -394,7 +394,11 @@ async fn a_flooded_instance_does_not_skip_the_required_samples_of_its_neighbour(
 #[tokio::test(start_paused = true)]
 async fn every_ready_instance_is_sampled_each_tick_while_both_watched_floods_are_outstanding() {
     local(async {
-        let rig = rig_with(watching(), Timing::default());
+        let landed = Arc::new(Landed::default());
+        let landed_before = Arc::clone(&landed);
+        let rig = rig_edit(watching(), Timing::default(), |env| {
+            env.storage = Some(landed.storage(env.dir.join("t1/samples.jsonl")));
+        });
         rig.fake.on_launch(|_, command| {
             let file = results(command);
             Launch::Run(script(move |mut ctx: ProcCtx| async move {
@@ -407,7 +411,9 @@ async fn every_ready_instance_is_sampled_each_tick_while_both_watched_floods_are
         let (seen, cancelling) = (Rc::clone(&threads_seen), cancel.clone());
         rig.fake.on_threads(move |pid| {
             let mut seen = seen.borrow_mut();
-            *seen.entry(pid).or_default() += 1;
+            let count = seen.entry(pid).or_default();
+            *count += 1;
+            landed_before.wait_for(*count - 1);
             if seen.len() == 2 && seen.values().all(|&count| count == 3) {
                 cancelling.cancel();
             }

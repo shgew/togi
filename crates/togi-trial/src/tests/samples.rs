@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use togi_machine::{CancellationToken, Regime};
 
-use super::harness::{core, finish, local, rig, rig_edit, spec};
+use super::harness::{Landed, core, finish, local, rig, rig_edit, spec};
 use super::trial::Recorder;
 use crate::error::Error;
 use crate::error::StorageError;
@@ -31,7 +31,16 @@ fn write(rig: &super::harness::Rig, relative: &str, text: &str) {
 #[tokio::test(start_paused = true)]
 async fn each_tick_persists_a_conditions_sample_with_sensors_workers_and_power() {
     local(async {
-        let rig = rig();
+        let landed = Arc::new(Landed::default());
+        let rig = rig_edit(TestBackend::new("/bin/true"), Timing::default(), |env| {
+            env.storage = Some(landed.storage(env.dir.join("t1/samples.jsonl")));
+        });
+        let tick = std::cell::Cell::new(0);
+        let before_tick = Arc::clone(&landed);
+        rig.fake.on_threads(move |_| {
+            tick.set(tick.get() + 1);
+            before_tick.wait_for(tick.get() - 1);
+        });
         write(&rig, "hwmon/hwmon0/name", "k10temp\n");
         write(&rig, "hwmon/hwmon0/temp1_label", "Tctl\n");
         write(&rig, "hwmon/hwmon0/temp1_input", "62000\n");
