@@ -880,6 +880,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "togi-tool-modelcheck"
+version = "0.0.0"
+dependencies = [
+ "proptest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "togi-facts",
+ "togi-journal",
+ "togi-machine",
+ "togi-sim",
+ "togi-tool-trialfacts",
+]
+
+[[package]]
 name = "togi-tool-trialfacts"
 version = "0.0.0"
 dependencies = [
