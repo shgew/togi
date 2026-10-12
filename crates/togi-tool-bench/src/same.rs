@@ -128,6 +128,24 @@ pub enum SameError {
     Interrupted,
 }
 
+impl SameError {
+    /// Whether the error is only a run stopped by an interrupt or by another session's halt.
+    fn interrupted(&self) -> bool {
+        matches!(
+            self,
+            Self::Interrupted
+                | Self::Run {
+                    source: RunError::Interrupted,
+                    ..
+                }
+                | Self::Rerun {
+                    source: RunError::Interrupted,
+                    ..
+                }
+        )
+    }
+}
+
 /// A comparison that failed, and the run directory it left for inspection, if any.
 #[derive(Debug)]
 pub struct Failed {
@@ -204,16 +222,7 @@ pub fn execute(options: &Options, fleet: &Fleet) -> Result<Report, Failed> {
     let trees = [base.map_err(fail)?, head.map_err(fail)?];
     let runs = load_runs(options, &trees).map_err(fail)?;
     let loaded = started.elapsed();
-    let build_dir = tempfile::Builder::new()
-        .prefix("togi-same-build-")
-        .tempdir()
-        .map_err(|source| SameError::Io {
-            what: "create the build directory",
-            path: std::env::temp_dir(),
-            source,
-        })
-        .map_err(fail)?;
-    let simulators = simulators(options, &trees, build_dir.path()).map_err(fail)?;
+    let simulators = simulators(options, &trees).map_err(fail)?;
     let built = started.elapsed();
     let keys = [0, 1].map(|side| digests::key(simulators[side].digest(), options.max_boots.get()));
     let pairs = compare::pair(runs);
@@ -366,13 +375,9 @@ fn load_runs(options: &Options, trees: &[PathBuf; 2]) -> Result<[Vec<RunSpec>; 2
 /// reuses, so its dependencies stay built; cargo takes a source file older than its last build for unchanged,
 /// and the base is a fresh export whose files keep the time of their commit, so each of its files is marked
 /// modified now first, and only its own crates build again. A target directory is never shared between trees,
-/// since one tree's build would be taken for the other's. Each binary is copied out of its target directory,
-/// which a later build may replace.
-fn simulators(
-    options: &Options,
-    trees: &[PathBuf; 2],
-    build_dir: &Path,
-) -> Result<[Simulator; 2], SameError> {
+/// since one tree's build would be taken for the other's. [`Simulator::locate`] copies each binary out of its
+/// target directory, which a later build may replace.
+fn simulators(options: &Options, trees: &[PathBuf; 2]) -> Result<[Simulator; 2], SameError> {
     let one = |side: Side| {
         let given = &options.simulators[side.index()];
         let binary = if let Some(binary) = given {
@@ -387,20 +392,11 @@ fn simulators(
                     source,
                 })?;
             }
-            let built = simulator::build(Some(tree), target.as_deref()).map_err(|source| {
-                SameError::Build {
-                    side: side.name(),
-                    tree: tree.clone(),
-                    source: Box::new(source),
-                }
-            })?;
-            let copy = build_dir.join(side.name());
-            fs::copy(&built, &copy).map_err(|source| SameError::Io {
-                what: "copy the built simulator",
-                path: built,
-                source,
-            })?;
-            copy
+            simulator::build(Some(tree), target.as_deref()).map_err(|source| SameError::Build {
+                side: side.name(),
+                tree: tree.clone(),
+                source: Box::new(source),
+            })?
         };
         Simulator::locate(Some(&binary)).map_err(|source| SameError::Simulator {
             side: side.name(),

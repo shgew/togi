@@ -338,7 +338,7 @@ impl Launcher for Fake<'_> {
         if let Some(hook) = &self.hook {
             hook(side, spec);
         }
-        if self.fleet.cancelled() {
+        if self.fleet.stopping() {
             return Err(RunError::Interrupted);
         }
         let behavior = (self.behave)(side, spec);
@@ -636,7 +636,7 @@ fn sessions_without_journals_or_events_never_compare_equal() {
 }
 
 struct Cached {
-    dir: tempfile::TempDir,
+    _dir: tempfile::TempDir,
     caches: [DigestCache; 2],
     costs: Costs,
 }
@@ -645,7 +645,11 @@ fn cached() -> Cached {
     let dir = tempfile::tempdir().unwrap();
     let caches = ["base", "head"].map(|key| DigestCache::open(dir.path(), key).unwrap());
     let costs = Costs::load(dir.path().join("costs.json"));
-    Cached { dir, caches, costs }
+    Cached {
+        _dir: dir,
+        caches,
+        costs,
+    }
 }
 
 impl Cached {
@@ -684,33 +688,35 @@ fn both_sides_are_cached_and_a_fresh_run_ignores_the_cache() {
 fn a_difference_reruns_only_the_sides_that_have_no_run_to_show() {
     let cache = cached();
     let root = tempfile::tempdir().unwrap();
-    let fleet = Fleet::new();
-    let fake = Fake::new(root.path(), &fleet, |side, _| {
-        journal(&format!("{{}}\n{{\"side\":{}}}\n", side.index()))
-    });
+    let fleets = [Fleet::new(), Fleet::new(), Fleet::new()];
+    let fake = |fleet| {
+        Fake::new(root.path(), fleet, |side, _| {
+            journal(&format!("{{}}\n{{\"side\":{}}}\n", side.index()))
+        })
+    };
     let pairs = same_sessions(&[1]);
     let want = "same: s/dev-1\n  events.jsonl:2\n  base: {\"side\":0}\n  head: {\"side\":1}\n";
-    let config = cache.config(&fleet);
-    let outcome = compare::run(&pairs, &config, &fake).unwrap();
+    let cold = fake(&fleets[0]);
+    let outcome = compare::run(&pairs, &cache.config(&fleets[0]), &cold).unwrap();
     assert!(report(&outcome).starts_with(want), "{}", report(&outcome));
-    assert_eq!(fake.launches().len(), 2);
-    let outcome = compare::run(&pairs, &config, &fake).unwrap();
+    assert_eq!(cold.launches().len(), 2);
+    let warm = fake(&fleets[1]);
+    let outcome = compare::run(&pairs, &cache.config(&fleets[1]), &warm).unwrap();
     assert!(report(&outcome).starts_with(want));
     assert_eq!(
-        fake.launches().len(),
-        4,
+        warm.launches().len(),
+        2,
         "both cached sides rerun to show the line"
     );
-    let before = fake.launches().len();
-    let mut head_fresh = cache.config(&fleet);
+    let head_only = fake(&fleets[2]);
+    let mut head_fresh = cache.config(&fleets[2]);
     head_fresh.caches[1] = None;
-    compare::run(&pairs, &head_fresh, &fake).unwrap();
+    compare::run(&pairs, &head_fresh, &head_only).unwrap();
     assert_eq!(
-        fake.launches()[before..],
+        head_only.launches(),
         ["head s/dev-1", "base s/dev-1"],
         "a fresh head runs once and the cached base once more to show the line"
     );
-    drop(cache.dir);
 }
 
 #[test]
@@ -776,7 +782,7 @@ fn a_differing_session_keeps_the_journals_of_its_cached_sides() {
         ("missing on head", true, [0, 0]),
     ] {
         let cache = cached();
-        let fleet = Fleet::new();
+        let fleets = [Fleet::new(), Fleet::new()];
         let pairs = || {
             let mut pairs = same_sessions(&[1]);
             if missing_on_head {
@@ -788,17 +794,17 @@ fn a_differing_session_keeps_the_journals_of_its_cached_sides() {
             exit: exits[side.index()],
             ..journal("{}\n")
         };
-        let mut config = cache.config(&fleet);
+        let mut config = cache.config(&fleets[0]);
         config.keep = true;
         let cold = tempfile::tempdir().unwrap();
-        let first = Fake::new(cold.path(), &fleet, behave);
+        let first = Fake::new(cold.path(), &fleets[0], behave);
         assert!(
             compare::run(&pairs(), &config, &first).unwrap().different(),
             "{name}"
         );
         let root = tempfile::tempdir().unwrap();
-        let second = Fake::new(root.path(), &fleet, behave);
-        let mut cached_config = cache.config(&fleet);
+        let second = Fake::new(root.path(), &fleets[1], behave);
+        let mut cached_config = cache.config(&fleets[1]);
         cached_config.keep = true;
         assert!(
             compare::run(&pairs(), &cached_config, &second)

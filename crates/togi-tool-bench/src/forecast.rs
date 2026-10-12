@@ -383,7 +383,8 @@ fn forecast_runs(
     let outcomes: Mutex<Vec<Option<Outcome>>> = Mutex::new((0..runs.len()).map(|_| None).collect());
     let order: Vec<usize> = (0..runs.len()).collect();
     let mut failures = pool::run(options.jobs.get(), &order, |i| {
-        let outcome = forecast_run(options, fleet, simulator, root, anchor, &runs[i])?;
+        let outcome = forecast_run(options, fleet, simulator, root, anchor, &runs[i])
+            .inspect_err(|_| fleet.abort())?;
         outcomes
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)[i] = Some(outcome);
@@ -392,6 +393,7 @@ fn forecast_runs(
     if fleet.cancelled() {
         return Err(ForecastError::Interrupted);
     }
+    failures.retain(|(_, error)| !matches!(error, ForecastError::Launch(RunError::Interrupted)));
     if !failures.is_empty() {
         failures.sort_by_key(|(i, _)| *i);
         return Err(ForecastError::Runs(RunFailures(

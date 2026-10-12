@@ -224,7 +224,8 @@ impl Outcome {
     }
 }
 
-/// What stops the pool: a difference found while stopping at the first, or a failure.
+/// What stops the pool, and the simulators still running with it: a difference found while stopping at the
+/// first, or a failure. The runs the stop interrupts are not failures of their own.
 enum Halt {
     Different,
     Failed(SameError),
@@ -327,7 +328,8 @@ impl Comparison<'_> {
                 ready.push(i);
             }
         }
-        let mut errors = pool::run(self.config.jobs, &ready, |i| self.resolve(i));
+        let halt = |result: Result<(), Halt>| result.inspect_err(|_| self.config.fleet.abort());
+        let mut errors = pool::run(self.config.jobs, &ready, |i| halt(self.resolve(i)));
         if errors.is_empty() && !self.config.fleet.cancelled() {
             let order = longest_first(jobs.len(), |n| {
                 let (i, side) = jobs[n];
@@ -340,17 +342,19 @@ impl Comparison<'_> {
             });
             errors = pool::run(self.config.jobs, &order, |n| {
                 let (i, side) = jobs[n];
-                self.run_side(i, side)
+                halt(self.run_side(i, side))
             });
         }
         let removed = self.remove_unresolved();
         if self.config.fleet.cancelled() {
             return Err(SameError::Interrupted);
         }
-        for (_, halt) in errors {
-            if let Halt::Failed(error) = halt {
-                return Err(error);
-            }
+        let failure = errors.into_iter().find_map(|(_, halt)| match halt {
+            Halt::Failed(error) if !error.interrupted() => Some(error),
+            _ => None,
+        });
+        if let Some(error) = failure {
+            return Err(error);
         }
         removed?;
         Ok(self.outcome(cached, scheduled))

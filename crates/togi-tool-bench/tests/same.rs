@@ -387,7 +387,12 @@ fn the_command_exits_zero_for_equal_trees_and_one_for_a_difference() {
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(1), "{}", text(&output.stderr));
-    assert!(text(&output.stdout).contains("  events.jsonl:3\n"));
+    let stdout = text(&output.stdout);
+    assert!(
+        stdout.contains("  events.jsonl:3\n"),
+        "{stdout}{}",
+        text(&output.stderr)
+    );
     assert!(text(&output.stderr).contains("kept the runs in"));
 }
 
