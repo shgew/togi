@@ -1,4 +1,6 @@
 use std::collections::BTreeSet;
+use std::ffi::OsStr;
+use std::fs::{self, OpenOptions};
 use std::io::{BufRead as _, BufReader, Read as _};
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
@@ -7,7 +9,7 @@ use jiff::tz::TimeZone;
 use nix::sys::signal::{Signal, kill};
 use nix::unistd::Pid;
 use togi_config::Config;
-use togi_journal::{Build, Payload, SCHEMA, ShutdownReason};
+use togi_journal::{Build, DeadEndCondition, Payload, SCHEMA, ShutdownReason};
 use togi_machine::CancellationToken;
 use togi_render::Renderer;
 use togi_session::{ConfigSource, StopPolicy};
@@ -248,4 +250,73 @@ fn a_recorded_checking_cycle_that_is_not_full_refuses_cycles_before_touching_the
     assert_eq!(ran.code, Some(2), "{}", ran.stderr);
     assert!(ran.stderr.contains("is not full"), "{}", ran.stderr);
     assert_eq!(files(state.path()), before);
+}
+
+/// Runs the simulator with a standard error that is no terminal and refuses every write, as a full disk does.
+fn sim_with_full_log(args: &[&OsStr]) -> Option<i32> {
+    let full = OpenOptions::new().write(true).open("/dev/full").unwrap();
+    command().args(args).stderr(full).status().unwrap().code()
+}
+
+#[test]
+fn a_log_that_cannot_be_flushed_fails_a_command_that_otherwise_succeeds() {
+    assert_eq!(
+        command().arg("--help").output().unwrap().status.code(),
+        Some(0)
+    );
+    assert_eq!(sim_with_full_log(&["--help".as_ref()]), Some(1));
+}
+
+const THERMAL_MACHINE: &str = r#"{
+  "cores": 2,
+  "model": {"signals": {"crash": 1}, "reset": {"thermal_trip": 1}},
+  "core": [
+    {"id": 0, "alone": [-10, -10, -10, -10, -10], "together": [-10, -10, -10, -10, -10, -10, -10]},
+    {"id": 1, "alone": [-10, -10, -10, -10, -10], "together": [-10, -10, -10, -10, -10, -10, -10]}
+  ]
+}"#;
+
+#[test]
+fn a_dead_end_exits_one_and_cites_the_events_that_caused_it() {
+    let state = tempfile::tempdir().unwrap();
+    let machine = state.path().join("machine-file.json");
+    fs::write(&machine, THERMAL_MACHINE).unwrap();
+    let dir = state.path().join("state");
+    let ran = sim([
+        "--machine".as_ref(),
+        machine.as_os_str(),
+        "--state-dir".as_ref(),
+        dir.as_os_str(),
+    ]);
+    assert_eq!(ran.code, Some(1), "{}", ran.stderr);
+    let events = live_events(&dir);
+    let (dead_end, causes) = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            Payload::DeadEnd(dead_end) => Some((dead_end, &event.cause)),
+            _ => None,
+        })
+        .expect("the journal has no dead end");
+    assert_eq!(dead_end.condition, DeadEndCondition::ThermalTrip);
+    assert!(!causes.is_empty());
+    let report: Vec<&str> = ran
+        .stderr
+        .lines()
+        .skip_while(|line| !line.starts_with("sim: dead end "))
+        .collect();
+    assert_eq!(
+        report[0],
+        format!("sim: dead end {}: {}", dead_end.condition, dead_end.detail)
+    );
+    let cited: Vec<&str> = report[1..].to_vec();
+    assert_eq!(cited.len(), causes.len(), "{}", ran.stderr);
+    for (line, seq) in cited.iter().zip(causes) {
+        let event = events.iter().find(|event| event.seq == *seq).unwrap();
+        let rest = line.strip_prefix("  evidence: ").expect(line);
+        assert!(
+            rest.ends_with(&event.msg),
+            "{rest} does not show seq {seq:?}: {}",
+            event.msg
+        );
+    }
 }

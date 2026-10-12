@@ -18,10 +18,16 @@ struct Sink {
 impl Log {
     pub(crate) fn stderr() -> Self {
         let stderr = io::stderr();
-        if stderr.is_terminal() {
-            Self::new(Box::new(stderr))
+        let terminal = stderr.is_terminal();
+        Self::for_stream(stderr, terminal)
+    }
+
+    /// The log for a stream: a terminal unbuffered, anything else buffered.
+    fn for_stream(out: impl Write + 'static, is_terminal: bool) -> Self {
+        if is_terminal {
+            Self::new(Box::new(out))
         } else {
-            Self::buffered(stderr)
+            Self::buffered(out)
         }
     }
 
@@ -115,6 +121,19 @@ mod tests {
         assert!(out.0.borrow().is_empty());
         log.finish().unwrap();
         assert_eq!(*out.0.borrow(), b"line\n");
+    }
+
+    #[test]
+    fn a_stream_log_is_buffered_unless_the_stream_is_a_terminal() {
+        for terminal in [false, true] {
+            let out = Shared::default();
+            let mut log = Log::for_stream(out.clone(), terminal);
+            writeln!(log, "line").unwrap();
+            let before: &[u8] = if terminal { b"line\n" } else { b"" };
+            assert_eq!(*out.0.borrow(), before, "terminal {terminal}");
+            log.finish().unwrap();
+            assert_eq!(*out.0.borrow(), b"line\n", "terminal {terminal}");
+        }
     }
 
     #[test]
