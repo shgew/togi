@@ -132,7 +132,7 @@ check-one +names:
 sim seed="1" *args: _dev-shell
     go run ./tools/sim --seed "$1" "${@:2}"
 
-# Run the Rust togi binary built from this tree, flags as `togi` takes them (`just togi-rs status`); a local build reports the revision `dev`
+# Run the Rust togi binary built from this tree, flags as `togi` takes them (`just togi-rs completion zsh`); a local build reports the revision `dev`
 [group('run')]
 togi-rs *args: _dev-shell
     cargo run --release --locked -p togi -- "$@"
