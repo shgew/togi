@@ -41,6 +41,12 @@ hardware *args:
     @[[ "{{ os() }}" == linux ]] || { echo 'just hardware needs Linux: run it on the target machine' >&2; exit 1; }
     nix develop --command env TMPDIR=/tmp go test -tags hardware -p 1 ./... "$@"
 
+# Run the Rust hardware tests of smu, detect, trial and hardware one binary and one test at a time on the target machine (Linux only), entering the dev shell itself because sudo drops it; as root, as the SMU needs, it skips trial's `cached_errors`, which refuses uid 0 (`just hardware-rs --no-run` only builds them)
+[group('test')]
+hardware-rs *args:
+    @[[ "{{ os() }}" == linux ]] || { echo 'just hardware-rs needs Linux: run it on the target machine' >&2; exit 1; }
+    tests=(--test hardware); [[ "$(id -u)" == 0 ]] || tests+=(--test cached_errors); nix develop --command env TMPDIR=/tmp RUST_TEST_THREADS=1 cargo test --locked -p togi-smu -p togi-detect -p togi-trial -p togi-hardware --features hardware "${tests[@]}" "$@"
+
 # Fuzz the journal parser for the given time (`just fuzz 5m`); failures land in internal/journal/testdata/fuzz
 [group('test')]
 fuzz time="1m": _dev-shell
