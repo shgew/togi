@@ -2013,6 +2013,38 @@ mod the_outcome_lines {
     }
 
     #[test]
+    fn only_a_backoff_or_a_derived_partial_states_its_request_basis() {
+        let (mut fx, next) = r7_fx();
+        let mut pass = branch(Premise::AllPass);
+        pass.passes = 4;
+        pass.decisions = vec![DecisionPayload::CheckingCycle(
+            crate::tests::kit::cycle(2, CycleEvent::Start),
+        )];
+        pass.next = Some(next.clone());
+        pass.without_telemetry = true;
+        let mut unnamed = branch(Premise::Unnamed);
+        unnamed.decisions = vec![DecisionPayload::TunerDecision(backoff(0, -31, -30, None))];
+        unnamed.next = Some(next);
+        unnamed.without_telemetry = true;
+        unnamed.offset_order = true;
+        fx.forecast.branches = vec![pass, unnamed];
+        let rows = fx.row_set();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].basis, None);
+        assert!(
+            !fit_phrases(&rows[0].phrases, 200).contains("per "),
+            "{:?}",
+            rows[0].phrases
+        );
+        assert_eq!(rows[1].basis, Some("per offset order"));
+        let compact = text(&outcome_lines(&fx.scene(ts(1)), 118, true));
+        assert!(
+            compact[0].ends_with("backoffs per offset order"),
+            "{compact:?}"
+        );
+    }
+
+    #[test]
     fn every_r7_named_outcome_keeps_a_row() {
         let mut fx = Fx::new().with_cores(&[(0, 0), (1, 0), (2, 0), (3, 0)]);
         let running = counted(

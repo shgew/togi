@@ -461,7 +461,14 @@ fn outcome_words(
     let named = matches!(branch.premise, Premise::Named(_));
     let mut phrases = decision_phrases(scene, &branch.decisions, named);
     let mut basis = None;
-    if branch.without_telemetry {
+    let rests_on_requests = branch.decisions.iter().any(|decision| match decision {
+        DecisionPayload::TunerDecision(decision) => {
+            decision.decision == togi_journal::Decision::Backoff
+        }
+        DecisionPayload::CheckingChain(_) => true,
+        _ => false,
+    });
+    if branch.without_telemetry && rests_on_requests {
         if let Some(last) = phrases.last_mut() {
             let text = request_basis(branch);
             last.text.push(' ');
