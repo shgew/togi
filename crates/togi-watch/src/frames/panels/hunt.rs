@@ -116,7 +116,10 @@ fn cause_words(hunt: &HuntView<'_>, compact: bool) -> String {
         return known_words(cause);
     }
     let Some(trial) = &cause.trial else {
-        return "crash while idle, with no trial running".to_owned();
+        return format!(
+            "{} while idle, with no trial running",
+            cause.signal.map_or("crash", signal_words)
+        );
     };
     let mut text = format!(
         "{} in {}{}",
@@ -1032,6 +1035,16 @@ mod tests {
         };
         assert_eq!(
             words(&facts, false),
+            "crash while idle, with no trial running"
+        );
+        facts.cause.signal = Some(Signal::CorrectedMce);
+        assert_eq!(
+            words(&facts, false),
+            "corrected hardware error while idle, with no trial running"
+        );
+        facts.cause.signal = Some(Signal::Crash);
+        assert_eq!(
+            words(&facts, true),
             "crash while idle, with no trial running"
         );
         facts.cause.trial = Some(trial_view(1, 5));
