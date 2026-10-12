@@ -689,6 +689,31 @@ fn infrastructure_failures_exit_1() {
 }
 
 #[test]
+fn the_default_config_comes_from_the_host() {
+    let (scenario, core, point) = failing_scenario();
+    let host = Host::new();
+    fs::write(
+        &host.config,
+        format!(
+            r#"{{"candidate_solo_limits":{{"{}":{point}}}}}"#,
+            core.get()
+        ),
+    )
+    .unwrap();
+    let session = Session::of(scenario);
+    let ran = reset(&host, session.path(), &["--all"]);
+    assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
+    assert!(
+        ran.err.contains(&format!(
+            "warning: candidate solo limit {point} for core {:02} is at or deeper",
+            core.get()
+        )),
+        "{}",
+        ran.err
+    );
+}
+
+#[test]
 fn an_invalid_default_config_is_silent_and_the_archive_succeeds() {
     let host = Host::new();
     fs::write(&host.config, "{").unwrap();
