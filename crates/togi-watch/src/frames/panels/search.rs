@@ -382,6 +382,57 @@ mod tests {
         assert!(text.contains("light 2/5, heavy 0/5"), "{text}");
     }
 
+    #[test]
+    fn the_turns_say_which_cores_already_have_their_solo_limit() {
+        let mut running = core_view(11, 1);
+        running.state = CoreState::Confirm;
+        let mut found = core_view(3, 0);
+        found.solo = Some(off(-20));
+        let mut other = core_view(5, 0);
+        other.solo = Some(off(-18));
+        let turn = |core_id: u8| SearchTurn {
+            core: core(core_id),
+            confirm: false,
+            regimes: vec![Regime::R1],
+            offset: off(-7),
+            workload: togi_machine::workloads(Regime::R1)[0].id(),
+            step: 1,
+            light: 0,
+            heavy: 0,
+            needed: 5,
+            running: false,
+        };
+        let turns = [turn(11)];
+        let model = Model::new();
+        let zone = TimeZone::UTC;
+        let rows = |cores: &[crate::model::CoreView]| {
+            let mut s = model.snapshot();
+            s.cores = cores;
+            s.turns = &turns;
+            let scene = scene(&s, &zone);
+            texts(&turn_lines(
+                &scene,
+                &Tables::new(SizeClass::Wide, 80),
+                80,
+                SizeClass::Wide,
+            ))
+        };
+        let before = rows(std::slice::from_ref(&running));
+        assert!(
+            before
+                .iter()
+                .all(|row| !row.contains("waiting for the cycles")),
+            "{before:?}"
+        );
+        let after = rows(&[running, found, other]);
+        let n = after.len();
+        assert_eq!(after[n - 2], "", "{after:?}");
+        assert_eq!(
+            after[n - 1],
+            "  waiting for the cycles  03 05  · solo limits found"
+        );
+    }
+
     fn bios_rows(
         bios: Option<&BiosProfile>,
         phases: Option<&PhasePlan>,
