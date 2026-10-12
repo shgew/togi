@@ -73,6 +73,42 @@ fn a_source_that_yields_no_facts_leaves_the_output_untouched() {
 }
 
 #[test]
+fn a_missing_state_directory_is_refused_without_creating_it_or_its_parents() {
+    let source = tempdir().unwrap();
+    let missing = source.path().join("typo").join("state");
+    let out = tempdir().unwrap();
+    let output = out.path().join("facts.jsonl.gz");
+
+    let error = generate(&missing, &output).unwrap_err();
+
+    assert!(
+        error.to_string().starts_with("read the state directory "),
+        "{error}"
+    );
+    assert!(!source.path().join("typo").exists());
+    assert_eq!(names(out.path()), Vec::<String>::new());
+}
+
+#[test]
+fn a_regular_file_in_place_of_the_state_directory_is_refused() {
+    let source = tempdir().unwrap();
+    let file = source.path().join("state");
+    fs::write(&file, COMMITTED).unwrap();
+    let out = tempdir().unwrap();
+    let output = out.path().join("facts.jsonl.gz");
+
+    let error = generate(&file, &output).unwrap_err();
+
+    assert!(
+        error.to_string().starts_with("read the state directory "),
+        "{error}"
+    );
+    assert!(file.is_file());
+    assert_eq!(names(source.path()), ["state"]);
+    assert_eq!(names(out.path()), Vec::<String>::new());
+}
+
+#[test]
 fn a_missing_output_directory_fails_without_creating_anything() {
     let source = tempdir().unwrap();
     let state = state_dir(source.path(), true);

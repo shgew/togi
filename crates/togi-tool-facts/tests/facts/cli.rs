@@ -1,5 +1,5 @@
-use std::fs;
-use std::process::{Command, Output};
+use std::fs::{self, File};
+use std::process::{Command, Output, Stdio};
 
 use tempfile::tempdir;
 use togi_tool_trialfacts::read;
@@ -46,6 +46,29 @@ fn a_failed_extraction_exits_one_names_the_tool_on_stderr_and_keeps_the_output()
     let stderr = String::from_utf8(ran.stderr).unwrap();
     assert!(stderr.starts_with("togi-tool-facts: "), "{stderr}");
     assert_eq!(fs::read(&output).unwrap(), b"committed extract");
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn a_count_that_cannot_be_written_exits_one_and_names_the_write() {
+    let source = tempdir().unwrap();
+    let state = state_dir(source.path(), true);
+    let out = tempdir().unwrap();
+    let output = out.path().join("facts.jsonl.gz");
+    let full = File::options().write(true).open("/dev/full").unwrap();
+
+    let ran = Command::new(env!("CARGO_BIN_EXE_togi-tool-facts"))
+        .args([state.as_os_str(), output.as_os_str()])
+        .stdout(Stdio::from(full))
+        .output()
+        .unwrap();
+
+    assert_eq!(ran.status.code(), Some(1));
+    let stderr = String::from_utf8(ran.stderr).unwrap();
+    assert!(
+        stderr.starts_with("togi-tool-facts: write the count"),
+        "{stderr}"
+    );
 }
 
 #[test]
