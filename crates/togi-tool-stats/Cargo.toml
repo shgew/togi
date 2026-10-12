@@ -1,0 +1,31 @@
+[package]
+name = "togi-tool-stats"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "The stats command: summarizes a current or archived journal for review, or scores a real run against a forecast"
+
+[dependencies]
+clap.workspace = true
+jiff.workspace = true
+thiserror.workspace = true
+togi-journal.workspace = true
+togi-machine.workspace = true
+togi-render.workspace = true
+togi-requests.workspace = true
+togi-tool-forecast.workspace = true
+togi-tuner.workspace = true
+
+[dev-dependencies]
+insta.workspace = true
+proptest.workspace = true
+tempfile.workspace = true
+togi-config.workspace = true
+togi-session.workspace = true
+togi-sim.workspace = true
+togi-simrun.workspace = true
+
+[lints]
+workspace = true

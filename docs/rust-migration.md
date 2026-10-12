@@ -733,7 +733,7 @@ Some Rust tests have no Go counterpart. They pin behavior Go got wrong or did no
 
 The two `togi-session` crash sweeps hit nextest's 120 s limit on GitHub runners ([#842](https://github.com/shgew/togi/issues/842)). `killing_the_run_at_every_durable_event_resumes_to_the_same_final_state` kills a run at each of the 809 durable events of a one-cycle session, and `a_crash_at_every_trial_event_leaves_a_resumable_journal` crashes one at each of 664 trial events. Each point drives a whole session again, about 85 ms in the dev profile, so the cost is quadratic in the journal length. A perf profile of the sweep put about 32 % of the time in `Journal::commit` decoding each written line again, 22 % in `StateDir::open_at` parsing the journal at every boot, 20 % in the tuner fold and 12 % in encoding: nearly all of it unoptimized serde_json.
 
-- **Change.** Dependencies, `togi-journal` and `togi-tuner` build at `opt-level = 1` in the dev profile; debug assertions and overflow checks stay on. The sweeps count durable lines without decoding them and fold each swept journal once. Every durable event is still a kill point and every trial event a crash point.
+- **Change.** Dependencies, `togi-journal` and `togi-tuner` build at `opt-level = 1` in the dev profile; debug assertions and overflow checks stay on. [#859](https://github.com/shgew/togi/issues/859) later moved the whole workspace to `opt-level = 1` in dev. The sweeps count durable lines without decoding them and fold each swept journal once. Every durable event is still a kill point and every trial event a crash point.
 - **Measurements.** 4 CPUs (`taskset -c 0-3`), `cargo nextest run -p togi-session --profile ci`, two runs each, on a shared host:
 
   | | before | test changes | test changes + opt-level 1 |
@@ -861,6 +861,51 @@ The counts, times and sizes are at `113b73ee`. Since then only [#807](https://gi
 
 - **Reading them.** The nine crates hold 3.1 times Go's library lines and 2.6 times its test lines, counting `togi-command`, which has no Go package. Their 841 tests run in 17.1 s, 6.3 s of it in `togi-command` (its entry says why) and 8.6 s in `togi-trial`; Go's seven packages take 0.2 s together, the longest, `internal/trial`, 0.125 s. The comparison is of suites, not of the code under test: the Rust tests start real processes that the Go unit tests do not, and the counts and times were not normalised for that.
 - **Not measured.** Compile times against Go, agent cost, changed-line coverage of the stage as a whole, and any run of the recipe, since it was only built. Nothing ran on real hardware and the suite was not run on a Mac. The NixOS VM check of the trial scope was not rerun here; CI runs it as `vm-trial-scope-rs` ([#809](https://github.com/shgew/togi/pull/809)).
+
+## Stage 7: `tools/stats` (#820, 2026-10-12)
+
+The `togi-tool-stats` crate ports `tools/stats` ([#820](https://github.com/shgew/togi/issues/820)): `togi-tool-stats [--state-dir DIR | --journal FILE] [--since TIME]` prints the review report of a current or archived journal, and `--forecast FILE` scores the run in `--state-dir` against a forecast instead. The library is `Journal::read` (or `Journal::new` over events), `report(&Journal, since)` and `score(state_dir, forecast)`, each returning the text; `main.rs` is the clap parser, the stdout write and the exit statuses (0, 1 with `togi-tool-stats: <error>` on stderr, 2 on a usage error). `just stats-rs` runs it next to the Go `stats` recipe, which is unchanged.
+
+- **Design calls.**
+  - It projects the journal's events directly (`togi-journal`'s `Recording`, so an unfinished last line is ignored and a journal that does not follow itself is an error). It does not use `togi-facts`, which validates what a tuning session needs (one decisive end per trial, a signal on every failure) and clones every event to do it; a review tool over a damaged journal should still report. `togi-facts` is not a dependency, against the Go package's import of `internal/facts`.
+  - It reads no trial samples. A Rust `trial.end` carries the request telemetry the session summarized from the samples when it ended the trial, after a crash too, so Go's recovery of telemetry for ruleset-8 ends has nothing left to do. `togi-requests` supplies the top request; `togi-tuner` supplies `Profile` and `Topology` for the depth comparisons the evidence check needs, in place of `tuner.AtLeastDeep`.
+  - The report is built as one string and written once, so a failed write is one error and exit status 1 and never a half report; Go kept the first write error of a section-by-section stream.
+  - Tables are grouped by the vocabulary's own order (`R1`..`R7`, the activities and outcomes as declared), not by the alphabetical order of Go's strings. The Time table groups by the trial's activity, which replaces Go's phase. The R7 backoff report lists every backoff of a multi-core R7 failure: the Go ruleset-9 gate is gone with the Go rulesets. Legacy fallbacks for journals older than the profile and the cores of an intent (an absent profile, an R6 or R7 trial with no cores loading every core) are gone with the Go journals.
+  - Goldens are insta snapshots of journals the tests build, so a tuner change leaves them alone; two tests over a simulated hunting session (cores 1 and 3 crash together) check the report against the journal's own events, not against bytes.
+- **Go bugs fixed.** Go listed rulesets sorted as strings, so ruleset 10 sorted before 5; Rust sorts numerically (`rulesets_are_listed_in_numeric_order_and_builds_by_name`). Go printed an empty cell for the regime of a failure that names neither a regime nor a trial; Rust prints `-` (`a_failure_that_names_neither_a_regime_nor_a_trial_shows_dashes`). Go printed an inconclusive trial's reason raw, so a multi-line reason broke the table; Rust escapes it (`a_combination_failure_is_reported_in_every_section`) and prints `-` when there is none (`an_inconclusive_trial_without_a_reason_shows_a_dash`). Go sorted trial classes by their label text, so `120s` listed before `60s`; Rust orders them by catalog workload, loaded cores and numeric duration (`class_tables_list_workloads_in_catalog_order_and_durations_numerically`, `r7_request_tables_list_durations_numerically`), and prints hunt and cycle numbers unpadded.
+- **Spec.** `docs/reviewing.md` gains "The Rust tool" with every difference from the Go output above; the Go text is unchanged until stage 9.
+- **Tests.** 57 tests (the unit tests, 9 over the binary and a simulated session) run in about 1.0 s wall under `cargo nextest run -p togi-tool-stats`, against 0.2 s for `go test -count=1 ./tools/stats` (27 tests). Library 2,167 lines and tests 2,934 lines plus 575 of snapshots, against Go's 1,487 and 1,073.
+- **Not measured.** Compile times against Go, agent cost, and the run on a Mac (the crate is clippy-clean for `aarch64-apple-darwin` from Linux).
+
+## Stage 7: the whole workspace at dev opt-level 1 (#859, 2026-10-12)
+
+[#845](https://github.com/shgew/togi/pull/845) built only dependencies, `togi-journal` and `togi-tuner` at `opt-level = 1`. That left `togi-machine`, `togi-sim`, `togi-session` and `togi-simrun` at 0, and three simulator tests took 30 to 60 s in CI's `rust-nextest`: `persistence::default_machine_1` (`togi-simrun`), and `resume::a_session_resumed_in_a_new_process_ends_where_an_uninterrupted_one_does` and `session::samples_reach_the_state_directory_only_when_asked_for` (`togi-tool-sim`). Profiles showed the time in `togi-machine`'s unoptimized helpers (`CoreId::from_index`, the `CoreSet` iterator) and in the inlined slice-bound checks ([#859](https://github.com/shgew/togi/issues/859)).
+
+- **Change.** `[profile.dev] opt-level = 1` for the whole workspace replaces #845's three package overrides. Debug assertions, overflow checks and `debug = "line-tables-only"` are unchanged, as are the release and profiling profiles.
+- **Measurements.** These were taken on the 32-thread host at load 12 to 24, with other agents running.
+
+  One default session (`togi-tool-sim --state-dir <new dir>`, `taskset -c 0`, hyperfine, 3 runs):
+
+  | | before | after |
+  |---|---|---|
+  | one default session | 4.67 ± 0.07 s | 1.30 ± 0.02 s |
+
+  The three tests, each run alone three times (`cargo nextest run --profile ci -E <test>`):
+
+  | test | before | after |
+  |---|---|---|
+  | `persistence::default_machine_1` | 5.3, 5.9, 7.3 s | 1.6, 1.6, 1.6 s |
+  | `resume::a_session_resumed_…` | 12.3, 9.8, 9.5 s | 2.7, 2.6, 2.7 s |
+  | `session::samples_reach_…` | 10.4, 9.9, 10.2 s | 3.0, 3.0, 3.6 s |
+
+  Incremental `cargo build --tests -p togi-tool-sim -p togi-session` after a one-line change (hyperfine, 5 runs, 1 warmup):
+
+  | changed crate | before | after |
+  |---|---|---|
+  | `togi-session` | 3.47 ± 0.53 s | 5.95 ± 0.31 s |
+  | `togi-machine` | 10.17 ± 3.04 s | 11.88 ± 0.10 s |
+- **Coverage.** `just cover-rs` still reports changed lines correctly at opt-level 1. A throwaway function was added to `togi-machine` and to `togi-session`, with a test that took one branch, and then dropped. For each crate the tool reported exactly the two lines of the untaken branch.
+- **CI.** The pull request records the `rust-nextest` times before and after. The CI profile prints a test's time only when it passes 30 s, so the CI figures are bounds.
 
 ## Stage 7: `tools/bench` (a) (#821, 2026-10-12)
 

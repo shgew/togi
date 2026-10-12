@@ -1218,6 +1218,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "togi-tool-stats"
+version = "0.0.0"
+dependencies = [
+ "clap",
+ "insta",
+ "jiff",
+ "proptest",
+ "tempfile",
+ "thiserror",
+ "togi-config",
+ "togi-journal",
+ "togi-machine",
+ "togi-render",
+ "togi-requests",
+ "togi-session",
+ "togi-sim",
+ "togi-simrun",
+ "togi-tool-forecast",
+ "togi-tuner",
+]
+
+[[package]]
 name = "togi-tool-trialfacts"
 version = "0.0.0"
 dependencies = [
