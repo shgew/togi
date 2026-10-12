@@ -261,3 +261,32 @@ fn a_combination_names_its_members_and_the_core_it_holds() {
     );
     assert_eq!(combo.holds.map(|m| m.core), Some(core(0)));
 }
+
+#[test]
+fn a_recovered_trial_says_when_it_started_and_that_it_loaded_part_of_a_ccd() {
+    let mut h = Hist::three();
+    let part = intent(
+        "p1",
+        Regime::R7,
+        Condition::Together,
+        &[-20, -30, -10],
+        &[0],
+    );
+    let at = h.push(part.into());
+    let id = TrialId::from("p1".to_owned());
+    h.push(trial_start(&id));
+    h.boot = "next".to_owned();
+    h.push(crash("boot", Some(at)).into());
+    let derived = Derived::new(&h.journal, &h.tuner, &h.facts);
+    let view = derived
+        .recover
+        .as_ref()
+        .and_then(|recover| recover.trial.as_ref())
+        .expect("the crashed trial");
+    assert_eq!(view.id, id);
+    assert!(
+        view.started.is_some(),
+        "the trial had started before the crash"
+    );
+    assert!(view.partial, "core 0 ran while core 1 of its CCD did not");
+}

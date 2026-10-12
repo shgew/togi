@@ -567,7 +567,7 @@ fn a_recovered_trial_keeps_its_place_in_the_cycle() {
     let mut script = Script::at_limit();
     let plan = script.next_trial();
     let (intent, trial) = script.intent(&plan);
-    script.start(&trial);
+    let started = script.start(&trial);
     script.boot = "next".to_owned();
     script.append(crash("boot", Some(intent)).into(), &[]);
     let model = script.model();
@@ -578,6 +578,12 @@ fn a_recovered_trial_keeps_its_place_in_the_cycle() {
         .expect("the crashed trial");
     let place = recovered.cycle.expect("a cycle trial");
     assert_eq!((place.cycle, place.step, place.part), (1, Some(1), Some(1)));
+    assert_eq!(
+        recovered.started,
+        Some(at(started)),
+        "the crashed trial had started"
+    );
+    assert!(!recovered.partial, "it loaded every core");
 }
 
 #[test]

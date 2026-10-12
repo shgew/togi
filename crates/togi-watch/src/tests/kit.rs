@@ -286,20 +286,7 @@ impl Script {
     }
 
     pub(crate) fn start(&mut self, trial: &TrialId) -> Seq {
-        self.append(
-            togi_journal::TrialStart {
-                trial: trial.clone(),
-                window_start_ns: None,
-                scope: "scope".to_owned(),
-                pid: 1,
-                cpus: Vec::new(),
-                argv: Vec::new(),
-                files: Vec::new(),
-                instances: Vec::new(),
-            }
-            .into(),
-            &[],
-        )
+        self.append(trial_start(trial), &[])
     }
 
     pub(crate) fn end(&mut self, intent: Seq, trial: &TrialId, outcome: Outcome) -> Seq {
@@ -314,6 +301,20 @@ impl Script {
         }
         model
     }
+}
+
+pub(crate) fn trial_start(trial: &TrialId) -> Payload {
+    togi_journal::TrialStart {
+        trial: trial.clone(),
+        window_start_ns: None,
+        scope: "scope".to_owned(),
+        pid: 1,
+        cpus: Vec::new(),
+        argv: Vec::new(),
+        files: Vec::new(),
+        instances: Vec::new(),
+    }
+    .into()
 }
 
 pub(crate) fn end_payload(trial: &TrialId, outcome: Outcome, signal: Option<Signal>) -> TrialEnd {
