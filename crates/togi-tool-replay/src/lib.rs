@@ -98,9 +98,11 @@ pub struct Cli {
     pub view: Page,
 }
 
-/// Runs the command: one frame of the recording to `out` with `--at`, else the dashboard on the terminal.
+/// Runs the command: one frame of the recording to `out` with `--at`, else the dashboard on the terminal. What the
+/// lenient read of the recording skipped is said once: on stderr after a frame, in the dashboard's footer when
+/// playing, where stderr would only garble the screen.
 pub fn run(cli: &Cli, out: &mut impl Write) -> Result<(), Error> {
-    let events = load::events(&cli.state_dir)?;
+    let load::Loaded { events, skipped } = load::events(&cli.state_dir)?;
     match cli.at {
         Some(at) => {
             let frame = Frame {
@@ -113,9 +115,13 @@ pub fn run(cli: &Cli, out: &mut impl Write) -> Result<(), Error> {
             let text = draw(&events, prefix(&events, at), &frame, &TimeZone::system())?;
             out.write_all(text.as_bytes())
                 .and_then(|()| out.flush())
-                .map_err(Error::Output)
+                .map_err(Error::Output)?;
+            if let Some(skipped) = skipped {
+                let _ = writeln!(std::io::stderr(), "togi-tool-replay: {skipped}");
+            }
+            Ok(())
         }
-        None => live::play(&events, prefix(&events, cli.from), cli.speed),
+        None => live::play(&events, prefix(&events, cli.from), cli.speed, skipped),
     }
 }
 

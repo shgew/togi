@@ -32,13 +32,17 @@ struct Replaying<'a, E> {
 }
 
 /// A feed playing `events` from the first `start` of them at `speed` by the real time `elapsed` reads, and the clock
-/// its frames are drawn at, which only reads the time of the feed's last journal and never plays anything on.
+/// its frames are drawn at, which only reads the time of the feed's last journal and never plays anything on. Its
+/// frames carry `skipped`, the report of what the read of the recording left out, from the first one on.
 fn replaying<E: FnMut() -> Duration>(
     events: &[Event],
     start: usize,
     speed: Speed,
+    skipped: Option<String>,
     elapsed: E,
 ) -> (Replaying<'_, E>, impl Fn() -> Timestamp + use<E>) {
+    let mut model = Model::new();
+    model.set_skipped(skipped);
     let mut playback = Playback::new(events, start, speed);
     let now = Rc::new(Cell::new(playback.advance(Duration::ZERO).1));
     let clock = {
@@ -50,7 +54,7 @@ fn replaying<E: FnMut() -> Duration>(
         playback,
         elapsed,
         now,
-        model: Model::new(),
+        model,
         shown: 0,
     };
     (feed, clock)
@@ -84,14 +88,20 @@ impl<E: FnMut() -> Duration> Feed for Replaying<'_, E> {
     }
 }
 
-/// Plays `events` from the first `start` of them at `speed` until the viewer quits or a signal ends it.
-pub(crate) fn play(events: &[Event], start: usize, speed: Speed) -> Result<(), Error> {
+/// Plays `events` from the first `start` of them at `speed` until the viewer quits or a signal ends it, with
+/// `skipped` in the footer.
+pub(crate) fn play(
+    events: &[Event],
+    start: usize,
+    speed: Speed,
+    skipped: Option<String>,
+) -> Result<(), Error> {
     let stdout = std::io::stdout();
     if !stdout.is_terminal() {
         return Err(Error::NotTerminal);
     }
     let started = Instant::now();
-    let (feed, clock) = replaying(events, start, speed, move || started.elapsed());
+    let (feed, clock) = replaying(events, start, speed, skipped, move || started.elapsed());
     let stdin = std::io::stdin();
     run_with(
         feed,
@@ -130,7 +140,7 @@ mod tests {
     ) {
         let elapsed = Elapsed::new(Cell::new(already));
         let reads = Rc::clone(&elapsed);
-        let (feed, clock) = replaying(events, start, Speed::new(speed).unwrap(), move || {
+        let (feed, clock) = replaying(events, start, Speed::new(speed).unwrap(), None, move || {
             reads.get()
         });
         (feed, clock, elapsed)
@@ -171,6 +181,34 @@ mod tests {
         logged(&mut all);
         assert_eq!(all.shown, events.len());
         assert!(!all.reload());
+    }
+
+    #[test]
+    fn what_the_read_skipped_is_in_every_frame_before_and_while_the_events_play() {
+        let report = "skipped 1 event of a kind this build does not know (future.thing at line 3)";
+        let mut events = Scenario::Checking.events().unwrap();
+        events.truncate(8);
+        for (hour, event) in (0_i64..).zip(&mut events) {
+            event.mono = None;
+            event.time = jiff::Timestamp::UNIX_EPOCH + jiff::SignedDuration::from_hours(hour);
+        }
+        let elapsed = Elapsed::new(Cell::new(Duration::ZERO));
+        let reads = Rc::clone(&elapsed);
+        let (mut feed, _) = replaying(
+            &events,
+            1,
+            Speed::new(1e9).unwrap(),
+            Some(report.to_owned()),
+            move || reads.get(),
+        );
+        for seconds in [0, 1] {
+            elapsed.set(Duration::from_secs(seconds));
+            let Journal::Ready { snapshot, .. } = feed.journal(&screen()) else {
+                panic!("not ready")
+            };
+            assert_eq!(snapshot.skipped, Some(report));
+        }
+        assert_eq!(feed.shown, events.len());
     }
 
     #[test]

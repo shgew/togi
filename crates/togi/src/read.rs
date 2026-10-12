@@ -29,9 +29,9 @@ fn notice(ctx: &mut Context<'_>, style: Style, message: &str) {
     let _ = writeln!(ctx.err, "{}", renderer.text(style, &message));
 }
 
-/// Reads the live journal of `ctx.state_dir`; on failure writes the reason to stderr and gives the
-/// exit. A different ruleset warns, a different schema is refused, a torn tail is reported by
-/// [`report_torn`] once the command has printed.
+/// Reads the live journal of `ctx.state_dir` leniently; on failure writes the reason to stderr and
+/// gives the exit. A different ruleset warns, a different schema is refused; what the read skipped
+/// and a torn tail are reported by [`report`] once the command has printed.
 ///
 /// # Errors
 ///
@@ -61,7 +61,7 @@ pub fn open(ctx: &mut Context<'_>, command: &str) -> Result<Recording, Exit> {
         }
     }
     let path = ctx.state_dir.join("events.jsonl");
-    Recording::read(&path).map_err(|error| {
+    Recording::read_lenient(&path).map_err(|error| {
         if matches!(&error.source, ReadError::Io(io) if io.kind() == ErrorKind::NotFound) {
             return fail(ctx, command, format!("no journal at {}", path.display()));
         }
@@ -70,8 +70,13 @@ pub fn open(ctx: &mut Context<'_>, command: &str) -> Result<Recording, Exit> {
     })
 }
 
-/// Tells the operator the journal ends mid-line; the next `run` records it.
-pub fn report_torn(ctx: &mut Context<'_>, command: &str, recording: &Recording) {
+/// Tells the operator what the read skipped, in the journal crate's one line, and that the journal
+/// ends mid-line, which the next `run` records.
+pub fn report(ctx: &mut Context<'_>, command: &str, recording: &Recording) {
+    let skipped = recording.skipped();
+    if !skipped.is_empty() {
+        notice(ctx, Style::Yellow, &format!("togi {command}: {skipped}"));
+    }
     if let Some(torn) = recording.torn() {
         let _ = writeln!(
             ctx.err,

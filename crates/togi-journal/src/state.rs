@@ -142,12 +142,15 @@ impl State {
         self.cores.iter().find(|facts| facts.core == core)
     }
 
+    /// Folds the next event. Its seq must be greater than the last folded one: the readers guarantee that seqs
+    /// count up from 1 without a hole, and a lenient read leaves holes where it skipped events of unknown kinds
+    /// (`journal.md`, Event format), which a read-only fold passes over.
     pub fn apply(&mut self, event: &Event) -> Result<(), FoldError> {
-        let expected = match self.last_seq {
-            None => Some(Seq::FIRST),
-            Some(last) => last.next(),
+        let follows = match self.last_seq {
+            None => event.seq == Seq::FIRST,
+            Some(last) => event.seq > last,
         };
-        if expected != Some(event.seq) {
+        if !follows {
             return Err(FoldError::Gap {
                 seq: event.seq,
                 after: self.last_seq,
@@ -215,10 +218,9 @@ impl State {
             }
             Payload::ConfigLoaded(config) => {
                 self.dead_end = None;
-                let backends = config.config.backends();
                 self.backends = BackendPaths {
-                    mprime: backends.mprime().map(Path::to_path_buf),
-                    ycruncher: backends.ycruncher().map(Path::to_path_buf),
+                    mprime: config.config.backends.mprime.clone(),
+                    ycruncher: config.config.backends.ycruncher.clone(),
                 };
                 if let Some(session) = &mut self.session {
                     session.build.version.clone_from(&config.build.version);

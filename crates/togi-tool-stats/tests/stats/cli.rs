@@ -3,6 +3,7 @@ use std::path::Path;
 use std::process::{Command, Output};
 
 use tempfile::tempdir;
+use togi_journal::Seq;
 use togi_tool_stats::{Journal, report};
 
 use crate::sim::{hunting_session, write_journal};
@@ -128,6 +129,38 @@ fn a_journal_whose_events_skip_a_number_is_refused() {
     let stderr = text(ran.stderr);
     assert!(stderr.contains("events.jsonl"), "{stderr}");
     assert!(stderr.contains("expected seq 1, found 2"), "{stderr}");
+}
+
+#[test]
+fn an_event_of_an_unknown_kind_is_skipped_and_named_on_stderr_and_the_report_is_still_written() {
+    let dir = tempdir().unwrap();
+    let mut events = hunting_session();
+    let mut last = events.pop().unwrap();
+    write_journal(dir.path(), &events);
+    let at = last.seq.get();
+    let unknown = format!(
+        "{{\"seq\":{at},\"time\":\"{}\",\"boot\":\"{}\",\"kind\":\"future.thing\",\"msg\":\"x\",\"data\":{{}}}}\n",
+        last.time,
+        last.boot.as_str()
+    );
+    last.seq = Seq::new(at + 1).unwrap();
+    let path = dir.path().join("events.jsonl");
+    let mut journal = fs::read_to_string(&path).unwrap();
+    journal.push_str(&unknown);
+    journal.push_str(&last.encode().unwrap());
+    journal.push('\n');
+    fs::write(&path, journal).unwrap();
+    let before = fs::read(&path).unwrap();
+    let ran = stats(&[os("--state-dir"), dir.path().as_os_str()]);
+    assert_eq!(ran.status.code(), Some(0));
+    assert!(text(ran.stdout).contains("Hunts\n"));
+    assert_eq!(
+        text(ran.stderr),
+        format!(
+            "togi-tool-stats: skipped 1 event of a kind this build does not know (future.thing at line {at})\n"
+        )
+    );
+    assert_eq!(fs::read(&path).unwrap(), before);
 }
 
 #[cfg(target_os = "linux")]

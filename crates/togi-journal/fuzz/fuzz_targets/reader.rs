@@ -30,6 +30,15 @@ fuzz_target!(|data: &[u8]| {
         assert!(!tail.contains(&b'\n'));
     }
 
+    let mut lenient = EventReader::lenient(data);
+    let mut last = 0;
+    for event in lenient.by_ref() {
+        let Ok(event) = event else { break };
+        assert!(event.seq.get() > last);
+        last = event.seq.get();
+    }
+    assert!(lenient.accepted() >= reader.accepted());
+
     let fs = MemFs::new();
     fs.put("/journal.jsonl", data);
     match Recording::read_in(&fs, Path::new("/journal.jsonl")) {

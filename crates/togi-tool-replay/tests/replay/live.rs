@@ -118,6 +118,20 @@ fn playing_on_a_terminal_draws_the_dashboard_and_q_quits() {
 }
 
 #[test]
+fn playing_a_recording_with_an_unknown_kind_says_so_in_the_dashboard_and_q_quits() {
+    let dir = tempdir().unwrap();
+    install(dir.path(), Scenario::Checking).unwrap();
+    super::plant::plant(dir.path());
+    let mut terminal = Terminal::open();
+    let mut replay = play(&terminal, dir.path().to_str().unwrap(), "1000000");
+    terminal.wait_for("CYCLE");
+    terminal.wait_for("skipped");
+    let mut master = File::from(terminal.master.try_clone().unwrap());
+    master.write_all(b"q").unwrap();
+    assert_eq!(replay.0.wait().unwrap().code(), Some(0));
+}
+
+#[test]
 fn sigterm_ends_the_dashboard_cleanly_and_restores_the_cursor() {
     let dir = tempdir().unwrap();
     install(dir.path(), Scenario::Checking).unwrap();

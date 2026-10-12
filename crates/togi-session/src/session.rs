@@ -441,7 +441,7 @@ impl Session {
         };
         let loaded = ConfigLoaded {
             build: self.build.clone(),
-            config: self.config.clone(),
+            config: self.config.snapshot(),
             path: self.source.path.clone(),
             file: self.source.file,
             kernel_cursor: boundary.cursor,

@@ -15,9 +15,11 @@ mod payload;
 mod reader;
 mod receipt;
 mod session_id;
+mod skipped;
 mod state;
 #[cfg(test)]
 mod testing;
+mod unknown;
 
 #[cfg(test)]
 mod tests;
@@ -38,6 +40,7 @@ pub use reader::{
 };
 pub use receipt::{SmuIntentReceipt, SmuWritten};
 pub use session_id::{InvalidSessionId, SessionId};
+pub use skipped::{IgnoredFields, Skipped, SkippedEvent};
 pub use state::{
     BackendPaths, CoreFacts, DeadEndRef, DecisionRef, FoldError, InFlight, SessionInfo, State,
 };

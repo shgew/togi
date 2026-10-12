@@ -26,6 +26,6 @@ mod table;
 mod tests;
 
 pub use error::Error;
-pub use forecast::score;
+pub use forecast::{Scored, score};
 pub use journal::Journal;
 pub use report::report;

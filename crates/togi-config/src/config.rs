@@ -1,6 +1,9 @@
 use std::{collections::BTreeMap, fs, path::Path, path::PathBuf};
 
-use serde::{Deserialize, Serialize, Serializer};
+use serde::Deserialize;
+use togi_journal::{
+    ConfigBackends, ConfigChecking, ConfigDeadEnds, ConfigDurations, ConfigEvidence, ConfigSnapshot,
+};
 use togi_machine::{CoreId, Regime, serde_object::Object};
 
 use crate::{
@@ -44,6 +47,43 @@ impl Config {
             path: path.to_owned(),
             source,
         })
+    }
+
+    /// The journal's record of this configuration: every effective setting, owned by `togi-journal`.
+    pub fn snapshot(&self) -> ConfigSnapshot {
+        ConfigSnapshot {
+            start_offsets: overrides::table(&self.overrides, overrides::start_only),
+            candidate_solo_limits: overrides::table(&self.overrides, overrides::limit_only),
+            durations: ConfigDurations {
+                search_trial_s: self.search_trial.get(),
+                short_trial_s: self.short_trial.get(),
+                checking_trial_s: self.checking_trial.get(),
+                checking_idle_s: self.checking_idle.get(),
+                checking_all_core_s: self.checking_all_core.get(),
+            },
+            evidence: ConfigEvidence {
+                miss: self.evidence.miss().get(),
+                rate: self.evidence.rate().get(),
+            },
+            checking: ConfigChecking {
+                cycle: self.checking_cycle.as_slice().to_vec(),
+            },
+            dead_ends: ConfigDeadEnds {
+                inconclusive_in_a_row: self.dead_ends.inconclusive_in_a_row().get(),
+                stray_crashes_in_a_row: self.dead_ends.stray_crashes_in_a_row().get(),
+            },
+            backends: ConfigBackends {
+                mprime: self.backends.mprime().map(Path::to_path_buf),
+                ycruncher: self.backends.ycruncher().map(Path::to_path_buf),
+            },
+            backend_user: self.backend_user.clone(),
+        }
+    }
+
+    /// The configuration a journal recorded, validated again as a configuration file is: a snapshot that this
+    /// build would refuse as a file is an error here too.
+    pub fn from_snapshot(snapshot: &ConfigSnapshot) -> Result<Self, ConfigError> {
+        Self::try_from(Object(RawConfig::from(snapshot)))
     }
 
     pub fn override_for(&self, core: CoreId) -> Option<InitialOverride> {
@@ -271,62 +311,36 @@ impl TryFrom<Object<RawConfig>> for Config {
     }
 }
 
-#[derive(Serialize)]
-#[expect(
-    clippy::struct_field_names,
-    reason = "the field names are the wire keys"
-)]
-struct WireDurations {
-    search_trial_s: TrialSeconds,
-    short_trial_s: TrialSeconds,
-    checking_trial_s: TrialSeconds,
-    checking_idle_s: TrialSeconds,
-    checking_all_core_s: R7BudgetSeconds,
-}
-
-#[derive(Serialize)]
-struct WireChecking<'a> {
-    cycle: &'a CheckingSchedule,
-}
-
-#[derive(Serialize)]
-struct Wire<'a> {
-    start_offsets: overrides::Table<'a>,
-    candidate_solo_limits: overrides::Table<'a>,
-    durations: WireDurations,
-    evidence: EvidencePolicy,
-    checking: WireChecking<'a>,
-    dead_ends: DeadEndPolicy,
-    backends: &'a Backends,
-    backend_user: Option<&'a str>,
-}
-
-impl Serialize for Config {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        Wire {
-            start_offsets: overrides::Table {
-                overrides: &self.overrides,
-                select: overrides::start_only,
-            },
-            candidate_solo_limits: overrides::Table {
-                overrides: &self.overrides,
-                select: overrides::limit_only,
-            },
-            durations: WireDurations {
-                search_trial_s: self.search_trial,
-                short_trial_s: self.short_trial,
-                checking_trial_s: self.checking_trial,
-                checking_idle_s: self.checking_idle,
-                checking_all_core_s: self.checking_all_core,
-            },
-            evidence: self.evidence,
-            checking: WireChecking {
-                cycle: &self.checking_cycle,
-            },
-            dead_ends: self.dead_ends,
-            backends: &self.backends,
-            backend_user: self.backend_user.as_deref(),
+impl From<&ConfigSnapshot> for RawConfig {
+    fn from(snapshot: &ConfigSnapshot) -> Self {
+        let durations = &snapshot.durations;
+        let seconds = |value: u32| Some(i64::from(value));
+        Self {
+            start_offsets: Some(overrides::raw_map(&snapshot.start_offsets)),
+            candidate_solo_limits: Some(overrides::raw_map(&snapshot.candidate_solo_limits)),
+            durations: Some(Object(RawDurations {
+                search_trial_s: seconds(durations.search_trial_s),
+                short_trial_s: seconds(durations.short_trial_s),
+                checking_trial_s: seconds(durations.checking_trial_s),
+                checking_idle_s: seconds(durations.checking_idle_s),
+                checking_all_core_s: seconds(durations.checking_all_core_s),
+            })),
+            evidence: Some(Object(RawEvidence {
+                miss: Some(snapshot.evidence.miss),
+                rate: Some(snapshot.evidence.rate),
+            })),
+            checking: Some(Object(RawChecking {
+                cycle: Some(snapshot.checking.cycle.clone()),
+            })),
+            dead_ends: Some(Object(RawDeadEnds {
+                inconclusive_in_a_row: Some(i64::from(snapshot.dead_ends.inconclusive_in_a_row)),
+                stray_crashes_in_a_row: Some(i64::from(snapshot.dead_ends.stray_crashes_in_a_row)),
+            })),
+            backends: Some(Object(RawBackends {
+                mprime: snapshot.backends.mprime.clone(),
+                ycruncher: snapshot.backends.ycruncher.clone(),
+            })),
+            backend_user: snapshot.backend_user.clone(),
         }
-        .serialize(serializer)
     }
 }

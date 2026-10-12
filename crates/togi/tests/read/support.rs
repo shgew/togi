@@ -126,22 +126,52 @@ pub(crate) fn append_between_trial_mce(dir: &Path) {
     );
 }
 
-/// The kind `assert_unknown_kind_refusal` expects; no build knows it.
+/// The kind of the events the lenient tests plant; no build knows it.
 pub(crate) const UNKNOWN_KIND: &str = "future.thing";
-
-/// The wording a read-only command uses for an event of [`UNKNOWN_KIND`], as one line.
-pub(crate) fn assert_unknown_kind_refusal(command: &str, ran: &std::process::Output, line: usize) {
-    assert_eq!(ran.status.code(), Some(1), "{command}");
-    let expected = format!(
-        "togi {command}: line {line}: unknown event kind \"{UNKNOWN_KIND}\"; this build does not know it\n"
-    );
-    assert_eq!(text(&ran.stderr), expected, "{command}");
-    assert!(!text(&ran.stderr).contains("modify"), "{command}");
-}
 
 /// Appends an event of `kind`, which no build should know; returns its line number.
 pub(crate) fn append_unknown_kind(dir: &Path, kind: &str) -> usize {
     let line = lines(dir).len() + 1;
     append_event(dir, kind, "x", &serde_json::json!({}));
     line
+}
+
+/// Puts an event of `kind`, which no build should know, before the journal's last event, which takes the next
+/// seq: a hole of one seq in what a build that knows every kind reads. Returns the unknown event's line number.
+pub(crate) fn insert_unknown_kind_before_last(dir: &Path, kind: &str) -> usize {
+    let mut kept = lines(dir);
+    let last = kept.pop().unwrap();
+    std::fs::write(
+        journal(dir),
+        kept.iter()
+            .map(|line| line.clone() + "\n")
+            .collect::<String>(),
+    )
+    .unwrap();
+    let line = append_unknown_kind(dir, kind);
+    let mut moved: serde_json::Value = serde_json::from_str(&last).unwrap();
+    moved["seq"] = (line as u64 + 1).into();
+    append_line(dir, &moved.to_string());
+    line
+}
+
+/// Appends a `session.warning` carrying a field no build knows; returns its line number.
+pub(crate) fn append_unknown_field(dir: &Path, field: &str) -> usize {
+    let line = lines(dir).len() + 1;
+    append_event(
+        dir,
+        "session.warning",
+        "warned",
+        &serde_json::json!({"operation": "write state projection", "error": "disk full", field: 1}),
+    );
+    line
+}
+
+fn append_line(dir: &Path, line: &str) {
+    use std::io::Write as _;
+    let mut file = std::fs::OpenOptions::new()
+        .append(true)
+        .open(journal(dir))
+        .unwrap();
+    writeln!(file, "{line}").unwrap();
 }

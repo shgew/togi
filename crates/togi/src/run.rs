@@ -32,7 +32,7 @@ use crate::args::ConfigArgs;
 use crate::cli::{Context, examples};
 use crate::dashboard::Dashboard;
 use crate::exit::Exit;
-use crate::report::{current_build, exit_with, refusal_message, unknown_kind_message};
+use crate::report::{current_build, exit_with, refusal_message, unknown_event_message};
 use crate::signals;
 
 mod outcome;
@@ -379,7 +379,7 @@ fn refusal(build: &Build, recorded: Option<&Build>, state_dir: &Path) -> Option<
         }),
         Verdict::Use => Recording::read(&state_dir.join(JOURNAL_FILE))
             .err()
-            .and_then(|error| unknown_kind_message(&error, recorded, build))
+            .and_then(|error| unknown_event_message(&error, recorded, build))
             .map(|message| Refused {
                 message,
                 leave_reason: "unknown event kind",

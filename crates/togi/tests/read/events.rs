@@ -4,9 +4,8 @@ use jiff::Timestamp;
 use togi_watchtest::Scenario;
 
 use crate::support::{
-    BETWEEN_TRIAL_MCE, Journald, UNKNOWN_KIND, append_between_trial_mce, append_event,
-    append_unknown_kind, assert_unknown_kind_refusal, first_trial, journal, lines,
-    rewrite_first_line, session, text, togi, togi_in_journal,
+    BETWEEN_TRIAL_MCE, Journald, append_between_trial_mce, append_event, first_trial, journal,
+    lines, rewrite_first_line, session, text, togi, togi_in_journal,
 };
 
 #[test]
@@ -339,15 +338,6 @@ fn a_between_trial_mce_is_listed_and_its_controls_are_escaped() {
         event["msg"], BETWEEN_TRIAL_MCE,
         "--json keeps the journal's text"
     );
-}
-
-#[test]
-fn an_event_of_an_unknown_kind_is_refused_in_read_only_words_by_events() {
-    let dir = session(Scenario::Search);
-    let line = append_unknown_kind(dir.path(), UNKNOWN_KIND);
-    let ran = togi(dir.path(), &["events"]);
-    assert_unknown_kind_refusal("events", &ran, line);
-    assert_eq!(text(&ran.stdout), "");
 }
 
 #[test]

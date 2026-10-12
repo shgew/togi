@@ -7,6 +7,7 @@ use togi_machine::{
     TargetOffset,
 };
 
+use super::config::ConfigSnapshot;
 use super::domain::{
     DeadEndAction, DeadEndCondition, DefectAnswer, DefectDirection, Notice, ShutdownReason,
 };
@@ -180,7 +181,7 @@ object_only! {
     #[serde(deny_unknown_fields)]
     pub struct ConfigLoaded {
         pub build: Build,
-        pub config: togi_config::Config,
+        pub config: ConfigSnapshot,
         pub path: String,
         pub file: bool,
         #[serde(default, skip_serializing_if = "Option::is_none")]

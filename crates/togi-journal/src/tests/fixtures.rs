@@ -10,11 +10,42 @@ use togi_machine::{
 
 use crate::*;
 
-pub(crate) fn config() -> togi_config::Config {
-    togi_config::Config::parse(
-        r#"{"backends":{"mprime":"/nix/store/x-mprime"},"start_offsets":{"3":-10}}"#,
-    )
-    .unwrap()
+pub(crate) fn config() -> ConfigSnapshot {
+    ConfigSnapshot {
+        start_offsets: [(core(3), target(-10))].into_iter().collect(),
+        backends: ConfigBackends {
+            mprime: Some("/nix/store/x-mprime".into()),
+            ycruncher: None,
+        },
+        ..bare_config()
+    }
+}
+
+pub(crate) fn bare_config() -> ConfigSnapshot {
+    ConfigSnapshot {
+        start_offsets: PerCore::default(),
+        candidate_solo_limits: PerCore::default(),
+        durations: ConfigDurations {
+            search_trial_s: 90,
+            short_trial_s: 120,
+            checking_trial_s: 120,
+            checking_idle_s: 900,
+            checking_all_core_s: 1200,
+        },
+        evidence: ConfigEvidence {
+            miss: 0.05,
+            rate: 0.5,
+        },
+        checking: ConfigChecking {
+            cycle: vec![Regime::R7, Regime::R2, Regime::R1],
+        },
+        dead_ends: ConfigDeadEnds {
+            inconclusive_in_a_row: 3,
+            stray_crashes_in_a_row: 3,
+        },
+        backends: ConfigBackends::default(),
+        backend_user: None,
+    }
 }
 
 pub(crate) fn workload(id: &str) -> WorkloadId {

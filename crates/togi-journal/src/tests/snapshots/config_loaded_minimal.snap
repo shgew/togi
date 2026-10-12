@@ -1,0 +1,5 @@
+---
+source: crates/togi-journal/src/tests/config_snapshot.rs
+expression: "&encoded"
+---
+{"seq":2,"time":"2026-10-02T01:14:07.12Z","boot":"e8f9aaaa-bbbb-cccc-dddd-eeeeeeeeeeee","cause":[1],"kind":"config.loaded","msg":"no config at /etc/togi/config.json; using defaults with togi 0.1.0+abc1234 (schema 1, ruleset 10, fixes 2)","data":{"build":{"version":"0.1.0","rev":"abc1234","ruleset":10,"schema":1,"fixes":2,"evidence":1},"config":{"start_offsets":{},"candidate_solo_limits":{},"durations":{"search_trial_s":90,"short_trial_s":120,"checking_trial_s":120,"checking_idle_s":900,"checking_all_core_s":1200},"evidence":{"miss":0.05,"rate":0.5},"checking":{"cycle":["R7","R2","R1"]},"dead_ends":{"inconclusive_in_a_row":3,"stray_crashes_in_a_row":3},"backends":{"mprime":null,"ycruncher":null},"backend_user":null},"path":"/etc/togi/config.json","file":false}}

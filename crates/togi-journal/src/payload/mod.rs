@@ -1,3 +1,4 @@
+mod config;
 mod domain;
 mod message;
 mod session;
@@ -10,6 +11,9 @@ use std::str::FromStr;
 
 use serde::{Serialize, Serializer};
 
+pub use config::{
+    ConfigBackends, ConfigChecking, ConfigDeadEnds, ConfigDurations, ConfigEvidence, ConfigSnapshot,
+};
 pub use domain::{
     Activity, Attribution, CorePhase, CycleEvent, DeadEndAction, DeadEndCondition, Decision,
     DefectAnswer, DefectDirection, HuntOutcome, HuntStage, Inference, Notice, Outcome, RetryTarget,
@@ -59,6 +63,19 @@ macro_rules! payloads {
                 Ok(match kind {
                     $(EventKind::$variant => Self::$variant(serde_json::from_str(data)?),)+
                 })
+            }
+
+            /// Decodes `data` again, tracking where in it an error occurs; for finding an unknown field.
+            pub(crate) fn decode_tracked(
+                kind: EventKind,
+                data: &str,
+            ) -> Result<(), serde_path_to_error::Error<serde_json::Error>> {
+                let mut deserializer = serde_json::Deserializer::from_str(data);
+                match kind {
+                    $(EventKind::$variant => {
+                        serde_path_to_error::deserialize::<_, $ty>(&mut deserializer).map(drop)
+                    })+
+                }
             }
         }
 
