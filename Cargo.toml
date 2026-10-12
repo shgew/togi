@@ -11,6 +11,7 @@ repository = "https://github.com/shgew/togi"
 publish = false
 
 [workspace.dependencies]
+clap = { version = "4", default-features = false, features = ["std", "derive", "help", "usage", "error-context"] }
 flate2 = "1"
 getrandom = { version = "0.4", features = ["std"] }
 jiff = { version = "0.2", default-features = false, features = ["std", "serde"] }
