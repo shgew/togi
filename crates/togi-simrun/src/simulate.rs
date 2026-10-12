@@ -10,7 +10,7 @@ use togi_journal::{
 use togi_session::{Ended, PublicationPolicy, ResumeCapsule, RunInput, SessionError, prepare};
 
 use crate::input::{Finished, Persistence, Replay, SimInput, SimOutcome};
-use crate::observe::{SharedLog, Slot, Tee, UserLog, Watch};
+use crate::observe::{SharedLog, Slot, Tee, UserLog, hook};
 use crate::{HistoryError, SimError, machine};
 
 #[expect(
@@ -63,9 +63,6 @@ fn simulate_checked(input: SimInput, check: &mut Check<'_>) -> Result<SimOutcome
         Persistence::Memory(fs) => Some(fs.clone()),
         Persistence::Files(_) => None,
     };
-    if observer.is_some() && memory.is_none() {
-        return Err(SimError::ObserverOnDisk);
-    }
     let samples = match (&persistence, write_samples) {
         (_, false) => None,
         (Persistence::Memory(_), true) => return Err(SimError::SamplesInMemory),
@@ -110,14 +107,6 @@ fn simulate_checked(input: SimInput, check: &mut Check<'_>) -> Result<SimOutcome
             user.borrow_mut().write_event(renderer, event, &zone);
         }
         let run_cancel = cancel.child_token();
-        let tee = Tee {
-            user: Rc::clone(&user),
-            watch: memory.as_ref().map(|fs| Watch {
-                fs: fs.clone(),
-                observer: Rc::clone(&slot),
-                cancel: run_cancel.clone(),
-            }),
-        };
         let ended = togi_session::run(RunInput {
             config: config.clone(),
             source: source.clone(),
@@ -132,7 +121,8 @@ fn simulate_checked(input: SimInput, check: &mut Check<'_>) -> Result<SimOutcome
             defects,
             resume: resume.take(),
             carry: prepared.carry,
-            log: Some(Box::new(tee)),
+            log: Some(Box::new(Tee(Rc::clone(&user)))),
+            on_append: Some(hook(Rc::clone(&slot), run_cancel.clone())),
             renderer,
             zone: zone.clone(),
             cancel: run_cancel,
