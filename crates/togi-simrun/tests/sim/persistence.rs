@@ -6,7 +6,7 @@ use togi_journal::EventKind;
 use togi_machine::BootId;
 use togi_session::Stop;
 use togi_sim::MachineDefinition;
-use togi_simrun::{Observe, Persistence, SimInput, SimOutcome, simulate};
+use togi_simrun::{Observe, Persistence, Replay, SimInput, SimOutcome, simulate};
 
 use crate::common::{STATE, hunt_machine, input, machine_file, nz, simulator};
 
@@ -162,13 +162,15 @@ fn assert_unpublished_during_runs(seen: &Seen) -> usize {
     boots
 }
 
-#[test]
-fn a_state_directory_on_disk_gets_state_json_only_when_a_run_ends() {
+/// Runs the crashing machine to its stop on disk and returns how many distinct `state.json` files the runs saw, and
+/// how many boots there were.
+fn published_in_a_crashing_simulation(replay: Replay) -> (usize, usize) {
     let dir = tempfile::tempdir().unwrap();
     let mut input = input(
         simulator(&hunt_machine(2), 1),
         Persistence::Files(dir.path().to_path_buf()),
     );
+    input.replay = replay;
     let seen = watch_state_json(&mut input, dir.path(), |_| false);
     let SimOutcome::Stopped(finished) = simulate(input).unwrap() else {
         panic!("capped");
@@ -182,13 +184,28 @@ fn a_state_directory_on_disk_gets_state_json_only_when_a_run_ends() {
     let seen = seen.borrow();
     let mut published = seen.iter().map(|(_, state)| state).collect::<Vec<_>>();
     published.dedup();
-    assert_eq!(published.len(), boots, "one publication per crashed boot");
     let journal = std::fs::read_to_string(dir.path().join("events.jsonl")).unwrap();
     assert!(
         !journal.contains("\"state.rebuilt\""),
         "a boot found no published state.json and rebuilt it"
     );
     assert!(dir.path().join("state.json").exists());
+    (published.len(), boots)
+}
+
+#[test]
+fn a_warm_simulation_on_disk_gets_state_json_only_when_it_stops() {
+    let (published, _) = published_in_a_crashing_simulation(Replay::Warm);
+    assert_eq!(
+        published, 1,
+        "no run saw a state.json: crashes publish none"
+    );
+}
+
+#[test]
+fn a_cold_simulation_on_disk_gets_state_json_at_every_crashed_boot() {
+    let (published, boots) = published_in_a_crashing_simulation(Replay::Cold);
+    assert_eq!(published, boots, "one publication per crashed boot");
 }
 
 #[test]

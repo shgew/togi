@@ -729,6 +729,30 @@ Every Go test function in `internal/simrun/*_test.go`, `internal/tuner/memo_test
 
 Some Rust tests have no Go counterpart. They pin behavior Go got wrong or did not have: `log::a_log_that_fails_during_a_crashed_boot_fails_the_simulation_instead_of_capping_it`, `log::an_observer_sees_every_append_after_the_log_fails`, `log::an_observer_sees_the_journal_in_order_across_boots` and its log, failing-log and on-disk variants, `log::a_stopped_observer_is_not_called_again_and_the_run_is_cancelled_once`, `simulate::tests::a_boot_that_ends_without_a_crash_is_always_checked`; three `persistence::` tests that pin when a state directory on disk gets `state.json`: at a stop, at a signal and from a crashed run's capsule, never during a run; the `split::` tests, which cover a capped simulation continuing in another process from `machine.json`, in memory too, and a snapshot that cannot be read or removed; and the `boundary::` tests, which cover rejected persistence options, a host failure at startup, the repaired-tail log line, `dump_to`, and reading the live journal back.
 
+## Stage 4: simulated reboot keeps the journal (#873, 2026-10-12)
+
+Go resumed a simulated reboot from the crashed boot's memory: no journal re-read, and `state.json` left pending after a crash until the invocation ended (`TestCrashLeavesDeferredStateUnwrittenInWarm`). Rust's `simulate` read and parsed all of `events.jsonl` at every boot, in memory and on disk, and published `state.json` at every crash, which the next boot then read back to compare.
+
+A warm reboot now carries state forward:
+
+- `Journal::reboot` keeps the open journal across a simulated reboot: it writes the buffer through, sets the new boot and a new `JournalId`, so no receipt of the crashed boot verifies, clears `repaired`, and reads nothing. A poisoned journal is not rebooted; the simulation closes it and takes the `lock` and `prepare` path.
+- `togi_session::prepare_kept` makes `prepare`'s decisions from the open journal's events. A journal `prepare` would archive before opening (at the reset boundary, a build that only differs, a build this build refuses) is closed and handed to `prepare`, so the directory work is the same code. A table test pins `prepare_kept` against `prepare` on the same directory for an empty journal, a plain resume, a build archive, a context change, a settled and an unsettled carry and a reset boundary.
+- A run that adopts a capsule skips `rebuild_state`: the boot before it left `state.json` pending on purpose. `ResumeCapsule::covers` is the adoption test, and `ResumeCapsule::publish` writes into a `StateDir`.
+- With `Replay::Warm` a crash publishes nothing; the last boot's capsule is published when a run stops or `max_boots` caps the simulation. `Replay::Cold` publishes at every crash, since nothing adopts there.
+
+`events.jsonl` and the final `state.json` stay byte-identical to the cold path (`warm_cold` and `persistence` tests, unchanged). New tests: `reboot::a_warm_simulation_reads_the_journal_once_however_many_boots_it_runs` counts reads of `events.jsonl` through `MemFs::reads`, `reboot::a_warm_simulation_publishes_state_json_once_at_its_stop_or_its_cap` counts publications, with cold counterparts, and `togi-journal` and `togi-session` pin `reboot`, `prepare_kept` and the adoption.
+
+Measured with release `togi-tool-sim --seed 102 --machine tools/bench/machines/flat-hazard.json --cycles 20 --state-dir D` (87,846 events, a 36.7 MB journal, about 290 crashes), on a shared host, three runs each:
+
+| | before | after |
+|---|---|---|
+| wall time | 36.8 s, 19.2 s, 18.3 s | 1.5 s, 1.5 s, 1.4 s |
+| `read` calls (`strace -f -c`) | 1,767 | 9 |
+| `rename` calls | 294 | 1 |
+| `write` calls | 9,147 | 8,854 |
+
+`events.jsonl` and `state.json` of the two builds compare byte-identical. The per-intent flush stays: the 8,854 writes cost 3 ms of syscall time in a 3 s run, so dropping it would not show.
+
 ## Stage 4: crash-sweep test time (#842, 2026-10-12)
 
 The two `togi-session` crash sweeps hit nextest's 120 s limit on GitHub runners ([#842](https://github.com/shgew/togi/issues/842)). `killing_the_run_at_every_durable_event_resumes_to_the_same_final_state` kills a run at each of the 809 durable events of a one-cycle session, and `a_crash_at_every_trial_event_leaves_a_resumable_journal` crashes one at each of 664 trial events. Each point drives a whole session again, about 85 ms in the dev profile, so the cost is quadratic in the journal length. A perf profile of the sweep put about 32 % of the time in `Journal::commit` decoding each written line again, 22 % in `StateDir::open_at` parsing the journal at every boot, 20 % in the tuner fold and 12 % in encoding: nearly all of it unoptimized serde_json.
