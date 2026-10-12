@@ -6,11 +6,61 @@ mod session;
 
 use std::fs;
 use std::num::{NonZeroU32, NonZeroUsize};
-use std::path::Path;
-use std::time::Duration;
+use std::path::{Path, PathBuf};
+use std::thread;
+use std::time::{Duration, Instant};
 
 use fake::Bench;
 use togi_tool_bench::{Error, Fleet, Options, Report, RunError, Selection, Status, execute};
+
+const DAMAGE: &str = r#"printf 'broken\n' > "$4/events.jsonl"; exit 0"#;
+
+fn report_text(report: &Report) -> String {
+    let mut text = Vec::new();
+    report.write(&mut text).unwrap();
+    String::from_utf8(text).unwrap()
+}
+
+fn state_dirs(bench: &Bench) -> Vec<PathBuf> {
+    let args = fs::read_to_string(bench.path("args.txt")).unwrap();
+    args.lines()
+        .filter_map(|line| {
+            let mut words = line.split_whitespace();
+            words.find(|word| *word == "--state-dir")?;
+            words.next().map(PathBuf::from)
+        })
+        .collect()
+}
+
+fn assert_gone(dirs: &[PathBuf]) {
+    for dir in dirs {
+        assert!(!dir.exists(), "{}", dir.display());
+        let root = dir
+            .ancestors()
+            .find(|path| {
+                path.file_name()
+                    .is_some_and(|name| name.to_string_lossy().starts_with("togi-bench-runs-"))
+            })
+            .unwrap();
+        assert!(!root.exists(), "{}", root.display());
+    }
+}
+
+fn files_under(dir: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    entries
+        .flat_map(|entry| {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                files_under(&path)
+            } else {
+                vec![path]
+            }
+        })
+        .collect()
+}
 
 fn run(options: &Options) -> Report {
     execute(options, &Fleet::new()).unwrap()
@@ -57,7 +107,7 @@ fn every_run_gets_one_record_in_suite_order_stamped_with_the_tree() {
         report
             .records
             .iter()
-            .all(|r| !r.commit.is_empty() && r.ruleset == 1)
+            .all(|r| r.commit == "abc1234" && !r.dirty && r.ruleset == 1)
     );
     assert!(
         report
@@ -144,7 +194,7 @@ fn a_status_follows_the_exit_status_and_the_log() {
 #[test]
 fn the_records_do_not_depend_on_how_many_simulators_run_at_once() {
     let bench = Bench::new();
-    let sim = bench.simulator("sim", 0, "", "");
+    let sim = bench.simulator("sim", 0, "", r#"[ "$2" = 1 ] && sleep 0.5"#);
     let mut one = bench.options(sim.clone());
     one.jobs = NonZeroUsize::MIN;
     one.cache = None;
@@ -243,6 +293,26 @@ fn without_keeping_no_run_directory_survives() {
     let bench = Bench::new();
     let report = run(&bench.options(bench.simulator("sim", 0, "", "")));
     assert!(report.kept.is_none());
+    let dirs = state_dirs(&bench);
+    assert_eq!(dirs.len(), 5);
+    assert_gone(&dirs);
+}
+
+#[test]
+fn a_failed_run_leaves_no_run_directory_either() {
+    let bench = Bench::new();
+    let record = format!(
+        r#"echo "$@" >> '{}'; sleep 30"#,
+        bench.path("args.txt").display()
+    );
+    let mut options = bench.options(bench.simulator("slow", 0, "", &record));
+    options.timeout = Duration::from_secs(1);
+    options.jobs = NonZeroUsize::MIN;
+    options.cache = None;
+    execute(&options, &Fleet::new()).unwrap_err();
+    let dirs = state_dirs(&bench);
+    assert_eq!(dirs.len(), 1);
+    assert_gone(&dirs);
 }
 
 #[test]
@@ -343,4 +413,189 @@ fn the_report_lists_the_summary_for_each_scenario_and_the_cache_line() {
     for needle in ["default ", "late ", "TOTAL ", "cache: 0 of 5 runs cached"] {
         assert!(text.contains(needle), "{needle}: {text}");
     }
+}
+
+#[test]
+fn the_report_prints_the_suites_notes_before_the_summary_and_none_without_a_gate() {
+    let bench = Bench::new();
+    let options = bench.options(bench.simulator("sim", 0, "", ""));
+    assert!(
+        !report_text(&run(&options))
+            .lines()
+            .any(|line| line.starts_with("suite:"))
+    );
+    fs::write(
+        bench.path("suite.json"),
+        r#"{"gate":{"notes":["first","second"]},"scenarios":[{"name":"default","dev":[1]}]}"#,
+    )
+    .unwrap();
+    let text = report_text(&run(&options));
+    assert!(text.starts_with("suite: first\nsuite: second\n"), "{text}");
+    assert_eq!(text.matches("suite:").count(), 2, "{text}");
+}
+
+#[test]
+fn the_simulator_that_runs_is_a_private_copy_of_the_file_that_was_hashed() {
+    let bench = Bench::new();
+    let original = bench.path("sim");
+    let swap = format!(r"printf '#!/bin/sh\nexit 7\n' > '{}'", original.display());
+    let mut options = bench.options(bench.simulator("sim", 0, "", &swap));
+    options.jobs = NonZeroUsize::MIN;
+    let report = run(&options);
+    assert_eq!(report.records.len(), 5);
+    assert!(
+        report
+            .records
+            .iter()
+            .all(|r| r.status == Status::Concluded && r.exit_code == 0)
+    );
+}
+
+#[test]
+fn every_simulator_leads_a_process_group_of_its_own() {
+    let bench = Bench::new();
+    let leader = bench.path("leader.txt");
+    let probe = format!(
+        r#"kill -0 "-$$" 2>/dev/null && echo leader >> '{}'"#,
+        leader.display()
+    );
+    run(&bench.options(bench.simulator("sim", 0, "", &probe)));
+    assert_eq!(fs::read_to_string(leader).unwrap().lines().count(), 5);
+}
+
+#[test]
+fn a_session_killed_by_a_signal_is_an_error_record_and_is_not_cached() {
+    let bench = Bench::new();
+    let flag = bench.path("killed");
+    let kill = format!(
+        "if [ ! -e '{0}' ]; then touch '{0}'; kill -9 $$; fi",
+        flag.display()
+    );
+    let mut options = bench.options(bench.simulator("sim", 0, "", &kill));
+    options.jobs = NonZeroUsize::MIN;
+    let first = run(&options);
+    assert_eq!(first.records[0].status, Status::Error);
+    assert_eq!(first.records[0].exit_code, -1);
+    assert!(
+        first.records[1..]
+            .iter()
+            .all(|r| r.status == Status::Concluded)
+    );
+    let second = run(&options);
+    assert_eq!(second.cached, 4);
+    assert!(second.records.iter().all(|r| r.status == Status::Concluded));
+}
+
+#[test]
+fn a_journal_that_ends_in_a_signal_is_an_error_record_and_is_not_cached() {
+    let bench = Bench::new();
+    let flag = bench.path("stopped");
+    let stop = format!(
+        r#"if [ ! -e '{0}' ]; then touch '{0}'; cp '{1}' "$4/events.jsonl"; exit 0; fi"#,
+        flag.display(),
+        bench.path("signalled.jsonl").display()
+    );
+    let mut options = bench.options(bench.simulator("sim", 0, "", &stop));
+    options.jobs = NonZeroUsize::MIN;
+    let first = run(&options);
+    assert_eq!(first.records[0].status, Status::Error);
+    assert_eq!(first.records[0].exit_code, 0);
+    assert!(
+        first.records[1..]
+            .iter()
+            .all(|r| r.status == Status::Concluded)
+    );
+    let second = run(&options);
+    assert_eq!(second.cached, 4);
+    assert!(second.records.iter().all(|r| r.status == Status::Concluded));
+}
+
+#[test]
+fn a_simulator_that_leaves_no_journal_is_an_error_record() {
+    let bench = Bench::new();
+    let none = r"echo 'sim: failed to read file'; exit 1";
+    let report = run(&bench.options(bench.simulator("sim", 0, "", none)));
+    assert_eq!(report.records.len(), 5);
+    assert!(
+        report
+            .records
+            .iter()
+            .all(|r| r.status == Status::Error && r.exit_code == 1 && r.sim_hours == 0.0)
+    );
+}
+
+#[test]
+fn a_damaged_journal_is_a_harness_error() {
+    let bench = Bench::new();
+    let error = execute(
+        &bench.options(bench.simulator("sim", 0, "", DAMAGE)),
+        &Fleet::new(),
+    )
+    .unwrap_err();
+    assert!(
+        matches!(&error, Error::Run { source, .. } if matches!(**source, RunError::Journal(_))),
+        "{error}"
+    );
+}
+
+#[test]
+fn a_failed_cache_write_is_a_warning_and_the_records_are_kept() {
+    let bench = Bench::new();
+    let block = format!(
+        r#"for d in '{}'/runs/*; do rm -rf "$d/default"; : > "$d/default"; done"#,
+        bench.path("cache").display()
+    );
+    let mut options = bench.options(bench.simulator("sim", 0, "", &block));
+    options.jobs = NonZeroUsize::MIN;
+    let report = run(&options);
+    assert_eq!(report.records.len(), 5);
+    assert_eq!(report.warnings.len(), 4, "{:?}", report.warnings);
+    assert!(
+        report.warnings[0].starts_with("write the run cache for default/dev-1: "),
+        "{:?}",
+        report.warnings
+    );
+    assert!(report.warnings[3].contains("default/holdout-101"));
+    assert_eq!(run(&options).cached, 1);
+}
+
+#[test]
+fn the_first_failure_stops_the_running_simulators_and_is_what_the_run_reports() {
+    let bench = Bench::new();
+    let failing_then_slow = format!(r#"if [ "$2" = 1 ]; then {DAMAGE}; fi; sleep 30"#);
+    let mut options = bench.options(bench.simulator("sim", 0, "", &failing_then_slow));
+    options.jobs = NonZeroUsize::new(2).unwrap();
+    options.cache = None;
+    let began = Instant::now();
+    let error = execute(&options, &Fleet::new()).unwrap_err();
+    assert!(began.elapsed() < Duration::from_secs(20), "{error}");
+    assert!(
+        matches!(&error, Error::Run { run, source } if run == "default/dev-1" && matches!(**source, RunError::Journal(_))),
+        "{error}"
+    );
+}
+
+#[test]
+fn cancelling_while_a_simulator_runs_stops_it_and_keeps_nothing() {
+    let bench = Bench::new();
+    let started = bench.path("started");
+    let hold = format!("touch '{}'; sleep 30", started.display());
+    let mut options = bench.options(bench.simulator("slow", 0, "", &hold));
+    options.keep = Some(bench.path("kept"));
+    options.jobs = NonZeroUsize::MIN;
+    let fleet = Fleet::new();
+    let began = Instant::now();
+    let result = thread::scope(|scope| {
+        let running = scope.spawn(|| execute(&options, &fleet));
+        let give_up = Instant::now() + Duration::from_secs(20);
+        while !started.exists() && Instant::now() < give_up {
+            thread::sleep(Duration::from_millis(10));
+        }
+        fleet.cancel();
+        running.join().unwrap()
+    });
+    assert!(matches!(result, Err(Error::Interrupted)), "{result:?}");
+    assert!(began.elapsed() < Duration::from_secs(20));
+    assert!(files_under(&bench.path("cache/runs")).is_empty());
+    assert_eq!(fs::read_dir(bench.path("kept")).unwrap().count(), 0);
 }

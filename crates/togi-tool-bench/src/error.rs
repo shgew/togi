@@ -16,19 +16,11 @@ pub enum Error {
         #[source]
         source: file::LoadError,
     },
-    #[error("load scenario {scenario}: replay needs a machine file naming a facts extract")]
-    ReplayWithoutMachine { scenario: String },
     #[error("load scenario {scenario}: {source}")]
     Replay {
         scenario: String,
         #[source]
         source: ExtractsError,
-    },
-    #[error("machine {machine}: {source}")]
-    InvalidMachine {
-        machine: String,
-        #[source]
-        source: InvalidMachine,
     },
     #[error("check model {machine}: {message}")]
     ModelCheck { machine: String, message: String },

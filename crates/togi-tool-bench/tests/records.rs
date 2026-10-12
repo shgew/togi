@@ -3,7 +3,7 @@
 mod common;
 
 use common::record;
-use togi_tool_bench::{Error, Record, Status, read_records, write_records};
+use togi_tool_bench::{Error, ModelCheck, Record, Status, read_records, write_records};
 
 fn read_text(text: &str) -> Result<Vec<Record>, Error> {
     let dir = tempfile::tempdir().unwrap();
@@ -62,15 +62,89 @@ fn a_run_listed_twice_is_refused_even_across_splits() {
     assert!(error.contains("duplicate baseline run target/1"), "{error}");
 }
 
+fn complete(scenario: &str, seed: u64) -> Record {
+    Record {
+        machine: Some("machine.json".to_owned()),
+        model_check: Some(ModelCheck {
+            eligible_groups: 1,
+            flagged_groups: 2,
+            idle_failures: 3,
+        }),
+        first_passed_cycle_h: Some(1.5),
+        worst_r7_hazard_per_h: Some(0.5),
+        ..record(scenario, seed)
+    }
+}
+
+const FIELDS: [&str; 28] = [
+    "scenario",
+    "machine",
+    "seed",
+    "split",
+    "commit",
+    "dirty",
+    "ruleset",
+    "evidence",
+    "status",
+    "model_check",
+    "exit_code",
+    "wall_s",
+    "sim_hours",
+    "first_passed_cycle_h",
+    "passed_cycles",
+    "crashes",
+    "trials",
+    "real_answers",
+    "real_answer_share",
+    "scenario_real_answer_share",
+    "trial_hours",
+    "hunts",
+    "combinations",
+    "final_profile",
+    "depth",
+    "hazard_per_h",
+    "hazard_max_per_h",
+    "worst_r7_hazard_per_h",
+];
+
 #[test]
 fn a_record_is_an_object_with_exactly_the_fields_the_format_names() {
     let mut value = serde_json::to_value(record("a", 1)).unwrap();
     value["partial_seconds"] = 150.into();
     assert!(read_text(&value.to_string()).is_err());
-    assert!(read_text("[\"a\",1]").is_err());
     let mut missing = serde_json::to_value(record("a", 1)).unwrap();
     missing.as_object_mut().unwrap().remove("depth");
     assert!(read_text(&missing.to_string()).is_err());
+}
+
+#[test]
+fn a_record_is_refused_in_the_positional_array_form() {
+    let object = serde_json::to_value(complete("a", 1)).unwrap();
+    let object = object.as_object().unwrap();
+    assert_eq!(object.len(), FIELDS.len());
+    let array = serde_json::Value::Array(FIELDS.iter().map(|name| object[*name].clone()).collect());
+    let error = read_text(&array.to_string()).unwrap_err().to_string();
+    assert!(error.contains("an object"), "{error}");
+
+    let mut nested = object.clone();
+    nested.insert("model_check".to_owned(), serde_json::json!([1, 2, 3]));
+    let error = read_text(&serde_json::Value::Object(nested).to_string())
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("an object"), "{error}");
+}
+
+#[test]
+fn the_first_passed_cycle_is_required_but_may_be_null() {
+    let mut value = serde_json::to_value(record("a", 1)).unwrap();
+    assert!(value["first_passed_cycle_h"].is_null());
+    assert!(read_text(&value.to_string()).is_ok());
+    value
+        .as_object_mut()
+        .unwrap()
+        .remove("first_passed_cycle_h");
+    let error = read_text(&value.to_string()).unwrap_err().to_string();
+    assert!(error.contains("first_passed_cycle_h"), "{error}");
 }
 
 #[test]

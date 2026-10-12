@@ -77,14 +77,18 @@ fn a_runs_inputs_bind_the_suite_the_run_and_every_file_of_its_machine() {
     );
 }
 
-#[test]
-fn every_file_an_overlay_extends_is_an_input() {
+fn committed_tree(machines: &[(&str, Option<(&str, &str)>)]) -> tempfile::TempDir {
     let bench = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tools/bench");
     let dir = tempfile::tempdir().unwrap();
-    let machines = dir.path().join("machines");
-    fs::create_dir_all(&machines).unwrap();
-    for name in ["target-shared-voltage.json", "target-r7-vf-boost.json"] {
-        fs::copy(bench.join("machines").join(name), machines.join(name)).unwrap();
+    fs::create_dir_all(dir.path().join("machines")).unwrap();
+    for (name, repoint) in machines {
+        let mut text = fs::read_to_string(bench.join("machines").join(name)).unwrap();
+        if let Some((from, to)) = repoint {
+            let extends = format!("\"extends\": \"{from}\"");
+            assert_eq!(text.matches(&extends).count(), 1, "{name}");
+            text = text.replace(&extends, &format!("\"extends\": \"{to}\""));
+        }
+        fs::write(dir.path().join("machines").join(name), text).unwrap();
     }
     fs::create_dir_all(dir.path().join("facts")).unwrap();
     fs::copy(
@@ -92,19 +96,107 @@ fn every_file_an_overlay_extends_is_an_input() {
         dir.path().join("facts/target.jsonl.gz"),
     )
     .unwrap();
+    dir
+}
+
+fn edit_notes(path: &Path) {
+    let text = fs::read_to_string(path).unwrap();
+    assert!(text.contains("\"notes\": ["));
+    fs::write(
+        path,
+        text.replacen("\"notes\": [", "\"notes\": [\"edited\", ", 1),
+    )
+    .unwrap();
+}
+
+#[test]
+fn every_file_an_overlay_extends_is_an_input() {
+    let dir = committed_tree(&[
+        ("target-shared-voltage.json", None),
+        ("target-r7-vf-boost.json", None),
+    ]);
     let suite =
         r#"{"scenarios":[{"name":"x","machine":"machines/target-r7-vf-boost.json","dev":[1]}]}"#;
     let (digest, runs) = plan(dir.path(), suite);
     let base = inputs(&digest, &runs[0]);
-    let parent = machines.join("target-shared-voltage.json");
-    let text = fs::read_to_string(&parent).unwrap();
-    fs::write(
-        &parent,
-        text.replacen("\"notes\": [", "\"notes\": [\"edited\", ", 1),
-    )
-    .unwrap();
+    edit_notes(&dir.path().join("machines/target-shared-voltage.json"));
     let (_, changed) = plan(dir.path(), suite);
     assert_ne!(base, inputs(&digest, &changed[0]));
+}
+
+#[test]
+fn an_equal_overlay_chain_in_another_tree_hits_and_only_its_grandparent_changing_misses() {
+    let chain = [
+        ("target-shared-voltage.json", None),
+        ("target-r7-vf-boost.json", None),
+        (
+            "target-r7-request-gap.json",
+            Some(("target-shared-voltage.json", "target-r7-vf-boost.json")),
+        ),
+    ];
+    let suite = r#"{"scenarios":[{"name":"chain","machine":"machines/target-r7-request-gap.json","dev":[1,2],"holdout":[101]}]}"#;
+    let first = committed_tree(&chain);
+    let second = committed_tree(&chain);
+    let (digest, runs) = plan(first.path(), suite);
+    let (other_digest, other_runs) = plan(second.path(), suite);
+    assert_eq!(digest, other_digest);
+    let machine = runs[0].machine.as_ref().unwrap();
+    assert_eq!(machine.inputs.len(), 4, "leaf, parent, root and the facts");
+
+    let cache = RunCache::open(&first.path().join("cache"), "key").unwrap();
+    cache
+        .put(&runs[0], &inputs(&digest, &runs[0]), &record("chain", 1))
+        .unwrap();
+    for (run, other) in runs.iter().zip(&other_runs) {
+        assert_eq!(inputs(&digest, run), inputs(&other_digest, other));
+    }
+    assert_eq!(
+        cache.get(&other_runs[0], &inputs(&other_digest, &other_runs[0])),
+        Some(record("chain", 1)),
+        "an equal chain in another tree shares the record"
+    );
+
+    edit_notes(&second.path().join("machines/target-shared-voltage.json"));
+    let (_, edited) = plan(second.path(), suite);
+    assert_ne!(inputs(&digest, &runs[0]), inputs(&digest, &edited[0]));
+    assert!(
+        cache
+            .get(&edited[0], &inputs(&digest, &edited[0]))
+            .is_none(),
+        "editing only the grandparent misses"
+    );
+}
+
+#[test]
+fn equal_files_in_another_directory_give_the_same_inputs() {
+    let first = machine_dir();
+    let second = machine_dir();
+    let (digest, runs) = plan(first.path(), SUITE);
+    let (other_digest, other_runs) = plan(second.path(), SUITE);
+    assert_eq!(digest, other_digest);
+    for (run, other) in runs.iter().zip(&other_runs) {
+        assert_eq!(inputs(&digest, run), inputs(&other_digest, other));
+    }
+}
+
+#[test]
+fn flipping_replay_changes_the_inputs() {
+    let dir = committed_tree(&[("target-shared-voltage.json", None)]);
+    let machine = r#""machine":"machines/target-shared-voltage.json","dev":[1]"#;
+    let (digest, plain) = plan(
+        dir.path(),
+        &format!(r#"{{"scenarios":[{{"name":"x",{machine}}}]}}"#),
+    );
+    let (_, replayed) = plan(
+        dir.path(),
+        &format!(r#"{{"scenarios":[{{"name":"x","replay":true,{machine}}}]}}"#),
+    );
+    assert!(plain[0].replay.is_none() && replayed[0].replay.is_some());
+    assert_ne!(
+        inputs(&digest, &plain[0]),
+        inputs(&digest, &replayed[0]),
+        "same suite digest, machine and facts"
+    );
 }
 
 #[test]
@@ -158,6 +250,15 @@ fn an_entry_for_another_run_or_a_damaged_one_is_a_miss() {
     let file = root.join("runs/key/x/dev-1.json");
     fs::write(&file, "{").unwrap();
     assert!(cache.get(&runs[0], &digest).is_none());
+    cache.put(&runs[0], &digest, &record("x", 1)).unwrap();
+    let stored: serde_json::Value = serde_json::from_slice(&fs::read(&file).unwrap()).unwrap();
+    let positional = serde_json::json!([stored["inputs"], stored["record"]]);
+    fs::write(&file, positional.to_string()).unwrap();
+    assert!(cache.get(&runs[0], &digest).is_none(), "a positional entry");
+    let mut unknown = stored;
+    unknown["extra"] = serde_json::json!(1);
+    fs::write(&file, unknown.to_string()).unwrap();
+    assert!(cache.get(&runs[0], &digest).is_none(), "an unknown key");
 }
 
 #[test]
@@ -243,8 +344,9 @@ fn costs_survive_a_scope_that_has_none_and_keep_the_eight_latest_scopes() {
         costs.set(&format!("s{scope}"), "x/dev-1", 1.0 + f64::from(scope));
     }
     assert_eq!(costs.get("s9", "x/dev-1"), Some(10.0));
+    assert_eq!(costs.get("s2", "x/dev-1"), Some(3.0), "the eighth latest");
     assert_eq!(
-        costs.get("s0", "x/dev-1"),
+        costs.get("s1", "x/dev-1"),
         Some(10.0),
         "an evicted scope falls back to the latest"
     );
@@ -259,7 +361,25 @@ fn costs_round_trip_through_their_file_and_a_damaged_file_is_empty() {
     costs.save().unwrap();
     assert_eq!(Costs::load(path.clone()).get("a", "x/dev-1"), Some(3.5));
     fs::write(&path, "not json").unwrap();
-    assert_eq!(Costs::load(path).get("a", "x/dev-1"), None);
+    assert_eq!(Costs::load(path.clone()).get("a", "x/dev-1"), None);
+    for (name, text) in [
+        ("positional file", r#"[{"x/dev-1":5.0},[]]"#),
+        (
+            "positional scope",
+            r#"{"latest":{"x/dev-1":5.0},"scopes":[["a",{"x/dev-1":5.0}]]}"#,
+        ),
+        (
+            "unknown key",
+            r#"{"latest":{"x/dev-1":5.0},"scopes":[],"extra":1}"#,
+        ),
+    ] {
+        fs::write(&path, text).unwrap();
+        assert_eq!(
+            Costs::load(path.clone()).get("a", "x/dev-1"),
+            None,
+            "{name}"
+        );
+    }
 }
 
 #[test]

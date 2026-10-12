@@ -9,20 +9,74 @@ mod fake;
 mod session;
 
 use std::fs;
-use std::path::Path;
-use std::process::{Command, Output};
+use std::path::{Path, PathBuf};
+use std::process::{Child, Command, Output, Stdio};
+use std::time::{Duration, Instant};
 
 use fake::Bench;
+use rustix::process::{Pid, Signal, kill_process, test_kill_process};
 
-fn bench_command(bench: &Bench) -> Command {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_togi-tool-bench"));
+/// A git invocation that reads neither the user's nor the system's configuration.
+fn isolate_git(command: &mut Command, home: &Path) {
     command
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("HOME", home)
+        .env_remove("GIT_DIR")
+        .env_remove("GIT_WORK_TREE")
+        .env_remove("GIT_INDEX_FILE");
+}
+
+fn git(dir: &Path, home: &Path, args: &[&str]) {
+    let mut command = Command::new("git");
+    isolate_git(&mut command, home);
+    let output = command.current_dir(dir).args(args).output().unwrap();
+    assert!(output.status.success(), "{}", text(&output.stderr));
+}
+
+/// A clean repository with one commit, inside the bench's temporary directory but apart from its files, so
+/// the tests do not depend on the checkout they run from.
+fn repo(bench: &Bench) -> PathBuf {
+    let base = fs::canonicalize(bench.dir.path()).unwrap();
+    let dir = base.join("repo");
+    if !dir.join(".git").exists() {
+        fs::create_dir(&dir).unwrap();
+        let home = base.join("githome");
+        git(&dir, &home, &["init", "--quiet"]);
+        git(
+            &dir,
+            &home,
+            &[
+                "-c",
+                "user.name=bench",
+                "-c",
+                "user.email=bench@example.invalid",
+                "commit",
+                "--allow-empty",
+                "--quiet",
+                "--message",
+                "init",
+            ],
+        );
+    }
+    dir
+}
+
+fn plain_command(bench: &Bench) -> Command {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_togi-tool-bench"));
+    isolate_git(&mut command, &bench.path("githome"));
+    command
+        .current_dir(repo(bench))
         .arg("--suite")
         .arg(bench.path("suite.json"))
-        .arg("--split")
-        .arg("all")
         .arg("--jobs")
         .arg("2");
+    command
+}
+
+fn bench_command(bench: &Bench) -> Command {
+    let mut command = plain_command(bench);
+    command.arg("--split").arg("all");
     command
 }
 
@@ -168,7 +222,12 @@ fn the_cache_defaults_under_home_and_without_either_is_an_error() {
         .env("HOME", bench.path("home"))
         .env_remove("XDG_CACHE_HOME");
     assert!(run(&mut home).status.success());
-    assert!(bench.path("home/.cache/togi/bench-rs/runs").is_dir());
+    let subdirectory = if cfg!(target_os = "macos") {
+        "home/Library/Caches"
+    } else {
+        "home/.cache"
+    };
+    assert!(bench.path(subdirectory).join("togi/bench-rs/runs").is_dir());
     let mut neither = bench_command(&bench);
     neither
         .arg("--sim")
@@ -226,7 +285,7 @@ fn sanity_exits_1_when_a_metric_is_flagged() {
             .status
             .success()
     );
-    let doubled: String = fs::read_to_string(bench.path("out.jsonl"))
+    let censored: String = fs::read_to_string(bench.path("out.jsonl"))
         .unwrap()
         .lines()
         .map(|line| {
@@ -235,8 +294,8 @@ fn sanity_exits_1_when_a_metric_is_flagged() {
             value.to_string() + "\n"
         })
         .collect();
-    fs::write(bench.path("go.jsonl"), doubled).unwrap();
-    let output = sanity(&bench.path("out.jsonl"), &bench.path("go.jsonl"));
+    fs::write(bench.path("rust-censored.jsonl"), censored).unwrap();
+    let output = sanity(&bench.path("rust-censored.jsonl"), &bench.path("out.jsonl"));
     assert_eq!(output.status.code(), Some(1));
     assert!(text(&output.stdout).contains("FLAGGED"));
 }
@@ -257,4 +316,155 @@ fn sanity_with_nothing_in_common_or_a_missing_file_fails() {
     assert!(text(&none.stderr).contains("no run is in both"));
     let missing = sanity(&bench.path("missing.jsonl"), &bench.path("empty.jsonl"));
     assert_eq!(missing.status.code(), Some(1));
+}
+
+fn records_of(path: &Path) -> Vec<serde_json::Value> {
+    fs::read_to_string(path)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect()
+}
+
+fn splits_of(records: &[serde_json::Value]) -> Vec<&str> {
+    let mut splits: Vec<&str> = records
+        .iter()
+        .map(|record| record["split"].as_str().unwrap())
+        .collect();
+    splits.dedup();
+    splits
+}
+
+#[test]
+fn the_default_split_is_dev_and_holdout_runs_only_the_holdout_seeds() {
+    let bench = Bench::new();
+    let mut dev = plain_command(&bench);
+    with_sim(&mut dev, &bench, 0);
+    let output = run(dev.arg("--out").arg(bench.path("dev.jsonl")));
+    assert!(output.status.success(), "{}", text(&output.stderr));
+    let records = records_of(&bench.path("dev.jsonl"));
+    assert_eq!(records.len(), 4);
+    assert_eq!(splits_of(&records), ["dev"]);
+    let mut holdout = plain_command(&bench);
+    with_sim(&mut holdout, &bench, 0);
+    let output = run(holdout
+        .arg("--split")
+        .arg("holdout")
+        .arg("--out")
+        .arg(bench.path("holdout.jsonl")));
+    assert!(output.status.success(), "{}", text(&output.stderr));
+    let records = records_of(&bench.path("holdout.jsonl"));
+    assert_eq!(records.len(), 1);
+    assert_eq!(splits_of(&records), ["holdout"]);
+}
+
+#[test]
+fn the_tree_stamp_is_the_repository_the_bench_runs_in() {
+    let bench = Bench::new();
+    let mut command = bench_command(&bench);
+    with_sim(&mut command, &bench, 0);
+    assert!(
+        run(command.arg("--out").arg(bench.path("out.jsonl")))
+            .status
+            .success()
+    );
+    let records = records_of(&bench.path("out.jsonl"));
+    assert!(
+        records.iter().all(
+            |record| record["dirty"] == false && !record["commit"].as_str().unwrap().is_empty()
+        )
+    );
+}
+
+#[test]
+fn a_records_file_in_the_tree_named_through_dots_does_not_make_it_dirty() {
+    let bench = Bench::new();
+    fs::create_dir(repo(&bench).join("sub")).unwrap();
+    fs::write(repo(&bench).join("out.jsonl"), "").unwrap();
+    let mut command = bench_command(&bench);
+    with_sim(&mut command, &bench, 0);
+    let output = run(command.arg("--out").arg("sub/../out.jsonl"));
+    assert!(output.status.success(), "{}", text(&output.stderr));
+    let records = records_of(&repo(&bench).join("out.jsonl"));
+    assert!(records.iter().all(|record| record["dirty"] == false));
+}
+
+#[test]
+fn outside_a_git_repository_the_bench_fails_naming_it() {
+    let bench = Bench::new();
+    let outside = bench.path("outside");
+    fs::create_dir(&outside).unwrap();
+    let mut command = bench_command(&bench);
+    with_sim(&mut command, &bench, 0);
+    let output = run(command
+        .current_dir(&outside)
+        .env("GIT_CEILING_DIRECTORIES", bench.dir.path()));
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = text(&output.stderr);
+    assert!(stderr.starts_with("togi-tool-bench: git "), "{stderr}");
+    assert!(stderr.contains("not a git repository"), "{stderr}");
+}
+
+fn wait_for(what: &str, mut ready: impl FnMut() -> bool) {
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while !ready() {
+        assert!(Instant::now() < deadline, "timed out waiting for {what}");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+fn exit_of(child: &mut Child) -> Output {
+    let mut stderr = String::new();
+    wait_for("the bench to exit", || child.try_wait().unwrap().is_some());
+    std::io::Read::read_to_string(child.stderr.as_mut().unwrap(), &mut stderr).unwrap();
+    Output {
+        status: child.try_wait().unwrap().unwrap(),
+        stdout: Vec::new(),
+        stderr: stderr.into_bytes(),
+    }
+}
+
+#[test]
+fn a_termination_stops_the_bench_and_its_simulators_without_blocking_their_signals() {
+    let bench = Bench::new();
+    let pids = bench.path("pids.txt");
+    let before = format!(
+        "echo $$ >> '{pids}'\ngrep SigBlk /proc/self/status > '{dir}/sigblk.'$$ 2>/dev/null\nexec sleep 60",
+        pids = pids.display(),
+        dir = bench.dir.path().display(),
+    );
+    let sim = bench.simulator("sim", 0, "", &before);
+    let mut command = bench_command(&bench);
+    command
+        .arg("--sim")
+        .arg(sim)
+        .arg("--cache")
+        .arg(bench.path("cache"))
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped());
+    let mut child = command.spawn().unwrap();
+    wait_for("both simulators", || {
+        fs::read_to_string(&pids).is_ok_and(|started| started.lines().count() == 2)
+    });
+    let signalled = Instant::now();
+    kill_process(
+        Pid::from_raw(i32::try_from(child.id()).unwrap()).unwrap(),
+        Signal::TERM,
+    )
+    .unwrap();
+    let output = exit_of(&mut child);
+    assert!(signalled.elapsed() < Duration::from_secs(20));
+    assert_eq!(output.status.code(), Some(1));
+    assert!(text(&output.stderr).contains("interrupted"));
+    for line in fs::read_to_string(&pids).unwrap().lines() {
+        let pid = Pid::from_raw(line.parse().unwrap()).unwrap();
+        assert!(
+            test_kill_process(pid).is_err(),
+            "simulator {pid:?} is still running"
+        );
+        if cfg!(target_os = "linux") {
+            let status = fs::read_to_string(bench.path(&format!("sigblk.{line}"))).unwrap();
+            assert_eq!(status.trim(), "SigBlk:\t0000000000000000");
+        }
+    }
 }

@@ -339,9 +339,28 @@ fn shared_voltage_hazards_have_their_own_lines() {
             ..measured(None)
         },
     ];
+    let baseline = Record {
+        seed: 2,
+        ..rows[0].clone()
+    };
     let out = text(|out| {
         summary::report(out, &rows)?;
-        report(out, &rows[1..2], &rows[..1])
+        report(out, &rows[1..2], &[baseline])
     });
     insta::assert_snapshot!(out);
+}
+
+#[test]
+fn a_baseline_run_that_changed_split_pairs_and_is_not_counted_unmatched() {
+    let candidate = Record {
+        split: Split::Dev,
+        ..record("default", 5)
+    };
+    let baseline = Record {
+        split: Split::Holdout,
+        ..record("default", 5)
+    };
+    let out = text(|out| report(out, &[candidate], &[baseline]));
+    assert!(!out.contains("WARNING"), "{out}");
+    assert!(out.contains("pairs=1"), "{out}");
 }

@@ -30,7 +30,11 @@ fn plan(suite: &str, selection: Selection) -> Result<Vec<String>, Error> {
 fn an_invalid_suite_is_refused_with_the_reason() {
     let cases = [
         ("syntax", "[", "decode suite"),
-        ("unknown key", r#"{"extra":true}"#, "unknown field"),
+        (
+            "positional suite",
+            r#"[null,[{"name":"x","dev":[1]}]]"#,
+            "decode suite",
+        ),
         (
             "positional scenario",
             r#"{"scenarios":[["x"]]}"#,
@@ -116,6 +120,44 @@ fn an_invalid_suite_is_refused_with_the_reason() {
         let error = plan(suite, Selection::Dev).unwrap_err().to_string();
         assert!(error.contains(want), "{name}: {error}");
     }
+}
+
+#[test]
+fn every_scenario_is_checked_whatever_the_selection() {
+    let cases = [
+        (
+            "a holdout-only missing machine",
+            r#"{"scenarios":[{"name":"x","dev":[1]},{"name":"y","machine":"missing.json","holdout":[1]}]}"#,
+            "load scenario y",
+        ),
+        (
+            "an ensemble member only holdout positions reach",
+            r#"{"scenarios":[{"name":"x","machines":["a.json","missing.json"],"dev":[1],"holdout":[2]}]}"#,
+            "load scenario x",
+        ),
+        (
+            "a holdout-only replay without facts",
+            r#"{"scenarios":[{"name":"x","dev":[1]},{"name":"y","machine":"a.json","replay":true,"holdout":[1]}]}"#,
+            "load scenario y",
+        ),
+        (
+            "a holdout-only replay without a machine",
+            r#"{"scenarios":[{"name":"x","dev":[1]},{"name":"y","replay":true,"holdout":[1]}]}"#,
+            "replay needs a machine",
+        ),
+    ];
+    for (name, suite, want) in cases {
+        let error = plan(suite, Selection::Dev).unwrap_err().to_string();
+        assert!(error.contains(want), "{name}: {error}");
+    }
+    let parse = Suite::parse(
+        br#"{"scenarios":[{"name":"y","replay":true,"dev":[1]}]}"#,
+        PathBuf::new(),
+    );
+    assert!(matches!(
+        parse,
+        Err(togi_tool_bench::SuiteError::ReplayWithoutMachine(_))
+    ));
 }
 
 #[test]
@@ -249,6 +291,15 @@ fn the_committed_suite_has_the_runs_and_scenarios_it_documents() {
     let all = suite.plan(Selection::All).unwrap();
     let dev = suite.plan(Selection::Dev).unwrap();
     assert_eq!((all.runs.len(), dev.runs.len()), (220, 110));
+    for deleted in [
+        "target-r4-limit",
+        "target-delayed-joint",
+        "target-flat-risk",
+        "target-flat-cost",
+    ] {
+        let file = bench_dir().join("machines").join(format!("{deleted}.json"));
+        assert!(!file.exists(), "{} is back", file.display());
+    }
     let mut names: Vec<&str> = Vec::new();
     for run in &all.runs {
         if !names.contains(&run.scenario.as_str()) {
@@ -296,7 +347,7 @@ fn the_target_scenario_spreads_two_seeds_per_member_over_nine_replayed_fits() {
 }
 
 #[test]
-fn the_committed_nonmember_scenario_is_replayed_with_one_smoke_seed() {
+fn the_committed_nonmember_scenario_is_a_replayed_synthetic_guard_with_one_smoke_seed() {
     let suite = Suite::load(&bench_dir().join("suite.json")).unwrap();
     let plan = suite.plan(Selection::All).unwrap();
     let runs: Vec<_> = plan
@@ -304,14 +355,49 @@ fn the_committed_nonmember_scenario_is_replayed_with_one_smoke_seed() {
         .iter()
         .filter(|run| run.scenario == "target-nonmember-mce")
         .collect();
-    assert_eq!(runs.len(), 8);
     assert!(runs.iter().all(|run| run.replay.is_some()));
-    let smoke: Vec<_> = runs
-        .iter()
-        .filter(|run| run.smoke)
-        .map(|run| run.seed)
-        .collect();
-    assert_eq!(smoke, [103]);
+    assert!(
+        runs.iter()
+            .all(|run| run.machine.as_ref().unwrap().name == "machines/target-nonmember-mce.json")
+    );
+    let seeds = |split: Split, smoke: bool| -> Vec<u64> {
+        runs.iter()
+            .filter(|run| run.split == split && (!smoke || run.smoke))
+            .map(|run| run.seed)
+            .collect()
+    };
+    assert_eq!(seeds(Split::Dev, false), [1, 2, 3, 4]);
+    assert_eq!(seeds(Split::Holdout, false), [101, 102, 103, 104]);
+    assert_eq!(
+        runs.iter()
+            .filter(|run| run.smoke)
+            .map(|run| run.seed)
+            .collect::<Vec<_>>(),
+        [103]
+    );
+
+    let machine = &runs[0].machine.as_ref().unwrap().definition;
+    for want in ["Synthetic", "#530", "not an admitted adversary"] {
+        assert!(
+            machine.description.contains(want),
+            "{}",
+            machine.description
+        );
+    }
+    assert!(
+        !machine.description.contains("all parameters except")
+            && !machine.description.contains("unchanged"),
+        "{}",
+        machine.description
+    );
+    assert_eq!(
+        [machine.model.past_limit_rate, machine.model.growth],
+        [0.002_906_799_572_937_778_2, 2.575_493_297_181_685_3],
+        "the frozen numeric model"
+    );
+    assert_eq!(machine.cores, 16);
+    assert_eq!(machine.core.len(), 16);
+    assert!(!machine.joint.is_empty());
 }
 
 #[test]

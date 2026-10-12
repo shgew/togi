@@ -1,9 +1,9 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::convert::Infallible;
 use std::time::Duration;
 
 use togi_facts::Observation;
-use togi_journal::{CycleEvent, Event, Payload};
+use togi_journal::{CycleEvent, Event, Payload, TrialId};
 use togi_machine::{
     CoreId, CoreSet, ObservedOffset, PerCore, REGIMES, Regime, TargetOffset, workloads,
 };
@@ -40,9 +40,10 @@ pub struct Measured {
 /// Measures a session's `events` on `model`, the machine it ran on, with `replay`, the oracle that answered its
 /// trials from real facts when it had one.
 ///
-/// Time counts from the first `session.start`; trials, hunts, combinations and crashes count their events; the
-/// final profile is the tuner's checking profile or, before it has one, the session's baseline; hazards are the
-/// model's steady-state failures per hour at the final profile.
+/// Time counts from the first `session.start`; trials, hunts, combinations and crashes count their events; real
+/// answers count the decisive trials that journaled a `trial.start` and that `replay` holds an answer for; the
+/// final profile is the last `profile.change`, the tuner's checking profile, or, before one, the session's
+/// baseline; hazards are the model's steady-state failures per hour at the final profile.
 pub fn measure(
     events: &[Event],
     model: &Model,
@@ -125,24 +126,25 @@ fn count_events(events: &[Event], measured: &mut Measured) {
 }
 
 fn final_profile(events: &[Event], cores: usize) -> Result<PerCore<ObservedOffset>, RunError> {
-    let tuner = togi_tuner::replay(events)
-        .map_err(|error| RunError::Measure(format!("replay the tuner: {error}")))?;
-    if let Some(profile) = tuner.profile() {
-        return Ok(profile
-            .iter()
-            .map(|(core, offset)| (core, offset.observed()))
-            .collect());
-    }
-    let state = togi_journal::State::replay(events)
-        .map_err(|error| RunError::Measure(format!("replay the journal: {error}")))?;
-    let baseline = state.session.map(|session| session.baseline);
+    let checking = events.iter().rev().find_map(|event| match &event.payload {
+        Payload::ProfileChange(change) => Some(change.to),
+        _ => None,
+    });
+    let baseline = match checking {
+        Some(_) => None,
+        None => togi_journal::State::replay(events)
+            .map_err(|error| RunError::Measure(format!("replay the journal: {error}")))?
+            .session
+            .map(|session| session.baseline),
+    };
     Ok((0..cores)
         .filter_map(core)
         .map(|core| {
-            let offset = baseline
-                .and_then(|baseline| baseline.get(core))
-                .unwrap_or_default();
-            (core, offset)
+            let offset = match checking {
+                Some(profile) => profile.get(core).map(TargetOffset::observed),
+                None => baseline.and_then(|baseline| baseline.get(core)),
+            };
+            (core, offset.unwrap_or_default())
         })
         .collect())
 }
@@ -169,11 +171,26 @@ fn real_answers(events: &[Event], model: &Model, replay: Option<&Replay>) -> Res
     };
     let facts = togi_facts::extract(session, events.iter().cloned().map(Ok::<_, Infallible>))
         .map_err(|error| RunError::Measure(format!("extract the trial facts: {error}")))?;
+    let started: HashSet<&TrialId> = events
+        .iter()
+        .filter_map(|event| match &event.payload {
+            Payload::TrialStart(start) => Some(&start.trial),
+            _ => None,
+        })
+        .collect();
     let mut answered = 0;
     for fact in &facts.facts {
         let Observation::Trial { class, profile, .. } = &fact.observation else {
             continue;
         };
+        if !fact
+            .source
+            .trial
+            .as_ref()
+            .is_some_and(|trial| started.contains(trial))
+        {
+            continue;
+        }
         let load = Load {
             regime: class.workload.regime(),
             workload: class.workload.as_str(),
@@ -314,5 +331,230 @@ mod tests {
     fn all_cores_within_the_tie_leave_nothing() {
         let requests = lanes(&[(0, 1.0), (1, 1.0005)]);
         assert!(next_partial(&cores(&[0, 1]), &requests).is_empty());
+    }
+
+    mod rail {
+        use togi_sim::MachineDefinition;
+        use togi_sim::definition::{CoreDef, SharedVoltageDef, VoltageCoreDef, VoltageWorkloadDef};
+
+        use super::*;
+
+        pub(super) fn definition() -> MachineDefinition {
+            let core = VoltageCoreDef {
+                base_v: 1.072,
+                threshold_v: 1.08,
+                count_v: 0.0036,
+                clock_v_per_100mhz: 0.0,
+                threshold_clock_v_per_100mhz: 0.0,
+                signals: None,
+            };
+            let workload = VoltageWorkloadDef {
+                reference_mhz: 5000.0,
+                full_mhz: [5000.0, 5000.0],
+                idle_gain_mhz: 0.0,
+                watts_per_core: 1.0,
+                offset_watts_per_count: 0.0,
+                package_mhz_per_w: 0.0,
+                balance_mhz_per_w: 0.0,
+                core: vec![core; R7_CORES],
+            };
+            MachineDefinition {
+                core: (0..16)
+                    .map(|id| CoreDef {
+                        id,
+                        alone: [0; 5],
+                        together: [0; 7],
+                        flat: 0.0,
+                        idle: None,
+                        workload: BTreeMap::new(),
+                    })
+                    .collect(),
+                shared_voltage: Some(SharedVoltageDef {
+                    idle_v: 0.8,
+                    margin_v: 0.01,
+                    rate: 1.0 / 3600.0,
+                    background_rate: 0.0,
+                    power_limit_w: 1000.0,
+                    thermal_limit_w: 1000.0,
+                    workload: workloads(Regime::R7)
+                        .iter()
+                        .map(|w| (w.id.to_owned(), workload.clone()))
+                        .collect(),
+                }),
+                ..MachineDefinition::default()
+            }
+        }
+
+        pub(super) fn each_workload(
+            definition: &mut MachineDefinition,
+            mut change: impl FnMut(&str, &mut VoltageWorkloadDef),
+        ) {
+            for (id, workload) in &mut definition.shared_voltage.as_mut().unwrap().workload {
+                change(id, workload);
+            }
+        }
+
+        pub(super) fn profile() -> Vec<TargetOffset> {
+            vec![TargetOffset::clamped(-20); R7_CORES]
+        }
+    }
+
+    fn hazard_per_h(model: &Model, profile: &[TargetOffset], workload: &str, ids: &[i64]) -> f64 {
+        let load = Load {
+            regime: Regime::R7,
+            workload,
+            cores: cores(ids).into_iter().collect(),
+            duration: Duration::ZERO,
+        };
+        model.hazard(profile, &load).unwrap() * 3600.0
+    }
+
+    fn assert_close(got: f64, want: f64) {
+        assert!(
+            (got - want).abs() <= 1e-12 * want.abs().max(1.0),
+            "{got} != {want}"
+        );
+    }
+
+    #[test]
+    fn a_partial_load_more_hazardous_than_its_ccd_is_the_worst_including_idle_hazard() {
+        let mut definition = rail::definition();
+        rail::each_workload(&mut definition, |_, w| {
+            w.core[0].base_v = 1.272;
+            w.core[1].base_v = 1.2715;
+            for core in &mut w.core[8..] {
+                core.base_v = 1.322;
+            }
+        });
+        definition.core[15].idle = Some(-10);
+        definition.model.past_limit_rate = 0.0002;
+        definition.model.growth = 1.0;
+        let model = Model::new(&definition, 1).unwrap();
+        let profile = rail::profile();
+        let workload = workloads(Regime::R7)[0].id;
+        let partial = hazard_per_h(&model, &profile, workload, &[2, 3, 4, 5, 6, 7]);
+        let full = hazard_per_h(&model, &profile, workload, &[0, 1, 2, 3, 4, 5, 6, 7]);
+        assert!(
+            partial > full,
+            "the fixture must make the partial the worse"
+        );
+        let worst = worst_r7_hazard_per_h(&model, &profile).unwrap().unwrap();
+        assert_close(worst, partial);
+    }
+
+    #[test]
+    fn the_chain_asks_the_model_for_the_requests_of_every_shrunken_load() {
+        let mut definition = rail::definition();
+        rail::each_workload(&mut definition, |id, w| {
+            for core in &mut w.core {
+                core.base_v = 1.572;
+            }
+            if id == workloads(Regime::R7)[0].id {
+                w.idle_gain_mhz = 100.0;
+                let requests = [1.3, 1.2995, 1.1, 1.14, 1.13, 1.12, 1.11, 1.1];
+                for (core, request) in requests.iter().enumerate() {
+                    w.core[core].base_v = request + 0.072;
+                }
+                w.core[2].clock_v_per_100mhz = 0.03;
+            }
+        });
+        let model = Model::new(&definition, 1).unwrap();
+        let profile = rail::profile();
+        let workload = workloads(Regime::R7)[0].id;
+        let mut loaded = cores(&[0, 1, 2, 3, 4, 5, 6, 7]);
+        let mut chain = Vec::new();
+        while loaded.len() >= 2 {
+            chain.push(ids(&loaded));
+            let load = Load {
+                regime: Regime::R7,
+                workload,
+                cores: loaded.iter().copied().collect(),
+                duration: Duration::ZERO,
+            };
+            let lanes = model.r7_requests(&profile, &load).unwrap().unwrap();
+            loaded = next_partial(&loaded, &lanes);
+        }
+        assert_eq!(
+            chain,
+            [
+                vec![0, 1, 2, 3, 4, 5, 6, 7],
+                vec![2, 3, 4, 5, 6, 7],
+                vec![3, 4, 5, 6, 7],
+                vec![4, 5, 6, 7],
+                vec![5, 6, 7],
+                vec![6, 7],
+            ]
+        );
+        assert_eq!(ids(&loaded), [7]);
+        let load = Load {
+            regime: Regime::R7,
+            workload,
+            cores: cores(&[0, 1, 7]).into_iter().collect(),
+            duration: Duration::ZERO,
+        };
+        let lanes = model.r7_requests(&profile, &load).unwrap().unwrap();
+        assert_eq!(ids(&next_partial(&cores(&[0, 1, 7]), &lanes)), [7]);
+        let worst = worst_r7_hazard_per_h(&model, &profile).unwrap().unwrap();
+        assert_close(worst, hazard_per_h(&model, &profile, workload, &[6, 7]));
+    }
+
+    fn worst_of(name: &str) -> (f64, f64) {
+        let mut definition = rail::definition();
+        let all = workloads(Regime::R7);
+        let selected = if name == "last workload" {
+            all[all.len() - 1].id
+        } else {
+            all[0].id
+        };
+        let pressure = name == "all-core power pressure";
+        rail::each_workload(&mut definition, |id, w| {
+            for core in &mut w.core {
+                core.base_v = 1.472;
+            }
+            if pressure {
+                w.full_mhz = [5000.0, 5200.0];
+                w.package_mhz_per_w = 100.0;
+                for core in &mut w.core {
+                    core.base_v = 1.272;
+                    core.clock_v_per_100mhz = 0.02;
+                }
+            } else if id == selected {
+                w.core[8].base_v = 1.372;
+                for core in &mut w.core[9..] {
+                    core.base_v = 1.072;
+                }
+            }
+        });
+        if pressure {
+            definition.shared_voltage.as_mut().unwrap().power_limit_w = 12.0;
+        }
+        let model = Model::new(&definition, 1).unwrap();
+        let profile = rail::profile();
+        let loaded: Vec<i64> = if pressure {
+            (0..16).collect()
+        } else {
+            (9..16).collect()
+        };
+        let want = hazard_per_h(&model, &profile, selected, &loaded);
+        let worst = worst_r7_hazard_per_h(&model, &profile).unwrap().unwrap();
+        (worst, want)
+    }
+
+    #[test]
+    fn the_worst_comes_from_a_partial_of_the_second_ccd() {
+        let (worst, want) = worst_of("second CCD partial");
+        assert_close(worst, want);
+    }
+
+    #[test]
+    fn the_worst_comes_from_the_all_core_load_under_power_pressure() {
+        let (worst, want) = worst_of("all-core power pressure");
+        assert_close(worst, want);
+    }
+
+    #[test]
+    fn the_worst_comes_from_the_last_r7_workload_alone() {
+        let (worst, want) = worst_of("last workload");
+        assert_close(worst, want);
     }
 }

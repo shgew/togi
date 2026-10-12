@@ -75,6 +75,7 @@ object_only! {
         /// Real seconds the simulator took; a cached record keeps the wall time of the run that made it.
         pub wall_s: f64,
         pub sim_hours: f64,
+        #[serde(deserialize_with = "Option::deserialize")]
         pub first_passed_cycle_h: Option<f64>,
         pub passed_cycles: u32,
         pub crashes: u32,

@@ -9,12 +9,12 @@ description = "The bench: runs the suite of simulated sessions on the simulator 
 
 [dependencies]
 clap.workspace = true
-nix = { workspace = true, features = ["signal"] }
 rand.workspace = true
 rustix = { workspace = true, features = ["process"] }
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
+signal-hook.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
 togi-facts.workspace = true

@@ -63,6 +63,7 @@
             ./tools/bench/machines
             ./tools/bench/facts
             ./tools/bench/suite.json
+            ./tools/bench/baseline.jsonl
             # The backend crates' tests read the Go adapters' output fixtures in place.
             ./internal/backend/mprime/testdata
             ./internal/backend/ycruncher/testdata
@@ -250,6 +251,7 @@
             });
             rust-nextest = craneLib.cargoNextest (rustCheck {
               cargoNextestExtraArgs = "--profile ci";
+              nativeCheckInputs = [ pkgs.gitMinimal ];
             });
             rust-doc = craneLib.cargoDocTest (rustCheck { });
             rust-fmt = craneLib.cargoFmt rustArgs;

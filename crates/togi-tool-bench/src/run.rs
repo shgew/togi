@@ -14,7 +14,7 @@ use togi_tuner::{EVIDENCE_EPOCH, RULESET};
 use crate::cache::{self, Costs, RunCache};
 use crate::compare;
 use crate::error::{Error, RunError};
-use crate::git::{self, Tree};
+use crate::git::Tree;
 use crate::metrics::{self, Measured};
 use crate::pool;
 use crate::process::Fleet;
@@ -43,6 +43,8 @@ pub struct Options {
     pub cache: Option<PathBuf>,
     /// The simulator command; none builds `togi-tool-sim` from the tree.
     pub simulator: Option<PathBuf>,
+    /// The revision and dirtiness stamped on every record.
+    pub tree: Tree,
 }
 
 /// A finished bench run.
@@ -97,7 +99,6 @@ pub fn execute(options: &Options, fleet: &Fleet) -> Result<Report, Error> {
         .as_deref()
         .map(|path| record::read(path, "baseline"))
         .transpose()?;
-    let tree = git::inspect(options.out.as_deref())?;
     let simulator = Simulator::locate(options.simulator.as_deref())?;
     let (cache, costs) = open_cache(options, &simulator)?;
     let root = run_root(options.keep.as_deref())?;
@@ -108,11 +109,11 @@ pub fn execute(options: &Options, fleet: &Fleet) -> Result<Report, Error> {
     });
     let slots: Mutex<Vec<Option<Record>>> = Mutex::new(vec![None; plan.runs.len()]);
     let cached = AtomicUsize::new(0);
+    let warnings = Mutex::new(Vec::new());
     let job = Job {
         options,
         suite: &suite,
         plan: &plan,
-        tree: &tree,
         simulator: &simulator,
         fleet,
         cache: cache.as_ref(),
@@ -120,15 +121,19 @@ pub fn execute(options: &Options, fleet: &Fleet) -> Result<Report, Error> {
         verdicts: &verdicts,
         root: root.path(),
         cached: &cached,
+        warnings: &warnings,
     };
-    let errors = pool::run(options.jobs.get(), &order, |i| {
-        let record = job.run(i)?;
+    let mut errors = pool::run(options.jobs.get(), &order, |i| {
+        let record = job.run(i).inspect_err(|_| fleet.abort())?;
         slots
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)[i] = Some(record);
         Ok(())
     });
-    let mut warnings = Vec::new();
+    let mut warnings = warnings
+        .into_inner()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    warnings.sort();
     if let Some(costs) = &costs
         && let Err(error) = costs.save()
     {
@@ -138,8 +143,12 @@ pub fn execute(options: &Options, fleet: &Fleet) -> Result<Report, Error> {
         root.discard();
         return Err(Error::Interrupted);
     }
-    if let Some((_, error)) = errors.into_iter().next() {
-        return Err(error);
+    if !errors.is_empty() {
+        let first = errors
+            .iter()
+            .position(|(_, error)| !matches!(error, Error::Interrupted))
+            .unwrap_or(0);
+        return Err(errors.swap_remove(first).1);
     }
     let mut records: Vec<Record> = slots
         .into_inner()
@@ -167,7 +176,7 @@ struct Job<'a> {
     options: &'a Options,
     suite: &'a Suite,
     plan: &'a Plan,
-    tree: &'a Tree,
+    warnings: &'a Mutex<Vec<String>>,
     simulator: &'a Simulator,
     fleet: &'a Fleet,
     cache: Option<&'a RunCache>,
@@ -181,16 +190,15 @@ impl Job<'_> {
     fn run(&self, index: usize) -> Result<Record, Error> {
         let spec = &self.plan.runs[index];
         self.measure(spec).map_err(|source| match source {
-            Failure::Run(RunError::Interrupted) => Error::Interrupted,
-            Failure::Run(source) => Error::Run {
+            RunError::Interrupted => Error::Interrupted,
+            source => Error::Run {
                 run: spec.name(),
                 source: Box::new(source),
             },
-            Failure::Harness(error) => error,
         })
     }
 
-    fn measure(&self, spec: &RunSpec) -> Result<Record, Failure> {
+    fn measure(&self, spec: &RunSpec) -> Result<Record, RunError> {
         let inputs = cache::inputs(self.suite.digest(), spec);
         let keeping = self.options.keep.is_some();
         let hit = match self.cache {
@@ -212,34 +220,24 @@ impl Job<'_> {
             if !keeping {
                 let _ = fs::remove_dir_all(&session.dir);
             }
-            if let Some(cache) = self.cache {
-                cache.put(spec, &inputs, &record).map_err(|source| {
-                    Failure::Harness(Error::WriteFile {
-                        what: "write the run cache",
-                        path: self.options.cache.clone().unwrap_or_default(),
-                        source,
-                    })
-                })?;
-            }
-            if let Some(costs) = self.costs {
-                costs.set(self.simulator.digest(), &spec.name(), record.wall_s);
+            if !session.ended_by_signal() {
+                if let Some(cache) = self.cache
+                    && let Err(error) = cache.put(spec, &inputs, &record)
+                {
+                    self.warnings
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .push(format!("write the run cache for {}: {error}", spec.name()));
+                }
+                if let Some(costs) = self.costs {
+                    costs.set(self.simulator.digest(), &spec.name(), record.wall_s);
+                }
             }
             record
         };
-        record.commit.clone_from(&self.tree.commit);
-        record.dirty = self.tree.dirty;
+        record.commit.clone_from(&self.options.tree.commit);
+        record.dirty = self.options.tree.dirty;
         Ok(record)
-    }
-}
-
-enum Failure {
-    Run(RunError),
-    Harness(Error),
-}
-
-impl From<RunError> for Failure {
-    fn from(error: RunError) -> Self {
-        Self::Run(error)
     }
 }
 
@@ -275,12 +273,16 @@ fn record_of(
         dirty: false,
         ruleset: RULESET,
         evidence: EVIDENCE_EPOCH,
-        status: Status::of(
-            session.exit,
-            !session.events.is_empty(),
-            session.journal_dead_end(),
-            session.log_dead_end(),
-        ),
+        status: if session.ended_by_signal() {
+            Status::Error
+        } else {
+            Status::of(
+                session.exit,
+                !session.events.is_empty(),
+                session.journal_dead_end(),
+                session.log_dead_end(),
+            )
+        },
         model_check: spec
             .machine
             .as_ref()

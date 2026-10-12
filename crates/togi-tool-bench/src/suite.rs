@@ -72,6 +72,8 @@ pub enum SuiteError {
     MachineAndMachines(String),
     #[error("scenario {0}: machines lists an empty path")]
     EmptyMachine(String),
+    #[error("scenario {0}: replay needs a machine file naming a facts extract")]
+    ReplayWithoutMachine(String),
     #[error("scenario {scenario} repeats seed {seed}")]
     RepeatedSeed { scenario: String, seed: u64 },
     #[error("scenario {scenario} smoke seed {seed} is in neither dev nor holdout")]
@@ -182,10 +184,20 @@ impl Suite {
     /// Every selected run, scenario by scenario in suite order, dev seeds before holdout seeds, with each
     /// machine file read once. An ensemble scenario's member is its seed's position within the split, modulo the
     /// member count, not the seed's value; a replay scenario's oracle is built from its member's facts extract.
+    /// Every member of every scenario is loaded, selected or not, so a mistake in a split not run now surfaces now.
     pub fn plan(&self, selection: Selection) -> Result<Plan, Error> {
         let mut machines = Machines::default();
         let mut runs = Vec::new();
         for scenario in &self.scenarios {
+            let mut members = Vec::with_capacity(scenario.members.len());
+            for name in &scenario.members {
+                let machine = machines.load(&scenario.name, name, &self.base)?;
+                let replay = scenario
+                    .replay
+                    .then(|| machines.replay(&scenario.name, &machine))
+                    .transpose()?;
+                members.push((machine, replay));
+            }
             for (split, seeds) in [
                 (Split::Dev, &scenario.dev),
                 (Split::Holdout, &scenario.holdout),
@@ -194,26 +206,13 @@ impl Suite {
                     continue;
                 }
                 for (index, &seed) in seeds.iter().enumerate() {
-                    let member = (!scenario.members.is_empty())
-                        .then(|| &scenario.members[index % scenario.members.len()]);
-                    let machine = member
-                        .map(|name| machines.load(&scenario.name, name, &self.base))
-                        .transpose()?;
-                    let replay = match (&machine, scenario.replay) {
-                        (Some(machine), true) => Some(machines.replay(&scenario.name, machine)?),
-                        (None, true) => {
-                            return Err(Error::ReplayWithoutMachine {
-                                scenario: scenario.name.clone(),
-                            });
-                        }
-                        _ => None,
-                    };
+                    let member = (!members.is_empty()).then(|| &members[index % members.len()]);
                     runs.push(RunSpec {
                         scenario: scenario.name.clone(),
                         split,
                         seed,
-                        machine,
-                        replay,
+                        machine: member.map(|(machine, _)| Arc::clone(machine)),
+                        replay: member.and_then(|(_, replay)| replay.clone()),
                         smoke: scenario.smoke.contains(&seed),
                     });
                 }
@@ -250,6 +249,9 @@ fn check(def: ScenarioDef) -> Result<Scenario, SuiteError> {
     } else {
         vec![def.machine]
     };
+    if def.replay && members.is_empty() {
+        return Err(SuiteError::ReplayWithoutMachine(def.name));
+    }
     let mut seeds = BTreeSet::new();
     for &seed in def.dev.iter().chain(&def.holdout) {
         if !seeds.insert(seed) {
@@ -338,7 +340,7 @@ impl RunSpec {
 #[derive(Debug)]
 pub struct Plan {
     pub runs: Vec<RunSpec>,
-    /// Every distinct machine the runs use, ordered by path.
+    /// Every distinct machine of the suite, selected or not, ordered by path.
     pub machines: Vec<Arc<Machine>>,
 }
 
@@ -372,10 +374,6 @@ impl Machines {
             let facts = path.parent().unwrap_or_else(|| Path::new("")).join(facts);
             inputs.push(sum(facts, base)?);
         }
-        Model::new(&definition, 0).map_err(|source| Error::InvalidMachine {
-            machine: name.to_owned(),
-            source,
-        })?;
         let machine = Arc::new(Machine {
             name: name.to_owned(),
             path: path.clone(),

@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use togi_sim::MachineDefinition;
-use togi_tool_bench::{Options, Selection};
+use togi_tool_bench::{Options, Selection, Tree};
 
 use crate::session;
 
@@ -26,6 +26,13 @@ impl Bench {
             .map(|event| serde_json::to_string(event).unwrap())
             .collect();
         let lines = lines.join("\n") + "\n";
+        let mut last = serde_json::to_value(journal.last().unwrap()).unwrap();
+        last["cause"] = serde_json::json!([last["seq"].clone()]);
+        last["seq"] = (last["seq"].as_u64().unwrap() + 1).into();
+        last["kind"] = "shutdown".into();
+        last["msg"] = "stopped by signal".into();
+        last["data"] = serde_json::json!({"reason": "signal"});
+        fs::write(bench.path("signalled.jsonl"), format!("{lines}{last}\n")).unwrap();
         fs::write(bench.path("journal.jsonl"), lines).unwrap();
         fs::write(
             bench.path("suite.json"),
@@ -76,6 +83,10 @@ exit {exit}
             max_boots: NonZeroU32::new(7).unwrap(),
             cache: Some(self.path("cache")),
             simulator: Some(simulator),
+            tree: Tree {
+                commit: "abc1234".to_owned(),
+                dirty: false,
+            },
         }
     }
 }

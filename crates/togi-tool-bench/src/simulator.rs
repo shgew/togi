@@ -1,12 +1,14 @@
 use std::fs::{self, File};
-use std::io::ErrorKind;
+use std::io::{ErrorKind, Write as _};
 use std::num::NonZeroU32;
+use std::os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::Arc;
 use std::time::Duration;
 
 use sha2::{Digest, Sha256};
-use togi_journal::{FileError, Payload, ReadError, Recording};
+use togi_journal::{FileError, Payload, ReadError, Recording, ShutdownReason};
 
 use crate::error::{Error, RunError};
 use crate::process::{self, Fleet};
@@ -17,11 +19,14 @@ const LOG: &str = "sim.log";
 const DEAD_END_LINE: &str = "sim: dead end ";
 const BINARY: &str = "togi-tool-sim";
 
-/// The simulator command, run once per session as a subprocess with a state directory of its own.
+/// The simulator command, run once per session as a subprocess with a state directory of its own. The bench
+/// runs a private copy of the file it hashed, so the digest names the code every session ran even when the
+/// original is rebuilt or replaced meanwhile.
 #[derive(Clone, Debug)]
 pub struct Simulator {
     binary: PathBuf,
     digest: String,
+    _private: Arc<tempfile::TempDir>,
 }
 
 /// What one simulator process left behind.
@@ -44,22 +49,51 @@ impl Session {
     pub fn log_dead_end(&self) -> bool {
         self.log.contains(DEAD_END_LINE)
     }
+
+    /// Whether a signal ended the session rather than the session itself: the process died of one, or its
+    /// journal ends in a shutdown a signal asked for. Its outcome is not determined by its inputs.
+    pub fn ended_by_signal(&self) -> bool {
+        self.exit == -1
+            || self.events.iter().any(|event| {
+                matches!(&event.payload, Payload::Shutdown(shutdown) if shutdown.reason == ShutdownReason::Signal)
+            })
+    }
 }
 
 impl Simulator {
-    /// The simulator at `explicit`, or the `togi-tool-sim` built from this tree.
+    /// The simulator at `explicit`, or the `togi-tool-sim` built from this tree, copied for this bench to run.
     pub fn locate(explicit: Option<&Path>) -> Result<Self, Error> {
-        let binary = match explicit {
+        let original = match explicit {
             Some(path) => path.to_path_buf(),
             None => build()?,
         };
-        let bytes = fs::read(&binary).map_err(|source| Error::NoSimulator {
-            path: binary.clone(),
+        let bytes = fs::read(&original).map_err(|source| Error::NoSimulator {
+            path: original.clone(),
             source,
         })?;
+        let failed = |source| Error::WriteFile {
+            what: "copy the simulator to",
+            path: std::env::temp_dir(),
+            source,
+        };
+        let private = tempfile::Builder::new()
+            .prefix("togi-bench-sim-")
+            .tempdir()
+            .map_err(failed)?;
+        fs::set_permissions(private.path(), fs::Permissions::from_mode(0o755)).map_err(failed)?;
+        let binary = private.path().join(BINARY);
+        File::options()
+            .write(true)
+            .create_new(true)
+            .mode(0o755)
+            .open(&binary)
+            .and_then(|mut file| file.write_all(&bytes))
+            .map_err(failed)?;
+        let copy = fs::read(&binary).map_err(failed)?;
         Ok(Self {
-            digest: crate::suite::hex(&Sha256::digest(bytes)),
+            digest: crate::suite::hex(&Sha256::digest(copy)),
             binary,
+            _private: Arc::new(private),
         })
     }
 

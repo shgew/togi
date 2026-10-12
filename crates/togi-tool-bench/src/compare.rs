@@ -270,16 +270,20 @@ pub fn report(w: &mut impl io::Write, candidate: &[Record], baseline: &[Record])
     }
     let pairs = pairing(candidate, baseline);
     let splits: BTreeSet<_> = candidate.iter().map(|r| r.split).collect();
-    let comparable = baseline
+    let candidate_keys: BTreeSet<_> = candidate.iter().map(Record::key).collect();
+    let baseline_keys: BTreeSet<_> = baseline.iter().map(Record::key).collect();
+    let unmatched_candidates = candidate
         .iter()
-        .filter(|r| splits.contains(&r.split))
+        .filter(|r| !baseline_keys.contains(&r.key()))
         .count();
-    if pairs.len() != candidate.len() || pairs.len() != comparable {
+    let unmatched_baselines = baseline
+        .iter()
+        .filter(|r| splits.contains(&r.split) && !candidate_keys.contains(&r.key()))
+        .count();
+    if unmatched_candidates > 0 || unmatched_baselines > 0 {
         writeln!(
             w,
-            "comparison: WARNING {} candidate and {} baseline runs in the same splits unmatched; {} paired",
-            candidate.len() - pairs.len(),
-            comparable - pairs.len(),
+            "comparison: WARNING {unmatched_candidates} candidate and {unmatched_baselines} baseline runs in the same splits unmatched; {} paired",
             pairs.len(),
         )?;
     }

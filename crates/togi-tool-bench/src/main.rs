@@ -7,8 +7,9 @@ use std::thread;
 use std::time::Duration;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use nix::sys::signal::{SigSet, Signal};
-use togi_tool_bench::{Fleet, Options, Selection, execute, sanity};
+use signal_hook::consts::{SIGHUP, SIGINT, SIGTERM};
+use signal_hook::iterator::Signals;
+use togi_tool_bench::{Fleet, Options, Selection, execute, inspect, sanity};
 
 const USAGE: u8 = 2;
 
@@ -128,6 +129,10 @@ fn bench(args: RunArgs) -> ExitCode {
             }
         }
     };
+    let tree = match inspect(args.out.as_deref()) {
+        Ok(tree) => tree,
+        Err(error) => return fail(&error),
+    };
     let options = Options {
         suite: args.suite,
         selection: match args.split {
@@ -136,6 +141,7 @@ fn bench(args: RunArgs) -> ExitCode {
             Split::All => Selection::All,
         },
         out: args.out,
+        tree,
         baseline: args.baseline,
         keep: args.keep,
         jobs: args
@@ -208,19 +214,15 @@ fn default_cache() -> Option<PathBuf> {
     Some(base.join("togi").join("bench-rs"))
 }
 
-/// Stops the fleet on SIGINT, SIGTERM and SIGHUP. The signals are blocked in the calling thread, which threads
-/// spawned later inherit, and a dedicated thread waits for them, so no handler runs inside a run.
+/// Stops the fleet on SIGINT, SIGTERM and SIGHUP. Handlers feed a watcher thread, so the signal mask stays empty
+/// and the processes the bench spawns do not start with these signals blocked.
 fn cancel_on_signals(fleet: &Arc<Fleet>) -> io::Result<()> {
-    let mut set = SigSet::empty();
-    for signal in [Signal::SIGINT, Signal::SIGTERM, Signal::SIGHUP] {
-        set.add(signal);
-    }
-    set.thread_block().map_err(io::Error::from)?;
+    let mut signals = Signals::new([SIGINT, SIGTERM, SIGHUP])?;
     let fleet = Arc::clone(fleet);
     thread::Builder::new()
         .name("signals".into())
         .spawn(move || {
-            while set.wait().is_ok() {
+            for _ in signals.forever() {
                 fleet.cancel();
             }
         })

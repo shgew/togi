@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 
 use crate::error::Error;
@@ -18,7 +18,7 @@ pub fn inspect(out: Option<&Path>) -> Result<Tree, Error> {
     let commit = text(&git(&["rev-parse", "--short", "HEAD"])?);
     let root = PathBuf::from(text(&git(&["rev-parse", "--show-toplevel"])?));
     let out = out
-        .map(std::path::absolute)
+        .map(|path| std::path::absolute(path).map(|path| clean(&path)))
         .transpose()
         .map_err(|error| Error::Git {
             command: "status".to_owned(),
@@ -33,6 +33,21 @@ pub fn inspect(out: Option<&Path>) -> Result<Tree, Error> {
 
 fn text(bytes: &[u8]) -> String {
     String::from_utf8_lossy(bytes).trim().to_owned()
+}
+
+/// `path` without its `.` and `..` components, as `Path` equality compares components and resolves neither.
+fn clean(path: &Path) -> PathBuf {
+    let mut clean = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                clean.pop();
+            }
+            other => clean.push(other),
+        }
+    }
+    clean
 }
 
 #[expect(
@@ -113,5 +128,18 @@ mod tests {
             b"R  out.jsonl\0out.jsonl\0",
             Some("/repo/out.jsonl")
         ));
+    }
+
+    #[test]
+    fn dots_in_the_output_path_are_cleaned() {
+        assert_eq!(
+            clean(Path::new("/repo/sub/../out.jsonl")),
+            Path::new("/repo/out.jsonl")
+        );
+        assert_eq!(
+            clean(Path::new("/repo/./a/b/../../out.jsonl")),
+            Path::new("/repo/out.jsonl")
+        );
+        assert_eq!(clean(Path::new("/../out.jsonl")), Path::new("/out.jsonl"));
     }
 }

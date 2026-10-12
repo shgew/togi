@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
 use std::time::SystemTime;
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use sha2::{Digest, Sha256};
 use togi_machine::object_only;
 
@@ -119,9 +119,13 @@ impl RunCache {
 /// Creates `dir` and marks it used now. Another bench pruning its least recently used caches may remove `dir`
 /// between the two, so a directory found missing is created again, a few times at most.
 fn touch(dir: &Path) -> io::Result<()> {
+    touch_with(dir, |dir| File::open(dir)?.set_modified(SystemTime::now()))
+}
+
+fn touch_with(dir: &Path, mut mark: impl FnMut(&Path) -> io::Result<()>) -> io::Result<()> {
     for attempt in 1.. {
         fs::create_dir_all(dir)?;
-        match File::open(dir).and_then(|file| file.set_modified(SystemTime::now())) {
+        match mark(dir) {
             Ok(()) => return Ok(()),
             Err(error) if error.kind() != ErrorKind::NotFound || attempt == TOUCH_ATTEMPTS => {
                 return Err(error);
@@ -150,16 +154,20 @@ pub struct Costs {
     data: Mutex<CostFile>,
 }
 
-#[derive(Debug, Default, Deserialize, Serialize)]
-struct CostFile {
-    latest: BTreeMap<String, f64>,
-    scopes: Vec<CostScope>,
-}
+object_only! {
+    #[derive(Debug, Default, Serialize)]
+    #[serde(deny_unknown_fields)]
+    struct CostFile {
+        latest: BTreeMap<String, f64>,
+        scopes: Vec<CostScope>,
+    }
 
-#[derive(Debug, Deserialize, Serialize)]
-struct CostScope {
-    key: String,
-    wall: BTreeMap<String, f64>,
+    #[derive(Debug, Serialize)]
+    #[serde(deny_unknown_fields)]
+    struct CostScope {
+        key: String,
+        wall: BTreeMap<String, f64>,
+    }
 }
 
 impl Costs {
@@ -225,4 +233,40 @@ pub fn longest_first(n: usize, cost: impl Fn(usize) -> Option<f64>) -> Vec<usize
     let mut order: Vec<usize> = (0..n).collect();
     order.sort_by(|&a, &b| costs[b].total_cmp(&costs[a]));
     order
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn touch_removing(dir: &Path, removals: u32) -> (io::Result<()>, u32) {
+        let mut calls = 0;
+        let result = touch_with(dir, |dir| {
+            calls += 1;
+            if calls <= removals {
+                fs::remove_dir_all(dir).unwrap();
+            }
+            File::open(dir)?.set_modified(SystemTime::now())
+        });
+        (result, calls)
+    }
+
+    #[test]
+    fn a_directory_pruned_before_it_is_marked_is_created_again() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path().join("runs/key");
+        let (result, calls) = touch_removing(&dir, 1);
+        result.unwrap();
+        assert_eq!(calls, 2);
+        assert!(dir.is_dir());
+    }
+
+    #[test]
+    fn a_directory_pruned_on_every_attempt_fails_after_the_last() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path().join("runs/key");
+        let (result, calls) = touch_removing(&dir, u32::MAX);
+        assert_eq!(result.unwrap_err().kind(), ErrorKind::NotFound);
+        assert_eq!(calls, TOUCH_ATTEMPTS);
+    }
 }

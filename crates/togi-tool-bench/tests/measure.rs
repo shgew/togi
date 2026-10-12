@@ -6,7 +6,12 @@ mod session;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use jiff::Timestamp;
+use serde_json::{Value, json};
+use togi_journal::{Event, SCHEMA};
 use togi_machine::{CoreSet, REGIMES, Regime, TargetOffset, workloads};
+use togi_sim::definition::CoreDef;
+use togi_sim::replay::{Replay, ReplayFact, ReplayOutcome};
 use togi_sim::{Load, MachineDefinition, Model, file};
 use togi_simrun::SimOutcome;
 use togi_tool_bench::{Measured, Status, measure};
@@ -149,4 +154,232 @@ fn the_other_regimes_hazards_are_in_the_record() {
     for regime in REGIMES {
         assert!(m.hazard_per_h.contains_key(&regime));
     }
+}
+
+const EPOCH: i64 = 1_767_225_600;
+
+fn at(second: i64) -> String {
+    Timestamp::from_second(EPOCH + second).unwrap().to_string()
+}
+
+fn event(seq: usize, second: i64, kind: &str, data: &Value) -> Event {
+    let line =
+        json!({"seq": seq, "time": at(second), "boot": "b", "kind": kind, "msg": "", "data": data});
+    Event::decode(&line.to_string()).unwrap()
+}
+
+fn journal(events: &[(i64, &str, Value)]) -> Vec<Event> {
+    events
+        .iter()
+        .enumerate()
+        .map(|(index, (second, kind, data))| event(index + 1, *second, kind, data))
+        .collect()
+}
+
+fn start(cores: u8) -> Value {
+    let cores: Vec<Value> = (0..cores)
+        .map(|core| json!({"core": core, "ccd": 0, "cpus": [core]}))
+        .collect();
+    json!({
+        "build": {"version": "0.0.0", "ruleset": 1, "schema": SCHEMA, "evidence": 1},
+        "session": "20260101T000000Z",
+        "cores": cores,
+    })
+}
+
+fn two_cores() -> MachineDefinition {
+    let core = |id, flat| CoreDef {
+        id,
+        alone: [-20; 5],
+        together: [-20; 7],
+        flat,
+        idle: None,
+        workload: std::collections::BTreeMap::new(),
+    };
+    MachineDefinition {
+        cores: 2,
+        core: vec![core(0, 0.00001), core(1, 0.00002)],
+        ..MachineDefinition::default()
+    }
+}
+
+fn hand_built() -> Vec<Event> {
+    journal(&[
+        (0, "session.start", start(2)),
+        (0, "session.baseline", json!({"offsets": {"0": 0, "1": 0}})),
+        (720, "profile.change", json!({"to": {"0": -10, "1": -11}})),
+        (
+            1080,
+            "trial.end",
+            json!({"trial": "1", "outcome": "pass", "duration_s": 90}),
+        ),
+        (1440, "crash.detected", json!({"previous_boot": "b"})),
+        (
+            1800,
+            "trial.end",
+            json!({"trial": "2", "outcome": "failure", "signal": "crash", "duration_s": 30}),
+        ),
+        (
+            3600,
+            "checking.cycle",
+            json!({"cycle": 1, "event": "end", "passed": true}),
+        ),
+        (
+            3960,
+            "checking.cycle",
+            json!({"cycle": 2, "event": "end", "passed": true}),
+        ),
+        (
+            5040,
+            "hunt.start",
+            json!({
+                "hunt": 1, "failure": 1, "regime": "R1",
+                "workload": workloads(Regime::R1)[0].id, "cores": [0],
+                "duration_s": 60, "failing": {"0": -11, "1": -11},
+                "parked": {"0": -10, "1": -11}, "candidates": [0, 1],
+                "trials": 1, "trial_s": 30, "miss": 0.0, "rate": 0.0,
+                "ranking": [0, 1],
+            }),
+        ),
+        (
+            5400,
+            "combination",
+            json!({
+                "combination": 1, "hunt": 1, "reason": "",
+                "members": [{"core": 0, "offset": -12}, {"core": 1, "offset": -12}],
+            }),
+        ),
+        (
+            7200,
+            "profile.applied",
+            json!({"offsets": {"0": 0, "1": 0}, "condition": "parked"}),
+        ),
+    ])
+}
+
+fn close(got: f64, want: f64) {
+    assert!((got - want).abs() <= 1e-12, "{got} != {want}");
+}
+
+#[test]
+fn a_hand_built_journal_measures_every_field_exactly() {
+    let model = Model::new(&two_cores(), 1).unwrap();
+    let m = measure(&hand_built(), &model, None).unwrap();
+    close(m.sim_hours, 2.0);
+    close(m.first_passed_cycle_h.unwrap(), 1.0);
+    assert_eq!(
+        (
+            m.passed_cycles,
+            m.crashes,
+            m.trials,
+            m.hunts,
+            m.combinations
+        ),
+        (2, 1, 2, 1, 1)
+    );
+    close(m.trial_hours, 120.0 / 3600.0);
+    assert_eq!((m.real_answers, m.real_answer_share), (0, 0.0));
+    let profile: Vec<i64> = m.final_profile.iter().map(|(_, offset)| offset.0).collect();
+    assert_eq!(
+        profile,
+        [-10, -11],
+        "the last profile.change, not the parked applied"
+    );
+    assert_eq!(m.depth, -21);
+    assert_eq!(m.hazard_per_h.len(), REGIMES.len());
+    for rate in m.hazard_per_h.values() {
+        close(*rate, 0.108);
+    }
+    close(m.hazard_max_per_h, 0.108);
+    assert!(m.worst_r7_hazard_per_h.is_none());
+}
+
+#[test]
+fn a_journal_cut_before_any_passed_cycle_has_no_first_passed_cycle() {
+    let model = Model::new(&two_cores(), 1).unwrap();
+    let m = measure(&hand_built()[..4], &model, None).unwrap();
+    assert!(m.first_passed_cycle_h.is_none());
+    assert_eq!(
+        (m.passed_cycles, m.crashes, m.trials, m.hunts),
+        (0, 0, 1, 0)
+    );
+    close(m.sim_hours, 0.3);
+    close(m.trial_hours, 90.0 / 3600.0);
+}
+
+#[test]
+fn a_machine_that_is_not_sixteen_cores_has_no_worst_r7_hazard() {
+    let model = Model::new(&two_cores(), 1).unwrap();
+    assert!(
+        measure(&[], &model, None)
+            .unwrap()
+            .worst_r7_hazard_per_h
+            .is_none()
+    );
+}
+
+#[test]
+fn only_started_decisive_trials_matching_a_real_fact_are_real_answers() {
+    let model = Model::new(
+        &MachineDefinition {
+            cores: 2,
+            ..MachineDefinition::default()
+        },
+        1,
+    )
+    .unwrap();
+    let work = workloads(Regime::R1)[0].id;
+    let other = workloads(Regime::R1)[1].id;
+    let fact = ReplayFact {
+        context: model.bios_context().clone(),
+        regime: Regime::R1,
+        workload: work.to_owned(),
+        cores: [togi_machine::CoreId::new(0).unwrap()]
+            .into_iter()
+            .collect(),
+        duration: Duration::from_secs(60),
+        profile: vec![TargetOffset::clamped(-20), TargetOffset::clamped(-21)],
+        outcome: ReplayOutcome::Pass,
+    };
+    let replay = Replay::new([fact]).unwrap();
+    let matching = json!({"0": -20, "1": -21});
+    let trials = [
+        (work, &matching, "pass", true),
+        (work, &matching, "failure", true),
+        (other, &matching, "pass", true),
+        (work, &json!({"0": -20, "1": -22}), "pass", true),
+        (work, &matching, "inconclusive", true),
+        (work, &matching, "failure", false),
+    ];
+    let mut events = vec![
+        (0, "session.start", start(2)),
+        (0, "session.baseline", json!({"offsets": {"0": 0, "1": 0}})),
+    ];
+    for (index, (workload, profile, outcome, started)) in trials.iter().enumerate() {
+        let id = index.to_string();
+        events.push((
+            1,
+            "trial.intent",
+            json!({
+                "trial": id, "profile": profile, "core": 0, "regime": "R1",
+                "workload": workload, "duration_s": 60, "condition": "alone",
+            }),
+        ));
+        if *started {
+            events.push((
+                1,
+                "trial.start",
+                json!({"trial": id, "scope": "s", "pid": 1, "cpus": [0], "argv": []}),
+            ));
+        }
+        let mut end = json!({"trial": id, "outcome": outcome, "duration_s": 60});
+        if *outcome == "failure" {
+            end["signal"] = json!("crash");
+        }
+        events.push((1, "trial.end", end));
+    }
+    let m = measure(&journal(&events), &model, Some(&replay)).unwrap();
+    assert_eq!(m.trials, 6);
+    assert_eq!(m.real_answers, 2);
+    close(m.real_answer_share, 1.0 / 3.0);
 }
