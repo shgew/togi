@@ -278,7 +278,8 @@ fn reset_everything(ctx: &mut Context<'_>, args: &Args, mut dir: StateDir, boot:
             };
             log_torn(ctx, &journal);
             let opened = journal.events().len();
-            let warnings = solo_limit_warnings(journal.events(), &args.config);
+            let warnings =
+                solo_limit_warnings(journal.events(), &args.config, system.config_path());
             match reset_all(&build, journal, &mut SystemClock(system)) {
                 Ok((session, _)) => {
                     log_recorded(ctx, Some(&session), opened);
@@ -328,8 +329,10 @@ fn finish_without_journal(
             return fail(ctx, COMMAND, error);
         }
         let journal = ctx.state_dir.join(JOURNAL);
-        if fs::metadata(&journal).is_ok_and(|meta| meta.len() == 0) {
-            let _ = fs::remove_file(&journal);
+        if fs::metadata(&journal).is_ok_and(|meta| meta.len() == 0)
+            && let Err(error) = remove_durably(&journal)
+        {
+            return fail(ctx, COMMAND, error);
         }
         return emit(
             ctx,
@@ -352,10 +355,20 @@ fn finish_without_journal(
     }
 }
 
+/// Removes `path` and syncs its directory, so the removal survives a crash; the error names the
+/// step that failed.
+fn remove_durably(path: &Path) -> Result<(), String> {
+    fs::remove_file(path).map_err(|error| format!("remove {}: {error}", path.display()))?;
+    let dir = path.parent().unwrap_or(Path::new("."));
+    fs::File::open(dir)
+        .and_then(|dir| dir.sync_all())
+        .map_err(|error| format!("sync {}: {error}", dir.display()))
+}
+
 /// A warning for each configured candidate solo limit at or deeper than its core's failure point
 /// in the session about to be archived.
-fn solo_limit_warnings(events: &[Event], config: &ConfigArgs) -> Vec<String> {
-    let config: Config = match config.load() {
+fn solo_limit_warnings(events: &[Event], config: &ConfigArgs, default: &Path) -> Vec<String> {
+    let config: Config = match config.load(default) {
         Ok(config) => config,
         Err(error) if config.is_explicit() => {
             return vec![format!(
@@ -404,3 +417,6 @@ fn solo_limit_warnings(events: &[Event], config: &ConfigArgs) -> Vec<String> {
         })
         .collect()
 }
+
+#[cfg(test)]
+mod tests;
