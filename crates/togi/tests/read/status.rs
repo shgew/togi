@@ -1,6 +1,6 @@
 use togi_watchtest::Scenario;
 
-use crate::support::{append_event, session, text, togi};
+use crate::support::{append_between_trial_mce, append_event, session, text, togi};
 
 #[test]
 fn scenarios_render_the_status() {
@@ -109,15 +109,7 @@ fn a_too_cautious_defect_lists_reset_commands_until_the_core_is_reset() {
 #[test]
 fn a_between_trial_mce_is_listed_as_evidence_and_escaped() {
     let dir = session(Scenario::Search);
-    append_event(
-        dir.path(),
-        "mce",
-        "mce on cpu 3 \u{1b}[2J between trials (recorded only)",
-        &serde_json::json!({
-            "cpu": 3, "bank": 1, "bank_type": "load_store", "corrected": true,
-            "between_trials": true, "lines": [],
-        }),
-    );
+    append_between_trial_mce(dir.path());
     let ran = togi(dir.path(), &["status"]);
     assert_eq!(ran.status.code(), Some(0), "{}", text(&ran.stderr));
     let shown = text(&ran.stdout);
@@ -209,5 +201,100 @@ fn a_queued_reset_shows_in_the_queued_column_until_the_search_restarts() {
         queued(dir.path()).ends_with(" reset"),
         "{}",
         queued(dir.path())
+    );
+}
+
+#[test]
+fn the_core_table_leads_with_core_ccd_slot_and_the_resident_offset() {
+    let dir = session(Scenario::Checking);
+    let ran = togi(dir.path(), &["status"]);
+    let shown = text(&ran.stdout);
+    let words = |line: &str| {
+        line.split_whitespace()
+            .map(str::to_owned)
+            .collect::<Vec<_>>()
+    };
+    let header = shown.lines().find(|line| line.starts_with("CORE")).unwrap();
+    assert_eq!(
+        words(header),
+        [
+            "CORE", "CCD", "SLOT", "OFFSET", "BIOS", "PHASE", "FAILURE", "QUEUED"
+        ]
+    );
+    let row = |core: &str| {
+        words(
+            shown
+                .lines()
+                .find(|line| line.starts_with(&format!("{core} ")))
+                .unwrap(),
+        )
+    };
+    let first = row("00");
+    assert_eq!(first[..4], ["00", "0", "0", "-26"]);
+    assert_eq!(
+        first[first.len() - 2],
+        "-28",
+        "the resident offset is not the failure point: {first:?}"
+    );
+    let ninth = row("08");
+    assert_eq!(ninth[..4], ["08", "1", "0", "-5"]);
+    assert_eq!(ninth[ninth.len() - 2], "-7");
+    let last = row("15");
+    assert_eq!(last[..3], ["15", "1", "7"]);
+}
+
+#[test]
+fn the_phase_column_uses_the_dashboards_state_words() {
+    use togi_journal::CorePhase;
+    use togi_watch::words::phase_word;
+
+    let all = [CorePhase::Search, CorePhase::HasRoom, CorePhase::AtLimit].map(phase_word);
+    let mut seen = std::collections::BTreeSet::new();
+    for scenario in Scenario::ALL {
+        let dir = session(scenario);
+        let ran = togi(dir.path(), &["status"]);
+        let shown = text(&ran.stdout);
+        let header = shown.lines().find(|line| line.starts_with("CORE")).unwrap();
+        let (start, end) = (
+            header.find("PHASE").unwrap(),
+            header.find("FAILURE").unwrap(),
+        );
+        for line in shown
+            .lines()
+            .skip_while(|line| !line.starts_with("CORE"))
+            .skip(1)
+            .take_while(|line| !line.is_empty())
+            .filter(|line| {
+                line.get(..2)
+                    .is_some_and(|id| id.bytes().all(|b| b.is_ascii_digit()))
+            })
+        {
+            let cell = line.get(start..end).unwrap().trim();
+            if cell != "-" {
+                assert!(all.contains(&cell), "{} shows {cell:?}", scenario.name());
+                seen.insert(cell.to_owned());
+            }
+        }
+    }
+    assert_eq!(seen.len(), all.len(), "{seen:?} of {all:?}");
+}
+
+#[test]
+fn the_regime_table_keeps_its_regime_column() {
+    let dir = session(Scenario::Between);
+    let ran = togi(dir.path(), &["status"]);
+    let shown = text(&ran.stdout);
+    let at = shown
+        .lines()
+        .position(|line| line.starts_with("REGIME"))
+        .unwrap();
+    let rows: Vec<&str> = shown.lines().skip(at).collect();
+    assert_eq!(
+        rows[0].split_whitespace().collect::<Vec<_>>(),
+        ["REGIME", "WORKLOAD", "TRIALS"]
+    );
+    assert_eq!(
+        rows[1].split_whitespace().collect::<Vec<_>>(),
+        ["R7", "mprime-avx2-36k-248k-allcore", "6"]
     );
 }

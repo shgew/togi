@@ -12,7 +12,7 @@ use rustix::pty::{OpenptFlags, grantpt, openpt, ptsname, unlockpt};
 use rustix::termios::{LocalModes, Winsize, tcgetattr, tcsetwinsize};
 use togi_watchtest::Scenario;
 
-use crate::support::{append_event, journal, session, text, togi};
+use crate::support::{append_between_trial_mce, append_event, journal, session, text, togi};
 
 const BOUND: Duration = Duration::from_secs(30);
 const HIDE_CURSOR: &[u8] = b"\x1b[?25l";
@@ -79,6 +79,20 @@ fn journal_controls_are_escaped_in_the_frame_and_the_diagnostic() {
 }
 
 #[test]
+fn a_between_trial_mce_shows_in_the_frame() {
+    let dir = session(Scenario::Search);
+    append_between_trial_mce(dir.path());
+    let ran = togi(dir.path(), &["watch", "--width", "240", "--height", "67"]);
+    assert_eq!(ran.status.code(), Some(0), "{}", text(&ran.stderr));
+    assert!(
+        text(&ran.stdout).contains("between trials"),
+        "{}",
+        text(&ran.stdout)
+    );
+    assert!(!text(&ran.stdout).contains('\u{1b}'));
+}
+
+#[test]
 fn the_frame_size_must_be_at_least_one() {
     let dir = tempfile::tempdir().unwrap();
     for args in [["watch", "--width", "0"], ["watch", "--height", "0"]] {
@@ -137,6 +151,20 @@ fn contains(haystack: &[u8], needle: &[u8]) -> bool {
 
 #[test]
 fn sigint_ends_a_live_watch_with_the_terminal_restored() {
+    a_signal_ends_a_live_watch_with_the_terminal_restored(Signal::INT);
+}
+
+#[test]
+fn sigterm_ends_a_live_watch_with_the_terminal_restored() {
+    a_signal_ends_a_live_watch_with_the_terminal_restored(Signal::TERM);
+}
+
+#[test]
+fn sighup_ends_a_live_watch_with_the_terminal_restored() {
+    a_signal_ends_a_live_watch_with_the_terminal_restored(Signal::HUP);
+}
+
+fn a_signal_ends_a_live_watch_with_the_terminal_restored(signal: Signal) {
     let dir = session(Scenario::Checking);
     let master = openpt(OpenptFlags::RDWR | OpenptFlags::NOCTTY | OpenptFlags::CLOEXEC).unwrap();
     grantpt(&master).unwrap();
@@ -188,7 +216,7 @@ fn sigint_ends_a_live_watch_with_the_terminal_restored() {
     }
     let shown_at = seen.len();
 
-    kill_process(pid, Signal::INT).unwrap();
+    kill_process(pid, signal).unwrap();
     let deadline = Instant::now() + BOUND;
     let status = loop {
         if let Some(status) = helper.0.try_wait().unwrap() {
@@ -201,7 +229,7 @@ fn sigint_ends_a_live_watch_with_the_terminal_restored() {
         );
         assert!(
             Instant::now() < deadline,
-            "watch did not end within {BOUND:?} of SIGINT"
+            "watch did not end within {BOUND:?} of {signal:?}"
         );
     };
     while read_more(
@@ -209,7 +237,7 @@ fn sigint_ends_a_live_watch_with_the_terminal_restored() {
         &mut seen,
         Instant::now() + Duration::from_millis(100),
     ) {}
-    assert_eq!(status.code(), Some(0), "SIGINT is a normal end");
+    assert_eq!(status.code(), Some(0), "{signal:?} is a normal end");
     assert!(
         contains(&seen[..], SHOW_CURSOR) && seen.len() > shown_at,
         "the cursor is shown again: {:?}",

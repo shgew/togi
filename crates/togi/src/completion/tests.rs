@@ -47,3 +47,31 @@ fn only_the_commands_that_read_the_configuration_offer_it() {
         }
     }
 }
+
+#[test]
+fn events_kind_completes_the_known_kinds_and_groups() {
+    let root = crate::cli::command();
+    let events = root.find_subcommand("events").unwrap();
+    let kind = events
+        .get_arguments()
+        .find(|arg| arg.get_long() == Some("kind"))
+        .unwrap();
+    let completed: Vec<String> = kind
+        .get_value_parser()
+        .possible_values()
+        .unwrap()
+        .map(|value| value.get_name().to_owned())
+        .filter(|name| name.starts_with("se"))
+        .collect();
+    assert!(
+        completed.iter().any(|name| name == "session"),
+        "{completed:?}"
+    );
+    assert!(
+        completed.iter().any(|name| name == "session.start"),
+        "{completed:?}"
+    );
+    for &shell in Shell::value_variants() {
+        assert!(text(shell).contains("session"), "{shell:?}");
+    }
+}

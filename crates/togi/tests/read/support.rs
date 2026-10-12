@@ -70,3 +70,17 @@ pub(crate) fn append_event(dir: &Path, kind: &str, msg: &str, data: &serde_json:
         .unwrap();
     writeln!(file, "{event}").unwrap();
 }
+
+pub(crate) const BETWEEN_TRIAL_MCE: &str = "mce on cpu 3 \u{1b}[2J between trials (recorded only)";
+
+pub(crate) fn append_between_trial_mce(dir: &Path) {
+    append_event(
+        dir,
+        "mce",
+        BETWEEN_TRIAL_MCE,
+        &serde_json::json!({
+            "cpu": 3, "bank": 1, "bank_type": "load_store", "corrected": true,
+            "between_trials": true, "lines": [],
+        }),
+    );
+}

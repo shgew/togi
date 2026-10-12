@@ -3,7 +3,10 @@ use std::io::Write as _;
 use jiff::Timestamp;
 use togi_watchtest::Scenario;
 
-use crate::support::{first_trial, journal, lines, rewrite_first_line, session, text, togi};
+use crate::support::{
+    BETWEEN_TRIAL_MCE, append_between_trial_mce, first_trial, journal, lines, rewrite_first_line,
+    session, text, togi,
+};
 
 #[test]
 fn json_prints_the_journal_lines_unchanged() {
@@ -269,4 +272,24 @@ fn events_help() {
     assert_eq!(ran.status.code(), Some(0));
     assert_eq!(text(&ran.stderr), "");
     insta::assert_snapshot!(text(&ran.stdout));
+}
+
+#[test]
+fn a_between_trial_mce_is_listed_and_its_controls_are_escaped() {
+    let dir = session(Scenario::Search);
+    append_between_trial_mce(dir.path());
+    let ran = togi(dir.path(), &["events", "--kind", "mce"]);
+    assert_eq!(ran.status.code(), Some(0), "{}", text(&ran.stderr));
+    let shown = text(&ran.stdout);
+    assert_eq!(shown.lines().count(), 1, "{shown}");
+    assert!(shown.contains("between trials (recorded only)"), "{shown}");
+    assert!(shown.contains("\\x1b[2J"), "{shown}");
+    assert!(!shown.contains('\u{1b}'), "{shown}");
+
+    let raw = togi(dir.path(), &["events", "--kind", "mce", "--json"]);
+    let event: serde_json::Value = serde_json::from_str(text(&raw.stdout).trim()).unwrap();
+    assert_eq!(
+        event["msg"], BETWEEN_TRIAL_MCE,
+        "--json keeps the journal's text"
+    );
 }

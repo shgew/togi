@@ -36,6 +36,9 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 /// and counts new events until End. It is rendered from the journal, which it reloads only when
 /// it changes.
 ///
+/// The screen's words are explained by `?` on the screen itself; the rules behind them are in
+/// docs/spec/tuner.md.
+///
 /// On a terminal it fills the screen until interrupted; otherwise it prints one frame of --width
 /// by --height and exits. An unreadable or incompatible journal appears in the frame and on
 /// stderr, and one-frame watch exits 1; live watch keeps showing the problem and retries when the
