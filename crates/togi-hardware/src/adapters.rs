@@ -7,7 +7,7 @@ use togi_machine::{
     CancellationToken, Clock, CoreId, Error, ObservedOffset, Partial, PmTable, PmTableReader,
     Running, Smu, SmuValidated, Stopped, Swept, TargetOffset, TrialConditions, TrialSpec, Trials,
 };
-use togi_smu::{Driver, PmReader};
+use togi_smu::Driver;
 use togi_trial::Runner;
 
 use crate::host::ScopeProbe;
@@ -54,11 +54,16 @@ impl Smu for SharedSmu {
 /// The PM table reader, which exists only once the driver validated: trials ask it from the start
 /// and get no table until the host publishes the reader.
 #[derive(Clone, Default)]
-pub(crate) struct PmSlot(Arc<OnceLock<Arc<PmReader>>>);
+pub(crate) struct PmSlot(Arc<OnceLock<Arc<dyn PmTableReader + Send + Sync>>>);
 
 impl PmSlot {
-    pub(crate) fn publish(&self, reader: Arc<PmReader>) {
+    pub(crate) fn publish(&self, reader: Arc<impl PmTableReader + Send + Sync + 'static>) {
         let _ = self.0.set(reader);
+    }
+
+    #[cfg(all(test, target_os = "linux"))]
+    pub(crate) fn is_published(&self) -> bool {
+        self.0.get().is_some()
     }
 }
 
@@ -100,6 +105,11 @@ pub(crate) struct RunnerHandle(Arc<Mutex<Runner>>);
 impl RunnerHandle {
     pub(crate) fn new(runner: Runner) -> Self {
         Self(Arc::new(Mutex::new(runner)))
+    }
+
+    #[cfg(all(test, target_os = "linux"))]
+    pub(crate) fn is_unlocked(&self) -> bool {
+        self.0.try_lock().is_ok()
     }
 }
 

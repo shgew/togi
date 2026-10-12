@@ -265,7 +265,7 @@ Inside the specialisation:
 - counts 1 and 2 retain `saved_entry` and record `service restart limit hit; rebooting back into the tuning boot`;
 - count 3 clears `saved_entry` and records `service restart limit exhausted; returning to the normal system`. Further hits remain at 3 and cannot grant another retry boot.
 
-Every `grub-editenv` command (`list`, `set`, `unset`) has a 10 second deadline, is killed as a process group when it passes it and may print at most 64 KiB; an overrun is a failed GRUB operation like any other error, so a hung or noisy `grub-editenv` cannot hold up cleanup or the release of the host lock. Clearing `saved_entry` reads it, unsets it and reads it again, and fails when it is still set.
+Every `grub-editenv` command (`list`, `set`, `unset`) has a 10 second deadline, is killed as a process group when it passes it and may print at most 64 KiB on each of stdout and stderr; an overrun is a failed GRUB operation like any other error, so a hung or noisy `grub-editenv` cannot hold up cleanup or the release of the host lock. Clearing `saved_entry` reads it, unsets it and reads it again, and fails when it is still set.
 
 Invalid counts cannot grant retries: a rejected value makes the command fail and takes the shell fallback. The command creates `/run/togi-retry-tuning-boot` only after its GRUB operations succeed, and only for a retry reboot. It removes that marker if the reboot request fails; the fallback also removes it before attempting its normal-system recovery. The marker is boot-local because `/run` is volatile. Reboot requests never use `--force` or GRUB's `next_entry`.
 

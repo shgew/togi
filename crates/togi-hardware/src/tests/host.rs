@@ -1,6 +1,6 @@
 use togi_machine::{Check, Host};
 
-use super::support::{Scope, Tree, host, refused_account, resolved_account};
+use super::support::{Scope, Tree, Watch, host, refused_account, resolved_account};
 use crate::host::Privilege;
 
 fn names(checks: &[Check]) -> Vec<&str> {
@@ -305,4 +305,25 @@ fn an_unreadable_ranking_is_a_partial_without_values() {
     let mut host = host(&tree, Privilege::Root, refused_account(), Scope::creating());
     let partial = host.ranking().unwrap_err();
     assert!(partial.value.is_empty());
+}
+
+#[test]
+fn validating_the_smu_as_root_validates_the_driver_and_publishes_the_pm_reader() {
+    let tree = Tree::new();
+    let mut host = host(&tree, Privilege::Root, refused_account(), Scope::creating());
+    assert!(!host.pm.is_published());
+    let _proof = host.validate_smu().unwrap();
+    assert!(host.pm.is_published());
+}
+
+#[test]
+fn an_invalid_identity_fails_validation_publishes_nothing_and_touches_no_hardware() {
+    let tree = Tree::new();
+    let watch = Watch::on(&tree);
+    tree.put("sys/kernel/ryzen_smu_drv/codename", "99\n");
+    let mut host = host(&tree, Privilege::Root, refused_account(), Scope::creating());
+    let error = host.validate_smu().unwrap_err();
+    assert!(error.to_string().contains("codename 99"), "{error}");
+    assert!(!host.pm.is_published());
+    assert_eq!(watch.touched(), Vec::<&str>::new());
 }

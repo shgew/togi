@@ -173,3 +173,19 @@ fn directories_that_are_not_watchdogs_are_ignored() {
         refused("no hardware watchdog state available")
     );
 }
+
+#[test]
+fn a_class_directory_that_cannot_be_listed_fails_with_its_cause() {
+    let root = TempDir::new().unwrap();
+    let class = root.path().join("sys/class/watchdog");
+    fs::create_dir_all(class.parent().unwrap()).unwrap();
+    fs::write(&class, "").unwrap();
+    let check = probe(root.path());
+    assert!(!check.ok);
+    assert!(
+        check.detail.starts_with("find hardware watchdogs: "),
+        "{}",
+        check.detail
+    );
+    assert!(check.detail.contains("Not a directory"), "{}", check.detail);
+}
