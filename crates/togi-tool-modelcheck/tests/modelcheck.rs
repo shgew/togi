@@ -361,20 +361,59 @@ fn the_machines_declared_context_limits_which_facts_are_checked() {
 }
 
 #[test]
+fn an_undeclared_machine_checks_each_recorded_context_separately() {
+    let two = model(&machine(0.0));
+    let under = |board: &str, seqs: std::ops::RangeInclusive<u64>| -> Vec<TrialFact> {
+        seqs.map(|seq| {
+            let mut record = fact(seq, &[-10, 0], &[0], 90, Decisive::Pass);
+            record.context = Some(context(board));
+            record
+        })
+        .collect()
+    };
+    let mut records = under("first", 1..=10);
+    records.extend(under("second", 11..=20));
+    let forward = Checker::new(&two, &records).unwrap().groups(&two).unwrap();
+    let labels: Vec<_> = forward
+        .iter()
+        .map(|group| (group.context.clone(), group.n))
+        .collect();
+    assert_eq!(
+        labels,
+        [(Some(context("first")), 10), (Some(context("second")), 10)]
+    );
+    records.reverse();
+    let backward = Checker::new(&two, &records).unwrap().groups(&two).unwrap();
+    assert_eq!(forward, backward);
+
+    let mut halves = under("first", 1..=5);
+    halves.extend(under("second", 6..=10));
+    let checker = Checker::new(&two, &halves).unwrap();
+    assert!(checker.groups(&two).unwrap().is_empty());
+}
+
+#[test]
 fn an_unreadable_extract_is_refused_with_its_path() {
     let dir = tempfile::tempdir().unwrap();
     let mut machine = machine(0.0);
     machine["facts"] = json!("missing.jsonl.gz");
     let path = dir.path().join("machine.json");
     let result = check(&path, &definition(&machine), &mut Extracts::new());
-    let Err(error @ Error::Extract(ExtractsError::Read(ReadError::Open { .. }))) = result else {
+    let Err(error @ Error::ReadExtract(ReadError::Open { .. })) = result else {
         panic!("{result:?}");
     };
-    let Error::Extract(ExtractsError::Read(ReadError::Open { source, .. })) = &error else {
+    let Error::ReadExtract(ReadError::Open { source, .. }) = &error else {
         unreachable!();
     };
     assert_eq!(source.kind(), io::ErrorKind::NotFound);
-    assert!(error.to_string().contains("missing.jsonl.gz"), "{error}");
+    let message = error.to_string();
+    assert!(
+        message.starts_with("read the machine's facts extract: "),
+        "{message}"
+    );
+    assert!(message.contains("missing.jsonl.gz"), "{message}");
+    assert!(!message.contains("replay oracle"), "{message}");
+    assert!(std::error::Error::source(&error).is_some());
 }
 
 #[test]

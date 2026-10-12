@@ -82,7 +82,8 @@ impl fmt::Display for Group {
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-struct Key {
+struct Key<'a> {
+    context: Option<&'a BiosContext>,
     class: TrialClass,
     depth: TargetOffset,
 }
@@ -182,27 +183,33 @@ impl Checker {
                 .map(|core| offsets[core.index()])
                 .max()
                 .unwrap_or(TargetOffset::ZERO);
-            let at = *index.entry(Key { class, depth }).or_insert_with(|| {
-                building.push((
-                    Prepared {
-                        group: Group {
-                            context: fact.context.clone(),
-                            class,
-                            depth,
-                            n: 0,
-                            k: 0,
-                            interval: Interval { low: 0, high: 0 },
-                            mean_p: 0.0,
-                            flagged: false,
+            let at = *index
+                .entry(Key {
+                    context: fact.context.as_ref(),
+                    class,
+                    depth,
+                })
+                .or_insert_with(|| {
+                    building.push((
+                        Prepared {
+                            group: Group {
+                                context: fact.context.clone(),
+                                class,
+                                depth,
+                                n: 0,
+                                k: 0,
+                                interval: Interval { low: 0, high: 0 },
+                                mean_p: 0.0,
+                                flagged: false,
+                            },
+                            points: Vec::new(),
+                            bounds: (0.0, 1.0),
+                            choose: Vec::new(),
                         },
-                        points: Vec::new(),
-                        bounds: (0.0, 1.0),
-                        choose: Vec::new(),
-                    },
-                    HashMap::new(),
-                ));
-                building.len() - 1
-            });
+                        HashMap::new(),
+                    ));
+                    building.len() - 1
+                });
             let (prepared, points) = &mut building[at];
             prepared.group.n += 1;
             if matches!(fact.outcome, togi_facts::Decisive::Failure { .. }) {
