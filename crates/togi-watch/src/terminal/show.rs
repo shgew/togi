@@ -21,6 +21,8 @@ pub(super) struct Options<N> {
     pub(super) colours: Colours,
     /// The wall clock, from which holds are measured.
     pub(super) now: N,
+    /// A redraw at least this often, whatever the frame's hold says.
+    pub(super) tick: Option<std::time::Duration>,
     /// Told after every reload a journal change caused, so the notifier goes on only then.
     pub(super) reloaded: Option<mpsc::UnboundedSender<()>>,
     /// Tells the notifier whether the frame on screen is frozen, so it never polls for one.
@@ -92,7 +94,7 @@ where
     let mut painter = Painter {
         scratch: Buffer::empty(Rect::ZERO),
     };
-    let mut clock = Clock::default();
+    let mut clock = Clock::paced(options.tick);
     let mut screen = Screen {
         view: View::Main,
         keys: options.keys,
@@ -252,6 +254,7 @@ mod tests {
                 keys: setup.keys,
                 colours: setup.colours,
                 now: move || EPOCH + SignedDuration::try_from(Instant::now() - start).unwrap(),
+                tick: None,
                 reloaded: Some(reloaded),
                 frozen: Some(frozen),
             };
@@ -916,6 +919,7 @@ mod tests {
                     keys: false,
                     colours: Colours::Console,
                     now: Timestamp::now,
+                    tick: None,
                     reloaded: None,
                     frozen: None,
                 },
@@ -981,6 +985,7 @@ mod tests {
                 keys: false,
                 colours: Colours::None,
                 now: || EPOCH,
+                tick: None,
                 reloaded: None,
                 frozen: None,
             };

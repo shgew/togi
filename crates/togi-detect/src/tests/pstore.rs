@@ -394,6 +394,35 @@ fn a_root_that_is_not_a_directory_is_an_error() {
 }
 
 #[test]
+fn a_failed_open_of_a_matching_dump_keeps_its_io_cause() {
+    let root = archive(&[("150/001/real.txt", b"Panic#1 Part1\nlast")]);
+    let path = root.path().join("150/001/dmesg.txt");
+    // A dump inside the requested boot's span that O_NOFOLLOW refuses, even to root.
+    symlink(root.path().join("150/001/real.txt"), &path).unwrap();
+    let (kernel, _) = kernel_over(root.path(), three_boots());
+    let error = kernel
+        .read_saved_pstore(&JournalBoot::parse(OLD).unwrap())
+        .unwrap_err();
+    assert!(
+        matches!(
+            &error,
+            Error::Pstore(PstoreError::Io {
+                access: Access::Open,
+                path: failed_path,
+                source,
+            }) if *failed_path == path
+                && source.raw_os_error() == Some(Errno::LOOP.raw_os_error())
+        ),
+        "{error:?}"
+    );
+    let cause = std::error::Error::source(&error)
+        .unwrap()
+        .downcast_ref::<std::io::Error>()
+        .unwrap();
+    assert_eq!(cause.raw_os_error(), Some(Errno::LOOP.raw_os_error()));
+}
+
+#[test]
 fn unsafe_archive_entries_are_refused_from_the_descriptor() {
     let read = |root: &Path| {
         let (kernel, _) = kernel_over(root, three_boots());
