@@ -22,7 +22,12 @@
 pub mod args;
 pub mod cli;
 pub mod completion;
+pub mod doctor;
 pub mod exit;
+pub mod report;
+pub mod reset;
+pub mod restart_limit;
+pub mod system;
 
-pub use cli::run;
+pub use cli::{run, run_with};
 pub use exit::Exit;

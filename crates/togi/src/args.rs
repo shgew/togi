@@ -9,6 +9,7 @@
 use std::path::{Path, PathBuf};
 
 use clap::{Args, ValueHint};
+use togi_config::{Config, LoadError};
 
 pub use togi_config::DEFAULT_PATH as DEFAULT_CONFIG_PATH;
 
@@ -55,6 +56,23 @@ impl ConfigArgs {
     #[must_use]
     pub fn is_explicit(&self) -> bool {
         self.path.is_some()
+    }
+
+    /// Reads the configuration: a missing default file is the default configuration, a missing
+    /// explicit one an error.
+    ///
+    /// # Errors
+    ///
+    /// The file cannot be read or is not a valid configuration.
+    pub fn load(&self) -> Result<Config, LoadError> {
+        match Config::load(self.path()) {
+            Err(LoadError::Read { source, .. })
+                if !self.is_explicit() && source.kind() == std::io::ErrorKind::NotFound =>
+            {
+                Ok(Config::default())
+            }
+            loaded => loaded,
+        }
     }
 }
 
