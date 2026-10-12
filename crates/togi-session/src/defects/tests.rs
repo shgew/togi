@@ -1,12 +1,16 @@
 use std::cell::Cell;
 use std::io;
+use std::num::NonZeroU32;
 use std::rc::Rc;
 
 use togi_defect::{Clause, DefectId, Entry};
 use togi_journal::{
     Activity, Decision, DefectAnswer, DefectDirection, EventKind, SessionWarning, TunerDecision,
 };
+use togi_journal::fs::{Fault, Op};
 use togi_machine::TargetOffset;
+use togi_sim::MachineDefinition;
+use togi_sim::definition::ModelDef;
 
 use super::*;
 use crate::session::{Control, Prompt};
@@ -308,4 +312,201 @@ fn a_resumed_finding_of_an_unlisted_defect_is_asked_and_its_yes_resets_the_recor
             ),
         ]
     );
+}
+
+fn steady() -> Bench {
+    Bench::defined(&MachineDefinition {
+        cores: 2,
+        model: ModelDef {
+            past_limit_rate: 0.0,
+            crash_mce: 0.0,
+            ..ModelDef::default()
+        },
+        ..MachineDefinition::default()
+    })
+}
+
+fn run_to(bench: &Bench, cycles: u32) {
+    let mut input = bench.input();
+    input.policy.cycles = NonZeroU32::new(cycles);
+    let ended = crate::run(input);
+    assert!(ended.errors.is_empty(), "{:?}", ended.errors);
+}
+
+/// A session that has run a checking cycle and then holds a finding of a defect this build does not list, over
+/// both cores.
+fn tuned_with_an_unlisted_finding_over_two_cores(bench: &Bench) -> Seq {
+    run_to(bench, 1);
+    let mut session = bench.open();
+    assert_eq!(session.start().unwrap(), Control::Continue);
+    let cited = session.appender().journal().events()[0].seq;
+    let found = DefectFound {
+        id: DefectId::new(UNLISTED).unwrap().0,
+        title: "unlisted".into(),
+        detail: "recorded by a build that listed it".into(),
+        pr: 200,
+        direction: DefectDirection::TooAggressive,
+        cores: [core(0), core(1)].into_iter().collect(),
+        decisions: vec![cited],
+    };
+    session
+        .appender
+        .append(Payload::DefectFound(found), &[cited])
+        .unwrap()
+}
+
+fn yes_for_both_cores(asked: &Rc<Cell<u32>>) -> Option<Box<dyn Prompt>> {
+    Some(Box::new(Counted {
+        answer: true,
+        cores: vec![core(0), core(1)],
+        asked: Rc::clone(asked),
+    }))
+}
+
+type Recorded = (Seq, Payload, Vec<Seq>);
+
+fn after(bench: &Bench, found: Seq) -> Vec<Recorded> {
+    let boot = bench.sim.seams().host.boot_id().unwrap();
+    let journal = crate::testing::simulated(&bench.mem)
+        .open_at(boot, bench.sim.now())
+        .unwrap();
+    journal
+        .events()
+        .iter()
+        .filter(|event| event.seq > found)
+        .map(|event| (event.seq, event.payload.clone(), event.cause.clone()))
+        .collect()
+}
+
+fn opened_with(bench: &Bench, asked: &Rc<Cell<u32>>) -> Session {
+    let mut input = bench.input();
+    input.prompt = yes_for_both_cores(asked);
+    let Ok(mut session) = Session::open(input) else {
+        panic!("open");
+    };
+    assert_eq!(session.start().unwrap(), Control::Continue);
+    session
+}
+
+/// The answer and the two resets that `check_defects` appends, as an uninterrupted answer leaves them, and the
+/// searches the two cores restart because of them.
+fn uninterrupted_answer() -> Vec<Payload> {
+    let bench = steady();
+    let found = tuned_with_an_unlisted_finding_over_two_cores(&bench);
+    let asked = Rc::new(Cell::new(0));
+    let mut session = opened_with(&bench, &asked);
+    assert!(session.check_defects().unwrap().is_none());
+    assert_eq!(asked.get(), 1);
+    drop(session);
+    run_to(&bench, 2);
+    effects_of_the_answer(&after(&bench, found), found)
+}
+
+/// What the answer caused, once and citing what it must: the answer, a reset of each core citing it, and each
+/// core's search restarted citing its reset and reaching its limit again. Returns those events' payloads.
+fn effects_of_the_answer(recorded: &[Recorded], found: Seq) -> Vec<Payload> {
+    let answers: Vec<_> = recorded
+        .iter()
+        .filter(|(_, payload, _)| matches!(payload, Payload::DefectAnswered(_)))
+        .collect();
+    assert_eq!(answers.len(), 1, "one answer");
+    let (answer, _, cause) = answers[0];
+    assert_eq!(cause, &[found]);
+    let answer = *answer;
+    let resets: Vec<_> = recorded
+        .iter()
+        .filter(|(_, payload, _)| matches!(payload, Payload::CommandReset(_)))
+        .map(|(seq, payload, cause)| {
+            let Payload::CommandReset(reset) = payload else {
+                unreachable!()
+            };
+            assert_eq!(cause, &[answer]);
+            (*seq, reset.target)
+        })
+        .collect();
+    assert_eq!(
+        resets.iter().map(|(_, target)| *target).collect::<Vec<_>>(),
+        [ResetTarget::Core(core(0)), ResetTarget::Core(core(1))]
+    );
+    for (reset, target) in resets {
+        let ResetTarget::Core(cored) = target else {
+            unreachable!()
+        };
+        let restarted = recorded.iter().filter(|(_, payload, cause)| {
+            matches!(payload, Payload::CorePhase(phase)
+                if phase.core == cored
+                    && phase.from == Some(togi_journal::CorePhase::AtLimit)
+                    && phase.to == togi_journal::CorePhase::Search)
+                && cause == &[reset]
+        });
+        assert_eq!(restarted.count(), 1, "core {cored:?} restarts once");
+        let last = recorded
+            .iter()
+            .rev()
+            .find_map(|(_, payload, _)| match payload {
+                Payload::CorePhase(phase) if phase.core == cored => Some(phase.to),
+                _ => None,
+            });
+        assert_eq!(last, Some(togi_journal::CorePhase::AtLimit), "{cored:?}");
+    }
+    recorded
+        .iter()
+        .filter(|(_, payload, _)| {
+            matches!(
+                payload,
+                Payload::DefectAnswered(_) | Payload::CommandReset(_) | Payload::CorePhase(_)
+            )
+        })
+        .map(|(_, payload, _)| payload.clone())
+        .collect()
+}
+
+/// The answer and the two resets are interrupted at each boundary: before and after the answer and each reset.
+/// The journal then resumed by a session and consumed by a run is the uninterrupted one, and the person is asked
+/// again only when the answer was not durable.
+#[test]
+fn an_interrupted_multi_core_answer_resumes_to_the_effects_of_an_uninterrupted_one() {
+    let reference = uninterrupted_answer();
+    for at in 1..=3u64 {
+        for durable in [false, true] {
+            let name = format!("append {at}, durable {durable}");
+            let bench = steady();
+            let found = tuned_with_an_unlisted_finding_over_two_cores(&bench);
+            let asked = Rc::new(Cell::new(0));
+            let mut session = opened_with(&bench, &asked);
+            let op = if durable { Op::Sync } else { Op::Write };
+            bench
+                .mem
+                .inject(Fault::before(op, at).named("events.jsonl"));
+            assert!(
+                session.check_defects().is_err(),
+                "{name}: the interruption did not fire"
+            );
+            drop(session);
+            bench.mem.clear_faults();
+            let answer_events = after(&bench, found)
+                .iter()
+                .filter(|(_, payload, _)| {
+                    matches!(
+                        payload,
+                        Payload::DefectAnswered(_) | Payload::CommandReset(_)
+                    )
+                })
+                .count();
+            assert_eq!(
+                answer_events as u64,
+                at - 1 + u64::from(durable),
+                "{name}: answer events durable after the interruption"
+            );
+            let mut session = opened_with(&bench, &asked);
+            assert!(session.check_defects().unwrap().is_none(), "{name}");
+            let total = if at == 1 && !durable { 2 } else { 1 };
+            assert_eq!(asked.get(), total, "{name}: questions asked");
+            drop(session);
+            run_to(&bench, 2);
+            assert_eq!(asked.get(), total, "{name}: the run asked again");
+            let recorded = after(&bench, found);
+            assert_eq!(effects_of_the_answer(&recorded, found), reference, "{name}");
+        }
+    }
 }
