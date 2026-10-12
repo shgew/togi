@@ -11,7 +11,9 @@ fn identical_when_built_twice(base: Base) {
         .filter(|scenario| scenario.base() == base)
     {
         let first = scenario.events().expect("the scenario builds");
-        let second = scenario.events().expect("the scenario builds again");
+        let second = scenario
+            .events_from(&afresh)
+            .expect("the scenario builds from the second simulation");
         assert!(!first.is_empty(), "{scenario}");
         assert_eq!(lines(&first), lines(&second), "{scenario}");
     }

@@ -23,5 +23,5 @@ pub use install::{install, install_events};
 pub use rerun::{CycleCompletedByRerun, cycle_completed_by_rerun};
 pub use scenario::Scenario;
 pub use simulate::{
-    Stop, build, crash_trial, default_machine, machine, never, probe_machine, simulate,
+    Stop, Until, build, crash_trial, default_machine, machine, probe_machine, simulate,
 };

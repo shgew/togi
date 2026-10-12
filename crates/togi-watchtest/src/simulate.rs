@@ -10,7 +10,7 @@ use togi_session::{ConfigSource, StopPolicy};
 use togi_sim::definition::{CoreDef, JointDef, ModelDef, Weights};
 use togi_sim::model::Script;
 use togi_sim::{MachineDefinition, Model, RunSettings, Simulator};
-use togi_simrun::{Observe, Persistence, Replay, SimInput, SimOutcome};
+use togi_simrun::{Observe, Observer, Persistence, Replay, SimInput, SimOutcome};
 use togi_tuner::{EVIDENCE_EPOCH, RULESET};
 
 use crate::Error;
@@ -65,13 +65,17 @@ pub fn default_machine(seed: u64) -> Result<Simulator, Error> {
     machine(&MachineDefinition::default(), seed)
 }
 
+/// Stops a simulation after the first appended event it reports true for.
+pub type Until = Box<dyn FnMut(&Event) -> bool>;
+
 /// Runs a simulated session through `stop` or until `until` reports true for an appended event, and returns its
 /// journal at the current ruleset. Its `config.loaded` names [`build`], so a release's version bump leaves the
-/// journal unchanged. An `until` stop is a signal: the journal ends with the shutdown it records.
+/// journal unchanged. An `until` stop is a signal: the journal ends with the shutdown it records. Without `until` no
+/// observer runs, because simrun's observer reads the in-memory journal back after every append.
 pub fn simulate(
     machine: Simulator,
     config: Config,
-    mut until: impl FnMut(&Event) -> bool + 'static,
+    until: Option<Until>,
     stop: Stop,
 ) -> Result<Vec<Event>, Error> {
     let persistence = Persistence::Memory(MemFs::new());
@@ -101,13 +105,15 @@ pub fn simulate(
         renderer: Renderer::default(),
         zone: TimeZone::UTC,
         cancel: CancellationToken::new(),
-        observer: Some(Box::new(move |event| {
-            if until(event) {
-                Observe::Stop
-            } else {
-                Observe::Continue
-            }
-        })),
+        observer: until.map(|mut until| -> Observer {
+            Box::new(move |event| {
+                if until(event) {
+                    Observe::Stop
+                } else {
+                    Observe::Continue
+                }
+            })
+        }),
         dump_to: None,
     })?;
     match outcome {
@@ -116,11 +122,6 @@ pub fn simulate(
         SimOutcome::Capped { boots } => return Err(Error::Capped(boots)),
     }
     Ok(togi_simrun::events(&persistence)?)
-}
-
-/// Never stops a simulation early.
-pub fn never(_: &Event) -> bool {
-    false
 }
 
 /// Pins trial `trial`'s outcome to a crash `at_s` seconds in.

@@ -122,14 +122,26 @@ impl Scenario {
 
     /// The scenario's journal. Its base simulation runs once per process; the cut is copied.
     pub fn events(self) -> Result<Vec<Event>, Error> {
-        self.cut().map_err(|source| Error::Scenario {
-            scenario: self,
-            source: Box::new(source),
-        })
+        self.base()
+            .events()
+            .and_then(|base| self.cut(base))
+            .map_err(|source| self.failed(source))
     }
 
-    fn cut(self) -> Result<Vec<Event>, Error> {
-        let events = self.base().events()?;
+    /// The scenario cut from `base`, a journal of [`Scenario::base`] the caller simulated, such as with
+    /// [`Base::simulate`].
+    pub fn events_from(self, base: &[Event]) -> Result<Vec<Event>, Error> {
+        self.cut(base).map_err(|source| self.failed(source))
+    }
+
+    fn failed(self, source: Error) -> Error {
+        Error::Scenario {
+            scenario: self,
+            source: Box::new(source),
+        }
+    }
+
+    fn cut(self, events: &[Event]) -> Result<Vec<Event>, Error> {
         let cut = match self {
             Self::Search => cut_trial(events, |intent| {
                 intent.activity == Some(Activity::Search)

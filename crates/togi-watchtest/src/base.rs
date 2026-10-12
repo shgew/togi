@@ -6,7 +6,7 @@ use togi_journal::{Activity, Event, Payload};
 use togi_machine::Regime;
 
 use crate::Error;
-use crate::simulate::{Stop, crash_trial, default_machine, never, probe_machine, simulate};
+use crate::simulate::{Stop, crash_trial, default_machine, probe_machine, simulate};
 
 /// The seed whose default machine, run through three clean cycles, leaves a core's BIOS offset unconfirmed after a
 /// failure. [INFERENCE: other seeds steer clear of it; found by scanning seeds 1 to 60. The Go simulator's seed 30
@@ -27,9 +27,10 @@ pub enum Base {
     Concluded,
     /// The default machine on seed 43 through three clean cycles.
     Unconfirmed,
-    /// The default machine through six clean cycles, rerun with a burst of crashes naming no core on the trials from
-    /// the first checking trial of cycle 4 on: after a held first failure, a second makes a hunt while the confirmed
-    /// profile shows a held, unconfirmed core.
+    /// The default machine through three clean cycles, with a burst of crashes naming no core on the trials from the
+    /// first checking trial of cycle 4 on: after a held first failure, a second makes a hunt while the confirmed
+    /// profile shows a held, unconfirmed core. Go ran six cycles and found the burst's start in a first, unscripted
+    /// simulation; three cycles reach the same hunt, and the start is pinned and checked.
     LaterHunt,
     /// The default machine stopped at its first confirmed BIOS profile.
     FirstResult,
@@ -60,26 +61,26 @@ impl Base {
             Self::Session => simulate(
                 default_machine(1)?,
                 Config::default(),
-                never,
+                None,
                 Stop::cycles(1),
             ),
             Self::Concluded => simulate(
                 default_machine(1)?,
                 Config::default(),
-                never,
+                None,
                 Stop::cycles(2),
             ),
             Self::Unconfirmed => simulate(
                 default_machine(UNCONFIRMED_SEED)?,
                 Config::default(),
-                never,
+                None,
                 Stop::cycles(3),
             ),
             Self::LaterHunt => later_hunt(),
             Self::FirstResult => simulate(
                 default_machine(1)?,
                 Config::default(),
-                never,
+                None,
                 Stop::FirstResult,
             ),
             Self::Probe => {
@@ -88,25 +89,25 @@ impl Base {
                 simulate(
                     machine,
                     config,
-                    move |event| match &event.payload {
+                    Some(Box::new(move |event| match &event.payload {
                         Payload::TrialIntent(intent) => {
                             deepening = intent.activity == Some(Activity::Deepening);
                             false
                         }
                         Payload::TrialStart(_) => deepening,
                         _ => false,
-                    },
+                    })),
                     Stop::cycles(1),
                 )
             }
             Self::Combination => {
                 let (machine, config) = probe_machine()?;
-                simulate(machine, config, never, Stop::cycles(1))
+                simulate(machine, config, None, Stop::cycles(1))
             }
             Self::CrashedCycle => simulate(
                 default_machine(5)?,
                 Config::default(),
-                never,
+                None,
                 Stop::cycles(1),
             ),
         }
@@ -129,25 +130,31 @@ impl fmt::Display for Base {
     }
 }
 
+/// The default machine's first checking trial of cycle 4 on, outside R7, which the burst starts at. Trials before it
+/// run alike with the burst scripted or not, so the burst's own journal shows it; [`later_hunt`] checks that it does
+/// instead of simulating the session a second time to find it.
+const BURST_START: u32 = 1887;
+
 fn later_hunt() -> Result<Vec<Event>, Error> {
-    let six = Stop::cycles(6);
-    let base = simulate(default_machine(1)?, Config::default(), never, six)?;
-    let first = base
-        .iter()
-        .find_map(|event| match &event.payload {
-            Payload::TrialIntent(intent)
-                if intent.activity == Some(Activity::Checking)
-                    && intent.cycle.is_some_and(|cycle| cycle.get() >= 4)
-                    && intent.regime != Regime::R7 =>
-            {
-                intent.trial.as_str().parse::<u32>().ok()
-            }
-            _ => None,
-        })
-        .ok_or_else(|| Error::Fixture("no checking trial in cycle 4".into()))?;
     let machine = default_machine(1)?;
-    for id in first..first + BURST {
+    for id in BURST_START..BURST_START + BURST {
         crash_trial(&machine, &format!("{id:04}"), 7.0, 3)?;
     }
-    simulate(machine, Config::default(), never, six)
+    let events = simulate(machine, Config::default(), None, Stop::cycles(3))?;
+    let first = events.iter().find_map(|event| match &event.payload {
+        Payload::TrialIntent(intent)
+            if intent.activity == Some(Activity::Checking)
+                && intent.cycle.is_some_and(|cycle| cycle.get() >= 4)
+                && intent.regime != Regime::R7 =>
+        {
+            intent.trial.as_str().parse::<u32>().ok()
+        }
+        _ => None,
+    });
+    if first != Some(BURST_START) {
+        return Err(Error::Fixture(format!(
+            "the first checking trial of cycle 4 on is {first:?}, not the burst's start {BURST_START}"
+        )));
+    }
+    Ok(events)
 }
