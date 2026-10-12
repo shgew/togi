@@ -2,8 +2,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 
 use togi_journal::{
-    Attribution, CorePhase, Decision, Event, Failure, HuntOutcome, Member, Payload, ResetTarget,
-    Seq, TrialId, TrialIntent,
+    Activity, Attribution, CorePhase, Decision, Event, Failure, HuntOutcome, Member, Payload,
+    ResetTarget, Seq, TrialId, TrialIntent, TunerDecision,
 };
 use togi_machine::{Condition, CoreId, CoreSet, PerCore, Regime, TargetOffset};
 
@@ -56,6 +56,7 @@ pub(crate) struct Marks {
     zero_named: BTreeMap<Seq, CoreId>,
     trials: BTreeMap<TrialId, Loaded>,
     charged_to_named: BTreeSet<Seq>,
+    r7_loaded: BTreeMap<Seq, CoreSet>,
 }
 
 impl Marks {
@@ -90,20 +91,31 @@ impl Marks {
     }
 
     /// A decision citing a failure says which core the failure counts against. Charged to its named core, the
-    /// failure keeps its point there for good; charged only elsewhere (a phase-2 blame, a confirmation revert, an R7
-    /// top-group backoff) or held, it records none on the named core, and the decision's own failure point stands.
-    fn answer(&mut self, failure: Seq, decision: Decision, charged: CoreId) {
+    /// failure keeps its point there for good. A hold records none. Charged elsewhere, it leaves the named core only
+    /// on grounds the journal records: the decision records its own failure point, it is a phase-2 decision (a
+    /// round blame, yield or confirmation revert), or the failure is a multi-core R7 failure whose trial loaded the
+    /// charged core. Otherwise the point stands, so a decision blaming the wrong core cannot erase it.
+    fn answer(&mut self, failure: Seq, decision: &TunerDecision) {
         let named = self
             .points
-            .get(&charged)
+            .get(&decision.core)
             .is_some_and(|points| points.iter().any(|point| point.failure == Some(failure)));
-        if decision == Decision::Hold {
+        if decision.decision == Decision::Hold {
             self.cancel(failure);
         } else if named {
             self.charged_to_named.insert(failure);
-        } else if !self.charged_to_named.contains(&failure) {
+        } else if !self.charged_to_named.contains(&failure) && self.moves(failure, decision) {
             self.cancel(failure);
         }
+    }
+
+    fn moves(&self, failure: Seq, decision: &TunerDecision) -> bool {
+        decision.failure_point.is_some()
+            || decision.activity == Activity::Deepening
+            || self
+                .r7_loaded
+                .get(&failure)
+                .is_some_and(|loaded| loaded.contains(decision.core))
     }
 
     fn reset(&mut self, core: CoreId) {
@@ -147,7 +159,7 @@ impl Marks {
             }
             Payload::TunerDecision(decision) => {
                 if let Some(&cited) = event.cause.first() {
-                    self.answer(cited, decision.decision, decision.core);
+                    self.answer(cited, decision);
                 }
                 self.mark(decision.core, decision.failure_point, seq, None);
             }
@@ -191,12 +203,16 @@ impl Marks {
             ),
             _ => (failure.regime, failure.condition),
         };
+        let loaded = self.loaded_cores(failure, seen);
         let multi_core_r7 = regime == Some(Regime::R7)
             && matches!(condition, Some(Condition::Together | Condition::Parked))
-            && self.loaded_cores(failure, seen).len() > 1;
+            && loaded.len() > 1;
         if multi_core_r7 && failure.offset == Some(TargetOffset::ZERO) {
             self.zero_named.insert(event.seq, core);
             return;
+        }
+        if multi_core_r7 {
+            self.r7_loaded.insert(event.seq, loaded);
         }
         self.mark(core, failure.offset, event.seq, Some(event.seq));
     }

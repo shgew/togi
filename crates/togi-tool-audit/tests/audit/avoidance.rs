@@ -1,4 +1,5 @@
 use serde_json::json;
+use togi_journal::Event;
 use togi_tool_audit::Check::Avoidance;
 use togi_tool_audit::Completion::InProgress;
 
@@ -220,6 +221,77 @@ fn a_failure_counts_against_the_core_its_decision_charges() {
                 cause(decision(4, 0, "backoff", Some(-30)), &[2]),
                 applied(5, [-25, -20]),
             ],
+            InProgress,
+            &[(5, Avoidance)],
+        ),
+    ]);
+}
+
+#[test]
+fn a_failure_moves_to_another_core_only_on_grounds_the_journal_records() {
+    let r7 = |loaded: &[u8], rest: Vec<Event>| {
+        let mut events = vec![
+            trial_intent(2, "0001", "R7", "together", loaded),
+            failure_with(
+                3,
+                json!({"core": 8, "offset": -20, "trial": "0001", "regime": "R7", "condition": "together"}),
+            ),
+        ];
+        events.extend(rest);
+        events
+    };
+    run(vec![
+        case(
+            "a search backoff of another core that records no point leaves the alone trial's point",
+            vec![
+                failure(2, 8, -20),
+                cause(decision_in(3, "search", 0, "backoff", None), &[2]),
+                applied(4, [-25, -20]),
+            ],
+            InProgress,
+            &[(4, Avoidance)],
+        ),
+        case(
+            "a checking backoff of another core that records no point leaves it too",
+            vec![
+                failure(2, 8, -20),
+                cause(decision(3, 0, "backoff", None), &[2]),
+                applied(4, [-25, -20]),
+            ],
+            InProgress,
+            &[(4, Avoidance)],
+        ),
+        case(
+            "a phase-2 decision charging another core moves it",
+            vec![
+                failure(2, 8, -20),
+                cause(decision_in(3, "deepening", 0, "yield", None), &[2]),
+                applied(4, [-25, -20]),
+            ],
+            InProgress,
+            &[],
+        ),
+        case(
+            "a multi-core R7 failure moves to a core its trial loaded",
+            r7(
+                &[0, 8],
+                vec![
+                    cause(decision(4, 0, "backoff", None), &[3]),
+                    applied(5, [-25, -20]),
+                ],
+            ),
+            InProgress,
+            &[],
+        ),
+        case(
+            "a multi-core R7 failure does not move to a core its trial left idle",
+            r7(
+                &[8, 9],
+                vec![
+                    cause(decision(4, 0, "backoff", None), &[3]),
+                    applied(5, [-25, -20]),
+                ],
+            ),
             InProgress,
             &[(5, Avoidance)],
         ),

@@ -139,9 +139,19 @@ pub(crate) fn trial_end(seq: u64, trial: &str) -> Event {
 }
 
 pub(crate) fn decision(seq: u64, core: u8, kind: &str, failure_point: Option<i64>) -> Event {
+    decision_in(seq, "checking", core, kind, failure_point)
+}
+
+pub(crate) fn decision_in(
+    seq: u64,
+    activity: &str,
+    core: u8,
+    kind: &str,
+    failure_point: Option<i64>,
+) -> Event {
     let mut data = json!({
         "core": core,
-        "activity": "checking",
+        "activity": activity,
         "decision": kind,
         "from_offset": -10,
         "to_offset": -10,
