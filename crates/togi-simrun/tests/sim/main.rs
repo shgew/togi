@@ -3,6 +3,7 @@
 #[macro_use]
 mod support;
 
+mod boundary;
 mod cap;
 mod carry;
 mod common;
