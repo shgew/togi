@@ -1821,6 +1821,7 @@ dependencies = [
  "togi-session",
  "togi-sim",
  "togi-simrun",
+ "togi-tool-forecast",
  "togi-tool-modelcheck",
  "togi-tool-trialfacts",
  "togi-tuner",
