@@ -1020,6 +1020,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "togi-tool-audit"
+version = "0.0.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror",
+ "togi-journal",
+ "togi-machine",
+ "togi-tuner",
+]
+
+[[package]]
 name = "togi-tool-facts"
 version = "0.0.0"
 dependencies = [
@@ -1067,6 +1079,31 @@ dependencies = [
  "togi-machine",
  "togi-sim",
  "togi-tool-trialfacts",
+]
+
+[[package]]
+name = "togi-tool-sim"
+version = "0.0.0"
+dependencies = [
+ "clap",
+ "jiff",
+ "nix",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "togi-config",
+ "togi-defect",
+ "togi-journal",
+ "togi-machine",
+ "togi-render",
+ "togi-session",
+ "togi-sim",
+ "togi-simrun",
+ "togi-tool-audit",
+ "togi-tool-trialfacts",
+ "togi-tuner",
+ "togi-version",
 ]
 
 [[package]]
