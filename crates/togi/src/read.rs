@@ -1,41 +1,19 @@
 //! Reading the journal for the read-only commands: the build check, the read, and the notices that
 //! go with them.
 
-use std::io::{ErrorKind, stderr};
+use std::io::ErrorKind;
 
-use togi_journal::{
-    Build, FileError, Operation, ReadError, Recording, SCHEMA, Verdict, recorded_build,
-};
-use togi_render::{OutputFacts, Renderer, Style, escape_text};
+use togi_journal::{FileError, Operation, ReadError, Recording, Verdict, recorded_build};
+use togi_render::{Renderer, Style, escape_text};
 
 use crate::cli::Context;
 use crate::exit::Exit;
-
-/// The build this binary records and judges journals by.
-#[must_use]
-pub fn current_build() -> Build {
-    let rev = togi_version::rev();
-    Build {
-        version: togi_version::version().to_owned(),
-        rev: (!rev.is_empty()).then(|| rev.to_owned()),
-        ruleset: togi_tuner::RULESET,
-        schema: SCHEMA,
-        fixes: 0,
-        evidence: togi_tuner::EVIDENCE_EPOCH,
-    }
-}
-
-fn stderr_renderer() -> Renderer {
-    Renderer::new(OutputFacts::detect(
-        &stderr(),
-        std::env::var_os("NO_COLOR").as_deref(),
-        std::env::var_os("JOURNAL_STREAM").as_deref(),
-    ))
-}
+use crate::report::{chain, current_build, fail, refusal_message, unknown_kind_message};
 
 fn notice(ctx: &mut Context<'_>, style: Style, message: &str) {
-    let renderer = stderr_renderer();
-    let _ = writeln!(ctx.err, "{}", renderer.text(style, message));
+    let renderer = Renderer::new(ctx.system.stderr_facts());
+    let message = escape_text(message).to_string();
+    let _ = writeln!(ctx.err, "{}", renderer.text(style, &message));
 }
 
 /// Reads the live journal of `ctx.state_dir`; on failure writes the reason to stderr and gives the
@@ -48,56 +26,43 @@ fn notice(ctx: &mut Context<'_>, style: Style, message: &str) {
 /// journal.
 pub fn open(ctx: &mut Context<'_>, command: &str) -> Result<Recording, Exit> {
     let current = current_build();
-    match recorded_build(ctx.state_dir) {
-        Ok(Some(recorded)) => match current.verdict(&recorded, Operation::Inspect) {
+    let recorded = match recorded_build(ctx.state_dir) {
+        Ok(recorded) => recorded,
+        Err(error) => return Err(fail(ctx, command, chain(&error))),
+    };
+    if let Some(recorded) = &recorded {
+        match current.verdict(recorded, Operation::Inspect) {
             Verdict::Refuse(refusal) => {
-                let advice = if refusal.recorded > refusal.current {
-                    format!("install {recorded} to read it, or run `togi reset --all`")
-                } else {
-                    "run `togi reset --all` to start a new session".to_owned()
-                };
-                notice(
-                    ctx,
-                    Style::RedBold,
-                    &format!(
-                        "togi: {command}: the journal was written by {recorded}: {refusal}; {advice}"
-                    ),
-                );
+                let message = refusal_message(&refusal, recorded, &current);
+                notice(ctx, Style::RedBold, &format!("togi {command}: {message}"));
                 return Err(Exit::Error);
             }
-            Verdict::Use | Verdict::Archive => {
-                if recorded.ruleset != current.ruleset {
-                    notice(
-                        ctx,
-                        Style::Yellow,
-                        &format!(
-                            "togi: {command}: the journal's ruleset is {}, this build's is {}; what it shows may not follow this build's rules",
-                            recorded.ruleset, current.ruleset
-                        ),
-                    );
-                }
+            Verdict::Use | Verdict::Archive if recorded.ruleset != current.ruleset => {
+                let message = format!(
+                    "togi {command}: the journal's ruleset is {}, this build's is {}; what it shows may not follow this build's rules",
+                    recorded.ruleset, current.ruleset
+                );
+                notice(ctx, Style::Yellow, &message);
             }
-        },
-        Ok(None) => {}
-        Err(error) => {
-            return Err(ctx.error(format_args!(
-                "{command}: {}",
-                escape_text(&error.to_string())
-            )));
+            Verdict::Use | Verdict::Archive => {}
         }
     }
     let path = ctx.state_dir.join("events.jsonl");
-    Recording::read(&path).map_err(|error| match &error {
-        FileError {
-            source: ReadError::Io(io),
-            ..
-        } if io.kind() == ErrorKind::NotFound => {
-            ctx.error(format_args!("{command}: no journal at {}", path.display()))
+    Recording::read(&path).map_err(|error| match (&error, &recorded) {
+        (
+            FileError {
+                source: ReadError::Io(io),
+                ..
+            },
+            _,
+        ) if io.kind() == ErrorKind::NotFound => {
+            fail(ctx, command, format!("no journal at {}", path.display()))
         }
-        _ => ctx.error(format_args!(
-            "{command}: {}",
-            escape_text(&error.to_string())
-        )),
+        (_, Some(recorded)) => match unknown_kind_message(&error, recorded, &current) {
+            Some(message) => fail(ctx, command, message),
+            None => fail(ctx, command, chain(&error)),
+        },
+        _ => fail(ctx, command, chain(&error)),
     })
 }
 
@@ -106,7 +71,7 @@ pub fn report_torn(ctx: &mut Context<'_>, command: &str, recording: &Recording) 
     if let Some(torn) = recording.torn() {
         let _ = writeln!(
             ctx.err,
-            "togi: {command}: journal ends with {} torn bytes; the next run records journal.torn",
+            "togi {command}: journal ends with {} torn bytes; the next run records journal.torn",
             torn.bytes.len()
         );
     }

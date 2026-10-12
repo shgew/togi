@@ -132,3 +132,22 @@ fn the_config_help_names_the_default_path() {
             .contains(&format!("[default: {DEFAULT_CONFIG_PATH}]"))
     );
 }
+
+#[test]
+fn a_missing_file_is_the_default_configuration_unless_it_was_asked_for() {
+    let dir = tempfile::tempdir().unwrap();
+    let missing = dir.path().join("config.json");
+    assert_eq!(
+        super::read(&missing, false).unwrap(),
+        togi_config::Config::default()
+    );
+    assert!(matches!(
+        super::read(&missing, true),
+        Err(togi_config::LoadError::Read { .. })
+    ));
+    std::fs::write(&missing, "{").unwrap();
+    assert!(matches!(
+        super::read(&missing, false),
+        Err(togi_config::LoadError::Parse { .. })
+    ));
+}

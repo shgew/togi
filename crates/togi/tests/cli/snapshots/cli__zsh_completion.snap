@@ -41,6 +41,14 @@ _arguments "${_arguments_options[@]}" : \
 ':shell -- The shell to print the script for:(bash zsh fish nushell)' \
 && ret=0
 ;;
+(doctor)
+_arguments "${_arguments_options[@]}" : \
+'--config=[JSON configuration file \[default\: /etc/togi/config.json\]]:path:_files' \
+'--state-dir=[State directory]:path:_files -/' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+&& ret=0
+;;
 (events)
 _arguments "${_arguments_options[@]}" : \
 '--core=[Only events naming core N, and the outcomes of trials that load it]:N:_default' \
@@ -50,6 +58,24 @@ _arguments "${_arguments_options[@]}" : \
 '--until=[Only events before this RFC 3339 time]:time:_default' \
 '--state-dir=[State directory]:path:_files -/' \
 '--json[Print raw, uncolored JSON events]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+&& ret=0
+;;
+(reset)
+_arguments "${_arguments_options[@]}" : \
+'--core=[Reset core N\: clear its failure point and every combination that includes it, and restart its search from the baseline]:N:' \
+'--config=[JSON configuration file \[default\: /etc/togi/config.json\]]:path:_files' \
+'--state-dir=[State directory]:path:_files -/' \
+'--all[Archive the session; the next run starts a new one]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+&& ret=0
+;;
+(restart-limit)
+_arguments "${_arguments_options[@]}" : \
+'--tuning-boot=[GRUB environment file for retry state and the saved tuning entry]:file:_files' \
+'--state-dir=[State directory]:path:_files -/' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 && ret=0
@@ -86,7 +112,19 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
+(doctor)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
 (events)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(reset)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(restart-limit)
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
@@ -115,7 +153,10 @@ esac
 _togi_commands() {
     local commands; commands=(
 'completion:Print a shell completion script' \
+'doctor:Check whether this machine is ready for a run' \
 'events:Print the journal, one readable line per event' \
+'reset:Reset one core, or archive the whole session' \
+'restart-limit:Recover after the tuning service reaches its restart limit' \
 'status:Show the session at a glance' \
 'watch:Show the session as a read-only dashboard' \
 'help:Print this message or the help of the given subcommand(s)' \
@@ -127,6 +168,11 @@ _togi__subcmd__completion_commands() {
     local commands; commands=()
     _describe -t commands 'togi completion commands' commands "$@"
 }
+(( $+functions[_togi__subcmd__doctor_commands] )) ||
+_togi__subcmd__doctor_commands() {
+    local commands; commands=()
+    _describe -t commands 'togi doctor commands' commands "$@"
+}
 (( $+functions[_togi__subcmd__events_commands] )) ||
 _togi__subcmd__events_commands() {
     local commands; commands=()
@@ -136,7 +182,10 @@ _togi__subcmd__events_commands() {
 _togi__subcmd__help_commands() {
     local commands; commands=(
 'completion:Print a shell completion script' \
+'doctor:Check whether this machine is ready for a run' \
 'events:Print the journal, one readable line per event' \
+'reset:Reset one core, or archive the whole session' \
+'restart-limit:Recover after the tuning service reaches its restart limit' \
 'status:Show the session at a glance' \
 'watch:Show the session as a read-only dashboard' \
 'help:Print this message or the help of the given subcommand(s)' \
@@ -148,6 +197,11 @@ _togi__subcmd__help__subcmd__completion_commands() {
     local commands; commands=()
     _describe -t commands 'togi help completion commands' commands "$@"
 }
+(( $+functions[_togi__subcmd__help__subcmd__doctor_commands] )) ||
+_togi__subcmd__help__subcmd__doctor_commands() {
+    local commands; commands=()
+    _describe -t commands 'togi help doctor commands' commands "$@"
+}
 (( $+functions[_togi__subcmd__help__subcmd__events_commands] )) ||
 _togi__subcmd__help__subcmd__events_commands() {
     local commands; commands=()
@@ -158,6 +212,16 @@ _togi__subcmd__help__subcmd__help_commands() {
     local commands; commands=()
     _describe -t commands 'togi help help commands' commands "$@"
 }
+(( $+functions[_togi__subcmd__help__subcmd__reset_commands] )) ||
+_togi__subcmd__help__subcmd__reset_commands() {
+    local commands; commands=()
+    _describe -t commands 'togi help reset commands' commands "$@"
+}
+(( $+functions[_togi__subcmd__help__subcmd__restart-limit_commands] )) ||
+_togi__subcmd__help__subcmd__restart-limit_commands() {
+    local commands; commands=()
+    _describe -t commands 'togi help restart-limit commands' commands "$@"
+}
 (( $+functions[_togi__subcmd__help__subcmd__status_commands] )) ||
 _togi__subcmd__help__subcmd__status_commands() {
     local commands; commands=()
@@ -167,6 +231,16 @@ _togi__subcmd__help__subcmd__status_commands() {
 _togi__subcmd__help__subcmd__watch_commands() {
     local commands; commands=()
     _describe -t commands 'togi help watch commands' commands "$@"
+}
+(( $+functions[_togi__subcmd__reset_commands] )) ||
+_togi__subcmd__reset_commands() {
+    local commands; commands=()
+    _describe -t commands 'togi reset commands' commands "$@"
+}
+(( $+functions[_togi__subcmd__restart-limit_commands] )) ||
+_togi__subcmd__restart-limit_commands() {
+    local commands; commands=()
+    _describe -t commands 'togi restart-limit commands' commands "$@"
 }
 (( $+functions[_togi__subcmd__status_commands] )) ||
 _togi__subcmd__status_commands() {

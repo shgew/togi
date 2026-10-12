@@ -709,6 +709,7 @@ dependencies = [
  "portable-atomic",
  "portable-atomic-util",
  "serde_core",
+ "windows-link",
 ]
 
 [[package]]
@@ -1524,10 +1525,17 @@ dependencies = [
  "serde_json",
  "tempfile",
  "togi-config",
+ "togi-defect",
+ "togi-detect",
+ "togi-hardware",
+ "togi-hostlock",
  "togi-journal",
  "togi-machine",
  "togi-render",
+ "togi-session",
+ "togi-smu",
  "togi-tuner",
+ "togi-tuningboot",
  "togi-version",
  "togi-watch",
  "togi-watchtest",

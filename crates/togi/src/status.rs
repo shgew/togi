@@ -18,6 +18,7 @@ use togi_watch::words::{noun, phase_word};
 use crate::cli::{Context, examples};
 use crate::exit::Exit;
 use crate::read;
+use crate::report::fail;
 use crate::table::{Row, table, wrap};
 
 static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
@@ -56,13 +57,11 @@ pub fn run(_args: &Args, ctx: &mut Context<'_>) -> Exit {
     let text = match render(events) {
         Ok(text) => text,
         Err(Problem::NoSession) => {
-            return ctx.error(format_args!(
-                "status: no session in {}",
-                ctx.state_dir.display()
-            ));
+            let message = format!("no session in {}", ctx.state_dir.display());
+            return fail(ctx, "status", message);
         }
         Err(Problem::Replay(message)) => {
-            return ctx.error(format_args!("status: {}", escape_text(&message)));
+            return fail(ctx, "status", message);
         }
     };
     if let Err(error) = ctx
@@ -70,7 +69,7 @@ pub fn run(_args: &Args, ctx: &mut Context<'_>) -> Exit {
         .write_all(text.as_bytes())
         .and_then(|()| ctx.out.flush())
     {
-        return ctx.error(format_args!("status: write output: {error}"));
+        return fail(ctx, "status", format!("write output: {error}"));
     }
     read::report_torn(ctx, "status", &recording);
     Exit::Ok

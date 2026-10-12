@@ -51,7 +51,7 @@ fn an_unreadable_journal_prints_the_problem_frame_and_exits_one() {
     assert_eq!(ran.status.code(), Some(1));
     assert!(!text(&ran.stdout).trim().is_empty(), "the frame is printed");
     assert!(
-        text(&ran.stderr).starts_with("togi: watch:"),
+        text(&ran.stderr).starts_with("togi watch:"),
         "{}",
         text(&ran.stderr)
     );

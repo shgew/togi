@@ -15,6 +15,7 @@ use togi_render::{OutputFacts, Renderer};
 use crate::cli::{Context, examples};
 use crate::exit::Exit;
 use crate::read;
+use crate::report::fail;
 
 static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
     examples(&[
@@ -133,7 +134,8 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
         std::env::var_os("NO_COLOR").as_deref(),
         std::env::var_os("JOURNAL_STREAM").as_deref(),
     );
-    run_with(args, ctx, facts, &TimeZone::system())
+    let zone = ctx.system.zone();
+    run_with(args, ctx, facts, &zone)
 }
 
 fn run_with(args: &Args, ctx: &mut Context<'_>, facts: OutputFacts, zone: &TimeZone) -> Exit {
@@ -151,11 +153,11 @@ fn run_with(args: &Args, ctx: &mut Context<'_>, facts: OutputFacts, zone: &TimeZ
     let renderer = Renderer::new(facts);
     for event in filter.select(recording.events()) {
         if let Err(error) = write_event(ctx.out, renderer, event, zone, args.json) {
-            return ctx.error(format_args!("events: write output: {error}"));
+            return fail(ctx, "events", format!("write output: {error}"));
         }
     }
     if let Err(error) = ctx.out.flush() {
-        return ctx.error(format_args!("events: write output: {error}"));
+        return fail(ctx, "events", format!("write output: {error}"));
     }
     read::report_torn(ctx, "events", &recording);
     Exit::Ok

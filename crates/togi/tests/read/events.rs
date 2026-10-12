@@ -130,7 +130,7 @@ fn a_file_that_is_not_a_journal_is_an_error() {
     assert_eq!(ran.status.code(), Some(1));
     assert_eq!(text(&ran.stdout), "");
     assert!(
-        text(&ran.stderr).starts_with("togi: events:"),
+        text(&ran.stderr).starts_with("togi events:"),
         "{}",
         text(&ran.stderr)
     );
@@ -147,7 +147,7 @@ fn a_newer_schema_is_refused_with_advice() {
         assert_eq!(ran.status.code(), Some(1), "{command}");
         assert_eq!(text(&ran.stdout), "", "{command}");
         let err = text(&ran.stderr);
-        assert!(err.contains("schema is 99"), "{err}");
+        assert!(err.contains("schema 99"), "{err}");
         assert!(err.contains("togi reset --all"), "{err}");
     }
 }
@@ -161,7 +161,7 @@ fn an_older_schema_is_refused_too() {
     let ran = togi(dir.path(), &["events"]);
     assert_eq!(ran.status.code(), Some(1));
     assert!(
-        text(&ran.stderr).contains("schema is 0"),
+        text(&ran.stderr).contains("uses schema 1"),
         "{}",
         text(&ran.stderr)
     );

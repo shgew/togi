@@ -22,6 +22,13 @@ module completions {
     shell: string@"nu-complete togi completion shell" # The shell to print the script for
   ]
 
+  # Check whether this machine is ready for a run
+  export extern "togi doctor" [
+    --config: path            # JSON configuration file [default: /etc/togi/config.json]
+    --state-dir: directory    # State directory
+    --help(-h)                # Print help (see more with '--help')
+  ]
+
   def "nu-complete togi events kind" [] {
     [ "backend" "backend.retry" "boot" "boot.leave_reason" "boot.saved_entry" "checking" "checking.chain" "checking.cycle" "checking.step" "combination" "command" "command.reset" "config" "config.loaded" "core" "core.phase" "crash" "crash.detected" "deadend" "deepening" "deepening.round" "defect" "defect.answered" "defect.found" "failure" "failure.carried" "host" "host.ranking" "hunt" "hunt.end" "hunt.group" "hunt.skipped" "hunt.start" "journal" "journal.torn" "mce" "preflight" "preflight.check" "profile" "profile.applied" "profile.change" "profile.restored" "session" "session.archived" "session.baseline" "session.carried" "session.context" "session.notice" "session.start" "session.warning" "shutdown" "smu" "smu.error" "smu.intent" "smu.readback" "smu.write" "state" "state.rebuilt" "trial" "trial.carried" "trial.end" "trial.intent" "trial.progress" "trial.sample" "trial.signal" "trial.start" "tuner" "tuner.decision" "tuner.warning" ]
   }
@@ -34,6 +41,22 @@ module completions {
     --since: string           # Only events at or after this RFC 3339 time
     --until: string           # Only events before this RFC 3339 time
     --json                    # Print raw, uncolored JSON events
+    --state-dir: directory    # State directory
+    --help(-h)                # Print help (see more with '--help')
+  ]
+
+  # Reset one core, or archive the whole session
+  export extern "togi reset" [
+    --core: string            # Reset core N: clear its failure point and every combination that includes it, and restart its search from the baseline
+    --all                     # Archive the session; the next run starts a new one
+    --config: path            # JSON configuration file [default: /etc/togi/config.json]
+    --state-dir: directory    # State directory
+    --help(-h)                # Print help (see more with '--help')
+  ]
+
+  # Recover after the tuning service reaches its restart limit
+  export extern "togi restart-limit" [
+    --tuning-boot: path       # GRUB environment file for retry state and the saved tuning entry
     --state-dir: directory    # State directory
     --help(-h)                # Print help (see more with '--help')
   ]
@@ -60,8 +83,20 @@ module completions {
   export extern "togi help completion" [
   ]
 
+  # Check whether this machine is ready for a run
+  export extern "togi help doctor" [
+  ]
+
   # Print the journal, one readable line per event
   export extern "togi help events" [
+  ]
+
+  # Reset one core, or archive the whole session
+  export extern "togi help reset" [
+  ]
+
+  # Recover after the tuning service reaches its restart limit
+  export extern "togi help restart-limit" [
   ]
 
   # Show the session at a glance
