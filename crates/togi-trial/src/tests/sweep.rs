@@ -1988,7 +1988,7 @@ async fn a_hung_signal_of_either_kind_is_containment_inside_the_grace_and_ends_i
         });
         let begun = Instant::now();
         let error = sweep(&rig.env).await.err().unwrap();
-        assert!(begun.elapsed() <= secs(15), "{:?}", begun.elapsed());
+        assert_eq!(begun.elapsed(), rig.env.timing.stop_grace);
         let all = calls(&rig);
         for signal in ["SIGCONT", "SIGTERM", "SIGKILL"] {
             assert_eq!(
@@ -1998,6 +1998,17 @@ async fn a_hung_signal_of_either_kind_is_containment_inside_the_grace_and_ends_i
             );
         }
         assert_eq!(all.iter().filter(|(_, w)| *w == "stop").count(), 3);
+        for (call, at) in rig.fake.systemd_calls() {
+            if matches!(
+                call,
+                Systemd::Kill {
+                    signal: KillSignal::Kill,
+                    ..
+                }
+            ) {
+                assert_eq!(at.duration_since(begun), rig.env.timing.stop_grace);
+            }
+        }
         let failures = containment(&error).failures();
         assert_eq!(
             failures
