@@ -51,8 +51,13 @@ pub(crate) fn install(state: &Path) {
 /// removed or renamed, and a file's bytes and modification time.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Entry {
-    Dir { modified: SystemTime },
-    File { bytes: Vec<u8>, modified: SystemTime },
+    Dir {
+        modified: SystemTime,
+    },
+    File {
+        bytes: Vec<u8>,
+        modified: SystemTime,
+    },
 }
 
 /// Every file and directory under `root`, and `root` itself, by path relative to it.
@@ -69,7 +74,11 @@ pub(crate) fn snapshot(root: &Path) -> Snapshot {
                 walk(root, &entry.unwrap().path(), seen);
             }
         } else {
-            assert!(metadata.is_file(), "{}: neither file nor directory", at.display());
+            assert!(
+                metadata.is_file(),
+                "{}: neither file nor directory",
+                at.display()
+            );
             let bytes = fs::read(at).unwrap();
             seen.insert(name, Entry::File { bytes, modified });
         }
@@ -97,7 +106,10 @@ pub(crate) fn assert_refusal(command: &str, stderr: &str, state: &Path) {
         "{command}: {stderr}"
     );
     for wanted in [journal.as_str(), CUTOVER, "another build's journal"] {
-        assert!(stderr.contains(wanted), "{command}: no {wanted:?} in {stderr}");
+        assert!(
+            stderr.contains(wanted),
+            "{command}: no {wanted:?} in {stderr}"
+        );
     }
     let message = refusal_message(state);
     assert!(

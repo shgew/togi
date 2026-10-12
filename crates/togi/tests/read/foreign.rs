@@ -35,7 +35,10 @@ fn go_state() -> (tempfile::TempDir, Snapshot) {
 
 /// No lock file, no state file written by a Rust build, no archive move: the directory is what it was.
 fn assert_untouched(state: &Path, before: &Snapshot) {
-    assert!(!state.join("lock").exists(), "a refusal took the journal lock");
+    assert!(
+        !state.join("lock").exists(),
+        "a refusal took the journal lock"
+    );
     assert!(!state.join("togi.lock").exists());
     assert_eq!(&fixture::snapshot(state), before);
 }
@@ -45,7 +48,12 @@ fn each_read_command_refuses_the_go_journal_and_changes_no_file() {
     for (command, args) in COMMANDS {
         let (dir, before) = go_state();
         let ran = togi(dir.path(), args);
-        assert_eq!(ran.status.code(), Some(1), "{args:?}: {}", text(&ran.stderr));
+        assert_eq!(
+            ran.status.code(),
+            Some(1),
+            "{args:?}: {}",
+            text(&ran.stderr)
+        );
         assert_eq!(text(&ran.stdout), "", "{args:?}: no frame, no output");
         fixture::assert_refusal(command, text(&ran.stderr), dir.path());
         assert_untouched(dir.path(), &before);
@@ -77,7 +85,12 @@ fn a_first_line_without_its_newline_is_refused_all_the_same() {
         fixture::keep_only_the_unterminated_first_line(dir.path());
         let before = fixture::snapshot(dir.path());
         let ran = togi(dir.path(), args);
-        assert_eq!(ran.status.code(), Some(1), "{args:?}: {}", text(&ran.stderr));
+        assert_eq!(
+            ran.status.code(),
+            Some(1),
+            "{args:?}: {}",
+            text(&ran.stderr)
+        );
         assert_eq!(text(&ran.stdout), "", "{args:?}: no frame, no output");
         fixture::assert_refusal(command, text(&ran.stderr), dir.path());
         let stderr = text(&ran.stderr);
@@ -95,7 +108,11 @@ fn a_truncated_header_of_this_build_is_refused_in_the_same_words() {
             let before = fixture::snapshot(dir.path());
             let ran = togi(dir.path(), args);
             let stderr = text(&ran.stderr);
-            assert_eq!(ran.status.code(), Some(1), "{args:?}, newline {newline}: {stderr}");
+            assert_eq!(
+                ran.status.code(),
+                Some(1),
+                "{args:?}, newline {newline}: {stderr}"
+            );
             assert_eq!(text(&ran.stdout), "", "{args:?}: no frame, no output");
             fixture::assert_refusal(command, stderr, dir.path());
             assert!(!stderr.contains("torn bytes"), "{stderr}");
@@ -161,7 +178,12 @@ fn live_watch_refuses_before_it_takes_the_terminal() {
         );
     };
     drain(&master, &mut seen);
-    assert_eq!(status.code(), Some(1), "{:?}", String::from_utf8_lossy(&seen));
+    assert_eq!(
+        status.code(),
+        Some(1),
+        "{:?}",
+        String::from_utf8_lossy(&seen)
+    );
     assert!(
         !contains(&seen, HIDE_CURSOR),
         "the dashboard took the terminal: {:?}",
