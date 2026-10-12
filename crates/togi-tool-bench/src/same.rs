@@ -14,7 +14,7 @@ pub mod journal;
 use std::collections::BTreeSet;
 use std::fmt;
 use std::fs;
-use std::io::{self, Write as _};
+use std::io;
 use std::num::{NonZeroU32, NonZeroUsize};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -204,16 +204,14 @@ impl Report {
     }
 }
 
-/// Compares the sessions of the base and head trees.
-pub fn execute(options: &Options, fleet: &Fleet) -> Result<Report, Failed> {
-    let waiting = |path: &Path| {
-        let _ = writeln!(
-            io::stderr(),
-            "togi-tool-bench: waiting for another comparison's lock on {}",
-            path.display()
-        );
-    };
-    execute_with(options, fleet, &simulator::build_in, &waiting)
+/// Compares the sessions of the base and head trees. `waiting` is told once, with the lock's path, when another
+/// comparison holds the base's target directory and this one waits for it.
+pub fn execute(
+    options: &Options,
+    fleet: &Fleet,
+    waiting: &dyn Fn(&Path),
+) -> Result<Report, Failed> {
+    execute_with(options, fleet, &simulator::build_in, waiting)
 }
 
 /// How a tree's simulator is built: in the tree, with the target directory when given, stoppable by the fleet.

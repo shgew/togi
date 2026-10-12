@@ -1,6 +1,6 @@
 use std::io::{self, Write as _};
 use std::num::{NonZeroU32, NonZeroUsize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::thread;
@@ -82,7 +82,14 @@ pub(crate) fn run(args: SameArgs) -> ExitCode {
         simulators: [args.base_sim, args.head_sim],
     };
     let mut stderr = io::stderr();
-    let report = match execute(&options, &fleet) {
+    let waiting = |lock: &Path| {
+        let _ = writeln!(
+            io::stderr(),
+            "togi-tool-bench: waiting for another comparison's lock on {}",
+            lock.display()
+        );
+    };
+    let report = match execute(&options, &fleet, &waiting) {
         Ok(report) => report,
         Err(failed) => {
             if let Some(kept) = &failed.kept {

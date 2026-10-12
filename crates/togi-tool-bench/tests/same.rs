@@ -16,7 +16,11 @@ use std::time::Duration;
 
 use togi_sim::MachineDefinition;
 use togi_tool_bench::Fleet;
-use togi_tool_bench::same::{Options, SameError, execute};
+use togi_tool_bench::same::{Failed, Options, Report, SameError};
+
+fn execute(options: &Options, fleet: &Fleet) -> Result<Report, Failed> {
+    togi_tool_bench::same::execute(options, fleet, &|_| {})
+}
 
 struct Trees {
     dir: tempfile::TempDir,
