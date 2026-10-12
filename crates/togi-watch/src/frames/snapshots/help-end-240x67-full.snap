@@ -68,32 +68,31 @@ legend: t=Text g=Grey w=White c=Running a=Hunt p=Good f=Bad m=Combination k=Trac
 ~                                                                                                      tttttttttttttttttttttttttttttttttttttttttttttttttttttttt        wwwwwwwwwwwwwww  ttttttttttttttttttttttttttttttttttttttttttttt
 │                                                                                                      step; the cycle panel lists its steps and R7 parts.                              workload; evidence, not a guarantee
 ~                                                                                                      ttttttttttttttttttttttttttttttttttttttttttttttttttt                              ttttttttttttttttttttttttttttttttttt
-│    THE TOP LINE ───────────────────────────────────────────────────────────────────                                                                                  record only      a trial whose result is kept but changes no decision
-~    wwwwwwwwwwww ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg                                                                                  wwwwwwwwwww      tttttttttttttttttttttttttttttttttttttttttttttttttttt
-│                                                                                        CLEAN CYCLES  The count of clean cycles still valid for the current           cycle            one pass through the checking schedule
-~                                                                                        wwwwwwwwwwww  ttttttttttttttttttttttttttttttttttttttttttttttttttttt           wwwww            tttttttttttttttttttttttttttttttttttttt
+│    THE TOP LINE ───────────────────────────────────────────────────────────────────                                                                                  cycle            one pass through the checking schedule
+~    wwwwwwwwwwww ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg                                                                                  wwwww            tttttttttttttttttttttttttttttttttttttt
+│                                                                                        CLEAN CYCLES  The count of clean cycles still valid for the current
+~                                                                                        wwwwwwwwwwww  ttttttttttttttttttttttttttttttttttttttttttttttttttttt
 │    failures       failure decisions, including trials skipped because they already                   profile; checking repeats cycles until stopped.
 ~    wwwwwwww       tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                   ttttttttttttttttttttttttttttttttttttttttttttttt
-│                   failed
-~                   tttttt
-│    crashes        boots that ended without a clean shutdown                            R6            During idle trials this screen holds still, clock included,     KINDS OF LOAD ─────────────────────────────────────────────────────────
-~    wwwwwww        ttttttttttttttttttttttttttttttttttttttttt                            ww            ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt     wwwwwwwwwwwww ggggggggggggggggggggggggggggggggggggggggggggggggggggggggg
-│    last observed  the last failure seen in this session that changed what togi                       so it cannot wake the cores.
-~    wwwwwwwwwwwww  tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                       tttttttttttttttttttttttttttt
-│                   does; record-only results and skips do not count                                                                                                   R1 light          one light thread: compiling, browsing
-~                   tttttttttttttttttttttttttttttttttttttttttttttttt                                                                                                   wwwwwwww          ttttttttttttttttttttttttttttttttttttt
-│    q              closes this view only; tuning keeps running                          NO ETA        A hunt can start at any time, so togi shows only what is        R2 heavy vector   one AVX2/AVX-512 thread: encoding, rendering
-~    w              ttttttttttttttttttttttttttttttttttttttttttt                          wwwwww        tttttttttttttttttttttttttttttttttttttttttttttttttttttttt        wwwwwwwwwwwwwww   tttttttttttttttttttttttttttttttttttttttttttt
-│                                                                                                      scheduled and the time left in the current trial.               R3 load steps     load switching on and off: current steps
-~                                                                                                      ttttttttttttttttttttttttttttttttttttttttttttttttt               wwwwwwwwwwwww     tttttttttttttttttttttttttttttttttttttttt
-│                                                                                                                                                                      R4 partial load   light load at 25-75% duty: bursty work
+│                   failed                                                                                                                                             KINDS OF LOAD ─────────────────────────────────────────────────────────
+~                   tttttt                                                                                                                                             wwwwwwwwwwwww ggggggggggggggggggggggggggggggggggggggggggggggggggggggggg
+│    crashes        boots that ended without a clean shutdown                            R6            During idle trials this screen holds still, clock included,
+~    wwwwwww        ttttttttttttttttttttttttttttttttttttttttt                            ww            ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│    last observed  the last failure seen in this session that changed what togi                       so it cannot wake the cores.                                    R1 light          one light thread: compiling, browsing
+~    wwwwwwwwwwwww  tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                       tttttttttttttttttttttttttttt                                    wwwwwwww          ttttttttttttttttttttttttttttttttttttt
+│                   does; skips do not count                                                                                                                           R2 heavy vector   one AVX2/AVX-512 thread: encoding, rendering
+~                   tttttttttttttttttttttttt                                                                                                                           wwwwwwwwwwwwwww   tttttttttttttttttttttttttttttttttttttttttttt
+│    q              closes this view only; tuning keeps running                          NO ETA        A hunt can start at any time, so togi shows only what is        R3 load steps     load switching on and off: current steps
+~    w              ttttttttttttttttttttttttttttttttttttttttttt                          wwwwww        tttttttttttttttttttttttttttttttttttttttttttttttttttttttt        wwwwwwwwwwwww     tttttttttttttttttttttttttttttttttttttttt
+│                                                                                                      scheduled and the time left in the current trial.               R4 partial load   light load at 25-75% duty: bursty work
+~                                                                                                      ttttttttttttttttttttttttttttttttttttttttttttttttt               wwwwwwwwwwwwwww   tttttttttttttttttttttttttttttttttttttt
+│                                                                                                                                                                      R5 both threads   both threads of one core: SMT pressure
 ~                                                                                                                                                                      wwwwwwwwwwwwwww   tttttttttttttttttttttttttttttttttttttt
-│                                                                                        RULES         How togi decides what to do:                                    R5 both threads   both threads of one core: SMT pressure
-~                                                                                        wwwww         tttttttttttttttttttttttttttt                                    wwwwwwwwwwwwwww   tttttttttttttttttttttttttttttttttttttt
-│                                                                                                      https://github.com/shgew/togi/blob/main/docs/spec/tuner.md      R6 idle + bursts  idle with short wake-ups: idle and boost
-~                                                                                                      tttttttttttttttttttttttttttttttttttttttttttttttttttttttttt      wwwwwwwwwwwwwwww  tttttttttttttttttttttttttttttttttttttttt
-│                                                                                                                                                                      R7 all-core       a CCD, part of one, or every core: power and heat
-~                                                                                                                                                                      wwwwwwwwwww       ttttttttttttttttttttttttttttttttttttttttttttttttt
+│                                                                                        RULES         How togi decides what to do:                                    R6 idle + bursts  idle with short wake-ups: idle and boost
+~                                                                                        wwwww         tttttttttttttttttttttttttttt                                    wwwwwwwwwwwwwwww  tttttttttttttttttttttttttttttttttttttttt
+│                                                                                                      https://github.com/shgew/togi/blob/main/docs/spec/tuner.md      R7 all-core       a CCD, part of one, or every core: power and heat
+~                                                                                                      tttttttttttttttttttttttttttttttttttttttttttttttttttttttttt      wwwwwwwwwww       ttttttttttttttttttttttttttttttttttttttttttttttttt
+│
 │
 │
 │

@@ -6,8 +6,8 @@ expression: body
 │
 │  ► SOLO LIMITS  0 of 16 found · core 00 confirming -11  ───  ○ PHASE 1  ───  ○ PHASE 2  ───  CLEAN CYCLES 0  ───  ○ CYCLE
 │
-│  ▌  SOLO LIMITS   -11 is core 00's candidate solo limit, and I'm...
-│  ▌                One core at a time with the rest at 0, so any failure...
+│  ▌  SOLO LIMITS   -11 is core 00's candidate solo limit, and I'm confirming
+│  ▌                it.
 │
 │  NOW ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── trial 0001
 │   R1   light load  on core 00 alone at -11   mprime SSE 4K-21K · 1 worker                                                     CONFIRM CORE 00 AT -11 · LIGHT

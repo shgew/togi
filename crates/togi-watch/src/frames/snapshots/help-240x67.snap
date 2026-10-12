@@ -36,19 +36,19 @@ expression: body
 │    grey      idle, parked, still to come                                               CYCLE         Checking: every core at its offset together, through the                         tables, by offset when offsets stand in for requests
 │                                                                                                      steps of a cycle. The stage shows the cycle's number and        self-sufficient  observed passing as top requester for this R7
 │                                                                                                      step; the cycle panel lists its steps and R7 parts.                              workload; evidence, not a guarantee
-│    THE TOP LINE ───────────────────────────────────────────────────────────────────                                                                                  record only      a trial whose result is kept but changes no decision
-│                                                                                        CLEAN CYCLES  The count of clean cycles still valid for the current           cycle            one pass through the checking schedule
+│    THE TOP LINE ───────────────────────────────────────────────────────────────────                                                                                  cycle            one pass through the checking schedule
+│                                                                                        CLEAN CYCLES  The count of clean cycles still valid for the current
 │    failures       failure decisions, including trials skipped because they already                   profile; checking repeats cycles until stopped.
-│                   failed
-│    crashes        boots that ended without a clean shutdown                            R6            During idle trials this screen holds still, clock included,     KINDS OF LOAD ─────────────────────────────────────────────────────────
-│    last observed  the last failure seen in this session that changed what togi                       so it cannot wake the cores.
-│                   does; record-only results and skips do not count                                                                                                   R1 light          one light thread: compiling, browsing
-│    q              closes this view only; tuning keeps running                          NO ETA        A hunt can start at any time, so togi shows only what is        R2 heavy vector   one AVX2/AVX-512 thread: encoding, rendering
-│                                                                                                      scheduled and the time left in the current trial.               R3 load steps     load switching on and off: current steps
-│                                                                                                                                                                      R4 partial load   light load at 25-75% duty: bursty work
-│                                                                                        RULES         How togi decides what to do:                                    R5 both threads   both threads of one core: SMT pressure
-│                                                                                                      https://github.com/shgew/togi/blob/main/docs/spec/tuner.md      R6 idle + bursts  idle with short wake-ups: idle and boost
-│                                                                                                                                                                      R7 all-core       a CCD, part of one, or every core: power and heat
+│                   failed                                                                                                                                             KINDS OF LOAD ─────────────────────────────────────────────────────────
+│    crashes        boots that ended without a clean shutdown                            R6            During idle trials this screen holds still, clock included,
+│    last observed  the last failure seen in this session that changed what togi                       so it cannot wake the cores.                                    R1 light          one light thread: compiling, browsing
+│                   does; skips do not count                                                                                                                           R2 heavy vector   one AVX2/AVX-512 thread: encoding, rendering
+│    q              closes this view only; tuning keeps running                          NO ETA        A hunt can start at any time, so togi shows only what is        R3 load steps     load switching on and off: current steps
+│                                                                                                      scheduled and the time left in the current trial.               R4 partial load   light load at 25-75% duty: bursty work
+│                                                                                                                                                                      R5 both threads   both threads of one core: SMT pressure
+│                                                                                        RULES         How togi decides what to do:                                    R6 idle + bursts  idle with short wake-ups: idle and boost
+│                                                                                                      https://github.com/shgew/togi/blob/main/docs/spec/tuner.md      R7 all-core       a CCD, part of one, or every core: power and heat
+│
 │
 │
 │

@@ -3,14 +3,14 @@ source: crates/togi-watch/src/frames/snapshots.rs
 expression: body
 ---
 │ togi   08:32:41   session 32h32m   57 failures · 12 crashes   last observed failure 08:32, a moment ago
-│ ■ SOLO ─ ■ P1 ─ ► P2 ─ CLEAN 0 ─ ○ CYCLE 1 paused at 18/18
+│ ■ SOLO ─ ■ P1 ─ ► P2 ─ CLEAN 0 ─ ■ CYCLE 1
 │
 │ ▌  The failed load runs again on the new profile.
 │
 │  R7   all-core load  on 03 06 07   mprime AVX2 36K-248K · 3 workers                     RERUN AFTER BACKOFF · PARTIAL
 │ ██████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  1:20 left  0/5 ► · · · ·
 │
-│ 5/5 pass → step 1   core named → backs off   none named → backs off   backoffs per earlier requests
+│ 5/5 pass → step 1   core named → backs off   none named → backs off   backoffs per offset order
 │
 │ CCD 0 3 loaded   0  2 counts/cell       -50 fail            CCD 1 idle       0  2 counts/cell       -50 fail
 │   00 -23 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄█··              -24             08  -5 HAS ROOM ▄▄▄█                         -7 top

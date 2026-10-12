@@ -29,16 +29,16 @@ expression: body
 │  CCD 1   -11  -11  -11   -9  -11  -11  -11  -11                                  07:08  cycle    cycle 2 passed, a full cycle of every kind of test
 │                                                                                  07:08  pass     R6 idle + bursts on 00-15 · passed · Tctl max 67°C
 │  CYCLE 2 ──────────────────────────────────────────────── 18 steps · 18 done     06:53  pass     R4 partial load on core 15 at -11 · passed · Tctl max 67°C
-│                                                                                  06:51  pass     R4 partial load on core 07 at -11 · passed · Tctl max 64°C
-│    #  kind              where               schedule      result                 06:49  pass     R4 partial load on core 14 at -11 · passed · Tctl max 75°C
-│  ■  1 R7 all-core       2 CCDs · 4 parts    4 parts       done                   06:47  pass     R4 partial load on core 06 at -11 · passed · Tctl max 73°C
-│  ■  2 R7 all-core       2 CCDs · 4 parts    4 parts       done                   06:45  pass     R4 partial load on core 13 at -11 · passed · Tctl max 62°C
-│  ■  3 R7 all-core       2 CCDs · 4 parts    4 parts       done                   06:43  pass     R4 partial load on core 05 at -11 · passed · Tctl max 70°C
-│  ■  4 R2 heavy vector   one core at a time  16 x 2m       done                   06:41  pass     R4 partial load on core 12 at -11 · passed · Tctl max 67°C
-│  ■  5 R2 heavy vector   one core at a time  16 x 2m       done                   06:39  pass     R4 partial load on core 04 at -11 · passed · Tctl max 69°C
-│  ■  6 R2 heavy vector   one core at a time  16 x 2m       done                   06:37  pass     R4 partial load on core 11 at -9 · passed · Tctl max 62°C
-│  ■  7 R6 idle + bursts  all cores idle      15m           done                   06:35  pass     R4 partial load on core 03 at -11 · passed · Tctl max 66°C
-│  +18 more                                                                        06:33  pass     R4 partial load on core 10 at -11 · passed · Tctl max 76°C
+│    #  kind              where               schedule      result                 06:51  pass     R4 partial load on core 07 at -11 · passed · Tctl max 64°C
+│  ■  1 R7 all-core       2 CCDs · 4 parts    4 parts       done                   06:49  pass     R4 partial load on core 14 at -11 · passed · Tctl max 75°C
+│  ■  2 R7 all-core       2 CCDs · 4 parts    4 parts       done                   06:47  pass     R4 partial load on core 06 at -11 · passed · Tctl max 73°C
+│  ■  3 R7 all-core       2 CCDs · 4 parts    4 parts       done                   06:45  pass     R4 partial load on core 13 at -11 · passed · Tctl max 62°C
+│  ■  4 R2 heavy vector   one core at a time  16 x 2m       done                   06:43  pass     R4 partial load on core 05 at -11 · passed · Tctl max 70°C
+│  ■  5 R2 heavy vector   one core at a time  16 x 2m       done                   06:41  pass     R4 partial load on core 12 at -11 · passed · Tctl max 67°C
+│  ■  6 R2 heavy vector   one core at a time  16 x 2m       done                   06:39  pass     R4 partial load on core 04 at -11 · passed · Tctl max 69°C
+│  ■  7 R6 idle + bursts  all cores idle      15m           done                   06:37  pass     R4 partial load on core 11 at -9 · passed · Tctl max 62°C
+│  ■  8 R5 both threads   one core at a time  16 x 2m       done                   06:35  pass     R4 partial load on core 03 at -11 · passed · Tctl max 66°C
+│  +17 more                                                                        06:33  pass     R4 partial load on core 10 at -11 · passed · Tctl max 76°C
 │                                                                                  06:31  pass     R4 partial load on core 02 at -11 · passed · Tctl max 67°C
 │  R7 ───────────────────── top requesters ───── self-sufficient ─────────────     06:29  pass     R4 partial load on core 09 at -11 · passed · Tctl max 69°C
 │  mprime AVX2 36K-248K     00-07 11 by offset   all                               06:27  pass     R4 partial load on core 01 at -11 · passed · Tctl max 69°C

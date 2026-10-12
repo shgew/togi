@@ -6,8 +6,8 @@ expression: body
 │
 │  ► SOLO LIMITS  0 of 16 found · core 00 searching -5  ───  ○ PHASE 1  ───  ○ PHASE 2  ───  CLEAN CYCLES 0  ───  ○ CYCLE
 │
-│  ▌  SOLO LIMITS   I'm finding core 00's solo limit, one turn at a time...        last trial      PASS  1:30 on core 15 · Tctl max 66°C
-│  ▌                One core at a time with the rest at 0, so any failure...
+│  ▌  SOLO LIMITS   I'm finding core 00's solo limit, one turn at a time, now      last trial      PASS  1:30 on core 15 · Tctl max 66°C
+│  ▌                at -5.
 │
 │  NOW ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── trial 0033
 │   R1   light load  on core 00 alone at -5   y-cruncher BKT + SFTv4 · 1 worker                                                   SEARCH CORE 00 AT -5 · LIGHT

@@ -4,7 +4,7 @@ expression: body
 ---
 │  togi   08:32:41   session 32h32m   57 failures · 12 crashes   last observed failure 08:32, a moment ago
 │
-│  ■ SOLO LIMITS  16/16  ───  ■ PHASE 1  ───  ► PHASE 2  confirmation cycle  ───  CLEAN CYCLES 0  ───  ○ CYCLE 1  paused at step 18 of 18
+│  ■ SOLO LIMITS  16/16  ───  ■ PHASE 1  ───  ► PHASE 2  confirmation cycle  ───  CLEAN CYCLES 0  ───  ■ CYCLE 1
 │
 │  ▌  RERUN   The failed load runs again after the offsets changed. This trial checks the new profile.                     last trial      CRASH  on 03 06 07
 │
@@ -17,7 +17,7 @@ expression: body
 │  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀          ▀▀▀ ▀ ▀▀▀ ▀▀▀
 │  0:40 of 2:00                                                                                                                                                                      0 passed · trial 1 of 5  ► · · · ·                   left
 │
-│  if 5 of 5 pass       cycle 2 starts per earlier requests → next: step 1: R7 all-core with mprime AVX2 36K-248K
+│  if 5 of 5 pass       cycle 2 starts → next: step 1: R7 all-core with mprime AVX2 36K-248K
 │  if a core is named   its failure point is recorded → it backs off per offset order → next: this load again
 │  if none is named     core 03 -24 → -23 per offset order → next: this load again
 │
