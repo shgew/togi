@@ -1,0 +1,213 @@
+---
+source: crates/togi/tests/read/status.rs
+expression: text(&ran.stdout)
+---
+checking cycle 1, steps 18/18 | phase 2: at most 1 round left, then one full
+  cycle
+session 20260101T000000Z started 2026-01-01T00:00:00Z
+BIOS SIM.1 on togi simulator, Simulated Zen 5 16-Core Processor, microcode 0x0,
+  boost limit 5700 MHz
+in flight: none
+
+CORE  CCD  SLOT  OFFSET  BIOS  PHASE     FAILURE  QUEUED
+00    0    0     -23     -23   AT LIMIT  -24      -
+  last decision [#6394] core 00 backed off at -24; next -23 (backed off:
+                attributed computation_error in parked R3 trial 0811; failure
+                point -24)
+01    0    1     -15     -15   AT LIMIT  -16      -
+  last decision [#4147] core 01 has room -> at its limit at -15 (failure point
+                -16 of core 01)
+02    0    2     -24     -24   AT LIMIT  -25      -
+  last decision [#5822] core 02 has room -> at its limit at -24 (failure point
+                -25 of core 02)
+03    0    3     -24     -24   HAS ROOM  -26      -
+  last decision [#3951] core 03 search -> has room at -24 (solo limit -25 passed
+                5 trials of R1 mprime-sse-4k-21k and R2 mprime-avx2-36k-248k;
+                checking starts at -24, one count shallower than the solo limit
+                -25 (margin); one count deeper reaches no failure point or
+                combination)
+04    0    4     -13     -13   AT LIMIT  -14      -
+  last decision [#5289] core 04 backed off at -14; next -13 (backed off:
+                attributed computation_error in together R6 trial 0660; failure
+                point -14)
+05    0    5     -8      -8    AT LIMIT  -9       -
+  last decision [#5019] core 05 has room -> at its limit at -8 (failure point -9
+                of core 05)
+06    0    6     -37     -37   HAS ROOM  -39      -
+  last decision [#4077] core 06 search -> has room at -37 (solo limit -38 passed
+                5 trials of R1 mprime-sse-4k-21k and R2 mprime-avx2-36k-248k;
+                checking starts at -37, one count shallower than the solo limit
+                -38 (margin); one count deeper reaches no failure point or
+                combination)
+07    0    7     -29     -29   HAS ROOM  -31      -
+  last decision [#4019] core 07 search -> has room at -29 (solo limit -30 passed
+                5 trials of R1 mprime-sse-4k-21k and R2 mprime-avx2-36k-248k;
+                checking starts at -29, one count shallower than the solo limit
+                -30 (margin); one count deeper reaches no failure point or
+                combination)
+08    1    0     -5      -5    HAS ROOM  -7       -
+  last decision [#3585] core 08 search -> has room at -5 (solo limit -6 passed 5
+                trials of R1 mprime-sse-4k-21k and R2 mprime-avx2-36k-248k;
+                checking starts at -5, one count shallower than the solo limit
+                -6 (margin); one count deeper reaches no failure point or
+                combination)
+09    1    1     -33     -33   AT LIMIT  -34      -
+  last decision [#5762] core 09 has room -> at its limit at -33 (failure point
+                -34 of core 09)
+10    1    2     -13     -13   AT LIMIT  -14      -
+  last decision [#5302] core 10 backed off at -14; next -13 (backed off:
+                attributed corrected_mce in together R6 trial 0661; failure
+                point -14)
+11    1    3     -7      -7    AT LIMIT  -8       -
+  last decision [#4240] core 11 backed off at -8; next -7 (voltage-targeted R7
+                backoff after failure #4239: core 11 order came from offsets at
+                CO -8; no request telemetry, 1 count)
+12    1    4     -14     -14   AT LIMIT  -15      -
+  last decision [#4806] core 12 backed off at -15; next -14 (backed off:
+                attributed unexpected_exit in together R2 trial 0585; failure
+                point -15)
+13    1    5     -35     -35   AT LIMIT  -36      -
+  last decision [#5920] core 13 backed off at -36; next -35 (backed off:
+                attributed uncorrected_mce in together R5 trial 0742; failure
+                point -36)
+14    1    6     -12     -12   AT LIMIT  -13      -
+  last decision [#6850] core 14 backed off at -13; next -12 (backed off:
+                attributed corrected_mce in together R4 trial 0890; failure
+                point -13)
+15    1    7     -13     -13   HAS ROOM  -15      -
+  last decision [#3980] core 15 search -> has room at -13 (solo limit -14 passed
+                5 trials of R1 mprime-sse-4k-21k and R2 mprime-avx2-36k-248k;
+                checking starts at -13, one count shallower than the solo limit
+                -14 (margin); one count deeper reaches no failure point or
+                combination)
+BIOS profile confirmed by the passed full cycle [#7128]
+
+R7 self-sufficiency (passed as top requester at equal or deeper offsets; not a
+  guarantee)
+CORE  CCD  SELF-SUFFICIENT               TOP REQUESTER
+00    0    observed (4 passing trials)   no (offset fallback)
+  workload mprime-avx2-36k-248k-allcore
+01    0    observed (8 passing trials)   no (offset fallback)
+  workload mprime-avx2-36k-248k-allcore
+02    0    observed (12 passing trials)  no (offset fallback)
+  workload mprime-avx2-36k-248k-allcore
+03    0    observed (8 passing trials)   no (offset fallback)
+  workload mprime-avx2-36k-248k-allcore
+04    0    observed (4 passing trials)   no (offset fallback)
+  workload mprime-avx2-36k-248k-allcore
+05    0    observed (10 passing trials)  yes (offset fallback)
+  workload mprime-avx2-36k-248k-allcore
+06    0    not yet demonstrated          no (offset fallback)
+  workload mprime-avx2-36k-248k-allcore
+07    0    observed (4 passing trials)   no (offset fallback)
+  workload mprime-avx2-36k-248k-allcore
+08    1    observed (10 passing trials)  yes (offset fallback)
+  workload mprime-avx2-36k-248k-allcore
+09    1    observed (4 passing trials)   no (offset fallback)
+  workload mprime-avx2-36k-248k-allcore
+10    1    observed (12 passing trials)  no (offset fallback)
+  workload mprime-avx2-36k-248k-allcore
+11    1    observed (4 passing trials)   no (offset fallback)
+  workload mprime-avx2-36k-248k-allcore
+12    1    observed (12 passing trials)  no (offset fallback)
+  workload mprime-avx2-36k-248k-allcore
+13    1    not yet demonstrated          no (offset fallback)
+  workload mprime-avx2-36k-248k-allcore
+14    1    observed (12 passing trials)  no (offset fallback)
+  workload mprime-avx2-36k-248k-allcore
+15    1    observed (8 passing trials)   no (offset fallback)
+  workload mprime-avx2-36k-248k-allcore
+00    0    observed (4 passing trials)   no (offset fallback)
+  workload mprime-avx512-36k-248k-allcore
+01    0    observed (8 passing trials)   no (offset fallback)
+  workload mprime-avx512-36k-248k-allcore
+02    0    observed (12 passing trials)  no (offset fallback)
+  workload mprime-avx512-36k-248k-allcore
+03    0    observed (8 passing trials)   no (offset fallback)
+  workload mprime-avx512-36k-248k-allcore
+04    0    observed (4 passing trials)   no (offset fallback)
+  workload mprime-avx512-36k-248k-allcore
+05    0    observed (8 passing trials)   yes (offset fallback)
+  workload mprime-avx512-36k-248k-allcore
+06    0    not yet demonstrated          no (offset fallback)
+  workload mprime-avx512-36k-248k-allcore
+07    0    observed (4 passing trials)   no (offset fallback)
+  workload mprime-avx512-36k-248k-allcore
+08    1    observed (8 passing trials)   yes (offset fallback)
+  workload mprime-avx512-36k-248k-allcore
+09    1    observed (4 passing trials)   no (offset fallback)
+  workload mprime-avx512-36k-248k-allcore
+10    1    observed (12 passing trials)  no (offset fallback)
+  workload mprime-avx512-36k-248k-allcore
+11    1    observed (4 passing trials)   no (offset fallback)
+  workload mprime-avx512-36k-248k-allcore
+12    1    observed (12 passing trials)  no (offset fallback)
+  workload mprime-avx512-36k-248k-allcore
+13    1    not yet demonstrated          no (offset fallback)
+  workload mprime-avx512-36k-248k-allcore
+14    1    observed (12 passing trials)  no (offset fallback)
+  workload mprime-avx512-36k-248k-allcore
+15    1    observed (8 passing trials)   no (offset fallback)
+  workload mprime-avx512-36k-248k-allcore
+00    0    observed (4 passing trials)   no (offset fallback)
+  workload ycruncher-fftv4-n63-vt3-allcore
+01    0    observed (8 passing trials)   no (offset fallback)
+  workload ycruncher-fftv4-n63-vt3-allcore
+02    0    observed (12 passing trials)  no (offset fallback)
+  workload ycruncher-fftv4-n63-vt3-allcore
+03    0    observed (8 passing trials)   no (offset fallback)
+  workload ycruncher-fftv4-n63-vt3-allcore
+04    0    observed (4 passing trials)   no (offset fallback)
+  workload ycruncher-fftv4-n63-vt3-allcore
+05    0    observed (8 passing trials)   yes (offset fallback)
+  workload ycruncher-fftv4-n63-vt3-allcore
+06    0    not yet demonstrated          no (offset fallback)
+  workload ycruncher-fftv4-n63-vt3-allcore
+07    0    observed (4 passing trials)   no (offset fallback)
+  workload ycruncher-fftv4-n63-vt3-allcore
+08    1    observed (8 passing trials)   yes (offset fallback)
+  workload ycruncher-fftv4-n63-vt3-allcore
+09    1    observed (4 passing trials)   no (offset fallback)
+  workload ycruncher-fftv4-n63-vt3-allcore
+10    1    observed (12 passing trials)  no (offset fallback)
+  workload ycruncher-fftv4-n63-vt3-allcore
+11    1    observed (4 passing trials)   no (offset fallback)
+  workload ycruncher-fftv4-n63-vt3-allcore
+12    1    observed (12 passing trials)  no (offset fallback)
+  workload ycruncher-fftv4-n63-vt3-allcore
+13    1    not yet demonstrated          no (offset fallback)
+  workload ycruncher-fftv4-n63-vt3-allcore
+14    1    observed (12 passing trials)  no (offset fallback)
+  workload ycruncher-fftv4-n63-vt3-allcore
+15    1    observed (8 passing trials)   no (offset fallback)
+  workload ycruncher-fftv4-n63-vt3-allcore
+
+CANDIDATE  OFFSET  SOLO  GAP  STATE
+03         -24     -25   1    waits
+06         -37     -38   1    waits
+07         -29     -30   1    waits
+08         -5      -6    1    waits
+15         -13     -14   1    waits
+
+worst case if no round fails: 1 round left, then one full cycle
+
+REGIME  WORKLOAD                         TRIALS
+R1      mprime-sse-4k-21k                16
+R1      ycruncher-bkt-sftv4              16
+R1      ycruncher-snt-svt                16
+R2      mprime-avx2-36k-248k             28
+R2      mprime-avx512-36k-248k           16
+R2      ycruncher-fftv4-n63-vt3          16
+R3      mprime-sse-4k-21k-steps          20
+R3      ycruncher-bkt-sftv4-steps        16
+R3      ycruncher-snt-svt-steps          16
+R4      mprime-sse-4k-21k-duty25         20
+R4      ycruncher-bkt-sftv4-duty50       16
+R4      ycruncher-snt-svt-duty75         16
+R5      mprime-sse-4k-21k-smt            32
+R6      mprime-sse-4k-21k-idle           6
+R6      ycruncher-bkt-sftv4-idle         1
+R7      mprime-avx2-36k-248k-allcore     80
+R7      mprime-avx512-36k-248k-allcore   76
+R7      ycruncher-fftv4-n63-vt3-allcore  76
+Tctl max since last profile change 76°C [#7067]

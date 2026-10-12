@@ -1726,3 +1726,13 @@ async fn a_cancelled_sweep_nobody_waits_for_with_failed_cleanup_reports_every_ca
     })
     .await;
 }
+
+#[test]
+fn stopping_without_waiting_has_terminated_the_workload_before_it_returns() {
+    let dir = crate::testing::tempdir();
+    let marker = dir.path().join("terminated.txt");
+    let (mut runner, _keep) = runner(marks_termination(marker.clone()), fast());
+    let trial = start(&mut runner, Regime::R1, &[0], secs(600));
+    assert!(trial.stop().is_ok());
+    assert!(marker.exists(), "stop returned before the workload ended");
+}

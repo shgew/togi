@@ -9,17 +9,18 @@ use togi_machine::{CoreId, Regime, Signal};
 
 use super::kit::*;
 use crate::words::{
-    Brief, History, Phrase, Tag, Tagging, Tone, age, carried_groups, core_ids, core_list,
-    cores_text, decision_line, decision_phrase, failure_line, hunt_end_phrase, kind_words,
-    lateness, load_words, noun, on_cores, phase_line, phase_word, plural, regime_words,
-    signal_words, solo_limit, tag_word, trial_end_tag, words, workload_display,
+    Brief, History, Phrase, Tag, Tagging, Tone, age, candidate_word, carried_groups, core_ids,
+    core_list, cores_text, decision_line, decision_phrase, failure_line, group_word,
+    hunt_end_phrase, kind_words, lateness, load_words, noun, on_cores, phase_line, phase_word,
+    plural, regime_words, signal_words, solo_limit, tag_word, trial_end_tag, words,
+    workload_display,
 };
 use crate::words::{decision_brief, decision_detail};
 use togi_journal::{
     CheckingChain, CheckingStep, DeadEnd, DeadEndCondition, DeepeningRound, HuntSkipped, RoundEvent,
 };
 use togi_machine::CcdId;
-use togi_tuner::DecisionPayload;
+use togi_tuner::{DecisionPayload, GroupState};
 
 /// The kinds with no words of their own: not in the history, in the log under their kind name, in no story.
 const SILENT: &[EventKind] = &[
@@ -331,6 +332,16 @@ fn the_phase_word_is_shared_with_status() {
     assert_eq!(phase_word(CorePhase::AtLimit), "AT LIMIT");
     assert_eq!(phase_word(Activity::Checking), "checking");
     assert_eq!(phase_word(Activity::Deepening), "deepening");
+}
+
+#[test]
+fn the_group_and_candidate_words_are_shared_with_status() {
+    assert_eq!(group_word(GroupState::Running), "running");
+    assert_eq!(group_word(GroupState::Passed), "passed");
+    assert_eq!(group_word(GroupState::Failed), "failed");
+    assert_eq!(group_word(GroupState::Skipped), "skipped");
+    assert_eq!(candidate_word(true), "moving");
+    assert_eq!(candidate_word(false), "checked again in place");
 }
 
 #[test]
