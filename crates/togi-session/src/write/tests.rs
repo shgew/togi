@@ -451,6 +451,60 @@ fn a_failed_readback_event_leaves_the_slot_unconfirmed() {
     assert_eq!(rig.hardware.slot(core(1)), Some(Slot::Unknown));
 }
 
+fn assert_unrecorded_smu_failure_hands_off(rig: &mut Rig, failure: WriteFailure, recorded: &str) {
+    let WriteFailure::Journal(journal) = &failure else {
+        panic!("{failure:?}");
+    };
+    let journal = journal.clone();
+    assert!(matches!(Flow::from(failure), Flow::Fatal(_)));
+    assert!(rig.appender.failure().is_some());
+    assert_eq!(rig.hardware.slot(core(1)), Some(Slot::Unknown));
+    let events_before = rig.kinds();
+    assert_eq!(events_before.last(), Some(&recorded));
+    assert!(!events_before.contains(&"smu.error"));
+
+    let mut report = Vec::new();
+    let gate = Access::gate(Some(rig.sweep), Some(rig.validated), Some(&rig.stopped));
+    let cores = rig.hardware.cores();
+    let outcome = respond(&journal, gate, &mut *rig.smu, cores, &mut report);
+    assert!(matches!(&outcome.response, Response::Zeroed(zeroed) if zeroed.is_clean()));
+    assert_eq!(rig.offset(0), 0);
+    assert_eq!(rig.offset(1), 0);
+    assert_eq!(rig.kinds(), events_before);
+    assert!(String::from_utf8(report).unwrap().contains("journal write"));
+}
+
+#[test]
+fn a_journal_failure_recording_a_failed_command_is_a_journal_failure_not_an_smu_dead_end() {
+    let mut rig = Rig::new(2);
+    rig.zero_all().unwrap();
+    rig.sim.fail_write(1);
+    rig.fail_journal_write(2);
+    let failure = rig.set(1, -10).unwrap_err();
+    assert_unrecorded_smu_failure_hands_off(&mut rig, failure, "smu.intent");
+}
+
+#[test]
+fn a_journal_failure_recording_a_failed_read_is_a_journal_failure_not_an_smu_dead_end() {
+    let mut rig = Rig::new(2);
+    rig.zero_all().unwrap();
+    let armed = Rc::new(Cell::new(true));
+    let once = Rc::clone(&armed);
+    rig.sim.interrupt_smu(move |operation: &SmuOperation| {
+        if operation.op == SimOp::Read
+            && operation.phase == HookPhase::Before
+            && once.replace(false)
+        {
+            return Err(Error::Other("mailbox timeout".into()));
+        }
+        Ok(())
+    });
+    rig.fail_journal_write(3);
+    let failure = rig.set(1, -10).unwrap_err();
+    assert!(!armed.get());
+    assert_unrecorded_smu_failure_hands_off(&mut rig, failure, "smu.write");
+}
+
 #[test]
 fn the_first_failed_append_latches_and_cancels_the_running_trial() {
     let mut rig = Rig::new(2);
