@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::{Barrier, Mutex, PoisonError};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Barrier, Mutex, PoisonError};
 use std::time::Duration;
 
 use serde_json::Value;
@@ -842,19 +843,31 @@ fn sessions_that_race_to_a_difference_report_one_when_stopping_at_the_first() {
     .unwrap();
     let root = tempfile::tempdir().unwrap();
     let barrier = Barrier::new(2);
-    let mut fake = Fake::new(root.path(), &fleet, changed);
-    fake.hook = Some(Box::new(move |side, _| {
-        if side == Side::Base {
+    let reruns = Arc::new(AtomicUsize::new(0));
+    let finished = Arc::clone(&reruns);
+    // Both sessions pass the stop check of their last rerun before either can report, so neither is
+    // interrupted: the one that loses the race to report must drop its runs.
+    let fake = Fake::new(root.path(), &fleet, move |side, _| {
+        if side == Side::Head {
             barrier.wait();
+            finished.fetch_add(1, Ordering::SeqCst);
         }
-    }));
+        journal(&format!("{{\"side\":{}}}\n", side.index()))
+    });
     let outcome = compare::run(&same_sessions(&[1, 2]), &cache.config(&fleet), &fake).unwrap();
+    assert_eq!(reruns.load(Ordering::SeqCst), 2);
     assert_eq!(outcome.differences.len(), 1);
-    assert_eq!(
-        files_under(root.path()).len(),
-        4,
-        "the journals and logs of the reported session"
-    );
+    let reported = outcome.differences[0].key.to_string();
+    let mut want: Vec<String> = ["base", "head"]
+        .into_iter()
+        .flat_map(|side| {
+            ["events.jsonl", "sim.log"].map(|file| format!("{side}/{reported}/{file}"))
+        })
+        .collect();
+    let mut files = files_under(root.path());
+    files.sort();
+    want.sort();
+    assert_eq!(files, want, "only the reported session's runs remain");
 }
 
 #[test]
@@ -941,7 +954,6 @@ fn a_digest_cache_keeps_the_most_recent_trees_only() {
 #[test]
 fn a_session_s_inputs_change_with_any_file_of_its_machine() {
     use crate::suite::Machine;
-    use std::sync::Arc;
     use togi_sim::MachineDefinition;
     let with = |name: &str, sum: &str| {
         let mut run = spec("s", Split::Dev, 1);
@@ -959,4 +971,73 @@ fn a_session_s_inputs_change_with_any_file_of_its_machine() {
     assert_ne!(base, with("m.json", "bb"));
     assert_ne!(base, with("n.json", "aa"));
     assert_eq!(base, with("m.json", "aa"));
+}
+
+#[test]
+fn a_session_s_inputs_change_with_its_identity_and_replay() {
+    use togi_sim::replay::Replay;
+    let base = spec("s", Split::Dev, 1);
+    let want = super::digests::inputs(&base);
+    assert_eq!(want, super::digests::inputs(&spec("s", Split::Dev, 1)));
+    let mut replaying = base.clone();
+    replaying.replay = Some(Arc::new(Replay::default()));
+    for (what, other) in [
+        ("seed", spec("s", Split::Dev, 2)),
+        ("split", spec("s", Split::Holdout, 1)),
+        ("name", spec("t", Split::Dev, 1)),
+        ("replay", replaying),
+    ] {
+        assert_ne!(super::digests::inputs(&other), want, "{what}");
+    }
+}
+
+#[test]
+fn the_digest_key_changes_with_the_simulator_and_the_boot_cap() {
+    let base = super::digests::key("simulator", 1000);
+    assert_eq!(base, super::digests::key("simulator", 1000));
+    assert_ne!(base, super::digests::key("simulator 2", 1000), "simulator");
+    assert_ne!(base, super::digests::key("simulator", 5), "boot cap");
+}
+
+#[test]
+fn a_digest_record_holds_only_for_the_inputs_that_made_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let cache = DigestCache::open(dir.path(), "k").unwrap();
+    let run = spec("s", Split::Dev, 1);
+    assert_eq!(cache.get(&run, "in"), None, "an empty cache hits");
+    let record = super::digests::SideRecord {
+        digest: "abc".to_owned(),
+        exit: 3,
+        wall_s: 1.5,
+    };
+    cache.put(&run, "in", &record).unwrap();
+    assert_eq!(cache.get(&run, "in"), Some(record));
+    assert_eq!(
+        cache.get(&run, "other"),
+        None,
+        "a record made from other inputs hits"
+    );
+    assert_eq!(cache.get(&spec("s", Split::Dev, 2), "in"), None);
+}
+
+#[test]
+fn a_corrupt_digest_record_misses() {
+    let dir = tempfile::tempdir().unwrap();
+    let cache = DigestCache::open(dir.path(), "k").unwrap();
+    let run = spec("s", Split::Dev, 1);
+    let record = super::digests::SideRecord {
+        digest: "abc".to_owned(),
+        exit: 0,
+        wall_s: 1.0,
+    };
+    cache.put(&run, "in", &record).unwrap();
+    let path = dir.path().join("same/k/s/dev-1.json");
+    for (what, bytes) in [
+        ("truncated", "{"),
+        ("an array", "[]"),
+        ("another shape", "{\"inputs\":\"in\",\"record\":{}}"),
+    ] {
+        fs::write(&path, bytes).unwrap();
+        assert_eq!(cache.get(&run, "in"), None, "{what}");
+    }
 }
