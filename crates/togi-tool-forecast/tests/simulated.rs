@@ -96,6 +96,7 @@ fn simulate(cycles: u32) -> Simulated {
         zone: TimeZone::UTC,
         cancel: CancellationToken::new(),
         report: Box::new(io::sink()),
+        on_append: None,
     });
     assert!(ended.errors.is_empty(), "{:?}", ended.errors);
     Simulated { mem, ended }
