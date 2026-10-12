@@ -86,14 +86,18 @@ fn simulate_checked(input: SimInput, check: &mut Check<'_>) -> Result<SimOutcome
         let (boot, context) = match identity {
             Ok(identity) => identity,
             Err(source) => {
-                release(kept.take());
-                return Err(SimError::Host {
-                    boot: number,
-                    source,
-                });
+                return Err(abandon(
+                    kept.take(),
+                    resume.as_ref(),
+                    SimError::Host {
+                        boot: number,
+                        source,
+                    },
+                ));
             }
         };
         let now = simulator.now();
+        let reopened = kept.is_some();
         let prepared = match kept.take() {
             Some(mut journal) => {
                 if journal.reboot(boot.clone()).is_ok() {
@@ -118,9 +122,15 @@ fn simulate_checked(input: SimInput, check: &mut Check<'_>) -> Result<SimOutcome
                 defects,
             ),
         }
-        .map_err(|source| SimError::Prepare {
-            boot: number,
-            source,
+        .map_err(|source| {
+            let error = SimError::Prepare {
+                boot: number,
+                source,
+            };
+            match &resume {
+                Some(capsule) if reopened => republish(&persistence, capsule, error),
+                _ => error,
+            }
         })?;
         let journal = prepared.journal;
         let opened = journal.events().len();
@@ -155,12 +165,16 @@ fn simulate_checked(input: SimInput, check: &mut Check<'_>) -> Result<SimOutcome
         let crash = ended.crashed();
         let appended = ended.journal.events().len() > opened;
         if due(number, max_boots, crash, verify_every) {
-            check(
+            let checked = check(
                 ended.capsule.as_ref(),
                 ended.journal.events(),
                 !crash && !ended.errors.is_empty(),
                 number,
-            )?;
+            );
+            if let Err(error) = checked {
+                let pending = ended.capsule.as_ref().filter(|_| crash);
+                return Err(abandon(Some(ended.journal), pending, error));
+            }
         }
         let Ended {
             stop,
@@ -183,7 +197,9 @@ fn simulate_checked(input: SimInput, check: &mut Check<'_>) -> Result<SimOutcome
                 .is_some_and(|capsule| capsule.covers(&journal, defects));
         if keeps {
             if appended && !superseded {
-                machine::forget(&persistence, journal.dir())?;
+                if let Err(error) = machine::forget(&persistence, journal.dir()) {
+                    return Err(abandon(Some(journal), capsule.as_ref(), error));
+                }
                 superseded = true;
             }
             kept = Some(journal);
@@ -260,11 +276,27 @@ fn close(journal: Journal, boot: u32) -> Result<StateDir, SimError> {
         .map_err(|source| SimError::Close { boot, source })
 }
 
-/// Closes a journal on an error path, where the error being returned is the one that matters.
-fn release(journal: Option<Journal>) {
-    if let Some(journal) = journal {
-        drop(journal.close());
+/// Ends a simulation on an error: closes the open journal, if any, after publishing the state its crashed boot left
+/// pending, as a normal exit does. `error` stays the one returned; a failure here is not reported over it.
+fn abandon(journal: Option<Journal>, pending: Option<&ResumeCapsule>, error: SimError) -> SimError {
+    if let Some(journal) = journal
+        && let Ok(mut dir) = journal.close()
+        && let Some(capsule) = pending
+    {
+        drop(capsule.publish(&mut dir));
     }
+    error
+}
+
+/// [`abandon`] for a journal that [`prepare_kept`] consumed: publishes the pending state into the directory unless
+/// it no longer holds the journal, as when the failed preparation archived it, which took the state file along.
+fn republish(persistence: &Persistence, pending: &ResumeCapsule, error: SimError) -> SimError {
+    if let Ok(mut dir) = lock(persistence)
+        && matches!(dir.live_session(), Ok(Some(_)))
+    {
+        drop(pending.publish(&mut dir));
+    }
+    error
 }
 
 fn publish(capsule: &ResumeCapsule, dir: &mut StateDir, boot: u32) -> Result<(), SimError> {

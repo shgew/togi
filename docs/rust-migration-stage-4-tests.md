@@ -725,6 +725,16 @@ These two `internal/tuner` files need whole simulated sessions, so #812 ports th
 |---|---|---|
 | `TestMemosMatchRecomputation` | `togi_simrun::sim::memo::flat_hazard_7`<br>`togi_simrun::sim::memo::target_shared_voltage_2`<br>`togi_simrun::sim::memo::target_r7_request_gap_1`<br>`togi_simrun::sim::memo::misleading_mce_3`<br>`togi_simrun::sim::memo::late_onset_1` | A |
 
+## journal (#873)
+
+`internal/journal` was ported in stage 2. Its test below maps to the stage-4 pull request that adds `Journal::reboot` (#873), the Rust counterpart of Go's `SetBoot`; the summary table does not count it.
+
+### `internal/journal/journal_test.go` (1)
+
+| Go test | Rust test(s) | status |
+|---|---|---|
+| `TestSetBootPreservesEarlierBootEvidence` | `togi_journal::journal::tests::a_reboot_keeps_the_events_and_appends_as_the_new_boot_without_reading_the_file` | X |
+
 ## audit
 
 ### `tools/audit/audit_test.go` (5)

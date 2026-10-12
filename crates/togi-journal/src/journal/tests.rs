@@ -366,6 +366,23 @@ fn a_poisoned_journal_is_not_rebooted() {
 }
 
 #[test]
+fn a_reboot_whose_sync_fails_poisons_the_journal_and_keeps_its_boot() {
+    let fs = MemFs::new();
+    let mut journal = begin_default(&fs);
+    journal.append(stamp(1), note("before"), &[]).unwrap();
+    fs.inject(Fault::before(Op::Sync, 1));
+    assert!(matches!(
+        journal.reboot(boot(2)),
+        Err(AppendError::Failed(_))
+    ));
+    assert_eq!(journal.boot(), &boot(1));
+    assert!(matches!(
+        journal.append(stamp(2), note("after"), &[]),
+        Err(AppendError::Poisoned(_))
+    ));
+}
+
+#[test]
 fn a_write_or_fsync_failure_poisons_without_further_io_and_the_survivor_replays_once() {
     let cases = [
         (Fault::before(Op::Write, 1), 1, "write never happened"),
