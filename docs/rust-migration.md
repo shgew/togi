@@ -615,3 +615,12 @@ The flake check `vm-trial-scope-rs` ([#766](https://github.com/shgew/togi/issues
 - **Not run.** `every_r1_and_r2_workload_passes_twenty_seconds_on_cpu_2` needs real stress backends, which the VM does not have. The `helper` unit tests in the `hardware` binary are excluded.
 - **Result.** One run on the VM at head `ef674af0` passed: 10 of 10, 8 of 8 and 2 of 2; the test script took 15 s, and the whole `nix build` 51 s on a host with the test binaries not yet built. The run on a GitHub runner is in the pull request. Not run on a Mac.
 - **CI.** No workflow change: `check.yml` builds every attribute of `checks.x86_64-linux` as its own job and gives KVM to every check that has a `driver`, which `vm-trial-scope-rs` has.
+
+## Stage 7: `tools/facts` (#819, 2026-10-12)
+
+The `togi-tool-facts` crate ports `tools/facts` ([#819](https://github.com/shgew/togi/issues/819)): `togi-tool-facts STATE-DIR OUTPUT` extracts the privacy-safe trial facts of a copied state directory with `togi-tool-trialfacts` and replaces the output atomically, printing `extracted N facts`. The library is `generate`; `main.rs` is a clap parser, the stdout line and the exit statuses (0 on success, 1 on a failed extraction or write with `togi-tool-facts: <error>` on stderr, 2 on a usage error).
+
+- **Atomic write.** `generate` calls `togi_tool_trialfacts::write`, which writes a temporary file in the output's directory, syncs it and renames it over the output; the temporary file is a `NamedTempFile` and is removed on every error path. A failed extraction never reaches the write, so an existing output is untouched. There is no second copy of this logic in the tool.
+- **Go bugs fixed.** None found. Go's `generate` created the temporary file before extracting, so a bad source left a short-lived file in the output's directory and a missing output directory was reported before a bad source; Rust extracts first.
+- **Tests.** 9 tests run in about 4 ms of test time under `cargo nextest run -p togi-tool-facts`, against 2 ms for `go test -count=1 ./tools/facts`. About 60 lines of library and 330 of tests, against 45 of Go and 130 of tests. The fixture builds a journal in memory and dumps it to disk.
+- **Not measured.** Compile times against Go. Not run on a Mac.
