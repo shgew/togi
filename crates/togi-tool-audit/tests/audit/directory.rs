@@ -132,3 +132,35 @@ fn a_journal_that_cannot_be_read_is_an_error_not_a_clean_audit() {
         Err(AuditError::Journal(_))
     ));
 }
+
+#[test]
+fn an_archive_that_cannot_be_read_is_an_error_naming_the_archive() {
+    let fs = MemFs::new();
+    let mut text = journal(vec![]);
+    text.extend_from_slice(b"{\"seq\":2}\n");
+    fs.put("/state/archive/20251231T000000Z.jsonl", text);
+    fs.put("/state/events.jsonl", journal(vec![stop(2)]));
+    assert!(matches!(
+        audit_recordings(&open(&fs), Finished),
+        Err(AuditError::Archive(_))
+    ));
+}
+
+#[test]
+fn archives_without_a_live_journal_yield_no_live_audit() {
+    let fs = MemFs::new();
+    fs.put("/state/archive/20251231T000000Z.jsonl", journal(vec![]));
+    fs.put("/state/archive/20260101T000000Z.jsonl", journal(vec![]));
+    let sources: Vec<Source> = audit_recordings(&open(&fs), Finished)
+        .unwrap()
+        .into_iter()
+        .map(|audit| audit.source)
+        .collect();
+    assert_eq!(
+        sources,
+        vec![
+            Source::Archived(session("20251231T000000Z")),
+            Source::Archived(session("20260101T000000Z")),
+        ]
+    );
+}
