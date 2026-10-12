@@ -284,7 +284,7 @@ pub struct Session {
 
 impl Session {
     pub fn new() -> Self {
-        Self::of(Scenario::Search)
+        Self::of(Scenario::Confirm)
     }
 
     pub fn of(scenario: Scenario) -> Self {

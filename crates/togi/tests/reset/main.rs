@@ -313,13 +313,7 @@ fn reset_all_completes_an_interrupted_incompatible_archive() {
 }
 
 fn failing_scenario() -> (Scenario, CoreId, i64) {
-    for scenario in [
-        Scenario::Hunt,
-        Scenario::Combination,
-        Scenario::Deadend,
-        Scenario::Stopped,
-        Scenario::Concluded,
-    ] {
+    for scenario in [Scenario::Deadend, Scenario::Hunt] {
         let events = scenario.events().unwrap();
         let state = togi_tuner::replay(&events).unwrap();
         let points = state.constraints().unwrap().failure_points();
