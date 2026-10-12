@@ -303,3 +303,38 @@ fn a_crashed_runs_capsule_publishes_what_a_live_run_had_and_the_next_boot_rebuil
             .all(|event| !matches!(event.payload, Payload::StateRebuilt(_)))
     );
 }
+
+#[test]
+fn the_state_a_crashed_run_left_unwritten_is_published_by_the_next_boot_when_no_capsule_is_adopted()
+{
+    let bench = bench();
+    let mut ended = crashed(&bench);
+    let capsule = ended.capsule.take().unwrap();
+    assert!(
+        ended
+            .journal
+            .read_state::<StateDocument>()
+            .unwrap()
+            .is_none()
+    );
+    drop(ended);
+    bench.sim.reboot();
+    let resumed = one_cycle(&bench, None);
+    assert!(resumed.errors.is_empty(), "{:?}", resumed.errors);
+    assert!(capsule.adopt(&resumed.journal, &[]).is_none());
+    let rebuilt: Vec<_> = resumed
+        .journal
+        .events()
+        .iter()
+        .filter_map(|event| match &event.payload {
+            Payload::StateRebuilt(rebuilt) => Some(rebuilt.fields.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(rebuilt, [vec!["state.json".to_string()]]);
+    let saved: StateDocument = resumed.journal.read_state().unwrap().unwrap();
+    assert_eq!(
+        saved.facts,
+        togi_journal::State::replay(resumed.journal.events()).unwrap()
+    );
+}
