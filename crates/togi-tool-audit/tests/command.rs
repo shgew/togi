@@ -610,8 +610,11 @@ fn real_process_a_signal_before_the_bench_starts_stops_it_as_soon_as_it_does() {
     let stderr = text(&output.stderr);
     assert_eq!(output.status.code(), Some(1), "{stderr}");
     assert!(stderr.contains("interrupted"), "{stderr}");
-    if let Ok(started) = fs::read_to_string(&pids) {
-        let pid = Pid::from_raw(started.trim().parse().unwrap()).unwrap();
+    if let Some(started) = fs::read_to_string(&pids)
+        .ok()
+        .and_then(|started| started.trim().parse().ok())
+    {
+        let pid = Pid::from_raw(started).unwrap();
         assert!(
             test_kill_process(pid).is_err(),
             "the bench is still running"

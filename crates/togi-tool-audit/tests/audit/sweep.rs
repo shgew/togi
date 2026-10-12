@@ -383,13 +383,19 @@ fn each_directory_is_audited_while_the_hook_holds_its_guard() {
     }
     let released = Cell::new(0);
     let seen = RefCell::new(Vec::new());
-    let report = audit_holding(&dirs, &[], Path::new(""), || Guard {
-        dirs: &dirs,
-        released: &released,
-        seen: &seen,
+    let taken = RefCell::new(Vec::new());
+    let report = audit_holding(&dirs, &[], Path::new(""), || {
+        let locked = dirs.iter().filter(|dir| dir.join("lock").exists()).count();
+        taken.borrow_mut().push(locked);
+        Guard {
+            dirs: &dirs,
+            released: &released,
+            seen: &seen,
+        }
     })
     .unwrap();
     assert_eq!(report.directories, 3);
     assert_eq!(released.get(), 3);
+    assert_eq!(*taken.borrow(), [0, 1, 2], "the guard precedes each audit");
     assert_eq!(*seen.borrow(), [1, 2, 3], "the guard outlives each audit");
 }
