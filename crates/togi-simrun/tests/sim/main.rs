@@ -18,5 +18,6 @@ mod persistence;
 mod r7_chain;
 mod samples;
 mod sixteen;
+mod split;
 mod stop;
 mod warm_cold;

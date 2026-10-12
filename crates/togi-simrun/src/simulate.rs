@@ -11,13 +11,13 @@ use togi_session::{Ended, PublicationPolicy, ResumeCapsule, RunInput, prepare};
 
 use crate::input::{Finished, Persistence, Replay, SimInput, SimOutcome};
 use crate::observe::{Slot, Tee, UserLog, Watch};
-use crate::{HistoryError, SimError};
+use crate::{HistoryError, SimError, machine};
 
 #[expect(
     clippy::disallowed_methods,
     reason = "a simulation keeps its state directory in memory or on disk without syncing"
 )]
-fn lock(persistence: &Persistence) -> Result<StateDir, LockError> {
+pub(crate) fn lock(persistence: &Persistence) -> Result<StateDir, LockError> {
     Ok(match persistence {
         Persistence::Memory(fs) => StateDir::simulated(fs.clone())?,
         Persistence::Files(path) => StateDir::lock_unsynced(path)?,
@@ -64,6 +64,7 @@ pub fn simulate(input: SimInput) -> Result<SimOutcome, SimError> {
         (Persistence::Files(_), true) => Some(lock(&persistence)?.trials_dir()),
     };
     simulator.set_samples_dir(samples);
+    machine::forget(&persistence, &lock(&persistence)?)?;
     let publication = match persistence {
         Persistence::Memory(_) => PublicationPolicy::OnFinish,
         Persistence::Files(_) => PublicationPolicy::Live,
@@ -166,6 +167,9 @@ pub fn simulate(input: SimInput) -> Result<SimOutcome, SimError> {
         }
         resume = capsule.filter(|_| replay == Replay::Warm);
         simulator.reboot();
+    }
+    if outcome.is_none() {
+        machine::save(&persistence, &lock(&persistence)?, &simulator.persisted())?;
     }
     if let Some(destination) = dump_to {
         dump(memory.as_ref(), &destination)?;

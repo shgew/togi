@@ -170,6 +170,17 @@ Computation errors, stalls, unexpected exits and crashes stop at the selected ti
 
 `crates/togi-sim` is the native port of `internal/sim`; it takes over when `tools/sim` does. It is a library: `Model::new(&MachineDefinition, seed)` validates a machine file's document, and a `Simulator` built from a `Model` and `RunSettings { seed, history, replay }` hands the session its seams (`Simulator::seams`, a `togi_machine::Machine`) and offers the controls tests use: `jump_wall`, `crash`, `next_reset`, `power_loss`, `reboot`, the fault arms (`fail_write`, `crash_at_write`, `crash_before_apply`, `corrupt_readback`, `fail_setup`, `miss_backend`, `escape`, `fail_check`), `script_trial`, `set_bios_context`, `set_samples_dir` and `interrupt_smu`, whose hook sees every SMU access before and after its effect. `History` (boots, last event time, BIOS context) replaces Go's `Resume`: a machine starts one reboot after the last event and numbers its boots after the recorded ones.
 
+A journal does not hold everything the next boot observes. `Simulator::persisted` returns a serializable `Persisted` snapshot of the machine, and `Simulator::restore` continues the machine from it. The snapshot holds:
+
+- the seed;
+- the clocks;
+- every boot with its reset reason and kernel log, as journald keeps them;
+- the machine checks and the reset waiting for the next boot;
+- the registers and BIOS context;
+- the last trial's samples.
+
+Draws are keyed by seed and typed parts, so no generator state is kept. Armed faults, added scripts and recorded violations are not kept. A snapshot for another number of cores is `RestoreError::Cores`. Go rebuilt a later process's machine from the journals alone, so it lost the pending machine checks, the reset reason and the time between the last event and the crash.
+
 The machine-file format is the same document, with these differences:
 
 - **Strict validation.** `Model::new` checks every number: finite, in range, `growth` positive, probabilities in 0 to 1, weights nonnegative with a positive total (reset weights too, so an empty reset map is an error, not a silent watchdog), `onset_boost` and `onset_s` nonnegative. It refuses a hazard that cannot be represented: a largest limit rate (the near-limit rate, or the past-limit rate grown to the deepest offset) that is not finite, a core whose `flat` plus that rate is not finite, a CCD exponent that is not finite or above 700, and a rail whose worst-case hazard is not finite. Hazard rates and failure counts are otherwise evaluated without overflowing intermediates, and growth powers and onset counts without underflowing ones, so every source of an accepted machine has a finite rate and scores and draws agree; other arithmetic, such as the rail's clock and power model, is plain floating point, so absurd coefficients give absurd clocks and rates near the smallest float may round to zero. Fields are checked in document order, nested ones too, and an error names the field (`joint[2].members.3`). Decoding comes first, so a document missing a required field (a core without `alone`) is a parse error even when its core count is also wrong. Go left most of these unchecked.
@@ -213,6 +224,7 @@ A divergence is `SimError::Diverged`, and a state that cannot be published is `S
 
 - `events` returns the live journal's events.
 - `history` and `history_in` return a `togi_sim::History` that continues a resumed machine's boot numbering and clock.
+- `resume_simulator` returns the simulator a later process continues with. A capped simulation leaves its machine as `machine.json` in the state directory, and the later process restores it. Without `machine.json`, it builds a fresh machine from `history`. The next `simulate` removes the file. A test pins that a simulation capped and continued by a second process leaves the same `events.jsonl` and `state.json` as an uninterrupted one. A machine rebuilt from the journals alone does not.
 - `recorded_config` and `recorded_config_in` return the configuration of the latest `config.loaded`, standing in for the file `togi run` would load.
 
 The tuner's simulation tests from `internal/tuner` (`forecast_sim_test.go` and `memo_test.go`) live in this crate's `tests/`, because they need whole simulated sessions. `togi-tuner` cannot take `togi-simrun` as a dev-dependency: that would build a second `togi-tuner` whose types do not unify with the first.

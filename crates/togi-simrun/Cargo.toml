@@ -9,6 +9,7 @@ description = "Drives a tuning session on the simulator: a crash reboots the sim
 
 [dependencies]
 jiff.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 togi-config.workspace = true
 togi-defect.workspace = true
@@ -19,7 +20,6 @@ togi-session.workspace = true
 togi-sim.workspace = true
 
 [dev-dependencies]
-serde_json.workspace = true
 tempfile.workspace = true
 togi-tuner.workspace = true
 

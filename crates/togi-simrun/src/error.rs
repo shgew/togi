@@ -43,6 +43,14 @@ pub enum SimError {
     },
     #[error("dump the simulated state directory: {0}")]
     Dump(#[source] io::Error),
+    #[error("write the simulated machine to {}: {source}", path.display())]
+    Machine {
+        path: std::path::PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("encode the simulated machine: {0}")]
+    EncodeMachine(#[source] serde_json::Error),
     #[error("samples are written under a state directory on disk; an in-memory one has none")]
     SamplesInMemory,
     #[error(
