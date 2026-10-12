@@ -510,3 +510,161 @@ fn a_compatible_journal_that_cannot_be_folded_is_returned_untouched() {
     );
     assert_returned_untouched(&bench, &ended, events);
 }
+
+type Read = Result<togi_machine::KernelRead, Partial<Vec<togi_machine::Mce>>>;
+
+type Seen = std::rc::Rc<std::cell::RefCell<Vec<Option<String>>>>;
+
+/// A kernel whose log reads answer from a script, in order, and remember the cursor each was asked to resume after.
+struct Scripted {
+    inner: Box<dyn Kernel>,
+    reads: std::collections::VecDeque<Read>,
+    seen: Seen,
+}
+
+impl Kernel for Scripted {
+    fn mces(
+        &mut self,
+        boot: &BootId,
+        since: Duration,
+    ) -> Result<Vec<togi_machine::Mce>, Error> {
+        self.inner.mces(boot, since)
+    }
+
+    fn read_mces(
+        &mut self,
+        _boot: &BootId,
+        after: Option<&KernelCursor>,
+    ) -> Result<togi_machine::KernelRead, Partial<Vec<togi_machine::Mce>>> {
+        self.seen
+            .borrow_mut()
+            .push(after.map(|cursor| cursor.as_str().to_owned()));
+        self.reads.pop_front().expect("the script ran out of reads")
+    }
+
+    fn reset_reason(&mut self, boot: &BootId) -> Result<togi_machine::ResetReason, Error> {
+        self.inner.reset_reason(boot)
+    }
+
+    fn reset_reason_after(&mut self, boot: &BootId) -> Result<togi_machine::ResetReason, Error> {
+        self.inner.reset_reason_after(boot)
+    }
+
+    fn saved_pstore(&mut self, boot: &BootId) -> Result<Option<togi_machine::PstoreRecord>, Error> {
+        self.inner.saved_pstore(boot)
+    }
+}
+
+fn machine_check(monotonic: Duration, bank: u16, label: &str) -> togi_machine::Mce {
+    togi_machine::Mce {
+        cpu: togi_machine::CpuId(0),
+        core: Some(crate::testing::core(0)),
+        bank,
+        bank_type: togi_machine::BankType::LoadStore,
+        corrected: true,
+        time: jiff::Timestamp::UNIX_EPOCH,
+        monotonic,
+        lines: vec![label.to_owned()],
+    }
+}
+
+fn partial(mces: Vec<togi_machine::Mce>, error: Error) -> Read {
+    Err(Partial { value: mces, error })
+}
+
+/// A session that resumes the boot's journal, whose recorded kernel cursor is returned, over a kernel that answers
+/// `script`.
+fn scripted(bench: &Bench, script: Vec<Read>) -> (Session, KernelCursor, Seen) {
+    let mut first = bench.open();
+    first.start().unwrap();
+    let cursor = first
+        .appender()
+        .recovery()
+        .kernel_cursor(&first.boot)
+        .cloned()
+        .expect("startup records the kernel cursor");
+    drop(first);
+    let mut input = bench.input();
+    let seen = Seen::default();
+    let inner = input.machine.kernel;
+    input.machine.kernel = Box::new(Scripted {
+        inner,
+        reads: script.into(),
+        seen: seen.clone(),
+    });
+    let Ok(session) = Session::open(input) else {
+        panic!("open");
+    };
+    (session, cursor, seen)
+}
+
+#[test]
+fn a_crash_on_the_read_after_a_lost_cursor_ends_the_step_with_no_evidence_recorded() {
+    let bench = Bench::new(2);
+    let lost = machine_check(Duration::ZERO, 1, "read before the cursor was lost");
+    let (mut session, cursor, seen) = scripted(
+        &bench,
+        vec![
+            partial(vec![lost], Error::CursorMissing),
+            partial(Vec::new(), Error::Crashed),
+        ],
+    );
+    let before = crate::testing::kinds_of(session.appender());
+    let Err(error) = session.start() else {
+        panic!("the step went on after the machine crashed");
+    };
+    assert!(error.is_crash(), "{error:?}");
+    assert_eq!(crate::testing::kinds_of(session.appender()), before);
+    assert_eq!(*seen.borrow(), [Some(cursor.as_str().to_owned()), None]);
+}
+
+#[test]
+fn the_machine_checks_of_both_partial_reads_survive_a_failed_reanchor() {
+    let bench = Bench::new(2);
+    let now = bench.sim.monotonic();
+    let in_trial = machine_check(now, 1, "inside the window");
+    let after_window = machine_check(now + Duration::from_secs(1), 2, "after the window");
+    let (mut session, cursor, seen) = scripted(
+        &bench,
+        vec![
+            partial(vec![in_trial.clone()], Error::CursorMissing),
+            partial(
+                vec![in_trial, after_window],
+                Error::Other("reanchor failed".into()),
+            ),
+        ],
+    );
+    let trial = TrialId::from("20260101T000000Z-t1".to_owned());
+    let window = TrialWindow {
+        trial: &trial,
+        since: Duration::ZERO,
+    };
+    let boundary = session.kernel_boundary(Some(window), false, &[]).unwrap();
+    assert_eq!(
+        boundary.error.as_deref(),
+        Some("kernel log unreadable: kernel log cursor cannot be resumed; reanchor failed")
+    );
+    assert_eq!(boundary.cursor, Some(cursor.clone()));
+    assert_eq!(*seen.borrow(), [Some(cursor.as_str().to_owned()), None]);
+    let recorded: Vec<_> = session
+        .appender()
+        .journal()
+        .events()
+        .iter()
+        .filter_map(|event| match &event.payload {
+            Payload::Mce(mce) => Some((
+                mce.lines.clone(),
+                mce.trial.clone(),
+                mce.between_trials,
+            )),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        recorded,
+        [
+            (vec!["inside the window".to_owned()], Some(trial), false),
+            (vec!["after the window".to_owned()], None, true),
+        ]
+    );
+}
