@@ -193,6 +193,7 @@ pub fn run(
             terminating: true,
         },
         out,
+        || Tty::new(&out),
         keys,
         render,
     )
@@ -218,24 +219,29 @@ pub fn run_after(
             terminating: false,
         },
         out,
+        || Tty::new(&out),
         keys,
         render,
     )
 }
 
-fn start(
+/// Takes the signals first, so a second dashboard waits before it touches the terminal, then opens the terminal
+/// with `open` and puts `keys` into raw mode for the call.
+fn start<B: console::Console>(
     config: &Config<'_>,
     out: BorrowedFd<'_>,
+    open: impl FnOnce() -> io::Result<B>,
     keys: Option<BorrowedFd<'_>>,
     render: impl FnMut(&Journal<'_>, &Screen, Timestamp, &mut Buffer) -> Drawn,
 ) -> Result<(), Error> {
+    let signals = signals::install(config.terminating).map_err(Error::Signals)?;
     let facts = togi_render::OutputFacts::detect(
         &out,
         std::env::var_os("NO_COLOR").as_deref(),
         std::env::var_os("JOURNAL_STREAM").as_deref(),
     );
     let colours = palette::colours_for(facts, std::env::var_os("TERM").as_deref());
-    let backend = Tty::new(&out).map_err(|source| Error::Terminal {
+    let backend = open().map_err(|source| Error::Terminal {
         operation: "open terminal",
         source,
     })?;
@@ -246,6 +252,7 @@ fn start(
     drive(
         backend,
         config,
+        &signals,
         keys.filter(|_| raw.is_some()),
         colours,
         Timestamp::now,
@@ -258,10 +265,12 @@ fn uses_palette(colours: Colours) -> bool {
     colours == Colours::Console
 }
 
-/// [`run`] on any backend, with the terminal's raw mode and colour profile already decided by the caller.
+/// [`run`] on any backend, with the signals taken and the terminal's raw mode and colour profile decided by the
+/// caller.
 fn drive<B: console::Console>(
     backend: B,
     live: &Config<'_>,
+    signals: &signals::Installed,
     keys: Option<BorrowedFd<'_>>,
     colours: Colours,
     now: impl Fn() -> Timestamp,
@@ -275,7 +284,6 @@ fn drive<B: console::Console>(
     std::thread::scope(|scope| {
         runtime.block_on(async {
             let (events, mut queue) = mpsc::unbounded_channel();
-            let signals = signals::install(live.terminating).map_err(Error::Signals)?;
             let _signals = Abort(signals.listen(events.clone()).map_err(Error::Signals)?);
             let _stop = live.stop.map(|stop| {
                 let stop = stop.clone();
@@ -406,7 +414,7 @@ mod tests {
     use super::testing::{Faults, Recorder, session_with_warnings, write_journal};
     use super::{
         Colours, Config, Drawn, Error, ONE_FRAME_SIZE, SourceError, Stop, View, drive, one_frame,
-        palette, uses_palette,
+        palette, start, uses_palette,
     };
     use crate::screen::{Hold, Journal, Screen};
 
@@ -419,6 +427,14 @@ mod tests {
         Drawn {
             scroll: 0,
             hold: Hold::Never,
+        }
+    }
+
+    /// [`plain`], frozen: only a signal, a key or a stop draws again.
+    fn frozen(journal: &Journal<'_>, screen: &Screen, now: Timestamp, buf: &mut Buffer) -> Drawn {
+        Drawn {
+            hold: Hold::Frozen,
+            ..plain(journal, screen, now, buf)
         }
     }
 
@@ -440,14 +456,55 @@ mod tests {
         colours: Colours,
         render: impl FnMut(&Journal<'_>, &Screen, Timestamp, &mut Buffer) -> Drawn,
     ) -> Result<(), Error> {
+        let signals = super::signals::install(live.terminating).unwrap();
         drive(
             recorder.backend(),
             live,
+            &signals,
             keys.map(AsFd::as_fd),
             colours,
             Timestamp::now,
             render,
         )
+    }
+
+    #[test]
+    fn the_terminal_is_opened_only_once_the_dashboard_owns_the_signals() {
+        let _serial = super::signals::tests::serial();
+        let state = TempDir::new().unwrap();
+        let (_read, write) = pipe();
+        let mut opened = false;
+        let error = start(
+            &Config {
+                state_dir: state.path(),
+                since: None,
+                stop: None,
+                terminating: true,
+            },
+            write.as_fd(),
+            || {
+                opened = super::signals::tests::owned();
+                Err::<super::testing::Recording, _>(std::io::Error::other("no terminal"))
+            },
+            None,
+            plain,
+        )
+        .unwrap_err();
+        assert!(
+            opened,
+            "the terminal was opened before the signals were taken"
+        );
+        assert!(matches!(
+            error,
+            Error::Terminal {
+                operation: "open terminal",
+                ..
+            }
+        ));
+        assert!(
+            !super::signals::tests::owned(),
+            "a failed start kept the signals"
+        );
     }
 
     use std::os::fd::AsFd;
@@ -571,17 +628,65 @@ mod tests {
         }
     }
 
+    /// How long a test waits for a dashboard that should already have ended.
+    const BOUND: std::time::Duration = std::time::Duration::from_secs(20);
+
+    /// Runs `fire` if it is not finished within [`BOUND`], so that a dashboard waiting for what never comes ends
+    /// and its test fails instead of hanging.
+    struct Watchdog {
+        done: Option<std::sync::mpsc::Sender<()>>,
+        thread: Option<std::thread::JoinHandle<bool>>,
+    }
+
+    impl Watchdog {
+        fn start(fire: impl FnOnce() + Send + 'static) -> Self {
+            let (done, finished) = std::sync::mpsc::channel::<()>();
+            let thread = std::thread::spawn(move || {
+                let fired =
+                    finished.recv_timeout(BOUND) == Err(std::sync::mpsc::RecvTimeoutError::Timeout);
+                if fired {
+                    fire();
+                }
+                fired
+            });
+            Self {
+                done: Some(done),
+                thread: Some(thread),
+            }
+        }
+
+        /// Whether it had to fire.
+        fn fired(mut self) -> bool {
+            self.done.take();
+            self.thread.take().unwrap().join().unwrap()
+        }
+    }
+
+    impl Drop for Watchdog {
+        fn drop(&mut self) {
+            self.done.take();
+            if let Some(thread) = self.thread.take() {
+                let _ = thread.join();
+            }
+        }
+    }
+
     #[test]
     fn sigwinch_redraws_with_the_new_size() {
         let _serial = super::signals::tests::serial();
         let state = TempDir::new().unwrap();
         let recorder = Recorder::new(80, 12);
+        let stop = Stop::new();
         let live = Config {
             state_dir: state.path(),
             since: None,
-            stop: None,
+            stop: Some(&stop),
             terminating: true,
         };
+        let watchdog = Watchdog::start({
+            let stop = stop.clone();
+            move || stop.stop()
+        });
         let mut sizes = Vec::new();
         let probe = recorder.clone();
         run_drive(
@@ -598,10 +703,11 @@ mod tests {
                     }
                     _ => kill_process(getpid(), Signal::TERM).unwrap(),
                 }
-                plain(journal, screen, now, buf)
+                frozen(journal, screen, now, buf)
             },
         )
         .unwrap();
+        assert!(!watchdog.fired(), "SIGWINCH drew nothing");
         assert_eq!(sizes, [(80, 12), (100, 30)]);
         assert_eq!(recorder.clears(), 3, "entry, the resize, and leaving");
     }
@@ -633,8 +739,9 @@ mod tests {
             state_dir: state.path(),
             since: None,
             stop: Some(&stop),
-            terminating: false,
+            terminating: true,
         };
+        let watchdog = Watchdog::start(|| kill_process(getpid(), Signal::TERM).unwrap());
         let other = stop.clone();
         let mut frames = 0;
         run_drive(
@@ -647,10 +754,11 @@ mod tests {
                 std::thread::scope(|scope| {
                     scope.spawn(|| other.stop());
                 });
-                plain(journal, screen, now, buf)
+                frozen(journal, screen, now, buf)
             },
         )
         .unwrap();
+        assert!(!watchdog.fired(), "the stop from another thread was lost");
         assert_eq!(frames, 1);
         assert!(recorder.restored());
     }

@@ -45,6 +45,15 @@ pub(super) struct Installed {
     pipe: MutexGuard<'static, Option<(OwnedFd, OwnedFd)>>,
 }
 
+#[cfg(not(target_vendor = "apple"))]
+fn nonblocking_pipe() -> io::Result<(OwnedFd, OwnedFd)> {
+    use rustix::pipe::PipeFlags;
+    Ok(rustix::pipe::pipe_with(
+        PipeFlags::CLOEXEC | PipeFlags::NONBLOCK,
+    )?)
+}
+
+#[cfg(target_vendor = "apple")]
 fn nonblocking_pipe() -> io::Result<(OwnedFd, OwnedFd)> {
     let (read, write) = super::input::pipe()?;
     for end in [&read, &write] {
@@ -164,26 +173,67 @@ pub(super) mod tests {
         SERIAL.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// What now happens on a signal, found by replacing the action with the default and putting it back. The
-    /// kernel's own bookkeeping bits of an action (its restorer and the mask libc fills in) differ between reads,
-    /// so only the handler and whether it restarts system calls are compared.
-    pub(in crate::terminal) fn disposition(signal: Signal) -> (SigHandler, bool) {
-        let default = SigAction::new(
-            SigHandler::SigDfl,
-            nix::sys::signal::SaFlags::empty(),
-            SigSet::empty(),
-        );
+    /// Whether a dashboard owns the signals now.
+    pub(in crate::terminal) fn owned() -> bool {
+        matches!(
+            super::PIPE.try_lock(),
+            Err(std::sync::TryLockError::WouldBlock)
+        )
+    }
+
+    /// What a signal's action does.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub(in crate::terminal) enum Action {
+        Default,
+        Ignore,
+        /// A handler, by its address.
+        Handler(usize),
+    }
+
+    /// What now happens on a signal, read without changing it. The kernel's own bookkeeping bits of an action
+    /// (its restorer and the mask libc fills in) differ between reads, so only the handler and whether it restarts
+    /// system calls are compared.
+    pub(in crate::terminal) fn disposition(signal: Signal) -> (Action, bool) {
         #[expect(unsafe_code, reason = "reading a signal action takes a sigaction call")]
-        // SAFETY: the action is put back at once, and it is the one sigaction returned.
-        unsafe {
-            let current = sigaction(signal, &default).unwrap();
-            sigaction(signal, &current).unwrap();
-            (
-                current.handler(),
-                current
-                    .flags()
-                    .contains(nix::sys::signal::SaFlags::SA_RESTART),
-            )
+        // SAFETY: an all-zero sigaction is a valid value, and a null new action makes sigaction only write the
+        // current one into it.
+        let current = unsafe {
+            let mut current: nix::libc::sigaction = std::mem::zeroed();
+            assert_eq!(
+                nix::libc::sigaction(
+                    signal as nix::libc::c_int,
+                    std::ptr::null(),
+                    &raw mut current
+                ),
+                0
+            );
+            current
+        };
+        let action = match current.sa_sigaction {
+            nix::libc::SIG_DFL => Action::Default,
+            nix::libc::SIG_IGN => Action::Ignore,
+            address => Action::Handler(address),
+        };
+        (
+            action,
+            current.sa_flags & nix::libc::SA_RESTART == nix::libc::SA_RESTART,
+        )
+    }
+
+    #[test]
+    fn the_signal_pipe_is_closed_on_exec_and_never_blocks() {
+        let (read, write) = super::nonblocking_pipe().unwrap();
+        for end in [&read, &write] {
+            assert!(
+                rustix::io::fcntl_getfd(end)
+                    .unwrap()
+                    .contains(rustix::io::FdFlags::CLOEXEC)
+            );
+            assert!(
+                rustix::fs::fcntl_getfl(end)
+                    .unwrap()
+                    .contains(rustix::fs::OFlags::NONBLOCK)
+            );
         }
     }
 
@@ -202,7 +252,7 @@ pub(super) mod tests {
             let _installed = install(true).unwrap();
             for signal in ALL {
                 assert!(
-                    matches!(disposition(signal).0, SigHandler::Handler(_)),
+                    matches!(disposition(signal).0, Action::Handler(_)),
                     "{signal:?} has no handler while the dashboard shows"
                 );
             }
@@ -224,7 +274,7 @@ pub(super) mod tests {
             }
             assert!(matches!(
                 disposition(Signal::SIGWINCH).0,
-                SigHandler::Handler(_)
+                Action::Handler(_)
             ));
         }
         assert_eq!(ALL.map(disposition), before);
@@ -244,7 +294,10 @@ pub(super) mod tests {
         let original = unsafe { sigaction(Signal::SIGHUP, &mine) }.unwrap();
         let installed = install(true).unwrap();
         drop(installed);
-        assert_eq!(disposition(Signal::SIGHUP), (mine.handler(), true));
+        assert_eq!(
+            disposition(Signal::SIGHUP),
+            (Action::Handler(custom as *const () as usize), true)
+        );
         // SAFETY: the action is the one sigaction returned.
         #[expect(unsafe_code, reason = "restoring a signal action")]
         unsafe {
