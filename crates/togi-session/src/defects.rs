@@ -39,7 +39,6 @@ impl Session {
             .appender
             .defects()
             .unanswered()
-            .filter(|finding| finding.entry.is_some())
             .map(|finding| finding.id)
             .collect();
         for id in unanswered {

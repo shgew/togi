@@ -1,4 +1,6 @@
+use std::cell::Cell;
 use std::io;
+use std::rc::Rc;
 
 use togi_defect::{Clause, DefectId, Entry};
 use togi_journal::{
@@ -202,5 +204,108 @@ fn a_yes_answer_whose_resets_were_lost_is_finished_without_asking_again() {
     assert_eq!(
         session.appender().journal().events().last().unwrap().cause,
         [answer]
+    );
+}
+
+/// Answers every question with `answer`, counting the questions and checking each names `cores`.
+struct Counted {
+    answer: bool,
+    cores: Vec<togi_machine::CoreId>,
+    asked: Rc<Cell<u32>>,
+}
+
+impl Prompt for Counted {
+    fn reset_cores(&mut self, finding: &togi_defect::FindingView<'_>) -> Result<bool, PromptError> {
+        assert_eq!(finding.cores.iter().collect::<Vec<_>>(), self.cores);
+        self.asked.set(self.asked.get() + 1);
+        Ok(self.answer)
+    }
+}
+
+const UNLISTED: u32 = 7;
+
+/// A session reopened on a journal holding a too-aggressive finding of a defect this build does not list.
+fn resumed_with_an_unlisted_finding(prompt: Option<Box<dyn Prompt>>) -> (Bench, Session, Seq) {
+    let bench = Bench::new(2);
+    let mut first = bench.open();
+    assert_eq!(first.start().unwrap(), Control::Continue);
+    let start = first.appender().journal().events()[0].seq;
+    let found = DefectFound {
+        id: DefectId::new(UNLISTED).unwrap().0,
+        title: "unlisted".into(),
+        detail: "recorded by a build that listed it".into(),
+        pr: 200,
+        direction: DefectDirection::TooAggressive,
+        cores: [core(1)].into_iter().collect(),
+        decisions: vec![start],
+    };
+    let found = first
+        .appender
+        .append(Payload::DefectFound(found), &[start])
+        .unwrap();
+    drop(first);
+    let mut input = bench.input();
+    input.prompt = prompt;
+    let Ok(mut session) = Session::open(input) else {
+        panic!("reopen");
+    };
+    assert_eq!(session.start().unwrap(), Control::Continue);
+    (bench, session, found)
+}
+
+#[test]
+fn a_resumed_aggressive_finding_of_an_unlisted_defect_without_a_terminal_is_a_defect_dead_end() {
+    let (_bench, mut session, found) = resumed_with_an_unlisted_finding(None);
+    let stop = session.check_defects().unwrap();
+    let Some(Stop::DeadEnd {
+        dead_end, causes, ..
+    }) = stop
+    else {
+        panic!("{stop:?}");
+    };
+    assert_eq!(dead_end.condition, DeadEndCondition::Defect);
+    assert_eq!(
+        dead_end.detail,
+        "defect 7 (unlisted) affected cores [1]; run in a terminal to decide whether to reset them"
+    );
+    assert_eq!(causes, [found]);
+}
+
+#[test]
+fn a_resumed_finding_of_an_unlisted_defect_is_asked_and_its_yes_resets_the_recorded_cores() {
+    let asked = Rc::new(Cell::new(0));
+    let prompt = Counted {
+        answer: true,
+        cores: vec![core(1)],
+        asked: Rc::clone(&asked),
+    };
+    let (_bench, mut session, found) = resumed_with_an_unlisted_finding(Some(Box::new(prompt)));
+    let before = session.appender().journal().events().len();
+    assert!(session.check_defects().unwrap().is_none());
+    assert_eq!(asked.get(), 1);
+    let events = session.appender().journal().events();
+    let appended: Vec<_> = events[before..]
+        .iter()
+        .map(|event| (event.payload.clone(), event.cause.clone()))
+        .collect();
+    let answer = events[before].seq;
+    assert_eq!(
+        appended,
+        [
+            (
+                Payload::DefectAnswered(DefectAnswered {
+                    id: DefectId::new(UNLISTED).unwrap().0,
+                    cores: [core(1)].into_iter().collect(),
+                    answer: DefectAnswer::Yes,
+                }),
+                vec![found],
+            ),
+            (
+                Payload::CommandReset(CommandReset {
+                    target: ResetTarget::Core(core(1)),
+                }),
+                vec![answer],
+            ),
+        ]
     );
 }
