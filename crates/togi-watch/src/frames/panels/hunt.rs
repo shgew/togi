@@ -726,6 +726,10 @@ mod tests {
         plan.parts[0].outcome = Some(GroupState::Passed);
         plan.parts[1] = part(&[1], &[0], Some(5), Some(GroupState::Running), true);
         assert_eq!(stage_of(&plan, true), "part 2 of 2");
+        plan.parts[1].outcome = Some(GroupState::Passed);
+        plan.parts[1].running = false;
+        assert_eq!(stage_of(&plan, true), "group 5");
+        assert_eq!(stage_of(&plan, false), "group 5");
     }
 
     #[test]
