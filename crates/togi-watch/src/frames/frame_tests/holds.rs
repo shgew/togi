@@ -7,6 +7,7 @@ use togi_journal::{EventKind, Payload};
 use togi_machine::Regime;
 use togi_watchtest::{Scenario, cut_at};
 
+use super::bands::{stage_line, summary_screen};
 use super::{
     ALL_SIZES, Fixture, SIZES, VIEWS, append, bar, clock, draw_journal, later, main_screen,
     one_frame, text, words,
@@ -33,9 +34,10 @@ fn an_idle_trial_freezes_every_view_until_its_end_is_recorded() {
     ];
     for view in VIEWS {
         for (width, height) in ALL_SIZES {
-            for keys in [true, false] {
+            for (keys, one_frame) in [(true, false), (false, false), (false, true)] {
                 let sc = Screen {
                     scroll: usize::MAX,
+                    one_frame,
                     ..screen(view, width, height, Colours::Full, keys)
                 };
                 let (first, drawn) = fx.draw(&sc, first_at);
@@ -50,6 +52,12 @@ fn an_idle_trial_freezes_every_view_until_its_end_is_recorded() {
                 }
                 if view == View::Main {
                     let shown = text(&first);
+                    for crash in ["crashed", "CRASHED", "togi run records the crash"] {
+                        assert!(
+                            !shown.contains(crash),
+                            "an idle trial is narrated as crashed ({crash:?}):\n{shown}"
+                        );
+                    }
                     assert!(
                         !shown.contains("left"),
                         "an idle trial shows a changing countdown:\n{shown}"
@@ -119,6 +127,12 @@ fn a_later_boot_releases_an_idle_trial_and_the_clock_moves_again() {
     let snapshot = fx.model.snapshot();
     assert!(snapshot.idle_hold().is_none());
     assert!(snapshot.crashed_trial());
+    let id = snapshot
+        .trial
+        .as_ref()
+        .expect("a released trial")
+        .id
+        .clone();
     for (width, height) in ALL_SIZES {
         for view in VIEWS {
             let sc = Screen {
@@ -139,7 +153,12 @@ fn a_later_boot_releases_an_idle_trial_and_the_clock_moves_again() {
                 ..main_screen(width, height)
             };
             let said = words(&fx.draw(&sc, fx.now).0);
-            for want in ["CRASHED, NOT YET RECOVERED", "togi run records the crash"] {
+            let want_id = format!("trial {id}");
+            for want in [
+                "CRASHED, NOT YET RECOVERED",
+                "togi run records the crash",
+                &want_id,
+            ] {
                 assert!(
                     said.contains(want),
                     "{width}x{height} lacks {want:?}: {said}"
@@ -155,6 +174,13 @@ fn a_later_boot_releases_an_idle_trial_and_the_clock_moves_again() {
             }
         }
     }
+    let summary = summary_screen();
+    let (wide, _) = fx.draw(&summary, fx.now);
+    let stage = stage_line(&wide, &summary);
+    assert!(
+        !stage.contains('►') && !stage.contains("left") && stage.contains("trial crashed"),
+        "{stage:?}"
+    );
 }
 
 #[test]

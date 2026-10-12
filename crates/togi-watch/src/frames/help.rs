@@ -61,7 +61,7 @@ const TOP: Section = Section {
         ("crashes", "boots that ended without a clean shutdown"),
         (
             "last observed",
-            "the last failure seen in this session that changed what togi does; record-only results and skips do not count",
+            "the last failure seen in this session that changed what togi does; skips do not count",
         ),
         ("q", "closes this view only; tuning keeps running"),
     ],
@@ -168,10 +168,6 @@ const WORDS: Section = Section {
         (
             "self-sufficient",
             "observed passing as top requester for this R7 workload; evidence, not a guarantee",
-        ),
-        (
-            "record only",
-            "a trial whose result is kept but changes no decision",
         ),
         ("cycle", "one pass through the checking schedule"),
     ],
@@ -596,6 +592,23 @@ mod tests {
                 "short wide help ends on a blank content row"
             );
         }
+    }
+
+    #[test]
+    fn help_glosses_no_record_only_trial() {
+        let (help, _) = help_body(115, 1000, 0, C);
+        let words = plain_rows(&help)
+            .join("\n")
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        for gone in ["record only", "record-only"] {
+            assert!(!words.contains(gone), "help glosses {gone:?}: {words}");
+        }
+        assert!(
+            words.contains("changed what togi does; skips do not count"),
+            "help lost the top-line note: {words}"
+        );
     }
 
     #[test]

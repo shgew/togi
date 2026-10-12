@@ -87,17 +87,17 @@ fn a_dead_end_a_retry_and_a_warning_with_controls_are_drawn_escaped() {
         let mut script = Script::at_limit();
         script.append(payload, &[]);
         let fx = Fixture::of(&script.events);
-        let mut shown = false;
         for view in [View::Main, View::Log] {
             let sc = screen(view, 300, 40, Colours::Full, true);
             let (buf, _) = fx.draw(&sc, fx.now);
             assert_inert(&buf, &format!("{name} {view:?}"));
-            shown |= squashed(&buf).contains(ESCAPED);
+            if view == View::Main {
+                assert!(
+                    squashed(&buf).contains(ESCAPED),
+                    "{name}: not visibly escaped in the main view"
+                );
+            }
         }
-        assert!(
-            shown,
-            "{name}: not visibly escaped in the main or the log view"
-        );
     }
 }
 

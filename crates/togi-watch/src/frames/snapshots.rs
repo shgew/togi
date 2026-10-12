@@ -38,7 +38,7 @@ fn screen_of(
     Screen {
         scroll,
         one_frame,
-        ..screen(view, width, height, colours, true)
+        ..screen(view, width, height, colours, !one_frame)
     }
 }
 
@@ -387,20 +387,28 @@ fn the_journal_view_at_the_view_sizes() {
 }
 
 #[test]
-fn one_frame_prints_the_live_text_without_styling() {
+fn one_frame_prints_the_live_text_without_the_key_footer() {
     let (model, now) = scenario_model(Scenario::Checking);
     let journal = ready(&model);
     for size in [WIDE, (120, 33)] {
         let (width, height) = size;
         let once = screen_of(View::Main, size, Colours::None, 0, true);
+        assert!(!once.keys && once.one_frame);
         let buf = text(
             &format!("one-frame-checking-{width}x{height}"),
             &journal,
             now,
             &once,
         );
-        assert!(has_no_styling(&buf));
-        let live = screen_of(View::Main, size, Colours::None, 0, false);
+        let said = rows_of(&buf).join("\n");
+        assert!(
+            !said.contains("close view") && !said.contains("help"),
+            "a one-frame print shows the key footer:\n{said}"
+        );
+        let live = Screen {
+            keys: false,
+            ..screen_of(View::Main, size, Colours::None, 0, false)
+        };
         let (live_buf, _) = render_checked(&journal, &live, now);
         assert_eq!(rows_of(&buf), rows_of(&live_buf));
     }
