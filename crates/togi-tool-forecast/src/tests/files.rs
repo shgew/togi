@@ -7,7 +7,7 @@ use togi_journal::{Event, Seq};
 use togi_tuner::RULESET;
 
 use super::support::{A, B, baseline, build, crash, events, id, start, start_with};
-use crate::{Anchor, Error, Session, read_dir};
+use crate::{Anchor, Error, Session, read_dir, read_dir_lenient};
 
 const C: &str = "20261007T020000Z";
 const D: &str = "20261007T020000Z-2";
@@ -108,6 +108,39 @@ fn a_journal_that_fails_the_readers_checks_is_an_error_naming_the_file() {
     gap.extend(events(5, [crash()]));
     fs::write(dir.path().join("events.jsonl"), lines(&gap)).unwrap();
     assert!(matches!(read_dir(dir.path(), None), Err(Error::Journal(_))));
+}
+
+#[test]
+fn a_lenient_read_skips_an_event_of_an_unknown_kind_and_hashes_the_file_as_it_is() {
+    let dir = tempfile::tempdir().unwrap();
+    let before = events(1, start(A, "abc1234"));
+    let skipped_seq = before.len() as u64 + 1;
+    let mut bytes = lines(&before);
+    let unknown = format!(
+        "{{\"seq\":{skipped_seq},\"time\":\"{}\",\"boot\":\"boot\",\"kind\":\"future.thing\",\"msg\":\"x\",\"data\":{{}}}}\n",
+        before[0].time
+    );
+    bytes.extend_from_slice(unknown.as_bytes());
+    let after = events(skipped_seq + 1, [crash()]);
+    bytes.extend(lines(&after));
+    fs::write(dir.path().join("events.jsonl"), &bytes).unwrap();
+
+    assert!(matches!(read_dir(dir.path(), None), Err(Error::Journal(_))));
+    let sessions = read_dir_lenient(dir.path(), None).unwrap();
+    let session = &sessions[0];
+    assert_eq!(session.events().len(), before.len() + 1);
+    let skipped = session.skipped();
+    assert_eq!(skipped.events().len(), 1);
+    assert_eq!(skipped.events()[0].seq.get(), skipped_seq);
+    let last = after[0].seq;
+    let anchor = session.anchor_at(last).unwrap();
+    let digest = Sha256::digest(&bytes)
+        .iter()
+        .fold(String::new(), |mut out, byte| {
+            let _ = write!(out, "{byte:02x}");
+            out
+        });
+    assert_eq!(anchor.sha256, digest);
 }
 
 #[test]

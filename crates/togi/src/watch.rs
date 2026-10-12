@@ -46,8 +46,9 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 /// stderr, and one-frame watch exits 1; live watch keeps showing the problem and retries when the
 /// journal changes. A journal another build wrote, whose first line is not a togi journal header,
 /// is refused before any frame: exit 1 with the cutover step on stderr, live or not. A missing
-/// journal (no session yet) is not an error. The tuning boot shows it on tty1. `NO_COLOR` turns
-/// colour off.
+/// journal (no session yet) is not an error. An event of a kind this build does not know is
+/// skipped and an unknown field is ignored; the footer says which. The tuning boot shows it on
+/// tty1. `NO_COLOR` turns colour off.
 #[derive(ClapArgs, Debug)]
 #[command(after_help = EXAMPLES.as_str())]
 pub struct Args {

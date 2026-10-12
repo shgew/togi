@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 use std::time::Duration;
 
 use jiff::Timestamp;
+use proptest::prelude::Strategy;
 
 use super::fixtures::{boot, samples, seq};
 use crate::*;
@@ -51,6 +52,24 @@ fn kind_names_round_trip() {
         assert_eq!(kind.as_str().parse::<EventKind>().unwrap(), *kind);
     }
     assert!("trial.nope".parse::<EventKind>().is_err());
+}
+/// Any known event: a sample payload of any kind with arbitrary seq, mono time and causes.
+pub(super) fn arbitrary_event() -> impl Strategy<Value = Event> {
+    (
+        0..EventKind::ALL.len(),
+        1001_u64..2000,
+        proptest::option::of(0_u64..1_000_000),
+        proptest::collection::btree_set(1_u64..1000, 0..5),
+    )
+        .prop_map(|(index, seq_no, mono, causes)| {
+            Event::new(
+                seq(seq_no),
+                stamp(mono.map(Duration::from_millis)),
+                boot(),
+                causes.into_iter().map(seq).collect(),
+                samples().swap_remove(index),
+            )
+        })
 }
 
 proptest::proptest! {

@@ -2,6 +2,7 @@
 
 use ratatui::buffer::Buffer;
 use ratatui::text::{Line, Span};
+use togi_render::escape_text;
 
 use super::colours::Paint;
 use super::draw::put;
@@ -10,11 +11,11 @@ use super::layout::Layout;
 use crate::screen::{Colours, Screen, View};
 
 /// The footer's keys in `view`, in `width` display cells, followed by `after` (the held journal's arrival
-/// count).
+/// count, then the skipped report).
 ///
-/// Labels shorten before a key is left out. All four keys stay down to 20 cells; below that every key but the
-/// close key may go, and `q` is shown whole whenever one cell fits. Active and current-view styling stays the
-/// same in the shortened forms.
+/// Labels shorten before a key is left out. All four keys stay down to 20 cells, with or without `after`; below
+/// that every key but the close key may go, and `q` is shown whole whenever one cell fits. Active and
+/// current-view styling stays the same in the shortened forms.
 #[must_use]
 pub fn key_hints(view: View, width: usize, after: &[Clause], colours: Colours) -> Line<'static> {
     struct Hint {
@@ -79,19 +80,43 @@ pub fn key_hints(view: View, width: usize, after: &[Clause], colours: Colours) -
     fit_clauses(width, &clauses)
 }
 
-/// Draws the key hints on the footer row when the reader has keys; `after` follows the keys.
+/// The footer clause for what the lenient read of the journal skipped or ignored, last in the footer's `after`.
+///
+/// It reads the report whole, then `skipped journal content: togi events` pointing at the command that prints
+/// it, then `skipped: togi events`, `skipped` and an amber `!`. Every key label shortens before the warning
+/// does, and the arrival count is left out before the warning shortens past `skipped`. The `!` outlasts `?`,
+/// `l` and `esc`, so all four keys and the warning share 20 cells, and below 19 cells the three go first and
+/// `q` alone fills 1 to 4.
+#[must_use]
+pub(super) fn skipped_clause(skipped: &str, colours: Colours) -> Clause {
+    let amber =
+        |text: &str| Line::styled(escape_text(text).to_string(), Paint::Hunt.style(colours));
+    Clause::new(
+        "   ",
+        vec![
+            Form::new(amber(skipped), 20),
+            Form::new(amber("skipped journal content: togi events"), 3),
+            Form::new(amber("skipped: togi events"), 3),
+            Form::new(amber("skipped"), 1),
+            Form::new(amber("!"), 0),
+            Form::empty(),
+        ],
+    )
+}
+
+/// Draws the footer row: the key hints when the reader has keys, with `after` following them; without keys,
+/// `after` alone.
 pub fn footer(screen: &Screen, after: &[Clause], buf: &mut Buffer) {
-    if !screen.keys {
-        return;
-    }
     let layout = Layout::new(screen);
-    let hints = key_hints(
-        screen.view,
-        usize::from(layout.footer.width),
-        after,
-        screen.colours,
-    );
-    put(buf, layout.footer, 0, 0, &hints);
+    let width = usize::from(layout.footer.width);
+    let line = if screen.keys {
+        key_hints(screen.view, width, after, screen.colours)
+    } else if after.is_empty() {
+        return;
+    } else {
+        fit_clauses(width, after)
+    };
+    put(buf, layout.footer, 0, 0, &line);
 }
 
 #[cfg(test)]
@@ -100,7 +125,7 @@ mod tests {
     use ratatui::layout::Rect;
     use ratatui::style::Style;
 
-    use super::{footer, key_hints};
+    use super::{footer, key_hints, skipped_clause};
     use crate::frames::colours::Paint;
     use crate::frames::fit::{Clause, Form, display_width, plain};
     use crate::frames::layout::Layout;
@@ -108,6 +133,109 @@ mod tests {
     use crate::screen::{Colours, Drawn, Hold, View};
 
     const VIEWS: [View; 3] = [View::Main, View::Help, View::Log];
+
+    #[test]
+    fn the_skipped_report_follows_the_keys_whole_and_then_as_a_pointer_that_keeps_them() {
+        let report = "skipped 1 event of a kind this build does not know (future.thing at line 3)";
+        let after = [skipped_clause(report, Colours::None)];
+        let wide = plain(&key_hints(View::Main, 200, &after, Colours::None));
+        assert!(wide.contains(report), "{wide}");
+        let narrow = plain(&key_hints(View::Main, 100, &after, Colours::None));
+        assert!(narrow.contains("togi events"), "{narrow}");
+        let fields: Vec<&str> = narrow.split_whitespace().collect();
+        for key in ["?", "l", "esc", "q"] {
+            assert!(fields.contains(&key), "{narrow}");
+        }
+    }
+
+    const REPORT: &str =
+        "skipped 1 event of a kind this build does not know (future.thing at line 3)";
+
+    #[test]
+    fn the_skipped_warning_never_costs_a_key_down_to_twenty_cells() {
+        let after = [skipped_clause(REPORT, Colours::None)];
+        for view in VIEWS {
+            for width in 20..=120 {
+                let text = plain(&key_hints(view, width, &after, Colours::None));
+                assert!(display_width(&text) <= width, "{view:?} {width}: {text:?}");
+                let fields: Vec<&str> = text.split_whitespace().collect();
+                for key in ["?", "l", "esc", "q"] {
+                    assert!(
+                        fields.contains(&key),
+                        "{view:?} {width}: lost {key:?}: {text:?}"
+                    );
+                }
+                assert!(
+                    text.contains('!') || text.contains("skipped"),
+                    "{view:?} {width}: the warning is gone: {text:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_skipped_warning_shortens_by_steps_at_normal_narrow_widths() {
+        let after = [skipped_clause(REPORT, Colours::None)];
+        let text = |width| plain(&key_hints(View::Help, width, &after, Colours::None));
+        assert!(text(20).ends_with("   !"), "{}", text(20));
+        assert!(text(30).ends_with("   skipped"), "{}", text(30));
+        assert!(
+            text(40).ends_with("   skipped: togi events"),
+            "{}",
+            text(40)
+        );
+        assert!(
+            text(50).ends_with("   skipped: togi events"),
+            "{}",
+            text(50)
+        );
+        assert!(text(200).ends_with(REPORT), "{}", text(200));
+    }
+
+    #[test]
+    fn the_skipped_warning_leaves_the_close_key_whole_at_any_width() {
+        let after = [skipped_clause(REPORT, Colours::None)];
+        for view in VIEWS {
+            for width in 1..20 {
+                let text = plain(&key_hints(view, width, &after, Colours::None));
+                assert!(display_width(&text) <= width, "{view:?} {width}: {text:?}");
+                assert!(
+                    text.split_whitespace().any(|key| key == "q"),
+                    "{view:?} {width}: {text:?}"
+                );
+                if width >= 5 {
+                    assert!(text.contains('!'), "{view:?} {width}: {text:?}");
+                }
+            }
+            assert_eq!(plain(&key_hints(view, 0, &after, Colours::None)), "");
+        }
+    }
+
+    #[test]
+    fn the_skipped_warning_keeps_its_amber_and_the_keys_their_style() {
+        let after = [skipped_clause(REPORT, Colours::Full)];
+        for view in VIEWS {
+            let reference = key_hints(view, 80, &[], Colours::Full);
+            for width in [20, 30, 40, 50] {
+                let line = key_hints(view, width, &after, Colours::Full);
+                for key in ["?", "l", "esc", "q"] {
+                    let style = |line: &ratatui::text::Line<'_>| {
+                        line.spans
+                            .iter()
+                            .find(|span| span.content.trim() == key)
+                            .map(|span| span.style)
+                    };
+                    assert_eq!(style(&line), style(&reference), "{view:?} {width}: {key:?}");
+                }
+                let last = line.spans.last().expect("a footer");
+                assert_eq!(
+                    last.style,
+                    Paint::Hunt.style(Colours::Full),
+                    "{view:?} {width}: the warning lost its amber"
+                );
+            }
+        }
+    }
 
     fn draw_footer(view: View, width: u16, height: u16, colours: Colours) -> (Buffer, Rect) {
         let sc = screen(view, width, height, colours, true);

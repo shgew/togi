@@ -378,6 +378,25 @@ fn an_intent_naming_another_regimes_workload_a_missing_load_or_a_foreign_core_is
 }
 
 #[test]
+fn a_recorded_configuration_this_build_refuses_is_not_folded() {
+    let mut j = Journal::search_at(&[-10]);
+    let mut snapshot = togi_config::Config::default().snapshot();
+    snapshot.durations.search_trial_s = 0;
+    let loaded = togi_journal::ConfigLoaded {
+        build: crate::testkit::build(),
+        config: snapshot,
+        path: "/etc/togi/config.json".to_owned(),
+        file: false,
+        kernel_cursor: None,
+        kernel_error: None,
+    };
+    assert!(matches!(
+        j.try_append(loaded.into(), &[]),
+        Err(FoldError::Config(message)) if message.contains("search_trial_s")
+    ));
+}
+
+#[test]
 fn a_plan_records_its_context_in_its_intent() {
     let j = Journal::has_room(&[-10, -10]);
     let base = j.manual(

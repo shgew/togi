@@ -651,6 +651,38 @@ fn a_current_journal_with_an_unknown_kind_exits_16_and_is_left_alone() {
 }
 
 #[test]
+fn a_current_journal_with_an_unknown_field_exits_16_and_is_left_alone() {
+    for args in [&["--core", "0"][..], &["--all"]] {
+        let host = Host::new();
+        let session = Session::new();
+        let mut text = session.text();
+        text = format!(
+            "{text}{{\"seq\":{},\"time\":\"2026-01-01T00:00:00Z\",\"boot\":\"b1a8cebe-21d1-14db-3741-5b5df946de05\",\"kind\":\"session.warning\",\"msg\":\"x\",\"data\":{{\"operation\":\"x\",\"error\":\"y\",\"future_field\":1}}}}\n",
+            session.kinds().len() + 1
+        );
+        fs::write(session.journal(), &text).unwrap();
+        let ran = reset(&host, session.path(), args);
+        assert_eq!(ran.exit, Exit::Incompatible, "{args:?}: {}", ran.err);
+        assert!(
+            ran.err.starts_with(
+                "togi reset: unknown field \"data.future_field\" of a session.warning event in journal written by togi 0.0.0 (schema 1, ruleset 1); this build, togi "
+            ),
+            "{args:?}: {}",
+            ran.err
+        );
+        assert!(
+            ran.err.ends_with(
+                " (schema 1, ruleset 1), cannot safely modify it; install the build that wrote it\n"
+            ),
+            "{args:?}: {}",
+            ran.err
+        );
+        assert_eq!(session.text(), text, "{args:?}");
+        assert!(!session.path().join("archive").exists(), "{args:?}");
+    }
+}
+
+#[test]
 fn solo_limits_are_checked_across_rulesets_and_skipped_across_schemas() {
     let (scenario, core, point) = failing_scenario();
     let host = Host::new();

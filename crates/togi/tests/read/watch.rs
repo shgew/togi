@@ -14,8 +14,7 @@ use rustix::termios::{LocalModes, Winsize, tcgetattr, tcsetwinsize};
 use togi_watchtest::Scenario;
 
 use crate::support::{
-    UNKNOWN_KIND, append_between_trial_mce, append_event, append_unknown_kind,
-    assert_unknown_kind_refusal, journal, lines, rewrite_first_line, session, text, togi,
+    append_between_trial_mce, append_event, journal, lines, rewrite_first_line, session, text, togi,
 };
 
 pub(crate) const BOUND: Duration = Duration::from_secs(30);
@@ -105,9 +104,9 @@ fn journal_controls_are_escaped_in_the_frame_and_the_diagnostic() {
     let broken = session(Scenario::Search);
     append_event(
         broken.path(),
-        "session.warning",
+        "failure",
         "x",
-        &serde_json::json!({"operation": "x", "bad\u{1b}[2J": 1}),
+        &serde_json::json!({"signal": "bad\u{1b}[2J", "attribution": "attributed"}),
     );
     let ran = togi(
         broken.path(),
@@ -297,13 +296,4 @@ fn a_signal_ends_a_live_watch_with_the_terminal_restored(signal: Signal) {
     }
     assert_eq!(status.code(), Some(0), "{signal:?} is a normal end");
     assert_eq!(tcgetattr(&slave).unwrap().local_modes, before);
-}
-
-#[test]
-fn an_event_of_an_unknown_kind_is_refused_in_read_only_words_by_watch() {
-    let dir = session(Scenario::Search);
-    let line = append_unknown_kind(dir.path(), UNKNOWN_KIND);
-    let ran = togi(dir.path(), &["watch", "--width", "100", "--height", "30"]);
-    assert_unknown_kind_refusal("watch", &ran, line);
-    assert_eq!(text(&ran.stdout).is_empty(), "watch" != "watch");
 }

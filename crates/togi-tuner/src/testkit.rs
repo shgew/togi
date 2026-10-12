@@ -265,7 +265,7 @@ impl Journal {
         self.append(
             ConfigLoaded {
                 build: build(),
-                config: config.clone(),
+                config: config.snapshot(),
                 path: "/etc/togi/config.json".to_owned(),
                 file: false,
                 kernel_cursor: None,

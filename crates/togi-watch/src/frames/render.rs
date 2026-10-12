@@ -7,7 +7,7 @@ use ratatui::buffer::Buffer;
 
 use super::dash::{draw_ccd, draw_now, header, stage_line, status_header};
 use super::draw::{put, rows};
-use super::footer::footer;
+use super::footer::{footer, skipped_clause};
 use super::help::help_body;
 use super::layout::{Layout, SizeClass};
 use super::measure::measure;
@@ -126,12 +126,15 @@ fn folded(scene: &Scene<'_>, log: &Log<'_>, screen: &Screen, buf: &mut Buffer) -
             );
         }
     }
-    let arrivals = if screen.view == View::Log {
+    let mut after = if screen.view == View::Log {
         log_arrivals(log, screen.colours)
     } else {
         Vec::new()
     };
-    footer(screen, &arrivals, buf);
+    if let Some(skipped) = scene.s.skipped {
+        after.push(skipped_clause(skipped, screen.colours));
+    }
+    footer(screen, &after, buf);
     Drawn {
         scroll,
         hold: if scene.hold.is_some() {

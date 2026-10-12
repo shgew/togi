@@ -42,8 +42,8 @@ fn unknown_envelope_field_is_an_error_that_names_the_kind() {
     assert!(
         matches!(
             error,
-            DecodeError::Envelope {
-                kind: Some(EventKind::SessionStart),
+            DecodeError::UnknownField {
+                kind: EventKind::SessionStart,
                 ..
             }
         ),
@@ -67,8 +67,8 @@ fn unknown_envelope_field_is_an_error_that_names_the_kind() {
     assert!(
         matches!(
             error,
-            DecodeError::Envelope {
-                kind: Some(EventKind::SessionStart),
+            DecodeError::UnknownField {
+                kind: EventKind::SessionStart,
                 ..
             }
         ),
@@ -121,7 +121,7 @@ fn invalid_envelope_value_names_the_kind_when_the_kind_is_known() {
 fn envelope_errors_without_a_known_kind_do_not_invent_one() {
     let line = corrupted_first_line(|line| {
         line["kind"] = json!("trial.nope");
-        line["extra"] = json!(1);
+        line["seq"] = json!(0);
     });
     let error = Event::decode(&line).unwrap_err();
     assert!(
@@ -170,7 +170,9 @@ fn unknown_payload_field_names_the_kind() {
         line["data"]["bogus_field"] = json!(1);
         let error = Event::decode(&line.to_string()).unwrap_err();
         match &error {
-            DecodeError::Payload { kind: named, .. } => assert_eq!(*named, kind),
+            DecodeError::UnknownField { kind: named, field } => {
+                assert_eq!((*named, field.as_str()), (kind, "data.bogus_field"));
+            }
             other => panic!("{kind}: {other}"),
         }
         assert!(error.to_string().contains(kind.as_str()), "{error}");
@@ -268,9 +270,14 @@ fn unknown_fields_in_nested_machine_types_are_refused() {
         nested["bogus"] = json!(1);
         let error = Event::decode(&line.to_string()).unwrap_err();
         assert!(
-            matches!(error, DecodeError::Payload { kind: named, .. } if named == kind),
+            matches!(error, DecodeError::UnknownField { kind: named, .. } if named == kind),
             "{kind}: {error}"
         );
+        let path = index.map_or_else(
+            || format!("data.{field}.bogus"),
+            |index| format!("data.{field}[{index}].bogus"),
+        );
+        assert!(error.to_string().contains(&path), "{kind}: {error}");
     }
 }
 
@@ -301,9 +308,9 @@ fn an_idle_class_has_no_workload_on_the_wire() {
 }
 
 #[test]
-fn a_config_that_does_not_validate_is_refused() {
+fn a_config_that_does_not_fit_the_snapshot_is_refused() {
     let mut line = line_of(super::fixtures::sample(EventKind::ConfigLoaded));
-    line["data"]["config"]["backends"]["mprime"] = json!("relative/path");
+    line["data"]["config"]["start_offsets"] = json!({"3": 10});
     let error = Event::decode(&line.to_string()).unwrap_err();
     assert!(
         matches!(

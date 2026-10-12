@@ -30,26 +30,42 @@ fn parse_since(text: &str) -> Result<Timestamp, String> {
     text.parse::<Timestamp>().map_err(|error| error.to_string())
 }
 
-fn run(cli: &Cli) -> Result<String, Error> {
+/// The report and what reading the journal skipped, one line each, for stderr.
+fn run(cli: &Cli) -> Result<(String, Vec<String>), Error> {
     if let Some(forecast) = &cli.forecast {
-        return score(&cli.state_dir, forecast);
+        let scored = score(&cli.state_dir, forecast)?;
+        let skipped = scored
+            .skipped
+            .iter()
+            .map(|(session, skipped)| format!("session {session}: {skipped}"))
+            .collect();
+        return Ok((scored.text, skipped));
     }
     let path = cli
         .journal
         .clone()
         .unwrap_or_else(|| cli.state_dir.join("events.jsonl"));
-    Ok(report(&Journal::read(path)?, cli.since))
+    let journal = Journal::read(path)?;
+    let skipped = Some(journal.skipped())
+        .filter(|skipped| !skipped.is_empty())
+        .map(ToString::to_string)
+        .into_iter()
+        .collect();
+    Ok((report(&journal, cli.since), skipped))
 }
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
-    let text = match run(&cli) {
-        Ok(text) => text,
+    let (text, skipped) = match run(&cli) {
+        Ok(ran) => ran,
         Err(error) => {
             let _ = writeln!(std::io::stderr(), "togi-tool-stats: {error}");
             return ExitCode::FAILURE;
         }
     };
+    for line in skipped {
+        let _ = writeln!(std::io::stderr(), "togi-tool-stats: {line}");
+    }
     match std::io::stdout().lock().write_all(text.as_bytes()) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {

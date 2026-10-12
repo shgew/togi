@@ -26,7 +26,7 @@ fn success_replaces_the_output_with_the_extracted_facts() {
     let output = out.path().join("facts.jsonl.gz");
     fs::write(&output, COMMITTED).unwrap();
 
-    assert_eq!(generate(&state, &output).unwrap(), 1);
+    assert_eq!(generate(&state, &output).unwrap().count, 1);
 
     let facts = read(&output).unwrap();
     assert_eq!(facts.len(), 1);
@@ -43,7 +43,7 @@ fn success_creates_an_output_that_does_not_exist_yet() {
     let out = tempdir().unwrap();
     let output = out.path().join("facts.jsonl.gz");
 
-    assert_eq!(generate(&state, &output).unwrap(), 1);
+    assert_eq!(generate(&state, &output).unwrap().count, 1);
     assert_eq!(read(&output).unwrap().len(), 1);
 }
 

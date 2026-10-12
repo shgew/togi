@@ -11,6 +11,7 @@ description = "The validated operator configuration read from JSON"
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+togi-journal.workspace = true
 togi-machine.workspace = true
 
 [dev-dependencies]
