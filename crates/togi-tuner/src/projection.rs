@@ -32,6 +32,7 @@ pub struct CheckingView {
     pub profile_seq: Option<Seq>,
     pub cycle: Option<NonZeroU32>,
     pub peak: Option<TemperaturePeak>,
+    pub exposure: Vec<(WorkloadId, u32)>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -76,6 +77,7 @@ pub struct Projection {
     pub bios_profile: Option<BiosProfile>,
     pub r7_status: Vec<R7CoreStatus>,
     pub clean_cycles: u32,
+    pub last_clean_cycle: Option<NonZeroU32>,
     pub first_result: bool,
     pub requirement: Option<TrialRequirement>,
     pub trial_history: Option<TrialHistory>,
@@ -109,6 +111,7 @@ impl State {
                 celsius: peak.celsius,
                 seq: peak.seq,
             }),
+            exposure: run.evidence.exposures().collect(),
         });
         let deepening = run.and_then(|run| {
             let round = run.rounds.active()?;
@@ -172,6 +175,7 @@ impl State {
             bios_profile: self.bios_profile(),
             r7_status: self.r7_status(),
             clean_cycles: self.clean_cycles(),
+            last_clean_cycle: self.last_clean_cycle(),
             first_result: self.first_result(),
             requirement: self.requirement(),
             trial_history: self.trial_history(),
