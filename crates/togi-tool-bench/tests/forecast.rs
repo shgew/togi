@@ -685,28 +685,7 @@ fn the_record_lists_each_machine_file_the_ensemble_reads_once_by_suite_relative_
 #[test]
 fn a_machine_the_suite_names_by_absolute_path_is_named_relative_to_the_suite() {
     let fixture = Fixture::new(false);
-    let bench = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tools/bench");
-    fs::create_dir_all(fixture.path("machines")).unwrap();
-    fs::create_dir_all(fixture.path("facts")).unwrap();
-    fs::copy(
-        bench.join("machines/target-fit-0.json"),
-        fixture.path("machines/target-fit-0.json"),
-    )
-    .unwrap();
-    fs::copy(
-        bench.join("facts/target.jsonl.gz"),
-        fixture.path("facts/target.jsonl.gz"),
-    )
-    .unwrap();
-    let absolute = fixture.path("machines/target-fit-0.json");
-    fs::write(
-        fixture.path("suite.json"),
-        format!(
-            r#"{{"scenarios":[{{"name":"target","machine":{:?},"dev":[1,2],"holdout":[101]}}]}}"#,
-            absolute.to_str().unwrap()
-        ),
-    )
-    .unwrap();
+    absolute_machine_suite(&fixture);
     let report = execute(&fixture.options(fixture.simulator("", 0)), &Fleet::new()).unwrap();
     let local = fixture.dir.path().to_str().unwrap();
     assert!(
@@ -733,6 +712,32 @@ fn a_machine_the_suite_names_by_absolute_path_is_named_relative_to_the_suite() {
         1,
         "{table}"
     );
+}
+
+/// Copies a machine with a facts extract into the fixture and writes a suite that names it by absolute path.
+fn absolute_machine_suite(fixture: &Fixture) {
+    let bench = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tools/bench");
+    fs::create_dir_all(fixture.path("machines")).unwrap();
+    fs::create_dir_all(fixture.path("facts")).unwrap();
+    fs::copy(
+        bench.join("machines/target-fit-0.json"),
+        fixture.path("machines/target-fit-0.json"),
+    )
+    .unwrap();
+    fs::copy(
+        bench.join("facts/target.jsonl.gz"),
+        fixture.path("facts/target.jsonl.gz"),
+    )
+    .unwrap();
+    let absolute = fixture.path("machines/target-fit-0.json");
+    fs::write(
+        fixture.path("suite.json"),
+        format!(
+            r#"{{"scenarios":[{{"name":"target","machine":{:?},"dev":[1,2],"holdout":[101]}}]}}"#,
+            absolute.to_str().unwrap()
+        ),
+    )
+    .unwrap();
 }
 
 fn literal_run(
@@ -795,6 +800,11 @@ fn the_report_names_the_anchor_the_runs_by_status_and_each_metric_s_range() {
 }
 
 fn command(fixture: &Fixture) -> Command {
+    command_with_suite(fixture, &fixture.path("suite.json"))
+}
+
+/// `forecast` of the fixture's copy with `--suite suite`, run from a fixture repository inside the fixture.
+fn command_with_suite(fixture: &Fixture, suite: &Path) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_togi-tool-bench"));
     isolate_git(&mut command, &fixture.path("githome"));
     command
@@ -802,8 +812,52 @@ fn command(fixture: &Fixture) -> Command {
         .arg("forecast")
         .arg(fixture.state())
         .arg("--suite")
-        .arg(fixture.path("suite.json"));
+        .arg(suite);
     command
+}
+
+#[test]
+fn a_relative_suite_naming_its_machine_by_absolute_path_names_it_relative_to_the_suite() {
+    let fixture = Fixture::new(false);
+    absolute_machine_suite(&fixture);
+    let out = fixture.path("forecast.json");
+    let output = command_with_suite(&fixture, Path::new("../suite.json"))
+        .arg("--sim")
+        .arg(fixture.simulator("", 0))
+        .arg("--out")
+        .arg(&out)
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let record = Record::read(&out).unwrap();
+    assert_eq!(record.runs.len(), 3);
+    assert!(
+        record
+            .runs
+            .iter()
+            .all(|run| run.machine == "machines/target-fit-0.json"),
+        "{:?}",
+        record
+            .runs
+            .iter()
+            .map(|run| &run.machine)
+            .collect::<Vec<_>>()
+    );
+    let local = fs::canonicalize(fixture.dir.path()).unwrap();
+    assert!(!stdout.contains(local.to_str().unwrap()), "{stdout}");
+    assert!(
+        !stdout.contains(fixture.dir.path().to_str().unwrap()),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("\nmachines/target-fit-0.json: "),
+        "{stdout}"
+    );
 }
 
 #[test]
@@ -921,23 +975,42 @@ fn a_full_forecast_leaves_no_run_directory_behind() {
     assert!(left.is_empty(), "{left:?}");
 }
 
-/// Runs `forecast` under a private `TMPDIR` and returns what the failed command left there.
-fn leftovers_of_a_failed_command(fixture: &Fixture, simulator: PathBuf, out: &Path) -> Vec<String> {
+/// Runs `forecast` under a private `TMPDIR` with a simulator that records its run directory before `extra`, and
+/// returns what the failed command left in `TMPDIR` and its stderr. Fails unless runs were made under `TMPDIR`.
+fn leftovers_of_a_failed_command(
+    fixture: &Fixture,
+    extra: &str,
+    out: &Path,
+) -> (Vec<String>, String) {
     let temporary = fixture.path("tmp");
     fs::create_dir_all(&temporary).unwrap();
+    let seen = fixture.path("seen");
     let output = command(fixture)
         .env("TMPDIR", &temporary)
         .arg("--sim")
-        .arg(simulator)
+        .arg(fixture.simulator(
+            &format!("echo \"$dir\" >> '{}'\n{extra}", seen.display()),
+            0,
+        ))
         .arg("--out")
         .arg(out)
         .output()
         .unwrap();
-    assert!(!output.status.success());
-    fs::read_dir(&temporary)
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(!output.status.success(), "{stderr}");
+    let seen = fs::read_to_string(seen).unwrap_or_default();
+    assert!(
+        seen.lines().next().is_some()
+            && seen
+                .lines()
+                .all(|dir| Path::new(dir).starts_with(&temporary)),
+        "the runs were not made under TMPDIR: {seen:?}; {stderr}"
+    );
+    let left = fs::read_dir(&temporary)
         .unwrap()
         .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
-        .collect()
+        .collect();
+    (left, stderr)
 }
 
 #[test]
@@ -945,22 +1018,23 @@ fn a_forecast_that_fails_to_write_its_record_leaves_no_run_directory_behind() {
     let fixture = Fixture::new(false);
     let blocker = fixture.path("file");
     fs::write(&blocker, "").unwrap();
-    let left = leftovers_of_a_failed_command(
-        &fixture,
-        fixture.simulator("", 0),
-        &blocker.join("forecast.json"),
-    );
+    let (left, stderr) =
+        leftovers_of_a_failed_command(&fixture, "", &blocker.join("forecast.json"));
+    assert!(stderr.contains("write forecast "), "{stderr}");
+    assert!(!stderr.contains("kept the runs"), "{stderr}");
     assert!(left.is_empty(), "{left:?}");
 }
 
 #[test]
 fn an_interrupted_forecast_leaves_no_run_directory_behind() {
     let fixture = Fixture::new(false);
-    let left = leftovers_of_a_failed_command(
+    let (left, stderr) = leftovers_of_a_failed_command(
         &fixture,
-        fixture.simulator("kill -INT $PPID; sleep 5", 0),
+        "kill -INT $PPID; sleep 5",
         &fixture.path("forecast.json"),
     );
+    assert!(stderr.contains("interrupted"), "{stderr}");
+    assert!(!stderr.contains("kept the runs"), "{stderr}");
     assert!(left.is_empty(), "{left:?}");
 }
 
