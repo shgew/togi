@@ -20,10 +20,10 @@ pub(crate) fn build() -> Build {
     Build {
         version: "0.1.0".into(),
         rev: None,
-        ruleset: 1,
+        ruleset: crate::RULESET,
         schema: SCHEMA,
         fixes: 0,
-        evidence: 1,
+        evidence: crate::EVIDENCE_EPOCH,
     }
 }
 
