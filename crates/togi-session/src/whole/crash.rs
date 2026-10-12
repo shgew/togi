@@ -403,7 +403,8 @@ fn assert_crash_is_accounted_for(events: &[Event], k: usize) {
         );
         assert_eq!(closed.outcome, Outcome::Failure, "{closed:?}");
     }
-    let failure = if ended_by_crash || durable_end.is_some_and(|end| end.outcome == Outcome::Failure)
+    let failure = if ended_by_crash
+        || durable_end.is_some_and(|end| end.outcome == Outcome::Failure)
     {
         let citing = events.iter().find_map(|event| match &event.payload {
             Payload::Failure(failure) if event.cause.contains(&detected) => Some(failure),
@@ -413,9 +414,7 @@ fn assert_crash_is_accounted_for(events: &[Event], k: usize) {
             let same: Vec<_> = events
                 .iter()
                 .filter_map(|event| match &event.payload {
-                    Payload::Failure(failure)
-                        if failure.trial.as_ref() == Some(&intent.trial) =>
-                    {
+                    Payload::Failure(failure) if failure.trial.as_ref() == Some(&intent.trial) => {
                         Some(failure)
                     }
                     _ => None,
