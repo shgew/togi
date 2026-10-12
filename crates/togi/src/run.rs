@@ -91,7 +91,7 @@ pub struct Args {
 
     /// Stop after N clean cycles, each a passed full cycle ending at or after phase 2's confirmation cycle
     /// (default endless)
-    #[arg(long, value_name = "N", value_parser = positive, conflicts_with = "first_result")]
+    #[arg(long, value_name = "N", value_parser = positive, allow_negative_numbers = true, conflicts_with = "first_result")]
     pub cycles: Option<NonZeroU32>,
 
     /// Stop once the BIOS profile is first confirmed, after phase 1's passed cycle and before phase 2 moves
@@ -433,3 +433,6 @@ impl Write for Hidden {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests;

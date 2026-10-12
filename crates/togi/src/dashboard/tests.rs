@@ -59,3 +59,44 @@ fn typed_ahead_input_is_dropped() {
         "nothing typed before the question remains"
     );
 }
+
+#[derive(Clone, Default)]
+struct Sink(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+
+impl std::io::Write for Sink {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+struct UntilStopped;
+
+impl super::Surface for UntilStopped {
+    fn draw(&self, _: &std::path::Path, _: u64, stop: &super::Stop) -> Result<(), String> {
+        stop.wait();
+        Ok(())
+    }
+}
+
+#[test]
+fn event_lines_are_dropped_only_while_the_dashboard_shows() {
+    use std::io::Write as _;
+    let sink = Sink::default();
+    let dashboard = super::Dashboard::new(
+        std::sync::Arc::new(UntilStopped),
+        std::path::Path::new("."),
+        0,
+    );
+    let mut lines = dashboard.gate(Box::new(sink.clone()));
+    lines.write_all(b"startup\n").unwrap();
+    dashboard.show();
+    lines.write_all(b"hidden event\n").unwrap();
+    dashboard.hide();
+    lines.write_all(b"shutdown\n").unwrap();
+    assert_eq!(&*sink.0.lock().unwrap(), b"startup\nshutdown\n");
+}
