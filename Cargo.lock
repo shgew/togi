@@ -1550,7 +1550,9 @@ dependencies = [
  "togi-tuner",
  "togi-tuningboot",
  "togi-version",
+ "togi-watch",
  "togi-watchtest",
+ "unicode-width",
 ]
 
 [[package]]

@@ -236,7 +236,7 @@ fn nushell_loads_the_script_without_warnings() {
     let ran = Command::new("nu")
         .args(["--no-config-file", "--no-history", "-c"])
         .arg(format!(
-            "source '{}'; 'togi completion ' | commandline complete | str join ' '",
+            "source '{}'; ['togi completion ' 'togi events --kind se'] | each {{|line| $line | commandline complete | str join ' '}} | str join (char newline)",
             script.display()
         ))
         .current_dir(dir.path())
@@ -248,10 +248,63 @@ fn nushell_loads_the_script_without_warnings() {
         .unwrap();
     assert_eq!(ran.status.code(), Some(0), "{}", stderr(&ran));
     assert_eq!(stderr(&ran), "");
-    let offered: Vec<&str> = stdout(&ran).split_whitespace().collect();
+    let lines: Vec<&str> = stdout(&ran).lines().collect();
+    let [commands, kinds] = lines[..] else {
+        panic!("two completions expected: {lines:?}")
+    };
+    let offered: Vec<&str> = commands.split_whitespace().collect();
     for shell in ["bash", "zsh", "fish", "nushell"] {
         assert!(offered.contains(&shell), "{shell} not offered: {offered:?}");
     }
+    let offered: Vec<&str> = kinds.split_whitespace().collect();
+    assert!(offered.contains(&"session"), "{offered:?}");
+    assert!(offered.contains(&"session.start"), "{offered:?}");
+}
+
+/// Needs bash with the `compgen` builtin: the stdenv bash of a nix build has none, so the dev shell
+/// and the rust-nextest check add `bashInteractive`.
+fn bash_complete(word: &str) -> Vec<String> {
+    let probe = Command::new("bash")
+        .args(["-c", "type compgen"])
+        .output()
+        .unwrap();
+    assert!(
+        probe.status.success(),
+        "bash on PATH has no compgen builtin: use bashInteractive, which the dev shell provides"
+    );
+    let dir = tempfile::tempdir().unwrap();
+    let script = dir.path().join("togi.bash");
+    std::fs::write(&script, completion("bash")).unwrap();
+    let ran = Command::new("bash")
+        .args(["--norc", "--noprofile", "-c"])
+        .arg(format!(
+            "source '{}'; COMP_WORDS=(togi events --kind '{word}'); COMP_CWORD=3; _togi togi '{word}' --kind; printf '%s\\n' \"${{COMPREPLY[@]}}\"",
+            script.display()
+        ))
+        .output()
+        .unwrap();
+    assert_eq!(ran.status.code(), Some(0), "{}", stderr(&ran));
+    stdout(&ran)
+        .lines()
+        .filter(|line| !line.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
+#[test]
+fn bash_completes_the_item_after_a_comma_in_events_kind() {
+    assert_eq!(
+        bash_complete("trial,cr"),
+        ["trial,crash", "trial,crash.detected"]
+    );
+    assert_eq!(
+        bash_complete("trial,checking.cycle,sess")
+            .first()
+            .map(String::as_str),
+        Some("trial,checking.cycle,session")
+    );
+    assert_eq!(bash_complete("sess")[0], "session");
+    assert!(bash_complete("trial,zzz").is_empty());
 }
 
 fn help(command: &str) -> String {
