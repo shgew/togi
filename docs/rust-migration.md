@@ -565,7 +565,8 @@ From the first "Started on branch" comment on each pull request's issue to its m
 - The Go compile equivalent (a changed file in the package) is not the same operation as `cargo clean -p`, and the crates are not the same size as their packages (the Rust lines, library and tests together, are 1.2 to 4.0 times Go's).
 - The forecast probe ran on a different session from Go's (Rust-written by an unmerged branch, 27,801 events against 40,592), sampled 800 prefixes rather than timing every one, ran once, and used a different random stream; per-call and per-event figures are comparable in shape only.
 - Agent cost: figures are at the cut-off; the trees are selected by name, so scouts and design work that served several pull requests are counted with them and there is no per-pull-request split beyond review. The session was killed twice during the stage (out of memory, by a runaway test in another stage's uncommitted work); a response in flight at a kill was never written, so its usage is missing. Review rounds before #801 and local gate failures are recorded nowhere and are not measured.
-## Stage 5: `togi-session` (#742, 2026-10-12)
+
+## Stage 4: `togi-session` (#742, 2026-10-12)
 
 The `togi-session` crate ports `internal/session` ([#742](https://github.com/shgew/togi/issues/742)): the tuning session. `run` takes a `RunInput` through startup, the tuning loop and the cleanup every exit shares and hands the journal back in `Ended` with a `ResumeCapsule`; `reset_core` and `reset_all` are the two journal commands; `prepare` is the Rust home of `carry.Prepare`. About 6,700 lines of library and 15,000 of tests. The 342 tests run in about 10 s under `cargo nextest` on Linux; two whole-session sweeps that kill the run at every durable event dominate it at about 9 s each, in parallel; the other tests finish within 2 s.
 
