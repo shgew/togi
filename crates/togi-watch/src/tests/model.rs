@@ -674,3 +674,88 @@ fn a_reset_queued_for_a_core_shows_on_that_core() {
         Some("reset")
     );
 }
+
+fn ended(trial: &TrialId, plan: &togi_tuner::TrialPlan, outcome: Outcome) -> Payload {
+    let signal = (outcome == Outcome::Failure).then_some(togi_machine::Signal::ComputationError);
+    let mut end = end_payload(trial, outcome, signal);
+    end.duration_s = plan.duration.get();
+    if outcome == Outcome::Failure {
+        end.core = plan.load.cores().iter().next();
+    }
+    end.into()
+}
+
+/// The step of the next cycle trial once every trial before it passes.
+fn next_cycle_step(script: &Script) -> Option<u32> {
+    let mut ahead = script.clone();
+    for _ in 0..200 {
+        match ahead.shadow.next().ok()? {
+            togi_tuner::Action::RunTrial(plan) => {
+                if let togi_tuner::TrialContext::Cycle { step, .. } = plan.context {
+                    return Some(step.get().get());
+                }
+                let (intent, trial) = ahead.intent(&plan);
+                ahead.append(ended(&trial, &plan, Outcome::Pass), &[intent]);
+            }
+            _ => {
+                ahead.step(|_| Outcome::Pass);
+            }
+        }
+    }
+    None
+}
+
+#[test]
+fn a_running_rerun_names_the_step_checking_resumes_at() {
+    let cores: Vec<(u8, u8)> = (0..8).map(|id| (id, id / 4)).collect();
+    let mut script = Script::new(&cores, &[Start::has_room(-20); 8]);
+    script.ranking();
+    let (mut cycle_trials, mut checked, mut skipped) = (0, 0, 0);
+    for _ in 0..400 {
+        let Ok(action) = script.shadow.next() else {
+            break;
+        };
+        let togi_tuner::Action::RunTrial(plan) = action else {
+            script.step(|_| Outcome::Pass);
+            continue;
+        };
+        let (intent, trial) = script.intent(&plan);
+        let mut outcome = Outcome::Pass;
+        match plan.context {
+            togi_tuner::TrialContext::Cycle { .. } => {
+                cycle_trials += 1;
+                if cycle_trials % 3 == 0 {
+                    outcome = Outcome::Failure;
+                }
+            }
+            togi_tuner::TrialContext::Rerun { .. } => {
+                script.start(&trial);
+                let model = script.model();
+                let snap = model.snapshot();
+                let cycle = snap.cycle.expect("a rerun holds the cycle");
+                let mut passed = script.clone();
+                passed.append(ended(&trial, &plan, Outcome::Pass), &[intent]);
+                if let Some(step) = next_cycle_step(&passed) {
+                    checked += 1;
+                    if step as usize != cycle.plan.current + 1 {
+                        skipped += 1;
+                    }
+                    assert_eq!(
+                        cycle.resume_step() + 1,
+                        step as usize,
+                        "rerun {trial}: the step named differs from the next cycle trial's"
+                    );
+                }
+            }
+            _ => {}
+        }
+        script.append(ended(&trial, &plan, outcome), &[intent]);
+        if skipped > 0 {
+            break;
+        }
+    }
+    assert!(
+        checked > 0 && skipped > 0,
+        "the session must hold a rerun whose next cycle trial is past the plan's current step: {checked} reruns, {skipped} past it"
+    );
+}

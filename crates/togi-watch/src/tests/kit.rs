@@ -149,6 +149,7 @@ pub(crate) fn transition(id: u8, start: Start) -> CoreTransition {
 }
 
 /// An event journal that grows as a session would append it, every event folded into a shadow tuner first.
+#[derive(Clone)]
 pub(crate) struct Script {
     pub(crate) events: Vec<Event>,
     pub(crate) shadow: TunerState,

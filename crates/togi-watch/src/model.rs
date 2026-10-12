@@ -363,7 +363,8 @@ pub struct CycleView<'a> {
     pub plan: &'a CyclePlan,
     /// The hunts each step started, by step index.
     pub step_hunts: &'a [Vec<u32>],
-    /// The step the tuner's next cycle trial runs in once reruns pass.
+    /// The step the tuner's next cycle trial runs in once reruns pass: the forecast between trials, or its pass
+    /// branch while a trial runs.
     pub resume: Option<StepNo>,
 }
 
@@ -644,7 +645,15 @@ impl Model {
             cycle: (plan.number.is_some() || !plan.steps.is_empty()).then(|| CycleView {
                 plan,
                 step_hunts: &derived.step_hunts,
-                resume: derived.forecast.between.as_ref().and_then(|b| b.resume),
+                resume: match &derived.forecast.between {
+                    Some(between) => between.resume,
+                    None => derived
+                        .forecast
+                        .branches
+                        .iter()
+                        .find(|branch| branch.premise == togi_tuner::Premise::Pass)
+                        .and_then(|branch| branch.resume),
+                },
             }),
             hunt: projection
                 .hunt_plan
