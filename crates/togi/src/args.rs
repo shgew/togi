@@ -43,12 +43,10 @@ pub struct ConfigArgs {
 }
 
 impl ConfigArgs {
-    /// The file to read: the one given, else [`DEFAULT_CONFIG_PATH`].
+    /// The file to read: the one given, else `default`.
     #[must_use]
-    pub fn path(&self) -> &Path {
-        self.path
-            .as_deref()
-            .unwrap_or(Path::new(DEFAULT_CONFIG_PATH))
+    pub fn path<'a>(&'a self, default: &'a Path) -> &'a Path {
+        self.path.as_deref().unwrap_or(default)
     }
 
     /// Whether `--config` was given: a missing default file means the default configuration, a
@@ -64,8 +62,8 @@ impl ConfigArgs {
     /// # Errors
     ///
     /// The file cannot be read or is not a valid configuration.
-    pub fn load(&self) -> Result<Config, LoadError> {
-        read(self.path(), self.is_explicit())
+    pub fn load(&self, default: &Path) -> Result<Config, LoadError> {
+        read(self.path(default), self.is_explicit())
     }
 }
 

@@ -23,7 +23,7 @@ use togi_cli::Exit;
 use togi_cli::system::System;
 use togi_config::Config;
 use togi_hardware::{Diagnosis, RebootError};
-use togi_hostlock::Policy;
+use togi_hostlock::{Error as LockError, HostLock, Policy};
 use togi_journal::Payload;
 use togi_machine::{BiosContext, BootId};
 use togi_render::OutputFacts;
@@ -92,6 +92,7 @@ pub struct Host {
     pub boot_fails: bool,
     pub root: bool,
     pub lock: PathBuf,
+    pub config: PathBuf,
     pub boot: String,
     pub steps: Steps,
     pub grubenvs: Rc<RefCell<Vec<PathBuf>>>,
@@ -99,9 +100,13 @@ pub struct Host {
     pub fail: RefCell<Vec<&'static str>>,
     pub marker: Cell<bool>,
     pub marker_at_reboot: Cell<Option<bool>>,
+    pub reboot_error: RefCell<Option<RebootError>>,
     pub diagnosis: RefCell<Option<Result<Diagnosis, togi_hardware::Error>>>,
     pub diagnoses: RefCell<Vec<(Option<BiosContext>, bool)>>,
     pub calls: Cell<usize>,
+    /// Whether a second claim on the host lock was refused as busy while `diagnose` ran; `None`
+    /// when it did not run as root.
+    pub lock_busy_in_diagnose: Cell<Option<bool>>,
     pub facts: OutputFacts,
     _dir: TempDir,
 }
@@ -117,6 +122,7 @@ impl Host {
             boot_fails: false,
             root: true,
             lock: dir.path().join("togi.lock"),
+            config: dir.path().join("config.json"),
             boot: "0123456789abcdef0123456789abcdef".into(),
             steps: Steps::default(),
             grubenvs: Rc::default(),
@@ -124,9 +130,11 @@ impl Host {
             fail: RefCell::default(),
             marker: Cell::new(false),
             marker_at_reboot: Cell::new(None),
+            reboot_error: RefCell::new(None),
             diagnosis: RefCell::new(None),
             diagnoses: RefCell::default(),
             calls: Cell::new(0),
+            lock_busy_in_diagnose: Cell::new(None),
             facts: OutputFacts::default(),
             _dir: dir,
         }
@@ -205,6 +213,10 @@ impl System for Host {
         (&self.lock, Policy::Private)
     }
 
+    fn config_path(&self) -> &Path {
+        &self.config
+    }
+
     fn boot_id(&self) -> Result<BootId, togi_detect::Error> {
         if self.boot_fails {
             return Err(togi_detect::Error::InvalidBootId { id: "none".into() });
@@ -234,6 +246,13 @@ impl System for Host {
         self.diagnoses
             .borrow_mut()
             .push((recorded.cloned(), privileged));
+        if privileged {
+            let busy = matches!(
+                HostLock::acquire(&self.lock, Policy::Private),
+                Err(LockError::Busy { .. })
+            );
+            self.lock_busy_in_diagnose.set(Some(busy));
+        }
         self.diagnosis.borrow_mut().take().unwrap()
     }
 
@@ -267,6 +286,9 @@ impl System for Host {
     fn reboot(&self) -> Result<(), RebootError> {
         self.steps.borrow_mut().push("reboot".into());
         self.marker_at_reboot.set(Some(self.marker.get()));
+        if let Some(error) = self.reboot_error.borrow_mut().take() {
+            return Err(error);
+        }
         if self.fail.borrow().contains(&"reboot") {
             return Err(RebootError::Exit {
                 status: ExitStatus::from_raw(1 << 8),

@@ -61,7 +61,7 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
         Ok(recorded) => recorded,
         Err(exit) => return exit,
     };
-    let config = match args.config.load() {
+    let config = match args.config.load(system.config_path()) {
         Ok(config) => config,
         Err(error) => return exit_with(ctx, COMMAND, error, Exit::Usage),
     };

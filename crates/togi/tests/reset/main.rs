@@ -13,8 +13,9 @@ use support::{Host, Ran, Session, files};
 use togi_cli::Exit;
 use togi_hostlock::{HostLock, Policy};
 use togi_journal::StateDir;
-use togi_machine::CoreId;
-use togi_watchtest::Scenario;
+use togi_machine::{CoreId, Signal};
+use togi_sim::model::Script;
+use togi_watchtest::{Scenario, Stop, default_machine, install_events, simulate};
 
 const SESSION: &str = "20260101T000000Z";
 
@@ -256,13 +257,17 @@ fn reset_core_refuses_every_stamp_mismatch_with_exit_16_and_appends_nothing() {
         for (from, to) in rewrites {
             session.rewrite_first_line(from, to);
         }
+        session.rewrite_first_line(
+            "\"version\":\"0.0.0\"",
+            "\"version\":\"0.0.0\",\"rev\":\"abc1234\"",
+        );
         let before = session.text();
         let ran = reset(&host, session.path(), &["--core", "0"]);
         assert_eq!(ran.exit, Exit::Incompatible, "{name}: {}", ran.err);
         assert_eq!(ran.out, "", "{name}");
         assert!(
             ran.err.starts_with(&format!(
-                "togi reset: this journal was written by togi 0.0.0 {written}; this build, togi "
+                "togi reset: this journal was written by togi 0.0.0+abc1234 {written}; this build, togi "
             )),
             "{name}: {}",
             ran.err
@@ -403,6 +408,7 @@ fn failing_scenario() -> (Scenario, CoreId, i64) {
 fn reset_all_warns_for_each_solo_limit_at_or_past_its_failure_point() {
     let (scenario, core, point) = failing_scenario();
     let core = core.get();
+    assert!(point < 0, "this case pins the remedy that offers a limit");
     let host = Host::new();
     let cfg = tempfile::tempdir().unwrap();
     let write = |limit: i64| {
@@ -432,14 +438,10 @@ fn reset_all_warns_for_each_solo_limit_at_or_past_its_failure_point() {
         );
         assert_eq!(ran.err.contains(&want), warns, "{limit}: {}", ran.err);
         if warns {
-            let remedy = if point < 0 {
-                format!(
-                    "use {}, the failure point plus one, or remove it",
-                    point + 1
-                )
-            } else {
-                "remove it".to_owned()
-            };
+            let remedy = format!(
+                "use {}, the failure point plus one, or remove it",
+                point + 1
+            );
             assert!(
                 ran.err.contains(&format!("{want}{remedy}\n")),
                 "{}",
@@ -687,12 +689,69 @@ fn infrastructure_failures_exit_1() {
 }
 
 #[test]
-fn a_closed_stdout_is_an_error() {
+fn an_invalid_default_config_is_silent_and_the_archive_succeeds() {
     let host = Host::new();
+    fs::write(&host.config, "{").unwrap();
     let session = Session::new();
-    let ran = host.run_to_closed_stdout(session.path(), &["reset", "--core", "1"]);
-    assert_eq!(ran.exit, Exit::Error, "{}", ran.err);
-    assert!(ran.err.contains("write output"), "{}", ran.err);
+    let ran = reset(&host, session.path(), &["--all"]);
+    assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
+    assert!(!ran.err.contains("warning"), "{}", ran.err);
+    assert!(!session.journal().exists());
+    assert!(archive(session.path(), &format!("{SESSION}.jsonl")).exists());
+}
+
+#[test]
+fn a_core_that_failed_at_zero_warns_with_the_remove_it_remedy() {
+    let machine = default_machine(1).unwrap();
+    machine
+        .script_trial(
+            "0001",
+            Script {
+                signal: Some(Signal::ComputationError),
+                at_s: 1.0,
+                core: CoreId::new(0).unwrap(),
+                reset: None,
+                then_crash: false,
+            },
+        )
+        .unwrap();
+    let events = simulate(
+        machine,
+        togi_config::Config::parse(r#"{"start_offsets":{"0":0}}"#).unwrap(),
+        None,
+        Stop::cycles(1),
+    )
+    .unwrap();
+    let state = tempfile::tempdir().unwrap();
+    install_events(state.path(), &events).unwrap();
+    let cfg = tempfile::tempdir().unwrap();
+    let path = cfg.path().join("config.json");
+    fs::write(&path, r#"{"candidate_solo_limits":{"0":-5}}"#).unwrap();
+    let host = Host::new();
+    let ran = reset(
+        &host,
+        state.path(),
+        &["--all", "--config", path.to_str().unwrap()],
+    );
+    assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
+    assert!(
+        ran.err.ends_with(
+            "warning: candidate solo limit -5 for core 00 is at or deeper than its failure point 0 in the archived session; remove it\n"
+        ),
+        "{}",
+        ran.err
+    );
+}
+
+#[test]
+fn a_closed_stdout_is_an_error() {
+    for args in [&["reset", "--core", "1"][..], &["reset", "--all"]] {
+        let host = Host::new();
+        let session = Session::new();
+        let ran = host.run_to_closed_stdout(session.path(), args);
+        assert_eq!(ran.exit, Exit::Error, "{args:?}: {}", ran.err);
+        assert!(ran.err.contains("write output"), "{args:?}: {}", ran.err);
+    }
 }
 
 #[test]

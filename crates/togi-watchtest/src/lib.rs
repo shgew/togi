@@ -19,7 +19,7 @@ pub use cut::{
     cut_when, hunt_with_unconfirmed_profile,
 };
 pub use error::{Error, InstallError};
-pub use install::install;
+pub use install::{install, install_events};
 pub use rerun::{CycleCompletedByRerun, cycle_completed_by_rerun};
 pub use scenario::Scenario;
 pub use simulate::{

@@ -207,6 +207,34 @@ fn a_marker_that_cannot_be_removed_after_a_failed_reboot_is_reported() {
 }
 
 #[test]
+fn a_reboot_that_cannot_run_reports_the_cause_and_removes_the_retry_marker() {
+    let host = Host::new();
+    let state = tempfile::tempdir().unwrap();
+    *host.count.borrow_mut() = Some("0".into());
+    *host.reboot_error.borrow_mut() = Some(togi_hardware::RebootError::Run(
+        togi_command::Error::TimedOut {
+            program: "systemctl".into(),
+            timeout: std::time::Duration::from_secs(30),
+        },
+    ));
+    let ran = run(&host, state.path());
+    assert_eq!(ran.exit, Exit::Error, "{}", ran.err);
+    assert_eq!(ran.out, "");
+    assert!(
+        ran.err.ends_with(
+            "togi restart-limit: systemctl reboot: run systemctl reboot: systemctl did not finish within 30s\n"
+        ),
+        "{}",
+        ran.err
+    );
+    assert!(!host.marker.get(), "the retry marker was left behind");
+    assert_eq!(
+        host.steps().last().map(String::as_str),
+        Some("remove marker")
+    );
+}
+
+#[test]
 fn usage_errors_and_help_touch_nothing() {
     for (args, exit) in [
         (&["restart-limit", "--help"][..], Exit::Ok),
