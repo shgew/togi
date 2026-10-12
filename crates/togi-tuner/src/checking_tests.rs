@@ -508,23 +508,28 @@ fn repeated_cycle_classes_add_trials() {
         )));
         let change = j.next_decision();
         j.decide(change);
-        let mut first = BTreeMap::new();
+        let mut classes: BTreeMap<u32, BTreeMap<ClassKey, u16>> = BTreeMap::new();
         loop {
             let action = j.step(&mut |_| Outcome::Pass);
             if let Action::RunTrial(plan) = &action {
                 if let TrialContext::Cycle { step, .. } = plan.context {
-                    first
+                    classes
                         .entry(step.get().get())
-                        .or_insert((plan.requirement.class, plan.requirement.needed.get()));
+                        .or_default()
+                        .insert(plan.requirement.class, plan.requirement.needed.get());
                 }
             }
             if decision_cycle(&action).is_some_and(|cycle| cycle.event == CycleEvent::End) {
                 break;
             }
         }
-        let (class, needed) = first[&1];
-        let (again, doubled) = first[&u32::try_from(catalog + 1).unwrap()];
-        assert_eq!((class, doubled), (again, needed * 2), "{regime}");
+        let first = &classes[&1];
+        let again = &classes[&u32::try_from(catalog + 1).unwrap()];
+        let doubled: BTreeMap<ClassKey, u16> = first
+            .iter()
+            .map(|(&class, &needed)| (class, needed * 2))
+            .collect();
+        assert_eq!(again, &doubled, "{regime}");
     }
 }
 
