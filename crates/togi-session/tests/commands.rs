@@ -5,11 +5,14 @@ use std::num::NonZeroU32;
 
 use jiff::tz::TimeZone;
 use togi_journal::fs::{Fault, Op};
-use togi_journal::{Build, CorePhase, Journal, MemFs, Payload, ResetTarget, SCHEMA, StateDir};
+use togi_journal::{
+    Build, CorePhase, CycleEvent, Journal, MemFs, Payload, ResetTarget, SCHEMA, StateDir,
+};
 use togi_machine::{CancellationToken, CoreId};
 use togi_render::Renderer;
 use togi_session::{
-    CommandError, ConfigSource, PublicationPolicy, RunInput, StopPolicy, reset_all, reset_core, run,
+    CommandError, ConfigSource, PublicationPolicy, RunInput, Stop, StopPolicy, reset_all,
+    reset_core, run,
 };
 use togi_sim::definition::ModelDef;
 use togi_sim::{MachineDefinition, Model, RunSettings, Simulator};
@@ -284,6 +287,7 @@ fn a_reset_core_is_consumed_by_the_resumed_session_which_retunes_it_to_its_limit
     second.policy.cycles = NonZeroU32::new(2);
     let ended = run(second);
     assert!(ended.errors.is_empty(), "{:?}", ended.errors);
+    assert_eq!(ended.stop, Some(Stop::Cycles));
     let events = ended.journal.events();
     let restart = events.iter().find(|event| {
         matches!(&event.payload, Payload::CorePhase(phase)
@@ -302,9 +306,16 @@ fn a_reset_core_is_consumed_by_the_resumed_session_which_retunes_it_to_its_limit
             .iter()
             .all(|(from, to, _)| !(*from == Some(CorePhase::AtLimit) && *to == CorePhase::Search))
     );
-    let cycles = events
+    let clean_cycles = events
         .iter()
-        .filter(|event| matches!(event.payload, Payload::CheckingCycle(_)) && event.seq > reset)
+        .filter(|event| {
+            matches!(&event.payload, Payload::CheckingCycle(cycle)
+                if cycle.event == CycleEvent::End && cycle.passed && cycle.full)
+                && event.seq > reset
+        })
         .count();
-    assert!(cycles > 0, "a checking cycle completes after the reset");
+    assert!(
+        clean_cycles > 0,
+        "a clean full checking cycle ends after the reset"
+    );
 }
