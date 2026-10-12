@@ -195,6 +195,26 @@ impl Fixture {
 
     /// A simulator that gives the run of seed `seed` the journal that seed's real resume wrote, after `extra`.
     fn simulator(&self, extra: &str, exit: i32) -> PathBuf {
+        self.simulator_from(&self.fulls(), extra, exit)
+    }
+
+    /// A simulator whose runs stop three events after the anchor, as a run cut off by its boot cap does.
+    fn cut_simulator(&self, exit: i32) -> PathBuf {
+        let cut = self.path("cut");
+        fs::create_dir_all(&cut).unwrap();
+        let copied = fs::read_to_string(self.state().join("events.jsonl"))
+            .unwrap()
+            .lines()
+            .count();
+        for seed in SEEDS {
+            let full = fs::read_to_string(self.fulls().join(format!("{seed}.jsonl"))).unwrap();
+            let kept: String = full.split_inclusive('\n').take(copied + 3).collect();
+            fs::write(cut.join(format!("{seed}.jsonl")), kept).unwrap();
+        }
+        self.simulator_from(&cut, "", exit)
+    }
+
+    fn simulator_from(&self, journals: &Path, extra: &str, exit: i32) -> PathBuf {
         let path = self.path("sim");
         let script = format!(
             r#"#!/bin/sh
@@ -209,7 +229,7 @@ done
 cp '{fulls}'/"$seed".jsonl "$dir/events.jsonl"
 exit {exit}
 "#,
-            fulls = self.fulls().display(),
+            fulls = journals.display(),
         );
         fs::write(&path, script).unwrap();
         fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
@@ -685,4 +705,54 @@ fn bench_flags_that_judge_a_run_are_usage_errors_with_forecast() {
         assert_eq!(output.status.code(), Some(2), "{flag}");
         assert!(output.stdout.is_empty(), "{flag}");
     }
+}
+
+#[test]
+fn a_run_cut_off_by_the_boot_cap_is_a_censored_outcome() {
+    let fixture = Fixture::new(false);
+    let report = execute(&fixture.options(fixture.cut_simulator(3)), &Fleet::new()).unwrap();
+    assert_eq!(report.record.summary.runs, 3);
+    assert_eq!(report.record.summary.concluded, 0);
+    assert!(
+        report
+            .record
+            .runs
+            .iter()
+            .all(|run| run.outcome.status == Status::Censored)
+    );
+}
+
+#[test]
+fn an_exit_code_that_disagrees_with_the_journal_names_both() {
+    let fixture = Fixture::new(false);
+    for (name, cut, exit, message) in [
+        (
+            "censored exit, concluded journal",
+            false,
+            3,
+            "simulator exit 3 means censored, but the journal after the anchor is concluded",
+        ),
+        (
+            "clean exit, cut journal",
+            true,
+            0,
+            "simulator exit 0 means concluded, but the journal after the anchor is censored",
+        ),
+    ] {
+        let simulator = if cut {
+            fixture.cut_simulator(exit)
+        } else {
+            fixture.simulator("", exit)
+        };
+        let failed = execute(&fixture.options(simulator), &Fleet::new()).unwrap_err();
+        assert!(failed.to_string().contains(message), "{name}: {failed}");
+    }
+}
+
+#[test]
+fn a_suite_that_does_not_parse_fails_as_a_suite_error() {
+    let fixture = Fixture::new(false);
+    fs::write(fixture.path("suite.json"), "{").unwrap();
+    let failed = execute(&fixture.options(fixture.simulator("", 0)), &Fleet::new()).unwrap_err();
+    assert!(matches!(*failed.error, ForecastError::Bench(_)), "{failed}");
 }

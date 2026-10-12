@@ -907,3 +907,56 @@ fn the_time_of_the_compared_sessions_is_reported_without_failing() {
         assert_eq!(report(&outcome), want, "{run}");
     }
 }
+
+#[test]
+fn only_the_slowest_sessions_are_listed_and_the_rest_counted() {
+    let root = tempfile::tempdir().unwrap();
+    let fleet = Fleet::new();
+    let fake = Fake::new(root.path(), &fleet, |side, _| Behavior {
+        wall: if side == Side::Base { 1.0 } else { 5.0 },
+        ..journal("{}\n")
+    });
+    let seeds: Vec<u64> = (1..=12).collect();
+    let outcome = compare::run(&same_sessions(&seeds), &config(&fleet), &fake).unwrap();
+    let text = report(&outcome);
+    assert!(
+        text.contains("same: 12 sessions took more than 2x their base's time (informational)"),
+        "{text}"
+    );
+    assert_eq!(text.matches("5.0x").count(), 10, "{text}");
+    assert!(text.contains("  and 2 more\n"), "{text}");
+}
+
+#[test]
+fn a_digest_cache_keeps_the_most_recent_trees_only() {
+    let dir = tempfile::tempdir().unwrap();
+    for key in (0..10).map(|n| format!("key-{n}")) {
+        DigestCache::open(dir.path(), &key).unwrap();
+    }
+    let kept = fs::read_dir(dir.path().join("same")).unwrap().count();
+    assert_eq!(kept, 8);
+    assert!(dir.path().join("same/key-9").is_dir());
+}
+
+#[test]
+fn a_session_s_inputs_change_with_any_file_of_its_machine() {
+    use crate::suite::Machine;
+    use std::sync::Arc;
+    use togi_sim::MachineDefinition;
+    let with = |name: &str, sum: &str| {
+        let mut run = spec("s", Split::Dev, 1);
+        run.machine = Some(Arc::new(Machine {
+            name: name.to_owned(),
+            path: PathBuf::from(name),
+            definition: MachineDefinition::default(),
+            inputs: vec![(PathBuf::from(name), Some(sum.to_owned()))],
+        }));
+        super::digests::inputs(&run)
+    };
+    let plain = super::digests::inputs(&spec("s", Split::Dev, 1));
+    let base = with("m.json", "aa");
+    assert_ne!(base, plain);
+    assert_ne!(base, with("m.json", "bb"));
+    assert_ne!(base, with("n.json", "aa"));
+    assert_eq!(base, with("m.json", "aa"));
+}

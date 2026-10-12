@@ -415,3 +415,18 @@ fn a_missing_base_argument_is_a_usage_error() {
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
 }
+
+#[test]
+fn an_absolute_suite_path_is_read_from_the_same_file_in_both_trees() {
+    let trees = Trees::new(SUITE, SUITE);
+    let sim = trees.simulator("sim", &recorded(None), 0);
+    let mut options = trees.options(sim.clone(), sim);
+    options.suite = trees.path("base/suite.json");
+    let done = execute(&options, &Fleet::new()).unwrap();
+    assert!(!done.different());
+    assert!(
+        report(&done).contains("0 of 4 sessions differ"),
+        "{}",
+        report(&done)
+    );
+}
