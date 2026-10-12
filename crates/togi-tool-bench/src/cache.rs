@@ -118,7 +118,7 @@ impl RunCache {
 
 /// Creates `dir` and marks it used now. Another bench pruning its least recently used caches may remove `dir`
 /// between the two, so a directory found missing is created again, a few times at most.
-fn touch(dir: &Path) -> io::Result<()> {
+pub(crate) fn touch(dir: &Path) -> io::Result<()> {
     touch_with(dir, |dir| File::open(dir)?.set_modified(SystemTime::now()))
 }
 
