@@ -589,20 +589,44 @@ fn a_recovered_trial_keeps_its_place_in_the_cycle() {
 #[test]
 fn a_prior_recovery_does_not_mask_a_later_boot_crash() {
     let mut script = searching();
+    let first = script.plan();
+    let (first_intent, first_trial) = script.intent(&first);
+    script.start(&first_trial);
     script.boot = "next".to_owned();
-    let mut stray = crash("boot", None);
-    stray.stray = true;
-    script.append(stray.into(), &[]);
-    let plan = script.plan();
-    let (_, trial) = script.intent(&plan);
-    script.start(&trial);
-    assert!(script.model().snapshot().recover.is_none());
+    let crashed = script.append(crash("boot", Some(first_intent)).into(), &[]);
+    script.append(
+        end_payload(
+            &first_trial,
+            Outcome::Failure,
+            Some(togi_machine::Signal::Crash),
+        )
+        .into(),
+        &[crashed],
+    );
+    let second = script.next_trial();
+    let (_, second_trial) = script.intent(&second);
+    let model = script.model();
+    let snap = model.snapshot();
+    let trial = snap.trial.expect("the next trial is intended");
+    assert_eq!(trial.id, second_trial);
+    assert!(trial.started.is_none() && !trial.crashed);
+    let recover = snap.recover.expect("the crash is being recovered");
+    assert_eq!(recover.trial.as_ref().map(|t| &t.id), Some(&first_trial));
+    assert_eq!(recover.end.as_ref().map(|end| &end.id), Some(&first_trial));
+
     script.boot = "later".to_owned();
     script.append(warning("a later boot wrote this"), &[]);
     let model = script.model();
     let snap = model.snapshot();
-    assert!(snap.crashed_trial(), "the trial's boot was outlived");
-    assert!(snap.recover.is_none());
+    assert!(
+        snap.crashed_trial(),
+        "the intended trial's boot was outlived"
+    );
+    assert!(snap.trial.is_some_and(|trial| trial.started.is_none()));
+    assert!(
+        snap.recover.is_none(),
+        "the earlier recovery does not stand for this crash"
+    );
     assert!(snap.resting());
 }
 
