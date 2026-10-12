@@ -72,8 +72,10 @@ object_only! {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub model_check: Option<ModelCheck>,
         pub exit_code: i32,
-        /// Real seconds the simulator took; a cached record keeps the wall time of the run that made it.
-        pub wall_s: f64,
+        /// Real seconds the simulator took; a cached record keeps the wall time of the run that made it. A baseline
+        /// file leaves it out, and no comparison reads it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub wall_s: Option<f64>,
         pub sim_hours: f64,
         #[serde(deserialize_with = "Option::deserialize")]
         pub first_passed_cycle_h: Option<f64>,
@@ -103,6 +105,17 @@ object_only! {
 impl Record {
     pub(crate) fn key(&self) -> (&str, u64) {
         (&self.scenario, self.seed)
+    }
+
+    /// The record as a baseline file keeps it: without the model check, which every run of its machine repeats,
+    /// and without the wall time. Comparison and gates read neither.
+    #[must_use]
+    pub fn baseline(&self) -> Self {
+        Self {
+            model_check: None,
+            wall_s: None,
+            ..self.clone()
+        }
     }
 }
 
@@ -139,6 +152,16 @@ pub fn read(path: &Path, what: &'static str) -> Result<Vec<Record>, Error> {
 
 /// Writes one record per line, replacing `path` only once every record is written.
 pub fn write(path: &Path, records: &[Record]) -> Result<(), Error> {
+    write_lines(path, records.iter())
+}
+
+/// Writes the records as a baseline file keeps them ([`Record::baseline`]), replacing `path` only once every
+/// record is written.
+pub fn write_baseline(path: &Path, records: &[Record]) -> Result<(), Error> {
+    write_lines(path, records.iter().map(Record::baseline))
+}
+
+fn write_lines(path: &Path, records: impl Iterator<Item = impl Serialize>) -> Result<(), Error> {
     let failed = |source| Error::WriteFile {
         what: "write records",
         path: path.to_path_buf(),
@@ -152,7 +175,7 @@ pub fn write(path: &Path, records: &[Record]) -> Result<(), Error> {
     {
         let mut out = BufWriter::new(file.as_file_mut());
         for record in records {
-            serde_json::to_writer(&mut out, record).map_err(|error| failed(error.into()))?;
+            serde_json::to_writer(&mut out, &record).map_err(|error| failed(error.into()))?;
             out.write_all(b"\n").map_err(failed)?;
         }
         out.flush().map_err(failed)?;

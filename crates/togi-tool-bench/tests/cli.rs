@@ -92,6 +92,42 @@ fn a_baseline_of_the_same_runs_is_neutral() {
 }
 
 #[test]
+fn the_baseline_out_file_is_a_baseline_the_command_accepts_and_prints_the_same_against() {
+    let bench = Bench::new();
+    let mut first = bench_command(&bench);
+    with_sim(&mut first, &bench, 0);
+    let output = run(first
+        .arg("--out")
+        .arg(bench.path("out.jsonl"))
+        .arg("--baseline-out")
+        .arg(bench.path("slim.jsonl")));
+    assert!(output.status.success(), "{}", text(&output.stderr));
+    let slim = fs::read_to_string(bench.path("slim.jsonl")).unwrap();
+    assert_eq!(slim.lines().count(), 5);
+    assert!(
+        !slim.contains("wall_s") && !slim.contains("model_check"),
+        "{slim}"
+    );
+    let full = fs::read_to_string(bench.path("out.jsonl")).unwrap();
+    assert!(full.contains("wall_s"), "{full}");
+
+    let against = |file: &str| {
+        let mut command = bench_command(&bench);
+        with_sim(&mut command, &bench, 0);
+        let output = run(command.arg("--baseline").arg(bench.path(file)));
+        assert!(output.status.success(), "{file}: {}", text(&output.stderr));
+        text(&output.stdout)
+            .lines()
+            .filter(|line| !line.starts_with("harness_wall_s="))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let against_full = against("out.jsonl");
+    assert!(against_full.contains("verdict: NEUTRAL"), "{against_full}");
+    assert_eq!(against("slim.jsonl"), against_full);
+}
+
+#[test]
 fn kept_runs_are_named_on_stderr() {
     let bench = Bench::new();
     let mut command = bench_command(&bench);
