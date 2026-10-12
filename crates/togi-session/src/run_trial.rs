@@ -1,6 +1,7 @@
 //! Running one trial: the profile it needs, the wait a struggling backend is owed, the trial itself and the end the
 //! evidence adds up to.
 
+use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 use std::time::Duration;
 
 use togi_journal::{
@@ -354,7 +355,15 @@ impl Session {
         token: &CancellationToken,
     ) -> Step<Waited> {
         let mut report = Journaled::new(&mut self.appender, &trial.id, trial.start, token);
-        let waited = running.wait(token, &mut report);
+        let waited = catch_unwind(AssertUnwindSafe(|| running.wait(token, &mut report)));
+        let waited = match waited {
+            Ok(waited) => waited,
+            Err(payload) => {
+                drop(report);
+                self.reap(running);
+                resume_unwind(payload);
+            }
+        };
         let reported = report.into_failure();
         self.appender.watch_trial(None);
         let stopping = running.stop();

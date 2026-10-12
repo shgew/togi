@@ -123,6 +123,9 @@ pub enum SessionError {
         #[source]
         source: io::Error,
     },
+    /// The run panicked; its cleanup ran before the panic was handed back.
+    #[error("panic: {0}")]
+    Panicked(String),
     /// A profile the run built is one it may not put on the machine, or not one of this machine.
     #[error("put a profile on the machine: {0}")]
     Profile(#[source] ProfileFailure),

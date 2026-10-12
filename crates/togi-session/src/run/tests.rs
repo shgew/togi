@@ -322,3 +322,105 @@ fn a_tuner_without_a_next_action_ends_the_run_with_a_typed_error() {
     assert!(ended.emergency.is_none());
     assert!(bench.sim.violations().is_empty());
 }
+
+struct PanicsWhileWaiting {
+    inner: Box<dyn Trials>,
+    stopped: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+struct PanickingRunning {
+    inner: Box<dyn Running>,
+    stopped: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl Trials for PanicsWhileWaiting {
+    fn sweep(&mut self, cancel: &CancellationToken) -> Result<Swept, Error> {
+        self.inner.sweep(cancel)
+    }
+
+    fn start(
+        &mut self,
+        cancel: &CancellationToken,
+        spec: TrialSpec,
+        stopped: Stopped,
+    ) -> Result<Box<dyn Running>, Partial<Option<Stopped>>> {
+        Ok(Box::new(PanickingRunning {
+            inner: self.inner.start(cancel, spec, stopped)?,
+            stopped: self.stopped.clone(),
+        }))
+    }
+
+    fn ended(&mut self, id: &str) -> Result<(), Error> {
+        self.inner.ended(id)
+    }
+
+    fn samples<'a>(
+        &'a self,
+        id: &'a str,
+    ) -> Box<dyn Iterator<Item = togi_machine::TrialConditions> + 'a> {
+        self.inner.samples(id)
+    }
+}
+
+impl Running for PanickingRunning {
+    fn started(&self) -> togi_machine::Started {
+        self.inner.started()
+    }
+
+    fn wait(
+        &mut self,
+        _: &CancellationToken,
+        _: &mut dyn togi_machine::Reporter,
+    ) -> Result<togi_machine::TrialResult, Partial<togi_machine::TrialResult>> {
+        panic!("a bug while the trial runs");
+    }
+
+    fn stop(self: Box<Self>) -> Result<Stopped, Error> {
+        self.stopped
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        self.inner.stop()
+    }
+}
+
+#[test]
+fn a_panic_while_a_trial_runs_joins_its_teardown_and_restores_the_offsets_before_it_is_handed_back()
+{
+    let bench = Bench::defined(&MachineDefinition {
+        cores: 2,
+        bios: Some(vec![-10, -10]),
+        ..MachineDefinition::default()
+    });
+    let mut input = bench.input();
+    let joined = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    input.machine.trials = Box::new(PanicsWhileWaiting {
+        inner: bench.sim.seams().trials,
+        stopped: joined.clone(),
+    });
+    let mut ended = run(input);
+    assert!(joined.load(std::sync::atomic::Ordering::SeqCst));
+    let panic = ended.panic.take().expect("the panic is handed back");
+    assert_eq!(panic.message(), "a bug while the trial runs");
+    assert!(matches!(
+        ended.errors.as_slice(),
+        [SessionError::Panicked(message)] if message == "a bug while the trial runs"
+    ));
+    let mut smu = bench.sim.seams().smu;
+    for id in 0..2 {
+        assert_eq!(
+            smu.offset(core(id)).unwrap().0,
+            -10,
+            "core {id} is back at the boot offset"
+        );
+    }
+    assert!(
+        ended
+            .journal
+            .events()
+            .iter()
+            .any(|event| event.kind() == togi_journal::EventKind::ProfileRestored)
+    );
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| panic.resume())).is_err(),
+        "resuming propagates the original panic"
+    );
+}

@@ -199,6 +199,7 @@ impl Session {
             errors,
             emergency,
             capsule,
+            panic: None,
             journal: self.appender.into_journal(),
         }
     }

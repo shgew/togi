@@ -40,5 +40,5 @@ pub use prepare::{PrepareError, Prepared, prepare};
 pub use publication::PublicationPolicy;
 pub use resume::{Divergence, DocumentDivergence, ResumeCapsule};
 pub use run::run;
-pub use session::{ConfigSource, Ended, Prompt, PromptError, RunInput, Stop, StopPolicy};
+pub use session::{ConfigSource, Ended, Panic, Prompt, PromptError, RunInput, Stop, StopPolicy};
 pub use write::{ConstraintRefusal, ProfileFailure, Refused, WriteFailure};

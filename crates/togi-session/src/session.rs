@@ -131,6 +131,43 @@ pub struct Ended {
     /// journal failure, which leaves the journal's last state unproven. A crashed run keeps its capsule: the folds
     /// follow every append, whatever was published.
     pub capsule: Option<ResumeCapsule>,
+    /// The panic that ended the run, once the cleanup after it finished: the caller closes what it holds and then
+    /// resumes it, so the panic still propagates.
+    pub panic: Option<Panic>,
+}
+
+/// The payload of a panic that unwound out of a run.
+pub struct Panic(Box<dyn std::any::Any + Send>);
+
+impl Panic {
+    pub(crate) fn new(payload: Box<dyn std::any::Any + Send>) -> Self {
+        Self(payload)
+    }
+
+    /// The panic's message, when it carries a string.
+    #[must_use]
+    pub fn message(&self) -> &str {
+        message_of(&*self.0)
+    }
+
+    /// Propagates the original panic.
+    pub fn resume(self) -> ! {
+        std::panic::resume_unwind(self.0)
+    }
+}
+
+impl std::fmt::Debug for Panic {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("Panic").field(&self.message()).finish()
+    }
+}
+
+pub(crate) fn message_of(payload: &(dyn std::any::Any + Send)) -> &str {
+    payload
+        .downcast_ref::<&str>()
+        .copied()
+        .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+        .unwrap_or("non-string panic payload")
 }
 
 impl Ended {
@@ -241,6 +278,7 @@ impl Session {
                 emergency: None,
                 journal,
                 capsule: None,
+                panic: None,
             })
         };
         if let Some(refusal) = refusal(&build, &journal) {
@@ -256,6 +294,7 @@ impl Session {
                 emergency: None,
                 journal,
                 capsule: None,
+                panic: None,
             }));
         }
         let handoff = match bootloader.map(BootHandoff::read).transpose() {
