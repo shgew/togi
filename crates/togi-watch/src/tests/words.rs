@@ -9,10 +9,10 @@ use togi_machine::{CoreId, Regime, Signal};
 
 use super::kit::*;
 use crate::words::{
-    Brief, History, Phrase, Tag, Tagging, age, carried_groups, core_ids, core_list, cores_text,
-    decision_line, decision_phrase, failure_line, hunt_end_phrase, kind_words, lateness,
-    load_words, noun, on_cores, phase_line, phase_word, plural, regime_words, signal_words,
-    solo_limit, tag_word, trial_end_tag, words, workload_display,
+    Brief, History, Phrase, Tag, Tagging, Tone, age, carried_groups, core_ids, core_list,
+    cores_text, decision_line, decision_phrase, failure_line, hunt_end_phrase, kind_words,
+    lateness, load_words, noun, on_cores, phase_line, phase_word, plural, regime_words,
+    signal_words, solo_limit, tag_word, trial_end_tag, words, workload_display,
 };
 use togi_journal::{
     CheckingChain, CheckingStep, DeadEnd, DeadEndCondition, DeepeningRound, HuntSkipped, RoundEvent,
@@ -129,44 +129,54 @@ fn each_decision_has_its_tag_tone_and_phrases() {
         (
             Decision::StepDeeper,
             Tag::Step,
+            Tone::Plain,
             "core 03 passed -10, next -15",
             "core 03 next -15",
         ),
         (
             Decision::CheckSoloLimit,
             Tag::Confirm,
+            Tone::Plain,
             "core 03 confirming -15 as its solo limit",
             "core 03 confirms -15",
         ),
         (
             Decision::Deepen,
             Tag::Room,
+            Tone::Good,
             "core 03 -10 → -15",
             "core 03 deepens -10 → -15",
         ),
         (
             Decision::Yield,
             Tag::Room,
+            Tone::Plain,
             "core 03 -10 → -15 so others go deeper",
             "core 03 yields -10 → -15",
         ),
         (
             Decision::Hold,
             Tag::Hold,
+            Tone::Warn,
             "core 03 holds at -10",
             "core 03 holds at -10",
         ),
         (
             Decision::Backoff,
             Tag::Backoff,
+            Tone::Warn,
             "core 03 -10 → -15",
             "core 03 -10 → -15",
         ),
     ];
-    for (kind, tag, line, phrase) in rows {
+    for (kind, tag, tone, line, phrase) in rows {
         let d = decision(kind, -10, -15);
         let said = decision_line(&d);
-        assert_eq!((said.tag, said.text.as_str()), (tag, line), "{kind}");
+        assert_eq!(
+            (said.tag, said.tone, said.text.as_str()),
+            (tag, tone, line),
+            "{kind}"
+        );
         assert_eq!(decision_phrase(&d, None), phrase, "{kind}");
         let payload = Payload::from(d);
         let table = words(EventKind::TunerDecision);
@@ -181,7 +191,11 @@ fn each_decision_has_its_tag_tone_and_phrases() {
         let Brief::Of(of) = table.compact else {
             panic!("a decision may have a compact outcome");
         };
-        assert_eq!(of(&payload).is_some(), kind == Decision::Backoff, "{kind}");
+        assert_eq!(
+            of(&payload).as_deref(),
+            (kind == Decision::Backoff).then_some("backs off"),
+            "{kind}"
+        );
     }
     let named = decision(Decision::Backoff, -30, -16);
     assert_eq!(
@@ -631,7 +645,14 @@ fn a_phrase_applies_only_to_its_own_kind() {
         let Tagging::By(of) = words(kind).tag else {
             panic!("{kind} is tagged by its payload");
         };
-        let _ = of(&other);
+        let fallback = match kind {
+            EventKind::TrialEnd => Tag::Unclear,
+            EventKind::Failure => Tag::Fail,
+            EventKind::TunerDecision => Tag::Backoff,
+            EventKind::HuntGroup => Tag::Group,
+            _ => Tag::Limit,
+        };
+        assert_eq!(of(&other), fallback, "{kind}");
     }
 }
 
@@ -691,4 +712,93 @@ fn an_idle_failure_is_worded_but_a_crash_is_not() {
     let mut unnamed = failure(Signal::Stall, Some("t1"));
     unnamed.attribution = togi_journal::Attribution::Attributed;
     assert!(failure_line(&unnamed).is_none(), "attributed to no core");
+}
+
+#[test]
+fn the_log_tags_each_kind_by_its_word() {
+    let mut known = failure(Signal::ComputationError, None);
+    known.known_failure = Some(seq(1));
+    let round: Payload = DeepeningRound {
+        round: nz(1),
+        event: RoundEvent::Start,
+        base: offsets(&[]),
+        base_seq: None,
+        target: offsets(&[]),
+        profile: offsets(&[]),
+        cores: set(&[]),
+        ranking: Vec::new(),
+        trials: None,
+        trial_s: None,
+        passed: false,
+        reason: None,
+    }
+    .into();
+    let step: Payload = CheckingStep {
+        cycle: nz(1),
+        step: nz(1),
+        profile: offsets(&[]),
+    }
+    .into();
+    let dead_end: Payload = DeadEnd {
+        condition: DeadEndCondition::Smu,
+        core: None,
+        detail: String::new(),
+        action: None,
+    }
+    .into();
+    let shutdown: Payload = togi_journal::Shutdown {
+        reason: togi_journal::ShutdownReason::Signal,
+        kernel_cursor: None,
+        kernel_error: None,
+        cycles: None,
+    }
+    .into();
+    let trial = togi_journal::TrialId::from("t".to_owned());
+    let mut probe = hunt_group(1, 2, &[0]);
+    probe.probe = Some(togi_journal::Member {
+        core: core(0),
+        offset: off(-1),
+    });
+    let rows: Vec<(Payload, &str)> = vec![
+        (known.into(), "skip"),
+        (failure(Signal::Stall, None).into(), "fail"),
+        (hunt_start(1, &[0]).into(), "hunt"),
+        (hunt_end(1, HuntOutcome::Culprit, &[0]).into(), "hunt"),
+        (
+            HuntSkipped {
+                failure: seq(1),
+                reason: String::new(),
+            }
+            .into(),
+            "hunt",
+        ),
+        (hunt_group(1, 1, &[0]).into(), "group"),
+        (probe.into(), "probe"),
+        (combination(1, 1, &[(0, -1)], false).into(), "combo"),
+        (round, "round"),
+        (step, "step"),
+        (cycle(1, togi_journal::CycleEvent::Start).into(), "cycle"),
+        (dead_end, "stop"),
+        (shutdown, "stop"),
+        (session_start(&[(0, 0)]), "start"),
+        (crash("boot", None).into(), "crash"),
+        (end_payload(&trial, Pass, None).into(), "pass"),
+        (
+            end_payload(&trial, Failure, Some(Signal::Stall)).into(),
+            "fail",
+        ),
+        (
+            end_payload(&trial, Failure, Some(Signal::Crash)).into(),
+            "crash",
+        ),
+        (end_payload(&trial, Inconclusive, None).into(), "unclear"),
+        (decision(Decision::Backoff, -10, -9).into(), "backoff"),
+        (decision(Decision::StepDeeper, -10, -15).into(), "step"),
+        (decision(Decision::Hold, -10, -10).into(), "hold"),
+        (warning("x"), "session warning"),
+        (smu_intent(0, -1), "smu intent"),
+    ];
+    for (payload, word) in rows {
+        assert_eq!(tag_word(&payload), word, "{}", payload.kind());
+    }
 }
