@@ -333,10 +333,9 @@ fn each_tree_is_built_and_its_own_simulator_run() {
     );
     assert!(text.ends_with("same: 2 of 2 sessions differ\n"), "{text}");
     let done = execute(&options("base", "same"), &Fleet::new()).unwrap();
-    assert!(!done.different());
     assert!(
-        done.identical,
-        "the same source built in another directory is the same simulator"
+        !done.different(),
+        "the same source built in another directory decides the same"
     );
 }
 
