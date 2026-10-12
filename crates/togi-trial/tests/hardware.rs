@@ -1488,4 +1488,12 @@ mod hardware {
             }
         }
     }
+
+    #[test]
+    fn the_scope_probe_creates_a_confined_scope_on_the_real_manager() {
+        let staged = Staged::new();
+        let runner = runner(&staged.tree, Helper::new(&staged.tree, "owner"));
+        let detail = runner.probe_scope().unwrap();
+        assert_eq!(detail, "scope confined to cpu 0 created");
+    }
 }
