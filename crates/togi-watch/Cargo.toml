@@ -5,7 +5,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 publish.workspace = true
-description = "The togi watch dashboard: the incremental journal model, history, words and the frame seam"
+description = "The togi watch dashboard: the incremental journal model, history, words and the frames"
 
 [dependencies]
 jiff.workspace = true
@@ -17,13 +17,21 @@ togi-machine.workspace = true
 togi-render.workspace = true
 togi-tuner.workspace = true
 tokio = { workspace = true, features = ["macros", "net", "rt", "signal", "sync", "time"] }
+unicode-width.workspace = true
 
 [dev-dependencies]
+criterion.workspace = true
+insta.workspace = true
 rustix = { workspace = true, features = ["event", "fs", "process", "pty", "termios"] }
 serde_json.workspace = true
 tempfile.workspace = true
 togi-config.workspace = true
+togi-watchtest.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
+
+[[bench]]
+name = "frames"
+harness = false
 
 [lints]
 workspace = true

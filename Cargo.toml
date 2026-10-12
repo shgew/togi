@@ -14,6 +14,7 @@ publish = false
 clap = { version = "4", default-features = false, features = ["std", "derive", "help", "usage", "error-context"] }
 clap_complete = { version = "4", default-features = false }
 clap_complete_nushell = { version = "4", default-features = false }
+criterion = { version = "0.7", default-features = false, features = ["cargo_bench_support"] }
 flate2 = "1"
 getrandom = { version = "0.4", features = ["std"] }
 insta = { version = "1", default-features = false }
@@ -59,8 +60,10 @@ togi-trialfiles = { path = "crates/togi-trialfiles", version = "0.0.0" }
 togi-tuner = { path = "crates/togi-tuner", version = "0.0.0" }
 togi-tuningboot = { path = "crates/togi-tuningboot", version = "0.0.0" }
 togi-version = { path = "crates/togi-version", version = "0.0.0" }
+togi-watchtest = { path = "crates/togi-watchtest", version = "0.0.0" }
 togi-ycruncher = { path = "crates/togi-ycruncher", version = "0.0.0" }
 tokio = { version = "1", default-features = false }
+unicode-width = "0.2"
 
 [workspace.lints.rust]
 unsafe_code = "deny"

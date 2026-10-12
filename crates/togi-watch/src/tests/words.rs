@@ -14,10 +14,12 @@ use crate::words::{
     lateness, load_words, noun, on_cores, phase_line, phase_word, plural, regime_words,
     signal_words, solo_limit, tag_word, trial_end_tag, words, workload_display,
 };
+use crate::words::{decision_brief, decision_detail};
 use togi_journal::{
     CheckingChain, CheckingStep, DeadEnd, DeadEndCondition, DeepeningRound, HuntSkipped, RoundEvent,
 };
 use togi_machine::CcdId;
+use togi_tuner::DecisionPayload;
 
 /// The kinds with no words of their own: not in the history, in the log under their kind name, in no story.
 const SILENT: &[EventKind] = &[
@@ -179,6 +181,7 @@ fn each_decision_has_its_tag_tone_and_phrases() {
         );
         assert_eq!(decision_phrase(&d, None), phrase, "{kind}");
         let payload = Payload::from(d);
+        assert_decision_words(&payload);
         let table = words(EventKind::TunerDecision);
         let Tagging::By(of) = table.tag else {
             panic!("a decision is tagged by its payload");
@@ -395,14 +398,51 @@ fn phrase(payload: &Payload) -> Option<String> {
     let Phrase::Of(of) = words(payload.kind()).detailed else {
         panic!("{} has no phrase of its own", payload.kind());
     };
-    of(payload)
+    let said = of(payload);
+    assert_decision_words(payload);
+    said
 }
 
 fn compact(payload: &Payload) -> Option<String> {
     let Brief::Of(of) = words(payload.kind()).compact else {
         panic!("{} has no compact words", payload.kind());
     };
-    of(payload)
+    let said = of(payload);
+    assert_decision_words(payload);
+    said
+}
+
+/// The words of a forecast decision are the table's words for the event it would be.
+fn assert_decision_words(payload: &Payload) {
+    let decision = match payload.clone() {
+        Payload::Failure(d) => DecisionPayload::from(d),
+        Payload::TunerWarning(d) => d.into(),
+        Payload::DeadEnd(d) => d.into(),
+        Payload::CorePhase(d) => d.into(),
+        Payload::TunerDecision(d) => d.into(),
+        Payload::ProfileChange(d) => d.into(),
+        Payload::CheckingCycle(d) => d.into(),
+        Payload::CheckingStep(d) => d.into(),
+        Payload::CheckingChain(d) => d.into(),
+        Payload::HuntStart(d) => d.into(),
+        Payload::HuntGroup(d) => d.into(),
+        Payload::HuntEnd(d) => d.into(),
+        Payload::HuntSkipped(d) => d.into(),
+        Payload::Combination(d) => d.into(),
+        Payload::DeepeningRound(d) => d.into(),
+        _ => return,
+    };
+    let table = words(payload.kind());
+    let detailed = match table.detailed {
+        Phrase::Of(of) => of(payload),
+        Phrase::Silent | Phrase::Contextual => None,
+    };
+    let brief = match table.compact {
+        Brief::Of(of) => of(payload),
+        Brief::Silent => None,
+    };
+    assert_eq!(decision_detail(&decision), detailed, "{}", payload.kind());
+    assert_eq!(decision_brief(&decision), brief, "{}", payload.kind());
 }
 
 fn history_line(payload: &Payload) -> Option<crate::words::Line> {

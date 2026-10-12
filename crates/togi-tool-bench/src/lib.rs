@@ -15,8 +15,8 @@
 //!    input file, so an unchanged run is not simulated again.
 //!
 //! Records, the summary, the comparison and the cache are this crate's own formats: JSON Lines of [`Record`],
-//! plain text reports, and one JSON file per cached run. The gates of a ruleset, `--same`, `--smoke` and
-//! `--forecast` are separate modules of later changes; the suite keeps the gate object they read.
+//! plain text reports, and one JSON file per cached run. The gate of a ruleset is the `gate` object of the suite
+//! file, typed and judged by [`gate`]; `--same`, `--smoke` and `--forecast` are separate modules of later changes.
 //!
 //! ```
 //! use togi_tool_bench::{Selection, Suite};
@@ -34,6 +34,7 @@
 pub mod cache;
 pub mod compare;
 mod error;
+pub mod gate;
 mod git;
 mod metrics;
 mod pool;
@@ -46,7 +47,7 @@ mod stats;
 mod suite;
 pub mod summary;
 
-pub use error::{Error, RunError};
+pub use error::{Error, RunError, Unrunnable};
 pub use git::{Tree, inspect};
 pub use metrics::{Measured, measure};
 pub use process::Fleet;
