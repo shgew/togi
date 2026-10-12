@@ -9,8 +9,7 @@ use togi_journal::{Event, Seq};
 use togi_machine::CancellationToken;
 use togi_render::{OutputFacts, Renderer, Style};
 use togi_session::{ConfigSource, Stop, StopPolicy};
-use togi_sim::{RunSettings, Simulator};
-use togi_simrun::{Finished, Persistence, Replay, SimInput, SimOutcome};
+use togi_simrun::{Finished, Persistence, Replay, ResumeError, SimInput, SimOutcome};
 use togi_tool_trialfacts::Extracts;
 
 use crate::log::Log;
@@ -37,8 +36,10 @@ enum Error {
     Machine(#[from] machine::LoadError),
     #[error("create the state directory: {0}")]
     TempDir(#[source] io::Error),
-    #[error("read the state directory's history: {0}")]
-    History(#[from] togi_simrun::HistoryError),
+    #[error("read the state directory's configuration: {0}")]
+    Config(#[from] togi_simrun::HistoryError),
+    #[error("resume the simulated machine: {0}")]
+    Resume(#[from] ResumeError),
     #[error("watch for signals: {0}")]
     Signals(#[source] io::Error),
     #[error(transparent)]
@@ -61,23 +62,15 @@ fn simulate(args: SessionArgs, log: &mut Log) -> Result<u8, Error> {
         log.announce(&format!("sim: state directory {}", dir.display()));
         dir
     };
-    let history = togi_simrun::history(&dir)?;
     let config = togi_simrun::recorded_config(&dir, Config::default())?;
-    let simulator = Simulator::new(
-        model,
-        RunSettings {
-            seed: args.seed,
-            history,
-            replay,
-        },
-    );
+    let persistence = Persistence::Files(dir.clone());
+    let simulator = togi_simrun::resume_simulator(&persistence, model, args.seed, replay)?;
     let renderer = Renderer::new(OutputFacts::detect(
         &io::stderr(),
         env::var_os("NO_COLOR").as_deref(),
         env::var_os("JOURNAL_STREAM").as_deref(),
     ));
     let zone = TimeZone::system();
-    let persistence = Persistence::Files(dir.clone());
     let outcome = togi_simrun::simulate(SimInput {
         config,
         source: ConfigSource {
