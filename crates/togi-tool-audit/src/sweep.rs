@@ -7,7 +7,10 @@ use std::num::NonZeroU64;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+use rustix::process::Pid;
 use serde_json::{Map, Value};
+
+use crate::interrupt::Interrupt;
 
 #[derive(Debug, thiserror::Error)]
 pub enum SweepError {
@@ -75,6 +78,8 @@ pub struct Sweep<'a> {
     /// The directory the sweep's evidence directory is made in and kept; `None` keeps it in a temporary directory
     /// that [`Evidence::scratch`] removes.
     pub keep: Option<&'a Path>,
+    /// Forwards a signal to the bench while it runs.
+    pub interrupt: &'a Interrupt,
 }
 
 /// What a finished sweep retained.
@@ -100,10 +105,20 @@ pub enum RunError {
     },
     #[error("locate the bench: {0}")]
     Locate(String),
-    #[error("bench sweep (evidence {}): {status}", dir.display())]
-    Bench { dir: PathBuf, status: String },
-    #[error("find the retained bench root in {}: got {found} roots", dir.display())]
-    Roots { dir: PathBuf, found: usize },
+    #[error("bench sweep ({}): {status}", evidence(.dir))]
+    Bench {
+        dir: Option<PathBuf>,
+        status: String,
+    },
+    #[error("find the retained bench root ({}): got {found} roots", evidence(.dir))]
+    Roots { dir: Option<PathBuf>, found: usize },
+}
+
+fn evidence(dir: &Option<PathBuf>) -> String {
+    match dir {
+        Some(dir) => format!("evidence {}", dir.display()),
+        None => "evidence removed; rerun with --keep DIR to retain it".into(),
+    }
 }
 
 const BENCH: &str = "togi-tool-bench";
@@ -175,10 +190,10 @@ impl Sweep<'_> {
         if let Some(sim) = self.sim {
             command.arg("--sim").arg(sim);
         }
-        let status = tee(&mut command, log).map_err(io("run the bench", &bench))?;
+        let status = tee(&mut command, log, self.interrupt).map_err(io("run the bench", &bench))?;
         if !status.success() {
             return Err(RunError::Bench {
-                dir,
+                dir: self.keep.map(|_| dir),
                 status: status.to_string(),
             });
         }
@@ -191,7 +206,7 @@ impl Sweep<'_> {
         }
         let [root] = <[PathBuf; 1]>::try_from(roots).map_err(|roots| RunError::Roots {
             found: roots.len(),
-            dir: dir.clone(),
+            dir: self.keep.map(|_| dir.clone()),
         })?;
         let _ = writeln!(
             std::io::stderr(),
@@ -236,12 +251,18 @@ impl Write for Tee {
     }
 }
 
-/// Runs `command`, copying its stdout and stderr to this process's stderr and to `log`.
+/// Runs `command`, copying its stdout and stderr to this process's stderr and to `log`, while `interrupt` forwards
+/// signals to it.
 #[expect(
     clippy::disallowed_methods,
     reason = "the audit sweep runs the bench as a subprocess"
 )]
-fn tee(command: &mut Command, log: fs::File) -> std::io::Result<std::process::ExitStatus> {
+fn tee(
+    command: &mut Command,
+    log: fs::File,
+    interrupt: &Interrupt,
+) -> std::io::Result<std::process::ExitStatus> {
+    let second = log.try_clone()?;
     let mut child = command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -249,7 +270,7 @@ fn tee(command: &mut Command, log: fs::File) -> std::io::Result<std::process::Ex
         .spawn()?;
     let out = child.stdout.take();
     let err = child.stderr.take();
-    let second = log.try_clone()?;
+    interrupt.bench_started(Pid::from_child(&child));
     std::thread::scope(|scope| {
         if let Some(mut pipe) = out {
             scope.spawn(move || std::io::copy(&mut pipe, &mut Tee(log)));
@@ -258,5 +279,6 @@ fn tee(command: &mut Command, log: fs::File) -> std::io::Result<std::process::Ex
             scope.spawn(move || std::io::copy(&mut pipe, &mut Tee(second)));
         }
     });
+    interrupt.bench_exited();
     child.wait()
 }

@@ -13,9 +13,11 @@ mod fixtures;
 use std::fs;
 use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Child, Command, Output, Stdio};
+use std::time::{Duration, Instant};
 
 use fixtures::{applied, header, phase, stop, write_state_dir};
+use rustix::process::{Pid, Signal, kill_process, test_kill_process};
 use togi_journal::Event;
 
 const RECORDS: &str = r#"{"scenario":"s","seed":1,"split":"dev","status":"concluded","wall_s":1.0}
@@ -288,6 +290,173 @@ fn a_sweep_without_keep_leaves_nothing_behind() {
     );
     assert_eq!(fs::read_dir(&scratch).unwrap().count(), 0);
 
-    assert_eq!(sweep(&fake.bench(1)).status.code(), Some(1));
+    let failed = sweep(&fake.bench(1));
+    assert_eq!(failed.status.code(), Some(1));
+    let stderr = text(&failed.stderr);
+    assert!(
+        stderr.contains("bench sweep (evidence removed; rerun with --keep DIR to retain it)"),
+        "{stderr}"
+    );
+    let failure = stderr
+        .lines()
+        .find(|line| line.contains("bench sweep"))
+        .unwrap();
+    assert!(!failure.contains("togi-audit-"), "{failure}");
     assert_eq!(fs::read_dir(&scratch).unwrap().count(), 0);
+}
+
+#[test]
+fn a_sweep_passes_the_simulator_to_the_bench() {
+    let fake = Fake::new();
+    let bench = fake.bench(0);
+    run(fake.sweep(&bench).args(["--sim", "/fake/sim"]));
+    let args = fs::read_to_string(fake.path("args.txt")).unwrap();
+    assert!(args.trim_end().ends_with("--sim /fake/sim"), "{args}");
+}
+
+#[test]
+fn a_missing_suite_file_fails_before_running_the_bench() {
+    let fake = Fake::new();
+    let bench = fake.bench(0);
+    let output = run(command()
+        .arg("--bench")
+        .arg(&bench)
+        .arg("--suite")
+        .arg(fake.path("absent.json")));
+    assert_eq!(output.status.code(), Some(1));
+    assert!(text(&output.stdout).is_empty());
+    assert!(text(&output.stderr).contains("read suite"));
+    assert!(!fake.path("args.txt").exists());
+}
+
+#[test]
+fn missing_run_records_fail_with_the_open_error() {
+    let fake = Fake::new();
+    let output = run(command()
+        .arg("--records")
+        .arg(fake.path("absent.jsonl"))
+        .arg("--root")
+        .arg(fake.path("root")));
+    assert_eq!(output.status.code(), Some(1));
+    assert!(text(&output.stdout).is_empty());
+    let stderr = text(&output.stderr);
+    assert!(stderr.contains("open run records"), "{stderr}");
+    assert!(stderr.contains("absent.jsonl"), "{stderr}");
+}
+
+#[test]
+fn a_run_directory_is_found_whatever_dots_its_root_is_spelled_with() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("bench-1");
+    let work = tmp.path().join("work");
+    fs::create_dir(&work).unwrap();
+    write_state_dir(&root.join("s/dev-2"), &[header(), phase(2, 0, None)]);
+    fs::write(
+        tmp.path().join("records.jsonl"),
+        r#"{"scenario":"s","seed":2,"split":"dev","status":"concluded","wall_s":1.0}"#,
+    )
+    .unwrap();
+    let output = run(command()
+        .current_dir(&work)
+        .args(["--records", "../records.jsonl", "--root", "../bench-1"])
+        .arg(root.join("s/dev-2")));
+    assert_eq!(output.status.code(), Some(1));
+    let found = brief(&text(&output.stdout));
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(
+        found[0].starts_with("\"s\" 2 journal=\"live\" seq=2 \"termination\": "),
+        "{found:?}"
+    );
+}
+
+fn wait_for(what: &str, mut ready: impl FnMut() -> bool) {
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while !ready() {
+        assert!(Instant::now() < deadline, "timed out waiting for {what}");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+fn exit_of(child: &mut Child) -> Output {
+    wait_for("the audit to exit", || child.try_wait().unwrap().is_some());
+    let mut stderr = String::new();
+    std::io::Read::read_to_string(child.stderr.as_mut().unwrap(), &mut stderr).unwrap();
+    Output {
+        status: child.try_wait().unwrap().unwrap(),
+        stdout: Vec::new(),
+        stderr: stderr.into_bytes(),
+    }
+}
+
+#[test]
+fn a_signal_stops_the_bench_and_removes_the_scratch_without_blocking_its_signals() {
+    for (signal, keep) in [
+        (Signal::TERM, false),
+        (Signal::INT, false),
+        (Signal::HUP, false),
+        (Signal::TERM, true),
+    ] {
+        let fake = Fake::new();
+        let scratch = fake.path("tmp");
+        fs::create_dir(&scratch).unwrap();
+        let pids = fake.path("pids.txt");
+        let bench = fake.path("bench");
+        fs::write(
+            &bench,
+            format!(
+                "#!/bin/sh\nif [ -r /proc/$$/status ]; then while read -r line; do case $line in SigBlk*) echo \"$line\";; esac; done < /proc/$$/status > '{sigblk}'; fi\necho $$ >> '{pids}'\nexec sleep 60\n",
+                sigblk = fake.path("sigblk").display(),
+                pids = pids.display(),
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(&bench, fs::Permissions::from_mode(0o755)).unwrap();
+        fs::write(
+            fake.path("suite.json"),
+            r#"{"scenarios":[{"name":"s","machine":"m.json"}]}"#,
+        )
+        .unwrap();
+        let mut audit = command();
+        audit
+            .env("TMPDIR", &scratch)
+            .arg("--bench")
+            .arg(&bench)
+            .arg("--suite")
+            .arg(fake.path("suite.json"))
+            .args(["--seeds", "2"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped());
+        if keep {
+            audit.arg("--keep").arg(fake.path("evidence"));
+        }
+        let mut child = audit.spawn().unwrap();
+        wait_for("the bench to start", || {
+            fs::read_to_string(&pids).is_ok_and(|started| started.ends_with('\n'))
+        });
+        kill_process(
+            Pid::from_raw(i32::try_from(child.id()).unwrap()).unwrap(),
+            signal,
+        )
+        .unwrap();
+        let output = exit_of(&mut child);
+        let stderr = text(&output.stderr);
+        assert_eq!(output.status.code(), Some(1), "{signal:?}: {stderr}");
+        assert!(stderr.contains("interrupted"), "{stderr}");
+        let pid =
+            Pid::from_raw(fs::read_to_string(&pids).unwrap().trim().parse().unwrap()).unwrap();
+        assert!(
+            test_kill_process(pid).is_err(),
+            "the bench is still running"
+        );
+        if cfg!(target_os = "linux") {
+            let blocked = fs::read_to_string(fake.path("sigblk")).unwrap();
+            assert_eq!(blocked.trim(), "SigBlk:\t0000000000000000");
+        }
+        assert_eq!(fs::read_dir(&scratch).unwrap().count(), 0, "{signal:?}");
+        assert_eq!(
+            fake.path("evidence").exists(),
+            keep,
+            "the kept evidence stays: {signal:?}"
+        );
+    }
 }

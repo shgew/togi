@@ -3,7 +3,7 @@ source: crates/togi-tool-audit/tests/command.rs
 expression: brief(&text(&output.stdout))
 ---
 [
-    "\"s\" 2 journal=- seq=- \"termination\": \"bench run ended with status error\"",
+    "\"s\" 2 journal=- seq=- \"bench_status\": \"bench run ended with status error\"",
     "\"s\" 2 journal=\"live\" seq=3 \"avoidance\": \"core 0 offset -30 reaches failure point -30 recorded at seq 2 (tuner.md: P[c] <= fail[c])\"",
     "\"s\" 2 journal=\"live\" seq=3 \"termination\": \"finished run has neither a conclusion nor a dead end\"",
 ]

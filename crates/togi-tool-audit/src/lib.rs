@@ -12,6 +12,7 @@
 //! state directories instead, it audits those.
 
 mod auditor;
+mod interrupt;
 mod marks;
 mod report;
 mod snapshot;
@@ -23,6 +24,7 @@ use togi_journal::{
     DirError, Event, FileError, LookupError, Recording, SessionId, StateDir, StateError,
 };
 
+pub use interrupt::{INTERRUPTED, Interrupt};
 pub use report::{
     Finding, Kind, Record, RecordError, Report, Split, Status, audit as audit_directories,
     audit_directory, check_records, read_records, run_directory, timing,

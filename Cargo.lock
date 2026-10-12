@@ -1646,8 +1646,10 @@ version = "0.0.0"
 dependencies = [
  "clap",
  "insta",
+ "rustix",
  "serde",
  "serde_json",
+ "signal-hook 0.4.5",
  "tempfile",
  "thiserror",
  "togi-journal",

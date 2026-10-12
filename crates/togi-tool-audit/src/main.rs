@@ -4,7 +4,9 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::Parser;
-use togi_tool_audit::{Evidence, Finding, Sweep, audit_directories, read_records};
+use togi_tool_audit::{
+    Evidence, Finding, INTERRUPTED, Interrupt, Sweep, audit_directories, read_records,
+};
 
 const USAGE: u8 = 2;
 
@@ -69,6 +71,11 @@ fn fail(error: &dyn std::fmt::Display) -> ExitCode {
     ExitCode::FAILURE
 }
 
+fn interrupted() -> ExitCode {
+    let _ = writeln!(io::stderr(), "togi-tool-audit: interrupted");
+    ExitCode::from(INTERRUPTED)
+}
+
 fn run(cli: Cli) -> ExitCode {
     let mut scratch = None;
     let (records, root) = match (&cli.records, &cli.root) {
@@ -78,6 +85,10 @@ fn run(cli: Cli) -> ExitCode {
                 .jobs
                 .or_else(|| std::thread::available_parallelism().ok())
                 .unwrap_or(NonZeroUsize::MIN);
+            let interrupt = match Interrupt::watch() {
+                Ok(interrupt) => interrupt,
+                Err(error) => return fail(&format!("watch for signals: {error}")),
+            };
             let sweep = Sweep {
                 suite: &cli.suite,
                 seeds: NonZeroU64::from(cli.seeds),
@@ -86,17 +97,22 @@ fn run(cli: Cli) -> ExitCode {
                 bench: cli.bench.as_deref(),
                 sim: cli.sim.as_deref(),
                 keep: cli.keep.as_deref(),
+                interrupt: &interrupt,
             };
             match sweep.run() {
                 Ok(Evidence {
                     scratch: held,
+                    dir,
                     records,
                     root,
-                    ..
                 }) => {
+                    if !interrupt.audit_started(held.as_ref().map(|_| dir)) {
+                        return interrupted();
+                    }
                     scratch = held;
                     (records, root)
                 }
+                Err(_) if interrupt.signalled() => return interrupted(),
                 Err(error) => return fail(&error),
             }
         }

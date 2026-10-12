@@ -1,11 +1,12 @@
-//! What a sweep audits and reports: the bench's run records for termination and wall-time checks, and every state
+//! What a sweep audits and reports: the bench's run records for bench-status and wall-time checks, and every state
 //! directory's journals.
 
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use togi_journal::{Seq, StateDir};
+use togi_machine::object_only;
 
 use crate::{Check, Completion, Source, audit_recordings};
 
@@ -17,7 +18,7 @@ const WALL_TIME_RATIO: f64 = 10.0;
 pub enum Kind {
     Audit(Check),
     WallTime,
-    Termination,
+    BenchStatus,
     Unreadable,
 }
 
@@ -26,7 +27,7 @@ impl Kind {
         match self {
             Self::Audit(check) => check.as_str(),
             Self::WallTime => "wall_time",
-            Self::Termination => "termination",
+            Self::BenchStatus => "bench_status",
             Self::Unreadable => "unreadable",
         }
     }
@@ -57,13 +58,15 @@ pub struct Finding {
 
 /// The members of a bench run record the audit reads; the bench's other members are ignored, so the audit follows
 /// the bench's file by its subprocess interface alone.
-#[derive(Clone, Debug, Deserialize, PartialEq)]
-pub struct Record {
-    pub scenario: String,
-    pub seed: u64,
-    pub split: Split,
-    pub status: Status,
-    pub wall_s: f64,
+object_only! {
+    #[derive(Clone, Debug, PartialEq)]
+    pub struct Record {
+        pub scenario: String,
+        pub seed: u64,
+        pub split: Split,
+        pub status: Status,
+        pub wall_s: f64,
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize)]
@@ -163,7 +166,7 @@ pub fn check_records(records: &[Record]) -> Result<(), RecordError> {
     Ok(())
 }
 
-/// Wall-time and termination violations of `records`, in record order: a run over ten times its scenario's median
+/// Wall-time and bench-status violations of `records`, in record order: a run over ten times its scenario's median
 /// wall time, and a run that neither concluded nor reached a dead end.
 pub fn timing(records: &[Record], root: &Path) -> Vec<Finding> {
     let mut times: BTreeMap<&str, Vec<f64>> = BTreeMap::new();
@@ -209,7 +212,7 @@ pub fn timing(records: &[Record], root: &Path) -> Vec<Finding> {
         }
         if !matches!(record.status, Status::Concluded | Status::DeadEnd) {
             found.push(finding(
-                Kind::Termination,
+                Kind::BenchStatus,
                 format!("bench run ended with status {}", status(record.status)),
             ));
         }
@@ -228,7 +231,8 @@ const fn status(status: Status) -> &'static str {
 
 /// The journals of one state directory: how many were read and what they violate. The live journal of a
 /// simulated run must also have concluded. The audit holds the directory's writer lock, so a directory a live
-/// process holds is refused, and it reads and writes nothing else.
+/// process holds is refused. Taking the lock creates the directory's `lock` file and sets the directory's mode to
+/// 0711; the audit writes nothing else.
 pub fn audit_directory(dir: &Path, simulated: bool) -> (Vec<Finding>, usize) {
     let unreadable = |reason: String| Finding {
         directory: dir.to_path_buf(),
@@ -285,11 +289,11 @@ pub struct Report {
 }
 
 /// Audits `dirs`, attributing each directory a record keeps to that run, after the records' own timing checks.
-/// Relative and absolute spellings of one directory share a record.
+/// Every spelling of one directory, relative or absolute, with `.` or `..` components, shares a record.
 pub fn audit(dirs: &[PathBuf], records: &[Record], root: &Path) -> std::io::Result<Report> {
     let mut by_dir = BTreeMap::new();
     for record in records {
-        by_dir.insert(std::path::absolute(run_directory(root, record))?, record);
+        by_dir.insert(lexical(&run_directory(root, record))?, record);
     }
     let mut report = Report {
         directories: dirs.len(),
@@ -297,7 +301,7 @@ pub fn audit(dirs: &[PathBuf], records: &[Record], root: &Path) -> std::io::Resu
         ..Report::default()
     };
     for dir in dirs {
-        let record = by_dir.get(&std::path::absolute(dir)?);
+        let record = by_dir.get(&lexical(dir)?);
         let (mut found, journals) = audit_directory(dir, record.is_some());
         report.journals += journals;
         for finding in &mut found {
@@ -309,4 +313,20 @@ pub fn audit(dirs: &[PathBuf], records: &[Record], root: &Path) -> std::io::Resu
         report.findings.append(&mut found);
     }
     Ok(report)
+}
+
+/// `path` made absolute with its `.` and `..` components resolved by name alone, as the bench names its run
+/// directories; a symbolic link followed by `..` is not resolved.
+fn lexical(path: &Path) -> std::io::Result<PathBuf> {
+    let mut resolved = PathBuf::new();
+    for component in std::path::absolute(path)?.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                resolved.pop();
+            }
+            other => resolved.push(other),
+        }
+    }
+    Ok(resolved)
 }

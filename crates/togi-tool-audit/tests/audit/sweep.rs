@@ -51,12 +51,12 @@ fn timing_flags_a_run_over_ten_times_its_scenario_median() {
         (
             "execution error",
             vec![record("a", Status::Error, 1.0)],
-            vec![Kind::Termination],
+            vec![Kind::BenchStatus],
         ),
         (
             "a boot-capped run is not a conclusion",
             vec![record("a", Status::Censored, 1.0)],
-            vec![Kind::Termination],
+            vec![Kind::BenchStatus],
         ),
     ] {
         assert_eq!(kinds(&timing(&records, Path::new("root"))), want, "{name}");
@@ -147,6 +147,24 @@ fn a_directory_is_audited_with_the_run_it_belongs_to_whatever_its_spelling() {
 }
 
 #[test]
+fn a_directory_is_audited_with_its_run_whatever_dots_its_path_has() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("bench");
+    let rec = record("a", Status::Concluded, 1.0);
+    write_state_dir(&run_directory(&root, &rec), &[header(), phase(2, 0, None)]);
+    fs::create_dir(tmp.path().join("elsewhere")).unwrap();
+    let respelled = tmp.path().join("elsewhere/../bench/a/./dev-1");
+    let report = audit_directories(&[respelled], &[rec], &root).unwrap();
+    assert_eq!(report.findings.len(), 1);
+    assert_eq!(report.findings[0].scenario.as_deref(), Some("a"));
+    assert_eq!(report.findings[0].seed, Some(1));
+    assert_eq!(
+        report.findings[0].check,
+        Kind::Audit(togi_tool_audit::Check::Termination)
+    );
+}
+
+#[test]
 fn a_run_directory_must_conclude_but_a_given_one_need_not() {
     let tmp = tempfile::tempdir().unwrap();
     let open = vec![header(), phase(2, 0, None)];
@@ -229,6 +247,7 @@ fn records_that_name_no_run_are_refused() {
     let mut errors = vec![
         records_file("").unwrap_err(),
         records_file("{\"scenario\":\"a\"}\n").unwrap_err(),
+        records_file("[\"a\",1,\"dev\",\"concluded\",1.0]\n").unwrap_err(),
     ];
     for (scenario, wall) in [
         ("", "1"),
@@ -242,4 +261,29 @@ fn records_that_name_no_run_are_refused() {
     }
     insta::assert_debug_snapshot!(errors);
     assert!(check_records(&[]).is_err());
+}
+
+#[test]
+fn the_reported_check_spellings_are_pinned() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut records = vec![
+        record("a", Status::Concluded, 1.0),
+        record("a", Status::Concluded, 1.0),
+        record("a", Status::Error, 11.0),
+    ];
+    records[2].seed = 3;
+    let mut findings = timing(&records, tmp.path());
+    findings.extend(
+        audit_directories(&[tmp.path().join("missing")], &[], tmp.path())
+            .unwrap()
+            .findings,
+    );
+    let spelled: Vec<String> = findings
+        .iter()
+        .map(|finding| {
+            let value = serde_json::to_value(finding).unwrap();
+            value["check"].as_str().unwrap().to_owned()
+        })
+        .collect();
+    assert_eq!(spelled, ["wall_time", "bench_status", "unreadable"]);
 }
