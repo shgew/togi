@@ -1,0 +1,36 @@
+---
+source: crates/togi-watch/src/frames/snapshots.rs
+expression: body
+---
+│ togi   09:48:45   session 9h48m   32 failures · 7 crashes   last observed failure 09:48, a moment ago
+│ ■ SOLO ─ ○ P1 ─ ○ P2 ─ CLEAN 0 ─ ○ CYCLE 1 paused at 1/18
+│
+│ ▌  I couldn't obtain usable failure evidence, so I can't continue testing safely. Check the recorded details...
+│
+│ DEAD END  no evidence: backend mprime is missing: setup failed: backend binary missing
+│
+│ CCD 0 idle       0  2 counts/cell       -50 fail            CCD 1 idle       0  2 counts/cell       -50 fail
+│   00 -25 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄█·              -26             08  -5 HAS ROOM ▄▄▄█                         -7 top
+│   01 -16 HAS ROOM ▄▄▄▄▄▄▄▄█                   -18             09 -34 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█          -36
+│   02 -25 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄█              -27             10 -17 HAS ROOM ▄▄▄▄▄▄▄▄▄█                  -19
+│   03 -24 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄█               -26             11  -9 HAS ROOM ▄▄▄▄▄█                      -11
+│   04 -15 HAS ROOM ▄▄▄▄▄▄▄▄█                   -17             12 -16 HAS ROOM ▄▄▄▄▄▄▄▄█                   -18
+│   05  -9 HAS ROOM ▄▄▄▄▄█                      -11 top         13 -37 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█        -39
+│   06 -37 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█        -39             14 -15 HAS ROOM ▄▄▄▄▄▄▄▄█                   -17
+│   07 -29 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█            -31             15 -13 HAS ROOM ▄▄▄▄▄▄▄█                    -15
+│
+│ CYCLE 1 ─────────────────────────────── 18 steps · 0 done   WHAT HAPPENED ─────────────────────────────── l: last 400
+│
+│ ○  1 R7 all-core       3+ parts      paused at part 1       09:48  stop     dead end: backend mprime is missing...
+│      ├ full CCD 0      00-07                                09:48  unclear  rerun of R7 all-core on 00-07 · setup...
+│      ├ full CCD 1      08-15                                09:48  backoff  core 00 -26 → -25
+│      ├ full CCD 0+1    00-15                                09:48  fail     core 00 fails at -26
+│      └ partials may follow                                  09:48  fail     R7 full CCD 0 on 00-07 · the stress...
+│ +17 more                                                    09:47  step     cycle 1 step 1: R7 all-core, mprime...
+│                                                             09:47  cycle    cycle 1 started · 18 steps
+│ R7 ────────────── top ───────────── self-sufficient ─────   09:47  limit    cores 06, 13 solo limit -38
+│ mprime AVX2       05 08 by offset   none yet                09:38  limit    core 09 solo limit -35
+│ mprime AVX-512    05 08 by offset   none yet                09:38  limit    core 00 solo limit -27
+│ y-cruncher FFTv4  05 08 by offset   none yet                +210 more
+│
+│  ?  help    l  log    esc  back    q  close view

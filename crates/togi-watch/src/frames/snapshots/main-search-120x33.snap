@@ -1,0 +1,36 @@
+---
+source: crates/togi-watch/src/frames/snapshots.rs
+expression: body
+---
+│ togi   00:48:40   session 0h48m   0 failures · 0 crashes
+│ ► SOLO  0 of 16 found ─ ○ P1 ─ ○ P2 ─ CLEAN 0 ─ ○ CYCLE
+│
+│ ▌  I'm finding core 00's solo limit, one turn at a time, now at -5.
+│
+│  R1   light load  on core 00 alone at -5   y-cruncher BKT + SFTv4 · 1 worker             SEARCH CORE 00 AT -5 · LIGHT
+│ ████████████████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  0:50 left  0/1 ►
+│
+│ pass → R2 heavy vector on core 00 alone at -5   core named → backs off   inconclusive → same trial again
+│
+│ CCD 0 one loaded 0  2 counts/cell       -50 fail            CCD 1 waiting    0  2 counts/cell       -50 fail
+│ ► 00  -5 SEARCH   ▄▄▄                             → -5        08   0 SEARCH                                   → -5
+│   01   0 SEARCH                                   → -5        09   0 SEARCH                                   → -5
+│   02   0 SEARCH                                   → -5        10   0 SEARCH                                   → -5
+│   03   0 SEARCH                                   → -5        11   0 SEARCH                                   → -5
+│   04   0 SEARCH                                   → -5        12   0 SEARCH                                   → -5
+│   05   0 SEARCH                                   → -5        13   0 SEARCH                                   → -5
+│   06   0 SEARCH                                   → -5        14   0 SEARCH                                   → -5
+│   07   0 SEARCH                                   → -5        15   0 SEARCH                                   → -5
+│
+│ TURNS ────────────────── one core per turn, in this order   WHAT HAPPENED ─────────────────────────────── l: last 400
+│
+│   08  search step: light...      -5   passed 0 · next -5    00:48  step     core 15 passed 0, next -5
+│   01  search step: light...      -5   passed 0 · next -5    00:45  step     core 07 passed 0, next -5
+│   09  search step: light...      -5   passed 0 · next -5    00:42  step     core 14 passed 0, next -5
+│   02  search step: light...      -5   passed 0 · next -5    00:39  step     core 06 passed 0, next -5
+│   10  search step: light...      -5   passed 0 · next -5    00:36  step     core 13 passed 0, next -5
+│   03  search step: light...      -5   passed 0 · next -5    00:33  step     core 05 passed 0, next -5
+│   11  search step: light...      -5   passed 0 · next -5    00:30  step     core 12 passed 0, next -5
+│ +9 more                                                     +10 more
+│
+│  ?  help    l  log    esc  back    q  close view
