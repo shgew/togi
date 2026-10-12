@@ -1,0 +1,27 @@
+[package]
+name = "togi-tool-replay"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "The replay command: plays a recorded journal through the dashboard on a fast-forward clock, or prints one frame of it"
+
+[dependencies]
+clap.workspace = true
+jiff.workspace = true
+ratatui.workspace = true
+thiserror.workspace = true
+togi-journal.workspace = true
+togi-tuner.workspace = true
+togi-watch.workspace = true
+
+[dev-dependencies]
+insta.workspace = true
+rustix = { workspace = true, features = ["event", "process", "pty", "termios"] }
+tempfile.workspace = true
+togi-machine.workspace = true
+togi-watchtest.workspace = true
+
+[lints]
+workspace = true

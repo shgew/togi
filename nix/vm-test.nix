@@ -337,8 +337,8 @@ in
       assert machine.succeed("stat -c '%U:%G:%a' /run/lock/togi.lock").strip() == "root:togi-hardware:660"
       lock_identity = machine.succeed("stat -c '%d:%i' /run/lock/togi.lock").strip()
       for binary, selection, count in [
-          ("togi-trial-tests-rs", hardware, 10),
-          ("togi-trial-tests-rs", delegated_hardware, 8),
+          ("togi-trial-tests-rs", hardware, 11),
+          ("togi-trial-tests-rs", delegated_hardware, 9),
           ("togi-trial-cached-errors-rs", "cached_errors::", 2),
       ]:
           listed = machine.succeed(f"{binary} {selection} --list").splitlines()

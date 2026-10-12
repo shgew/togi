@@ -1539,7 +1539,9 @@ dependencies = [
  "togi-tuner",
  "togi-tuningboot",
  "togi-version",
+ "togi-watch",
  "togi-watchtest",
+ "unicode-width",
 ]
 
 [[package]]
@@ -1821,6 +1823,7 @@ dependencies = [
  "togi-session",
  "togi-sim",
  "togi-simrun",
+ "togi-tool-forecast",
  "togi-tool-modelcheck",
  "togi-tool-trialfacts",
  "togi-tuner",
@@ -1894,6 +1897,24 @@ dependencies = [
  "togi-machine",
  "togi-sim",
  "togi-tool-trialfacts",
+]
+
+[[package]]
+name = "togi-tool-replay"
+version = "0.0.0"
+dependencies = [
+ "clap",
+ "insta",
+ "jiff",
+ "ratatui",
+ "rustix",
+ "tempfile",
+ "thiserror",
+ "togi-journal",
+ "togi-machine",
+ "togi-tuner",
+ "togi-watch",
+ "togi-watchtest",
 ]
 
 [[package]]

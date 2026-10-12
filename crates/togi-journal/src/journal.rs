@@ -331,6 +331,29 @@ impl Journal {
         })
     }
 
+    /// Keeps the journal open across a simulated reboot into `boot`: writes the buffer through and syncs, as a close
+    /// would, then appends as the new boot under a new identity, so no receipt from before verifies, with no repair
+    /// recorded. Nothing is read: the events are the ones this writer already holds. A poisoned journal is not
+    /// rebooted; close it and open its directory, which replays whatever survived.
+    ///
+    /// # Errors
+    ///
+    /// The failure that poisoned the journal, or the failed write or sync, which poisons it.
+    pub fn reboot(&mut self, boot: togi_machine::BootId) -> Result<(), AppendError> {
+        if let Some(failure) = &self.poison {
+            return Err(AppendError::Poisoned(Arc::clone(failure)));
+        }
+        if let Err(failure) = self.writer.finish() {
+            let failure = Arc::new(failure);
+            self.poison = Some(Arc::clone(&failure));
+            return Err(AppendError::Failed(failure));
+        }
+        self.boot = boot;
+        self.id = JournalId::next();
+        self.repaired = None;
+        Ok(())
+    }
+
     /// Syncs the journal and hands back the directory with its lock still held. A poisoned journal does no I/O: the
     /// directory is returned so it can be reopened and replayed.
     pub fn close(mut self) -> Result<StateDir, CloseError> {

@@ -78,15 +78,69 @@ pub fn prepare(
         Some(Verdict::Use) | None => {}
     }
     let journal = dir.open_at(boot.clone(), now)?;
+    carry_into(
+        journal,
+        matches!(verdict, Some(Verdict::Use)),
+        boot,
+        now,
+        context,
+        defects,
+    )
+}
+
+/// [`prepare`] for a journal that is already open and was rebooted into `boot` ([`Journal::reboot`]): the same
+/// decisions, made from its events instead of a read of the file. A journal [`prepare`] would archive before opening,
+/// one at or before the reset boundary or whose build only differs from this one's, or one this build refuses, is
+/// closed and handed to [`prepare`], which acts on the directory exactly as it does for a closed one.
+///
+/// # Errors
+///
+/// As [`prepare`].
+pub fn prepare_kept(
+    journal: Journal,
+    build: &Build,
+    boot: BootId,
+    now: Timestamp,
+    context: Option<&BiosContext>,
+    defects: &'static [Entry],
+) -> Result<Prepared, PrepareError> {
+    let reset = match (journal.session(), journal.dir().reset_boundary()?) {
+        (Some(live), Some(boundary)) => live <= boundary,
+        _ => false,
+    };
+    let verdict = journal
+        .events()
+        .first()
+        .and_then(|event| match &event.payload {
+            Payload::SessionStart(start) => Some(build.verdict(&start.build, Operation::Resume)),
+            _ => None,
+        });
+    if reset || !matches!(verdict, Some(Verdict::Use) | None) {
+        return prepare(journal.close()?, build, boot, now, context, defects);
+    }
+    carry_into(journal, verdict.is_some(), boot, now, context, defects)
+}
+
+/// What [`prepare`] does once the journal is open: archives it as a transition when `resumable` and its BIOS context
+/// changed, then finds the carry the new session starts from.
+fn carry_into(
+    journal: Journal,
+    resumable: bool,
+    boot: BootId,
+    now: Timestamp,
+    context: Option<&BiosContext>,
+    defects: &'static [Entry],
+) -> Result<Prepared, PrepareError> {
     let stamp = Stamp {
         time: now,
         mono: None,
     };
-    let journal = match verdict {
-        Some(Verdict::Use) if context_changed(&journal, context) => journal
+    let journal = if resumable && context_changed(&journal, context) {
+        journal
             .archive(stamp, ArchiveKind::Transition, &[])?
-            .open_at(boot.clone(), now)?,
-        _ => journal,
+            .open_at(boot.clone(), now)?
+    } else {
+        journal
     };
     let Some(pending) = journal.dir().pending_carry()? else {
         return Ok(Prepared {

@@ -18,6 +18,7 @@ mod memo;
 mod memory;
 mod persistence;
 mod r7_chain;
+mod reboot;
 mod samples;
 mod sixteen;
 mod split;

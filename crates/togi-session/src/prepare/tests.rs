@@ -7,7 +7,8 @@ use togi_sim::MachineDefinition;
 use togi_sim::definition::ModelDef;
 
 use togi_carry::CarryError;
-use togi_journal::fs::{Fault, Op};
+use togi_journal::MemFs;
+use togi_journal::fs::{Fault, FileKind, Op};
 
 use super::*;
 use crate::testing::{Bench, build, simulated};
@@ -453,4 +454,181 @@ fn a_broken_archive_layout_or_live_header_refuses_the_preparation_and_leaves_the
             "{layout}"
         );
     }
+}
+
+type Scenario = (&'static str, Bench, Build, Option<BiosContext>);
+
+fn next_build() -> Build {
+    Build {
+        ruleset: 2,
+        ..build()
+    }
+}
+
+/// Directories in every state `prepare` decides on, each with the build and BIOS context the next boot has.
+fn scenarios() -> Vec<Scenario> {
+    let mut all: Vec<Scenario> = vec![("empty", bench(), build(), None)];
+
+    let plain = bench();
+    let (_, context) = finished(&plain);
+    all.push(("plain resume", plain, build(), Some(context.clone())));
+
+    let transition = bench();
+    let (_, context) = finished(&transition);
+    let changed = BiosContext {
+        bios_version: "other".into(),
+        ..context
+    };
+    all.push(("context change", transition, build(), Some(changed)));
+
+    let archive = bench();
+    let (_, context) = finished(&archive);
+    all.push(("build archive", archive, next_build(), Some(context)));
+
+    let unsettled = bench();
+    let (_, context) = finished(&unsettled);
+    drop(
+        prepared(&unsettled, &next_build(), Some(&context))
+            .journal
+            .close()
+            .unwrap(),
+    );
+    all.push(("carry unsettled", unsettled, next_build(), Some(context)));
+
+    let settled = bench();
+    let (_, context) = finished(&settled);
+    let first = prepared(&settled, &next_build(), Some(&context));
+    drop(first.journal.close().unwrap());
+    let mut input = settled.input();
+    input.build = next_build();
+    input.policy.cycles = Some(NonZeroU32::MIN);
+    input.carry = first.carry;
+    drop(run(input).journal.close().unwrap());
+    all.push(("carry settled", settled, next_build(), Some(context)));
+
+    let reset = bench();
+    let (_, context) = finished(&reset);
+    drop(
+        prepared(&reset, &next_build(), Some(&context))
+            .journal
+            .close()
+            .unwrap(),
+    );
+    let mut input = reset.input();
+    input.build = next_build();
+    input.policy.cycles = Some(NonZeroU32::MIN);
+    let mut dir = run(input).journal.close().unwrap();
+    dir.mark_reset_all().unwrap();
+    drop(dir);
+    all.push(("reset boundary", reset, next_build(), Some(context)));
+    all
+}
+
+fn boot(name: &str) -> BootId {
+    BootId::from(name.to_owned())
+}
+
+fn copy_of(mem: &MemFs) -> MemFs {
+    let copy = MemFs::new();
+    for (path, kind) in mem.entries() {
+        if kind == FileKind::File {
+            copy.put(&path, mem.contents(&path).unwrap());
+        }
+    }
+    copy
+}
+
+/// Everything a preparation leaves: the journal it hands over, its carry and the directory's files.
+fn left(prepared: &Prepared, mem: &MemFs) -> impl PartialEq + std::fmt::Debug {
+    let events: Vec<String> = prepared
+        .journal
+        .events()
+        .iter()
+        .map(|event| format!("{event:?}"))
+        .collect();
+    let files: Vec<_> = mem
+        .entries()
+        .into_iter()
+        .map(|(path, kind)| {
+            let bytes = mem.contents(&path);
+            (path, kind, bytes)
+        })
+        .collect();
+    (
+        events,
+        prepared.journal.boot().clone(),
+        prepared.journal.session(),
+        prepared.carry.clone(),
+        files,
+    )
+}
+
+#[test]
+fn a_kept_journal_is_prepared_as_the_reopened_directory_is() {
+    for (name, bench, build, context) in scenarios() {
+        let rebooted = boot("rebooted");
+        let now = bench.sim.now();
+        let (closed, kept) = (copy_of(&bench.mem), copy_of(&bench.mem));
+        let expected = prepare(
+            simulated(&closed),
+            &build,
+            rebooted.clone(),
+            now,
+            context.as_ref(),
+            bench.defects,
+        )
+        .unwrap();
+
+        let mut journal = simulated(&kept).open_at(boot("crashed"), now).unwrap();
+        journal.reboot(rebooted.clone()).unwrap();
+        let reads = kept.reads().len();
+        let actual = prepare_kept(
+            journal,
+            &build,
+            rebooted,
+            now,
+            context.as_ref(),
+            bench.defects,
+        )
+        .unwrap();
+        assert_eq!(
+            left(&actual, &kept),
+            left(&expected, &closed),
+            "{name}: the files, events and carry differ"
+        );
+        if matches!(name, "empty" | "plain resume" | "carry unsettled") {
+            assert!(
+                kept.reads()[reads..]
+                    .iter()
+                    .all(|path| !path.ends_with("events.jsonl")),
+                "{name}: the kept journal was read from its file"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_kept_journal_this_build_refuses_is_refused_and_left_unchanged() {
+    let bench = bench();
+    let (_, context) = finished(&bench);
+    let older = Build {
+        ruleset: 0,
+        ..build()
+    };
+    let before = bench.mem.contents("/state/events.jsonl").unwrap();
+    let now = bench.sim.now();
+    let mut journal = simulated(&bench.mem).open_at(boot("crashed"), now).unwrap();
+    journal.reboot(boot("rebooted")).unwrap();
+    let error = prepare_kept(
+        journal,
+        &older,
+        boot("rebooted"),
+        now,
+        Some(&context),
+        bench.defects,
+    )
+    .unwrap_err();
+    assert!(matches!(error, PrepareError::Refused(_)), "{error:?}");
+    assert_eq!(bench.mem.contents("/state/events.jsonl"), Some(before));
+    assert!(simulated(&bench.mem).archives().unwrap().is_empty());
 }

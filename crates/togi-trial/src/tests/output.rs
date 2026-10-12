@@ -872,3 +872,183 @@ async fn a_blocked_log_write_never_stalls_supervision_and_is_reported() {
     })
     .await;
 }
+
+#[test_case("PIN FAILED", None; "setup")]
+#[test_case("AFFINITY:3", Some(CpuId(3)); "affinity")]
+#[tokio::test(start_paused = true)]
+async fn an_exit_queued_ahead_of_watched_setup_or_affinity_text_beyond_the_first_batch_does_not_win(
+    line: &'static str,
+    escaped: Option<CpuId>,
+) {
+    local(async {
+        let rig = rig_with(watching(), Timing::default());
+        let mut bytes = flood(25_000);
+        bytes.extend_from_slice(line.as_bytes());
+        bytes.push(b'\n');
+        rig.fake.on_launch(move |_, command| {
+            let (bytes, file) = (bytes.clone(), results(command));
+            Launch::Run(script(move |ctx: ProcCtx| async move {
+                ctx.write_file(file, &bytes).unwrap();
+                ctx.exit(ExitInfo::Code(1));
+            }))
+        });
+        let handle = rig.start(spec(Regime::R1, &[0], secs(60))).await.unwrap();
+        let run = finish(&handle).await;
+        let result = &run.finished.result;
+        assert_eq!(result.failure, None);
+        assert!(run.signals().is_empty(), "{:?}", run.signals());
+        assert_eq!(result.escaped, Vec::from_iter(escaped));
+        assert_eq!(result.inconclusive.is_some(), escaped.is_none());
+        assert!(run.finished.teardown.is_ok());
+    })
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_unscoped_watched_partial_after_a_failed_group_kill_is_withheld_as_containment() {
+    local(async {
+        let rig = rig_edit(watching(), Timing::default(), |env| env.unscoped = true);
+        rig.fake.on_launch(|_, command| {
+            let file = results(command);
+            Launch::Run(script(move |ctx: ProcCtx| async move {
+                ctx.write_file(&file, "COMPUTE ERROR").unwrap();
+                tokio::time::sleep(Duration::from_millis(2500)).await;
+                ctx.exit(ExitInfo::Code(0));
+            }))
+        });
+        let handle = rig.start(spec(Regime::R1, &[0], secs(2))).await.unwrap();
+        *rig.fake.process(0).signal_error.borrow_mut() = Some(SignalErrorKind::Failed);
+        let run = finish(&handle).await;
+        assert_eq!(run.finished.result.failure, None);
+        assert!(run.signals().is_empty(), "{:?}", run.signals());
+        let containment = run.finished.teardown.unwrap_err();
+        assert!(
+            containment
+                .failures()
+                .iter()
+                .any(|failure| matches!(failure, CleanupFailure::SignalGroup { .. })),
+            "{:?}",
+            containment.failures()
+        );
+    })
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn writers_confirmed_for_one_instance_keep_their_evidence_when_another_group_kill_fails() {
+    local(async {
+        let rig = rig_with(watching(), Timing::default());
+        rig.fake.on_launch(|_, command| {
+            let file = results(command);
+            Launch::Run(script(move |mut ctx: ProcCtx| async move {
+                ctx.write_file(&file, "COMPUTE ERROR").unwrap();
+                ctx.until_killed().await;
+            }))
+        });
+        let cancel = CancellationToken::new();
+        let handle = rig
+            .start_with(&cancel, spec(Regime::R7, &[0, 1], secs(60)))
+            .await
+            .unwrap();
+        *rig.fake.process(0).signal_error.borrow_mut() = Some(SignalErrorKind::Failed);
+        tokio::time::sleep(secs(2)).await;
+        cancel.cancel();
+        let run = finish(&handle).await;
+        let failure = run.finished.result.failure.unwrap();
+        assert_eq!(failure.core, super::harness::core(1));
+        assert_eq!(
+            run.signals(),
+            [(super::harness::core(1), Signal::ComputationError)]
+        );
+        let containment = run.finished.teardown.unwrap_err();
+        assert!(
+            containment
+                .failures()
+                .iter()
+                .any(|failure| matches!(failure, CleanupFailure::SignalGroup { .. }))
+        );
+    })
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn writers_of_an_instance_whose_scope_is_already_gone_keep_their_evidence_when_another_scope_fails()
+ {
+    local(async {
+        let rig = rig_with(watching(), Timing::default());
+        rig.fake.on_launch(|_, command| {
+            let file = results(command);
+            Launch::Run(script(move |mut ctx: ProcCtx| async move {
+                ctx.write_file(&file, "COMPUTE ERROR").unwrap();
+                ctx.until_killed().await;
+            }))
+        });
+        rig.fake.on_systemd(|call| match call {
+            Systemd::Kill { scope, .. } if scope.as_str().ends_with("c00") => {
+                Some(Reply::Fail(togi_command::Error::Spawn {
+                    program: "systemctl".into(),
+                    source: std::io::Error::other("no bus"),
+                }))
+            }
+            Systemd::Kill { .. } => Some(Reply::Output {
+                success: false,
+                text: "Failed to kill unit: Unit could not be found.".into(),
+            }),
+            _ => None,
+        });
+        let cancel = CancellationToken::new();
+        let handle = rig
+            .start_with(&cancel, spec(Regime::R7, &[0, 1], secs(60)))
+            .await
+            .unwrap();
+        tokio::time::sleep(secs(2)).await;
+        cancel.cancel();
+        let run = finish(&handle).await;
+        let failure = run.finished.result.failure.unwrap();
+        assert_eq!(failure.core, super::harness::core(1));
+        assert_eq!(
+            run.signals(),
+            [(super::harness::core(1), Signal::ComputationError)]
+        );
+        let containment = run.finished.teardown.unwrap_err();
+        assert!(
+            containment
+                .failures()
+                .iter()
+                .any(|failure| matches!(failure, CleanupFailure::KillScope { .. }))
+        );
+    })
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn rejecting_a_fifo_watched_file_without_backlog_is_an_ordinary_diagnostic() {
+    local(async {
+        let rig = rig_with(watching(), Timing::default());
+        rig.fake.on_launch(|_, command| {
+            let file = results(command);
+            Launch::Run(script(move |mut ctx: ProcCtx| async move {
+                rustix::fs::mknodat(
+                    rustix::fs::CWD,
+                    &file,
+                    rustix::fs::FileType::Fifo,
+                    rustix::fs::Mode::from_raw_mode(0o600),
+                    0,
+                )
+                .unwrap();
+                ctx.until_killed().await;
+            }))
+        });
+        let handle = rig.start(spec(Regime::R1, &[0], secs(4))).await.unwrap();
+        let run = finish(&handle).await;
+        assert!(run.finished.teardown.is_ok());
+        assert_eq!(run.finished.result.ran, secs(4));
+        assert_eq!(run.finished.result.failure, None);
+        assert_eq!(
+            run.finished.result.inconclusive.as_deref(),
+            Some("core 00 watched output: unsupported watched output file")
+        );
+        assert!(matches!(&run.finished.errors[..], [Error::Output(_)]));
+    })
+    .await;
+}

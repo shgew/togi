@@ -152,6 +152,11 @@ sim-suite-rs *args: _dev-shell
 replay *args: _dev-shell
     go run ./tools/replay "$@"
 
+# Play a recorded journal through the dashboard on a fast-forward clock with the Rust tool
+[group('run')]
+replay-rs *args: _dev-shell
+    cargo run --release --locked -p togi-tool-replay -- "$@"
+
 # Summarize a current or archived journal for review
 [group('run')]
 stats *args: _dev-shell
@@ -197,6 +202,21 @@ smoke base="origin/main" *args: _dev-shell
 [group('run')]
 forecast state_dir *args: _dev-shell
     go run ./tools/bench --forecast "$1" "${@:2}"
+
+# Prove simulated session decisions are unchanged from a base revision with the Rust bench, which builds both trees' Rust simulators; stops at the first difference (`--keep-going` counts them all)
+[group('run')]
+same-rs base="origin/main" *args: _dev-shell
+    dir=$(mktemp -d); trap 'rm -rf "$dir"' EXIT; git archive "$1" | tar -x -C "$dir"; cargo run --release --locked -p togi-tool-bench -- same "$dir" "${@:2}"
+
+# Prove a fixed selection of simulated sessions, one per scenario, is unchanged from a base revision with the Rust bench; same cache and fail-fast as `same-rs`
+[group('run')]
+smoke-rs base="origin/main" *args: _dev-shell
+    dir=$(mktemp -d); trap 'rm -rf "$dir"' EXIT; git archive "$1" | tar -x -C "$dir"; cargo run --release --locked -p togi-tool-bench -- same "$dir" --smoke "${@:2}"
+
+# Forecast a real run from a copy of its state directory with the Rust bench and the target ensemble (`--out FILE` writes the Rust forecast record)
+[group('run')]
+forecast-rs state_dir *args: _dev-shell
+    cargo run --release --locked -p togi-tool-bench -- forecast "$1" "${@:2}"
 
 # Re-record the committed bench baseline over all seeds, without model checks, wall times or retired fields
 [group('run')]

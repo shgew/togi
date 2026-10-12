@@ -1,0 +1,6 @@
+---
+source: crates/togi/tests/read/events.rs
+expression: text(&ran.stdout)
+---
+00:00:00 core.phase     core 03 starts search at 0 (baseline)
+00:21:00 tuner.decision core 03 passed R1+R2 at 0; next -5 (coarse, no failure point yet)

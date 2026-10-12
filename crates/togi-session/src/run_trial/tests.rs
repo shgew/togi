@@ -1626,3 +1626,47 @@ fn a_start_that_returns_no_proof_latches_the_containment_and_holds_no_proof() {
         SessionError::Unproven
     ));
 }
+
+#[test]
+fn an_escaped_worker_ends_the_trial_inconclusive_with_its_cpus_and_dead_ends_on_containment() {
+    let run = whole(Faults::default(), |rigging| {
+        rigging.result = Some(TrialResult {
+            ran: full_run(),
+            escaped: vec![CpuId(42)],
+            ..TrialResult::default()
+        });
+    });
+    assert!(run.ended.errors.is_empty(), "{:?}", run.ended.errors);
+    assert!(
+        matches!(&run.ended.stop, Some(Stop::DeadEnd { dead_end, .. })
+            if dead_end.condition == DeadEndCondition::Containment),
+        "{:?}",
+        run.ended.stop
+    );
+    let kinds = run.kinds();
+    assert_eq!(
+        kinds.iter().filter(|kind| **kind == "trial.start").count(),
+        1
+    );
+    let after_end = kinds.iter().skip_while(|kind| **kind != "trial.end");
+    assert!(
+        !after_end
+            .clone()
+            .any(|kind| matches!(*kind, "smu.write" | "profile.restored")),
+        "{kinds:?}"
+    );
+    let ends: Vec<TrialEnd> = run
+        .ended
+        .journal
+        .events()
+        .iter()
+        .filter_map(|event| match &event.payload {
+            Payload::TrialEnd(end) => Some(end.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(ends.len(), 1);
+    assert_eq!(ends[0].outcome, Verdict::Inconclusive);
+    assert_eq!(ends[0].containment_error, None);
+    assert_eq!(ends[0].escaped, [CpuId(42)]);
+}

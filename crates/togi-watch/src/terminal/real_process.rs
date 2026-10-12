@@ -29,7 +29,7 @@ use togi_machine::{BootId, CcdId, CoreId, CoreInfo, CpuId};
 use togi_watchtest::{Scenario, install};
 use tokio::signal::unix::{SignalKind, signal};
 
-use super::{Error, Stop, run, run_after, run_after_with, run_with};
+use super::{Error, Stop, run, run_after, run_after_rendered, run_rendered};
 use crate::screen::{Drawn, Hold, Journal, Screen, View};
 
 /// The full name of the helper test, which is how the test binary is told to run only it.
@@ -132,7 +132,7 @@ fn integrated(
     ready.recv().unwrap();
     let stdin = std::io::stdin();
     let stdout = std::io::stdout();
-    let outcome = run_after_with(
+    let outcome = run_after_rendered(
         state_dir,
         0,
         &stop,
@@ -182,7 +182,7 @@ fn real_process_helper() {
     let once = || {
         let stdin = std::io::stdin();
         let stdout = std::io::stdout();
-        run_with(
+        run_rendered(
             &state_dir,
             stdout.as_fd(),
             Some(stdin.as_fd()),
