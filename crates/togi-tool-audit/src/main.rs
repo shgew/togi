@@ -11,7 +11,7 @@ const USAGE: u8 = 2;
 /// Audit the journals of a simulated sweep, or of the given state directories.
 ///
 /// Without state directories, runs the bench over every scenario of the suite for seeds 1 to --seeds, keeps each
-/// run's state directory and audits them all. With state directories, reads their current and archived journals;
+/// run's state directory and audits them all; the evidence is removed afterwards unless --keep names a directory. With state directories, reads their current and archived journals;
 /// the audit holds each directory's writer lock, so audit a copy of one a tuner may use. Violations are JSON Lines
 /// on stdout; the summary and the evidence paths are on stderr.
 #[derive(Debug, Parser)]
@@ -23,7 +23,7 @@ struct Cli {
     /// The most bench simulators at once; default the available parallelism.
     #[arg(long, value_name = "N")]
     jobs: Option<NonZeroUsize>,
-    /// Retain the sweep evidence under DIR; default a new temporary directory.
+    /// Retain the sweep evidence under DIR; default a temporary directory removed after the audit.
     #[arg(long, value_name = "DIR")]
     keep: Option<PathBuf>,
     /// The scenario suite; machine paths are relative to it.
@@ -70,6 +70,7 @@ fn fail(error: &dyn std::fmt::Display) -> ExitCode {
 }
 
 fn run(cli: Cli) -> ExitCode {
+    let mut scratch = None;
     let (records, root) = match (&cli.records, &cli.root) {
         (Some(records), Some(root)) => (records.clone(), root.clone()),
         _ if cli.dirs.is_empty() => {
@@ -87,13 +88,23 @@ fn run(cli: Cli) -> ExitCode {
                 keep: cli.keep.as_deref(),
             };
             match sweep.run() {
-                Ok(Evidence { records, root, .. }) => (records, root),
+                Ok(Evidence {
+                    scratch: held,
+                    records,
+                    root,
+                    ..
+                }) => {
+                    scratch = held;
+                    (records, root)
+                }
                 Err(error) => return fail(&error),
             }
         }
         _ => return audit_only(&cli.dirs),
     };
-    audit_records(&records, &root, cli.dirs)
+    let code = audit_records(&records, &root, cli.dirs);
+    drop(scratch);
+    code
 }
 
 fn audit_only(dirs: &[PathBuf]) -> ExitCode {

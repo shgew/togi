@@ -258,3 +258,32 @@ fn a_retained_sweep_is_audited_again_from_its_records() {
     assert_eq!(one.status.code(), Some(1), "the status error remains");
     assert!(text(&one.stderr).contains("directories=1 journals=1 violations=1"));
 }
+
+#[test]
+fn a_sweep_without_keep_leaves_nothing_behind() {
+    let fake = Fake::new();
+    let scratch = fake.path("tmp");
+    fs::create_dir(&scratch).unwrap();
+    let sweep = |bench: &Path| {
+        let mut command = command();
+        command
+            .env("TMPDIR", &scratch)
+            .arg("--bench")
+            .arg(bench)
+            .arg("--suite")
+            .arg(fake.path("suite.json"))
+            .args(["--seeds", "2"]);
+        run(&mut command)
+    };
+    let output = sweep(&fake.bench(0));
+    let stderr = text(&output.stderr);
+    assert_eq!(output.status.code(), Some(1), "{stderr}");
+    assert!(
+        stderr.contains("directories=2 journals=2 violations=3"),
+        "{stderr}"
+    );
+    assert_eq!(fs::read_dir(&scratch).unwrap().count(), 0);
+
+    assert_eq!(sweep(&fake.bench(1)).status.code(), Some(1));
+    assert_eq!(fs::read_dir(&scratch).unwrap().count(), 0);
+}

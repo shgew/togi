@@ -72,13 +72,16 @@ pub struct Sweep<'a> {
     pub bench: Option<&'a Path>,
     /// The simulator command the bench runs; `None` lets the bench build its own.
     pub sim: Option<&'a Path>,
-    /// The directory the evidence directory is made in; `None` means a new temporary directory.
+    /// The directory the sweep's evidence directory is made in and kept; `None` keeps it in a temporary directory
+    /// that [`Evidence::scratch`] removes.
     pub keep: Option<&'a Path>,
 }
 
 /// What a finished sweep retained.
 #[derive(Debug)]
 pub struct Evidence {
+    /// Removes the sweep's directory when dropped; none when the sweep was asked to keep its evidence.
+    pub scratch: Option<tempfile::TempDir>,
     pub dir: PathBuf,
     pub records: PathBuf,
     pub root: PathBuf,
@@ -123,22 +126,21 @@ impl Sweep<'_> {
         let bytes = fs::read(&suite_path).map_err(io("read suite", &suite_path))?;
         let base = suite_path.parent().unwrap_or(Path::new("/"));
         let suite = sweep_suite(&bytes, base, self.seeds)?;
-        let parent = match self.keep {
-            Some(keep) => {
-                fs::create_dir_all(keep).map_err(io("create evidence directory", keep))?;
-                keep.to_path_buf()
-            }
-            None => tempfile::Builder::new()
+        let (dir, scratch) = if let Some(keep) = self.keep {
+            fs::create_dir_all(keep).map_err(io("create evidence directory", keep))?;
+            let dir = tempfile::Builder::new()
+                .prefix("sweep-")
+                .tempdir_in(keep)
+                .map_err(io("create sweep directory", keep))?
+                .keep();
+            (dir, None)
+        } else {
+            let scratch = tempfile::Builder::new()
                 .prefix("togi-audit-")
                 .tempdir()
-                .map_err(io("create evidence directory", Path::new("")))?
-                .keep(),
+                .map_err(io("create evidence directory", &std::env::temp_dir()))?;
+            (scratch.path().to_path_buf(), Some(scratch))
         };
-        let dir = tempfile::Builder::new()
-            .prefix("sweep-")
-            .tempdir_in(&parent)
-            .map_err(io("create sweep directory", &parent))?
-            .keep();
         let suite_file = dir.join("suite.json");
         let mut encoded = serde_json::to_vec_pretty(&suite).map_err(|error| RunError::Io {
             what: "encode sweep suite",
@@ -197,7 +199,12 @@ impl Sweep<'_> {
             records.display(),
             root.display()
         );
-        Ok(Evidence { dir, records, root })
+        Ok(Evidence {
+            scratch,
+            dir,
+            records,
+            root,
+        })
     }
 }
 
