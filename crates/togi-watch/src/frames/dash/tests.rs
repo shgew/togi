@@ -347,6 +347,11 @@ fn every_state_has_its_word() {
     assert_eq!(state_word(CoreState::AtLimit), "AT LIMIT");
     assert_eq!(state_word(CoreState::Probe), "PROBE");
     assert_eq!(state_word(CoreState::Waiting), "WAITING");
+    assert_eq!(state_word(CoreState::Confirm), "CONFIRM");
+    assert_eq!(state_word(CoreState::Found), "FOUND");
+    assert_eq!(state_word(CoreState::Suspect), "SUSPECT");
+    assert_eq!(state_word(CoreState::Member), "MEMBER");
+    assert_eq!(state_word(CoreState::Parked), "PARKED");
 }
 
 #[test]
@@ -386,6 +391,62 @@ fn a_ccd_role_counts_load_and_probes() {
                 },
             ],
             "members, one probed shallower than its failing offset",
+        ),
+        (
+            "parked and every core still loaded",
+            vec![
+                CoreView {
+                    loaded: true,
+                    ..core_view(0, 0, CoreState::Parked)
+                },
+                CoreView {
+                    loaded: true,
+                    ..core_view(1, 0, CoreState::Parked)
+                },
+            ],
+            "parked at 0, still under load",
+        ),
+        (
+            "every suspect loaded",
+            vec![
+                CoreView {
+                    loaded: true,
+                    ..core_view(0, 0, CoreState::Suspect)
+                },
+                CoreView {
+                    loaded: true,
+                    ..core_view(1, 0, CoreState::Suspect)
+                },
+            ],
+            "suspects at their failing offsets",
+        ),
+        (
+            "every member loaded and none probed",
+            vec![
+                CoreView {
+                    loaded: true,
+                    ..core_view(0, 0, CoreState::Member)
+                },
+                CoreView {
+                    loaded: true,
+                    ..core_view(1, 0, CoreState::Member)
+                },
+            ],
+            "members at their failing offsets",
+        ),
+        (
+            "every core loaded in mixed states",
+            vec![
+                CoreView {
+                    loaded: true,
+                    ..core_view(0, 0, CoreState::Suspect)
+                },
+                CoreView {
+                    loaded: true,
+                    ..core_view(1, 0, CoreState::Member)
+                },
+            ],
+            "all under load",
         ),
     ] {
         let mut s = model.snapshot();
