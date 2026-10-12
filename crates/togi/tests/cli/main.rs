@@ -348,12 +348,145 @@ fn run_refuses_a_journal_from_a_newer_evidence_epoch_before_the_config_and_appen
     ]);
     assert_eq!(ran.status.code(), Some(16), "{}", stderr(&ran));
     assert_eq!(stdout(&ran), "");
-    assert_eq!(
-        stderr(&ran),
-        "togi run: the journal's evidence epoch is 2; this build's is 1\n"
+    assert!(
+        stderr(&ran).starts_with(
+            "togi run: this journal was written by togi 9.9.9+x (schema 1, ruleset 1, evidence epoch 2); this build, togi "
+        ) && stderr(&ran).ends_with(
+            ", uses evidence epoch 1. Install togi 9.9.9 to continue this session, or run togi reset --all to archive it and start over.\n"
+        ),
+        "{}",
+        stderr(&ran)
     );
     assert_eq!(
         std::fs::read_to_string(state.join("events.jsonl")).unwrap(),
         NEWER_JOURNAL
     );
+}
+
+fn help(command: &str) -> String {
+    let ran = togi(&[command, "--help"]);
+    assert_eq!(ran.status.code(), Some(0), "{command}");
+    assert_eq!(stderr(&ran), "", "{command}");
+    stdout(&ran).to_owned()
+}
+
+#[test]
+fn reset_help() {
+    insta::assert_snapshot!(help("reset"));
+}
+
+#[test]
+fn doctor_help() {
+    insta::assert_snapshot!(help("doctor"));
+}
+
+#[test]
+fn restart_limit_help() {
+    insta::assert_snapshot!(help("restart-limit"));
+}
+
+#[test]
+fn only_doctor_and_reset_list_config() {
+    for command in ["doctor", "reset"] {
+        assert!(help(command).contains("--config"), "{command}");
+    }
+    assert!(!help("restart-limit").contains("--config"));
+}
+
+#[test]
+fn administration_usage_errors_exit_2_before_touching_anything() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path().join("state");
+    let state = state.to_str().unwrap();
+    for (args, text) in [
+        (&["reset"][..], "required arguments were not provided"),
+        (&["reset", "--core", "1", "--all"], "cannot be used with"),
+        (&["reset", "--core", "x"], "invalid value 'x'"),
+        (&["reset", "--core", "-1"], "unexpected argument"),
+        (&["reset", "--all", "extra"], "unexpected argument 'extra'"),
+        (&["restart-limit"], "required arguments were not provided"),
+        (&["restart-limit", "--tuning-boot="], "a value is required"),
+        (
+            &["restart-limit", "--tuning-boot", "g", "extra"],
+            "unexpected argument 'extra'",
+        ),
+        (
+            &["restart-limit", "--config", "c.json", "--tuning-boot", "g"],
+            SCOPE,
+        ),
+        (
+            &["--config", "c.json", "restart-limit", "--tuning-boot", "g"],
+            SCOPE,
+        ),
+        (&["doctor", "extra"], "unexpected argument 'extra'"),
+        (&["doctor", "--version"], "unexpected argument '--version'"),
+    ] {
+        let mut all = vec!["--state-dir", state];
+        all.extend_from_slice(args);
+        let ran = togi(&all);
+        assert_eq!(ran.status.code(), Some(2), "{args:?}: {}", stderr(&ran));
+        assert_eq!(stdout(&ran), "", "{args:?}");
+        assert!(stderr(&ran).contains(text), "{args:?}: {}", stderr(&ran));
+    }
+    assert!(
+        !std::path::Path::new(state).exists(),
+        "a usage error created the state directory"
+    );
+}
+
+fn session_start(schema: u32) -> String {
+    format!(
+        "{{\"seq\":1,\"time\":\"2026-01-01T00:00:00Z\",\"boot\":\"b1a8cebe-21d1-14db-3741-5b5df946de05\",\"kind\":\"session.start\",\"msg\":\"x\",\"data\":{{\"build\":{{\"version\":\"9.9.9\",\"ruleset\":1,\"schema\":{schema},\"fixes\":0,\"evidence\":1}},\"session\":\"20260101T000000Z\",\"cores\":[]}}}}\n"
+    )
+}
+
+#[test]
+#[cfg(target_os = "linux")]
+fn doctor_refuses_a_newer_journal_with_exit_16_before_any_check() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("events.jsonl"), session_start(99)).unwrap();
+    let state = dir.path().to_str().unwrap();
+    for args in [
+        ["--state-dir", state, "doctor"],
+        ["doctor", "--state-dir", state],
+    ] {
+        let ran = togi(&args);
+        assert_eq!(ran.status.code(), Some(16), "{args:?}: {}", stderr(&ran));
+        assert_eq!(stdout(&ran), "");
+        assert!(
+            stderr(&ran).starts_with("togi doctor: this journal was written by togi 9.9.9"),
+            "{}",
+            stderr(&ran)
+        );
+    }
+}
+
+#[test]
+#[cfg(target_os = "linux")]
+fn doctor_exits_1_for_an_unreadable_journal_and_2_for_a_bad_config() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path().to_str().unwrap();
+    let missing = dir.path().join("none.json");
+    let ran = togi(&[
+        "--state-dir",
+        state,
+        "doctor",
+        "--config",
+        missing.to_str().unwrap(),
+    ]);
+    assert_eq!(ran.status.code(), Some(2), "{}", stderr(&ran));
+    assert!(stderr(&ran).contains("none.json"), "{}", stderr(&ran));
+    let ran = togi(&[
+        "--config",
+        missing.to_str().unwrap(),
+        "--state-dir",
+        state,
+        "doctor",
+    ]);
+    assert_eq!(ran.status.code(), Some(2), "{}", stderr(&ran));
+
+    std::fs::write(dir.path().join("events.jsonl"), "not json\n").unwrap();
+    let ran = togi(&["--state-dir", state, "doctor"]);
+    assert_eq!(ran.status.code(), Some(1), "{}", stderr(&ran));
+    assert_eq!(stdout(&ran), "");
 }

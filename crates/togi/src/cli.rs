@@ -10,9 +10,9 @@ use clap::error::{ContextKind, ContextValue, ErrorKind};
 use clap::{CommandFactory, Parser, Subcommand};
 
 use crate::args::StateDirArgs;
-use crate::completion;
 use crate::exit::Exit;
 use crate::system::{Real, System};
+use crate::{completion, doctor, reset, restart_limit};
 
 const BANNER: &str = "   __              _\n  / /_____  ____ _(_)\n / __/ __ \\/ __ `/ /\n/ /_/ /_/ / /_/ / /\n\\__/\\____/\\__, /_/\n         /____/\n\n  per-core Curve Optimizer\n\n";
 
@@ -43,6 +43,9 @@ pub struct Cli {
 pub enum Command {
     Run(crate::run::Args),
     Completion(completion::Args),
+    Doctor(doctor::Args),
+    Reset(reset::Args),
+    RestartLimit(restart_limit::Args),
 }
 
 impl Command {
@@ -51,6 +54,9 @@ impl Command {
         match self {
             Self::Run(args) => crate::run::run(&args, ctx),
             Self::Completion(args) => completion::run(&args, ctx),
+            Self::Doctor(args) => doctor::run(&args, ctx),
+            Self::Reset(args) => reset::run(&args, ctx),
+            Self::RestartLimit(args) => restart_limit::run(&args, ctx),
         }
     }
 }
@@ -63,7 +69,7 @@ pub struct Context<'a> {
     pub out: &'a mut dyn Write,
     /// Standard error.
     pub err: &'a mut dyn Write,
-    /// The host: platform, locks, machine and terminal.
+    /// The host the command runs on.
     pub system: &'a dyn System,
 }
 
@@ -86,7 +92,8 @@ where
     run_with(args, out, err, &Real)
 }
 
-/// [`run()`] against the given host instead of the real one.
+/// [`run()`] on `system` instead of the host: how a test stands for another platform, takes the host
+/// lock on a temporary file or answers the hardware checks. See [`crate::system`].
 pub fn run_with<I, T>(
     args: I,
     out: &mut dyn Write,

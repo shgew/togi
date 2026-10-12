@@ -1,77 +1,119 @@
-//! What `run` and `doctor` take from the host: the platform check, the host lock's place, the boot id,
-//! the real machine, the bootloader, the reboot request and the process's own terminal and stderr.
+//! The machine a command runs on, as one seam.
 //!
-//! [`Real`] is the host; tests give [`crate::cli::run_with`] a [`System`] of their own, which is how a
-//! Linux test reaches the unsupported-platform path and how `run` is exercised on a simulated machine
-//! without touching hardware, a lock under `/run` or the boot entry.
+//! Every command reaches the host through [`System`]: the platform, the host lock, the boot id,
+//! the clock, the hardware checks, GRUB, the reboot, the machine `run` tunes and the process's own
+//! terminal, stderr and dashboard. [`Real`] is the host; [`crate::run`] uses
+//! it. [`crate::run_with`] takes any other, so a test on Linux can stand for another platform
+//! (`check_platform` fails with [`togi_hardware::Error::Unsupported`]), hold the host lock on a
+//! temporary file, or answer the hardware checks without touching hardware.
+//!
+//! A command that must stop on a platform other than Linux asks [`System::check_platform`] before
+//! it reads the boot id, opens the journal, takes the host lock or makes a check.
 
-use std::io::{self, Write};
+use std::fs::OpenOptions;
+use std::io::{self, IsTerminal, Write};
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Duration;
 
 use jiff::Timestamp;
+use jiff::tz::TimeZone;
+use rustix::time::{ClockId, clock_gettime};
 use togi_config::Config;
-use togi_hardware::{Error, Grub, RebootError};
+use togi_hardware::{Diagnosis, Grub, RebootError};
 use togi_hostlock::{HostLock, Policy};
-use togi_machine::{BootId, Machine};
-use togi_render::{OutputFacts, Renderer};
-use togi_tuningboot::Bootloader;
+use togi_machine::{BiosContext, BootId, CancellationToken, Clock, Error, Machine};
+use togi_render::OutputFacts;
+use togi_tuningboot::{Bootloader, RETRY_MARKER};
 
 use crate::dashboard::{Surface, Watch};
 
-/// The host, as far as the commands that reach hardware depend on it.
+/// What a command needs from the host.
 pub trait System {
-    /// Whether this platform can run on real hardware; the first thing `run` and `doctor` ask.
-    fn check_platform(&self) -> Result<(), Error>;
+    /// Whether this platform can run on real hardware; `Err` is the refusal a command reports.
+    fn check_platform(&self) -> Result<(), togi_hardware::Error>;
 
-    /// The host lock file and the ownership rule it is held under.
+    /// Whether the process runs as root.
+    fn privileged(&self) -> bool;
+
+    /// The host lock file and the ownership it must have.
     fn host_lock(&self) -> (&Path, Policy);
 
-    /// This boot's id.
+    /// The identifier of the current boot.
     fn boot_id(&self) -> Result<BootId, togi_detect::Error>;
 
     /// The wall clock.
     fn now(&self) -> Timestamp;
 
-    /// GRUB's environment block at `grubenv`.
+    /// Time since boot.
+    fn monotonic(&self) -> Duration;
+
+    /// The zone event lines are shown in.
+    fn zone(&self) -> TimeZone;
+
+    /// The checks `run` makes at startup, without writing anything.
+    fn diagnose(
+        &self,
+        config: &Config,
+        recorded: Option<&BiosContext>,
+        privileged: bool,
+    ) -> Result<Diagnosis, togi_hardware::Error>;
+
+    /// The GRUB environment file `grubenv`.
     fn bootloader(&self, grubenv: &Path) -> Box<dyn Bootloader>;
 
-    /// Asks the system to reboot into the normal system.
+    /// Creates the retry marker; fails when it exists.
+    fn create_retry_marker(&self) -> io::Result<()>;
+
+    /// Removes the retry marker; an absent marker is not an error.
+    fn remove_retry_marker(&self) -> io::Result<()>;
+
+    /// Asks systemd for a plain reboot.
     fn reboot(&self) -> Result<(), RebootError>;
 
-    /// The machine, assembled under the held host lock.
+    /// What decides whether stderr is coloured.
+    fn stderr_facts(&self) -> OutputFacts;
+
+    /// The machine `run` tunes, assembled under the held host lock.
     fn open_machine(
         &self,
         config: &Config,
         state_dir: &Path,
         lock: &HostLock,
-    ) -> Result<Machine, Error>;
+    ) -> Result<Machine, togi_hardware::Error>;
 
     /// Whether stdin and stderr are both terminals.
     fn interactive(&self) -> bool;
 
-    /// A handle on standard error that outlives the command's borrowed streams: the event lines of a run and
-    /// the report of its emergency.
+    /// A handle on standard error that outlives the command's borrowed streams: the event lines of
+    /// a run and the report of its emergency.
     fn stderr(&self) -> Box<dyn Write>;
-
-    /// How stderr is styled.
-    fn renderer(&self) -> Renderer;
 
     /// What draws the dashboard when `run` shows one.
     fn surface(&self) -> Arc<dyn Surface>;
 }
 
-/// The machine togi runs on.
+/// The host the process runs on.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Real;
 
 impl System for Real {
-    fn check_platform(&self) -> Result<(), Error> {
+    fn check_platform(&self) -> Result<(), togi_hardware::Error> {
         togi_hardware::check_platform()
     }
 
+    fn privileged(&self) -> bool {
+        rustix::process::geteuid().is_root()
+    }
+
     fn host_lock(&self) -> (&Path, Policy) {
-        (Path::new(togi_hostlock::DEFAULT_PATH), Policy::Host)
+        let policy = if cfg!(target_os = "linux") {
+            Policy::Host
+        } else {
+            Policy::Private
+        };
+        (Path::new(togi_hostlock::DEFAULT_PATH), policy)
     }
 
     fn boot_id(&self) -> Result<BootId, togi_detect::Error> {
@@ -82,12 +124,57 @@ impl System for Real {
         Timestamp::now()
     }
 
+    fn monotonic(&self) -> Duration {
+        let now = clock_gettime(ClockId::Monotonic);
+        Duration::new(
+            u64::try_from(now.tv_sec).unwrap_or_default(),
+            u32::try_from(now.tv_nsec).unwrap_or_default(),
+        )
+    }
+
+    fn zone(&self) -> TimeZone {
+        TimeZone::system()
+    }
+
+    fn diagnose(
+        &self,
+        config: &Config,
+        recorded: Option<&BiosContext>,
+        privileged: bool,
+    ) -> Result<Diagnosis, togi_hardware::Error> {
+        togi_hardware::diagnose(config, recorded, privileged)
+    }
+
     fn bootloader(&self, grubenv: &Path) -> Box<dyn Bootloader> {
         Box::new(Grub::new(grubenv))
     }
 
+    fn create_retry_marker(&self) -> io::Result<()> {
+        OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(RETRY_MARKER)
+            .map(drop)
+    }
+
+    fn remove_retry_marker(&self) -> io::Result<()> {
+        match std::fs::remove_file(RETRY_MARKER) {
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+            result => result,
+        }
+    }
+
     fn reboot(&self) -> Result<(), RebootError> {
         togi_hardware::reboot()
+    }
+
+    fn stderr_facts(&self) -> OutputFacts {
+        OutputFacts::detect(
+            &io::stderr(),
+            std::env::var_os("NO_COLOR").as_deref(),
+            std::env::var_os("JOURNAL_STREAM").as_deref(),
+        )
     }
 
     fn open_machine(
@@ -95,7 +182,7 @@ impl System for Real {
         config: &Config,
         state_dir: &Path,
         lock: &HostLock,
-    ) -> Result<Machine, Error> {
+    ) -> Result<Machine, togi_hardware::Error> {
         togi_hardware::open(config, state_dir, lock)
     }
 
@@ -107,23 +194,37 @@ impl System for Real {
         Box::new(io::stderr())
     }
 
-    fn renderer(&self) -> Renderer {
-        Renderer::new(OutputFacts::detect(
-            &io::stderr(),
-            std::env::var_os("NO_COLOR").as_deref(),
-            std::env::var_os("JOURNAL_STREAM").as_deref(),
-        ))
-    }
-
     fn surface(&self) -> Arc<dyn Surface> {
         Arc::new(Watch)
     }
 }
 
-/// Whether both streams are terminals, as a terminal ioctl says: a character device such as `/dev/null` is not.
+/// Whether both streams are terminals, as a terminal ioctl says: a character device such as
+/// `/dev/null` is not.
 #[must_use]
-pub fn both_terminals(stdin: &impl std::io::IsTerminal, stderr: &impl std::io::IsTerminal) -> bool {
+pub fn both_terminals(stdin: &impl IsTerminal, stderr: &impl IsTerminal) -> bool {
     stdin.is_terminal() && stderr.is_terminal()
+}
+
+/// The clock of a [`System`], for the session functions that stamp the events they append.
+pub struct SystemClock<'a>(pub &'a dyn System);
+
+impl Clock for SystemClock<'_> {
+    fn now(&self) -> Timestamp {
+        self.0.now()
+    }
+
+    fn monotonic(&self) -> Duration {
+        self.0.monotonic()
+    }
+
+    fn sleep(&mut self, cancel: &CancellationToken, duration: Duration) -> Result<(), Error> {
+        if cancel.wait_timeout(duration) {
+            Err(Error::Cancelled)
+        } else {
+            Ok(())
+        }
+    }
 }
 
 #[cfg(test)]

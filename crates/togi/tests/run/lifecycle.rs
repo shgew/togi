@@ -236,10 +236,10 @@ fn an_unknown_event_kind_in_a_current_journal_is_refused_before_the_config_namin
     let (exit, _, err) = fake.run(&["run", "--config", missing.to_str().unwrap()]);
     assert_eq!(exit, Exit::Incompatible, "{err}");
     assert!(
-        err.contains(r#"unknown event kind "future.thing""#),
+        err.contains(r#"unknown kind "future.thing""#),
         "{err}"
     );
-    assert!(err.contains("install the build that wrote it"), "{err}");
+    assert!(err.contains("cannot safely modify it; install the build that wrote it"), "{err}");
     assert_eq!(
         fs::read(fake.state_dir().join("events.jsonl")).unwrap(),
         before

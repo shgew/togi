@@ -6,19 +6,21 @@ use std::collections::BTreeMap;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
 
 use jiff::Timestamp;
+use jiff::tz::TimeZone;
 use tempfile::TempDir;
 use togi_cli::dashboard::{Stop, Surface};
 use togi_cli::system::System;
 use togi_config::Config;
-use togi_hardware::{Error, RebootError};
+use togi_hardware::{Diagnosis, Error, RebootError};
 use togi_hostlock::{HostLock, Policy};
 use togi_machine::{
-    BootId, CoreId, Error as MachineError, Machine, ObservedOffset, Smu, SmuValidated, Stopped,
+    BiosContext, BootId, CoreId, Error as MachineError, Machine, ObservedOffset, Smu, SmuValidated, Stopped,
     TargetOffset,
 };
-use togi_render::Renderer;
+use togi_render::OutputFacts;
 use togi_sim::{Model, RunSettings, Simulator, file};
 use togi_tuningboot::{Bootloader, Environment, SavedEntry};
 
@@ -309,8 +311,37 @@ impl System for Fake {
         Box::new(self.stderr.clone())
     }
 
-    fn renderer(&self) -> Renderer {
-        Renderer::default()
+    fn stderr_facts(&self) -> OutputFacts {
+        OutputFacts::default()
+    }
+
+    fn privileged(&self) -> bool {
+        true
+    }
+
+    fn monotonic(&self) -> Duration {
+        self.sim.seams().clock.monotonic()
+    }
+
+    fn zone(&self) -> TimeZone {
+        TimeZone::UTC
+    }
+
+    fn diagnose(
+        &self,
+        _: &Config,
+        _: Option<&BiosContext>,
+        _: bool,
+    ) -> Result<Diagnosis, Error> {
+        panic!("run does not diagnose")
+    }
+
+    fn create_retry_marker(&self) -> io::Result<()> {
+        panic!("run does not touch the retry marker")
+    }
+
+    fn remove_retry_marker(&self) -> io::Result<()> {
+        panic!("run does not touch the retry marker")
     }
 
     fn surface(&self) -> Arc<dyn Surface> {

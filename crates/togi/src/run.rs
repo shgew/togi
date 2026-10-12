@@ -7,34 +7,28 @@
 //! every exit; a panic in it comes back with that cleanup done, and is resumed after the dashboard, the
 //! journal and the host lock are put away, in that order.
 
-use std::fmt::{self, Display};
 use std::io::{self, Write};
 use std::num::NonZeroU32;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::LazyLock;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use clap::{Args as ClapArgs, ValueHint};
-use jiff::tz::TimeZone;
-use togi_config::{Config, LoadError};
 use togi_defect::KNOWN_DEFECTS;
 use togi_hostlock::HostLock;
-use togi_journal::{
-    Build, FileError, Operation, ReadError, Recording, Refusal, StateDir, UnknownKind, Verdict,
-};
+use togi_journal::{Operation, Recording, StateDir, Verdict};
 use togi_machine::CancellationToken;
-use togi_render::{Renderer, Style};
-use togi_session::{
-    ConfigSource, PrepareError, Prompt, PublicationPolicy, RunInput, StopPolicy, prepare,
-};
+use togi_render::{Renderer, Style, escape_text};
+use togi_session::{PrepareError, Prompt, PublicationPolicy, RunInput, StopPolicy, prepare};
 use togi_tuningboot::{Bootloader, LeaveReason, RestartCount};
 
 use crate::args::ConfigArgs;
 use crate::cli::{Context, examples};
 use crate::dashboard::Dashboard;
 use crate::exit::Exit;
-use crate::{build, signals};
+use crate::report::{current_build, exit_with, refusal_message, unknown_kind_message};
+use crate::signals;
 
 mod outcome;
 mod prompt;
@@ -117,10 +111,10 @@ fn positive(text: &str) -> Result<NonZeroU32, String> {
 /// Runs the command.
 pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
     if let Err(error) = ctx.system.check_platform() {
-        return failure(ctx, Exit::Error, error);
+        return exit_with(ctx, COMMAND, error, Exit::Error);
     }
-    let renderer = ctx.system.renderer();
-    let build = build::current();
+    let renderer = Renderer::new(ctx.system.stderr_facts());
+    let build = current_build();
     let mut bootloader = args
         .tuning_boot
         .as_deref()
@@ -129,68 +123,64 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
     let dir = match StateDir::lock(ctx.state_dir) {
         Ok(dir) => dir,
         Err(error @ togi_journal::LockError::Held { .. }) => {
-            return failure(ctx, Exit::Locked, error);
+            return exit_with(ctx, COMMAND, error, Exit::Locked);
         }
-        Err(error) => return failure(ctx, Exit::Error, error),
+        Err(error) => return exit_with(ctx, COMMAND, error, Exit::Error),
     };
-    match dir.live_build() {
-        Ok(Some(recorded)) => match build.verdict(&recorded, Operation::Resume) {
+    let recorded = match dir.live_build() {
+        Ok(recorded) => recorded,
+        Err(error) => return exit_with(ctx, COMMAND, error, Exit::Error),
+    };
+    if let Some(recorded) = &recorded {
+        match build.verdict(recorded, Operation::Resume) {
             Verdict::Refuse(refusal) => {
-                return refuse(
-                    ctx,
-                    Refused::Stamp(&refusal),
-                    bootloader.as_deref_mut(),
-                    renderer,
-                    None,
-                );
+                let refused = Refused {
+                    message: refusal_message(&refusal, recorded, &build),
+                    leave_reason: INCOMPATIBLE,
+                };
+                return refuse(ctx, &refused, bootloader.as_deref_mut(), renderer, None);
             }
             Verdict::Use => {
-                if let Some(unknown) = unknown_kind(&ctx.state_dir.join(JOURNAL_FILE)) {
-                    let refused = Refused::Kind {
-                        unknown: &unknown,
-                        written_by: &recorded,
-                        this: &build,
+                if let Err(error) = Recording::read(&ctx.state_dir.join(JOURNAL_FILE))
+                    && let Some(message) = unknown_kind_message(&error, recorded, &build)
+                {
+                    let refused = Refused {
+                        message,
+                        leave_reason: "unknown event kind",
                     };
-                    return refuse(ctx, refused, bootloader.as_deref_mut(), renderer, None);
+                    return refuse(ctx, &refused, bootloader.as_deref_mut(), renderer, None);
                 }
             }
             Verdict::Archive => {}
-        },
-        Ok(None) => {}
-        Err(error) => return failure(ctx, Exit::Error, error),
+        }
     }
 
-    let (config, file) = match Config::load(args.config.path()) {
-        Ok(config) => (config, true),
-        Err(LoadError::Read { source, .. })
-            if source.kind() == io::ErrorKind::NotFound && !args.config.is_explicit() =>
-        {
-            (Config::default(), false)
-        }
-        Err(error) => return failure(ctx, Exit::Usage, error),
+    let (config, source) = match args.config.load_with_source() {
+        Ok(loaded) => loaded,
+        Err(error) => return exit_with(ctx, COMMAND, error, Exit::Usage),
     };
 
     let cancel = CancellationToken::new();
     let _listening = match signals::listen(&cancel) {
         Ok(listening) => listening,
-        Err(error) => return failure(ctx, Exit::Error, format!("listen for signals: {error}")),
+        Err(error) => return exit_with(ctx, COMMAND, format!("listen for signals: {error}"), Exit::Error),
     };
 
     let (lock_path, policy) = ctx.system.host_lock();
     let lock = match HostLock::acquire(lock_path, policy) {
         Ok(lock) => lock,
         Err(error @ togi_hostlock::Error::Busy { .. }) => {
-            return failure(ctx, Exit::Locked, error);
+            return exit_with(ctx, COMMAND, error, Exit::Locked);
         }
-        Err(error) => return failure(ctx, Exit::Error, error),
+        Err(error) => return exit_with(ctx, COMMAND, error, Exit::Error),
     };
     let boot = match ctx.system.boot_id() {
         Ok(boot) => boot,
-        Err(error) => return failure(ctx, Exit::Error, error),
+        Err(error) => return exit_with(ctx, COMMAND, error, Exit::Error),
     };
     let mut machine = match ctx.system.open_machine(&config, ctx.state_dir, &lock) {
         Ok(machine) => machine,
-        Err(error) => return failure(ctx, Exit::Error, error),
+        Err(error) => return exit_with(ctx, COMMAND, error, Exit::Error),
     };
     let bios = machine
         .host
@@ -207,15 +197,22 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
     ) {
         Ok(prepared) => prepared,
         Err(PrepareError::Refused(refusal)) => {
+            let refused = Refused {
+                message: recorded.as_ref().map_or_else(
+                    || refusal.to_string(),
+                    |recorded| refusal_message(&refusal, recorded, &build),
+                ),
+                leave_reason: INCOMPATIBLE,
+            };
             return refuse(
                 ctx,
-                Refused::Stamp(&refusal),
+                &refused,
                 bootloader.as_deref_mut(),
                 renderer,
                 Some(&lock),
             );
         }
-        Err(error) => return failure(ctx, Exit::Error, error),
+        Err(error) => return exit_with(ctx, COMMAND, error, Exit::Error),
     };
     let journal = prepared.journal;
 
@@ -235,13 +232,10 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
     let prompt: Option<Box<dyn Prompt>> = interactive.then(|| {
         Box::new(prompt::Terminal::new(cancel.clone(), dashboard.clone())) as Box<dyn Prompt>
     });
-    let zone = TimeZone::system();
+    let zone = ctx.system.zone();
     let input = RunInput {
         config,
-        source: ConfigSource {
-            path: args.config.path().display().to_string(),
-            file,
-        },
+        source,
         build,
         boot,
         journal,
@@ -306,21 +300,16 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
     exit
 }
 
-fn failure(ctx: &mut Context<'_>, exit: Exit, message: impl Display) -> Exit {
-    let _ = writeln!(ctx.err, "togi run: {message}");
-    exit
-}
-
 /// A journal this build may not append to: prints why, and in the tuning boot persists a leave reason and
 /// clears the saved boot entry, under the host lock, without appending anything. Never reboots.
 fn refuse(
     ctx: &mut Context<'_>,
-    refused: Refused<'_>,
+    refused: &Refused,
     bootloader: Option<&mut (dyn Bootloader + '_)>,
     renderer: Renderer,
     held: Option<&HostLock>,
 ) -> Exit {
-    let line = format!("togi run: {refused}");
+    let line = format!("togi {COMMAND}: {}", escape_text(&refused.message));
     let _ = writeln!(ctx.err, "{}", renderer.text(Style::RedBold, &line));
     let Some(bootloader) = bootloader else {
         return Exit::Incompatible;
@@ -331,12 +320,12 @@ fn refuse(
         _lock = match HostLock::acquire(path, policy) {
             Ok(lock) => lock,
             Err(error @ togi_hostlock::Error::Busy { .. }) => {
-                return failure(ctx, Exit::Locked, error);
+                return exit_with(ctx, COMMAND, error, Exit::Locked);
             }
-            Err(error) => return failure(ctx, Exit::Error, error),
+            Err(error) => return exit_with(ctx, COMMAND, error, Exit::Error),
         };
     }
-    let reason = LeaveReason::new(refused.leave_reason(), RestartCount::ZERO)
+    let reason = LeaveReason::new(refused.leave_reason, RestartCount::ZERO)
         .and_then(|reason| togi_tuningboot::write_reason(bootloader, &reason));
     if let Err(error) = reason {
         let _ = writeln!(ctx.err, "togi: persist GRUB leave reason: {error}");
@@ -359,55 +348,14 @@ fn refuse(
     Exit::Incompatible
 }
 
+const COMMAND: &str = "run";
 const JOURNAL_FILE: &str = "events.jsonl";
+const INCOMPATIBLE: &str = "journal incompatible";
 
-/// Why a journal may not be appended to.
-#[derive(Clone, Copy)]
-enum Refused<'a> {
-    /// Its build stamp is newer than this build's.
-    Stamp(&'a Refusal),
-    /// A current journal holds an event kind this build does not know.
-    Kind {
-        unknown: &'a UnknownKind,
-        written_by: &'a Build,
-        this: &'a Build,
-    },
-}
-
-impl Refused<'_> {
-    const fn leave_reason(&self) -> &'static str {
-        match self {
-            Self::Stamp(_) => "journal incompatible",
-            Self::Kind { .. } => "unknown event kind",
-        }
-    }
-}
-
-impl Display for Refused<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Stamp(refusal) => write!(f, "{refusal}"),
-            Self::Kind {
-                unknown,
-                written_by,
-                this,
-            } => write!(
-                f,
-                "the journal holds an event this build cannot read ({unknown}); it was written by {written_by} and this is {this}; install the build that wrote it"
-            ),
-        }
-    }
-}
-
-/// The unknown kind a readable current journal holds, if it holds one.
-fn unknown_kind(path: &Path) -> Option<UnknownKind> {
-    match Recording::read(path) {
-        Err(FileError {
-            source: ReadError::UnknownKind { source, .. },
-            ..
-        }) => Some(source),
-        _ => None,
-    }
+/// Why a journal may not be appended to, and the leave reason the tuning boot persists for it.
+struct Refused {
+    message: String,
+    leave_reason: &'static str,
 }
 
 /// What the session wrote to its report while the dashboard was up, kept for after it.

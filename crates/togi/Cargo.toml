@@ -18,8 +18,8 @@ path = "src/main.rs"
 clap.workspace = true
 clap_complete.workspace = true
 clap_complete_nushell.workspace = true
-jiff.workspace = true
-rustix = { workspace = true, features = ["event", "stdio", "termios"] }
+jiff = { workspace = true, features = ["tz-system"] }
+rustix = { workspace = true, features = ["event", "stdio", "termios", "time"] }
 tokio = { workspace = true, features = ["macros", "rt", "signal"] }
 togi-config.workspace = true
 togi-defect.workspace = true
@@ -38,9 +38,12 @@ togi-watch.workspace = true
 [dev-dependencies]
 insta.workspace = true
 rustix = { workspace = true, features = ["pty", "termios", "process"] }
+serde_json.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["rt"] }
 togi-sim.workspace = true
+togi-smu.workspace = true
+togi-watchtest.workspace = true
 
 [lints]
 workspace = true

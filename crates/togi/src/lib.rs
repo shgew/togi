@@ -18,14 +18,27 @@
 //!
 //! Completions and help follow from the clap definition, so nothing else lists the command, and
 //! the snapshot tests show the new text for review.
+//!
+//! # The host seam
+//!
+//! A command reaches the machine only through [`system::System`]: the platform, privileges, host
+//! lock, boot id, clock, hardware checks, GRUB, the retry marker and the reboot. [`run`] uses the
+//! real host; [`run_with`] takes any other, so a test on Linux can stand for another platform
+//! (`check_platform` returning [`togi_hardware::Error::Unsupported`]), hold the host lock on a
+//! temporary file or answer the hardware checks without touching hardware. `run` and `doctor` ask
+//! `check_platform` first, before they read the boot id, open the journal, take the host lock or
+//! make a check, and report `hardware runs need Linux` with exit 1.
 
 pub mod args;
-pub mod build;
 pub mod cli;
 pub mod completion;
 pub mod dashboard;
+pub mod doctor;
 pub mod exit;
 pub mod panics;
+pub mod report;
+pub mod reset;
+pub mod restart_limit;
 pub mod run;
 pub mod signals;
 pub mod system;
