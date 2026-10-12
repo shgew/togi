@@ -423,11 +423,21 @@ fn only_a_live_session_start_names_the_live_session() {
     let fs = MemFs::new();
     let dir = dir(&fs);
     assert_eq!(dir.live_session().unwrap(), None);
+    // A Rust header missing only its newline is a torn tail, not a session; a line that lacks the build is not a
+    // complete header of this build and is refused.
+    fs.put(
+        "/state/events.jsonl",
+        "{\"seq\":1,\"kind\":\"session.start\",\"data\":{\"build\":{\"version\":\"1\",\"ruleset\":3,\"schema\":1,\"evidence\":2},\"session\":\"20231114T221320Z\"}}",
+    );
+    assert_eq!(dir.live_session().unwrap(), None);
     fs.put(
         "/state/events.jsonl",
         "{\"seq\":1,\"kind\":\"session.start\",\"data\":{\"session\":\"20231114T221320Z\"}}",
     );
-    assert_eq!(dir.live_session().unwrap(), None);
+    assert!(matches!(
+        dir.live_session(),
+        Err(DirError::ForeignJournal { .. })
+    ));
     fs.put(
         "/state/events.jsonl",
         "{\"seq\":1,\"kind\":\"session.start\",\"data\":{\"session\":\"20231114T221320Z\"}}\n",

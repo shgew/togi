@@ -122,12 +122,30 @@ fn an_unreadable_journal_exits_one_naming_the_tool_and_the_file() {
 fn a_journal_whose_events_skip_a_number_is_refused() {
     let dir = tempdir().unwrap();
     let events = hunting_session();
+    // The Rust header, then an event that skips seq 2.
+    let mut kept = vec![events[0].clone()];
+    kept.extend_from_slice(&events[2..]);
+    write_journal(dir.path(), &kept);
+    let ran = stats(&[os("--state-dir"), dir.path().as_os_str()]);
+    assert_eq!(ran.status.code(), Some(1));
+    let stderr = text(ran.stderr);
+    assert!(stderr.contains("events.jsonl"), "{stderr}");
+    assert!(stderr.contains("expected seq 2, found 3"), "{stderr}");
+}
+
+#[test]
+fn a_journal_whose_first_line_is_not_a_rust_header_is_refused() {
+    let dir = tempdir().unwrap();
+    let events = hunting_session();
     write_journal(dir.path(), &events[1..]);
     let ran = stats(&[os("--state-dir"), dir.path().as_os_str()]);
     assert_eq!(ran.status.code(), Some(1));
     let stderr = text(ran.stderr);
     assert!(stderr.contains("events.jsonl"), "{stderr}");
-    assert!(stderr.contains("expected seq 1, found 2"), "{stderr}");
+    assert!(
+        stderr.contains("first line is not a complete header of this build"),
+        "{stderr}"
+    );
 }
 
 #[cfg(target_os = "linux")]

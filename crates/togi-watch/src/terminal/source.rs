@@ -689,7 +689,7 @@ mod tests {
             };
             assert!(text.contains("events.jsonl"), "{text}");
             assert!(text.contains("docs/howto.md#go-to-rust-cutover"), "{text}");
-            assert!(!text.contains("line"), "no later line was read: {text}");
+            assert!(!text.contains("line 2"), "no later line was read: {text}");
             let refusal = source.refusal().unwrap();
             assert!(matches!(
                 refusal,
