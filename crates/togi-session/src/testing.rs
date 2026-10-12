@@ -266,6 +266,7 @@ impl Bench {
             resume: None,
             carry: None,
             log: None,
+            on_append: None,
             renderer: Renderer::default(),
             zone: TimeZone::UTC,
             cancel: CancellationToken::new(),

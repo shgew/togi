@@ -127,27 +127,6 @@ fn shown(outcome: &Result<SimOutcome, SimError>) -> String {
     }
 }
 
-fn files_dir_is_empty(dir: &tempfile::TempDir) -> bool {
-    std::fs::read_dir(dir.path()).unwrap().next().is_none()
-}
-
-#[test]
-fn an_observer_on_a_state_directory_on_disk_is_refused_before_anything_is_touched() {
-    let dir = tempfile::tempdir().unwrap();
-    let sim = simulator(&hunt_machine(2), 1);
-    let before = sim.persisted();
-    let mut input = input(sim.clone(), Persistence::Files(dir.path().to_path_buf()));
-    input.observer = Some(Box::new(|_| Observe::Continue));
-    let outcome = simulate(input);
-    assert!(
-        matches!(outcome, Err(SimError::ObserverOnDisk)),
-        "{}",
-        shown(&outcome)
-    );
-    assert!(files_dir_is_empty(&dir));
-    assert_eq!(sim.persisted(), before);
-}
-
 #[test]
 fn samples_without_a_state_directory_on_disk_are_refused_before_anything_is_touched() {
     let fs = MemFs::new();

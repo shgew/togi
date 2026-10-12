@@ -3,19 +3,18 @@ use std::io::{self, Write};
 use std::rc::Rc;
 
 use jiff::tz::TimeZone;
-use togi_journal::{Event, MemFs};
+use togi_journal::Event;
 use togi_machine::CancellationToken;
 use togi_render::Renderer;
+use togi_session::AppendHook;
 
 use crate::input::{Observe, Observer};
 
 pub(crate) type SharedLog = Rc<RefCell<UserLog>>;
 pub(crate) type Slot = Rc<RefCell<Option<Observer>>>;
 
-const EVENTS: &str = "/state/events.jsonl";
-
 /// The caller's log. The first write that fails drops it and is kept for the simulation to report, so the
-/// observer behind the same [`Tee`] keeps seeing every appended event.
+/// observer keeps seeing every appended event.
 pub(crate) struct UserLog {
     writer: Option<Box<dyn Write>>,
     failure: Option<io::Error>,
@@ -60,25 +59,13 @@ impl UserLog {
     }
 }
 
-/// The log a run writes each appended event's line to: it forwards to the caller's log and lets the observer
-/// see the event that line is about. It never fails, so a failing caller's log does not stop the observer.
-pub(crate) struct Tee {
-    pub user: SharedLog,
-    pub watch: Option<Watch>,
-}
-
-pub(crate) struct Watch {
-    pub fs: MemFs,
-    pub observer: Slot,
-    pub cancel: CancellationToken,
-}
+/// The log a run writes each appended event's line to: it forwards to the caller's log and never fails, so a
+/// failing caller's log does not stop the run's other consumers.
+pub(crate) struct Tee(pub SharedLog);
 
 impl Write for Tee {
     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        self.user.borrow_mut().write(bytes);
-        if let Some(watch) = self.watch.as_mut() {
-            watch.see(bytes);
-        }
+        self.0.borrow_mut().write(bytes);
         Ok(bytes.len())
     }
 
@@ -87,34 +74,16 @@ impl Write for Tee {
     }
 }
 
-impl Watch {
-    fn see(&mut self, bytes: &[u8]) {
-        for byte in bytes {
-            if *byte != b'\n' {
-                continue;
-            }
-            self.appended();
-        }
-    }
-
-    fn appended(&mut self) {
-        let mut slot = self.observer.borrow_mut();
-        let Some(observer) = slot.as_mut() else {
-            return;
-        };
-        let Some(event) = self.last_event() else {
-            return;
-        };
-        if observer(&event) == Observe::Stop {
+/// The hook that shows `slot`'s observer each event a run appends. An observer that answers
+/// [`Observe::Stop`] is dropped and `cancel` fires, so it is never called again.
+pub(crate) fn hook(slot: Slot, cancel: CancellationToken) -> AppendHook {
+    Box::new(move |event| {
+        let mut slot = slot.borrow_mut();
+        if let Some(observer) = slot.as_mut()
+            && observer(event) == Observe::Stop
+        {
             *slot = None;
-            self.cancel.cancel();
+            cancel.cancel();
         }
-    }
-
-    fn last_event(&self) -> Option<Event> {
-        let bytes = self.fs.contents(EVENTS)?;
-        let text = std::str::from_utf8(&bytes).ok()?;
-        let line = text.strip_suffix('\n')?.rsplit('\n').next()?;
-        Event::decode(line).ok()
-    }
+    })
 }

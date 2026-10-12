@@ -39,7 +39,7 @@ pub enum Observe {
     Stop,
 }
 
-/// Called with every event a run appends, after it is durable. It needs an in-memory state directory.
+/// Called with every event a run appends, once and in order, after it is durable.
 pub type Observer = Box<dyn FnMut(&Event) -> Observe>;
 
 pub struct SimInput {
