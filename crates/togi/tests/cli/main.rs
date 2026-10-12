@@ -94,6 +94,57 @@ fn no_command_prints_the_wordmark_and_usage_on_stderr() {
     insta::assert_snapshot!(stderr(&ran));
 }
 
+#[test]
+fn state_dir_without_a_command_prints_the_wordmark_and_usage_on_stderr() {
+    for args in [&["--state-dir", "/x"][..], &["--state-dir=/x"]] {
+        let ran = togi(args);
+        assert_eq!(ran.status.code(), Some(2), "{args:?}");
+        assert_eq!(stdout(&ran), "", "{args:?}");
+        assert!(
+            stderr(&ran).starts_with("   __              _\n"),
+            "{args:?}: {}",
+            stderr(&ran)
+        );
+        assert!(stderr(&ran).contains("Usage: togi"), "{args:?}");
+    }
+}
+
+/// `/dev/full` fails every write with `ENOSPC`. A stdout closed at startup is not tested: Rust's
+/// runtime reopens it on `/dev/null` before `main`, so no write ever fails there.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_stdout_that_cannot_be_written_exits_1_with_the_error_on_stderr() {
+    let full = |args: &[&str]| {
+        let stdout = std::fs::OpenOptions::new()
+            .write(true)
+            .open("/dev/full")
+            .unwrap();
+        Command::new(env!("CARGO_BIN_EXE_togi"))
+            .args(args)
+            .stdout(stdout)
+            .output()
+            .unwrap()
+    };
+    for args in [
+        &["completion", "bash"][..],
+        &["completion", "nushell"],
+        &["--help"],
+        &["completion", "--help"],
+        &["--version"],
+    ] {
+        let ran = full(args);
+        assert_eq!(ran.status.code(), Some(1), "{args:?}: {}", stderr(&ran));
+        assert!(
+            stderr(&ran).starts_with("togi: ") && stderr(&ran).contains("No space left on device"),
+            "{args:?}: {}",
+            stderr(&ran)
+        );
+    }
+    let ran = full(&["bogus"]);
+    assert_eq!(ran.status.code(), Some(2), "a usage error stays exit 2");
+    assert!(stderr(&ran).contains("unrecognized subcommand"));
+}
+
 const SCOPE: &str = "--config applies only to doctor, run and reset";
 
 #[test]
@@ -124,7 +175,7 @@ fn usage_errors_exit_2_on_stderr_with_nothing_on_stdout() {
 }
 
 #[test]
-fn a_missing_shell_error_names_the_shells() {
+fn a_missing_shell_error_names_the_argument() {
     let ran = togi(&["completion"]);
     assert!(stderr(&ran).contains("<SHELL>"), "{}", stderr(&ran));
     insta::assert_snapshot!(stderr(&ran));
@@ -175,13 +226,10 @@ fn completion_reads_and_writes_nothing_in_the_state_directory() {
 #[test]
 fn nushell_loads_the_script_without_warnings() {
     let nu = Command::new("nu").arg("--version").output();
-    if nu.is_err() {
-        assert!(
-            std::env::var_os("TOGI_DEV_SHELL").is_none(),
-            "nu is not on PATH in the dev shell"
-        );
-        return;
-    }
+    assert!(
+        nu.is_ok(),
+        "nu is not on PATH: the dev shell and the rust-nextest check provide it, and without it this test would pass without loading the script"
+    );
     let dir = tempfile::tempdir().unwrap();
     let script = dir.path().join("togi.nu");
     std::fs::write(&script, completion("nushell")).unwrap();

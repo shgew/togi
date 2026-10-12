@@ -93,6 +93,18 @@ fn no_command_prints_the_wordmark_and_usage_to_stderr_and_exits_2() {
 }
 
 #[test]
+fn state_dir_without_a_command_prints_the_wordmark_and_usage_to_stderr_and_exits_2() {
+    for args in [&["--state-dir", "/x"][..], &["--state-dir=/x"]] {
+        let ran = togi(args);
+        assert_eq!(ran.exit, Exit::Usage, "{args:?}");
+        assert_eq!(ran.out, "", "{args:?}");
+        assert!(ran.err.starts_with(BANNER), "{args:?}: {}", ran.err);
+        assert!(ran.err.contains("Usage: togi"), "{args:?}: {}", ran.err);
+        assert!(ran.err.contains("Commands:"), "{args:?}: {}", ran.err);
+    }
+}
+
+#[test]
 fn usage_errors_exit_2_with_stderr_only() {
     for (args, text) in [
         (&["bogus"][..], "unrecognized subcommand 'bogus'"),
@@ -136,6 +148,8 @@ fn config_is_rejected_with_the_scope_error_wherever_it_is_written() {
         &["--config", "c.json"],
         &["--config=c.json"],
         &["--config"],
+        &["--config", "completion"],
+        &["--config=c.json", "--version"],
         &["--config", "c.json", "--help"],
         &["completion", "--config"],
     ] {
@@ -157,6 +171,11 @@ fn the_scope_error_shows_the_usage_of_the_command_it_names() {
     assert!(ran.err.contains("Usage: togi completion"), "{}", ran.err);
     assert!(
         !togi(&["--config", "c.json"])
+            .err
+            .contains("Usage: togi completion")
+    );
+    assert!(
+        !togi(&["--config", "completion"])
             .err
             .contains("Usage: togi completion")
     );
@@ -305,6 +324,11 @@ fn every_help_examples_block_shares_one_description_column() {
     for mut command in commands {
         let help = command.render_help().to_string();
         let Some((_, block)) = help.split_once("Examples:\n") else {
+            let name = command.get_name();
+            assert_eq!(
+                name, "help",
+                "`{name}` has no Examples block in its help:\n{help}"
+            );
             continue;
         };
         let block = block.split("\n\n").next().unwrap();
