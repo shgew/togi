@@ -44,7 +44,7 @@ pub(crate) struct SameArgs {
     /// Stop a session after N simulated boots: the run is censored.
     #[arg(long, value_name = "N", default_value = "1000")]
     max_boots: NonZeroU32,
-    /// The directory of cached digests, session costs, builds and runs; default the user cache directory's
+    /// The directory of cached digests, session costs and the base's build; default the user cache directory's
     /// togi/bench-rs.
     #[arg(long, value_name = "DIR")]
     cache: Option<PathBuf>,

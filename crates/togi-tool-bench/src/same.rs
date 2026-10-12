@@ -14,7 +14,7 @@ pub mod journal;
 use std::collections::BTreeSet;
 use std::fmt;
 use std::fs;
-use std::io;
+use std::io::{self, Write as _};
 use std::num::{NonZeroU32, NonZeroUsize};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -206,13 +206,28 @@ impl Report {
 
 /// Compares the sessions of the base and head trees.
 pub fn execute(options: &Options, fleet: &Fleet) -> Result<Report, Failed> {
-    execute_with(options, fleet, &simulator::build_in)
+    let waiting = |path: &Path| {
+        let _ = writeln!(
+            io::stderr(),
+            "togi-tool-bench: waiting for another comparison's lock on {}",
+            path.display()
+        );
+    };
+    execute_with(options, fleet, &simulator::build_in, &waiting)
 }
 
 /// How a tree's simulator is built: in the tree, with the target directory when given, stoppable by the fleet.
 type Build<'a> = &'a dyn Fn(&Fleet, &Path, Option<&Path>) -> Result<PathBuf, Error>;
 
-fn execute_with(options: &Options, fleet: &Fleet, build: Build<'_>) -> Result<Report, Failed> {
+/// Told once that another comparison holds the lock at the path, before the wait for it.
+type Waiting<'a> = &'a dyn Fn(&Path);
+
+fn execute_with(
+    options: &Options,
+    fleet: &Fleet,
+    build: Build<'_>,
+    waiting: Waiting<'_>,
+) -> Result<Report, Failed> {
     let started = Instant::now();
     let fail = |error| Failed {
         error: Box::new(error),
@@ -232,7 +247,7 @@ fn execute_with(options: &Options, fleet: &Fleet, build: Build<'_>) -> Result<Re
         return Err(fail(SameError::Interrupted));
     }
     let loaded = started.elapsed();
-    let simulators = simulators(options, &trees, fleet, build).map_err(fail)?;
+    let simulators = simulators(options, &trees, fleet, build, waiting).map_err(fail)?;
     if fleet.cancelled() {
         return Err(fail(SameError::Interrupted));
     }
@@ -394,6 +409,7 @@ fn simulators(
     trees: &[PathBuf; 2],
     fleet: &Fleet,
     build: Build<'_>,
+    waiting: Waiting<'_>,
 ) -> Result<[Simulator; 2], SameError> {
     let locate = |side: Side, binary: &Path| {
         Simulator::locate(Some(binary)).map_err(|source| SameError::Simulator {
@@ -432,7 +448,10 @@ fn simulators(
                 source,
             }
         })?;
-        let _held = lock_target(&options.cache)?;
+        let _held = lock_target(&options.cache, fleet, waiting)?;
+        if fleet.cancelled() {
+            return Err(SameError::Interrupted);
+        }
         mark_modified(tree).map_err(|source| SameError::Io {
             what: "mark the base tree modified",
             path: tree.clone(),
@@ -444,7 +463,8 @@ fn simulators(
 }
 
 /// Takes the exclusive lock on the base's target directory, which a comparison holds until it drops the file.
-fn lock_target(cache: &Path) -> Result<fs::File, SameError> {
+/// While another comparison holds it, `waiting` is told once and the wait ends at an interrupt.
+fn lock_target(cache: &Path, fleet: &Fleet, waiting: Waiting<'_>) -> Result<fs::File, SameError> {
     let path = cache.join("same-target.lock");
     let failed = |source| SameError::Io {
         what: "lock the target directory with",
@@ -458,8 +478,22 @@ fn lock_target(cache: &Path) -> Result<fs::File, SameError> {
         .truncate(false)
         .open(&path)
         .map_err(failed)?;
-    file.lock().map_err(failed)?;
-    Ok(file)
+    let mut told = false;
+    loop {
+        match file.try_lock() {
+            Ok(()) => return Ok(file),
+            Err(fs::TryLockError::Error(source)) => return Err(failed(source)),
+            Err(fs::TryLockError::WouldBlock) => {}
+        }
+        if !told {
+            waiting(&path);
+            told = true;
+        }
+        if fleet.cancelled() {
+            return Err(SameError::Interrupted);
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
 }
 
 /// Marks every file under `dir` modified now, skipping the directories of version control and builds.
@@ -583,7 +617,14 @@ mod build_tests {
             seen.borrow_mut().push((target.is_some(), blocked));
             Ok(fixture.simulator.clone())
         };
-        simulators(&fixture.options(), &fixture.trees(), &Fleet::new(), &build).unwrap();
+        simulators(
+            &fixture.options(),
+            &fixture.trees(),
+            &Fleet::new(),
+            &build,
+            &|_| {},
+        )
+        .unwrap();
         assert_eq!(*seen.borrow(), [(true, true), (false, false)]);
         let probe = fs::File::options().write(true).open(&lock).unwrap();
         assert!(probe.try_lock().is_ok(), "the lock outlived the build");
@@ -597,7 +638,7 @@ mod build_tests {
             fleet.cancel();
             Ok(fixture.simulator.clone())
         };
-        let failed = execute_with(&fixture.options(), &fleet, &build).unwrap_err();
+        let failed = execute_with(&fixture.options(), &fleet, &build, &|_| {}).unwrap_err();
         assert!(matches!(*failed.error, SameError::Interrupted), "{failed}");
     }
 
@@ -611,7 +652,7 @@ mod build_tests {
                 message: "stopped".into(),
             })
         };
-        let failed = execute_with(&fixture.options(), &fleet, &build).unwrap_err();
+        let failed = execute_with(&fixture.options(), &fleet, &build, &|_| {}).unwrap_err();
         assert!(matches!(*failed.error, SameError::Interrupted), "{failed}");
     }
 
@@ -623,7 +664,47 @@ mod build_tests {
         let build = |_: &Fleet, _: &Path, _: Option<&Path>| -> Result<PathBuf, Error> {
             panic!("built after an interrupt")
         };
-        let failed = execute_with(&fixture.options(), &fleet, &build).unwrap_err();
+        let failed = execute_with(&fixture.options(), &fleet, &build, &|_| {}).unwrap_err();
         assert!(matches!(*failed.error, SameError::Interrupted), "{failed}");
+    }
+
+    #[test]
+    fn an_interrupt_during_the_head_build_is_an_interrupt_not_equality() {
+        let fixture = Fixture::new();
+        let fleet = Fleet::new();
+        let build = |fleet: &Fleet, _: &Path, target: Option<&Path>| {
+            if target.is_none() {
+                fleet.cancel();
+            }
+            Ok(fixture.simulator.clone())
+        };
+        let failed = execute_with(&fixture.options(), &fleet, &build, &|_| {}).unwrap_err();
+        assert!(matches!(*failed.error, SameError::Interrupted), "{failed}");
+    }
+
+    #[test]
+    fn a_comparison_waiting_for_the_target_lock_stops_at_an_interrupt() {
+        let fixture = Fixture::new();
+        let cache = fixture.cache();
+        fs::create_dir_all(&cache).unwrap();
+        let holder = fs::File::create(cache.join("same-target.lock")).unwrap();
+        holder.lock().unwrap();
+        let fleet = Fleet::new();
+        fleet.cancel();
+        let told = RefCell::new(Vec::new());
+        let waiting = |path: &Path| told.borrow_mut().push(path.to_path_buf());
+        let error = lock_target(&cache, &fleet, &waiting).unwrap_err();
+        assert!(matches!(error, SameError::Interrupted), "{error}");
+        assert_eq!(*told.borrow(), [cache.join("same-target.lock")]);
+    }
+
+    #[test]
+    fn a_free_target_lock_is_taken_without_a_notice() {
+        let fixture = Fixture::new();
+        let told = RefCell::new(0);
+        let waiting = |_: &Path| *told.borrow_mut() += 1;
+        let held = lock_target(&fixture.cache(), &Fleet::new(), &waiting).unwrap();
+        assert_eq!(*told.borrow(), 0);
+        drop(held);
     }
 }
