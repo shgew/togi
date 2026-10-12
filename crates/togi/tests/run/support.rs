@@ -272,6 +272,7 @@ impl System for Fake {
     }
 
     fn boot_id(&self) -> Result<BootId, togi_detect::Error> {
+        self.calls.borrow_mut().push("boot_id");
         self.boots_read.set(self.boots_read.get() + 1);
         Ok(self.sim.seams().host.boot_id().unwrap())
     }
@@ -290,6 +291,7 @@ impl System for Fake {
     }
 
     fn open_machine(&self, _: &Config, _: &Path, _: &HostLock) -> Result<Machine, Error> {
+        self.calls.borrow_mut().push("open_machine");
         self.opened.set(self.opened.get() + 1);
         if self.open_error {
             return Err(Error::NeedsRoot {
@@ -344,10 +346,11 @@ impl System for Fake {
     }
 }
 
-/// Sends the process SIGINT, as Ctrl-C does, once the session writes its first offset. Each test runs in its own
-/// process (nextest), so the signal reaches only the run under test.
+/// Sends the process a signal, as Ctrl-C or a closed terminal does, once the session writes its first offset. Each
+/// test runs in its own process (nextest), so the signal reaches only the run under test.
 struct InterruptingSmu {
     inner: Box<dyn Smu>,
+    signal: rustix::process::Signal,
     sent: bool,
 }
 
@@ -355,8 +358,7 @@ impl InterruptingSmu {
     fn interrupt(&mut self) {
         if !self.sent {
             self.sent = true;
-            rustix::process::kill_process(rustix::process::getpid(), rustix::process::Signal::INT)
-                .unwrap();
+            rustix::process::kill_process(rustix::process::getpid(), self.signal).unwrap();
         }
     }
 }
@@ -387,9 +389,15 @@ impl Smu for InterruptingSmu {
 
 /// The machine, interrupted by SIGINT at its first offset write.
 pub(crate) fn interrupt_on_first_write(machine: Machine) -> Machine {
+    signal_on_first_write(machine, rustix::process::Signal::INT)
+}
+
+/// The machine, sent `signal` at its first offset write.
+pub(crate) fn signal_on_first_write(machine: Machine, signal: rustix::process::Signal) -> Machine {
     Machine {
         smu: Box::new(InterruptingSmu {
             inner: machine.smu,
+            signal,
             sent: false,
         }),
         ..machine

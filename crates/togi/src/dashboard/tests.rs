@@ -100,3 +100,24 @@ fn event_lines_are_dropped_only_while_the_dashboard_shows() {
     lines.write_all(b"shutdown\n").unwrap();
     assert_eq!(&*sink.0.lock().unwrap(), b"startup\nshutdown\n");
 }
+
+#[test]
+fn input_typed_while_the_dashboard_showed_is_dropped_when_the_input_is_given_back() {
+    let (master, slave) = terminal();
+    let quiet = QuietInput::enter(slave.as_fd()).unwrap().unwrap();
+    rustix::io::write(&master, b"typed during the run\n").unwrap();
+    let readable = |file: &File| {
+        let mut fds = [PollFd::new(file, PollFlags::IN)];
+        let none = Timespec {
+            tv_sec: 0,
+            tv_nsec: 0,
+        };
+        poll(&mut fds, Some(&none)).unwrap() > 0
+    };
+    assert!(readable(&slave), "the typed bytes reach the terminal input");
+    drop(quiet);
+    assert!(
+        !readable(&slave),
+        "typed-ahead keys must not reach the shell after the run"
+    );
+}

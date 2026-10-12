@@ -9,7 +9,7 @@ use togi_hostlock::{HostLock, Policy};
 use togi_journal::{EventKind, Payload, ShutdownReason, StateDir};
 use togi_machine::Machine;
 
-use crate::support::{Fake, interrupt_on_first_write};
+use crate::support::{Fake, interrupt_on_first_write, signal_on_first_write};
 
 fn interrupted() -> Fake {
     let mut fake = Fake::new();
@@ -421,4 +421,241 @@ impl togi_cli::dashboard::Surface for Records {
         stop.wait();
         Ok(())
     }
+}
+
+#[test]
+fn sighup_and_sigterm_stop_a_run_cleanly_like_sigint() {
+    for signal in [rustix::process::Signal::HUP, rustix::process::Signal::TERM] {
+        let mut fake = Fake::new();
+        fake.wrap = Box::new(move |machine| signal_on_first_write(machine, signal));
+        let (exit, _, err) = fake.run(&["run", "--no-tui"]);
+        assert_eq!(exit, Exit::Ok, "{signal:?}: {err}");
+        let events = fake.events();
+        let last = events.last().unwrap();
+        assert!(
+            matches!(&last.payload, Payload::Shutdown(shutdown) if shutdown.reason == ShutdownReason::Signal),
+            "{signal:?}: {}",
+            last.kind().as_str()
+        );
+    }
+}
+
+fn position(events: &[togi_journal::Event], wanted: impl Fn(&Payload) -> bool) -> Option<usize> {
+    events.iter().position(|event| wanted(&event.payload))
+}
+
+#[test]
+fn a_missing_watchdog_is_journaled_as_a_warning_before_the_first_offset_write_with_the_dashboard_up()
+ {
+    let mut fake = Fake::new();
+    fake.interactive = true;
+    fake.sim.fail_check("watchdog", "no /dev/watchdog");
+    fake.wrap = Box::new(interrupt_on_first_write);
+    let (exit, _, err) = fake.run(&["run"]);
+    assert_eq!(exit, Exit::Ok, "{err}");
+    let events = fake.events();
+    let warned = position(&events, |payload| {
+        matches!(payload, Payload::SessionWarning(warning) if warning.operation == "check hardware watchdog"
+            && warning.error.starts_with("no active hardware watchdog (no /dev/watchdog)"))
+    })
+    .unwrap();
+    let first_write =
+        position(&events, |payload| matches!(payload, Payload::SmuIntent(_))).unwrap();
+    assert!(warned < first_write, "{warned} before {first_write}");
+    assert!(
+        !events
+            .iter()
+            .any(|event| matches!(&event.payload, Payload::PreflightCheck(check) if check.check == "watchdog")),
+        "a manual run does not wait for the watchdog"
+    );
+}
+
+#[test]
+fn the_tuning_boot_waits_for_the_watchdog_and_a_manual_run_does_not() {
+    let manual = {
+        let mut fake = Fake::new();
+        fake.sim.fail_check("watchdog", "no /dev/watchdog");
+        fake.wrap = Box::new(interrupt_on_first_write);
+        let (exit, _, err) = fake.run(&["run", "--no-tui"]);
+        assert_eq!(exit, Exit::Ok, "{err}");
+        assert!(
+            !fake
+                .events()
+                .iter()
+                .any(|event| matches!(&event.payload, Payload::PreflightCheck(check) if check.check == "watchdog")),
+            "a manual run does not wait for a watchdog handoff"
+        );
+        fake
+    };
+    assert!(
+        manual
+            .events()
+            .iter()
+            .any(|event| matches!(&event.payload, Payload::SmuIntent(_)))
+    );
+
+    let mut boot = Fake::new();
+    boot.sim.fail_check("watchdog", "no /dev/watchdog");
+    boot.wrap = Box::new(interrupt_on_first_write);
+    let before = boot.sim.monotonic();
+    let grubenv = boot.grubenv();
+    let (exit, _, err) = boot.run(&[
+        "run",
+        "--no-tui",
+        "--tuning-boot",
+        grubenv.to_str().unwrap(),
+    ]);
+    assert_eq!(exit, Exit::Preflight, "{err}");
+    assert!(boot.sim.monotonic().saturating_sub(before) >= std::time::Duration::from_secs(30));
+    assert!(
+        !boot
+            .events()
+            .iter()
+            .any(|event| matches!(&event.payload, Payload::SmuIntent(_))),
+        "no offset is written before the watchdog is armed"
+    );
+}
+
+#[test]
+fn the_host_lock_is_taken_before_the_boot_id_is_read_and_the_hardware_opened() {
+    let fake = interrupted();
+    let (exit, _, err) = fake.run(&["run", "--no-tui"]);
+    assert_eq!(exit, Exit::Ok, "{err}");
+    assert_eq!(
+        *fake.calls.borrow(),
+        ["check_platform", "host_lock", "boot_id", "open_machine"]
+    );
+}
+
+#[test]
+fn an_explicit_config_that_is_missing_is_a_usage_error_wherever_the_flag_is_written() {
+    let fake = Fake::new();
+    let missing = fake.dir.join("missing.json");
+    let missing = missing.to_str().unwrap();
+    let state = fake.state_dir();
+    for args in [
+        [
+            "togi",
+            "--config",
+            missing,
+            "--state-dir",
+            state.to_str().unwrap(),
+            "run",
+        ],
+        [
+            "togi",
+            "--state-dir",
+            state.to_str().unwrap(),
+            "run",
+            "--config",
+            missing,
+        ],
+    ] {
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        let exit = togi_cli::run_with(args, &mut out, &mut err, &fake);
+        let err = String::from_utf8(err).unwrap();
+        assert_eq!(exit, Exit::Usage, "{args:?}: {err}");
+        assert!(err.contains("cannot read config"), "{err}");
+    }
+    assert_eq!(fake.opened.get(), 0);
+    assert!(fake.events().is_empty());
+}
+
+#[test]
+fn an_unknown_kind_in_an_older_journal_does_not_refuse_the_run_before_the_config_is_read() {
+    for field in ["ruleset", "schema", "evidence"] {
+        let mut fake = Fake::new();
+        first_run(&mut fake);
+        let path = fake.state_dir().join("events.jsonl");
+        let text = fs::read_to_string(&path).unwrap();
+        let (first, rest) = text.split_once('\n').unwrap();
+        let marker = format!(r#""{field}":"#);
+        let at = first
+            .find(&marker)
+            .unwrap_or_else(|| panic!("{field} in {first}"))
+            + marker.len();
+        let digits = first[at..].bytes().take_while(u8::is_ascii_digit).count();
+        let value: u32 = first[at..at + digits].parse().unwrap();
+        let older = value
+            .checked_sub(1)
+            .unwrap_or_else(|| panic!("{field} {value} has no older stamp"));
+        fs::write(
+            &path,
+            format!("{}{older}{}\n{rest}", &first[..at], &first[at + digits..]),
+        )
+        .unwrap();
+        let before = append_future_kind(&fake);
+        let missing = fake.dir.join("missing.json");
+        let (exit, _, err) = fake.run(&["run", "--config", missing.to_str().unwrap()]);
+        assert_eq!(exit, Exit::Usage, "older {field}: {err}");
+        assert!(err.contains("cannot read config"), "older {field}: {err}");
+        assert!(!err.contains("unknown kind"), "older {field}: {err}");
+        assert_eq!(fs::read(&path).unwrap(), before, "older {field}");
+    }
+}
+
+struct Finishes(std::sync::Arc<std::sync::atomic::AtomicBool>);
+
+impl togi_cli::dashboard::Surface for Finishes {
+    fn draw(
+        &self,
+        _: &std::path::Path,
+        _: u64,
+        stop: &togi_cli::dashboard::Stop,
+    ) -> Result<(), String> {
+        stop.wait();
+        self.0.store(true, std::sync::atomic::Ordering::SeqCst);
+        Ok(())
+    }
+}
+
+struct NotesFirstWrite {
+    finished: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    seen: Option<bool>,
+}
+
+impl std::io::Write for NotesFirstWrite {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.seen
+            .get_or_insert_with(|| self.finished.load(std::sync::atomic::Ordering::SeqCst));
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+#[test]
+fn a_failure_after_the_dashboard_showed_stops_and_joins_it_before_the_diagnostic_prints() {
+    let mut fake = Fake::new();
+    fake.interactive = true;
+    fake.sim.fail_write(1);
+    let finished = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    fake.surface = std::sync::Arc::new(Finishes(finished.clone()));
+    let mut err = NotesFirstWrite {
+        finished,
+        seen: None,
+    };
+    let mut out = Vec::new();
+    let exit = togi_cli::run_with(fake.arguments(&["run"]), &mut out, &mut err, &fake);
+    assert_eq!(exit, Exit::Smu);
+    assert_eq!(
+        err.seen,
+        Some(true),
+        "the diagnostic printed over a live dashboard"
+    );
+}
+
+#[test]
+fn a_journal_that_cannot_be_opened_never_shows_the_dashboard() {
+    let mut fake = Fake::new();
+    fake.interactive = true;
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(None));
+    fake.surface = std::sync::Arc::new(Records { seen: seen.clone() });
+    fs::create_dir_all(fake.state_dir()).unwrap();
+    fs::write(fake.state_dir().join("events.jsonl"), "not json\n").unwrap();
+    let (exit, _, err) = fake.run(&["run"]);
+    assert_eq!(exit, Exit::Error, "{err}");
+    assert!(seen.lock().unwrap().is_none(), "the dashboard drew");
 }
