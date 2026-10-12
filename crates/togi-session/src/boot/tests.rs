@@ -473,20 +473,28 @@ fn a_resumed_dead_end_whose_pending_reason_cannot_be_acknowledged_stops_before_t
         let pending = togi_tuningboot::read_reason(&mut grub.clone())
             .unwrap()
             .unwrap();
-        assert_eq!(pending.id, prior.id, "{fault:?}: the pending reason was replaced");
+        assert_eq!(
+            pending.id, prior.id,
+            "{fault:?}: the pending reason was replaced"
+        );
         let added: Vec<_> = session.appender().journal().events()[before..]
             .iter()
-            .map(|event| event.kind())
+            .map(togi_journal::Event::kind)
             .collect();
         assert!(
             added.iter().all(|kind| *kind == EventKind::BootLeaveReason),
             "{fault:?}: {added:?}"
         );
         assert!(
-            !session.appender().journal().events().iter().any(|event| matches!(
-                event.payload,
-                Payload::BootSavedEntry(_) | Payload::Shutdown(_)
-            )),
+            !session
+                .appender()
+                .journal()
+                .events()
+                .iter()
+                .any(|event| matches!(
+                    event.payload,
+                    Payload::BootSavedEntry(_) | Payload::Shutdown(_)
+                )),
             "{fault:?}: a handoff event authorizes a reboot"
         );
     }

@@ -90,7 +90,7 @@ fn a_refused_profile_ends_the_run_with_the_refusal_starts_no_trial_and_claims_no
         "the refusal and the cleanup that followed appended {:?}",
         events[before.len()..]
             .iter()
-            .map(|event| event.kind())
+            .map(togi_journal::Event::kind)
             .collect::<Vec<_>>()
     );
     let mut smu = bench.sim.seams().smu;
