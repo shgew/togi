@@ -60,6 +60,12 @@ pub enum DirError {
         #[source]
         source: crate::session_id::InvalidSessionId,
     },
+    #[error("{} holds an unreadable build stamp: {source}", path.display())]
+    BadBuild {
+        path: PathBuf,
+        #[source]
+        source: serde_json::Error,
+    },
     #[error("{0} markers are permanent")]
     PermanentMarker(Marker),
 }

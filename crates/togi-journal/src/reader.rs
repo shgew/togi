@@ -272,6 +272,24 @@ impl StateDir {
         Ok(false)
     }
 
+    /// The archived session read whole; `None` when the directory holds no archive of it. Only complete lines count.
+    pub fn archived_recording(
+        &self,
+        session: &crate::SessionId,
+    ) -> Result<Option<Recording>, FileError> {
+        let path = self.archive_journal(session);
+        match self.fs().read(&path) {
+            Ok(bytes) => Recording::parse(&bytes)
+                .map(Some)
+                .map_err(|source| FileError { path, source }),
+            Err(error) if not_found(&error) => Ok(None),
+            Err(error) => Err(FileError {
+                path,
+                source: error.into(),
+            }),
+        }
+    }
+
     /// Every journal of the directory read whole: the archived sessions oldest first, then the live journal when
     /// there is one. Only complete lines count.
     pub fn recordings(&self) -> Result<Vec<Recording>, LookupError> {

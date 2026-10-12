@@ -403,3 +403,40 @@ fn an_unreadable_live_journal_is_an_error_not_the_archives_alone() {
     assert!(matches!(error.source, ReadError::Io(_)), "{error}");
     assert_eq!(error.path, path("events.jsonl"));
 }
+
+#[test]
+fn an_archived_recording_is_read_alone_and_absent_when_there_is_no_archive() {
+    use crate::testing::{begin, session, simulated};
+
+    let fs = MemFs::new();
+    let id = session("20231114T000000Z");
+    let dir = begin(&fs, id)
+        .archive(stamp(5), crate::ArchiveKind::Transition, &[])
+        .unwrap();
+    let recording = dir.archived_recording(&id).unwrap().unwrap();
+    assert_eq!(started(&recording), id);
+    assert_eq!(recording.torn().map(|torn| torn.bytes.len()), None);
+    drop(dir);
+    let other = session("20231113T000000Z");
+    assert!(simulated(&fs).archived_recording(&other).unwrap().is_none());
+}
+
+#[test]
+fn an_archived_recording_ignores_a_torn_tail_and_names_an_unreadable_file() {
+    use crate::testing::{session, simulated};
+
+    let fs = MemFs::new();
+    let id = session("20231114T000000Z");
+    let mut bytes = journal_of(id);
+    let complete = Recording::parse(&bytes).unwrap().events().len();
+    bytes.extend_from_slice(b"{\"seq\":9");
+    fs.put(format!("/state/archive/{id}.jsonl"), bytes);
+    let recording = simulated(&fs).archived_recording(&id).unwrap().unwrap();
+    assert_eq!(recording.events().len(), complete);
+    assert!(recording.torn().is_some());
+
+    let broken = session("20231113T000000Z");
+    fs.put(format!("/state/archive/{broken}.jsonl"), "garbage\n");
+    let error = simulated(&fs).archived_recording(&broken).unwrap_err();
+    assert!(error.path.ends_with(format!("{broken}.jsonl")));
+}

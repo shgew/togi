@@ -586,3 +586,47 @@ fn publication_leaves_a_hard_link_to_the_published_state_untouched_on_disk() {
     assert_eq!(std::fs::read(&keep).unwrap(), b"{\"n\":1}\n");
     assert_eq!(dir.read_state::<Doc>().unwrap(), Some(Doc { n: 2 }));
 }
+
+#[test]
+fn the_live_build_comes_from_the_first_line_alone() {
+    let fs = MemFs::new();
+    let dir = dir(&fs);
+    assert_eq!(dir.live_build().unwrap(), None);
+    let start = "{\"seq\":1,\"kind\":\"session.start\",\"data\":{\"build\":{\"version\":\"1\",\"ruleset\":3,\"schema\":1,\"evidence\":2},\"session\":\"20231114T221320Z\",\"cores\":[]}}";
+    fs.put("/state/events.jsonl", start);
+    assert_eq!(dir.live_build().unwrap(), None);
+    fs.put(
+        "/state/events.jsonl",
+        format!("{start}\n{{\"seq\":2,\"kind\":\"from.the.future\",\"data\":{{}}}}\ngarbage"),
+    );
+    let build = dir.live_build().unwrap().unwrap();
+    assert_eq!(
+        (build.version.as_str(), build.ruleset, build.evidence),
+        ("1", 3, 2)
+    );
+    assert!(dir.live_session().unwrap().is_some());
+}
+
+#[test]
+fn a_garbled_first_line_has_no_live_build() {
+    let fs = MemFs::new();
+    let dir = dir(&fs);
+    fs.put(
+        "/state/events.jsonl",
+        "{\"seq\":1,\"kind\":\"mce\",\"data\":{}}\n",
+    );
+    assert!(matches!(
+        dir.live_build(),
+        Err(DirError::NotAJournal { .. })
+    ));
+    fs.put(
+        "/state/events.jsonl",
+        "{\"seq\":1,\"kind\":\"session.start\",\"data\":{\"session\":\"20231114T221320Z\"}}\n",
+    );
+    assert!(matches!(dir.live_build(), Err(DirError::BadBuild { .. })));
+    fs.put("/state/events.jsonl", "not json\n");
+    assert!(matches!(
+        dir.live_build(),
+        Err(DirError::NotAJournal { .. })
+    ));
+}
