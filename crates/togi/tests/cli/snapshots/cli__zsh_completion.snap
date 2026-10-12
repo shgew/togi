@@ -51,7 +51,7 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (reset)
 _arguments "${_arguments_options[@]}" : \
-'--core=[Reset core N\: clear its failure point and every combination that includes it, and restart its search from the baseline]:N:_default' \
+'--core=[Reset core N\: clear its failure point and every combination that includes it, and restart its search from the baseline]:N:' \
 '--config=[JSON configuration file \[default\: /etc/togi/config.json\]]:path:_files' \
 '--state-dir=[State directory]:path:_files -/' \
 '--all[Archive the session; the next run starts a new one]' \

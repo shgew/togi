@@ -5,7 +5,7 @@ use std::error::Error;
 use std::fmt::{Display, Write as _};
 
 use togi_defect::{KNOWN_DEFECTS, fixed_stamp};
-use togi_journal::{Build, Event, FileError, ReadError, Refusal, SCHEMA};
+use togi_journal::{Build, Dimension, Event, FileError, ReadError, Refusal, SCHEMA};
 use togi_render::{Renderer, escape_text};
 use togi_tuner::{EVIDENCE_EPOCH, RULESET};
 
@@ -25,23 +25,50 @@ pub fn current_build() -> Build {
     }
 }
 
+/// Go's name for a build: its version and revision, or that it predates version stamps.
+fn name(build: &Build) -> String {
+    if build.version.is_empty() {
+        "a togi build from before version stamps".to_owned()
+    } else {
+        build.to_string()
+    }
+}
+
 /// Why `current` may not use a journal `recorded` wrote, with what to do about it.
 #[must_use]
 pub fn refusal_message(refusal: &Refusal, recorded: &Build, current: &Build) -> String {
     let Refusal {
         dimension,
-        recorded: found,
         current: used,
+        ..
     } = refusal;
-    let mut text = format!(
-        "this journal was written by {recorded} ({dimension} {found}); this build, {current}, uses {dimension} {used}. "
+    let mut written = format!(
+        "this journal was written by {} (schema {}, ruleset {}",
+        name(recorded),
+        recorded.schema,
+        recorded.ruleset
     );
-    if found > used {
-        let name = recorded.to_string();
-        let _ = write!(
-            text,
-            "Install {name} to continue this session, or run togi reset --all to archive it and start over."
-        );
+    if *dimension == Dimension::Evidence {
+        let _ = write!(written, ", evidence epoch {}", recorded.evidence);
+    }
+    let newer = recorded.schema > current.schema
+        || recorded.ruleset > current.ruleset
+        || recorded.evidence > current.evidence;
+    let mut text = format!(
+        "{written}); this build, {}, uses {dimension} {used}. ",
+        name(current)
+    );
+    if newer {
+        if recorded.version.is_empty() {
+            text.push_str("Install the togi build that wrote it to continue this session");
+        } else {
+            let _ = write!(
+                text,
+                "Install togi {} to continue this session",
+                recorded.version
+            );
+        }
+        text.push_str(", or run togi reset --all to archive it and start over.");
     } else {
         text.push_str(
             "togi run archives it and starts a new session that carries its candidate solo limits and failure points; togi reset --all archives it and starts over.",
@@ -50,13 +77,17 @@ pub fn refusal_message(refusal: &Refusal, recorded: &Build, current: &Build) -> 
     text
 }
 
-/// `error` and every cause below it, joined by `: `.
+/// `error` and every cause below it, joined by `: `; a cause the text already ends with or
+/// contains, as the journal errors print their source themselves, is not repeated.
 #[must_use]
 pub fn chain(error: &dyn Error) -> String {
     let mut text = error.to_string();
     let mut source = error.source();
     while let Some(cause) = source {
-        let _ = write!(text, ": {cause}");
+        let cause_text = cause.to_string();
+        if !text.contains(&cause_text) {
+            let _ = write!(text, ": {cause_text}");
+        }
         source = cause.source();
     }
     text
@@ -90,11 +121,19 @@ pub fn unknown_kind_message(
     recorded: &Build,
     current: &Build,
 ) -> Option<String> {
-    matches!(error.source, ReadError::UnknownKind { .. }).then(|| {
-        format!(
-            "{error}; this journal was written by {recorded} and this build is {current}. Install the build that wrote it to continue this session, or run togi reset --all to archive it and start over."
-        )
-    })
+    let ReadError::UnknownKind { source, .. } = &error.source else {
+        return None;
+    };
+    Some(format!(
+        "unknown kind {:?} in journal written by {} (schema {}, ruleset {}); this build, {} (schema {}, ruleset {}), cannot safely modify it; install the build that wrote it",
+        source.0,
+        name(recorded),
+        recorded.schema,
+        recorded.ruleset,
+        name(current),
+        current.schema,
+        current.ruleset,
+    ))
 }
 
 /// Writes the lines of `events` to stderr, in local time and without colour.

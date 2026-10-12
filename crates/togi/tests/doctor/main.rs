@@ -8,7 +8,7 @@ mod support;
 
 use std::fs;
 
-use support::{Host, Ran, Session};
+use support::{Host, Ran, Session, files};
 use togi_cli::Exit;
 use togi_hardware::{CheckName, Diagnosis, Skip, Skipped};
 use togi_hostlock::{HostLock, Policy};
@@ -93,9 +93,11 @@ fn missing_state() -> (tempfile::TempDir, std::path::PathBuf) {
 fn a_ready_machine_prints_the_table_and_ready() {
     let session = Session::new();
     let host = host_with(ready());
+    let before = (files(session.path()), session.text());
     let ran = doctor(&host, session.path(), &[]);
     assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
     assert_eq!(ran.err, "");
+    assert_eq!((files(session.path()), session.text()), before);
     insta::assert_snapshot!("ready", ran.out);
 }
 
@@ -262,22 +264,51 @@ fn the_recorded_context_reaches_the_checks_only_for_a_journal_run_would_continue
 
 #[test]
 fn a_journal_run_would_refuse_exits_16_before_any_lock_or_check() {
-    for (name, from, to) in [
-        ("newer schema", "\"schema\":1", "\"schema\":99"),
-        ("newer ruleset", "\"ruleset\":1", "\"ruleset\":99"),
-        ("newer evidence", "\"evidence\":1}", "\"evidence\":99}"),
+    for (name, from, to, written, uses) in [
+        (
+            "newer schema",
+            "\"schema\":1",
+            "\"schema\":99",
+            "(schema 99, ruleset 1)",
+            "uses schema 1.",
+        ),
+        (
+            "newer ruleset",
+            "\"ruleset\":1",
+            "\"ruleset\":99",
+            "(schema 1, ruleset 99)",
+            "uses ruleset 1.",
+        ),
+        (
+            "newer evidence",
+            "\"evidence\":1}",
+            "\"evidence\":99}",
+            "(schema 1, ruleset 1, evidence epoch 99)",
+            "uses evidence epoch 1.",
+        ),
     ] {
         let session = Session::new();
         session.rewrite_first_line(from, to);
+        let before = (files(session.path()), session.text());
         let host = host_with(ready());
         let ran = doctor(&host, session.path(), &[]);
         assert_eq!(ran.exit, Exit::Incompatible, "{name}: {}", ran.err);
         assert_eq!(ran.out, "", "{name}");
         assert!(
-            ran.err.contains("this journal was written by"),
+            ran.err.starts_with(&format!(
+                "togi doctor: this journal was written by togi 0.0.0 {written}; this build, togi "
+            )),
             "{name}: {}",
             ran.err
         );
+        assert!(
+            ran.err.ends_with(&format!(
+                "{uses} Install togi 0.0.0 to continue this session, or run togi reset --all to archive it and start over.\n"
+            )),
+            "{name}: {}",
+            ran.err
+        );
+        assert_eq!((files(session.path()), session.text()), before, "{name}");
         assert_eq!(host.calls.get(), 0, "{name}");
         assert!(!host.lock.exists(), "{name}");
     }
@@ -296,11 +327,15 @@ fn an_unreadable_journal_exits_1() {
             text.replace_range(at..at + 4, "\"kidn\"");
             fs::write(session.journal(), text).unwrap();
         }
+        let before = (files(session.path()), session.text());
         let host = host_with(ready());
         let ran = doctor(&host, session.path(), &[]);
         assert_eq!(ran.exit, Exit::Error, "{name}: {}", ran.err);
         assert_eq!(ran.out, "", "{name}");
         assert_eq!(host.calls.get(), 0, "{name}");
+        assert_eq!((files(session.path()), session.text()), before, "{name}");
+        let causes = ran.err.matches("expected").count();
+        assert!(causes <= 1, "{name}: a cause is repeated: {}", ran.err);
     }
 }
 
@@ -344,7 +379,13 @@ fn a_busy_host_lock_exits_3_only_for_root() {
     let _held = HostLock::acquire(&host.lock, Policy::Private).unwrap();
     let ran = doctor(&host, session.path(), &[]);
     assert_eq!(ran.exit, Exit::Locked, "{}", ran.err);
-    assert!(ran.err.contains(host.lock.to_str().unwrap()), "{}", ran.err);
+    assert_eq!(
+        ran.err,
+        format!(
+            "togi doctor: acquire host lock {}: another togi process holds the host lock\n",
+            host.lock.display()
+        )
+    );
     assert_eq!(host.calls.get(), 0);
 
     let mut host = host_with(ready());
@@ -366,6 +407,7 @@ fn a_host_lock_that_cannot_be_opened_exits_1() {
         .join("togi.lock");
     let ran = doctor(&host, session.path(), &[]);
     assert_eq!(ran.exit, Exit::Error, "{}", ran.err);
+    assert!(ran.err.contains("missing/togi.lock"), "{}", ran.err);
     assert_eq!(host.calls.get(), 0);
 }
 
@@ -462,14 +504,85 @@ fn an_unknown_event_kind_in_a_current_journal_exits_16_naming_it() {
     assert_eq!(ran.exit, Exit::Incompatible, "{}", ran.err);
     assert_eq!(ran.out, "");
     assert!(
-        ran.err.contains("unknown event kind \"future.fact\""),
+        ran.err.starts_with(
+            "togi doctor: unknown kind \"future.fact\" in journal written by togi 0.0.0 (schema 1, ruleset 1); this build, togi "
+        ),
         "{}",
         ran.err
     );
     assert!(
-        ran.err.contains("this journal was written by togi"),
+        ran.err.ends_with(
+            " (schema 1, ruleset 1), cannot safely modify it; install the build that wrote it\n"
+        ),
         "{}",
         ran.err
     );
+    assert!(!ran.err.contains("reset --all"), "{}", ran.err);
     assert_eq!(host.calls.get(), 0);
+}
+
+#[test]
+fn the_unknown_kind_refusal_is_red_bold_on_a_terminal_like_the_stamp_refusal() {
+    let session = Session::new();
+    let text = format!(
+        "{}{{\"seq\":{},\"time\":\"2026-01-01T00:00:00Z\",\"boot\":\"b1a8cebe-21d1-14db-3741-5b5df946de05\",\"kind\":\"future.fact\",\"msg\":\"x\",\"data\":{{}}}}\n",
+        session.text(),
+        session.kinds().len() + 1
+    );
+    fs::write(session.journal(), text).unwrap();
+    let mut host = host_with(ready());
+    host.facts = OutputFacts {
+        is_terminal: true,
+        ..OutputFacts::default()
+    };
+    let ran = doctor(&host, session.path(), &[]);
+    assert_eq!(ran.exit, Exit::Incompatible, "{}", ran.err);
+    assert!(
+        ran.err.starts_with("\x1b[1;31mtogi doctor: unknown kind"),
+        "{:?}",
+        ran.err
+    );
+    assert!(ran.err.ends_with("\x1b[0m\n"), "{:?}", ran.err);
+}
+
+#[test]
+fn an_unprivileged_failed_check_exits_15_and_another_platform_exits_1() {
+    let mut diagnosis = ready();
+    diagnosis.ran[5].ok = false;
+    diagnosis.ran.retain(|check| check.name != "bios_context");
+    let session = Session::new();
+    let mut host = host_with(diagnosis);
+    host.root = false;
+    let ran = doctor(&host, session.path(), &[]);
+    assert_eq!(ran.exit, Exit::Preflight, "{}", ran.err);
+    assert_eq!(ran.err, "togi doctor: not ready: backends\n");
+    assert!(ran.out.ends_with("not ready: backends\n"), "{}", ran.out);
+    assert!(!host.lock.exists());
+
+    let mut host = host_with(ready());
+    host.root = false;
+    host.linux = false;
+    let ran = doctor(&host, session.path(), &[]);
+    assert_eq!(ran.exit, Exit::Error, "{}", ran.err);
+    assert_eq!(
+        ran.err,
+        "togi doctor: hardware runs need Linux: unsupported operation\n"
+    );
+    assert_eq!(host.calls.get(), 0);
+}
+
+#[test]
+fn a_current_journal_before_its_session_context_passes_no_context() {
+    let session = Session::new();
+    let text = session.text();
+    let kept: Vec<&str> = text
+        .lines()
+        .take_while(|line| !line.contains("\"kind\":\"session.context\""))
+        .collect();
+    assert!(!kept.is_empty() && kept.len() < text.lines().count());
+    fs::write(session.journal(), format!("{}\n", kept.join("\n"))).unwrap();
+    let host = host_with(ready());
+    let ran = doctor(&host, session.path(), &[]);
+    assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
+    assert_eq!(host.diagnoses.borrow().as_slice(), [(None, true)]);
 }

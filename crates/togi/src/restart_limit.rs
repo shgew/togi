@@ -5,7 +5,8 @@ use std::sync::LazyLock;
 
 use clap::builder::{NonEmptyStringValueParser, TypedValueParser as _};
 use clap::{Args as ClapArgs, ValueHint};
-use togi_tuningboot::{RestartLimit, restart_limit};
+use togi_hardware::RebootError;
+use togi_tuningboot::{RETRY_MARKER, RestartLimit, restart_limit};
 
 use crate::cli::{Context, examples};
 use crate::exit::Exit;
@@ -60,7 +61,11 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
     };
     if retry {
         if let Err(error) = system.create_retry_marker() {
-            return fail(ctx, COMMAND, format!("create retry marker: {error}"));
+            return fail(
+                ctx,
+                COMMAND,
+                format!("create retry marker: open {RETRY_MARKER}: {error}"),
+            );
         }
         let _ = writeln!(
             ctx.err,
@@ -68,7 +73,11 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
         );
     } else {
         if let Err(error) = system.remove_retry_marker() {
-            return fail(ctx, COMMAND, format!("remove retry marker: {error}"));
+            return fail(
+                ctx,
+                COMMAND,
+                format!("remove retry marker: remove {RETRY_MARKER}: {error}"),
+            );
         }
         let _ = writeln!(
             ctx.err,
@@ -76,14 +85,31 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
         );
     }
     if let Err(error) = system.reboot() {
-        let exit = fail(ctx, COMMAND, chain(&error));
+        let exit = fail(ctx, COMMAND, reboot_failure(&error));
         if retry && let Err(error) = system.remove_retry_marker() {
             let _ = writeln!(
                 ctx.err,
-                "togi {COMMAND}: remove retry marker after failed reboot: {error}"
+                "togi {COMMAND}: remove retry marker after failed reboot: remove {RETRY_MARKER}: {error}"
             );
         }
         return exit;
     }
     Exit::Ok
+}
+
+fn reboot_failure(error: &RebootError) -> String {
+    match error {
+        RebootError::Exit { status, stderr } => {
+            let status = status
+                .code()
+                .map_or_else(|| status.to_string(), |code| format!("exit status {code}"));
+            let detail = if stderr.is_empty() {
+                String::new()
+            } else {
+                format!(": {stderr}")
+            };
+            format!("systemctl reboot: {status}{detail}")
+        }
+        RebootError::Run(_) => format!("systemctl reboot: {}", chain(error)),
+    }
 }

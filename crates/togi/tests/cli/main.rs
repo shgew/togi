@@ -332,6 +332,7 @@ fn session_start(schema: u32) -> String {
 }
 
 #[test]
+#[cfg(target_os = "linux")]
 fn doctor_refuses_a_newer_journal_with_exit_16_before_any_check() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("events.jsonl"), session_start(99)).unwrap();
@@ -352,6 +353,7 @@ fn doctor_refuses_a_newer_journal_with_exit_16_before_any_check() {
 }
 
 #[test]
+#[cfg(target_os = "linux")]
 fn doctor_exits_1_for_an_unreadable_journal_and_2_for_a_bad_config() {
     let dir = tempfile::tempdir().unwrap();
     let state = dir.path().to_str().unwrap();

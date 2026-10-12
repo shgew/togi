@@ -65,7 +65,10 @@ fn reset_core_of_a_core_the_session_lacks_exits_2_and_changes_nothing() {
         let ran = reset(&host, session.path(), &["--core", core]);
         assert_eq!(ran.exit, Exit::Usage, "{core}: {}", ran.err);
         assert_eq!(ran.out, "");
-        assert!(ran.err.contains("togi reset:"), "{}", ran.err);
+        assert_eq!(
+            ran.err,
+            format!("togi reset: reset core {core}: no such core\n")
+        );
         assert_eq!(session.text(), before, "{core}");
     }
 }
@@ -100,10 +103,22 @@ fn no_journal_or_no_session_exits_1_without_creating_state() {
         assert!(ran.err.contains("no journal at"), "{}", ran.err);
         assert_eq!(files(state.path()), Vec::<String>::new(), "{args:?}");
 
-        fs::write(state.path().join("events.jsonl"), "").unwrap();
-        let ran = reset(&host, state.path(), args);
-        assert_eq!(ran.exit, Exit::Error, "{args:?}");
-        assert!(ran.err.contains("no session in"), "{}", ran.err);
+        for content in ["", "{\"seq\":"] {
+            fs::write(state.path().join("events.jsonl"), content).unwrap();
+            let before = files(state.path());
+            let ran = reset(&host, state.path(), args);
+            assert_eq!(ran.exit, Exit::Error, "{args:?}");
+            assert_eq!(
+                ran.err,
+                format!("togi reset: no session in {}\n", state.path().display())
+            );
+            assert_eq!(files(state.path()), before, "{args:?}: {content:?}");
+            assert_eq!(
+                fs::read_to_string(state.path().join("events.jsonl")).unwrap(),
+                content,
+                "{args:?}"
+            );
+        }
     }
 }
 
@@ -187,45 +202,76 @@ fn reset_all_of_another_ruleset_archives_it_normally() {
 
 #[test]
 fn reset_core_refuses_every_stamp_mismatch_with_exit_16_and_appends_nothing() {
-    for (name, from, to, advice) in [
+    let archives = "togi run archives it and starts a new session that carries its candidate solo limits and failure points; togi reset --all archives it and starts over.";
+    let install = "Install togi 0.0.0 to continue this session, or run togi reset --all to archive it and start over.";
+    for (name, rewrites, written, uses, advice) in [
         (
             "newer schema",
-            "\"schema\":1",
-            "\"schema\":99",
-            "Install togi",
+            &[("\"schema\":1", "\"schema\":99")][..],
+            "(schema 99, ruleset 1)",
+            "schema 1",
+            install,
+        ),
+        (
+            "older schema",
+            &[("\"schema\":1", "\"schema\":0")],
+            "(schema 0, ruleset 1)",
+            "schema 1",
+            archives,
         ),
         (
             "newer ruleset",
-            "\"ruleset\":1",
-            "\"ruleset\":99",
-            "Install togi",
+            &[("\"ruleset\":1", "\"ruleset\":99")],
+            "(schema 1, ruleset 99)",
+            "ruleset 1",
+            install,
         ),
         (
             "newer evidence",
-            "\"evidence\":1}",
-            "\"evidence\":99}",
-            "Install togi",
+            &[("\"evidence\":1}", "\"evidence\":99}")],
+            "(schema 1, ruleset 1, evidence epoch 99)",
+            "evidence epoch 1",
+            install,
         ),
         (
             "older ruleset",
-            "\"ruleset\":1",
-            "\"ruleset\":0",
-            "togi run archives it",
+            &[("\"ruleset\":1", "\"ruleset\":0")],
+            "(schema 1, ruleset 0)",
+            "ruleset 1",
+            archives,
+        ),
+        (
+            "older ruleset with a newer evidence epoch",
+            &[
+                ("\"ruleset\":1", "\"ruleset\":0"),
+                ("\"evidence\":1}", "\"evidence\":99}"),
+            ],
+            "(schema 1, ruleset 0)",
+            "ruleset 1",
+            install,
         ),
     ] {
         let host = Host::new();
         let session = Session::new();
-        session.rewrite_first_line(from, to);
+        for (from, to) in rewrites {
+            session.rewrite_first_line(from, to);
+        }
         let before = session.text();
         let ran = reset(&host, session.path(), &["--core", "0"]);
         assert_eq!(ran.exit, Exit::Incompatible, "{name}: {}", ran.err);
         assert_eq!(ran.out, "", "{name}");
         assert!(
-            ran.err.contains("this journal was written by"),
+            ran.err.starts_with(&format!(
+                "togi reset: this journal was written by togi 0.0.0 {written}; this build, togi "
+            )),
             "{name}: {}",
             ran.err
         );
-        assert!(ran.err.contains(advice), "{name}: {}", ran.err);
+        assert!(
+            ran.err.ends_with(&format!(", uses {uses}. {advice}\n")),
+            "{name}: {}",
+            ran.err
+        );
         assert_eq!(session.text(), before, "{name}");
     }
 }
@@ -253,7 +299,13 @@ fn a_busy_host_lock_exits_3_naming_it_before_anything_changes() {
         let ran = reset(&host, session.path(), args);
         assert_eq!(ran.exit, Exit::Locked, "{args:?}: {}", ran.err);
         assert_eq!(ran.out, "");
-        assert!(ran.err.contains(host.lock.to_str().unwrap()), "{}", ran.err);
+        assert_eq!(
+            ran.err,
+            format!(
+                "togi reset: acquire host lock {}: another togi process holds the host lock\n",
+                host.lock.display()
+            )
+        );
         assert_eq!(files(session.path()), before);
         assert_eq!(session.text(), text);
     }
@@ -269,6 +321,10 @@ fn a_held_state_directory_lock_exits_3_and_changes_nothing() {
         let ran = reset(&host, session.path(), args);
         assert_eq!(ran.exit, Exit::Locked, "{args:?}: {}", ran.err);
         assert_eq!(ran.out, "");
+        assert_eq!(
+            ran.err,
+            "togi reset: another togi process holds the journal lock\n"
+        );
         drop(held);
         assert_eq!(session.text(), text);
     }
@@ -321,6 +377,14 @@ fn reset_all_completes_an_interrupted_incompatible_archive() {
     );
     assert!(!archive(state.path(), &format!("{SESSION}-compat-pending")).exists());
     assert!(archive(state.path(), &format!("{SESSION}-reset-all")).exists());
+    assert!(
+        !state.path().join("events.jsonl").exists(),
+        "reset recreated the journal"
+    );
+    assert_eq!(
+        fs::read_to_string(archive(state.path(), &format!("{SESSION}.jsonl"))).unwrap(),
+        "moved\n"
+    );
 }
 
 fn failing_scenario() -> (Scenario, CoreId, i64) {
@@ -505,11 +569,21 @@ fn a_journal_that_already_records_its_archive_is_only_moved() {
         "{text}{{\"seq\":9999,\"kind\":\"session.archived\",\"data\":{{\"session\":\"{SESSION}\"}}}}\n"
     );
     fs::write(session.journal(), &text).unwrap();
+    fs::create_dir(session.path().join("archive")).unwrap();
+    fs::write(
+        archive(session.path(), &format!("{SESSION}-trials")),
+        "kept\n",
+    )
+    .unwrap();
     let ran = reset(&host, session.path(), &["--all"]);
     assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
     assert_eq!(
         fs::read_to_string(archive(session.path(), &format!("{SESSION}.jsonl"))).unwrap(),
         text
+    );
+    assert_eq!(
+        fs::read_to_string(archive(session.path(), &format!("{SESSION}-trials"))).unwrap(),
+        "kept\n"
     );
     assert!(archive(session.path(), &format!("{SESSION}-reset-all")).exists());
 }
@@ -528,15 +602,20 @@ fn a_current_journal_with_an_unknown_kind_exits_16_and_is_left_alone() {
         let ran = reset(&host, session.path(), args);
         assert_eq!(ran.exit, Exit::Incompatible, "{args:?}: {}", ran.err);
         assert!(
-            ran.err.contains("unknown event kind \"future.fact\""),
+            ran.err.starts_with(
+                "togi reset: unknown kind \"future.fact\" in journal written by togi 0.0.0 (schema 1, ruleset 1); this build, togi "
+            ),
             "{args:?}: {}",
             ran.err
         );
         assert!(
-            ran.err.contains("this journal was written by togi"),
+            ran.err.ends_with(
+                " (schema 1, ruleset 1), cannot safely modify it; install the build that wrote it\n"
+            ),
             "{args:?}: {}",
             ran.err
         );
+        assert!(!ran.err.contains("reset --all"), "{args:?}: {}", ran.err);
         assert_eq!(session.text(), text, "{args:?}");
         assert!(!session.path().join("archive").exists(), "{args:?}");
     }
@@ -657,7 +736,7 @@ fn a_core_in_range_but_not_in_the_session_exits_2() {
     fs::write(state.path().join("events.jsonl"), &start).unwrap();
     let ran = reset(&host, state.path(), &["--core", "5"]);
     assert_eq!(ran.exit, Exit::Usage, "{}", ran.err);
-    assert!(ran.err.contains("no such core"), "{}", ran.err);
+    assert_eq!(ran.err, "togi reset: reset core 5: no such core\n");
     assert_eq!(
         fs::read_to_string(state.path().join("events.jsonl")).unwrap(),
         start
@@ -685,4 +764,144 @@ fn a_torn_tail_is_repaired_and_logged_before_the_reset() {
         "{}",
         ran.err
     );
+}
+
+fn with_unknown_kind(session: &Session) -> String {
+    let text = format!(
+        "{}{{\"seq\":{},\"time\":\"2026-01-01T00:00:00Z\",\"boot\":\"b1a8cebe-21d1-14db-3741-5b5df946de05\",\"kind\":\"future.fact\",\"msg\":\"x\",\"data\":{{}}}}\n",
+        session.text(),
+        session.kinds().len() + 1
+    );
+    fs::write(session.journal(), &text).unwrap();
+    text
+}
+
+#[test]
+fn an_unknown_kind_keeps_a_pending_carry_and_refuses_an_older_ruleset_too() {
+    let host = Host::new();
+    let session = Session::new();
+    let text = with_unknown_kind(&session);
+    fs::create_dir(session.path().join("archive")).unwrap();
+    let marker = archive(session.path(), "20250101T000000Z-carry-pending");
+    fs::write(&marker, "").unwrap();
+    let ran = reset(&host, session.path(), &["--all"]);
+    assert_eq!(ran.exit, Exit::Incompatible, "{}", ran.err);
+    assert!(marker.exists(), "a refused reset dropped the carry");
+    assert_eq!(
+        files(session.path())
+            .iter()
+            .filter(|f| f.ends_with("-reset-all"))
+            .count(),
+        0
+    );
+    assert_eq!(session.text(), text);
+
+    let older = Session::new();
+    older.rewrite_first_line("\"ruleset\":1", "\"ruleset\":0");
+    let text = with_unknown_kind(&older);
+    let ran = reset(&host, older.path(), &["--all"]);
+    assert_eq!(ran.exit, Exit::Incompatible, "{}", ran.err);
+    assert_eq!(older.text(), text);
+    assert!(!older.path().join("archive").exists());
+}
+
+#[test]
+fn a_pending_carry_is_dropped_with_a_live_journal_and_an_empty_one() {
+    let host = Host::new();
+    let session = Session::new();
+    fs::create_dir(session.path().join("archive")).unwrap();
+    let marker = archive(session.path(), "20250101T000000Z-carry-pending");
+    fs::write(&marker, "").unwrap();
+    let ran = reset(&host, session.path(), &["--all"]);
+    assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
+    assert!(!marker.exists());
+    assert!(
+        ran.out
+            .starts_with(&format!("session {SESSION} archived to")),
+        "{}",
+        ran.out
+    );
+
+    let state = tempfile::tempdir().unwrap();
+    fs::create_dir(state.path().join("archive")).unwrap();
+    fs::write(state.path().join("events.jsonl"), "").unwrap();
+    let marker = archive(state.path(), "20250101T000000Z-carry-pending");
+    fs::write(&marker, "").unwrap();
+    let ran = reset(&host, state.path(), &["--all"]);
+    assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
+    assert!(ran.out.starts_with("carry from session"), "{}", ran.out);
+    assert!(!marker.exists());
+}
+
+#[test]
+fn a_torn_tail_under_all_logs_the_repair_the_reset_and_the_archive() {
+    let host = Host::new();
+    let session = Session::new();
+    let mut text = session.text();
+    text.push_str("{\"seq\":");
+    fs::write(session.journal(), text).unwrap();
+    let ran = reset(&host, session.path(), &["--all"]);
+    assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
+    let kinds: Vec<&str> = ran
+        .err
+        .lines()
+        .map(|line| line.split_whitespace().nth(1).unwrap())
+        .collect();
+    assert_eq!(
+        kinds,
+        ["journal.torn", "command.reset", "session.archived"],
+        "{}",
+        ran.err
+    );
+}
+
+#[test]
+fn a_failed_archive_still_logs_the_events_it_recorded() {
+    let host = Host::new();
+    let session = Session::new();
+    fs::create_dir(session.path().join("archive")).unwrap();
+    fs::write(
+        archive(session.path(), &format!("{SESSION}.jsonl")),
+        "taken\n",
+    )
+    .unwrap();
+    let ran = reset(&host, session.path(), &["--all"]);
+    assert_eq!(ran.exit, Exit::Error, "{}", ran.err);
+    assert_eq!(ran.out, "");
+    let first = ran.err.lines().next().unwrap();
+    assert!(first.starts_with("00:00:00 command.reset "), "{}", ran.err);
+    assert!(
+        ran.err.lines().last().unwrap().starts_with("togi reset: "),
+        "{}",
+        ran.err
+    );
+}
+
+#[test]
+fn a_solo_limit_on_a_core_without_a_failure_point_does_not_warn() {
+    let host = Host::new();
+    let cfg = tempfile::tempdir().unwrap();
+    let path = cfg.path().join("config.json");
+    let (scenario, other) = [Scenario::Deadend, Scenario::Hunt, Scenario::Confirm]
+        .into_iter()
+        .find_map(|scenario| {
+            let state = togi_tuner::replay(&scenario.events().unwrap()).unwrap();
+            let points = state.constraints().unwrap().failure_points();
+            let other = (0..16u8).find(|n| points.get(CoreId::try_from(*n).unwrap()).is_none())?;
+            Some((scenario, other))
+        })
+        .expect("a scenario with a core that has no failure point");
+    fs::write(
+        &path,
+        format!(r#"{{"candidate_solo_limits":{{"{other}":-1}}}}"#),
+    )
+    .unwrap();
+    let session = Session::of(scenario);
+    let ran = reset(
+        &host,
+        session.path(),
+        &["--all", "--config", path.to_str().unwrap()],
+    );
+    assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
+    assert!(!ran.err.contains("warning"), "{}", ran.err);
 }

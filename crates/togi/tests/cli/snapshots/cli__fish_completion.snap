@@ -41,7 +41,7 @@ complete -c togi -n "__fish_togi_using_subcommand completion" -s h -l help -d 'P
 complete -c togi -n "__fish_togi_using_subcommand doctor" -l config -d 'JSON configuration file [default: /etc/togi/config.json]' -r -F
 complete -c togi -n "__fish_togi_using_subcommand doctor" -l state-dir -d 'State directory' -r -f -a "(__fish_complete_directories)"
 complete -c togi -n "__fish_togi_using_subcommand doctor" -s h -l help -d 'Print help (see more with \'--help\')'
-complete -c togi -n "__fish_togi_using_subcommand reset" -l core -d 'Reset core N: clear its failure point and every combination that includes it, and restart its search from the baseline' -r
+complete -c togi -n "__fish_togi_using_subcommand reset" -l core -d 'Reset core N: clear its failure point and every combination that includes it, and restart its search from the baseline' -r -f
 complete -c togi -n "__fish_togi_using_subcommand reset" -l config -d 'JSON configuration file [default: /etc/togi/config.json]' -r -F
 complete -c togi -n "__fish_togi_using_subcommand reset" -l state-dir -d 'State directory' -r -f -a "(__fish_complete_directories)"
 complete -c togi -n "__fish_togi_using_subcommand reset" -l all -d 'Archive the session; the next run starts a new one'

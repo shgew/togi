@@ -37,7 +37,8 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 /// ready with the failed checks: those run would turn into a preflight dead end. A missing
 /// hardware watchdog is a warning, as in a run started outside the tuning boot. A changed BIOS
 /// context is a warning too: run archives the session and starts a new one. A journal with a
-/// newer schema, ruleset or evidence epoch is refused as run refuses it. On a platform other than
+/// newer schema, ruleset or evidence epoch, or with unknown event kinds, is refused as run refuses
+/// it. On a platform other than
 /// Linux it reports that hardware runs need Linux and exits 1 before reading anything.
 #[derive(ClapArgs, Debug)]
 #[command(after_help = EXAMPLES.as_str())]
@@ -69,8 +70,12 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
         let (path, policy) = system.host_lock();
         match HostLock::acquire(path, policy) {
             Ok(lock) => Some(lock),
-            Err(error @ LockError::Busy { .. }) => {
-                return exit_with(ctx, COMMAND, error, Exit::Locked);
+            Err(LockError::Busy { .. }) => {
+                let message = format!(
+                    "acquire host lock {}: another togi process holds the host lock",
+                    path.display()
+                );
+                return exit_with(ctx, COMMAND, message, Exit::Locked);
             }
             Err(error) => return fail(ctx, COMMAND, error),
         }
@@ -131,19 +136,14 @@ fn recorded_context(
         Verdict::Archive => return Ok(None),
         Verdict::Refuse(refusal) => {
             let message = refusal_message(&refusal, &recorded, &current);
-            let _ = writeln!(
-                ctx.err,
-                "{}",
-                renderer.text(Style::RedBold, &format!("togi {COMMAND}: {message}"))
-            );
-            return Err(Exit::Incompatible);
+            return Err(refuse(ctx, renderer, &message));
         }
         Verdict::Use => {}
     }
     let path = ctx.state_dir.join("events.jsonl");
     let recording = Recording::read(&path).map_err(|error| {
         match unknown_kind_message(&error, &recorded, &current) {
-            Some(message) => exit_with(ctx, COMMAND, message, Exit::Incompatible),
+            Some(message) => refuse(ctx, renderer, &message),
             None => fail(ctx, COMMAND, chain(&error)),
         }
     })?;
@@ -154,6 +154,12 @@ fn recorded_context(
             togi_journal::Payload::SessionContext(context) => Some(context.bios_context()),
             _ => None,
         }))
+}
+
+fn refuse(ctx: &mut Context<'_>, renderer: Renderer, message: &str) -> Exit {
+    let line = format!("togi {COMMAND}: {}", escape_text(message));
+    let _ = writeln!(ctx.err, "{}", renderer.text(Style::RedBold, &line));
+    Exit::Incompatible
 }
 
 /// The check table and the names of the failed checks.

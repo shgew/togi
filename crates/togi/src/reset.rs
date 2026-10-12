@@ -5,12 +5,12 @@ use std::io::ErrorKind;
 use std::path::Path;
 use std::sync::LazyLock;
 
-use clap::Args as ClapArgs;
+use clap::{Args as ClapArgs, ValueHint};
 use togi_config::{Config, InitialOverride};
 use togi_hostlock::{Error as HostLockError, HostLock};
 use togi_journal::{
     ArchiveKind, Build, Event, Journal, LockError, Marker, OpenError, Operation, Recording,
-    SessionId, StateDir, Verdict,
+    SessionId, StateDir, Verdict, recorded_build,
 };
 use togi_machine::{BootId, CoreId};
 use togi_render::escape_text;
@@ -46,7 +46,7 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 /// invalid configuration does not prevent archiving.
 ///
 /// --core refuses a different journal ruleset, schema or evidence epoch; --all archives any of
-/// them. Only one run or reset can own this machine, even with different state directories. A busy
+/// them. Both forms refuse unknown event kinds; install the build that wrote them. Only one run or reset can own this machine, even with different state directories. A busy
 /// host lock stops reset before it changes the session.
 #[derive(ClapArgs, Debug)]
 #[command(after_help = EXAMPLES.as_str())]
@@ -64,7 +64,7 @@ pub struct Args {
 pub struct Target {
     /// Reset core N: clear its failure point and every combination that includes it, and restart
     /// its search from the baseline
-    #[arg(long, value_name = "N")]
+    #[arg(long, value_name = "N", value_hint = ValueHint::Other)]
     pub core: Option<u8>,
 
     /// Archive the session; the next run starts a new one
@@ -82,7 +82,13 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
     let (path, policy) = system.host_lock();
     let _host = match HostLock::acquire(path, policy) {
         Ok(lock) => lock,
-        Err(error @ HostLockError::Busy { .. }) => return locked(ctx, &error),
+        Err(HostLockError::Busy { .. }) => {
+            let message = format!(
+                "acquire host lock {}: another togi process holds the host lock",
+                path.display()
+            );
+            return exit_with(ctx, COMMAND, message, Exit::Locked);
+        }
         Err(error) => return fail(ctx, COMMAND, error),
     };
     let journal = ctx.state_dir.join(JOURNAL);
@@ -91,23 +97,26 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
     {
         return fail(ctx, COMMAND, format!("no journal at {}", journal.display()));
     }
+    if matches!(recorded_build(ctx.state_dir), Ok(None)) && !(all && pending_marker(ctx.state_dir))
+    {
+        return no_session(ctx);
+    }
     let boot = match system.boot_id() {
         Ok(boot) => boot,
         Err(error) => return fail(ctx, COMMAND, chain(&error)),
     };
     let dir = match StateDir::lock(ctx.state_dir) {
         Ok(dir) => dir,
-        Err(error @ LockError::Held { .. }) => return locked(ctx, &error),
+        Err(LockError::Held { .. }) => {
+            let message = "another togi process holds the journal lock";
+            return exit_with(ctx, COMMAND, message, Exit::Locked);
+        }
         Err(error) => return fail(ctx, COMMAND, error),
     };
     match args.target.core {
         Some(core) => reset_one(ctx, dir, boot, core),
         None => reset_everything(ctx, args, dir, boot),
     }
-}
-
-fn locked(ctx: &mut Context<'_>, error: &dyn std::error::Error) -> Exit {
-    exit_with(ctx, COMMAND, error, Exit::Locked)
 }
 
 fn no_session(ctx: &mut Context<'_>) -> Exit {
@@ -137,12 +146,7 @@ fn reset_one(ctx: &mut Context<'_>, dir: StateDir, boot: BootId, core: u8) -> Ex
         return exit_with(ctx, COMMAND, message, Exit::Incompatible);
     }
     let Ok(id) = CoreId::try_from(core) else {
-        return exit_with(
-            ctx,
-            COMMAND,
-            format!("core {core:02} does not exist"),
-            Exit::Usage,
-        );
+        return no_such_core(ctx, core);
     };
     let mut journal = match dir.open_at(boot, system.now()) {
         Ok(journal) => journal,
@@ -153,7 +157,10 @@ fn reset_one(ctx: &mut Context<'_>, dir: StateDir, boot: BootId, core: u8) -> Ex
     let reset = reset_core(&build, &mut journal, &mut SystemClock(system), id);
     log_events(ctx, &journal.events()[opened..]);
     if let Err(error) = reset {
-        return command_failure(ctx, &error);
+        return match error {
+            CommandError::NoSuchCore { .. } => no_such_core(ctx, core),
+            error => command_failure(ctx, &error),
+        };
     }
     if let Err(error) = journal.close() {
         return fail(ctx, COMMAND, chain(&error));
@@ -162,6 +169,15 @@ fn reset_one(ctx: &mut Context<'_>, dir: StateDir, boot: BootId, core: u8) -> Ex
         "reset of core {core:02} queued; the next togi run restarts its search from the baseline"
     );
     emit(ctx, queued).map_or_else(|exit| exit, |()| Exit::Ok)
+}
+
+fn no_such_core(ctx: &mut Context<'_>, core: u8) -> Exit {
+    exit_with(
+        ctx,
+        COMMAND,
+        format!("reset core {core}: no such core"),
+        Exit::Usage,
+    )
 }
 
 fn open_failure(
@@ -178,11 +194,16 @@ fn open_failure(
     fail(ctx, COMMAND, chain(error))
 }
 
-fn log_archived(ctx: &mut Context<'_>, session: &SessionId, opened: usize) {
-    let path = ctx
-        .state_dir
-        .join("archive")
-        .join(format!("{session}.jsonl"));
+fn log_recorded(ctx: &mut Context<'_>, session: Option<&SessionId>, opened: usize) {
+    let Some(session) = session else { return };
+    let live = ctx.state_dir.join(JOURNAL);
+    let path = if live.exists() {
+        live
+    } else {
+        ctx.state_dir
+            .join("archive")
+            .join(format!("{session}.jsonl"))
+    };
     if let Ok(recording) = Recording::read(&path)
         && let Some(recorded) = recording.events().get(opened..)
     {
@@ -212,12 +233,20 @@ fn archived_line(session: &SessionId) -> String {
 fn reset_everything(ctx: &mut Context<'_>, args: &Args, mut dir: StateDir, boot: BootId) -> Exit {
     let system = ctx.system;
     let build = current_build();
-    let dropped = match dir.drop_pending_carry() {
-        Ok(dropped) => dropped,
-        Err(error) => return fail(ctx, COMMAND, chain(&error)),
-    };
     let recorded = match dir.live_build() {
         Ok(recorded) => recorded,
+        Err(error) => return fail(ctx, COMMAND, chain(&error)),
+    };
+    if let Some(recorded) = &recorded
+        && build.verdict(recorded, Operation::ResetAll) == Verdict::Use
+        && let Err(error) = Recording::read(&ctx.state_dir.join(JOURNAL))
+        && let Some(message) = unknown_kind_message(&error, recorded, &build)
+    {
+        return exit_with(ctx, COMMAND, message, Exit::Incompatible);
+    }
+    let live = dir.live_session().ok().flatten();
+    let dropped = match dir.drop_pending_carry() {
+        Ok(dropped) => dropped,
         Err(error) => return fail(ctx, COMMAND, chain(&error)),
     };
     let Some(recorded) = recorded else {
@@ -252,10 +281,13 @@ fn reset_everything(ctx: &mut Context<'_>, args: &Args, mut dir: StateDir, boot:
             let warnings = solo_limit_warnings(journal.events(), &args.config);
             match reset_all(&build, journal, &mut SystemClock(system)) {
                 Ok((session, _)) => {
-                    log_archived(ctx, &session, opened);
+                    log_recorded(ctx, Some(&session), opened);
                     (session, warnings)
                 }
-                Err(error) => return command_failure(ctx, &error),
+                Err(error) => {
+                    log_recorded(ctx, live.as_ref(), opened);
+                    return command_failure(ctx, &error);
+                }
             }
         }
     };
@@ -294,6 +326,10 @@ fn finish_without_journal(
             .and_then(|journal| journal.close().map_err(|error| chain(&error)));
         if let Err(error) = recovered {
             return fail(ctx, COMMAND, error);
+        }
+        let journal = ctx.state_dir.join(JOURNAL);
+        if fs::metadata(&journal).is_ok_and(|meta| meta.len() == 0) {
+            let _ = fs::remove_file(&journal);
         }
         return emit(
             ctx,

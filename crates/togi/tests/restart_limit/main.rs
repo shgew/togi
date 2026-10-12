@@ -159,10 +159,23 @@ fn a_failure_stops_at_its_step_and_leaves_the_marker_right() {
         assert!(!ran.err.is_empty(), "{}", case.name);
         assert_eq!(host.steps(), case.steps, "{}", case.name);
         assert_eq!(host.marker.get(), case.marker_after, "{}", case.name);
+        for (fail, expected) in [
+            (
+                "create marker",
+                "create retry marker: open /run/togi-retry-tuning-boot: injected failure",
+            ),
+            (
+                "remove marker",
+                "remove retry marker: remove /run/togi-retry-tuning-boot: injected failure",
+            ),
+        ] {
+            if case.fail == fail {
+                assert!(ran.err.contains(expected), "{}: {}", case.name, ran.err);
+            }
+        }
         if case.fail == "reboot" {
             assert!(
-                ran.err
-                    .contains("systemctl reboot exited with exit status: 1: denied"),
+                ran.err.contains("systemctl reboot: exit status 1: denied"),
                 "{}: {}",
                 case.name,
                 ran.err
@@ -180,14 +193,13 @@ fn a_marker_that_cannot_be_removed_after_a_failed_reboot_is_reported() {
     let ran = run(&host, state.path());
     assert_eq!(ran.exit, Exit::Error);
     assert!(
-        ran.err
-            .contains("systemctl reboot exited with exit status: 1: denied"),
+        ran.err.contains("systemctl reboot: exit status 1: denied"),
         "{}",
         ran.err
     );
     assert!(
         ran.err
-            .contains("remove retry marker after failed reboot: injected failure"),
+            .contains("remove retry marker after failed reboot: remove /run/togi-retry-tuning-boot: injected failure"),
         "{}",
         ran.err
     );
