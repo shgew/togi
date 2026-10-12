@@ -1,0 +1,1011 @@
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+
+use togi_config::Config;
+use togi_journal::fs::{Fault, Op};
+use togi_journal::{
+    Activity, Attribution, Build, CarriedCore, CorePhase, CoreTransition, CycleEvent,
+    DeadEndCondition, Event, EventKind, HuntOutcome, Outcome, Payload, SessionCarried, SessionId,
+    TrialId, TrialIntent,
+};
+use togi_machine::{BiosContext, Condition, CoreId, PerCore, Regime, Signal, TargetOffset};
+use togi_session::{PrepareError, Stop};
+use togi_sim::MachineDefinition;
+use togi_sim::definition::JointDef;
+use togi_simrun::{Observe, Observer, SimError, SimInput, simulate};
+use togi_tuner::PhaseNo;
+
+use crate::common::{Bench, STATE, build, finish, hunt_machine, machine_file, until_kind};
+
+const SEED: u64 = 1000;
+
+fn previous_build() -> Build {
+    build()
+}
+
+fn next_build() -> Build {
+    Build {
+        ruleset: previous_build().ruleset + 1,
+        ..previous_build()
+    }
+}
+
+fn next_input(bench: &Bench) -> SimInput {
+    let mut input = bench.input();
+    input.build = next_build();
+    input
+}
+
+fn core(id: i64) -> CoreId {
+    CoreId::new(id).unwrap()
+}
+
+fn offset(value: i64) -> TargetOffset {
+    TargetOffset::new(value).unwrap()
+}
+
+fn uniform(value: i64, cores: i64) -> PerCore<TargetOffset> {
+    (0..cores).map(|id| (core(id), offset(value))).collect()
+}
+
+fn shared_voltage() -> MachineDefinition {
+    machine_file("shared-voltage")
+}
+
+fn clean_cycle() -> Bench {
+    let bench = Bench::new(&shared_voltage(), SEED);
+    finish(bench.input());
+    bench
+}
+
+fn changed_bios() -> BiosContext {
+    BiosContext {
+        bios_version: "changed".into(),
+        board: "board".into(),
+        cpu_model: "cpu".into(),
+        microcode: "0x1".into(),
+        boost_limit_mhz: 5000,
+    }
+}
+
+fn stop_when(mut hit: impl FnMut(&Event) -> bool + 'static) -> Observer {
+    Box::new(move |event| {
+        if hit(event) {
+            Observe::Stop
+        } else {
+            Observe::Continue
+        }
+    })
+}
+
+fn after_initial_phases(cores: usize) -> Observer {
+    let mut seen = 0;
+    stop_when(move |event| {
+        if matches!(&event.payload, Payload::CorePhase(phase) if phase.from.is_none()) {
+            seen += 1;
+        }
+        seen == cores
+    })
+}
+
+fn after_alone_passes(cores: usize) -> Observer {
+    let mut trials = BTreeMap::new();
+    let mut passed = BTreeSet::new();
+    stop_when(move |event| {
+        match &event.payload {
+            Payload::TrialIntent(intent) if intent.condition == Condition::Alone => {
+                if let Some(core) = intent.core {
+                    trials.insert(intent.trial.clone(), core);
+                }
+            }
+            Payload::TrialEnd(end) if end.outcome == Outcome::Pass => {
+                if let Some(core) = trials.get(&end.trial) {
+                    passed.insert(*core);
+                }
+            }
+            _ => {}
+        }
+        passed.len() == cores
+    })
+}
+
+fn is_passed_full_cycle(event: &Event) -> bool {
+    matches!(
+        &event.payload,
+        Payload::CheckingCycle(cycle)
+            if cycle.event == CycleEvent::End && cycle.passed && cycle.full
+    )
+}
+
+fn is_phase_two_confirmed(event: &Event) -> bool {
+    matches!(
+        &event.payload,
+        Payload::CheckingCycle(cycle)
+            if cycle.event == CycleEvent::End
+                && cycle.passed
+                && cycle.full
+                && cycle.reason.as_deref().is_some_and(|reason| reason.contains("phase 2 ends"))
+    )
+}
+
+fn session_of(events: &[Event]) -> SessionId {
+    match &events
+        .first()
+        .unwrap_or_else(|| panic!("a journal"))
+        .payload
+    {
+        Payload::SessionStart(start) => start.session,
+        other => panic!("first event is {other:?}"),
+    }
+}
+
+fn archived(bench: &Bench, session: SessionId) -> Option<Vec<u8>> {
+    bench
+        .fs
+        .contents(format!("{STATE}/archive/{session}.jsonl"))
+}
+
+fn carried(events: &[Event]) -> SessionCarried {
+    let all: Vec<_> = events
+        .iter()
+        .filter_map(|event| match &event.payload {
+            Payload::SessionCarried(carried) => Some(carried.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(all.len(), 1, "session.carried events");
+    all.into_iter().next().unwrap()
+}
+
+fn carried_core(events: &[Event], id: CoreId) -> CarriedCore {
+    carried(events)
+        .carried
+        .into_iter()
+        .find(|seed| seed.core == id)
+        .unwrap_or_else(|| panic!("{id:?} carries nothing"))
+}
+
+fn first_phases(events: &[Event]) -> BTreeMap<CoreId, CoreTransition> {
+    let mut phases = BTreeMap::new();
+    for event in events {
+        if let Payload::CorePhase(phase) = &event.payload
+            && phase.from.is_none()
+        {
+            phases.entry(phase.core).or_insert_with(|| phase.clone());
+        }
+    }
+    phases
+}
+
+fn carried_start(limit: i64, failure_point: Option<i64>) -> i64 {
+    match failure_point {
+        Some(point) if point < 0 && limit <= point => point + 1,
+        _ => limit,
+    }
+}
+
+fn config(text: &str) -> Config {
+    Config::parse(text).unwrap()
+}
+
+fn candidates(limit: i64, cores: i64) -> String {
+    let limits: Vec<String> = (0..cores)
+        .map(|core| format!("\"{core}\": {limit}"))
+        .collect();
+    format!("{{{}}}", limits.join(", "))
+}
+
+fn candidate_config(limit: i64, cores: i64) -> Config {
+    config(&format!(
+        r#"{{"candidate_solo_limits": {}}}"#,
+        candidates(limit, cores)
+    ))
+}
+
+fn quick_matrix() -> Config {
+    config(&format!(
+        r#"{{
+            "candidate_solo_limits": {},
+            "evidence": {{"miss": 0.5}},
+            "durations": {{
+                "search_trial_s": 1,
+                "short_trial_s": 1,
+                "checking_trial_s": 1,
+                "checking_idle_s": 1,
+                "checking_all_core_s": 4
+            }}
+        }}"#,
+        candidates(-10, 4)
+    ))
+}
+
+#[test]
+fn a_ruleset_transition_seeds_the_next_session() {
+    let source = clean_cycle();
+    let id = session_of(&source.events());
+    let next = source.resumed(&shared_voltage(), SEED);
+    let finished = finish(next_input(&next));
+    assert_eq!(finished.stop, Some(Stop::Cycles));
+    assert!(archived(&next, id).is_some());
+    let events = next.events();
+    let carried = carried(&events);
+    assert_eq!(carried.sources.len(), 1);
+    assert_eq!(carried.sources[0].session, id);
+    assert!(carried.failure_points);
+    let phases = first_phases(&events);
+    let mut failure_points = BTreeMap::new();
+    let (mut limits, mut points) = (0, 0);
+    for seed in &carried.carried {
+        let phase = &phases[&seed.core];
+        if let Some(point) = seed.failure_point {
+            points += 1;
+            failure_points.insert(seed.core, point.offset);
+            assert_eq!(phase.failure_point, Some(point.offset), "{:?}", seed.core);
+            assert!(phase.offset > point.offset, "{:?}: {phase:?}", seed.core);
+        }
+        if let Some(limit) = seed.candidate_solo_limit {
+            limits += 1;
+            let want = carried_start(
+                limit.offset.get(),
+                seed.failure_point.map(|point| point.offset.get()),
+            );
+            assert_eq!(phase.to, CorePhase::Search, "{:?}", seed.core);
+            assert!(phase.check_solo_limit, "{:?}", seed.core);
+            assert_eq!(phase.offset.get(), want, "{:?}", seed.core);
+        }
+    }
+    assert!(
+        limits > 0 && points > 0,
+        "{limits} limits, {points} failure points"
+    );
+    let mut tested = 0;
+    for event in &events {
+        if let Payload::TrialIntent(intent) = &event.payload
+            && intent.condition == Condition::Alone
+            && let (Some(core), Some(tested_at)) = (intent.core, intent.offset)
+            && let Some(&point) = failure_points.get(&core)
+        {
+            tested += 1;
+            assert!(
+                tested_at > point,
+                "seq {}: {core:?} tested at {tested_at:?}",
+                event.seq
+            );
+        }
+    }
+    assert!(tested > 0);
+}
+
+#[test]
+fn a_previous_ruleset_session_transitions_to_a_seeded_session() {
+    let source = clean_cycle();
+    let source_events = source.events();
+    let id = session_of(&source_events);
+    let decisions: BTreeMap<CoreId, _> = togi_tuner::replay(&source_events)
+        .unwrap()
+        .project()
+        .cores
+        .into_iter()
+        .map(|view| (view.core, (view.offset, view.pass)))
+        .collect();
+    let next = source.resumed(&shared_voltage(), SEED);
+    let finished = finish(next_input(&next));
+    assert_eq!(finished.stop, Some(Stop::Cycles));
+    assert!(archived(&next, id).is_some());
+    let events = next.events();
+    let Payload::SessionStart(start) = &events[0].payload else {
+        panic!("first event is {:?}", events[0].payload);
+    };
+    assert_eq!(start.build, next_build());
+    assert_ne!(start.session, id);
+    let carried = carried(&events);
+    assert_eq!(carried.sources.len(), 1);
+    assert_eq!(carried.sources[0].session, id);
+    assert_eq!(carried.sources[0].ruleset, previous_build().ruleset);
+    let mut carried_at = None;
+    let (mut facts, mut live_trials) = (0, 0);
+    for event in &events {
+        match &event.payload {
+            Payload::SessionCarried(_) => carried_at = Some(event.seq),
+            Payload::TrialCarried(_) | Payload::FailureCarried(_) => {
+                facts += 1;
+                assert_eq!(
+                    carried_at, None,
+                    "seq {} follows session.carried",
+                    event.seq
+                );
+            }
+            Payload::TrialEnd(_) => live_trials += 1,
+            Payload::CheckingCycle(cycle) if cycle.passed => {
+                assert!(
+                    live_trials > 0,
+                    "seq {} passes before any live trial",
+                    event.seq
+                );
+            }
+            _ => {}
+        }
+    }
+    assert!(facts > 0, "no carried trial or failure facts");
+    let phases = first_phases(&events);
+    assert!(!phases.is_empty());
+    for (core, phase) in &phases {
+        assert_eq!(phase.to, CorePhase::Search, "{core:?}");
+    }
+    assert!(carried.failure_points && !carried.carried.is_empty());
+    let (mut discriminating, mut points) = (false, 0);
+    for seed in &carried.carried {
+        let phase = &phases[&seed.core];
+        let limit = seed.candidate_solo_limit.expect("a carried solo limit");
+        let want = carried_start(
+            limit.offset.get(),
+            seed.failure_point.map(|point| point.offset.get()),
+        );
+        points += usize::from(seed.failure_point.is_some());
+        assert_eq!(phase.to, CorePhase::Search);
+        assert!(phase.check_solo_limit, "{:?}", seed.core);
+        assert_eq!(phase.offset.get(), want, "{:?}", seed.core);
+        assert_eq!(phase.pass, None, "{:?}", seed.core);
+        assert_eq!(
+            phase.failure_point,
+            seed.failure_point.map(|point| point.offset)
+        );
+        let (decided, pass) = decisions[&seed.core];
+        discriminating |= decided.get() != want || pass.is_some();
+    }
+    assert!(points > 0);
+    assert!(
+        discriminating,
+        "every source decision equals its carried start"
+    );
+}
+
+#[test]
+fn a_ruleset_transition_starts_phase_one_with_nothing_confirmed() {
+    let source = clean_cycle();
+    let confirmed = togi_tuner::replay(&source.events()).unwrap().project();
+    assert!(
+        confirmed
+            .bios_profile
+            .as_ref()
+            .is_some_and(|profile| profile.confirmed.is_some())
+    );
+    assert!(confirmed.clean_cycles > 0);
+    let next = source.resumed(&shared_voltage(), SEED);
+    let mut input = next_input(&next);
+    input.observer = Some(after_initial_phases(16));
+    finish(input);
+    let state = togi_tuner::replay(&next.events()).unwrap().project();
+    let plan = state.phase_plan.expect("a phase plan");
+    assert_eq!(plan.phase, PhaseNo::One);
+    assert_eq!(plan.concluded, None);
+    assert!(!plan.confirming);
+    assert!(plan.candidates.is_empty());
+    assert!(
+        state
+            .bios_profile
+            .as_ref()
+            .is_none_or(|profile| profile.confirmed.is_none())
+    );
+    assert_eq!(state.clean_cycles, 0);
+    assert_eq!(state.checking.cycle, None);
+}
+
+#[test]
+fn a_ruleset_transition_after_a_bios_change_carries_only_solo_limits() {
+    let source = clean_cycle();
+    let next = source.resumed(&shared_voltage(), SEED);
+    next.sim.set_bios_context(changed_bios());
+    let mut input = next_input(&next);
+    input.observer = Some(after_initial_phases(16));
+    finish(input);
+    let events = next.events();
+    let carried = carried(&events);
+    assert!(!carried.failure_points);
+    assert!(
+        carried
+            .detail
+            .as_deref()
+            .is_some_and(|detail| detail.contains("bios_version")),
+        "{:?}",
+        carried.detail
+    );
+    assert!(!carried.carried.is_empty());
+    assert!(
+        carried
+            .carried
+            .iter()
+            .all(|seed| seed.failure_point.is_none() && seed.candidate_solo_limit.is_some())
+    );
+    let phases = first_phases(&events);
+    assert_eq!(phases.len(), 16);
+    for (core, phase) in &phases {
+        assert_eq!(phase.failure_point, None, "{core:?}");
+    }
+}
+
+#[test]
+fn a_bios_change_archives_and_checks_solo_limits() {
+    let bench = Bench::new(&hunt_machine(4), 1);
+    let mut input = bench.input();
+    input.config = quick_matrix();
+    input.observer = Some(after_alone_passes(4));
+    finish(input);
+    let id = session_of(&bench.events());
+
+    bench.sim.set_bios_context(changed_bios());
+    bench.sim.reboot();
+    let mut input = bench.input();
+    input.config = quick_matrix();
+    input.observer = Some(after_initial_phases(4));
+    finish(input);
+
+    assert!(archived(&bench, id).is_some());
+    let events = bench.events();
+    assert_ne!(session_of(&events), id);
+    let carried = carried(&events);
+    assert!(!carried.failure_points);
+    assert_eq!(carried.sources[0].session, id);
+    assert_eq!(carried.carried.len(), 4);
+    let phases = first_phases(&events);
+    assert_eq!(phases.len(), 4);
+    for (core, phase) in &phases {
+        assert_eq!(phase.to, CorePhase::Search, "{core:?}");
+        assert!(phase.check_solo_limit, "{core:?}");
+    }
+}
+
+#[test]
+fn a_configured_candidate_solo_limit_stops_short_of_a_carried_failure_point() {
+    let source = clean_cycle();
+    let next = source.resumed(&shared_voltage(), SEED);
+    let mut input = next_input(&next);
+    input.config = config(r#"{"candidate_solo_limits": {"0": -50}}"#);
+    input.observer = Some(after_initial_phases(16));
+    finish(input);
+    let events = next.events();
+    let point = carried_core(&events, core(0))
+        .failure_point
+        .expect("core 0 carries a failure point")
+        .offset
+        .get();
+    assert!(point > -50, "{point}");
+    let phase = &first_phases(&events)[&core(0)];
+    assert_eq!(phase.to, CorePhase::Search);
+    assert!(phase.check_solo_limit);
+    assert_eq!(phase.offset.get(), point + 1);
+    assert!(
+        phase.reason.starts_with(&format!(
+            "configured candidate solo limit; clamped to {}",
+            point + 1
+        )),
+        "{}",
+        phase.reason
+    );
+}
+
+#[test]
+fn a_carried_failure_point_at_zero_dead_ends_the_core() {
+    let mut failing = hunt_machine(2);
+    failing.core[0].alone = [1; 5];
+    let source = Bench::new(&failing, 1);
+    let first = finish(source.input());
+    assert!(
+        matches!(first.stop, Some(Stop::DeadEnd { .. })),
+        "{:?}",
+        first.stop
+    );
+    let id = session_of(&source.events());
+
+    let next = source.resumed(&hunt_machine(2), 1);
+    let finished = finish(next_input(&next));
+    let Some(Stop::DeadEnd { dead_end, .. }) = finished.stop else {
+        panic!("stopped with {:?}", finished.stop);
+    };
+    assert_eq!(dead_end.condition, DeadEndCondition::FailureAtZero);
+    assert_eq!(dead_end.core, Some(core(0)));
+    let events = next.events();
+    let point = carried_core(&events, core(0))
+        .failure_point
+        .expect("core 0 carries a failure point");
+    assert_eq!(point.offset.get(), 0);
+    assert_eq!(point.from.session, id);
+    let live_alone_on_core_zero = events.iter().any(|event| {
+        matches!(&event.payload, Payload::TrialIntent(intent)
+            if intent.core == Some(core(0)) && intent.condition == Condition::Alone)
+    });
+    assert!(!live_alone_on_core_zero);
+}
+
+#[test]
+fn a_bios_archive_interrupted_before_the_move_resumes_the_carry() {
+    let bench = Bench::new(&hunt_machine(4), 1);
+    let mut input = bench.input();
+    input.config = quick_matrix();
+    input.observer = Some(after_alone_passes(4));
+    finish(input);
+    let id = session_of(&bench.events());
+
+    bench.sim.set_bios_context(changed_bios());
+    bench.sim.reboot();
+    bench
+        .fs
+        .inject(Fault::before(Op::Rename, 1).named("events.jsonl"));
+    let mut input = bench.input();
+    input.config = quick_matrix();
+    assert!(matches!(
+        simulate(input),
+        Err(SimError::Prepare {
+            source: PrepareError::Archive(_),
+            ..
+        })
+    ));
+    bench.fs.clear_faults();
+
+    let interrupted = bench.events();
+    assert_eq!(session_of(&interrupted), id);
+    assert!(matches!(
+        &interrupted.last().unwrap().payload,
+        Payload::SessionArchived(archive) if archive.session == id
+    ));
+    assert!(archived(&bench, id).is_none());
+
+    let mut input = bench.input();
+    input.config = quick_matrix();
+    input.observer = Some(until_kind(EventKind::SessionCarried));
+    finish(input);
+    let events = bench.events();
+    assert_ne!(session_of(&events), id);
+    let carried = carried(&events);
+    assert!(!carried.failure_points);
+    assert!(!carried.carried.is_empty());
+    assert_eq!(carried.sources[0].session, id);
+    assert!(archived(&bench, id).is_some());
+}
+
+fn is_hunt_end_on_core_one(event: &Event, result: HuntOutcome) -> bool {
+    matches!(
+        &event.payload,
+        Payload::HuntEnd(end)
+            if end.result == result && end.cores.len() == 1 && end.cores.first() == Some(core(1))
+    )
+}
+
+fn culprit_machine(joint: bool) -> MachineDefinition {
+    let mut definition = hunt_machine(4);
+    for limits in &mut definition.core {
+        limits.alone = [-50; 5];
+        limits.together = [-50; 7];
+    }
+    if joint {
+        definition.joint.push(JointDef {
+            members: BTreeMap::from([(1, -10)]),
+            regimes: vec![Regime::R6],
+            rate: Some(10.0),
+            ..JointDef::default()
+        });
+    }
+    definition
+}
+
+fn direct_machine() -> MachineDefinition {
+    let mut definition = hunt_machine(4);
+    definition.core[1].together[5] = -5;
+    definition
+}
+
+fn transition_carrying_core_one(
+    source: &Bench,
+    definition: &MachineDefinition,
+    config: Config,
+) -> CarriedCore {
+    let id = session_of(&source.events());
+    let next = source.resumed(definition, 1);
+    let mut input = next_input(&next);
+    input.config = config;
+    input.observer = Some(until_kind(EventKind::SessionCarried));
+    finish(input);
+    let events = next.events();
+    let carried = carried(&events);
+    assert!(carried.failure_points);
+    assert_eq!(carried.sources[0].session, id);
+    carried_core(&events, core(1))
+}
+
+fn hunt_of_core_one(events: &[Event], result: HuntOutcome) -> (togi_journal::Seq, i64) {
+    let (seq, hunt) = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            Payload::HuntEnd(end) if is_hunt_end_on_core_one(event, result) => {
+                Some((event.seq, end.hunt))
+            }
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("no {result} hunt on core 1"));
+    let start = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            Payload::HuntStart(start) if start.hunt == hunt => Some(start.clone()),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("no hunt start for {hunt}"));
+    (seq, start.failing.get(core(1)).unwrap().get())
+}
+
+#[test]
+fn a_ruleset_transition_carries_a_culprit_hunt_failure_point() {
+    let config = candidate_config(-10, 4);
+    let source = Bench::new(&culprit_machine(false), 1);
+    let mut input = source.input();
+    input.config = config.clone();
+    input.policy.cycles = None;
+    input.observer = Some(stop_when(is_phase_two_confirmed));
+    finish(input);
+
+    let joint = culprit_machine(true);
+    let source = source.resumed(&joint, 1);
+    let mut input = source.input();
+    input.config = config.clone();
+    input.policy.cycles = None;
+    input.observer = Some(stop_when(|event| {
+        is_hunt_end_on_core_one(event, HuntOutcome::Culprit)
+    }));
+    finish(input);
+
+    let (end_seq, want) = hunt_of_core_one(&source.events(), HuntOutcome::Culprit);
+    let seed = transition_carrying_core_one(&source, &joint, config);
+    let point = seed.failure_point.expect("a carried failure point");
+    assert_eq!(point.offset.get(), want);
+    assert_eq!(point.from.seq, end_seq);
+    assert_eq!(point.signal, Signal::Crash);
+}
+
+#[test]
+fn a_ruleset_transition_carries_a_direct_hunt_failure_point() {
+    let config = candidate_config(-10, 4);
+    let definition = direct_machine();
+    let source = Bench::new(&definition, 1);
+    let mut input = source.input();
+    input.config = config.clone();
+    input.policy.cycles = None;
+    input.observer = Some(stop_when(|event| {
+        is_hunt_end_on_core_one(event, HuntOutcome::Direct)
+    }));
+    finish(input);
+
+    let events = source.events();
+    let (_, want) = hunt_of_core_one(&events, HuntOutcome::Direct);
+    let (failure_seq, signal) = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            Payload::Failure(failure)
+                if failure.core == Some(core(1))
+                    && failure.offset.map(TargetOffset::get) == Some(want)
+                    && failure.attribution == Attribution::Attributed
+                    && failure.known_failure.is_none() =>
+            {
+                Some((event.seq, failure.signal))
+            }
+            _ => None,
+        })
+        .expect("a failure at the hunt's offset");
+    let seed = transition_carrying_core_one(&source, &definition, config);
+    let point = seed.failure_point.expect("a carried failure point");
+    assert_eq!(point.offset.get(), want);
+    assert_eq!(point.from.seq, failure_seq);
+    assert_eq!(point.signal, signal);
+}
+
+fn class_key(intent: &TrialIntent) -> String {
+    let cores: Vec<u8> = match intent.core {
+        Some(core) => vec![core.get()],
+        None => intent.cores.iter().map(CoreId::get).collect(),
+    };
+    format!(
+        "{:?}/{:?}/{cores:?}/{}",
+        intent.regime,
+        Some(intent.workload),
+        intent.duration_s
+    )
+}
+
+fn first_cycle_live_passes(events: &[Event]) -> BTreeMap<String, usize> {
+    let mut intents: HashMap<TrialId, &TrialIntent> = HashMap::new();
+    let mut counts = BTreeMap::new();
+    let mut open = false;
+    for event in events {
+        match &event.payload {
+            Payload::CheckingCycle(cycle) if cycle.event == CycleEvent::Start => {
+                assert!(!open, "first cycle restarted before passing in full");
+                open = true;
+            }
+            Payload::CheckingCycle(cycle) if open => {
+                assert!(cycle.passed && cycle.full, "{cycle:?}");
+                return counts;
+            }
+            Payload::TrialIntent(intent) if open => {
+                intents.insert(intent.trial.clone(), intent);
+            }
+            Payload::TrialEnd(end) => {
+                if let Some(intent) = intents.get(&end.trial) {
+                    assert_eq!(end.outcome, Outcome::Pass, "{end:?}");
+                    *counts.entry(class_key(intent)).or_default() += 1;
+                }
+            }
+            _ => {}
+        }
+    }
+    panic!("no first passed full cycle");
+}
+
+#[test]
+fn a_transition_checks_carried_solo_limits_but_completes_full_cycles_with_live_passes() {
+    let definition = hunt_machine(2);
+    let config = candidate_config(-10, 2);
+    let source = Bench::new(&definition, 1);
+    let mut input = source.input();
+    input.config = config.clone();
+    input.policy.cycles = None;
+    input.observer = Some(stop_when(is_passed_full_cycle));
+    finish(input);
+    let source_events = source.events();
+    let id = session_of(&source_events);
+
+    let next = source.resumed(&definition, 1);
+    let mut input = next_input(&next);
+    input.config = config.clone();
+    input.policy.cycles = None;
+    input.observer = Some(stop_when(is_passed_full_cycle));
+    finish(input);
+    let events = next.events();
+
+    let Payload::SessionStart(start) = &events[0].payload else {
+        panic!("first event is {:?}", events[0].payload);
+    };
+    assert_eq!(start.build, next_build());
+    assert!(archived(&next, id).is_some());
+
+    let trials = config.evidence().trials().get();
+    let mut facts = HashMap::new();
+    let mut together_passes: BTreeMap<String, usize> = BTreeMap::new();
+    let mut completed = BTreeSet::new();
+    for event in &events {
+        match &event.payload {
+            Payload::TrialCarried(fact) => {
+                if fact.source.session == id
+                    && fact.condition == Condition::Together
+                    && fact.outcome == Outcome::Pass
+                {
+                    let cores: Vec<u8> = fact.class.cores.iter().map(CoreId::get).collect();
+                    let key = format!(
+                        "{:?}/{:?}/{cores:?}/{}",
+                        fact.class.regime, fact.class.workload, fact.class.duration_s
+                    );
+                    *together_passes.entry(key).or_default() += 1;
+                }
+                facts.insert(event.seq, fact);
+            }
+            Payload::TrialIntent(intent) => {
+                assert_ne!(
+                    intent.activity,
+                    Some(Activity::Search),
+                    "live solo limit trial at seq {}",
+                    event.seq
+                );
+            }
+            Payload::CorePhase(phase)
+                if phase.from == Some(CorePhase::Search) && phase.to != CorePhase::Search =>
+            {
+                assert!(
+                    phase.reason.contains("carried") && phase.reason.contains(&id.to_string()),
+                    "{phase:?}"
+                );
+                let mut counts: HashMap<Regime, u32> = HashMap::new();
+                for cause in &event.cause {
+                    if let Some(fact) = facts.get(cause)
+                        && fact.source.session == id
+                        && fact.outcome == Outcome::Pass
+                        && fact.class.cores.len() == 1
+                        && fact.class.cores.first() == Some(phase.core)
+                    {
+                        *counts.entry(fact.class.regime).or_default() += 1;
+                    }
+                }
+                for regime in [Regime::R1, Regime::R2] {
+                    assert_eq!(
+                        counts.get(&regime).copied().unwrap_or(0),
+                        trials,
+                        "{:?} {regime:?}",
+                        phase.core
+                    );
+                }
+                completed.insert(phase.core);
+            }
+            _ => {}
+        }
+    }
+    assert_eq!(completed, BTreeSet::from([core(0), core(1)]));
+    let source_passes = first_cycle_live_passes(&source_events);
+    assert!(!source_passes.is_empty());
+    assert_eq!(source_passes, together_passes);
+    assert_eq!(source_passes, first_cycle_live_passes(&events));
+}
+
+#[test]
+fn a_transition_starts_a_hunt_from_a_carried_together_failure() {
+    let mut definition = hunt_machine(4);
+    for limits in &mut definition.core {
+        limits.alone = [-11; 5];
+        limits.together = [-11, -11, -11, -11, -11, -11, -50];
+    }
+    definition.core[1].together[5] = -5;
+    let source = Bench::new(&definition, 1);
+    let mut input = source.input();
+    input.config = candidate_config(-10, 4);
+    input.policy.cycles = None;
+    input.observer = Some(stop_when(|event| {
+        matches!(
+            &event.payload,
+            Payload::Failure(failure)
+                if failure.condition == Some(Condition::Together)
+                    && failure.regime == Some(Regime::R6)
+                    && failure.attribution == Attribution::Unattributed
+        )
+    }));
+    finish(input);
+
+    let source_events = source.events();
+    let id = session_of(&source_events);
+    let failure = source_events
+        .iter()
+        .rev()
+        .find_map(|event| match &event.payload {
+            Payload::Failure(failure) => Some(failure.clone()),
+            _ => None,
+        })
+        .expect("a checking failure together");
+    let trial = failure.trial.clone().expect("a failing trial");
+    let intent = source_events
+        .iter()
+        .find_map(|event| match &event.payload {
+            Payload::TrialIntent(intent) if intent.trial == trial => Some(intent.clone()),
+            _ => None,
+        })
+        .expect("the failing trial's intent");
+    assert_eq!(intent.activity, Some(Activity::Checking));
+    assert_eq!(intent.profile, uniform(-9, 4));
+
+    let next = source.resumed(&definition, 1);
+    let mut input = next_input(&next);
+    input.config = candidate_config(-11, 4);
+    input.policy.cycles = None;
+    input.observer = Some(stop_when(|event| {
+        matches!(event.payload, Payload::HuntStart(_))
+    }));
+    finish(input);
+    let events = next.events();
+    let Payload::SessionStart(start) = &events[0].payload else {
+        panic!("first event is {:?}", events[0].payload);
+    };
+    assert_eq!(start.build, next_build());
+
+    let mut carried_at = None;
+    let mut current_profile = None;
+    let mut hunts = 0;
+    for event in &events {
+        match &event.payload {
+            Payload::ProfileChange(change) => current_profile = Some(change.to),
+            Payload::TrialCarried(fact)
+                if fact.source.session == id
+                    && fact.source.trial.as_ref() == Some(&trial)
+                    && fact.outcome == Outcome::Failure =>
+            {
+                carried_at = Some(event.seq);
+            }
+            Payload::TrialIntent(rerun)
+                if rerun.condition == Condition::Together
+                    && rerun.regime == intent.regime
+                    && rerun.workload == intent.workload
+                    && rerun.duration_s == intent.duration_s
+                    && rerun.cores == intent.cores
+                    && rerun.profile == intent.profile =>
+            {
+                panic!("the carried failure was rerun: {rerun:?}");
+            }
+            Payload::HuntStart(hunt) => {
+                hunts += 1;
+                assert_eq!(current_profile, Some(uniform(-10, 4)));
+                assert_eq!(Some(hunt.failure), carried_at);
+                assert_eq!(hunt.trial.as_ref(), Some(&trial));
+                assert_eq!(hunt.failing, intent.profile);
+                assert_eq!(hunt.regime, intent.regime);
+                assert_eq!(hunt.workload, intent.workload);
+                assert_eq!(hunt.duration_s, intent.duration_s);
+                assert_eq!(hunt.cores, intent.cores);
+            }
+            _ => {}
+        }
+    }
+    assert_eq!(hunts, 1);
+}
+
+fn journal_with_unknown_kind() -> (Bench, SessionId, Vec<u8>) {
+    let bench = Bench::new(&hunt_machine(2), 1);
+    let mut input = bench.input();
+    input.observer = Some(after_alone_passes(1));
+    finish(input);
+    let events = bench.events();
+    let id = session_of(&events);
+    let path = format!("{STATE}/events.jsonl");
+    let mut text = String::from_utf8(bench.fs.contents(&path).unwrap()).unwrap();
+    let mut line: serde_json::Value = serde_json::from_str(text.lines().last().unwrap()).unwrap();
+    line["seq"] = (events.last().unwrap().seq.get() + 1).into();
+    line["kind"] = "retired.fact".into();
+    line["msg"] = "unknown evidence".into();
+    line["data"] = serde_json::json!({"core": 0, "offset": -50});
+    line.as_object_mut().unwrap().remove("cause");
+    text.push_str(&line.to_string());
+    text.push('\n');
+    bench.fs.put(&path, text.as_bytes());
+    (bench, id, text.into_bytes())
+}
+
+#[test]
+fn a_journal_with_an_unknown_kind_is_refused_untouched_by_the_build_that_wrote_it() {
+    let (bench, id, original) = journal_with_unknown_kind();
+    let error = simulate(bench.input()).err().expect("a refused journal");
+    assert!(
+        matches!(
+            error,
+            SimError::Prepare {
+                source: PrepareError::Open(_),
+                ..
+            }
+        ),
+        "{error}"
+    );
+    assert!(error.to_string().contains("retired.fact"), "{error}");
+    assert_eq!(
+        bench.fs.contents(format!("{STATE}/events.jsonl")),
+        Some(original)
+    );
+    assert!(archived(&bench, id).is_none());
+}
+
+#[test]
+fn an_older_journal_with_an_unknown_kind_is_archived_and_carries_nothing() {
+    let (bench, id, original) = journal_with_unknown_kind();
+    let run = || {
+        let mut input = next_input(&bench);
+        input.observer = Some(until_kind(EventKind::TrialEnd));
+        let finished = finish(input);
+        assert!(finished.errors.is_empty(), "{:?}", finished.errors);
+        assert_eq!(finished.stop, Some(Stop::Signal));
+        bench.events()
+    };
+    let first = run();
+    assert_eq!(archived(&bench, id), Some(original));
+    let session = session_of(&first);
+    assert_ne!(session, id);
+    let carried: Vec<_> = first
+        .iter()
+        .filter_map(|event| match &event.payload {
+            Payload::SessionCarried(carried) => Some(carried),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        carried.iter().all(|carried| carried.carried.is_empty()),
+        "{carried:?}"
+    );
+
+    let next = run();
+    assert_eq!(session_of(&next), session);
+    assert!(next.len() > first.len());
+    let ends = |events: &[Event]| {
+        events
+            .iter()
+            .filter(|event| event.kind() == EventKind::TrialEnd)
+            .count()
+    };
+    assert_eq!(ends(&next), ends(&first) + 1);
+}
