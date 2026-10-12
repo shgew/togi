@@ -272,12 +272,18 @@ impl Pty {
         }
     }
 
-    /// Waits until `found` holds for the bytes received after `from`, and returns how many bytes there are then.
-    fn wait_for(&mut self, from: usize, what: &str, found: impl Fn(&[u8]) -> bool) -> usize {
+    /// Waits until `found` finds what it looks for in the bytes received after `from`, and returns the offset just
+    /// past it, so that what arrived after it in the same read is still there for the next wait.
+    fn wait_for(
+        &mut self,
+        from: usize,
+        what: &str,
+        found: impl Fn(&[u8]) -> Option<usize>,
+    ) -> usize {
         let deadline = Instant::now() + BOUND;
         loop {
-            if found(&self.seen[from..]) {
-                return self.seen.len();
+            if let Some(end) = found(&self.seen[from..]) {
+                return from + end;
             }
             let pumped = self.pump(deadline);
             assert!(
@@ -314,16 +320,23 @@ enum Pumped {
     Deadline,
 }
 
-/// A run of at least eight of the same character: a row of a state the helper drew.
-fn state_shown(bytes: &[u8], state: char) -> bool {
+/// The end of the first run of eight of `state` in `bytes`: a row of a state the helper drew.
+fn state_shown(bytes: &[u8], state: char) -> Option<usize> {
     let mut needle = [0_u8; 4];
     let needle = state.encode_utf8(&mut needle).as_bytes();
-    let wanted = needle.repeat(8);
-    bytes.windows(wanted.len()).any(|window| window == wanted)
+    end_of(bytes, &needle.repeat(8))
+}
+
+/// The end of the first `needle` in `bytes`.
+fn end_of(bytes: &[u8], needle: &[u8]) -> Option<usize> {
+    bytes
+        .windows(needle.len())
+        .position(|window| window == needle)
+        .map(|start| start + needle.len())
 }
 
 fn contains(bytes: &[u8], needle: &[u8]) -> bool {
-    bytes.windows(needle.len()).any(|window| window == needle)
+    end_of(bytes, needle).is_some()
 }
 
 fn count_of(bytes: &[u8], needle: &[u8]) -> usize {
@@ -541,7 +554,7 @@ fn real_process_sigwinch_repaints_at_the_new_size() {
     pty.resize(100, 30);
     helper.signal(Signal::WINCH);
     pty.wait_for(first, "a frame of the new width", |bytes| {
-        contains(bytes, &"M".repeat(99).into_bytes())
+        end_of(bytes, &"M".repeat(99).into_bytes())
     });
     assert!(
         count_of(&pty.seen[first..], b"\x1b[2J") >= 1,
@@ -768,18 +781,18 @@ fn real_process_after_run_a_sigint_neither_kills_the_process_nor_escapes_a_calle
     let first = pty.wait_for(0, "the first frame", |bytes| state_shown(bytes, 'M'));
     rustix::io::write(&pty.master, b"q").unwrap();
     let returned = pty.wait_for(first, "the dashboard's return", |bytes| {
-        contains(bytes, RETURNED)
+        end_of(bytes, RETURNED)
     });
     helper.signal(Signal::INT);
     rustix::io::write(&pty.master, b"\n").unwrap();
     let listening = pty.wait_for(
         returned,
         "the caller's listener, after a SIGINT with no listener of its own",
-        |bytes| contains(bytes, LISTENING),
+        |bytes| end_of(bytes, LISTENING),
     );
     helper.signal(Signal::INT);
     pty.wait_for(listening, "the SIGINT at the caller's listener", |bytes| {
-        contains(bytes, RECEIVED)
+        end_of(bytes, RECEIVED)
     });
     pty.drain();
     let status = helper.finish();
@@ -801,7 +814,7 @@ fn real_process_a_second_run_in_the_process_still_cancels_on_sigint() {
     let first = pty.wait_for(0, "the first dashboard", |bytes| state_shown(bytes, 'M'));
     rustix::io::write(&pty.master, b"q").unwrap();
     let second = pty.wait_for(first, "the second dashboard's start", |bytes| {
-        contains(bytes, SECOND)
+        end_of(bytes, SECOND)
     });
     pty.wait_for(second, "the second dashboard", |bytes| {
         state_shown(bytes, 'M')
@@ -810,6 +823,19 @@ fn real_process_a_second_run_in_the_process_still_cancels_on_sigint() {
     pty.drain();
     let status = helper.finish();
     assert_restored(&pty, status, false);
+}
+
+#[test]
+fn real_process_a_wait_still_sees_what_came_in_the_same_read_as_the_previous_match() {
+    let mut pty = Pty::open(80, 24);
+    let mut slave = pty.slave();
+    let mut marker_and_frame = SECOND.to_vec();
+    marker_and_frame.extend_from_slice(&b"M".repeat(8));
+    slave.write_all(&marker_and_frame).unwrap();
+    let second = pty.wait_for(0, "the marker", |bytes| end_of(bytes, SECOND));
+    pty.wait_for(second, "the frame written with the marker", |bytes| {
+        state_shown(bytes, 'M')
+    });
 }
 
 #[test]
@@ -829,7 +855,7 @@ fn real_process_run_after_handles_only_sigwinch() {
     pty.resize(100, 30);
     helper.signal(Signal::WINCH);
     pty.wait_for(first, "a frame of the new width", |bytes| {
-        contains(bytes, &"S".repeat(99).into_bytes())
+        end_of(bytes, &"S".repeat(99).into_bytes())
     });
     rustix::io::write(&pty.master, b"q").unwrap();
     pty.drain();
@@ -850,7 +876,9 @@ fn real_process_run_after_leaves_sigint_sigterm_and_sighup_to_its_caller() {
         },
     );
     let mut seen = pty.wait_for(0, "the first frame", |bytes| {
-        state_shown(bytes, 'S') && state_shown(bytes, '0')
+        state_shown(bytes, 'S')
+            .zip(state_shown(bytes, '0'))
+            .map(|(state, count)| state.max(count))
     });
     for (signal, count) in [(Signal::TERM, '1'), (Signal::HUP, '2')] {
         helper.signal(signal);

@@ -1,0 +1,29 @@
+---
+source: crates/togi-tool-bench/tests/sanity.rs
+expression: "String::from_utf8(out).unwrap()"
+---
+sanity: means over the runs both benches ran; flagged when the means differ by more than the band and by more than 3 standard errors, when concluded runs were lost, or when a side lacks the metric on runs the other has
+scenario                metric                    rust_runs go_runs       rust         go     rel_diff       z  flag
+default                 concluded                         4       4     1.0000     1.0000        +0.0%    0.00  
+default                 sim_hours                         4       4    61.5000    41.5000       +48.2%   21.91  FLAGGED
+default                 passed_cycles                     4       4     2.0000     2.0000        +0.0%    0.00  
+default                 crashes                           4       4    10.0000    10.0000        +0.0%    0.00  
+default                 trials                            4       4  1000.0000  1000.0000        +0.0%    0.00  
+default                 trial_hours                       4       4    40.0000    40.0000        +0.0%    0.00  
+default                 hunts                             4       4     2.0000     2.0000        +0.0%    0.00  
+default                 combinations                      4       4     0.0000     0.0000        +0.0%    0.00  
+default                 depth                             4       4  -300.0000  -300.0000        +0.0%    0.00  
+default                 real_answer_share                 4       4     0.0000     0.0000        +0.0%    0.00  
+default                 hazard_max_per_h                  4       4     0.0000     0.0000        +0.0%    0.00  
+TOTAL                   concluded                         4       4     1.0000     1.0000        +0.0%    0.00  
+TOTAL                   sim_hours                         4       4    61.5000    41.5000       +48.2%   21.91  FLAGGED
+TOTAL                   passed_cycles                     4       4     2.0000     2.0000        +0.0%    0.00  
+TOTAL                   crashes                           4       4    10.0000    10.0000        +0.0%    0.00  
+TOTAL                   trials                            4       4  1000.0000  1000.0000        +0.0%    0.00  
+TOTAL                   trial_hours                       4       4    40.0000    40.0000        +0.0%    0.00  
+TOTAL                   hunts                             4       4     2.0000     2.0000        +0.0%    0.00  
+TOTAL                   combinations                      4       4     0.0000     0.0000        +0.0%    0.00  
+TOTAL                   depth                             4       4  -300.0000  -300.0000        +0.0%    0.00  
+TOTAL                   real_answer_share                 4       4     0.0000     0.0000        +0.0%    0.00  
+TOTAL                   hazard_max_per_h                  4       4     0.0000     0.0000        +0.0%    0.00  
+sanity: 2 of 22 comparisons flagged
