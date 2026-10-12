@@ -23,10 +23,10 @@ Status:
 | facts | 3 | 3 | 0 | 0 | 0 |
 | fit | 37 | 35 | 2 | 0 | 0 |
 | stats | 27 | 26 | 1 | 0 | 0 |
-| bench | 84 | 50 | 2 | 0 | 32 |
+| bench | 84 | 51 | 1 | 0 | 32 |
 | audit | 13 | 0 | 0 | 7 | 6 |
 | togi | 118 | 14 | 2 | 0 | 102 |
-| **total** | **305** | **151** | **7** | **7** | **140** |
+| **total** | **305** | **152** | **6** | **7** | **140** |
 
 The pending rows by owner (a row with several owners counts for each): #826 37, #829 36, #869 32, #870 6, #872 32.
 
@@ -249,7 +249,7 @@ The pending rows by owner (a row with several owners counts for each): #826 37, 
 |---|---|---|
 | `TestReadResultsIgnoresRetiredFields` | `togi_tool_bench::sanity::go_scores_ignore_the_fields_the_rust_bench_does_not_compare` | A |
 | `TestComparisonIgnoresProjectedFields` | `togi_tool_bench::records::a_record_is_an_object_with_exactly_the_fields_the_format_names` | O(the Rust record is strict and holds no projected fields to ignore; its field set is pinned by the test listed) |
-| `TestCommittedBaselineIsSlim` | — | O(it pinned the slimming of the Go `baseline.jsonl`, which the Rust bench does not rewrite) |
+| `TestCommittedBaselineIsSlim` | `togi_tool_bench::records::the_baseline_writer_leaves_out_the_model_check_and_the_wall_time_and_nothing_else`<br>`togi_tool_bench::records::a_baseline_file_round_trips_through_the_reader`<br>`togi_tool_bench::compare::a_baseline_file_compares_exactly_as_the_full_records_do` | A |
 
 ### `tools/bench/bench_test.go` (6)
 
