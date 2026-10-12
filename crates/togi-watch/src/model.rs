@@ -5,20 +5,26 @@
 //! frame. The views keep the tuner's plan types and add only what the journal says about them: when, why and
 //! after what. Raw facts stay raw; the frames escape them at output.
 
+use std::cell::OnceCell;
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
 use jiff::Timestamp;
-use togi_journal::{Activity, DeadEndCondition, Member, ShutdownReason, TrialId};
+use togi_journal::{
+    Activity, DeadEndCondition, Event, Member, Seq, ShutdownReason, State as JournalState, TrialId,
+};
 use togi_machine::{
     CcdId, Condition, CoreId, CoreSet, ObservedOffset, PerCore, Regime, ResetKind, Signal,
     TargetOffset, WorkloadId,
 };
 use togi_tuner::{
     BiosProfile, CombinationId, CyclePlan, DeepeningView, Forecast, HuntPlan, Limit, PhasePlan,
-    R7CoreStatus, SearchTurn, StepNo,
+    R7CoreStatus, SearchTurn, State as TunerState, StepNo,
 };
 
-use crate::history::{Entry, LogEntry};
+use crate::derive::Derived;
+use crate::facts::Facts;
+use crate::history::{Entry, LOG_LIMIT, LogEntry};
 use crate::screen::Log;
 
 /// Why the model cannot stand for the journal: one of the two folds refused an event.
@@ -107,6 +113,15 @@ pub struct CoreView {
     pub loaded: bool,
     /// Whether the trial in flight can name it.
     pub judged: bool,
+}
+
+/// What a hunt sets each core to: its failing offsets and the offsets it parks the rest at.
+#[derive(Debug, Clone, PartialEq)]
+pub struct HuntShape {
+    /// The failing profile.
+    pub failing: PerCore<TargetOffset>,
+    /// The profile that parks cores shallower.
+    pub parked: PerCore<TargetOffset>,
 }
 
 /// A recorded combination: offsets at which these cores failed together.
@@ -445,8 +460,12 @@ pub struct Snapshot<'a> {
     pub log: &'a [LogEntry],
     /// Every event the log lists, kept or not.
     pub log_total: usize,
-    /// Core ids in the session's order, the order of every profile.
+    /// Core ids in the session's order, ascending, the order every profile is listed in.
     pub order: &'a [CoreId],
+    /// What each hunt sets each core to, by hunt number.
+    pub shapes: &'a BTreeMap<u32, HuntShape>,
+    /// The sequence numbers of trials carried from earlier sessions.
+    pub carried: &'a BTreeSet<Seq>,
 }
 
 impl<'a> Snapshot<'a> {
@@ -463,14 +482,11 @@ impl<'a> Snapshot<'a> {
 /// The journal folded into facts.
 #[derive(Debug, Default)]
 pub struct Model {
+    journal: JournalState,
+    tuner: TunerState,
+    facts: Facts,
     problem: Option<FoldError>,
-    view: View,
-}
-
-#[derive(Debug, Default)]
-struct View {
-    session: Option<SessionView>,
-    forecast: Forecast,
+    derived: OnceCell<Derived>,
 }
 
 impl Model {
@@ -479,39 +495,105 @@ impl Model {
         Self::default()
     }
 
-    /// Why the model cannot stand for the journal, once a fold failed. Every later fold fails too.
+    /// Folds the next event of the journal. A refusal turns the model into a problem state: the facts folded so
+    /// far are dropped rather than shown half applied, and every later fold fails with the same error.
+    pub fn fold(&mut self, event: &Event) -> Result<(), FoldError> {
+        if let Some(problem) = &self.problem {
+            return Err(problem.clone());
+        }
+        self.derived = OnceCell::new();
+        let folded = self
+            .journal
+            .apply(event)
+            .map_err(FoldError::from)
+            .and_then(|()| self.tuner.fold(event).map_err(FoldError::from));
+        match folded {
+            Ok(()) => {
+                self.facts.fold(event, &self.journal, &self.tuner);
+                Ok(())
+            }
+            Err(error) => {
+                self.facts = Facts::default();
+                self.problem = Some(error.clone());
+                Err(error)
+            }
+        }
+    }
+
+    /// Why the model cannot stand for the journal, once a fold failed.
     pub fn problem(&self) -> Option<&FoldError> {
         self.problem.as_ref()
     }
 
-    /// The facts a frame shows, borrowed from the model.
+    /// The facts a frame shows, borrowed from the model. The tuner's projection and forecast are computed here
+    /// the first time after a change and kept until the next fold.
     pub fn snapshot(&self) -> Snapshot<'_> {
+        let derived = self.derived.get_or_init(|| {
+            if self.problem.is_some() || self.journal.session.is_none() {
+                Derived::empty()
+            } else {
+                Derived::new(&self.journal, &self.tuner, &self.facts)
+            }
+        });
+        let live = self.problem.is_none() && self.journal.session.is_some();
+        let facts = &self.facts;
+        let projection = &derived.projection;
+        let plan = &projection.cycle_plan;
+        let log = &facts.log[facts.log.len().saturating_sub(LOG_LIMIT)..];
         Snapshot {
-            session: self.view.session.as_ref(),
-            failures: 0,
-            crashes: 0,
-            last_failure: None,
-            clean_cycles: 0,
-            cores: &[],
-            combos: &[],
-            r7: &[],
-            trial: None,
-            last: None,
-            forecast: &self.view.forecast,
-            cycle: None,
-            hunt: None,
-            turns: &[],
-            phases: None,
-            deepening: None,
-            bios: None,
-            recover: None,
-            stopped: None,
-            dead_end: None,
-            history: &[],
-            history_dropped: 0,
-            log: &[],
-            log_total: 0,
-            order: &[],
+            session: facts.session.as_ref().filter(|_| live),
+            failures: facts.failures,
+            crashes: facts.crashes,
+            last_failure: facts.last_failure,
+            clean_cycles: projection.clean_cycles,
+            cores: &derived.cores,
+            combos: &derived.combos,
+            r7: &projection.r7_status,
+            trial: derived.trial.as_ref(),
+            last: facts.last.as_ref(),
+            forecast: &derived.forecast,
+            cycle: (plan.number.is_some() || !plan.steps.is_empty()).then(|| CycleView {
+                plan,
+                step_hunts: &derived.step_hunts,
+                resume: derived.forecast.between.as_ref().and_then(|b| b.resume),
+            }),
+            hunt: projection
+                .hunt_plan
+                .as_ref()
+                .zip(derived.hunt.as_ref())
+                .map(|(plan, facts)| HuntView { plan, facts }),
+            turns: &projection.search_turns,
+            phases: projection.phase_plan.as_ref(),
+            deepening: projection.deepening.as_ref(),
+            bios: projection
+                .bios_profile
+                .as_ref()
+                .filter(|bios| bios.confirmed.is_some()),
+            recover: derived.recover.as_ref(),
+            stopped: facts.stop.as_ref().filter(|_| facts.stopped),
+            dead_end: facts
+                .dead_end
+                .as_ref()
+                .filter(|_| self.journal.dead_end.is_some()),
+            history: &derived.history,
+            history_dropped: derived.history_dropped,
+            log,
+            log_total: facts.log_total,
+            order: &derived.order,
+            shapes: &facts.shapes,
+            carried: &facts.carried,
         }
     }
+}
+
+/// Folds events into a new model, stopping at the first one the model refuses. The model is then in its problem
+/// state, like one that was folded event by event.
+pub fn project<'a>(events: impl IntoIterator<Item = &'a Event>) -> Model {
+    let mut model = Model::new();
+    for event in events {
+        if model.fold(event).is_err() {
+            break;
+        }
+    }
+    model
 }

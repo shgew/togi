@@ -1,12 +1,13 @@
 //! What happened, as structured entries: the lines of the history panel and the raw lines of the log view.
 
 use std::borrow::Cow;
+use std::fmt::Write as _;
 
 use jiff::Timestamp;
 use togi_journal::{Inference, Seq};
 use togi_machine::{CoreId, Signal, TargetOffset};
 
-use crate::words::{Tag, Tone};
+use crate::words::{Tag, Tone, core_ids, plural};
 
 /// How many history entries are kept, newest first.
 pub const HISTORY_LIMIT: usize = 200;
@@ -114,4 +115,276 @@ pub struct LogEntry {
     pub tag: Cow<'static, str>,
     /// The recorded message, raw.
     pub msg: String,
+}
+
+impl Entry {
+    /// A plain line: a tag, a sentence and a tone, merging with nothing.
+    pub fn line(at: Timestamp, tag: Tag, text: String, tone: Tone) -> Self {
+        Self {
+            at,
+            tag,
+            text,
+            tone,
+            kind: EntryKind::Plain,
+            key: None,
+            alarm: None,
+            runs: 0,
+            first: 0,
+            of: 0,
+            peak: None,
+            reboot: None,
+            hunt: None,
+            first_group: 0,
+            last_group: 0,
+            probe: false,
+            cores: Vec::new(),
+            offset: None,
+            count: 0,
+            inferred: None,
+            signal: None,
+        }
+    }
+
+    /// The sentence split around the words drawn as an alarm: the words before, the alarm and the words after.
+    /// Without an alarm everything is before.
+    pub fn sentence(&self) -> (String, String, String) {
+        match self.kind {
+            EntryKind::Session => {
+                let text = if self.count > 0 {
+                    format!(
+                        "session started · {} carried from the last session",
+                        plural(self.count as usize, "solo limit")
+                    )
+                } else {
+                    format!("session started on {} cores", self.of)
+                };
+                (text, String::new(), String::new())
+            }
+            EntryKind::Limits => {
+                let offset = self.offset.map_or(0, TargetOffset::get);
+                let mut cores = self.cores.clone();
+                cores.sort_unstable();
+                let mut text = match cores.as_slice() {
+                    [core] => format!("core {:02} solo limit {offset}", core.get()),
+                    _ => format!(
+                        "cores {} solo limit {offset}",
+                        cores
+                            .iter()
+                            .map(|core| format!("{:02}", core.get()))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ),
+                };
+                if offset == -50 {
+                    text.push_str(", the deepest offset");
+                }
+                (text, String::new(), String::new())
+            }
+            EntryKind::Groups => {
+                let many = self.last_group > self.first_group;
+                let groups = if many {
+                    format!("groups {}-{}", self.first_group, self.last_group)
+                } else {
+                    format!("group {}", self.first_group)
+                };
+                let cores = core_ids(self.cores.iter().copied());
+                let (what, verdict) = if self.inferred == Some(Inference::Failure) {
+                    (cores, "failed on existing evidence")
+                } else if many {
+                    (
+                        format!("parts of {cores}"),
+                        "all passed on existing evidence",
+                    )
+                } else {
+                    (cores, "passed on existing evidence")
+                };
+                (
+                    format!(
+                        "hunt {} {groups} · {what} · {verdict}",
+                        self.hunt.unwrap_or(0)
+                    ),
+                    String::new(),
+                    String::new(),
+                )
+            }
+            EntryKind::Trials => {
+                if self.probe && self.last_group > self.first_group {
+                    return (
+                        format!(
+                            "hunt {} groups {}-{} · member probes · each {} passed",
+                            self.hunt.unwrap_or(0),
+                            self.first_group,
+                            self.last_group,
+                            self.tally()
+                        ),
+                        String::new(),
+                        String::new(),
+                    );
+                }
+                let mut text = if self.of > 1 || self.runs > 1 {
+                    format!("{} · {} passed", self.text, self.tally())
+                } else {
+                    format!("{} · passed", self.text)
+                };
+                if let Some(peak) = self.peak {
+                    let _ = write!(text, " · Tctl max {peak}°C");
+                }
+                (text, String::new(), String::new())
+            }
+            EntryKind::Plain => match self.alarm.as_deref() {
+                Some(alarm) if !alarm.is_empty() => match self.text.split_once(alarm) {
+                    Some((before, after)) => {
+                        (before.to_owned(), alarm.to_owned(), after.to_owned())
+                    }
+                    None => (self.text.clone(), String::new(), String::new()),
+                },
+                _ => (self.text.clone(), String::new(), String::new()),
+            },
+        }
+    }
+
+    /// Merged trials counted against what their part or requirement needs: "4 of 4", "trials 1-3 of 4". Passes
+    /// that run past the requirement, as when a failure leaves earlier passes standing, are only counted.
+    pub fn tally(&self) -> String {
+        let (runs, first, of) = (self.runs, self.first, self.of);
+        if of == 0 || (of == 1 && runs == 1) || first + runs - 1 > of {
+            runs.to_string()
+        } else if first == 1 && runs == of {
+            format!("{runs} of {of}")
+        } else if runs == 1 {
+            format!("trial {first} of {of}")
+        } else {
+            format!("trials {first}-{} of {of}", first + runs - 1)
+        }
+    }
+}
+
+/// Appends a line, merging it into the line before when both carry the same key.
+pub(crate) fn fold_entry(history: &mut Vec<Entry>, line: Entry) {
+    let Some(last) = history.last_mut() else {
+        history.push(line);
+        return;
+    };
+    if line.key.is_none() || last.key != line.key {
+        history.push(line);
+        return;
+    }
+    match line.kind {
+        EntryKind::Limits => {
+            if last.offset != line.offset {
+                history.push(line);
+                return;
+            }
+            last.cores.extend(line.cores.iter().copied());
+        }
+        EntryKind::Groups => {
+            if last.last_group + 1 != line.first_group {
+                history.push(line);
+                return;
+            }
+            last.last_group = line.last_group;
+            for core in &line.cores {
+                if !last.cores.contains(core) {
+                    last.cores.push(*core);
+                }
+            }
+        }
+        EntryKind::Trials => {
+            last.runs += line.runs;
+            last.of = last.of.max(line.of);
+            if line.peak.is_some() && (last.peak.is_none() || line.peak > last.peak) {
+                last.peak = line.peak;
+            }
+        }
+        EntryKind::Plain | EntryKind::Session => {
+            history.push(line);
+            return;
+        }
+    }
+    last.at = line.at;
+}
+
+/// Whether `line` is a member probe that passed every trial it needed, straight after one that did the same for
+/// the hunt's previous group.
+pub(crate) fn mergeable_probe_passes(last: &Entry, line: &Entry) -> bool {
+    line.probe
+        && line.tag == Tag::Pass
+        && line.of > 0
+        && line.runs == line.of
+        && line.first == 1
+        && last.probe
+        && last.tag == Tag::Pass
+        && last.hunt == line.hunt
+        && last.last_group + 1 == line.first_group
+        && last.of == line.of
+        && last.runs == last.of
+        && last.first == 1
+}
+
+/// Folds adjacent member probes that each passed every trial they needed into one line.
+pub(crate) fn merge_probe_passes(history: Vec<Entry>) -> Vec<Entry> {
+    let mut out: Vec<Entry> = Vec::with_capacity(history.len());
+    for entry in history {
+        if let Some(last) = out.last_mut() {
+            if mergeable_probe_passes(last, &entry) {
+                last.at = entry.at;
+                last.last_group = entry.last_group;
+                if entry.peak.is_some() && (last.peak.is_none() || entry.peak > last.peak) {
+                    last.peak = entry.peak;
+                }
+                continue;
+            }
+        }
+        out.push(entry);
+    }
+    out
+}
+
+/// The kept history: entries in the order they happened, and how many older ones were let go.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct History {
+    pub(crate) entries: Vec<Entry>,
+    pub(crate) dropped: usize,
+}
+
+impl History {
+    /// Appends a line, merging it into the one before, and lets the oldest go once twice the limit is kept.
+    pub(crate) fn push(&mut self, line: Entry) {
+        fold_entry(&mut self.entries, line);
+        if self.entries.len() > 2 * HISTORY_LIMIT {
+            self.compact();
+        }
+    }
+
+    fn compact(&mut self) {
+        let Some(last) = self.entries.pop() else {
+            return;
+        };
+        let mut kept = merge_probe_passes(std::mem::take(&mut self.entries));
+        kept.push(last);
+        let mut drop = kept.len().saturating_sub(HISTORY_LIMIT);
+        let n = kept.len();
+        if n > 1 && mergeable_probe_passes(&kept[n - 2], &kept[n - 1]) {
+            drop = drop.saturating_sub(1);
+        }
+        if drop > 0 {
+            self.dropped += drop;
+            kept.drain(..drop);
+        }
+        self.entries = kept;
+    }
+
+    /// The history to show: probe passes merged across the retention boundary, the newest
+    /// [`HISTORY_LIMIT`] kept, newest first, and how many older ones were let go.
+    pub(crate) fn recent(&self) -> (Vec<Entry>, usize) {
+        let mut kept = merge_probe_passes(self.entries.clone());
+        let mut dropped = self.dropped;
+        if kept.len() > HISTORY_LIMIT {
+            let drop = kept.len() - HISTORY_LIMIT;
+            dropped += drop;
+            kept.drain(..drop);
+        }
+        kept.reverse();
+        (kept, dropped)
+    }
 }

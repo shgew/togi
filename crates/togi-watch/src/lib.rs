@@ -5,6 +5,9 @@
 //! [`screen`] is the seam between the frames, which draw one snapshot, and the terminal loop, which decides when
 //! to draw.
 
+mod derive;
+mod describe;
+mod facts;
 pub mod history;
 pub mod model;
 pub mod screen;
