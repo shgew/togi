@@ -106,6 +106,41 @@ fn state_rebuild_write_failure_warns_and_continues() {
 }
 
 #[test]
+fn a_state_file_holding_the_document_as_an_array_is_rebuilt() {
+    let bench = Bench::new(2);
+    let mut session = swept(&bench);
+    session.begin().unwrap();
+    drop(session);
+    let mut resumed = bench.open();
+    let positional = (
+        resumed.appender.folds.facts.clone(),
+        resumed.appender.tuner().project(),
+    );
+    resumed.appender.journal.write_state(&positional).unwrap();
+    let written: serde_json::Value =
+        serde_json::from_slice(&bench.mem.contents("/state/state.json").unwrap()).unwrap();
+    assert_eq!(written.as_array().map(Vec::len), Some(2));
+    assert!(
+        resumed
+            .appender
+            .journal()
+            .read_state::<StateDocument>()
+            .is_err()
+    );
+    resumed.rebuild_state().unwrap();
+    let rebuilt = resumed.appender.journal().events().last().unwrap();
+    assert_eq!(
+        rebuilt.payload,
+        Payload::StateRebuilt(StateRebuilt {
+            fields: vec!["state.json".into()],
+        })
+    );
+    let saved: serde_json::Value =
+        serde_json::from_slice(&bench.mem.contents("/state/state.json").unwrap()).unwrap();
+    assert!(saved.is_object());
+}
+
+#[test]
 fn deferred_state_is_written_before_the_journal_leaves_the_run() {
     let bench = Bench::new(2);
     let mut input = bench.input();

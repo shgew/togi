@@ -1,5 +1,6 @@
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use togi_journal::{Payload, SessionWarning, StateRebuilt};
+use togi_machine::object_only;
 use togi_tuner::Projection;
 
 use crate::appender::{Appender, Folds};
@@ -13,11 +14,13 @@ pub enum PublicationPolicy {
     OnFinish,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct StateDocument {
-    pub facts: togi_journal::State,
-    pub tuner: Projection,
+object_only! {
+    #[derive(Clone, Debug, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub(crate) struct StateDocument {
+        pub facts: togi_journal::State,
+        pub tuner: Projection,
+    }
 }
 
 impl StateDocument {
