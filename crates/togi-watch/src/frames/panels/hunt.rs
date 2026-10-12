@@ -1007,6 +1007,36 @@ mod tests {
             rows[2].contains("2 of 2") && rows[2].ends_with("failed"),
             "{rows:?}"
         );
+        let painted = with_hunt(&concluded, &facts, |scene, hunt| {
+            let colourful = crate::frames::scene::Scene {
+                colours: crate::screen::Colours::Full,
+                ..*scene
+            };
+            part_lines(
+                &colourful,
+                hunt,
+                &Tables::new(SizeClass::Wide, 100),
+                100,
+                SizeClass::Wide,
+            )
+        });
+        let state_style = |row: usize, word: &str| {
+            painted[row]
+                .spans
+                .iter()
+                .find(|span| span.content.trim() == word)
+                .unwrap_or_else(|| panic!("row {row} has no {word} span: {:?}", painted[row]))
+                .style
+        };
+        let full = crate::screen::Colours::Full;
+        assert_eq!(
+            state_style(1, "passed"),
+            crate::frames::Paint::Good.style(full)
+        );
+        assert_eq!(
+            state_style(2, "failed"),
+            crate::frames::Paint::Bad.style(full)
+        );
     }
 
     #[test]
