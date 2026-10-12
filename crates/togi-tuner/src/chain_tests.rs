@@ -1131,3 +1131,65 @@ fn ccd_count_above_three_is_refused_at_session_start() {
     };
     assert!(Journal::bare(&ids).try_append(three.into(), &[]).is_ok());
 }
+
+/// A cycle open with its first R7 step begun and `cells` pass cells in one of its classes, none
+/// at a profile that covers the checking profile.
+fn crowded(cells: u32) -> Journal {
+    let mut j = chain_journal();
+    for at in 0..cells {
+        let digit = |place: u32| -i64::from(at / 10_u32.pow(place) % 10 + 1);
+        j.carry(
+            "20230101T000000Z",
+            (Regime::R7, 0, &[0, 1, 2, 3], SHORT),
+            Condition::Together,
+            &[digit(0), digit(1), digit(2), digit(3), -1, -1, -1, -1],
+            Outcome::Pass,
+        );
+    }
+    j
+}
+
+fn folded_visits(mut j: Journal, event: impl FnOnce(&mut Journal)) -> u64 {
+    j.state.visits();
+    event(&mut j);
+    let folded = j.state.visits();
+    j.assert_resumes();
+    folded
+}
+
+#[test]
+fn an_unchanged_config_load_rebuilds_nothing_whatever_the_ledger_holds() {
+    let visits = |cells| {
+        folded_visits(crowded(cells), |j| {
+            j.load(&testkit::config(r7_only()));
+        })
+    };
+    assert_eq!(visits(100), 0);
+    assert_eq!(visits(10_000), 0);
+}
+
+#[test]
+fn a_chain_record_counts_the_classes_it_adds_not_the_ledger() {
+    let visits = |cells| {
+        let mut j = crowded(cells);
+        pass_part(&mut j, &[0, 1, 2, 3], &FULL_REQUESTS);
+        let chain = decided(j.next());
+        assert!(matches!(chain.payload, DecisionPayload::CheckingChain(_)));
+        j.state.visits();
+        j.decide(chain);
+        let folded = j.state.visits();
+        j.assert_resumes();
+        folded
+    };
+    assert_eq!(visits(100), visits(10_000));
+}
+
+#[test]
+fn a_profile_change_recounts_the_classes_that_can_cover_it_not_the_ledger() {
+    let visits = |cells| {
+        folded_visits(crowded(cells), |j| {
+            j.profile_change(&[-11, -20, -30, -40, -20, -20, -20, -20]);
+        })
+    };
+    assert_eq!(visits(100), visits(10_000));
+}
