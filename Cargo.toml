@@ -14,6 +14,7 @@ publish = false
 clap = { version = "4", default-features = false, features = ["std", "derive", "help", "usage", "error-context"] }
 flate2 = "1"
 getrandom = { version = "0.4", features = ["std"] }
+insta = { version = "1", default-features = false }
 jiff = { version = "0.2", default-features = false, features = ["std", "serde"] }
 nix = { version = "0.30", default-features = false, features = ["fs"] }
 proptest = "1"
@@ -44,6 +45,7 @@ togi-sim = { path = "crates/togi-sim", version = "0.0.0" }
 togi-simrun = { path = "crates/togi-simrun", version = "0.0.0" }
 togi-smu = { path = "crates/togi-smu", version = "0.0.0" }
 togi-tool-audit = { path = "crates/togi-tool-audit", version = "0.0.0" }
+togi-tool-modelcheck = { path = "crates/togi-tool-modelcheck", version = "0.0.0" }
 togi-tool-trialfacts = { path = "crates/togi-tool-trialfacts", version = "0.0.0" }
 togi-trial = { path = "crates/togi-trial", version = "0.0.0" }
 togi-trialfiles = { path = "crates/togi-trialfiles", version = "0.0.0" }
