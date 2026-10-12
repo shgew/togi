@@ -116,12 +116,10 @@ func reviewerCount(l, f int) int {
 		return 1
 	case l < 500:
 		return min(2, f)
-	case l < 2000:
-		return min(4, ceilDiv(f, 3))
 	case l < 5000:
-		return min(8, ceilDiv(f, 2))
+		return max(2, min(4, ceilDiv(f, 3)))
 	}
-	return min(16, f)
+	return min(8, ceilDiv(f, 2))
 }
 
 func ceilDiv(a, b int) int { return (a + b - 1) / b }
