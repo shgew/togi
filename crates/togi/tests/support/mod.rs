@@ -11,8 +11,8 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::io;
 use std::os::unix::process::ExitStatusExt;
-use std::process::ExitStatus;
 use std::path::{Path, PathBuf};
+use std::process::ExitStatus;
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -291,7 +291,11 @@ impl Session {
         assert!(text.lines().next().unwrap().contains(from), "{from}");
         let first_end = text.find('\n').unwrap();
         let (first, rest) = text.split_at(first_end);
-        std::fs::write(self.journal(), format!("{}{rest}", first.replacen(from, to, 1))).unwrap();
+        std::fs::write(
+            self.journal(),
+            format!("{}{rest}", first.replacen(from, to, 1)),
+        )
+        .unwrap();
     }
 
     pub fn kinds(&self) -> Vec<String> {

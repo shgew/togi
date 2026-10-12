@@ -80,17 +80,15 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
         Err(error) => return fail(ctx, COMMAND, chain(&error)),
     };
     let (table, failed) = table(&diagnosis);
-    if let Err(exit) = ctx.out.write_all(table.as_bytes()).map_err(|error| {
-        ctx.error(format!("write output: {error}"))
-    }) {
+    if let Err(exit) = ctx
+        .out
+        .write_all(table.as_bytes())
+        .map_err(|error| ctx.error(format!("write output: {error}")))
+    {
         return exit;
     }
     if let Some(error) = &diagnosis.bios_context_error {
-        return fail(
-            ctx,
-            COMMAND,
-            format!("read BIOS context: {}", chain(error)),
-        );
+        return fail(ctx, COMMAND, format!("read BIOS context: {}", chain(error)));
     }
     if !failed.is_empty() {
         let line = format!("not ready: {}", failed.join(", "));
@@ -141,12 +139,14 @@ fn recorded_context(
         Verdict::Use => {}
     }
     let path = ctx.state_dir.join("events.jsonl");
-    let recording = Recording::read(&path)
-        .map_err(|error| fail(ctx, COMMAND, chain(&error)))?;
-    Ok(recording.events().iter().find_map(|event| match &event.payload {
-        togi_journal::Payload::SessionContext(context) => Some(context.bios_context()),
-        _ => None,
-    }))
+    let recording = Recording::read(&path).map_err(|error| fail(ctx, COMMAND, chain(&error)))?;
+    Ok(recording
+        .events()
+        .iter()
+        .find_map(|event| match &event.payload {
+            togi_journal::Payload::SessionContext(context) => Some(context.bios_context()),
+            _ => None,
+        }))
 }
 
 /// The check table and the names of the failed checks.
@@ -162,7 +162,11 @@ fn table(diagnosis: &Diagnosis) -> (String, Vec<String>) {
             failed.push(check.name.clone());
             "FAIL"
         };
-        rows.push((check.name.clone(), result, escape_text(&check.detail).to_string()));
+        rows.push((
+            check.name.clone(),
+            result,
+            escape_text(&check.detail).to_string(),
+        ));
     }
     for skipped in &diagnosis.skipped {
         rows.push((
@@ -190,7 +194,10 @@ fn table(diagnosis: &Diagnosis) -> (String, Vec<String>) {
         "CHECK", "RESULT"
     );
     for (name, result, detail) in &rows {
-        let _ = writeln!(text, "{name:<name_width$}  {result:<result_width$}  {detail}");
+        let _ = writeln!(
+            text,
+            "{name:<name_width$}  {result:<result_width$}  {detail}"
+        );
     }
     (text, failed)
 }

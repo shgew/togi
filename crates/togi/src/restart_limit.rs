@@ -11,8 +11,7 @@ use crate::cli::{Context, examples};
 use crate::exit::Exit;
 use crate::report::{chain, fail};
 
-static EXAMPLES: LazyLock<String> =
-    LazyLock::new(|| {
+static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
     examples(&[(
         "sudo togi restart-limit --tuning-boot /boot/grub/grubenv",
         "Retry the tuning boot twice, then return to the normal system",

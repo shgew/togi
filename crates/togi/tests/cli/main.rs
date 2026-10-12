@@ -249,9 +249,18 @@ fn administration_usage_errors_exit_2_before_touching_anything() {
         (&["reset", "--all", "extra"], "unexpected argument 'extra'"),
         (&["restart-limit"], "required arguments were not provided"),
         (&["restart-limit", "--tuning-boot="], "a value is required"),
-        (&["restart-limit", "--tuning-boot", "g", "extra"], "unexpected argument 'extra'"),
-        (&["restart-limit", "--config", "c.json", "--tuning-boot", "g"], SCOPE),
-        (&["--config", "c.json", "restart-limit", "--tuning-boot", "g"], SCOPE),
+        (
+            &["restart-limit", "--tuning-boot", "g", "extra"],
+            "unexpected argument 'extra'",
+        ),
+        (
+            &["restart-limit", "--config", "c.json", "--tuning-boot", "g"],
+            SCOPE,
+        ),
+        (
+            &["--config", "c.json", "restart-limit", "--tuning-boot", "g"],
+            SCOPE,
+        ),
         (&["doctor", "extra"], "unexpected argument 'extra'"),
         (&["doctor", "--version"], "unexpected argument '--version'"),
     ] {
@@ -262,7 +271,10 @@ fn administration_usage_errors_exit_2_before_touching_anything() {
         assert_eq!(stdout(&ran), "", "{args:?}");
         assert!(stderr(&ran).contains(text), "{args:?}: {}", stderr(&ran));
     }
-    assert!(!std::path::Path::new(state).exists(), "a usage error created the state directory");
+    assert!(
+        !std::path::Path::new(state).exists(),
+        "a usage error created the state directory"
+    );
 }
 
 fn session_start(schema: u32) -> String {
@@ -296,10 +308,22 @@ fn doctor_exits_1_for_an_unreadable_journal_and_2_for_a_bad_config() {
     let dir = tempfile::tempdir().unwrap();
     let state = dir.path().to_str().unwrap();
     let missing = dir.path().join("none.json");
-    let ran = togi(&["--state-dir", state, "doctor", "--config", missing.to_str().unwrap()]);
+    let ran = togi(&[
+        "--state-dir",
+        state,
+        "doctor",
+        "--config",
+        missing.to_str().unwrap(),
+    ]);
     assert_eq!(ran.status.code(), Some(2), "{}", stderr(&ran));
     assert!(stderr(&ran).contains("none.json"), "{}", stderr(&ran));
-    let ran = togi(&["--config", missing.to_str().unwrap(), "--state-dir", state, "doctor"]);
+    let ran = togi(&[
+        "--config",
+        missing.to_str().unwrap(),
+        "--state-dir",
+        state,
+        "doctor",
+    ]);
     assert_eq!(ran.status.code(), Some(2), "{}", stderr(&ran));
 
     std::fs::write(dir.path().join("events.jsonl"), "not json\n").unwrap();

@@ -10,9 +10,9 @@ use clap::error::{ContextKind, ContextValue, ErrorKind};
 use clap::{CommandFactory, Parser, Subcommand};
 
 use crate::args::StateDirArgs;
+use crate::exit::Exit;
 use crate::system::{Real, System};
 use crate::{completion, doctor, reset, restart_limit};
-use crate::exit::Exit;
 
 const BANNER: &str = "   __              _\n  / /_____  ____ _(_)\n / __/ __ \\/ __ `/ /\n/ /_/ /_/ / /_/ / /\n\\__/\\____/\\__, /_/\n         /____/\n\n  per-core Curve Optimizer\n\n";
 
@@ -92,7 +92,12 @@ where
 
 /// [`run`] on `system` instead of the host: how a test stands for another platform, takes the host
 /// lock on a temporary file or answers the hardware checks. See [`crate::system`].
-pub fn run_with<I, T>(args: I, out: &mut dyn Write, err: &mut dyn Write, system: &dyn System) -> Exit
+pub fn run_with<I, T>(
+    args: I,
+    out: &mut dyn Write,
+    err: &mut dyn Write,
+    system: &dyn System,
+) -> Exit
 where
     I: IntoIterator<Item = T>,
     T: Into<OsString> + Clone,

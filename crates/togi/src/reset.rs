@@ -23,8 +23,14 @@ use crate::system::SystemClock;
 
 static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
     examples(&[
-        ("sudo togi reset --core 3", "Search core 3 again from its baseline"),
-        ("sudo togi reset --all", "Archive the session and start over"),
+        (
+            "sudo togi reset --core 3",
+            "Search core 3 again from its baseline",
+        ),
+        (
+            "sudo togi reset --all",
+            "Archive the session and start over",
+        ),
     ])
 });
 
@@ -128,7 +134,12 @@ fn reset_one(ctx: &mut Context<'_>, dir: StateDir, boot: BootId, core: u8) -> Ex
         Err(error) => return fail(ctx, COMMAND, chain(&error)),
     }
     let Ok(id) = CoreId::try_from(core) else {
-        return exit_with(ctx, COMMAND, format!("core {core:02} does not exist"), Exit::Usage);
+        return exit_with(
+            ctx,
+            COMMAND,
+            format!("core {core:02} does not exist"),
+            Exit::Usage,
+        );
     };
     let mut journal = match dir.open_at(boot, system.now()) {
         Ok(journal) => journal,
@@ -206,7 +217,10 @@ fn reset_everything(ctx: &mut Context<'_>, args: &Args, mut dir: StateDir, boot:
     };
     if let Err(exit) = emit(
         ctx,
-        format!("{}; the next togi run starts a new session", archived_line(&session)),
+        format!(
+            "{}; the next togi run starts a new session",
+            archived_line(&session)
+        ),
     ) {
         return exit;
     }

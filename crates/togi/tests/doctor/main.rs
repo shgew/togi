@@ -1,3 +1,8 @@
+#![allow(
+    clippy::unwrap_used,
+    reason = "the helpers panic on a broken fixture, as the tests do"
+)]
+
 #[path = "../support/mod.rs"]
 mod support;
 
@@ -20,12 +25,36 @@ fn check(name: &str, detail: &str, ok: bool) -> Check {
 
 fn ready_checks() -> Vec<Check> {
     vec![
-        check("cpu", "family 0x1A model 0x44 AMD Ryzen 9 9950X 16-Core Processor", true),
-        check("ryzen_smu", "codename 23 (Granite Ridge), driver 0.7.1, SMU 98.92.0", true),
-        check("pm_table", "pm_table version 0x620205: decoding per-core power, voltage request, temperature and C-state lanes", true),
-        check("readback", "16 cores read back: 00:0 01:0 02:0 03:0 04:0 05:0 06:0 07:0 08:0 09:0 10:0 11:0 12:0 13:0 14:0 15:0", true),
-        check("slot_mapping", "CCD0 fuse 0x00: cores 00-07 on slots 0-7; CCD1 fuse 0x00: cores 08-15 on slots 0-7", true),
-        check("backends", "mprime: /nix/store/mprime/bin/mprime; y-cruncher: /nix/store/y-cruncher/bin/y-cruncher", true),
+        check(
+            "cpu",
+            "family 0x1A model 0x44 AMD Ryzen 9 9950X 16-Core Processor",
+            true,
+        ),
+        check(
+            "ryzen_smu",
+            "codename 23 (Granite Ridge), driver 0.7.1, SMU 98.92.0",
+            true,
+        ),
+        check(
+            "pm_table",
+            "pm_table version 0x620205: decoding per-core power, voltage request, temperature and C-state lanes",
+            true,
+        ),
+        check(
+            "readback",
+            "16 cores read back: 00:0 01:0 02:0 03:0 04:0 05:0 06:0 07:0 08:0 09:0 10:0 11:0 12:0 13:0 14:0 15:0",
+            true,
+        ),
+        check(
+            "slot_mapping",
+            "CCD0 fuse 0x00: cores 00-07 on slots 0-7; CCD1 fuse 0x00: cores 08-15 on slots 0-7",
+            true,
+        ),
+        check(
+            "backends",
+            "mprime: /nix/store/mprime/bin/mprime; y-cruncher: /nix/store/y-cruncher/bin/y-cruncher",
+            true,
+        ),
         check("backend_user", "togi-trial: uid 990 gid 990", true),
         check("systemd_run", "scope confined to cpu 0 created", true),
         check("watchdog", "no hardware watchdog state available", false),
@@ -121,8 +150,10 @@ fn without_root_it_takes_no_lock_and_says_what_it_skipped() {
     let ran_checks: Vec<Check> = ["cpu", "ryzen_smu", "backends", "backend_user", "watchdog"]
         .iter()
         .map(|name| {
-            let found = ready_checks().into_iter().find(|c| c.name == *name).unwrap();
-            found
+            ready_checks()
+                .into_iter()
+                .find(|c| c.name == *name)
+                .unwrap()
         })
         .collect();
     let skipped = [
@@ -157,20 +188,35 @@ fn the_failed_style_follows_the_terminal_and_the_environment() {
     let mut diagnosis = ready();
     diagnosis.ran[0].ok = false;
     for (name, facts, want) in [
-        ("plain", OutputFacts::default(), "togi doctor: not ready: cpu\n"),
+        (
+            "plain",
+            OutputFacts::default(),
+            "togi doctor: not ready: cpu\n",
+        ),
         (
             "terminal",
-            OutputFacts { is_terminal: true, ..OutputFacts::default() },
+            OutputFacts {
+                is_terminal: true,
+                ..OutputFacts::default()
+            },
             "\x1b[1;31mtogi doctor: not ready: cpu\x1b[0m\n",
         ),
         (
             "no colour",
-            OutputFacts { is_terminal: true, no_color: true, journald: false },
+            OutputFacts {
+                is_terminal: true,
+                no_color: true,
+                journald: false,
+            },
             "togi doctor: not ready: cpu\n",
         ),
         (
             "journald",
-            OutputFacts { is_terminal: false, no_color: false, journald: true },
+            OutputFacts {
+                is_terminal: false,
+                no_color: false,
+                journald: true,
+            },
             "<3>\x1b[1;31mtogi doctor: not ready: cpu\x1b[0m\n",
         ),
     ] {
@@ -185,7 +231,10 @@ fn the_failed_style_follows_the_terminal_and_the_environment() {
         assert_eq!(ran.exit, Exit::Preflight, "{name}");
         assert_eq!(ran.err, want, "{name}");
         assert!(ran.out.ends_with("not ready: cpu\n"), "{name}");
-        assert!(!ran.out.contains('\x1b'), "{name}: stdout is never coloured");
+        assert!(
+            !ran.out.contains('\x1b'),
+            "{name}: stdout is never coloured"
+        );
     }
 }
 
@@ -224,7 +273,11 @@ fn a_journal_run_would_refuse_exits_16_before_any_lock_or_check() {
         let ran = doctor(&host, session.path(), &[]);
         assert_eq!(ran.exit, Exit::Incompatible, "{name}: {}", ran.err);
         assert_eq!(ran.out, "", "{name}");
-        assert!(ran.err.contains("this journal was written by"), "{name}: {}", ran.err);
+        assert!(
+            ran.err.contains("this journal was written by"),
+            "{name}: {}",
+            ran.err
+        );
         assert_eq!(host.calls.get(), 0, "{name}");
         assert!(!host.lock.exists(), "{name}");
     }
@@ -272,7 +325,10 @@ fn config_is_accepted_before_and_after_the_command() {
     let cfg = tempfile::tempdir().unwrap();
     let missing = cfg.path().join("missing.json");
     let missing = missing.to_str().unwrap();
-    for args in [&["doctor", "--config", missing][..], &["--config", missing, "doctor"]] {
+    for args in [
+        &["doctor", "--config", missing][..],
+        &["--config", missing, "doctor"],
+    ] {
         let session = Session::new();
         let host = host_with(ready());
         let ran = host.run(session.path(), args);
@@ -302,7 +358,12 @@ fn a_busy_host_lock_exits_3_only_for_root() {
 fn a_host_lock_that_cannot_be_opened_exits_1() {
     let session = Session::new();
     let mut host = host_with(ready());
-    host.lock = host.lock.parent().unwrap().join("missing").join("togi.lock");
+    host.lock = host
+        .lock
+        .parent()
+        .unwrap()
+        .join("missing")
+        .join("togi.lock");
     let ran = doctor(&host, session.path(), &[]);
     assert_eq!(ran.exit, Exit::Error, "{}", ran.err);
     assert_eq!(host.calls.get(), 0);
@@ -319,7 +380,12 @@ fn a_failed_diagnosis_exits_1() {
     let ran = doctor(&host, session.path(), &[]);
     assert_eq!(ran.exit, Exit::Error);
     assert_eq!(ran.out, "");
-    assert!(ran.err.starts_with("togi doctor: open the SMU: running as uid 1000"), "{}", ran.err);
+    assert!(
+        ran.err
+            .starts_with("togi doctor: open the SMU: running as uid 1000"),
+        "{}",
+        ran.err
+    );
 }
 
 #[test]
@@ -335,7 +401,10 @@ fn a_bios_context_that_cannot_be_read_follows_the_table_with_exit_1() {
     assert_eq!(ran.exit, Exit::Error);
     assert!(ran.out.starts_with("CHECK"), "{}", ran.out);
     assert!(!ran.out.contains("ready"), "{}", ran.out);
-    assert_eq!(ran.err, "togi doctor: read BIOS context: the SMU driver needs Linux\n");
+    assert_eq!(
+        ran.err,
+        "togi doctor: read BIOS context: the SMU driver needs Linux\n"
+    );
 }
 
 #[test]
@@ -343,7 +412,10 @@ fn another_platform_stops_before_the_journal_the_lock_and_every_check() {
     let session = Session::new();
     session.rewrite_first_line("\"schema\":1", "\"schema\":99");
     let (_keep, absent) = missing_state();
-    for (name, state) in [("a journal run would refuse", session.path()), ("no state directory", &absent)] {
+    for (name, state) in [
+        ("a journal run would refuse", session.path()),
+        ("no state directory", &absent),
+    ] {
         let mut host = host_with(ready());
         host.linux = false;
         let held = HostLock::acquire(&host.lock, Policy::Private).unwrap();
@@ -353,8 +425,7 @@ fn another_platform_stops_before_the_journal_the_lock_and_every_check() {
         assert_eq!(ran.exit, Exit::Error, "{name}: {}", ran.err);
         assert_eq!(ran.out, "", "{name}");
         assert_eq!(
-            ran.err,
-            "togi doctor: hardware runs need Linux: unsupported operation\n",
+            ran.err, "togi doctor: hardware runs need Linux: unsupported operation\n",
             "{name}"
         );
         assert_eq!(host.calls.get(), 0, "{name}");

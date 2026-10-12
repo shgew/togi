@@ -69,7 +69,11 @@ pub fn emit(ctx: &mut Context<'_>, text: impl Display) -> Result<(), Exit> {
 
 /// Writes `togi <command>: <message>` to stderr, the message escaped, and returns `exit`.
 pub fn exit_with(ctx: &mut Context<'_>, command: &str, message: impl Display, exit: Exit) -> Exit {
-    let _ = writeln!(ctx.err, "togi {command}: {}", escape_text(&message.to_string()));
+    let _ = writeln!(
+        ctx.err,
+        "togi {command}: {}",
+        escape_text(&message.to_string())
+    );
     exit
 }
 
