@@ -58,6 +58,9 @@ struct RunArgs {
     /// Write one JSON record per run to this file.
     #[arg(long, value_name = "FILE")]
     out: Option<PathBuf>,
+    /// Write the records as a baseline file keeps them: without `model_check` and `wall_s`, which no comparison reads. Comparison and gates accept it as `--baseline`.
+    #[arg(long, value_name = "FILE")]
+    baseline_out: Option<PathBuf>,
     /// Compare the run with the records in this file and, when the suite registers a gate, judge it and exit 1 unless it passes.
     #[arg(long, value_name = "FILE")]
     baseline: Option<PathBuf>,
@@ -138,7 +141,14 @@ fn bench(args: RunArgs) -> ExitCode {
             }
         }
     };
-    let tree = match inspect(args.out.as_deref()) {
+    let tree = match inspect(
+        &args
+            .out
+            .iter()
+            .chain(&args.baseline_out)
+            .map(PathBuf::as_path)
+            .collect::<Vec<_>>(),
+    ) {
         Ok(tree) => tree,
         Err(error) => return fail(&error),
     };
@@ -150,6 +160,7 @@ fn bench(args: RunArgs) -> ExitCode {
             Split::All => Selection::All,
         },
         out: args.out,
+        baseline_out: args.baseline_out,
         tree,
         baseline: args.baseline,
         keep: args.keep,

@@ -76,6 +76,7 @@ exit {exit}
             suite: self.path("suite.json"),
             selection: Selection::All,
             out: None,
+            baseline_out: None,
             baseline: None,
             keep: None,
             jobs: NonZeroUsize::new(2).unwrap(),

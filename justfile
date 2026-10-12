@@ -219,6 +219,11 @@ bench-baseline: _dev-shell
     nu --stdin -c '$in | lines | each { from json | reject -o model_check wall_s partial_seconds | to json --raw } | to text' <"$full" >"$slim"
     mv "$slim" tools/bench/baseline.jsonl
 
+# Record a Rust bench baseline over all seeds to OUT, without model checks or wall times; the committed Go baseline stays until stage 9 (`just bench-baseline-rs /tmp/baseline-rs.jsonl`)
+[group('run')]
+bench-baseline-rs out: _dev-shell
+    cargo run --release --locked -p togi-tool-bench -- --split all --baseline-out "$1"
+
 # Regenerate privacy-safe real facts from a copied state directory
 [group('run')]
 facts state_dir: _dev-shell

@@ -45,7 +45,7 @@ pub(crate) fn run(args: ForecastArgs) -> ExitCode {
     if let Err(error) = cancel_on_signals(&fleet) {
         return fail(&format!("watch for signals: {error}"));
     }
-    let tree = match inspect(args.out.as_deref()) {
+    let tree = match inspect(&args.out.iter().map(PathBuf::as_path).collect::<Vec<_>>()) {
         Ok(tree) => tree,
         Err(error) => return fail(&error),
     };
