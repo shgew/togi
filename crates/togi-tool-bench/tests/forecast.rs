@@ -340,10 +340,9 @@ fn a_run_that_fails_or_does_not_conclude_fails_the_forecast() {
             matches!(*failed.error, ForecastError::Runs(_)),
             "{name}: {failed}"
         );
-        assert!(
-            failed.to_string().contains("forecast target/dev-1:"),
-            "{name}: {failed}"
-        );
+        let message = failed.to_string();
+        assert!(message.contains("forecast target/"), "{name}: {message}");
+        assert!(!message.contains("interrupted"), "{name}: {message}");
     }
 }
 

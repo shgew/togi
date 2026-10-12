@@ -426,7 +426,12 @@ fn forecast_run(
     copy_state(&options.state, &dir)?;
     let launched = simulator
         .launch(fleet, root, spec, options.max_boots, options.timeout)
-        .map_err(ForecastError::Launch)?;
+        .map_err(|error| {
+            if matches!(error, RunError::Interrupted) && options.keep.is_none() {
+                let _ = fs::remove_dir_all(&dir);
+            }
+            ForecastError::Launch(error)
+        })?;
     let sessions = read_dir(&dir, Some(anchor.session))
         .map_err(|error| ForecastError::Read(Box::new(error)))?;
     let mut outcome =
