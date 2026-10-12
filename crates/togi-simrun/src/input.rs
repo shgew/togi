@@ -11,14 +11,14 @@ use togi_render::Renderer;
 use togi_session::{ConfigSource, Emergency, ResumeCapsule, SessionError, Stop, StopPolicy};
 use togi_sim::Simulator;
 
-/// Where the state directory lives across the simulated boots.
+/// Where the state directory lives across the simulated boots. Either way `state.json` is published when each run
+/// finishes, and a crashed run publishes it from its resume capsule.
 #[derive(Clone, Debug)]
 pub enum Persistence {
     /// An in-memory directory the caller keeps the handle of; nothing reaches the disk unless
-    /// [`SimInput::dump_to`] asks. The session publishes `state.json` when each run finishes.
+    /// [`SimInput::dump_to`] asks.
     Memory(MemFs),
-    /// A directory on disk locked for each boot, with the journal buffered and nothing synced. The session
-    /// publishes `state.json` after every event.
+    /// A directory on disk locked for each boot, with the journal buffered and nothing synced.
     Files(PathBuf),
 }
 

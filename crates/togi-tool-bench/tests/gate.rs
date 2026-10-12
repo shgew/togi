@@ -482,6 +482,33 @@ fn the_reports_of_a_passing_failing_and_refused_gate() {
 }
 
 #[test]
+fn a_baseline_file_is_judged_exactly_as_the_full_records_are() {
+    let gate = test_gate();
+    for (name, shift) in [
+        ("pass", (|_| -1.0) as fn(usize) -> f64),
+        ("fail", |i| num(i % 2) + 1.0),
+    ] {
+        let (candidate, mut full) = gate_runs(shift, same_hours);
+        for run in &mut full {
+            run.wall_s = Some(42.0);
+            run.model_check = Some(togi_tool_bench::ModelCheck {
+                eligible_groups: 2,
+                flagged_groups: 1,
+                idle_failures: 0,
+            });
+        }
+        let slim: Vec<Record> = full.iter().map(Record::baseline).collect();
+        let against_full = text(&gate, &gate.judge(&candidate, &full));
+        let against_slim = text(&gate, &gate.judge(&candidate, &slim));
+        assert!(
+            against_full.contains("gate test: "),
+            "{name}: {against_full}"
+        );
+        assert_eq!(against_slim, against_full, "{name}");
+    }
+}
+
+#[test]
 fn the_report_prints_the_gates_note_after_its_header() {
     let mut object = gate_object();
     object["note"] = json!("why this gate");

@@ -73,7 +73,7 @@ fn without_wall(report: &Report) -> Vec<String> {
         .iter()
         .map(|record| {
             let mut record = record.clone();
-            record.wall_s = 0.0;
+            record.wall_s = None;
             serde_json::to_string(&record).unwrap()
         })
         .collect()
@@ -114,7 +114,7 @@ fn every_run_gets_one_record_in_suite_order_stamped_with_the_tree() {
         report
             .records
             .iter()
-            .all(|r| r.sim_hours > 0.0 && r.wall_s >= 0.0)
+            .all(|r| r.sim_hours > 0.0 && r.wall_s.is_some_and(|wall| wall >= 0.0))
     );
     assert_eq!(report.cached, 0);
 }
@@ -332,6 +332,42 @@ fn the_records_file_is_written_and_a_baseline_is_compared() {
     assert!(text.contains("verdict: NEUTRAL"), "{text}");
     assert!(text.contains("cache: 5 of 5 runs cached"), "{text}");
     assert!(text.contains("harness_wall_s="));
+}
+
+#[test]
+fn the_baseline_file_holds_the_runs_records_without_wall_times_and_compares_as_they_do() {
+    let bench = Bench::new();
+    let mut options = bench.options(bench.simulator("sim", 0, "", ""));
+    options.out = Some(bench.path("out.jsonl"));
+    options.baseline_out = Some(bench.path("slim.jsonl"));
+    let first = run(&options);
+    let slim = togi_tool_bench::read_records(&bench.path("slim.jsonl"), "baseline").unwrap();
+    let want: Vec<_> = first
+        .records
+        .iter()
+        .map(togi_tool_bench::Record::baseline)
+        .collect();
+    assert_eq!(slim, want);
+    assert!(first.records.iter().all(|r| r.wall_s.is_some()));
+    let text = fs::read_to_string(bench.path("slim.jsonl")).unwrap();
+    assert!(
+        !text.contains("wall_s") && !text.contains("model_check"),
+        "{text}"
+    );
+
+    options.out = None;
+    options.baseline_out = None;
+    let mut report_against = |file: &str| {
+        options.baseline = Some(bench.path(file));
+        report_text(&run(&options))
+            .lines()
+            .filter(|line| !line.starts_with("harness_wall_s="))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let against_full = report_against("out.jsonl");
+    assert!(against_full.contains("verdict: NEUTRAL"), "{against_full}");
+    assert_eq!(report_against("slim.jsonl"), against_full);
 }
 
 #[test]

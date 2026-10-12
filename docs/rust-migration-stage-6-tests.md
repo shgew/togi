@@ -2,7 +2,7 @@
 
 Every `func Test*`, `Benchmark*`, `Fuzz*` and `Example*` in the Go packages ported in stage 6 (#641) is mapped to the Rust tests that pin the same behavior: `internal/watch` → `togi-watch`, `internal/watch/watchtest` → `togi-watchtest` and `tools/replay` → `togi-tool-replay`. The Linux-only `notify_linux_test.go` is included. There are no Fuzz or Example functions and one Benchmark. `accessors_test.go` and `golden_test.go` hold only helpers, and `main_test.go` holds only `TestMain`.
 
-Rust names are `crate::module::fn`; the tests of the `togi-watchtest` integration binary add its name after the crate (`togi_watchtest::watchtest::…`). Each name resolves to a test that `cargo nextest list -p togi-watch -p togi-watchtest` reports on `main` at 30305764. The pull requests that ported each part are #846 (the model), #850 (`togi-watchtest`), #853 (the terminal loop), #863 (the frames) and #837 (the replay tool, pending).
+Rust names are `crate::module::fn`; the tests of the `togi-watchtest` integration binary add its name after the crate (`togi_watchtest::watchtest::…`), and so do the tests of the `togi-tool-replay` integration binary (`togi_tool_replay::replay::…`). Each `togi_watch` and `togi_watchtest` name resolves to a test that `cargo nextest list -p togi-watch -p togi-watchtest` reports on `main` at 30305764 or is one of the two tests this pull request adds (`togi_watch::frames::snapshots::every_scenario_fits_the_frame_at_every_main_size`, from the frames commit `f27b2233`). The `togi_tool_replay` names, and `togi_watch::terminal::tests::a_caller_owned_feed_and_clock_drive_the_one_loop_with_no_directory_watched`, come from the replay branch at `9d77174a` and resolve on `main` once the replay pull request merges. The pull requests that ported each part are #846 (the model), #850 (`togi-watchtest`), #853 (the terminal loop), #863 (the frames) and #837 (the replay tool).
 
 A Go test that pinned a frame and the model often maps to tests of both: the model's under `togi_watch::tests`, the frames' under `togi_watch::frames`, the loop's under `togi_watch::terminal`. The goldens of `TestWatchFrames` and `TestWatchWithoutJournal` map to the insta snapshots of `togi_watch::frames::snapshots`; the native frames do not promise Go's bytes.
 
@@ -12,16 +12,16 @@ Status:
 - **X**: a test of another Rust crate pins it.
 - **O(reason)**: obsolete under the native contract.
 - **G(reason)**: not pinned by any Rust test and not obsolete.
-- **pending #837**: the replay tool's port is not on `main` yet.
+- **Sources:** every row's Rust names were read from the sources, and the replay names from the replay branch with `git show`.
 
 ## Summary
 
-| Package | Go tests | A | X | O | G | pending |
-|---|---:|---:|---:|---:|---:|---:|
-| watch | 162 | 159 | 0 | 3 | 0 | 0 |
-| watchtest | 0 | 0 | 0 | 0 | 0 | 0 |
-| replay | 10 | 0 | 0 | 0 | 0 | 10 |
-| **total** | **172** | **159** | **0** | **3** | **0** | **10** |
+| Package | Go tests | A | X | O | G |
+|---|---:|---:|---:|---:|---:|
+| watch | 162 | 160 | 0 | 2 | 0 |
+| watchtest | 0 | 0 | 0 | 0 | 0 |
+| replay | 10 | 9 | 0 | 1 | 0 |
+| **total** | **172** | **169** | **0** | **3** | **0** |
 
 ## watch
 
@@ -48,7 +48,7 @@ Status:
 
 | Go test | Rust test(s) | status |
 |---|---|---|
-| `TestWatchFrames` | `togi_watch::frames::frame_tests::bounds::between`<br>`togi_watch::frames::frame_tests::bounds::checking`<br>`togi_watch::frames::frame_tests::bounds::combination`<br>`togi_watch::frames::frame_tests::bounds::concluded`<br>`togi_watch::frames::frame_tests::bounds::confirm`<br>`togi_watch::frames::frame_tests::bounds::confirmation`<br>`togi_watch::frames::frame_tests::bounds::crashed`<br>`togi_watch::frames::frame_tests::bounds::deadend`<br>`togi_watch::frames::frame_tests::bounds::first_result`<br>`togi_watch::frames::frame_tests::bounds::hunt`<br>`togi_watch::frames::frame_tests::bounds::hunt_bios`<br>`togi_watch::frames::frame_tests::bounds::idle`<br>`togi_watch::frames::frame_tests::bounds::member_probe`<br>`togi_watch::frames::frame_tests::bounds::recovering`<br>`togi_watch::frames::frame_tests::bounds::round`<br>`togi_watch::frames::frame_tests::bounds::search`<br>`togi_watch::frames::frame_tests::bounds::stopped`<br>`togi_watch::frames::frame_tests::bounds::unconfirmed`<br>`togi_watch::frames::frame_tests::without_journal::a_journal_that_is_missing_starting_or_unreadable_stays_in_bounds_and_never_holds`<br>`togi_watch::frames::snapshots::between`<br>`togi_watch::frames::snapshots::checking`<br>`togi_watch::frames::snapshots::checking_in_each_colour_profile`<br>`togi_watch::frames::snapshots::combination`<br>`togi_watch::frames::snapshots::concluded`<br>`togi_watch::frames::snapshots::confirm`<br>`togi_watch::frames::snapshots::confirmation`<br>`togi_watch::frames::snapshots::crashed`<br>`togi_watch::frames::snapshots::deadend`<br>`togi_watch::frames::snapshots::every_scenario_has_a_main_view_snapshot`<br>`togi_watch::frames::snapshots::first_result`<br>`togi_watch::frames::snapshots::help_at_the_view_sizes`<br>`togi_watch::frames::snapshots::hunt`<br>`togi_watch::frames::snapshots::hunt_bios`<br>`togi_watch::frames::snapshots::idle`<br>`togi_watch::frames::snapshots::idle_in_each_colour_profile`<br>`togi_watch::frames::snapshots::member_probe`<br>`togi_watch::frames::snapshots::member_probe_in_each_colour_profile`<br>`togi_watch::frames::snapshots::no_color_and_journald_map_to_one_profile_and_the_console_to_its_own`<br>`togi_watch::frames::snapshots::recovering`<br>`togi_watch::frames::snapshots::round`<br>`togi_watch::frames::snapshots::search`<br>`togi_watch::frames::snapshots::stopped`<br>`togi_watch::frames::snapshots::the_journal_view_at_the_view_sizes`<br>`togi_watch::frames::snapshots::unconfirmed` | A |
+| `TestWatchFrames` | `togi_watch::frames::frame_tests::bounds::between`<br>`togi_watch::frames::frame_tests::bounds::checking`<br>`togi_watch::frames::frame_tests::bounds::combination`<br>`togi_watch::frames::frame_tests::bounds::concluded`<br>`togi_watch::frames::frame_tests::bounds::confirm`<br>`togi_watch::frames::frame_tests::bounds::confirmation`<br>`togi_watch::frames::frame_tests::bounds::crashed`<br>`togi_watch::frames::frame_tests::bounds::deadend`<br>`togi_watch::frames::frame_tests::bounds::first_result`<br>`togi_watch::frames::frame_tests::bounds::hunt`<br>`togi_watch::frames::frame_tests::bounds::hunt_bios`<br>`togi_watch::frames::frame_tests::bounds::idle`<br>`togi_watch::frames::frame_tests::bounds::member_probe`<br>`togi_watch::frames::frame_tests::bounds::recovering`<br>`togi_watch::frames::frame_tests::bounds::round`<br>`togi_watch::frames::frame_tests::bounds::search`<br>`togi_watch::frames::frame_tests::bounds::stopped`<br>`togi_watch::frames::frame_tests::bounds::unconfirmed`<br>`togi_watch::frames::frame_tests::without_journal::a_journal_that_is_missing_starting_or_unreadable_stays_in_bounds_and_never_holds`<br>`togi_watch::frames::snapshots::every_scenario_fits_the_frame_at_every_main_size`<br>`togi_watch::frames::snapshots::between`<br>`togi_watch::frames::snapshots::checking`<br>`togi_watch::frames::snapshots::checking_in_each_colour_profile`<br>`togi_watch::frames::snapshots::combination`<br>`togi_watch::frames::snapshots::concluded`<br>`togi_watch::frames::snapshots::confirm`<br>`togi_watch::frames::snapshots::confirmation`<br>`togi_watch::frames::snapshots::crashed`<br>`togi_watch::frames::snapshots::deadend`<br>`togi_watch::frames::snapshots::every_scenario_has_a_main_view_snapshot`<br>`togi_watch::frames::snapshots::first_result`<br>`togi_watch::frames::snapshots::help_at_the_view_sizes`<br>`togi_watch::frames::snapshots::hunt`<br>`togi_watch::frames::snapshots::hunt_bios`<br>`togi_watch::frames::snapshots::idle`<br>`togi_watch::frames::snapshots::idle_in_each_colour_profile`<br>`togi_watch::frames::snapshots::member_probe`<br>`togi_watch::frames::snapshots::member_probe_in_each_colour_profile`<br>`togi_watch::frames::snapshots::no_color_and_journald_map_to_one_profile_and_the_console_to_its_own`<br>`togi_watch::frames::snapshots::recovering`<br>`togi_watch::frames::snapshots::round`<br>`togi_watch::frames::snapshots::search`<br>`togi_watch::frames::snapshots::stopped`<br>`togi_watch::frames::snapshots::the_journal_view_at_the_view_sizes`<br>`togi_watch::frames::snapshots::unconfirmed`<br>(Go kept three sizes for every cut. #536 is decided: a cut keeps 240x67, 160x45 and 120x33 only when it draws a size-dependent panel no other kept cut draws. In Rust nine cuts keep 240x67 only (`confirm`, `between`, `stopped`, `deadend`, `confirmation`, `concluded`, `unconfirmed`, `crashed`, `first_result`), which removed 18 snapshots, and `every_scenario_fits_the_frame_at_every_main_size` draws every cut at all three sizes through the bounds check without writing a snapshot) | A |
 | `TestFramesSpendBytesOnCellsNotStaleStyles` | `togi_watch::terminal::show::tests::only_changed_rows_are_written`<br>(frames are ratatui cell buffers with one style per cell; the loop's diff writes only changed cells) | A |
 | `TestFramesDrawOnlyIBM437Glyphs` | `togi_watch::frames::help::tests::help_stays_in_bounds_and_draws_only_console_glyphs_at_every_size`<br>`togi_watch::frames::frame_tests::without_journal::a_journal_that_is_missing_starting_or_unreadable_stays_in_bounds_and_never_holds` | A |
 | `TestConsoleTextReplacesWhatTheFontCannotDraw` | `togi_watch::frames::fit::tests::console_text_replaces_what_the_font_cannot_draw` | A |
@@ -163,7 +163,7 @@ Status:
 | Go test | Rust test(s) | status |
 |---|---|---|
 | `TestHelpWideUsesThreeColumns` | `togi_watch::frames::help::tests::wide_help_uses_three_columns` | A |
-| `TestHelpLinksTunerSpecAndStatesNoRule` | `togi_watch::frames::help::tests::help_links_the_tuner_spec_and_states_no_rule` | A |
+| `TestHelpLinksTunerSpecAndStatesNoRule` | `togi_watch::frames::help::tests::help_links_the_tuner_spec_and_states_no_rule`<br>(#539 is decided: the help says what the screen shows and links the tuner spec, and states no rule. The Rust test checks the link and that 28 rule phrases removed from WHAT TOGI DOES and WORDS are gone; it checked five before this change) | A |
 | `TestHelpNarrowScrollsOneColumn` | `togi_watch::frames::help::tests::narrow_help_scrolls_one_column` | A |
 | `TestLogFollowsNewEntriesOnlyAtEnd` | `togi_watch::frames::panels::log::tests::the_view_follows_new_entries_only_at_the_end`<br>`togi_watch::frames::panels::log::tests::a_scroll_at_or_past_the_extent_shows_the_end`<br>`togi_watch::terminal::keys::tests::log_reaching_its_end_by_page_follows_it` | A |
 | `TestHelpLogBodiesFitSmallRectangles` | `togi_watch::frames::help::tests::help_bodies_fit_small_rectangles`<br>`togi_watch::frames::panels::log::tests::log_bodies_fit_small_rectangles` | A |
@@ -201,7 +201,7 @@ Status:
 | `TestShowWritesOnlyChangedRows` | `togi_watch::terminal::show::tests::only_changed_rows_are_written`<br>`togi_watch::terminal::show::tests::a_resize_clears_and_repaints_the_whole_screen_once`<br>`togi_watch::terminal::show::tests::the_console_palette_is_set_on_entry_and_reset_on_every_exit` | A |
 | `TestLiveHoldsUntilJournalKeyResizeOrDeadline` | `togi_watch::terminal::show::tests::a_live_frame_holds_until_a_journal_change_key_resize_or_its_deadline` | A |
 | `TestRefreshClockStopsTickerDuringHold` | `togi_watch::terminal::clock::tests::a_held_frame_stays_quiet_until_its_instant_then_ticks`<br>`togi_watch::terminal::clock::tests::a_clock_frame_wakes_every_second`<br>`togi_watch::terminal::clock::tests::the_ticker_is_not_restarted_by_a_redraw` | A |
-| `TestShowIgnoresUntil` | — | O(pinned that a caller-ticked `show`, the replay tool's entry point, redraws on every tick whatever hold the frame asks for; the Rust loop takes no caller ticks, and replaying a recording is the replay tool's (#837)) |
+| `TestShowIgnoresUntil` | `togi_watch::terminal::tests::a_caller_owned_feed_and_clock_drive_the_one_loop_with_no_directory_watched`<br>`togi_tool_replay::live::tests::the_feed_folds_the_events_played_so_far_and_only_when_the_count_changes`<br>(Go's caller-ticked `show` redrew on every tick whatever hold the frame asked for, for the replay tool; the Rust loop runs the same with a caller-owned feed and clock and a redraw interval, and the first test redraws a frame that asks to be held at every tick of that interval) | A |
 | `TestRunRestoresCursorOnErrors` | `togi_watch::terminal::show::tests::terminal_failures_name_the_operation_keep_the_cause_and_restore_what_was_set_up`<br>`togi_watch::terminal::show::tests::a_failed_redraw_size_read_is_reported_after_a_good_first_frame`<br>`togi_watch::terminal::tests::the_reader_is_joined_on_every_exit` | A |
 | `TestShowKeyboardDispatch` | `togi_watch::terminal::show::tests::keys_switch_views_and_scroll_and_a_view_change_repaints_whole` | A |
 | `TestReadKeysFragmentedSequences` | `togi_watch::terminal::keys::tests::every_sequence_decodes_at_every_split_point`<br>`togi_watch::terminal::input::tests::a_split_sequence_waits_a_bounded_time_and_is_one_key` | A |
@@ -271,19 +271,19 @@ Status:
 
 `internal/watch/watchtest` has no test files: `fixture.go` is test support (`Install`), exercised through the status tests. Its Rust counterpart `togi-watchtest` tests what it builds (its `scenarios`, `determinism`, `install`, `helpers` and `fixtures` tests); the rows above cite those tests where a watch test relied on a fixture's property.
 
-## replay
-
 ### `tools/replay/main_test.go` (10)
+
+The Rust tests are the unit tests of `togi-tool-replay` (`togi_tool_replay::tests::{cli,frames,load,playback}` and `togi_tool_replay::live::tests`) and its `replay` integration binary, which runs the built binary, two of its tests on a pseudo-terminal.
 
 | Go test | Rust test(s) | status |
 |---|---|---|
-| `TestPlaybackWallClockCorrections` | <<REPLAY>> | pending #837 |
-| `TestPlaybackZeroMono` | <<REPLAY>> | pending #837 |
-| `TestPlaybackFallback` | <<REPLAY>> | pending #837 |
-| `TestPlaybackBackwardFallbackRetainsFollowingInterval` | <<REPLAY>> | pending #837 |
-| `TestPlaybackFrom` | <<REPLAY>> | pending #837 |
-| `TestPlaybackSpeed` | <<REPLAY>> | pending #837 |
-| `TestRunRejectsInvalidSpeedBeforeReading` | <<REPLAY>> | pending #837 |
-| `TestRunFrameRetainsRecordedClock` | <<REPLAY>> | pending #837 |
-| `TestRunFrameCurrentRulesetAllSchemas` | <<REPLAY>> | pending #837 |
-| `TestRunFrameShippedSchemas` | <<REPLAY>> | pending #837 |
+| `TestPlaybackWallClockCorrections` | `togi_tool_replay::tests::playback::a_wall_clock_correction_in_the_recording_costs_no_playback_time` | A |
+| `TestPlaybackZeroMono` | `togi_tool_replay::tests::playback::a_monotonic_zero_is_a_stamp_not_a_missing_one` | A |
+| `TestPlaybackFallback` | `togi_tool_replay::tests::playback::without_two_monotonic_stamps_of_one_known_boot_the_wall_clock_paces_the_gap` | A |
+| `TestPlaybackBackwardFallbackRetainsFollowingInterval` | `togi_tool_replay::tests::playback::a_backward_wall_clock_gap_is_free_and_the_next_interval_is_kept`<br>`togi_tool_replay::tests::playback::a_monotonic_clock_that_ran_backwards_within_a_boot_is_free_too` | A |
+| `TestPlaybackFrom` | `togi_tool_replay::tests::playback::playback_starts_at_the_prefix_a_sequence_number_names`<br>`togi_tool_replay::tests::playback::the_prefix_holds_the_events_up_to_a_sequence_number_and_at_least_the_first`<br>`togi_tool_replay::tests::playback::a_start_past_the_end_or_before_the_first_event_is_held_inside_the_recording`<br>`togi_tool_replay::tests::cli::the_defaults_play_from_the_first_event_at_300_times` | A |
+| `TestPlaybackSpeed` | `togi_tool_replay::tests::playback::the_speed_scales_real_time_and_saturates_instead_of_overflowing`<br>`togi_tool_replay::tests::playback::playing_past_the_last_event_keeps_the_clock_running_from_it` | A |
+| `TestRunRejectsInvalidSpeedBeforeReading` | `togi_tool_replay::tests::playback::a_speed_must_be_finite_and_positive`<br>`togi_tool_replay::tests::cli::an_invalid_speed_is_rejected_when_the_arguments_are_read_before_any_journal_is`<br>`togi_tool_replay::replay::an_invalid_speed_is_a_usage_error_before_the_journal_is_read` | A |
+| `TestRunFrameRetainsRecordedClock` | `togi_tool_replay::tests::frames::the_frame_is_drawn_at_the_last_events_wall_time_plus_after`<br>`togi_tool_replay::tests::frames::a_frame_is_the_state_as_of_the_event_not_the_end_of_the_recording`<br>`togi_tool_replay::tests::frames::the_main_view_of_a_prefix_is_printed_as_plain_text`<br>`togi_tool_replay::tests::frames::the_help_and_log_views_are_printed_without_the_key_footer`<br>`togi_tool_replay::tests::cli::at_prints_one_frame_of_the_recording_in_the_system_time_zone`<br>`togi_tool_replay::tests::cli::every_page_can_be_printed`<br>`togi_tool_replay::replay::at_prints_a_frame_of_a_recording_and_nothing_else`<br>(Go's journal had a wall clock that jumped back; the Rust frame is drawn at the selected event's own wall time plus `--after`, a backward gap of the recording is the playback tests' subject) | A |
+| `TestRunFrameCurrentRulesetAllSchemas` | `togi_tool_replay::tests::frames::every_scenario_can_be_replayed_to_its_last_event`<br>`togi_tool_replay::tests::load::the_events_of_a_recording_are_read_whole`<br>`togi_tool_replay::tests::load::a_recording_of_another_ruleset_or_a_newer_schema_is_refused`<br>(Rust reads only its own schema, so schemas 1 to 3 of the Go test have no counterpart; a recording of the current schema and ruleset plays to its last event, and an older or newer one is refused) | A |
+| `TestRunFrameShippedSchemas` | `togi_tool_replay::tests::load::a_recording_of_another_ruleset_or_a_newer_schema_is_refused`<br>`togi_tool_replay::tests::load::a_refusal_comes_before_any_later_event_is_decoded` | O(the test played the Go-written recordings under `tools/replay/testdata` and `internal/carry/testdata`, which the native Rust build does not read; the refusal tests are what still applies of it) |
