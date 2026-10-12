@@ -226,7 +226,11 @@ fn an_unsweepable_suite_or_missing_bench_fails_before_running() {
     assert!(text(&output.stderr).contains("suite has no scenarios"));
     assert!(!fake.path("args.txt").exists());
 
-    let missing = run(command().arg("--suite").arg(fake.path("suite.json")));
+    let lonely = fake.path("lonely");
+    fs::copy(env!("CARGO_BIN_EXE_togi-tool-audit"), &lonely).unwrap();
+    let missing = run(Command::new(&lonely)
+        .arg("--suite")
+        .arg(fake.path("suite.json")));
     assert_eq!(missing.status.code(), Some(1));
     assert!(text(&missing.stderr).contains("locate the bench"));
 }
