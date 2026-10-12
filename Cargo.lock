@@ -1670,6 +1670,7 @@ name = "togi-watch"
 version = "0.0.0"
 dependencies = [
  "jiff",
+ "nix",
  "ratatui",
  "rustix",
  "serde_json",

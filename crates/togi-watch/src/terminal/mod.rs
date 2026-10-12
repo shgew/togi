@@ -8,6 +8,7 @@
 //! - It is cleared once on entry, and again, whole, on a resize or a view change.
 //! - Frames are drawn into the screen less its last row and last column, which are never written, so nothing
 //!   scrolls. ratatui writes only the cells that changed.
+//! - Signal handlers are installed for the call only, and the actions they replaced are put back on every exit.
 //! - The cursor is hidden while the dashboard shows, and on the Linux console (`TERM=linux`) its 16 colours are
 //!   redefined. Both are restored on every exit: quitting, a signal, an error and a panic.
 //!
@@ -120,17 +121,14 @@ impl Stop {
     }
 }
 
-/// How to run the live dashboard.
+/// How the loop is run, and what ends it.
 #[derive(Debug, Clone, Copy)]
-pub struct Live<'a> {
-    /// The state directory holding `events.jsonl`.
-    pub state_dir: &'a Path,
-    /// For the dashboard of a run that is about to append to the journal: the sequence number of its last event
-    /// before the run. Until the journal holds a later one the screen says the run is starting, instead of showing
-    /// what an earlier run left in it.
-    pub since: Option<u64>,
-    /// Ends the dashboard from another thread.
-    pub stop: Option<&'a Stop>,
+struct Config<'a> {
+    state_dir: &'a Path,
+    since: Option<u64>,
+    stop: Option<&'a Stop>,
+    /// Whether SIGINT, SIGTERM and SIGHUP end the dashboard.
+    terminating: bool,
 }
 
 /// Aborts its task when dropped.
@@ -172,16 +170,61 @@ impl Drop for RawMode<'_> {
     }
 }
 
-/// Shows the dashboard of the journal on `out` until the viewer quits, SIGINT, SIGTERM or SIGHUP arrives, or
-/// `live.stop` is used. When `keys` is a terminal, keys switch views and scroll: `?` explains the screen, `l`
-/// shows the event log, the arrow and page keys scroll, `q` quits.
+/// Shows the dashboard of the journal in `state_dir` on `out` until the viewer quits or SIGINT, SIGTERM or
+/// SIGHUP arrives. When `keys` is a terminal, keys switch views and scroll: `?` explains the screen, `l` shows the
+/// event log, the arrow and page keys scroll, `q` quits.
 ///
 /// `render` draws one frame of the journal on a screen into a buffer one row and one column smaller than the
 /// terminal, and reports how long the frame stays true.
 ///
-/// SIGWINCH redraws. The handlers of the four signals stay installed after this returns.
+/// The four signals' handlers (SIGWINCH redraws) are installed for the call and the previous actions put back on
+/// every exit, so only one dashboard at a time can show in a process.
 pub fn run(
-    live: &Live<'_>,
+    state_dir: &Path,
+    out: BorrowedFd<'_>,
+    keys: Option<BorrowedFd<'_>>,
+    render: impl FnMut(&Journal<'_>, &Screen, Timestamp, &mut Buffer) -> Drawn,
+) -> Result<(), Error> {
+    start(
+        &Config {
+            state_dir,
+            since: None,
+            stop: None,
+            terminating: true,
+        },
+        out,
+        keys,
+        render,
+    )
+}
+
+/// [`run`] for a journal a run is about to append to, which takes its cancellation from the caller. Until the
+/// journal holds an event after sequence number `since`, the last one before the run, the screen says the run is
+/// starting instead of showing what an earlier run left in it. It ends when the viewer quits or `stop` is used,
+/// and leaves SIGINT, SIGTERM and SIGHUP to the caller; only SIGWINCH is handled, and put back on exit.
+pub fn run_after(
+    state_dir: &Path,
+    since: u64,
+    stop: &Stop,
+    out: BorrowedFd<'_>,
+    keys: Option<BorrowedFd<'_>>,
+    render: impl FnMut(&Journal<'_>, &Screen, Timestamp, &mut Buffer) -> Drawn,
+) -> Result<(), Error> {
+    start(
+        &Config {
+            state_dir,
+            since: Some(since),
+            stop: Some(stop),
+            terminating: false,
+        },
+        out,
+        keys,
+        render,
+    )
+}
+
+fn start(
+    config: &Config<'_>,
     out: BorrowedFd<'_>,
     keys: Option<BorrowedFd<'_>>,
     render: impl FnMut(&Journal<'_>, &Screen, Timestamp, &mut Buffer) -> Drawn,
@@ -202,7 +245,7 @@ pub fn run(
     };
     drive(
         backend,
-        live,
+        config,
         keys.filter(|_| raw.is_some()),
         colours,
         Timestamp::now,
@@ -218,7 +261,7 @@ fn uses_palette(colours: Colours) -> bool {
 /// [`run`] on any backend, with the terminal's raw mode and colour profile already decided by the caller.
 fn drive<B: console::Console>(
     backend: B,
-    live: &Live<'_>,
+    live: &Config<'_>,
     keys: Option<BorrowedFd<'_>>,
     colours: Colours,
     now: impl Fn() -> Timestamp,
@@ -232,7 +275,8 @@ fn drive<B: console::Console>(
     std::thread::scope(|scope| {
         runtime.block_on(async {
             let (events, mut queue) = mpsc::unbounded_channel();
-            let _signals = Abort(signals::listen(events.clone()).map_err(Error::Signals)?);
+            let signals = signals::install(live.terminating).map_err(Error::Signals)?;
+            let _signals = Abort(signals.listen(events.clone()).map_err(Error::Signals)?);
             let _stop = live.stop.map(|stop| {
                 let stop = stop.clone();
                 let events = events.clone();
@@ -361,7 +405,7 @@ mod tests {
 
     use super::testing::{Faults, Recorder, session_with_warnings, write_journal};
     use super::{
-        Colours, Drawn, Error, Live, ONE_FRAME_SIZE, SourceError, Stop, View, drive, one_frame,
+        Colours, Config, Drawn, Error, ONE_FRAME_SIZE, SourceError, Stop, View, drive, one_frame,
         palette, uses_palette,
     };
     use crate::screen::{Hold, Journal, Screen};
@@ -391,7 +435,7 @@ mod tests {
 
     fn run_drive(
         recorder: &Recorder,
-        live: &Live<'_>,
+        live: &Config<'_>,
         keys: Option<&OwnedFd>,
         colours: Colours,
         render: impl FnMut(&Journal<'_>, &Screen, Timestamp, &mut Buffer) -> Drawn,
@@ -410,6 +454,7 @@ mod tests {
 
     #[test]
     fn the_reader_is_joined_on_every_exit() {
+        let _serial = super::signals::tests::serial();
         let state = TempDir::new().unwrap();
         for exit in [
             "quit",
@@ -422,10 +467,11 @@ mod tests {
         ] {
             let (read, write) = pipe();
             let stop = Stop::new();
-            let live = Live {
+            let live = Config {
                 state_dir: state.path(),
                 since: None,
                 stop: Some(&stop),
+                terminating: false,
             };
             let faults = match exit {
                 "clear error" => Faults {
@@ -487,6 +533,7 @@ mod tests {
 
     #[test]
     fn each_of_the_three_signals_ends_the_dashboard_and_restores_the_terminal() {
+        let _serial = super::signals::tests::serial();
         let state = TempDir::new().unwrap();
         for (name, signal) in [
             ("SIGINT", Signal::INT),
@@ -494,10 +541,11 @@ mod tests {
             ("SIGHUP", Signal::HUP),
         ] {
             let recorder = Recorder::new(80, 12);
-            let live = Live {
+            let live = Config {
                 state_dir: state.path(),
                 since: None,
                 stop: None,
+                terminating: true,
             };
             let mut sent = false;
             run_drive(
@@ -525,12 +573,14 @@ mod tests {
 
     #[test]
     fn sigwinch_redraws_with_the_new_size() {
+        let _serial = super::signals::tests::serial();
         let state = TempDir::new().unwrap();
         let recorder = Recorder::new(80, 12);
-        let live = Live {
+        let live = Config {
             state_dir: state.path(),
             since: None,
             stop: None,
+            terminating: true,
         };
         let mut sizes = Vec::new();
         let probe = recorder.clone();
@@ -558,14 +608,16 @@ mod tests {
 
     #[test]
     fn stopping_before_the_dashboard_starts_ends_it_at_once() {
+        let _serial = super::signals::tests::serial();
         let state = TempDir::new().unwrap();
         let stop = Stop::new();
         stop.stop();
         let recorder = Recorder::new(80, 12);
-        let live = Live {
+        let live = Config {
             state_dir: state.path(),
             since: None,
             stop: Some(&stop),
+            terminating: false,
         };
         run_drive(&recorder, &live, None, Colours::None, plain).unwrap();
         assert!(recorder.restored());
@@ -573,13 +625,15 @@ mod tests {
 
     #[test]
     fn another_thread_can_stop_a_running_dashboard() {
+        let _serial = super::signals::tests::serial();
         let state = TempDir::new().unwrap();
         let stop = Stop::new();
         let recorder = Recorder::new(80, 12);
-        let live = Live {
+        let live = Config {
             state_dir: state.path(),
             since: None,
             stop: Some(&stop),
+            terminating: false,
         };
         let other = stop.clone();
         let mut frames = 0;
@@ -603,15 +657,17 @@ mod tests {
 
     #[test]
     fn the_console_palette_is_redefined_only_for_the_console_profile() {
+        let _serial = super::signals::tests::serial();
         let state = TempDir::new().unwrap();
         for colours in [Colours::Full, Colours::Console, Colours::None] {
             let recorder = Recorder::new(80, 12);
             let stop = Stop::new();
             stop.stop();
-            let live = Live {
+            let live = Config {
                 state_dir: state.path(),
                 since: None,
                 stop: Some(&stop),
+                terminating: false,
             };
             run_drive(&recorder, &live, None, colours, plain).unwrap();
             let raw = recorder.raw();
@@ -628,15 +684,17 @@ mod tests {
 
     #[test]
     fn the_frame_is_drawn_from_the_journal_on_disk() {
+        let _serial = super::signals::tests::serial();
         let state = TempDir::new().unwrap();
         write_journal(state.path(), &session_with_warnings(3));
         let recorder = Recorder::new(80, 12);
         let stop = Stop::new();
         stop.stop();
-        let live = Live {
+        let live = Config {
             state_dir: state.path(),
             since: None,
             stop: Some(&stop),
+            terminating: false,
         };
         let mut seen = Vec::new();
         run_drive(

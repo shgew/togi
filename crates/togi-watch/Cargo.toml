@@ -9,6 +9,7 @@ description = "The togi watch dashboard: the incremental journal model, history,
 
 [dependencies]
 jiff.workspace = true
+nix = { workspace = true, features = ["signal"] }
 ratatui = { workspace = true, features = ["crossterm"] }
 rustix = { workspace = true, features = ["event", "fs", "pipe", "termios"] }
 thiserror.workspace = true
@@ -19,6 +20,7 @@ togi-tuner.workspace = true
 tokio = { workspace = true, features = ["macros", "net", "rt", "signal", "sync", "time"] }
 
 [dev-dependencies]
+nix = { workspace = true, features = ["signal"] }
 rustix = { workspace = true, features = ["event", "fs", "process", "pty", "termios"] }
 serde_json.workspace = true
 tempfile.workspace = true
