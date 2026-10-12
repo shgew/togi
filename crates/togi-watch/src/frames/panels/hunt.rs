@@ -1172,6 +1172,14 @@ mod tests {
             words(&facts, true),
             "wrong result in the rerun of R7 all-core on 00 01"
         );
+        facts.cause.trial = None;
+        facts.cause.known = true;
+        facts.cause.regime = Some(Regime::R7);
+        assert_eq!(
+            words(&facts, false),
+            "R7 all-core already failed at these offsets"
+        );
+        assert_eq!(words(&facts, false), super::known_words(&facts.cause));
     }
 
     #[test]
