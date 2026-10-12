@@ -122,8 +122,8 @@ struct Scenario {
 }
 
 /// A validated suite file: scenario names are safe unique path components, no seed repeats within a scenario and
-/// every smoke seed belongs to a split. The optional gate is kept as the object the file holds; the gate's own
-/// pull request gives it a type.
+/// every smoke seed belongs to a split. The optional gate is kept as the object the file holds; [`crate::gate::load`]
+/// types and checks it.
 #[derive(Debug)]
 pub struct Suite {
     gate: Option<serde_json::Map<String, serde_json::Value>>,
@@ -167,6 +167,19 @@ impl Suite {
     /// The SHA-256 of the suite file's bytes, in lower-case hex.
     pub fn digest(&self) -> &str {
         &self.digest
+    }
+
+    /// The registered gate as the object the file holds; [`gate::load`](crate::gate::load) types it.
+    pub(crate) const fn gate_object(&self) -> Option<&serde_json::Map<String, serde_json::Value>> {
+        self.gate.as_ref()
+    }
+
+    /// A scenario's dev and holdout seeds, as the suite wrote them; none for a scenario the suite lacks.
+    pub(crate) fn seeds_of(&self, name: &str) -> Option<(&[u64], &[u64])> {
+        self.scenarios
+            .iter()
+            .find(|scenario| scenario.name == name)
+            .map(|scenario| (scenario.dev.as_slice(), scenario.holdout.as_slice()))
     }
 
     /// The notes of the registered gate, in order; none for a suite without a gate or a gate without notes.
