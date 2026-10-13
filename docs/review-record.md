@@ -26,7 +26,7 @@ No findings.
 <summary>Review data</summary>
 
 - Base: <full base sha>
-- Files: `internal/tuner/step.go`, `internal/tuner/step_test.go`
+- Files: `crates/togi-tuner/src/decide.rs`, `crates/togi-tuner/src/optimum.rs`
 - Excluded: `go.sum` (generated)
 - Reviewers: reviewer-1 (<model>): both files
 - Coverage: 0 uncovered ranges.
@@ -45,7 +45,7 @@ A later record with findings:
 
 | Source | Priority | Finding | Outcome |
 |---|---|---|---|
-| reviewer-1 | P1 | Readback skipped on retry (`internal/smu/write.go:42`) | deferred: #123 |
+| reviewer-1 | P1 | Readback skipped on retry (`crates/togi-session/src/write.rs:42`) | deferred: #123 |
 | reviewer-2 | P3 | Stale comment | fixed in <full sha> |
 
 <details>
@@ -88,8 +88,8 @@ Human text and JSON carry the same data. Version 1 lacked `base_sha` and `previo
 
   ```json
   {
-    "reviewers": [{"name": "reviewer-1", "model": "<model or null>", "files": ["internal/tuner/step.go"]}],
-    "findings": [{"source": "reviewer-1", "priority": "P2", "finding": "…", "location": "internal/tuner/step.go:42", "url": null,
+    "reviewers": [{"name": "reviewer-1", "model": "<model or null>", "files": ["crates/togi-tuner/src/decide.rs"]}],
+    "findings": [{"source": "reviewer-1", "priority": "P2", "finding": "…", "location": "crates/togi-tuner/src/decide.rs:42", "url": null,
                   "outcome": {"status": "fixed", "sha": "<full sha>"}}],
     "coverage_judgment": "How the uncovered ranges were judged; required when the diff changes Go or Rust code.",
     "blocked": "A blocker the findings do not show, such as an unresolved review thread."

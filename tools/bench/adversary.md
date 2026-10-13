@@ -18,7 +18,7 @@ An unsafe-profile finding must beat the unmodified starting machine by at least 
 A machine the tuner cannot possibly handle teaches nothing. Every candidate must satisfy all of these:
 
 - **P1, consistent with real evidence.** Start from a committed target fit, `tools/bench/machines/target-fit-<k>.json`. Keep its `bios_context` object and point `facts` at `tools/bench/facts/target.jsonl.gz` relative to the new file. Preserve the fit's provenance and qualifications in its `notes` array of strings. The bench's model check must report `ok`: the machine still explains every real group with at least 10 trials. A flagged model check disqualifies the candidate. Keep `"replay": true` on the suite scenario, so trials matching real facts get real answers and the perturbation acts only where the real machine was not measured.
-- **P2, existing mechanisms only.** Use the parameters `docs/simulating.md` and `internal/sim/doc.go` describe. Keep rates and limits inside the fitter's ranges in [benchmarking](../../docs/benchmarking.md#fitting-the-target-machine).
+- **P2, existing mechanisms only.** Use the parameters `docs/simulating.md` and the `togi-sim` machine-file document (`crates/togi-sim/src/definition.rs`) describe. Keep rates and limits inside the fitter's ranges in [benchmarking](../../docs/benchmarking.md#fitting-the-target-machine).
 - **P3, a physical story.** State in the machine's `description` string what about a real CPU the change represents, such as a core whose AVX-512 limit is two counts shallower than its SSE limit.
 
 A machine built from the seeded default machine instead of a target fit has no P1 evidence. Report such findings separately as unanchored.

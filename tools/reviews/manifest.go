@@ -124,7 +124,7 @@ func reviewerCount(l, f int) int {
 
 func ceilDiv(a, b int) int { return (a + b - 1) / b }
 
-var smallPaths = []string{"internal/smu", "internal/trial", "internal/session", "internal/journal", "crates/togi-smu", "crates/togi-trial", "crates/togi-session", "crates/togi-journal", "nix"}
+var smallPaths = []string{"crates/togi-smu", "crates/togi-trial", "crates/togi-session", "crates/togi-journal", "nix"}
 
 // isSmall applies the small-pull-request rule to the whole diff: at most 2 files and under 100 changed lines, every file counted, none under a protected path.
 func isSmall(files []fileDiff) bool {

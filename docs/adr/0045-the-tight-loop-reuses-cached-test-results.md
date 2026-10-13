@@ -1,5 +1,9 @@
 # The tight loop reuses cached test results
 
+Status: see [the index](README.md).
+
+Superseded by [ADR 0062](0062-checks-need-no-race-detector-or-test-result-cache.md) ([#918](https://github.com/shgew/togi/issues/918)): `just test` and `just focus` now run `cargo nextest run`, which keeps no result cache, and Rust tests are not shuffled. The measurement below is the record of the Go suite, 38 packages, that no longer exists. [ADR 0047](0047-gate-before-every-push.md) and [ADR 0051](0051-light-checks-for-review-fixes.md) amended its gate and fix-push rules, and those stand without it.
+
 `just test` and `just focus` ran `go test -shuffle=on`. Go caches a package's test result only when every flag on the command line is one of its cacheable test flags (`go help test`), and `-shuffle` is not one of them. Every run therefore relinked every test binary into Go's build work directory and reran every package, however little had changed since the last run.
 
 [#151](https://github.com/shgew/togi/issues/151) proposed the same change and was closed because [ADR 0021](0021-cache-check-outputs-on-cachix.md) left local `just test` as the run that draws a fresh shuffle seed when CI substitutes a cached check. Since then `just gate`, required before every commit, runs the integration-tagged tests and the race run with `-shuffle=on` on every invocation, so it draws that seed instead.

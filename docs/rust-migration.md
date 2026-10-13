@@ -1795,3 +1795,28 @@ With Go gone, names that told Rust apart from Go are renamed in one cutover, wit
 - **Review coverage.** The independent review collected changed-line coverage once at its first frozen head: 4,893 tests passed with none skipped, 25.687 s in nextest and 52.79 s for the full wrapped command. It reported zero uncovered changed ranges and zero files not built. These are shared-host measurements, not isolated compile timings or a macOS run.
 - **Review fixes and checks.** The fix commit and its `just push-fix` command took 43.42 s in total; formatting, retained-tool lint for Linux and macOS, workspace clippy for the host and macOS, and 1,714 affected-crate tests passed (11.871 s for tests). The full wrapped `just check` on the fix head took 170.89 s and passed all 20 Linux flake checks, including the separate formatter gates, package smoke check, VM tests and four simulator shards; nextest passed all 4,893 tests in 39.313 s, the tuning-boot VM script took 58.68 s and the trial-scope VM script 15.96 s. Nix omitted aarch64-darwin as incompatible. These measurements include shared-host and wrapper effects, not isolated compile costs.
 - **Not measured.** CI's per-check timings, the macOS job, agent tokens and cost, and total elapsed time.
+
+## Stage 9: active guides and ADR mechanisms (#918, 2026-10-13)
+
+The active guides describe the installed workspace and the four retained Go development tools. The lasting idiom rules of `docs/porting.md` moved to `AGENTS.md`, and its offset types, receipt-chain limits and explicit teardown order to their owning specs; the guide is deleted. ADR mechanism amendments retain their historical rationale. [ADR 0062](adr/0062-checks-need-no-race-detector-or-test-result-cache.md) supersedes only the race-detector and cached-test-result decisions; [ADR 0061](adr/0061-no-macos-ci.md) already superseded the macOS decision. The review workflow and its retained tool now agree on the protected crate paths, with the obsolete Go paths removed together.
+
+- **Documentation search.** The anchored Go-instruction search over active root guides, active `docs/` guides and specs, `.omp`, issue templates and the bench/fit programs found 15 matching lines: seven in the explicitly historical older-ruleset recipe and eight for the retained Go tools. History ADRs, migration logs, the changelog and review-rendering fixtures are outside that active-docs scope. No active link points to the deleted porting guide; ADRs 0048 and 0058 preserve it through a frozen revision link.
+- **Executed recipe.** The intermediate-profile scoring example ran as a scratch test in `togi-tool-bench` against `target-shared-voltage.json`, seed 1 and that seed's recorded final profile. It printed `worst_r7_hazard_per_h=3.585984` and passed its assertion against `3.5859843366813045` (one test, 0.002 s in nextest; 9.32 s for the wrapped command, including an 8.13 s test build). The scratch test was removed, with no implementation change retained.
+
+### Warm unchanged test-loop costs
+
+On the shared Linux x86_64 development host (AMD Ryzen 9 9950X3D2, 32 logical CPUs), with the checkout based on `45c2df3f` and this documentation rewrite applied, hyperfine measured the existing dev-shell recipes. The heavy-job lock and dev-shell entry were outside the timed commands. Each command had three discarded warmups and ten measured runs, all exiting 0, with JSON and Markdown exports retained as measurement artifacts:
+
+```sh
+hyperfine --warmup 3 --runs 10 --export-json timings.json --export-markdown timings.md \
+  'just test' 'just focus togi-tuner'
+```
+
+| Command | Mean ± standard deviation | Minimum–maximum |
+|---|---:|---:|
+| `just test` | 21.805 ± 0.729 s | 21.396–23.740 s |
+| `just focus togi-tuner` | 0.451 ± 0.015 s | 0.436–0.490 s |
+
+These are different selections, not an equivalent-work comparison. Nextest runs the selected tests again on each invocation; cargo reuses their builds. Hyperfine flagged a workspace outlier in both the exploratory three-run sample (22.074 ± 0.551 s) and the ten-run sample above. The latter retains that run rather than trimming it. These shared-host observations are not an isolated performance guarantee or evidence for a hand-built test-result cache.
+
+The first timing attempt failed because copied Cargo artifacts embedded fixture and snapshot paths from removed worktrees. Diagnostic output established the stale paths; invalidating this checkout's workspace-package artifacts, while retaining dependency artifacts, corrected the measurement setup without a source fix. Compile costs isolated from the warmup, total elapsed work on this pull request, agent tokens and monetary cost were not measured. No macOS build or target-machine run was performed for this rewrite.

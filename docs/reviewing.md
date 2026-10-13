@@ -47,21 +47,21 @@ The session holding the terminal point, or the newest session of a censored run,
 
 The snapshots for a concluded, a censored and an unconcluded forecast score a simulated session, stopped at its first crash and resumed with another seed, against a fixed forecast, the last one without a concluded run; `INSTA_UPDATE=always cargo nextest run -p togi-tool-stats` re-renders them.
 
-`just stats --forecast` scores the records `just forecast` writes (`togi-tool-bench forecast`) and refuses a Go-written record ([forecasting](benchmarking.md#forecasting-a-real-run)).
+`just stats --forecast` scores the records `just forecast` writes (`togi-tool-bench forecast`) ([forecasting](benchmarking.md#forecasting-a-real-run)).
 
 ## The stats tool (`togi-tool-stats`)
 
-`just stats` runs `togi-tool-stats` ([#820](https://github.com/shgew/togi/issues/820)). It takes the flags `--state-dir`, `--journal`, `--since` and `--forecast`, with `--forecast` refusing `--journal` and `--since`, and prints the sections above. It differs from the retired Go tool's output in these ways:
+`just stats` runs `togi-tool-stats` ([#820](https://github.com/shgew/togi/issues/820)). It takes the flags `--state-dir`, `--journal`, `--since` and `--forecast`, with `--forecast` refusing `--journal` and `--since`, and prints the sections above. It reports as follows:
 
 - It reads only `events.jsonl`, never trial samples. A `trial.end` already holds the request telemetry the session summarized from the trial's samples, also for a trial a crash cut short, so a trial whose end lacks the fields has none to recover. The R7 request report counts a trial's end fields and the carried `trial.carried` facts of other sessions.
-- It reads no Go-written journal. A journal that does not follow itself (a gap in the sequence, a cause that does not precede its event) is an error naming the file, with exit status 1; a usage error exits 2.
-- **Time** is grouped by the trial's activity (`search`, `checking`, `hunt`, `deepening`, or `-` for an intent without one) instead of the Go phase. Every grouped table follows the order the vocabulary declares: regimes `R1`..`R7`; activities, conditions and outcomes as the journal lists them; and trial classes (failures after prior passes, failure rate by depth, the R7 request tables) by the workload's place in the catalog, then the loaded cores by number, then the intended duration in seconds, so `60s` lists before `120s`. Nothing sorts alphabetically.
+- A journal that does not follow itself (a gap in the sequence, a cause that does not precede its event) is an error naming the file, with exit status 1; a usage error exits 2.
+- **Time** is grouped by the trial's activity (`search`, `checking`, `hunt`, `deepening`, or `-` for an intent without one). Every grouped table follows the order the vocabulary declares: regimes `R1`..`R7`; activities, conditions and outcomes as the journal lists them; and trial classes (failures after prior passes, failure rate by depth, the R7 request tables) by the workload's place in the catalog, then the loaded cores by number, then the intended duration in seconds, so `60s` lists before `120s`. Nothing sorts alphabetically.
 - **Session** adds the event count.
-- **R7 voltage-targeted backoffs** lists every backoff caused by a multi-core R7 failure; the tuner has one ruleset, so the Go ruleset-9 gate is gone. A cause list reads `3,7`. **R7 chain derivations** shows the chain's part as its number, the request groups from the highest request down (`00 > 01,02`, a tie in one group `01,02`) and the sources as `3,7`, or `offset fallback` when none orders the load.
+- **R7 voltage-targeted backoffs** lists every backoff caused by a multi-core R7 failure; the tuner has one ruleset. A cause list reads `3,7`. **R7 chain derivations** shows the chain's part as its number, the request groups from the highest request down (`00 > 01,02`, a tie in one group `01,02`) and the sources as `3,7`, or `offset fallback` when none orders the load.
 - Hunt and cycle numbers print as plain numbers in every table (`2`, not `0002`).
 - A hunt that records no failing trial shows `-` there; a cancelled hunt that names no cores shows `-` under members/culprit.
 - **Failures** shows `-` for the regime of a failure that names neither a regime nor a trial. **Inconclusive trials** escapes a multi-line reason (`\n`) and shows `-` for a trial that records none.
-- `--journal` and `--state-dir` refuse a journal file that is a symlink, because the report reads through the journal crate's no-follow open; the Go tool followed it.
+- `--journal` and `--state-dir` refuse a journal file that is a symlink, because the report reads through the journal crate's no-follow open.
 - **Scoring a forecast** prints the evidence epoch in the `Forecast:` line and in each build (`rev abc ruleset 1 epoch 1`, `rev none` for a build without a revision).
 
 The tests render goldens as [insta](https://insta.rs) snapshots in `crates/togi-tool-stats/src/tests/snapshots/`, from journals the tests build in memory (a combination failure on two CCDs, the review-boundary scenario, R7 requests and decisions, scored forecasts). `INSTA_UPDATE=always cargo nextest run -p togi-tool-stats` re-renders them; review the diff against this document. Tests over a simulated session check the report against the journal's own events and not against bytes, so a tuner change leaves the snapshots alone.

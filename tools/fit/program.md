@@ -19,15 +19,15 @@ The seal moves forward by itself: when the owner refreshes the extract after a n
 
 ## What you may change
 
-- The failure model in `internal/sim`: how failure probabilities and hazards follow from a machine's parameters, and the machine-file keys that set new parameters.
-- The fitter in `tools/fit`: what it fits, its bounds and its search, and how `sim.EncodeMachine` writes new parameters as JSON. Preserve generated provenance, bootstrap provenance, model-check flags and forward-validation qualifications in the `notes` array of strings.
-- Tests, `docs/simulating.md`, `docs/benchmarking.md` and `internal/sim/doc.go` describing a deliberately changed model.
+- The failure model in the `togi-sim` crate: how failure probabilities and hazards follow from a machine's parameters (`Model::failure_probability`, `Model::hazard` and the sources behind them), and the machine-file keys that set new parameters.
+- The fitter in `togi-tool-fit`: what it fits, its bounds and its search, and how `togi_sim::file::encode` writes new parameters as JSON. Preserve generated provenance, bootstrap provenance, model-check flags and forward-validation qualifications in the `notes` array of strings.
+- Tests, `docs/simulating.md`, `docs/benchmarking.md` and the `togi-sim` crate documentation describing a deliberately changed model.
 
 Everything else is frozen:
 
-- **The score:** the scoring, clamping, constant and sealing in `tools/fit/forward.go`, `tools/modelcheck`, `tools/trialfacts` and the extract under `tools/bench/facts/`.
-- **The tuner and the bench:** `internal/tuner`, `internal/config`, `tools/bench` and its suite. The committed machine files and baseline change only in a pull request's regeneration commit.
-- **The run loop, journal and hardware path:** `internal/session`, `internal/journal`, `internal/smu`, `internal/trial` and `internal/detect`.
+- **The score:** the scoring, clamping, constant and sealing in `crates/togi-tool-fit/src/forward.rs`, the `togi-tool-modelcheck` and `togi-tool-trialfacts` crates, and the extract under `tools/bench/facts/`.
+- **The tuner and the bench:** `togi-tuner`, `togi-config`, `togi-tool-bench` and `tools/bench` with its suite. The committed machine files and baseline change only in a pull request's regeneration commit.
+- **The run loop, journal and hardware path:** `togi-session`, `togi-journal`, `togi-smu`, `togi-trial` and `togi-detect`.
 
 ## Hard rules
 
@@ -35,8 +35,8 @@ Breaking any rule invalidates an experiment, however good its loss looks.
 
 - **Forward only.** Fit and score only the unsealed sessions during dev experiments. The unsealed reference, candidate confirmation and full-extract F4 check run only after selecting a dev winner, and their sealed outcomes must not guide subsequent experiments. Never edit the extract. No parameter may be keyed to a session, ruleset, date, sequence number or trial ID.
 - **No memorized profiles.** Parameters describe cores, CCDs, regimes, workloads, offsets and durations, never one applied profile. The current R7 joints are memorized failing profiles; replacing them is in scope, adding more is not.
-- **One rule for draws and scores.** Simulated trials draw failures from the same rules that `Machine.FailureProbability` and `Machine.Hazard` report. A score computed from a model the simulator does not run measures nothing.
-- **Deterministic.** Fixed inputs reproduce the forward scores and machine files byte for byte on one architecture; elapsed wall-time lines are excluded. The committed machine files are generated on amd64: compare a candidate with a reference run on amd64, and on another architecture compare decoded values, not bytes ([benchmarking](../../docs/benchmarking.md#fitting-the-target-machine)).
+- **One rule for draws and scores.** Simulated trials draw failures from the same rules that `Model::failure_probability` and `Model::hazard` report. A score computed from a model the simulator does not run measures nothing.
+- **Deterministic.** Fixed inputs reproduce the forward scores and machine files byte for byte on one host; elapsed wall-time lines are excluded. Compare a candidate with a reference run on the same host; across hosts compare decoded values, not bytes ([benchmarking](../../docs/benchmarking.md#fitting-the-target-machine)).
 - **Fit time.** Report the `Forward-chained elapsed` line. A change that more than doubles it needs a reason.
 - **Tests pass.** Run the affected tests before scoring a candidate, and `just gate` before keeping a commit.
 

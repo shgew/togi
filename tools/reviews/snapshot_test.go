@@ -224,16 +224,13 @@ func TestIsSmall(t *testing.T) {
 		{"100 lines", []fileDiff{file("a.go", 50), file("b.go", 50)}, false},
 		{"three files", []fileDiff{file("a", 1), file("b", 1), file("c", 1)}, false},
 		{"excluded files count", []fileDiff{file("a.go", 60), file("go.sum", 40)}, false},
-		{"protected path", []fileDiff{file("internal/smu/write.go", 1)}, false},
 		{"protected nix", []fileDiff{file("nix/module.nix", 1)}, false},
-		{"protected rename source", []fileDiff{{Path: "docs/x.go", OldPath: "internal/journal/x.go", Added: 1}}, false},
 		{"protected crate", []fileDiff{file("crates/togi-smu/src/lib.rs", 1)}, false},
 		{"protected crate rename source", []fileDiff{{Path: "docs/x.rs", OldPath: "crates/togi-trial/src/run.rs", Added: 1}}, false},
 		{"protected session crate", []fileDiff{file("crates/togi-session/Cargo.toml", 1)}, false},
 		{"protected journal crate", []fileDiff{file("crates/togi-journal/src/lib.rs", 1)}, false},
 		{"other crate", []fileDiff{file("crates/togi-render/src/lib.rs", 1)}, true},
 		{"lookalike crate", []fileDiff{file("crates/togi-smu-extra/src/lib.rs", 1)}, true},
-		{"lookalike path", []fileDiff{file("internal/smuggle/x.go", 1)}, true},
 	}
 	for _, tt := range tests {
 		if got := isSmall(tt.files); got != tt.want {

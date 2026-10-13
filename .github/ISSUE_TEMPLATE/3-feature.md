@@ -12,5 +12,5 @@ labels: ["feature", "needs-triage"]
 
 <!-- List the commands to run and what they should show, so a reviewer can check the pull request against them. -->
 
-<!-- One line naming the packages or files the change edits, comma-separated, such as `internal/tuner`, `docs/spec/tuner.md`. `just board` compares it with the work in progress to find overlaps. -->
+<!-- One line naming the packages or files the change edits, comma-separated, such as `crates/togi-tuner`, `docs/spec/tuner.md`. `just board` compares it with the work in progress to find overlaps. -->
 Touches:

@@ -16,3 +16,7 @@ Comparable projects keep such harnesses out of the binary operators install: Tig
 ## Consequences
 
 Simulating needs a source checkout. The operator-facing `togi` has no simulation flags, and a future operator diagnostic such as `togi doctor` stays free of simulation. Tests that need a simulated journal build it in process through `internal/simrun`.
+
+## Amendment (#918)
+
+The mechanism after the Rust cutover; the decision and its reasons are unchanged. Development programs are the `togi-tool-*` crates (`publish = false`; `just sim` runs `cargo run --release --locked -p togi-tool-sim`), never part of the `togi` crate, and `togi` depends on none of them. The package builds `-p togi` only. The crash-reboot loop is the `togi-simrun` crate, which `togi-session` does not use; the `togi` crate and `togi-session` take `togi-sim` as a dev-dependency only, and tests that need a simulated journal build it in process through `togi-simrun` (via the `togi-watchtest` dev-dependency). `tools/` keeps the benchmark data (`tools/bench`) and the four retained Go programs, `release`, `board`, `reviews` and `cover`, which also never ship.

@@ -1,8 +1,9 @@
 //! The sanity check of a bench run's current records against the scores of a recorded baseline.
 //!
-//! The recorded baseline and the current records draw their simulated machines and failures from different random
-//! streams, so a seed's run differs between them and no per-seed equality is expected. What must agree is the distribution of each
-//! metric over a scenario's seeds. For every scenario, and for all runs together, each metric's mean over the
+//! The recorded baseline and the current records come from the same bench, so on an unchanged tree, suite and
+//! inputs a seed's run is the same on both sides. A change to the tuner, the simulator or their inputs can move any
+//! seed's run, so no per-seed equality is expected: what must agree is the distribution of each metric over a
+//! scenario's seeds. For every scenario, and for all runs together, each metric's mean over the
 //! runs both sides have is compared. A metric is flagged only when the means differ by more than its [`Band`]
 //! and by more than [`Z`] standard errors (Welch's two-sample statistic, stratified by scenario for all runs
 //! together): a large difference that the seeds' own spread does not explain. A group of one run has no spread,

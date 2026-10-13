@@ -10,14 +10,14 @@ Branch from `main` and follow `AGENTS.md`. Read `docs/spec/tuner.md`, `docs/spec
 
 ## What you may change
 
-- `internal/tuner/**`: search, hunts, deepening and checking decisions.
+- `crates/togi-tuner/**`: search, hunts, deepening and checking decisions.
 - Tests and specifications describing a deliberately changed rule.
 
 Everything else is frozen for tuner experiments:
 
-- **The environment:** `internal/sim` and `tools/bench`, including the suite, facts, fitted machines and baseline; `tools/facts`, `tools/fit`, `tools/modelcheck` and `tools/trialfacts`.
-- **The run loop and journal:** `internal/session`, `internal/journal` and the journal schema.
-- **The hardware path:** `internal/smu`, `internal/trial` and `internal/detect`.
+- **The environment:** the simulator (`togi-sim`, `togi-simrun`, `togi-tool-sim`) and the bench (`togi-tool-bench` and `tools/bench`, including the suite, facts, fitted machines and baseline); `togi-tool-facts`, `togi-tool-fit`, `togi-tool-modelcheck`, `togi-tool-trialfacts` and `togi-facts`.
+- **The run loop and journal:** `togi-session`, `togi-journal` and the journal schema.
+- **The hardware path:** `togi-smu`, `togi-trial` and `togi-detect`.
 - **Configuration defaults and the evidence they ask for** (**Evidence volume** below). Trading evidence for time is safe only when the simulator predicts failures at depths the journal has not tested, and the forward-chained check in `just fit` ([benchmarking](../../docs/benchmarking.md#forward-chained-check)) shows it does not yet. The bench's hazard comes from that same simulator, so it cannot catch a shorter or smaller evidence set that misses a real failure. The owner lifts this freeze in a separate pull request, once the forward-chained check supports it.
 
 A simulator or machine-file change is an evaluation change, not a tuner experiment; record ideas needing frozen files for an owner decision. Refreshing evidence with `just facts` and `just fit` is an owner-triggered evaluation update: review its model checks and record a new baseline before comparing tuners in the changed environment. Use a copy of the state directory, never the live one.

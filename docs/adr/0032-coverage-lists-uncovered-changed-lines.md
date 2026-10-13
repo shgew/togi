@@ -17,3 +17,7 @@ Every printed range lies inside the diff. The `/review-pr` coordinator hands eac
 ## Consequences
 
 Review sees only gaps the change introduced or touched; an unchanged untested line beside the change no longer shows. The program is code to maintain, tested on fixture diffs and profiles. Lines of a file the profile does not measure, such as `hardware`-tagged code or files built only on another OS, print nothing; reviewers still judge those by reading them.
+
+## Amendment (#918)
+
+The mechanism after the Rust cutover; the decision and its reasons are unchanged. `tools/cover` reads the new-side ranges of `git diff -U0` against the merge base for `*.rs` files and intersects them with a cargo-llvm-cov LCOV trace, where a line listed more than once counts as reached if any listing reached it. With no changed Rust lines it prints `No Rust lines changed since BASE.`; with none unreached, `Every changed Rust line the trace measures ran in a test since BASE.` The Consequences' last sentence no longer holds for Rust: a changed file the coverage build leaves out, or a changed item under a `cfg` predicate the host does not satisfy or cannot decide whose lines the trace does not measure, is printed as `path: not built for <host triple>` instead of nothing. Reviewers still judge those by reading them. The Go profile route remains for the retained Go tools.
