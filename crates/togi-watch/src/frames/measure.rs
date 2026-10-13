@@ -1,8 +1,10 @@
 //! Where the main view's model-dependent panels sit: the trial band, the outcome lines, a table per CCD, the
 //! context panel and the history, measured from the screen's [`Layout`] and the snapshot.
 //!
-//! A resting band (no trial in flight, a stop, a dead end, a recovery) takes the rows it needs and the outcome
-//! lines give theirs up, so the panels below move up rather than leaving blank rows.
+//! Every live trial state (running, preparing, between trials) gives each panel the same rectangle: between trials
+//! the trial band's slot holds the resting text and the outcome lines keep the last trial's outcomes. A stop, a
+//! dead end, a crash or a recovery takes the rows its band needs and the outcome lines give theirs up, so the
+//! panels below move up rather than leaving blank rows.
 
 use ratatui::layout::Rect;
 use togi_machine::CcdId;
@@ -175,9 +177,9 @@ pub(crate) struct Ccd {
 pub(crate) struct Measure {
     /// What depends on the screen alone.
     pub(crate) layout: Layout,
-    /// The trial band, or the resting band.
+    /// The trial band, or the resting band: the same slot while a trial runs, is prepared or is awaited.
     pub(crate) now: Rect,
-    /// The outcome lines; no rows while resting.
+    /// The outcome lines; no rows while stopped, at a dead end, crashed or recovering.
     pub(crate) outcomes: Rect,
     /// A table per CCD, in CCD order.
     pub(crate) ccds: Vec<Ccd>,
@@ -210,7 +212,7 @@ pub(crate) fn measure(scene: &Scene<'_>, screen: &Screen) -> Measure {
     let mut now_height = usize::from(rows.now_height);
     let mut outcomes_height = usize::from(rows.outcomes_height);
     let mut ccd_y = usize::from(rows.ccd);
-    if scene.s.resting() {
+    if scene.s.resting() && !scene.s.between_trials() {
         now_height = resting_band(scene).lines.len();
         if class != SizeClass::Compact {
             now_height += 1;

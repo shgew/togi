@@ -224,7 +224,11 @@ impl Source {
             }
             _ => (Box::new(Model::new()), 0),
         };
-        for event in &events[folded..] {
+        let batch = &events[folded..];
+        let last_end = batch
+            .iter()
+            .rposition(|event| matches!(event.payload, Payload::TrialEnd(_)));
+        for (at, event) in batch.iter().enumerate() {
             if let Payload::SessionStart(start) = &event.payload {
                 if let Verdict::Refuse(refusal) =
                     shown_build().verdict(&start.build, Operation::Inspect)
@@ -233,7 +237,7 @@ impl Source {
                     return;
                 }
             }
-            if model.fold(event).is_err() {
+            if model.fold_ending(event, last_end == Some(at)).is_err() {
                 break;
             }
         }

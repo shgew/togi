@@ -18,7 +18,7 @@ use super::super::fit::{console_text, cut_styled, cut_words, display_width, line
 use super::super::scene::{Scene, short_duration};
 use super::super::terms::part_name;
 use super::shape_words;
-use crate::model::{HuntShape, TrialView};
+use crate::model::{HuntShape, Snapshot, TrialView};
 use crate::words::{
     carried_groups, core_ids, decision_brief, decision_detail, decision_phrase, hunt_end_phrase,
     kind_words, solo_limit, workload_display,
@@ -58,8 +58,26 @@ pub(super) struct OutcomeRow {
 }
 
 /// The outcome lines of the trial in flight in `width` cells: one per branch of the forecast, or the one line of
-/// a compact screen. Empty when no trial is in flight.
+/// a compact screen. Between trials they stay those of the trial that just ended, as they stood before its end.
+/// Empty before a first trial, after a stop, a dead end, a crash or a recovery.
 pub(crate) fn outcome_lines(scene: &Scene<'_>, width: usize, compact: bool) -> Vec<Line<'static>> {
+    let kept;
+    let scene = match scene.s.ended {
+        Some(ended) => {
+            kept = Scene {
+                s: Snapshot {
+                    trial: Some(ended.trial),
+                    forecast: ended.forecast,
+                    cycle: ended.cycle,
+                    hunt: ended.hunt,
+                    ..scene.s
+                },
+                ..*scene
+            };
+            &kept
+        }
+        None => scene,
+    };
     let s = &scene.s;
     if s.trial.is_none()
         || s.stopped.is_some()

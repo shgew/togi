@@ -13,6 +13,14 @@ expression: body
 │  last: PASS after 5:00 · R7 all-core on 00-07 · Tctl max 75°C
 │  next: step 1: R7 all-core with mprime AVX2 36K-248K
 │
+│
+│
+│
+│
+│  if it passes         CCD 0 partial on 00-04 06 07 per offset order → part 1 is done → next: step 1: R7 all-core on 00-04 06 07 with mprime AVX2 36K-248K
+│  if a core is named   its failure point is recorded → it backs off per offset order → next: rerun R7 all-core on 00-07 · 2m
+│  if none is named     core 05 -9 → -8 per offset order → next: rerun R7 all-core on 00-07 · 2m
+│
 │  CCD 0               0       -10       -20       -30       -40       -50 fail pt  not under load                         CCD 1               0       -10       -20       -30       -40       -50 fail pt  not under load
 │    00  -25  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬·                           -26                                            08   -5  HAS ROOM  ▄▄▄▄▄·▬                                                -7   top by offset
 │    01  -15  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬·                                     -16                                            09  -34  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▬                  -36
@@ -57,14 +65,6 @@ expression: body
 │  mprime AVX-512 36K-248K        05 08 by offset          none yet                                                        07:07  step     core 06 passed -38, next -39
 │  y-cruncher FFTv4 + N63 + VT3   05 08 by offset          none yet                                                        07:04  step     core 13 passed -38, next -39
 │                                                                                                                          06:40  step     core 06 passed -37, next -38
-│                                                                                                                          06:37  step     core 13 passed -37, next -38
-│                                                                                                                          06:13  step     core 06 passed -36, next -37
-│                                                                                                                          06:10  step     core 13 passed -36, next -37
-│                                                                                                                          05:57  confirm  core 09 confirming -35 as its solo limit
-│                                                                                                                          05:57  fail     core 09 fails at -36
-│                                                                                                                          05:57  fail     core 09 · R1 light at -36 · wrong result
-│                                                                                                                          05:53  confirm  core 00 confirming -27 as its solo limit
-│                                                                                                                          05:53  fail     core 00 fails at -28
-│                                                                                                                          +183 more
+│                                                                                                                          +191 more
 │
 │   ?  help    l  log    esc  back    q  close view
