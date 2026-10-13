@@ -805,7 +805,7 @@ fn the_committed_suite_registers_no_gate() {
 }
 
 #[test]
-fn the_committed_go_baseline_covers_every_run_of_the_suite() {
+fn the_committed_baseline_covers_every_run_of_the_suite() {
     let suite = Suite::load(&bench().join("suite.json")).unwrap();
     let plan = suite.plan(Selection::All).unwrap();
     let text = fs::read_to_string(bench().join("baseline.jsonl")).unwrap();

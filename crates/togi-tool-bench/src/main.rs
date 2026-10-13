@@ -32,7 +32,7 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Compare a run's records with the scores the Go bench recorded, metric by metric.
+    /// Compare a run's records with the scores of a recorded baseline, metric by metric.
     Sanity(SanityArgs),
     /// Prove two trees decide the same on every simulated session, or only the suite's smoke sessions.
     Same(same_cli::SameArgs),
@@ -92,13 +92,13 @@ struct SanityArgs {
     /// The records of the Rust bench run, as `--out` wrote them.
     #[arg(long, value_name = "FILE")]
     records: PathBuf,
-    /// The Go bench's recorded scores.
+    /// The recorded baseline scores.
     #[arg(
         long,
         value_name = "FILE",
         default_value = "tools/bench/baseline.jsonl"
     )]
-    go: PathBuf,
+    baseline: PathBuf,
 }
 
 fn main() -> ExitCode {
@@ -199,14 +199,14 @@ fn bench(args: RunArgs) -> ExitCode {
 
 fn sanity_check(args: &SanityArgs) -> ExitCode {
     let compared = togi_tool_bench::read_records(&args.records, "records")
-        .and_then(|rust| Ok((rust, sanity::read_go(&args.go)?)));
-    let (rust, go) = match compared {
+        .and_then(|rust| Ok((rust, sanity::read_baseline(&args.baseline)?)));
+    let (rust, baseline) = match compared {
         Ok(pair) => pair,
         Err(error) => return fail(&error),
     };
-    let lines = sanity::compare(&rust, &go);
+    let lines = sanity::compare(&rust, &baseline);
     if lines.is_empty() {
-        return fail(&"no run is in both the records and the Go scores");
+        return fail(&"no run is in both the records and the baseline scores");
     }
     if let Err(error) = sanity::report(&mut io::stdout().lock(), &lines) {
         return fail(&format!("write the report: {error}"));

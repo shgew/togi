@@ -1,4 +1,4 @@
-//! The sanity check of the Rust bench against the scores the Go bench recorded.
+//! The sanity check of the Rust bench against the scores of a recorded baseline.
 //!
 //! The two benches draw their simulated machines and failures from different random streams, so a seed's run
 //! differs between them and no per-seed equality is expected. What must agree is the distribution of each
@@ -27,17 +27,17 @@ const CONCLUDED: &str = "concluded";
 /// A mean difference is flagged only beyond this many standard errors.
 pub const Z: f64 = 3.0;
 
-/// The size of a difference worth flagging: beyond `abs` in the metric's own unit and beyond `rel` of Go's mean.
+/// The size of a difference worth flagging: beyond `abs` in the metric's own unit and beyond `rel` of the baseline's mean.
 #[derive(Clone, Copy, Debug)]
 pub struct Band {
     pub rel: f64,
     pub abs: f64,
 }
 
-/// A run of the Go bench, as its baseline file records it. Fields the Rust bench does not compare, and fields
-/// Go retired, are ignored.
+/// A run as the baseline file records it. Fields the Rust bench does not compare, and fields it retired,
+/// are ignored.
 #[derive(Clone, Debug, Deserialize)]
-pub struct GoRun {
+pub struct BaselineRun {
     scenario: String,
     seed: u64,
     #[serde(default)]
@@ -66,10 +66,10 @@ pub struct GoRun {
     worst_r7_hazard_per_h: Option<f64>,
 }
 
-/// Reads the Go bench's records, one JSON object per line.
-pub fn read_go(path: &Path) -> Result<Vec<GoRun>, Error> {
+/// Reads the baseline's records, one JSON object per line.
+pub fn read_baseline(path: &Path) -> Result<Vec<BaselineRun>, Error> {
     let text = fs::read_to_string(path).map_err(|source| Error::ReadFile {
-        what: "read Go scores",
+        what: "read baseline scores",
         path: path.to_path_buf(),
         source,
     })?;
@@ -78,7 +78,7 @@ pub fn read_go(path: &Path) -> Result<Vec<GoRun>, Error> {
         .filter(|(_, line)| !line.trim().is_empty())
         .map(|(index, line)| {
             serde_json::from_str(line).map_err(|source| Error::Decode {
-                what: "Go scores",
+                what: "baseline scores",
                 path: path.to_path_buf(),
                 line: index + 1,
                 source,
@@ -138,8 +138,8 @@ impl From<&Record> for Row {
     }
 }
 
-impl From<&GoRun> for Row {
-    fn from(r: &GoRun) -> Self {
+impl From<&BaselineRun> for Row {
+    fn from(r: &BaselineRun) -> Self {
         Self {
             scenario: r.scenario.clone(),
             seed: r.seed,
@@ -166,7 +166,7 @@ struct Metric {
     value: fn(&Row) -> Option<f64>,
 }
 
-/// The metrics compared and the band of each. A band's `rel` is the share of Go's mean a difference must exceed
+/// The metrics compared and the band of each. A band's `rel` is the share of the baseline's mean a difference must exceed
 /// and `abs` the size in the metric's unit it must exceed; counts of rare events have wide bands, quantities
 /// every run pins down narrow ones.
 const METRICS: [Metric; 13] = [
@@ -273,17 +273,17 @@ const METRICS: [Metric; 13] = [
     },
 ];
 
-/// One metric of one group of runs, Rust against Go.
+/// One metric of one group of runs, Rust against the baseline.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Line {
     pub scenario: String,
     pub metric: &'static str,
     /// Means over the runs each side measured the metric on; NaN for a side that never did.
     pub rust: f64,
-    pub go: f64,
+    pub baseline: f64,
     /// Runs each side measured the metric on.
     pub rust_runs: usize,
-    pub go_runs: usize,
+    pub baseline_runs: usize,
     /// Welch's statistic of the difference of means; infinite when both sides are constant and differ.
     pub z: f64,
     pub flagged: bool,
@@ -293,14 +293,14 @@ pub struct Line {
 /// means over the runs of the scenario that both benches ran. A scenario one side lacks is left out; a metric
 /// that only one side measured, or that the sides measured on different numbers of runs, is a flagged line, and
 /// is left out only when neither side measured it. A missing mean is NaN.
-pub fn compare(rust: &[Record], go: &[GoRun]) -> Vec<Line> {
+pub fn compare(rust: &[Record], baseline: &[BaselineRun]) -> Vec<Line> {
     let rust: Vec<Row> = rust.iter().map(Row::from).collect();
-    let go: Vec<Row> = go.iter().map(Row::from).collect();
+    let baseline: Vec<Row> = baseline.iter().map(Row::from).collect();
     let shared: BTreeSet<(&str, u64)> = {
-        let go_keys: BTreeSet<_> = go.iter().map(|r| (r.scenario.as_str(), r.seed)).collect();
+        let baseline_keys: BTreeSet<_> = baseline.iter().map(|r| (r.scenario.as_str(), r.seed)).collect();
         rust.iter()
             .map(|r| (r.scenario.as_str(), r.seed))
-            .filter(|key| go_keys.contains(key))
+            .filter(|key| baseline_keys.contains(key))
             .collect()
     };
     let in_both = |rows: &[Row]| -> Vec<Row> {
@@ -309,7 +309,7 @@ pub fn compare(rust: &[Record], go: &[GoRun]) -> Vec<Line> {
             .cloned()
             .collect()
     };
-    let (rust, go) = (in_both(&rust), in_both(&go));
+    let (rust, baseline) = (in_both(&rust), in_both(&baseline));
     let mut scenarios: Vec<&str> = Vec::new();
     for row in &rust {
         if !scenarios.contains(&row.scenario.as_str()) {
@@ -330,7 +330,7 @@ pub fn compare(rust: &[Record], go: &[GoRun]) -> Vec<Line> {
                 .iter()
                 .map(|name| Stratum {
                     rust: values(&rust, name),
-                    go: values(&go, name),
+                    baseline: values(&baseline, name),
                 })
                 .collect();
             lines.extend(line(scenario.unwrap_or("TOTAL"), metric, &strata));
@@ -354,40 +354,40 @@ fn variance(values: &[f64]) -> f64 {
 /// One scenario's values of a metric on each side.
 struct Stratum {
     rust: Vec<f64>,
-    go: Vec<f64>,
+    baseline: Vec<f64>,
 }
 
 /// The line of one metric over `strata`, one scenario's or all of them; none when neither side measured it.
 ///
 /// The means are over every value. The standard error is stratified by scenario, since both sides ran the same
 /// seeds of each scenario and the spread between scenarios cancels in the difference of means:
-/// `sqrt(sum_s (n_s/N)^2 (var_rust_s/n_rust_s + var_go_s/n_go_s))`, with `n_s` the Go runs of stratum `s`.
+/// `sqrt(sum_s (n_s/N)^2 (var_rust_s/n_rust_s + var_baseline_s/n_baseline_s))`, with `n_s` the baseline runs of stratum `s`.
 fn line(scenario: &str, metric: &Metric, strata: &[Stratum]) -> Option<Line> {
     let rust: Vec<f64> = strata.iter().flat_map(|s| s.rust.iter().copied()).collect();
-    let go: Vec<f64> = strata.iter().flat_map(|s| s.go.iter().copied()).collect();
-    if rust.is_empty() && go.is_empty() {
+    let baseline: Vec<f64> = strata.iter().flat_map(|s| s.baseline.iter().copied()).collect();
+    if rust.is_empty() && baseline.is_empty() {
         return None;
     }
-    let one_side_lacks = rust.is_empty() || go.is_empty();
-    let (rust_mean, go_mean) = (mean(&rust), mean(&go));
+    let one_side_lacks = rust.is_empty() || baseline.is_empty();
+    let (rust_mean, baseline_mean) = (mean(&rust), mean(&baseline));
     let spread = strata
         .iter()
-        .filter(|s| s.rust.len() >= 2 && s.go.len() >= 2);
-    let go_total: usize = strata
+        .filter(|s| s.rust.len() >= 2 && s.baseline.len() >= 2);
+    let baseline_total: usize = strata
         .iter()
-        .filter(|s| !s.rust.is_empty() && !s.go.is_empty())
-        .map(|s| s.go.len())
+        .filter(|s| !s.rust.is_empty() && !s.baseline.is_empty())
+        .map(|s| s.baseline.len())
         .sum();
     let error = spread
         .clone()
         .map(|s| {
-            let weight = float(s.go.len()) / float(go_total);
+            let weight = float(s.baseline.len()) / float(baseline_total);
             weight.powi(2)
-                * (variance(&s.rust) / float(s.rust.len()) + variance(&s.go) / float(s.go.len()))
+                * (variance(&s.rust) / float(s.rust.len()) + variance(&s.baseline) / float(s.baseline.len()))
         })
         .sum::<f64>()
         .sqrt();
-    let diff = rust_mean - go_mean;
+    let diff = rust_mean - baseline_mean;
     let z = if one_side_lacks || spread.count() == 0 || diff == 0.0 {
         0.0
     } else if error > 0.0 {
@@ -397,19 +397,19 @@ fn line(scenario: &str, metric: &Metric, strata: &[Stratum]) -> Option<Line> {
     };
     let Band { rel, abs } = metric.band;
     let flagged = one_side_lacks
-        || rust.len() != go.len()
+        || rust.len() != baseline.len()
         || if metric.name == CONCLUDED {
             diff < 0.0
         } else {
-            diff.abs() > abs && diff.abs() > rel * go_mean.abs() && z.abs() > Z
+            diff.abs() > abs && diff.abs() > rel * baseline_mean.abs() && z.abs() > Z
         };
     Some(Line {
         scenario: scenario.to_owned(),
         metric: metric.name,
         rust: rust_mean,
-        go: go_mean,
+        baseline: baseline_mean,
         rust_runs: rust.len(),
-        go_runs: go.len(),
+        baseline_runs: baseline.len(),
         z,
         flagged,
     })
@@ -431,25 +431,25 @@ pub fn report(w: &mut impl io::Write, lines: &[Line]) -> io::Result<()> {
     )?;
     writeln!(
         w,
-        "scenario                metric                    rust_runs go_runs       rust         go     rel_diff       z  flag"
+        "scenario                metric                    rust_runs baseline_runs       rust   baseline     rel_diff       z  flag"
     )?;
     for l in lines {
-        let rel = if l.rust.is_nan() || l.go.is_nan() {
+        let rel = if l.rust.is_nan() || l.baseline.is_nan() {
             "n/a".to_owned()
-        } else if l.go == 0.0 {
+        } else if l.baseline == 0.0 {
             if l.rust == 0.0 { "+0.0%" } else { "+inf%" }.to_owned()
         } else {
-            format!("{:+.1}%", (l.rust - l.go) / l.go.abs() * 100.0)
+            format!("{:+.1}%", (l.rust - l.baseline) / l.baseline.abs() * 100.0)
         };
         writeln!(
             w,
-            "{:<23} {:<25} {:>9} {:>7} {:>10} {:>10} {:>12} {:>7.2}  {}",
+            "{:<23} {:<25} {:>9} {:>13} {:>10} {:>10} {:>12} {:>7.2}  {}",
             l.scenario,
             l.metric,
             l.rust_runs,
-            l.go_runs,
+            l.baseline_runs,
             cell(l.rust),
-            cell(l.go),
+            cell(l.baseline),
             rel,
             l.z,
             if l.flagged { "FLAGGED" } else { "" },
