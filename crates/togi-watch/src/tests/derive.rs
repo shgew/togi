@@ -91,6 +91,38 @@ fn a_cycle_trial_finds_its_part_in_the_plan() {
 }
 
 #[test]
+fn the_now_count_credits_each_quota_not_every_pass() {
+    let mut steps = vec![step(Regime::R2, false)];
+    steps[0].parts[0].running = true;
+    steps[0].parts[0].short = 3;
+    steps[0].parts[0].long = 1;
+    steps[0].parts[0].passed = 3;
+    let mut cycle = plan(steps, 0);
+    let mut running = placed(&[0], 1, None);
+    place_in_cycle(&cycle, &mut running);
+    assert_eq!(
+        running.count,
+        Count {
+            passed: 3,
+            index: 4,
+            of: 4
+        },
+        "three credited short passes while the long trial runs"
+    );
+    cycle.steps[0].parts[0].passed = 4;
+    let mut done = placed(&[0], 1, None);
+    place_in_cycle(&cycle, &mut done);
+    assert_eq!(
+        done.count,
+        Count {
+            passed: 4,
+            index: 4,
+            of: 4
+        }
+    );
+}
+
+#[test]
 fn a_hunt_trial_takes_its_part_and_probe_from_the_plan() {
     let member = |core: u8| Member {
         core: self::core(core),
