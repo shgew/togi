@@ -104,7 +104,7 @@ fn a_truncated_header_of_this_build_is_refused_in_the_same_words() {
     for newline in [false, true] {
         for (command, args) in COMMANDS {
             let dir = tempfile::tempdir().unwrap();
-            fixture::keep_only_a_truncated_rust_header(dir.path(), newline);
+            fixture::keep_only_a_truncated_journal_header(dir.path(), newline);
             let before = fixture::snapshot(dir.path());
             let ran = togi(dir.path(), args);
             let stderr = text(&ran.stderr);

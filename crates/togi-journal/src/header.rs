@@ -1,5 +1,6 @@
-//! The first line of a journal a Rust build wrote, told apart from another build's journal before any event is
-//! decoded. Every reader classifies the first line here: [`crate::recorded_build`] and the event reader alike.
+//! The first line of a journal this build wrote, its header, told apart from another build's journal before any
+//! event is decoded. Every reader classifies the first line here: [`crate::recorded_build`] and the event reader
+//! alike.
 
 use serde::Deserialize;
 use togi_machine::serde_object::{self, Object};
@@ -35,7 +36,7 @@ struct HeaderBuild {
     evidence: u32,
 }
 
-/// The build stamp of `line` when it is a Rust journal header: a `session.start` object whose `data` holds a
+/// The build stamp of `line` when it is a journal header: a `session.start` object whose `data` holds a
 /// session and a build stamp. Fields the header does not need are ignored, so a newer build's additions keep its
 /// journal recognisable and leave the stamp's verdict, and the strict decode after it, to refuse it. `None` for
 /// any other line: malformed JSON, another kind, or a header without `data`, `session` or `build`.

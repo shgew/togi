@@ -286,8 +286,11 @@ fn sanity_exits_1_when_a_metric_is_flagged() {
             value.to_string() + "\n"
         })
         .collect();
-    fs::write(bench.path("rust-censored.jsonl"), censored).unwrap();
-    let output = sanity(&bench.path("rust-censored.jsonl"), &bench.path("out.jsonl"));
+    fs::write(bench.path("current-censored.jsonl"), censored).unwrap();
+    let output = sanity(
+        &bench.path("current-censored.jsonl"),
+        &bench.path("out.jsonl"),
+    );
     assert_eq!(output.status.code(), Some(1));
     assert!(text(&output.stdout).contains("FLAGGED"));
 }

@@ -118,7 +118,7 @@ pub(crate) fn assert_refusal(command: &str, stderr: &str, state: &Path) {
     );
 }
 
-/// Appends to the installed journal a line a Rust build would refuse for another reason, to show it is never read.
+/// Appends to the installed journal a line this build would refuse for another reason, to show it is never read.
 pub(crate) fn append_unreadable_line(state: &Path) {
     use std::io::Write as _;
     let mut journal = fs::OpenOptions::new()
@@ -143,7 +143,7 @@ pub(crate) fn keep_only_the_unterminated_first_line(state: &Path) {
 /// Replaces the installed journal with the first half of the first line of a journal this build wrote, as a crash
 /// during the very first write leaves it, with the final newline when `newline` and without it otherwise. The
 /// installed journal is made in a scratch directory, so the state directory gains no lock or state file.
-pub(crate) fn keep_only_a_truncated_rust_header(state: &Path, newline: bool) {
+pub(crate) fn keep_only_a_truncated_journal_header(state: &Path, newline: bool) {
     let scratch = tempfile::tempdir().unwrap();
     togi_watchtest::install(scratch.path(), togi_watchtest::Scenario::Search).unwrap();
     let text = fs::read_to_string(scratch.path().join("events.jsonl")).unwrap();

@@ -65,7 +65,7 @@
           rustLinker = lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
             CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS = "-C link-arg=-fuse-ld=mold";
           };
-          rustArgs = {
+          cargoArgs = {
             pname = "togi-workspace";
             version = "0.0.0";
             src = lib.fileset.toSource {
@@ -78,28 +78,28 @@
             nativeBuildInputs = lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.mold ];
           }
           // rustLinker;
-          rustDeps = craneLib.buildDepsOnly rustArgs;
-          rustCheck = args: rustArgs // args // { cargoArtifacts = rustDeps; };
-          rustNoDeps =
+          cargoDeps = craneLib.buildDepsOnly cargoArgs;
+          cargoCheck = args: cargoArgs // args // { cargoArtifacts = cargoDeps; };
+          cargoNoDeps =
             args:
-            rustArgs
+            cargoArgs
             // args
             // {
               cargoArtifacts = null;
               doInstallCargoArtifacts = false;
-              nativeBuildInputs = rustArgs.nativeBuildInputs ++ args.nativeBuildInputs;
+              nativeBuildInputs = cargoArgs.nativeBuildInputs ++ args.nativeBuildInputs;
             };
           simSuite = lib.importJSON ./nix/sim-suite.json;
-          rustRelease = rustArgs // {
+          releaseArgs = cargoArgs // {
             CARGO_PROFILE = "release";
             CARGO_PROFILE_RELEASE_LTO = "false";
           };
-          simRelease = rustRelease // {
+          simRelease = releaseArgs // {
             pname = "togi-tool-sim";
             cargoExtraArgs = "--locked -p togi-tool-sim";
           };
-          rustReleaseDeps = craneLib.buildDepsOnly (
-            rustRelease
+          releaseDeps = craneLib.buildDepsOnly (
+            releaseArgs
             // {
               pname = "togi-release";
               cargoExtraArgs = "--locked -p togi -p togi-tool-sim";
@@ -108,7 +108,7 @@
           togiToolSim = craneLib.buildPackage (
             simRelease
             // {
-              cargoArtifacts = rustReleaseDeps;
+              cargoArtifacts = releaseDeps;
               doCheck = false;
             }
           );
@@ -184,15 +184,15 @@
           togiPackage =
             rev:
             craneLib.buildPackage (
-              rustRelease
+              releaseArgs
               // {
                 pname = "togi";
                 inherit version meta;
                 cargoExtraArgs = "--locked -p togi";
-                cargoArtifacts = rustReleaseDeps;
+                cargoArtifacts = releaseDeps;
                 doCheck = false;
                 TOGI_REV = rev;
-                nativeBuildInputs = rustArgs.nativeBuildInputs ++ [ pkgs.installShellFiles ];
+                nativeBuildInputs = cargoArgs.nativeBuildInputs ++ [ pkgs.installShellFiles ];
                 postInstall = installCompletions;
               }
             );
@@ -229,7 +229,7 @@
 
           checks = {
             go-tools = goTools;
-            clippy = craneLib.mkCargoDerivation (rustCheck {
+            clippy = craneLib.mkCargoDerivation (cargoCheck {
               pnameSuffix = "-clippy";
               buildPhaseCargoCommand = ''
                 cargoWithProfile clippy --locked --all-targets -- --deny warnings
@@ -237,7 +237,7 @@
                 cargoWithProfile clippy --locked --all-targets --target aarch64-apple-darwin -- --deny warnings
               '';
             });
-            nextest = craneLib.cargoNextest (rustCheck {
+            nextest = craneLib.cargoNextest (cargoCheck {
               cargoNextestExtraArgs = "--profile ci";
               nativeCheckInputs = [
                 pkgs.gitMinimal
@@ -245,9 +245,9 @@
                 pkgs.nushell
               ];
             });
-            doc = craneLib.cargoDocTest (rustCheck { });
-            cargo-fmt = craneLib.cargoFmt rustArgs;
-            deny = craneLib.mkCargoDerivation (rustNoDeps {
+            doc = craneLib.cargoDocTest (cargoCheck { });
+            cargo-fmt = craneLib.cargoFmt cargoArgs;
+            deny = craneLib.mkCargoDerivation (cargoNoDeps {
               pnameSuffix = "-deny";
               nativeBuildInputs = [
                 pkgs.cargo-deny
@@ -260,7 +260,7 @@
                 cargo deny --offline --locked check bans licenses sources advisories
               '';
             });
-            shear = craneLib.mkCargoDerivation (rustNoDeps {
+            shear = craneLib.mkCargoDerivation (cargoNoDeps {
               pnameSuffix = "-shear";
               nativeBuildInputs = [ pkgs.cargo-shear ];
               buildPhaseCargoCommand = "cargo shear";
@@ -349,10 +349,10 @@
               };
             in
             {
-              trial-scope-tests = craneLib.mkCargoDerivation (rustCheck {
+              trial-scope-tests = craneLib.mkCargoDerivation (cargoCheck {
                 pnameSuffix = "-trial-scope-tests";
                 doInstallCargoArtifacts = false;
-                nativeBuildInputs = rustArgs.nativeBuildInputs ++ [ pkgs.jq ];
+                nativeBuildInputs = cargoArgs.nativeBuildInputs ++ [ pkgs.jq ];
                 buildPhaseCargoCommand = ''
                   cargoWithProfile test --locked -p togi-trial --features hardware --test hardware --test cached_errors \
                     --no-run --message-format json-render-diagnostics > cargo-messages.json

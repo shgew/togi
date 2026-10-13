@@ -89,7 +89,7 @@ struct RunArgs {
 
 #[derive(Debug, Args)]
 struct SanityArgs {
-    /// The records of the Rust bench run, as `--out` wrote them.
+    /// The current records of a bench run, as `--out` wrote them.
     #[arg(long, value_name = "FILE")]
     records: PathBuf,
     /// The recorded baseline scores.
@@ -199,12 +199,12 @@ fn bench(args: RunArgs) -> ExitCode {
 
 fn sanity_check(args: &SanityArgs) -> ExitCode {
     let compared = togi_tool_bench::read_records(&args.records, "records")
-        .and_then(|rust| Ok((rust, sanity::read_baseline(&args.baseline)?)));
-    let (rust, baseline) = match compared {
+        .and_then(|current| Ok((current, sanity::read_baseline(&args.baseline)?)));
+    let (current, baseline) = match compared {
         Ok(pair) => pair,
         Err(error) => return fail(&error),
     };
-    let lines = sanity::compare(&rust, &baseline);
+    let lines = sanity::compare(&current, &baseline);
     if lines.is_empty() {
         return fail(&"no run is in both the records and the baseline scores");
     }

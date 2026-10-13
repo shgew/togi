@@ -32,7 +32,7 @@ pub enum SourceError {
     /// The journal was written by a build whose schema this one cannot show.
     #[error(transparent)]
     Incompatible(#[from] Refusal),
-    /// The journal is another build's: its first line is not a Rust journal header, and nothing after it is read.
+    /// The journal is another build's: its first line is not a journal header, and nothing after it is read.
     #[error(transparent)]
     Foreign(DirError),
     /// The journal decodes, but its events do not fold into a session.

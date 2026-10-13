@@ -123,7 +123,7 @@ fn an_unreadable_journal_exits_one_naming_the_tool_and_the_file() {
 fn a_journal_whose_events_skip_a_number_is_refused() {
     let dir = tempdir().unwrap();
     let events = hunting_session();
-    // The Rust header, then an event that skips seq 2.
+    // The journal header, then an event that skips seq 2.
     let mut kept = vec![events[0].clone()];
     kept.extend_from_slice(&events[2..]);
     write_journal(dir.path(), &kept);
@@ -135,7 +135,7 @@ fn a_journal_whose_events_skip_a_number_is_refused() {
 }
 
 #[test]
-fn a_journal_whose_first_line_is_not_a_rust_header_is_refused() {
+fn a_journal_whose_first_line_is_not_a_journal_header_is_refused() {
     let dir = tempdir().unwrap();
     let events = hunting_session();
     write_journal(dir.path(), &events[1..]);

@@ -1,5 +1,5 @@
 //! `togi-tool-stats`: the development program that summarizes a current or archived journal for review
-//! (`docs/reviewing.md`), or scores a real run against a forecast the Rust `bench --forecast` wrote.
+//! (`docs/reviewing.md`), or scores a real run against a forecast the `bench --forecast` wrote.
 //!
 //! [`Journal::read`] reads a journal whole without taking its lock; [`report`] renders it as plain text
 //! tables, sorted and deterministic for a fixed journal. [`score`] reads a state directory's journals from a

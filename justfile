@@ -36,7 +36,7 @@ hardware *args:
 fuzz seconds="60": _dev-shell
     cd crates/togi-journal && mkdir -p fuzz/corpus/reader && cargo fuzz run -s none reader fuzz/corpus/reader fuzz/seeds/reader -- -max_total_time="$1"
 
-# Print changed Rust lines no test reached since a base, and the changed files the run does not build (`just cover origin/main`)
+# Print changed lines no test reached since a base, and the changed files the run does not build (`just cover origin/main`)
 [group('test')]
 cover base: _dev-shell
     #!/usr/bin/env bash
