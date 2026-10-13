@@ -11,7 +11,8 @@ use std::time::Duration;
 
 use jiff::Timestamp;
 use togi_journal::{
-    Activity, DeadEndCondition, Event, Member, Seq, ShutdownReason, State as JournalState, TrialId,
+    Activity, DeadEndCondition, Event, Member, Payload, Seq, ShutdownReason, State as JournalState,
+    TrialId,
 };
 use togi_machine::{
     CcdId, Condition, CoreId, CoreSet, ObservedOffset, PerCore, Regime, ResetKind, Signal,
@@ -486,6 +487,48 @@ pub struct Snapshot<'a> {
     pub carried: &'a BTreeSet<Seq>,
     /// What the lenient read of the journal skipped or ignored, in one line; shown whatever else is on screen.
     pub skipped: Option<&'a str>,
+    /// While the session rests between trials: what the trial that just ended led to, as it stood before its
+    /// end. The outcome lines keep showing it until the next trial's intent is recorded.
+    pub ended: Option<EndedTrial<'a>>,
+}
+
+/// The trial that just ended, with the forecast and plans the frame showed while it ran.
+#[derive(Debug, Clone, Copy)]
+pub struct EndedTrial<'a> {
+    /// The trial, before its end.
+    pub trial: &'a TrialView,
+    /// What each outcome of that trial led to.
+    pub forecast: &'a Forecast,
+    /// The checking cycle as it stood then.
+    pub cycle: Option<CycleView<'a>>,
+    /// The running hunt as it stood then.
+    pub hunt: Option<HuntView<'a>>,
+}
+
+fn cycle_view(derived: &Derived) -> Option<CycleView<'_>> {
+    let plan = &derived.projection.cycle_plan;
+    (plan.number.is_some() || !plan.steps.is_empty()).then(|| CycleView {
+        plan,
+        step_hunts: &derived.step_hunts,
+        resume: match &derived.forecast.between {
+            Some(between) => between.resume,
+            None => derived
+                .forecast
+                .branches
+                .iter()
+                .find(|branch| branch.premise == togi_tuner::Premise::Pass)
+                .and_then(|branch| branch.resume),
+        },
+    })
+}
+
+fn hunt_view(derived: &Derived) -> Option<HuntView<'_>> {
+    derived
+        .projection
+        .hunt_plan
+        .as_ref()
+        .zip(derived.hunt.as_ref())
+        .map(|(plan, facts)| HuntView { plan, facts })
 }
 
 /// A started idle trial: nothing on the screen may change with the clock until its end is recorded, so drawing
@@ -531,6 +574,17 @@ impl<'a> Snapshot<'a> {
                 || self.recover.is_some()
                 || self.crashed_trial()
                 || self.trial.is_none())
+    }
+
+    /// Whether the session is live with no trial in flight: one ended, or none has run yet, and nothing has
+    /// stopped it, ended it or crashed since. Every panel keeps its place then, as while a trial runs or is
+    /// prepared.
+    pub fn between_trials(&self) -> bool {
+        self.session.is_some()
+            && self.trial.is_none()
+            && self.dead_end.is_none()
+            && self.stopped.is_none()
+            && self.recover.is_none()
     }
 
     /// Whether the journal's tail is a trial whose boot a later boot has outlived: the trial crashed, and the next
@@ -580,6 +634,7 @@ pub struct Model {
     problem: Option<FoldError>,
     skipped: Option<String>,
     derived: OnceCell<Derived>,
+    ended: Option<Derived>,
 }
 
 impl Model {
@@ -597,10 +652,24 @@ impl Model {
     /// Folds the next event of the journal. A refusal turns the model into a problem state: the facts folded so
     /// far are dropped rather than shown half applied, and every later fold fails with the same error.
     pub fn fold(&mut self, event: &Event) -> Result<(), FoldError> {
+        self.fold_ending(event, true)
+    }
+
+    /// [`Model::fold`], where `keep_outcomes` says whether a trial end folded now keeps what the trial in flight
+    /// led to, for the frame between trials to show. A replay keeps it only for the last trial end it folds,
+    /// since a later end or any stop replaces it, so it computes one projection instead of one per trial.
+    pub fn fold_ending(&mut self, event: &Event, keep_outcomes: bool) -> Result<(), FoldError> {
         if let Some(problem) = &self.problem {
             return Err(problem.clone());
         }
-        self.derived = OnceCell::new();
+        let before = self.derived.take();
+        if matches!(event.payload, Payload::SessionStart(_)) {
+            self.ended = None;
+        } else if matches!(event.payload, Payload::TrialEnd(_)) {
+            self.ended = (keep_outcomes && self.journal.session.is_some()).then(|| {
+                before.unwrap_or_else(|| Derived::new(&self.journal, &self.tuner, &self.facts))
+            });
+        }
         let folded = self
             .journal
             .apply(event)
@@ -637,9 +706,8 @@ impl Model {
         let live = self.problem.is_none() && self.journal.session.is_some();
         let facts = &self.facts;
         let projection = &derived.projection;
-        let plan = &projection.cycle_plan;
         let log = &facts.log[facts.log.len().saturating_sub(LOG_LIMIT)..];
-        Snapshot {
+        let mut snapshot = Snapshot {
             session: facts.session.as_ref().filter(|_| live),
             failures: facts.failures,
             crashes: facts.crashes,
@@ -651,24 +719,8 @@ impl Model {
             trial: derived.trial.as_ref(),
             last: facts.last.as_ref(),
             forecast: &derived.forecast,
-            cycle: (plan.number.is_some() || !plan.steps.is_empty()).then(|| CycleView {
-                plan,
-                step_hunts: &derived.step_hunts,
-                resume: match &derived.forecast.between {
-                    Some(between) => between.resume,
-                    None => derived
-                        .forecast
-                        .branches
-                        .iter()
-                        .find(|branch| branch.premise == togi_tuner::Premise::Pass)
-                        .and_then(|branch| branch.resume),
-                },
-            }),
-            hunt: projection
-                .hunt_plan
-                .as_ref()
-                .zip(derived.hunt.as_ref())
-                .map(|(plan, facts)| HuntView { plan, facts }),
+            cycle: cycle_view(derived),
+            hunt: hunt_view(derived),
             turns: &projection.search_turns,
             phases: projection.phase_plan.as_ref(),
             deepening: projection.deepening.as_ref(),
@@ -690,16 +742,32 @@ impl Model {
             shapes: &facts.shapes,
             carried: &facts.carried,
             skipped: self.skipped.as_deref(),
-        }
+            ended: None,
+        };
+        snapshot.ended = self.ended.as_ref().and_then(|ended| {
+            let trial = ended.trial.as_ref()?;
+            (snapshot.between_trials() && snapshot.last.is_some_and(|last| last.id == trial.id))
+                .then(|| EndedTrial {
+                    trial,
+                    forecast: &ended.forecast,
+                    cycle: cycle_view(ended),
+                    hunt: hunt_view(ended),
+                })
+        });
+        snapshot
     }
 }
 
 /// Folds events into a new model, stopping at the first one the model refuses. The model is then in its problem
 /// state, like one that was folded event by event.
 pub fn project<'a>(events: impl IntoIterator<Item = &'a Event>) -> Model {
+    let events: Vec<&Event> = events.into_iter().collect();
+    let last_end = events
+        .iter()
+        .rposition(|event| matches!(event.payload, Payload::TrialEnd(_)));
     let mut model = Model::new();
-    for event in events {
-        if model.fold(event).is_err() {
+    for (at, event) in events.into_iter().enumerate() {
+        if model.fold_ending(event, last_end == Some(at)).is_err() {
             break;
         }
     }

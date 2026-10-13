@@ -6,6 +6,7 @@ mod bands;
 mod bounds;
 mod escapes;
 mod holds;
+mod live_panels;
 mod local_time;
 mod panels;
 mod without_journal;

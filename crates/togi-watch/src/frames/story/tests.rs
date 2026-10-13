@@ -3024,7 +3024,7 @@ mod the_simulated_sessions {
         );
         assert!(band.lines.iter().all(|line| !line.contains("left")));
         assert_eq!(last_lines(&scene).len(), 1);
-        assert!(outcome_lines(&scene, 100, false).is_empty());
+        assert!(!outcome_lines(&scene, 100, false).is_empty());
     }
 
     #[test]
