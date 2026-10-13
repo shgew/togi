@@ -103,6 +103,31 @@ undocumented_unsafe_blocks = "deny"
 opt-level = 1
 debug = "line-tables-only"
 
+# Keep the expensive simulator, session and render loops optimized; these measured leaf crates and tools
+# need less code-generation work at 0 without a material test-time increase.
+# New crates stay at 1 until their compile and test costs are measured (docs/rust-migration.md, #932).
+[profile.dev.package]
+togi = { opt-level = 0 }
+togi-backend = { opt-level = 0 }
+togi-command = { opt-level = 0 }
+togi-detect = { opt-level = 0 }
+togi-hardware = { opt-level = 0 }
+togi-hostlock = { opt-level = 0 }
+togi-mprime = { opt-level = 0 }
+togi-smu = { opt-level = 0 }
+togi-tool-audit = { opt-level = 0 }
+togi-tool-bench = { opt-level = 0 }
+togi-tool-facts = { opt-level = 0 }
+togi-tool-fit = { opt-level = 0 }
+togi-tool-forecast = { opt-level = 0 }
+togi-tool-modelcheck = { opt-level = 0 }
+togi-tool-replay = { opt-level = 0 }
+togi-tool-sim = { opt-level = 0 }
+togi-tool-stats = { opt-level = 0 }
+togi-tool-trialfacts = { opt-level = 0 }
+togi-trial = { opt-level = 0 }
+togi-ycruncher = { opt-level = 0 }
+
 [profile.release]
 lto = "thin"
 panic = "unwind"
