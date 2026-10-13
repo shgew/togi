@@ -1,23 +1,14 @@
 ---
 name: Bug
-about: Something togi does wrong.
+about: Something togi does wrong. A sentence or two is enough.
 labels: ["bugfix", "needs-triage"]
 ---
 
-<!-- Maintainers: during triage, add a `Touches:` line naming the packages or files the fix edits (see docs/issues.md). -->
-
-## What happened
-
-## Expected
-
-## Version
-
-<!-- If available, share the output of `togi --version` (optional). -->
-
-## Environment
-
-<!-- Kernel (`uname -r`), CPU model, board with BIOS and AGESA version, and ryzen_smu version. Share what you know; these details are optional. -->
-
-## Journal
-
-<!-- If available, share an excerpt from `togi events` around the problem (optional), with the full journal on request. -->
+<!--
+Say what went wrong in a sentence or two. Everything else is optional; add it if you have it:
+- what you expected instead;
+- `togi --version`;
+- an excerpt of `togi events` around the problem;
+- a photo or screenshot of the screen.
+Triage adds the priority and the `Touches:` line.
+-->
