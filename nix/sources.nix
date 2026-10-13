@@ -1,5 +1,5 @@
-# Narrowed Cargo sources: what a derivation compiles and reads, nothing else, so an edit elsewhere in the workspace
-# leaves its derivation hash alone.
+# Cargo source groups exclude unrelated workspace members and fixture files, so edits outside a build's
+# dependency closure leave its derivation hash alone.
 #
 # A source keeps the workspace manifests and `Cargo.lock`, so Cargo resolves the workspace and `--locked` holds, and
 # the files of the members the derivation builds. Cargo still insists that every member has its target files, so
