@@ -264,3 +264,72 @@ fn kinds_of_journal(journal: &togi_journal::Journal) -> Vec<&'static str> {
         .map(|event| event.kind().as_str())
         .collect()
 }
+
+fn rebuilt_after_tampering(tamper: impl FnOnce(&mut serde_json::Value)) -> Vec<String> {
+    let bench = Bench::new(2);
+    let mut session = swept(&bench);
+    session.begin().unwrap();
+    assert!(session.appender.publish_state().unwrap());
+    drop(session);
+    let mut state: serde_json::Value =
+        serde_json::from_slice(&bench.mem.contents("/state/state.json").unwrap()).unwrap();
+    tamper(&mut state);
+    bench
+        .mem
+        .put("/state/state.json", serde_json::to_vec(&state).unwrap());
+    let mut resumed = bench.open();
+    resumed.rebuild_state().unwrap();
+    let Payload::StateRebuilt(rebuilt) =
+        &resumed.appender.journal().events().last().unwrap().payload
+    else {
+        panic!("no state.rebuilt was appended");
+    };
+    rebuilt.fields.clone()
+}
+
+#[test]
+fn every_differing_facts_key_is_named_in_journal_order() {
+    let fields = rebuilt_after_tampering(|state| {
+        state["facts"]["cores"] = serde_json::json!([]);
+        state["facts"]["last_seq"] = serde_json::json!(1);
+    });
+    assert_eq!(fields, ["cores", "last_seq"]);
+}
+
+#[test]
+fn a_disagreeing_tuner_projection_is_named_apart_from_facts() {
+    let fields = rebuilt_after_tampering(|state| {
+        state["tuner"]["clean_cycles"] = serde_json::json!(7);
+        state["facts"]["last_seq"] = serde_json::json!(1);
+    });
+    assert_eq!(fields, ["last_seq", "tuner"]);
+}
+
+#[test]
+fn a_snapshot_one_event_behind_is_rebuilt_naming_last_seq() {
+    let bench = Bench::new(2);
+    let mut session = swept(&bench);
+    session.begin().unwrap();
+    assert!(session.appender.publish_state().unwrap());
+    session
+        .appender
+        .append(
+            Payload::SessionWarning(SessionWarning {
+                operation: "x".into(),
+                trial: None,
+                error: "e".into(),
+            }),
+            &[],
+        )
+        .unwrap();
+    drop(session);
+    let mut resumed = bench.open();
+    resumed.rebuild_state().unwrap();
+    let rebuilt = resumed.appender.journal().events().last().unwrap();
+    assert_eq!(
+        rebuilt.payload,
+        Payload::StateRebuilt(StateRebuilt {
+            fields: vec!["last_seq".into()],
+        })
+    );
+}

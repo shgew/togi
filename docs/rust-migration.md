@@ -1758,6 +1758,12 @@ The supporting pull requests, counted apart (#860, #871, #882): 3 records, 5 rev
 - **Measured.** Historically, before `togi run` was on `main`, a scratch pass ran on the development host (32 threads, other jobs running) on `rust-cutover` merged with the unmerged `rust-togi-run` branch: the `vm` test script took 58 s and `vm-trial-scope-rs` 16 s. That was a scratch measurement and is not the current evidence. An earlier real head, `4fc0b438` with [#880](https://github.com/shgew/togi/issues/880) merged, passed all 21 Linux checks of `just check` (tuning script 75.68 s, trial-scope 22.54 s). The real integrated head is `cfc5befa721286d44d9a11c5932a7f4dda55ddd3`, on `main` at `e5838ba0` with #880, [#899](https://github.com/shgew/togi/issues/899) (#877) and [#901](https://github.com/shgew/togi/issues/901) (#886) merged: `just check` passed all 21 Linux checks, both VMs rebuilt; the tuning-boot test script finished in 57.75 s and the Rust trial-scope test script in 15.46 s, and the module and restart-limit checks reused successful outputs. `just gate` passed 4,890 nextest tests with 0 skipped in 21.194 s. `just check` and `just gate` together took 200.50 s of wall time; that figure is for both and not for `just check` alone.
 - **Not measured.** Anything on a Mac, a boot on real hardware, and the owner's state-directory move at the cutover.
 
+## Stage 8: release-note correction (#894, 2026-10-13)
+
+The owner authorized the patch release after [#914](https://github.com/shgew/togi/pull/914), with one correction to the cutover fragment: the `state.rebuilt` defect was caught before the first Rust release, so it is not a fix to a released version. The fragment keeps the Rust cutover and fresh-session entry, and omits that unreleased fix.
+
+No production code or tests change. Compile/test timings and agent cost were not measured for this documentation correction; its pull request and independent review record carry the check outcomes.
+
 ## Stage 9: dependency updates restored (#919, #921, 2026-10-13)
 
 Weekly Dependabot updates now cover Cargo dependencies, the Rust toolchain pin, Nix flake inputs and GitHub Actions; the dependency-update pause ends in this pull request. Minor and patch updates are grouped where the ecosystem classifies versions, with a 7-day cooldown.
