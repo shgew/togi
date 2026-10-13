@@ -429,6 +429,28 @@ fn cycle_plan_partial_evidence_windows() {
 }
 
 #[test]
+fn cycle_plan_credits_each_quota_only_up_to_its_count() {
+    let mut j = chain_journal();
+    pass_part(&mut j, &[0, 1, 2, 3], &[]);
+    decide_next(&mut j);
+    let plan = j.next_trial();
+    for _ in 0..5 {
+        j.trial(&plan, Outcome::Pass);
+    }
+    let long = cycle_plan_of(&j, 1, &[1, 2, 3], 300);
+    let (intent, trial) = j.intent(&long);
+    let got = parts(&j, 0)[1].clone();
+    assert!(
+        got.short == 3 && got.long == 1 && got.passed == 3 && !got.done && got.running,
+        "five short passes credit three: {got:?}"
+    );
+    j.end(intent, &trial, Outcome::Pass);
+    let got = parts(&j, 0)[1].clone();
+    assert!(got.passed == 4 && got.done, "{got:?}");
+    cycle_plan_resumes(&j);
+}
+
+#[test]
 fn cycle_plan_one_ccd_merges_coincident_durations() {
     let mut j = journal(
         one_ccd(),

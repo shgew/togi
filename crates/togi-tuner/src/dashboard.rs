@@ -22,6 +22,8 @@ pub struct CyclePart {
     pub short_s: u32,
     pub long: u32,
     pub long_s: u32,
+    /// Credited passes: each quota's valid passes clipped to that quota's count, so surplus
+    /// evidence in one class never fills another. Raw evidence stays in the evidence counts.
     pub passed: u32,
     pub failed: u32,
     pub done: bool,
@@ -278,7 +280,7 @@ impl Run {
                             } else {
                                 cycle.have(quota.class)
                             };
-                            view.passed += passed;
+                            view.passed += passed.min(quota.count);
                             view.failed += checking.map_or(0, |profile| {
                                 self.evidence
                                     .live_failures(quota.class, &profile, Some(cycle.start))

@@ -197,6 +197,8 @@ pub(crate) fn place_in_cycle(plan: &CyclePlan, trial: &mut TrialView) {
     if plan.number.map(std::num::NonZeroU32::get) != Some(place.cycle) {
         return;
     }
+    // `part.passed` is credited per quota (see `CyclePart::passed`), so N never exceeds M and
+    // surplus short passes never stand in for the long trial.
     let put = |trial: &mut TrialView, step: usize, index: usize| {
         let parts = &plan.steps[step].parts;
         let part = &parts[index];
