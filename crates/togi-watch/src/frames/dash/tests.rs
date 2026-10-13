@@ -625,16 +625,43 @@ fn a_gauge_shows_the_depth_a_combination_holds() {
     };
     assert_eq!(
         gauge_text(&core(-43, -44), -43),
-        format!("{}░█", "▄".repeat(43))
+        format!("{}░▬", "▄".repeat(43))
     );
     assert_eq!(
         gauge_text(&core(-43, -44), 0),
-        format!("{}░█", "·".repeat(43))
+        format!("{}░▬", "·".repeat(43))
     );
     assert_eq!(
         gauge_text(&core(-43, -43), -43),
-        format!("{} █", "▄".repeat(43))
+        format!("{} ▬", "▄".repeat(43))
     );
+}
+
+#[test]
+fn a_failure_point_is_a_half_height_bar_in_both_cell_widths() {
+    let model = Model::new();
+    let zone = TimeZone::UTC;
+    let core = CoreView {
+        fail: Some(off(-8)),
+        ..core_view(0, 0, CoreState::AtLimit)
+    };
+    for (cells, colours) in [
+        (50, Colours::None),
+        (25, Colours::None),
+        (25, Colours::Full),
+    ] {
+        let scene = scene(&model.snapshot(), Timestamp::UNIX_EPOCH, &zone, colours);
+        let line = gauge(&scene, &core, -4, cells);
+        let text = plain(&line);
+        assert_eq!(text.matches('▬').count(), 1, "{cells} cells: {text:?}");
+        assert!(!text.contains('█'), "{cells} cells: {text:?}");
+        let bad = line
+            .spans
+            .iter()
+            .find(|span| span.content.contains('▬'))
+            .map(|span| span.style);
+        assert_eq!(bad, Some(Paint::Bad.style(colours)), "{cells} cells");
+    }
 }
 
 #[test]

@@ -591,7 +591,7 @@ mod tests {
 
     #[test]
     fn the_console_glyph_set_holds_what_the_frames_draw() {
-        for glyph in "►▄░█▀·│─┌┐└┘→↑↓°".chars() {
+        for glyph in "►▄░█▀▬·│─┌┐└┘→↑↓°".chars() {
             assert!(is_console_glyph(glyph), "{glyph:?}");
         }
         for glyph in "✓日…×—“".chars() {

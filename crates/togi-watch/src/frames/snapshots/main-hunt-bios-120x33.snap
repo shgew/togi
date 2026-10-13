@@ -13,14 +13,14 @@ expression: body
 │ 5/5 pass → part 2: 01-15   none named → group 2   core named → rerun at CO 0
 │
 │ CCD 0 one loaded 0  2 counts/cell       -50 fail  back      CCD 1 judged     0  2 counts/cell       -50 fail
-│ ► 00   0 PARKED   ···········█··              -24  -23        08  -5 MEMBER   ▄▄▄█                         -7
-│   01 -15 MEMBER   ▄▄▄▄▄▄▄█·                   -16             09 -33 MEMBER   ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█·          -34
-│   02 -24 MEMBER   ▄▄▄▄▄▄▄▄▄▄▄▄█               -25             10 -13 MEMBER   ▄▄▄▄▄▄█··                   -14
-│   03 -24 MEMBER   ▄▄▄▄▄▄▄▄▄▄▄▄█               -25             11  -7 MEMBER   ▄▄▄█·                        -8
-│   04 -13 MEMBER   ▄▄▄▄▄▄█·                    -14             12 -14 MEMBER   ▄▄▄▄▄▄▄█·                   -15
-│   05  -8 MEMBER   ▄▄▄▄█                        -9             13 -35 MEMBER   ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█·         -36
-│   06 -37 MEMBER   ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█        -39             14 -12 MEMBER   ▄▄▄▄▄▄█·                    -13
-│   07 -29 MEMBER   ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█            -31             15 -13 MEMBER   ▄▄▄▄▄▄▄█                    -15
+│ ► 00   0 PARKED   ···········▬··              -24  -23        08  -5 MEMBER   ▄▄▄▬                         -7
+│   01 -15 MEMBER   ▄▄▄▄▄▄▄▬·                   -16             09 -33 MEMBER   ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬·          -34
+│   02 -24 MEMBER   ▄▄▄▄▄▄▄▄▄▄▄▄▬               -25             10 -13 MEMBER   ▄▄▄▄▄▄▬··                   -14
+│   03 -24 MEMBER   ▄▄▄▄▄▄▄▄▄▄▄▄▬               -25             11  -7 MEMBER   ▄▄▄▬·                        -8
+│   04 -13 MEMBER   ▄▄▄▄▄▄▬·                    -14             12 -14 MEMBER   ▄▄▄▄▄▄▄▬·                   -15
+│   05  -8 MEMBER   ▄▄▄▄▬                        -9             13 -35 MEMBER   ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬·         -36
+│   06 -37 MEMBER   ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬        -39             14 -12 MEMBER   ▄▄▄▄▄▄▬·                    -13
+│   07 -29 MEMBER   ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬            -31             15 -13 MEMBER   ▄▄▄▄▄▄▄▬                    -15
 │
 │ BIOS PROFILE ─────────────────── UNCONFIRMED since #10993   WHAT HAPPENED ─────────────────────────────── l: last 400
 │ slot      0    1    2    3    4    5    6    7

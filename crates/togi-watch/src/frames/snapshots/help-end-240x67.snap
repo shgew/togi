@@ -8,16 +8,16 @@ expression: body
 │
 │    READING THE SCREEN ─────────────────────────────────────────────────────────────    WHAT TOGI DOES ───────────────────────────────────────────────────────────    WORDS ─────────────────────────────────────────────────────────────────
 │
-│    ► 04  -28  AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄░░░░░░░█                -36         SOLO LIMITS   The cores whose solo limit is found, and the core being         SEARCH           finding its solo limit with light and heavy-vector
+│    ► 04  -28  AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄░░░░░░░▬                -36         SOLO LIMITS   The cores whose solo limit is found, and the core being         SEARCH           finding its solo limit with light and heavy-vector
 │                        at its limit: it cannot go deeper                                             searched or confirmed.                                                           trials alone
 │                                                                                                                                                                      CONFIRM          checking its candidate solo limit with repeated light
-│    ► 00  -26  HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·····█                    -32         PHASE 1       The first full cycle, run on the profile the solo limits                         and heavy-vector trials alone
+│    ► 00  -26  HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·····▬                    -32         PHASE 1       The first full cycle, run on the profile the solo limits                         and heavy-vector trials alone
 │                        has room: backed off after a hunt, may deepen                                 give.                                                           FOUND            solo limit checked; waiting at 0
 │                                                                                                                                                                      WAITING          at 0, waiting for its first search turn
-│      09    0  PARKED   ···············································█    -48         HUNT          An amber detour: parked trials that find the core or            MEMBER           kept with its hunt group at its failing offset;
+│      09    0  PARKED   ···············································▬    -48         HUNT          An amber detour: parked trials that find the core or            MEMBER           kept with its hunt group at its failing offset;
 │                        parked at 0 by a hunt; returns to -47                                         combination behind a failure. The hunt panel shows its                           another member may be probed
 │                                                                                                      groups and member probes.                                       offset           Curve Optimizer counts, 0 to -50; deeper is more
-│    ► 00  -26  PROBE    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▀ ▀▀ █                    -32                                                                                                        negative
+│    ► 00  -26  PROBE    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▀ ▀▀ ▬                    -32                                                                                                        negative
 │                        probe: the group failed with core 00 at -30, -29, -27           PHASE 2       Deepening: its rounds and its confirmation cycle. A round       trial            one launch of one workload on its target
 │                                                                                                      lists its candidates and their gaps.                            solo limit       the deepest offset a core confirmed under load alone
 │    ►         the core carries load in this trial                                                                                                                     failure point    the shallowest offset where a core failed on its own
@@ -26,7 +26,7 @@ expression: body
 │    grey ▄▄▄  the same depth, grey when the core is not judged                                                                                                        at its limit     a core that cannot go deeper
 │    ···       depth it reached but does not use now: given back, parked, waiting        CYCLE         Checking: every core at its offset together, through the        has room         a core that can still go deeper
 │    ░░░       depth a combination blocks now                                                          steps of a cycle. The stage shows the cycle's number and        suspect          a core a hunt keeps at its failing offset
-│    █         its failure point: this core failed there on its own account                            step; the cycle panel lists its steps and R7 parts.             parked           a core a hunt holds shallower than its failing offset
+│    ▬         its failure point: this core failed there on its own account                            step; the cycle panel lists its steps and R7 parts.             parked           a core a hunt holds shallower than its failing offset
 │    ▀         a group trial failed with this core at that offset                                                                                                      partial part     an R7 part with the top requesters idle
 │    cyan      running now                                                               CLEAN CYCLES  The count of clean cycles for the current profile.              top requester    the loaded core with the highest voltage request,
 │    amber     a hunt, and what it paused                                                                                                                                               setting the shared core voltage; marked top on the CCD

@@ -7,16 +7,16 @@ expression: body
 
  █ READING THE SCREEN ────────────────────────────────────────────────────────
  █
- │ ► 04  -28  AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄░░░░░░░█                -36
+ │ ► 04  -28  AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄░░░░░░░▬                -36
  │                     at its limit: it cannot go deeper
  │
- │ ► 00  -26  HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·····█                    -32
+ │ ► 00  -26  HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·····▬                    -32
  │                     has room: backed off after a hunt, may deepen
  │
- │   09    0  PARKED   ···············································█    -48
+ │   09    0  PARKED   ···············································▬    -48
  │                     parked at 0 by a hunt; returns to -47
  │
- │ ► 00  -26  PROBE    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▀ ▀▀ █                    -32
+ │ ► 00  -26  PROBE    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▀ ▀▀ ▬                    -32
  │                     probe: the group failed with core 00 at -30, -29, -27
  │
  │ ►         the core carries load in this trial

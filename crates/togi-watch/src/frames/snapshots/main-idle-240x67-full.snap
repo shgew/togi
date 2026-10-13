@@ -37,21 +37,21 @@ legend: t=Text g=Grey w=White c=Running a=Hunt p=Good f=Bad m=Combination k=Trac
 │
 │  CCD 0               0       -10       -20       -30       -40       -50 fail pt  all under load                         CCD 1               0       -10       -20       -30       -40       -50 fail pt  all under load
 ~  wwwww               g       ggg       ggg       ggg       ggg       ggg ggggggg  gggggggggggggg                         wwwww               g       ggg       ggg       ggg       ggg       ggg ggggggg  gggggggggggggg
-│  ► 00  -25  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█·                           -26                                          ► 08   -5  HAS ROOM  ▄▄▄▄▄·█                                                -7
+│  ► 00  -25  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬·                           -26                                          ► 08   -5  HAS ROOM  ▄▄▄▄▄·▬                                                -7
 ~  c ww  www  tttttttt  wwwwwwwwwwwwwwwwwwwwwwwwwfg                         ttttt                                          c ww  www  tttttttt  wwwwwgf                                             ttttt
-│  ► 01  -15  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█·                                     -16                                          ► 09  -34  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·█                  -36
+│  ► 01  -15  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬·                                     -16                                          ► 09  -34  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▬                  -36
 ~  c ww  www  tttttttt  wwwwwwwwwwwwwwwfg                                   ttttt                                          c ww  www  tttttttt  wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwgf                ttttt
-│  ► 02  -25  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·█                           -27                                          ► 10  -15  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█··                                    -16
+│  ► 02  -25  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▬                           -27                                          ► 10  -15  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬··                                    -16
 ~  c ww  www  tttttttt  wwwwwwwwwwwwwwwwwwwwwwwwwgf                         ttttt                                          c ww  www  tttttttt  wwwwwwwwwwwwwwwfgg                                  ttttt
-│  ► 03  -24  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·█                            -26                                          ► 11   -7  AT LIMIT  ▄▄▄▄▄▄▄█··                                             -8
+│  ► 03  -24  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▬                            -26                                          ► 11   -7  AT LIMIT  ▄▄▄▄▄▄▄▬··                                             -8
 ~  c ww  www  tttttttt  wwwwwwwwwwwwwwwwwwwwwwwwgf                          ttttt                                          c ww  www  tttttttt  wwwwwwwfgg                                          ttttt
-│  ► 04  -15  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·█                                     -17                                          ► 12  -14  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄█··                                     -15
+│  ► 04  -15  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▬                                     -17                                          ► 12  -14  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬··                                     -15
 ~  c ww  www  tttttttt  wwwwwwwwwwwwwwwgf                                   ttttt                                          c ww  www  tttttttt  wwwwwwwwwwwwwwfgg                                   ttttt
-│  ► 05   -8  AT LIMIT  ▄▄▄▄▄▄▄▄█·                                             -9                                          ► 13  -37  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·█               -39
+│  ► 05   -8  AT LIMIT  ▄▄▄▄▄▄▄▄▬·                                             -9                                          ► 13  -37  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▬               -39
 ~  c ww  www  tttttttt  wwwwwwwwfg                                          ttttt                                          c ww  www  tttttttt  wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwgf             ttttt
-│  ► 06  -37  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·█               -39                                          ► 14  -15  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·█                                     -17
+│  ► 06  -37  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▬               -39                                          ► 14  -15  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▬                                     -17
 ~  c ww  www  tttttttt  wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwgf             ttttt                                          c ww  www  tttttttt  wwwwwwwwwwwwwwwgf                                   ttttt
-│  ► 07  -29  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·█                       -31                                          ► 15  -13  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄·█                                       -15
+│  ► 07  -29  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▬                       -31                                          ► 15  -13  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄·▬                                       -15
 ~  c ww  www  tttttttt  wwwwwwwwwwwwwwwwwwwwwwwwwwwwwgf                     ttttt                                          c ww  www  tttttttt  wwwwwwwwwwwwwgf                                     ttttt
 │
 │  BIOS PROFILE ──────────────────────────────────────────────────────────────────────────────────────────────────────     WHAT HAPPENED ─────────────────────────────────────────────────────────────────── newest first · l: last 400 events

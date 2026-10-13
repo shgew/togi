@@ -133,7 +133,7 @@ fn shapes_without_colour(scenario: Scenario, buf: &Buffer) {
             assert!(elapsed.trim_start_matches('█').starts_with('░'));
             assert!(bar('▀').starts_with("▀▀▀▀"));
             let core = first_row_with(&rows, "HAS ROOM");
-            for glyph in ['▄', '·', '█'] {
+            for glyph in ['▄', '·', '▬'] {
                 assert!(core.contains(glyph), "{glyph:?} missing from {core:?}");
             }
         }
