@@ -2,6 +2,19 @@
 
 All notable changes to togi are documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Changes not yet released wait in [`changes/`](changes/) until the release assembles them here.
 
+## [0.11.2] - 2026-10-13
+
+### Changed
+
+- Bench caches now use `togi/bench`; obsolete cache entries are not reused ([#939]).
+- The bench sanity table names the compared records `current` and `current_runs` instead of language-specific columns ([#939]).
+
+### Fixed
+
+- The dashboard's NOW band counts credited short and long passes separately, so surplus rerun passes never overflow the quota or replace a required long pass ([#945]).
+- Core gauges use a half-height failure-point bar that remains distinct from applied depth without colour ([#946]).
+- Live dashboard panels stay in place between trials and while preparing the next trial, retaining the last trial's outcome rows without inventing a countdown ([#949]).
+
 ## [0.11.1] - 2026-10-13
 
 ### Changed
@@ -429,6 +442,8 @@ All notable changes to togi are documented in this file. The format is based on 
 
 [0.11.1]: https://github.com/shgew/togi/releases/tag/v0.11.1
 
+[0.11.2]: https://github.com/shgew/togi/releases/tag/v0.11.2
+
 [#1]: https://github.com/shgew/togi/issues/1
 [#2]: https://github.com/shgew/togi/issues/2
 [#3]: https://github.com/shgew/togi/issues/3
@@ -584,3 +599,7 @@ All notable changes to togi are documented in this file. The format is based on 
 [#680]: https://github.com/shgew/togi/pull/680
 [#683]: https://github.com/shgew/togi/pull/683
 [#903]: https://github.com/shgew/togi/pull/903
+[#939]: https://github.com/shgew/togi/pull/939
+[#945]: https://github.com/shgew/togi/pull/945
+[#946]: https://github.com/shgew/togi/pull/946
+[#949]: https://github.com/shgew/togi/pull/949
