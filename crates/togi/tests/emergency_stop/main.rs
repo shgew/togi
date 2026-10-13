@@ -451,5 +451,5 @@ fn a_machine_that_crashes_while_zeroing_fails_the_stop_with_every_core_unconfirm
         "{}",
         ran.err
     );
-    assert_eq!(rig.ops(), ["sweep", "set-all"]);
+    assert_eq!(rig.ops(), ["sweep"]);
 }
