@@ -92,5 +92,12 @@ fn an_emergency_zero_without_mapped_slots_is_refused_before_any_mailbox_command(
             .starts_with("offsets unchanged: the core slots are not mapped: "),
         "{error}"
     );
-    assert_eq!(watch.touched(), Vec::<&str>::new());
+    // Validation starts the PM table reader, which may read `pm_table_version`/`pm_table`
+    // concurrently; only the mailbox and SMN files show an SMU command was sent.
+    let commanded: Vec<_> = watch
+        .touched()
+        .into_iter()
+        .filter(|name| !name.starts_with("pm_table"))
+        .collect();
+    assert_eq!(commanded, Vec::<&str>::new());
 }

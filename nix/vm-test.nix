@@ -531,7 +531,9 @@ in
       machine.wait_until_succeeds(f"test -s {state}/trial", timeout=180)
       trial_scope = machine.succeed(f"cat {state}/trial").strip()
       started = [line for line in smu_log() if "trial started" in line]
-      assert len(started) == 1 and "scopes=togi-trial-" in started[0], started
+      assert len(started) == 1, started
+      observed = started[0].split("scopes=", 1)[1].split(",")
+      assert observed == [f"{trial_scope.removesuffix('-c00')}-c00.scope", f"{trial_scope.removesuffix('-c00')}-c01.scope"], (observed, trial_scope)
       assert scopes() != "", "the trial runs on no systemd scope"
       assert offsets() == trial_offsets, offsets()
       assert prop("NRestarts") == "0"

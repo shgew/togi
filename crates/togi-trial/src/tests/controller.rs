@@ -14,9 +14,13 @@ use togi_machine::{
     CancellationToken, CcdId, CoreInfo, CpuId, Regime, TargetOffset, TrialSpec, Trials,
 };
 
-use super::harness::{core, finish, local, nothing_runs, rig_edit, spec as base_spec, topology};
+use super::harness::{
+    core, crate_error, finish, local, nothing_runs, rig_edit, spec as base_spec, topology,
+};
 use super::process::{Helper, allowed_cpus, linux, timing};
-use crate::controller::{Call, Proc, Recording, Threads};
+use crate::Error;
+use crate::controller::{Call, Controller, Moved, Proc, Recording, Threads};
+use crate::launch::cpus_list;
 use crate::native::Settings;
 use crate::os::Systemd;
 use crate::os::fake::{Fake, Launch, ProcCtx, Reply, script};
@@ -120,6 +124,11 @@ async fn a_start_that_fails_to_launch_restores_after_its_confirmed_rollback() {
             recording.calls(),
             [Call::Confine(all_but(2)), Call::Restore]
         );
+        assert!(
+            matches!(crate_error(&failed.error), Some(Error::Launch { .. })),
+            "a complete restoration added to the launch error: {:?}",
+            failed.error
+        );
     })
     .await;
 }
@@ -214,6 +223,175 @@ async fn a_sweep_that_proves_nothing_runs_restores_threads_a_start_left_confined
         );
     })
     .await;
+}
+
+// ---- incomplete moves ----
+
+/// What a move reports when a thread could not be read or moved.
+const FAILED: Moved = Moved {
+    threads: 9,
+    failed: 2,
+    incomplete: false,
+};
+
+/// What a move reports when the pass limit was reached while threads kept appearing.
+const BOUNDED: Moved = Moved {
+    threads: 9,
+    failed: 0,
+    incomplete: true,
+};
+
+/// Each incomplete move with the counts its report must carry, spelled out.
+fn incomplete_moves() -> [(Moved, &'static str); 2] {
+    [
+        (FAILED, "9 threads, 2 could not be read or moved"),
+        (
+            BOUNDED,
+            "9 threads, new threads were still appearing when the pass limit was reached",
+        ),
+    ]
+}
+
+/// Records its calls as [`Recording`] does, and reports `confined` for every confinement and
+/// `restored` for every restoration.
+struct Reporting {
+    recording: Recording,
+    confined: Moved,
+    restored: Moved,
+}
+
+impl Controller for Reporting {
+    fn confine(&self, cpus: &[CpuId]) -> Option<Moved> {
+        self.recording.confine(cpus).map(|_| self.confined)
+    }
+
+    fn restore(&self) -> Option<Moved> {
+        self.recording.restore().map(|_| self.restored)
+    }
+}
+
+fn reporting(confined: Moved, restored: Moved) -> (Arc<Reporting>, impl FnOnce(&mut Env<Fake>)) {
+    let controller = Arc::new(Reporting {
+        recording: Recording::default(),
+        confined,
+        restored,
+    });
+    let handed = Arc::clone(&controller);
+    (controller, move |env: &mut Env<Fake>| {
+        env.controller = handed;
+    })
+}
+
+fn retry_line(counts: &str) -> String {
+    format!(
+        "togi's own threads were not all given their own CPUs back and stay confined until a \
+         later confirmed teardown or sweep retries: {counts}"
+    )
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_incomplete_confinement_and_restoration_warn_in_the_trials_progress() {
+    for (moved, counts) in incomplete_moves() {
+        local(async {
+            let (controller, install) = reporting(moved, moved);
+            let rig = rig_edit(TestBackend::new("/bin/true"), Timing::default(), install);
+            rig.fake.on_launch(|_, _| {
+                Launch::Run(script(|mut ctx: ProcCtx| async move {
+                    ctx.until_killed().await;
+                }))
+            });
+            let spec = base_spec(Regime::R1, &[2], secs(5));
+            let loaded = cpus_list(&spec.cpus);
+            let handle = rig.start(spec).await.unwrap();
+            let run = finish(&handle).await;
+            assert!(run.finished.teardown.is_ok(), "{moved:?}");
+            assert_eq!(
+                controller.recording.calls(),
+                [Call::Confine(all_but(2)), Call::Restore]
+            );
+            let confined = format!(
+                "togi's own threads were not all confined to CPUs {} and may still run on a CPU \
+                 the trial loads ({loaded}): {counts}",
+                cpus_list(&all_but(2))
+            );
+            let restored = retry_line(counts);
+            let reports: Vec<&str> = run
+                .progress()
+                .into_iter()
+                .filter(|line| line.starts_with("togi's own threads"))
+                .collect();
+            assert_eq!(reports, [confined.as_str(), restored.as_str()]);
+        })
+        .await;
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_start_that_fails_to_launch_returns_an_incomplete_restoration_with_its_error() {
+    for (moved, counts) in incomplete_moves() {
+        local(async {
+            let (controller, install) = reporting(Moved::default(), moved);
+            let rig = rig_edit(TestBackend::new("/bin/true"), Timing::default(), install);
+            rig.fake
+                .on_launch(|_, _| Launch::Fail(io::Error::other("no process left")));
+            let failed = rig
+                .start(base_spec(Regime::R1, &[2], secs(5)))
+                .await
+                .map(|_| ())
+                .unwrap_err();
+            assert!(
+                failed.value.is_some(),
+                "the rollback confirmed nothing runs"
+            );
+            assert_eq!(
+                controller.recording.calls(),
+                [Call::Confine(all_but(2)), Call::Restore]
+            );
+            let Some(Error::Joined(joined)) = crate_error(&failed.error) else {
+                panic!("the restoration was not joined: {:?}", failed.error);
+            };
+            let restored = retry_line(counts);
+            assert!(
+                matches!(joined.errors(), [Error::Launch { .. }, Error::Output(output)]
+                    if output.diagnostics() == [restored.clone()]),
+                "{:?}",
+                joined.errors()
+            );
+        })
+        .await;
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_sweep_whose_restoration_is_incomplete_says_it_stays_confined_until_a_retry() {
+    for (moved, counts) in incomplete_moves() {
+        local(async {
+            let (controller, install) = reporting(Moved::default(), moved);
+            let rig = rig_edit(TestBackend::new("/bin/true"), Timing::default(), install);
+            let (reply, answered) = std::sync::mpsc::sync_channel(1);
+            serve_detached(
+                Rc::clone(&rig.env),
+                Command::Sweep {
+                    cancel: CancellationToken::new(),
+                    reply,
+                },
+            )
+            .await;
+            let swept = answered.recv().unwrap().unwrap();
+            assert_eq!(controller.recording.calls(), [Call::Restore]);
+            assert!(
+                swept.detail.ends_with(&format!("; {}", retry_line(counts))),
+                "{}",
+                swept.detail
+            );
+            assert!(
+                !swept.detail.contains("their own CPUs again"),
+                "{}",
+                swept.detail
+            );
+        })
+        .await;
+    }
 }
 
 // ---- the process seam ----

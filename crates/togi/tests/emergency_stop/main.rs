@@ -1,4 +1,4 @@
-#![allow(
+#![expect(
     clippy::unwrap_used,
     reason = "the helpers panic on a broken fixture, as the tests do"
 )]
@@ -11,6 +11,8 @@ mod support;
 
 use std::cell::RefCell;
 use std::fmt::Write as _;
+use std::fs::{self, Permissions};
+use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -311,6 +313,30 @@ fn a_busy_host_lock_exits_3_before_the_machine_is_opened() {
             rig.host.lock.display()
         )
     );
+    assert!(rig.unopened());
+    assert_eq!(rig.ops(), Vec::<String>::new());
+    rig.assert_untouched();
+}
+
+#[test]
+fn an_unsafe_host_lock_exits_1_before_the_machine_is_opened() {
+    let rig = Rig::new();
+    let directory = rig.host.lock.parent().unwrap();
+    fs::set_permissions(directory, Permissions::from_mode(0o777)).unwrap();
+    let resolved = fs::canonicalize(directory).unwrap();
+    let uid = fs::metadata(&resolved).unwrap().uid();
+    let ran = rig.run();
+    assert_eq!(ran.exit, Exit::Error);
+    assert_eq!(ran.out, "");
+    assert_eq!(
+        ran.err,
+        format!(
+            "togi emergency-stop: host lock {}: directory {} (uid {uid}, mode 777) is writable by group or others without the sticky bit; offsets unchanged\n",
+            rig.host.lock.display(),
+            resolved.display()
+        )
+    );
+    assert!(!rig.host.lock.exists(), "the lock was taken");
     assert!(rig.unopened());
     assert_eq!(rig.ops(), Vec::<String>::new());
     rig.assert_untouched();

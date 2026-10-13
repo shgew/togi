@@ -54,7 +54,8 @@ mod vm_recovery {
     const STATE: &str = "/var/lib/togi-vm";
     const STATE_DIR: &str = "/var/lib/togi";
     const ACCOUNT: &str = "togi-trial";
-    const SCOPES: &str = "/sys/fs/cgroup/system.slice";
+    /// The unified cgroup hierarchy; trial scopes sit in whichever slice systemd gave them.
+    const CGROUPS: &str = "/sys/fs/cgroup";
     /// What the fake SMU reads before anything wrote it: the BIOS baseline a normal stop restores.
     const BASELINE: i64 = -5;
     /// The offset of a loaded core during a trial; an unloaded core's is shallower and different for each, so the
@@ -106,22 +107,50 @@ mod vm_recovery {
             .collect()
     }
 
-    /// The names of the trial scopes systemd holds right now.
+    /// The names of the trial scopes systemd holds right now, found anywhere in the cgroup tree.
     #[expect(
         clippy::case_sensitive_file_extension_comparisons,
         reason = "systemd unit names are exact and case-sensitive: only `togi-trial-*.scope` is a trial scope"
     )]
     fn trial_scopes() -> Vec<String> {
-        let Ok(entries) = std::fs::read_dir(SCOPES) else {
-            return Vec::new();
-        };
-        let mut names: Vec<String> = entries
-            .filter_map(Result::ok)
-            .filter_map(|entry| entry.file_name().into_string().ok())
-            .filter(|name| name.starts_with("togi-trial-") && name.ends_with(".scope"))
-            .collect();
+        let mut names = Vec::new();
+        let mut pending = vec![PathBuf::from(CGROUPS)];
+        while let Some(dir) = pending.pop() {
+            let Ok(entries) = std::fs::read_dir(&dir) else {
+                continue;
+            };
+            for entry in entries.filter_map(Result::ok) {
+                if !entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+                    continue;
+                }
+                let Ok(name) = entry.file_name().into_string() else {
+                    continue;
+                };
+                if name.starts_with("togi-trial-") && name.ends_with(".scope") {
+                    names.push(name);
+                } else {
+                    pending.push(entry.path());
+                }
+            }
+        }
         names.sort();
         names
+    }
+
+    /// Waits until every expected trial scope is observable in the cgroup tree.
+    fn await_scopes(count: usize) -> Vec<String> {
+        let deadline = std::time::Instant::now() + Duration::from_secs(30);
+        loop {
+            let scopes = trial_scopes();
+            if scopes.len() >= count {
+                return scopes;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "only {scopes:?} of {count} trial scopes appeared"
+            );
+            std::thread::sleep(Duration::from_millis(50));
+        }
     }
 
     fn log(line: &str) {
@@ -522,7 +551,7 @@ mod vm_recovery {
             .map_err(|partial| partial.error)
             .unwrap();
         let started = running.started();
-        let scopes = trial_scopes();
+        let scopes = await_scopes(LOADED);
         log(&format!(
             "trial started in {} scopes={}",
             started.scope,
