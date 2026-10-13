@@ -51,7 +51,7 @@ The goldens `forecast-concluded.golden`, `forecast-censored.golden` and `forecas
 
 ## The Rust tool
 
-`just stats-rs` runs `togi-tool-stats`, the Rust port of `tools/stats` ([#820](https://github.com/shgew/togi/issues/820)), next to the Go `just stats`; stage 9 of the [Rust migration](rust-migration.md) retires the Go recipe. It takes the same flags (`--state-dir`, `--journal`, `--since`, `--forecast`, with `--forecast` still refusing `--journal` and `--since`) and prints the sections above, with these differences from the Go output:
+`just stats` runs `togi-tool-stats`, the Rust port of `tools/stats` ([#820](https://github.com/shgew/togi/issues/820)), next to the Go `just stats`; stage 9 of the [Rust migration](rust-migration.md) retires the Go recipe. It takes the same flags (`--state-dir`, `--journal`, `--since`, `--forecast`, with `--forecast` still refusing `--journal` and `--since`) and prints the sections above, with these differences from the Go output:
 
 - It reads only `events.jsonl`, never trial samples. A Rust `trial.end` already holds the request telemetry the session summarized from the trial's samples, also for a trial a crash cut short, so a trial whose end lacks the fields has none to recover. The R7 request report counts a trial's end fields and the carried `trial.carried` facts of other sessions.
 - It reads no Go-written journal. A journal that does not follow itself (a gap in the sequence, a cause that does not precede its event) is an error naming the file, with exit status 1; a usage error exits 2.

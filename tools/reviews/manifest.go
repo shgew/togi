@@ -35,7 +35,7 @@ type manifest struct {
 	PRFiles int           `json:"pr_files"`
 	PRLines int           `json:"pr_lines"`
 	Patches []patchStatus `json:"patches,omitempty"`
-	// Coverage is null until `just cover` and `just cover-rs` output arrives.
+	// Coverage is null until `just cover` output arrives.
 	Coverage *coverage `json:"coverage"`
 }
 
