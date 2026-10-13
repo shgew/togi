@@ -268,34 +268,40 @@
               }
               // darwinCrossCc
             );
-            nextest = craneLib.cargoNextest (cargoCheck testSource {
-              cargoNextestExtraArgs = "--profile ci";
-              nativeCheckInputs = [
-                pkgs.gitMinimal
-                pkgs.bashInteractive
-                pkgs.nushell
-              ];
-            });
+            nextest = craneLib.cargoNextest (
+              cargoCheck testSource {
+                cargoNextestExtraArgs = "--profile ci";
+                nativeCheckInputs = [
+                  pkgs.gitMinimal
+                  pkgs.bashInteractive
+                  pkgs.nushell
+                ];
+              }
+            );
             doc = craneLib.cargoDocTest (cargoCheck cratesSource { });
             cargo-fmt = craneLib.cargoFmt (cargoWith codeSource { });
-            deny = craneLib.mkCargoDerivation (cargoNoDeps manifestSource {
-              pnameSuffix = "-deny";
-              nativeBuildInputs = [
-                pkgs.cargo-deny
-                pkgs.gitMinimal
-              ];
-              buildPhaseCargoCommand = ''
-                mkdir -p $CARGO_HOME/advisory-dbs
-                cp -r ${advisoryDb} $CARGO_HOME/advisory-dbs/advisory-db-3157b0e258782691
-                chmod -R u+w $CARGO_HOME/advisory-dbs
-                cargo deny --offline --locked check bans licenses sources advisories
-              '';
-            });
-            shear = craneLib.mkCargoDerivation (cargoNoDeps codeSource {
-              pnameSuffix = "-shear";
-              nativeBuildInputs = [ pkgs.cargo-shear ];
-              buildPhaseCargoCommand = "cargo shear";
-            });
+            deny = craneLib.mkCargoDerivation (
+              cargoNoDeps manifestSource {
+                pnameSuffix = "-deny";
+                nativeBuildInputs = [
+                  pkgs.cargo-deny
+                  pkgs.gitMinimal
+                ];
+                buildPhaseCargoCommand = ''
+                  mkdir -p $CARGO_HOME/advisory-dbs
+                  cp -r ${advisoryDb} $CARGO_HOME/advisory-dbs/advisory-db-3157b0e258782691
+                  chmod -R u+w $CARGO_HOME/advisory-dbs
+                  cargo deny --offline --locked check bans licenses sources advisories
+                '';
+              }
+            );
+            shear = craneLib.mkCargoDerivation (
+              cargoNoDeps codeSource {
+                pnameSuffix = "-shear";
+                nativeBuildInputs = [ pkgs.cargo-shear ];
+                buildPhaseCargoCommand = "cargo shear";
+              }
+            );
             package =
               let
                 package = togiPackage "dev";
@@ -380,27 +386,29 @@
               };
             in
             {
-              trial-scope-tests = craneLib.mkCargoDerivation (cargoCheck trialSource {
-                pnameSuffix = "-trial-scope-tests";
-                doInstallCargoArtifacts = false;
-                nativeBuildInputs = cargoArgs.nativeBuildInputs ++ [ pkgs.jq ];
-                buildPhaseCargoCommand = ''
-                  cargoWithProfile test --locked -p togi-trial --features hardware --test hardware --test cached_errors \
-                    --no-run --message-format json-render-diagnostics > cargo-messages.json
-                '';
-                installPhaseCommand = ''
-                  mkdir -p "$out/bin"
-                  install_test() {
-                    jq -r --arg target "$1" \
-                      'select(.reason == "compiler-artifact" and .target.name == $target and .executable != null) | .executable' \
-                      cargo-messages.json > executables
-                    test "$(wc -l < executables)" = 1
-                    cp "$(cat executables)" "$out/bin/$2"
-                  }
-                  install_test hardware togi-trial-tests
-                  install_test cached_errors togi-trial-cached-errors
-                '';
-              });
+              trial-scope-tests = craneLib.mkCargoDerivation (
+                cargoCheck trialSource {
+                  pnameSuffix = "-trial-scope-tests";
+                  doInstallCargoArtifacts = false;
+                  nativeBuildInputs = cargoArgs.nativeBuildInputs ++ [ pkgs.jq ];
+                  buildPhaseCargoCommand = ''
+                    cargoWithProfile test --locked -p togi-trial --features hardware --test hardware --test cached_errors \
+                      --no-run --message-format json-render-diagnostics > cargo-messages.json
+                  '';
+                  installPhaseCommand = ''
+                    mkdir -p "$out/bin"
+                    install_test() {
+                      jq -r --arg target "$1" \
+                        'select(.reason == "compiler-artifact" and .target.name == $target and .executable != null) | .executable' \
+                        cargo-messages.json > executables
+                      test "$(wc -l < executables)" = 1
+                      cp "$(cat executables)" "$out/bin/$2"
+                    }
+                    install_test hardware togi-trial-tests
+                    install_test cached_errors togi-trial-cached-errors
+                  '';
+                }
+              );
               vm = vm.tuning-boot;
               vm-restart-limit = vm.restart-limit;
               vm-trial-scope = vm.trial-scope;
