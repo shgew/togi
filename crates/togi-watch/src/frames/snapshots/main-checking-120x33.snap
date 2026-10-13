@@ -13,14 +13,14 @@ expression: body
 │ 3/4 pass → trial 4 of 4 · 5m   core named → backs off   none named → backs off   backoffs per offset order
 │
 │ CCD 0 all loaded 0  2 counts/cell       -50 fail            CCD 1 idle       0  2 counts/cell       -50 fail
-│ ► 00 -26 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄█              -28             08  -5 HAS ROOM ▄▄▄█                         -7 top
-│ ► 01 -16 HAS ROOM ▄▄▄▄▄▄▄▄█                   -18             09 -34 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█          -36
-│ ► 02 -25 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄█              -27             10 -17 HAS ROOM ▄▄▄▄▄▄▄▄▄█                  -19
-│ ► 03 -24 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄█               -26             11  -9 HAS ROOM ▄▄▄▄▄█                      -11
-│ ► 04 -15 HAS ROOM ▄▄▄▄▄▄▄▄█                   -17             12 -16 HAS ROOM ▄▄▄▄▄▄▄▄█                   -18
-│ ► 05  -9 HAS ROOM ▄▄▄▄▄█                      -11 top         13 -37 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█        -39
-│ ► 06 -37 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█        -39             14 -15 HAS ROOM ▄▄▄▄▄▄▄▄█                   -17
-│ ► 07 -29 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█            -31             15 -13 HAS ROOM ▄▄▄▄▄▄▄█                    -15
+│ ► 00 -26 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▬              -28             08  -5 HAS ROOM ▄▄▄▬                         -7 top
+│ ► 01 -16 HAS ROOM ▄▄▄▄▄▄▄▄▬                   -18             09 -34 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬          -36
+│ ► 02 -25 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▬              -27             10 -17 HAS ROOM ▄▄▄▄▄▄▄▄▄▬                  -19
+│ ► 03 -24 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▬               -26             11  -9 HAS ROOM ▄▄▄▄▄▬                      -11
+│ ► 04 -15 HAS ROOM ▄▄▄▄▄▄▄▄▬                   -17             12 -16 HAS ROOM ▄▄▄▄▄▄▄▄▬                   -18
+│ ► 05  -9 HAS ROOM ▄▄▄▄▄▬                      -11 top         13 -37 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬        -39
+│ ► 06 -37 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬        -39             14 -15 HAS ROOM ▄▄▄▄▄▄▄▄▬                   -17
+│ ► 07 -29 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬            -31             15 -13 HAS ROOM ▄▄▄▄▄▄▄▬                    -15
 │
 │ CYCLE 1 ─────────────────────────────── 18 steps · 0 done   WHAT HAPPENED ─────────────────────────────── l: last 400
 │

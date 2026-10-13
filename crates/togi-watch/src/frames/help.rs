@@ -38,7 +38,7 @@ const SCREEN: Section = Section {
         ),
         ("░░░", "depth a combination blocks now"),
         (
-            "█",
+            "▬",
             "its failure point: this core failed there on its own account",
         ),
         ("▀", "a group trial failed with this core at that offset"),
@@ -323,7 +323,7 @@ fn reading(width: usize, colours: Colours) -> Vec<Line<'static>> {
                 &[
                     (Paint::White, "▄", 28),
                     (Paint::Combination, "░", 7),
-                    (Paint::Bad, "█", 1),
+                    (Paint::Bad, "▬", 1),
                 ],
             ),
         },
@@ -338,7 +338,7 @@ fn reading(width: usize, colours: Colours) -> Vec<Line<'static>> {
                 &[
                     (Paint::White, "▄", 26),
                     (Paint::Grey, "·", 5),
-                    (Paint::Bad, "█", 1),
+                    (Paint::Bad, "▬", 1),
                 ],
             ),
         },
@@ -348,7 +348,7 @@ fn reading(width: usize, colours: Colours) -> Vec<Line<'static>> {
             failure: -48,
             state: "PARKED",
             note: "parked at 0 by a hunt; returns to -47",
-            gauge: gauge(colours, &[(Paint::Grey, "·", 47), (Paint::Bad, "█", 1)]),
+            gauge: gauge(colours, &[(Paint::Grey, "·", 47), (Paint::Bad, "▬", 1)]),
         },
         Example {
             core: 0,
@@ -358,7 +358,7 @@ fn reading(width: usize, colours: Colours) -> Vec<Line<'static>> {
             note: "probe: the group failed with core 00 at -30, -29, -27",
             gauge: gauge(
                 colours,
-                &[(Paint::White, "▄", 26), (Paint::Bad, "▀ ▀▀ █", 1)],
+                &[(Paint::White, "▄", 26), (Paint::Bad, "▀ ▀▀ ▬", 1)],
             ),
         },
     ];
@@ -825,7 +825,7 @@ mod tests {
                 let fields: Vec<&str> = row.split_whitespace().collect();
                 for field in &fields {
                     assert!(
-                        field.trim_matches(['▄', '░', '·', '█', '▀']).is_empty()
+                        field.trim_matches(['▄', '░', '·', '▬', '▀']).is_empty()
                             || tokens.contains(field),
                         "width {width} example {i}: text or value cut to {field:?}: {row:?}"
                     );

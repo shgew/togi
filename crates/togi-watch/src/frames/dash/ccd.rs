@@ -80,7 +80,7 @@ pub(super) fn gauge(
         let (lo, hi) = (i * 50 / total + 1, (i + 1) * 50 / total);
         let hits = |point: i64| (lo..=hi).contains(&-point);
         let (glyph, paint) = if core.fail.is_some_and(|fail| hits(fail.get())) {
-            ('█', Some(Paint::Bad))
+            ('▬', Some(Paint::Bad))
         } else if core.group_fails.iter().any(|mark| hits(mark.get())) {
             ('▀', Some(Paint::Bad))
         } else if -applied >= lo {

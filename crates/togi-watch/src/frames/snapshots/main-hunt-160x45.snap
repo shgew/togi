@@ -18,14 +18,14 @@ expression: body
 │  if a core is named   its failure point is recorded → next: rerun R2 heavy vector on 05 with every core at 0 · 2m
 │
 │  CCD 0               0  2 counts/cell       -50 fail pt  one loaded              CCD 1               0  2 counts/cell       -50 fail pt  judged
-│    00  -25  MEMBER    ▄▄▄▄▄▄▄▄▄▄▄▄█·               -26                             08   -5  MEMBER    ▄▄▄█                          -7
-│    01  -15  MEMBER    ▄▄▄▄▄▄▄█·                    -16                             09  -34  MEMBER    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█           -36
-│    02  -25  MEMBER    ▄▄▄▄▄▄▄▄▄▄▄▄▄█               -27                             10  -15  MEMBER    ▄▄▄▄▄▄▄█·                    -16
-│    03  -24  MEMBER    ▄▄▄▄▄▄▄▄▄▄▄▄█                -26                             11   -7  MEMBER    ▄▄▄█·                         -8
-│    04  -15  MEMBER    ▄▄▄▄▄▄▄▄█                    -17                             12  -14  MEMBER    ▄▄▄▄▄▄▄█·                    -15
-│  ► 05    0  PARKED    ·····█                       -11   returns to -9             13  -37  MEMBER    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█         -39
-│    06  -37  MEMBER    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█         -39                             14  -15  MEMBER    ▄▄▄▄▄▄▄▄█                    -17
-│    07  -29  MEMBER    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█             -31                             15  -13  MEMBER    ▄▄▄▄▄▄▄█                     -15
+│    00  -25  MEMBER    ▄▄▄▄▄▄▄▄▄▄▄▄▬·               -26                             08   -5  MEMBER    ▄▄▄▬                          -7
+│    01  -15  MEMBER    ▄▄▄▄▄▄▄▬·                    -16                             09  -34  MEMBER    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬           -36
+│    02  -25  MEMBER    ▄▄▄▄▄▄▄▄▄▄▄▄▄▬               -27                             10  -15  MEMBER    ▄▄▄▄▄▄▄▬·                    -16
+│    03  -24  MEMBER    ▄▄▄▄▄▄▄▄▄▄▄▄▬                -26                             11   -7  MEMBER    ▄▄▄▬·                         -8
+│    04  -15  MEMBER    ▄▄▄▄▄▄▄▄▬                    -17                             12  -14  MEMBER    ▄▄▄▄▄▄▄▬·                    -15
+│  ► 05    0  PARKED    ·····▬                       -11   returns to -9             13  -37  MEMBER    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬         -39
+│    06  -37  MEMBER    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬         -39                             14  -15  MEMBER    ▄▄▄▄▄▄▄▄▬                    -17
+│    07  -29  MEMBER    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬             -31                             15  -13  MEMBER    ▄▄▄▄▄▄▄▬                     -15
 │
 │  BIOS PROFILE ──────────────────────────────────────────────────────────────     WHAT HAPPENED ───────────────────────────────────────────────── l: last 400
 │  none confirmed yet: phase 1 has not passed a full cycle

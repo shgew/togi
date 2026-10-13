@@ -18,14 +18,14 @@ expression: body
 │  if none is named     core 05 -9 → -8 per offset order → next: rerun R7 all-core on 00-07 · 2m
 │
 │  CCD 0               0  2 counts/cell       -50 fail pt  all under load          CCD 1               0  2 counts/cell       -50 fail pt  not under load
-│  ► 00  -26  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄█               -28                             08   -5  HAS ROOM  ▄▄▄█                          -7   top by offset
-│  ► 01  -16  HAS ROOM  ▄▄▄▄▄▄▄▄█                    -18                             09  -34  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█           -36
-│  ► 02  -25  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄█               -27                             10  -17  HAS ROOM  ▄▄▄▄▄▄▄▄▄█                   -19
-│  ► 03  -24  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄█                -26                             11   -9  HAS ROOM  ▄▄▄▄▄█                       -11
-│  ► 04  -15  HAS ROOM  ▄▄▄▄▄▄▄▄█                    -17                             12  -16  HAS ROOM  ▄▄▄▄▄▄▄▄█                    -18
-│  ► 05   -9  HAS ROOM  ▄▄▄▄▄█                       -11   top by offset             13  -37  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█         -39
-│  ► 06  -37  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█         -39                             14  -15  HAS ROOM  ▄▄▄▄▄▄▄▄█                    -17
-│  ► 07  -29  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█             -31                             15  -13  HAS ROOM  ▄▄▄▄▄▄▄█                     -15
+│  ► 00  -26  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▬               -28                             08   -5  HAS ROOM  ▄▄▄▬                          -7   top by offset
+│  ► 01  -16  HAS ROOM  ▄▄▄▄▄▄▄▄▬                    -18                             09  -34  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬           -36
+│  ► 02  -25  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▬               -27                             10  -17  HAS ROOM  ▄▄▄▄▄▄▄▄▄▬                   -19
+│  ► 03  -24  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▬                -26                             11   -9  HAS ROOM  ▄▄▄▄▄▬                       -11
+│  ► 04  -15  HAS ROOM  ▄▄▄▄▄▄▄▄▬                    -17                             12  -16  HAS ROOM  ▄▄▄▄▄▄▄▄▬                    -18
+│  ► 05   -9  HAS ROOM  ▄▄▄▄▄▬                       -11   top by offset             13  -37  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬         -39
+│  ► 06  -37  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬         -39                             14  -15  HAS ROOM  ▄▄▄▄▄▄▄▄▬                    -17
+│  ► 07  -29  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬             -31                             15  -13  HAS ROOM  ▄▄▄▄▄▄▄▬                     -15
 │
 │  BIOS PROFILE ──────────────────────────────────────────────────────────────     WHAT HAPPENED ───────────────────────────────────────────────── l: last 400
 │  none confirmed yet: phase 1 has not passed a full cycle

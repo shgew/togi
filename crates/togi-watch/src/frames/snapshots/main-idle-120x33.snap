@@ -13,14 +13,14 @@ expression: body
 │ pass → step 8   core named → backs off   none named → hunt 2
 │
 │ CCD 0 all loaded 0  2 counts/cell       -50 fail            CCD 1 all loaded 0  2 counts/cell       -50 fail
-│ ► 00 -25 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄█·              -26           ► 08  -5 HAS ROOM ▄▄▄█                         -7
-│ ► 01 -15 AT LIMIT ▄▄▄▄▄▄▄█·                   -16           ► 09 -34 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█          -36
-│ ► 02 -25 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄█              -27           ► 10 -15 AT LIMIT ▄▄▄▄▄▄▄█·                   -16
-│ ► 03 -24 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄█               -26           ► 11  -7 AT LIMIT ▄▄▄█·                        -8
-│ ► 04 -15 HAS ROOM ▄▄▄▄▄▄▄▄█                   -17           ► 12 -14 AT LIMIT ▄▄▄▄▄▄▄█·                   -15
-│ ► 05  -8 AT LIMIT ▄▄▄▄█                        -9           ► 13 -37 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█        -39
-│ ► 06 -37 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█        -39           ► 14 -15 HAS ROOM ▄▄▄▄▄▄▄▄█                   -17
-│ ► 07 -29 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█            -31           ► 15 -13 HAS ROOM ▄▄▄▄▄▄▄█                    -15
+│ ► 00 -25 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▬·              -26           ► 08  -5 HAS ROOM ▄▄▄▬                         -7
+│ ► 01 -15 AT LIMIT ▄▄▄▄▄▄▄▬·                   -16           ► 09 -34 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬          -36
+│ ► 02 -25 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▬              -27           ► 10 -15 AT LIMIT ▄▄▄▄▄▄▄▬·                   -16
+│ ► 03 -24 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▬               -26           ► 11  -7 AT LIMIT ▄▄▄▬·                        -8
+│ ► 04 -15 HAS ROOM ▄▄▄▄▄▄▄▄▬                   -17           ► 12 -14 AT LIMIT ▄▄▄▄▄▄▄▬·                   -15
+│ ► 05  -8 AT LIMIT ▄▄▄▄▬                        -9           ► 13 -37 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬        -39
+│ ► 06 -37 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬        -39           ► 14 -15 HAS ROOM ▄▄▄▄▄▄▄▄▬                   -17
+│ ► 07 -29 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬            -31           ► 15 -13 HAS ROOM ▄▄▄▄▄▄▄▬                    -15
 │
 │ CYCLE 1 ─────────────────────────────── 18 steps · 6 done   WHAT HAPPENED ─────────────────────────────── l: last 400
 │
