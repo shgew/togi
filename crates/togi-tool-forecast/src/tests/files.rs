@@ -188,7 +188,7 @@ fn the_anchor_of_an_empty_or_missing_live_journal_is_an_error() {
     fs::write(dir.path().join("events.jsonl"), b"").unwrap();
     let error = Anchor::of(dir.path()).unwrap_err();
     assert!(matches!(error, Error::NoEvents { .. }), "{error}");
-    // A first line that is not a complete Rust header is refused, even when a crash may have torn it.
+    // A first line that is not a complete journal header is refused, even when a crash may have torn it.
     fs::write(dir.path().join("events.jsonl"), b"{\"seq\":1,\"torn").unwrap();
     let error = Anchor::of(dir.path()).unwrap_err();
     assert!(

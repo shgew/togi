@@ -10,33 +10,33 @@ _default:
 _dev-shell:
     @[[ "${TOGI_DEV_SHELL:-}" == 1 ]] || { echo 'this recipe needs the dev shell: run `nix develop`, or `direnv allow` once per checkout' >&2; exit 1; }
 
-# Run the Rust test suite with optional nextest flags (`just test -p togi-journal`)
+# Run the test suite with optional nextest flags (`just test -p togi-journal`)
 [group('test')]
 test *args: _dev-shell
     cargo nextest run "$@"
 
-# Run one Rust crate's tests with optional nextest flags (`just focus togi-journal`)
+# Run one crate's tests with optional nextest flags (`just focus togi-journal`)
 [group('test')]
 focus crate *args: _dev-shell
     cargo nextest run -p "$@"
 
-# Type-check one Rust crate without building it (`just typecheck togi-journal`)
+# Type-check one crate without building it (`just typecheck togi-journal`)
 [group('test')]
 typecheck crate: _dev-shell
     cargo check --all-targets -p "$1"
 
-# Run the Rust hardware tests of smu, detect, trial and hardware one binary and one test at a time, every binary even after one fails, on the target machine (Linux only), entering the dev shell itself because sudo drops it; as root, as the SMU needs, it builds under root's home and skips trial's `cached_errors`, which refuses uid 0 (`just hardware --no-run` only builds them)
+# Run the hardware tests of smu, detect, trial and hardware one binary and one test at a time, every binary even after one fails, on the target machine (Linux only), entering the dev shell itself because sudo drops it; as root, as the SMU needs, it builds under root's home and skips trial's `cached_errors`, which refuses uid 0 (`just hardware --no-run` only builds them)
 [group('test')]
 hardware *args:
     @[[ "{{ os() }}" == linux ]] || { echo 'just hardware needs Linux: run it on the target machine' >&2; exit 1; }
     tests=(--test hardware); [[ "$(id -u)" == 0 ]] || tests+=(--test cached_errors); [[ "$(id -u)" != 0 ]] || export CARGO_TARGET_DIR=~root/.cache/togi/hardware-target; nix develop --command env TMPDIR=/tmp RUST_TEST_THREADS=1 cargo test --locked --no-fail-fast -p togi-smu -p togi-detect -p togi-trial -p togi-hardware --features hardware "${tests[@]}" "$@"
 
-# Fuzz the Rust journal reader for the given seconds (`just fuzz 300`), seeded from fuzz/seeds
+# Fuzz the journal reader for the given seconds (`just fuzz 300`), seeded from fuzz/seeds
 [group('test')]
 fuzz seconds="60": _dev-shell
     cd crates/togi-journal && mkdir -p fuzz/corpus/reader && cargo fuzz run -s none reader fuzz/corpus/reader fuzz/seeds/reader -- -max_total_time="$1"
 
-# Print changed Rust lines no test reached since a base, and the changed files the run does not build (`just cover origin/main`)
+# Print changed lines no test reached since a base, and the changed files the run does not build (`just cover origin/main`)
 [group('test')]
 cover base: _dev-shell
     #!/usr/bin/env bash
@@ -47,7 +47,7 @@ cover base: _dev-shell
     target=${CARGO_LLVM_COV_TARGET_DIR:-${CARGO_TARGET_DIR:-target}/llvm-cov-target}
     go run ./tools/cover --lcov "$trace" --build-dir "$target/debug" --base "$1"
 
-# Lint the retained Go tools as built for Linux and for macOS, and the Rust workspace with clippy for the host's target and aarch64 macOS, with optional Go lint flags
+# Lint the retained Go tools as built for Linux and for macOS, and the workspace with clippy for the host's target and aarch64 macOS, with optional Go lint flags
 [group('quality')]
 lint *args: _dev-shell
     for target in linux/amd64 darwin/arm64; do env GOOS="${target%/*}" GOARCH="${target#*/}" CGO_ENABLED=0 golangci-lint run ./... "$@"; done
@@ -59,7 +59,7 @@ lint *args: _dev-shell
 fmt:
     nix fmt
 
-# Run every non-VM flake check but the rust-sim-suite-* shards, which CI and `just check` on Linux run (`just sim-suite` or `just check-one rust-sim-suite-<i>` reproduces them), and cargo-deny's advisory audit, which only the rust-deny flake check runs, cheapest first, using warm dev-shell Go and Rust caches
+# Run every non-VM flake check but the sim-suite-* shards, which CI and `just check` on Linux run (`just sim-suite` or `just check-one sim-suite-<i>` reproduces them), and cargo-deny's advisory audit, which only the deny flake check runs, cheapest first, using warm dev-shell Go and cargo caches
 [group('quality')]
 gate: _dev-shell
     #!/usr/bin/env bash
@@ -78,27 +78,27 @@ gate: _dev-shell
     cargo deny --locked check bans licenses sources
     cargo shear
 
-# Run every flake check this host builds, streaming their build logs: go-tools, lint, fmt, changes, module, the rust-* checks (clippy, nextest, doc, fmt, deny, shear, package) and, on Linux, trial-scope-tests-rs, the rust-sim-suite-* shards and the VM tests
+# Run every flake check this host builds, streaming their build logs: go-tools, lint, fmt, changes, module, clippy, nextest, doc, cargo-fmt, deny, shear, package and, on Linux, trial-scope-tests, the sim-suite-* shards and the VM tests
 [group('nix')]
 check *args:
     nix flake check --print-build-logs "$@"
 
-# Build named flake checks, streaming their build logs: go-tools, lint, fmt, changes, module, rust-clippy, rust-nextest, rust-doc, rust-fmt, rust-deny, rust-shear, rust-package or, on Linux, trial-scope-tests-rs, rust-sim-suite-<i>, vm, vm-trial-scope-rs and vm-restart-limit (`just check-one lint`)
+# Build named flake checks, streaming their build logs: go-tools, lint, fmt, changes, module, clippy, nextest, doc, cargo-fmt, deny, shear, package or, on Linux, trial-scope-tests, sim-suite-<i>, vm, vm-trial-scope and vm-restart-limit (`just check-one lint`)
 [group('nix')]
 check-one +names:
     nix build --no-link --print-build-logs $(printf '.#checks.{{ system }}.%s ' "$@")
 
-# Run a simulated session with the Rust simulator, flags as `togi-tool-sim` takes them (`just sim --seed 7 --max-boots 20`)
+# Run a simulated session, flags as `togi-tool-sim` takes them (`just sim --seed 7 --max-boots 20`)
 [group('run')]
 sim *args: _dev-shell
     cargo run --release --locked -p togi-tool-sim -- "$@"
 
-# Run the Rust togi binary built from this tree, flags as `togi` takes them (`just togi completion zsh`); a local build reports the revision `dev`
+# Run the togi binary built from this tree, flags as `togi` takes them (`just togi completion zsh`); a local build reports the revision `dev`
 [group('run')]
 togi *args: _dev-shell
     cargo run --release --locked -p togi -- "$@"
 
-# Run every session of the simulator suite with the Rust simulator and check that each ended clean
+# Run every session of the simulator suite and check that each ended clean
 [group('run')]
 sim-suite *args: _dev-shell
     out=$(mktemp -d); cargo run --release --locked -p togi-tool-sim -- suite --suite tools/bench/suite.json --out "$out" "$@" && cargo run --release --locked -p togi-tool-sim -- check --suite tools/bench/suite.json --shards 1 "$out"
@@ -113,18 +113,18 @@ replay *args: _dev-shell
 stats *args: _dev-shell
     cargo run --release --locked -p togi-tool-stats -- "$@"
 
-# Benchmark simulated session conclusions, building and running the Rust simulator (`just bench --split dev --baseline tools/bench/baseline.jsonl`, or `just bench sanity --records records.jsonl` against the recorded baseline)
+# Benchmark simulated session conclusions, building and running the simulator (`just bench --split dev --baseline tools/bench/baseline.jsonl`, or `just bench sanity --records records.jsonl` against the recorded baseline)
 [group('run')]
 bench *args: _dev-shell
     cargo run --release --locked -p togi-tool-bench -- "$@"
 
-# Sweep every simulated scenario with the Rust bench and simulator and audit the retained journals, or audit given state directories (`just audit --seeds 50 --jobs 8 --keep runs`)
+# Sweep every simulated scenario with the bench and simulator and audit the retained journals, or audit given state directories (`just audit --seeds 50 --jobs 8 --keep runs`)
 [group('run')]
 audit *args: _dev-shell
     cargo build --release --locked -p togi-tool-bench
     cargo run --release --locked -p togi-tool-audit -- "$@"
 
-# Prove simulated session decisions are unchanged from a base revision, building both trees' Rust simulators; stops at the first difference (`--keep-going` counts them all)
+# Prove simulated session decisions are unchanged from a base revision, building both trees' simulators; stops at the first difference (`--keep-going` counts them all)
 [group('run')]
 same base="origin/main" *args: _dev-shell
     dir=$(mktemp -d); trap 'rm -rf "$dir"' EXIT; git archive "$1" | tar -x -C "$dir"; cargo run --release --locked -p togi-tool-bench -- same "$dir" "${@:2}"
@@ -279,7 +279,7 @@ _touched-packages pushed:
         [[ "$dir" == . ]] && echo . || echo "./$dir"
     done | sort -u
 
-# Print the Rust crates changed between a pushed head and HEAD, one per line: `--workspace` when Cargo.toml, Cargo.lock, rust-toolchain.toml, clippy.toml, .config/nextest.toml or .cargo/config.toml changed, files every crate's build or tests read, else each crate with a changed file under crates/ that still has its Cargo.toml at HEAD
+# Print the crates changed between a pushed head and HEAD, one per line: `--workspace` when Cargo.toml, Cargo.lock, rust-toolchain.toml, clippy.toml, .config/nextest.toml or .cargo/config.toml changed, files every crate's build or tests read, else each crate with a changed file under crates/ that still has its Cargo.toml at HEAD
 _touched-crates pushed:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -292,7 +292,7 @@ _touched-crates pushed:
         git cat-file -e "HEAD:${dir}Cargo.toml" 2>/dev/null && basename "$dir"
     done || true
 
-# Push a fix to a pull request under review: format, lint, run `go test` on the retained Go tools' packages and `just test` on the Rust crates changed since the last pushed head, then push as `just ship` does without the gate; the first push of a branch uses `just ship`
+# Push a fix to a pull request under review: format, lint, run `go test` on the retained Go tools' packages and `just test` on the crates changed since the last pushed head, then push as `just ship` does without the gate; the first push of a branch uses `just ship`
 [group('github')]
 push-fix: (_push-ready "push-fix" "push the stack with gh stack push")
     #!/usr/bin/env bash
@@ -311,7 +311,7 @@ push-fix: (_push-ready "push-fix" "push the stack with gh stack push")
     fi
     mapfile -t crates < <(just _touched-crates "$pushed")
     if ((${#crates[@]} == 0)); then
-        echo "push-fix: no Rust crate changed since $pushed; nothing to test" >&2
+        echo "push-fix: no crate changed since $pushed; nothing to test" >&2
     elif [[ "${crates[0]}" == --workspace ]]; then
         just test --workspace
     else

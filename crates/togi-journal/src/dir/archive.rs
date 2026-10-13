@@ -468,7 +468,7 @@ fn first_line(fs: &dyn Fs, path: &Path) -> Result<Option<(Vec<u8>, bool)>, DirEr
 
 /// The build stamp of the live journal in the state directory `dir`, decoded from its first complete line alone,
 /// without taking the lock or writing; `None` when there is no journal or no complete first line. A first line,
-/// complete or not, that is not a Rust journal header is another build's journal, and no event after it is read.
+/// complete or not, that is not a journal header is another build's journal, and no event after it is read.
 pub fn recorded_build(dir: &Path) -> Result<Option<Build>, DirError> {
     recorded_build_in(&DiskFs::default(), dir)
 }

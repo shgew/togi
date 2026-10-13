@@ -45,7 +45,7 @@ pub(crate) struct SameArgs {
     #[arg(long, value_name = "N", default_value = "1000")]
     max_boots: NonZeroU32,
     /// The directory of cached digests, session costs and the base's build; default the user cache directory's
-    /// togi/bench-rs.
+    /// togi/bench.
     #[arg(long, value_name = "DIR")]
     cache: Option<PathBuf>,
     /// Run this simulator for the base instead of building it from the tree.

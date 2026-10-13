@@ -201,7 +201,7 @@ fn the_cache_defaults_to_the_user_cache_directory() {
         .env("XDG_CACHE_HOME", bench.path("xdg"))
         .env_remove("HOME");
     assert!(run(&mut command).status.success());
-    assert!(bench.path("xdg/togi/bench-rs/runs").is_dir());
+    assert!(bench.path("xdg/togi/bench/runs").is_dir());
 }
 
 #[test]
@@ -219,7 +219,7 @@ fn the_cache_defaults_under_home_and_without_either_is_an_error() {
     } else {
         "home/.cache"
     };
-    assert!(bench.path(subdirectory).join("togi/bench-rs/runs").is_dir());
+    assert!(bench.path(subdirectory).join("togi/bench/runs").is_dir());
     let mut neither = bench_command(&bench);
     neither
         .arg("--sim")
@@ -286,8 +286,11 @@ fn sanity_exits_1_when_a_metric_is_flagged() {
             value.to_string() + "\n"
         })
         .collect();
-    fs::write(bench.path("rust-censored.jsonl"), censored).unwrap();
-    let output = sanity(&bench.path("rust-censored.jsonl"), &bench.path("out.jsonl"));
+    fs::write(bench.path("current-censored.jsonl"), censored).unwrap();
+    let output = sanity(
+        &bench.path("current-censored.jsonl"),
+        &bench.path("out.jsonl"),
+    );
     assert_eq!(output.status.code(), Some(1));
     assert!(text(&output.stdout).contains("FLAGGED"));
 }

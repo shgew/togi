@@ -409,7 +409,7 @@ mod recorded {
     }
 
     #[test]
-    fn an_unterminated_first_line_that_is_not_a_rust_header_is_another_builds_journal() {
+    fn an_unterminated_first_line_that_is_not_a_journal_header_is_another_builds_journal() {
         for (name, bytes) in [
             ("go first line", go_first_line_without_newline()),
             ("garbage", "garbage".to_owned()),

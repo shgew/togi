@@ -65,8 +65,8 @@
           rustLinker = lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
             CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS = "-C link-arg=-fuse-ld=mold";
           };
-          rustArgs = {
-            pname = "togi-rust";
+          cargoArgs = {
+            pname = "togi-workspace";
             version = "0.0.0";
             src = lib.fileset.toSource {
               root = ./.;
@@ -78,28 +78,28 @@
             nativeBuildInputs = lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.mold ];
           }
           // rustLinker;
-          rustDeps = craneLib.buildDepsOnly rustArgs;
-          rustCheck = args: rustArgs // args // { cargoArtifacts = rustDeps; };
-          rustNoDeps =
+          cargoDeps = craneLib.buildDepsOnly cargoArgs;
+          cargoCheck = args: cargoArgs // args // { cargoArtifacts = cargoDeps; };
+          cargoNoDeps =
             args:
-            rustArgs
+            cargoArgs
             // args
             // {
               cargoArtifacts = null;
               doInstallCargoArtifacts = false;
-              nativeBuildInputs = rustArgs.nativeBuildInputs ++ args.nativeBuildInputs;
+              nativeBuildInputs = cargoArgs.nativeBuildInputs ++ args.nativeBuildInputs;
             };
           simSuite = lib.importJSON ./nix/sim-suite.json;
-          rustRelease = rustArgs // {
+          releaseArgs = cargoArgs // {
             CARGO_PROFILE = "release";
             CARGO_PROFILE_RELEASE_LTO = "false";
           };
-          simRelease = rustRelease // {
+          simRelease = releaseArgs // {
             pname = "togi-tool-sim";
             cargoExtraArgs = "--locked -p togi-tool-sim";
           };
-          rustReleaseDeps = craneLib.buildDepsOnly (
-            rustRelease
+          releaseDeps = craneLib.buildDepsOnly (
+            releaseArgs
             // {
               pname = "togi-release";
               cargoExtraArgs = "--locked -p togi -p togi-tool-sim";
@@ -108,7 +108,7 @@
           togiToolSim = craneLib.buildPackage (
             simRelease
             // {
-              cargoArtifacts = rustReleaseDeps;
+              cargoArtifacts = releaseDeps;
               doCheck = false;
             }
           );
@@ -122,7 +122,7 @@
           };
           simSuiteShard =
             shard:
-            pkgs.runCommand "togi-rust-sim-suite-${toString shard}" { } ''
+            pkgs.runCommand "togi-sim-suite-${toString shard}" { } ''
               sim=${togiToolSim}/bin/togi-tool-sim
               suite=${simSuiteSource}/tools/bench/suite.json
               jobs=''${NIX_BUILD_CORES:-0}
@@ -131,7 +131,7 @@
               "$sim" check --suite "$suite" --shards ${toString simSuite.shards} --shard ${toString shard} "$out"
             '';
           simSuiteChecks = lib.listToAttrs (
-            map (shard: lib.nameValuePair "rust-sim-suite-${toString shard}" (simSuiteShard shard)) (
+            map (shard: lib.nameValuePair "sim-suite-${toString shard}" (simSuiteShard shard)) (
               lib.range 0 (simSuite.shards - 1)
             )
           );
@@ -181,24 +181,24 @@
             ];
             checkPhase = testPhase "" "./...";
           };
-          togiRust =
+          togiPackage =
             rev:
             craneLib.buildPackage (
-              rustRelease
+              releaseArgs
               // {
-                pname = "togi-rs";
+                pname = "togi";
                 inherit version meta;
                 cargoExtraArgs = "--locked -p togi";
-                cargoArtifacts = rustReleaseDeps;
+                cargoArtifacts = releaseDeps;
                 doCheck = false;
                 TOGI_REV = rev;
-                nativeBuildInputs = rustArgs.nativeBuildInputs ++ [ pkgs.installShellFiles ];
+                nativeBuildInputs = cargoArgs.nativeBuildInputs ++ [ pkgs.installShellFiles ];
                 postInstall = installCompletions;
               }
             );
         in
         {
-          packages.default = togiRust rev;
+          packages.default = togiPackage rev;
 
           devShells.default = pkgs.mkShell (
             {
@@ -229,7 +229,7 @@
 
           checks = {
             go-tools = goTools;
-            rust-clippy = craneLib.mkCargoDerivation (rustCheck {
+            clippy = craneLib.mkCargoDerivation (cargoCheck {
               pnameSuffix = "-clippy";
               buildPhaseCargoCommand = ''
                 cargoWithProfile clippy --locked --all-targets -- --deny warnings
@@ -237,7 +237,7 @@
                 cargoWithProfile clippy --locked --all-targets --target aarch64-apple-darwin -- --deny warnings
               '';
             });
-            rust-nextest = craneLib.cargoNextest (rustCheck {
+            nextest = craneLib.cargoNextest (cargoCheck {
               cargoNextestExtraArgs = "--profile ci";
               nativeCheckInputs = [
                 pkgs.gitMinimal
@@ -245,9 +245,9 @@
                 pkgs.nushell
               ];
             });
-            rust-doc = craneLib.cargoDocTest (rustCheck { });
-            rust-fmt = craneLib.cargoFmt rustArgs;
-            rust-deny = craneLib.mkCargoDerivation (rustNoDeps {
+            doc = craneLib.cargoDocTest (cargoCheck { });
+            cargo-fmt = craneLib.cargoFmt cargoArgs;
+            deny = craneLib.mkCargoDerivation (cargoNoDeps {
               pnameSuffix = "-deny";
               nativeBuildInputs = [
                 pkgs.cargo-deny
@@ -260,17 +260,17 @@
                 cargo deny --offline --locked check bans licenses sources advisories
               '';
             });
-            rust-shear = craneLib.mkCargoDerivation (rustNoDeps {
+            shear = craneLib.mkCargoDerivation (cargoNoDeps {
               pnameSuffix = "-shear";
               nativeBuildInputs = [ pkgs.cargo-shear ];
               buildPhaseCargoCommand = "cargo shear";
             });
-            rust-package =
+            package =
               let
-                package = togiRust "dev";
+                package = togiPackage "dev";
               in
               # `package` lets the module check and the VM tests use this dev build from any system.
-              pkgs.runCommand "togi-rust-package" { passthru = { inherit package; }; } ''
+              pkgs.runCommand "togi-package" { passthru = { inherit package; }; } ''
                 togi=${lib.getExe package}
                 test "$("$togi" --version)" = "togi ${version}+dev"
                 for shell in bash zsh fish nushell; do
@@ -337,22 +337,22 @@
             module = import ./nix/module-test.nix {
               pkgs = inputs.nixpkgs.legacyPackages.x86_64-linux;
               hostPkgs = pkgs;
-              package = inputs.self.checks.x86_64-linux.rust-package.package;
+              package = inputs.self.checks.x86_64-linux.package.package;
             };
           }
           // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux (
             let
               vm = import ./nix/vm-test.nix {
                 inherit pkgs;
-                trialTestsRs = config.checks.trial-scope-tests-rs;
-                package = config.checks.rust-package.package;
+                trialTests = config.checks.trial-scope-tests;
+                package = config.checks.package.package;
               };
             in
             {
-              trial-scope-tests-rs = craneLib.mkCargoDerivation (rustCheck {
+              trial-scope-tests = craneLib.mkCargoDerivation (cargoCheck {
                 pnameSuffix = "-trial-scope-tests";
                 doInstallCargoArtifacts = false;
-                nativeBuildInputs = rustArgs.nativeBuildInputs ++ [ pkgs.jq ];
+                nativeBuildInputs = cargoArgs.nativeBuildInputs ++ [ pkgs.jq ];
                 buildPhaseCargoCommand = ''
                   cargoWithProfile test --locked -p togi-trial --features hardware --test hardware --test cached_errors \
                     --no-run --message-format json-render-diagnostics > cargo-messages.json
@@ -366,13 +366,13 @@
                     test "$(wc -l < executables)" = 1
                     cp "$(cat executables)" "$out/bin/$2"
                   }
-                  install_test hardware togi-trial-tests-rs
-                  install_test cached_errors togi-trial-cached-errors-rs
+                  install_test hardware togi-trial-tests
+                  install_test cached_errors togi-trial-cached-errors
                 '';
               });
               vm = vm.tuning-boot;
               vm-restart-limit = vm.restart-limit;
-              vm-trial-scope-rs = vm.trial-scope-rs;
+              vm-trial-scope = vm.trial-scope;
             }
             // simSuiteChecks
           );

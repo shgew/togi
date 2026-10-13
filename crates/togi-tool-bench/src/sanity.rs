@@ -1,7 +1,7 @@
-//! The sanity check of the Rust bench against the scores of a recorded baseline.
+//! The sanity check of a bench run's current records against the scores of a recorded baseline.
 //!
-//! The two benches draw their simulated machines and failures from different random streams, so a seed's run
-//! differs between them and no per-seed equality is expected. What must agree is the distribution of each
+//! The recorded baseline and the current records draw their simulated machines and failures from different random
+//! streams, so a seed's run differs between them and no per-seed equality is expected. What must agree is the distribution of each
 //! metric over a scenario's seeds. For every scenario, and for all runs together, each metric's mean over the
 //! runs both sides have is compared. A metric is flagged only when the means differ by more than its [`Band`]
 //! and by more than [`Z`] standard errors (Welch's two-sample statistic, stratified by scenario for all runs
@@ -34,7 +34,7 @@ pub struct Band {
     pub abs: f64,
 }
 
-/// A run as the baseline file records it. Fields the Rust bench does not compare, and fields it retired,
+/// A run as the baseline file records it. Fields the sanity check does not compare, and fields the bench retired,
 /// are ignored.
 #[derive(Clone, Debug, Deserialize)]
 pub struct BaselineRun {
@@ -273,35 +273,36 @@ const METRICS: [Metric; 13] = [
     },
 ];
 
-/// One metric of one group of runs, Rust against the baseline.
+/// One metric of one group of runs, the current records against the baseline.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Line {
     pub scenario: String,
     pub metric: &'static str,
     /// Means over the runs each side measured the metric on; NaN for a side that never did.
-    pub rust: f64,
+    pub current: f64,
     pub baseline: f64,
     /// Runs each side measured the metric on.
-    pub rust_runs: usize,
+    pub current_runs: usize,
     pub baseline_runs: usize,
     /// Welch's statistic of the difference of means; infinite when both sides are constant and differ.
     pub z: f64,
     pub flagged: bool,
 }
 
-/// The sanity table: for each scenario in the order the Rust records name them, then for all runs, each metric's
-/// means over the runs of the scenario that both benches ran. A scenario one side lacks is left out; a metric
+/// The sanity table: for each scenario in the order the current records name them, then for all runs, each metric's
+/// means over the runs of the scenario that both the current records and the baseline have. A scenario one side lacks is left out; a metric
 /// that only one side measured, or that the sides measured on different numbers of runs, is a flagged line, and
 /// is left out only when neither side measured it. A missing mean is NaN.
-pub fn compare(rust: &[Record], baseline: &[BaselineRun]) -> Vec<Line> {
-    let rust: Vec<Row> = rust.iter().map(Row::from).collect();
+pub fn compare(current: &[Record], baseline: &[BaselineRun]) -> Vec<Line> {
+    let current: Vec<Row> = current.iter().map(Row::from).collect();
     let baseline: Vec<Row> = baseline.iter().map(Row::from).collect();
     let shared: BTreeSet<(&str, u64)> = {
         let baseline_keys: BTreeSet<_> = baseline
             .iter()
             .map(|r| (r.scenario.as_str(), r.seed))
             .collect();
-        rust.iter()
+        current
+            .iter()
             .map(|r| (r.scenario.as_str(), r.seed))
             .filter(|key| baseline_keys.contains(key))
             .collect()
@@ -312,9 +313,9 @@ pub fn compare(rust: &[Record], baseline: &[BaselineRun]) -> Vec<Line> {
             .cloned()
             .collect()
     };
-    let (rust, baseline) = (in_both(&rust), in_both(&baseline));
+    let (current, baseline) = (in_both(&current), in_both(&baseline));
     let mut scenarios: Vec<&str> = Vec::new();
-    for row in &rust {
+    for row in &current {
         if !scenarios.contains(&row.scenario.as_str()) {
             scenarios.push(&row.scenario);
         }
@@ -332,7 +333,7 @@ pub fn compare(rust: &[Record], baseline: &[BaselineRun]) -> Vec<Line> {
             let strata: Vec<Stratum> = members
                 .iter()
                 .map(|name| Stratum {
-                    rust: values(&rust, name),
+                    current: values(&current, name),
                     baseline: values(&baseline, name),
                 })
                 .collect();
@@ -356,7 +357,7 @@ fn variance(values: &[f64]) -> f64 {
 
 /// One scenario's values of a metric on each side.
 struct Stratum {
-    rust: Vec<f64>,
+    current: Vec<f64>,
     baseline: Vec<f64>,
 }
 
@@ -364,24 +365,27 @@ struct Stratum {
 ///
 /// The means are over every value. The standard error is stratified by scenario, since both sides ran the same
 /// seeds of each scenario and the spread between scenarios cancels in the difference of means:
-/// `sqrt(sum_s (n_s/N)^2 (var_rust_s/n_rust_s + var_baseline_s/n_baseline_s))`, with `n_s` the baseline runs of stratum `s`.
+/// `sqrt(sum_s (n_s/N)^2 (var_current_s/n_current_s + var_baseline_s/n_baseline_s))`, with `n_s` the baseline runs of stratum `s`.
 fn line(scenario: &str, metric: &Metric, strata: &[Stratum]) -> Option<Line> {
-    let rust: Vec<f64> = strata.iter().flat_map(|s| s.rust.iter().copied()).collect();
+    let current: Vec<f64> = strata
+        .iter()
+        .flat_map(|s| s.current.iter().copied())
+        .collect();
     let baseline: Vec<f64> = strata
         .iter()
         .flat_map(|s| s.baseline.iter().copied())
         .collect();
-    if rust.is_empty() && baseline.is_empty() {
+    if current.is_empty() && baseline.is_empty() {
         return None;
     }
-    let one_side_lacks = rust.is_empty() || baseline.is_empty();
-    let (rust_mean, baseline_mean) = (mean(&rust), mean(&baseline));
+    let one_side_lacks = current.is_empty() || baseline.is_empty();
+    let (current_mean, baseline_mean) = (mean(&current), mean(&baseline));
     let spread = strata
         .iter()
-        .filter(|s| s.rust.len() >= 2 && s.baseline.len() >= 2);
+        .filter(|s| s.current.len() >= 2 && s.baseline.len() >= 2);
     let baseline_total: usize = strata
         .iter()
-        .filter(|s| !s.rust.is_empty() && !s.baseline.is_empty())
+        .filter(|s| !s.current.is_empty() && !s.baseline.is_empty())
         .map(|s| s.baseline.len())
         .sum();
     let error = spread
@@ -389,12 +393,12 @@ fn line(scenario: &str, metric: &Metric, strata: &[Stratum]) -> Option<Line> {
         .map(|s| {
             let weight = float(s.baseline.len()) / float(baseline_total);
             weight.powi(2)
-                * (variance(&s.rust) / float(s.rust.len())
+                * (variance(&s.current) / float(s.current.len())
                     + variance(&s.baseline) / float(s.baseline.len()))
         })
         .sum::<f64>()
         .sqrt();
-    let diff = rust_mean - baseline_mean;
+    let diff = current_mean - baseline_mean;
     let z = if one_side_lacks || spread.count() == 0 || diff == 0.0 {
         0.0
     } else if error > 0.0 {
@@ -404,7 +408,7 @@ fn line(scenario: &str, metric: &Metric, strata: &[Stratum]) -> Option<Line> {
     };
     let Band { rel, abs } = metric.band;
     let flagged = one_side_lacks
-        || rust.len() != baseline.len()
+        || current.len() != baseline.len()
         || if metric.name == CONCLUDED {
             diff < 0.0
         } else {
@@ -413,9 +417,9 @@ fn line(scenario: &str, metric: &Metric, strata: &[Stratum]) -> Option<Line> {
     Some(Line {
         scenario: scenario.to_owned(),
         metric: metric.name,
-        rust: rust_mean,
+        current: current_mean,
         baseline: baseline_mean,
-        rust_runs: rust.len(),
+        current_runs: current.len(),
         baseline_runs: baseline.len(),
         z,
         flagged,
@@ -434,28 +438,31 @@ fn cell(value: f64) -> String {
 pub fn report(w: &mut impl io::Write, lines: &[Line]) -> io::Result<()> {
     writeln!(
         w,
-        "sanity: means over the runs both benches ran; flagged when the means differ by more than the band and by more than {Z} standard errors, when concluded runs were lost, or when a side lacks the metric on runs the other has"
+        "sanity: means over the runs in both the current records and the baseline; flagged when the means differ by more than the band and by more than {Z} standard errors, when concluded runs were lost, or when a side lacks the metric on runs the other has"
     )?;
     writeln!(
         w,
-        "scenario                metric                    rust_runs baseline_runs       rust   baseline     rel_diff       z  flag"
+        "scenario                metric                    current_runs baseline_runs    current   baseline     rel_diff       z  flag"
     )?;
     for l in lines {
-        let rel = if l.rust.is_nan() || l.baseline.is_nan() {
+        let rel = if l.current.is_nan() || l.baseline.is_nan() {
             "n/a".to_owned()
         } else if l.baseline == 0.0 {
-            if l.rust == 0.0 { "+0.0%" } else { "+inf%" }.to_owned()
+            if l.current == 0.0 { "+0.0%" } else { "+inf%" }.to_owned()
         } else {
-            format!("{:+.1}%", (l.rust - l.baseline) / l.baseline.abs() * 100.0)
+            format!(
+                "{:+.1}%",
+                (l.current - l.baseline) / l.baseline.abs() * 100.0
+            )
         };
         writeln!(
             w,
-            "{:<23} {:<25} {:>9} {:>13} {:>10} {:>10} {:>12} {:>7.2}  {}",
+            "{:<23} {:<25} {:>12} {:>13} {:>10} {:>10} {:>12} {:>7.2}  {}",
             l.scenario,
             l.metric,
-            l.rust_runs,
+            l.current_runs,
             l.baseline_runs,
-            cell(l.rust),
+            cell(l.current),
             cell(l.baseline),
             rel,
             l.z,

@@ -423,7 +423,7 @@ fn only_a_live_session_start_names_the_live_session() {
     let fs = MemFs::new();
     let dir = dir(&fs);
     assert_eq!(dir.live_session().unwrap(), None);
-    // A Rust header missing only its newline is a torn tail, not a session; a line that lacks the build is not a
+    // A journal header missing only its newline is a torn tail, not a session; a line that lacks the build is not a
     // complete header of this build and is refused.
     fs.put(
         "/state/events.jsonl",

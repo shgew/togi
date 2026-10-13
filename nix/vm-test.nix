@@ -1,7 +1,7 @@
 {
   pkgs,
   package,
-  trialTestsRs,
+  trialTests,
 }:
 let
   module = import ./module.nix { packages.${pkgs.stdenv.hostPlatform.system}.default = package; };
@@ -37,7 +37,7 @@ let
 in
 {
   # Runs the shipped package under real systemd with a GRUB tuning boot and the retained trial scope tests
-  # (trial-scope-tests-rs) as root and as the delegated hardware user, without stress backends or SMU
+  # (trial-scope-tests) as root and as the delegated hardware user, without stress backends or SMU
   # access. Only the tuning specialisation's watchdog is overridden, to 10s (the module check pins the
   # shipped 30s); the test still freezes PID 1 and observes the real hardware watchdog reset.
   tuning-boot = pkgs.testers.runNixOSTest {
@@ -58,7 +58,7 @@ in
       systemd.services."user@".serviceConfig.Delegate = "cpu cpuset io memory pids";
       environment.etc."togi-test-lock-provision.py".source = documentedLockProvision;
       environment.systemPackages = [
-        trialTestsRs
+        trialTests
         pkgs.util-linux
         pkgs.python3
       ];
@@ -76,7 +76,7 @@ in
 
       def run_scope_tests(prefix, selection, manager):
           log = "/tmp/scope-tests.log"
-          status, _ = machine.execute(f"{prefix} togi-trial-tests-rs {selection} {flags} > {log} 2>&1")
+          status, _ = machine.execute(f"{prefix} togi-trial-tests {selection} {flags} > {log} 2>&1")
           output = machine.succeed(f"cat {log}")
           machine.log(output)
           assert status == 0, output
@@ -136,7 +136,7 @@ in
       machine.fail("runuser -u unrelated -- touch /run/lock/unrelated-lock")
       machine.fail("runuser -u unrelated -- flock --nonblock /run/lock/togi.lock true")
       unrelated_status, unrelated_output = machine.execute(
-          f"runuser -u unrelated -- togi-trial-tests-rs {pin} {flags} 2>&1"
+          f"runuser -u unrelated -- togi-trial-tests {pin} {flags} 2>&1"
       )
       assert unrelated_status != 0, unrelated_output
       assert "permission denied" in unrelated_output.lower(), unrelated_output
@@ -316,8 +316,8 @@ in
     '';
   };
 
-  trial-scope-rs = pkgs.testers.runNixOSTest {
-    name = "togi-trial-scope-rs";
+  trial-scope = pkgs.testers.runNixOSTest {
+    name = "togi-trial-scope";
 
     nodes.machine = {
       imports = [ tuningBoot ];
@@ -329,7 +329,7 @@ in
         group = "togi-hardware";
       };
       systemd.services."user@".serviceConfig.Delegate = "cpu cpuset io memory pids";
-      environment.systemPackages = [ trialTestsRs ];
+      environment.systemPackages = [ trialTests ];
     };
 
     testScript = ''
@@ -356,13 +356,13 @@ in
       assert machine.succeed("stat -c '%U:%G:%a' /run/lock/togi.lock").strip() == "root:togi-hardware:660"
       lock_identity = machine.succeed("stat -c '%d:%i' /run/lock/togi.lock").strip()
       for binary, selection, count in [
-          ("togi-trial-tests-rs", hardware, 11),
-          ("togi-trial-tests-rs", delegated_hardware, 9),
-          ("togi-trial-cached-errors-rs", "cached_errors::", 2),
+          ("togi-trial-tests", hardware, 11),
+          ("togi-trial-tests", delegated_hardware, 9),
+          ("togi-trial-cached-errors", "cached_errors::", 2),
       ]:
           listed = machine.succeed(f"{binary} {selection} --list").splitlines()
           assert sum(line.endswith(": test") for line in listed) == count, listed
-      run_scope_tests("", "togi-trial-tests-rs", hardware, "")
+      run_scope_tests("", "togi-trial-tests", hardware, "")
       assert machine.succeed("stat -c '%d:%i' /run/lock/togi.lock").strip() == lock_identity
       machine.succeed("loginctl enable-linger togi-hardware")
       delegated_uid = machine.succeed("id -u togi-hardware").strip()
@@ -371,8 +371,8 @@ in
           f"runuser -u togi-hardware -- env XDG_RUNTIME_DIR=/run/user/{delegated_uid} "
           f"DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{delegated_uid}/bus"
       )
-      run_scope_tests(delegated_prefix, "togi-trial-tests-rs", delegated_hardware, "--user")
-      run_scope_tests(delegated_prefix, "togi-trial-cached-errors-rs", "cached_errors::", "--user")
+      run_scope_tests(delegated_prefix, "togi-trial-tests", delegated_hardware, "--user")
+      run_scope_tests(delegated_prefix, "togi-trial-cached-errors", "cached_errors::", "--user")
       assert machine.succeed("stat -c '%d:%i' /run/lock/togi.lock").strip() == lock_identity
       assert machine.succeed("stat -c '%U:%G:%a' /run/lock/togi.lock").strip() == "root:togi-hardware:660"
     '';

@@ -113,7 +113,7 @@ fn a_truncated_header_of_this_build_is_refused_in_the_same_words() {
         let bad = fake.dir.join("invalid.json");
         fs::write(&bad, "{ not a configuration").unwrap();
         fs::create_dir(fake.state_dir()).unwrap();
-        fixture::keep_only_a_truncated_rust_header(&fake.state_dir(), newline);
+        fixture::keep_only_a_truncated_journal_header(&fake.state_dir(), newline);
         let before = fixture::snapshot(&fake.dir);
         let (exit, out, err) = fake.run(&["run", "--no-tui", "--config", bad.to_str().unwrap()]);
         assert_eq!(exit, Exit::Error, "newline {newline}: {err}");

@@ -1,12 +1,12 @@
 # CI's definition of green: every Linux flake check on GitHub-hosted runners, one job per check so the VM
 # tests boot in parallel. On pushes to `main` only, a native arm64 runner also builds
-# `checks.aarch64-darwin.go-tools`, which builds and tests the retained Go tools, and `checks.aarch64-darwin.rust-nextest`, which builds the Rust
+# `checks.aarch64-darwin.go-tools`, which builds and tests the retained Go tools, and `checks.aarch64-darwin.nextest`, which builds the
 # workspace and runs its tests; pull requests skip it (ADR 0046). The aggregating `check` job requires
 # the Linux checks, and on `main` the macOS job too. Jobs substitute from the public Cachix cache `togi`
 # and push each check's output when CACHIX_AUTH_TOKEN is available, so a check whose inputs are unchanged
 # passes without running; the checks build the package with the revision `dev` so that a new commit alone
 # changes none of them (ADR 0021).
-# The release workflow builds the default package and runs Rust nextest on the release commit.
+# The release workflow builds the default package and runs nextest on the release commit.
 name: check
 
 on:
@@ -91,8 +91,8 @@ jobs:
           skipPush: true
       - name: nix build .#checks.aarch64-darwin.go-tools
         run: nix build --no-link --print-build-logs --print-out-paths .#checks.aarch64-darwin.go-tools > "$RUNNER_TEMP/out-paths"
-      - name: nix build .#checks.aarch64-darwin.rust-nextest
-        run: nix build --no-link --print-build-logs --print-out-paths .#checks.aarch64-darwin.rust-nextest >> "$RUNNER_TEMP/out-paths"
+      - name: nix build .#checks.aarch64-darwin.nextest
+        run: nix build --no-link --print-build-logs --print-out-paths .#checks.aarch64-darwin.nextest >> "$RUNNER_TEMP/out-paths"
       - name: Push the check's output to Cachix
         if: env.CACHIX_AUTH_TOKEN != ''
         continue-on-error: true
@@ -116,6 +116,6 @@ jobs:
         env:
           CHECKS: ${{ needs.eval.outputs.checks }}
         run: |
-          want=$(jq -ce '.shards as $n | select($n >= 1) | [range($n) | "rust-sim-suite-\(.)"]' nix/sim-suite.json)
-          got=$(jq -c '[.[] | select(startswith("rust-sim-suite-"))] | sort_by(ltrimstr("rust-sim-suite-") | tonumber)' <<<"$CHECKS")
+          want=$(jq -ce '.shards as $n | select($n >= 1) | [range($n) | "sim-suite-\(.)"]' nix/sim-suite.json)
+          got=$(jq -c '[.[] | select(startswith("sim-suite-"))] | sort_by(ltrimstr("sim-suite-") | tonumber)' <<<"$CHECKS")
           test "$got" = "$want" || { echo "suite shards built: $got; nix/sim-suite.json expects: $want"; exit 1; }

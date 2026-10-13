@@ -222,7 +222,8 @@ fn the_first_of_two_differing_contexts_wins() {
 }
 
 #[test]
-fn a_first_line_that_is_not_a_rust_header_is_another_builds_journal_and_nothing_after_it_is_read() {
+fn a_first_line_that_is_not_a_journal_header_is_another_builds_journal_and_nothing_after_it_is_read()
+ {
     let good = recorded(&MemFs::new());
     let kinds = [
         ("not session.start", non_start_first_line(&good)),
@@ -260,7 +261,7 @@ fn flat_first_line() -> Vec<u8> {
 }
 
 #[test]
-fn a_rust_header_this_build_cannot_decode_is_not_another_builds_journal() {
+fn a_journal_header_this_build_cannot_decode_is_not_another_builds_journal() {
     let good = recorded(&MemFs::new());
     let first = good.split_inclusive(|byte| *byte == b'\n').next().unwrap();
     let mut line: serde_json::Value = serde_json::from_slice(first).unwrap();
@@ -301,7 +302,7 @@ fn a_rust_header_this_build_cannot_decode_is_not_another_builds_journal() {
 }
 
 #[test]
-fn an_unterminated_first_line_that_is_not_a_rust_header_is_refused_not_torn() {
+fn an_unterminated_first_line_that_is_not_a_journal_header_is_refused_not_torn() {
     // `testdata/20260927T221954Z-config.jsonl` is the Go build's journal from
     // `internal/journal/testdata`, with its boot ids replaced by synthetic ones.
     let go = include_str!("../../testdata/20260927T221954Z-config.jsonl")
@@ -333,7 +334,7 @@ fn an_unterminated_first_line_that_is_not_a_rust_header_is_refused_not_torn() {
 }
 
 #[test]
-fn an_unterminated_rust_header_is_still_a_torn_tail() {
+fn an_unterminated_journal_header_is_still_a_torn_tail() {
     let bytes = recorded(&MemFs::new());
     let first = bytes.split_inclusive(|byte| *byte == b'\n').next().unwrap();
     let torn = &first[..first.len() - 1];
@@ -706,7 +707,7 @@ fn a_lenient_reader_still_checks_seq_causes_and_the_first_event_of_what_it_skips
         Some(ReadError::Cause { line: 5, .. })
     ));
 
-    // A first line that is not a complete Rust header is refused before it is decoded, so a lenient reader never
+    // A first line that is not a complete journal header is refused before it is decoded, so a lenient reader never
     // skips an unknown first kind and never reports a known one that is not session.start.
     let first = line(1, "future.thing", "", "{}");
     let error = EventReader::lenient(first.as_slice())
@@ -737,7 +738,7 @@ fn a_lenient_reader_still_checks_seq_causes_and_the_first_event_of_what_it_skips
 }
 
 #[test]
-fn strict_and_lenient_alike_refuse_a_first_line_that_is_not_a_complete_rust_header_and_change_nothing()
+fn strict_and_lenient_alike_refuse_a_first_line_that_is_not_a_complete_journal_header_and_change_nothing()
  {
     let go = include_str!("../../testdata/20260927T221954Z-config.jsonl");
     let go_first = go.lines().next().unwrap();
