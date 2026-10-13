@@ -1,8 +1,7 @@
 # CI's definition of green: every Linux flake check on GitHub-hosted runners, one job per check so the VM
-# tests boot in parallel. On pushes to `main` only, a native arm64 runner also builds
-# `checks.aarch64-darwin.go-tools`, which builds and tests the retained Go tools, and `checks.aarch64-darwin.nextest`, which builds the
-# workspace and runs its tests; pull requests skip it (ADR 0046). The aggregating `check` job requires
-# the Linux checks, and on `main` the macOS job too. Jobs substitute from the public Cachix cache `togi`
+# tests boot in parallel. No job runs on macOS (ADR 0061): `just lint` and `just gate` clippy the Rust
+# workspace for aarch64-apple-darwin from Linux, and a breakage found on a Mac is fixed as a bug. The
+# aggregating `check` job requires the Linux checks. Jobs substitute from the public Cachix cache `togi`
 # and push each check's output when CACHIX_AUTH_TOKEN is available, so a check whose inputs are unchanged
 # passes without running; the checks build the package with the revision `dev` so that a new commit alone
 # changes none of them (ADR 0021).
@@ -17,9 +16,10 @@ on:
 permissions:
   contents: read
 
+# Only the newest run of a pull request or main needs checking; releases wait for the exact main head.
 concurrency:
-  group: check-${{ github.ref }}${{ github.event_name == 'push' && format('-{0}', github.sha) || '' }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   eval:
@@ -75,42 +75,16 @@ jobs:
         continue-on-error: true
         run: cachix push togi < "$RUNNER_TEMP/out-paths"
 
-  macos:
-    name: macOS arm64
-    if: github.event_name == 'push'
-    runs-on: macos-26
-    env:
-      CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31
-      - uses: cachix/cachix-action@38b082610b782e7e93e209c35fd730d399dee866 # v17
-        with:
-          name: togi
-          authToken: ${{ env.CACHIX_AUTH_TOKEN }}
-          skipPush: true
-      - name: nix build .#checks.aarch64-darwin.go-tools
-        run: nix build --no-link --print-build-logs --print-out-paths .#checks.aarch64-darwin.go-tools > "$RUNNER_TEMP/out-paths"
-      - name: nix build .#checks.aarch64-darwin.nextest
-        run: nix build --no-link --print-build-logs --print-out-paths .#checks.aarch64-darwin.nextest >> "$RUNNER_TEMP/out-paths"
-      - name: Push the check's output to Cachix
-        if: env.CACHIX_AUTH_TOKEN != ''
-        continue-on-error: true
-        run: cachix push togi < "$RUNNER_TEMP/out-paths"
 
   check:
     if: always()
-    needs: [eval, build, macos]
+    needs: [eval, build]
     runs-on: ubuntu-26.04
     steps:
       - name: Every check passed
         env:
           BUILD: ${{ needs.build.result }}
-          MACOS: ${{ needs.macos.result }}
-          MACOS_EXPECTED: ${{ github.event_name == 'push' && 'success' || 'skipped' }}
-        run: |
-          test "$BUILD" = success
-          test "$MACOS" = "$MACOS_EXPECTED"
+        run: test "$BUILD" = success
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Every simulator suite shard was built
         env:
