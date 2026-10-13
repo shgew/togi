@@ -16,9 +16,10 @@ on:
 permissions:
   contents: read
 
+# Only the newest run of a pull request or main needs checking; releases wait for the exact main head.
 concurrency:
-  group: check-${{ github.ref }}${{ github.event_name == 'push' && format('-{0}', github.sha) || '' }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   eval:

@@ -17,6 +17,7 @@ The job became the slowest part of every push to `main`. In [run 38405568483](ht
 - **Code behind `cfg(target_os = "linux")` keeps a working non-Linux path.**
 - **A pull request that changes platform-gated code says that it was not built on macOS**, unless its author built it there.
 - **A breakage found on macOS is filed and fixed like any other bug.**
+- **Only the newest `main` check run needs to finish** ([#941](https://github.com/shgew/togi/issues/941)). A newer push cancels its predecessor, as pull request pushes already do; ADR 0016's rule that every push to `main` runs to the end is superseded. A release still requires a successful check on its exact head; if a merge cancels the run it is waiting for, rerun the release on the new head ([Releasing](../releasing.md)).
 - The flake keeps its `aarch64-darwin` outputs, so `just check` on a Mac still works as a development tool; nothing in CI builds or caches them.
 
 ## Considered Options
