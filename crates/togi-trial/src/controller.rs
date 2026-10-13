@@ -8,7 +8,7 @@
 
 use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Mutex, PoisonError};
 
 use rustix::io::Errno;
 use rustix::process::Pid;
@@ -195,9 +195,10 @@ impl Tasks for Proc {
         };
         let mut unread = 0;
         let mut tids: Vec<u32> = entries
-            .filter_map(|entry| match entry {
-                Ok(entry) => entry.file_name().to_str()?.parse().ok(),
-                Err(_) => {
+            .filter_map(|entry| {
+                if let Ok(entry) = entry {
+                    entry.file_name().to_str()?.parse().ok()
+                } else {
                     unread += 1;
                     None
                 }
@@ -389,6 +390,8 @@ fn is_empty(set: &CpuSet) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use togi_machine::CcdId;
 
     use super::*;
