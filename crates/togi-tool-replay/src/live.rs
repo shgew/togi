@@ -7,7 +7,7 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use jiff::Timestamp;
-use togi_journal::Event;
+use togi_journal::{Event, Payload};
 use togi_watch::model::Model;
 use togi_watch::screen::{Journal, Screen};
 use togi_watch::terminal::{Config, Feed, run_with};
@@ -65,8 +65,14 @@ impl<E: FnMut() -> Duration> Feed for Replaying<'_, E> {
         let (played, now) = self.playback.advance((self.elapsed)());
         self.now.set(now);
         if played != self.shown {
-            for event in &self.events[self.shown..played] {
-                if self.model.problem().is_some() || self.model.fold(event).is_err() {
+            let batch = &self.events[self.shown..played];
+            let last_end = batch
+                .iter()
+                .rposition(|event| matches!(event.payload, Payload::TrialEnd(_)));
+            for (at, event) in batch.iter().enumerate() {
+                if self.model.problem().is_some()
+                    || self.model.fold_ending(event, last_end == Some(at)).is_err()
+                {
                     break;
                 }
             }

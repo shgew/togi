@@ -656,8 +656,10 @@ impl Model {
     }
 
     /// [`Model::fold`], where `keep_outcomes` says whether a trial end folded now keeps what the trial in flight
-    /// led to, for the frame between trials to show. A replay keeps it only for the last trial end it folds,
-    /// since a later end or any stop replaces it, so it computes one projection instead of one per trial.
+    /// led to, for the frame between trials to show. A caller folding several events before the next frame passes
+    /// `true` only for the last trial end among them, since a later end or any stop replaces what an earlier one
+    /// kept, so it computes one projection instead of one per trial; an event other than a session start or a
+    /// trial end keeps what the last one kept.
     pub fn fold_ending(&mut self, event: &Event, keep_outcomes: bool) -> Result<(), FoldError> {
         if let Some(problem) = &self.problem {
             return Err(problem.clone());
@@ -760,13 +762,12 @@ impl Model {
 
 /// Folds events into a new model, stopping at the first one the model refuses. The model is then in its problem
 /// state, like one that was folded event by event.
-pub fn project<'a>(events: impl IntoIterator<Item = &'a Event>) -> Model {
-    let events: Vec<&Event> = events.into_iter().collect();
+pub fn project(events: &[Event]) -> Model {
     let last_end = events
         .iter()
         .rposition(|event| matches!(event.payload, Payload::TrialEnd(_)));
     let mut model = Model::new();
-    for (at, event) in events.into_iter().enumerate() {
+    for (at, event) in events.iter().enumerate() {
         if model.fold_ending(event, last_end == Some(at)).is_err() {
             break;
         }

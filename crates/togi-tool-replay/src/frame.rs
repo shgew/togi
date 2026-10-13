@@ -4,7 +4,7 @@ use jiff::SignedDuration;
 use jiff::tz::TimeZone;
 use ratatui::buffer::{Buffer, Cell};
 use ratatui::style::{Color, Modifier};
-use togi_journal::Event;
+use togi_journal::{Event, Payload};
 use togi_watch::frames::{frame_area, render};
 use togi_watch::model::Model;
 use togi_watch::screen::{Colours, Journal, Screen, View};
@@ -34,11 +34,16 @@ pub fn draw(
 ) -> Result<String, Error> {
     let events = events.split_at(shown.max(1).min(events.len())).0;
     let mut model = Model::new();
-    for event in events {
-        model.fold(event).map_err(|source| Error::Fold {
-            seq: event.seq.get(),
-            source,
-        })?;
+    let last_end = events
+        .iter()
+        .rposition(|event| matches!(event.payload, Payload::TrialEnd(_)));
+    for (at, event) in events.iter().enumerate() {
+        model
+            .fold_ending(event, last_end == Some(at))
+            .map_err(|source| Error::Fold {
+                seq: event.seq.get(),
+                source,
+            })?;
     }
     let snapshot = model.snapshot();
     let screen = Screen {

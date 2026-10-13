@@ -109,7 +109,7 @@ fn project_folds_like_fold() {
     let projected = project(&script.events);
     assert!(projected.problem().is_none());
     assert_eq!(projected.snapshot().cores.len(), 3);
-    let broken = project(script.events.iter().skip(1));
+    let broken = project(&script.events[1..]);
     assert!(broken.problem().is_some());
 }
 
@@ -560,6 +560,75 @@ fn between_trials_the_last_outcome_and_the_forecast_stand() {
         snap.forecast.between.is_some(),
         "what runs next is forecast between trials"
     );
+}
+
+/// What a frame between trials shows of the trial that just ended: its id and what each outcome led to.
+fn ended_of(model: &Model) -> Option<(String, String)> {
+    model
+        .snapshot()
+        .ended
+        .map(|ended| (ended.trial.id.to_string(), format!("{:?}", ended.forecast)))
+}
+
+#[test]
+fn only_the_last_end_of_a_batch_keeps_its_outcomes_and_a_batch_without_one_keeps_the_last() {
+    let mut script = Script::at_limit();
+    let mut ends = Vec::new();
+    for _ in 0..2 {
+        let plan = script.next_trial();
+        let (intent, trial) = script.intent(&plan);
+        script.start(&trial);
+        script.end(intent, &trial, Outcome::Pass);
+        ends.push(script.events.len());
+    }
+    let plan = script.next_trial();
+    let next_decided = script.events.len();
+    script.intent(&plan);
+    let events = &script.events;
+    let next_intent = events.len();
+    assert!(
+        next_decided > ends[1],
+        "the tuner decides something between the last end and the next intent"
+    );
+
+    // Folding one event at a time keeps every end; the batch must show the same as the incremental fold at each
+    // endpoint: just ended, the next intent, and with two ends in the history.
+    for &shown in &[ends[0], ends[1], next_decided, next_intent] {
+        let mut each = Model::new();
+        for event in &events[..shown] {
+            each.fold(event).unwrap();
+        }
+        let batch = project(&events[..shown]);
+        assert_eq!(ended_of(&batch), ended_of(&each), "{shown} events");
+        assert_eq!(
+            batch.snapshot().last.map(|last| &last.id),
+            each.snapshot().last.map(|last| &last.id)
+        );
+        assert_eq!(
+            batch.snapshot().history.len(),
+            each.snapshot().history.len()
+        );
+    }
+    assert!(
+        ended_of(&project(&events[..ends[1]])).is_some(),
+        "the last end keeps its outcomes"
+    );
+
+    // A batch holding no end leaves what the last end kept: the events decided after it keep the same outcomes.
+    let kept = ended_of(&project(&events[..ends[1]]));
+    let mut rest = project(&events[..ends[1]]);
+    for event in &events[ends[1]..next_decided] {
+        rest.fold_ending(event, false).unwrap();
+    }
+    assert!(
+        ended_of(&rest).is_some(),
+        "the end survives a batch without one"
+    );
+    assert_eq!(ended_of(&rest), kept);
+
+    // The next intent ends the time between trials, so nothing is kept for it.
+    rest.fold_ending(&events[next_decided], false).unwrap();
+    assert_eq!(ended_of(&rest), None);
 }
 
 #[test]
