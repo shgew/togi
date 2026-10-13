@@ -21,3 +21,7 @@ For a reviewed head that changes Go code, the `/review-pr` coordinator runs it o
 ## Consequences
 
 Review sees untested changed code without anyone writing tests to move a number. The output lists every uncovered block in a changed file, including blocks outside the diff, so reviewers do the matching, and the quality of the signal rests on their judgment. The record's JSON becomes version 3 to carry the coverage judgment. Code reached only by the VM checks, the `hardware` tests or the real machine shows as uncovered; reviewers judge it with that in mind.
+
+## Amendment (#918)
+
+The mechanism after the Rust cutover; the decision and its reasons are unchanged. `just cover BASE` takes a required base. It runs `cargo llvm-cov nextest --locked --lcov` over the workspace tests, then `go run ./tools/cover --lcov ... --base BASE`, which prints the changed Rust lines no test reached and, for each changed file the coverage build leaves out, `path: not built for <host triple>`. The whole-repository `go tool cover -func` output has no Rust counterpart. For the retained Go tools, the review coordinator runs `go test -coverprofile` and `go run ./tools/cover --profile ...` by hand (`.omp/commands/review-pr.md`). Code reached only by the VM checks, the `hardware` tests or the target machine still shows as uncovered or not built.

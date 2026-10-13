@@ -2,6 +2,8 @@
 
 Status: see [the index](README.md).
 
+Superseded by [ADR 0062](0062-checks-need-no-race-detector-or-test-result-cache.md) ([#918](https://github.com/shgew/togi/issues/918)): the Go packages, `just test -race` and the `race` flake check it describes were removed with the Go tree, and the Rust workspace needs no race check. The text below is the record of the Go decision.
+
 Supersedes only the race-detector decision and its consequences in [ADR 0016](0016-every-pull-request-runs-every-check.md). Its package set and source were amended by [#499](https://github.com/shgew/togi/issues/499); see Amendment.
 
 ADR 0016 removed the race detector because its first CI job took 8m00s, against 3m41s for the VM test. Containment and session ownership now add concurrency that should be checked before it merges. [ADR 0021](0021-cache-check-outputs-on-cachix.md) also lets unchanged checks pass by substituting their outputs rather than running again.

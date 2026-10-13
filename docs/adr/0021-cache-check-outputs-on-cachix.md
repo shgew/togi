@@ -24,3 +24,7 @@ A `check` run took about 3.3 minutes, set by the `vm` job. Much of it repeated w
 - A pull request run holding the token could push any output under a check's store path, which `main` would then take as a pass. Only collaborators can open pull requests.
 - The `check` workflow needs the `CACHIX_AUTH_TOKEN` repository secret to push; without it, runs still pass and only read the cache.
 - The `package` check no longer builds the exact derivation that ships. The release commit's build runs the same tests on it.
+
+## Amendment (#918)
+
+The mechanism after the Rust cutover; the decision and its reasons are unchanged. The build jobs, the revision `dev` for check builds, `packages.default` keeping the commit's revision, and the Cachix push of each check's output are as before. The Rust checks build from `Cargo.lock` with crane, whose dependency artifacts are one derivation that `clippy`, `nextest`, `doc` and `trial-scope-tests` share. The VM package is the `togi` build with `doCheck = false`, and `trial-scope-tests` builds the `hardware` and `cached_errors` test binaries. The source lists in `flake.nix` decide which change rebuilds which check; the Go-source detail in the Considered Options above describes the Go tree. A substituted Rust check skips only the run: Rust tests draw no shuffle seed ([ADR 0062](0062-checks-need-no-race-detector-or-test-result-cache.md)), and `-race` no longer exists. The retained Go tools' `go-tools` check still runs `-shuffle=on` when it builds.
