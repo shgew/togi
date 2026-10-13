@@ -6,10 +6,7 @@ use std::os::unix::fs::{PermissionsExt, symlink};
 use tempfile::TempDir;
 use togi_machine::{REGIMES, workload_by_id, workloads};
 
-const TESTDATA: &str = concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../internal/backend/ycruncher/testdata"
-);
+const TESTDATA: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/testdata");
 const LOWEST: &str = "05-A64 ~ Kasumi";
 const ZEN5: &str = "24-ZN5 ~ Komari";
 

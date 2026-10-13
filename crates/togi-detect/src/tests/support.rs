@@ -64,7 +64,7 @@ pub(super) fn stamped(message: &Message) -> String {
 
 pub(super) fn fixture(name: &str) -> Vec<Message> {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../internal/detect/testdata")
+        .join("testdata")
         .join(name);
     std::fs::read_to_string(path)
         .unwrap()
