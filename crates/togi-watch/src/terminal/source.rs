@@ -224,10 +224,11 @@ impl Source {
             }
             _ => (Box::new(Model::new()), 0),
         };
-        let last_end = events
+        let batch = &events[folded..];
+        let last_end = batch
             .iter()
             .rposition(|event| matches!(event.payload, Payload::TrialEnd(_)));
-        for (at, event) in events.iter().enumerate().skip(folded) {
+        for (at, event) in batch.iter().enumerate() {
             if let Payload::SessionStart(start) = &event.payload {
                 if let Verdict::Refuse(refusal) =
                     shown_build().verdict(&start.build, Operation::Inspect)
