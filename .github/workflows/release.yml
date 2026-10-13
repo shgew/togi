@@ -27,7 +27,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: nix develop --command go run ./tools/release -commit
       - name: Build the package and run its tests
-        run: nix build --no-link --print-build-logs .#packages.x86_64-linux.default .#checks.x86_64-linux.rust-nextest
+        run: nix build --no-link --print-build-logs .#packages.x86_64-linux.default .#checks.x86_64-linux.nextest
       - name: Push to main
         env:
           RELEASE_DEPLOY_KEY: ${{ secrets.RELEASE_DEPLOY_KEY }}

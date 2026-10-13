@@ -12,7 +12,7 @@ use togi_machine::object_only;
 use crate::cache::{touch, write_atomic};
 use crate::suite::{RunSpec, hex};
 
-const FORMAT: &str = "togi-bench-same-rs-v1";
+const FORMAT: &str = "togi-bench-same-v1";
 const KEPT_TREES: usize = 8;
 
 object_only! {

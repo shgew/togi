@@ -76,7 +76,7 @@ struct RunArgs {
     /// Stop a session after N simulated boots: the run is censored.
     #[arg(long, value_name = "N", default_value = "1000")]
     max_boots: NonZeroU32,
-    /// The directory of cached runs and their costs; default the user cache directory's togi/bench-rs.
+    /// The directory of cached runs and their costs; default the user cache directory's togi/bench.
     #[arg(long, value_name = "DIR", conflicts_with = "no_cache")]
     cache: Option<PathBuf>,
     /// Run every session instead of reusing cached ones.
@@ -234,7 +234,7 @@ fn default_cache() -> Option<PathBuf> {
                 dir
             })
         })?;
-    Some(base.join("togi").join("bench-rs"))
+    Some(base.join("togi").join("bench"))
 }
 
 /// Stops the fleet on SIGINT, SIGTERM and SIGHUP. Handlers feed a watcher thread, so the signal mask stays empty
