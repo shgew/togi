@@ -14,7 +14,7 @@ const fn resolve_revision(explicit: Option<&'static str>) -> &'static str {
     }
 }
 
-/// The release version, without the file's trailing whitespace.
+/// The release version read from version.txt, without surrounding whitespace.
 #[must_use]
 pub fn version() -> &'static str {
     VERSION.trim()
