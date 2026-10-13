@@ -243,13 +243,13 @@ fn no_cache_runs_every_session() {
     assert!(text(&run(&mut command).stdout).contains("cache: 0 of 5 runs cached"));
 }
 
-fn sanity(records: &Path, go: &Path) -> Output {
+fn sanity(records: &Path, baseline: &Path) -> Output {
     run(Command::new(env!("CARGO_BIN_EXE_togi-tool-bench"))
         .arg("sanity")
         .arg("--records")
         .arg(records)
-        .arg("--go")
-        .arg(go))
+        .arg("--baseline")
+        .arg(baseline))
 }
 
 #[test]

@@ -16,7 +16,7 @@ var (
 	coverNotBuiltLine = regexp.MustCompile(`^(.+): not built for (.+)$`)
 )
 
-// parseCover reads `just cover` and `just cover-rs` output: `path:first-last` and `path:line` ranges, then `path: not built for <platform>` lines. Its summary sentences are ignored.
+// parseCover reads `just cover` output: `path:first-last` and `path:line` ranges, then `path: not built for <platform>` lines. Its summary sentences are ignored.
 func parseCover(text string) (ranges []coverRange, unbuilt []notBuilt, err error) {
 	for line := range strings.Lines(text) {
 		line = strings.TrimSpace(line)

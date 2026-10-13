@@ -5,10 +5,7 @@ use std::os::unix::fs::{PermissionsExt, symlink};
 use tempfile::TempDir;
 use togi_machine::{REGIMES, workload_by_id, workloads};
 
-const TESTDATA: &str = concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../internal/backend/mprime/testdata"
-);
+const TESTDATA: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/testdata");
 
 fn fake_package() -> TempDir {
     let pkg = TempDir::new().unwrap();

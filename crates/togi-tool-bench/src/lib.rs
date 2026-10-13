@@ -10,7 +10,7 @@
 //! 3. [`measure`] turns the journal into the [`Measured`] numbers of a [`Record`]: time, crashes, trials, real
 //!    answers, the final profile and the model's hazards at it.
 //! 4. [`summary::report`] and [`compare::report`] print the per-scenario summary and the comparison with a
-//!    baseline, and [`sanity::compare`] checks a run against the scores the Go bench recorded.
+//!    baseline, and [`sanity::compare`] checks a run against the scores of a recorded baseline.
 //! 5. [`cache`] keeps each finished record under the digests of the simulator, the bench, the flags and every
 //!    input file, so an unchanged run is not simulated again.
 //!

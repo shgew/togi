@@ -42,10 +42,6 @@
             ./go.sum
             ./.golangci.yml
             ./version.txt
-            ./version.go
-            ./version_test.go
-            ./cmd
-            ./internal
             ./tools
           ];
           rustPkgs = pkgs.extend inputs.rust-overlay.overlays.default;
@@ -59,15 +55,11 @@
             ./deny.toml
             ./.config
             ./crates
-            ./internal/detect/testdata
             ./tools/bench/machines
             ./tools/bench/facts
             ./tools/bench/suite.json
             ./tools/bench/baseline.jsonl
             ./tools/bench/gates
-            # The backend crates' tests read the Go adapters' output fixtures in place.
-            ./internal/backend/mprime/testdata
-            ./internal/backend/ycruncher/testdata
             ./version.txt
           ];
           rustLinker = lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
@@ -172,27 +164,23 @@
             mainProgram = "togi";
             platforms = [ system ];
           };
-          togi =
-            rev:
-            pkgs.buildGo127Module {
-              pname = "togi";
-              inherit version meta;
-              src = lib.fileset.toSource {
-                root = ./.;
-                fileset = goFiles;
-              };
-              vendorHash = "sha256-w1Kcniaoea7gPne6mde/KhZiSAVNGJ/H9mNED8lmDMA=";
-              nativeBuildInputs = [ pkgs.installShellFiles ];
-              nativeCheckInputs = [
-                pkgs.gitMinimal
-                pkgs.nushell
-              ]
-              ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.util-linux ];
-              ldflags = [ "-X github.com/shgew/togi.rev=${rev}" ];
-              subPackages = [ "cmd/togi" ];
-              checkPhase = testPhase "" "./...";
-              postInstall = installCompletions;
+          goTools = pkgs.buildGo127Module {
+            pname = "togi-go-tools";
+            inherit version;
+            src = lib.fileset.toSource {
+              root = ./.;
+              fileset = goFiles;
             };
+            vendorHash = "sha256-uPqabZgQGQulf+F3BvMLhv4O0h5jOq12F7K60u5xjtA=";
+            nativeCheckInputs = [ pkgs.gitMinimal ];
+            subPackages = [
+              "tools/release"
+              "tools/board"
+              "tools/reviews"
+              "tools/cover"
+            ];
+            checkPhase = testPhase "" "./...";
+          };
           togiRust =
             rev:
             craneLib.buildPackage (
@@ -240,7 +228,7 @@
           );
 
           checks = {
-            package = togi "dev";
+            go-tools = goTools;
             rust-clippy = craneLib.mkCargoDerivation (rustCheck {
               pnameSuffix = "-clippy";
               buildPhaseCargoCommand = ''
@@ -291,24 +279,9 @@
                 done
                 touch "$out"
               '';
-            race = config.checks.package.overrideAttrs {
-              pname = "togi-race";
-              src = lib.fileset.toSource {
-                root = ./.;
-                fileset = lib.fileset.difference goFiles ./tools;
-              };
-              goModules = config.checks.package.goModules;
-              buildPhase = ''
-                runHook preBuild
-                runHook postBuild
-              '';
-              checkPhase = testPhase "-race" "./internal/trial ./internal/journal ./internal/watch ./internal/smu ./cmd/togi";
-              installPhase = "mkdir -p $out";
-              dontFixup = true;
-            };
-            lint = config.checks.package.overrideAttrs (old: {
+            lint = config.checks.go-tools.overrideAttrs (old: {
               pname = "togi-lint";
-              goModules = config.checks.package.goModules;
+              goModules = config.checks.go-tools.goModules;
               nativeBuildInputs = old.nativeBuildInputs ++ [ pkgs.golangci-lint ];
               buildPhase = ''
                 runHook preBuild

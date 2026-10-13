@@ -10,70 +10,35 @@ _default:
 _dev-shell:
     @[[ "${TOGI_DEV_SHELL:-}" == 1 ]] || { echo 'this recipe needs the dev shell: run `nix develop`, or `direnv allow` once per checkout' >&2; exit 1; }
 
-# Run the Go test suite with optional test flags
+# Run the Rust test suite with optional nextest flags (`just test -p togi-journal`)
 [group('test')]
 test *args: _dev-shell
-    go test ./... "$@"
-
-# Run one package's tests with optional test flags (`just focus ./internal/tuner`, `just focus ./... -run TestChecking/crash`)
-[group('test')]
-focus package *args: _dev-shell
-    go test "$@"
-
-# Run the Rust test suite with optional nextest flags (`just test-rs -p togi-journal`)
-[group('test')]
-test-rs *args: _dev-shell
     cargo nextest run "$@"
 
-# Run one Rust crate's tests with optional nextest flags (`just focus-rs togi-journal`)
+# Run one Rust crate's tests with optional nextest flags (`just focus togi-journal`)
 [group('test')]
-focus-rs crate *args: _dev-shell
+focus crate *args: _dev-shell
     cargo nextest run -p "$@"
 
-# Type-check one Rust crate without building it (`just check-rs togi-journal`)
+# Type-check one Rust crate without building it (`just typecheck togi-journal`)
 [group('test')]
-check-rs crate: _dev-shell
+typecheck crate: _dev-shell
     cargo check --all-targets -p "$1"
 
-# Run the hardware tests on the target machine (Linux only), entering the dev shell itself because sudo drops it
+# Run the Rust hardware tests of smu, detect, trial and hardware one binary and one test at a time, every binary even after one fails, on the target machine (Linux only), entering the dev shell itself because sudo drops it; as root, as the SMU needs, it builds under root's home and skips trial's `cached_errors`, which refuses uid 0 (`just hardware --no-run` only builds them)
 [group('test')]
 hardware *args:
     @[[ "{{ os() }}" == linux ]] || { echo 'just hardware needs Linux: run it on the target machine' >&2; exit 1; }
-    nix develop --command env TMPDIR=/tmp go test -tags hardware -p 1 ./... "$@"
+    tests=(--test hardware); [[ "$(id -u)" == 0 ]] || tests+=(--test cached_errors); [[ "$(id -u)" != 0 ]] || export CARGO_TARGET_DIR=~root/.cache/togi/hardware-target; nix develop --command env TMPDIR=/tmp RUST_TEST_THREADS=1 cargo test --locked --no-fail-fast -p togi-smu -p togi-detect -p togi-trial -p togi-hardware --features hardware "${tests[@]}" "$@"
 
-# Run the Rust hardware tests of smu, detect, trial and hardware one binary and one test at a time, every binary even after one fails, on the target machine (Linux only), entering the dev shell itself because sudo drops it; as root, as the SMU needs, it builds under root's home and skips trial's `cached_errors`, which refuses uid 0 (`just hardware-rs --no-run` only builds them)
+# Fuzz the Rust journal reader for the given seconds (`just fuzz 300`), seeded from fuzz/seeds
 [group('test')]
-hardware-rs *args:
-    @[[ "{{ os() }}" == linux ]] || { echo 'just hardware-rs needs Linux: run it on the target machine' >&2; exit 1; }
-    tests=(--test hardware); [[ "$(id -u)" == 0 ]] || tests+=(--test cached_errors); [[ "$(id -u)" != 0 ]] || export CARGO_TARGET_DIR=~root/.cache/togi/hardware-rs-target; nix develop --command env TMPDIR=/tmp RUST_TEST_THREADS=1 cargo test --locked --no-fail-fast -p togi-smu -p togi-detect -p togi-trial -p togi-hardware --features hardware "${tests[@]}" "$@"
-
-# Fuzz the journal parser for the given time (`just fuzz 5m`); failures land in internal/journal/testdata/fuzz
-[group('test')]
-fuzz time="1m": _dev-shell
-    go test -run '^$' -fuzz '^FuzzParse$' -fuzztime "$1" ./internal/journal
-
-# Fuzz the Rust journal reader for the given seconds (`just fuzz-journal 300`), seeded from fuzz/seeds
-[group('test')]
-fuzz-journal seconds="60": _dev-shell
+fuzz seconds="60": _dev-shell
     cd crates/togi-journal && mkdir -p fuzz/corpus/reader && cargo fuzz run -s none reader fuzz/corpus/reader fuzz/seeds/reader -- -max_total_time="$1"
 
-# Print code no test reaches: per function for the whole repo, or changed lines since a base (`just cover origin/main`)
+# Print changed Rust lines no test reached since a base, and the changed files the run does not build (`just cover origin/main`)
 [group('test')]
-cover base="": _dev-shell
-    #!/usr/bin/env bash
-    set -euo pipefail
-    profile=$(mktemp)
-    trap 'rm -f "$profile"' EXIT
-    go test -shuffle=on -tags integration -coverprofile="$profile" ./... >&2
-    if [[ -z "$1" ]]; then
-        go tool cover -func="$profile"
-        exit
-    fi
-    go run ./tools/cover --profile "$profile" --base "$1" --tags integration
-
-# Print changed Rust lines no test reached since a base, as `just cover` does for Go, and the changed files the run does not build (`just cover-rs origin/main`)
-[group('test')]
-cover-rs base: _dev-shell
+cover base: _dev-shell
     #!/usr/bin/env bash
     set -euo pipefail
     trace=$(mktemp)
@@ -82,7 +47,7 @@ cover-rs base: _dev-shell
     target=${CARGO_LLVM_COV_TARGET_DIR:-${CARGO_TARGET_DIR:-target}/llvm-cov-target}
     go run ./tools/cover --lcov "$trace" --build-dir "$target/debug" --base "$1"
 
-# Lint all Go packages as built for Linux and for macOS, and the Rust workspace with clippy for the host's target and aarch64 macOS, with optional Go lint flags
+# Lint the retained Go tools as built for Linux and for macOS, and the Rust workspace with clippy for the host's target and aarch64 macOS, with optional Go lint flags
 [group('quality')]
 lint *args: _dev-shell
     for target in linux/amd64 darwin/arm64; do env GOOS="${target%/*}" GOARCH="${target#*/}" CGO_ENABLED=0 golangci-lint run ./... "$@"; done
@@ -94,7 +59,7 @@ lint *args: _dev-shell
 fmt:
     nix fmt
 
-# Run every non-VM flake check but the rust-sim-suite-* shards, which CI and `just check` on Linux run (`just sim-suite-rs` or `just check-one rust-sim-suite-<i>` reproduces them), and cargo-deny's advisory audit, which only the rust-deny flake check runs, cheapest first, using warm dev-shell Go and Rust caches
+# Run every non-VM flake check but the rust-sim-suite-* shards, which CI and `just check` on Linux run (`just sim-suite` or `just check-one rust-sim-suite-<i>` reproduces them), and cargo-deny's advisory audit, which only the rust-deny flake check runs, cheapest first, using warm dev-shell Go and Rust caches
 [group('quality')]
 gate: _dev-shell
     #!/usr/bin/env bash
@@ -102,177 +67,101 @@ gate: _dev-shell
     just check-one fmt
     just lint
     just check-one module changes
-    vendored=$(nix build --no-link --print-out-paths '.#checks.{{ system }}.package.goModules')
+    vendored=$(nix build --no-link --print-out-paths '.#checks.{{ system }}.go-tools.goModules')
     fresh=$(mktemp -d)
     trap 'rm -rf "$fresh"' EXIT
     go mod vendor -o "$fresh/vendor"
     diff -rq "$fresh/vendor" "$vendored" >&2 || { echo 'gate: the Go modules vendored for vendorHash in flake.nix differ from go.mod and go.sum; update vendorHash' >&2; exit 1; }
     go test -shuffle=on -tags integration ./...
-    go test -race -shuffle=on -tags integration ./internal/trial ./internal/journal ./internal/watch ./internal/smu ./cmd/togi
     cargo nextest run --locked --profile ci
     cargo test --locked --doc
     cargo deny --locked check bans licenses sources
     cargo shear
-    if [[ "{{ os() }}" == linux ]]; then
-        go test -c -tags hardware -o /dev/null ./internal/trial
-    fi
 
-# Run every flake check this host builds, streaming their build logs: package, race, lint, fmt, changes, module, the rust-* checks (clippy, nextest, doc, fmt, deny, shear, package) and, on Linux, trial-scope-tests, the rust-sim-suite-* shards and the VM tests
+# Run every flake check this host builds, streaming their build logs: go-tools, lint, fmt, changes, module, the rust-* checks (clippy, nextest, doc, fmt, deny, shear, package) and, on Linux, trial-scope-tests-rs, the rust-sim-suite-* shards and the VM tests
 [group('nix')]
 check *args:
     nix flake check --print-build-logs "$@"
 
-# Build named flake checks, streaming their build logs: package, race, lint, fmt, changes, module, rust-clippy, rust-nextest, rust-doc, rust-fmt, rust-deny, rust-shear, rust-package or, on Linux, trial-scope-tests, rust-sim-suite-<i>, vm and vm-restart-limit (`just check-one race`)
+# Build named flake checks, streaming their build logs: go-tools, lint, fmt, changes, module, rust-clippy, rust-nextest, rust-doc, rust-fmt, rust-deny, rust-shear, rust-package or, on Linux, trial-scope-tests-rs, rust-sim-suite-<i>, vm, vm-trial-scope-rs and vm-restart-limit (`just check-one lint`)
 [group('nix')]
 check-one +names:
     nix build --no-link --print-build-logs $(printf '.#checks.{{ system }}.%s ' "$@")
 
-# Run a simulated session through the search and its first clean cycle
+# Run a simulated session with the Rust simulator, flags as `togi-tool-sim` takes them (`just sim --seed 7 --max-boots 20`)
 [group('run')]
-sim seed="1" *args: _dev-shell
-    go run ./tools/sim --seed "$1" "${@:2}"
-
-# Run the Rust togi binary built from this tree, flags as `togi` takes them (`just togi-rs completion zsh`); a local build reports the revision `dev`
-[group('run')]
-togi-rs *args: _dev-shell
-    cargo run --release --locked -p togi -- "$@"
-
-# Run a simulated session with the Rust simulator, flags as `sim` takes them (`just sim-rs --seed 7 --max-boots 20`)
-[group('run')]
-sim-rs *args: _dev-shell
+sim *args: _dev-shell
     cargo run --release --locked -p togi-tool-sim -- "$@"
+
+# Run the Rust togi binary built from this tree, flags as `togi` takes them (`just togi completion zsh`); a local build reports the revision `dev`
+[group('run')]
+togi *args: _dev-shell
+    cargo run --release --locked -p togi -- "$@"
 
 # Run every session of the simulator suite with the Rust simulator and check that each ended clean
 [group('run')]
-sim-suite-rs *args: _dev-shell
+sim-suite *args: _dev-shell
     out=$(mktemp -d); cargo run --release --locked -p togi-tool-sim -- suite --suite tools/bench/suite.json --out "$out" "$@" && cargo run --release --locked -p togi-tool-sim -- check --suite tools/bench/suite.json --shards 1 "$out"
 
 # Play a recorded journal through the dashboard on a fast-forward clock
 [group('run')]
 replay *args: _dev-shell
-    go run ./tools/replay "$@"
-
-# Play a recorded journal through the dashboard on a fast-forward clock with the Rust tool
-[group('run')]
-replay-rs *args: _dev-shell
     cargo run --release --locked -p togi-tool-replay -- "$@"
 
 # Summarize a current or archived journal for review
 [group('run')]
 stats *args: _dev-shell
-    go run ./tools/stats "$@"
-
-# Summarize a current or archived journal for review with the Rust tool
-[group('run')]
-stats-rs *args: _dev-shell
     cargo run --release --locked -p togi-tool-stats -- "$@"
 
-# Benchmark simulated session conclusions and compare against a baseline
+# Benchmark simulated session conclusions, building and running the Rust simulator (`just bench --split dev --baseline tools/bench/baseline.jsonl`, or `just bench sanity --records records.jsonl` against the recorded baseline)
 [group('run')]
 bench *args: _dev-shell
-    go run ./tools/bench "$@"
-
-# Benchmark simulated session conclusions with the Rust bench, which builds and runs the Rust simulator (`just bench-rs --split dev --baseline records.jsonl`, or `just bench-rs sanity --records records.jsonl` against the Go scores)
-[group('run')]
-bench-rs *args: _dev-shell
     cargo run --release --locked -p togi-tool-bench -- "$@"
 
-# Sweep every simulated scenario and audit its retained journals, or audit given state directories
+# Sweep every simulated scenario with the Rust bench and simulator and audit the retained journals, or audit given state directories (`just audit --seeds 50 --jobs 8 --keep runs`)
 [group('run')]
 audit *args: _dev-shell
-    go run ./tools/audit "$@"
-
-# Sweep every simulated scenario with the Rust bench and simulator and audit the retained journals, or audit given state directories (`just audit-rs --seeds 50 --jobs 8 --keep runs`)
-[group('run')]
-audit-rs *args: _dev-shell
     cargo build --release --locked -p togi-tool-bench
     cargo run --release --locked -p togi-tool-audit -- "$@"
 
-# Prove simulated session decisions are unchanged from a base revision; stops at the first difference (`--keep-going` counts them all)
+# Prove simulated session decisions are unchanged from a base revision, building both trees' Rust simulators; stops at the first difference (`--keep-going` counts them all)
 [group('run')]
 same base="origin/main" *args: _dev-shell
-    dir=$(mktemp -d); trap 'rm -rf "$dir"' EXIT; git archive "$1" | tar -x -C "$dir"; go run ./tools/bench --same "$dir" "${@:2}"
+    dir=$(mktemp -d); trap 'rm -rf "$dir"' EXIT; git archive "$1" | tar -x -C "$dir"; cargo run --release --locked -p togi-tool-bench -- same "$dir" "${@:2}"
 
 # Prove a fixed selection of simulated sessions, one per scenario, is unchanged from a base revision; same cache and fail-fast as `same`
 [group('run')]
 smoke base="origin/main" *args: _dev-shell
-    dir=$(mktemp -d); trap 'rm -rf "$dir"' EXIT; git archive "$1" | tar -x -C "$dir"; go run ./tools/bench --same "$dir" --smoke "${@:2}"
-
-# Forecast a real run from a copy of its state directory with the target ensemble (`--out tools/bench/forecasts/<session>-<seq>.json`)
-[group('run')]
-forecast state_dir *args: _dev-shell
-    go run ./tools/bench --forecast "$1" "${@:2}"
-
-# Prove simulated session decisions are unchanged from a base revision with the Rust bench, which builds both trees' Rust simulators; stops at the first difference (`--keep-going` counts them all)
-[group('run')]
-same-rs base="origin/main" *args: _dev-shell
-    dir=$(mktemp -d); trap 'rm -rf "$dir"' EXIT; git archive "$1" | tar -x -C "$dir"; cargo run --release --locked -p togi-tool-bench -- same "$dir" "${@:2}"
-
-# Prove a fixed selection of simulated sessions, one per scenario, is unchanged from a base revision with the Rust bench; same cache and fail-fast as `same-rs`
-[group('run')]
-smoke-rs base="origin/main" *args: _dev-shell
     dir=$(mktemp -d); trap 'rm -rf "$dir"' EXIT; git archive "$1" | tar -x -C "$dir"; cargo run --release --locked -p togi-tool-bench -- same "$dir" --smoke "${@:2}"
 
-# Forecast a real run from a copy of its state directory with the Rust bench and the target ensemble (`--out FILE` writes the Rust forecast record)
+# Forecast a real run from a copy of its state directory with the target ensemble (`--out FILE` writes the forecast record)
 [group('run')]
-forecast-rs state_dir *args: _dev-shell
+forecast state_dir *args: _dev-shell
     cargo run --release --locked -p togi-tool-bench -- forecast "$1" "${@:2}"
 
-# Re-record the committed bench baseline over all seeds, without model checks, wall times or retired fields
+# Re-record the committed bench baseline over all seeds, without model checks or wall times (`just bench-baseline` writes tools/bench/baseline.jsonl, `just bench-baseline OUT` another file)
 [group('run')]
-bench-baseline: _dev-shell
-    #!/usr/bin/env bash
-    set -euo pipefail
-    full=$(mktemp)
-    slim=$(mktemp)
-    trap 'rm -f "$full" "$slim"' EXIT
-    go run ./tools/bench --split all --out "$full"
-    nu --stdin -c '$in | lines | each { from json | reject -o model_check wall_s partial_seconds | to json --raw } | to text' <"$full" >"$slim"
-    mv "$slim" tools/bench/baseline.jsonl
-
-# Record a Rust bench baseline over all seeds to OUT, without model checks or wall times; the committed Go baseline stays until stage 9 (`just bench-baseline-rs /tmp/baseline-rs.jsonl`)
-[group('run')]
-bench-baseline-rs out: _dev-shell
+bench-baseline out="tools/bench/baseline.jsonl": _dev-shell
     cargo run --release --locked -p togi-tool-bench -- --split all --baseline-out "$1"
 
 # Regenerate privacy-safe real facts from a copied state directory
 [group('run')]
 facts state_dir: _dev-shell
-    go run ./tools/facts "$1" tools/bench/facts/target.jsonl.gz
-
-# Regenerate privacy-safe real facts from a copied state directory with the Rust tool
-[group('run')]
-facts-rs state_dir: _dev-shell
     cargo run --release --locked -p togi-tool-facts -- "$1" tools/bench/facts/target.jsonl.gz
 
-# Fit the target-machine bootstrap ensemble from the committed evidence
+# Fit the target-machine bootstrap ensemble from the committed evidence; the result does not depend on --jobs
 [group('run')]
 fit *args: _dev-shell
-    go run ./tools/fit "$@"
-
-# Fit the target-machine bootstrap ensemble with the Rust tool; the result does not depend on --jobs
-[group('run')]
-fit-rs *args: _dev-shell
     cargo run --release --locked -p togi-tool-fit -- "$@"
 
 # Fit the all-facts IN-SAMPLE shared-voltage anchor; not forward-validated
 [group('run')]
 fit-shared-voltage *args: _dev-shell
-    go run ./tools/fit --shared-voltage-in-sample "$@"
-
-# Fit the all-facts IN-SAMPLE shared-voltage anchor with the Rust tool; not forward-validated
-[group('run')]
-fit-shared-voltage-rs *args: _dev-shell
     cargo run --release --locked -p togi-tool-fit -- --shared-voltage-in-sample "$@"
 
 # Run only the forward-chained check of the target fit, writing no machine files (`just forward --seal 1`)
 [group('run')]
 forward *args: _dev-shell
-    go run ./tools/fit --forward-only "$@"
-
-# Run only the forward-chained check with the Rust tool, writing no machine files (`just forward-rs --seal 1`)
-[group('run')]
-forward-rs *args: _dev-shell
     cargo run --release --locked -p togi-tool-fit -- --forward-only "$@"
 
 # Start the release workflow on main and follow it: unless an issue, open or closed, is labeled needs-hardware, once check passes on main, it commits the release, builds the package, pushes to main and publishes
@@ -403,7 +292,7 @@ _touched-crates pushed:
         git cat-file -e "HEAD:${dir}Cargo.toml" 2>/dev/null && basename "$dir"
     done || true
 
-# Push a fix to a pull request under review: format, lint, run `just focus` on the Go packages and `just test-rs` on the Rust crates changed since the last pushed head, then push as `just ship` does without the gate; the first push of a branch uses `just ship`
+# Push a fix to a pull request under review: format, lint, run `go test` on the retained Go tools' packages and `just test` on the Rust crates changed since the last pushed head, then push as `just ship` does without the gate; the first push of a branch uses `just ship`
 [group('github')]
 push-fix: (_push-ready "push-fix" "push the stack with gh stack push")
     #!/usr/bin/env bash
@@ -416,19 +305,19 @@ push-fix: (_push-ready "push-fix" "push the stack with gh stack push")
     mapfile -t packages < <(just _touched-packages "$pushed")
     just lint
     if ((${#packages[@]} == 0)); then
-        echo "push-fix: no Go package changed since $pushed; nothing to focus" >&2
+        echo "push-fix: no Go package changed since $pushed; nothing to test" >&2
     else
-        just focus "${packages[@]}"
+        go test "${packages[@]}"
     fi
     mapfile -t crates < <(just _touched-crates "$pushed")
     if ((${#crates[@]} == 0)); then
         echo "push-fix: no Rust crate changed since $pushed; nothing to test" >&2
     elif [[ "${crates[0]}" == --workspace ]]; then
-        just test-rs --workspace
+        just test --workspace
     else
         args=()
         for crate in "${crates[@]}"; do args+=(-p "$crate"); done
-        just test-rs "${args[@]}"
+        just test "${args[@]}"
     fi
     git push --force-with-lease --force-if-includes --set-upstream origin "refs/heads/$branch:refs/heads/$branch"
 

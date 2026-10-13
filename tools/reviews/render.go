@@ -173,7 +173,7 @@ func buildRecord(m manifest, in findingsInput) (recordModel, error) {
 	switch {
 	case m.changesCode():
 		if m.Coverage == nil {
-			return recordModel{}, errors.New("the diff changes Go or Rust code but the snapshot has no coverage: run `just cover <base>` for Go, `just cover-rs <base>` for Rust, and pass the output to `snapshot --cover`")
+			return recordModel{}, errors.New("the diff changes Go or Rust code but the snapshot has no coverage: run `just cover <base>` and pass the output to `snapshot --cover`")
 		}
 		if strings.TrimSpace(in.CoverageJudgment) == "" {
 			return recordModel{}, errors.New("coverage_judgment is required: the diff changes Go or Rust code")

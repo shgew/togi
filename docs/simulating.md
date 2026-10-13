@@ -236,8 +236,8 @@ The tuner's simulation tests from `internal/tuner` (`forecast_sim_test.go` and `
 `crates/togi-tool-sim` builds the `togi-tool-sim` command, the native `tools/sim`. It runs from a source checkout like the Go one:
 
 ```sh
-just sim-rs [--seed N] [--machine FILE] [--replay-facts] [--cycles N] [--state-dir DIR] [--samples] [--max-boots N] [--verify-every N] [--cold-boots]
-just sim-suite-rs [--jobs N] [--max-boots N]   # the whole suite in one shard, then its check
+just sim [--seed N] [--machine FILE] [--replay-facts] [--cycles N] [--state-dir DIR] [--samples] [--max-boots N] [--verify-every N] [--cold-boots]
+just sim-suite [--jobs N] [--max-boots N]   # the whole suite in one shard, then its check
 cargo run --release -p togi-tool-sim -- suite --suite tools/bench/suite.json [--shards N] [--shard I] [--jobs N] --out DIR [--max-boots N]
 cargo run --release -p togi-tool-sim -- check --suite tools/bench/suite.json --shards N [--shard I] DIR
 ```
