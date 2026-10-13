@@ -451,10 +451,5 @@ fn a_machine_that_crashes_while_zeroing_fails_the_stop_with_every_core_unconfirm
         "{}",
         ran.err
     );
-    assert!(
-        ran.err
-            .contains("togi emergency-stop: core 00 unreadable: the simulated machine crashed\n"),
-        "{}",
-        ran.err
-    );
+    assert_eq!(rig.ops(), ["sweep", "set-all"]);
 }
