@@ -46,6 +46,18 @@ fn a_rebuild_disagreeing_with_a_current_snapshot_is_a_violation() {
             &[],
         ),
         case(
+            "a snapshot behind the journal naming only last_seq is stale too",
+            vec![rebuilt(2, &["last_seq"])],
+            InProgress,
+            &[],
+        ),
+        case(
+            "a saved tuner projection that disagrees is a violation",
+            vec![rebuilt(2, &["tuner"]), stop(3)],
+            InProgress,
+            &[(2, Replay)],
+        ),
+        case(
             "the same build disagreeing with its own snapshot",
             vec![rebuilt(2, &["cores"]), config_loaded(3, 0)],
             InProgress,

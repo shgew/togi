@@ -2,6 +2,12 @@
 
 All notable changes to togi are documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Changes not yet released wait in [`changes/`](changes/) until the release assembles them here.
 
+## [0.11.1] - 2026-10-13
+
+### Changed
+
+- togi is now written in Rust and starts a fresh session: before the first boot, move `/var/lib/togi` to `/var/lib/togi-go`; see [Go to Rust cutover](https://github.com/shgew/togi/blob/main/docs/howto.md#go-to-rust-cutover) for the full steps and the rollback ([#903]).
+
 ## [0.11.0] - 2026-10-10
 
 ### Added
@@ -421,6 +427,8 @@ All notable changes to togi are documented in this file. The format is based on 
 
 [0.11.0]: https://github.com/shgew/togi/releases/tag/v0.11.0
 
+[0.11.1]: https://github.com/shgew/togi/releases/tag/v0.11.1
+
 [#1]: https://github.com/shgew/togi/issues/1
 [#2]: https://github.com/shgew/togi/issues/2
 [#3]: https://github.com/shgew/togi/issues/3
@@ -575,3 +583,4 @@ All notable changes to togi are documented in this file. The format is based on 
 [#679]: https://github.com/shgew/togi/pull/679
 [#680]: https://github.com/shgew/togi/pull/680
 [#683]: https://github.com/shgew/togi/pull/683
+[#903]: https://github.com/shgew/togi/pull/903
