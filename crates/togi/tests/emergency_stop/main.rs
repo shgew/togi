@@ -10,6 +10,7 @@
 mod support;
 
 use std::cell::RefCell;
+use std::fmt::Write as _;
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -18,8 +19,8 @@ use togi_cli::Exit;
 use togi_hostlock::{HostLock, Policy};
 use togi_machine::{
     BiosContext, BootId, CancellationToken, Check, CoreId, CoreInfo, CoreRank, Error,
-    Host as MachineHost, Machine, Partial, Running, Smu as _, SmuValidated, Stopped, Swept,
-    TrialConditions, TrialSpec, Trials,
+    Host as MachineHost, Machine, Partial, Running, SmuValidated, Stopped, Swept, TrialConditions,
+    TrialSpec, Trials,
 };
 use togi_sim::faults::{HookPhase, SmuOp, SmuOperation};
 use togi_sim::{Model, RunSettings, Simulator, file};
@@ -213,9 +214,11 @@ impl Rig {
 }
 
 fn readbacks(text: impl Fn(u8) -> String) -> String {
-    (0..CORES)
-        .map(|number| format!("togi emergency-stop: {}\n", text(number)))
-        .collect()
+    let mut lines = String::new();
+    for number in 0..CORES {
+        writeln!(lines, "togi emergency-stop: {}", text(number)).unwrap();
+    }
+    lines
 }
 
 #[test]

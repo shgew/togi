@@ -11,7 +11,7 @@ use std::sync::mpsc::{Sender, channel};
 use std::time::Duration;
 
 use togi_machine::{
-    CancellationToken, CcdId, CoreInfo, CpuId, Regime, Running, TargetOffset, TrialSpec, Trials,
+    CancellationToken, CcdId, CoreInfo, CpuId, Regime, TargetOffset, TrialSpec, Trials,
 };
 
 use super::harness::{core, finish, local, nothing_runs, rig_edit, spec as base_spec, topology};
@@ -46,7 +46,7 @@ fn recorded() -> (Arc<Recording>, impl FnOnce(&mut Env<Fake>)) {
     let recording = Arc::new(Recording::default());
     let handed = Arc::clone(&recording);
     (recording, move |env: &mut Env<Fake>| {
-        env.controller = handed
+        env.controller = handed;
     })
 }
 

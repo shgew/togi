@@ -598,10 +598,12 @@ mod tests {
             (moved.threads, moved.failed, moved.incomplete),
             (2, 0, false)
         );
-        assert!(fake.mask(1) == set(&[2, 3]) && fake.mask(2) == set(&[2, 3]));
+        assert_eq!(fake.mask(1), set(&[2, 3]));
+        assert_eq!(fake.mask(2), set(&[2, 3]));
         let moved = threads.restore().unwrap();
         assert!(moved.complete());
-        assert!(fake.mask(1) == set(&[0]) && fake.mask(2) == set(&[0]));
+        assert_eq!(fake.mask(1), set(&[0]));
+        assert_eq!(fake.mask(2), set(&[0]));
         assert_eq!(threads.restore(), None, "nothing is left to restore");
     }
 
@@ -613,7 +615,8 @@ mod tests {
         fake.add(5, &[1]);
         let moved = threads.restore().unwrap();
         assert!(moved.complete());
-        assert!(fake.mask(5) == set(&[0, 1]) && fake.mask(2) == set(&[0, 1]));
+        assert_eq!(fake.mask(5), set(&[0, 1]));
+        assert_eq!(fake.mask(2), set(&[0, 1]));
     }
 
     #[test]
@@ -624,13 +627,13 @@ mod tests {
         let moved = threads.confine(&cpus(&[1])).unwrap();
         assert_eq!((moved.threads, moved.failed), (2, 1));
         assert!(!moved.complete());
-        assert!(fake.mask(1) == set(&[1]));
+        assert_eq!(fake.mask(1), set(&[1]));
         let moved = threads.restore().unwrap();
         assert!(!moved.complete(), "{moved:?}");
         fake.0.lock().unwrap().unreadable.clear();
         let moved = threads.restore().unwrap();
         assert!(moved.complete(), "{moved:?}");
-        assert!(fake.mask(1) == set(&[0, 1]));
+        assert_eq!(fake.mask(1), set(&[0, 1]));
     }
 
     #[test]
@@ -642,7 +645,7 @@ mod tests {
             (moved.threads, moved.failed, moved.incomplete),
             (2, 1, false)
         );
-        assert!(fake.mask(2) == set(&[0, 1]));
+        assert_eq!(fake.mask(2), set(&[0, 1]));
     }
 
     #[test]

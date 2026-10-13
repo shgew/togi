@@ -107,6 +107,10 @@ mod vm_recovery {
     }
 
     /// The names of the trial scopes systemd holds right now.
+    #[expect(
+        clippy::case_sensitive_file_extension_comparisons,
+        reason = "systemd unit names are exact and case-sensitive: only `togi-trial-*.scope` is a trial scope"
+    )]
     fn trial_scopes() -> Vec<String> {
         let Ok(entries) = std::fs::read_dir(SCOPES) else {
             return Vec::new();
@@ -133,7 +137,7 @@ mod vm_recovery {
     struct FileSmu;
 
     impl FileSmu {
-        fn offsets(&self) -> Vec<i64> {
+        fn offsets() -> Vec<i64> {
             let stored: Vec<i64> = text("offsets")
                 .split_whitespace()
                 .filter_map(|value| value.parse().ok())
@@ -145,7 +149,7 @@ mod vm_recovery {
             }
         }
 
-        fn store(&self, offsets: &[i64], operation: &str) {
+        fn store(offsets: &[i64], operation: &str) {
             let staging = path("offsets.tmp");
             let line: Vec<String> = offsets.iter().map(i64::to_string).collect();
             std::fs::write(&staging, line.join(" ")).unwrap();
@@ -159,21 +163,21 @@ mod vm_recovery {
             let value = if text("fault") == "readback" && core.index() == 1 {
                 -7
             } else {
-                self.offsets()[core.index()]
+                Self::offsets()[core.index()]
             };
             log(&format!("read core {:02} {value}", core.get()));
             Ok(ObservedOffset(value))
         }
 
         fn set_offset(&mut self, core: CoreId, offset: TargetOffset) -> Result<(), Error> {
-            let mut offsets = self.offsets();
+            let mut offsets = Self::offsets();
             offsets[core.index()] = offset.get();
-            self.store(&offsets, &format!("set core {:02}", core.get()));
+            Self::store(&offsets, &format!("set core {:02}", core.get()));
             Ok(())
         }
 
         fn set_all_offsets(&mut self, offset: TargetOffset) -> Result<(), Error> {
-            self.store(&vec![offset.get(); cores()], "set-all");
+            Self::store(&vec![offset.get(); cores()], "set-all");
             Ok(())
         }
 
@@ -185,7 +189,7 @@ mod vm_recovery {
                 scopes.join(",")
             };
             log(&format!("emergency-zero trial-scopes={alive}"));
-            self.store(&vec![0; cores()], "emergency-zero wrote");
+            Self::store(&vec![0; cores()], "emergency-zero wrote");
             Ok(())
         }
     }
@@ -463,7 +467,7 @@ mod vm_recovery {
     }
 
     fn restore_baseline() {
-        FileSmu.store(&vec![BASELINE; cores()], "restore-baseline");
+        FileSmu::store(&vec![BASELINE; cores()], "restore-baseline");
     }
 
     /// What `togi run` does in the VM, as the `mode` file says. Offsets and trial scopes are real files and real
@@ -480,7 +484,7 @@ mod vm_recovery {
                 return 0;
             }
             "deadend" => {
-                FileSmu.store(&trial_offsets(), "trial-offsets");
+                FileSmu::store(&trial_offsets(), "trial-offsets");
                 restore_baseline();
                 return 15;
             }
@@ -490,7 +494,7 @@ mod vm_recovery {
         let mut machine = system
             .open_machine(&Config::default(), Path::new(STATE_DIR), &lock)
             .unwrap();
-        FileSmu.store(&trial_offsets(), "trial-offsets");
+        FileSmu::store(&trial_offsets(), "trial-offsets");
         let mut offsets = PerCore::default();
         for info in topology() {
             let read = machine.smu.offset(info.core).unwrap();
@@ -530,7 +534,7 @@ mod vm_recovery {
             exit(1);
         }
         let _ = running.wait(&cancel, &mut Quiet);
-        running.stop().unwrap();
+        let _ = running.stop().unwrap();
         restore_baseline();
         0
     }
