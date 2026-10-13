@@ -1,6 +1,6 @@
 # Rust migration log
 
-The log of the move from Go to Rust ([#634](https://github.com/shgew/togi/issues/634), [ADR 0048](adr/0048-rust.md)). The rules are in [`porting.md`](porting.md), and the contract is [ADR 0058](adr/0058-native-rust-rewrite.md). Every stage appends an entry for what its pull requests measured and found: dates, lines removed and added, compile and test times next to Go's, regressions, review findings, and agent cost where known. Stage 12 ([#647](https://github.com/shgew/togi/issues/647)) turns this file into a retrospective.
+The log of the move from Go to Rust ([#634](https://github.com/shgew/togi/issues/634), [ADR 0048](adr/0048-rust.md)). The rules are in [the Rust section of `AGENTS.md`](../AGENTS.md#rust) and the specs in [`docs/spec/`](spec/), and the contract is [ADR 0058](adr/0058-native-rust-rewrite.md). Every stage appends an entry for what its pull requests measured and found: dates, lines removed and added, compile and test times next to Go's, regressions, review findings, and agent cost where known. Stage 12 ([#647](https://github.com/shgew/togi/issues/647)) turns this file into a retrospective.
 
 Append entries below the last one, newest last. State what was measured and how, and name what was not measured.
 
