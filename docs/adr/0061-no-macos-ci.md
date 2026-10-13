@@ -8,7 +8,7 @@ Supersedes [ADR 0046](0046-macos-checks-the-package-on-main.md) and the macOS de
 
 ADR 0046 added a native `macos-26` arm64 job to the `check` workflow, on pushes to `main` only, that built `checks.aarch64-darwin.package`. ADR 0057 added `checks.aarch64-darwin.rust-nextest` to it, to build the Rust workspace and run its tests on the Mac. The aggregating `check` job required the macOS job on `main`, so a darwin breakage failed `check` there and the release waited.
 
-The job became the slowest part of every push to `main`. In [run 38405568483](https://github.com/shgew/togi/actions/runs/38405568483) the `rust-nextest` step alone took 14 min 28 s, nearly all of it compiling the Rust tests for macOS from scratch. Pull requests never ran the job, so nothing waited on it but releases. The owner develops on macOS often enough to notice a breakage there, and prefers fixing it when it shows up to paying for the job on every push. The target machine is x86_64 Linux; macOS is a development host.
+The job became the slowest part of every push to `main`. In [run 38405568483](https://github.com/shgew/togi/actions/runs/38405568483) the `rust-nextest` step alone took 14 min 28 s, nearly all of it compiling the Rust tests for macOS from scratch. Pull requests never ran the job, so nothing waited on it but releases. The target machine is x86_64 Linux; macOS is a development host, and breakages found there remain bugs to fix.
 
 ## Decision
 
