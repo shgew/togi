@@ -86,10 +86,7 @@ impl Session {
         }
         let fields = match self.appender.journal().read_state::<StateDocument>() {
             Ok(Some(saved)) => {
-                let mut fields = Vec::new();
-                if saved.facts != self.appender.folds.facts {
-                    fields.push("facts".into());
-                }
+                let mut fields = differing_facts(&saved.facts, &self.appender.folds.facts);
                 if saved.tuner != self.appender.tuner().project() {
                     fields.push("tuner".into());
                 }
@@ -103,6 +100,32 @@ impl Session {
         }
         Ok(())
     }
+}
+
+/// The top-level keys of `facts` on which `saved` and `fresh` disagree, in the order `state.json` writes them.
+fn differing_facts(saved: &togi_journal::State, fresh: &togi_journal::State) -> Vec<String> {
+    let togi_journal::State {
+        schema,
+        session,
+        cores,
+        last_seq,
+        open,
+        dead_end,
+        backends,
+    } = saved;
+    [
+        ("schema", *schema == fresh.schema),
+        ("session", *session == fresh.session),
+        ("cores", *cores == fresh.cores),
+        ("last_seq", *last_seq == fresh.last_seq),
+        ("open", *open == fresh.open),
+        ("dead_end", *dead_end == fresh.dead_end),
+        ("backends", *backends == fresh.backends),
+    ]
+    .into_iter()
+    .filter(|(_, same)| !same)
+    .map(|(key, _)| key.into())
+    .collect()
 }
 
 #[cfg(test)]
