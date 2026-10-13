@@ -65,6 +65,13 @@
           rustLinker = lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
             CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS = "-C link-arg=-fuse-ld=mold";
           };
+          # Linting aarch64-apple-darwin from Linux runs C build scripts (criterion's alloca) for that target,
+          # which needs a compiler that takes Apple's flags; the host gcc does not. The unwrapped clang and
+          # llvm-ar are cross compilers; alloca.c needs only the compiler's own stddef.h and stdint.h.
+          darwinCrossCc = lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
+            CC_aarch64_apple_darwin = lib.getExe' pkgs.llvmPackages.clang-unwrapped "clang";
+            AR_aarch64_apple_darwin = lib.getExe' pkgs.llvm "llvm-ar";
+          };
           cargoArgs = {
             pname = "togi-workspace";
             version = "0.0.0";
@@ -225,18 +232,22 @@
               TOGI_DEV_SHELL = "1";
             }
             // rustLinker
+            // darwinCrossCc
           );
 
           checks = {
             go-tools = goTools;
-            clippy = craneLib.mkCargoDerivation (cargoCheck {
-              pnameSuffix = "-clippy";
-              buildPhaseCargoCommand = ''
-                cargoWithProfile clippy --locked --all-targets -- --deny warnings
-                cargoWithProfile clippy --locked --all-targets --all-features -- --deny warnings
-                cargoWithProfile clippy --locked --all-targets --target aarch64-apple-darwin -- --deny warnings
-              '';
-            });
+            clippy = craneLib.mkCargoDerivation (
+              cargoCheck {
+                pnameSuffix = "-clippy";
+                buildPhaseCargoCommand = ''
+                  cargoWithProfile clippy --locked --all-targets -- --deny warnings
+                  cargoWithProfile clippy --locked --all-targets --all-features -- --deny warnings
+                  cargoWithProfile clippy --locked --all-targets --target aarch64-apple-darwin -- --deny warnings
+                '';
+              }
+              // darwinCrossCc
+            );
             nextest = craneLib.cargoNextest (cargoCheck {
               cargoNextestExtraArgs = "--profile ci";
               nativeCheckInputs = [
