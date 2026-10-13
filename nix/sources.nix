@@ -16,9 +16,9 @@ let
     map (path: fileset.maybeMissing (root + "/${path}")) workspace.workspace.exclude
   );
   members = lib.attrNames (
-    lib.filterAttrs (name: type: type == "directory" && builtins.pathExists (cratesDir + "/${name}/Cargo.toml")) (
-      builtins.readDir cratesDir
-    )
+    lib.filterAttrs (
+      name: type: type == "directory" && builtins.pathExists (cratesDir + "/${name}/Cargo.toml")
+    ) (builtins.readDir cratesDir)
   );
   dir = name: cratesDir + "/${name}";
   manifest = name: lib.importTOML (dir name + "/Cargo.toml");
@@ -33,7 +33,9 @@ let
       toml = manifest name;
       sections =
         map (table: toml.${table} or { }) tables
-        ++ lib.concatMap (target: map (table: target.${table} or { }) tables) (lib.attrValues (toml.target or { }));
+        ++ lib.concatMap (target: map (table: target.${table} or { }) tables) (
+          lib.attrValues (toml.target or { })
+        );
     in
     lib.filter (dep: lib.elem dep members) (lib.concatMap lib.attrNames sections);
 
@@ -63,11 +65,14 @@ let
     name:
     let
       toml = manifest name;
-      declared = table: default: map (target: target.path or (default target.name)) (toml.${table} or [ ]);
+      declared =
+        table: default: map (target: target.path or (default target.name)) (toml.${table} or [ ]);
     in
     lib.unique (
       [ (toml.lib.path or "src/lib.rs") ]
-      ++ declared "bin" (target: if target == toml.package.name then "src/main.rs" else "src/bin/${target}.rs")
+      ++ declared "bin" (
+        target: if target == toml.package.name then "src/main.rs" else "src/bin/${target}.rs"
+      )
       ++ declared "bench" (target: "benches/${target}.rs")
       ++ declared "test" (target: "tests/${target}.rs")
       ++ declared "example" (target: "examples/${target}.rs")
@@ -104,7 +109,15 @@ let
           ]
           ++ map (crate: dir crate + "/Cargo.toml") members
           ++ map (
-            crate: rustIn (fileset.unions (map (sub: fileset.maybeMissing (dir crate + "/${sub}")) [ "src" "benches" ]))
+            crate:
+            rustIn (
+              fileset.unions (
+                map (sub: fileset.maybeMissing (dir crate + "/${sub}")) [
+                  "src"
+                  "benches"
+                ]
+              )
+            )
           ) code
           ++ map (crate: rustIn (dir crate)) rs
           ++ map dir full
