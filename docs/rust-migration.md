@@ -1763,3 +1763,11 @@ The supporting pull requests, counted apart (#860, #871, #882): 3 records, 5 rev
 The owner authorized the patch release after [#914](https://github.com/shgew/togi/pull/914), with one correction to the cutover fragment: the `state.rebuilt` defect was caught before the first Rust release, so it is not a fix to a released version. The fragment keeps the Rust cutover and fresh-session entry, and omits that unreleased fix.
 
 No production code or tests change. Compile/test timings and agent cost were not measured for this documentation correction; its pull request and independent review record carry the check outcomes.
+
+## Stage 9: dependency updates restored (#919, #921, 2026-10-13)
+
+Weekly Dependabot updates now cover Cargo dependencies, the Rust toolchain pin, Nix flake inputs and GitHub Actions; the dependency-update pause ends in this pull request. Minor and patch updates are grouped where the ecosystem classifies versions, with a 7-day cooldown.
+
+- **Schema validation.** The author ran `check-jsonschema --builtin-schema vendor.dependabot .github/dependabot.yml` with check-jsonschema 0.38.0: both the draft and final configuration printed `ok -- validation done`. The draft run's tool-reported wall time was 1.27 s; the final run's elapsed time was not recorded.
+- **Ship.** The author's `just ship` completed and pushed the branch; the tool reported 118.52 s total wall time. The observed output tail reported no gitleaks leaks, cargo-deny bans, licenses and sources passing, and no cargo-shear issues. Individual gate-step output and timings were not retained in the author's evidence, so the total is not a per-check measurement.
+- **Evidence gaps.** Agent tokens and monetary cost, agent time, total elapsed time for the pull request, and per-check timings are unknown. The first Dependabot updater run can only be observed after merge and has not been verified; a schema-valid configuration does not prove that updater run succeeds.

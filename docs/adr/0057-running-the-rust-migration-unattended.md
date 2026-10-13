@@ -2,6 +2,8 @@
 
 Status: see [the index](README.md).
 
+Note (2026-10-13): the dependency-update pause ended with stage 9 ([#919](https://github.com/shgew/togi/issues/919)). `.github/dependabot.yml` updates `cargo`, the `rust-toolchain.toml` pin, `nix` and `github-actions` weekly, with minor and patch updates grouped and a 7-day cooldown, and the `open-pull-requests-limit: 0` entries are gone. The pause rule and consequence below are the record of stages 2–8.
+
 Partly supersedes [ADR 0048](0048-rust.md) and [ADR 0046](0046-macos-checks-the-package-on-main.md). On 2026-10-11 the owner decided that stages 2–7 of the migration ([#634](https://github.com/shgew/togi/issues/634)) run without the owner present, and stages 9–12 after the cutover is accepted, and set the Rust toolchain. Before stage 2 started, a two-reviewer plan council reviewed the epic and its stage issues; its findings were applied to the issue bodies, each marked "(orchestrator, 2026-10-11, plan council)" ([summary](https://github.com/shgew/togi/issues/634#issuecomment-6108195762)). Three of these decisions change earlier ADRs. ADR 0048 had every change to a protected comparison asset approved by the owner, and counted 252 suite sessions. ADR 0046 had the macOS job build only the Go package. The full rules are in #634 (**Running unattended**) and [#637](https://github.com/shgew/togi/issues/637); [`docs/porting.md`](../porting.md) holds what porting pull requests follow.
 
 ## Decision
