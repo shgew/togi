@@ -497,6 +497,7 @@ pub(super) fn runner_over<O: Os>(
         roots: Roots::default(),
         unscoped: !scoped,
         user_manager: false,
+        controller: Arc::new(crate::controller::Idle),
     };
     Runner::build(options, settings, make_os).unwrap()
 }

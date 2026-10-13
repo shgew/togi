@@ -12,6 +12,7 @@ fn spec(regime: Regime, seed: u64, index: usize) -> TrialSpec {
         duration: Duration::from_secs(60),
         index,
         seed,
+        offsets: PerCore::default(),
     }
 }
 

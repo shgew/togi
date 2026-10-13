@@ -465,6 +465,7 @@ fn probe_env(rig: &Rig) -> (Rc<Env<Probe>>, Rc<Cell<u32>>) {
         log_sink: None,
         supervisors: std::cell::RefCell::default(),
         preparer: rig.env.preparer.clone(),
+        controller: Arc::clone(&rig.env.controller),
     };
     (Rc::new(env), lost_threads)
 }

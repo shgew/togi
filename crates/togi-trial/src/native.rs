@@ -10,6 +10,7 @@ use togi_machine::{
 };
 use tokio::sync::mpsc::UnboundedSender;
 
+use crate::controller::Controller;
 use crate::error::InvalidTrial;
 use crate::error::{Error, Shared};
 use crate::files::TrialsRoot;
@@ -26,6 +27,7 @@ pub(crate) struct Settings {
     pub(crate) roots: Roots,
     pub(crate) unscoped: bool,
     pub(crate) user_manager: bool,
+    pub(crate) controller: Arc<dyn Controller>,
 }
 
 /// Runs trials on one dedicated runtime thread; every launch happens there.
@@ -45,6 +47,7 @@ impl Runner {
                 roots: Roots::default(),
                 unscoped: false,
                 user_manager,
+                controller: Arc::new(crate::controller::Threads::over(crate::controller::Proc)),
             };
             let proc = settings.roots.proc.clone();
             Self::build(options, settings, move || {
@@ -92,6 +95,7 @@ impl Runner {
             log_sink: None,
             supervisors: std::cell::RefCell::default(),
             preparer: crate::prepare::Preparer::default(),
+            controller: settings.controller,
         })?;
         Ok(Self {
             dir,

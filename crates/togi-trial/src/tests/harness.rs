@@ -8,7 +8,7 @@ use std::time::Duration;
 use tempfile::TempDir;
 use togi_machine::{
     CancellationToken, CcdId, Condition, CoreId, CoreInfo, CpuId, Partial, Regime, Stopped,
-    TrialSpec, pick_workload,
+    TargetOffset, TrialSpec, pick_workload,
 };
 use tokio::task::LocalSet;
 
@@ -57,6 +57,10 @@ pub(super) fn spec(regime: Regime, cores: &[u8], duration: Duration) -> TrialSpe
         duration,
         index: 0,
         seed: 7,
+        offsets: topology
+            .iter()
+            .map(|info| (info.core, TargetOffset::ZERO))
+            .collect(),
     }
 }
 
@@ -116,6 +120,7 @@ pub(super) fn rig_edit(
         log_sink: None,
         supervisors: std::cell::RefCell::default(),
         preparer: crate::prepare::Preparer::default(),
+        controller: Arc::new(crate::controller::Idle),
     };
     edit(&mut env);
     let env = Rc::new(env);

@@ -12,7 +12,7 @@ use clap::{CommandFactory, Parser, Subcommand};
 use crate::args::StateDirArgs;
 use crate::exit::Exit;
 use crate::system::{Real, System};
-use crate::{completion, doctor, events, reset, restart_limit, status, watch};
+use crate::{completion, doctor, emergency_stop, events, reset, restart_limit, status, watch};
 
 const BANNER: &str = "   __              _\n  / /_____  ____ _(_)\n / __/ __ \\/ __ `/ /\n/ /_/ /_/ / /_/ / /\n\\__/\\____/\\__, /_/\n         /____/\n\n  per-core Curve Optimizer\n\n";
 
@@ -57,6 +57,7 @@ pub enum Command {
     Events(events::Args),
     Reset(reset::Args),
     RestartLimit(restart_limit::Args),
+    EmergencyStop(emergency_stop::Args),
     Status(status::Args),
     Watch(watch::Args),
 }
@@ -71,6 +72,7 @@ impl Command {
             Self::Events(args) => events::run(&args, ctx),
             Self::Reset(args) => reset::run(&args, ctx),
             Self::RestartLimit(args) => restart_limit::run(&args, ctx),
+            Self::EmergencyStop(args) => emergency_stop::run(&args, ctx),
             Self::Status(args) => status::run(&args, ctx),
             Self::Watch(args) => watch::run(&args, ctx),
         }

@@ -41,10 +41,12 @@ unicode-width.workspace = true
 insta.workspace = true
 rustix = { workspace = true, features = ["event", "pty", "process", "termios"] }
 tempfile.workspace = true
+togi-backend.workspace = true
 togi-command.workspace = true
 tokio = { workspace = true, features = ["rt"] }
 togi-sim.workspace = true
 togi-smu.workspace = true
+togi-trial.workspace = true
 togi-watchtest.workspace = true
 
 [lints]

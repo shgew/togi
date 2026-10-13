@@ -68,6 +68,7 @@ fn runner(setup: impl FnOnce(&Fake) + Send + 'static, timing: Timing) -> (Runner
         roots,
         unscoped: false,
         user_manager: false,
+        controller: Arc::new(crate::controller::Idle),
     };
     let runner = Runner::build(options, settings, move || {
         let fake = Fake::default();

@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 use togi_machine::{
     BootId, CancellationToken, Condition, CoreId, CoreSet, CpuId, Error, Machine, Mce,
-    ObservedOffset, Partial, Regime, Reporter, Running, Sample, Signal, Stopped, TargetOffset,
-    TrialResult, TrialSpec, Workload, pick_workload,
+    ObservedOffset, Partial, PerCore, Regime, Reporter, Running, Sample, Signal, Stopped,
+    TargetOffset, TrialResult, TrialSpec, Workload, pick_workload,
 };
 use togi_sim::definition::{CoreDef, ModelDef, Weights};
 use togi_sim::{InvalidMachine, Load, MachineDefinition, Model, RunSettings, Simulator, file};
@@ -146,6 +146,7 @@ pub(crate) fn spec(
         duration,
         index: 0,
         seed: 1,
+        offsets: PerCore::default(),
     }
 }
 

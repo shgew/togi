@@ -34,7 +34,9 @@ mod whole;
 pub use appender::AppendHook;
 pub use boot::BootError;
 pub use commands::{CommandError, reset_all, reset_core};
-pub use emergency::{Outcome as Emergency, Readback, Response, Withheld, Zeroed};
+pub use emergency::{
+    Outcome as Emergency, Readback, Response, Withheld, Zeroed, zero_and_read_back,
+};
 pub use error::{AppendFailure, FoldError, JournalCause, JournalFailure, SessionError};
 pub use prepare::{PrepareError, Prepared, prepare, prepare_kept};
 pub use publication::PublicationPolicy;

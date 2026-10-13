@@ -46,6 +46,7 @@ complete -c togi -n "__fish_togi_needs_command" -f -a "doctor" -d 'Check whether
 complete -c togi -n "__fish_togi_needs_command" -f -a "events" -d 'Print the journal, one readable line per event'
 complete -c togi -n "__fish_togi_needs_command" -f -a "reset" -d 'Reset one core, or archive the whole session'
 complete -c togi -n "__fish_togi_needs_command" -f -a "restart-limit" -d 'Recover after the tuning service reaches its restart limit'
+complete -c togi -n "__fish_togi_needs_command" -f -a "emergency-stop" -d 'Internal emergency recovery that stops leftover trials and sets every core to offset 0'
 complete -c togi -n "__fish_togi_needs_command" -f -a "status" -d 'Show the session at a glance'
 complete -c togi -n "__fish_togi_needs_command" -f -a "watch" -d 'Show the session as a read-only dashboard'
 complete -c togi -n "__fish_togi_needs_command" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
@@ -77,18 +78,21 @@ complete -c togi -n "__fish_togi_using_subcommand reset" -s h -l help -d 'Print 
 complete -c togi -n "__fish_togi_using_subcommand restart-limit" -l tuning-boot -d 'GRUB environment file for retry state and the saved tuning entry' -r -F
 complete -c togi -n "__fish_togi_using_subcommand restart-limit" -l state-dir -d 'State directory' -r -f -a "(__fish_complete_directories)"
 complete -c togi -n "__fish_togi_using_subcommand restart-limit" -s h -l help -d 'Print help (see more with \'--help\')'
+complete -c togi -n "__fish_togi_using_subcommand emergency-stop" -l state-dir -d 'State directory' -r -f -a "(__fish_complete_directories)"
+complete -c togi -n "__fish_togi_using_subcommand emergency-stop" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c togi -n "__fish_togi_using_subcommand status" -l state-dir -d 'State directory' -r -f -a "(__fish_complete_directories)"
 complete -c togi -n "__fish_togi_using_subcommand status" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c togi -n "__fish_togi_using_subcommand watch" -l width -d 'Frame width in columns, 1 to 1000, when stdout is not a terminal' -r -f
 complete -c togi -n "__fish_togi_using_subcommand watch" -l height -d 'Frame height in rows, 1 to 1000, when stdout is not a terminal' -r -f
 complete -c togi -n "__fish_togi_using_subcommand watch" -l state-dir -d 'State directory' -r -f -a "(__fish_complete_directories)"
 complete -c togi -n "__fish_togi_using_subcommand watch" -s h -l help -d 'Print help (see more with \'--help\')'
-complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from run completion doctor events reset restart-limit status watch help" -f -a "run" -d 'Start or resume the tuning session in the foreground'
-complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from run completion doctor events reset restart-limit status watch help" -f -a "completion" -d 'Print a shell completion script'
-complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from run completion doctor events reset restart-limit status watch help" -f -a "doctor" -d 'Check whether this machine is ready for a run'
-complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from run completion doctor events reset restart-limit status watch help" -f -a "events" -d 'Print the journal, one readable line per event'
-complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from run completion doctor events reset restart-limit status watch help" -f -a "reset" -d 'Reset one core, or archive the whole session'
-complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from run completion doctor events reset restart-limit status watch help" -f -a "restart-limit" -d 'Recover after the tuning service reaches its restart limit'
-complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from run completion doctor events reset restart-limit status watch help" -f -a "status" -d 'Show the session at a glance'
-complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from run completion doctor events reset restart-limit status watch help" -f -a "watch" -d 'Show the session as a read-only dashboard'
-complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from run completion doctor events reset restart-limit status watch help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
+complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from run completion doctor events reset restart-limit emergency-stop status watch help" -f -a "run" -d 'Start or resume the tuning session in the foreground'
+complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from run completion doctor events reset restart-limit emergency-stop status watch help" -f -a "completion" -d 'Print a shell completion script'
+complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from run completion doctor events reset restart-limit emergency-stop status watch help" -f -a "doctor" -d 'Check whether this machine is ready for a run'
+complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from run completion doctor events reset restart-limit emergency-stop status watch help" -f -a "events" -d 'Print the journal, one readable line per event'
+complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from run completion doctor events reset restart-limit emergency-stop status watch help" -f -a "reset" -d 'Reset one core, or archive the whole session'
+complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from run completion doctor events reset restart-limit emergency-stop status watch help" -f -a "restart-limit" -d 'Recover after the tuning service reaches its restart limit'
+complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from run completion doctor events reset restart-limit emergency-stop status watch help" -f -a "emergency-stop" -d 'Internal emergency recovery that stops leftover trials and sets every core to offset 0'
+complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from run completion doctor events reset restart-limit emergency-stop status watch help" -f -a "status" -d 'Show the session at a glance'
+complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from run completion doctor events reset restart-limit emergency-stop status watch help" -f -a "watch" -d 'Show the session as a read-only dashboard'
+complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from run completion doctor events reset restart-limit emergency-stop status watch help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'

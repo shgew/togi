@@ -167,6 +167,7 @@ mod tests {
             duration: Duration::from_secs(10),
             index: 0,
             seed: 7,
+            offsets: togi_machine::PerCore::default(),
         }
     }
 

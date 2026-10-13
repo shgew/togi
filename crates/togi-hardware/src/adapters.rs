@@ -19,6 +19,12 @@ pub(crate) fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 /// The driver's `Smu` face; the host holds the same driver for validation and checks.
+///
+/// Every emergency zeroing on hardware passes through here, the session's after a journal failure
+/// and `togi emergency-stop`'s, so the one refusal that protects the SMU lives here too: no zero
+/// is written before the core slots are mapped. A validated driver whose slot mapping was
+/// refused, as on a topology with a harvested CCD, would take a set-all command it could not read
+/// back.
 pub(crate) struct SharedSmu(pub(crate) SharedDriver);
 
 impl Smu for SharedSmu {
@@ -44,10 +50,21 @@ impl Smu for SharedSmu {
 
     #[expect(
         clippy::disallowed_methods,
-        reason = "delegates the session's emergency zeroing, with its proofs, to the one driver"
+        reason = "delegates the shared emergency zeroing, with its proofs, to the one driver"
     )]
     fn emergency_zero(&mut self, validated: SmuValidated, stopped: &Stopped) -> Result<(), Error> {
-        lock(&self.0).emergency_zero(validated, stopped)
+        let mut driver = lock(&self.0);
+        let mapping = driver.check_slot_mapping();
+        if !mapping.ok {
+            return Err(Error::Other(
+                format!(
+                    "offsets unchanged: the core slots are not mapped: {}",
+                    mapping.detail
+                )
+                .into(),
+            ));
+        }
+        driver.emergency_zero(validated, stopped)
     }
 }
 

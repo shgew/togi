@@ -109,6 +109,9 @@ pub struct Host {
     /// Whether a second claim on the host lock was refused as busy while `diagnose` ran; `None`
     /// when it did not run as root.
     pub lock_busy_in_diagnose: Cell<Option<bool>>,
+    /// What `open_machine` hands out once: the machine of a command that opens one, or why it
+    /// cannot. Empty when the test expects the command not to open any.
+    pub machine: RefCell<Option<Result<Machine, togi_hardware::Error>>>,
     pub facts: OutputFacts,
     _dir: TempDir,
 }
@@ -137,6 +140,7 @@ impl Host {
             diagnoses: RefCell::default(),
             calls: Cell::new(0),
             lock_busy_in_diagnose: Cell::new(None),
+            machine: RefCell::new(None),
             facts: OutputFacts::default(),
             _dir: dir,
         }
@@ -310,7 +314,11 @@ impl System for Host {
         _: &Path,
         _: &HostLock,
     ) -> Result<Machine, togi_hardware::Error> {
-        panic!("only run opens the machine")
+        self.steps.borrow_mut().push("open machine".into());
+        self.machine
+            .borrow_mut()
+            .take()
+            .expect("only run and emergency-stop open the machine, once, and the test stages it")
     }
 
     fn interactive(&self) -> bool {

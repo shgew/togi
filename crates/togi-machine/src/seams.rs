@@ -1,8 +1,8 @@
 use crate::object_only;
 use crate::{
     BankType, BiosContext, BootId, CancellationToken, Condition, CoreId, CoreInfo, CpuId, Error,
-    KernelCursor, LoadSchedule, ObservedOffset, Partial, Regime, ResetKind, Signal, TargetOffset,
-    TrialConditions, WorkloadId,
+    KernelCursor, LoadSchedule, ObservedOffset, Partial, PerCore, Regime, ResetKind, Signal,
+    TargetOffset, TrialConditions, WorkloadId,
 };
 use jiff::Timestamp;
 use serde::Serialize;
@@ -100,6 +100,9 @@ pub struct TrialSpec {
     pub duration: Duration,
     pub index: usize,
     pub seed: u64,
+    /// The offset a readback confirmed on each core as the trial starts; a core whose offset is
+    /// not known is absent. The runner keeps togi's own threads off the loaded cores by it.
+    pub offsets: PerCore<TargetOffset>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]

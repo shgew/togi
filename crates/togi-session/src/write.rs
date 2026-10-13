@@ -221,6 +221,18 @@ impl Hardware {
             .collect()
     }
 
+    /// The offsets known for the cores that have one, which a trial's spec conveys so the trial's own threads
+    /// can stay off the cores held deepest. A core whose offset is not known is left out.
+    pub(crate) fn confirmed(&self) -> PerCore<TargetOffset> {
+        self.cores
+            .iter()
+            .filter_map(|core| match self.slots.get(core) {
+                Some(Slot::Known(offset)) => Some((core, offset)),
+                Some(Slot::Unknown) | None => None,
+            })
+            .collect()
+    }
+
     /// A write of `target` to `core`. When it can deepen the core, `check` sees the profile the machine would hold
     /// afterwards and names what it reaches; a write that leaves the core as deep or shallower than it is known to
     /// be, or sets it to 0, moves toward no constraint and is not checked.

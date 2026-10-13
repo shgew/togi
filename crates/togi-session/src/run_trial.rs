@@ -262,6 +262,7 @@ impl Session {
             duration: Duration::from_secs(u64::from(plan.duration.get())),
             index: rotation,
             seed: intent.get(),
+            offsets: self.hardware.confirmed(),
         };
         let Some(confirmed) = self.confirmed.as_ref() else {
             return Err(SessionError::Unproven.into());

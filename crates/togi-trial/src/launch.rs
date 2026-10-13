@@ -23,8 +23,10 @@ pub(crate) enum Confinement {
 pub(crate) struct LaunchCommand {
     pub(crate) argv: Vec<OsString>,
     pub(crate) cwd: PathBuf,
-    /// The CPUs the launcher itself is confined to from its first instruction; used only without
-    /// a scope, where nothing else confines it.
+    /// The CPUs the launcher itself is confined to from its first instruction. A forked launcher
+    /// inherits the affinity of the thread that forks it, which is togi's controller set while a
+    /// trial runs, so the launcher must be given the workload's CPUs and never the controller's;
+    /// a scope's cpuset then narrows it no further.
     pub(crate) pin: Vec<CpuId>,
 }
 
@@ -101,10 +103,7 @@ pub(crate) fn command_for(
     LaunchCommand {
         argv,
         cwd: cwd.to_owned(),
-        pin: match confinement {
-            Confinement::Scoped { .. } => Vec::new(),
-            Confinement::Unscoped => cpus.to_vec(),
-        },
+        pin: cpus.to_vec(),
     }
 }
 
@@ -250,7 +249,11 @@ mod tests {
             &[CpuId(0)],
             &plan,
         );
-        assert!(scoped.pin.is_empty(), "the scope's cpuset confines it");
+        assert_eq!(
+            scoped.pin,
+            [CpuId(0)],
+            "a scoped launcher is pinned to the workload's CPUs, not the controller's"
+        );
         let command = command_for(
             Confinement::Unscoped,
             &scope(),

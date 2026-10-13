@@ -11,8 +11,8 @@ use togi_journal::{
 use togi_machine::{
     Backend, BankType, BootId, CancellationToken, Clock, CpuId, Error, Instance, Kernel,
     KernelCursor, KernelRead, LoadSchedule, Machine, Mce, Partial, PmTable, PstoreRecord, Regime,
-    Reporter, ResetReason, Running, Signal, Started, Stopped, TrialConditions, TrialFailure,
-    TrialResult, TrialSpec, Trials,
+    Reporter, ResetReason, Running, Signal, Started, Stopped, TargetOffset, TrialConditions,
+    TrialFailure, TrialResult, TrialSpec, Trials,
 };
 use togi_sim::faults::{HookPhase, SmuOp, SmuOperation};
 
@@ -206,6 +206,8 @@ struct Rigging {
     start_error: Option<fn() -> Error>,
     /// Runs once the workload's wait has returned, before it is stopped.
     after_wait: Option<Rc<dyn Fn()>>,
+    /// The specs the trials were started with, oldest first.
+    specs: Vec<TrialSpec>,
 }
 
 type Rigs = Rc<RefCell<Rigging>>;
@@ -240,6 +242,7 @@ impl Trials for Rigged {
                 error: error(),
             });
         }
+        self.rigs.borrow_mut().specs.push(spec.clone());
         let inner = self.inner.start(cancel, spec, ready)?;
         Ok(Box::new(RiggedRunning {
             inner,
@@ -757,6 +760,19 @@ fn cites_trial_mce(session: &Session, end: &TrialEnd, corrected: bool) -> bool {
                         && mce.corrected == corrected)
         })
     })
+}
+
+#[test]
+fn a_trials_spec_conveys_the_confirmed_profile_so_its_own_threads_can_avoid_the_deep_cores() {
+    let mut bench = Bench::new(2);
+    bench.config = Config::parse(r#"{"start_offsets":{"0":-1}}"#).unwrap();
+    let mut rig = rigged(bench);
+    trial(&mut rig).unwrap();
+    let rigs = rig.rigs.borrow();
+    let spec = rigs.specs.first().expect("a trial started");
+    assert_eq!(spec.offsets.iter().count(), 2, "{:?}", spec.offsets);
+    assert_eq!(spec.offsets.get(core(1)), Some(TargetOffset::ZERO));
+    assert!(spec.offsets.get(core(0)).is_some());
 }
 
 #[test]

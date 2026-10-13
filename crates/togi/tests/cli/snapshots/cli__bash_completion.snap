@@ -26,6 +26,9 @@ _togi() {
             togi,doctor)
                 cmd="togi__subcmd__doctor"
                 ;;
+            togi,emergency-stop)
+                cmd="togi__subcmd__emergency__subcmd__stop"
+                ;;
             togi,events)
                 cmd="togi__subcmd__events"
                 ;;
@@ -52,6 +55,9 @@ _togi() {
                 ;;
             togi__subcmd__help,doctor)
                 cmd="togi__subcmd__help__subcmd__doctor"
+                ;;
+            togi__subcmd__help,emergency-stop)
+                cmd="togi__subcmd__help__subcmd__emergency__subcmd__stop"
                 ;;
             togi__subcmd__help,events)
                 cmd="togi__subcmd__help__subcmd__events"
@@ -81,7 +87,7 @@ _togi() {
 
     case "${cmd}" in
         togi)
-            opts="-h -V --state-dir --help --version run completion doctor events reset restart-limit status watch help"
+            opts="-h -V --state-dir --help --version run completion doctor events reset restart-limit emergency-stop status watch help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -158,6 +164,27 @@ _togi() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
+        togi__subcmd__emergency__subcmd__stop)
+            opts="-h --state-dir --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --state-dir)
+                    COMPREPLY=()
+                    if [[ "${BASH_VERSINFO[0]}" -ge 4 ]]; then
+                        compopt -o plusdirs
+                    fi
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
         togi__subcmd__events)
             opts="-h --core --kind --trial --since --until --json --state-dir --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
@@ -216,7 +243,7 @@ _togi() {
             return 0
             ;;
         togi__subcmd__help)
-            opts="run completion doctor events reset restart-limit status watch help"
+            opts="run completion doctor events reset restart-limit emergency-stop status watch help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -244,6 +271,20 @@ _togi() {
             return 0
             ;;
         togi__subcmd__help__subcmd__doctor)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        togi__subcmd__help__subcmd__emergency__subcmd__stop)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
