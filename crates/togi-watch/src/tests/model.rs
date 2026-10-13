@@ -574,11 +574,11 @@ fn ended_of(model: &Model) -> Option<(String, String)> {
 fn only_the_last_end_of_a_batch_keeps_its_outcomes_and_a_batch_without_one_keeps_the_last() {
     let mut script = Script::at_limit();
     let mut ends = Vec::new();
-    for _ in 0..2 {
+    for outcome in [Outcome::Pass, Outcome::Failure] {
         let plan = script.next_trial();
         let (intent, trial) = script.intent(&plan);
         script.start(&trial);
-        script.end(intent, &trial, Outcome::Pass);
+        script.append(ended(&trial, &plan, outcome), &[intent]);
         ends.push(script.events.len());
     }
     let plan = script.next_trial();
