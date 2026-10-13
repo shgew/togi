@@ -256,10 +256,11 @@ func localPullDiff(t tools, pr int, frozen pullInfo) ([]byte, error) {
 	return raw, nil
 }
 
-// diffTooLarge reports whether gh failed because GitHub refuses a diff over its line limit.
+// diffTooLarge reports whether gh failed because GitHub refuses a diff over its line or file limit.
 func diffTooLarge(err error) bool {
 	msg := err.Error()
-	return strings.Contains(msg, "HTTP 406") && strings.Contains(msg, "the diff exceeded the maximum number of lines")
+	return strings.Contains(msg, "HTTP 406") && (strings.Contains(msg, "the diff exceeded the maximum number of lines") ||
+		strings.Contains(msg, "the diff exceeded the maximum number of files"))
 }
 
 // exclusionOf names why the review skips the file, or "" when it is included. Paths and kinds exclude by themselves. Whether a file is generated is decided on its contents, never on marker lines a patch shows: a marker in context or outside the hunks counts, one after the package clause or inside a string does not, and one an earlier patch of a delta added and a later one dropped does not either. complete says the sections hold each file's whole change, as the pull request's diff does: an added or deleted file's section then is its whole content and needs no read. Any other file is read at the frozen head; one the head lacks has no contents to judge and stays in the review.

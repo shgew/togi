@@ -556,6 +556,23 @@ func TestSnapshotTooLargeDiffStepFailures(t *testing.T) {
 	}
 }
 
+func TestSnapshotFileLimitDiffBuiltLocally(t *testing.T) {
+	t.Parallel()
+	gh := pullHandler(t, "", headSHA)
+	tl, _, iso := localDiffTools(t, func(args []string) ([]byte, error) {
+		if args[0] == "pr" && args[1] == "diff" {
+			return nil, errors.New("gh pr: could not find pull request diff: HTTP 406: Sorry, the diff exceeded the maximum number of files (300). Consider using 'List pull requests files' API or locally cloning the repository instead.\nPullRequest.diff too_large")
+		}
+		return gh(args)
+	}, nil)
+	if err := runSnapshot(tl, []string{"700"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(iso.calls) != 3 {
+		t.Fatalf("isolated git calls = %v, want init, fetch and diff", iso.calls)
+	}
+}
+
 func TestSnapshotDiffRefusalsOutsideTooLargeRunNoGit(t *testing.T) {
 	t.Parallel()
 	tests := map[string]string{
