@@ -4,7 +4,7 @@ use std::io::Write as _;
 use std::os::fd::OwnedFd;
 use std::os::unix::ffi::OsStringExt as _;
 use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Command, ExitStatus, Stdio};
 use std::time::{Duration, Instant};
 
 use rustix::event::{PollFd, PollFlags, Timespec, poll};
@@ -32,8 +32,22 @@ impl Terminal {
         let slave = PathBuf::from(OsString::from_vec(
             ptsname(&master, Vec::new()).unwrap().into_bytes(),
         ));
+        Self {
+            master,
+            slave,
+            seen: Vec::new(),
+        }
+    }
+
+    /// A slave descriptor at 30 rows by 120 columns: macOS sets the window size only through the slave.
+    fn slave(&self) -> File {
+        let slave = File::options()
+            .read(true)
+            .write(true)
+            .open(&self.slave)
+            .unwrap();
         tcsetwinsize(
-            &master,
+            &slave,
             Winsize {
                 ws_row: 30,
                 ws_col: 120,
@@ -42,19 +56,31 @@ impl Terminal {
             },
         )
         .unwrap();
-        Self {
-            master,
-            slave,
-            seen: Vec::new(),
-        }
+        slave
     }
 
-    fn slave(&self) -> File {
-        File::options()
-            .read(true)
-            .write(true)
-            .open(&self.slave)
-            .unwrap()
+    /// Waits for the replay to exit while reading what it draws: a replay blocks while its terminal's output queue is
+    /// full, and macOS discards what is still queued when the replay closes the slave with nobody reading.
+    fn exit(&mut self, replay: &mut Replay) -> ExitStatus {
+        let deadline = Instant::now() + BOUND;
+        loop {
+            if let Some(status) = replay.0.try_wait().unwrap() {
+                return status;
+            }
+            assert!(Instant::now() < deadline, "the replay never exited");
+            let timeout = Timespec {
+                tv_sec: 0,
+                tv_nsec: 20_000_000,
+            };
+            let mut fds = [PollFd::new(&self.master, PollFlags::IN)];
+            if poll(&mut fds, Some(&timeout)).unwrap() == 0 {
+                continue;
+            }
+            let mut buf = [0_u8; 8192];
+            if let Ok(read) = rustix::io::read(&self.master, &mut buf) {
+                self.seen.extend_from_slice(&buf[..read]);
+            }
+        }
     }
 
     fn wait_for(&mut self, text: &str) {
@@ -113,7 +139,7 @@ fn playing_on_a_terminal_draws_the_dashboard_and_q_quits() {
     terminal.wait_for("CYCLE");
     let mut master = File::from(terminal.master.try_clone().unwrap());
     master.write_all(b"q").unwrap();
-    let status = replay.0.wait().unwrap();
+    let status = terminal.exit(&mut replay);
     assert_eq!(status.code(), Some(0));
 }
 
@@ -128,7 +154,7 @@ fn playing_a_recording_with_an_unknown_kind_says_so_in_the_dashboard_and_q_quits
     terminal.wait_for("skipped");
     let mut master = File::from(terminal.master.try_clone().unwrap());
     master.write_all(b"q").unwrap();
-    assert_eq!(replay.0.wait().unwrap().code(), Some(0));
+    assert_eq!(terminal.exit(&mut replay).code(), Some(0));
 }
 
 #[test]
@@ -139,6 +165,6 @@ fn sigterm_ends_the_dashboard_cleanly_and_restores_the_cursor() {
     let mut replay = play(&terminal, dir.path().to_str().unwrap(), "1");
     terminal.wait_for("togi");
     kill_process(Pid::from_child(&replay.0), Signal::TERM).unwrap();
-    assert_eq!(replay.0.wait().unwrap().code(), Some(0));
+    assert_eq!(terminal.exit(&mut replay).code(), Some(0));
     terminal.wait_for("\u{1b}[?25h");
 }

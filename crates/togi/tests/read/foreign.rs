@@ -131,8 +131,13 @@ fn live_watch_refuses_before_it_takes_the_terminal() {
     let slave_path = PathBuf::from(OsString::from_vec(
         ptsname(&master, Vec::new()).unwrap().into_bytes(),
     ));
+    let slave = File::options()
+        .read(true)
+        .write(true)
+        .open(&slave_path)
+        .unwrap();
     tcsetwinsize(
-        &master,
+        &slave,
         Winsize {
             ws_row: 30,
             ws_col: 100,
@@ -141,11 +146,6 @@ fn live_watch_refuses_before_it_takes_the_terminal() {
         },
     )
     .unwrap();
-    let slave = File::options()
-        .read(true)
-        .write(true)
-        .open(&slave_path)
-        .unwrap();
     let child = Command::new(env!("CARGO_BIN_EXE_togi"))
         .arg("--state-dir")
         .arg(dir.path())

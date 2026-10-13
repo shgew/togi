@@ -227,8 +227,13 @@ fn a_signal_ends_a_live_watch_with_the_terminal_restored(signal: Signal) {
     let slave_path = PathBuf::from(OsString::from_vec(
         ptsname(&master, Vec::new()).unwrap().into_bytes(),
     ));
+    let slave = File::options()
+        .read(true)
+        .write(true)
+        .open(&slave_path)
+        .unwrap();
     tcsetwinsize(
-        &master,
+        &slave,
         Winsize {
             ws_row: 30,
             ws_col: 100,
@@ -237,11 +242,6 @@ fn a_signal_ends_a_live_watch_with_the_terminal_restored(signal: Signal) {
         },
     )
     .unwrap();
-    let slave = File::options()
-        .read(true)
-        .write(true)
-        .open(&slave_path)
-        .unwrap();
     let before = tcgetattr(&slave).unwrap().local_modes;
     assert!(before.contains(LocalModes::ICANON | LocalModes::ECHO));
 
