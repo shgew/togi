@@ -97,7 +97,11 @@ fn baseline_scores_ignore_the_fields_the_rust_bench_does_not_compare() {
 fn a_malformed_baseline_line_names_its_number_and_a_missing_file_is_an_error() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("baseline.jsonl");
-    fs::write(&path, format!("{}\n{{", baseline_line("default", 1, 48.0, 9))).unwrap();
+    fs::write(
+        &path,
+        format!("{}\n{{", baseline_line("default", 1, 48.0, 9)),
+    )
+    .unwrap();
     let error = read_baseline(&path).unwrap_err().to_string();
     assert!(error.contains("line 2"), "{error}");
     assert!(read_baseline(&dir.path().join("missing.jsonl")).is_err());
@@ -159,7 +163,10 @@ fn a_shift_the_spread_explains_is_not_flagged_however_large() {
 #[test]
 fn one_run_has_no_spread_to_judge_a_difference_by() {
     let rust_runs = [rust("default", 1, 100.0, 10)];
-    let lines = compare(&rust_runs, &baseline_runs(&[baseline_line("default", 1, 40.0, 10)]));
+    let lines = compare(
+        &rust_runs,
+        &baseline_runs(&[baseline_line("default", 1, 40.0, 10)]),
+    );
     assert!(flagged(&lines).is_empty());
 }
 

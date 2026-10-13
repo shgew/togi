@@ -297,7 +297,10 @@ pub fn compare(rust: &[Record], baseline: &[BaselineRun]) -> Vec<Line> {
     let rust: Vec<Row> = rust.iter().map(Row::from).collect();
     let baseline: Vec<Row> = baseline.iter().map(Row::from).collect();
     let shared: BTreeSet<(&str, u64)> = {
-        let baseline_keys: BTreeSet<_> = baseline.iter().map(|r| (r.scenario.as_str(), r.seed)).collect();
+        let baseline_keys: BTreeSet<_> = baseline
+            .iter()
+            .map(|r| (r.scenario.as_str(), r.seed))
+            .collect();
         rust.iter()
             .map(|r| (r.scenario.as_str(), r.seed))
             .filter(|key| baseline_keys.contains(key))
@@ -364,7 +367,10 @@ struct Stratum {
 /// `sqrt(sum_s (n_s/N)^2 (var_rust_s/n_rust_s + var_baseline_s/n_baseline_s))`, with `n_s` the baseline runs of stratum `s`.
 fn line(scenario: &str, metric: &Metric, strata: &[Stratum]) -> Option<Line> {
     let rust: Vec<f64> = strata.iter().flat_map(|s| s.rust.iter().copied()).collect();
-    let baseline: Vec<f64> = strata.iter().flat_map(|s| s.baseline.iter().copied()).collect();
+    let baseline: Vec<f64> = strata
+        .iter()
+        .flat_map(|s| s.baseline.iter().copied())
+        .collect();
     if rust.is_empty() && baseline.is_empty() {
         return None;
     }
@@ -383,7 +389,8 @@ fn line(scenario: &str, metric: &Metric, strata: &[Stratum]) -> Option<Line> {
         .map(|s| {
             let weight = float(s.baseline.len()) / float(baseline_total);
             weight.powi(2)
-                * (variance(&s.rust) / float(s.rust.len()) + variance(&s.baseline) / float(s.baseline.len()))
+                * (variance(&s.rust) / float(s.rust.len())
+                    + variance(&s.baseline) / float(s.baseline.len()))
         })
         .sum::<f64>()
         .sqrt();
