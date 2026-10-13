@@ -1802,6 +1802,7 @@ The active guides describe the installed workspace and the four retained Go deve
 
 - **Documentation search.** The anchored Go-instruction search over active root guides, active `docs/` guides and specs, `.omp`, issue templates and the bench/fit programs found 15 matching lines: seven in the explicitly historical older-ruleset recipe and eight for the retained Go tools. History ADRs, migration logs, the changelog and review-rendering fixtures are outside that active-docs scope. No active link points to the deleted porting guide; ADRs 0048 and 0058 preserve it through a frozen revision link.
 - **Executed recipe.** The intermediate-profile scoring example ran as a scratch test in `togi-tool-bench` against `target-shared-voltage.json`, seed 1 and that seed's recorded final profile. It printed `worst_r7_hazard_per_h=3.585984` and passed its assertion against `3.5859843366813045` (one test, 0.002 s in nextest; 9.32 s for the wrapped command, including an 8.13 s test build). The scratch test was removed, with no implementation change retained.
+- **Ship.** `just ship` on `589100ff` passed the full local gate and pushed the branch. All four retained Go tool packages passed, nextest passed all 4,893 tests with none skipped in 22.060 s, and doc tests passed. The wrapped command took 81.77 s, including dev-shell entry, formatting and a wait for the shared ship lock; it is not an isolated gate or compile timing.
 
 ### Warm unchanged test-loop costs
 
