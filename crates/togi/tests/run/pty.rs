@@ -7,6 +7,8 @@ use std::fs::File;
 use std::os::fd::OwnedFd;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::{Arc, Mutex};
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use rustix::process::{Pid, Signal, kill_process};
@@ -142,6 +144,26 @@ fn open_pty() -> (OwnedFd, File) {
     (master, slave)
 }
 
+/// Everything the child writes to the terminal, read while it runs: macOS discards what is still queued once the
+/// last slave descriptor closes. The reader ends at that close.
+fn record(master: &OwnedFd) -> (Arc<Mutex<Vec<u8>>>, JoinHandle<()>) {
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let master = rustix::io::dup(master).unwrap();
+    let reader = {
+        let seen = seen.clone();
+        std::thread::spawn(move || {
+            let mut chunk = [0_u8; 4096];
+            while let Ok(read) = rustix::io::read(&master, &mut chunk) {
+                if read == 0 {
+                    break;
+                }
+                seen.lock().unwrap().extend_from_slice(&chunk[..read]);
+            }
+        })
+    };
+    (seen, reader)
+}
+
 fn events_of(dir: &Path) -> Vec<togi_journal::Event> {
     togi_journal::Recording::read(&dir.join("state/events.jsonl"))
         .map(togi_journal::Recording::into_events)
@@ -230,21 +252,21 @@ fn a_session_panic_stops_the_dashboard_and_gives_the_terminal_back_before_the_pa
         .stderr(Stdio::from(slave))
         .spawn()
         .unwrap();
+    let (seen, reader) = record(&master);
     let status = wait_for_exit(&mut child);
     assert_eq!(status.code(), Some(2));
+    drop(child);
+    reader.join().unwrap();
     let restored = tcgetattr(&master).unwrap();
     assert!(
         restored.local_modes.contains(LocalModes::ECHO)
             && restored.local_modes.contains(LocalModes::ICANON),
         "the previous input settings are back"
     );
-    let mut chunk = [0_u8; 4096];
-    let read = rustix::io::read(&master, &mut chunk).unwrap();
-    let seen = chunk[..read].to_vec();
+    let seen = String::from_utf8_lossy(&seen.lock().unwrap()).into_owned();
     assert!(
-        String::from_utf8_lossy(&seen).contains("panic: injected panic while the dashboard shows"),
-        "{}",
-        String::from_utf8_lossy(&seen)
+        seen.contains("panic: injected panic while the dashboard shows"),
+        "{seen}"
     );
 }
 
@@ -272,20 +294,7 @@ fn ctrl_c_stops_a_run_that_shows_the_real_dashboard_and_the_cursor_comes_back() 
         .stderr(Stdio::from(slave))
         .spawn()
         .unwrap();
-    let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::<u8>::new()));
-    let reader = {
-        let seen = seen.clone();
-        let master = rustix::io::dup(&master).unwrap();
-        std::thread::spawn(move || {
-            let mut chunk = [0_u8; 4096];
-            while let Ok(read) = rustix::io::read(&master, &mut chunk) {
-                if read == 0 {
-                    break;
-                }
-                seen.lock().unwrap().extend_from_slice(&chunk[..read]);
-            }
-        })
-    };
+    let (seen, reader) = record(&master);
     wait_until("a trial to run", || {
         events_of(dir.path())
             .iter()
@@ -349,20 +358,7 @@ fn a_session_panic_over_the_real_linux_console_dashboard_restores_the_cursor_and
         .stderr(Stdio::from(slave))
         .spawn()
         .unwrap();
-    let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::<u8>::new()));
-    let reader = {
-        let seen = seen.clone();
-        let master = rustix::io::dup(&master).unwrap();
-        std::thread::spawn(move || {
-            let mut chunk = [0_u8; 4096];
-            while let Ok(read) = rustix::io::read(&master, &mut chunk) {
-                if read == 0 {
-                    break;
-                }
-                seen.lock().unwrap().extend_from_slice(&chunk[..read]);
-            }
-        })
-    };
+    let (seen, reader) = record(&master);
     wait_until(
         "the dashboard to hide the cursor and set the palette",
         || {
