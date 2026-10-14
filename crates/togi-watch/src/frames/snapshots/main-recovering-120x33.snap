@@ -23,14 +23,14 @@ expression: body
 │
 │ TURNS ────────────────── one core per turn, in this order   WHAT HAPPENED ─────────────────────────────── l: last 400
 │
-│   01  search step: light...      -10  p -5 · next -10       01:40  crash    with the offsets applied, rebooted
-│   09  search step: light...      -10  p -5 · next -10       01:39  step     core 00 passed -10, next -15
-│   02  search step: light...      -10  p -5 · next -10       01:36  step     core 15 passed -5, next -10
-│   10  search step: light...      -10  p -5 · next -10       01:33  step     core 07 passed -5, next -10
-│   03  search step: light...      -10  p -5 · next -10       01:30  step     core 14 passed -5, next -10
-│   11  search step: light...      -10  p -5 · next -10       01:27  step     core 06 passed -5, next -10
-│   04  search step: light...      -10  p -5 · next -10       01:24  step     core 13 passed -5, next -10
-│   12  search step: light...      -10  p -5 · next -10       01:21  step     core 05 passed -5, next -10
+│   01  search: light, then heavy  -10  p -5 · next -10       01:40  crash    with the offsets applied, rebooted
+│   09  search: light, then heavy  -10  p -5 · next -10       01:39  step     core 00 passed -10, next -15
+│   02  search: light, then heavy  -10  p -5 · next -10       01:36  step     core 15 passed -5, next -10
+│   10  search: light, then heavy  -10  p -5 · next -10       01:33  step     core 07 passed -5, next -10
+│   03  search: light, then heavy  -10  p -5 · next -10       01:30  step     core 14 passed -5, next -10
+│   11  search: light, then heavy  -10  p -5 · next -10       01:27  step     core 06 passed -5, next -10
+│   04  search: light, then heavy  -10  p -5 · next -10       01:24  step     core 13 passed -5, next -10
+│   12  search: light, then heavy  -10  p -5 · next -10       01:21  step     core 05 passed -5, next -10
 │ +8 more                                                     +27 more
 │
 │  ?  help    l  log    esc  back    q  close view

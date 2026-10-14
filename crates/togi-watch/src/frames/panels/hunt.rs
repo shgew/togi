@@ -8,11 +8,11 @@ use togi_machine::{CoreId, Signal};
 use togi_tuner::{GroupState, HuntGroup, MemberProbe, RerunPlan};
 
 use super::super::colours::Paint;
-use super::super::fit::{display_width, rule};
+use super::super::fit::{Clause, Form, display_width, fit_clauses, plain, rule};
 use super::super::layout::SizeClass;
 use super::super::measure::Tables;
 use super::super::notes::offset_list;
-use super::super::scene::{Scene, between, short_duration};
+use super::super::scene::{Scene, between, clock, short_duration};
 use super::super::story::{crash_evidence, known_words};
 use super::super::terms::{cycle_place, recut_words, trial_name};
 use super::table::{cell, field_row, overlay, stage_marker, table_row};
@@ -45,6 +45,7 @@ pub(super) fn hunt_lines(
             )
         }
     });
+    let room = width.saturating_sub(t.field);
     let mut out = vec![
         rule(
             width,
@@ -53,43 +54,31 @@ pub(super) fn hunt_lines(
             scene.style(Paint::Track),
         ),
         Line::default(),
-        field_row(
-            scene,
-            t,
-            "cause",
-            cell(scene, Paint::Text, cause_words(hunt, compact)),
-            width,
-        ),
+        field_row(scene, t, "cause", cause_line(scene, hunt, compact, room), width),
     ];
     if !compact {
-        let evidence = crash_evidence(hunt.facts.cause.end.as_ref());
-        if !evidence.is_empty() {
-            out.push(field_row(
-                scene,
-                t,
-                "evidence",
-                cell(
-                    scene,
-                    Paint::Grey,
-                    format!("{evidence} · not enough to attribute"),
-                ),
-                width,
-            ));
+        if let Some(line) = evidence_line(scene, hunt, room) {
+            out.push(field_row(scene, t, "evidence", line, width));
         }
-        out.push(field_row(
-            scene,
-            t,
-            "candidates",
-            cell(
-                scene,
-                Paint::Text,
-                format!(
-                    "{}, every core with an offset in the failing profile",
-                    core_ids(hunt.plan.candidates.iter())
+        let explain = |text: &'static str| Form::new(cell(scene, Paint::Text, text), 1);
+        let candidates = fit_clauses(
+            room,
+            &[
+                Clause::whole(
+                    "",
+                    cell(scene, Paint::Text, core_ids(hunt.plan.candidates.iter())),
                 ),
-            ),
-            width,
-        ));
+                Clause::new(
+                    ", ",
+                    vec![
+                        explain("every core with an offset in the failing profile"),
+                        explain("every core at a failing offset"),
+                        Form::empty(),
+                    ],
+                ),
+            ],
+        );
+        out.push(field_row(scene, t, "candidates", candidates, width));
     }
     if !hunt.plan.probes.is_empty() {
         out.push(Line::default());
@@ -110,38 +99,108 @@ pub(super) fn hunt_lines(
     out
 }
 
-fn cause_words(hunt: &HuntView<'_>, compact: bool) -> String {
+/// What failed and where, with the attribution kept whole: the subject and the cycle place shorten first, so
+/// `no core named` or the named core is never what a narrow panel cuts.
+fn cause_line(
+    scene: &Scene<'_>,
+    hunt: &HuntView<'_>,
+    compact: bool,
+    room: usize,
+) -> Line<'static> {
     let cause = &hunt.facts.cause;
+    let say = |text: String| cell(scene, Paint::Text, text);
     if cause.known {
-        return known_words(cause);
+        return fit_clauses(room, &[Clause::whole("", say(known_words(cause)))]);
     }
     let Some(trial) = &cause.trial else {
-        return format!(
+        let text = format!(
             "{} while idle, with no trial running",
             cause.signal.map_or("crash", signal_words)
         );
+        return fit_clauses(room, &[Clause::whole("", say(text))]);
     };
-    let mut text = format!(
-        "{} in {}{}",
-        cause.signal.map_or("failure", signal_words),
-        if cause.rerun_of { "the rerun of " } else { "" },
-        trial_name(trial)
+    let signal = cause.signal.map_or("failure", signal_words);
+    let rerun = if cause.rerun_of { "the rerun of " } else { "" };
+    let subject = Clause::new(
+        "",
+        vec![
+            Form::new(say(format!("{signal} in {rerun}{}", trial_name(trial))), 3),
+            Form::new(
+                say(format!(
+                    "{signal} in {rerun}{} {}",
+                    trial.regime,
+                    kind_words(trial.regime)
+                )),
+                3,
+            ),
+            Form::new(
+                say(if cause.rerun_of {
+                    format!("{signal} in the rerun")
+                } else {
+                    signal.to_owned()
+                }),
+                3,
+            ),
+        ],
     );
-    if compact {
-        if cause.core.is_none() {
-            text.push_str(", no core named");
+    let mut place = vec![];
+    if !compact {
+        let full = cycle_place(trial);
+        if !full.is_empty() {
+            let mut bare = trial.clone();
+            bare.count.of = 0;
+            let bare = cycle_place(&bare);
+            place.push(Form::new(say(full.clone()), 5));
+            if bare != full {
+                place.push(Form::new(say(bare), 5));
+            }
+            place.push(Form::empty());
         }
-        return text;
     }
-    let place = cycle_place(trial);
+    let named = cause.core.map_or_else(
+        || "no core named".to_owned(),
+        |core| format!("core {:02} named", core.get()),
+    );
+    let mut clauses = vec![subject];
     if !place.is_empty() {
-        text.push_str(" · ");
-        text.push_str(&place);
+        clauses.push(Clause::new(" · ", place));
     }
-    if cause.core.is_none() {
-        text.push_str(" · no core named");
+    clauses.push(Clause::whole(if compact { ", " } else { " · " }, say(named)));
+    fit_clauses(room, &clauses)
+}
+
+/// What the journal holds about a crash that falls short of naming a core, then that it does not attribute the
+/// failure; the uncertainty is kept whole and the sample's wording shortens first.
+fn evidence_line(scene: &Scene<'_>, hunt: &HuntView<'_>, room: usize) -> Option<Line<'static>> {
+    let end = hunt.facts.cause.end.as_ref();
+    let whole = crash_evidence(end);
+    if whole.is_empty() {
+        return None;
     }
-    text
+    let say = |text: String| Form::new(cell(scene, Paint::Grey, text), 3);
+    let mut forms = vec![say(whole)];
+    if let Some(end) = end
+        && let Some(sample) = end.last_sample
+    {
+        let at = clock(sample);
+        match end.stalled {
+            Some(core) => {
+                let core = core.get();
+                forms.push(say(format!(
+                    "core {core:02} stalled by the last sample, {at} in"
+                )));
+                forms.push(say(format!("core {core:02} stalled, {at} in")));
+            }
+            None => forms.push(say(format!("last sample {at} in"))),
+        }
+    }
+    Some(fit_clauses(
+        room,
+        &[
+            Clause::new("", forms),
+            Clause::whole(" · ", cell(scene, Paint::Grey, "not enough to attribute")),
+        ],
+    ))
 }
 
 fn part_lines(
@@ -244,7 +303,7 @@ fn part_lines(
             cell(
                 scene,
                 Paint::Grey,
-                "then finer parts and their complements, until one fails or none does",
+                "then finer parts and complements until one fails or none does",
             ),
             width,
         ));
@@ -518,7 +577,7 @@ fn then_lines(
     } else if plan.probes.is_empty() {
         vec![
             (
-                "record what it found: one core's failure point, or a combination".to_owned(),
+                "record one core's failure point or a combination".to_owned(),
                 None,
             ),
             ("back off past it".to_owned(), None),
@@ -606,11 +665,18 @@ fn step_line(scene: &Scene<'_>, text: &str, emphasis: Option<&str>) -> Line<'sta
 /// Where the rerun after a hunt loads, and how long it runs.
 fn rerun_words(rerun: &RerunPlan, class: SizeClass) -> (String, String) {
     let place = format!("{} {}", rerun.regime, kind_words(rerun.regime));
-    if class == SizeClass::Compact {
+    if class != SizeClass::Wide {
         let mut length = format!(": {} x {}", rerun.short, seconds(rerun.short_s));
         if rerun.long > 0 {
             length = format!("{length}, then {} x {}", rerun.long, seconds(rerun.long_s));
+        } else if class == SizeClass::Medium {
+            length.push_str(", original length");
         }
+        let place = if class == SizeClass::Compact {
+            place
+        } else {
+            format!("{place} on {}", core_ids(rerun.cores.iter()))
+        };
         return (place, length);
     }
     let mut length = format!(
@@ -681,11 +747,14 @@ fn probe_stage(hunt: &HuntView<'_>, short: bool) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use jiff::tz::TimeZone;
     use togi_journal::{DeadEndCondition, HuntStage, ShutdownReason};
     use togi_machine::{Regime, Signal};
     use togi_tuner::GroupState;
 
+    use super::super::super::fit::{CUT_MARKER, cut_words, plain};
     use super::super::super::layout::SizeClass;
     use super::super::super::measure::Tables;
     use super::super::fixtures::{
@@ -693,10 +762,13 @@ mod tests {
         scene, texts, trial_view,
     };
     use super::{
-        cause_words, group_lines, hunt_lines, outcome_words, part_lines, probe_lines, then_lines,
+        cause_line, group_lines, hunt_lines, outcome_words, part_lines, probe_lines, then_lines,
     };
-    use crate::model::{CycleView, DeadEndView, HuntView, Model, SessionView, StopView};
-    use crate::tests::kit::off;
+    use crate::model::{
+        CyclePlace, CycleView, DeadEndView, HuntFacts, HuntView, Model, SessionView, StopView,
+        TrialEndView,
+    };
+    use crate::tests::kit::{off, set};
 
     fn stage_of(plan: &togi_tuner::HuntPlan, short: bool) -> String {
         let facts = hunt_facts();
@@ -948,7 +1020,7 @@ mod tests {
                 && wide[1].contains("trial 2 of 5")
         );
         assert!(wide[2].contains("2 of 2") && wide[2].contains("if part 1 passes"));
-        assert!(wide[3].contains("then finer parts and their complements"));
+        assert!(wide[3].contains("then finer parts and complements"));
         let compact = texts(&part_lines(
             &scene,
             &hunt,
@@ -1169,7 +1241,9 @@ mod tests {
         let plan = hunt_plan(Vec::new(), Vec::new());
         let mut facts = hunt_facts();
         let words = |facts: &crate::model::HuntFacts, compact| {
-            with_hunt(&plan, facts, |_, hunt| cause_words(hunt, compact))
+            with_hunt(&plan, facts, |scene, hunt| {
+                plain(&cause_line(scene, hunt, compact, usize::MAX))
+            })
         };
         assert_eq!(
             words(&facts, false),
@@ -1199,7 +1273,11 @@ mod tests {
         facts.cause.core = Some(crate::tests::kit::core(1));
         assert_eq!(
             words(&facts, true),
-            "wrong result in the rerun of R7 all-core on 00 01"
+            "wrong result in the rerun of R7 all-core on 00 01, core 01 named"
+        );
+        assert_eq!(
+            words(&facts, false),
+            "wrong result in the rerun of R7 all-core on 00 01 · core 01 named"
         );
         facts.cause.trial = None;
         facts.cause.known = true;
@@ -1209,6 +1287,165 @@ mod tests {
             "R7 all-core already failed at these offsets"
         );
         assert_eq!(words(&facts, false), super::known_words(&facts.cause));
+    }
+
+    fn failure_facts(signal: Signal, named: Option<u8>, cores: &[u8]) -> HuntFacts {
+        let mut trial = trial_view(2, 5);
+        trial.cores = set(cores);
+        trial.cycle = Some(CyclePlace {
+            cycle: 1,
+            step: Some(4),
+            part: Some(11),
+            parts: 12,
+        });
+        let mut facts = hunt_facts();
+        facts.cause.signal = Some(signal);
+        facts.cause.rerun_of = true;
+        facts.cause.core = named.map(crate::tests::kit::core);
+        if signal == Signal::Crash {
+            facts.cause.end = Some(TrialEndView {
+                id: "t1".to_owned().into(),
+                at: at(1500),
+                regime: Some(Regime::R7),
+                cores: trial.cores,
+                outcome: togi_journal::Outcome::Failure,
+                signal: Some(signal),
+                core: None,
+                duration: Duration::from_secs(1),
+                planned: Some(Duration::from_secs(600)),
+                last_sample: Some(Duration::from_secs(1)),
+                stalled: None,
+                tctl_max_c: None,
+                voltage_v: None,
+            });
+        }
+        facts.cause.trial = Some(trial);
+        facts
+    }
+
+    fn medium_rows(facts: &HuntFacts, width: usize) -> Vec<String> {
+        let plan = hunt_plan(
+            Vec::new(),
+            vec![
+                part(&[0, 1], &[2], Some(4), Some(GroupState::Running), true),
+                part(&[2], &[0, 1], None, None, false),
+            ],
+        );
+        with_hunt(&plan, facts, |scene, hunt| {
+            texts(&hunt_lines(
+                scene,
+                hunt,
+                &Tables::new(SizeClass::Medium, width),
+                width,
+                SizeClass::Medium,
+            ))
+        })
+    }
+
+    fn row_of<'a>(rows: &'a [String], label: &str) -> &'a str {
+        rows.iter()
+            .find(|row| row.starts_with(label))
+            .unwrap_or_else(|| panic!("no {label} row in {rows:?}"))
+    }
+
+    /// The 160x45 hunt panel: 75 cells, of which the label column takes 12.
+    const MEDIUM_PANEL: usize = 75;
+
+    #[test]
+    fn the_legacy_cut_hid_what_the_medium_rows_now_keep() {
+        let room = MEDIUM_PANEL - 12;
+        let legacy_cause = "wrong result in the rerun of R7 all-core on 00 01 · cycle 1 step 4, part 11, trial 2 of 5 · no core named";
+        let legacy_evidence = "the last sample came 0:01 into the trial · not enough to attribute";
+        assert!(!cut_words(legacy_cause, room).contains("no core named"));
+        assert!(!cut_words(legacy_evidence, room).contains("attribute"));
+        let crash = medium_rows(&failure_facts(Signal::Crash, None, &[0, 1]), MEDIUM_PANEL);
+        let cause = row_of(&crash, "cause");
+        assert!(
+            cause.ends_with("no core named") && !cause.contains(CUT_MARKER),
+            "{cause}"
+        );
+        assert!(cause.contains("crash in the rerun of R7 all-core on 00 01"));
+        let evidence = row_of(&crash, "evidence");
+        assert!(
+            evidence.ends_with("not enough to attribute") && !evidence.contains(CUT_MARKER),
+            "{evidence}"
+        );
+        assert!(evidence.contains("0:01"), "{evidence}");
+    }
+
+    #[test]
+    fn a_named_wrong_result_keeps_its_core_at_medium() {
+        let facts = failure_facts(Signal::ComputationError, Some(4), &[0, 1]);
+        let rows = medium_rows(&facts, MEDIUM_PANEL);
+        let cause = row_of(&rows, "cause");
+        assert!(
+            cause.starts_with("cause       wrong result in the rerun of R7 all-core on 00 01")
+                && cause.ends_with("core 04 named")
+                && !cause.contains(CUT_MARKER),
+            "{cause}"
+        );
+        assert!(!rows.iter().any(|row| row.starts_with("evidence")));
+    }
+
+    #[test]
+    fn a_long_subject_gives_way_before_the_attribution_and_the_uncertainty() {
+        let cores = [0, 2, 4, 6, 8, 10, 12, 14];
+        for width in [MEDIUM_PANEL, 60] {
+            let unnamed = medium_rows(&failure_facts(Signal::Crash, None, &cores), width);
+            let cause = row_of(&unnamed, "cause");
+            assert!(
+                cause.ends_with("no core named") && !cause.contains(CUT_MARKER),
+                "{width}: {cause}"
+            );
+            let evidence = row_of(&unnamed, "evidence");
+            assert!(
+                evidence.ends_with("not enough to attribute") && !evidence.contains(CUT_MARKER),
+                "{width}: {evidence}"
+            );
+            let named = medium_rows(
+                &failure_facts(Signal::ComputationError, Some(8), &cores),
+                width,
+            );
+            assert!(
+                row_of(&named, "cause").ends_with("core 08 named"),
+                "{width}: {named:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_stalled_worker_is_named_in_the_medium_evidence() {
+        let mut facts = failure_facts(Signal::Crash, None, &[0, 1]);
+        let end = facts.cause.end.as_mut().expect("an end");
+        end.last_sample = Some(Duration::from_secs(125));
+        end.stalled = Some(crate::tests::kit::core(4));
+        let rows = medium_rows(&facts, MEDIUM_PANEL);
+        let evidence = row_of(&rows, "evidence");
+        assert!(
+            evidence.contains("core 04 stalled")
+                && evidence.contains("2:05")
+                && evidence.ends_with("not enough to attribute"),
+            "{evidence}"
+        );
+    }
+
+    #[test]
+    fn the_medium_hunt_prose_fits_without_a_cut() {
+        let rows = medium_rows(&failure_facts(Signal::Crash, None, &[0, 1]), MEDIUM_PANEL);
+        for row in &rows {
+            assert!(!row.contains(CUT_MARKER), "{row}\n{}", rows.join("\n"));
+        }
+        let all = rows.join("\n");
+        for kept in [
+            "then finer parts and complements until one fails or none does",
+            "record one core's failure point or a combination",
+            "original length",
+        ] {
+            assert!(all.contains(kept), "{kept}:\n{all}");
+        }
+        insta::with_settings!({ snapshot_suffix => "", prepend_module_to_snapshot => false }, {
+            insta::assert_snapshot!("hunt-medium-attribution", all);
+        });
     }
 
     #[test]
@@ -1286,7 +1523,7 @@ mod tests {
             rows[0].starts_with("then")
                 && rows[0].contains("if the hunt resolves and the rerun passes:")
         );
-        assert!(rows[1].contains('1') && rows[1].contains("record what it found"));
+        assert!(rows[1].contains('1') && rows[1].contains("record one core's failure point"));
         assert!(
             rows[3].contains("rerun R7 all-core on 00-02: 5 trials of 10m, its original length")
         );

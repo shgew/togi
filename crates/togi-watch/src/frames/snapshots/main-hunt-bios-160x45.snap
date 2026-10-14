@@ -30,19 +30,19 @@ expression: body
 │  BIOS PROFILE ─────────────────────── UNCONFIRMED since #10993 · cores 00-15     WHAT HAPPENED ───────────────────────────────────────────────── l: last 400
 │  slot      0    1    2    3    4    5    6    7
 │  CCD 0   -22* -14* -23* -23* -12*  -7* -36* -28*                                 21:50  hunt     #4 started · part 1: 01-15 at failing offsets, 00 parked
-│  CCD 1    -4* -32* -12*  -6* -13* -34* -11* -12*                                 21:50  crash    R2 heavy vector on core 00 at -23 · rebooted · early in...
+│  CCD 1    -4* -32* -12*  -6* -13* -34* -11* -12*                                 21:50  crash    R2 heavy vector on core 00 at... · rebooted · no core named
 │  * not confirmed: a passed cycle confirms it, unless held                        21:49  hold     core 03 holds at -24
 │                                                                                  21:49  fail     core 03 fails at -24
-│  HUNT 4 ───────────────────────────────────────── started 21:50 · 40s so far     21:49  fail     R2 heavy vector on core 00 at -23 · uncorrected hardware...
+│  HUNT 4 ───────────────────────────────────────── started 21:50 · 40s so far     21:49  fail     R2 heavy... · uncorrected hardware error · no core named
 │                                                                                  21:49  crash    with the offsets applied, rebooted
-│  cause       crash in R2 heavy vector on 00 · cycle 4 step 4, part 1...          21:47  hunt     not needed, these offsets already reach a known failure
-│  evidence    the last sample came 0:06 into the trial · not enough to...         21:47  crash    R2 heavy vector on core 00 at -23 · rebooted · early in...
+│  cause       crash in R2 heavy vector on 00 · no core named                      21:47  hunt     not needed, these offsets already reach a known failure
+│  evidence    last sample 0:06 in · not enough to attribute                       21:47  crash    R2 heavy vector on core 00 at... · rebooted · no core named
 │  candidates  00-15, every core with an offset in the failing profile             21:46  pass     R7 full CCD 0+1 on 00-15 · 4 passed · Tctl max 76°C
-│                                                                                  21:30  note     checking cycle 4 R7 step 3 CCD 1 y-cruncher FFTv4 + N63...
+│                                                                                  21:30  note     cycle 4 step 3 · CCD 1 partials end
 │  parts       part    failing      parked at 0  schedule state                    21:30  pass     R7 partial CCD 1 on 09 13 · 4 passed · Tctl max 74°C
-│            ► 1 of 2  01-15        00           5 x 2m   trial 4 of 5             21:19  note     checking cycle 4 R7 step 3 CCD 1 y-cruncher FFTv4 + N63...
+│            ► 1 of 2  01-15        00           5 x 2m   trial 4 of 5             21:19  note     cycle 4 step 3 · CCD 1 partial 5 loads 09 13
 │              2 of 2  00           01-15        5 x 2m   if part 1 passes         21:19  pass     R7 partial CCD 1 on 09 12 13 · 4 passed · Tctl max 75°C
-│              then finer parts and their complements, until one fails or...       21:08  note     checking cycle 4 R7 step 3 CCD 1 y-cruncher FFTv4 + N63...
+│              then finer parts and complements until one fails or none does       21:08  note     cycle 4 step 3 · CCD 1 partial 4 loads 09 12 13
 │  +6 more                                                                         +1609 more
 │
 │   ?  help    l  log    esc  back    q  close view

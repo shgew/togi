@@ -38,7 +38,7 @@ in
       type = lib.types.nullOr (lib.types.either lib.types.str lib.types.path);
       default = null;
       example = lib.literalExpression ''"''${pkgs.terminus_font}/share/consolefonts/ter-i32b.psf.gz"'';
-      description = "Console font of the tuning boot, as console.font takes it. The default, null, is the kernel's built-in font whatever the system sets: 8x16 below 2560x1080 and Terminus 16x32 bold from there, which make the 240x67 frame the dashboard is laid out for at 1080p and 4K, and which cover IBM437, whose block and box glyphs the dashboard draws with. A font set here must cover them too: Terminus' ter-i fonts do, while ter-v and Lat2-Terminus fonts lack the half block the digits use.";
+      description = "Console font of the tuning boot, as console.font takes it. The default, null, is the kernel's built-in font whatever the system sets: 8x16 below 2560x1080 and Terminus 16x32 bold from there. The 8x16 font gives 240x67 at 1920x1080; 16x32 gives 160x45 (Medium) at 2560x1440 and 240x67 (Wide) at 3840x2160. Both cover IBM437, whose block and box glyphs the dashboard draws with. A font set here must cover them too: Terminus' ter-i fonts do, while ter-v and Lat2-Terminus fonts lack the half block the digits use.";
     };
     settings = lib.mkOption {
       type = json.type;

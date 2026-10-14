@@ -1,10 +1,10 @@
 use togi_journal::HuntOutcome::{Cancelled, Combination, Culprit, Fallback, Loaded};
 use togi_journal::{
-    CheckingStep, CorePhase, CycleEvent, DeadEnd, DeadEndCondition, DeepeningRound, HuntOutcome,
-    HuntStage, Inference, Mce, Member, Outcome, Payload, RoundEvent, SessionCarried, Shutdown,
-    ShutdownReason, TrialId,
+    CheckingChain, CheckingStep, CorePhase, CycleEvent, DeadEnd, DeadEndCondition, DeepeningRound,
+    HuntOutcome, HuntStage, Inference, Mce, Member, Outcome, Payload, RoundEvent, SessionCarried,
+    Shutdown, ShutdownReason, TrialId,
 };
-use togi_machine::{BankType, Condition, CpuId, Regime, Signal};
+use togi_machine::{BankType, CcdId, Condition, CpuId, Regime, Signal};
 
 use super::kit::*;
 
@@ -592,4 +592,49 @@ fn a_hunt_line_the_history_has_dropped_is_not_renamed() {
             .all(|line| !line.contains("#1 started"))
     );
     assert_eq!(h.facts.hunt_starts[&1].live, 1);
+}
+
+#[test]
+fn a_checking_chain_note_is_summarised_in_the_history_and_whole_in_the_log() {
+    let chain = |cores: &[u8], source_seqs| -> Payload {
+        CheckingChain {
+            cycle: nz(1),
+            step: nz(1),
+            ccd: CcdId(0),
+            workload: togi_machine::workloads(Regime::R7)[0].id(),
+            groups: vec![set(&[0]), set(&[1]), set(&[2])],
+            cores: set(cores),
+            source_seqs,
+            profile: offsets(&[-44, -40, -39]),
+            part: nz(2),
+            rederived: None,
+        }
+        .into()
+    };
+    let mut h = Hist::three();
+    let partial = chain(&[0, 1, 2], vec![seq(1), seq(2)]);
+    h.push(partial.clone());
+    let end = chain(&[], Vec::new());
+    h.push(end.clone());
+    let tail = &h.sentences()[1..];
+    assert_eq!(
+        tail,
+        [
+            "note: cycle 1 step 1 · CCD 0 partial 2 loads 00-02",
+            "note: cycle 1 step 1 · CCD 0 partials end"
+        ]
+    );
+    assert!(tail.iter().all(|line| line.chars().count() < 59));
+    let log = &h.facts.log;
+    let (last, before) = (&log[log.len() - 1], &log[log.len() - 2]);
+    assert_eq!(before.msg, partial.message());
+    assert_eq!(last.msg, end.message());
+    assert!(
+        before.msg.contains("request groups [[00], [01], [02]]")
+            && before.msg.contains("from request measurements #1, #2")
+            && before.msg.contains("partial 2 loads cores 00, 01, 02 at profile"),
+        "{}",
+        before.msg
+    );
+    assert!(last.msg.contains("partial chain ends because"), "{}", last.msg);
 }

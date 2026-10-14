@@ -37,22 +37,22 @@ expression: body
 │  TURNS ──────────────────────────────────────────────────────────────────────────── one core per turn, in this order     00:45  step     core 07 passed 0, next -5
 │                                                                                                                          00:42  step     core 14 passed 0, next -5
 │    core   this turn                      at     workload                  so far                                         00:39  step     core 06 passed 0, next -5
-│    08     search step: light, then heavy -5     y-cruncher BKT + SFTv4    passed 0 · next -5                             00:36  step     core 13 passed 0, next -5
-│    01     search step: light, then heavy -5     y-cruncher BKT + SFTv4    passed 0 · next -5                             00:33  step     core 05 passed 0, next -5
-│    09     search step: light, then heavy -5     y-cruncher BKT + SFTv4    passed 0 · next -5                             00:30  step     core 12 passed 0, next -5
-│    02     search step: light, then heavy -5     y-cruncher BKT + SFTv4    passed 0 · next -5                             00:27  step     core 04 passed 0, next -5
-│    10     search step: light, then heavy -5     y-cruncher BKT + SFTv4    passed 0 · next -5                             00:24  step     core 11 passed 0, next -5
-│    03     search step: light, then heavy -5     y-cruncher BKT + SFTv4    passed 0 · next -5                             00:21  step     core 03 passed 0, next -5
-│    11     search step: light, then heavy -5     y-cruncher BKT + SFTv4    passed 0 · next -5                             00:18  step     core 10 passed 0, next -5
-│    04     search step: light, then heavy -5     y-cruncher BKT + SFTv4    passed 0 · next -5                             00:15  step     core 02 passed 0, next -5
-│    12     search step: light, then heavy -5     y-cruncher BKT + SFTv4    passed 0 · next -5                             00:12  step     core 09 passed 0, next -5
-│    05     search step: light, then heavy -5     y-cruncher BKT + SFTv4    passed 0 · next -5                             00:09  step     core 01 passed 0, next -5
-│    13     search step: light, then heavy -5     y-cruncher BKT + SFTv4    passed 0 · next -5                             00:06  step     core 08 passed 0, next -5
-│    06     search step: light, then heavy -5     y-cruncher BKT + SFTv4    passed 0 · next -5                             00:03  step     core 00 passed 0, next -5
-│    14     search step: light, then heavy -5     y-cruncher BKT + SFTv4    passed 0 · next -5                             00:00  start    session started on 16 cores
-│    07     search step: light, then heavy -5     y-cruncher BKT + SFTv4    passed 0 · next -5
-│    15     search step: light, then heavy -5     y-cruncher BKT + SFTv4    passed 0 · next -5
-│  ► 00     search step: light, then heavy -5     y-cruncher BKT + SFTv4    passed 0 · next -5
+│    08     search: light, then heavy      -5     y-cruncher BKT + SFTv4    passed 0 · next -5                             00:36  step     core 13 passed 0, next -5
+│    01     search: light, then heavy      -5     y-cruncher BKT + SFTv4    passed 0 · next -5                             00:33  step     core 05 passed 0, next -5
+│    09     search: light, then heavy      -5     y-cruncher BKT + SFTv4    passed 0 · next -5                             00:30  step     core 12 passed 0, next -5
+│    02     search: light, then heavy      -5     y-cruncher BKT + SFTv4    passed 0 · next -5                             00:27  step     core 04 passed 0, next -5
+│    10     search: light, then heavy      -5     y-cruncher BKT + SFTv4    passed 0 · next -5                             00:24  step     core 11 passed 0, next -5
+│    03     search: light, then heavy      -5     y-cruncher BKT + SFTv4    passed 0 · next -5                             00:21  step     core 03 passed 0, next -5
+│    11     search: light, then heavy      -5     y-cruncher BKT + SFTv4    passed 0 · next -5                             00:18  step     core 10 passed 0, next -5
+│    04     search: light, then heavy      -5     y-cruncher BKT + SFTv4    passed 0 · next -5                             00:15  step     core 02 passed 0, next -5
+│    12     search: light, then heavy      -5     y-cruncher BKT + SFTv4    passed 0 · next -5                             00:12  step     core 09 passed 0, next -5
+│    05     search: light, then heavy      -5     y-cruncher BKT + SFTv4    passed 0 · next -5                             00:09  step     core 01 passed 0, next -5
+│    13     search: light, then heavy      -5     y-cruncher BKT + SFTv4    passed 0 · next -5                             00:06  step     core 08 passed 0, next -5
+│    06     search: light, then heavy      -5     y-cruncher BKT + SFTv4    passed 0 · next -5                             00:03  step     core 00 passed 0, next -5
+│    14     search: light, then heavy      -5     y-cruncher BKT + SFTv4    passed 0 · next -5                             00:00  start    session started on 16 cores
+│    07     search: light, then heavy      -5     y-cruncher BKT + SFTv4    passed 0 · next -5
+│    15     search: light, then heavy      -5     y-cruncher BKT + SFTv4    passed 0 · next -5
+│  ► 00     search: light, then heavy      -5     y-cruncher BKT + SFTv4    passed 0 · next -5
 │
 │
 │

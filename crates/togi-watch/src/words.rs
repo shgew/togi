@@ -588,6 +588,21 @@ fn chain_phrase(d: &CheckingChain) -> String {
     }
 }
 
+/// The history line of a chain note: the cycle and step, the CCD, and the cores the next partial loads, or that
+/// the chain ends. The request groups, their provenance and the profile stay in the journal message.
+fn chain_summary(d: &CheckingChain) -> String {
+    let (cycle, step, ccd) = (d.cycle.get(), d.step.get(), d.ccd.0);
+    if d.cores.is_empty() {
+        format!("cycle {cycle} step {step} · CCD {ccd} partials end")
+    } else {
+        format!(
+            "cycle {cycle} step {step} · CCD {ccd} partial {} loads {}",
+            d.part,
+            core_ids(d.cores)
+        )
+    }
+}
+
 fn cycle_phrase(d: &CheckingCycle) -> String {
     let cycle = d.cycle.get();
     if d.event == CycleEvent::Start {
@@ -899,13 +914,11 @@ pub fn words(kind: EventKind) -> Words {
             ..Words::SILENT
         },
         EventKind::CheckingChain => Words {
-            history: History::Line(|payload| {
-                Some(Line {
-                    tag: Tag::Note,
-                    text: payload.message(),
-                    tone: Tone::Plain,
-                })
-            }),
+            history: History::Line(of!(CheckingChain, |d| Some(Line {
+                tag: Tag::Note,
+                text: chain_summary(d),
+                tone: Tone::Plain,
+            }))),
             detailed: Phrase::Of(of!(CheckingChain, |d| Some(chain_phrase(d)))),
             ..Words::SILENT
         },

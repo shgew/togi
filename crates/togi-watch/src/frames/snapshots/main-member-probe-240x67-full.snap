@@ -65,9 +65,9 @@ legend: t=Text g=Grey w=White c=Running a=Hunt p=Good f=Bad m=Combination k=Trac
 │                                                                                                                          08:20  group    hunt 1 groups 35-38 · parts of 03 10 11 · all passed on existing evidence
 ~                                                                                                                          ggggg  aaaaaaaa ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
 │  cause       crash in R6 idle + bursts on 00-15 · cycle 1 step 7, trial 1 of 1 · no core named                           08:20  crash    hunt 1 group 34 · 03 10 11 at failing offsets · rebooted
-~  ggggggggggggttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                           ggggg  ffffffff tttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+~  ggggggggggggtttttttttttttttttttttttttttttttttt   tttttttttttttttttttttttttttt   ttttttttttttt                           ggggg  ffffffff tttttttttttttttttttttttttttttttttttttttttttttttttttttttt
 │  candidates  00-15, every core with an offset in the failing profile                                                     08:19  group    hunt 1 groups 28-33 · parts of 02 03 10 11 · all passed on existing evidence
-~  ggggggggggggttttttttttttttttttttttttttttttttttttttttttttttttttttttt                                                     ggggg  aaaaaaaa tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+~  ggggggggggggttttt  tttttttttttttttttttttttttttttttttttttttttttttttt                                                     ggggg  aaaaaaaa tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
 │                                                                                                                          08:19  crash    hunt 1 group 27 · 02 03 10 11 at failing offsets · rebooted
 ~                                                                                                                          ggggg  ffffffff ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
 │  parts       groups 1-2   parts of 00-15                               all passed                                        08:17  group    hunt 1 groups 23-26 · parts of 02 03 08-11 · all passed on existing evidence
