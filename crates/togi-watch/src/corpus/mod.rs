@@ -361,16 +361,24 @@ impl Default for Collector {
 
 impl Collector {
     fn add(&mut self, case: &str, producer: &str, form: &str, text: &str) {
-        let key = (producer.to_owned(), form.to_owned(), shape(text));
-        let item = self.items.entry(key).or_default();
-        let hash = hash_of(&text);
-        if item.texts.insert(hash) {
-            item.variants += 1;
-            if item.text.is_empty() || text < item.text.as_str() {
-                text.clone_into(&mut item.text);
+        let cells = text
+            .split(" · ")
+            .flat_map(|clause| clause.split("  "))
+            .map(str::trim)
+            .filter(|clause| !clause.is_empty());
+        for clause in cells {
+            let key = (producer.to_owned(), form.to_owned(), shape(clause));
+            let item = self.items.entry(key).or_default();
+            let hash = hash_of(&clause);
+            if item.texts.insert(hash) {
+                item.variants += 1;
+                if item.text.is_empty() || clause < item.text.as_str() {
+                    clause.clone_into(&mut item.text);
+                }
             }
+            item.cases.add(case);
         }
-        item.cases.add(case);
+        let hash = hash_of(&text);
         let carried = self
             .carries
             .entry(hash)

@@ -89,8 +89,31 @@ const NOT_PHRASES: &[&str] = &[
     "include_str",
 ];
 
-/// Literals no case renders, and why. The exporter lists these in the document and does not fail on them.
-pub(crate) const SILENT: &[(&str, &str, &str)] = &[];
+/// Literals no case renders, and why. The exporter lists these in the document and does not fail on them. Each is a
+/// gap of this corpus, not a proof of unreachability: no native fixture was built for it yet.
+pub(crate) const SILENT: &[(&str, &str, &str)] = &[
+    ("frames/story/mod.rs", "This step", "no case draws a running trial whose place has no step number"),
+    ("frames/story/mod.rs", "Every core runs at its profile offset. The cycle keeps", "no case draws a running cycle trial outside phases one and two"),
+    ("frames/story/mod.rs", "part of {} at its offsets", "no case draws a hunt with a candidate plan and no per-part split"),
+    ("frames/story/mod.rs", "; core {id:02} named.", "no case draws a hunt cause that names a core in compact form"),
+    ("frames/story/mod.rs", "The machine crashed while idle", "no case draws an idle crash that carries no signal"),
+    ("frames/story/mod.rs", "Crashed while idle{name_brief}", "no case draws an idle crash that carries no signal"),
+    ("frames/story/mod.rs", "Failed in {name}{name_brief}", "no case draws a hunt cause that is a failed trial without a regime kind"),
+    ("frames/story/mod.rs", "{secs}-second", "no case draws a trial length that is not a whole number of minutes"),
+    ("frames/story/mod.rs", "an idle failure is already recorded", "no case draws a hunt whose known cause has no regime"),
+    ("frames/story/mod.rs", ", carried from an earlier session", "no case draws a carried idle-failure hunt cause"),
+    ("frames/story/mod.rs", "{regime} {} already failed", "no case draws a hunt whose known cause is a recorded failure"),
+    ("frames/story/mod.rs", "core {:02}'s worker had stalled", "no case draws a crash with a stalled core and a last sample"),
+    ("frames/story/outcome.rs", "a CCD {ccd} core at 0", "no case draws a named failure whose zero cores sit on another CCD"),
+    ("frames/story/outcome.rs", "pass or fail", "no case draws an outcome row mixing pass and failure kinds"),
+    ("frames/story/outcome.rs", "core {:02} starts its search over", "no case draws an unnamed core re-entering search in a decision"),
+    ("frames/panels/cycle.rs", "hunts ", "no case draws a cycle step with two or more hunts"),
+    ("frames/panels/hunt.rs", " · answered by existing evidence", "no case draws a hunt group answered from carried evidence"),
+    ("frames/panels/hunt.rs", "► running", "no case draws a running hunt trial without a trial count"),
+    ("frames/footer.rs", "skipped: togi events", "no case draws this footer form; the skip report is drawn at the three widths the sweep covers"),
+    ("words.rs", "idle with short bursts", "no case renders this regime word"),
+    ("words.rs", "core {core:02} starts its search", "no simulated journal moves a core into or back into search through a decision"),
+];
 
 /// One phrase literal of the source.
 #[derive(Debug)]
