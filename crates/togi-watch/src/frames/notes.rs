@@ -75,6 +75,13 @@ impl CoreNote<'_> {
     /// value the note is about is kept in a bare form down to its own width.
     #[must_use]
     pub fn line(&self, width: usize, colours: Colours) -> Line<'static> {
+        let line = self.fitted(width, colours);
+        #[cfg(test)]
+        crate::corpus::line("note", "", &line);
+        line
+    }
+
+    fn fitted(&self, width: usize, colours: Colours) -> Line<'static> {
         let sep = " · ";
         let one = |forms: Vec<Form>| Clause::new(sep, forms);
         let short = |paint: Paint, clauses: &[Clause]| {

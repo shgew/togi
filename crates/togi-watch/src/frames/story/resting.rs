@@ -19,6 +19,13 @@ const SAVED_ROWS: &str = "Rows show the saved profile, not applied now.";
 
 /// The resting band: no trial in flight, a stop, a dead end, a crashed trial or a recovery.
 pub(crate) fn resting_band(scene: &Scene<'_>) -> RestingBand {
+    let band = band(scene);
+    #[cfg(test)]
+    super::corpus::band(&band);
+    band
+}
+
+fn band(scene: &Scene<'_>) -> RestingBand {
     let s = &scene.s;
     if let Some(dead_end) = s.dead_end {
         let mut lines = vec![format!(
@@ -232,9 +239,12 @@ pub(crate) fn last_lines(scene: &Scene<'_>) -> Vec<Line<'static>> {
         return Vec::new();
     };
     let (word, paint) = end_word(last);
-    vec![Line::from(vec![
+    let lines = vec![Line::from(vec![
         scene.paint(Paint::Grey, "last trial      "),
         scene.paint(paint, word),
         scene.paint(Paint::Grey, format!("  {}", end_facts(last).join(" · "))),
-    ])]
+    ])];
+    #[cfg(test)]
+    crate::corpus::lines("story.last", word, &lines);
+    lines
 }

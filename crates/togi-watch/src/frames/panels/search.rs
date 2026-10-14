@@ -113,6 +113,8 @@ pub(super) fn turn_lines(
             width,
         ));
     }
+    #[cfg(test)]
+    crate::corpus::lines("panel.turns", &format!("{class:?}"), &out);
     out
 }
 
@@ -215,6 +217,8 @@ pub(super) fn bios_lines(scene: &Scene<'_>, width: usize, class: SizeClass) -> V
             width,
         ));
     }
+    #[cfg(test)]
+    crate::corpus::lines("panel.bios", &format!("{class:?}"), &out);
     out
 }
 
@@ -299,6 +303,8 @@ pub(super) fn phase2_lines(scene: &Scene<'_>, width: usize) -> (Vec<Line<'static
             width,
         ));
     }
+    #[cfg(test)]
+    crate::corpus::lines("panel.phase2", "", &out);
     (out, head)
 }
 

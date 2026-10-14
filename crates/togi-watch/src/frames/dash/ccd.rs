@@ -151,11 +151,24 @@ pub(crate) fn note_line(scene: &Scene<'_>, core: &CoreView, width: usize) -> Lin
     } else {
         return Line::default();
     };
-    note.line(width, scene.colours)
+    let line = note.line(width, scene.colours);
+    #[cfg(test)]
+    crate::corpus::line("dash.note", "", &line);
+    line
 }
 
 /// What this trial does with a CCD's cores, in full and in a word.
 pub(super) fn ccd_role(scene: &Scene<'_>, id: CcdId) -> (String, String) {
+    let role = role(scene, id);
+    #[cfg(test)]
+    {
+        crate::corpus::text("dash.role", "full", &role.0);
+        crate::corpus::text("dash.role", "short", &role.1);
+    }
+    role
+}
+
+fn role(scene: &Scene<'_>, id: CcdId) -> (String, String) {
     let (mut loaded, mut judged, mut parked, mut total) = (0, 0, 0, 0);
     let (mut suspects, mut members, mut probes) = (0, 0, 0);
     let (mut at_zero, mut parked_zero) = (true, true);

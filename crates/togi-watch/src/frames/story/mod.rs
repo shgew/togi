@@ -1,6 +1,8 @@
 //! The narration: why the screen looks the way it does, what the last trial did, what each outcome of the trial
 //! in flight leads to, and the resting band when no trial runs.
 
+#[cfg(test)]
+mod corpus;
 mod outcome;
 mod resting;
 #[cfg(test)]
@@ -76,6 +78,13 @@ const PARTIAL_NOTE: &str = "This partial idles the top-requester groups found so
 
 /// The story of a folded journal, with or without a session.
 pub(crate) fn story(scene: &Scene<'_>) -> Story {
+    let said = spoken(scene);
+    #[cfg(test)]
+    corpus::said(&said);
+    said
+}
+
+fn spoken(scene: &Scene<'_>) -> Story {
     let s = &scene.s;
     if s.session.is_none() {
         return Story::one(
@@ -372,11 +381,14 @@ fn stage_label(scene: &Scene<'_>) -> String {
 
 /// The story of a journal a session is about to append to, before it records anything.
 pub(crate) fn starting_story() -> Story {
-    Story::one(
+    let said = Story::one(
         "STARTING",
         "Checking the machine and the journal before the first trial; this screen follows the run as soon as it records something.".to_owned(),
         Paint::Running,
-    )
+    );
+    #[cfg(test)]
+    corpus::said(&said);
+    said
 }
 
 /// The story of a journal that cannot be read; `one_frame` drops the promise to retry, which only live watch
@@ -389,7 +401,10 @@ pub(crate) fn problem_story(error: &dyn std::error::Error, one_frame: bool) -> S
                 .to_owned(),
         );
     }
-    Story::new("JOURNAL UNREADABLE", lines, "", Paint::Bad)
+    let said = Story::new("JOURNAL UNREADABLE", lines, "", Paint::Bad);
+    #[cfg(test)]
+    corpus::said(&said);
+    said
 }
 
 fn stopped_story(reason: ShutdownReason, saved: bool) -> Story {

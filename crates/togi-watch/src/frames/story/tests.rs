@@ -44,6 +44,8 @@ use crate::model::{
 use crate::screen::{Colours, View};
 use crate::tests::kit::{core, infos, nz, off, seq, set};
 
+mod edges;
+
 static UTC: LazyLock<TimeZone> = LazyLock::new(|| TimeZone::UTC);
 
 fn ts(secs: i64) -> Timestamp {

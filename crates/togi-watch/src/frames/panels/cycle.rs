@@ -157,11 +157,13 @@ pub(super) fn cycle_lines(
         drop.insert(1);
     }
     let dropped = drop.len();
-    let lines = out
+    let lines: Vec<Line<'static>> = out
         .into_iter()
         .enumerate()
         .filter_map(|(i, line)| (!drop.contains(&i)).then_some(line))
         .collect();
+    #[cfg(test)]
+    crate::corpus::lines("panel.cycle", &format!("{class:?}"), &lines);
     CycleRows {
         lines,
         focus: Some(at - dropped),
@@ -442,6 +444,8 @@ pub(super) fn combination_lines(
             &[cell(scene, Paint::White, "now"), now],
         ));
     }
+    #[cfg(test)]
+    crate::corpus::lines("panel.combinations", &format!("{class:?}"), &out);
     out
 }
 

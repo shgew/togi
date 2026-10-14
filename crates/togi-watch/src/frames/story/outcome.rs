@@ -88,20 +88,24 @@ pub(crate) fn outcome_lines(scene: &Scene<'_>, width: usize, compact: bool) -> V
         return Vec::new();
     }
     let rows = outcome_rows(scene);
-    if compact {
-        return compact_line(scene, &rows, width)
+    let lines: Vec<Line<'static>> = if compact {
+        compact_line(scene, &rows, width)
             .map(|line| cut_styled(&line, width))
             .into_iter()
-            .collect();
-    }
-    rows.iter()
-        .map(|row| {
-            let label = scene.paint(row.paint, format!("{:<21}", row.label));
-            let room = width.saturating_sub(21);
-            let text = cut_words(&fit_phrases(&row.phrases, room), room);
-            Line::from(vec![label, scene.paint(Paint::Text, text)])
-        })
-        .collect()
+            .collect()
+    } else {
+        rows.iter()
+            .map(|row| {
+                let label = scene.paint(row.paint, format!("{:<21}", row.label));
+                let room = width.saturating_sub(21);
+                let text = cut_words(&fit_phrases(&row.phrases, room), room);
+                Line::from(vec![label, scene.paint(Paint::Text, text)])
+            })
+            .collect()
+    };
+    #[cfg(test)]
+    super::corpus::fitted(&lines, compact);
+    lines
 }
 
 fn compact_line(scene: &Scene<'_>, rows: &[OutcomeRow], width: usize) -> Option<Line<'static>> {
@@ -235,6 +239,8 @@ pub(super) fn outcome_rows(scene: &Scene<'_>) -> Vec<OutcomeRow> {
     for branch in &scene.s.forecast.branches {
         let (phrases, compact, basis) = outcome_words(scene, branch);
         let text = fit_phrases(&phrases, usize::MAX >> 1);
+        #[cfg(test)]
+        super::corpus::branch(branch, &phrases, &compact, basis);
         let at = groups
             .iter()
             .position(|group| group.text == text)
@@ -374,6 +380,8 @@ pub(super) fn outcome_rows(scene: &Scene<'_>) -> Vec<OutcomeRow> {
             break;
         }
     }
+    #[cfg(test)]
+    super::corpus::rows(&rows);
     rows
 }
 

@@ -126,7 +126,10 @@ pub(crate) fn header(scene: &Scene<'_>, width: usize, compact: bool) -> Line<'st
             ],
         ));
     }
-    fit_clauses(width, &clauses)
+    let line = fit_clauses(width, &clauses);
+    #[cfg(test)]
+    crate::corpus::line("dash.header", if compact { "compact" } else { "full" }, &line);
+    line
 }
 
 fn status_clauses(

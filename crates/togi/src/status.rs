@@ -692,3 +692,6 @@ impl Status<'_> {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod corpus;

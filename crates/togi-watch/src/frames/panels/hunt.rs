@@ -102,6 +102,8 @@ pub(super) fn hunt_lines(
     }
     out.push(Line::default());
     out.extend(then_lines(scene, hunt, t, width, class));
+    #[cfg(test)]
+    crate::corpus::lines("panel.hunt", &format!("{class:?}"), &out);
     out
 }
 

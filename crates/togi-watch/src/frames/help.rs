@@ -227,6 +227,8 @@ fn section_lines(
         .unwrap_or(0);
     let label_width = (widest + 2).min((width / 3).max(1));
     for (i, &(label, text)) in section.items.iter().enumerate() {
+        #[cfg(test)]
+        crate::corpus::text("help.item", section.title, text);
         let wrapped = wrap_styled(
             text,
             width.saturating_sub(label_width).max(1),

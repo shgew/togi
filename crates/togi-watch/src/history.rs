@@ -174,6 +174,13 @@ impl Entry {
     /// The sentence split around the words drawn as an alarm: the words before, the alarm and the words after.
     /// Without an alarm everything is before.
     pub fn sentence(&self) -> (String, String, String) {
+        let sentence = self.sentence_words();
+        #[cfg(test)]
+        crate::corpus::sentence(self, &sentence);
+        sentence
+    }
+
+    fn sentence_words(&self) -> (String, String, String) {
         match self.kind {
             EntryKind::Session => {
                 let text = if self.count > 0 {

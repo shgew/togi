@@ -11,6 +11,8 @@
 //! - [`help_body`] and [`footer`]: the help view and the key hints.
 
 mod colours;
+#[cfg(test)]
+pub(crate) mod corpus;
 mod dash;
 mod draw;
 mod fit;

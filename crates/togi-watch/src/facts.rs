@@ -291,6 +291,8 @@ impl Facts {
         let table = words(event.kind());
         if table.listed {
             self.log_total += 1;
+            #[cfg(test)]
+            crate::corpus::journal_message(&tag_word(&event.payload), &event.msg);
             self.log.push(LogEntry {
                 seq: event.seq,
                 at: event.time,
