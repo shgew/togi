@@ -741,7 +741,7 @@ fn a_partial_crash_recovers_into_the_named_or_loaded_core_backoff_through_run() 
             assert!(
                 backoff
                     .reason
-                    .contains("not located on the unloaded cores yet"),
+                    .contains("the unloaded cores have not been checked by a located hunt yet"),
                 "{}",
                 backoff.reason
             );

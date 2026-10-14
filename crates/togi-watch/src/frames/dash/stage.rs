@@ -247,7 +247,7 @@ pub(crate) fn stage_line(scene: &Scene<'_>, class: SizeClass, summary: bool) -> 
             (
                 Paint::Grey,
                 format!(
-                    "screen paused until {}",
+                    "screen paused · planned end {}",
                     scene.wall_minute(hold.planned_end)
                 ),
             )

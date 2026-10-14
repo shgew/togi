@@ -314,7 +314,7 @@ fn cycle_history() {
             "cycle: cycle 1 started · 1 step",
             "cycle: cycle 1 passed but missing R2: 3 more steps",
             "cycle: cycle 2 started · 1 step",
-            "cycle: cycle 2 passed, a full cycle of every kind of test",
+            "cycle: cycle 2 passed, a full cycle",
             "cycle: cycle 3 started · 1 step",
             "cycle: cycle 3 ended early: failure",
         ]
@@ -397,7 +397,7 @@ fn deepening_history_separates_deeper_and_yielded_members() {
             "limit: core 01 solo limit -30",
             "limit: core 02 solo limit -10",
             "round: #2: core 00 goes deeper to -21, core 01 yields to -29",
-            "room: core 01 -30 → -29 so others go deeper",
+            "room: core 01 -30 → -29; no later round moves it",
             "room: core 00 -20 → -21",
         ]
     );

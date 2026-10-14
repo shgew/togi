@@ -313,9 +313,9 @@ The journal's fold is fallible: `apply` returns an error, never panics, for a jo
 Each event's `msg` goes to stderr in an escaped representation, prefixed by local time and kind padded to 14 characters, so the system journal of a tuning boot reads as a narrative:
 
 ```
-01:14:07 trial.intent   trial 0413 core 07 CO -32 R2 mprime AVX2 36K-248K 90 s alone
+01:14:07 trial.intent   trial 0413 core 07 offset -32 R2 mprime AVX2 36K-248K 90 s alone
 01:15:37 trial.end      trial 0413 PASS 90 s | Tctl max 71°C
-01:15:37 tuner.decision core 07 passed R1+R2 at -32; next -37 (coarse, no failure point yet)
+01:15:37 tuner.decision core 07 passed R1+R2 at -32; searches -37 on its next turn (coarse, no failure point yet)
 ```
 
 Human rendering escapes untrusted controls before adding application-owned styling. C0 controls and DEL use visible `\xNN` escapes, except tab, newline and carriage return use `\t`, `\n` and `\r`. C1 controls (including U+009B CSI and U+009D OSC), Unicode line and paragraph separators, and bidi formatting controls and marks (U+061C, U+200E–U+200F, U+202A–U+202E and U+2066–U+2069) use `\uNNNN`; raw ESC is `\x1b`. Invalid UTF-8 bytes use `\xNN`. Other Unicode and already-visible escape text remain readable and unchanged, with one exception: the dashboard draws only its console character set ([runtime.md, Commands](runtime.md#commands)), so it writes `×`, `…`, en and em dashes and curly quotes as `x`, `...`, `-`, `'` and `"`, and any other character outside that set as `\uNNNN`. The same rule covers event kinds, including unknown kinds in read errors, journal-derived status fields (including BIOS context), archive notices, and dashboard messages and diagnostics, so one event cannot insert a terminal command, another rendered line or a bidi override. Application-owned ANSI styling and dashboard cursor controls remain active.

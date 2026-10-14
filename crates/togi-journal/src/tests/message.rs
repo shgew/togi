@@ -23,26 +23,26 @@ fn spec_quoted_texts() {
     };
     assert_eq!(
         Payload::from(decision.clone()).message(),
-        "core 07 passed R1+R2 at -32; next -37 (coarse, no failure point yet)"
+        "core 07 passed R1+R2 at -32; searches -37 on its next turn (coarse, no failure point yet)"
     );
     decision.decision = Decision::Backoff;
     assert!(
         Payload::from(decision.clone())
             .message()
-            .starts_with("core 07 failed at -32")
+            .starts_with("core 07 failed at -32; searches -37 on its next turn")
     );
     decision.activity = Activity::Checking;
     assert!(
         Payload::from(decision.clone())
             .message()
-            .starts_with("core 07 backed off at -32")
+            .starts_with("core 07 backed off from -32 to -37")
     );
     decision.decision = Decision::Hold;
     decision.to_offset = decision.from_offset;
     assert!(
         Payload::from(decision)
             .message()
-            .starts_with("core 07 holds at -32; next -32")
+            .starts_with("core 07 failure held; tuning stays at -32 (")
     );
 }
 
@@ -159,7 +159,7 @@ fn recovered_trial_messages_keep_the_reason_and_the_last_sample() {
 fn intent_message_names_the_activity_fields() {
     let text = message(EventKind::TrialIntent);
     for part in [
-        "trial 0413 core 03 CO -32 R2",
+        "trial 0413 core 03 offset -32 R2",
         "90 s alone",
         "(retry)",
         "cycle 2",
@@ -179,13 +179,16 @@ fn intent_message_names_the_activity_fields() {
     assert!(
         Payload::from(intent)
             .message()
-            .ends_with("rerun with every core at CO 0")
+            .ends_with("rerun with every core at offset 0")
     );
 }
 
 #[test]
 fn smu_messages_carry_core_and_offset() {
-    assert_eq!(message(EventKind::SmuIntent), "SMU set core 03 to CO -20");
+    assert_eq!(
+        message(EventKind::SmuIntent),
+        "SMU set core 03 to offset -20"
+    );
     assert_eq!(message(EventKind::SmuWrite), "SMU wrote all cores CO 0");
     assert_eq!(message(EventKind::SmuReadback), "SMU core 03 reads CO -20");
     let readback = SmuReadback {
@@ -318,7 +321,7 @@ fn multi_core_trial_intents_name_every_loaded_core() {
         text,
         "trial 0413 cores 03, 07 R2 mprime AVX2 36K-248K 90 s parked hunt 3 group 4 rerun"
     );
-    assert!(!text.contains(" CO "), "{text}");
+    assert!(!text.contains(" offset "), "{text}");
 
     let deepening = TrialIntent {
         condition: Condition::Together,
@@ -334,6 +337,18 @@ fn multi_core_trial_intents_name_every_loaded_core() {
 }
 
 #[test]
+fn a_single_target_trial_intent_says_core_not_cores() {
+    let one = TrialIntent {
+        condition: Condition::Parked,
+        cores: set(&[5]),
+        ..multi_core_intent()
+    };
+    let text = Payload::from(one).message();
+    assert!(text.starts_with("trial 0413 core 05 R2"), "{text}");
+    assert!(!text.contains("cores"), "{text}");
+}
+
+#[test]
 fn checking_step_names_cycle_step_and_current_profile() {
     let text = Payload::from(CheckingStep {
         cycle: ord(2),
@@ -342,10 +357,11 @@ fn checking_step_names_cycle_step_and_current_profile() {
     })
     .message();
     assert!(
-        text.starts_with("checking cycle 2 R7 step 4 starts at current profile "),
+        text.starts_with("checking cycle 2 step 4 starts at current profile "),
         "{text}"
     );
     assert!(text.contains("-20") && text.contains("-50"), "{text}");
+    assert!(!text.contains("R7"), "{text}");
 }
 
 #[test]
@@ -380,7 +396,18 @@ fn carried_messages_name_the_source() {
 fn session_carried_message_counts_what_it_carries() {
     assert!(
         message(EventKind::SessionCarried)
-            .starts_with("carried 1 candidate solo limits and 1 failure points")
+            .starts_with("carried 1 candidate solo limit and 1 failure point from")
+    );
+    let Payload::SessionCarried(mut carried) = sample(EventKind::SessionCarried) else {
+        unreachable!()
+    };
+    let mut second = carried.carried[0].clone();
+    second.core = core(4);
+    carried.carried.push(second);
+    assert!(
+        Payload::from(carried)
+            .message()
+            .starts_with("carried 2 candidate solo limits and 2 failure points from")
     );
 }
 
@@ -815,12 +842,12 @@ fn carry_without_failure_points_says_they_stay_behind_and_why() {
     carried.failure_points = false;
     carried.detail = Some("BIOS context changed".into());
     let text = Payload::from(carried.clone()).message();
-    assert!(text.contains("1 candidate solo limits"), "{text}");
+    assert!(text.contains("carried 1 candidate solo limit from"), "{text}");
     assert!(
         text.contains("failure points stay behind: BIOS context changed"),
         "{text}"
     );
-    assert!(!text.contains("1 failure points"), "{text}");
+    assert!(!text.contains("failure point from"), "{text}");
     carried.detail = None;
     assert!(
         Payload::from(carried)
@@ -995,8 +1022,69 @@ fn a_deepen_decision_says_deepened_not_failed() {
     decision.reason = "checks passed".into();
     assert_eq!(
         Payload::from(decision).message(),
-        "core 07 deepened at -30; next -31 (checks passed)"
+        "core 07 deepened from -30 to -31 (checks passed)"
     );
+}
+
+fn decision_text(kind: Decision, activity: Activity, from: i64, to: i64) -> String {
+    let Payload::TunerDecision(mut decision) = sample(EventKind::TunerDecision) else {
+        unreachable!()
+    };
+    decision.activity = activity;
+    decision.decision = kind;
+    decision.from_offset = target(from);
+    decision.to_offset = target(to);
+    decision.reason = "why".into();
+    Payload::from(decision).message()
+}
+
+#[test]
+fn each_decision_names_its_own_source_and_destination() {
+    use Activity::{Checking, Deepening, Search};
+    assert_eq!(
+        decision_text(Decision::StepDeeper, Search, -10, -15),
+        "core 07 passed R1+R2 at -10; searches -15 on its next turn (why)"
+    );
+    assert_eq!(
+        decision_text(Decision::Backoff, Search, -10, -6),
+        "core 07 failed at -10; searches -6 on its next turn (why)"
+    );
+    assert_eq!(
+        decision_text(Decision::CheckSoloLimit, Checking, -7, -6),
+        "core 07 checks candidate solo limit -6 (from -7; why)"
+    );
+    assert_eq!(
+        decision_text(Decision::CheckSoloLimit, Checking, -6, -6),
+        "core 07 checks candidate solo limit -6 (why)"
+    );
+    assert_eq!(
+        decision_text(Decision::Deepen, Deepening, -10, -11),
+        "core 07 deepened from -10 to -11 (why)"
+    );
+    assert_eq!(
+        decision_text(Decision::Yield, Deepening, -6, -5),
+        "core 07 yielded from -6 to -5 (why)"
+    );
+    assert_eq!(
+        decision_text(Decision::Backoff, Checking, -25, -24),
+        "core 07 backed off from -25 to -24 (why)"
+    );
+    assert_eq!(
+        decision_text(Decision::Hold, Checking, -24, -24),
+        "core 07 failure held; tuning stays at -24 (why)"
+    );
+}
+
+#[test]
+fn a_checking_step_does_not_claim_a_regime() {
+    let text = Payload::from(CheckingStep {
+        cycle: ord(3),
+        step: ord(1),
+        profile: profile(&[-10]),
+    })
+    .message();
+    assert!(text.starts_with("checking cycle 3 step 1 starts"), "{text}");
+    assert!(!text.contains("R7") && !text.contains("R2"), "{text}");
 }
 
 #[test]

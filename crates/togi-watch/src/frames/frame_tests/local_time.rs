@@ -104,7 +104,7 @@ fn every_time_on_screen_is_local() {
         &frame(&idle, View::Main, &zone),
         &[
             format!("togi   {}", at(hold.started, "%H:%M:%S")),
-            format!("paused until {}", at(hold.planned_end, "%H:%M")),
+            format!("planned end {}", at(hold.planned_end, "%H:%M")),
             format!("started {}", at(hold.started, "%H:%M")),
         ],
     );

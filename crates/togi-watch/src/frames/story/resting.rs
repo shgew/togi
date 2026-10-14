@@ -11,7 +11,7 @@ use super::super::colours::Paint;
 use super::super::scene::{Scene, clock};
 use super::super::terms::{cycle_place, trial_name};
 use super::RestingBand;
-use super::outcome::next_trial_words;
+use super::outcome::{NEXT_TRIAL, next_trial_words};
 use crate::model::{RecoveryView, TrialEndView};
 use crate::words::{kind_words, lateness, on_cores, signal_words};
 
@@ -97,13 +97,16 @@ fn stop_words(reason: ShutdownReason) -> &'static str {
 fn next_line(scene: &Scene<'_>) -> String {
     let between = scene.s.forecast.between.as_ref();
     match between.and_then(|between| between.next.as_ref()) {
-        Some(next) => format!("next: {}", next_trial_words(scene, next, None, None)),
+        Some(next) => format!(
+            "{NEXT_TRIAL}{}",
+            next_trial_words(scene, next, None, None)
+        ),
         None if between.and_then(|between| between.uncertainty)
             == Some(Uncertainty::NeedsRanking) =>
         {
-            "next: read the core ranking before deciding".to_owned()
+            format!("{NEXT_TRIAL}read the core ranking before deciding")
         }
-        None => "next: deciding".to_owned(),
+        None => format!("{NEXT_TRIAL}deciding"),
     }
 }
 

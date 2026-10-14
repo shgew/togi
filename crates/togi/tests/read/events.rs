@@ -294,6 +294,21 @@ fn a_torn_tail_is_reported_after_the_events() {
 }
 
 #[test]
+fn a_single_torn_byte_is_reported_in_the_singular() {
+    let dir = session(Scenario::Search);
+    let mut file = std::fs::OpenOptions::new()
+        .append(true)
+        .open(journal(dir.path()))
+        .unwrap();
+    file.write_all(b"{").unwrap();
+    let ran = togi(dir.path(), &["status"]);
+    assert_eq!(ran.status.code(), Some(0));
+    let stderr = text(&ran.stderr);
+    assert!(stderr.contains("journal ends with 1 torn byte;"), "{stderr}");
+    assert!(!stderr.contains("1 torn bytes"), "{stderr}");
+}
+
+#[test]
 fn state_dir_works_before_and_after_the_command() {
     let dir = session(Scenario::Search);
     let path = dir.path().to_str().unwrap();

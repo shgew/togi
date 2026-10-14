@@ -192,7 +192,8 @@ fn solo_clause(solo: Option<TargetOffset>) -> Option<Clause> {
 }
 
 /// The top-requester note beside a core's own note: the word `top` in a form that fits, whole or left out.
-/// `by_offset` says the offsets stand in for voltage requests.
+/// `by_offset` says the offsets stand in for voltage requests; that note keeps its `offset` qualification in
+/// every form, so where neither `top by offset` nor `offset top` fits it is left out rather than shown as `top`.
 #[must_use]
 pub fn top_note(
     note: &Line<'static>,
@@ -200,31 +201,35 @@ pub fn top_note(
     width: usize,
     colours: Colours,
 ) -> Line<'static> {
-    let mut word = "top";
-    if width >= "top requester".len() {
-        word = if by_offset {
-            "top by offset"
-        } else {
-            "top requester"
-        };
-    }
+    let (long, short) = if by_offset {
+        ("top by offset", "offset top")
+    } else {
+        ("top requester", "top")
+    };
+    let word = if width >= "top requester".len() { long } else { short };
     if line_width(note) == 0 {
+        // Alone, the word is cut when it does not fit; an offset fallback must not be cut to a bare `top`.
+        if width < word.len() {
+            return Line::default();
+        }
         return tint(
             fit_clauses(width, &[Clause::whole("", word)]),
             Paint::Text.style(colours),
         );
     }
+    let mut forms = Vec::new();
+    if by_offset {
+        forms.push(Form::new(Line::styled(long, Paint::Text.style(colours)), 2));
+        forms.push(Form::new(Line::styled(short, Paint::Text.style(colours)), 1));
+    } else {
+        forms.push(Form::new(Line::styled(word, Paint::Text.style(colours)), 1));
+    }
+    forms.push(Form::empty());
     fit_clauses(
         width,
         &[
             Clause::whole("", note.clone()),
-            Clause::new(
-                Line::styled(" · ", Paint::Grey.style(colours)),
-                vec![
-                    Form::new(Line::styled(word, Paint::Text.style(colours)), 1),
-                    Form::empty(),
-                ],
-            ),
+            Clause::new(Line::styled(" · ", Paint::Grey.style(colours)), forms),
         ],
     )
 }
@@ -404,6 +409,7 @@ mod tests {
         for (text, width, want) in [
             ("", 2, ""),
             ("", 3, "top"),
+            ("", 12, "top"),
             ("", 13, "top requester"),
             ("-11", 5, "-11"),
             ("-11", 9, "-11 · top"),
@@ -414,13 +420,29 @@ mod tests {
                 "top_note({text:?}, {width})"
             );
         }
-        assert_eq!(
-            plain(&top_note(&Line::default(), true, 13, Colours::Full)),
-            "top by offset"
-        );
-        assert_eq!(
-            plain(&top_note(&Line::from("-11"), true, 20, Colours::Full)),
-            "-11 · top by offset"
-        );
+    }
+
+    #[test]
+    fn an_offset_fallback_top_note_keeps_its_qualification_or_is_left_out() {
+        for (text, width, want) in [
+            ("", 13, "top by offset"),
+            ("", 12, "offset top"),
+            ("", 10, "offset top"),
+            ("", 9, ""),
+            ("", 3, ""),
+            ("-11", 20, "-11 · top by offset"),
+            ("-11", 16, "-11 · offset top"),
+            ("-11", 15, "-11"),
+            ("-11", 12, "-11"),
+            ("-11", 9, "-11"),
+            ("-11", 3, "-11"),
+        ] {
+            let got = plain(&top_note(&Line::from(text), true, width, Colours::Full));
+            assert_eq!(got, want, "top_note({text:?}, {width})");
+            assert!(
+                got != "top" && !got.ends_with(" top") || got.ends_with("offset top"),
+                "an offset fallback reads as a measured top: {got:?}"
+            );
+        }
     }
 }
