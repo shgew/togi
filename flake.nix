@@ -47,21 +47,38 @@
           rustPkgs = pkgs.extend inputs.rust-overlay.overlays.default;
           rustToolchain = rustPkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
           craneLib = (inputs.crane.mkLib rustPkgs).overrideToolchain rustToolchain;
-          rustFiles = lib.fileset.unions [
-            ./Cargo.toml
-            ./Cargo.lock
-            ./rust-toolchain.toml
-            ./clippy.toml
-            ./deny.toml
+          # Each derivation reads the narrowest source its build needs; see nix/sources.nix.
+          cargoSources = import ./nix/sources.nix { inherit lib; };
+          allCrates = cargoSources.members;
+          # The workspace's test fixtures that live outside `crates/`, which tests read in place.
+          testFixtures = [
             ./.config
-            ./crates
             ./tools/bench/machines
             ./tools/bench/facts
             ./tools/bench/suite.json
             ./tools/bench/baseline.jsonl
             ./tools/bench/gates
-            ./version.txt
           ];
+          cliSource = cargoSources.source { code = cargoSources.closure [ "togi" ]; };
+          simSource = cargoSources.source { code = cargoSources.closure [ "togi-tool-sim" ]; };
+          trialSource = cargoSources.source {
+            code = cargoSources.closureWithDev [ "togi-trial" ];
+            full = [ "togi-trial" ];
+          };
+          # The recovery tests compile `togi` whole (its tests and their data) with the dev closure as code.
+          recoverySource = cargoSources.source {
+            code = cargoSources.closureWithDev [ "togi" ];
+            full = [ "togi" ];
+          };
+          # Compiles every target; the crates' own test data is inside them.
+          cratesSource = cargoSources.source { full = allCrates; };
+          testSource = cargoSources.source {
+            full = allCrates;
+            files = testFixtures;
+          };
+          # Tools that read code or manifests and no data.
+          codeSource = cargoSources.source { rs = allCrates; };
+          manifestSource = cargoSources.source { files = [ ./deny.toml ]; };
           rustLinker = lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
             CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS = "-C link-arg=-fuse-ld=mold";
           };
@@ -72,25 +89,27 @@
             CC_aarch64_apple_darwin = lib.getExe' pkgs.llvmPackages.clang-unwrapped "clang";
             AR_aarch64_apple_darwin = lib.getExe' pkgs.llvm "llvm-ar";
           };
+          # Dependencies read only the manifests and the lock: the dummy source and the vendor directory ignore code.
+          depsSource = cargoSources.source { code = allCrates; };
           cargoArgs = {
             pname = "togi-workspace";
             version = "0.0.0";
-            src = lib.fileset.toSource {
-              root = ./.;
-              fileset = rustFiles;
-            };
+            cargoVendorDir = craneLib.vendorCargoDeps { inherit (depsSource) src; };
             strictDeps = true;
             # Crane builds the release profile by default; the checks build what `just gate` builds.
             CARGO_PROFILE = "dev";
             nativeBuildInputs = lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.mold ];
           }
           // rustLinker;
-          cargoDeps = craneLib.buildDepsOnly cargoArgs;
-          cargoCheck = args: cargoArgs // args // { cargoArtifacts = cargoDeps; };
+          cargoWith = source: args: cargoArgs // source // args;
+          depsArgs = cargoArgs // {
+            dummySrc = craneLib.mkDummySrc { inherit (depsSource) src; };
+          };
+          cargoDeps = craneLib.buildDepsOnly depsArgs;
+          cargoCheck = source: args: cargoWith source args // { cargoArtifacts = cargoDeps; };
           cargoNoDeps =
-            args:
-            cargoArgs
-            // args
+            source: args:
+            cargoWith source args
             // {
               cargoArtifacts = null;
               doInstallCargoArtifacts = false;
@@ -101,13 +120,17 @@
             CARGO_PROFILE = "release";
             CARGO_PROFILE_RELEASE_LTO = "false";
           };
-          simRelease = releaseArgs // {
-            pname = "togi-tool-sim";
-            cargoExtraArgs = "--locked -p togi-tool-sim";
-          };
+          simRelease = cargoWith simSource (
+            releaseArgs
+            // {
+              pname = "togi-tool-sim";
+              cargoExtraArgs = "--locked -p togi-tool-sim";
+            }
+          );
           releaseDeps = craneLib.buildDepsOnly (
             releaseArgs
             // {
+              inherit (depsArgs) dummySrc;
               pname = "togi-release";
               cargoExtraArgs = "--locked -p togi -p togi-tool-sim";
             }
@@ -191,17 +214,19 @@
           togiPackage =
             rev:
             craneLib.buildPackage (
-              releaseArgs
-              // {
-                pname = "togi";
-                inherit version meta;
-                cargoExtraArgs = "--locked -p togi";
-                cargoArtifacts = releaseDeps;
-                doCheck = false;
-                TOGI_REV = rev;
-                nativeBuildInputs = cargoArgs.nativeBuildInputs ++ [ pkgs.installShellFiles ];
-                postInstall = installCompletions;
-              }
+              cargoWith cliSource (
+                releaseArgs
+                // {
+                  pname = "togi";
+                  inherit version meta;
+                  cargoExtraArgs = "--locked -p togi";
+                  cargoArtifacts = releaseDeps;
+                  doCheck = false;
+                  TOGI_REV = rev;
+                  nativeBuildInputs = cargoArgs.nativeBuildInputs ++ [ pkgs.installShellFiles ];
+                  postInstall = installCompletions;
+                }
+              )
             );
         in
         {
@@ -238,7 +263,7 @@
           checks = {
             go-tools = goTools;
             clippy = craneLib.mkCargoDerivation (
-              cargoCheck {
+              cargoCheck cratesSource {
                 pnameSuffix = "-clippy";
                 buildPhaseCargoCommand = ''
                   cargoWithProfile clippy --locked --all-targets -- --deny warnings
@@ -248,34 +273,40 @@
               }
               // darwinCrossCc
             );
-            nextest = craneLib.cargoNextest (cargoCheck {
-              cargoNextestExtraArgs = "--profile ci";
-              nativeCheckInputs = [
-                pkgs.gitMinimal
-                pkgs.bashInteractive
-                pkgs.nushell
-              ];
-            });
-            doc = craneLib.cargoDocTest (cargoCheck { });
-            cargo-fmt = craneLib.cargoFmt cargoArgs;
-            deny = craneLib.mkCargoDerivation (cargoNoDeps {
-              pnameSuffix = "-deny";
-              nativeBuildInputs = [
-                pkgs.cargo-deny
-                pkgs.gitMinimal
-              ];
-              buildPhaseCargoCommand = ''
-                mkdir -p $CARGO_HOME/advisory-dbs
-                cp -r ${advisoryDb} $CARGO_HOME/advisory-dbs/advisory-db-3157b0e258782691
-                chmod -R u+w $CARGO_HOME/advisory-dbs
-                cargo deny --offline --locked check bans licenses sources advisories
-              '';
-            });
-            shear = craneLib.mkCargoDerivation (cargoNoDeps {
-              pnameSuffix = "-shear";
-              nativeBuildInputs = [ pkgs.cargo-shear ];
-              buildPhaseCargoCommand = "cargo shear";
-            });
+            nextest = craneLib.cargoNextest (
+              cargoCheck testSource {
+                cargoNextestExtraArgs = "--profile ci";
+                nativeCheckInputs = [
+                  pkgs.gitMinimal
+                  pkgs.bashInteractive
+                  pkgs.nushell
+                ];
+              }
+            );
+            doc = craneLib.cargoDocTest (cargoCheck cratesSource { });
+            cargo-fmt = craneLib.cargoFmt (cargoWith codeSource { });
+            deny = craneLib.mkCargoDerivation (
+              cargoNoDeps manifestSource {
+                pnameSuffix = "-deny";
+                nativeBuildInputs = [
+                  pkgs.cargo-deny
+                  pkgs.gitMinimal
+                ];
+                buildPhaseCargoCommand = ''
+                  mkdir -p $CARGO_HOME/advisory-dbs
+                  cp -r ${advisoryDb} $CARGO_HOME/advisory-dbs/advisory-db-3157b0e258782691
+                  chmod -R u+w $CARGO_HOME/advisory-dbs
+                  cargo deny --offline --locked check bans licenses sources advisories
+                '';
+              }
+            );
+            shear = craneLib.mkCargoDerivation (
+              cargoNoDeps codeSource {
+                pnameSuffix = "-shear";
+                nativeBuildInputs = [ pkgs.cargo-shear ];
+                buildPhaseCargoCommand = "cargo shear";
+              }
+            );
             package =
               let
                 package = togiPackage "dev";
@@ -361,43 +392,47 @@
               };
             in
             {
-              trial-scope-tests = craneLib.mkCargoDerivation (cargoCheck {
-                pnameSuffix = "-trial-scope-tests";
-                doInstallCargoArtifacts = false;
-                nativeBuildInputs = cargoArgs.nativeBuildInputs ++ [ pkgs.jq ];
-                buildPhaseCargoCommand = ''
-                  cargoWithProfile test --locked -p togi-trial --features hardware --test hardware --test cached_errors \
-                    --no-run --message-format json-render-diagnostics > cargo-messages.json
-                '';
-                installPhaseCommand = ''
-                  mkdir -p "$out/bin"
-                  install_test() {
-                    jq -r --arg target "$1" \
-                      'select(.reason == "compiler-artifact" and .target.name == $target and .executable != null) | .executable' \
+              trial-scope-tests = craneLib.mkCargoDerivation (
+                cargoCheck trialSource {
+                  pnameSuffix = "-trial-scope-tests";
+                  doInstallCargoArtifacts = false;
+                  nativeBuildInputs = cargoArgs.nativeBuildInputs ++ [ pkgs.jq ];
+                  buildPhaseCargoCommand = ''
+                    cargoWithProfile test --locked -p togi-trial --features hardware --test hardware --test cached_errors \
+                      --no-run --message-format json-render-diagnostics > cargo-messages.json
+                  '';
+                  installPhaseCommand = ''
+                    mkdir -p "$out/bin"
+                    install_test() {
+                      jq -r --arg target "$1" \
+                        'select(.reason == "compiler-artifact" and .target.name == $target and .executable != null) | .executable' \
+                        cargo-messages.json > executables
+                      test "$(wc -l < executables)" = 1
+                      cp "$(cat executables)" "$out/bin/$2"
+                    }
+                    install_test hardware togi-trial-tests
+                    install_test cached_errors togi-trial-cached-errors
+                  '';
+                }
+              );
+              vm-recovery-tests = craneLib.mkCargoDerivation (
+                cargoCheck recoverySource {
+                  pnameSuffix = "-vm-recovery-tests";
+                  doInstallCargoArtifacts = false;
+                  nativeBuildInputs = cargoArgs.nativeBuildInputs ++ [ pkgs.jq ];
+                  buildPhaseCargoCommand = ''
+                    cargoWithProfile test --locked -p togi --test vm_recovery --no-run \
+                      --message-format json-render-diagnostics > cargo-messages.json
+                  '';
+                  installPhaseCommand = ''
+                    mkdir -p "$out/bin"
+                    jq -r 'select(.reason == "compiler-artifact" and .target.name == "vm_recovery" and .executable != null) | .executable' \
                       cargo-messages.json > executables
                     test "$(wc -l < executables)" = 1
-                    cp "$(cat executables)" "$out/bin/$2"
-                  }
-                  install_test hardware togi-trial-tests
-                  install_test cached_errors togi-trial-cached-errors
-                '';
-              });
-              vm-recovery-tests = craneLib.mkCargoDerivation (cargoCheck {
-                pnameSuffix = "-vm-recovery-tests";
-                doInstallCargoArtifacts = false;
-                nativeBuildInputs = cargoArgs.nativeBuildInputs ++ [ pkgs.jq ];
-                buildPhaseCargoCommand = ''
-                  cargoWithProfile test --locked -p togi --test vm_recovery --no-run \
-                    --message-format json-render-diagnostics > cargo-messages.json
-                '';
-                installPhaseCommand = ''
-                  mkdir -p "$out/bin"
-                  jq -r 'select(.reason == "compiler-artifact" and .target.name == "vm_recovery" and .executable != null) | .executable' \
-                    cargo-messages.json > executables
-                  test "$(wc -l < executables)" = 1
-                  cp "$(cat executables)" "$out/bin/togi-vm-recovery"
-                '';
-              });
+                    cp "$(cat executables)" "$out/bin/togi-vm-recovery"
+                  '';
+                }
+              );
               vm = vm.tuning-boot;
               vm-restart-limit = vm.restart-limit;
               vm-trial-scope = vm.trial-scope;
