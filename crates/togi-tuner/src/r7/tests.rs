@@ -1046,6 +1046,7 @@ mod escalation {
             last = match strikes.escalation(&topo, key, &profile, &affected) {
                 Some(Escalation::Backoffs { failures, .. }) => Answer::Locate(Some(failures)),
                 Some(Escalation::LoadedAtZero) => Answer::Locate(None),
+                Some(Escalation::Covered { .. }) => panic!("strikes alone never cover a load"),
                 None => {
                     let ordinal = strikes.next_ordinal(key);
                     next += 1;

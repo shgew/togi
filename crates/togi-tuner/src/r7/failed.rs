@@ -7,7 +7,7 @@ use super::escalation::Backoffs;
 use super::measurements::{Measurement, Measurements};
 use super::order::RequestOrder;
 use crate::failures::Pending;
-use crate::{ClassKey, LoadKey, Profile, Topology};
+use crate::{ClassKey, Count, LoadKey, Profile, Topology};
 
 /// What a trial reported about requests, clocks and stalls.
 #[derive(Clone, Copy, Debug)]
@@ -67,6 +67,9 @@ pub(crate) struct FailedTrial {
     pub(crate) order: RequestOrder,
     named_lane: Option<(CoreId, RequestOrder)>,
     pub(crate) backoffs: Backoffs,
+    /// The passes of the load, as the failure folds, that hold every loaded core at least as
+    /// deep with an unloaded core shallower ([`crate::Evidence::loaded_cover`]).
+    pub(crate) cover: Count,
 }
 
 /// The measurement a failing request came from, when one covered the core.
@@ -115,11 +118,18 @@ impl FailedTrial {
             order,
             named_lane,
             backoffs: Backoffs::default(),
+            cover: Count::default(),
         }
     }
 
     pub(crate) fn top(&self) -> CoreSet {
         effective_top(self.recorded_top, &self.order)
+    }
+
+    /// The passes showing the loaded cores pass on their own as deep as they failed, once there
+    /// are `needed` of them.
+    pub(crate) fn covered(&self, needed: std::num::NonZeroU16) -> Option<&[Seq]> {
+        (self.cover.valid >= u32::from(needed.get())).then_some(self.cover.witnesses.as_slice())
     }
 
     /// The failing request of `core`: the measurement the trial's order took it from, else the

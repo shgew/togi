@@ -109,8 +109,10 @@ impl LocateReason {
     /// The events the located hunt cites besides the failure.
     pub(crate) fn cause(&self) -> Vec<Seq> {
         let mut cause: Vec<Seq> = self.rerun_passed.into_iter().collect();
-        if let Some(Escalation::Backoffs { decisions, .. }) = &self.escalation {
-            cause.extend(decisions.iter().copied());
+        match &self.escalation {
+            Some(Escalation::Backoffs { decisions, .. }) => cause.extend(decisions.iter().copied()),
+            Some(Escalation::Covered { passes }) => cause.extend(passes.iter().copied()),
+            Some(Escalation::LoadedAtZero) | None => {}
         }
         cause
     }
@@ -268,7 +270,8 @@ impl Run {
     }
 
     /// Why a multi-core R7 failure is located before it is charged, or none when it is charged
-    /// now: a live unattributed one whose load left an unloaded core off CO 0 and that escalates,
+    /// now: a live unattributed one whose load left an unloaded core off CO 0 and that escalates
+    /// or whose load already passed with its loaded cores as deep and an unloaded core shallower,
     /// and, carried or naming a core at CO 0, one whose loaded cores were all at CO 0.
     pub(crate) fn locatable(&self, view: &Failed<'_>) -> Option<LocateReason> {
         let record = view.record;
@@ -291,12 +294,22 @@ impl Run {
             .iter()
             .filter_map(|&core| self.ccd_of(core))
             .collect();
-        let escalation = view.trial.backoffs.escalation(
-            &self.topo,
-            record.pending.class.load(),
-            view.profile(),
-            &affected,
-        );
+        let escalation = view
+            .trial
+            .backoffs
+            .escalation(
+                &self.topo,
+                record.pending.class.load(),
+                view.profile(),
+                &affected,
+            )
+            .or_else(|| {
+                view.trial
+                    .covered(self.config.needed)
+                    .map(|passes| Escalation::Covered {
+                        passes: passes.to_vec(),
+                    })
+            });
         if loaded_at_zero {
             if view
                 .named
@@ -682,10 +695,23 @@ impl Run {
                 });
             }
         }
+        if link.is_none() && self.carried_covered(&view) {
+            return None;
+        }
         unhandled
             .iter()
             .find_map(|&core| self.core_response(&view, core, link))
             .map(|response| R7Route::Respond(Box::new(response)))
+    }
+
+    /// Whether a carried failure that names no core held its loaded cores no deeper than passes
+    /// of its load with an unloaded core shallower: it needs no move, since those passes show the
+    /// loaded cores do not need one, and a carried failure is not located. The live failures of
+    /// the load find the unloaded core.
+    fn carried_covered(&self, view: &Failed<'_>) -> bool {
+        view.record.pending.carried
+            && !self.named_culprit(view)
+            && view.trial.covered(self.config.needed).is_some()
     }
 
     /// The first response an open multi-core R7 failure requires, in failure order. A failure

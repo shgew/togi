@@ -51,6 +51,10 @@ pub(crate) enum Escalation {
     LoadedAtZero,
     /// The load was backed off `failures` times since its last pass, by these decisions.
     Backoffs { failures: u32, decisions: Vec<Seq> },
+    /// These passes of the load hold every loaded core at least as deep as the failure with an
+    /// unloaded core shallower: the loaded cores pass on their own, so the failure needs a deeper
+    /// unloaded core.
+    Covered { passes: Vec<Seq> },
 }
 
 impl fmt::Display for Escalation {
@@ -75,6 +79,16 @@ impl fmt::Display for Escalation {
                     write!(f, "#{}", decision.get())?;
                 }
                 f.write_str(") and still fails, so stepping back its loaded cores is not helping")
+            }
+            Self::Covered { passes } => {
+                f.write_str("the load already passed with every loaded core as deep or deeper and an unloaded core shallower (")?;
+                for (at, pass) in passes.iter().enumerate() {
+                    if at > 0 {
+                        f.write_str(", ")?;
+                    }
+                    write!(f, "#{}", pass.get())?;
+                }
+                f.write_str("), so its loaded cores pass on their own and stepping one back cannot be what it needs")
             }
         }
     }

@@ -509,6 +509,109 @@ fn escalation_snapshot_is_frozen_when_the_failure_folds() {
 }
 
 #[test]
+fn a_load_that_passed_with_its_loaded_cores_as_deep_locates_its_failure_at_once() {
+    type Case = (&'static str, char, [i64; 4], usize, bool);
+    let cases: [Case; 6] = [
+        (
+            "an unloaded core shallower",
+            'a',
+            [-30, -30, -20, -30],
+            0,
+            true,
+        ),
+        (
+            "loaded cores deeper too",
+            'a',
+            [-32, -31, -30, -10],
+            0,
+            true,
+        ),
+        (
+            "a loaded core shallower",
+            'a',
+            [-30, -29, -20, -30],
+            0,
+            false,
+        ),
+        ("the profile it failed at", 'a', [-30; 4], 0, false),
+        ("one pass short", 'a', [-30, -30, -20, -30], 1, false),
+        (
+            "another workload's passes",
+            'b',
+            [-30, -30, -20, -30],
+            0,
+            false,
+        ),
+    ];
+    for (name, op, passed, short, located) in cases {
+        let mut j = Journal::r7_session();
+        for (id, offset) in (0..).zip(passed) {
+            j.place(id, offset);
+        }
+        let n = usize::from(j.run().config.needed.get());
+        let passes: Vec<Seq> = (0..n - short)
+            .map(|_| j.load_trial(escalation_load(op), Outcome::Pass))
+            .collect();
+        for id in 0..4 {
+            j.place(id, -30);
+        }
+        let played = j.play("A");
+        if located {
+            let (failure, escalation, cause) = j.located();
+            assert_eq!(failure, played.last_failure(), "{name}");
+            assert_eq!(
+                escalation,
+                Escalation::Covered {
+                    passes: passes.clone()
+                },
+                "{name}"
+            );
+            assert_eq!(cause, passes, "{name}");
+        } else {
+            assert_eq!(j.r7_backoff().failure, played.last_failure(), "{name}");
+        }
+        j.assert_resumes();
+    }
+}
+
+#[test]
+fn coverage_is_frozen_when_the_failure_folds() {
+    let mut j = Journal::r7_session();
+    let n = usize::from(j.run().config.needed.get());
+    let played = j.play("A");
+    j.place(2, -20);
+    for _ in 0..n {
+        j.load_trial(escalation_load('a'), Outcome::Pass);
+    }
+    j.place(2, -30);
+    assert_eq!(j.r7_backoff().failure, played.last_failure());
+    j.assert_resumes();
+}
+
+#[test]
+fn a_carried_failure_its_loaded_cores_passed_as_deep_needs_no_move() {
+    for covered in [true, false] {
+        let mut j = Journal::r7_session();
+        let n = usize::from(j.run().config.needed.get());
+        let top = R7Report::default().top(&[0]);
+        if covered {
+            for _ in 0..n {
+                j.r7_fact(true, &[0, 1], &[-30, -30, -20, -30], &top);
+            }
+        }
+        let failure = j.r7_fact(false, &[0, 1], &[-30; 4], &top);
+        if covered {
+            assert_eq!(j.run().r7_decision(), None);
+            assert_eq!(j.run().locate_due(), None);
+            assert!(j.run().r7.open.contains_key(&failure));
+        } else {
+            assert_eq!(j.r7_backoff().failure, failure);
+        }
+        j.assert_resumes();
+    }
+}
+
+#[test]
 fn deepening_hold_and_named_backoffs_are_never_counted() {
     let load = load_key('a');
     let (decision, failure) = (Seq::new(2).unwrap(), Seq::new(1).unwrap());
