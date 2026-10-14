@@ -65,6 +65,11 @@
             code = cargoSources.closureWithDev [ "togi-trial" ];
             full = [ "togi-trial" ];
           };
+          # The recovery tests compile `togi` whole (its tests and their data) with the dev closure as code.
+          recoverySource = cargoSources.source {
+            code = cargoSources.closureWithDev [ "togi" ];
+            full = [ "togi" ];
+          };
           # Compiles every target; the crates' own test data is inside them.
           cratesSource = cargoSources.source { full = allCrates; };
           testSource = cargoSources.source {
