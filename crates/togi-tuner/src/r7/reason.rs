@@ -15,11 +15,28 @@ fn count(n: i64) -> String {
 /// How the failing request of the moved core was known.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum Basis {
-    NoTelemetry { offset: i64 },
-    Uncovered { offset: i64, sources: Vec<Seq> },
-    NoPass { request: f64 },
-    Met { request: f64, target: f64 },
-    Toward { request: f64, target: f64 },
+    NoTelemetry {
+        offset: i64,
+    },
+    Uncovered {
+        offset: i64,
+        sources: Vec<Seq>,
+    },
+    NoPass {
+        request: f64,
+    },
+    /// A carried failure: passes recorded after it would set its target, so it takes none.
+    Carried {
+        request: f64,
+    },
+    Met {
+        request: f64,
+        target: f64,
+    },
+    Toward {
+        request: f64,
+        target: f64,
+    },
 }
 
 /// What else the charge says about which core moves.
@@ -134,6 +151,10 @@ impl fmt::Display for R7Reason {
             Basis::NoPass { request } => {
                 write!(f, "request {request:.3} V; no qualifying pass, {counts}")?;
             }
+            Basis::Carried { request } => write!(
+                f,
+                "request {request:.3} V; a carried failure takes no voltage target, {counts}"
+            )?,
             Basis::Met { request, target } => write!(
                 f,
                 "request {request:.3} V already met the passed target {target:.3} V; {counts}"

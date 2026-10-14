@@ -568,6 +568,7 @@ impl Run {
             .active_backend(record.pending.class.workload().backend());
         let mut target: Option<Target> = None;
         let own = match failing.volts {
+            Some(request) if record.pending.carried => OwnRequest::Measured(request),
             Some(request) => {
                 let failing_top = charge.rail;
                 let ask = Ask {
@@ -601,6 +602,7 @@ impl Run {
                 offset,
                 sources: failing.sources.clone(),
             },
+            (Some(request), None) if record.pending.carried => Basis::Carried { request },
             (Some(request), None) => Basis::NoPass { request },
             (Some(request), Some(target)) if request >= target.volts => Basis::Met {
                 request,

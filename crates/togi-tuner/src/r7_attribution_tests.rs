@@ -210,7 +210,7 @@ fn r7_all_core_targets_use_each_ccd() {
     }
     let failing = requests(&[(0, 1.1), (1, 1.09), (2, 1.2), (3, 1.19)]).top(&[0, 2]);
     let at = j.at_values();
-    j.r7_fact(false, &[0, 1, 2, 3], &at, &failing);
+    j.r7_failed(&[0, 1, 2, 3], &at, &failing);
     assert_eq!(j.drain_backoffs(8), [(0, -25), (2, -20)]);
 }
 
@@ -311,8 +311,7 @@ fn r7_backoff_reason() {
                 );
             }
         }
-        let failure = j.r7_fact(
-            false,
+        let failure = j.r7_failed(
             &[0, 1],
             &profile,
             &requests(case.requests).top(&[0]).named(0),
@@ -325,8 +324,9 @@ fn r7_backoff_reason() {
         assert!(why.notes.is_empty(), "{name}: {:?}", why.notes);
         assert_eq!(why.rail, None, "{name}");
         assert!(action.cause.contains(&failure), "{name}");
-        assert!(
+        assert_eq!(
             decision(&action).reason.contains("20230101T000000Z"),
+            case.target.is_some(),
             "{name}"
         );
         assert_eq!(j.next_decision(), action, "{name}");

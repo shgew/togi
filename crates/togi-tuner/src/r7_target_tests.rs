@@ -66,6 +66,31 @@ fn assert_no_pass(why: &R7Reason, request: f64) {
 }
 
 #[test]
+fn a_carried_failure_takes_no_voltage_target() {
+    for carried in [false, true] {
+        let mut j = Journal::r7_session();
+        let n = needed(&j);
+        let pass = report(&[(0, 1.1539), (1, 1.08)], &[0]);
+        passes(&mut j, n, &[0, 1], &[-20, -30, -30, -30], &pass);
+        let failing = report(&[(0, 1.09447), (1, 1.08)], &[0]);
+        if carried {
+            j.r7_fact(false, &[0, 1], &ALL_30, &failing);
+        } else {
+            j.r7_failed(&[0, 1], &ALL_30, &failing);
+        }
+        let (decision, why) = r7_backoff(&j);
+        if carried {
+            assert_eq!(why.basis, Basis::Carried { request: 1.09447 });
+            assert_eq!(moved(&decision), (0, -29));
+        } else {
+            assert_toward(&why, 1.09447, 1.1539);
+            assert_eq!(moved(&decision), (0, -13));
+        }
+        assert_eq!(j.next_decision(), decision, "carried {carried}");
+    }
+}
+
+#[test]
 fn r7_voltage_target_clock_filter() {
     type Case<'a> = (&'a str, &'a [(u8, u32)], i64, Option<f64>);
     let cases: [Case<'_>; 3] = [
@@ -81,7 +106,7 @@ fn r7_voltage_target_clock_filter() {
         let failing = report(&[(0, 1.1), (1, 1.08)], &[0])
             .named(0)
             .clocks(&[(0, 5000)]);
-        j.r7_fact(false, &[0, 1], &ALL_30, &failing);
+        j.r7_failed(&[0, 1], &ALL_30, &failing);
         let (decision, why) = r7_backoff(&j);
         assert_eq!(moved(&decision), (0, want), "{name}");
         match target {
@@ -133,12 +158,7 @@ fn r7_unattributed_voltage_target() {
         &[-26, -30, -30, -30],
         &report(&[(0, 1.115), (1, 1.08)], &[0]),
     );
-    j.r7_fact(
-        false,
-        &[0, 1],
-        &ALL_30,
-        &report(&[(0, 1.1), (1, 1.08)], &[0]),
-    );
+    j.r7_failed(&[0, 1], &ALL_30, &report(&[(0, 1.1), (1, 1.08)], &[0]));
     let (decision, why) = r7_backoff(&j);
     assert_eq!(moved(&decision), (0, -25));
     assert_toward(&why, 1.1, 1.115);
@@ -157,12 +177,7 @@ fn r7_tied_top_target_must_beat_the_ccd_maximum() {
             &[-26, -30, -30, -30],
             &report(&[(0, pass_top), (1, 1.08)], &[0]),
         );
-        j.r7_fact(
-            false,
-            &[0, 1],
-            &ALL_30,
-            &report(&[(0, 1.1), (1, 1.0991)], &[0, 1]),
-        );
+        j.r7_failed(&[0, 1], &ALL_30, &report(&[(0, 1.1), (1, 1.0991)], &[0, 1]));
         let (decision, why) = r7_backoff(&j);
         assert_eq!(why.core, core(1), "{pass_top}");
         if admitted {
@@ -186,8 +201,7 @@ fn r7_named_target_transfers_across_loads_without_fail_clock() {
         &[-30, -20, -30, -30],
         &report(&[(0, 1.09), (1, 1.118), (2, 1.1), (3, 1.09)], &[1, 2]),
     );
-    j.r7_fact(
-        false,
+    j.r7_failed(
         &[0, 1],
         &ALL_30,
         &report(&[(0, 1.1), (1, 1.09)], &[0]).named(0),
@@ -217,12 +231,7 @@ fn r7_step_down_target_exceeds_original_top() {
     }
     let profile = [0, -30, -30, -30];
     j.profile_change(&profile);
-    j.r7_fact(
-        false,
-        &[0, 1],
-        &profile,
-        &report(&[(0, 1.2), (1, 1.15)], &[0]),
-    );
+    j.r7_failed(&[0, 1], &profile, &report(&[(0, 1.2), (1, 1.15)], &[0]));
     let (decision, why) = r7_backoff(&j);
     assert_eq!(moved(&decision), (1, -6));
     assert_toward(&why, 1.15, 1.236);
@@ -238,7 +247,7 @@ fn r7_step_down_target_exceeds_original_top() {
 fn r7_failure_uses_requests_as_of_its_start() {
     let mut j = Journal::r7_session();
     let before = j.r7_fact(true, &[0, 1], &ALL_30, &report(&[(0, 1.2), (1, 1.1)], &[0]));
-    j.r7_fact(false, &[0, 1], &ALL_30, &R7Report::default());
+    j.r7_failed(&[0, 1], &ALL_30, &R7Report::default());
     let after = j.r7_fact(true, &[0, 1], &ALL_30, &report(&[(0, 1.1), (1, 1.2)], &[1]));
     let (decision, why) = r7_backoff(&j);
     assert_eq!(moved(&decision).0, 0);
@@ -268,12 +277,7 @@ fn r7_voltage_target_cites_its_lowest_pass() {
         &passed,
         &report(&[(0, 1.118), (1, 1.08)], &[0]),
     );
-    j.r7_fact(
-        false,
-        &[0, 1],
-        &ALL_30,
-        &report(&[(0, 1.1), (1, 1.08)], &[0]),
-    );
+    j.r7_failed(&[0, 1], &ALL_30, &report(&[(0, 1.1), (1, 1.08)], &[0]));
     let (decision, why) = r7_backoff(&j);
     assert_eq!(moved(&decision), (0, -25));
     assert_toward(&why, 1.1, 1.118);
@@ -385,12 +389,12 @@ fn r7_unloaded_named_reset_keeps_measurement() {
             &ALL_30,
             &report(&[(0, 1.08), (1, 1.1)], &[1]),
         );
-        j.r7_fact(false, &[0, 1], &ALL_30, &R7Report::default().named(3));
+        j.r7_failed(&[0, 1], &ALL_30, &R7Report::default().named(3));
         let (decision, why) = r7_backoff(&j);
         assert_eq!(why.core, core(3));
         j.decide(decision);
         j.reset(reset);
-        let failure = j.r7_fact(false, &[0, 1], &ALL_30, &R7Report::default());
+        let failure = j.r7_failed(&[0, 1], &ALL_30, &R7Report::default());
         let order = &j.run().r7.open.get(&failure).unwrap().r7.order;
         let (decision, why) = r7_backoff(&j);
         assert_eq!(moved(&decision), (1, -29), "reset {reset}");
@@ -424,12 +428,7 @@ fn r7_target_tie_earliest_profile() {
         let mut leading = vec![j.r7_fact(true, &[0, 1], &lead, lead_report)];
         let followed = passes(&mut j, n, &[0, 1], &follow, follow_report);
         leading.extend(passes(&mut j, n - 1, &[0, 1], &lead, lead_report));
-        j.r7_fact(
-            false,
-            &[0, 1],
-            &ALL_30,
-            &report(&[(0, 1.1), (1, 1.08)], &[0]),
-        );
+        j.r7_failed(&[0, 1], &ALL_30, &report(&[(0, 1.1), (1, 1.08)], &[0]));
         let (decision, why) = r7_backoff(&j);
         assert_eq!(moved(&decision), (0, -25), "second leads {second_leads}");
         assert_toward(&why, 1.1, 1.115);
@@ -473,12 +472,7 @@ fn r7_target_cites_late_minimum() {
         &passed,
         &report(&[(0, 1.12), (1, 1.08)], &[0]),
     );
-    j.r7_fact(
-        false,
-        &[0, 1],
-        &ALL_30,
-        &report(&[(0, 1.1), (1, 1.08)], &[0]),
-    );
+    j.r7_failed(&[0, 1], &ALL_30, &report(&[(0, 1.1), (1, 1.08)], &[0]));
     let (decision, why) = r7_backoff(&j);
     assert_toward(&why, 1.1, 1.118);
     let cited: Vec<Seq> = decision
@@ -520,19 +514,14 @@ fn v_star_ignores_an_invalidated_pass() {
         let mut j = Journal::r7_session();
         let n = needed(&j);
         passes(&mut j, n, &[0, 1], &q, &at_q);
-        j.r7_fact(false, &[0, 1], &q, &report(&[(0, 1.1), (1, 1.08)], &[0]));
+        j.r7_failed(&[0, 1], &q, &report(&[(0, 1.1), (1, 1.08)], &[0]));
         let (decision, why) = r7_backoff(&j);
         assert_eq!(moved(&decision), (0, -25));
         assert_no_pass(&why, 1.1);
         assert_eq!(why.counts, 1);
         j.decide(decision);
         let fresh = passes(&mut j, newer, &[0, 1], &q, &at_q);
-        j.r7_fact(
-            false,
-            &[0, 1],
-            &ALL_30,
-            &report(&[(0, 1.08), (1, 1.1)], &[1]),
-        );
+        j.r7_failed(&[0, 1], &ALL_30, &report(&[(0, 1.08), (1, 1.1)], &[1]));
         let (decision, why) = r7_backoff(&j);
         assert_eq!(moved(&decision).0, 1);
         (j, decision, why, fresh)
@@ -557,14 +546,9 @@ fn v_star_returns_with_a_failure_the_reset_of_its_named_core_drops() {
         let old = passes(&mut j, n, &[0, 1], &q, &at_q);
         let failing = report(&[(0, 1.1), (1, 1.08)], &[0]);
         let failing = named.map_or(failing.clone(), |core| failing.named(core));
-        j.r7_fact(false, &[0, 1], &q, &failing);
+        j.r7_failed(&[0, 1], &q, &failing);
         j.reset(3);
-        j.r7_fact(
-            false,
-            &[0, 1],
-            &ALL_30,
-            &report(&[(0, 1.1), (1, 1.08)], &[0]),
-        );
+        j.r7_failed(&[0, 1], &ALL_30, &report(&[(0, 1.1), (1, 1.08)], &[0]));
         let (decision, why) = r7_backoff(&j);
         assert_eq!(moved(&decision).0, 0, "{named:?}");
         if restored {
@@ -620,12 +604,7 @@ fn pass_volume(count: usize) -> (usize, usize, usize, u64, u64, (u8, i64), usize
     j.state.visits();
     j.r7_fact(true, &[0, 1], &q, &varied(count));
     let folding = j.state.visits();
-    j.r7_fact(
-        false,
-        &[0, 1],
-        &ALL_30,
-        &report(&[(0, 1.1), (1, 1.08)], &[0]),
-    );
+    j.r7_failed(&[0, 1], &ALL_30, &report(&[(0, 1.1), (1, 1.08)], &[0]));
     j.state.visits();
     let decision = j.next_decision();
     let deciding = j.state.visits();
@@ -668,12 +647,7 @@ fn r7_target_cites_more_earliest_passes_after_the_needed_count_increases() {
     ));
     let after = needed(&j);
     assert!(after > before && after <= passed.len());
-    j.r7_fact(
-        false,
-        &[0, 1],
-        &ALL_30,
-        &report(&[(0, 1.1), (1, 1.08)], &[0]),
-    );
+    j.r7_failed(&[0, 1], &ALL_30, &report(&[(0, 1.1), (1, 1.08)], &[0]));
     let (decision, why) = r7_backoff(&j);
     assert_toward(&why, 1.1, 1.115);
     let cited: Vec<Seq> = decision
