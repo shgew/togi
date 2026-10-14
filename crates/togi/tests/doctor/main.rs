@@ -13,6 +13,7 @@ use togi_hardware::{CheckName, Diagnosis, Skip, Skipped};
 use togi_journal::MemFs;
 use togi_machine::Check;
 use togi_render::OutputFacts;
+use togi_tuner::RULESET;
 
 fn check(name: &str, detail: &str, ok: bool) -> Check {
     Check {
@@ -267,7 +268,10 @@ fn the_recorded_context_reaches_the_checks_only_for_a_journal_run_would_continue
     drop(seen);
 
     let older = Session::new();
-    older.rewrite_first_line("\"ruleset\":1", "\"ruleset\":0");
+    older.rewrite_first_line(
+        &format!("\"ruleset\":{RULESET}"),
+        &format!("\"ruleset\":{}", RULESET - 1),
+    );
     let host = host_with(ready(), older.fs.clone());
     assert_eq!(doctor(&host, older.path(), &[]).exit, Exit::Ok);
     assert_eq!(host.diagnoses.borrow().as_slice(), [(None, true)]);
@@ -281,27 +285,28 @@ fn the_recorded_context_reaches_the_checks_only_for_a_journal_run_would_continue
 
 #[test]
 fn a_journal_run_would_refuse_exits_16_before_any_lock_or_check() {
+    let current = format!("\"ruleset\":{RULESET}");
     for (name, from, to, written, uses) in [
         (
             "newer schema",
             "\"schema\":1",
             "\"schema\":99",
-            "(schema 99, ruleset 1)",
-            "uses schema 1.",
+            format!("(schema 99, ruleset {RULESET})"),
+            "uses schema 1.".to_owned(),
         ),
         (
             "newer ruleset",
-            "\"ruleset\":1",
+            current.as_str(),
             "\"ruleset\":99",
-            "(schema 1, ruleset 99)",
-            "uses ruleset 1.",
+            "(schema 1, ruleset 99)".to_owned(),
+            format!("uses ruleset {RULESET}."),
         ),
         (
             "newer evidence",
             "\"evidence\":1}",
             "\"evidence\":99}",
-            "(schema 1, ruleset 1, evidence epoch 99)",
-            "uses evidence epoch 1.",
+            format!("(schema 1, ruleset {RULESET}, evidence epoch 99)"),
+            "uses evidence epoch 1.".to_owned(),
         ),
     ] {
         let session = Session::new();
@@ -551,16 +556,16 @@ fn an_unknown_event_kind_in_a_current_journal_exits_16_naming_it() {
     assert_eq!(ran.exit, Exit::Incompatible, "{}", ran.err);
     assert_eq!(ran.out, "");
     assert!(
-        ran.err.starts_with(
-            "togi doctor: unknown kind \"future.fact\" in journal written by togi 0.0.0 (schema 1, ruleset 1); this build, togi "
-        ),
+        ran.err.starts_with(&format!(
+            "togi doctor: unknown kind \"future.fact\" in journal written by togi 0.0.0 (schema 1, ruleset {RULESET}); this build, togi "
+        )),
         "{}",
         ran.err
     );
     assert!(
-        ran.err.ends_with(
-            " (schema 1, ruleset 1), cannot safely modify it; install the build that wrote it\n"
-        ),
+        ran.err.ends_with(&format!(
+            " (schema 1, ruleset {RULESET}), cannot safely modify it; install the build that wrote it\n"
+        )),
         "{}",
         ran.err
     );

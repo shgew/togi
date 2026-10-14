@@ -306,7 +306,7 @@ fn every_run_gets_one_record_in_suite_order_stamped_with_the_tree() {
         report
             .records
             .iter()
-            .all(|r| r.commit == "abc1234" && !r.dirty && r.ruleset == 1)
+            .all(|r| r.commit == "abc1234" && !r.dirty && r.ruleset == togi_tuner::RULESET)
     );
     assert!(
         report

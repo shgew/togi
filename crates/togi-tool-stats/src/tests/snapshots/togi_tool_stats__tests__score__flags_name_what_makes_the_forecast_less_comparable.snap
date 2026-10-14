@@ -2,9 +2,9 @@
 source: crates/togi-tool-stats/src/tests/score.rs
 expression: "scored(&record, log.events)"
 ---
-Forecast: commit new, ruleset 1, evidence epoch 1, 3 runs: 2 concluded, 1 dead ends, 0 censored
+Forecast: commit new, ruleset 2, evidence epoch 1, 3 runs: 2 concluded, 1 dead ends, 0 censored
 Anchor: session 20260101T000000Z event 2 at 2026-01-01T00:00:01Z, unchanged
-Run: concluded 2.00 h after the anchor; builds after the anchor: rev none ruleset 1 epoch 1
+Run: concluded 2.00 h after the anchor; builds after the anchor: rev none ruleset 2 epoch 1
 Flag: the forecast was made from a dirty tree at commit new
 Flag: a build without a revision ran after the anchor; the forecast is at commit new
 Note: forecast hours run to conclusion over concluded runs only; hours are simulated; a simulated crash reboot takes 90 s, while real recovery took a median of 141 s on 2026-10-03 (about 37 minutes over that session), so real runs take longer; not corrected
