@@ -11,9 +11,9 @@
 //!    renders under its own name, into a records file beside the document;
 //! 2. folds every prefix of every [`togi_watchtest::Base`] journal and of the cycle a rerun completes, and draws
 //!    each at the three main sizes and at its clocks ([`crate::frames::corpus::run`]);
-//! 3. draws the 18 [`togi_watchtest::Scenario`] cuts and the journal states as whole frames;
+//! 3. draws the 18 [`togi_watchtest::Scenario`] cuts and the journal states at the three sizes;
 //! 4. writes one Markdown document ([`document`]): the phrases by producer, form and shape, the forwarded journal
-//!    messages, the frames, and the [`manifest`] of source literals with the cases that rendered each.
+//!    messages, and the [`manifest`] of source literals with the cases that rendered each.
 //!
 //! It fails, after writing the document, when an enforced source literal was rendered by no case and is not listed
 //! as silent.
@@ -343,8 +343,6 @@ pub(crate) type Key = (String, String, String);
 pub(crate) struct Collector {
     /// By producer, form and shape.
     pub(crate) items: BTreeMap<Key, Item>,
-    /// Whole frames to show as they are, by case.
-    pub(crate) frames: BTreeMap<String, String>,
     /// For each source literal of [`manifest::literals`], the cases that rendered it.
     pub(crate) literals: Vec<Provenance>,
     /// The literals each distinct rendered text carries, by the text's hash.
@@ -355,7 +353,6 @@ impl Default for Collector {
     fn default() -> Self {
         Self {
             items: BTreeMap::new(),
-            frames: BTreeMap::new(),
             literals: vec![Provenance::default(); manifest::literals().len()],
             carries: HashMap::new(),
         }
@@ -394,15 +391,6 @@ fn finish() -> Collector {
         .expect("the exporter's thread collects")
 }
 
-/// Keeps a whole frame for the document, as the case that drew it.
-pub(crate) fn keep_frame(case: &str, frame: String) {
-    LOCAL.with(|local| {
-        if let Some(collector) = local.borrow_mut().as_mut() {
-            collector.frames.insert(case.to_owned(), frame);
-        }
-    });
-}
-
 fn records_path(doc: &Path) -> PathBuf {
     let mut name = doc.as_os_str().to_owned();
     name.push(".records");
@@ -420,6 +408,7 @@ pub(crate) struct TestRun {
 
 /// Runs every other unit test of this binary in a child process, recording to `records`. Several test threads
 /// keep every test on a thread named after it.
+#[expect(clippy::disallowed_methods, reason = "the exporter re-runs this test binary to collect the other tests' phrases")]
 fn run_tests(records: &Path) -> usize {
     let exe = std::env::current_exe().expect("the test binary's path");
     let output = std::process::Command::new(&exe)

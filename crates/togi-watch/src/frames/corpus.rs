@@ -5,7 +5,7 @@
 //! the three main sizes. A state with a trial in flight is also drawn at the trial's planned end and at 90 seconds
 //! past it, except an idle (R6) trial, which holds the frame frozen from its start: that one is drawn once and
 //! must report [`Hold::Frozen`]. The 18 [`Scenario`] cuts, the journal states and the help and journal views are
-//! drawn as whole frames too.
+//! drawn too.
 
 use std::io;
 
@@ -17,8 +17,8 @@ use togi_watchtest::{Base, Scenario, cycle_completed_by_rerun};
 use super::layout::Layout;
 use super::measure::Measure;
 use super::scene::Scene;
-use super::testing::{FIXED_NOW, ready, render_checked, screen, text_snapshot};
-use crate::corpus::{case, keep_frame, region};
+use super::testing::{FIXED_NOW, ready, render_checked, screen};
+use crate::corpus::{case, region};
 use crate::model::{Model, Snapshot, project};
 use crate::screen::{Colours, Hold, Journal, Screen, View};
 
@@ -31,16 +31,6 @@ const VIEW_SIZES: [(u16, u16); 3] = [(80, 24), (160, 45), (240, 67)];
 /// The widest help view that has one column: the wider ones set three columns side by side, whose rows would
 /// join phrases of unrelated sections.
 const THREE_COLUMNS: u16 = 195;
-
-/// The scenario cuts whose whole frame the document shows, at the wide size.
-const FRAMES: [Scenario; 6] = [
-    Scenario::Checking,
-    Scenario::MemberProbe,
-    Scenario::Idle,
-    Scenario::Recovering,
-    Scenario::Deadend,
-    Scenario::Stopped,
-];
 
 /// What the sweep drew.
 #[derive(Debug, Default)]
@@ -180,19 +170,15 @@ fn sweep_journal(swept: &mut Swept, name: &str, events: &[Event]) {
         .push((name.to_owned(), events.len(), swept.frames - before));
 }
 
-/// Draws a finished journal as the case `id` at every main size, keeping the whole frame of the sizes `keep`
-/// names.
-fn whole(swept: &mut Swept, id: &str, events: &[Event], keep: &[(u16, u16)]) {
+/// Draws a finished journal as the case `id` at every main size.
+fn whole(swept: &mut Swept, id: &str, events: &[Event]) {
     let model = project(events);
     let journal = ready(&model);
     let last = events.last().expect("a journal with events").time;
     let now = last + SignedDuration::from_secs(40);
     for size in SIZES {
         let name = format!("{id}/{}x{}", size.0, size.1);
-        let (buf, _) = draw(swept, &name, &journal, &screen_of(View::Main, size, false), now);
-        if keep.contains(&size) {
-            keep_frame(&name, text_snapshot(&buf));
-        }
+        draw(swept, &name, &journal, &screen_of(View::Main, size, false), now);
     }
 }
 
@@ -213,32 +199,26 @@ fn states(swept: &mut Swept) {
                     size.0,
                     size.1
                 );
-                let (buf, _) = draw(
+                draw(
                     swept,
                     &id,
                     &journal,
                     &screen_of(View::Main, size, once),
                     FIXED_NOW,
                 );
-                if size == SIZES[0] {
-                    keep_frame(&id, text_snapshot(&buf));
-                }
             }
         }
     }
     let model = Model::new();
     for size in VIEW_SIZES {
         let id = format!("journal/help/{}x{}", size.0, size.1);
-        let (buf, _) = draw(
+        draw(
             swept,
             &id,
             &ready(&model),
             &screen_of(View::Help, size, false),
             FIXED_NOW,
         );
-        if size == VIEW_SIZES[0] {
-            keep_frame(&id, text_snapshot(&buf));
-        }
         let id = format!("journal/empty-log/{}x{}", size.0, size.1);
         draw(
             swept,
@@ -293,24 +273,14 @@ pub(crate) fn run() -> Swept {
     let rerun = cycle_completed_by_rerun().unwrap_or_else(|error| panic!("rerun journals: {error}"));
     sweep_journal(&mut swept, "rerun-completes-cycle", &rerun.ended);
     for (n, running) in rerun.running.iter().enumerate() {
-        whole(&mut swept, &format!("scenario/rerun-{n}"), running, &[]);
+        whole(&mut swept, &format!("scenario/rerun-{n}"), running);
     }
-    whole(&mut swept, "scenario/rerun-passed", &rerun.passed, &[]);
+    whole(&mut swept, "scenario/rerun-passed", &rerun.passed);
     for scenario in Scenario::ALL {
         let events = scenario
             .events()
             .unwrap_or_else(|error| panic!("{}: {error}", scenario.name()));
-        let keep: &[(u16, u16)] = if FRAMES.contains(&scenario) {
-            &SIZES[..1]
-        } else {
-            &[]
-        };
-        whole(
-            &mut swept,
-            &format!("scenario/{}", scenario.name()),
-            &events,
-            keep,
-        );
+        whole(&mut swept, &format!("scenario/{}", scenario.name()), &events);
         swept.scenarios += 1;
     }
     states(&mut swept);

@@ -416,7 +416,7 @@ fn defect_found(events: &[Event], direction: &str) -> Vec<Event> {
     )
 }
 
-fn reset(events: &[Event], target: serde_json::Value) -> Vec<Event> {
+fn reset(events: &[Event], target: &serde_json::Value) -> Vec<Event> {
     then_json(events, "command.reset", serde_json::json!({ "target": target }))
 }
 
@@ -496,8 +496,8 @@ fn edge_journals() -> Vec<(String, String, Vec<Event>)> {
         "defect.answered",
         serde_json::json!({"id": 1, "cores": [3, 5], "answer": "no"}),
     );
-    let one = reset(&answered, serde_json::json!({"core": 3}));
-    let both = reset(&one, serde_json::json!({"core": 5}));
+    let one = reset(&answered, &serde_json::json!({"core": 3}));
+    let both = reset(&one, &serde_json::json!({"core": 5}));
     add("defect-found", "search + a too-cautious defect.found on cores 3 5", found.clone());
     add("defect-answered", "defect-found + defect.answered no", answered);
     add("defect-reset-one-core", "defect-answered + command.reset core 3", one);
@@ -505,7 +505,7 @@ fn edge_journals() -> Vec<(String, String, Vec<Event>)> {
     add(
         "defect-reset-all",
         "defect-found + command.reset all",
-        reset(&found, serde_json::json!("all")),
+        reset(&found, &serde_json::json!("all")),
     );
     add(
         "defect-too-aggressive",
@@ -605,7 +605,7 @@ fn edge_journals() -> Vec<(String, String, Vec<Event>)> {
         "stopped + command.reset core 3",
         reset(
             &Scenario::Stopped.events().expect("the scenario cuts"),
-            serde_json::json!({"core": 3}),
+            &serde_json::json!({"core": 3}),
         ),
     );
     add(
@@ -952,7 +952,11 @@ fn lines(dir: &Path) -> Vec<String> {
 }
 
 fn write_lines(dir: &Path, lines: &[String]) {
-    let text: String = lines.iter().map(|line| format!("{line}\n")).collect();
+    let text = lines.iter().fold(String::new(), |mut text, line| {
+        text.push_str(line);
+        text.push('\n');
+        text
+    });
     std::fs::write(journal(dir), text).expect("the journal writes");
 }
 

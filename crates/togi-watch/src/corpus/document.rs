@@ -1,5 +1,5 @@
 //! The Markdown the exporter writes: the phrase catalogue, the forwarded journal messages, the manifest of source
-//! phrases with the cases that rendered them, and a few whole frames.
+//! phrases with the cases that rendered them.
 
 use std::collections::BTreeMap;
 use std::collections::hash_map::DefaultHasher;
@@ -75,7 +75,6 @@ pub(super) fn write(collector: &Collector, run: &TestRun, swept: &Swept) -> Stri
     catalogue(&mut out, collector);
     messages(&mut out, collector);
     manifest_section(&mut out, collector);
-    frames(&mut out, collector);
     out
 }
 
@@ -250,14 +249,4 @@ fn manifest_section(out: &mut String, collector: &Collector) {
         let _ = writeln!(out, "- `{file}` {}: {reason}", code(start));
     }
     out.push('\n');
-}
-
-fn frames(out: &mut String, collector: &Collector) {
-    let _ = writeln!(
-        out,
-        "## Representative frames\n\nA few whole frames, exactly as drawn, for how the phrases sit together.\n"
-    );
-    for (case, frame) in &collector.frames {
-        let _ = writeln!(out, "### `{case}`\n\n```text\n{frame}\n```\n");
-    }
 }
