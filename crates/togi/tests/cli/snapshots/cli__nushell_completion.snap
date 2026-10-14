@@ -72,6 +72,12 @@ module completions {
     --help(-h)                # Print help (see more with '--help')
   ]
 
+  # Internal emergency recovery that stops leftover trials and sets every core to offset 0
+  export extern "togi emergency-stop" [
+    --state-dir: directory    # State directory
+    --help(-h)                # Print help (see more with '--help')
+  ]
+
   # Show the session at a glance
   export extern "togi status" [
     --state-dir: directory    # State directory
@@ -112,6 +118,10 @@ module completions {
 
   # Recover after the tuning service reaches its restart limit
   export extern "togi help restart-limit" [
+  ]
+
+  # Internal emergency recovery that stops leftover trials and sets every core to offset 0
+  export extern "togi help emergency-stop" [
   ]
 
   # Show the session at a glance

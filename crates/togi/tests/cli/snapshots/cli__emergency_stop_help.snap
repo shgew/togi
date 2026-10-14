@@ -1,0 +1,23 @@
+---
+source: crates/togi/tests/cli/main.rs
+expression: "help(\"emergency-stop\")"
+---
+Internal emergency recovery that stops leftover trials and sets every core to offset 0
+
+Internal recovery for a togi process that died with trial workloads or Curve Optimizer offsets left behind; the tuning service runs it after an abnormal exit. It refuses outside Linux and without root, takes the host lock, validates the CPU, the SMU driver and the core topology, stops every stale togi trial scope and confirms none is left. Only then does it write 0 to every core and read every core back.
+
+It only ever writes 0: it takes no offsets and no configuration, and neither reads nor appends to the journal. Offsets stay as they were when another togi process holds the host lock, when validation fails, when a stale trial scope cannot be stopped or when the core slots cannot be mapped. Exit status 0 means every core read back 0; 3, that the host lock is busy; 1, anything else, with the cause on stderr.
+
+Usage: togi emergency-stop [OPTIONS]
+
+Options:
+      --state-dir <path>
+          State directory
+          
+          [default: /var/lib/togi]
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+Examples:
+  sudo togi emergency-stop   Stop leftover trials, then set every core to 0 and read each back

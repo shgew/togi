@@ -1,3 +1,4 @@
+mod controller;
 pub(crate) mod harness;
 mod output;
 #[cfg(target_os = "linux")]

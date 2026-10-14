@@ -461,11 +461,17 @@ fn restart_limit_help() {
 }
 
 #[test]
+fn emergency_stop_help() {
+    insta::assert_snapshot!(help("emergency-stop"));
+}
+
+#[test]
 fn only_doctor_and_reset_list_config() {
     for command in ["doctor", "reset"] {
         assert!(help(command).contains("--config"), "{command}");
     }
     assert!(!help("restart-limit").contains("--config"));
+    assert!(!help("emergency-stop").contains("--config"));
 }
 
 #[test]
@@ -493,6 +499,13 @@ fn administration_usage_errors_exit_2_before_touching_anything() {
             &["--config", "c.json", "restart-limit", "--tuning-boot", "g"],
             SCOPE,
         ),
+        (&["emergency-stop", "extra"], "unexpected argument 'extra'"),
+        (
+            &["emergency-stop", "--offset", "-5"],
+            "unexpected argument '--offset'",
+        ),
+        (&["emergency-stop", "--config", "c.json"], SCOPE),
+        (&["--config", "c.json", "emergency-stop"], SCOPE),
         (&["doctor", "extra"], "unexpected argument 'extra'"),
         (&["doctor", "--version"], "unexpected argument '--version'"),
     ] {

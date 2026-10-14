@@ -1,10 +1,12 @@
 use std::sync::Arc;
 
 use tempfile::TempDir;
-use togi_machine::{PmTable, PmTableReader, Trials};
+use togi_machine::{Host, PmTable, PmTableReader, Smu, Stopped, Trials};
 use togi_trial::{Backends, Options, Runner};
 
-use crate::adapters::{PmSlot, RunnerHandle};
+use super::support::{Scope, Tree, Watch, host, refused_account};
+use crate::adapters::{PmSlot, RunnerHandle, SharedSmu};
+use crate::host::Privilege;
 
 struct FixedTable;
 
@@ -68,4 +70,34 @@ fn a_live_samples_iterator_does_not_hold_the_runner_lock() {
     assert!(clone.is_unlocked());
     assert_eq!(samples.next().map(|sample| sample.elapsed_ms), Some(1));
     assert!(clone.is_unlocked());
+}
+
+#[test]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "proves the shared emergency zeroing refuses before any SMU command"
+)]
+fn an_emergency_zero_without_mapped_slots_is_refused_before_any_mailbox_command() {
+    let tree = Tree::new();
+    let mut host = host(&tree, Privilege::Root, refused_account(), Scope::creating());
+    let validated = host.validate_smu().unwrap();
+    let watch = Watch::on(&tree);
+    let mut smu = SharedSmu(Arc::clone(&host.driver));
+    let error = smu
+        .emergency_zero(validated, &Stopped::confirmed())
+        .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .starts_with("offsets unchanged: the core slots are not mapped: "),
+        "{error}"
+    );
+    // Validation starts the PM table reader, which may read `pm_table_version`/`pm_table`
+    // concurrently; only the mailbox and SMN files show an SMU command was sent.
+    let commanded: Vec<_> = watch
+        .touched()
+        .into_iter()
+        .filter(|name| !name.starts_with("pm_table"))
+        .collect();
+    assert_eq!(commanded, Vec::<&str>::new());
 }

@@ -22,6 +22,7 @@ use tokio::sync::mpsc::{
 };
 use tokio::time::{Instant, sleep, sleep_until};
 
+use crate::controller::{self, Controller, Moved};
 use crate::error::{CleanupFailure, Containment, Error, InvalidTrial, OutputFailure, StorageError};
 use crate::evidence::{Observation, Selector, Stream};
 use crate::files::{self, Container};
@@ -67,6 +68,8 @@ pub(crate) struct Env<O: Os> {
     pub(crate) supervisors: RefCell<Registry>,
     /// How a start's file preparation runs, off this thread.
     pub(crate) preparer: Preparer,
+    /// Moves togi's own threads off the cores a trial loads, and back.
+    pub(crate) controller: Arc<dyn Controller>,
 }
 
 impl<O: Os> Env<O> {
@@ -197,6 +200,59 @@ fn early(error: Error, ready: Stopped) -> Partial<Option<Stopped>> {
     }
 }
 
+/// Moves every thread of togi onto the CPUs `controller::select` chooses for this trial, before
+/// any workload starts, and reports it. Never fails the trial: a thread that could not be read or
+/// moved, or a pass limit reached while threads kept appearing, is said in the report.
+fn confine<O: Os>(env: &Env<O>, spec: &TrialSpec, events: &StdSender<Event>) {
+    let Some(cpus) = controller::select(&env.topology, &spec.cores, &spec.cpus, &spec.offsets)
+    else {
+        return;
+    };
+    if let Some(moved) = env.controller.confine(&cpus) {
+        let line = if moved.complete() {
+            format!(
+                "togi's own threads run on CPUs {} while the trial loads {}: {}",
+                launch::cpus_list(&cpus),
+                launch::cpus_list(&spec.cpus),
+                moved.describe(),
+            )
+        } else {
+            format!(
+                "togi's own threads were not all confined to CPUs {} and may still run on a CPU \
+                 the trial loads ({}): {}",
+                launch::cpus_list(&cpus),
+                launch::cpus_list(&spec.cpus),
+                moved.describe(),
+            )
+        };
+        let _ = events.send(Event::Progress(line));
+    }
+}
+
+/// Gives togi's threads back the affinity they had, once the teardown confirmed nothing runs.
+fn restore<O: Os>(env: &Env<O>, events: &StdSender<Event>) {
+    if let Some(moved) = env.controller.restore() {
+        let _ = events.send(Event::Progress(restored_line(moved)));
+    }
+}
+
+/// What a restoration reports; one that was not complete says the threads stay confined until the
+/// next confirmed teardown or sweep retries it.
+pub(crate) fn restored_line(moved: Moved) -> String {
+    if moved.complete() {
+        format!(
+            "togi's own threads run on their own CPUs again: {}",
+            moved.describe()
+        )
+    } else {
+        format!(
+            "togi's own threads were not all given their own CPUs back and stay confined until \
+             a later confirmed teardown or sweep retries: {}",
+            moved.describe()
+        )
+    }
+}
+
 /// Prepares, launches and begins supervising a trial. Timing starts when this returns.
 /// On failure the same teardown ran; `Some` in the partial value proves nothing runs.
 pub(crate) async fn start<O: Os>(
@@ -267,6 +323,7 @@ pub(crate) async fn start<O: Os>(
     drop(ready);
 
     let (events_tx, events_rx) = channel();
+    confine(&env, &spec, &events_tx);
     let (inbound_tx, mut inbound_rx) = bounded(INBOUND_CAPACITY);
     let selector = Selector::new(
         plan.workload.backend,
@@ -631,7 +688,14 @@ async fn roll_back<O: Os>(
     let panic = judge.take_panic();
     diagnostics.splice(0..0, judge.conclude().diagnostics);
     let (first, proof) = match ended.proof {
-        Ok(stopped) => (cause, Some(stopped)),
+        Ok(stopped) => {
+            if let Some(moved) = env.controller.restore()
+                && !moved.complete()
+            {
+                diagnostics.push(restored_line(moved));
+            }
+            (cause, Some(stopped))
+        }
         Err(containment) => (
             Error::Containment(Arc::new(containment.caused_by(cause))),
             None,
@@ -1067,6 +1131,9 @@ impl<O: Os> Supervisor<O> {
             .await
             .finish()
             .await;
+        if ended.proof.is_ok() {
+            restore(&env, &events);
+        }
         panics.extend(judge.take_panic());
         for what in &panics {
             judge.observe(Observation::SamplingLoss {

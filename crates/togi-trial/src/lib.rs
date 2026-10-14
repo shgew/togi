@@ -9,6 +9,8 @@ mod identity;
 mod runner;
 
 #[cfg(target_os = "linux")]
+mod controller;
+#[cfg(target_os = "linux")]
 mod evidence;
 #[cfg(target_os = "linux")]
 mod files;

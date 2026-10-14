@@ -18,7 +18,7 @@ allow-print-in-tests = true
 disallowed-methods = [
     { path = "togi_machine::Smu::set_offset", reason = "Only the session write transaction writes a core offset through the SMU seam" },
     { path = "togi_machine::Smu::set_all_offsets", reason = "Only the session write transaction writes every offset through the SMU seam" },
-    { path = "togi_machine::Smu::emergency_zero", reason = "Only the session's journal-failure emergency zeroes every core, after a confirmed teardown" },
+    { path = "togi_machine::Smu::emergency_zero", reason = "Only the session's emergency zeroing, shared by the journal-failure emergency and togi emergency-stop, zeroes every core, after a confirmed teardown" },
     { path = "togi_machine::SmuValidated::checked", reason = "Only a host implementation that validated the SMU interface mints its proof" },
     { path = "togi_machine::Stopped::confirmed", reason = "Only a seam implementation that confirmed every workload stopped mints a teardown proof" },
     { path = "togi_journal::StateDir::simulated", reason = "Only simulations and session tests keep a journal in memory; production locks a directory on disk" },

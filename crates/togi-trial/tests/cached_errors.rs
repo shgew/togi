@@ -113,6 +113,7 @@ mod cached_errors {
             duration: Duration::from_secs(600),
             index: 0,
             seed: 1,
+            offsets: togi_machine::PerCore::default(),
         }
     }
 

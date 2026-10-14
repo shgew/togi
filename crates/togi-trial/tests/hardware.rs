@@ -603,6 +603,7 @@ mod hardware {
             duration,
             index: 0,
             seed: 1,
+            offsets: togi_machine::PerCore::default(),
         }
     }
 
@@ -1466,6 +1467,7 @@ mod hardware {
                         duration: Duration::from_secs(20),
                         index,
                         seed: 0,
+                        offsets: togi_machine::PerCore::default(),
                     };
                     let mut trial = start(&mut runner, spec);
                     let result = trial

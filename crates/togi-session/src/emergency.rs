@@ -1,9 +1,12 @@
-//! The answer to a journal that cannot be written: every core to 0, read back, reported, and no further event.
+//! Every core to 0, read back, and reported: the answer to a journal that cannot be written, and the zeroing behind
+//! `togi emergency-stop`.
 //!
 //! The one exception to intent before write, so it is gated three ways. A stale trial scope may still hold a
 //! workload until a sweep succeeded, the SMU may not be what togi expects until it was validated, and a workload of
-//! this run may still run until teardown is confirmed. Without all three nothing touches the SMU. Only a successful
-//! sweep makes a [`SweepCleared`].
+//! this run may still run until teardown is confirmed. Without all three nothing touches the SMU. In a session only
+//! a successful sweep makes a [`SweepCleared`] for `Access::gate`. `togi emergency-stop` has no session: it
+//! validates the SMU and sweeps itself, and its proofs of both go straight to [`zero_and_read_back`]. The hardware
+//! SMU adds one refusal to both: no zero is written before the core slots are mapped.
 
 use std::io::{self, Write};
 
@@ -110,10 +113,34 @@ pub struct Outcome {
 
 #[expect(
     clippy::disallowed_methods,
-    reason = "the journal-failure emergency is the one caller of the zero-only SMU seam"
+    reason = "the one caller of the zero-only SMU seam, shared by the journal-failure emergency and `togi emergency-stop`"
 )]
-fn zero(smu: &mut dyn Smu, access: &Access<'_>) -> Result<(), Error> {
-    smu.emergency_zero(access.validated, access.stopped)
+fn zero(smu: &mut dyn Smu, validated: SmuValidated, stopped: &Stopped) -> Result<(), Error> {
+    smu.emergency_zero(validated, stopped)
+}
+
+/// Zeroes every core with no intent and reads each core of `cores` back. `stopped` proves no workload runs and
+/// `validated` that the SMU is the one togi expects. Nothing is appended or reported here. A crash ends every SMU
+/// access at once.
+pub fn zero_and_read_back(
+    smu: &mut dyn Smu,
+    validated: SmuValidated,
+    stopped: &Stopped,
+    cores: CoreSet,
+) -> Zeroed {
+    let zero = zero(smu, validated, stopped);
+    let mut readbacks = Vec::new();
+    if !matches!(zero, Err(Error::Crashed)) {
+        for core in cores {
+            let result = smu.offset(core);
+            let crashed = matches!(result, Err(Error::Crashed));
+            readbacks.push(Readback { core, result });
+            if crashed {
+                break;
+            }
+        }
+    }
+    Zeroed { zero, readbacks }
 }
 
 /// Answers a failed journal append. Zeroes every core of `cores` without an intent when the gate allows it, reads
@@ -136,19 +163,7 @@ pub(crate) fn respond(
             };
         }
     };
-    let zero = zero(smu, &access);
-    let mut readbacks = Vec::new();
-    if !matches!(zero, Err(Error::Crashed)) {
-        for core in cores {
-            let result = smu.offset(core);
-            let crashed = matches!(result, Err(Error::Crashed));
-            readbacks.push(Readback { core, result });
-            if crashed {
-                break;
-            }
-        }
-    }
-    let zeroed = Zeroed { zero, readbacks };
+    let zeroed = zero_and_read_back(smu, access.validated, access.stopped, cores);
     let problems: Vec<String> = zeroed
         .readbacks
         .iter()

@@ -2,6 +2,8 @@
   pkgs,
   package,
   trialTests,
+  # The executable of crates/togi/tests/vm_recovery.rs at bin/togi-vm-recovery: `togi` with a persistent fake SMU.
+  vmRecovery,
 }:
 let
   module = import ./module.nix { packages.${pkgs.stdenv.hostPlatform.system}.default = package; };
@@ -223,6 +225,9 @@ in
       assert len(watchdog) == 1 and watchdog[0]["data"]["ok"], preflight
       assert preflight[0]["data"]["check"] == "watchdog", preflight
       machine.log(f"armed watchdog preflight: {watchdog[0]}")
+      # The dead end exit 15 is abnormal, so the ExecStopPost hook runs; the VM has no SMU, so it refuses before any
+      # write and says offsets are unchanged.
+      machine.succeed("journalctl -b -u togi.service -o cat --no-pager | grep -F 'emergency-stop:' | grep -F 'offsets unchanged'")
       machine.succeed("test -z \"$(togi events --json --kind smu.intent,trial.intent)\"")
       machine.wait_for_unit("togi-watch.service")
       machine.fail("grep -q '^FONT=' /etc/vconsole.conf")
@@ -396,6 +401,10 @@ in
           if [ "$1" = restart-limit ]; then
             exit 2
           fi
+          if [ "$1" = emergency-stop ]; then
+            echo "stub emergency-stop"
+            exit 0
+          fi
           exec ${pkgs.coreutils}/bin/sleep infinity
         '';
         services.togi.tuning.leaveOnShutdown = false;
@@ -440,6 +449,196 @@ in
       results = [e["UNIT_RESULT"] for e in togi if "UNIT_RESULT" in e]
       assert exits == ["2", "2", "2"], f"togi.service exits before the reboot: {exits}"
       assert results == ["exit-code", "exit-code", "exit-code", "start-limit-hit"], f"togi.service results: {results}"
+      hook_runs = [e for e in togi if e.get("MESSAGE") == "stub emergency-stop"]
+      assert len(hook_runs) == 3, f"ExecStopPost ran {len(hook_runs)} times for three abnormal exits: {hook_runs}"
+    '';
+  };
+
+  # Kills togi mid-trial under real systemd: the trial runs on real systemd scopes from the shipped trial runner and
+  # the SMU is a persistent file, so the offsets stay applied after SIGKILL. The module's ExecStopPost hook must run
+  # the package's `togi emergency-stop` (the production sweep, validation, zero-only write and readback; only the
+  # machine behind the System seam is the VM's) and leave no trial scope and every core at 0 before the 60 s restart.
+  # Only a successful exit skips the hook; every other exit status, a dead end included, runs it. Faults in the
+  # validation, the sweep and the readback show the command's gates and exit status.
+  emergency-stop = pkgs.testers.runNixOSTest {
+    name = "togi-emergency-stop";
+
+    nodes.machine = {
+      imports = [ tuningBoot ];
+      virtualisation.cores = 4;
+      # `togi` is the test executable of crates/togi/tests/vm_recovery.rs: the same CLI on a fake SMU file.
+      services.togi.package = pkgs.writeShellScriptBin "togi" ''
+        exec ${vmRecovery}/bin/togi-vm-recovery --exact vm_recovery::helper --nocapture -- togi "$@"
+      '';
+      systemd.tmpfiles.rules = [
+        "d /var/lib/togi-vm 0755 root root -"
+        "f /var/lib/togi-vm/mode 0644 root root - kill"
+      ];
+    };
+
+    testScript = ''
+      state = "/var/lib/togi-vm"
+      cores = 4
+      baseline = [-5] * cores
+      trial_offsets = [-30, -30, -10, -20]
+      auto_restart = "systemctl show togi.service -p SubState --value | grep -qx auto-restart"
+      inactive = "systemctl show togi.service -p ActiveState --value | grep -qx inactive"
+
+
+      def prop(name):
+          return machine.succeed(f"systemctl show togi.service -p {name} --value").strip()
+
+
+      def offsets():
+          raw = machine.succeed(f"cat {state}/offsets 2>/dev/null || true").split()
+          return [int(value) for value in raw] if raw else baseline
+
+
+      def smu_log():
+          return machine.succeed(f"cat {state}/smu.log 2>/dev/null || true").splitlines()
+
+
+      def zeroings():
+          return [line for line in smu_log() if "emergency-zero wrote" in line]
+
+
+      def scopes():
+          return machine.succeed("systemctl list-units --all 'togi-trial-*.scope' --plain --no-legend").strip()
+
+
+      def emergency_lines():
+          journal = machine.succeed("journalctl -b -u togi.service -o cat --no-pager")
+          return [line for line in journal.splitlines() if "emergency-stop:" in line]
+
+
+      def plant(fault):
+          machine.succeed(f"printf '%s' '-9 -9 -9 -9' > {state}/offsets; printf '%s' '{fault}' > {state}/fault")
+
+
+      def run_unit(mode):
+          machine.succeed(f"systemctl reset-failed togi.service; printf '%s' '{mode}' > {state}/mode; systemctl start togi.service")
+
+
+      machine.start(allow_reboot=True)
+      machine.wait_for_unit("multi-user.target")
+      tuning_system = machine.succeed("readlink -f /run/current-system/specialisation/togi").strip()
+      machine.succeed("grub-set-default 'NixOS - togi' && sync")
+      machine.reboot()
+      machine.wait_for_unit("multi-user.target")
+      assert machine.succeed("readlink -f /run/current-system").strip() == tuning_system
+
+      # SIGKILL mid-trial.
+      machine.wait_until_succeeds(f"test -s {state}/trial", timeout=180)
+      trial_scope = machine.succeed(f"cat {state}/trial").strip()
+      started = [line for line in smu_log() if "trial started" in line]
+      assert len(started) == 1, started
+      observed = started[0].split("scopes=", 1)[1].split(",")
+      assert observed == [f"{trial_scope.removesuffix('-c00')}-c00.scope", f"{trial_scope.removesuffix('-c00')}-c01.scope"], (observed, trial_scope)
+      assert scopes() != "", "the trial runs on no systemd scope"
+      assert offsets() == trial_offsets, offsets()
+      assert prop("NRestarts") == "0"
+      main_pid = prop("MainPID")
+      allowed = machine.succeed(f"grep -h Cpus_allowed_list /proc/{main_pid}/task/*/status").split("\n")
+      allowed = {line.split()[-1] for line in allowed if line.strip()}
+      # The trial loads cores 0 and 1; core 2 is the least-deep unloaded core.
+      assert allowed == {"2"}, f"togi threads may run on loaded cores: {allowed}"
+      machine.succeed("systemctl kill --kill-whom=main --signal=SIGKILL togi.service")
+      machine.wait_until_succeeds(auto_restart, timeout=90)
+      assert prop("Result") == "signal", prop("Result")
+      exit_at = int(prop("ExecMainExitTimestampMonotonic"))
+      assert prop("NRestarts") == "0", "the restart already happened before the check"
+      assert scopes() == "", scopes()
+      assert offsets() == [0] * cores, offsets()
+      log = smu_log()
+      zero = next(i for i, line in enumerate(log) if "emergency-zero trial-scopes=" in line)
+      assert log[zero].endswith("trial-scopes=none"), f"a trial scope was alive at the zeroing: {log[zero]}"
+      assert f"pid={main_pid} " not in log[zero], "the killed process did not zero"
+      assert log[zero + 1].endswith("emergency-zero wrote " + " ".join(["0"] * cores)), log[zero + 1]
+      readbacks = sorted(line.split(" ", 1)[1] for line in log[zero + 2 : zero + 2 + cores])
+      assert readbacks == [f"read core {core:02d} 0" for core in range(cores)], readbacks
+      journal = emergency_lines()
+      machine.log("\n".join(journal))
+      assert any("trial scopes:" in line for line in journal), journal
+      assert any(f"every core read back 0 ({cores} cores)" in line for line in journal), journal
+      for core in range(cores):
+          assert any(f"core {core:02d} read back 0" in line for line in journal), (core, journal)
+      # The restart waits its 60 s after the cleanup, and only one restart happened.
+      machine.wait_until_succeeds(f"test \"$(cat {state}/trial)\" != {trial_scope}", timeout=180)
+      assert prop("NRestarts") == "1", prop("NRestarts")
+      delay = int(prop("ExecMainStartTimestampMonotonic")) - exit_at
+      assert delay >= 60_000_000, f"togi restarted {delay} us after it died, before RestartSec"
+      assert prop("RestartUSec") == "1min", prop("RestartUSec")
+
+      # A successful stop restores the baseline; the hook is skipped, so nothing zeroes it.
+      assert offsets() == trial_offsets and scopes() != ""
+      assert len(zeroings()) == 1
+      emergency_total = len(emergency_lines())
+      machine.succeed("systemctl stop togi.service")
+      assert prop("Result") == "success", prop("Result")
+      assert offsets() == baseline, offsets()
+      assert scopes() == "", scopes()
+      assert len(zeroings()) == 1
+      assert len(emergency_lines()) == emergency_total
+
+      # An abnormal exit status that is not one of togi's own runs the hook.
+      run_unit("fail")
+      machine.wait_until_succeeds(auto_restart, timeout=120)
+      assert prop("Result") == "exit-code" and prop("ExecMainStatus") == "1"
+      assert scopes() == "", scopes()
+      assert offsets() == [0] * cores, offsets()
+      assert len(zeroings()) == 2
+      machine.succeed("systemctl stop togi.service")
+      emergency_total = len(emergency_lines())
+      assert emergency_total > 0
+
+      # A dead-end status is abnormal too: the hook runs, and since this fake validates, it zeroes every core.
+      run_unit("deadend")
+      machine.wait_until_succeeds("systemctl is-failed togi.service", timeout=60)
+      assert prop("Result") == "exit-code" and prop("ExecMainStatus") == "15"
+      assert offsets() == [0] * cores, offsets()
+      assert len(zeroings()) == 3 and len(emergency_lines()) > emergency_total
+      emergency_total = len(emergency_lines())
+
+      # The same dead end on a host whose SMU validation fails: the hook refuses and writes nothing.
+      machine.succeed(f"printf '%s' validation > {state}/fault")
+      run_unit("deadend")
+      machine.wait_until_succeeds("systemctl is-failed togi.service", timeout=60)
+      assert prop("ExecMainStatus") == "15", prop("ExecMainStatus")
+      assert offsets() == baseline, offsets()
+      assert len(zeroings()) == 3 and len(emergency_lines()) > emergency_total
+      machine.succeed(f"rm -f {state}/fault")
+      emergency_total = len(emergency_lines())
+
+      # A success skips the hook and keeps the baseline the run restored.
+      run_unit("clean")
+      machine.wait_until_succeeds(inactive, timeout=60)
+      assert prop("Result") == "success", prop("Result")
+      assert offsets() == baseline, offsets()
+      assert len(zeroings()) == 3 and len(emergency_lines()) == emergency_total
+
+      # The command's gates: nothing is zeroed when the validation or the sweep fails, and a readback that is not
+      # 0 fails the command after the zeroing.
+      for fault in ["validation", "sweep"]:
+          plant(fault)
+          mark = len(smu_log())
+          status, output = machine.execute("togi emergency-stop 2>&1")
+          machine.log(output)
+          assert status == 1, (fault, status, output)
+          assert "by the test" in output, (fault, output)
+          assert offsets() == [-9] * cores, (fault, offsets())
+          assert not any("emergency-zero" in line for line in smu_log()[mark:]), fault
+      plant("readback")
+      status, output = machine.execute("togi emergency-stop 2>&1")
+      machine.log(output)
+      assert status == 1, (status, output)
+      assert "core 01 reads -7" in output, output
+      assert offsets() == [0] * cores, offsets()
+      plant("")
+      output = machine.succeed("togi emergency-stop 2>&1")
+      machine.log(output)
+      assert f"every core read back 0 ({cores} cores)" in output, output
+      assert offsets() == [0] * cores, offsets()
+      assert scopes() == "", scopes()
     '';
   };
 }

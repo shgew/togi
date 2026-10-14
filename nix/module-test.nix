@@ -79,6 +79,10 @@ let
   tuning = one.specialisation.togi.configuration;
   restartLimitScript = tuning.systemd.services.togi-restart-limit.script;
   leaveTuningBoot = tuning.systemd.services.togi-leave-tuning-boot;
+  togiService = tuning.systemd.services.togi;
+  # ExecStopPost is the module's postStop script: the shipped package's zero-only emergency path, gated on an
+  # abnormal result.
+  stopHook = togiService.postStop;
   generatedConfig = one.environment.etc."togi/config.json";
   expectedSettings = hostPkgs.writeText "togi-module-settings.json" (
     builtins.toJSON one.services.togi.settings
@@ -140,6 +144,24 @@ assert lib.hasInfix
 assert
   overriddenTuning.systemd.services.togi-watch.serviceConfig.ExecStart
   == "${lib.getExe pkgs.hello} watch";
+assert togiService.serviceConfig.Restart == "on-failure";
+assert togiService.serviceConfig.RestartSec == 60;
+assert togiService.startLimitIntervalSec == 1800;
+assert togiService.startLimitBurst == 3;
+assert lib.hasInfix "ExecStopPost=" tuning.systemd.units."togi.service".text;
+assert lib.hasInfix ''[ "''${SERVICE_RESULT:-}" != success ] || exit 0'' stopHook;
+assert !lib.hasInfix "EXIT_STATUS" stopHook;
+assert !lib.hasInfix "exit-code" stopHook;
+assert lib.hasInfix
+  (builtins.unsafeDiscardStringContext "exec ${lib.getExe package} emergency-stop")
+  stopHook;
+assert lib.hasSuffix "emergency-stop\n" stopHook;
+assert builtins.elem tuning.systemd.package togiService.path;
+assert builtins.elem pkgs.grub2 togiService.path;
+assert !lib.hasInfix "emergency-stop" togiService.serviceConfig.ExecStart;
+assert lib.hasInfix
+  (builtins.unsafeDiscardStringContext "exec ${lib.getExe pkgs.hello} emergency-stop")
+  overriddenTuning.systemd.services.togi.postStop;
 hostPkgs.runCommand "togi-module-check" { nativeBuildInputs = [ hostPkgs.jq ]; } ''
   jq --exit-status --slurpfile expected ${expectedSettings} \
     '. == $expected[0]' ${generatedConfig.source}

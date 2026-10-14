@@ -356,6 +356,7 @@
               vm = import ./nix/vm-test.nix {
                 inherit pkgs;
                 trialTests = config.checks.trial-scope-tests;
+                vmRecovery = config.checks.vm-recovery-tests;
                 package = config.checks.package.package;
               };
             in
@@ -381,9 +382,26 @@
                   install_test cached_errors togi-trial-cached-errors
                 '';
               });
+              vm-recovery-tests = craneLib.mkCargoDerivation (cargoCheck {
+                pnameSuffix = "-vm-recovery-tests";
+                doInstallCargoArtifacts = false;
+                nativeBuildInputs = cargoArgs.nativeBuildInputs ++ [ pkgs.jq ];
+                buildPhaseCargoCommand = ''
+                  cargoWithProfile test --locked -p togi --test vm_recovery --no-run \
+                    --message-format json-render-diagnostics > cargo-messages.json
+                '';
+                installPhaseCommand = ''
+                  mkdir -p "$out/bin"
+                  jq -r 'select(.reason == "compiler-artifact" and .target.name == "vm_recovery" and .executable != null) | .executable' \
+                    cargo-messages.json > executables
+                  test "$(wc -l < executables)" = 1
+                  cp "$(cat executables)" "$out/bin/togi-vm-recovery"
+                '';
+              });
               vm = vm.tuning-boot;
               vm-restart-limit = vm.restart-limit;
               vm-trial-scope = vm.trial-scope;
+              vm-emergency-stop = vm.emergency-stop;
             }
             // simSuiteChecks
           );

@@ -129,16 +129,26 @@ in
               "systemd-pstore.service"
               "local-fs.target"
             ];
-            path = [ pkgs.grub2 ];
+            path = [
+              pkgs.grub2
+              config.systemd.package
+            ];
             startLimitIntervalSec = 1800;
             startLimitBurst = 3;
             serviceConfig = {
               ExecStart = "${lib.getExe cfg.package} run --tuning-boot ${grubenv}";
               Restart = "on-failure";
               RestartSec = 60;
-              RestartPreventExitStatus = "3 10 11 12 13 14 15 16 17 18";
+              RestartPreventExitStatus = lib.concatMapStringsSep " " toString ([ 3 ] ++ lib.range 10 18);
               StateDirectory = "togi";
             };
+            # An abnormal exit, whatever its status, may leave workloads and offsets applied through RestartSec, so
+            # only a success skips the hook. `togi emergency-stop` takes the host lock and validates the SMU before
+            # it writes, so a contended lock or an unsupported host exits with offsets untouched.
+            postStop = ''
+              [ "''${SERVICE_RESULT:-}" != success ] || exit 0
+              exec ${lib.getExe cfg.package} emergency-stop
+            '';
           };
           systemd.services.togi-leave-tuning-boot = lib.mkIf cfg.tuning.leaveOnShutdown {
             description = "Return the next boot to the normal system after an orderly shutdown";

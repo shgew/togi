@@ -174,7 +174,15 @@ async fn serve<O: Os>(env: Rc<Env<O>>, command: Command) {
         Command::Sweep { cancel, reply } => {
             let outcome = sweep::sweep(&env, &cancel)
                 .await
-                .map(|(detail, stopped)| Swept { detail, stopped });
+                .map(|(mut detail, stopped)| {
+                    // A sweep proves nothing runs, so threads still confined by a start that never
+                    // reached its teardown can have their own CPUs back.
+                    if let Some(moved) = env.controller.restore() {
+                        detail.push_str("; ");
+                        detail.push_str(&crate::supervisor::restored_line(moved));
+                    }
+                    Swept { detail, stopped }
+                });
             if let Err(std::sync::mpsc::SendError(Err(error))) = reply.send(outcome) {
                 report(&format!(
                     "a sweep nobody waits for failed: {}",
