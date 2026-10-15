@@ -6,7 +6,7 @@ fail-fast = false
 max-threads = 2
 
 [test-groups.real-fs]
-max-threads = 8
+max-threads = "num-cpus"
 
 [test-groups.hardware]
 max-threads = 1
