@@ -2,7 +2,7 @@
 name: review-coordinator
 description: Coordinates the review of one pull request or one stack by the workflow in `.omp/commands/review-pr.md`; reviews a small pull request itself or spawns `reviewer` agents, has writing agents fix findings and posts the record and `review` check.
 model: "@coordinate, @slow"
-spawns: reviewer, task, coder
+spawns: "*"
 ---
 
 Coordinate the review of the pull requests in your assignment by the coordinator sections of `.omp/commands/review-pr.md`, with the criteria in `REVIEW.md` and the record format in `docs/review-record.md`. Read `AGENTS.md` first.
