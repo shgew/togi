@@ -108,26 +108,29 @@ pub(crate) fn diagnosis_host(
     request_privileged: bool,
     privilege: Privilege,
 ) -> Result<(SystemHost, bool), Error> {
-    diagnosis_host_with(request_privileged, privilege, |privileged| {
-        let driver = if privileged {
-            Driver::open(root)
-        } else {
-            Driver::identity_only(root)
-        }
-        .map_err(Error::OpenSmu)?;
-        let parts = Parts::new(driver, config)?;
-        let scope = parts.runner(PathBuf::new())?;
-        Ok(parts.host(root, privilege, scope))
-    })
+    diagnosis_host_with(
+        request_privileged,
+        privilege,
+        || Driver::open(root),
+        || Driver::identity_only(root),
+        |driver| {
+            let parts = Parts::new(driver, config)?;
+            let scope = parts.runner(PathBuf::new())?;
+            Ok(parts.host(root, privilege, scope))
+        },
+    )
 }
 
 pub(crate) fn diagnosis_host_with<H>(
     request_privileged: bool,
     privilege: Privilege,
-    build: impl FnOnce(bool) -> Result<H, Error>,
+    open: impl FnOnce() -> Result<Driver, togi_smu::Error>,
+    identity_only: impl FnOnce() -> Result<Driver, togi_smu::Error>,
+    build: impl FnOnce(Driver) -> Result<H, Error>,
 ) -> Result<(H, bool), Error> {
     let privileged = request_privileged && privilege.is_root();
-    Ok((build(privileged)?, privileged))
+    let driver = if privileged { open() } else { identity_only() }.map_err(Error::OpenSmu)?;
+    Ok((build(driver)?, privileged))
 }
 
 #[cfg(test)]

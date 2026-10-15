@@ -14,15 +14,21 @@ fn diagnosis_host(
     request_privileged: bool,
     privilege: Privilege,
 ) -> Result<(SystemHost<Tree>, bool), Error> {
-    diagnosis_host_with(request_privileged, privilege, |privileged| {
-        Ok(host_with_driver(
-            tree,
-            tree.driver(!privileged),
-            privilege,
-            refused_account(),
-            Scope::creating(),
-        ))
-    })
+    diagnosis_host_with(
+        request_privileged,
+        privilege,
+        || Ok(tree.driver(false)),
+        || Ok(tree.driver(true)),
+        |driver| {
+            Ok(host_with_driver(
+                tree,
+                driver,
+                privilege,
+                refused_account(),
+                Scope::creating(),
+            ))
+        },
+    )
 }
 
 fn diagnose_at(
@@ -189,6 +195,7 @@ fn assert_identity_only_diagnosis(request_privileged: bool, privilege: Privilege
     assert!(diagnosis.bios_context_error.is_none());
 
     let (mut host, privileged) = diagnosis_host(&tree, request_privileged, privilege).unwrap();
+    assert!(!privileged);
     let scope = Scope::creating();
     host.scope = Box::new(scope.clone());
     host.account = resolved_account();

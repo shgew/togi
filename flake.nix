@@ -70,7 +70,7 @@
             code = cargoSources.closureWithDev [ "togi" ];
             full = [ "togi" ];
           };
-          # Compiles every target; the crates' own test data is inside them.
+          # Documentation tests need crate-local fixtures, not external benchmark inputs.
           cratesSource = cargoSources.source { full = allCrates; };
           testSource = cargoSources.source {
             full = allCrates;
@@ -263,7 +263,7 @@
           checks = {
             go-tools = goTools;
             clippy = craneLib.mkCargoDerivation (
-              cargoCheck cratesSource {
+              cargoCheck testSource {
                 pnameSuffix = "-clippy";
                 buildPhaseCargoCommand = ''
                   cargoWithProfile clippy --locked --all-targets -- --deny warnings
