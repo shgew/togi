@@ -1,10 +1,9 @@
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
 
 use jiff::Timestamp;
 use togi_journal::{
-    Build, MemFs, Outcome, Payload, SCHEMA, SessionContext, SessionStart, Stamp, StateDir,
-    TrialEnd, TrialId, TrialIntent,
+    Build, MemFs, Outcome, Payload, Recording, SCHEMA, SessionContext, SessionStart, Stamp,
+    StateDir, TrialEnd, TrialId, TrialIntent,
 };
 use togi_machine::{
     BiosContext, BootId, CcdId, Condition, CoreId, CoreInfo, CoreSet, CpuId, PerCore, Regime,
@@ -121,9 +120,13 @@ fn bios() -> BiosContext {
     }
 }
 
-/// A state directory on disk holding one session of two cores; with `trial`, one passed trial of core 0.
-pub(crate) fn state_dir(parent: &Path, trial: bool) -> PathBuf {
+/// An in-memory state directory holding one session of two cores and optionally one passed trial.
+pub(crate) fn state(trial: bool) -> (MemFs, StateDir) {
     let fs = MemFs::new();
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "content fixtures keep the journal in memory"
+    )]
     let dir = StateDir::simulated(fs.clone()).unwrap();
     let mut journal = dir.open(BootId::from("fixture-boot".to_owned())).unwrap();
     let mut second = 0;
@@ -133,15 +136,39 @@ pub(crate) fn state_dir(parent: &Path, trial: bool) -> PathBuf {
         append(&mut journal, &mut second, intent());
         append(&mut journal, &mut second, end());
     }
-    drop(journal.close().unwrap());
-    fs.dump_to(parent).unwrap();
-    parent.join("state")
+    let dir = journal.close().unwrap();
+    (fs, dir)
 }
 
-/// A state directory whose journal is not JSON.
-pub(crate) fn corrupt_state_dir(parent: &Path) -> PathBuf {
-    let path = parent.join("corrupt");
-    std::fs::create_dir(&path).unwrap();
-    std::fs::write(path.join("events.jsonl"), "{invalid}\n").unwrap();
-    path
+pub(crate) fn recordings(trial: bool) -> Vec<Recording> {
+    let (_, dir) = state(trial);
+    dir.recordings_lenient().unwrap()
+}
+
+pub(crate) fn unknown_recording() -> Recording {
+    let (fs, dir) = state(true);
+    let path = dir.path().join("events.jsonl");
+    let text = Recording::read_in(&fs, &path)
+        .unwrap()
+        .events()
+        .iter()
+        .map(|event| event.encode().unwrap())
+        .collect::<Vec<_>>();
+    let mut lines = Vec::new();
+    for (index, text) in text.iter().enumerate() {
+        let mut line: serde_json::Value = serde_json::from_str(text).unwrap();
+        if index >= 2 {
+            line["seq"] = (line["seq"].as_u64().unwrap() + 1).into();
+        }
+        lines.push(line.clone());
+        if index == 1 {
+            line["seq"] = 3.into();
+            line["kind"] = "future.thing".into();
+            line["data"] = serde_json::json!({});
+            lines.push(line);
+        }
+    }
+    let spliced: String = lines.iter().map(|line| line.to_string() + "\n").collect();
+    fs.put(&path, spliced.as_bytes());
+    Recording::read_in_lenient(&fs, &path).unwrap()
 }

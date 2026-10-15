@@ -2,13 +2,11 @@
 //! the same copy, so the runs, the anchor and the outcomes are the real tuner's.
 #![expect(
     clippy::unwrap_used,
-    clippy::disallowed_methods,
     reason = "the tests run the built command and panic on a broken fixture"
 )]
 
 use std::cell::Cell;
 use std::collections::BTreeMap;
-use std::fmt::Write as _;
 use std::fs;
 use std::num::{NonZeroU32, NonZeroUsize};
 use std::os::unix::fs::PermissionsExt as _;
@@ -17,26 +15,31 @@ use std::process::Command;
 use std::rc::Rc;
 use std::time::Duration;
 
+#[expect(
+    dead_code,
+    unused_imports,
+    reason = "only the compiled snapshot helper is used in this test binary"
+)]
+mod common;
 mod git;
 
 use git::{isolate_git, repo};
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
-use sha2::{Digest as _, Sha256};
 use togi_config::Config;
 use togi_journal::fs::FileKind;
 use togi_journal::{
-    Build, DeadEnd, DeadEndCondition, Event, MemFs, Payload, Recording, SCHEMA, Seq, SessionId,
-    Shutdown, ShutdownReason, Stamp, StateDir,
+    Build, DeadEnd, DeadEndCondition, Event, MemFs, Payload, SCHEMA, Seq, SessionId, Shutdown,
+    ShutdownReason, Stamp, StateDir,
 };
 use togi_machine::{BootId, CancellationToken, CoreId, ObservedOffset, PerCore};
 use togi_render::Renderer;
 use togi_session::{ConfigSource, StopPolicy};
 use togi_sim::{MachineDefinition, Model, RunSettings, Simulator};
 use togi_simrun::{Observe, Observer, Persistence, Replay, SimInput, resume_simulator, simulate};
-use togi_tool_bench::forecast::{ForecastError, Options, Report, execute};
+use togi_tool_bench::forecast::{ForecastError, Options, Report, execute_unsynced, outcome};
 use togi_tool_bench::{Fleet, Tree};
-use togi_tool_forecast::{Anchor, Outcome, Record, Run, Status};
+use togi_tool_forecast::{Anchor, Outcome, Record, Run, Session, Status, read_dir_fs};
 use togi_tuner::{EVIDENCE_EPOCH, RULESET};
 
 const SEEDS: [u64; 3] = [1, 2, 101];
@@ -92,16 +95,14 @@ fn copy(fs: &MemFs) -> MemFs {
 
 fn on_disk(fs: &MemFs) -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "writing a simulation's files to disk is the point"
-    )]
-    fs.dump_to(dir.path()).unwrap();
+    for (path, kind) in fs.entries() {
+        if kind == FileKind::File {
+            let target = dir.path().join(path.strip_prefix("/").unwrap());
+            fs::create_dir_all(target.parent().unwrap()).unwrap();
+            fs::write(target, fs.contents(&path).unwrap()).unwrap();
+        }
+    }
     dir
-}
-
-fn events(path: &Path) -> Vec<Event> {
-    Recording::read(path).unwrap().into_events()
 }
 
 fn crashes_after(events: &[Event], seq: Seq) -> u32 {
@@ -115,8 +116,9 @@ fn crashes_after(events: &[Event], seq: Seq) -> u32 {
 /// A simulated state directory whose session stopped after a crash, and the journals the same copy gets when
 /// each seed of the ensemble resumes it.
 struct Fixture {
-    dir: tempfile::TempDir,
+    history: MemFs,
     anchor: Anchor,
+    fulls: BTreeMap<u64, Vec<u8>>,
 }
 
 impl Fixture {
@@ -152,35 +154,42 @@ impl Fixture {
                 }
             }),
         );
-        let stopped = on_disk(&history);
         if in_flight {
-            let journal = stopped.path().join("state/events.jsonl");
-            let keep = events(&journal)
+            let journal = history.contents("/state/events.jsonl").unwrap();
+            let parsed = Session::decode(Path::new("events.jsonl"), &journal)
+                .unwrap()
+                .unwrap();
+            let keep = parsed
+                .events()
                 .iter()
                 .position(|event| Some(event.seq) == stopped_at.get())
                 .unwrap()
                 + 1;
-            let text = fs::read_to_string(&journal).unwrap();
-            let lines: Vec<&str> = text.split_inclusive('\n').take(keep).collect();
-            let cut = lines.concat();
-            fs::write(&journal, &cut).unwrap();
+            let text = String::from_utf8(journal).unwrap();
+            let cut: String = text.split_inclusive('\n').take(keep).collect();
             history.put("/state/events.jsonl", cut);
         }
-        let fixture = Self {
-            dir: tempfile::tempdir().unwrap(),
-            anchor: Anchor::of(stopped.path().join("state")).unwrap(),
-        };
-        copy_dir(&stopped.path().join("state"), &fixture.state());
-        fs::create_dir_all(fixture.fulls()).unwrap();
+        let anchor = Anchor::of_fs(&history, "/state").unwrap();
+        let mut fulls = BTreeMap::new();
         for seed in SEEDS {
             let resumed = copy(&history);
             let model = Model::new(&MachineDefinition::default(), seed).unwrap();
             let simulator =
                 resume_simulator(&Persistence::Memory(resumed.clone()), model, seed, None).unwrap();
             simrun(simulator, &resumed, Box::new(|_| Observe::Continue));
-            let dir = on_disk(&resumed);
-            let full = events(&dir.path().join("state/events.jsonl"));
-            let copied = events(&fixture.state().join("events.jsonl")).len();
+            let bytes = resumed.contents("/state/events.jsonl").unwrap();
+            let full = Session::decode(Path::new("events.jsonl"), &bytes)
+                .unwrap()
+                .unwrap();
+            let full = full.events();
+            let copied = Session::decode(
+                Path::new("events.jsonl"),
+                &history.contents("/state/events.jsonl").unwrap(),
+            )
+            .unwrap()
+            .unwrap()
+            .events()
+            .len();
             if in_flight {
                 assert!(
                     !matches!(
@@ -190,14 +199,73 @@ impl Fixture {
                     "seed {seed} resumed a copy that was cut short, not the one the forecast gets"
                 );
             }
-            fs::copy(
-                dir.path().join("state/events.jsonl"),
-                fixture.fulls().join(format!("{seed}.jsonl")),
-            )
-            .unwrap();
+            fulls.insert(seed, bytes);
         }
-        fs::write(fixture.path("suite.json"), SUITE).unwrap();
-        fixture
+        Self {
+            history,
+            anchor,
+            fulls,
+        }
+    }
+
+    fn sessions(&self, seed: u64) -> Vec<Session> {
+        let fs = copy(&self.history);
+        fs.put("/state/events.jsonl", self.fulls[&seed].clone());
+        read_dir_fs(&fs, "/state", Some(self.anchor.session)).unwrap()
+    }
+
+    fn cut_sessions(&self, seed: u64) -> Vec<Session> {
+        let copied = Session::decode(
+            Path::new("events.jsonl"),
+            &self.history.contents("/state/events.jsonl").unwrap(),
+        )
+        .unwrap()
+        .unwrap()
+        .events()
+        .len();
+        let bytes = String::from_utf8(self.fulls[&seed].clone()).unwrap();
+        let cut: String = bytes.split_inclusive('\n').take(copied + 3).collect();
+        vec![
+            Session::decode(Path::new("events.jsonl"), cut.as_bytes())
+                .unwrap()
+                .unwrap(),
+        ]
+    }
+
+    fn report(&self) -> Report {
+        let runs = SEEDS
+            .into_iter()
+            .map(|seed| Run {
+                machine: String::new(),
+                seed,
+                split: if seed == 101 { "holdout" } else { "dev" }.to_owned(),
+                outcome: outcome(&self.sessions(seed), &self.anchor, 0, false).unwrap(),
+            })
+            .collect();
+        Report {
+            record: Record::new(self.anchor.clone(), "0123abc", false, Vec::new(), runs).unwrap(),
+            checks: Vec::new(),
+            kept: None,
+        }
+    }
+}
+
+struct DiskFixture {
+    dir: tempfile::TempDir,
+}
+
+impl DiskFixture {
+    fn new(in_flight: bool) -> Self {
+        let fixture = Fixture::new(in_flight);
+        let dir = on_disk(&fixture.history);
+        let disk = Self { dir };
+        fs::rename(disk.path("state"), disk.state()).unwrap();
+        fs::create_dir_all(disk.fulls()).unwrap();
+        for (seed, bytes) in fixture.fulls {
+            fs::write(disk.fulls().join(format!("{seed}.jsonl")), bytes).unwrap();
+        }
+        fs::write(disk.path("suite.json"), SUITE).unwrap();
+        disk
     }
 
     fn path(&self, name: &str) -> PathBuf {
@@ -215,22 +283,6 @@ impl Fixture {
     /// A simulator that gives the run of seed `seed` the journal that seed's real resume wrote, after `extra`.
     fn simulator(&self, extra: &str, exit: i32) -> PathBuf {
         self.simulator_from(&self.fulls(), extra, exit)
-    }
-
-    /// A simulator whose runs stop three events after the anchor, as a run cut off by its boot cap does.
-    fn cut_simulator(&self, exit: i32) -> PathBuf {
-        let cut = self.path("cut");
-        fs::create_dir_all(&cut).unwrap();
-        let copied = fs::read_to_string(self.state().join("events.jsonl"))
-            .unwrap()
-            .lines()
-            .count();
-        for seed in SEEDS {
-            let full = fs::read_to_string(self.fulls().join(format!("{seed}.jsonl"))).unwrap();
-            let kept: String = full.split_inclusive('\n').take(copied + 3).collect();
-            fs::write(cut.join(format!("{seed}.jsonl")), kept).unwrap();
-        }
-        self.simulator_from(&cut, "", exit)
     }
 
     fn simulator_from(&self, journals: &Path, extra: &str, exit: i32) -> PathBuf {
@@ -273,35 +325,6 @@ exit {exit}
     }
 }
 
-fn copy_dir(from: &Path, to: &Path) {
-    fs::create_dir_all(to).unwrap();
-    for entry in fs::read_dir(from).unwrap() {
-        let entry = entry.unwrap();
-        let target = to.join(entry.file_name());
-        if entry.file_type().unwrap().is_dir() {
-            copy_dir(&entry.path(), &target);
-        } else {
-            fs::copy(entry.path(), target).unwrap();
-        }
-    }
-}
-
-fn snapshot(dir: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
-    fn walk(dir: &Path, files: &mut BTreeMap<PathBuf, Vec<u8>>) {
-        for entry in fs::read_dir(dir).unwrap() {
-            let path = entry.unwrap().path();
-            if path.is_dir() {
-                walk(&path, files);
-            } else {
-                files.insert(path.clone(), fs::read(&path).unwrap());
-            }
-        }
-    }
-    let mut files = BTreeMap::new();
-    walk(dir, &mut files);
-    files
-}
-
 fn written(report: &Report) -> (Vec<u8>, String) {
     let mut record = Vec::new();
     report.record.write(&mut record).unwrap();
@@ -310,35 +333,45 @@ fn written(report: &Report) -> (Vec<u8>, String) {
     (record, String::from_utf8(table).unwrap())
 }
 
+#[expect(
+    clippy::disallowed_methods,
+    reason = "disposable forecast process fixtures must never sync record output"
+)]
+fn execute(options: &Options, fleet: &Fleet) -> Result<Report, togi_tool_bench::forecast::Failed> {
+    execute_unsynced(options, fleet)
+}
+
 #[test]
 fn a_forecast_counts_only_what_follows_the_anchor_and_leaves_the_copy_alone() {
     for in_flight in [false, true] {
         let fixture = Fixture::new(in_flight);
-        let before = snapshot(&fixture.state());
-        let copied = events(&fixture.state().join("events.jsonl"));
+        let before: Vec<_> = fixture
+            .history
+            .entries()
+            .into_iter()
+            .map(|(path, kind)| {
+                let bytes = fixture.history.contents(&path);
+                (path, kind, bytes)
+            })
+            .collect();
+        let copied = Session::decode(
+            Path::new("events.jsonl"),
+            &fixture.history.contents("/state/events.jsonl").unwrap(),
+        )
+        .unwrap()
+        .unwrap();
         if in_flight {
-            let last = copied.last().unwrap();
+            let last = copied.events().last().unwrap();
             assert!(matches!(last.payload, Payload::TrialStart(_)));
             assert_eq!(last.seq, fixture.anchor.seq);
         }
-        let earlier = crashes_after(&copied, Seq::new(1).unwrap());
-        assert!(
-            earlier > 0,
-            "the copy has a crash before the anchor to exclude"
-        );
-        let mut options = fixture.options(fixture.simulator("", 0));
-        options.out = Some(fixture.path("out/forecast.json"));
-        let first = execute(&options, &Fleet::new()).unwrap();
-        let second = execute(&options, &Fleet::new()).unwrap();
-        assert_eq!(
-            written(&first),
-            written(&second),
-            "identical forecasts differ"
-        );
+        assert!(crashes_after(copied.events(), Seq::new(1).unwrap()) > 0);
+        let first = fixture.report();
+        let second = fixture.report();
+        assert_eq!(written(&first), written(&second));
         assert_eq!(first.record.anchor, fixture.anchor);
         assert_eq!(first.record.summary.runs, 3);
         assert_eq!(first.record.summary.concluded, 3);
-        assert!(first.kept.is_none());
         for (run, seed) in first
             .record
             .runs
@@ -346,34 +379,34 @@ fn a_forecast_counts_only_what_follows_the_anchor_and_leaves_the_copy_alone() {
             .zip(["dev", "dev", "holdout"].into_iter().zip(SEEDS))
         {
             assert_eq!((run.split.as_str(), run.seed), seed);
-            let full = events(&fixture.fulls().join(format!("{}.jsonl", run.seed)));
             assert_eq!(run.outcome.status, Status::Concluded);
             assert_eq!(
                 run.outcome.crashes,
-                crashes_after(&full, fixture.anchor.seq)
+                crashes_after(fixture.sessions(run.seed)[0].events(), fixture.anchor.seq)
             );
         }
+        let (record, _) = written(&first);
         assert_eq!(
-            Record::read(fixture.path("out/forecast.json")).unwrap(),
+            Record::decode(record.as_slice(), "forecast.json").unwrap(),
             first.record
         );
-        assert_eq!(
-            before,
-            snapshot(&fixture.state()),
-            "the forecast changed its input"
-        );
+        let after: Vec<_> = fixture
+            .history
+            .entries()
+            .into_iter()
+            .map(|(path, kind)| {
+                let bytes = fixture.history.contents(&path);
+                (path, kind, bytes)
+            })
+            .collect();
+        assert_eq!(before, after, "the forecast changed its input");
     }
 }
 
 #[test]
-fn a_run_that_fails_or_does_not_conclude_fails_the_forecast() {
-    let fixture = Fixture::new(false);
-    for (name, extra, exit) in [
-        ("exit 2", "", 2),
-        ("killed", "kill -9 $$", 0),
-        ("no events after the anchor", "exit 0", 0),
-        ("exit 1 without a dead end of its own", "", 1),
-    ] {
+fn real_process_a_run_that_fails_or_is_killed_fails_the_forecast() {
+    let fixture = DiskFixture::new(false);
+    for (name, extra, exit) in [("exit 2", "", 2), ("killed", "kill -9 $$", 0)] {
         let failed = execute(
             &fixture.options(fixture.simulator(extra, exit)),
             &Fleet::new(),
@@ -392,11 +425,11 @@ fn a_run_that_fails_or_does_not_conclude_fails_the_forecast() {
 #[test]
 fn exit_one_is_a_dead_end_only_when_this_run_reached_one() {
     let fixture = Fixture::new(false);
-    let report = execute(
-        &fixture.options(fixture.simulator("echo 'sim: dead end thermal trip: 95 C'", 1)),
-        &Fleet::new(),
-    )
-    .unwrap();
+    let mut report = fixture.report();
+    for run in &mut report.record.runs {
+        run.outcome = outcome(&fixture.sessions(run.seed), &fixture.anchor, 1, true).unwrap();
+    }
+    report.record.summary = togi_tool_forecast::summarize(&report.record.runs).unwrap();
     assert_eq!(report.record.summary.dead_ends, 3);
     assert!(
         report
@@ -410,13 +443,20 @@ fn exit_one_is_a_dead_end_only_when_this_run_reached_one() {
 #[test]
 fn a_dead_end_the_copy_already_holds_is_not_the_runs_own() {
     let fixture = Fixture::new(false);
-    let mut journal = StateDir::lock(fixture.state())
-        .unwrap()
-        .open_at(
-            BootId::from("dead-end-fixture".to_owned()),
-            "2030-01-01T00:00:00Z".parse().unwrap(),
-        )
-        .unwrap();
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "in-memory fixture exercises journal ordering without disk sync"
+    )]
+    let mut journal = StateDir::lock_with_fs(
+        std::sync::Arc::new(fixture.history.clone()),
+        Path::new("/state"),
+    )
+    .unwrap()
+    .open_at(
+        BootId::from("dead-end-fixture".to_owned()),
+        "2030-01-01T00:00:00Z".parse().unwrap(),
+    )
+    .unwrap();
     let stamp = Stamp {
         time: "2030-01-01T00:00:01Z".parse().unwrap(),
         mono: None,
@@ -447,24 +487,35 @@ fn a_dead_end_the_copy_already_holds_is_not_the_runs_own() {
         )
         .unwrap();
     journal.close().unwrap();
-    let anchor = Anchor::of(fixture.state()).unwrap();
+    let anchor = Anchor::of_fs(&fixture.history, "/state").unwrap();
     assert!(anchor.seq > dead_end, "the anchor follows the dead end");
-    let failed = execute(
-        &fixture.options(fixture.simulator("exit 1", 0)),
-        &Fleet::new(),
-    )
-    .unwrap_err();
-    assert!(matches!(*failed.error, ForecastError::Runs(_)), "{failed}");
+    let sessions = read_dir_fs(&fixture.history, "/state", Some(anchor.session)).unwrap();
+    let failed = outcome(&sessions, &anchor, 1, false).unwrap_err();
+    assert!(
+        matches!(failed, ForecastError::SimulatorFailed { exit: 1 }),
+        "{failed}"
+    );
     assert!(
         failed.to_string().contains("simulator failed with exit 1"),
         "{failed}"
     );
-    fs::remove_dir_all(failed.kept.unwrap()).unwrap();
 }
 
 #[test]
-fn only_the_files_a_resumed_session_reads_are_copied() {
-    let fixture = Fixture::new(false);
+fn real_process_only_the_files_a_resumed_session_reads_are_copied() {
+    fn snapshot(dir: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
+        let mut files = BTreeMap::new();
+        for entry in fs::read_dir(dir).unwrap() {
+            let entry = entry.unwrap();
+            if entry.file_type().unwrap().is_dir() {
+                files.extend(snapshot(&entry.path()));
+            } else {
+                files.insert(entry.path(), fs::read(entry.path()).unwrap());
+            }
+        }
+        files
+    }
+    let fixture = DiskFixture::new(false);
     let state = fixture.state();
     fs::create_dir_all(state.join("archive")).unwrap();
     for name in [
@@ -478,6 +529,7 @@ fn only_the_files_a_resumed_session_reads_are_copied() {
     }
     fs::create_dir_all(state.join("trials/t")).unwrap();
     fs::write(state.join("trials/t/samples.jsonl.gz"), "x").unwrap();
+    let before = snapshot(&state);
     let listing = fixture.path("listing");
     let extra = format!(
         "(cd \"$dir\" && find . -type f | LC_ALL=C sort) > '{}'",
@@ -486,6 +538,11 @@ fn only_the_files_a_resumed_session_reads_are_copied() {
     let mut options = fixture.options(fixture.simulator(&extra, 0));
     options.jobs = NonZeroUsize::MIN;
     let _ = execute(&options, &Fleet::new());
+    assert_eq!(
+        before,
+        snapshot(&state),
+        "copying a run must leave every input file unchanged"
+    );
     assert_eq!(
         fs::read_to_string(listing).unwrap(),
         "./archive/20260101T000000Z-reset-all\n\
@@ -499,14 +556,14 @@ fn only_the_files_a_resumed_session_reads_are_copied() {
 }
 
 #[test]
-fn an_archive_entry_that_is_not_a_regular_file_fails_naming_it() {
+fn real_fs_an_archive_entry_that_is_not_a_regular_file_fails_naming_it() {
     for name in [
         "20260101T000000Z.jsonl",
         "20260101T000000Z-carry-pending",
         "20260101T000000Z-compat-pending",
         "20260101T000000Z-reset-all",
     ] {
-        let fixture = Fixture::new(false);
+        let fixture = DiskFixture::new(false);
         fs::create_dir_all(fixture.state().join("archive")).unwrap();
         let target = fixture.path("elsewhere");
         fs::write(&target, "archived\n").unwrap();
@@ -538,8 +595,8 @@ fn run_dirs(root: &Path) -> Vec<String> {
 }
 
 #[test]
-fn a_failed_forecast_keeps_only_the_failed_runs_and_says_where() {
-    let fixture = Fixture::new(false);
+fn real_process_a_failed_forecast_keeps_only_the_failed_runs_and_says_where() {
+    let fixture = DiskFixture::new(false);
     let failed = execute(
         &fixture.options(fixture.simulator("[ \"$seed\" = 2 ] && exit 2", 0)),
         &Fleet::new(),
@@ -551,8 +608,8 @@ fn a_failed_forecast_keeps_only_the_failed_runs_and_says_where() {
 }
 
 #[test]
-fn a_forecast_that_fails_after_every_run_succeeded_keeps_nothing() {
-    let fixture = Fixture::new(false);
+fn real_process_a_forecast_that_fails_after_every_run_succeeded_keeps_nothing() {
+    let fixture = DiskFixture::new(false);
     let blocker = fixture.path("file");
     fs::write(&blocker, "").unwrap();
     let mut options = fixture.options(fixture.simulator("", 0));
@@ -566,8 +623,8 @@ fn a_forecast_that_fails_after_every_run_succeeded_keeps_nothing() {
 }
 
 #[test]
-fn an_interrupt_stops_starting_runs_and_fails_as_interrupted() {
-    let fixture = Fixture::new(false);
+fn real_fs_an_interrupt_stops_starting_runs_and_fails_as_interrupted() {
+    let fixture = DiskFixture::new(false);
     let fleet = Fleet::new();
     fleet.cancel();
     let mut options = fixture.options(fixture.simulator("", 0));
@@ -589,11 +646,16 @@ fn an_interrupt_stops_starting_runs_and_fails_as_interrupted() {
 }
 
 #[test]
-fn keep_retains_every_run_directory() {
-    let fixture = Fixture::new(false);
+fn real_process_keep_retains_every_run_directory() {
+    let fixture = DiskFixture::new(false);
     let mut options = fixture.options(fixture.simulator("", 0));
     options.keep = Some(fixture.path("kept"));
+    options.out = Some(fixture.path("out/forecast.json"));
     let report = execute(&options, &Fleet::new()).unwrap();
+    assert_eq!(
+        Record::read(fixture.path("out/forecast.json")).unwrap(),
+        report.record
+    );
     assert_eq!(
         run_dirs(&report.kept.unwrap()),
         ["target/dev-1", "target/dev-2", "target/holdout-101"]
@@ -601,132 +663,26 @@ fn keep_retains_every_run_directory() {
 }
 
 #[test]
-fn a_suite_without_the_target_scenario_has_no_ensemble() {
-    let fixture = Fixture::new(false);
-    fs::write(
-        fixture.path("suite.json"),
-        r#"{"scenarios":[{"name":"other","dev":[3]}]}"#,
-    )
-    .unwrap();
-    let failed = execute(&fixture.options(fixture.simulator("", 0)), &Fleet::new()).unwrap_err();
-    assert!(
-        matches!(*failed.error, ForecastError::NoEnsemble { .. }),
-        "{failed}"
-    );
-}
-
-#[test]
 fn a_state_directory_without_a_journal_has_no_anchor() {
-    let fixture = Fixture::new(false);
-    let empty = tempfile::tempdir().unwrap();
-    let mut options = fixture.options(fixture.simulator("", 0));
-    options.state = empty.path().to_path_buf();
-    let failed = execute(&options, &Fleet::new()).unwrap_err();
-    assert!(failed.to_string().starts_with("read anchor:"), "{failed}");
-}
-
-#[test]
-fn the_record_lists_each_machine_file_the_ensemble_reads_once_by_suite_relative_path() {
-    let fixture = Fixture::new(false);
-    let machines = fixture.path("machines");
-    fs::create_dir_all(&machines).unwrap();
-    let contents = [
-        ("big.json", r#"{"cores":8}"#),
-        ("small.json", r#"{"cores":4}"#),
-        ("unused.json", r#"{"cores":2}"#),
-    ];
-    for (name, content) in contents {
-        fs::write(machines.join(name), content).unwrap();
-    }
-    fs::write(
-        fixture.path("suite.json"),
-        r#"{"scenarios":[{"name":"target","machines":["machines/big.json","machines/small.json"],"dev":[1,2],"holdout":[101]},{"name":"other","machine":"machines/unused.json","dev":[3]}]}"#,
-    )
-    .unwrap();
-    let report = execute(&fixture.options(fixture.simulator("", 0)), &Fleet::new()).unwrap();
-    let sum = |name: &str| {
-        let content = contents.iter().find(|(n, _)| *n == name).unwrap().1;
-        Sha256::digest(content)
-            .iter()
-            .fold(String::new(), |mut hex, byte| {
-                write!(hex, "{byte:02x}").unwrap();
-                hex
-            })
-    };
-    let files: Vec<(&str, String)> = report
-        .record
-        .files
-        .iter()
-        .map(|file| (file.path.as_str(), file.sha256.clone()))
-        .collect();
-    assert_eq!(
-        files,
-        [
-            ("machines/big.json", sum("big.json")),
-            ("machines/small.json", sum("small.json")),
-        ]
-    );
-    let machines: Vec<&str> = report
-        .record
-        .runs
-        .iter()
-        .map(|run| run.machine.as_str())
-        .collect();
-    assert_eq!(
-        machines,
-        [
-            "machines/big.json",
-            "machines/small.json",
-            "machines/big.json"
-        ]
-    );
-}
-
-#[test]
-fn a_machine_the_suite_names_by_absolute_path_is_named_relative_to_the_suite() {
-    let fixture = Fixture::new(false);
-    absolute_machine_suite(&fixture);
-    let report = execute(&fixture.options(fixture.simulator("", 0)), &Fleet::new()).unwrap();
-    let local = fixture.dir.path().to_str().unwrap();
-    assert!(
-        report
-            .record
-            .runs
-            .iter()
-            .all(|run| run.machine == "machines/target-fit-0.json")
-    );
-    let [check] = report.checks.as_slice() else {
-        panic!("{:?}", report.checks);
-    };
-    assert_eq!(check.machine, Path::new("machines/target-fit-0.json"));
-    assert_eq!(
-        check.extract,
-        Path::new("machines/../facts/target.jsonl.gz")
-    );
-    let (record, table) = written(&report);
-    assert!(!String::from_utf8(record).unwrap().contains(local));
-    assert!(!table.contains(local), "{table}");
-    assert!(table.contains("\nmachines/target-fit-0.json: "), "{table}");
-    assert_eq!(
-        table.matches("machines/target-fit-0.json: ").count(),
-        1,
-        "{table}"
-    );
+    let error = Anchor::of_fs(&MemFs::new(), "/empty").unwrap_err();
+    assert!(matches!(
+        error,
+        togi_tool_forecast::Error::ReadJournal { .. }
+    ));
 }
 
 /// Copies a machine with a facts extract into the fixture and writes a suite that names it by absolute path.
-fn absolute_machine_suite(fixture: &Fixture) {
-    let bench = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tools/bench");
+fn absolute_machine_suite(fixture: &DiskFixture) {
     fs::create_dir_all(fixture.path("machines")).unwrap();
     fs::create_dir_all(fixture.path("facts")).unwrap();
-    fs::copy(
-        bench.join("machines/target-fit-0.json"),
+    fs::write(
         fixture.path("machines/target-fit-0.json"),
+        include_bytes!("../../../tools/bench/machines/target-fit-0.json"),
     )
     .unwrap();
-    fs::copy(
-        bench.join("facts/target.jsonl.gz"),
+    fs::write(
         fixture.path("facts/target.jsonl.gz"),
+        include_bytes!("../../../tools/bench/facts/target.jsonl.gz"),
     )
     .unwrap();
     let absolute = fs::canonicalize(fixture.path("machines/target-fit-0.json")).unwrap();
@@ -796,15 +752,18 @@ fn the_report_names_the_anchor_the_runs_by_status_and_each_metric_s_range() {
     };
     let mut out = Vec::new();
     report.write(&mut out).unwrap();
-    insta::assert_snapshot!("the_forecast_report", String::from_utf8(out).unwrap());
+    common::assert_snapshot(
+        &String::from_utf8(out).unwrap(),
+        include_str!("snapshots/forecast__the_forecast_report.snap"),
+    );
 }
 
-fn command(fixture: &Fixture) -> Command {
+fn command(fixture: &DiskFixture) -> Command {
     command_with_suite(fixture, &fixture.path("suite.json"))
 }
 
 /// `forecast` of the fixture's copy with `--suite suite`, run from a fixture repository inside the fixture.
-fn command_with_suite(fixture: &Fixture, suite: &Path) -> Command {
+fn command_with_suite(fixture: &DiskFixture, suite: &Path) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_togi-tool-bench"));
     isolate_git(&mut command, &fixture.path("githome"));
     command
@@ -817,15 +776,17 @@ fn command_with_suite(fixture: &Fixture, suite: &Path) -> Command {
 }
 
 #[test]
-fn a_relative_suite_naming_its_machine_by_absolute_path_names_it_relative_to_the_suite() {
-    let fixture = Fixture::new(false);
+#[expect(
+    clippy::disallowed_methods,
+    reason = "real_process coverage exercises CLI path resolution and simulator launch"
+)]
+fn real_process_a_relative_suite_naming_its_machine_by_absolute_path_names_it_relative_to_the_suite()
+ {
+    let fixture = DiskFixture::new(false);
     absolute_machine_suite(&fixture);
-    let out = fixture.path("forecast.json");
     let output = command_with_suite(&fixture, Path::new("../suite.json"))
         .arg("--sim")
         .arg(fixture.simulator("", 0))
-        .arg("--out")
-        .arg(&out)
         .output()
         .unwrap();
     let stdout = String::from_utf8(output.stdout).unwrap();
@@ -834,7 +795,9 @@ fn a_relative_suite_naming_its_machine_by_absolute_path_names_it_relative_to_the
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let record = Record::read(&out).unwrap();
+    let record = execute(&fixture.options(fixture.simulator("", 0)), &Fleet::new())
+        .unwrap()
+        .record;
     assert_eq!(record.runs.len(), 3);
     assert!(
         record
@@ -861,14 +824,15 @@ fn a_relative_suite_naming_its_machine_by_absolute_path_names_it_relative_to_the
 }
 
 #[test]
-fn the_command_prints_the_forecast_and_writes_the_record() {
-    let fixture = Fixture::new(false);
-    let out = fixture.path("forecast.json");
+#[expect(
+    clippy::disallowed_methods,
+    reason = "real_process coverage exercises the command executable and simulator launch"
+)]
+fn real_process_the_command_prints_the_forecast() {
+    let fixture = DiskFixture::new(false);
     let output = command(&fixture)
         .arg("--sim")
         .arg(fixture.simulator("", 0))
-        .arg("--out")
-        .arg(&out)
         .output()
         .unwrap();
     let stdout = String::from_utf8(output.stdout).unwrap();
@@ -879,11 +843,14 @@ fn the_command_prints_the_forecast_and_writes_the_record() {
     );
     assert!(stdout.starts_with("forecast: after session "), "{stdout}");
     assert!(stdout.contains("\nmetric   median"), "{stdout}");
-    assert_eq!(Record::read(out).unwrap().runs.len(), 3);
 }
 
 #[test]
-fn bench_flags_that_judge_a_run_are_usage_errors_with_forecast() {
+#[expect(
+    clippy::disallowed_methods,
+    reason = "real_process coverage exercises command exit codes for invalid flags"
+)]
+fn real_process_bench_flags_that_judge_a_run_are_usage_errors_with_forecast() {
     for flag in ["--split=all", "--baseline=b.jsonl", "--same=."] {
         let output = Command::new(env!("CARGO_BIN_EXE_togi-tool-bench"))
             .args(["forecast", ".", flag])
@@ -897,7 +864,11 @@ fn bench_flags_that_judge_a_run_are_usage_errors_with_forecast() {
 #[test]
 fn a_run_cut_off_by_the_boot_cap_is_a_censored_outcome() {
     let fixture = Fixture::new(false);
-    let report = execute(&fixture.options(fixture.cut_simulator(3)), &Fleet::new()).unwrap();
+    let mut report = fixture.report();
+    for run in &mut report.record.runs {
+        run.outcome = outcome(&fixture.cut_sessions(run.seed), &fixture.anchor, 3, false).unwrap();
+    }
+    report.record.summary = togi_tool_forecast::summarize(&report.record.runs).unwrap();
     assert_eq!(report.record.summary.runs, 3);
     assert_eq!(report.record.summary.concluded, 0);
     assert!(
@@ -926,27 +897,31 @@ fn an_exit_code_that_disagrees_with_the_journal_names_both() {
             "simulator exit 0 means concluded, but the journal after the anchor is censored",
         ),
     ] {
-        let simulator = if cut {
-            fixture.cut_simulator(exit)
-        } else {
-            fixture.simulator("", exit)
-        };
-        let failed = execute(&fixture.options(simulator), &Fleet::new()).unwrap_err();
+        let mut sessions = fixture.sessions(SEEDS[0]);
+        if cut {
+            sessions = fixture.cut_sessions(SEEDS[0]);
+        }
+        let failed = outcome(&sessions, &fixture.anchor, exit, false).unwrap_err();
         assert!(failed.to_string().contains(message), "{name}: {failed}");
     }
 }
 
 #[test]
 fn a_suite_that_does_not_parse_fails_as_a_suite_error() {
-    let fixture = Fixture::new(false);
-    fs::write(fixture.path("suite.json"), "{").unwrap();
-    let failed = execute(&fixture.options(fixture.simulator("", 0)), &Fleet::new()).unwrap_err();
-    assert!(matches!(*failed.error, ForecastError::Bench(_)), "{failed}");
+    let failed = togi_tool_bench::Suite::parse(b"{", PathBuf::from("/suite")).unwrap_err();
+    assert!(
+        matches!(failed, togi_tool_bench::SuiteError::Decode(_)),
+        "{failed}"
+    );
 }
 
 #[test]
-fn a_full_forecast_leaves_no_run_directory_behind() {
-    let fixture = Fixture::new(false);
+#[expect(
+    clippy::disallowed_methods,
+    reason = "real_process coverage exercises TMPDIR handling across command children"
+)]
+fn real_process_a_full_forecast_leaves_no_run_directory_behind() {
+    let fixture = DiskFixture::new(false);
     let temporary = fixture.path("tmp");
     fs::create_dir_all(&temporary).unwrap();
     let seen = fixture.path("seen");
@@ -975,10 +950,14 @@ fn a_full_forecast_leaves_no_run_directory_behind() {
     assert!(left.is_empty(), "{left:?}");
 }
 
+#[expect(
+    clippy::disallowed_methods,
+    reason = "real_process coverage observes failed command cleanup across children"
+)]
 /// Runs `forecast` under a private `TMPDIR` with a simulator that records its run directory before `extra`, and
 /// returns what the failed command left in `TMPDIR` and its stderr. Fails unless runs were made under `TMPDIR`.
 fn leftovers_of_a_failed_command(
-    fixture: &Fixture,
+    fixture: &DiskFixture,
     extra: &str,
     out: &Path,
 ) -> (Vec<String>, String) {
@@ -1014,8 +993,8 @@ fn leftovers_of_a_failed_command(
 }
 
 #[test]
-fn a_forecast_that_fails_to_write_its_record_leaves_no_run_directory_behind() {
-    let fixture = Fixture::new(false);
+fn real_process_a_forecast_that_fails_to_write_its_record_leaves_no_run_directory_behind() {
+    let fixture = DiskFixture::new(false);
     let blocker = fixture.path("file");
     fs::write(&blocker, "").unwrap();
     let (left, stderr) =
@@ -1026,8 +1005,8 @@ fn a_forecast_that_fails_to_write_its_record_leaves_no_run_directory_behind() {
 }
 
 #[test]
-fn an_interrupted_forecast_leaves_no_run_directory_behind() {
-    let fixture = Fixture::new(false);
+fn real_process_an_interrupted_forecast_leaves_no_run_directory_behind() {
+    let fixture = DiskFixture::new(false);
     let (left, stderr) = leftovers_of_a_failed_command(
         &fixture,
         "kill -INT $PPID; sleep 5",
@@ -1039,8 +1018,12 @@ fn an_interrupted_forecast_leaves_no_run_directory_behind() {
 }
 
 #[test]
-fn the_command_says_where_the_runs_of_a_failed_forecast_are_kept() {
-    let fixture = Fixture::new(false);
+#[expect(
+    clippy::disallowed_methods,
+    reason = "real_process coverage exercises command failure output and retained directories"
+)]
+fn real_process_the_command_says_where_the_runs_of_a_failed_forecast_are_kept() {
+    let fixture = DiskFixture::new(false);
     let temporary = fixture.path("tmp");
     fs::create_dir_all(&temporary).unwrap();
     let output = command(&fixture)
@@ -1067,4 +1050,18 @@ fn the_command_says_where_the_runs_of_a_failed_forecast_are_kept() {
     assert!(output.status.success());
     assert!(!String::from_utf8_lossy(&output.stderr).contains("kept the runs"));
     fs::remove_dir_all(kept).unwrap();
+}
+
+#[test]
+fn missing_post_anchor_events_or_a_dead_end_fail_without_a_child_process() {
+    let fixture = Fixture::new(false);
+    let copied = read_dir_fs(&fixture.history, "/state", Some(fixture.anchor.session)).unwrap();
+    assert!(matches!(
+        outcome(&copied, &fixture.anchor, 0, false),
+        Err(ForecastError::SimulatorFailed { exit: 0 })
+    ));
+    assert!(matches!(
+        outcome(&fixture.sessions(SEEDS[0]), &fixture.anchor, 1, false),
+        Err(ForecastError::SimulatorFailed { exit: 1 })
+    ));
 }

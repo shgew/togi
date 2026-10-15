@@ -7,6 +7,10 @@ mod session;
 mod signals;
 mod suite;
 
+#[cfg(test)]
+#[path = "../../../tests/cli/content.rs"]
+mod tests;
+
 use std::io::Write as _;
 use std::num::{NonZeroU32, NonZeroUsize};
 use std::path::PathBuf;
@@ -125,16 +129,13 @@ fn build() -> Build {
 
 fn main() -> ExitCode {
     let mut log = Log::stderr();
-    let code = match Cli::try_parse() {
+    let code = match parse(std::env::args_os(), &mut log) {
         Ok(cli) => match cli.command {
             None => session::run(cli.session, &mut log),
             Some(Command::Suite(args)) => suite::run(&args, &mut log),
             Some(Command::Check(args)) => suite::check(&args, &mut log),
         },
-        Err(error) => {
-            let _ = write!(log, "{}", error.render());
-            if error.use_stderr() { USAGE } else { 0 }
-        }
+        Err(code) => code,
     };
     match log.finish() {
         Ok(()) => ExitCode::from(code),
@@ -143,4 +144,14 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+fn parse(
+    args: impl IntoIterator<Item = impl Into<std::ffi::OsString> + Clone>,
+    log: &mut Log,
+) -> Result<Cli, u8> {
+    Cli::try_parse_from(args).map_err(|error| {
+        let _ = write!(log, "{}", error.render());
+        if error.use_stderr() { USAGE } else { 0 }
+    })
 }

@@ -6,7 +6,7 @@ use std::sync::LazyLock;
 
 use clap::Args as ClapArgs;
 use togi_config::Config;
-use togi_hostlock::{Error as LockError, HostLock};
+use togi_hostlock::Error as LockError;
 use togi_machine::{
     CancellationToken, CoreInfo, CoreSet, Error as MachineError, Machine, ObservedOffset,
 };
@@ -190,8 +190,7 @@ pub fn run(_args: &Args, ctx: &mut Context<'_>) -> Exit {
             "needs root to write the SMU; offsets unchanged",
         );
     }
-    let (path, policy) = system.host_lock();
-    let lock = match HostLock::acquire(path, policy) {
+    let lock = match system.acquire_host_lock() {
         Ok(lock) => lock,
         Err(error @ LockError::Busy { .. }) => {
             return exit_with(

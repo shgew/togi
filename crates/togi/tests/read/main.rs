@@ -1,7 +1,6 @@
 #![expect(
     clippy::unwrap_used,
-    clippy::disallowed_methods,
-    reason = "the tests run the built command and panic on a broken fixture"
+    reason = "the tests run the command against memory and panic on a broken fixture"
 )]
 
 mod commands;

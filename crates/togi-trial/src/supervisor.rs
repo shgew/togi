@@ -53,6 +53,7 @@ pub(crate) struct Env<O: Os> {
     pub(crate) os: Rc<O>,
     pub(crate) timing: Timing,
     pub(crate) roots: Roots,
+    pub(crate) inputs: crate::procfs::Inputs,
     pub(crate) dir: PathBuf,
     pub(crate) backends: Backends,
     pub(crate) topology: Vec<CoreInfo>,
@@ -62,6 +63,9 @@ pub(crate) struct Env<O: Os> {
     pub(crate) pm_table: Option<Arc<dyn PmTableReader + Send + Sync>>,
     /// Test construction: where samples go instead of the trial's `samples.jsonl`.
     pub(crate) storage: Option<Rc<dyn Fn() -> Result<Open, StorageError>>>,
+    pub(crate) durability: crate::samples::Durability,
+    /// The shared watched-file metadata of a descriptor-free fixture.
+    pub(crate) memory: Option<crate::watch::Memory>,
     /// Test construction: what the output log thread writes to instead of the log files.
     pub(crate) log_sink: Option<Rc<dyn Fn() -> Wrap>>,
     /// Every supervisor started on this thread, so shutdown can have each tear its trial down.
@@ -296,6 +300,7 @@ pub(crate) async fn start<O: Os>(
     let container = {
         let (dir, id) = (env.dir.clone(), plan.id.clone());
         let chown = env.preparer.chown.clone();
+        let fs = env.preparer.fs.clone();
         let prepared = env
             .preparer
             .run(
@@ -305,7 +310,7 @@ pub(crate) async fn start<O: Os>(
                 &mut commands_rx,
                 &cancelled,
                 move || {
-                    let mut container = files::recreate(&dir, &id, identity)?;
+                    let mut container = files::recreate_in(&dir, &id, identity, fs)?;
                     container.chown = chown;
                     Ok(container)
                 },
@@ -375,7 +380,7 @@ pub(crate) async fn start<O: Os>(
     let (failed_tx, storage_failed) = unbounded_channel();
     let open = match &env.storage {
         Some(make) => make(),
-        None => Ok(container.samples()),
+        None => Ok(container.samples(env.durability)),
     };
     let notify = failed_tx.clone();
     let mut errors = Vec::new();
@@ -397,7 +402,13 @@ pub(crate) async fn start<O: Os>(
         ));
     }
     let supervisor = Supervisor {
-        sensors: Sensors::new(&env.roots, &env.topology, &cores, started_at),
+        sensors: Sensors::with_inputs(
+            &env.roots,
+            &env.topology,
+            &cores,
+            started_at,
+            env.inputs.clone(),
+        ),
         timeline: timeline(&plan.load, plan.duration).peekable(),
         env: Rc::clone(&env),
         plan,
@@ -487,7 +498,16 @@ async fn launch_all<O: Os>(
         Confinement::Unscoped => None,
     };
     let scoped = identity.is_some();
-    let owner = identity.map_or_else(|| rustix::process::geteuid().as_raw(), BackendIdentity::uid);
+    let owner = identity.map_or_else(
+        || {
+            if env.memory.is_some() {
+                65534
+            } else {
+                rustix::process::geteuid().as_raw()
+            }
+        },
+        BackendIdentity::uid,
+    );
     let suspend_first = matches!(plan.load, Load::Bursts { .. });
     for (index, instance) in plan.instances.iter().enumerate() {
         if cancelled.load(Ordering::Acquire) {
@@ -510,6 +530,29 @@ async fn launch_all<O: Os>(
                 },
             )
             .await?;
+        let watched = if let Some(dir) = &files.dir {
+            files
+                .plan
+                .watched
+                .iter()
+                .map(|name| Watched::new(Arc::clone(dir), name.clone(), owner))
+                .collect()
+        } else {
+            let memory =
+                env.memory
+                    .as_ref()
+                    .ok_or_else(|| crate::error::PrepareError::Directory {
+                        operation: "prepare watched output in",
+                        path: files.path.clone(),
+                        source: std::io::Error::other("memory preparation has no watched metadata"),
+                    })?;
+            files
+                .plan
+                .watched
+                .iter()
+                .map(|name| memory.watched(&files.path, name, owner))
+                .collect()
+        };
         let command = launch::command_for(
             confinement,
             &scope,
@@ -584,12 +627,7 @@ async fn launch_all<O: Os>(
             child: Some(child),
             waiter,
             readers,
-            watched: files
-                .plan
-                .watched
-                .iter()
-                .map(|name| Watched::new(Arc::clone(&files.dir), name.clone(), owner))
-                .collect(),
+            watched,
             writers: None,
             observed: Observed {
                 run: Run::Running,

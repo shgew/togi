@@ -103,6 +103,11 @@ impl StateDir {
         Self::lock_in(Arc::new(DiskFs::default()), path.as_ref(), false)
     }
 
+    /// Locks a state directory using the supplied filesystem and its durability guarantees.
+    pub fn lock_with_fs(fs: Arc<dyn Fs>, path: &Path) -> Result<Self, LockError> {
+        Self::lock_in(fs, path, false)
+    }
+
     /// A state directory on disk whose files are never synced and whose journal buffers 64 KiB of events, flushed on
     /// read, archive and close. Fast simulations only: a crash loses events. An SMU intent receipt from such a journal
     /// proves the intent reached the file in order and survives the process exiting, not that it survives power loss.
@@ -115,7 +120,7 @@ impl StateDir {
         Self::lock_in(Arc::new(fs), Path::new(SIMULATED_ROOT), false)
     }
 
-    fn lock_in(fs: Arc<dyn Fs>, path: &Path, buffered: bool) -> Result<Self, LockError> {
+    pub(crate) fn lock_in(fs: Arc<dyn Fs>, path: &Path, buffered: bool) -> Result<Self, LockError> {
         create_dirs(fs.as_ref(), path)?;
         fs.set_dir_mode(path, STATE_DIR_MODE)
             .map_err(io_at("set directory mode", path))?;

@@ -1,102 +1,121 @@
-use std::path::Path;
-use std::process::{Command, Output};
+use std::os::unix::process::ExitStatusExt as _;
+use std::path::{Path, PathBuf};
+use std::process::{ExitStatus, Output};
+use std::sync::Arc;
 
-use tempfile::TempDir;
+use togi_journal::Event;
+use togi_journal::fs::{Fs, MemFs};
 use togi_watchtest::Scenario;
 
-/// The built command over `state`, with no colour preference, no journal stream and UTC.
-pub(crate) fn command(state: &Path, args: &[&str]) -> Command {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_togi"));
-    command
-        .arg("--state-dir")
-        .arg(state)
-        .args(args)
-        .env_remove("NO_COLOR")
-        .env_remove("JOURNAL_STREAM")
-        .env("TZ", "UTC");
-    command
+use crate::host::Host;
+
+/// An isolated in-memory state directory and the filesystem the command reads.
+pub(crate) struct Session {
+    pub(crate) fs: Arc<MemFs>,
+    path: PathBuf,
 }
 
-pub(crate) fn togi(state: &Path, args: &[&str]) -> Output {
-    command(state, args).output().unwrap()
+impl Session {
+    pub(crate) fn empty() -> Self {
+        let fs = Arc::new(MemFs::new());
+        let path = PathBuf::from("/state");
+        fs.create_dir(&path).unwrap();
+        Self { fs, path }
+    }
+
+    pub(crate) fn path(&self) -> &Path {
+        &self.path
+    }
+
+    pub(crate) fn host(&self) -> Host {
+        Host::with_fs(self.fs.clone())
+    }
 }
 
-/// Which of the command's streams `JOURNAL_STREAM` names.
+pub(crate) fn output(ran: crate::host::Ran) -> Output {
+    Output {
+        status: ExitStatus::from_raw(i32::from(ran.exit.code()) << 8),
+        stdout: ran.out.into_bytes(),
+        stderr: ran.err.into_bytes(),
+    }
+}
+
+pub(crate) fn togi(state: &Session, args: &[&str]) -> Output {
+    output(state.host().run(state.path(), args))
+}
+
+/// Which of the command's streams systemd directs to its journal.
 #[derive(Clone, Copy)]
 pub(crate) enum Journald {
     Stdout,
     Stderr,
 }
 
-/// Runs the command with stdout and stderr as files and `JOURNAL_STREAM` naming `stream`, as
-/// systemd starts a service whose output goes to the journal.
-pub(crate) fn togi_in_journal(state: &Path, args: &[&str], stream: Journald) -> Output {
-    use std::os::unix::fs::MetadataExt as _;
-    use std::process::Stdio;
-
-    let capture = tempfile::tempdir().unwrap();
-    let (out_path, err_path) = (capture.path().join("out"), capture.path().join("err"));
-    let (out, err) = (
-        std::fs::File::create(&out_path).unwrap(),
-        std::fs::File::create(&err_path).unwrap(),
-    );
-    let named = match stream {
-        Journald::Stdout => out.metadata().unwrap(),
-        Journald::Stderr => err.metadata().unwrap(),
-    };
-    let status = command(state, args)
-        .env("JOURNAL_STREAM", format!("{}:{}", named.dev(), named.ino()))
-        .stdout(Stdio::from(out))
-        .stderr(Stdio::from(err))
-        .status()
-        .unwrap();
-    Output {
-        status,
-        stdout: std::fs::read(out_path).unwrap(),
-        stderr: std::fs::read(err_path).unwrap(),
+/// Capture both streams in memory; journal identity is an injected host fact.
+pub(crate) fn togi_in_journal(state: &Session, args: &[&str], stream: Journald) -> Output {
+    let mut host = state.host();
+    match stream {
+        Journald::Stdout => {
+            host.stdout_facts = Some(togi_render::OutputFacts {
+                journald: true,
+                ..togi_render::OutputFacts::default()
+            });
+        }
+        Journald::Stderr => {
+            host.stdout_facts = Some(togi_render::OutputFacts::default());
+            host.facts.journald = true;
+        }
     }
+    output(host.run(state.path(), args))
 }
 
 pub(crate) fn text(bytes: &[u8]) -> &str {
     std::str::from_utf8(bytes).unwrap()
 }
 
-pub(crate) fn session(scenario: Scenario) -> TempDir {
-    let dir = tempfile::tempdir().unwrap();
-    togi_watchtest::install(dir.path(), scenario).unwrap();
-    dir
+pub(crate) fn session(scenario: Scenario) -> Session {
+    installed(&scenario.events().unwrap())
 }
 
-pub(crate) fn journal(dir: &Path) -> std::path::PathBuf {
-    dir.join("events.jsonl")
+pub(crate) fn installed(events: &[Event]) -> Session {
+    let state = Session::empty();
+    togi_watchtest::install_events_with_fs(state.fs.clone(), state.path(), events).unwrap();
+    state
 }
 
-pub(crate) fn lines(dir: &Path) -> Vec<String> {
-    std::fs::read_to_string(journal(dir))
+pub(crate) fn journal(state: &Session) -> PathBuf {
+    state.path().join("events.jsonl")
+}
+
+pub(crate) fn write_journal(state: &Session, bytes: impl AsRef<[u8]>) {
+    state.fs.put(journal(state), bytes.as_ref().to_vec());
+}
+
+pub(crate) fn lines(state: &Session) -> Vec<String> {
+    String::from_utf8(state.fs.read(&journal(state)).unwrap())
         .unwrap()
         .lines()
         .map(str::to_owned)
         .collect()
 }
 
-pub(crate) fn rewrite_first_line(dir: &Path, change: impl FnOnce(&mut serde_json::Value)) {
-    let mut lines = lines(dir);
+pub(crate) fn rewrite_first_line(state: &Session, change: impl FnOnce(&mut serde_json::Value)) {
+    let mut lines = lines(state);
     let mut first: serde_json::Value = serde_json::from_str(&lines[0]).unwrap();
     change(&mut first);
     lines[0] = first.to_string();
-    std::fs::write(journal(dir), lines.join("\n") + "\n").unwrap();
+    write_journal(state, lines.join("\n") + "\n");
 }
 
-pub(crate) fn first_trial(dir: &Path) -> String {
-    let ran = togi(dir, &["events", "--kind", "trial.intent", "--json"]);
+pub(crate) fn first_trial(state: &Session) -> String {
+    let ran = togi(state, &["events", "--kind", "trial.intent", "--json"]);
     let first = text(&ran.stdout).lines().next().unwrap();
     let event: serde_json::Value = serde_json::from_str(first).unwrap();
     event["data"]["trial"].as_str().unwrap().to_owned()
 }
 
-pub(crate) fn append_event(dir: &Path, kind: &str, msg: &str, data: &serde_json::Value) {
-    use std::io::Write as _;
-    let last: serde_json::Value = serde_json::from_str(lines(dir).last().unwrap()).unwrap();
+pub(crate) fn append_event(state: &Session, kind: &str, msg: &str, data: &serde_json::Value) {
+    let last: serde_json::Value = serde_json::from_str(lines(state).last().unwrap()).unwrap();
     let event = serde_json::json!({
         "seq": last["seq"].as_u64().unwrap() + 1,
         "time": "2026-02-01T00:00:00Z",
@@ -105,18 +124,23 @@ pub(crate) fn append_event(dir: &Path, kind: &str, msg: &str, data: &serde_json:
         "msg": msg,
         "data": data,
     });
-    let mut file = std::fs::OpenOptions::new()
-        .append(true)
-        .open(journal(dir))
+    append_bytes(state, format!("{event}\n").as_bytes());
+}
+
+pub(crate) fn append_bytes(state: &Session, bytes: &[u8]) {
+    state
+        .fs
+        .open_append(&journal(state))
+        .unwrap()
+        .write_all(bytes)
         .unwrap();
-    writeln!(file, "{event}").unwrap();
 }
 
 pub(crate) const BETWEEN_TRIAL_MCE: &str = "mce on cpu 3 \u{1b}[2J between trials (recorded only)";
 
-pub(crate) fn append_between_trial_mce(dir: &Path) {
+pub(crate) fn append_between_trial_mce(state: &Session) {
     append_event(
-        dir,
+        state,
         "mce",
         BETWEEN_TRIAL_MCE,
         &serde_json::json!({
@@ -126,40 +150,34 @@ pub(crate) fn append_between_trial_mce(dir: &Path) {
     );
 }
 
-/// The kind of the events the lenient tests plant; no build knows it.
 pub(crate) const UNKNOWN_KIND: &str = "future.thing";
 
-/// Appends an event of `kind`, which no build should know; returns its line number.
-pub(crate) fn append_unknown_kind(dir: &Path, kind: &str) -> usize {
-    let line = lines(dir).len() + 1;
-    append_event(dir, kind, "x", &serde_json::json!({}));
+pub(crate) fn append_unknown_kind(state: &Session, kind: &str) -> usize {
+    let line = lines(state).len() + 1;
+    append_event(state, kind, "x", &serde_json::json!({}));
     line
 }
 
-/// Puts an event of `kind`, which no build should know, before the journal's last event, which takes the next
-/// seq: a hole of one seq in what a build that knows every kind reads. Returns the unknown event's line number.
-pub(crate) fn insert_unknown_kind_before_last(dir: &Path, kind: &str) -> usize {
-    let mut kept = lines(dir);
+pub(crate) fn insert_unknown_kind_before_last(state: &Session, kind: &str) -> usize {
+    let mut kept = lines(state);
     let last = kept.pop().unwrap();
-    std::fs::write(
-        journal(dir),
+    write_journal(
+        state,
         kept.iter()
             .map(|line| line.clone() + "\n")
             .collect::<String>(),
-    )
-    .unwrap();
-    let line = append_unknown_kind(dir, kind);
+    );
+    let line = append_unknown_kind(state, kind);
     let mut moved: serde_json::Value = serde_json::from_str(&last).unwrap();
     moved["seq"] = (line as u64 + 1).into();
-    append_line(dir, &moved.to_string());
+    append_bytes(state, format!("{moved}\n").as_bytes());
     line
 }
 
-/// Appends a `session.warning` carrying a field no build knows; returns its line number.
-pub(crate) fn append_unknown_field(dir: &Path, field: &str) -> usize {
-    let line = lines(dir).len() + 1;
+pub(crate) fn append_unknown_field(state: &Session, field: &str) -> usize {
+    let line = lines(state).len() + 1;
     append_event(
-        dir,
+        state,
         "session.warning",
         "warned",
         &serde_json::json!({"operation": "write state projection", "error": "disk full", field: 1}),
@@ -167,11 +185,51 @@ pub(crate) fn append_unknown_field(dir: &Path, field: &str) -> usize {
     line
 }
 
-fn append_line(dir: &Path, line: &str) {
-    use std::io::Write as _;
-    let mut file = std::fs::OpenOptions::new()
-        .append(true)
-        .open(journal(dir))
+/// Compare against compile-time snapshot content, without insta's runtime file reads.
+pub(crate) fn snapshot(name: &str, actual: &str) {
+    macro_rules! snapshots {
+        ($($name:literal),+ $(,)?) => {
+            match name {
+                $($name => include_str!(concat!("snapshots/read__", $name, ".snap")),)+
+                _ => panic!("unknown compiled snapshot {name}"),
+            }
+        };
+    }
+    let expected = snapshots!(
+        "events__events_help",
+        "events__events_group",
+        "events__events_kinds",
+        "events__events_trial",
+        "events__events_core",
+        "status__status_help",
+        "status__status_between",
+        "status__status_checking",
+        "status__status_combination",
+        "status__status_concluded",
+        "status__status_confirm",
+        "status__status_confirmation",
+        "status__status_crashed",
+        "status__status_deadend",
+        "status__status_first-result",
+        "status__status_hunt-bios",
+        "status__status_hunt",
+        "status__status_idle",
+        "status__status_member-probe",
+        "status__status_recovering",
+        "status__status_round",
+        "status__status_search",
+        "status__status_stopped",
+        "status__status_unconfirmed",
+        "watch__watch_help",
+    );
+    let (_, body) = expected
+        .strip_prefix("---\n")
+        .unwrap()
+        .split_once("\n---\n")
         .unwrap();
-    writeln!(file, "{line}").unwrap();
+    assert_eq!(
+        actual.trim_end_matches('\n'),
+        body.trim_end_matches('\n'),
+        "{name}"
+    );
 }

@@ -1,7 +1,9 @@
 use std::path::Path;
 
 use togi_journal::{SessionId, Skipped};
-use togi_tool_forecast::{Metric, Record, Row, Score, Status, read_dir_lenient, recovery_bias};
+use togi_tool_forecast::{
+    Metric, Record, Row, Score, Session, Status, read_dir_lenient, recovery_bias,
+};
 
 use crate::error::Error;
 use crate::report::{optional, stamp};
@@ -19,8 +21,20 @@ pub struct Scored {
 /// read leniently: `skipped` says what that left out.
 pub fn score(state_dir: impl AsRef<Path>, forecast: impl AsRef<Path>) -> Result<Scored, Error> {
     let forecast = forecast.as_ref();
-    let record = Record::read(forecast)?;
-    let sessions = read_dir_lenient(state_dir, Some(record.anchor.session))?;
+    score_with(
+        forecast,
+        || Record::read(forecast).map_err(Error::from),
+        |record| read_dir_lenient(state_dir, Some(record.anchor.session)).map_err(Error::from),
+    )
+}
+
+pub(crate) fn score_with(
+    forecast: &Path,
+    read_record: impl FnOnce() -> Result<Record, Error>,
+    read_sessions: impl FnOnce(&Record) -> Result<Vec<Session>, Error>,
+) -> Result<Scored, Error> {
+    let record = read_record()?;
+    let sessions = read_sessions(&record)?;
     let score = record.score(&sessions).map_err(|source| Error::Score {
         path: forecast.display().to_string(),
         source,

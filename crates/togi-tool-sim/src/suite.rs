@@ -82,7 +82,15 @@ struct Checked {
 
 impl Suite {
     pub fn load(path: &Path) -> Result<Self, SuiteError> {
-        let text = std::fs::read_to_string(path).map_err(|source| SuiteError::Read {
+        Self::load_with(path, |path| std::fs::read_to_string(path))
+    }
+
+    /// Loads a suite through the supplied text reader, resolving machines beside `path`.
+    pub fn load_with(
+        path: &Path,
+        read: impl FnOnce(&Path) -> std::io::Result<String>,
+    ) -> Result<Self, SuiteError> {
+        let text = read(path).map_err(|source| SuiteError::Read {
             path: path.to_path_buf(),
             source,
         })?;

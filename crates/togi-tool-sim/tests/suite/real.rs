@@ -8,7 +8,12 @@ pub(crate) fn suite_path() -> PathBuf {
 }
 
 pub(crate) fn real_runs() -> Vec<Run> {
-    Suite::load(&suite_path()).unwrap().runs()
+    Suite::parse(
+        include_str!("../../../../tools/bench/suite.json"),
+        suite_path().parent().unwrap(),
+    )
+    .unwrap()
+    .runs()
 }
 
 fn count(runs: &[Run], scenario: &str, split: Split) -> usize {
@@ -184,7 +189,7 @@ fn every_machine_the_suite_names_loads() {
         .collect();
     assert_eq!(machines.len(), 18);
     for machine in machines {
-        togi_sim::file::load(machine)
+        togi_sim::file::load_from(machine, &CommittedMachines)
             .unwrap_or_else(|error| panic!("{}: {error}", machine.display()));
     }
     assert!(
@@ -192,4 +197,53 @@ fn every_machine_the_suite_names_loads() {
             .filter(|run| run.scenario == "default")
             .all(|run| run.machine.is_none())
     );
+}
+
+struct CommittedMachines;
+
+impl togi_sim::file::Source for CommittedMachines {
+    fn read_to_string(&self, path: &Path) -> std::io::Result<String> {
+        macro_rules! documents {
+            ($($name:literal),+ $(,)?) => {
+                match path.file_name().and_then(|name| name.to_str()) {
+                    $(Some($name) => Ok(include_str!(concat!("../../../../tools/bench/machines/", $name)).to_owned()),)+
+                    _ => Err(std::io::ErrorKind::NotFound.into()),
+                }
+            };
+        }
+        documents!(
+            "flat-hazard.json",
+            "idle-limit.json",
+            "late-onset.json",
+            "misleading-mce.json",
+            "shared-voltage.json",
+            "target-fit-0.json",
+            "target-fit-1.json",
+            "target-fit-2.json",
+            "target-fit-3.json",
+            "target-fit-4.json",
+            "target-fit-5.json",
+            "target-fit-6.json",
+            "target-fit-7.json",
+            "target-fit-8.json",
+            "target-nonmember-mce.json",
+            "target-r7-request-gap.json",
+            "target-r7-vf-boost.json",
+            "target-shared-voltage.json",
+        )
+    }
+
+    fn canonicalize(&self, path: &Path) -> std::io::Result<PathBuf> {
+        let mut clean = PathBuf::new();
+        for component in path.components() {
+            match component {
+                std::path::Component::ParentDir => {
+                    clean.pop();
+                }
+                std::path::Component::CurDir => {}
+                component => clean.push(component),
+            }
+        }
+        Ok(clean)
+    }
 }

@@ -54,83 +54,87 @@ fn recorded() -> (Arc<Recording>, impl FnOnce(&mut Env<Fake>)) {
     })
 }
 
-#[tokio::test(start_paused = true)]
-async fn the_controller_set_is_in_place_before_the_launch_and_follows_each_trials_loaded_core() {
-    local(async {
-        let (recording, install) = recorded();
-        let rig = rig_edit(TestBackend::new("/bin/true"), Timing::default(), install);
-        let early = Arc::new(AtomicBool::new(false));
-        let (seen, calls) = (Arc::clone(&early), Arc::clone(&recording));
-        rig.fake.on_launch(move |_, _| {
-            seen.store(!calls.calls().is_empty(), Ordering::SeqCst);
-            Launch::Run(script(|mut ctx: ProcCtx| async move {
-                ctx.until_killed().await;
-            }))
-        });
-        let first = rig
-            .start(base_spec(Regime::R1, &[2], secs(5)))
-            .await
-            .unwrap();
-        assert!(
-            early.load(Ordering::SeqCst),
-            "the confinement came after the launch"
-        );
-        assert_eq!(recording.calls(), [Call::Confine(all_but(2))]);
-        let run = finish(&first).await;
-        assert!(run.finished.teardown.is_ok());
-        assert_eq!(
-            recording.calls(),
-            [Call::Confine(all_but(2)), Call::Restore],
-            "restored once the teardown confirmed"
-        );
-        assert!(
-            run.progress()
-                .iter()
-                .any(|line| line.contains("their own CPUs again")),
-            "{:?}",
-            run.progress()
-        );
+#[test]
+fn the_controller_set_is_in_place_before_the_launch_and_follows_each_trials_loaded_core() {
+    crate::testing::runtime(true).block_on(async move {
+        local(async {
+            let (recording, install) = recorded();
+            let rig = rig_edit(TestBackend::new("/bin/true"), Timing::default(), install);
+            let early = Arc::new(AtomicBool::new(false));
+            let (seen, calls) = (Arc::clone(&early), Arc::clone(&recording));
+            rig.fake.on_launch(move |_, _| {
+                seen.store(!calls.calls().is_empty(), Ordering::SeqCst);
+                Launch::Run(script(|mut ctx: ProcCtx| async move {
+                    ctx.until_killed().await;
+                }))
+            });
+            let first = rig
+                .start(base_spec(Regime::R1, &[2], secs(5)))
+                .await
+                .unwrap();
+            assert!(
+                early.load(Ordering::SeqCst),
+                "the confinement came after the launch"
+            );
+            assert_eq!(recording.calls(), [Call::Confine(all_but(2))]);
+            let run = finish(&first).await;
+            assert!(run.finished.teardown.is_ok());
+            assert_eq!(
+                recording.calls(),
+                [Call::Confine(all_but(2)), Call::Restore],
+                "restored once the teardown confirmed"
+            );
+            assert!(
+                run.progress()
+                    .iter()
+                    .any(|line| line.contains("their own CPUs again")),
+                "{:?}",
+                run.progress()
+            );
 
-        let second = rig
-            .start(base_spec(Regime::R1, &[5], secs(5)))
-            .await
-            .unwrap();
-        finish(&second).await;
-        assert_eq!(
-            recording.calls()[2..],
-            [Call::Confine(all_but(5)), Call::Restore]
-        );
-    })
-    .await;
+            let second = rig
+                .start(base_spec(Regime::R1, &[5], secs(5)))
+                .await
+                .unwrap();
+            finish(&second).await;
+            assert_eq!(
+                recording.calls()[2..],
+                [Call::Confine(all_but(5)), Call::Restore]
+            );
+        })
+        .await;
+    });
 }
 
-#[tokio::test(start_paused = true)]
-async fn a_start_that_fails_to_launch_restores_after_its_confirmed_rollback() {
-    local(async {
-        let (recording, install) = recorded();
-        let rig = rig_edit(TestBackend::new("/bin/true"), Timing::default(), install);
-        rig.fake
-            .on_launch(|_, _| Launch::Fail(io::Error::other("no process left")));
-        let failed = rig
-            .start(base_spec(Regime::R1, &[2], secs(5)))
-            .await
-            .map(|_| ())
-            .unwrap_err();
-        assert!(
-            failed.value.is_some(),
-            "the rollback confirmed nothing runs"
-        );
-        assert_eq!(
-            recording.calls(),
-            [Call::Confine(all_but(2)), Call::Restore]
-        );
-        assert!(
-            matches!(crate_error(&failed.error), Some(Error::Launch { .. })),
-            "a complete restoration added to the launch error: {:?}",
-            failed.error
-        );
-    })
-    .await;
+#[test]
+fn a_start_that_fails_to_launch_restores_after_its_confirmed_rollback() {
+    crate::testing::runtime(true).block_on(async move {
+        local(async {
+            let (recording, install) = recorded();
+            let rig = rig_edit(TestBackend::new("/bin/true"), Timing::default(), install);
+            rig.fake
+                .on_launch(|_, _| Launch::Fail(io::Error::other("no process left")));
+            let failed = rig
+                .start(base_spec(Regime::R1, &[2], secs(5)))
+                .await
+                .map(|_| ())
+                .unwrap_err();
+            assert!(
+                failed.value.is_some(),
+                "the rollback confirmed nothing runs"
+            );
+            assert_eq!(
+                recording.calls(),
+                [Call::Confine(all_but(2)), Call::Restore]
+            );
+            assert!(
+                matches!(crate_error(&failed.error), Some(Error::Launch { .. })),
+                "a complete restoration added to the launch error: {:?}",
+                failed.error
+            );
+        })
+        .await;
+    });
 }
 
 /// A process that never exits and holds its pipes: nothing can confirm it stopped.
@@ -148,81 +152,87 @@ fn kill_hangs(call: &Systemd) -> Option<Reply> {
     }
 }
 
-#[tokio::test(start_paused = true)]
-async fn a_teardown_that_cannot_confirm_leaves_the_threads_confined() {
-    local(async {
-        let (recording, install) = recorded();
-        let rig = rig_edit(TestBackend::new("/bin/true"), Timing::default(), install);
-        rig.fake.on_launch(|_, _| immortal());
-        rig.fake.on_systemd(kill_hangs);
-        let cancel = CancellationToken::new();
-        let handle = rig
-            .start_with(&cancel, base_spec(Regime::R1, &[2], secs(60)))
-            .await
-            .unwrap();
-        cancel.cancel();
-        let run = finish(&handle).await;
-        assert!(run.finished.teardown.is_err(), "the teardown confirmed");
-        assert_eq!(
-            recording.calls(),
-            [Call::Confine(all_but(2))],
-            "restored although nothing proved the workload stopped"
-        );
-    })
-    .await;
-}
-
-#[tokio::test(start_paused = true)]
-async fn a_rollback_that_cannot_confirm_leaves_the_threads_confined() {
-    local(async {
-        let (recording, install) = recorded();
-        let rig = rig_edit(TestBackend::new("/bin/true"), Timing::default(), install);
-        rig.fake.on_launch(|index, _| {
-            if index == 0 {
-                immortal()
-            } else {
-                Launch::Fail(io::Error::other("no process left"))
-            }
-        });
-        rig.fake.on_systemd(kill_hangs);
-        let failed = rig
-            .start(base_spec(Regime::R7, &[0, 1], secs(60)))
-            .await
-            .map(|_| ())
-            .unwrap_err();
-        assert!(failed.value.is_none(), "the rollback cannot have confirmed");
-        assert!(
-            matches!(recording.calls()[..], [Call::Confine(_)]),
-            "{:?}",
-            recording.calls()
-        );
-    })
-    .await;
-}
-
-#[tokio::test(start_paused = true)]
-async fn a_sweep_that_proves_nothing_runs_restores_threads_a_start_left_confined() {
-    local(async {
-        let (recording, install) = recorded();
-        let rig = rig_edit(TestBackend::new("/bin/true"), Timing::default(), install);
-        let (reply, answered) = std::sync::mpsc::sync_channel(1);
-        serve_detached(
-            Rc::clone(&rig.env),
-            Command::Sweep {
-                cancel: CancellationToken::new(),
-                reply,
-            },
-        )
+#[test]
+fn a_teardown_that_cannot_confirm_leaves_the_threads_confined() {
+    crate::testing::runtime(true).block_on(async move {
+        local(async {
+            let (recording, install) = recorded();
+            let rig = rig_edit(TestBackend::new("/bin/true"), Timing::default(), install);
+            rig.fake.on_launch(|_, _| immortal());
+            rig.fake.on_systemd(kill_hangs);
+            let cancel = CancellationToken::new();
+            let handle = rig
+                .start_with(&cancel, base_spec(Regime::R1, &[2], secs(60)))
+                .await
+                .unwrap();
+            cancel.cancel();
+            let run = finish(&handle).await;
+            assert!(run.finished.teardown.is_err(), "the teardown confirmed");
+            assert_eq!(
+                recording.calls(),
+                [Call::Confine(all_but(2))],
+                "restored although nothing proved the workload stopped"
+            );
+        })
         .await;
-        let swept = answered.recv().unwrap().unwrap();
-        assert_eq!(recording.calls(), [Call::Restore]);
-        assert!(
-            swept.detail.contains("their own CPUs again"),
-            "{}",
-            swept.detail
-        );
-    })
-    .await;
+    });
+}
+
+#[test]
+fn a_rollback_that_cannot_confirm_leaves_the_threads_confined() {
+    crate::testing::runtime(true).block_on(async move {
+        local(async {
+            let (recording, install) = recorded();
+            let rig = rig_edit(TestBackend::new("/bin/true"), Timing::default(), install);
+            rig.fake.on_launch(|index, _| {
+                if index == 0 {
+                    immortal()
+                } else {
+                    Launch::Fail(io::Error::other("no process left"))
+                }
+            });
+            rig.fake.on_systemd(kill_hangs);
+            let failed = rig
+                .start(base_spec(Regime::R7, &[0, 1], secs(60)))
+                .await
+                .map(|_| ())
+                .unwrap_err();
+            assert!(failed.value.is_none(), "the rollback cannot have confirmed");
+            assert!(
+                matches!(recording.calls()[..], [Call::Confine(_)]),
+                "{:?}",
+                recording.calls()
+            );
+        })
+        .await;
+    });
+}
+
+#[test]
+fn a_sweep_that_proves_nothing_runs_restores_threads_a_start_left_confined() {
+    crate::testing::runtime(true).block_on(async move {
+        local(async {
+            let (recording, install) = recorded();
+            let rig = rig_edit(TestBackend::new("/bin/true"), Timing::default(), install);
+            let (reply, answered) = std::sync::mpsc::sync_channel(1);
+            serve_detached(
+                Rc::clone(&rig.env),
+                Command::Sweep {
+                    cancel: CancellationToken::new(),
+                    reply,
+                },
+            )
+            .await;
+            let swept = answered.recv().unwrap().unwrap();
+            assert_eq!(recording.calls(), [Call::Restore]);
+            assert!(
+                swept.detail.contains("their own CPUs again"),
+                "{}",
+                swept.detail
+            );
+        })
+        .await;
+    });
 }
 
 // ---- incomplete moves ----
@@ -289,114 +299,120 @@ fn retry_line(counts: &str) -> String {
     )
 }
 
-#[tokio::test(start_paused = true)]
-async fn an_incomplete_confinement_and_restoration_warn_in_the_trials_progress() {
-    for (moved, counts) in incomplete_moves() {
-        local(async {
-            let (controller, install) = reporting(moved, moved);
-            let rig = rig_edit(TestBackend::new("/bin/true"), Timing::default(), install);
-            rig.fake.on_launch(|_, _| {
-                Launch::Run(script(|mut ctx: ProcCtx| async move {
-                    ctx.until_killed().await;
-                }))
-            });
-            let spec = base_spec(Regime::R1, &[2], secs(5));
-            let loaded = cpus_list(&spec.cpus);
-            let handle = rig.start(spec).await.unwrap();
-            let run = finish(&handle).await;
-            assert!(run.finished.teardown.is_ok(), "{moved:?}");
-            assert_eq!(
-                controller.recording.calls(),
-                [Call::Confine(all_but(2)), Call::Restore]
-            );
-            let confined = format!(
-                "togi's own threads were not all confined to CPUs {} and may still run on a CPU \
-                 the trial loads ({loaded}): {counts}",
-                cpus_list(&all_but(2))
-            );
-            let restored = retry_line(counts);
-            let reports: Vec<&str> = run
-                .progress()
-                .into_iter()
-                .filter(|line| line.starts_with("togi's own threads"))
-                .collect();
-            assert_eq!(reports, [confined.as_str(), restored.as_str()]);
-        })
-        .await;
-    }
+#[test]
+fn an_incomplete_confinement_and_restoration_warn_in_the_trials_progress() {
+    crate::testing::runtime(true).block_on(async move {
+        for (moved, counts) in incomplete_moves() {
+            local(async {
+        let (controller, install) = reporting(moved, moved);
+        let rig = rig_edit(TestBackend::new("/bin/true"), Timing::default(), install);
+        rig.fake.on_launch(|_, _| {
+            Launch::Run(script(|mut ctx: ProcCtx| async move {
+                ctx.until_killed().await;
+            }))
+        });
+        let spec = base_spec(Regime::R1, &[2], secs(5));
+        let loaded = cpus_list(&spec.cpus);
+        let handle = rig.start(spec).await.unwrap();
+        let run = finish(&handle).await;
+        assert!(run.finished.teardown.is_ok(), "{moved:?}");
+        assert_eq!(
+            controller.recording.calls(),
+            [Call::Confine(all_but(2)), Call::Restore]
+        );
+        let confined = format!(
+            "togi's own threads were not all confined to CPUs {} and may still run on a CPU \
+             the trial loads ({loaded}): {counts}",
+            cpus_list(&all_but(2))
+        );
+        let restored = retry_line(counts);
+        let reports: Vec<&str> = run
+            .progress()
+            .into_iter()
+            .filter(|line| line.starts_with("togi's own threads"))
+            .collect();
+        assert_eq!(reports, [confined.as_str(), restored.as_str()]);
+    })
+    .await;
+        }
+    });
 }
 
-#[tokio::test(start_paused = true)]
-async fn a_start_that_fails_to_launch_returns_an_incomplete_restoration_with_its_error() {
-    for (moved, counts) in incomplete_moves() {
-        local(async {
-            let (controller, install) = reporting(Moved::default(), moved);
-            let rig = rig_edit(TestBackend::new("/bin/true"), Timing::default(), install);
-            rig.fake
-                .on_launch(|_, _| Launch::Fail(io::Error::other("no process left")));
-            let failed = rig
-                .start(base_spec(Regime::R1, &[2], secs(5)))
-                .await
-                .map(|_| ())
-                .unwrap_err();
-            assert!(
-                failed.value.is_some(),
-                "the rollback confirmed nothing runs"
-            );
-            assert_eq!(
-                controller.recording.calls(),
-                [Call::Confine(all_but(2)), Call::Restore]
-            );
-            let Some(Error::Joined(joined)) = crate_error(&failed.error) else {
-                panic!("the restoration was not joined: {:?}", failed.error);
-            };
-            let restored = retry_line(counts);
-            assert!(
-                matches!(joined.errors(), [Error::Launch { .. }, Error::Output(output)]
-                    if output.diagnostics() == [restored.clone()]),
-                "{:?}",
-                joined.errors()
-            );
-        })
-        .await;
-    }
-}
-
-#[tokio::test(start_paused = true)]
-async fn a_sweep_whose_restoration_is_incomplete_says_it_stays_confined_until_a_retry() {
-    for (moved, counts) in incomplete_moves() {
-        local(async {
-            let (controller, install) = reporting(Moved::default(), moved);
-            let rig = rig_edit(TestBackend::new("/bin/true"), Timing::default(), install);
-            let (reply, answered) = std::sync::mpsc::sync_channel(1);
-            serve_detached(
-                Rc::clone(&rig.env),
-                Command::Sweep {
-                    cancel: CancellationToken::new(),
-                    reply,
-                },
-            )
+#[test]
+fn a_start_that_fails_to_launch_returns_an_incomplete_restoration_with_its_error() {
+    crate::testing::runtime(true).block_on(async move {
+        for (moved, counts) in incomplete_moves() {
+            local(async {
+                let (controller, install) = reporting(Moved::default(), moved);
+                let rig = rig_edit(TestBackend::new("/bin/true"), Timing::default(), install);
+                rig.fake
+                    .on_launch(|_, _| Launch::Fail(io::Error::other("no process left")));
+                let failed = rig
+                    .start(base_spec(Regime::R1, &[2], secs(5)))
+                    .await
+                    .map(|_| ())
+                    .unwrap_err();
+                assert!(
+                    failed.value.is_some(),
+                    "the rollback confirmed nothing runs"
+                );
+                assert_eq!(
+                    controller.recording.calls(),
+                    [Call::Confine(all_but(2)), Call::Restore]
+                );
+                let Some(Error::Joined(joined)) = crate_error(&failed.error) else {
+                    panic!("the restoration was not joined: {:?}", failed.error);
+                };
+                let restored = retry_line(counts);
+                assert!(
+                    matches!(joined.errors(), [Error::Launch { .. }, Error::Output(output)]
+                if output.diagnostics() == [restored.clone()]),
+                    "{:?}",
+                    joined.errors()
+                );
+            })
             .await;
-            let swept = answered.recv().unwrap().unwrap();
-            assert_eq!(controller.recording.calls(), [Call::Restore]);
-            assert!(
-                swept.detail.ends_with(&format!("; {}", retry_line(counts))),
-                "{}",
-                swept.detail
-            );
-            assert!(
-                !swept.detail.contains("their own CPUs again"),
-                "{}",
-                swept.detail
-            );
-        })
-        .await;
-    }
+        }
+    });
+}
+
+#[test]
+fn a_sweep_whose_restoration_is_incomplete_says_it_stays_confined_until_a_retry() {
+    crate::testing::runtime(true).block_on(async move {
+        for (moved, counts) in incomplete_moves() {
+            local(async {
+                let (controller, install) = reporting(Moved::default(), moved);
+                let rig = rig_edit(TestBackend::new("/bin/true"), Timing::default(), install);
+                let (reply, answered) = std::sync::mpsc::sync_channel(1);
+                serve_detached(
+                    Rc::clone(&rig.env),
+                    Command::Sweep {
+                        cancel: CancellationToken::new(),
+                        reply,
+                    },
+                )
+                .await;
+                let swept = answered.recv().unwrap().unwrap();
+                assert_eq!(controller.recording.calls(), [Call::Restore]);
+                assert!(
+                    swept.detail.ends_with(&format!("; {}", retry_line(counts))),
+                    "{}",
+                    swept.detail
+                );
+                assert!(
+                    !swept.detail.contains("their own CPUs again"),
+                    "{}",
+                    swept.detail
+                );
+            })
+            .await;
+        }
+    });
 }
 
 // ---- the process seam ----
 
-const CHILD: &str = "tests::controller::seam_child";
+const CHILD: &str = "tests::controller::real_process_seam_child";
 const MARK: &str = "helper:controller-seam";
 
 /// The CPUs a `Cpus_allowed_list` value names, ascending.
@@ -555,6 +571,10 @@ fn seam() {
     let settings = Settings {
         timing: timing(),
         roots: Roots::default(),
+        fs: None,
+        inputs: crate::procfs::Inputs::default(),
+        memory: None,
+        durability: crate::samples::Durability::Unsynced,
         unscoped: true,
         user_manager: false,
         controller: Arc::new(Threads::over(Proc)),
@@ -591,7 +611,7 @@ fn seam() {
 
 /// Runs only as the child of the test below.
 #[test]
-fn seam_child() {
+fn real_process_seam_child() {
     if !std::env::args().any(|arg| arg == MARK) {
         return;
     }

@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, fs, path::Path, path::PathBuf};
+use std::{collections::BTreeMap, fs::File, io, path::Path, path::PathBuf};
 
 use serde::Deserialize;
 use togi_journal::{
@@ -39,7 +39,19 @@ impl Config {
     }
 
     pub fn load(path: &Path) -> Result<Self, LoadError> {
-        let text = fs::read_to_string(path).map_err(|source| LoadError::Read {
+        Self::load_with(path, |path| File::open(path))
+    }
+
+    pub(crate) fn load_with<R: io::Read>(
+        path: &Path,
+        open: impl FnOnce(&Path) -> io::Result<R>,
+    ) -> Result<Self, LoadError> {
+        let read = || {
+            let mut text = String::new();
+            open(path)?.read_to_string(&mut text)?;
+            Ok(text)
+        };
+        let text = read().map_err(|source| LoadError::Read {
             path: path.to_owned(),
             source,
         })?;

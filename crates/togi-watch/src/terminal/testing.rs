@@ -1,4 +1,4 @@
-//! Test support: a terminal backend that records what the loop does to it, and journals on disk.
+//! Test support: a recording terminal backend, in-memory journal bytes, and explicit kernel-only disk fixtures.
 
 use std::cell::{Cell as StdCell, RefCell};
 use std::io::{self, Write};
@@ -11,6 +11,16 @@ use ratatui::buffer::Cell;
 use ratatui::layout::{Position, Size};
 use togi_journal::{Build, Event, Payload, SCHEMA, SessionId, SessionStart, SessionWarning, Stamp};
 use togi_machine::{BootId, CcdId, CoreId, CoreInfo, CpuId};
+
+/// Runs fake asynchronous loops with deterministic time and no I/O reactor descriptors.
+pub(super) fn paused<T>(future: impl Future<Output = T>) -> T {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .start_paused(true)
+        .build()
+        .unwrap()
+        .block_on(future)
+}
 
 /// One thing the loop did to the terminal.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -308,12 +318,12 @@ pub(super) fn session_with_warnings(warnings: u64) -> Vec<Event> {
     events
 }
 
-/// Writes `events` as the journal in `directory` and gives it a fixed modification time.
-pub(super) fn write_journal(directory: &Path, events: &[Event]) {
-    write_bytes(directory, &lines(events));
+/// Kernel-only fixture: writes a journal with a fixed modification time.
+pub(super) fn real_fs_write_journal(directory: &Path, events: &[Event]) {
+    real_fs_write_bytes(directory, &lines(events));
 }
 
-pub(super) fn write_bytes(directory: &Path, bytes: &[u8]) {
+pub(super) fn real_fs_write_bytes(directory: &Path, bytes: &[u8]) {
     let path = directory.join("events.jsonl");
     std::fs::write(&path, bytes).unwrap();
     let file = std::fs::File::options().write(true).open(&path).unwrap();

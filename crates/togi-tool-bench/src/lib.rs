@@ -35,6 +35,9 @@
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 
+#[cfg(test)]
+extern crate self as togi_tool_bench;
+
 pub mod cache;
 pub mod compare;
 mod error;
@@ -58,9 +61,11 @@ pub use git::{Tree, inspect};
 pub use metrics::{Measured, measure};
 pub use process::Fleet;
 pub use record::{
-    ModelCheck, Record, Status, read as read_records, write as write_records,
+    ModelCheck, Record, Status, encode as encode_records,
+    encode_baseline as encode_baseline_records, read as read_records,
+    read_from as read_records_from, write as write_records,
     write_baseline as write_baseline_records,
 };
 pub use run::{Options, Report, execute, set_scenario_shares};
 pub use simulator::{Session, Simulator};
-pub use suite::{Machine, Plan, RunSpec, Selection, Split, Suite, SuiteError};
+pub use suite::{Machine, Plan, RunSpec, Selection, Split, Suite, SuiteError, SuiteSource};

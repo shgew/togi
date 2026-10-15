@@ -174,11 +174,9 @@ fn durable(bench: &Bench) -> Vec<Event> {
         .to_vec()
 }
 
-/// Runs `check` for each of `points` on as many threads as the machine offers, up to eight.
+/// Runs `check` for each of `points` on eight real threads.
 fn each(points: &[usize], check: impl Fn(usize) + Sync) {
-    let workers = std::thread::available_parallelism()
-        .map_or(1, usize::from)
-        .min(8);
+    let workers = 8;
     std::thread::scope(|scope| {
         let handles: Vec<_> = (0..workers)
             .map(|worker| {

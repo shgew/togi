@@ -1,20 +1,30 @@
+#[cfg(target_os = "linux")]
 use std::cell::Cell;
+use std::collections::BTreeMap;
+#[cfg(target_os = "linux")]
 use std::collections::BTreeSet;
-use std::fs;
-use std::mem::MaybeUninit;
+use std::ffi::OsString;
+use std::io;
 use std::path::{Path, PathBuf};
+#[cfg(target_os = "linux")]
 use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
-use rustix::fd::OwnedFd;
-use rustix::fs::inotify;
-use rustix::io::Errno;
-use tempfile::TempDir;
+#[cfg(target_os = "linux")]
 use togi_config::Config;
+use togi_machine::{Check, CoreInfo, CoreRank, Partial};
+#[cfg(target_os = "linux")]
 use togi_smu::Driver;
+#[cfg(target_os = "linux")]
 use togi_trial::{BackendIdentity, IdentityError};
 
+use crate::adapters::lock;
+#[cfg(target_os = "linux")]
 use crate::assemble::Parts;
+use crate::host::HostReadings;
+#[cfg(target_os = "linux")]
 use crate::host::{Privilege, ScopeProbe, SystemHost};
+#[cfg(target_os = "linux")]
 use crate::preflight::Account;
 
 pub(super) const MAILBOX_AND_PM_FILES: [&str; 5] = [
@@ -25,17 +35,30 @@ pub(super) const MAILBOX_AND_PM_FILES: [&str; 5] = [
     "pm_table",
 ];
 
+#[derive(Clone)]
+enum Entry {
+    Directory,
+    File(Vec<u8>),
+}
+
+#[derive(Clone)]
 pub(super) struct Tree {
-    dir: TempDir,
+    entries: Arc<Mutex<BTreeMap<PathBuf, Entry>>>,
+    touched: Arc<Mutex<Vec<&'static str>>>,
 }
 
 impl Tree {
-    /// A machine whose CPU and `ryzen_smu` identity checks pass, with its mailbox and PM table
-    /// files in place so that touching one can be seen.
+    pub(super) fn empty() -> Self {
+        Self {
+            entries: Arc::default(),
+            touched: Arc::default(),
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    /// A supported identity with one physical core: mapping must refuse before SMN access.
     pub(super) fn new() -> Self {
-        let tree = Self {
-            dir: TempDir::new().unwrap(),
-        };
+        let tree = Self::empty();
         tree.put(
             "proc/cpuinfo",
             "cpu family : 26\nmodel : 68\nmodel name : Test CPU\nmicrocode : 0xb404038\n",
@@ -55,66 +78,195 @@ impl Tree {
         tree
     }
 
+    #[expect(
+        clippy::unused_self,
+        reason = "the memory fixture has a fixed virtual root"
+    )]
     pub(super) fn root(&self) -> &Path {
-        self.dir.path()
+        Path::new("/fixture")
     }
 
     pub(super) fn path(&self, relative: &str) -> PathBuf {
-        self.dir.path().join(relative)
+        self.root().join(relative)
+    }
+
+    pub(super) fn mkdir(&self, relative: &str) {
+        let path = self.path(relative);
+        let mut entries = lock(&self.entries);
+        for parent in path.ancestors() {
+            entries.entry(parent.to_owned()).or_insert(Entry::Directory);
+        }
     }
 
     pub(super) fn put(&self, relative: &str, text: &str) {
         let path = self.path(relative);
-        fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(path, text).unwrap();
+        let parent = path.parent().unwrap().strip_prefix(self.root()).unwrap();
+        self.mkdir(parent.to_str().unwrap());
+        lock(&self.entries).insert(path, Entry::File(text.as_bytes().to_vec()));
     }
 
+    #[cfg(target_os = "linux")]
     pub(super) fn remove(&self, relative: &str) {
-        fs::remove_file(self.path(relative)).unwrap();
-    }
-}
-
-/// An inotify watch on the mailbox and PM table files of a tree: any open, read or write of
-/// one is an event, so reaching the hardware cannot go unnoticed.
-pub(super) struct Watch {
-    inotify: OwnedFd,
-    files: Vec<(i32, &'static str)>,
-}
-
-impl Watch {
-    pub(super) fn on(tree: &Tree) -> Self {
-        let inotify =
-            inotify::init(inotify::CreateFlags::NONBLOCK | inotify::CreateFlags::CLOEXEC).unwrap();
-        let files = MAILBOX_AND_PM_FILES
-            .into_iter()
-            .map(|name| {
-                let path = tree.path(&format!("sys/kernel/ryzen_smu_drv/{name}"));
-                let watch = inotify::add_watch(&inotify, path, inotify::WatchFlags::ALL_EVENTS);
-                (watch.unwrap(), name)
-            })
-            .collect();
-        Self { inotify, files }
+        assert!(lock(&self.entries).remove(&self.path(relative)).is_some());
     }
 
-    /// The watched files with an event since the last call, sorted.
-    pub(super) fn touched(&self) -> Vec<&'static str> {
-        let mut buffer = [MaybeUninit::uninit(); 1024];
-        let mut reader = inotify::Reader::new(&self.inotify, &mut buffer);
-        let mut touched = BTreeSet::new();
-        loop {
-            match reader.next() {
-                Err(Errno::AGAIN) => break,
-                Err(error) => panic!("reading the inotify queue: {error}"),
-                Ok(event) => {
-                    let file = self.files.iter().find(|(watch, _)| *watch == event.wd());
-                    touched.insert(file.map_or("an unknown watch", |(_, name)| *name));
-                }
+    #[cfg(target_os = "linux")]
+    pub(super) fn remove_dir(&self, relative: &str) {
+        let path = self.path(relative);
+        lock(&self.entries).retain(|entry, _| !entry.starts_with(&path));
+    }
+
+    fn record(&self, path: &Path) {
+        if path.parent() == Some(self.path("sys/kernel/ryzen_smu_drv").as_path()) {
+            if let Some(name) = MAILBOX_AND_PM_FILES
+                .into_iter()
+                .find(|name| path.file_name() == Some(std::ffi::OsStr::new(name)))
+            {
+                lock(&self.touched).push(name);
             }
         }
-        touched.into_iter().collect()
+    }
+
+    pub(super) fn read(&self, path: &Path) -> io::Result<Vec<u8>> {
+        self.record(path);
+        match lock(&self.entries).get(path) {
+            Some(Entry::File(bytes)) => Ok(bytes.clone()),
+            Some(Entry::Directory) => Err(io::Error::other("not a regular file")),
+            None => Err(io::ErrorKind::NotFound.into()),
+        }
+    }
+
+    pub(super) fn attribute(&self, path: &Path) -> io::Result<String> {
+        crate::files::read_attribute_from(self.read(path).map(io::Cursor::new))
+    }
+
+    pub(super) fn list(&self, path: &Path) -> io::Result<Vec<OsString>> {
+        let entries = lock(&self.entries);
+        match entries.get(path) {
+            Some(Entry::Directory) => Ok(entries
+                .keys()
+                .filter(|entry| entry.parent() == Some(path))
+                .map(|entry| entry.file_name().unwrap().to_owned())
+                .collect()),
+            Some(Entry::File(_)) => Err(rustix::io::Errno::NOTDIR.into()),
+            None => Err(io::ErrorKind::NotFound.into()),
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    pub(super) fn driver(&self, identity_only: bool) -> Driver {
+        let cpu_names = self
+            .list(&self.path("sys/devices/system/cpu"))
+            .unwrap()
+            .into_iter()
+            .map(|name| name.into_string().unwrap())
+            .collect();
+        let loaded = lock(&self.entries).contains_key(&self.path("sys/kernel/ryzen_smu_drv"));
+        let read = self.clone();
+        if identity_only {
+            Driver::identity_only_from_readers(self.root(), cpu_names, loaded, move |path| {
+                read.read(path)
+            })
+            .unwrap()
+        } else {
+            let write = self.clone();
+            Driver::from_readers(
+                self.root(),
+                cpu_names,
+                loaded,
+                move |path| read.read(path),
+                move |path, bytes| {
+                    write.record(path);
+                    let mut entries = lock(&write.entries);
+                    match entries.get_mut(path) {
+                        Some(Entry::File(content)) => {
+                            if content.len() < bytes.len() {
+                                content.resize(bytes.len(), 0);
+                            }
+                            content[..bytes.len()].copy_from_slice(bytes);
+                            Ok(bytes.len())
+                        }
+                        Some(Entry::Directory) => Err(io::Error::other("not a regular file")),
+                        None => Err(io::ErrorKind::NotFound.into()),
+                    }
+                },
+            )
+            .unwrap()
+        }
+    }
+
+    pub(super) fn ranking(
+        &self,
+        cores: &[CoreInfo],
+    ) -> Result<Vec<CoreRank>, Partial<Vec<CoreRank>>> {
+        crate::ranking::read_with(self.root(), cores, |path| self.attribute(path))
+    }
+
+    pub(super) fn watchdog(&self) -> Check {
+        crate::watchdog::probe_with(
+            self.root(),
+            |path| self.list(path).map(|entries| entries.into_iter().map(Ok)),
+            |path| self.attribute(path),
+        )
+    }
+
+    #[cfg(target_os = "linux")]
+    pub(super) fn materialize(&self) -> tempfile::TempDir {
+        let dir = tempfile::TempDir::new().unwrap();
+        for (path, entry) in lock(&self.entries).iter() {
+            let Ok(relative) = path.strip_prefix(self.root()) else {
+                continue;
+            };
+            let path = dir.path().join(relative);
+            match entry {
+                Entry::Directory => std::fs::create_dir_all(path).unwrap(),
+                Entry::File(bytes) => std::fs::write(path, bytes).unwrap(),
+            }
+        }
+        dir
     }
 }
 
+impl HostReadings for Tree {
+    fn watchdog(&self, _root: &Path) -> Check {
+        self.watchdog()
+    }
+
+    fn ranking(
+        &self,
+        _root: &Path,
+        cores: &[CoreInfo],
+    ) -> Result<Vec<CoreRank>, Partial<Vec<CoreRank>>> {
+        self.ranking(cores)
+    }
+}
+
+#[cfg(target_os = "linux")]
+pub(super) struct Watch {
+    touched: Arc<Mutex<Vec<&'static str>>>,
+    start: usize,
+}
+
+#[cfg(target_os = "linux")]
+impl Watch {
+    pub(super) fn on(tree: &Tree) -> Self {
+        Self {
+            touched: Arc::clone(&tree.touched),
+            start: lock(&tree.touched).len(),
+        }
+    }
+
+    pub(super) fn touched(&self) -> Vec<&'static str> {
+        lock(&self.touched)[self.start..]
+            .iter()
+            .copied()
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    }
+}
+
+#[cfg(target_os = "linux")]
 pub(super) fn resolved_account() -> Account {
     Account::Resolved {
         name: "trial-user".to_owned(),
@@ -122,10 +274,12 @@ pub(super) fn resolved_account() -> Account {
     }
 }
 
+#[cfg(target_os = "linux")]
 pub(super) fn refused_account() -> Account {
     Account::Refused(IdentityError::NotConfigured)
 }
 
+#[cfg(target_os = "linux")]
 /// A scope probe that counts its calls and answers with a canned reply.
 #[derive(Clone)]
 pub(super) struct Scope {
@@ -133,6 +287,7 @@ pub(super) struct Scope {
     reply: Rc<dyn Fn() -> Result<String, togi_trial::Error>>,
 }
 
+#[cfg(target_os = "linux")]
 impl Scope {
     pub(super) fn creating() -> Self {
         Self::answering(|| Ok("scope confined to cpu 0 created".to_owned()))
@@ -159,6 +314,7 @@ impl Scope {
     }
 }
 
+#[cfg(target_os = "linux")]
 impl ScopeProbe for Scope {
     fn probe(&self) -> Result<String, togi_trial::Error> {
         self.calls.set(self.calls.get() + 1);
@@ -166,14 +322,34 @@ impl ScopeProbe for Scope {
     }
 }
 
+#[cfg(target_os = "linux")]
 pub(super) fn host(
     tree: &Tree,
     privilege: Privilege,
     account: Account,
     scope: Scope,
-) -> SystemHost {
-    let driver = Driver::open(tree.root()).unwrap();
+) -> SystemHost<Tree> {
+    host_with_driver(tree, tree.driver(false), privilege, account, scope)
+}
+
+#[cfg(target_os = "linux")]
+pub(super) fn host_with_driver(
+    tree: &Tree,
+    driver: Driver,
+    privilege: Privilege,
+    account: Account,
+    scope: Scope,
+) -> SystemHost<Tree> {
     let mut parts = Parts::new(driver, &Config::default()).unwrap();
     parts.account = account;
-    parts.host(tree.root(), privilege, scope)
+    SystemHost {
+        root: tree.root().to_owned(),
+        privilege,
+        driver: parts.driver,
+        pm: parts.pm,
+        backends: parts.backends,
+        account: parts.account,
+        scope: Box::new(scope),
+        readings: tree.clone(),
+    }
 }

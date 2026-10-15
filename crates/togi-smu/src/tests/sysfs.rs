@@ -1,8 +1,8 @@
 use super::fixture::Tree;
-use crate::Driver;
+#[cfg(target_os = "linux")]
+use crate::files::Files;
 use crate::mailbox::{Command, MailboxError, Status, Transport};
 use crate::sysfs::Sysfs;
-use std::fs;
 use std::io::ErrorKind;
 use tempfile::TempDir;
 
@@ -13,12 +13,12 @@ fn mailbox_tree() -> (Tree, Sysfs) {
     tree.put(&format!("{DRIVER}/smu_args"), &"\0".repeat(24));
     tree.put(&format!("{DRIVER}/rsmu_cmd"), &"\0".repeat(4));
     tree.put(&format!("{DRIVER}/smn"), &"\0".repeat(4));
-    let sysfs = Sysfs::locate(tree.root()).unwrap();
+    let sysfs = Sysfs::from_readers(tree.root(), tree.source());
     (tree, sysfs)
 }
 
 #[test]
-fn an_absent_driver_directory_is_not_a_mailbox() {
+fn real_fs_an_absent_driver_directory_is_not_a_mailbox() {
     let empty = TempDir::new().unwrap();
     assert!(Sysfs::locate(empty.path()).is_none());
 }
@@ -55,11 +55,11 @@ fn arguments_round_trip_in_24_little_endian_bytes() {
     let (tree, sysfs) = mailbox_tree();
     let args = [0x1234_5678, 4, 3, 2, 1, 0xffec];
     assert_eq!(sysfs.transact(1, args).unwrap(), args);
-    let written = fs::read(tree.path(&format!("{DRIVER}/smu_args"))).unwrap();
+    let written = tree.bytes(&format!("{DRIVER}/smu_args"));
     assert_eq!(written.len(), 24);
     assert_eq!(written[..4], 0x1234_5678_u32.to_le_bytes());
     assert_eq!(
-        fs::read(tree.path(&format!("{DRIVER}/rsmu_cmd"))).unwrap(),
+        tree.bytes(&format!("{DRIVER}/rsmu_cmd")),
         1_u32.to_le_bytes()
     );
 }
@@ -73,7 +73,7 @@ fn typed_commands_write_their_code() {
         Err(MailboxError::Status { command: 0xd5, .. })
     ));
     assert_eq!(
-        fs::read(tree.path(&format!("{DRIVER}/rsmu_cmd"))).unwrap(),
+        tree.bytes(&format!("{DRIVER}/rsmu_cmd")),
         0xd5_u32.to_le_bytes()
     );
 }
@@ -138,7 +138,7 @@ fn unavailable_mailbox_files_fail_at_the_open_stage() {
         assert_eq!(source.kind(), ErrorKind::NotFound);
         if name == "smu_args" {
             assert_eq!(
-                fs::read(tree.path(&format!("{DRIVER}/rsmu_cmd"))).unwrap(),
+                tree.bytes(&format!("{DRIVER}/rsmu_cmd")),
                 [0; 4],
                 "command written after the argument write failed"
             );
@@ -149,10 +149,14 @@ fn unavailable_mailbox_files_fail_at_the_open_stage() {
 #[cfg(target_os = "linux")]
 #[test]
 fn a_failed_write_is_reported_with_its_path() {
-    let (tree, sysfs) = mailbox_tree();
+    let tree = Tree::with_ccds(0, 0, true);
     let args = tree.path(&format!("{DRIVER}/smu_args"));
-    fs::remove_file(&args).unwrap();
-    std::os::unix::fs::symlink("/dev/full", &args).unwrap();
+    let readers = crate::files::Readers {
+        cpu_names: vec![],
+        read: std::sync::Arc::new(|_| panic!("read after failed argument write")),
+        write: std::sync::Arc::new(|_, _| Err(std::io::Error::other("write failed"))),
+    };
+    let sysfs = Sysfs::from_readers(tree.root(), Files::Readers(std::sync::Arc::new(readers)));
     let error = sysfs.transact(1, [0; 6]).unwrap_err();
     assert!(
         matches!(&error, MailboxError::Write { path, .. } if path == &args),
@@ -161,14 +165,20 @@ fn a_failed_write_is_reported_with_its_path() {
 }
 
 #[test]
-fn the_driver_reaches_the_real_mailbox_only_through_validation() {
+fn the_driver_reaches_the_mailbox_only_through_validation() {
     let tree = Tree::new(8, true);
     tree.put(&format!("{DRIVER}/smn"), "\0\0\0\0");
-    let mut driver = Driver::open(tree.root()).unwrap();
-    let smn = tree.path(&format!("{DRIVER}/smn"));
-    assert_eq!(fs::read(&smn).unwrap(), [0; 4], "open wrote to the mailbox");
+    let mut driver = tree.open().unwrap();
+    assert_eq!(
+        tree.bytes(&format!("{DRIVER}/smn")),
+        [0; 4],
+        "open wrote to the mailbox"
+    );
     let _ = driver.validate().unwrap();
-    assert_eq!(fs::read(&smn).unwrap(), 0x304a_03dc_u32.to_le_bytes());
+    assert_eq!(
+        tree.bytes(&format!("{DRIVER}/smn")),
+        0x304a_03dc_u32.to_le_bytes()
+    );
     let detail = driver.check_slot_mapping().detail;
     assert!(
         detail.contains("harvested CCDs are not yet supported"),

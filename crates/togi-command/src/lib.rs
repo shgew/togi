@@ -214,10 +214,17 @@ pub async fn run(invocation: &Invocation, deadline: Instant) -> Result<Output, E
     Err(leader.teardown(invocation, cause).await)
 }
 
+/// Rejects calls inside a runtime; a zero timeout outside one starts neither a runtime nor a child.
 pub fn run_blocking(invocation: &Invocation, timeout: Duration) -> Result<Output, Error> {
     if tokio::runtime::Handle::try_current().is_ok() {
         return Err(Error::InsideRuntime {
             program: invocation.program.clone(),
+        });
+    }
+    if timeout.is_zero() {
+        return Err(Error::TimedOut {
+            program: invocation.program.clone(),
+            timeout,
         });
     }
     let runtime = tokio::runtime::Builder::new_current_thread()
@@ -265,6 +272,16 @@ struct Started {
 /// every later setup failure (pidfd, pipe registration) tears the group down and reaps or hands
 /// off the leader instead of dropping an unwatched child.
 async fn start(invocation: &Invocation) -> Result<Started, Error> {
+    #[cfg(test)]
+    {
+        fault::START_ATTEMPTS.set(fault::START_ATTEMPTS.get() + 1);
+        if fault::REFUSE_START.get() {
+            return Err(Error::Spawn {
+                program: invocation.program.clone(),
+                source: io::Error::other("unexpected command start"),
+            });
+        }
+    }
     let reaper =
         Reaper::start().map_err(|source| invocation.io_error(Operation::StartReaper, source))?;
     let mut command = std::process::Command::new(&invocation.program);
@@ -274,6 +291,8 @@ async fn start(invocation: &Invocation) -> Result<Started, Error> {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .process_group(0);
+    #[cfg(test)]
+    fault::SPAWN_ATTEMPTS.set(fault::SPAWN_ATTEMPTS.get() + 1);
     #[expect(
         clippy::disallowed_methods,
         reason = "the one spawn behind togi-command's bounded runner; a Leader owns the child before any fallible setup"
@@ -550,7 +569,7 @@ fn injected_setup_failure() -> Option<io::Error> {
 }
 
 /// Per-thread fault injection for the unit tests: a failed post-spawn setup step, a kill that
-/// fails or is not delivered, and a reaper thread that cannot be created.
+/// fails or is not delivered, a refused start, and a reaper thread that cannot be created.
 #[cfg(test)]
 mod fault {
     use std::cell::Cell;
@@ -569,6 +588,100 @@ mod fault {
         pub(crate) static KILL: Cell<Option<Kill>> = const { Cell::new(None) };
         pub(crate) static SPAWNED: Cell<Option<Pid>> = const { Cell::new(None) };
         pub(crate) static REAPER: Cell<bool> = const { Cell::new(false) };
+        pub(crate) static REFUSE_START: Cell<bool> = const { Cell::new(false) };
+        pub(crate) static START_ATTEMPTS: Cell<u32> = const { Cell::new(0) };
+        pub(crate) static SPAWN_ATTEMPTS: Cell<u32> = const { Cell::new(0) };
+    }
+}
+
+#[cfg(test)]
+mod admission_tests {
+    use std::time::{Duration, Instant as StdInstant};
+
+    use tokio::time::Instant;
+
+    use super::{Error, Invocation, fault};
+
+    struct RefuseStart;
+
+    impl RefuseStart {
+        fn new() -> Self {
+            fault::START_ATTEMPTS.set(0);
+            fault::REFUSE_START.set(true);
+            Self
+        }
+    }
+
+    impl Drop for RefuseStart {
+        fn drop(&mut self) {
+            fault::REFUSE_START.set(false);
+        }
+    }
+
+    fn runtime() -> tokio::runtime::Runtime {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .unwrap()
+    }
+
+    #[test]
+    fn a_deadline_not_in_the_future_times_out_without_spawning() {
+        let _refuse = RefuseStart::new();
+        let invocation = Invocation::new("sh");
+        runtime().block_on(async {
+            let now = Instant::now();
+            for deadline in [now, now.checked_sub(Duration::from_secs(1)).unwrap()] {
+                let started = StdInstant::now();
+                #[expect(
+                    clippy::disallowed_methods,
+                    reason = "the fake start refuses all process effects"
+                )]
+                let error = super::run(&invocation, deadline).await.unwrap_err();
+                assert!(started.elapsed() < Duration::from_millis(100));
+                match error {
+                    Error::TimedOut { program, timeout } => {
+                        assert_eq!(program, "sh");
+                        assert_eq!(timeout, Duration::ZERO);
+                    }
+                    other => panic!("{other:?}"),
+                }
+            }
+        });
+        assert_eq!(fault::START_ATTEMPTS.get(), 0);
+    }
+
+    #[test]
+    fn a_zero_blocking_timeout_times_out_without_spawning() {
+        let _refuse = RefuseStart::new();
+        let started = StdInstant::now();
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "the fake start refuses all process effects"
+        )]
+        let error = super::run_blocking(&Invocation::new("sh"), Duration::ZERO).unwrap_err();
+        assert!(started.elapsed() < Duration::from_millis(100));
+        assert!(matches!(
+            error,
+            Error::TimedOut { program, timeout } if program == "sh" && timeout.is_zero()
+        ));
+        assert_eq!(fault::START_ATTEMPTS.get(), 0);
+    }
+
+    #[test]
+    fn run_blocking_inside_a_runtime_does_not_spawn() {
+        let _refuse = RefuseStart::new();
+        runtime().block_on(async {
+            for timeout in [Duration::ZERO, Duration::from_secs(10)] {
+                #[expect(
+                    clippy::disallowed_methods,
+                    reason = "the fake start refuses all process effects"
+                )]
+                let error = super::run_blocking(&Invocation::new("sh"), timeout).unwrap_err();
+                assert!(matches!(error, Error::InsideRuntime { program } if program == "sh"));
+            }
+        });
+        assert_eq!(fault::START_ATTEMPTS.get(), 0);
     }
 }
 
@@ -1015,17 +1128,16 @@ mod tests {
     #[test]
     fn a_reaper_thread_that_cannot_start_starts_nothing() {
         fault::REAPER.set(true);
-        let dir = tempfile::tempdir().unwrap();
-        let marker = dir.path().join("marker");
-        let invocation = Invocation::new("sh")
-            .arg("-c")
-            .arg(format!("touch {}", marker.display()));
+        fault::SPAWN_ATTEMPTS.set(0);
+        fault::SPAWNED.set(None);
+        let invocation = Invocation::new("sh");
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .unwrap();
         let started = StdInstant::now();
-        #[expect(
-            clippy::disallowed_methods,
-            reason = "tests exercise the bounded runner with real processes"
-        )]
-        let result = super::run_blocking(&invocation, Duration::from_secs(10));
+        let result = runtime.block_on(super::start(&invocation));
+        fault::REAPER.set(false);
         let elapsed = started.elapsed();
         match &result {
             Err(Error::Io {
@@ -1036,11 +1148,11 @@ mod tests {
                 assert_eq!(program, "sh");
                 assert_eq!(source.to_string(), "injected reaper thread failure");
             }
-            other => panic!("{other:?}"),
+            Err(other) => panic!("{other:?}"),
+            Ok(_) => panic!("the failed reaper started a command"),
         }
         assert!(elapsed < Duration::from_millis(100), "{elapsed:?}");
+        assert_eq!(fault::SPAWN_ATTEMPTS.get(), 0, "a spawn was attempted");
         assert_eq!(fault::SPAWNED.get(), None, "a process was started");
-        std::thread::sleep(Duration::from_millis(100));
-        assert!(!marker.exists(), "the command ran");
     }
 }

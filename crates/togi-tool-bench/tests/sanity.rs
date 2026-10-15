@@ -1,19 +1,20 @@
 #![expect(clippy::unwrap_used, reason = "helpers panic on a broken fixture")]
 
+#[expect(
+    dead_code,
+    unused_imports,
+    reason = "this binary uses records and snapshots, not memory trees"
+)]
 mod common;
 
-use std::fs;
 use std::path::Path;
 
 use common::record;
-use togi_tool_bench::sanity::{BaselineRun, compare, read_baseline, report};
+use togi_tool_bench::sanity::{BaselineRun, compare, read_baseline_from, report};
 use togi_tool_bench::{Record, Status};
 
 fn baseline_runs(lines: &[String]) -> Vec<BaselineRun> {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("baseline.jsonl");
-    fs::write(&path, lines.join("\n")).unwrap();
-    read_baseline(&path).unwrap()
+    read_baseline_from(lines.join("\n").as_bytes(), Path::new("baseline.jsonl")).unwrap()
 }
 
 fn baseline_line(scenario: &str, seed: u64, sim_hours: f64, crashes: u32) -> String {
@@ -94,17 +95,19 @@ fn baseline_scores_ignore_the_fields_the_sanity_check_does_not_compare() {
 }
 
 #[test]
-fn a_malformed_baseline_line_names_its_number_and_a_missing_file_is_an_error() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("baseline.jsonl");
-    fs::write(
-        &path,
-        format!("{}\n{{", baseline_line("default", 1, 48.0, 9)),
-    )
-    .unwrap();
-    let error = read_baseline(&path).unwrap_err().to_string();
+fn a_malformed_baseline_line_names_its_number_and_an_unreadable_input_is_an_error() {
+    struct Unreadable;
+    impl std::io::Read for Unreadable {
+        fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+            Err(std::io::ErrorKind::NotFound.into())
+        }
+    }
+    let text = format!("{}\n{{", baseline_line("default", 1, 48.0, 9));
+    let error = read_baseline_from(text.as_bytes(), Path::new("baseline.jsonl"))
+        .unwrap_err()
+        .to_string();
     assert!(error.contains("line 2"), "{error}");
-    assert!(read_baseline(&dir.path().join("missing.jsonl")).is_err());
+    assert!(read_baseline_from(Unreadable, Path::new("missing.jsonl")).is_err());
 }
 
 #[test]
@@ -362,14 +365,16 @@ fn the_table_marks_flagged_lines_and_counts_them() {
     let lines = compare(&shifted, &baseline_runs(&baseline_lines));
     let mut out = Vec::new();
     report(&mut out, &lines).unwrap();
-    insta::assert_snapshot!(String::from_utf8(out).unwrap());
+    common::assert_snapshot(
+        &String::from_utf8(out).unwrap(),
+        include_str!("snapshots/sanity__the_table_marks_flagged_lines_and_counts_them.snap"),
+    );
 }
 
 #[test]
 fn the_committed_baseline_is_the_whole_suite_without_deleted_scenarios() {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tools/bench/baseline.jsonl");
-    let text = fs::read_to_string(&path).unwrap();
-    let runs = read_baseline(&path).unwrap();
+    let text = include_str!("../../../tools/bench/baseline.jsonl");
+    let runs = read_baseline_from(text.as_bytes(), Path::new("baseline.jsonl")).unwrap();
     assert_eq!(runs.len(), 220);
     assert_eq!(
         text.matches("\"scenario\":\"target-nonmember-mce\"")

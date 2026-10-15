@@ -1,10 +1,5 @@
-// Conditions samples: lazy, strictly before the end, stalled culprit, file-backed and shared-voltage lanes.
-// Go: samples_test.go (TestCrashWorkerSamplesSurviveRecovery, TestSimulatedSamples,
-// TestInMemorySampleRetentionDoesNotGrowWithDuration, TestSampleSetupFailuresRemainErrors),
-// TestSharedVoltageSamplesAndDeterminism (lanes; the request summary is togi-requests' own test),
-// TestSharedVoltageSamplesStayLazy; TestSamplePersistenceFailuresRemainErrors (a /dev/full integration test)
-// is `a_sample_file_that_refuses_writes_is_an_error_with_the_trial_result` below, and the setup failures
-// are covered by the test that cannot create the path.
+// Conditions samples: lazy, strictly before the end, stalled culprit, serialized storage and
+// shared-voltage lanes. Storage failures are injected without files or devices.
 
 use std::time::Duration;
 use togi_machine::{
@@ -129,9 +124,9 @@ fn samples_tick_each_second_strictly_before_the_end_and_a_stalled_culprit_stops_
     for (name, signal, at, culprit, want) in cases {
         for file_backed in [false, true] {
             let mut rig = Rig::new(&scripted(signal, at, culprit), 1);
-            let dir = tempfile::tempdir().expect("a directory");
+            let dir = std::rc::Rc::new(crate::common::MemorySamples::default());
             if file_backed {
-                rig.sim.set_samples_dir(Some(dir.path().to_owned()));
+                rig.sim.set_sample_storage(dir.clone());
             }
             run_scripted(&mut rig);
             rig.sim.reboot();
@@ -146,7 +141,7 @@ fn samples_tick_each_second_strictly_before_the_end_and_a_stalled_culprit_stops_
 }
 
 #[test]
-fn a_crashed_trials_samples_survive_recovery_in_files() {
+fn a_crashed_trials_serialized_samples_survive_recovery() {
     let mut definition = machine(2, vec![]);
     definition.script = vec![ScriptDef {
         trial: "0001".to_owned(),
@@ -155,9 +150,9 @@ fn a_crashed_trials_samples_survive_recovery_in_files() {
         core: 1,
         ..ScriptDef::default()
     }];
-    let dir = tempfile::tempdir().expect("a directory");
+    let dir = std::rc::Rc::new(crate::common::MemorySamples::default());
     let mut rig = Rig::new(&definition, 1);
-    rig.sim.set_samples_dir(Some(dir.path().to_owned()));
+    rig.sim.set_sample_storage(dir.clone());
     let waited = rig
         .run(spec(
             "0001",
@@ -178,15 +173,15 @@ fn a_crashed_trials_samples_survive_recovery_in_files() {
     ];
     assert_eq!(collect(&mut rig, "0001"), want);
     let mut recovered = Rig::new(&definition, 1);
-    recovered.sim.set_samples_dir(Some(dir.path().to_owned()));
+    recovered.sim.set_sample_storage(dir.clone());
     assert_eq!(collect(&mut recovered, "0001"), want);
 }
 
 #[test]
 fn ending_a_trial_compresses_its_samples_without_changing_them() {
-    let dir = tempfile::tempdir().expect("a directory");
+    let dir = std::rc::Rc::new(crate::common::MemorySamples::default());
     let mut rig = Rig::new(&machine(2, vec![]), 1);
-    rig.sim.set_samples_dir(Some(dir.path().to_owned()));
+    rig.sim.set_sample_storage(dir.clone());
     rig.pass(spec(
         "0001",
         Regime::R1,
@@ -194,12 +189,14 @@ fn ending_a_trial_compresses_its_samples_without_changing_them() {
         &[0],
         Duration::from_secs(5),
     ));
-    let plain = dir.path().join("0001").join(togi_trialfiles::SAMPLES);
-    assert!(plain.exists());
+    assert!(!dir.files.borrow()["0001"].1, "initially plain JSON lines");
     let before = collect(&mut rig, "0001");
     assert_eq!(before.len(), 4);
     rig.machine.trials.ended("0001").expect("compressed");
-    assert!(!plain.exists(), "the plain file is replaced");
+    assert!(
+        dir.files.borrow()["0001"].1,
+        "the stored bytes are compressed"
+    );
     assert_eq!(collect(&mut rig, "0001"), before);
     let mut memory = Rig::new(&machine(2, vec![]), 1);
     memory
@@ -231,19 +228,16 @@ fn a_long_trial_keeps_no_series_and_yields_lazily() {
 
 #[test]
 fn a_sample_store_that_cannot_be_written_is_an_error_with_the_trial_result() {
-    for case in ["directory", "file"] {
+    for (case, kind) in [
+        ("directory", std::io::ErrorKind::NotADirectory),
+        ("file", std::io::ErrorKind::IsADirectory),
+    ] {
         let mut rig = Rig::new(&machine(2, vec![]), 1);
-        let root = tempfile::tempdir().expect("a directory");
-        let dir = if case == "directory" {
-            let path = root.path().join("not-directory");
-            std::fs::write(&path, b"").expect("a file");
-            path
-        } else {
-            std::fs::create_dir_all(root.path().join("0001").join(togi_trialfiles::SAMPLES))
-                .expect("a directory in the way");
-            root.path().to_owned()
-        };
-        rig.sim.set_samples_dir(Some(dir));
+        let store = std::rc::Rc::new(crate::common::MemorySamples {
+            fail_open: Some(kind),
+            ..Default::default()
+        });
+        rig.sim.set_sample_storage(store);
         let (waited, _) = rig.run(spec(
             "0001",
             Regime::R1,
@@ -262,20 +256,17 @@ fn a_sample_store_that_cannot_be_written_is_an_error_with_the_trial_result() {
     }
 }
 
-/// The sample file opens, then every write is refused (`/dev/full`): a short trial fails when its buffer is
-/// flushed, a long one while the series streams out. Both keep the storage error and the trial's result.
-#[cfg(target_os = "linux")]
+/// A short trial fails when its buffer flushes, a long one while the series streams out.
 #[test]
 fn a_sample_file_that_refuses_writes_is_an_error_with_the_trial_result() {
     const NO_SPACE: i32 = 28;
     for (case, seconds) in [("short", 3), ("long", 3600)] {
         let mut rig = Rig::new(&machine(2, vec![]), 1);
-        let root = tempfile::tempdir().expect("a directory");
-        let trial_dir = root.path().join("0001");
-        std::fs::create_dir_all(&trial_dir).expect("a trial directory");
-        std::os::unix::fs::symlink("/dev/full", trial_dir.join(togi_trialfiles::SAMPLES))
-            .expect("a link to a full device");
-        rig.sim.set_samples_dir(Some(root.path().to_owned()));
+        rig.sim
+            .set_sample_storage(std::rc::Rc::new(crate::common::MemorySamples {
+                fail_after: Some(0),
+                ..Default::default()
+            }));
         let duration = Duration::from_secs(seconds);
         let (waited, _) = rig.run(spec(
             "0001",
@@ -299,14 +290,14 @@ fn a_sample_file_that_refuses_writes_is_an_error_with_the_trial_result() {
 }
 
 #[test]
-fn a_shared_voltage_machine_samples_its_lanes_the_same_in_memory_and_in_files() {
+fn a_shared_voltage_machine_samples_its_lanes_the_same_lazily_and_in_serialized_storage() {
     let definition = committed_machine("shared-voltage.json");
     let mut memory = Vec::new();
     for file_backed in [false, true] {
-        let dir = tempfile::tempdir().expect("a directory");
+        let dir = std::rc::Rc::new(crate::common::MemorySamples::default());
         let mut rig = Rig::new(&definition, 1);
         if file_backed {
-            rig.sim.set_samples_dir(Some(dir.path().to_owned()));
+            rig.sim.set_sample_storage(dir.clone());
         }
         let workload = togi_machine::pick_workload(Regime::R7, 0);
         rig.pass(spec(

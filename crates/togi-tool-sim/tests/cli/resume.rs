@@ -1,42 +1,35 @@
-use std::fs;
 use std::path::Path;
 
-use crate::common::sim;
+use super::common::Host;
 
-fn run(dir: &Path, extra: &[&str]) -> Option<i32> {
-    let mut args = vec!["--state-dir", dir.to_str().unwrap()];
-    args.extend_from_slice(extra);
-    let ran = sim(&args);
-    ran.code
-}
-
-/// A session split across processes by the boot cap ends exactly where the same session run in one process does:
-/// the same journal, byte for byte, and the same state document. The cap always falls on a crash, so this holds
-/// only when the crash's evidence and the reboot's clock survive the process.
+/// Reconstruct the simulator for each invocation, retaining only the journal and machine document.
 #[test]
-fn a_session_resumed_in_a_new_process_ends_where_an_uninterrupted_one_does() {
-    let root = tempfile::tempdir().unwrap();
-    let whole = root.path().join("whole");
-    let split = root.path().join("split");
-    assert_eq!(run(&whole, &[]), Some(0));
+fn a_session_resumed_from_recorded_memory_ends_where_an_uninterrupted_one_does() {
+    let mut host = Host::default();
+    assert_eq!(host.run(["--state-dir", "/whole"]).code, Some(0));
     let mut resumes = 0;
-    let mut code = run(&split, &["--max-boots", "4"]);
+    let mut code = host.run(["--state-dir", "/split", "--max-boots", "4"]).code;
     while code == Some(3) {
         resumes += 1;
         assert!(resumes < 20, "the split session never finished");
-        code = run(&split, &["--max-boots", "4"]);
+        code = host.run(["--state-dir", "/split", "--max-boots", "4"]).code;
     }
     assert_eq!(code, Some(0));
     assert!(resumes >= 2, "the session crashed too rarely to split it");
-    assert!(!split.join("archive").exists());
-    same(&whole, &split, "events.jsonl");
-    same(&whole, &split, "state.json");
-}
-
-fn same(whole: &Path, split: &Path, name: &str) {
-    let whole = fs::read_to_string(whole.join(name)).unwrap();
-    let split = fs::read_to_string(split.join(name)).unwrap();
-    same_text(name, &whole, &split);
+    let whole = &host.states[Path::new("/whole")];
+    let split = &host.states[Path::new("/split")];
+    assert!(
+        !split
+            .entries()
+            .iter()
+            .any(|(path, _)| path.starts_with("/state/archive"))
+    );
+    for name in ["events.jsonl", "state.json"] {
+        let path = Path::new("/state").join(name);
+        let whole = String::from_utf8(whole.contents(&path).unwrap()).unwrap();
+        let split = String::from_utf8(split.contents(&path).unwrap()).unwrap();
+        same_text(name, &whole, &split);
+    }
 }
 
 fn same_text(name: &str, whole: &str, split: &str) {
@@ -44,7 +37,7 @@ fn same_text(name: &str, whole: &str, split: &str) {
         .lines()
         .zip(split.lines())
         .enumerate()
-        .find(|(_, (expected, found))| expected != found)
+        .find(|(_, (a, b))| a != b)
     {
         panic!(
             "{name} differs first at line {}:\nuninterrupted: {expected}\nresumed:       {found}",

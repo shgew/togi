@@ -243,6 +243,7 @@ fn struct_objects(value: &Value, pointer: &str, path: &str, found: &mut Vec<(Str
 }
 
 proptest! {
+    #![proptest_config(crate::testing::property_config())]
     #[test]
     fn strict_and_lenient_decode_a_known_event_the_same_and_lenient_reports_nothing(
         event in arbitrary_event(),

@@ -7,7 +7,7 @@ use togi_machine::{
     BiosContext, CcdId, Condition, CoreId, CoreSet, PerCore, Regime, Signal, TargetOffset,
     WorkloadId,
 };
-use togi_tool_trialfacts::{BuildStamp, Class, Phase, Profile, TrialFact, write};
+use togi_tool_trialfacts::{BuildStamp, Class, Phase, Profile, TrialFact, write_unsynced};
 
 pub(crate) fn fact(
     session: &str,
@@ -121,7 +121,11 @@ pub(crate) fn evidence() -> Vec<TrialFact> {
 
 pub(crate) fn write_extract(dir: &Path, facts: &[TrialFact]) -> PathBuf {
     let path = dir.join("facts.jsonl.gz");
-    write(&path, facts).unwrap();
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "a disposable unsynced fixture feeds the real CLI subprocess"
+    )]
+    write_unsynced(&path, facts).unwrap();
     path
 }
 

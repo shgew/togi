@@ -1,7 +1,10 @@
 use std::fs;
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Duration;
+
+use togi_journal::fs::Fs;
 
 use crate::id::ScopeName;
 
@@ -151,21 +154,120 @@ fn disappeared(error: &io::Error) -> bool {
     error.kind() == io::ErrorKind::NotFound || error.raw_os_error() == Some(3)
 }
 
+/// Read-only inputs for procfs and sensors. Disk reads preserve the kernel's symlink semantics;
+/// an injected filesystem lets content fixtures use the same readers without host effects.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Inputs {
+    filesystem: Option<Arc<dyn Fs>>,
+}
+
+impl Inputs {
+    #[cfg(test)]
+    pub(crate) fn memory(filesystem: Arc<dyn Fs>) -> Self {
+        Self {
+            filesystem: Some(filesystem),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn filesystem(&self) -> Option<&Arc<dyn Fs>> {
+        self.filesystem.as_ref()
+    }
+
+    pub(crate) fn read(&self, path: &Path) -> io::Result<Vec<u8>> {
+        match &self.filesystem {
+            Some(filesystem) => filesystem.read(path),
+            None => fs::read(path),
+        }
+    }
+
+    pub(crate) fn read_to_string(&self, path: &Path) -> io::Result<String> {
+        match &self.filesystem {
+            Some(filesystem) => String::from_utf8(filesystem.read(path)?)
+                .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error)),
+            None => fs::read_to_string(path),
+        }
+    }
+
+    pub(crate) fn read_dir(&self, path: &Path) -> io::Result<Entries> {
+        match &self.filesystem {
+            Some(filesystem) => Ok(Entries::Memory {
+                root: path.to_owned(),
+                entries: filesystem.read_dir(path)?.into_iter(),
+            }),
+            None => fs::read_dir(path).map(Entries::Disk),
+        }
+    }
+}
+
+pub(crate) enum Entries {
+    Disk(fs::ReadDir),
+    Memory {
+        root: PathBuf,
+        entries: std::vec::IntoIter<togi_journal::fs::DirEntry>,
+    },
+}
+
+pub(crate) enum Entry {
+    Disk(fs::DirEntry),
+    Memory(PathBuf),
+}
+
+impl Entry {
+    pub(crate) fn path(&self) -> PathBuf {
+        match self {
+            Self::Disk(entry) => entry.path(),
+            Self::Memory(path) => path.clone(),
+        }
+    }
+
+    pub(crate) fn file_name(&self) -> std::ffi::OsString {
+        match self {
+            Self::Disk(entry) => entry.file_name(),
+            Self::Memory(path) => path.file_name().unwrap_or_default().to_owned(),
+        }
+    }
+}
+
+impl Iterator for Entries {
+    type Item = io::Result<Entry>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Disk(entries) => entries.next().map(|entry| entry.map(Entry::Disk)),
+            Self::Memory { root, entries } => entries
+                .next()
+                .map(|entry| Ok(Entry::Memory(root.join(entry.name)))),
+        }
+    }
+}
+
 /// Reads `/proc`, rooted anywhere so fixtures can stand in.
 #[derive(Clone, Debug)]
 pub(crate) struct Proc {
     root: PathBuf,
     ticks: u64,
+    inputs: Inputs,
 }
 
 impl Proc {
+    #[cfg(test)]
     pub(crate) const fn new(root: PathBuf, ticks: u64) -> Self {
-        Self { root, ticks }
+        Self::with_inputs(root, ticks, Inputs { filesystem: None })
+    }
+
+    pub(crate) const fn with_inputs(root: PathBuf, ticks: u64, inputs: Inputs) -> Self {
+        Self {
+            root,
+            ticks,
+            inputs,
+        }
     }
 
     fn read(&self, relative: &str) -> Result<String, ProcError> {
         let path = self.root.join(relative);
-        fs::read(&path)
+        self.inputs
+            .read(&path)
             .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
             .map_err(|error| {
                 if disappeared(&error) {
@@ -192,7 +294,7 @@ impl Proc {
 
     pub(crate) fn threads(&self, pid: u32) -> Result<Threads, ProcError> {
         let directory = self.root.join(format!("{pid}/task"));
-        let entries = fs::read_dir(&directory).map_err(|error| {
+        let entries = self.inputs.read_dir(&directory).map_err(|error| {
             if disappeared(&error) {
                 ProcError::Gone
             } else {
@@ -239,7 +341,7 @@ impl Proc {
     /// Every live process whose cgroup path names a trial scope; a read failure other than a
     /// disappearance fails the whole scan, never an empty success.
     pub(crate) fn scope_processes(&self) -> Result<Vec<ScopeProcess>, ProcError> {
-        let entries = fs::read_dir(&self.root).map_err(|error| {
+        let entries = self.inputs.read_dir(&self.root).map_err(|error| {
             ProcError::Observation(format!("list {}: {error}", self.root.display()))
         })?;
         let mut found = Vec::new();
@@ -404,16 +506,85 @@ mod tests {
         assert_eq!(scope_of("0::/xtogi-trial-a.scope\n"), None);
     }
 
-    fn fixture() -> (tempfile::TempDir, Proc) {
+    struct Fixture {
+        fs: Arc<togi_journal::fs::MemFs>,
+    }
+
+    impl Fixture {
+        fn path() -> &'static Path {
+            Path::new("/proc-fixture")
+        }
+
+        fn mkdir(&self, relative: &str) {
+            let path = Self::path().join(relative);
+            for ancestor in path.ancestors().collect::<Vec<_>>().into_iter().rev() {
+                if self.fs.kind(ancestor).unwrap().is_none() {
+                    self.fs.create_dir(ancestor).unwrap();
+                }
+            }
+        }
+    }
+
+    fn fixture() -> (Fixture, Proc) {
+        let dir = Fixture {
+            fs: Arc::new(togi_journal::fs::MemFs::new()),
+        };
+        dir.mkdir("");
+        let proc = Proc::with_inputs(
+            Fixture::path().to_owned(),
+            100,
+            Inputs::memory(dir.fs.clone()),
+        );
+        (dir, proc)
+    }
+
+    fn write(dir: &Fixture, relative: &str, text: &str) {
+        dir.fs.put(Fixture::path().join(relative), text.as_bytes());
+    }
+
+    fn disk_fixture() -> (tempfile::TempDir, Proc) {
         let dir = tempfile::tempdir().unwrap();
         let proc = Proc::new(dir.path().to_owned(), 100);
         (dir, proc)
     }
 
-    fn write(dir: &tempfile::TempDir, relative: &str, text: &str) {
+    fn disk_write(dir: &tempfile::TempDir, relative: &str, text: &str) {
         let path = dir.path().join(relative);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(path, text).unwrap();
+    }
+
+    #[test]
+    fn injected_read_and_listing_errors_are_lost_observations() {
+        use togi_journal::fs::{Fault, Op};
+
+        let (dir, proc) = fixture();
+        write(&dir, "10/stat", &stat_line("w", 'R', &[]));
+        dir.fs.inject(Fault::before(Op::Read, 1));
+        assert!(matches!(proc.usage(10), Err(ProcError::Observation(_))));
+        dir.fs.clear_faults();
+        dir.fs.inject(Fault::before(Op::Read, 1));
+        assert!(matches!(proc.threads(10), Err(ProcError::Observation(_))));
+        dir.fs.clear_faults();
+        dir.fs.inject(Fault::before(Op::Read, 1));
+        assert!(matches!(
+            proc.scope_processes(),
+            Err(ProcError::Observation(_))
+        ));
+    }
+
+    #[test]
+    fn proc_text_is_lossy_but_sensor_text_requires_utf8() {
+        let (dir, proc) = fixture();
+        let mut bytes = stat_line("w", 'R', &[(39, "3")]).into_bytes();
+        bytes[5] = 0xff;
+        let path = Fixture::path().join("10/stat");
+        dir.fs.put(&path, bytes);
+        assert_eq!(proc.usage(10).unwrap().cpu, 3);
+        assert_eq!(
+            proc.inputs.read_to_string(&path).unwrap_err().kind(),
+            io::ErrorKind::InvalidData
+        );
     }
 
     #[test]
@@ -446,7 +617,7 @@ mod tests {
     fn threads_keep_the_readable_ones_when_siblings_fail_or_vanish() {
         let (dir, proc) = fixture();
         write(&dir, "10/task/123/stat", &stat_line("w", 'R', &[(39, "3")]));
-        fs::create_dir_all(dir.path().join("10/task/124")).unwrap();
+        dir.mkdir("10/task/124");
         write(&dir, "10/task/125/stat", "garbage");
         write(&dir, "10/task/abc/stat", "x");
         write(&dir, "10/task/0/stat", "x");
@@ -462,9 +633,9 @@ mod tests {
     }
 
     #[test]
-    fn a_task_entry_that_is_not_a_directory_is_lost_observation() {
-        let (dir, proc) = fixture();
-        write(&dir, "99/task", "");
+    fn real_fs_a_task_entry_that_is_not_a_directory_is_lost_observation() {
+        let (dir, proc) = disk_fixture();
+        disk_write(&dir, "99/task", "");
         match proc.threads(99) {
             Err(ProcError::Observation(message)) => {
                 assert!(message.contains("99/task"), "{message}");
@@ -509,14 +680,14 @@ mod tests {
             proc.scope_processes(),
             Err(ProcError::Observation(_))
         ));
-        let missing = Proc::new(dir.path().join("nowhere"), 100);
+        let missing = Proc::with_inputs(Fixture::path().join("nowhere"), 100, proc.inputs.clone());
         assert!(matches!(
             missing.scope_processes(),
             Err(ProcError::Observation(_))
         ));
     }
 
-    fn readable_sibling(dir: &tempfile::TempDir) {
+    fn readable_sibling(dir: &Fixture) {
         write(dir, "20/cgroup", "0::/a/togi-trial-x.scope\n");
         write(dir, "20/stat", &stat_line("w", 'S', &[(22, "777")]));
     }
@@ -526,7 +697,7 @@ mod tests {
         let (dir, proc) = fixture();
         readable_sibling(&dir);
         // A pid whose directory lost its files between listing and reading.
-        fs::create_dir_all(dir.path().join("40")).unwrap();
+        dir.mkdir("40");
         let found = proc.scope_processes().unwrap();
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].pid, 20);
@@ -540,7 +711,7 @@ mod tests {
             if broken == "stat" {
                 write(&dir, "30/cgroup", "0::/a/togi-trial-y.scope\n");
             }
-            fs::create_dir_all(dir.path().join(format!("30/{broken}"))).unwrap();
+            dir.mkdir(&format!("30/{broken}"));
             let Err(ProcError::Observation(text)) = proc.scope_processes() else {
                 panic!("a {broken} that is a directory must fail the scan");
             };
@@ -549,14 +720,15 @@ mod tests {
     }
 
     #[test]
-    fn scope_scan_fails_on_permission_denied_but_not_on_a_vanished_file() {
+    fn real_fs_scope_scan_fails_on_permission_denied_but_not_on_a_vanished_file() {
         use std::os::unix::fs::PermissionsExt as _;
 
         for denied in ["cgroup", "stat"] {
-            let (dir, proc) = fixture();
-            readable_sibling(&dir);
-            write(&dir, "30/cgroup", "0::/a/togi-trial-y.scope\n");
-            write(&dir, "30/stat", &stat_line("w", 'S', &[(22, "5")]));
+            let (dir, proc) = disk_fixture();
+            disk_write(&dir, "20/cgroup", "0::/a/togi-trial-x.scope\n");
+            disk_write(&dir, "20/stat", &stat_line("w", 'S', &[(22, "777")]));
+            disk_write(&dir, "30/cgroup", "0::/a/togi-trial-y.scope\n");
+            disk_write(&dir, "30/stat", &stat_line("w", 'S', &[(22, "5")]));
             let path = dir.path().join(format!("30/{denied}"));
             fs::set_permissions(&path, fs::Permissions::from_mode(0o0)).unwrap();
             if fs::read(&path).is_ok() {
@@ -587,7 +759,7 @@ mod tests {
     #[test]
     fn per_process_reads_fail_on_a_non_file_stat_and_threads_keep_readable_ones() {
         let (dir, proc) = fixture();
-        fs::create_dir_all(dir.path().join("50/stat")).unwrap();
+        dir.mkdir("50/stat");
         assert!(matches!(proc.usage(50), Err(ProcError::Observation(_))));
         let process = ScopeProcess {
             scope: scope("togi-trial-x"),
@@ -598,13 +770,13 @@ mod tests {
             proc.alive(&process),
             Err(ProcError::Observation(_))
         ));
-        fs::create_dir_all(dir.path().join("50/cgroup")).unwrap();
+        dir.mkdir("50/cgroup");
         assert!(matches!(
             proc.in_scope(50, &process.scope),
             Err(ProcError::Observation(_))
         ));
         write(&dir, "51/task/1/stat", &stat_line("w", 'R', &[(39, "2")]));
-        fs::create_dir_all(dir.path().join("51/task/2/stat")).unwrap();
+        dir.mkdir("51/task/2/stat");
         let found = proc.threads(51).unwrap();
         assert_eq!(found.threads, [Thread { tid: 1, cpu: 2 }]);
         assert!(matches!(

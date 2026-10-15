@@ -17,6 +17,7 @@ mod evidence;
 mod forward;
 mod generate;
 mod likelihood;
+mod output;
 mod paths;
 mod search;
 mod signals;
@@ -30,12 +31,13 @@ use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-pub use anchor::shared_voltage_anchor;
+pub use anchor::{shared_voltage_anchor, shared_voltage_anchor_records};
 pub use error::{Error, EvidenceError, Problem};
 pub use forward::{
     ForwardCheck, ForwardCounts, ForwardRow, ForwardScore, forward_check, report_forward,
 };
-pub use generate::{Ensemble, Fitted, Generated, generate};
+pub use generate::{Ensemble, Fitted, Generated, generate, generate_records};
+pub use output::MachineOutput;
 
 /// What one run does.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

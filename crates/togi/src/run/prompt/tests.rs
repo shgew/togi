@@ -199,7 +199,7 @@ fn terminal() -> (OwnedFd, File) {
 const EOF_KEY: &[u8] = b"\x04";
 
 #[test]
-fn a_typed_line_is_read_whole_on_a_terminal() {
+fn real_fs_a_typed_line_is_read_whole_on_a_terminal() {
     let (master, slave) = terminal();
     write(&master, b"yes\n").unwrap();
     let line = read_line(slave.as_fd(), &CancellationToken::new(), readable).unwrap();
@@ -207,7 +207,7 @@ fn a_typed_line_is_read_whole_on_a_terminal() {
 }
 
 #[test]
-fn a_signal_that_interrupts_the_wait_is_a_wake_up_not_an_error() {
+fn real_fs_a_signal_that_interrupts_the_wait_is_a_wake_up_not_an_error() {
     let (_master, slave) = terminal();
     let cancel = CancellationToken::new();
     let mut waits = 0;
@@ -225,7 +225,7 @@ fn a_signal_that_interrupts_the_wait_is_a_wake_up_not_an_error() {
 }
 
 #[test]
-fn a_part_of_a_line_does_not_keep_a_stop_waiting() {
+fn real_fs_a_part_of_a_line_does_not_keep_a_stop_waiting() {
     let (master, slave) = terminal();
     write(&master, b"abc").unwrap();
     write(&master, EOF_KEY).unwrap();
@@ -245,7 +245,7 @@ fn a_part_of_a_line_does_not_keep_a_stop_waiting() {
 }
 
 #[test]
-fn the_end_of_the_input_after_a_part_of_a_line_is_that_part_and_no() {
+fn real_fs_the_end_of_the_input_after_a_part_of_a_line_is_that_part_and_no() {
     let (master, slave) = terminal();
     write(&master, b"yes").unwrap();
     write(&master, EOF_KEY).unwrap();
@@ -256,7 +256,7 @@ fn the_end_of_the_input_after_a_part_of_a_line_is_that_part_and_no() {
 }
 
 #[test]
-fn the_end_of_the_input_with_nothing_typed_is_no_line() {
+fn real_fs_the_end_of_the_input_with_nothing_typed_is_no_line() {
     let (master, slave) = terminal();
     write(&master, EOF_KEY).unwrap();
     let line = read_line(slave.as_fd(), &CancellationToken::new(), readable).unwrap();

@@ -97,6 +97,7 @@ pub(crate) struct Runtime {
     pub faults: Faults,
     pub samples: LastTrial,
     pub samples_dir: Option<std::path::PathBuf>,
+    pub sample_storage: Option<std::rc::Rc<dyn crate::SampleStorage>>,
 }
 
 impl Runtime {
@@ -135,6 +136,7 @@ impl Runtime {
             faults: Faults::default(),
             samples: LastTrial::default(),
             samples_dir: None,
+            sample_storage: None,
             model,
         };
         runtime.start_boot();
@@ -186,6 +188,7 @@ impl Runtime {
             faults: Faults::default(),
             samples: persisted.samples,
             samples_dir: None,
+            sample_storage: None,
             model,
         })
     }

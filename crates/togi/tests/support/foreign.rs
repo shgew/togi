@@ -19,32 +19,76 @@
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::SystemTime;
 
+use togi_journal::fs::{FileKind, Fs};
 /// Where the refusal sends the operator.
 pub(crate) const CUTOVER: &str = "docs/howto.md#go-to-rust-cutover";
 
-fn source() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/testdata/foreign-go")
+const FILES: &[(&str, &[u8])] = &[
+    (
+        "events.jsonl",
+        include_bytes!("../testdata/foreign-go/events.jsonl"),
+    ),
+    (
+        "state.json",
+        include_bytes!("../testdata/foreign-go/state.json"),
+    ),
+    (
+        ".events.jsonl.tmp",
+        include_bytes!("../testdata/foreign-go/.events.jsonl.tmp"),
+    ),
+    (
+        "archive/20260926T151414Z.jsonl",
+        include_bytes!("../testdata/foreign-go/archive/20260926T151414Z.jsonl"),
+    ),
+    (
+        "archive/20260926T151414Z-compat-pending",
+        include_bytes!("../testdata/foreign-go/archive/20260926T151414Z-compat-pending"),
+    ),
+    (
+        "archive/20260926T151414Z-trials/artifact",
+        include_bytes!("../testdata/foreign-go/archive/20260926T151414Z-trials/artifact"),
+    ),
+    (
+        "trials/20260927T221954Z-0001.log",
+        include_bytes!("../testdata/foreign-go/trials/20260927T221954Z-0001.log"),
+    ),
+];
+
+fn create_dirs(fs: &dyn Fs, path: &Path) {
+    if fs.kind(path).unwrap().is_some() {
+        return;
+    }
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        create_dirs(fs, parent);
+    }
+    fs.create_dir(path).unwrap();
 }
 
-/// Copies the Go build's state directory into `state`, which exists or is created.
-pub(crate) fn install(state: &Path) {
-    fn copy(from: &Path, to: &Path) {
-        for entry in fs::read_dir(from).unwrap() {
-            let entry = entry.unwrap();
-            let target = to.join(entry.file_name());
-            if entry.file_type().unwrap().is_dir() {
-                fs::create_dir(&target).unwrap();
-                copy(&entry.path(), &target);
-            } else {
-                fs::copy(entry.path(), &target).unwrap();
-            }
-        }
+/// Installs the compiled Go fixture in the caller's in-memory filesystem.
+pub(crate) fn install(fs: &dyn Fs, state: &Path) {
+    create_dirs(fs, state);
+    for (name, bytes) in FILES {
+        let target = state.join(name);
+        create_dirs(fs, target.parent().unwrap());
+        fs.create_truncate(&target)
+            .unwrap()
+            .write_all(bytes)
+            .unwrap();
     }
-    fs::create_dir_all(state).unwrap();
-    copy(&source(), state);
+}
+
+/// Disk fixture only for a genuine interactive subprocess test; never syncs.
+pub(crate) fn install_real_fs(state: &Path) {
+    for (name, bytes) in FILES {
+        let target = state.join(name);
+        fs::create_dir_all(target.parent().unwrap()).unwrap();
+        fs::write(target, bytes).unwrap();
+    }
 }
 
 /// What a snapshot keeps of one entry: a directory's modification time, which moves when an entry in it is added,
@@ -52,22 +96,22 @@ pub(crate) fn install(state: &Path) {
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Entry {
     Dir {
-        modified: SystemTime,
+        modified: Option<SystemTime>,
     },
     File {
         bytes: Vec<u8>,
-        modified: SystemTime,
+        modified: Option<SystemTime>,
     },
 }
 
 /// Every file and directory under `root`, and `root` itself, by path relative to it.
 pub(crate) type Snapshot = BTreeMap<String, Entry>;
 
-pub(crate) fn snapshot(root: &Path) -> Snapshot {
+pub(crate) fn snapshot_real_fs(root: &Path) -> Snapshot {
     fn walk(root: &Path, at: &Path, seen: &mut Snapshot) {
         let metadata = fs::symlink_metadata(at).unwrap();
         let name = at.strip_prefix(root).unwrap().display().to_string();
-        let modified = metadata.modified().unwrap();
+        let modified = Some(metadata.modified().unwrap());
         if metadata.is_dir() {
             seen.insert(name, Entry::Dir { modified });
             for entry in fs::read_dir(at).unwrap() {
@@ -118,40 +162,72 @@ pub(crate) fn assert_refusal(command: &str, stderr: &str, state: &Path) {
     );
 }
 
-/// Appends to the installed journal a line this build would refuse for another reason, to show it is never read.
-pub(crate) fn append_unreadable_line(state: &Path) {
-    use std::io::Write as _;
-    let mut journal = fs::OpenOptions::new()
-        .append(true)
-        .open(state.join("events.jsonl"))
-        .unwrap();
-    journal
+/// Every directory and regular file, without touching the host filesystem.
+pub(crate) fn snapshot(fs: &dyn Fs, root: &Path) -> Snapshot {
+    fn walk(fs: &dyn Fs, root: &Path, at: &Path, seen: &mut Snapshot) {
+        let name = at.strip_prefix(root).unwrap().display().to_string();
+        match fs.kind(at).unwrap().unwrap() {
+            FileKind::Dir => {
+                seen.insert(name, Entry::Dir { modified: None });
+                for entry in fs.read_dir(at).unwrap() {
+                    walk(fs, root, &at.join(entry.name), seen);
+                }
+            }
+            FileKind::File => {
+                seen.insert(
+                    name,
+                    Entry::File {
+                        bytes: fs.read(at).unwrap(),
+                        modified: None,
+                    },
+                );
+            }
+            kind => panic!("{}: unexpected {kind:?}", at.display()),
+        }
+    }
+    let mut seen = Snapshot::new();
+    walk(fs, root, root, &mut seen);
+    seen
+}
+
+/// Plants unreadable later lines to prove refusal uses only the first header.
+pub(crate) fn append_unreadable_line(fs: &dyn Fs, state: &Path) {
+    fs.open_append(&state.join("events.jsonl"))
+        .unwrap()
         .write_all(b"{\"seq\":13,\"kind\":\"future.thing\",\"data\":{}}\nnot json\n")
         .unwrap();
 }
 
-/// Cuts the installed journal down to its first line without the final newline: a Go journal torn after its first
-/// line, which a Rust build must still refuse as another build's journal, not treat as a torn tail or an empty journal.
-pub(crate) fn keep_only_the_unterminated_first_line(state: &Path) {
+pub(crate) fn keep_only_the_unterminated_first_line(fs: &dyn Fs, state: &Path) {
     let path = state.join("events.jsonl");
-    let text = fs::read_to_string(&path).unwrap();
+    let text = String::from_utf8(fs.read(&path).unwrap()).unwrap();
     let (first, _) = text.split_once('\n').unwrap();
     assert!(first.starts_with("{\"seq\":1,"), "{first}");
-    fs::write(&path, first).unwrap();
+    fs.create_truncate(&path)
+        .unwrap()
+        .write_all(first.as_bytes())
+        .unwrap();
 }
 
-/// Replaces the installed journal with the first half of the first line of a journal this build wrote, as a crash
-/// during the very first write leaves it, with the final newline when `newline` and without it otherwise. The
-/// installed journal is made in a scratch directory, so the state directory gains no lock or state file.
-pub(crate) fn keep_only_a_truncated_journal_header(state: &Path, newline: bool) {
-    let scratch = tempfile::tempdir().unwrap();
-    togi_watchtest::install(scratch.path(), togi_watchtest::Scenario::Search).unwrap();
-    let text = fs::read_to_string(scratch.path().join("events.jsonl")).unwrap();
-    let (first, _) = text.split_once('\n').unwrap();
-    assert!(first.contains("\"session.start\""), "{first}");
-    let mut kept = first.as_bytes()[..first.len() / 2].to_vec();
+pub(crate) fn keep_only_a_truncated_journal_header(fs: &dyn Fs, state: &Path, newline: bool) {
+    let scratch = std::sync::Arc::new(togi_journal::fs::MemFs::new());
+    let path = Path::new("/header");
+    togi_watchtest::install_with_fs(scratch.clone(), path, togi_watchtest::Scenario::Search)
+        .unwrap();
+    let bytes = scratch.read(&path.join("events.jsonl")).unwrap();
+    let first = bytes.split(|byte| *byte == b'\n').next().unwrap();
+    assert!(
+        std::str::from_utf8(first)
+            .unwrap()
+            .contains("\"session.start\"")
+    );
+    let mut kept = first[..first.len() / 2].to_vec();
     if newline {
         kept.push(b'\n');
     }
-    fs::write(state.join("events.jsonl"), kept).unwrap();
+    create_dirs(fs, state);
+    fs.create_truncate(&state.join("events.jsonl"))
+        .unwrap()
+        .write_all(&kept)
+        .unwrap();
 }

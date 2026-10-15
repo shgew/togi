@@ -1,10 +1,8 @@
 //! What `status`, `events` and one-frame `watch` share: the `--config` refusal, the escaping of
 //! what the journal holds, the journald styling of a refusal and the host lock they never take.
 
-use togi_hostlock::{HostLock, Policy};
 use togi_watchtest::Scenario;
 
-use crate::host::Host;
 use crate::support::{
     Journald, UNKNOWN_KIND, append_unknown_field, append_unknown_kind,
     insert_unknown_kind_before_last, session, text, togi, togi_in_journal,
@@ -30,7 +28,7 @@ fn config_is_a_usage_error_before_or_after_the_command_name() {
             let mut leading = vec!["--config", "x", command];
             leading.extend(help);
             for args in [written, leading] {
-                let ran = togi(dir.path(), &args);
+                let ran = togi(&dir, &args);
                 assert_eq!(ran.status.code(), Some(2), "{args:?}");
                 assert_eq!(text(&ran.stdout), "", "{args:?}");
                 assert_eq!(
@@ -53,7 +51,7 @@ fn the_config_error_comes_before_the_arguments_of_the_command() {
         &["--config", "x", "watch", "--width", "0"],
         &["watch", "--width", "0", "--config", "x"],
     ] {
-        let ran = togi(dir.path(), args);
+        let ran = togi(&dir, args);
         assert_eq!(ran.status.code(), Some(2), "{args:?}");
         assert_eq!(text(&ran.stdout), "", "{args:?}");
         assert_eq!(
@@ -80,24 +78,24 @@ fn skipped_report(kind: &str, kind_line: usize, field_line: usize) -> String {
 #[test]
 fn the_read_only_commands_skip_an_unknown_kind_and_ignore_an_unknown_field_and_say_so() {
     let dir = session(Scenario::Search);
-    let known = crate::support::lines(dir.path()).len();
-    let kind_line = insert_unknown_kind_before_last(dir.path(), UNKNOWN_KIND);
-    let field_line = append_unknown_field(dir.path(), "extra");
-    let before = state_files(dir.path());
+    let known = crate::support::lines(&dir).len();
+    let kind_line = insert_unknown_kind_before_last(&dir, UNKNOWN_KIND);
+    let field_line = append_unknown_field(&dir, "extra");
+    let before = state_files(&dir);
     let report = skipped_report(UNKNOWN_KIND, kind_line, field_line);
 
-    let ran = togi(dir.path(), &["status"]);
+    let ran = togi(&dir, &["status"]);
     assert_eq!(ran.status.code(), Some(0), "{}", text(&ran.stderr));
     assert!(!ran.stdout.is_empty());
     assert_eq!(text(&ran.stderr), format!("togi status: {report}\n"));
 
-    let ran = togi(dir.path(), &["events"]);
+    let ran = togi(&dir, &["events"]);
     assert_eq!(ran.status.code(), Some(0), "{}", text(&ran.stderr));
     assert_eq!(text(&ran.stdout).lines().count(), known + 1);
     assert!(!text(&ran.stdout).contains(UNKNOWN_KIND));
     assert_eq!(text(&ran.stderr), format!("togi events: {report}\n"));
 
-    let ran = togi(dir.path(), &["events", "--json"]);
+    let ran = togi(&dir, &["events", "--json"]);
     assert_eq!(ran.status.code(), Some(0), "{}", text(&ran.stderr));
     let kinds: Vec<String> = text(&ran.stdout)
         .lines()
@@ -110,29 +108,25 @@ fn the_read_only_commands_skip_an_unknown_kind_and_ignore_an_unknown_field_and_s
     assert!(!kinds.iter().any(|kind| kind == UNKNOWN_KIND));
     assert_eq!(text(&ran.stderr), format!("togi events: {report}\n"));
 
-    let ran = togi(dir.path(), &WIDE_WATCH);
+    let ran = togi(&dir, &WIDE_WATCH);
     assert_eq!(ran.status.code(), Some(0), "{}", text(&ran.stderr));
     assert_eq!(text(&ran.stderr), "");
     assert!(text(&ran.stdout).contains(&report), "{}", text(&ran.stdout));
 
-    assert_eq!(
-        state_files(dir.path()),
-        before,
-        "the journal is left as it was"
-    );
+    assert_eq!(state_files(&dir), before, "the journal is left as it was");
 }
 
 #[test]
 fn an_unknown_kind_that_is_hostile_is_escaped_in_what_the_read_only_commands_say() {
     let dir = session(Scenario::Search);
-    let line = append_unknown_kind(dir.path(), HOSTILE_KIND);
+    let line = append_unknown_kind(&dir, HOSTILE_KIND);
     let commands: [(&str, Vec<&str>); 3] = [
         ("status", vec!["status"]),
         ("events", vec!["events"]),
         ("watch", WIDE_WATCH.to_vec()),
     ];
     for (command, args) in commands {
-        let ran = togi(dir.path(), &args);
+        let ran = togi(&dir, &args);
         assert_eq!(ran.status.code(), Some(0), "{command}");
         let said = format!(
             "skipped 1 event of a kind this build does not know ({HOSTILE_KIND:?} at line {line})"
@@ -158,33 +152,37 @@ fn an_unknown_kind_that_is_hostile_is_escaped_in_what_the_read_only_commands_say
 #[test]
 fn an_unknown_kind_as_the_first_event_is_never_skipped() {
     let dir = session(Scenario::Search);
-    crate::support::rewrite_first_line(dir.path(), |event| {
+    crate::support::rewrite_first_line(&dir, |event| {
         event["kind"] = UNKNOWN_KIND.into();
     });
-    let before = crate::fixture::snapshot(dir.path());
+    let before = crate::fixture::snapshot(dir.fs.as_ref(), dir.path());
     for command in ["status", "events", "watch"] {
         let args = if command == "watch" {
             one_frame_watch(&[])
         } else {
             vec![command]
         };
-        let ran = togi(dir.path(), &args);
+        let ran = togi(&dir, &args);
         assert_eq!(ran.status.code(), Some(1), "{command}");
         assert_eq!(text(&ran.stdout), "", "{command}");
         // The first line is not a header of this build, whatever its kind: the refusal does not say which build.
         crate::fixture::assert_refusal(command, text(&ran.stderr), dir.path());
-        assert_eq!(crate::fixture::snapshot(dir.path()), before, "{command}");
+        assert_eq!(
+            crate::fixture::snapshot(dir.fs.as_ref(), dir.path()),
+            before,
+            "{command}"
+        );
     }
 }
 
 #[test]
 fn a_schema_refusal_is_red_bold_priority_3_when_stderr_is_the_system_journal() {
     let dir = session(Scenario::Search);
-    crate::support::rewrite_first_line(dir.path(), |event| {
+    crate::support::rewrite_first_line(&dir, |event| {
         event["data"]["build"]["schema"] = 99.into();
     });
     for command in ["status", "events"] {
-        let ran = togi_in_journal(dir.path(), &[command], Journald::Stderr);
+        let ran = togi_in_journal(&dir, &[command], Journald::Stderr);
         assert_eq!(ran.status.code(), Some(1), "{command}");
         assert_eq!(text(&ran.stdout), "", "{command}");
         let err = text(&ran.stderr);
@@ -198,18 +196,18 @@ fn a_schema_refusal_is_red_bold_priority_3_when_stderr_is_the_system_journal() {
 }
 
 #[test]
-fn the_read_only_commands_succeed_while_another_process_holds_the_host_lock_and_never_take_it() {
-    let session = crate::host::Session::of(Scenario::Search);
-    let before = state_files(session.path());
+fn the_read_only_commands_succeed_while_the_host_lock_is_held_and_never_take_it() {
+    let session = session(Scenario::Search);
+    let before = state_files(&session);
     let commands: [(&str, Vec<&str>); 3] = [
         ("status", vec!["status"]),
         ("events", vec!["events"]),
         ("watch", one_frame_watch(&[])),
     ];
     for (command, args) in commands {
-        let host = Host::new();
+        let host = session.host();
         {
-            let _held = HostLock::acquire(&host.lock, Policy::Private).unwrap();
+            let _held = host.locks.acquire(&host.lock).unwrap();
             let ran = host.run(session.path(), &args);
             assert_eq!(
                 ran.exit,
@@ -219,26 +217,19 @@ fn the_read_only_commands_succeed_while_another_process_holds_the_host_lock_and_
             );
             assert_eq!(ran.err, "", "{command}");
             assert!(!ran.out.is_empty(), "{command}");
-            assert_eq!(state_files(session.path()), before, "{command} while held");
+            assert_eq!(state_files(&session), before, "{command} while held");
         }
-        let _ = std::fs::remove_file(&host.lock);
         let ran = host.run(session.path(), &args);
         assert_eq!(ran.exit, togi_cli::Exit::Ok, "{command}: {}", ran.err);
-        assert!(!host.lock.exists(), "{command} created the host lock");
         assert_eq!(
-            state_files(session.path()),
-            before,
-            "{command} without lock"
+            host.lock_acquisitions.get(),
+            0,
+            "{command} took the host lock"
         );
+        assert_eq!(state_files(&session), before, "{command} without lock");
     }
 }
 
-fn state_files(dir: &std::path::Path) -> Vec<(String, Vec<u8>)> {
-    crate::host::files(dir)
-        .into_iter()
-        .filter_map(|name| {
-            let path = dir.join(&name);
-            path.is_file().then(|| (name, std::fs::read(path).unwrap()))
-        })
-        .collect()
+fn state_files(dir: &crate::support::Session) -> crate::fixture::Snapshot {
+    crate::fixture::snapshot(dir.fs.as_ref(), dir.path())
 }

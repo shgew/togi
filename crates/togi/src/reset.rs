@@ -1,16 +1,16 @@
 //! `togi reset`: restart one core's search, or archive the whole session.
 
 use std::fs;
-use std::io::ErrorKind;
+use std::io::{ErrorKind, Read as _};
 use std::path::Path;
 use std::sync::LazyLock;
 
 use clap::{Args as ClapArgs, ValueHint};
 use togi_config::{Config, InitialOverride};
-use togi_hostlock::{Error as HostLockError, HostLock};
+use togi_hostlock::Error as HostLockError;
 use togi_journal::{
     ArchiveKind, Build, DirError, Event, Journal, LockError, Marker, OpenError, Operation,
-    Recording, SessionId, StateDir, Verdict, recorded_build,
+    SessionId, StateDir, Verdict,
 };
 use togi_machine::{BootId, CoreId};
 use togi_render::escape_text;
@@ -22,7 +22,7 @@ use crate::exit::Exit;
 use crate::report::{
     chain, current_build, emit, exit_with, fail, log_events, refusal_message, unknown_event_message,
 };
-use crate::system::SystemClock;
+use crate::system::{System, SystemClock};
 
 static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
     examples(&[
@@ -80,8 +80,8 @@ const JOURNAL: &str = "events.jsonl";
 pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
     let system = ctx.system;
     let all = args.target.all;
-    let (path, policy) = system.host_lock();
-    let _host = match HostLock::acquire(path, policy) {
+    let (path, _) = system.host_lock();
+    let _host = match system.acquire_host_lock() {
         Ok(lock) => lock,
         Err(HostLockError::Busy { .. }) => {
             let message = format!(
@@ -93,25 +93,25 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
         Err(error) => return fail(ctx, COMMAND, error),
     };
     let journal = ctx.state_dir.join(JOURNAL);
-    if matches!(fs::metadata(&journal), Err(error) if error.kind() == ErrorKind::NotFound)
-        && !(all && pending_marker(ctx.state_dir))
+    if matches!(journal_nonempty(system, &journal), Err(error) if error.kind() == ErrorKind::NotFound)
+        && !(all && pending_marker(system, ctx.state_dir))
     {
         return fail(ctx, COMMAND, format!("no journal at {}", journal.display()));
     }
     // Read alone, before the journal lock: another build's journal, or a header torn by a crash, is refused without
     // creating the lock file, as the read-only commands refuse it.
-    let recorded = recorded_build(ctx.state_dir);
+    let recorded = system.recorded_build(ctx.state_dir);
     if let Err(error @ DirError::ForeignJournal { .. }) = &recorded {
         return fail(ctx, COMMAND, chain(error));
     }
-    if matches!(recorded, Ok(None)) && !(all && pending_marker(ctx.state_dir)) {
+    if matches!(recorded, Ok(None)) && !(all && pending_marker(system, ctx.state_dir)) {
         return no_session(ctx);
     }
     let boot = match system.boot_id() {
         Ok(boot) => boot,
         Err(error) => return fail(ctx, COMMAND, chain(&error)),
     };
-    let dir = match StateDir::lock(ctx.state_dir) {
+    let dir = match system.lock_state_dir(ctx.state_dir) {
         Ok(dir) => dir,
         Err(LockError::Held { .. }) => {
             let message = "another togi process holds the journal lock";
@@ -130,12 +130,27 @@ fn no_session(ctx: &mut Context<'_>) -> Exit {
     fail(ctx, COMMAND, message)
 }
 
-fn pending_marker(state_dir: &Path) -> bool {
-    fs::read_dir(state_dir.join("archive")).is_ok_and(|entries| {
-        entries
-            .flatten()
-            .any(|entry| entry.file_name().to_string_lossy().ends_with("-pending"))
-    })
+fn pending_marker(system: &dyn System, state_dir: &Path) -> bool {
+    let archive = state_dir.join("archive");
+    match system.journal_fs() {
+        Some(fs) => fs.read_dir(&archive).is_ok_and(|entries| {
+            entries
+                .iter()
+                .any(|entry| entry.name.to_string_lossy().ends_with("-pending"))
+        }),
+        None => fs::read_dir(archive).is_ok_and(|entries| {
+            entries
+                .flatten()
+                .any(|entry| entry.file_name().to_string_lossy().ends_with("-pending"))
+        }),
+    }
+}
+
+fn journal_nonempty(system: &dyn System, path: &Path) -> std::io::Result<bool> {
+    match system.journal_fs() {
+        Some(fs) => fs.open_read(path)?.read(&mut [0]).map(|len| len != 0),
+        None => fs::metadata(path).map(|metadata| metadata.len() != 0),
+    }
 }
 
 fn reset_one(ctx: &mut Context<'_>, dir: StateDir, boot: BootId, core: u8) -> Exit {
@@ -203,14 +218,14 @@ fn open_failure(
 fn log_recorded(ctx: &mut Context<'_>, session: Option<&SessionId>, opened: usize) {
     let Some(session) = session else { return };
     let live = ctx.state_dir.join(JOURNAL);
-    let path = if live.exists() {
+    let path = if journal_nonempty(ctx.system, &live).is_ok() {
         live
     } else {
         ctx.state_dir
             .join("archive")
             .join(format!("{session}.jsonl"))
     };
-    if let Ok(recording) = Recording::read(&path)
+    if let Ok(recording) = ctx.system.recording(&path)
         && let Some(recorded) = recording.events().get(opened..)
     {
         log_events(ctx, recorded);
@@ -245,7 +260,7 @@ fn reset_everything(ctx: &mut Context<'_>, args: &Args, mut dir: StateDir, boot:
     };
     if let Some(recorded) = &recorded
         && build.verdict(recorded, Operation::ResetAll) == Verdict::Use
-        && let Err(error) = Recording::read(&ctx.state_dir.join(JOURNAL))
+        && let Err(error) = system.recording(&ctx.state_dir.join(JOURNAL))
         && let Some(message) = unknown_event_message(&error, recorded, &build)
     {
         return exit_with(ctx, COMMAND, message, Exit::Incompatible);
@@ -284,8 +299,7 @@ fn reset_everything(ctx: &mut Context<'_>, args: &Args, mut dir: StateDir, boot:
             };
             log_torn(ctx, &journal);
             let opened = journal.events().len();
-            let warnings =
-                solo_limit_warnings(journal.events(), &args.config, system.config_path());
+            let warnings = solo_limit_warnings(journal.events(), &args.config, system);
             match reset_all(&build, journal, &mut SystemClock(system)) {
                 Ok((session, _)) => {
                     log_recorded(ctx, Some(&session), opened);
@@ -335,8 +349,8 @@ fn finish_without_journal(
             return fail(ctx, COMMAND, error);
         }
         let journal = ctx.state_dir.join(JOURNAL);
-        if fs::metadata(&journal).is_ok_and(|meta| meta.len() == 0)
-            && let Err(error) = remove_durably(&journal)
+        if journal_nonempty(system, &journal).is_ok_and(|nonempty| !nonempty)
+            && let Err(error) = remove_durably(system.journal_fs().as_deref(), &journal)
         {
             return fail(ctx, COMMAND, error);
         }
@@ -363,18 +377,37 @@ fn finish_without_journal(
 
 /// Removes `path` and syncs its directory, so the removal survives a crash; the error names the
 /// step that failed.
-fn remove_durably(path: &Path) -> Result<(), String> {
-    fs::remove_file(path).map_err(|error| format!("remove {}: {error}", path.display()))?;
+fn remove_durably(
+    filesystem: Option<&dyn togi_journal::fs::Fs>,
+    path: &Path,
+) -> Result<(), String> {
     let dir = path.parent().unwrap_or(Path::new("."));
-    fs::File::open(dir)
-        .and_then(|dir| dir.sync_all())
-        .map_err(|error| format!("sync {}: {error}", dir.display()))
+    if let Some(fs) = filesystem {
+        fs.remove_file(path)
+            .map_err(|error| format!("remove {}: {error}", path.display()))?;
+        fs.sync_dir(dir)
+            .map_err(|error| format!("sync {}: {error}", dir.display()))
+    } else {
+        fs::remove_file(path).map_err(|error| format!("remove {}: {error}", path.display()))?;
+        sync_directory(dir).map_err(|error| format!("sync {}: {error}", dir.display()))
+    }
+}
+
+#[expect(
+    clippy::disallowed_methods,
+    reason = "production reset removal must survive a crash"
+)]
+fn sync_directory(path: &Path) -> std::io::Result<()> {
+    fs::File::open(path)?.sync_all()
 }
 
 /// A warning for each configured candidate solo limit at or deeper than its core's failure point
 /// in the session about to be archived.
-fn solo_limit_warnings(events: &[Event], config: &ConfigArgs, default: &Path) -> Vec<String> {
-    let config: Config = match config.load(default) {
+fn solo_limit_warnings(events: &[Event], config: &ConfigArgs, system: &dyn System) -> Vec<String> {
+    let config: Config = match config
+        .load_with_source_read(system.config_path(), |path| system.read_config(path))
+        .map(|(config, _)| config)
+    {
         Ok(config) => config,
         Err(error) if config.is_explicit() => {
             return vec![format!(

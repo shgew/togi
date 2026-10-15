@@ -19,7 +19,6 @@ togi-tool-forecast.workspace = true
 togi-tuner.workspace = true
 
 [dev-dependencies]
-insta.workspace = true
 proptest.workspace = true
 tempfile.workspace = true
 togi-config.workspace = true

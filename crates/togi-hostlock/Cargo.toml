@@ -7,6 +7,9 @@ repository.workspace = true
 publish.workspace = true
 description = "Takes the exclusive host lock that serializes togi processes driving the SMU"
 
+[features]
+test-support = []
+
 [dependencies]
 rustix.workspace = true
 thiserror.workspace = true

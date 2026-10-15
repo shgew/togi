@@ -6,7 +6,7 @@ use std::ffi::OsString;
 use std::fs::File;
 use std::os::fd::OwnedFd;
 use std::os::unix::ffi::OsStringExt as _;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
@@ -15,7 +15,7 @@ use rustix::pty::{OpenptFlags, grantpt, openpt, ptsname, unlockpt};
 use rustix::termios::{Winsize, tcsetwinsize};
 
 use crate::fixture::{self, Snapshot};
-use crate::support::{text, togi};
+use crate::support::{Session, text, togi};
 use crate::watch::{BOUND, HIDE_CURSOR, Helper, contains, read_more};
 
 const COMMANDS: [(&str, &[&str]); 4] = [
@@ -26,28 +26,33 @@ const COMMANDS: [(&str, &[&str]); 4] = [
 ];
 
 /// A state directory holding the Go build's files, and what it held.
-fn go_state() -> (tempfile::TempDir, Snapshot) {
-    let dir = tempfile::tempdir().unwrap();
-    fixture::install(dir.path());
-    let before = fixture::snapshot(dir.path());
+fn go_state() -> (Session, Snapshot) {
+    let dir = crate::support::Session::empty();
+    fixture::install(dir.fs.as_ref(), dir.path());
+    let before = fixture::snapshot(dir.fs.as_ref(), dir.path());
     (dir, before)
 }
 
 /// No lock file, no state file written by a Rust build, no archive move: the directory is what it was.
-fn assert_untouched(state: &Path, before: &Snapshot) {
-    assert!(
-        !state.join("lock").exists(),
+fn assert_untouched(state: &Session, before: &Snapshot) {
+    use togi_journal::fs::Fs as _;
+    assert_eq!(
+        state.fs.kind(&state.path().join("lock")).unwrap(),
+        None,
         "a refusal took the journal lock"
     );
-    assert!(!state.join("togi.lock").exists());
-    assert_eq!(&fixture::snapshot(state), before);
+    assert_eq!(
+        state.fs.kind(&state.path().join("togi.lock")).unwrap(),
+        None
+    );
+    assert_eq!(&fixture::snapshot(state.fs.as_ref(), state.path()), before);
 }
 
 #[test]
 fn each_read_command_refuses_the_go_journal_and_changes_no_file() {
     for (command, args) in COMMANDS {
         let (dir, before) = go_state();
-        let ran = togi(dir.path(), args);
+        let ran = togi(&dir, args);
         assert_eq!(
             ran.status.code(),
             Some(1),
@@ -56,35 +61,35 @@ fn each_read_command_refuses_the_go_journal_and_changes_no_file() {
         );
         assert_eq!(text(&ran.stdout), "", "{args:?}: no frame, no output");
         fixture::assert_refusal(command, text(&ran.stderr), dir.path());
-        assert_untouched(dir.path(), &before);
+        assert_untouched(&dir, &before);
     }
 }
 
 #[test]
 fn the_refusal_comes_from_the_first_line_alone_whatever_follows_it() {
     for (command, args) in COMMANDS {
-        let dir = tempfile::tempdir().unwrap();
-        fixture::install(dir.path());
-        fixture::append_unreadable_line(dir.path());
-        let before = fixture::snapshot(dir.path());
-        let ran = togi(dir.path(), args);
+        let dir = crate::support::Session::empty();
+        fixture::install(dir.fs.as_ref(), dir.path());
+        fixture::append_unreadable_line(dir.fs.as_ref(), dir.path());
+        let before = fixture::snapshot(dir.fs.as_ref(), dir.path());
+        let ran = togi(&dir, args);
         assert_eq!(ran.status.code(), Some(1), "{args:?}");
         fixture::assert_refusal(command, text(&ran.stderr), dir.path());
         let stderr = text(&ran.stderr);
         assert!(!stderr.contains("unknown event kind"), "{stderr}");
         assert!(!stderr.contains("line 13"), "{stderr}");
-        assert_untouched(dir.path(), &before);
+        assert_untouched(&dir, &before);
     }
 }
 
 #[test]
 fn a_first_line_without_its_newline_is_refused_all_the_same() {
     for (command, args) in COMMANDS {
-        let dir = tempfile::tempdir().unwrap();
-        fixture::install(dir.path());
-        fixture::keep_only_the_unterminated_first_line(dir.path());
-        let before = fixture::snapshot(dir.path());
-        let ran = togi(dir.path(), args);
+        let dir = crate::support::Session::empty();
+        fixture::install(dir.fs.as_ref(), dir.path());
+        fixture::keep_only_the_unterminated_first_line(dir.fs.as_ref(), dir.path());
+        let before = fixture::snapshot(dir.fs.as_ref(), dir.path());
+        let ran = togi(&dir, args);
         assert_eq!(
             ran.status.code(),
             Some(1),
@@ -95,7 +100,7 @@ fn a_first_line_without_its_newline_is_refused_all_the_same() {
         fixture::assert_refusal(command, text(&ran.stderr), dir.path());
         let stderr = text(&ran.stderr);
         assert!(!stderr.contains("torn bytes"), "{stderr}");
-        assert_untouched(dir.path(), &before);
+        assert_untouched(&dir, &before);
     }
 }
 
@@ -103,10 +108,10 @@ fn a_first_line_without_its_newline_is_refused_all_the_same() {
 fn a_truncated_header_of_this_build_is_refused_in_the_same_words() {
     for newline in [false, true] {
         for (command, args) in COMMANDS {
-            let dir = tempfile::tempdir().unwrap();
-            fixture::keep_only_a_truncated_journal_header(dir.path(), newline);
-            let before = fixture::snapshot(dir.path());
-            let ran = togi(dir.path(), args);
+            let dir = crate::support::Session::empty();
+            fixture::keep_only_a_truncated_journal_header(dir.fs.as_ref(), dir.path(), newline);
+            let before = fixture::snapshot(dir.fs.as_ref(), dir.path());
+            let ran = togi(&dir, args);
             let stderr = text(&ran.stderr);
             assert_eq!(
                 ran.status.code(),
@@ -116,14 +121,16 @@ fn a_truncated_header_of_this_build_is_refused_in_the_same_words() {
             assert_eq!(text(&ran.stdout), "", "{args:?}: no frame, no output");
             fixture::assert_refusal(command, stderr, dir.path());
             assert!(!stderr.contains("torn bytes"), "{stderr}");
-            assert_untouched(dir.path(), &before);
+            assert_untouched(&dir, &before);
         }
     }
 }
 
 #[test]
-fn live_watch_refuses_before_it_takes_the_terminal() {
-    let (dir, before) = go_state();
+fn real_process_live_watch_refuses_before_it_takes_the_terminal() {
+    let dir = tempfile::tempdir().unwrap();
+    fixture::install_real_fs(dir.path());
+    let before = fixture::snapshot_real_fs(dir.path());
     let master = openpt(OpenptFlags::RDWR | OpenptFlags::NOCTTY).unwrap();
     fcntl_setfd(&master, FdFlags::CLOEXEC).unwrap();
     grantpt(&master).unwrap();
@@ -146,6 +153,10 @@ fn live_watch_refuses_before_it_takes_the_terminal() {
         },
     )
     .unwrap();
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the real_process test checks refusal on a PTY"
+    )]
     let child = Command::new(env!("CARGO_BIN_EXE_togi"))
         .arg("--state-dir")
         .arg(dir.path())
@@ -191,7 +202,12 @@ fn live_watch_refuses_before_it_takes_the_terminal() {
     );
     let shown = String::from_utf8_lossy(&seen);
     fixture::assert_refusal("watch", &shown, dir.path());
-    assert_untouched(dir.path(), &before);
+    assert!(
+        !dir.path().join("lock").exists(),
+        "a refusal took the journal lock"
+    );
+    assert!(!dir.path().join("togi.lock").exists());
+    assert_eq!(fixture::snapshot_real_fs(dir.path()), before);
 }
 
 /// Reads what the child left on the terminal after it ended.

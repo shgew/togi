@@ -235,7 +235,9 @@ fn an_invalid_machine_is_refused_before_anything_is_written() {
 #[test]
 fn every_committed_machine_round_trips_through_the_encoder() {
     for path in committed() {
-        let loaded = file::load(&path).expect("loads");
+        let loaded = file::load_from(&path, &crate::common::committed_files())
+            .map(|(machine, _)| machine)
+            .expect("loads");
         let text = file::encode(&loaded).expect("encodes");
         assert_eq!(
             file::decode(&text).expect("decodes"),
@@ -435,7 +437,12 @@ fn definitions() -> impl Strategy<Value = MachineDefinition> {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(128))]
+    #![proptest_config(ProptestConfig {
+        cases: 128,
+        failure_persistence: None,
+        rng_seed: proptest::test_runner::RngSeed::Fixed(953),
+        ..ProptestConfig::default()
+    })]
 
     #[test]
     fn every_valid_definition_round_trips(definition in definitions()) {

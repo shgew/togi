@@ -116,11 +116,16 @@ impl Clock for SystemClock {
 
 /// The one trial runner, shared by the machine's `Trials` and the preflight's scope probe, so a
 /// process has a single runtime thread.
-#[derive(Clone)]
-pub(crate) struct RunnerHandle(Arc<Mutex<Runner>>);
+pub(crate) struct RunnerHandle<R = Runner>(Arc<Mutex<R>>);
 
-impl RunnerHandle {
-    pub(crate) fn new(runner: Runner) -> Self {
+impl<R> Clone for RunnerHandle<R> {
+    fn clone(&self) -> Self {
+        Self(Arc::clone(&self.0))
+    }
+}
+
+impl<R> RunnerHandle<R> {
+    pub(crate) fn new(runner: R) -> Self {
         Self(Arc::new(Mutex::new(runner)))
     }
 
@@ -136,7 +141,7 @@ impl ScopeProbe for RunnerHandle {
     }
 }
 
-impl Trials for RunnerHandle {
+impl<R: Trials> Trials for RunnerHandle<R> {
     fn sweep(&mut self, cancel: &CancellationToken) -> Result<Swept, Error> {
         lock(&self.0).sweep(cancel)
     }

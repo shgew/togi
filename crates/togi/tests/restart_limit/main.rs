@@ -25,7 +25,7 @@ fn every_count_picks_its_boot_action_in_order() {
         (Some("3"), 3, false),
     ] {
         let host = Host::new();
-        let state = tempfile::tempdir().unwrap();
+        let state = support::MemoryDir::new();
         *host.count.borrow_mut() = initial.map(str::to_owned);
         host.marker.set(!retry);
         let ran = run(&host, state.path());
@@ -63,7 +63,7 @@ fn every_count_picks_its_boot_action_in_order() {
             [std::path::PathBuf::from(GRUBENV)]
         );
         assert_eq!(
-            files(state.path()),
+            files(&host.fs, state.path()),
             Vec::<String>::new(),
             "touched the state directory"
         );
@@ -147,7 +147,7 @@ fn a_failure_stops_at_its_step_and_leaves_the_marker_right() {
         },
     ] {
         let host = Host::new();
-        let state = tempfile::tempdir().unwrap();
+        let state = support::MemoryDir::new();
         *host.count.borrow_mut() = Some(case.count.to_owned());
         host.marker.set(case.marker_before);
         host.fail
@@ -187,7 +187,7 @@ fn a_failure_stops_at_its_step_and_leaves_the_marker_right() {
 #[test]
 fn a_marker_that_cannot_be_removed_after_a_failed_reboot_is_reported() {
     let host = Host::new();
-    let state = tempfile::tempdir().unwrap();
+    let state = support::MemoryDir::new();
     *host.count.borrow_mut() = Some("0".into());
     host.fail.borrow_mut().extend(["reboot", "remove marker"]);
     let ran = run(&host, state.path());
@@ -209,7 +209,7 @@ fn a_marker_that_cannot_be_removed_after_a_failed_reboot_is_reported() {
 #[test]
 fn a_reboot_that_cannot_run_reports_the_cause_and_removes_the_retry_marker() {
     let host = Host::new();
-    let state = tempfile::tempdir().unwrap();
+    let state = support::MemoryDir::new();
     *host.count.borrow_mut() = Some("0".into());
     *host.reboot_error.borrow_mut() = Some(togi_hardware::RebootError::Run(
         togi_command::Error::TimedOut {
@@ -252,7 +252,7 @@ fn usage_errors_and_help_touch_nothing() {
         (&["restart-limit", "--force"], Exit::Usage),
     ] {
         let host = Host::new();
-        let state = tempfile::tempdir().unwrap();
+        let state = support::MemoryDir::new();
         let ran = host.run(state.path(), args);
         assert_eq!(ran.exit, exit, "{args:?}: {}", ran.err);
         assert_eq!(host.steps(), Vec::<String>::new(), "{args:?}");
@@ -273,7 +273,7 @@ fn the_state_directory_flag_is_accepted_after_the_command_and_config_never() {
         &["--config", "unused.json", "restart-limit", "--help"],
     ] {
         let host = Host::new();
-        let state = tempfile::tempdir().unwrap();
+        let state = support::MemoryDir::new();
         let ran = host.run(state.path(), args);
         assert_eq!(ran.exit, Exit::Usage, "{args:?}");
         assert_eq!(ran.out, "");

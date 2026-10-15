@@ -211,9 +211,12 @@ fn the_review_boundary_scenario_keeps_the_evidence_a_cutoff_hides() {
 fn the_review_boundary_report_before_and_after_a_cutoff() {
     let (log, cutoff) = review_boundary();
     let journal = log.journal();
-    insta::assert_snapshot!("review_boundary_whole_journal", report(&journal, None));
-    insta::assert_snapshot!(
-        "review_boundary_since_cutoff",
+    assert_snapshot!(
+        "scenario__review_boundary_whole_journal",
+        report(&journal, None)
+    );
+    assert_snapshot!(
+        "scenario__review_boundary_since_cutoff",
         report(&journal, Some(cutoff))
     );
 }
@@ -367,7 +370,10 @@ fn combination() -> Log {
 #[test]
 fn a_combination_failure_is_reported_in_every_section() {
     let log = combination();
-    insta::assert_snapshot!(log.report());
+    assert_snapshot!(
+        "scenario__a_combination_failure_is_reported_in_every_section",
+        log.report()
+    );
     let journal = log.journal();
     let p = Projection::new(&journal);
     let m = compute(&p, None);
@@ -478,14 +484,20 @@ fn r7_backoffs_and_chains_are_listed_with_their_causes_and_sources() {
         r.chains.iter().map(|c| c.seq.get()).collect::<Vec<_>>(),
         [5, 9]
     );
-    insta::assert_snapshot!(super::support::rendered(|table| {
-        crate::r7::render_decisions(table, &r);
-    }));
+    assert_snapshot!(
+        "scenario__r7_backoffs_and_chains_are_listed_with_their_causes_and_sources",
+        super::support::rendered(|table| {
+            crate::r7::render_decisions(table, &r);
+        })
+    );
 }
 
 #[test]
 fn a_journal_of_one_event_reports_empty_sections() {
-    insta::assert_snapshot!(Log::new(&[(0, 0)]).report());
+    assert_snapshot!(
+        "scenario__a_journal_of_one_event_reports_empty_sections",
+        Log::new(&[(0, 0)]).report()
+    );
 }
 
 #[test]

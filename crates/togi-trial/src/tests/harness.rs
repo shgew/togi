@@ -5,7 +5,8 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 
-use tempfile::TempDir;
+use std::path::{Path, PathBuf};
+use togi_journal::fs::{Fs, MemFs};
 use togi_machine::{
     CancellationToken, CcdId, Condition, CoreId, CoreInfo, CpuId, Partial, Regime, Stopped,
     TargetOffset, TrialSpec, pick_workload,
@@ -67,7 +68,22 @@ pub(super) fn spec(regime: Regime, cores: &[u8], duration: Duration) -> TrialSpe
 pub(super) struct Rig {
     pub(super) fake: Fake,
     pub(super) env: Rc<Env<Fake>>,
-    pub(super) dir: TempDir,
+    pub(super) dir: FixtureDir,
+    pub(super) fs: Arc<MemFs>,
+    pub(super) memory: crate::watch::Memory,
+}
+
+/// A fixture namespace, not a directory on the host.
+pub(super) struct FixtureDir(PathBuf);
+
+impl FixtureDir {
+    pub(super) fn path(&self) -> &Path {
+        &self.0
+    }
+}
+
+pub(super) fn fixture_identity() -> BackendIdentity {
+    BackendIdentity::new(65534, 65534).unwrap()
 }
 
 /// The account of the fixtures that need a backend identity: the effective user and group of the
@@ -97,8 +113,11 @@ pub(super) fn rig_edit(
     timing: Timing,
     edit: impl FnOnce(&mut Env<Fake>),
 ) -> Rig {
-    let dir = crate::testing::tempdir();
-    let fake = Fake::default();
+    let dir = FixtureDir("/rig".into());
+    let fs = Arc::new(MemFs::new());
+    fs.create_dir(dir.path()).unwrap();
+    let memory = crate::watch::Memory::new(fs.clone());
+    let fake = Fake::with_memory(memory.clone());
     let roots = Roots {
         hwmon: dir.path().join("hwmon"),
         cpu: dir.path().join("cpu"),
@@ -109,22 +128,31 @@ pub(super) fn rig_edit(
         os: Rc::new(fake.clone()),
         timing,
         roots,
+        inputs: crate::procfs::Inputs::memory(fs.clone()),
         dir: dir.path().join("trials"),
         backends: Backends::new().with(Arc::new(backend)),
         topology: topology(),
-        identity: Some(own_identity()),
+        identity: Some(fixture_identity()),
         unscoped: false,
         user_manager: false,
         pm_table: None,
         storage: None,
+        durability: crate::samples::Durability::Unsynced,
+        memory: Some(memory.clone()),
         log_sink: None,
         supervisors: std::cell::RefCell::default(),
-        preparer: crate::prepare::Preparer::default(),
+        preparer: crate::prepare::Preparer::with_fs(fs.clone()),
         controller: Arc::new(crate::controller::Idle),
     };
     edit(&mut env);
     let env = Rc::new(env);
-    Rig { fake, env, dir }
+    Rig {
+        fake,
+        env,
+        dir,
+        fs,
+        memory,
+    }
 }
 
 pub(super) fn rig() -> Rig {
@@ -141,6 +169,51 @@ pub(super) fn nothing_runs() -> Stopped {
 }
 
 impl Rig {
+    pub(super) fn read(&self, path: impl AsRef<Path>) -> std::io::Result<Vec<u8>> {
+        self.fs.read(path.as_ref())
+    }
+
+    pub(super) fn read_string(&self, path: impl AsRef<Path>) -> std::io::Result<String> {
+        String::from_utf8(self.read(path)?).map_err(std::io::Error::other)
+    }
+
+    pub(super) fn exists(&self, path: impl AsRef<Path>) -> bool {
+        self.fs.kind(path.as_ref()).is_ok_and(|kind| kind.is_some())
+    }
+
+    pub(super) fn create_dir_all(&self, path: impl AsRef<Path>) -> std::io::Result<()> {
+        let mut missing = Vec::new();
+        for ancestor in path.as_ref().ancestors() {
+            if self.fs.kind(ancestor)?.is_some() {
+                break;
+            }
+            missing.push(ancestor);
+        }
+        for ancestor in missing.into_iter().rev() {
+            self.fs.create_dir(ancestor)?;
+        }
+        Ok(())
+    }
+
+    pub(super) fn write(
+        &self,
+        path: impl AsRef<Path>,
+        contents: impl AsRef<[u8]>,
+    ) -> std::io::Result<()> {
+        if let Some(parent) = path.as_ref().parent() {
+            self.create_dir_all(parent)?;
+        }
+        self.memory.write_file(path, contents, Some(65534))
+    }
+
+    pub(super) fn samples(&self) -> Vec<togi_machine::TrialConditions> {
+        togi_machine::ReadSamples::from_reader(std::io::Cursor::new(
+            self.read(self.env.dir.join("t1/samples.jsonl"))
+                .unwrap_or_default(),
+        ))
+        .collect()
+    }
+
     pub(super) async fn start(&self, spec: TrialSpec) -> Result<Handle, Partial<Option<Stopped>>> {
         start(
             Rc::clone(&self.env),
@@ -215,58 +288,83 @@ pub(super) async fn finish(handle: &Handle) -> Run {
     }
 }
 
-/// The samples the writer thread has appended to a real file. The writer runs in real time, and
-/// under a paused clock the ticks come microseconds apart, so a test that counts samples on disk
-/// holds each tick until the previous sample has landed; the supervisor itself never waits.
+/// Samples recorded by the writer thread. Holding a tick until the previous append landed
+/// keeps paused-clock sample counts deterministic without making supervision wait for storage.
 #[derive(Default)]
 pub(super) struct Landed {
-    count: std::sync::Mutex<usize>,
+    count: std::sync::Mutex<(usize, Vec<u8>)>,
     appended: std::sync::Condvar,
 }
 
 struct Landing {
-    file: std::fs::File,
     landed: Arc<Landed>,
 }
 
 impl crate::samples::Storage for Landing {
     fn append(&mut self, line: &[u8]) -> std::io::Result<()> {
-        std::io::Write::write_all(&mut self.file, line)?;
-        self.file.sync_all()?;
-        *self.landed.count.lock().unwrap() += 1;
+        let mut recorded = self
+            .landed
+            .count
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        recorded.0 += 1;
+        recorded.1.extend_from_slice(line);
         self.landed.appended.notify_all();
         Ok(())
     }
 
     fn close(self: Box<Self>) -> std::io::Result<()> {
-        self.file.sync_all()
+        Ok(())
     }
 }
 
 impl Landed {
-    /// Storage that creates `path` and counts each appended line.
+    /// Storage that records every appended line without opening a descriptor.
     pub(super) fn storage(
         self: &Arc<Self>,
-        path: std::path::PathBuf,
     ) -> Rc<dyn Fn() -> Result<crate::samples::Open, crate::error::StorageError>> {
         let landed = Arc::clone(self);
         Rc::new(move || {
-            let (path, landed) = (path.clone(), Arc::clone(&landed));
-            Ok(Box::new(move || {
-                let file =
-                    std::fs::File::create_new(path).map_err(crate::error::StorageError::Create)?;
-                Ok(Box::new(Landing { file, landed }) as Box<dyn crate::samples::Storage>)
-            }) as crate::samples::Open)
+            let landed = Arc::clone(&landed);
+            Ok(Box::new(
+                move || Ok(Box::new(Landing { landed }) as Box<dyn crate::samples::Storage>),
+            ) as crate::samples::Open)
         })
+    }
+
+    pub(super) fn bytes(&self) -> Vec<u8> {
+        self.count
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .1
+            .clone()
+    }
+
+    pub(super) fn count(&self) -> usize {
+        self.count
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .0
+    }
+
+    pub(super) fn read_string(&self) -> String {
+        String::from_utf8(self.bytes()).unwrap()
+    }
+
+    pub(super) fn samples(&self) -> Vec<togi_machine::TrialConditions> {
+        togi_machine::ReadSamples::from_reader(std::io::Cursor::new(self.bytes())).collect()
     }
 
     /// Blocks the runtime thread, and with it the paused clock, until `lines` have landed.
     pub(super) fn wait_for(&self, lines: usize) {
-        let count = self.count.lock().unwrap();
+        let count = self
+            .count
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let (_count, waited) = self
             .appended
-            .wait_timeout_while(count, Duration::from_secs(60), |count| *count < lines)
-            .unwrap();
+            .wait_timeout_while(count, Duration::from_secs(60), |count| count.0 < lines)
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         assert!(
             !waited.timed_out(),
             "the writer never appended {lines} samples"
@@ -437,7 +535,45 @@ mod tests {
         written
     }
 
-    #[tokio::test(start_paused = true)]
+    #[test]
+    fn landed_storage_records_bytes_and_append_count_and_closes_without_io() {
+        let landed = Arc::new(Landed::default());
+        let mut storage = landed.storage()().unwrap()().unwrap();
+        storage.append(b"{\"elapsed_ms\":1000}\n").unwrap();
+        storage.append(b"{\"elapsed_ms\":2000}\n").unwrap();
+        storage.close().unwrap();
+        assert_eq!(landed.count(), 2);
+        assert_eq!(
+            landed.read_string(),
+            "{\"elapsed_ms\":1000}\n{\"elapsed_ms\":2000}\n"
+        );
+        assert_eq!(
+            landed
+                .samples()
+                .iter()
+                .map(|sample| sample.elapsed_ms)
+                .collect::<Vec<_>>(),
+            [1000, 2000]
+        );
+    }
+
+    crate::testing::test! {
+    async fn a_fake_process_writes_into_the_shared_memory_namespace() {
+        local(async {
+            let rig = rig();
+            let written = launch_under(&rig.fake, fixture_identity(), rig.dir.path());
+            tokio::task::yield_now().await;
+            assert!(matches!(written.borrow().as_ref(), Some(Ok(()))));
+            assert_eq!(
+                rig.read_string(rig.dir.path().join("results.txt")).unwrap(),
+                "COMPUTE ERROR\n"
+            );
+        })
+        .await;
+    }
+    }
+
+    crate::testing::test! {
     async fn a_fake_process_takes_the_account_its_scope_runs_it_under() {
         local(async {
             let fake = Fake::default();
@@ -474,8 +610,9 @@ mod tests {
         })
         .await;
     }
+    }
 
-    #[tokio::test(start_paused = true)]
+    crate::testing::test! {
     async fn every_watched_write_of_a_rig_process_targets_the_rigs_configured_account() {
         local(async {
             let rig = rig();
@@ -499,9 +636,10 @@ mod tests {
         })
         .await;
     }
+    }
 
-    #[tokio::test(start_paused = true)]
-    async fn a_privileged_run_hands_watched_files_to_the_configured_account() {
+    crate::testing::test! {
+    async fn real_fs_a_privileged_run_hands_watched_files_to_the_configured_account() {
         if !rustix::process::geteuid().is_root() {
             eprintln!("skipped: needs root to chown a watched file to another account");
             return;
@@ -509,7 +647,7 @@ mod tests {
         local(async {
             let dir = crate::testing::tempdir();
             let identity = identity_of(0, 0);
-            let fake = Fake::default();
+            let fake = Fake::disk();
             let written = launch_under(&fake, identity, dir.path());
             tokio::task::yield_now().await;
             assert!(matches!(written.borrow().as_ref(), Some(Ok(()))));
@@ -520,8 +658,9 @@ mod tests {
         })
         .await;
     }
+    }
 
-    #[tokio::test(start_paused = true)]
+    crate::testing::test! {
     async fn an_expired_systemd_deadline_times_out_without_running_the_script_or_its_effect() {
         let fake = Fake::default();
         let scripted = Rc::new(std::cell::Cell::new(0));
@@ -566,8 +705,9 @@ mod tests {
         assert!(later.is_ok(), "a live deadline still applies the effect");
         assert!(fake.units().is_empty());
     }
+    }
 
-    #[tokio::test(start_paused = true)]
+    crate::testing::test! {
     async fn a_one_shot_signal_failure_fails_only_the_next_matching_delivery() {
         use crate::os::Child as _;
         let fake = Fake::default();
@@ -589,8 +729,9 @@ mod tests {
         })
         .await;
     }
+    }
 
-    #[tokio::test(start_paused = true)]
+    crate::testing::test! {
     async fn the_threads_hook_runs_before_the_read_and_can_change_what_it_returns() {
         let fake = Fake::default();
         local(async {
@@ -617,6 +758,7 @@ mod tests {
             assert_eq!(seen.get(), Some(pid));
         })
         .await;
+    }
     }
 }
 

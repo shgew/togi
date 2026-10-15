@@ -1737,6 +1737,12 @@ fn play(log: &mut Log, step: Step) {
 }
 
 proptest! {
+    #![proptest_config(ProptestConfig {
+        rng_seed: proptest::test_runner::RngSeed::Fixed(0x7265_636f_7665_7279),
+        failure_persistence: None,
+        ..ProptestConfig::default()
+    })]
+
     #[test]
     fn a_fresh_fold_of_every_prefix_is_the_incremental_fold(script in prop::collection::vec(steps(), 0..48)) {
         let mut log = Log::new();

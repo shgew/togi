@@ -88,10 +88,9 @@ fn a_full_machine_decodes_with_its_metadata() {
 }
 
 fn load_text(text: &str) -> Result<MachineDefinition, LoadError> {
-    let dir = tempfile::tempdir().expect("temporary directory");
-    let path = dir.path().join("machine.json");
-    std::fs::write(&path, text).expect("write the machine");
-    file::load(&path)
+    let dir = crate::common::MemoryFiles::default();
+    let path = dir.write(&dir.path().join("machine.json"), text);
+    file::load_from(&path, &dir).map(|(machine, _)| machine)
 }
 
 #[test]

@@ -29,7 +29,6 @@ togi-tuner.workspace = true
 togi-version.workspace = true
 
 [dev-dependencies]
-insta.workspace = true
 jiff.workspace = true
 proptest.workspace = true
 togi-config.workspace = true

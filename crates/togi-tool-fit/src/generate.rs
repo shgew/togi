@@ -1,13 +1,11 @@
 //! The target-fit ensemble: the all-facts fit and its whole-trial bootstrap refits, each checked against the
 //! original extract and written as a machine file.
 
-use std::fs;
 use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use rayon::prelude::*;
-use togi_sim::file;
 use togi_sim::{MachineDefinition, Model};
 use togi_tool_modelcheck::{Check, Checker, Group, Status, report};
 use togi_tool_trialfacts::{TrialFact, read};
@@ -16,6 +14,7 @@ use crate::encode::encode_machine;
 use crate::error::Error;
 use crate::evidence::{bootstrap, decisive};
 use crate::forward::{forward_check, report_forward};
+use crate::output::{DiskOutput, MachineOutput};
 use crate::paths::facts_reference;
 use crate::search::{fit, fit_from};
 use crate::signals::report_signals;
@@ -38,7 +37,7 @@ pub struct Fitted {
     pub constrained: Vec<Group>,
     /// The groups the written machine still flags.
     pub flagged: Vec<Group>,
-    /// The model check of the machine file as read back from disk.
+    /// The model check of the encoded machine as read back from its output adapter.
     pub check: Check,
 }
 
@@ -57,15 +56,6 @@ struct Draft {
     flagged: Vec<Group>,
 }
 
-fn io_error(action: &'static str, path: &Path) -> impl FnOnce(io::Error) -> Error {
-    let path = path.to_path_buf();
-    move |source| Error::Io {
-        action,
-        path,
-        source,
-    }
-}
-
 fn first_error<T>(results: Vec<Result<T, Error>>) -> Result<Vec<T>, Error> {
     results.into_iter().collect()
 }
@@ -80,11 +70,34 @@ pub fn generate(
     report_to: &mut impl io::Write,
 ) -> Result<Generated, Error> {
     let records = read(facts)?;
-    let trials = decisive(&records)?;
+    generate_records(
+        &records,
+        facts,
+        out_dir,
+        ensemble,
+        report_to,
+        &mut DiskOutput,
+    )
+}
+
+/// Fits decoded facts and publishes machines through `output`, checking their encoded readback.
+pub fn generate_records(
+    records: &[TrialFact],
+    facts: &Path,
+    out_dir: &Path,
+    ensemble: Ensemble,
+    report_to: &mut impl io::Write,
+    output: &mut impl MachineOutput,
+) -> Result<Generated, Error> {
+    let trials = decisive(records)?;
     let reference = facts_reference(out_dir, facts)?;
-    fs::create_dir_all(out_dir).map_err(io_error("create output directory", out_dir))?;
+    output.prepare(out_dir)?;
     let (written, forward) = rayon::join(
-        || write_ensemble(&records, &trials, facts, out_dir, &reference, ensemble),
+        || {
+            write_ensemble(
+                records, &trials, facts, out_dir, &reference, ensemble, output,
+            )
+        },
         || {
             let started = Instant::now();
             let check = forward_check(&trials, 0);
@@ -112,6 +125,7 @@ fn write_ensemble(
     out_dir: &Path,
     reference: &str,
     ensemble: Ensemble,
+    output: &mut impl MachineOutput,
 ) -> Result<(Vec<Fitted>, Vec<u8>), Error> {
     let drafts: Vec<Result<Draft, Error>> = (0..=ensemble.bootstrap)
         .into_par_iter()
@@ -186,11 +200,8 @@ fn write_ensemble(
             &draft.constrained,
             &draft.flagged,
         )?;
-        fs::write(&path, content).map_err(io_error("write fitted machine", &path))?;
-        let loaded = file::load(&path).map_err(|source| Error::Load {
-            path: path.clone(),
-            source,
-        })?;
+        output.write(&path, &content, "write fitted machine")?;
+        let loaded = output.load(&path)?;
         let check = checker.check(&path, facts, &Model::new(&loaded, 0)?)?;
         writeln!(
             text,

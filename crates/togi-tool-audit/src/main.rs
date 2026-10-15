@@ -5,11 +5,21 @@ use std::process::ExitCode;
 
 use clap::Parser;
 use togi_tool_audit::{
-    Evidence, Finding, INTERRUPTED, Interrupt, Sweep, audit_directories, audit_holding,
-    read_records,
+    Evidence, Finding, INTERRUPTED, Interrupt, JournalSkip, Record, RecordError, Sweep,
+    audit_directory, audit_with, read_records,
 };
 
 const USAGE: u8 = 2;
+
+type Inspection = (Vec<Finding>, usize, Vec<JournalSkip>);
+
+/// The command's journal/record readers and output streams; production supplies durable disk readers.
+pub(crate) struct Io<'a> {
+    pub(crate) inspect: &'a dyn Fn(&Path, bool) -> Inspection,
+    pub(crate) records: &'a dyn Fn(&Path) -> Result<Vec<Record>, RecordError>,
+    pub(crate) out: &'a mut dyn io::Write,
+    pub(crate) err: &'a mut dyn io::Write,
+}
 
 /// Audit the journals of a simulated sweep, or of the given state directories.
 ///
@@ -53,31 +63,46 @@ struct Cli {
 }
 
 fn main() -> ExitCode {
-    match Cli::try_parse() {
-        Ok(cli) => run(cli),
+    entry(
+        std::env::args_os(),
+        &mut Io {
+            inspect: &audit_directory,
+            records: &read_records,
+            out: &mut io::stdout(),
+            err: &mut io::stderr(),
+        },
+    )
+}
+
+pub(crate) fn entry(
+    args: impl IntoIterator<Item = impl Into<std::ffi::OsString> + Clone>,
+    io: &mut Io<'_>,
+) -> ExitCode {
+    match Cli::try_parse_from(args) {
+        Ok(cli) => run(cli, io),
         Err(error) => {
             if error.use_stderr() {
-                let _ = write!(io::stderr(), "{}", error.render());
+                let _ = write!(io.err, "{}", error.render());
                 ExitCode::from(USAGE)
             } else {
-                let _ = write!(io::stdout(), "{}", error.render());
+                let _ = write!(io.out, "{}", error.render());
                 ExitCode::SUCCESS
             }
         }
     }
 }
 
-fn fail(error: &dyn std::fmt::Display) -> ExitCode {
-    let _ = writeln!(io::stderr(), "togi-tool-audit: {error}");
+fn fail(error: &dyn std::fmt::Display, err: &mut dyn io::Write) -> ExitCode {
+    let _ = writeln!(err, "togi-tool-audit: {error}");
     ExitCode::FAILURE
 }
 
-fn interrupted() -> ExitCode {
-    let _ = writeln!(io::stderr(), "togi-tool-audit: interrupted");
+fn interrupted(err: &mut dyn io::Write) -> ExitCode {
+    let _ = writeln!(err, "togi-tool-audit: interrupted");
     ExitCode::from(INTERRUPTED)
 }
 
-fn run(cli: Cli) -> ExitCode {
+fn run(cli: Cli, io: &mut Io<'_>) -> ExitCode {
     let mut scratch = None;
     let mut watching = None;
     let (records, root) = match (&cli.records, &cli.root) {
@@ -89,7 +114,7 @@ fn run(cli: Cli) -> ExitCode {
                 .unwrap_or(NonZeroUsize::MIN);
             let interrupt = match Interrupt::watch() {
                 Ok(interrupt) => interrupt,
-                Err(error) => return fail(&format!("watch for signals: {error}")),
+                Err(error) => return fail(&format!("watch for signals: {error}"), io.err),
             };
             let sweep = Sweep {
                 suite: &cli.suite,
@@ -109,27 +134,27 @@ fn run(cli: Cli) -> ExitCode {
                     root,
                 }) => {
                     if !interrupt.audit_started(held.as_ref().map(|_| dir)) {
-                        return interrupted();
+                        return interrupted(io.err);
                     }
                     scratch = held;
                     watching = Some(interrupt);
                     (records, root)
                 }
-                Err(_) if interrupt.signalled() => return interrupted(),
-                Err(error) => return fail(&error),
+                Err(_) if interrupt.signalled() => return interrupted(io.err),
+                Err(error) => return fail(&error, io.err),
             }
         }
-        _ => return audit_only(&cli.dirs),
+        _ => return audit_only(&cli.dirs, io),
     };
-    let code = audit_records(&records, &root, cli.dirs, watching.as_deref());
+    let code = audit_records(&records, &root, cli.dirs, watching.as_deref(), io);
     let held = watching.as_deref().map(Interrupt::hold);
     drop(scratch);
     drop(held);
     code
 }
 
-fn audit_only(dirs: &[PathBuf]) -> ExitCode {
-    report(audit_directories(dirs, &[], Path::new("")))
+fn audit_only(dirs: &[PathBuf], io: &mut Io<'_>) -> ExitCode {
+    report(audit_with(dirs, &[], Path::new(""), || (), io.inspect), io)
 }
 
 fn audit_records(
@@ -137,10 +162,11 @@ fn audit_records(
     root: &Path,
     mut dirs: Vec<PathBuf>,
     interrupt: Option<&Interrupt>,
+    io: &mut Io<'_>,
 ) -> ExitCode {
-    let records = match read_records(records) {
+    let records = match (io.records)(records) {
         Ok(records) => records,
-        Err(error) => return fail(&error),
+        Err(error) => return fail(&error, io.err),
     };
     if dirs.is_empty() {
         dirs = records
@@ -148,22 +174,29 @@ fn audit_records(
             .map(|record| togi_tool_audit::run_directory(root, record))
             .collect();
     }
-    report(audit_holding(&dirs, &records, root, || {
-        interrupt.map(Interrupt::hold)
-    }))
+    report(
+        audit_with(
+            &dirs,
+            &records,
+            root,
+            || interrupt.map(Interrupt::hold),
+            io.inspect,
+        ),
+        io,
+    )
 }
 
-fn report(audited: io::Result<togi_tool_audit::Report>) -> ExitCode {
+fn report(audited: io::Result<togi_tool_audit::Report>, io: &mut Io<'_>) -> ExitCode {
     let audited = match audited {
         Ok(audited) => audited,
-        Err(error) => return fail(&error),
+        Err(error) => return fail(&error, io.err),
     };
-    if let Err(error) = write_findings(&audited.findings) {
-        return fail(&format!("write the report: {error}"));
+    if let Err(error) = write_findings(&audited.findings, io.out) {
+        return fail(&format!("write the report: {error}"), io.err);
     }
     for skip in &audited.skipped {
         let _ = writeln!(
-            io::stderr(),
+            io.err,
             "togi-tool-audit: {:?} {}: {}",
             skip.directory.to_string_lossy(),
             skip.journal,
@@ -171,7 +204,7 @@ fn report(audited: io::Result<togi_tool_audit::Report>) -> ExitCode {
         );
     }
     let _ = writeln!(
-        io::stderr(),
+        io.err,
         "togi-tool-audit: directories={} journals={} violations={}",
         audited.directories,
         audited.journals,
@@ -184,8 +217,8 @@ fn report(audited: io::Result<togi_tool_audit::Report>) -> ExitCode {
     }
 }
 
-fn write_findings(findings: &[Finding]) -> io::Result<()> {
-    let mut out = io::BufWriter::new(io::stdout().lock());
+fn write_findings(findings: &[Finding], out: &mut dyn io::Write) -> io::Result<()> {
+    let mut out = io::BufWriter::new(out);
     for finding in findings {
         serde_json::to_writer(&mut out, finding)?;
         out.write_all(b"\n")?;

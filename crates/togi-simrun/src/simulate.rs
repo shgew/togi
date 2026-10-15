@@ -41,7 +41,19 @@ type Check<'a> =
     dyn FnMut(Option<&ResumeCapsule>, &[Event], bool, u32) -> Result<(), SimError> + 'a;
 
 /// [`simulate`], checking each due boot's resume state with `check`.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "a simulation writes its in-memory state directory to disk only on request"
+)]
 fn simulate_checked(input: SimInput, check: &mut Check<'_>) -> Result<SimOutcome, SimError> {
+    simulate_with_dump(input, check, &mut |fs, destination| fs.dump_to(destination))
+}
+
+fn simulate_with_dump(
+    input: SimInput,
+    check: &mut Check<'_>,
+    dump: &mut dyn FnMut(&MemFs, &Path) -> io::Result<()>,
+) -> Result<SimOutcome, SimError> {
     let SimInput {
         config,
         source,
@@ -248,7 +260,7 @@ fn simulate_checked(input: SimInput, check: &mut Check<'_>) -> Result<SimOutcome
         machine::save(&persistence, &lock(&persistence)?, &simulator.persisted())?;
     }
     if let Some(destination) = dump_to {
-        dump(memory.as_ref(), &destination)?;
+        dump_with(memory.as_ref(), &destination, dump)?;
     }
     Ok(outcome.unwrap_or(SimOutcome::Capped { boots: max_boots }))
 }
@@ -312,13 +324,13 @@ fn publish(capsule: &ResumeCapsule, dir: &mut StateDir, boot: u32) -> Result<(),
         .map_err(|source| SimError::Publish { boot, source })
 }
 
-#[expect(
-    clippy::disallowed_methods,
-    reason = "a simulation writes its in-memory state directory to disk on request"
-)]
-fn dump(memory: Option<&MemFs>, destination: &Path) -> Result<(), SimError> {
+fn dump_with(
+    memory: Option<&MemFs>,
+    destination: &Path,
+    dump: &mut dyn FnMut(&MemFs, &Path) -> io::Result<()>,
+) -> Result<(), SimError> {
     match memory {
-        Some(fs) => fs.dump_to(destination).map_err(SimError::Dump),
+        Some(fs) => dump(fs, destination).map_err(SimError::Dump),
         None => Ok(()),
     }
 }

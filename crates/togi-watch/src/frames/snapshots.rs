@@ -1,4 +1,4 @@
-//! insta snapshots of whole frames, every one drawn by `render` through the bounds check: the main view of each
+//! Embedded snapshots of whole frames, every one drawn by `render` through the bounds check: the main view of each
 //! simulated scenario, the colour profiles, the journal states, the help and journal views and one frame.
 //!
 //! A text snapshot is the frame's rows; a styled one adds a row of tone letters under each row that has styling.
@@ -23,10 +23,104 @@ const VIEW_SIZES: [(u16, u16); 3] = [(80, 24), (160, 45), (240, 67)];
 const WIDE: (u16, u16) = (240, 67);
 const WIDE_ONLY: [(u16, u16); 1] = [WIDE];
 
+macro_rules! expected {
+    ($name:expr; $($snapshot:literal),* $(,)?) => {
+        match $name {
+            $($snapshot => include_str!(concat!("snapshots/", $snapshot, ".snap")),)*
+            name => panic!("no embedded frame snapshot for {name}"),
+        }
+    };
+}
+
+#[track_caller]
 fn check(name: &str, body: &str) {
-    insta::with_settings!({ snapshot_suffix => "", prepend_module_to_snapshot => false }, {
-        insta::assert_snapshot!(name, body);
-    });
+    // Compile the committed fixtures into the test: comparisons never invoke insta's disk/config machinery.
+    let snapshot = expected! { name;
+        "main-between-240x67",
+        "main-stopped-240x67",
+        "main-unconfirmed-240x67",
+        "one-frame-checking-120x33",
+        "one-frame-checking-240x67",
+        "main-checking-120x33",
+        "main-checking-160x45",
+        "main-checking-240x67-console",
+        "main-checking-240x67-full",
+        "main-checking-240x67-none",
+        "main-checking-240x67",
+        "main-concluded-240x67",
+        "main-confirmation-240x67",
+        "main-deadend-240x67",
+        "main-first-result-240x67",
+        "main-hunt-120x33",
+        "main-hunt-160x45",
+        "main-hunt-240x67",
+        "main-hunt-bios-120x33",
+        "main-hunt-bios-160x45",
+        "main-hunt-bios-240x67",
+        "main-idle-120x33",
+        "main-idle-160x45",
+        "main-idle-240x67-console",
+        "main-idle-240x67-full",
+        "main-idle-240x67-none",
+        "main-idle-240x67",
+        "help-160x45",
+        "help-240x67-full",
+        "help-240x67",
+        "help-80x24",
+        "help-end-240x67-full",
+        "help-end-240x67",
+        "help-end-160x45",
+        "help-end-80x24",
+        "main-member-probe-240x67-console",
+        "main-member-probe-240x67-full",
+        "main-member-probe-240x67-none",
+        "main-member-probe-240x67",
+        "main-recovering-120x33",
+        "main-recovering-160x45",
+        "main-recovering-240x67",
+        "main-round-120x33",
+        "main-round-160x45",
+        "main-round-240x67",
+        "main-search-120x33",
+        "main-search-160x45",
+        "main-search-240x67",
+        "missing-120x33",
+        "missing-160x45",
+        "missing-240x67",
+        "problem-120x33",
+        "problem-160x45",
+        "problem-240x67",
+        "problem-once-120x33",
+        "problem-once-160x45",
+        "problem-once-240x67",
+        "starting-120x33",
+        "starting-160x45",
+        "starting-240x67",
+        "main-combination-120x33",
+        "main-combination-160x45",
+        "main-combination-240x67",
+        "main-confirm-240x67",
+        "main-crashed-240x67",
+        "main-member-probe-120x33",
+        "main-member-probe-160x45",
+        "log-160x45",
+        "log-240x67-full",
+        "log-240x67",
+        "log-80x24",
+        "log-top-160x45",
+    };
+    let (_, expected) = snapshot
+        .strip_prefix("---\n")
+        .and_then(|snapshot| snapshot.split_once("\n---\n"))
+        .expect("a committed snapshot has an insta metadata header");
+    // The row assertion shows the first changed row rather than an escaped whole-frame string.
+    for (row, (actual, wanted)) in body.lines().zip(expected.lines()).enumerate() {
+        assert_eq!(actual, wanted, "{name}, row {}", row + 1);
+    }
+    assert_eq!(
+        body, expected,
+        "{name}: frame length or trailing newline differs"
+    );
 }
 
 fn screen_of(

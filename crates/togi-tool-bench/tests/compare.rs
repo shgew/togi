@@ -1,5 +1,10 @@
 #![expect(clippy::unwrap_used, reason = "helpers panic on a broken fixture")]
 
+#[expect(
+    dead_code,
+    unused_imports,
+    reason = "this binary uses records and snapshots, not memory trees"
+)]
 mod common;
 
 use common::record;
@@ -333,19 +338,32 @@ fn baselines() -> Vec<Record> {
 
 #[test]
 fn the_summary_lists_scenarios_in_record_order_then_the_total() {
-    insta::assert_snapshot!(text(|out| summary::report(out, &candidates())));
+    common::assert_snapshot(
+        &text(|out| summary::report(out, &candidates())),
+        include_str!(
+            "snapshots/compare__the_summary_lists_scenarios_in_record_order_then_the_total.snap"
+        ),
+    );
 }
 
 #[test]
 fn the_comparison_names_each_scenario_and_the_verdict() {
-    insta::assert_snapshot!(text(|out| report(out, &candidates()[..2], &baselines())));
+    common::assert_snapshot(
+        &text(|out| report(out, &candidates()[..2], &baselines())),
+        include_str!("snapshots/compare__the_comparison_names_each_scenario_and_the_verdict.snap"),
+    );
 }
 
 #[test]
 fn unmatched_runs_in_the_candidates_splits_are_warned_about() {
     let mut base = baselines();
     base.push(record("missing", 7));
-    insta::assert_snapshot!(text(|out| report(out, &candidates(), &base)));
+    common::assert_snapshot(
+        &text(|out| report(out, &candidates(), &base)),
+        include_str!(
+            "snapshots/compare__unmatched_runs_in_the_candidates_splits_are_warned_about.snap"
+        ),
+    );
 }
 
 #[test]
@@ -355,7 +373,10 @@ fn a_rejected_candidate_says_which_violations() {
     a.depth = -14;
     a.hazard_max_per_h = 0.1;
     let base = baselines().remove(1);
-    insta::assert_snapshot!(text(|out| report(out, &[a], &[base])));
+    common::assert_snapshot(
+        &text(|out| report(out, &[a], &[base])),
+        include_str!("snapshots/compare__a_rejected_candidate_says_which_violations.snap"),
+    );
 }
 
 #[test]
@@ -387,7 +408,10 @@ fn shared_voltage_hazards_have_their_own_lines() {
         summary::report(out, &rows)?;
         report(out, &rows[1..2], &[baseline])
     });
-    insta::assert_snapshot!(out);
+    common::assert_snapshot(
+        &out,
+        include_str!("snapshots/compare__shared_voltage_hazards_have_their_own_lines.snap"),
+    );
 }
 
 #[test]

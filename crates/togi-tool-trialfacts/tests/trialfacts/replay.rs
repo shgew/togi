@@ -1,14 +1,17 @@
+use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
 use togi_facts::{Decisive, TrialClass};
+use togi_journal::MemFs;
+use togi_journal::fs::Fs;
 use togi_machine::{Regime, Signal, TargetOffset};
 use togi_sim::definition::BiosContextDef;
 use togi_sim::replay::{ReplayFact, ReplayOutcome};
 use togi_sim::{Load, MachineDefinition};
 use togi_tool_trialfacts::{
-    Class, Extracts, ExtractsError, ReadError, TrialFact, replay_facts, write,
+    Class, Extracts, ExtractsError, ReadError, TrialFact, decode, encode, replay_facts,
 };
 
 use crate::builders::{bios, crash, fact, offsets, set, workload};
@@ -54,20 +57,36 @@ fn answered(replay: &togi_sim::replay::Replay, context: &str, first_offset: i64)
     replay.has_answer(&bios(context), &load, &offsets(&[first_offset, 0]))
 }
 
-fn extract_in(dir: &Path) -> PathBuf {
+fn extract_in(fs: &MemFs, dir: &Path) -> PathBuf {
     let path = dir.join("facts.gz");
-    write(&path, &evidence()).unwrap();
+    put_extract(fs, &path, &evidence());
     path
+}
+
+fn put_extract(fs: &MemFs, path: &Path, facts: &[TrialFact]) {
+    let mut bytes = Vec::new();
+    encode(&mut bytes, facts).unwrap();
+    fs.put(path, bytes);
+}
+
+fn read_extract(fs: &MemFs, path: &Path) -> Result<Vec<TrialFact>, ReadError> {
+    let bytes = fs.contents(path).ok_or_else(|| ReadError::Open {
+        path: path.to_path_buf(),
+        source: io::Error::from(io::ErrorKind::NotFound),
+    })?;
+    decode(bytes.as_slice())
 }
 
 #[test]
 fn only_decisive_trials_with_a_context_answer_trials() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = extract_in(dir.path());
-    let machine_path = dir.path().join("machine.json");
+    let fs = MemFs::new();
+    let path = extract_in(&fs, Path::new("/fixtures"));
+    let machine_path = Path::new("/fixtures/machine.json");
     for facts in ["facts.gz", path.to_str().unwrap()] {
         let replay = Extracts::new()
-            .replay(&machine_path, &machine(facts))
+            .replay_with(machine_path, &machine(facts), |path| {
+                read_extract(&fs, path)
+            })
             .unwrap();
         assert_eq!(replay.len(), 2, "{facts}");
         for first_offset in [-10, -20, -30, -40] {
@@ -142,9 +161,9 @@ fn replay_facts_keep_what_the_simulator_matches_and_replays() {
 
 #[test]
 fn a_machine_without_an_extract_or_context_or_file_is_refused() {
-    let dir = tempfile::tempdir().unwrap();
-    extract_in(dir.path());
-    let machine_path = dir.path().join("machine.json");
+    let fs = MemFs::new();
+    extract_in(&fs, Path::new("/fixtures"));
+    let machine_path = Path::new("/fixtures/machine.json");
     let mut extracts = Extracts::new();
 
     for facts in [None, Some(String::new())] {
@@ -152,7 +171,11 @@ fn a_machine_without_an_extract_or_context_or_file_is_refused() {
             facts,
             ..machine("facts.gz")
         };
-        let error = extracts.replay(&machine_path, &declared).unwrap_err();
+        let error = extracts
+            .replay_with(machine_path, &declared, |_| {
+                panic!("missing facts must not read")
+            })
+            .unwrap_err();
         assert!(matches!(error, ExtractsError::NoFacts), "{error}");
     }
 
@@ -160,11 +183,17 @@ fn a_machine_without_an_extract_or_context_or_file_is_refused() {
         bios_context: None,
         ..machine("facts.gz")
     };
-    let error = extracts.replay(&machine_path, &undeclared).unwrap_err();
+    let error = extracts
+        .replay_with(machine_path, &undeclared, |_| {
+            panic!("missing context must not read")
+        })
+        .unwrap_err();
     assert!(matches!(error, ExtractsError::NoContext), "{error}");
 
     let error = extracts
-        .replay(&machine_path, &machine("missing.gz"))
+        .replay_with(machine_path, &machine("missing.gz"), |path| {
+            read_extract(&fs, path)
+        })
         .unwrap_err();
     assert!(
         matches!(error, ExtractsError::Read(ReadError::Open { .. })),
@@ -174,17 +203,21 @@ fn a_machine_without_an_extract_or_context_or_file_is_refused() {
 
 #[test]
 fn a_fact_the_simulator_cannot_replay_names_its_index() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("facts.gz");
+    let fs = MemFs::new();
+    let path = Path::new("/fixtures/facts.gz");
     let mut too_long = fact(FIRST, 5, &[-10, 0], crash(Some(0)));
     too_long.duration_s = 91;
-    write(
-        &path,
+    put_extract(
+        &fs,
+        path,
         &[fact(FIRST, 4, &[-10, 0], Decisive::Pass), too_long],
-    )
-    .unwrap();
+    );
     let error = Extracts::new()
-        .replay(&dir.path().join("machine.json"), &machine("facts.gz"))
+        .replay_with(
+            Path::new("/fixtures/machine.json"),
+            &machine("facts.gz"),
+            |path| read_extract(&fs, path),
+        )
         .unwrap_err();
     assert!(
         matches!(&error, ExtractsError::Invalid(invalid) if invalid.index == 1),
@@ -194,13 +227,17 @@ fn a_fact_the_simulator_cannot_replay_names_its_index() {
 
 #[test]
 fn each_extract_is_read_once_and_shared() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = extract_in(dir.path());
+    let fs = MemFs::new();
+    let path = extract_in(&fs, Path::new("/fixtures"));
     let mut extracts = Extracts::default();
     let mut first_records = None;
     for machine_name in ["first.json", "second.json"] {
         let (found, records) = extracts
-            .load(&dir.path().join(machine_name), &machine("facts.gz"))
+            .load_with(
+                &Path::new("/fixtures").join(machine_name),
+                &machine("facts.gz"),
+                |path| read_extract(&fs, path),
+            )
             .unwrap();
         assert_eq!(found, path);
         assert_eq!(records.len(), 4);
@@ -208,27 +245,31 @@ fn each_extract_is_read_once_and_shared() {
             None => first_records = Some(records),
             Some(first) => assert!(Arc::ptr_eq(first, &records)),
         }
-        std::fs::remove_file(&path).ok();
+        fs.remove_file(&path).ok();
     }
     assert!(
         Extracts::new()
-            .load(&dir.path().join("first.json"), &machine("facts.gz"))
+            .load_with(
+                Path::new("/fixtures/first.json"),
+                &machine("facts.gz"),
+                |path| read_extract(&fs, path),
+            )
             .is_err()
     );
 }
 
 #[test]
 fn extracts_resolve_relative_to_the_machine_file() {
-    let dir = tempfile::tempdir().unwrap();
-    std::fs::create_dir(dir.path().join("machines")).unwrap();
-    std::fs::create_dir(dir.path().join("facts")).unwrap();
-    write(dir.path().join("facts").join("e.gz"), &evidence()).unwrap();
+    let fs = MemFs::new();
+    let resolved = Path::new("/fixtures/machines/../facts/e.gz");
+    put_extract(&fs, resolved, &evidence());
     let (path, records) = Extracts::new()
-        .load(
-            &dir.path().join("machines").join("m.json"),
+        .load_with(
+            Path::new("/fixtures/machines/m.json"),
             &machine("../facts/e.gz"),
+            |path| read_extract(&fs, path),
         )
         .unwrap();
-    assert_eq!(path, dir.path().join("machines").join("../facts/e.gz"));
+    assert_eq!(path, resolved);
     assert_eq!(records.len(), 4);
 }

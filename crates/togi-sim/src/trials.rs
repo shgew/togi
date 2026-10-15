@@ -129,16 +129,27 @@ impl Trials for SimTrials {
         }))
     }
 
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "simulation output is disposable and never requests durability"
+    )]
     fn ended(&mut self, id: &str) -> Result<(), Error> {
         let runtime = self.0.borrow();
+        if let Some(storage) = &runtime.sample_storage {
+            return storage.ended(id);
+        }
         let Some(dir) = &runtime.samples_dir else {
             return Ok(());
         };
-        togi_trialfiles::compress(&dir.join(id)).map_err(|errors| Error::Other(Box::new(errors)))
+        togi_trialfiles::compress_unsynced(&dir.join(id))
+            .map_err(|errors| Error::Other(Box::new(errors)))
     }
 
     fn samples<'a>(&'a self, id: &'a str) -> Box<dyn Iterator<Item = TrialConditions> + 'a> {
         let runtime = self.0.borrow();
+        if let Some(storage) = &runtime.sample_storage {
+            return storage.read(id);
+        }
         match &runtime.samples_dir {
             Some(dir) => Box::new(togi_machine::read_samples(&dir.join(id))),
             None if runtime.samples.id.as_deref() == Some(id) => {
@@ -488,6 +499,10 @@ impl Runtime {
             stalled,
             voltage: self.model.voltage_state(profile, load).ok().flatten(),
         };
+        if let Some(storage) = &self.sample_storage {
+            self.samples = LastTrial::default();
+            return storage.write(&spec.id, &mut |out| snapshot.encode(out));
+        }
         if let Some(dir) = &self.samples_dir {
             self.samples = LastTrial::default();
             snapshot.persist(dir, &spec.id)

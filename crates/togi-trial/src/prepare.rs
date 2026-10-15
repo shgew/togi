@@ -26,6 +26,8 @@ pub(crate) struct Preparer {
     busy: Arc<AtomicBool>,
     /// Test construction: how created files change owner.
     pub(crate) chown: Chown,
+    /// An explicitly injected filesystem for descriptor-free fixtures.
+    pub(crate) fs: Option<Arc<dyn togi_journal::fs::Fs>>,
     /// Test construction: called on the preparation thread with the step's name before it works.
     pub(crate) entered: Option<Arc<Entered>>,
 }
@@ -39,6 +41,14 @@ impl Drop for Release {
 }
 
 impl Preparer {
+    #[cfg(test)]
+    pub(crate) fn with_fs(fs: Arc<dyn togi_journal::fs::Fs>) -> Self {
+        Self {
+            fs: Some(fs),
+            ..Self::default()
+        }
+    }
+
     /// Runs `work` and waits for what it reports until `until`; a cancellation of the start ends
     /// the wait first. `step` names the work in the error of a missed deadline and `bound` is the
     /// budget the deadline came from.

@@ -1219,6 +1219,8 @@ fn mask(ids: &[u8], bits: u16) -> CoreSet {
 }
 
 proptest! {
+    #![proptest_config(crate::prop_tests::seeded(256))]
+
     #[test]
     fn plans_terminate_on_the_minimal_failing_set_or_fall_back(hunt in hunts()) {
         let candidates = set(&hunt.candidates);

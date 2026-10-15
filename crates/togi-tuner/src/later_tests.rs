@@ -824,7 +824,7 @@ fn failure_ops() -> impl Strategy<Value = Vec<(u8, bool)>> {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(12))]
+    #![proptest_config(crate::prop_tests::seeded(12))]
 
     #[test]
     fn after_conclusion_no_ordinary_decision_deepens_any_core(ops in failure_ops()) {

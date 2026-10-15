@@ -69,11 +69,29 @@ pub struct BaselineRun {
 
 /// Reads the baseline's records, one JSON object per line.
 pub fn read_baseline(path: &Path) -> Result<Vec<BaselineRun>, Error> {
-    let text = fs::read_to_string(path).map_err(|source| Error::ReadFile {
-        what: "read baseline scores",
-        path: path.to_path_buf(),
-        source,
-    })?;
+    read_baseline_from(
+        fs::File::open(path).map_err(|source| Error::ReadFile {
+            what: "read baseline scores",
+            path: path.to_path_buf(),
+            source,
+        })?,
+        path,
+    )
+}
+
+/// Decodes baseline scores from memory or a stream; the path is diagnostic context only.
+pub fn read_baseline_from(
+    mut reader: impl io::Read,
+    path: &Path,
+) -> Result<Vec<BaselineRun>, Error> {
+    let mut text = String::new();
+    reader
+        .read_to_string(&mut text)
+        .map_err(|source| Error::ReadFile {
+            what: "read baseline scores",
+            path: path.to_path_buf(),
+            source,
+        })?;
     text.lines()
         .enumerate()
         .filter(|(_, line)| !line.trim().is_empty())

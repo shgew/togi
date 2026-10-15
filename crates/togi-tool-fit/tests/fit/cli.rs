@@ -5,6 +5,10 @@ use togi_machine::Regime;
 
 use crate::support::{fact, write_extract};
 
+#[expect(
+    clippy::disallowed_methods,
+    reason = "real_process tests run the fitted-machine command"
+)]
 fn fit(args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_togi-tool-fit"))
         .args(args)
@@ -33,7 +37,7 @@ fn text(bytes: &[u8]) -> String {
 }
 
 #[test]
-fn forward_only_prints_the_check_and_writes_no_machine_files() {
+fn real_process_forward_only_prints_the_check_and_writes_no_machine_files() {
     let dir = tempfile::tempdir().unwrap();
     let extract = two_sessions(dir.path());
     let out = dir.path().join("machines");
@@ -59,7 +63,7 @@ fn forward_only_prints_the_check_and_writes_no_machine_files() {
 }
 
 #[test]
-fn sealing_every_held_out_session_is_an_error() {
+fn real_process_sealing_every_held_out_session_is_an_error() {
     let dir = tempfile::tempdir().unwrap();
     let extract = two_sessions(dir.path());
     let ran = fit(&[
@@ -78,7 +82,7 @@ fn sealing_every_held_out_session_is_an_error() {
 }
 
 #[test]
-fn an_unreadable_extract_exits_1_with_the_error_on_stderr() {
+fn real_process_an_unreadable_extract_exits_1_with_the_error_on_stderr() {
     let dir = tempfile::tempdir().unwrap();
     let missing = dir.path().join("missing.gz");
     for extra in [
@@ -100,7 +104,7 @@ fn an_unreadable_extract_exits_1_with_the_error_on_stderr() {
 }
 
 #[test]
-fn flags_that_do_not_go_together_are_usage_errors() {
+fn real_process_flags_that_do_not_go_together_are_usage_errors() {
     for args in [
         &["--shared-voltage-in-sample", "--forward-only"][..],
         &["--shared-voltage-in-sample", "--bootstrap", "0"],
@@ -124,7 +128,7 @@ fn flags_that_do_not_go_together_are_usage_errors() {
 }
 
 #[test]
-fn the_help_lists_the_modes() {
+fn real_process_the_help_lists_the_modes() {
     let ran = fit(&["--help"]);
     assert_eq!(ran.status.code(), Some(0));
     let stdout = text(&ran.stdout);
@@ -139,7 +143,7 @@ fn the_help_lists_the_modes() {
 }
 
 #[test]
-fn an_ensemble_run_writes_the_machine_files_and_prints_the_report() {
+fn real_process_an_ensemble_run_writes_the_machine_files_and_prints_the_report() {
     let dir = tempfile::tempdir().unwrap();
     let extract = two_sessions(dir.path());
     let out = dir.path().join("machines");
@@ -164,7 +168,7 @@ fn an_ensemble_run_writes_the_machine_files_and_prints_the_report() {
 }
 
 #[test]
-fn the_shared_voltage_anchor_is_fitted_checked_and_written() {
+fn real_process_the_shared_voltage_anchor_is_fitted_checked_and_written() {
     let dir = tempfile::tempdir().unwrap();
     let mut facts = Vec::new();
     for i in 0..149_u64 {

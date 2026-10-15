@@ -1,7 +1,7 @@
 #![expect(
     clippy::unwrap_used,
     clippy::disallowed_methods,
-    reason = "helpers panic on a broken fixture, and the tests keep journals in memory and dump them to disk"
+    reason = "helpers panic on invalid fixtures and keep simulated journals in memory"
 )]
 
 mod builders;

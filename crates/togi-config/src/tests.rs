@@ -652,24 +652,36 @@ fn a_snapshot_the_configuration_would_refuse_is_refused_when_read_back() {
 }
 
 #[test]
-fn load_reads_a_file() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("config.json");
-    std::fs::write(&path, r#"{"backend_user":"togi-trial"}"#).unwrap();
+fn load_reads_content() {
+    let path = std::path::Path::new("/config/config.json");
     assert_eq!(
-        Config::load(&path).unwrap().backend_user(),
+        Config::load_with(path, |requested| {
+            assert_eq!(requested, path);
+            Ok(r#"{"backend_user":"togi-trial"}"#.as_bytes())
+        })
+        .unwrap()
+        .backend_user(),
         Some("togi-trial")
     );
 }
 
 #[test]
 fn load_of_a_missing_file_stays_inspectable() {
-    let dir = tempfile::tempdir().unwrap();
-    let missing = dir.path().join("missing.json");
-    match Config::load(&missing).unwrap_err() {
+    let missing = std::path::Path::new("/config/missing.json");
+    let error = Config::load_with(missing, |requested| {
+        assert_eq!(requested, missing);
+        Err::<&[u8], _>(io::Error::new(
+            io::ErrorKind::NotFound,
+            "missing configuration",
+        ))
+    })
+    .unwrap_err();
+    assert!(error.to_string().contains(missing.to_str().unwrap()));
+    match error {
         LoadError::Read { path, source } => {
             assert_eq!(path, missing);
             assert_eq!(source.kind(), io::ErrorKind::NotFound);
+            assert_eq!(source.to_string(), "missing configuration");
         }
         other @ LoadError::Parse { .. } => panic!("{other}"),
     }
@@ -677,22 +689,20 @@ fn load_of_a_missing_file_stays_inspectable() {
 
 #[test]
 fn load_names_the_file_of_an_invalid_config() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("config.json");
-    std::fs::write(&path, r#"{"bogus":1}"#).unwrap();
-    let err = Config::load(&path).unwrap_err();
-    assert!(matches!(&err, LoadError::Parse { path: named, .. } if *named == path));
+    let path = std::path::Path::new("/config/config.json");
+    let err = Config::load_with(path, |_| Ok(r#"{"bogus":1}"#.as_bytes())).unwrap_err();
+    assert!(matches!(&err, LoadError::Parse { path: named, .. } if named == path));
     assert!(err.to_string().contains("unknown field"));
+    assert!(err.to_string().contains(path.to_str().unwrap()));
 }
 
 #[test]
 fn load_rejects_a_file_that_is_not_utf8() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("config.json");
-    std::fs::write(&path, [0xff, 0xfe]).unwrap();
+    let path = std::path::Path::new("/config/config.json");
     assert!(matches!(
-        Config::load(&path).unwrap_err(),
-        LoadError::Read { .. }
+        Config::load_with(path, |_| Ok([0xff, 0xfe].as_slice())).unwrap_err(),
+        LoadError::Read { path: named, source }
+            if named == path && source.kind() == io::ErrorKind::InvalidData
     ));
 }
 

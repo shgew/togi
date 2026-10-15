@@ -18,14 +18,13 @@ use std::rc::Rc;
 
 use support::{Host, Ran};
 use togi_cli::Exit;
-use togi_hostlock::{HostLock, Policy};
 use togi_machine::{
     BiosContext, BootId, CancellationToken, Check, CoreId, CoreInfo, CoreRank, Error,
     Host as MachineHost, Machine, Partial, Running, SmuValidated, Stopped, Swept, TrialConditions,
     TrialSpec, Trials,
 };
 use togi_sim::faults::{HookPhase, SmuOp, SmuOperation};
-use togi_sim::{Model, RunSettings, Simulator, file};
+use togi_sim::{Model, RunSettings, Simulator};
 
 const CORES: u8 = 16;
 const BIOS: i64 = -10;
@@ -34,9 +33,10 @@ type Log = Rc<RefCell<Vec<String>>>;
 
 /// The machine `togi emergency-stop` finds after a crash: every core's offset at `BIOS`.
 fn simulator() -> Simulator {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../tools/bench/machines/shared-voltage.json");
-    let mut definition = file::load(path).unwrap();
+    let mut definition = serde_json::from_str::<togi_sim::MachineDefinition>(include_str!(
+        "../../../../tools/bench/machines/shared-voltage.json"
+    ))
+    .unwrap();
     definition.bios = Some(vec![BIOS; usize::from(CORES)]);
     Simulator::new(
         Model::new(&definition, 1).unwrap(),
@@ -209,7 +209,7 @@ impl Rig {
     fn assert_untouched(&self) {
         assert_eq!(self.offsets(), vec![BIOS; usize::from(CORES)]);
         assert!(
-            !self.state.exists(),
+            !self.host.exists(&self.state),
             "emergency-stop created the state directory"
         );
     }
@@ -241,7 +241,7 @@ fn a_stop_sweeps_then_zeroes_every_core_and_reads_each_back() {
     assert_eq!(rig.ops(), expected);
     assert_eq!(rig.offsets(), vec![0; usize::from(CORES)]);
     assert!(
-        !rig.state.exists(),
+        !rig.host.exists(&rig.state),
         "emergency-stop created the state directory"
     );
 }
@@ -250,7 +250,7 @@ fn a_stop_sweeps_then_zeroes_every_core_and_reads_each_back() {
 fn a_stop_releases_the_host_lock() {
     let rig = Rig::new();
     assert_eq!(rig.run().exit, Exit::Ok);
-    assert!(HostLock::acquire(&rig.host.lock, Policy::Private).is_ok());
+    assert!(rig.host.locks.acquire(&rig.host.lock).is_ok());
 }
 
 #[test]
@@ -302,7 +302,7 @@ fn a_topology_without_cores_is_refused_before_validation_and_sweep() {
 #[test]
 fn a_busy_host_lock_exits_3_before_the_machine_is_opened() {
     let rig = Rig::new();
-    let _held = HostLock::acquire(&rig.host.lock, Policy::Private).unwrap();
+    let _held = rig.host.locks.acquire(&rig.host.lock).unwrap();
     let ran = rig.run();
     assert_eq!(ran.exit, Exit::Locked);
     assert_eq!(ran.out, "");
@@ -319,8 +319,12 @@ fn a_busy_host_lock_exits_3_before_the_machine_is_opened() {
 }
 
 #[test]
-fn an_unsafe_host_lock_exits_1_before_the_machine_is_opened() {
-    let rig = Rig::new();
+fn real_fs_an_unsafe_host_lock_exits_1_before_the_machine_is_opened() {
+    let mut rig = Rig::new();
+    let host = Host::real();
+    *host.machine.borrow_mut() = rig.host.machine.borrow_mut().take();
+    rig.state = host.lock.with_file_name("state");
+    rig.host = host;
     let directory = rig.host.lock.parent().unwrap();
     fs::set_permissions(directory, Permissions::from_mode(0o777)).unwrap();
     let resolved = fs::canonicalize(directory).unwrap();
@@ -352,7 +356,7 @@ fn a_platform_other_than_linux_is_refused_before_the_lock_and_the_machine() {
         ran.err,
         "togi emergency-stop: hardware runs need Linux: unsupported operation\n"
     );
-    assert!(!rig.host.lock.exists(), "the lock was taken");
+    assert_eq!(rig.host.lock_acquisitions.get(), 0, "the lock was taken");
     assert!(rig.unopened());
     rig.assert_untouched();
 }
@@ -367,7 +371,7 @@ fn a_caller_without_root_is_refused_before_the_lock_and_the_machine() {
         ran.err,
         "togi emergency-stop: needs root to write the SMU; offsets unchanged\n"
     );
-    assert!(!rig.host.lock.exists(), "the lock was taken");
+    assert_eq!(rig.host.lock_acquisitions.get(), 0, "the lock was taken");
     assert!(rig.unopened());
     rig.assert_untouched();
 }

@@ -7,6 +7,9 @@ pub(crate) fn isolate_git(command: &mut Command, home: &Path) {
     command
         .env("GIT_CONFIG_NOSYSTEM", "1")
         .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_COUNT", "1")
+        .env("GIT_CONFIG_KEY_0", "core.fsync")
+        .env("GIT_CONFIG_VALUE_0", "none")
         .env("HOME", home)
         .env_remove("GIT_DIR")
         .env_remove("GIT_WORK_TREE")

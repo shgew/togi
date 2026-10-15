@@ -13,6 +13,50 @@ use togi_tool_trialfacts::Extracts;
 
 use crate::error::Error;
 
+/// The suite's machine documents, canonical paths, and binary facts inputs.
+pub trait SuiteSource: file::Source {
+    fn read(&self, path: &Path) -> std::io::Result<Vec<u8>>;
+
+    /// Decodes an extract. Disk adapters stream it rather than retaining a second compressed copy.
+    fn read_facts(
+        &self,
+        path: &Path,
+    ) -> Result<Vec<togi_tool_trialfacts::TrialFact>, togi_tool_trialfacts::ReadError> {
+        let bytes = self
+            .read(path)
+            .map_err(|source| togi_tool_trialfacts::ReadError::Open {
+                path: path.to_path_buf(),
+                source,
+            })?;
+        togi_tool_trialfacts::decode(bytes.as_slice())
+    }
+}
+
+pub(crate) struct DiskSource;
+
+impl file::Source for DiskSource {
+    fn read_to_string(&self, path: &Path) -> std::io::Result<String> {
+        fs::read_to_string(path)
+    }
+
+    fn canonicalize(&self, path: &Path) -> std::io::Result<PathBuf> {
+        path.canonicalize()
+    }
+}
+
+impl SuiteSource for DiskSource {
+    fn read(&self, path: &Path) -> std::io::Result<Vec<u8>> {
+        fs::read(path)
+    }
+
+    fn read_facts(
+        &self,
+        path: &Path,
+    ) -> Result<Vec<togi_tool_trialfacts::TrialFact>, togi_tool_trialfacts::ReadError> {
+        togi_tool_trialfacts::read(path)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Split {
@@ -134,7 +178,12 @@ pub struct Suite {
 
 impl Suite {
     pub fn load(path: &Path) -> Result<Self, SuiteError> {
-        let bytes = fs::read(path).map_err(|source| SuiteError::Read {
+        Self::load_from(path, &DiskSource)
+    }
+
+    /// Loads the suite document through `source`, resolving its machine paths relative to its parent.
+    pub fn load_from(path: &Path, source: &impl SuiteSource) -> Result<Self, SuiteError> {
+        let bytes = source.read(path).map_err(|source| SuiteError::Read {
             path: path.to_path_buf(),
             source,
         })?;
@@ -199,15 +248,24 @@ impl Suite {
     /// member count, not the seed's value; a replay scenario's oracle is built from its member's facts extract.
     /// Every member of every scenario is loaded, selected or not, so a mistake in a split not run now surfaces now.
     pub fn plan(&self, selection: Selection) -> Result<Plan, Error> {
+        self.plan_from(selection, &DiskSource)
+    }
+
+    /// Plans with all machine and facts input read through `source`.
+    pub fn plan_from(
+        &self,
+        selection: Selection,
+        source: &impl SuiteSource,
+    ) -> Result<Plan, Error> {
         let mut machines = Machines::default();
         let mut runs = Vec::new();
         for scenario in &self.scenarios {
             let mut members = Vec::with_capacity(scenario.members.len());
             for name in &scenario.members {
-                let machine = machines.load(&scenario.name, name, &self.base)?;
+                let machine = machines.load(&scenario.name, name, &self.base, source)?;
                 let replay = scenario
                     .replay
-                    .then(|| machines.replay(&scenario.name, &machine))
+                    .then(|| machines.replay(&scenario.name, &machine, source))
                     .transpose()?;
                 members.push((machine, replay));
             }
@@ -365,19 +423,25 @@ struct Machines {
 }
 
 impl Machines {
-    fn load(&mut self, scenario: &str, name: &str, base: &Path) -> Result<Arc<Machine>, Error> {
+    fn load(
+        &mut self,
+        scenario: &str,
+        name: &str,
+        base: &Path,
+        source: &impl SuiteSource,
+    ) -> Result<Arc<Machine>, Error> {
         let path = base.join(name);
         if let Some(machine) = self.loaded.get(&path) {
             return Ok(Arc::clone(machine));
         }
         let (definition, files) =
-            file::load_with_files(&path).map_err(|source| Error::Machine {
+            file::load_from(&path, source).map_err(|source| Error::Machine {
                 scenario: scenario.to_owned(),
                 source,
             })?;
         let mut inputs = Vec::with_capacity(files.len() + 1);
         for file in files {
-            inputs.push(sum(file, base)?);
+            inputs.push(sum(file, base, source)?);
         }
         if let Some(facts) = definition
             .facts
@@ -385,7 +449,7 @@ impl Machines {
             .filter(|facts| !facts.is_empty())
         {
             let facts = path.parent().unwrap_or_else(|| Path::new("")).join(facts);
-            inputs.push(sum(facts, base)?);
+            inputs.push(sum(facts, base, source)?);
         }
         let machine = Arc::new(Machine {
             name: name.to_owned(),
@@ -397,13 +461,20 @@ impl Machines {
         Ok(machine)
     }
 
-    fn replay(&mut self, scenario: &str, machine: &Machine) -> Result<Arc<Replay>, Error> {
+    fn replay(
+        &mut self,
+        scenario: &str,
+        machine: &Machine,
+        source: &impl SuiteSource,
+    ) -> Result<Arc<Replay>, Error> {
         if let Some(replay) = self.replays.get(&machine.path) {
             return Ok(Arc::clone(replay));
         }
         let replay = Arc::new(
             self.extracts
-                .replay(&machine.path, &machine.definition)
+                .replay_with(&machine.path, &machine.definition, |path| {
+                    source.read_facts(path)
+                })
                 .map_err(|source| Error::Replay {
                     scenario: scenario.to_owned(),
                     source,
@@ -415,15 +486,19 @@ impl Machines {
     }
 }
 
-fn sum(path: PathBuf, base: &Path) -> Result<(PathBuf, Option<String>), Error> {
-    let resolved = base.canonicalize().ok();
+fn sum(
+    path: PathBuf,
+    base: &Path,
+    source: &impl SuiteSource,
+) -> Result<(PathBuf, Option<String>), Error> {
+    let resolved = source.canonicalize(base).ok();
     let name = path
         .strip_prefix(base)
         .ok()
         .or_else(|| path.strip_prefix(resolved.as_deref()?).ok())
         .unwrap_or(&path)
         .to_path_buf();
-    match fs::read(&path) {
+    match source.read(&path) {
         Ok(bytes) => Ok((name, Some(hex(&Sha256::digest(bytes))))),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok((name, None)),
         Err(source) => Err(Error::ReadFile {

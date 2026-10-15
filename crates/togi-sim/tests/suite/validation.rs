@@ -52,10 +52,9 @@ fn topology_is_checked_before_the_limits() {
 }
 
 fn load_text(text: &str) -> Result<MachineDefinition, LoadError> {
-    let dir = tempfile::tempdir().expect("a directory");
-    let path = dir.path().join("machine.json");
-    std::fs::write(&path, text).expect("write the machine");
-    file::load(&path)
+    let dir = crate::common::MemoryFiles::default();
+    let path = dir.write(&dir.path().join("machine.json"), text);
+    file::load_from(&path, &dir).map(|(machine, _)| machine)
 }
 
 // Go loads `{"cores": -2, "core": [{"id": 0}]}` and the 18-core analogue and gets the topology error. The

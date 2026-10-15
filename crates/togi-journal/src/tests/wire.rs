@@ -73,6 +73,7 @@ pub(super) fn arbitrary_event() -> impl Strategy<Value = Event> {
 }
 
 proptest::proptest! {
+    #![proptest_config(crate::testing::property_config())]
     #[test]
     fn profiles_causes_and_mono_round_trip(
         offsets in proptest::collection::vec(-50_i64..=0, 0..16),

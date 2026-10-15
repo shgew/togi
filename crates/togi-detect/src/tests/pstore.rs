@@ -11,7 +11,9 @@ use serde_json::json;
 use tempfile::TempDir;
 use togi_machine::{Kernel as _, PstoreRecord};
 
-use super::support::{CURRENT, LATER, MISSING, OLD, Reply, boot, exit, locked, ok, scripted};
+use super::support::{
+    CURRENT, LATER, MISSING, OLD, Reply, boot, disk_pstore, exit, locked, ok, pstore, scripted,
+};
 use crate::Error;
 use crate::boot::JournalBoot;
 use crate::pstore::{Access, DumpId, PstoreError, Unsafe, is_directory, read_at, tail_lines};
@@ -55,18 +57,18 @@ fn three_boots() -> Vec<u8> {
 }
 
 fn kernel_over(root: &Path, list: Vec<u8>) -> (crate::Kernel, super::support::Calls) {
-    scripted(&[], root, JOURNALCTL_BUDGET, move |_| ok(&list))
+    scripted(&[], disk_pstore(root), JOURNALCTL_BUDGET, move |_| {
+        ok(&list)
+    })
+}
+
+fn memory_kernel(files: &[(&str, &[u8])], list: Vec<u8>) -> (crate::Kernel, super::support::Calls) {
+    scripted(&[], pstore(files), JOURNALCTL_BUDGET, move |_| ok(&list))
 }
 
 fn saved(files: &[(&str, &[u8])], id: &str) -> Option<PstoreRecord> {
-    let root = archive(files);
-    let (mut kernel, _) = kernel_over(root.path(), three_boots());
-    let mut record = kernel.saved_pstore(&boot(id)).unwrap();
-    if let Some(record) = &mut record {
-        let prefix = root.path().to_str().unwrap();
-        record.path = record.path.strip_prefix(prefix).unwrap().to_owned();
-    }
-    record
+    let (mut kernel, _) = memory_kernel(files, three_boots());
+    kernel.saved_pstore(&boot(id)).unwrap()
 }
 
 fn record(path: &str, lines: &[&str]) -> PstoreRecord {
@@ -206,6 +208,13 @@ fn an_equal_dump_identity_keeps_the_earliest_chunk() {
 
 #[test]
 fn an_absent_or_empty_archive_runs_no_command() {
+    let (mut kernel, calls) = memory_kernel(&[], three_boots());
+    assert_eq!(kernel.saved_pstore(&boot(OLD)).unwrap(), None);
+    assert!(locked(&calls).is_empty());
+}
+
+#[test]
+fn real_fs_an_absent_or_empty_archive_runs_no_command() {
     let missing = tempfile::tempdir().unwrap();
     let (mut kernel, calls) = kernel_over(&missing.path().join("none"), three_boots());
     assert_eq!(kernel.saved_pstore(&boot(OLD)).unwrap(), None);
@@ -215,7 +224,7 @@ fn an_absent_or_empty_archive_runs_no_command() {
 }
 
 #[test]
-fn entries_that_are_not_archive_directories_are_skipped() {
+fn real_fs_entries_that_are_not_archive_directories_are_skipped() {
     let root = archive(&[("150/001/dmesg.txt", b"Panic#1 Part1\nreal")]);
     let elsewhere = archive(&[("160/001/dmesg.txt", b"Panic#9 Part1\nplanted")]);
     symlink(elsewhere.path().join("160"), root.path().join("170")).unwrap();
@@ -245,7 +254,7 @@ fn entries_that_are_not_archive_directories_are_skipped() {
 }
 
 #[test]
-fn a_stamp_directory_is_listed_only_when_it_is_in_the_span() {
+fn real_fs_a_stamp_directory_is_listed_only_when_it_is_in_the_span() {
     let root = archive(&[("150/001/dmesg.txt", b"Panic#1 Part1\nreal")]);
     directory(&root.path().join("90"));
     fs::set_permissions(root.path().join("90"), fs::Permissions::from_mode(0o777)).unwrap();
@@ -302,11 +311,13 @@ fn the_header_of_every_matching_chunk_must_identify_its_dump() {
             &[b"Panic#1 Part1".as_slice(), &[b'x'; 200]].concat(),
         ),
     ] {
-        let root = archive(&[
-            ("150/001/dmesg.txt", data),
-            ("160/001/dmesg.txt", b"Panic#2 Part1\nfine"),
-        ]);
-        let (kernel, _) = kernel_over(root.path(), three_boots());
+        let (kernel, _) = memory_kernel(
+            &[
+                ("150/001/dmesg.txt", data),
+                ("160/001/dmesg.txt", b"Panic#2 Part1\nfine"),
+            ],
+            three_boots(),
+        );
         let error = kernel
             .read_saved_pstore(&JournalBoot::parse(OLD).unwrap())
             .unwrap_err();
@@ -330,10 +341,7 @@ fn dump_ids_come_from_the_first_line_only() {
 
 #[test]
 fn a_tail_read_cut_short_by_eof_is_an_error() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("dmesg.txt");
-    fs::write(&path, b"abcd").unwrap();
-    let file = OwnedFd::from(fs::File::open(&path).unwrap());
+    let file = b"abcd".to_vec();
     let mut window = [0; 16];
 
     assert_eq!(read_at(&file, &mut window, 0, false), Err(Errno::IO));
@@ -342,7 +350,7 @@ fn a_tail_read_cut_short_by_eof_is_an_error() {
 }
 
 #[test]
-fn an_unknown_entry_type_is_inspected_without_following_links() {
+fn real_fs_an_unknown_entry_type_is_inspected_without_following_links() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     directory(&root.join("150"));
@@ -368,7 +376,7 @@ fn an_unknown_entry_type_is_inspected_without_following_links() {
 }
 
 #[test]
-fn a_root_that_is_not_a_directory_is_an_error() {
+fn real_fs_a_root_that_is_not_a_directory_is_an_error() {
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("pstore");
     fs::write(&file, b"x").unwrap();
@@ -394,7 +402,7 @@ fn a_root_that_is_not_a_directory_is_an_error() {
 }
 
 #[test]
-fn a_failed_open_of_a_matching_dump_keeps_its_io_cause() {
+fn real_fs_a_failed_open_of_a_matching_dump_keeps_its_io_cause() {
     let root = archive(&[("150/001/real.txt", b"Panic#1 Part1\nlast")]);
     let path = root.path().join("150/001/dmesg.txt");
     // A dump inside the requested boot's span that O_NOFOLLOW refuses, even to root.
@@ -423,7 +431,7 @@ fn a_failed_open_of_a_matching_dump_keeps_its_io_cause() {
 }
 
 #[test]
-fn unsafe_archive_entries_are_refused_from_the_descriptor() {
+fn real_fs_unsafe_archive_entries_are_refused_from_the_descriptor() {
     let read = |root: &Path| {
         let (kernel, _) = kernel_over(root, three_boots());
         kernel.read_saved_pstore(&JournalBoot::parse(OLD).unwrap())
@@ -499,7 +507,6 @@ fn unsafe_archive_entries_are_refused_from_the_descriptor() {
 
 #[test]
 fn a_boot_list_that_cannot_be_read_is_an_error_not_an_absent_record() {
-    let root = archive(&[("150/001/dmesg.txt", b"last")]);
     let cases: [(&str, Reply); 4] = [
         (
             "command",
@@ -517,7 +524,12 @@ fn a_boot_list_that_cannot_be_read_is_an_error_not_an_absent_record() {
         ("empty exit 1", Box::new(|| exit(1, b"", ""))),
     ];
     for (name, reply) in cases {
-        let (mut kernel, _) = scripted(&[], root.path(), JOURNALCTL_BUDGET, move |_| reply());
+        let (mut kernel, _) = scripted(
+            &[],
+            pstore(&[("150/001/dmesg.txt", b"last")]),
+            JOURNALCTL_BUDGET,
+            move |_| reply(),
+        );
         let error = kernel.saved_pstore(&boot(OLD)).unwrap_err();
         assert!(!matches!(error, togi_machine::Error::BootMissing), "{name}");
         if name == "nonzero exit" {
@@ -547,23 +559,29 @@ fn an_unknown_boot_span_records_no_dump() {
             boots(&[(OLD, Some(0)), (LATER, Some(200_000_000))]),
         ),
     ] {
-        let root = archive(&[("150/001/dmesg.txt", b"Panic#1 Part1\nunrelated dump")]);
-        let (mut kernel, _) = kernel_over(root.path(), list);
+        let (mut kernel, _) = memory_kernel(
+            &[("150/001/dmesg.txt", b"Panic#1 Part1\nunrelated dump")],
+            list,
+        );
         assert_eq!(kernel.saved_pstore(&boot(OLD)).unwrap(), None, "{name}");
     }
 }
 
 #[test]
 fn a_dump_survives_a_lost_journal_tail() {
-    let root = archive(&[("150/001/dmesg.txt", b"Panic#1 Part1\nkernel page dump\n")]);
     let list = boots(&[(OLD, Some(100_000_000)), (LATER, Some(200_000_000))]);
-    let (mut kernel, calls) = scripted(&[], root.path(), JOURNALCTL_BUDGET, move |args| {
-        if args[0] == "--list-boots" {
-            ok(&list)
-        } else {
-            exit(1, b"", "journal tail is corrupt")
-        }
-    });
+    let (mut kernel, calls) = scripted(
+        &[],
+        pstore(&[("150/001/dmesg.txt", b"Panic#1 Part1\nkernel page dump\n")]),
+        JOURNALCTL_BUDGET,
+        move |args| {
+            if args[0] == "--list-boots" {
+                ok(&list)
+            } else {
+                exit(1, b"", "journal tail is corrupt")
+            }
+        },
+    );
     let got = kernel.saved_pstore(&boot(OLD)).unwrap().unwrap();
     assert_eq!(got.lines, ["Panic#1 Part1", "kernel page dump"]);
     let calls = locked(&calls);

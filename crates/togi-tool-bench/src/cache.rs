@@ -3,11 +3,12 @@ use std::collections::BTreeMap;
 use std::fs::{self, File};
 use std::io::{self, ErrorKind, Write as _};
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::SystemTime;
 
 use serde::Serialize;
 use sha2::{Digest, Sha256};
+use togi_journal::fs::Fs;
 use togi_machine::object_only;
 
 use crate::record::Record;
@@ -65,6 +66,7 @@ object_only! {
 #[derive(Debug)]
 pub struct RunCache {
     dir: PathBuf,
+    fs: Option<Arc<dyn Fs>>,
 }
 
 impl RunCache {
@@ -88,7 +90,15 @@ impl RunCache {
         for (_, name) in others.into_iter().skip(KEPT_TREES - 1) {
             let _ = fs::remove_dir_all(parent.join(name));
         }
-        Ok(Self { dir })
+        Ok(Self { dir, fs: None })
+    }
+
+    /// Opens an already selected namespace through an injected filesystem, without disk LRU bookkeeping.
+    pub fn with_fs(root: &Path, key: &str, fs: Arc<dyn Fs>) -> Self {
+        Self {
+            dir: root.join("runs").join(key),
+            fs: Some(fs),
+        }
     }
 
     fn path(&self, spec: &RunSpec) -> PathBuf {
@@ -99,7 +109,12 @@ impl RunCache {
 
     /// The record kept for `spec` if it was made from the same `inputs`.
     pub fn get(&self, spec: &RunSpec, inputs: &str) -> Option<Record> {
-        let bytes = fs::read(self.path(spec)).ok()?;
+        let path = self.path(spec);
+        let bytes = match &self.fs {
+            Some(fs) => fs.read(&path),
+            None => fs::read(&path),
+        }
+        .ok()?;
         let entry: Entry = serde_json::from_slice(&bytes).ok()?;
         let same_run = entry.record.scenario == spec.scenario
             && entry.record.seed == spec.seed
@@ -112,7 +127,44 @@ impl RunCache {
             inputs: inputs.to_owned(),
             record: record.clone(),
         };
-        write_atomic(&self.path(spec), &serde_json::to_vec(&entry)?)
+        let bytes = serde_json::to_vec(&entry)?;
+        match &self.fs {
+            Some(fs) => write_in(fs.as_ref(), &self.path(spec), &bytes),
+            None => write_atomic(&self.path(spec), &bytes),
+        }
+    }
+}
+
+pub(crate) fn write_in(fs: &dyn Fs, path: &Path, bytes: &[u8]) -> io::Result<()> {
+    if let Some(parent) = path.parent() {
+        create_dirs(fs, parent)?;
+    }
+    let temporary = path.with_extension("tmp");
+    fs.create_truncate(&temporary)?.write_all(bytes)?;
+    fs.rename(&temporary, path)
+}
+
+fn create_dirs(fs: &dyn Fs, path: &Path) -> io::Result<()> {
+    use togi_journal::fs::FileKind;
+    if path.as_os_str().is_empty() {
+        return Ok(());
+    }
+    match fs.kind(path)? {
+        Some(FileKind::Dir) => return Ok(()),
+        Some(_) => return Err(ErrorKind::NotADirectory.into()),
+        None => {}
+    }
+    if let Some(parent) = path.parent() {
+        create_dirs(fs, parent)?;
+    }
+    match fs.create_dir(path) {
+        Err(error)
+            if error.kind() == ErrorKind::AlreadyExists
+                && fs.kind(path)? == Some(FileKind::Dir) =>
+        {
+            Ok(())
+        }
+        result => result,
     }
 }
 
@@ -151,6 +203,7 @@ pub(crate) fn write_atomic(path: &Path, content: &[u8]) -> io::Result<()> {
 #[derive(Debug)]
 pub struct Costs {
     path: PathBuf,
+    fs: Option<Arc<dyn Fs>>,
     data: Mutex<CostFile>,
 }
 
@@ -179,6 +232,21 @@ impl Costs {
             .unwrap_or_default();
         Self {
             path,
+            fs: None,
+            data: Mutex::new(data),
+        }
+    }
+
+    /// Loads the same cost format from an injected filesystem.
+    pub fn with_fs(path: PathBuf, fs: Arc<dyn Fs>) -> Self {
+        let data = fs
+            .read(&path)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+            .unwrap_or_default();
+        Self {
+            path,
+            fs: Some(fs),
             data: Mutex::new(data),
         }
     }
@@ -222,7 +290,10 @@ impl Costs {
 
     pub fn save(&self) -> io::Result<()> {
         let bytes = serde_json::to_vec(&*self.data())?;
-        write_atomic(&self.path, &bytes)
+        match &self.fs {
+            Some(fs) => write_in(fs.as_ref(), &self.path, &bytes),
+            None => write_atomic(&self.path, &bytes),
+        }
     }
 }
 
@@ -252,7 +323,7 @@ mod tests {
     }
 
     #[test]
-    fn a_directory_pruned_before_it_is_marked_is_created_again() {
+    fn real_fs_a_directory_pruned_before_it_is_marked_is_created_again() {
         let root = tempfile::tempdir().unwrap();
         let dir = root.path().join("runs/key");
         let (result, calls) = touch_removing(&dir, 1);
@@ -262,7 +333,7 @@ mod tests {
     }
 
     #[test]
-    fn a_directory_pruned_on_every_attempt_fails_after_the_last() {
+    fn real_fs_a_directory_pruned_on_every_attempt_fails_after_the_last() {
         let root = tempfile::tempdir().unwrap();
         let dir = root.path().join("runs/key");
         let (result, calls) = touch_removing(&dir, u32::MAX);

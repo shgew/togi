@@ -6,7 +6,6 @@ use std::os::unix::fs::{PermissionsExt, symlink};
 use tempfile::TempDir;
 use togi_machine::{REGIMES, workload_by_id, workloads};
 
-const TESTDATA: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/testdata");
 const LOWEST: &str = "05-A64 ~ Kasumi";
 const ZEN5: &str = "24-ZN5 ~ Komari";
 
@@ -41,8 +40,8 @@ fn workload(base: &str) -> &'static Workload {
     workload_by_id(&format!("{base}-smt")).unwrap()
 }
 
-fn detail(pkg: &TempDir) -> String {
-    format!("{} ({LOWEST}, {ZEN5})", pkg.path().display())
+fn detail(pkg: &Path) -> String {
+    format!("{} ({LOWEST}, {ZEN5})", pkg.display())
 }
 
 fn binary_name() -> BytesRegex {
@@ -57,6 +56,27 @@ fn select_names<'a>(
     (
         lowest.map(|name| name.to_str().unwrap()),
         zen5.map(|name| name.to_str().unwrap()),
+    )
+}
+
+fn discover_names(ycruncher: &Ycruncher, names: &[&str]) -> Result<Binaries, Error> {
+    ycruncher.discover_with(
+        |root| {
+            assert_eq!(root, ycruncher.pkg.join(BINARIES));
+            Ok(names.iter().map(|name| OsString::from(*name)).collect())
+        },
+        |name, path| {
+            assert_eq!(name, NAME);
+            assert!(path.starts_with(ycruncher.pkg.join(BINARIES)));
+            Ok(())
+        },
+    )
+}
+
+fn memory_binaries() -> Result<Binaries, Error> {
+    discover_names(
+        &Ycruncher::new("/pkg").unwrap(),
+        &["11-SNB ~ Hina", LOWEST, ZEN5, "Digits"],
     )
 }
 
@@ -117,41 +137,109 @@ fn select_can_find_zen5_without_a_lower_binary() {
 
 #[test]
 fn identity_and_detail() {
-    let pkg = fake_package(true);
-    let ycruncher = Ycruncher::new(pkg.path()).unwrap();
+    let pkg = Path::new("/pkg");
+    let ycruncher = Ycruncher::new(pkg).unwrap();
     assert_eq!(ycruncher.kind(), togi_machine::Backend::Ycruncher);
-    assert_eq!(ycruncher.check().unwrap().detail, detail(&pkg));
+    assert_eq!(
+        ycruncher.check_with(memory_binaries).unwrap().detail,
+        detail(pkg)
+    );
 }
 
 #[test]
 fn unrelated_entries_are_ignored() {
-    for (name, mode) in [
-        ("00-README", 0o644),
-        ("00-README", 0o755),
-        ("24-ZN5", 0o755),
-    ] {
-        let pkg = fake_package(true);
-        write_binary(&pkg, name, mode);
+    let ycruncher = Ycruncher::new("/pkg").unwrap();
+    for name in ["00-README", "24-ZN5", "Digits"] {
         assert_eq!(
-            Ycruncher::new(pkg.path()).unwrap().check().unwrap().detail,
-            detail(&pkg),
-            "{name} {mode:o}"
+            ycruncher
+                .check_with(|| discover_names(&ycruncher, &[LOWEST, ZEN5, name]))
+                .unwrap()
+                .detail,
+            detail(Path::new("/pkg")),
+            "{name}"
         );
     }
 }
 
 #[test]
-fn creation_order_does_not_decide_the_choice() {
-    let pkg = TempDir::new().unwrap();
-    fs::create_dir_all(binaries_dir(&pkg)).unwrap();
-    write_binary(&pkg, "24-ZN5 ~ Zeta", 0o755);
-    write_binary(&pkg, "24-ZN5 ~ Komari", 0o755);
-    write_binary(&pkg, "11-SNB ~ Hina", 0o755);
-    write_binary(&pkg, "05-A64 ~ Kasumi", 0o755);
+fn discovery_order_does_not_decide_the_choice() {
+    let ycruncher = Ycruncher::new("/pkg").unwrap();
     assert_eq!(
-        Ycruncher::new(pkg.path()).unwrap().check().unwrap().detail,
-        detail(&pkg)
+        ycruncher
+            .check_with(|| {
+                discover_names(
+                    &ycruncher,
+                    &["24-ZN5 ~ Zeta", ZEN5, "11-SNB ~ Hina", LOWEST],
+                )
+            })
+            .unwrap()
+            .detail,
+        detail(Path::new("/pkg"))
     );
+}
+
+#[test]
+fn discovery_checks_lowest_then_zen5_and_stops_on_failure() {
+    let ycruncher = Ycruncher::new("/pkg").unwrap();
+    let root = ycruncher.pkg.join(BINARIES);
+    for failed in [None, Some(LOWEST), Some(ZEN5)] {
+        let mut checked = Vec::new();
+        let result = ycruncher.discover_with(
+            |_| Ok(vec![OsString::from(ZEN5), OsString::from(LOWEST)]),
+            |name, path| {
+                assert_eq!(name, NAME);
+                checked.push(path.to_owned());
+                if failed.is_some_and(|failed| path == root.join(failed)) {
+                    Err(Error::NotExecutable {
+                        name,
+                        path: path.to_owned(),
+                    })
+                } else {
+                    Ok(())
+                }
+            },
+        );
+        let expected = if failed == Some(LOWEST) {
+            vec![root.join(LOWEST)]
+        } else {
+            vec![root.join(LOWEST), root.join(ZEN5)]
+        };
+        assert_eq!(checked, expected);
+        match failed {
+            Some(failed) => assert!(matches!(
+                result,
+                Err(Error::NotExecutable { path, .. }) if path == root.join(failed)
+            )),
+            None => assert!(result.is_ok()),
+        }
+    }
+}
+
+#[test]
+fn directory_read_errors_precede_executable_checks() {
+    let ycruncher = Ycruncher::new("/pkg").unwrap();
+    for kind in [io::ErrorKind::NotFound, io::ErrorKind::PermissionDenied] {
+        let error = ycruncher
+            .discover_with(
+                |root| {
+                    assert_eq!(root, ycruncher.pkg.join(BINARIES));
+                    Err(kind.into())
+                },
+                |_, _| panic!("failed directory reads must precede executable checks"),
+            )
+            .unwrap_err();
+        match error {
+            Error::BinariesMissing { source, .. } => {
+                assert_eq!(kind, io::ErrorKind::NotFound);
+                assert_eq!(source.kind(), kind);
+            }
+            Error::ReadBinaries { source, .. } => {
+                assert_eq!(kind, io::ErrorKind::PermissionDenied);
+                assert_eq!(source.kind(), kind);
+            }
+            other => panic!("{other:?}"),
+        }
+    }
 }
 
 fn os(bytes: &[u8]) -> &OsStr {
@@ -182,7 +270,7 @@ fn select_compares_non_utf8_names_bytewise() {
 
 #[cfg(target_os = "linux")]
 #[test]
-fn non_utf8_names_are_selected_and_checked() {
+fn real_fs_non_utf8_names_are_selected_and_checked() {
     let pkg = TempDir::new().unwrap();
     let root = binaries_dir(&pkg);
     fs::create_dir_all(&root).unwrap();
@@ -229,19 +317,20 @@ fn non_utf8_names_are_selected_and_checked() {
     ));
 }
 
-#[cfg(target_os = "linux")]
 #[test]
 fn only_a_non_matching_non_utf8_name_is_no_binary() {
-    let pkg = TempDir::new().unwrap();
-    let root = binaries_dir(&pkg);
-    fs::create_dir_all(&root).unwrap();
-    fs::write(root.join(os(b"00-\xff ~ odd")), "binary").unwrap();
-    let error = Ycruncher::new(pkg.path()).unwrap().check().unwrap_err();
+    let ycruncher = Ycruncher::new("/pkg").unwrap();
+    let error = ycruncher
+        .discover_with(
+            |_| Ok(vec![os(b"00-\xff ~ odd").to_owned()]),
+            |_, _| panic!("nonmatching names must not be checked"),
+        )
+        .unwrap_err();
     assert!(matches!(error, Error::NoBinaries { .. }), "{error:?}");
 }
 
 #[test]
-fn both_chosen_binaries_must_be_executable_regular_files() {
+fn real_fs_both_chosen_binaries_must_be_executable_regular_files() {
     for (name, directory) in [(LOWEST, false), (ZEN5, false), (LOWEST, true), (ZEN5, true)] {
         let pkg = fake_package(true);
         let path = binaries_dir(&pkg).join(name);
@@ -262,7 +351,7 @@ fn both_chosen_binaries_must_be_executable_regular_files() {
 }
 
 #[test]
-fn missing_binaries_directory_is_backend_missing() {
+fn real_fs_missing_binaries_directory_is_backend_missing() {
     let pkg = fake_package(true);
     fs::remove_dir_all(binaries_dir(&pkg)).unwrap();
     let error = Ycruncher::new(pkg.path()).unwrap().check().unwrap_err();
@@ -277,15 +366,15 @@ fn missing_binaries_directory_is_backend_missing() {
 
 #[test]
 fn missing_zen5_fails_check_and_every_plan() {
-    let pkg = fake_package(false);
-    let ycruncher = Ycruncher::new(pkg.path()).unwrap();
-    let error = ycruncher.check().unwrap_err();
+    let ycruncher = Ycruncher::new("/pkg").unwrap();
+    let discover = || discover_names(&ycruncher, &["11-SNB ~ Hina", LOWEST]);
+    let error = ycruncher.check_with(discover).unwrap_err();
     assert!(matches!(error, Error::NoZen5 { .. }));
     assert!(error.is_missing());
     assert!(error.to_string().contains("24-ZN5"));
     for base in ["ycruncher-bkt-sftv4", "ycruncher-fftv4-n63-vt3"] {
         let error = ycruncher
-            .plan(workload(base), Path::new("/w"), &cpus(&[2]))
+            .plan_with(workload(base), Path::new("/w"), &cpus(&[2]), discover)
             .unwrap_err();
         assert!(matches!(error, Error::NoZen5 { .. }), "{base}");
     }
@@ -293,19 +382,16 @@ fn missing_zen5_fails_check_and_every_plan() {
 
 #[test]
 fn no_matching_names_is_backend_missing() {
-    let pkg = fake_package(true);
-    let root = binaries_dir(&pkg);
-    fs::remove_dir_all(&root).unwrap();
-    fs::create_dir(&root).unwrap();
-    fs::write(root.join("README"), "").unwrap();
-    let error = Ycruncher::new(pkg.path()).unwrap().check().unwrap_err();
+    let ycruncher = Ycruncher::new("/pkg").unwrap();
+    let root = ycruncher.pkg.join(BINARIES);
+    let error = discover_names(&ycruncher, &["README"]).unwrap_err();
     assert!(matches!(error, Error::NoBinaries { .. }));
     assert!(error.is_missing());
     assert!(error.to_string().contains(&root.display().to_string()));
 }
 
 #[test]
-fn dangling_chosen_binary_is_backend_missing() {
+fn real_fs_dangling_chosen_binary_is_backend_missing() {
     let pkg = fake_package(true);
     let path = binaries_dir(&pkg).join(LOWEST);
     fs::remove_file(&path).unwrap();
@@ -316,7 +402,7 @@ fn dangling_chosen_binary_is_backend_missing() {
 }
 
 #[test]
-fn cyclic_chosen_binary_is_not_backend_missing() {
+fn real_fs_cyclic_chosen_binary_is_not_backend_missing() {
     let pkg = fake_package(true);
     let path = binaries_dir(&pkg).join(LOWEST);
     fs::remove_file(&path).unwrap();
@@ -328,7 +414,7 @@ fn cyclic_chosen_binary_is_not_backend_missing() {
 }
 
 #[test]
-fn binaries_path_that_is_a_file_is_not_backend_missing() {
+fn real_fs_binaries_path_that_is_a_file_is_not_backend_missing() {
     let pkg = fake_package(true);
     let root = binaries_dir(&pkg);
     fs::remove_dir_all(&root).unwrap();
@@ -340,7 +426,7 @@ fn binaries_path_that_is_a_file_is_not_backend_missing() {
 }
 
 #[test]
-fn unreadable_binaries_directory_is_not_backend_missing() {
+fn real_fs_unreadable_binaries_directory_is_not_backend_missing() {
     let pkg = fake_package(true);
     let root = binaries_dir(&pkg);
     fs::set_permissions(&root, fs::Permissions::from_mode(0o000)).unwrap();
@@ -373,9 +459,9 @@ fn expected_config(cpus: &str, memory: u64, tests: &[&str]) -> String {
 
 #[test]
 fn plans_match_exactly() {
-    let pkg = fake_package(true);
-    let ycruncher = Ycruncher::new(pkg.path()).unwrap();
-    let dir = TempDir::new().unwrap();
+    let pkg = Path::new("/pkg");
+    let ycruncher = Ycruncher::new(pkg).unwrap();
+    let dir = Path::new("/w");
     for (base, binary, tests, ids, text, memory) in [
         (
             "ycruncher-bkt-sftv4",
@@ -403,14 +489,14 @@ fn plans_match_exactly() {
         ),
     ] {
         let got = ycruncher
-            .plan(workload(base), dir.path(), &cpus(&ids))
+            .plan_with(workload(base), dir, &cpus(&ids), memory_binaries)
             .unwrap();
         let want = Plan {
-            program: binaries_dir(&pkg).join(binary),
+            program: pkg.join(BINARIES).join(binary),
             args: ["skip-warnings", "pause:-2", "status:none", "config"]
                 .into_iter()
                 .map(OsString::from)
-                .chain([dir.path().join("stress.cfg").into_os_string()])
+                .chain([dir.join("stress.cfg").into_os_string()])
                 .collect(),
             inputs: vec![Input {
                 name: "stress.cfg".parse().unwrap(),
@@ -424,13 +510,13 @@ fn plans_match_exactly() {
 
 #[test]
 fn config_is_literal_native_syntax() {
-    let pkg = fake_package(true);
-    let plan = Ycruncher::new(pkg.path())
+    let plan = Ycruncher::new("/pkg")
         .unwrap()
-        .plan(
+        .plan_with(
             workload("ycruncher-snt-svt"),
             Path::new("/w"),
             &cpus(&[18, 2]),
+            memory_binaries,
         )
         .unwrap();
     assert_eq!(
@@ -442,15 +528,15 @@ fn config_is_literal_native_syntax() {
 
 #[test]
 fn memory_is_32_mib_per_cpu() {
-    let pkg = fake_package(true);
-    let ycruncher = Ycruncher::new(pkg.path()).unwrap();
+    let ycruncher = Ycruncher::new("/pkg").unwrap();
     for count in 1..=4u16 {
         let ids: Vec<u16> = (0..count).collect();
         let plan = ycruncher
-            .plan(
+            .plan_with(
                 workload("ycruncher-bkt-sftv4"),
                 Path::new("/w"),
                 &cpus(&ids),
+                memory_binaries,
             )
             .unwrap();
         let contents = String::from_utf8(plan.inputs[0].contents.clone()).unwrap();
@@ -463,10 +549,14 @@ fn memory_is_32_mib_per_cpu() {
 
 #[test]
 fn unsupported_workload_is_refused_before_discovery() {
-    let pkg = TempDir::new().unwrap();
-    let error = Ycruncher::new(pkg.path())
+    let error = Ycruncher::new("/pkg")
         .unwrap()
-        .plan(workload("mprime-sse-4k-21k"), Path::new("/w"), &cpus(&[2]))
+        .plan_with(
+            workload("mprime-sse-4k-21k"),
+            Path::new("/w"),
+            &cpus(&[2]),
+            || panic!("unsupported workload must precede discovery"),
+        )
         .unwrap_err();
     assert!(matches!(error, Error::Unsupported { .. }));
     assert!(!error.is_missing());
@@ -475,30 +565,43 @@ fn unsupported_workload_is_refused_before_discovery() {
 
 #[test]
 fn a_plan_needs_a_cpu() {
-    let pkg = fake_package(true);
-    let error = Ycruncher::new(pkg.path())
+    let error = Ycruncher::new("/pkg")
         .unwrap()
-        .plan(workload("ycruncher-bkt-sftv4"), Path::new("/w"), &[])
+        .plan_with(
+            workload("ycruncher-bkt-sftv4"),
+            Path::new("/w"),
+            &[],
+            || panic!("CPU validation must precede discovery"),
+        )
         .unwrap_err();
     assert!(matches!(error, Error::NoCpus { .. }));
 }
 
 #[test]
-fn planning_writes_nothing() {
-    let pkg = fake_package(true);
-    let dir = TempDir::new().unwrap();
-    Ycruncher::new(pkg.path())
+fn planning_only_discovers_binaries() {
+    let mut discoveries = 0;
+    let plan = Ycruncher::new("/pkg")
         .unwrap()
-        .plan(workload("ycruncher-bkt-sftv4"), dir.path(), &cpus(&[2]))
+        .plan_with(
+            workload("ycruncher-bkt-sftv4"),
+            Path::new("/w"),
+            &cpus(&[2]),
+            || {
+                discoveries += 1;
+                memory_binaries()
+            },
+        )
         .unwrap();
-    assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 0);
+    assert_eq!(discoveries, 1);
+    assert_eq!(plan.inputs.len(), 1);
+    assert_eq!(plan.inputs[0].name, CONFIG);
 }
 
 #[test]
 fn every_catalog_workload_plans() {
-    let pkg = fake_package(true);
-    let ycruncher = Ycruncher::new(pkg.path()).unwrap();
-    let dir = TempDir::new().unwrap();
+    let pkg = Path::new("/pkg");
+    let ycruncher = Ycruncher::new(pkg).unwrap();
+    let dir = Path::new("/w");
     let mut planned = BTreeSet::new();
     for regime in REGIMES {
         for workload in workloads(regime) {
@@ -507,15 +610,20 @@ fn every_catalog_workload_plans() {
             }
             let ids = [2, 18];
             let plan = ycruncher
-                .plan(
+                .plan_with(
                     workload,
-                    dir.path(),
+                    dir,
                     &cpus(&ids[..usize::from(workload.threads)]),
+                    memory_binaries,
                 )
                 .unwrap_or_else(|error| panic!("{regime}/{}: {error}", workload.id));
             assert!(plan.program.is_absolute());
-            assert!(plan.program.starts_with(pkg.path()));
-            assert!(fs::metadata(&plan.program).unwrap().permissions().mode() & 0o111 != 0);
+            assert!(plan.program.starts_with(pkg.join(BINARIES)));
+            assert!(
+                [LOWEST, ZEN5]
+                    .iter()
+                    .any(|name| plan.program.ends_with(name))
+            );
             assert_eq!(plan.inputs.len(), 1);
             assert_eq!(plan.inputs[0].name.as_str(), "stress.cfg");
             planned.insert(workload.base);
@@ -659,10 +767,8 @@ fn precedence_is_affinity_computation_setup_progress() {
     );
 }
 
-fn fixture(name: &str) -> Vec<Line> {
-    fs::read_to_string(format!("{TESTDATA}/{name}"))
-        .unwrap()
-        .split(['\n', '\r'])
+fn fixture(data: &str) -> Vec<Line> {
+    data.split(['\n', '\r'])
         .filter(|line| !line.is_empty())
         .map(classify)
         .collect()
@@ -674,12 +780,24 @@ fn progress(test: &str) -> Line {
 
 #[test]
 fn passing_fixtures_report_progress() {
-    for (name, test) in [
-        ("lowest-pass.txt", "BKT"),
-        ("snt-pass.txt", "SNT"),
-        ("zen5-pass.txt", "FFTv4"),
+    for (name, data, test) in [
+        (
+            "lowest-pass.txt",
+            include_str!("../testdata/lowest-pass.txt"),
+            "BKT",
+        ),
+        (
+            "snt-pass.txt",
+            include_str!("../testdata/snt-pass.txt"),
+            "SNT",
+        ),
+        (
+            "zen5-pass.txt",
+            include_str!("../testdata/zen5-pass.txt"),
+            "FFTv4",
+        ),
     ] {
-        let lines = fixture(name);
+        let lines = fixture(data);
         assert!(lines.contains(&progress(test)), "{name}");
         for failure in [Line::ComputationError, Line::SetupError] {
             assert!(!lines.contains(&failure), "{name}");
@@ -695,19 +813,19 @@ fn passing_fixtures_report_progress() {
 
 #[test]
 fn setup_fixture_reports_setup_error() {
-    assert!(fixture("setup-nope.txt").contains(&Line::SetupError));
+    assert!(fixture(include_str!("../testdata/setup-nope.txt")).contains(&Line::SetupError));
 }
 
 #[test]
 fn affinity_fixture_reports_the_cpu() {
-    let lines = fixture("affinity-warning.txt");
+    let lines = fixture(include_str!("../testdata/affinity-warning.txt"));
     assert!(lines.contains(&Line::AffinityError(Some(CpuId(3)))));
     assert!(lines.contains(&progress("FFTv4")));
 }
 
 #[test]
 fn spliced_errors_are_not_erased_by_earlier_success() {
-    let lines = fixture("error-spliced.txt");
+    let lines = fixture(include_str!("../testdata/error-spliced.txt"));
     assert_eq!(
         lines
             .iter()

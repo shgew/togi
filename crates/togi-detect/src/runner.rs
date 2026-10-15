@@ -26,6 +26,10 @@ pub(crate) enum RunError {
 
 pub(crate) trait Journalctl: Send {
     fn run(&self, args: &[OsString], remaining: Duration) -> Result<Output, RunError>;
+
+    fn now(&self) -> Instant {
+        Instant::now()
+    }
 }
 
 pub(crate) struct Process {
@@ -81,7 +85,7 @@ impl<'a> Journal<'a> {
     pub(crate) fn new(runner: &'a dyn Journalctl, budget: Duration) -> Self {
         Self {
             runner,
-            started: Instant::now(),
+            started: runner.now(),
             budget,
         }
     }
@@ -94,7 +98,7 @@ impl<'a> Journal<'a> {
     ) -> Result<Vec<u8>, Error> {
         let remaining = self
             .budget
-            .checked_sub(self.started.elapsed())
+            .checked_sub(self.runner.now().duration_since(self.started))
             .filter(|left| !left.is_zero())
             .ok_or_else(|| Error::BudgetExhausted {
                 operation: operation.clone(),

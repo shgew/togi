@@ -46,6 +46,39 @@ fn failed(operation: &'static str, errno: Errno) -> WatchError {
     }
 }
 
+/// Classifies a decoded event without depending on an inotify descriptor.
+fn relevant(
+    watches: &HashMap<i32, PathBuf>,
+    directory: &Path,
+    journal: &Path,
+    wd: i32,
+    flags: ReadFlags,
+    name: Option<&OsStr>,
+) -> bool {
+    if flags.contains(ReadFlags::QUEUE_OVERFLOW) {
+        return true;
+    }
+    let Some(watched) = watches.get(&wd) else {
+        return false;
+    };
+    if flags.intersects(ReadFlags::IGNORED | ReadFlags::DELETE_SELF | ReadFlags::MOVE_SELF)
+        || watched == journal
+    {
+        return true;
+    }
+    if watched == directory {
+        return name == Some(OsStr::new(JOURNAL));
+    }
+    let first = directory
+        .strip_prefix(watched)
+        .ok()
+        .and_then(|below| below.components().next());
+    match (first, name) {
+        (Some(first), Some(name)) => first.as_os_str() == name,
+        _ => false,
+    }
+}
+
 /// The inotify watches for one journal.
 pub(in crate::terminal) struct Inotify {
     fd: AsyncFd<OwnedFd>,
@@ -82,29 +115,14 @@ impl Inotify {
     /// Whether an event is about the journal: a lost queue, or an event of the journal, the state directory, or
     /// one of the directories above it that is watched for the state directory's sake.
     fn is_relevant(&self, wd: i32, flags: ReadFlags, name: Option<&OsStr>) -> bool {
-        if flags.contains(ReadFlags::QUEUE_OVERFLOW) {
-            return true;
-        }
-        let Some(watched) = self.watches.get(&wd) else {
-            return false;
-        };
-        if flags.intersects(ReadFlags::IGNORED | ReadFlags::DELETE_SELF | ReadFlags::MOVE_SELF)
-            || *watched == self.journal
-        {
-            return true;
-        }
-        if *watched == self.directory {
-            return name == Some(OsStr::new(JOURNAL));
-        }
-        let first = self
-            .directory
-            .strip_prefix(watched)
-            .ok()
-            .and_then(|below| below.components().next());
-        match (first, name) {
-            (Some(first), Some(name)) => first.as_os_str() == name,
-            _ => false,
-        }
+        relevant(
+            &self.watches,
+            &self.directory,
+            &self.journal,
+            wd,
+            flags,
+            name,
+        )
     }
 
     /// Reads every pending event and reports whether any of them matters.
@@ -300,49 +318,61 @@ mod tests {
         assert!(DIRECTORY.contains(WatchFlags::ONLYDIR));
     }
 
-    #[tokio::test]
-    async fn relevance_follows_the_journal_the_directory_and_what_is_above_it() {
-        let root = TempDir::new().unwrap();
-        let directory = root.path().join("state");
-        fs::create_dir(&directory).unwrap();
-        let mut watcher = watcher_at(&directory);
-        let wd_of = |watcher: &Inotify, path: &Path| {
-            *watcher
-                .watches
-                .iter()
-                .find(|(_, watched)| *watched == path)
-                .unwrap()
-                .0
+    #[test]
+    fn relevance_follows_the_journal_the_directory_and_what_is_above_it() {
+        let directory = Path::new("/state");
+        let journal = directory.join(JOURNAL);
+        let state = 1;
+        let parent = 2;
+        let unknown = i32::MAX;
+        let watches = std::collections::HashMap::from([
+            (state, directory.to_path_buf()),
+            (parent, Path::new("/").to_path_buf()),
+        ]);
+        let relevant = |wd, flags, name: Option<&OsStr>| {
+            super::relevant(&watches, directory, &journal, wd, flags, name)
         };
-        let state = wd_of(&watcher, &directory);
-        let watched_below =
-            |name: &str| watcher.is_relevant(state, ReadFlags::CREATE, Some(OsStr::new(name)));
+        let watched_below = |name: &str| relevant(state, ReadFlags::CREATE, Some(OsStr::new(name)));
         assert!(watched_below(JOURNAL));
         assert!(!watched_below("events.jsonl.tmp"));
         assert!(!watched_below("state.json"));
-        assert!(!watcher.is_relevant(state, ReadFlags::MODIFY, None));
-        assert!(watcher.is_relevant(state, ReadFlags::DELETE_SELF, None));
-        assert!(watcher.is_relevant(state, ReadFlags::MOVE_SELF, None));
-        assert!(watcher.is_relevant(state, ReadFlags::IGNORED, None));
-        let parent = wd_of(&watcher, root.path());
-        assert!(watcher.is_relevant(parent, ReadFlags::CREATE, Some(OsStr::new("state"))));
-        assert!(!watcher.is_relevant(parent, ReadFlags::CREATE, Some(OsStr::new("other"))));
-        assert!(!watcher.is_relevant(parent, ReadFlags::CREATE, None));
+        assert!(!relevant(state, ReadFlags::MODIFY, None));
+        assert!(relevant(state, ReadFlags::DELETE_SELF, None));
+        assert!(relevant(state, ReadFlags::MOVE_SELF, None));
+        assert!(relevant(state, ReadFlags::IGNORED, None));
+        assert!(relevant(
+            parent,
+            ReadFlags::CREATE,
+            Some(OsStr::new("state"))
+        ));
+        assert!(!relevant(
+            parent,
+            ReadFlags::CREATE,
+            Some(OsStr::new("other"))
+        ));
+        assert!(!relevant(parent, ReadFlags::CREATE, None));
         assert!(
-            watcher.is_relevant(-1, ReadFlags::QUEUE_OVERFLOW, None),
+            relevant(-1, ReadFlags::QUEUE_OVERFLOW, None),
             "a lost queue may have held a change of the journal"
         );
-        let unknown = i32::MAX;
         assert!(
-            !watcher.is_relevant(unknown, ReadFlags::DELETE_SELF, None),
+            !relevant(unknown, ReadFlags::DELETE_SELF, None),
             "an event of a watch that is gone"
         );
-        watcher.watches.insert(unknown, directory.join(JOURNAL));
-        assert!(watcher.is_relevant(unknown, ReadFlags::MODIFY, None));
+        let mut watches = watches;
+        watches.insert(unknown, journal.clone());
+        assert!(super::relevant(
+            &watches,
+            directory,
+            &journal,
+            unknown,
+            ReadFlags::MODIFY,
+            None
+        ));
     }
 
     #[tokio::test]
-    async fn an_existing_state_directory_is_watched_with_its_parent_and_never_polled() {
+    async fn real_fs_an_existing_state_directory_is_watched_with_its_parent_and_never_polled() {
         let root = TempDir::new().unwrap();
         let directory = root.path().join("state");
         fs::create_dir(&directory).unwrap();
@@ -354,7 +384,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_append_reaches_the_loop() {
+    async fn real_fs_an_append_reaches_the_loop() {
         let root = TempDir::new().unwrap();
         journal_in(root.path(), "one\n");
         let mut watcher = watcher_at(root.path());
@@ -367,7 +397,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_replacement_reaches_the_loop() {
+    async fn real_fs_a_replacement_reaches_the_loop() {
         let root = TempDir::new().unwrap();
         journal_in(root.path(), "one\n");
         let mut watcher = watcher_at(root.path());
@@ -377,7 +407,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_removal_reaches_the_loop() {
+    async fn real_fs_a_removal_reaches_the_loop() {
         let root = TempDir::new().unwrap();
         journal_in(root.path(), "one\n");
         let mut watcher = watcher_at(root.path());
@@ -386,7 +416,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_creation_reaches_the_loop_and_is_watched_afterwards() {
+    async fn real_fs_a_creation_reaches_the_loop_and_is_watched_afterwards() {
         let root = TempDir::new().unwrap();
         let mut watcher = watcher_at(root.path());
         journal_in(root.path(), "one\n");
@@ -396,7 +426,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_missing_state_directory_is_waited_for_through_its_nearest_parent() {
+    async fn real_fs_a_missing_state_directory_is_waited_for_through_its_nearest_parent() {
         let root = TempDir::new().unwrap();
         let directory = root.path().join("state").join("nested");
         let mut watcher = watcher_at(&directory);
@@ -420,7 +450,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_directory_made_while_the_climb_passes_it_is_still_watched() {
+    async fn real_fs_a_directory_made_while_the_climb_passes_it_is_still_watched() {
         let root = TempDir::new().unwrap();
         let state = root.path().join("state");
         let directory = state.join("nested");
@@ -450,7 +480,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_replaced_state_directory_reaches_the_loop() {
+    async fn real_fs_a_replaced_state_directory_reaches_the_loop() {
         let root = TempDir::new().unwrap();
         let directory = root.path().join("state");
         fs::create_dir(&directory).unwrap();
@@ -465,7 +495,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_state_directory_that_can_only_be_traversed_is_watched_through_the_journal() {
+    async fn real_fs_a_state_directory_that_can_only_be_traversed_is_watched_through_the_journal() {
         if is_root() {
             return;
         }
@@ -488,7 +518,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_traverse_only_directory_without_a_journal_is_polled_until_one_can_be_watched() {
+    async fn real_fs_a_traverse_only_directory_without_a_journal_is_polled_until_one_can_be_watched()
+     {
         if is_root() {
             return;
         }
@@ -508,7 +539,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_unreadable_ancestor_is_polled_behind_only_while_the_state_directory_is_missing() {
+    async fn real_fs_an_unreadable_ancestor_is_polled_behind_only_while_the_state_directory_is_missing()
+     {
         if is_root() {
             return;
         }
@@ -537,7 +569,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_state_directory_below_a_file_is_waited_for_through_the_files_parent() {
+    async fn real_fs_a_state_directory_below_a_file_is_waited_for_through_the_files_parent() {
         let root = TempDir::new().unwrap();
         let file = root.path().join("file");
         fs::write(&file, "x").unwrap();

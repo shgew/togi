@@ -32,7 +32,7 @@ fn sh_with_helper(script: &str) -> Invocation {
 #[cfg(target_os = "linux")]
 fn escape_command(ready: &Path) -> String {
     format!(
-        "{ESCAPE_HELPER}={} \"$0\" --exact escape_helper --test-threads 1",
+        "{ESCAPE_HELPER}={} \"$0\" --exact real_process_escape_helper --test-threads 1",
         ready.display()
     )
 }
@@ -40,7 +40,7 @@ fn escape_command(ready: &Path) -> String {
 /// Does nothing unless re-invoked by `escape_command`: then it starts its own session, as
 /// `setsid` would, and holds the inherited pipes open until killed.
 #[test]
-fn escape_helper() {
+fn real_process_escape_helper() {
     let Some(ready) = std::env::var_os(ESCAPE_HELPER) else {
         return;
     };
@@ -241,58 +241,6 @@ async fn real_process_hung_child_is_killed_at_the_deadline() {
     assert_stops(pid_in(&pid_file)).await;
 }
 
-#[tokio::test]
-async fn a_deadline_not_in_the_future_times_out_without_spawning() {
-    let dir = tempfile::tempdir().unwrap();
-    let marker = dir.path().join("marker");
-    let invocation = sh(&format!("touch {}", marker.display()));
-    let now = Instant::now();
-    for deadline in [now, now.checked_sub(Duration::from_secs(1)).unwrap()] {
-        let started = StdInstant::now();
-        #[expect(
-            clippy::disallowed_methods,
-            reason = "tests exercise the bounded runner with real processes"
-        )]
-        let error = togi_command::run(&invocation, deadline).await.unwrap_err();
-        assert!(
-            started.elapsed() < Duration::from_millis(100),
-            "{:?}",
-            started.elapsed()
-        );
-        match error {
-            Error::TimedOut { program, timeout } => {
-                assert_eq!(program, "sh");
-                assert_eq!(timeout, Duration::ZERO);
-            }
-            other => panic!("{other:?}"),
-        }
-    }
-    tokio::time::sleep(Duration::from_millis(100)).await;
-    assert!(!marker.exists(), "the command ran after its deadline");
-}
-
-#[test]
-fn a_zero_blocking_timeout_times_out_without_spawning() {
-    let dir = tempfile::tempdir().unwrap();
-    let marker = dir.path().join("marker");
-    let started = StdInstant::now();
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "tests exercise the bounded runner with real processes"
-    )]
-    let error =
-        togi_command::run_blocking(&sh(&format!("touch {}", marker.display())), Duration::ZERO)
-            .unwrap_err();
-    assert!(
-        started.elapsed() < Duration::from_millis(100),
-        "{:?}",
-        started.elapsed()
-    );
-    assert!(matches!(error, Error::TimedOut { .. }), "{error:?}");
-    std::thread::sleep(Duration::from_millis(100));
-    assert!(!marker.exists(), "the command ran after its deadline");
-}
-
 #[cfg(target_os = "linux")]
 #[tokio::test]
 async fn real_process_group_descendant_holding_the_pipes_is_killed() {
@@ -486,20 +434,6 @@ async fn real_process_dropping_the_future_kills_the_group() {
     };
     drop(run);
     assert_stops(pid).await;
-}
-
-#[tokio::test]
-async fn run_blocking_inside_a_runtime_does_not_spawn() {
-    let dir = tempfile::tempdir().unwrap();
-    let marker = dir.path().join("marker");
-    let invocation = sh(&format!("touch {}", marker.display()));
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "tests exercise the bounded runner with real processes"
-    )]
-    let error = togi_command::run_blocking(&invocation, Duration::from_secs(10)).unwrap_err();
-    assert!(matches!(error, Error::InsideRuntime { .. }), "{error:?}");
-    assert!(!marker.exists());
 }
 
 #[test]

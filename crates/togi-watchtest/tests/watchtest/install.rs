@@ -1,5 +1,9 @@
-use togi_journal::{Payload, Recording};
-use togi_watchtest::{Error, InstallError, Scenario, install};
+use std::path::Path;
+use std::sync::Arc;
+
+use togi_journal::fs::Fs;
+use togi_journal::{MemFs, Payload, Recording};
+use togi_watchtest::{Error, InstallError, Scenario, install_with_fs};
 
 use crate::support::lines;
 
@@ -11,9 +15,11 @@ fn an_installed_scenario_reads_back_through_the_journal_reader() {
         Scenario::Deadend,
         Scenario::Stopped,
     ] {
-        let dir = tempfile::tempdir().expect("a temporary directory");
-        let build = install(dir.path(), scenario).expect("the scenario installs");
-        let recording = Recording::read(&dir.path().join("events.jsonl")).expect("it reads back");
+        let fs = MemFs::new();
+        let dir = Path::new("/session");
+        let build =
+            install_with_fs(Arc::new(fs.clone()), dir, scenario).expect("the scenario installs");
+        let recording = Recording::read_in(&fs, &dir.join("events.jsonl")).expect("it reads back");
         assert!(recording.torn().is_none(), "{scenario}");
         let want = scenario.events().expect("the scenario builds");
         assert_eq!(lines(recording.events()), lines(&want), "{scenario}");
@@ -27,9 +33,11 @@ fn an_installed_scenario_reads_back_through_the_journal_reader() {
 
 #[test]
 fn an_installed_multi_boot_scenario_keeps_every_boot_and_smu_event() {
-    let dir = tempfile::tempdir().expect("a temporary directory");
-    install(dir.path(), Scenario::Recovering).expect("the scenario installs");
-    let recording = Recording::read(&dir.path().join("events.jsonl")).expect("it reads back");
+    let fs = MemFs::new();
+    let dir = Path::new("/session");
+    install_with_fs(Arc::new(fs.clone()), dir, Scenario::Recovering)
+        .expect("the scenario installs");
+    let recording = Recording::read_in(&fs, &dir.join("events.jsonl")).expect("it reads back");
     let mut boots: Vec<_> = recording
         .events()
         .iter()
@@ -47,23 +55,26 @@ fn an_installed_multi_boot_scenario_keeps_every_boot_and_smu_event() {
 
 #[test]
 fn installing_where_no_state_directory_can_be_made_is_an_error() {
-    let dir = tempfile::tempdir().expect("a temporary directory");
-    let file = dir.path().join("file");
-    std::fs::write(&file, b"").expect("a file");
-    let error = install(&file, Scenario::Confirm).expect_err("a file is not a directory");
+    let fs = MemFs::new();
+    let file = Path::new("/file");
+    fs.create_new(file).expect("a file");
+    let error = install_with_fs(Arc::new(fs), file, Scenario::Confirm)
+        .expect_err("a file is not a directory");
     assert!(matches!(error, Error::Install { dir, .. } if dir == file));
 }
 
 #[test]
 fn installing_over_a_journal_is_refused_and_leaves_it_as_it_was() {
-    let dir = tempfile::tempdir().expect("a temporary directory");
-    install(dir.path(), Scenario::Confirm).expect("the scenario installs");
-    let journal = dir.path().join("events.jsonl");
-    let before = std::fs::read(&journal).expect("the journal reads");
-    let error = install(dir.path(), Scenario::Confirm).expect_err("a journal is already there");
+    let fs = MemFs::new();
+    let dir = Path::new("/session");
+    install_with_fs(Arc::new(fs.clone()), dir, Scenario::Confirm).expect("the scenario installs");
+    let journal = dir.join("events.jsonl");
+    let before = fs.contents(&journal).expect("the journal reads");
+    let error = install_with_fs(Arc::new(fs.clone()), dir, Scenario::Confirm)
+        .expect_err("a journal is already there");
     assert!(
-        matches!(&error, Error::Install { dir: named, source: InstallError::NotEmpty } if named == dir.path()),
+        matches!(&error, Error::Install { dir: named, source: InstallError::NotEmpty } if named == dir),
         "{error}"
     );
-    assert_eq!(std::fs::read(&journal).expect("the journal reads"), before);
+    assert_eq!(fs.contents(&journal).expect("the journal reads"), before);
 }

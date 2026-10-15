@@ -11,7 +11,7 @@ use togi_ycruncher::Ycruncher;
 
 use crate::adapters::{PmSlot, RunnerHandle, SharedDriver};
 use crate::error::Error;
-use crate::host::{Privilege, ScopeProbe, SystemHost};
+use crate::host::{Privilege, ScopeProbe, SystemHost, SystemReadings};
 use crate::preflight::Account;
 
 pub(crate) fn backends(config: &Config) -> Result<Backends, Error> {
@@ -85,6 +85,7 @@ impl Parts {
             backends: self.backends,
             account: self.account,
             scope: Box::new(scope),
+            readings: SystemReadings,
         }
     }
 }

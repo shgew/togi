@@ -113,45 +113,53 @@ mod tests {
         timeout(within, clock.wake()).await.is_ok()
     }
 
-    #[tokio::test(start_paused = true)]
-    async fn a_clock_frame_wakes_every_second() {
-        let mut clock = Clock::default();
-        clock.schedule(Hold::Never, NOW);
-        assert!(!wakes(&mut clock, Duration::from_millis(999)).await);
-        assert!(wakes(&mut clock, Duration::from_millis(2)).await);
-        assert!(!wakes(&mut clock, Duration::from_millis(998)).await);
-        assert!(wakes(&mut clock, Duration::from_millis(2)).await);
+    #[test]
+    fn a_clock_frame_wakes_every_second() {
+        crate::terminal::testing::paused(async {
+            let mut clock = Clock::default();
+            clock.schedule(Hold::Never, NOW);
+            assert!(!wakes(&mut clock, Duration::from_millis(999)).await);
+            assert!(wakes(&mut clock, Duration::from_millis(2)).await);
+            assert!(!wakes(&mut clock, Duration::from_millis(998)).await);
+            assert!(wakes(&mut clock, Duration::from_millis(2)).await);
+        });
     }
 
-    #[tokio::test(start_paused = true)]
-    async fn a_held_frame_stays_quiet_until_its_instant_then_ticks() {
-        let mut clock = Clock::default();
-        clock.schedule(Hold::Never, NOW);
-        clock.schedule(Hold::Until(after(10)), NOW);
-        assert!(!wakes(&mut clock, Duration::from_secs(9)).await);
-        assert!(wakes(&mut clock, Duration::from_secs(1)).await);
-        clock.schedule(Hold::Until(after(10)), after(10));
-        assert!(
-            wakes(&mut clock, Duration::from_millis(1001)).await,
-            "a passed hold ticks"
-        );
+    #[test]
+    fn a_held_frame_stays_quiet_until_its_instant_then_ticks() {
+        crate::terminal::testing::paused(async {
+            let mut clock = Clock::default();
+            clock.schedule(Hold::Never, NOW);
+            clock.schedule(Hold::Until(after(10)), NOW);
+            assert!(!wakes(&mut clock, Duration::from_secs(9)).await);
+            assert!(wakes(&mut clock, Duration::from_secs(1)).await);
+            clock.schedule(Hold::Until(after(10)), after(10));
+            assert!(
+                wakes(&mut clock, Duration::from_millis(1001)).await,
+                "a passed hold ticks"
+            );
+        });
     }
 
-    #[tokio::test(start_paused = true)]
-    async fn a_frozen_frame_arms_nothing_for_hours() {
-        let mut clock = Clock::default();
-        clock.schedule(Hold::Never, NOW);
-        clock.schedule(Hold::Frozen, NOW);
-        assert!(!clock.is_armed());
-        assert!(!wakes(&mut clock, Duration::from_hours(6)).await);
+    #[test]
+    fn a_frozen_frame_arms_nothing_for_hours() {
+        crate::terminal::testing::paused(async {
+            let mut clock = Clock::default();
+            clock.schedule(Hold::Never, NOW);
+            clock.schedule(Hold::Frozen, NOW);
+            assert!(!clock.is_armed());
+            assert!(!wakes(&mut clock, Duration::from_hours(6)).await);
+        });
     }
 
-    #[tokio::test(start_paused = true)]
-    async fn the_ticker_is_not_restarted_by_a_redraw() {
-        let mut clock = Clock::default();
-        clock.schedule(Hold::Never, NOW);
-        tokio::time::advance(Duration::from_millis(600)).await;
-        clock.schedule(Hold::Never, NOW);
-        assert!(wakes(&mut clock, Duration::from_millis(401)).await);
+    #[test]
+    fn the_ticker_is_not_restarted_by_a_redraw() {
+        crate::terminal::testing::paused(async {
+            let mut clock = Clock::default();
+            clock.schedule(Hold::Never, NOW);
+            tokio::time::advance(Duration::from_millis(600)).await;
+            clock.schedule(Hold::Never, NOW);
+            assert!(wakes(&mut clock, Duration::from_millis(401)).await);
+        });
     }
 }

@@ -115,22 +115,25 @@ impl Mprime {
     fn binary(&self) -> PathBuf {
         self.pkg.join("bin/mprime")
     }
-}
 
-impl Backend for Mprime {
-    fn kind(&self) -> togi_machine::Backend {
-        togi_machine::Backend::Mprime
-    }
-
-    fn check(&self) -> Result<Ready, Error> {
+    fn check_with(
+        &self,
+        check: impl FnOnce(&'static str, &Path) -> Result<(), Error>,
+    ) -> Result<Ready, Error> {
         let program = self.binary();
-        check_executable(NAME, &program)?;
+        check(NAME, &program)?;
         Ok(Ready {
             detail: program.display().to_string(),
         })
     }
 
-    fn plan(&self, workload: &Workload, dir: &Path, cpus: &[CpuId]) -> Result<Plan, Error> {
+    fn plan_with(
+        &self,
+        workload: &Workload,
+        dir: &Path,
+        cpus: &[CpuId],
+        check: impl FnOnce(&'static str, &Path) -> Result<(), Error>,
+    ) -> Result<Plan, Error> {
         let backend = self.kind();
         let variant = Variant::of(workload.base).ok_or(Error::Unsupported {
             backend,
@@ -143,7 +146,7 @@ impl Backend for Mprime {
             });
         }
         let program = self.binary();
-        check_executable(NAME, &program)?;
+        check(NAME, &program)?;
         let settings = variant.settings(cpus.len());
         let mut work_dir = OsString::from("-W");
         work_dir.push(dir);
@@ -162,6 +165,20 @@ impl Backend for Mprime {
             ],
             watched: vec![RESULTS],
         })
+    }
+}
+
+impl Backend for Mprime {
+    fn kind(&self) -> togi_machine::Backend {
+        togi_machine::Backend::Mprime
+    }
+
+    fn check(&self) -> Result<Ready, Error> {
+        self.check_with(check_executable)
+    }
+
+    fn plan(&self, workload: &Workload, dir: &Path, cpus: &[CpuId]) -> Result<Plan, Error> {
+        self.plan_with(workload, dir, cpus, check_executable)
     }
 
     fn classify(&self, line: &str) -> Line {

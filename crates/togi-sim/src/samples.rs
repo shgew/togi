@@ -15,6 +15,17 @@ const TICK: Duration = Duration::from_secs(1);
 const STALL_LEAD: Duration = Duration::from_secs(2);
 const CCD_SIZE: usize = 8;
 
+/// Storage for serialized simulation samples. The simulator itself never requests durability.
+pub trait SampleStorage {
+    fn write(
+        &self,
+        id: &str,
+        encode: &mut dyn FnMut(&mut dyn Write) -> io::Result<()>,
+    ) -> io::Result<()>;
+    fn read(&self, id: &str) -> Box<dyn Iterator<Item = TrialConditions>>;
+    fn ended(&self, id: &str) -> Result<(), togi_machine::Error>;
+}
+
 object_only! {
     /// What the samples of one trial are generated from.
     #[derive(Clone, Debug, Default, PartialEq, Serialize)]
@@ -72,8 +83,12 @@ impl LastTrial {
         let dir = dir.join(id);
         fs::create_dir_all(&dir)?;
         let mut out = BufWriter::new(fs::File::create(dir.join(togi_trialfiles::SAMPLES))?);
+        self.encode(&mut out)
+    }
+
+    pub(crate) fn encode(&self, out: &mut dyn Write) -> io::Result<()> {
         for sample in self.conditions() {
-            serde_json::to_writer(&mut out, &sample)?;
+            serde_json::to_writer(&mut *out, &sample)?;
             out.write_all(b"\n")?;
         }
         out.flush()

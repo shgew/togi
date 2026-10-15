@@ -4,7 +4,7 @@
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
-use std::io::{self, BufRead, BufReader};
+use std::io::{self, BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
@@ -17,6 +17,75 @@ const ARCHIVE: &str = "archive";
 const SUFFIX: &str = ".jsonl";
 const STAMPED: [&str; 2] = ["session.start", "config.loaded"];
 const READ_BUFFER: usize = 1 << 20;
+
+/// Journal enumeration and streaming, independently of the storage adapter.
+pub(super) trait Source {
+    type Reader: Read + 'static;
+    fn files(&self, dir: &Path) -> Result<BTreeMap<String, PathBuf>, JournalError>;
+    fn open(&self, path: &Path) -> io::Result<Self::Reader>;
+    fn nonempty(&self, path: &Path) -> io::Result<bool>;
+}
+
+pub(super) struct Disk;
+
+impl Source for Disk {
+    type Reader = File;
+
+    fn files(&self, dir: &Path) -> Result<BTreeMap<String, PathBuf>, JournalError> {
+        files(dir)
+    }
+
+    fn open(&self, path: &Path) -> io::Result<File> {
+        File::open(path)
+    }
+
+    fn nonempty(&self, path: &Path) -> io::Result<bool> {
+        fs::metadata(path).map(|meta| meta.len() > 0)
+    }
+}
+
+impl<F: togi_journal::fs::Fs> Source for F {
+    type Reader = Box<dyn Read + Send>;
+
+    fn files(&self, dir: &Path) -> Result<BTreeMap<String, PathBuf>, JournalError> {
+        use togi_journal::fs::FileKind;
+        let mut files = BTreeMap::new();
+        let live = dir.join(LIVE);
+        if self.kind(&live).map_err(|source| JournalError::List {
+            path: live.clone(),
+            source,
+        })? == Some(FileKind::File)
+        {
+            files.insert(LIVE.to_owned(), live);
+        }
+        let archive = dir.join(ARCHIVE);
+        let entries = match self.read_dir(&archive) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(files),
+            Err(source) => {
+                return Err(JournalError::List {
+                    path: archive,
+                    source,
+                });
+            }
+        };
+        for entry in entries {
+            let name = entry.name.to_string_lossy();
+            if entry.kind == FileKind::File && name.ends_with(SUFFIX) {
+                files.insert(format!("{ARCHIVE}/{name}"), archive.join(&entry.name));
+            }
+        }
+        Ok(files)
+    }
+
+    fn open(&self, path: &Path) -> io::Result<Self::Reader> {
+        self.open_read(path)
+    }
+
+    fn nonempty(&self, path: &Path) -> io::Result<bool> {
+        self.open_read(path)?.read(&mut [0]).map(|len| len > 0)
+    }
+}
 
 /// Why a session's journals could not be digested or compared.
 #[derive(Debug, thiserror::Error)]
@@ -178,14 +247,18 @@ fn describe(version: &str, rev: &str) -> String {
 /// The SHA-256, in lower-case hex, of a session directory's journals after build normalization, each with its
 /// name and normalized size, so a session that kept another number of archives or other contents differs.
 pub fn digest(dir: &Path) -> Result<String, JournalError> {
-    let files = files(dir)?;
+    digest_with(&Disk, dir)
+}
+
+pub(super) fn digest_with(source: &impl Source, dir: &Path) -> Result<String, JournalError> {
+    let files = source.files(dir)?;
     if files.is_empty() {
         return Err(JournalError::Missing);
     }
     let mut total = Sha256::new();
     let mut nonempty = false;
     for (name, path) in &files {
-        let (sum, size) = file_digest(path)?;
+        let (sum, size) = file_digest(source, path)?;
         nonempty |= size > 0;
         total.update(format!("{name} {size} {}\n", hex(&sum)));
     }
@@ -195,12 +268,12 @@ pub fn digest(dir: &Path) -> Result<String, JournalError> {
     Ok(hex(&total.finalize()))
 }
 
-fn file_digest(path: &Path) -> Result<([u8; 32], u64), JournalError> {
+fn file_digest(source: &impl Source, path: &Path) -> Result<([u8; 32], u64), JournalError> {
     let read = |source| JournalError::Read {
         path: path.to_path_buf(),
         source,
     };
-    let mut reader = BufReader::with_capacity(READ_BUFFER, File::open(path).map_err(read)?);
+    let mut reader = BufReader::with_capacity(READ_BUFFER, source.open(path).map_err(read)?);
     let mut hash = Sha256::new();
     let mut size = 0_u64;
     let mut line = Vec::new();
@@ -273,7 +346,15 @@ pub fn first_difference(
 /// A journal one side lacks differs at its first line. It is an error for a side to have no journal or only
 /// empty ones, so two failed sessions never compare equal.
 pub fn compare_dirs(base: &Path, head: &Path) -> Result<Option<Difference>, JournalError> {
-    let sides = [files(base)?, files(head)?];
+    compare_dirs_with(&Disk, base, head)
+}
+
+pub(super) fn compare_dirs_with(
+    source: &impl Source,
+    base: &Path,
+    head: &Path,
+) -> Result<Option<Difference>, JournalError> {
+    let sides = [source.files(base)?, source.files(head)?];
     if sides[0].is_empty() || sides[1].is_empty() {
         return Err(JournalError::MissingOnASide {
             base: sides[0].len(),
@@ -283,11 +364,10 @@ pub fn compare_dirs(base: &Path, head: &Path) -> Result<Option<Difference>, Jour
     for (files, side) in sides.iter().zip(["base", "head"]) {
         let mut nonempty = false;
         for path in files.values() {
-            let meta = fs::metadata(path).map_err(|source| JournalError::Read {
+            nonempty |= source.nonempty(path).map_err(|source| JournalError::Read {
                 path: path.clone(),
                 source,
             })?;
-            nonempty |= meta.len() > 0;
         }
         if !nonempty {
             return Err(JournalError::EmptyOnASide { side });
@@ -296,7 +376,7 @@ pub fn compare_dirs(base: &Path, head: &Path) -> Result<Option<Difference>, Jour
     let names: BTreeSet<&String> = sides.iter().flat_map(BTreeMap::keys).collect();
     for name in names {
         let paths = [sides[0].get(name), sides[1].get(name)];
-        if let Some(difference) = compare_file(name, paths)? {
+        if let Some(difference) = compare_file(source, name, paths)? {
             return Ok(Some(difference));
         }
     }
@@ -304,13 +384,15 @@ pub fn compare_dirs(base: &Path, head: &Path) -> Result<Option<Difference>, Jour
 }
 
 fn compare_file(
+    source: &impl Source,
     name: &str,
     paths: [Option<&PathBuf>; 2],
 ) -> Result<Option<Difference>, JournalError> {
     let open = |path: Option<&PathBuf>| -> Result<Box<dyn BufRead>, JournalError> {
         match path {
             None => Ok(Box::new(io::empty())),
-            Some(path) => File::open(path)
+            Some(path) => source
+                .open(path)
                 .map(|file| Box::new(BufReader::new(file)) as Box<dyn BufRead>)
                 .map_err(|source| JournalError::Read {
                     path: path.clone(),

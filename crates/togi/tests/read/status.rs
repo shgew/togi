@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::path::Path;
 
 use togi_config::Config;
 use togi_journal::{
@@ -10,24 +9,27 @@ use togi_machine::{Condition, CoreSet, PerCore, Regime, Signal};
 use togi_watchtest::{Base, Scenario, cut_trial, cut_when};
 use unicode_width::UnicodeWidthStr as _;
 
-use crate::support::{append_between_trial_mce, append_event, session, text, togi};
+use crate::support::{Session, append_between_trial_mce, append_event, session, text, togi};
 
 #[test]
 fn scenarios_render_the_status() {
     for scenario in Scenario::ALL {
         let dir = session(scenario);
-        let ran = togi(dir.path(), &["status"]);
+        let ran = togi(&dir, &["status"]);
         assert_eq!(ran.status.code(), Some(0), "{}", scenario.name());
         assert_eq!(text(&ran.stderr), "", "{}", scenario.name());
-        insta::assert_snapshot!(format!("status_{}", scenario.name()), text(&ran.stdout));
+        crate::support::snapshot(
+            &format!("status__status_{}", scenario.name()),
+            text(&ran.stdout),
+        );
     }
 }
 
 #[test]
 fn a_journal_without_a_session_is_an_error() {
-    let dir = tempfile::tempdir().unwrap();
-    std::fs::write(crate::support::journal(dir.path()), "").unwrap();
-    let ran = togi(dir.path(), &["status"]);
+    let dir = crate::support::Session::empty();
+    crate::support::write_journal(&dir, "");
+    let ran = togi(&dir, &["status"]);
     assert_eq!(ran.status.code(), Some(1));
     assert_eq!(text(&ran.stdout), "");
     assert!(
@@ -39,8 +41,8 @@ fn a_journal_without_a_session_is_an_error() {
 
 #[test]
 fn a_missing_journal_is_an_error_naming_the_file() {
-    let dir = tempfile::tempdir().unwrap();
-    let ran = togi(dir.path(), &["status"]);
+    let dir = crate::support::Session::empty();
+    let ran = togi(&dir, &["status"]);
     assert_eq!(ran.status.code(), Some(1));
     assert!(
         text(&ran.stderr).contains("no journal at"),
@@ -52,7 +54,7 @@ fn a_missing_journal_is_an_error_naming_the_file() {
 #[test]
 fn status_takes_no_arguments() {
     let dir = session(Scenario::Search);
-    let ran = togi(dir.path(), &["status", "extra"]);
+    let ran = togi(&dir, &["status", "extra"]);
     assert_eq!(ran.status.code(), Some(2));
     assert_eq!(text(&ran.stdout), "");
 }
@@ -61,7 +63,7 @@ fn status_takes_no_arguments() {
 fn status_fits_eighty_columns() {
     for scenario in Scenario::ALL {
         let dir = session(scenario);
-        let ran = togi(dir.path(), &["status"]);
+        let ran = togi(&dir, &["status"]);
         for line in text(&ran.stdout).lines() {
             assert!(
                 line.width() <= 80,
@@ -80,7 +82,7 @@ fn a_concluded_phase_names_the_latest_clean_cycle_not_the_running_cycle() {
     let latest = projection.last_clean_cycle.unwrap().get();
     let running = projection.checking.cycle.unwrap().get();
     assert_ne!(latest, running);
-    let shown = status_of(installed(&events).path());
+    let shown = status_of(&installed(&events));
     let header = flat(shown.split("\nsession ").next().unwrap());
     assert!(
         header.contains(&format!(
@@ -97,17 +99,17 @@ fn a_concluded_phase_names_the_latest_clean_cycle_not_the_running_cycle() {
 
 #[test]
 fn status_help() {
-    let ran = togi(std::path::Path::new("/nonexistent"), &["status", "--help"]);
+    let ran = togi(&crate::support::Session::empty(), &["status", "--help"]);
     assert_eq!(ran.status.code(), Some(0));
     assert_eq!(text(&ran.stderr), "");
-    insta::assert_snapshot!(text(&ran.stdout));
+    crate::support::snapshot("status__status_help", text(&ran.stdout));
 }
 
 #[test]
 fn a_too_cautious_defect_lists_reset_commands_until_each_affected_core_is_reset() {
     let dir = session(Scenario::Search);
     append_event(
-        dir.path(),
+        &dir,
         "defect.found",
         "defect 1",
         &serde_json::json!({
@@ -115,7 +117,7 @@ fn a_too_cautious_defect_lists_reset_commands_until_each_affected_core_is_reset(
             "direction": "too_cautious", "cores": [3, 5], "decisions": [4, 6],
         }),
     );
-    let shown = status_of(dir.path());
+    let shown = status_of(&dir);
     assert!(
         shown.contains("defect 1: step\\x1b[31m too cautious (fixed by pull request #7)"),
         "{shown}"
@@ -123,12 +125,12 @@ fn a_too_cautious_defect_lists_reset_commands_until_each_affected_core_is_reset(
     assert!(shown.contains("togi reset --core 3\n"));
     assert!(shown.contains("togi reset --core 5\n"));
     append_event(
-        dir.path(),
+        &dir,
         "defect.answered",
         "defect 1 answered no",
         &serde_json::json!({"id": 1, "cores": [3, 5], "answer": "no"}),
     );
-    let answered = status_of(dir.path());
+    let answered = status_of(&dir);
     assert!(
         answered.contains("defect 1: "),
         "an answer hides the defect"
@@ -136,21 +138,21 @@ fn a_too_cautious_defect_lists_reset_commands_until_each_affected_core_is_reset(
     assert!(answered.contains("togi reset --core 3\n"));
     assert!(answered.contains("togi reset --core 5\n"));
     append_event(
-        dir.path(),
+        &dir,
         "command.reset",
         "reset core 3",
         &serde_json::json!({"target": {"core": 3}}),
     );
-    let one = status_of(dir.path());
+    let one = status_of(&dir);
     assert!(!one.contains("togi reset --core 3"));
     assert!(one.contains("togi reset --core 5\n"));
     append_event(
-        dir.path(),
+        &dir,
         "command.reset",
         "reset core 5",
         &serde_json::json!({"target": {"core": 5}}),
     );
-    let both = status_of(dir.path());
+    let both = status_of(&dir);
     assert!(!both.contains("defect 1"), "{both}");
     assert!(!both.contains("togi reset --core"), "{both}");
 }
@@ -159,7 +161,7 @@ fn a_too_cautious_defect_lists_reset_commands_until_each_affected_core_is_reset(
 fn a_reset_of_every_core_removes_the_defect() {
     let dir = session(Scenario::Search);
     append_event(
-        dir.path(),
+        &dir,
         "defect.found",
         "defect 1",
         &serde_json::json!({
@@ -168,19 +170,19 @@ fn a_reset_of_every_core_removes_the_defect() {
         }),
     );
     append_event(
-        dir.path(),
+        &dir,
         "command.reset",
         "reset all",
         &serde_json::json!({"target": "all"}),
     );
-    assert!(!status_of(dir.path()).contains("defect 1"));
+    assert!(!status_of(&dir).contains("defect 1"));
 }
 
 #[test]
 fn a_between_trial_mce_is_listed_as_evidence_and_escaped() {
     let dir = session(Scenario::Search);
-    append_between_trial_mce(dir.path());
-    let ran = togi(dir.path(), &["status"]);
+    append_between_trial_mce(&dir);
+    let ran = togi(&dir, &["status"]);
     assert_eq!(ran.status.code(), Some(0), "{}", text(&ran.stderr));
     let shown = text(&ran.stdout);
     assert!(shown.contains("between-trial evidence [#"), "{shown}");
@@ -191,7 +193,7 @@ fn a_between_trial_mce_is_listed_as_evidence_and_escaped() {
 #[test]
 fn a_hunt_names_the_decisive_failure_signal() {
     let dir = session(Scenario::Hunt);
-    let ran = togi(dir.path(), &["status"]);
+    let ran = togi(&dir, &["status"]);
     let shown = text(&ran.stdout);
     let hunt = shown
         .lines()
@@ -208,7 +210,7 @@ fn wide_bios_fields_wrap_by_terminal_cells_and_stay_whole() {
     let dir = session(Scenario::Search);
     let board = "日本 ".repeat(20);
     append_event(
-        dir.path(),
+        &dir,
         "session.context",
         "context",
         &serde_json::json!({
@@ -216,7 +218,7 @@ fn wide_bios_fields_wrap_by_terminal_cells_and_stay_whole() {
             "microcode": "0x1", "boost_limit_mhz": 5000,
         }),
     );
-    let shown = status_of(dir.path());
+    let shown = status_of(&dir);
     assert!(flat(&shown).contains(board.trim_end()), "{shown}");
     for line in shown.lines() {
         assert!(line.width() <= 80, "{} cells: {line}", line.width());
@@ -227,7 +229,7 @@ fn wide_bios_fields_wrap_by_terminal_cells_and_stay_whole() {
 fn carried_facts_add_self_sufficiency_evidence_but_no_live_regime_exposure() {
     let base = Scenario::Between.events().unwrap();
     let intent = last_intent(&base);
-    let before = status_of(installed(&base).path());
+    let before = status_of(&installed(&base));
     let carried = vec![
         (vec![], carried_pass(&base, &intent).into()),
         (
@@ -257,7 +259,7 @@ fn carried_facts_add_self_sufficiency_evidence_but_no_live_regime_exposure() {
             .into(),
         ),
     ];
-    let after = status_of(installed(&then(&base, carried)).path());
+    let after = status_of(&installed(&then(&base, carried)));
     let changed: Vec<(&str, &str)> = before
         .lines()
         .zip(after.lines())
@@ -290,7 +292,7 @@ fn carried_facts_add_self_sufficiency_evidence_but_no_live_regime_exposure() {
 #[test]
 fn a_queued_reset_shows_in_the_queued_column_until_the_search_restarts() {
     let dir = session(Scenario::Stopped);
-    let queued = |dir: &std::path::Path| {
+    let queued = |dir: &Session| {
         let ran = togi(dir, &["status"]);
         assert_eq!(ran.status.code(), Some(0), "{}", text(&ran.stderr));
         text(&ran.stdout)
@@ -299,24 +301,20 @@ fn a_queued_reset_shows_in_the_queued_column_until_the_search_restarts() {
             .unwrap()
             .to_owned()
     };
-    assert!(queued(dir.path()).ends_with(" -"));
+    assert!(queued(&dir).ends_with(" -"));
     append_event(
-        dir.path(),
+        &dir,
         "command.reset",
         "reset core 3",
         &serde_json::json!({"target": {"core": 3}}),
     );
-    assert!(
-        queued(dir.path()).ends_with(" reset"),
-        "{}",
-        queued(dir.path())
-    );
+    assert!(queued(&dir).ends_with(" reset"), "{}", queued(&dir));
 }
 
 #[test]
 fn the_core_table_leads_with_core_ccd_slot_and_the_resident_offset() {
     let dir = session(Scenario::Checking);
-    let ran = togi(dir.path(), &["status"]);
+    let ran = togi(&dir, &["status"]);
     let shown = text(&ran.stdout);
     let words = |line: &str| {
         line.split_whitespace()
@@ -361,7 +359,7 @@ fn the_phase_column_uses_the_dashboards_state_words() {
     let mut seen = std::collections::BTreeSet::new();
     for scenario in Scenario::ALL {
         let dir = session(scenario);
-        let ran = togi(dir.path(), &["status"]);
+        let ran = togi(&dir, &["status"]);
         let shown = text(&ran.stdout);
         let header = shown.lines().find(|line| line.starts_with("CORE")).unwrap();
         let (start, end) = (
@@ -391,7 +389,7 @@ fn the_phase_column_uses_the_dashboards_state_words() {
 #[test]
 fn the_regime_table_keeps_its_regime_column() {
     let dir = session(Scenario::Between);
-    let ran = togi(dir.path(), &["status"]);
+    let ran = togi(&dir, &["status"]);
     let shown = text(&ran.stdout);
     let at = shown
         .lines()
@@ -408,13 +406,11 @@ fn the_regime_table_keeps_its_regime_column() {
     );
 }
 
-pub(super) fn installed(events: &[Event]) -> tempfile::TempDir {
-    let dir = tempfile::tempdir().unwrap();
-    togi_watchtest::install_events(dir.path(), events).unwrap();
-    dir
+pub(super) fn installed(events: &[Event]) -> Session {
+    crate::support::installed(events)
 }
 
-fn status_of(dir: &Path) -> String {
+fn status_of(dir: &Session) -> String {
     let ran = togi(dir, &["status"]);
     assert_eq!(ran.status.code(), Some(0), "{}", text(&ran.stderr));
     assert_eq!(text(&ran.stderr), "");
@@ -574,7 +570,7 @@ fn hunt_from_a_carried_fact(carried: &Carried) -> String {
         &base,
         vec![(vec![], fact), (vec![seq], Payload::HuntStart(start))],
     );
-    hunt_line(&status_of(installed(&events).path()), 1)
+    hunt_line(&status_of(&installed(&events)), 1)
 }
 
 #[test]
@@ -598,7 +594,7 @@ fn a_located_hunt_names_the_held_loaded_cores_as_its_parked_source() {
     let events = cut_trial(base, |intent| intent.activity == Some(Activity::Hunt)).unwrap();
     let start = first_hunt_start(events);
     assert!(start.parked_seq.is_none() && start.parked.iter().any(|(_, o)| o.get() != 0));
-    let hunt = hunt_line(&status_of(installed(events).path()), 1);
+    let hunt = hunt_line(&status_of(&installed(events)), 1);
     assert!(
         hunt.contains(
             "loaded cores 00 01 02 03 04 05 06 07 held at their failing offsets, the rest parked at 0"
@@ -636,7 +632,7 @@ fn a_hunt_after_a_passed_full_cycle_names_the_cycle_end_it_parks_from() {
             }
         }
     }
-    let hunt = hunt_line(&status_of(installed(&events).path()), 4);
+    let hunt = hunt_line(&status_of(&installed(&events)), 4);
     assert!(
         hunt.contains(&format!("parked offsets cycle end #{cycle_end}")),
         "{hunt}"
@@ -646,7 +642,7 @@ fn a_hunt_after_a_passed_full_cycle_names_the_cycle_end_it_parks_from() {
 #[test]
 fn hunt_group_columns_stay_aligned_when_a_group_lists_sixteen_cores() {
     let dir = session(Scenario::MemberProbe);
-    let shown = status_of(dir.path());
+    let shown = status_of(&dir);
     let header = shown
         .lines()
         .find(|line| line.starts_with("GROUP"))
@@ -712,7 +708,7 @@ fn a_phase_two_round_with_completed_checks_counts_them() {
             })
     })
     .unwrap();
-    let shown = status_of(installed(events).path());
+    let shown = status_of(&installed(events));
     assert!(
         shown.starts_with("phase 2 round 1, checks 1/"),
         "{}",
@@ -755,7 +751,7 @@ fn a_short_checking_cycle_names_the_coverage_it_lacks() {
         intent.activity == Some(Activity::Checking)
     })
     .unwrap();
-    let shown = flat(&status_of(installed(cut).path()));
+    let shown = flat(&status_of(&installed(cut)));
     assert!(
         shown.contains("checking cycle 1, steps 0/2, not full: R1: 2 more steps; R2: 2 more steps"),
         "{shown}"
@@ -765,14 +761,14 @@ fn a_short_checking_cycle_names_the_coverage_it_lacks() {
 
 #[test]
 fn a_full_checking_cycle_does_not_say_it_is_not_full() {
-    let shown = status_of(session(Scenario::Checking).path());
+    let shown = status_of(&session(Scenario::Checking));
     assert!(!shown.contains("not full"), "{shown}");
 }
 
 #[test]
 fn a_fallback_combination_names_the_hunt_it_covered_every_candidate_of() {
     let mut events = Scenario::Combination.events().unwrap();
-    let observed = status_of(installed(&events).path());
+    let observed = status_of(&installed(&events));
     assert!(observed.contains("observed in hunt 1 [#"), "{observed}");
     assert!(!observed.contains("fallback over"), "{observed}");
     let mut seq = None;
@@ -782,7 +778,7 @@ fn a_fallback_combination_names_the_hunt_it_covered_every_candidate_of() {
             seq = Some(event.seq);
         }
     }
-    let shown = status_of(installed(&events).path());
+    let shown = status_of(&installed(&events));
     assert!(
         shown.contains(&format!(
             "fallback over every candidate of hunt 1 [#{}]",
@@ -800,7 +796,7 @@ fn pass_evidence_above_need_is_shown_uncapped() {
     let carried: Vec<(Vec<Seq>, Payload)> = (0..7)
         .map(|_| (vec![], carried_pass(&base, &intent).into()))
         .collect();
-    let shown = status_of(installed(&then(&base, carried)).path());
+    let shown = status_of(&installed(&then(&base, carried)));
     let header = shown
         .lines()
         .find(|line| line.starts_with("GROUP"))
@@ -821,13 +817,13 @@ fn pass_evidence_above_need_is_shown_uncapped() {
 #[test]
 fn a_journal_the_fold_rejects_is_an_error_with_nothing_on_stdout() {
     let dir = session(Scenario::Between);
-    let mut lines = crate::support::lines(dir.path());
+    let mut lines = crate::support::lines(&dir);
     let mut start: serde_json::Value = serde_json::from_str(&lines[0]).unwrap();
     assert_eq!(start["kind"], "session.start");
     start["data"]["cores"].as_array_mut().unwrap().pop();
     lines[0] = start.to_string();
-    std::fs::write(crate::support::journal(dir.path()), lines.join("\n") + "\n").unwrap();
-    let ran = togi(dir.path(), &["status"]);
+    crate::support::write_journal(&dir, lines.join("\n") + "\n");
+    let ran = togi(&dir, &["status"]);
     assert_eq!(ran.status.code(), Some(1), "{}", text(&ran.stdout));
     assert_eq!(text(&ran.stdout), "");
     let stderr = text(&ran.stderr);
@@ -851,26 +847,14 @@ fn a_session_with_no_search_hunt_round_or_checking_plan_says_checking_has_not_st
             && projection.cycle_plan.steps.is_empty()
     })
     .unwrap();
-    let shown = status_of(installed(events).path());
+    let shown = status_of(&installed(events));
     assert!(shown.contains("checking not started"), "{shown}");
 }
 
-#[cfg(target_os = "linux")]
 #[test]
 fn a_failed_write_to_stdout_is_an_error() {
     let dir = session(Scenario::Search);
-    let full = std::fs::OpenOptions::new()
-        .write(true)
-        .open("/dev/full")
-        .unwrap();
-    let ran = std::process::Command::new(env!("CARGO_BIN_EXE_togi"))
-        .arg("--state-dir")
-        .arg(dir.path())
-        .arg("status")
-        .env("TZ", "UTC")
-        .stdout(full)
-        .output()
-        .unwrap();
+    let ran = crate::support::output(dir.host().run_to_closed_stdout(dir.path(), &["status"]));
     assert_eq!(ran.status.code(), Some(1), "{}", text(&ran.stderr));
     assert!(
         text(&ran.stderr).starts_with("togi status: write output: "),
@@ -880,7 +864,7 @@ fn a_failed_write_to_stdout_is_an_error() {
 }
 
 /// Rewrites the message of the last event of `kind` in the journal.
-fn rewrite_msg(dir: &Path, kind: &str, msg: &str) {
+fn rewrite_msg(dir: &Session, kind: &str, msg: &str) {
     let mut lines = crate::support::lines(dir);
     let at = lines
         .iter()
@@ -889,7 +873,7 @@ fn rewrite_msg(dir: &Path, kind: &str, msg: &str) {
     let mut event: serde_json::Value = serde_json::from_str(&lines[at]).unwrap();
     event["msg"] = msg.into();
     lines[at] = event.to_string();
-    std::fs::write(crate::support::journal(dir), lines.join("\n") + "\n").unwrap();
+    crate::support::write_journal(dir, lines.join("\n") + "\n");
 }
 
 const HOSTILE: &str = "a\u{1b}[31mb\u{202e}c\nd\u{2066}e";
@@ -907,8 +891,8 @@ fn assert_visibly_escaped(shown: &str) {
 #[test]
 fn controls_in_an_in_flight_message_are_escaped() {
     let dir = session(Scenario::Search);
-    rewrite_msg(dir.path(), "trial.intent", HOSTILE);
-    let shown = status_of(dir.path());
+    rewrite_msg(&dir, "trial.intent", HOSTILE);
+    let shown = status_of(&dir);
     assert_visibly_escaped(&shown);
     let line = shown
         .lines()
@@ -921,12 +905,12 @@ fn controls_in_an_in_flight_message_are_escaped() {
 fn controls_in_a_carried_session_message_are_escaped() {
     let dir = session(Scenario::Search);
     append_event(
-        dir.path(),
+        &dir,
         "session.carried",
         HOSTILE,
         &serde_json::json!({"sources": [], "failure_points": false}),
     );
-    let shown = status_of(dir.path());
+    let shown = status_of(&dir);
     assert_visibly_escaped(&shown);
     assert!(
         shown
@@ -939,8 +923,8 @@ fn controls_in_a_carried_session_message_are_escaped() {
 #[test]
 fn controls_in_a_decision_message_are_escaped() {
     let dir = session(Scenario::Search);
-    rewrite_msg(dir.path(), "tuner.decision", HOSTILE);
-    let shown = status_of(dir.path());
+    rewrite_msg(&dir, "tuner.decision", HOSTILE);
+    let shown = status_of(&dir);
     assert_visibly_escaped(&shown);
     assert!(
         shown
@@ -954,7 +938,7 @@ fn controls_in_a_decision_message_are_escaped() {
 fn controls_in_bios_context_fields_are_escaped() {
     let dir = session(Scenario::Search);
     append_event(
-        dir.path(),
+        &dir,
         "session.context",
         "context",
         &serde_json::json!({
@@ -962,7 +946,7 @@ fn controls_in_bios_context_fields_are_escaped() {
             "microcode": HOSTILE, "boost_limit_mhz": 5000,
         }),
     );
-    let shown = status_of(dir.path());
+    let shown = status_of(&dir);
     assert_visibly_escaped(&shown);
     assert_eq!(flat(&shown).matches(HOSTILE_ESCAPED).count(), 4, "{shown}");
 }

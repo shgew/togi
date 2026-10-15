@@ -1,7 +1,12 @@
 #![cfg(unix)]
 
 mod error;
+#[cfg(any(test, feature = "test-support"))]
+mod memory;
 mod policy;
+
+#[cfg(any(test, feature = "test-support"))]
+pub use memory::MemHostLocks;
 
 use std::ffi::OsStr;
 use std::fs::{self, File, TryLockError};
@@ -29,7 +34,9 @@ pub enum Policy {
 
 #[derive(Debug)]
 pub struct HostLock {
-    _file: File,
+    _file: Option<File>,
+    #[cfg(any(test, feature = "test-support"))]
+    _memory: Option<memory::Held>,
     path: PathBuf,
 }
 
@@ -49,7 +56,9 @@ impl HostLock {
         secure_lock(&file, path, policy, access)?;
         match file.try_lock() {
             Ok(()) => Ok(Self {
-                _file: file,
+                _file: Some(file),
+                #[cfg(any(test, feature = "test-support"))]
+                _memory: None,
                 path: path.to_owned(),
             }),
             Err(TryLockError::WouldBlock) => Err(Error::Busy {

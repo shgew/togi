@@ -51,5 +51,5 @@ pub use error::Error;
 pub use outcome::{Outcome, Status, after, recovery_bias};
 pub use record::{File, Record, Run};
 pub use score::{Flag, Placement, Row, Score};
-pub use session::{Anchor, Session, read_dir, read_dir_lenient};
+pub use session::{Anchor, Session, read_dir, read_dir_fs, read_dir_lenient, read_dir_lenient_fs};
 pub use summary::{Metric, MetricKind, Range, Summary, metrics, summarize};

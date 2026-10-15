@@ -159,7 +159,7 @@ fn hunt_decide_visits_distinct_cells_not_passes() {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(24))]
+    #![proptest_config(crate::prop_tests::seeded(24))]
 
     #[test]
     fn culprit_and_pair_terminate(

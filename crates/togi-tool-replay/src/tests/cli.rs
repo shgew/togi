@@ -2,12 +2,11 @@ use clap::Parser;
 use clap::error::ErrorKind;
 use jiff::SignedDuration;
 use jiff::tz::TimeZone;
-use tempfile::tempdir;
 use togi_watch::screen::View;
-use togi_watchtest::{Scenario, install};
+use togi_watchtest::Scenario;
 
-use super::plant::plant;
-use crate::{Cli, Error, Frame, draw, prefix, run};
+use super::plant::{plant, recording};
+use crate::{Cli, Error, Frame, draw, load, prefix, run_with};
 
 fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
     Cli::try_parse_from(
@@ -93,38 +92,49 @@ fn a_frame_size_view_and_delay_are_checked_when_the_arguments_are_read() {
     assert_eq!(cli.after, Some(SignedDuration::from_secs(-40)));
 }
 
-fn state_dir(scenario: Scenario) -> (tempfile::TempDir, Vec<String>) {
-    let dir = tempdir().unwrap();
-    install(dir.path(), scenario).unwrap();
-    let path = dir.path().to_str().unwrap().to_owned();
-    (
-        dir,
-        vec!["togi-tool-replay".into(), "--state-dir".into(), path],
+fn run(cli: &Cli, bytes: &str, out: &mut impl std::io::Write) -> Vec<u8> {
+    let mut err = Vec::new();
+    run_with(
+        cli,
+        out,
+        &mut err,
+        |state| load::events_from(state, bytes.as_bytes()),
+        || TimeZone::UTC,
     )
+    .unwrap();
+    err
 }
 
 #[test]
-fn at_prints_one_frame_of_the_recording_in_the_system_time_zone() {
-    let (dir, mut args) = state_dir(Scenario::Checking);
+fn at_prints_one_frame_of_the_recording_in_the_supplied_time_zone() {
+    let bytes = recording(Scenario::Checking);
     let events = Scenario::Checking.events().unwrap();
     let at = events[events.len() / 2].seq.get();
-    args.extend(
-        [
-            "--at",
-            &at.to_string(),
-            "--after",
-            "40s",
-            "--view",
-            "log",
-            "--width",
-            "100",
-            "--height",
-            "30",
-        ]
-        .map(String::from),
-    );
+    let cli = parse(&[
+        "--at",
+        &at.to_string(),
+        "--after",
+        "40s",
+        "--view",
+        "log",
+        "--width",
+        "100",
+        "--height",
+        "30",
+    ])
+    .unwrap();
     let mut out = Vec::new();
-    run(&Cli::try_parse_from(&args).unwrap(), &mut out).unwrap();
+    let mut err = Vec::new();
+    let zone = TimeZone::fixed(jiff::tz::offset(9));
+    run_with(
+        &cli,
+        &mut out,
+        &mut err,
+        |state| load::events_from(state, bytes.as_bytes()),
+        || zone.clone(),
+    )
+    .unwrap();
+    assert!(err.is_empty());
     let want = draw(
         &events,
         prefix(&events, at),
@@ -135,26 +145,24 @@ fn at_prints_one_frame_of_the_recording_in_the_system_time_zone() {
             colour: false,
             after: SignedDuration::from_secs(40),
         },
-        &TimeZone::system(),
+        &zone,
     )
     .unwrap();
     assert_eq!(String::from_utf8(out).unwrap(), want);
-    drop(dir);
 }
 
 #[test]
 fn every_page_can_be_printed() {
-    let (_dir, args) = state_dir(Scenario::Checking);
+    let bytes = recording(Scenario::Checking);
     let events = Scenario::Checking.events().unwrap();
     for (name, view) in [
         ("main", View::Main),
         ("help", View::Help),
         ("log", View::Log),
     ] {
-        let mut args = args.clone();
-        args.extend(["--at", "30", "--view", name].map(String::from));
+        let cli = parse(&["--at", "30", "--view", name]).unwrap();
         let mut out = Vec::new();
-        run(&Cli::try_parse_from(&args).unwrap(), &mut out).unwrap();
+        assert!(run(&cli, &bytes, &mut out).is_empty());
         let frame = Frame {
             view,
             width: 240,
@@ -162,27 +170,26 @@ fn every_page_can_be_printed() {
             colour: false,
             after: SignedDuration::ZERO,
         };
-        let want = draw(&events, prefix(&events, 30), &frame, &TimeZone::system()).unwrap();
+        let want = draw(&events, prefix(&events, 30), &frame, &TimeZone::UTC).unwrap();
         assert_eq!(String::from_utf8(out).unwrap(), want, "{name}");
     }
 }
 
 #[test]
 fn at_a_sequence_number_beyond_the_recording_prints_its_last_frame() {
-    let (_dir, mut args) = state_dir(Scenario::Checking);
-    args.extend(["--at", "99999999"].map(String::from));
+    let bytes = recording(Scenario::Checking);
+    let cli = parse(&["--at", "99999999"]).unwrap();
     let mut out = Vec::new();
-    run(&Cli::try_parse_from(&args).unwrap(), &mut out).unwrap();
+    assert!(run(&cli, &bytes, &mut out).is_empty());
     assert!(!out.is_empty());
 }
 
 #[test]
 fn at_draws_a_recording_with_an_unknown_kind_and_fields_as_the_known_events_alone_and_leaves_it_as_it_is()
  {
-    let (dir, mut args) = state_dir(Scenario::Checking);
-    let planted = plant(dir.path());
-    let path = dir.path().join("events.jsonl");
-    let bytes = std::fs::read(&path).unwrap();
+    let mut bytes = recording(Scenario::Checking);
+    let planted = plant(&mut bytes);
+    let before = bytes.clone();
     let all = Scenario::Checking.events().unwrap();
     let known: Vec<_> = all
         .iter()
@@ -190,9 +197,15 @@ fn at_draws_a_recording_with_an_unknown_kind_and_fields_as_the_known_events_alon
         .cloned()
         .collect();
     let at = all.last().unwrap().seq.get();
-    args.extend(["--at", &at.to_string()].map(String::from));
+    let cli = parse(&["--at", &at.to_string()]).unwrap();
     let mut out = Vec::new();
-    run(&Cli::try_parse_from(&args).unwrap(), &mut out).unwrap();
+    let err = String::from_utf8(run(&cli, &bytes, &mut out)).unwrap();
+    assert_eq!(err.lines().count(), 1, "{err}");
+    let report = err.strip_prefix("togi-tool-replay: ").unwrap();
+    assert!(report.starts_with(&planted.skipped_kind()), "{err}");
+    for ignored in planted.ignored_fields() {
+        assert!(report.contains(&ignored), "{err}");
+    }
     let frame = Frame {
         view: View::Main,
         width: 240,
@@ -200,9 +213,9 @@ fn at_draws_a_recording_with_an_unknown_kind_and_fields_as_the_known_events_alon
         colour: false,
         after: SignedDuration::ZERO,
     };
-    let want = draw(&known, prefix(&known, at), &frame, &TimeZone::system()).unwrap();
+    let want = draw(&known, prefix(&known, at), &frame, &TimeZone::UTC).unwrap();
     assert_eq!(String::from_utf8(out).unwrap(), want);
-    assert_eq!(std::fs::read(&path).unwrap(), bytes);
+    assert_eq!(bytes, before);
 }
 
 struct Broken;
@@ -219,13 +232,25 @@ impl std::io::Write for Broken {
 
 #[test]
 fn run_reports_an_unreadable_recording_and_a_failed_write() {
-    let dir = tempdir().unwrap();
-    let path = dir.path().to_str().unwrap();
-    let cli = Cli::try_parse_from(["togi-tool-replay", "--state-dir", path, "--at", "1"]).unwrap();
-    assert!(matches!(run(&cli, &mut Vec::new()), Err(Error::Read(_))));
+    let cli = parse(&["--at", "1"]).unwrap();
+    let error = run_with(
+        &cli,
+        &mut Vec::new(),
+        &mut Vec::new(),
+        |state| load::events_from(state, std::io::BufReader::new(super::load::Missing)),
+        || panic!("an unreadable recording must fail before looking up the time zone"),
+    )
+    .unwrap_err();
+    assert!(matches!(error, Error::Read(_)));
 
-    let (_dir, mut args) = state_dir(Scenario::Checking);
-    args.extend(["--at", "1"].map(String::from));
-    let error = run(&Cli::try_parse_from(&args).unwrap(), &mut Broken).unwrap_err();
+    let bytes = recording(Scenario::Checking);
+    let error = run_with(
+        &cli,
+        &mut Broken,
+        &mut Vec::new(),
+        |state| load::events_from(state, bytes.as_bytes()),
+        || TimeZone::UTC,
+    )
+    .unwrap_err();
     assert_eq!(error.to_string(), "write the frame: closed");
 }

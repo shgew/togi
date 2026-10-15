@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
-use tempfile::TempDir;
-use togi_machine::{Host, PmTable, PmTableReader, Smu, Stopped, Trials};
-use togi_trial::{Backends, Options, Runner};
+use togi_machine::{
+    CancellationToken, Error, Host, Partial, PmTable, PmTableReader, ReadSamples, Running, Smu,
+    Stopped, Swept, TrialConditions, TrialSpec, Trials,
+};
 
 use super::support::{Scope, Tree, Watch, host, refused_account};
 use crate::adapters::{PmSlot, RunnerHandle, SharedSmu};
@@ -32,26 +33,39 @@ fn the_runners_slot_clone_sees_no_table_until_the_reader_is_published() {
     assert_eq!(runners.pm_table(), Some(table()));
 }
 
-fn trial_with_samples(state: &TempDir, lines: &str) -> RunnerHandle {
-    let trials = state.path().join("trials");
-    std::fs::create_dir_all(trials.join("t1")).unwrap();
-    std::fs::write(trials.join("t1/samples.jsonl"), lines).unwrap();
-    let runner = Runner::new(Options {
-        dir: trials,
-        backends: Backends::new(),
-        topology: Vec::new(),
-        identity: None,
-        pm_table: None,
-    })
-    .unwrap();
-    RunnerHandle::new(runner)
+struct Samples(&'static str);
+
+impl Trials for Samples {
+    fn sweep(&mut self, _cancel: &CancellationToken) -> Result<Swept, Error> {
+        panic!("sample reads must not sweep workloads")
+    }
+
+    fn start(
+        &mut self,
+        _cancel: &CancellationToken,
+        _spec: TrialSpec,
+        _ready: Stopped,
+    ) -> Result<Box<dyn Running>, Partial<Option<Stopped>>> {
+        panic!("sample reads must not start workloads")
+    }
+
+    fn ended(&mut self, _id: &str) -> Result<(), Error> {
+        panic!("sample reads must not end trials")
+    }
+
+    fn samples<'a>(&'a self, id: &'a str) -> Box<dyn Iterator<Item = TrialConditions> + 'a> {
+        assert_eq!(id, "t1");
+        Box::new(ReadSamples::from_reader(self.0.as_bytes()))
+    }
+}
+
+fn trial_with_samples(lines: &'static str) -> RunnerHandle<Samples> {
+    RunnerHandle::new(Samples(lines))
 }
 
 #[test]
 fn samples_read_through_the_handle_keep_the_files_order_and_values() {
-    let state = TempDir::new().unwrap();
     let handle = trial_with_samples(
-        &state,
         "{\"elapsed_ms\":30}\n{\"elapsed_ms\":10,\"tctl_c\":61}\n{\"elapsed_ms\":20}\n",
     );
     let samples: Vec<_> = handle
@@ -63,8 +77,7 @@ fn samples_read_through_the_handle_keep_the_files_order_and_values() {
 
 #[test]
 fn a_live_samples_iterator_does_not_hold_the_runner_lock() {
-    let state = TempDir::new().unwrap();
-    let handle = trial_with_samples(&state, "{\"elapsed_ms\":1}\n");
+    let handle = trial_with_samples("{\"elapsed_ms\":1}\n");
     let clone = handle.clone();
     let mut samples = handle.samples("t1");
     assert!(clone.is_unlocked());

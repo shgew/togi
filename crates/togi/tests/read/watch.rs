@@ -14,7 +14,7 @@ use rustix::termios::{LocalModes, Winsize, tcgetattr, tcsetwinsize};
 use togi_watchtest::Scenario;
 
 use crate::support::{
-    append_between_trial_mce, append_event, journal, lines, rewrite_first_line, session, text, togi,
+    append_between_trial_mce, append_event, lines, rewrite_first_line, session, text, togi,
 };
 
 pub(crate) const BOUND: Duration = Duration::from_secs(30);
@@ -23,8 +23,8 @@ const SHOW_CURSOR: &[u8] = b"\x1b[?25h";
 
 #[test]
 fn a_missing_journal_prints_no_session_yet_and_exits_zero() {
-    let dir = tempfile::tempdir().unwrap();
-    let ran = togi(dir.path(), &["watch", "--width", "80", "--height", "20"]);
+    let dir = crate::support::Session::empty();
+    let ran = togi(&dir, &["watch", "--width", "80", "--height", "20"]);
     assert_eq!(ran.status.code(), Some(0));
     assert_eq!(text(&ran.stderr), "");
     assert!(
@@ -37,7 +37,7 @@ fn a_missing_journal_prints_no_session_yet_and_exits_zero() {
 #[test]
 fn without_a_terminal_one_frame_of_the_requested_size_is_printed() {
     let dir = session(Scenario::Checking);
-    let ran = togi(dir.path(), &["watch", "--width", "100", "--height", "30"]);
+    let ran = togi(&dir, &["watch", "--width", "100", "--height", "30"]);
     assert_eq!(ran.status.code(), Some(0));
     assert_eq!(text(&ran.stderr), "");
     let shown = text(&ran.stdout);
@@ -50,9 +50,9 @@ fn without_a_terminal_one_frame_of_the_requested_size_is_printed() {
 fn an_unreadable_journal_prints_the_problem_frame_and_exits_one() {
     // A header of this build, then a line that is not an event: unreadable, not another build's journal.
     let dir = session(Scenario::Search);
-    let header = lines(dir.path()).swap_remove(0);
-    std::fs::write(journal(dir.path()), format!("{header}\nnot json\n")).unwrap();
-    let ran = togi(dir.path(), &["watch", "--width", "100", "--height", "30"]);
+    let header = lines(&dir).swap_remove(0);
+    crate::support::write_journal(&dir, format!("{header}\nnot json\n"));
+    let ran = togi(&dir, &["watch", "--width", "100", "--height", "30"]);
     assert_eq!(ran.status.code(), Some(1));
     assert!(!text(&ran.stdout).trim().is_empty(), "the frame is printed");
     assert!(
@@ -65,10 +65,10 @@ fn an_unreadable_journal_prints_the_problem_frame_and_exits_one() {
 #[test]
 fn an_incompatible_journal_prints_the_refusal_frame_and_exits_one() {
     let dir = session(Scenario::Search);
-    rewrite_first_line(dir.path(), |event| {
+    rewrite_first_line(&dir, |event| {
         event["data"]["build"]["schema"] = 99.into();
     });
-    let ran = togi(dir.path(), &["watch", "--width", "240", "--height", "67"]);
+    let ran = togi(&dir, &["watch", "--width", "240", "--height", "67"]);
     assert_eq!(ran.status.code(), Some(1));
     let refusal = format!(
         "the journal's schema is 99; this build's is {}",
@@ -86,12 +86,12 @@ fn an_incompatible_journal_prints_the_refusal_frame_and_exits_one() {
 fn journal_controls_are_escaped_in_the_frame_and_the_diagnostic() {
     let dir = session(Scenario::Search);
     append_event(
-        dir.path(),
+        &dir,
         "session.warning",
         "warn \u{1b}[2Jsneaky",
         &serde_json::json!({"operation": "x\u{1b}[31m", "error": "e\u{7}"}),
     );
-    let ran = togi(dir.path(), &["watch", "--width", "240", "--height", "67"]);
+    let ran = togi(&dir, &["watch", "--width", "240", "--height", "67"]);
     assert_eq!(ran.status.code(), Some(0), "{}", text(&ran.stderr));
     assert!(!text(&ran.stdout).contains('\u{1b}'));
     assert!(
@@ -103,15 +103,12 @@ fn journal_controls_are_escaped_in_the_frame_and_the_diagnostic() {
 
     let broken = session(Scenario::Search);
     append_event(
-        broken.path(),
+        &broken,
         "failure",
         "x",
         &serde_json::json!({"signal": "bad\u{1b}[2J", "attribution": "attributed"}),
     );
-    let ran = togi(
-        broken.path(),
-        &["watch", "--width", "240", "--height", "67"],
-    );
+    let ran = togi(&broken, &["watch", "--width", "240", "--height", "67"]);
     assert_eq!(ran.status.code(), Some(1));
     assert!(!text(&ran.stdout).contains('\u{1b}'));
     assert!(!text(&ran.stderr).contains('\u{1b}'));
@@ -130,8 +127,8 @@ fn journal_controls_are_escaped_in_the_frame_and_the_diagnostic() {
 #[test]
 fn a_between_trial_mce_shows_in_the_frame() {
     let dir = session(Scenario::Search);
-    append_between_trial_mce(dir.path());
-    let ran = togi(dir.path(), &["watch", "--width", "240", "--height", "67"]);
+    append_between_trial_mce(&dir);
+    let ran = togi(&dir, &["watch", "--width", "240", "--height", "67"]);
     assert_eq!(ran.status.code(), Some(0), "{}", text(&ran.stderr));
     assert!(
         text(&ran.stdout).contains("between trials"),
@@ -143,14 +140,14 @@ fn a_between_trial_mce_shows_in_the_frame() {
 
 #[test]
 fn the_frame_size_must_be_at_least_one() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = crate::support::Session::empty();
     for args in [
         ["watch", "--width", "0"],
         ["watch", "--height", "0"],
         ["watch", "--width", "1001"],
         ["watch", "--height", "1001"],
     ] {
-        let ran = togi(dir.path(), &args);
+        let ran = togi(&dir, &args);
         assert_eq!(ran.status.code(), Some(2), "{args:?}");
         assert_eq!(text(&ran.stdout), "");
     }
@@ -158,10 +155,10 @@ fn the_frame_size_must_be_at_least_one() {
 
 #[test]
 fn watch_help() {
-    let ran = togi(std::path::Path::new("/nonexistent"), &["watch", "--help"]);
+    let ran = togi(&crate::support::Session::empty(), &["watch", "--help"]);
     assert_eq!(ran.status.code(), Some(0));
     assert_eq!(text(&ran.stderr), "");
-    insta::assert_snapshot!(text(&ran.stdout));
+    crate::support::snapshot("watch__watch_help", text(&ran.stdout));
 }
 
 pub(crate) struct Helper(pub(crate) Child);
@@ -204,22 +201,23 @@ pub(crate) fn contains(haystack: &[u8], needle: &[u8]) -> bool {
 }
 
 #[test]
-fn sigint_ends_a_live_watch_with_the_terminal_restored() {
+fn real_process_sigint_ends_a_live_watch_with_the_terminal_restored() {
     a_signal_ends_a_live_watch_with_the_terminal_restored(Signal::INT);
 }
 
 #[test]
-fn sigterm_ends_a_live_watch_with_the_terminal_restored() {
+fn real_process_sigterm_ends_a_live_watch_with_the_terminal_restored() {
     a_signal_ends_a_live_watch_with_the_terminal_restored(Signal::TERM);
 }
 
 #[test]
-fn sighup_ends_a_live_watch_with_the_terminal_restored() {
+fn real_process_sighup_ends_a_live_watch_with_the_terminal_restored() {
     a_signal_ends_a_live_watch_with_the_terminal_restored(Signal::HUP);
 }
 
 fn a_signal_ends_a_live_watch_with_the_terminal_restored(signal: Signal) {
-    let dir = session(Scenario::Checking);
+    let dir = tempfile::tempdir().unwrap();
+    togi_watchtest::install(dir.path(), Scenario::Checking).unwrap();
     let master = openpt(OpenptFlags::RDWR | OpenptFlags::NOCTTY).unwrap();
     fcntl_setfd(&master, FdFlags::CLOEXEC).unwrap();
     grantpt(&master).unwrap();
@@ -245,6 +243,10 @@ fn a_signal_ends_a_live_watch_with_the_terminal_restored(signal: Signal) {
     let before = tcgetattr(&slave).unwrap().local_modes;
     assert!(before.contains(LocalModes::ICANON | LocalModes::ECHO));
 
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the real_process test checks watch terminal restoration"
+    )]
     let child = Command::new(env!("CARGO_BIN_EXE_togi"))
         .arg("--state-dir")
         .arg(dir.path())

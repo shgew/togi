@@ -578,7 +578,11 @@ mod hardware {
     }
 
     fn runner(tree: &Tree, backend: Arc<Helper>) -> Runner {
-        Runner::new(Options {
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "gated hardware containment tests retain safety without syncing disposable output"
+        )]
+        Runner::new_unsynced(Options {
             dir: tree.root.join("trials"),
             backends: Backends::new().with(backend),
             topology: topology(),
@@ -1440,7 +1444,11 @@ mod hardware {
         ];
         for (kind, backend) in backends {
             eprintln!("{kind}: {}", backend.check().unwrap().detail);
-            let mut runner = Runner::new(Options {
+            #[expect(
+                clippy::disallowed_methods,
+                reason = "gated hardware backend tests must not sync disposable trial output"
+            )]
+            let mut runner = Runner::new_unsynced(Options {
                 dir: staged.tree.root.join(format!("trials-{kind}")),
                 backends: Backends::new().with(Arc::clone(&backend)),
                 topology: vec![CoreInfo {

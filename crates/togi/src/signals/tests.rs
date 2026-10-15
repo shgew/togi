@@ -9,7 +9,7 @@ use togi_machine::CancellationToken;
 use super::{LOST, cancel_all, guarded, listen_after, tokens};
 
 #[test]
-fn a_signal_while_the_listener_starts_still_cancels_the_run() {
+fn real_process_a_signal_while_the_listener_starts_still_cancels_the_run() {
     let token = CancellationToken::new();
     let listening = listen_after(&token, || {
         assert_eq!(
@@ -26,7 +26,7 @@ fn a_signal_while_the_listener_starts_still_cancels_the_run() {
 }
 
 #[test]
-fn a_listener_that_cannot_start_leaves_no_token_behind() {
+fn real_process_a_listener_that_cannot_start_leaves_no_token_behind() {
     let token = CancellationToken::new();
     let refused = listen_after(&token, || Err(io::Error::other("no signal handlers")));
     assert!(refused.is_err());
@@ -34,7 +34,7 @@ fn a_listener_that_cannot_start_leaves_no_token_behind() {
 }
 
 #[test]
-fn a_listener_that_dies_by_a_panic_cancels_every_registered_run() {
+fn real_process_a_listener_that_dies_by_a_panic_cancels_every_registered_run() {
     let token = CancellationToken::new();
     tokens().push((u64::MAX, token.clone()));
     let _ = thread::spawn(|| guarded(|| panic!("the listener broke"))).join();
@@ -46,7 +46,7 @@ fn a_listener_that_dies_by_a_panic_cancels_every_registered_run() {
 }
 
 #[test]
-fn a_listener_that_ends_without_a_panic_cancels_nothing() {
+fn real_process_a_listener_that_ends_without_a_panic_cancels_nothing() {
     let token = CancellationToken::new();
     tokens().push((u64::MAX, token.clone()));
     thread::spawn(|| guarded(|| {})).join().unwrap();

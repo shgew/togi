@@ -1,3 +1,4 @@
+use crate::files::{Files, Readers};
 use crate::mailbox::{Command, MailboxError, Status, Transport};
 use crate::pm_table::{PmFile, PmSource};
 #[cfg(target_os = "linux")]
@@ -64,7 +65,9 @@ pub(super) const CCD1_FUSE: u32 = CCD0_FUSE + (1 << 25);
 pub(super) const GENEROUS: Duration = Duration::from_secs(30);
 
 pub(super) struct Tree {
-    dir: TempDir,
+    dir: Option<TempDir>,
+    files: Arc<Mutex<HashMap<PathBuf, Vec<u8>>>>,
+    errors: Arc<Mutex<HashMap<PathBuf, io::ErrorKind>>>,
 }
 
 impl Tree {
@@ -74,7 +77,9 @@ impl Tree {
 
     pub(super) fn with_ccds(ccds: usize, cores_per_ccd: usize, cache: bool) -> Self {
         let tree = Self {
-            dir: TempDir::new().unwrap(),
+            dir: None,
+            files: Arc::default(),
+            errors: Arc::default(),
         };
         tree.put(
             "proc/cpuinfo",
@@ -92,23 +97,129 @@ impl Tree {
         }
         tree
     }
+    #[cfg(target_os = "linux")]
+    pub(super) fn real(cores_per_ccd: usize, cache: bool) -> Self {
+        let memory = Self::new(cores_per_ccd, cache);
+        let tree = Self {
+            dir: Some(TempDir::new().unwrap()),
+            files: Arc::default(),
+            errors: Arc::default(),
+        };
+        for (path, bytes) in lock(&memory.files).iter() {
+            let relative = path.strip_prefix(memory.root()).unwrap().to_str().unwrap();
+            tree.put_bytes(relative, bytes);
+        }
+        tree
+    }
+
+    pub(super) fn source(&self) -> Files {
+        if self.dir.is_some() {
+            return Files::System;
+        }
+        let files = Arc::clone(&self.files);
+        let errors = Arc::clone(&self.errors);
+        let written = Arc::clone(&self.files);
+        let base = self.path("sys/devices/system/cpu");
+        let mut cpu_names: Vec<String> = lock(&files)
+            .keys()
+            .filter_map(|path| path.strip_prefix(&base).ok()?.components().next())
+            .map(|name| name.as_os_str().to_str().unwrap().to_owned())
+            .collect();
+        cpu_names.sort();
+        cpu_names.dedup();
+        Files::Readers(Arc::new(Readers {
+            cpu_names,
+            read: Arc::new(move |path| {
+                if let Some(kind) = lock(&errors).get(path) {
+                    return Err((*kind).into());
+                }
+                lock(&files)
+                    .get(path)
+                    .cloned()
+                    .ok_or_else(|| io::ErrorKind::NotFound.into())
+            }),
+            write: Arc::new(move |path, bytes| {
+                let mut files = lock(&written);
+                let existing = files
+                    .get_mut(path)
+                    .ok_or_else(|| io::Error::from(io::ErrorKind::NotFound))?;
+                if existing.len() < bytes.len() {
+                    existing.resize(bytes.len(), 0);
+                }
+                existing[..bytes.len()].copy_from_slice(bytes);
+                Ok(bytes.len())
+            }),
+        }))
+    }
+
+    pub(super) fn open(&self) -> Result<Driver, Error> {
+        let Files::Readers(readers) = self.source() else {
+            return Driver::open(self.root());
+        };
+        let read = Arc::clone(&readers.read);
+        let write = Arc::clone(&readers.write);
+        let loaded = lock(&self.files)
+            .keys()
+            .any(|path| path.starts_with(self.path("sys/kernel/ryzen_smu_drv")));
+        Driver::from_readers(
+            self.root(),
+            readers.cpu_names.clone(),
+            loaded,
+            move |path| read(path),
+            move |path, bytes| write(path, bytes),
+        )
+    }
+
+    pub(super) fn identity_only(&self) -> Driver {
+        let Files::Readers(readers) = self.source() else {
+            return Driver::identity_only(self.root()).unwrap();
+        };
+        let read = Arc::clone(&readers.read);
+        Driver::identity_only_from_readers(
+            self.root(),
+            readers.cpu_names.clone(),
+            true,
+            move |path| read(path),
+        )
+        .unwrap()
+    }
+
+    pub(super) fn fail_read(&self, relative: &str, kind: io::ErrorKind) {
+        lock(&self.errors).insert(self.path(relative), kind);
+    }
+
+    pub(super) fn remove_dir(&self, relative: &str) {
+        let path = self.path(relative);
+        lock(&self.files).retain(|file, _| !file.starts_with(&path));
+    }
+
+    pub(super) fn bytes(&self, relative: &str) -> Vec<u8> {
+        match self.source() {
+            Files::System => fs::read(self.path(relative)).unwrap(),
+            Files::Readers(readers) => (readers.read)(&self.path(relative)).unwrap(),
+        }
+    }
 
     pub(super) fn root(&self) -> &Path {
-        self.dir.path()
+        self.dir
+            .as_ref()
+            .map_or(Path::new("/fixture"), TempDir::path)
     }
 
     pub(super) fn path(&self, relative: &str) -> PathBuf {
-        self.dir.path().join(relative)
+        self.root().join(relative)
     }
 
     pub(super) fn put(&self, relative: &str, text: &str) {
-        let path = self.path(relative);
-        fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(path, text).unwrap();
+        self.put_bytes(relative, text.as_bytes());
     }
 
     pub(super) fn remove(&self, relative: &str) {
-        fs::remove_file(self.path(relative)).unwrap();
+        if self.dir.is_some() {
+            fs::remove_file(self.path(relative)).unwrap();
+        } else {
+            assert!(lock(&self.files).remove(&self.path(relative)).is_some());
+        }
     }
 
     pub(super) fn cpu(&self, cpu: usize, core: usize, ccd: usize, cache: bool) {
@@ -127,11 +238,14 @@ impl Tree {
         self.put("sys/class/dmi/id/board_name", "X870E Taichi\n");
     }
 
-    #[cfg(target_os = "linux")]
     pub(super) fn put_bytes(&self, relative: &str, bytes: &[u8]) {
         let path = self.path(relative);
-        fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(path, bytes).unwrap();
+        if self.dir.is_some() {
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, bytes).unwrap();
+        } else {
+            lock(&self.files).insert(path, bytes.to_vec());
+        }
     }
 
     /// The mailbox and PM table files, answering as a healthy `ryzen_smu` driver would.
@@ -358,6 +472,7 @@ pub(super) fn open(tree: &Tree, fake: &Fake) -> Driver {
 pub(super) fn open_within(tree: &Tree, fake: &Fake, deadline: Duration) -> Driver {
     Driver::with_transport(
         tree.root(),
+        tree.source(),
         Box::new(fake.clone()),
         Arc::new(fake.clone()),
         deadline,
@@ -368,6 +483,7 @@ pub(super) fn open_within(tree: &Tree, fake: &Fake, deadline: Duration) -> Drive
 pub(super) fn open_error(tree: &Tree, fake: &Fake) -> Error {
     Driver::with_transport(
         tree.root(),
+        tree.source(),
         Box::new(fake.clone()),
         Arc::new(fake.clone()),
         GENEROUS,

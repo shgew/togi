@@ -5,8 +5,16 @@
     reason = "the tests run the built command and panic on a broken fixture"
 )]
 
+#[expect(
+    dead_code,
+    reason = "CLI tests construct commands directly rather than using fixture Options"
+)]
 mod fake;
 mod git;
+#[expect(
+    dead_code,
+    reason = "process fixture setup uses session events, not simulator outcomes"
+)]
 mod session;
 
 use std::fs;
@@ -14,7 +22,7 @@ use std::path::Path;
 use std::process::{Child, Command, Output, Stdio};
 use std::time::{Duration, Instant};
 
-use fake::Bench;
+use fake::ProcessBench as Bench;
 use git::{isolate_git, repo};
 use rustix::process::{Pid, Signal, kill_process, test_kill_process};
 
@@ -53,7 +61,7 @@ fn run(command: &mut Command) -> Output {
 }
 
 #[test]
-fn a_run_prints_the_summary_and_writes_the_records() {
+fn real_process_a_run_prints_the_summary_and_writes_the_records() {
     let bench = Bench::new();
     let mut command = bench_command(&bench);
     with_sim(&mut command, &bench, 0);
@@ -73,7 +81,7 @@ fn a_run_prints_the_summary_and_writes_the_records() {
 }
 
 #[test]
-fn a_baseline_of_the_same_runs_is_neutral() {
+fn real_process_a_baseline_of_the_same_runs_is_neutral() {
     let bench = Bench::new();
     let mut first = bench_command(&bench);
     with_sim(&mut first, &bench, 0);
@@ -92,7 +100,8 @@ fn a_baseline_of_the_same_runs_is_neutral() {
 }
 
 #[test]
-fn the_baseline_out_file_is_a_baseline_the_command_accepts_and_prints_the_same_against() {
+fn real_process_the_baseline_out_file_is_a_baseline_the_command_accepts_and_prints_the_same_against()
+ {
     let bench = Bench::new();
     let mut first = bench_command(&bench);
     with_sim(&mut first, &bench, 0);
@@ -128,7 +137,7 @@ fn the_baseline_out_file_is_a_baseline_the_command_accepts_and_prints_the_same_a
 }
 
 #[test]
-fn kept_runs_are_named_on_stderr() {
+fn real_process_kept_runs_are_named_on_stderr() {
     let bench = Bench::new();
     let mut command = bench_command(&bench);
     with_sim(&mut command, &bench, 0);
@@ -140,7 +149,7 @@ fn kept_runs_are_named_on_stderr() {
 }
 
 #[test]
-fn a_baseline_missing_runs_of_the_split_is_warned_about_in_the_report() {
+fn real_process_a_baseline_missing_runs_of_the_split_is_warned_about_in_the_report() {
     let bench = Bench::new();
     let mut first = bench_command(&bench);
     with_sim(&mut first, &bench, 0);
@@ -164,7 +173,7 @@ fn a_baseline_missing_runs_of_the_split_is_warned_about_in_the_report() {
 }
 
 #[test]
-fn a_missing_simulator_fails_with_the_reason() {
+fn real_process_a_missing_simulator_fails_with_the_reason() {
     let bench = Bench::new();
     let mut command = bench_command(&bench);
     let output = run(command
@@ -177,7 +186,7 @@ fn a_missing_simulator_fails_with_the_reason() {
 }
 
 #[test]
-fn a_usage_error_exits_2_and_help_exits_0() {
+fn real_process_a_usage_error_exits_2_and_help_exits_0() {
     let bench = Bench::new();
     let bad = run(bench_command(&bench).arg("--unknown"));
     assert_eq!(bad.status.code(), Some(2));
@@ -192,7 +201,7 @@ fn a_usage_error_exits_2_and_help_exits_0() {
 }
 
 #[test]
-fn the_cache_defaults_to_the_user_cache_directory() {
+fn real_process_the_cache_defaults_to_the_user_cache_directory() {
     let bench = Bench::new();
     let mut command = bench_command(&bench);
     command
@@ -205,7 +214,7 @@ fn the_cache_defaults_to_the_user_cache_directory() {
 }
 
 #[test]
-fn the_cache_defaults_under_home_and_without_either_is_an_error() {
+fn real_process_the_cache_defaults_under_home_and_without_either_is_an_error() {
     let bench = Bench::new();
     let sim = bench.simulator("sim", 0, "", "");
     let mut home = bench_command(&bench);
@@ -232,7 +241,7 @@ fn the_cache_defaults_under_home_and_without_either_is_an_error() {
 }
 
 #[test]
-fn no_cache_runs_every_session() {
+fn real_process_no_cache_runs_every_session() {
     let bench = Bench::new();
     let mut command = bench_command(&bench);
     command
@@ -253,7 +262,7 @@ fn sanity(records: &Path, baseline: &Path) -> Output {
 }
 
 #[test]
-fn sanity_of_records_against_themselves_flags_nothing() {
+fn real_process_sanity_of_records_against_themselves_flags_nothing() {
     let bench = Bench::new();
     let mut command = bench_command(&bench);
     with_sim(&mut command, &bench, 0);
@@ -268,7 +277,7 @@ fn sanity_of_records_against_themselves_flags_nothing() {
 }
 
 #[test]
-fn sanity_exits_1_when_a_metric_is_flagged() {
+fn real_process_sanity_exits_1_when_a_metric_is_flagged() {
     let bench = Bench::new();
     let mut command = bench_command(&bench);
     with_sim(&mut command, &bench, 0);
@@ -296,7 +305,7 @@ fn sanity_exits_1_when_a_metric_is_flagged() {
 }
 
 #[test]
-fn sanity_with_nothing_in_common_or_a_missing_file_fails() {
+fn real_process_sanity_with_nothing_in_common_or_a_missing_file_fails() {
     let bench = Bench::new();
     let mut command = bench_command(&bench);
     with_sim(&mut command, &bench, 0);
@@ -331,7 +340,7 @@ fn splits_of(records: &[serde_json::Value]) -> Vec<&str> {
 }
 
 #[test]
-fn the_default_split_is_dev_and_holdout_runs_only_the_holdout_seeds() {
+fn real_process_the_default_split_is_dev_and_holdout_runs_only_the_holdout_seeds() {
     let bench = Bench::new();
     let mut dev = plain_command(&bench);
     with_sim(&mut dev, &bench, 0);
@@ -354,7 +363,7 @@ fn the_default_split_is_dev_and_holdout_runs_only_the_holdout_seeds() {
 }
 
 #[test]
-fn the_tree_stamp_is_the_repository_the_bench_runs_in() {
+fn real_process_the_tree_stamp_is_the_repository_the_bench_runs_in() {
     let bench = Bench::new();
     let mut command = bench_command(&bench);
     with_sim(&mut command, &bench, 0);
@@ -372,7 +381,7 @@ fn the_tree_stamp_is_the_repository_the_bench_runs_in() {
 }
 
 #[test]
-fn a_records_file_in_the_tree_named_through_dots_does_not_make_it_dirty() {
+fn real_process_a_records_file_in_the_tree_named_through_dots_does_not_make_it_dirty() {
     let bench = Bench::new();
     fs::create_dir(repo(bench.dir.path()).join("sub")).unwrap();
     fs::write(repo(bench.dir.path()).join("out.jsonl"), "").unwrap();
@@ -385,7 +394,7 @@ fn a_records_file_in_the_tree_named_through_dots_does_not_make_it_dirty() {
 }
 
 #[test]
-fn outside_a_git_repository_the_bench_fails_naming_it() {
+fn real_process_outside_a_git_repository_the_bench_fails_naming_it() {
     let bench = Bench::new();
     let outside = bench.path("outside");
     fs::create_dir(&outside).unwrap();
@@ -420,7 +429,7 @@ fn exit_of(child: &mut Child) -> Output {
 }
 
 #[test]
-fn a_termination_stops_the_bench_and_its_simulators_without_blocking_their_signals() {
+fn real_process_a_termination_stops_the_bench_and_its_simulators_without_blocking_their_signals() {
     let bench = Bench::new();
     let pids = bench.path("pids.txt");
     let before = format!(

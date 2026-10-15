@@ -1,7 +1,6 @@
 //! Shared fixtures of the unit tests: facts, machines and synthetic evidence.
 
 use std::collections::BTreeMap;
-use std::path::Path;
 
 use togi_facts::{Decisive, TrialClass};
 use togi_journal::{SCHEMA, Seq};
@@ -9,12 +8,14 @@ use togi_machine::{
     BiosContext, Condition, CoreId, CoreSet, PerCore, Regime, Signal, TargetOffset, WorkloadId,
 };
 use togi_sim::MachineDefinition;
-use togi_tool_trialfacts::{BuildStamp, Class, Phase, Profile, TrialFact, write};
+use togi_tool_trialfacts::{BuildStamp, Class, Phase, Profile, TrialFact};
 
 mod anchor;
 mod evidence;
 mod forward;
 mod generate;
+#[path = "../../tests/fit/output.rs"]
+mod output;
 mod search;
 mod signals;
 mod voltage;
@@ -123,12 +124,6 @@ pub(crate) fn repeated(template: &TrialFact, n: usize, failures: usize) -> Vec<T
             fact
         })
         .collect()
-}
-
-pub(crate) fn extract(dir: &Path, name: &str, facts: &[TrialFact]) -> std::path::PathBuf {
-    let path = dir.join(name);
-    write(&path, facts).unwrap();
-    path
 }
 
 /// A machine of `n` cores with every limit at the deepest offset and the model's defaults.

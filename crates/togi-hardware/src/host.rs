@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use rustix::process::geteuid;
@@ -54,7 +54,32 @@ impl ScopeProbe for Runner {
     }
 }
 
-pub(crate) struct SystemHost {
+pub(crate) trait HostReadings {
+    fn watchdog(&self, root: &Path) -> Check;
+    fn ranking(
+        &self,
+        root: &Path,
+        cores: &[CoreInfo],
+    ) -> Result<Vec<CoreRank>, Partial<Vec<CoreRank>>>;
+}
+
+pub(crate) struct SystemReadings;
+
+impl HostReadings for SystemReadings {
+    fn watchdog(&self, root: &Path) -> Check {
+        watchdog::probe(root)
+    }
+
+    fn ranking(
+        &self,
+        root: &Path,
+        cores: &[CoreInfo],
+    ) -> Result<Vec<CoreRank>, Partial<Vec<CoreRank>>> {
+        ranking::read(root, cores)
+    }
+}
+
+pub(crate) struct SystemHost<R = SystemReadings> {
     pub(crate) root: PathBuf,
     pub(crate) privilege: Privilege,
     pub(crate) driver: SharedDriver,
@@ -62,9 +87,10 @@ pub(crate) struct SystemHost {
     pub(crate) backends: Backends,
     pub(crate) account: Account,
     pub(crate) scope: Box<dyn ScopeProbe>,
+    pub(crate) readings: R,
 }
 
-impl SystemHost {
+impl<R: HostReadings> SystemHost<R> {
     fn driver_check(&self, name: CheckName, check: impl FnOnce(&mut Driver) -> Check) -> Check {
         let mut driver = lock(&self.driver);
         match driver.validate() {
@@ -120,7 +146,7 @@ impl SystemHost {
     }
 
     pub(crate) fn watchdog_check(&self) -> Check {
-        watchdog::probe(&self.root)
+        self.readings.watchdog(&self.root)
     }
 
     pub(crate) fn current_bios_context(&self) -> Result<BiosContext, togi_smu::Error> {
@@ -138,7 +164,7 @@ impl SystemHost {
     }
 }
 
-impl Host for SystemHost {
+impl<R: HostReadings> Host for SystemHost<R> {
     fn boot_id(&mut self) -> Result<BootId, MachineError> {
         Ok(togi_detect::boot_id()?)
     }
@@ -166,7 +192,7 @@ impl Host for SystemHost {
             value: Vec::new(),
             error: error.into(),
         })?;
-        ranking::read(&self.root, &cores)
+        self.readings.ranking(&self.root, &cores)
     }
 
     fn preflight(&mut self) -> Vec<Check> {

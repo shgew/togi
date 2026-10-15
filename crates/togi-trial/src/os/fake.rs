@@ -13,6 +13,7 @@ use std::path::Path;
 use std::pin::Pin;
 use std::process::ExitStatus;
 use std::rc::Rc;
+use std::sync::Arc;
 use std::task::{Context, Poll, Waker};
 use std::time::Duration;
 
@@ -151,6 +152,8 @@ pub(crate) struct ProcCtx {
     pub(crate) stderr: DuplexStream,
     pub(crate) signals: UnboundedReceiver<Delivery>,
     pub(crate) account: Option<(u32, u32)>,
+    pub(crate) memory: crate::watch::Memory,
+    disk_writes: bool,
 }
 
 impl ProcCtx {
@@ -162,14 +165,19 @@ impl ProcCtx {
         let _ = self.stderr.write_all(text.as_bytes()).await;
     }
 
-    /// Creates or truncates `path` and writes `contents` as the process's account, as a backend
-    /// under `systemd-run --uid --gid` would: a privileged suite would otherwise leave root's
-    /// files that the trial rightly refuses to read.
+    /// Writes through the shared memory adapter, or the explicitly selected kernel-test adapter.
     pub(crate) fn write_file(
         &self,
         path: impl AsRef<Path>,
         contents: impl AsRef<[u8]>,
     ) -> io::Result<()> {
+        if !self.disk_writes {
+            return self.memory.write_file(
+                path,
+                contents,
+                Some(self.account.map_or(65534, |(uid, _)| uid)),
+            );
+        }
         let mut file = std::fs::File::create(path)?;
         if let Some((uid, gid)) = self.account {
             std::os::unix::fs::fchown(&file, Some(uid), Some(gid))?;
@@ -264,33 +272,15 @@ struct Shared {
 #[derive(Clone)]
 pub(crate) struct Fake {
     shared: Rc<Shared>,
+    memory: crate::watch::Memory,
+    disk_writes: bool,
 }
 
 impl Default for Fake {
     fn default() -> Self {
-        Self {
-            shared: Rc::new(Shared {
-                launches: RefCell::default(),
-                processes: RefCell::default(),
-                systemd_calls: RefCell::default(),
-                launch_script: RefCell::new(Box::new(|_, _| {
-                    Launch::Run(script(|mut ctx| async move { ctx.until_killed().await }))
-                })),
-                systemd_script: RefCell::new(Box::new(|_| None)),
-                threads_hook: RefCell::new(None),
-                scan_hook: RefCell::new(None),
-                units: RefCell::default(),
-                ready_default: Cell::new(true),
-                fail_pipes: Cell::new(false),
-                fail_alive: Cell::new(false),
-                hang_scans: Cell::new(false),
-                scan_fault: Cell::new(None),
-                signal_error_default: Cell::new(None),
-                fail_once: Rc::default(),
-                recovered: RefCell::default(),
-                next_pid: Cell::new(1000),
-            }),
-        }
+        Self::with_memory(crate::watch::Memory::new(Arc::new(
+            togi_journal::fs::MemFs::new(),
+        )))
     }
 }
 
@@ -326,6 +316,50 @@ fn account_in(command: &LaunchCommand) -> Option<(u32, u32)> {
 }
 
 impl Fake {
+    pub(crate) fn with_memory(memory: crate::watch::Memory) -> Self {
+        Self {
+            memory,
+            disk_writes: false,
+            shared: Rc::new(Shared {
+                launches: RefCell::default(),
+                processes: RefCell::default(),
+                systemd_calls: RefCell::default(),
+                launch_script: RefCell::new(Box::new(|_, _| {
+                    Launch::Run(script(|mut ctx| async move { ctx.until_killed().await }))
+                })),
+                systemd_script: RefCell::new(Box::new(|_| None)),
+                threads_hook: RefCell::new(None),
+                scan_hook: RefCell::new(None),
+                units: RefCell::default(),
+                ready_default: Cell::new(true),
+                fail_pipes: Cell::new(false),
+                fail_alive: Cell::new(false),
+                hang_scans: Cell::new(false),
+                scan_fault: Cell::new(None),
+                signal_error_default: Cell::new(None),
+                fail_once: Rc::default(),
+                recovered: RefCell::default(),
+                next_pid: Cell::new(1000),
+            }),
+        }
+    }
+
+    /// Only kernel ownership tests select real backend file writes.
+    pub(crate) fn disk() -> Self {
+        Self {
+            disk_writes: true,
+            ..Self::default()
+        }
+    }
+
+    pub(crate) fn append_file(
+        &self,
+        path: impl AsRef<Path>,
+        contents: impl AsRef<[u8]>,
+    ) -> io::Result<()> {
+        self.memory.append_file(path, contents, Some(65534))
+    }
+
     pub(crate) fn on_launch(&self, script: impl FnMut(usize, &LaunchCommand) -> Launch + 'static) {
         *self.shared.launch_script.borrow_mut() = Box::new(script);
     }
@@ -544,6 +578,8 @@ impl Os for Fake {
             stderr: stderr_writer,
             signals,
             account: account_in(command),
+            memory: self.memory.clone(),
+            disk_writes: self.disk_writes,
         };
         tokio::task::spawn_local(script(ctx));
         let flaky = Rc::clone(&shared.stdout_failure);

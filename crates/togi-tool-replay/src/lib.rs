@@ -102,7 +102,24 @@ pub struct Cli {
 /// lenient read of the recording skipped is said once: on stderr after a frame, in the dashboard's footer when
 /// playing, where stderr would only garble the screen.
 pub fn run(cli: &Cli, out: &mut impl Write) -> Result<(), Error> {
-    let load::Loaded { events, skipped } = load::events(&cli.state_dir)?;
+    run_with(
+        cli,
+        out,
+        &mut std::io::stderr(),
+        load::events,
+        TimeZone::system,
+    )
+}
+
+/// Keeps recording access, diagnostics and local-time lookup injectable without changing playback.
+fn run_with(
+    cli: &Cli,
+    out: &mut impl Write,
+    err: &mut impl Write,
+    load: impl FnOnce(&std::path::Path) -> Result<load::Loaded, Error>,
+    timezone: impl FnOnce() -> TimeZone,
+) -> Result<(), Error> {
+    let load::Loaded { events, skipped } = load(&cli.state_dir)?;
     match cli.at {
         Some(at) => {
             let frame = Frame {
@@ -112,12 +129,12 @@ pub fn run(cli: &Cli, out: &mut impl Write) -> Result<(), Error> {
                 colour: cli.color,
                 after: cli.after.unwrap_or_default(),
             };
-            let text = draw(&events, prefix(&events, at), &frame, &TimeZone::system())?;
+            let text = draw(&events, prefix(&events, at), &frame, &timezone())?;
             out.write_all(text.as_bytes())
                 .and_then(|()| out.flush())
                 .map_err(Error::Output)?;
             if let Some(skipped) = skipped {
-                let _ = writeln!(std::io::stderr(), "togi-tool-replay: {skipped}");
+                let _ = writeln!(err, "togi-tool-replay: {skipped}");
             }
             Ok(())
         }

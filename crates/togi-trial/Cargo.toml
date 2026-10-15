@@ -18,6 +18,7 @@ serde_json.workspace = true
 thiserror.workspace = true
 togi-backend.workspace = true
 togi-command.workspace = true
+togi-journal.workspace = true
 togi-machine.workspace = true
 togi-trialfiles.workspace = true
 tokio = { workspace = true, features = ["io-util", "macros", "net", "rt", "sync", "time"] }

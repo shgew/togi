@@ -15,7 +15,6 @@ togi-journal.workspace = true
 togi-machine.workspace = true
 
 [dev-dependencies]
-tempfile.workspace = true
 test-case.workspace = true
 
 [lints]

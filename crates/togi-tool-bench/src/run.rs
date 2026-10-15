@@ -19,11 +19,14 @@ use crate::git::Tree;
 use crate::metrics::{self, Measured};
 use crate::pool;
 use crate::process::Fleet;
-use crate::record::{self, ModelCheck, Record, Status};
+use crate::record::{ModelCheck, Record, Status};
 use crate::simulator::{Session, Simulator};
 use crate::stats::share;
-use crate::suite::{Machine, Plan, RunSpec, Selection, Suite};
+use crate::suite::{DiskSource, Machine, Plan, RunSpec, Selection, Suite};
 use crate::summary;
+
+mod adapters;
+use self::adapters::{ExecutionIo, RunRoot, SessionRunner};
 
 /// What a bench run is asked for.
 #[derive(Clone, Debug)]
@@ -99,19 +102,23 @@ impl Report {
 /// The records are in suite order whatever order the sessions finish in, so the report does not depend on
 /// `jobs`. A run whose cache entry was made from the same simulator, bench, flags and inputs is not run again.
 pub fn execute(options: &Options, fleet: &Fleet) -> Result<Report, Error> {
+    execute_with(options, fleet, &DiskSource)
+}
+
+fn execute_with(options: &Options, fleet: &Fleet, io: &impl ExecutionIo) -> Result<Report, Error> {
     let started = Instant::now();
-    let suite = Suite::load(&options.suite)?;
+    let suite = Suite::load_from(&options.suite, io)?;
     let gate = gate::load(&suite)?;
-    let plan = suite.plan(options.selection)?;
-    let (verdicts, checks) = model_checks(&plan)?;
+    let plan = suite.plan_from(options.selection, io)?;
+    let (verdicts, checks) = model_checks_with(&plan, |path| io.read_facts(path))?;
     let baseline = options
         .baseline
         .as_deref()
-        .map(|path| record::read(path, "baseline"))
+        .map(|path| io.read_records(path, "baseline"))
         .transpose()?;
-    let simulator = Simulator::locate(options.simulator.as_deref())?;
-    let (cache, costs) = open_cache(options, &simulator)?;
-    let root = run_root(options.keep.as_deref())?;
+    let simulator = io.simulator(options)?;
+    let (cache, costs) = io.cache(options, &simulator)?;
+    let root = io.root(options.keep.as_deref())?;
     let order = cache::longest_first(plan.runs.len(), |i| {
         costs
             .as_ref()
@@ -172,10 +179,10 @@ pub fn execute(options: &Options, fleet: &Fleet) -> Result<Report, Error> {
         Judgment { resolved, verdict }
     });
     if let Some(out) = &options.out {
-        record::write(out, &records)?;
+        io.write_records(out, &records, false)?;
     }
     if let Some(path) = &options.baseline_out {
-        record::write_baseline(path, &records)?;
+        io.write_records(path, &records, true)?;
     }
     Ok(Report {
         notes: suite.notes(),
@@ -190,12 +197,12 @@ pub fn execute(options: &Options, fleet: &Fleet) -> Result<Report, Error> {
     })
 }
 
-struct Job<'a> {
+struct Job<'a, R> {
     options: &'a Options,
     suite: &'a Suite,
     plan: &'a Plan,
     warnings: &'a Mutex<Vec<String>>,
-    simulator: &'a Simulator,
+    simulator: &'a R,
     fleet: &'a Fleet,
     cache: Option<&'a RunCache>,
     costs: Option<&'a Costs>,
@@ -204,7 +211,7 @@ struct Job<'a> {
     cached: &'a AtomicUsize,
 }
 
-impl Job<'_> {
+impl<R: SessionRunner> Job<'_, R> {
     fn run(&self, index: usize) -> Result<Record, Error> {
         let spec = &self.plan.runs[index];
         self.measure(spec).map_err(|source| match source {
@@ -236,7 +243,7 @@ impl Job<'_> {
             )?;
             let record = record_of(spec, &session, self.verdicts)?;
             if !keeping {
-                let _ = fs::remove_dir_all(&session.dir);
+                self.simulator.remove(&session.dir);
             }
             if !session.ended_by_signal() {
                 if let Some(cache) = self.cache
@@ -331,13 +338,20 @@ fn record_of(
     })
 }
 
-/// Checks each distinct machine that declares a facts extract against it, once.
-fn model_checks(plan: &Plan) -> Result<(BTreeMap<PathBuf, ModelCheck>, Vec<Check>), Error> {
+fn model_checks_with(
+    plan: &Plan,
+    mut reader: impl FnMut(
+        &Path,
+    ) -> Result<
+        Vec<togi_tool_trialfacts::TrialFact>,
+        togi_tool_trialfacts::ReadError,
+    >,
+) -> Result<(BTreeMap<PathBuf, ModelCheck>, Vec<Check>), Error> {
     let mut extracts = Extracts::new();
     let mut verdicts = BTreeMap::new();
     let mut checks = Vec::new();
     for machine in &plan.machines {
-        if let Some(check) = check_machine(machine, &mut extracts)? {
+        if let Some(check) = check_machine_with(machine, &mut extracts, &mut reader)? {
             verdicts.insert(
                 machine.path.clone(),
                 ModelCheck {
@@ -356,6 +370,17 @@ pub(crate) fn check_machine(
     machine: &Machine,
     extracts: &mut Extracts,
 ) -> Result<Option<Check>, Error> {
+    check_machine_with(machine, extracts, |path| togi_tool_trialfacts::read(path))
+}
+
+pub(crate) fn check_machine_with(
+    machine: &Machine,
+    extracts: &mut Extracts,
+    reader: impl FnOnce(
+        &Path,
+    )
+        -> Result<Vec<togi_tool_trialfacts::TrialFact>, togi_tool_trialfacts::ReadError>,
+) -> Result<Option<Check>, Error> {
     let Some(facts) = machine
         .definition
         .facts
@@ -372,7 +397,7 @@ pub(crate) fn check_machine(
         .model(0)
         .map_err(|error| failed(error.to_string()))?;
     let (_, records) = extracts
-        .load(&machine.path, &machine.definition)
+        .load_with(&machine.path, &machine.definition, reader)
         .map_err(|error| failed(error.to_string()))?;
     let label = Path::new(&machine.name);
     let extract = label.parent().unwrap_or_else(|| Path::new("")).join(facts);
@@ -466,3 +491,6 @@ pub fn set_scenario_shares(records: &mut [Record]) {
         record.scenario_real_answer_share = share(real, trials);
     }
 }
+
+#[cfg(test)]
+mod tests;

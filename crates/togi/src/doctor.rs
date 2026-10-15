@@ -5,8 +5,8 @@ use std::sync::LazyLock;
 
 use clap::Args as ClapArgs;
 use togi_hardware::Diagnosis;
-use togi_hostlock::{Error as LockError, HostLock};
-use togi_journal::{Operation, Recording, Verdict, recorded_build};
+use togi_hostlock::Error as LockError;
+use togi_journal::{Operation, Verdict};
 use togi_machine::BiosContext;
 use togi_render::{Renderer, Style, escape_text};
 
@@ -61,14 +61,18 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
         Ok(recorded) => recorded,
         Err(exit) => return exit,
     };
-    let config = match args.config.load(system.config_path()) {
+    let config = match args
+        .config
+        .load_with_source_read(system.config_path(), |path| system.read_config(path))
+        .map(|(config, _)| config)
+    {
         Ok(config) => config,
         Err(error) => return exit_with(ctx, COMMAND, error, Exit::Usage),
     };
     let privileged = system.privileged();
     let _lock = if privileged {
-        let (path, policy) = system.host_lock();
-        match HostLock::acquire(path, policy) {
+        let (path, _) = system.host_lock();
+        match system.acquire_host_lock() {
             Ok(lock) => Some(lock),
             Err(LockError::Busy { .. }) => {
                 let message = format!(
@@ -127,7 +131,7 @@ fn recorded_context(
     renderer: Renderer,
 ) -> Result<Option<BiosContext>, Exit> {
     let current = current_build();
-    let recorded = match recorded_build(ctx.state_dir) {
+    let recorded = match ctx.system.recorded_build(ctx.state_dir) {
         Ok(Some(recorded)) => recorded,
         Ok(None) => return Ok(None),
         Err(error) => return Err(fail(ctx, COMMAND, chain(&error))),
@@ -141,7 +145,7 @@ fn recorded_context(
         Verdict::Use => {}
     }
     let path = ctx.state_dir.join("events.jsonl");
-    let recording = Recording::read(&path).map_err(|error| {
+    let recording = ctx.system.recording(&path).map_err(|error| {
         match unknown_event_message(&error, &recorded, &current) {
             Some(message) => refuse(ctx, renderer, &message),
             None => fail(ctx, COMMAND, chain(&error)),

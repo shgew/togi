@@ -250,10 +250,10 @@ fn the_same_seed_draws_the_same_failures_and_telemetry_changes_none() {
     let p = expected(&model, &[0; 16], &voltage_trial());
     assert!((0.3..=0.9).contains(&p), "{p}");
     let run = |seed: u64, with_samples: bool| {
-        let dir = tempfile::tempdir().expect("a directory");
+        let dir = std::rc::Rc::new(crate::common::MemorySamples::default());
         let mut rig = rig_with_seed(&model, seed);
         if with_samples {
-            rig.sim.set_samples_dir(Some(dir.path().to_owned()));
+            rig.sim.set_sample_storage(dir.clone());
         }
         let mut out = Vec::new();
         let mut failures = 0usize;

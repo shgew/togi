@@ -353,18 +353,46 @@ fn drive<B: console::Console>(
     keys: Option<BorrowedFd<'_>>,
     colours: Colours,
     now: impl Fn() -> Timestamp,
-    mut render: impl FnMut(&Journal<'_>, &Screen, Timestamp, &mut Buffer) -> Drawn,
+    render: impl FnMut(&Journal<'_>, &Screen, Timestamp, &mut Buffer) -> Drawn,
 ) -> Result<(), Error> {
-    let now = &now;
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(Error::Runtime)?;
+    drive_with(
+        &runtime,
+        backend,
+        feed,
+        live,
+        keys,
+        colours,
+        now,
+        render,
+        signals::listen,
+    )
+}
+
+/// The driver with its runtime and event listener supplied; the production adapter owns both.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The driver preserves its inputs while injecting runtime and signal setup."
+)]
+fn drive_with<B: console::Console>(
+    runtime: &tokio::runtime::Runtime,
+    backend: B,
+    feed: impl Feed,
+    live: &Config<'_>,
+    keys: Option<BorrowedFd<'_>>,
+    colours: Colours,
+    now: impl Fn() -> Timestamp,
+    mut render: impl FnMut(&Journal<'_>, &Screen, Timestamp, &mut Buffer) -> Drawn,
+    listen: impl FnOnce(bool, mpsc::UnboundedSender<Event>) -> io::Result<JoinHandle<()>>,
+) -> Result<(), Error> {
+    let now = &now;
     std::thread::scope(|scope| {
         runtime.block_on(async {
             let (events, mut queue) = mpsc::unbounded_channel();
-            let _signals =
-                Abort(signals::listen(live.terminating, events.clone()).map_err(Error::Signals)?);
+            let _signals = Abort(listen(live.terminating, events.clone()).map_err(Error::Signals)?);
             let _stop = live.stop.map(|stop| {
                 let stop = stop.clone();
                 let events = events.clone();
@@ -456,16 +484,68 @@ pub fn one_frame(
     one_frame_with(state_dir, width, height, out, dashboard())
 }
 
+/// [`one_frame`] using the caller's filesystem, instant and time zone instead of the host's.
+///
+/// The journal is read through `fs` once; the same refusal and problem-frame rules apply.
+pub fn one_frame_in(
+    fs: &dyn togi_journal::fs::Fs,
+    state_dir: &Path,
+    width: u16,
+    height: u16,
+    out: &mut impl Write,
+    now: Timestamp,
+    zone: &TimeZone,
+) -> Result<(), Error> {
+    one_frame_loaded(
+        Source::read_in(fs, state_dir, None),
+        width,
+        height,
+        out,
+        now,
+        |journal, screen, now, buffer| frames::render(journal, screen, now, zone, buffer),
+    )
+}
+
 /// [`one_frame`] with `render` drawing the frame, as for [`run_rendered`].
 fn one_frame_with(
     state_dir: &Path,
     width: u16,
     height: u16,
     out: &mut impl Write,
+    render: impl FnMut(&Journal<'_>, &Screen, Timestamp, &mut Buffer) -> Drawn,
+) -> Result<(), Error> {
+    one_frame_source(
+        Source::new(state_dir, None),
+        width,
+        height,
+        out,
+        Timestamp::now(),
+        render,
+    )
+}
+
+/// Reloads a supplied journal and draws it at a supplied instant.
+fn one_frame_source(
+    mut source: Source,
+    width: u16,
+    height: u16,
+    out: &mut impl Write,
+    now: Timestamp,
+    render: impl FnMut(&Journal<'_>, &Screen, Timestamp, &mut Buffer) -> Drawn,
+) -> Result<(), Error> {
+    source.reload();
+    one_frame_loaded(source, width, height, out, now, render)
+}
+
+/// Draws an already-loaded journal without consulting the host.
+fn one_frame_loaded(
+    mut source: Source,
+    width: u16,
+    height: u16,
+    out: &mut impl Write,
+    now: Timestamp,
     mut render: impl FnMut(&Journal<'_>, &Screen, Timestamp, &mut Buffer) -> Drawn,
 ) -> Result<(), Error> {
-    let mut source = Source::new(state_dir, None);
-    source.reload();
     if let Some(refusal) = source.refusal() {
         return Err(refusal.into());
     }
@@ -484,12 +564,7 @@ fn one_frame_with(
         width.saturating_sub(1),
         height.saturating_sub(1),
     ));
-    render(
-        &source.journal(&screen),
-        &screen,
-        Timestamp::now(),
-        &mut buffer,
-    );
+    render(&source.journal(&screen), &screen, now, &mut buffer);
     write_plain(&buffer, out).map_err(Error::Output)?;
     source
         .into_problem()
@@ -526,14 +601,13 @@ mod tests {
 
     use jiff::Timestamp;
     use ratatui::buffer::Buffer;
-    use rustix::process::{Signal, getpid, kill_process};
-    use tempfile::TempDir;
 
     use super::console::RESET_PALETTE;
-    use super::testing::{Faults, Recorder, session_with_warnings, write_journal};
+    use super::source::MemoryJournal;
+    use super::testing::{Faults, Recorder, lines, session_with_warnings};
     use super::{
-        Colours, Config, Drawn, Error, Feed, ONE_FRAME_SIZE, Source, SourceError, Stop, View,
-        drive, one_frame, one_frame_with, uses_palette,
+        Colours, Config, Drawn, Error, Event, Feed, ONE_FRAME_SIZE, Source, SourceError, Stop,
+        View, drive_with, one_frame_source, uses_palette,
     };
     use crate::screen::{Hold, Journal, Screen};
 
@@ -571,19 +645,105 @@ mod tests {
     fn run_drive(
         recorder: &Recorder,
         live: &Config<'_>,
-        keys: Option<&OwnedFd>,
+        feed: impl Feed,
         colours: Colours,
         render: impl FnMut(&Journal<'_>, &Screen, Timestamp, &mut Buffer) -> Drawn,
     ) -> Result<(), Error> {
-        let feed = Source::new(live.watch.expect("a watched directory"), None);
-        drive(
+        drive_with(
+            &timer_runtime(),
             recorder.backend(),
             feed,
             live,
-            keys.map(AsFd::as_fd),
+            None,
             colours,
-            Timestamp::now,
+            || Timestamp::UNIX_EPOCH,
             render,
+            silent_listener,
+        )
+    }
+
+    fn timer_runtime() -> tokio::runtime::Runtime {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .start_paused(true)
+            .build()
+            .unwrap()
+    }
+
+    #[expect(
+        clippy::unnecessary_wraps,
+        reason = "the injected listener has a fallible start interface"
+    )]
+    fn silent_listener(
+        _: bool,
+        _: tokio::sync::mpsc::UnboundedSender<Event>,
+    ) -> std::io::Result<tokio::task::JoinHandle<()>> {
+        Ok(tokio::spawn(std::future::pending()))
+    }
+
+    fn run_events(
+        recorder: &Recorder,
+        live: &Config<'_>,
+        feed: impl Feed,
+        colours: Colours,
+        mut render: impl FnMut(
+            &Journal<'_>,
+            &Screen,
+            Timestamp,
+            &mut Buffer,
+            &tokio::sync::mpsc::UnboundedSender<Event>,
+        ) -> Drawn,
+    ) -> Result<(), Error> {
+        let events = std::cell::RefCell::new(None);
+        drive_with(
+            &timer_runtime(),
+            recorder.backend(),
+            feed,
+            live,
+            None,
+            colours,
+            || Timestamp::UNIX_EPOCH,
+            |journal, screen, now, buf| {
+                render(journal, screen, now, buf, events.borrow().as_ref().unwrap())
+            },
+            |terminating, sender| {
+                *events.borrow_mut() = Some(sender.clone());
+                silent_listener(terminating, sender)
+            },
+        )
+    }
+
+    fn one_frame_with(
+        journal: &MemoryJournal,
+        width: u16,
+        height: u16,
+        out: &mut impl std::io::Write,
+        render: impl FnMut(&Journal<'_>, &Screen, Timestamp, &mut Buffer) -> Drawn,
+    ) -> Result<(), Error> {
+        one_frame_source(
+            Source::memory(journal, None),
+            width,
+            height,
+            out,
+            Timestamp::UNIX_EPOCH,
+            render,
+        )
+    }
+
+    fn one_frame(
+        journal: &MemoryJournal,
+        width: u16,
+        height: u16,
+        out: &mut impl std::io::Write,
+    ) -> Result<(), Error> {
+        one_frame_with(
+            journal,
+            width,
+            height,
+            out,
+            |journal, screen, now, buffer| {
+                crate::frames::render(journal, screen, now, &jiff::tz::TimeZone::UTC, buffer)
+            },
         )
     }
 
@@ -608,7 +768,6 @@ mod tests {
 
     #[test]
     fn a_caller_owned_feed_and_clock_drive_the_one_loop_with_no_directory_watched() {
-        let _serial = super::signals::tests::serial();
         let reloads = std::rc::Rc::new(std::cell::Cell::new(0));
         let journals = std::rc::Rc::new(std::cell::Cell::new(0));
         let feed = Counting {
@@ -633,7 +792,8 @@ mod tests {
         });
         let mut drawn_at = Vec::new();
         let recorder = Recorder::new(80, 12);
-        drive(
+        drive_with(
+            &timer_runtime(),
             recorder.backend(),
             feed,
             &config,
@@ -648,6 +808,7 @@ mod tests {
                 }
                 frozen(journal, screen, now, buf)
             },
+            silent_listener,
         )
         .unwrap();
         assert!(!watchdog.fired(), "a frozen frame was never redrawn");
@@ -661,9 +822,8 @@ mod tests {
     }
 
     #[test]
-    fn the_reader_is_joined_on_every_exit() {
-        let _serial = super::signals::tests::serial();
-        let state = TempDir::new().unwrap();
+    fn real_process_the_reader_is_joined_on_every_exit() {
+        let state = MemoryJournal::new();
         for exit in [
             "quit",
             "end of input",
@@ -676,7 +836,7 @@ mod tests {
             let (read, write) = pipe();
             let stop = Stop::new();
             let live = Config {
-                watch: Some(state.path()),
+                watch: None,
                 tick: None,
                 stop: Some(&stop),
                 terminating: false,
@@ -711,15 +871,22 @@ mod tests {
                 Some(write)
             };
             let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
-                run_drive(
-                    &recorder,
+                drive_with(
+                    &tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .unwrap(),
+                    recorder.backend(),
+                    Source::memory(&state, None),
                     &live,
-                    Some(&read),
+                    Some(read.as_fd()),
                     Colours::None,
+                    || Timestamp::UNIX_EPOCH,
                     |journal, screen, now, buf| {
                         assert!(exit != "panic", "frame panic");
                         plain(journal, screen, now, buf)
                     },
+                    silent_listener,
                 )
             }));
             match exit {
@@ -740,18 +907,13 @@ mod tests {
     }
 
     #[test]
-    fn each_of_the_three_signals_ends_the_dashboard_and_restores_the_terminal() {
-        let _serial = super::signals::tests::serial();
-        let state = TempDir::new().unwrap();
-        for (name, signal) in [
-            ("SIGINT", Signal::INT),
-            ("SIGTERM", Signal::TERM),
-            ("SIGHUP", Signal::HUP),
-        ] {
+    fn cancellation_ends_the_dashboard_and_restores_the_terminal() {
+        let state = MemoryJournal::new();
+        for name in ["SIGINT", "SIGTERM", "SIGHUP"] {
             let recorder = Recorder::new(80, 12);
             let stop = Stop::new();
             let live = Config {
-                watch: Some(state.path()),
+                watch: None,
                 tick: None,
                 stop: Some(&stop),
                 terminating: true,
@@ -761,15 +923,15 @@ mod tests {
                 move || stop.stop()
             });
             let mut sent = false;
-            run_drive(
+            run_events(
                 &recorder,
                 &live,
-                None,
+                Source::memory(&state, None),
                 Colours::Console,
-                |journal, screen, now, buf| {
+                |journal, screen, now, buf, events| {
                     if !sent {
                         sent = true;
-                        kill_process(getpid(), signal).unwrap();
+                        events.send(Event::Cancel).unwrap();
                     }
                     frozen(journal, screen, now, buf)
                 },
@@ -829,13 +991,12 @@ mod tests {
     }
 
     #[test]
-    fn sigwinch_redraws_with_the_new_size() {
-        let _serial = super::signals::tests::serial();
-        let state = TempDir::new().unwrap();
+    fn a_resize_redraws_with_the_new_size() {
+        let state = MemoryJournal::new();
         let recorder = Recorder::new(80, 12);
         let stop = Stop::new();
         let live = Config {
-            watch: Some(state.path()),
+            watch: None,
             tick: None,
             stop: Some(&stop),
             terminating: true,
@@ -846,65 +1007,73 @@ mod tests {
         });
         let mut sizes = Vec::new();
         let probe = recorder.clone();
-        run_drive(
+        run_events(
             &recorder,
             &live,
-            None,
+            Source::memory(&state, None),
             Colours::None,
-            |journal, screen, now, buf| {
+            |journal, screen, now, buf, events| {
                 sizes.push((screen.width, screen.height));
                 match sizes.len() {
                     1 => {
                         probe.resize(100, 30);
-                        kill_process(getpid(), Signal::WINCH).unwrap();
+                        events.send(Event::Resize).unwrap();
                     }
-                    _ => kill_process(getpid(), Signal::TERM).unwrap(),
+                    _ => events.send(Event::Cancel).unwrap(),
                 }
                 frozen(journal, screen, now, buf)
             },
         )
         .unwrap();
-        assert!(!watchdog.fired(), "SIGWINCH drew nothing");
+        assert!(!watchdog.fired(), "the resize drew nothing");
         assert_eq!(sizes, [(80, 12), (100, 30)]);
         assert_eq!(recorder.clears(), 3, "entry, the resize, and leaving");
     }
 
     #[test]
     fn stopping_before_the_dashboard_starts_ends_it_at_once() {
-        let _serial = super::signals::tests::serial();
-        let state = TempDir::new().unwrap();
+        let state = MemoryJournal::new();
         let stop = Stop::new();
         stop.stop();
         let recorder = Recorder::new(80, 12);
         let live = Config {
-            watch: Some(state.path()),
+            watch: None,
             tick: None,
             stop: Some(&stop),
             terminating: false,
         };
-        run_drive(&recorder, &live, None, Colours::None, plain).unwrap();
+        run_drive(
+            &recorder,
+            &live,
+            Source::memory(&state, None),
+            Colours::None,
+            plain,
+        )
+        .unwrap();
         assert!(recorder.restored());
     }
 
     #[test]
     fn another_thread_can_stop_a_running_dashboard() {
-        let _serial = super::signals::tests::serial();
-        let state = TempDir::new().unwrap();
+        let state = MemoryJournal::new();
         let stop = Stop::new();
         let recorder = Recorder::new(80, 12);
         let live = Config {
-            watch: Some(state.path()),
+            watch: None,
             tick: None,
             stop: Some(&stop),
             terminating: true,
         };
-        let watchdog = Watchdog::start(|| kill_process(getpid(), Signal::TERM).unwrap());
+        let watchdog = Watchdog::start({
+            let stop = stop.clone();
+            move || stop.stop()
+        });
         let other = stop.clone();
         let mut frames = 0;
         run_drive(
             &recorder,
             &live,
-            None,
+            Source::memory(&state, None),
             Colours::None,
             |journal, screen, now, buf| {
                 frames += 1;
@@ -922,19 +1091,25 @@ mod tests {
 
     #[test]
     fn the_console_palette_is_redefined_only_for_the_console_profile() {
-        let _serial = super::signals::tests::serial();
-        let state = TempDir::new().unwrap();
+        let state = MemoryJournal::new();
         for colours in [Colours::Full, Colours::Console, Colours::None] {
             let recorder = Recorder::new(80, 12);
             let stop = Stop::new();
             stop.stop();
             let live = Config {
-                watch: Some(state.path()),
+                watch: None,
                 tick: None,
                 stop: Some(&stop),
                 terminating: false,
             };
-            run_drive(&recorder, &live, None, colours, plain).unwrap();
+            run_drive(
+                &recorder,
+                &live,
+                Source::memory(&state, None),
+                colours,
+                plain,
+            )
+            .unwrap();
             let raw = recorder.raw();
             let palette = raw.iter().any(|text| text.starts_with("\x1b]P"));
             assert_eq!(palette, colours == Colours::Console, "{colours:?}");
@@ -948,15 +1123,14 @@ mod tests {
     }
 
     #[test]
-    fn the_frame_is_drawn_from_the_journal_on_disk() {
-        let _serial = super::signals::tests::serial();
-        let state = TempDir::new().unwrap();
-        write_journal(state.path(), &session_with_warnings(3));
+    fn the_frame_is_drawn_from_the_journal() {
+        let state = MemoryJournal::new();
+        state.write(&lines(&session_with_warnings(3)));
         let recorder = Recorder::new(80, 12);
         let stop = Stop::new();
         stop.stop();
         let live = Config {
-            watch: Some(state.path()),
+            watch: None,
             tick: None,
             stop: Some(&stop),
             terminating: false,
@@ -965,7 +1139,7 @@ mod tests {
         run_drive(
             &recorder,
             &live,
-            None,
+            Source::memory(&state, None),
             Colours::None,
             |journal, screen, now, buf| {
                 seen.push(match journal {
@@ -1009,9 +1183,9 @@ mod tests {
 
     #[test]
     fn one_frame_of_a_missing_journal_prints_the_frame_without_styling_and_succeeds() {
-        let state = TempDir::new().unwrap();
+        let state = MemoryJournal::new();
         let mut out = Vec::new();
-        one_frame_with(state.path(), 40, 6, &mut out, describe).unwrap();
+        one_frame_with(&state, 40, 6, &mut out, describe).unwrap();
         let text = String::from_utf8(out).unwrap();
         assert_eq!(
             text,
@@ -1022,21 +1196,15 @@ mod tests {
 
     #[test]
     fn one_frame_draws_into_the_screen_less_its_last_row_and_column() {
-        let state = TempDir::new().unwrap();
+        let state = MemoryJournal::new();
         let mut out = Vec::new();
         let mut area = None;
         let mut screen_seen = None;
-        one_frame_with(
-            state.path(),
-            30,
-            9,
-            &mut out,
-            |journal, screen, now, buf| {
-                area = Some(buf.area);
-                screen_seen = Some(*screen);
-                describe(journal, screen, now, buf)
-            },
-        )
+        one_frame_with(&state, 30, 9, &mut out, |journal, screen, now, buf| {
+            area = Some(buf.area);
+            screen_seen = Some(*screen);
+            describe(journal, screen, now, buf)
+        })
         .unwrap();
         assert_eq!(area, Some(ratatui::layout::Rect::new(0, 0, 29, 8)));
         assert_eq!(String::from_utf8(out).unwrap().lines().count(), 8);
@@ -1054,19 +1222,19 @@ mod tests {
 
     #[test]
     fn one_frame_of_a_journal_shows_its_session() {
-        let state = TempDir::new().unwrap();
-        write_journal(state.path(), &session_with_warnings(2));
+        let state = MemoryJournal::new();
+        state.write(&lines(&session_with_warnings(2)));
         let mut out = Vec::new();
-        one_frame_with(state.path(), 40, 6, &mut out, describe).unwrap();
+        one_frame_with(&state, 40, 6, &mut out, describe).unwrap();
         assert!(String::from_utf8(out).unwrap().starts_with("3 events\n"));
     }
 
     #[test]
     fn one_frame_of_an_unreadable_journal_prints_its_problem_frame_then_returns_the_error() {
-        let state = TempDir::new().unwrap();
-        super::testing::write_bytes(state.path(), &super::testing::undecodable_journal());
+        let state = MemoryJournal::new();
+        state.write(&super::testing::undecodable_journal());
         let mut out = Vec::new();
-        let error = one_frame_with(state.path(), 400, 6, &mut out, describe).unwrap_err();
+        let error = one_frame_with(&state, 400, 6, &mut out, describe).unwrap_err();
         let text = String::from_utf8(out).unwrap();
         assert!(text.starts_with("problem: "), "{text}");
         assert!(text.contains("line 2"), "{text}");
@@ -1079,16 +1247,13 @@ mod tests {
 
     #[test]
     fn one_frame_of_a_journal_that_cannot_fold_returns_that_error_too() {
-        let state = TempDir::new().unwrap();
-        write_journal(
-            state.path(),
-            &[
-                super::testing::session_start(1),
-                super::testing::session_start(2),
-            ],
-        );
+        let state = MemoryJournal::new();
+        state.write(&lines(&[
+            super::testing::session_start(1),
+            super::testing::session_start(2),
+        ]));
         let mut out = Vec::new();
-        let error = one_frame_with(state.path(), 80, 6, &mut out, describe).unwrap_err();
+        let error = one_frame_with(&state, 80, 6, &mut out, describe).unwrap_err();
         assert!(matches!(error, Error::Journal(SourceError::Fold(_))));
         assert!(String::from_utf8(out).unwrap().starts_with("problem: "));
     }
@@ -1104,23 +1269,23 @@ mod tests {
                 Ok(())
             }
         }
-        let state = TempDir::new().unwrap();
-        let error = one_frame_with(state.path(), 10, 6, &mut Broken, describe).unwrap_err();
+        let state = MemoryJournal::new();
+        let error = one_frame_with(&state, 10, 6, &mut Broken, describe).unwrap_err();
         assert!(matches!(error, Error::Output(_)));
     }
 
     #[test]
     fn one_frame_prints_the_dashboard_frame_without_styling() {
-        let state = TempDir::new().unwrap();
+        let state = MemoryJournal::new();
         let mut out = Vec::new();
-        one_frame(state.path(), 120, 33, &mut out).unwrap();
+        one_frame(&state, 120, 33, &mut out).unwrap();
         let text = String::from_utf8(out).unwrap();
         assert!(text.contains("NO SESSION YET"), "{text}");
         assert_eq!(text.lines().count(), 32);
         assert!(!text.contains('\x1b'), "{text}");
-        togi_watchtest::install(state.path(), togi_watchtest::Scenario::Idle).unwrap();
+        state.write(&lines(&togi_watchtest::Scenario::Idle.events().unwrap()));
         let mut out = Vec::new();
-        one_frame(state.path(), 120, 33, &mut out).unwrap();
+        one_frame(&state, 120, 33, &mut out).unwrap();
         let text = String::from_utf8(out).unwrap();
         assert!(text.contains("this screen holds still"), "{text}");
         assert!(
@@ -1131,10 +1296,10 @@ mod tests {
 
     #[test]
     fn one_frame_prints_the_dashboard_s_problem_frame_and_returns_the_error() {
-        let state = TempDir::new().unwrap();
-        super::testing::write_bytes(state.path(), &super::testing::undecodable_journal());
+        let state = MemoryJournal::new();
+        state.write(&super::testing::undecodable_journal());
         let mut out = Vec::new();
-        let error = one_frame(state.path(), 120, 33, &mut out).unwrap_err();
+        let error = one_frame(&state, 120, 33, &mut out).unwrap_err();
         let text = String::from_utf8(out).unwrap();
         assert!(text.contains("JOURNAL UNREADABLE"), "{text}");
         assert!(!text.contains('\x1b'), "{text}");
@@ -1146,16 +1311,12 @@ mod tests {
 
     #[test]
     fn one_frame_of_another_builds_journal_prints_nothing_and_leaves_the_file_alone() {
-        let state = TempDir::new().unwrap();
-        super::testing::write_bytes(state.path(), &super::testing::go_journal());
-        let path = state.path().join("events.jsonl");
-        let before = (
-            std::fs::read(&path).unwrap(),
-            std::fs::metadata(&path).unwrap(),
-        );
+        let state = MemoryJournal::new();
+        state.write(&super::testing::go_journal());
+        let before = state.snapshot();
         for width in [120, 400] {
             let mut out = Vec::new();
-            let error = one_frame(state.path(), width, 33, &mut out).unwrap_err();
+            let error = one_frame(&state, width, 33, &mut out).unwrap_err();
             assert!(out.is_empty(), "a refusal drew a frame");
             assert!(
                 matches!(error, Error::Journal(SourceError::Foreign(_))),
@@ -1165,29 +1326,32 @@ mod tests {
             assert!(text.contains("events.jsonl"), "{text}");
             assert!(text.contains("docs/howto.md#go-to-rust-cutover"), "{text}");
         }
-        let after = (
-            std::fs::read(&path).unwrap(),
-            std::fs::metadata(&path).unwrap(),
-        );
+        let after = state.snapshot();
         assert_eq!(before.0, after.0);
-        assert_eq!(before.1.modified().unwrap(), after.1.modified().unwrap());
-        assert_eq!(std::fs::read_dir(state.path()).unwrap().count(), 1);
+        assert_eq!(before.1, after.1);
+        assert_eq!(before.3, after.3, "a refusal mutated the journal");
     }
 
     #[test]
     fn a_dashboard_refuses_another_builds_journal_before_it_draws_anything() {
-        let _serial = super::signals::tests::serial();
-        let state = TempDir::new().unwrap();
-        super::testing::write_bytes(state.path(), &super::testing::go_journal());
+        let state = MemoryJournal::new();
+        state.write(&super::testing::go_journal());
         let recorder = Recorder::new(80, 12);
         let stop = Stop::new();
         let live = Config {
-            watch: Some(state.path()),
+            watch: None,
             tick: None,
             stop: Some(&stop),
             terminating: false,
         };
-        let error = run_drive(&recorder, &live, None, Colours::None, plain).unwrap_err();
+        let error = run_drive(
+            &recorder,
+            &live,
+            Source::memory(&state, None),
+            Colours::None,
+            plain,
+        )
+        .unwrap_err();
         assert!(
             matches!(error, Error::Journal(SourceError::Foreign(_))),
             "{error:?}"
@@ -1197,33 +1361,31 @@ mod tests {
 
     #[test]
     fn a_live_dashboard_ends_with_the_refusal_when_another_builds_journal_arrives() {
-        let _serial = super::signals::tests::serial();
-        let state = TempDir::new().unwrap();
+        let state = MemoryJournal::new();
         let recorder = Recorder::new(80, 12);
         let stop = Stop::new();
         let live = Config {
-            watch: Some(state.path()),
+            watch: None,
             tick: None,
             stop: Some(&stop),
             terminating: false,
         };
-        let (done, finished) = std::sync::mpsc::channel::<()>();
-        let (path, stopper) = (state.path(), &stop);
-        let result = std::thread::scope(|scope| {
-            scope.spawn(move || {
-                std::thread::sleep(std::time::Duration::from_millis(300));
-                super::testing::write_bytes(path, &super::testing::go_journal());
-                if finished
-                    .recv_timeout(std::time::Duration::from_secs(20))
-                    .is_err()
-                {
-                    stopper.stop();
-                }
-            });
-            let result = run_drive(&recorder, &live, None, Colours::None, plain);
-            done.send(()).unwrap();
-            result
+        let watchdog = Watchdog::start({
+            let stop = stop.clone();
+            move || stop.stop()
         });
+        let result = run_events(
+            &recorder,
+            &live,
+            Source::memory(&state, None),
+            Colours::None,
+            |journal, screen, now, buf, events| {
+                state.write(&super::testing::go_journal());
+                events.send(Event::Changed).unwrap();
+                plain(journal, screen, now, buf)
+            },
+        );
+        assert!(!watchdog.fired(), "the changed journal was never reloaded");
         let error = result.unwrap_err();
         assert!(
             matches!(error, Error::Journal(SourceError::Foreign(_))),

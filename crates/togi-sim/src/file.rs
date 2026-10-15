@@ -102,6 +102,24 @@ pub fn encode(machine: &MachineDefinition) -> Result<String, EncodeError> {
     Ok(text)
 }
 
+/// The two path operations needed to materialize machine overlays.
+pub trait Source {
+    fn read_to_string(&self, path: &Path) -> io::Result<String>;
+    fn canonicalize(&self, path: &Path) -> io::Result<PathBuf>;
+}
+
+struct Files;
+
+impl Source for Files {
+    fn read_to_string(&self, path: &Path) -> io::Result<String> {
+        fs::read_to_string(path)
+    }
+
+    fn canonicalize(&self, path: &Path) -> io::Result<PathBuf> {
+        fs::canonicalize(path)
+    }
+}
+
 /// Loads and validates the machine at `path`, materializing overlays.
 pub fn load(path: impl AsRef<Path>) -> Result<MachineDefinition, LoadError> {
     load_with_files(path).map(|(machine, _)| machine)
@@ -112,8 +130,16 @@ pub fn load(path: impl AsRef<Path>) -> Result<MachineDefinition, LoadError> {
 pub fn load_with_files(
     path: impl AsRef<Path>,
 ) -> Result<(MachineDefinition, Vec<PathBuf>), LoadError> {
+    load_from(path, &Files)
+}
+
+/// Loads and validates through `source`, returning the leaf and its parents in load order.
+pub fn load_from(
+    path: impl AsRef<Path>,
+    source: &impl Source,
+) -> Result<(MachineDefinition, Vec<PathBuf>), LoadError> {
     let mut files = Vec::new();
-    let machine = load_file(path.as_ref(), &mut files, &mut Vec::new())?;
+    let machine = load_file(path.as_ref(), source, &mut files, &mut Vec::new())?;
     Ok((machine, files))
 }
 
@@ -158,21 +184,24 @@ object!(Probe, Overlay, Override);
 
 fn load_file(
     path: &Path,
+    source: &impl Source,
     files: &mut Vec<PathBuf>,
     chain: &mut Vec<PathBuf>,
 ) -> Result<MachineDefinition, LoadError> {
     files.push(path.to_path_buf());
-    let text = fs::read_to_string(path).map_err(|source| LoadError::Read {
-        path: path.to_path_buf(),
-        source,
-    })?;
+    let text = source
+        .read_to_string(path)
+        .map_err(|source| LoadError::Read {
+            path: path.to_path_buf(),
+            source,
+        })?;
     let parse = |source| LoadError::Parse {
         path: path.to_path_buf(),
         source,
     };
     let probe: Probe = serde_json::from_str(&text).map_err(parse)?;
     let machine = if probe.extends || probe.shared_voltage_override {
-        load_overlay(path, &text, files, chain)?
+        load_overlay(path, &text, source, files, chain)?
     } else {
         decode(&text).map_err(parse)?
     };
@@ -186,6 +215,7 @@ fn load_file(
 fn load_overlay(
     path: &Path,
     text: &str,
+    source: &impl Source,
     files: &mut Vec<PathBuf>,
     chain: &mut Vec<PathBuf>,
 ) -> Result<MachineDefinition, LoadError> {
@@ -208,17 +238,19 @@ fn load_overlay(
         .shared_voltage_override
         .filter(|overrides| !overrides.is_empty())
         .ok_or_else(|| fail(OverlayProblem::EmptyOverride))?;
-    let identity = fs::canonicalize(path).map_err(|source| LoadError::Read {
-        path: path.to_path_buf(),
-        source,
-    })?;
+    let identity = source
+        .canonicalize(path)
+        .map_err(|source| LoadError::Read {
+            path: path.to_path_buf(),
+            source,
+        })?;
     if chain.contains(&identity) {
         return Err(fail(OverlayProblem::Cycle(identity)));
     }
     let dir = path.parent().unwrap_or(Path::new(""));
     let parent_path = clean(&dir.join(extends));
     chain.push(identity);
-    let parent = load_file(&parent_path, files, chain);
+    let parent = load_file(&parent_path, source, files, chain);
     chain.pop();
     let mut machine = parent.map_err(|source| LoadError::Parent {
         path: path.to_path_buf(),
@@ -271,7 +303,7 @@ fn load_overlay(
         let parent_dir = parent_path.parent().unwrap_or(Path::new(""));
         if !facts.is_empty() && !Path::new(facts).is_absolute() {
             let canonical = |directory: &Path| {
-                canonical_dir(directory).map_err(|source| LoadError::Directory {
+                canonical_dir(source, directory).map_err(|source| LoadError::Directory {
                     path: path.to_path_buf(),
                     directory: directory.to_path_buf(),
                     source,
@@ -293,12 +325,12 @@ fn load_overlay(
 }
 
 /// `directory` resolved through every symlink; the empty parent of a bare file name is the current directory.
-fn canonical_dir(directory: &Path) -> io::Result<PathBuf> {
-    if directory.as_os_str().is_empty() {
-        fs::canonicalize(".")
+fn canonical_dir(source: &impl Source, directory: &Path) -> io::Result<PathBuf> {
+    source.canonicalize(if directory.as_os_str().is_empty() {
+        Path::new(".")
     } else {
-        fs::canonicalize(directory)
-    }
+        directory
+    })
 }
 
 /// `facts`, a path relative to canonical directory `to`, as a path relative to canonical directory `from`.
@@ -384,9 +416,8 @@ mod tests {
 
     #[test]
     fn a_directory_that_cannot_be_resolved_is_reported_with_the_overlay_file_that_needed_it() {
-        let root = tempfile::tempdir().expect("temporary directory");
-        let missing = root.path().join("never-created");
-        let source = canonical_dir(&missing).expect_err("no such directory");
+        let missing = PathBuf::from("/missing/directory");
+        let source = io::Error::from(io::ErrorKind::NotFound);
         let error = LoadError::Directory {
             path: PathBuf::from("overlays/leaf.json"),
             directory: missing.clone(),
@@ -400,10 +431,10 @@ mod tests {
     }
 
     #[test]
-    fn the_empty_directory_of_a_bare_file_name_is_the_current_directory() {
+    fn real_fs_the_empty_directory_of_a_bare_file_name_is_the_current_directory() {
         assert_eq!(Path::new("machine.json").parent(), Some(Path::new("")));
         assert_eq!(
-            canonical_dir(Path::new("")).expect("the current directory"),
+            canonical_dir(&Files, Path::new("")).expect("the current directory"),
             fs::canonicalize(".").expect("the current directory")
         );
     }

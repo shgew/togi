@@ -162,7 +162,11 @@ mod cached_errors {
         let _exclusive = exclusive();
         let dir = tempfile::tempdir().unwrap();
         let marker = dir.path().join("ready");
-        let mut runner = Runner::new(Options {
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "real-process error-chain fixtures use disposable output without durability"
+        )]
+        let mut runner = Runner::new_unsynced(Options {
             dir: dir.path().join("trials"),
             backends: Backends::new().with(Arc::new(Shell {
                 script: CARRIER,
@@ -208,7 +212,11 @@ mod cached_errors {
         let _exclusive = exclusive();
         let dir = tempfile::tempdir().unwrap();
         let marker = dir.path().join("ready");
-        let mut runner = Runner::new(Options {
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "real-process cancellation fixtures use disposable output without durability"
+        )]
+        let mut runner = Runner::new_unsynced(Options {
             dir: dir.path().join("trials"),
             backends: Backends::new().with(Arc::new(Shell {
                 script: PLAIN,

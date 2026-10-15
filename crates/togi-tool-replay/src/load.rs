@@ -1,5 +1,6 @@
 //! Reading the recording to play.
 
+use std::io::BufRead;
 use std::path::Path;
 
 use togi_journal::{
@@ -25,14 +26,24 @@ pub(crate) struct Loaded {
 /// rules.
 pub(crate) fn events(state_dir: &Path) -> Result<Loaded, Error> {
     let path = state_dir.join("events.jsonl");
+    let bytes = std::fs::read(&path).map_err(|source| {
+        Error::Read(FileError {
+            path,
+            source: ReadError::Io(source),
+        })
+    })?;
+    events_from(state_dir, bytes.as_slice())
+}
+
+/// Decodes a recording without opening or modifying its source. `state_dir` only labels diagnostics.
+pub(crate) fn events_from(state_dir: &Path, input: impl BufRead) -> Result<Loaded, Error> {
     let read = |source| {
         Error::Read(FileError {
-            path: path.clone(),
+            path: state_dir.join("events.jsonl"),
             source,
         })
     };
-    let bytes = std::fs::read(&path).map_err(|source| read(ReadError::Io(source)))?;
-    let mut reader = EventReader::lenient(bytes.as_slice());
+    let mut reader = EventReader::lenient(input);
     let Some(first) = reader.next().transpose().map_err(read)? else {
         return Err(Error::Empty(state_dir.to_path_buf()));
     };

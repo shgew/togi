@@ -12,6 +12,14 @@ fn dir(fs: &MemFs) -> StateDir {
     crate::testing::simulated(fs)
 }
 
+#[expect(
+    clippy::disallowed_methods,
+    reason = "kernel tests inject a disk adapter with durability disabled"
+)]
+fn disk_dir(path: &Path) -> Result<StateDir, LockError> {
+    StateDir::lock_with_fs(Arc::new(DiskFs::unsynced()), path)
+}
+
 fn sid(text: &str) -> SessionId {
     text.parse().unwrap()
 }
@@ -42,23 +50,26 @@ fn a_second_writer_is_refused_until_the_first_drops() {
 }
 
 #[test]
-fn locking_on_disk_creates_every_missing_directory() {
+fn real_fs_locking_creates_every_missing_directory() {
     let root = tempfile::tempdir().unwrap();
     let path = root.path().join("a/b/c");
-    let held = StateDir::lock(&path).unwrap();
+    let held = disk_dir(&path).unwrap();
     assert!(path.join("lock").is_file());
-    assert!(matches!(StateDir::lock(&path), Err(LockError::Held { .. })));
+    assert!(matches!(disk_dir(&path), Err(LockError::Held { .. })));
     drop(held);
-    assert!(StateDir::lock(&path).is_ok());
+    assert!(disk_dir(&path).is_ok());
 }
 
 #[test]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "this test uses an in-memory filesystem at an arbitrary path"
+)]
 fn locking_refuses_a_state_path_that_is_a_file() {
-    let root = tempfile::tempdir().unwrap();
-    let path = root.path().join("file");
-    std::fs::write(&path, "x").unwrap();
+    let fs = MemFs::new();
+    fs.put("/file", "x");
     assert!(matches!(
-        StateDir::lock(path.join("state")),
+        StateDir::lock_with_fs(Arc::new(fs), Path::new("/file/state")),
         Err(LockError::Dir(DirError::NotADirectory { .. }))
     ));
 }
@@ -517,20 +528,20 @@ fn mode_of(path: &Path) -> u32 {
 }
 
 #[test]
-fn locking_an_existing_directory_restores_the_state_mode_before_taking_the_lock() {
+fn real_fs_locking_restores_the_state_mode_before_taking_the_lock() {
     let root = tempfile::tempdir().unwrap();
     for mode in [0o777, 0o700] {
         let path = root.path().join(format!("state-{mode:o}"));
         std::fs::create_dir(&path).unwrap();
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(mode)).unwrap();
-        let held = StateDir::lock(&path).unwrap();
+        let held = disk_dir(&path).unwrap();
         assert_eq!(mode_of(&path), 0o711);
         drop(held);
     }
 }
 
 #[test]
-fn locking_a_directory_the_owner_cannot_write_still_succeeds() {
+fn real_fs_locking_a_directory_the_owner_cannot_write_still_succeeds() {
     if rustix::process::geteuid().is_root() {
         return;
     }
@@ -538,21 +549,21 @@ fn locking_a_directory_the_owner_cannot_write_still_succeeds() {
     let path = root.path().join("state");
     std::fs::create_dir(&path).unwrap();
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o500)).unwrap();
-    let held = StateDir::lock(&path).unwrap();
+    let held = disk_dir(&path).unwrap();
     assert_eq!(mode_of(&path), 0o711);
     assert!(path.join("lock").is_file());
     drop(held);
 }
 
 #[test]
-fn a_symlinked_archive_directory_is_refused_on_disk() {
+fn real_fs_a_symlinked_archive_directory_is_refused() {
     let root = tempfile::tempdir().unwrap();
     let outside = root.path().join("outside");
     std::fs::create_dir(&outside).unwrap();
     std::fs::write(outside.join("20260101T000000Z.jsonl"), "").unwrap();
     std::fs::write(outside.join("20260101T000000Z-reset-all"), "").unwrap();
     let path = root.path().join("state");
-    let held = StateDir::lock(&path).unwrap();
+    let held = disk_dir(&path).unwrap();
     std::os::unix::fs::symlink(&outside, path.join("archive")).unwrap();
     assert!(matches!(held.archives(), Err(DirError::Io { .. })));
     assert!(matches!(held.markers(), Err(DirError::Io { .. })));
@@ -584,10 +595,10 @@ fn publication_never_writes_through_a_pre_existing_temporary_inode() {
 }
 
 #[test]
-fn publication_leaves_a_hard_link_to_the_published_state_untouched_on_disk() {
+fn real_fs_publication_leaves_a_hard_link_to_the_published_state_untouched() {
     let root = tempfile::tempdir().unwrap();
     let path = root.path().join("state");
-    let mut dir = StateDir::lock(&path).unwrap();
+    let mut dir = disk_dir(&path).unwrap();
     dir.write_state(&Doc { n: 1 }).unwrap();
     let keep = root.path().join("keep");
     std::fs::hard_link(path.join("state.json"), &keep).unwrap();

@@ -1,14 +1,18 @@
+use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::os::unix::process::ExitStatusExt;
 use std::path::{Path, PathBuf};
 use std::process::ExitStatus;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use jiff::Timestamp;
+use rustix::fs::FileType;
+use rustix::io::Errno;
 use togi_command::Output;
 use togi_machine::{BootId, CcdId, CoreId, CoreInfo, CpuId};
 
+use crate::pstore::{Archive, Directory, Dump, PstoreError, ReadAt};
 use crate::runner::{JOURNALCTL_BUDGET, Journalctl, RunError};
 use crate::{CpuCoreMap, Kernel, Message};
 
@@ -63,12 +67,20 @@ pub(super) fn stamped(message: &Message) -> String {
 }
 
 pub(super) fn fixture(name: &str) -> Vec<Message> {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("testdata")
-        .join(name);
-    std::fs::read_to_string(path)
-        .unwrap()
-        .lines()
+    let text = match name {
+        "interleaved-separated-records.jsonl" => {
+            include_str!("../../testdata/interleaved-separated-records.jsonl")
+        }
+        "truncated-interleaved-records.jsonl" => {
+            include_str!("../../testdata/truncated-interleaved-records.jsonl")
+        }
+        "truncated-record.jsonl" => include_str!("../../testdata/truncated-record.jsonl"),
+        "zen4-decode-unit.jsonl" => include_str!("../../testdata/zen4-decode-unit.jsonl"),
+        "zen5-load-store.jsonl" => include_str!("../../testdata/zen5-load-store.jsonl"),
+        "interleaved-records.jsonl" => include_str!("../../testdata/interleaved-records.jsonl"),
+        _ => panic!("unknown fixture {name}"),
+    };
+    text.lines()
         .map(|line| {
             let entry: serde_json::Value = serde_json::from_str(line).unwrap();
             message(
@@ -134,6 +146,7 @@ pub(super) struct Call {
 struct Scripted<F> {
     calls: Calls,
     reply: F,
+    clock: Arc<Mutex<Instant>>,
 }
 
 impl<F> Journalctl for Scripted<F>
@@ -151,12 +164,35 @@ where
         });
         (self.reply)(&args)
     }
+
+    fn now(&self) -> Instant {
+        *locked(&self.clock)
+    }
 }
 
 pub(super) fn scripted<F>(
     topology: &[CoreInfo],
-    pstore: impl Into<PathBuf>,
+    pstore: crate::PstoreSource,
     budget: Duration,
+    reply: F,
+) -> (Kernel, Calls)
+where
+    F: Fn(&[String]) -> Result<Output, RunError> + Send + 'static,
+{
+    scripted_at(
+        topology,
+        pstore,
+        budget,
+        Arc::new(Mutex::new(Instant::now())),
+        reply,
+    )
+}
+
+pub(super) fn scripted_at<F>(
+    topology: &[CoreInfo],
+    pstore: crate::PstoreSource,
+    budget: Duration,
+    clock: Arc<Mutex<Instant>>,
     reply: F,
 ) -> (Kernel, Calls)
 where
@@ -166,8 +202,9 @@ where
     let runner = Scripted {
         calls: Arc::clone(&calls),
         reply,
+        clock,
     };
-    let kernel = Kernel::with_parts(topology, Box::new(runner), budget, pstore.into()).unwrap();
+    let kernel = Kernel::with_parts(topology, Box::new(runner), budget, pstore).unwrap();
     (kernel, calls)
 }
 
@@ -175,12 +212,7 @@ pub(super) fn kernel<F>(cores: &[(i64, &[u16])], reply: F) -> (Kernel, Calls)
 where
     F: Fn(&[String]) -> Result<Output, RunError> + Send + 'static,
 {
-    scripted(
-        &topology(cores),
-        "/nonexistent-togi-pstore",
-        JOURNALCTL_BUDGET,
-        reply,
-    )
+    scripted(&topology(cores), pstore(&[]), JOURNALCTL_BUDGET, reply)
 }
 
 pub(super) fn argv(call: &Call) -> Vec<&str> {
@@ -198,4 +230,91 @@ pub(super) fn caused_by<'a, E: std::error::Error + 'static>(
         next = error.source();
     }
     None
+}
+
+#[derive(Clone)]
+struct MemoryDirectory {
+    path: PathBuf,
+    files: Arc<BTreeMap<PathBuf, Vec<u8>>>,
+}
+
+impl Directory for MemoryDirectory {
+    type File = Vec<u8>;
+
+    fn entries(&self, _: &Path) -> Result<Vec<(OsString, FileType)>, PstoreError> {
+        let mut entries = BTreeMap::new();
+        for file in self.files.keys() {
+            if let Ok(rest) = file.strip_prefix(&self.path) {
+                let mut parts = rest.components();
+                if let Some(name) = parts.next() {
+                    let kind = if parts.next().is_some() {
+                        FileType::Directory
+                    } else {
+                        FileType::RegularFile
+                    };
+                    entries.insert(name.as_os_str().to_owned(), kind);
+                }
+            }
+        }
+        Ok(entries.into_iter().collect())
+    }
+
+    fn is_directory(&self, _: &OsString, kind: FileType, _: &Path) -> Result<bool, PstoreError> {
+        Ok(kind == FileType::Directory)
+    }
+
+    fn directory(&self, name: &OsString, _: &Path) -> Result<Self, PstoreError> {
+        Ok(Self {
+            path: self.path.join(name),
+            files: Arc::clone(&self.files),
+        })
+    }
+
+    fn dump(&self, _: &Path) -> Result<Option<Dump<Self::File>>, PstoreError> {
+        let path = self.path.join("dmesg.txt");
+        Ok(self
+            .files
+            .get(&path)
+            .map(|data| Dump::from_reader(path, data.clone())))
+    }
+}
+
+impl ReadAt for Vec<u8> {
+    fn read(&self, buffer: &mut [u8], offset: u64) -> Result<usize, Errno> {
+        let offset = usize::try_from(offset).map_err(|_| Errno::OVERFLOW)?;
+        let bytes = self.get(offset..).unwrap_or_default();
+        let length = bytes.len().min(buffer.len());
+        buffer[..length].copy_from_slice(&bytes[..length]);
+        Ok(length)
+    }
+
+    fn size(&self) -> Result<u64, Errno> {
+        Ok(self.len() as u64)
+    }
+}
+
+pub(super) fn pstore(files: &[(&str, &[u8])]) -> crate::PstoreSource {
+    let directory = MemoryDirectory {
+        path: PathBuf::from("/"),
+        files: Arc::new(
+            files
+                .iter()
+                .map(|(path, bytes)| (Path::new("/").join(path), bytes.to_vec()))
+                .collect(),
+        ),
+    };
+    crate::PstoreSource::Injected(Box::new(move |kernel, boot| {
+        Kernel::saved_from_archive(
+            Archive::from_directory(Path::new("/"), directory.clone())?,
+            kernel,
+            boot,
+        )
+    }))
+}
+
+pub(super) fn disk_pstore(root: &Path) -> crate::PstoreSource {
+    let root = root.to_owned();
+    crate::PstoreSource::Injected(Box::new(move |kernel, boot| {
+        Kernel::saved_from_archive(Archive::open(&root)?, kernel, boot)
+    }))
 }

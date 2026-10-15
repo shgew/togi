@@ -1,31 +1,54 @@
+use crate::files::Files;
 use crate::mailbox::{Command, MailboxError, Status, Transport};
-use std::fs::{File, OpenOptions};
-use std::io::{Read, Write};
+use std::fs::OpenOptions;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 pub(crate) const DRIVER_DIR: &str = "sys/kernel/ryzen_smu_drv";
 
 pub(crate) struct Sysfs {
     dir: PathBuf,
+    files: Files,
 }
 const MAX_FILE: u64 = 4096;
 
 impl Sysfs {
     pub(crate) fn locate(root: &Path) -> Option<Self> {
         let dir = root.join(DRIVER_DIR);
-        dir.is_dir().then_some(Self { dir })
+        dir.is_dir().then_some(Self {
+            dir,
+            files: Files::System,
+        })
+    }
+
+    pub(crate) fn from_readers(root: &Path, files: Files) -> Self {
+        Self {
+            dir: root.join(DRIVER_DIR),
+            files,
+        }
     }
 
     fn write(&self, name: &str, data: &[u8]) -> Result<(), MailboxError> {
         let path = self.dir.join(name);
-        let mut file = OpenOptions::new()
-            .write(true)
-            .open(&path)
-            .map_err(|source| MailboxError::Open {
-                path: path.clone(),
-                source,
-            })?;
-        match file.write(data) {
+        let written = match &self.files {
+            Files::System => {
+                let mut file = OpenOptions::new()
+                    .write(true)
+                    .open(&path)
+                    .map_err(|source| MailboxError::Open {
+                        path: path.clone(),
+                        source,
+                    })?;
+                file.write(data)
+            }
+            Files::Readers(readers) => match (readers.write)(&path, data) {
+                Err(source) if source.kind() == io::ErrorKind::NotFound => {
+                    return Err(MailboxError::Open { path, source });
+                }
+                outcome => outcome,
+            },
+        };
+        match written {
             Ok(written) if written == data.len() => Ok(()),
             Ok(written) => Err(MailboxError::ShortWrite {
                 path,
@@ -38,11 +61,13 @@ impl Sysfs {
 
     fn read<const N: usize>(&self, name: &str) -> Result<[u8; N], MailboxError> {
         let path = self.dir.join(name);
-        let mut bytes = Vec::with_capacity(N);
-        let read = File::open(&path).and_then(|file| file.take(MAX_FILE).read_to_end(&mut bytes));
-        if let Err(source) = read {
-            return Err(MailboxError::Read { path, source });
-        }
+        let bytes = self
+            .files
+            .read(&path, MAX_FILE, N)
+            .map_err(|source| MailboxError::Read {
+                path: path.clone(),
+                source,
+            })?;
         let got = bytes.len();
         <[u8; N]>::try_from(bytes).map_err(|_| MailboxError::Length { path, got, want: N })
     }

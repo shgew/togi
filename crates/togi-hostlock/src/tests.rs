@@ -53,7 +53,7 @@ fn legacy_lock(dir: &TempDir, contents: &str, mode: u32) -> PathBuf {
 }
 
 #[test]
-fn exclusive_until_dropped() {
+fn real_fs_exclusive_until_dropped() {
     let dir = private_dir();
     let path = lock_in(&dir);
     let lock = acquire(&path).unwrap();
@@ -75,7 +75,7 @@ fn exclusive_until_dropped() {
 }
 
 #[test]
-fn legacy_locks_are_tightened_in_place() {
+fn real_fs_legacy_locks_are_tightened_in_place() {
     for mode in [0o644, 0o444, 0o640] {
         let dir = private_dir();
         let path = legacy_lock(&dir, "persistent host lock\n", mode);
@@ -88,7 +88,7 @@ fn legacy_locks_are_tightened_in_place() {
 }
 
 #[test]
-fn legacy_read_only_holder_stays_exclusive_through_migration() {
+fn real_fs_legacy_read_only_holder_stays_exclusive_through_migration() {
     let dir = private_dir();
     let path = legacy_lock(&dir, "", 0o644);
     let holder = File::open(&path).unwrap();
@@ -105,7 +105,7 @@ fn legacy_read_only_holder_stays_exclusive_through_migration() {
 }
 
 #[test]
-fn provisioned_group_lock_keeps_its_mode() {
+fn real_fs_provisioned_group_lock_keeps_its_mode() {
     let dir = private_dir();
     let path = legacy_lock(&dir, "", 0o660);
     drop(acquire(&path).unwrap());
@@ -113,7 +113,7 @@ fn provisioned_group_lock_keeps_its_mode() {
 }
 
 #[test]
-fn concurrent_creators_yield_one_owner() {
+fn real_fs_concurrent_creators_yield_one_owner() {
     const CONTENDERS: usize = 8;
     let dir = private_dir();
     let path = lock_in(&dir);
@@ -140,7 +140,7 @@ fn concurrent_creators_yield_one_owner() {
 }
 
 #[test]
-fn unsafe_lock_objects_are_refused_untouched() {
+fn real_fs_unsafe_lock_objects_are_refused_untouched() {
     for kind in ["symlink", "hardlink", "directory", "fifo"] {
         let dir = private_dir();
         let target = dir.path().join("target");
@@ -172,7 +172,7 @@ fn unsafe_lock_objects_are_refused_untouched() {
 }
 
 #[test]
-fn hardlinked_lock_is_named_as_multiply_linked() {
+fn real_fs_hardlinked_lock_is_named_as_multiply_linked() {
     let dir = private_dir();
     let target = dir.path().join("target");
     fs::write(&target, "").unwrap();
@@ -188,7 +188,7 @@ fn hardlinked_lock_is_named_as_multiply_linked() {
 }
 
 #[test]
-fn writable_ancestor_needs_the_sticky_bit() {
+fn real_fs_writable_ancestor_needs_the_sticky_bit() {
     for sticky in [false, true] {
         let dir = private_dir();
         set_mode(dir.path(), if sticky { 0o1777 } else { 0o777 });
@@ -217,7 +217,7 @@ fn writable_ancestor_needs_the_sticky_bit() {
 }
 
 #[test]
-fn missing_parent_is_not_created() {
+fn real_fs_missing_parent_is_not_created() {
     let dir = private_dir();
     let missing = dir.path().join("missing");
     let path = missing.join("togi.lock");
@@ -235,7 +235,7 @@ fn missing_parent_is_not_created() {
 }
 
 #[test]
-fn read_only_descriptor_to_a_secure_lock_is_refused_without_chmod() {
+fn real_fs_read_only_descriptor_to_a_secure_lock_is_refused_without_chmod() {
     for mode in [0o600, 0o660] {
         let dir = private_dir();
         let path = legacy_lock(&dir, "persistent", mode);
@@ -256,7 +256,7 @@ fn read_only_descriptor_to_a_secure_lock_is_refused_without_chmod() {
 }
 
 #[test]
-fn create_permission_failure_is_reported_as_create() {
+fn real_fs_create_permission_failure_is_reported_as_create() {
     if geteuid().is_root() {
         return;
     }
@@ -282,7 +282,7 @@ fn create_permission_failure_is_reported_as_create() {
 }
 
 #[test]
-fn unopenable_lock_is_refused_untouched() {
+fn real_fs_unopenable_lock_is_refused_untouched() {
     if geteuid().is_root() {
         return;
     }
@@ -306,7 +306,7 @@ fn unopenable_lock_is_refused_untouched() {
 }
 
 #[test]
-fn host_policy_leaves_provisioning_to_root() {
+fn real_fs_host_policy_leaves_provisioning_to_root() {
     if geteuid().is_root() {
         return;
     }
@@ -339,7 +339,11 @@ fn real_process_excludes_until_it_exits() {
         reason = "test helper re-executes the test binary"
     )]
     let mut child = Command::new(std::env::current_exe().unwrap())
-        .args(["--exact", "tests::hold_lock_helper", "--nocapture"])
+        .args([
+            "--exact",
+            "tests::real_process_hold_lock_helper",
+            "--nocapture",
+        ])
         .env(HOLD_ENV, &path)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -360,7 +364,7 @@ fn real_process_excludes_until_it_exits() {
 }
 
 #[test]
-fn hold_lock_helper() {
+fn real_process_hold_lock_helper() {
     let Some(path) = std::env::var_os(HOLD_ENV) else {
         return;
     };

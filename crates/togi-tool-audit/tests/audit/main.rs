@@ -1,8 +1,7 @@
 #![expect(
     clippy::unwrap_used,
-    clippy::disallowed_methods,
     clippy::needless_pass_by_value,
-    reason = "fixtures panic on a broken journal, take JSON literals by value, and keep state directories in memory"
+    reason = "fixtures panic on a broken journal and take JSON literals by value"
 )]
 
 mod avoidance;

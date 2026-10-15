@@ -219,3 +219,83 @@ fn a_failed_check_after_a_warm_crash_still_publishes_the_crashed_boots_state() {
     assert!(published.is_some());
     assert_eq!(published, projected.contents("/state/state.json"));
 }
+
+#[test]
+fn a_dump_receives_the_stopped_memory_directory_after_publication() {
+    let fs = MemFs::new();
+    let mut input = sim_input(
+        crashing(),
+        Persistence::Memory(fs.clone()),
+        Replay::Warm,
+        None,
+    );
+    input.observer = Some(Box::new(|event| {
+        if event.kind() == EventKind::TrialEnd {
+            Observe::Stop
+        } else {
+            Observe::Continue
+        }
+    }));
+    input.dump_to = Some("/dump".into());
+    let mut dumped = false;
+    let outcome = super::simulate_with_dump(input, &mut verify, &mut |memory, destination| {
+        assert_eq!(destination, std::path::Path::new("/dump"));
+        assert_eq!(
+            memory.contents("/state/events.jsonl"),
+            fs.contents("/state/events.jsonl")
+        );
+        assert!(memory.contents("/state/state.json").is_some());
+        assert!(memory.contents("/state/machine.json").is_none());
+        dumped = true;
+        Ok(())
+    })
+    .unwrap();
+    assert!(matches!(outcome, SimOutcome::Stopped(_)));
+    assert!(dumped);
+}
+
+#[test]
+fn a_dump_of_a_capped_simulation_includes_the_machine_it_left() {
+    let mut input = sim_input(
+        crashing(),
+        Persistence::Memory(MemFs::new()),
+        Replay::Warm,
+        None,
+    );
+    input.dump_to = Some("/dump".into());
+    let mut dumped = false;
+    let outcome = super::simulate_with_dump(input, &mut verify, &mut |memory, _| {
+        assert!(!memory.contents("/state/machine.json").unwrap().is_empty());
+        assert!(!memory.contents("/state/events.jsonl").unwrap().is_empty());
+        assert!(memory.contents("/state/state.json").is_some());
+        dumped = true;
+        Ok(())
+    })
+    .unwrap();
+    assert!(matches!(outcome, SimOutcome::Capped { .. }));
+    assert!(dumped);
+}
+
+#[test]
+fn a_dump_that_cannot_be_written_fails_the_simulation_instead_of_capping_it() {
+    let mut input = sim_input(
+        crashing(),
+        Persistence::Memory(MemFs::new()),
+        Replay::Warm,
+        None,
+    );
+    input.dump_to = Some("/dump".into());
+    let outcome = super::simulate_with_dump(input, &mut verify, &mut |memory, _| {
+        assert!(memory.contents("/state/machine.json").is_some());
+        Err(std::io::Error::other("dump refused"))
+    });
+    assert!(matches!(outcome, Err(SimError::Dump(_))));
+}
+
+#[test]
+fn a_dump_asked_of_a_state_directory_on_disk_writes_nothing() {
+    super::dump_with(None, std::path::Path::new("/dump"), &mut |_, _| {
+        panic!("a file-backed simulation must not invoke the memory dump adapter")
+    })
+    .unwrap();
+}

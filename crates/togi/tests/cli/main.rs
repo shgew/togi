@@ -1,16 +1,48 @@
 #![expect(
     clippy::unwrap_used,
     clippy::disallowed_methods,
-    reason = "the tests run the built command and panic on a broken fixture"
+    reason = "fixtures panic on failure; the real_process_ shell tests execute real commands"
 )]
 
-use std::process::{Command, Output};
+use std::os::unix::process::ExitStatusExt;
+use std::path::Path;
+use std::process::{Command, ExitStatus, Output};
+
+use togi_journal::fs::Fs;
+
+#[path = "../support/mod.rs"]
+mod support;
+
+macro_rules! snapshot {
+    ($name:ident, $actual:expr) => {{
+        let expected = include_str!(concat!("snapshots/cli__", stringify!($name), ".snap"))
+            .split_once("\n---\n")
+            .unwrap()
+            .1;
+        assert_eq!(
+            $actual.trim_end_matches('\n'),
+            expected.trim_end_matches('\n')
+        );
+    }};
+}
 
 fn togi(args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_togi"))
-        .args(args)
-        .output()
-        .unwrap()
+    togi_on(&support::Host::new(), args)
+}
+
+fn togi_on(host: &support::Host, args: &[&str]) -> Output {
+    let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
+    let exit = togi_cli::run_with(
+        std::iter::once("togi").chain(args.iter().copied()),
+        &mut stdout,
+        &mut stderr,
+        host,
+    );
+    Output {
+        status: ExitStatus::from_raw(i32::from(exit.code()) << 8),
+        stdout,
+        stderr,
+    }
 }
 
 fn stdout(output: &Output) -> &str {
@@ -75,7 +107,7 @@ fn top_level_help() {
     let ran = togi(&["--help"]);
     assert_eq!(ran.status.code(), Some(0));
     assert_eq!(stderr(&ran), "");
-    insta::assert_snapshot!(stdout(&ran));
+    snapshot!(top_level_help, stdout(&ran));
 }
 
 #[test]
@@ -83,7 +115,7 @@ fn completion_help() {
     let ran = togi(&["completion", "--help"]);
     assert_eq!(ran.status.code(), Some(0));
     assert_eq!(stderr(&ran), "");
-    insta::assert_snapshot!(stdout(&ran));
+    snapshot!(completion_help, stdout(&ran));
 }
 
 #[test]
@@ -91,7 +123,10 @@ fn no_command_prints_the_wordmark_and_usage_on_stderr() {
     let ran = togi(&[]);
     assert_eq!(ran.status.code(), Some(2));
     assert_eq!(stdout(&ran), "");
-    insta::assert_snapshot!(stderr(&ran));
+    snapshot!(
+        no_command_prints_the_wordmark_and_usage_on_stderr,
+        stderr(&ran)
+    );
 }
 
 #[test]
@@ -113,7 +148,7 @@ fn state_dir_without_a_command_prints_the_wordmark_and_usage_on_stderr() {
 /// runtime reopens it on `/dev/null` before `main`, so no write ever fails there.
 #[cfg(target_os = "linux")]
 #[test]
-fn a_stdout_that_cannot_be_written_exits_1_with_the_error_on_stderr() {
+fn real_process_a_stdout_that_cannot_be_written_exits_1_with_the_error_on_stderr() {
     let full = |args: &[&str]| {
         let stdout = std::fs::OpenOptions::new()
             .write(true)
@@ -178,7 +213,7 @@ fn usage_errors_exit_2_on_stderr_with_nothing_on_stdout() {
 fn a_missing_shell_error_names_the_argument() {
     let ran = togi(&["completion"]);
     assert!(stderr(&ran).contains("<SHELL>"), "{}", stderr(&ran));
-    insta::assert_snapshot!(stderr(&ran));
+    snapshot!(a_missing_shell_error_names_the_argument, stderr(&ran));
 }
 
 fn completion(shell: &str) -> String {
@@ -190,41 +225,42 @@ fn completion(shell: &str) -> String {
 
 #[test]
 fn bash_completion() {
-    insta::assert_snapshot!(completion("bash"));
+    snapshot!(bash_completion, completion("bash"));
 }
 
 #[test]
 fn zsh_completion() {
-    insta::assert_snapshot!(completion("zsh"));
+    snapshot!(zsh_completion, completion("zsh"));
 }
 
 #[test]
 fn fish_completion() {
-    insta::assert_snapshot!(completion("fish"));
+    snapshot!(fish_completion, completion("fish"));
 }
 
 #[test]
 fn nushell_completion() {
-    insta::assert_snapshot!(completion("nushell"));
+    snapshot!(nushell_completion, completion("nushell"));
 }
 
 #[test]
 fn completion_reads_and_writes_nothing_in_the_state_directory() {
-    let dir = tempfile::tempdir().unwrap();
-    let state = dir.path().to_str().unwrap();
+    let host = support::Host::new();
+    let state = "/state";
     for args in [
         ["--state-dir", state, "completion", "fish"],
         ["completion", "fish", "--state-dir", state],
     ] {
-        let ran = togi(&args);
+        let ran = togi_on(&host, &args);
         assert_eq!(ran.status.code(), Some(0), "{args:?}: {}", stderr(&ran));
         assert!(!stdout(&ran).is_empty());
     }
-    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+    assert!(host.fs.kind(Path::new(state)).unwrap().is_none());
+    assert!(host.steps().is_empty());
 }
 
 #[test]
-fn nushell_loads_the_script_without_warnings() {
+fn real_process_nushell_loads_the_script_without_warnings() {
     let nu = Command::new("nu").arg("--version").output();
     assert!(
         nu.is_ok(),
@@ -292,7 +328,7 @@ fn bash_complete(word: &str) -> Vec<String> {
 }
 
 #[test]
-fn bash_completes_the_item_after_a_comma_in_events_kind() {
+fn real_process_bash_completes_the_item_after_a_comma_in_events_kind() {
     assert_eq!(
         bash_complete("trial,cr"),
         ["trial,crash", "trial,crash.detected"]
@@ -312,7 +348,7 @@ fn run_help() {
     let ran = togi(&["run", "--help"]);
     assert_eq!(ran.status.code(), Some(0));
     assert_eq!(stderr(&ran), "");
-    insta::assert_snapshot!(stdout(&ran));
+    snapshot!(run_help, stdout(&ran));
 }
 
 #[test]
@@ -333,9 +369,8 @@ fn the_cycles_example_is_worded_the_same_in_the_top_level_and_run_help() {
 
 #[test]
 fn run_usage_errors_exit_2_before_anything_is_touched() {
-    let state = tempfile::tempdir().unwrap();
-    let state = state.path().join("state");
-    let state = state.to_str().unwrap();
+    let host = support::Host::new();
+    let state = "/state";
     for (args, text) in [
         (
             &["run", "--first-result", "--cycles", "1"][..],
@@ -349,28 +384,29 @@ fn run_usage_errors_exit_2_before_anything_is_touched() {
     ] {
         let mut all = vec!["--state-dir", state];
         all.extend_from_slice(args);
-        let ran = togi(&all);
+        let ran = togi_on(&host, &all);
         assert_eq!(ran.status.code(), Some(2), "{args:?}");
         assert_eq!(stdout(&ran), "", "{args:?}");
         assert!(stderr(&ran).contains(text), "{args:?}: {}", stderr(&ran));
     }
-    assert!(!std::path::Path::new(state).exists());
+    assert!(host.fs.kind(Path::new(state)).unwrap().is_none());
+    assert!(host.steps().is_empty());
 }
 
-/// These reach `run`'s platform check on `Real`, which refuses anything but Linux before it reads the config.
+/// Config loading uses the injected host regardless of where the flag is written.
 #[test]
 #[cfg(target_os = "linux")]
 fn run_reads_its_config_wherever_the_flag_is_written() {
-    let dir = tempfile::tempdir().unwrap();
-    let state = dir.path().join("state");
-    let missing = dir.path().join("missing.json");
+    let host = support::Host::new();
+    let state = Path::new("/state");
+    let missing = Path::new("/missing.json");
     for args in [
         vec!["run", "--config", missing.to_str().unwrap()],
         vec!["--config", missing.to_str().unwrap(), "run"],
     ] {
         let mut all = vec!["--state-dir", state.to_str().unwrap()];
         all.extend(args.iter().copied());
-        let ran = togi(&all);
+        let ran = togi_on(&host, &all);
         assert_eq!(ran.status.code(), Some(2), "{args:?}: {}", stderr(&ran));
         assert_eq!(stdout(&ran), "", "{args:?}");
         assert!(
@@ -384,16 +420,19 @@ fn run_reads_its_config_wherever_the_flag_is_written() {
 #[test]
 #[cfg(target_os = "linux")]
 fn run_with_an_invalid_config_is_a_usage_error() {
-    let dir = tempfile::tempdir().unwrap();
-    let config = dir.path().join("config.json");
-    std::fs::write(&config, r#"{"bogus": 1}"#).unwrap();
-    let ran = togi(&[
-        "run",
-        "--state-dir",
-        dir.path().join("state").to_str().unwrap(),
-        "--config",
-        config.to_str().unwrap(),
-    ]);
+    let host = support::Host::new();
+    let config = Path::new("/config.json");
+    host.write(config, r#"{"bogus": 1}"#).unwrap();
+    let ran = togi_on(
+        &host,
+        &[
+            "run",
+            "--state-dir",
+            "/state",
+            "--config",
+            config.to_str().unwrap(),
+        ],
+    );
     assert_eq!(ran.status.code(), Some(2), "{}", stderr(&ran));
     assert!(
         stderr(&ran).starts_with("togi run: invalid config"),
@@ -409,18 +448,22 @@ const NEWER_JOURNAL: &str = r#"{"seq":1,"time":"2026-01-01T00:00:00Z","boot":"b"
 #[test]
 #[cfg(target_os = "linux")]
 fn run_refuses_a_journal_from_a_newer_evidence_epoch_before_the_config_and_appends_nothing() {
-    let dir = tempfile::tempdir().unwrap();
-    let state = dir.path().join("state");
-    std::fs::create_dir_all(&state).unwrap();
-    std::fs::write(state.join("events.jsonl"), NEWER_JOURNAL).unwrap();
-    let missing = dir.path().join("missing.json");
-    let ran = togi(&[
-        "run",
-        "--state-dir",
-        state.to_str().unwrap(),
-        "--config",
-        missing.to_str().unwrap(),
-    ]);
+    let host = support::Host::new();
+    let state = Path::new("/state");
+    host.fs.create_dir(state).unwrap();
+    host.write(state.join("events.jsonl"), NEWER_JOURNAL)
+        .unwrap();
+    let missing = Path::new("/missing.json");
+    let ran = togi_on(
+        &host,
+        &[
+            "run",
+            "--state-dir",
+            state.to_str().unwrap(),
+            "--config",
+            missing.to_str().unwrap(),
+        ],
+    );
     assert_eq!(ran.status.code(), Some(16), "{}", stderr(&ran));
     assert_eq!(stdout(&ran), "");
     assert!(
@@ -433,7 +476,7 @@ fn run_refuses_a_journal_from_a_newer_evidence_epoch_before_the_config_and_appen
         stderr(&ran)
     );
     assert_eq!(
-        std::fs::read_to_string(state.join("events.jsonl")).unwrap(),
+        String::from_utf8(host.fs.read(&state.join("events.jsonl")).unwrap()).unwrap(),
         NEWER_JOURNAL
     );
 }
@@ -447,22 +490,22 @@ fn help(command: &str) -> String {
 
 #[test]
 fn reset_help() {
-    insta::assert_snapshot!(help("reset"));
+    snapshot!(reset_help, help("reset"));
 }
 
 #[test]
 fn doctor_help() {
-    insta::assert_snapshot!(help("doctor"));
+    snapshot!(doctor_help, help("doctor"));
 }
 
 #[test]
 fn restart_limit_help() {
-    insta::assert_snapshot!(help("restart-limit"));
+    snapshot!(restart_limit_help, help("restart-limit"));
 }
 
 #[test]
 fn emergency_stop_help() {
-    insta::assert_snapshot!(help("emergency-stop"));
+    snapshot!(emergency_stop_help, help("emergency-stop"));
 }
 
 #[test]
@@ -476,9 +519,8 @@ fn only_doctor_and_reset_list_config() {
 
 #[test]
 fn administration_usage_errors_exit_2_before_touching_anything() {
-    let dir = tempfile::tempdir().unwrap();
-    let state = dir.path().join("state");
-    let state = state.to_str().unwrap();
+    let host = support::Host::new();
+    let state = "/state";
     for (args, text) in [
         (&["reset"][..], "required arguments were not provided"),
         (&["reset", "--core", "1", "--all"], "cannot be used with"),
@@ -511,15 +553,13 @@ fn administration_usage_errors_exit_2_before_touching_anything() {
     ] {
         let mut all = vec!["--state-dir", state];
         all.extend_from_slice(args);
-        let ran = togi(&all);
+        let ran = togi_on(&host, &all);
         assert_eq!(ran.status.code(), Some(2), "{args:?}: {}", stderr(&ran));
         assert_eq!(stdout(&ran), "", "{args:?}");
         assert!(stderr(&ran).contains(text), "{args:?}: {}", stderr(&ran));
     }
-    assert!(
-        !std::path::Path::new(state).exists(),
-        "a usage error created the state directory"
-    );
+    assert!(host.fs.kind(Path::new(state)).unwrap().is_none());
+    assert!(host.steps().is_empty(), "a usage error reached the host");
 }
 
 #[cfg(target_os = "linux")]
@@ -532,14 +572,16 @@ fn session_start(schema: u32) -> String {
 #[test]
 #[cfg(target_os = "linux")]
 fn doctor_refuses_a_newer_journal_with_exit_16_before_any_check() {
-    let dir = tempfile::tempdir().unwrap();
-    std::fs::write(dir.path().join("events.jsonl"), session_start(99)).unwrap();
-    let state = dir.path().to_str().unwrap();
+    let host = support::Host::new();
+    let state = "/state";
+    host.fs.create_dir(Path::new(state)).unwrap();
+    host.write(Path::new(state).join("events.jsonl"), session_start(99))
+        .unwrap();
     for args in [
         ["--state-dir", state, "doctor"],
         ["doctor", "--state-dir", state],
     ] {
-        let ran = togi(&args);
+        let ran = togi_on(&host, &args);
         assert_eq!(ran.status.code(), Some(16), "{args:?}: {}", stderr(&ran));
         assert_eq!(stdout(&ran), "");
         assert!(
@@ -553,29 +595,37 @@ fn doctor_refuses_a_newer_journal_with_exit_16_before_any_check() {
 #[test]
 #[cfg(target_os = "linux")]
 fn doctor_exits_1_for_an_unreadable_journal_and_2_for_a_bad_config() {
-    let dir = tempfile::tempdir().unwrap();
-    let state = dir.path().to_str().unwrap();
-    let missing = dir.path().join("none.json");
-    let ran = togi(&[
-        "--state-dir",
-        state,
-        "doctor",
-        "--config",
-        missing.to_str().unwrap(),
-    ]);
+    let host = support::Host::new();
+    let state = "/state";
+    host.fs.create_dir(Path::new(state)).unwrap();
+    let missing = Path::new("/none.json");
+    let ran = togi_on(
+        &host,
+        &[
+            "--state-dir",
+            state,
+            "doctor",
+            "--config",
+            missing.to_str().unwrap(),
+        ],
+    );
     assert_eq!(ran.status.code(), Some(2), "{}", stderr(&ran));
     assert!(stderr(&ran).contains("none.json"), "{}", stderr(&ran));
-    let ran = togi(&[
-        "--config",
-        missing.to_str().unwrap(),
-        "--state-dir",
-        state,
-        "doctor",
-    ]);
+    let ran = togi_on(
+        &host,
+        &[
+            "--config",
+            missing.to_str().unwrap(),
+            "--state-dir",
+            state,
+            "doctor",
+        ],
+    );
     assert_eq!(ran.status.code(), Some(2), "{}", stderr(&ran));
 
-    std::fs::write(dir.path().join("events.jsonl"), "not json\n").unwrap();
-    let ran = togi(&["--state-dir", state, "doctor"]);
+    host.write(Path::new(state).join("events.jsonl"), "not json\n")
+        .unwrap();
+    let ran = togi_on(&host, &["--state-dir", state, "doctor"]);
     assert_eq!(ran.status.code(), Some(1), "{}", stderr(&ran));
     assert_eq!(stdout(&ran), "");
 }

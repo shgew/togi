@@ -1,5 +1,3 @@
-#![allow(dead_code, reason = "each test crate uses part of this shared module")]
-
 use std::num::NonZeroU32;
 
 use jiff::tz::TimeZone;

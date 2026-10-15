@@ -1,46 +1,34 @@
-use std::fs;
+use std::io::{self, BufReader, Read};
 use std::path::Path;
 
-use tempfile::tempdir;
-use togi_watchtest::{Scenario, install};
+use togi_watchtest::Scenario;
 
-use super::plant::{UNKNOWN_KIND, plant};
+use super::plant::{UNKNOWN_KIND, plant, recording};
 use crate::{Error, load};
 
-fn installed(scenario: Scenario) -> tempfile::TempDir {
-    let dir = tempdir().unwrap();
-    install(dir.path(), scenario).unwrap();
-    dir
+fn loaded(text: &str) -> Result<load::Loaded, Error> {
+    load::events_from(Path::new("state"), text.as_bytes())
 }
 
-fn rewrite_first_line(dir: &Path, from: &str, to: &str) {
-    let path = dir.join("events.jsonl");
-    let text = fs::read_to_string(&path).unwrap();
+fn rewrite_first_line(text: &mut String, from: &str, to: &str) {
     let (first, rest) = text.split_once('\n').unwrap();
     assert!(first.contains(from), "{first}");
-    fs::write(&path, format!("{}\n{rest}", first.replacen(from, to, 1))).unwrap();
+    *text = format!("{}\n{rest}", first.replacen(from, to, 1));
 }
 
 #[test]
 fn the_events_of_a_recording_are_read_whole() {
-    let dir = installed(Scenario::Checking);
-    let loaded = load::events(dir.path()).unwrap();
+    let loaded = loaded(&recording(Scenario::Checking)).unwrap();
     assert_eq!(loaded.events, Scenario::Checking.events().unwrap());
     assert_eq!(loaded.skipped, None);
 }
 
 #[test]
 fn an_unknown_kind_in_the_middle_is_skipped_unknown_fields_are_ignored_and_the_report_says_which() {
-    let dir = installed(Scenario::Checking);
-    let planted = plant(dir.path());
-    let path = dir.path().join("events.jsonl");
-    let bytes = fs::read(&path).unwrap();
-    let before: Vec<_> = fs::read_dir(dir.path())
-        .unwrap()
-        .map(|entry| entry.unwrap().file_name())
-        .collect();
-
-    let loaded = load::events(dir.path()).unwrap();
+    let mut text = recording(Scenario::Checking);
+    let planted = plant(&mut text);
+    let before = text.clone();
+    let loaded = loaded(&text).unwrap();
     let known: Vec<_> = Scenario::Checking
         .events()
         .unwrap()
@@ -60,118 +48,96 @@ fn an_unknown_kind_in_the_middle_is_skipped_unknown_fields_are_ignored_and_the_r
         assert!(report.contains(&ignored), "{report}");
     }
     assert!(!report.contains('\n'), "{report}");
-
-    assert_eq!(fs::read(&path).unwrap(), bytes);
-    let after: Vec<_> = fs::read_dir(dir.path())
-        .unwrap()
-        .map(|entry| entry.unwrap().file_name())
-        .collect();
-    assert_eq!(after, before);
+    assert_eq!(text, before);
 }
 
 #[test]
 fn an_unknown_kind_on_the_first_line_is_still_an_error() {
-    let dir = installed(Scenario::Checking);
+    let mut text = recording(Scenario::Checking);
     rewrite_first_line(
-        dir.path(),
+        &mut text,
         "\"kind\":\"session.start\"",
         &format!("\"kind\":\"{UNKNOWN_KIND}\""),
     );
-    assert!(matches!(
-        load::events(dir.path()).unwrap_err(),
-        Error::Read(_)
-    ));
+    assert!(matches!(loaded(&text).unwrap_err(), Error::Read(_)));
 }
 
 #[test]
 fn reading_leaves_the_journal_and_its_unfinished_last_line_as_they_are() {
-    let dir = installed(Scenario::Checking);
-    let path = dir.path().join("events.jsonl");
-    let mut bytes = fs::read(&path).unwrap();
-    bytes.extend_from_slice(b"{\"unfinished\":");
-    fs::write(&path, &bytes).unwrap();
-    let listing = || {
-        let mut names: Vec<_> = fs::read_dir(dir.path())
-            .unwrap()
-            .map(|entry| entry.unwrap().file_name())
-            .collect();
-        names.sort();
-        names
-    };
-    let before = listing();
-    let loaded = load::events(dir.path()).unwrap();
+    let mut text = recording(Scenario::Checking);
+    text.push_str("{\"unfinished\":");
+    let before = text.clone();
+    let loaded = loaded(&text).unwrap();
     assert_eq!(
         loaded.events.len(),
         Scenario::Checking.events().unwrap().len()
     );
     assert_eq!(loaded.skipped, None);
-    assert_eq!(fs::read(&path).unwrap(), bytes);
-    assert_eq!(listing(), before);
+    assert_eq!(text, before);
 }
 
 #[test]
 fn a_recording_of_another_ruleset_or_a_newer_schema_is_refused() {
-    let ruleset = installed(Scenario::Checking);
+    let mut ruleset = recording(Scenario::Checking);
     let current = togi_tuner::RULESET;
     rewrite_first_line(
-        ruleset.path(),
+        &mut ruleset,
         &format!("\"ruleset\":{current}"),
         &format!("\"ruleset\":{}", current + 1),
     );
-    let error = load::events(ruleset.path()).unwrap_err();
+    let error = loaded(&ruleset).unwrap_err();
     assert!(matches!(error, Error::Refused(_)), "{error}");
     assert!(error.to_string().contains("ruleset"), "{error}");
 
-    let schema = installed(Scenario::Checking);
+    let mut schema = recording(Scenario::Checking);
     let current = togi_journal::SCHEMA;
     rewrite_first_line(
-        schema.path(),
+        &mut schema,
         &format!("\"schema\":{current}"),
         &format!("\"schema\":{}", current + 1),
     );
-    let error = load::events(schema.path()).unwrap_err();
+    let error = loaded(&schema).unwrap_err();
     assert!(matches!(error, Error::Refused(_)), "{error}");
     assert!(error.to_string().contains("schema"), "{error}");
 }
 
+pub(super) struct Missing;
+
+impl Read for Missing {
+    fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
+        Err(io::Error::new(io::ErrorKind::NotFound, "missing recording"))
+    }
+}
+
 #[test]
 fn a_missing_journal_and_an_empty_one_are_errors_naming_what_is_wrong() {
-    let dir = tempdir().unwrap();
-    let error = load::events(dir.path()).unwrap_err();
+    let error = load::events_from(Path::new("state"), BufReader::new(Missing)).unwrap_err();
     assert!(matches!(error, Error::Read(_)), "{error}");
     assert!(error.to_string().starts_with("read journal: "), "{error}");
+    assert!(error.to_string().contains("state/events.jsonl"), "{error}");
 
-    fs::write(dir.path().join("events.jsonl"), "").unwrap();
-    let error = load::events(dir.path()).unwrap_err();
+    let error = loaded("").unwrap_err();
     assert!(matches!(error, Error::Empty(_)), "{error}");
-    assert!(error.to_string().ends_with(" holds no events"), "{error}");
+    assert_eq!(error.to_string(), "state holds no events");
 }
 
 #[test]
 fn a_journal_that_does_not_decode_is_an_error() {
-    let dir = tempdir().unwrap();
-    fs::write(dir.path().join("events.jsonl"), "not an event\n").unwrap();
     assert!(matches!(
-        load::events(dir.path()).unwrap_err(),
+        loaded("not an event\n").unwrap_err(),
         Error::Read(_)
     ));
 }
 
 #[test]
 fn a_refusal_comes_before_any_later_event_is_decoded() {
-    let dir = installed(Scenario::Checking);
+    let mut text = recording(Scenario::Checking);
     let current = togi_tuner::RULESET;
     rewrite_first_line(
-        dir.path(),
+        &mut text,
         &format!("\"ruleset\":{current}"),
         &format!("\"ruleset\":{}", current + 1),
     );
-    let path = dir.path().join("events.jsonl");
-    let mut text = fs::read_to_string(&path).unwrap();
     text.push_str("not an event\n");
-    fs::write(&path, text).unwrap();
-    assert!(matches!(
-        load::events(dir.path()).unwrap_err(),
-        Error::Refused(_)
-    ));
+    assert!(matches!(loaded(&text).unwrap_err(), Error::Refused(_)));
 }

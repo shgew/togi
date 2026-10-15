@@ -5,15 +5,23 @@
     reason = "the tests run the built command and panic on a broken fixture"
 )]
 
+#[expect(
+    dead_code,
+    reason = "CLI tests construct commands directly rather than using fixture Options"
+)]
 mod fake;
 mod git;
+#[expect(
+    dead_code,
+    reason = "process fixture setup uses session events, not simulator outcomes"
+)]
 mod session;
 
 use std::fs;
 use std::path::Path;
 use std::process::{Command, Output};
 
-use fake::Bench;
+use fake::ProcessBench as Bench;
 use git::{isolate_git, repo};
 use serde_json::json;
 use togi_sim::file;
@@ -64,7 +72,7 @@ fn shared_voltage() -> std::path::PathBuf {
 }
 
 #[test]
-fn a_registered_gate_judges_the_run_against_the_baseline_and_sets_the_exit() {
+fn real_process_a_registered_gate_judges_the_run_against_the_baseline_and_sets_the_exit() {
     let bench = Bench::new();
     let machine = shared_voltage();
     let definition = file::load(&machine).unwrap();
@@ -223,7 +231,7 @@ fn a_registered_gate_judges_the_run_against_the_baseline_and_sets_the_exit() {
 }
 
 #[test]
-fn a_suite_with_a_gate_and_no_baseline_prints_no_verdict_and_exits_0() {
+fn real_process_a_suite_with_a_gate_and_no_baseline_prints_no_verdict_and_exits_0() {
     let bench = Bench::new();
     let gated = bench.path("gated.json");
     let gate = json!({
@@ -241,7 +249,7 @@ fn a_suite_with_a_gate_and_no_baseline_prints_no_verdict_and_exits_0() {
 }
 
 #[test]
-fn a_gate_of_the_go_bench_stops_the_run_before_any_session() {
+fn real_process_a_gate_of_the_go_bench_stops_the_run_before_any_session() {
     let bench = Bench::new();
     let archived =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tools/bench/gates/ruleset-11/suite.json");

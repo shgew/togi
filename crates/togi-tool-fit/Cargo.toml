@@ -20,7 +20,6 @@ togi-tool-modelcheck.workspace = true
 togi-tool-trialfacts.workspace = true
 
 [dev-dependencies]
-insta.workspace = true
 proptest.workspace = true
 tempfile.workspace = true
 

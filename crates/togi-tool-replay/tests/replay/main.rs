@@ -25,7 +25,7 @@ fn text(bytes: Vec<u8>) -> String {
 }
 
 #[test]
-fn at_prints_a_frame_of_a_recording_and_nothing_else() {
+fn real_process_at_prints_a_frame_of_a_recording_and_nothing_else() {
     let dir = tempdir().unwrap();
     install(dir.path(), Scenario::Checking).unwrap();
     let state = dir.path().to_str().unwrap();
@@ -51,10 +51,12 @@ fn at_prints_a_frame_of_a_recording_and_nothing_else() {
 }
 
 #[test]
-fn at_says_once_on_stderr_what_it_skipped_and_still_prints_the_frame() {
+fn real_process_at_says_once_on_stderr_what_it_skipped_and_still_prints_the_frame() {
     let dir = tempdir().unwrap();
     install(dir.path(), Scenario::Checking).unwrap();
-    let planted = plant::plant(dir.path());
+    let mut recording = plant::recording(Scenario::Checking);
+    let planted = plant::plant(&mut recording);
+    std::fs::write(dir.path().join("events.jsonl"), recording).unwrap();
     let path = dir.path().join("events.jsonl");
     let bytes = std::fs::read(&path).unwrap();
     let ran = replay(&["--state-dir", dir.path().to_str().unwrap(), "--at", "99999"]);
@@ -72,7 +74,7 @@ fn at_says_once_on_stderr_what_it_skipped_and_still_prints_the_frame() {
 }
 
 #[test]
-fn an_invalid_speed_is_a_usage_error_before_the_journal_is_read() {
+fn real_process_an_invalid_speed_is_a_usage_error_before_the_journal_is_read() {
     let dir = tempdir().unwrap();
     let missing = dir.path().join("missing");
     for speed in [
@@ -94,7 +96,7 @@ fn an_invalid_speed_is_a_usage_error_before_the_journal_is_read() {
 }
 
 #[test]
-fn playing_without_a_terminal_fails_and_points_at_at() {
+fn real_process_playing_without_a_terminal_fails_and_points_at_at() {
     let dir = tempdir().unwrap();
     install(dir.path(), Scenario::Checking).unwrap();
     let ran = replay(&["--state-dir", dir.path().to_str().unwrap()]);
@@ -107,7 +109,7 @@ fn playing_without_a_terminal_fails_and_points_at_at() {
 }
 
 #[test]
-fn a_missing_journal_exits_1_naming_the_file() {
+fn real_process_a_missing_journal_exits_1_naming_the_file() {
     let dir = tempdir().unwrap();
     let ran = replay(&["--state-dir", dir.path().to_str().unwrap(), "--at", "1"]);
     assert_eq!(ran.status.code(), Some(1));

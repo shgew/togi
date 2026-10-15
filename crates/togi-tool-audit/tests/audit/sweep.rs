@@ -2,10 +2,14 @@ use std::fs;
 use std::num::NonZeroU64;
 use std::path::{Path, PathBuf};
 
+use std::collections::BTreeMap;
+use togi_journal::StateDir;
+use togi_journal::fs::MemFs;
+
 use togi_journal::Event;
 use togi_tool_audit::{
-    Finding, Kind, Record, Split, Status, audit_directories, audit_holding, check_records,
-    read_records, run_directory, sweep_suite, timing,
+    Finding, Kind, Record, Split, Status, audit_directory_with, audit_with, check_records,
+    read_records_from, run_directory, sweep_suite, timing,
 };
 
 use crate::fixtures::*;
@@ -22,6 +26,77 @@ fn record(scenario: &str, status: Status, wall_s: f64) -> Record {
 
 fn kinds(findings: &[Finding]) -> Vec<Kind> {
     findings.iter().map(|finding| finding.check).collect()
+}
+
+fn memory(events: &[Event]) -> MemFs {
+    let fs = MemFs::new();
+    let journal: String = events
+        .iter()
+        .map(|event| event.encode().unwrap() + "\n")
+        .collect();
+    fs.put("/state/events.jsonl", journal.into_bytes());
+    fs.put(
+        "/state/state.json",
+        serde_json::to_vec(&serde_json::json!({
+            "facts": togi_journal::State::replay(events).unwrap(),
+            "tuner": togi_tuner::replay(events).unwrap().project(),
+        }))
+        .unwrap(),
+    );
+    fs
+}
+
+fn lexical(path: &Path) -> PathBuf {
+    let mut resolved = PathBuf::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                resolved.pop();
+            }
+            other => resolved.push(other),
+        }
+    }
+    resolved
+}
+
+#[derive(Default)]
+struct Directories(BTreeMap<PathBuf, MemFs>);
+
+impl Directories {
+    fn put(&mut self, path: &Path, events: &[Event]) {
+        self.0.insert(lexical(path), memory(events));
+    }
+
+    fn inspect(
+        &self,
+        path: &Path,
+        simulated: bool,
+    ) -> (Vec<Finding>, usize, Vec<togi_tool_audit::JournalSkip>) {
+        audit_directory_with(path, simulated, |path| {
+            let fs = self
+                .0
+                .get(&lexical(path))
+                .ok_or_else(|| "not a directory".to_owned())?;
+            #[expect(
+                clippy::disallowed_methods,
+                reason = "report content fixtures open only the injected in-memory journal"
+            )]
+            let state = StateDir::simulated(fs.clone());
+            state.map_err(|error| error.to_string())
+        })
+    }
+
+    fn audit(&self, dirs: &[PathBuf], records: &[Record], root: &Path) -> togi_tool_audit::Report {
+        audit_with(
+            dirs,
+            records,
+            root,
+            || (),
+            |path, simulated| self.inspect(path, simulated),
+        )
+        .unwrap()
+    }
 }
 
 #[test]
@@ -72,7 +147,10 @@ fn timing_names_the_run_directory_and_its_median() {
     ];
     let found = timing(&records, Path::new("root"));
     assert_eq!(found[0].directory, PathBuf::from("root/a/dev-1"));
-    insta::assert_snapshot!(found[0].reason, @"wall time 11.000s exceeds 10x scenario median 1.000s");
+    assert_eq!(
+        found[0].reason,
+        "wall time 11.000s exceeds 10x scenario median 1.000s"
+    );
 }
 
 fn sweep(input: &str, seeds: u64) -> Result<String, String> {
@@ -97,7 +175,12 @@ fn the_sweep_suite_is_dev_only_over_seeds_one_to_n_with_absolute_machines() {
         3,
     )
     .unwrap();
-    insta::assert_snapshot!(suite);
+    assert_snapshot(
+        &suite,
+        include_str!(
+            "snapshots/audit__sweep__the_sweep_suite_is_dev_only_over_seeds_one_to_n_with_absolute_machines.snap"
+        ),
+    );
 }
 
 #[test]
@@ -123,12 +206,12 @@ fn dirty() -> Vec<Event> {
 
 #[test]
 fn a_directory_is_audited_with_the_run_it_belongs_to_whatever_its_spelling() {
-    let tmp = tempfile::tempdir().unwrap();
-    let root = tmp.path().join("bench");
-    let respelled = tmp.path().join("bench/./a//dev-1");
+    let mut dirs = Directories::default();
+    let root = Path::new("/fixture/bench");
+    let respelled = PathBuf::from("/fixture/bench/./a//dev-1");
     let rec = record("a", Status::Concluded, 1.0);
-    write_state_dir(&run_directory(&root, &rec), &dirty());
-    let report = audit_directories(&[respelled], &[rec], &root).unwrap();
+    dirs.put(&run_directory(root, &rec), &dirty());
+    let report = dirs.audit(&[respelled], &[rec], root);
     let found: Vec<_> = report
         .findings
         .iter()
@@ -142,19 +225,23 @@ fn a_directory_is_audited_with_the_run_it_belongs_to_whatever_its_spelling() {
             )
         })
         .collect();
-    insta::assert_debug_snapshot!(found);
+    assert_snapshot(
+        &format!("{found:#?}"),
+        include_str!(
+            "snapshots/audit__sweep__a_directory_is_audited_with_the_run_it_belongs_to_whatever_its_spelling.snap"
+        ),
+    );
     assert_eq!((report.directories, report.journals), (1, 1));
 }
 
 #[test]
 fn a_directory_is_audited_with_its_run_whatever_dots_its_path_has() {
-    let tmp = tempfile::tempdir().unwrap();
-    let root = tmp.path().join("bench");
+    let mut dirs = Directories::default();
+    let root = Path::new("/fixture/bench");
     let rec = record("a", Status::Concluded, 1.0);
-    write_state_dir(&run_directory(&root, &rec), &[header(), phase(2, 0, None)]);
-    fs::create_dir(tmp.path().join("elsewhere")).unwrap();
-    let respelled = tmp.path().join("elsewhere/../bench/a/./dev-1");
-    let report = audit_directories(&[respelled], &[rec], &root).unwrap();
+    dirs.put(&run_directory(root, &rec), &[header(), phase(2, 0, None)]);
+    let respelled = PathBuf::from("/fixture/elsewhere/../bench/a/./dev-1");
+    let report = dirs.audit(&[respelled], &[rec], root);
     assert_eq!(report.findings.len(), 1);
     assert_eq!(report.findings[0].scenario.as_deref(), Some("a"));
     assert_eq!(report.findings[0].seed, Some(1));
@@ -166,31 +253,38 @@ fn a_directory_is_audited_with_its_run_whatever_dots_its_path_has() {
 
 #[test]
 fn a_run_directory_must_conclude_but_a_given_one_need_not() {
-    let tmp = tempfile::tempdir().unwrap();
+    let mut dirs = Directories::default();
+    let root = Path::new("/fixture");
+    let path = root.join("a/dev-1");
     let open = vec![header(), phase(2, 0, None)];
-    write_state_dir(&tmp.path().join("a/dev-1"), &open);
+    dirs.put(&path, &open);
     let rec = record("a", Status::Concluded, 1.0);
-    let simulated = audit_directories(&[tmp.path().join("a/dev-1")], &[rec], tmp.path()).unwrap();
+    let simulated = dirs.audit(std::slice::from_ref(&path), &[rec], root);
     assert_eq!(
         kinds(&simulated.findings),
         [Kind::Audit(togi_tool_audit::Check::Termination)]
     );
-    let given = audit_directories(&[tmp.path().join("a/dev-1")], &[], tmp.path()).unwrap();
+    let given = dirs.audit(&[path], &[], root);
     assert!(given.findings.is_empty());
 }
 
 #[test]
 fn an_unreadable_or_missing_directory_is_a_finding_not_a_crash() {
-    let tmp = tempfile::tempdir().unwrap();
-    let broken = tmp.path().join("broken");
-    fs::create_dir(&broken).unwrap();
-    fs::write(broken.join("events.jsonl"), "not json\n").unwrap();
-    let report = audit_directories(
-        &[tmp.path().join("missing"), broken, tmp.path().to_path_buf()],
+    let root = Path::new("/fixture");
+    let mut dirs = Directories::default();
+    let broken = MemFs::new();
+    broken.put("/state/events.jsonl", b"not json\n".to_vec());
+    dirs.0.insert(root.join("broken"), broken);
+    dirs.0.insert(root.to_path_buf(), MemFs::new());
+    let report = dirs.audit(
+        &[
+            root.join("missing"),
+            root.join("broken"),
+            root.to_path_buf(),
+        ],
         &[],
-        tmp.path(),
-    )
-    .unwrap();
+        root,
+    );
     assert_eq!(report.directories, 3);
     assert_eq!(report.journals, 0);
     assert_eq!(
@@ -202,21 +296,31 @@ fn an_unreadable_or_missing_directory_is_a_finding_not_a_crash() {
 
 #[test]
 fn a_clean_directory_reports_its_journals_and_nothing_else() {
-    let tmp = tempfile::tempdir().unwrap();
-    write_state_dir(tmp.path(), &clean());
-    let report = audit_directories(&[tmp.path().to_path_buf()], &[], tmp.path()).unwrap();
+    let mut dirs = Directories::default();
+    let root = Path::new("/fixture");
+    dirs.put(root, &clean());
+    let report = dirs.audit(&[root.to_path_buf()], &[], root);
     assert_eq!((report.journals, report.findings.len()), (1, 0));
 }
 
 fn records_file(text: &str) -> Result<Vec<Record>, String> {
-    let tmp = tempfile::tempdir().unwrap();
-    let path = tmp.path().join("records.jsonl");
-    fs::write(&path, text).unwrap();
-    read_records(&path).map_err(|error| {
-        error
-            .to_string()
-            .replace(tmp.path().to_str().unwrap(), "[tmp]")
-    })
+    read_records_from(Path::new("[tmp]/records.jsonl"), text.as_bytes())
+        .map_err(|error| error.to_string())
+}
+
+#[test]
+fn record_reader_errors_keep_the_source_path() {
+    struct Broken;
+    impl std::io::Read for Broken {
+        fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::other("record stream failed"))
+        }
+    }
+    let error = read_records_from(Path::new("/fixture/records.jsonl"), Broken).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "open run records /fixture/records.jsonl: record stream failed",
+    );
 }
 
 #[test]
@@ -259,23 +363,26 @@ fn records_that_name_no_run_are_refused() {
     ] {
         errors.push(records_file(&line(scenario, wall)).unwrap_err());
     }
-    insta::assert_debug_snapshot!(errors);
+    assert_snapshot(
+        &format!("{errors:#?}"),
+        include_str!("snapshots/audit__sweep__records_that_name_no_run_are_refused.snap"),
+    );
     assert!(check_records(&[]).is_err());
 }
 
 #[test]
 fn the_reported_check_spellings_are_pinned() {
-    let tmp = tempfile::tempdir().unwrap();
+    let root = Path::new("/fixture");
     let mut records = vec![
         record("a", Status::Concluded, 1.0),
         record("a", Status::Concluded, 1.0),
         record("a", Status::Error, 11.0),
     ];
     records[2].seed = 3;
-    let mut findings = timing(&records, tmp.path());
+    let mut findings = timing(&records, root);
     findings.extend(
-        audit_directories(&[tmp.path().join("missing")], &[], tmp.path())
-            .unwrap()
+        Directories::default()
+            .audit(&[root.join("missing")], &[], root)
             .findings,
     );
     let spelled: Vec<String> = findings
@@ -289,7 +396,7 @@ fn the_reported_check_spellings_are_pinned() {
 }
 
 #[test]
-fn auditing_a_directory_creates_its_lock_file_and_sets_its_mode() {
+fn real_fs_auditing_a_directory_creates_its_lock_file_and_sets_its_mode() {
     use std::os::unix::fs::PermissionsExt as _;
 
     let tmp = tempfile::tempdir().unwrap();
@@ -297,7 +404,14 @@ fn auditing_a_directory_creates_its_lock_file_and_sets_its_mode() {
     write_state_dir(&dir, &clean());
     fs::set_permissions(&dir, fs::Permissions::from_mode(0o755)).unwrap();
     assert!(!dir.join("lock").exists());
-    let report = audit_directories(std::slice::from_ref(&dir), &[], Path::new("")).unwrap();
+    let report = audit_with(
+        std::slice::from_ref(&dir),
+        &[],
+        Path::new(""),
+        || (),
+        disk_inspect,
+    )
+    .unwrap();
     assert!(report.findings.is_empty(), "{:?}", report.findings);
     assert!(dir.join("lock").is_file());
     assert_eq!(
@@ -308,16 +422,18 @@ fn auditing_a_directory_creates_its_lock_file_and_sets_its_mode() {
 
 #[test]
 fn a_violation_in_an_archived_journal_names_the_archive() {
-    let tmp = tempfile::tempdir().unwrap();
-    let dir = tmp.path().join("state");
-    write_state_dir(&dir, &clean());
-    fs::create_dir(dir.join("archive")).unwrap();
+    let mut dirs = Directories::default();
+    let dir = Path::new("/fixture/state");
+    dirs.put(dir, &clean());
     let archive: String = dirty()
         .iter()
         .map(|event| event.encode().unwrap() + "\n")
         .collect();
-    fs::write(dir.join("archive/20251231T000000Z.jsonl"), archive).unwrap();
-    let report = audit_directories(&[dir], &[], Path::new("")).unwrap();
+    dirs.0.get(dir).unwrap().put(
+        "/state/archive/20251231T000000Z.jsonl",
+        archive.into_bytes(),
+    );
+    let report = dirs.audit(&[dir.to_path_buf()], &[], Path::new("/"));
     assert_eq!(report.journals, 2);
     let journals: Vec<_> = report
         .findings
@@ -357,42 +473,46 @@ fn each_directory_is_audited_while_the_hook_holds_its_guard() {
     use std::cell::{Cell, RefCell};
 
     struct Guard<'a> {
-        dirs: &'a [PathBuf],
+        audited: &'a Cell<usize>,
         released: &'a Cell<usize>,
         seen: &'a RefCell<Vec<usize>>,
     }
     impl Drop for Guard<'_> {
         fn drop(&mut self) {
-            let locked = self
-                .dirs
-                .iter()
-                .filter(|dir| dir.join("lock").exists())
-                .count();
-            self.seen.borrow_mut().push(locked);
+            self.seen.borrow_mut().push(self.audited.get());
             self.released.set(self.released.get() + 1);
         }
     }
 
-    let tmp = tempfile::tempdir().unwrap();
+    let mut memory = Directories::default();
     let dirs: Vec<PathBuf> = ["one", "two", "three"]
         .iter()
-        .map(|name| tmp.path().join(name))
+        .map(|name| Path::new("/fixture").join(name))
         .collect();
     for dir in &dirs {
-        write_state_dir(dir, &clean());
+        memory.put(dir, &clean());
     }
     let released = Cell::new(0);
     let seen = RefCell::new(Vec::new());
     let taken = RefCell::new(Vec::new());
-    let report = audit_holding(&dirs, &[], Path::new(""), || {
-        let locked = dirs.iter().filter(|dir| dir.join("lock").exists()).count();
-        taken.borrow_mut().push(locked);
-        Guard {
-            dirs: &dirs,
-            released: &released,
-            seen: &seen,
-        }
-    })
+    let audited = Cell::new(0);
+    let report = audit_with(
+        &dirs,
+        &[],
+        Path::new("/"),
+        || {
+            taken.borrow_mut().push(audited.get());
+            Guard {
+                audited: &audited,
+                released: &released,
+                seen: &seen,
+            }
+        },
+        |path, simulated| {
+            audited.set(audited.get() + 1);
+            memory.inspect(path, simulated)
+        },
+    )
     .unwrap();
     assert_eq!(report.directories, 3);
     assert_eq!(released.get(), 3);

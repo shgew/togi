@@ -1,22 +1,30 @@
-//! The `togi-tool-audit` command, run as a process over a fake bench.
+//! The audit command: content routing in memory, and process/signal protocols over an unsynced disk adapter.
 #![expect(
     clippy::unwrap_used,
-    clippy::disallowed_methods,
     clippy::needless_pass_by_value,
-    reason = "the tests run the built command, panic on a broken fixture and share fixtures that take JSON literals by value"
+    reason = "the tests panic on a broken fixture and share fixtures that take JSON literals by value"
 )]
 
 #[expect(dead_code, reason = "each test crate uses part of the shared fixtures")]
 #[path = "audit/fixtures.rs"]
 mod fixtures;
 
+#[expect(
+    dead_code,
+    reason = "the durable binary main is not the injected test entry"
+)]
+#[path = "../src/main.rs"]
+mod audit_command;
+mod support;
+
 use std::fs;
 use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Output, Stdio};
+use std::process::{Child, Output, Stdio};
 use std::time::{Duration, Instant};
+use support::{AuditCommand as Command, Memory};
 
-use fixtures::{applied, header, phase, stop, write_state_dir};
+use fixtures::{applied, assert_snapshot, header, phase, stop, write_state_dir};
 use rustix::process::{Pid, Signal, kill_process, test_kill_process};
 use serde_json::{Value, json};
 use togi_journal::Event;
@@ -24,9 +32,12 @@ use togi_journal::Event;
 const RECORDS: &str = r#"{"scenario":"s","seed":1,"split":"dev","status":"concluded","wall_s":1.0}
 {"scenario":"s","seed":2,"split":"dev","status":"error","wall_s":1.0}
 "#;
+pub(crate) fn make_fifo(path: &std::path::Path) {
+    nix::unistd::mkfifo(path, nix::sys::stat::Mode::from_bits_truncate(0o600)).unwrap();
+}
 
 fn command() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_togi-tool-audit"))
+    Command::new(std::env::current_exe().unwrap())
 }
 
 fn text(bytes: &[u8]) -> String {
@@ -136,7 +147,8 @@ fn run(command: &mut Command) -> Output {
 
 #[test]
 fn help_goes_to_stdout_and_a_bad_flag_exits_two() {
-    let help = run(command().arg("--help"));
+    let memory = Memory::default();
+    let help = memory.run(["--help"]);
     assert!(help.status.success());
     assert!(text(&help.stdout).contains("STATE-DIR"));
     for args in [
@@ -147,24 +159,25 @@ fn help_goes_to_stdout_and_a_bad_flag_exits_two() {
         &["--root", "dir"],
         &["--bogus"],
     ] {
-        assert_eq!(run(command().args(args)).status.code(), Some(2), "{args:?}");
+        assert_eq!(memory.run(args).status.code(), Some(2), "{args:?}");
     }
 }
 
 #[test]
 fn given_directories_are_audited_without_a_sweep() {
-    let tmp = tempfile::tempdir().unwrap();
-    write_state_dir(&tmp.path().join("ok"), &[header(), stop(2)]);
-    write_state_dir(&tmp.path().join("bad"), &dirty());
-    let clean = run(command().arg(tmp.path().join("ok")));
+    let mut memory = Memory::default();
+    memory.state(Path::new("/fixture/ok"), &[header(), stop(2)]);
+    memory.state(Path::new("/fixture/bad"), &dirty());
+    let clean = memory.run(["/fixture/ok"]);
     assert_eq!(clean.status.code(), Some(0));
     assert!(text(&clean.stderr).contains("directories=1 journals=1 violations=0"));
-    let both = run(command()
-        .arg(tmp.path().join("ok"))
-        .arg(tmp.path().join("bad")));
+    let both = memory.run(["/fixture/ok", "/fixture/bad"]);
     assert_eq!(both.status.code(), Some(1));
     assert!(text(&both.stderr).contains("directories=2 journals=2 violations=1"));
-    insta::assert_debug_snapshot!(brief(&text(&both.stdout)));
+    assert_snapshot(
+        &format!("{:#?}", brief(&text(&both.stdout))),
+        include_str!("snapshots/command__given_directories_are_audited_without_a_sweep.snap"),
+    );
 }
 
 /// The line `event` is written as, to edit into one this build does not wholly know.
@@ -183,16 +196,6 @@ fn future_event(seq: u64) -> Value {
     json!({"seq": seq, "time": "2026-01-01T00:00:00Z", "boot": "b", "kind": "future.thing", "msg": "m", "data": {}})
 }
 
-fn write_journal(dir: &Path, lines: &[Value]) {
-    use std::fmt::Write as _;
-    fs::create_dir_all(dir).unwrap();
-    let mut journal = String::new();
-    for line in lines {
-        writeln!(journal, "{line}").unwrap();
-    }
-    fs::write(dir.join("events.jsonl"), journal).unwrap();
-}
-
 /// What the command says a lenient read of `dir`'s live journal left out of the journals this file writes.
 fn skip_report(dir: &Path, kind_line: u64) -> String {
     format!(
@@ -204,10 +207,10 @@ fn skip_report(dir: &Path, kind_line: u64) -> String {
 
 #[test]
 fn a_given_directory_reports_what_its_lenient_read_left_out_and_is_still_audited() {
-    let tmp = tempfile::tempdir().unwrap();
-    let dir = tmp.path().join("bad");
-    write_journal(
-        &dir,
+    let mut memory = Memory::default();
+    let dir = Path::new("/fixture/bad");
+    memory.journal(
+        dir,
         &[
             header_with_unknown_field(),
             future_event(2),
@@ -215,7 +218,7 @@ fn a_given_directory_reports_what_its_lenient_read_left_out_and_is_still_audited
             line(&applied(4, [-30, 0])),
         ],
     );
-    let output = run(command().arg(&dir));
+    let output = memory.run([dir]);
     let stderr = text(&output.stderr);
     assert_eq!(output.status.code(), Some(1), "{stderr}");
     assert_eq!(
@@ -226,7 +229,7 @@ fn a_given_directory_reports_what_its_lenient_read_left_out_and_is_still_audited
         ]
     );
     assert!(
-        stderr.lines().any(|line| line == skip_report(&dir, 2)),
+        stderr.lines().any(|line| line == skip_report(dir, 2)),
         "{stderr}"
     );
     assert!(
@@ -237,25 +240,20 @@ fn a_given_directory_reports_what_its_lenient_read_left_out_and_is_still_audited
 
 #[test]
 fn a_recorded_run_reports_what_its_lenient_read_left_out_and_is_still_audited() {
-    let tmp = tempfile::tempdir().unwrap();
-    let root = tmp.path().join("bench-1");
+    let mut memory = Memory::default();
+    let root = Path::new("/fixture/bench-1");
     let dir = root.join("s/dev-1");
-    write_state_dir(&dir, &[header(), stop(2)]);
-    write_journal(
+    memory.state(&dir, &[header(), stop(2)]);
+    memory.journal(
         &dir,
         &[header_with_unknown_field(), line(&stop(2)), future_event(3)],
     );
-    let records = tmp.path().join("records.jsonl");
-    fs::write(
-        &records,
-        r#"{"scenario":"s","seed":1,"split":"dev","status":"concluded","wall_s":1.0}"#,
-    )
-    .unwrap();
-    let output = run(command()
-        .arg("--records")
-        .arg(&records)
-        .arg("--root")
-        .arg(&root));
+    let records = Path::new("/fixture/records.jsonl");
+    memory.records.insert(
+        records.to_path_buf(),
+        br#"{"scenario":"s","seed":1,"split":"dev","status":"concluded","wall_s":1.0}"#.to_vec(),
+    );
+    let output = memory.run([Path::new("--records"), records, Path::new("--root"), root]);
     let stderr = text(&output.stderr);
     assert_eq!(output.status.code(), Some(0), "{stderr}");
     assert!(text(&output.stdout).is_empty());
@@ -270,7 +268,8 @@ fn a_recorded_run_reports_what_its_lenient_read_left_out_and_is_still_audited() 
 }
 
 #[test]
-fn a_sweep_runs_the_bench_keeps_its_runs_and_audits_them() {
+fn real_process_a_sweep_runs_the_bench_keeps_its_runs_and_audits_them() {
+    support::child();
     let fake = Fake::new();
     let bench = fake.bench(0);
     let output = run(&mut fake.sweep(&bench));
@@ -282,7 +281,12 @@ fn a_sweep_runs_the_bench_keeps_its_runs_and_audits_them() {
         stderr.contains("directories=2 journals=2 violations=3"),
         "{stderr}"
     );
-    insta::assert_debug_snapshot!(brief(&text(&output.stdout)));
+    assert_snapshot(
+        &format!("{:#?}", brief(&text(&output.stdout))),
+        include_str!(
+            "snapshots/command__a_sweep_runs_the_bench_keeps_its_runs_and_audits_them.snap"
+        ),
+    );
 
     let args = fs::read_to_string(fake.path("args.txt")).unwrap();
     let words: Vec<&str> = args.split_whitespace().collect();
@@ -310,7 +314,8 @@ fn a_sweep_runs_the_bench_keeps_its_runs_and_audits_them() {
 }
 
 #[test]
-fn a_failed_bench_names_the_evidence_and_audits_nothing() {
+fn real_process_a_failed_bench_names_the_evidence_and_audits_nothing() {
+    support::child();
     let fake = Fake::new();
     let bench = fake.bench(1);
     let output = run(&mut fake.sweep(&bench));
@@ -326,7 +331,8 @@ fn a_failed_bench_names_the_evidence_and_audits_nothing() {
 }
 
 #[test]
-fn an_unsweepable_suite_or_missing_bench_fails_before_running() {
+fn real_process_an_unsweepable_suite_or_missing_bench_fails_before_running() {
+    support::child();
     let fake = Fake::new();
     let bench = fake.bench(0);
     fs::write(fake.path("suite.json"), r#"{"scenarios":[]}"#).unwrap();
@@ -336,7 +342,7 @@ fn an_unsweepable_suite_or_missing_bench_fails_before_running() {
     assert!(!fake.path("args.txt").exists());
 
     let lonely = fake.path("lonely");
-    fs::copy(env!("CARGO_BIN_EXE_togi-tool-audit"), &lonely).unwrap();
+    fs::copy(std::env::current_exe().unwrap(), &lonely).unwrap();
     let missing = run(Command::new(&lonely)
         .arg("--suite")
         .arg(fake.path("suite.json")));
@@ -345,7 +351,8 @@ fn an_unsweepable_suite_or_missing_bench_fails_before_running() {
 }
 
 #[test]
-fn a_retained_sweep_is_audited_again_from_its_records() {
+fn real_process_a_retained_sweep_is_audited_again_from_its_records() {
+    support::child();
     let fake = Fake::new();
     let bench = fake.bench(0);
     run(&mut fake.sweep(&bench));
@@ -363,7 +370,10 @@ fn a_retained_sweep_is_audited_again_from_its_records() {
         .unwrap();
     let again = run(command().args(["--records", words[7], "--root"]).arg(&root));
     assert_eq!(again.status.code(), Some(1));
-    insta::assert_debug_snapshot!(brief(&text(&again.stdout)));
+    assert_snapshot(
+        &format!("{:#?}", brief(&text(&again.stdout))),
+        include_str!("snapshots/command__a_retained_sweep_is_audited_again_from_its_records.snap"),
+    );
     let one = run(command()
         .args(["--records", words[7], "--root"])
         .arg(&root)
@@ -373,7 +383,8 @@ fn a_retained_sweep_is_audited_again_from_its_records() {
 }
 
 #[test]
-fn a_sweep_without_keep_leaves_nothing_behind() {
+fn real_process_a_sweep_without_keep_leaves_nothing_behind() {
+    support::child();
     let fake = Fake::new();
     let scratch = fake.path("tmp");
     fs::create_dir(&scratch).unwrap();
@@ -413,7 +424,8 @@ fn a_sweep_without_keep_leaves_nothing_behind() {
 }
 
 #[test]
-fn a_sweep_passes_the_simulator_to_the_bench() {
+fn real_process_a_sweep_passes_the_simulator_to_the_bench() {
+    support::child();
     let fake = Fake::new();
     let bench = fake.bench(0);
     run(fake.sweep(&bench).args(["--sim", "/fake/sim"]));
@@ -422,7 +434,8 @@ fn a_sweep_passes_the_simulator_to_the_bench() {
 }
 
 #[test]
-fn a_missing_suite_file_fails_before_running_the_bench() {
+fn real_process_a_missing_suite_file_fails_before_running_the_bench() {
+    support::child();
     let fake = Fake::new();
     let bench = fake.bench(0);
     let output = run(command()
@@ -438,12 +451,12 @@ fn a_missing_suite_file_fails_before_running_the_bench() {
 
 #[test]
 fn missing_run_records_fail_with_the_open_error() {
-    let fake = Fake::new();
-    let output = run(command()
-        .arg("--records")
-        .arg(fake.path("absent.jsonl"))
-        .arg("--root")
-        .arg(fake.path("root")));
+    let output = Memory::default().run([
+        "--records",
+        "/fixture/absent.jsonl",
+        "--root",
+        "/fixture/root",
+    ]);
     assert_eq!(output.status.code(), Some(1));
     assert!(text(&output.stdout).is_empty());
     let stderr = text(&output.stderr);
@@ -452,7 +465,8 @@ fn missing_run_records_fail_with_the_open_error() {
 }
 
 #[test]
-fn a_run_directory_is_found_whatever_dots_its_root_is_spelled_with() {
+fn real_process_a_run_directory_is_found_whatever_dots_its_root_is_spelled_with() {
+    support::child();
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path().join("bench-1");
     let work = tmp.path().join("work");
@@ -497,6 +511,7 @@ fn exit_of(child: &mut Child) -> Output {
 
 #[test]
 fn real_process_a_signal_stops_the_bench_and_removes_the_scratch_without_blocking_its_signals() {
+    support::child();
     for (signal, keep) in [
         (Signal::TERM, false),
         (Signal::INT, false),
@@ -571,6 +586,7 @@ fn real_process_a_signal_stops_the_bench_and_removes_the_scratch_without_blockin
 #[test]
 fn real_process_a_signal_while_the_audit_reads_the_evidence_removes_the_scratch_and_exits() {
     use std::os::unix::fs::FileTypeExt as _;
+    support::child();
 
     for (signal, keep) in [
         (Signal::TERM, false),
@@ -582,9 +598,11 @@ fn real_process_a_signal_while_the_audit_reads_the_evidence_removes_the_scratch_
         let scratch = fake.path("tmp");
         fs::create_dir(&scratch).unwrap();
         let bench = fake.path("bench");
+        let fifo = fake.path("records.pipe");
+        make_fifo(&fifo);
         fs::write(
             &bench,
-            "#!/bin/sh\nwhile [ $# -gt 0 ]; do case \"$1\" in --keep) keep=\"$2\";; --out) out=\"$2\";; esac; shift; done\nmkdir -p \"$keep/bench-1\"\nmkfifo \"$out\"\n",
+            format!("#!/bin/sh\nwhile [ $# -gt 0 ]; do case \"$1\" in --keep) keep=\"$2\";; --out) out=\"$2\";; esac; shift; done\nmkdir -p \"$keep/bench-1\"\nmv '{}' \"$out\"\n", fifo.display()),
         )
         .unwrap();
         fs::set_permissions(&bench, fs::Permissions::from_mode(0o755)).unwrap();
@@ -684,6 +702,7 @@ fn signal(child: &Child, signal: Signal) {
 
 #[test]
 fn real_process_a_signal_before_the_bench_starts_stops_it_as_soon_as_it_does() {
+    support::child();
     let fake = Fake::new();
     let pids = fake.path("pids.txt");
     let bench = scripted_bench(
@@ -691,11 +710,7 @@ fn real_process_a_signal_before_the_bench_starts_stops_it_as_soon_as_it_does() {
         &format!("echo $$ > '{}'\nexec sleep 60\n", pids.display()),
     );
     fs::remove_file(fake.path("suite.json")).unwrap();
-    let made = Command::new("mkfifo")
-        .arg(fake.path("suite.json"))
-        .status()
-        .unwrap();
-    assert!(made.success());
+    make_fifo(&fake.path("suite.json"));
     let mut child = sweep_in(&fake, &bench, false).spawn().unwrap();
     let suite = fake.path("suite.json");
     let writer = std::thread::spawn(move || fs::OpenOptions::new().write(true).open(suite));
@@ -728,6 +743,7 @@ fn real_process_a_signal_before_the_bench_starts_stops_it_as_soon_as_it_does() {
 
 #[test]
 fn real_process_an_interrupted_sweep_is_interrupted_even_when_the_bench_exits_cleanly() {
+    support::child();
     let fake = Fake::new();
     let ready = fake.path("ready");
     let bench = scripted_bench(
@@ -749,7 +765,8 @@ fn real_process_an_interrupted_sweep_is_interrupted_even_when_the_bench_exits_cl
 }
 
 #[test]
-fn a_bench_that_keeps_no_run_root_fails_the_sweep() {
+fn real_process_a_bench_that_keeps_no_run_root_fails_the_sweep() {
+    support::child();
     let fake = Fake::new();
     let bench = scripted_bench(&fake, ": > \"$out\"\n");
     let output = run(&mut sweep_in(&fake, &bench, false));

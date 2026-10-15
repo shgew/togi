@@ -67,6 +67,8 @@ pub trait Fs: Send + Sync + fmt::Debug {
     /// Renames, failing with `AlreadyExists` instead of replacing `to`.
     fn rename_noreplace(&self, from: &Path, to: &Path) -> io::Result<()>;
     fn remove_file(&self, path: &Path) -> io::Result<()>;
+    /// Removes an empty directory without following a symbolic link.
+    fn remove_dir(&self, path: &Path) -> io::Result<()>;
     fn sync_dir(&self, path: &Path) -> io::Result<()>;
     /// Sets the permission bits of the directory at `path`, opened without following a link.
     fn set_dir_mode(&self, path: &Path, mode: u32) -> io::Result<()>;
@@ -77,9 +79,17 @@ pub trait Fs: Send + Sync + fmt::Debug {
     fn try_lock(&self, path: &Path) -> io::Result<Option<FsLock>>;
 }
 
+/// A real filesystem adapter that never syncs file contents, directory entries, or permissions.
+///
+/// For explicitly non-durable simulations and kernel tests only; production journals use
+/// [`crate::StateDir::lock`] instead.
+pub fn unsynced_disk_fs() -> Arc<dyn Fs> {
+    Arc::new(DiskFs::unsynced())
+}
+
 /// The real filesystem. Every sync reaches the disk unless the value was made by [`DiskFs::unsynced`].
 ///
-/// Crate-private: no other crate can open a journal on disk for writing except through [`StateDir::lock`].
+/// Crate-private: writers select durability through `StateDir` or the explicit opaque unsynced adapter.
 ///
 /// [`StateDir::lock`]: crate::StateDir::lock
 #[derive(Clone, Copy, Debug)]
@@ -132,6 +142,10 @@ impl FsFile for DiskFile {
         }
     }
 
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "production journal acknowledgements require durable file contents"
+    )]
     fn sync(&mut self) -> io::Result<()> {
         if self.synced {
             self.file.sync_data()
@@ -187,6 +201,14 @@ impl Fs for DiskFs {
         std::fs::remove_file(path)
     }
 
+    fn remove_dir(&self, path: &Path) -> io::Result<()> {
+        std::fs::remove_dir(path)
+    }
+
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "production journal publication requires durable directory entries"
+    )]
     fn sync_dir(&self, path: &Path) -> io::Result<()> {
         if !self.synced {
             return Ok(());
@@ -198,6 +220,10 @@ impl Fs for DiskFs {
             .sync_all()
     }
 
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "production state-directory permissions must survive power loss"
+    )]
     fn set_dir_mode(&self, path: &Path, mode: u32) -> io::Result<()> {
         let dir = OpenOptions::new()
             .read(true)
@@ -577,6 +603,13 @@ pub struct MemFs {
     tree: Arc<Mutex<Tree>>,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum DumpEntry<'a> {
+    Dir,
+    File(&'a [u8]),
+    Symlink(&'a Path),
+}
+
 impl MemFs {
     pub fn new() -> Self {
         Self::default()
@@ -665,23 +698,33 @@ impl MemFs {
 
     /// Writes the tree's files under `destination`, mirroring their paths.
     pub fn dump_to(&self, destination: &Path) -> io::Result<()> {
+        self.dump_with(destination, |target, entry| match entry {
+            DumpEntry::Dir => std::fs::create_dir_all(target),
+            DumpEntry::File(bytes) => std::fs::write(target, bytes),
+            DumpEntry::Symlink(link) => std::os::unix::fs::symlink(link, target),
+        })
+    }
+
+    fn dump_with(
+        &self,
+        destination: &Path,
+        mut publish: impl FnMut(&Path, DumpEntry<'_>) -> io::Result<()>,
+    ) -> io::Result<()> {
         let (nodes, data) = {
             let tree = self.tree();
             (tree.nodes.clone(), tree.data.clone())
         };
-        std::fs::create_dir_all(destination)?;
+        publish(destination, DumpEntry::Dir)?;
         for (path, node) in nodes {
             let target = destination.join(path.strip_prefix("/").unwrap_or(&path));
-            match node {
-                Node::Dir => std::fs::create_dir_all(&target)?,
+            let entry = match &node {
+                Node::Dir => DumpEntry::Dir,
                 Node::File(inode) => {
-                    std::fs::write(
-                        &target,
-                        data.get(&inode).map(Vec::as_slice).unwrap_or_default(),
-                    )?;
+                    DumpEntry::File(data.get(inode).map(Vec::as_slice).unwrap_or_default())
                 }
-                Node::Symlink(link) => std::os::unix::fs::symlink(link, &target)?,
-            }
+                Node::Symlink(link) => DumpEntry::Symlink(link),
+            };
+            publish(&target, entry)?;
         }
         Ok(())
     }
@@ -842,6 +885,23 @@ impl Fs for MemFs {
                 }
                 Ok(())
             }
+            None => Err(io::Error::from(io::ErrorKind::NotFound)),
+        })
+    }
+
+    fn remove_dir(&self, path: &Path) -> io::Result<()> {
+        self.mutate(Op::Remove, &[path], |tree| match tree.node(path) {
+            Some(Node::Dir) => {
+                if path == Path::new("/") {
+                    return Err(io::Error::from(io::ErrorKind::PermissionDenied));
+                }
+                if tree.children(path).next().is_some() {
+                    return Err(io::Error::from(io::ErrorKind::DirectoryNotEmpty));
+                }
+                tree.nodes.remove(path);
+                Ok(())
+            }
+            Some(_) => Err(io::Error::from(io::ErrorKind::NotADirectory)),
             None => Err(io::Error::from(io::ErrorKind::NotFound)),
         })
     }
@@ -1083,49 +1143,84 @@ mod tests {
         let fs = MemFs::new();
         dir(&fs, "/s");
         fs.put("/s/a/b", "bytes");
-        let out = tempfile::tempdir().unwrap();
-        #[expect(
-            clippy::disallowed_methods,
-            reason = "pins the simulation dump the tripwire guards"
-        )]
-        fs.dump_to(out.path()).unwrap();
-        assert_eq!(std::fs::read(out.path().join("s/a/b")).unwrap(), b"bytes");
+        fs.symlink("/s/a/b", "/s/link");
+        let out = MemFs::new();
+        fs.dump_with(Path::new("/out"), |target, entry| {
+            match entry {
+                DumpEntry::Dir => out.create_dir(target)?,
+                DumpEntry::File(bytes) => out.put(target, bytes),
+                DumpEntry::Symlink(link) => out.symlink(link, target),
+            }
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(out.contents("/out/s/a/b").unwrap(), b"bytes");
+        assert_eq!(
+            out.kind(Path::new("/out/s/link")).unwrap(),
+            Some(FileKind::Symlink)
+        );
+        assert!(out.open_read(Path::new("/out/s/link")).is_err());
     }
 
     #[test]
-    fn disk_locks_are_exclusive_and_released_on_drop() {
+    fn removing_a_directory_requires_an_empty_directory_not_a_link() {
+        let fs = MemFs::new();
+        fs.put("/s/inner/file", "bytes");
+        fs.symlink("/s/inner", "/s/link");
+        assert_eq!(
+            fs.remove_dir(Path::new("/s/inner")).unwrap_err().kind(),
+            io::ErrorKind::DirectoryNotEmpty
+        );
+        assert_eq!(
+            fs.remove_dir(Path::new("/s/link")).unwrap_err().kind(),
+            io::ErrorKind::NotADirectory
+        );
+        fs.remove_file(Path::new("/s/inner/file")).unwrap();
+        fs.inject(Fault::before(Op::Remove, 1));
+        assert!(fs.remove_dir(Path::new("/s/inner")).is_err());
+        assert_eq!(fs.kind(Path::new("/s/inner")).unwrap(), Some(FileKind::Dir));
+        fs.remove_dir(Path::new("/s/inner")).unwrap();
+        assert_eq!(fs.kind(Path::new("/s/inner")).unwrap(), None);
+        assert_eq!(
+            fs.remove_dir(Path::new("/s/inner")).unwrap_err().kind(),
+            io::ErrorKind::NotFound
+        );
+    }
+
+    #[test]
+    fn real_fs_disk_locks_are_exclusive_and_released_on_drop() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("lock");
-        let held = DiskFs::default().try_lock(&path).unwrap();
+        let held = DiskFs::unsynced().try_lock(&path).unwrap();
         assert!(held.is_some());
-        assert!(DiskFs::default().try_lock(&path).unwrap().is_none());
+        assert!(DiskFs::unsynced().try_lock(&path).unwrap().is_none());
         drop(held);
-        assert!(DiskFs::default().try_lock(&path).unwrap().is_some());
+        assert!(DiskFs::unsynced().try_lock(&path).unwrap().is_some());
     }
 
     #[test]
-    fn disk_rename_noreplace_refuses_an_existing_target() {
+    fn real_fs_disk_rename_noreplace_refuses_an_existing_target() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("a"), "x").unwrap();
         std::fs::write(dir.path().join("b"), "y").unwrap();
-        let error = DiskFs::default()
+        let error = DiskFs::unsynced()
             .rename_noreplace(&dir.path().join("a"), &dir.path().join("b"))
             .unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::AlreadyExists);
     }
 
     #[test]
-    fn disk_opens_refuse_symlinks() {
+    fn real_fs_disk_opens_refuse_symlinks() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("real"), "x").unwrap();
         std::os::unix::fs::symlink(dir.path().join("real"), dir.path().join("link")).unwrap();
         assert!(
-            DiskFs::default()
+            DiskFs::unsynced()
                 .open_read(&dir.path().join("link"))
                 .is_err()
         );
         assert_eq!(
-            DiskFs::default().kind(&dir.path().join("link")).unwrap(),
+            DiskFs::unsynced().kind(&dir.path().join("link")).unwrap(),
             Some(FileKind::Symlink)
         );
     }
@@ -1204,17 +1299,17 @@ mod tests {
     }
 
     #[test]
-    fn disk_read_dir_refuses_a_symlinked_directory() {
+    fn real_fs_disk_read_dir_refuses_a_symlinked_directory() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir(dir.path().join("real")).unwrap();
         std::fs::write(dir.path().join("real/inner"), "x").unwrap();
         std::os::unix::fs::symlink(dir.path().join("real"), dir.path().join("link")).unwrap();
         assert!(
-            DiskFs::default()
+            DiskFs::unsynced()
                 .read_dir(&dir.path().join("link"))
                 .is_err()
         );
-        let entries = DiskFs::default()
+        let entries = DiskFs::unsynced()
             .read_dir(&dir.path().join("real"))
             .unwrap();
         assert_eq!(
@@ -1224,5 +1319,70 @@ mod tests {
                 kind: FileKind::File
             }]
         );
+    }
+
+    #[test]
+    fn disallowed_io_negative_controls_are_never_executed() {
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "pins the disk simulation tripwire without executing it"
+        )]
+        fn unsynced(path: &Path) -> Result<crate::StateDir, crate::LockError> {
+            crate::StateDir::lock_unsynced(path)
+        }
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "pins the opaque unsynced adapter tripwire without opening anything"
+        )]
+        fn disk() -> Arc<dyn Fs> {
+            unsynced_disk_fs()
+        }
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "pins the generic filesystem constructor tripwire without executing it"
+        )]
+        fn with_fs(fs: Arc<dyn Fs>, path: &Path) -> Result<crate::StateDir, crate::LockError> {
+            crate::StateDir::lock_with_fs(fs, path)
+        }
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "pins the simulation dump tripwire without executing it"
+        )]
+        fn dump(fs: &MemFs, path: &Path) -> io::Result<()> {
+            fs.dump_to(path)
+        }
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "pins the sync_all tripwire without creating a descriptor or syncing"
+        )]
+        fn sync_all(file: &File) -> io::Result<()> {
+            file.sync_all()
+        }
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "pins the sync_data tripwire without creating a descriptor or syncing"
+        )]
+        fn sync_data(file: &File) -> io::Result<()> {
+            file.sync_data()
+        }
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "pins the rustix fsync tripwire without creating a descriptor or syncing"
+        )]
+        fn fsync(file: &File) -> rustix::io::Result<()> {
+            rustix::fs::fsync(file)
+        }
+        #[cfg(target_os = "linux")]
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "pins the rustix fdatasync tripwire without creating a descriptor or syncing"
+        )]
+        fn fdatasync(file: &File) -> rustix::io::Result<()> {
+            rustix::fs::fdatasync(file)
+        }
+        // Referencing the functions keeps them type-checked and linted without calling any of them.
+        let _ = (unsynced, disk, with_fs, dump, sync_all, sync_data, fsync);
+        #[cfg(target_os = "linux")]
+        let _ = fdatasync;
     }
 }

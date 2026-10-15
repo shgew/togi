@@ -21,7 +21,6 @@ unicode-width.workspace = true
 
 [dev-dependencies]
 criterion.workspace = true
-insta.workspace = true
 rustix = { workspace = true, features = ["event", "fs", "process", "pty", "termios"] }
 serde_json.workspace = true
 tempfile.workspace = true

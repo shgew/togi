@@ -5,7 +5,10 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use togi_tool_trialfacts::{ExtractError, WriteError, extract_dir, write};
+use togi_journal::Recording;
+use togi_tool_trialfacts::{
+    ExtractError, Extracted, TrialFact, WriteError, encode, extract_dir, from_recordings, write,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum GenerateError {
@@ -42,8 +45,24 @@ pub fn generate(
         path: state_dir.to_path_buf(),
         source,
     })?;
-    let extracted = extract_dir(state_dir)?;
-    write(output, &extracted.facts)?;
+    finish(extract_dir(state_dir), |facts| write(output, facts))
+}
+
+/// Extracts journals already held in memory and writes their gzip extract to `writer`.
+/// Extraction completes before any bytes are written; the caller owns publication of the result.
+pub fn generate_recordings(
+    recordings: impl IntoIterator<Item = Recording>,
+    writer: impl io::Write,
+) -> Result<Generated, GenerateError> {
+    finish(from_recordings(recordings), |facts| encode(writer, facts))
+}
+
+fn finish(
+    extracted: Result<Extracted, ExtractError>,
+    persist: impl FnOnce(&[TrialFact]) -> Result<(), WriteError>,
+) -> Result<Generated, GenerateError> {
+    let extracted = extracted?;
+    persist(&extracted.facts)?;
     Ok(Generated {
         count: extracted.facts.len(),
         skipped: extracted
@@ -61,3 +80,11 @@ fn require_directory(path: &Path) -> io::Result<()> {
         Err(io::ErrorKind::NotADirectory.into())
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/facts/fixture.rs"]
+mod fixture;
+
+#[cfg(test)]
+#[path = "../tests/facts/generate.rs"]
+mod tests;

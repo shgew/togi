@@ -3,7 +3,7 @@
 use std::ffi::OsString;
 use std::fmt;
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, BufReader, Read};
+use std::io::{self, BufReader, Read, Write};
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 
@@ -72,7 +72,26 @@ impl std::error::Error for Errors {}
 /// Finishes or retries compression after all writers in `dir` have stopped.
 /// Missing files and directories are harmless: a trial may have stopped before creating them.
 pub fn compress(dir: &Path) -> Result<(), Errors> {
-    let instances = match instance_dirs(dir) {
+    compress_in(dir, &mut Disk { durable: true })
+}
+
+/// Compresses disposable trial output without requesting storage durability.
+///
+/// Simulations use this adapter; live trials must use [`compress`].
+pub fn compress_unsynced(dir: &Path) -> Result<(), Errors> {
+    compress_in(dir, &mut Disk { durable: false })
+}
+
+/// Compresses a completed trial through an explicit storage adapter.
+///
+/// In-memory trial runners use this seam. Live trials must use [`compress`], whose
+/// adapter enforces regular-file checks and durable publication.
+pub fn compress_with(dir: &Path, storage: &mut impl Storage) -> Result<(), Errors> {
+    compress_in(dir, storage)
+}
+
+fn compress_in(dir: &Path, storage: &mut impl Storage) -> Result<(), Errors> {
+    let instances = match storage.instance_dirs(dir) {
         Ok(instances) => instances,
         Err(source) if source.kind() == io::ErrorKind::NotFound => return Ok(()),
         Err(source) => {
@@ -83,10 +102,10 @@ pub fn compress(dir: &Path) -> Result<(), Errors> {
         }
     };
     let mut errors = Vec::new();
-    errors.extend(compress_file(&dir.join(SAMPLES), sync_dir).err());
+    errors.extend(compress_file(&dir.join(SAMPLES), storage).err());
     for instance in instances {
         for log in INSTANCE_LOGS {
-            errors.extend(compress_file(&instance.join(log), sync_dir).err());
+            errors.extend(compress_file(&instance.join(log), storage).err());
         }
     }
     if errors.is_empty() {
@@ -96,80 +115,145 @@ pub fn compress(dir: &Path) -> Result<(), Errors> {
     }
 }
 
-/// The real (not symlinked) subdirectories of `dir`, sorted by name. An entry that vanishes while listing is skipped.
-fn instance_dirs(dir: &Path) -> io::Result<Vec<PathBuf>> {
-    let mut instances = Vec::new();
-    for entry in fs::read_dir(dir)? {
-        let entry = entry?;
-        match entry.file_type() {
-            Ok(file_type) if file_type.is_dir() => instances.push(entry.path()),
-            Ok(_) => {}
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error),
+/// The operations involved in publishing a complete compressed trial file.
+///
+/// Implementations must never follow symlinks or open nonregular sources. The
+/// compressor writes and finishes gzip, syncs its content, renames it, syncs the
+/// directory, removes the plain form, then syncs the directory again.
+pub trait Storage {
+    type Source: Read;
+    type Destination: Write;
+
+    /// Returns real instance directories, sorted by name, without following links.
+    fn instance_dirs(&mut self, dir: &Path) -> io::Result<Vec<PathBuf>>;
+    /// Returns a regular source, or `None` for missing and nonregular paths.
+    fn open_regular(&mut self, path: &Path) -> Result<Option<Self::Source>, Error>;
+    /// Creates a new destination exclusively, without following links.
+    fn create(&mut self, path: &Path) -> io::Result<Self::Destination>;
+    fn sync_file(&mut self, file: &mut Self::Destination) -> io::Result<()>;
+    fn rename(&mut self, from: &Path, to: &Path) -> io::Result<()>;
+    fn remove(&mut self, path: &Path) -> io::Result<()>;
+    fn sync_dir(&mut self, dir: &Path) -> io::Result<()>;
+}
+
+struct Disk {
+    durable: bool,
+}
+
+impl Storage for Disk {
+    type Source = File;
+    type Destination = File;
+
+    fn instance_dirs(&mut self, dir: &Path) -> io::Result<Vec<PathBuf>> {
+        let mut instances = Vec::new();
+        for entry in fs::read_dir(dir)? {
+            let entry = entry?;
+            match entry.file_type() {
+                Ok(file_type) if file_type.is_dir() => instances.push(entry.path()),
+                Ok(_) => {}
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error),
+            }
+        }
+        instances.sort();
+        Ok(instances)
+    }
+
+    fn open_regular(&mut self, path: &Path) -> Result<Option<File>, Error> {
+        let src = match OpenOptions::new()
+            .read(true)
+            .custom_flags((OFlags::NOFOLLOW | OFlags::NONBLOCK).bits().cast_signed())
+            .open(path)
+        {
+            Ok(src) => src,
+            Err(source)
+                if source.kind() == io::ErrorKind::NotFound
+                    || source.raw_os_error() == Some(Errno::LOOP.raw_os_error()) =>
+            {
+                return Ok(None);
+            }
+            Err(source) => {
+                return Err(Error::Open {
+                    path: path.to_owned(),
+                    source,
+                });
+            }
+        };
+        match src.metadata() {
+            Ok(info) if info.is_file() => Ok(Some(src)),
+            Ok(_) => Ok(None),
+            Err(source) => Err(Error::Stat {
+                path: path.to_owned(),
+                source,
+            }),
         }
     }
-    instances.sort();
-    Ok(instances)
+
+    fn create(&mut self, path: &Path) -> io::Result<File> {
+        OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o644)
+            .custom_flags(OFlags::NOFOLLOW.bits().cast_signed())
+            .open(path)
+    }
+
+    fn sync_file(&mut self, file: &mut File) -> io::Result<()> {
+        if self.durable {
+            #[expect(
+                clippy::disallowed_methods,
+                reason = "live compression makes gzip content durable before publication"
+            )]
+            file.sync_all()?;
+        }
+        Ok(())
+    }
+
+    fn rename(&mut self, from: &Path, to: &Path) -> io::Result<()> {
+        fs::rename(from, to)
+    }
+
+    fn remove(&mut self, path: &Path) -> io::Result<()> {
+        fs::remove_file(path)
+    }
+
+    fn sync_dir(&mut self, dir: &Path) -> io::Result<()> {
+        if self.durable {
+            #[expect(
+                clippy::disallowed_methods,
+                reason = "live compression persists gzip publication and then plain-file removal"
+            )]
+            File::open(dir)?.sync_all()?;
+        }
+        Ok(())
+    }
 }
 
 /// Replaces the regular file at `path` with its gzip form at `path` + ".gz". The compressed file is written whole
 /// under a temporary name, synced and renamed into place before the plain file is removed, so a reader finds one
 /// complete form at every moment and a crash leaves either both (readers prefer the plain one) or the compressed one.
 /// A missing path is skipped. So is anything that is not a regular file: a workload may replace its logs with a
-/// symlink, which is never followed. `sync_dir` makes a change to path's directory durable.
-fn compress_file(
-    path: &Path,
-    mut sync_dir: impl FnMut(&Path) -> io::Result<()>,
-) -> Result<(), Error> {
-    let mut src = match OpenOptions::new()
-        .read(true)
-        .custom_flags((OFlags::NOFOLLOW | OFlags::NONBLOCK).bits().cast_signed())
-        .open(path)
-    {
-        Ok(src) => src,
-        Err(source)
-            if source.kind() == io::ErrorKind::NotFound
-                || source.raw_os_error() == Some(Errno::LOOP.raw_os_error()) =>
-        {
-            return Ok(());
-        }
-        Err(source) => {
-            return Err(Error::Open {
-                path: path.to_owned(),
-                source,
-            });
-        }
+/// symlink, which is never followed.
+fn compress_file(path: &Path, storage: &mut impl Storage) -> Result<(), Error> {
+    let Some(mut src) = storage.open_regular(path)? else {
+        return Ok(());
     };
-    match src.metadata() {
-        Ok(info) if info.is_file() => {}
-        Ok(_) => return Ok(()),
-        Err(source) => {
-            return Err(Error::Stat {
-                path: path.to_owned(),
-                source,
-            });
-        }
-    }
     let final_path = with_suffix(path, ".gz");
     let tmp = with_suffix(&final_path, ".tmp");
-    if let Err(source) = fs::remove_file(&tmp)
+    if let Err(source) = storage.remove(&tmp)
         && source.kind() != io::ErrorKind::NotFound
     {
         return Err(Error::RemoveStale { path: tmp, source });
     }
-    let dst = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o644)
-        .custom_flags(OFlags::NOFOLLOW.bits().cast_signed())
-        .open(&tmp)
-        .map_err(|source| Error::Create {
-            path: tmp.clone(),
-            source,
-        })?;
-    let published = write_gzip(&mut src, dst).and_then(|()| fs::rename(&tmp, &final_path));
+    let dst = storage.create(&tmp).map_err(|source| Error::Create {
+        path: tmp.clone(),
+        source,
+    })?;
+    let published = write_gzip(&mut src, dst)
+        .and_then(|mut dst| storage.sync_file(&mut dst))
+        .and_then(|()| storage.rename(&tmp, &final_path));
     if let Err(source) = published {
-        let _ = fs::remove_file(&tmp);
+        let _ = storage.remove(&tmp);
         return Err(Error::Compress {
             path: path.to_owned(),
             source,
@@ -179,28 +263,30 @@ fn compress_file(
         Some(parent) if !parent.as_os_str().is_empty() => parent,
         _ => Path::new("."),
     };
-    sync_dir(dir).map_err(|source| Error::SyncCompressed {
+    storage
+        .sync_dir(dir)
+        .map_err(|source| Error::SyncCompressed {
+            path: path.to_owned(),
+            source,
+        })?;
+    storage.remove(path).map_err(|source| Error::RemovePlain {
         path: path.to_owned(),
         source,
     })?;
-    fs::remove_file(path).map_err(|source| Error::RemovePlain {
-        path: path.to_owned(),
-        source,
-    })?;
-    sync_dir(dir).map_err(|source| Error::SyncRemoval {
+    storage.sync_dir(dir).map_err(|source| Error::SyncRemoval {
         path: path.to_owned(),
         source,
     })
 }
 
-fn write_gzip(src: &mut File, dst: File) -> io::Result<()> {
+fn write_gzip<R: Read, W: Write>(src: &mut R, dst: W) -> io::Result<W> {
     let mut encoder = GzEncoder::new(dst, Compression::default());
     io::copy(src, &mut encoder)?;
-    encoder.finish()?.sync_all()
+    encoder.finish()
 }
 
-fn sync_dir(path: &Path) -> io::Result<()> {
-    File::open(path)?.sync_all()
+fn read_gzip<R: Read>(src: R) -> MultiGzDecoder<BufReader<R>> {
+    MultiGzDecoder::new(BufReader::new(src))
 }
 
 fn with_suffix(path: &Path, suffix: &str) -> PathBuf {
@@ -237,7 +323,5 @@ pub fn open(path: &Path) -> io::Result<TrialFile> {
         Err(_) => {}
     }
     let file = File::open(with_suffix(path, ".gz"))?;
-    Ok(TrialFile(Form::Compressed(Box::new(MultiGzDecoder::new(
-        BufReader::new(file),
-    )))))
+    Ok(TrialFile(Form::Compressed(Box::new(read_gzip(file)))))
 }

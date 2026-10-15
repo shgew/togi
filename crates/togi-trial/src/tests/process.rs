@@ -498,6 +498,10 @@ pub(super) fn runner_over<O: Os>(
         unscoped: !scoped,
         user_manager: false,
         controller: Arc::new(crate::controller::Idle),
+        durability: crate::samples::Durability::Unsynced,
+        fs: None,
+        inputs: crate::procfs::Inputs::default(),
+        memory: None,
     };
     Runner::build(options, settings, make_os).unwrap()
 }
@@ -746,6 +750,8 @@ fn real_process_affinity_and_computation_errors_beat_an_overlong_line() {
 
 #[test]
 fn real_process_r6_workers_are_stopped_before_the_trial_starts_to_count() {
+    use rustix::process::{Pid, WaitId, WaitIdOptions, waitid};
+
     let dir = crate::testing::tempdir();
     let mut idle = runner("work", false, timing(), dir.path());
     let mut trial = idle
@@ -757,11 +763,18 @@ fn real_process_r6_workers_are_stopped_before_the_trial_starts_to_count() {
         .map_err(|partial| partial.error)
         .unwrap();
     for instance in trial.started().instances {
+        let pid = Pid::from_raw(i32::try_from(instance.pid).unwrap()).unwrap();
+        // A tracer can leave a SIGSTOP group-stop in /proc's `t` state. Require the kernel's
+        // group-stop notification, not an incidental ptrace stop, without consuming it.
         let stopped = wait_until(secs(1), || {
-            std::fs::read_to_string(format!("/proc/{}/stat", instance.pid))
-                .ok()
-                .and_then(|stat| stat.rsplit(')').next().map(str::trim).map(str::to_owned))
-                .is_some_and(|rest| rest.starts_with('T'))
+            waitid(
+                WaitId::Pid(pid),
+                WaitIdOptions::STOPPED | WaitIdOptions::NOWAIT | WaitIdOptions::NOHANG,
+            )
+            .unwrap()
+            .is_some_and(|status| {
+                status.stopping_signal() == Some(nix::sys::signal::Signal::SIGSTOP as i32)
+            })
         });
         assert!(stopped, "worker {} is stopped before wait", instance.pid);
     }

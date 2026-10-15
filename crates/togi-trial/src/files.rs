@@ -9,17 +9,18 @@ use std::sync::Arc;
 use rustix::fs::{AtFlags, Dir, Gid, Mode, OFlags, Uid, fchmod, fchown, mkdirat, openat, unlinkat};
 use rustix::io::Errno;
 use togi_backend::{Backend, Plan};
+use togi_journal::fs::{FileKind, Fs, FsFile};
 use togi_machine::Workload;
 
 use crate::error::PrepareError;
 use crate::id::TrialId;
 use crate::identity::BackendIdentity;
 use crate::plan::InstancePlan;
-use crate::samples::{Open, create_file};
+use crate::samples::{Durability, Open, create_file, create_file_unsynced};
 
 const MAX_DEPTH: usize = 128;
 
-type ChownFn = dyn Fn(&str, BorrowedFd<'_>, Uid, Gid) -> Result<(), Errno> + Send + Sync;
+type ChownFn = dyn Fn(&str, Option<BorrowedFd<'_>>, Uid, Gid) -> Result<(), Errno> + Send + Sync;
 
 /// How a created file or directory is handed to the backend account; the target names it for
 /// whoever observes the call. Production changes the owner of the descriptor it was given.
@@ -28,19 +29,31 @@ pub(crate) struct Chown(Arc<ChownFn>);
 
 impl Chown {
     pub(crate) fn new(
-        change: impl Fn(&str, BorrowedFd<'_>, Uid, Gid) -> Result<(), Errno> + Send + Sync + 'static,
+        change: impl Fn(&str, Option<BorrowedFd<'_>>, Uid, Gid) -> Result<(), Errno>
+        + Send
+        + Sync
+        + 'static,
     ) -> Self {
         Self(Arc::new(change))
     }
 
-    fn apply(&self, target: &str, fd: BorrowedFd<'_>, uid: Uid, gid: Gid) -> Result<(), Errno> {
+    fn apply(
+        &self,
+        target: &str,
+        fd: Option<BorrowedFd<'_>>,
+        uid: Uid,
+        gid: Gid,
+    ) -> Result<(), Errno> {
         (self.0)(target, fd, uid, gid)
     }
 }
 
 impl Default for Chown {
     fn default() -> Self {
-        Self::new(|_, fd, uid, gid| fchown(fd, Some(uid), Some(gid)))
+        Self::new(|_, fd, uid, gid| match fd {
+            Some(fd) => fchown(fd, Some(uid), Some(gid)),
+            None => Ok(()),
+        })
     }
 }
 
@@ -51,24 +64,56 @@ impl std::fmt::Debug for Chown {
 }
 
 /// The trial's root-owned directory, held by descriptor so nothing below is reached by path.
+/// Disk storage always retains both directory descriptors; memory storage needs neither.
 #[derive(Debug)]
 pub(crate) struct Container {
     pub(crate) path: PathBuf,
-    dir: Arc<OwnedFd>,
-    parent: Arc<OwnedFd>,
+    storage: ContainerStorage,
     pub(crate) chown: Chown,
 }
 
-/// One instance's directory, its retained logs and what the backend asked for.
 #[derive(Debug)]
+enum ContainerStorage {
+    Disk {
+        dir: Arc<OwnedFd>,
+        parent: Arc<OwnedFd>,
+    },
+    Memory(Arc<dyn Fs>),
+}
+
+/// One instance's directory, its retained logs and what the backend asked for.
 pub(crate) struct InstanceFiles {
     pub(crate) path: PathBuf,
-    pub(crate) dir: Arc<OwnedFd>,
-    pub(crate) stdout: File,
-    pub(crate) stderr: File,
+    pub(crate) dir: Option<Arc<OwnedFd>>,
+    pub(crate) stdout: crate::logs::Sink,
+    pub(crate) stderr: crate::logs::Sink,
     pub(crate) plan: Plan,
     /// Generated input paths relative to the trial directory.
     pub(crate) inputs: Vec<String>,
+}
+
+impl std::fmt::Debug for InstanceFiles {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("InstanceFiles")
+            .field("path", &self.path)
+            .field("dir", &self.dir)
+            .field("plan", &self.plan)
+            .field("inputs", &self.inputs)
+            .finish_non_exhaustive()
+    }
+}
+
+pub(crate) struct MemorySink(pub(crate) Box<dyn FsFile>);
+
+impl io::Write for MemorySink {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        self.0.write_all(bytes)?;
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
 }
 
 fn directory_error(
@@ -305,8 +350,58 @@ pub(crate) fn recreate(
     }
     Ok(Container {
         path,
-        dir: Arc::new(dir),
-        parent: Arc::new(parent),
+        storage: ContainerStorage::Disk {
+            dir: Arc::new(dir),
+            parent: Arc::new(parent),
+        },
+        chown: Chown::default(),
+    })
+}
+
+/// Uses the supplied in-memory filesystem; the production path retains descriptor validation.
+pub(crate) fn recreate_in(
+    root: &Path,
+    id: &TrialId,
+    identity: Option<BackendIdentity>,
+    fs: Option<Arc<dyn Fs>>,
+) -> Result<Container, PrepareError> {
+    fn directory(fs: &dyn Fs, path: &Path) -> io::Result<()> {
+        if fs.kind(path)? == Some(FileKind::Dir) {
+            return Ok(());
+        }
+        if let Some(parent) = path.parent().filter(|parent| *parent != path) {
+            directory(fs, parent)?;
+        }
+        fs.create_dir(path)
+    }
+    fn remove(fs: &dyn Fs, path: &Path) -> io::Result<()> {
+        if fs.kind(path)? == Some(FileKind::Dir) {
+            for entry in fs.read_dir(path)? {
+                remove(fs, &path.join(entry.name))?;
+            }
+            fs.remove_dir(path)
+        } else {
+            fs.remove_file(path)
+        }
+    }
+    let Some(fs) = fs else {
+        return recreate(root, id, identity);
+    };
+    directory(&*fs, root).map_err(|error| directory_error("create", root, error))?;
+    let path = root.join(id.as_str());
+    if fs
+        .kind(&path)
+        .map_err(|error| directory_error("inspect", &path, error))?
+        .is_some()
+    {
+        remove(&*fs, &path)
+            .map_err(|error| directory_error("remove the earlier trial", &path, error))?;
+    }
+    fs.create_dir(&path)
+        .map_err(|error| directory_error("create", &path, error))?;
+    Ok(Container {
+        path,
+        storage: ContainerStorage::Memory(fs),
         chown: Chown::default(),
     })
 }
@@ -401,6 +496,12 @@ impl Container {
         workload: &Workload,
         identity: Option<BackendIdentity>,
     ) -> Result<InstanceFiles, PrepareError> {
+        let trial = match &self.storage {
+            ContainerStorage::Disk { dir, .. } => dir,
+            ContainerStorage::Memory(fs) => {
+                return self.instance_in(plan, backend, workload, identity, &**fs);
+            }
+        };
         let name = plan.name.dir_name();
         let path = self.path.join(&name);
         let create = |what: &str, source: Errno| PrepareError::Create {
@@ -408,9 +509,9 @@ impl Container {
             name: what.to_owned(),
             source: source.into(),
         };
-        mkdirat(&*self.dir, name.as_str(), Mode::from_raw_mode(0o755))
+        mkdirat(&**trial, name.as_str(), Mode::from_raw_mode(0o755))
             .map_err(|errno| create(&name, errno))?;
-        let dir = open_directory(self.dir.as_fd(), &name).map_err(|errno| create(&name, errno))?;
+        let dir = open_directory(trial.as_fd(), &name).map_err(|errno| create(&name, errno))?;
         fchmod(&dir, Mode::from_raw_mode(0o755)).map_err(|errno| create(&name, errno))?;
         let backend_plan = backend
             .plan(workload, &path, &plan.cpus)
@@ -447,29 +548,122 @@ impl Container {
                 })?;
             if let Some((uid, gid)) = owner {
                 self.chown
-                    .apply(file_name, file.as_fd(), uid, gid)
+                    .apply(file_name, Some(file.as_fd()), uid, gid)
                     .map_err(|errno| chown_failed(file_name, errno))?;
             }
             inputs.push(format!("{name}/{file_name}"));
         }
         if let Some((uid, gid)) = owner {
             self.chown
-                .apply(&name, dir.as_fd(), uid, gid)
+                .apply(&name, Some(dir.as_fd()), uid, gid)
                 .map_err(|errno| chown_failed(&name, errno))?;
         }
         Ok(InstanceFiles {
             path,
-            dir: Arc::new(dir),
-            stdout,
-            stderr,
+            dir: Some(Arc::new(dir)),
+            stdout: Box::new(stdout),
+            stderr: Box::new(stderr),
+            plan: backend_plan,
+            inputs,
+        })
+    }
+
+    fn instance_in(
+        &self,
+        plan: &InstancePlan,
+        backend: &dyn Backend,
+        workload: &Workload,
+        identity: Option<BackendIdentity>,
+        fs: &dyn Fs,
+    ) -> Result<InstanceFiles, PrepareError> {
+        let name = plan.name.dir_name();
+        let path = self.path.join(&name);
+        let create = |what: &str, source: io::Error| PrepareError::Create {
+            instance: name.clone(),
+            name: what.to_owned(),
+            source,
+        };
+        fs.create_dir(&path)
+            .map_err(|source| create(&name, source))?;
+        let backend_plan = backend
+            .plan(workload, &path, &plan.cpus)
+            .map_err(PrepareError::Backend)?;
+        if backend_plan.program.as_os_str().is_empty() {
+            return Err(PrepareError::EmptyProgram);
+        }
+        let stdout = fs
+            .create_new(&path.join("stdout.log"))
+            .map_err(|source| create("stdout.log", source))?;
+        let stderr = fs
+            .create_new(&path.join("stderr.log"))
+            .map_err(|source| create("stderr.log", source))?;
+        let chown = |target: &str| {
+            if let Some(identity) = identity {
+                self.chown
+                    .apply(
+                        target,
+                        None,
+                        Uid::from_raw(identity.uid()),
+                        Gid::from_raw(identity.gid()),
+                    )
+                    .map_err(|source| PrepareError::Chown {
+                        instance: name.clone(),
+                        name: target.to_owned(),
+                        source: source.into(),
+                    })?;
+            }
+            Ok::<_, PrepareError>(())
+        };
+        let mut inputs = Vec::with_capacity(backend_plan.inputs.len());
+        for input in &backend_plan.inputs {
+            let file_name = input.name.as_str();
+            fs.create_new(&path.join(file_name))
+                .and_then(|mut file| file.write_all(&input.contents))
+                .map_err(|source| create(file_name, source))?;
+            chown(file_name)?;
+            inputs.push(format!("{name}/{file_name}"));
+        }
+        chown(&name)?;
+        Ok(InstanceFiles {
+            path,
+            dir: None,
+            stdout: Box::new(MemorySink(stdout)),
+            stderr: Box::new(MemorySink(stderr)),
             plan: backend_plan,
             inputs,
         })
     }
 
     /// How the samples writer creates `samples.jsonl` in this container.
-    pub(crate) fn samples(&self) -> Open {
-        create_file(&self.dir, &self.parent)
+    pub(crate) fn samples(&self, durability: Durability) -> Open {
+        let (dir, parent) = match &self.storage {
+            ContainerStorage::Disk { dir, parent } => (dir, parent),
+            ContainerStorage::Memory(fs) => {
+                let (fs, path) = (Arc::clone(fs), self.path.join(togi_trialfiles::SAMPLES));
+                return Box::new(move || {
+                    let file = fs
+                        .create_new(&path)
+                        .map_err(crate::error::StorageError::Create)?;
+                    Ok(Box::new(MemorySamples(file)) as Box<dyn crate::samples::Storage>)
+                });
+            }
+        };
+        match durability {
+            Durability::Durable => create_file(dir, parent),
+            Durability::Unsynced => create_file_unsynced(dir, parent),
+        }
+    }
+}
+
+struct MemorySamples(Box<dyn FsFile>);
+
+impl crate::samples::Storage for MemorySamples {
+    fn append(&mut self, line: &[u8]) -> io::Result<()> {
+        self.0.write_all(line)
+    }
+
+    fn close(self: Box<Self>) -> io::Result<()> {
+        Ok(())
     }
 }
 
@@ -507,7 +701,7 @@ mod tests {
     }
 
     #[test]
-    fn the_container_is_recreated_with_fixed_modes_when_scoped() {
+    fn real_fs_the_container_is_recreated_with_fixed_modes_when_scoped() {
         let tmp = crate::testing::tempdir();
         let root = tmp.path().join("trials");
         let container = recreate(&root, &id("t1"), Some(own_identity())).unwrap();
@@ -518,7 +712,7 @@ mod tests {
     }
 
     #[test]
-    fn a_symlinked_trials_directory_is_refused() {
+    fn real_fs_a_symlinked_trials_directory_is_refused() {
         let tmp = crate::testing::tempdir();
         let real = tmp.path().join("real");
         fs::create_dir(&real).unwrap();
@@ -528,7 +722,7 @@ mod tests {
     }
 
     #[test]
-    fn a_trials_directory_others_can_write_is_refused_before_any_change() {
+    fn real_fs_a_trials_directory_others_can_write_is_refused_before_any_change() {
         let tmp = crate::testing::tempdir();
         let root = tmp.path().join("trials");
         fs::create_dir(&root).unwrap();
@@ -541,7 +735,7 @@ mod tests {
     }
 
     #[test]
-    fn a_state_directory_others_can_write_is_refused() {
+    fn real_fs_a_state_directory_others_can_write_is_refused() {
         let tmp = crate::testing::tempdir();
         let state = tmp.path().join("state");
         fs::create_dir(&state).unwrap();
@@ -552,7 +746,7 @@ mod tests {
     }
 
     #[test]
-    fn a_trials_directory_owned_by_another_user_is_refused() {
+    fn real_fs_a_trials_directory_owned_by_another_user_is_refused() {
         if rustix::process::geteuid().is_root() {
             return;
         }
@@ -561,7 +755,7 @@ mod tests {
     }
 
     #[test]
-    fn samples_are_read_only_from_regular_files_below_the_validated_root() {
+    fn real_fs_samples_are_read_only_from_regular_files_below_the_validated_root() {
         let tmp = crate::testing::tempdir();
         let root_path = tmp.path().join("trials");
         let container = recreate(&root_path, &id("t1"), None).unwrap();
@@ -598,7 +792,7 @@ mod tests {
     }
 
     #[test]
-    fn an_old_trial_is_removed_without_following_symlinks() {
+    fn real_fs_an_old_trial_is_removed_without_following_symlinks() {
         let tmp = crate::testing::tempdir();
         let victim = tmp.path().join("victim");
         fs::create_dir(&victim).unwrap();
@@ -616,7 +810,7 @@ mod tests {
     }
 
     #[test]
-    fn a_trial_directory_that_is_a_symlink_is_replaced_not_followed() {
+    fn real_fs_a_trial_directory_that_is_a_symlink_is_replaced_not_followed() {
         let tmp = crate::testing::tempdir();
         let victim = tmp.path().join("victim");
         fs::create_dir(&victim).unwrap();
@@ -631,7 +825,7 @@ mod tests {
     }
 
     #[test]
-    fn a_relative_trials_directory_resolves_against_its_base_and_touches_nothing_else() {
+    fn real_fs_a_relative_trials_directory_resolves_against_its_base_and_touches_nothing_else() {
         let tmp = crate::testing::tempdir();
         let root = TrialsRoot::open_from(
             tmp.path(),
@@ -652,7 +846,7 @@ mod tests {
     #[test_case(0o777; "world writable")]
     #[test_case(0o775; "group writable")]
     #[test_case(0o757; "other writable")]
-    fn a_writable_ancestor_without_the_sticky_bit_is_refused_before_any_change(mode: u32) {
+    fn real_fs_a_writable_ancestor_without_the_sticky_bit_is_refused_before_any_change(mode: u32) {
         let tmp = crate::testing::tempdir();
         let open = tmp.path().join("open");
         fs::create_dir(&open).unwrap();
@@ -666,7 +860,7 @@ mod tests {
     }
 
     #[test]
-    fn a_symlinked_ancestor_is_refused_before_any_change() {
+    fn real_fs_a_symlinked_ancestor_is_refused_before_any_change() {
         let tmp = crate::testing::tempdir();
         let real = tmp.path().join("real");
         fs::create_dir(&real).unwrap();
@@ -681,7 +875,7 @@ mod tests {
     }
 
     #[test]
-    fn a_sticky_world_writable_ancestor_the_runner_owns_is_accepted() {
+    fn real_fs_a_sticky_world_writable_ancestor_the_runner_owns_is_accepted() {
         let tmp = crate::testing::tempdir();
         let shared = tmp.path().join("shared");
         fs::create_dir(&shared).unwrap();
@@ -691,7 +885,7 @@ mod tests {
     }
 
     #[test]
-    fn an_ancestor_another_user_owns_is_refused_whatever_sits_above_it() {
+    fn real_fs_an_ancestor_another_user_owns_is_refused_whatever_sits_above_it() {
         if rustix::process::geteuid().is_root() {
             return;
         }
@@ -787,7 +981,7 @@ mod tests {
     }
 
     #[test]
-    fn an_ancestor_the_account_cannot_search_is_refused_without_chmod() {
+    fn real_fs_an_ancestor_the_account_cannot_search_is_refused_without_chmod() {
         let tmp = crate::testing::tempdir();
         let private = tmp.path().join("private");
         fs::create_dir(&private).unwrap();
@@ -803,7 +997,7 @@ mod tests {
     }
 
     #[test]
-    fn instances_get_exclusive_logs_inputs_and_fixed_modes() {
+    fn real_fs_instances_get_exclusive_logs_inputs_and_fixed_modes() {
         let tmp = crate::testing::tempdir();
         let container =
             recreate(&tmp.path().join("trials"), &id("t1"), Some(own_identity())).unwrap();
@@ -843,17 +1037,30 @@ mod tests {
         backend
     }
 
+    fn memory_container(fs: &Arc<togi_journal::fs::MemFs>, trial: &str) -> Container {
+        recreate_in(Path::new("/trials"), &id(trial), None, Some(fs.clone())).unwrap()
+    }
+
+    fn memory_identity() -> BackendIdentity {
+        BackendIdentity::new(1000, 1000).unwrap()
+    }
+
     #[test]
     fn the_inputs_and_then_the_directory_change_owner_and_only_when_scoped() {
-        let tmp = crate::testing::tempdir();
-        let mut container = recreate(&tmp.path().join("trials"), &id("t1"), None).unwrap();
+        let fs = Arc::new(togi_journal::fs::MemFs::new());
+        let mut container = memory_container(&fs, "t1");
         let (chown, calls) = recording(None);
         container.chown = chown;
         container
-            .instance(&work(), &with_inputs(), &workload(), Some(own_identity()))
+            .instance(
+                &work(),
+                &with_inputs(),
+                &workload(),
+                Some(memory_identity()),
+            )
             .unwrap();
         assert_eq!(*calls.lock().unwrap(), ["prime.txt", "local.txt", "work"]);
-        let other = recreate(&tmp.path().join("trials"), &id("t2"), None).unwrap();
+        let other = memory_container(&fs, "t2");
         let mut unscoped = other;
         let (chown, calls) = recording(None);
         unscoped.chown = chown;
@@ -865,12 +1072,17 @@ mod tests {
 
     #[test]
     fn a_failed_input_ownership_names_the_input_and_changes_nothing_after_it() {
-        let tmp = crate::testing::tempdir();
-        let mut container = recreate(&tmp.path().join("trials"), &id("t1"), None).unwrap();
+        let fs = Arc::new(togi_journal::fs::MemFs::new());
+        let mut container = memory_container(&fs, "t1");
         let (chown, calls) = recording(Some("prime.txt"));
         container.chown = chown;
         let error = container
-            .instance(&work(), &with_inputs(), &workload(), Some(own_identity()))
+            .instance(
+                &work(),
+                &with_inputs(),
+                &workload(),
+                Some(memory_identity()),
+            )
             .unwrap_err();
         match error {
             PrepareError::Chown {
@@ -888,12 +1100,17 @@ mod tests {
 
     #[test]
     fn a_failed_directory_ownership_is_named_once_every_input_was_handed_over() {
-        let tmp = crate::testing::tempdir();
-        let mut container = recreate(&tmp.path().join("trials"), &id("t1"), None).unwrap();
+        let fs = Arc::new(togi_journal::fs::MemFs::new());
+        let mut container = memory_container(&fs, "t1");
         let (chown, calls) = recording(Some("work"));
         container.chown = chown;
         let error = container
-            .instance(&work(), &with_inputs(), &workload(), Some(own_identity()))
+            .instance(
+                &work(),
+                &with_inputs(),
+                &workload(),
+                Some(memory_identity()),
+            )
             .unwrap_err();
         assert!(
             matches!(error, PrepareError::Chown { ref instance, ref name, .. } if instance == "work" && name == "work"),
@@ -903,7 +1120,7 @@ mod tests {
     }
 
     #[test]
-    fn a_second_instance_of_the_same_name_cannot_reuse_the_directory() {
+    fn real_fs_a_second_instance_of_the_same_name_cannot_reuse_the_directory() {
         let tmp = crate::testing::tempdir();
         let container = recreate(&tmp.path().join("trials"), &id("t1"), None).unwrap();
         let backend = TestBackend::new("/bin/true");
@@ -917,7 +1134,7 @@ mod tests {
     }
 
     #[test]
-    fn an_input_named_like_a_log_or_repeated_fails_exclusively() {
+    fn real_fs_an_input_named_like_a_log_or_repeated_fails_exclusively() {
         let tmp = crate::testing::tempdir();
         let container = recreate(&tmp.path().join("trials"), &id("t1"), None).unwrap();
         let mut backend = TestBackend::new("/bin/true");
@@ -940,8 +1157,8 @@ mod tests {
 
     #[test]
     fn backend_failures_and_an_empty_program_stop_before_any_log_exists() {
-        let tmp = crate::testing::tempdir();
-        let container = recreate(&tmp.path().join("trials"), &id("t1"), None).unwrap();
+        let fs = Arc::new(togi_journal::fs::MemFs::new());
+        let container = memory_container(&fs, "t1");
         let mut failing = TestBackend::new("/bin/true");
         failing.fail_plan = true;
         let error = container
@@ -949,16 +1166,20 @@ mod tests {
             .unwrap_err();
         assert!(matches!(error, PrepareError::Backend(_)));
         let empty = TestBackend::new("");
-        let other = recreate(&tmp.path().join("trials"), &id("t2"), None).unwrap();
+        let other = memory_container(&fs, "t2");
         let error = other
             .instance(&work(), &empty, &workload(), None)
             .unwrap_err();
         assert!(matches!(error, PrepareError::EmptyProgram));
-        assert!(!other.path.join("work/stdout.log").exists());
+        assert!(
+            fs.kind(&other.path.join("work/stdout.log"))
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]
-    fn retained_log_descriptors_survive_a_path_replacement() {
+    fn real_fs_retained_log_descriptors_survive_a_path_replacement() {
         let tmp = crate::testing::tempdir();
         let container = recreate(&tmp.path().join("trials"), &id("t1"), None).unwrap();
         let backend = TestBackend::new("/bin/true");
@@ -982,7 +1203,7 @@ mod tests {
     }
 
     #[test]
-    fn both_retained_logs_survive_a_symlink_swap_of_their_paths() {
+    fn real_fs_both_retained_logs_survive_a_symlink_swap_of_their_paths() {
         let tmp = crate::testing::tempdir();
         let container = recreate(&tmp.path().join("trials"), &id("t1"), None).unwrap();
         let mut files = container
@@ -1013,7 +1234,9 @@ mod tests {
 
     #[test_case(false; "a work directory holding the symlinks")]
     #[test_case(true; "a work directory that is itself a symlink")]
-    fn a_reused_trial_directory_never_writes_through_old_input_or_log_symlinks(linked: bool) {
+    fn real_fs_a_reused_trial_directory_never_writes_through_old_input_or_log_symlinks(
+        linked: bool,
+    ) {
         let tmp = crate::testing::tempdir();
         let victim = tmp.path().join("control");
         fs::write(&victim, "protected control\n").unwrap();

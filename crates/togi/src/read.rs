@@ -3,7 +3,7 @@
 
 use std::io::ErrorKind;
 
-use togi_journal::{FileError, Operation, ReadError, Recording, Verdict, recorded_build};
+use togi_journal::{FileError, Operation, ReadError, Recording, Verdict};
 use togi_render::{Renderer, Style, escape_text};
 
 use crate::cli::Context;
@@ -39,7 +39,7 @@ fn notice(ctx: &mut Context<'_>, style: Style, message: &str) {
 /// journal.
 pub fn open(ctx: &mut Context<'_>, command: &str) -> Result<Recording, Exit> {
     let current = current_build();
-    let recorded = match recorded_build(ctx.state_dir) {
+    let recorded = match ctx.system.recorded_build(ctx.state_dir) {
         Ok(recorded) => recorded,
         Err(error) => return Err(fail(ctx, command, chain(&error))),
     };
@@ -61,7 +61,7 @@ pub fn open(ctx: &mut Context<'_>, command: &str) -> Result<Recording, Exit> {
         }
     }
     let path = ctx.state_dir.join("events.jsonl");
-    Recording::read_lenient(&path).map_err(|error| {
+    ctx.system.recording_lenient(&path).map_err(|error| {
         if matches!(&error.source, ReadError::Io(io) if io.kind() == ErrorKind::NotFound) {
             return fail(ctx, command, format!("no journal at {}", path.display()));
         }

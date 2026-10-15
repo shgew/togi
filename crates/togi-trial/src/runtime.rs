@@ -52,6 +52,20 @@ impl Runtime {
     pub(crate) fn spawn<O: Os>(
         make_env: impl FnOnce() -> Env<O> + Send + 'static,
     ) -> Result<Self, Error> {
+        Self::spawn_with(make_env, true)
+    }
+
+    /// Runs in-memory adapters without constructing the operating system's I/O reactor.
+    pub(crate) fn spawn_timer_only<O: Os>(
+        make_env: impl FnOnce() -> Env<O> + Send + 'static,
+    ) -> Result<Self, Error> {
+        Self::spawn_with(make_env, false)
+    }
+
+    fn spawn_with<O: Os>(
+        make_env: impl FnOnce() -> Env<O> + Send + 'static,
+        io: bool,
+    ) -> Result<Self, Error> {
         let join_bound = Timing::default().stop_bound() + JOIN_SLACK;
         let (bound_tx, bound_rx) = sync_channel::<Duration>(1);
         let (commands, mut inbox) = unbounded_channel::<Command>();
@@ -60,10 +74,12 @@ impl Runtime {
         let thread = std::thread::Builder::new()
             .name("togi-trial".to_owned())
             .spawn(move || {
-                let runtime = match tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                {
+                let mut builder = tokio::runtime::Builder::new_current_thread();
+                builder.enable_time();
+                if io {
+                    builder.enable_io();
+                }
+                let runtime = match builder.build() {
                     Ok(runtime) => runtime,
                     Err(error) => {
                         let _ = ready_tx.send(Err(Error::RuntimeBuild(error)));

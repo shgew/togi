@@ -1,10 +1,16 @@
 //! A recording a newer build might have written: an event of an unknown kind in the middle of it and events with
 //! fields this build does not know. Shared by the unit tests and the binary's, which include this file.
 
-use std::fs;
-use std::path::Path;
-
 pub(crate) const UNKNOWN_KIND: &str = "future.thing";
+
+pub(crate) fn recording(scenario: togi_watchtest::Scenario) -> String {
+    scenario
+        .events()
+        .unwrap()
+        .iter()
+        .map(|event| event.encode().unwrap() + "\n")
+        .collect()
+}
 
 /// Where the planted lines sit, one-based as the reader counts them.
 pub(crate) struct Planted {
@@ -41,15 +47,9 @@ fn kind_of(line: &str) -> &str {
     rest.split_once('"').unwrap().0
 }
 
-/// Plants the unknown kind and fields in the journal of `dir`; the lines keep their seqs, so the unknown event
-/// leaves a hole of one seq among the known ones.
-pub(crate) fn plant(dir: &Path) -> Planted {
-    let path = dir.join("events.jsonl");
-    let mut lines: Vec<String> = fs::read_to_string(&path)
-        .unwrap()
-        .lines()
-        .map(str::to_owned)
-        .collect();
+/// Plants the unknown kind and fields in memory; sequence numbers remain unchanged.
+pub(crate) fn plant(text: &mut String) -> Planted {
+    let mut lines: Vec<String> = text.lines().map(str::to_owned).collect();
     let find = |kind: &str| {
         lines
             .iter()
@@ -77,7 +77,7 @@ pub(crate) fn plant(dir: &Path) -> Planted {
     lines[wild].insert_str(at, &format!("\"wild\":1{comma}"));
     lines[extra].insert_str(1, "\"extra\":1,");
 
-    fs::write(&path, lines.join("\n") + "\n").unwrap();
+    *text = lines.join("\n") + "\n";
     Planted {
         kind_line: kind + 1,
         wild_line: wild + 1,

@@ -4,7 +4,6 @@ use std::rc::Rc;
 
 use togi_journal::{EventKind, MemFs};
 use togi_session::{SessionError, Stop};
-use togi_sim::MachineDefinition;
 use togi_simrun::{HistoryError, Observe, Persistence, SimError, SimOutcome, events, simulate};
 
 use crate::common::{Bench, STATE, finish, hunt_machine, input, nz, simulator, until_kind};
@@ -165,39 +164,15 @@ fn a_machine_crashed_before_the_simulation_fails_boot_one_on_the_host() {
     assert_eq!(bench.sim.persisted(), before);
 }
 
-/// A run that ends on its boot cap, with a `machine.json` in the state directory.
-fn capped(bench: &Bench, dump_to: std::path::PathBuf) -> Result<SimOutcome, SimError> {
-    let mut input = bench.input();
-    input.max_boots = nz(2);
-    input.dump_to = Some(dump_to);
-    simulate(input)
-}
-
 #[test]
-fn a_dump_writes_the_stopped_memory_directory_to_disk() {
-    let bench = Bench::new(&MachineDefinition::default(), 1);
-    let out = tempfile::tempdir().unwrap();
-    let target = out.path().join("dump");
-    let mut input = bench.input();
-    input.observer = Some(until_kind(EventKind::TrialEnd));
-    input.dump_to = Some(target.clone());
-    assert_eq!(finish(input).stop, Some(Stop::Signal));
-    for name in ["events.jsonl", "state.json"] {
-        assert_eq!(
-            std::fs::read(target.join("state").join(name)).unwrap(),
-            bench.fs.contents(format!("{STATE}/{name}")).unwrap(),
-            "{name}"
-        );
-    }
-    assert!(!target.join("state/machine.json").exists());
-}
-
-#[test]
-fn a_dump_of_a_capped_simulation_includes_the_machine_it_left() {
+fn real_fs_a_dump_writes_the_capped_memory_directory_to_disk() {
     let bench = Bench::new(&hunt_machine(2), 1);
     let out = tempfile::tempdir().unwrap();
     let target = out.path().join("dump");
-    let outcome = capped(&bench, target.clone());
+    let mut input = bench.input();
+    input.max_boots = nz(2);
+    input.dump_to = Some(target.clone());
+    let outcome = simulate(input);
     assert!(
         matches!(outcome, Ok(SimOutcome::Capped { boots }) if boots.get() == 2),
         "{}",
@@ -210,44 +185,13 @@ fn a_dump_of_a_capped_simulation_includes_the_machine_it_left() {
         bench.fs.contents(format!("{STATE}/machine.json")).unwrap()
     );
     assert_eq!(
+        std::fs::read(target.join("state/state.json")).unwrap(),
+        bench.fs.contents(format!("{STATE}/state.json")).unwrap()
+    );
+    assert_eq!(
         std::fs::read(target.join("state/events.jsonl")).unwrap(),
         bench.fs.contents(format!("{STATE}/events.jsonl")).unwrap()
     );
-}
-
-#[test]
-fn a_dump_that_cannot_be_written_fails_the_simulation_instead_of_capping_it() {
-    let bench = Bench::new(&hunt_machine(2), 1);
-    let out = tempfile::tempdir().unwrap();
-    let file = out.path().join("file");
-    std::fs::write(&file, b"in the way").unwrap();
-    let outcome = capped(&bench, file.join("dump"));
-    assert!(
-        matches!(outcome, Err(SimError::Dump(_))),
-        "{}",
-        shown(&outcome)
-    );
-}
-
-#[test]
-fn a_dump_asked_of_a_state_directory_on_disk_writes_nothing() {
-    let dir = tempfile::tempdir().unwrap();
-    let out = tempfile::tempdir().unwrap();
-    let target = out.path().join("dump");
-    let mut input = input(
-        simulator(&hunt_machine(2), 1),
-        Persistence::Files(dir.path().to_path_buf()),
-    );
-    input.max_boots = nz(2);
-    input.dump_to = Some(target.clone());
-    let outcome = simulate(input);
-    assert!(
-        matches!(outcome, Ok(SimOutcome::Capped { .. })),
-        "{}",
-        shown(&outcome)
-    );
-    assert!(!target.exists());
-    assert!(dir.path().join("events.jsonl").exists());
 }
 
 #[test]
@@ -257,18 +201,12 @@ fn a_live_journal_that_was_never_written_has_no_events() {
             .unwrap()
             .is_empty()
     );
-    let dir = tempfile::tempdir().unwrap();
-    assert!(
-        events(&Persistence::Files(dir.path().to_path_buf()))
-            .unwrap()
-            .is_empty()
-    );
 }
 
 #[test]
-fn a_live_journal_on_disk_is_read_back() {
-    let dir = tempfile::tempdir().unwrap();
-    let persistence = Persistence::Files(dir.path().to_path_buf());
+fn a_live_journal_is_read_back() {
+    let fs = MemFs::new();
+    let persistence = Persistence::Memory(fs.clone());
     let mut input = input(simulator(&hunt_machine(2), 1), persistence.clone());
     input.max_boots = nz(2);
     let outcome = simulate(input);
@@ -278,9 +216,9 @@ fn a_live_journal_on_disk_is_read_back() {
         shown(&outcome)
     );
     let read = events(&persistence).unwrap();
-    let on_disk = std::fs::read_to_string(dir.path().join("events.jsonl")).unwrap();
+    let journal = String::from_utf8(fs.contents(format!("{STATE}/events.jsonl")).unwrap()).unwrap();
     assert!(read.len() > 2);
-    assert_eq!(read.len(), on_disk.lines().count());
+    assert_eq!(read.len(), journal.lines().count());
     assert_eq!(read[0].kind(), EventKind::SessionStart);
 }
 
@@ -290,12 +228,6 @@ fn a_malformed_live_journal_is_an_error_not_an_empty_history() {
     fs.put(format!("{STATE}/events.jsonl"), "garbage\n");
     assert!(matches!(
         events(&Persistence::Memory(fs)),
-        Err(HistoryError::Read(_))
-    ));
-    let dir = tempfile::tempdir().unwrap();
-    std::fs::write(dir.path().join("events.jsonl"), "garbage\n").unwrap();
-    assert!(matches!(
-        events(&Persistence::Files(dir.path().to_path_buf())),
         Err(HistoryError::Read(_))
     ));
 }
