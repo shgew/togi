@@ -25,12 +25,13 @@ use togi_cli::dashboard::Surface;
 use togi_cli::system::System;
 use togi_config::Config;
 use togi_hardware::{Diagnosis, RebootError};
-use togi_hostlock::{Error as LockError, HostLock, Policy};
-use togi_journal::Payload;
+use togi_hostlock::{Error as LockError, HostLock, MemHostLocks, Policy};
+use togi_journal::fs::Fs;
+use togi_journal::{MemFs, Payload};
 use togi_machine::{BiosContext, BootId, Machine};
 use togi_render::OutputFacts;
 use togi_tuningboot::{Bootloader, Environment, SavedEntry};
-use togi_watchtest::{Scenario, install};
+use togi_watchtest::{Scenario, install_with_fs};
 
 pub struct Ran {
     pub exit: Exit,
@@ -89,10 +90,18 @@ impl Bootloader for Env {
     }
 }
 
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "the host fake independently controls external checks"
+)]
 pub struct Host {
     pub linux: bool,
     pub boot_fails: bool,
     pub root: bool,
+    pub fs: Arc<MemFs>,
+    pub locks: MemHostLocks,
+    pub lock_acquisitions: Cell<usize>,
+    pub real_fs: bool,
     pub lock: PathBuf,
     pub config: PathBuf,
     pub boot: String,
@@ -113,21 +122,26 @@ pub struct Host {
     /// cannot. Empty when the test expects the command not to open any.
     pub machine: RefCell<Option<Result<Machine, togi_hardware::Error>>>,
     pub facts: OutputFacts,
-    _dir: TempDir,
+    pub stdout_facts: Option<OutputFacts>,
+    directory: Option<TempDir>,
 }
 
 impl Host {
     pub fn new() -> Self {
-        let dir = tempfile::Builder::new()
-            .prefix("togi-host-")
-            .tempdir()
-            .unwrap();
+        Self::with_fs(Arc::new(MemFs::new()))
+    }
+
+    pub fn with_fs(fs: Arc<MemFs>) -> Self {
         Self {
             linux: true,
             boot_fails: false,
             root: true,
-            lock: dir.path().join("togi.lock"),
-            config: dir.path().join("config.json"),
+            fs,
+            locks: MemHostLocks::default(),
+            lock_acquisitions: Cell::new(0),
+            real_fs: false,
+            lock: PathBuf::from("/host/togi.lock"),
+            config: PathBuf::from("/host/config.json"),
             boot: "0123456789abcdef0123456789abcdef".into(),
             steps: Steps::default(),
             grubenvs: Rc::default(),
@@ -142,8 +156,57 @@ impl Host {
             lock_busy_in_diagnose: Cell::new(None),
             machine: RefCell::new(None),
             facts: OutputFacts::default(),
-            _dir: dir,
+            stdout_facts: None,
+            directory: None,
         }
+    }
+
+    pub fn real() -> Self {
+        let dir = tempfile::tempdir().unwrap();
+        let mut host = Self::new();
+        host.lock = dir.path().join("togi.lock");
+        host.config = dir.path().join("config.json");
+        host.real_fs = true;
+        host.directory = Some(dir);
+        host
+    }
+
+    #[expect(
+        clippy::unnecessary_wraps,
+        reason = "fixture writes share the fallible filesystem interface"
+    )]
+    pub fn write(&self, path: impl AsRef<Path>, bytes: impl AsRef<[u8]>) -> io::Result<()> {
+        self.fs.put(path, bytes.as_ref().to_vec());
+        Ok(())
+    }
+
+    pub fn read_to_string(&self, path: impl AsRef<Path>) -> io::Result<String> {
+        String::from_utf8(self.fs.read(path.as_ref())?)
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
+    }
+
+    pub fn exists(&self, path: impl AsRef<Path>) -> bool {
+        if self.real_fs {
+            path.as_ref().exists()
+        } else {
+            self.fs.kind(path.as_ref()).is_ok_and(|kind| kind.is_some())
+        }
+    }
+
+    pub fn create_dir_all(&self, path: impl AsRef<Path>) -> io::Result<()> {
+        for ancestor in path
+            .as_ref()
+            .ancestors()
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+        {
+            if ancestor.as_os_str().is_empty() || self.fs.kind(ancestor)?.is_some() {
+                continue;
+            }
+            self.fs.create_dir(ancestor)?;
+        }
+        Ok(())
     }
 
     pub fn step(&self, name: &str) -> io::Result<()> {
@@ -219,6 +282,35 @@ impl System for Host {
         (&self.lock, Policy::Private)
     }
 
+    fn acquire_host_lock(&self) -> Result<HostLock, LockError> {
+        self.lock_acquisitions.set(self.lock_acquisitions.get() + 1);
+        if self.real_fs {
+            HostLock::acquire(&self.lock, Policy::Private)
+        } else {
+            self.locks.acquire(&self.lock)
+        }
+    }
+
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "explicit real filesystem command fixtures must never sync"
+    )]
+    fn journal_fs(&self) -> Option<Arc<dyn Fs>> {
+        Some(if self.real_fs {
+            togi_journal::fs::unsynced_disk_fs()
+        } else {
+            self.fs.clone()
+        })
+    }
+
+    fn listen(&self, _: &togi_machine::CancellationToken) -> io::Result<Box<dyn std::any::Any>> {
+        Ok(Box::new(()))
+    }
+
+    fn stdout_facts(&self) -> OutputFacts {
+        self.stdout_facts.unwrap_or(self.facts)
+    }
+
     fn config_path(&self) -> &Path {
         &self.config
     }
@@ -253,10 +345,7 @@ impl System for Host {
             .borrow_mut()
             .push((recorded.cloned(), privileged));
         if privileged {
-            let busy = matches!(
-                HostLock::acquire(&self.lock, Policy::Private),
-                Err(LockError::Busy { .. })
-            );
+            let busy = matches!(self.acquire_host_lock(), Err(LockError::Busy { .. }));
             self.lock_busy_in_diagnose.set(Some(busy));
         }
         self.diagnosis.borrow_mut().take().unwrap()
@@ -336,7 +425,8 @@ impl System for Host {
 
 /// A state directory holding the simulated journal of a session at its first search trial.
 pub struct Session {
-    pub dir: TempDir,
+    pub dir: MemoryDir,
+    pub fs: Arc<MemFs>,
     pub context: BiosContext,
 }
 
@@ -346,11 +436,12 @@ impl Session {
     }
 
     pub fn of(scenario: Scenario) -> Self {
-        let dir = tempfile::Builder::new()
-            .prefix("togi-state-")
-            .tempdir()
-            .unwrap();
-        install(dir.path(), scenario).unwrap();
+        Self::with_fs(Arc::new(MemFs::new()), scenario)
+    }
+
+    pub fn with_fs(fs: Arc<MemFs>, scenario: Scenario) -> Self {
+        let dir = MemoryDir(PathBuf::from(format!("/state-{}", fs.entries().len())));
+        install_with_fs(fs.clone(), dir.path(), scenario).unwrap();
         let context = scenario
             .events()
             .unwrap()
@@ -360,11 +451,15 @@ impl Session {
                 _ => None,
             })
             .expect("the scenario records a BIOS context");
-        Self { dir, context }
+        Self { dir, fs, context }
     }
 
     pub fn path(&self) -> &Path {
         self.dir.path()
+    }
+
+    pub fn host(&self) -> Host {
+        Host::with_fs(self.fs.clone())
     }
 
     pub fn journal(&self) -> PathBuf {
@@ -372,7 +467,7 @@ impl Session {
     }
 
     pub fn text(&self) -> String {
-        std::fs::read_to_string(self.journal()).unwrap()
+        String::from_utf8(self.fs.contents(self.journal()).unwrap()).unwrap()
     }
 
     pub fn rewrite_first_line(&self, from: &str, to: &str) {
@@ -380,11 +475,10 @@ impl Session {
         assert!(text.lines().next().unwrap().contains(from), "{from}");
         let first_end = text.find('\n').unwrap();
         let (first, rest) = text.split_at(first_end);
-        std::fs::write(
+        self.fs.put(
             self.journal(),
-            format!("{}{rest}", first.replacen(from, to, 1)),
-        )
-        .unwrap();
+            format!("{}{rest}", first.replacen(from, to, 1)).into_bytes(),
+        );
     }
 
     pub fn kinds(&self) -> Vec<String> {
@@ -398,18 +492,24 @@ impl Session {
     }
 }
 
-pub fn files(dir: &Path) -> Vec<String> {
-    fn walk(root: &Path, at: &Path, names: &mut Vec<String>) {
-        for entry in std::fs::read_dir(at).unwrap().flatten() {
-            let path = entry.path();
-            names.push(path.strip_prefix(root).unwrap().display().to_string());
-            if path.is_dir() {
-                walk(root, &path, names);
-            }
-        }
+pub struct MemoryDir(pub PathBuf);
+
+impl MemoryDir {
+    pub fn new() -> Self {
+        Self(PathBuf::from("/fixture"))
     }
-    let mut names = Vec::new();
-    walk(dir, dir, &mut names);
-    names.sort();
-    names
+
+    pub fn path(&self) -> &Path {
+        &self.0
+    }
+}
+
+pub fn files(fs: &MemFs, dir: &Path) -> Vec<String> {
+    fs.entries()
+        .into_iter()
+        .filter_map(|(path, _)| {
+            let relative = path.strip_prefix(dir).ok()?;
+            (!relative.as_os_str().is_empty()).then(|| relative.display().to_string())
+        })
+        .collect()
 }

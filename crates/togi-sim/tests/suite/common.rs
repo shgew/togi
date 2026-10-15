@@ -10,20 +10,231 @@ use togi_sim::definition::{CoreDef, ModelDef, Weights};
 use togi_sim::{InvalidMachine, Load, MachineDefinition, Model, RunSettings, Simulator, file};
 
 pub(crate) fn machines_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tools/bench/machines")
+    PathBuf::from("/machines")
 }
 
+const MACHINES: &[(&str, &str)] = &[
+    (
+        "flat-hazard.json",
+        include_str!("../../../../tools/bench/machines/flat-hazard.json"),
+    ),
+    (
+        "idle-limit.json",
+        include_str!("../../../../tools/bench/machines/idle-limit.json"),
+    ),
+    (
+        "late-onset.json",
+        include_str!("../../../../tools/bench/machines/late-onset.json"),
+    ),
+    (
+        "misleading-mce.json",
+        include_str!("../../../../tools/bench/machines/misleading-mce.json"),
+    ),
+    (
+        "shared-voltage.json",
+        include_str!("../../../../tools/bench/machines/shared-voltage.json"),
+    ),
+    (
+        "target-fit-0.json",
+        include_str!("../../../../tools/bench/machines/target-fit-0.json"),
+    ),
+    (
+        "target-fit-1.json",
+        include_str!("../../../../tools/bench/machines/target-fit-1.json"),
+    ),
+    (
+        "target-fit-2.json",
+        include_str!("../../../../tools/bench/machines/target-fit-2.json"),
+    ),
+    (
+        "target-fit-3.json",
+        include_str!("../../../../tools/bench/machines/target-fit-3.json"),
+    ),
+    (
+        "target-fit-4.json",
+        include_str!("../../../../tools/bench/machines/target-fit-4.json"),
+    ),
+    (
+        "target-fit-5.json",
+        include_str!("../../../../tools/bench/machines/target-fit-5.json"),
+    ),
+    (
+        "target-fit-6.json",
+        include_str!("../../../../tools/bench/machines/target-fit-6.json"),
+    ),
+    (
+        "target-fit-7.json",
+        include_str!("../../../../tools/bench/machines/target-fit-7.json"),
+    ),
+    (
+        "target-fit-8.json",
+        include_str!("../../../../tools/bench/machines/target-fit-8.json"),
+    ),
+    (
+        "target-nonmember-mce.json",
+        include_str!("../../../../tools/bench/machines/target-nonmember-mce.json"),
+    ),
+    (
+        "target-r7-request-gap.json",
+        include_str!("../../../../tools/bench/machines/target-r7-request-gap.json"),
+    ),
+    (
+        "target-r7-vf-boost.json",
+        include_str!("../../../../tools/bench/machines/target-r7-vf-boost.json"),
+    ),
+    (
+        "target-shared-voltage.json",
+        include_str!("../../../../tools/bench/machines/target-shared-voltage.json"),
+    ),
+];
+
 pub(crate) fn committed() -> Vec<PathBuf> {
-    let mut paths: Vec<_> = std::fs::read_dir(machines_dir())
-        .expect("machines directory")
-        .map(|entry| entry.expect("directory entry").path())
-        .filter(|path| {
-            path.extension()
-                .is_some_and(|extension| extension == "json")
+    MACHINES
+        .iter()
+        .map(|(name, _)| machines_dir().join(name))
+        .collect()
+}
+
+#[derive(Default)]
+pub(crate) struct MemoryFiles(std::cell::RefCell<BTreeMap<PathBuf, String>>);
+
+impl MemoryFiles {
+    pub(crate) fn write(&self, path: &Path, text: &str) -> PathBuf {
+        self.0.borrow_mut().insert(path.to_owned(), text.to_owned());
+        path.to_owned()
+    }
+
+    #[expect(
+        clippy::unused_self,
+        reason = "the memory fixture has a fixed virtual root"
+    )]
+    pub(crate) fn path(&self) -> &Path {
+        Path::new("/fixture")
+    }
+}
+
+impl file::Source for MemoryFiles {
+    fn read_to_string(&self, path: &Path) -> std::io::Result<String> {
+        self.0
+            .borrow()
+            .get(path)
+            .cloned()
+            .ok_or_else(|| std::io::ErrorKind::NotFound.into())
+    }
+
+    fn canonicalize(&self, path: &Path) -> std::io::Result<PathBuf> {
+        let mut clean = PathBuf::new();
+        for part in path.components() {
+            match part {
+                std::path::Component::ParentDir => {
+                    clean.pop();
+                }
+                std::path::Component::CurDir => {}
+                part => clean.push(part),
+            }
+        }
+        Ok(if clean.is_absolute() {
+            clean
+        } else {
+            Path::new("/fixture").join(clean)
         })
-        .collect();
-    paths.sort();
-    paths
+    }
+}
+
+pub(crate) fn committed_files() -> MemoryFiles {
+    let files = MemoryFiles::default();
+    for (name, text) in MACHINES {
+        files.write(&machines_dir().join(name), text);
+    }
+    files
+}
+
+#[derive(Default)]
+pub(crate) struct MemorySamples {
+    pub files: std::cell::RefCell<BTreeMap<String, (Vec<u8>, bool)>>,
+    pub fail_after: Option<usize>,
+    pub fail_open: Option<std::io::ErrorKind>,
+}
+
+impl togi_sim::SampleStorage for MemorySamples {
+    fn write(
+        &self,
+        id: &str,
+        encode: &mut dyn FnMut(&mut dyn std::io::Write) -> std::io::Result<()>,
+    ) -> std::io::Result<()> {
+        struct Writer {
+            bytes: Vec<u8>,
+            fail_after: Option<usize>,
+        }
+        impl std::io::Write for Writer {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                if let Some(limit) = self.fail_after {
+                    if self.bytes.len() >= limit {
+                        return Err(std::io::Error::from_raw_os_error(28));
+                    }
+                    let count = bytes.len().min(limit - self.bytes.len());
+                    self.bytes.extend_from_slice(&bytes[..count]);
+                    return Ok(count);
+                }
+                self.bytes.extend_from_slice(bytes);
+                Ok(bytes.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        if let Some(kind) = self.fail_open {
+            return Err(kind.into());
+        }
+        let mut out = std::io::BufWriter::new(Writer {
+            bytes: Vec::new(),
+            fail_after: self.fail_after,
+        });
+        encode(&mut out)?;
+        let writer = out
+            .into_inner()
+            .map_err(std::io::IntoInnerError::into_error)?;
+        self.files
+            .borrow_mut()
+            .insert(id.to_owned(), (writer.bytes, false));
+        Ok(())
+    }
+
+    fn read(&self, id: &str) -> Box<dyn Iterator<Item = togi_machine::TrialConditions>> {
+        use std::io::Read;
+        let files = self.files.borrow();
+        let Some((bytes, compressed)) = files.get(id) else {
+            return Box::new(std::iter::empty());
+        };
+        let plain = if *compressed {
+            let mut plain = Vec::new();
+            flate2::read::GzDecoder::new(bytes.as_slice())
+                .read_to_end(&mut plain)
+                .expect("valid gzip");
+            plain
+        } else {
+            bytes.clone()
+        };
+        let samples: Vec<_> = serde_json::Deserializer::from_slice(&plain)
+            .into_iter::<togi_machine::TrialConditions>()
+            .map(|sample| sample.expect("valid sample"))
+            .collect();
+        Box::new(samples.into_iter())
+    }
+
+    fn ended(&self, id: &str) -> Result<(), Error> {
+        use std::io::Write;
+        if let Some((bytes, compressed)) = self.files.borrow_mut().get_mut(id) {
+            if !*compressed {
+                let mut out =
+                    flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+                out.write_all(bytes).expect("memory write");
+                *bytes = out.finish().expect("memory compression");
+                *compressed = true;
+            }
+        }
+        Ok(())
+    }
 }
 
 pub(crate) fn core_def(id: i64, alone: i64, together: i64) -> CoreDef {
@@ -80,7 +291,9 @@ pub(crate) fn load<'a>(regime: Regime, workload: &'a str, ids: &[i64], seconds: 
 }
 
 pub(crate) fn committed_machine(name: &str) -> MachineDefinition {
-    file::load(machines_dir().join(name)).expect("a committed machine")
+    file::load_from(machines_dir().join(name), &committed_files())
+        .expect("a committed machine")
+        .0
 }
 
 pub(crate) fn r7_workload(index: usize) -> &'static str {
@@ -88,7 +301,12 @@ pub(crate) fn r7_workload(index: usize) -> &'static str {
 }
 
 pub(crate) fn machine_dir_text(name: &str) -> String {
-    std::fs::read_to_string(machines_dir().join(name)).expect("a committed machine")
+    MACHINES
+        .iter()
+        .find(|(known, _)| *known == name)
+        .expect("a committed machine")
+        .1
+        .to_owned()
 }
 
 pub(crate) fn core(id: i64) -> CoreId {

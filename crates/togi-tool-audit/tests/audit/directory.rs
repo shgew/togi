@@ -35,6 +35,10 @@ fn live(fs: &MemFs, body: Vec<Event>) {
     fs.put("/state/state.json", serde_json::to_vec(&document).unwrap());
 }
 
+#[expect(
+    clippy::disallowed_methods,
+    reason = "audit content fixtures open only the injected in-memory journal"
+)]
 fn open(fs: &MemFs) -> StateDir {
     StateDir::simulated(fs.clone()).unwrap()
 }

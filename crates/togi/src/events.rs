@@ -130,11 +130,7 @@ impl TypedValueParser for KindList {
 
 /// Runs `togi events`.
 pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
-    let facts = OutputFacts::detect(
-        &io::stdout(),
-        std::env::var_os("NO_COLOR").as_deref(),
-        std::env::var_os("JOURNAL_STREAM").as_deref(),
-    );
+    let facts = ctx.system.stdout_facts();
     let zone = ctx.system.zone();
     run_with(args, ctx, facts, &zone)
 }

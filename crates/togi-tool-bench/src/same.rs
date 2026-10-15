@@ -252,10 +252,7 @@ fn execute_with(
     let built = started.elapsed();
     let keys = [0, 1].map(|side| digests::key(simulators[side].digest(), options.max_boots.get()));
     let pairs = compare::pair(runs);
-    let identical = keys[0] == keys[1]
-        && pairs.iter().all(|pair| {
-            pair.runs[0].is_some() && pair.runs[1].is_some() && pair.inputs[0] == pair.inputs[1]
-        });
+    let identical = same_inputs(&keys, &pairs);
     let keyed = started.elapsed();
     let mut timings = Timings {
         suites: loaded,
@@ -263,23 +260,8 @@ fn execute_with(
         keys: keyed.saturating_sub(built),
         sessions: Duration::ZERO,
     };
-    if identical && !options.no_cache && options.keep.is_none() {
-        return Ok(Report {
-            outcome: Outcome {
-                sessions: pairs.len(),
-                differences: Vec::new(),
-                keep_going: options.keep_going,
-                cached: [0; 2],
-                scheduled: [0; 2],
-                total_s: [0.0; 2],
-                slow: Vec::new(),
-                warnings: Vec::new(),
-            },
-            identical: true,
-            kept: None,
-            timings,
-            warnings: Vec::new(),
-        });
+    if let Some(report) = identical_report(options, pairs.len(), identical, timings) {
+        return Ok(report);
     }
     let cache_error = |what, source| SameError::Io {
         what,
@@ -357,8 +339,55 @@ fn execute_with(
     }
 }
 
+fn identical_report(
+    options: &Options,
+    sessions: usize,
+    identical: bool,
+    timings: Timings,
+) -> Option<Report> {
+    if !identical || options.no_cache || options.keep.is_some() {
+        return None;
+    }
+    Some(Report {
+        outcome: Outcome {
+            sessions,
+            differences: Vec::new(),
+            keep_going: options.keep_going,
+            cached: [0; 2],
+            scheduled: [0; 2],
+            total_s: [0.0; 2],
+            slow: Vec::new(),
+            warnings: Vec::new(),
+        },
+        identical: true,
+        kept: None,
+        timings,
+        warnings: Vec::new(),
+    })
+}
+
+fn same_inputs(keys: &[String; 2], pairs: &[compare::Pair]) -> bool {
+    keys[0] == keys[1]
+        && pairs.iter().all(|pair| {
+            pair.runs[0].is_some() && pair.runs[1].is_some() && pair.inputs[0] == pair.inputs[1]
+        })
+}
+
 /// Plans each tree's suite, or with `smoke` only the sessions the head's suite lists under `smoke`.
 fn load_runs(options: &Options, trees: &[PathBuf; 2]) -> Result<[Vec<RunSpec>; 2], SameError> {
+    load_runs_with(options, trees, &|path| {
+        Suite::load(path)
+            .map_err(Error::from)
+            .and_then(|suite| suite.plan(Selection::All))
+            .map(|plan| plan.runs)
+    })
+}
+
+fn load_runs_with(
+    options: &Options,
+    trees: &[PathBuf; 2],
+    plan: &dyn Fn(&Path) -> Result<Vec<RunSpec>, Error>,
+) -> Result<[Vec<RunSpec>; 2], SameError> {
     let mut runs = [Vec::new(), Vec::new()];
     for side in Side::BOTH {
         let tree = &trees[side.index()];
@@ -367,15 +396,11 @@ fn load_runs(options: &Options, trees: &[PathBuf; 2]) -> Result<[Vec<RunSpec>; 2
         } else {
             tree.join(&options.suite)
         };
-        runs[side.index()] = Suite::load(&suite)
-            .map_err(Error::from)
-            .and_then(|suite| suite.plan(Selection::All))
-            .map_err(|source| SameError::Suite {
-                side: side.name(),
-                tree: tree.clone(),
-                source: Box::new(source),
-            })?
-            .runs;
+        runs[side.index()] = plan(&suite).map_err(|source| SameError::Suite {
+            side: side.name(),
+            tree: tree.clone(),
+            source: Box::new(source),
+        })?;
     }
     if options.smoke {
         let smoke: BTreeSet<Key> = runs[Side::Head.index()]
@@ -423,19 +448,7 @@ fn simulators(
             return Err(SameError::Interrupted);
         }
         let tree = &trees[side.index()];
-        let built = |target: Option<&Path>| {
-            build(fleet, tree, target).map_err(|source| {
-                if fleet.cancelled() {
-                    SameError::Interrupted
-                } else {
-                    SameError::Build {
-                        side: side.name(),
-                        tree: tree.clone(),
-                        source: Box::new(source),
-                    }
-                }
-            })
-        };
+        let built = |target: Option<&Path>| build_for(side, tree, fleet, build, target);
         if side == Side::Head {
             return locate(side, &built(None)?);
         }
@@ -458,6 +471,27 @@ fn simulators(
         locate(side, &built(Some(&target))?)
     };
     Ok([one(Side::Base)?, one(Side::Head)?])
+}
+
+fn build_for(
+    side: Side,
+    tree: &Path,
+    fleet: &Fleet,
+    build: Build<'_>,
+    target: Option<&Path>,
+) -> Result<PathBuf, SameError> {
+    if fleet.cancelled() {
+        return Err(SameError::Interrupted);
+    }
+    let result = build(fleet, tree, target);
+    if fleet.cancelled() {
+        return Err(SameError::Interrupted);
+    }
+    result.map_err(|source| SameError::Build {
+        side: side.name(),
+        tree: tree.to_path_buf(),
+        source: Box::new(source),
+    })
 }
 
 /// Takes the exclusive lock on the base's target directory, which a comparison holds until it drops the file.
@@ -605,7 +639,7 @@ mod build_tests {
     }
 
     #[test]
-    fn the_base_builds_with_its_target_directory_locked_and_the_head_without() {
+    fn real_fs_the_base_builds_with_its_target_directory_locked_and_the_head_without() {
         let fixture = Fixture::new();
         let lock = fixture.cache().join("same-target.lock");
         let seen = RefCell::new(Vec::new());
@@ -630,19 +664,18 @@ mod build_tests {
 
     #[test]
     fn an_interrupt_during_the_build_is_an_interrupt_not_equality() {
-        let fixture = Fixture::new();
+        let simulator = PathBuf::from("/built/simulator");
         let fleet = Fleet::new();
         let build = |fleet: &Fleet, _: &Path, _: Option<&Path>| {
             fleet.cancel();
-            Ok(fixture.simulator.clone())
+            Ok(simulator.clone())
         };
-        let failed = execute_with(&fixture.options(), &fleet, &build, &|_| {}).unwrap_err();
-        assert!(matches!(*failed.error, SameError::Interrupted), "{failed}");
+        let error = build_for(Side::Base, Path::new("/base"), &fleet, &build, None).unwrap_err();
+        assert!(matches!(error, SameError::Interrupted), "{error}");
     }
 
     #[test]
     fn a_build_that_fails_after_an_interrupt_is_an_interrupt() {
-        let fixture = Fixture::new();
         let fleet = Fleet::new();
         let build = |fleet: &Fleet, _: &Path, _: Option<&Path>| {
             fleet.cancel();
@@ -650,38 +683,45 @@ mod build_tests {
                 message: "stopped".into(),
             })
         };
-        let failed = execute_with(&fixture.options(), &fleet, &build, &|_| {}).unwrap_err();
-        assert!(matches!(*failed.error, SameError::Interrupted), "{failed}");
+        let error = build_for(Side::Base, Path::new("/base"), &fleet, &build, None).unwrap_err();
+        assert!(matches!(error, SameError::Interrupted), "{error}");
     }
 
     #[test]
     fn an_interrupt_before_the_builds_starts_none() {
-        let fixture = Fixture::new();
         let fleet = Fleet::new();
         fleet.cancel();
         let build = |_: &Fleet, _: &Path, _: Option<&Path>| -> Result<PathBuf, Error> {
             panic!("built after an interrupt")
         };
-        let failed = execute_with(&fixture.options(), &fleet, &build, &|_| {}).unwrap_err();
-        assert!(matches!(*failed.error, SameError::Interrupted), "{failed}");
+        let error = build_for(Side::Base, Path::new("/base"), &fleet, &build, None).unwrap_err();
+        assert!(matches!(error, SameError::Interrupted), "{error}");
     }
 
     #[test]
     fn an_interrupt_during_the_head_build_is_an_interrupt_not_equality() {
-        let fixture = Fixture::new();
+        let simulator = PathBuf::from("/built/simulator");
         let fleet = Fleet::new();
         let build = |fleet: &Fleet, _: &Path, target: Option<&Path>| {
             if target.is_none() {
                 fleet.cancel();
             }
-            Ok(fixture.simulator.clone())
+            Ok(simulator.clone())
         };
-        let failed = execute_with(&fixture.options(), &fleet, &build, &|_| {}).unwrap_err();
-        assert!(matches!(*failed.error, SameError::Interrupted), "{failed}");
+        build_for(
+            Side::Base,
+            Path::new("/base"),
+            &fleet,
+            &build,
+            Some(Path::new("/target")),
+        )
+        .unwrap();
+        let error = build_for(Side::Head, Path::new("/head"), &fleet, &build, None).unwrap_err();
+        assert!(matches!(error, SameError::Interrupted), "{error}");
     }
 
     #[test]
-    fn a_comparison_waiting_for_the_target_lock_stops_at_an_interrupt() {
+    fn real_fs_a_comparison_waiting_for_the_target_lock_stops_at_an_interrupt() {
         let fixture = Fixture::new();
         let cache = fixture.cache();
         fs::create_dir_all(&cache).unwrap();
@@ -697,7 +737,7 @@ mod build_tests {
     }
 
     #[test]
-    fn a_free_target_lock_is_taken_without_a_notice() {
+    fn real_fs_a_free_target_lock_is_taken_without_a_notice() {
         let fixture = Fixture::new();
         let told = RefCell::new(0);
         let waiting = |_: &Path| *told.borrow_mut() += 1;

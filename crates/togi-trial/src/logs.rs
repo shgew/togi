@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::fs::File;
 use std::io::{self, Write};
 use std::sync::mpsc::{Receiver, Sender, SyncSender, TrySendError, channel, sync_channel};
 use std::time::Duration;
@@ -13,8 +12,8 @@ use crate::join::{self, Missing};
 const QUEUE: usize = 256;
 
 pub(crate) type Sink = Box<dyn Write + Send>;
-/// Turns a retained log descriptor into what the log thread writes to; tests wrap it.
-pub(crate) type Wrap = Box<dyn Fn(File) -> Sink + Send>;
+/// Decorates the retained output sink before the log thread writes to it.
+pub(crate) type Wrap = Box<dyn Fn(Sink) -> Sink + Send>;
 
 type Key = (usize, Stream);
 
@@ -91,15 +90,15 @@ impl LogWriter {
         Ok(Self {
             queue,
             opens,
-            wrap: wrap.unwrap_or_else(|| Box::new(|file| Box::new(file) as Sink)),
+            wrap: wrap.unwrap_or_else(|| Box::new(|sink| sink)),
             done,
         })
     }
 
-    /// Hands `file` to the log thread before any bytes for it can be queued.
-    pub(crate) fn open(&self, instance: usize, stream: Stream, file: File) -> LogHandle {
+    /// Hands `sink` to the log thread before any bytes for it can be queued.
+    pub(crate) fn open(&self, instance: usize, stream: Stream, sink: Sink) -> LogHandle {
         let key = (instance, stream);
-        let _ = self.opens.send((key, (self.wrap)(file)));
+        let _ = self.opens.send((key, (self.wrap)(sink)));
         LogHandle {
             queue: self.queue.clone(),
             key,
@@ -236,74 +235,72 @@ mod tests {
             .expect("the log thread never entered its write");
     }
 
-    fn file() -> File {
-        tempfile::tempfile().unwrap()
+    #[test]
+    fn bytes_reach_the_log_in_order_and_the_join_reports_success() {
+        crate::testing::runtime(false).block_on(async {
+            let written = Arc::new(Mutex::new(Vec::new()));
+            let writer = LogWriter::spawn(None).unwrap();
+            let mut log = writer.open(0, Stream::Stdout, Box::new(Shared(Arc::clone(&written))));
+            log.append(b"one\n").unwrap();
+            log.append(b"two\n").unwrap();
+            drop(log);
+            assert!(
+                matches!(writer.finish(Duration::from_secs(5)).await, LogsEnd::Done(f) if f.is_empty())
+            );
+            assert_eq!(*written.lock().unwrap(), b"one\ntwo\n");
+        });
     }
 
-    #[tokio::test]
-    async fn bytes_reach_the_log_in_order_and_the_join_reports_success() {
-        let written = Arc::new(Mutex::new(Vec::new()));
-        let sink = Arc::clone(&written);
-        let writer = LogWriter::spawn(Some(Box::new(move |_| {
-            Box::new(Shared(Arc::clone(&sink))) as Sink
-        })))
-        .unwrap();
-        let mut log = writer.open(0, Stream::Stdout, file());
-        log.append(b"one\n").unwrap();
-        log.append(b"two\n").unwrap();
-        drop(log);
-        assert!(
-            matches!(writer.finish(Duration::from_secs(5)).await, LogsEnd::Done(f) if f.is_empty())
-        );
-        assert_eq!(*written.lock().unwrap(), b"one\ntwo\n");
-    }
-
-    #[tokio::test]
-    async fn a_write_error_is_reported_once_at_the_join() {
-        let writer = LogWriter::spawn(Some(Box::new(|_| Box::new(Failing) as Sink))).unwrap();
-        let mut log = writer.open(3, Stream::Stderr, file());
-        log.append(b"a").unwrap();
-        log.append(b"b").unwrap();
-        drop(log);
-        match writer.finish(Duration::from_secs(5)).await {
-            LogsEnd::Done(failures) => {
-                assert_eq!(failures.len(), 1);
-                assert_eq!(
-                    (failures[0].instance, failures[0].stream),
-                    (3, Stream::Stderr)
-                );
+    #[test]
+    fn a_write_error_is_reported_once_at_the_join() {
+        crate::testing::runtime(false).block_on(async {
+            let writer = LogWriter::spawn(None).unwrap();
+            let mut log = writer.open(3, Stream::Stderr, Box::new(Failing));
+            log.append(b"a").unwrap();
+            log.append(b"b").unwrap();
+            drop(log);
+            match writer.finish(Duration::from_secs(5)).await {
+                LogsEnd::Done(failures) => {
+                    assert_eq!(failures.len(), 1);
+                    assert_eq!(
+                        (failures[0].instance, failures[0].stream),
+                        (3, Stream::Stderr)
+                    );
+                }
+                LogsEnd::TimedOut(_) | LogsEnd::Vanished => panic!("did not finish"),
             }
-            LogsEnd::TimedOut(_) | LogsEnd::Vanished => panic!("did not finish"),
-        }
+        });
     }
 
-    #[tokio::test]
-    async fn a_stuck_write_drops_bytes_without_waiting_and_the_join_is_bounded() {
-        let (writer, gate, entries) = stuck_writer();
-        let mut log = writer.open(0, Stream::Stdout, file());
-        log.append(b"x").unwrap();
-        await_entry(&entries);
-        // The thread holds one chunk and cannot take another, so exactly QUEUE more fit.
-        let started = std::time::Instant::now();
-        let results: Vec<bool> = (0..(QUEUE + 10))
-            .map(|_| log.append(b"x").is_ok())
-            .collect();
-        assert!(started.elapsed() < Duration::from_secs(1));
-        assert!(
-            results[..QUEUE].iter().all(|ok| *ok),
-            "the queue holds QUEUE chunks"
-        );
-        assert!(!results[QUEUE], "the first drop is reported");
-        assert!(
-            results[QUEUE + 1..].iter().all(|ok| *ok),
-            "only the first drop of a run is reported"
-        );
-        drop(log);
-        assert!(matches!(
-            writer.finish(Duration::from_millis(100)).await,
-            LogsEnd::TimedOut(_)
-        ));
-        drop(gate);
+    #[test]
+    fn a_stuck_write_drops_bytes_without_waiting_and_the_join_is_bounded() {
+        crate::testing::runtime(false).block_on(async {
+            let (writer, gate, entries) = stuck_writer();
+            let mut log = writer.open(0, Stream::Stdout, Box::new(Vec::<u8>::new()));
+            log.append(b"x").unwrap();
+            await_entry(&entries);
+            // The thread holds one chunk and cannot take another, so exactly QUEUE more fit.
+            let started = std::time::Instant::now();
+            let results: Vec<bool> = (0..(QUEUE + 10))
+                .map(|_| log.append(b"x").is_ok())
+                .collect();
+            assert!(started.elapsed() < Duration::from_secs(1));
+            assert!(
+                results[..QUEUE].iter().all(|ok| *ok),
+                "the queue holds QUEUE chunks"
+            );
+            assert!(!results[QUEUE], "the first drop is reported");
+            assert!(
+                results[QUEUE + 1..].iter().all(|ok| *ok),
+                "only the first drop of a run is reported"
+            );
+            drop(log);
+            assert!(matches!(
+                writer.finish(Duration::from_millis(100)).await,
+                LogsEnd::TimedOut(_)
+            ));
+            drop(gate);
+        });
     }
 
     #[test]
@@ -311,7 +308,7 @@ mod tests {
         let (runtime, release) = crate::join::saturated_pool();
         let (gate, release) = runtime.block_on(async {
             let (writer, gate, _entries) = stuck_writer();
-            let mut log = writer.open(0, Stream::Stdout, file());
+            let mut log = writer.open(0, Stream::Stdout, Box::new(Vec::<u8>::new()));
             log.append(b"x").unwrap();
             drop(log);
             let ended = tokio::time::timeout(

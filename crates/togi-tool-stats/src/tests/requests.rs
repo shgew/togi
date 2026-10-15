@@ -124,10 +124,10 @@ fn r7_trials_are_counted_by_top_request_bin_and_by_top_requester() {
     let journal = log.journal();
     let p = Projection::new(&journal);
     let since = Some(EPOCH + SignedDuration::from_secs(100));
-    insta::assert_snapshot!(rendered(|table| render_requests(
-        table,
-        &requests(&p, since)
-    )));
+    assert_snapshot!(
+        "requests__r7_trials_are_counted_by_top_request_bin_and_by_top_requester",
+        rendered(|table| render_requests(table, &requests(&p, since)))
+    );
 }
 
 #[test]

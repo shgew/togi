@@ -127,14 +127,7 @@ impl Simulator {
         limit: Duration,
     ) -> Result<Session, RunError> {
         let launched = self.launch(fleet, root, spec, max_boots, limit)?;
-        let events = match Recording::read(&launched.dir.join(JOURNAL)) {
-            Ok(recording) => recording.into_events(),
-            Err(FileError {
-                source: ReadError::Io(error),
-                ..
-            }) if error.kind() == ErrorKind::NotFound => Vec::new(),
-            Err(error) => return Err(RunError::Journal(error)),
-        };
+        let events = recorded_events(Recording::read(&launched.dir.join(JOURNAL)))?;
         Ok(Session {
             dir: launched.dir,
             exit: launched.exit,
@@ -389,9 +382,38 @@ fn host_binary(bytes: &[u8]) -> bool {
     bytes.starts_with(b"\x7fELF")
 }
 
+fn recorded_events(
+    recording: Result<Recording, FileError>,
+) -> Result<Vec<togi_journal::Event>, RunError> {
+    match recording {
+        Ok(recording) => Ok(recording.into_events()),
+        Err(FileError {
+            source: ReadError::Io(error),
+            ..
+        }) if error.kind() == ErrorKind::NotFound => Ok(Vec::new()),
+        Err(error) => Err(RunError::Journal(error)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_absent_journal_has_no_events_but_a_damaged_journal_is_an_error() {
+        let fs = togi_journal::MemFs::new();
+        let path = Path::new("/runs/events.jsonl");
+        assert!(
+            recorded_events(Recording::read_in(&fs, path))
+                .unwrap()
+                .is_empty()
+        );
+        fs.put(path, b"broken\n".to_vec());
+        assert!(matches!(
+            recorded_events(Recording::read_in(&fs, path)),
+            Err(RunError::Journal(_))
+        ));
+    }
 
     const MACH_O_EXECUTE: [u8; 16] = [
         0xcf, 0xfa, 0xed, 0xfe, 0x0c, 0, 0, 0x01, 0, 0, 0, 0, 0x02, 0, 0, 0,
@@ -520,7 +542,7 @@ mod tests {
     }
 
     #[test]
-    fn the_probe_follows_symlinks_to_the_interpreter() {
+    fn real_fs_the_probe_follows_symlinks_to_the_interpreter() {
         let dir = tempfile::tempdir().unwrap();
         let target = dir.path().join("interpreter");
         fs::write(&target, HOST).unwrap();

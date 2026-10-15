@@ -1,11 +1,11 @@
 //! `togi watch`: the read-only dashboard of the journal.
 
-use std::io::{IsTerminal as _, stdin, stdout};
+use std::io::{stdin, stdout};
 use std::os::fd::AsFd as _;
 use std::sync::LazyLock;
 
 use clap::{Args as ClapArgs, ValueHint};
-use togi_journal::{DirError, recorded_build};
+use togi_journal::DirError;
 use togi_watch::terminal::{self, ONE_FRAME_SIZE, SourceError};
 
 use crate::cli::{Context, examples};
@@ -76,13 +76,23 @@ pub struct Args {
 /// Runs `togi watch`.
 pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
     // Another build's journal is refused before the terminal is touched and before any frame: no frame, no retry.
-    if let Err(error @ DirError::ForeignJournal { .. }) = recorded_build(ctx.state_dir) {
+    if let Err(error @ DirError::ForeignJournal { .. }) = ctx.system.recorded_build(ctx.state_dir) {
         return fail(ctx, "watch", chain(&error));
     }
-    let result = if stdout().is_terminal() {
+    let result = if ctx.system.stdout_facts().is_terminal {
         let out = stdout();
         let keys = stdin();
         terminal::run(ctx.state_dir, out.as_fd(), Some(keys.as_fd()))
+    } else if let Some(fs) = ctx.system.journal_fs() {
+        terminal::one_frame_in(
+            fs.as_ref(),
+            ctx.state_dir,
+            args.width,
+            args.height,
+            &mut ctx.out,
+            ctx.system.now(),
+            &ctx.system.zone(),
+        )
     } else {
         terminal::one_frame(ctx.state_dir, args.width, args.height, &mut ctx.out)
     };

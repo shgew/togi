@@ -1,13 +1,12 @@
 use std::fmt::Write;
-use std::fs;
 use std::path::Path;
 
 use sha2::{Digest, Sha256};
-use togi_journal::{Event, Seq};
+use togi_journal::{Event, MemFs, Seq};
 use togi_tuner::RULESET;
 
 use super::support::{A, B, baseline, build, crash, events, id, start, start_with};
-use crate::{Anchor, Error, Session, read_dir, read_dir_lenient};
+use crate::{Anchor, Error, Session, read_dir_fs, read_dir_lenient_fs};
 
 const C: &str = "20261007T020000Z";
 const D: &str = "20261007T020000Z-2";
@@ -27,9 +26,16 @@ fn journal(session: &str, extra: usize) -> Vec<u8> {
     lines(&events(1, payloads))
 }
 
-fn archive(dir: &Path, name: &str, bytes: &[u8]) {
-    fs::create_dir_all(dir.join("archive")).unwrap();
-    fs::write(dir.join("archive").join(name), bytes).unwrap();
+fn archive(dir: &MemFs, name: &str, bytes: &[u8]) {
+    dir.put(format!("/state/archive/{name}"), bytes);
+}
+
+fn read_dir(dir: &MemFs, from: Option<togi_journal::SessionId>) -> Result<Vec<Session>, Error> {
+    read_dir_fs(dir, "/state", from)
+}
+
+fn anchor(dir: &MemFs) -> Result<Anchor, Error> {
+    Anchor::of_fs(dir, "/state")
 }
 
 fn ids(sessions: &[Session]) -> Vec<String> {
@@ -41,78 +47,75 @@ fn ids(sessions: &[Session]) -> Vec<String> {
 
 #[test]
 fn a_directory_reads_archives_oldest_first_then_the_live_journal() {
-    let dir = tempfile::tempdir().unwrap();
-    archive(dir.path(), &format!("{B}.jsonl"), &journal(B, 1));
-    archive(dir.path(), &format!("{A}.jsonl"), &journal(A, 0));
-    archive(dir.path(), &format!("{D}.jsonl"), &journal(D, 0));
-    fs::write(dir.path().join("events.jsonl"), journal(C, 2)).unwrap();
-    let sessions = read_dir(dir.path(), None).unwrap();
+    let dir = MemFs::new();
+    archive(&dir, &format!("{B}.jsonl"), &journal(B, 1));
+    archive(&dir, &format!("{A}.jsonl"), &journal(A, 0));
+    archive(&dir, &format!("{D}.jsonl"), &journal(D, 0));
+    dir.put("/state/events.jsonl", journal(C, 2));
+    let sessions = read_dir(&dir, None).unwrap();
     assert_eq!(ids(&sessions), [A, B, D, C]);
 }
 
 #[test]
 fn archives_older_than_the_anchor_session_are_skipped_unread() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = MemFs::new();
     archive(
-        dir.path(),
+        &dir,
         &format!("{A}.jsonl"),
         b"older than the anchor and unreadable\n",
     );
-    archive(dir.path(), &format!("{B}.jsonl"), &journal(B, 0));
-    fs::write(dir.path().join("events.jsonl"), journal(C, 0)).unwrap();
-    let sessions = read_dir(dir.path(), Some(id(B))).unwrap();
+    archive(&dir, &format!("{B}.jsonl"), &journal(B, 0));
+    dir.put("/state/events.jsonl", journal(C, 0));
+    let sessions = read_dir(&dir, Some(id(B))).unwrap();
     assert_eq!(ids(&sessions), [B, C]);
-    assert!(matches!(read_dir(dir.path(), None), Err(Error::Journal(_))));
+    assert!(matches!(read_dir(&dir, None), Err(Error::Journal(_))));
 }
 
 #[test]
 fn entries_that_are_not_journals_are_ignored() {
-    let dir = tempfile::tempdir().unwrap();
-    archive(dir.path(), "notes.jsonl", b"not a session\n");
-    archive(dir.path(), &format!("{A}.carry-pending"), b"");
-    fs::create_dir_all(dir.path().join("archive").join(format!("{B}.jsonl"))).unwrap();
-    archive(dir.path(), &format!("{C}.jsonl"), b"");
-    assert!(read_dir(dir.path(), None).unwrap().is_empty());
+    let dir = MemFs::new();
+    archive(&dir, "notes.jsonl", b"not a session\n");
+    archive(&dir, &format!("{A}.carry-pending"), b"");
+    togi_journal::fs::Fs::create_dir(&dir, Path::new(&format!("/state/archive/{B}.jsonl")))
+        .unwrap();
+    archive(&dir, &format!("{C}.jsonl"), b"");
+    assert!(read_dir(&dir, None).unwrap().is_empty());
 }
 
 #[test]
 fn a_directory_without_journals_holds_no_session() {
-    let dir = tempfile::tempdir().unwrap();
-    assert!(read_dir(dir.path(), None).unwrap().is_empty());
-    assert!(
-        read_dir(dir.path().join("missing"), None)
-            .unwrap()
-            .is_empty()
-    );
-    fs::write(dir.path().join("events.jsonl"), b"").unwrap();
-    assert!(read_dir(dir.path(), None).unwrap().is_empty());
+    let dir = MemFs::new();
+    assert!(read_dir(&dir, None).unwrap().is_empty());
+    assert!(read_dir_fs(&dir, "/missing", None).unwrap().is_empty());
+    dir.put("/state/events.jsonl", b"");
+    assert!(read_dir(&dir, None).unwrap().is_empty());
 }
 
 #[test]
 fn an_archive_that_cannot_be_listed_is_an_error() {
-    let dir = tempfile::tempdir().unwrap();
-    fs::write(dir.path().join("archive"), b"a file, not a directory").unwrap();
-    let error = read_dir(dir.path(), None).unwrap_err();
+    let dir = MemFs::new();
+    dir.put("/state/archive", b"a file, not a directory");
+    let error = read_dir(&dir, None).unwrap_err();
     assert!(matches!(error, Error::ListArchive { .. }), "{error}");
     assert!(error.to_string().starts_with("list archive "), "{error}");
 }
 
 #[test]
 fn a_journal_that_fails_the_readers_checks_is_an_error_naming_the_file() {
-    let dir = tempfile::tempdir().unwrap();
-    fs::write(dir.path().join("events.jsonl"), b"{\"seq\": 1}\n").unwrap();
-    let error = read_dir(dir.path(), None).unwrap_err();
+    let dir = MemFs::new();
+    dir.put("/state/events.jsonl", b"{\"seq\": 1}\n");
+    let error = read_dir(&dir, None).unwrap_err();
     assert!(matches!(error, Error::Journal(_)));
     assert!(error.to_string().contains("events.jsonl"), "{error}");
     let mut gap = events(1, start(A, "abc1234"));
     gap.extend(events(5, [crash()]));
-    fs::write(dir.path().join("events.jsonl"), lines(&gap)).unwrap();
-    assert!(matches!(read_dir(dir.path(), None), Err(Error::Journal(_))));
+    dir.put("/state/events.jsonl", lines(&gap));
+    assert!(matches!(read_dir(&dir, None), Err(Error::Journal(_))));
 }
 
 #[test]
 fn a_lenient_read_skips_an_event_of_an_unknown_kind_and_hashes_the_file_as_it_is() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = MemFs::new();
     let before = events(1, start(A, "abc1234"));
     let skipped_seq = before.len() as u64 + 1;
     let mut bytes = lines(&before);
@@ -123,10 +126,10 @@ fn a_lenient_read_skips_an_event_of_an_unknown_kind_and_hashes_the_file_as_it_is
     bytes.extend_from_slice(unknown.as_bytes());
     let after = events(skipped_seq + 1, [crash()]);
     bytes.extend(lines(&after));
-    fs::write(dir.path().join("events.jsonl"), &bytes).unwrap();
+    dir.put("/state/events.jsonl", bytes.as_slice());
 
-    assert!(matches!(read_dir(dir.path(), None), Err(Error::Journal(_))));
-    let sessions = read_dir_lenient(dir.path(), None).unwrap();
+    assert!(matches!(read_dir(&dir, None), Err(Error::Journal(_))));
+    let sessions = read_dir_lenient_fs(&dir, "/state", None).unwrap();
     let session = &sessions[0];
     assert_eq!(session.events().len(), before.len() + 1);
     let skipped = session.skipped();
@@ -145,13 +148,9 @@ fn a_lenient_read_skips_an_event_of_an_unknown_kind_and_hashes_the_file_as_it_is
 
 #[test]
 fn a_journal_that_does_not_open_with_session_start_is_an_error() {
-    let dir = tempfile::tempdir().unwrap();
-    fs::write(
-        dir.path().join("events.jsonl"),
-        lines(&events(1, [crash()])),
-    )
-    .unwrap();
-    assert!(matches!(read_dir(dir.path(), None), Err(Error::Journal(_))));
+    let dir = MemFs::new();
+    dir.put("/state/events.jsonl", lines(&events(1, [crash()])));
+    assert!(matches!(read_dir(&dir, None), Err(Error::Journal(_))));
     assert!(matches!(
         Session::from_events(events(1, [crash()])),
         Err(Error::NotStarted)
@@ -164,11 +163,11 @@ fn a_journal_that_does_not_open_with_session_start_is_an_error() {
 
 #[test]
 fn the_anchor_is_the_last_complete_event_of_the_live_journal() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = MemFs::new();
     let mut bytes = journal(A, 2);
     bytes.extend_from_slice(b"{\"seq\":5,\"time\":\"torn");
-    fs::write(dir.path().join("events.jsonl"), &bytes).unwrap();
-    let anchor = Anchor::of(dir.path()).unwrap();
+    dir.put("/state/events.jsonl", bytes);
+    let anchor = anchor(&dir).unwrap();
     assert_eq!((anchor.session, anchor.seq), (id(A), Seq::new(4).unwrap()));
     let whole = Session::from_events(events(1, {
         let mut payloads = start(A, "abc1234");
@@ -181,16 +180,16 @@ fn the_anchor_is_the_last_complete_event_of_the_live_journal() {
 
 #[test]
 fn the_anchor_of_an_empty_or_missing_live_journal_is_an_error() {
-    let dir = tempfile::tempdir().unwrap();
-    let error = Anchor::of(dir.path()).unwrap_err();
+    let dir = MemFs::new();
+    let error = anchor(&dir).unwrap_err();
     assert!(matches!(error, Error::ReadJournal { .. }), "{error}");
     assert!(error.to_string().starts_with("read journal "), "{error}");
-    fs::write(dir.path().join("events.jsonl"), b"").unwrap();
-    let error = Anchor::of(dir.path()).unwrap_err();
+    dir.put("/state/events.jsonl", b"");
+    let error = anchor(&dir).unwrap_err();
     assert!(matches!(error, Error::NoEvents { .. }), "{error}");
     // A first line that is not a complete journal header is refused, even when a crash may have torn it.
-    fs::write(dir.path().join("events.jsonl"), b"{\"seq\":1,\"torn").unwrap();
-    let error = Anchor::of(dir.path()).unwrap_err();
+    dir.put("/state/events.jsonl", b"{\"seq\":1,\"torn");
+    let error = anchor(&dir).unwrap_err();
     assert!(
         matches!(&error, Error::Journal(file) if matches!(file.source, togi_journal::ReadError::Foreign)),
         "{error}"
@@ -205,7 +204,7 @@ fn the_anchor_of_an_empty_or_missing_live_journal_is_an_error() {
 
 #[test]
 fn the_hash_covers_the_lines_as_the_file_holds_them() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = MemFs::new();
     let all = events(1, {
         let mut payloads = start(A, "abc1234");
         payloads.push(crash());
@@ -225,8 +224,8 @@ fn the_hash_covers_the_lines_as_the_file_holds_them() {
         lines(&all),
         "keys sort differently from the struct's"
     );
-    fs::write(dir.path().join("events.jsonl"), &reordered).unwrap();
-    let anchor = Anchor::of(dir.path()).unwrap();
+    dir.put("/state/events.jsonl", reordered.as_slice());
+    let anchor = anchor(&dir).unwrap();
     let digest = Sha256::digest(&reordered)
         .iter()
         .fold(String::new(), |mut out, byte| {
@@ -239,7 +238,7 @@ fn the_hash_covers_the_lines_as_the_file_holds_them() {
         .anchor_at(Seq::new(3).unwrap())
         .unwrap();
     assert_ne!(anchor.sha256, canonical.sha256);
-    let sessions = read_dir(dir.path(), None).unwrap();
+    let sessions = read_dir(&dir, None).unwrap();
     assert_eq!(sessions.len(), 1);
     assert_eq!(crate::after(&sessions, &anchor).unwrap().crashes, 0);
 }
@@ -288,15 +287,15 @@ fn an_event_that_cannot_be_encoded_is_an_error() {
 
 #[test]
 fn a_journal_of_another_ruleset_reads_as_one_session_that_cannot_be_replayed() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = MemFs::new();
     let mut stale = build("abc1234");
     stale.ruleset = RULESET - 1;
     let payloads = [start_with(A, stale), baseline([-10, -20])];
-    fs::write(dir.path().join("events.jsonl"), lines(&events(1, payloads))).unwrap();
-    let sessions = read_dir(dir.path(), None).unwrap();
+    dir.put("/state/events.jsonl", lines(&events(1, payloads)));
+    let sessions = read_dir(&dir, None).unwrap();
     assert_eq!(sessions.len(), 1);
     assert!(!sessions[0].replayable());
-    let anchor = Anchor::of(dir.path()).unwrap();
+    let anchor = anchor(&dir).unwrap();
     let error = crate::after(&sessions, &anchor).unwrap_err();
     assert!(matches!(error, Error::NotReplayable { .. }), "{error}");
     assert_eq!(
@@ -306,4 +305,21 @@ fn a_journal_of_another_ruleset_reads_as_one_session_that_cannot_be_replayed() {
             RULESET - 1
         )
     );
+}
+
+#[test]
+fn real_fs_directory_enumeration_ignores_symlinks_and_nonregular_archives() {
+    let dir = tempfile::tempdir().unwrap();
+    let archive = dir.path().join("archive");
+    std::fs::create_dir(&archive).unwrap();
+    std::fs::write(archive.join(format!("{A}.jsonl")), journal(A, 0)).unwrap();
+    std::fs::create_dir(archive.join(format!("{B}.jsonl"))).unwrap();
+    std::os::unix::fs::symlink(
+        archive.join(format!("{A}.jsonl")),
+        archive.join(format!("{C}.jsonl")),
+    )
+    .unwrap();
+    std::fs::write(dir.path().join("events.jsonl"), journal(D, 0)).unwrap();
+    let sessions = crate::read_dir(dir.path(), None).unwrap();
+    assert_eq!(ids(&sessions), [A, D]);
 }

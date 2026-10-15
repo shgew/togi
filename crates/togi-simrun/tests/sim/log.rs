@@ -127,9 +127,14 @@ fn recording(input: &mut SimInput) -> Rc<RefCell<Vec<Event>>> {
     seen
 }
 
-fn observed_run_equals_journal(persistence: &Persistence, log: Option<Box<dyn Write>>) {
+fn observed_run_equals_journal(
+    persistence: &Persistence,
+    log: Option<Box<dyn Write>>,
+    replay: togi_simrun::Replay,
+) {
     let mut input = input(simulator(&hunt_machine(2), 1), persistence.clone());
     input.log = log;
+    input.replay = replay;
     let seen = recording(&mut input);
     let outcome = simulate(input);
     assert!(
@@ -149,7 +154,11 @@ fn observed_run_equals_journal(persistence: &Persistence, log: Option<Box<dyn Wr
 
 #[test]
 fn an_observer_sees_the_journal_in_order_across_boots() {
-    observed_run_equals_journal(&Persistence::Memory(MemFs::new()), None);
+    observed_run_equals_journal(
+        &Persistence::Memory(MemFs::new()),
+        None,
+        togi_simrun::Replay::Warm,
+    );
 }
 
 #[test]
@@ -157,6 +166,7 @@ fn an_observer_sees_the_journal_in_order_beside_a_log() {
     observed_run_equals_journal(
         &Persistence::Memory(MemFs::new()),
         Some(log(false, false).0),
+        togi_simrun::Replay::Warm,
     );
 }
 
@@ -174,11 +184,11 @@ fn an_observer_sees_the_journal_in_order_beside_a_failing_log() {
 }
 
 #[test]
-fn an_observer_works_on_a_state_directory_on_disk() {
-    let dir = tempfile::tempdir().unwrap();
+fn an_observer_sees_the_journal_in_order_across_cold_boots() {
     observed_run_equals_journal(
-        &Persistence::Files(dir.path().to_path_buf()),
+        &Persistence::Memory(MemFs::new()),
         Some(log(false, false).0),
+        togi_simrun::Replay::Cold,
     );
 }
 

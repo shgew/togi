@@ -676,17 +676,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "insta"
-version = "1.49.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b67d3d2e287e4b86c10b3f3b641033d1f89b74bdb39d05f34952e2b9a6fe21cd"
-dependencies = [
- "once_cell",
- "similar",
- "tempfile",
-]
-
-[[package]]
 name = "instability"
 version = "0.3.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1393,12 +1382,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a219298ac11a56ea9a6d2120044824d6f01aeb034955e7af7bc16858527deea"
 
 [[package]]
-name = "similar"
-version = "2.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bbbb5d9659141646ae647b42fe094daf6c6192d1620870b449d9557f748b2daa"
-
-[[package]]
 name = "smallvec"
 version = "1.16.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1573,7 +1556,6 @@ dependencies = [
  "clap",
  "clap_complete",
  "clap_complete_nushell",
- "insta",
  "jiff",
  "rustix",
  "serde_json",
@@ -1640,7 +1622,6 @@ version = "0.0.0"
 dependencies = [
  "serde",
  "serde_json",
- "tempfile",
  "test-case",
  "thiserror",
  "togi-journal",
@@ -1719,7 +1700,6 @@ dependencies = [
 name = "togi-journal"
 version = "0.0.0"
 dependencies = [
- "insta",
  "jiff",
  "proptest",
  "rustix",
@@ -1799,6 +1779,7 @@ dependencies = [
 name = "togi-sim"
 version = "0.0.0"
 dependencies = [
+ "flate2",
  "jiff",
  "proptest",
  "rand",
@@ -1844,7 +1825,7 @@ name = "togi-tool-audit"
 version = "0.0.0"
 dependencies = [
  "clap",
- "insta",
+ "nix",
  "rustix",
  "serde",
  "serde_json",
@@ -1862,7 +1843,6 @@ name = "togi-tool-bench"
 version = "0.0.0"
 dependencies = [
  "clap",
- "insta",
  "jiff",
  "proptest",
  "rand",
@@ -1908,7 +1888,6 @@ name = "togi-tool-fit"
 version = "0.0.0"
 dependencies = [
  "clap",
- "insta",
  "proptest",
  "rand",
  "rayon",
@@ -1950,7 +1929,6 @@ dependencies = [
  "proptest",
  "serde",
  "serde_json",
- "tempfile",
  "thiserror",
  "togi-facts",
  "togi-journal",
@@ -1964,7 +1942,6 @@ name = "togi-tool-replay"
 version = "0.0.0"
 dependencies = [
  "clap",
- "insta",
  "jiff",
  "ratatui",
  "rustix",
@@ -2007,7 +1984,6 @@ name = "togi-tool-stats"
 version = "0.0.0"
 dependencies = [
  "clap",
- "insta",
  "jiff",
  "proptest",
  "tempfile",
@@ -2055,6 +2031,7 @@ dependencies = [
  "togi-command",
  "togi-config",
  "togi-hostlock",
+ "togi-journal",
  "togi-machine",
  "togi-mprime",
  "togi-trialfiles",
@@ -2109,7 +2086,6 @@ name = "togi-watch"
 version = "0.0.0"
 dependencies = [
  "criterion",
- "insta",
  "jiff",
  "ratatui",
  "rustix",
@@ -2131,7 +2107,6 @@ name = "togi-watchtest"
 version = "0.0.0"
 dependencies = [
  "jiff",
- "tempfile",
  "thiserror",
  "togi-config",
  "togi-journal",

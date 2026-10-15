@@ -40,6 +40,10 @@ fn found_in(
     if let Some(state) = state {
         fs.put("/state/state.json", serde_json::to_vec(&state).unwrap());
     }
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "projection content fixtures open only the injected in-memory journal"
+    )]
     let dir = StateDir::simulated(fs).unwrap();
     audit_recordings(&dir, completion)
         .unwrap()

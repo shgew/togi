@@ -1,8 +1,8 @@
 use std::cell::RefCell;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::rc::Rc;
 
-use togi_journal::EventKind;
+use togi_journal::{EventKind, MemFs};
 use togi_machine::BootId;
 use togi_session::Stop;
 use togi_sim::MachineDefinition;
@@ -29,8 +29,10 @@ fn run(
     definition: &MachineDefinition,
     seed: u64,
     persistence: Persistence,
+    replay: Replay,
 ) -> (Option<Stop>, bool) {
     let mut input = input(simulator(definition, seed), persistence);
+    input.replay = replay;
     input.max_boots = nz(BOOTS);
     match simulate(input).unwrap() {
         SimOutcome::Stopped(finished) => {
@@ -41,9 +43,9 @@ fn run(
     }
 }
 
-fn in_memory(definition: &MachineDefinition, seed: u64) -> Left {
-    let fs = togi_journal::MemFs::new();
-    let (stop, capped) = run(definition, seed, Persistence::Memory(fs.clone()));
+fn in_memory(definition: &MachineDefinition, seed: u64, replay: Replay) -> Left {
+    let fs = MemFs::new();
+    let (stop, capped) = run(definition, seed, Persistence::Memory(fs.clone()), replay);
     let root = Path::new(STATE);
     Left {
         stop,
@@ -53,58 +55,36 @@ fn in_memory(definition: &MachineDefinition, seed: u64) -> Left {
     }
 }
 
-fn on_disk(definition: &MachineDefinition, seed: u64) -> Left {
-    let dir = tempfile::tempdir().unwrap();
-    let (stop, capped) = run(
-        definition,
-        seed,
-        Persistence::Files(dir.path().to_path_buf()),
-    );
-    let read = |name: &str| text(std::fs::read(dir.path().join(name)).unwrap(), dir.path());
-    Left {
-        stop,
-        capped,
-        events: read("events.jsonl"),
-        state: read("state.json"),
-    }
-}
-
 fn same_files(definition: &MachineDefinition, seed: u64) {
-    let disk = on_disk(definition, seed);
-    let memory = in_memory(definition, seed);
+    let cold = in_memory(definition, seed, Replay::Cold);
+    let warm = in_memory(definition, seed, Replay::Warm);
+    assert_eq!(cold.stop, warm.stop, "stop (left cold, right warm)");
     assert_eq!(
-        disk.stop, memory.stop,
-        "stop (left on disk, right in memory)"
+        cold.capped, warm.capped,
+        "boot cap reached (left cold, right warm)"
     );
-    assert_eq!(
-        disk.capped, memory.capped,
-        "boot cap reached (left on disk, right in memory)"
-    );
-    if let Some((line, (left, right))) = disk
+    if let Some((line, (left, right))) = cold
         .events
         .lines()
-        .zip(memory.events.lines())
+        .zip(warm.events.lines())
         .enumerate()
         .find(|(_, (left, right))| left != right)
     {
         panic!(
-            "events.jsonl line {} differs\n  on disk:   {left}\n  in memory: {right}",
+            "events.jsonl line {} differs\n  cold: {left}\n  warm: {right}",
             line + 1
         );
     }
     assert_eq!(
-        disk.events.lines().count(),
-        memory.events.lines().count(),
-        "events.jsonl lines (left on disk, right in memory)"
+        cold.events.lines().count(),
+        warm.events.lines().count(),
+        "events.jsonl lines (left cold, right warm)"
     );
     assert!(
-        disk.events.lines().count() > 100,
+        cold.events.lines().count() > 100,
         "a short session proves little"
     );
-    assert_eq!(
-        disk.state, memory.state,
-        "state.json (left on disk, right in memory)"
-    );
+    assert_eq!(cold.state, warm.state, "state.json (left cold, right warm)");
 }
 
 #[test]
@@ -124,18 +104,20 @@ fn target_fit_0_1() {
 
 type Seen = Rc<RefCell<Vec<(BootId, Option<Vec<u8>>)>>>;
 
-/// Records, at every appended event, the `state.json` on disk beside the event's boot; the observer answers `stop`.
+/// Records, at every appended event, the in-memory `state.json` beside the event's boot; the observer answers `stop`.
 fn watch_state_json(
     input: &mut SimInput,
-    dir: &Path,
+    fs: &MemFs,
     stop: impl Fn(EventKind) -> bool + 'static,
 ) -> Seen {
     let seen: Seen = Rc::new(RefCell::new(Vec::new()));
     let sink = Rc::clone(&seen);
-    let path: PathBuf = dir.join("state.json");
+    let fs = fs.clone();
     input.observer = Some(Box::new(move |event| {
-        sink.borrow_mut()
-            .push((event.boot.clone(), std::fs::read(&path).ok()));
+        sink.borrow_mut().push((
+            event.boot.clone(),
+            fs.contents(format!("{STATE}/state.json")),
+        ));
         if stop(event.kind()) {
             Observe::Stop
         } else {
@@ -162,16 +144,16 @@ fn assert_unpublished_during_runs(seen: &Seen) -> usize {
     boots
 }
 
-/// Runs the crashing machine to its stop on disk and returns how many distinct `state.json` files the runs saw, and
+/// Runs the crashing machine to its stop in memory and returns how many distinct `state.json` files the runs saw, and
 /// how many boots there were.
 fn published_in_a_crashing_simulation(replay: Replay) -> (usize, usize) {
-    let dir = tempfile::tempdir().unwrap();
+    let fs = MemFs::new();
     let mut input = input(
         simulator(&hunt_machine(2), 1),
-        Persistence::Files(dir.path().to_path_buf()),
+        Persistence::Memory(fs.clone()),
     );
     input.replay = replay;
-    let seen = watch_state_json(&mut input, dir.path(), |_| false);
+    let seen = watch_state_json(&mut input, &fs, |_| false);
     let SimOutcome::Stopped(finished) = simulate(input).unwrap() else {
         panic!("capped");
     };
@@ -184,17 +166,17 @@ fn published_in_a_crashing_simulation(replay: Replay) -> (usize, usize) {
     let seen = seen.borrow();
     let mut published = seen.iter().map(|(_, state)| state).collect::<Vec<_>>();
     published.dedup();
-    let journal = std::fs::read_to_string(dir.path().join("events.jsonl")).unwrap();
+    let journal = String::from_utf8(fs.contents(format!("{STATE}/events.jsonl")).unwrap()).unwrap();
     assert!(
         !journal.contains("\"state.rebuilt\""),
         "a boot found no published state.json and rebuilt it"
     );
-    assert!(dir.path().join("state.json").exists());
+    assert!(fs.contents(format!("{STATE}/state.json")).is_some());
     (published.len(), boots)
 }
 
 #[test]
-fn a_warm_simulation_on_disk_gets_state_json_only_when_it_stops() {
+fn a_warm_simulation_gets_state_json_only_when_it_stops() {
     let (published, _) = published_in_a_crashing_simulation(Replay::Warm);
     assert_eq!(
         published, 1,
@@ -203,50 +185,49 @@ fn a_warm_simulation_on_disk_gets_state_json_only_when_it_stops() {
 }
 
 #[test]
-fn a_cold_simulation_on_disk_gets_state_json_at_every_crashed_boot() {
+fn a_cold_simulation_gets_state_json_at_every_crashed_boot() {
     let (published, boots) = published_in_a_crashing_simulation(Replay::Cold);
     assert_eq!(published, boots, "one publication per crashed boot");
 }
 
 #[test]
-fn a_capped_simulation_on_disk_leaves_the_crashed_runs_state_json() {
-    let dir = tempfile::tempdir().unwrap();
+fn a_capped_simulation_leaves_the_crashed_runs_state_json() {
+    let fs = MemFs::new();
     let mut input = input(
         simulator(&hunt_machine(2), 1),
-        Persistence::Files(dir.path().to_path_buf()),
+        Persistence::Memory(fs.clone()),
     );
     input.max_boots = nz(1);
-    let seen = watch_state_json(&mut input, dir.path(), |_| false);
+    let seen = watch_state_json(&mut input, &fs, |_| false);
     assert!(matches!(
         simulate(input).unwrap(),
         SimOutcome::Capped { .. }
     ));
     assert_eq!(assert_unpublished_during_runs(&seen), 1);
-    assert!(dir.path().join("state.json").exists());
+    assert!(fs.contents(format!("{STATE}/state.json")).is_some());
 }
 
 #[test]
-fn a_signalled_run_on_disk_publishes_state_json_when_it_stops() {
-    let dir = tempfile::tempdir().unwrap();
+fn a_signalled_run_publishes_state_json_when_it_stops() {
+    let fs = MemFs::new();
     let mut input = input(
         simulator(&hunt_machine(2), 1),
-        Persistence::Files(dir.path().to_path_buf()),
+        Persistence::Memory(fs.clone()),
     );
-    let seen = watch_state_json(&mut input, dir.path(), |kind| kind == EventKind::TrialEnd);
+    let seen = watch_state_json(&mut input, &fs, |kind| kind == EventKind::TrialEnd);
     let SimOutcome::Stopped(finished) = simulate(input).unwrap() else {
         panic!("capped");
     };
     assert_eq!(finished.stop, Some(Stop::Signal));
     assert_unpublished_during_runs(&seen);
-    assert!(dir.path().join("state.json").exists());
+    assert!(fs.contents(format!("{STATE}/state.json")).is_some());
 }
 
 /// Go `TestRunOwnerEveryExit`, panic mode, through the simulator: the panic of a boot reaches the caller only after
-/// the boot's journal is closed, so the buffered events are on disk and the writer lock is free.
+/// the boot's journal is closed, so the buffered events can be read back.
 #[test]
-fn an_observer_panic_on_disk_flushes_the_boots_events_and_releases_the_lock_before_it_propagates() {
-    let dir = tempfile::tempdir().unwrap();
-    let persistence = Persistence::Files(dir.path().to_path_buf());
+fn an_observer_panic_flushes_the_boots_events_before_it_propagates() {
+    let persistence = Persistence::Memory(MemFs::new());
     let mut input = input(simulator(&hunt_machine(2), 1), persistence.clone());
     let seen = Rc::new(RefCell::new(Vec::new()));
     let sink = Rc::clone(&seen);
@@ -261,15 +242,14 @@ fn an_observer_panic_on_disk_flushes_the_boots_events_and_releases_the_lock_befo
         payload.downcast_ref::<&str>().copied(),
         Some("a bug in the observer")
     );
-    let on_disk: Vec<_> = togi_simrun::events(&persistence)
+    let recorded: Vec<_> = togi_simrun::events(&persistence)
         .unwrap()
         .iter()
         .map(|event| event.seq)
         .collect();
     assert_eq!(
-        on_disk,
+        recorded,
         *seen.borrow(),
-        "every event the boot appended is on disk"
+        "every event the boot appended is persisted"
     );
-    togi_journal::StateDir::lock(dir.path()).expect("the writer lock is released");
 }

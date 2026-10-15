@@ -57,24 +57,18 @@ impl ConfigArgs {
         self.path.is_some()
     }
 
-    /// Reads the configuration: a missing default file is the default configuration, a missing
-    /// explicit one an error.
+    /// Loads configuration text through the caller's reader, retaining its path and provenance.
     ///
     /// # Errors
     ///
-    /// The file cannot be read or is not a valid configuration.
-    pub fn load(&self, default: &Path) -> Result<Config, LoadError> {
-        self.load_with_source(default).map(|(config, _)| config)
-    }
-
-    /// [`ConfigArgs::load`], with where the configuration came from, as a session records it.
-    ///
-    /// # Errors
-    ///
-    /// The file cannot be read or is not a valid configuration.
-    pub fn load_with_source(&self, default: &Path) -> Result<(Config, ConfigSource), LoadError> {
+    /// The reader fails or the text is not a valid configuration.
+    pub fn load_with_source_read(
+        &self,
+        default: &Path,
+        read_text: impl FnOnce(&Path) -> std::io::Result<String>,
+    ) -> Result<(Config, ConfigSource), LoadError> {
         let path = self.path(default);
-        let (config, file) = read(path, self.is_explicit())?;
+        let (config, file) = read(path, self.is_explicit(), read_text)?;
         let source = ConfigSource {
             path: path.display().to_string(),
             file,
@@ -85,8 +79,23 @@ impl ConfigArgs {
 
 /// The configuration at `path` and whether a file supplied it: a missing file that was not asked for
 /// is the default configuration.
-fn read(path: &Path, explicit: bool) -> Result<(Config, bool), LoadError> {
-    match Config::load(path) {
+fn read(
+    path: &Path,
+    explicit: bool,
+    read_text: impl FnOnce(&Path) -> std::io::Result<String>,
+) -> Result<(Config, bool), LoadError> {
+    let loaded = read_text(path)
+        .map_err(|source| LoadError::Read {
+            path: path.to_owned(),
+            source,
+        })
+        .and_then(|text| {
+            Config::parse(&text).map_err(|source| LoadError::Parse {
+                path: path.to_owned(),
+                source,
+            })
+        });
+    match loaded {
         Err(LoadError::Read { source, .. })
             if !explicit && source.kind() == std::io::ErrorKind::NotFound =>
         {

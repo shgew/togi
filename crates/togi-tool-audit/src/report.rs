@@ -2,6 +2,7 @@
 //! directory's journals.
 
 use std::collections::BTreeMap;
+use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -97,10 +98,22 @@ pub enum Status {
 
 /// Reads one record per line; blank lines are skipped.
 pub fn read_records(path: &Path) -> Result<Vec<Record>, RecordError> {
-    let text = std::fs::read_to_string(path).map_err(|source| RecordError::Read {
+    let file = std::fs::File::open(path).map_err(|source| RecordError::Read {
         path: path.to_path_buf(),
         source,
     })?;
+    read_records_from(path, file)
+}
+
+/// Reads and validates run records from a reader; `path` labels read and decode errors.
+pub fn read_records_from(path: &Path, mut reader: impl Read) -> Result<Vec<Record>, RecordError> {
+    let mut text = String::new();
+    reader
+        .read_to_string(&mut text)
+        .map_err(|source| RecordError::Read {
+            path: path.to_path_buf(),
+            source,
+        })?;
     let mut records = Vec::new();
     for (index, line) in text.lines().enumerate() {
         if !line.trim().is_empty() {
@@ -243,6 +256,20 @@ pub struct JournalSkip {
 /// directory a live process holds is refused. Taking the lock creates the directory's `lock` file and sets the
 /// directory's mode to 0711; the audit writes nothing else.
 pub fn audit_directory(dir: &Path, simulated: bool) -> (Vec<Finding>, usize, Vec<JournalSkip>) {
+    audit_directory_with(dir, simulated, |dir| {
+        if !dir.is_dir() {
+            return Err("not a directory".into());
+        }
+        StateDir::lock(dir).map_err(|error| error.to_string())
+    })
+}
+
+/// Audits a directory through an injected state-directory opener, retaining the same finding attribution.
+pub fn audit_directory_with(
+    dir: &Path,
+    simulated: bool,
+    open: impl FnOnce(&Path) -> Result<StateDir, String>,
+) -> (Vec<Finding>, usize, Vec<JournalSkip>) {
     let unreadable = |reason: String| Finding {
         directory: dir.to_path_buf(),
         scenario: None,
@@ -252,16 +279,12 @@ pub fn audit_directory(dir: &Path, simulated: bool) -> (Vec<Finding>, usize, Vec
         check: Kind::Unreadable,
         reason,
     };
-    if !dir.is_dir() {
-        return (vec![unreadable("not a directory".into())], 0, Vec::new());
-    }
     let completion = if simulated {
         Completion::Finished
     } else {
         Completion::InProgress
     };
-    let audits = StateDir::lock(dir)
-        .map_err(|error| error.to_string())
+    let audits = open(dir)
         .and_then(|state| audit_recordings(&state, completion).map_err(|error| error.to_string()));
     let audits = match audits {
         Ok(audits) => audits,
@@ -319,6 +342,18 @@ pub fn audit_holding<G>(
     root: &Path,
     hold: impl Fn() -> G,
 ) -> std::io::Result<Report> {
+    audit_with(dirs, records, root, hold, audit_directory)
+}
+
+/// Audits directories using an injected journal inspection and per-directory holding hook.
+/// Absolute fixture paths avoid consulting the process's current directory during lexical attribution.
+pub fn audit_with<G>(
+    dirs: &[PathBuf],
+    records: &[Record],
+    root: &Path,
+    hold: impl Fn() -> G,
+    inspect: impl Fn(&Path, bool) -> (Vec<Finding>, usize, Vec<JournalSkip>),
+) -> std::io::Result<Report> {
     let mut by_dir = BTreeMap::new();
     for record in records {
         by_dir.insert(lexical(&run_directory(root, record))?, record);
@@ -331,7 +366,7 @@ pub fn audit_holding<G>(
     for dir in dirs {
         let record = by_dir.get(&lexical(dir)?);
         let guard = hold();
-        let (mut found, journals, mut skips) = audit_directory(dir, record.is_some());
+        let (mut found, journals, mut skips) = inspect(dir, record.is_some());
         drop(guard);
         report.journals += journals;
         for finding in &mut found {

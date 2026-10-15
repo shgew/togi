@@ -22,7 +22,62 @@ const CAPPED: u8 = 3;
 /// dead end, 1 for an error or a dead end, 2 when the recorded checking cycle is not full and `--cycles` could
 /// never be met, 3 when the boot cap ends an unfinished session.
 pub(crate) fn run(args: SessionArgs, log: &mut Log) -> u8 {
-    match simulate(args, log) {
+    run_with(
+        args,
+        log,
+        |args| {
+            machine::load(
+                args.machine.as_deref(),
+                args.seed,
+                args.replay_facts,
+                &mut Extracts::new(),
+            )
+        },
+        |args, log| {
+            let dir = if let Some(dir) = args.state_dir.filter(|dir| !dir.as_os_str().is_empty()) {
+                dir
+            } else {
+                let dir = temporary()?;
+                log.announce(&format!("sim: state directory {}", dir.display()));
+                dir
+            };
+            Ok(Persistence::Files(dir))
+        },
+        || {
+            let cancel = CancellationToken::new();
+            signals::cancel_on_signals(cancel.clone()).map_err(Error::Signals)?;
+            Ok(Context {
+                cancel,
+                renderer: Renderer::new(OutputFacts::detect(
+                    &io::stderr(),
+                    env::var_os("NO_COLOR").as_deref(),
+                    env::var_os("JOURNAL_STREAM").as_deref(),
+                )),
+                zone: TimeZone::system(),
+            })
+        },
+        togi_simrun::simulate,
+    )
+}
+
+pub(crate) struct Context {
+    pub cancel: CancellationToken,
+    pub renderer: Renderer,
+    pub zone: TimeZone,
+}
+
+pub(crate) fn run_with(
+    args: SessionArgs,
+    log: &mut Log,
+    load: impl FnOnce(
+        &SessionArgs,
+    )
+        -> Result<(togi_sim::Model, Option<togi_sim::replay::Replay>), machine::LoadError>,
+    persistence: impl FnOnce(SessionArgs, &mut Log) -> Result<Persistence, Error>,
+    context: impl FnOnce() -> Result<Context, Error>,
+    execute: impl FnOnce(SimInput) -> Result<SimOutcome, togi_simrun::SimError>,
+) -> u8 {
+    match simulate(args, log, load, persistence, context, execute) {
         Ok(code) => code,
         Err(error) => {
             let _ = writeln!(log, "sim: {error}");
@@ -35,7 +90,7 @@ pub(crate) fn run(args: SessionArgs, log: &mut Log) -> u8 {
 }
 
 #[derive(Debug, thiserror::Error)]
-enum Error {
+pub(crate) enum Error {
     #[error(transparent)]
     Machine(#[from] machine::LoadError),
     #[error("create the state directory: {0}")]
@@ -54,35 +109,40 @@ enum Error {
     ScheduleNotFull,
 }
 
-fn simulate(args: SessionArgs, log: &mut Log) -> Result<u8, Error> {
-    let cancel = CancellationToken::new();
-    signals::cancel_on_signals(cancel.clone()).map_err(Error::Signals)?;
-    let (model, replay) = machine::load(
-        args.machine.as_deref(),
-        args.seed,
-        args.replay_facts,
-        &mut Extracts::new(),
-    )?;
-    let dir = if let Some(dir) = args.state_dir.filter(|dir| !dir.as_os_str().is_empty()) {
-        dir
-    } else {
-        let dir = temporary()?;
-        log.announce(&format!("sim: state directory {}", dir.display()));
-        dir
-    };
-    let config = togi_simrun::recorded_config(&dir, Config::default())?;
+fn simulate(
+    args: SessionArgs,
+    log: &mut Log,
+    load: impl FnOnce(
+        &SessionArgs,
+    )
+        -> Result<(togi_sim::Model, Option<togi_sim::replay::Replay>), machine::LoadError>,
+    persistence: impl FnOnce(SessionArgs, &mut Log) -> Result<Persistence, Error>,
+    context: impl FnOnce() -> Result<Context, Error>,
+    execute: impl FnOnce(SimInput) -> Result<SimOutcome, togi_simrun::SimError>,
+) -> Result<u8, Error> {
+    let Context {
+        cancel,
+        renderer,
+        zone,
+    } = context()?;
+    let (model, replay) = load(&args)?;
+    let seed = args.seed;
+    let cold_boots = args.cold_boots;
+    let verify_every = args.verify_every;
+    let max_boots = args.max_boots;
+    let cycles = args.cycles;
+    let write_samples = args.samples;
+    let persistence = persistence(args, log)?;
+    let config = togi_simrun::recorded_config(&persistence, Config::default())?;
     if !config.checking_cycle().is_full() {
         return Err(Error::ScheduleNotFull);
     }
-    let persistence = Persistence::Files(dir.clone());
-    let simulator = togi_simrun::resume_simulator(&persistence, model, args.seed, replay)?;
-    let renderer = Renderer::new(OutputFacts::detect(
-        &io::stderr(),
-        env::var_os("NO_COLOR").as_deref(),
-        env::var_os("JOURNAL_STREAM").as_deref(),
-    ));
-    let zone = TimeZone::system();
-    let outcome = togi_simrun::simulate(SimInput {
+    let simulator = togi_simrun::resume_simulator(&persistence, model, seed, replay)?;
+    let dir = match &persistence {
+        Persistence::Files(dir) => dir.as_path(),
+        Persistence::Memory(_) => Path::new("/state"),
+    };
+    let outcome = execute(SimInput {
         config,
         source: ConfigSource {
             path: DEFAULT_PATH.to_owned(),
@@ -91,18 +151,18 @@ fn simulate(args: SessionArgs, log: &mut Log) -> Result<u8, Error> {
         build: build(),
         simulator,
         persistence: persistence.clone(),
-        replay: if args.cold_boots {
+        replay: if cold_boots {
             Replay::Cold
         } else {
             Replay::Warm
         },
-        verify_every: NonZeroU32::new(args.verify_every),
-        max_boots: args.max_boots,
+        verify_every: NonZeroU32::new(verify_every),
+        max_boots,
         policy: StopPolicy {
-            cycles: Some(args.cycles),
+            cycles: Some(cycles),
             first_result: false,
         },
-        write_samples: args.samples,
+        write_samples,
         defects: togi_defect::KNOWN_DEFECTS,
         log: Some(Box::new(log.clone())),
         renderer,
@@ -119,9 +179,7 @@ fn simulate(args: SessionArgs, log: &mut Log) -> Result<u8, Error> {
             );
             CAPPED
         }
-        SimOutcome::Stopped(finished) => {
-            report(&finished, &persistence, renderer, &zone, log, &dir)
-        }
+        SimOutcome::Stopped(finished) => report(&finished, &persistence, renderer, &zone, log, dir),
     })
 }
 

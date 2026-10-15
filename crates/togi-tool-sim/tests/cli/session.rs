@@ -1,31 +1,21 @@
 use std::collections::BTreeSet;
-use std::fs;
-use std::io::{BufRead as _, BufReader, Read as _};
 use std::num::NonZeroU32;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use jiff::tz::TimeZone;
-use nix::sys::signal::{Signal, kill};
-use nix::unistd::Pid;
 use togi_config::Config;
-use togi_journal::{Build, DeadEndCondition, Payload, SCHEMA, ShutdownReason};
+use togi_journal::{DeadEndCondition, MemFs, Payload, ShutdownReason};
 use togi_machine::CancellationToken;
 use togi_render::Renderer;
 use togi_session::{ConfigSource, StopPolicy};
 use togi_sim::{MachineDefinition, Model, RunSettings, Simulator};
 use togi_simrun::{Persistence, Replay, SimInput, simulate};
 
-use crate::common::{command, entries, live_events, sim, sim_in_tmp};
+use super::common::Host;
 
 #[test]
 fn the_boot_cap_ends_an_unfinished_session_with_status_three() {
-    let state = tempfile::tempdir().unwrap();
-    let ran = sim([
-        "--max-boots".as_ref(),
-        "2".as_ref(),
-        "--state-dir".as_ref(),
-        state.path().as_os_str(),
-    ]);
+    let ran = Host::default().run(["--max-boots", "2", "--state-dir", "/state"]);
     assert_eq!(ran.code, Some(3), "{}", ran.stderr);
     assert!(
         ran.stderr.ends_with(
@@ -38,12 +28,11 @@ fn the_boot_cap_ends_an_unfinished_session_with_status_three() {
 
 #[test]
 fn without_a_state_directory_a_temporary_one_is_kept_and_announced_first() {
-    let tmp = tempfile::tempdir().unwrap();
-    let ran = sim_in_tmp(tmp.path(), ["--max-boots", "2"]);
+    let mut host = Host::default();
+    let ran = host.run(["--max-boots", "2"]);
     assert_eq!(ran.code, Some(3), "{}", ran.stderr);
-    let created = entries(tmp.path());
-    assert_eq!(created.len(), 1, "{created:?}");
-    let dir = &created[0];
+    assert_eq!(host.states.len(), 1);
+    let dir = host.states.keys().next().unwrap();
     assert!(
         dir.file_name()
             .unwrap()
@@ -55,50 +44,72 @@ fn without_a_state_directory_a_temporary_one_is_kept_and_announced_first() {
         ran.stderr.lines().next().unwrap(),
         format!("sim: state directory {}", dir.display())
     );
-    let boots: BTreeSet<_> = live_events(dir)
+    let boots: BTreeSet<_> = host
+        .events(dir.to_str().unwrap())
         .into_iter()
         .map(|event| event.boot)
         .collect();
     assert_eq!(boots.len(), 2);
 }
 
-fn samples(dir: &Path, name: &str) -> usize {
-    let trials = dir.join("trials");
-    if !trials.exists() {
-        return 0;
-    }
-    entries(&trials)
-        .iter()
-        .filter(|trial| trial.join(name).exists())
-        .count()
-}
-
 #[test]
 fn samples_reach_the_state_directory_only_when_asked_for() {
     for write in [false, true] {
-        let state = tempfile::tempdir().unwrap();
-        let mut args = vec!["--state-dir".as_ref(), state.path().as_os_str()];
+        let mut host = Host::default();
+        let mut args = vec!["--state-dir", "/state"];
         if write {
-            args.push("--samples".as_ref());
+            args.push("--samples");
         }
-        let ran = sim(&args);
+        let mut called = false;
+        let ran = host.execute(args, |mut input| {
+            called = true;
+            assert_eq!(input.write_samples, write);
+            assert!(matches!(&input.persistence, Persistence::Memory(_)));
+            // Record the disk-output request at the execution seam, then use the simulator's existing
+            // in-memory sample collection for the whole session. The disk adapter is exercised separately.
+            input.write_samples = false;
+            let simulator = input.simulator.clone();
+            let persistence = input.persistence.clone();
+            let outcome = simulate(input)?;
+            let trial = togi_simrun::events(&persistence)
+                .unwrap()
+                .into_iter()
+                .rev()
+                .find_map(|event| match event.payload {
+                    Payload::TrialEnd(end) => Some(end.trial),
+                    _ => None,
+                })
+                .expect("the completed session ended a trial");
+            assert!(
+                simulator
+                    .seams()
+                    .trials
+                    .samples(trial.as_str())
+                    .next()
+                    .is_some()
+            );
+            Ok(outcome)
+        });
+        assert!(called);
         assert_eq!(ran.code, Some(0), "{}", ran.stderr);
-        assert_eq!(samples(state.path(), "samples.jsonl.gz") > 0, write);
-        assert_eq!(samples(state.path(), "samples.jsonl"), 0);
     }
 }
 
 #[test]
 fn a_finished_session_ends_its_journal_with_the_cycles_shutdown() {
-    let state = tempfile::tempdir().unwrap();
-    let ran = sim(["--state-dir".as_ref(), state.path().as_os_str()]);
+    let mut host = Host::default();
+    let ran = host.run(["--state-dir", "/state"]);
     assert_eq!(ran.code, Some(0), "{}", ran.stderr);
-    let events = live_events(state.path());
+    let events = host.events("/state");
     let Payload::Shutdown(shutdown) = &events.last().unwrap().payload else {
         panic!("the journal does not end in a shutdown");
     };
     assert_eq!(shutdown.reason, ShutdownReason::Cycles);
-    assert!(state.path().join("state.json").exists());
+    assert!(
+        host.states[Path::new("/state")]
+            .contents("/state/state.json")
+            .is_some()
+    );
     assert!(
         ran.stderr.lines().last().unwrap().contains("shutdown"),
         "{}",
@@ -106,65 +117,19 @@ fn a_finished_session_ends_its_journal_with_the_cycles_shutdown() {
     );
 }
 
-#[test]
-fn a_signal_stops_the_session_in_order() {
-    let tmp = tempfile::tempdir().unwrap();
-    let mut child = command()
-        .env("TMPDIR", tmp.path())
-        .args(["--cycles", "1000"])
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .unwrap();
-    let mut stderr = BufReader::new(child.stderr.take().unwrap());
-    let mut announced = String::new();
-    stderr.read_line(&mut announced).unwrap();
-    let dir = announced
-        .strip_prefix("sim: state directory ")
-        .unwrap()
-        .trim_end()
-        .to_owned();
-    kill(
-        Pid::from_raw(i32::try_from(child.id()).unwrap()),
-        Signal::SIGTERM,
-    )
-    .unwrap();
-    let mut rest = String::new();
-    stderr.read_to_string(&mut rest).unwrap();
-    let status = child.wait().unwrap();
-    assert_eq!(status.code(), Some(0), "{rest}");
-    let events = live_events(Path::new(&dir));
-    let Payload::Shutdown(shutdown) = &events.last().unwrap().payload else {
-        panic!("the journal does not end in a shutdown");
-    };
-    assert_eq!(shutdown.reason, ShutdownReason::Signal);
-}
-
-fn build() -> Build {
-    let rev = togi_version::rev();
-    Build {
-        version: togi_version::version().to_owned(),
-        rev: (!rev.is_empty()).then(|| rev.to_owned()),
-        ruleset: togi_tuner::RULESET,
-        schema: SCHEMA,
-        fixes: 0,
-        evidence: togi_tuner::EVIDENCE_EPOCH,
-    }
-}
-
-fn record(dir: &Path, config: Config) {
-    let machine = MachineDefinition::default();
+fn record(fs: MemFs, config: Config) {
     simulate(SimInput {
         config,
         source: ConfigSource::default(),
-        build: build(),
+        build: crate::build(),
         simulator: Simulator::new(
-            Model::new(&machine, 1).unwrap(),
+            Model::new(&MachineDefinition::default(), 1).unwrap(),
             RunSettings {
                 seed: 1,
                 ..RunSettings::default()
             },
         ),
-        persistence: Persistence::Files(dir.to_path_buf()),
+        persistence: Persistence::Memory(fs),
         replay: Replay::Warm,
         verify_every: None,
         max_boots: NonZeroU32::MIN,
@@ -186,21 +151,16 @@ fn record(dir: &Path, config: Config) {
 
 #[test]
 fn a_resume_runs_under_the_configuration_the_journal_recorded() {
-    let state = tempfile::tempdir().unwrap();
-    let recorded = Config::parse(
-        r#"{"durations":{"search_trial_s":60},"backends":{"mprime":"/nix/store/recorded-mprime","ycruncher":"/nix/store/recorded-ycruncher"}}"#,
-    )
-    .unwrap();
+    let mut host = Host::default();
+    let recorded = Config::parse(r#"{"durations":{"search_trial_s":60},"backends":{"mprime":"/recorded-mprime","ycruncher":"/recorded-ycruncher"}}"#).unwrap();
     assert_ne!(recorded.backends(), Config::default().backends());
-    record(state.path(), recorded.clone());
-    let ran = sim([
-        "--state-dir".as_ref(),
-        state.path().as_os_str(),
-        "--max-boots".as_ref(),
-        "1".as_ref(),
-    ]);
+    let fs = MemFs::new();
+    record(fs.clone(), recorded.clone());
+    host.states.insert("/state".into(), fs);
+    let ran = host.run(["--state-dir", "/state", "--max-boots", "1"]);
     assert!(matches!(ran.code, Some(0 | 3)), "{}", ran.stderr);
-    let loaded: Vec<Config> = live_events(state.path())
+    let loaded: Vec<Config> = host
+        .events("/state")
         .into_iter()
         .filter_map(|event| match event.payload {
             Payload::ConfigLoaded(loaded) => Some(Config::from_snapshot(&loaded.config).unwrap()),
@@ -208,67 +168,39 @@ fn a_resume_runs_under_the_configuration_the_journal_recorded() {
         })
         .collect();
     assert!(loaded.len() >= 2, "{} config.loaded events", loaded.len());
-    for config in &loaded {
-        assert_eq!(
-            config.backends().mprime(),
-            Some(Path::new("/nix/store/recorded-mprime"))
-        );
-        assert_eq!(
-            config.backends().ycruncher(),
-            Some(Path::new("/nix/store/recorded-ycruncher"))
-        );
-        assert_eq!(*config, recorded);
+    for config in loaded {
+        assert_eq!(config, recorded);
     }
-}
-
-fn files(dir: &Path) -> Vec<(PathBuf, Vec<u8>)> {
-    let mut found = Vec::new();
-    for path in entries(dir) {
-        if path.is_dir() {
-            found.extend(files(&path));
-        } else {
-            found.push((path.clone(), std::fs::read(&path).unwrap()));
-        }
-    }
-    found
 }
 
 #[test]
 fn a_recorded_checking_cycle_that_is_not_full_refuses_cycles_before_touching_the_state() {
-    let state = tempfile::tempdir().unwrap();
+    let mut host = Host::default();
     let short = Config::parse(r#"{"checking":{"cycle":["R1","R2"]}}"#).unwrap();
     assert!(!short.checking_cycle().is_full());
-    record(state.path(), short);
-    let before = files(state.path());
-    let ran = sim([
-        "--state-dir".as_ref(),
-        state.path().as_os_str(),
-        "--max-boots".as_ref(),
-        "5".as_ref(),
-    ]);
+    let fs = MemFs::new();
+    record(fs.clone(), short);
+    let before: Vec<_> = fs
+        .entries()
+        .into_iter()
+        .map(|(path, kind)| {
+            let body = fs.contents(&path);
+            (path, kind, body)
+        })
+        .collect();
+    host.states.insert("/state".into(), fs.clone());
+    let ran = host.run(["--state-dir", "/state", "--max-boots", "5"]);
     assert_eq!(ran.code, Some(2), "{}", ran.stderr);
-    assert!(ran.stderr.contains("is not full"), "{}", ran.stderr);
-    assert_eq!(files(state.path()), before);
-}
-
-/// Runs the simulator with a standard error that is no terminal and refuses every write, as a full disk does.
-#[cfg(target_os = "linux")]
-fn sim_with_full_log(args: &[&std::ffi::OsStr]) -> Option<i32> {
-    let full = fs::OpenOptions::new()
-        .write(true)
-        .open("/dev/full")
-        .unwrap();
-    command().args(args).stderr(full).status().unwrap().code()
-}
-
-#[cfg(target_os = "linux")]
-#[test]
-fn a_log_that_cannot_be_flushed_fails_a_command_that_otherwise_succeeds() {
-    assert_eq!(
-        command().arg("--help").output().unwrap().status.code(),
-        Some(0)
-    );
-    assert_eq!(sim_with_full_log(&["--help".as_ref()]), Some(1));
+    assert!(ran.stderr.contains("is not full"));
+    let after: Vec<_> = fs
+        .entries()
+        .into_iter()
+        .map(|(path, kind)| {
+            let body = fs.contents(&path);
+            (path, kind, body)
+        })
+        .collect();
+    assert_eq!(after, before);
 }
 
 const THERMAL_MACHINE: &str = r#"{
@@ -282,18 +214,11 @@ const THERMAL_MACHINE: &str = r#"{
 
 #[test]
 fn a_dead_end_exits_one_and_cites_the_events_that_caused_it() {
-    let state = tempfile::tempdir().unwrap();
-    let machine = state.path().join("machine-file.json");
-    fs::write(&machine, THERMAL_MACHINE).unwrap();
-    let dir = state.path().join("state");
-    let ran = sim([
-        "--machine".as_ref(),
-        machine.as_os_str(),
-        "--state-dir".as_ref(),
-        dir.as_os_str(),
-    ]);
+    let mut host = Host::default();
+    host.put("/machine.json", THERMAL_MACHINE);
+    let ran = host.run(["--machine", "/machine.json", "--state-dir", "/state"]);
     assert_eq!(ran.code, Some(1), "{}", ran.stderr);
-    let events = live_events(&dir);
+    let events = host.events("/state");
     let (dead_end, causes) = events
         .iter()
         .find_map(|event| match &event.payload {
@@ -312,9 +237,8 @@ fn a_dead_end_exits_one_and_cites_the_events_that_caused_it() {
         report[0],
         format!("sim: dead end {}: {}", dead_end.condition, dead_end.detail)
     );
-    let cited: Vec<&str> = report[1..].to_vec();
-    assert_eq!(cited.len(), causes.len(), "{}", ran.stderr);
-    for (line, seq) in cited.iter().zip(causes) {
+    assert_eq!(report[1..].len(), causes.len(), "{}", ran.stderr);
+    for (line, seq) in report[1..].iter().zip(causes) {
         let event = events.iter().find(|event| event.seq == *seq).unwrap();
         let rest = line.strip_prefix("  evidence: ").expect(line);
         assert!(

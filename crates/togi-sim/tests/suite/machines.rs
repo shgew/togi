@@ -10,7 +10,7 @@ fn every_committed_machine_loads_and_validates() {
     let paths = committed();
     assert!(paths.len() >= 18, "{} machines", paths.len());
     for path in paths {
-        let (machine, files) = file::load_with_files(&path)
+        let (machine, files) = file::load_from(&path, &crate::common::committed_files())
             .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
         assert_eq!(files[0], path);
         let model =
@@ -22,11 +22,19 @@ fn every_committed_machine_loads_and_validates() {
 
 #[test]
 fn the_overlays_name_their_parents_and_the_fitted_machines_their_facts() {
-    let (_, files) =
-        file::load_with_files(machines_dir().join("target-r7-request-gap.json")).expect("loads");
+    let (_, files) = file::load_from(
+        machines_dir().join("target-r7-request-gap.json"),
+        &crate::common::committed_files(),
+    )
+    .expect("loads");
     assert_eq!(files.len(), 2);
     assert!(files[1].ends_with("target-shared-voltage.json"));
-    let fit = file::load(machines_dir().join("target-fit-0.json")).expect("loads");
+    let fit = file::load_from(
+        machines_dir().join("target-fit-0.json"),
+        &crate::common::committed_files(),
+    )
+    .map(|(machine, _)| machine)
+    .expect("loads");
     assert_eq!(fit.facts.as_deref(), Some("../facts/target.jsonl.gz"));
     let model = Model::new(&fit, 1).expect("valid");
     assert!(!model.bios_context().bios_version.is_empty());

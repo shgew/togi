@@ -18,7 +18,7 @@ use togi_session::{ConfigSource, Ended, PublicationPolicy, RunInput, Stop, StopP
 use togi_sim::definition::ModelDef;
 use togi_sim::{MachineDefinition, Model, RunSettings, Simulator};
 use togi_simrun::{Observe, Observer, Persistence, Replay, SimInput, SimOutcome, resume_simulator};
-use togi_tool_forecast::{Anchor, Outcome, Session, Status, after, read_dir};
+use togi_tool_forecast::{Anchor, Outcome, Session, Status, after, read_dir_fs};
 use togi_tuner::{EVIDENCE_EPOCH, RULESET};
 
 struct Simulated {
@@ -168,18 +168,11 @@ fn a_run_that_goes_on_past_its_conclusion_scores_as_the_cycles_one_run_with_the_
 #[test]
 fn a_simulated_state_directory_reads_back_as_the_sessions_it_holds() {
     let stopped = simulate(1);
-    let dir = tempfile::tempdir().unwrap();
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "writing a simulation's files to disk is the point"
-    )]
-    stopped.mem.dump_to(dir.path()).unwrap();
-    let state = dir.path().join("state");
-    let sessions = read_dir(&state, None).unwrap();
+    let sessions = read_dir_fs(&stopped.mem, "/state", None).unwrap();
     assert_eq!(sessions.len(), 1);
     assert!(sessions[0].replayable());
     let last = stopped.events().last().unwrap().seq;
-    let anchor = Anchor::of(&state).unwrap();
+    let anchor = Anchor::of_fs(&stopped.mem, "/state").unwrap();
     assert_eq!(anchor.seq, last);
     assert_eq!(
         stopped.session().anchor_at(last),
@@ -253,16 +246,6 @@ fn resume(history: &MemFs, seed: u64, cycles: Option<u32>, observer: Observer) -
     fs
 }
 
-fn on_disk(fs: &MemFs) -> tempfile::TempDir {
-    let dir = tempfile::tempdir().unwrap();
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "writing a simulation's files to disk is the point"
-    )]
-    fs.dump_to(dir.path()).unwrap();
-    dir
-}
-
 fn is_cycle_start(event: &Event) -> bool {
     matches!(&event.payload, Payload::CheckingCycle(c) if c.event == CycleEvent::Start)
 }
@@ -291,8 +274,7 @@ fn endless_after_the_cycles_one_run(seed: u64) -> Endless {
         }
     });
     simrun(simulator, &history, Some(1), crashed);
-    let history_dir = on_disk(&history);
-    let anchor = Anchor::of(history_dir.path().join("state")).unwrap();
+    let anchor = Anchor::of_fs(&history, "/state").unwrap();
     let starts = Rc::new(Cell::new(0));
     let counted = Rc::clone(&starts);
     let stopped = resume(
@@ -324,8 +306,7 @@ fn endless_after_the_cycles_one_run(seed: u64) -> Endless {
         }),
     );
     let outcome = |fs: &MemFs| {
-        let dir = on_disk(fs);
-        let sessions = read_dir(dir.path().join("state"), Some(anchor.session)).unwrap();
+        let sessions = read_dir_fs(fs, "/state", Some(anchor.session)).unwrap();
         (after(&sessions, &anchor).unwrap(), sessions)
     };
     let (want, _) = outcome(&stopped);

@@ -70,11 +70,10 @@ fn line(payload: ConfigLoaded) -> String {
     .unwrap()
 }
 
-fn pinned(name: &str, payload: ConfigLoaded) {
+fn pinned(snapshot: &str, payload: ConfigLoaded) {
     let encoded = line(payload.clone());
-    insta::with_settings!({ prepend_module_to_snapshot => false }, {
-        insta::assert_snapshot!(name, &encoded);
-    });
+    let (_, expected) = snapshot.split_once("\n---\n").unwrap();
+    assert_eq!(encoded, expected.trim_end_matches('\n'));
     let decoded = Event::decode(&encoded).unwrap();
     assert_eq!(decoded.payload, Payload::from(payload));
     assert_eq!(decoded.encode().unwrap(), encoded);
@@ -82,12 +81,15 @@ fn pinned(name: &str, payload: ConfigLoaded) {
 
 #[test]
 fn a_fully_populated_config_loaded_matches_its_golden() {
-    pinned("config_loaded_full", full());
+    pinned(include_str!("snapshots/config_loaded_full.snap"), full());
 }
 
 #[test]
 fn a_minimal_config_loaded_matches_its_golden() {
-    pinned("config_loaded_minimal", minimal());
+    pinned(
+        include_str!("snapshots/config_loaded_minimal.snap"),
+        minimal(),
+    );
 }
 
 #[test]

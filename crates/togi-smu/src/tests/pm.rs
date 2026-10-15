@@ -4,7 +4,6 @@ use crate::pm_table::{
     TABLE_LEN, Timing, Unavailable, VERSION, decode, layout, parse_version,
 };
 use crate::sysfs::DRIVER_DIR;
-use std::fs;
 use std::io::{self, ErrorKind};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
@@ -582,8 +581,8 @@ fn check_never_waits_longer_than_what_is_left_of_the_read_budget() {
 }
 
 fn pm_file(tree: &Tree, name: &str, bytes: &[u8]) -> FileSource {
-    fs::write(tree.path(&format!("{DRIVER_DIR}/{name}")), bytes).unwrap();
-    FileSource::new(tree.root())
+    tree.put_bytes(&format!("{DRIVER_DIR}/{name}"), bytes);
+    FileSource::new(tree.root(), tree.source())
 }
 
 #[test]
@@ -597,11 +596,11 @@ fn the_file_source_reads_at_most_one_byte_past_the_version_length() {
         };
         let source = pm_file(&tree, "pm_table_version", &bytes);
         let read = source.read(PmFile::Version).unwrap();
-        assert_eq!(read.len(), returned, "{len} bytes on disk");
+        assert_eq!(read.len(), returned, "{len} input bytes");
         assert_eq!(
             parse_version(&read),
             (len == 4).then_some(VERSION),
-            "{len} bytes on disk"
+            "{len} input bytes"
         );
     }
 }
@@ -620,7 +619,7 @@ fn the_file_source_reads_at_most_one_byte_past_the_table_length() {
     ] {
         let source = pm_file(&tree, "pm_table", &vec![0_u8; len]);
         let read = source.read(PmFile::Table).unwrap();
-        assert_eq!(read.len(), returned, "{len} bytes on disk");
+        assert_eq!(read.len(), returned, "{len} input bytes");
         match decode(&read) {
             Ok(_) => assert_eq!(len, TABLE_LEN),
             Err(error) => assert_eq!(error, DecodeError::Size { len: returned }),
@@ -628,17 +627,10 @@ fn the_file_source_reads_at_most_one_byte_past_the_table_length() {
     }
 }
 
-#[cfg(unix)]
 #[test]
-fn the_file_source_stops_reading_an_endless_file() {
-    let tree = Tree::new(8, true);
-    for (name, file, limit) in [
-        ("pm_table_version", PmFile::Version, 5),
-        ("pm_table", PmFile::Table, TABLE_LEN + 1),
-    ] {
-        let path = tree.path(&format!("{DRIVER_DIR}/{name}"));
-        std::os::unix::fs::symlink("/dev/zero", path).unwrap();
-        let read = FileSource::new(tree.root()).read(file).unwrap();
-        assert_eq!(read.len(), limit, "{name}");
+fn the_file_source_stops_reading_an_endless_reader() {
+    for limit in [5, TABLE_LEN + 1] {
+        let read = crate::files::read_limited(io::repeat(0), limit as u64, limit).unwrap();
+        assert_eq!(read.len(), limit);
     }
 }

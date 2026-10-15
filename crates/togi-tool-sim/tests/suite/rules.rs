@@ -97,22 +97,23 @@ fn invalid_suites_are_refused() {
 
 #[test]
 fn a_missing_suite_file_is_a_read_error() {
-    let dir = tempfile::tempdir().unwrap();
-    let error = Suite::load(&dir.path().join("absent.json")).unwrap_err();
+    let error = Suite::load_with(Path::new("/absent.json"), |_| {
+        Err(std::io::ErrorKind::NotFound.into())
+    })
+    .unwrap_err();
     assert!(matches!(error, SuiteError::Read { .. }), "{error}");
 }
 
 #[test]
 fn a_suite_file_resolves_machines_beside_itself() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("suite.json");
-    std::fs::write(
-        &path,
-        r#"{"scenarios":[{"name":"x","machine":"m/a.json","dev":[1]}]}"#,
-    )
-    .unwrap();
-    let runs = Suite::load(&path).unwrap().runs();
-    assert_eq!(runs[0].machine, Some(dir.path().join("m/a.json")));
+    let path = Path::new("/suite/suite.json");
+    let runs = Suite::load_with(path, |read_path| {
+        assert_eq!(read_path, path);
+        Ok(r#"{"scenarios":[{"name":"x","machine":"m/a.json","dev":[1]}]}"#.to_owned())
+    })
+    .unwrap()
+    .runs();
+    assert_eq!(runs[0].machine, Some(PathBuf::from("/suite/m/a.json")));
 }
 
 #[test]

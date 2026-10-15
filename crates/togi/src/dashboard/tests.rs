@@ -21,7 +21,8 @@ fn terminal() -> (OwnedFd, File) {
 }
 
 #[test]
-fn echo_and_line_buffering_stay_off_until_the_input_is_given_back_and_the_signal_keys_stay_on() {
+fn real_fs_echo_and_line_buffering_stay_off_until_the_input_is_given_back_and_the_signal_keys_stay_on()
+ {
     let (_master, slave) = terminal();
     let before = tcgetattr(&slave).unwrap().local_modes;
     assert!(before.contains(LocalModes::ECHO | LocalModes::ICANON | LocalModes::ISIG));
@@ -34,13 +35,13 @@ fn echo_and_line_buffering_stay_off_until_the_input_is_given_back_and_the_signal
 }
 
 #[test]
-fn a_stream_that_is_not_a_terminal_is_left_alone() {
+fn real_fs_a_stream_that_is_not_a_terminal_is_left_alone() {
     let null = File::open("/dev/null").unwrap();
     assert!(QuietInput::enter(null.as_fd()).unwrap().is_none());
 }
 
 #[test]
-fn typed_ahead_input_is_dropped() {
+fn real_fs_typed_ahead_input_is_dropped() {
     let (master, slave) = terminal();
     let _quiet = QuietInput::enter(slave.as_fd()).unwrap();
     rustix::io::write(&master, b"typed\n").unwrap();
@@ -87,10 +88,11 @@ impl super::Surface for UntilStopped {
 fn event_lines_are_dropped_only_while_the_dashboard_shows() {
     use std::io::Write as _;
     let sink = Sink::default();
-    let dashboard = super::Dashboard::new(
+    let dashboard = super::Dashboard::isolated(
         std::sync::Arc::new(UntilStopped),
         std::path::Path::new("."),
         0,
+        |message| panic!("unexpected dashboard fallback: {message}"),
     );
     let mut lines = dashboard.gate(Box::new(sink.clone()));
     lines.write_all(b"startup\n").unwrap();
@@ -105,10 +107,11 @@ fn event_lines_are_dropped_only_while_the_dashboard_shows() {
 fn the_gate_says_for_each_event_line_whether_it_kept_it_off_the_screen() {
     use std::io::Write as _;
     let sink = Sink::default();
-    let dashboard = super::Dashboard::new(
+    let dashboard = super::Dashboard::isolated(
         std::sync::Arc::new(UntilStopped),
         std::path::Path::new("."),
         0,
+        |message| panic!("unexpected dashboard fallback: {message}"),
     );
     let kept = std::rc::Rc::new(std::cell::Cell::new(false));
     let mut lines = dashboard.gate_with_status(Box::new(sink.clone()), std::rc::Rc::clone(&kept));
@@ -124,7 +127,7 @@ fn the_gate_says_for_each_event_line_whether_it_kept_it_off_the_screen() {
 }
 
 #[test]
-fn input_typed_while_the_dashboard_showed_is_dropped_when_the_input_is_given_back() {
+fn real_fs_input_typed_while_the_dashboard_showed_is_dropped_when_the_input_is_given_back() {
     let (master, slave) = terminal();
     let quiet = QuietInput::enter(slave.as_fd()).unwrap().unwrap();
     rustix::io::write(&master, b"typed during the run\n").unwrap();
@@ -197,13 +200,13 @@ impl std::io::Write for Said {
 fn a_panic_while_drawing_falls_back_to_event_lines_at_once_not_when_the_dashboard_is_hidden() {
     use std::io::Write as _;
     let said = Said::default();
-    let mut dashboard = super::Dashboard::new(
+    let notices = said.clone();
+    let dashboard = super::Dashboard::isolated(
         std::sync::Arc::new(PanicsWhileDrawing),
         std::path::Path::new("."),
         0,
+        move |message| notices.push("notice", message),
     );
-    let notices = said.clone();
-    dashboard.notice = std::sync::Arc::new(move |message| notices.push("notice", message));
     let mut lines = dashboard.gate(Box::new(said.clone()));
     dashboard.show();
     wait_until("the fallback to event lines", || !dashboard.is_showing());
@@ -221,10 +224,11 @@ fn a_panic_while_drawing_falls_back_to_event_lines_at_once_not_when_the_dashboar
 
 #[test]
 fn drawing_that_returns_stops_the_helper_and_the_dashboard_is_still_showing_until_it_is_hidden() {
-    let dashboard = super::Dashboard::new(
+    let dashboard = super::Dashboard::isolated(
         std::sync::Arc::new(UntilStopped),
         std::path::Path::new("."),
         0,
+        |message| panic!("unexpected dashboard fallback: {message}"),
     );
     assert!(!dashboard.is_showing());
     dashboard.show();

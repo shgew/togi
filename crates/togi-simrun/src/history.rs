@@ -5,7 +5,7 @@ use togi_config::Config;
 use togi_journal::{Payload, StateDir};
 use togi_sim::History;
 
-use crate::HistoryError;
+use crate::{HistoryError, Persistence};
 
 #[expect(
     clippy::disallowed_methods,
@@ -42,11 +42,14 @@ pub fn history_in(dir: &StateDir) -> Result<History, HistoryError> {
     })
 }
 
-/// The configuration a resume of `dir` runs under: the one the latest `config.loaded` recorded, standing in for the
+/// The configuration a resume of `persistence` runs under: the one the latest `config.loaded` recorded, standing in for the
 /// file `togi run` would load; `fresh` when no journal recorded one. A recorded configuration this build would
 /// refuse as a file is an error.
-pub fn recorded_config(dir: &Path, fresh: Config) -> Result<Config, HistoryError> {
-    recorded_config_in(&locked(dir)?, fresh)
+pub fn recorded_config(persistence: &Persistence, fresh: Config) -> Result<Config, HistoryError> {
+    recorded_config_in(
+        &crate::simulate::lock(persistence).map_err(HistoryError::from)?,
+        fresh,
+    )
 }
 
 /// [`recorded_config`] over a state directory the caller already holds.

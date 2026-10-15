@@ -1,9 +1,12 @@
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use serde_json::json;
 use togi_machine::Kernel as _;
 
-use super::support::{LATER, OLD, boot, caused_by, kernel, locked, ok, scripted};
+use super::support::{
+    LATER, OLD, boot, caused_by, kernel, locked, ok, pstore, scripted, scripted_at,
+};
 use crate::boot::JournalBoot;
 use crate::runner::{JOURNALCTL_BUDGET, RunError};
 use crate::{Error, Kernel};
@@ -40,11 +43,13 @@ fn every_seam_call_starts_its_command_with_the_whole_budget() {
             Box::new(|k| drop(k.saved_pstore(&boot(OLD)))),
         ),
     ];
-    let archive = tempfile::tempdir().unwrap();
-    std::fs::create_dir(archive.path().join("150")).unwrap();
     for (name, call) in calls {
-        let (mut kernel, recorded) =
-            scripted(&[], archive.path(), JOURNALCTL_BUDGET, |_| ok(b"[]"));
+        let (mut kernel, recorded) = scripted(
+            &[],
+            pstore(&[("150/001/dmesg.txt", b"")]),
+            JOURNALCTL_BUDGET,
+            |_| ok(b"[]"),
+        );
         call(&mut kernel);
         let recorded = locked(&recorded);
         assert_eq!(recorded.len(), 1, "{name}");
@@ -77,12 +82,14 @@ fn a_command_that_times_out_leaves_no_observation() {
 #[test]
 fn the_commands_of_one_call_share_one_budget() {
     let list = json!([{"boot_id": OLD}, {"boot_id": LATER}]).to_string();
-    let (kernel, calls) = scripted(
+    let clock = Arc::new(Mutex::new(Instant::now()));
+    let (kernel, calls) = scripted_at(
         &[],
-        "/nonexistent-togi-pstore",
+        pstore(&[]),
         Duration::from_millis(150),
+        Arc::clone(&clock),
         move |_| {
-            std::thread::sleep(Duration::from_millis(250));
+            *locked(&clock) += Duration::from_millis(250);
             ok(&list)
         },
     );
@@ -97,9 +104,10 @@ fn the_commands_of_one_call_share_one_budget() {
 fn later_commands_get_what_is_left_of_the_budget() {
     let list = json!([{"boot_id": OLD}, {"boot_id": LATER}]).to_string();
     let budget = Duration::from_secs(5);
-    let (kernel, calls) = scripted(&[], "/nonexistent-togi-pstore", budget, move |args| {
+    let clock = Arc::new(Mutex::new(Instant::now()));
+    let (kernel, calls) = scripted_at(&[], pstore(&[]), budget, Arc::clone(&clock), move |args| {
         if args[0] == "--list-boots" {
-            std::thread::sleep(Duration::from_millis(100));
+            *locked(&clock) += Duration::from_millis(100);
             ok(&list)
         } else {
             ok("")
@@ -114,7 +122,7 @@ fn later_commands_get_what_is_left_of_the_budget() {
 
 #[test]
 fn a_used_up_budget_runs_nothing() {
-    let (kernel, calls) = scripted(&[], "/nonexistent-togi-pstore", Duration::ZERO, |_| ok(""));
+    let (kernel, calls) = scripted(&[], pstore(&[]), Duration::ZERO, |_| ok(""));
     let error = kernel
         .read_whole_boot(&JournalBoot::parse(OLD).unwrap(), Duration::ZERO)
         .unwrap_err();

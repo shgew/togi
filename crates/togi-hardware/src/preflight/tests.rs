@@ -1,13 +1,9 @@
-use std::fs;
-use std::os::unix::fs::PermissionsExt as _;
 use std::path::Path;
 use std::sync::Arc;
 
-use tempfile::TempDir;
-use togi_machine::Check;
-use togi_mprime::Mprime;
+use togi_backend::{Backend as BackendAdapter, Error as BackendError, Line, Plan, Ready};
+use togi_machine::{Backend, Check, CpuId, Workload};
 use togi_trial::{BackendIdentity, Backends, IdentityError};
-use togi_ycruncher::Ycruncher;
 
 use super::{Account, Outcome, STEPS, Step, check_backends, run, skip};
 use crate::checks::{CheckName, Skip};
@@ -144,41 +140,64 @@ fn a_skipped_step_becomes_a_failed_check_carrying_its_reason() {
     assert_eq!(check.detail, "needs root");
 }
 
-fn install(root: &Path, relative: &str, mode: u32) {
-    let path = root.join(relative);
-    fs::create_dir_all(path.parent().unwrap()).unwrap();
-    fs::write(&path, "").unwrap();
-    fs::set_permissions(&path, fs::Permissions::from_mode(mode)).unwrap();
+struct BackendCheck {
+    kind: Backend,
+    executable: bool,
 }
 
-fn package(executable: bool) -> TempDir {
-    let root = TempDir::new().unwrap();
-    let mode = if executable { 0o755 } else { 0o644 };
-    for relative in [
-        "bin/mprime",
-        "lib/y-cruncher/Binaries/00-x64 ~ baseline",
-        "lib/y-cruncher/Binaries/24-ZN5 ~ Zen 5",
-    ] {
-        install(root.path(), relative, mode);
+impl BackendAdapter for BackendCheck {
+    fn kind(&self) -> Backend {
+        self.kind
     }
-    root
+
+    fn check(&self) -> Result<Ready, BackendError> {
+        let (name, path, detail) = match self.kind {
+            Backend::Mprime => ("mprime", "/fixture/bin/mprime", "/fixture/bin/mprime"),
+            Backend::Ycruncher => (
+                "y-cruncher",
+                "/fixture/lib/y-cruncher/Binaries/00-x64 ~ baseline",
+                "00-x64 ~ baseline; 24-ZN5 ~ Zen 5",
+            ),
+        };
+        if self.executable {
+            Ok(Ready {
+                detail: detail.to_owned(),
+            })
+        } else {
+            Err(BackendError::NotExecutable {
+                name,
+                path: path.into(),
+            })
+        }
+    }
+
+    fn plan(
+        &self,
+        _workload: &Workload,
+        _dir: &Path,
+        _cpus: &[CpuId],
+    ) -> Result<Plan, BackendError> {
+        panic!("preflight checks must not plan workloads")
+    }
+
+    fn classify(&self, _line: &str) -> Line {
+        panic!("preflight checks must not classify workload output")
+    }
 }
 
-fn backends(root: &Path, mprime: bool, ycruncher: bool) -> Backends {
+fn backends(mprime: bool, ycruncher: bool, executable: bool) -> Backends {
     let mut backends = Backends::new();
-    if mprime {
-        backends = backends.with(Arc::new(Mprime::new(root).unwrap()));
-    }
-    if ycruncher {
-        backends = backends.with(Arc::new(Ycruncher::new(root).unwrap()));
+    for (kind, configured) in [(Backend::Mprime, mprime), (Backend::Ycruncher, ycruncher)] {
+        if configured {
+            backends = backends.with(Arc::new(BackendCheck { kind, executable }));
+        }
     }
     backends
 }
 
 #[test]
 fn unconfigured_backends_fail_naming_both() {
-    let root = package(true);
-    let check = check_backends(&backends(root.path(), false, false));
+    let check = check_backends(&Backends::new());
     assert!(!check.ok);
     assert_eq!(check.name, "backends");
     assert_eq!(
@@ -188,9 +207,8 @@ fn unconfigured_backends_fail_naming_both() {
 }
 
 #[test]
-fn a_missing_backend_fails_and_the_other_is_still_reported() {
-    let root = package(true);
-    let check = check_backends(&backends(root.path(), true, false));
+fn an_unconfigured_backend_fails_and_the_other_is_still_reported() {
+    let check = check_backends(&backends(true, false, true));
     assert!(!check.ok);
     assert!(check.detail.starts_with("mprime: "), "{}", check.detail);
     assert!(
@@ -201,7 +219,7 @@ fn a_missing_backend_fails_and_the_other_is_still_reported() {
         check.detail
     );
 
-    let check = check_backends(&backends(root.path(), false, true));
+    let check = check_backends(&backends(false, true, true));
     assert!(!check.ok);
     assert!(
         check
@@ -213,9 +231,8 @@ fn a_missing_backend_fails_and_the_other_is_still_reported() {
 }
 
 #[test]
-fn non_executable_backends_fail_with_every_cause() {
-    let root = package(false);
-    let check = check_backends(&backends(root.path(), true, true));
+fn failed_backend_checks_report_every_cause() {
+    let check = check_backends(&backends(true, true, false));
     assert!(!check.ok);
     assert_eq!(
         check
@@ -230,9 +247,8 @@ fn non_executable_backends_fail_with_every_cause() {
 }
 
 #[test]
-fn ready_backends_pass_and_name_their_binaries() {
-    let root = package(true);
-    let check = check_backends(&backends(root.path(), true, true));
+fn ready_backend_checks_pass_and_name_their_binaries() {
+    let check = check_backends(&backends(true, true, true));
     assert!(check.ok, "{}", check.detail);
     assert!(check.detail.starts_with("mprime: "), "{}", check.detail);
     assert!(check.detail.contains("; ycruncher: "), "{}", check.detail);

@@ -6,7 +6,7 @@ use flate2::write::GzEncoder;
 use togi_facts::{Decisive, TrialClass};
 use togi_machine::{CcdId, Condition, PerCore, Regime, Signal};
 use togi_tool_trialfacts::{
-    Class, Phase, ReadError, TrialFact, WriteError, decode, encode, read, write,
+    Class, Phase, ReadError, TrialFact, WriteError, decode, encode, read, write_unsynced,
 };
 
 use crate::builders::{core, crash, fact, set, workload};
@@ -90,16 +90,11 @@ impl Write for Counting {
 }
 
 #[test]
-fn an_extract_round_trips_through_its_file_byte_for_byte() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("facts.jsonl.gz");
+fn an_extract_round_trips_through_its_bytes() {
     let facts = sample();
-    write(&path, &facts).unwrap();
-    assert_eq!(read(&path).unwrap(), facts);
-
     let mut first = Vec::new();
     encode(&mut first, &facts).unwrap();
-    assert_eq!(std::fs::read(&path).unwrap(), first);
+    assert_eq!(decode(first.as_slice()).unwrap(), facts);
     let mut second = Vec::new();
     encode(&mut second, &facts).unwrap();
     assert_eq!(first, second);
@@ -107,43 +102,53 @@ fn an_extract_round_trips_through_its_file_byte_for_byte() {
 
 #[test]
 fn an_empty_extract_changes_nothing() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("facts.gz");
-    assert!(matches!(write(&path, &[]), Err(WriteError::Empty)));
-    assert!(!path.exists());
+    let mut bytes = Vec::new();
+    assert!(matches!(encode(&mut bytes, &[]), Err(WriteError::Empty)));
+    assert!(bytes.is_empty());
 
-    std::fs::write(&path, "existing output").unwrap();
-    assert!(matches!(write(&path, &[]), Err(WriteError::Empty)));
-    assert_eq!(std::fs::read_to_string(&path).unwrap(), "existing output");
-    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+    bytes.extend_from_slice(b"existing output");
+    assert!(matches!(encode(&mut bytes, &[]), Err(WriteError::Empty)));
+    assert_eq!(bytes, b"existing output");
 }
 
 #[test]
-fn a_new_extract_replaces_the_old_one_and_leaves_no_temporary_file() {
+fn real_fs_a_new_extract_replaces_the_old_one_and_leaves_no_temporary_file() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("facts.gz");
     std::fs::write(&path, "old").unwrap();
-    write(&path, &sample()).unwrap();
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the kernel publication test deliberately writes a disposable unsynced extract"
+    )]
+    write_unsynced(&path, &sample()).unwrap();
     assert_eq!(read(&path).unwrap(), sample());
     assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
 }
 
 #[test]
-fn a_destination_that_cannot_be_replaced_is_an_error_and_leaves_nothing_behind() {
+fn real_fs_a_destination_that_cannot_be_replaced_is_an_error_and_leaves_nothing_behind() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("occupied");
     std::fs::create_dir(&path).unwrap();
     std::fs::write(path.join("keep"), "kept").unwrap();
-    assert!(matches!(
-        write(&path, &sample()),
-        Err(WriteError::Replace { .. })
-    ));
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the kernel replacement failure test must not sync its disposable temporary file"
+    )]
+    let result = write_unsynced(&path, &sample());
+    assert!(matches!(result, Err(WriteError::Replace { .. })));
     assert_eq!(std::fs::read_to_string(path.join("keep")).unwrap(), "kept");
     assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
 
     let missing = dir.path().join("absent").join("facts.gz");
-    assert!(matches!(write(&missing, &sample()), Err(WriteError::Io(_))));
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the kernel creation failure test uses the non-durable disk adapter"
+    )]
+    let result = write_unsynced(&missing, &sample());
+    assert!(matches!(result, Err(WriteError::Io(_))));
     assert!(!missing.exists());
+    assert!(matches!(read(&missing), Err(ReadError::Open { .. })));
 }
 
 #[test]
@@ -203,20 +208,12 @@ fn positional(object: &serde_json::Value, keys: &[&str]) -> serde_json::Value {
 fn a_fact_that_would_not_read_back_is_refused_and_leaves_the_destination_unchanged() {
     let mut facts = sample();
     facts[2].outcome = Decisive::Pass;
+    let mut bytes = b"existing output".to_vec();
     assert!(matches!(
-        encode(Vec::new(), &facts),
+        encode(&mut bytes, &facts),
         Err(WriteError::Invalid { index: 2, .. })
     ));
-
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("facts.gz");
-    std::fs::write(&path, "existing output").unwrap();
-    assert!(matches!(
-        write(&path, &facts),
-        Err(WriteError::Invalid { index: 2, .. })
-    ));
-    assert_eq!(std::fs::read_to_string(&path).unwrap(), "existing output");
-    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+    assert_eq!(bytes, b"existing output");
 }
 
 #[test]
@@ -231,12 +228,6 @@ fn a_voltage_request_that_is_not_finite_is_refused() {
 
 #[test]
 fn an_unreadable_extract_is_an_error_and_never_a_partial_result() {
-    let dir = tempfile::tempdir().unwrap();
-    assert!(matches!(
-        read(dir.path().join("missing.gz")),
-        Err(ReadError::Open { .. })
-    ));
-
     let valid = line(&sample()[0]);
     let mut truncated = gz(&format!("{valid}\n"));
     truncated.truncate(truncated.len() - 8);
@@ -447,4 +438,19 @@ fn a_record_that_contradicts_itself_or_the_vocabulary_is_refused() {
     }
     let ok = format!("{pass}\n{failure}\n{idle}\n");
     assert_eq!(decode(gz(&ok).as_slice()).unwrap(), facts);
+}
+
+#[expect(
+    dead_code,
+    reason = "compile-only negative control for the durability tripwire"
+)]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "removing the unsynced writer entry must leave this expectation unfulfilled"
+)]
+fn the_unsynced_writer_keeps_its_durability_tripwire(
+    path: &std::path::Path,
+    facts: &[TrialFact],
+) -> Result<(), togi_tool_trialfacts::WriteError> {
+    write_unsynced(path, facts)
 }

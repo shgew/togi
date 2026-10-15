@@ -2,17 +2,13 @@
 //! hardware, and how each end of the session maps to a status. The Go tests these replace are listed in
 //! `docs/rust-migration.md`.
 
-use std::fs;
-
 use togi_cli::Exit;
-use togi_hostlock::{HostLock, Policy};
-use togi_journal::{EventKind, Payload, ShutdownReason, StateDir};
+use togi_hostlock::Policy;
+use togi_journal::{EventKind, Payload, ShutdownReason};
 use togi_machine::{CoreId, Machine, TargetOffset};
 use togi_render::OutputFacts;
 
-use crate::support::{
-    Fake, biased, interrupt_at_first_trial, interrupt_on_first_write, signal_on_first_write,
-};
+use crate::support::{Fake, biased, interrupt_at_first_trial, interrupt_on_first_write};
 
 fn interrupted() -> Fake {
     let mut fake = Fake::new();
@@ -26,10 +22,10 @@ fn seed_newer_epoch(fake: &mut Fake) {
     fake.wrap = wrap;
     assert_eq!(exit, Exit::Ok, "{stderr}");
     let path = fake.state_dir().join("events.jsonl");
-    let text = fs::read_to_string(&path).unwrap();
+    let text = fake.read_to_string(&path).unwrap();
     let (first, rest) = text.split_once('\n').unwrap();
     assert!(first.contains(r#""evidence":1"#), "{first}");
-    fs::write(
+    fake.write(
         &path,
         format!(
             "{}\n{rest}",
@@ -51,8 +47,8 @@ fn an_unsupported_platform_is_reported_before_anything_else_is_touched() {
         "togi run: hardware runs need Linux: unsupported operation\n"
     );
     assert_eq!(*fake.calls.borrow(), ["check_platform"]);
-    assert!(!fake.state_dir().exists());
-    assert!(!fake.lock.exists());
+    assert!(!fake.exists(fake.state_dir()));
+    assert!(!fake.exists(&fake.lock));
     assert_eq!((fake.boots_read.get(), fake.opened.get()), (0, 0));
 }
 
@@ -92,7 +88,7 @@ fn assert_stopped_by_a_signal_with_the_offsets_restored(fake: &Fake, boot: i64, 
 }
 
 #[test]
-fn sigint_stops_a_run_cleanly_with_the_offsets_restored_and_the_shutdown_recorded() {
+fn cancellation_stops_a_run_cleanly_with_the_offsets_restored_and_the_shutdown_recorded() {
     let mut fake = Fake::on(biased(1000, -5));
     fake.wrap = Box::new(interrupt_on_first_write);
     let (exit, out, err) = fake.run(&["run", "--no-tui"]);
@@ -108,14 +104,14 @@ fn a_journal_with_a_newer_evidence_epoch_is_refused_before_the_config_is_read() 
     let mut fake = Fake::new();
     seed_newer_epoch(&mut fake);
     let path = fake.state_dir().join("events.jsonl");
-    let before = fs::read(&path).unwrap();
+    let before = fake.read(&path).unwrap();
     let opened = fake.opened.get();
 
     let missing = fake.dir.join("missing.json");
     let (exit, _, err) = fake.run(&["run", "--config", missing.to_str().unwrap()]);
     assert_eq!(exit, Exit::Incompatible, "{err}");
     assert!(err.contains("evidence epoch"), "{err}");
-    assert_eq!(fs::read(&path).unwrap(), before);
+    assert_eq!(fake.read(&path).unwrap(), before);
     assert_eq!(fake.opened.get(), opened);
 }
 
@@ -156,7 +152,7 @@ fn a_tuning_boot_refusal_does_not_touch_the_boot_entry_without_the_host_lock() {
     let mut fake = Fake::new();
     seed_newer_epoch(&mut fake);
     fake.grub = crate::support::Grub::with_saved_entry("tuning");
-    let held = HostLock::acquire(&fake.lock, Policy::Private).unwrap();
+    let held = fake.hold_lock();
     let grubenv = fake.grubenv();
     let (exit, _, err) = fake.run(&["run", "--tuning-boot", grubenv.to_str().unwrap()]);
     drop(held);
@@ -178,9 +174,6 @@ fn a_tuning_boot_refusal_does_not_touch_the_boot_entry_without_the_host_lock() {
 
 #[test]
 fn a_tuning_boot_refusal_does_not_touch_the_boot_entry_when_the_host_lock_is_not_safe() {
-    if rustix::process::geteuid().is_root() {
-        return;
-    }
     let mut fake = Fake::new();
     seed_newer_epoch(&mut fake);
     fake.grub = crate::support::Grub::with_saved_entry("tuning");
@@ -213,17 +206,17 @@ fn a_refusal_under_journald_is_printed_at_err_priority_in_bold_red() {
 #[test]
 fn the_host_lock_is_taken_before_the_journals_lock_as_reset_does() {
     let fake = Fake::new();
-    let held = HostLock::acquire(&fake.lock, Policy::Private).unwrap();
+    let held = fake.hold_lock();
     let (exit, _, err) = fake.run(&["run", "--no-tui"]);
     drop(held);
     assert_eq!(exit, Exit::Locked, "{err}");
     assert!(
-        !fake.state_dir().exists(),
+        !fake.exists(fake.state_dir()),
         "the journal's lock was taken while the host lock was busy"
     );
 
     let fake = Fake::new();
-    let held = StateDir::lock(fake.state_dir()).unwrap();
+    let held = togi_cli::system::System::lock_state_dir(&fake, &fake.state_dir()).unwrap();
     let (exit, _, err) = fake.run(&["run", "--no-tui"]);
     drop(held);
     assert_eq!(exit, Exit::Locked, "{err}");
@@ -239,7 +232,7 @@ fn the_host_lock_is_taken_before_the_journals_lock_as_reset_does() {
 fn an_invalid_config_is_a_usage_error_for_a_compatible_journal() {
     let fake = Fake::new();
     let config = fake.dir.join("config.json");
-    fs::write(&config, r#"{"bogus": 1}"#).unwrap();
+    fake.write(&config, r#"{"bogus": 1}"#).unwrap();
     let (exit, _, err) = fake.run(&["run", "--config", config.to_str().unwrap()]);
     assert_eq!(exit, Exit::Usage, "{err}");
     assert!(err.starts_with("togi run: invalid config"), "{err}");
@@ -280,7 +273,7 @@ fn a_missing_default_config_is_the_default_configuration_and_is_recorded_as_no_f
 #[test]
 fn a_default_config_that_exists_is_read_and_recorded_as_a_file() {
     let fake = interrupted();
-    fs::write(&fake.default_config, "{}").unwrap();
+    fake.write(&fake.default_config, "{}").unwrap();
     let (exit, err) = fake.run_on_default_config(&["run", "--no-tui"]);
     assert_eq!(exit, Exit::Ok, "{err}");
     assert_eq!(
@@ -293,7 +286,7 @@ fn a_default_config_that_exists_is_read_and_recorded_as_a_file() {
 fn the_config_flag_may_precede_the_command_name() {
     let fake = Fake::new();
     let config = fake.dir.join("config.json");
-    fs::write(&config, r#"{"bogus": 1}"#).unwrap();
+    fake.write(&config, r#"{"bogus": 1}"#).unwrap();
     let (mut out, mut err) = (Vec::new(), Vec::new());
     let exit = togi_cli::run_with(
         [
@@ -315,7 +308,7 @@ fn the_config_flag_may_precede_the_command_name() {
 #[test]
 fn a_busy_host_lock_stops_the_run_before_hardware_and_any_event() {
     let fake = Fake::new();
-    let held = HostLock::acquire(&fake.lock, Policy::Private).unwrap();
+    let held = fake.hold_lock();
     let (exit, _, err) = fake.run(&["run", "--no-tui"]);
     drop(held);
     assert_eq!(exit, Exit::Locked, "{err}");
@@ -327,7 +320,7 @@ fn a_busy_host_lock_stops_the_run_before_hardware_and_any_event() {
 #[test]
 fn a_busy_journal_lock_is_exit_three() {
     let fake = Fake::new();
-    let held = StateDir::lock(fake.state_dir()).unwrap();
+    let held = togi_cli::system::System::lock_state_dir(&fake, &fake.state_dir()).unwrap();
     let (exit, _, err) = fake.run(&["run", "--no-tui"]);
     drop(held);
     assert_eq!(exit, Exit::Locked, "{err}");
@@ -360,8 +353,8 @@ fn with_a_future_kind(text: &str) -> String {
 
 fn append_future_kind(fake: &Fake) -> Vec<u8> {
     let path = fake.state_dir().join("events.jsonl");
-    let text = with_a_future_kind(&fs::read_to_string(&path).unwrap());
-    fs::write(&path, &text).unwrap();
+    let text = with_a_future_kind(&fake.read_to_string(&path).unwrap());
+    fake.write(&path, &text).unwrap();
     text.into_bytes()
 }
 
@@ -370,7 +363,13 @@ fn append_future_kind(fake: &Fake) -> Vec<u8> {
 /// from the second.
 fn replace_the_journal_at_the_host_lock(fake: &Fake, text: String) {
     let path = fake.state_dir().join("events.jsonl");
-    *fake.at_host_lock.borrow_mut() = Some(Box::new(move || fs::write(&path, text).unwrap()));
+    let fs = std::sync::Arc::clone(&fake.fs);
+    *fake.at_host_lock.borrow_mut() = Some(Box::new(move || {
+        fs.create_truncate(&path)
+            .unwrap()
+            .write_all(text.as_bytes())
+            .unwrap();
+    }));
 }
 
 fn first_run(fake: &mut Fake) {
@@ -394,7 +393,7 @@ fn an_unknown_event_kind_in_a_current_journal_is_refused_before_the_config_namin
         "{err}"
     );
     assert_eq!(
-        fs::read(fake.state_dir().join("events.jsonl")).unwrap(),
+        fake.read(fake.state_dir().join("events.jsonl")).unwrap(),
         before
     );
 }
@@ -404,12 +403,12 @@ fn an_unknown_event_field_in_a_current_journal_is_refused_naming_its_path_and_wr
     let mut fake = Fake::new();
     first_run(&mut fake);
     let path = fake.state_dir().join("events.jsonl");
-    let text = fs::read_to_string(&path).unwrap();
+    let text = fake.read_to_string(&path).unwrap();
     let next = text.lines().count() + 1;
     let before = format!(
         r#"{text}{{"seq":{next},"time":"2026-01-01T00:00:00Z","boot":"b","kind":"session.warning","msg":"x","data":{{"operation":"x","error":"y","future_field":1}}}}"#
     ) + "\n";
-    fs::write(&path, &before).unwrap();
+    fake.write(&path, &before).unwrap();
     let missing = fake.dir.join("missing.json");
     let (exit, _, err) = fake.run(&["run", "--config", missing.to_str().unwrap()]);
     assert_eq!(exit, Exit::Incompatible, "{err}");
@@ -421,7 +420,7 @@ fn an_unknown_event_field_in_a_current_journal_is_refused_naming_its_path_and_wr
         err.contains("cannot safely modify it; install the build that wrote it"),
         "{err}"
     );
-    assert_eq!(fs::read(&path).unwrap(), before.into_bytes());
+    assert_eq!(fake.read(&path).unwrap(), before.into_bytes());
 }
 
 #[test]
@@ -459,7 +458,7 @@ fn assert_refused_under_the_locks(
     assert_eq!(exit, Exit::Incompatible, "{err}");
     assert!(err.contains(reason), "{err}");
     assert_eq!(
-        fs::read(fake.state_dir().join("events.jsonl")).unwrap(),
+        fake.read(fake.state_dir().join("events.jsonl")).unwrap(),
         changed.as_bytes(),
         "the refused journal is left as it was found"
     );
@@ -492,7 +491,7 @@ fn a_journal_that_became_newer_after_the_first_read_is_refused_under_the_locks()
     let mut fake = Fake::new();
     first_run(&mut fake);
     let path = fake.state_dir().join("events.jsonl");
-    let text = fs::read_to_string(&path).unwrap();
+    let text = fake.read_to_string(&path).unwrap();
     let newer = text.replacen(r#""evidence":1"#, r#""evidence":2"#, 1);
     assert_ne!(newer, text);
     replace_the_journal_at_the_host_lock(&fake, newer.clone());
@@ -519,7 +518,7 @@ fn a_journal_that_gained_an_unknown_kind_after_the_first_read_is_refused_under_t
     let mut fake = Fake::new();
     first_run(&mut fake);
     let path = fake.state_dir().join("events.jsonl");
-    let changed = with_a_future_kind(&fs::read_to_string(&path).unwrap());
+    let changed = with_a_future_kind(&fake.read_to_string(&path).unwrap());
     replace_the_journal_at_the_host_lock(&fake, changed.clone());
     fake.grub = crate::support::Grub::with_saved_entry("tuning");
     let grubenv = fake.grubenv();
@@ -542,13 +541,13 @@ fn a_journal_that_gained_an_unknown_kind_after_the_first_read_is_refused_under_t
 #[test]
 fn a_journal_that_is_not_a_journal_is_an_error_and_is_left_alone() {
     let fake = Fake::new();
-    fs::create_dir_all(fake.state_dir()).unwrap();
+    fake.create_dir(fake.state_dir()).unwrap();
     let path = fake.state_dir().join("events.jsonl");
-    fs::write(&path, "not json\n").unwrap();
+    fake.write(&path, "not json\n").unwrap();
     let (exit, _, err) = fake.run(&["run", "--no-tui"]);
     assert_eq!(exit, Exit::Error, "{err}");
     assert!(err.starts_with("togi run: "), "{err}");
-    assert_eq!(fs::read_to_string(&path).unwrap(), "not json\n");
+    assert_eq!(fake.read_to_string(&path).unwrap(), "not json\n");
     assert_eq!(fake.opened.get(), 0);
 }
 
@@ -610,9 +609,6 @@ fn a_hardware_that_cannot_be_opened_is_reported_as_an_error() {
 
 #[test]
 fn a_host_lock_that_is_not_safe_is_refused_before_hardware() {
-    if rustix::process::geteuid().is_root() {
-        return;
-    }
     let mut fake = Fake::new();
     fake.policy = Policy::Host;
     let (exit, _, err) = fake.run(&["run", "--no-tui"]);
@@ -627,7 +623,7 @@ fn the_bios_context_is_not_read_from_a_machine_whose_identity_is_not_validated()
     let bios_reads = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
     let mut fake = Fake::new();
     let seen = bios_reads.clone();
-    fake.wrap = Box::new(move |machine| Machine {
+    fake.wrap = Box::new(move |machine, _| Machine {
         host: Box::new(crate::support::UnvalidatedHost {
             inner: machine.host,
             bios_reads: seen.clone(),
@@ -654,6 +650,10 @@ fn the_dashboard_hides_event_lines_and_the_clean_stop_prints_the_restoration_and
 }
 
 #[test]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the fixture seeds applied simulated offsets before resume"
+)]
 fn a_restoration_the_dashboard_hid_at_a_resumes_startup_is_not_repeated_by_the_clean_stop() {
     // A run in the same boot left offsets applied, so the resume restores them at its startup, while the
     // dashboard shows, and then goes on to work: only the restoration and the shutdown of its own stop belong
@@ -668,7 +668,7 @@ fn a_restoration_the_dashboard_hid_at_a_resumes_startup_is_not_repeated_by_the_c
         .unwrap();
     let earlier = first.events().len();
 
-    let mut fake = Fake::in_dir(first.sim.clone(), &first.dir);
+    let mut fake = first.resume();
     fake.interactive = true;
     fake.wrap = Box::new(interrupt_at_first_trial);
     let (exit, _, err) = fake.run(&["run"]);
@@ -707,10 +707,13 @@ fn the_dashboard_starts_after_the_last_event_of_the_earlier_run() {
     let earlier = first.events().len() as u64;
 
     let seen = std::sync::Arc::new(std::sync::Mutex::new(None));
-    let mut fake = Fake::in_dir(first.sim.clone(), &first.dir);
+    let mut fake = first.resume();
     fake.interactive = true;
     fake.wrap = Box::new(interrupt_on_first_write);
-    fake.surface = std::sync::Arc::new(Records { seen: seen.clone() });
+    fake.surface = std::sync::Arc::new(Records {
+        seen: seen.clone(),
+        fs: fake.fs.clone(),
+    });
     let (exit, _, err) = fake.run(&["run"]);
     assert_eq!(exit, Exit::Ok, "{err}");
     let (since, _) = seen.lock().unwrap().unwrap();
@@ -727,8 +730,11 @@ fn the_dashboard_starts_after_the_journal_is_open() {
     let mut fake = Fake::new();
     fake.interactive = true;
     fake.wrap = Box::new(interrupt_on_first_write);
-    fake.surface = std::sync::Arc::new(Records { seen: seen.clone() });
-    assert!(!fake.state_dir().join("events.jsonl").exists());
+    fake.surface = std::sync::Arc::new(Records {
+        seen: seen.clone(),
+        fs: fake.fs.clone(),
+    });
+    assert!(!fake.exists(fake.state_dir().join("events.jsonl")));
     let (exit, _, err) = fake.run(&["run"]);
     assert_eq!(exit, Exit::Ok, "{err}");
     let (since, journal_existed) = seen.lock().unwrap().unwrap();
@@ -741,6 +747,7 @@ fn the_dashboard_starts_after_the_journal_is_open() {
 
 struct Records {
     seen: std::sync::Arc<std::sync::Mutex<Option<(u64, bool)>>>,
+    fs: std::sync::Arc<dyn togi_journal::fs::Fs>,
 }
 
 impl togi_cli::dashboard::Surface for Records {
@@ -750,20 +757,22 @@ impl togi_cli::dashboard::Surface for Records {
         since: u64,
         stop: &togi_cli::dashboard::Stop,
     ) -> Result<(), String> {
-        *self.seen.lock().unwrap() = Some((since, state_dir.join("events.jsonl").exists()));
+        *self.seen.lock().unwrap() = Some((
+            since,
+            self.fs
+                .kind(&state_dir.join("events.jsonl"))
+                .unwrap()
+                .is_some(),
+        ));
         stop.wait();
         Ok(())
     }
 }
 
 #[test]
-fn sighup_and_sigterm_stop_a_run_cleanly_like_sigint() {
+fn real_process_sighup_and_sigterm_stop_a_run_cleanly_like_sigint() {
     for signal in [rustix::process::Signal::HUP, rustix::process::Signal::TERM] {
-        let mut fake = Fake::on(biased(1000, -5));
-        fake.wrap = Box::new(move |machine| signal_on_first_write(machine, signal));
-        let (exit, _, err) = fake.run(&["run", "--no-tui"]);
-        assert_eq!(exit, Exit::Ok, "{signal:?}: {err}");
-        assert_stopped_by_a_signal_with_the_offsets_restored(&fake, -5, &format!("{signal:?}"));
+        crate::pty::stopped_by_signal(signal);
     }
 }
 
@@ -894,7 +903,7 @@ fn an_unknown_kind_in_an_older_journal_does_not_refuse_the_run_before_the_config
         let mut fake = Fake::new();
         first_run(&mut fake);
         let path = fake.state_dir().join("events.jsonl");
-        let text = fs::read_to_string(&path).unwrap();
+        let text = fake.read_to_string(&path).unwrap();
         let (first, rest) = text.split_once('\n').unwrap();
         let marker = format!(r#""{field}":"#);
         let at = first
@@ -906,7 +915,7 @@ fn an_unknown_kind_in_an_older_journal_does_not_refuse_the_run_before_the_config
         let older = value
             .checked_sub(1)
             .unwrap_or_else(|| panic!("{field} {value} has no older stamp"));
-        fs::write(
+        fake.write(
             &path,
             format!("{}{older}{}\n{rest}", &first[..at], &first[at + digits..]),
         )
@@ -917,7 +926,7 @@ fn an_unknown_kind_in_an_older_journal_does_not_refuse_the_run_before_the_config
         assert_eq!(exit, Exit::Usage, "older {field}: {err}");
         assert!(err.contains("cannot read config"), "older {field}: {err}");
         assert!(!err.contains("unknown kind"), "older {field}: {err}");
-        assert_eq!(fs::read(&path).unwrap(), before, "older {field}");
+        assert_eq!(fake.read(&path).unwrap(), before, "older {field}");
     }
 }
 
@@ -979,9 +988,13 @@ fn a_journal_that_is_not_a_journal_never_shows_the_dashboard() {
     let mut fake = Fake::new();
     fake.interactive = true;
     let seen = std::sync::Arc::new(std::sync::Mutex::new(None));
-    fake.surface = std::sync::Arc::new(Records { seen: seen.clone() });
-    fs::create_dir_all(fake.state_dir()).unwrap();
-    fs::write(fake.state_dir().join("events.jsonl"), "not json\n").unwrap();
+    fake.surface = std::sync::Arc::new(Records {
+        seen: seen.clone(),
+        fs: fake.fs.clone(),
+    });
+    fake.create_dir(fake.state_dir()).unwrap();
+    fake.write(fake.state_dir().join("events.jsonl"), "not json\n")
+        .unwrap();
     let (exit, _, err) = fake.run(&["run"]);
     assert_eq!(exit, Exit::Error, "{err}");
     assert!(seen.lock().unwrap().is_none(), "the dashboard drew");
@@ -994,9 +1007,13 @@ fn a_journal_that_cannot_be_opened_never_shows_the_dashboard() {
     let mut fake = Fake::new();
     fake.interactive = true;
     let seen = std::sync::Arc::new(std::sync::Mutex::new(None));
-    fake.surface = std::sync::Arc::new(Records { seen: seen.clone() });
-    fs::create_dir_all(fake.state_dir()).unwrap();
-    fs::write(fake.state_dir().join("archive"), "not a directory").unwrap();
+    fake.surface = std::sync::Arc::new(Records {
+        seen: seen.clone(),
+        fs: fake.fs.clone(),
+    });
+    fake.create_dir(fake.state_dir()).unwrap();
+    fake.write(fake.state_dir().join("archive"), "not a directory")
+        .unwrap();
     let (exit, _, err) = fake.run(&["run"]);
     assert_eq!(exit, Exit::Error, "{err}");
     assert_eq!(
@@ -1014,7 +1031,7 @@ fn seed_a_pending_boot_loop_dead_end(fake: &mut Fake) {
     let (exit, _, err) = fake.run(&["run", "--no-tui"]);
     assert_eq!(exit, Exit::Smu, "{err}");
     let path = fake.state_dir().join("events.jsonl");
-    let text = fs::read_to_string(&path).unwrap();
+    let text = fake.read_to_string(&path).unwrap();
     let before: Vec<&str> = text
         .lines()
         .take_while(|line| !line.contains(r#""kind":"trial.intent""#))
@@ -1036,7 +1053,8 @@ fn seed_a_pending_boot_loop_dead_end(fake: &mut Fake) {
     let dead_end = format!(
         r#"{{"seq":{next},"time":"2026-01-01T00:00:00Z","boot":"{boot}","mono_ms":0,"cause":[{cause}],"kind":"deadend","msg":"dead end boot_loop: three crashes before application","data":{{"condition":"boot_loop","detail":"three crashes before application","action":"clear_saved_entry_and_reboot"}}}}"#
     );
-    fs::write(&path, format!("{}\n{dead_end}\n", before.join("\n"))).unwrap();
+    fake.write(&path, format!("{}\n{dead_end}\n", before.join("\n")))
+        .unwrap();
     fake.sim.reboot();
 }
 

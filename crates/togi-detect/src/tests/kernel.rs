@@ -263,11 +263,25 @@ fn a_boot_id_is_the_32_hex_digits_of_a_hyphenated_uuid() {
     }
 }
 
-#[cfg(target_os = "linux")]
 #[test]
-fn this_machine_has_a_boot_id() {
-    let id = crate::boot_id().unwrap();
+fn a_proc_boot_id_is_read_and_validated() {
+    let id = crate::boot::read_boot_id(|| Ok("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\n".to_owned()))
+        .unwrap();
+    assert_eq!(id.as_str(), "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
     assert!(crate::boot::JournalBoot::parse(id.as_str()).is_ok());
+
+    let error = crate::boot::read_boot_id(|| {
+        Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied))
+    })
+    .unwrap_err();
+    let crate::Error::BootId(BootIdError::Read(source)) = error else {
+        panic!("unexpected boot-id error: {error}");
+    };
+    assert_eq!(source.kind(), std::io::ErrorKind::PermissionDenied);
+    assert!(matches!(
+        crate::boot::read_boot_id(|| Ok("not a boot id".to_owned())),
+        Err(crate::Error::BootId(BootIdError::Invalid(_)))
+    ));
 }
 
 #[test]

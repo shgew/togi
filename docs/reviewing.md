@@ -45,7 +45,7 @@ The session holding the terminal point, or the newest session of a censored run,
 - A censored run is scored with its hours, crashes and hunts as lower bounds, printed with `>=`; each is `above` once past the 90th percentile and `open` otherwise, and its percentile counts only forecast runs below it. Offsets and depth are scored where the run stopped.
 - Real hours include real crash recovery, which the simulated hours do not model (`just forecast` states the bias); the score reports both as they are.
 
-The snapshots for a concluded, a censored and an unconcluded forecast score a simulated session, stopped at its first crash and resumed with another seed, against a fixed forecast, the last one without a concluded run; `INSTA_UPDATE=always cargo nextest run -p togi-tool-stats` re-renders them.
+The snapshots for a concluded, a censored and an unconcluded forecast score a simulated session, stopped at its first crash and resumed with another seed, against a fixed forecast, the last one without a concluded run.
 
 `just stats --forecast` scores the records `just forecast` writes (`togi-tool-bench forecast`) ([forecasting](benchmarking.md#forecasting-a-real-run)).
 
@@ -64,7 +64,7 @@ The snapshots for a concluded, a censored and an unconcluded forecast score a si
 - `--journal` and `--state-dir` refuse a journal file that is a symlink, because the report reads through the journal crate's no-follow open.
 - **Scoring a forecast** prints the evidence epoch in the `Forecast:` line and in each build (`rev abc ruleset 1 epoch 1`, `rev none` for a build without a revision).
 
-The tests render goldens as [insta](https://insta.rs) snapshots in `crates/togi-tool-stats/src/tests/snapshots/`, from journals the tests build in memory (a combination failure on two CCDs, the review-boundary scenario, R7 requests and decisions, scored forecasts). `INSTA_UPDATE=always cargo nextest run -p togi-tool-stats` re-renders them; review the diff against this document. Tests over a simulated session check the report against the journal's own events and not against bytes, so a tuner change leaves the snapshots alone.
+The tests compare rendered output with compile-time golden fixtures in `crates/togi-tool-stats/src/tests/snapshots/`, from journals they build in memory (a combination failure on two CCDs, the review-boundary scenario, R7 requests and decisions, scored forecasts). Run `cargo nextest run -p togi-tool-stats` to check them; an intentional rendering change updates the fixture and reviews its diff against this document. Tests over a simulated session check the report against the journal's own events and not against bytes, so a tuner change leaves the snapshots alone.
 
 ## Retros
 

@@ -1,17 +1,23 @@
 #![expect(clippy::unwrap_used, reason = "helpers panic on a broken fixture")]
 
+#[expect(
+    dead_code,
+    unused_imports,
+    reason = "this binary uses only the shared record constructor"
+)]
 mod common;
 
 use common::record;
 use togi_tool_bench::{
-    Error, ModelCheck, Record, Status, read_records, write_baseline_records, write_records,
+    Error, ModelCheck, Record, Status, encode_baseline_records, encode_records, read_records_from,
 };
 
 fn read_text(text: &str) -> Result<Vec<Record>, Error> {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("records.jsonl");
-    std::fs::write(&path, text).unwrap();
-    read_records(&path, "baseline")
+    read_records_from(
+        text.as_bytes(),
+        std::path::Path::new("records.jsonl"),
+        "baseline",
+    )
 }
 
 fn line(record: &Record) -> String {
@@ -19,18 +25,17 @@ fn line(record: &Record) -> String {
 }
 
 #[test]
-fn records_round_trip_through_a_file_one_per_line() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("out.jsonl");
+fn records_round_trip_through_memory_one_per_line() {
     let mut with_r7 = record("shared", 2);
     with_r7.worst_r7_hazard_per_h = Some(1.5);
     with_r7.first_passed_cycle_h = Some(3.25);
     let records = vec![record("default", 1), with_r7];
-    write_records(&path, &records).unwrap();
-    let text = std::fs::read_to_string(&path).unwrap();
+    let mut bytes = Vec::new();
+    encode_records(&mut bytes, &records).unwrap();
+    let text = String::from_utf8(bytes).unwrap();
     assert_eq!(text.lines().count(), 2);
     assert!(text.ends_with('\n'));
-    assert_eq!(read_records(&path, "records").unwrap(), records);
+    assert_eq!(read_text(&text).unwrap(), records);
 }
 
 #[test]
@@ -88,11 +93,10 @@ fn measured(scenario: &str, seed: u64) -> Record {
 
 #[test]
 fn the_baseline_writer_leaves_out_the_model_check_and_the_wall_time_and_nothing_else() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("baseline.jsonl");
     let records = vec![measured("a", 1), measured("a", 2)];
-    write_baseline_records(&path, &records).unwrap();
-    let text = std::fs::read_to_string(&path).unwrap();
+    let mut bytes = Vec::new();
+    encode_baseline_records(&mut bytes, &records).unwrap();
+    let text = String::from_utf8(bytes).unwrap();
     assert_eq!(text.lines().count(), 2);
     assert!(text.ends_with('\n'));
     for line in text.lines() {
@@ -120,11 +124,15 @@ fn the_baseline_writer_leaves_out_the_model_check_and_the_wall_time_and_nothing_
 
 #[test]
 fn a_baseline_file_round_trips_through_the_reader() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("baseline.jsonl");
     let records = vec![measured("a", 1), record("b", 2), measured("b", 3)];
-    write_baseline_records(&path, &records).unwrap();
-    let read = read_records(&path, "baseline").unwrap();
+    let mut bytes = Vec::new();
+    encode_baseline_records(&mut bytes, &records).unwrap();
+    let read = read_records_from(
+        bytes.as_slice(),
+        std::path::Path::new("baseline.jsonl"),
+        "baseline",
+    )
+    .unwrap();
     let want: Vec<Record> = records.iter().map(Record::baseline).collect();
     assert_eq!(read, want);
     assert!(
@@ -215,9 +223,19 @@ fn the_first_passed_cycle_is_required_but_may_be_null() {
 }
 
 #[test]
-fn a_missing_file_is_a_read_error() {
-    let dir = tempfile::tempdir().unwrap();
-    let error = read_records(&dir.path().join("missing.jsonl"), "baseline").unwrap_err();
+fn an_unreadable_input_is_a_read_error() {
+    struct Unreadable;
+    impl std::io::Read for Unreadable {
+        fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+            Err(std::io::ErrorKind::NotFound.into())
+        }
+    }
+    let error = read_records_from(
+        Unreadable,
+        std::path::Path::new("missing.jsonl"),
+        "baseline",
+    )
+    .unwrap_err();
     assert!(error.to_string().contains("baseline"), "{error}");
 }
 

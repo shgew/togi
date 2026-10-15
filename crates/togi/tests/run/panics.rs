@@ -54,7 +54,6 @@ impl Order {
     fn note(&self, line: &str) {
         let mut file = self.0.lock().unwrap_or_else(PoisonError::into_inner);
         writeln!(file, "{line}").unwrap();
-        file.sync_all().unwrap();
     }
 }
 
@@ -88,6 +87,10 @@ impl Logging {
     }
 }
 
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the fake records simulated SMU writes before delegation"
+)]
 impl Smu for Logging {
     fn offset(&mut self, core: CoreId) -> Result<ObservedOffset, MachineError> {
         self.inner.offset(core)
@@ -450,7 +453,7 @@ fn allow_growth_again() {
 /// The child: runs `togi run` for the scenario named in the environment and exits with its status. Does nothing
 /// when the environment names none, which is how an ordinary test run passes over it.
 #[test]
-fn helper() {
+fn real_process_helper() {
     let Ok(scenario) = std::env::var(SCENARIO) else {
         return;
     };
@@ -462,11 +465,11 @@ fn helper() {
         "before_the_host_lock" => fake.panic_in_platform = true,
         "after_hardware_setup" => {
             let order = order.clone();
-            fake.wrap = Box::new(move |machine| panicking(machine, &order, Faults::default()));
+            fake.wrap = Box::new(move |machine, _| panicking(machine, &order, Faults::default()));
         }
         "failed_restoration" => {
             let order = order.clone();
-            fake.wrap = Box::new(move |machine| {
+            fake.wrap = Box::new(move |machine, _| {
                 let faults = Faults {
                     refuse_writes: true,
                     ..Faults::default()
@@ -476,7 +479,7 @@ fn helper() {
         }
         "unconfirmed_teardown" => {
             let order = order.clone();
-            fake.wrap = Box::new(move |machine| {
+            fake.wrap = Box::new(move |machine, _| {
                 let faults = Faults {
                     unconfirmed_stop: true,
                     ..Faults::default()
@@ -487,14 +490,14 @@ fn helper() {
         "lock_order" => {
             let order = order.clone();
             let dir = dir.clone();
-            fake.wrap = Box::new(move |machine| {
+            fake.wrap = Box::new(move |machine, _| {
                 watch_the_locks(&dir, &order);
                 panicking(machine, &order, Faults::default())
             });
         }
         "contained_worker" => {
             let order = order.clone();
-            fake.wrap = Box::new(move |machine| {
+            fake.wrap = Box::new(move |machine, _| {
                 let action: Box<dyn FnMut()> = Box::new(|| {
                     let worker = thread::Builder::new()
                         .name("test-worker".to_owned())
@@ -512,7 +515,7 @@ fn helper() {
         }
         "tokio_task" => {
             let order = order.clone();
-            fake.wrap = Box::new(move |machine| {
+            fake.wrap = Box::new(move |machine, _| {
                 let action: Box<dyn FnMut()> = Box::new(|| {
                     let runtime = tokio::runtime::Builder::new_current_thread()
                         .build()
@@ -529,7 +532,7 @@ fn helper() {
             });
         }
         "lost_worker" => {
-            fake.wrap = Box::new(move |machine| Machine {
+            fake.wrap = Box::new(move |machine, _| Machine {
                 smu: Box::new(LosesItsWorker {
                     inner: machine.smu,
                     lost: false,
@@ -542,7 +545,7 @@ fn helper() {
             fake.surface = Arc::new(PanicsAtOnce);
             let order = order.clone();
             let dir = dir.clone();
-            fake.wrap = Box::new(move |machine| {
+            fake.wrap = Box::new(move |machine, _| {
                 let dir = dir.clone();
                 let action: Box<dyn FnMut()> = Box::new(move || {
                     wait_for_release(&dir);
@@ -556,7 +559,7 @@ fn helper() {
             fake.surface = Arc::new(SaysWhenItStops);
             let order = order.clone();
             let journal = dir.join("state/events.jsonl");
-            fake.wrap = Box::new(move |machine| {
+            fake.wrap = Box::new(move |machine, _| {
                 let journal = journal.clone();
                 let action: Box<dyn FnMut()> = Box::new(move || refuse_journal_growth(&journal));
                 logging(machine, &order, Some(action))
@@ -569,7 +572,7 @@ fn helper() {
             fake.surface = Arc::new(FailsOnCue(Arc::clone(&cue)));
             let order = order.clone();
             let dir = dir.clone();
-            fake.wrap = Box::new(move |machine| {
+            fake.wrap = Box::new(move |machine, _| {
                 let machine = logging(machine, &order, Some(Box::new(interrupt)));
                 Machine {
                     kernel: Box::new(FailsTheDashboard {
@@ -663,7 +666,7 @@ fn command(scenario: &str, dir: &Path) -> Command {
     let mut command = Command::new(std::env::current_exe().unwrap());
     command
         .args([
-            "panics::helper",
+            "panics::real_process_helper",
             "--exact",
             "--nocapture",
             "--test-threads=1",
@@ -674,6 +677,10 @@ fn command(scenario: &str, dir: &Path) -> Command {
     command
 }
 
+#[expect(
+    clippy::disallowed_methods,
+    reason = "real_process tests capture the panic scenario child"
+)]
 fn run(scenario: &str) -> Child {
     let dir = TempDir::new().unwrap();
     let output = command(scenario, dir.path()).output().unwrap();
@@ -686,6 +693,10 @@ fn run(scenario: &str) -> Child {
 
 /// Runs a scenario that waits for the parent to see `line` on stderr before it goes on, so everything the child
 /// prints after that line was printed while the session was still running.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "real_process tests coordinate the panic scenario child"
+)]
 fn run_released_by(scenario: &str, line: &str) -> Child {
     let dir = TempDir::new().unwrap();
     let mut child = command(scenario, dir.path())
@@ -712,7 +723,7 @@ fn run_released_by(scenario: &str, line: &str) -> Child {
 }
 
 #[test]
-fn a_panic_before_the_host_lock_exits_two_with_a_panic_line() {
+fn real_process_a_panic_before_the_host_lock_exits_two_with_a_panic_line() {
     let child = run("before_the_host_lock");
     assert_eq!(child.status, Some(2), "{}", child.stderr);
     assert!(
@@ -727,7 +738,7 @@ fn a_panic_before_the_host_lock_exits_two_with_a_panic_line() {
 }
 
 #[test]
-fn a_panic_after_hardware_setup_runs_the_owner_cleanup_in_order_then_exits_two() {
+fn real_process_a_panic_after_hardware_setup_runs_the_owner_cleanup_in_order_then_exits_two() {
     let child = run("after_hardware_setup");
     assert_eq!(child.status, Some(2), "{}", child.stderr);
     assert!(
@@ -750,7 +761,8 @@ fn a_panic_after_hardware_setup_runs_the_owner_cleanup_in_order_then_exits_two()
 }
 
 #[test]
-fn a_panic_whose_cleanup_cannot_restore_the_offsets_reports_the_dead_end_and_still_exits_two() {
+fn real_process_a_panic_whose_cleanup_cannot_restore_the_offsets_reports_the_dead_end_and_still_exits_two()
+ {
     let child = run("failed_restoration");
     assert_eq!(child.status, Some(2), "{}", child.stderr);
     assert!(
@@ -769,7 +781,8 @@ fn a_panic_whose_cleanup_cannot_restore_the_offsets_reports_the_dead_end_and_sti
 }
 
 #[test]
-fn a_panic_whose_teardown_cannot_be_confirmed_reports_it_and_the_dead_end_and_exits_two() {
+fn real_process_a_panic_whose_teardown_cannot_be_confirmed_reports_it_and_the_dead_end_and_exits_two()
+ {
     let child = run("unconfirmed_teardown");
     assert_eq!(child.status, Some(2), "{}", child.stderr);
     assert!(
@@ -784,7 +797,7 @@ fn a_panic_whose_teardown_cannot_be_confirmed_reports_it_and_the_dead_end_and_ex
 }
 
 #[test]
-fn a_panic_a_worker_thread_contains_does_not_end_the_run() {
+fn real_process_a_panic_a_worker_thread_contains_does_not_end_the_run() {
     let child = run("contained_worker");
     assert_eq!(child.status, Some(0), "{}", child.stderr);
     assert!(
@@ -805,7 +818,7 @@ fn a_panic_a_worker_thread_contains_does_not_end_the_run() {
 }
 
 #[test]
-fn a_panic_in_a_tokio_task_does_not_end_the_run() {
+fn real_process_a_panic_in_a_tokio_task_does_not_end_the_run() {
     let child = run("tokio_task");
     assert_eq!(child.status, Some(0), "{}", child.stderr);
     assert!(
@@ -821,7 +834,7 @@ fn a_panic_in_a_tokio_task_does_not_end_the_run() {
 }
 
 #[test]
-fn a_worker_that_dies_of_a_panic_ends_the_run_through_the_owner_not_the_hook() {
+fn real_process_a_worker_that_dies_of_a_panic_ends_the_run_through_the_owner_not_the_hook() {
     let child = run("lost_worker");
     assert_eq!(
         child.status,
@@ -846,7 +859,7 @@ fn a_worker_that_dies_of_a_panic_ends_the_run_through_the_owner_not_the_hook() {
 }
 
 #[test]
-fn a_panic_in_the_dashboard_falls_back_to_event_lines_while_the_run_goes_on() {
+fn real_process_a_panic_in_the_dashboard_falls_back_to_event_lines_while_the_run_goes_on() {
     let child = run_released_by("dashboard", FALLBACK);
     assert_eq!(child.status, Some(0), "{}", child.stderr);
     assert!(
@@ -874,7 +887,7 @@ fn a_panic_in_the_dashboard_falls_back_to_event_lines_while_the_run_goes_on() {
 }
 
 #[test]
-fn a_dashboard_that_gives_way_between_the_restoration_and_the_shutdown_shows_each_closing_line_once()
+fn real_process_a_dashboard_that_gives_way_between_the_restoration_and_the_shutdown_shows_each_closing_line_once()
  {
     let child = run_released_by("fallback_between_the_closing_events", PROBE);
     assert_eq!(child.status, Some(0), "{}", child.stderr);
@@ -895,7 +908,8 @@ fn a_dashboard_that_gives_way_between_the_restoration_and_the_shutdown_shows_eac
 }
 
 #[test]
-fn a_dashboard_that_gives_way_after_the_last_event_shows_both_closing_lines_once_in_order() {
+fn real_process_a_dashboard_that_gives_way_after_the_last_event_shows_both_closing_lines_once_in_order()
+ {
     let child = run_released_by("fallback_after_the_closing_events", PROBE);
     assert_eq!(child.status, Some(0), "{}", child.stderr);
     assert_eq!(child.count(" profile.restored "), 1, "{}", child.stderr);
@@ -913,7 +927,7 @@ fn a_dashboard_that_gives_way_after_the_last_event_shows_both_closing_lines_once
 }
 
 #[test]
-fn a_panic_closes_the_journal_before_the_host_lock_is_released() {
+fn real_process_a_panic_closes_the_journal_before_the_host_lock_is_released() {
     let child = run("lock_order");
     assert_eq!(child.status, Some(2), "{}", child.stderr);
     let order = child.order();
@@ -932,7 +946,8 @@ fn a_panic_closes_the_journal_before_the_host_lock_is_released() {
 }
 
 #[test]
-fn the_emergency_report_of_a_journal_failure_is_printed_after_the_dashboard_stopped_drawing() {
+fn real_process_the_emergency_report_of_a_journal_failure_is_printed_after_the_dashboard_stopped_drawing()
+ {
     let child = run("journal_failure");
     assert_eq!(child.status, Some(1), "{}", child.stderr);
     let report = child.at("every core set to CO 0 without an intent (readback all 0)");

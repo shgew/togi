@@ -70,6 +70,18 @@ impl Extracts {
         machine_path: &Path,
         machine: &MachineDefinition,
     ) -> Result<(PathBuf, Arc<[TrialFact]>), ExtractsError> {
+        self.load_with(machine_path, machine, |path| read(path))
+    }
+
+    /// Like [`Self::load`], reading an uncached extract through `reader`.
+    ///
+    /// Cached records are shared without calling `reader` again. Failed reads are not cached.
+    pub fn load_with(
+        &mut self,
+        machine_path: &Path,
+        machine: &MachineDefinition,
+        reader: impl FnOnce(&Path) -> Result<Vec<TrialFact>, ReadError>,
+    ) -> Result<(PathBuf, Arc<[TrialFact]>), ExtractsError> {
         let facts = machine
             .facts
             .as_deref()
@@ -82,7 +94,7 @@ impl Extracts {
         if let Some(records) = self.read.get(&path) {
             return Ok((path, Arc::clone(records)));
         }
-        let records: Arc<[TrialFact]> = read(&path)?.into();
+        let records: Arc<[TrialFact]> = reader(&path)?.into();
         self.read.insert(path.clone(), Arc::clone(&records));
         Ok((path, records))
     }
@@ -92,10 +104,20 @@ impl Extracts {
         machine_path: &Path,
         machine: &MachineDefinition,
     ) -> Result<Replay, ExtractsError> {
+        self.replay_with(machine_path, machine, |path| read(path))
+    }
+
+    /// Like [`Self::replay`], loading an uncached extract through `reader`.
+    pub fn replay_with(
+        &mut self,
+        machine_path: &Path,
+        machine: &MachineDefinition,
+        reader: impl FnOnce(&Path) -> Result<Vec<TrialFact>, ReadError>,
+    ) -> Result<Replay, ExtractsError> {
         if machine.bios_context.is_none() {
             return Err(ExtractsError::NoContext);
         }
-        let (_, records) = self.load(machine_path, machine)?;
+        let (_, records) = self.load_with(machine_path, machine, reader)?;
         Ok(Replay::new(replay_facts(&records))?)
     }
 }

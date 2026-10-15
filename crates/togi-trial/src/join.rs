@@ -53,7 +53,7 @@ impl ClockHold {
 #[cfg(test)]
 pub(crate) fn saturated_pool() -> (tokio::runtime::Runtime, std::sync::mpsc::Sender<()>) {
     let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
+        .enable_time()
         .max_blocking_threads(1)
         .build()
         .unwrap();
@@ -71,23 +71,27 @@ pub(crate) fn saturated_pool() -> (tokio::runtime::Runtime, std::sync::mpsc::Sen
 mod tests {
     use super::*;
 
-    #[tokio::test]
-    async fn what_the_thread_reports_is_returned() {
-        let (finished, done) = oneshot::channel();
-        std::thread::spawn(move || {
-            let _ = finished.send(7);
+    #[test]
+    fn what_the_thread_reports_is_returned() {
+        crate::testing::runtime(false).block_on(async move {
+            let (finished, done) = oneshot::channel();
+            std::thread::spawn(move || {
+                let _ = finished.send(7);
+            });
+            assert_eq!(report(done, Duration::from_secs(5)).await, Ok(7));
         });
-        assert_eq!(report(done, Duration::from_secs(5)).await, Ok(7));
     }
 
-    #[tokio::test]
-    async fn a_thread_that_ends_without_reporting_vanished() {
-        let (finished, done) = oneshot::channel::<()>();
-        drop(finished);
-        assert_eq!(
-            report(done, Duration::from_secs(5)).await,
-            Err(Missing::Vanished)
-        );
+    #[test]
+    fn a_thread_that_ends_without_reporting_vanished() {
+        crate::testing::runtime(false).block_on(async move {
+            let (finished, done) = oneshot::channel::<()>();
+            drop(finished);
+            assert_eq!(
+                report(done, Duration::from_secs(5)).await,
+                Err(Missing::Vanished)
+            );
+        });
     }
 
     #[test]

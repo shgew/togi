@@ -1,5 +1,3 @@
-#![allow(dead_code, reason = "each test crate uses part of this shared module")]
-
 use std::fs;
 use std::num::{NonZeroU32, NonZeroUsize};
 use std::os::unix::fs::PermissionsExt as _;
@@ -11,11 +9,12 @@ use togi_tool_bench::{Options, Selection, Tree};
 
 use crate::session;
 
-pub(crate) struct Bench {
+/// Explicit real-process fixture: executable scripts and their disposable on-disk inputs.
+pub(crate) struct ProcessBench {
     pub(crate) dir: tempfile::TempDir,
 }
 
-impl Bench {
+impl ProcessBench {
     pub(crate) fn new() -> Self {
         let bench = Self {
             dir: tempfile::tempdir().unwrap(),
@@ -26,13 +25,6 @@ impl Bench {
             .map(|event| serde_json::to_string(event).unwrap())
             .collect();
         let lines = lines.join("\n") + "\n";
-        let mut last = serde_json::to_value(journal.last().unwrap()).unwrap();
-        last["cause"] = serde_json::json!([last["seq"].clone()]);
-        last["seq"] = (last["seq"].as_u64().unwrap() + 1).into();
-        last["kind"] = "shutdown".into();
-        last["msg"] = "stopped by signal".into();
-        last["data"] = serde_json::json!({"reason": "signal"});
-        fs::write(bench.path("signalled.jsonl"), format!("{lines}{last}\n")).unwrap();
         fs::write(bench.path("journal.jsonl"), lines).unwrap();
         fs::write(
             bench.path("suite.json"),

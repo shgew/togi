@@ -57,10 +57,9 @@ fn clock(time: Timestamp) -> String {
         .to_string()
 }
 
-fn shown_snapshot(name: &str, body: &str) {
-    insta::with_settings!({ prepend_module_to_snapshot => false }, {
-        insta::assert_snapshot!(name, body);
-    });
+fn shown_snapshot(snapshot: &str, body: &str) {
+    let expected = snapshot.split_once("\n---\n").unwrap().1;
+    assert_eq!(body.trim_end(), expected.trim_end());
 }
 
 #[test]
@@ -68,18 +67,18 @@ fn the_main_view_of_a_prefix_is_printed_as_plain_text() {
     let events = scenario(Scenario::Checking);
     let body = text(&events, events.len(), &frame(View::Main, (120, 33)));
     assert!(!body.contains('\x1b'));
-    shown_snapshot("main-checking-120x33", &body);
+    shown_snapshot(include_str!("snapshots/main-checking-120x33.snap"), &body);
 }
 
 #[test]
 fn the_help_and_log_views_are_printed_without_the_key_footer() {
     let events = scenario(Scenario::Checking);
     shown_snapshot(
-        "help-80x24",
+        include_str!("snapshots/help-80x24.snap"),
         &text(&events, events.len(), &frame(View::Help, (80, 24))),
     );
     shown_snapshot(
-        "log-80x24",
+        include_str!("snapshots/log-80x24.snap"),
         &text(&events, events.len(), &frame(View::Log, (80, 24))),
     );
 }

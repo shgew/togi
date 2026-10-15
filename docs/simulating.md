@@ -11,7 +11,7 @@ just sim [--seed N] [--machine FILE] [--replay-facts] [--cycles N] [--state-dir 
 - `--replay-facts` answers exact trial-class/full-profile matches from the machine file's `facts` extract, under its declared BIOS context. Without this flag the file remains a fitted simulator alone.
 - `--cycles` (default 1) stops after N clean cycles; [Checking](spec/tuner.md#checking) says when a cycle counts and when the run stops.
 - `--state-dir` uses an existing directory; without it, `togi-tool-sim` creates a temporary `togi-sim-*` directory, keeps it and announces it on stderr as `sim: state directory DIR`.
-- `--samples` writes `trials/<trial-id>/samples.jsonl` for later inspection, gzip-compressed on trial end (`journal.md`, Files); by default trial samples stay in memory.
+- `--samples` writes `trials/<trial-id>/samples.jsonl` for later inspection, gzip-compressed on trial end; by default trial samples stay in memory. Simulation output, including compression, is never synced ([Journal, simulated storage](spec/journal.md#rules)).
 - `--max-boots` (default 1000) caps the simulated boots of one invocation. A session still running after N boots stops with its journal and `state.json` as they stand, the reason on stderr, and exit 3.
 - `--verify-every` (default 0) replays the whole journal into fresh state after every Nth simulated crash, and fails unless it equals the state the next boot resumes from; 0 checks only when the invocation ends: the session stops, an error ends it or it reaches `--max-boots`.
 - `--cold-boots` replays the whole journal at every boot, as `togi run` does, instead of resuming from the state the crashed boot folded.

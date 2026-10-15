@@ -4,9 +4,9 @@
 //! configuration file, the boot id, the clock, the hardware checks, GRUB, the reboot, the machine
 //! `run` tunes and the process's own terminal, stderr and dashboard. [`Real`] is the host;
 //! [`crate::run`] uses it. [`crate::run_with`] takes any other, so a test on Linux can stand for
-//! another platform (`check_platform` fails with [`togi_hardware::Error::Unsupported`]), hold the
-//! host lock on a temporary file, read the configuration from a temporary default path, or answer
-//! the hardware checks without touching hardware.
+//! another platform (`check_platform` fails with [`togi_hardware::Error::Unsupported`]), acquire a
+//! descriptor-free host lock, read configuration and journals from an in-memory filesystem, or
+//! answer the hardware checks without touching hardware.
 //!
 //! A command that must stop on a platform other than Linux asks [`System::check_platform`] before
 //! it reads the boot id, opens the journal, takes the host lock or makes a check.
@@ -24,6 +24,8 @@ use rustix::time::{ClockId, clock_gettime};
 use togi_config::Config;
 use togi_hardware::{Diagnosis, Grub, RebootError};
 use togi_hostlock::{HostLock, Policy};
+use togi_journal::fs::Fs;
+use togi_journal::{Build, DirError, FileError, LockError, Recording, StateDir};
 use togi_machine::{BiosContext, BootId, CancellationToken, Clock, Error, Machine};
 use togi_render::OutputFacts;
 use togi_tuningboot::{Bootloader, RETRY_MARKER};
@@ -38,8 +40,69 @@ pub trait System {
     /// Whether the process runs as root.
     fn privileged(&self) -> bool;
 
+    /// Installs the command's signal listener; fake hosts can retain the token without host effects.
+    fn listen(&self, token: &CancellationToken) -> io::Result<Box<dyn std::any::Any>> {
+        listen_for_signals(token)
+    }
+
     /// The host lock file and the ownership it must have.
     fn host_lock(&self) -> (&Path, Policy);
+
+    /// Acquires the host-wide command lock. Test hosts may provide descriptor-free exclusion.
+    fn acquire_host_lock(&self) -> Result<HostLock, togi_hostlock::Error> {
+        let (path, policy) = self.host_lock();
+        HostLock::acquire(path, policy)
+    }
+
+    /// The journal filesystem, when injected; `None` uses the durable production filesystem.
+    fn journal_fs(&self) -> Option<Arc<dyn Fs>> {
+        None
+    }
+
+    /// Locks a state directory using the same filesystem as its readers.
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the host seam explicitly selects an injected journal filesystem"
+    )]
+    fn lock_state_dir(&self, path: &Path) -> Result<StateDir, LockError> {
+        match self.journal_fs() {
+            Some(fs) => StateDir::lock_with_fs(fs, path),
+            None => StateDir::lock(path),
+        }
+    }
+
+    /// Reads the first-line build stamp without taking the writer lock.
+    fn recorded_build(&self, path: &Path) -> Result<Option<Build>, DirError> {
+        match self.journal_fs() {
+            Some(fs) => togi_journal::recorded_build_in(&*fs, path),
+            None => togi_journal::recorded_build(path),
+        }
+    }
+
+    /// Reads a journal with strict event decoding.
+    fn recording(&self, path: &Path) -> Result<Recording, FileError> {
+        match self.journal_fs() {
+            Some(fs) => Recording::read_in(&*fs, path),
+            None => Recording::read(path),
+        }
+    }
+
+    /// Reads a journal while retaining diagnostics for unknown event kinds and fields.
+    fn recording_lenient(&self, path: &Path) -> Result<Recording, FileError> {
+        match self.journal_fs() {
+            Some(fs) => Recording::read_in_lenient(&*fs, path),
+            None => Recording::read_lenient(path),
+        }
+    }
+
+    /// Reads configuration bytes through the host's filesystem.
+    fn read_config(&self, path: &Path) -> io::Result<String> {
+        match self.journal_fs() {
+            Some(fs) => String::from_utf8(fs.read(path)?)
+                .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error)),
+            None => std::fs::read_to_string(path),
+        }
+    }
 
     /// The configuration file read when `--config` is absent.
     fn config_path(&self) -> &Path;
@@ -79,6 +142,15 @@ pub trait System {
     /// What decides whether stderr is coloured.
     fn stderr_facts(&self) -> OutputFacts;
 
+    /// What decides whether stdout is coloured or connected to the system journal.
+    fn stdout_facts(&self) -> OutputFacts {
+        OutputFacts::detect(
+            &io::stdout(),
+            std::env::var_os("NO_COLOR").as_deref(),
+            std::env::var_os("JOURNAL_STREAM").as_deref(),
+        )
+    }
+
     /// The machine `run` tunes, assembled under the held host lock.
     fn open_machine(
         &self,
@@ -96,6 +168,11 @@ pub trait System {
 
     /// What draws the dashboard when `run` shows one.
     fn surface(&self) -> Arc<dyn Surface>;
+
+    /// Assembles the dashboard with this host's terminal effects.
+    fn dashboard(&self, state: &Path, since: u64) -> crate::dashboard::Dashboard {
+        crate::dashboard::Dashboard::new(self.surface(), state, since)
+    }
 }
 
 /// The host the process runs on.
@@ -237,3 +314,12 @@ impl Clock for SystemClock<'_> {
 
 #[cfg(test)]
 mod tests;
+
+/// Installs a real signal listener for explicit process fixtures as well as production hosts.
+///
+/// # Errors
+///
+/// Returns the error from registering the process signal listener.
+pub fn listen_for_signals(token: &CancellationToken) -> io::Result<Box<dyn std::any::Any>> {
+    crate::signals::listen(token).map(|guard| Box::new(guard) as Box<dyn std::any::Any>)
+}

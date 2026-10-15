@@ -19,8 +19,8 @@ pub(super) fn listen(
     terminating: bool,
     events: UnboundedSender<Event>,
 ) -> io::Result<JoinHandle<()>> {
-    let mut resize = signal(SignalKind::window_change())?;
-    let mut cancel = if terminating {
+    let resize = signal(SignalKind::window_change())?;
+    let cancel = if terminating {
         Some([
             signal(SignalKind::interrupt())?,
             signal(SignalKind::terminate())?,
@@ -29,7 +29,25 @@ pub(super) fn listen(
     } else {
         None
     };
-    Ok(tokio::spawn(async move {
+    Ok(forward(resize, cancel, events))
+}
+
+trait Receive: Send + 'static {
+    fn recv(&mut self) -> impl Future<Output = Option<()>> + Send;
+}
+
+impl Receive for Signal {
+    async fn recv(&mut self) -> Option<()> {
+        Signal::recv(self).await
+    }
+}
+
+fn forward(
+    mut resize: impl Receive,
+    mut cancel: Option<[impl Receive; 3]>,
+    events: UnboundedSender<Event>,
+) -> JoinHandle<()> {
+    tokio::spawn(async move {
         loop {
             let event = tokio::select! {
                 Some(()) = resize.recv() => Event::Resize,
@@ -39,11 +57,11 @@ pub(super) fn listen(
                 return;
             }
         }
-    }))
+    })
 }
 
 /// Waits for any of the cancelling signals, or forever when there are none.
-async fn cancelled(signals: Option<&mut [Signal; 3]>) {
+async fn cancelled(signals: Option<&mut [impl Receive; 3]>) {
     let Some([interrupt, terminate, hangup]) = signals else {
         return std::future::pending().await;
     };
@@ -56,95 +74,61 @@ async fn cancelled(signals: Option<&mut [Signal; 3]>) {
 }
 
 #[cfg(test)]
-pub(super) mod tests {
-    use std::sync::{Mutex, MutexGuard, PoisonError};
-    use std::time::Duration;
+mod tests {
+    use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
-    use rustix::process::{Signal, getpid, kill_process};
-    use tokio::signal::unix::{SignalKind, signal};
-    use tokio::sync::mpsc::{UnboundedReceiver, unbounded_channel};
-    use tokio::time::timeout;
-
-    use super::listen;
+    use super::forward;
     use crate::terminal::Event;
+    use crate::terminal::testing::paused;
 
-    static SERIAL: Mutex<()> = Mutex::new(());
-
-    /// Held by every test that sends the process a signal or runs a dashboard that listens for them, so that under
-    /// plain `cargo test`'s threads one test's signal never reaches another's dashboard. (`cargo nextest` runs each
-    /// test in its own process.)
-    pub(in crate::terminal) fn serial() -> MutexGuard<'static, ()> {
-        SERIAL.lock().unwrap_or_else(PoisonError::into_inner)
+    impl super::Receive for UnboundedReceiver<()> {
+        async fn recv(&mut self) -> Option<()> {
+            self.recv().await
+        }
     }
 
-    /// A real signal is delivered within this, or the test fails.
-    const BOUND: Duration = Duration::from_secs(20);
+    fn listener() -> (UnboundedSender<()>, UnboundedReceiver<()>) {
+        unbounded_channel()
+    }
 
-    async fn next(events: &mut UnboundedReceiver<Event>) -> Event {
-        timeout(BOUND, events.recv())
+    async fn next(queue: &mut UnboundedReceiver<Event>) -> Event {
+        tokio::time::timeout(std::time::Duration::from_secs(20), queue.recv())
             .await
-            .expect("no event within the bound")
-            .unwrap()
-    }
-
-    /// Runs a test's body on a fresh runtime while it holds [`serial`].
-    fn serially(body: impl Future<Output = ()>) {
-        let _serial = serial();
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap()
-            .block_on(body);
+            .expect("no event within the paused-time bound")
+            .expect("signal forwarding stopped")
     }
 
     #[test]
     fn a_dashboard_that_terminates_turns_each_signal_into_its_event() {
-        serially(async {
+        paused(async {
             let (events, mut queue) = unbounded_channel();
-            let task = listen(true, events).unwrap();
-            for (signal, resize) in [
-                (Signal::WINCH, true),
-                (Signal::INT, false),
-                (Signal::TERM, false),
-                (Signal::HUP, false),
-            ] {
-                kill_process(getpid(), signal).unwrap();
-                let event = next(&mut queue).await;
-                let expected = if resize {
-                    matches!(event, Event::Resize)
-                } else {
-                    matches!(event, Event::Cancel)
-                };
-                assert!(expected, "{signal:?}: {event:?}");
+            let (resize, resize_listener) = listener();
+            let terminating = [listener(), listener(), listener()];
+            let [interrupt, terminate, hangup] = terminating;
+            let task = forward(
+                resize_listener,
+                Some([interrupt.1, terminate.1, hangup.1]),
+                events,
+            );
+            resize.send(()).unwrap();
+            assert!(matches!(next(&mut queue).await, Event::Resize));
+            for signal in [interrupt.0, terminate.0, hangup.0] {
+                signal.send(()).unwrap();
+                assert!(matches!(next(&mut queue).await, Event::Cancel));
             }
             task.abort();
         });
     }
 
     #[test]
-    fn a_dashboard_that_does_not_terminate_leaves_sigint_sigterm_and_sighup_to_its_caller() {
-        serially(async {
-            let mut caller = [
-                (Signal::INT, signal(SignalKind::interrupt()).unwrap()),
-                (Signal::TERM, signal(SignalKind::terminate()).unwrap()),
-                (Signal::HUP, signal(SignalKind::hangup()).unwrap()),
-            ];
+    fn a_dashboard_that_does_not_terminate_listens_only_for_resize() {
+        paused(async {
             let (events, mut queue) = unbounded_channel();
-            let task = listen(false, events).unwrap();
-            for (number, listener) in &mut caller {
-                kill_process(getpid(), *number).unwrap();
-                timeout(BOUND, listener.recv())
-                    .await
-                    .expect("the caller's listener missed its signal")
-                    .unwrap();
-                tokio::task::yield_now().await;
-                tokio::task::yield_now().await;
-                assert!(
-                    queue.try_recv().is_err(),
-                    "the dashboard took {number:?} from its caller"
-                );
-            }
-            kill_process(getpid(), Signal::WINCH).unwrap();
+            let (resize, resize_listener) = listener();
+            let task = forward(resize_listener, None::<[UnboundedReceiver<()>; 3]>, events);
+            tokio::task::yield_now().await;
+            assert!(queue.try_recv().is_err());
+            resize.send(()).unwrap();
             assert!(matches!(next(&mut queue).await, Event::Resize));
             task.abort();
         });

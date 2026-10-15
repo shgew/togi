@@ -1,4 +1,3 @@
-use std::io;
 use std::path::{Path, PathBuf};
 
 use togi_config::Config;
@@ -23,42 +22,6 @@ trait Store {
     /// `name` as text, with the state directory written as [`STATE`] so two directories compare.
     fn text(&self, name: &str) -> String {
         String::from_utf8(self.bytes(name).unwrap()).unwrap()
-    }
-}
-
-struct Disk(tempfile::TempDir);
-
-impl Disk {
-    fn new() -> Self {
-        Self(tempfile::tempdir().unwrap())
-    }
-}
-
-impl Store for Disk {
-    fn persistence(&self) -> Persistence {
-        Persistence::Files(self.0.path().to_path_buf())
-    }
-
-    fn path(&self, name: &str) -> PathBuf {
-        self.0.path().join(name)
-    }
-
-    fn bytes(&self, name: &str) -> Option<Vec<u8>> {
-        match std::fs::read(self.path(name)) {
-            Ok(bytes) => Some(bytes),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => None,
-            Err(error) => panic!("read {name}: {error}"),
-        }
-    }
-
-    fn remove(&self, name: &str) {
-        std::fs::remove_file(self.path(name)).unwrap();
-    }
-
-    fn text(&self, name: &str) -> String {
-        String::from_utf8(self.bytes(name).unwrap())
-            .unwrap()
-            .replace(self.0.path().to_str().unwrap(), STATE)
     }
 }
 
@@ -181,28 +144,23 @@ fn keeps_pending_machine_checks(saved: &serde_json::Value) {
 
 #[test]
 fn a_capped_simulation_continues_in_another_process_as_if_uninterrupted() {
-    let saved = split_matches_whole(Disk::new, &hunt_machine(2), 1, 3);
+    let saved = split_matches_whole(MemFs::new, &hunt_machine(2), 1, 3);
     let last = saved["boots"].as_array().unwrap().last().unwrap();
     assert!(last["reason"]["kind"].is_string(), "{saved}");
 }
 
 #[test]
 fn a_capped_simulation_keeps_its_pending_machine_checks_for_the_next_process() {
-    keeps_pending_machine_checks(&split_matches_whole(Disk::new, &mce_machine(), 1, 4));
-}
-
-#[test]
-fn a_capped_simulation_in_memory_keeps_its_pending_machine_checks_for_the_next_process() {
     keeps_pending_machine_checks(&split_matches_whole(MemFs::new, &mce_machine(), 1, 4));
 }
 
 #[test]
 fn a_continuation_that_starts_nothing_keeps_the_saved_machine() {
     let definition = hunt_machine(2);
-    let whole = Disk::new();
+    let whole = MemFs::new();
     to_the_end(simulator(&definition, 1), &whole);
 
-    let split = Disk::new();
+    let split = MemFs::new();
     let saved = capped(&definition, 1, &split, 3);
     let mut rejected = input(resumed(&definition, 1, &split), split.persistence());
     rejected.config = Config::parse(r#"{"start_offsets": {"15": -10}}"#).unwrap();
@@ -248,10 +206,11 @@ fn a_machine_that_cannot_be_read_stops_the_continuation() {
 
 #[test]
 fn a_machine_path_that_is_a_directory_stops_the_continuation() {
-    let store = Disk::new();
-    std::fs::create_dir(store.path(MACHINE)).unwrap();
+    let store = MemFs::new();
+    Fs::create_dir(&store, Path::new(STATE)).unwrap();
+    Fs::create_dir(&store, &store.path(MACHINE)).unwrap();
     unreadable_machine(&store);
-    assert!(store.path(MACHINE).is_dir());
+    assert!(store.bytes(MACHINE).is_none());
 }
 
 #[test]

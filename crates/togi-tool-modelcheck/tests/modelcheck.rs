@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde_json::{Value, json};
 use togi_facts::{Decisive, TrialClass};
@@ -17,7 +17,8 @@ use togi_tool_modelcheck::{
     report,
 };
 use togi_tool_trialfacts::{
-    BuildStamp, Class, Extracts, ExtractsError, Phase, Profile, ReadError, TrialFact, write,
+    BuildStamp, Class, Extracts, ExtractsError, Phase, Profile, ReadError, TrialFact, decode,
+    encode,
 };
 
 const SESSION: &str = "20260101T000000Z";
@@ -125,15 +126,17 @@ fn machine(near_limit_rate: f64) -> Value {
     })
 }
 
-fn write_fixture(dir: &Path, machine: &Value) -> PathBuf {
-    let path = dir.join("machine.json");
-    std::fs::write(&path, machine.to_string()).unwrap();
-    write(dir.join("facts.jsonl.gz"), &passes(10)).unwrap();
-    path
-}
-
-fn check_file(path: &Path) -> Result<Check, Error> {
-    check(path, &file::load(path).unwrap(), &mut Extracts::new())
+fn check_fixture(machine: &Value) -> Result<Check, Error> {
+    let mut bytes = Vec::new();
+    encode(&mut bytes, &passes(10)).unwrap();
+    let path = Path::new("fixture/machine.json");
+    let definition = definition(machine);
+    let mut extracts = Extracts::new();
+    extracts.load_with(path, &definition, |extract| {
+        assert_eq!(extract, Path::new("fixture/facts.jsonl.gz"));
+        decode(bytes.as_slice())
+    })?;
+    check(path, &definition, &mut extracts)
 }
 
 #[test]
@@ -142,12 +145,11 @@ fn a_fixture_machine_is_judged_against_its_own_extract() {
         (0.0, Status::Ok, Interval { low: 0, high: 0 }),
         (1.0, Status::Flagged, Interval { low: 10, high: 10 }),
     ] {
-        let dir = tempfile::tempdir().unwrap();
-        let path = write_fixture(dir.path(), &machine(near_limit_rate));
-        let result = check_file(&path).unwrap();
+        let path = Path::new("fixture/machine.json");
+        let result = check_fixture(&machine(near_limit_rate)).unwrap();
         assert_eq!(result.status, status);
         assert_eq!(result.machine, path);
-        assert_eq!(result.extract, dir.path().join("facts.jsonl.gz"));
+        assert_eq!(result.extract, Path::new("fixture/facts.jsonl.gz"));
         let [group] = result.groups.as_slice() else {
             panic!("{result:?}");
         };
@@ -168,11 +170,9 @@ fn the_report_names_each_flagged_group_and_nothing_for_no_checks() {
     report(&mut out, &[]).unwrap();
     assert!(out.is_empty());
 
-    let dir = tempfile::tempdir().unwrap();
-    let path = write_fixture(dir.path(), &machine(1.0));
-    let flagged = check_file(&path).unwrap();
-    let ok_dir = tempfile::tempdir().unwrap();
-    let ok = check_file(&write_fixture(ok_dir.path(), &machine(0.0))).unwrap();
+    let path = Path::new("fixture/machine.json");
+    let flagged = check_fixture(&machine(1.0)).unwrap();
+    let ok = check_fixture(&machine(0.0)).unwrap();
     report(&mut out, &[flagged.clone(), ok]).unwrap();
     let out = String::from_utf8(out).unwrap();
     let mean_p = flagged.groups[0].mean_p;
@@ -200,8 +200,7 @@ fn the_report_names_each_flagged_group_and_nothing_for_no_checks() {
 
 #[test]
 fn a_check_serializes_with_the_class_flattened_and_the_status_in_words() {
-    let dir = tempfile::tempdir().unwrap();
-    let result = check_file(&write_fixture(dir.path(), &machine(0.0))).unwrap();
+    let result = check_fixture(&machine(0.0)).unwrap();
     let mut json = serde_json::to_value(&result).unwrap();
     json["machine"] = json!("machine.json");
     json["extract"] = json!("facts.jsonl.gz");
@@ -302,11 +301,9 @@ fn a_checker_accepts_exactly_what_its_report_calls_ok() {
 fn a_machine_with_an_indecisive_reset_is_refused_and_a_zero_weight_changes_nothing() {
     for kind in [ResetKind::ThermalTrip, ResetKind::PowerLoss] {
         for (name, weight) in [("zero", 0.0), ("small-positive", 1e-9), ("positive", 1.0)] {
-            let dir = tempfile::tempdir().unwrap();
             let mut machine = machine(0.0);
             machine["model"]["reset"] = json!({"watchdog": 1.0, kind.as_str(): weight});
-            let path = write_fixture(dir.path(), &machine);
-            let result = check_file(&path);
+            let result = check_fixture(&machine);
             if weight > 0.0 {
                 let Err(Error::IndecisiveReset(refused)) = result else {
                     panic!("{kind}/{name}: {result:?}");
@@ -393,12 +390,21 @@ fn an_undeclared_machine_checks_each_recorded_context_separately() {
 }
 
 #[test]
-fn an_unreadable_extract_is_refused_with_its_path() {
-    let dir = tempfile::tempdir().unwrap();
+fn a_failed_extract_read_is_reported_with_its_path() {
     let mut machine = machine(0.0);
     machine["facts"] = json!("missing.jsonl.gz");
-    let path = dir.path().join("machine.json");
-    let result = check(&path, &definition(&machine), &mut Extracts::new());
+    let result = Extracts::new()
+        .load_with(
+            Path::new("fixture/machine.json"),
+            &definition(&machine),
+            |path| {
+                Err(ReadError::Open {
+                    path: path.to_path_buf(),
+                    source: io::ErrorKind::NotFound.into(),
+                })
+            },
+        )
+        .map_err(Error::from);
     let Err(error @ Error::ReadExtract(ReadError::Open { .. })) = result else {
         panic!("{result:?}");
     };
@@ -618,8 +624,7 @@ impl io::Write for Budget {
 
 #[test]
 fn a_sink_that_fails_anywhere_in_the_report_fails_the_report() {
-    let dir = tempfile::tempdir().unwrap();
-    let flagged = check_file(&write_fixture(dir.path(), &machine(1.0))).unwrap();
+    let flagged = check_fixture(&machine(1.0)).unwrap();
     let mut whole = Vec::new();
     report(&mut whole, std::slice::from_ref(&flagged)).unwrap();
     for budget in 0..whole.len() {

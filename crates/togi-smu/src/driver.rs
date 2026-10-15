@@ -1,4 +1,5 @@
 use crate::error::{Error, Operation, chain};
+use crate::files::{Files, Readers};
 use crate::identity;
 use crate::mailbox::{COMMAND_DEADLINE, Command, Transport, Worker};
 use crate::pm_table::{
@@ -8,6 +9,7 @@ use crate::slots::{self, Location, SlotError, SlotMap};
 use crate::sysfs::Sysfs;
 use crate::topology::{self, RawCpu};
 use std::fmt;
+use std::io;
 use std::mem;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -85,6 +87,7 @@ fn check(name: &str, outcome: Result<String, Error>) -> Check {
 /// The only writer of Curve Optimizer offsets.
 pub struct Driver {
     root: PathBuf,
+    files: Files,
     cpus: Vec<RawCpu>,
     stage: Stage,
 }
@@ -123,20 +126,59 @@ impl Driver {
     pub fn open(root: &Path) -> Result<Self, Error> {
         let pending = Sysfs::locate(root).map(|sysfs| Pending {
             transport: Box::new(sysfs),
-            pm: Arc::new(FileSource::new(root)),
+            pm: Arc::new(FileSource::new(root, Files::System)),
             deadline: COMMAND_DEADLINE,
         });
-        Self::with_stage(root, Stage::Unvalidated(pending))
+        Self::with_stage(root, Files::System, Stage::Unvalidated(pending))
     }
 
     pub fn identity_only(root: &Path) -> Result<Self, Error> {
         let loaded = Sysfs::locate(root).is_some();
-        Self::with_stage(root, Stage::IdentityOnly { loaded })
+        Self::with_stage(root, Files::System, Stage::IdentityOnly { loaded })
+    }
+
+    /// Opens supplied CPU directory names and file readers, without accessing the host.
+    /// Paths passed to the closures are rooted at `root`. Mailbox writes still require
+    /// successful CPU and driver validation; no system-file fallback is used.
+    pub fn from_readers(
+        root: &Path,
+        cpu_names: Vec<String>,
+        loaded: bool,
+        read: impl Fn(&Path) -> io::Result<Vec<u8>> + Send + Sync + 'static,
+        write: impl Fn(&Path, &[u8]) -> io::Result<usize> + Send + Sync + 'static,
+    ) -> Result<Self, Error> {
+        let files = Files::Readers(Arc::new(Readers {
+            cpu_names,
+            read: Arc::new(read),
+            write: Arc::new(write),
+        }));
+        let pending = loaded.then(|| Pending {
+            transport: Box::new(Sysfs::from_readers(root, files.clone())),
+            pm: Arc::new(FileSource::new(root, files.clone())),
+            deadline: COMMAND_DEADLINE,
+        });
+        Self::with_stage(root, files, Stage::Unvalidated(pending))
+    }
+
+    /// Like `identity_only`, using only the supplied readers, never host files.
+    pub fn identity_only_from_readers(
+        root: &Path,
+        cpu_names: Vec<String>,
+        loaded: bool,
+        read: impl Fn(&Path) -> io::Result<Vec<u8>> + Send + Sync + 'static,
+    ) -> Result<Self, Error> {
+        let files = Files::Readers(Arc::new(Readers {
+            cpu_names,
+            read: Arc::new(read),
+            write: Arc::new(|_, _| Err(io::ErrorKind::PermissionDenied.into())),
+        }));
+        Self::with_stage(root, files, Stage::IdentityOnly { loaded })
     }
 
     #[cfg(test)]
     pub(crate) fn with_transport(
         root: &Path,
+        files: Files,
         transport: Box<dyn Transport>,
         pm: Arc<dyn PmSource>,
         deadline: Duration,
@@ -146,7 +188,7 @@ impl Driver {
             pm,
             deadline,
         };
-        Self::with_stage(root, Stage::Unvalidated(Some(pending)))
+        Self::with_stage(root, files, Stage::Unvalidated(Some(pending)))
     }
 
     /// Replaces the mailbox deadline of a validated driver, so a test can validate generously
@@ -158,10 +200,11 @@ impl Driver {
         }
     }
 
-    fn with_stage(root: &Path, stage: Stage) -> Result<Self, Error> {
+    fn with_stage(root: &Path, files: Files, stage: Stage) -> Result<Self, Error> {
         Ok(Self {
             root: root.to_owned(),
-            cpus: topology::read(root)?,
+            cpus: topology::read(root, &files)?,
+            files,
             stage,
         })
     }
@@ -204,8 +247,8 @@ impl Driver {
             Stage::Lost => return Err(Error::MailboxLost),
             Stage::Unvalidated(_) => {}
         }
-        identity::cpu(&self.root)?;
-        identity::driver(&self.root, self.loaded())?;
+        identity::cpu(&self.root, &self.files)?;
+        identity::driver(&self.root, &self.files, self.loaded())?;
         let Stage::Unvalidated(Some(pending)) = mem::replace(&mut self.stage, Stage::Lost) else {
             return Err(Error::DriverNotLoaded);
         };
@@ -230,13 +273,17 @@ impl Driver {
     }
 
     pub fn check_cpu(&self) -> Check {
-        check("cpu", identity::cpu(&self.root).map(|cpu| cpu.to_string()))
+        check(
+            "cpu",
+            identity::cpu(&self.root, &self.files).map(|cpu| cpu.to_string()),
+        )
     }
 
     pub fn check_driver(&self) -> Check {
         check(
             "ryzen_smu",
-            identity::driver(&self.root, self.loaded()).map(|driver| driver.to_string()),
+            identity::driver(&self.root, &self.files, self.loaded())
+                .map(|driver| driver.to_string()),
         )
     }
 
@@ -277,7 +324,7 @@ impl Driver {
     pub fn bios_context(&mut self) -> Result<BiosContext, Error> {
         let operation = Operation::ReadBiosContext;
         let validated = validated(&mut self.stage, operation)?;
-        let firmware = identity::firmware(&self.root)?;
+        let firmware = identity::firmware(&self.root, &self.files)?;
         let response = validated
             .worker
             .command(Command::BoostLimit, [0; 6])

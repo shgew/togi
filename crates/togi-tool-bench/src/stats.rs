@@ -56,6 +56,12 @@ mod tests {
     }
 
     proptest! {
+        #![proptest_config(ProptestConfig {
+            rng_seed: proptest::test_runner::RngSeed::Fixed(0x6265_6e63_6873_7461),
+            failure_persistence: None,
+            ..ProptestConfig::default()
+        })]
+
         #[test]
         fn a_percentile_lies_within_the_values_and_never_decreases(
             mut values in prop::collection::vec(-1.0e6_f64..1.0e6, 1..40),

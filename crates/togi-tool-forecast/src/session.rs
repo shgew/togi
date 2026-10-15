@@ -5,6 +5,7 @@ use std::path::Path;
 use jiff::Timestamp;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
+use togi_journal::fs::{FileKind, Fs};
 use togi_journal::{
     Build, Event, EventReader, FileError, Operation, Payload, ReadError, Refusal, SCHEMA, Seq,
     SessionId, Skipped, Verdict,
@@ -37,7 +38,20 @@ impl Anchor {
     /// journal without locking or writing the directory.
     pub fn of(dir: impl AsRef<Path>) -> Result<Self, Error> {
         let dir = dir.as_ref();
-        let session = Session::read(&dir.join(LIVE_JOURNAL))?.ok_or_else(|| Error::NoEvents {
+        Self::of_session(dir, Session::read(&dir.join(LIVE_JOURNAL))?)
+    }
+
+    /// Reads the anchor through an explicitly supplied filesystem, without locking or writing it.
+    pub fn of_fs(fs: &dyn Fs, dir: impl AsRef<Path>) -> Result<Self, Error> {
+        let dir = dir.as_ref();
+        Self::of_session(
+            dir,
+            Session::read_with_fs(&dir.join(LIVE_JOURNAL), Reading::Strict, Some(fs))?,
+        )
+    }
+
+    fn of_session(dir: &Path, session: Option<Session>) -> Result<Self, Error> {
+        let session = session.ok_or_else(|| Error::NoEvents {
             dir: dir.to_path_buf(),
         })?;
         Ok(session.anchor_through(session.events.len() - 1))
@@ -148,11 +162,33 @@ impl Session {
     }
 
     fn read_with(path: &Path, reading: Reading) -> Result<Option<Self>, Error> {
-        let bytes = fs::read(path).map_err(|source| Error::ReadJournal {
+        Self::read_with_fs(path, reading, None)
+    }
+
+    fn read_with_fs(
+        path: &Path,
+        reading: Reading,
+        fs: Option<&dyn Fs>,
+    ) -> Result<Option<Self>, Error> {
+        let bytes = match fs {
+            Some(fs) => fs.read(path),
+            None => fs::read(path),
+        }
+        .map_err(|source| Error::ReadJournal {
             path: path.to_path_buf(),
             source,
         })?;
-        Self::parse(&bytes, reading).map_err(|source| {
+        Self::decode_with(path, &bytes, reading)
+    }
+
+    /// Decodes a journal's original bytes, retaining their exact prefix hashes.
+    /// `path` labels errors and need not exist.
+    pub fn decode(path: &Path, bytes: &[u8]) -> Result<Option<Self>, Error> {
+        Self::decode_with(path, bytes, Reading::Strict)
+    }
+
+    fn decode_with(path: &Path, bytes: &[u8], reading: Reading) -> Result<Option<Self>, Error> {
+        Self::parse(bytes, reading).map_err(|source| {
             Error::Journal(FileError {
                 path: path.to_path_buf(),
                 source,
@@ -238,7 +274,7 @@ impl Session {
 /// appending. An archived file whose name is not a session id is not a journal; a journal without a complete
 /// line holds no session; a journal that fails the reader's checks is an error naming the file.
 pub fn read_dir(dir: impl AsRef<Path>, from: Option<SessionId>) -> Result<Vec<Session>, Error> {
-    read_dir_with(dir.as_ref(), from, Reading::Strict)
+    read_dir_with(dir.as_ref(), from, Reading::Strict, None)
 }
 
 /// [`read_dir`] for a state directory nobody is resuming, such as an operator's: events of kinds this build does
@@ -248,33 +284,68 @@ pub fn read_dir_lenient(
     dir: impl AsRef<Path>,
     from: Option<SessionId>,
 ) -> Result<Vec<Session>, Error> {
-    read_dir_with(dir.as_ref(), from, Reading::Lenient)
+    read_dir_with(dir.as_ref(), from, Reading::Lenient, None)
+}
+
+/// Reads archived and live journals through an explicitly supplied filesystem.
+pub fn read_dir_fs(
+    fs: &dyn Fs,
+    dir: impl AsRef<Path>,
+    from: Option<SessionId>,
+) -> Result<Vec<Session>, Error> {
+    read_dir_with(dir.as_ref(), from, Reading::Strict, Some(fs))
+}
+
+/// Lenient [`read_dir_fs`], preserving skipped events and original journal hashes.
+pub fn read_dir_lenient_fs(
+    fs: &dyn Fs,
+    dir: impl AsRef<Path>,
+    from: Option<SessionId>,
+) -> Result<Vec<Session>, Error> {
+    read_dir_with(dir.as_ref(), from, Reading::Lenient, Some(fs))
 }
 
 fn read_dir_with(
     dir: &Path,
     from: Option<SessionId>,
     reading: Reading,
+    fs: Option<&dyn Fs>,
 ) -> Result<Vec<Session>, Error> {
     let archive = dir.join(ARCHIVE_DIR);
     let mut ids = Vec::new();
-    match fs::read_dir(&archive) {
-        Ok(entries) => {
-            for entry in entries {
-                let entry = entry.map_err(|source| Error::ListArchive {
-                    path: archive.clone(),
-                    source,
-                })?;
-                let is_file = entry.file_type().is_ok_and(|kind| kind.is_file());
-                let id = entry
-                    .file_name()
-                    .to_str()
-                    .and_then(|name| name.strip_suffix(JOURNAL_SUFFIX)?.parse::<SessionId>().ok());
-                if let (true, Some(id)) = (is_file, id) {
-                    ids.push(id);
-                }
-            }
+    let mut select = |name: std::ffi::OsString, is_file| {
+        let id = name
+            .to_str()
+            .and_then(|name| name.strip_suffix(JOURNAL_SUFFIX)?.parse::<SessionId>().ok());
+        if let (true, Some(id)) = (is_file, id) {
+            ids.push(id);
         }
+    };
+    let listing = match fs {
+        Some(fs) => fs.read_dir(&archive).map(|entries| {
+            for entry in entries {
+                select(entry.name, entry.kind == FileKind::File);
+            }
+        }),
+        None => match fs::read_dir(&archive) {
+            Ok(entries) => {
+                for entry in entries {
+                    let entry = entry.map_err(|source| Error::ListArchive {
+                        path: archive.clone(),
+                        source,
+                    })?;
+                    select(
+                        entry.file_name(),
+                        entry.file_type().is_ok_and(|kind| kind.is_file()),
+                    );
+                }
+                Ok(())
+            }
+            Err(error) => Err(error),
+        },
+    };
+    match listing {
+        Ok(()) => {}
         Err(error) if error.kind() == io::ErrorKind::NotFound => {}
         Err(source) => {
             return Err(Error::ListArchive {
@@ -290,9 +361,9 @@ fn read_dir_with(
         .filter(|&id| from.is_none_or(|from| id >= from))
     {
         let path = archive.join(format!("{id}{JOURNAL_SUFFIX}"));
-        sessions.extend(Session::read_with(&path, reading)?);
+        sessions.extend(Session::read_with_fs(&path, reading, fs)?);
     }
-    match Session::read_with(&dir.join(LIVE_JOURNAL), reading) {
+    match Session::read_with_fs(&dir.join(LIVE_JOURNAL), reading, fs) {
         Ok(live) => sessions.extend(live),
         Err(Error::ReadJournal { source, .. }) if source.kind() == io::ErrorKind::NotFound => {}
         Err(error) => return Err(error),

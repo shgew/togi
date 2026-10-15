@@ -1,4 +1,5 @@
 mod archive;
+mod buffering;
 mod repair;
 
 use std::fmt::Write as _;
@@ -330,23 +331,11 @@ fn a_reboot_forgets_the_repair_the_open_recorded() {
 
 #[test]
 fn a_reboot_writes_the_buffer_through() {
-    let root = tempfile::tempdir().unwrap();
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "the test needs the buffered journal an unsynced state directory has"
-    )]
-    let dir = StateDir::lock_unsynced(root.path()).unwrap();
-    let mut journal = dir.open(boot(1)).unwrap();
-    journal
-        .append(stamp(0), start(default_session()), &[])
-        .unwrap();
-    let path = root.path().join("events.jsonl");
-    assert!(
-        std::fs::read(&path).unwrap().is_empty(),
-        "the event is buffered"
-    );
+    let fs = MemFs::new();
+    let mut journal = buffering::begin(&fs);
+    assert!(live(&fs).is_empty(), "the event is buffered");
     journal.reboot(boot(2)).unwrap();
-    let written = Recording::parse(&std::fs::read(&path).unwrap()).unwrap();
+    let written = Recording::parse(&live(&fs)).unwrap();
     assert_eq!(written.events().len(), 1);
 }
 
@@ -659,6 +648,7 @@ fn a_sub_millisecond_monotonic_time_is_published_as_the_line_reads_back() {
 }
 
 proptest::proptest! {
+    #![proptest_config(crate::testing::property_config())]
     #[test]
     fn appended_events_equal_the_reopened_journal(
         stamps in proptest::collection::vec(

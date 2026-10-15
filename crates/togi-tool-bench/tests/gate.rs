@@ -1,17 +1,20 @@
 #![expect(clippy::unwrap_used, reason = "helpers panic on a broken fixture")]
 
+#[expect(
+    dead_code,
+    reason = "this binary does not use every memory tree fixture method"
+)]
 mod common;
 
 use std::fmt::Write as _;
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::thread;
 
 use common::record;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use togi_tool_bench::gate::{self, Criterion, Measure, Resolved, Verdict, quantile_change};
-use togi_tool_bench::{Record, Selection, Status, Suite, read_records};
+use togi_tool_bench::{Record, Selection, Status, Suite, read_records_from};
 
 type Shift = fn(usize) -> f64;
 type Mutate = fn(&mut Vec<Record>, &mut Vec<Record>);
@@ -478,7 +481,10 @@ fn the_reports_of_a_passing_failing_and_refused_gate() {
         out += &text(&gate, &gate.judge(&candidate[drop..], &baseline));
         out.push('\n');
     }
-    insta::assert_snapshot!(out);
+    common::assert_snapshot(
+        &out,
+        include_str!("snapshots/gate__the_reports_of_a_passing_failing_and_refused_gate.snap"),
+    );
 }
 
 #[test]
@@ -745,12 +751,8 @@ fn a_gate_that_leaves_a_scenario_without_seeds_is_refused() {
     assert!(error.contains("scenario a has no holdout seeds"), "{error}");
 }
 
-fn bench() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tools/bench")
-}
-
-fn sha256(path: &Path) -> String {
-    Sha256::digest(fs::read(path).unwrap())
+fn sha256(bytes: &[u8]) -> String {
+    Sha256::digest(bytes)
         .iter()
         .fold(String::new(), |mut hex, byte| {
             write!(hex, "{byte:02x}").unwrap();
@@ -760,38 +762,54 @@ fn sha256(path: &Path) -> String {
 
 #[test]
 fn the_archived_go_gate_is_kept_unchanged_and_never_re_scored() {
-    let archive = bench().join("gates/ruleset-11");
-    for (name, want) in [
+    for (name, bytes, want) in [
         (
             "suite.json",
+            include_bytes!("../../../tools/bench/gates/ruleset-11/suite.json").as_slice(),
             "afcd7feacbd6a5ddbaf30f1d69b2750749d92f30d52bde95816168ef2f2c895b",
         ),
         (
             "baseline.jsonl",
+            include_bytes!("../../../tools/bench/gates/ruleset-11/baseline.jsonl").as_slice(),
             "4cb9921ec9f31bba9899e3c4cd6dc0ebe4cbead1039fd5947f3f39ec8fb1f78c",
         ),
         (
             "candidate.jsonl",
+            include_bytes!("../../../tools/bench/gates/ruleset-11/candidate.jsonl").as_slice(),
             "6aaa3781211f46b207af2ef8b6810c7cd398b9641ea227ddfedb1bdf7352fc05",
         ),
         (
             "report.txt",
+            include_bytes!("../../../tools/bench/gates/ruleset-11/report.txt").as_slice(),
             "68a1af81c8de041ca863ac004dbac4de83c2d854ada2588558eed9040516e7c6",
         ),
     ] {
         assert_eq!(
-            sha256(&archive.join(name)),
+            sha256(bytes),
             want,
             "{name}: the archive records what was scored and never changes"
         );
     }
-    let suite = Suite::load(&archive.join("suite.json")).unwrap();
+    let suite = Suite::parse(
+        include_bytes!("../../../tools/bench/gates/ruleset-11/suite.json"),
+        ".".into(),
+    )
+    .unwrap();
     assert_eq!(
         gate::load(&suite).unwrap_err().to_string(),
         "gate: bootstrap_seed is a pair, the seed of the Go bench's PCG; archived Go gates are kept as records and are not re-scored"
     );
-    for name in ["baseline.jsonl", "candidate.jsonl"] {
-        let error = read_records(&archive.join(name), "records")
+    for (name, bytes) in [
+        (
+            "baseline.jsonl",
+            include_bytes!("../../../tools/bench/gates/ruleset-11/baseline.jsonl").as_slice(),
+        ),
+        (
+            "candidate.jsonl",
+            include_bytes!("../../../tools/bench/gates/ruleset-11/candidate.jsonl").as_slice(),
+        ),
+    ] {
+        let error = read_records_from(bytes, Path::new(name), "records")
             .unwrap_err()
             .to_string();
         assert!(error.contains("line 1"), "{name}: {error}");
@@ -800,15 +818,15 @@ fn the_archived_go_gate_is_kept_unchanged_and_never_re_scored() {
 
 #[test]
 fn the_committed_suite_registers_no_gate() {
-    let suite = Suite::load(&bench().join("suite.json")).unwrap();
+    let suite = common::Tree::committed().suite();
     assert!(gate::load(&suite).unwrap().is_none());
 }
 
 #[test]
 fn the_committed_baseline_covers_every_run_of_the_suite() {
-    let suite = Suite::load(&bench().join("suite.json")).unwrap();
-    let plan = suite.plan(Selection::All).unwrap();
-    let text = fs::read_to_string(bench().join("baseline.jsonl")).unwrap();
+    let tree = common::Tree::committed();
+    let plan = tree.suite().plan_from(Selection::All, &tree).unwrap();
+    let text = include_str!("../../../tools/bench/baseline.jsonl");
     let have: std::collections::BTreeSet<(String, u64)> = text
         .lines()
         .map(|line| {

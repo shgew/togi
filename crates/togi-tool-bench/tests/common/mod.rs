@@ -1,3 +1,8 @@
+#![cfg(test)]
+
+mod tree;
+pub(crate) use tree::Tree;
+
 use std::collections::BTreeMap;
 
 use togi_machine::PerCore;
@@ -35,4 +40,10 @@ pub(crate) fn record(scenario: &str, seed: u64) -> Record {
         hazard_max_per_h: 0.0,
         worst_r7_hazard_per_h: None,
     }
+}
+
+/// Compares a rendered report with the compiled body of an existing snapshot.
+pub(crate) fn assert_snapshot(actual: &str, snapshot: &str) {
+    let body = snapshot.split_once("\n---\n").expect("snapshot header").1;
+    assert_eq!(actual.trim_end_matches('\n'), body.trim_end_matches('\n'));
 }

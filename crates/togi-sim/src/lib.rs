@@ -31,5 +31,6 @@ pub use hazard::{HazardSource, Load, SourceKind};
 pub use model::Model;
 pub use persisted::{Persisted, RestoreError};
 pub use runtime::{History, REBOOT_TIME, RunSettings};
+pub use samples::SampleStorage;
 pub use simulator::{ScriptError, Simulator};
 pub use vocab::{RESETS, ResetMix, SignalMix, WEIGHTED_SIGNALS, regime_index};

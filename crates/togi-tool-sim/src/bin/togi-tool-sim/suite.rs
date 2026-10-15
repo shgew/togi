@@ -53,7 +53,7 @@ pub(crate) fn check(args: &CheckArgs, log: &mut Log) -> u8 {
 }
 
 #[derive(Debug, thiserror::Error)]
-enum Error {
+pub(crate) enum Error {
     #[error(transparent)]
     Suite(#[from] togi_tool_sim::SuiteError),
     #[error(transparent)]
@@ -89,7 +89,30 @@ enum Error {
 fn run_shard(args: &SuiteArgs, log: &mut Log) -> Result<bool, Error> {
     let cancel = CancellationToken::new();
     signals::cancel_on_signals(cancel.clone()).map_err(Error::Signals)?;
-    let runs = shard(&Suite::load(&args.suite)?.runs(), args.shards, args.shard)?;
+    run_shard_with(
+        args,
+        log,
+        &Suite::load(&args.suite)?,
+        &cancel,
+        |run, extracts| machine::load(run.machine.as_deref(), run.seed, run.replay, extracts),
+        |path, text| fs::create_dir_all(&args.out).and_then(|()| fs::write(path, text)),
+    )
+}
+
+pub(crate) fn run_shard_with(
+    args: &SuiteArgs,
+    log: &mut Log,
+    suite: &Suite,
+    cancel: &CancellationToken,
+    load: impl Fn(
+        &Run,
+        &mut Extracts,
+    )
+        -> Result<(togi_sim::Model, Option<togi_sim::replay::Replay>), machine::LoadError>
+    + Sync,
+    write: impl FnOnce(&Path, String) -> io::Result<()>,
+) -> Result<bool, Error> {
+    let runs = shard(&suite.runs(), args.shards, args.shard)?;
     let jobs = args
         .jobs
         .unwrap_or_else(|| thread::available_parallelism().unwrap_or(NonZeroUsize::MIN))
@@ -100,7 +123,7 @@ fn run_shard(args: &SuiteArgs, log: &mut Log) -> Result<bool, Error> {
     let (sender, finished) = mpsc::channel();
     thread::scope(|scope| {
         for _ in 0..jobs {
-            let (sender, runs, next, cancel) = (sender.clone(), &runs, &next, &cancel);
+            let (sender, runs, next, load) = (sender.clone(), &runs, &next, &load);
             scope.spawn(move || {
                 let mut extracts = Extracts::new();
                 loop {
@@ -109,7 +132,13 @@ fn run_shard(args: &SuiteArgs, log: &mut Log) -> Result<bool, Error> {
                         break;
                     };
                     let started = Instant::now();
-                    let outcome = execute(run, MemFs::new(), args.max_boots, &mut extracts, cancel);
+                    let outcome = execute_loaded(
+                        run,
+                        MemFs::new(),
+                        args.max_boots,
+                        load(run, &mut extracts),
+                        cancel,
+                    );
                     if sender.send((index, started.elapsed(), outcome)).is_err() {
                         break;
                     }
@@ -142,9 +171,7 @@ fn run_shard(args: &SuiteArgs, log: &mut Log) -> Result<bool, Error> {
         .all(|result| result.outcome == Outcome::Clean);
     let path = args.out.join(manifest_name(args.shard));
     let text = encode_manifest(&results).map_err(Error::Encode)?;
-    fs::create_dir_all(&args.out)
-        .and_then(|()| fs::write(&path, text))
-        .map_err(|source| Error::Write { path, source })?;
+    write(&path, text).map_err(|source| Error::Write { path, source })?;
     Ok(clean)
 }
 
@@ -159,7 +186,41 @@ fn shard_of(name: &str) -> Option<usize> {
 }
 
 fn check_manifests(args: &CheckArgs) -> Result<(), Error> {
-    let runs = Suite::load(&args.suite)?.runs();
+    let suite = Suite::load(&args.suite)?;
+    check_with(
+        args,
+        &suite,
+        || {
+            fs::read_dir(&args.manifests)
+                .map_err(|source| Error::Read {
+                    path: args.manifests.clone(),
+                    source,
+                })
+                .map(|entries| {
+                    entries.map(move |entry| {
+                        entry
+                            .map(|entry| entry.path())
+                            .map_err(|source| Error::Read {
+                                path: args.manifests.clone(),
+                                source,
+                            })
+                    })
+                })
+        },
+        |path| fs::read_to_string(path),
+    )
+}
+
+pub(crate) fn check_with<I>(
+    args: &CheckArgs,
+    suite: &Suite,
+    entries: impl FnOnce() -> Result<I, Error>,
+    read: impl Fn(&Path) -> io::Result<String>,
+) -> Result<(), Error>
+where
+    I: IntoIterator<Item = Result<PathBuf, Error>>,
+{
+    let runs = suite.runs();
     let indices = match args.shard {
         Some(index) => index..=index,
         None => 0..=args.shards.get() - 1,
@@ -174,15 +235,13 @@ fn check_manifests(args: &CheckArgs) -> Result<(), Error> {
                 .collect(),
         });
     }
-    let read = |path: &Path, source| Error::Read {
+    let read_error = |path: &Path, source| Error::Read {
         path: path.to_path_buf(),
         source,
     };
     let mut manifests = Vec::new();
-    for entry in fs::read_dir(&args.manifests).map_err(|source| read(&args.manifests, source))? {
-        let path = entry
-            .map_err(|source| read(&args.manifests, source))?
-            .path();
+    for path in entries()? {
+        let path = path?;
         let Some(shard) = path
             .file_name()
             .and_then(|name| name.to_str())
@@ -190,7 +249,7 @@ fn check_manifests(args: &CheckArgs) -> Result<(), Error> {
         else {
             return Err(Error::Stray { path });
         };
-        let text = fs::read_to_string(&path).map_err(|source| read(&path, source))?;
+        let text = read(&path).map_err(|source| read_error(&path, source))?;
         let results = parse_manifest(&text).map_err(|source| Error::Manifest {
             path: path.clone(),
             source,
@@ -205,6 +264,7 @@ fn check_manifests(args: &CheckArgs) -> Result<(), Error> {
 /// resume state matched a fresh fold of the journal (the simulation checks that after every crash too), the tuner
 /// replays the journal, and the audit finds no violation in any of the directory's journals and a published
 /// `state.json` at the journal's last event. `fs` is the session's fresh in-memory state directory.
+#[cfg(test)]
 fn execute(
     run: &Run,
     fs: MemFs,
@@ -212,15 +272,30 @@ fn execute(
     extracts: &mut Extracts,
     cancel: &CancellationToken,
 ) -> Outcome {
-    let (model, replay) =
-        match machine::load(run.machine.as_deref(), run.seed, run.replay, extracts) {
-            Ok(loaded) => loaded,
-            Err(error) => {
-                return Outcome::Failed {
-                    detail: error.to_string(),
-                };
-            }
-        };
+    execute_loaded(
+        run,
+        fs,
+        max_boots,
+        machine::load(run.machine.as_deref(), run.seed, run.replay, extracts),
+        cancel,
+    )
+}
+
+fn execute_loaded(
+    run: &Run,
+    fs: MemFs,
+    max_boots: NonZeroU32,
+    loaded: Result<(togi_sim::Model, Option<togi_sim::replay::Replay>), machine::LoadError>,
+    cancel: &CancellationToken,
+) -> Outcome {
+    let (model, replay) = match loaded {
+        Ok(loaded) => loaded,
+        Err(error) => {
+            return Outcome::Failed {
+                detail: error.to_string(),
+            };
+        }
+    };
     let persistence = Persistence::Memory(fs.clone());
     let simulated = togi_simrun::simulate(SimInput {
         config: Config::default(),

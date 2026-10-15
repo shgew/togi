@@ -9,14 +9,14 @@ use crate::common::machine_dir_text;
 const AVX2: &str = "mprime-avx2-36k-248k-allcore";
 const AVX512: &str = "mprime-avx512-36k-248k-allcore";
 
-fn write(path: &Path, content: &str) -> PathBuf {
+fn real_write(path: &Path, content: &str) -> PathBuf {
     std::fs::create_dir_all(path.parent().expect("a parent")).expect("create the directory");
     std::fs::write(path, content).expect("write the machine");
     path.to_owned()
 }
 
 /// The shared-voltage example machine with extra members spliced in after its opening brace.
-fn write_parent(path: &Path, extra: &str) -> PathBuf {
+fn write_parent(dir: &crate::common::MemoryFiles, path: &Path, extra: &str) -> PathBuf {
     let text = machine_dir_text("shared-voltage.json");
     let text = if extra.is_empty() {
         text
@@ -26,7 +26,7 @@ fn write_parent(path: &Path, extra: &str) -> PathBuf {
             text.trim_start().strip_prefix('{').expect("an object")
         )
     };
-    write(path, &text)
+    dir.write(path, &text)
 }
 
 fn overlay(extends: &str, entries: &str) -> String {
@@ -35,8 +35,8 @@ fn overlay(extends: &str, entries: &str) -> String {
     )
 }
 
-fn load(path: &Path) -> MachineDefinition {
-    file::load(path).expect("loads")
+fn load(dir: &crate::common::MemoryFiles, path: &Path) -> MachineDefinition {
+    file::load_from(path, dir).expect("loads").0
 }
 
 fn entry(workload: &str, core: i64, rest: &str) -> String {
@@ -45,9 +45,13 @@ fn entry(workload: &str, core: i64, rest: &str) -> String {
 
 #[test]
 fn an_overlay_is_its_parent_plus_the_named_fields() {
-    let dir = tempfile::tempdir().expect("temporary directory");
-    let parent = write_parent(&dir.path().join("parent.json"), r#""facts": "facts.gz","#);
-    let leaf = write(
+    let dir = crate::common::MemoryFiles::default();
+    let parent = write_parent(
+        &dir,
+        &dir.path().join("parent.json"),
+        r#""facts": "facts.gz","#,
+    );
+    let leaf = dir.write(
         &dir.path().join("leaf.json"),
         &overlay(
             "parent.json",
@@ -63,7 +67,7 @@ fn an_overlay_is_its_parent_plus_the_named_fields() {
             ),
         ),
     );
-    let mut want = load(&parent);
+    let mut want = load(&dir, &parent);
     {
         let rail = want.shared_voltage.as_mut().expect("a rail");
         rail.workload.get_mut(AVX2).expect("avx2").core[5].threshold_clock_v_per_100mhz = 0.06;
@@ -75,12 +79,12 @@ fn an_overlay_is_its_parent_plus_the_named_fields() {
     want.description = "fixture overlay".to_owned();
     want.notes.clear();
 
-    let (got, files) = file::load_with_files(&leaf).expect("loads");
+    let (got, files) = file::load_from(&leaf, &dir).expect("loads");
     assert_eq!(got, want);
     assert_eq!(files, [leaf.clone(), parent.clone()], "leaf first");
-    assert_eq!(got, load(&leaf), "load and load_with_files agree");
+    assert_eq!(got, load(&dir, &leaf), "repeated loads agree");
     assert!(Model::new(&got, 1).is_ok());
-    let untouched = load(&parent);
+    let untouched = load(&dir, &parent);
     assert_ne!(
         untouched.shared_voltage.expect("a rail").workload[AVX2].core[5]
             .threshold_clock_v_per_100mhz,
@@ -91,16 +95,16 @@ fn an_overlay_is_its_parent_plus_the_named_fields() {
 
 #[test]
 fn an_overlay_follows_its_parent() {
-    let dir = tempfile::tempdir().expect("temporary directory");
+    let dir = crate::common::MemoryFiles::default();
     let parent = dir.path().join("parent.json");
-    write_parent(&parent, "");
-    let leaf = write(
+    write_parent(&dir, &parent, "");
+    let leaf = dir.write(
         &dir.path().join("leaf.json"),
         &overlay("parent.json", &entry(AVX2, 5, r#", "threshold_v": 1.1"#)),
     );
-    assert!(!load(&leaf).old_kernel);
-    write_parent(&parent, r#""old_kernel": true,"#);
-    let got = load(&leaf);
+    assert!(!load(&dir, &leaf).old_kernel);
+    write_parent(&dir, &parent, r#""old_kernel": true,"#);
+    let got = load(&dir, &leaf);
     assert!(got.old_kernel, "the parent's later change flows through");
     assert_eq!(
         got.shared_voltage.expect("a rail").workload[AVX2].core[5].threshold_v,
@@ -110,9 +114,9 @@ fn an_overlay_follows_its_parent() {
 
 #[test]
 fn a_chain_loads_leaf_first_and_the_last_override_wins() {
-    let dir = tempfile::tempdir().expect("temporary directory");
-    let root = write_parent(&dir.path().join("root.json"), "");
-    let mid = write(
+    let dir = crate::common::MemoryFiles::default();
+    let root = write_parent(&dir, &dir.path().join("root.json"), "");
+    let mid = dir.write(
         &dir.path().join("mid.json"),
         &overlay(
             "root.json",
@@ -127,14 +131,14 @@ fn a_chain_loads_leaf_first_and_the_last_override_wins() {
             ),
         ),
     );
-    let leaf = write(
+    let leaf = dir.write(
         &dir.path().join("leaf.json"),
         &overlay(
             "mid.json",
             &entry(AVX2, 5, r#", "threshold_clock_v_per_100mhz": 0.06"#),
         ),
     );
-    let (got, files) = file::load_with_files(&leaf).expect("loads");
+    let (got, files) = file::load_from(&leaf, &dir).expect("loads");
     assert_eq!(files, [leaf, mid, root]);
     let cores = &got.shared_voltage.expect("a rail").workload[AVX2].core;
     assert_eq!(cores[5].threshold_v, 1.05, "the middle overlay's threshold");
@@ -150,8 +154,8 @@ fn a_chain_loads_leaf_first_and_the_last_override_wins() {
 
 #[test]
 fn the_parent_is_looked_up_relative_to_the_overlay() {
-    let dir = tempfile::tempdir().expect("temporary directory");
-    let parent = write_parent(&dir.path().join("shared/parent.json"), "");
+    let dir = crate::common::MemoryFiles::default();
+    let parent = write_parent(&dir, &dir.path().join("shared/parent.json"), "");
     let one = entry(AVX2, 5, r#", "threshold_v": 1.1"#);
     for (name, leaf, extends) in [
         (
@@ -170,16 +174,17 @@ fn the_parent_is_looked_up_relative_to_the_overlay() {
             "./../../shared/parent.json",
         ),
     ] {
-        let leaf = write(&leaf, &overlay(extends, &one));
-        let (_, files) = file::load_with_files(&leaf).expect(name);
+        let leaf = dir.write(&leaf, &overlay(extends, &one));
+        let (_, files) = file::load_from(&leaf, &dir).expect(name);
         assert_eq!(files, [leaf, parent.clone()], "{name}");
     }
 }
 
 #[test]
 fn inherited_facts_resolve_to_the_same_extract_from_the_overlay() {
-    let dir = tempfile::tempdir().expect("temporary directory");
+    let dir = crate::common::MemoryFiles::default();
     write_parent(
+        &dir,
         &dir.path().join("machines/parent.json"),
         r#""facts": "../facts/extract.jsonl.gz","#,
     );
@@ -211,17 +216,17 @@ fn inherited_facts_resolve_to_the_same_extract_from_the_overlay() {
             "../../facts/extract.jsonl.gz",
         ),
     ] {
-        let leaf = write(&dir.path().join(leaf), &overlay(extends, &one));
-        let got = load(&leaf).facts.expect("facts");
+        let leaf = dir.write(&dir.path().join(leaf), &overlay(extends, &one));
+        let got = load(&dir, &leaf).facts.expect("facts");
         assert_eq!(got, facts, "{name}");
         let resolved = leaf.parent().expect("a directory").join(&got);
         assert_eq!(normalized(&resolved), want, "{name}");
     }
-    let mid = write(
+    let mid = dir.write(
         &dir.path().join("mid/mid.json"),
         &overlay("../machines/parent.json", &one),
     );
-    let leaf = write(
+    let leaf = dir.write(
         &dir.path().join("a/b/leaf.json"),
         &overlay(
             "../../mid/mid.json",
@@ -233,11 +238,11 @@ fn inherited_facts_resolve_to_the_same_extract_from_the_overlay() {
         ),
     );
     assert_eq!(
-        load(&mid).facts.as_deref(),
+        load(&dir, &mid).facts.as_deref(),
         Some("../facts/extract.jsonl.gz")
     );
     assert_eq!(
-        load(&leaf).facts.as_deref(),
+        load(&dir, &leaf).facts.as_deref(),
         Some("../../facts/extract.jsonl.gz")
     );
 }
@@ -258,26 +263,28 @@ fn normalized(path: &Path) -> PathBuf {
 
 #[cfg(unix)]
 #[test]
-fn inherited_facts_through_a_symlinked_directory_still_name_the_same_extract() {
+fn real_fs_inherited_facts_through_a_symlinked_directory_still_name_the_same_extract() {
     let dir = tempfile::tempdir().expect("temporary directory");
     std::fs::create_dir_all(dir.path().join("elsewhere/deep")).expect("create the link target");
-    write_parent(
-        &dir.path().join("machines/parent.json"),
-        r#""facts": "alias/../extract.jsonl.gz","#,
+    let text = machine_dir_text("shared-voltage.json").replacen(
+        '{',
+        r#"{"facts": "alias/../extract.jsonl.gz","#,
+        1,
     );
+    real_write(&dir.path().join("machines/parent.json"), &text);
     std::os::unix::fs::symlink(
         dir.path().join("elsewhere/deep"),
         dir.path().join("machines/alias"),
     )
     .expect("link a directory");
-    let leaf = write(
+    let leaf = real_write(
         &dir.path().join("overlays/leaf.json"),
         &overlay(
             "../machines/parent.json",
             &entry(AVX2, 5, r#", "threshold_v": 1.1"#),
         ),
     );
-    let got = load(&leaf).facts.expect("facts");
+    let got = file::load(&leaf).expect("loads").facts.expect("facts");
     // The file system resolves `alias/..` to the link target's parent, not to `machines`.
     let directory_of = |base: &Path, facts: &str| {
         let path = base.join(facts);
@@ -299,31 +306,31 @@ fn inherited_facts_through_a_symlinked_directory_still_name_the_same_extract() {
 
 #[test]
 fn an_overlay_of_a_parent_without_facts_has_none() {
-    let dir = tempfile::tempdir().expect("temporary directory");
-    write_parent(&dir.path().join("parent.json"), "");
-    let leaf = write(
+    let dir = crate::common::MemoryFiles::default();
+    write_parent(&dir, &dir.path().join("parent.json"), "");
+    let leaf = dir.write(
         &dir.path().join("x/leaf.json"),
         &overlay("../parent.json", &entry(AVX2, 5, r#", "threshold_v": 1.1"#)),
     );
-    assert_eq!(load(&leaf).facts, None);
+    assert_eq!(load(&dir, &leaf).facts, None);
 }
 
 #[test]
 fn a_full_machine_lists_only_itself_and_a_missing_one_is_an_error() {
-    let dir = tempfile::tempdir().expect("temporary directory");
-    let path = write_parent(&dir.path().join("full.json"), "");
-    let (machine, files) = file::load_with_files(&path).expect("loads");
+    let dir = crate::common::MemoryFiles::default();
+    let path = write_parent(&dir, &dir.path().join("full.json"), "");
+    let (machine, files) = file::load_from(&path, &dir).expect("loads");
     assert_eq!(files, vec![path.clone()]);
-    assert_eq!(machine, load(&path));
-    let missing = file::load_with_files(dir.path().join("missing.json"));
+    assert_eq!(machine, load(&dir, &path));
+    let missing = file::load_from(dir.path().join("missing.json"), &dir);
     assert!(matches!(missing, Err(LoadError::Read { .. })));
 }
 
 #[test]
 fn a_cycle_is_an_error_however_it_is_spelled() {
-    let dir = tempfile::tempdir().expect("temporary directory");
+    let dir = crate::common::MemoryFiles::default();
     let one = entry(AVX2, 5, r#", "threshold_v": 1.1"#);
-    let at = |name: &str, extends: &str| write(&dir.path().join(name), &overlay(extends, &one));
+    let at = |name: &str, extends: &str| dir.write(&dir.path().join(name), &overlay(extends, &one));
     let mut cycles = vec![
         ("self", at("self.json", "self.json")),
         ("two files", {
@@ -333,32 +340,40 @@ fn a_cycle_is_an_error_however_it_is_spelled() {
         }),
     ];
     cycles.push(("overlay of a cycle", at("c.json", "a.json")));
-    #[cfg(unix)]
-    {
-        let loop_dir = dir.path().join("loop");
-        std::fs::create_dir_all(&loop_dir).expect("create the directory");
-        std::os::unix::fs::symlink(".", loop_dir.join("alias")).expect("a symlink");
-        cycles.push((
-            "symlinked directory alias",
-            at("loop/leaf.json", "alias/leaf.json"),
-        ));
-        cycles.push((
-            "overlay of a symlink alias cycle",
-            at("loop/deep.json", "alias/alias/leaf.json"),
-        ));
-    }
     for (name, path) in cycles {
-        let error = file::load_with_files(&path).expect_err(name);
+        let error = file::load_from(&path, &dir).expect_err(name);
         assert!(error.to_string().contains("cycle"), "{name}: {error}");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn real_fs_cycles_through_symlinked_directories_are_refused() {
+    let dir = tempfile::tempdir().expect("temporary directory");
+    let loop_dir = dir.path().join("loop");
+    std::fs::create_dir_all(&loop_dir).expect("create the directory");
+    std::os::unix::fs::symlink(".", loop_dir.join("alias")).expect("a symlink");
+    let one = entry(AVX2, 5, r#", "threshold_v": 1.1"#);
+    real_write(
+        &loop_dir.join("leaf.json"),
+        &overlay("alias/leaf.json", &one),
+    );
+    let deep = real_write(
+        &loop_dir.join("deep.json"),
+        &overlay("alias/alias/leaf.json", &one),
+    );
+    for path in [loop_dir.join("leaf.json"), deep] {
+        let error = file::load_with_files(path).expect_err("symlink cycle");
+        assert!(error.to_string().contains("cycle"), "{error}");
     }
 }
 
 #[test]
 fn malformed_overlays_are_refused_with_the_file_named() {
-    let dir = tempfile::tempdir().expect("temporary directory");
-    let parent = write_parent(&dir.path().join("parent.json"), "");
-    write(&dir.path().join("plain.json"), r#"{"cores": 16}"#);
-    write(&dir.path().join("broken.json"), r#"{"cores": ["#);
+    let dir = crate::common::MemoryFiles::default();
+    let parent = write_parent(&dir, &dir.path().join("parent.json"), "");
+    dir.write(&dir.path().join("plain.json"), r#"{"cores": 16}"#);
+    dir.write(&dir.path().join("broken.json"), r#"{"cores": ["#);
     let valid = entry(AVX2, 5, r#", "threshold_v": 1.1"#);
     let with = |entries: String| overlay("parent.json", &entries);
     let cases: Vec<(&str, String, &str)> = vec![
@@ -552,8 +567,8 @@ fn malformed_overlays_are_refused_with_the_file_named() {
     ];
     let leaf = dir.path().join("leaf.json");
     for (name, content, want) in cases {
-        write(&leaf, &content);
-        let error = file::load_with_files(&leaf).expect_err(name).to_string();
+        dir.write(&leaf, &content);
+        let error = file::load_from(&leaf, &dir).expect_err(name).to_string();
         assert!(
             error.contains(leaf.to_str().expect("utf-8")),
             "{name}: {error}"

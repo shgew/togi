@@ -5,8 +5,6 @@ use std::os::unix::fs::{PermissionsExt, symlink};
 use tempfile::TempDir;
 use togi_machine::{REGIMES, workload_by_id, workloads};
 
-const TESTDATA: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/testdata");
-
 fn fake_package() -> TempDir {
     let pkg = TempDir::new().unwrap();
     fs::create_dir(pkg.path().join("bin")).unwrap();
@@ -14,6 +12,16 @@ fn fake_package() -> TempDir {
     fs::write(&binary, "#!/bin/sh\n").unwrap();
     fs::set_permissions(&binary, fs::Permissions::from_mode(0o755)).unwrap();
     pkg
+}
+
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "the executable-check seam is fallible"
+)]
+fn executable(name: &'static str, path: &Path) -> Result<(), Error> {
+    assert_eq!(name, NAME);
+    assert_eq!(path, Path::new("/pkg/bin/mprime"));
+    Ok(())
 }
 
 fn cpus(ids: &[u16]) -> Vec<CpuId> {
@@ -42,17 +50,20 @@ fn text(plan: &Plan, name: &str) -> String {
 
 #[test]
 fn identity_and_detail() {
-    let pkg = fake_package();
-    let mprime = Mprime::new(pkg.path()).unwrap();
+    let mprime = Mprime::new("/pkg").unwrap();
     assert_eq!(mprime.kind(), togi_machine::Backend::Mprime);
-    assert_eq!(
-        mprime.check().unwrap().detail,
-        pkg.path().join("bin/mprime").display().to_string()
-    );
+    let ready = mprime
+        .check_with(|name, path| {
+            assert_eq!(name, NAME);
+            assert_eq!(path, Path::new("/pkg/bin/mprime"));
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(ready.detail, "/pkg/bin/mprime");
 }
 
 #[test]
-fn missing_binary_is_backend_missing() {
+fn real_fs_missing_binary_is_backend_missing() {
     let pkg = fake_package();
     fs::remove_file(pkg.path().join("bin/mprime")).unwrap();
     let error = Mprime::new(pkg.path()).unwrap().check().unwrap_err();
@@ -64,20 +75,36 @@ fn missing_binary_is_backend_missing() {
 }
 
 #[test]
-fn non_executable_binary_fails_check() {
+fn real_fs_execute_mode_is_checked_by_check_and_plan() {
     let pkg = fake_package();
+    let mprime = Mprime::new(pkg.path()).unwrap();
+    assert_eq!(
+        mprime.check().unwrap().detail,
+        pkg.path().join("bin/mprime").display().to_string()
+    );
+    let dir = pkg.path().join("work");
+    let workload = workload("mprime-sse-4k-21k");
+    let cpus = cpus(&[2]);
+    assert_eq!(
+        mprime.plan(workload, &dir, &cpus).unwrap().program,
+        pkg.path().join("bin/mprime")
+    );
     fs::set_permissions(
         pkg.path().join("bin/mprime"),
         fs::Permissions::from_mode(0o644),
     )
     .unwrap();
-    let error = Mprime::new(pkg.path()).unwrap().check().unwrap_err();
+    let error = mprime.check().unwrap_err();
     assert!(matches!(error, Error::NotExecutable { .. }));
     assert!(!error.is_missing());
+    assert!(matches!(
+        mprime.plan(workload, &dir, &cpus),
+        Err(Error::NotExecutable { .. })
+    ));
 }
 
 #[test]
-fn stat_failure_is_not_backend_missing() {
+fn real_fs_stat_failure_is_not_backend_missing() {
     let pkg = fake_package();
     let binary = pkg.path().join("bin/mprime");
     fs::remove_file(&binary).unwrap();
@@ -98,9 +125,9 @@ fn expected_settings(fft: (u16, u16), flags: [u8; 4], hyper: u8, threads: usize)
 
 #[test]
 fn plans_match_exactly() {
-    let pkg = fake_package();
-    let mprime = Mprime::new(pkg.path()).unwrap();
-    let dir = TempDir::new().unwrap();
+    let pkg = Path::new("/pkg");
+    let mprime = Mprime::new(pkg).unwrap();
+    let dir = Path::new("/w");
     for (base, fft, flags, ids, hyper) in [
         ("mprime-sse-4k-21k", (4, 21), [0, 0, 0, 0], vec![2], 0),
         (
@@ -113,14 +140,14 @@ fn plans_match_exactly() {
         ("mprime-avx2-36k-248k", (36, 248), [1, 1, 1, 0], vec![2], 0),
     ] {
         let got = mprime
-            .plan(workload(base), dir.path(), &cpus(&ids))
+            .plan_with(workload(base), dir, &cpus(&ids), executable)
             .unwrap();
         let settings = expected_settings(fft, flags, hyper, ids.len());
         let want = Plan {
-            program: pkg.path().join("bin/mprime"),
+            program: pkg.join("bin/mprime"),
             args: vec![
                 OsString::from("-t"),
-                OsString::from(format!("-W{}", dir.path().display())),
+                OsString::from(format!("-W{}", dir.display())),
             ],
             inputs: vec![
                 Input {
@@ -144,10 +171,14 @@ fn plans_match_exactly() {
 
 #[test]
 fn sse_single_cpu_local_txt_is_literal() {
-    let pkg = fake_package();
-    let plan = Mprime::new(pkg.path())
+    let plan = Mprime::new("/pkg")
         .unwrap()
-        .plan(workload("mprime-sse-4k-21k"), Path::new("/w"), &cpus(&[2]))
+        .plan_with(
+            workload("mprime-sse-4k-21k"),
+            Path::new("/w"),
+            &cpus(&[2]),
+            executable,
+        )
         .unwrap();
     assert_eq!(
         text(&plan, "local.txt"),
@@ -158,11 +189,15 @@ fn sse_single_cpu_local_txt_is_literal() {
 
 #[test]
 fn thread_count_and_hyperthreading_follow_the_cpu_list() {
-    let pkg = fake_package();
-    let mprime = Mprime::new(pkg.path()).unwrap();
+    let mprime = Mprime::new("/pkg").unwrap();
     for (ids, hyper) in [(vec![2], 0), (vec![2, 18], 1), (vec![2, 18, 3, 19], 1)] {
         let plan = mprime
-            .plan(workload("mprime-sse-4k-21k"), Path::new("/w"), &cpus(&ids))
+            .plan_with(
+                workload("mprime-sse-4k-21k"),
+                Path::new("/w"),
+                &cpus(&ids),
+                executable,
+            )
             .unwrap();
         for name in ["prime.txt", "local.txt"] {
             let contents = text(&plan, name);
@@ -174,13 +209,13 @@ fn thread_count_and_hyperthreading_follow_the_cpu_list() {
 
 #[test]
 fn unsupported_workload_is_refused_before_the_binary_is_checked() {
-    let pkg = TempDir::new().unwrap();
-    let error = Mprime::new(pkg.path())
+    let error = Mprime::new("/pkg")
         .unwrap()
-        .plan(
+        .plan_with(
             workload("ycruncher-bkt-sftv4"),
             Path::new("/w"),
             &cpus(&[2]),
+            |_, _| panic!("unsupported workload must precede executable validation"),
         )
         .unwrap_err();
     assert!(matches!(error, Error::Unsupported { .. }));
@@ -190,43 +225,62 @@ fn unsupported_workload_is_refused_before_the_binary_is_checked() {
 
 #[test]
 fn a_plan_needs_a_cpu() {
-    let pkg = fake_package();
-    let error = Mprime::new(pkg.path())
+    let error = Mprime::new("/pkg")
         .unwrap()
-        .plan(workload("mprime-sse-4k-21k"), Path::new("/w"), &[])
+        .plan_with(
+            workload("mprime-sse-4k-21k"),
+            Path::new("/w"),
+            &[],
+            |_, _| panic!("CPU validation must precede executable validation"),
+        )
         .unwrap_err();
     assert!(matches!(error, Error::NoCpus { .. }));
 }
 
 #[test]
 fn missing_binary_yields_no_plan() {
-    let pkg = fake_package();
-    fs::remove_file(pkg.path().join("bin/mprime")).unwrap();
-    let dir = TempDir::new().unwrap();
-    let error = Mprime::new(pkg.path())
+    let error = Mprime::new("/pkg")
         .unwrap()
-        .plan(workload("mprime-sse-4k-21k"), dir.path(), &cpus(&[2]))
+        .plan_with(
+            workload("mprime-sse-4k-21k"),
+            Path::new("/w"),
+            &cpus(&[2]),
+            |name, path| {
+                Err(Error::Missing {
+                    name,
+                    path: path.to_owned(),
+                    source: std::io::ErrorKind::NotFound.into(),
+                })
+            },
+        )
         .unwrap_err();
     assert!(error.is_missing());
-    assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 0);
 }
 
 #[test]
-fn planning_writes_nothing() {
-    let pkg = fake_package();
-    let dir = TempDir::new().unwrap();
-    Mprime::new(pkg.path())
+fn planning_only_checks_the_executable() {
+    let mut checked = Vec::new();
+    let plan = Mprime::new("/pkg")
         .unwrap()
-        .plan(workload("mprime-sse-4k-21k"), dir.path(), &cpus(&[2]))
+        .plan_with(
+            workload("mprime-sse-4k-21k"),
+            Path::new("/w"),
+            &cpus(&[2]),
+            |name, path| {
+                checked.push((name, path.to_owned()));
+                Ok(())
+            },
+        )
         .unwrap();
-    assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 0);
+    assert_eq!(checked, [(NAME, plan.program.clone())]);
+    assert_eq!(names(&plan), ["prime.txt", "local.txt"]);
 }
 
 #[test]
 fn every_catalog_workload_plans() {
-    let pkg = fake_package();
-    let mprime = Mprime::new(pkg.path()).unwrap();
-    let dir = TempDir::new().unwrap();
+    let pkg = Path::new("/pkg");
+    let mprime = Mprime::new(pkg).unwrap();
+    let dir = Path::new("/w");
     let mut planned = BTreeSet::new();
     for regime in REGIMES {
         for workload in workloads(regime) {
@@ -235,15 +289,15 @@ fn every_catalog_workload_plans() {
             }
             let ids = [2, 18];
             let plan = mprime
-                .plan(
+                .plan_with(
                     workload,
-                    dir.path(),
+                    dir,
                     &cpus(&ids[..usize::from(workload.threads)]),
+                    executable,
                 )
                 .unwrap_or_else(|error| panic!("{regime}/{}: {error}", workload.id));
             assert!(plan.program.is_absolute());
-            assert!(plan.program.starts_with(pkg.path()));
-            assert!(fs::metadata(&plan.program).unwrap().permissions().mode() & 0o111 != 0);
+            assert_eq!(plan.program, pkg.join("bin/mprime"));
             assert_eq!(names(&plan), ["prime.txt", "local.txt"]);
             assert_eq!(plan.watched.len(), 1);
             planned.insert(workload.base);
@@ -351,8 +405,7 @@ fn failure_outranks_setup_outranks_progress() {
     );
 }
 
-fn kinds(file: &str) -> Vec<Line> {
-    let data = fs::read_to_string(format!("{TESTDATA}/{file}")).unwrap();
+fn kinds(data: &str) -> Vec<Line> {
     data.split(['\n', '\r'])
         .filter(|line| !line.is_empty())
         .map(classify)
@@ -361,7 +414,7 @@ fn kinds(file: &str) -> Vec<Line> {
 
 #[test]
 fn pass_stdout_fixture_progresses_without_errors() {
-    let lines = kinds("pass-stdout.txt");
+    let lines = kinds(include_str!("../testdata/pass-stdout.txt"));
     for size in ["4K", "5K", "6K", "8K"] {
         assert!(lines.contains(&Line::Progress(format!("self-test {size} passed"))));
     }
@@ -371,7 +424,7 @@ fn pass_stdout_fixture_progresses_without_errors() {
 
 #[test]
 fn pass_results_fixture_has_no_errors() {
-    let lines = kinds("pass-results.txt");
+    let lines = kinds(include_str!("../testdata/pass-results.txt"));
     assert_eq!(
         lines
             .iter()
@@ -384,7 +437,7 @@ fn pass_results_fixture_has_no_errors() {
 
 #[test]
 fn spliced_errors_are_not_erased_by_later_success() {
-    let lines = kinds("error-spliced.txt");
+    let lines = kinds(include_str!("../testdata/error-spliced.txt"));
     assert_eq!(
         lines
             .iter()

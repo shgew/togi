@@ -410,6 +410,8 @@ mod tests {
     }
 
     proptest! {
+        #![proptest_config(crate::prop_tests::seeded(256))]
+
         #[test]
         fn seqs_behave_like_an_ordered_set_across_clones(script in ops(), floor in 0_u32..60) {
             let mut live = vec![(Seqs::default(), std::collections::BTreeSet::new())];

@@ -1,4 +1,4 @@
-use std::fs;
+use std::path::Path;
 
 use togi_journal::{
     Build, DeadEnd, DeadEndCondition, Event, SCHEMA, SessionBaseline, ShutdownReason,
@@ -8,8 +8,8 @@ use togi_tool_forecast::{Anchor, Outcome, Record, Run, Session, Status};
 use togi_tuner::{EVIDENCE_EPOCH, RULESET};
 
 use super::support::{Log, config_loaded, crash_detected, shutdown};
-use crate::forecast::render_score;
-use crate::{Error, score};
+use crate::Error;
+use crate::forecast::{render_score, score_with};
 
 fn stamped(rev: Option<&str>) -> Build {
     Build {
@@ -104,7 +104,10 @@ fn a_concluded_run_is_scored_against_the_ensemble() {
     let record = record(&log, "abc", false, ensemble(true));
     log.at(3 * 3600).add(config_loaded(stamped(Some("abc"))));
     log.at(4 * 3600).add(shutdown(ShutdownReason::Cycles));
-    insta::assert_snapshot!(scored(&record, log.events));
+    assert_snapshot!(
+        "score__a_concluded_run_is_scored_against_the_ensemble",
+        scored(&record, log.events)
+    );
 }
 
 #[test]
@@ -113,7 +116,10 @@ fn a_run_that_has_not_concluded_is_scored_with_lower_bounds() {
     let record = record(&log, "abc", false, ensemble(true));
     log.at(3600).add(config_loaded(stamped(Some("abc"))));
     log.at(2 * 3600).add(crash_detected("a", None));
-    insta::assert_snapshot!(scored(&record, log.events));
+    assert_snapshot!(
+        "score__a_run_that_has_not_concluded_is_scored_with_lower_bounds",
+        scored(&record, log.events)
+    );
 }
 
 #[test]
@@ -127,7 +133,10 @@ fn a_forecast_without_a_concluded_run_has_no_hours_to_score_against() {
         detail: "test".to_owned(),
         action: None,
     });
-    insta::assert_snapshot!(scored(&record, log.events));
+    assert_snapshot!(
+        "score__a_forecast_without_a_concluded_run_has_no_hours_to_score_against",
+        scored(&record, log.events)
+    );
 }
 
 #[test]
@@ -136,33 +145,43 @@ fn flags_name_what_makes_the_forecast_less_comparable() {
     let record = record(&log, "new", true, ensemble(true));
     log.at(3600).add(config_loaded(stamped(None)));
     log.at(7200).add(shutdown(ShutdownReason::Cycles));
-    insta::assert_snapshot!(scored(&record, log.events));
+    assert_snapshot!(
+        "score__flags_name_what_makes_the_forecast_less_comparable",
+        scored(&record, log.events)
+    );
 }
 
 #[test]
 fn a_journal_with_nothing_after_the_anchor_scores_no_builds() {
     let log = opening(Some("abc"));
     let record = record(&log, "abc", false, ensemble(true));
-    insta::assert_snapshot!(scored(&record, log.events));
+    assert_snapshot!(
+        "score__a_journal_with_nothing_after_the_anchor_scores_no_builds",
+        scored(&record, log.events)
+    );
 }
 
-fn state_dir(log: &Log) -> tempfile::TempDir {
-    let dir = tempfile::tempdir().unwrap();
-    let mut text = String::new();
-    for event in &log.events {
-        text.push_str(&event.encode().unwrap());
-        text.push('\n');
-    }
-    fs::write(dir.path().join("events.jsonl"), text).unwrap();
-    dir
+fn encoded(log: &Log) -> Vec<u8> {
+    log.events
+        .iter()
+        .map(|event| event.encode().unwrap() + "\n")
+        .collect::<String>()
+        .into_bytes()
 }
 
-fn write(record: &Record, dir: &std::path::Path) -> std::path::PathBuf {
-    let path = dir.join("forecast.json");
+fn score_memory(record: &Record, journal: &[u8]) -> Result<crate::Scored, Error> {
+    let path = Path::new("forecast.json");
     let mut bytes = Vec::new();
     record.write(&mut bytes).unwrap();
-    fs::write(&path, bytes).unwrap();
-    path
+    score_with(
+        path,
+        || Record::decode(bytes.as_slice(), path).map_err(Error::from),
+        |_| {
+            Ok(Session::decode(Path::new("events.jsonl"), journal)?
+                .into_iter()
+                .collect())
+        },
+    )
 }
 
 #[test]
@@ -171,9 +190,7 @@ fn a_state_directory_is_scored_from_the_anchor_through_the_forecast_file() {
     let record = record(&log, "abc", false, ensemble(true));
     log.at(3600).add(config_loaded(stamped(Some("abc"))));
     log.at(7200).add(shutdown(ShutdownReason::Cycles));
-    let state = state_dir(&log);
-    let forecast = write(&record, state.path());
-    let text = score(state.path(), &forecast).unwrap().text;
+    let text = score_memory(&record, &encoded(&log)).unwrap().text;
     assert!(text.contains(", unchanged\n"), "{text}");
     assert!(text.contains("\nForecast score\n"), "{text}");
     assert_eq!(text, scored(&record, log.events.clone()));
@@ -184,14 +201,11 @@ fn a_state_directory_whose_journal_through_the_anchor_changed_is_refused() {
     let mut log = opening(Some("abc"));
     let record = record(&log, "abc", false, ensemble(true));
     log.at(3600).add(config_loaded(stamped(Some("abc"))));
-    let state = state_dir(&log);
-    let forecast = write(&record, state.path());
-    let journal = state.path().join("events.jsonl");
-    let changed = fs::read_to_string(&journal)
-        .unwrap()
-        .replacen("\"boot\":\"", "\"boot\":\"x", 1);
-    fs::write(&journal, changed).unwrap();
-    let error = score(state.path(), &forecast).unwrap_err();
+    let changed =
+        String::from_utf8(encoded(&log))
+            .unwrap()
+            .replacen("\"boot\":\"", "\"boot\":\"x", 1);
+    let error = score_memory(&record, changed.as_bytes()).unwrap_err();
     assert!(
         matches!(
             &error,
@@ -207,8 +221,18 @@ fn a_state_directory_whose_journal_through_the_anchor_changed_is_refused() {
 
 #[test]
 fn a_missing_forecast_file_names_the_file() {
-    let state = state_dir(&opening(None));
-    let missing = state.path().join("absent.json");
-    let error = score(state.path(), &missing).unwrap_err();
+    let missing = Path::new("absent.json");
+    let error = score_with(
+        missing,
+        || {
+            Err(togi_tool_forecast::Error::ReadRecord {
+                path: missing.to_path_buf(),
+                source: std::io::ErrorKind::NotFound.into(),
+            }
+            .into())
+        },
+        |_| panic!("a missing forecast must fail before reading the journal"),
+    )
+    .unwrap_err();
     assert!(error.to_string().contains("absent.json"), "{error}");
 }

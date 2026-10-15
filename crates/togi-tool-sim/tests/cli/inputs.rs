@@ -1,12 +1,10 @@
-use std::fs;
+use std::path::Path;
 
-use crate::common::{entries, sim, sim_in_tmp};
+use super::common::{Host, sim};
 
 #[test]
 fn invalid_arguments_are_usage_errors_that_touch_nothing() {
-    let root = tempfile::tempdir().unwrap();
-    let state = root.path().join("state");
-    let state = state.to_str().unwrap();
+    let mut host = Host::default();
     for (name, args, named) in [
         ("unknown flag", vec!["--unknown"], "--unknown"),
         ("positional argument", vec!["extra"], "extra"),
@@ -20,11 +18,11 @@ fn invalid_arguments_are_usage_errors_that_touch_nothing() {
         ),
         ("non-numeric seed", vec!["--seed", "x"], "--seed"),
     ] {
-        let ran = sim(args.iter().copied().chain(["--state-dir", state]));
+        let ran = host.run(args.iter().copied().chain(["--state-dir", "/state"]));
         assert_eq!(ran.code, Some(2), "{name}: {}", ran.stderr);
         assert!(ran.stderr.contains(named), "{name}: {}", ran.stderr);
-        assert!(ran.stdout.is_empty(), "{name}: {}", ran.stdout);
-        assert!(!root.path().join("state").exists(), "{name}");
+        assert!(ran.stdout.is_empty());
+        assert!(host.states.is_empty(), "{name}");
     }
 }
 
@@ -38,72 +36,81 @@ fn help_is_written_to_standard_error_and_succeeds() {
 
 #[test]
 fn an_invalid_machine_leaves_the_state_directory_untouched() {
-    let root = tempfile::tempdir().unwrap();
-    let machine = root.path().join("machine.json");
-    fs::write(&machine, r#"{"unknown_machine_key":1}"#).unwrap();
-    let state = root.path().join("state");
-    let ran = sim([
-        "--machine".as_ref(),
-        machine.as_os_str(),
-        "--state-dir".as_ref(),
-        state.as_os_str(),
-    ]);
+    let mut host = Host::default();
+    host.put("/machine.json", r#"{"unknown_machine_key":1}"#);
+    let ran = host.run(["--machine", "/machine.json", "--state-dir", "/state"]);
     assert_eq!(ran.code, Some(1), "{}", ran.stderr);
     assert!(
         ran.stderr.starts_with("sim: load machine:"),
         "{}",
         ran.stderr
     );
-    assert!(!state.exists());
+    assert!(host.states.is_empty());
 }
 
 #[test]
 fn replaying_facts_needs_a_machine_before_any_state_changes() {
-    let root = tempfile::tempdir().unwrap();
-    let state = root.path().join("state");
-    let ran = sim([
-        "--replay-facts".as_ref(),
-        "--state-dir".as_ref(),
-        state.as_os_str(),
-    ]);
-    assert_eq!(ran.code, Some(1), "{}", ran.stderr);
+    let mut host = Host::default();
+    let ran = host.run(["--replay-facts", "--state-dir", "/state"]);
+    assert_eq!(ran.code, Some(1));
     assert_eq!(
         ran.stderr,
         "sim: replaying facts needs a machine file naming a facts extract; the default machine has none\n"
     );
-    assert!(!state.exists());
+    assert!(host.states.is_empty());
 }
 
 #[test]
 fn a_machine_without_an_extract_cannot_replay() {
-    let root = tempfile::tempdir().unwrap();
-    let state = root.path().join("state");
-    let machine = crate::common::machines().join("flat-hazard.json");
-    let ran = sim([
-        "--replay-facts".as_ref(),
-        "--machine".as_ref(),
-        machine.as_os_str(),
-        "--state-dir".as_ref(),
-        state.as_os_str(),
+    let mut host = Host::default();
+    host.put(
+        "/machine.json",
+        include_str!("../../../../tools/bench/machines/flat-hazard.json"),
+    );
+    let ran = host.run([
+        "--replay-facts",
+        "--machine",
+        "/machine.json",
+        "--state-dir",
+        "/state",
     ]);
-    assert_eq!(ran.code, Some(1), "{}", ran.stderr);
-    assert!(ran.stderr.starts_with("sim: "), "{}", ran.stderr);
-    assert!(!state.exists());
+    assert_eq!(ran.code, Some(1));
+    assert!(ran.stderr.starts_with("sim: "));
+    assert!(host.states.is_empty());
 }
 
 #[test]
 fn invalid_input_creates_no_temporary_state() {
-    let tmp = tempfile::tempdir().unwrap();
-    let root = tempfile::tempdir().unwrap();
-    let machine = root.path().join("machine.json");
-    fs::write(&machine, r#"{"unknown_machine_key":1}"#).unwrap();
-    for args in [
-        vec!["--machine".as_ref(), machine.as_os_str()],
-        vec!["--replay-facts".as_ref()],
-    ] {
-        let ran = sim_in_tmp(tmp.path(), &args);
-        assert_eq!(ran.code, Some(1), "{args:?}: {}", ran.stderr);
-        assert!(!ran.stderr.contains("state directory"), "{}", ran.stderr);
+    let mut host = Host::default();
+    host.put("/machine.json", r#"{"unknown_machine_key":1}"#);
+    for args in [vec!["--machine", "/machine.json"], vec!["--replay-facts"]] {
+        let ran = host.run(args);
+        assert_eq!(ran.code, Some(1), "{}", ran.stderr);
+        assert!(!ran.stderr.contains("state directory"));
     }
-    assert!(entries(tmp.path()).is_empty());
+    assert!(host.states.is_empty());
+    assert!(host.files.contains_key(Path::new("/machine.json")));
+}
+
+#[test]
+fn overlays_are_loaded_through_the_same_memory_source() {
+    let mut host = Host::default();
+    host.put(
+        "/target-shared-voltage.json",
+        include_str!("../../../../tools/bench/machines/target-shared-voltage.json"),
+    );
+    host.put(
+        "/overlay.json",
+        include_str!("../../../../tools/bench/machines/target-r7-vf-boost.json"),
+    );
+    let ran = host.run([
+        "--machine",
+        "/overlay.json",
+        "--state-dir",
+        "/state",
+        "--max-boots",
+        "1",
+    ]);
+    assert!(matches!(ran.code, Some(0 | 3)), "{}", ran.stderr);
+    assert!(!host.events("/state").is_empty());
 }

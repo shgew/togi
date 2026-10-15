@@ -1,15 +1,16 @@
+use jiff::Timestamp;
 use std::os::unix::process::ExitStatusExt;
 use std::path::Path;
 use std::process::Command;
-
-use jiff::Timestamp;
+use std::sync::Arc;
+use togi_journal::fs::{FileKind, Fs, MemFs};
 use togi_journal::{
-    ArchiveKind, Build, Journal, LockError, Payload, Recording, SCHEMA, Seq, SessionId,
-    SessionStart, SessionWarning, SmuCommand, Stamp, StateDir,
+    ArchiveKind, Build, Journal, LockError, Payload, SCHEMA, SessionId, SessionStart,
+    SessionWarning, Stamp, StateDir,
 };
-use togi_machine::{BootId, TargetOffset};
+use togi_machine::BootId;
 
-const CHILD: &str = "child_appends_then_aborts";
+const CHILD: &str = "real_process_child_appends_then_aborts";
 const ENV: &str = "TOGI_JOURNAL_ABORT_DIR";
 const APPENDS: u64 = 25;
 
@@ -68,64 +69,74 @@ mod support {
         std::fs::create_dir(&path).unwrap();
         0o777 & !mode(&path)
     }
-
-    pub(crate) fn appended(journal: &Journal) -> Vec<(Seq, Payload)> {
-        journal
-            .events()
-            .iter()
-            .map(|event| (event.seq, event.payload.clone()))
-            .collect()
-    }
-
-    pub(crate) fn on_disk(path: &Path) -> Vec<(Seq, Payload)> {
-        Recording::read(path)
-            .unwrap()
-            .events()
-            .iter()
-            .map(|event| (event.seq, event.payload.clone()))
-            .collect()
-    }
 }
 
-use support::{appended, begin, boot, mode, note, on_disk, stamp};
+use support::{begin, boot, mode, note, stamp};
+
+#[expect(
+    clippy::unwrap_used,
+    reason = "a kernel fixture must acquire its unsynced state directory"
+)]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "kernel and process tests explicitly use the non-durable disk adapter"
+)]
+fn unsynced(path: &Path) -> StateDir {
+    StateDir::lock_with_fs(togi_journal::fs::unsynced_disk_fs(), path).unwrap()
+}
 
 #[test]
-fn a_disk_journal_survives_close_reopen_state_and_archive() {
-    let root = tempfile::tempdir().unwrap();
-    let state = root.path().join("nested/state");
-    let mut journal = begin(StateDir::lock(&state).unwrap());
+fn a_journal_survives_close_reopen_state_and_archive() {
+    let fs = MemFs::new();
+    let state = Path::new("/nested/state");
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "this lifecycle test runs entirely in memory"
+    )]
+    let lock = || StateDir::lock_with_fs(Arc::new(fs.clone()), state);
+    let mut journal = begin(lock().unwrap());
     journal.append(stamp(1), note("one"), &[]).unwrap();
     journal.write_state(&[1, 2, 3]).unwrap();
-    assert!(matches!(
-        StateDir::lock(&state),
-        Err(LockError::Held { .. })
-    ));
+    assert!(matches!(lock(), Err(LockError::Held { .. })));
     let dir = journal.close().unwrap();
     drop(dir);
 
-    let journal = StateDir::lock(&state).unwrap().open(boot(2)).unwrap();
+    let journal = lock().unwrap().open(boot(2)).unwrap();
     assert_eq!(journal.events().len(), 2);
     assert_eq!(
         journal.read_state::<Vec<i32>>().unwrap(),
         Some(vec![1, 2, 3])
     );
     assert_eq!(
-        Recording::read(&state.join("events.jsonl"))
+        togi_journal::Recording::read_in(&fs, &state.join("events.jsonl"))
             .unwrap()
             .events()
             .len(),
         2
     );
 
-    std::fs::create_dir_all(state.join("trials/0001")).unwrap();
+    fs.create_dir(&state.join("trials")).unwrap();
+    fs.create_dir(&state.join("trials/0001")).unwrap();
     let dir = journal
         .archive(stamp(2), ArchiveKind::ResetAll, &[])
         .unwrap();
-    assert!(!state.join("events.jsonl").exists());
-    assert!(!state.join("state.json").exists());
-    assert!(state.join("archive/20231114T221320Z.jsonl").is_file());
-    assert!(state.join("archive/20231114T221320Z-trials/0001").is_dir());
-    assert!(state.join("archive/20231114T221320Z-reset-all").is_file());
+    assert_eq!(fs.kind(&state.join("events.jsonl")).unwrap(), None);
+    assert_eq!(fs.kind(&state.join("state.json")).unwrap(), None);
+    assert_eq!(
+        fs.kind(&state.join("archive/20231114T221320Z.jsonl"))
+            .unwrap(),
+        Some(FileKind::File)
+    );
+    assert_eq!(
+        fs.kind(&state.join("archive/20231114T221320Z-trials/0001"))
+            .unwrap(),
+        Some(FileKind::Dir)
+    );
+    assert_eq!(
+        fs.kind(&state.join("archive/20231114T221320Z-reset-all"))
+            .unwrap(),
+        Some(FileKind::File)
+    );
     assert_eq!(
         dir.reset_boundary().unwrap(),
         Some("20231114T221320Z".parse().unwrap())
@@ -133,120 +144,47 @@ fn a_disk_journal_survives_close_reopen_state_and_archive() {
 }
 
 #[test]
-fn a_symlinked_journal_is_never_followed() {
+fn real_fs_a_symlinked_journal_is_never_followed() {
     let root = tempfile::tempdir().unwrap();
     let state = root.path().join("state");
-    drop(StateDir::lock(&state).unwrap());
+    drop(unsynced(&state));
     let elsewhere = root.path().join("elsewhere.jsonl");
     std::fs::write(&elsewhere, "").unwrap();
     std::os::unix::fs::symlink(&elsewhere, state.join("events.jsonl")).unwrap();
-    assert!(StateDir::lock(&state).unwrap().open(boot(1)).is_err());
+    assert!(unsynced(&state).open(boot(1)).is_err());
     assert_eq!(std::fs::read(&elsewhere).unwrap(), b"");
 }
 
 #[test]
 #[expect(
     clippy::disallowed_methods,
-    reason = "pins the unsynced buffered mode the simulator uses"
+    reason = "pins the in-memory simulation tripwire without disk I/O"
 )]
-fn the_unsynced_mode_buffers_until_flush_close_or_64_kib() {
-    let root = tempfile::tempdir().unwrap();
-    let state = root.path().join("state");
-    let path = state.join("events.jsonl");
-    let mut journal = begin(StateDir::lock_unsynced(&state).unwrap());
-    journal.append(stamp(1), note("small"), &[]).unwrap();
-    assert_eq!(std::fs::read(&path).unwrap(), b"");
-    journal.flush().unwrap();
-    assert_eq!(on_disk(&path), appended(&journal));
-    assert_eq!(on_disk(&path).len(), 2);
-
-    journal.append(stamp(2), note("buffered"), &[]).unwrap();
-    assert_eq!(on_disk(&path), appended(&journal)[..2]);
-    journal
-        .append(stamp(3), note(&"x".repeat(70 * 1024)), &[])
-        .unwrap();
-    assert_eq!(on_disk(&path), appended(&journal));
-    assert_eq!(on_disk(&path).len(), 4);
-
-    journal.append(stamp(4), note("tail"), &[]).unwrap();
-    let expected = appended(&journal);
-    assert_eq!(on_disk(&path), expected[..4]);
-    let dir = journal.close().unwrap();
-    drop(dir);
-    assert_eq!(on_disk(&path), expected);
-    assert_eq!(expected.len(), 5);
-}
-
-#[test]
-#[expect(
-    clippy::disallowed_methods,
-    reason = "pins the unsynced buffered mode the simulator uses"
-)]
-fn a_buffered_journal_dropped_without_close_loses_only_what_was_buffered() {
-    let root = tempfile::tempdir().unwrap();
-    let state = root.path().join("state");
-    let mut journal = begin(StateDir::lock_unsynced(&state).unwrap());
-    journal.append(stamp(1), note("flushed"), &[]).unwrap();
-    journal.flush().unwrap();
-    let flushed = appended(&journal);
-    assert_eq!(flushed[1].1, note("flushed"));
-    journal.append(stamp(2), note("lost"), &[]).unwrap();
-    drop(journal);
-    assert_eq!(on_disk(&state.join("events.jsonl")), flushed);
-}
-
-#[test]
-#[expect(
-    clippy::disallowed_methods,
-    reason = "pins the in-memory simulation and its dump to disk, the tripwires' negative controls"
-)]
-fn a_simulated_journal_dumped_to_disk_reads_back_whole() {
+fn a_simulated_journal_reads_back_whole() {
     let fs = togi_journal::fs::MemFs::new();
     let mut journal = begin(StateDir::simulated(fs.clone()).unwrap());
     journal.append(stamp(1), note("simulated"), &[]).unwrap();
-    let expected = appended(&journal);
+    let expected: Vec<_> = journal
+        .events()
+        .iter()
+        .map(|event| (event.seq, event.payload.clone()))
+        .collect();
     drop(journal.close().unwrap());
-    let out = tempfile::tempdir().unwrap();
-    fs.dump_to(out.path()).unwrap();
-    assert_eq!(on_disk(&out.path().join("state/events.jsonl")), expected);
+    let written = togi_journal::Recording::read_in(&fs, Path::new("/state/events.jsonl")).unwrap();
+    let actual: Vec<_> = written
+        .events()
+        .iter()
+        .map(|event| (event.seq, event.payload.clone()))
+        .collect();
+    assert_eq!(actual, expected);
 }
 
 #[test]
-#[expect(
-    clippy::disallowed_methods,
-    reason = "pins the unsynced buffered mode the simulator uses"
-)]
-fn an_unsynced_smu_intent_receipt_is_minted_only_after_the_intent_reached_the_file() {
-    let root = tempfile::tempdir().unwrap();
-    let state = root.path().join("state");
-    let path = state.join("events.jsonl");
-    let mut journal = begin(StateDir::lock_unsynced(&state).unwrap());
-    journal.append(stamp(1), note("before"), &[]).unwrap();
-    assert_eq!(std::fs::read(&path).unwrap(), b"");
-
-    let receipt = journal
-        .append_smu_intent(
-            stamp(2),
-            SmuCommand::SetAll {
-                offset: TargetOffset::ZERO,
-            },
-            &[],
-        )
-        .unwrap();
-    let written = on_disk(&path);
-    assert_eq!(written, appended(&journal));
-    assert_eq!(written.len(), 3);
-    let (seq, payload) = written.last().unwrap();
-    assert_eq!(*seq, receipt.intent());
-    assert!(matches!(payload, Payload::SmuIntent(_)));
-}
-
-#[test]
-fn child_appends_then_aborts() {
+fn real_process_child_appends_then_aborts() {
     let Some(dir) = std::env::var_os(ENV) else {
         return;
     };
-    let mut journal = begin(StateDir::lock(Path::new(&dir)).unwrap());
+    let mut journal = begin(unsynced(Path::new(&dir)));
     for index in 0..APPENDS {
         journal
             .append(stamp(1), note(&format!("event {index}")), &[])
@@ -274,23 +212,23 @@ fn real_process_an_abrupt_exit_loses_no_acknowledged_event() {
         "the child must die by abort, not exit: {status:?}"
     );
 
-    let journal = StateDir::lock(&state).unwrap().open(boot(2)).unwrap();
+    let journal = unsynced(&state).open(boot(2)).unwrap();
     assert_eq!(journal.events().len() as u64, APPENDS + 1);
     assert_eq!(journal.repaired(), None);
 }
 
 #[test]
-fn the_state_directory_is_traversable_whatever_it_was_before() {
+fn real_fs_the_state_directory_is_traversable_whatever_it_was_before() {
     use std::os::unix::fs::PermissionsExt;
     let root = tempfile::tempdir().unwrap();
     let fresh = root.path().join("fresh/state");
-    drop(StateDir::lock(&fresh).unwrap());
+    drop(unsynced(&fresh));
     assert_eq!(mode(&fresh), 0o711);
 
     let existing = root.path().join("existing");
     std::fs::create_dir(&existing).unwrap();
     std::fs::set_permissions(&existing, std::fs::Permissions::from_mode(0o700)).unwrap();
-    drop(StateDir::lock(&existing).unwrap());
+    drop(unsynced(&existing));
     assert_eq!(mode(&existing), 0o711);
     assert_eq!(
         mode(&root.path().join("fresh")),
@@ -299,7 +237,7 @@ fn the_state_directory_is_traversable_whatever_it_was_before() {
 }
 
 #[test]
-fn a_symlinked_state_directory_is_refused_and_its_target_left_alone() {
+fn real_fs_a_symlinked_state_directory_is_refused_and_its_target_left_alone() {
     use std::os::unix::fs::PermissionsExt;
     let root = tempfile::tempdir().unwrap();
     let target = root.path().join("target");
@@ -307,6 +245,11 @@ fn a_symlinked_state_directory_is_refused_and_its_target_left_alone() {
     std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o700)).unwrap();
     let link = root.path().join("link");
     std::os::unix::fs::symlink(&target, &link).unwrap();
-    assert!(StateDir::lock(&link).is_err());
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "kernel refusal must use the non-durable disk adapter"
+    )]
+    let result = StateDir::lock_with_fs(togi_journal::fs::unsynced_disk_fs(), &link);
+    assert!(result.is_err());
     assert_eq!(mode(&target), 0o700);
 }

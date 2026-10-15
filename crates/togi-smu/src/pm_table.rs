@@ -1,9 +1,9 @@
 use crate::Error;
+use crate::files::Files;
 use crate::mailbox::Poison;
 use crate::sysfs::DRIVER_DIR;
 use std::fmt;
-use std::fs::File;
-use std::io::{self, Read};
+use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread;
@@ -150,12 +150,14 @@ pub(crate) trait PmSource: Send + Sync {
 
 pub(crate) struct FileSource {
     dir: PathBuf,
+    files: Files,
 }
 
 impl FileSource {
-    pub(crate) fn new(root: &Path) -> Self {
+    pub(crate) fn new(root: &Path, files: Files) -> Self {
         Self {
             dir: root.join(DRIVER_DIR),
+            files,
         }
     }
 }
@@ -166,11 +168,7 @@ impl PmSource for FileSource {
             PmFile::Version => ("pm_table_version", VERSION_LEN + 1),
             PmFile::Table => ("pm_table", TABLE_LEN + 1),
         };
-        let mut bytes = Vec::with_capacity(limit);
-        File::open(self.dir.join(name))?
-            .take(limit as u64)
-            .read_to_end(&mut bytes)?;
-        Ok(bytes)
+        self.files.read(&self.dir.join(name), limit as u64, limit)
     }
 }
 

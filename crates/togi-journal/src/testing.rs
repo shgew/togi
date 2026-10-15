@@ -92,3 +92,11 @@ pub(crate) fn kinds(events: &[Event]) -> Vec<&'static str> {
 pub(crate) fn path(name: &str) -> PathBuf {
     PathBuf::from("/state").join(name)
 }
+
+pub(crate) fn property_config() -> proptest::test_runner::Config {
+    proptest::test_runner::Config {
+        rng_seed: proptest::test_runner::RngSeed::Fixed(0x6a6f_7572_6e61_6c70),
+        failure_persistence: None,
+        ..proptest::test_runner::Config::default()
+    }
+}

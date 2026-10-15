@@ -34,7 +34,7 @@ mod unvalidated {
             "proc/cpuinfo",
             "cpu family : 25\nmodel : 68\nmodel name : Test CPU\n",
         );
-        std::fs::remove_dir_all(tree.path("sys/kernel/ryzen_smu_drv")).unwrap();
+        tree.remove_dir("sys/kernel/ryzen_smu_drv");
         let mut host = host(&tree, Privilege::Root, refused_account(), Scope::creating());
         let checks = host.preflight();
         assert_eq!(names(&checks), ALL_CHECKS);
@@ -331,7 +331,7 @@ fn an_invalid_identity_fails_validation_publishes_nothing_and_touches_no_hardwar
 #[test]
 fn a_supported_cpu_with_no_driver_loaded_is_refused_and_skips_every_gated_check() {
     let tree = Tree::new();
-    std::fs::remove_dir_all(tree.path("sys/kernel/ryzen_smu_drv")).unwrap();
+    tree.remove_dir("sys/kernel/ryzen_smu_drv");
     let scope = Scope::creating();
     let mut host = host(&tree, Privilege::Root, resolved_account(), scope.clone());
     let checks = host.preflight();
@@ -354,4 +354,48 @@ fn a_supported_cpu_with_no_driver_loaded_is_refused_and_skips_every_gated_check(
         );
     }
     assert_eq!(scope.calls.get(), 0);
+}
+
+#[test]
+fn real_fs_identity_refusal_does_not_open_mailbox_or_pm_files() {
+    use std::mem::MaybeUninit;
+
+    use rustix::fs::inotify;
+
+    use super::support::MAILBOX_AND_PM_FILES;
+    use crate::assemble::Parts;
+
+    let tree = Tree::new();
+    tree.put("sys/kernel/ryzen_smu_drv/codename", "99\n");
+    let dir = tree.materialize();
+    let inotify =
+        inotify::init(inotify::CreateFlags::NONBLOCK | inotify::CreateFlags::CLOEXEC).unwrap();
+    for name in MAILBOX_AND_PM_FILES {
+        inotify::add_watch(
+            &inotify,
+            dir.path().join("sys/kernel/ryzen_smu_drv").join(name),
+            inotify::WatchFlags::ALL_EVENTS,
+        )
+        .unwrap();
+    }
+    let driver = togi_smu::Driver::open(dir.path()).unwrap();
+    let parts = Parts::new(driver, &togi_config::Config::default()).unwrap();
+    let mut host = parts.host(dir.path(), Privilege::Root, Scope::creating());
+    let checks = host.preflight();
+    assert!(!find(&checks, "ryzen_smu").ok);
+    assert_eq!(
+        find(&checks, "readback").detail,
+        "needs passing cpu and ryzen_smu checks"
+    );
+    assert!(host.validate_smu().is_err());
+    let mut buffer = [MaybeUninit::uninit(); 1024];
+    assert!(matches!(
+        inotify::Reader::new(&inotify, &mut buffer).next(),
+        Err(rustix::io::Errno::AGAIN)
+    ));
+    std::fs::read(dir.path().join("sys/kernel/ryzen_smu_drv/pm_table")).unwrap();
+    assert!(
+        inotify::Reader::new(&inotify, &mut buffer).next().is_ok(),
+        "the watch must observe a real open/read"
+    );
 }

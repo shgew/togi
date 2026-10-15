@@ -26,8 +26,18 @@ pub(crate) fn load(
     replay: bool,
     extracts: &mut Extracts,
 ) -> Result<(Model, Option<Replay>), LoadError> {
+    load_with(path, seed, replay, extracts, |path| file::load(path))
+}
+
+pub(crate) fn load_with(
+    path: Option<&Path>,
+    seed: u64,
+    replay: bool,
+    extracts: &mut Extracts,
+    read: impl FnOnce(&Path) -> Result<MachineDefinition, file::LoadError>,
+) -> Result<(Model, Option<Replay>), LoadError> {
     let definition = match path {
-        Some(path) => file::load(path)?,
+        Some(path) => read(path)?,
         None => MachineDefinition::default(),
     };
     let replay = match (replay, path) {

@@ -17,6 +17,7 @@ togi-machine.workspace = true
 togi-trialfiles.workspace = true
 
 [dev-dependencies]
+flate2.workspace = true
 proptest.workspace = true
 tempfile.workspace = true
 

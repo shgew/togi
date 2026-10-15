@@ -5,11 +5,14 @@ use std::cmp::Reverse;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use togi_journal::fs::Fs;
 
 use sha2::{Digest, Sha256};
 use togi_machine::object_only;
 
-use crate::cache::{touch, write_atomic};
+use crate::cache::{touch, write_atomic, write_in};
 use crate::suite::{RunSpec, hex};
 
 const FORMAT: &str = "togi-bench-same-v1";
@@ -64,6 +67,7 @@ pub(crate) fn inputs(spec: &RunSpec) -> String {
 #[derive(Debug)]
 pub struct DigestCache {
     dir: PathBuf,
+    fs: Option<Arc<dyn Fs>>,
 }
 
 impl DigestCache {
@@ -87,7 +91,15 @@ impl DigestCache {
         for (_, name) in others.into_iter().skip(KEPT_TREES - 1) {
             let _ = fs::remove_dir_all(parent.join(name));
         }
-        Ok(Self { dir })
+        Ok(Self { dir, fs: None })
+    }
+
+    /// Opens an already selected namespace through `fs`, without disk LRU bookkeeping.
+    pub fn with_fs(root: &Path, key: &str, fs: Arc<dyn Fs>) -> Self {
+        Self {
+            dir: root.join("same").join(key),
+            fs: Some(fs),
+        }
     }
 
     fn path(&self, spec: &RunSpec) -> PathBuf {
@@ -98,7 +110,12 @@ impl DigestCache {
 
     /// The record kept for `spec` if it was made from the same `inputs`.
     pub fn get(&self, spec: &RunSpec, inputs: &str) -> Option<SideRecord> {
-        let bytes = fs::read(self.path(spec)).ok()?;
+        let path = self.path(spec);
+        let bytes = match &self.fs {
+            Some(fs) => fs.read(&path),
+            None => fs::read(path),
+        }
+        .ok()?;
         let entry: Entry = serde_json::from_slice(&bytes).ok()?;
         (entry.inputs == inputs).then_some(entry.record)
     }
@@ -108,6 +125,11 @@ impl DigestCache {
             inputs: inputs.to_owned(),
             record: record.clone(),
         };
-        write_atomic(&self.path(spec), &serde_json::to_vec(&entry)?)
+        let path = self.path(spec);
+        let bytes = serde_json::to_vec(&entry)?;
+        match &self.fs {
+            None => write_atomic(&path, &bytes),
+            Some(fs) => write_in(fs.as_ref(), &path, &bytes),
+        }
     }
 }

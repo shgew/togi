@@ -68,7 +68,7 @@ fn file_name_views_agree() {
 }
 
 #[test]
-fn executable_regular_file_passes() {
+fn real_fs_executable_regular_file_passes() {
     let dir = TempDir::new().unwrap();
     for mode in [0o755, 0o700, 0o100, 0o010, 0o001] {
         let path = file_with_mode(&dir, &format!("bin-{mode:o}"), mode);
@@ -77,7 +77,7 @@ fn executable_regular_file_passes() {
 }
 
 #[test]
-fn file_without_execute_bit_is_refused() {
+fn real_fs_file_without_execute_bit_is_refused() {
     let dir = TempDir::new().unwrap();
     let path = file_with_mode(&dir, "bin", 0o644);
     match check_executable("mprime", &path).unwrap_err() {
@@ -90,7 +90,7 @@ fn file_without_execute_bit_is_refused() {
 }
 
 #[test]
-fn directory_is_not_an_executable() {
+fn real_fs_directory_is_not_an_executable() {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("bin");
     fs::create_dir(&path).unwrap();
@@ -101,7 +101,7 @@ fn directory_is_not_an_executable() {
 }
 
 #[test]
-fn symlink_to_an_executable_passes() {
+fn real_fs_symlink_to_an_executable_passes() {
     let dir = TempDir::new().unwrap();
     let target = file_with_mode(&dir, "real", 0o755);
     let link = dir.path().join("link");
@@ -110,7 +110,7 @@ fn symlink_to_an_executable_passes() {
 }
 
 #[test]
-fn symlink_to_a_plain_file_is_refused() {
+fn real_fs_symlink_to_a_plain_file_is_refused() {
     let dir = TempDir::new().unwrap();
     let target = file_with_mode(&dir, "real", 0o644);
     let link = dir.path().join("link");
@@ -122,7 +122,7 @@ fn symlink_to_a_plain_file_is_refused() {
 }
 
 #[test]
-fn absent_binary_is_missing() {
+fn real_fs_absent_binary_is_missing() {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("absent");
     let error = check_executable("mprime", &path).unwrap_err();
@@ -133,7 +133,7 @@ fn absent_binary_is_missing() {
 }
 
 #[test]
-fn dangling_symlink_is_missing() {
+fn real_fs_dangling_symlink_is_missing() {
     let dir = TempDir::new().unwrap();
     let link = dir.path().join("link");
     symlink("absent", &link).unwrap();
@@ -141,7 +141,7 @@ fn dangling_symlink_is_missing() {
 }
 
 #[test]
-fn cyclic_symlink_is_a_stat_error_not_missing() {
+fn real_fs_cyclic_symlink_is_a_stat_error_not_missing() {
     let dir = TempDir::new().unwrap();
     let link = dir.path().join("loop");
     symlink("loop", &link).unwrap();
@@ -152,7 +152,7 @@ fn cyclic_symlink_is_a_stat_error_not_missing() {
 }
 
 #[test]
-fn file_as_a_directory_component_is_a_stat_error_not_missing() {
+fn real_fs_file_as_a_directory_component_is_a_stat_error_not_missing() {
     let dir = TempDir::new().unwrap();
     let file = file_with_mode(&dir, "file", 0o755);
     let error = check_executable("mprime", &file.join("bin")).unwrap_err();

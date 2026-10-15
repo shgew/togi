@@ -5,19 +5,19 @@ use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use tempfile::TempDir;
 use togi_backend::{Backend, Line, Plan, Ready};
+use togi_journal::fs::{FileKind, Fs, MemFs};
 use togi_machine::{
     CancellationToken, CoreId, CpuId, Partial, PmTable, PmTableReader, Regime, Reporter, Running,
     Sample, Signal, Stopped, Trials, Workload,
 };
 
 use super::harness::{
-    Run, crate_error, finish, local, nothing_runs, own_identity, rig, rig_edit, spec, topology,
+    Run, crate_error, finish, identity_of, local, nothing_runs, rig, rig_edit, spec, topology,
 };
 use crate::error::{CleanupFailure, Error, InvalidTrial};
 use crate::id::ScopeName;
@@ -48,20 +48,22 @@ fn fast() -> Timing {
     }
 }
 
-fn runner(setup: impl FnOnce(&Fake) + Send + 'static, timing: Timing) -> (Runner, TempDir) {
-    let dir = crate::testing::tempdir();
+fn runner(setup: impl FnOnce(&Fake) + Send + 'static, timing: Timing) -> (Runner, Arc<MemFs>) {
+    let fs = Arc::new(MemFs::default());
+    let root = Path::new("/rig");
+    let memory = crate::watch::Memory::new(fs.clone());
     let options = Options {
-        dir: dir.path().join("trials"),
+        dir: root.join("trials"),
         backends: Backends::new().with(Arc::new(TestBackend::new("/bin/true"))),
         topology: topology(),
-        identity: Some(own_identity()),
+        identity: Some(identity_of(1000, 1000)),
         pm_table: None,
     };
     let roots = Roots {
-        hwmon: dir.path().join("hwmon"),
-        cpu: dir.path().join("cpu"),
-        powercap: dir.path().join("powercap"),
-        proc: dir.path().join("proc"),
+        hwmon: root.join("hwmon"),
+        cpu: root.join("cpu"),
+        powercap: root.join("powercap"),
+        proc: root.join("proc"),
     };
     let settings = Settings {
         timing,
@@ -69,14 +71,18 @@ fn runner(setup: impl FnOnce(&Fake) + Send + 'static, timing: Timing) -> (Runner
         unscoped: false,
         user_manager: false,
         controller: Arc::new(crate::controller::Idle),
+        fs: Some(fs.clone()),
+        inputs: crate::procfs::Inputs::memory(fs.clone()),
+        memory: Some(memory.clone()),
+        durability: crate::samples::Durability::Unsynced,
     };
     let runner = Runner::build(options, settings, move || {
-        let fake = Fake::default();
+        let fake = Fake::with_memory(memory);
         setup(&fake);
         fake
     })
     .unwrap();
-    (runner, dir)
+    (runner, fs)
 }
 
 #[derive(Default)]
@@ -124,13 +130,13 @@ fn wait_for(deadline: Duration, mut condition: impl FnMut() -> bool) -> bool {
     condition()
 }
 
-/// A worker that notes in `marker` when it is asked to terminate, then ends.
-fn terminating(marker: &Path) -> Launch {
-    let marker = marker.to_owned();
+/// A worker that records when it is asked to terminate, then ends.
+fn terminating(terminated: &Arc<AtomicBool>) -> Launch {
+    let terminated = Arc::clone(terminated);
     Launch::Run(script(move |mut ctx: ProcCtx| async move {
         while let Some(delivery) = ctx.signals.recv().await {
             if matches!(delivery, Delivery::Group(GroupSignal::Term)) {
-                std::fs::write(&marker, "terminated").unwrap();
+                terminated.store(true, Ordering::SeqCst);
                 ctx.exit(ExitInfo::Signal(15));
                 return;
             }
@@ -138,9 +144,9 @@ fn terminating(marker: &Path) -> Launch {
     }))
 }
 
-fn marks_termination(marker: PathBuf) -> impl FnOnce(&Fake) + Send + 'static {
+fn marks_termination(terminated: Arc<AtomicBool>) -> impl FnOnce(&Fake) + Send + 'static {
     move |fake| {
-        fake.on_launch(move |_, _| terminating(&marker));
+        fake.on_launch(move |_, _| terminating(&terminated));
     }
 }
 
@@ -160,12 +166,12 @@ fn stalling() -> Timing {
     }
 }
 
-/// Workers that note termination in `marker`, the first launch of which blocks the runtime thread
-/// for `stall` first, as slow filesystem or launcher setup does. `launches` counts the launches;
+/// Workers that record termination, the first launch of which blocks the runtime thread for
+/// `stall` first, as slow filesystem or launcher setup does. `launches` counts the launches;
 /// `ready` is whether the workers start inside their scope.
 fn stalls_first_launch(
     stall: Duration,
-    marker: PathBuf,
+    terminated: Arc<AtomicBool>,
     launches: Arc<AtomicUsize>,
     ready: bool,
 ) -> impl FnOnce(&Fake) + Send + 'static {
@@ -175,14 +181,14 @@ fn stalls_first_launch(
             if launches.fetch_add(1, Ordering::SeqCst) == 0 {
                 std::thread::sleep(stall);
             }
-            terminating(&marker)
+            terminating(&terminated)
         });
     }
 }
 
 #[test]
 fn a_whole_trial_runs_waits_and_stops_through_the_public_seams() {
-    let (mut runner, dir) = runner(
+    let (mut runner, fs) = runner(
         |fake| {
             fake.on_launch(|_, _| {
                 Launch::Run(script(|mut ctx: ProcCtx| async move {
@@ -204,10 +210,10 @@ fn a_whole_trial_runs_waits_and_stops_through_the_public_seams() {
     assert_eq!(result.failure, None);
     assert_eq!(result.ran, Duration::from_millis(300));
     let _stopped: Stopped = trial.stop().unwrap();
-    assert!(dir.path().join("trials/t1/work/stdout.log").exists());
+    assert!(fs.contents("/rig/trials/t1/work/stdout.log").is_some());
     assert_eq!(
-        std::fs::read_to_string(dir.path().join("trials/t1/work/stdout.log")).unwrap(),
-        "ok one\nok two\n"
+        fs.contents("/rig/trials/t1/work/stdout.log").unwrap(),
+        b"ok one\nok two\n"
     );
 }
 
@@ -244,7 +250,7 @@ fn stopping_without_waiting_tears_down_and_proves_it() {
 
 #[test]
 fn readers_keep_draining_between_start_and_wait() {
-    let (mut runner, dir) = runner(
+    let (mut runner, fs) = runner(
         |fake| {
             fake.on_launch(|_, _| {
                 Launch::Run(script(|mut ctx: ProcCtx| async move {
@@ -258,11 +264,12 @@ fn readers_keep_draining_between_start_and_wait() {
         fast(),
     );
     let mut trial = start(&mut runner, Regime::R1, &[0], secs(600));
-    let log = dir.path().join("trials/t1/work/stdout.log");
-    let expected = 200 * 100 * "ok line of output\n".len() as u64;
+    let log = Path::new("/rig/trials/t1/work/stdout.log");
+    let expected = 200 * 100 * "ok line of output\n".len();
     assert!(
-        wait_for(secs(10), || std::fs::metadata(&log)
-            .is_ok_and(|m| m.len() == expected)),
+        wait_for(secs(10), || fs
+            .contents(log)
+            .is_some_and(|bytes| bytes.len() == expected)),
         "the log filled before anyone waited"
     );
     let mut report = Collect::default();
@@ -284,45 +291,45 @@ fn readers_keep_draining_between_start_and_wait() {
     assert!(trial.stop().is_ok());
 }
 
-#[tokio::test]
-async fn the_blocking_apis_refuse_to_run_inside_a_runtime() {
-    let (mut runner, _dir) = runner(|_| {}, fast());
-    assert!(matches!(
-        runner.probe_scope(),
-        Err(Error::InsideRuntime {
-            operation: "the scope probe"
-        })
-    ));
-    let sweep = runner.sweep(&CancellationToken::new()).unwrap_err();
-    assert!(matches!(
-        crate_error(&sweep),
-        Some(Error::InsideRuntime {
-            operation: "the sweep"
-        })
-    ));
-    let partial = runner
-        .start(
-            &CancellationToken::new(),
-            spec(Regime::R1, &[0], secs(1)),
-            nothing_runs(),
-        )
-        .err()
-        .unwrap();
-    assert!(partial.value.is_some(), "the proof comes back untouched");
-    assert!(matches!(
-        crate_error(&partial.error),
-        Some(Error::InsideRuntime { operation: "start" })
-    ));
-    assert!(runner.ended("t1").is_err());
+#[test]
+fn the_blocking_apis_refuse_to_run_inside_a_runtime() {
+    crate::testing::runtime(false).block_on(async {
+        let (mut runner, _dir) = runner(|_| {}, fast());
+        assert!(matches!(
+            runner.probe_scope(),
+            Err(Error::InsideRuntime {
+                operation: "the scope probe"
+            })
+        ));
+        let sweep = runner.sweep(&CancellationToken::new()).unwrap_err();
+        assert!(matches!(
+            crate_error(&sweep),
+            Some(Error::InsideRuntime {
+                operation: "the sweep"
+            })
+        ));
+        let partial = runner
+            .start(
+                &CancellationToken::new(),
+                spec(Regime::R1, &[0], secs(1)),
+                nothing_runs(),
+            )
+            .err()
+            .unwrap();
+        assert!(partial.value.is_some(), "the proof comes back untouched");
+        assert!(matches!(
+            crate_error(&partial.error),
+            Some(Error::InsideRuntime { operation: "start" })
+        ));
+        assert!(runner.ended("t1").is_err());
+    });
 }
 
 #[test]
 fn waiting_and_stopping_inside_a_runtime_are_refused_and_the_trial_stays_usable() {
     let (mut runner, _dir) = runner(|_| {}, fast());
     let mut trial = start(&mut runner, Regime::R1, &[0], Duration::from_millis(200));
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .build()
-        .unwrap();
+    let runtime = crate::testing::runtime(false);
     let refused = runtime.block_on(async {
         trial
             .wait(&CancellationToken::new(), &mut Collect::default())
@@ -346,26 +353,24 @@ fn trial_stop_refused(trial: Box<dyn Running>) -> bool {
 
 #[test]
 fn a_trial_dropped_after_start_is_torn_down_by_its_supervisor() {
-    let dir = crate::testing::tempdir();
-    let marker = dir.path().join("terminated.txt");
-    let (mut runner, _keep) = runner(marks_termination(marker.clone()), fast());
+    let terminated = Arc::new(AtomicBool::new(false));
+    let (mut runner, _keep) = runner(marks_termination(Arc::clone(&terminated)), fast());
     let trial = start(&mut runner, Regime::R1, &[0], secs(600));
     drop(trial);
     assert!(
-        wait_for(secs(10), || marker.exists()),
+        wait_for(secs(10), || terminated.load(Ordering::SeqCst)),
         "SIGTERM reached the abandoned workload"
     );
 }
 
 #[test]
 fn a_trial_dropped_while_supervision_runs_is_torn_down_too() {
-    let dir = crate::testing::tempdir();
-    let marker = dir.path().join("terminated.txt");
-    let (mut runner, _keep) = runner(marks_termination(marker.clone()), fast());
+    let terminated = Arc::new(AtomicBool::new(false));
+    let (mut runner, _keep) = runner(marks_termination(Arc::clone(&terminated)), fast());
     let trial = start(&mut runner, Regime::R7, &[0, 1], secs(600));
     std::thread::sleep(Duration::from_millis(200));
     drop(trial);
-    assert!(wait_for(secs(10), || marker.exists()));
+    assert!(wait_for(secs(10), || terminated.load(Ordering::SeqCst)));
 }
 
 #[test]
@@ -449,21 +454,20 @@ fn dropping_the_runner_is_bounded_even_with_a_stuck_trial() {
 
 #[test]
 fn dropping_the_runner_tears_down_a_trial_whose_handle_was_never_dropped() {
-    let dir = crate::testing::tempdir();
-    let marker = dir.path().join("terminated.txt");
-    let (mut runner, _keep) = runner(marks_termination(marker.clone()), fast());
+    let terminated = Arc::new(AtomicBool::new(false));
+    let (mut runner, _keep) = runner(marks_termination(Arc::clone(&terminated)), fast());
     let trial = start(&mut runner, Regime::R1, &[0], secs(600));
     std::mem::forget(trial);
     drop(runner);
     assert!(
-        marker.exists(),
+        terminated.load(Ordering::SeqCst),
         "the supervisor terminated its workload before the runner ended"
     );
 }
 
 #[test]
 fn the_runner_sweeps_probes_compresses_and_reads_samples() {
-    let (mut runner, dir) = runner(
+    let (mut runner, fs) = runner(
         |fake| {
             fake.add_unit("togi-trial-old.scope");
         },
@@ -480,8 +484,8 @@ fn the_runner_sweeps_probes_compresses_and_reads_samples() {
     let _ = trial.wait(&CancellationToken::new(), &mut Collect::default());
     drop(trial.stop().unwrap());
     runner.ended("t1").unwrap();
-    assert!(dir.path().join("trials/t1/work/stdout.log.gz").exists());
-    assert!(!dir.path().join("trials/t1/work/stdout.log").exists());
+    assert!(fs.contents("/rig/trials/t1/work/stdout.log.gz").is_some());
+    assert!(fs.contents("/rig/trials/t1/work/stdout.log").is_none());
     assert!(runner.samples("t1").count() >= 1);
     assert_eq!(runner.samples("../t1").count(), 0);
     assert!(runner.ended("../t1").is_err());
@@ -665,10 +669,14 @@ fn start_failure(
 
 #[test]
 fn a_stalled_start_is_containment_without_a_value_and_the_trial_it_finishes_late_is_abandoned() {
-    let dir = crate::testing::tempdir();
-    let marker = dir.path().join("terminated.txt");
+    let terminated = Arc::new(AtomicBool::new(false));
     let (mut runner, _keep) = runner(
-        stalls_first_launch(secs(1), marker.clone(), Arc::new(AtomicUsize::new(0)), true),
+        stalls_first_launch(
+            secs(1),
+            Arc::clone(&terminated),
+            Arc::new(AtomicUsize::new(0)),
+            true,
+        ),
         stalling(),
     );
     let begun = Instant::now();
@@ -677,20 +685,19 @@ fn a_stalled_start_is_containment_without_a_value_and_the_trial_it_finishes_late
     assert!(partial.value.is_none(), "no proof that nothing runs");
     assert!(matches!(partial.error, togi_machine::Error::Containment(_)));
     assert!(
-        wait_for(secs(10), || marker.exists()),
+        wait_for(secs(10), || terminated.load(Ordering::SeqCst)),
         "the workload of a start nobody waits for was torn down"
     );
 }
 
 #[test]
 fn a_timed_out_start_launches_no_further_instance_and_rolls_back_the_first() {
-    let dir = crate::testing::tempdir();
-    let marker = dir.path().join("terminated.txt");
+    let terminated = Arc::new(AtomicBool::new(false));
     let launches = Arc::new(AtomicUsize::new(0));
     let (mut runner, _keep) = runner(
         stalls_first_launch(
             Duration::from_millis(1200),
-            marker.clone(),
+            Arc::clone(&terminated),
             Arc::clone(&launches),
             true,
         ),
@@ -700,7 +707,7 @@ fn a_timed_out_start_launches_no_further_instance_and_rolls_back_the_first() {
     assert!(partial.value.is_none());
     assert!(matches!(partial.error, togi_machine::Error::Containment(_)));
     assert!(
-        wait_for(secs(10), || marker.exists()),
+        wait_for(secs(10), || terminated.load(Ordering::SeqCst)),
         "the first instance was rolled back"
     );
     assert_eq!(
@@ -712,12 +719,11 @@ fn a_timed_out_start_launches_no_further_instance_and_rolls_back_the_first() {
 
 #[test]
 fn dropping_the_runner_after_a_timed_out_start_waits_for_the_rollback_in_progress() {
-    let dir = crate::testing::tempdir();
-    let marker = dir.path().join("terminated.txt");
+    let terminated = Arc::new(AtomicBool::new(false));
     let (mut runner, _keep) = runner(
         stalls_first_launch(
             secs(1),
-            marker.clone(),
+            Arc::clone(&terminated),
             Arc::new(AtomicUsize::new(0)),
             false,
         ),
@@ -727,35 +733,34 @@ fn dropping_the_runner_after_a_timed_out_start_waits_for_the_rollback_in_progres
     assert!(partial.value.is_none());
     drop(runner);
     assert!(
-        marker.exists(),
+        terminated.load(Ordering::SeqCst),
         "shutdown let the start that was waiting for its scope roll its workload back"
     );
 }
 
 #[test]
 fn dropping_the_trial_and_the_runner_back_to_back_still_terminates_the_workload() {
-    let dir = crate::testing::tempdir();
-    let marker = dir.path().join("terminated.txt");
-    let (mut runner, _keep) = runner(marks_termination(marker.clone()), fast());
+    let terminated = Arc::new(AtomicBool::new(false));
+    let (mut runner, _keep) = runner(marks_termination(Arc::clone(&terminated)), fast());
     let trial = start(&mut runner, Regime::R1, &[0], secs(600));
     drop(trial);
     drop(runner);
     assert!(
-        marker.exists(),
+        terminated.load(Ordering::SeqCst),
         "the runner ended only after the abandoned workload was terminated"
     );
 }
 
 #[test]
 fn a_duration_that_cannot_be_scheduled_is_refused_before_anything_changes() {
-    let (mut runner, dir) = runner(|_| {}, fast());
+    let (mut runner, fs) = runner(|_| {}, fast());
     let partial = start_failure(&mut runner, Regime::R1, &[0], Duration::MAX);
     assert!(partial.value.is_some(), "nothing ran, so the proof returns");
     assert!(matches!(
         crate_error(&partial.error),
         Some(Error::Invalid(InvalidTrial::UnrepresentableDuration))
     ));
-    assert!(!dir.path().join("trials").exists());
+    assert_eq!(fs.kind(Path::new("/rig/trials")).unwrap(), None);
 }
 
 #[test]
@@ -872,37 +877,38 @@ fn a_late_wait_with_a_backlog_of_reports_is_still_bounded() {
     assert!(matches!(partial.error, togi_machine::Error::Containment(_)));
 }
 
-fn names(dir: &Path) -> Vec<String> {
-    let mut names: Vec<String> = std::fs::read_dir(dir)
+fn names(fs: &dyn Fs, dir: &Path) -> Vec<String> {
+    let mut names: Vec<String> = fs
+        .read_dir(dir)
         .unwrap()
-        .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+        .into_iter()
+        .map(|entry| entry.name.into_string().unwrap())
         .collect();
     names.sort();
     names
 }
 
 /// Every file of every trial directory except `skip`, by path.
-fn retained(root: &Path, skip: &str) -> BTreeMap<PathBuf, Vec<u8>> {
+fn retained(fs: &dyn Fs, root: &Path, skip: &str) -> BTreeMap<PathBuf, Vec<u8>> {
     let mut found = BTreeMap::new();
-    for trial in std::fs::read_dir(root).unwrap() {
-        let trial = trial.unwrap();
-        if trial.file_name() == skip {
+    for trial in fs.read_dir(root).unwrap() {
+        if trial.name == skip {
             continue;
         }
-        for file in std::fs::read_dir(trial.path()).unwrap() {
-            let path = file.unwrap().path();
-            found.insert(path.clone(), std::fs::read(path).unwrap());
+        let trial = root.join(trial.name);
+        for file in fs.read_dir(&trial).unwrap() {
+            let path = trial.join(file.name);
+            found.insert(path.clone(), fs.read(&path).unwrap());
         }
     }
     found
 }
 
-fn files_below(dir: &Path, prefix: &str, found: &mut Vec<String>) {
-    for entry in std::fs::read_dir(dir).unwrap() {
-        let entry = entry.unwrap();
-        let name = format!("{prefix}{}", entry.file_name().to_str().unwrap());
-        if entry.file_type().unwrap().is_dir() {
-            files_below(&entry.path(), &format!("{name}/"), found);
+fn files_below(fs: &dyn Fs, dir: &Path, prefix: &str, found: &mut Vec<String>) {
+    for entry in fs.read_dir(dir).unwrap() {
+        let name = format!("{prefix}{}", entry.name.to_str().unwrap());
+        if entry.kind == FileKind::Dir {
+            files_below(fs, &dir.join(&entry.name), &format!("{name}/"), found);
         } else {
             found.push(name);
         }
@@ -912,18 +918,17 @@ fn files_below(dir: &Path, prefix: &str, found: &mut Vec<String>) {
 
 #[test]
 fn ending_a_trial_compresses_it_and_leaves_every_older_retained_trial_untouched() {
-    let (mut runner, dir) = runner(|_| {}, fast());
-    let trials = dir.path().join("trials");
+    let (mut runner, fs) = runner(|_| {}, fast());
+    let trials = Path::new("/rig/trials");
     for i in 0..205 {
         let old = trials.join(format!("{:04}", 9000 + i));
-        std::fs::create_dir_all(&old).unwrap();
-        std::fs::write(old.join("passed"), "").unwrap();
-        std::fs::write(old.join("samples.jsonl.gz"), "old").unwrap();
+        fs.put(old.join("passed"), b"");
+        fs.put(old.join("samples.jsonl.gz"), b"old");
     }
-    let mut expected = names(&trials);
+    let mut expected = names(fs.as_ref(), trials);
     expected.push("t1".to_owned());
     expected.sort();
-    let before = retained(&trials, "t1");
+    let before = retained(fs.as_ref(), trials, "t1");
     assert_eq!(before.len(), 410);
 
     let mut trial = start(&mut runner, Regime::R7, &[0, 1], Duration::from_millis(300));
@@ -932,7 +937,7 @@ fn ending_a_trial_compresses_it_and_leaves_every_older_retained_trial_untouched(
     runner.ended("t1").unwrap();
 
     let mut files = Vec::new();
-    files_below(&trials.join("t1"), "", &mut files);
+    files_below(fs.as_ref(), &trials.join("t1"), "", &mut files);
     let has = |file: &str, extension: &str| {
         Path::new(file)
             .extension()
@@ -955,15 +960,15 @@ fn ending_a_trial_compresses_it_and_leaves_every_older_retained_trial_untouched(
         ]
     );
     assert_eq!(
-        retained(&trials, "t1"),
+        retained(fs.as_ref(), trials, "t1"),
         before,
         "older trials are untouched"
     );
-    assert_eq!(names(&trials), expected);
+    assert_eq!(names(fs.as_ref(), trials), expected);
 }
 
 #[test]
-fn compression_follows_the_directory_it_holds_not_its_pathname() {
+fn real_fs_compression_follows_the_directory_it_holds_not_its_pathname() {
     use rustix::fs::{Mode, OFlags, open};
     let dir = crate::testing::tempdir();
     let trials = dir.path().join("trials");
@@ -984,7 +989,7 @@ fn compression_follows_the_directory_it_holds_not_its_pathname() {
     std::fs::rename(&trial, trials.join("moved")).unwrap();
     make(&trial, "decoy\n");
 
-    crate::native::compress_pinned(&held).unwrap();
+    crate::native::compress_pinned_unsynced(&held).unwrap();
 
     let moved = trials.join("moved");
     assert!(moved.join("samples.jsonl.gz").exists());
@@ -1149,7 +1154,7 @@ async fn abandoned_during(phase: Phase, fault: bool) -> Abandoned {
     Abandoned { rig, run, member }
 }
 
-#[tokio::test(start_paused = true)]
+crate::testing::test! {
 async fn abandoning_while_the_workload_ignores_term_still_kills_and_reaps_it() {
     local(async {
         let clean = abandoned_during(Phase::Reaping, false).await;
@@ -1175,8 +1180,9 @@ async fn abandoning_while_the_workload_ignores_term_still_kills_and_reaps_it() {
     })
     .await;
 }
+}
 
-#[tokio::test(start_paused = true)]
+crate::testing::test! {
 async fn abandoning_while_readers_drain_still_waits_for_them_and_never_proves_an_undrained_stop() {
     local(async {
         let clean = abandoned_during(Phase::Draining, false).await;
@@ -1198,8 +1204,9 @@ async fn abandoning_while_readers_drain_still_waits_for_them_and_never_proves_an
     })
     .await;
 }
+}
 
-#[tokio::test(start_paused = true)]
+crate::testing::test! {
 async fn abandoning_during_verification_still_waits_for_the_scope_to_empty() {
     local(async {
         let clean = abandoned_during(Phase::Verifying, false).await;
@@ -1221,8 +1228,9 @@ async fn abandoning_during_verification_still_waits_for_the_scope_to_empty() {
     })
     .await;
 }
+}
 
-#[tokio::test(start_paused = true)]
+crate::testing::test! {
 async fn shutdown_overlaps_pending_rollback_and_live_teardown_in_one_slot() {
     local(async {
         let timing = Timing {
@@ -1285,8 +1293,9 @@ async fn shutdown_overlaps_pending_rollback_and_live_teardown_in_one_slot() {
     })
     .await;
 }
+}
 
-#[tokio::test(start_paused = true)]
+crate::testing::test! {
 async fn shutdown_retains_and_abandons_a_supervisor_registered_by_a_pending_start() {
     local(async {
         let rig = rig();
@@ -1315,8 +1324,9 @@ async fn shutdown_retains_and_abandons_a_supervisor_registered_by_a_pending_star
     })
     .await;
 }
+}
 
-#[tokio::test(start_paused = true)]
+crate::testing::test! {
 async fn a_late_registration_is_abandoned_promptly_while_another_pending_start_stays_blocked() {
     local(async {
         let rig = rig();
@@ -1350,8 +1360,9 @@ async fn a_late_registration_is_abandoned_promptly_while_another_pending_start_s
     })
     .await;
 }
+}
 
-#[tokio::test(start_paused = true)]
+crate::testing::test! {
 async fn a_handle_dropped_after_the_last_abandon_check_still_reports_an_unconfirmed_teardown() {
     local(async {
         let rig = rig();
@@ -1391,6 +1402,7 @@ async fn a_handle_dropped_after_the_last_abandon_check_still_reports_an_unconfir
         );
     })
     .await;
+}
 }
 
 #[derive(Debug)]
@@ -1448,7 +1460,7 @@ fn panicking_rig() -> super::harness::Rig {
     rig
 }
 
-#[tokio::test(start_paused = true)]
+crate::testing::test! {
 async fn a_dropped_handle_reports_both_supervision_panics_in_order_with_the_teardown() {
     local(async {
         let rig = panicking_rig();
@@ -1469,8 +1481,9 @@ async fn a_dropped_handle_reports_both_supervision_panics_in_order_with_the_tear
     })
     .await;
 }
+}
 
-#[tokio::test(start_paused = true)]
+crate::testing::test! {
 async fn a_supervision_panic_keeps_a_classifier_panic_from_the_final_output() {
     local(async {
         let rig = panicking_rig();
@@ -1496,6 +1509,7 @@ async fn a_supervision_panic_keeps_a_classifier_panic_from_the_final_output() {
     })
     .await;
 }
+}
 
 fn runtime_reports() -> Vec<String> {
     crate::runtime::RUNTIME_REPORTS.with_borrow(Clone::clone)
@@ -1512,7 +1526,7 @@ fn undeliverable_start() -> crate::runtime::Command {
     }
 }
 
-#[tokio::test(start_paused = true)]
+crate::testing::test! {
 async fn a_start_nobody_waits_for_that_ends_without_proof_is_reported_and_bounded() {
     local(async {
         let rig = rig();
@@ -1538,8 +1552,9 @@ async fn a_start_nobody_waits_for_that_ends_without_proof_is_reported_and_bounde
     })
     .await;
 }
+}
 
-#[tokio::test(start_paused = true)]
+crate::testing::test! {
 async fn a_start_nobody_waits_for_that_rolls_back_with_proof_is_not_reported() {
     local(async {
         let rig = rig();
@@ -1556,8 +1571,9 @@ async fn a_start_nobody_waits_for_that_rolls_back_with_proof_is_not_reported() {
     })
     .await;
 }
+}
 
-#[tokio::test(start_paused = true)]
+crate::testing::test! {
 async fn a_sweep_nobody_waits_for_that_fails_is_reported_and_bounded() {
     local(async {
         let rig = rig();
@@ -1590,8 +1606,9 @@ async fn a_sweep_nobody_waits_for_that_fails_is_reported_and_bounded() {
     })
     .await;
 }
+}
 
-#[tokio::test(start_paused = true)]
+crate::testing::test! {
 async fn shutdown_reports_the_live_supervisor_still_running_at_the_shared_deadline() {
     local(async {
         let rig = rig();
@@ -1625,6 +1642,7 @@ async fn shutdown_reports_the_live_supervisor_still_running_at_the_shared_deadli
         assert!(rig.fake.process(0).reaped.get());
     })
     .await;
+}
 }
 
 #[test]
@@ -1688,7 +1706,7 @@ fn a_containment_shows_each_failure_with_its_causes_once_in_order() {
     );
 }
 
-#[tokio::test(start_paused = true)]
+crate::testing::test! {
 async fn a_cancelled_sweep_nobody_waits_for_with_failed_cleanup_reports_every_cause_in_order() {
     local(async {
         let rig = rig();
@@ -1727,13 +1745,16 @@ async fn a_cancelled_sweep_nobody_waits_for_with_failed_cleanup_reports_every_ca
     })
     .await;
 }
+}
 
 #[test]
 fn stopping_without_waiting_has_terminated_the_workload_before_it_returns() {
-    let dir = crate::testing::tempdir();
-    let marker = dir.path().join("terminated.txt");
-    let (mut runner, _keep) = runner(marks_termination(marker.clone()), fast());
+    let terminated = Arc::new(AtomicBool::new(false));
+    let (mut runner, _keep) = runner(marks_termination(Arc::clone(&terminated)), fast());
     let trial = start(&mut runner, Regime::R1, &[0], secs(600));
     assert!(trial.stop().is_ok());
-    assert!(marker.exists(), "stop returned before the workload ended");
+    assert!(
+        terminated.load(Ordering::SeqCst),
+        "stop returned before the workload ended"
+    );
 }

@@ -6,12 +6,11 @@
 #[path = "../support/mod.rs"]
 mod support;
 
-use std::fs;
-
+use std::sync::Arc;
 use support::{Host, Ran, Session, files};
 use togi_cli::Exit;
 use togi_hardware::{CheckName, Diagnosis, Skip, Skipped};
-use togi_hostlock::{HostLock, Policy};
+use togi_journal::MemFs;
 use togi_machine::Check;
 use togi_render::OutputFacts;
 
@@ -71,8 +70,8 @@ fn ready() -> Diagnosis {
     }
 }
 
-fn host_with(diagnosis: Diagnosis) -> Host {
-    let host = Host::new();
+fn host_with(diagnosis: Diagnosis, fs: Arc<MemFs>) -> Host {
+    let host = Host::with_fs(fs);
     *host.diagnosis.borrow_mut() = Some(Ok(diagnosis));
     host
 }
@@ -83,8 +82,8 @@ fn doctor(host: &Host, state: &std::path::Path, args: &[&str]) -> Ran {
     host.run(state, &all)
 }
 
-fn missing_state() -> (tempfile::TempDir, std::path::PathBuf) {
-    let dir = tempfile::tempdir().unwrap();
+fn missing_state() -> (support::MemoryDir, std::path::PathBuf) {
+    let dir = support::MemoryDir::new();
     let state = dir.path().join("state");
     (dir, state)
 }
@@ -92,8 +91,8 @@ fn missing_state() -> (tempfile::TempDir, std::path::PathBuf) {
 #[test]
 fn a_ready_machine_prints_the_table_and_ready() {
     let session = Session::new();
-    let host = host_with(ready());
-    let before = (files(session.path()), session.text());
+    let host = host_with(ready(), session.fs.clone());
+    let before = (files(&session.fs, session.path()), session.text());
     let ran = doctor(&host, session.path(), &[]);
     assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
     assert_eq!(
@@ -102,8 +101,8 @@ fn a_ready_machine_prints_the_table_and_ready() {
         "the host lock was not held during the checks"
     );
     assert_eq!(ran.err, "");
-    assert_eq!((files(session.path()), session.text()), before);
-    insta::assert_snapshot!("ready", ran.out);
+    assert_eq!((files(&session.fs, session.path()), session.text()), before);
+    assert_snapshot(include_str!("snapshots/doctor__ready.snap"), &ran.out);
 }
 
 #[test]
@@ -116,11 +115,14 @@ fn a_changed_context_is_a_warning_not_a_failure() {
         false,
     ));
     let session = Session::new();
-    let host = host_with(diagnosis);
+    let host = host_with(diagnosis, session.fs.clone());
     let ran = doctor(&host, session.path(), &[]);
     assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
     assert_eq!(ran.err, "");
-    insta::assert_snapshot!("context_changed", ran.out);
+    assert_snapshot(
+        include_str!("snapshots/doctor__context_changed.snap"),
+        &ran.out,
+    );
 }
 
 #[test]
@@ -145,11 +147,11 @@ fn a_failed_check_names_itself_and_exits_15() {
         bios_context_error: None,
     };
     let session = Session::new();
-    let host = host_with(diagnosis);
+    let host = host_with(diagnosis, session.fs.clone());
     let ran = doctor(&host, session.path(), &[]);
     assert_eq!(ran.exit, Exit::Preflight);
     assert_eq!(ran.err, "togi doctor: not ready: readback, systemd_run\n");
-    insta::assert_snapshot!("failed", ran.out);
+    assert_snapshot(include_str!("snapshots/doctor__failed.snap"), &ran.out);
 }
 
 #[test]
@@ -180,14 +182,21 @@ fn without_root_it_takes_no_lock_and_says_what_it_skipped() {
         bios_context_error: None,
     };
     let session = Session::new();
-    let mut host = host_with(diagnosis);
+    let mut host = host_with(diagnosis, session.fs.clone());
     host.root = false;
     let ran = doctor(&host, session.path(), &[]);
     assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
     assert_eq!(ran.err, "");
-    assert!(!host.lock.exists(), "an unprivileged doctor takes no lock");
+    assert_eq!(
+        host.lock_acquisitions.get(),
+        0,
+        "an unprivileged doctor takes no lock"
+    );
     assert_eq!(host.diagnoses.borrow().last().map(|d| d.1), Some(false));
-    insta::assert_snapshot!("unprivileged", ran.out);
+    assert_snapshot(
+        include_str!("snapshots/doctor__unprivileged.snap"),
+        &ran.out,
+    );
 }
 
 #[test]
@@ -228,11 +237,14 @@ fn the_failed_style_follows_the_terminal_and_the_environment() {
         ),
     ] {
         let session = Session::new();
-        let mut host = host_with(Diagnosis {
-            ran: diagnosis.ran.clone(),
-            skipped: Vec::new(),
-            bios_context_error: None,
-        });
+        let mut host = host_with(
+            Diagnosis {
+                ran: diagnosis.ran.clone(),
+                skipped: Vec::new(),
+                bios_context_error: None,
+            },
+            session.fs.clone(),
+        );
         host.facts = facts;
         let ran = doctor(&host, session.path(), &[]);
         assert_eq!(ran.exit, Exit::Preflight, "{name}");
@@ -248,7 +260,7 @@ fn the_failed_style_follows_the_terminal_and_the_environment() {
 #[test]
 fn the_recorded_context_reaches_the_checks_only_for_a_journal_run_would_continue() {
     let session = Session::new();
-    let host = host_with(ready());
+    let host = host_with(ready(), session.fs.clone());
     assert_eq!(doctor(&host, session.path(), &[]).exit, Exit::Ok);
     let seen = host.diagnoses.borrow();
     assert_eq!(seen.as_slice(), [(Some(session.context.clone()), true)]);
@@ -256,15 +268,15 @@ fn the_recorded_context_reaches_the_checks_only_for_a_journal_run_would_continue
 
     let older = Session::new();
     older.rewrite_first_line("\"ruleset\":1", "\"ruleset\":0");
-    let host = host_with(ready());
+    let host = host_with(ready(), older.fs.clone());
     assert_eq!(doctor(&host, older.path(), &[]).exit, Exit::Ok);
     assert_eq!(host.diagnoses.borrow().as_slice(), [(None, true)]);
 
     let (_keep, absent) = missing_state();
-    let host = host_with(ready());
+    let host = host_with(ready(), Arc::new(MemFs::new()));
     assert_eq!(doctor(&host, &absent, &[]).exit, Exit::Ok);
     assert_eq!(host.diagnoses.borrow().as_slice(), [(None, true)]);
-    assert!(!absent.exists(), "doctor created the state directory");
+    assert!(!host.exists(&absent), "doctor created the state directory");
 }
 
 #[test]
@@ -298,8 +310,8 @@ fn a_journal_run_would_refuse_exits_16_before_any_lock_or_check() {
             "\"version\":\"0.0.0\"",
             "\"version\":\"0.0.0\",\"rev\":\"abc1234\"",
         );
-        let before = (files(session.path()), session.text());
-        let host = host_with(ready());
+        let before = (files(&session.fs, session.path()), session.text());
+        let host = host_with(ready(), session.fs.clone());
         let ran = doctor(&host, session.path(), &[]);
         assert_eq!(ran.exit, Exit::Incompatible, "{name}: {}", ran.err);
         assert_eq!(ran.out, "", "{name}");
@@ -317,9 +329,13 @@ fn a_journal_run_would_refuse_exits_16_before_any_lock_or_check() {
             "{name}: {}",
             ran.err
         );
-        assert_eq!((files(session.path()), session.text()), before, "{name}");
+        assert_eq!(
+            (files(&session.fs, session.path()), session.text()),
+            before,
+            "{name}"
+        );
         assert_eq!(host.calls.get(), 0, "{name}");
-        assert!(!host.lock.exists(), "{name}");
+        assert_eq!(host.lock_acquisitions.get(), 0, "{name}");
     }
 }
 
@@ -328,21 +344,25 @@ fn an_unreadable_journal_exits_1() {
     for (name, rewrite) in [("not json", true), ("malformed later event", false)] {
         let session = Session::new();
         if rewrite {
-            fs::write(session.journal(), "not json\n").unwrap();
+            session.fs.put(session.journal(), b"not json\n".to_vec());
         } else {
             let mut text = session.text();
             text.push_str("{\"seq\":\n");
             let at = text.find("\"kind\":\"config.loaded\"").unwrap();
             text.replace_range(at..at + 4, "\"kidn\"");
-            fs::write(session.journal(), text).unwrap();
+            session.fs.put(session.journal(), text.into_bytes());
         }
-        let before = (files(session.path()), session.text());
-        let host = host_with(ready());
+        let before = (files(&session.fs, session.path()), session.text());
+        let host = host_with(ready(), session.fs.clone());
         let ran = doctor(&host, session.path(), &[]);
         assert_eq!(ran.exit, Exit::Error, "{name}: {}", ran.err);
         assert_eq!(ran.out, "", "{name}");
         assert_eq!(host.calls.get(), 0, "{name}");
-        assert_eq!((files(session.path()), session.text()), before, "{name}");
+        assert_eq!(
+            (files(&session.fs, session.path()), session.text()),
+            before,
+            "{name}"
+        );
         let causes = ran.err.matches("expected").count();
         assert!(causes <= 1, "{name}: a cause is repeated: {}", ran.err);
     }
@@ -350,8 +370,8 @@ fn an_unreadable_journal_exits_1() {
 
 #[test]
 fn the_default_config_comes_from_the_host() {
-    let host = host_with(ready());
-    fs::write(&host.config, "{").unwrap();
+    let host = host_with(ready(), Arc::new(MemFs::new()));
+    host.write(&host.config, "{").unwrap();
     let (_dir, state) = missing_state();
     let ran = doctor(&host, &state, &[]);
     assert_eq!(ran.exit, Exit::Usage, "{}", ran.err);
@@ -364,13 +384,14 @@ fn the_default_config_comes_from_the_host() {
 
 #[test]
 fn a_configuration_error_exits_2() {
-    let cfg = tempfile::tempdir().unwrap();
+    let cfg = support::MemoryDir::new();
     let bad = cfg.path().join("bad.json");
-    fs::write(&bad, "{").unwrap();
+    let fixture = Host::new();
+    fixture.write(&bad, "{").unwrap();
     let missing = cfg.path().join("missing.json");
     for path in [&bad, &missing] {
-        let session = Session::new();
-        let host = host_with(ready());
+        let session = Session::with_fs(fixture.fs.clone(), togi_watchtest::Scenario::Confirm);
+        let host = host_with(ready(), fixture.fs.clone());
         let ran = doctor(&host, session.path(), &["--config", path.to_str().unwrap()]);
         assert_eq!(ran.exit, Exit::Usage, "{}", ran.err);
         assert!(ran.err.contains(path.to_str().unwrap()), "{}", ran.err);
@@ -380,7 +401,7 @@ fn a_configuration_error_exits_2() {
 
 #[test]
 fn config_is_accepted_before_and_after_the_command() {
-    let cfg = tempfile::tempdir().unwrap();
+    let cfg = support::MemoryDir::new();
     let missing = cfg.path().join("missing.json");
     let missing = missing.to_str().unwrap();
     for args in [
@@ -388,7 +409,7 @@ fn config_is_accepted_before_and_after_the_command() {
         &["--config", missing, "doctor"],
     ] {
         let session = Session::new();
-        let host = host_with(ready());
+        let host = host_with(ready(), session.fs.clone());
         let ran = host.run(session.path(), args);
         assert_eq!(ran.exit, Exit::Usage, "{args:?}");
         assert!(ran.err.contains("missing.json"), "{args:?}: {}", ran.err);
@@ -398,8 +419,8 @@ fn config_is_accepted_before_and_after_the_command() {
 #[test]
 fn a_busy_host_lock_exits_3_only_for_root() {
     let session = Session::new();
-    let host = host_with(ready());
-    let _held = HostLock::acquire(&host.lock, Policy::Private).unwrap();
+    let host = host_with(ready(), session.fs.clone());
+    let _held = host.locks.acquire(&host.lock).unwrap();
     let ran = doctor(&host, session.path(), &[]);
     assert_eq!(ran.exit, Exit::Locked, "{}", ran.err);
     assert_eq!(
@@ -411,24 +432,24 @@ fn a_busy_host_lock_exits_3_only_for_root() {
     );
     assert_eq!(host.calls.get(), 0);
 
-    let mut host = host_with(ready());
+    let mut host = host_with(ready(), session.fs.clone());
     host.root = false;
     host.lock = host.lock.clone();
-    let _held = HostLock::acquire(&host.lock, Policy::Private).unwrap();
+    let _held = host.locks.acquire(&host.lock).unwrap();
     assert_eq!(doctor(&host, session.path(), &[]).exit, Exit::Ok);
 }
 
 #[test]
-fn a_host_lock_that_cannot_be_opened_exits_1() {
-    let session = Session::new();
-    let mut host = host_with(ready());
+fn real_fs_a_host_lock_that_cannot_be_opened_exits_1() {
+    let mut host = Host::real();
+    *host.diagnosis.borrow_mut() = Some(Ok(ready()));
     host.lock = host
         .lock
         .parent()
         .unwrap()
         .join("missing")
         .join("togi.lock");
-    let ran = doctor(&host, session.path(), &[]);
+    let ran = doctor(&host, &host.lock.with_file_name("state"), &[]);
     assert_eq!(ran.exit, Exit::Error, "{}", ran.err);
     assert!(ran.err.contains("missing/togi.lock"), "{}", ran.err);
     assert_eq!(host.calls.get(), 0);
@@ -437,7 +458,7 @@ fn a_host_lock_that_cannot_be_opened_exits_1() {
 #[test]
 fn a_failed_diagnosis_exits_1() {
     let session = Session::new();
-    let host = Host::new();
+    let host = session.host();
     *host.diagnosis.borrow_mut() = Some(Err(togi_hardware::Error::NeedsRoot {
         operation: "open the SMU",
         uid: 1000,
@@ -461,7 +482,7 @@ fn a_bios_context_that_cannot_be_read_follows_the_table_with_exit_1() {
         bios_context_error: Some(togi_smu::Error::Unsupported),
     };
     let session = Session::new();
-    let host = host_with(diagnosis);
+    let host = host_with(diagnosis, session.fs.clone());
     let ran = doctor(&host, session.path(), &[]);
     assert_eq!(ran.exit, Exit::Error);
     assert!(ran.out.starts_with("CHECK"), "{}", ran.out);
@@ -481,9 +502,9 @@ fn another_platform_stops_before_the_journal_the_lock_and_every_check() {
         ("a journal run would refuse", session.path()),
         ("no state directory", &absent),
     ] {
-        let mut host = host_with(ready());
+        let mut host = host_with(ready(), session.fs.clone());
         host.linux = false;
-        let held = HostLock::acquire(&host.lock, Policy::Private).unwrap();
+        let held = host.locks.acquire(&host.lock).unwrap();
         let cfg = state.join("no-such-config.json");
         let ran = doctor(&host, state, &["--config", cfg.to_str().unwrap()]);
         drop(held);
@@ -495,19 +516,22 @@ fn another_platform_stops_before_the_journal_the_lock_and_every_check() {
         );
         assert_eq!(host.calls.get(), 0, "{name}");
     }
-    assert!(!absent.exists(), "doctor created the state directory");
+    assert!(
+        !session.host().exists(&absent),
+        "doctor created the state directory"
+    );
 
-    let mut host = host_with(ready());
+    let mut host = host_with(ready(), session.fs.clone());
     host.linux = false;
     let ran = doctor(&host, session.path(), &[]);
     assert_eq!(ran.exit, Exit::Error);
-    assert!(!host.lock.exists(), "the host lock file was created");
+    assert_eq!(host.lock_acquisitions.get(), 0, "the host lock was taken");
 }
 
 #[test]
 fn a_closed_stdout_is_an_error() {
     let session = Session::new();
-    let host = host_with(ready());
+    let host = host_with(ready(), session.fs.clone());
     let ran = host.run_to_closed_stdout(session.path(), &["doctor"]);
     assert_eq!(ran.exit, Exit::Error, "{}", ran.err);
     assert!(ran.err.contains("write output"), "{}", ran.err);
@@ -521,8 +545,8 @@ fn an_unknown_event_kind_in_a_current_journal_exits_16_naming_it() {
         "{text}{{\"seq\":{},\"time\":\"2026-01-01T00:00:00Z\",\"boot\":\"b1a8cebe-21d1-14db-3741-5b5df946de05\",\"kind\":\"future.fact\",\"msg\":\"x\",\"data\":{{}}}}\n",
         session.kinds().len() + 1
     );
-    fs::write(session.journal(), text).unwrap();
-    let host = host_with(ready());
+    session.fs.put(session.journal(), text.into_bytes());
+    let host = host_with(ready(), session.fs.clone());
     let ran = doctor(&host, session.path(), &[]);
     assert_eq!(ran.exit, Exit::Incompatible, "{}", ran.err);
     assert_eq!(ran.out, "");
@@ -552,8 +576,8 @@ fn the_unknown_kind_refusal_is_red_bold_on_a_terminal_like_the_stamp_refusal() {
         session.text(),
         session.kinds().len() + 1
     );
-    fs::write(session.journal(), text).unwrap();
-    let mut host = host_with(ready());
+    session.fs.put(session.journal(), text.into_bytes());
+    let mut host = host_with(ready(), session.fs.clone());
     host.facts = OutputFacts {
         is_terminal: true,
         ..OutputFacts::default()
@@ -574,15 +598,15 @@ fn an_unprivileged_failed_check_exits_15_and_another_platform_exits_1() {
     diagnosis.ran[5].ok = false;
     diagnosis.ran.retain(|check| check.name != "bios_context");
     let session = Session::new();
-    let mut host = host_with(diagnosis);
+    let mut host = host_with(diagnosis, session.fs.clone());
     host.root = false;
     let ran = doctor(&host, session.path(), &[]);
     assert_eq!(ran.exit, Exit::Preflight, "{}", ran.err);
     assert_eq!(ran.err, "togi doctor: not ready: backends\n");
     assert!(ran.out.ends_with("not ready: backends\n"), "{}", ran.out);
-    assert!(!host.lock.exists());
+    assert_eq!(host.lock_acquisitions.get(), 0);
 
-    let mut host = host_with(ready());
+    let mut host = host_with(ready(), session.fs.clone());
     host.root = false;
     host.linux = false;
     let ran = doctor(&host, session.path(), &[]);
@@ -603,9 +627,22 @@ fn a_current_journal_before_its_session_context_passes_no_context() {
         .take_while(|line| !line.contains("\"kind\":\"session.context\""))
         .collect();
     assert!(!kept.is_empty() && kept.len() < text.lines().count());
-    fs::write(session.journal(), format!("{}\n", kept.join("\n"))).unwrap();
-    let host = host_with(ready());
+    session.fs.put(
+        session.journal(),
+        format!("{}\n", kept.join("\n")).into_bytes(),
+    );
+    let host = host_with(ready(), session.fs.clone());
     let ran = doctor(&host, session.path(), &[]);
     assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
     assert_eq!(host.diagnoses.borrow().as_slice(), [(None, true)]);
+}
+
+fn assert_snapshot(snapshot: &str, actual: &str) {
+    let expected = snapshot
+        .strip_prefix("---\n")
+        .unwrap()
+        .split_once("\n---\n")
+        .unwrap()
+        .1;
+    assert_eq!(actual, expected);
 }

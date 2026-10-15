@@ -1,5 +1,5 @@
-//! A host for `togi run` made of fakes: a simulated machine, a lock and a state directory in a temporary
-//! directory, an in-memory boot entry and captured stderr. Nothing here reaches real hardware.
+//! A host for `togi run` made of fakes: a simulated machine, memory files and locks, an in-memory boot
+//! entry and captured stderr. Explicit subprocess fixtures use unsynced disk storage.
 
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
@@ -10,12 +10,13 @@ use std::time::Duration;
 
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
-use tempfile::TempDir;
 use togi_cli::dashboard::{Stop, Surface};
 use togi_cli::system::System;
 use togi_config::Config;
 use togi_hardware::{Diagnosis, Error, RebootError};
 use togi_hostlock::{HostLock, Policy};
+use togi_journal::MemFs;
+use togi_journal::fs::Fs;
 use togi_machine::{
     BiosContext, BootId, CancellationToken, CoreId, Error as MachineError, Machine, ObservedOffset,
     Partial, Running, Smu, SmuValidated, Stopped, Swept, TargetOffset, TrialConditions, TrialSpec,
@@ -25,8 +26,6 @@ use togi_render::OutputFacts;
 use togi_sim::{Model, RunSettings, Simulator, file};
 use togi_tuningboot::{Bootloader, Environment, SavedEntry};
 
-pub(crate) const MACHINE: &str = "shared-voltage";
-
 const CONFIG: &str = "config.json";
 
 pub(crate) fn simulator(seed: u64) -> Simulator {
@@ -35,10 +34,10 @@ pub(crate) fn simulator(seed: u64) -> Simulator {
 
 /// The machine with every core's boot offset at `bios`, which a run has to restore after it wrote others.
 pub(crate) fn biased(seed: u64, bios: i64) -> Simulator {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../tools/bench/machines")
-        .join(format!("{MACHINE}.json"));
-    let mut definition = file::load(path).unwrap();
+    let mut definition = file::decode(include_str!(
+        "../../../../tools/bench/machines/shared-voltage.json"
+    ))
+    .unwrap();
     definition.bios = (bios != 0).then(|| vec![bios; 16]);
     Simulator::new(
         Model::new(&definition, seed).unwrap(),
@@ -157,6 +156,8 @@ impl<F: Fn(&Stop) -> Result<(), String> + Send + Sync> Surface for Scripted<F> {
     }
 }
 
+type WrapMachine = dyn Fn(Machine, &CancellationToken) -> Machine;
+
 #[expect(
     clippy::struct_excessive_bools,
     reason = "a switchboard of independent fakes"
@@ -168,7 +169,10 @@ pub(crate) struct Fake {
     pub(crate) policy: Policy,
     pub(crate) open_error: bool,
     pub(crate) real_stderr: bool,
-    temp: Option<TempDir>,
+    pub(crate) fs: Arc<dyn Fs>,
+    pub(crate) locks: togi_hostlock::MemHostLocks,
+    real_host: bool,
+    cancel: RefCell<Option<CancellationToken>>,
     pub(crate) lock: PathBuf,
     /// The default configuration file: absent unless a test writes it.
     pub(crate) default_config: PathBuf,
@@ -181,7 +185,7 @@ pub(crate) struct Fake {
     pub(crate) stderr: Capture,
     pub(crate) grub: Grub,
     pub(crate) surface: Arc<dyn Surface>,
-    pub(crate) wrap: Box<dyn Fn(Machine) -> Machine>,
+    pub(crate) wrap: Box<WrapMachine>,
     pub(crate) opened: Cell<u32>,
     pub(crate) boots_read: Cell<u32>,
     pub(crate) reboots: Cell<u32>,
@@ -199,15 +203,37 @@ impl Fake {
     }
 
     pub(crate) fn on(sim: Simulator) -> Self {
-        let temp = TempDir::new().unwrap();
-        let mut fake = Self::in_dir(sim, temp.path());
-        fake.temp = Some(temp);
-        fake
+        Self::with_fs(sim, Path::new("/run-test"), Arc::new(MemFs::new()), false)
     }
 
-    /// A host whose files live in `dir`.
+    /// A genuine subprocess fixture: real locks, signals and files, but never disk synchronization.
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "real process fixtures must not sync to disk"
+    )]
     pub(crate) fn in_dir(sim: Simulator, dir: &Path) -> Self {
-        std::fs::write(dir.join(CONFIG), "{}").unwrap();
+        Self::with_fs(sim, dir, togi_journal::fs::unsynced_disk_fs(), true)
+    }
+
+    pub(crate) fn resume(&self) -> Self {
+        let mut resumed = Self::with_fs(
+            self.sim.clone(),
+            &self.dir,
+            Arc::clone(&self.fs),
+            self.real_host,
+        );
+        resumed.locks = self.locks.clone();
+        resumed
+    }
+
+    fn with_fs(sim: Simulator, dir: &Path, fs: Arc<dyn Fs>, real_host: bool) -> Self {
+        if fs.kind(dir).unwrap().is_none() {
+            fs.create_dir(dir).unwrap();
+        }
+        fs.create_truncate(&dir.join(CONFIG))
+            .unwrap()
+            .write_all(b"{}")
+            .unwrap();
         Self {
             sim,
             lock: dir.join("togi.lock"),
@@ -217,7 +243,10 @@ impl Fake {
             policy: Policy::Private,
             open_error: false,
             real_stderr: false,
-            temp: None,
+            fs,
+            locks: togi_hostlock::MemHostLocks::default(),
+            real_host,
+            cancel: RefCell::default(),
             supported: true,
             interactive: false,
             facts: OutputFacts::default(),
@@ -228,7 +257,7 @@ impl Fake {
                 stop.wait();
                 Ok(())
             })),
-            wrap: Box::new(|machine| machine),
+            wrap: Box::new(|machine, _| machine),
             opened: Cell::new(0),
             boots_read: Cell::new(0),
             reboots: Cell::new(0),
@@ -288,9 +317,44 @@ impl Fake {
     }
 
     pub(crate) fn events(&self) -> Vec<togi_journal::Event> {
-        togi_journal::Recording::read(&self.state_dir().join("events.jsonl"))
+        togi_journal::Recording::read_in(&*self.fs, &self.state_dir().join("events.jsonl"))
             .map(togi_journal::Recording::into_events)
             .unwrap_or_default()
+    }
+
+    pub(crate) fn write(
+        &self,
+        path: impl AsRef<Path>,
+        content: impl AsRef<[u8]>,
+    ) -> io::Result<()> {
+        self.fs
+            .create_truncate(path.as_ref())?
+            .write_all(content.as_ref())
+    }
+
+    pub(crate) fn read(&self, path: impl AsRef<Path>) -> io::Result<Vec<u8>> {
+        self.fs.read(path.as_ref())
+    }
+
+    pub(crate) fn read_to_string(&self, path: impl AsRef<Path>) -> io::Result<String> {
+        String::from_utf8(self.read(path)?)
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
+    }
+
+    pub(crate) fn create_dir(&self, path: impl AsRef<Path>) -> io::Result<()> {
+        self.fs.create_dir(path.as_ref())
+    }
+
+    pub(crate) fn exists(&self, path: impl AsRef<Path>) -> bool {
+        self.fs.kind(path.as_ref()).unwrap().is_some()
+    }
+
+    pub(crate) fn hold_lock(&self) -> HostLock {
+        if self.real_host {
+            HostLock::acquire(&self.lock, self.policy).unwrap()
+        } else {
+            self.locks.acquire(&self.lock).unwrap()
+        }
     }
 }
 
@@ -310,6 +374,32 @@ impl System for Fake {
 
     fn config_path(&self) -> &Path {
         &self.default_config
+    }
+
+    fn journal_fs(&self) -> Option<Arc<dyn Fs>> {
+        Some(Arc::clone(&self.fs))
+    }
+
+    fn acquire_host_lock(&self) -> Result<HostLock, togi_hostlock::Error> {
+        let (path, policy) = self.host_lock();
+        if self.real_host {
+            HostLock::acquire(path, policy)
+        } else if policy == Policy::Host {
+            Err(togi_hostlock::Error::NotProvisioned {
+                path: path.to_owned(),
+            })
+        } else {
+            self.locks.acquire(path)
+        }
+    }
+
+    fn listen(&self, cancel: &CancellationToken) -> io::Result<Box<dyn std::any::Any>> {
+        *self.cancel.borrow_mut() = Some(cancel.clone());
+        if self.real_host {
+            togi_cli::system::listen_for_signals(cancel)
+        } else {
+            Ok(Box::new(()))
+        }
     }
 
     fn host_lock(&self) -> (&Path, Policy) {
@@ -338,8 +428,12 @@ impl System for Fake {
     fn reboot(&self) -> Result<(), RebootError> {
         self.reboots.set(self.reboots.get() + 1);
         self.free_at_reboot.set(Some((
-            HostLock::acquire(&self.lock, self.policy).is_ok(),
-            togi_journal::StateDir::lock(self.state_dir()).is_ok(),
+            if self.real_host {
+                HostLock::acquire(&self.lock, self.policy).is_ok()
+            } else {
+                self.locks.acquire(&self.lock).is_ok()
+            },
+            self.lock_state_dir(&self.state_dir()).is_ok(),
         )));
         if self.fail_reboot {
             return Err(RebootError::Exit {
@@ -359,7 +453,25 @@ impl System for Fake {
                 uid: 1000,
             });
         }
-        Ok((self.wrap)(self.sim.seams()))
+        Ok((self.wrap)(
+            self.sim.seams(),
+            self.cancel.borrow().as_ref().unwrap(),
+        ))
+    }
+
+    fn dashboard(&self, state: &Path, since: u64) -> togi_cli::dashboard::Dashboard {
+        if self.real_host {
+            togi_cli::dashboard::Dashboard::new(self.surface(), state, since)
+        } else {
+            let stderr = self.stderr.clone();
+            togi_cli::dashboard::Dashboard::isolated(self.surface(), state, since, move |message| {
+                let _ = writeln!(
+                    stderr.clone(),
+                    "togi run: dashboard: {}; printing events instead",
+                    togi_render::escape_text(message)
+                );
+            })
+        }
     }
 
     fn interactive(&self) -> bool {
@@ -374,6 +486,9 @@ impl System for Fake {
     }
 
     fn stderr_facts(&self) -> OutputFacts {
+        self.facts
+    }
+    fn stdout_facts(&self) -> OutputFacts {
         self.facts
     }
 
@@ -406,11 +521,10 @@ impl System for Fake {
     }
 }
 
-/// Sends the process a signal, as Ctrl-C or a closed terminal does, once the session writes its first offset. Each
-/// test runs in its own process (nextest), so the signal reaches only the run under test.
+/// Cancels the run once the session writes its first offset, without sending a host signal.
 struct InterruptingSmu {
     inner: Box<dyn Smu>,
-    signal: rustix::process::Signal,
+    cancel: CancellationToken,
     sent: bool,
 }
 
@@ -418,11 +532,15 @@ impl InterruptingSmu {
     fn interrupt(&mut self) {
         if !self.sent {
             self.sent = true;
-            rustix::process::kill_process(rustix::process::getpid(), self.signal).unwrap();
+            self.cancel.cancel();
         }
     }
 }
 
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the fake injects cancellation before delegating simulated SMU writes"
+)]
 impl Smu for InterruptingSmu {
     fn offset(&mut self, core: CoreId) -> Result<ObservedOffset, MachineError> {
         self.inner.offset(core)
@@ -447,27 +565,22 @@ impl Smu for InterruptingSmu {
     }
 }
 
-/// The machine, interrupted by SIGINT at its first offset write.
-pub(crate) fn interrupt_on_first_write(machine: Machine) -> Machine {
-    signal_on_first_write(machine, rustix::process::Signal::INT)
-}
-
-/// The machine, sent `signal` at its first offset write.
-pub(crate) fn signal_on_first_write(machine: Machine, signal: rustix::process::Signal) -> Machine {
+/// The machine, cancelled at its first offset write.
+pub(crate) fn interrupt_on_first_write(machine: Machine, cancel: &CancellationToken) -> Machine {
     Machine {
         smu: Box::new(InterruptingSmu {
             inner: machine.smu,
-            signal,
+            cancel: cancel.clone(),
             sent: false,
         }),
         ..machine
     }
 }
 
-/// Sends the process SIGINT when the session starts its first trial: after its startup, so after any restoration
-/// a same-boot resume made before it went on to work.
+/// Cancels the run at its first trial, after any same-boot startup restoration.
 struct InterruptingTrials {
     inner: Box<dyn Trials>,
+    cancel: CancellationToken,
     sent: bool,
 }
 
@@ -484,8 +597,8 @@ impl Trials for InterruptingTrials {
     ) -> Result<Box<dyn Running>, Partial<Option<Stopped>>> {
         if !self.sent {
             self.sent = true;
-            rustix::process::kill_process(rustix::process::getpid(), rustix::process::Signal::INT)
-                .unwrap();
+            // Trial tokens are children: cancelling one alone does not stop the session.
+            self.cancel.cancel();
         }
         self.inner.start(cancel, spec, ready)
     }
@@ -499,11 +612,12 @@ impl Trials for InterruptingTrials {
     }
 }
 
-/// The machine, interrupted by SIGINT when its first trial starts.
-pub(crate) fn interrupt_at_first_trial(machine: Machine) -> Machine {
+/// The machine, cancelled when its first trial starts.
+pub(crate) fn interrupt_at_first_trial(machine: Machine, cancel: &CancellationToken) -> Machine {
     Machine {
         trials: Box::new(InterruptingTrials {
             inner: machine.trials,
+            cancel: cancel.clone(),
             sent: false,
         }),
         ..machine

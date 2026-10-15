@@ -1,8 +1,7 @@
 use crate::*;
-use flate2::{Compression, write::GzEncoder};
+use flate2::{Compression, read::MultiGzDecoder, write::GzEncoder};
 use proptest::prelude::*;
 use std::io::{Cursor, Write};
-use std::path::Path;
 
 mod load;
 mod object_only;
@@ -171,53 +170,29 @@ fn nested_vocabulary_types_refuse_unknown_fields() {
     assert!(serde_json::from_str::<LoadSchedule>(r#"{"kind":"random","seed":1}"#).is_ok());
 }
 
-fn write_gzip(path: &Path, content: &str) {
-    let mut writer = GzEncoder::new(std::fs::File::create(path).unwrap(), Compression::default());
+fn gzip(content: &str) -> Vec<u8> {
+    let mut writer = GzEncoder::new(Vec::new(), Compression::default());
     writer.write_all(content.as_bytes()).unwrap();
-    writer.finish().unwrap();
+    writer.finish().unwrap()
 }
 
 #[test]
 fn read_samples_forms() {
-    let two = "{\"elapsed_ms\":1000}\n{\"elapsed_ms\":2000}\n";
-    for (plain, gzip, raw_gzip, want) in [
-        (Some(two), None, false, vec![1000, 2000]),
-        (None, Some(two), false, vec![1000, 2000]),
-        (Some(two), Some("torn"), true, vec![1000, 2000]),
+    for (content, want) in [
         (
-            Some("{\"elapsed_ms\":1000}\n{\"elapsed_ms\":20"),
-            None,
-            false,
-            vec![1000],
-        ),
-        (
-            None,
-            Some("{\"elapsed_ms\":1000}\n{\"elapsed_ms\":20"),
-            false,
-            vec![1000],
-        ),
-        (
-            None,
-            Some("{\"elapsed_ms\":1000}\nnot json\n{\"elapsed_ms\":2000}\n"),
-            false,
+            "{\"elapsed_ms\":1000}\n{\"elapsed_ms\":2000}\n",
             vec![1000, 2000],
         ),
-        (None, Some("not gzip"), true, vec![]),
-        (None, None, false, vec![]),
+        ("{\"elapsed_ms\":1000}\n{\"elapsed_ms\":20", vec![1000]),
+        (
+            "{\"elapsed_ms\":1000}\nnot json\n{\"elapsed_ms\":2000}\n",
+            vec![1000, 2000],
+        ),
+        ("", vec![]),
     ] {
-        let dir = tempfile::tempdir().unwrap();
-        if let Some(content) = plain {
-            std::fs::write(dir.path().join(togi_trialfiles::SAMPLES), content).unwrap();
-        }
-        if let Some(content) = gzip {
-            let path = dir.path().join(format!("{}.gz", togi_trialfiles::SAMPLES));
-            if raw_gzip {
-                std::fs::write(path, content).unwrap();
-            } else {
-                write_gzip(&path, content);
-            }
-        }
-        let samples: Vec<_> = read_samples(dir.path()).collect();
+        let plain: Vec<_> = ReadSamples::from_reader(content.as_bytes()).collect();
+        let compressed: Vec<_> =
+            ReadSamples::from_reader(MultiGzDecoder::new(Cursor::new(gzip(content)))).collect();
         let expected: Vec<_> = want
             .into_iter()
             .map(|elapsed_ms| TrialConditions {
@@ -225,18 +200,59 @@ fn read_samples_forms() {
                 ..TrialConditions::default()
             })
             .collect();
+        assert_eq!(plain, expected);
+        assert_eq!(compressed, expected);
+    }
+}
+
+#[test]
+fn read_samples_rejects_invalid_gzip() {
+    let mut samples = ReadSamples::from_reader(MultiGzDecoder::new(Cursor::new(b"not gzip")));
+    assert_eq!(samples.next(), None);
+    assert_eq!(samples.next(), None);
+}
+
+#[test]
+fn real_fs_read_samples_opens_plain_or_gzip_and_prefers_plain() {
+    // This exercises path selection in the file adapter, not sample decoding.
+    let content = "{\"elapsed_ms\":1000}\n";
+    for (plain, compressed) in [
+        (Some(content), None),
+        (None, Some(gzip(content))),
+        (Some(content), Some(b"torn".to_vec())),
+        (None, None),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        if let Some(content) = plain {
+            std::fs::write(dir.path().join(togi_trialfiles::SAMPLES), content).unwrap();
+        }
+        if let Some(bytes) = &compressed {
+            std::fs::write(
+                dir.path().join(format!("{}.gz", togi_trialfiles::SAMPLES)),
+                bytes,
+            )
+            .unwrap();
+        }
+        let samples: Vec<_> = read_samples(dir.path()).collect();
+        let expected = if plain.is_some() || compressed.is_some() {
+            vec![TrialConditions {
+                elapsed_ms: 1000,
+                ..TrialConditions::default()
+            }]
+        } else {
+            Vec::new()
+        };
         assert_eq!(samples, expected);
     }
 }
 
 #[test]
 fn read_samples_stops_early() {
-    let dir = tempfile::tempdir().unwrap();
-    write_gzip(
-        &dir.path().join(format!("{}.gz", togi_trialfiles::SAMPLES)),
+    let samples: Vec<_> = ReadSamples::from_reader(MultiGzDecoder::new(Cursor::new(gzip(
         "{\"elapsed_ms\":1}\n{\"elapsed_ms\":2}\n",
-    );
-    let samples: Vec<_> = read_samples(dir.path()).take(1).collect();
+    ))))
+    .take(1)
+    .collect();
     assert_eq!(
         samples,
         [TrialConditions {

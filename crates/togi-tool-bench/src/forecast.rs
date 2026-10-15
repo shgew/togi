@@ -229,6 +229,20 @@ fn write_table(w: &mut impl io::Write, rows: &[[String; 4]]) -> io::Result<()> {
 
 /// Forecasts the real run whose state directory is copied at `options.state`.
 pub fn execute(options: &Options, fleet: &Fleet) -> Result<Report, Failed> {
+    execute_with_durability(options, fleet, true)
+}
+
+/// Forecasts into disposable scratch output without syncing the record.
+/// Journal inputs remain read-only; production callers should use [`execute`].
+pub fn execute_unsynced(options: &Options, fleet: &Fleet) -> Result<Report, Failed> {
+    execute_with_durability(options, fleet, false)
+}
+
+fn execute_with_durability(
+    options: &Options,
+    fleet: &Fleet,
+    durable: bool,
+) -> Result<Report, Failed> {
     let fail = |error: ForecastError| Failed {
         error: Box::new(error),
         kept: None,
@@ -284,7 +298,7 @@ pub fn execute(options: &Options, fleet: &Fleet) -> Result<Report, Failed> {
     .map_err(|error| ForecastError::Summary(Box::new(error)))
     .map_err(finish)?;
     if let Some(out) = &options.out {
-        write_record(out, &record).map_err(finish)?;
+        write_record(out, &record, durable).map_err(finish)?;
     }
     let kept = if keep {
         Some(root)
@@ -304,8 +318,11 @@ fn ensemble(suite: &Path) -> Result<Vec<RunSpec>, ForecastError> {
     let plan = Suite::load(suite)
         .map_err(Error::from)
         .and_then(|suite| suite.plan(Selection::All))?;
-    let runs: Vec<RunSpec> = plan
-        .runs
+    select_ensemble(suite, plan.runs)
+}
+
+fn select_ensemble(suite: &Path, runs: Vec<RunSpec>) -> Result<Vec<RunSpec>, ForecastError> {
+    let runs: Vec<RunSpec> = runs
         .into_iter()
         .filter(|spec| spec.scenario == SCENARIO)
         .collect();
@@ -320,6 +337,13 @@ fn ensemble(suite: &Path) -> Result<Vec<RunSpec>, ForecastError> {
 /// The model check of each distinct machine the ensemble runs that names a facts extract, naming the machine and
 /// its extract as the record does.
 fn model_checks(runs: &[RunSpec]) -> Result<Vec<Check>, ForecastError> {
+    model_checks_with(runs, check_machine)
+}
+
+fn model_checks_with(
+    runs: &[RunSpec],
+    mut check_machine: impl FnMut(&Machine, &mut Extracts) -> Result<Option<Check>, Error>,
+) -> Result<Vec<Check>, ForecastError> {
     let mut extracts = Extracts::new();
     let mut seen = BTreeSet::new();
     let mut checks = Vec::new();
@@ -463,18 +487,32 @@ fn forecast_run(
         })?;
     let sessions = read_dir(&dir, Some(anchor.session))
         .map_err(|error| ForecastError::Read(Box::new(error)))?;
+    let outcome = outcome(&sessions, anchor, launched.exit, launched.log_dead_end())?;
+    if options.keep.is_none() {
+        fs::remove_dir_all(&dir).map_err(|source| ForecastError::Io {
+            what: "remove the run",
+            path: dir,
+            source,
+        })?;
+    }
+    Ok(outcome)
+}
+
+/// Interprets one simulator invocation's journal and exit status after the forecast anchor.
+/// `log_dead_end` describes this invocation's own log, never an earlier run's.
+pub fn outcome(
+    sessions: &[Session],
+    anchor: &Anchor,
+    exit: i32,
+    log_dead_end: bool,
+) -> Result<Outcome, ForecastError> {
     let mut outcome =
-        after(&sessions, anchor).map_err(|error| ForecastError::Read(Box::new(error)))?;
-    let events = events_after(&sessions, anchor);
+        after(sessions, anchor).map_err(|error| ForecastError::Read(Box::new(error)))?;
+    let events = events_after(sessions, anchor);
     let dead_end = events
         .iter()
         .any(|event| matches!(event.payload, Payload::DeadEnd(_)));
-    let status = RunStatus::of(
-        launched.exit,
-        !events.is_empty(),
-        dead_end,
-        launched.log_dead_end(),
-    );
+    let status = RunStatus::of(exit, !events.is_empty(), dead_end, log_dead_end);
     // Exit 1 is a dead end only when this invocation reached one: a dead end event after the anchor, or its own
     // log line when it finished one the copy left pending. A dead end in the copy is not this run's.
     let (means, journal, expected) = match status {
@@ -485,24 +523,15 @@ fn forecast_run(
         RunStatus::Concluded => ("concluded", name(outcome.status), Status::Concluded),
         RunStatus::Censored => ("censored", name(outcome.status), Status::Censored),
         RunStatus::Error => {
-            return Err(ForecastError::SimulatorFailed {
-                exit: launched.exit,
-            });
+            return Err(ForecastError::SimulatorFailed { exit });
         }
     };
     if outcome.status != expected {
         return Err(ForecastError::StatusMismatch {
-            exit: launched.exit,
+            exit,
             means,
             journal,
         });
-    }
-    if options.keep.is_none() {
-        fs::remove_dir_all(&dir).map_err(|source| ForecastError::Io {
-            what: "remove the run",
-            path: dir,
-            source,
-        })?;
     }
     Ok(outcome)
 }
@@ -593,7 +622,7 @@ fn copy_state(src: &Path, dst: &Path) -> Result<(), ForecastError> {
     Ok(())
 }
 
-fn write_record(path: &Path, record: &Record) -> Result<(), ForecastError> {
+fn write_record(path: &Path, record: &Record, durable: bool) -> Result<(), ForecastError> {
     let failed = |source: Box<dyn std::error::Error + Send + Sync>| ForecastError::Write {
         path: path.to_path_buf(),
         source,
@@ -605,8 +634,338 @@ fn write_record(path: &Path, record: &Record) -> Result<(), ForecastError> {
         fs::create_dir_all(parent).map_err(|error| failed(error.into()))?;
     }
     let mut file = fs::File::create(path).map_err(|error| failed(error.into()))?;
-    record
-        .write(&mut file)
-        .map_err(|error| failed(error.into()))?;
-    file.sync_all().map_err(|error| failed(error.into()))
+    write_record_to(record, &mut file, |file| {
+        if durable { sync_record(file) } else { Ok(()) }
+    })
+    .map_err(failed)
+}
+
+#[expect(
+    clippy::disallowed_methods,
+    reason = "production forecast publication requires durable record contents"
+)]
+fn sync_record(file: &mut fs::File) -> io::Result<()> {
+    file.sync_all()
+}
+
+fn write_record_to<W: io::Write>(
+    record: &Record,
+    writer: &mut W,
+    sync: impl FnOnce(&mut W) -> io::Result<()>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    record.write(writer)?;
+    sync(writer)?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sha2::Digest as _;
+    use std::collections::BTreeMap;
+    use std::io::Write;
+
+    struct RecordingWriter {
+        bytes: Vec<u8>,
+        calls: Vec<&'static str>,
+        write_limit: Option<usize>,
+        fail_sync: bool,
+    }
+
+    impl Write for RecordingWriter {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            self.calls.push("write");
+            let remaining = self
+                .write_limit
+                .map_or(bytes.len(), |limit| limit.saturating_sub(self.bytes.len()));
+            if remaining == 0 && !bytes.is_empty() {
+                return Err(io::Error::other("write failed"));
+            }
+            let written = bytes.len().min(remaining);
+            self.bytes.extend_from_slice(&bytes[..written]);
+            Ok(written)
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            panic!("record publication must not substitute flush for sync")
+        }
+    }
+
+    impl RecordingWriter {
+        fn sync(&mut self) -> io::Result<()> {
+            self.calls.push("sync");
+            if self.fail_sync {
+                Err(io::Error::other("sync failed"))
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    fn record() -> Record {
+        Record::new(
+            Anchor {
+                session: "20260101T000000Z".parse().unwrap(),
+                seq: togi_journal::Seq::new(1).unwrap(),
+                time: "2026-01-01T00:00:00Z".parse().unwrap(),
+                sha256: "0".repeat(64),
+            },
+            "0123abc",
+            false,
+            Vec::new(),
+            vec![Run {
+                machine: String::new(),
+                seed: 1,
+                split: "dev".to_owned(),
+                outcome: Outcome {
+                    status: Status::Concluded,
+                    hours: 1.0,
+                    crashes: 0,
+                    hunts: 0,
+                    profile: [(
+                        togi_machine::CoreId::new(0).unwrap(),
+                        togi_machine::ObservedOffset(-1),
+                    )]
+                    .into_iter()
+                    .collect(),
+                    depth: -1,
+                },
+            }],
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn record_publication_writes_every_byte_before_sync_and_propagates_failures() {
+        let record = record();
+        let mut expected = Vec::new();
+        record.write(&mut expected).unwrap();
+        for (write_limit, fail_sync) in [
+            (None, false),
+            (Some(0), false),
+            (Some(64), false),
+            (None, true),
+        ] {
+            let mut writer = RecordingWriter {
+                bytes: Vec::new(),
+                calls: Vec::new(),
+                write_limit,
+                fail_sync,
+            };
+            let result = write_record_to(&record, &mut writer, RecordingWriter::sync);
+            if let Some(limit) = write_limit {
+                assert!(result.unwrap_err().to_string().contains("write failed"));
+                assert!(writer.calls.iter().all(|call| *call == "write"));
+                assert_eq!(
+                    writer.bytes,
+                    expected[..limit],
+                    "a failed write leaves only its prefix and never syncs"
+                );
+            } else {
+                assert_eq!(writer.bytes, expected);
+                assert_eq!(writer.calls.last(), Some(&"sync"));
+                assert!(
+                    writer.calls[..writer.calls.len() - 1]
+                        .iter()
+                        .all(|call| *call == "write")
+                );
+                if fail_sync {
+                    assert!(result.unwrap_err().to_string().contains("sync failed"));
+                } else {
+                    result.unwrap();
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn unsynced_record_publication_writes_the_same_bytes_without_sync() {
+        let record = record();
+        let mut writer = RecordingWriter {
+            bytes: Vec::new(),
+            calls: Vec::new(),
+            write_limit: None,
+            fail_sync: true,
+        };
+        write_record_to(&record, &mut writer, |_| Ok(())).unwrap();
+        assert!(!writer.calls.is_empty());
+        assert!(writer.calls.iter().all(|call| *call == "write"));
+        assert_eq!(
+            Record::decode(writer.bytes.as_slice(), "forecast.json").unwrap(),
+            record
+        );
+    }
+
+    struct MemorySource(std::collections::BTreeMap<PathBuf, Vec<u8>>);
+
+    impl MemorySource {
+        fn normalized(path: &Path) -> PathBuf {
+            let mut normalized = PathBuf::new();
+            for part in path.components() {
+                match part {
+                    std::path::Component::ParentDir => {
+                        normalized.pop();
+                    }
+                    std::path::Component::CurDir => {}
+                    part => normalized.push(part.as_os_str()),
+                }
+            }
+            normalized
+        }
+    }
+
+    impl togi_sim::file::Source for MemorySource {
+        fn read_to_string(&self, path: &Path) -> io::Result<String> {
+            String::from_utf8(crate::suite::SuiteSource::read(self, path)?)
+                .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
+        }
+
+        fn canonicalize(&self, path: &Path) -> io::Result<PathBuf> {
+            Ok(Self::normalized(path))
+        }
+    }
+
+    impl crate::suite::SuiteSource for MemorySource {
+        fn read(&self, path: &Path) -> io::Result<Vec<u8>> {
+            self.0
+                .get(&Self::normalized(path))
+                .cloned()
+                .ok_or_else(|| io::Error::from(io::ErrorKind::NotFound))
+        }
+    }
+
+    #[test]
+    fn a_suite_without_the_target_scenario_has_no_ensemble() {
+        let suite = Suite::parse(
+            br#"{"scenarios":[{"name":"other","dev":[3]}]}"#,
+            PathBuf::from("/suite"),
+        )
+        .unwrap();
+        let plan = suite
+            .plan_from(Selection::All, &MemorySource(BTreeMap::default()))
+            .unwrap();
+        assert!(matches!(
+            select_ensemble(Path::new("/suite/suite.json"), plan.runs),
+            Err(ForecastError::NoEnsemble { .. })
+        ));
+    }
+
+    #[test]
+    fn the_record_lists_each_machine_file_the_ensemble_reads_once_by_suite_relative_path() {
+        let contents = [
+            ("big.json", r#"{"cores":8}"#),
+            ("small.json", r#"{"cores":4}"#),
+            ("unused.json", r#"{"cores":2}"#),
+        ];
+        let source = MemorySource(
+            contents
+                .iter()
+                .map(|(name, text)| {
+                    (
+                        PathBuf::from(format!("/suite/machines/{name}")),
+                        text.as_bytes().to_vec(),
+                    )
+                })
+                .collect(),
+        );
+        let suite = Suite::parse(
+            br#"{"scenarios":[{"name":"target","machines":["machines/big.json","machines/small.json"],"dev":[1,2],"holdout":[101]},{"name":"other","machine":"machines/unused.json","dev":[3]}]}"#,
+            PathBuf::from("/suite"),
+        ).unwrap();
+        let plan = suite.plan_from(Selection::All, &source).unwrap();
+        let runs = select_ensemble(Path::new("/suite/suite.json"), plan.runs).unwrap();
+        let sum = |text: &str| crate::suite::hex(&sha2::Sha256::digest(text.as_bytes()));
+        let files = ensemble_files(&runs).unwrap();
+        assert_eq!(
+            files
+                .iter()
+                .map(|file| (file.path.as_str(), file.sha256.clone()))
+                .collect::<Vec<_>>(),
+            [
+                ("machines/big.json", sum(contents[0].1)),
+                ("machines/small.json", sum(contents[1].1)),
+            ]
+        );
+        assert_eq!(
+            runs.iter()
+                .map(|run| machine_name(run.machine.as_deref().unwrap()).unwrap())
+                .collect::<Vec<_>>(),
+            [
+                "machines/big.json",
+                "machines/small.json",
+                "machines/big.json",
+            ]
+        );
+    }
+
+    #[test]
+    fn an_absolute_machine_and_its_model_check_are_named_relative_to_the_suite() {
+        use crate::suite::SuiteSource;
+        let source = MemorySource(
+            [
+                (
+                    PathBuf::from("/suite/machines/target-fit-0.json"),
+                    include_bytes!("../../../tools/bench/machines/target-fit-0.json").to_vec(),
+                ),
+                (
+                    PathBuf::from("/suite/facts/target.jsonl.gz"),
+                    include_bytes!("../../../tools/bench/facts/target.jsonl.gz").to_vec(),
+                ),
+            ]
+            .into_iter()
+            .collect(),
+        );
+        let suite = Suite::parse(
+            br#"{"scenarios":[{"name":"target","machine":"/suite/machines/target-fit-0.json","dev":[1,2],"holdout":[101]}]}"#,
+            PathBuf::from("/suite"),
+        ).unwrap();
+        let plan = suite.plan_from(Selection::All, &source).unwrap();
+        let runs = select_ensemble(Path::new("/suite/suite.json"), plan.runs).unwrap();
+        assert!(
+            runs.iter()
+                .all(|run| machine_name(run.machine.as_deref().unwrap()).unwrap()
+                    == "machines/target-fit-0.json")
+        );
+        let checks = model_checks_with(&runs, |machine, extracts| {
+            crate::run::check_machine_with(machine, extracts, |path| {
+                let bytes =
+                    source
+                        .read(path)
+                        .map_err(|source| togi_tool_trialfacts::ReadError::Open {
+                            path: path.to_path_buf(),
+                            source,
+                        })?;
+                togi_tool_trialfacts::decode(bytes.as_slice())
+            })
+        })
+        .unwrap();
+        assert_eq!(checks.len(), 1);
+        assert_eq!(checks[0].machine, Path::new("machines/target-fit-0.json"));
+        assert_eq!(
+            checks[0].extract,
+            Path::new("machines/../facts/target.jsonl.gz")
+        );
+        let mut record = record();
+        record.files = ensemble_files(&runs).unwrap();
+        for run in &mut record.runs {
+            run.machine = machine_name(runs[0].machine.as_deref().unwrap()).unwrap();
+        }
+        let report = Report {
+            record,
+            checks,
+            kept: None,
+        };
+        let mut json = Vec::new();
+        report.record.write(&mut json).unwrap();
+        let mut table = Vec::new();
+        report.write(&mut table).unwrap();
+        assert!(!String::from_utf8(json).unwrap().contains("/suite"));
+        let table = String::from_utf8(table).unwrap();
+        assert!(!table.contains("/suite"), "{table}");
+        assert_eq!(
+            table.matches("\nmachines/target-fit-0.json: ").count(),
+            1,
+            "{table}"
+        );
+    }
 }

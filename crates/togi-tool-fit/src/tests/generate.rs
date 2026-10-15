@@ -1,29 +1,40 @@
-use std::fs;
 use std::path::{Path, PathBuf};
 
 use togi_facts::{Decisive, TrialClass};
 use togi_machine::{BiosContext, Regime, Signal, TargetOffset, WorkloadId};
 use togi_sim::definition::CcdDef;
 use togi_sim::file;
-use togi_tool_modelcheck::{Group, Interval, Status, check};
-use togi_tool_trialfacts::{Class, Extracts, TrialFact};
+use togi_tool_modelcheck::{Group, Interval, Status, check_records};
+use togi_tool_trialfacts::{Class, TrialFact};
 
-use super::{context, extract, fact, failure, repeated};
+use super::output::MemoryOutput;
+use super::{context, fact, failure, repeated};
+use crate::MachineOutput;
 use crate::encode::encode_machine;
 use crate::error::{Error, EvidenceError};
 use crate::evidence::initial_config;
-use crate::generate::{Ensemble, generate};
+use crate::generate::{Ensemble, generate_records};
 use crate::signals::fit_signals;
 
 struct Run {
-    dir: tempfile::TempDir,
+    dir: PathBuf,
     extract: PathBuf,
+    records: Vec<TrialFact>,
+    output: MemoryOutput,
 }
 
 fn run_dir(facts: &[TrialFact]) -> Run {
-    let dir = tempfile::tempdir().unwrap();
-    let extract = extract(dir.path(), "facts.jsonl.gz", facts);
-    Run { dir, extract }
+    let dir = PathBuf::from("/fit");
+    let extract = dir.join("facts.jsonl.gz");
+    let mut bytes = Vec::new();
+    togi_tool_trialfacts::encode(&mut bytes, facts).unwrap();
+    let records = togi_tool_trialfacts::decode(bytes.as_slice()).unwrap();
+    Run {
+        dir,
+        extract,
+        records,
+        output: MemoryOutput::default(),
+    }
 }
 
 fn pool(threads: usize) -> rayon::ThreadPool {
@@ -66,19 +77,34 @@ fn an_ensemble_is_written_checked_against_the_original_evidence_and_reproducible
     let run = run_dir(&records);
     let mut first: Vec<Vec<u8>> = Vec::new();
     for (i, threads) in [1, 2].into_iter().enumerate() {
-        let out = run.dir.path().join(i.to_string()).join("machines");
+        let out = run.dir.join(i.to_string()).join("machines");
         let mut report = Vec::new();
         let generated = pool(threads)
-            .install(|| generate(&run.extract, &out, ensemble(1), &mut report))
+            .install(|| {
+                generate_records(
+                    &run.records,
+                    &run.extract,
+                    &out,
+                    ensemble(1),
+                    &mut report,
+                    &mut run.output.clone(),
+                )
+            })
             .unwrap();
         for (n, fitted) in generated.fits.iter().enumerate() {
             let path = member(&out, n);
-            let content = fs::read(&path).unwrap();
-            let cfg = file::load(&path).unwrap();
+            let content = run.output.read_to_string(&path).unwrap().into_bytes();
+            let cfg = run.output.load(&path).unwrap();
             assert_eq!(cfg.facts.as_deref(), Some("../../facts.jsonl.gz"));
             let bios = cfg.bios_context.as_ref().unwrap();
             assert_eq!(bios.board.as_deref(), Some(context().board.as_str()));
-            let checked = check(&path, &cfg, &mut Extracts::new()).unwrap();
+            let checked = check_records(
+                &path,
+                &run.extract,
+                &togi_sim::Model::new(&cfg, 0).unwrap(),
+                &run.records,
+            )
+            .unwrap();
             assert_eq!(checked.status, Status::Ok, "{checked:?}");
             assert_eq!(
                 (
@@ -144,11 +170,12 @@ fn the_ensemble_report_and_files_are_the_same_on_one_thread_and_on_many() {
         let run = run_dir(&case.records);
         let mut outputs = Vec::new();
         for threads in [1, 5] {
-            let out = run.dir.path().join(threads.to_string()).join("machines");
+            let out = run.dir.join(threads.to_string()).join("machines");
             let mut report = Vec::new();
             let generated = pool(threads)
                 .install(|| {
-                    generate(
+                    generate_records(
+                        &run.records,
                         &run.extract,
                         &out,
                         Ensemble {
@@ -156,11 +183,12 @@ fn the_ensemble_report_and_files_are_the_same_on_one_thread_and_on_many() {
                             bootstrap: 4,
                         },
                         &mut report,
+                        &mut run.output.clone(),
                     )
                 })
                 .unwrap();
             let files: Vec<String> = (0..5)
-                .map(|n| fs::read_to_string(member(&out, n)).unwrap())
+                .map(|n| run.output.read_to_string(&member(&out, n)).unwrap())
                 .collect();
             let report = String::from_utf8(report)
                 .unwrap()
@@ -280,24 +308,28 @@ fn the_ensemble_report_and_files_are_the_same_on_one_thread_and_on_many() {
 
 #[test]
 fn evidence_with_no_decisive_trial_is_refused_before_anything_is_written() {
-    let dir = tempfile::tempdir().unwrap();
-    let out = dir.path().join("machines");
-    let mut report = Vec::new();
-    let missing = dir.path().join("facts.jsonl.gz");
-    let error = generate(&missing, &out, ensemble(0), &mut report).unwrap_err();
-    assert!(matches!(error, Error::Read(_)), "{error}");
     let mut idle = r1_trials(-10, 1, 1).remove(0);
     idle.class = Class::Idle {
         loaded: super::cores(&[0]),
     };
-    let only_idle = extract(dir.path(), "idle.jsonl.gz", &[idle]);
-    let error = generate(&only_idle, &out, ensemble(0), &mut report).unwrap_err();
+    let run = run_dir(&[idle]);
+    let out = run.dir.join("machines");
+    let mut report = Vec::new();
+    let error = generate_records(
+        &run.records,
+        &run.extract,
+        &out,
+        ensemble(0),
+        &mut report,
+        &mut run.output.clone(),
+    )
+    .unwrap_err();
     assert!(
         matches!(error, Error::Evidence(EvidenceError::NoTrials)),
         "{error}"
     );
     assert!(
-        !out.exists(),
+        !run.output.exists(&out),
         "refused evidence created the output directory"
     );
     assert!(report.is_empty(), "refused evidence reported a fit");
@@ -307,27 +339,38 @@ fn evidence_with_no_decisive_trial_is_refused_before_anything_is_written() {
 fn a_destination_that_conflicts_is_refused_and_left_as_it_was() {
     for directory in [false, true] {
         let run = run_dir(&r1_trials(-10, 1, 0));
-        let out = run.dir.path().join("machines");
+        let out = run.dir.join("machines");
         let (conflict, action) = if directory {
             (member(&out, 0), "write fitted machine")
         } else {
             (out.clone(), "create output directory")
         };
         if directory {
-            fs::create_dir_all(&conflict).unwrap();
+            run.output.create_dir_all(&conflict).unwrap();
         } else {
-            fs::write(&conflict, "preserve").unwrap();
+            run.output
+                .create_dir_all(conflict.parent().unwrap())
+                .unwrap();
+            run.output.write(&conflict, "preserve").unwrap();
         }
         let mut report = Vec::new();
-        let error = generate(&run.extract, &out, ensemble(0), &mut report).unwrap_err();
+        let error = generate_records(
+            &run.records,
+            &run.extract,
+            &out,
+            ensemble(0),
+            &mut report,
+            &mut run.output.clone(),
+        )
+        .unwrap_err();
         assert!(
             matches!(&error, Error::Io { action: a, .. } if *a == action),
             "{error}"
         );
         assert!(report.is_empty(), "a refused run printed a report");
-        assert_eq!(conflict.is_dir(), directory);
+        assert_eq!(run.output.is_dir(&conflict), directory);
         if !directory {
-            assert_eq!(fs::read_to_string(&conflict).unwrap(), "preserve");
+            assert_eq!(run.output.read_to_string(&conflict).unwrap(), "preserve");
         }
     }
 }
@@ -381,7 +424,14 @@ fn an_encoded_machine_retains_the_fit_evidence_and_parameters() {
     let constrained = [group(120, 45, 5, Interval { low: 0, high: 0 }, false)];
     let flagged = [group(300, 24, 7, Interval { low: 0, high: 2 }, true)];
     let content = encode_machine(&cfg, 2, 263, 45, 12.5, &constrained, &flagged).unwrap();
-    insta::assert_snapshot!("encoded_fit", content);
+    let snapshot = include_str!("snapshots/togi_tool_fit__tests__generate__encoded_fit.snap");
+    let expected = snapshot
+        .splitn(3, "---")
+        .nth(2)
+        .unwrap()
+        .strip_prefix('\n')
+        .unwrap();
+    assert_eq!(content.trim_end(), expected.trim_end());
     let mut decoded = file::decode(&content).unwrap();
     assert_eq!(decoded.notes.len(), 6);
     decoded.notes.clear();
@@ -399,9 +449,14 @@ fn the_extract_path_a_machine_declares_is_relative_to_its_directory_and_cleaned(
     );
     assert_eq!(reference("/a/machines", "/a/machines/sub/x.gz"), "sub/x.gz");
     assert_eq!(reference("/a/machines", "/a/machines"), "");
+    assert_eq!(reference("/a/machines", "/a/facts.gz"), "../facts.gz");
+}
+
+#[test]
+fn real_fs_relative_extract_reference_uses_the_working_directory() {
     let cwd = std::env::current_dir().unwrap();
     assert_eq!(
-        reference("machines", cwd.join("facts.gz").to_str().unwrap()),
+        crate::paths::facts_reference(Path::new("machines"), &cwd.join("facts.gz")).unwrap(),
         "../facts.gz"
     );
 }

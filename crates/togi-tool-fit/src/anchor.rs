@@ -1,7 +1,6 @@
 //! The in-sample shared-voltage anchor: one machine file fitted to every decisive trial and checked against
 //! the whole extract before it is written.
 
-use std::fs;
 use std::io;
 use std::path::Path;
 
@@ -13,6 +12,7 @@ use togi_tool_trialfacts::{TrialFact, read};
 use crate::encode::encode_shared_voltage_anchor;
 use crate::error::Error;
 use crate::evidence::{bios_context_def, decisive, is_failure, load_of, regime_of, trial_class};
+use crate::output::{DiskOutput, MachineOutput};
 use crate::paths::facts_reference;
 use crate::signals::report_signals;
 use crate::voltage::fit_shared_voltage;
@@ -24,17 +24,30 @@ pub fn shared_voltage_anchor(
     out_dir: &Path,
     report: &mut impl io::Write,
 ) -> Result<(), Error> {
-    anchor_with(facts, out_dir, report, fit_shared_voltage)
+    let records = read(facts)?;
+    shared_voltage_anchor_records(&records, facts, out_dir, report, &mut DiskOutput)
+}
+
+/// Fits decoded facts, publishing the accepted anchor through `output`.
+pub fn shared_voltage_anchor_records(
+    records: &[TrialFact],
+    facts: &Path,
+    out_dir: &Path,
+    report: &mut impl io::Write,
+    output: &mut impl MachineOutput,
+) -> Result<(), Error> {
+    anchor_with(records, facts, out_dir, report, fit_shared_voltage, output)
 }
 
 pub(crate) fn anchor_with(
+    records: &[TrialFact],
     facts: &Path,
     out_dir: &Path,
     report: &mut impl io::Write,
     fitter: impl FnOnce(&[TrialFact]) -> Result<(MachineDefinition, f64), Error>,
+    output: &mut impl MachineOutput,
 ) -> Result<(), Error> {
-    let records = read(facts)?;
-    let trials = decisive(&records)?;
+    let trials = decisive(records)?;
     for fact in &trials {
         let cores = fact.profile.as_slice().len();
         if cores != CORES {
@@ -56,7 +69,7 @@ pub(crate) fn anchor_with(
     cfg.facts = Some(facts_reference(out_dir, facts)?);
     let path = out_dir.join("target-shared-voltage.json");
     let model = Model::new(&cfg, 0)?;
-    let check = check_records(&path, facts, &model, &records)?;
+    let check = check_records(&path, facts, &model, records)?;
     writeln!(
         report,
         "IN-SAMPLE shared-voltage fit; NOT forward-validated. The 2026-10-04 #306 R7 forward bar failed."
@@ -131,16 +144,8 @@ pub(crate) fn anchor_with(
         return Err(Error::AnchorFlagged);
     }
     let content = encode_shared_voltage_anchor(&cfg, trials.len(), loss)?;
-    fs::create_dir_all(out_dir).map_err(|source| Error::Io {
-        action: "create output directory",
-        path: out_dir.to_path_buf(),
-        source,
-    })?;
-    fs::write(&path, content).map_err(|source| Error::Io {
-        action: "write shared-voltage anchor",
-        path: path.clone(),
-        source,
-    })?;
+    output.prepare(out_dir)?;
+    output.write(&path, &content, "write shared-voltage anchor")?;
     writeln!(
         report,
         "Wrote IN-SAMPLE anchor: {} (NOT forward-validated)",

@@ -28,6 +28,10 @@ pub(crate) struct Settings {
     pub(crate) unscoped: bool,
     pub(crate) user_manager: bool,
     pub(crate) controller: Arc<dyn Controller>,
+    pub(crate) durability: crate::samples::Durability,
+    pub(crate) fs: Option<Arc<dyn togi_journal::fs::Fs>>,
+    pub(crate) inputs: crate::procfs::Inputs,
+    pub(crate) memory: Option<crate::watch::Memory>,
 }
 
 /// Runs trials on one dedicated runtime thread; every launch happens there.
@@ -35,10 +39,93 @@ pub struct Runner {
     dir: PathBuf,
     timing: Timing,
     runtime: Runtime,
+    durability: crate::samples::Durability,
+    fs: Option<Arc<dyn togi_journal::fs::Fs>>,
+}
+
+struct MemoryCompression<'a>(&'a dyn togi_journal::fs::Fs);
+
+impl togi_trialfiles::Storage for MemoryCompression<'_> {
+    type Source = Box<dyn std::io::Read + Send>;
+    type Destination = crate::files::MemorySink;
+
+    fn instance_dirs(&mut self, dir: &std::path::Path) -> std::io::Result<Vec<PathBuf>> {
+        let mut paths = self
+            .0
+            .read_dir(dir)?
+            .into_iter()
+            .filter(|entry| entry.kind == togi_journal::fs::FileKind::Dir)
+            .map(|entry| dir.join(entry.name))
+            .collect::<Vec<_>>();
+        paths.sort();
+        Ok(paths)
+    }
+
+    fn open_regular(
+        &mut self,
+        path: &std::path::Path,
+    ) -> Result<Option<Self::Source>, togi_trialfiles::Error> {
+        let error = |source| togi_trialfiles::Error::Open {
+            path: path.to_owned(),
+            source,
+        };
+        match self.0.kind(path).map_err(error)? {
+            Some(togi_journal::fs::FileKind::File) => {
+                self.0.open_read(path).map(Some).map_err(error)
+            }
+            _ => Ok(None),
+        }
+    }
+
+    fn create(&mut self, path: &std::path::Path) -> std::io::Result<Self::Destination> {
+        self.0.create_new(path).map(crate::files::MemorySink)
+    }
+
+    fn sync_file(&mut self, _: &mut Self::Destination) -> std::io::Result<()> {
+        Ok(())
+    }
+
+    fn rename(&mut self, from: &std::path::Path, to: &std::path::Path) -> std::io::Result<()> {
+        self.0.rename(from, to)
+    }
+
+    fn remove(&mut self, path: &std::path::Path) -> std::io::Result<()> {
+        self.0.remove_file(path)
+    }
+
+    fn sync_dir(&mut self, _: &std::path::Path) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the explicitly supplied memory filesystem compresses disposable trial fixtures"
+)]
+fn compress_memory(
+    fs: &dyn togi_journal::fs::Fs,
+    dir: &std::path::Path,
+) -> Result<(), togi_trialfiles::Errors> {
+    togi_trialfiles::compress_with(dir, &mut MemoryCompression(fs))
 }
 
 impl Runner {
     pub fn new(options: Options) -> Result<Self, Error> {
+        Self::new_with_durability(options, crate::samples::Durability::Durable)
+    }
+
+    /// Constructs a runner for disposable output without filesystem durability syscalls.
+    ///
+    /// This retains descriptor-relative safety and process containment, but a crash may lose
+    /// completed samples and compressed files. Live tuning must use [`Self::new`].
+    pub fn new_unsynced(options: Options) -> Result<Self, Error> {
+        Self::new_with_durability(options, crate::samples::Durability::Unsynced)
+    }
+
+    fn new_with_durability(
+        options: Options,
+        durability: crate::samples::Durability,
+    ) -> Result<Self, Error> {
         #[cfg(target_os = "linux")]
         {
             let user_manager = !rustix::process::geteuid().is_root();
@@ -48,18 +135,27 @@ impl Runner {
                 unscoped: false,
                 user_manager,
                 controller: Arc::new(crate::controller::Threads::over(crate::controller::Proc)),
+                durability,
+                fs: None,
+                inputs: crate::procfs::Inputs::default(),
+                memory: None,
             };
             let proc = settings.roots.proc.clone();
+            let inputs = settings.inputs.clone();
             Self::build(options, settings, move || {
                 crate::os::linux::Linux::new(
-                    crate::procfs::Proc::new(proc, crate::procfs::ticks_per_second()),
+                    crate::procfs::Proc::with_inputs(
+                        proc,
+                        crate::procfs::ticks_per_second(),
+                        inputs,
+                    ),
                     user_manager,
                 )
             })
         }
         #[cfg(not(target_os = "linux"))]
         {
-            let _ = options;
+            let _ = (options, durability);
             Err(Error::Unsupported {
                 operation: "running trials",
             })
@@ -80,10 +176,17 @@ impl Runner {
         } = options;
         let timing = settings.timing;
         let env_dir = dir.clone();
-        let runtime = Runtime::spawn(move || Env {
+        let durability = settings.durability;
+        let fs = settings.fs.clone();
+        let timer_only = fs.is_some();
+        let mut preparer = crate::prepare::Preparer::default();
+        preparer.fs = settings.fs;
+        let make_env = move || Env {
             os: std::rc::Rc::new(make_os()),
             timing: settings.timing,
             roots: settings.roots,
+            inputs: settings.inputs,
+            memory: settings.memory,
             dir: env_dir,
             backends,
             topology,
@@ -94,13 +197,21 @@ impl Runner {
             storage: None,
             log_sink: None,
             supervisors: std::cell::RefCell::default(),
-            preparer: crate::prepare::Preparer::default(),
+            preparer,
             controller: settings.controller,
-        })?;
+            durability,
+        };
+        let runtime = if timer_only {
+            Runtime::spawn_timer_only(make_env)?
+        } else {
+            Runtime::spawn(make_env)?
+        };
         Ok(Self {
             dir,
             timing,
             runtime,
+            durability,
+            fs,
         })
     }
 
@@ -204,13 +315,37 @@ impl Trials for Runner {
     fn ended(&mut self, id: &str) -> Result<(), togi_machine::Error> {
         outside_runtime("ended")?;
         let id = TrialId::parse(id).map_err(|error| Error::Invalid(InvalidTrial::Id(error)))?;
+        if let Some(fs) = &self.fs {
+            return compress_memory(&**fs, &self.dir.join(id.as_str()))
+                .map_err(|errors| Error::Compress(errors).into());
+        }
         let root = TrialsRoot::open(&self.dir, false).map_err(Error::Prepare)?;
         let trial = root.trial(&id).map_err(Error::Prepare)?;
-        compress_pinned(&trial).map_err(|errors| Error::Compress(errors).into())
+        let compress = match self.durability {
+            crate::samples::Durability::Durable => compress_pinned,
+            crate::samples::Durability::Unsynced => compress_pinned_unsynced,
+        };
+        compress(&trial).map_err(|errors| Error::Compress(errors).into())
     }
 
     fn samples<'a>(&'a self, id: &'a str) -> Box<dyn Iterator<Item = TrialConditions> + 'a> {
         let reader = TrialId::parse(id).ok().and_then(|id| {
+            if let Some(fs) = &self.fs {
+                let path = self.dir.join(id.as_str());
+                let reader: Option<Box<dyn std::io::Read>> =
+                    match fs.open_read(&path.join(togi_trialfiles::SAMPLES)) {
+                        Ok(reader) => Some(reader),
+                        Err(error) if error.kind() == std::io::ErrorKind::NotFound => fs
+                            .open_read(&path.join(format!("{}.gz", togi_trialfiles::SAMPLES)))
+                            .ok()
+                            .map(|reader| {
+                                Box::new(flate2::read::MultiGzDecoder::new(reader))
+                                    as Box<dyn std::io::Read>
+                            }),
+                        Err(_) => None,
+                    };
+                return reader;
+            }
             TrialsRoot::open(&self.dir, false)
                 .ok()
                 .and_then(|root| root.samples(&id))
@@ -327,6 +462,21 @@ pub(crate) fn compress_pinned(trial: &std::os::fd::OwnedFd) -> Result<(), togi_t
     )))
 }
 
+/// Compresses the pinned directory without syncing disposable output.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "explicit unsynced runner construction selects disposable compressed output"
+)]
+pub(crate) fn compress_pinned_unsynced(
+    trial: &std::os::fd::OwnedFd,
+) -> Result<(), togi_trialfiles::Errors> {
+    use std::os::fd::AsRawFd as _;
+    togi_trialfiles::compress_unsynced(&PathBuf::from(format!(
+        "/proc/self/fd/{}",
+        trial.as_raw_fd()
+    )))
+}
+
 struct Discard;
 
 impl Reporter for Discard {
@@ -434,5 +584,20 @@ impl Drop for Trial {
         if self.ended.is_none() {
             let _ = self.commands.send(TrialCommand::Abandon);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn the_disallowed_unsynced_runner_constructor_is_never_executed() {
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "pins the disposable runner tripwire without creating a runtime or files"
+        )]
+        fn unsynced(options: super::Options) -> Result<super::Runner, super::Error> {
+            super::Runner::new_unsynced(options)
+        }
+        let _ = unsynced;
     }
 }

@@ -155,7 +155,7 @@ mod tests {
     }
 
     #[test]
-    fn a_pseudo_terminal_is_a_terminal() {
+    fn real_fs_a_pseudo_terminal_is_a_terminal() {
         use std::os::unix::fs::OpenOptionsExt as _;
 
         let flags = rustix::pty::OpenptFlags::RDWR | rustix::pty::OpenptFlags::NOCTTY;
@@ -195,16 +195,18 @@ mod tests {
     }
 
     #[test]
-    fn a_regular_file_is_plain() {
+    fn real_fs_a_regular_file_is_plain_and_its_identity_is_detected() {
         let file = tempfile::tempfile().unwrap();
         assert_eq!(
             OutputFacts::detect(&file, None, None),
             OutputFacts::default()
         );
+        let named = identity_string(&file);
+        assert!(OutputFacts::detect(&file, None, Some(OsStr::new(&named))).journald);
     }
 
     #[test]
-    fn a_pipe_is_plain() {
+    fn real_fs_a_pipe_is_plain() {
         let (_reader, writer) = std::io::pipe().unwrap();
         assert_eq!(
             OutputFacts::detect(&writer, None, None),
@@ -213,7 +215,7 @@ mod tests {
     }
 
     #[test]
-    fn a_character_device_that_is_not_a_terminal_is_plain() {
+    fn real_fs_a_character_device_that_is_not_a_terminal_is_plain() {
         let null = File::options().write(true).open("/dev/null").unwrap();
         assert_eq!(
             OutputFacts::detect(&null, None, None),
@@ -223,9 +225,12 @@ mod tests {
 
     #[test]
     fn journal_stream_matches_by_device_and_inode_not_file_type() {
-        let file = tempfile::tempfile().unwrap();
-        let named = identity_string(&file);
-        let facts = OutputFacts::detect(&file, None, Some(OsStr::new(&named)));
+        let identity = StreamIdentity {
+            device: 8,
+            inode: 12345,
+        };
+        let facts =
+            OutputFacts::from_parts(false, Some(identity), None, Some(OsStr::new("8:12345")));
         assert_eq!(
             facts,
             OutputFacts {
@@ -238,20 +243,14 @@ mod tests {
 
     #[test]
     fn a_journal_stream_naming_another_stream_is_ignored() {
-        let file = tempfile::tempfile().unwrap();
-        let other = tempfile::tempfile().unwrap();
-        let named = identity_string(&other);
-        assert!(!OutputFacts::detect(&file, None, Some(OsStr::new(&named))).journald);
-        let meta = file.metadata().unwrap();
-        for wrong in [
-            format!("{}:{}", meta.dev(), meta.ino() + 1),
-            format!("{}:{}", meta.dev() + 1, meta.ino()),
-            format!("{}:{}:1", meta.dev(), meta.ino()),
-            format!("{}:", meta.dev()),
-            String::from("garbage"),
-        ] {
+        let identity = StreamIdentity {
+            device: 8,
+            inode: 12345,
+        };
+        for wrong in ["8:12346", "9:12345", "8:12345:1", "8:", "garbage"] {
             assert!(
-                !OutputFacts::detect(&file, None, Some(OsStr::new(&wrong))).journald,
+                !OutputFacts::from_parts(false, Some(identity), None, Some(OsStr::new(wrong)))
+                    .journald,
                 "{wrong}"
             );
         }
@@ -259,10 +258,9 @@ mod tests {
 
     #[test]
     fn no_color_counts_only_when_non_empty() {
-        let file = tempfile::tempfile().unwrap();
-        assert!(OutputFacts::detect(&file, Some(OsStr::new("1")), None).no_color);
-        assert!(OutputFacts::detect(&file, Some(OsStr::new("anything")), None).no_color);
-        assert!(!OutputFacts::detect(&file, Some(OsStr::new("")), None).no_color);
-        assert!(!OutputFacts::detect(&file, None, None).no_color);
+        assert!(OutputFacts::from_parts(false, None, Some(OsStr::new("1")), None).no_color);
+        assert!(OutputFacts::from_parts(false, None, Some(OsStr::new("anything")), None).no_color);
+        assert!(!OutputFacts::from_parts(false, None, Some(OsStr::new("")), None).no_color);
+        assert!(!OutputFacts::from_parts(false, None, None, None).no_color);
     }
 }

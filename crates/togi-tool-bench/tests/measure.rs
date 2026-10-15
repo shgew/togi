@@ -1,9 +1,14 @@
 //! Measurements of journals of whole simulated sessions, which the real tuner and simulator produce in memory.
 #![expect(clippy::unwrap_used, reason = "helpers panic on a broken fixture")]
 
+#[expect(
+    dead_code,
+    reason = "this binary uses only committed memory machine inputs"
+)]
+mod common;
 mod session;
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Duration;
 
 use jiff::Timestamp;
@@ -19,8 +24,11 @@ use togi_tool_trialfacts::Extracts;
 
 use session::{Session, session};
 
-fn machines() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tools/bench/machines")
+fn definition(name: &str) -> MachineDefinition {
+    let tree = common::Tree::committed();
+    file::load_from(tree.path().join("machines").join(name), &tree)
+        .unwrap()
+        .0
 }
 
 fn measured(session: &Session, definition: &MachineDefinition, seed: u64) -> Measured {
@@ -99,7 +107,7 @@ fn a_machine_without_a_shared_rail_has_no_worst_r7_hazard() {
 
 #[test]
 fn the_worst_r7_hazard_covers_at_least_every_all_core_load() {
-    let definition = file::load(machines().join("shared-voltage.json")).unwrap();
+    let definition = definition("shared-voltage.json");
     let capped = session(&definition, 1, None, 3);
     let m = measured(&capped, &definition, 1);
     let worst = m.worst_r7_hazard_per_h.unwrap();
@@ -129,9 +137,15 @@ fn the_worst_r7_hazard_covers_at_least_every_all_core_load() {
 
 #[test]
 fn trials_a_real_fact_answers_are_counted_against_the_trials_that_ended() {
-    let path = machines().join("target-fit-0.json");
-    let definition = file::load(&path).unwrap();
-    let replay = Extracts::new().replay(&path, &definition).unwrap();
+    let path = Path::new("/bench/machines/target-fit-0.json");
+    let definition = definition("target-fit-0.json");
+    let replay = Extracts::new()
+        .replay_with(path, &definition, |_| {
+            togi_tool_trialfacts::decode(
+                include_bytes!("../../../tools/bench/facts/target.jsonl.gz").as_slice(),
+            )
+        })
+        .unwrap();
     let replayed = session(&definition, 1, Some(replay.clone()), 6);
     let model = Model::new(&definition, 1).unwrap();
     let with = measure(&replayed.events, &model, Some(&replay)).unwrap();

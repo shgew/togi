@@ -188,10 +188,19 @@ impl Simulator {
     /// directory it already has keeps the last trial's samples.
     pub fn set_samples_dir(&self, dir: Option<PathBuf>) {
         let mut runtime = self.shared.borrow_mut();
-        if runtime.samples_dir != dir {
+        if runtime.samples_dir != dir || runtime.sample_storage.is_some() {
             runtime.samples_dir = dir;
+            runtime.sample_storage = None;
             runtime.samples = crate::samples::LastTrial::default();
         }
+    }
+
+    /// Attaches an injectable sample store, clearing samples retained by the previous store.
+    pub fn set_sample_storage(&self, storage: std::rc::Rc<dyn crate::SampleStorage>) {
+        let mut runtime = self.shared.borrow_mut();
+        runtime.samples_dir = None;
+        runtime.samples = crate::samples::LastTrial::default();
+        runtime.sample_storage = Some(storage);
     }
 
     /// Forgets the last trial's samples, so a trial of a new session that reuses its id reads none.

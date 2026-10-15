@@ -136,6 +136,29 @@ struct Showing {
     quiet: Option<QuietInput<'static>>,
 }
 
+/// Host coordination is separate from drawing and gating, so an in-memory surface needs no
+/// terminal descriptors or process-wide panic reporting state.
+#[derive(Clone, Copy)]
+enum Effects {
+    Terminal,
+    Isolated,
+}
+
+impl Effects {
+    fn quiet(self) -> Option<QuietInput<'static>> {
+        match self {
+            Self::Terminal => QuietInput::enter(rustix::stdio::stdin()).ok().flatten(),
+            Self::Isolated => None,
+        }
+    }
+
+    fn screen_owned(self, owned: bool) {
+        if matches!(self, Self::Terminal) {
+            panics::screen_owned(owned);
+        }
+    }
+}
+
 type Notice = Arc<dyn Fn(&str) + Send + Sync>;
 
 /// Says on stderr that the dashboard gave way to event lines.
@@ -155,19 +178,56 @@ pub struct Dashboard {
     visible: Arc<AtomicBool>,
     showing: Mutex<Option<Showing>>,
     notice: Notice,
+    effects: Effects,
 }
 
 impl Dashboard {
     /// A dashboard of the journal in `state_dir` that says the run is starting until an event after `since`.
     #[must_use]
     pub fn new(surface: Arc<dyn Surface>, state_dir: &Path, since: u64) -> Self {
+        Self::with_effects(
+            surface,
+            state_dir,
+            since,
+            Effects::Terminal,
+            Arc::new(print_fallback),
+        )
+    }
+
+    /// A caller-provided surface without terminal or process-wide panic-screen coordination.
+    ///
+    /// Drawing, event gating and shutdown are unchanged; failures are reported to `notice`.
+    #[must_use]
+    pub fn isolated(
+        surface: Arc<dyn Surface>,
+        state_dir: &Path,
+        since: u64,
+        notice: impl Fn(&str) + Send + Sync + 'static,
+    ) -> Self {
+        Self::with_effects(
+            surface,
+            state_dir,
+            since,
+            Effects::Isolated,
+            Arc::new(notice),
+        )
+    }
+
+    fn with_effects(
+        surface: Arc<dyn Surface>,
+        state_dir: &Path,
+        since: u64,
+        effects: Effects,
+        notice: Notice,
+    ) -> Self {
         Self {
             surface,
             state_dir: state_dir.to_owned(),
             since,
             visible: Arc::new(AtomicBool::new(false)),
             showing: Mutex::new(None),
-            notice: Arc::new(print_fallback),
+            notice,
+            effects,
         }
     }
 
@@ -196,15 +256,16 @@ impl Dashboard {
         if showing.is_some() {
             return;
         }
-        let quiet = QuietInput::enter(rustix::stdio::stdin()).ok().flatten();
+        let quiet = self.effects.quiet();
         let stop = Stop::default();
-        panics::screen_owned(true);
+        self.effects.screen_owned(true);
         self.visible.store(true, Ordering::SeqCst);
         let surface = Arc::clone(&self.surface);
         let state_dir = self.state_dir.clone();
         let since = self.since;
         let visible = Arc::clone(&self.visible);
         let notice = Arc::clone(&self.notice);
+        let effects = self.effects;
         let thread_stop = stop.clone();
         let thread = thread::Builder::new()
             .name("togi-dashboard".to_owned())
@@ -218,7 +279,7 @@ impl Dashboard {
                     // The notice comes first: event lines flow again only once it is out.
                     notice(&message);
                     visible.store(false, Ordering::SeqCst);
-                    panics::screen_owned(false);
+                    effects.screen_owned(false);
                 }
             });
         match thread {
@@ -231,7 +292,7 @@ impl Dashboard {
             }
             Err(error) => {
                 self.visible.store(false, Ordering::SeqCst);
-                panics::screen_owned(false);
+                self.effects.screen_owned(false);
                 (self.notice)(&error.to_string());
             }
         }
@@ -262,7 +323,7 @@ impl Dashboard {
             let _ = thread.join();
             drop(quiet);
         }
-        panics::screen_owned(false);
+        self.effects.screen_owned(false);
     }
 }
 

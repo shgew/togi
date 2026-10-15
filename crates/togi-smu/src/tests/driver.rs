@@ -4,7 +4,6 @@ use super::fixture::{
 };
 use crate::mailbox::{Command, MailboxError, Status};
 use crate::{Driver, Error, Operation};
-use std::fs;
 use std::num::IntErrorKind;
 use togi_machine::{BiosContext, CcdId, CpuId, ObservedOffset, TargetOffset};
 
@@ -86,8 +85,8 @@ fn open_touches_no_hardware_and_validate_maps_once() {
 #[test]
 fn without_the_driver_directory_nothing_validates() {
     let tree = Tree::new(8, true);
-    fs::remove_dir_all(tree.path("sys/kernel/ryzen_smu_drv")).unwrap();
-    let mut driver = Driver::open(tree.root()).unwrap();
+    tree.remove_dir("sys/kernel/ryzen_smu_drv");
+    let mut driver = tree.open().unwrap();
     let check = driver.check_driver();
     assert!(!check.ok && check.detail.contains("ryzen_smu is not loaded"));
     assert!(matches!(
@@ -98,7 +97,7 @@ fn without_the_driver_directory_nothing_validates() {
 }
 
 #[test]
-fn missing_topology_is_an_open_error() {
+fn real_fs_missing_topology_directory_is_an_open_error() {
     let empty = tempfile::tempdir().unwrap();
     assert!(matches!(
         Driver::open(empty.path()).unwrap_err(),
@@ -132,7 +131,7 @@ fn unsupported_identity_never_reaches_hardware() {
 fn identity_only_driver_checks_but_never_opens_the_mailbox() {
     let tree = Tree::new(8, true);
     tree.identity_files();
-    let mut driver = Driver::identity_only(tree.root()).unwrap();
+    let mut driver = tree.identity_only();
     assert!(driver.check_cpu().ok);
     assert!(driver.check_driver().ok);
     assert!(matches!(
@@ -221,7 +220,7 @@ fn checks_report_exact_details_and_bios_context() {
 fn bios_strings_are_lossy_utf8() {
     let tree = Tree::new(8, true);
     tree.identity_files();
-    fs::write(tree.path("sys/class/dmi/id/board_vendor"), b"Vendor\xff\n").unwrap();
+    tree.put_bytes("sys/class/dmi/id/board_vendor", b"Vendor\xff\n");
     let fake = Fake::new();
     let mut driver = validated(&tree, &fake);
     assert_eq!(
@@ -343,11 +342,12 @@ fn malformed_topology_files_are_open_errors() {
         "online",
     ] {
         let tree = Tree::new(8, relative != "topology/die_id");
-        let path = tree.path(&format!("sys/devices/system/cpu/cpu0/{relative}"));
+        let relative_path = format!("sys/devices/system/cpu/cpu0/{relative}");
+        let path = tree.path(&relative_path);
         if relative == "online" {
-            fs::create_dir(&path).unwrap();
+            tree.fail_read(&relative_path, std::io::ErrorKind::PermissionDenied);
         } else {
-            fs::write(&path, "invalid\n").unwrap();
+            tree.put(&relative_path, "invalid\n");
         }
         let fake = Fake::new();
         let error = open_error(&tree, &fake);
@@ -379,13 +379,11 @@ fn missing_topology_files_are_open_errors() {
 
 #[test]
 fn no_online_cpu_is_an_open_error() {
-    let tree = tempfile::tempdir().unwrap();
-    let cpu = tree.path().join("sys/devices/system/cpu");
-    fs::create_dir_all(cpu.join("cpunotnumber/topology")).unwrap();
-    fs::write(cpu.join("cpunotnumber/topology/core_id"), "0").unwrap();
-    fs::write(cpu.join("notcpu"), "ignored").unwrap();
+    let tree = Tree::with_ccds(0, 0, true);
+    tree.put("sys/devices/system/cpu/cpunotnumber/topology/core_id", "0");
+    tree.put("sys/devices/system/cpu/notcpu", "ignored");
     assert!(matches!(
-        Driver::open(tree.path()).unwrap_err(),
+        tree.open().unwrap_err(),
         Error::NoOnlineCpus { .. }
     ));
 }
@@ -549,8 +547,10 @@ fn malformed_cpu_identity_keeps_the_failing_field_and_its_cause() {
 fn an_unreadable_cache_id_is_a_fatal_open_error_not_a_die_fallback() {
     let tree = Tree::new(8, true);
     let path = tree.path("sys/devices/system/cpu/cpu0/cache/index3/id");
-    fs::remove_file(&path).unwrap();
-    fs::create_dir(&path).unwrap();
+    tree.fail_read(
+        "sys/devices/system/cpu/cpu0/cache/index3/id",
+        std::io::ErrorKind::PermissionDenied,
+    );
     let fake = Fake::new();
     let error = open_error(&tree, &fake);
     let Error::ReadFile {

@@ -110,8 +110,8 @@ where
     run_with(args, out, err, &Real)
 }
 
-/// [`run()`] on `system` instead of the host: how a test stands for another platform, takes the host
-/// lock on a temporary file or answers the hardware checks. See [`crate::system`].
+/// [`run()`] on `system` instead of the host: commands can use memory files and locks or answer
+/// hardware checks without touching the host. See [`crate::system`].
 pub fn run_with<I, T>(
     args: I,
     out: &mut dyn Write,

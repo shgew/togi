@@ -153,8 +153,23 @@ impl Ycruncher {
 
     /// Both the lowest-ISA and the Zen 5 binary are required and checked, whichever one runs.
     fn discover(&self) -> Result<Binaries, Error> {
+        self.discover_with(
+            |root| {
+                fs::read_dir(root)?
+                    .map(|entry| entry.map(|entry| entry.file_name()))
+                    .collect()
+            },
+            check_executable,
+        )
+    }
+
+    fn discover_with(
+        &self,
+        read: impl FnOnce(&Path) -> io::Result<Vec<OsString>>,
+        mut check: impl FnMut(&'static str, &Path) -> Result<(), Error>,
+    ) -> Result<Binaries, Error> {
         let root = self.pkg.join(BINARIES);
-        let read = |source: io::Error| {
+        let read_error = |source: io::Error| {
             let root = root.clone();
             if source.kind() == io::ErrorKind::NotFound {
                 Error::BinariesMissing {
@@ -170,10 +185,7 @@ impl Ycruncher {
                 }
             }
         };
-        let mut names = Vec::new();
-        for entry in fs::read_dir(&root).map_err(read)? {
-            names.push(entry.map_err(read)?.file_name());
-        }
+        let names = read(&root).map_err(read_error)?;
         let (lowest, zen5) = select(
             &self.patterns.binary_name,
             names.iter().map(OsString::as_os_str),
@@ -189,19 +201,16 @@ impl Ycruncher {
             root,
         };
         for isa in [Isa::Lowest, Isa::Zen5] {
-            check_executable(NAME, &binaries.path(isa))?;
+            check(NAME, &binaries.path(isa))?;
         }
         Ok(binaries)
     }
-}
 
-impl Backend for Ycruncher {
-    fn kind(&self) -> togi_machine::Backend {
-        togi_machine::Backend::Ycruncher
-    }
-
-    fn check(&self) -> Result<Ready, Error> {
-        let binaries = self.discover()?;
+    fn check_with(
+        &self,
+        discover: impl FnOnce() -> Result<Binaries, Error>,
+    ) -> Result<Ready, Error> {
+        let binaries = discover()?;
         Ok(Ready {
             detail: format!(
                 "{} ({}, {})",
@@ -212,7 +221,13 @@ impl Backend for Ycruncher {
         })
     }
 
-    fn plan(&self, workload: &Workload, dir: &Path, cpus: &[CpuId]) -> Result<Plan, Error> {
+    fn plan_with(
+        &self,
+        workload: &Workload,
+        dir: &Path,
+        cpus: &[CpuId],
+        discover: impl FnOnce() -> Result<Binaries, Error>,
+    ) -> Result<Plan, Error> {
         let backend = self.kind();
         let profile = Profile::of(workload.base).ok_or(Error::Unsupported {
             backend,
@@ -224,7 +239,7 @@ impl Backend for Ycruncher {
                 workload: workload.id(),
             });
         }
-        let binaries = self.discover()?;
+        let binaries = discover()?;
         Ok(Plan {
             program: binaries.path(profile.isa),
             args: vec![
@@ -240,6 +255,20 @@ impl Backend for Ycruncher {
             }],
             watched: Vec::new(),
         })
+    }
+}
+
+impl Backend for Ycruncher {
+    fn kind(&self) -> togi_machine::Backend {
+        togi_machine::Backend::Ycruncher
+    }
+
+    fn check(&self) -> Result<Ready, Error> {
+        self.check_with(|| self.discover())
+    }
+
+    fn plan(&self, workload: &Workload, dir: &Path, cpus: &[CpuId]) -> Result<Plan, Error> {
+        self.plan_with(workload, dir, cpus, || self.discover())
     }
 
     fn classify(&self, line: &str) -> Line {

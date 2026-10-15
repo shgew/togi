@@ -6,7 +6,7 @@ use togi_facts::{Decisive, TrialClass};
 use togi_journal::{Activity, Dimension, Failure, MemFs, Outcome, Payload, SCHEMA};
 use togi_machine::{CcdId, Condition, PerCore, Regime, Signal};
 use togi_tool_trialfacts::{
-    Class, ExtractError, InvalidProfile, Phase, TrialFact, decode, encode, extract, extract_dir,
+    Class, ExtractError, InvalidProfile, Phase, TrialFact, decode, encode, extract, from_recordings,
 };
 
 use crate::builders::{
@@ -111,19 +111,18 @@ fn facts_follow_session_order_not_archive_order() {
 }
 
 #[test]
-fn a_state_directory_on_disk_extracts_like_its_memory_image() {
+fn recordings_extract_like_their_state_directory() {
     let fs = MemFs::new();
     let mut w = Writer::open(&fs);
     passing_session(&mut w, OLD, 1);
     let mut w = w.archive();
     passing_session(&mut w, NEW, 1);
     let dir = w.close();
-    let want = extract(&dir).unwrap().facts;
-    drop(dir);
-
-    let disk = tempfile::tempdir().unwrap();
-    fs.dump_to(disk.path()).unwrap();
-    assert_eq!(extract_dir(disk.path().join("state")).unwrap().facts, want);
+    let recordings = dir.recordings_lenient().unwrap();
+    assert_eq!(
+        from_recordings(recordings).unwrap().facts,
+        extract(&dir).unwrap().facts
+    );
 }
 
 /// Inserts an event of a kind no build knows after the event `after` of the live journal and renumbers the lines

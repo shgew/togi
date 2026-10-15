@@ -10,13 +10,13 @@ description = "The facts command: extracts the privacy-safe trial facts of a cop
 [dependencies]
 clap.workspace = true
 thiserror.workspace = true
+togi-journal.workspace = true
 togi-tool-trialfacts.workspace = true
 
 [dev-dependencies]
 jiff.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
-togi-journal.workspace = true
 togi-machine.workspace = true
 
 [lints]

@@ -1,4 +1,4 @@
-use std::fs;
+use std::io;
 
 use togi_journal::Seq;
 use togi_tuner::{EVIDENCE_EPOCH, RULESET};
@@ -49,8 +49,6 @@ fn a_record_without_runs_cannot_be_made() {
 
 #[test]
 fn a_record_written_reads_back_equal_and_is_the_same_bytes_every_time() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("forecast.json");
     let record = record();
     let mut bytes = Vec::new();
     record.write(&mut bytes).unwrap();
@@ -59,8 +57,10 @@ fn a_record_written_reads_back_equal_and_is_the_same_bytes_every_time() {
     assert_eq!(bytes, again);
     assert!(bytes.ends_with(b"}\n"));
     assert!(bytes.windows(3).any(|w| w == b"\n  "), "indented");
-    fs::write(&path, &bytes).unwrap();
-    assert_eq!(Record::read(&path).unwrap(), record);
+    assert_eq!(
+        Record::decode(bytes.as_slice(), "forecast.json").unwrap(),
+        record
+    );
 }
 
 #[test]
@@ -98,10 +98,8 @@ fn a_summary_without_hours_writes_null() {
     record.write(&mut bytes).unwrap();
     let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     assert!(json["summary"]["hours"].is_null());
-    let dir = tempfile::tempdir().unwrap();
-    fs::write(dir.path().join("f.json"), &bytes).unwrap();
     assert_eq!(
-        Record::read(dir.path().join("f.json"))
+        Record::decode(bytes.as_slice(), "f.json")
             .unwrap()
             .summary
             .hours,
@@ -111,48 +109,49 @@ fn a_summary_without_hours_writes_null() {
 
 #[test]
 fn a_record_that_cannot_be_read_names_the_file() {
-    let dir = tempfile::tempdir().unwrap();
-    let missing = dir.path().join("missing.json");
-    let error = Record::read(&missing).unwrap_err();
+    struct Unreadable;
+    impl io::Read for Unreadable {
+        fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
+            Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "unreadable",
+            ))
+        }
+    }
+    let error = Record::decode(Unreadable, "missing.json").unwrap_err();
     assert!(matches!(error, Error::ReadRecord { .. }));
     assert!(error.to_string().starts_with("read forecast "), "{error}");
-    let broken = dir.path().join("broken.json");
-    fs::write(&broken, b"{\"anchor\":").unwrap();
-    let error = Record::read(&broken).unwrap_err();
+    let error = Record::decode(b"{\"anchor\":".as_slice(), "broken.json").unwrap_err();
     assert!(matches!(error, Error::DecodeRecord { .. }));
     assert!(error.to_string().contains("broken.json"), "{error}");
 }
 
 #[test]
 fn a_record_without_runs_is_refused_on_reading() {
-    let dir = tempfile::tempdir().unwrap();
     let mut json = serde_json::to_value(record()).unwrap();
     json["runs"] = serde_json::json!([]);
-    let path = dir.path().join("empty.json");
-    fs::write(&path, serde_json::to_vec(&json).unwrap()).unwrap();
-    let error = Record::read(&path).unwrap_err();
+    let error =
+        Record::decode(serde_json::to_vec(&json).unwrap().as_slice(), "empty.json").unwrap_err();
     assert!(matches!(error, Error::EmptyRecord { .. }));
     assert!(error.to_string().ends_with("has no runs"), "{error}");
 }
 
 #[test]
 fn a_record_with_an_unknown_status_is_refused_on_reading() {
-    let dir = tempfile::tempdir().unwrap();
     let mut json = serde_json::to_value(record()).unwrap();
     json["runs"][0]["outcome"]["status"] = serde_json::json!("running");
-    let path = dir.path().join("status.json");
-    fs::write(&path, serde_json::to_vec(&json).unwrap()).unwrap();
     assert!(matches!(
-        Record::read(&path),
+        Record::decode(serde_json::to_vec(&json).unwrap().as_slice(), "status.json"),
         Err(Error::DecodeRecord { .. })
     ));
 }
 
 fn read_value(json: &serde_json::Value) -> Error {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("forecast.json");
-    fs::write(&path, serde_json::to_vec(json).unwrap()).unwrap();
-    Record::read(&path).unwrap_err()
+    Record::decode(
+        serde_json::to_vec(json).unwrap().as_slice(),
+        "forecast.json",
+    )
+    .unwrap_err()
 }
 
 fn positional(object: &serde_json::Value, keys: &[&str]) -> serde_json::Value {

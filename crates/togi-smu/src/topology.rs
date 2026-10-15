@@ -1,6 +1,7 @@
 use crate::Error;
-use crate::files::{is_missing, read_int, read_int_opt, read_lossy};
+use crate::files::{Files, is_missing, read_int, read_int_opt, read_lossy};
 use crate::slots::SlotError;
+use std::ffi::OsStr;
 use std::fs;
 use std::path::Path;
 use togi_machine::{CcdId, CpuId};
@@ -24,53 +25,64 @@ pub(crate) struct CoreGroup {
     pub(crate) cpus: Vec<CpuId>,
 }
 
-fn cpu_numbers(base: &Path) -> Result<Vec<CpuId>, Error> {
+fn cpu_numbers(files: &Files, base: &Path) -> Result<Vec<CpuId>, Error> {
     let list = |source| Error::ListCpus {
         path: base.to_owned(),
         source,
     };
     let mut cpus = Vec::new();
-    for entry in fs::read_dir(base).map_err(list)? {
-        let entry = entry.map_err(list)?;
-        if !entry.file_type().map_err(list)?.is_dir() {
-            continue;
-        }
-        let name = entry.file_name();
+    let mut push = |name: &OsStr| -> Result<(), Error> {
         let Some(digits) = name
             .to_str()
             .and_then(|name| name.strip_prefix("cpu"))
             .filter(|digits| !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()))
         else {
-            continue;
+            return Ok(());
         };
         let cpu = digits.parse().map_err(|_| Error::CpuNumber {
             name: name.to_string_lossy().into_owned(),
         })?;
         cpus.push(CpuId(cpu));
+        Ok(())
+    };
+    match files {
+        Files::System => {
+            for entry in fs::read_dir(base).map_err(list)? {
+                let entry = entry.map_err(list)?;
+                if entry.file_type().map_err(list)?.is_dir() {
+                    push(&entry.file_name())?;
+                }
+            }
+        }
+        Files::Readers(readers) => {
+            for name in &readers.cpu_names {
+                push(OsStr::new(name))?;
+            }
+        }
     }
     cpus.sort_unstable();
     Ok(cpus)
 }
 
-fn online(dir: &Path) -> Result<bool, Error> {
-    match read_lossy(&dir.join("online")) {
+fn online(files: &Files, dir: &Path) -> Result<bool, Error> {
+    match read_lossy(files, &dir.join("online")) {
         Ok(text) => Ok(text.trim() != "0"),
         Err(error) if is_missing(&error) => Ok(true),
         Err(error) => Err(error),
     }
 }
 
-pub(crate) fn read(root: &Path) -> Result<Vec<RawCpu>, Error> {
+pub(crate) fn read(root: &Path, files: &Files) -> Result<Vec<RawCpu>, Error> {
     let base = root.join(CPU_DIR);
     let mut seen = Vec::new();
-    for cpu in cpu_numbers(&base)? {
+    for cpu in cpu_numbers(files, &base)? {
         let dir = base.join(format!("cpu{}", cpu.0));
-        if !online(&dir)? {
+        if !online(files, &dir)? {
             continue;
         }
-        let core_id = read_int(&dir.join("topology/core_id"))?;
-        let package = read_int(&dir.join("topology/physical_package_id"))?;
-        let cache_id = read_int_opt(&dir.join("cache/index3/id"))?;
+        let core_id = read_int(files, &dir.join("topology/core_id"))?;
+        let package = read_int(files, &dir.join("topology/physical_package_id"))?;
+        let cache_id = read_int_opt(files, &dir.join("cache/index3/id"))?;
         seen.push((cpu, core_id, package, cache_id, dir));
     }
     if seen.is_empty() {
@@ -81,7 +93,7 @@ pub(crate) fn read(root: &Path) -> Result<Vec<RawCpu>, Error> {
         .map(|(cpu, core_id, package, cache_id, dir)| {
             let ccd_key = match cache_id {
                 Some(id) if use_cache_ids => id,
-                _ => read_int(&dir.join("topology/die_id"))?,
+                _ => read_int(files, &dir.join("topology/die_id"))?,
             };
             Ok(RawCpu {
                 cpu,

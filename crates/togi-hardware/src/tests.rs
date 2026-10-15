@@ -7,7 +7,6 @@ mod files;
 #[cfg(target_os = "linux")]
 mod host;
 mod ranking;
-#[cfg(target_os = "linux")]
 mod support;
 mod watchdog;
 

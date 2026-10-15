@@ -37,7 +37,7 @@ fn state_with_torn_tail() -> (tempfile::TempDir, String) {
 }
 
 #[test]
-fn the_report_reads_only_the_journal_and_leaves_it_as_it_was() {
+fn real_process_the_report_reads_only_the_journal_and_leaves_it_as_it_was() {
     let (dir, want) = state_with_torn_tail();
     let journal = dir.path().join("events.jsonl");
     let before = fs::read(&journal).unwrap();
@@ -60,7 +60,7 @@ fn the_report_reads_only_the_journal_and_leaves_it_as_it_was() {
 }
 
 #[test]
-fn since_keeps_what_starts_at_or_after_the_cutoff() {
+fn real_process_since_keeps_what_starts_at_or_after_the_cutoff() {
     let (dir, _) = state_with_torn_tail();
     let ran = stats(&[
         os("--state-dir"),
@@ -80,7 +80,7 @@ fn since_keeps_what_starts_at_or_after_the_cutoff() {
 }
 
 #[test]
-fn rejected_arguments_exit_two_without_a_report() {
+fn real_process_rejected_arguments_exit_two_without_a_report() {
     let dir = tempdir().unwrap();
     for args in [
         vec![os("unexpected")],
@@ -109,7 +109,7 @@ fn rejected_arguments_exit_two_without_a_report() {
 }
 
 #[test]
-fn an_unreadable_journal_exits_one_naming_the_tool_and_the_file() {
+fn real_process_an_unreadable_journal_exits_one_naming_the_tool_and_the_file() {
     let dir = tempdir().unwrap();
     let ran = stats(&[os("--state-dir"), dir.path().as_os_str()]);
     assert_eq!(ran.status.code(), Some(1));
@@ -120,7 +120,7 @@ fn an_unreadable_journal_exits_one_naming_the_tool_and_the_file() {
 }
 
 #[test]
-fn a_journal_whose_events_skip_a_number_is_refused() {
+fn real_process_a_journal_whose_events_skip_a_number_is_refused() {
     let dir = tempdir().unwrap();
     let events = hunting_session();
     // The journal header, then an event that skips seq 2.
@@ -135,7 +135,7 @@ fn a_journal_whose_events_skip_a_number_is_refused() {
 }
 
 #[test]
-fn a_journal_whose_first_line_is_not_a_journal_header_is_refused() {
+fn real_process_a_journal_whose_first_line_is_not_a_journal_header_is_refused() {
     let dir = tempdir().unwrap();
     let events = hunting_session();
     write_journal(dir.path(), &events[1..]);
@@ -150,7 +150,8 @@ fn a_journal_whose_first_line_is_not_a_journal_header_is_refused() {
 }
 
 #[test]
-fn an_event_of_an_unknown_kind_is_skipped_and_named_on_stderr_and_the_report_is_still_written() {
+fn real_process_an_event_of_an_unknown_kind_is_skipped_and_named_on_stderr_and_the_report_is_still_written()
+ {
     let dir = tempdir().unwrap();
     let mut events = hunting_session();
     let mut last = events.pop().unwrap();
@@ -183,7 +184,7 @@ fn an_event_of_an_unknown_kind_is_skipped_and_named_on_stderr_and_the_report_is_
 
 #[cfg(target_os = "linux")]
 #[test]
-fn a_report_that_cannot_be_written_exits_one_and_names_the_write() {
+fn real_process_a_report_that_cannot_be_written_exits_one_and_names_the_write() {
     let (dir, _) = state_with_torn_tail();
     let full = fs::File::options().write(true).open("/dev/full").unwrap();
     let ran = Command::new(env!("CARGO_BIN_EXE_togi-tool-stats"))
@@ -196,7 +197,7 @@ fn a_report_that_cannot_be_written_exits_one_and_names_the_write() {
 }
 
 #[test]
-fn a_forecast_scores_the_state_directory_instead_of_reporting() {
+fn real_process_a_forecast_scores_the_state_directory_instead_of_reporting() {
     let events = hunting_session();
     let dir = tempdir().unwrap();
     write_journal(dir.path(), &events);

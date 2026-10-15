@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::num::NonZeroU32;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use jiff::tz::TimeZone;
 use togi_config::Config;
@@ -10,7 +10,7 @@ use togi_machine::{CancellationToken, Signal};
 use togi_render::Renderer;
 use togi_session::{ConfigSource, StopPolicy};
 use togi_sim::definition::{CoreDef, ModelDef, Weights};
-use togi_sim::{MachineDefinition, Model, RunSettings, Simulator, file};
+use togi_sim::{MachineDefinition, Model, RunSettings, Simulator};
 use togi_simrun::{
     Finished, Observe, Observer, Persistence, Replay, SimInput, SimOutcome, events, simulate,
 };
@@ -28,11 +28,46 @@ pub(crate) fn build() -> Build {
     }
 }
 
+struct Machines;
+
+impl togi_sim::file::Source for Machines {
+    fn read_to_string(&self, path: &Path) -> std::io::Result<String> {
+        let text = match path.file_name().and_then(|name| name.to_str()) {
+            Some("shared-voltage.json") => {
+                include_str!("../../../../tools/bench/machines/shared-voltage.json")
+            }
+            Some("target-fit-0.json") => {
+                include_str!("../../../../tools/bench/machines/target-fit-0.json")
+            }
+            Some("flat-hazard.json") => {
+                include_str!("../../../../tools/bench/machines/flat-hazard.json")
+            }
+            Some("target-shared-voltage.json") => {
+                include_str!("../../../../tools/bench/machines/target-shared-voltage.json")
+            }
+            Some("target-r7-request-gap.json") => {
+                include_str!("../../../../tools/bench/machines/target-r7-request-gap.json")
+            }
+            Some("misleading-mce.json") => {
+                include_str!("../../../../tools/bench/machines/misleading-mce.json")
+            }
+            Some("late-onset.json") => {
+                include_str!("../../../../tools/bench/machines/late-onset.json")
+            }
+            _ => return Err(std::io::ErrorKind::NotFound.into()),
+        };
+        Ok(text.to_owned())
+    }
+
+    fn canonicalize(&self, path: &Path) -> std::io::Result<PathBuf> {
+        Ok(path.to_owned())
+    }
+}
+
 pub(crate) fn machine_file(name: &str) -> MachineDefinition {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../tools/bench/machines")
-        .join(format!("{name}.json"));
-    file::load(path).unwrap()
+    togi_sim::file::load_from(format!("/machines/{name}.json"), &Machines)
+        .unwrap()
+        .0
 }
 
 pub(crate) fn simulator(definition: &MachineDefinition, seed: u64) -> Simulator {
@@ -129,7 +164,7 @@ impl Bench {
     }
 
     pub(crate) fn recorded_config(&self, fresh: Config) -> Config {
-        togi_simrun::recorded_config_in(&self.dir(), fresh).unwrap()
+        togi_simrun::recorded_config(&self.persistence(), fresh).unwrap()
     }
 
     /// A copy of the state directory with its own filesystem, for resuming the same history twice.

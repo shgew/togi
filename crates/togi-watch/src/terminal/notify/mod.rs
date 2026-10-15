@@ -220,185 +220,203 @@ mod tests {
         }
     }
 
-    #[tokio::test(start_paused = true)]
-    async fn a_change_waits_for_its_reload_before_the_notifier_goes_on() {
-        let mut l = handshake();
-        let mut handshake = l.handshake.take().unwrap();
-        let mut watch = Fake::watching([Ok(()), Ok(())]);
-        let task = tokio::spawn(async move {
-            drive(&mut watch, &mut handshake).await;
-            watch.changes.len()
+    #[test]
+    fn a_change_waits_for_its_reload_before_the_notifier_goes_on() {
+        crate::terminal::testing::paused(async {
+            let mut l = handshake();
+            let mut handshake = l.handshake.take().unwrap();
+            let mut watch = Fake::watching([Ok(()), Ok(())]);
+            let task = tokio::spawn(async move {
+                drive(&mut watch, &mut handshake).await;
+                watch.changes.len()
+            });
+            assert!(matches!(l.events.recv().await, Some(Event::Changed)));
+            tokio::time::advance(Duration::from_secs(60)).await;
+            tokio::task::yield_now().await;
+            assert!(
+                l.events.try_recv().is_err(),
+                "the second change came before the reload was acknowledged"
+            );
+            l.reloaded.send(()).unwrap();
+            assert!(matches!(l.events.recv().await, Some(Event::Changed)));
+            drop(l.reloaded);
+            assert_eq!(
+                task.await.unwrap(),
+                0,
+                "the notifier ended once the loop was gone"
+            );
         });
-        assert!(matches!(l.events.recv().await, Some(Event::Changed)));
-        tokio::time::advance(Duration::from_secs(60)).await;
-        tokio::task::yield_now().await;
-        assert!(
-            l.events.try_recv().is_err(),
-            "the second change came before the reload was acknowledged"
-        );
-        l.reloaded.send(()).unwrap();
-        assert!(matches!(l.events.recv().await, Some(Event::Changed)));
-        drop(l.reloaded);
-        assert_eq!(
-            task.await.unwrap(),
-            0,
-            "the notifier ended once the loop was gone"
-        );
     }
 
-    #[tokio::test(start_paused = true)]
-    async fn polling_looks_once_a_second_and_reports_the_journal_once_it_is_watched() {
-        let mut l = handshake();
-        let mut handshake = l.handshake.take().unwrap();
-        let mut watch = Fake::polling(4);
-        let task = tokio::spawn(async move {
-            drive(&mut watch, &mut handshake).await;
-            watch.arms
+    #[test]
+    fn polling_looks_once_a_second_and_reports_the_journal_once_it_is_watched() {
+        crate::terminal::testing::paused(async {
+            let mut l = handshake();
+            let mut handshake = l.handshake.take().unwrap();
+            let mut watch = Fake::polling(4);
+            let task = tokio::spawn(async move {
+                drive(&mut watch, &mut handshake).await;
+                watch.arms
+            });
+            tokio::task::yield_now().await;
+            let start = tokio::time::Instant::now();
+            assert!(matches!(l.events.recv().await, Some(Event::Changed)));
+            assert_eq!(start.elapsed(), 4 * POLL, "reported before the fourth look");
+            drop(l.reloaded);
+            assert_eq!(
+                task.await.unwrap(),
+                4,
+                "three looks while missing, one that found it"
+            );
         });
-        tokio::task::yield_now().await;
-        let start = tokio::time::Instant::now();
-        assert!(matches!(l.events.recv().await, Some(Event::Changed)));
-        assert_eq!(start.elapsed(), 4 * POLL, "reported before the fourth look");
-        drop(l.reloaded);
-        assert_eq!(
-            task.await.unwrap(),
-            4,
-            "three looks while missing, one that found it"
-        );
     }
 
-    #[tokio::test(start_paused = true)]
-    async fn a_frozen_frame_is_never_polled_behind() {
-        let mut l = handshake();
-        l.frozen.send_replace(true);
-        let mut handshake = l.handshake.take().unwrap();
-        let mut watch = Fake::polling(1);
-        let task = tokio::spawn(async move {
-            drive(&mut watch, &mut handshake).await;
-            watch.arms
+    #[test]
+    fn a_frozen_frame_is_never_polled_behind() {
+        crate::terminal::testing::paused(async {
+            let mut l = handshake();
+            l.frozen.send_replace(true);
+            let mut handshake = l.handshake.take().unwrap();
+            let mut watch = Fake::polling(1);
+            let task = tokio::spawn(async move {
+                drive(&mut watch, &mut handshake).await;
+                watch.arms
+            });
+            tokio::task::yield_now().await;
+            tokio::time::advance(Duration::from_hours(6)).await;
+            tokio::task::yield_now().await;
+            assert!(l.events.try_recv().is_err());
+            l.frozen.send_replace(false);
+            let unfrozen = tokio::time::Instant::now();
+            assert!(matches!(l.events.recv().await, Some(Event::Changed)));
+            assert_eq!(
+                unfrozen.elapsed(),
+                POLL,
+                "the interval did not start when the frame thawed"
+            );
+            drop(l.reloaded);
+            assert_eq!(task.await.unwrap(), 1, "nothing was looked at while frozen");
         });
-        tokio::task::yield_now().await;
-        tokio::time::advance(Duration::from_hours(6)).await;
-        tokio::task::yield_now().await;
-        assert!(l.events.try_recv().is_err());
-        l.frozen.send_replace(false);
-        let unfrozen = tokio::time::Instant::now();
-        assert!(matches!(l.events.recv().await, Some(Event::Changed)));
-        assert_eq!(
-            unfrozen.elapsed(),
-            POLL,
-            "the interval did not start when the frame thawed"
-        );
-        drop(l.reloaded);
-        assert_eq!(task.await.unwrap(), 1, "nothing was looked at while frozen");
     }
 
-    #[tokio::test(start_paused = true)]
-    async fn a_change_that_leaves_no_journal_looks_again_before_the_interval() {
-        let mut l = handshake();
-        let mut handshake = l.handshake.take().unwrap();
-        let mut watch = Fake::watching([Ok(())]);
-        watch.left_missing = true;
-        watch.appears_after = 1;
-        let task = tokio::spawn(async move {
-            drive(&mut watch, &mut handshake).await;
-            watch.arms
+    #[test]
+    fn a_change_that_leaves_no_journal_looks_again_before_the_interval() {
+        crate::terminal::testing::paused(async {
+            let mut l = handshake();
+            let mut handshake = l.handshake.take().unwrap();
+            let mut watch = Fake::watching([Ok(())]);
+            watch.left_missing = true;
+            watch.appears_after = 1;
+            let task = tokio::spawn(async move {
+                drive(&mut watch, &mut handshake).await;
+                watch.arms
+            });
+            let start = tokio::time::Instant::now();
+            assert!(matches!(l.events.recv().await, Some(Event::Changed)));
+            l.reloaded.send(()).unwrap();
+            assert!(
+                matches!(l.events.recv().await, Some(Event::Changed)),
+                "the journal that appeared meanwhile is reported at once"
+            );
+            assert_eq!(
+                start.elapsed(),
+                Duration::ZERO,
+                "the look waited for the interval"
+            );
+            drop(l.reloaded);
+            assert_eq!(task.await.unwrap(), 1);
         });
-        let start = tokio::time::Instant::now();
-        assert!(matches!(l.events.recv().await, Some(Event::Changed)));
-        l.reloaded.send(()).unwrap();
-        assert!(
-            matches!(l.events.recv().await, Some(Event::Changed)),
-            "the journal that appeared meanwhile is reported at once"
-        );
-        assert_eq!(
-            start.elapsed(),
-            Duration::ZERO,
-            "the look waited for the interval"
-        );
-        drop(l.reloaded);
-        assert_eq!(task.await.unwrap(), 1);
     }
 
-    #[tokio::test(start_paused = true)]
-    async fn a_failure_is_delivered_once_and_ends_the_notifier() {
-        let mut l = handshake();
-        let mut handshake = l.handshake.take().unwrap();
-        let mut watch = Fake::watching([Err(io_error()), Ok(())]);
-        let task = tokio::spawn(async move { drive(&mut watch, &mut handshake).await });
-        assert!(matches!(l.events.recv().await, Some(Event::Failed(_))));
-        timeout(Duration::from_secs(1), task)
-            .await
-            .unwrap()
-            .unwrap();
-        assert!(l.events.recv().await.is_none());
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn a_look_that_finds_the_journal_still_missing_goes_back_to_polling() {
-        let mut l = handshake();
-        let mut handshake = l.handshake.take().unwrap();
-        let mut watch = Fake::watching([Ok(())]);
-        watch.left_missing = true;
-        watch.appears_after = 3;
-        let task = tokio::spawn(async move {
-            drive(&mut watch, &mut handshake).await;
-            watch.arms
+    #[test]
+    fn a_failure_is_delivered_once_and_ends_the_notifier() {
+        crate::terminal::testing::paused(async {
+            let mut l = handshake();
+            let mut handshake = l.handshake.take().unwrap();
+            let mut watch = Fake::watching([Err(io_error()), Ok(())]);
+            let task = tokio::spawn(async move { drive(&mut watch, &mut handshake).await });
+            assert!(matches!(l.events.recv().await, Some(Event::Failed(_))));
+            timeout(Duration::from_secs(1), task)
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(l.events.recv().await.is_none());
         });
-        assert!(matches!(l.events.recv().await, Some(Event::Changed)));
-        l.reloaded.send(()).unwrap();
-        tokio::time::advance(POLL).await;
-        tokio::task::yield_now().await;
-        assert!(
-            l.events.try_recv().is_err(),
-            "reported while it was still missing"
-        );
-        tokio::time::advance(POLL).await;
-        assert!(matches!(l.events.recv().await, Some(Event::Changed)));
-        drop(l.reloaded);
-        assert_eq!(task.await.unwrap(), 3);
     }
 
-    #[tokio::test(start_paused = true)]
-    async fn a_failed_look_after_a_change_is_delivered_and_ends_the_notifier() {
-        let mut l = handshake();
-        let mut handshake = l.handshake.take().unwrap();
-        let mut watch = Fake::watching([Ok(())]);
-        watch.left_missing = true;
-        watch.fail_arm = true;
-        let task = tokio::spawn(async move { drive(&mut watch, &mut handshake).await });
-        assert!(matches!(l.events.recv().await, Some(Event::Changed)));
-        l.reloaded.send(()).unwrap();
-        assert!(matches!(l.events.recv().await, Some(Event::Failed(_))));
-        timeout(Duration::from_secs(1), task)
-            .await
-            .unwrap()
-            .unwrap();
+    #[test]
+    fn a_look_that_finds_the_journal_still_missing_goes_back_to_polling() {
+        crate::terminal::testing::paused(async {
+            let mut l = handshake();
+            let mut handshake = l.handshake.take().unwrap();
+            let mut watch = Fake::watching([Ok(())]);
+            watch.left_missing = true;
+            watch.appears_after = 3;
+            let task = tokio::spawn(async move {
+                drive(&mut watch, &mut handshake).await;
+                watch.arms
+            });
+            assert!(matches!(l.events.recv().await, Some(Event::Changed)));
+            l.reloaded.send(()).unwrap();
+            tokio::time::advance(POLL).await;
+            tokio::task::yield_now().await;
+            assert!(
+                l.events.try_recv().is_err(),
+                "reported while it was still missing"
+            );
+            tokio::time::advance(POLL).await;
+            assert!(matches!(l.events.recv().await, Some(Event::Changed)));
+            drop(l.reloaded);
+            assert_eq!(task.await.unwrap(), 3);
+        });
     }
 
-    #[tokio::test(start_paused = true)]
-    async fn a_failed_look_while_polling_is_delivered_and_ends_the_notifier() {
-        let mut l = handshake();
-        let mut handshake = l.handshake.take().unwrap();
-        let mut watch = Fake::polling(5);
-        watch.fail_arm = true;
-        let task = tokio::spawn(async move { drive(&mut watch, &mut handshake).await });
-        tokio::time::advance(POLL).await;
-        assert!(matches!(l.events.recv().await, Some(Event::Failed(_))));
-        timeout(Duration::from_secs(1), task)
-            .await
-            .unwrap()
-            .unwrap();
+    #[test]
+    fn a_failed_look_after_a_change_is_delivered_and_ends_the_notifier() {
+        crate::terminal::testing::paused(async {
+            let mut l = handshake();
+            let mut handshake = l.handshake.take().unwrap();
+            let mut watch = Fake::watching([Ok(())]);
+            watch.left_missing = true;
+            watch.fail_arm = true;
+            let task = tokio::spawn(async move { drive(&mut watch, &mut handshake).await });
+            assert!(matches!(l.events.recv().await, Some(Event::Changed)));
+            l.reloaded.send(()).unwrap();
+            assert!(matches!(l.events.recv().await, Some(Event::Failed(_))));
+            timeout(Duration::from_secs(1), task)
+                .await
+                .unwrap()
+                .unwrap();
+        });
     }
 
-    #[tokio::test(start_paused = true)]
-    async fn a_loop_that_is_gone_ends_the_notifier_at_its_next_change() {
-        let mut l = handshake();
-        let mut handshake = l.handshake.take().unwrap();
-        let mut watch = Fake::watching([Ok(())]);
-        drop(l.events);
-        timeout(Duration::from_secs(1), drive(&mut watch, &mut handshake))
-            .await
-            .unwrap();
+    #[test]
+    fn a_failed_look_while_polling_is_delivered_and_ends_the_notifier() {
+        crate::terminal::testing::paused(async {
+            let mut l = handshake();
+            let mut handshake = l.handshake.take().unwrap();
+            let mut watch = Fake::polling(5);
+            watch.fail_arm = true;
+            let task = tokio::spawn(async move { drive(&mut watch, &mut handshake).await });
+            tokio::time::advance(POLL).await;
+            assert!(matches!(l.events.recv().await, Some(Event::Failed(_))));
+            timeout(Duration::from_secs(1), task)
+                .await
+                .unwrap()
+                .unwrap();
+        });
+    }
+
+    #[test]
+    fn a_loop_that_is_gone_ends_the_notifier_at_its_next_change() {
+        crate::terminal::testing::paused(async {
+            let mut l = handshake();
+            let mut handshake = l.handshake.take().unwrap();
+            let mut watch = Fake::watching([Ok(())]);
+            drop(l.events);
+            timeout(Duration::from_secs(1), drive(&mut watch, &mut handshake))
+                .await
+                .unwrap();
+        });
     }
 }

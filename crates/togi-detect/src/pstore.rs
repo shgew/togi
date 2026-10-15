@@ -183,20 +183,73 @@ struct Stamp {
 }
 
 /// The pstore archive directory, held by descriptor so nothing below it is reached by path.
-pub(crate) struct Archive {
+pub(crate) struct Archive<D = OwnedFd> {
     root: PathBuf,
-    directory: OwnedFd,
+    directory: D,
     stamps: Vec<Stamp>,
 }
 
-pub(crate) struct Dump {
+pub(crate) struct Dump<F = OwnedFd> {
     path: PathBuf,
-    file: OwnedFd,
+    file: F,
 }
 
-struct Candidate {
+struct Candidate<F> {
     id: DumpId,
-    dump: Dump,
+    dump: Dump<F>,
+}
+
+pub(crate) trait Directory: Sized {
+    type File: ReadAt;
+    fn entries(&self, path: &Path) -> Result<Vec<(OsString, FileType)>, PstoreError>;
+    fn is_directory(
+        &self,
+        name: &OsString,
+        kind: FileType,
+        path: &Path,
+    ) -> Result<bool, PstoreError>;
+    fn directory(&self, name: &OsString, path: &Path) -> Result<Self, PstoreError>;
+    fn dump(&self, path: &Path) -> Result<Option<Dump<Self::File>>, PstoreError>;
+}
+
+pub(crate) trait ReadAt {
+    fn read(&self, buffer: &mut [u8], offset: u64) -> Result<usize, Errno>;
+    fn size(&self) -> Result<u64, Errno>;
+}
+
+impl ReadAt for OwnedFd {
+    fn read(&self, buffer: &mut [u8], offset: u64) -> Result<usize, Errno> {
+        pread(self, buffer, offset)
+    }
+
+    fn size(&self) -> Result<u64, Errno> {
+        Ok(u64::try_from(fstat(self)?.st_size).unwrap_or(0))
+    }
+}
+
+impl Directory for OwnedFd {
+    type File = OwnedFd;
+
+    fn entries(&self, path: &Path) -> Result<Vec<(OsString, FileType)>, PstoreError> {
+        list(self, path)
+    }
+
+    fn is_directory(
+        &self,
+        name: &OsString,
+        kind: FileType,
+        path: &Path,
+    ) -> Result<bool, PstoreError> {
+        is_directory(self, name, kind, path)
+    }
+
+    fn directory(&self, name: &OsString, path: &Path) -> Result<Self, PstoreError> {
+        open_directory(self, name, path)
+    }
+
+    fn dump(&self, path: &Path) -> Result<Option<Dump>, PstoreError> {
+        open_dump(self, path)
+    }
 }
 
 impl Archive {
@@ -208,7 +261,13 @@ impl Archive {
             Err(errno) => return Err(PstoreError::io(Access::Open, root, errno)),
         };
         check_directory(&directory, root)?;
-        let entries = list(&directory, root)?;
+        Self::from_directory(root, directory)
+    }
+}
+
+impl<D: Directory> Archive<D> {
+    pub(crate) fn from_directory(root: &Path, directory: D) -> Result<Option<Self>, PstoreError> {
+        let entries = directory.entries(root)?;
         if entries.is_empty() {
             return Ok(None);
         }
@@ -222,7 +281,7 @@ impl Archive {
             else {
                 continue;
             };
-            if is_directory(&directory, &name, kind, root)? {
+            if directory.is_directory(&name, kind, root)? {
                 stamps.push(Stamp { seconds, name });
             }
         }
@@ -235,23 +294,23 @@ impl Archive {
     }
 
     /// The dump with the highest count within `span`, preferring its lowest part.
-    pub(crate) fn newest_dump(&self, span: BootSpan) -> Result<Option<Dump>, PstoreError> {
-        let mut best: Option<Candidate> = None;
+    pub(crate) fn newest_dump(&self, span: BootSpan) -> Result<Option<Dump<D::File>>, PstoreError> {
+        let mut best: Option<Candidate<D::File>> = None;
         for stamp in self
             .stamps
             .iter()
             .filter(|stamp| span.contains_second(stamp.seconds))
         {
             let stamp_path = self.root.join(&stamp.name);
-            let stamp_dir = open_directory(&self.directory, &stamp.name, &stamp_path)?;
-            for (name, kind) in list(&stamp_dir, &stamp_path)? {
+            let stamp_dir = self.directory.directory(&stamp.name, &stamp_path)?;
+            for (name, kind) in stamp_dir.entries(&stamp_path)? {
                 let is_suffix = name.len() == 3 && name.as_bytes().iter().all(u8::is_ascii_digit);
-                if !is_suffix || !is_directory(&stamp_dir, &name, kind, &stamp_path)? {
+                if !is_suffix || !stamp_dir.is_directory(&name, kind, &stamp_path)? {
                     continue;
                 }
                 let suffix_path = stamp_path.join(&name);
-                let suffix_dir = open_directory(&stamp_dir, &name, &suffix_path)?;
-                let Some(dump) = open_dump(&suffix_dir, &suffix_path)? else {
+                let suffix_dir = stamp_dir.directory(&name, &suffix_path)?;
+                let Some(dump) = suffix_dir.dump(&suffix_path)? else {
                     continue;
                 };
                 let id = dump.identity()?;
@@ -267,7 +326,11 @@ impl Archive {
     }
 }
 
-impl Dump {
+impl<F: ReadAt> Dump<F> {
+    pub(crate) fn from_reader(path: PathBuf, file: F) -> Self {
+        Self { path, file }
+    }
+
     pub(crate) fn path(&self) -> &Path {
         &self.path
     }
@@ -284,7 +347,7 @@ impl Dump {
     /// The last lines of the file, read from the descriptor whose header was checked.
     pub(crate) fn tail(&self) -> Result<Vec<String>, PstoreError> {
         let fail = |errno| PstoreError::io(Access::ReadTail, &self.path, errno);
-        let size = u64::try_from(fstat(&self.file).map_err(fail)?.st_size).unwrap_or(0);
+        let size = self.file.size().map_err(fail)?;
         let length = size.min(TAIL_BYTES);
         let mut window = vec![0; usize::try_from(length).unwrap_or(0)];
         let read = read_at(&self.file, &mut window, size - length, false).map_err(fail)?;
@@ -294,14 +357,14 @@ impl Dump {
 }
 
 pub(crate) fn read_at(
-    file: &OwnedFd,
+    file: &impl ReadAt,
     buffer: &mut [u8],
     offset: u64,
     until_eof: bool,
 ) -> Result<usize, Errno> {
     let mut filled = 0;
     while filled < buffer.len() {
-        let read = pread(file, &mut buffer[filled..], offset + filled as u64)?;
+        let read = file.read(&mut buffer[filled..], offset + filled as u64)?;
         if read == 0 {
             return if until_eof {
                 Ok(filled)
@@ -385,7 +448,7 @@ fn open_dump(suffix_dir: &OwnedFd, suffix_path: &Path) -> Result<Option<Dump>, P
     } else if stat.st_nlink != 1 {
         Unsafe::Linked
     } else {
-        return Ok(Some(Dump { path, file }));
+        return Ok(Some(Dump::from_reader(path, file)));
     };
     Err(PstoreError::Unsafe { path, reason })
 }

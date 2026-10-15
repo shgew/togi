@@ -17,6 +17,11 @@ pub(crate) fn read_attribute(path: &Path) -> io::Result<String> {
     if !file.metadata()?.is_file() {
         return Err(io::Error::other("not a regular file"));
     }
+    read_attribute_from(Ok(file))
+}
+
+pub(crate) fn read_attribute_from(source: io::Result<impl Read>) -> io::Result<String> {
+    let file = source?;
     let mut bytes = Vec::new();
     file.take(LIMIT as u64 + 1).read_to_end(&mut bytes)?;
     if bytes.len() > LIMIT {

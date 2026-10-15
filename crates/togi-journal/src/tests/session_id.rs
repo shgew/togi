@@ -95,6 +95,7 @@ fn serde_uses_the_text_form() {
 }
 
 proptest! {
+    #![proptest_config(crate::testing::property_config())]
     #[test]
     fn any_valid_id_round_trips(seconds in 0_i64..253_402_300_799, suffix in prop::option::of(2_u32..)) {
         let time = Timestamp::from_second(seconds).unwrap();

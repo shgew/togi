@@ -113,6 +113,22 @@ pub(crate) trait Launcher: Sync {
 
     /// Runs `spec` on `side` to its end. A failure to run is an error; a session that ended badly is a result.
     fn launch(&self, side: Side, spec: &RunSpec) -> Result<Ran, RunError>;
+
+    fn digest(&self, dir: &Path) -> Result<String, journal::JournalError> {
+        journal::digest(dir)
+    }
+
+    fn difference(
+        &self,
+        base: &Path,
+        head: &Path,
+    ) -> Result<Option<Difference>, journal::JournalError> {
+        journal::compare_dirs(base, head)
+    }
+
+    fn remove(&self, dir: &Path) -> io::Result<()> {
+        fs::remove_dir_all(dir)
+    }
 }
 
 pub(crate) struct Config<'a> {
@@ -401,7 +417,7 @@ impl Comparison<'_> {
     fn launch(&self, side: Side, spec: &RunSpec) -> Result<Ran, RunError> {
         let result = self.launcher.launch(side, spec);
         if matches!(result, Err(RunError::Interrupted)) {
-            let _ = fs::remove_dir_all(self.launcher.dir(side, spec));
+            let _ = self.launcher.remove(&self.launcher.dir(side, spec));
         }
         result
     }
@@ -418,7 +434,9 @@ impl Comparison<'_> {
             key: name.clone(),
             source,
         })?;
-        let record = journal::digest(&ran.dir)
+        let record = self
+            .launcher
+            .digest(&ran.dir)
             .map(|digest| SideRecord {
                 digest,
                 exit: ran.exit,
@@ -544,8 +562,10 @@ impl Comparison<'_> {
                 source: journal::JournalError::Missing,
             });
         };
-        let found =
-            journal::compare_dirs(&base_dir, &head_dir).map_err(|source| SameError::Compare {
+        let found = self
+            .launcher
+            .difference(&base_dir, &head_dir)
+            .map_err(|source| SameError::Compare {
                 key: pair.key.to_string(),
                 source,
             })?;
@@ -564,11 +584,13 @@ impl Comparison<'_> {
         let dirs = std::mem::take(&mut self.state().pairs[i].dirs);
         for (side, dir) in Side::BOTH.into_iter().zip(dirs) {
             if let Some(dir) = dir {
-                fs::remove_dir_all(&dir).map_err(|source| SameError::Remove {
-                    side: side.name(),
-                    key: self.pairs[i].key.to_string(),
-                    source,
-                })?;
+                self.launcher
+                    .remove(&dir)
+                    .map_err(|source| SameError::Remove {
+                        side: side.name(),
+                        key: self.pairs[i].key.to_string(),
+                        source,
+                    })?;
             }
         }
         Ok(())

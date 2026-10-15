@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::io::{BufWriter, Write as _};
+use std::io::{self, BufWriter, Read};
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
@@ -121,11 +121,31 @@ impl Record {
 
 /// Reads one record per line; blank lines are skipped, and a run twice is refused.
 pub fn read(path: &Path, what: &'static str) -> Result<Vec<Record>, Error> {
-    let text = fs::read_to_string(path).map_err(|source| Error::ReadFile {
+    read_from(
+        fs::File::open(path).map_err(|source| Error::ReadFile {
+            what,
+            path: path.to_path_buf(),
+            source,
+        })?,
+        path,
         what,
-        path: path.to_path_buf(),
-        source,
-    })?;
+    )
+}
+
+/// Decodes records from a reader; `path` identifies the input in diagnostics only.
+pub fn read_from(
+    mut reader: impl Read,
+    path: &Path,
+    what: &'static str,
+) -> Result<Vec<Record>, Error> {
+    let mut text = String::new();
+    reader
+        .read_to_string(&mut text)
+        .map_err(|source| Error::ReadFile {
+            what,
+            path: path.to_path_buf(),
+            source,
+        })?;
     let mut seen = BTreeSet::new();
     let mut records = Vec::new();
     for (index, line) in text.lines().enumerate() {
@@ -161,6 +181,27 @@ pub fn write_baseline(path: &Path, records: &[Record]) -> Result<(), Error> {
     write_lines(path, records.iter().map(Record::baseline))
 }
 
+/// Encodes complete records as JSON Lines without opening files.
+pub fn encode(writer: impl io::Write, records: &[Record]) -> io::Result<()> {
+    encode_lines(writer, records.iter())
+}
+
+/// Encodes the deterministic baseline fields as JSON Lines.
+pub fn encode_baseline(writer: impl io::Write, records: &[Record]) -> io::Result<()> {
+    encode_lines(writer, records.iter().map(Record::baseline))
+}
+
+fn encode_lines(
+    mut writer: impl io::Write,
+    records: impl Iterator<Item = impl Serialize>,
+) -> io::Result<()> {
+    for record in records {
+        serde_json::to_writer(&mut writer, &record)?;
+        writer.write_all(b"\n")?;
+    }
+    writer.flush()
+}
+
 fn write_lines(path: &Path, records: impl Iterator<Item = impl Serialize>) -> Result<(), Error> {
     let failed = |source| Error::WriteFile {
         what: "write records",
@@ -174,11 +215,7 @@ fn write_lines(path: &Path, records: impl Iterator<Item = impl Serialize>) -> Re
     let mut file = tempfile::NamedTempFile::new_in(dir).map_err(failed)?;
     {
         let mut out = BufWriter::new(file.as_file_mut());
-        for record in records {
-            serde_json::to_writer(&mut out, &record).map_err(|error| failed(error.into()))?;
-            out.write_all(b"\n").map_err(failed)?;
-        }
-        out.flush().map_err(failed)?;
+        encode_lines(&mut out, records).map_err(failed)?;
     }
     file.persist(path).map_err(|error| failed(error.error))?;
     Ok(())

@@ -22,6 +22,10 @@ impl Runner {
         Err(unsupported())
     }
 
+    pub fn new_unsynced(_options: Options) -> Result<Self, Error> {
+        Err(unsupported())
+    }
+
     pub fn probe_scope(&self) -> Result<String, Error> {
         match self.0 {}
     }

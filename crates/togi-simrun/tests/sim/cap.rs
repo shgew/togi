@@ -59,7 +59,7 @@ fn a_cap_whose_last_state_cannot_be_published_is_an_error_not_a_cap() {
 }
 
 #[test]
-fn a_held_lock_refuses_the_simulation_before_any_journal_or_offset_change() {
+fn real_fs_a_held_lock_refuses_the_simulation_before_any_journal_or_offset_change() {
     let dir = tempfile::tempdir().unwrap();
     #[expect(
         clippy::disallowed_methods,

@@ -329,7 +329,7 @@ pub(super) mod tests {
         }
 
         #[test]
-        fn both_ends_of_a_pipe_are_closed_on_exec() {
+        fn real_fs_both_ends_of_a_pipe_are_closed_on_exec() {
             let (read, write) = pipe();
             for end in [&read, &write] {
                 assert!(
@@ -341,7 +341,7 @@ pub(super) mod tests {
         }
 
         #[test]
-        fn a_reader_on_a_real_pipe_decodes_a_sequence_and_reports_the_end() {
+        fn real_fs_a_reader_on_a_real_pipe_decodes_a_sequence_and_reports_the_end() {
             let (read, write) = pipe();
             let (events, mut queue) = unbounded_channel();
             std::thread::scope(|scope| {
@@ -362,7 +362,7 @@ pub(super) mod tests {
         }
 
         #[test]
-        fn stopping_an_idle_reader_joins_it_and_leaves_the_callers_pipe_alone() {
+        fn real_fs_stopping_an_idle_reader_joins_it_and_leaves_the_callers_pipe_alone() {
             let (read, write) = pipe();
             let (events, mut queue) = unbounded_channel();
             std::thread::scope(|scope| {
@@ -380,7 +380,7 @@ pub(super) mod tests {
         }
 
         #[test]
-        fn a_lone_escape_becomes_the_esc_key_after_the_timeout() {
+        fn real_fs_a_lone_escape_becomes_the_esc_key_after_the_timeout() {
             let (read, write) = pipe();
             let (events, mut queue) = unbounded_channel();
             std::thread::scope(|scope| {

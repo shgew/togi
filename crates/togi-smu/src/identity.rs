@@ -1,5 +1,5 @@
 use crate::Error;
-use crate::files::{first_stanza, read_trimmed};
+use crate::files::{Files, first_stanza, read_trimmed};
 use crate::sysfs::DRIVER_DIR;
 use std::fmt;
 use std::path::Path;
@@ -40,8 +40,8 @@ impl fmt::Display for DriverSummary {
 }
 
 /// Family 0x1A, model 0x40–0x4F, from the first `/proc/cpuinfo` stanza.
-pub(crate) fn cpu(root: &Path) -> Result<CpuSummary, Error> {
-    let stanza = first_stanza(&root.join("proc/cpuinfo"))?;
+pub(crate) fn cpu(root: &Path, files: &Files) -> Result<CpuSummary, Error> {
+    let stanza = first_stanza(files, &root.join("proc/cpuinfo"))?;
     let parse = |field: &'static str, text: &str| {
         text.parse::<u32>().map_err(|source| Error::ParseCpuInfo {
             field,
@@ -63,18 +63,18 @@ pub(crate) fn cpu(root: &Path) -> Result<CpuSummary, Error> {
     }
 }
 
-pub(crate) fn driver(root: &Path, loaded: bool) -> Result<DriverSummary, Error> {
+pub(crate) fn driver(root: &Path, files: &Files, loaded: bool) -> Result<DriverSummary, Error> {
     if !loaded {
         return Err(Error::DriverNotLoaded);
     }
     let dir = root.join(DRIVER_DIR);
-    let codename = read_trimmed(&dir.join("codename"))?;
+    let codename = read_trimmed(files, &dir.join("codename"))?;
     if codename != GRANITE_RIDGE_CODENAME {
         return Err(Error::Codename { found: codename });
     }
     Ok(DriverSummary {
-        driver_version: read_trimmed(&dir.join("drv_version"))?,
-        smu_version: read_trimmed(&dir.join("version"))?,
+        driver_version: read_trimmed(files, &dir.join("drv_version"))?,
+        smu_version: read_trimmed(files, &dir.join("version"))?,
     })
 }
 
@@ -86,12 +86,12 @@ pub(crate) struct Firmware {
     pub(crate) microcode: String,
 }
 
-pub(crate) fn firmware(root: &Path) -> Result<Firmware, Error> {
+pub(crate) fn firmware(root: &Path, files: &Files) -> Result<Firmware, Error> {
     let dmi = root.join("sys/class/dmi/id");
-    let bios_version = read_trimmed(&dmi.join("bios_version"))?;
-    let vendor = read_trimmed(&dmi.join("board_vendor"))?;
-    let name = read_trimmed(&dmi.join("board_name"))?;
-    let stanza = first_stanza(&root.join("proc/cpuinfo"))?;
+    let bios_version = read_trimmed(files, &dmi.join("bios_version"))?;
+    let vendor = read_trimmed(files, &dmi.join("board_vendor"))?;
+    let name = read_trimmed(files, &dmi.join("board_name"))?;
+    let stanza = first_stanza(files, &root.join("proc/cpuinfo"))?;
     Ok(Firmware {
         bios_version,
         board: format!("{vendor} {name}"),

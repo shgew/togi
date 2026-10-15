@@ -11,7 +11,7 @@ fn held() -> Vec<String> {
 }
 
 #[test]
-fn a_panic_on_another_thread_neither_ends_the_process_nor_prints_over_the_dashboard() {
+fn real_process_a_panic_on_another_thread_neither_ends_the_process_nor_prints_over_the_dashboard() {
     install();
     screen_owned(true);
     let worker = thread::Builder::new()
@@ -32,7 +32,8 @@ fn a_panic_on_another_thread_neither_ends_the_process_nor_prints_over_the_dashbo
 }
 
 #[test]
-fn a_panic_another_thread_catches_itself_leaves_the_process_running_and_togis_own_is_silent() {
+fn real_process_a_panic_another_thread_catches_itself_leaves_the_process_running_and_togis_own_is_silent()
+ {
     install();
     screen_owned(true);
     let worker = thread::spawn(|| {

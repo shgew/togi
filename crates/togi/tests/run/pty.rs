@@ -22,7 +22,7 @@ use togi_machine::{
     Stopped, Swept, TrialResult, TrialSpec, Trials,
 };
 
-use crate::support::{Fake, Scripted, simulator};
+use crate::support::{Fake, Scripted, biased};
 
 const SCENARIO: &str = "TOGI_RUN_TEST_PTY";
 const DIR: &str = "TOGI_RUN_TEST_PTY_DIR";
@@ -101,12 +101,12 @@ impl Running for EndlessRunning {
 }
 
 #[test]
-fn helper() {
+fn real_process_helper() {
     if std::env::var_os(SCENARIO).is_none() {
         return;
     }
     let dir = PathBuf::from(std::env::var_os(DIR).unwrap());
-    let mut fake = Fake::in_dir(simulator(1000), &dir);
+    let mut fake = Fake::in_dir(biased(1000, -5), &dir);
     fake.real_stderr = true;
     fake.interactive = true;
     let scenario = std::env::var(SCENARIO).unwrap_or_default();
@@ -120,7 +120,7 @@ fn helper() {
         "real-panic" => Panic::Once(dir.join(GO)),
         _ => Panic::Never,
     };
-    fake.wrap = Box::new(move |machine| Machine {
+    fake.wrap = Box::new(move |machine, _| Machine {
         trials: Box::new(Endless(machine.trials, panic.clone())),
         ..machine
     });
@@ -130,6 +130,17 @@ fn helper() {
         .map(Into::into)
         .collect();
     let exit = togi_cli::run_process(args, &fake);
+    if scenario == "run" {
+        let mut smu = fake.sim.seams().smu;
+        for core in 0..16 {
+            assert_eq!(
+                smu.offset(togi_machine::CoreId::new(core).unwrap())
+                    .unwrap()
+                    .0,
+                -5
+            );
+        }
+    }
     std::process::exit(i32::from(exit.code()));
 }
 
@@ -179,11 +190,25 @@ fn wait_until(what: &str, mut ready: impl FnMut() -> bool) {
 }
 
 #[test]
-fn ctrl_c_reaches_runs_own_listener_after_the_dashboard_closed_and_the_session_stops() {
+fn real_process_ctrl_c_reaches_runs_own_listener_after_the_dashboard_closed_and_the_session_stops()
+{
+    stopped_by_signal(Signal::INT);
+}
+
+pub(super) fn stopped_by_signal(signal: Signal) {
     let dir = TempDir::new().unwrap();
     let (master, slave) = open_pty();
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "real_process tests control the run helper over a PTY"
+    )]
     let mut child = Command::new(std::env::current_exe().unwrap())
-        .args(["pty::helper", "--exact", "--nocapture", "--test-threads=1"])
+        .args([
+            "pty::real_process_helper",
+            "--exact",
+            "--nocapture",
+            "--test-threads=1",
+        ])
         .env(SCENARIO, "run")
         .env(DIR, dir.path())
         .stdin(Stdio::from(slave.try_clone().unwrap()))
@@ -208,7 +233,7 @@ fn ctrl_c_reaches_runs_own_listener_after_the_dashboard_closed_and_the_session_s
         "the signal keys stay on, so Ctrl-C still stops run"
     );
 
-    kill_process(Pid::from_child(&child), Signal::INT).unwrap();
+    kill_process(Pid::from_child(&child), signal).unwrap();
     let status = wait_for_exit(&mut child);
     assert_eq!(status.code(), Some(0));
 
@@ -217,6 +242,16 @@ fn ctrl_c_reaches_runs_own_listener_after_the_dashboard_closed_and_the_session_s
         &events.last().unwrap().payload,
         Payload::Shutdown(shutdown) if shutdown.reason == ShutdownReason::Signal
     ));
+    assert!(
+        events
+            .iter()
+            .any(|event| event.kind() == EventKind::SmuIntent)
+    );
+    assert!(
+        events
+            .iter()
+            .any(|event| event.kind() == EventKind::ProfileRestored)
+    );
     let restored = tcgetattr(&master).unwrap();
     assert!(
         restored.local_modes.contains(LocalModes::ECHO)
@@ -240,11 +275,21 @@ fn wait_for_exit(child: &mut std::process::Child) -> std::process::ExitStatus {
 }
 
 #[test]
-fn a_session_panic_stops_the_dashboard_and_gives_the_terminal_back_before_the_panic_propagates() {
+fn real_process_a_session_panic_stops_the_dashboard_and_gives_the_terminal_back_before_the_panic_propagates()
+ {
     let dir = TempDir::new().unwrap();
     let (master, slave) = open_pty();
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the real_process test checks panic terminal restoration"
+    )]
     let mut child = Command::new(std::env::current_exe().unwrap())
-        .args(["pty::helper", "--exact", "--nocapture", "--test-threads=1"])
+        .args([
+            "pty::real_process_helper",
+            "--exact",
+            "--nocapture",
+            "--test-threads=1",
+        ])
         .env(SCENARIO, "panic")
         .env(DIR, dir.path())
         .stdin(Stdio::from(slave.try_clone().unwrap()))
@@ -280,11 +325,20 @@ fn contains(haystack: &[u8], needle: &[u8]) -> bool {
 }
 
 #[test]
-fn ctrl_c_stops_a_run_that_shows_the_real_dashboard_and_the_cursor_comes_back() {
+fn real_process_ctrl_c_stops_a_run_that_shows_the_real_dashboard_and_the_cursor_comes_back() {
     let dir = TempDir::new().unwrap();
     let (master, slave) = open_pty();
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the real_process test sends Ctrl-C through a PTY"
+    )]
     let mut child = Command::new(std::env::current_exe().unwrap())
-        .args(["pty::helper", "--exact", "--nocapture", "--test-threads=1"])
+        .args([
+            "pty::real_process_helper",
+            "--exact",
+            "--nocapture",
+            "--test-threads=1",
+        ])
         .env(SCENARIO, "real")
         .env(DIR, dir.path())
         .env("TERM", "xterm-256color")
@@ -343,11 +397,21 @@ fn last(haystack: &[u8], needle: &[u8]) -> Option<usize> {
 /// The Go `TestRunHardwareRestoresCursorAndPaletteWhenSessionPanics`: the real dashboard on the Linux console
 /// hides the cursor and sets the palette, then the session panics and both are restored before the panic shows.
 #[test]
-fn a_session_panic_over_the_real_linux_console_dashboard_restores_the_cursor_and_the_palette() {
+fn real_process_a_session_panic_over_the_real_linux_console_dashboard_restores_the_cursor_and_the_palette()
+ {
     let dir = TempDir::new().unwrap();
     let (master, slave) = open_pty();
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the real_process test checks console restoration after panic"
+    )]
     let mut child = Command::new(std::env::current_exe().unwrap())
-        .args(["pty::helper", "--exact", "--nocapture", "--test-threads=1"])
+        .args([
+            "pty::real_process_helper",
+            "--exact",
+            "--nocapture",
+            "--test-threads=1",
+        ])
         .env(SCENARIO, "real-panic")
         .env(DIR, dir.path())
         .env("TERM", "linux")

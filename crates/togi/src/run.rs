@@ -12,7 +12,7 @@
 use std::cell::{Cell, RefCell};
 use std::io::{self, Write};
 use std::num::NonZeroU32;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::LazyLock;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -20,7 +20,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use clap::{Args as ClapArgs, ValueHint};
 use togi_defect::KNOWN_DEFECTS;
 use togi_hostlock::HostLock;
-use togi_journal::{Build, Operation, Recording, StateDir, Verdict, recorded_build};
+use togi_journal::{Build, Operation, Verdict};
 use togi_machine::CancellationToken;
 use togi_render::{Renderer, Style, escape_text};
 use togi_session::{
@@ -30,10 +30,8 @@ use togi_tuningboot::{Bootloader, LeaveReason, RestartCount};
 
 use crate::args::ConfigArgs;
 use crate::cli::{Context, examples};
-use crate::dashboard::Dashboard;
 use crate::exit::Exit;
 use crate::report::{current_build, exit_with, refusal_message, unknown_event_message};
-use crate::signals;
 
 mod outcome;
 mod prompt;
@@ -125,11 +123,11 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
     // What a run can decide from reading alone comes first, before any lock: a journal this build may not
     // append to, and the configuration. Neither writes anything, so neither needs the host lock, except the
     // tuning boot's refusal, which clears the boot entry. The same journal is judged again under the locks.
-    let unlocked = match recorded_build(ctx.state_dir) {
+    let unlocked = match ctx.system.recorded_build(ctx.state_dir) {
         Ok(recorded) => recorded,
         Err(error) => return exit_with(ctx, COMMAND, error, Exit::Error),
     };
-    if let Some(refused) = refusal(&build, unlocked.as_ref(), ctx.state_dir) {
+    if let Some(refused) = refusal(&build, unlocked.as_ref(), ctx) {
         let _lock = match bootloader {
             Some(_) => match take_host_lock(ctx) {
                 Ok(lock) => Some(lock),
@@ -139,13 +137,17 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
         };
         return refuse(ctx, &refused, bootloader.as_deref_mut(), renderer);
     }
-    let (config, source) = match args.config.load_with_source(ctx.system.config_path()) {
+    let (config, source) = match args
+        .config
+        .load_with_source_read(ctx.system.config_path(), |path| {
+            ctx.system.read_config(path)
+        }) {
         Ok(loaded) => loaded,
         Err(error) => return exit_with(ctx, COMMAND, error, Exit::Usage),
     };
 
     let cancel = CancellationToken::new();
-    let _listening = match signals::listen(&cancel) {
+    let _listening = match ctx.system.listen(&cancel) {
         Ok(listening) => listening,
         Err(error) => {
             return exit_with(
@@ -163,7 +165,7 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
         Ok(lock) => lock,
         Err(exit) => return exit,
     };
-    let dir = match StateDir::lock(ctx.state_dir) {
+    let dir = match ctx.system.lock_state_dir(ctx.state_dir) {
         Ok(dir) => dir,
         Err(error @ togi_journal::LockError::Held { .. }) => {
             return exit_with(ctx, COMMAND, error, Exit::Locked);
@@ -174,7 +176,7 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
         Ok(recorded) => recorded,
         Err(error) => return exit_with(ctx, COMMAND, error, Exit::Error),
     };
-    if let Some(refused) = refusal(&build, recorded.as_ref(), ctx.state_dir) {
+    if let Some(refused) = refusal(&build, recorded.as_ref(), ctx) {
         return refuse(ctx, &refused, bootloader.as_deref_mut(), renderer);
     }
 
@@ -217,7 +219,7 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
     let interactive = ctx.system.interactive();
     let dashboard = (interactive && !args.no_tui).then(|| {
         let since = journal.events().last().map_or(0, |event| event.seq.get());
-        Rc::new(Dashboard::new(ctx.system.surface(), ctx.state_dir, since))
+        Rc::new(ctx.system.dashboard(ctx.state_dir, since))
     });
     let hidden = Hidden::default();
     let suppressed = Rc::new(Cell::new(false));
@@ -358,8 +360,7 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
 
 /// Takes the host lock, or says why not and how the run exits.
 fn take_host_lock(ctx: &mut Context<'_>) -> Result<HostLock, Exit> {
-    let (path, policy) = ctx.system.host_lock();
-    match HostLock::acquire(path, policy) {
+    match ctx.system.acquire_host_lock() {
         Ok(lock) => Ok(lock),
         Err(error @ togi_hostlock::Error::Busy { .. }) => {
             Err(exit_with(ctx, COMMAND, error, Exit::Locked))
@@ -370,14 +371,16 @@ fn take_host_lock(ctx: &mut Context<'_>) -> Result<HostLock, Exit> {
 
 /// Why the journal of `state_dir`, written by `recorded`, may not be appended to by `build`: a newer schema,
 /// ruleset or evidence epoch, or a kind of event this build does not know in a journal it otherwise reads.
-fn refusal(build: &Build, recorded: Option<&Build>, state_dir: &Path) -> Option<Refused> {
+fn refusal(build: &Build, recorded: Option<&Build>, ctx: &Context<'_>) -> Option<Refused> {
     let recorded = recorded?;
     match build.verdict(recorded, Operation::Resume) {
         Verdict::Refuse(refusal) => Some(Refused {
             message: refusal_message(&refusal, recorded, build),
             leave_reason: INCOMPATIBLE,
         }),
-        Verdict::Use => Recording::read(&state_dir.join(JOURNAL_FILE))
+        Verdict::Use => ctx
+            .system
+            .recording(&ctx.state_dir.join(JOURNAL_FILE))
             .err()
             .and_then(|error| unknown_event_message(&error, recorded, build))
             .map(|message| Refused {

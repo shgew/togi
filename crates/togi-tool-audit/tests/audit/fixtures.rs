@@ -280,6 +280,33 @@ pub(crate) fn run(cases: Vec<Case>) {
     }
 }
 
+/// Compares a compiled snapshot's body without a runtime snapshot filesystem adapter.
+pub(crate) fn assert_snapshot(actual: &str, expected: &str) {
+    let (_, body) = expected.split_once("\n---\n").unwrap();
+    assert_eq!(actual.trim_end(), body.trim_end());
+}
+
+#[expect(
+    clippy::disallowed_methods,
+    reason = "kernel audit fixtures explicitly inject an unsynced journal adapter; production keeps durable locking"
+)]
+pub(crate) fn disk_inspect(
+    path: &std::path::Path,
+    simulated: bool,
+) -> (
+    Vec<togi_tool_audit::Finding>,
+    usize,
+    Vec<togi_tool_audit::JournalSkip>,
+) {
+    togi_tool_audit::audit_directory_with(path, simulated, |path| {
+        if !path.is_dir() {
+            return Err("not a directory".into());
+        }
+        togi_journal::StateDir::lock_with_fs(togi_journal::fs::unsynced_disk_fs(), path)
+            .map_err(|error| error.to_string())
+    })
+}
+
 /// Writes `events` as the live journal of a state directory on disk, with the `state.json` a run publishes at its
 /// last event.
 pub(crate) fn write_state_dir(dir: &std::path::Path, events: &[Event]) {

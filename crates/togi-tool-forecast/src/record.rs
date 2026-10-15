@@ -1,5 +1,5 @@
 use std::fs;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::Path;
 
 use serde::Serialize;
@@ -93,11 +93,27 @@ impl Record {
             path: path.to_path_buf(),
             source,
         })?;
-        let record: Self =
-            serde_json::from_slice(&bytes).map_err(|source| Error::DecodeRecord {
+        Self::decode_bytes(&bytes, path)
+    }
+
+    /// Decodes a record from a reader; `path` is only a diagnostic label.
+    pub fn decode(mut reader: impl Read, path: impl AsRef<Path>) -> Result<Self, Error> {
+        let path = path.as_ref();
+        let mut bytes = Vec::new();
+        reader
+            .read_to_end(&mut bytes)
+            .map_err(|source| Error::ReadRecord {
                 path: path.to_path_buf(),
                 source,
             })?;
+        Self::decode_bytes(&bytes, path)
+    }
+
+    fn decode_bytes(bytes: &[u8], path: &Path) -> Result<Self, Error> {
+        let record: Self = serde_json::from_slice(bytes).map_err(|source| Error::DecodeRecord {
+            path: path.to_path_buf(),
+            source,
+        })?;
         if record.runs.is_empty() {
             return Err(Error::EmptyRecord {
                 path: path.to_path_buf(),

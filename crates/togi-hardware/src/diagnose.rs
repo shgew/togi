@@ -7,7 +7,7 @@ use togi_smu::Driver;
 use crate::assemble::Parts;
 use crate::checks::{CheckName, Skip, Skipped, failed, passed};
 use crate::error::Error;
-use crate::host::{Privilege, SystemHost};
+use crate::host::{HostReadings, Privilege, SystemHost};
 use crate::preflight::Outcome;
 
 /// What `togi doctor` found. The checks made before a BIOS context read failed stay in `ran`.
@@ -35,7 +35,7 @@ pub(crate) trait Survey {
     fn bios_context(&self) -> Result<BiosContext, togi_smu::Error>;
 }
 
-impl Survey for SystemHost {
+impl<R: HostReadings> Survey for SystemHost<R> {
     fn steps(&self, privileged: bool) -> Vec<Outcome> {
         self.run_steps(privileged)
     }
@@ -108,17 +108,26 @@ pub(crate) fn diagnosis_host(
     request_privileged: bool,
     privilege: Privilege,
 ) -> Result<(SystemHost, bool), Error> {
+    diagnosis_host_with(request_privileged, privilege, |privileged| {
+        let driver = if privileged {
+            Driver::open(root)
+        } else {
+            Driver::identity_only(root)
+        }
+        .map_err(Error::OpenSmu)?;
+        let parts = Parts::new(driver, config)?;
+        let scope = parts.runner(PathBuf::new())?;
+        Ok(parts.host(root, privilege, scope))
+    })
+}
+
+pub(crate) fn diagnosis_host_with<H>(
+    request_privileged: bool,
+    privilege: Privilege,
+    build: impl FnOnce(bool) -> Result<H, Error>,
+) -> Result<(H, bool), Error> {
     let privileged = request_privileged && privilege.is_root();
-    let driver = if privileged {
-        Driver::open(root)
-    } else {
-        Driver::identity_only(root)
-    }
-    .map_err(Error::OpenSmu)?;
-    let parts = Parts::new(driver, config)?;
-    let scope = parts.runner(PathBuf::new())?;
-    let host = parts.host(root, privilege, scope);
-    Ok((host, privileged))
+    Ok((build(privileged)?, privileged))
 }
 
 #[cfg(test)]

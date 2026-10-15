@@ -459,7 +459,7 @@ mod recorded {
 }
 
 #[test]
-fn an_unreadable_journal_is_an_io_error() {
+fn real_fs_an_unreadable_journal_is_an_io_error() {
     use std::os::unix::fs::PermissionsExt as _;
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("events.jsonl");

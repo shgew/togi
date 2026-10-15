@@ -81,24 +81,65 @@ pub fn decode(reader: impl Read) -> Result<Vec<TrialFact>, ReadError> {
     Ok(facts)
 }
 
-/// Writes `facts` as a gzip extract, replacing `path` only once every byte is written: the extract goes to
-/// a temporary file beside it first. Without facts, nothing is created or changed.
+/// Writes `facts` as a gzip extract, syncing every byte before atomically replacing `path`: the extract
+/// goes to a temporary file beside it first. Without valid facts, nothing is created or changed.
 pub fn write(path: impl AsRef<Path>, facts: &[TrialFact]) -> Result<(), WriteError> {
-    let path = path.as_ref();
+    write_file(path.as_ref(), facts, sync_file)
+}
+
+/// Like [`write`], including atomic replacement, but without syncing the temporary file.
+///
+/// Use for disposable extracts whose survival across a machine crash is not required.
+pub fn write_unsynced(path: impl AsRef<Path>, facts: &[TrialFact]) -> Result<(), WriteError> {
+    write_file(path.as_ref(), facts, |_| Ok(()))
+}
+
+#[expect(
+    clippy::disallowed_methods,
+    reason = "production extracts must be synced before replacing the previous complete extract"
+)]
+fn sync_file(file: &File) -> io::Result<()> {
+    file.sync_all()
+}
+
+fn write_file(
+    path: &Path,
+    facts: &[TrialFact],
+    sync: impl FnOnce(&File) -> io::Result<()>,
+) -> Result<(), WriteError> {
+    write_with(
+        path,
+        facts,
+        |parent| tempfile::NamedTempFile::new_in(parent),
+        |temporary| sync(temporary.as_file()),
+        |temporary, path| {
+            temporary
+                .persist(path)
+                .map(|_| ())
+                .map_err(|error| error.error)
+        },
+    )
+}
+
+fn write_with<T: Write>(
+    path: &Path,
+    facts: &[TrialFact],
+    create: impl FnOnce(&Path) -> io::Result<T>,
+    sync: impl FnOnce(&T) -> io::Result<()>,
+    replace: impl FnOnce(T, &Path) -> io::Result<()>,
+) -> Result<(), WriteError> {
     validate(facts)?;
     let parent = path
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
         .unwrap_or_else(|| Path::new("."));
-    let mut temporary = tempfile::NamedTempFile::new_in(parent)?;
-    encode(BufWriter::new(temporary.as_file_mut()), facts)?;
-    temporary.as_file().sync_all()?;
-    temporary
-        .persist(path)
-        .map_err(|error| WriteError::Replace {
-            path: path.to_path_buf(),
-            source: error.error,
-        })?;
+    let mut temporary = create(parent)?;
+    encode(BufWriter::new(&mut temporary), facts)?;
+    sync(&temporary)?;
+    replace(temporary, path).map_err(|source| WriteError::Replace {
+        path: path.to_path_buf(),
+        source,
+    })?;
     Ok(())
 }
 
@@ -131,3 +172,6 @@ fn validate(facts: &[TrialFact]) -> Result<(), WriteError> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

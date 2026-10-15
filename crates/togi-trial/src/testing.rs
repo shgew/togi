@@ -6,6 +6,28 @@ use std::path::{Path, PathBuf};
 use togi_backend::{Backend, Error, FileName, Input, Line, Plan, Ready};
 use togi_machine::{CpuId, Workload};
 
+/// A current-thread runtime with timers, but no reactor or OS descriptors.
+pub(crate) fn runtime(paused: bool) -> tokio::runtime::Runtime {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .start_paused(paused)
+        .build()
+        .expect("build the timer-only test runtime")
+}
+
+/// Keeps parameterised test attributes while running an async fixture without an I/O reactor.
+macro_rules! test {
+    ($(#[$attribute:meta])* async fn $name:ident($($arguments:tt)*) $(-> $result:ty)? $body:block) => {
+        $(#[$attribute])*
+        #[test]
+        fn $name($($arguments)*) $(-> $result)? {
+            crate::testing::runtime(true).block_on(async move $body)
+        }
+    };
+}
+
+pub(crate) use test;
+
 /// A backend with the classifier the Go tests used: `COMPUTE ERROR` anywhere is a computation
 /// error, `PIN FAILED` a setup error, `AFFINITY:<n>` an affinity error, `ok` a progress line.
 #[derive(Clone, Debug)]

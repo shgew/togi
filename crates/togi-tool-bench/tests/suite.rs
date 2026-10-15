@@ -1,5 +1,11 @@
 #![expect(clippy::unwrap_used, reason = "helpers panic on a broken fixture")]
 
+#[expect(
+    dead_code,
+    reason = "this binary uses only memory trees, not record and snapshot helpers"
+)]
+mod common;
+use common::Tree;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -9,10 +15,10 @@ fn bench_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tools/bench")
 }
 
-fn plan_in(dir: &Path, suite: &str, selection: Selection) -> Result<Vec<String>, Error> {
-    let suite = Suite::parse(suite.as_bytes(), dir.to_path_buf())?;
+fn plan_in(dir: &Tree, suite: &str, selection: Selection) -> Result<Vec<String>, Error> {
+    let suite = Suite::parse(suite.as_bytes(), dir.path().to_path_buf())?;
     Ok(suite
-        .plan(selection)?
+        .plan_from(selection, dir)?
         .runs
         .iter()
         .map(togi_tool_bench::RunSpec::name)
@@ -20,10 +26,10 @@ fn plan_in(dir: &Path, suite: &str, selection: Selection) -> Result<Vec<String>,
 }
 
 fn plan(suite: &str, selection: Selection) -> Result<Vec<String>, Error> {
-    let dir = tempfile::tempdir().unwrap();
-    std::fs::write(dir.path().join("a.json"), "{\"cores\": 2}").unwrap();
-    std::fs::write(dir.path().join("b.json"), "{\"cores\": 2}").unwrap();
-    plan_in(dir.path(), suite, selection)
+    let dir = Tree::new();
+    dir.write(dir.path().join("a.json"), "{\"cores\": 2}");
+    dir.write(dir.path().join("b.json"), "{\"cores\": 2}");
+    plan_in(&dir, suite, selection)
 }
 
 #[test]
@@ -168,8 +174,8 @@ fn every_scenario_is_checked_whatever_the_selection() {
 
 #[test]
 fn a_missing_suite_file_is_a_read_error() {
-    let dir = tempfile::tempdir().unwrap();
-    let error = Suite::load(&dir.path().join("missing.json"))
+    let dir = Tree::new();
+    let error = Suite::load_from(&dir.path().join("missing.json"), &dir)
         .unwrap_err()
         .to_string();
     assert!(error.contains("read suite"), "{error}");
@@ -193,14 +199,14 @@ fn runs_come_in_suite_order_with_dev_seeds_before_holdout_seeds() {
 
 #[test]
 fn smoke_seeds_mark_their_runs() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = Tree::new();
     let suite = Suite::parse(
         br#"{"scenarios":[{"name":"x","dev":[1,2],"holdout":[3],"smoke":[2,3]},{"name":"y","dev":[1]}]}"#,
         dir.path().to_path_buf(),
     )
     .unwrap();
     let smoke: Vec<_> = suite
-        .plan(Selection::All)
+        .plan_from(Selection::All, &dir)
         .unwrap()
         .runs
         .iter()
@@ -212,15 +218,15 @@ fn smoke_seeds_mark_their_runs() {
 
 #[test]
 fn an_ensemble_picks_members_by_position_within_each_split() {
-    let dir = tempfile::tempdir().unwrap();
-    std::fs::write(dir.path().join("a.json"), "{\"cores\": 2}").unwrap();
-    std::fs::write(dir.path().join("b.json"), "{\"cores\": 2}").unwrap();
+    let dir = Tree::new();
+    dir.write(dir.path().join("a.json"), "{\"cores\": 2}");
+    dir.write(dir.path().join("b.json"), "{\"cores\": 2}");
     let suite = Suite::parse(
         br#"{"scenarios":[{"name":"x","machines":["a.json","b.json"],"dev":[10,20,30],"holdout":[99,98]}]}"#,
         dir.path().to_path_buf(),
     )
     .unwrap();
-    let plan = suite.plan(Selection::All).unwrap();
+    let plan = suite.plan_from(Selection::All, &dir).unwrap();
     let members: Vec<_> = plan
         .runs
         .iter()
@@ -242,14 +248,14 @@ fn an_ensemble_picks_members_by_position_within_each_split() {
 
 #[test]
 fn a_machine_shared_by_runs_is_read_once() {
-    let dir = tempfile::tempdir().unwrap();
-    std::fs::write(dir.path().join("a.json"), "{\"cores\": 2}").unwrap();
+    let dir = Tree::new();
+    dir.write(dir.path().join("a.json"), "{\"cores\": 2}");
     let suite = Suite::parse(
         br#"{"scenarios":[{"name":"x","machine":"a.json","dev":[1,2]},{"name":"y","machine":"a.json","dev":[1]}]}"#,
         dir.path().to_path_buf(),
     )
     .unwrap();
-    let plan = suite.plan(Selection::Dev).unwrap();
+    let plan = suite.plan_from(Selection::Dev, &dir).unwrap();
     assert_eq!(plan.machines.len(), 1);
     let first = plan.runs[0].machine.as_ref().unwrap();
     assert!(
@@ -261,7 +267,7 @@ fn a_machine_shared_by_runs_is_read_once() {
 
 #[test]
 fn the_registered_gates_notes_are_the_suites_notes() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = Tree::new();
     let with = Suite::parse(
         br#"{"gate":{"id":"g","notes":["first","second"]},"scenarios":[{"name":"x","dev":[1]}]}"#,
         dir.path().to_path_buf(),
@@ -279,7 +285,7 @@ fn the_registered_gates_notes_are_the_suites_notes() {
 
 #[test]
 fn the_digest_follows_the_suite_files_bytes() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = Tree::new();
     let digest = |text: &str| {
         Suite::parse(text.as_bytes(), dir.path().to_path_buf())
             .unwrap()
@@ -293,19 +299,11 @@ fn the_digest_follows_the_suite_files_bytes() {
 
 #[test]
 fn the_committed_suite_has_the_runs_and_scenarios_it_documents() {
-    let suite = Suite::load(&bench_dir().join("suite.json")).unwrap();
-    let all = suite.plan(Selection::All).unwrap();
-    let dev = suite.plan(Selection::Dev).unwrap();
+    let dir = Tree::committed();
+    let suite = dir.suite();
+    let all = suite.plan_from(Selection::All, &dir).unwrap();
+    let dev = suite.plan_from(Selection::Dev, &dir).unwrap();
     assert_eq!((all.runs.len(), dev.runs.len()), (220, 110));
-    for deleted in [
-        "target-r4-limit",
-        "target-delayed-joint",
-        "target-flat-risk",
-        "target-flat-cost",
-    ] {
-        let file = bench_dir().join("machines").join(format!("{deleted}.json"));
-        assert!(!file.exists(), "{} is back", file.display());
-    }
     let mut names: Vec<&str> = Vec::new();
     for run in &all.runs {
         if !names.contains(&run.scenario.as_str()) {
@@ -333,8 +331,8 @@ fn the_committed_suite_has_the_runs_and_scenarios_it_documents() {
 
 #[test]
 fn the_target_scenario_spreads_two_seeds_per_member_over_nine_replayed_fits() {
-    let suite = Suite::load(&bench_dir().join("suite.json")).unwrap();
-    let plan = suite.plan(Selection::All).unwrap();
+    let dir = Tree::committed();
+    let plan = dir.suite().plan_from(Selection::All, &dir).unwrap();
     let mut members: BTreeMap<String, (usize, usize)> = BTreeMap::new();
     for run in plan.runs.iter().filter(|run| run.scenario == "target") {
         assert!(run.replay.is_some());
@@ -354,8 +352,8 @@ fn the_target_scenario_spreads_two_seeds_per_member_over_nine_replayed_fits() {
 
 #[test]
 fn the_committed_nonmember_scenario_is_a_replayed_synthetic_guard_with_one_smoke_seed() {
-    let suite = Suite::load(&bench_dir().join("suite.json")).unwrap();
-    let plan = suite.plan(Selection::All).unwrap();
+    let dir = Tree::committed();
+    let plan = dir.suite().plan_from(Selection::All, &dir).unwrap();
     let runs: Vec<_> = plan
         .runs
         .iter()
@@ -408,8 +406,8 @@ fn the_committed_nonmember_scenario_is_a_replayed_synthetic_guard_with_one_smoke
 
 #[test]
 fn every_machine_of_the_committed_suite_is_valid_and_lists_its_files() {
-    let suite = Suite::load(&bench_dir().join("suite.json")).unwrap();
-    let plan = suite.plan(Selection::All).unwrap();
+    let dir = Tree::committed();
+    let plan = dir.suite().plan_from(Selection::All, &dir).unwrap();
     assert_eq!(plan.machines.len(), 18);
     for machine in &plan.machines {
         assert!(machine.model(1).is_ok(), "{}", machine.name);
@@ -452,8 +450,9 @@ fn leaves(prefix: &str, value: &serde_json::Value, out: &mut BTreeMap<String, se
 }
 
 fn leaves_of(name: &str) -> BTreeMap<String, serde_json::Value> {
-    let path = bench_dir().join("machines").join(name);
-    let definition = togi_sim::file::load(path).unwrap();
+    let dir = Tree::committed();
+    let path = dir.path().join("machines").join(name);
+    let (definition, _) = togi_sim::file::load_from(path, &dir).unwrap();
     let mut out = BTreeMap::new();
     leaves("", &serde_json::to_value(definition).unwrap(), &mut out);
     out
@@ -510,5 +509,18 @@ fn the_anchor_overlays_differ_from_the_anchor_only_by_their_mechanism() {
                 .collect(),
             "{name}"
         );
+    }
+}
+
+#[test]
+fn real_fs_deleted_scenario_files_are_absent_from_the_committed_tree() {
+    for deleted in [
+        "target-r4-limit",
+        "target-delayed-joint",
+        "target-flat-risk",
+        "target-flat-cost",
+    ] {
+        let file = bench_dir().join("machines").join(format!("{deleted}.json"));
+        assert!(!file.exists(), "{} is back", file.display());
     }
 }

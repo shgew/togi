@@ -1,26 +1,20 @@
 use std::collections::BTreeSet;
 use std::io::Read;
-use std::path::Path;
 
 use flate2::read::MultiGzDecoder;
 use togi_facts::Decisive;
 use togi_journal::Seq;
 use togi_machine::{BiosContext, Condition, Regime};
 use togi_sim::replay::Replay;
-use togi_tool_trialfacts::{Class, Phase, ProfileClassKey, decode, encode, read, replay_facts};
+use togi_tool_trialfacts::{Class, Phase, ProfileClassKey, decode, encode, replay_facts};
 
 use crate::builders::bios;
 
-fn committed() -> &'static Path {
-    Path::new(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../tools/bench/facts/target.jsonl.gz"
-    ))
-}
+const COMMITTED: &[u8] = include_bytes!("../../../../tools/bench/facts/target.jsonl.gz");
 
 #[test]
 fn the_committed_extract_reads_unchanged() {
-    let facts = read(committed()).unwrap();
+    let facts = decode(COMMITTED).unwrap();
     assert_eq!(facts.len(), 3297);
 
     let context = facts[0].context.clone().unwrap();
@@ -111,10 +105,10 @@ fn the_committed_extract_reads_unchanged() {
 #[test]
 fn every_committed_record_writes_back_to_the_same_json() {
     let mut text = String::new();
-    MultiGzDecoder::new(std::fs::File::open(committed()).unwrap())
+    MultiGzDecoder::new(COMMITTED)
         .read_to_string(&mut text)
         .unwrap();
-    let facts = read(committed()).unwrap();
+    let facts = decode(COMMITTED).unwrap();
     assert_eq!(text.lines().count(), facts.len());
     for (line, fact) in text.lines().zip(&facts) {
         let original: serde_json::Value = serde_json::from_str(line).unwrap();
@@ -124,7 +118,7 @@ fn every_committed_record_writes_back_to_the_same_json() {
 
 #[test]
 fn the_committed_extract_survives_a_rewrite() {
-    let facts = read(committed()).unwrap();
+    let facts = decode(COMMITTED).unwrap();
     let mut bytes = Vec::new();
     encode(&mut bytes, &facts).unwrap();
     assert_eq!(decode(bytes.as_slice()).unwrap(), facts);
@@ -132,7 +126,7 @@ fn the_committed_extract_survives_a_rewrite() {
 
 #[test]
 fn the_committed_extract_builds_a_replay_oracle() {
-    let facts = read(committed()).unwrap();
+    let facts = decode(COMMITTED).unwrap();
     let replayed = replay_facts(&facts);
     assert_eq!(replayed.len(), facts.len());
     let replay = Replay::new(replayed).unwrap();

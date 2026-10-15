@@ -27,11 +27,17 @@ pub(crate) fn checked(text: &str) -> Result<BootId, BootIdError> {
     Ok(BootId::from(id.to_owned()))
 }
 
+#[cfg(any(test, target_os = "linux"))]
+pub(crate) fn read_boot_id(
+    read: impl FnOnce() -> std::io::Result<String>,
+) -> Result<BootId, Error> {
+    let text = read().map_err(|source| Error::BootId(source.into()))?;
+    checked(&text).map_err(Error::BootId)
+}
+
 #[cfg(target_os = "linux")]
 pub fn boot_id() -> Result<BootId, Error> {
-    let text = std::fs::read_to_string("/proc/sys/kernel/random/boot_id")
-        .map_err(|source| Error::BootId(source.into()))?;
-    checked(&text).map_err(Error::BootId)
+    read_boot_id(|| std::fs::read_to_string("/proc/sys/kernel/random/boot_id"))
 }
 
 #[cfg(target_os = "macos")]

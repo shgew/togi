@@ -691,7 +691,7 @@ fn drive(j: &mut Journal, ids: &[u8], byte: u8) -> bool {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(40))]
+    #![proptest_config(crate::prop_tests::seeded(40))]
 
     #[test]
     fn cycle_counts_maintained_at_fold_equal_a_brute_force_recount(

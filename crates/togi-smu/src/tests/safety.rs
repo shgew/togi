@@ -124,10 +124,6 @@ fn emergency_zero_still_writes_when_slot_mapping_was_refused() {
 fn emergency_zero_needs_a_validated_driver_even_with_a_proof() {
     let tree = Tree::new(8, true);
     let fake = Fake::new();
-    #[cfg(target_os = "linux")]
-    tree.hardware_files();
-    #[cfg(target_os = "linux")]
-    let watch = Watch::hardware_files(&tree);
     let mut unvalidated = open(&tree, &fake);
     let error = zero_all(&mut unvalidated, forged_proof()).unwrap_err();
     assert!(matches!(
@@ -137,11 +133,9 @@ fn emergency_zero_needs_a_validated_driver_even_with_a_proof() {
         }
     ));
     assert_eq!(fake.hardware_calls(), 0);
-    let mut identity = Driver::identity_only(tree.root()).unwrap();
+    let mut identity = tree.identity_only();
     let error = zero_all(&mut identity, forged_proof()).unwrap_err();
     assert!(matches!(smu_error(&error), Error::IdentityOnly { .. }));
-    #[cfg(target_os = "linux")]
-    assert_eq!(watch.touched(), Vec::<&str>::new());
 }
 
 /// Every way into an identity-only driver: the checks that read identity files, then every entry
@@ -165,7 +159,7 @@ fn exercise_identity_only(driver: &mut Driver) {
 fn an_identity_only_driver_refuses_every_entry_point() {
     let tree = Tree::new(8, true);
     tree.identity_files();
-    let mut driver = Driver::identity_only(tree.root()).unwrap();
+    let mut driver = tree.identity_only();
     exercise_identity_only(&mut driver);
 }
 
@@ -173,8 +167,8 @@ fn an_identity_only_driver_refuses_every_entry_point() {
 /// table file: not one of them may be opened, read or written.
 #[cfg(target_os = "linux")]
 #[test]
-fn an_identity_only_driver_opens_no_mailbox_or_pm_table_file() {
-    let tree = Tree::new(8, true);
+fn real_fs_an_identity_only_driver_opens_no_mailbox_or_pm_table_file() {
+    let tree = Tree::real(8, true);
     tree.identity_files();
     tree.hardware_files();
     let watch = Watch::hardware_files(&tree);
@@ -186,8 +180,8 @@ fn an_identity_only_driver_opens_no_mailbox_or_pm_table_file() {
 
 #[cfg(target_os = "linux")]
 #[test]
-fn an_unvalidated_driver_opens_no_mailbox_or_pm_table_file() {
-    let tree = Tree::new(8, true);
+fn real_fs_an_unvalidated_driver_opens_no_mailbox_or_pm_table_file() {
+    let tree = Tree::real(8, true);
     tree.hardware_files();
     let watch = Watch::hardware_files(&tree);
     let mut driver = Driver::open(tree.root()).unwrap();
@@ -197,8 +191,8 @@ fn an_unvalidated_driver_opens_no_mailbox_or_pm_table_file() {
 
 #[cfg(target_os = "linux")]
 #[test]
-fn a_driver_that_failed_its_identity_check_opens_no_mailbox_or_pm_table_file() {
-    let tree = Tree::new(8, true);
+fn real_fs_a_driver_that_failed_its_identity_check_opens_no_mailbox_or_pm_table_file() {
+    let tree = Tree::real(8, true);
     tree.put(
         "proc/cpuinfo",
         "cpu family : 25\nmodel : 68\nmodel name : Zen 3\n",
@@ -218,8 +212,8 @@ fn a_driver_that_failed_its_identity_check_opens_no_mailbox_or_pm_table_file() {
 /// that does reach them, and every one shows up.
 #[cfg(target_os = "linux")]
 #[test]
-fn the_file_observer_sees_a_validated_driver_reach_the_hardware_files() {
-    let tree = Tree::new(8, true);
+fn real_fs_the_file_observer_sees_a_validated_driver_reach_the_hardware_files() {
+    let tree = Tree::real(8, true);
     tree.hardware_files();
     let watch = Watch::hardware_files(&tree);
     let mut driver = Driver::open(tree.root()).unwrap();

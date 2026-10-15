@@ -1,15 +1,15 @@
 use std::cell::Cell;
-use std::fs;
-use std::path::Path;
 
 use togi_facts::Decisive;
 use togi_machine::{Regime, Signal, workloads};
 use togi_sim::definition::{SharedVoltageDef, VoltageCoreDef, VoltageWorkloadDef, Weights};
-use togi_sim::{Load, MachineDefinition, Model, file};
-use togi_tool_modelcheck::{Status, check};
+use togi_sim::{Load, MachineDefinition, Model};
+use togi_tool_modelcheck::{Status, check_records};
 use togi_tool_trialfacts::{Class, Extracts, TrialFact};
 
-use super::{context, extract, fact};
+use super::output::MemoryOutput;
+use super::{context, fact};
+use crate::MachineOutput;
 use crate::anchor::anchor_with;
 use crate::error::{Error, EvidenceError};
 use crate::evidence::{initial_config, load_of};
@@ -92,19 +92,20 @@ fn anchor_config(records: &[TrialFact]) -> (MachineDefinition, f64) {
 }
 
 struct Fixture {
-    _dir: tempfile::TempDir,
+    output: MemoryOutput,
+    records: Vec<TrialFact>,
     extract: std::path::PathBuf,
     out: std::path::PathBuf,
 }
 
 fn fixture(facts: &[TrialFact]) -> Fixture {
-    let dir = tempfile::tempdir().unwrap();
-    let extract = extract(dir.path(), "facts.gz", facts);
-    let out = dir.path().join("machines");
+    let mut bytes = Vec::new();
+    togi_tool_trialfacts::encode(&mut bytes, facts).unwrap();
     Fixture {
-        _dir: dir,
-        extract,
-        out,
+        output: MemoryOutput::default(),
+        records: togi_tool_trialfacts::decode(bytes.as_slice()).unwrap(),
+        extract: "/fit/facts.gz".into(),
+        out: "/fit/machines".into(),
     }
 }
 
@@ -113,7 +114,14 @@ fn run(
     fitter: impl FnOnce(&[TrialFact]) -> Result<(MachineDefinition, f64), Error>,
 ) -> (Result<(), Error>, String) {
     let mut report = Vec::new();
-    let result = anchor_with(&fixture.extract, &fixture.out, &mut report, fitter);
+    let result = anchor_with(
+        &fixture.records,
+        &fixture.extract,
+        &fixture.out,
+        &mut report,
+        fitter,
+        &mut fixture.output.clone(),
+    );
     (result, String::from_utf8(report).unwrap())
 }
 
@@ -138,8 +146,8 @@ fn an_anchor_is_checked_deterministic_and_replayable_from_its_own_provenance() {
         result.unwrap();
         assert_eq!(calls.get(), 1);
         let path = fixture.out.join("target-shared-voltage.json");
-        let content = fs::read_to_string(&path).unwrap();
-        let cfg = file::load(&path).unwrap();
+        let content = fixture.output.read_to_string(&path).unwrap();
+        let cfg = fixture.output.load(&path).unwrap();
         let (want, loss) = anchor_config(&records);
         assert_eq!(
             cfg.shared_voltage, want.shared_voltage,
@@ -152,13 +160,21 @@ fn an_anchor_is_checked_deterministic_and_replayable_from_its_own_provenance() {
             Some("fixture")
         );
         let mut extracts = Extracts::new();
-        let checked = check(&path, &cfg, &mut extracts).unwrap();
+        let checked = check_records(
+            &path,
+            &fixture.extract,
+            &Model::new(&cfg, 0).unwrap(),
+            &fixture.records,
+        )
+        .unwrap();
         assert_eq!(
             (checked.status, checked.groups.len(), checked.idle_failures),
             (Status::Ok, 1, 1)
         );
         assert_eq!((checked.groups[0].n, checked.groups[0].k), (20, 10));
-        let replay = extracts.replay(&path, &cfg).unwrap();
+        let replay = extracts
+            .replay_with(&path, &cfg, |_| Ok(fixture.records.clone()))
+            .unwrap();
         let class = match records[0].class {
             Class::Trial(class) => class,
             Class::Idle { .. } => unreachable!("the fixture is a trial"),
@@ -239,7 +255,9 @@ fn an_anchor_is_checked_deterministic_and_replayable_from_its_own_provenance() {
             ),
         }
         assert!(
-            !fixture.out.join("target-fit-0.json").exists(),
+            !fixture
+                .output
+                .exists(&fixture.out.join("target-fit-0.json")),
             "anchor mode generated a legacy fit"
         );
     }
@@ -256,19 +274,27 @@ fn an_anchor_keeps_an_empty_bios_field_and_replays_the_facts_that_carry_it() {
     result.unwrap();
     assert!(report.contains("Wrote IN-SAMPLE anchor"), "{report}");
     let path = fixture.out.join("target-shared-voltage.json");
-    let cfg = file::load(&path).unwrap();
+    let cfg = fixture.output.load(&path).unwrap();
     let bios = Model::new(&cfg, 0).unwrap().bios_context().clone();
     let want = records[0].context.clone().unwrap();
     assert_eq!(want.microcode, "");
     assert_eq!(bios, want);
     let mut extracts = Extracts::new();
-    let checked = check(&path, &cfg, &mut extracts).unwrap();
+    let checked = check_records(
+        &path,
+        &fixture.extract,
+        &Model::new(&cfg, 0).unwrap(),
+        &fixture.records,
+    )
+    .unwrap();
     assert_eq!(
         (checked.status, checked.groups.len()),
         (Status::Ok, 1),
         "{checked:?}"
     );
-    let replay = extracts.replay(&path, &cfg).unwrap();
+    let replay = extracts
+        .replay_with(&path, &cfg, |_| Ok(fixture.records.clone()))
+        .unwrap();
     let class = match records[0].class {
         Class::Trial(class) => class,
         Class::Idle { .. } => unreachable!("the fixture is a trial"),
@@ -285,8 +311,8 @@ fn a_flagged_anchor_prints_its_scores_and_never_writes() {
         let fixture = fixture(&anchor_records());
         let path = fixture.out.join("target-shared-voltage.json");
         if existing {
-            fs::create_dir_all(&fixture.out).unwrap();
-            fs::write(&path, "preserve anchor").unwrap();
+            fixture.output.create_dir_all(&fixture.out).unwrap();
+            fixture.output.write(&path, "preserve anchor").unwrap();
         }
         let (result, report) = run(&fixture, |records| {
             let (mut cfg, loss) = anchor_config(records);
@@ -314,13 +340,13 @@ fn a_flagged_anchor_prints_its_scores_and_never_writes() {
         assert!(!report.contains("Wrote IN-SAMPLE anchor:"));
         if existing {
             assert_eq!(
-                fs::read_to_string(&path).unwrap(),
+                fixture.output.read_to_string(&path).unwrap(),
                 "preserve anchor",
                 "the flagged fit replaced the anchor"
             );
         } else {
             assert!(
-                !Path::new(&fixture.out).exists(),
+                !fixture.output.exists(&fixture.out),
                 "the flagged fit created the output directory"
             );
         }
@@ -368,7 +394,10 @@ fn facts_the_anchor_cannot_replay_are_refused_before_any_fit() {
         });
         let error = result.unwrap_err();
         assert!(expected(&error), "{name}: {error}");
-        assert!(report.is_empty() && !fixture.out.exists(), "{name}");
+        assert!(
+            report.is_empty() && !fixture.output.exists(&fixture.out),
+            "{name}"
+        );
     }
 }
 
@@ -407,9 +436,13 @@ fn an_anchor_that_cannot_be_written_is_an_error_and_leaves_the_destination_alone
             fixture.out.clone()
         };
         if directory {
-            fs::create_dir_all(&conflict).unwrap();
+            fixture.output.create_dir_all(&conflict).unwrap();
         } else {
-            fs::write(&conflict, "preserve").unwrap();
+            fixture
+                .output
+                .create_dir_all(conflict.parent().unwrap())
+                .unwrap();
+            fixture.output.write(&conflict, "preserve").unwrap();
         }
         let (result, report) = run(&fixture, |records| Ok(anchor_config(records)));
         let error = result.unwrap_err();
@@ -418,9 +451,12 @@ fn an_anchor_that_cannot_be_written_is_an_error_and_leaves_the_destination_alone
             "{error}"
         );
         assert!(!report.contains("Wrote IN-SAMPLE anchor"), "{report}");
-        assert_eq!(conflict.is_dir(), directory);
+        assert_eq!(fixture.output.is_dir(&conflict), directory);
         if !directory {
-            assert_eq!(fs::read_to_string(&conflict).unwrap(), "preserve");
+            assert_eq!(
+                fixture.output.read_to_string(&conflict).unwrap(),
+                "preserve"
+            );
         }
     }
 }
