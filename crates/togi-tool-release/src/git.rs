@@ -1,6 +1,7 @@
 //! The git seam: every repository read and write the release makes is one git command.
 
 use std::io::{self, Write as _};
+use std::os::unix::process::ExitStatusExt as _;
 use std::path::PathBuf;
 use std::process::{Command, ExitStatus, Stdio};
 use std::string::FromUtf8Error;
@@ -34,10 +35,11 @@ pub enum GitError {
         #[source]
         source: io::Error,
     },
+    /// `status` reads as Go's `exec.ExitError` does, as in `exit status 128` or `signal: killed`.
     #[error("git {command}: {status}: {stderr}")]
     Failed {
         command: String,
-        status: ExitStatus,
+        status: String,
         stderr: String,
     },
     #[error("read the output of git {command}")]
@@ -135,7 +137,7 @@ impl Git for ProcessGit {
         if !output.status.success() {
             return Err(GitError::Failed {
                 command: rendered(),
-                status: output.status,
+                status: go_status(output.status),
                 stderr: String::from_utf8_lossy(&output.stderr).trim().to_owned(),
             });
         }
@@ -149,4 +151,99 @@ impl Git for ProcessGit {
         // A leftover file is harmless: the next release's `read-tree` replaces the whole index.
         let _ = fs::remove_file(self.dir.join(path));
     }
+}
+
+/// The names Go gives signals 1 to 31 on this platform.
+#[cfg(target_os = "macos")]
+const SIGNALS: [&str; 31] = [
+    "hangup",
+    "interrupt",
+    "quit",
+    "illegal instruction",
+    "trace/BPT trap",
+    "abort trap",
+    "EMT trap",
+    "floating point exception",
+    "killed",
+    "bus error",
+    "segmentation fault",
+    "bad system call",
+    "broken pipe",
+    "alarm clock",
+    "terminated",
+    "urgent I/O condition",
+    "suspended (signal)",
+    "suspended",
+    "continued",
+    "child exited",
+    "stopped (tty input)",
+    "stopped (tty output)",
+    "I/O possible",
+    "cputime limit exceeded",
+    "filesize limit exceeded",
+    "virtual timer expired",
+    "profiling timer expired",
+    "window size changes",
+    "information request",
+    "user defined signal 1",
+    "user defined signal 2",
+];
+
+/// The names Go gives signals 1 to 31 on this platform.
+#[cfg(not(target_os = "macos"))]
+const SIGNALS: [&str; 31] = [
+    "hangup",
+    "interrupt",
+    "quit",
+    "illegal instruction",
+    "trace/breakpoint trap",
+    "aborted",
+    "bus error",
+    "floating point exception",
+    "killed",
+    "user defined signal 1",
+    "segmentation fault",
+    "user defined signal 2",
+    "broken pipe",
+    "alarm clock",
+    "terminated",
+    "stack fault",
+    "child exited",
+    "continued",
+    "stopped (signal)",
+    "stopped",
+    "stopped (tty input)",
+    "stopped (tty output)",
+    "urgent I/O condition",
+    "CPU time limit exceeded",
+    "file size limit exceeded",
+    "virtual timer expired",
+    "profiling timer expired",
+    "window changed",
+    "I/O possible",
+    "power failure",
+    "bad system call",
+];
+
+/// `status` as Go's `os.ProcessState` prints a finished process: `exit status N`, or `signal: NAME` for a
+/// killed one, followed by ` (core dumped)` if it dumped core.
+fn go_status(status: ExitStatus) -> String {
+    let mut text = match (status.code(), status.signal()) {
+        (Some(code), _) => format!("exit status {code}"),
+        (None, Some(signal)) => {
+            let name = usize::try_from(signal)
+                .ok()
+                .and_then(|n| n.checked_sub(1))
+                .and_then(|i| SIGNALS.get(i));
+            match name {
+                Some(name) => format!("signal: {name}"),
+                None => format!("signal: signal {signal}"),
+            }
+        }
+        (None, None) => status.to_string(),
+    };
+    if status.core_dumped() {
+        text.push_str(" (core dumped)");
+    }
+    text
 }

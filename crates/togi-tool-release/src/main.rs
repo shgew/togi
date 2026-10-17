@@ -1,7 +1,7 @@
 //! `release`: see the library documentation.
 
 use std::error::Error;
-use std::io::{self, Write as _};
+use std::io::{self, Write};
 use std::process::ExitCode;
 
 use jiff::Timestamp;
@@ -9,7 +9,7 @@ use togi_tool_release::cli::{self, Command, Parsed, USAGE};
 use togi_tool_release::fragments::check_fragments;
 use togi_tool_release::gates::{GitHubGates, SystemClock};
 use togi_tool_release::git::ProcessGit;
-use togi_tool_release::github::{self, HttpTransport};
+use togi_tool_release::github::{self, GitHub, HttpTransport, Repository};
 use togi_tool_release::release::{Mode, Runner};
 
 fn main() -> ExitCode {
@@ -42,28 +42,35 @@ fn main() -> ExitCode {
 }
 
 fn run(command: Command) -> Result<(), Box<dyn Error>> {
-    if let Command::Check(dir) = command {
-        return Ok(check_fragments(&dir)?);
-    }
     let mut git = ProcessGit::new(".");
     let mut out = io::stdout().lock();
-    let mut runner = Runner {
-        git: &mut git,
+    match command {
+        Command::Check(dir) => Ok(check_fragments(&dir)?),
+        Command::Preview => Ok(runner(&mut git, &mut out).release(Mode::Preview)?),
+        Command::Publish => {
+            let (mut api, repository) = github_from_env()?;
+            Ok(runner(&mut git, &mut out).publish(&mut api, &repository)?)
+        }
+        Command::Commit => {
+            let (mut api, repository) = github_from_env()?;
+            let mut gates = GitHubGates {
+                api: &mut api,
+                repository: &repository,
+                clock: SystemClock,
+            };
+            Ok(runner(&mut git, &mut out).release(Mode::Commit(&mut gates))?)
+        }
+    }
+}
+
+fn runner<'a>(git: &'a mut ProcessGit, out: &'a mut dyn Write) -> Runner<'a> {
+    Runner {
+        git,
         today: Timestamp::now(),
-        out: &mut out,
-    };
-    if let Command::Preview = command {
-        return Ok(runner.release(Mode::Preview)?);
+        out,
     }
-    let (mut api, repository) =
-        github::from_env(|key| std::env::var(key).ok(), Box::new(HttpTransport))?;
-    if let Command::Publish = command {
-        return Ok(runner.publish(&mut api, &repository)?);
-    }
-    let mut gates = GitHubGates {
-        api: &mut api,
-        repository: &repository,
-        clock: SystemClock,
-    };
-    Ok(runner.release(Mode::Commit(&mut gates))?)
+}
+
+fn github_from_env() -> Result<(GitHub, Repository), github::EnvError> {
+    github::from_env(|key| std::env::var(key).ok(), Box::new(HttpTransport))
 }

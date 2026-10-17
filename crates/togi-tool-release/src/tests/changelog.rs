@@ -46,11 +46,11 @@ fn rewrite_and_notes() {
     .unwrap();
     let want = "# Changelog\n\n## [0.1.1] - 2026-09-25\n\n### Added\n\n- New option ([#34]).\n- Old link ([#40]).\n\n## [0.1.0] - 2026-09-01\n\n### Fixed\n\n- Old behavior ([#2]).\n\n[0.1.0]: https://forge.example/o/r/releases/tag/v0.1.0\n\n[0.1.1]: https://forge.example/o/r/releases/tag/v0.1.1\n\n[#2]: https://forge.example/o/r/pull/2\n[#34]: https://forge.example/o/r/pull/34\n[#40]: https://forge.example/o/r/pull/40\n";
     assert_eq!(updated, want);
-    let section = section_named(&updated, "0.1.1").unwrap();
+    let section = section_named(&updated, "0.1.1").unwrap().unwrap();
     assert_eq!(section.date, Some("2026-09-25"));
     assert_eq!(entries(section.body).len(), 2);
     assert_eq!(
-        release_notes(&updated, section),
+        release_notes(&updated, section).unwrap(),
         "### Added\n\n- New option ([#34]).\n- Old link ([#40]).\n\n[#34]: https://forge.example/o/r/pull/34\n\n[#40]: https://forge.example/o/r/pull/40"
     );
 }
@@ -84,9 +84,9 @@ fn rewrite_and_notes() {
     "inline link is not a reference"
 )]
 fn release_sections(changelog: &str, version: &str, body: &str, notes: &str) {
-    let section = section_named(changelog, version).unwrap();
+    let section = section_named(changelog, version).unwrap().unwrap();
     assert_eq!(section.body.trim(), body);
-    assert_eq!(release_notes(changelog, section), notes);
+    assert_eq!(release_notes(changelog, section).unwrap(), notes);
 }
 
 #[test_case(

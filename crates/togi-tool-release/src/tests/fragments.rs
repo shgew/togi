@@ -7,7 +7,7 @@ use super::*;
 use crate::chain;
 use crate::changelog::bump;
 
-fn entry(pr: u64, section: &'static str, text: &str) -> Entry {
+fn entry(pr: u64, section: Section, text: &str) -> Entry {
     Entry {
         pr,
         section,
@@ -25,9 +25,9 @@ fn parses_fragment() {
     assert_eq!(
         got,
         [
-            entry(42, "Changed", "**BREAKING** Reset the core."),
-            entry(42, "Changed", "Faster."),
-            entry(42, "Fixed", "A crash."),
+            entry(42, Section::Changed, "**BREAKING** Reset the core."),
+            entry(42, Section::Changed, "Faster."),
+            entry(42, Section::Fixed, "A crash."),
         ]
     );
 }
@@ -49,7 +49,7 @@ fn rejects_pull_request_links(text: &str) {
 #[test_case("A crash [issue 42](https://github.com/shgew/togi/issues/42)." ; "issue link")]
 fn accepts_other_links(text: &str) {
     let got = parse_fragment("42.md", &format!("### Fixed\n\n- {text}\n")).unwrap();
-    assert_eq!(got, [entry(42, "Fixed", text)]);
+    assert_eq!(got, [entry(42, Section::Fixed, text)]);
 }
 
 #[test_case("fast-state.md", "### Fixed\n\n- A crash.\n", "fast-state.md: name must be the pull request number, as in 123.md" ; "slug name")]
@@ -139,5 +139,17 @@ fn real_fs_check_fragments_refuses_subdirectory() {
     assert_eq!(
         chain(&check_fragments(dir.path()).unwrap_err()),
         "7.md: unexpected directory"
+    );
+}
+
+#[test]
+fn real_fs_check_fragments_refuses_first_subdirectory_by_name() {
+    let dir = tempfile::tempdir().unwrap();
+    for name in ["9.md", "3.md", "5.md"] {
+        fs::create_dir(dir.path().join(name)).unwrap();
+    }
+    assert_eq!(
+        chain(&check_fragments(dir.path()).unwrap_err()),
+        "3.md: unexpected directory"
     );
 }

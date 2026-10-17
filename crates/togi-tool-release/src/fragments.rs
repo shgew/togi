@@ -3,21 +3,51 @@
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
-use std::sync::LazyLock;
-use std::{fs, io};
+use std::{fmt, fs, io};
 
-use regex::Regex;
-
-use crate::pattern;
+use crate::{Pattern, PatternError, compiled, pattern};
 
 /// The directory of pending fragments, relative to the repository root.
 pub const FRAGMENT_DIR: &str = "changes";
 /// The one file in [`FRAGMENT_DIR`] that is not a fragment.
 pub const FRAGMENT_README: &str = "README.md";
-/// The sections a fragment may have, in the order the release writes them.
-pub const SECTIONS: [&str; 4] = ["Added", "Changed", "Removed", "Fixed"];
 
-static PULL_REQUEST_LINK: LazyLock<Regex> = LazyLock::new(|| {
+/// A section a fragment may have.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Section {
+    Added,
+    Changed,
+    Removed,
+    Fixed,
+}
+
+impl Section {
+    /// Every section, in the order the release writes them.
+    pub const ALL: [Self; 4] = [Self::Added, Self::Changed, Self::Removed, Self::Fixed];
+
+    /// The text after `### ` in the section's heading.
+    pub const fn heading(self) -> &'static str {
+        match self {
+            Self::Added => "Added",
+            Self::Changed => "Changed",
+            Self::Removed => "Removed",
+            Self::Fixed => "Fixed",
+        }
+    }
+}
+
+impl fmt::Display for Section {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.heading())
+    }
+}
+
+/// [`Section::ALL`] as a list of headings, as in `Added, Changed, Removed, Fixed`.
+fn section_list() -> String {
+    Section::ALL.map(Section::heading).join(", ")
+}
+
+static PULL_REQUEST_LINK: Pattern = Pattern::new(|| {
     pattern(
         r"(?i)\[#[0-9]+\]|https?://(?:www\.)?github\.com/[a-z0-9_.-]+/[a-z0-9_.-]+/pull/[0-9]+(?-u:\b)",
     )
@@ -28,7 +58,7 @@ static PULL_REQUEST_LINK: LazyLock<Regex> = LazyLock::new(|| {
 pub struct Entry {
     /// The pull request the fragment is named by.
     pub pr: u64,
-    pub section: &'static str,
+    pub section: Section,
     /// The entry without its `- ` marker, ending with a period.
     pub text: String,
 }
@@ -54,9 +84,9 @@ pub enum FragmentError {
     EmptySection {
         name: String,
         line: usize,
-        section: &'static str,
+        section: Section,
     },
-    #[error("{name}:{line}: section {section:?} is not one of Added, Changed, Removed, Fixed")]
+    #[error("{name}:{line}: section {section:?} is not one of {}", section_list())]
     UnknownSection {
         name: String,
         line: usize,
@@ -72,6 +102,8 @@ pub enum FragmentError {
     Line { name: String, line: usize },
     #[error("{name}: no entries")]
     Empty { name: String },
+    #[error(transparent)]
+    Pattern(#[from] PatternError),
 }
 
 /// Parses the fragment `name` holding `content` into its entries, in file order.
@@ -90,8 +122,8 @@ pub fn parse_fragment(name: &str, content: &str) -> Result<Vec<Entry>, FragmentE
         source,
     })?;
     let mut entries = Vec::new();
-    let mut section: Option<(&'static str, usize)> = None;
-    let close = |section: Option<(&'static str, usize)>, line: usize| match section {
+    let mut section: Option<(Section, usize)> = None;
+    let close = |section: Option<(Section, usize)>, line: usize| match section {
         Some((section, 0)) => Err(FragmentError::EmptySection {
             name: name.to_owned(),
             line,
@@ -107,15 +139,15 @@ pub fn parse_fragment(name: &str, content: &str) -> Result<Vec<Entry>, FragmentE
         }
         if let Some(heading) = line.strip_prefix("### ") {
             close(section, n)?;
-            let known = SECTIONS
-                .iter()
-                .find(|known| **known == heading)
+            let known = Section::ALL
+                .into_iter()
+                .find(|known| known.heading() == heading)
                 .ok_or_else(|| FragmentError::UnknownSection {
                     name: name.to_owned(),
                     line: n,
                     section: heading.to_owned(),
                 })?;
-            section = Some((*known, 0));
+            section = Some((known, 0));
         } else if let Some(text) = line.strip_prefix("- ") {
             let text = text.trim();
             let Some((heading, count)) = section.as_mut() else {
@@ -130,7 +162,7 @@ pub fn parse_fragment(name: &str, content: &str) -> Result<Vec<Entry>, FragmentE
                     line: n,
                 });
             }
-            if PULL_REQUEST_LINK.is_match(text) {
+            if compiled(&PULL_REQUEST_LINK)?.is_match(text) {
                 return Err(FragmentError::PullRequestLink {
                     name: name.to_owned(),
                     line: n,
@@ -139,7 +171,7 @@ pub fn parse_fragment(name: &str, content: &str) -> Result<Vec<Entry>, FragmentE
             }
             entries.push(Entry {
                 pr,
-                section: heading,
+                section: *heading,
                 text: text.to_owned(),
             });
             *count += 1;
@@ -217,12 +249,17 @@ fn read_fragment_dir(dir: &Path) -> Result<BTreeMap<String, String>, CheckError>
             });
         }
     };
-    let mut files = BTreeMap::new();
+    let mut entries = Vec::new();
     for entry in list {
-        let entry = entry.map_err(|source| CheckError::List {
+        entries.push(entry.map_err(|source| CheckError::List {
             dir: dir.to_owned(),
             source,
-        })?;
+        })?);
+    }
+    // Directory order is arbitrary; refuse the first bad entry by name.
+    entries.sort_by_key(fs::DirEntry::file_name);
+    let mut files = BTreeMap::new();
+    for entry in entries {
         let name = entry.file_name().to_string_lossy().into_owned();
         let kind = entry.file_type().map_err(|source| CheckError::Read {
             name: name.clone(),
@@ -240,11 +277,11 @@ fn read_fragment_dir(dir: &Path) -> Result<BTreeMap<String, String>, CheckError>
 }
 
 /// The release section the entries make, without its heading, and the pull requests it links, ascending and
-/// distinct. Sections follow [`SECTIONS`]; in each, breaking entries come first, then by pull request number,
+/// distinct. Sections follow [`Section::ALL`]; in each, breaking entries come first, then by pull request number,
 /// each linked as ` ([#N])` before its final period.
 pub fn assemble(entries: &[Entry]) -> (String, Vec<u64>) {
     let mut body = String::new();
-    for section in SECTIONS {
+    for section in Section::ALL {
         let mut lines: Vec<&Entry> = entries.iter().filter(|e| e.section == section).collect();
         if lines.is_empty() {
             continue;

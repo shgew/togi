@@ -325,3 +325,16 @@ fn real_process_preview_reads_fetched_main_not_checkout() {
         "Would release from origin/main:\n\nRelease 0.1.1\n\nNo breaking changes (patch bump).\n\n### Fixed\n\n- A fix ([#35]).\n\n[#35]: https://forge.example/moved/r/pull/35\n"
     );
 }
+
+#[test]
+fn real_process_git_failure_reads_as_go_printed_it() {
+    let mut repo = Repo::new(RELEASED, &[]);
+    let error = repo
+        .git
+        .run(GitCommand::new(&["show", "HEAD:missing"]))
+        .unwrap_err();
+    assert_eq!(
+        crate::chain(&error),
+        "git show HEAD:missing: exit status 128: fatal: path 'missing' does not exist in 'HEAD'"
+    );
+}

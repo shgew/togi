@@ -15,6 +15,7 @@ pub mod release;
 mod fakes;
 
 use std::error::Error;
+use std::sync::LazyLock;
 
 use regex::Regex;
 
@@ -30,10 +31,25 @@ pub fn chain(error: &dyn Error) -> String {
     text
 }
 
-#[expect(
-    clippy::expect_used,
-    reason = "the patterns are constants, each compiled by the tests that exercise it"
-)]
-fn pattern(source: &'static str) -> Regex {
-    Regex::new(source).expect("a constant pattern compiles")
+/// A constant pattern that does not compile.
+#[derive(Clone, Debug, thiserror::Error)]
+#[error("compile the pattern {pattern}")]
+pub struct PatternError {
+    pattern: &'static str,
+    #[source]
+    source: regex::Error,
+}
+
+/// A pattern compiled on first use.
+type Pattern = LazyLock<Result<Regex, PatternError>>;
+
+fn pattern(source: &'static str) -> Result<Regex, PatternError> {
+    Regex::new(source).map_err(|error| PatternError {
+        pattern: source,
+        source: error,
+    })
+}
+
+fn compiled(pattern: &'static Pattern) -> Result<&'static Regex, PatternError> {
+    pattern.as_ref().map_err(Clone::clone)
 }

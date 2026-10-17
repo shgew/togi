@@ -284,20 +284,32 @@ fn previews_release() {
     );
 }
 
-#[test_case(Some("fetch --quiet origin main"), None, "fetch main: git fetch --quiet origin main: exit status: 1: injected" ; "fetch")]
-#[test_case(Some("rev-parse --verify origin/main^{commit}"), None, "resolve origin/main: git rev-parse --verify origin/main^{commit}: exit status: 1: injected" ; "resolve")]
-#[test_case(Some("show base:CHANGELOG.md"), None, "read CHANGELOG.md from origin/main: git show base:CHANGELOG.md: exit status: 1: injected" ; "read")]
-#[test_case(Some("show base:Cargo.toml"), None, "read Cargo.toml from origin/main: git show base:Cargo.toml: exit status: 1: injected" ; "read manifest")]
+#[test]
+fn previews_publishing_an_untagged_release() {
+    let mut git = main_git("0.1.0", RELEASED, "sha\trefs/tags/v0.0.9\n", &[]);
+    let (result, out) = release(&mut git, None);
+    result.unwrap();
+    assert_eq!(git.mutations(), Vec::<String>::new());
+    assert_eq!(
+        out,
+        "0.1.0 is released in CHANGELOG.md; would publish origin/main if its GitHub Release is missing\n"
+    );
+}
+
+#[test_case(Some("fetch --quiet origin main"), None, "fetch main: git fetch --quiet origin main: exit status 1: injected" ; "fetch")]
+#[test_case(Some("rev-parse --verify origin/main^{commit}"), None, "resolve origin/main: git rev-parse --verify origin/main^{commit}: exit status 1: injected" ; "resolve")]
+#[test_case(Some("show base:CHANGELOG.md"), None, "read CHANGELOG.md from origin/main: git show base:CHANGELOG.md: exit status 1: injected" ; "read")]
+#[test_case(Some("show base:Cargo.toml"), None, "read Cargo.toml from origin/main: git show base:Cargo.toml: exit status 1: injected" ; "read manifest")]
 #[test_case(None, Some(("show base:version.txt", "bad")), "read version.txt: invalid semantic version \"bad\"" ; "version")]
 #[test_case(None, Some(("show base:Cargo.toml", "[workspace.package]\nname = \"togi\"\n")), "read Cargo.toml: missing [workspace.package] repository" ; "manifest without repository")]
 #[test_case(None, Some(("show base:Cargo.toml", "[workspace.package]\nrepository = 1\n")), "read Cargo.toml: missing [workspace.package] repository" ; "manifest repository not a string")]
 #[test_case(None, Some(("show base:Cargo.toml", "not a manifest")), "read Cargo.toml: parse: TOML parse error at line 1, column 5\n  |\n1 | not a manifest\n  |     ^\nkey with no value, expected `=`\n" ; "invalid manifest")]
-#[test_case(Some("ls-tree --name-only base changes/"), None, "read changes/ from origin/main: list: git ls-tree --name-only base changes/: exit status: 1: injected" ; "list fragments")]
-#[test_case(Some("show base:changes/35.md"), None, "read changes/ from origin/main: read 35.md: git show base:changes/35.md: exit status: 1: injected" ; "read fragment")]
+#[test_case(Some("ls-tree --name-only base changes/"), None, "read changes/ from origin/main: list: git ls-tree --name-only base changes/: exit status 1: injected" ; "list fragments")]
+#[test_case(Some("show base:changes/35.md"), None, "read changes/ from origin/main: read 35.md: git show base:changes/35.md: exit status 1: injected" ; "read fragment")]
 #[test_case(None, Some(("show base:changes/35.md", "- A fix.\n")), "read changes/: 35.md:1: entry before any ### section heading" ; "invalid fragment")]
-#[test_case(Some("ls-remote --tags origin refs/tags/v*"), None, "list release tags: git ls-remote --tags origin refs/tags/v*: exit status: 1: injected" ; "tags")]
+#[test_case(Some("ls-remote --tags origin refs/tags/v*"), None, "list release tags: git ls-remote --tags origin refs/tags/v*: exit status 1: injected" ; "tags")]
 #[test_case(None, Some(("show base:version.txt", "9999999999999999999999999999999999999999.1.0")), "bump version: parse version \"9999999999999999999999999999999999999999.1.0\": number too large to fit in target type" ; "overflow")]
-#[test_case(None, Some(("show base:CHANGELOG.md", "# Changelog\n\n## [0.1.0] - 2026-09-25\n\n## [0.1.1] - 2026-09-25\n")), "rewrite changelog: version [0.1.1] already exists" ; "duplicate")]
+#[test_case(None, Some(("show base:CHANGELOG.md", &format!("{RELEASED}\n## [0.1.1] - 2026-09-25\n"))), "rewrite changelog: version [0.1.1] already exists" ; "duplicate")]
 fn release_failures_do_not_commit(
     failure: Option<&str>,
     response: Option<(&str, &str)>,
@@ -316,14 +328,14 @@ fn release_failures_do_not_commit(
     assert_eq!(out, "");
 }
 
-#[test_case("rev-parse --git-path togi-release-index", "commit release 0.1.1: locate temporary index: git rev-parse --git-path togi-release-index: exit status: 1: injected" ; "locate index")]
-#[test_case("read-tree base", "commit release 0.1.1: read parent tree: git read-tree base: exit status: 1: injected" ; "read tree")]
-#[test_case("hash-object -w --stdin", "commit release 0.1.1: store version.txt: git hash-object -w --stdin: exit status: 1: injected" ; "store")]
-#[test_case("update-index --cacheinfo", "commit release 0.1.1: stage version.txt: git update-index --cacheinfo 100644,blob0,version.txt: exit status: 1: injected" ; "stage")]
-#[test_case("update-index --force-remove", "commit release 0.1.1: remove changes/35.md: git update-index --force-remove changes/35.md: exit status: 1: injected" ; "remove")]
-#[test_case("write-tree", "commit release 0.1.1: write tree: git write-tree: exit status: 1: injected" ; "write tree")]
-#[test_case("commit-tree tree -p base -F -", "commit release 0.1.1: create commit: git commit-tree tree -p base -F -: exit status: 1: injected" ; "create commit")]
-#[test_case("checkout --quiet --detach commit", "check out commit: git checkout --quiet --detach commit: exit status: 1: injected" ; "checkout")]
+#[test_case("rev-parse --git-path togi-release-index", "commit release 0.1.1: locate temporary index: git rev-parse --git-path togi-release-index: exit status 1: injected" ; "locate index")]
+#[test_case("read-tree base", "commit release 0.1.1: read parent tree: git read-tree base: exit status 1: injected" ; "read tree")]
+#[test_case("hash-object -w --stdin", "commit release 0.1.1: store version.txt: git hash-object -w --stdin: exit status 1: injected" ; "store")]
+#[test_case("update-index --cacheinfo", "commit release 0.1.1: stage version.txt: git update-index --cacheinfo 100644,blob0,version.txt: exit status 1: injected" ; "stage")]
+#[test_case("update-index --force-remove", "commit release 0.1.1: remove changes/35.md: git update-index --force-remove changes/35.md: exit status 1: injected" ; "remove")]
+#[test_case("write-tree", "commit release 0.1.1: write tree: git write-tree: exit status 1: injected" ; "write tree")]
+#[test_case("commit-tree tree -p base -F -", "commit release 0.1.1: create commit: git commit-tree tree -p base -F -: exit status 1: injected" ; "create commit")]
+#[test_case("checkout --quiet --detach commit", "check out commit: git checkout --quiet --detach commit: exit status 1: injected" ; "checkout")]
 fn commit_failures_stop_before_checkout(failure: &str, want: &str) {
     let mut git = main_git("0.1.0", RELEASED, "", A_FIX);
     git.failures.push(failure.to_owned());
@@ -447,13 +459,13 @@ fn publish_skips(changelog: &str, lookup: u16, requests_want: &[&str], output: &
     assert_eq!(out, output);
 }
 
-#[test_case(Some("show HEAD:version.txt"), None, "read version.txt: git show HEAD:version.txt: exit status: 1: injected" ; "read")]
+#[test_case(Some("show HEAD:version.txt"), None, "read version.txt: git show HEAD:version.txt: exit status 1: injected" ; "read")]
 #[test_case(None, Some(("show HEAD:version.txt", "bad")), "read version.txt: invalid semantic version \"bad\"" ; "version")]
-#[test_case(Some("rev-parse --is-shallow-repository"), None, "check release history: git rev-parse --is-shallow-repository: exit status: 1: injected" ; "history")]
-#[test_case(Some("fetch --quiet --unshallow --no-tags origin main"), Some(("rev-parse --is-shallow-repository", "true\n")), "fetch complete release history: git fetch --quiet --unshallow --no-tags origin main: exit status: 1: injected" ; "unshallow")]
-#[test_case(Some("log --first-parent -1 --format=%H HEAD -- version.txt"), None, "find the commit that set version.txt to 0.1.0: git log --first-parent -1 --format=%H HEAD -- version.txt: exit status: 1: injected" ; "log")]
+#[test_case(Some("rev-parse --is-shallow-repository"), None, "check release history: git rev-parse --is-shallow-repository: exit status 1: injected" ; "history")]
+#[test_case(Some("fetch --quiet --unshallow --no-tags origin main"), Some(("rev-parse --is-shallow-repository", "true\n")), "fetch complete release history: git fetch --quiet --unshallow --no-tags origin main: exit status 1: injected" ; "unshallow")]
+#[test_case(Some("log --first-parent -1 --format=%H HEAD -- version.txt"), None, "find the commit that set version.txt to 0.1.0: git log --first-parent -1 --format=%H HEAD -- version.txt: exit status 1: injected" ; "log")]
 #[test_case(None, Some(("log --first-parent -1 --format=%H HEAD -- version.txt", "\n")), "find the commit that set version.txt to 0.1.0: no commit changed version.txt" ; "empty history")]
-#[test_case(Some("ls-remote --tags origin refs/tags/v0.1.0 refs/tags/v0.1.0^{}"), None, "check tag v0.1.0: git ls-remote --tags origin refs/tags/v0.1.0 refs/tags/v0.1.0^{}: exit status: 1: injected" ; "tag lookup")]
+#[test_case(Some("ls-remote --tags origin refs/tags/v0.1.0 refs/tags/v0.1.0^{}"), None, "check tag v0.1.0: git ls-remote --tags origin refs/tags/v0.1.0 refs/tags/v0.1.0^{}: exit status 1: injected" ; "tag lookup")]
 #[test_case(None, Some(("ls-remote --tags origin refs/tags/v0.1.0 refs/tags/v0.1.0^{}", "other-sha\trefs/tags/v0.1.0\n")), "tag v0.1.0 points at other-sha, but the release commit is merge-sha" ; "tag elsewhere")]
 #[test_case(None, Some(("ls-remote --tags origin refs/tags/v0.1.0 refs/tags/v0.1.0^{}", "tag-object\trefs/tags/v0.1.0\nother-sha\trefs/tags/v0.1.0^{}\n")), "tag v0.1.0 points at other-sha, but the release commit is merge-sha" ; "annotated tag elsewhere")]
 fn publish_failures_do_not_create_release(

@@ -7,6 +7,7 @@ use std::io::{self, Write};
 use jiff::Timestamp;
 use serde::Deserialize;
 
+use crate::PatternError;
 use crate::changelog::{
     BumpError, RewriteError, bump, is_version, release_notes, rewrite_changelog, section_named,
 };
@@ -75,6 +76,8 @@ pub enum ReleaseError {
         #[source]
         source: GitError,
     },
+    #[error(transparent)]
+    Pattern(#[from] PatternError),
     #[error("print the result")]
     Output(#[source] io::Error),
 }
@@ -179,6 +182,8 @@ pub enum PublishError {
         #[source]
         source: ApiError,
     },
+    #[error(transparent)]
+    Pattern(#[from] PatternError),
     #[error("print the result")]
     Output(#[source] io::Error),
 }
@@ -217,7 +222,7 @@ impl Runner<'_> {
         let version = read("version.txt")?.trim().to_owned();
         let changelog = read("CHANGELOG.md")?;
         let manifest = read("Cargo.toml")?;
-        if !is_version(&version) {
+        if !is_version(&version)? {
             return Err(ReleaseError::Version(version));
         }
         let web_url = repository_url(&manifest).map_err(ReleaseError::Manifest)?;
@@ -230,7 +235,7 @@ impl Runner<'_> {
             .map_err(ReleaseError::Tags)?;
         if fragments.is_empty() {
             let committing = matches!(mode, Mode::Commit(_));
-            let dated = section_named(&changelog, &version).is_some_and(|s| s.date.is_some());
+            let dated = section_named(&changelog, &version)?.is_some_and(|s| s.date.is_some());
             if dated && (!has_tag(&tags, &format!("v{version}")) || committing) {
                 writeln!(
                     self.out,
@@ -255,9 +260,10 @@ impl Runner<'_> {
         let message = format!("Release {next}\n\n{reason}\n");
         let gates = match mode {
             Mode::Preview => {
-                let notes = section_named(&updated, &next)
-                    .map(|section| release_notes(&updated, section))
-                    .unwrap_or_default();
+                let notes = match section_named(&updated, &next)? {
+                    Some(section) => release_notes(&updated, section)?,
+                    None => String::new(),
+                };
                 write!(
                     self.out,
                     "Would release from {BASE}:\n\n{message}\n{notes}\n"
@@ -417,10 +423,11 @@ impl Runner<'_> {
         };
         let version = read("version.txt")?.trim().to_owned();
         let changelog = read("CHANGELOG.md")?;
-        if !is_version(&version) {
+        if !is_version(&version)? {
             return Err(PublishError::Version(version));
         }
-        let Some(section) = section_named(&changelog, &version).filter(|s| s.date.is_some()) else {
+        let Some(section) = section_named(&changelog, &version)?.filter(|s| s.date.is_some())
+        else {
             writeln!(
                 self.out,
                 "nothing to publish: CHANGELOG.md has no released [{version}] section"
@@ -474,7 +481,7 @@ impl Runner<'_> {
             "tag_name": tag,
             "target_commitish": commit,
             "name": version,
-            "body": release_notes(&changelog, section),
+            "body": release_notes(&changelog, section)?,
         });
         let created: Created = api
             .decoded(Method::Post, &format!("{prefix}/releases"), Some(&body))
