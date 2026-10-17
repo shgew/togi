@@ -2,6 +2,7 @@ use std::io;
 
 use jiff::tz::{self, TimeZone};
 use serde_json::{Value, json};
+use test_case::test_case;
 use togi_journal::{Event, HuntOutcome, Payload};
 
 use crate::{OutputFacts, Renderer, Style, escape_text, style_for};
@@ -129,144 +130,60 @@ fn hunt_start() -> Event {
     )
 }
 
-fn style_cases() -> Vec<(&'static str, Event, Style)> {
-    vec![
-        ("failed trial end", trial_end("failure"), Style::Red),
-        (
-            "inconclusive trial end",
-            trial_end("inconclusive"),
-            Style::Dim,
-        ),
-        ("passed trial end", trial_end("pass"), Style::Plain),
-        ("attributed failure", failure_event(), Style::Red),
-        (
-            "unattributed failure",
-            event(
+#[test_case(&trial_end("failure"), Style::Red; "failed trial end")]
+#[test_case(&trial_end("inconclusive"), Style::Dim; "inconclusive trial end")]
+#[test_case(&trial_end("pass"), Style::Plain; "passed trial end")]
+#[test_case(&failure_event(), Style::Red; "attributed failure")]
+#[test_case(&event(
                 "failure",
                 &json!({"signal": "stall", "attribution": "unattributed"}),
-            ),
-            Style::Red,
-        ),
-        (
-            "crash",
-            event("crash.detected", &json!({"previous_boot": "b"})),
-            Style::Red,
-        ),
-        (
-            "dead end",
-            event(
+            ), Style::Red; "unattributed failure")]
+#[test_case(&event("crash.detected", &json!({"previous_boot": "b"})), Style::Red; "crash")]
+#[test_case(&event(
                 "deadend",
                 &json!({"condition": "failure_at_zero", "detail": "d"}),
-            ),
-            Style::RedBold,
-        ),
-        ("step deeper", decision("step_deeper"), Style::Green),
-        ("deepen", decision("deepen"), Style::Green),
-        ("backoff", decision("backoff"), Style::Yellow),
-        ("yield", decision("yield"), Style::Yellow),
-        (
-            "check solo limit",
-            decision("check_solo_limit"),
-            Style::Plain,
-        ),
-        ("hold", decision("hold"), Style::Plain),
-        (
-            "search to room",
-            transition(Some("search"), "has_room"),
-            Style::GreenBold,
-        ),
-        (
-            "search to limit",
-            transition(Some("search"), "at_limit"),
-            Style::GreenBold,
-        ),
-        (
-            "room to limit",
-            transition(Some("has_room"), "at_limit"),
-            Style::GreenBold,
-        ),
-        (
-            "initial limit",
-            transition(None, "at_limit"),
-            Style::GreenBold,
-        ),
-        ("initial room", transition(None, "has_room"), Style::Plain),
-        (
-            "room to room",
-            transition(Some("has_room"), "has_room"),
-            Style::Plain,
-        ),
-        (
-            "limit back to search",
-            transition(Some("at_limit"), "search"),
-            Style::Plain,
-        ),
-        (
-            "limit to room",
-            transition(Some("at_limit"), "has_room"),
-            Style::Plain,
-        ),
-        ("initial search", transition(None, "search"), Style::Plain),
-        (
-            "full passed cycle end",
-            cycle("end", true, true),
-            Style::GreenBold,
-        ),
-        (
-            "non-full passed cycle end",
-            cycle("end", true, false),
-            Style::Plain,
-        ),
-        (
-            "failed full cycle end",
-            cycle("end", false, true),
-            Style::Plain,
-        ),
-        (
-            "full passed cycle start",
-            cycle("start", true, true),
-            Style::Plain,
-        ),
-        ("passed round end", round("end", true), Style::GreenBold),
-        ("failed round end", round("end", false), Style::Plain),
-        ("passed round start", round("start", true), Style::Plain),
-        ("hunt cancelled", hunt_end("cancelled"), Style::Plain),
-        ("hunt direct", hunt_end("direct"), Style::Green),
-        ("hunt culprit", hunt_end("culprit"), Style::Green),
-        ("hunt combination", hunt_end("combination"), Style::Yellow),
-        ("hunt fallback", hunt_end("fallback"), Style::Yellow),
-        ("hunt loaded", hunt_end("loaded"), Style::Yellow),
-        ("hunt start", hunt_start(), Style::Yellow),
-        (
-            "hunt group without inference",
-            hunt_group(None),
-            Style::Plain,
-        ),
-        (
-            "hunt group inferred pass",
-            hunt_group(Some("pass")),
-            Style::Plain,
-        ),
-        (
-            "hunt group inferred failure",
-            hunt_group(Some("failure")),
-            Style::Plain,
-        ),
-        (
-            "hunt group skipped",
-            event(
+            ), Style::RedBold; "dead end")]
+#[test_case(&decision("step_deeper"), Style::Green; "step deeper")]
+#[test_case(&decision("deepen"), Style::Green; "deepen")]
+#[test_case(&decision("backoff"), Style::Yellow; "backoff")]
+#[test_case(&decision("yield"), Style::Yellow; "yield")]
+#[test_case(&decision("check_solo_limit"), Style::Plain; "check solo limit")]
+#[test_case(&decision("hold"), Style::Plain; "hold")]
+#[test_case(&transition(Some("search"), "has_room"), Style::GreenBold; "search to room")]
+#[test_case(&transition(Some("search"), "at_limit"), Style::GreenBold; "search to limit")]
+#[test_case(&transition(Some("has_room"), "at_limit"), Style::GreenBold; "room to limit")]
+#[test_case(&transition(None, "at_limit"), Style::GreenBold; "initial limit")]
+#[test_case(&transition(None, "has_room"), Style::Plain; "initial room")]
+#[test_case(&transition(Some("has_room"), "has_room"), Style::Plain; "room to room")]
+#[test_case(&transition(Some("at_limit"), "search"), Style::Plain; "limit back to search")]
+#[test_case(&transition(Some("at_limit"), "has_room"), Style::Plain; "limit to room")]
+#[test_case(&transition(None, "search"), Style::Plain; "initial search")]
+#[test_case(&cycle("end", true, true), Style::GreenBold; "full passed cycle end")]
+#[test_case(&cycle("end", true, false), Style::Plain; "non-full passed cycle end")]
+#[test_case(&cycle("end", false, true), Style::Plain; "failed full cycle end")]
+#[test_case(&cycle("start", true, true), Style::Plain; "full passed cycle start")]
+#[test_case(&round("end", true), Style::GreenBold; "passed round end")]
+#[test_case(&round("end", false), Style::Plain; "failed round end")]
+#[test_case(&round("start", true), Style::Plain; "passed round start")]
+#[test_case(&hunt_end("cancelled"), Style::Plain; "hunt cancelled")]
+#[test_case(&hunt_end("direct"), Style::Green; "hunt direct")]
+#[test_case(&hunt_end("culprit"), Style::Green; "hunt culprit")]
+#[test_case(&hunt_end("combination"), Style::Yellow; "hunt combination")]
+#[test_case(&hunt_end("fallback"), Style::Yellow; "hunt fallback")]
+#[test_case(&hunt_end("loaded"), Style::Yellow; "hunt loaded")]
+#[test_case(&hunt_start(), Style::Yellow; "hunt start")]
+#[test_case(&hunt_group(None), Style::Plain; "hunt group without inference")]
+#[test_case(&hunt_group(Some("pass")), Style::Plain; "hunt group inferred pass")]
+#[test_case(&hunt_group(Some("failure")), Style::Plain; "hunt group inferred failure")]
+#[test_case(&event(
                 "hunt.group",
                 &json!({
                     "hunt": 4, "group": 1, "cores": [3, 11], "profile": {}, "set": [3, 11],
                     "granularity": 2, "stage": "probe", "index": 0, "duration_s": 0,
                     "skipped": true, "reason": "already checked",
                 }),
-            ),
-            Style::Plain,
-        ),
-        (
-            "hunt group with probe and held members",
-            event(
+            ), Style::Plain; "hunt group skipped")]
+#[test_case(&event(
                 "hunt.group",
                 &json!({
                     "hunt": 4, "group": 5, "cores": [3], "profile": {"3": -40, "11": -22},
@@ -274,93 +191,41 @@ fn style_cases() -> Vec<(&'static str, Event, Style)> {
                     "duration_s": 120, "probe": {"core": 11, "offset": -22},
                     "held": [{"core": 3, "offset": -40}],
                 }),
-            ),
-            Style::Plain,
-        ),
-        (
-            "hunt skipped",
-            event("hunt.skipped", &json!({"failure": 5, "reason": "held"})),
-            Style::Plain,
-        ),
-        (
-            "combination",
-            event(
+            ), Style::Plain; "hunt group with probe and held members")]
+#[test_case(&event("hunt.skipped", &json!({"failure": 5, "reason": "held"})), Style::Plain; "hunt skipped")]
+#[test_case(&event(
                 "combination",
                 &json!({"combination": 1, "members": [], "hunt": 1, "reason": "r"}),
-            ),
-            Style::Yellow,
-        ),
-        (
-            "tuner warning",
-            event(
+            ), Style::Yellow; "combination")]
+#[test_case(&event(
                 "tuner.warning",
                 &json!({"warning": "monotonicity", "passes": [], "detail": "d"}),
-            ),
-            Style::Yellow,
-        ),
-        (
-            "session warning",
-            event(
+            ), Style::Yellow; "tuner warning")]
+#[test_case(&event(
                 "session.warning",
                 &json!({"operation": "write state", "error": "disk full"}),
-            ),
-            Style::Yellow,
-        ),
-        (
-            "defect found",
-            event(
+            ), Style::Yellow; "session warning")]
+#[test_case(&event(
                 "defect.found",
                 &json!({
                     "id": 1, "title": "t", "detail": "d", "pr": 1,
                     "direction": "too_cautious", "cores": [2], "decisions": [],
                 }),
-            ),
-            Style::Yellow,
-        ),
-        (
-            "defect answered",
-            event(
+            ), Style::Yellow; "defect found")]
+#[test_case(&event(
                 "defect.answered",
                 &json!({"id": 1, "cores": [2], "answer": "yes"}),
-            ),
-            Style::Plain,
-        ),
-        (
-            "backend retry",
-            event(
+            ), Style::Plain; "defect answered")]
+#[test_case(&event(
                 "backend.retry",
                 &json!({"backend": "kernel_log", "attempt": 2, "wait_s": 30, "reason": "r"}),
-            ),
-            Style::Dim,
-        ),
-        (
-            "host ranking",
-            event("host.ranking", &json!({"ranking": [3, 1]})),
-            Style::Plain,
-        ),
-        (
-            "host ranking unavailable",
-            event("host.ranking", &json!({"ranking": [], "detail": "missing"})),
-            Style::Plain,
-        ),
-        (
-            "session baseline",
-            event("session.baseline", &json!({"offsets": {"0": 0, "1": -5}})),
-            Style::Plain,
-        ),
-        (
-            "session archived",
-            event("session.archived", &json!({"session": "20261002T011407Z"})),
-            Style::Plain,
-        ),
-    ]
-}
-
-#[test]
-fn style_follows_the_semantic_table() {
-    for (name, event, expected) in style_cases() {
-        assert_eq!(style_for(&event.payload), expected, "{name}");
-    }
+            ), Style::Dim; "backend retry")]
+#[test_case(&event("host.ranking", &json!({"ranking": [3, 1]})), Style::Plain; "host ranking")]
+#[test_case(&event("host.ranking", &json!({"ranking": [], "detail": "missing"})), Style::Plain; "host ranking unavailable")]
+#[test_case(&event("session.baseline", &json!({"offsets": {"0": 0, "1": -5}})), Style::Plain; "session baseline")]
+#[test_case(&event("session.archived", &json!({"session": "20261002T011407Z"})), Style::Plain; "session archived")]
+fn style_follows_the_semantic_table(event: &Event, expected: Style) {
+    assert_eq!(style_for(&event.payload), expected);
 }
 
 #[test]
@@ -373,22 +238,17 @@ fn style_is_decided_by_payload_not_message() {
     assert_eq!(style_for(&hostile.payload), Style::Plain);
 }
 
-#[test]
-fn every_nonplain_style_wraps_the_whole_line_in_owned_sgr() {
-    let renderer = colored();
-    for (style, open) in [
-        (Style::Red, "\x1b[31m"),
-        (Style::RedBold, "\x1b[1;31m"),
-        (Style::Green, "\x1b[32m"),
-        (Style::GreenBold, "\x1b[1;32m"),
-        (Style::Yellow, "\x1b[33m"),
-        (Style::Dim, "\x1b[2m"),
-    ] {
-        assert_eq!(
-            renderer.text(style, "line").to_string(),
-            format!("{open}line\x1b[0m")
-        );
-    }
+#[test_case(Style::Red, "\x1b[31m"; "red")]
+#[test_case(Style::RedBold, "\x1b[1;31m"; "red bold")]
+#[test_case(Style::Green, "\x1b[32m"; "green")]
+#[test_case(Style::GreenBold, "\x1b[1;32m"; "green bold")]
+#[test_case(Style::Yellow, "\x1b[33m"; "yellow")]
+#[test_case(Style::Dim, "\x1b[2m"; "dim")]
+fn every_nonplain_style_wraps_the_whole_line_in_owned_sgr(style: Style, open: &str) {
+    assert_eq!(
+        colored().text(style, "line").to_string(),
+        format!("{open}line\x1b[0m")
+    );
 }
 
 #[test]
@@ -505,14 +365,6 @@ fn journald_priority_applies_to_red_and_red_bold_only() {
             .to_string()
             .starts_with("<3>\x1b[31m")
     );
-    for other in [
-        decision("step_deeper"),
-        decision("backoff"),
-        trial_end("inconclusive"),
-    ] {
-        let line = renderer.line(&other, &zone).to_string();
-        assert!(!line.contains("<3>"), "{line}");
-    }
     assert!(
         renderer
             .text(Style::RedBold, "refused")
@@ -535,6 +387,14 @@ fn journald_priority_applies_to_red_and_red_bold_only() {
         colored().text(Style::RedBold, "refused").to_string(),
         "\x1b[1;31mrefused\x1b[0m"
     );
+}
+
+#[test_case(&decision("step_deeper"); "step deeper")]
+#[test_case(&decision("backoff"); "backoff")]
+#[test_case(&trial_end("inconclusive"); "inconclusive trial end")]
+fn journald_priority_skips_other_events(other: &Event) {
+    let line = journald().line(other, &utc()).to_string();
+    assert!(!line.contains("<3>"), "{line}");
 }
 
 #[test]
@@ -690,36 +550,44 @@ fn write_event_ends_with_exactly_one_newline() {
     assert!(text.contains("first\\nsecond\\n"));
 }
 
-#[test]
-fn write_event_escapes_a_diagnostic_without_sanitizing_its_evidence() {
-    let detail = "日本語\x1b[2J\x1b]52;c;data\x07\r\n\u{9b}31m\u{202e}\u{2028}";
-    let msg = format!("trial 0001 {detail}");
-    let diagnostic = event_with(
+const DIAGNOSTIC_DETAIL: &str = "日本語\x1b[2J\x1b]52;c;data\x07\r\n\u{9b}31m\u{202e}\u{2028}";
+
+fn diagnostic() -> Event {
+    event_with(
         "trial.progress",
-        &msg,
-        &json!({"trial": "0001", "detail": detail}),
-    );
-    let before = diagnostic.encode().unwrap();
+        &format!("trial 0001 {DIAGNOSTIC_DETAIL}"),
+        &json!({"trial": "0001", "detail": DIAGNOSTIC_DETAIL}),
+    )
+}
+
+#[test_case(colored(); "colored")]
+#[test_case(plain(); "plain")]
+fn write_event_escapes_a_diagnostic(renderer: Renderer) {
     let escaped = r"trial 0001 日本語\x1b[2J\x1b]52;c;data\x07\r\n\u009b31m\u202e\u2028";
-    for (name, renderer) in [("colored", colored()), ("plain", plain())] {
-        let mut out = Vec::new();
-        renderer.write_event(&mut out, &diagnostic, &utc()).unwrap();
-        let text = String::from_utf8(out).unwrap();
-        assert_eq!(
-            text,
-            format!("01:14:07 trial.progress {escaped}\n"),
-            "{name}"
-        );
-        assert!(
-            !text.contains(['\x1b', '\r', '\u{9b}', '\u{202e}', '\u{2028}']),
-            "{name}"
-        );
-    }
+    let mut out = Vec::new();
+    renderer
+        .write_event(&mut out, &diagnostic(), &utc())
+        .unwrap();
+    let text = String::from_utf8(out).unwrap();
+    assert_eq!(text, format!("01:14:07 trial.progress {escaped}\n"));
+    assert!(!text.contains(['\x1b', '\r', '\u{9b}', '\u{202e}', '\u{2028}']));
+}
+
+#[test]
+fn write_event_does_not_sanitize_the_evidence_of_a_diagnostic() {
+    let diagnostic = diagnostic();
+    let msg = format!("trial 0001 {DIAGNOSTIC_DETAIL}");
+    let before = diagnostic.encode().unwrap();
+    let mut out = Vec::new();
+    colored()
+        .write_event(&mut out, &diagnostic, &utc())
+        .unwrap();
+    plain().write_event(&mut out, &diagnostic, &utc()).unwrap();
     assert_eq!(diagnostic.msg, msg);
     let Payload::TrialProgress(progress) = &diagnostic.payload else {
         panic!("not a trial progress: {:?}", diagnostic.payload);
     };
-    assert_eq!(progress.detail, detail);
+    assert_eq!(progress.detail, DIAGNOSTIC_DETAIL);
     let after = diagnostic.encode().unwrap();
     assert_eq!(before, after);
     let decoded = Event::decode(&after).unwrap();
@@ -727,7 +595,7 @@ fn write_event_escapes_a_diagnostic_without_sanitizing_its_evidence() {
     let Payload::TrialProgress(progress) = &decoded.payload else {
         panic!("not a trial progress: {:?}", decoded.payload);
     };
-    assert_eq!(progress.detail, detail);
+    assert_eq!(progress.detail, DIAGNOSTIC_DETAIL);
 }
 
 #[test]
@@ -764,15 +632,15 @@ impl io::Write for FailingWriter {
     }
 }
 
-#[test]
-fn write_event_propagates_the_sink_error() {
-    for fail_after in [0, 5, 30] {
-        let mut sink = FailingWriter { fail_after };
-        let error = plain()
-            .write_event(&mut sink, &failure_event(), &utc())
-            .unwrap_err();
-        assert_eq!(error.kind(), io::ErrorKind::BrokenPipe, "{fail_after}");
-    }
+#[test_case(0; "fails at once")]
+#[test_case(5; "fails inside the timestamp")]
+#[test_case(30; "fails later in the line")]
+fn write_event_propagates_the_sink_error(fail_after: usize) {
+    let mut sink = FailingWriter { fail_after };
+    let error = plain()
+        .write_event(&mut sink, &failure_event(), &utc())
+        .unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::BrokenPipe);
 }
 
 #[test]
