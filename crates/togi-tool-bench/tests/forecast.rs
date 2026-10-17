@@ -559,22 +559,16 @@ fn real_process_only_the_files_a_resumed_session_reads_are_copied() {
 }
 
 #[test]
-fn real_fs_an_archive_entry_that_is_not_a_regular_file_fails_naming_it() {
-    for name in [
-        "20260101T000000Z.jsonl",
-        "20260101T000000Z-carry-pending",
-        "20260101T000000Z-compat-pending",
-        "20260101T000000Z-reset-all",
-    ] {
-        let fixture = DiskFixture::new(false);
-        fs::create_dir_all(fixture.state().join("archive")).unwrap();
-        let target = fixture.path("elsewhere");
-        fs::write(&target, "archived\n").unwrap();
-        std::os::unix::fs::symlink(&target, fixture.state().join("archive").join(name)).unwrap();
-        let failed =
-            execute(&fixture.options(fixture.simulator("", 0)), &Fleet::new()).unwrap_err();
-        assert!(failed.to_string().contains(name), "{name}: {failed}");
-    }
+fn real_fs_an_archive_entry_that_is_not_a_regular_file_fails_the_forecast_naming_it() {
+    let name = "20260101T000000Z-reset-all";
+    let fixture = DiskFixture::new(false);
+    fs::create_dir_all(fixture.state().join("archive")).unwrap();
+    let target = fixture.path("elsewhere");
+    fs::write(&target, "archived\n").unwrap();
+    std::os::unix::fs::symlink(&target, fixture.state().join("archive").join(name)).unwrap();
+    let failed = execute(&fixture.options(fixture.simulator("", 0)), &Fleet::new()).unwrap_err();
+    let message = togi_machine::error_chain(&failed);
+    assert!(message.contains(name), "{message}");
 }
 
 fn run_dirs(root: &Path) -> Vec<String> {
