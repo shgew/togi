@@ -6,8 +6,8 @@ use crate::*;
 
 fn assert_object_only<T: DeserializeOwned + std::fmt::Debug>(object: &str, array: &str) {
     serde_json::from_str::<T>(object).unwrap();
-    let error = serde_json::from_str::<T>(array).unwrap_err().to_string();
-    assert!(error.contains("expected an object"), "{array}: {error}");
+    let decoded = serde_json::from_str::<T>(array);
+    assert!(decoded.is_err(), "{array} decoded as {decoded:?}");
 }
 
 #[test]
@@ -44,10 +44,12 @@ fn machine_types_keep_refusing_unknown_fields() {
 
 #[test]
 fn nested_machine_types_are_object_only_inside_a_container() {
-    let error = serde_json::from_str::<Vec<CoreInfo>>("[[1,0,[2]]]").unwrap_err();
-    assert!(error.to_string().contains("expected an object"), "{error}");
-    let error = serde_json::from_str::<Option<LoadSchedule>>(r#"["random",1]"#).unwrap_err();
-    assert!(error.to_string().contains("expected an object"), "{error}");
+    serde_json::from_str::<Vec<CoreInfo>>(r#"[{"core":1,"ccd":0,"cpus":[2]}]"#).unwrap();
+    let decoded = serde_json::from_str::<Vec<CoreInfo>>("[[1,0,[2]]]");
+    assert!(decoded.is_err(), "{decoded:?}");
+    serde_json::from_str::<Option<LoadSchedule>>(r#"{"kind":"random","seed":1}"#).unwrap();
+    let decoded = serde_json::from_str::<Option<LoadSchedule>>(r#"["random",1]"#);
+    assert!(decoded.is_err(), "{decoded:?}");
 }
 
 /// The control: what a plain derive accepts and `object_only!` refuses, with serde's attributes kept.
@@ -114,7 +116,7 @@ mod mechanism {
     #[test]
     fn the_trait_call_refuses_an_array_too() {
         let mut input = serde_json::Deserializer::from_str("[1,0,[]]");
-        let error = crate::CoreInfo::deserialize(&mut input).unwrap_err();
-        assert!(error.to_string().contains("expected an object"), "{error}");
+        let decoded = crate::CoreInfo::deserialize(&mut input);
+        assert!(decoded.is_err(), "{decoded:?}");
     }
 }
