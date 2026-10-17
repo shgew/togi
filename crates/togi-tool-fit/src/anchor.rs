@@ -5,7 +5,7 @@ use std::io;
 use std::path::Path;
 
 use togi_machine::Regime;
-use togi_sim::{MachineDefinition, Model};
+use togi_sim::{MachineDefinition, Model, saturating_count};
 use togi_tool_modelcheck::{Status, check_records};
 use togi_tool_trialfacts::{TrialFact, read};
 
@@ -120,7 +120,7 @@ pub(crate) fn anchor_with(
             r7_loss -= (-p).ln_1p();
         }
     }
-    let total = f64::from(u32::try_from(trials.len()).unwrap_or(u32::MAX));
+    let total = saturating_count(trials.len());
     writeln!(
         report,
         "All trials in-sample (record only): trials={} raw total in-sample log loss {loss} log_loss/trial={}",
@@ -128,7 +128,7 @@ pub(crate) fn anchor_with(
         loss / total
     )?;
     let r7_mean = if r7_trials > 0 {
-        r7_loss / f64::from(u32::try_from(r7_trials).unwrap_or(u32::MAX))
+        r7_loss / saturating_count(r7_trials)
     } else {
         0.0
     };
