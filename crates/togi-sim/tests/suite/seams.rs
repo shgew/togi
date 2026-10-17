@@ -454,10 +454,8 @@ fn unknown_boots_and_cursors_are_named_errors() {
         Err(Error::BootMissing)
     ));
     for old in [&missing, &boot] {
-        assert!(matches!(
-            rig.machine.kernel.reset_reason_after(old),
-            Err(Error::BootMissing)
-        ));
+        let after = rig.machine.kernel.reset_reason_after(old);
+        assert!(matches!(after, Err(Error::BootMissing)), "{old}: {after:?}");
     }
     for suffix in ["no-number", "-1", "1"] {
         let cursor = KernelCursor::from(format!("{boot}:{suffix}"));

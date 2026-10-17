@@ -603,11 +603,11 @@ fn a_replayed_uncorrected_machine_check_names_a_bank_by_the_models_probability(
             },
         );
         let (waited, _) = rig.run(spec("1", Regime::R7, work, &[0, 1], MINUTE));
-        assert!(crashed(&waited));
+        assert!(crashed(&waited), "seed {seed}: {waited:?}");
         rig.sim.reboot();
         let boot = rig.boot();
         let mces = rig.mces(&boot);
-        assert_eq!(mces.len(), 1);
+        assert_eq!(mces.len(), 1, "seed {seed}: {mces:?}");
         assert_eq!(mces[0].bank_type.core_local(), want_local, "seed {seed}");
         banks.insert(mces[0].bank);
     }

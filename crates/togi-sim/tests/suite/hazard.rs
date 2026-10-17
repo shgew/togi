@@ -284,10 +284,11 @@ fn sources_sum_to_the_steady_hazard_and_scale_to_the_probability() {
         for regime in regimes {
             for cores in [&[0][..], &[2], &[0, 1], &[1, 3], &[0, 1, 2, 3]] {
                 for workload in ["", "mprime-sse-4k-21k"] {
+                    let case = format!("{profile:?} {regime:?} cores {cores:?} {workload:?}");
                     let load = load(regime, workload, cores, 90.0);
                     let sources = model.sources(&profile, &load).expect("shape");
                     let rate: f64 = sources.iter().map(|source| source.rate).sum();
-                    assert_eq!(model.hazard(&profile, &load), Ok(rate));
+                    assert_eq!(model.hazard(&profile, &load), Ok(rate), "{case}");
                     let failures: f64 = sources
                         .iter()
                         .map(|source| onset.failures(source.after_s, source.rate, 90.0))
@@ -296,10 +297,13 @@ fn sources_sum_to_the_steady_hazard_and_scale_to_the_probability() {
                         .iter()
                         .map(|source| source.rate * onset.exposure(source.after_s, 90.0))
                         .sum();
-                    assert!((failures - exposure).abs() <= 1e-12 * exposure.max(1.0));
+                    assert!(
+                        (failures - exposure).abs() <= 1e-12 * exposure.max(1.0),
+                        "{case}: {failures} vs {exposure}"
+                    );
                     let probability = model.failure_probability(&profile, &load).expect("shape");
-                    assert_eq!(probability, -(-failures).exp_m1());
-                    assert!((0.0..=1.0).contains(&probability));
+                    assert_eq!(probability, -(-failures).exp_m1(), "{case}");
+                    assert!((0.0..=1.0).contains(&probability), "{case}: {probability}");
                 }
             }
         }

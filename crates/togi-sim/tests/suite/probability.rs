@@ -81,7 +81,10 @@ fn a_failure_time_is_the_inverse_of_exposure() {
                 for rate in [1e-4, 0.1, 3.0] {
                     for cumulative in [1e-6, 0.01, 0.5, 1.0, 4.0, 20.0] {
                         let time = onset.failure_time(after, rate, cumulative);
-                        assert!(time >= after);
+                        assert!(
+                            time >= after,
+                            "window {window_s} boost {boost} after {after} rate {rate} count {cumulative}: {time}"
+                        );
                         let back = rate * onset.exposure(after, time);
                         assert!(
                             (back - cumulative).abs() <= 1e-9 * cumulative.max(1.0),
@@ -104,15 +107,21 @@ fn a_tiny_rate_cannot_fail_inside_a_trial() {
     assert!(time > 1e6, "{time}");
 }
 
+const OVERFLOW_WINDOW: f64 = 1e-309;
+const OVERFLOW_RATE: f64 = 1e308;
+
+// 1e308 · (1 + 10) overflows before the 1e-309 seconds it is multiplied by, yet the count is 1.1.
+fn overflowing_onset() -> Onset {
+    Onset {
+        window_s: OVERFLOW_WINDOW,
+        boost: 10.0,
+    }
+}
+
 #[test]
 fn a_window_count_whose_boosted_rate_overflows_is_scored_and_drawn_alike() {
-    // 1e308 · (1 + 10) overflows before the 1e-309 seconds it is multiplied by, yet the count is 1.1.
-    let window = 1e-309;
-    let onset = Onset {
-        window_s: window,
-        boost: 10.0,
-    };
-    let rate = 1e308;
+    let (window, rate) = (OVERFLOW_WINDOW, OVERFLOW_RATE);
+    let onset = overflowing_onset();
     let count = onset.failures(0.0, rate, window);
     assert!((count - 1.1).abs() < 1e-9, "{count}");
     assert_eq!(
@@ -120,12 +129,6 @@ fn a_window_count_whose_boosted_rate_overflows_is_scored_and_drawn_alike() {
         count + rate * window
     );
     assert_eq!(onset.failures(0.0, rate, 0.0), 0.0);
-
-    // A draw is inside the window exactly when its count is at most the window's.
-    for (cumulative, inside) in [(0.5, true), (1.09, true), (1.11, false), (2.0, false)] {
-        let time = onset.failure_time(0.0, rate, cumulative);
-        assert_eq!(time <= window, inside, "{cumulative}: {time}");
-    }
     let half = onset.failure_time(0.0, rate, count / 2.0);
     assert!((half / window - 0.5).abs() < 1e-6, "{half}");
     let after = onset.failure_time(0.0, rate, count + 1.0);
@@ -142,6 +145,16 @@ fn a_window_count_whose_boosted_rate_overflows_is_scored_and_drawn_alike() {
     assert!(huge.failures(0.0, 1e308, 1.0).is_infinite());
     let drawn = huge.failure_time(0.0, 1e308, 1.0);
     assert!((0.0..1e-300).contains(&drawn), "{drawn}");
+}
+
+// A draw is inside the window exactly when its count is at most the window's 1.1.
+#[test_case(0.5, true; "well inside")]
+#[test_case(1.09, true; "just inside")]
+#[test_case(1.11, false; "just outside")]
+#[test_case(2.0, false; "well outside")]
+fn an_overflowing_window_draw_is_inside_exactly_when_its_count_is(cumulative: f64, inside: bool) {
+    let time = overflowing_onset().failure_time(0.0, OVERFLOW_RATE, cumulative);
+    assert_eq!(time <= OVERFLOW_WINDOW, inside, "{time}");
 }
 
 #[test]

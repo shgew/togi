@@ -91,7 +91,7 @@ fn a_match_is_drawn_among_the_facts_of_its_context_and_full_profile() {
         assert_eq!(
             pick(&replay, &load, &profile, seed),
             Some(first.clone()),
-            "deterministic"
+            "deterministic at seed {seed}"
         );
         seen.insert(format!("{first:?}"));
     }
@@ -143,7 +143,8 @@ fn the_choice_does_not_depend_on_the_index_hash_order() {
     for seed in 0..50 {
         assert_eq!(
             pick(&first, &load, &profile, seed),
-            pick(&second, &load, &profile, seed)
+            pick(&second, &load, &profile, seed),
+            "seed {seed}"
         );
     }
 }

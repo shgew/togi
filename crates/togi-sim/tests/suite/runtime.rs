@@ -122,29 +122,37 @@ fn each_signal_has_its_result_shape() {
         let waited = rig.alone(0, -12, Regime::R2, 0);
         match signal {
             Signal::ComputationError | Signal::Stall | Signal::UnexpectedExit => {
-                let result = waited.expect("a backend failure");
+                let result = waited.unwrap_or_else(|error| panic!("{signal}: {error:?}"));
                 let failure = result.failure.expect("a failure");
                 assert_eq!((failure.signal, failure.core), (signal, core(0)));
-                assert!(result.ran < NINETY);
+                assert!(result.ran < NINETY, "{signal}: {:?}", result.ran);
             }
             Signal::CorrectedMce => {
-                let result = waited.expect("a pass-shaped result");
+                let result = waited.unwrap_or_else(|error| panic!("{signal}: {error:?}"));
                 let mces = rig.mces(&boot);
-                assert!(result.failure.is_none());
-                assert_eq!(result.ran, NINETY);
-                assert_eq!(mces.len(), 1);
-                assert_eq!((mces[0].corrected, mces[0].core), (true, Some(core(0))));
+                assert!(result.failure.is_none(), "{signal}: {:?}", result.failure);
+                assert_eq!(result.ran, NINETY, "{signal}");
+                assert_eq!(mces.len(), 1, "{signal}: {mces:?}");
+                assert_eq!(
+                    (mces[0].corrected, mces[0].core),
+                    (true, Some(core(0))),
+                    "{signal}"
+                );
             }
             Signal::Crash => {
-                assert!(crashed(&waited));
+                assert!(crashed(&waited), "{signal}: {waited:?}");
                 assert!(matches!(rig.machine.host.boot_id(), Err(Error::Crashed)));
                 rig.sim.reboot();
                 let next = rig.boot();
                 let mces = rig.mces(&next);
-                assert_eq!(mces.len(), 1);
-                assert_eq!((mces[0].corrected, mces[0].core), (false, Some(core(0))));
-                assert_eq!(mces[0].time, rig.sim.now());
-                assert_eq!(mces[0].monotonic, Duration::ZERO);
+                assert_eq!(mces.len(), 1, "{signal}: {mces:?}");
+                assert_eq!(
+                    (mces[0].corrected, mces[0].core),
+                    (false, Some(core(0))),
+                    "{signal}"
+                );
+                assert_eq!(mces[0].time, rig.sim.now(), "{signal}");
+                assert_eq!(mces[0].monotonic, Duration::ZERO, "{signal}");
             }
             Signal::UncorrectedMce => unreachable!("not a weighted signal"),
         }

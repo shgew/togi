@@ -318,7 +318,8 @@ fn a_shared_voltage_machine_samples_its_lanes_the_same_lazily_and_in_serialized_
         ));
         rig.sim.reboot();
         let samples = collect(&mut rig, "0001");
-        assert_eq!(samples.len(), 29);
+        let storage = if file_backed { "file" } else { "memory" };
+        assert_eq!(samples.len(), 29, "{storage}");
         if file_backed {
             assert_eq!(samples, memory);
         } else {
@@ -327,20 +328,33 @@ fn a_shared_voltage_machine_samples_its_lanes_the_same_lazily_and_in_serialized_
         let idle_v = rig.sim.model().voltage().expect("a rail").idle_v;
         for sample in &samples {
             let pm = sample.pm_table.expect("every sample has lanes");
-            assert_eq!(sample.core_mhz.len(), 3);
-            assert!((f64::from(pm.voltage_request_v[8]) - idle_v).abs() < 1e-6);
+            assert_eq!(sample.core_mhz.len(), 3, "{storage}");
+            assert!(
+                (f64::from(pm.voltage_request_v[8]) - idle_v).abs() < 1e-6,
+                "{storage}: {} against {idle_v}",
+                pm.voltage_request_v[8]
+            );
             assert!(
                 pm.voltage_request_v[7] > pm.voltage_request_v[8],
-                "loaded cores request more"
+                "{storage}: loaded cores request more"
             );
             assert_eq!(
                 (pm.c0_pct[0], pm.c0_pct[7], pm.c0_pct[8], pm.cc6_pct[8]),
-                (100.0, 100.0, 0.0, 100.0)
+                (100.0, 100.0, 0.0, 100.0),
+                "{storage}"
             );
         }
         let first = samples[0].core_mhz;
-        assert_eq!(first.get(core(0)), first.get(core(1)), "one CCD, one clock");
-        assert_eq!(first.get(CoreId::new(8).expect("a core")), None);
+        assert_eq!(
+            first.get(core(0)),
+            first.get(core(1)),
+            "{storage}: one CCD, one clock"
+        );
+        assert_eq!(
+            first.get(CoreId::new(8).expect("a core")),
+            None,
+            "{storage}"
+        );
     }
 }
 

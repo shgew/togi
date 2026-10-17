@@ -139,37 +139,55 @@ fn clocks_follow_package_power_idle_gain_and_cross_ccd_balance() {
     assert!(first < 4329 && second < 4889, "{first} {second}");
 }
 
-#[test]
-fn core_eleven_needs_a_supporting_core_to_keep_its_rail() {
+/// The rail and core 11's rate and threshold when `cores` run the second R7 workload under a deep profile.
+fn core_eleven_rail(cores: &[i64]) -> (f64, f64, f64) {
     let model = voltage_model();
-    let regime = r7();
     let workload = r7_workload(1);
     let profile = offsets(&[
         -31, -38, -37, -34, -35, -36, -45, -42, -48, -47, -38, -44, -50, -42, -50, -50,
     ]);
-    let state = |cores: &[i64]| {
-        model
-            .voltage_state(&profile, &load(regime, workload, cores, SECONDS))
-            .expect("shape")
-            .expect("a rail")
-    };
-    let unsupported_cores = [8, 9, 11, 12, 14, 15];
-    let unsupported = state(&unsupported_cores);
+    let state = model
+        .voltage_state(&profile, &load(r7(), workload, cores, SECONDS))
+        .expect("shape")
+        .expect("a rail");
     let threshold = model.voltage().expect("a rail").workload(workload).cores[11].threshold_v;
-    assert!(state(&[8, 9, 10, 11, 12, 13, 14, 15]).rail > threshold);
-    for supporter in [10, 13] {
-        let mut cores = unsupported_cores.to_vec();
-        cores.push(supporter);
-        let supported = state(&cores);
-        assert!(unsupported.rail < threshold && supported.rail > threshold);
-        assert!(unsupported.rates[11] > supported.rates[11] * 10.0);
-    }
-    let mix = model.voltage().expect("a rail").workload(workload).cores[11]
+    (state.rail, state.rates[11], threshold)
+}
+
+const UNSUPPORTED: [i64; 6] = [8, 9, 11, 12, 14, 15];
+
+#[test_case(10; "core 10")]
+#[test_case(13; "core 13")]
+fn core_eleven_needs_a_supporting_core_to_keep_its_rail(supporter: i64) {
+    let (unsupported, unsupported_rate, threshold) = core_eleven_rail(&UNSUPPORTED);
+    let mut cores = UNSUPPORTED.to_vec();
+    cores.push(supporter);
+    let (supported, supported_rate, _) = core_eleven_rail(&cores);
+    assert!(
+        unsupported < threshold && supported > threshold,
+        "{unsupported} and {supported} around {threshold}"
+    );
+    assert!(
+        unsupported_rate > supported_rate * 10.0,
+        "{unsupported_rate} against {supported_rate}"
+    );
+}
+
+#[test]
+fn core_eleven_keeps_its_rail_with_its_whole_ccd_and_fails_by_computation_error() {
+    let (rail, _, threshold) = core_eleven_rail(&[8, 9, 10, 11, 12, 13, 14, 15]);
+    assert!(rail > threshold, "{rail} <= {threshold}");
+    let model = voltage_model();
+    let mix = model
+        .voltage()
+        .expect("a rail")
+        .workload(r7_workload(1))
+        .cores[11]
         .signals
         .as_ref()
         .expect("core 11 names its signals");
     for x in [0.0, 0.25, 0.5, 0.999] {
-        assert_eq!(mix.pick(x), Signal::ComputationError);
+        assert_eq!(mix.pick(x), Signal::ComputationError, "{x}");
     }
 }
 
@@ -371,45 +389,50 @@ fn the_rail_drops_unloaded_flat_and_idle_hazards_but_other_loads_keep_theirs() {
     assert_ne!(before, kinds_of(&moved, &other));
 }
 
-#[test]
-fn equal_request_and_requirement_slopes_cancel_a_common_clock_shift() {
-    let regime = r7();
-    let workload = r7_workload(0);
-    let profile = offsets(&[-35; 16]);
-    let two = load(regime, workload, &[0, 1], SECONDS);
-    let tune = |delta: f64, coefficient: f64| {
-        let mut definition = committed_machine("shared-voltage.json");
-        definition.core = flat_cores(16, -50, -50);
-        let rail = definition.shared_voltage.as_mut().expect("a rail");
-        let w = rail.workload.get_mut(workload).expect("workload");
-        w.idle_gain_mhz = 0.0;
-        w.package_mhz_per_w = 0.0;
-        w.balance_mhz_per_w = 0.0;
-        w.full_mhz = [w.reference_mhz + delta; 2];
-        for core in &mut w.core {
-            core.base_v = 1.2;
-            core.threshold_v = 1.074;
-            core.clock_v_per_100mhz = 0.03;
-            core.threshold_clock_v_per_100mhz = coefficient;
-        }
-        model(&definition)
-    };
-    let reference = tune(0.0, 0.03).hazard(&profile, &two).expect("shape");
-    for delta in [-100.0, 100.0] {
-        let model = tune(delta, 0.03);
-        close(
-            model.hazard(&profile, &two).expect("shape"),
-            reference,
-            1e-12,
-        );
-        let want = -(-reference * SECONDS).exp_m1();
-        close(
-            model.failure_probability(&profile, &two).expect("shape"),
-            want,
-            1e-12,
-        );
+fn tuned(delta: f64, coefficient: f64) -> Model {
+    let mut definition = committed_machine("shared-voltage.json");
+    definition.core = flat_cores(16, -50, -50);
+    let rail = definition.shared_voltage.as_mut().expect("a rail");
+    let w = rail.workload.get_mut(r7_workload(0)).expect("workload");
+    w.idle_gain_mhz = 0.0;
+    w.package_mhz_per_w = 0.0;
+    w.balance_mhz_per_w = 0.0;
+    w.full_mhz = [w.reference_mhz + delta; 2];
+    for core in &mut w.core {
+        core.base_v = 1.2;
+        core.threshold_v = 1.074;
+        core.clock_v_per_100mhz = 0.03;
+        core.threshold_clock_v_per_100mhz = coefficient;
     }
-    let steeper = tune(100.0, 0.04).hazard(&profile, &two).expect("shape");
+    model(&definition)
+}
+
+#[test_case(-100.0; "down")]
+#[test_case(100.0; "up")]
+fn equal_request_and_requirement_slopes_cancel_a_common_clock_shift(delta: f64) {
+    let profile = offsets(&[-35; 16]);
+    let two = load(r7(), r7_workload(0), &[0, 1], SECONDS);
+    let reference = tuned(0.0, 0.03).hazard(&profile, &two).expect("shape");
+    let model = tuned(delta, 0.03);
+    close(
+        model.hazard(&profile, &two).expect("shape"),
+        reference,
+        1e-12,
+    );
+    let want = -(-reference * SECONDS).exp_m1();
+    close(
+        model.failure_probability(&profile, &two).expect("shape"),
+        want,
+        1e-12,
+    );
+}
+
+#[test]
+fn a_steeper_requirement_slope_raises_the_hazard_of_a_faster_clock() {
+    let profile = offsets(&[-35; 16]);
+    let two = load(r7(), r7_workload(0), &[0, 1], SECONDS);
+    let reference = tuned(0.0, 0.03).hazard(&profile, &two).expect("shape");
+    let steeper = tuned(100.0, 0.04).hazard(&profile, &two).expect("shape");
     assert!(steeper > reference, "{steeper} <= {reference}");
 }
 
@@ -609,19 +632,19 @@ fn failure_share_is_a_loaded_cores_rail_rate_over_the_total(idle_rate: f64) {
     );
 }
 
-#[test]
-fn failure_share_is_zero_without_a_multi_core_r7_rail_hazard() {
-    let regime = r7();
-    let workload = r7_workload(0);
-    let profile = offsets(&[-35; 16]);
-    let three = load(regime, workload, &[0, 1, 7], SECONDS);
+#[test_case(Regime::R7, &[0]; "a single r7 core")]
+#[test_case(Regime::R2, &[0, 1]; "an r2 pair")]
+fn failure_share_is_zero_outside_a_multi_core_r7_load(regime: Regime, cores: &[i64]) {
     let model = voltage_model();
-    for other in [
-        load(regime, workload, &[0], SECONDS),
-        load(Regime::R2, workload, &[0, 1], SECONDS),
-    ] {
-        assert_eq!(model.r7_failure_share(&profile, &other, core(0)), Ok(0.0));
-    }
+    let profile = offsets(&[-35; 16]);
+    let other = load(regime, r7_workload(0), cores, SECONDS);
+    assert_eq!(model.r7_failure_share(&profile, &other, core(0)), Ok(0.0));
+}
+
+#[test]
+fn failure_share_is_zero_without_a_rail_hazard() {
+    let profile = offsets(&[-35; 16]);
+    let three = load(r7(), r7_workload(0), &[0, 1, 7], SECONDS);
     let legacy = crate::common::model(&crate::common::machine(16, vec![]));
     assert_eq!(legacy.r7_failure_share(&profile, &three, core(0)), Ok(0.0));
 
@@ -675,40 +698,40 @@ fn the_background_rate_ignores_profile_workload_and_load_and_takes_the_onset_boo
         let profile = offsets(&[offset; 16]);
         for workload in togi_machine::workloads(Regime::R7) {
             for cores in [&[0, 1][..], &[0, 1, 2, 3, 4, 5, 6, 7], &[0, 1, 8, 9]] {
+                let case = format!("offset {offset}, {}, cores {cores:?}", workload.id);
                 let two = load(regime, workload.id, cores, 120.0);
-                assert_eq!(
-                    model.hazard(&profile, &two),
-                    Ok(0.001),
-                    "{offset} {cores:?}"
-                );
+                assert_eq!(model.hazard(&profile, &two), Ok(0.001), "{case}");
                 for duration in [5.0, 120.0] {
                     let timed = load(regime, workload.id, cores, duration);
                     let exposure = duration + 2.0 * f64::min(duration, 10.0);
                     assert_eq!(
                         model.failure_probability(&profile, &timed),
-                        Ok(-(-0.001 * exposure).exp_m1())
+                        Ok(-(-0.001 * exposure).exp_m1()),
+                        "{case}, {duration} s"
                     );
                 }
                 assert_eq!(
                     model.r7_failure_share(&profile, &two, core(cores[0])),
                     Ok(0.0),
-                    "background names no core"
+                    "background names no core: {case}"
                 );
             }
         }
     }
-    let zero = offsets(&[0; 16]);
-    for outside in [
-        load(regime, r7_workload(0), &[0], 120.0),
-        load(Regime::R2, "", &[0, 1], 120.0),
-    ] {
-        assert_eq!(model.hazard(&zero, &outside), Ok(0.0));
-    }
     let silent = crate::common::model(&background_machine(0.0));
+    let zero = offsets(&[0; 16]);
     assert_eq!(
         silent.hazard(&zero, &load(regime, r7_workload(0), &[0, 1], 120.0)),
         Ok(0.0)
     );
+}
+
+#[test_case(Regime::R7, r7_workload(0), &[0]; "a single r7 core")]
+#[test_case(Regime::R2, "", &[0, 1]; "an r2 pair")]
+fn the_background_rate_stays_out_of_other_loads(regime: Regime, workload: &str, cores: &[i64]) {
+    let model = model(&background_machine(0.001));
+    let outside = load(regime, workload, cores, 120.0);
+    assert_eq!(model.hazard(&offsets(&[0; 16]), &outside), Ok(0.0));
 }
 
 #[test]

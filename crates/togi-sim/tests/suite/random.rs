@@ -93,7 +93,10 @@ fn r6_and_r7_start_from_the_shallowest_alone_limit() {
     for seed in 0..50 {
         for limits in seeded(seed, 4).limits() {
             let shallowest = *limits.alone.iter().max().expect("five limits");
-            assert!(limits.together[5] >= shallowest && limits.together[6] >= shallowest);
+            assert!(
+                limits.together[5] >= shallowest && limits.together[6] >= shallowest,
+                "seed {seed}: {limits:?}"
+            );
         }
     }
 }

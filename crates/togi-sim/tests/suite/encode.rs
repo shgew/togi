@@ -222,18 +222,14 @@ fn an_invalid_field_is_refused_by_its_path(edit: fn(&mut MachineDefinition), pat
 #[test]
 fn every_committed_machine_round_trips_through_the_encoder() {
     for path in committed() {
+        let name = path.display();
         let loaded = file::load_from(&path, &crate::common::committed_files())
             .map(|(machine, _)| machine)
-            .expect("loads");
-        let text = file::encode(&loaded).expect("encodes");
-        assert_eq!(
-            file::decode(&text).expect("decodes"),
-            loaded,
-            "{}",
-            path.display()
-        );
-        let again = file::decode(&text).expect("decodes");
-        assert!(Model::new(&again, 1).is_ok(), "{}", path.display());
+            .unwrap_or_else(|error| panic!("{name} loads: {error}"));
+        let text = file::encode(&loaded).unwrap_or_else(|error| panic!("{name} encodes: {error}"));
+        let again = file::decode(&text).unwrap_or_else(|error| panic!("{name} decodes: {error}"));
+        assert_eq!(again, loaded, "{name}");
+        assert!(Model::new(&again, 1).is_ok(), "{name}");
     }
 }
 
