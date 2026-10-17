@@ -39,7 +39,7 @@ fn collect(rig: &mut Rig, id: &str) -> Vec<TrialConditions> {
         .trials
         .samples(id)
         .collect::<Result<_, _>>()
-        .unwrap()
+        .expect("valid simulated samples")
 }
 
 fn scripted(signal: Signal, at: f64, culprit: i64) -> MachineDefinition {
