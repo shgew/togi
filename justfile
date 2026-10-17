@@ -15,6 +15,11 @@ _dev-shell:
 test *args: _dev-shell
     cargo nextest run "$@"
 
+# Test the Nushell coordination board against fixed GitHub fixtures, without network access
+[group('test')]
+board-test: _dev-shell
+    nu --no-config-file tools/board/tests.nu
+
 # Run one crate's tests with optional nextest flags (`just focus togi-journal`)
 [group('test')]
 focus crate *args: _dev-shell
@@ -47,10 +52,11 @@ cover base: _dev-shell
     target=${CARGO_LLVM_COV_TARGET_DIR:-${CARGO_TARGET_DIR:-target}/llvm-cov-target}
     go run ./tools/cover --lcov "$trace" --build-dir "$target/debug" --base "$1"
 
-# Lint the retained Go tools as built for Linux and for macOS, and the workspace with clippy for the host's target and aarch64 macOS, with optional Go lint flags
+# Lint the retained Go tools for Linux and macOS, check the Nushell board's syntax, and run workspace clippy for the host and aarch64 macOS, with optional Go lint flags
 [group('quality')]
 lint *args: _dev-shell
     for target in linux/amd64 darwin/arm64; do env GOOS="${target%/*}" GOARCH="${target#*/}" CGO_ENABLED=0 golangci-lint run ./... "$@"; done
+    nu --no-config-file -c 'nu-check --debug ("tools/board/main.nu" | path expand); nu-check --debug --as-module ("tools/board/mod.nu" | path expand)'
     cargo clippy --locked --all-targets -- --deny warnings
     cargo clippy --locked --all-targets --target aarch64-apple-darwin -- --deny warnings
 
@@ -67,6 +73,7 @@ gate: _dev-shell
     just check-one fmt
     just lint
     just check-one module changes
+    just board-test
     vendored=$(nix build --no-link --print-out-paths '.#checks.{{ system }}.go-tools.goModules')
     fresh=$(mktemp -d)
     trap 'rm -rf "$fresh"' EXIT
@@ -78,12 +85,12 @@ gate: _dev-shell
     cargo deny --locked check bans licenses sources
     cargo shear
 
-# Run every flake check this host builds, streaming their build logs: go-tools, lint, fmt, changes, module, clippy, nextest, doc, cargo-fmt, deny, shear, package and, on Linux, trial-scope-tests, the sim-suite-* shards and the VM tests
+# Run every flake check this host builds, streaming their build logs: board-test, go-tools, lint, fmt, changes, module, clippy, nextest, doc, cargo-fmt, deny, shear, package and, on Linux, trial-scope-tests, the sim-suite-* shards and the VM tests
 [group('nix')]
 check *args:
     nix flake check --print-build-logs "$@"
 
-# Build named flake checks, streaming their build logs: go-tools, lint, fmt, changes, module, clippy, nextest, doc, cargo-fmt, deny, shear, package or, on Linux, trial-scope-tests, vm-recovery-tests, sim-suite-<i>, vm, vm-trial-scope, vm-restart-limit and vm-emergency-stop (`just check-one lint`)
+# Build named flake checks, streaming their build logs: board-test, go-tools, lint, fmt, changes, module, clippy, nextest, doc, cargo-fmt, deny, shear, package or, on Linux, trial-scope-tests, vm-recovery-tests, sim-suite-<i>, vm, vm-trial-scope, vm-restart-limit and vm-emergency-stop (`just check-one lint`)
 [group('nix')]
 check-one +names:
     nix build --no-link --print-build-logs $(printf '.#checks.{{ system }}.%s ' "$@")
@@ -182,7 +189,7 @@ changes: _dev-shell
 # Print who may post on the repository, what waits on the owner and on the target machine, untriaged issues, work in progress, ready work, overlaps and the open Ruleset issue
 [group('github')]
 board: _dev-shell
-    go run ./tools/board
+    nu --no-config-file tools/board/main.nu
 
 # Limit issues, comments, reactions and pull requests to collaborators for six months, GitHub's longest interaction limit
 [group('github')]
@@ -292,7 +299,7 @@ _touched-crates pushed:
         git cat-file -e "HEAD:${dir}Cargo.toml" 2>/dev/null && basename "$dir"
     done || true
 
-# Push a fix to a pull request under review: format, lint, run `go test` on the retained Go tools' packages and `just test` on the crates changed since the last pushed head, then push as `just ship` does without the gate; the first push of a branch uses `just ship`
+# Push a fix to a pull request under review: format, lint, test the changed Go packages, Rust crates and Nushell board, then push as `just ship` does without the gate; the first push of a branch uses `just ship`
 [group('github')]
 push-fix: (_push-ready "push-fix" "push the stack with gh stack push")
     #!/usr/bin/env bash
@@ -308,6 +315,9 @@ push-fix: (_push-ready "push-fix" "push the stack with gh stack push")
         echo "push-fix: no Go package changed since $pushed; nothing to test" >&2
     else
         go test "${packages[@]}"
+    fi
+    if ! git diff --quiet "$pushed" HEAD -- tools/board; then
+        just board-test
     fi
     mapfile -t crates < <(just _touched-crates "$pushed")
     if ((${#crates[@]} == 0)); then
