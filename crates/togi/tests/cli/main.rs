@@ -8,6 +8,7 @@ use std::os::unix::process::ExitStatusExt;
 use std::path::Path;
 use std::process::{Command, ExitStatus, Output};
 
+use test_case::test_case;
 use togi_journal::fs::Fs;
 
 #[path = "../support/mod.rs"]
@@ -129,52 +130,54 @@ fn no_command_prints_the_wordmark_and_usage_on_stderr() {
     );
 }
 
-#[test]
-fn state_dir_without_a_command_prints_the_wordmark_and_usage_on_stderr() {
-    for args in [&["--state-dir", "/x"][..], &["--state-dir=/x"]] {
-        let ran = togi(args);
-        assert_eq!(ran.status.code(), Some(2), "{args:?}");
-        assert_eq!(stdout(&ran), "", "{args:?}");
-        assert!(
-            stderr(&ran).starts_with("   __              _\n"),
-            "{args:?}: {}",
-            stderr(&ran)
-        );
-        assert!(stderr(&ran).contains("Usage: togi"), "{args:?}");
-    }
+#[test_case(&["--state-dir", "/x"] ; "separate value")]
+#[test_case(&["--state-dir=/x"] ; "attached value")]
+fn state_dir_without_a_command_prints_the_wordmark_and_usage_on_stderr(args: &[&str]) {
+    let ran = togi(args);
+    assert_eq!(ran.status.code(), Some(2));
+    assert_eq!(stdout(&ran), "");
+    assert!(
+        stderr(&ran).starts_with("   __              _\n"),
+        "{}",
+        stderr(&ran)
+    );
+    assert!(stderr(&ran).contains("Usage: togi"));
 }
 
 /// `/dev/full` fails every write with `ENOSPC`. A stdout closed at startup is not tested: Rust's
 /// runtime reopens it on `/dev/null` before `main`, so no write ever fails there.
 #[cfg(target_os = "linux")]
+fn full(args: &[&str]) -> Output {
+    let stdout = std::fs::OpenOptions::new()
+        .write(true)
+        .open("/dev/full")
+        .unwrap();
+    Command::new(env!("CARGO_BIN_EXE_togi"))
+        .args(args)
+        .stdout(stdout)
+        .output()
+        .unwrap()
+}
+
+#[test_case(&["completion", "bash"] ; "bash script")]
+#[test_case(&["completion", "nushell"] ; "nushell script")]
+#[test_case(&["--help"] ; "help")]
+#[test_case(&["completion", "--help"] ; "command help")]
+#[test_case(&["--version"] ; "version")]
+#[cfg(target_os = "linux")]
+fn real_process_a_stdout_that_cannot_be_written_exits_1_with_the_error_on_stderr(args: &[&str]) {
+    let ran = full(args);
+    assert_eq!(ran.status.code(), Some(1), "{}", stderr(&ran));
+    assert!(
+        stderr(&ran).starts_with("togi: ") && stderr(&ran).contains("No space left on device"),
+        "{}",
+        stderr(&ran)
+    );
+}
+
 #[test]
-fn real_process_a_stdout_that_cannot_be_written_exits_1_with_the_error_on_stderr() {
-    let full = |args: &[&str]| {
-        let stdout = std::fs::OpenOptions::new()
-            .write(true)
-            .open("/dev/full")
-            .unwrap();
-        Command::new(env!("CARGO_BIN_EXE_togi"))
-            .args(args)
-            .stdout(stdout)
-            .output()
-            .unwrap()
-    };
-    for args in [
-        &["completion", "bash"][..],
-        &["completion", "nushell"],
-        &["--help"],
-        &["completion", "--help"],
-        &["--version"],
-    ] {
-        let ran = full(args);
-        assert_eq!(ran.status.code(), Some(1), "{args:?}: {}", stderr(&ran));
-        assert!(
-            stderr(&ran).starts_with("togi: ") && stderr(&ran).contains("No space left on device"),
-            "{args:?}: {}",
-            stderr(&ran)
-        );
-    }
+#[cfg(target_os = "linux")]
+fn real_process_a_usage_error_on_a_full_stdout_stays_exit_2() {
     let ran = full(&["bogus"]);
     assert_eq!(ran.status.code(), Some(2), "a usage error stays exit 2");
     assert!(stderr(&ran).contains("unrecognized subcommand"));
@@ -182,31 +185,21 @@ fn real_process_a_stdout_that_cannot_be_written_exits_1_with_the_error_on_stderr
 
 const SCOPE: &str = "--config applies only to doctor, run and reset";
 
-#[test]
-fn usage_errors_exit_2_on_stderr_with_nothing_on_stdout() {
-    for (args, text) in [
-        (&["bogus"][..], "unrecognized subcommand 'bogus'"),
-        (&["--bogus"], "unexpected argument '--bogus'"),
-        (
-            &["--state-dir"],
-            "a value is required for '--state-dir <path>'",
-        ),
-        (&["completion"], "required arguments were not provided"),
-        (
-            &["completion", "tcsh"],
-            "invalid value 'tcsh' for '<SHELL>'",
-        ),
-        (&["completion", "bash", "zsh"], "unexpected argument 'zsh'"),
-        (&["--config", "c.json", "completion", "bash"], SCOPE),
-        (&["--config=c.json", "completion", "bash"], SCOPE),
-        (&["completion", "bash", "--config", "c.json"], SCOPE),
-        (&["--config", "c.json"], SCOPE),
-    ] {
-        let ran = togi(args);
-        assert_eq!(ran.status.code(), Some(2), "{args:?}");
-        assert_eq!(stdout(&ran), "", "{args:?}");
-        assert!(stderr(&ran).contains(text), "{args:?}: {}", stderr(&ran));
-    }
+#[test_case(&["bogus"], "unrecognized subcommand 'bogus'" ; "unknown subcommand")]
+#[test_case(&["--bogus"], "unexpected argument '--bogus'" ; "unknown flag")]
+#[test_case(&["--state-dir"], "a value is required for '--state-dir <path>'" ; "state dir without a value")]
+#[test_case(&["completion"], "required arguments were not provided" ; "completion without a shell")]
+#[test_case(&["completion", "tcsh"], "invalid value 'tcsh' for '<SHELL>'" ; "unknown shell")]
+#[test_case(&["completion", "bash", "zsh"], "unexpected argument 'zsh'" ; "two shells")]
+#[test_case(&["--config", "c.json", "completion", "bash"], SCOPE ; "leading config")]
+#[test_case(&["--config=c.json", "completion", "bash"], SCOPE ; "leading attached config")]
+#[test_case(&["completion", "bash", "--config", "c.json"], SCOPE ; "trailing config")]
+#[test_case(&["--config", "c.json"], SCOPE ; "config without a command")]
+fn usage_errors_exit_2_on_stderr_with_nothing_on_stdout(args: &[&str], text: &str) {
+    let ran = togi(args);
+    assert_eq!(ran.status.code(), Some(2));
+    assert_eq!(stdout(&ran), "");
+    assert!(stderr(&ran).contains(text), "{}", stderr(&ran));
 }
 
 #[test]
@@ -243,19 +236,14 @@ fn nushell_completion() {
     snapshot!(nushell_completion, completion("nushell"));
 }
 
-#[test]
-fn completion_reads_and_writes_nothing_in_the_state_directory() {
+#[test_case(&["--state-dir", "/state", "completion", "fish"] ; "state dir before the command")]
+#[test_case(&["completion", "fish", "--state-dir", "/state"] ; "state dir after the command")]
+fn completion_reads_and_writes_nothing_in_the_state_directory(args: &[&str]) {
     let host = support::Host::new();
-    let state = "/state";
-    for args in [
-        ["--state-dir", state, "completion", "fish"],
-        ["completion", "fish", "--state-dir", state],
-    ] {
-        let ran = togi_on(&host, &args);
-        assert_eq!(ran.status.code(), Some(0), "{args:?}: {}", stderr(&ran));
-        assert!(!stdout(&ran).is_empty());
-    }
-    assert!(host.fs.kind(Path::new(state)).unwrap().is_none());
+    let ran = togi_on(&host, args);
+    assert_eq!(ran.status.code(), Some(0), "{}", stderr(&ran));
+    assert!(!stdout(&ran).is_empty());
+    assert!(host.fs.kind(Path::new("/state")).unwrap().is_none());
     assert!(host.steps().is_empty());
 }
 
@@ -367,54 +355,45 @@ fn the_cycles_example_is_worded_the_same_in_the_top_level_and_run_help() {
     assert_eq!(row(stdout(&top)), row(stdout(&run)));
 }
 
-#[test]
-fn run_usage_errors_exit_2_before_anything_is_touched() {
+#[test_case(
+    &["run", "--first-result", "--cycles", "1"],
+    "cannot be used with" ;
+    "first result with cycles"
+)]
+#[test_case(&["run", "--cycles", "0"], "must be a positive integer" ; "zero cycles")]
+#[test_case(&["run", "--cycles", "many"], "must be a positive integer" ; "cycles not a number")]
+#[test_case(&["run", "--cycles"], "a value is required" ; "cycles without a value")]
+#[test_case(&["run", "--bogus"], "unexpected argument '--bogus'" ; "unknown flag")]
+#[test_case(&["run", "--version"], "unexpected argument '--version'" ; "version")]
+fn run_usage_errors_exit_2_before_anything_is_touched(args: &[&str], text: &str) {
     let host = support::Host::new();
     let state = "/state";
-    for (args, text) in [
-        (
-            &["run", "--first-result", "--cycles", "1"][..],
-            "cannot be used with",
-        ),
-        (&["run", "--cycles", "0"], "must be a positive integer"),
-        (&["run", "--cycles", "many"], "must be a positive integer"),
-        (&["run", "--cycles"], "a value is required"),
-        (&["run", "--bogus"], "unexpected argument '--bogus'"),
-        (&["run", "--version"], "unexpected argument '--version'"),
-    ] {
-        let mut all = vec!["--state-dir", state];
-        all.extend_from_slice(args);
-        let ran = togi_on(&host, &all);
-        assert_eq!(ran.status.code(), Some(2), "{args:?}");
-        assert_eq!(stdout(&ran), "", "{args:?}");
-        assert!(stderr(&ran).contains(text), "{args:?}: {}", stderr(&ran));
-    }
+    let mut all = vec!["--state-dir", state];
+    all.extend_from_slice(args);
+    let ran = togi_on(&host, &all);
+    assert_eq!(ran.status.code(), Some(2));
+    assert_eq!(stdout(&ran), "");
+    assert!(stderr(&ran).contains(text), "{}", stderr(&ran));
     assert!(host.fs.kind(Path::new(state)).unwrap().is_none());
     assert!(host.steps().is_empty());
 }
 
 /// Config loading uses the injected host regardless of where the flag is written.
-#[test]
+#[test_case(&["run", "--config", "/missing.json"] ; "after the command")]
+#[test_case(&["--config", "/missing.json", "run"] ; "before the command")]
 #[cfg(target_os = "linux")]
-fn run_reads_its_config_wherever_the_flag_is_written() {
+fn run_reads_its_config_wherever_the_flag_is_written(args: &[&str]) {
     let host = support::Host::new();
-    let state = Path::new("/state");
-    let missing = Path::new("/missing.json");
-    for args in [
-        vec!["run", "--config", missing.to_str().unwrap()],
-        vec!["--config", missing.to_str().unwrap(), "run"],
-    ] {
-        let mut all = vec!["--state-dir", state.to_str().unwrap()];
-        all.extend(args.iter().copied());
-        let ran = togi_on(&host, &all);
-        assert_eq!(ran.status.code(), Some(2), "{args:?}: {}", stderr(&ran));
-        assert_eq!(stdout(&ran), "", "{args:?}");
-        assert!(
-            stderr(&ran).starts_with("togi run: cannot read config"),
-            "{args:?}: {}",
-            stderr(&ran)
-        );
-    }
+    let mut all = vec!["--state-dir", "/state"];
+    all.extend(args.iter().copied());
+    let ran = togi_on(&host, &all);
+    assert_eq!(ran.status.code(), Some(2), "{}", stderr(&ran));
+    assert_eq!(stdout(&ran), "");
+    assert!(
+        stderr(&ran).starts_with("togi run: cannot read config"),
+        "{}",
+        stderr(&ran)
+    );
 }
 
 #[test]
@@ -508,56 +487,59 @@ fn emergency_stop_help() {
     snapshot!(emergency_stop_help, help("emergency-stop"));
 }
 
-#[test]
-fn only_doctor_and_reset_list_config() {
-    for command in ["doctor", "reset"] {
-        assert!(help(command).contains("--config"), "{command}");
-    }
-    assert!(!help("restart-limit").contains("--config"));
-    assert!(!help("emergency-stop").contains("--config"));
+#[test_case("doctor" ; "doctor")]
+#[test_case("reset" ; "reset")]
+fn doctor_and_reset_list_config(command: &str) {
+    assert!(help(command).contains("--config"));
 }
 
-#[test]
-fn administration_usage_errors_exit_2_before_touching_anything() {
+#[test_case("restart-limit" ; "restart limit")]
+#[test_case("emergency-stop" ; "emergency stop")]
+fn restart_limit_and_emergency_stop_do_not_list_config(command: &str) {
+    assert!(!help(command).contains("--config"));
+}
+
+#[test_case(&["reset"], "required arguments were not provided" ; "reset without a target")]
+#[test_case(&["reset", "--core", "1", "--all"], "cannot be used with" ; "reset core and all")]
+#[test_case(&["reset", "--core", "x"], "invalid value 'x'" ; "reset core not a number")]
+#[test_case(&["reset", "--core", "-1"], "unexpected argument" ; "reset negative core")]
+#[test_case(&["reset", "--all", "extra"], "unexpected argument 'extra'" ; "reset extra argument")]
+#[test_case(&["restart-limit"], "required arguments were not provided" ; "restart limit without a boot")]
+#[test_case(&["restart-limit", "--tuning-boot="], "a value is required" ; "restart limit empty boot")]
+#[test_case(
+    &["restart-limit", "--tuning-boot", "g", "extra"],
+    "unexpected argument 'extra'" ;
+    "restart limit extra argument"
+)]
+#[test_case(
+    &["restart-limit", "--config", "c.json", "--tuning-boot", "g"],
+    SCOPE ;
+    "restart limit trailing config"
+)]
+#[test_case(
+    &["--config", "c.json", "restart-limit", "--tuning-boot", "g"],
+    SCOPE ;
+    "restart limit leading config"
+)]
+#[test_case(&["emergency-stop", "extra"], "unexpected argument 'extra'" ; "emergency stop extra argument")]
+#[test_case(
+    &["emergency-stop", "--offset", "-5"],
+    "unexpected argument '--offset'" ;
+    "emergency stop offset"
+)]
+#[test_case(&["emergency-stop", "--config", "c.json"], SCOPE ; "emergency stop trailing config")]
+#[test_case(&["--config", "c.json", "emergency-stop"], SCOPE ; "emergency stop leading config")]
+#[test_case(&["doctor", "extra"], "unexpected argument 'extra'" ; "doctor extra argument")]
+#[test_case(&["doctor", "--version"], "unexpected argument '--version'" ; "doctor version")]
+fn administration_usage_errors_exit_2_before_touching_anything(args: &[&str], text: &str) {
     let host = support::Host::new();
     let state = "/state";
-    for (args, text) in [
-        (&["reset"][..], "required arguments were not provided"),
-        (&["reset", "--core", "1", "--all"], "cannot be used with"),
-        (&["reset", "--core", "x"], "invalid value 'x'"),
-        (&["reset", "--core", "-1"], "unexpected argument"),
-        (&["reset", "--all", "extra"], "unexpected argument 'extra'"),
-        (&["restart-limit"], "required arguments were not provided"),
-        (&["restart-limit", "--tuning-boot="], "a value is required"),
-        (
-            &["restart-limit", "--tuning-boot", "g", "extra"],
-            "unexpected argument 'extra'",
-        ),
-        (
-            &["restart-limit", "--config", "c.json", "--tuning-boot", "g"],
-            SCOPE,
-        ),
-        (
-            &["--config", "c.json", "restart-limit", "--tuning-boot", "g"],
-            SCOPE,
-        ),
-        (&["emergency-stop", "extra"], "unexpected argument 'extra'"),
-        (
-            &["emergency-stop", "--offset", "-5"],
-            "unexpected argument '--offset'",
-        ),
-        (&["emergency-stop", "--config", "c.json"], SCOPE),
-        (&["--config", "c.json", "emergency-stop"], SCOPE),
-        (&["doctor", "extra"], "unexpected argument 'extra'"),
-        (&["doctor", "--version"], "unexpected argument '--version'"),
-    ] {
-        let mut all = vec!["--state-dir", state];
-        all.extend_from_slice(args);
-        let ran = togi_on(&host, &all);
-        assert_eq!(ran.status.code(), Some(2), "{args:?}: {}", stderr(&ran));
-        assert_eq!(stdout(&ran), "", "{args:?}");
-        assert!(stderr(&ran).contains(text), "{args:?}: {}", stderr(&ran));
-    }
+    let mut all = vec!["--state-dir", state];
+    all.extend_from_slice(args);
+    let ran = togi_on(&host, &all);
+    assert_eq!(ran.status.code(), Some(2), "{}", stderr(&ran));
+    assert_eq!(stdout(&ran), "");
+    assert!(stderr(&ran).contains(text), "{}", stderr(&ran));
     assert!(host.fs.kind(Path::new(state)).unwrap().is_none());
     assert!(host.steps().is_empty(), "a usage error reached the host");
 }
@@ -569,27 +551,23 @@ fn session_start(schema: u32) -> String {
     )
 }
 
-#[test]
+#[test_case(&["--state-dir", "/state", "doctor"] ; "state dir before the command")]
+#[test_case(&["doctor", "--state-dir", "/state"] ; "state dir after the command")]
 #[cfg(target_os = "linux")]
-fn doctor_refuses_a_newer_journal_with_exit_16_before_any_check() {
+fn doctor_refuses_a_newer_journal_with_exit_16_before_any_check(args: &[&str]) {
     let host = support::Host::new();
     let state = "/state";
     host.fs.create_dir(Path::new(state)).unwrap();
     host.write(Path::new(state).join("events.jsonl"), session_start(99))
         .unwrap();
-    for args in [
-        ["--state-dir", state, "doctor"],
-        ["doctor", "--state-dir", state],
-    ] {
-        let ran = togi_on(&host, &args);
-        assert_eq!(ran.status.code(), Some(16), "{args:?}: {}", stderr(&ran));
-        assert_eq!(stdout(&ran), "");
-        assert!(
-            stderr(&ran).starts_with("togi doctor: this journal was written by togi 9.9.9"),
-            "{}",
-            stderr(&ran)
-        );
-    }
+    let ran = togi_on(&host, args);
+    assert_eq!(ran.status.code(), Some(16), "{}", stderr(&ran));
+    assert_eq!(stdout(&ran), "");
+    assert!(
+        stderr(&ran).starts_with("togi doctor: this journal was written by togi 9.9.9"),
+        "{}",
+        stderr(&ran)
+    );
 }
 
 #[test]

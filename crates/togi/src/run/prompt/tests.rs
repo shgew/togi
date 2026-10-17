@@ -6,6 +6,7 @@ use std::rc::Rc;
 
 use rustix::io::{Errno, write};
 use rustix::pty::{OpenptFlags, grantpt, openpt, ptsname, unlockpt};
+use test_case::test_case;
 use togi_defect::{DefectId, FindingView};
 use togi_journal::{DefectDirection, Seq};
 use togi_machine::{CancellationToken, CoreId, CoreSet};
@@ -13,21 +14,16 @@ use togi_session::PromptError;
 
 use super::{Answers, ask, parse_answer, read_line, readable};
 
-#[test]
-fn only_a_complete_line_saying_y_or_yes_is_a_yes() {
-    let table = [
-        ("Yes \n", true),
-        ("Y\n", true),
-        ("yEs\n", true),
-        ("no\n", false),
-        ("sure\n", false),
-        ("\n", false),
-        ("yes", false),
-        ("", false),
-    ];
-    for (line, want) in table {
-        assert_eq!(parse_answer(line), want, "{line:?}");
-    }
+#[test_case("Yes \n", true ; "yes with a trailing space")]
+#[test_case("Y\n", true ; "capital y")]
+#[test_case("yEs\n", true ; "mixed case yes")]
+#[test_case("no\n", false ; "no")]
+#[test_case("sure\n", false ; "sure")]
+#[test_case("\n", false ; "empty line")]
+#[test_case("yes", false ; "incomplete line")]
+#[test_case("", false ; "end of input")]
+fn only_a_complete_line_saying_y_or_yes_is_a_yes(line: &str, want: bool) {
+    assert_eq!(parse_answer(line), want);
 }
 
 #[derive(Clone, Default)]
@@ -104,25 +100,24 @@ fn only_input_typed_after_the_question_is_the_answer() {
     assert!(text.ends_with("Reset cores 3? [y/N] "), "{text:?}");
 }
 
-#[test]
-fn the_question_names_every_core_and_a_no_or_end_of_input_is_no() {
-    for line in [Some("n\n"), None] {
-        let out = Shared::default();
-        let mut answers = Typed {
-            out: out.clone(),
-            line,
-        };
-        let decisions = [];
-        let yes = ask(
-            &mut out.clone(),
-            &mut answers,
-            &CancellationToken::new(),
-            &finding(&[3, 7], &decisions),
-        )
-        .unwrap();
-        assert!(!yes);
-        assert!(out.text().ends_with("Reset cores 3, 7? [y/N] "));
-    }
+#[test_case(Some("n\n") ; "no")]
+#[test_case(None ; "end of input")]
+fn the_question_names_every_core_and_a_no_or_end_of_input_is_no(line: Option<&'static str>) {
+    let out = Shared::default();
+    let mut answers = Typed {
+        out: out.clone(),
+        line,
+    };
+    let decisions = [];
+    let yes = ask(
+        &mut out.clone(),
+        &mut answers,
+        &CancellationToken::new(),
+        &finding(&[3, 7], &decisions),
+    )
+    .unwrap();
+    assert!(!yes);
+    assert!(out.text().ends_with("Reset cores 3, 7? [y/N] "));
 }
 
 #[test]
