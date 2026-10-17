@@ -294,49 +294,79 @@ pub fn fit_clauses(width: usize, clauses: &[Clause]) -> Line<'static> {
     }
 }
 
-/// `text` wrapped to `width` display cells in `style`. A newline starts a paragraph; a word wider than the
-/// width is broken by cells.
+/// `text` wrapped to `width` display cells in `style`; see [`wrap_line`].
 #[must_use]
 pub fn wrap_styled(text: &str, width: usize, style: Style) -> Vec<Line<'static>> {
+    wrap_line(&Line::from(Span::styled(text, style)), width)
+}
+
+/// `line` wrapped to `width` display cells, every word in its own style and every gap in the style of the space
+/// it replaces. A newline starts a paragraph; a word wider than the width is broken by cells.
+#[must_use]
+pub(crate) fn wrap_line(line: &Line<'_>, width: usize) -> Vec<Line<'static>> {
     if width == 0 {
         return Vec::new();
     }
-    let mut out = Vec::new();
-    let push = |out: &mut Vec<Line<'static>>, text: String| {
-        out.push(Line::from(Span::styled(text, style)));
-    };
-    for paragraph in text.split('\n') {
-        let paragraph = inert(paragraph);
-        let mut line = String::new();
-        for word in paragraph.split_whitespace() {
-            let mut word = word;
-            while display_width(word) > width {
-                if !line.is_empty() {
-                    push(&mut out, std::mem::take(&mut line));
-                }
-                let cells: Vec<Cell> = word.chars().map(|c| (c, Style::new())).collect();
-                let head = prefix_len(&cells, width).max(1);
-                let split = word
-                    .char_indices()
-                    .nth(head)
-                    .map_or(word.len(), |(at, _)| at);
-                push(&mut out, word[..split].to_owned());
-                word = &word[split..];
+    let base = line
+        .spans
+        .first()
+        .map_or(line.style, |span| line.style.patch(span.style));
+    let mut paragraphs: Vec<Vec<Cell>> = vec![Vec::new()];
+    for span in &line.spans {
+        let style = line.style.patch(span.style);
+        for (i, piece) in span.content.split('\n').enumerate() {
+            if i > 0 {
+                paragraphs.push(Vec::new());
             }
-            if word.is_empty() {
-                continue;
-            }
-            if line.is_empty() {
-                line.push_str(word);
-            } else if display_width(&line) + 1 + display_width(word) <= width {
-                line.push(' ');
-                line.push_str(word);
-            } else {
-                push(&mut out, std::mem::replace(&mut line, word.to_owned()));
+            if let Some(paragraph) = paragraphs.last_mut() {
+                paragraph.extend(inert(piece).chars().map(|c| (c, style)));
             }
         }
-        if !line.is_empty() || paragraph.is_empty() {
-            push(&mut out, line);
+    }
+    let mut out = Vec::new();
+    let push = |out: &mut Vec<Line<'static>>, cells: &[Cell]| {
+        out.push(if cells.is_empty() {
+            Line::from(Span::styled(String::new(), base))
+        } else {
+            line_of(cells)
+        });
+    };
+    for paragraph in &paragraphs {
+        let mut row: Vec<Cell> = Vec::new();
+        let mut rest = paragraph.as_slice();
+        while let Some(start) = rest.iter().position(|&(c, _)| !c.is_whitespace()) {
+            let gap = rest[..start].first().map(|&(_, style)| style);
+            rest = &rest[start..];
+            let end = rest
+                .iter()
+                .position(|&(c, _)| c.is_whitespace())
+                .unwrap_or(rest.len());
+            let mut word = &rest[..end];
+            rest = &rest[end..];
+            while cells_width(word) > width {
+                if !row.is_empty() {
+                    push(&mut out, &row);
+                    row.clear();
+                }
+                let head = prefix_len(word, width).max(1);
+                push(&mut out, &word[..head]);
+                word = &word[head..];
+            }
+            let Some(&(_, first)) = word.first() else {
+                continue;
+            };
+            if row.is_empty() {
+                row.extend_from_slice(word);
+            } else if cells_width(&row) + 1 + cells_width(word) <= width {
+                row.push((' ', gap.unwrap_or(first)));
+                row.extend_from_slice(word);
+            } else {
+                push(&mut out, &row);
+                row = word.to_vec();
+            }
+        }
+        if !row.is_empty() || paragraph.is_empty() {
+            push(&mut out, &row);
         }
     }
     out
@@ -374,7 +404,7 @@ mod tests {
 
     use super::{
         CUT_MARKER, Clause, Form, console_text, cut_styled, cut_words, display_width, fit_clauses,
-        inert, is_console_glyph, line_width, plain, rule, truncate_styled, wrap_styled,
+        inert, is_console_glyph, line_width, plain, rule, truncate_styled, wrap_line, wrap_styled,
     };
 
     #[test]
@@ -632,6 +662,30 @@ mod tests {
         assert_eq!(lines("a\n\nb", 5), ["a", "", "b"]);
         assert_eq!(lines("", 5), [""]);
         assert!(lines("anything", 0).is_empty());
+    }
+
+    #[test]
+    fn a_wrapped_line_keeps_each_word_and_gap_in_its_own_style() {
+        let red = Style::new().fg(Color::Red);
+        let line = Line::from(vec![
+            Span::raw("aaa "),
+            Span::styled("bb cc", red),
+            Span::raw(" dd"),
+        ]);
+        let styled = |line: &Line<'_>| {
+            line.spans
+                .iter()
+                .map(|span| (span.content.to_string(), span.style == red))
+                .collect::<Vec<_>>()
+        };
+        let rows: Vec<_> = wrap_line(&line, 6).iter().map(styled).collect();
+        assert_eq!(
+            rows,
+            [
+                vec![("aaa ".to_owned(), false), ("bb".to_owned(), true)],
+                vec![("cc".to_owned(), true), (" dd".to_owned(), false)],
+            ]
+        );
     }
 
     #[test]
