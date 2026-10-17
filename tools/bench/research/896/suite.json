@@ -1,0 +1,17 @@
+{
+  "scenarios": [
+    {"name": "target-fit-0", "machine": "../../machines/target-fit-0.json", "dev": [201, 202], "holdout": []},
+    {"name": "target-fit-1", "machine": "../../machines/target-fit-1.json", "dev": [201, 202], "holdout": []},
+    {"name": "target-fit-2", "machine": "../../machines/target-fit-2.json", "dev": [201, 202], "holdout": []},
+    {"name": "target-fit-3", "machine": "../../machines/target-fit-3.json", "dev": [201, 202], "holdout": []},
+    {"name": "target-fit-4", "machine": "../../machines/target-fit-4.json", "dev": [201, 202], "holdout": []},
+    {"name": "target-fit-5", "machine": "../../machines/target-fit-5.json", "dev": [201, 202], "holdout": []},
+    {"name": "target-fit-6", "machine": "../../machines/target-fit-6.json", "dev": [201, 202], "holdout": []},
+    {"name": "target-fit-7", "machine": "../../machines/target-fit-7.json", "dev": [201, 202], "holdout": []},
+    {"name": "target-fit-8", "machine": "../../machines/target-fit-8.json", "dev": [201, 202], "holdout": []},
+    {"name": "target-shared-voltage", "machine": "../../machines/target-shared-voltage.json", "dev": [201, 202, 203, 204, 205, 206, 207, 208], "holdout": []},
+    {"name": "target-r7-request-gap", "machine": "../../machines/target-r7-request-gap.json", "dev": [201, 202, 203, 204, 205, 206, 207, 208], "holdout": []},
+    {"name": "target-r7-vf-boost", "machine": "../../machines/target-r7-vf-boost.json", "dev": [201, 202, 203, 204, 205, 206, 207, 208], "holdout": []},
+    {"name": "shared-voltage", "machine": "../../machines/shared-voltage.json", "dev": [201, 202, 203, 204, 205, 206, 207, 208], "holdout": []}
+  ]
+}

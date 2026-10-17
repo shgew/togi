@@ -517,6 +517,62 @@ fn the_anchor_overlays_differ_from_the_anchor_only_by_their_mechanism() {
 }
 
 #[test]
+fn the_896_research_suite_runs_unreplayed_dev_seeds_from_201_on_committed_machines() {
+    let dir = Tree::committed();
+    let suite = Suite::parse(
+        include_bytes!("../../../tools/bench/research/896/suite.json"),
+        dir.path().join("research/896"),
+    )
+    .unwrap();
+    let plan = suite.plan_from(Selection::All, &dir).unwrap();
+    assert!(
+        plan.runs
+            .iter()
+            .all(|run| run.split == Split::Dev && run.replay.is_none())
+    );
+    let mut got: Vec<(String, String, Vec<u64>)> = Vec::new();
+    for run in &plan.runs {
+        let machine = run.machine.as_ref().unwrap().name.clone();
+        match got.last_mut() {
+            Some((scenario, _, seeds)) if *scenario == run.scenario => seeds.push(run.seed),
+            _ => got.push((run.scenario.clone(), machine, vec![run.seed])),
+        }
+    }
+    let mut want: Vec<(String, String, Vec<u64>)> = (0..9)
+        .map(|i| {
+            let name = format!("target-fit-{i}");
+            let machine = format!("../../machines/{name}.json");
+            (name, machine, vec![201, 202])
+        })
+        .collect();
+    for name in [
+        "target-shared-voltage",
+        "target-r7-request-gap",
+        "target-r7-vf-boost",
+        "shared-voltage",
+    ] {
+        let machine = format!("../../machines/{name}.json");
+        want.push((name.to_owned(), machine, (201..=208).collect()));
+    }
+    assert_eq!(got, want);
+    assert_eq!(plan.runs.len(), 50);
+
+    let committed = dir.suite().plan_from(Selection::All, &dir).unwrap();
+    assert!(
+        committed.runs.iter().all(|run| run.seed < 201),
+        "the committed suite reaches the research seeds"
+    );
+    for machine in &plan.machines {
+        assert!(machine.model(201).is_ok(), "{}", machine.name);
+        assert!(
+            machine.inputs.iter().all(|(_, sum)| sum.is_some()),
+            "{}",
+            machine.name
+        );
+    }
+}
+
+#[test]
 fn real_fs_deleted_scenario_files_are_absent_from_the_committed_tree() {
     for deleted in [
         "target-r4-limit",
