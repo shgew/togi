@@ -2,12 +2,12 @@
 source: crates/togi-watch/src/frames/snapshots.rs
 expression: body
 ---
-│ togi   23:46:45   tuning 71h46m   session 71h46m   62 failures · 16 crashes   last observed failure 23:46
-│ ■ SOLO ─ ►  HUNT 4   part 1 of 2 ─ ■ P1 ─ ■ P2 ─ CLEAN 2 ─ ○ CYCLE 4 paused at 4/18
+│ togi   00:06:25   tuning 72h06m   session 72h06m   63 failures · 15 crashes   last observed failure 00:05
+│ ■ SOLO ─ ►  HUNT 5   part 1 of 2 ─ ■ P1 ─ ■ P2 ─ CLEAN 2 ─ ○ CYCLE 4 paused at 4/18
 │
 │ ▌  Crashed early in R2 heavy vector on 00; no core named. Rerunning it with 00-05 07-15 parked.
 │
-│  R2   heavy vector load  on 00 · 06 at failing offsets, 08 parked, idle   mprime AVX2 36K-248K   HUNT 4 · PART 1 OF 2
+│  R2   heavy vector load  on 00 · 06 at failing offsets, 08 parked, idle   mprime AVX2 36K-248K   HUNT 5 · PART 1 OF 2
 │ ██████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  1:20 left  2/5 ■ ■ ► · ·
 │
 │ 5/5 pass → part 2: 08   none named → hunt ends   core named → hunt ends
@@ -22,15 +22,15 @@ expression: body
 │   06 -38 MEMBER   ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬        -39             14 -12 AT LIMIT ▄▄▄▄▄▄▬·                    -13
 │   07 -29 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬             -30             15 -13 AT LIMIT ▄▄▄▄▄▄▬                     -14
 │
-│ BIOS PROFILE ─────────────────── UNCONFIRMED since #11330   WHAT HAPPENED ─────────────────────────────── l: last 400
+│ BIOS PROFILE ─────────────────── UNCONFIRMED since #11459   WHAT HAPPENED ─────────────────────────────── l: last 400
 │ slot      0    1    2    3    4    5    6    7
-│ CCD 0   -23  -15  -24  -23* -13   -8  -37* -29              23:46  hunt     #4 started · part 1: 06 at failing...
-│ CCD 1    -5* -33  -13   -7  -14  -35  -12  -13              23:46  crash    R2 heavy... · rebooted · no core named
-│ * a passed full cycle confirms, unless a failure is held    23:44  hold     core 03 failure held; tuning stays at -24
-│                                                             23:44  fail     core 03 fails at -24
-│ HUNT 4 ────────────────────────────────────── 23:46 · 40s   23:44  fail     uncorrected hardware error · no core...
-│ cause      crash in R2 heavy vector on 00, no core named    23:44  crash    with the offsets applied, rebooted
-│ ► part 1/2 06 at failing offsets     trial 3/5              23:42  hunt     not hunted: held: first unattributed...
-│ +4 more                                                     +1685 more
+│ CCD 0   -23  -15  -24  -24  -13   -8  -37* -29              00:05  hunt     #5 started · part 1: 06 at failing...
+│ CCD 1    -5* -33  -13   -7  -14  -35  -12  -13              00:05  crash    R2 heavy... · rebooted · no core named
+│ * a passed full cycle confirms, unless a failure is held    00:04  hunt     not hunted: held: first unattributed...
+│                                                             00:04  crash    R2 heavy... · rebooted · no core named
+│ HUNT 5 ────────────────────────────────────── 00:05 · 40s   00:02  pass     R7 full CCD 0+1 on 00-15 · 4 passed...
+│ cause      crash in R2 heavy vector on 00, no core named    23:46  note     cycle 4 step 3 · CCD 1 partials end
+│ ► part 1/2 06 at failing offsets     trial 3/5              23:46  pass     R7 partial CCD 1 on 09 13 · 4 passed...
+│ +4 more                                                     +1681 more
 │
 │  ?  help    l  log    esc  back    q  exit dashboard

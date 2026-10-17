@@ -2,77 +2,76 @@
 source: crates/togi/tests/read/status.rs
 expression: text(&ran.stdout)
 ---
-hunt 4, group 1 | phase 2 concluded: clean cycles 2, latest clean cycle 3
+hunt 5, group 1 | phase 2 concluded: clean cycles 2, latest clean cycle 3
 session 20260101T000000Z started 2026-01-01T00:00:00Z
 BIOS SIM.1 on togi simulator, Simulated Zen 5 16-Core Processor, microcode 0x0,
   boost limit 5700 MHz
-in flight: [#11569] trial 1943 core 00 R2 mprime AVX2 36K-248K 120 s parked hunt
-  4 group 1
+in flight: [#11613] trial 1954 core 00 R2 mprime AVX2 36K-248K 120 s parked hunt
+  5 group 1
 
 CORE  CCD  SLOT  OFFSET  BIOS  PHASE     FAILURE  QUEUED
 00    0    0     -23     -23   AT LIMIT  -24      -
-  last decision [#6394] core 00 backed off from -24 to -23 (backed off:
-                attributed computation_error in parked R3 trial 0811; failure
+  last decision [#6524] core 00 backed off from -24 to -23 (backed off:
+                attributed computation_error in parked R3 trial 0823; failure
                 point -24)
 01    0    1     -15     -15   AT LIMIT  -16      -
-  last decision [#4147] core 01 has room -> at its limit at -15 (failure point
+  last decision [#4144] core 01 has room -> at its limit at -15 (failure point
                 -16 of core 01)
 02    0    2     -24     -24   AT LIMIT  -25      -
-  last decision [#5822] core 02 has room -> at its limit at -24 (failure point
+  last decision [#5828] core 02 has room -> at its limit at -24 (failure point
                 -25 of core 02)
-03    0    3     -24     -23*  AT LIMIT  -25      -
-  last decision [#11415] core 03 failure held; tuning stays at -24 (holds at
-                -24: failure #11414 (cycle 4) is the first counting against core
-                03 since the profile passed cycle 3 (#10805); a second failure
-                against it by cycle 8 (K = 5) steps it back)
+03    0    3     -24     -24   AT LIMIT  -25      -
+  last decision [#7841] core 03 backed off from -25 to -24 (failure #7835 (R7
+                trial 1005) charged to deepened core 03; round 1, last passed
+                offset -24; failure point -25)
 04    0    4     -13     -13   AT LIMIT  -14      -
-  last decision [#5289] core 04 backed off from -14 to -13 (backed off:
-                attributed computation_error in together R6 trial 0660; failure
+  last decision [#5295] core 04 backed off from -14 to -13 (backed off:
+                attributed computation_error in together R6 trial 0661; failure
                 point -14)
 05    0    5     -8      -8    AT LIMIT  -9       -
-  last decision [#5019] core 05 has room -> at its limit at -8 (failure point -9
+  last decision [#5046] core 05 has room -> at its limit at -8 (failure point -9
                 of core 05)
 06    0    6     -38     -37*  AT LIMIT  -39      -
-  last decision [#7937] core 06 has room -> at its limit at -38 (failure point
+  last decision [#8066] core 06 has room -> at its limit at -38 (failure point
                 -39 of core 06)
 07    0    7     -29     -29   AT LIMIT  -30      -
-  last decision [#7844] core 07 backed off from -30 to -29 (failure #7839 (R7
-                trial 0999) charged to deepened core 07; round 2, last passed
+  last decision [#7973] core 07 backed off from -30 to -29 (failure #7968 (R7
+                trial 1011) charged to deepened core 07; round 2, last passed
                 offset -29; failure point -30)
 08    1    0     -6      -5*   AT LIMIT  -7       -
-  last decision [#7936] core 08 has room -> at its limit at -6 (failure point -7
+  last decision [#8065] core 08 has room -> at its limit at -6 (failure point -7
                 of core 08)
 09    1    1     -33     -33   AT LIMIT  -34      -
-  last decision [#5762] core 09 has room -> at its limit at -33 (failure point
+  last decision [#5768] core 09 has room -> at its limit at -33 (failure point
                 -34 of core 09)
 10    1    2     -13     -13   AT LIMIT  -14      -
-  last decision [#5302] core 10 backed off from -14 to -13 (backed off:
-                attributed corrected_mce in together R6 trial 0661; failure
+  last decision [#5308] core 10 backed off from -14 to -13 (backed off:
+                attributed corrected_mce in together R6 trial 0662; failure
                 point -14)
 11    1    3     -7      -7    AT LIMIT  -8       -
-  last decision [#4240] core 11 backed off from -8 to -7 (voltage-targeted R7
-                backoff after failure #4239: core 11 order came from offsets at
+  last decision [#4237] core 11 backed off from -8 to -7 (voltage-targeted R7
+                backoff after failure #4236: core 11 order came from offsets at
                 CO -8; no request telemetry, 1 count)
 12    1    4     -14     -14   AT LIMIT  -15      -
-  last decision [#4806] core 12 backed off from -15 to -14 (backed off:
+  last decision [#4803] core 12 backed off from -15 to -14 (backed off:
                 attributed unexpected_exit in together R2 trial 0585; failure
                 point -15)
 13    1    5     -35     -35   AT LIMIT  -36      -
-  last decision [#5920] core 13 backed off from -36 to -35 (backed off:
-                attributed uncorrected_mce in together R5 trial 0742; failure
+  last decision [#6077] core 13 backed off from -36 to -35 (backed off:
+                attributed computation_error in parked R5 trial 0754; failure
                 point -36)
 14    1    6     -12     -12   AT LIMIT  -13      -
-  last decision [#6850] core 14 backed off from -13 to -12 (backed off:
-                attributed corrected_mce in together R4 trial 0890; failure
+  last decision [#6980] core 14 backed off from -13 to -12 (backed off:
+                attributed corrected_mce in together R4 trial 0902; failure
                 point -13)
 15    1    7     -13     -13   AT LIMIT  -14      -
-  last decision [#8796] core 15 backed off from -14 to -13 (failure #8795 (R1
-                trial 1271) charged to deepened core 15; phase 2 confirmation,
+  last decision [#8925] core 15 backed off from -14 to -13 (failure #8924 (R1
+                trial 1283) charged to deepened core 15; phase 2 confirmation,
                 last confirmed offset -13; failure point -14)
-* unconfirmed since [#11330]: cores 03 06 08 show stepped-back offsets; other
-  BIOS offsets come from the profile confirmed by the passed full cycle
-  [#10805]. A passed full cycle confirms the changes, except a held failure's
-  stepped-back offset, which stays marked until the hold ends
+* unconfirmed since [#11459]: cores 06 08 show stepped-back offsets; other BIOS
+  offsets come from the profile confirmed by the passed full cycle [#10934]. A
+  passed full cycle confirms the changes, except a held failure's stepped-back
+  offset, which stays marked until the hold ends
 
 R7 self-sufficiency (passed as top requester at equal or deeper offsets; not a
   guarantee)
@@ -174,8 +173,8 @@ CORE  CCD  SELF-SUFFICIENT               TOP REQUESTER
 15    1    observed (25 passing trials)  no (offset fallback)
   workload ycruncher-fftv4-n63-vt3-allcore
 
-hunt 4 [#11500]: unattributed crash in R2 trial 1942; parked offsets from cycle
-  end #7128
+hunt 5 [#11544]: unattributed crash in R2 trial 1953; parked offsets from cycle
+  end #7258
   candidates 06 08
 GROUP  CORES  OUTCOME  PASS EVIDENCE  NEED
 G1     06     running  2              5
@@ -201,5 +200,5 @@ R6      ycruncher-bkt-sftv4-idle         2
 R7      mprime-avx2-36k-248k-allcore     170
 R7      mprime-avx512-36k-248k-allcore   170
 R7      ycruncher-fftv4-n63-vt3-allcore  170
-Tctl max since last profile change 76°C [#8942]
+Tctl max since last profile change 76°C [#9071]
 

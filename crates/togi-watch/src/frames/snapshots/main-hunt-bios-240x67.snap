@@ -2,15 +2,15 @@
 source: crates/togi-watch/src/frames/snapshots.rs
 expression: body
 ---
-│  togi   23:46:45   tuning 71h46m   session 71h46m   62 failures · 16 crashes   last observed failure 23:46, a moment ago
+│  togi   00:06:25   tuning 72h06m   session 72h06m   63 failures · 15 crashes   last observed failure 00:05, a moment ago
 │
-│  ■ SOLO LIMITS  16/16  ───  ►  HUNT 4   parts · part 1 of 2  ───  ■ PHASE 1  ───  ■ PHASE 2  concluded  ───  CLEAN CYCLES 2  · repeats until stopped  ───  ○ CYCLE 4  paused at step 4 of 18, part 1
+│  ■ SOLO LIMITS  16/16  ───  ►  HUNT 5   parts · part 1 of 2  ───  ■ PHASE 1  ───  ■ PHASE 2  concluded  ───  CLEAN CYCLES 2  · repeats until stopped  ───  ○ CYCLE 4  paused at step 4 of 18, part 1
 │
-│  ▌  HUNT 4   The machine crashed early in the 2-minute heavy vector trial on 00 and rebooted.                            last trial      CRASH  on core 00
+│  ▌  HUNT 5   The machine crashed early in the 2-minute heavy vector trial on 00 and rebooted.                            last trial      CRASH  on core 00
 │  ▌           No core was named: I rerun that load with 06 at their failing offsets, 00-05 07-15 parked.
 │
-│  NOW ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── trial 1943
-│   R2   heavy vector load  on 00 · 06 at failing offsets, 08 parked, idle   mprime AVX2 36K-248K · 1 worker                                                                                                              HUNT 4 · PART 1 OF 2
+│  NOW ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── trial 1954
+│   R2   heavy vector load  on 00 · 06 at failing offsets, 08 parked, idle   mprime AVX2 36K-248K · 1 worker                                                                                                              HUNT 5 · PART 1 OF 2
 │
 │  ██████████████████████████████████████████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░          ▀█    ▀▀█ █▀█
 │  ██████████████████████████████████████████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░           █  ▀ █▀▀ █ █
@@ -18,7 +18,7 @@ expression: body
 │  0:40 of 2:00                                                                                                                                                                      2 passed · trial 3 of 5  ■ ■ ► · ·                   left
 │
 │  if 5 of 5 pass:      next trial: part 2: 08 at failing offsets, 06 parked, idle
-│  if none is named:    hunt 4 ends: 06 named → core 06 -38 → -37; next trial: rerun R2 heavy vector, core 00 at -23 · 2m
+│  if none is named:    hunt 5 ends: 06 named → core 06 -38 → -37; next trial: rerun R2 heavy vector, core 00 at -23 · 2m
 │  if a core is named:  its failure point is recorded → the hunt ends → it backs off; next trial: rerun R2 heavy vector, core 00 at -22 · 2m
 │
 │  CCD 0               0       -10       -20       -30       -40       -50 fail pt  one core under load at a time          CCD 1               0       -10       -20       -30       -40       -50 fail pt  not under load
@@ -31,40 +31,40 @@ expression: body
 │    06  -38  MEMBER    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬               -39                                            14  -12  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▬···                                      -13
 │    07  -29  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬                        -30                                            15  -13  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▬                                        -14
 │
-│  BIOS PROFILE ──────────────────────────────────────────────────────────── UNCONFIRMED since #11330 · cores 03 06 08     WHAT HAPPENED ─────────────────────────────────────────────────────────────────── newest first · l: last 400 events
+│  BIOS PROFILE ─────────────────────────────────────────────────────────────── UNCONFIRMED since #11459 · cores 06 08     WHAT HAPPENED ─────────────────────────────────────────────────────────────────── newest first · l: last 400 events
 │  slot      0    1    2    3    4    5    6    7
-│  CCD 0   -23  -15  -24  -23* -13   -8  -37* -29                                                                          23:46  hunt     #4 started · part 1: 06 at failing offsets, 08 parked
-│  CCD 1    -5* -33  -13   -7  -14  -35  -12  -13                                                                          23:46  crash    R2 heavy vector on core 00 at -23 · rebooted · early in trial 1 of 1 · no core named
-│  * unconfirmed: a passed full cycle confirms it, unless a failure is held                                                23:44  hold     core 03 failure held; tuning stays at -24
-│                                                                                                                          23:44  fail     core 03 fails at -24
-│  HUNT 4 ───────────────────────────────────────────────────────────────────────────────── started 23:46 · 40s so far     23:44  fail     R2 heavy vector on core 00 at -23 · uncorrected hardware error · no core named
-│                                                                                                                          23:44  crash    with the offsets applied, rebooted
-│  cause       crash in R2 heavy vector on 00 · cycle 4 step 4, part 1, trial 1 of 1 · no core named                       23:42  hunt     not hunted: held: first unattributed failure loading cores [00] since the profile passed cycle 3...
-│  evidence    the last sample came 0:06 into the trial · not enough to attribute                                          23:42  crash    R2 heavy vector on core 00 at -23 · rebooted · early in trial 1 of 1 · no core named
-│  candidates  06 08, deeper at failure than at their parked offsets                                                       23:41  pass     R7 full CCD 0+1 on 00-15 · 4 passed · Tctl max 74°C
-│                                                                                                                          23:25  note     cycle 4 step 3 · CCD 1 partials end
-│  parts       part        at failing offsets   parked        schedule   state                                             23:25  pass     R7 partial CCD 1 on 09 13 · 4 passed · Tctl max 70°C
-│            ► 1 of 2      06                   08            5 x 2m     trial 3 of 5                                      23:14  note     cycle 4 step 3 · CCD 1 partial 5 loads 09 13
-│              2 of 2      08                   06            5 x 2m     if part 1 passes                                  23:14  pass     R7 partial CCD 1 on 09 12 13 · 4 passed · Tctl max 75°C
-│  others      00-05 07 09-15 held at failing offsets · 06 parked at -37 · 08 parked at -5                                 23:03  note     cycle 4 step 3 · CCD 1 partial 4 loads 09 12 13
-│              failed parts are split again; complements test what remains                                                 23:03  pass     R7 partial CCD 1 on 09 10 12 13 15 · 4 passed · Tctl max 71°C
-│                                                                                                                          22:52  note     cycle 4 step 3 · CCD 1 partial 3 loads 09 10 12 13 15
-│  then        after the hunt:                                                                                             22:52  pass     R7 partial CCD 1 on 09 10 12-15 · 4 passed · Tctl max 74°C
-│              1  record one core's failure point or a combination                                                         22:41  note     cycle 4 step 3 · CCD 1 partial 2 loads 09 10 12-15
-│              2  back off past it                                                                                         22:41  pass     R7 partial CCD 1 on 09-15 · 4 passed · Tctl max 74°C
-│              3  rerun R2 heavy vector on 00: 5 trials of 2m, its original length                                         22:30  note     cycle 4 step 3 · CCD 1 partial 1 loads 09-15
-│              4  if the rerun passes, resume cycle 4                                                                      22:30  pass     R7 full CCD 1 on 08-15 · 4 passed · Tctl max 74°C
-│                                                                                                                          22:19  note     cycle 4 step 3 · CCD 0 partials end
-│                                                                                                                          22:19  pass     R7 partial CCD 0 on 06 07 · 4 passed · Tctl max 72°C
-│                                                                                                                          22:08  note     cycle 4 step 3 · CCD 0 partial 5 loads 06 07
-│                                                                                                                          22:08  pass     R7 partial CCD 0 on 02 03 06 07 · 4 passed · Tctl max 74°C
-│                                                                                                                          21:57  note     cycle 4 step 3 · CCD 0 partial 4 loads 02 03 06 07
-│                                                                                                                          21:57  pass     R7 partial CCD 0 on 00 02 03 06 07 · 4 passed · Tctl max 73°C
-│                                                                                                                          21:46  note     cycle 4 step 3 · CCD 0 partial 3 loads 00 02 03 06 07
-│                                                                                                                          21:46  pass     R7 partial CCD 0 on 00-03 06 07 · 4 passed · Tctl max 72°C
-│                                                                                                                          21:35  note     cycle 4 step 3 · CCD 0 partial 2 loads 00-03 06 07
-│                                                                                                                          21:35  pass     R7 partial CCD 0 on 00-04 06 07 · 4 passed · Tctl max 67°C
-│                                                                                                                          21:24  note     cycle 4 step 3 · CCD 0 partial 1 loads 00-04 06 07
-│                                                                                                                          +1660 more
+│  CCD 0   -23  -15  -24  -24  -13   -8  -37* -29                                                                          00:05  hunt     #5 started · part 1: 06 at failing offsets, 08 parked
+│  CCD 1    -5* -33  -13   -7  -14  -35  -12  -13                                                                          00:05  crash    R2 heavy vector on core 00 at -23 · rebooted · early in trial 1 of 1 · no core named
+│  * unconfirmed: a passed full cycle confirms it, unless a failure is held                                                00:04  hunt     not hunted: held: first unattributed failure loading cores [00] since the profile passed cycle 3...
+│                                                                                                                          00:04  crash    R2 heavy vector on core 00 at -23 · rebooted · early in trial 1 of 1 · no core named
+│  HUNT 5 ───────────────────────────────────────────────────────────────────────────────── started 00:05 · 40s so far     00:02  pass     R7 full CCD 0+1 on 00-15 · 4 passed · Tctl max 74°C
+│                                                                                                                          23:46  note     cycle 4 step 3 · CCD 1 partials end
+│  cause       crash in R2 heavy vector on 00 · cycle 4 step 4, part 1, trial 1 of 1 · no core named                       23:46  pass     R7 partial CCD 1 on 09 13 · 4 passed · Tctl max 70°C
+│  evidence    the last sample came 0:06 into the trial · not enough to attribute                                          23:35  note     cycle 4 step 3 · CCD 1 partial 5 loads 09 13
+│  candidates  06 08, deeper at failure than at their parked offsets                                                       23:35  pass     R7 partial CCD 1 on 09 12 13 · 4 passed · Tctl max 75°C
+│                                                                                                                          23:24  note     cycle 4 step 3 · CCD 1 partial 4 loads 09 12 13
+│  parts       part        at failing offsets   parked        schedule   state                                             23:24  pass     R7 partial CCD 1 on 09 10 12 13 15 · 4 passed · Tctl max 71°C
+│            ► 1 of 2      06                   08            5 x 2m     trial 3 of 5                                      23:13  note     cycle 4 step 3 · CCD 1 partial 3 loads 09 10 12 13 15
+│              2 of 2      08                   06            5 x 2m     if part 1 passes                                  23:13  pass     R7 partial CCD 1 on 09 10 12-15 · 4 passed · Tctl max 74°C
+│  others      00-05 07 09-15 held at failing offsets · 06 parked at -37 · 08 parked at -5                                 23:02  note     cycle 4 step 3 · CCD 1 partial 2 loads 09 10 12-15
+│              failed parts are split again; complements test what remains                                                 23:02  pass     R7 partial CCD 1 on 09-15 · 4 passed · Tctl max 74°C
+│                                                                                                                          22:51  note     cycle 4 step 3 · CCD 1 partial 1 loads 09-15
+│  then        after the hunt:                                                                                             22:51  pass     R7 full CCD 1 on 08-15 · 4 passed · Tctl max 74°C
+│              1  record one core's failure point or a combination                                                         22:40  note     cycle 4 step 3 · CCD 0 partials end
+│              2  back off past it                                                                                         22:40  pass     R7 partial CCD 0 on 06 07 · 4 passed · Tctl max 72°C
+│              3  rerun R2 heavy vector on 00: 5 trials of 2m, its original length                                         22:29  note     cycle 4 step 3 · CCD 0 partial 5 loads 06 07
+│              4  if the rerun passes, resume cycle 4                                                                      22:29  pass     R7 partial CCD 0 on 02 03 06 07 · 4 passed · Tctl max 74°C
+│                                                                                                                          22:18  note     cycle 4 step 3 · CCD 0 partial 4 loads 02 03 06 07
+│                                                                                                                          22:18  pass     R7 partial CCD 0 on 00 02 03 06 07 · 4 passed · Tctl max 73°C
+│                                                                                                                          22:07  note     cycle 4 step 3 · CCD 0 partial 3 loads 00 02 03 06 07
+│                                                                                                                          22:07  pass     R7 partial CCD 0 on 00-03 06 07 · 4 passed · Tctl max 72°C
+│                                                                                                                          21:56  note     cycle 4 step 3 · CCD 0 partial 2 loads 00-03 06 07
+│                                                                                                                          21:56  pass     R7 partial CCD 0 on 00-04 06 07 · 4 passed · Tctl max 67°C
+│                                                                                                                          21:45  note     cycle 4 step 3 · CCD 0 partial 1 loads 00-04 06 07
+│                                                                                                                          21:45  pass     R7 full CCD 0 on 00-07 · 4 passed · Tctl max 76°C
+│                                                                                                                          21:34  step     cycle 4 step 3: R7 all-core, y-cruncher FFTv4 + N63 + VT3
+│                                                                                                                          21:34  pass     R7 full CCD 0+1 on 00-15 · 4 passed · Tctl max 72°C
+│                                                                                                                          21:18  note     cycle 4 step 2 · CCD 1 partials end
+│                                                                                                                          +1656 more
 │
 │   ?  help    l  log    esc  back    q  exit dashboard
