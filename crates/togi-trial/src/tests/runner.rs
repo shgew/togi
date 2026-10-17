@@ -812,14 +812,19 @@ fn a_timed_out_start_launches_no_further_instance_and_rolls_back_the_first() {
 fn dropping_the_runner_after_a_timed_out_start_waits_for_the_rollback_in_progress() {
     let Stalled {
         mut runner,
+        clock,
         release,
         terminated,
         ..
     } = stalled(false);
     let partial = start_failure(&mut runner, Regime::R6, &[0], secs(600));
     assert!(partial.value.is_none());
-    release.send(()).unwrap();
+    let released = std::thread::spawn(move || {
+        clock.until_waiting();
+        release.send(()).unwrap();
+    });
     drop(runner);
+    released.join().unwrap();
     assert!(
         terminated.load(Ordering::SeqCst),
         "shutdown let the start that was waiting for its scope roll its workload back"

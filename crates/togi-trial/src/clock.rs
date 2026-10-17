@@ -80,16 +80,24 @@ impl Manual {
         self.state.lock().unwrap().elapsed += by;
     }
 
+    /// Waits until a wait is in progress.
+    pub(crate) fn until_waiting(&self) {
+        drop(self.waiting_state());
+    }
+
     /// Waits until a wait is in progress, then moves the clock to its deadline, as when nothing
     /// answers it in time.
     pub(crate) fn expire_waiting(&self) {
-        let state = self.state.lock().unwrap();
-        let mut state = self
-            .waiting
-            .wait_while(state, |state| state.deadline.is_none())
-            .unwrap();
+        let mut state = self.waiting_state();
         let deadline = state.deadline.unwrap();
         state.elapsed = state.elapsed.max(deadline);
+    }
+
+    fn waiting_state(&self) -> std::sync::MutexGuard<'_, State> {
+        let state = self.state.lock().unwrap();
+        self.waiting
+            .wait_while(state, |state| state.deadline.is_none())
+            .unwrap()
     }
 
     fn recv_timeout<T>(
