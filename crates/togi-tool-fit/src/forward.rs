@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::io;
 
 use rayon::prelude::*;
-use togi_journal::SessionId;
+use togi_journal::{Seq, SessionId};
 use togi_machine::{REGIMES, Regime, WorkloadId};
 use togi_sim::{MachineDefinition, Model, saturating_count};
 use togi_tool_modelcheck::Checker;
@@ -71,10 +71,31 @@ pub struct R7Rows {
     pub singleton: ForwardCounts,
 }
 
+/// One scored held-out trial, identified by its session and journal sequence number, with the exact values
+/// its row's counts sum.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TrialScore {
+    pub session: SessionId,
+    pub seq: Seq,
+    pub workload: WorkloadId,
+    /// How many cores the trial loaded.
+    pub loaded: usize,
+    pub failure: bool,
+    /// The predicted failure probability, before the log-loss clamp.
+    pub probability: f64,
+    pub fit_log_loss: f64,
+    pub constant_log_loss: f64,
+    /// A failure the prediction gave less than 1% probability.
+    pub surprise: bool,
+    /// The trial's class and full profile occur in the earlier sessions.
+    pub matched: bool,
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct Breakdown {
     pub regimes: BTreeMap<Regime, ForwardCounts>,
     pub r7: R7Rows,
+    pub trials: Vec<TrialScore>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -87,6 +108,8 @@ pub struct ForwardRow {
     pub score: ForwardScore,
     pub regimes: BTreeMap<Regime, ForwardCounts>,
     pub r7: R7Rows,
+    /// The scored trials in the held-out session's order.
+    pub trials: Vec<TrialScore>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -197,6 +220,7 @@ fn chain(
                 score: scored,
                 regimes: breakdown.regimes,
                 r7: breakdown.r7,
+                trials: breakdown.trials,
             });
             let c = &scored.counts;
             pooled.counts.trials += c.trials;
@@ -284,11 +308,13 @@ fn score_trials(
         let p = probability(fact, &class)?;
         let failure = is_failure(fact);
         let regime = regime_of(fact);
+        let fit_log_loss = log_loss(p, failure);
+        let constant_log_loss = log_loss(constant, failure);
         let add = |counts: &mut ForwardCounts| {
             counts.trials += 1;
             counts.predicted += p;
-            counts.fit_log_loss += log_loss(p, failure);
-            counts.constant_log_loss += log_loss(constant, failure);
+            counts.fit_log_loss += fit_log_loss;
+            counts.constant_log_loss += constant_log_loss;
             if failure {
                 counts.failures += 1;
             }
@@ -302,12 +328,26 @@ fn score_trials(
                 add(&mut breakdown.r7.singleton);
             }
         }
-        if failure && p < 0.01 {
+        let surprise = failure && p < 0.01;
+        if surprise {
             score.surprises += 1;
         }
-        if seen.contains(&ProfileClassKey::from(fact)) {
+        let matched = seen.contains(&ProfileClassKey::from(fact));
+        if matched {
             score.matches += 1;
         }
+        breakdown.trials.push(TrialScore {
+            session: fact.session,
+            seq: fact.seq,
+            workload: class.workload,
+            loaded: class.loaded.len(),
+            failure,
+            probability: p,
+            fit_log_loss,
+            constant_log_loss,
+            surprise,
+            matched,
+        });
     }
     Ok((score, breakdown))
 }

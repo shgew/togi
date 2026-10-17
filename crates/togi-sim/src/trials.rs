@@ -154,7 +154,7 @@ impl Trials for SimTrials {
             return storage.read(id);
         }
         match &runtime.samples_dir {
-            Some(dir) => Box::new(togi_machine::read_samples(&dir.join(id))),
+            Some(dir) => Box::new(crate::samples::read(dir, id)),
             None if runtime.samples.id.as_deref() == Some(id) => {
                 Box::new(runtime.samples.conditions().map(Ok))
             }

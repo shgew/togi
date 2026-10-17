@@ -81,6 +81,14 @@ pub enum Error {
         crate::artifact::SHA256
     )]
     ArtifactSource { path: PathBuf, sha256: String },
+    #[error("{} line {line} is not a forward record", path.display())]
+    Records {
+        path: PathBuf,
+        line: usize,
+        source: serde_json::Error,
+    },
+    #[error("the records do not pair: {0}")]
+    Unpaired(String),
     #[error("the shared-voltage fit requires 16 cores: fact {session}:{seq} has {cores}")]
     NeedsSixteenCores {
         session: SessionId,

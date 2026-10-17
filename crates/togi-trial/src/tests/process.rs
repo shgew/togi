@@ -502,6 +502,7 @@ pub(super) fn runner_over<O: Os>(
         fs: None,
         inputs: crate::procfs::Inputs::default(),
         memory: None,
+        clock: crate::clock::Clock::System,
     };
     Runner::build(options, settings, make_os).unwrap()
 }

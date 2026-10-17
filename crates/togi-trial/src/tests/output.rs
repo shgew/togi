@@ -895,9 +895,9 @@ fn a_blocked_log_write_never_stalls_supervision_and_is_reported() {
             rig.fake
                 .on_launch(emits(Source::Stdout, b"ok line\n".repeat(512 * 1024)));
             let handle = rig.start(spec(Regime::R1, &[0], secs(3))).await.unwrap();
-            let wall = std::time::Instant::now();
+            let begun = tokio::time::Instant::now();
             let run = finish(&handle).await;
-            assert!(wall.elapsed() < rig.env.timing.wait_bound(secs(3)));
+            assert!(begun.elapsed() < rig.env.timing.wait_bound(secs(3)));
             assert_eq!(run.finished.result.ran, secs(3));
             assert!(run.finished.teardown.is_ok());
             let Some(Error::Output(output)) = run.finished.errors.last() else {

@@ -190,6 +190,11 @@ fit-artifact out: _dev-shell
 forward *args: _dev-shell
     cargo run --release --locked -p togi-tool-fit -- --forward-only "$@"
 
+# Pair a candidate's forward records with a reference's and compare them exactly (`just forward-compare CANDIDATE REFERENCE --metrics FILE`)
+[group('run')]
+forward-compare candidate reference *args: _dev-shell
+    cargo run --release --locked -p togi-tool-fit -- --compare "$@"
+
 # Dispatch one step of a research campaign under its launch manifest, never the campaign itself (`just research 427 start --manifest FILE`; see docs/benchmarking.md#research-campaigns)
 [group('run')]
 research issue *args: _dev-shell

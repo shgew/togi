@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::num::{NonZeroU16, NonZeroU32};
 
-use togi_journal::{HuntEnd, HuntGroup, HuntOutcome, HuntStart, Seq};
+use togi_journal::{HuntEnd, HuntGroup, HuntStart, Seq};
 use togi_machine::{CoreId, CoreSet, PerCore, TargetOffset};
 
 use super::plan::{GroupOutcome, Plan};
@@ -137,15 +137,27 @@ impl Active {
     }
 }
 
-/// How a located hunt ended: the failure that rejected its last group and the loaded core that
-/// failure named, with the failed trial the charge reads.
+/// How a located hunt that kept the failure on the loaded cores ended: its `hunt.end`, whether
+/// every loaded core failed at CO 0, and the failure that rejected its last group.
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct LocatedEnd {
+pub(crate) struct LoadedEnd {
     pub(crate) seq: Seq,
-    pub(crate) result: HuntOutcome,
-    pub(crate) failure: Option<Seq>,
-    pub(crate) named: Option<Named>,
     pub(crate) all_zero: bool,
+    pub(crate) rejected: Option<Rejected>,
+}
+
+impl LoadedEnd {
+    pub(crate) fn named(&self) -> Option<&Named> {
+        self.rejected.as_ref()?.named.as_ref()
+    }
+}
+
+/// The failure that rejected a located hunt's last group, and the loaded core it named with the
+/// failed trial the charge reads.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct Rejected {
+    pub(crate) failure: Seq,
+    pub(crate) named: Option<Named>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -154,13 +166,21 @@ pub(crate) struct Named {
     pub(crate) failure: Box<OpenFailure>,
 }
 
-/// A multi-core R7 failure answered by a located hunt: open while `end` is empty, consumed by any
-/// end but `loaded` and charged to the loaded cores after one.
+/// Where a located hunt stands: running, consumed by any end but `loaded`, or charged to the
+/// loaded cores after a `loaded` end.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum LocatedEnd {
+    Open,
+    Consumed,
+    Loaded(LoadedEnd),
+}
+
+/// A multi-core R7 failure answered by a located hunt.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Located {
     pub(crate) hunt: NonZeroU32,
     pub(crate) source: Seq,
-    pub(crate) end: Option<LocatedEnd>,
+    pub(crate) end: LocatedEnd,
 }
 
 #[derive(Clone, Debug, PartialEq)]

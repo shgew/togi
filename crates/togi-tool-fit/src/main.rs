@@ -5,6 +5,7 @@ use std::process::ExitCode;
 
 use clap::error::ErrorKind;
 use clap::{CommandFactory as _, Parser};
+use togi_tool_fit::compare::compare_files;
 use togi_tool_fit::{Ensemble, Mode, Options, Sessions, run};
 
 /// Fit simulated machines to the real trial facts and check the fit forward on later sessions.
@@ -15,7 +16,7 @@ struct Cli {
     /// after the original research artifact, and one holding the artifact's sessions must be that artifact;
     /// --write-artifact reads the whole extract to select the artifact's rows.
     #[arg(long)]
-    facts: PathBuf,
+    facts: Option<PathBuf>,
     /// Read every session of --facts: the owner-approved fit or check of the current extract, never a
     /// research campaign's.
     #[arg(long)]
@@ -69,15 +70,58 @@ struct Cli {
         ]
     )]
     write_artifact: Option<PathBuf>,
+    /// With --forward-only, also write the check's full-precision records, one JSON line for the input,
+    /// each scored trial, each held-out session and the pool, to the new file FILE.
+    #[arg(long, value_name = "FILE", requires = "forward_only")]
+    records: Option<PathBuf>,
+    /// Pair a candidate's --records file with a reference's, run on the same rows and seal, and compare
+    /// them exactly; reads no extract and fits nothing.
+    #[arg(
+        long,
+        num_args = 2,
+        action = clap::ArgAction::Set,
+        value_names = ["CANDIDATE", "REFERENCE"],
+        conflicts_with_all = [
+            "facts",
+            "current_extract",
+            "out",
+            "seed",
+            "bootstrap",
+            "jobs",
+            "forward_only",
+            "shared_voltage_in_sample",
+            "write_artifact"
+        ]
+    )]
+    compare: Vec<PathBuf>,
+    /// With --compare, also write the comparison as a JSON object of numbers to the new file FILE.
+    #[arg(long, value_name = "FILE", requires = "compare")]
+    metrics: Option<PathBuf>,
 }
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
+    let mut stdout = std::io::stdout();
+    if let [candidate, reference] = cli.compare.as_slice() {
+        return match compare_files(candidate, reference, cli.metrics.as_deref(), &mut stdout) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => fail(&error),
+        };
+    }
+    let Some(facts) = cli.facts else {
+        Cli::command()
+            .error(
+                ErrorKind::MissingRequiredArgument,
+                "--facts FILE is required unless --compare",
+            )
+            .exit()
+    };
     let mode = match (cli.write_artifact, cli.out) {
         (Some(out), _) => Mode::WriteArtifact { out },
         (None, _) if cli.forward_only => Mode::Forward {
             seal: cli.seal,
             reference: cli.reference_machine,
+            records: cli.records,
         },
         (None, Some(out)) if cli.shared_voltage_in_sample => Mode::SharedVoltage { out },
         (None, Some(out)) => Mode::Ensemble {
@@ -95,7 +139,7 @@ fn main() -> ExitCode {
             .exit(),
     };
     let options = Options {
-        facts: cli.facts,
+        facts,
         sessions: if cli.current_extract {
             Sessions::Current
         } else {
@@ -104,7 +148,6 @@ fn main() -> ExitCode {
         jobs: cli.jobs,
         mode,
     };
-    let mut stdout = std::io::stdout();
     match run(&options, &mut stdout) {
         Ok(elapsed) => {
             let printed = match elapsed.forward {
@@ -123,13 +166,15 @@ fn main() -> ExitCode {
                 }
             }
         }
-        Err(error) => {
-            let _ = writeln!(
-                std::io::stderr(),
-                "togi-tool-fit: {}",
-                togi_machine::error_chain(&error)
-            );
-            ExitCode::FAILURE
-        }
+        Err(error) => fail(&error),
     }
+}
+
+fn fail(error: &togi_tool_fit::Error) -> ExitCode {
+    let _ = writeln!(
+        std::io::stderr(),
+        "togi-tool-fit: {}",
+        togi_machine::error_chain(error)
+    );
+    ExitCode::FAILURE
 }

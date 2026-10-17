@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use jiff::{SignedDuration, Timestamp};
+use test_case::test_case;
 use togi_journal::Event;
 use togi_machine::BootId;
 use togi_watchtest::Scenario;
@@ -49,32 +50,31 @@ fn assert_playback(
     assert_eq!(shown, clock, "at elapsed {elapsed:?}: display clock");
 }
 
-#[test]
-fn a_wall_clock_correction_in_the_recording_costs_no_playback_time() {
-    for jump in [secs(-60), secs(60)] {
-        let events = recorded(&[
-            (secs(0), "boot", Some(0)),
-            (jump + secs(10), "boot", Some(10_000)),
-            (jump + secs(20), "boot", Some(20_000)),
-            (jump + secs(30), "boot", Some(30_000)),
-        ]);
-        let mut playback = Playback::new(&events, 1, speed(1.0));
-        for (elapsed, played) in [
-            (at(0), 1),
-            (at(9), 1),
-            (at(10), 2),
-            (at(15), 2),
-            (at(20).checked_sub(Duration::from_nanos(1)).unwrap(), 2),
-            (at(20), 3),
-            (at(35), 4),
-        ] {
-            let wall = if played > 1 {
-                SignedDuration::try_from(elapsed).unwrap() + jump
-            } else {
-                SignedDuration::try_from(elapsed).unwrap()
-            };
-            assert_playback(&mut playback, elapsed, played, START + wall);
-        }
+#[test_case(secs(-60); "backwards")]
+#[test_case(secs(60); "forwards")]
+fn a_wall_clock_correction_in_the_recording_costs_no_playback_time(jump: SignedDuration) {
+    let events = recorded(&[
+        (secs(0), "boot", Some(0)),
+        (jump + secs(10), "boot", Some(10_000)),
+        (jump + secs(20), "boot", Some(20_000)),
+        (jump + secs(30), "boot", Some(30_000)),
+    ]);
+    let mut playback = Playback::new(&events, 1, speed(1.0));
+    for (elapsed, played) in [
+        (at(0), 1),
+        (at(9), 1),
+        (at(10), 2),
+        (at(15), 2),
+        (at(20).checked_sub(Duration::from_nanos(1)).unwrap(), 2),
+        (at(20), 3),
+        (at(35), 4),
+    ] {
+        let wall = if played > 1 {
+            SignedDuration::try_from(elapsed).unwrap() + jump
+        } else {
+            SignedDuration::try_from(elapsed).unwrap()
+        };
+        assert_playback(&mut playback, elapsed, played, START + wall);
     }
 }
 
@@ -91,55 +91,39 @@ fn a_monotonic_zero_is_a_stamp_not_a_missing_one() {
     assert_playback(&mut playback, at(20), 3, events[2].time);
 }
 
-#[test]
-fn without_two_monotonic_stamps_of_one_known_boot_the_wall_clock_paces_the_gap() {
-    let cases: [(Stamp, Stamp); 5] = [
-        ((secs(0), "boot", None), (secs(10), "boot", None)),
-        ((secs(0), "boot", None), (secs(10), "boot", Some(0))),
-        ((secs(0), "boot", Some(0)), (secs(10), "boot", None)),
-        (
-            (secs(0), "before", Some(100_000)),
-            (secs(10), "after", Some(0)),
-        ),
-        ((secs(0), "", Some(0)), (secs(10), "", Some(0))),
-    ];
-    for (before, after) in cases {
-        let events = recorded(&[before, after]);
-        let mut playback = Playback::new(&events, 1, speed(1.0));
-        assert_playback(&mut playback, at(9), 1, events[0].time + secs(9));
-        assert_playback(&mut playback, at(10), 2, events[1].time);
-        assert_playback(&mut playback, at(12), 2, events[1].time + secs(2));
-        assert_eq!(events.len(), 2);
-    }
+#[test_case((secs(0), "boot", None), (secs(10), "boot", None); "no monotonic stamps")]
+#[test_case((secs(0), "boot", None), (secs(10), "boot", Some(0)); "only the later stamped")]
+#[test_case((secs(0), "boot", Some(0)), (secs(10), "boot", None); "only the earlier stamped")]
+#[test_case((secs(0), "before", Some(100_000)), (secs(10), "after", Some(0)); "cross boot")]
+#[test_case((secs(0), "", Some(0)), (secs(10), "", Some(0)); "unknown boot")]
+fn without_two_monotonic_stamps_of_one_known_boot_the_wall_clock_paces_the_gap(
+    before: Stamp,
+    after: Stamp,
+) {
+    let events = recorded(&[before, after]);
+    let mut playback = Playback::new(&events, 1, speed(1.0));
+    assert_playback(&mut playback, at(9), 1, events[0].time + secs(9));
+    assert_playback(&mut playback, at(10), 2, events[1].time);
+    assert_playback(&mut playback, at(12), 2, events[1].time + secs(2));
+    assert_eq!(events.len(), 2);
 }
 
-#[test]
-fn a_backward_wall_clock_gap_is_free_and_the_next_interval_is_kept() {
-    let cases: [(&str, [Stamp; 3]); 2] = [
-        (
-            "no monotonic stamps",
-            [
-                (secs(0), "boot", None),
-                (secs(-60), "boot", None),
-                (secs(-50), "boot", None),
-            ],
-        ),
-        (
-            "cross boot",
-            [
-                (secs(0), "before", Some(100_000)),
-                (secs(-60), "after", Some(0)),
-                (secs(-50), "after", Some(10_000)),
-            ],
-        ),
-    ];
-    for (_, stamps) in cases {
-        let events = recorded(&stamps);
-        let mut playback = Playback::new(&events, 1, speed(1.0));
-        assert_playback(&mut playback, at(0), 2, events[1].time);
-        assert_playback(&mut playback, at(9), 2, events[1].time + secs(9));
-        assert_playback(&mut playback, at(10), 3, events[2].time);
-    }
+#[test_case([
+    (secs(0), "boot", None),
+    (secs(-60), "boot", None),
+    (secs(-50), "boot", None),
+]; "no monotonic stamps")]
+#[test_case([
+    (secs(0), "before", Some(100_000)),
+    (secs(-60), "after", Some(0)),
+    (secs(-50), "after", Some(10_000)),
+]; "cross boot")]
+fn a_backward_wall_clock_gap_is_free_and_the_next_interval_is_kept(stamps: [Stamp; 3]) {
+    let events = recorded(&stamps);
+    let mut playback = Playback::new(&events, 1, speed(1.0));
+    assert_playback(&mut playback, at(0), 2, events[1].time);
+    assert_playback(&mut playback, at(9), 2, events[1].time + secs(9));
+    assert_playback(&mut playback, at(10), 3, events[2].time);
 }
 
 #[test]
@@ -183,38 +167,51 @@ fn the_prefix_holds_the_events_up_to_a_sequence_number_and_at_least_the_first() 
     assert_eq!(prefix(&events, u64::MAX), 3);
 }
 
-#[test]
-fn the_speed_scales_real_time_and_saturates_instead_of_overflowing() {
-    let events = recorded(&[
+fn steady() -> Vec<Event> {
+    recorded(&[
         (secs(0), "boot", Some(0)),
         (secs(10), "boot", Some(10_000)),
         (secs(20), "boot", Some(20_000)),
-    ]);
-    let cases = [
-        (0.5, at(30), 2, secs(15)),
-        (300.0, Duration::from_millis(50), 2, secs(15)),
-        (f64::MAX, Duration::ZERO, 1, secs(0)),
-    ];
-    for (factor, elapsed, played, wall) in cases {
-        let mut playback = Playback::new(&events, 1, speed(factor));
-        assert_playback(&mut playback, elapsed, played, START + wall);
-    }
-    for elapsed in [Duration::from_nanos(1), SECOND] {
-        let mut playback = Playback::new(&events, 1, speed(f64::MAX));
-        assert_playback(&mut playback, elapsed, 3, Timestamp::MAX);
-    }
+    ])
 }
 
-#[test]
-fn a_speed_must_be_finite_and_positive() {
-    for text in [
-        "NaN", "inf", "+inf", "-inf", "Infinity", "0", "-0", "-1", "", "fast",
-    ] {
-        assert!(text.parse::<Speed>().is_err(), "{text:?}");
-    }
-    for text in ["300", "0.5", "1e300", "1.7976931348623157e308"] {
-        assert!(text.parse::<Speed>().is_ok(), "{text:?}");
-    }
+#[test_case(0.5, at(30), 2, secs(15); "half speed")]
+#[test_case(300.0, Duration::from_millis(50), 2, secs(15); "300 times")]
+#[test_case(f64::MAX, Duration::ZERO, 1, secs(0); "largest speed before any time passes")]
+fn the_speed_scales_real_time(factor: f64, elapsed: Duration, played: usize, wall: SignedDuration) {
+    let events = steady();
+    let mut playback = Playback::new(&events, 1, speed(factor));
+    assert_playback(&mut playback, elapsed, played, START + wall);
+}
+
+#[test_case(Duration::from_nanos(1); "one nanosecond")]
+#[test_case(SECOND; "one second")]
+fn the_largest_speed_saturates_instead_of_overflowing(elapsed: Duration) {
+    let events = steady();
+    let mut playback = Playback::new(&events, 1, speed(f64::MAX));
+    assert_playback(&mut playback, elapsed, 3, Timestamp::MAX);
+}
+
+#[test_case("NaN")]
+#[test_case("inf")]
+#[test_case("+inf"; "plus inf")]
+#[test_case("-inf"; "minus inf")]
+#[test_case("Infinity")]
+#[test_case("0"; "zero")]
+#[test_case("-0"; "negative zero")]
+#[test_case("-1"; "negative")]
+#[test_case(""; "empty")]
+#[test_case("fast")]
+fn a_speed_must_be_finite_and_positive(text: &str) {
+    assert!(text.parse::<Speed>().is_err());
+}
+
+#[test_case("300")]
+#[test_case("0.5"; "half")]
+#[test_case("1e300"; "huge")]
+#[test_case("1.7976931348623157e308"; "largest finite")]
+fn a_finite_positive_speed_is_accepted(text: &str) {
+    assert!(text.parse::<Speed>().is_ok());
 }
 
 #[test]

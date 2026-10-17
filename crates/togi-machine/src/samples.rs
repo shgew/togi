@@ -2,8 +2,6 @@ use crate::PerCore;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, Read};
-use std::path::Path;
-use togi_trialfiles::TrialFile;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct PmTable {
@@ -46,7 +44,7 @@ pub enum SampleError {
     Decode(#[source] serde_json::Error),
 }
 
-pub struct ReadSamples<R: Read = TrialFile> {
+pub struct ReadSamples<R: Read> {
     reader: Option<BufReader<R>>,
     line: Vec<u8>,
     error: Option<SampleError>,
@@ -72,10 +70,6 @@ impl<R: Read> ReadSamples<R> {
             },
         }
     }
-}
-
-pub fn read_samples(dir: &Path) -> ReadSamples {
-    ReadSamples::from_open(togi_trialfiles::open(&dir.join(togi_trialfiles::SAMPLES)))
 }
 
 impl<R: Read> Iterator for ReadSamples<R> {

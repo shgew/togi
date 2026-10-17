@@ -575,6 +575,7 @@ fn seam() {
         fs: None,
         inputs: crate::procfs::Inputs::default(),
         memory: None,
+        clock: crate::clock::Clock::System,
         durability: crate::samples::Durability::Unsynced,
         unscoped: true,
         user_manager: false,

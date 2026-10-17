@@ -491,13 +491,15 @@ impl Ledger {
             .last()
     }
 
-    /// The latest complete run in `role` with the same evaluator, arguments and pinned data as `run`.
+    /// The latest complete run in `role` with the same evaluator, measured arguments and pinned data as
+    /// `run`; where each run writes its `--records` is no part of what it measures.
     pub fn pair(&self, run: &Started, role: Role) -> Option<&Started> {
+        let wanted = measured(&run.args);
         self.starts()
             .filter(|started| {
                 started.role == role
                     && started.recipe == run.recipe
-                    && started.args == run.args
+                    && measured(&started.args) == wanted
                     && started.pins == run.pins
                     && self
                         .end(started.seq)
@@ -505,4 +507,18 @@ impl Ledger {
             })
             .last()
     }
+}
+
+/// A run's arguments without its `--records` path, the one output a paired run names for itself.
+fn measured(args: &[String]) -> Vec<&str> {
+    let mut kept = Vec::with_capacity(args.len());
+    let mut args = args.iter();
+    while let Some(arg) = args.next() {
+        if arg == "--records" {
+            args.next();
+        } else if !arg.starts_with("--records=") {
+            kept.push(arg.as_str());
+        }
+    }
+    kept
 }
