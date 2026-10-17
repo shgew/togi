@@ -1,10 +1,9 @@
-use togi_machine::{CcdId, CoreId, CoreSet, PerCore};
+use togi_machine::{CcdId, CoreId, CoreSet, PerCore, TargetOffset};
 use togi_requests::{VOLTS_PER_COUNT, groups, top};
 
 use super::measurements::{Measurement, Measurements};
 use togi_journal::Seq;
 
-use super::Applied;
 use crate::{Depth, LoadKey, Profile, Ranking, Topology};
 
 /// Where one loaded core's request came from.
@@ -76,7 +75,7 @@ impl CcdOrder {
         self.groups.iter().enumerate().find_map(|(at, group)| {
             let cores: CoreSet = group
                 .iter()
-                .filter(|&core| profile.at(core).signed() != 0)
+                .filter(|&core| profile.get(core).is_some_and(|at| at.signed() != 0))
                 .collect();
             (!cores.is_empty()).then_some(Movable {
                 cores,
@@ -147,9 +146,11 @@ impl RequestOrder {
             let measurement = source(part);
             let mut here = PerCore::default();
             for core in loaded {
-                let applied = profile.at(core).signed();
+                let Some(applied) = profile.get(core).map(TargetOffset::signed) else {
+                    continue;
+                };
                 let measured = measurement.and_then(|m| {
-                    let shift = f64::from(applied - m.profile().at(core).signed());
+                    let shift = f64::from(applied - m.profile().get(core)?.signed());
                     m.request(core)
                         .map(|request| (m.seq(), request + VOLTS_PER_COUNT * shift))
                 });

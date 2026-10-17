@@ -2,10 +2,12 @@
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
+use std::num::NonZeroU8;
 
 use ratatui::text::{Line, Span};
 use togi_journal::Seq;
 use togi_machine::{CcdId, CoreSet, TargetOffset};
+use togi_tuner::TurnKind;
 
 use super::super::colours::Paint;
 use super::super::dash::note_line;
@@ -53,14 +55,17 @@ pub(super) fn turn_lines(
             marker = Line::from(stage_marker(scene, "►"));
             (style, faint) = (Paint::White, Paint::Text);
         }
-        let mut what = if turn.step == 1 {
+        let mut what = if turn.kind
+            == (TurnKind::Search {
+                step: NonZeroU8::MIN,
+            }) {
             "search: 1 count deeper".to_owned()
         } else {
             format!("search: {}", regime_list(&turn.regimes))
         };
         let mut so_far = "none yet".to_owned();
         if let Some(core) = scene.core(turn.core) {
-            if let Some(n) = core.confirm.filter(|_| turn.confirm) {
+            if let Some(n) = core.confirm.filter(|_| turn.kind == TurnKind::Confirm) {
                 what = format!(
                     "confirm: light trial {} of {}",
                     (n.light + 1).min(n.needed),
@@ -334,11 +339,14 @@ pub(super) fn phase2_lines(scene: &Scene<'_>, width: usize) -> Vec<Line<'static>
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroU8;
+
     use jiff::Timestamp;
     use jiff::tz::TimeZone;
     use togi_machine::Regime;
     use togi_tuner::{
         BiosProfile, Candidate, DeepeningCheck, DeepeningView, PhasePlan, Profile, SearchTurn,
+        TurnKind,
     };
 
     use super::super::super::layout::SizeClass;
@@ -360,11 +368,10 @@ mod tests {
         let cores = [view];
         let turns = [SearchTurn {
             core: core(11),
-            confirm: true,
+            kind: TurnKind::Confirm,
             regimes: vec![Regime::R1],
             offset: off(-7),
             workload: togi_machine::workloads(Regime::R1)[0].id(),
-            step: 1,
             light,
             heavy,
             needed: 5,
@@ -416,11 +423,12 @@ mod tests {
         let column = t.turns[2].w;
         let turn = |step: u8, regimes: Vec<Regime>| SearchTurn {
             core: core(2),
-            confirm: false,
+            kind: TurnKind::Search {
+                step: NonZeroU8::new(step).expect("a search step"),
+            },
             regimes,
             offset: off(-35),
             workload: togi_machine::workloads(Regime::R1)[0].id(),
-            step,
             light: 0,
             heavy: 0,
             needed: 5,
@@ -480,11 +488,12 @@ mod tests {
         other.solo = Some(off(-18));
         let turn = |core_id: u8| SearchTurn {
             core: core(core_id),
-            confirm: false,
+            kind: TurnKind::Search {
+                step: NonZeroU8::MIN,
+            },
             regimes: vec![Regime::R1],
             offset: off(-7),
             workload: togi_machine::workloads(Regime::R1)[0].id(),
-            step: 1,
             light: 0,
             heavy: 0,
             needed: 5,

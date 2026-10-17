@@ -14,7 +14,6 @@ use super::plan::{
 use super::state::{Active, GroupRecord};
 use crate::failures::Pending;
 use crate::ledger::carried_clause;
-use crate::r7::Applied;
 use crate::r7::respond::R7Route;
 use crate::state::Run;
 use crate::{
@@ -33,12 +32,9 @@ pub(super) enum Next {
 }
 
 fn member_list(profile: &Profile, cores: CoreSet) -> Vec<Member> {
-    cores
-        .iter()
-        .map(|core| Member {
-            core,
-            offset: profile.at(core),
-        })
+    profile
+        .among(cores)
+        .map(|(core, offset)| Member { core, offset })
         .collect()
 }
 
@@ -313,20 +309,22 @@ impl Run {
     ) -> Option<ProbeStep> {
         let group = hunt.groups.get(hunt.first_probe().checked_sub(1)?)?;
         let singleton = std::iter::once(core).collect();
+        let (Some(failing), Some(anchor)) = (hunt.failing.get(core), hunt.parked.get(core)) else {
+            return None;
+        };
         if group.payload.cores != singleton
             || group.payload.inferred.is_some()
             || group.profile != group_profile(&hunt.parked, &hunt.failing, singleton)
             || self.answer_of(hunt, group).outcome != Some(GroupOutcome::Failed)
-            || self.core(core).offset.shallower_than(hunt.failing.at(core))
-            || hunt.parked.at(core).get() - hunt.failing.at(core).get() <= 1
+            || self.core(core).offset.shallower_than(failing)
+            || anchor.get() - failing.get() <= 1
         {
             return None;
         }
-        let anchor = hunt.parked.at(core);
         let mut probes = self.probe_results(hunt);
         let stopped = || {
             ProbeStep::Done(Found {
-                members: std::iter::once((core, hunt.failing.at(core))).collect(),
+                members: std::iter::once((core, failing)).collect(),
                 stopped: true,
             })
         };
@@ -378,35 +376,36 @@ impl Run {
                 if let Some(step) = self.singleton_probing(hunt, core) {
                     match step {
                         ProbeStep::Run(probe) => {
-                            let anchor = probe.offset == hunt.parked.at(core);
-                            let reason = if anchor {
-                                format!(
+                            let reason = match hunt.parked.get(core) {
+                                Some(anchor) if anchor != probe.offset => format!(
+                                    "; probing core {:02} between its reproduced singleton failure and the passing parked anchor {}",
+                                    core.get(),
+                                    anchor.get()
+                                ),
+                                Some(_) | None => format!(
                                     "; testing core {:02} at parked offset {} to establish a safe singleton anchor; CO 0 is not assumed to pass",
                                     core.get(),
                                     probe.offset.get()
-                                )
-                            } else {
-                                format!(
-                                    "; probing core {:02} between its reproduced singleton failure and the passing parked anchor {}",
-                                    core.get(),
-                                    hunt.parked.at(core).get()
-                                )
+                                ),
                             };
                             return Settled::Plan(self.probe_group(hunt, &probe, reason));
                         }
                         ProbeStep::Done(found) => {
-                            let point = found.members.get(core).unwrap_or(hunt.failing.at(core));
-                            members.push(Member { core, offset: point });
-                            if found.stopped {
-                                reason.push_str(
-                                    "; singleton probing stopped without a safe bracket; retain the shallowest reproduced failure",
-                                );
-                            } else {
-                                let _ = write!(
-                                    reason,
-                                    "; singleton probes found failure at {} and a passing anchor or probe one count shallower",
-                                    point.get()
-                                );
+                            if let Some(point) =
+                                found.members.get(core).or_else(|| hunt.failing.get(core))
+                            {
+                                members.push(Member { core, offset: point });
+                                if found.stopped {
+                                    reason.push_str(
+                                        "; singleton probing stopped without a safe bracket; retain the shallowest reproduced failure",
+                                    );
+                                } else {
+                                    let _ = write!(
+                                        reason,
+                                        "; singleton probes found failure at {} and a passing anchor or probe one count shallower",
+                                        point.get()
+                                    );
+                                }
                             }
                         }
                     }
@@ -430,7 +429,11 @@ impl Run {
                 let broken = self.checking.profile().is_some_and(|profile| {
                     failing_members
                         .iter()
-                        .any(|member| profile.at(member.core).shallower_than(member.offset))
+                        .any(|member| {
+                    profile
+                        .get(member.core)
+                        .is_some_and(|at| at.shallower_than(member.offset))
+                })
                 });
                 if broken {
                     (HuntOutcome::Combination, base.to_owned(), set, Vec::new())
@@ -615,7 +618,7 @@ impl Run {
             return None;
         }
         if end.payload.cores.len() == 1 {
-            return Some(self.culprit_backoff(hunt, end.seq, end.payload.cores.first()?));
+            return self.culprit_backoff(hunt, end.seq, end.payload.cores.first()?);
         }
         match &end.combination {
             None => Some(self.combination_record(hunt)),
@@ -623,13 +626,19 @@ impl Run {
         }
     }
 
-    fn culprit_backoff(&self, hunt: &Active, end: Seq, id: togi_machine::CoreId) -> DecisionAction {
+    fn culprit_backoff(
+        &self,
+        hunt: &Active,
+        end: Seq,
+        id: togi_machine::CoreId,
+    ) -> Option<DecisionAction> {
         let core = self.core(id);
         let failing = hunt
             .end
             .as_ref()
             .and_then(|end| end.payload.members.iter().find(|member| member.core == id))
-            .map_or(hunt.failing.at(id), |member| member.offset);
+            .map(|member| member.offset)
+            .or_else(|| hunt.failing.get(id))?;
         let point = self
             .failure_point(id)
             .filter(|&fail| fail.shallower_than(failing))
@@ -650,7 +659,7 @@ impl Run {
             ),
             kept => (kept, String::new()),
         };
-        DecisionAction::new(
+        Some(DecisionAction::new(
             TunerDecision {
                 core: id,
                 activity: Activity::Hunt,
@@ -669,7 +678,7 @@ impl Run {
                 ),
             },
             vec![end],
-        )
+        ))
     }
 
     fn combination_record(&self, hunt: &Active) -> DecisionAction {
@@ -689,10 +698,11 @@ impl Run {
         };
         let mut reason = format!("hunt {} found a combined failure", hunt.id);
         if let Some(profile) = self.checking.profile() {
-            if let Some(member) = members
-                .iter()
-                .find(|member| profile.at(member.core).shallower_than(member.offset))
-            {
+            if let Some(member) = members.iter().find(|member| {
+                profile
+                    .get(member.core)
+                    .is_some_and(|at| at.shallower_than(member.offset))
+            }) {
                 reason = format!(
                     "no backoff: core {:02} is already shallower",
                     member.core.get()

@@ -14,8 +14,9 @@ use togi_machine::{
 };
 use togi_tuner::{
     Between, ClassKey, CyclePart, CyclePlan, CycleStep, Forecast, GroupState, HuntGroup, HuntPart,
-    HuntPlan, Load, PartNo, PhaseNo, PhasePlan, Profile, R7CoreStatus, Requirement, RerunPlan,
-    Secs, StepNo, Topology, TrialContext, TrialPlan, Uncertainty, Window, WorkloadChoice,
+    HuntPlan, Lengths, Load, PartNo, PhaseNo, PhasePlan, Profile, Quota, R7CoreStatus, Requirement,
+    RerunPlan, Secs, StepNo, Topology, TrialContext, TrialPlan, Uncertainty, Window,
+    WorkloadChoice,
 };
 
 use super::{
@@ -211,10 +212,13 @@ fn part(cores: &[u8], ccd: Option<u8>, full: bool, running: bool) -> CyclePart {
         ccd: ccd.map(CcdId),
         full,
         partial: !full,
-        short: 1,
-        short_s: 120,
-        long: 0,
-        long_s: 0,
+        lengths: Some(Lengths {
+            short: Quota {
+                count: 1,
+                secs: 120,
+            },
+            long: None,
+        }),
         passed: 0,
         failed: 0,
         done: false,
@@ -301,10 +305,13 @@ fn hunt_plan() -> HuntPlan {
         rerun: RerunPlan {
             regime: Regime::R7,
             cores: CoreSet::default(),
-            short: 0,
-            short_s: 0,
-            long: 0,
-            long_s: 0,
+            lengths: Lengths {
+                short: Quota {
+                    count: 1,
+                    secs: 600,
+                },
+                long: None,
+            },
         },
     }
 }

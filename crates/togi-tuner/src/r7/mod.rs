@@ -13,20 +13,5 @@ pub(crate) mod state;
 pub(crate) mod status;
 pub(crate) mod target;
 
-use togi_machine::{CoreId, TargetOffset};
-
-use crate::Profile;
-
-/// A profile's offset for a core of its topology. A core it does not hold reads as zero.
-pub(crate) trait Applied {
-    fn at(&self, core: CoreId) -> TargetOffset;
-}
-
-impl Applied for Profile {
-    fn at(&self, core: CoreId) -> TargetOffset {
-        self.get(core).unwrap_or(TargetOffset::ZERO)
-    }
-}
-
 #[cfg(test)]
 mod tests;

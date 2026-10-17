@@ -4,7 +4,6 @@ use togi_machine::{CoreId, CoreSet, TargetOffset};
 
 use togi_machine::WorkloadId;
 
-use super::Applied;
 use crate::{BackendId, Depth, Profile};
 
 const BUCKETS: usize = 51;
@@ -72,8 +71,8 @@ impl SelfSufficiency {
         top: CoreSet,
         profile: &Profile,
     ) {
-        for core in top {
-            let at = bucket(profile.at(core));
+        for (core, offset) in profile.among(top) {
+            let at = bucket(offset);
             let cell = self.cells.entry((backend, workload, core)).or_default();
             cell.total.add(at);
             cell.by_load.entry(loaded).or_default().add(at);

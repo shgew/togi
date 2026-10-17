@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 use togi_machine::{CcdId, CoreId, Regime, WorkloadId, workloads};
 
-use super::Applied;
 use super::order::{Lane, RequestOrder};
 use crate::state::Run;
 use crate::{LoadKey, Profile};
@@ -36,8 +35,8 @@ impl Run {
                     &offsets,
                 );
                 let top = order.top();
-                for core in part {
-                    let passes = self.r7.status.passes(backend, id, core, offsets.at(core));
+                for (core, offset) in offsets.among(part) {
+                    let passes = self.r7.status.passes(backend, id, core, offset);
                     out.push(R7CoreStatus {
                         core,
                         ccd,

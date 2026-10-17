@@ -4,7 +4,6 @@ use togi_journal::{Activity, Decision, Seq, TunerDecision};
 use togi_machine::{CcdId, Condition, CoreId, CoreSet, PerCore, Signal, TargetOffset};
 use togi_requests::groups;
 
-use super::Applied;
 use super::escalation::Escalation;
 use super::failed::FailedTrial;
 use super::order::lowest_ranked;
@@ -199,7 +198,7 @@ impl Run {
     }
 
     fn at_zero_in(profile: &Profile, core: CoreId) -> bool {
-        profile.at(core) == TargetOffset::ZERO
+        profile.get(core) == Some(TargetOffset::ZERO)
     }
 
     /// Whether a named failure counts against its named core. A core named at CO 0 on a CCD with
@@ -242,9 +241,9 @@ impl Run {
     }
 
     fn shallower_than_failed(&self, view: &Failed<'_>, core: CoreId) -> bool {
-        self.core(core)
-            .offset
-            .shallower_than(view.profile().at(core))
+        view.profile()
+            .get(core)
+            .is_some_and(|failed| self.core(core).offset.shallower_than(failed))
     }
 
     /// Whether every core a decision against `id` could move already sits shallower than in the
@@ -568,7 +567,7 @@ impl Run {
         if !charge.named {
             cause.extend(self.ranking.as_ref().map(|ranking| ranking.seq));
         }
-        Some(self.backoff(view, chosen, cause, charge))
+        self.backoff(view, chosen, cause, charge)
     }
 
     fn backoff(
@@ -577,10 +576,10 @@ impl Run {
         id: CoreId,
         mut cause: Vec<Seq>,
         mut charge: Charge,
-    ) -> R7Response {
+    ) -> Option<R7Response> {
         let record = view.record;
         let failing = view.trial.failing_request(id);
-        let applied = view.profile().at(id);
+        let applied = view.profile().get(id)?;
         let n = self.config.needed;
         let backend = self
             .evidence
@@ -711,7 +710,7 @@ impl Run {
             },
             cause,
         );
-        R7Response::Backoff { decision, why }
+        Some(R7Response::Backoff { decision, why })
     }
 
     /// The route of one multi-core R7 failure whose cores `handled` already answered.

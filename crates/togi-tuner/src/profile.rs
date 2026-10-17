@@ -65,6 +65,25 @@ impl Profile {
         Self(cores.iter().map(|core| (core, offset(core))).collect())
     }
 
+    /// The profile with each core's offset replaced by `offset` of it.
+    #[must_use]
+    pub(crate) fn map(&self, mut offset: impl FnMut(CoreId, TargetOffset) -> TargetOffset) -> Self {
+        Self(
+            self.0
+                .iter()
+                .map(|(core, at)| (core, offset(core, at)))
+                .collect(),
+        )
+    }
+
+    /// The offsets of the cores of `cores` the profile holds.
+    pub(crate) fn among(
+        &self,
+        cores: CoreSet,
+    ) -> impl Iterator<Item = (CoreId, TargetOffset)> + '_ {
+        self.iter().filter(move |&(core, _)| cores.contains(core))
+    }
+
     /// The offset of `core`, or `None` for a core outside the profile.
     pub fn get(&self, core: CoreId) -> Option<TargetOffset> {
         self.0.get(core)

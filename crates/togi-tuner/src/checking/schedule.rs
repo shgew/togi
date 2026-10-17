@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use togi_config::Config;
 use togi_machine::{CcdId, CoreSet, Regime, WorkloadId, pick_workload};
 
-use super::chains::R7Step;
+use super::chains::{Link, R7Step};
 use crate::config::TunerConfig;
 use crate::{ClassKey, Secs, Topology};
 
@@ -123,15 +123,16 @@ fn r7_parts(
             R7PartRole::Ccd,
         ));
         for node in started.into_iter().flat_map(|step| step.current(ccd)) {
-            if node.cores.len() >= 2 {
-                parts.push(r7_part(
+            match node.link {
+                Link::Partial(cores) if cores.len() >= 2 => parts.push(r7_part(
                     config,
                     topo,
                     workload,
-                    node.cores,
+                    cores,
                     Some(ccd),
                     R7PartRole::Partial,
-                ));
+                )),
+                Link::Partial(_) | Link::End => {}
             }
         }
     }
@@ -308,7 +309,7 @@ mod tests {
     fn partial(profile: Profile) -> Node {
         Node {
             part: NonZeroU32::MIN,
-            cores: set(&[0, 1]),
+            link: Link::Partial(set(&[0, 1])),
             profile,
             seq: seq(9),
         }

@@ -18,7 +18,7 @@ use togi_machine::Regime;
 use crate::state::Run;
 use crate::{ClassKey, FoldError, Profile, Topology, TrialContext, Window};
 
-pub(crate) use chains::{Node, R7Step};
+pub(crate) use chains::{Link, Node, R7Step};
 pub(crate) use reruns::Reruns;
 pub(crate) use schedule::{PartPlan, Quota, StepPlan};
 pub use schedule::{R7PartRole, r7_part_passes};
@@ -471,7 +471,7 @@ impl Run {
             chain.ccd,
             Node {
                 part: chain.part,
-                cores: chain.cores,
+                link: Link::recorded(chain.cores),
                 profile,
                 seq: event.seq,
             },

@@ -7,13 +7,39 @@ use togi_machine::{CcdId, CoreSet};
 use crate::Profile;
 
 /// One derived partial of a CCD's chain: the loaded set the predecessor's top group left, the
-/// profile it was derived at, and the event that recorded it. An empty set ends the chain.
+/// profile it was derived at, and the event that recorded it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct Node {
     pub(crate) part: NonZeroU32,
-    pub(crate) cores: CoreSet,
+    pub(crate) link: Link,
     pub(crate) profile: Profile,
     pub(crate) seq: Seq,
+}
+
+/// What a chain node derives: the next partial's loaded cores, or the end of the chain.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Link {
+    Partial(CoreSet),
+    End,
+}
+
+impl Link {
+    /// The link a `checking.chain` records, whose empty set ends the chain.
+    pub(crate) fn recorded(cores: CoreSet) -> Self {
+        if cores.is_empty() {
+            Self::End
+        } else {
+            Self::Partial(cores)
+        }
+    }
+
+    /// The loaded set a `checking.chain` records for the link.
+    pub(crate) fn recorded_cores(self) -> CoreSet {
+        match self {
+            Self::Partial(cores) => cores,
+            Self::End => CoreSet::default(),
+        }
+    }
 }
 
 /// A CCD's chain as recorded, and how much of it stands at the checking profile: the prefix whose
@@ -37,13 +63,13 @@ impl Chain {
     pub(crate) fn complete(&self) -> bool {
         self.current()
             .last()
-            .is_some_and(|node| node.cores.is_empty())
+            .is_some_and(|node| node.link == Link::End)
     }
 
     pub(crate) fn record(&mut self, node: Node) {
         match self.nodes.iter().position(|old| old.part == node.part) {
             None => self.nodes.push(node),
-            Some(at) if node.cores.is_empty() => {
+            Some(at) if node.link == Link::End => {
                 self.nodes.truncate(at);
                 self.nodes.push(node);
             }

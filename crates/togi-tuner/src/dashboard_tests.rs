@@ -1,4 +1,4 @@
-use std::num::NonZeroU32;
+use std::num::{NonZeroU8, NonZeroU32};
 
 use togi_journal::{Activity, HuntGroup, HuntStage, HuntStart, Member, Outcome, Seq};
 use togi_machine::{Condition, Regime, workloads};
@@ -7,7 +7,9 @@ use crate::chain_tests::{
     FULL_REQUESTS, PARTIAL_REQUESTS, SHORT, STARTS, chain_journal, decided, journal, one_ccd,
     pass_part, run, shallower, two_ccds,
 };
-use crate::dashboard::{CyclePart, GroupState, MemberProbe, TrialRequirement};
+use crate::dashboard::{
+    CyclePart, GroupState, Lengths, MemberProbe, Quota, TrialRequirement, TurnKind,
+};
 use crate::hunt::plan::GroupOutcome;
 use crate::hunt::support::{
     at, attribute, cancel_hunt, group_of, hunt_of, ids, limit_session, projection_cases,
@@ -45,16 +47,26 @@ fn step_record(j: &Journal, step: u32) -> togi_journal::Payload {
     .into()
 }
 
+fn short_secs(part: &CyclePart) -> u32 {
+    part.lengths.expect("the part has trials").short.secs
+}
+
 fn part(cores: &[u8], ccd: Option<u8>, partial: bool, short_s: u32, long: (u32, u32)) -> CyclePart {
     CyclePart {
         cores: set(cores),
         ccd: ccd.map(togi_machine::CcdId),
         full: !partial,
         partial,
-        short: 3,
-        short_s,
-        long: long.0,
-        long_s: long.1,
+        lengths: Some(Lengths {
+            short: Quota {
+                count: 3,
+                secs: short_s,
+            },
+            long: (long.0 > 0).then_some(Quota {
+                count: long.0,
+                secs: long.1,
+            }),
+        }),
         passed: 0,
         failed: 0,
         done: false,
@@ -293,7 +305,7 @@ fn cycle_plan_repeated_partial_requirements() {
     let view = j.state.cycle_plan();
     let got = &view.steps[3].parts[1];
     assert!(
-        got.short == 6 && got.long == 2 && got.passed == 2 && !got.done && got.running,
+        got.counts() == (6, 2) && got.passed == 2 && !got.done && got.running,
         "{got:?}"
     );
     assert!(
@@ -357,7 +369,7 @@ fn cycle_plan_credits_each_quota_only_up_to_its_count() {
     let (intent, trial) = j.intent(&long);
     let got = parts(&j, 0)[1].clone();
     assert!(
-        got.short == 3 && got.long == 1 && got.passed == 3 && !got.done && got.running,
+        got.counts() == (3, 1) && got.passed == 3 && !got.done && got.running,
         "five short passes credit three: {got:?}"
     );
     j.end(intent, &trial, Outcome::Pass);
@@ -376,14 +388,14 @@ fn cycle_plan_one_ccd_merges_coincident_durations() {
     let all = [0, 1, 2, 3, 4, 5, 6, 7];
     let view = parts(&j, 0);
     assert!(
-        view.len() == 1 && view[0].full && view[0].short == 4 && view[0].long == 0,
+        view.len() == 1 && view[0].full && view[0].counts() == (4, 0),
         "{view:?}"
     );
     pass_part_merged(&mut j, &all);
     decide_next(&mut j);
     let got = parts(&j, 0)[1].clone();
     assert!(
-        got.partial && !got.full && got.short == 4 && got.long == 0 && got.short_s == 1200,
+        got.partial && !got.full && got.counts() == (4, 0) && short_secs(&got) == 1200,
         "{got:?}"
     );
     let plan = j.next_trial();
@@ -1100,7 +1112,10 @@ fn search_turns_order_and_confirmation() {
         turns.iter().map(|turn| turn.core).collect::<Vec<_>>(),
         [core(0), core(1), core(2)]
     );
-    assert!(turns.iter().all(|turn| !turn.confirm && turn.step == 5));
+    assert!(turns.iter().all(|turn| turn.kind
+        == TurnKind::Search {
+            step: NonZeroU8::new(5).unwrap()
+        }));
     let plan = j.next_trial();
     j.intent(&plan);
     let running: Vec<_> = j
@@ -1218,7 +1233,8 @@ fn stored_requirement_separates_class_count_and_part() {
         })
     );
     let part = &projection.cycle_plan.steps[0].parts[1];
-    assert_eq!(part.short + part.long, 4, "{part:?}");
+    let (short, long) = part.counts();
+    assert_eq!(short + long, 4, "{part:?}");
     assert_eq!(part.passed + part.failed + 1, 1, "{part:?}");
     assert!(!part.done && !part.running, "{part:?}");
     assert_eq!(fresh(&j.events).project(), projection);
@@ -1343,7 +1359,7 @@ fn config_reload_keeps_the_running_parts_stored_requirement() {
     let (at, stored) = running(&j).expect("the trial's part is not running");
     let secs = j.run().config.checking_trial.get();
     assert!(
-        stored.short_s == secs && stored.short == 1 && stored.passed == 0,
+        short_secs(&stored) == secs && stored.counts() == (1, 0) && stored.passed == 0,
         "{stored:?}"
     );
     let changed = secs + 1;
@@ -1383,7 +1399,7 @@ fn config_reload_keeps_the_running_parts_stored_requirement() {
     );
     let rebuilt = &parts(&j, 0)[at];
     assert!(
-        rebuilt.short_s == changed && rebuilt.passed == 0,
+        short_secs(rebuilt) == changed && rebuilt.passed == 0,
         "the ended part kept the old requirement: {rebuilt:?}"
     );
 }
@@ -1441,4 +1457,59 @@ fn search_turns_keep_an_unfinished_second_regime_first_then_rotate_past_the_curs
     decide_next(&mut j);
     assert_eq!(turns(&j), rotated);
     j.assert_resumes();
+}
+
+#[test]
+fn absent_lengths_and_confirmation_turns_keep_their_flat_state_shape() {
+    let short_only = part(&[0, 1], Some(0), true, 600, (0, 0));
+    let json = serde_json::to_value(&short_only).unwrap();
+    assert_eq!(
+        (
+            &json["short"],
+            &json["short_s"],
+            &json["long"],
+            &json["long_s"]
+        ),
+        (&3.into(), &600.into(), &0.into(), &0.into())
+    );
+    assert_eq!(
+        serde_json::from_value::<CyclePart>(json).unwrap(),
+        short_only
+    );
+    let none = CyclePart {
+        lengths: None,
+        ..short_only
+    };
+    let json = serde_json::to_value(&none).unwrap();
+    assert_eq!((&json["short"], &json["short_s"]), (&0.into(), &0.into()));
+    assert_eq!(serde_json::from_value::<CyclePart>(json).unwrap(), none);
+
+    let j = Journal::search_at(&[-20, -20, -20]);
+    let turn = j.state.search_turns()[0].clone();
+    for kind in [
+        TurnKind::Confirm,
+        TurnKind::Search {
+            step: NonZeroU8::MIN,
+        },
+    ] {
+        let turn = crate::SearchTurn {
+            kind,
+            ..turn.clone()
+        };
+        let json = serde_json::to_value(&turn).unwrap();
+        let flat = (json["confirm"].as_bool(), json["step"].as_u64());
+        let want = match kind {
+            TurnKind::Confirm => (Some(true), Some(0)),
+            TurnKind::Search { step } => (Some(false), Some(u64::from(step.get()))),
+        };
+        assert_eq!(flat, want);
+        assert_eq!(
+            serde_json::from_value::<crate::SearchTurn>(json).unwrap(),
+            turn
+        );
+    }
+    let mut json = serde_json::to_value(&turn).unwrap();
+    json["confirm"] = true.into();
+    json["step"] = 5.into();
+    assert!(serde_json::from_value::<crate::SearchTurn>(json).is_err());
 }

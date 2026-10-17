@@ -6,7 +6,8 @@ use togi_machine::{
     CcdId, Condition, CoreSet, ObservedOffset, PerCore, Regime, Signal, TargetOffset, workloads,
 };
 use togi_tuner::{
-    Action, CyclePart, CyclePlan, CycleStep, GroupState, HuntGroup, HuntPlan, RerunPlan, StepNo,
+    Action, CyclePart, CyclePlan, CycleStep, GroupState, HuntGroup, HuntPlan, Lengths, Quota,
+    RerunPlan, StepNo,
 };
 
 use super::kit::*;
@@ -111,10 +112,13 @@ pub(super) fn plan(groups: Vec<HuntGroup>) -> HuntPlan {
         rerun: RerunPlan {
             regime: Regime::R7,
             cores: CoreSet::default(),
-            short: 0,
-            short_s: 0,
-            long: 0,
-            long_s: 0,
+            lengths: Lengths {
+                short: Quota {
+                    count: 1,
+                    secs: 600,
+                },
+                long: None,
+            },
         },
     }
 }
@@ -466,10 +470,10 @@ pub(super) fn step(regime: Regime, done: bool) -> CycleStep {
             ccd: None,
             full: true,
             partial: false,
-            short: 1,
-            short_s: 60,
-            long: 0,
-            long_s: 0,
+            lengths: Some(Lengths {
+                short: Quota { count: 1, secs: 60 },
+                long: None,
+            }),
             passed: 0,
             failed: 0,
             done,
