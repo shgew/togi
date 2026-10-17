@@ -2,7 +2,7 @@ use std::num::NonZeroU32;
 
 use jiff::tz::TimeZone;
 use togi_config::Config;
-use togi_journal::{Build, Event, MemFs, SCHEMA};
+use togi_journal::{Build, Event, FixStamp, MemFs, SCHEMA};
 use togi_machine::CancellationToken;
 use togi_render::Renderer;
 use togi_session::{ConfigSource, StopPolicy};
@@ -39,7 +39,7 @@ pub(crate) fn session(
             rev: None,
             ruleset: 1,
             schema: SCHEMA,
-            fixes: 0,
+            fixes: FixStamp::none(),
             evidence: 1,
         },
         simulator,

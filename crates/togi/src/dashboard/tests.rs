@@ -1,29 +1,16 @@
 use std::fs::File;
-use std::os::fd::{AsFd as _, OwnedFd};
+use std::os::fd::AsFd as _;
 
 use rustix::event::{PollFd, PollFlags, Timespec, poll};
-use rustix::pty::{OpenptFlags, grantpt, openpt, ptsname, unlockpt};
 use rustix::termios::{LocalModes, tcgetattr};
+use togi_render::open_pty;
 
 use super::{QuietInput, discard_on};
-
-fn terminal() -> (OwnedFd, File) {
-    let master = openpt(OpenptFlags::RDWR | OpenptFlags::NOCTTY).unwrap();
-    grantpt(&master).unwrap();
-    unlockpt(&master).unwrap();
-    let name = ptsname(&master, Vec::new()).unwrap();
-    let slave = File::options()
-        .read(true)
-        .write(true)
-        .open(std::str::from_utf8(name.as_bytes()).unwrap())
-        .unwrap();
-    (master, slave)
-}
 
 #[test]
 fn real_fs_echo_and_line_buffering_stay_off_until_the_input_is_given_back_and_the_signal_keys_stay_on()
  {
-    let (_master, slave) = terminal();
+    let (_master, slave) = open_pty().unwrap();
     let before = tcgetattr(&slave).unwrap().local_modes;
     assert!(before.contains(LocalModes::ECHO | LocalModes::ICANON | LocalModes::ISIG));
     let quiet = QuietInput::enter(slave.as_fd()).unwrap().unwrap();
@@ -42,7 +29,7 @@ fn real_fs_a_stream_that_is_not_a_terminal_is_left_alone() {
 
 #[test]
 fn real_fs_typed_ahead_input_is_dropped() {
-    let (master, slave) = terminal();
+    let (master, slave) = open_pty().unwrap();
     let _quiet = QuietInput::enter(slave.as_fd()).unwrap();
     rustix::io::write(&master, b"typed\n").unwrap();
     let readable = |file: &File| {
@@ -133,7 +120,7 @@ fn the_gate_says_for_each_event_line_whether_it_kept_it_off_the_screen() {
 
 #[test]
 fn real_fs_input_typed_while_the_dashboard_showed_is_dropped_when_the_input_is_given_back() {
-    let (master, slave) = terminal();
+    let (master, slave) = open_pty().unwrap();
     let quiet = QuietInput::enter(slave.as_fd()).unwrap().unwrap();
     rustix::io::write(&master, b"typed during the run\n").unwrap();
     let readable = |file: &File| {

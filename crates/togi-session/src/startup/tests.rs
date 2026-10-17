@@ -4,11 +4,11 @@ use std::num::NonZeroU32;
 use std::rc::Rc;
 
 use togi_config::Config;
-use togi_defect::{Clause, DefectId, Entry};
+use togi_defect::{Clause, Entry};
 use togi_journal::fs::{Fault as FsFault, Op};
 use togi_journal::{
-    Activity, Decision, DefectDirection, Event, EventKind, Payload, RetryTarget, SessionContext,
-    ShutdownReason, TunerDecision,
+    Activity, Decision, DefectDirection, DefectId, Event, EventKind, Payload, RetryTarget,
+    SessionContext, ShutdownReason, TunerDecision,
 };
 use togi_machine::{
     BootId, CancellationToken, Clock, Error, Host, Kernel, KernelCursor, KernelRead, Partial,
@@ -23,7 +23,7 @@ use togi_tuningboot::{Bootloader, Environment, SavedEntry};
 
 use super::*;
 use crate::emergency::Response;
-use crate::session::{ConfigSource, Prompt, PromptError, RunInput, Stop};
+use crate::session::{ConfigSource, Fault, Lifecycle, Prompt, PromptError, RunInput, Stop};
 use crate::testing::{
     Bench, MemBoot, SweepFails, ValidationFails, core, kinds_of, offsets, put, recorded_baseline,
     swept,
@@ -102,7 +102,7 @@ fn failed_checks_are_a_preflight_dead_end_citing_them_and_skip_the_sweep() {
         "failed checks: root (not root), backends (no mprime)"
     );
     assert_eq!(causes.len(), 2);
-    assert!(session.sweep.is_none());
+    assert!(matches!(session.lifecycle, Lifecycle::Unswept));
     assert_eq!(kinds_of(session.appender()).last(), Some(&"deadend"));
 }
 
@@ -160,8 +160,7 @@ fn the_sweep_hands_over_the_proof_that_nothing_runs() {
     let mut session = started(&bench);
     session.preflight().unwrap();
     assert_eq!(session.sweep().unwrap(), Control::Continue);
-    assert!(session.sweep.is_some());
-    assert!(session.stopped.is_some());
+    assert!(session.lifecycle.stopped().is_some());
     assert_eq!(
         checks(&session).last().unwrap(),
         &("trial_scopes".to_owned(), true)
@@ -183,8 +182,7 @@ fn a_failed_sweep_is_a_containment_dead_end_and_leaves_the_smu_alone() {
     assert_eq!(dead_end.condition, DeadEndCondition::Containment);
     assert_eq!(dead_end.detail, "scope busy");
     assert_eq!(causes.len(), 1);
-    assert!(session.sweep.is_none());
-    assert!(session.stopped.is_none());
+    assert_eq!(session.lifecycle.fault(), Some(Fault::Containment));
     assert_eq!(
         checks(&session).last().unwrap(),
         &("trial_scopes".to_owned(), false)
@@ -251,7 +249,7 @@ fn an_unconfirmed_sweep_latches_the_containment_before_its_check_is_recorded() {
     session.preflight().unwrap();
     bench.mem.inject(FsFault::before(Op::Write, 1));
     assert!(session.sweep().is_err());
-    assert_eq!(session.fault, Some(crate::session::Fault::Containment));
+    assert_eq!(session.lifecycle.fault(), Some(Fault::Containment));
 }
 
 #[test]

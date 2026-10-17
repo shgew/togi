@@ -336,6 +336,7 @@ pub(super) fn phase2_lines(scene: &Scene<'_>, width: usize) -> Vec<Line<'static>
 mod tests {
     use jiff::Timestamp;
     use jiff::tz::TimeZone;
+    use test_case::test_case;
     use togi_machine::Regime;
     use togi_tuner::{
         BiosProfile, Candidate, DeepeningCheck, DeepeningView, PhasePlan, Profile, SearchTurn,
@@ -388,32 +389,31 @@ mod tests {
         all
     }
 
+    #[test_case(0, 0, "confirm: light trial 1 of 5"; "first light")]
+    #[test_case(4, 0, "confirm: light trial 5 of 5"; "last light")]
+    #[test_case(5, 0, "confirm: heavy trial 1 of 5"; "first heavy")]
+    #[test_case(5, 4, "confirm: heavy trial 5 of 5"; "last heavy")]
+    #[test_case(5, 5, "records the solo limit"; "complete")]
+    fn a_complete_confirmation_turn_records_the_solo_limit(light: u32, heavy: u32, want: &str) {
+        let text = confirm_turn(light, heavy);
+        assert_eq!(
+            text.iter().filter(|row| row.contains(want)).count(),
+            2,
+            "both classes say {want:?}:\n{}",
+            text.join("\n")
+        );
+    }
+
     #[test]
-    fn a_complete_confirmation_turn_records_the_solo_limit() {
-        for (name, light, heavy, want) in [
-            ("first light", 0, 0, "confirm: light trial 1 of 5"),
-            ("last light", 4, 0, "confirm: light trial 5 of 5"),
-            ("first heavy", 5, 0, "confirm: heavy trial 1 of 5"),
-            ("last heavy", 5, 4, "confirm: heavy trial 5 of 5"),
-            ("complete", 5, 5, "records the solo limit"),
-        ] {
-            let text = confirm_turn(light, heavy);
-            assert_eq!(
-                text.iter().filter(|row| row.contains(want)).count(),
-                2,
-                "{name}: both classes say {want:?}:\n{}",
-                text.join("\n")
-            );
-        }
+    fn a_partial_confirmation_turn_counts_its_light_and_heavy_trials() {
         let text = confirm_turn(2, 0).join("\n");
         assert!(text.contains("light 2/5, heavy 0/5"), "{text}");
     }
 
-    /// The 160x45 turns panel is 75 cells wide; its `this turn` column is the one the descriptions must fit.
+    /// The 160x45 turns panel is 75 cells wide.
     #[test]
-    fn the_medium_turn_descriptions_fit_their_column_whole() {
+    fn the_medium_search_turns_are_not_cut() {
         let t = Tables::new(SizeClass::Medium, 75);
-        let column = t.turns[2].w;
         let turn = |step: u8, regimes: Vec<Regime>| SearchTurn {
             core: core(2),
             confirm: false,
@@ -445,29 +445,31 @@ mod tests {
             .find(|row| row.contains("search: 1 count deeper"))
             .unwrap_or_else(|| panic!("{rows:?}"));
         assert!(!pair.contains("...") && !deeper.contains("..."), "{rows:?}");
-        for words in [
-            "search: light, then heavy",
-            "search: 1 count deeper",
-            "confirm: light trial 5 of 5",
-            "confirm: heavy trial 5 of 5",
-            "records the solo limit",
-        ] {
-            assert!(
-                super::super::super::fit::display_width(words) <= column,
-                "{words} in {column}"
-            );
-        }
-        for (light, heavy, want) in [
-            (0, 0, "confirm: light trial 1 of 5"),
-            (5, 4, "confirm: heavy trial 5 of 5"),
-        ] {
-            let rows = confirm_turn(light, heavy);
-            assert!(
-                rows.iter()
-                    .any(|row| row.contains(want) && !row.contains("...")),
-                "{rows:?}"
-            );
-        }
+    }
+
+    /// The `this turn` column of the 75-cell turns panel is the one the descriptions must fit.
+    #[test_case("search: light, then heavy"; "a search pair")]
+    #[test_case("search: 1 count deeper"; "a deeper search")]
+    #[test_case("confirm: light trial 5 of 5"; "the last light confirmation")]
+    #[test_case("confirm: heavy trial 5 of 5"; "the last heavy confirmation")]
+    #[test_case("records the solo limit"; "a complete confirmation")]
+    fn a_medium_turn_description_fits_its_column_whole(words: &str) {
+        let column = Tables::new(SizeClass::Medium, 75).turns[2].w;
+        assert!(
+            super::super::super::fit::display_width(words) <= column,
+            "{words} in {column}"
+        );
+    }
+
+    #[test_case(0, 0, "confirm: light trial 1 of 5"; "the first light trial")]
+    #[test_case(5, 4, "confirm: heavy trial 5 of 5"; "the last heavy trial")]
+    fn a_medium_confirmation_turn_is_not_cut(light: u32, heavy: u32, want: &str) {
+        let rows = confirm_turn(light, heavy);
+        assert!(
+            rows.iter()
+                .any(|row| row.contains(want) && !row.contains("...")),
+            "{rows:?}"
+        );
     }
 
     #[test]

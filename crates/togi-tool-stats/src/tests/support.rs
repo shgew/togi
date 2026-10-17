@@ -4,9 +4,9 @@ use jiff::{SignedDuration, Timestamp};
 use togi_config::Config;
 use togi_journal::{
     Activity, Attribution, Build, CheckingCycle, ConfigLoaded, CrashDetected, CycleEvent, Decision,
-    Event, Failure, HuntEnd, HuntGroup, HuntOutcome, HuntStage, HuntStart, Outcome, Payload,
-    SCHEMA, Seq, SessionStart, Shutdown, ShutdownReason, Stamp, TrialEnd, TrialId, TrialIntent,
-    TrialStart, TunerDecision,
+    Event, Failure, FixStamp, HuntEnd, HuntGroup, HuntOutcome, HuntStage, HuntStart, Outcome,
+    Payload, SCHEMA, Seq, SessionStart, Shutdown, ShutdownReason, Stamp, TrialEnd, TrialId,
+    TrialIntent, TrialStart, TunerDecision,
 };
 use togi_machine::{
     BootId, CcdId, Condition, CoreId, CoreInfo, CoreSet, PerCore, Regime, Signal, TargetOffset,
@@ -63,7 +63,7 @@ pub(super) fn build(version: &str, rev: Option<&str>) -> Build {
         rev: rev.map(str::to_owned),
         ruleset: RULESET,
         schema: SCHEMA,
-        fixes: 0,
+        fixes: FixStamp::none(),
         evidence: 1,
     }
 }

@@ -3,8 +3,8 @@ use std::collections::BTreeMap;
 use jiff::Timestamp;
 use togi_config::Config;
 use togi_journal::{
-    Attribution, Build, ConfigLoaded, CorePhase, CoreTransition, Event, Failure, Outcome, Payload,
-    SCHEMA, Seq, SessionStart, Stamp, TrialEnd, TrialId, TunerDecision, TunerWarning,
+    Attribution, Build, ConfigLoaded, CorePhase, CoreTransition, Event, Failure, FixStamp, Outcome,
+    Payload, SCHEMA, Seq, SessionStart, Stamp, TrialEnd, TrialId, TunerDecision, TunerWarning,
 };
 use togi_machine::{
     BootId, CcdId, Condition, CoreInfo, CoreSet, PerCore, Regime, Signal, TargetOffset, WorkloadId,
@@ -22,7 +22,7 @@ pub(crate) fn build() -> Build {
         rev: None,
         ruleset: crate::RULESET,
         schema: SCHEMA,
-        fixes: 0,
+        fixes: FixStamp::none(),
         evidence: crate::EVIDENCE_EPOCH,
     }
 }
@@ -801,6 +801,16 @@ impl Journal {
 
     pub(crate) fn run(&self) -> &crate::state::Run {
         self.state.run().unwrap()
+    }
+
+    /// The open trial's requirement as the dashboard shows it.
+    pub(crate) fn requirement(&self) -> crate::TrialRequirement {
+        self.state.requirement().expect("a trial is open")
+    }
+
+    /// Where the last closed trial's requirement stood when it ended.
+    pub(crate) fn history(&self) -> crate::TrialHistory {
+        self.state.trial_history().expect("a trial closed")
     }
 
     /// Starts round `round` moving `cores` to `profile`, needing `trials` passes of 120 s.

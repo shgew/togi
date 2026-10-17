@@ -19,7 +19,7 @@ pub fn current_build() -> Build {
         rev: Some(togi_version::rev().to_owned()),
         ruleset: RULESET,
         schema: SCHEMA,
-        fixes: fixed_stamp(KNOWN_DEFECTS).0,
+        fixes: fixed_stamp(KNOWN_DEFECTS),
         evidence: EVIDENCE_EPOCH,
     }
 }

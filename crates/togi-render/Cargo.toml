@@ -7,6 +7,9 @@ repository.workspace = true
 publish.workspace = true
 description = "Human output for the journal: terminal-safe escaping, the event line, semantic styles and journald priority"
 
+[features]
+test-support = ["rustix/pty"]
+
 [dependencies]
 jiff.workspace = true
 rustix.workspace = true

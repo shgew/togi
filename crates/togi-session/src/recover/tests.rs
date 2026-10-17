@@ -13,9 +13,9 @@ use togi_journal::{
 };
 use togi_machine::{
     BankType, BootId, CancellationToken, Clock, Condition, CoreSet, CpuId, Error, Kernel,
-    KernelCursor, KernelRead, Partial, PerCore, PmTable, PstoreRecord, ReadSamples, Regime,
-    ResetKind, ResetReason, Running, Signal, Stopped, Swept, TargetOffset, TrialConditions,
-    TrialSpec, Trials, pick_workload,
+    KernelCursor, KernelRead, Partial, PmTable, PstoreRecord, ReadSamples, Regime, ResetKind,
+    ResetReason, Running, Signal, Stopped, Swept, TargetOffset, TrialConditions, TrialSpec, Trials,
+    pick_workload,
 };
 use togi_render::Renderer;
 
@@ -342,7 +342,7 @@ impl Harness {
     fn same_boot(&mut self) -> Step<()> {
         let mut kernel = TestKernel(Rc::clone(&self.kernel));
         let mut trials = TestTrials(Rc::clone(&self.trials));
-        let cleared = Rig::new(2).sweep;
+        let cleared = Rig::new(2).cleared();
         same_boot_trial(
             Recovery {
                 appender: self.appender.as_mut().unwrap(),
@@ -538,31 +538,8 @@ fn trial_log() -> Log {
 
 fn unapplied_end(id: &str) -> TrialEnd {
     TrialEnd {
-        trial: trial_id(id),
-        kernel_cursor: None,
-        kernel_error: None,
-        outcome: Outcome::Inconclusive,
-        signal: None,
-        core: None,
-        duration_s: 5,
-        tctl_max_c: None,
-        voltage_request_median_v: None,
-        voltage_request_min_v: None,
-        voltage_requests_v: PerCore::default(),
-        top_requesters: CoreSet::default(),
-        ccd_mhz: BTreeMap::new(),
-        last_sample_s: None,
-        last_sample_tctl_c: None,
-        last_sample_min_mhz: None,
-        last_sample_max_mhz: None,
-        stalled_core: None,
-        worker_stalled_ms: None,
-        reason: None,
         interrupted: true,
-        last_evidence: false,
-        escaped: Vec::new(),
-        backend_missing: false,
-        containment_error: None,
+        ..crate::evidence::trial_end(trial_id(id), Outcome::Inconclusive, 5)
     }
 }
 

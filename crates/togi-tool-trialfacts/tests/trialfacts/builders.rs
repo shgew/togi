@@ -3,8 +3,8 @@ use std::collections::BTreeMap;
 use jiff::Timestamp;
 use togi_facts::{Decisive, TrialClass};
 use togi_journal::{
-    Activity, ArchiveKind, Build, Journal, MemFs, Outcome, Payload, SCHEMA, Seq, SessionContext,
-    SessionStart, Stamp, StateDir, TrialEnd, TrialId, TrialIntent,
+    Activity, ArchiveKind, Build, FixStamp, Journal, MemFs, Outcome, Payload, SCHEMA, Seq,
+    SessionContext, SessionStart, Stamp, StateDir, TrialEnd, TrialId, TrialIntent,
 };
 use togi_machine::{
     BiosContext, BootId, CcdId, Condition, CoreId, CoreInfo, CoreSet, CpuId, PerCore, Regime,
@@ -62,7 +62,7 @@ pub(crate) fn stamp_of(build: u32) -> BuildStamp {
         rev: "abc".into(),
         ruleset: build,
         schema: SCHEMA,
-        fixes: 0,
+        fixes: FixStamp::none(),
         evidence: Some(1),
     }
 }
@@ -151,7 +151,7 @@ impl Writer {
             rev: Some("abc".into()),
             ruleset: 1,
             schema: SCHEMA,
-            fixes: 0,
+            fixes: FixStamp::none(),
             evidence: 1,
         };
         adjust(&mut build);

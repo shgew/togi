@@ -98,9 +98,11 @@ fn thermal_reason_yields_to_mce_evidence() {
 
 #[test]
 fn a_crash_keeps_the_trial_in_flight_until_its_end() {
-    let mut j = Journal::search_at(&[-10]);
+    let mut j = Journal::new(&[0], &[crate::testkit::Start::search(-10).checking()]);
     let plan = j.next_trial();
+    assert!(plan.requirement.needed.get() > 1, "{plan:?}");
     let (intent, trial) = j.intent(&plan);
+    assert!(!j.state.forecast().branches.is_empty());
     j.append(
         CrashDetected {
             previous_boot: togi_machine::BootId::from("boot".to_owned()),
@@ -115,11 +117,13 @@ fn a_crash_keeps_the_trial_in_flight_until_its_end() {
         .into(),
         &[],
     );
-    let open = j.run().flight.open.as_ref().unwrap();
-    assert!(open.crashed);
-    assert_eq!(open.requirement, plan.requirement);
+    assert!(j.state.forecast().branches.is_empty());
+    assert_eq!(
+        j.requirement().needed,
+        u32::from(plan.requirement.needed.get())
+    );
     j.end(intent, &trial, Outcome::Failure);
-    assert!(j.run().flight.open.is_none());
+    assert_eq!(j.state.requirement(), None);
 }
 
 #[test]
@@ -252,9 +256,16 @@ fn only_the_mces_a_trial_end_cites_name_a_core() {
 
 #[test]
 fn a_between_trials_mce_is_not_remembered() {
-    let mut j = Journal::search_at(&[-10]);
-    let plan = j.next_trial();
-    j.append(
+    let mut j = Journal::has_room(&[-10, -10]);
+    let plan = j.manual(
+        Regime::R6,
+        0,
+        Load::Many(set(&[0, 1])),
+        Condition::Together,
+        &[-10, -10],
+        900,
+    );
+    let between = j.append(
         Mce {
             between_trials: true,
             trial: None,
@@ -263,8 +274,11 @@ fn a_between_trials_mce_is_not_remembered() {
         .into(),
         &[],
     );
-    let (_, _) = j.intent(&plan);
-    assert!(j.run().flight.open.as_ref().unwrap().mces.is_empty());
+    let (intent, trial) = j.intent(&plan);
+    assert_eq!(
+        crate::fold_tests::cited_core(&j, intent, &trial, &[between]),
+        None
+    );
 }
 
 #[test]

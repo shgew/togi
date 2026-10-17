@@ -592,6 +592,8 @@ fn a_trial_waits_at_one_five_and_thirty_minutes_after_inconclusive_trials_and_re
     let crashed = trial(&mut rig).unwrap_err();
     assert!(crashed.is_crash(), "{crashed:?}");
     assert_eq!(retries(&rig.session), [(1, 60)]);
+    rig.session.lifecycle = crate::session::Lifecycle::Unswept;
+    assert_eq!(rig.session.sweep().unwrap(), Control::Continue);
     assert_eq!(trial(&mut rig).unwrap(), Control::Continue);
     assert_eq!(retries(&rig.session), [(1, 60)]);
     assert_eq!(trial(&mut rig).unwrap(), Control::Continue);
@@ -1363,7 +1365,7 @@ fn a_together_trial_must_carry_the_profile_the_tuner_stands_at() {
 #[test]
 fn nothing_is_written_or_started_without_the_proof_that_nothing_runs() {
     let mut rig = rigged(Bench::new(2));
-    rig.session.stopped = None;
+    rig.session.lifecycle.lose_stopped();
     let plan = together_plan(&rig.session, &[-5, -3]);
     let events = rig.session.appender().journal().events().len();
     let flow = rig
@@ -1381,8 +1383,7 @@ fn an_unconfirmed_containment_withholds_the_proof_and_ends_the_trial_as_such() {
     let mut rig = rigged(Bench::new(2));
     rig.rigs.borrow_mut().stop_error = Some(|| Error::Containment("workload still running".into()));
     trial(&mut rig).unwrap();
-    assert!(rig.session.stopped.is_none());
-    assert_eq!(rig.session.fault, Some(Fault::Containment));
+    assert_eq!(rig.session.lifecycle.fault(), Some(Fault::Containment));
     let end = ends(&rig.session).pop().unwrap();
     assert_eq!(end.outcome, Verdict::Inconclusive);
     assert!(end.containment_error.is_some());
@@ -1399,6 +1400,29 @@ fn an_unconfirmed_containment_withholds_the_proof_and_ends_the_trial_as_such() {
 }
 
 #[test]
+fn a_crash_beside_an_unconfirmed_containment_ends_the_trial_with_both_and_latches_the_crash() {
+    let mut rig = rigged(Bench::new(2));
+    {
+        let mut rigs = rig.rigs.borrow_mut();
+        rigs.wait_error = Some(|| Error::Containment("workload still running".into()));
+        rigs.stop_error = Some(|| Error::Crashed);
+    }
+    let error = trial(&mut rig).unwrap_err();
+    assert!(error.is_crash(), "{error:?}");
+    assert_eq!(rig.session.lifecycle.fault(), Some(Fault::Crashed));
+    let ends = ends(&rig.session);
+    let [end] = ends.as_slice() else {
+        panic!("{ends:?}");
+    };
+    assert_eq!(end.outcome, Verdict::Inconclusive);
+    assert!(end.interrupted);
+    assert_eq!(
+        end.containment_error.as_deref(),
+        Some("trial cleanup could not be confirmed: workload still running")
+    );
+}
+
+#[test]
 fn a_machine_that_crashes_mid_trial_leaves_the_trial_open_for_the_recovery() {
     let mut rig = rigged(Bench::new(2));
     {
@@ -1411,7 +1435,7 @@ fn a_machine_that_crashes_mid_trial_leaves_the_trial_open_for_the_recovery() {
     }
     let error = trial(&mut rig).unwrap_err();
     assert!(error.is_crash());
-    assert_eq!(rig.session.fault, Some(Fault::Crashed));
+    assert_eq!(rig.session.lifecycle.fault(), Some(Fault::Crashed));
     assert!(ends(&rig.session).is_empty());
     assert_eq!(kind_count(&rig.session, "trial.start"), 1);
 }
@@ -1562,7 +1586,8 @@ fn a_journal_that_fails_anywhere_in_a_trial_leaves_no_workload_running() {
         if outcome.is_err() {
             failed += 1;
             assert!(
-                rig.session.stopped.is_some() || rig.session.fault.is_some(),
+                rig.session.lifecycle.stopped().is_some()
+                    || rig.session.lifecycle.fault().is_some(),
                 "write {nth}"
             );
         }
@@ -1933,8 +1958,7 @@ fn a_containment_error_from_the_wait_withholds_the_proof_a_successful_stop_gives
     let mut rig = rigged(Bench::new(2));
     rig.rigs.borrow_mut().wait_error = Some(contained);
     trial(&mut rig).unwrap();
-    assert!(rig.session.stopped.is_none());
-    assert_eq!(rig.session.fault, Some(Fault::Containment));
+    assert_eq!(rig.session.lifecycle.fault(), Some(Fault::Containment));
     assert!(matches!(
         trial(&mut rig).unwrap_err(),
         SessionError::Unproven
@@ -1946,8 +1970,7 @@ fn a_start_that_returns_no_proof_latches_the_containment_and_holds_no_proof() {
     let mut rig = rigged(Bench::new(2));
     rig.rigs.borrow_mut().start_error = Some(contained);
     trial(&mut rig).unwrap();
-    assert!(rig.session.stopped.is_none());
-    assert_eq!(rig.session.fault, Some(Fault::Containment));
+    assert_eq!(rig.session.lifecycle.fault(), Some(Fault::Containment));
     let end = ends(&rig.session).pop().unwrap();
     assert!(end.containment_error.is_some());
     assert!(matches!(

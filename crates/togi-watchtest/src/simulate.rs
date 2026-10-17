@@ -3,7 +3,7 @@ use std::num::NonZeroU32;
 
 use jiff::tz::TimeZone;
 use togi_config::{Config, DEFAULT_PATH};
-use togi_journal::{Build, Event, MemFs, SCHEMA};
+use togi_journal::{Build, Event, FixStamp, MemFs, SCHEMA};
 use togi_machine::{CancellationToken, CoreId, Regime, Signal};
 use togi_render::Renderer;
 use togi_session::{ConfigSource, StopPolicy};
@@ -44,7 +44,7 @@ pub fn build() -> Build {
         rev: None,
         ruleset: RULESET,
         schema: SCHEMA,
-        fixes: 0,
+        fixes: FixStamp::none(),
         evidence: EVIDENCE_EPOCH,
     }
 }

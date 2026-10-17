@@ -7,8 +7,8 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 use togi_journal::fs::{FileKind, Fs};
 use togi_journal::{
-    Build, Event, EventReader, FileError, Operation, Payload, ReadError, Refusal, SCHEMA, Seq,
-    SessionId, Skipped, Verdict,
+    Build, Event, EventReader, FileError, FixStamp, Operation, Payload, ReadError, Refusal, SCHEMA,
+    Seq, SessionId, Skipped, Verdict,
 };
 use togi_machine::object_only;
 use togi_tuner::{EVIDENCE_EPOCH, RULESET};
@@ -236,7 +236,7 @@ impl Session {
             rev: None,
             ruleset: RULESET,
             schema: SCHEMA,
-            fixes: 0,
+            fixes: FixStamp::none(),
             evidence: EVIDENCE_EPOCH,
         };
         let refusal = match reader.verdict(&build, Operation::Replay) {

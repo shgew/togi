@@ -86,9 +86,13 @@ pub(crate) fn build() -> Build {
         rev: Some("abc1234".into()),
         ruleset: 10,
         schema: SCHEMA,
-        fixes: 2,
+        fixes: FixStamp::through(defect(2)),
         evidence: 1,
     }
+}
+
+pub(crate) fn defect(value: u32) -> DefectId {
+    DefectId::new(value).unwrap()
 }
 
 pub(crate) fn session() -> SessionId {
@@ -589,7 +593,7 @@ pub(crate) fn samples() -> Vec<Payload> {
         }
         .into(),
         DefectFound {
-            id: ord(1),
+            id: defect(1),
             title: "false failure on power-off".into(),
             detail: "clean exit".into(),
             pr: 14,
@@ -599,7 +603,7 @@ pub(crate) fn samples() -> Vec<Payload> {
         }
         .into(),
         DefectAnswered {
-            id: ord(1),
+            id: defect(1),
             cores: set(&[2]),
             answer: DefectAnswer::Yes,
         }

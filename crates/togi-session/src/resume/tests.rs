@@ -1,7 +1,7 @@
 use std::num::NonZeroU32;
 
-use togi_defect::{DefectId, DefectState, Entry};
-use togi_journal::{DefectDirection, Payload};
+use togi_defect::{DefectState, Entry};
+use togi_journal::{DefectDirection, DefectId, Payload};
 use togi_machine::Signal;
 use togi_sim::MachineDefinition;
 use togi_sim::definition::ModelDef;

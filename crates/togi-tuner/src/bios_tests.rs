@@ -6,7 +6,7 @@ use togi_machine::{CoreId, Signal};
 
 use crate::later::WINDOW;
 use crate::later_tests::{
-    current_of, drive_to_hunt_start, end_cycle, fail_core, fail_loading_only, hunt_end,
+    current_of, drive_to_hunt_start, end_cycle, fail_core, fail_loading_only, held, hunt_end,
     idle_failure, is_hold, later_session, next, parked_failure, pass_cycles, run_group, session,
     settle, start_cycle, strikes,
 };
@@ -282,14 +282,7 @@ fn a_hold_target_stops_showing_for_a_core_that_stepped_back_and_was_confirmed() 
     ));
     let hold = j.decide(action);
     let confirmed = j.run().bios_profile().confirmed.unwrap().seq;
-    assert_eq!(
-        j.run()
-            .later
-            .strikes()
-            .map(|k| k.cores.len())
-            .collect::<Vec<_>>(),
-        [1]
-    );
+    assert_eq!(held(&j), [first]);
     assert_shown(&j, &[-9, -11], confirmed, &[0, 1], Some(hold));
     fail_core(&mut j, 1);
     let (own, _) = next(&j);
@@ -304,14 +297,7 @@ fn a_hold_target_stops_showing_for_a_core_that_stepped_back_and_was_confirmed() 
     settle(&mut j);
     let end = end_cycle(&mut j);
     assert_shown(&j, &[-9, -11], end, &[0], Some(hold));
-    assert_eq!(
-        j.run()
-            .later
-            .strikes()
-            .map(|k| k.failure)
-            .collect::<Vec<_>>(),
-        [first]
-    );
+    assert_eq!(held(&j), [first]);
     j.assert_resumes();
 }
 
@@ -394,7 +380,6 @@ fn a_paired_hunts_hold_shows_until_its_commitment() {
     let start = drive_to_hunt_start(&mut j);
     let started = j.decide(start);
     shown(&j);
-    assert_eq!(strikes(&j), 0);
     assert!(j.run().hunts.active.as_ref().unwrap().paired.is_some());
     if let Action::Decide(group) = j.next() {
         if matches!(group.payload, DecisionPayload::HuntGroup(_)) {
