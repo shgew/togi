@@ -402,7 +402,7 @@ Observation and accounting measure the unchanged tuner. Their conclusions about 
 | [#896](https://github.com/shgew/togi/issues/896) | counterfactual accounting | [`tools/bench/research/896.md`](../tools/bench/research/896.md) |
 | [#503](https://github.com/shgew/togi/issues/503) | fixed-policy observation, feasibility only | [`tools/bench/research/503.md`](../tools/bench/research/503.md) |
 
-An issue without a brief has no campaign; #428's brief waits for #427's parameterization. Each brief names its mode, its finite candidate queue, permitted and forbidden data, writable paths, metrics, keep and stop rules, result format and prerequisites. A prerequisite that has not landed stops the campaign before its first candidate.
+An issue without a brief has no campaign; #428's brief waits for #427's parameterization. Each brief names its mode, its finite candidate queue, permitted and forbidden data, writable paths, metrics, keep and stop rules, result format and prerequisites. A prerequisite that has not landed stops the campaign before its first candidate. Every campaign also needs the `just research` dispatcher that validates its manifest and writes its record ([#1040](https://github.com/shgew/togi/issues/1040)); until it lands, no campaign starts.
 
 ### Limits
 
