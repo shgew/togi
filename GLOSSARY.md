@@ -241,7 +241,7 @@ A backoff that raises a core's request to a voltage at which the load passed ([R
 A backoff after attribution or a hunt identifies a failed offset or combination, recording the failure point or combination.
 
 **Yield**:
-A move back to a core's round baseline (the shallower of its last passed offset and its offset when the failed round began; [Phase 2](docs/spec/tuner.md#phase-2)), made by every deepened mover of that round that is not blamed, loaded or not. A core that yields is finished for phase 2: no later round moves it.
+A move back to a core's round baseline (the shallower of its last passed offset and its offset when the failed round began; [Phase 2](docs/spec/tuner.md#phase-2)), made by every deepened mover of that round that is not blamed, loaded or not. A yield does not finish its core: it remains eligible for another round, with only valid matching evidence counting toward its checks.
 
 **Ruleset**:
 The hardcoded strategy for search, hunts, the two phases, checking and backoffs.

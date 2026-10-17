@@ -143,15 +143,11 @@ impl Run {
         });
     }
 
-    /// A deepening yield in phase 2 finishes its core and answers no failure.
-    pub(crate) fn phase2_yield(&mut self, decision: &TunerDecision) -> bool {
-        let yielded = decision.activity == Activity::Deepening
+    /// A deepening yield returns to baseline but answers no failure and finishes no candidate.
+    pub(crate) fn phase2_yield(&self, decision: &TunerDecision) -> bool {
+        decision.activity == Activity::Deepening
             && decision.decision == Decision::Yield
-            && self.phases.phase1_end().is_some();
-        if yielded {
-            self.phases.finish(decision.core);
-        }
-        yielded
+            && self.phases.phase1_end().is_some()
     }
 
     /// A deepening backoff in phase 2 answers the failures it cites for every core: no other
@@ -220,7 +216,7 @@ impl Run {
                         failure_point: self.failure_point(id),
                         workloads: Vec::new(),
                         reason: format!(
-                            "round {} failed on core {:02}, so core {:02} returns to its last passed offset {}",
+                            "round {} failed on core {:02}, so core {:02} yields to its round baseline {}; remains eligible for a later round",
                             shape.id(),
                             blame.blamed.get(),
                             id.get(),
