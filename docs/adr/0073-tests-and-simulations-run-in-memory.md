@@ -12,9 +12,9 @@ How fast the check loop runs decides how fast agents iterate on togi. Tests and 
 
 **Tests and simulations never touch disk** unless one of these holds:
 
-- The test checks kernel-dependent filesystem or process behavior: a `real_fs_` or `real_process_` test (`AGENTS.md`, Testing). It confines its files to its own temporary directory and disables sync.
+- The test checks kernel-dependent filesystem or process behavior: a `real_fs_` or `real_process_` test (`AGENTS.md`, Testing), which confines its files to its own temporary directory and disables sync; a test behind the `hardware` Cargo feature, which `just hardware` runs on the target machine; or a VM test, which exercises the shipped binary's real durability.
 - The caller asks for files: a flag such as `--state-dir` or `--keep`, a single `togi-tool-sim` session, whose announced state directory is its output ([simulating](../simulating.md)), or a failing run keeping its evidence for diagnosis.
-- [ADR 0060](0060-bench-children-keep-temporary-journals.md) applies: bench, `same`, `smoke` and `audit` children run with a temporary `--state-dir`, and the parent reads and parses each journal after the child exits.
+- [ADR 0060](0060-bench-children-keep-temporary-journals.md) applies: bench, `same`, `smoke` and `audit` children run with a temporary `--state-dir`, and the parent reads and parses each journal after the child exits. `forecast` children run the same way, each resuming its own copy of the state directory it forecasts ([benchmarking](../benchmarking.md#the-forecast-command)).
 
 Ordinary tests also do no network I/O, start no processes, leave no process-wide state behind and never call `fsync`, directly or through production code; they inject sync failures or record durability ordering instead. Production keeps its per-event durability: the in-memory path is a seam the tests choose, not a setting that weakens the shipped binary.
 
