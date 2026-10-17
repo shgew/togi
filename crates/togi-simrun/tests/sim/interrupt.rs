@@ -17,6 +17,8 @@ use togi_sim::faults::{SmuOp, SmuOperation};
 use togi_sim::{History, MachineDefinition, Model, RunSettings, Simulator};
 use togi_simrun::{Observe, Replay, SimError, SimOutcome, simulate};
 
+use test_case::test_case;
+
 use crate::common::{Bench, finish, hunt_machine, nz, phase_two_concludes};
 
 const SEED: u64 = 1;
@@ -677,7 +679,16 @@ fn deepening_case() -> Case {
 
 const SHARES: usize = 4;
 
-fn share(case: &Case, index: usize) {
+#[test_case(hunt_case, 0; "hunt resume 0")]
+#[test_case(hunt_case, 1; "hunt resume 1")]
+#[test_case(hunt_case, 2; "hunt resume 2")]
+#[test_case(hunt_case, 3; "hunt resume 3")]
+#[test_case(deepening_case, 0; "deepening resume 0")]
+#[test_case(deepening_case, 1; "deepening resume 1")]
+#[test_case(deepening_case, 2; "deepening resume 2")]
+#[test_case(deepening_case, 3; "deepening resume 3")]
+fn power_loss_during(case: fn() -> Case, index: usize) {
+    let case = case();
     for at in (index..case.append_points()).step_by(SHARES) {
         case.assert_interruption(Interruption::Append(at));
     }
@@ -685,30 +696,3 @@ fn share(case: &Case, index: usize) {
         case.assert_interruption(Interruption::Smu(at));
     }
 }
-
-macro_rules! shares {
-    ($case:ident, $($test:ident => $index:expr),+ $(,)?) => {
-        $(
-            #[test]
-            fn $test() {
-                share(&$case(), $index);
-            }
-        )+
-    };
-}
-
-shares!(
-    hunt_case,
-    power_loss_during_hunt_resume_0 => 0,
-    power_loss_during_hunt_resume_1 => 1,
-    power_loss_during_hunt_resume_2 => 2,
-    power_loss_during_hunt_resume_3 => 3,
-);
-
-shares!(
-    deepening_case,
-    power_loss_during_deepening_resume_0 => 0,
-    power_loss_during_deepening_resume_1 => 1,
-    power_loss_during_deepening_resume_2 => 2,
-    power_loss_during_deepening_resume_3 => 3,
-);

@@ -2,6 +2,7 @@ use crate::*;
 use std::fs;
 use std::os::unix::fs::{PermissionsExt, symlink};
 use tempfile::TempDir;
+use test_case::test_case;
 
 fn catalog(id: &str) -> togi_machine::WorkloadId {
     id.parse().unwrap()
@@ -16,31 +17,27 @@ fn file_with_mode(dir: &TempDir, name: &str, mode: u32) -> PathBuf {
     path
 }
 
-#[test]
-fn file_names_are_single_components() {
-    for (name, want) in [
-        ("prime.txt", Ok(())),
-        ("stress.cfg", Ok(())),
-        (".hidden", Ok(())),
-        ("...", Ok(())),
-        ("with space ~ and tilde", Ok(())),
-        ("", Err(InvalidFileName::Empty)),
-        (".", Err(InvalidFileName::CurrentDirectory)),
-        ("..", Err(InvalidFileName::ParentDirectory)),
-        ("a/b", Err(InvalidFileName::Separator)),
-        ("/etc", Err(InvalidFileName::Separator)),
-        ("dir/", Err(InvalidFileName::Separator)),
-        ("../x", Err(InvalidFileName::Separator)),
-        ("a\0b", Err(InvalidFileName::Nul)),
-        ("\0", Err(InvalidFileName::Nul)),
-    ] {
-        assert_eq!(name.parse::<FileName>().map(|_| ()), want, "{name:?}");
-        assert_eq!(
-            FileName::try_from(name.to_owned()).map(|_| ()),
-            want,
-            "{name:?}"
-        );
-    }
+#[test_case("prime.txt", Ok(()); "plain name")]
+#[test_case("stress.cfg", Ok(()); "config name")]
+#[test_case(".hidden", Ok(()); "hidden name")]
+#[test_case("...", Ok(()); "three dots")]
+#[test_case("with space ~ and tilde", Ok(()); "space and tilde")]
+#[test_case("", Err(InvalidFileName::Empty); "empty")]
+#[test_case(".", Err(InvalidFileName::CurrentDirectory); "current directory")]
+#[test_case("..", Err(InvalidFileName::ParentDirectory); "parent directory")]
+#[test_case("a/b", Err(InvalidFileName::Separator); "inner separator")]
+#[test_case("/etc", Err(InvalidFileName::Separator); "absolute path")]
+#[test_case("dir/", Err(InvalidFileName::Separator); "trailing separator")]
+#[test_case("../x", Err(InvalidFileName::Separator); "parent component")]
+#[test_case("a\0b", Err(InvalidFileName::Nul); "inner nul")]
+#[test_case("\0", Err(InvalidFileName::Nul); "only nul")]
+fn file_names_are_single_components(name: &str, want: Result<(), InvalidFileName>) {
+    assert_eq!(name.parse::<FileName>().map(|_| ()), want, "{name:?}");
+    assert_eq!(
+        FileName::try_from(name.to_owned()).map(|_| ()),
+        want,
+        "{name:?}"
+    );
 }
 
 #[test]
@@ -67,13 +64,15 @@ fn file_name_views_agree() {
     assert_eq!(PLAIN, "prime.txt".parse().unwrap());
 }
 
-#[test]
-fn real_fs_executable_regular_file_passes() {
+#[test_case(0o755; "rwxr-xr-x")]
+#[test_case(0o700; "rwx owner only")]
+#[test_case(0o100; "owner execute only")]
+#[test_case(0o010; "group execute only")]
+#[test_case(0o001; "other execute only")]
+fn real_fs_executable_regular_file_passes(mode: u32) {
     let dir = TempDir::new().unwrap();
-    for mode in [0o755, 0o700, 0o100, 0o010, 0o001] {
-        let path = file_with_mode(&dir, &format!("bin-{mode:o}"), mode);
-        check_executable("mprime", &path).unwrap();
-    }
+    let path = file_with_mode(&dir, "bin", mode);
+    check_executable("mprime", &path).unwrap();
 }
 
 #[test]
@@ -159,68 +158,65 @@ fn real_fs_file_as_a_directory_component_is_a_stat_error_not_missing() {
     assert!(!error.is_missing());
 }
 
-#[test]
-fn only_absence_maps_to_backend_missing() {
-    let root = PathBuf::from("/pkg");
-    let missing = [
-        Error::Missing {
-            name: "mprime",
-            path: root.clone(),
-            source: io::ErrorKind::NotFound.into(),
-        },
-        Error::BinariesMissing {
-            name: "y-cruncher",
-            root: root.clone(),
-            source: io::ErrorKind::NotFound.into(),
-        },
-        Error::NoBinaries {
-            name: "y-cruncher",
-            root: root.clone(),
-        },
-        Error::NoZen5 { root: root.clone() },
-    ];
-    for error in missing {
-        assert!(error.is_missing(), "{error}");
-        assert!(matches!(
-            togi_machine::Error::from(error),
-            togi_machine::Error::BackendMissing
-        ));
-    }
-    let present = [
-        Error::Stat {
-            name: "mprime",
-            path: root.clone(),
-            source: io::ErrorKind::PermissionDenied.into(),
-        },
-        Error::NotExecutable {
-            name: "mprime",
-            path: root.clone(),
-        },
-        Error::ReadBinaries {
-            name: "y-cruncher",
-            root,
-            source: io::ErrorKind::PermissionDenied.into(),
-        },
-        Error::Unsupported {
-            backend: togi_machine::Backend::Mprime,
-            workload: catalog("mprime-sse-4k-21k"),
-        },
-        Error::NoCpus {
-            backend: togi_machine::Backend::Mprime,
-            workload: catalog("mprime-sse-4k-21k"),
-        },
-        Error::Pattern {
-            name: "mprime",
-            source: regex::Regex::new(&String::from("(")).unwrap_err(),
-        },
-    ];
-    for error in present {
-        assert!(!error.is_missing(), "{error}");
-        assert!(matches!(
-            togi_machine::Error::from(error),
-            togi_machine::Error::Other(_)
-        ));
-    }
+fn root() -> PathBuf {
+    PathBuf::from("/pkg")
+}
+
+#[test_case(Error::Missing {
+    name: "mprime",
+    path: root(),
+    source: io::ErrorKind::NotFound.into(),
+}; "missing binary")]
+#[test_case(Error::BinariesMissing {
+    name: "y-cruncher",
+    root: root(),
+    source: io::ErrorKind::NotFound.into(),
+}; "missing binaries directory")]
+#[test_case(Error::NoBinaries {
+    name: "y-cruncher",
+    root: root(),
+}; "no binaries")]
+#[test_case(Error::NoZen5 { root: root() }; "no zen5 binary")]
+fn absence_maps_to_backend_missing(error: Error) {
+    assert!(error.is_missing(), "{error}");
+    assert!(matches!(
+        togi_machine::Error::from(error),
+        togi_machine::Error::BackendMissing
+    ));
+}
+
+#[test_case(Error::Stat {
+    name: "mprime",
+    path: root(),
+    source: io::ErrorKind::PermissionDenied.into(),
+}; "stat error")]
+#[test_case(Error::NotExecutable {
+    name: "mprime",
+    path: root(),
+}; "not executable")]
+#[test_case(Error::ReadBinaries {
+    name: "y-cruncher",
+    root: root(),
+    source: io::ErrorKind::PermissionDenied.into(),
+}; "unreadable binaries directory")]
+#[test_case(Error::Unsupported {
+    backend: togi_machine::Backend::Mprime,
+    workload: catalog("mprime-sse-4k-21k"),
+}; "unsupported workload")]
+#[test_case(Error::NoCpus {
+    backend: togi_machine::Backend::Mprime,
+    workload: catalog("mprime-sse-4k-21k"),
+}; "no cpus")]
+#[test_case(Error::Pattern {
+    name: "mprime",
+    source: regex::Regex::new(&String::from("(")).unwrap_err(),
+}; "bad pattern")]
+fn other_failures_are_not_backend_missing(error: Error) {
+    assert!(!error.is_missing(), "{error}");
+    assert!(matches!(
+        togi_machine::Error::from(error),
+        togi_machine::Error::Other(_)
+    ));
 }
 
 #[test]

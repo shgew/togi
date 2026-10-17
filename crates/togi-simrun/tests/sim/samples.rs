@@ -156,9 +156,11 @@ fn real_fs_a_new_sessions_trial_gets_no_serialized_samples_from_an_earlier_invoc
     assert!(archived.join("samples.jsonl.gz").is_file());
     assert!(!archived.join("samples.jsonl").exists());
     assert_eq!(
-        togi_machine::read_samples(&archived)
-            .collect::<Result<Vec<_>, _>>()
-            .unwrap(),
+        togi_machine::ReadSamples::from_open(togi_trialfiles::open(
+            &archived.join(togi_trialfiles::SAMPLES)
+        ))
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap(),
         samples,
         "the earlier session's compressed samples must remain intact after trial 0001 is reused"
     );

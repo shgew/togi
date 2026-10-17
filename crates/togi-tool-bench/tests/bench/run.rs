@@ -1,12 +1,4 @@
 //! A bench run over a fake simulator: a script that leaves a recorded journal and exits as the test says.
-#![expect(clippy::unwrap_used, reason = "helpers panic on a broken fixture")]
-
-mod fake;
-#[expect(
-    dead_code,
-    reason = "process fixture setup uses session events, not simulator outcomes"
-)]
-mod session;
 
 use std::fs;
 use std::num::NonZeroUsize;
@@ -15,7 +7,8 @@ use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use fake::ProcessBench as Bench;
+use crate::fake::ProcessBench as Bench;
+use crate::session;
 use togi_sim::MachineDefinition;
 use togi_tool_audit::{Check, Kind};
 use togi_tool_bench::{Error, Fleet, Options, Report, RunError, Status, execute};

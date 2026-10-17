@@ -3,7 +3,8 @@
 //!
 //! * [`generate_records`] fits the target-machine ensemble: the all-facts fit and its whole-trial bootstrap
 //!   refits, each checked against the original extract with the model check and written as a machine file.
-//! * [`forward_check`] fits each session's earlier sessions and scores the session, writing no machine file.
+//! * [`forward_check`] fits each session's earlier sessions and scores the session, writing no machine file;
+//!   [`records`] keeps its every value and [`compare`] pairs a candidate's records with a reference's.
 //! * [`shared_voltage_anchor_records`] fits the in-sample 16-core shared-voltage anchor.
 //! * [`artifact`] defines the original research artifact, writes it and keeps later sessions out of a run
 //!   that does not name the current extract.
@@ -14,6 +15,7 @@
 
 mod anchor;
 pub mod artifact;
+pub mod compare;
 mod encode;
 mod error;
 mod evidence;
@@ -22,6 +24,7 @@ mod generate;
 mod likelihood;
 mod output;
 mod paths;
+pub mod records;
 mod search;
 mod signals;
 mod voltage;
@@ -40,8 +43,8 @@ pub use anchor::shared_voltage_anchor_records;
 pub use artifact::{Extract, Sessions};
 pub use error::{Error, EvidenceError, Problem};
 pub use forward::{
-    ForwardCheck, ForwardCounts, ForwardRow, ForwardScore, R7Ccd, R7Rows, forward_check,
-    reference_check, report_forward, report_reference,
+    ForwardCheck, ForwardCounts, ForwardRow, ForwardScore, R7Ccd, R7Rows, TrialScore,
+    forward_check, reference_check, report_forward, report_reference,
 };
 pub use generate::{Ensemble, Fitted, Generated, generate_records};
 pub use output::MachineOutput;
@@ -53,10 +56,12 @@ pub enum Mode {
     Ensemble { ensemble: Ensemble, out: PathBuf },
     /// Run only the forward-chained check, leaving the newest `seal` sessions out, and score the machine
     /// files of a committed ensemble, `reference`, on the same held-out sessions without fitting them.
-    /// Empty scores no reference.
+    /// Empty scores no reference. With `records`, also write the check's full-precision
+    /// [`records`] to that new file.
     Forward {
         seal: usize,
         reference: Vec<PathBuf>,
+        records: Option<PathBuf>,
     },
     /// Fit the in-sample shared-voltage anchor into the directory `out`.
     SharedVoltage { out: PathBuf },
@@ -112,7 +117,11 @@ pub fn run(options: &Options, report: &mut (impl io::Write + Send)) -> Result<El
                 )?;
                 Ok(Some(generated.forward_elapsed))
             }
-            Mode::Forward { seal, reference } => {
+            Mode::Forward {
+                seal,
+                reference,
+                records,
+            } => {
                 let members = reference
                     .iter()
                     .map(|path| {
@@ -123,10 +132,17 @@ pub fn run(options: &Options, report: &mut (impl io::Write + Send)) -> Result<El
                     })
                     .collect::<Result<Vec<_>, _>>()?;
                 let trials = evidence::decisive(&extract.facts)?;
+                let records = records
+                    .as_deref()
+                    .map(records::RecordsFile::create)
+                    .transpose()?;
                 let forward = Instant::now();
                 let check = forward_check(&trials, *seal)?;
                 let elapsed = forward.elapsed();
                 report_forward(report, &check, *seal)?;
+                if let Some(records) = records {
+                    records.write(&extract, *seal, &check)?;
+                }
                 if !members.is_empty() {
                     let reference = reference_check(&trials, *seal, &members)?;
                     report_reference(report, &reference, *seal, members.len())?;

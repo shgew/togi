@@ -6,6 +6,8 @@ use togi_sim::definition::{CcdDef, JointDef, ScriptDef, Weights};
 use togi_sim::file::{self, LoadError};
 use togi_sim::{MachineDefinition, Model, Problem};
 
+use test_case::test_case;
+
 use crate::common::{core_def, flat_cores, invalid, load, machine, model, offsets};
 
 fn refused(definition: &MachineDefinition, path: &str, problem: &Problem) {
@@ -28,14 +30,27 @@ fn joint(members: &[(i64, i64)]) -> JointDef {
     }
 }
 
-#[test]
-fn the_core_count_is_even_from_two_to_sixteen() {
-    for cores in [2, 4, 6, 8, 10, 12, 14, 16] {
-        assert!(Model::new(&machine(cores, vec![]), 1).is_ok(), "{cores}");
-    }
-    for cores in [-2, 0, 1, 3, 17, 18, 32] {
-        refused(&machine(cores, vec![]), "cores", &Problem::Topology(cores));
-    }
+#[test_case(2; "two")]
+#[test_case(4; "four")]
+#[test_case(6; "six")]
+#[test_case(8; "eight")]
+#[test_case(10; "ten")]
+#[test_case(12; "twelve")]
+#[test_case(14; "fourteen")]
+#[test_case(16; "sixteen")]
+fn an_even_core_count_from_two_to_sixteen_is_accepted(cores: i64) {
+    assert!(Model::new(&machine(cores, vec![]), 1).is_ok());
+}
+
+#[test_case(-2; "negative")]
+#[test_case(0; "zero")]
+#[test_case(1; "one")]
+#[test_case(3; "odd")]
+#[test_case(17; "seventeen")]
+#[test_case(18; "eighteen")]
+#[test_case(32; "thirty two")]
+fn any_other_core_count_is_refused(cores: i64) {
+    refused(&machine(cores, vec![]), "cores", &Problem::Topology(cores));
 }
 
 #[test]
@@ -56,28 +71,27 @@ fn load_text(text: &str) -> Result<MachineDefinition, LoadError> {
 // The loader decodes strictly before validating topology. Core entries require `alone` and `together`,
 // so documents missing those limits fail to parse before their core count is checked. With the limits
 // present, `Model::new` reports the invalid core count rather than a core-table error.
-#[test]
-fn a_loaded_document_is_refused_for_its_topology_before_its_limits() {
+#[test_case(-2; "negative cores")]
+#[test_case(18; "too many cores")]
+fn a_loaded_document_is_refused_for_its_topology_before_its_limits(cores: i64) {
     let limits =
         r#""alone": [-10, -10, -10, -10, -10], "together": [-10, -10, -10, -10, -10, -10, -10]"#;
-    for cores in [-2, 18] {
-        let complete = format!(r#"{{"cores": {cores}, "core": [{{"id": 0, {limits}}}]}}"#);
-        match load_text(&complete) {
-            Err(LoadError::Invalid { source, .. }) => assert_eq!(
-                (source.path.as_str(), source.problem),
-                ("cores", Problem::Topology(cores))
-            ),
-            other => panic!("{cores} cores: {other:?}"),
-        }
-        let bare = format!(r#"{{"cores": {cores}, "core": [{{"id": 0}}]}}"#);
-        let error = load_text(&bare).expect_err("a refused document");
-        let message = togi_machine::error_chain(&error);
-        assert!(matches!(error, LoadError::Parse { .. }), "{message}");
-        assert!(
-            message.contains("machine.json") && message.contains("alone"),
-            "{message}"
-        );
+    let complete = format!(r#"{{"cores": {cores}, "core": [{{"id": 0, {limits}}}]}}"#);
+    match load_text(&complete) {
+        Err(LoadError::Invalid { source, .. }) => assert_eq!(
+            (source.path.as_str(), source.problem),
+            ("cores", Problem::Topology(cores))
+        ),
+        other => panic!("{other:?}"),
     }
+    let bare = format!(r#"{{"cores": {cores}, "core": [{{"id": 0}}]}}"#);
+    let error = load_text(&bare).expect_err("a refused document");
+    let message = togi_machine::error_chain(&error);
+    assert!(matches!(error, LoadError::Parse { .. }), "{message}");
+    assert!(
+        message.contains("machine.json") && message.contains("alone"),
+        "{message}"
+    );
 }
 
 #[test]
@@ -150,17 +164,13 @@ fn limits_idle_and_workload_limits_stay_within_minus_fifty_and_one() {
     refused(&definition, "core[1].workload.mprime-sse-4k-21k", &out(2));
 }
 
-#[test]
-fn flat_rates_are_finite_and_nonnegative() {
+#[test_case(-1.0, &Problem::Negative; "negative")]
+#[test_case(f64::NAN, &Problem::NotFinite; "nan")]
+#[test_case(f64::INFINITY, &Problem::NotFinite; "infinite")]
+fn flat_rates_are_finite_and_nonnegative(flat: f64, problem: &Problem) {
     let mut definition = two_cores();
-    for (flat, problem) in [
-        (-1.0, Problem::Negative),
-        (f64::NAN, Problem::NotFinite),
-        (f64::INFINITY, Problem::NotFinite),
-    ] {
-        definition.core[1].flat = flat;
-        refused(&definition, "core[1].flat", &problem);
-    }
+    definition.core[1].flat = flat;
+    refused(&definition, "core[1].flat", problem);
 }
 
 #[test]
@@ -249,26 +259,32 @@ fn bios_and_ranking_have_one_value_per_core() {
     );
 }
 
-#[test]
-fn scripts_name_a_trial_once_and_a_core_of_the_machine() {
-    let script = |trial: &str, core: i64| ScriptDef {
+fn script(trial: &str, core: i64) -> ScriptDef {
+    ScriptDef {
         trial: trial.to_owned(),
         core,
         ..ScriptDef::default()
-    };
-    for core in [-1, 2] {
-        let mut definition = two_cores();
-        definition.script = vec![script("0001", core)];
-        refused(
-            &definition,
-            "script[0].core",
-            &Problem::OutOfRange {
-                value: core,
-                min: 0,
-                max: 1,
-            },
-        );
     }
+}
+
+#[test_case(-1; "below the first core")]
+#[test_case(2; "past the last core")]
+fn a_script_names_a_core_of_the_machine(core: i64) {
+    let mut definition = two_cores();
+    definition.script = vec![script("0001", core)];
+    refused(
+        &definition,
+        "script[0].core",
+        &Problem::OutOfRange {
+            value: core,
+            min: 0,
+            max: 1,
+        },
+    );
+}
+
+#[test]
+fn scripts_name_a_trial_once() {
     let mut definition = two_cores();
     definition.script = vec![script("", 0)];
     refused(&definition, "script[0].trial", &Problem::Empty);
@@ -281,23 +297,27 @@ fn scripts_name_a_trial_once_and_a_core_of_the_machine() {
     refused(&definition, "script[0].at_s", &Problem::Negative);
 }
 
+#[test_case(-1; "below the first core")]
+#[test_case(2; "past the last core")]
+fn joint_members_are_real_cores(core: i64) {
+    let mut definition = two_cores();
+    definition.joint = vec![joint(&[(core, -10)])];
+    refused(
+        &definition,
+        &format!("joint[0].members.{core}"),
+        &Problem::OutOfRange {
+            value: core,
+            min: 0,
+            max: 1,
+        },
+    );
+}
+
 #[test]
-fn joints_need_members_on_real_cores_and_valid_numbers() {
+fn joints_need_members_and_valid_numbers() {
     let mut definition = two_cores();
     definition.joint = vec![joint(&[])];
     refused(&definition, "joint[0].members", &Problem::Empty);
-    for core in [-1, 2] {
-        definition.joint = vec![joint(&[(core, -10)])];
-        refused(
-            &definition,
-            &format!("joint[0].members.{core}"),
-            &Problem::OutOfRange {
-                value: core,
-                min: 0,
-                max: 1,
-            },
-        );
-    }
     definition.joint = vec![joint(&[(0, -5)]), joint(&[(0, -5), (1, 1)])];
     refused(
         &definition,
@@ -409,91 +429,60 @@ fn reset_weights_are_finite_nonnegative_with_a_positive_total() {
     assert_eq!(model(&definition).reset_mix().total(), 3.0);
 }
 
-#[test]
-fn a_mix_of_subnormal_weights_draws_in_the_proportions_of_any_scale() {
-    let tiny = f64::from_bits(1);
-    for weight in [tiny, 1.0, 1e300] {
-        let mut definition = two_cores();
-        definition.model.signals =
-            Weights::from([(Signal::ComputationError, weight), (Signal::Crash, weight)]);
-        definition.model.reset = Weights::from([
-            (ResetKind::Watchdog, weight),
-            (ResetKind::ThermalTrip, weight),
-        ]);
-        let model = model(&definition);
-        let signals = model.signal_mix(togi_machine::Regime::R1);
-        let resets = model.reset_mix();
-        let (mut computation, mut watchdog) = (0, 0);
-        for step in 0..1000 {
-            let x = f64::from(step) / 1000.0;
-            let want = usize::from(x >= 0.5);
-            computation += usize::from(signals.pick(x) == Signal::ComputationError);
-            watchdog += usize::from(resets.pick(x) == ResetKind::Watchdog);
-            assert_eq!(
-                signals.pick(x),
-                [Signal::ComputationError, Signal::Crash][want],
-                "weight {weight}, x {x}"
-            );
-        }
-        assert_eq!((computation, watchdog), (500, 500), "weight {weight}");
-        assert_eq!(signals.probability(Signal::ComputationError), 0.5);
-        assert_eq!(signals.probability(Signal::Stall), 0.0);
+#[test_case(f64::from_bits(1); "subnormal weights")]
+#[test_case(1.0; "unit weights")]
+#[test_case(1e300; "huge weights")]
+fn a_mix_of_subnormal_weights_draws_in_the_proportions_of_any_scale(weight: f64) {
+    let mut definition = two_cores();
+    definition.model.signals =
+        Weights::from([(Signal::ComputationError, weight), (Signal::Crash, weight)]);
+    definition.model.reset = Weights::from([
+        (ResetKind::Watchdog, weight),
+        (ResetKind::ThermalTrip, weight),
+    ]);
+    let model = model(&definition);
+    let signals = model.signal_mix(togi_machine::Regime::R1);
+    let resets = model.reset_mix();
+    let (mut computation, mut watchdog) = (0, 0);
+    for step in 0..1000 {
+        let x = f64::from(step) / 1000.0;
+        let want = usize::from(x >= 0.5);
+        computation += usize::from(signals.pick(x) == Signal::ComputationError);
+        watchdog += usize::from(resets.pick(x) == ResetKind::Watchdog);
+        assert_eq!(
+            signals.pick(x),
+            [Signal::ComputationError, Signal::Crash][want],
+            "x {x}"
+        );
     }
+    assert_eq!((computation, watchdog), (500, 500));
+    assert_eq!(signals.probability(Signal::ComputationError), 0.5);
+    assert_eq!(signals.probability(Signal::Stall), 0.0);
+}
+
+#[test_case("model.past_limit_rate", &Problem::Negative, |d| d.model.past_limit_rate = -1.0; "negative past limit rate")]
+#[test_case("model.past_limit_rate", &Problem::NotFinite, |d| d.model.past_limit_rate = f64::INFINITY; "infinite past limit rate")]
+#[test_case("model.growth", &Problem::NotPositive, |d| d.model.growth = 0.0; "zero growth")]
+#[test_case("model.growth", &Problem::NotPositive, |d| d.model.growth = -2.0; "negative growth")]
+#[test_case("model.growth", &Problem::NotFinite, |d| d.model.growth = f64::NAN; "nan growth")]
+#[test_case("model.growth", &Problem::Overflow, |d| d.model.growth = 1e10; "overflowing growth")]
+#[test_case("model.near_limit_rate", &Problem::Negative, |d| d.model.near_limit_rate = -0.5; "negative near limit rate")]
+#[test_case("model.crash_mce", &Problem::Probability, |d| d.model.crash_mce = 1.5; "crash mce above one")]
+#[test_case("model.crash_mce", &Problem::Probability, |d| d.model.crash_mce = -0.1; "negative crash mce")]
+#[test_case("model.core_local_bank", &Problem::NotFinite, |d| d.model.core_local_bank = f64::NAN; "nan core local bank")]
+#[test_case("model.core_local_bank", &Problem::Probability, |d| d.model.core_local_bank = 2.0; "core local bank above one")]
+#[test_case("model.onset_s", &Problem::Negative, |d| d.model.onset_s = -1.0; "negative onset")]
+#[test_case("model.onset_s", &Problem::NotFinite, |d| d.model.onset_s = f64::INFINITY; "infinite onset")]
+#[test_case("model.onset_boost", &Problem::Negative, |d| d.model.onset_boost = -1.0; "negative onset boost")]
+#[test_case("model.onset_boost", &Problem::NotFinite, |d| d.model.onset_boost = f64::NAN; "nan onset boost")]
+fn model_scalars_are_checked(path: &str, problem: &Problem, edit: fn(&mut MachineDefinition)) {
+    let mut definition = two_cores();
+    edit(&mut definition);
+    refused(&definition, path, problem);
 }
 
 #[test]
-fn model_scalars_are_checked() {
-    type Edit = fn(&mut MachineDefinition);
-    let cases: [(&str, Problem, Edit); 15] = [
-        ("model.past_limit_rate", Problem::Negative, |d| {
-            d.model.past_limit_rate = -1.0;
-        }),
-        ("model.past_limit_rate", Problem::NotFinite, |d| {
-            d.model.past_limit_rate = f64::INFINITY;
-        }),
-        ("model.growth", Problem::NotPositive, |d| {
-            d.model.growth = 0.0;
-        }),
-        ("model.growth", Problem::NotPositive, |d| {
-            d.model.growth = -2.0;
-        }),
-        ("model.growth", Problem::NotFinite, |d| {
-            d.model.growth = f64::NAN;
-        }),
-        ("model.growth", Problem::Overflow, |d| d.model.growth = 1e10),
-        ("model.near_limit_rate", Problem::Negative, |d| {
-            d.model.near_limit_rate = -0.5;
-        }),
-        ("model.crash_mce", Problem::Probability, |d| {
-            d.model.crash_mce = 1.5;
-        }),
-        ("model.crash_mce", Problem::Probability, |d| {
-            d.model.crash_mce = -0.1;
-        }),
-        ("model.core_local_bank", Problem::NotFinite, |d| {
-            d.model.core_local_bank = f64::NAN;
-        }),
-        ("model.core_local_bank", Problem::Probability, |d| {
-            d.model.core_local_bank = 2.0;
-        }),
-        ("model.onset_s", Problem::Negative, |d| {
-            d.model.onset_s = -1.0;
-        }),
-        ("model.onset_s", Problem::NotFinite, |d| {
-            d.model.onset_s = f64::INFINITY;
-        }),
-        ("model.onset_boost", Problem::Negative, |d| {
-            d.model.onset_boost = -1.0;
-        }),
-        ("model.onset_boost", Problem::NotFinite, |d| {
-            d.model.onset_boost = f64::NAN;
-        }),
-    ];
-    for (path, problem, edit) in cases {
-        let mut definition = two_cores();
-        edit(&mut definition);
-        refused(&definition, path, &problem);
-    }
+fn model_scalars_at_their_boundaries_are_valid() {
     let mut edge = two_cores();
     edge.model.crash_mce = 1.0;
     edge.model.core_local_bank = 0.0;

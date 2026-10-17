@@ -555,6 +555,8 @@ fn deleted_input_stops_the_campaign() {
 #[test_case("forward --facts facts/original.jsonl.gz --seal 1 --seal 1", "given twice" ; "repeated flag")]
 #[test_case("fit --facts facts/original.jsonl.gz --out /research/427/t1/fit", "does not serve this role" ; "fit in a candidate run")]
 #[test_case("forward --facts facts/original.jsonl.gz --seal 1 stray", "is not a --flag" ; "positional argument")]
+#[test_case("forward --facts facts/original.jsonl.gz --seal 1 --records runs/elsewhere.jsonl", "--records must name a path inside /research/427/t1" ; "records outside the run")]
+#[test_case("forward --facts facts/original.jsonl.gz --seal 1 --records /research/427/t1/experiments.jsonl", "outside its record" ; "records over the ledger")]
 fn model_evaluator_is_refused(command: &str, expected: &str) {
     let fake = fake(&sessions());
     let mut live = Live::start(&model_manifest(&fake), 427, &fake);
@@ -577,6 +579,35 @@ fn worker_limit_is_added_when_absent() {
     );
     assert_eq!(planned.budget, std::time::Duration::from_mins(479));
     assert_eq!(planned.started.stdout, "raw/0001-h1-reference.stdout");
+}
+
+#[test]
+fn forward_records_are_written_inside_the_run() {
+    let fake = fake(&sessions());
+    let mut live = Live::start(&model_manifest(&fake), 427, &fake);
+    let records = format!("{RUN}/records/h1.jsonl");
+    let planned = live
+        .begin(
+            &fake,
+            "h1",
+            Role::Reference,
+            &format!("{FORWARD} --records {records}"),
+        )
+        .unwrap();
+    assert_eq!(
+        planned.started.args,
+        [
+            "--facts",
+            FACTS,
+            "--seal",
+            "1",
+            "--records",
+            &records,
+            "--jobs",
+            "4"
+        ]
+        .map(str::to_owned)
+    );
 }
 
 #[test_case("forward --facts facts/original.jsonl.gz --seal 1", "not an evaluator of fixed-policy observation" ; "model evaluator")]
@@ -920,6 +951,63 @@ fn kept(fake: &mut Fake) -> Live {
     .unwrap();
     live.decide(fake, "h1", Outcome::Kept).unwrap();
     live
+}
+
+#[test]
+fn runs_that_write_their_own_records_still_pair() {
+    let mut fake = fake(&sessions());
+    let mut live = Live::start(&model_manifest(&fake), 427, &fake);
+    let complete = End::Exited { code: 0 };
+    let reference = live
+        .run(
+            &fake,
+            "h1",
+            Role::Reference,
+            &format!("{FORWARD} --records {RUN}/reference.jsonl"),
+            complete,
+        )
+        .unwrap();
+    fake.edit("crates/togi-sim/src/model.rs", "candidate");
+    let candidate = live
+        .run(
+            &fake,
+            "h1",
+            Role::Candidate,
+            &format!("{FORWARD} --records={RUN}/candidate.jsonl"),
+            complete,
+        )
+        .unwrap();
+    live.decide(&fake, "h1", Outcome::Kept).unwrap();
+    assert_eq!(
+        live.campaign.ledger.outcome("h1").unwrap().runs,
+        [reference, candidate]
+    );
+    let confirmation = live
+        .run(
+            &fake,
+            "h1",
+            Role::Confirmation,
+            &format!("{CONFIRM} --records {RUN}/confirmation.jsonl"),
+            complete,
+        )
+        .unwrap();
+    fake.revert("crates/togi-sim/src/model.rs");
+    let confirmation_reference = live
+        .run(
+            &fake,
+            "h1",
+            Role::ConfirmationReference,
+            &format!("{CONFIRM} --records {RUN}/confirmation-reference.jsonl"),
+            complete,
+        )
+        .unwrap();
+    fake.edit("crates/togi-sim/src/model.rs", "candidate");
+    live.decide(&fake, "h1", Outcome::ConfirmationPassed)
+        .unwrap();
+    assert_eq!(
+        live.campaign.ledger.outcome("h1").unwrap().runs,
+        [confirmation_reference, confirmation]
+    );
 }
 
 #[test]

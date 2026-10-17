@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use test_case::test_case;
 use togi_journal::DeadEndCondition;
 use togi_tool_sim::{Outcome, parse_manifest};
 
@@ -153,22 +154,21 @@ fn a_shard_outside_the_count_is_refused() {
     assert!(!host.files.keys().any(|path| path.starts_with("/manifests")));
 }
 
-#[test]
-fn a_shard_the_count_cannot_hold_is_refused_by_check() {
-    let mut host = host();
-    for shard in ["2", "3", &usize::MAX.to_string()] {
-        let ran = host.run([
-            "check",
-            "--suite",
-            "/suite.json",
-            "--shards",
-            "2",
-            "--shard",
-            shard,
-            "/manifests",
-        ]);
-        assert_eq!(ran.code, Some(1), "shard {shard}: {}", ran.stderr);
-    }
+#[test_case("2"; "equal to the count")]
+#[test_case("3"; "past the count")]
+#[test_case(&usize::MAX.to_string(); "largest index")]
+fn a_shard_the_count_cannot_hold_is_refused_by_check(shard: &str) {
+    let ran = host().run([
+        "check",
+        "--suite",
+        "/suite.json",
+        "--shards",
+        "2",
+        "--shard",
+        shard,
+        "/manifests",
+    ]);
+    assert_eq!(ran.code, Some(1), "{}", ran.stderr);
 }
 
 #[test]

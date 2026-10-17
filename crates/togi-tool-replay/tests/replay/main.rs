@@ -11,6 +11,7 @@ mod plant;
 use std::process::{Command, Output};
 
 use tempfile::tempdir;
+use test_case::test_case;
 use togi_watchtest::{Scenario, install};
 
 fn replay(args: &[&str]) -> Output {
@@ -73,26 +74,22 @@ fn real_process_at_says_once_on_stderr_what_it_skipped_and_still_prints_the_fram
     assert_eq!(std::fs::read(&path).unwrap(), bytes);
 }
 
-#[test]
-fn real_process_an_invalid_speed_is_a_usage_error_before_the_journal_is_read() {
+#[test_case("--speed=NaN"; "nan")]
+#[test_case("--speed=inf"; "inf")]
+#[test_case("--speed=0"; "zero")]
+#[test_case("--speed=-0"; "negative zero")]
+#[test_case("--speed=-1"; "negative")]
+fn real_process_an_invalid_speed_is_a_usage_error_before_the_journal_is_read(speed: &str) {
     let dir = tempdir().unwrap();
     let missing = dir.path().join("missing");
-    for speed in [
-        "--speed=NaN",
-        "--speed=inf",
-        "--speed=0",
-        "--speed=-0",
-        "--speed=-1",
-    ] {
-        let ran = replay(&["--state-dir", missing.to_str().unwrap(), speed]);
-        assert_eq!(ran.status.code(), Some(2), "{speed}");
-        let stderr = text(ran.stderr);
-        assert!(
-            stderr.contains("--speed must be finite and positive"),
-            "{stderr}"
-        );
-        assert!(!stderr.contains("read journal"), "{stderr}");
-    }
+    let ran = replay(&["--state-dir", missing.to_str().unwrap(), speed]);
+    assert_eq!(ran.status.code(), Some(2));
+    let stderr = text(ran.stderr);
+    assert!(
+        stderr.contains("--speed must be finite and positive"),
+        "{stderr}"
+    );
+    assert!(!stderr.contains("read journal"), "{stderr}");
 }
 
 #[test]

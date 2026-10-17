@@ -3,6 +3,7 @@ use jiff::{SignedDuration, Timestamp};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
+use test_case::test_case;
 use togi_journal::Event;
 use togi_watch::screen::View;
 use togi_watchtest::Scenario;
@@ -87,21 +88,22 @@ fn a_refused_batch_reports_the_sequence_of_the_first_invalid_event() {
     assert_eq!(seq, events[1].seq.get());
 }
 
-#[test]
-fn the_help_and_log_views_are_printed_with_their_page_names_and_no_key_hints() {
+#[test_case(View::Help, "9/9 Help", include_str!("snapshots/help-80x24.snap"); "help")]
+#[test_case(View::Log, "8/9 Journal", include_str!("snapshots/log-80x24.snap"); "log")]
+fn the_help_and_log_views_are_printed_with_their_page_names_and_no_key_hints(
+    view: View,
+    place: &str,
+    snapshot: &str,
+) {
     let events = scenario(Scenario::Checking);
-    let help = text(&events, events.len(), &frame(View::Help, (80, 24)));
-    let log = text(&events, events.len(), &frame(View::Log, (80, 24)));
-    for (print, place) in [(&help, "9/9 Help"), (&log, "8/9 Journal")] {
-        let footer = print.lines().last().unwrap_or_default();
-        assert!(footer.contains(place), "{footer:?}");
-        assert!(
-            !footer.contains("Esc") && !footer.contains("PgUp"),
-            "{footer:?}"
-        );
-    }
-    shown_snapshot(include_str!("snapshots/help-80x24.snap"), &help);
-    shown_snapshot(include_str!("snapshots/log-80x24.snap"), &log);
+    let print = text(&events, events.len(), &frame(view, (80, 24)));
+    let footer = print.lines().last().unwrap_or_default();
+    assert!(footer.contains(place), "{footer:?}");
+    assert!(
+        !footer.contains("Esc") && !footer.contains("PgUp"),
+        "{footer:?}"
+    );
+    shown_snapshot(snapshot, &print);
 }
 
 /// The newest short message the log lists as of the first `shown` events.
@@ -139,33 +141,32 @@ fn a_frame_is_the_state_as_of_the_event_not_the_end_of_the_recording() {
     );
 }
 
-#[test]
-fn the_log_view_follows_the_end_of_the_prefix() {
+#[test_case(3; "a third of the recording")]
+#[test_case(1; "the whole recording")]
+fn the_log_view_follows_the_end_of_the_prefix(fraction: usize) {
     let events = scenario(Scenario::Checking);
-    for shown in [events.len() / 3, events.len()] {
-        let log = text(&events, shown, &frame(View::Log, (240, 67)));
-        assert!(log.contains(&logged(&events, shown)), "{shown}");
-    }
+    let shown = events.len() / fraction;
+    let log = text(&events, shown, &frame(View::Log, (240, 67)));
+    assert!(log.contains(&logged(&events, shown)), "{shown}");
 }
 
-#[test]
-fn the_frame_is_drawn_at_the_last_events_wall_time_plus_after() {
+#[test_case(SignedDuration::ZERO; "no delay")]
+#[test_case(SignedDuration::from_secs(40); "forty seconds")]
+fn the_frame_is_drawn_at_the_last_events_wall_time_plus_after(after: SignedDuration) {
     let events = scenario(Scenario::Checking);
     let shown = events.len() / 2;
     let last = events[shown - 1].time;
-    for after in [SignedDuration::ZERO, SignedDuration::from_secs(40)] {
-        let main = Frame {
-            after,
-            ..frame(View::Main, (240, 67))
-        };
-        let header = text(&events, shown, &main);
-        let header = header.lines().next().unwrap();
-        assert!(
-            header.contains(&clock(offset(last, after))),
-            "{header:?} should show {}",
-            clock(offset(last, after))
-        );
-    }
+    let main = Frame {
+        after,
+        ..frame(View::Main, (240, 67))
+    };
+    let header = text(&events, shown, &main);
+    let header = header.lines().next().unwrap();
+    assert!(
+        header.contains(&clock(offset(last, after))),
+        "{header:?} should show {}",
+        clock(offset(last, after))
+    );
 }
 
 #[test]
@@ -190,32 +191,25 @@ fn colour_keeps_ansi_that_strips_back_to_the_plain_frame() {
     }
 }
 
-#[test]
-fn a_frame_stays_inside_the_screen_at_any_size() {
+#[test_case((240, 67); "240x67")]
+#[test_case((120, 33); "120x33")]
+#[test_case((80, 24); "80x24")]
+#[test_case((40, 10); "40x10")]
+#[test_case((10, 3); "10x3")]
+#[test_case((2, 2); "2x2")]
+#[test_case((1, 1); "1x1")]
+fn a_frame_stays_inside_the_screen_at_any_size(size: (u16, u16)) {
     let events = scenario(Scenario::Checking);
-    for size in [
-        (240, 67),
-        (120, 33),
-        (80, 24),
-        (40, 10),
-        (10, 3),
-        (2, 2),
-        (1, 1),
-    ] {
-        for view in [View::Main, View::Help, View::Log] {
-            let body = text(&events, events.len(), &frame(view, size));
-            let rows = body.lines().count();
-            assert_eq!(rows, usize::from(size.1 - 1), "{view:?} at {size:?}");
-            let widest = body
-                .lines()
-                .map(|line| line.chars().count())
-                .max()
-                .unwrap_or(0);
-            assert!(
-                widest < usize::from(size.0).max(2),
-                "{view:?} at {size:?}: {widest}"
-            );
-        }
+    for view in [View::Main, View::Help, View::Log] {
+        let body = text(&events, events.len(), &frame(view, size));
+        let rows = body.lines().count();
+        assert_eq!(rows, usize::from(size.1 - 1), "{view:?}");
+        let widest = body
+            .lines()
+            .map(|line| line.chars().count())
+            .max()
+            .unwrap_or(0);
+        assert!(widest < usize::from(size.0).max(2), "{view:?}: {widest}");
     }
 }
 
