@@ -58,8 +58,9 @@ impl Candidate {
 pub(crate) enum Unresolved {
     /// The candidate skipped this failure, so its profile and every later decision differ.
     AfterFailure { failure: Seq },
-    /// A tuner decision before this derivation cites `source`, a trial the candidate skipped, so that
-    /// decision's offsets and every later decision may differ.
+    /// A tuner decision, hunt, combination, deepening round or core phase before this derivation cites
+    /// `source`, a trial the candidate skipped, so that decision's offsets and every later decision may
+    /// differ.
     AfterDecision { decision: Seq, source: Seq },
     /// The order the derivation read cites the measurement of a trial the candidate skipped.
     Source { source: Seq },
@@ -475,10 +476,23 @@ impl<'a> Ledger<'a> {
         }
     }
 
-    /// Marks the candidate diverged at `event` when it is a tuner decision citing a trial the candidate
-    /// skipped: without that trial the decision, its offsets and every later decision may differ.
+    /// Marks the candidate diverged at `event` when it is a tuner decision, hunt, combination, deepening
+    /// round or core phase citing a trial the candidate skipped: without that trial the decision, its
+    /// offsets and every later decision may differ. A located hunt cites the passes that covered the
+    /// loaded cores, which a candidate may have skipped.
     fn cite(&mut self, event: &Event) {
-        if self.diverged.is_some() || !matches!(event.payload, Payload::TunerDecision(_)) {
+        let decides = matches!(
+            event.payload,
+            Payload::TunerDecision(_)
+                | Payload::HuntStart(_)
+                | Payload::HuntGroup(_)
+                | Payload::HuntEnd(_)
+                | Payload::HuntSkipped(_)
+                | Payload::Combination(_)
+                | Payload::DeepeningRound(_)
+                | Payload::CorePhase(_)
+        );
+        if self.diverged.is_some() || !decides {
             return;
         }
         if let Some(&source) = event.cause.iter().find(|seq| self.skipped.contains(seq)) {
@@ -562,12 +576,19 @@ impl<'a> Ledger<'a> {
         let evidence = state.evidence()?;
         let plan = state.cycle_plan();
         let mut needed: BTreeMap<ClassKey, Coverage> = BTreeMap::new();
+        // The tuner multiplies a part's base quota by one more than the earlier parts of its workload
+        // that hold the same set (`checking::schedule`). The candidate's chain may hold other sets, so
+        // its quota multiplies the same base by its own count of earlier parts holding its set.
+        let mut tuner_sets: HashMap<(WorkloadId, CoreSet), u32> = HashMap::new();
+        let mut held_sets: HashMap<(WorkloadId, CoreSet), u32> = HashMap::new();
         for (index, step) in plan.steps.iter().enumerate() {
-            if step.regime != Regime::R7 {
-                continue;
-            }
             let number = NonZeroU32::new(u32::try_from(index + 1).ok()?)?;
-            for part in step.parts.iter().filter(|part| part.partial) {
+            let mut held_parts = Vec::with_capacity(step.parts.len());
+            for part in &step.parts {
+                if step.regime != Regime::R7 || !part.partial {
+                    held_parts.push(part.cores);
+                    continue;
+                }
                 let ccd = part.ccd?;
                 let held = self
                     .chains
@@ -584,6 +605,13 @@ impl<'a> Ledger<'a> {
                     Position::Kept { old, new } => (old, Some(new)),
                     Position::Unknown { .. } => return None,
                 };
+                held_parts.push(cores);
+                let earlier = |sets: &HashMap<(WorkloadId, CoreSet), u32>, cores| {
+                    NonZeroU32::MIN
+                        .saturating_add(sets.get(&(step.workload, cores)).copied().unwrap_or(0))
+                };
+                let tuner = earlier(&tuner_sets, part.cores);
+                let own = earlier(&held_sets, cores);
                 for (count, secs) in [(part.short, part.short_s), (part.long, part.long_s)] {
                     let Some(secs) = NonZeroU32::new(secs).filter(|_| count > 0) else {
                         continue;
@@ -601,9 +629,16 @@ impl<'a> Ledger<'a> {
                         rerun: Vec::new(),
                         unobserved: 0,
                     });
-                    // A later step of the same workload already adds the earlier steps' passes of the
-                    // class to its own quota, and the tuner checks each quota on its own.
-                    coverage.needed = coverage.needed.max(count);
+                    // A later part's quota already includes the earlier parts' passes of its class, and
+                    // the tuner checks each quota on its own, so the class needs the largest.
+                    let quota = (count / tuner).saturating_mul(own.get());
+                    coverage.needed = coverage.needed.max(quota);
+                }
+            }
+            for (part, cores) in step.parts.iter().zip(held_parts) {
+                for (sets, cores) in [(&mut tuner_sets, part.cores), (&mut held_sets, cores)] {
+                    let seen = sets.entry((step.workload, cores)).or_insert(0);
+                    *seen = seen.saturating_add(1);
                 }
             }
         }

@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use serde_json::Value;
 use test_case::test_case;
 use togi_config::Config;
-use togi_journal::{CycleEvent, Event, Outcome, Payload};
+use togi_journal::{CycleEvent, Event, EventKind, Outcome, Payload};
 use togi_tool_stats::{Journal, chain_records, counterfactual};
 
 use crate::sim::{TARGET_FIT_0, TARGET_FIT_1, TARGET_FIT_2, machine_session, machine_session_with};
@@ -252,9 +252,10 @@ fn a_skipped_failure_whose_set_the_final_chain_still_holds_is_delayed(
     );
 }
 
-#[test]
-fn a_tuner_decision_citing_a_skipped_trial_leaves_what_follows_unresolved() {
-    let mut events = machine_session(TARGET_FIT_0, 3);
+#[test_case(EventKind::TunerDecision ; "tuner_decision")]
+#[test_case(EventKind::HuntStart ; "located_hunt")]
+fn a_tuner_decision_citing_a_skipped_trial_leaves_what_follows_unresolved(kind: EventKind) {
+    let mut events = machine_session(TARGET_FIT_0, 2);
     let skipped = ends_of(&accounted(&events), "coalesce", &["skipped"]);
     let source = events
         .iter()
@@ -263,7 +264,7 @@ fn a_tuner_decision_citing_a_skipped_trial_leaves_what_follows_unresolved() {
         .unwrap();
     let at = events
         .iter()
-        .position(|event| event.seq > source && matches!(event.payload, Payload::TunerDecision(_)))
+        .position(|event| event.seq > source && event.payload.kind() == kind)
         .unwrap();
     events[at].cause.push(source);
     let decision = events[at].seq.get();
@@ -481,6 +482,26 @@ fn a_class_a_later_step_of_its_workload_repeats_needs_only_that_steps_quota() {
         }
     }
     assert!(repeated, "{:?}", session.records);
+}
+
+#[test]
+fn a_set_tie_keeps_in_two_steps_of_a_workload_needs_the_later_steps_quota_once() {
+    let config = Config::parse(
+        r#"{"checking":{"cycle":["R7","R7","R7","R7","R2","R2","R2","R6","R5","R1","R1","R1","R3","R3","R3","R4","R4","R4","R6"]}}"#,
+    )
+    .unwrap();
+    let session = accounted(&machine_session_with(TARGET_FIT_0, 3, config));
+    let kept: Vec<u64> = of(&session, "cycle", "tie")
+        .into_iter()
+        .filter(|c| c["status"] == "covered")
+        .flat_map(|c| c["coverage"].as_array().unwrap())
+        .filter(|coverage| !coverage["instead_of"].is_null() && coverage["duration_s"] == 120)
+        .map(|coverage| n(&coverage["needed"]))
+        .collect();
+    // Steps 1 and 4 share a workload: the set tie keeps in both needs three passes, then six by the
+    // fourth step's quota, not the three of either step alone nor the nine of both summed.
+    assert!(kept.contains(&6), "{kept:?}");
+    assert!(kept.iter().all(|&needed| needed <= 6), "{kept:?}");
 }
 
 #[test]
