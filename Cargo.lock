@@ -1649,6 +1649,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "test-case",
  "thiserror",
  "togi-command",
  "togi-hostlock",
@@ -1745,6 +1746,7 @@ dependencies = [
  "rustix",
  "serde_json",
  "tempfile",
+ "test-case",
  "togi-journal",
  "togi-machine",
 ]

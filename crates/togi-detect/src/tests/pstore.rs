@@ -9,6 +9,7 @@ use rustix::fs::FileType;
 use rustix::io::Errno;
 use serde_json::json;
 use tempfile::TempDir;
+use test_case::test_case;
 use togi_machine::{Kernel as _, PstoreRecord};
 
 use super::support::{
@@ -78,117 +79,74 @@ fn record(path: &str, lines: &[&str]) -> PstoreRecord {
     }
 }
 
-type Case<'a> = (
-    &'a str,
-    &'a [(&'a str, &'a [u8])],
-    &'a str,
-    Option<PstoreRecord>,
-);
-
-#[test]
-fn a_record_in_the_boots_wall_clock_span_is_selected() {
-    let cases: [Case; 13] = [
-        (
-            "matching EFI record",
-            &[("150/001/dmesg.txt", b"Panic#1 Part1\nfirst\nlast\x1b[2J\n")],
-            OLD,
-            Some(record(
-                "/150/001/dmesg.txt",
-                &["Panic#1 Part1", "first", "last\x1b[2J"],
-            )),
-        ),
-        ("absent archive", &[], OLD, None),
-        ("older record", &[("99/001/dmesg.txt", b"old")], OLD, None),
-        (
-            "following boot record",
-            &[("250/001/dmesg.txt", b"later")],
-            OLD,
-            None,
-        ),
-        (
-            "successor boundary excluded",
-            &[("200/001/dmesg.txt", b"later")],
-            OLD,
-            None,
-        ),
-        (
-            "first boundary included",
-            &[("100/001/dmesg.txt", b"Panic#1 Part1\nfirst")],
-            OLD,
-            Some(record("/100/001/dmesg.txt", &["Panic#1 Part1", "first"])),
-        ),
-        (
-            "unknown boot",
-            &[("150/001/dmesg.txt", b"data")],
-            MISSING,
-            None,
-        ),
-        (
-            "no successor",
-            &[("350/001/dmesg.txt", b"data")],
-            CURRENT,
-            None,
-        ),
-        (
-            "latest dump and count",
-            &[
-                ("150/001/dmesg.txt", b"Oops#1 Part1\nolder"),
-                ("160/001/dmesg.txt", b"Oops#1 Part2\nolder count"),
-                ("160/002/dmesg.txt", b"Panic#2 Part1\nlatest"),
-            ],
-            OLD,
-            Some(record("/160/002/dmesg.txt", &["Panic#2 Part1", "latest"])),
-        ),
-        (
-            "dump split across seconds retains newest messages",
-            &[
-                ("150/001/dmesg.txt", b"Oops#1 Part1\nold dump"),
-                ("160/002/dmesg.txt", b"Panic#2 Part19\nnewest messages"),
-                (
-                    "161/002/dmesg.txt",
-                    b"Panic#2 Part20\nolder messages from later chunk",
-                ),
-            ],
-            OLD,
-            Some(record(
-                "/160/002/dmesg.txt",
-                &["Panic#2 Part19", "newest messages"],
-            )),
-        ),
-        (
-            "count suffix wraps",
-            &[
-                ("150/999/dmesg.txt", b"Oops#999 Part1\nold dump"),
-                ("160/000/dmesg.txt", b"Panic#1000 Part1\nlatest"),
-            ],
-            OLD,
-            Some(record(
-                "/160/000/dmesg.txt",
-                &["Panic#1000 Part1", "latest"],
-            )),
-        ),
-        (
-            "repeated suffix retains full count",
-            &[
-                ("150/001/dmesg.txt", b"Oops#1 Part1\nold dump"),
-                ("160/001/dmesg.txt", b"Panic#1001 Part1\nlatest"),
-            ],
-            OLD,
-            Some(record(
-                "/160/001/dmesg.txt",
-                &["Panic#1001 Part1", "latest"],
-            )),
-        ),
-        (
-            "unknown backend",
-            &[("150/dmesg.txt", b"ERST"), ("dmesg-ramoops-0", b"ramoops")],
-            OLD,
-            None,
-        ),
-    ];
-    for (name, files, id, want) in cases {
-        assert_eq!(saved(files, id), want, "{name}");
-    }
+#[test_case(
+    &[("150/001/dmesg.txt", b"Panic#1 Part1\nfirst\nlast\x1b[2J\n")],
+    OLD,
+    Some(&record("/150/001/dmesg.txt", &["Panic#1 Part1", "first", "last\x1b[2J"]));
+    "matching EFI record"
+)]
+#[test_case(&[], OLD, None; "absent archive")]
+#[test_case(&[("99/001/dmesg.txt", b"old")], OLD, None; "older record")]
+#[test_case(&[("250/001/dmesg.txt", b"later")], OLD, None; "following boot record")]
+#[test_case(&[("200/001/dmesg.txt", b"later")], OLD, None; "successor boundary excluded")]
+#[test_case(
+    &[("100/001/dmesg.txt", b"Panic#1 Part1\nfirst")],
+    OLD,
+    Some(&record("/100/001/dmesg.txt", &["Panic#1 Part1", "first"]));
+    "first boundary included"
+)]
+#[test_case(&[("150/001/dmesg.txt", b"data")], MISSING, None; "unknown boot")]
+#[test_case(&[("350/001/dmesg.txt", b"data")], CURRENT, None; "no successor")]
+#[test_case(
+    &[
+        ("150/001/dmesg.txt", b"Oops#1 Part1\nolder"),
+        ("160/001/dmesg.txt", b"Oops#1 Part2\nolder count"),
+        ("160/002/dmesg.txt", b"Panic#2 Part1\nlatest"),
+    ],
+    OLD,
+    Some(&record("/160/002/dmesg.txt", &["Panic#2 Part1", "latest"]));
+    "latest dump and count"
+)]
+#[test_case(
+    &[
+        ("150/001/dmesg.txt", b"Oops#1 Part1\nold dump"),
+        ("160/002/dmesg.txt", b"Panic#2 Part19\nnewest messages"),
+        ("161/002/dmesg.txt", b"Panic#2 Part20\nolder messages from later chunk"),
+    ],
+    OLD,
+    Some(&record("/160/002/dmesg.txt", &["Panic#2 Part19", "newest messages"]));
+    "dump split across seconds retains newest messages"
+)]
+#[test_case(
+    &[
+        ("150/999/dmesg.txt", b"Oops#999 Part1\nold dump"),
+        ("160/000/dmesg.txt", b"Panic#1000 Part1\nlatest"),
+    ],
+    OLD,
+    Some(&record("/160/000/dmesg.txt", &["Panic#1000 Part1", "latest"]));
+    "count suffix wraps"
+)]
+#[test_case(
+    &[
+        ("150/001/dmesg.txt", b"Oops#1 Part1\nold dump"),
+        ("160/001/dmesg.txt", b"Panic#1001 Part1\nlatest"),
+    ],
+    OLD,
+    Some(&record("/160/001/dmesg.txt", &["Panic#1001 Part1", "latest"]));
+    "repeated suffix retains full count"
+)]
+#[test_case(
+    &[("150/dmesg.txt", b"ERST"), ("dmesg-ramoops-0", b"ramoops")],
+    OLD,
+    None;
+    "unknown backend"
+)]
+fn a_record_in_the_boots_wall_clock_span_is_selected(
+    files: &[(&str, &[u8])],
+    id: &str,
+    want: Option<&PstoreRecord>,
+) {
+    assert_eq!(saved(files, id).as_ref(), want);
 }
 
 #[test]
@@ -296,36 +254,29 @@ fn the_tail_window_is_the_budget_minus_the_header() {
     assert_eq!(got.lines, ["last"]);
 }
 
-#[test]
-fn the_header_of_every_matching_chunk_must_identify_its_dump() {
-    for (name, data) in [
-        ("invalid header", &b"not a pstore dump\n"[..]),
-        ("incomplete header", b"Panic#1 Part1"),
-        ("invalid count", b"Panic#x Part1\n"),
-        ("signed count", b"Panic#+1 Part1\n"),
-        ("invalid part", b"Panic#1 Part0\n"),
-        ("empty part", b"Panic#1 Part\n"),
-        ("empty file", b""),
-        (
-            "unterminated within the header window",
-            &[b"Panic#1 Part1".as_slice(), &[b'x'; 200]].concat(),
-        ),
-    ] {
-        let (kernel, _) = memory_kernel(
-            &[
-                ("150/001/dmesg.txt", data),
-                ("160/001/dmesg.txt", b"Panic#2 Part1\nfine"),
-            ],
-            three_boots(),
-        );
-        let error = kernel
-            .read_saved_pstore(&JournalBoot::parse(OLD).unwrap())
-            .unwrap_err();
-        assert!(
-            matches!(error, Error::Pstore(PstoreError::Identity { .. })),
-            "{name}: {error:?}"
-        );
-    }
+#[test_case(b"not a pstore dump\n"; "invalid header")]
+#[test_case(b"Panic#1 Part1"; "incomplete header")]
+#[test_case(b"Panic#x Part1\n"; "invalid count")]
+#[test_case(b"Panic#+1 Part1\n"; "signed count")]
+#[test_case(b"Panic#1 Part0\n"; "invalid part")]
+#[test_case(b"Panic#1 Part\n"; "empty part")]
+#[test_case(b""; "empty file")]
+#[test_case(&[b"Panic#1 Part1".as_slice(), &[b'x'; 200]].concat(); "unterminated within the header window")]
+fn the_header_of_every_matching_chunk_must_identify_its_dump(data: &[u8]) {
+    let (kernel, _) = memory_kernel(
+        &[
+            ("150/001/dmesg.txt", data),
+            ("160/001/dmesg.txt", b"Panic#2 Part1\nfine"),
+        ],
+        three_boots(),
+    );
+    let error = kernel
+        .read_saved_pstore(&JournalBoot::parse(OLD).unwrap())
+        .unwrap_err();
+    assert!(
+        matches!(error, Error::Pstore(PstoreError::Identity { .. })),
+        "{error:?}"
+    );
 }
 
 #[test]
@@ -375,30 +326,28 @@ fn real_fs_an_unknown_entry_type_is_inspected_without_following_links() {
     );
 }
 
-#[test]
-fn real_fs_a_root_that_is_not_a_directory_is_an_error() {
+#[test_case("pstore"; "regular file")]
+#[test_case("link"; "symlink to a directory")]
+fn real_fs_a_root_that_is_not_a_directory_is_an_error(root: &str) {
     let dir = tempfile::tempdir().unwrap();
-    let file = dir.path().join("pstore");
-    fs::write(&file, b"x").unwrap();
-    let link = dir.path().join("link");
-    symlink(dir.path(), &link).unwrap();
-    for root in [&file, &link] {
-        let (kernel, calls) = kernel_over(root, three_boots());
-        let error = kernel
-            .read_saved_pstore(&JournalBoot::parse(OLD).unwrap())
-            .unwrap_err();
-        assert!(
-            matches!(
-                error,
-                Error::Pstore(PstoreError::Io {
-                    access: Access::Open,
-                    ..
-                })
-            ),
-            "{root:?}: {error:?}"
-        );
-        assert!(locked(&calls).is_empty());
-    }
+    fs::write(dir.path().join("pstore"), b"x").unwrap();
+    symlink(dir.path(), dir.path().join("link")).unwrap();
+    let root = dir.path().join(root);
+    let (kernel, calls) = kernel_over(&root, three_boots());
+    let error = kernel
+        .read_saved_pstore(&JournalBoot::parse(OLD).unwrap())
+        .unwrap_err();
+    assert!(
+        matches!(
+            error,
+            Error::Pstore(PstoreError::Io {
+                access: Access::Open,
+                ..
+            })
+        ),
+        "{root:?}: {error:?}"
+    );
+    assert!(locked(&calls).is_empty());
 }
 
 #[test]
@@ -505,87 +454,70 @@ fn real_fs_unsafe_archive_entries_are_refused_from_the_descriptor() {
     ));
 }
 
-#[test]
-fn real_fs_group_or_other_writable_dumps_are_refused() {
-    for mode in [0o620, 0o602, 0o666] {
-        let root = archive(&[("150/001/dmesg.txt", b"Panic#1 Part1\nx")]);
-        let path = root.path().join("150/001/dmesg.txt");
-        fs::set_permissions(&path, fs::Permissions::from_mode(mode)).unwrap();
-        let (kernel, _) = kernel_over(root.path(), three_boots());
-        let result = kernel.read_saved_pstore(&JournalBoot::parse(OLD).unwrap());
-        assert!(
-            matches!(
-                &result,
-                Err(Error::Pstore(PstoreError::Unsafe {
-                    path: failed_path,
-                    reason: Unsafe::Writable,
-                })) if *failed_path == path
-            ),
-            "mode {mode:o}: {result:?}"
-        );
+#[test_case(0o620; "group writable")]
+#[test_case(0o602; "other writable")]
+#[test_case(0o666; "group and other writable")]
+fn real_fs_group_or_other_writable_dumps_are_refused(mode: u32) {
+    let root = archive(&[("150/001/dmesg.txt", b"Panic#1 Part1\nx")]);
+    let path = root.path().join("150/001/dmesg.txt");
+    fs::set_permissions(&path, fs::Permissions::from_mode(mode)).unwrap();
+    let (kernel, _) = kernel_over(root.path(), three_boots());
+    let result = kernel.read_saved_pstore(&JournalBoot::parse(OLD).unwrap());
+    assert!(
+        matches!(
+            &result,
+            Err(Error::Pstore(PstoreError::Unsafe {
+                path: failed_path,
+                reason: Unsafe::Writable,
+            })) if *failed_path == path
+        ),
+        "{result:?}"
+    );
+}
+
+#[test_case(
+    Box::new(|| {
+        Err(crate::runner::RunError::Command(
+            togi_command::Error::TimedOut {
+                program: "journalctl".into(),
+                timeout: Duration::from_secs(1),
+            },
+        ))
+    }),
+    None;
+    "command"
+)]
+#[test_case(Box::new(|| ok("bad JSON")), None; "malformed list")]
+#[test_case(Box::new(|| exit(2, b"", "unreadable")), Some("exit status: 2"); "nonzero exit")]
+#[test_case(Box::new(|| exit(1, b"", "")), None; "empty exit 1")]
+fn a_boot_list_that_cannot_be_read_is_an_error_not_an_absent_record(
+    reply: Reply,
+    message: Option<&str>,
+) {
+    let (mut kernel, _) = scripted(
+        &[],
+        pstore(&[("150/001/dmesg.txt", b"last")]),
+        JOURNALCTL_BUDGET,
+        move |_| reply(),
+    );
+    let error = kernel.saved_pstore(&boot(OLD)).unwrap_err();
+    assert!(!matches!(error, togi_machine::Error::BootMissing));
+    if let Some(message) = message {
+        assert!(error.to_string().contains(message), "{error}");
     }
 }
 
-#[test]
-fn a_boot_list_that_cannot_be_read_is_an_error_not_an_absent_record() {
-    let cases: [(&str, Reply); 4] = [
-        (
-            "command",
-            Box::new(|| {
-                Err(crate::runner::RunError::Command(
-                    togi_command::Error::TimedOut {
-                        program: "journalctl".into(),
-                        timeout: Duration::from_secs(1),
-                    },
-                ))
-            }),
-        ),
-        ("malformed list", Box::new(|| ok("bad JSON"))),
-        ("nonzero exit", Box::new(|| exit(2, b"", "unreadable"))),
-        ("empty exit 1", Box::new(|| exit(1, b"", ""))),
-    ];
-    for (name, reply) in cases {
-        let (mut kernel, _) = scripted(
-            &[],
-            pstore(&[("150/001/dmesg.txt", b"last")]),
-            JOURNALCTL_BUDGET,
-            move |_| reply(),
-        );
-        let error = kernel.saved_pstore(&boot(OLD)).unwrap_err();
-        assert!(!matches!(error, togi_machine::Error::BootMissing), "{name}");
-        if name == "nonzero exit" {
-            assert!(error.to_string().contains("exit status: 2"), "{error}");
-        }
-    }
-}
-
-#[test]
-fn an_unknown_boot_span_records_no_dump() {
-    for (name, list) in [
-        ("missing timestamps", boots(&[(OLD, None), (LATER, None)])),
-        (
-            "null timestamps",
-            br#"[{"boot_id":"x","first_entry":null}]"#.to_vec(),
-        ),
-        (
-            "clock moved backwards",
-            boots(&[(OLD, Some(300_000_000)), (LATER, Some(100_000_000))]),
-        ),
-        (
-            "equal timestamps",
-            boots(&[(OLD, Some(100_000_000)), (LATER, Some(100_000_000))]),
-        ),
-        (
-            "no start",
-            boots(&[(OLD, Some(0)), (LATER, Some(200_000_000))]),
-        ),
-    ] {
-        let (mut kernel, _) = memory_kernel(
-            &[("150/001/dmesg.txt", b"Panic#1 Part1\nunrelated dump")],
-            list,
-        );
-        assert_eq!(kernel.saved_pstore(&boot(OLD)).unwrap(), None, "{name}");
-    }
+#[test_case(boots(&[(OLD, None), (LATER, None)]); "missing timestamps")]
+#[test_case(br#"[{"boot_id":"x","first_entry":null}]"#.to_vec(); "null timestamps")]
+#[test_case(boots(&[(OLD, Some(300_000_000)), (LATER, Some(100_000_000))]); "clock moved backwards")]
+#[test_case(boots(&[(OLD, Some(100_000_000)), (LATER, Some(100_000_000))]); "equal timestamps")]
+#[test_case(boots(&[(OLD, Some(0)), (LATER, Some(200_000_000))]); "no start")]
+fn an_unknown_boot_span_records_no_dump(list: Vec<u8>) {
+    let (mut kernel, _) = memory_kernel(
+        &[("150/001/dmesg.txt", b"Panic#1 Part1\nunrelated dump")],
+        list,
+    );
+    assert_eq!(kernel.saved_pstore(&boot(OLD)).unwrap(), None);
 }
 
 #[test]
