@@ -68,6 +68,10 @@ pub(crate) enum Note {
         failure: Seq,
         end: Seq,
     },
+    NamedNonCrashCap {
+        uncapped: i64,
+        limit: i64,
+    },
     Located(String),
     Probe {
         idled: CoreSet,
@@ -125,6 +129,12 @@ impl fmt::Display for Note {
                     None => f.write_str(": the charged core has taken two unattributed charges, including across load passes"),
                 }
             }
+            Self::NamedNonCrashCap { uncapped, limit } => write!(
+                f,
+                "named non-crash computation error or unexpected exit: voltage-target move capped at {} instead of {}; recorded failure points still apply",
+                count(*limit),
+                count(*uncapped)
+            ),
             Self::RerunPassed { failure, end } => write!(
                 f,
                 "the rerun of failure #{failure} with every core at CO 0 passed (#{end}), so it counts as unattributed against the cores off CO 0"

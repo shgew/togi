@@ -1,7 +1,7 @@
 use std::fmt;
 
 use togi_journal::{Activity, Decision, HuntOutcome, Seq, TunerDecision};
-use togi_machine::{CcdId, Condition, CoreId, CoreSet, PerCore, TargetOffset};
+use togi_machine::{CcdId, Condition, CoreId, CoreSet, PerCore, Signal, TargetOffset};
 use togi_requests::groups;
 
 use super::Applied;
@@ -16,6 +16,8 @@ use crate::r7::failed::OpenFailure;
 use crate::state::Run;
 use crate::zero::{AtZero, Diagnostic};
 use crate::{Action, DecisionAction, Depth, Profile, TrialPlan};
+
+const NAMED_NON_CRASH_CAP: i64 = 3;
 
 /// A failed multi-core R7 trial as attribution reads it now: once its all-zero rerun passed,
 /// neither its named nor its stalled core confines it any more.
@@ -614,7 +616,22 @@ impl Run {
             None => OwnRequest::OffsetProxy,
         };
         let rail = (charge.stepped && failing.volts.is_some()).then_some(charge.rail);
-        let counts = backoff_counts(own, target.as_ref(), rail);
+        let mut counts = backoff_counts(own, target.as_ref(), rail);
+        if charge.named
+            && !record.pending.carried
+            && view.trial.crash_duration_s.is_none()
+            && matches!(
+                record.pending.failure.signal,
+                Signal::ComputationError | Signal::UnexpectedExit
+            )
+            && counts > NAMED_NON_CRASH_CAP
+        {
+            charge.notes.push(Note::NamedNonCrashCap {
+                uncapped: counts,
+                limit: NAMED_NON_CRASH_CAP,
+            });
+            counts = NAMED_NON_CRASH_CAP;
+        }
         let offset = applied.get();
         let basis = match (failing.volts, &target) {
             (None, _) if failing.sources.is_empty() => Basis::NoTelemetry { offset },

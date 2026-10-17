@@ -672,11 +672,11 @@ fn reconstructed_0106_to_0119_uses_the_recorded_ccd1_target() {
     else {
         panic!("expected reconstructed 0106 backoff");
     };
-    assert_eq!(why.counts, 5);
+    assert_eq!(why.counts, 3);
     let crate::DecisionPayload::TunerDecision(td) = decision.payload else {
         panic!("expected tuner decision");
     };
-    assert_eq!((td.core, td.to_offset.get()), (core(11), -36));
+    assert_eq!((td.core, td.to_offset.get()), (core(11), -38));
     journal.assert_resumes();
 }
 

@@ -103,6 +103,8 @@ Short crashes do not use a passing voltage target: their request summary may cov
 
 Named R7 failures borrow a voltage target only from a load wholly on the named core's CCD, never by pooling different loads to reach the pass count. Missing failure clocks use that load's latest measured clock; without either, togi takes the one-count fallback. [The target rule](spec/tuner.md#r7-voltage-targeted-backoff) owns the exact eligibility, invalidation and clock comparison; [ADR 0067](adr/0067-named-targets-stay-on-their-ccd.md) records the 25 MHz bench-candidate tolerance and its limits.
 
+Named computation errors and unexpected exits take smaller steps toward that voltage target instead of surrendering a large gap in one move ([ADR 0068](adr/0068-cap-named-non-crash-r7-backoffs.md)). This does not soften a failure point or the all-zero checks, and it does not cap crashes, MCEs, stalls or failures redirected to a request group. The exact cap and its boundaries belong to [voltage-targeted backoff](spec/tuner.md#r7-voltage-targeted-backoff). The target-machine motivation was five non-crash backoffs of 7–18 counts in runs 4–5 of session 20261012T225227Z; smaller steps trade extra reruns for retaining depth, not a measured safety improvement.
+
 ### Phases: take the margin back, then confirm
 
 A **failure point** forbids that core's failing offset and deeper values. A **combination** forbids reaching all its members' recorded offsets together. These constraints apply to the tuning profile; a hunt deliberately tests a failed group profile.
