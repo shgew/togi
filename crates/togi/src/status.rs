@@ -103,30 +103,30 @@ enum Parked {
 
 /// What the events say that no fold keeps: notes, hunt and combination sequence numbers, defects.
 #[derive(Default)]
-struct Scan {
-    carried: Vec<(Seq, String)>,
-    between: Vec<(Seq, String)>,
+struct Scan<'a> {
+    carried: Vec<(Seq, &'a str)>,
+    between: Vec<(Seq, &'a str)>,
     hunt_start: BTreeMap<u32, (Seq, Parked)>,
     combination_seq: BTreeMap<u32, Seq>,
-    defects: Vec<Defect>,
+    defects: Vec<Defect<'a>>,
 }
 
-struct Defect {
+struct Defect<'a> {
     id: u32,
-    title: String,
+    title: &'a str,
     pr: u32,
-    decisions: Vec<Seq>,
+    decisions: &'a [Seq],
     cores: CoreSet,
 }
 
-impl Scan {
-    fn of(events: &[Event]) -> Self {
+impl<'a> Scan<'a> {
+    fn of(events: &'a [Event]) -> Self {
         let mut scan = Self::default();
         for event in events {
             match &event.payload {
-                Payload::SessionCarried(_) => scan.carried.push((event.seq, event.msg.clone())),
+                Payload::SessionCarried(_) => scan.carried.push((event.seq, &event.msg)),
                 Payload::Mce(mce) if mce.between_trials => {
-                    scan.between.push((event.seq, event.msg.clone()));
+                    scan.between.push((event.seq, &event.msg));
                 }
                 Payload::HuntStart(start) => {
                     let parked = if let Some(seq) = start.parked_seq {
@@ -146,9 +146,9 @@ impl Scan {
                 Payload::DefectFound(found) if found.direction == DefectDirection::TooCautious => {
                     scan.defects.push(Defect {
                         id: found.id.get(),
-                        title: found.title.clone(),
+                        title: &found.title,
                         pr: found.pr,
-                        decisions: found.decisions.clone(),
+                        decisions: &found.decisions,
                         cores: found.cores,
                     });
                 }
@@ -198,7 +198,7 @@ struct Status<'a> {
     journal: &'a JournalState,
     projection: &'a Projection,
     snap: Snapshot<'a>,
-    scan: &'a Scan,
+    scan: &'a Scan<'a>,
 }
 
 fn esc(text: &str) -> String {
@@ -223,11 +223,12 @@ fn rounds(count: u32) -> String {
 }
 
 /// What a cycle of `steps` lacks of the coverage a full cycle needs, one entry per regime.
-fn missing_coverage(steps: &[Regime]) -> Vec<String> {
+fn missing_coverage(steps: impl IntoIterator<Item = Regime, IntoIter: Clone>) -> Vec<String> {
+    let steps = steps.into_iter();
     FULL_CYCLE
         .iter()
         .filter_map(|&(regime, least)| {
-            let got = steps.iter().filter(|&&step| step == regime).count();
+            let got = steps.clone().filter(|&step| step == regime).count();
             (got < least).then(|| {
                 let more = least - got;
                 format!("{regime}: {more} more {}", noun(more, "step"))
@@ -257,9 +258,15 @@ const fn dead_end_label(condition: DeadEndCondition) -> &'static str {
 
 /// The BIOS note while stepped-back offsets of `cores` since `since` wait for a passed full cycle;
 /// every other BIOS offset comes from the profile `confirmed` confirmed.
-fn unconfirmed_note(since: u64, cores: &[CoreId], confirmed: Seq) -> String {
-    let listed = cores_of(cores.iter().copied());
-    let shown = if cores.len() == 1 {
+fn unconfirmed_note(
+    since: u64,
+    cores: impl IntoIterator<Item = CoreId, IntoIter: ExactSizeIterator>,
+    confirmed: Seq,
+) -> String {
+    let cores = cores.into_iter();
+    let count = cores.len();
+    let listed = cores_of(cores);
+    let shown = if count == 1 {
         format!("core {listed} shows a stepped-back offset")
     } else {
         format!("cores {listed} show stepped-back offsets")
@@ -431,8 +438,7 @@ impl Status<'_> {
         } else if let Some(number) = plan.number.filter(|_| !plan.steps.is_empty()) {
             let done = plan.steps.iter().filter(|step| step.done).count();
             let mut text = format!("checking cycle {number}, steps {done}/{}", plan.steps.len());
-            let steps: Vec<_> = plan.steps.iter().map(|step| step.regime).collect();
-            let missing = missing_coverage(&steps);
+            let missing = missing_coverage(plan.steps.iter().map(|step| step.regime));
             if !missing.is_empty() {
                 text.push_str(", not full: ");
                 text.push_str(&missing.join("; "));
@@ -543,8 +549,8 @@ impl Status<'_> {
                 confirmed.seq
             ),
             Some((bios, confirmed)) => {
-                let cores: Vec<CoreId> = bios.unconfirmed.iter().map(|mark| mark.core).collect();
-                unconfirmed_note(bios.since().map_or(0, Seq::get), &cores, confirmed.seq)
+                let cores = bios.unconfirmed.iter().map(|mark| mark.core);
+                unconfirmed_note(bios.since().map_or(0, Seq::get), cores, confirmed.seq)
             }
         };
         self.line("", "  ", &text);
@@ -732,7 +738,7 @@ impl Status<'_> {
             let text = format!(
                 "defect {}: {} (fixed by pull request #{}); decisions {} affected cores {}",
                 defect.id,
-                esc(&defect.title),
+                esc(defect.title),
                 defect.pr,
                 decisions.join(" "),
                 cores_of(defect.cores)
