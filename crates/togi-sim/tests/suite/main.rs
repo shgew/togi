@@ -6,6 +6,7 @@
 
 mod ccd;
 mod common;
+mod compatibility;
 mod definition;
 mod draws;
 mod encode;
