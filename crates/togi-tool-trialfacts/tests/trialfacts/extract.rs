@@ -357,7 +357,11 @@ fn a_session_whose_schema_is_not_readable_history_is_refused_by_name() {
                 assert_eq!(source.recorded, schema);
                 assert_eq!(source.current, SCHEMA);
             }
-            other => panic!("schema {schema}: {other}"),
+            other @ (ExtractError::Journals(_)
+            | ExtractError::Lock(_)
+            | ExtractError::Facts { .. }
+            | ExtractError::Profile { .. }
+            | ExtractError::NoFacts) => panic!("schema {schema}: {other}"),
         }
         assert!(error.to_string().contains(NEW), "{error}");
     }
