@@ -36,10 +36,10 @@ pub enum GitError {
         source: io::Error,
     },
     /// `status` reads as Go's `exec.ExitError` does, as in `exit status 128` or `signal: killed`.
-    #[error("git {command}: {status}: {stderr}")]
+    #[error("git {command}: {}: {stderr}", go_status(*status))]
     Failed {
         command: String,
-        status: String,
+        status: ExitStatus,
         stderr: String,
     },
     #[error("read the output of git {command}")]
@@ -137,7 +137,7 @@ impl Git for ProcessGit {
         if !output.status.success() {
             return Err(GitError::Failed {
                 command: rendered(),
-                status: go_status(output.status),
+                status: output.status,
                 stderr: String::from_utf8_lossy(&output.stderr).trim().to_owned(),
             });
         }
@@ -247,3 +247,7 @@ fn go_status(status: ExitStatus) -> String {
     }
     text
 }
+
+#[cfg(test)]
+#[path = "tests/git.rs"]
+mod tests;

@@ -3,6 +3,8 @@
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::io::{self, Cursor, Write};
+use std::os::unix::process::ExitStatusExt as _;
+use std::process::ExitStatus;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
@@ -40,7 +42,7 @@ pub(crate) struct FakeGit {
 pub(crate) fn injected(command: &str) -> GitError {
     GitError::Failed {
         command: command.to_owned(),
-        status: "exit status 1".to_owned(),
+        status: ExitStatus::from_raw(256),
         stderr: "injected".to_owned(),
     }
 }

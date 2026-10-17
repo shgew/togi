@@ -26,6 +26,8 @@ fn isolated(dir: &Path, home: &Path) -> ProcessGit {
         .env("GIT_COMMITTER_EMAIL", "release@example.com")
         .env_remove("GIT_DIR")
         .env_remove("GIT_WORK_TREE")
+        .env("LC_ALL", "C")
+        .env("LANGUAGE", "C")
         .env_remove("GIT_INDEX_FILE")
 }
 
