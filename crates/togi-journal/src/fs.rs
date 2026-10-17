@@ -82,7 +82,7 @@ pub trait Fs: Send + Sync + fmt::Debug {
 
 /// A real filesystem adapter that never syncs file contents, directory entries, or permissions.
 ///
-/// For explicitly non-durable simulations and kernel tests only; production journals use
+/// For explicitly non-durable simulations, scratch state copies and kernel tests only; production journals use
 /// [`crate::StateDir::lock`] instead.
 pub fn unsynced_disk_fs() -> Arc<dyn Fs> {
     Arc::new(DiskFs::unsynced())

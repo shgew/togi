@@ -9,7 +9,7 @@ use togi_machine::{CancellationToken, Error, PerCore, TargetOffset};
 use crate::emergency::SweepCleared;
 use crate::error::{SessionError, Step};
 use crate::recover::{self, Recovered, Recovery};
-use crate::session::{Control, Fault, Outcome, Session, Stop, Visit};
+use crate::session::{Control, Fault, Lifecycle, Outcome, Session, Stop, Visit};
 use crate::write;
 
 const WATCHDOG_WAIT: Duration = Duration::from_secs(30);
@@ -50,9 +50,10 @@ impl Session<'_> {
         if !self.same_boot() || self.recovery_cancelled {
             return Ok(Control::Continue);
         }
-        let Some(sweep) = self.sweep else {
+        let Lifecycle::Swept(swept) = &self.lifecycle else {
             return Ok(Control::Continue);
         };
+        let cleared = swept.cleared;
         let step = recover::same_boot_trial(
             Recovery {
                 appender: &mut self.appender,
@@ -61,7 +62,7 @@ impl Session<'_> {
                 boot: &self.boot,
                 cancel: &self.cancel,
             },
-            sweep,
+            cleared,
         )
         .map(|()| Control::Continue);
         self.settle(step)
@@ -192,14 +193,13 @@ impl Session<'_> {
     pub(crate) fn sweep(&mut self) -> Outcome {
         match self.trials.sweep(&CancellationToken::new()) {
             Ok(swept) => {
-                self.sweep = Some(SweepCleared::of(&swept));
-                self.stopped = Some(swept.stopped);
+                self.lifecycle = Lifecycle::swept(SweepCleared::of(&swept), swept.stopped);
                 self.record_check("trial_scopes", swept.detail.clone(), true)?;
                 Ok(Control::Continue)
             }
             Err(Error::Crashed) => Err(Error::Crashed.into()),
             Err(error) => {
-                self.fault.get_or_insert(Fault::Containment);
+                self.lifecycle.latch(Fault::Containment);
                 let detail = togi_render::error_chain(&error);
                 let seq = self.record_check("trial_scopes", detail.clone(), false)?;
                 let dead_end = DeadEnd {

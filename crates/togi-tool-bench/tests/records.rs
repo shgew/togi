@@ -63,7 +63,7 @@ fn a_malformed_line_names_its_number() {
 #[test]
 fn a_run_listed_twice_is_refused_even_across_splits() {
     let mut holdout = record("target", 1);
-    holdout.split = togi_tool_bench::Split::Holdout;
+    holdout.split = togi_tool_forecast::Split::Holdout;
     let text = format!("{}\n{}\n", line(&record("target", 1)), line(&holdout));
     let error = read_text(&text).unwrap_err().to_string();
     assert!(error.contains("duplicate baseline run target/1"), "{error}");

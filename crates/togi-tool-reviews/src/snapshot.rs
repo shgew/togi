@@ -15,6 +15,7 @@ use crate::manifest::{
     MANIFEST_VERSION, Manifest, ManifestFile, PreviousRecord, hunk_file_name, is_small,
     reviewer_count, total_lines, write_manifest,
 };
+use crate::parts::{join_records, parse_part, robotogi_comments};
 use crate::rangediff::{DeltaResult, classify_range};
 use crate::record::parse_record;
 use crate::text::{join, nullable, path_escape, quote, short};
@@ -496,7 +497,19 @@ fn previous_record_of(
             quote(&c.user.login)
         )));
     }
-    let r = parse_record(&c.body)
+    let body = if parse_part(&c.body).is_some() {
+        let records = join_records(robotogi_comments(t.programs, repo, pr)?)?;
+        let comment = format!("#issuecomment-{}", &found[3]);
+        let Some(record) = records.into_iter().find(|r| r.url.ends_with(&comment)) else {
+            return Err(Error::new(format!(
+                "previous record {url} is not the first part of a record whose parts are all posted"
+            )));
+        };
+        record.body
+    } else {
+        c.body
+    };
+    let r = parse_record(&body)
         .map_err(|error| Error::wrap(format!("read the previous record {url}"), error))?;
     if r.head_sha.is_empty() {
         return Err(Error::new(format!(

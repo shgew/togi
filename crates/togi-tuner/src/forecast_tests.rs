@@ -445,16 +445,17 @@ fn forecast_r7_premises_fold_distinct_outcomes_without_invented_telemetry() {
 }
 
 fn plan_trial(j: &Journal) -> togi_journal::TrialId {
-    j.state
-        .run()
-        .unwrap()
-        .flight
-        .open
-        .as_ref()
-        .unwrap()
-        .intent
-        .trial
-        .clone()
+    j.events
+        .iter()
+        .rev()
+        .find_map(|event| {
+            if let togi_journal::Payload::TrialIntent(intent) = &event.payload {
+                Some(intent.trial.clone())
+            } else {
+                None
+            }
+        })
+        .expect("a trial intent")
 }
 
 #[test]

@@ -192,6 +192,7 @@ fn solo_clause(solo: Option<TargetOffset>) -> Option<Clause> {
 
 #[cfg(test)]
 mod tests {
+    use test_case::test_case;
     use togi_machine::TargetOffset;
 
     use super::{CoreNote, offset_list};
@@ -207,82 +208,50 @@ mod tests {
         TargetOffset::new(offset).expect("a profile offset")
     }
 
-    #[test]
-    fn a_note_line_keeps_its_value_at_every_width() {
-        let returns = CoreNote::ReturnsTo(t(-37));
-        let found = CoreNote::Found(t(-38));
-        let backed = CoreNote::BackedOff {
-            after: 3,
-            solo: Some(t(-38)),
-        };
-        for (core, width, want) in [
-            (returns, 20, "returns to -37"),
-            (returns, 14, "returns to -37"),
-            (returns, 13, " -37"),
-            (returns, 12, " -37"),
-            (returns, 4, " -37"),
-            (returns, 3, "-37"),
-            (found, 13, "solo -38"),
-            (found, 7, "-38"),
-            (backed, 17, "C3 · solo -38"),
-            (backed, 6, "C3"),
-        ] {
-            assert_eq!(note(core, width), want, "{core:?} in {width}");
-        }
+    #[test_case(CoreNote::ReturnsTo(t(-37)), 20, "returns to -37"; "a return fits whole")]
+    #[test_case(CoreNote::ReturnsTo(t(-37)), 14, "returns to -37"; "a return fits exactly")]
+    #[test_case(CoreNote::ReturnsTo(t(-37)), 13, " -37"; "a return one cell short keeps the value")]
+    #[test_case(CoreNote::ReturnsTo(t(-37)), 12, " -37"; "a return at 12 keeps the value")]
+    #[test_case(CoreNote::ReturnsTo(t(-37)), 4, " -37"; "a return at 4 keeps the value")]
+    #[test_case(CoreNote::ReturnsTo(t(-37)), 3, "-37"; "a return at 3 is the bare value")]
+    #[test_case(CoreNote::Found(t(-38)), 13, "solo -38"; "a found limit fits whole")]
+    #[test_case(CoreNote::Found(t(-38)), 7, "-38"; "a found limit shortens to the value")]
+    #[test_case(CoreNote::BackedOff { after: 3, solo: Some(t(-38)) }, 17, "C3 · solo -38"; "a backoff fits whole")]
+    #[test_case(CoreNote::BackedOff { after: 3, solo: Some(t(-38)) }, 6, "C3"; "a backoff shortens to its count")]
+    fn a_note_line_keeps_its_value_at_the_width(core: CoreNote<'_>, width: usize, want: &str) {
+        assert_eq!(note(core, width), want, "{core:?} in {width}");
     }
 
-    #[test]
-    fn every_note_shows_its_value_whole_or_nothing_at_every_width() {
-        let offsets = [t(-30), t(-29), t(-27)];
-        for core in [
-            CoreNote::GroupFailed(&offsets),
-            CoreNote::ReturnsTo(t(-37)),
-            CoreNote::Confirming {
-                offset: t(-31),
-                light: 2,
-                heavy: 1,
-                needed: 3,
-            },
-            CoreNote::HeldBy {
-                combination: 4,
-                solo: Some(t(-31)),
-            },
-            CoreNote::BackedOff {
-                after: 12,
-                solo: Some(t(-31)),
-            },
-            CoreNote::Found(t(-38)),
-            CoreNote::Searching {
-                passed: Some(t(-20)),
-                next: Some(t(-24)),
-            },
-            CoreNote::Searching {
-                passed: None,
-                next: Some(t(-24)),
-            },
-            CoreNote::Queued("waiting for the idle trial to end"),
-        ] {
-            for width in 0..60 {
-                let line = core.line(width, Colours::Full);
-                let text = plain(&line);
-                assert!(line_width(&line) <= width, "{core:?} in {width}: {text:?}");
-                for token in text
-                    .split(' ')
-                    .filter(|token| token.starts_with('-') && token.len() > 1)
-                {
-                    assert!(
-                        token[1..]
-                            .trim_end_matches(['.', ':', ','])
-                            .chars()
-                            .all(|c| c.is_ascii_digit()),
-                        "{core:?} in {width}: a value was cut: {text:?}"
-                    );
-                }
+    #[test_case(CoreNote::GroupFailed(&[t(-30), t(-29), t(-27)]); "a group failure")]
+    #[test_case(CoreNote::ReturnsTo(t(-37)); "a return")]
+    #[test_case(CoreNote::Confirming { offset: t(-31), light: 2, heavy: 1, needed: 3 }; "a confirmation")]
+    #[test_case(CoreNote::HeldBy { combination: 4, solo: Some(t(-31)) }; "a held core")]
+    #[test_case(CoreNote::BackedOff { after: 12, solo: Some(t(-31)) }; "a backoff")]
+    #[test_case(CoreNote::Found(t(-38)); "a found solo limit")]
+    #[test_case(CoreNote::Searching { passed: Some(t(-20)), next: Some(t(-24)) }; "a search with a pass")]
+    #[test_case(CoreNote::Searching { passed: None, next: Some(t(-24)) }; "a search without a pass")]
+    #[test_case(CoreNote::Queued("waiting for the idle trial to end"); "a queued core")]
+    fn a_note_shows_its_value_whole_or_nothing_at_every_width(core: CoreNote<'_>) {
+        for width in 0..60 {
+            let line = core.line(width, Colours::Full);
+            let text = plain(&line);
+            assert!(line_width(&line) <= width, "{core:?} in {width}: {text:?}");
+            for token in text
+                .split(' ')
+                .filter(|token| token.starts_with('-') && token.len() > 1)
+            {
                 assert!(
-                    !text.starts_with(' ') || matches!(core, CoreNote::ReturnsTo(_)),
-                    "{core:?} in {width}: {text:?}"
+                    token[1..]
+                        .trim_end_matches(['.', ':', ','])
+                        .chars()
+                        .all(|c| c.is_ascii_digit()),
+                    "{core:?} in {width}: a value was cut: {text:?}"
                 );
             }
+            assert!(
+                !text.starts_with(' ') || matches!(core, CoreNote::ReturnsTo(_)),
+                "{core:?} in {width}: {text:?}"
+            );
         }
     }
 

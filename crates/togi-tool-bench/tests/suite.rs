@@ -9,7 +9,8 @@ use common::Tree;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use togi_tool_bench::{Error, Selection, Split, Suite};
+use togi_tool_bench::{Error, Selection, Suite};
+use togi_tool_forecast::Split;
 
 fn bench_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tools/bench")

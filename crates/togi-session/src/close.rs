@@ -12,16 +12,26 @@ use togi_journal::{DeadEndCondition, Payload};
 use togi_machine::{PerCore, TargetOffset};
 use togi_tuner::DecisionPayload;
 
-use crate::emergency::{self, Access, Withheld};
+use crate::emergency::{self, Access};
 use crate::error::{Flow, JournalFailure, SessionError};
 use crate::session::{Ended, Fault, Panic, Session, Stop, message_of};
 
-/// How far the cleanup of a run that may still touch the machine got.
+/// How far the restoration at the end of a run that may still touch the machine got.
 enum Reached {
-    /// The machine is as the run found it, or a dead end settled what the restoration could not.
+    /// The machine is as the run found it, or the dead end the run stopped at settled what the restoration could not.
     Settled,
-    /// The restoration did not finish: nothing more is recorded about the run's end.
-    Unsettled,
+    /// The restoration found dead-end evidence and recorded the dead end, which settles it and replaces the stop.
+    DeadEnd(Stop),
+    /// The restoration did not finish, for the error if there is one: nothing more is recorded about the run's end.
+    Unsettled(Option<SessionError>),
+}
+
+/// What the cleanup of a run that may still touch the machine left: the stop the run ends at, which a dead end the
+/// cleanup recorded replaces, the errors of the cleanup, and the panic that cut it short.
+struct Cleanup {
+    stop: Option<Stop>,
+    errors: Vec<SessionError>,
+    panic: Option<Panic>,
 }
 
 impl Session<'_> {
@@ -31,116 +41,130 @@ impl Session<'_> {
         let mut stop = match run {
             Ok(stop) => Some(stop),
             Err(error) => {
-                self.keep(&mut errors, error);
+                errors.push(self.keep(error));
                 None
             }
         };
         for error in std::mem::take(&mut self.unconfirmed) {
-            self.keep(&mut errors, SessionError::Machine(error));
+            errors.push(self.keep(SessionError::Machine(error)));
         }
         let mut panic = None;
-        if self.fault.is_none() && self.appender.failure().is_none() {
-            let cleanup = catch_unwind(AssertUnwindSafe(|| {
-                self.clean_up(&mut stop, &mut errors, &mut panic);
-            }));
-            if let Err(payload) = cleanup {
-                let message = message_of(&*payload).to_owned();
-                self.appender.interrupt(&message);
-                errors.push(SessionError::Panicked(message));
-                panic.get_or_insert_with(|| Panic::new(payload));
-            }
+        if self.lifecycle.fault().is_none() && self.appender.failure().is_none() {
+            let cleanup = self.clean_up(stop);
+            stop = cleanup.stop;
+            errors.extend(cleanup.errors);
+            panic = cleanup.panic;
         }
         let emergency = self
             .appender
             .failure()
             .cloned()
             .map(|failure| self.answer(&failure));
-        let mut ended = self.finish(stop, errors, emergency);
-        ended.panic = panic;
-        ended
+        self.finish(stop, errors, emergency, panic)
     }
 
-    /// Restores the machine and records the shutdown. A panic out of the drain of a signalled stop is kept as an
-    /// error and in `panic` for the caller to resume, and the restoration still runs; no shutdown follows it.
-    fn clean_up(
-        &mut self,
-        stop: &mut Option<Stop>,
-        errors: &mut Vec<SessionError>,
-        panic: &mut Option<Panic>,
-    ) {
+    /// Records the decisions a signalled stop owes, restores the machine and records the shutdown. A panic out of
+    /// the drain is kept as an error and the restoration still runs, with no shutdown after it; a panic out of the
+    /// restoration or the shutdown interrupts the journal, and a dead end the restoration recorded before it is
+    /// kept. Either is the cleanup's panic for the caller to resume.
+    fn clean_up(&mut self, stop: Option<Stop>) -> Cleanup {
+        let mut cleanup = Cleanup {
+            stop,
+            errors: Vec::new(),
+            panic: None,
+        };
         let mut drain_failed = false;
-        if matches!(stop, Some(Stop::Signal)) {
+        if matches!(cleanup.stop, Some(Stop::Signal)) {
             match catch_unwind(AssertUnwindSafe(|| self.record_drained())) {
-                Ok(Ok(Some(dead_end))) => *stop = Some(dead_end),
+                Ok(Ok(Some(dead_end))) => cleanup.stop = Some(dead_end),
                 Ok(Ok(None)) => {}
                 Ok(Err(error)) => {
-                    self.keep(errors, error);
+                    cleanup.errors.push(self.keep(error));
                     drain_failed = true;
                 }
                 Err(payload) => {
-                    errors.push(SessionError::Panicked(message_of(&*payload).to_owned()));
-                    *panic = Some(Panic::new(payload));
+                    let message = message_of(&*payload).to_owned();
+                    cleanup.errors.push(SessionError::Panicked(message));
+                    cleanup.panic = Some(Panic::new(payload));
                     drain_failed = true;
                 }
             }
         }
-        if self.fault.is_some() || self.appender.failure().is_some() {
-            return;
+        if self.lifecycle.fault().is_some() || self.appender.failure().is_some() {
+            return cleanup;
         }
-        let reached = if smu_dead_end(stop.as_ref()) {
-            Reached::Settled
-        } else {
-            let held = self.held();
-            self.restore_and_settle(stop, &held, errors)
-        };
-        if !drain_failed
-            && matches!(reached, Reached::Settled)
-            && !self.unreconciled()
-            && let Err(error) = self.append_shutdown()
-        {
-            self.keep(errors, error);
+        let stop = cleanup.stop.as_ref();
+        let reached = catch_unwind(AssertUnwindSafe(|| {
+            if smu_dead_end(stop) {
+                Reached::Settled
+            } else {
+                let held = self.held();
+                self.restore_and_settle(stop, &held)
+            }
+        }));
+        match reached {
+            Ok(Reached::Settled) => {}
+            Ok(Reached::DeadEnd(dead_end)) => cleanup.stop = Some(dead_end),
+            Ok(Reached::Unsettled(error)) => {
+                cleanup.errors.extend(error);
+                return cleanup;
+            }
+            Err(payload) => {
+                self.interrupted(&mut cleanup, payload);
+                return cleanup;
+            }
         }
+        if drain_failed {
+            return cleanup;
+        }
+        let shutdown = catch_unwind(AssertUnwindSafe(|| {
+            if self.unreconciled() {
+                Ok(())
+            } else {
+                self.append_shutdown()
+            }
+        }));
+        match shutdown {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => cleanup.errors.push(self.keep(error)),
+            Err(payload) => self.interrupted(&mut cleanup, payload),
+        }
+        cleanup
+    }
+
+    /// Interrupts the journal for a panic out of the restoration or the shutdown and keeps it as an error of the
+    /// cleanup, and as its panic unless the drain already panicked.
+    fn interrupted(&mut self, cleanup: &mut Cleanup, payload: Box<dyn std::any::Any + Send>) {
+        let message = message_of(&*payload).to_owned();
+        self.appender.interrupt(&message);
+        cleanup.errors.push(SessionError::Panicked(message));
+        cleanup.panic.get_or_insert_with(|| Panic::new(payload));
     }
 
     /// Keeps an error of the run; one that says the machine went down latches the crash, so nothing after it
     /// touches the machine, publishes or answers with the emergency as though it had not.
-    fn keep(&mut self, errors: &mut Vec<SessionError>, error: SessionError) {
+    fn keep(&mut self, error: SessionError) -> SessionError {
         if error.is_crash() {
-            self.fault = Some(Fault::Crashed);
+            self.lifecycle.crash();
         }
-        errors.push(error);
+        error
     }
 
-    fn restore_and_settle(
-        &mut self,
-        stop: &mut Option<Stop>,
-        held: &PerCore<TargetOffset>,
-        errors: &mut Vec<SessionError>,
-    ) -> Reached {
+    fn restore_and_settle(&mut self, stop: Option<&Stop>, held: &PerCore<TargetOffset>) -> Reached {
         match self.restore(held) {
             Ok(restoration) if restoration.is_complete() => Reached::Settled,
-            Ok(_) => Reached::Unsettled,
-            Err(Flow::Fatal(error)) => {
-                self.keep(errors, error);
-                Reached::Unsettled
-            }
+            Ok(_) => Reached::Unsettled(None),
+            Err(Flow::Fatal(error)) => Reached::Unsettled(Some(self.keep(error))),
             Err(Flow::DeadEnd(condition)) => {
                 if matches!(stop, Some(Stop::DeadEnd { .. })) {
                     return Reached::Settled;
                 }
                 match self.check_dead_end() {
-                    Ok(Some(dead_end)) => {
-                        *stop = Some(dead_end);
-                        Reached::Settled
-                    }
+                    Ok(Some(dead_end)) => Reached::DeadEnd(dead_end),
                     Ok(None) => {
-                        errors.push(SessionError::DeadEndUnrecorded(condition));
-                        Reached::Unsettled
+                        Reached::Unsettled(Some(SessionError::DeadEndUnrecorded(condition)))
                     }
-                    Err(error) => {
-                        self.keep(errors, error);
-                        Reached::Unsettled
-                    }
+                    Err(error) => Reached::Unsettled(Some(self.keep(error))),
                 }
             }
         }
@@ -178,14 +202,9 @@ impl Session<'_> {
     /// The emergency for a journal that cannot be appended to. A fault withholds it: a crashed machine or one
     /// whose workload may run is not touched.
     fn answer(&mut self, failure: &JournalFailure) -> emergency::Outcome {
-        let gate = match self.fault {
-            Some(Fault::Crashed) => Err(Withheld::Crashed),
-            Some(Fault::Containment) => Err(Withheld::TeardownUnconfirmed),
-            None => Access::gate(self.sweep, self.validated, self.stopped.as_ref()),
-        };
         emergency::respond(
             failure,
-            gate,
+            Access::gate(&self.lifecycle, self.validated),
             &mut *self.smu,
             self.hardware.cores(),
             &mut *self.report,
@@ -199,9 +218,10 @@ impl Session<'_> {
         stop: Option<Stop>,
         mut errors: Vec<SessionError>,
         mut emergency: Option<emergency::Outcome>,
+        panic: Option<Panic>,
     ) -> Ended {
         if self.appender.failure().is_none()
-            && self.fault != Some(Fault::Crashed)
+            && self.lifecycle.fault() != Some(Fault::Crashed)
             && !self.appender.journal().events().is_empty()
             && let Err(error) = self.appender.publish_state()
         {
@@ -223,7 +243,7 @@ impl Session<'_> {
             errors,
             emergency,
             capsule,
-            panic: None,
+            panic,
             journal: self.appender.into_journal(),
         }
     }

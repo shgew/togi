@@ -9,7 +9,7 @@ mod tuner;
 use std::fmt;
 use std::str::FromStr;
 
-use serde::{Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 use togi_machine::CoreId;
 
 pub use config::{
@@ -41,8 +41,8 @@ pub use tuner::{
 
 macro_rules! payloads {
     ($($variant:ident($ty:ty) = $wire:literal,)+) => {
-        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-        pub enum EventKind { $($variant,)+ }
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+        pub enum EventKind { $(#[serde(rename = $wire)] $variant,)+ }
 
         impl EventKind {
             pub const ALL: &'static [Self] = &[$(Self::$variant,)+];
@@ -52,7 +52,8 @@ macro_rules! payloads {
             }
         }
 
-        #[derive(Clone, Debug, PartialEq)]
+        #[derive(Clone, Debug, PartialEq, Serialize)]
+        #[serde(untagged)]
         pub enum Payload { $($variant($ty),)+ }
 
         impl Payload {
@@ -77,12 +78,6 @@ macro_rules! payloads {
                         serde_path_to_error::deserialize::<_, $ty>(&mut deserializer).map(drop)
                     })+
                 }
-            }
-        }
-
-        impl Serialize for Payload {
-            fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-                match self { $(Self::$variant(payload) => payload.serialize(serializer),)+ }
             }
         }
 
@@ -288,18 +283,5 @@ impl EventKind {
 impl fmt::Display for EventKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
-    }
-}
-
-impl Serialize for EventKind {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(self.as_str())
-    }
-}
-
-impl<'de> serde::Deserialize<'de> for EventKind {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let text = String::deserialize(deserializer)?;
-        text.parse().map_err(serde::de::Error::custom)
     }
 }

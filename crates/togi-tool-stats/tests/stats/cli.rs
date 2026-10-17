@@ -322,7 +322,7 @@ fn forecast_run(cores: &[i64], status: togi_tool_forecast::Status) -> togi_tool_
     togi_tool_forecast::Run {
         machine: "m.json".to_owned(),
         seed: 1,
-        split: "dev".to_owned(),
+        split: togi_tool_forecast::Split::Dev,
         outcome: togi_tool_forecast::Outcome {
             status,
             hours: 5.0,

@@ -139,13 +139,12 @@ order by core, "offset" desc;
 
 A copy of the target machine's journals shows what the next real run would carry. `togi-tool-sim --state-dir` resumes the copy on the simulator under the current build, so a journal recorded under an older ruleset or schema goes through the transition the next `togi run` would make (`docs/simulating.md`), and `togi events --kind session.carried,trial.carried,failure.carried` lists what it carried, each fact with the session it came from. Run it only on a copy: preparation archives the live journal.
 
-From a checkout on the target machine, copy only the journals (the sources are read-only):
+From a checkout on the target machine, copy the journals, `state.json` and the archive markers with [`just copy-state`](benchmarking.md#forecasting-a-real-run) (the sources are read-only), while togi is not running a trial:
 
 ```sh
 copy=$(mktemp -d)
 trap 'rm -rf "$copy"' EXIT
-mkdir "$copy/archive"
-sudo sh -c 'cp /var/lib/togi/archive/*.jsonl "$1/archive/"; for marker in /var/lib/togi/archive/*-reset-all; do [ ! -f "$marker" ] || cp "$marker" "$1/archive/"; done; cp /var/lib/togi/events.jsonl "$1/events.jsonl"' sh "$copy"
+sudo nix develop --command just copy-state /var/lib/togi "$copy"
 sudo chown -R "$(id -u):$(id -g)" "$copy"
 just sim --state-dir "$copy"
 just togi --state-dir "$copy" events --kind session.carried,trial.carried,failure.carried
