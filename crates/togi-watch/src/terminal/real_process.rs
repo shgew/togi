@@ -24,7 +24,9 @@ use rustix::process::{Pid, Signal, kill_process};
 use rustix::pty::{OpenptFlags, grantpt, openpt, ptsname, unlockpt};
 use rustix::termios::{LocalModes, Winsize, tcgetattr, tcsetwinsize};
 use tempfile::TempDir;
-use togi_journal::{Build, Event, Payload, SCHEMA, Seq, SessionStart, SessionWarning, Stamp};
+use togi_journal::{
+    Build, Event, FixStamp, Payload, SCHEMA, Seq, SessionStart, SessionWarning, Stamp,
+};
 use togi_machine::{BootId, CcdId, CoreId, CoreInfo, CpuId};
 use togi_watchtest::{Scenario, install};
 use tokio::signal::unix::{SignalKind, signal};
@@ -474,7 +476,7 @@ fn journal_lines(warnings: u64) -> Vec<u8> {
                 rev: None,
                 ruleset: 1,
                 schema: SCHEMA,
-                fixes: 0,
+                fixes: FixStamp::none(),
                 evidence: 1,
             },
             session: "20231114T221320Z".parse().unwrap(),

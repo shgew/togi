@@ -4,7 +4,7 @@ use std::io::BufRead;
 use std::path::Path;
 
 use togi_journal::{
-    Build, Event, EventReader, FileError, Operation, Payload, ReadError, SCHEMA, Verdict,
+    Build, Event, EventReader, FileError, FixStamp, Operation, Payload, ReadError, SCHEMA, Verdict,
 };
 use togi_tuner::{EVIDENCE_EPOCH, RULESET};
 
@@ -52,7 +52,7 @@ pub(crate) fn events_from(state_dir: &Path, input: impl BufRead) -> Result<Loade
         rev: None,
         ruleset: RULESET,
         schema: SCHEMA,
-        fixes: 0,
+        fixes: FixStamp::none(),
         evidence: EVIDENCE_EPOCH,
     };
     if let Payload::SessionStart(start) = &first.payload

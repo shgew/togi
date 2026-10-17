@@ -14,7 +14,7 @@ use togi_sim::definition::{CoreDef, JointDef, ModelDef, Weights};
 
 use crate::emergency::{Response, Withheld};
 use crate::session::Session;
-use crate::session::{Fault as Broken, Visit};
+use crate::session::{Fault as Broken, Lifecycle, Visit};
 use crate::testing::{Bench, core, put, recorded_baseline, swept, target};
 use crate::{Ended, SessionError, Stop};
 
@@ -180,7 +180,7 @@ fn without_the_proof_that_every_workload_stopped_nothing_is_restored_or_recorded
     let bench = Bench::new(2);
     let mut session = tuned(&bench);
     let run = Ok(signalled(&mut session));
-    session.stopped = None;
+    session.lifecycle.lose_stopped();
     let before = kinds(session.appender().journal().events());
     let ended = close(session, run);
     assert_eq!(kinds(ended.journal.events()), before);
@@ -193,7 +193,7 @@ fn a_machine_out_of_reach_is_left_alone_and_records_no_shutdown() {
         let bench = Bench::new(2);
         let mut session = tuned(&bench);
         let run = Ok(signalled(&mut session));
-        session.fault = Some(fault);
+        session.lifecycle = Lifecycle::Faulted(fault);
         let before = kinds(session.appender().journal().events());
         let ended = close(session, run);
         assert_eq!(kinds(ended.journal.events()), before, "{fault:?}");
@@ -245,6 +245,48 @@ fn a_restoration_that_fails_at_the_smu_turns_a_clean_stop_into_an_smu_dead_end()
     assert!(!kinds.contains(&"profile.restored"));
     assert_eq!(shutdown_reason(events), Some(ShutdownReason::DeadEnd));
     assert_eq!(smu_offsets(&bench), [-5, -5]);
+}
+
+/// The dead end the restoration recorded is the run's stop even when a panic strikes the shutdown after it.
+#[test]
+fn a_panic_taking_in_the_shutdown_keeps_the_dead_end_the_restoration_recorded() {
+    let bench = Bench::new(2);
+    let armed = std::rc::Rc::new(std::cell::Cell::new(false));
+    let flag = armed.clone();
+    let mut input = bench.input();
+    input.on_append = Some(Box::new(move |event| {
+        assert!(
+            !(flag.get() && event.kind() == togi_journal::EventKind::Shutdown),
+            "a bug taking in the shutdown"
+        );
+    }));
+    let Ok(mut session) = Session::open(input) else {
+        panic!("open");
+    };
+    assert_eq!(session.start().unwrap(), crate::session::Control::Continue);
+    assert_eq!(session.sweep().unwrap(), crate::session::Control::Continue);
+    recorded_baseline(&mut session, &[0, 0]);
+    put(&mut session, &[-5, -5]);
+    session.validated = Some(session.host.validate_smu().unwrap());
+    let run = Ok(signalled(&mut session));
+    bench.sim.fail_write(1);
+    armed.set(true);
+    let mut ended = session.close(run);
+    let panic = ended.panic.take().expect("the panic is handed back");
+    assert_eq!(panic.message(), "a bug taking in the shutdown");
+    let Some(Stop::DeadEnd { dead_end, .. }) = &ended.stop else {
+        panic!("{:?}", ended.stop);
+    };
+    assert_eq!(dead_end.condition, DeadEndCondition::Smu);
+    assert!(matches!(
+        ended.errors.as_slice(),
+        [SessionError::Panicked(message)] if message == "a bug taking in the shutdown"
+    ));
+    let kinds = kinds(ended.journal.events());
+    assert!(
+        kinds.ends_with(&["smu.error", "deadend", "shutdown"]),
+        "{kinds:?}"
+    );
 }
 
 #[test]
@@ -468,7 +510,7 @@ fn the_emergency_is_withheld_without_a_validated_smu_or_after_a_fault() {
     assert_eq!(smu_offsets(&bench), [-5, -5]);
 
     let bench = Bench::new(2);
-    let ended = latched(&bench, |session| session.stopped = None);
+    let ended = latched(&bench, |session| session.lifecycle.lose_stopped());
     assert!(matches!(
         ended.emergency.unwrap().response,
         Response::Withheld(Withheld::TeardownUnconfirmed)
@@ -480,7 +522,9 @@ fn the_emergency_is_withheld_without_a_validated_smu_or_after_a_fault() {
         (Broken::Containment, Withheld::TeardownUnconfirmed),
     ] {
         let bench = Bench::new(2);
-        let ended = latched(&bench, |session| session.fault = Some(fault));
+        let ended = latched(&bench, |session| {
+            session.lifecycle = Lifecycle::Faulted(fault);
+        });
         assert!(matches!(
             ended.emergency.unwrap().response,
             Response::Withheld(withheld) if withheld == reason
@@ -840,7 +884,7 @@ fn put_alone(session: &mut Session, values: &[i64]) {
     crate::write::apply_profile(
         &mut session.appender,
         &mut *session.smu,
-        session.stopped.as_ref().unwrap(),
+        session.lifecycle.stopped().unwrap(),
         &mut session.hardware,
         crate::write::ProfileRequest {
             target: &target,

@@ -350,18 +350,25 @@ impl Ledger {
     }
 
     pub fn started_at(&self) -> Option<Timestamp> {
-        self.records.iter().find_map(|record| match record {
-            Record::CampaignStarted { at, .. } => Some(*at),
-            _ => None,
+        self.records.iter().find_map(|record| {
+            if let Record::CampaignStarted { at, .. } = record {
+                Some(*at)
+            } else {
+                None
+            }
         })
     }
 
     pub fn manifest_sha256(&self) -> Option<&str> {
-        self.records.iter().find_map(|record| match record {
-            Record::CampaignStarted {
+        self.records.iter().find_map(|record| {
+            if let Record::CampaignStarted {
                 manifest_sha256, ..
-            } => Some(manifest_sha256.as_str()),
-            _ => None,
+            } = record
+            {
+                Some(manifest_sha256.as_str())
+            } else {
+                None
+            }
         })
     }
 
@@ -370,9 +377,12 @@ impl Ledger {
     pub fn stopped(&self) -> Option<(StopReason, &str)> {
         self.records
             .iter()
-            .find_map(|record| match record {
-                Record::CampaignStopped { reason, detail, .. } => Some((*reason, detail.as_str())),
-                _ => None,
+            .find_map(|record| {
+                if let Record::CampaignStopped { reason, detail, .. } = record {
+                    Some((*reason, detail.as_str()))
+                } else {
+                    None
+                }
             })
             .or_else(|| {
                 self.records.iter().find_map(|record| match record {
@@ -384,29 +394,46 @@ impl Ledger {
                     Record::ExperimentEnded(ended) if ended.end == End::TimedOut => {
                         Some((StopReason::WallLimit, "a run stopped at the limit"))
                     }
-                    _ => None,
+                    Record::CampaignStarted { .. }
+                    | Record::CampaignResumed { .. }
+                    | Record::ExperimentStarted(_)
+                    | Record::ExperimentEnded(_)
+                    | Record::Outcome(_)
+                    | Record::CampaignStopped { .. }
+                    | Record::LedgerTorn { .. } => None,
                 })
             })
     }
 
     pub fn starts(&self) -> impl Iterator<Item = &Started> {
-        self.records.iter().filter_map(|record| match record {
-            Record::ExperimentStarted(started) => Some(started),
-            _ => None,
+        self.records.iter().filter_map(|record| {
+            if let Record::ExperimentStarted(started) = record {
+                Some(started)
+            } else {
+                None
+            }
         })
     }
 
     pub fn end(&self, seq: u32) -> Option<&Ended> {
-        self.records.iter().find_map(|record| match record {
-            Record::ExperimentEnded(ended) if ended.seq == seq => Some(ended),
-            _ => None,
+        self.records.iter().find_map(|record| {
+            if let Record::ExperimentEnded(ended) = record
+                && ended.seq == seq
+            {
+                Some(ended)
+            } else {
+                None
+            }
         })
     }
 
     pub fn decisions(&self) -> impl Iterator<Item = &Decision> {
-        self.records.iter().filter_map(|record| match record {
-            Record::Outcome(decision) => Some(decision),
-            _ => None,
+        self.records.iter().filter_map(|record| {
+            if let Record::Outcome(decision) = record {
+                Some(decision)
+            } else {
+                None
+            }
         })
     }
 

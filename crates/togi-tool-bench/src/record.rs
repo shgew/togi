@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use togi_machine::{ObservedOffset, PerCore, Regime, object_only};
 
 use crate::error::Error;
-use crate::suite::Split;
+use togi_tool_forecast::Split;
 
 /// How a run ended.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]

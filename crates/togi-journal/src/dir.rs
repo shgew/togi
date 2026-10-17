@@ -13,7 +13,9 @@ use serde::de::DeserializeOwned;
 use crate::fs::{DiskFs, FileKind, Fs, FsLock, MemFs};
 use crate::session_id::SessionId;
 
-pub use archive::{ArchiveKind, Lifetime, Marker, recorded_build, recorded_build_in};
+pub use archive::{
+    ArchiveKind, Lifetime, Marker, recorded_build, recorded_build_in, session_entries_in,
+};
 
 pub(crate) const LOCK_FILE: &str = "lock";
 pub(crate) const EVENTS_FILE: &str = "events.jsonl";

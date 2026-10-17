@@ -228,7 +228,7 @@ impl Run {
         )?;
         let open = match std::mem::take(&mut self.flight.current) {
             InFlight::Open(open) if open.trial == end.trial => open,
-            other => {
+            other @ (InFlight::Idle | InFlight::Open(_) | InFlight::Awaiting(_)) => {
                 self.flight.current = other;
                 return Err(FoldError::NoOpenTrial(end.trial.clone()));
             }

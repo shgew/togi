@@ -9,6 +9,7 @@ use togi_sim::faults::SmuOperation;
 
 use super::{Access, Response, Withheld, respond};
 use crate::error::JournalFailure;
+use crate::session::{Fault, Lifecycle, Swept};
 use crate::testing::{Rig, core, target};
 use crate::write::{ConstraintRefusal, apply};
 
@@ -79,32 +80,56 @@ fn lower(rig: &mut Rig, n: i64, offset: i64) {
         .hardware
         .check_set(core(n), target(offset), &mut |_| None::<ConstraintRefusal>)
         .unwrap();
-    drop(apply(&mut rig.appender, &mut *rig.smu, &rig.stopped, checked, &[]).unwrap());
+    drop(
+        apply(
+            &mut rig.appender,
+            &mut *rig.smu,
+            rig.lifecycle.stopped().unwrap(),
+            checked,
+            &[],
+        )
+        .unwrap(),
+    );
 }
 
 #[test]
 fn nothing_touches_the_smu_without_a_sweep_a_validation_and_a_confirmed_teardown() {
     let rig = Rig::new(2);
+    let held = Lifecycle::Swept(Swept {
+        cleared: rig.cleared(),
+        stopped: None,
+        confirmed: None,
+    });
     let cases = [
         (
-            Access::gate(None, Some(rig.validated), Some(&rig.stopped)),
+            Access::gate(&Lifecycle::Unswept, Some(rig.validated)),
             Withheld::NoSweep,
             "offsets unchanged before successful trial-scope sweep",
         ),
         (
-            Access::gate(Some(rig.sweep), None, Some(&rig.stopped)),
+            Access::gate(&rig.lifecycle, None),
             Withheld::NoValidation,
             "offsets unchanged: the SMU interface was not validated",
         ),
         (
-            Access::gate(Some(rig.sweep), Some(rig.validated), None),
+            Access::gate(&held, Some(rig.validated)),
             Withheld::TeardownUnconfirmed,
             "offsets unchanged: the stop of every workload is not confirmed",
         ),
         (
-            Access::gate(None, None, None),
+            Access::gate(&Lifecycle::Unswept, None),
             Withheld::NoSweep,
             "offsets unchanged before successful trial-scope sweep",
+        ),
+        (
+            Access::gate(&Lifecycle::Faulted(Fault::Containment), Some(rig.validated)),
+            Withheld::TeardownUnconfirmed,
+            "offsets unchanged: the stop of every workload is not confirmed",
+        ),
+        (
+            Access::gate(&Lifecycle::Faulted(Fault::Crashed), Some(rig.validated)),
+            Withheld::Crashed,
+            "offsets unchanged: the machine crashed",
         ),
     ];
     for (gate, withheld, said) in cases {
@@ -117,6 +142,22 @@ fn nothing_touches_the_smu_without_a_sweep_a_validation_and_a_confirmed_teardown
 }
 
 #[test]
+fn a_fault_takes_every_proof_with_it() {
+    let mut rig = Rig::new(2);
+    rig.lifecycle.latch(Fault::Containment);
+    assert!(rig.lifecycle.stopped().is_none());
+    rig.lifecycle.latch(Fault::Crashed);
+    assert_eq!(rig.lifecycle.fault(), Some(Fault::Containment));
+    rig.lifecycle.crash();
+    assert_eq!(rig.lifecycle.fault(), Some(Fault::Crashed));
+    let Lifecycle::Swept(swept) = Rig::new(2).lifecycle else {
+        panic!("the rig is swept");
+    };
+    rig.lifecycle.hold(swept.stopped.unwrap());
+    assert!(rig.lifecycle.stopped().is_none());
+}
+
+#[test]
 fn a_gated_emergency_zeroes_every_core_reads_each_back_and_reports() {
     let mut rig = Rig::new(2);
     rig.start_at_zero();
@@ -124,7 +165,7 @@ fn a_gated_emergency_zeroes_every_core_reads_each_back_and_reports() {
     lower(&mut rig, 1, -20);
     let events = rig.kinds();
     let mut report = Vec::new();
-    let gate = Access::gate(Some(rig.sweep), Some(rig.validated), Some(&rig.stopped));
+    let gate = Access::gate(&rig.lifecycle, Some(rig.validated));
     let outcome = respond(&failure(), gate, &mut *rig.smu, cores(2), &mut report);
     let Response::Zeroed(zeroed) = &outcome.response else {
         panic!("withheld");
@@ -148,7 +189,7 @@ fn a_failed_zeroing_is_reported_with_what_every_core_still_reads() {
     let inner = std::mem::replace(&mut rig.smu, Box::new(Forbidden));
     let mut smu = FailsToZero { inner };
     let mut report = Vec::new();
-    let gate = Access::gate(Some(rig.sweep), Some(rig.validated), Some(&rig.stopped));
+    let gate = Access::gate(&rig.lifecycle, Some(rig.validated));
     let outcome = respond(&failure(), gate, &mut smu, cores(2), &mut report);
     let Response::Zeroed(zeroed) = &outcome.response else {
         panic!("withheld");
@@ -183,7 +224,7 @@ fn an_interruption_of_any_emergency_access_keeps_the_original_error_and_appends_
             }
         });
         let mut report = Vec::new();
-        let gate = Access::gate(Some(rig.sweep), Some(rig.validated), Some(&rig.stopped));
+        let gate = Access::gate(&rig.lifecycle, Some(rig.validated));
         let outcome = respond(&failure(), gate, &mut *rig.smu, cores(2), &mut report);
         let Response::Zeroed(zeroed) = &outcome.response else {
             panic!("withheld at access {interrupted}");
@@ -212,7 +253,7 @@ fn an_unwritable_report_is_returned_not_lost() {
         }
     }
     let rig = Rig::new(2);
-    let gate = Access::gate(None, Some(rig.validated), Some(&rig.stopped));
+    let gate = Access::gate(&Lifecycle::Unswept, Some(rig.validated));
     let outcome = respond(&failure(), gate, &mut Forbidden, cores(2), &mut Closed);
     assert!(outcome.report.is_err());
 }

@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use togi_facts::{Decisive, TrialClass};
-use togi_journal::{Activity, Build, Seq, SessionId, TrialId};
+use togi_journal::{Activity, Build, FixStamp, Seq, SessionId, TrialId};
 use togi_machine::{
     BiosContext, CcdId, Condition, CoreId, CoreSet, PER_CORE_MAX, PerCore, Regime, Signal,
     TargetOffset, WorkloadId, object_only,
@@ -161,8 +161,8 @@ object_only! {
         pub rev: String,
         pub ruleset: u32,
         pub schema: u32,
-        #[serde(default)]
-        pub fixes: u32,
+        #[serde(default = "FixStamp::none")]
+        pub fixes: FixStamp,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub evidence: Option<u32>,
     }

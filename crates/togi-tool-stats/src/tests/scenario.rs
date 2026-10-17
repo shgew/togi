@@ -11,7 +11,7 @@ use super::support::{
     workload,
 };
 use crate::evidence::{GroupReuse, StageReuse};
-use crate::hunts::StepKey;
+use crate::hunts::{StepCycle, StepKey};
 use crate::project::Projection;
 use crate::report::{Exposure, compute, report};
 use crate::{Error, Journal};
@@ -150,8 +150,7 @@ fn the_review_boundary_scenario_keeps_the_evidence_a_cutoff_hides() {
         );
     }
     let key = |outcome| StepKey {
-        rerun: false,
-        cycle: 1,
+        cycle: StepCycle::Cycle(Some(nz(1))),
         regime: Regime::R6,
         cores: "00,01".to_owned(),
         outcome: Some(outcome),
