@@ -185,6 +185,25 @@ mod unvalidated {
 }
 
 #[test]
+fn a_pm_reader_worker_spawn_failure_is_informational() {
+    let tree = Tree::new();
+    let host = host(
+        &tree,
+        Privilege::Root,
+        resolved_account(),
+        Scope::creating(),
+    );
+    let check = host.check_pm_reader(Err(togi_smu::Error::WorkerSpawn(std::io::Error::other(
+        "PM reader thread unavailable",
+    ))));
+
+    assert_eq!(check.name, "pm_table");
+    assert!(check.ok, "PM table must not fail preflight: {check:?}");
+    assert!(check.detail.contains("PM reader thread unavailable"));
+    assert!(!host.pm.is_published());
+}
+
+#[test]
 fn a_resolved_account_runs_the_scope_probe() {
     let tree = Tree::new();
     let scope = Scope::creating();
