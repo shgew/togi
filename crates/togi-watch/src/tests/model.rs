@@ -130,7 +130,10 @@ fn a_refused_batch_reports_the_first_event_and_keeps_the_problem() {
     let mut model = Model::new();
     let error = model.fold_batch(&script.events[1..]).unwrap_err();
     assert_eq!(error.index, 0);
-    assert_eq!(model.problem(), Some(&error.source));
+    assert!(matches!(
+        (model.problem(), &error.source),
+        (Some(FoldError::Journal(cached)), FoldError::Journal(returned)) if cached == returned
+    ));
     assert!(matches!(
         error.source,
         FoldError::Journal(togi_journal::FoldError::Gap { .. })
@@ -138,9 +141,15 @@ fn a_refused_batch_reports_the_first_event_and_keeps_the_problem() {
     assert!(model.snapshot().session.is_none());
     let later = model.fold_batch(&script.events).unwrap_err();
     assert_eq!(later.index, 0);
-    assert_eq!(model.problem(), Some(&later.source));
+    assert!(matches!(
+        (model.problem(), &later.source),
+        (Some(FoldError::Journal(cached)), FoldError::Journal(returned)) if cached == returned
+    ));
     model.fold_batch(&[]).unwrap();
-    assert_eq!(model.problem(), Some(&later.source));
+    assert!(matches!(
+        (model.problem(), &later.source),
+        (Some(FoldError::Journal(cached)), FoldError::Journal(returned)) if cached == returned
+    ));
 }
 
 #[test]
@@ -150,7 +159,10 @@ fn a_batch_reports_the_failure_position_after_a_valid_prefix() {
     let mut model = Model::new();
     let error = model.fold_batch(&script.events).unwrap_err();
     assert_eq!(error.index, 1);
-    assert_eq!(model.problem(), Some(&error.source));
+    assert!(matches!(
+        (model.problem(), &error.source),
+        (Some(FoldError::Journal(cached)), FoldError::Journal(returned)) if cached == returned
+    ));
     assert!(model.snapshot().session.is_none());
 }
 
