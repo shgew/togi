@@ -645,13 +645,11 @@ mod admission_tests {
                 )]
                 let error = super::run(&invocation, deadline).await.unwrap_err();
                 assert!(started.elapsed() < Duration::from_millis(100));
-                match error {
-                    Error::TimedOut { program, timeout } => {
-                        assert_eq!(program, "sh");
-                        assert_eq!(timeout, Duration::ZERO);
-                    }
-                    other => panic!("{other:?}"),
-                }
+                let Error::TimedOut { program, timeout } = error else {
+                    panic!("{error:?}");
+                };
+                assert_eq!(program, "sh");
+                assert_eq!(timeout, Duration::ZERO);
             }
         });
         assert_eq!(fault::START_ATTEMPTS.get(), 0);
@@ -923,19 +921,18 @@ mod tests {
         let cleanup = KillOnDrop::if_running(child);
         let error = result.unwrap_err();
         let message = error.to_string();
-        match &error {
-            Error::Teardown {
-                program,
-                cause,
-                operation: Operation::KillGroup,
-                source,
-            } => {
-                assert_eq!(program, "sleep");
-                assert!(matches!(**cause, Error::TimedOut { .. }), "{cause:?}");
-                assert_kill_failure(source);
-            }
-            other => panic!("{other:?}"),
-        }
+        let Error::Teardown {
+            program,
+            cause,
+            operation: Operation::KillGroup,
+            source,
+        } = &error
+        else {
+            panic!("{error:?}");
+        };
+        assert_eq!(program, "sleep");
+        assert!(matches!(**cause, Error::TimedOut { .. }), "{cause:?}");
+        assert_kill_failure(source);
         assert!(
             message.contains("did not finish") && message.contains("kill the process group"),
             "{message}"
@@ -1080,18 +1077,17 @@ mod tests {
         let error = super::run_blocking(&Invocation::new("sleep").arg("3"), DEADLINE).unwrap_err();
         let elapsed = started.elapsed();
         let child = spawned();
-        match &error {
-            Error::Teardown {
-                cause,
-                operation: Operation::Reap,
-                source,
-                ..
-            } => {
-                assert!(matches!(**cause, Error::TimedOut { .. }), "{cause:?}");
-                assert_eq!(source.kind(), std::io::ErrorKind::TimedOut);
-            }
-            other => panic!("{other:?}"),
-        }
+        let Error::Teardown {
+            cause,
+            operation: Operation::Reap,
+            source,
+            ..
+        } = &error
+        else {
+            panic!("{error:?}");
+        };
+        assert!(matches!(**cause, Error::TimedOut { .. }), "{cause:?}");
+        assert_eq!(source.kind(), std::io::ErrorKind::TimedOut);
         assert!(elapsed < DEADLINE + REAP_GRACE + SLACK, "{elapsed:?}");
         assert!(is_running(child), "the leader exited within the grace");
         assert_reaped_within(child, Duration::from_secs(10));

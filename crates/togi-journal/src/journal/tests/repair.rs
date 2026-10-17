@@ -7,9 +7,12 @@ fn torn_events(journal: &crate::Journal) -> Vec<&crate::JournalTorn> {
     journal
         .events()
         .iter()
-        .filter_map(|event| match &event.payload {
-            Payload::JournalTorn(torn) => Some(torn),
-            _ => None,
+        .filter_map(|event| {
+            if let Payload::JournalTorn(torn) = &event.payload {
+                Some(torn)
+            } else {
+                None
+            }
         })
         .collect()
 }

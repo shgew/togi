@@ -110,13 +110,12 @@ fn a_power_button_between_trials_is_inconclusive() {
     let mut input = bench.input();
     input.observer = Some(Box::new(move |event| {
         reset(event);
-        match &event.payload {
-            togi_journal::Payload::CrashDetected(crash)
-                if crash.reset_reason == Some(ResetKind::PowerButton) =>
-            {
-                Observe::Stop
-            }
-            _ => Observe::Continue,
+        if let togi_journal::Payload::CrashDetected(crash) = &event.payload
+            && crash.reset_reason == Some(ResetKind::PowerButton)
+        {
+            Observe::Stop
+        } else {
+            Observe::Continue
         }
     }));
     finish(input);
@@ -149,14 +148,16 @@ fn a_wall_clock_jump_does_not_lose_a_trials_corrected_mce() {
     let flag = Rc::clone(&jumped);
     let sim = bench.sim.clone();
     let mut input = bench.input();
-    input.observer = Some(Box::new(move |event| match event.kind() {
-        EventKind::TrialStart if !flag.get() => {
+    input.observer = Some(Box::new(move |event| {
+        if event.kind() == EventKind::TrialStart && !flag.get() {
             flag.set(true);
             sim.jump_wall(SignedDuration::from_hours(-2));
             Observe::Continue
+        } else if event.kind() == EventKind::TrialEnd {
+            Observe::Stop
+        } else {
+            Observe::Continue
         }
-        EventKind::TrialEnd => Observe::Stop,
-        _ => Observe::Continue,
     }));
     finish(input);
     let events = bench.events();
