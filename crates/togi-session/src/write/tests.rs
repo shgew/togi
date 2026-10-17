@@ -75,11 +75,12 @@ impl Rig {
     fn intents(&self) -> Vec<(Option<CoreId>, i64)> {
         self.events()
             .iter()
-            .filter_map(|event| match &event.payload {
-                Payload::SmuIntent(intent) => {
+            .filter_map(|event| {
+                if let Payload::SmuIntent(intent) = &event.payload {
                     Some((intent.command().core(), intent.command().offset().get()))
+                } else {
+                    None
                 }
-                _ => None,
             })
             .collect()
     }
@@ -346,9 +347,12 @@ fn a_failed_command_is_recorded_and_is_an_smu_dead_end_with_the_verified_steps_k
     let events = rig.events();
     let record = events
         .iter()
-        .find_map(|event| match &event.payload {
-            Payload::SmuError(error) => Some((event.cause.clone(), error.clone())),
-            _ => None,
+        .find_map(|event| {
+            if let Payload::SmuError(error) = &event.payload {
+                Some((event.cause.clone(), error.clone()))
+            } else {
+                None
+            }
         })
         .unwrap();
     let last_intent = events

@@ -333,9 +333,12 @@ fn the_state_a_crashed_run_left_unwritten_is_published_by_the_next_boot_when_no_
         .journal
         .events()
         .iter()
-        .filter_map(|event| match &event.payload {
-            Payload::StateRebuilt(rebuilt) => Some(rebuilt.fields.clone()),
-            _ => None,
+        .filter_map(|event| {
+            if let Payload::StateRebuilt(rebuilt) = &event.payload {
+                Some(rebuilt.fields.clone())
+            } else {
+                None
+            }
         })
         .collect();
     assert_eq!(rebuilt, [vec!["state.json".to_string()]]);

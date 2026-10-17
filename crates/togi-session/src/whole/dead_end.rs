@@ -1051,9 +1051,12 @@ fn assert_restored_and_published(bench: &Bench, ended: &Ended) {
         .journal
         .events()
         .iter()
-        .find_map(|event| match &event.payload {
-            Payload::SessionBaseline(baseline) => Some(baseline.offsets),
-            _ => None,
+        .find_map(|event| {
+            if let Payload::SessionBaseline(baseline) = &event.payload {
+                Some(baseline.offsets)
+            } else {
+                None
+            }
         })
         .unwrap();
     let held = offsets_of(bench);
@@ -1093,7 +1096,7 @@ fn every_stop_and_error_exit_joins_the_trial_restores_the_hardware_publishes_the
         match exit.stop {
             Stop::Cycles => input.policy.cycles = Some(NonZeroU32::MIN),
             Stop::FirstResult => input.policy.first_result = true,
-            _ => {}
+            Stop::Signal | Stop::DeadEnd { .. } => {}
         }
         let ended = run(input);
         assert!(ended.errors.is_empty(), "{}: {:?}", exit.name, ended.errors);

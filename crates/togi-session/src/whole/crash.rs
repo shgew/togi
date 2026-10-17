@@ -223,9 +223,12 @@ fn assert_settled(bench: &Bench, ended: &Ended) -> Summary {
     let baseline = events
         .iter()
         .rev()
-        .find_map(|event| match &event.payload {
-            Payload::SessionBaseline(baseline) => Some(baseline.offsets),
-            _ => None,
+        .find_map(|event| {
+            if let Payload::SessionBaseline(baseline) = &event.payload {
+                Some(baseline.offsets)
+            } else {
+                None
+            }
         })
         .unwrap();
     let cores: CoreSet = held.iter().map(|(core, _)| core).collect();
@@ -288,9 +291,14 @@ fn killing_the_run_at_every_durable_event_resumes_to_the_same_final_state() {
                 .journal
                 .events()
                 .iter()
-                .find_map(|event| match &event.payload {
-                    Payload::TrialEnd(end) if end.trial == first.trial => Some(end),
-                    _ => None,
+                .find_map(|event| {
+                    if let Payload::TrialEnd(end) = &event.payload
+                        && end.trial == first.trial
+                    {
+                        Some(end)
+                    } else {
+                        None
+                    }
                 })
                 .unwrap();
             assert!(end.interrupted, "{end:?}");
@@ -332,9 +340,14 @@ fn trial_events(events: &[Event]) -> Vec<usize> {
 }
 
 fn crash_detected_for(events: &[Event], boot: &togi_machine::BootId) -> Option<Seq> {
-    events.iter().find_map(|event| match &event.payload {
-        Payload::CrashDetected(crash) if crash.previous_boot == *boot => Some(event.seq),
-        _ => None,
+    events.iter().find_map(|event| {
+        if let Payload::CrashDetected(crash) = &event.payload
+            && crash.previous_boot == *boot
+        {
+            Some(event.seq)
+        } else {
+            None
+        }
     })
 }
 
@@ -366,26 +379,25 @@ fn assert_crash_is_accounted_for(events: &[Event], k: usize) {
     let mut started: Option<Duration> = None;
     let mut last: Option<Duration> = None;
     for event in &events[..k] {
-        match &event.payload {
-            Payload::TrialIntent(intent) => {
-                open = Some(intent);
-                durable_end = None;
-                started = None;
-                last = None;
-            }
-            Payload::TrialStart(_) => {
-                started = event.mono;
-                last = event.mono;
-            }
+        let payload = &event.payload;
+        if let Payload::TrialIntent(intent) = payload {
+            open = Some(intent);
+            durable_end = None;
+            started = None;
+            last = None;
+        } else if let Payload::TrialStart(_) = payload {
+            started = event.mono;
+            last = event.mono;
+        } else if matches!(
+            payload,
             Payload::TrialProgress(_) | Payload::TrialSignal(_) | Payload::TrialSample(_)
-                if started.is_some() =>
-            {
-                last = event.mono;
-            }
-            Payload::TrialEnd(end) if open.is_some_and(|intent| intent.trial == end.trial) => {
-                durable_end = Some(end);
-            }
-            _ => {}
+        ) && started.is_some()
+        {
+            last = event.mono;
+        } else if let Payload::TrialEnd(end) = payload
+            && open.is_some_and(|intent| intent.trial == end.trial)
+        {
+            durable_end = Some(end);
         }
     }
     let intent = open.unwrap_or_else(|| panic!("#{k} has no trial.intent before it"));
@@ -393,9 +405,14 @@ fn assert_crash_is_accounted_for(events: &[Event], k: usize) {
     if ended_by_crash {
         let closed = events[k..]
             .iter()
-            .find_map(|event| match &event.payload {
-                Payload::TrialEnd(end) if end.trial == intent.trial => Some(end),
-                _ => None,
+            .find_map(|event| {
+                if let Payload::TrialEnd(end) = &event.payload
+                    && end.trial == intent.trial
+                {
+                    Some(end)
+                } else {
+                    None
+                }
             })
             .unwrap_or_else(|| panic!("trial {} left open after #{k}", intent.trial));
         let ran = match (started, last) {
@@ -409,29 +426,36 @@ fn assert_crash_is_accounted_for(events: &[Event], k: usize) {
         );
         assert_eq!(closed.outcome, Outcome::Failure, "{closed:?}");
     }
-    let failure = if ended_by_crash
-        || durable_end.is_some_and(|end| end.outcome == Outcome::Failure)
-    {
-        let citing = events.iter().find_map(|event| match &event.payload {
-            Payload::Failure(failure) if event.cause.contains(&detected) => Some(failure),
-            _ => None,
-        });
-        Some(citing.unwrap_or_else(|| {
-            let same: Vec<_> = events
-                .iter()
-                .filter_map(|event| match &event.payload {
-                    Payload::Failure(failure) if failure.trial.as_ref() == Some(&intent.trial) => {
-                        Some(failure)
-                    }
-                    _ => None,
-                })
-                .collect();
-            assert_eq!(same.len(), 1, "crash at #{k}: {same:?}");
-            same[0]
-        }))
-    } else {
-        None
-    };
+    let failure =
+        if ended_by_crash || durable_end.is_some_and(|end| end.outcome == Outcome::Failure) {
+            let citing = events.iter().find_map(|event| {
+                if let Payload::Failure(failure) = &event.payload
+                    && event.cause.contains(&detected)
+                {
+                    Some(failure)
+                } else {
+                    None
+                }
+            });
+            Some(citing.unwrap_or_else(|| {
+                let same: Vec<_> = events
+                    .iter()
+                    .filter_map(|event| {
+                        if let Payload::Failure(failure) = &event.payload
+                            && failure.trial.as_ref() == Some(&intent.trial)
+                        {
+                            Some(failure)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                assert_eq!(same.len(), 1, "crash at #{k}: {same:?}");
+                same[0]
+            }))
+        } else {
+            None
+        };
     let Some(failure) = failure.filter(|_| ended_by_crash) else {
         return;
     };
@@ -444,7 +468,7 @@ fn assert_crash_is_accounted_for(events: &[Event], k: usize) {
         Condition::Together if failure.signal == Signal::Crash => {
             assert_eq!(failure.attribution, Attribution::Unattributed, "#{k}");
         }
-        _ => {}
+        Condition::Together | Condition::Parked => {}
     }
 }
 
@@ -495,11 +519,14 @@ fn a_crash_during_recovery_fails_the_original_trial_once_and_the_recovery_boot_i
         let events = ended.journal.events();
         let failures: Vec<_> = events
             .iter()
-            .filter_map(|event| match &event.payload {
-                Payload::Failure(failure) if failure.trial.as_ref() == Some(&crashed_trial) => {
+            .filter_map(|event| {
+                if let Payload::Failure(failure) = &event.payload
+                    && failure.trial.as_ref() == Some(&crashed_trial)
+                {
                     Some(failure)
+                } else {
+                    None
                 }
-                _ => None,
             })
             .collect();
         assert_eq!(failures.len(), 1, "crashed at #{k}: {failures:?}");
@@ -570,15 +597,16 @@ fn r7_bench() -> Bench {
 fn first_partial(events: &[Event]) -> &TrialIntent {
     events
         .iter()
-        .find_map(|event| match &event.payload {
-            Payload::TrialIntent(intent)
-                if intent.regime == Regime::R7
-                    && (2..4).contains(&intent.cores.iter().count())
-                    && intent.condition == Condition::Together =>
+        .find_map(|event| {
+            if let Payload::TrialIntent(intent) = &event.payload
+                && intent.regime == Regime::R7
+                && (2..4).contains(&intent.cores.iter().count())
+                && intent.condition == Condition::Together
             {
                 Some(intent)
+            } else {
+                None
             }
-            _ => None,
         })
         .expect("the reference run never ran an R7 partial")
 }
@@ -624,9 +652,14 @@ impl Trials for CancelAfterAnotherTrial {
 fn trial_end<'a>(events: &'a [Event], trial: &TrialId) -> &'a togi_journal::TrialEnd {
     events
         .iter()
-        .find_map(|event| match &event.payload {
-            Payload::TrialEnd(end) if end.trial == *trial => Some(end),
-            _ => None,
+        .find_map(|event| {
+            if let Payload::TrialEnd(end) = &event.payload
+                && end.trial == *trial
+            {
+                Some(end)
+            } else {
+                None
+            }
         })
         .unwrap()
 }
@@ -688,11 +721,14 @@ fn a_partial_crash_recovers_into_the_named_or_loaded_core_backoff_through_run() 
         assert_eq!(end.outcome, Outcome::Failure, "{signal:?}");
         let failure = events
             .iter()
-            .find_map(|event| match &event.payload {
-                Payload::Failure(failure) if failure.trial.as_ref() == Some(&partial.trial) => {
+            .find_map(|event| {
+                if let Payload::Failure(failure) = &event.payload
+                    && failure.trial.as_ref() == Some(&partial.trial)
+                {
                     Some(failure)
+                } else {
+                    None
                 }
-                _ => None,
             })
             .expect("no recovered failure");
         let after_end = events
@@ -701,19 +737,23 @@ fn a_partial_crash_recovers_into_the_named_or_loaded_core_backoff_through_run() 
             .unwrap();
         let next = events[after_end..]
             .iter()
-            .find_map(|event| match &event.payload {
-                Payload::TrialIntent(intent) => Some(intent),
-                _ => None,
+            .find_map(|event| {
+                if let Payload::TrialIntent(intent) = &event.payload {
+                    Some(intent)
+                } else {
+                    None
+                }
             })
             .expect("no trial after the recovered partial");
-        let backoff = events.iter().find_map(|event| match &event.payload {
-            Payload::TunerDecision(decision)
-                if decision.decision == Decision::Backoff
-                    && decision.activity != Activity::Search =>
+        let backoff = events.iter().find_map(|event| {
+            if let Payload::TunerDecision(decision) = &event.payload
+                && decision.decision == Decision::Backoff
+                && decision.activity != Activity::Search
             {
                 Some(decision)
+            } else {
+                None
             }
-            _ => None,
         });
         let hunted = events
             .iter()
@@ -904,7 +944,9 @@ fn every_early_append_failure_respects_the_sweep_gate() {
             Response::Zeroed(zeroed) if k >= sweep => {
                 assert!(zeroed.is_clean(), "append #{k}: {zeroed:?}");
             }
-            other => panic!("append #{k} (sweep at #{sweep}): {other:?}"),
+            other @ (Response::Withheld(_) | Response::Zeroed(_)) => {
+                panic!("append #{k} (sweep at #{sweep}): {other:?}")
+            }
         }
         let mut smu = bench.sim.seams().smu;
         for core in 0..2 {

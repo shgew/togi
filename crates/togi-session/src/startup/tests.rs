@@ -42,9 +42,12 @@ fn checks(session: &Session) -> Vec<(String, bool)> {
         .journal()
         .events()
         .iter()
-        .filter_map(|event| match &event.payload {
-            Payload::PreflightCheck(check) => Some((check.check.clone(), check.ok)),
-            _ => None,
+        .filter_map(|event| {
+            if let Payload::PreflightCheck(check) = &event.payload {
+                Some((check.check.clone(), check.ok))
+            } else {
+                None
+            }
         })
         .collect()
 }
@@ -336,9 +339,12 @@ fn an_smu_that_cannot_be_validated_is_a_warning_and_leaves_the_emergency_withhel
         .journal()
         .events()
         .iter()
-        .find_map(|event| match &event.payload {
-            Payload::SessionWarning(warning) => Some(warning.clone()),
-            _ => None,
+        .find_map(|event| {
+            if let Payload::SessionWarning(warning) = &event.payload {
+                Some(warning.clone())
+            } else {
+                None
+            }
         })
         .unwrap();
     assert_eq!(warning.operation, "validate the SMU interface");
@@ -755,18 +761,27 @@ fn stopped_dead_end(ended: &Ended) -> (&togi_journal::DeadEnd, &[Seq]) {
 }
 
 fn swept_ok(events: &[Event]) -> Option<Seq> {
-    events.iter().find_map(|event| match &event.payload {
-        Payload::PreflightCheck(check) if check.check == "trial_scopes" && check.ok => {
+    events.iter().find_map(|event| {
+        if let Payload::PreflightCheck(check) = &event.payload
+            && check.check == "trial_scopes"
+            && check.ok
+        {
             Some(event.seq)
+        } else {
+            None
         }
-        _ => None,
     })
 }
 
 fn trial_end(events: &[Event], trial: &str) -> Option<Seq> {
-    events.iter().find_map(|event| match &event.payload {
-        Payload::TrialEnd(end) if end.trial.as_str() == trial => Some(event.seq),
-        _ => None,
+    events.iter().find_map(|event| {
+        if let Payload::TrialEnd(end) = &event.payload
+            && end.trial.as_str() == trial
+        {
+            Some(event.seq)
+        } else {
+            None
+        }
     })
 }
 
@@ -968,11 +983,14 @@ fn the_watchdog_wait_polls_each_second_until_armed_or_thirty_seconds_and_stops_o
         let events = ended.journal.events();
         let watchdog: Vec<(bool, &str)> = events
             .iter()
-            .filter_map(|event| match &event.payload {
-                Payload::PreflightCheck(check) if check.check == "watchdog" => {
+            .filter_map(|event| {
+                if let Payload::PreflightCheck(check) = &event.payload
+                    && check.check == "watchdog"
+                {
                     Some((check.ok, check.detail.as_str()))
+                } else {
+                    None
                 }
-                _ => None,
             })
             .collect();
         let detail =
@@ -1434,9 +1452,12 @@ fn left_open(bench: &Bench) -> String {
         .journal
         .events()
         .iter()
-        .find_map(|event| match &event.payload {
-            Payload::TrialStart(start) => Some(start.trial.as_str().to_owned()),
-            _ => None,
+        .find_map(|event| {
+            if let Payload::TrialStart(start) = &event.payload {
+                Some(start.trial.as_str().to_owned())
+            } else {
+                None
+            }
         })
         .unwrap();
     assert_eq!(trial_end(died.journal.events(), &trial), None);
