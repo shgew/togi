@@ -57,7 +57,8 @@ fn search_exit_starts_one_count_shallower_than_the_solo_limit() {
         assert_eq!(
             j.run()
                 .core(core(0))
-                .solo_limit
+                .phase
+                .solo_limit()
                 .map(togi_machine::TargetOffset::get),
             Some(solo)
         );
@@ -80,9 +81,9 @@ fn solo_limit_survives_a_failure_discarding_pass() {
     });
     let state = j.run().core(core(0));
     assert_eq!(state.pass, None);
-    assert_eq!(state.solo_limit, Some(off(-20)));
+    assert_eq!(state.phase.solo_limit(), Some(off(-20)));
     j.core_phase(crate::schedule_tests::transition(0, CorePhase::Search, 0));
-    assert_eq!(j.run().core(core(0)).solo_limit, None);
+    assert_eq!(j.run().core(core(0)).phase.solo_limit(), None);
 }
 
 #[test]

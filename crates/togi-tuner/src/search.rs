@@ -10,7 +10,7 @@ use crate::ledger::carried_clause;
 use crate::state::Run;
 use crate::{
     Action, BackendId, ClassKey, DecisionAction, DecisionPayload, Depth, Evidence, Load, Profile,
-    TrialContext, TrialPlan, Window, WorkloadChoice,
+    TrialPlan, Window, WorkloadChoice,
 };
 
 /// How many counts shallower than its solo limit a core starts checking.
@@ -274,15 +274,6 @@ impl Run {
     ) -> TrialPlan {
         let core = self.core(id);
         let workload = frozen.unwrap_or_else(|| self.rotation_workload(id, regime));
-        let context = if core.check.is_some() {
-            TrialContext::SoloLimit { core: id, regime }
-        } else {
-            TrialContext::Search {
-                core: id,
-                regime,
-                offset: core.offset,
-            }
-        };
         TrialPlan {
             regime,
             workload: frozen.map_or(WorkloadChoice::Rotate, WorkloadChoice::Frozen),
@@ -291,7 +282,6 @@ impl Run {
             activity: Activity::Search,
             profile: Profile::alone(&self.topo, id, core.offset),
             duration: self.config.search_trial,
-            context,
             requirement: self.solo_requirement(id, self.alone_class(id, workload)),
             retry: false,
             cause: core.last_seq.into_iter().collect(),
@@ -299,12 +289,12 @@ impl Run {
     }
 
     pub(crate) fn searching(&self, id: CoreId) -> Option<Core> {
-        Some(self.core(id)).filter(|core| core.phase == Some(CorePhase::Search))
+        Some(self.core(id)).filter(|core| core.phase.searching())
     }
 
     fn candidate_exit(&self, id: CoreId, core: Core) -> Option<Action> {
-        let check = core.check?;
-        let phase_seq = core.phase_seq;
+        let check = core.phase.check()?;
+        let phase_seq = Some(check.since);
         let profile = Profile::alone(&self.topo, id, core.offset);
         let mut cause: Vec<Seq> = phase_seq.into_iter().collect();
         for (regime, frozen) in [(Regime::R1, check.r1), (Regime::R2, check.r2)] {
@@ -381,7 +371,9 @@ impl Run {
         let order = self.topo.order();
         let cursor = self.search.cursor.and_then(|at| order.get(at).copied());
         if let Some(id) = cursor {
-            let current = self.searching(id).filter(|core| core.check.is_none());
+            let current = self
+                .searching(id)
+                .filter(|core| core.phase.check().is_none());
             if let (Some(_), (Some(r1), Some(r2))) =
                 (current, self.search.current(id, &self.evidence))
             {
@@ -395,7 +387,9 @@ impl Run {
             return Some(Action::RunTrial(plan));
         }
         if let Some(id) = cursor {
-            let current = self.searching(id).filter(|core| core.check.is_none());
+            let current = self
+                .searching(id)
+                .filter(|core| core.phase.check().is_none());
             if current.is_some()
                 && matches!(self.search.current(id, &self.evidence), (Some(_), None))
             {
@@ -408,7 +402,7 @@ impl Run {
             let Some(core) = self.searching(id) else {
                 continue;
             };
-            if core.check.is_none() {
+            if core.phase.check().is_none() {
                 return Some(Action::RunTrial(self.search_trial(id, Regime::R1, None)));
             }
             return self.candidate_exit(id, core);

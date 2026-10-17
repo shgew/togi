@@ -77,7 +77,7 @@ impl Run {
     }
 
     fn group_running(&self, hunt: &Active, group: &GroupRecord) -> bool {
-        self.flight.open.as_ref().is_some_and(|open| {
+        self.flight.open().is_some_and(|open| {
             open.intent.hunt == Some(hunt.id) && open.intent.group == Some(group.payload.group)
         })
     }

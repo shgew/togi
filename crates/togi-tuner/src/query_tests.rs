@@ -168,7 +168,7 @@ fn assert_second_regime(plan: &TrialPlan) {
     assert_eq!(plan.profile.get(core(0)), Some(off(-10)));
     assert_eq!(plan.condition, Condition::Alone);
     assert_eq!(
-        plan.context,
+        plan.requirement.context,
         TrialContext::SoloLimit {
             core: core(0),
             regime: Regime::R2

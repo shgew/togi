@@ -10,9 +10,7 @@ use crate::ledger::carried_clause;
 use crate::r7::Applied;
 use crate::r7::respond::R7Response;
 use crate::state::Run;
-use crate::{
-    Action, DecisionAction, Load, Profile, TrialContext, TrialPlan, Window, WorkloadChoice,
-};
+use crate::{Action, DecisionAction, Load, Profile, TrialPlan, Window, WorkloadChoice};
 
 pub(super) fn round_end(
     round: NonZeroU32,
@@ -124,7 +122,8 @@ impl Run {
         let target = Profile::over(self.topo.all(), |core| {
             if cores.contains(core) {
                 self.core(core)
-                    .solo_limit
+                    .phase
+                    .solo_limit()
                     .unwrap_or_else(|| offsets.at(core))
             } else {
                 offsets.at(core)
@@ -257,7 +256,6 @@ impl Run {
             activity: Activity::Deepening,
             profile: check.profile,
             duration: class.duration(),
-            context: TrialContext::Round { round: round.id() },
             requirement,
             retry: false,
             cause,

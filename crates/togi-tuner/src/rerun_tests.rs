@@ -11,8 +11,8 @@ use togi_machine::{BootId, Condition, CoreSet, PerCore, Regime, Signal, pick_wor
 use crate::testkit::{self, Journal, Start, build, fresh, set};
 use crate::tests::{core, off};
 use crate::{
-    Action, ClassKey, DecisionPayload, FoldError, Load, Profile, RequirementKind, Secs,
-    TrialContext, TrialPlan, Window, WorkloadChoice,
+    Action, ClassKey, DecisionPayload, FoldError, Load, Profile, Secs, TrialContext, TrialPlan,
+    Window, WorkloadChoice,
 };
 
 const SESSION: &str = "20230101T000000Z";
@@ -142,18 +142,18 @@ fn commit(j: &mut Journal, plan: &TrialPlan, named: u8) -> Seq {
 fn rerun(j: &Journal) -> TrialPlan {
     let plan = j.next_trial();
     assert!(
-        matches!(plan.context, TrialContext::Rerun { .. }),
+        matches!(plan.requirement.context, TrialContext::Rerun { .. }),
         "expected a rerun, got {plan:?}"
     );
     plan
 }
 
 fn is_rerun(action: &Action) -> bool {
-    matches!(action, Action::RunTrial(plan) if matches!(plan.context, TrialContext::Rerun { .. }))
+    matches!(action, Action::RunTrial(plan) if matches!(plan.requirement.context, TrialContext::Rerun { .. }))
 }
 
 fn is_cycle_trial(action: &Action) -> bool {
-    matches!(action, Action::RunTrial(plan) if matches!(plan.context, TrialContext::Cycle { .. }))
+    matches!(action, Action::RunTrial(plan) if matches!(plan.requirement.context, TrialContext::Cycle { .. }))
 }
 
 fn pass_reruns(j: &mut Journal) -> Vec<TrialPlan> {
@@ -163,7 +163,7 @@ fn pass_reruns(j: &mut Journal) -> Vec<TrialPlan> {
         let Action::RunTrial(plan) = action else {
             return done;
         };
-        if !matches!(plan.context, TrialContext::Rerun { .. }) {
+        if !matches!(plan.requirement.context, TrialContext::Rerun { .. }) {
             return done;
         }
         pass(j, &plan);
@@ -296,7 +296,10 @@ fn rerun_long_failed_part() {
     let long = rerun(&j);
     assert_eq!(long.duration, secs(600), "the passes were lost: {long:?}");
     assert_eq!(long.cause, vec![second]);
-    assert_eq!(long.context, TrialContext::Rerun { failure: first });
+    assert_eq!(
+        long.requirement.context,
+        TrialContext::Rerun { failure: first }
+    );
     pass(&mut j, &long);
     assert_eq!(j.run().reruns.head().map(|head| head.failure), Some(second));
     for _ in 0..n {
@@ -326,7 +329,10 @@ fn rerun_repeated_commitment_cites_latest_failure() {
     for _ in 0..n {
         let plan = rerun(&j);
         assert_eq!(plan.cause, vec![second]);
-        assert_eq!(plan.context, TrialContext::Rerun { failure: first });
+        assert_eq!(
+            plan.requirement.context,
+            TrialContext::Rerun { failure: first }
+        );
         pass(&mut j, &plan);
     }
     assert!(j.run().reruns.is_empty(), "{:?}", j.run().reruns);
@@ -344,25 +350,32 @@ fn rerun_fifo_and_shared_duration() {
     let first_step = until_trial(&mut j);
     let r1 = TrialPlan {
         workload: WorkloadChoice::Frozen(pick_workload(Regime::R1, 1).id()),
-        context: TrialContext::Cycle {
-            cycle: NonZeroU32::MIN,
-            step: crate::StepNo::new(NonZeroU32::new(2).unwrap()),
-            part: crate::PartNo::new(NonZeroU32::MIN),
+        requirement: crate::Requirement {
+            context: TrialContext::Cycle {
+                cycle: NonZeroU32::MIN,
+                step: crate::StepNo::new(NonZeroU32::new(2).unwrap()),
+                part: crate::PartNo::new(NonZeroU32::MIN),
+            },
+            ..first_step.requirement
         },
         ..first_step
     };
     assert_eq!(r1.load, Load::Single(core(0)));
     let first = commit(&mut j, &r1, 0);
     let all = set(&[0, 1, 2, 3]);
+    let base = workload_plan(&r1, Regime::R6, Load::Many(all), 600);
     let r6 = TrialPlan {
         workload: WorkloadChoice::Frozen(pick_workload(Regime::R6, 1).id()),
-        context: TrialContext::Cycle {
-            cycle: NonZeroU32::MIN,
-            step: crate::StepNo::new(NonZeroU32::new(4).unwrap()),
-            part: crate::PartNo::new(NonZeroU32::MIN),
+        requirement: crate::Requirement {
+            context: TrialContext::Cycle {
+                cycle: NonZeroU32::MIN,
+                step: crate::StepNo::new(NonZeroU32::new(4).unwrap()),
+                part: crate::PartNo::new(NonZeroU32::MIN),
+            },
+            ..base.requirement
         },
         profile: checking(&j),
-        ..workload_plan(&r1, Regime::R6, Load::Many(all), 600)
+        ..base
     };
     let second = commit(&mut j, &r6, 1);
     j.assert_resumes();
@@ -492,7 +505,10 @@ fn rerun_retry_belongs_to_its_obligation() {
     assert!(!next.retry);
     assert_eq!(next.load, Load::Single(core(1)));
     assert_eq!(next.cause, vec![second]);
-    assert_eq!(next.context, TrialContext::Rerun { failure: second });
+    assert_eq!(
+        next.requirement.context,
+        TrialContext::Rerun { failure: second }
+    );
     assert_eq!(
         next.requirement.window,
         Window::LiveOrCarried {
@@ -509,12 +525,16 @@ fn cycle_retry_ends_with_its_cycle() {
     ended(&mut j, &plan, Outcome::Inconclusive, None);
     let again = j.next_trial();
     assert!(again.retry);
-    assert!(matches!(again.context, TrialContext::Cycle { cycle, .. } if cycle.get() == 1));
+    assert!(
+        matches!(again.requirement.context, TrialContext::Cycle { cycle, .. } if cycle.get() == 1)
+    );
     j.cycle_end(1, false, false);
     j.cycle_start(2, &[Regime::R1]);
     let next = j.next_trial();
     assert!(!next.retry, "cycle 2 ran cycle 1's retry: {next:?}");
-    assert!(matches!(next.context, TrialContext::Cycle { cycle, .. } if cycle.get() == 2));
+    assert!(
+        matches!(next.requirement.context, TrialContext::Cycle { cycle, .. } if cycle.get() == 2)
+    );
     j.assert_resumes();
 }
 
@@ -722,7 +742,7 @@ fn carried_rerun_citation_replay() {
 
         let live = j.next_trial();
         assert!(
-            matches!(live.context, TrialContext::Cycle { .. }),
+            matches!(live.requirement.context, TrialContext::Cycle { .. }),
             "{live:?}"
         );
         assert_eq!(live.regime, Regime::R1);
@@ -813,7 +833,10 @@ fn a_failure_of_the_class_after_the_passes_invalidates_them_for_the_rerun() {
         let Some(Action::RunTrial(rerun)) = j.run().rerun_action() else {
             panic!("no rerun owed");
         };
-        assert_eq!(rerun.context, TrialContext::Rerun { failure: first });
+        assert_eq!(
+            rerun.requirement.context,
+            TrialContext::Rerun { failure: first }
+        );
         pass(&mut j, &rerun);
         assert_eq!(
             j.run().reruns.is_empty(),
@@ -870,7 +893,7 @@ fn rerun_plan_shape() {
         let (duration, needed) = if at < n { (120, n) } else { (300, 1) };
         assert_eq!(rerun.condition, Condition::Together);
         assert_eq!(rerun.activity, Activity::Checking);
-        assert_eq!(rerun.context, TrialContext::Rerun { failure });
+        assert_eq!(rerun.requirement.context, TrialContext::Rerun { failure });
         assert_eq!(rerun.regime, Regime::R1);
         assert_eq!(rerun.workload, plan.workload);
         assert_eq!(rerun.load, Load::Single(core(0)));
@@ -878,12 +901,9 @@ fn rerun_plan_shape() {
         assert_eq!(rerun.duration, secs(duration));
         assert!(!rerun.retry);
         assert_eq!(rerun.cause, vec![failure]);
-        assert_eq!(rerun.requirement.kind, RequirementKind::Rerun);
         assert_eq!(rerun.requirement.class, class.with_duration(secs(duration)));
         assert_eq!(rerun.requirement.needed.get(), needed);
         assert_eq!(rerun.requirement.window, window);
-        assert_eq!(rerun.requirement.step, None);
-        assert_eq!(rerun.requirement.part, None);
         pass(&mut j, &rerun);
     }
     assert!(!is_rerun(&j.next()));
@@ -908,7 +928,7 @@ fn live_rerun_pass_after_the_cycle_start_also_counts_for_the_cycle_requirement_o
     loop {
         let plan = until_trial(&mut j);
         assert!(
-            matches!(plan.context, TrialContext::Cycle { .. }),
+            matches!(plan.requirement.context, TrialContext::Cycle { .. }),
             "{plan:?}"
         );
         if plan.duration != secs(120) {
@@ -979,10 +999,13 @@ fn intent_context_rejects_a_cycle_trial_outside_the_schedule() {
     unscheduled(
         &j,
         &TrialPlan {
-            context: TrialContext::Cycle {
-                cycle: NonZeroU32::new(2).unwrap(),
-                step: crate::StepNo::new(NonZeroU32::MIN),
-                part: crate::PartNo::new(NonZeroU32::MIN),
+            requirement: crate::Requirement {
+                context: TrialContext::Cycle {
+                    cycle: NonZeroU32::new(2).unwrap(),
+                    step: crate::StepNo::new(NonZeroU32::MIN),
+                    part: crate::PartNo::new(NonZeroU32::MIN),
+                },
+                ..plan.requirement
             },
             ..plan.clone()
         },
@@ -1132,7 +1155,7 @@ fn a_carried_rerun_boundary_preserves_the_pending_checks() {
                 panic!("{label}: the boundary lost the pending rerun: {want:?}");
             };
             assert!(
-                matches!(plan.context, TrialContext::Rerun { .. }),
+                matches!(plan.requirement.context, TrialContext::Rerun { .. }),
                 "{label}"
             );
             assert_eq!(plan.duration, secs(duration), "{label}");
@@ -1173,16 +1196,21 @@ fn carried_rerun_citations_wait_for_a_cycle_boundary_not_a_step() {
     j.assert_resumes();
 }
 
-fn ordinals(requirement: &crate::Requirement) -> (Option<u32>, Option<u32>) {
-    (
-        requirement.step.map(|step| step.get().get()),
-        requirement.part.map(|part| part.get().get()),
-    )
+fn ordinals(requirement: &crate::Requirement) -> Option<(u32, u32)> {
+    match requirement.context {
+        TrialContext::Cycle { step, part, .. } => Some((step.get().get(), part.get().get())),
+        TrialContext::Search { .. }
+        | TrialContext::SoloLimit { .. }
+        | TrialContext::Rerun { .. }
+        | TrialContext::ZeroRerun { .. }
+        | TrialContext::Round { .. }
+        | TrialContext::Hunt { .. } => None,
+    }
 }
 
 /// A stored requirement as the dashboard shows it: the count, and the (step, part) ordinals the
 /// cycle plan marks running.
-type Shown = (u32, Vec<(Option<u32>, Option<u32>)>);
+type Shown = (u32, Vec<(u32, u32)>);
 
 /// What the open trial's stored requirement shows; the cycle plan reads the running part from
 /// that requirement.
@@ -1198,7 +1226,7 @@ fn shown(j: &Journal) -> Shown {
                 .iter()
                 .zip(1..)
                 .filter(|(part, _)| part.running)
-                .map(move |(_, part)| (Some(number), Some(part)))
+                .map(move |(_, part)| (number, part))
         })
         .collect();
     (j.requirement().needed, running)
@@ -1206,11 +1234,7 @@ fn shown(j: &Journal) -> Shown {
 
 /// What `shown` reads once the fold stores `plan`'s requirement.
 fn scheduled(plan: &TrialPlan) -> Shown {
-    let running = if plan.requirement.kind == RequirementKind::Cycle {
-        vec![ordinals(&plan.requirement)]
-    } else {
-        Vec::new()
-    };
+    let running = ordinals(&plan.requirement).into_iter().collect();
     (u32::from(plan.requirement.needed.get()), running)
 }
 
@@ -1270,8 +1294,7 @@ fn cycle_retries_attach_the_requirement_the_fold_stores() {
     for (name, before, after, retry) in cases {
         let mut j = session(&[-10, -11, -12, -13], before);
         let first = until_trial(&mut j);
-        assert_eq!(first.requirement.kind, RequirementKind::Cycle, "{name}");
-        assert_eq!(ordinals(&first.requirement), (Some(1), Some(1)), "{name}");
+        assert_eq!(ordinals(&first.requirement), Some((1, 1)), "{name}");
         ended(&mut j, &first, Outcome::Inconclusive, None);
         j.load(&testkit::config(after));
         assert_eq!(j.run().retry.is_some(), retry, "{name}");
@@ -1305,8 +1328,8 @@ fn stored_requirement_separates_class_count_and_part() {
         panic!("no partial part came");
     };
     let (intent, trial) = j.intent(&partial);
-    assert_eq!(ordinals(&partial.requirement), (Some(1), Some(2)));
-    assert_eq!(shown(&j), (3, vec![(Some(1), Some(2))]));
+    assert_eq!(ordinals(&partial.requirement), Some((1, 2)));
+    assert_eq!(shown(&j), (3, vec![(1, 2)]));
     let mut end = Journal::end_payload(&trial, Outcome::Inconclusive, None);
     end.duration_s = partial.duration.get();
     j.append(end.into(), &[intent]);
