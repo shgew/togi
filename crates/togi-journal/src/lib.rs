@@ -28,7 +28,7 @@ mod tests;
 pub use build::{Build, Dimension, Operation, Refusal, SCHEMA, Verdict};
 pub use dir::{
     ArchiveKind, DirError, Lifetime, LockError, Marker, StateDir, StateError, recorded_build,
-    recorded_build_in,
+    recorded_build_in, session_entries_in,
 };
 pub use event::{DecodeError, Event, Seq, Stamp};
 pub use filter::{Filter, InvalidKindSelector, KindSelector};
