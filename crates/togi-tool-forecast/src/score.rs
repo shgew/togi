@@ -125,9 +125,12 @@ impl Record {
         let metrics = metrics(&self.runs)?;
         let forecast: CoreSet = metrics
             .iter()
-            .filter_map(|metric| match metric.kind {
-                MetricKind::Core(core) => Some(core),
-                _ => None,
+            .filter_map(|metric| {
+                if let MetricKind::Core(core) = metric.kind {
+                    Some(core)
+                } else {
+                    None
+                }
             })
             .collect();
         let run: CoreSet = outcome.profile.iter().map(|(core, _)| core).collect();

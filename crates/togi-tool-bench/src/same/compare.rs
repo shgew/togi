@@ -365,9 +365,14 @@ impl Comparison<'_> {
         if self.config.fleet.cancelled() {
             return Err(SameError::Interrupted);
         }
-        let failure = errors.into_iter().find_map(|(_, halt)| match halt {
-            Halt::Failed(error) if !error.interrupted() => Some(error),
-            _ => None,
+        let failure = errors.into_iter().find_map(|(_, halt)| {
+            if let Halt::Failed(error) = halt
+                && !error.interrupted()
+            {
+                Some(error)
+            } else {
+                None
+            }
         });
         if let Some(error) = failure {
             return Err(error);

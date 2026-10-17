@@ -211,7 +211,6 @@
             vendorHash = "sha256-uPqabZgQGQulf+F3BvMLhv4O0h5jOq12F7K60u5xjtA=";
             nativeCheckInputs = [ pkgs.gitMinimal ];
             subPackages = [
-              "tools/reviews"
               "tools/cover"
             ];
             checkPhase = testPhase "" "./...";
