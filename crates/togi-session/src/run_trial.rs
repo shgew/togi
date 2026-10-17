@@ -406,6 +406,9 @@ impl Session {
         if containment.is_some() {
             self.fault.get_or_insert(Fault::Containment);
         }
+        if crashed {
+            self.fault = Some(Fault::Crashed);
+        }
         if let Some(failure) = reported {
             return Err(failure.into());
         }

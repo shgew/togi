@@ -1300,6 +1300,72 @@ fn a_machine_that_crashes_mid_trial_leaves_the_trial_open_for_the_recovery() {
 }
 
 #[test]
+fn a_crash_in_the_wait_during_a_failed_report_withholds_the_journal_emergency() {
+    crash_during_a_failed_report(|rigging| rigging.wait_error = Some(|| Error::Crashed));
+}
+
+#[test]
+fn a_crash_in_the_stop_during_a_failed_report_withholds_the_journal_emergency() {
+    crash_during_a_failed_report(|rigging| rigging.stop_error = Some(|| Error::Crashed));
+}
+
+#[test]
+fn a_crash_beside_unconfirmed_containment_during_a_failed_report_is_withheld_as_a_crash() {
+    crash_during_a_failed_report(|rigging| {
+        rigging.wait_error = Some(|| Error::Containment("scope still populated".into()));
+        rigging.stop_error = Some(|| Error::Crashed);
+    });
+}
+
+fn crash_during_a_failed_report(crash: impl FnOnce(&mut Rigging)) {
+    let mut rig = rigged(Bench::new(2));
+    rig.session.validated = Some(rig.session.host.validate_smu().unwrap());
+    rig.bench
+        .sim
+        .script_trial(
+            "0001",
+            Script {
+                signal: Some(Signal::ComputationError),
+                at_s: 10.0,
+                core: core(0),
+                reset: None,
+                then_crash: false,
+            },
+        )
+        .unwrap();
+    let touched = Rc::new(Cell::new(0_usize));
+    let count = touched.clone();
+    rig.bench.sim.interrupt_smu(move |_: &SmuOperation| {
+        count.set(count.get() + 1);
+        Ok(())
+    });
+    {
+        let mut rigs = rig.rigs.borrow_mut();
+        let mem = rig.bench.mem.clone();
+        rigs.on_start = Some(Rc::new(move || {
+            mem.inject(FsFault::before(Op::Write, 2));
+        }));
+        crash(&mut rigs);
+    }
+    let error = trial(&mut rig).unwrap_err();
+    assert!(matches!(error, SessionError::Journal(_)), "{error:?}");
+    assert_eq!(kind_count(&rig.session, "trial.start"), 1);
+    assert_eq!(kind_count(&rig.session, "trial.progress"), 0);
+    assert!(ends(&rig.session).is_empty());
+    let before_close = touched.get();
+    let ended = rig.session.close(Err(error));
+    assert!(
+        matches!(
+            ended.emergency.as_ref().map(|outcome| &outcome.response),
+            Some(crate::Response::Withheld(crate::Withheld::Crashed))
+        ),
+        "{:?}",
+        ended.emergency
+    );
+    assert_eq!(touched.get(), before_close);
+}
+
+#[test]
 fn a_backend_failure_the_workload_reports_is_journaled_as_progress_citing_the_start() {
     let mut rig = rigged(Bench::new(2));
     rig.bench
