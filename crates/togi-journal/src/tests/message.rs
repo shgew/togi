@@ -1,3 +1,4 @@
+use test_case::test_case;
 use togi_machine::{Condition, CoreSet, PerCore, Regime, Signal};
 
 use super::fixtures::{
@@ -122,37 +123,28 @@ fn trial_end_inconclusive_gives_the_reason() {
     );
 }
 
-#[test]
-fn recovered_trial_messages_keep_the_reason_and_the_last_sample() {
+#[test_case("crash", Some(Signal::Crash), Outcome::Failure, ", last evidence 990 s after start"; "crash")]
+#[test_case("computation error", Some(Signal::ComputationError), Outcome::Failure, " after 990 s"; "computation error")]
+#[test_case("thermal trip", None, Outcome::Inconclusive, " after 990 s"; "thermal trip")]
+#[test_case("power loss", None, Outcome::Inconclusive, " after 990 s"; "power loss")]
+fn recovered_trial_messages_keep_the_reason_and_the_last_sample(
+    reason: &str,
+    signal: Option<Signal>,
+    outcome: Outcome,
+    duration: &str,
+) {
     let telemetry = "last sample 987 s: Tctl 73°C, 4321-5432 MHz";
-    for (reason, signal, outcome, duration) in [
-        (
-            "crash",
-            Some(Signal::Crash),
-            Outcome::Failure,
-            ", last evidence 990 s after start",
-        ),
-        (
-            "computation error",
-            Some(Signal::ComputationError),
-            Outcome::Failure,
-            " after 990 s",
-        ),
-        ("thermal trip", None, Outcome::Inconclusive, " after 990 s"),
-        ("power loss", None, Outcome::Inconclusive, " after 990 s"),
-    ] {
-        let text = Payload::from(bare_trial_end(outcome, signal, reason)).message();
-        assert!(text.starts_with("trial 0413 "), "{text}");
-        assert!(text.contains(duration), "{reason}: {text}");
-        assert!(text.contains(telemetry), "{reason}: {text}");
-        match outcome {
-            Outcome::Inconclusive => {
-                assert!(text.contains("INCONCLUSIVE"), "{text}");
-                assert!(text.ends_with(&format!(": {reason}")), "{text}");
-            }
-            Outcome::Failure => assert!(text.contains("FAIL"), "{text}"),
-            Outcome::Pass => unreachable!("no case recovers a passing trial: {text}"),
+    let text = Payload::from(bare_trial_end(outcome, signal, reason)).message();
+    assert!(text.starts_with("trial 0413 "), "{text}");
+    assert!(text.contains(duration), "{reason}: {text}");
+    assert!(text.contains(telemetry), "{reason}: {text}");
+    match outcome {
+        Outcome::Inconclusive => {
+            assert!(text.contains("INCONCLUSIVE"), "{text}");
+            assert!(text.ends_with(&format!(": {reason}")), "{text}");
         }
+        Outcome::Failure => assert!(text.contains("FAIL"), "{text}"),
+        Outcome::Pass => unreachable!("no case recovers a passing trial: {text}"),
     }
 }
 
@@ -949,27 +941,27 @@ fn a_raw_reset_line_is_kept_verbatim_over_the_typed_reason() {
     assert!(!text.contains("reset reason: watchdog"), "{text}");
 }
 
-#[test]
-fn trial_end_voltage_telemetry_survives_every_outcome() {
+#[test_case(Outcome::Pass; "pass")]
+#[test_case(Outcome::Failure; "failure")]
+#[test_case(Outcome::Inconclusive; "inconclusive")]
+fn trial_end_voltage_telemetry_survives_every_outcome(outcome: Outcome) {
     let Payload::TrialEnd(base) = sample(EventKind::TrialEnd) else {
         unreachable!()
     };
-    for outcome in [Outcome::Pass, Outcome::Failure, Outcome::Inconclusive] {
-        let end = TrialEnd {
-            outcome,
-            reason: Some("interrupted".into()),
-            ..base.clone()
-        };
-        let text = Payload::from(end).message();
-        assert!(
-            text.contains("loaded voltage request median 1.100 V, min 1.050 V"),
-            "{outcome}: {text}"
-        );
-        assert!(
-            text.contains("top requester 03 1.125 V"),
-            "{outcome}: {text}"
-        );
-    }
+    let end = TrialEnd {
+        outcome,
+        reason: Some("interrupted".into()),
+        ..base
+    };
+    let text = Payload::from(end).message();
+    assert!(
+        text.contains("loaded voltage request median 1.100 V, min 1.050 V"),
+        "{outcome}: {text}"
+    );
+    assert!(
+        text.contains("top requester 03 1.125 V"),
+        "{outcome}: {text}"
+    );
 }
 
 #[test]

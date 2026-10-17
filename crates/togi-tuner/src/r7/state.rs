@@ -12,6 +12,7 @@ use super::status::SelfSufficiency;
 use super::target::{PassRecord, R7Targets};
 use crate::BackendId;
 use crate::failures::{Pending, together_attribution};
+use crate::hunt::state::LocatedEnd;
 use crate::state::Run;
 
 /// The R7 substate: what request measurements, voltage targets, escalation strikes and
@@ -186,12 +187,14 @@ impl Run {
         let view = self.failed(record);
         let named = self.named_culprit(&view);
         let targets = self.failure_targets(&view);
-        let located_named = self
-            .hunts
-            .located
-            .get(&seq)
-            .and_then(|located| located.end.as_ref())
-            .is_some_and(|end| end.named.is_some());
+        let located_named =
+            self.hunts
+                .located
+                .get(&seq)
+                .is_some_and(|located| match &located.end {
+                    LocatedEnd::Loaded(end) => end.named().is_some(),
+                    LocatedEnd::Open | LocatedEnd::Consumed => false,
+                });
         let probe = (!named && !located_named)
             .then(|| self.r7_probe_part(&view, decision.core))
             .flatten();

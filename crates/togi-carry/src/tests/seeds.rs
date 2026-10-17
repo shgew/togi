@@ -1,3 +1,4 @@
+use test_case::test_case;
 use togi_journal::{
     Attribution, CarriedSource, CorePhase, CoreTransition, Payload, ResetTarget, SCHEMA,
     SessionCarried, Shutdown, ShutdownReason,
@@ -63,54 +64,57 @@ fn seeds_solo_limits_and_failure_points() {
     );
 }
 
-#[test]
-fn bios_change_archives_metadata_carry_available() {
-    for (recorded, current, kept, detail) in [
-        (Some(context()), context(), true, None),
-        (
-            Some(context()),
-            other_context(),
-            false,
-            Some("bios_version is 3.20; the session recorded 3.10"),
-        ),
-        (
-            None,
-            other_context(),
-            false,
-            Some("the archived session recorded no BIOS context"),
-        ),
-    ] {
-        let mut x = Source::new(day(9), &[0, 1], 4, 1);
-        if let Some(recorded) = &recorded {
-            x = x.with_context(recorded);
-        }
-        let failure = x
-            .fail(0, -30, Condition::Alone, Attribution::Attributed)
-            .failure;
-        let solo = x.pass(1, -20, Condition::Alone);
-        let (mut archive, chain) = chain_of(&[&x]);
-        let got = pending(&mut archive, &chain, None, &[]);
-        let resolved = got.resolve(&current, &togi_config::Backends::default(), 1);
-
-        assert_eq!(resolved.failure_points(), kept);
-        assert_eq!(resolved.detail(), detail);
-        let want = if kept {
-            vec![
-                seed(
-                    0,
-                    None,
-                    Some(point(-30, x.id, failure, Signal::UnexpectedExit)),
-                ),
-                seed(1, Some(limit(-20, x.id, solo)), None),
-            ]
-        } else {
-            vec![seed(1, Some(limit(-20, x.id, solo)), None)]
-        };
-        assert_eq!(resolved.seeds(), want);
-        let carried = resolved.session_carried(set(&[0, 1]));
-        assert_eq!(carried.failure_points, kept);
-        assert_eq!(carried.carried, want);
+#[test_case(Some(&context()), &context(), true, None; "the same BIOS keeps the failure points")]
+#[test_case(
+    Some(&context()),
+    &other_context(),
+    false,
+    Some("bios_version is 3.20; the session recorded 3.10");
+    "a changed BIOS drops the failure points"
+)]
+#[test_case(
+    None,
+    &other_context(),
+    false,
+    Some("the archived session recorded no BIOS context");
+    "a session that recorded no BIOS context"
+)]
+fn bios_change_archives_metadata_carry_available(
+    recorded: Option<&togi_machine::BiosContext>,
+    current: &togi_machine::BiosContext,
+    kept: bool,
+    detail: Option<&str>,
+) {
+    let mut x = Source::new(day(9), &[0, 1], 4, 1);
+    if let Some(recorded) = recorded {
+        x = x.with_context(recorded);
     }
+    let failure = x
+        .fail(0, -30, Condition::Alone, Attribution::Attributed)
+        .failure;
+    let solo = x.pass(1, -20, Condition::Alone);
+    let (mut archive, chain) = chain_of(&[&x]);
+    let got = pending(&mut archive, &chain, None, &[]);
+    let resolved = got.resolve(current, &togi_config::Backends::default(), 1);
+
+    assert_eq!(resolved.failure_points(), kept);
+    assert_eq!(resolved.detail(), detail);
+    let want = if kept {
+        vec![
+            seed(
+                0,
+                None,
+                Some(point(-30, x.id, failure, Signal::UnexpectedExit)),
+            ),
+            seed(1, Some(limit(-20, x.id, solo)), None),
+        ]
+    } else {
+        vec![seed(1, Some(limit(-20, x.id, solo)), None)]
+    };
+    assert_eq!(resolved.seeds(), want);
+    let carried = resolved.session_carried(set(&[0, 1]));
+    assert_eq!(carried.failure_points, kept);
+    assert_eq!(carried.carried, want);
 }
 
 #[test]
@@ -124,89 +128,81 @@ fn select_idempotent() {
     assert_eq!(resolve(&first, 1), resolve(&second, 1));
 }
 
-#[test]
-fn hunt_culprit_seed_sparse_topology() {
-    for (name, reset_after, attributed, want) in [
-        ("culprit", false, 0, Some((-35, true))),
-        ("reset culprit", true, 0, None),
-        (
-            "attributed failure is shallower",
-            false,
-            -28,
-            Some((-28, false)),
-        ),
-        ("culprit is shallower", false, -40, Some((-35, true))),
-    ] {
-        let mut x = Source::new(day(9), &[0, 2, 5], 3, 1).with_context(&context());
-        let failure = x.add(super::idle_failure(profile(&[
-            (0, -10),
-            (2, -35),
-            (5, -20),
-        ])));
-        x.add(hunt_start(
-            1,
-            failure,
-            profile(&[(0, -10), (2, -35), (5, -20)]),
-            set(&[2]),
-        ));
-        let end = x.add(culprit(1, set(&[2])));
-        if reset_after {
-            x.add(reset(ResetTarget::Core(super::core(2))));
-        }
-        let attributed_failure = (attributed != 0).then(|| {
-            x.fail(2, attributed, Condition::Together, Attribution::Attributed)
-                .failure
-        });
+#[test_case(false, 0, Some((-35, true)); "culprit")]
+#[test_case(true, 0, None; "reset culprit")]
+#[test_case(false, -28, Some((-28, false)); "attributed failure is shallower")]
+#[test_case(false, -40, Some((-35, true)); "culprit is shallower")]
+fn hunt_culprit_seed_sparse_topology(
+    reset_after: bool,
+    attributed: i64,
+    want: Option<(i64, bool)>,
+) {
+    let mut x = Source::new(day(9), &[0, 2, 5], 3, 1).with_context(&context());
+    let failure = x.add(super::idle_failure(profile(&[
+        (0, -10),
+        (2, -35),
+        (5, -20),
+    ])));
+    x.add(hunt_start(
+        1,
+        failure,
+        profile(&[(0, -10), (2, -35), (5, -20)]),
+        set(&[2]),
+    ));
+    let end = x.add(culprit(1, set(&[2])));
+    if reset_after {
+        x.add(reset(ResetTarget::Core(super::core(2))));
+    }
+    let attributed_failure = (attributed != 0).then(|| {
+        x.fail(2, attributed, Condition::Together, Attribution::Attributed)
+            .failure
+    });
 
-        let (mut archive, chain) = chain_of(&[&x]);
-        let got = pending(&mut archive, &chain, None, &[]);
-        let want: Vec<_> = want
-            .map(|(value, from_hunt)| {
-                let (at, signal) = if from_hunt {
-                    (end, Signal::Crash)
-                } else {
-                    (attributed_failure.unwrap(), Signal::UnexpectedExit)
-                };
-                seed(2, None, Some(point(value, x.id, at, signal)))
-            })
-            .into_iter()
-            .collect();
-        assert_eq!(got.seeds(), want, "{name}");
+    let (mut archive, chain) = chain_of(&[&x]);
+    let got = pending(&mut archive, &chain, None, &[]);
+    let want: Vec<_> = want
+        .map(|(value, from_hunt)| {
+            let (at, signal) = if from_hunt {
+                (end, Signal::Crash)
+            } else {
+                (attributed_failure.unwrap(), Signal::UnexpectedExit)
+            };
+            seed(2, None, Some(point(value, x.id, at, signal)))
+        })
+        .into_iter()
+        .collect();
+    assert_eq!(got.seeds(), want);
+}
+
+fn member(core: i64, value: i64) -> togi_journal::Member {
+    togi_journal::Member {
+        core: super::core(core),
+        offset: offset(value),
     }
 }
 
-#[test]
-fn a_singleton_culprit_seeds_its_end_member_over_the_hunt_start_offset() {
+#[test_case(vec![member(2, -23)], -23; "refined member")]
+#[test_case(Vec::new(), -30; "no members from an older end")]
+#[test_case(vec![member(5, -23)], -30; "member of another core")]
+#[test_case(vec![member(5, -11), member(2, -23)], -23; "own member among others")]
+fn a_singleton_culprit_seeds_its_end_member_over_the_hunt_start_offset(
+    members: Vec<togi_journal::Member>,
+    want: i64,
+) {
     let failing = profile(&[(0, -10), (2, -30), (5, -20)]);
-    let member = |core: i64, value: i64| togi_journal::Member {
-        core: super::core(core),
-        offset: offset(value),
-    };
-    for (name, members, want) in [
-        ("refined member", vec![member(2, -23)], -23),
-        ("no members from an older end", Vec::new(), -30),
-        ("member of another core", vec![member(5, -23)], -30),
-        (
-            "own member among others",
-            vec![member(5, -11), member(2, -23)],
-            -23,
-        ),
-    ] {
-        let mut x = Source::new(day(9), &[0, 2, 5], 3, 1).with_context(&context());
-        let failure = x.add(super::idle_failure(failing));
-        x.add(hunt_start(1, failure, failing, set(&[2])));
-        let mut end = culprit(1, set(&[2]));
-        end.members = members;
-        let end = x.add(end);
+    let mut x = Source::new(day(9), &[0, 2, 5], 3, 1).with_context(&context());
+    let failure = x.add(super::idle_failure(failing));
+    x.add(hunt_start(1, failure, failing, set(&[2])));
+    let mut end = culprit(1, set(&[2]));
+    end.members = members;
+    let end = x.add(end);
 
-        let (mut archive, chain) = chain_of(&[&x]);
-        let got = pending(&mut archive, &chain, None, &[]);
-        assert_eq!(
-            got.seeds(),
-            [seed(2, None, Some(point(want, x.id, end, Signal::Crash)))],
-            "{name}"
-        );
-    }
+    let (mut archive, chain) = chain_of(&[&x]);
+    let got = pending(&mut archive, &chain, None, &[]);
+    assert_eq!(
+        got.seeds(),
+        [seed(2, None, Some(point(want, x.id, end, Signal::Crash)))]
+    );
 }
 
 #[test]
@@ -301,23 +297,19 @@ fn excluded_failure_falls_back_to_the_next_shallowest() {
     );
 }
 
-#[test]
-fn interrupted_alone_nonzero_seeds_crash_failure() {
-    for (name, value, condition, seeded) in [
-        ("alone", -20, Condition::Alone, true),
-        ("at CO 0", 0, Condition::Alone, false),
-        ("together", -20, Condition::Together, false),
-    ] {
-        let mut x = Source::new(day(9), &[4], 3, 1).with_context(&context());
-        x.intent(4, value, condition);
-        let (mut archive, chain) = chain_of(&[&x]);
-        let got = pending(&mut archive, &chain, None, &[]);
-        let want: Vec<_> = seeded
-            .then(|| seed(4, None, Some(point(-20, x.id, seq(3), Signal::Crash))))
-            .into_iter()
-            .collect();
-        assert_eq!(got.seeds(), want, "{name}");
-    }
+#[test_case(-20, Condition::Alone, true; "alone")]
+#[test_case(0, Condition::Alone, false; "at CO 0")]
+#[test_case(-20, Condition::Together, false; "together")]
+fn interrupted_alone_nonzero_seeds_crash_failure(value: i64, condition: Condition, seeded: bool) {
+    let mut x = Source::new(day(9), &[4], 3, 1).with_context(&context());
+    x.intent(4, value, condition);
+    let (mut archive, chain) = chain_of(&[&x]);
+    let got = pending(&mut archive, &chain, None, &[]);
+    let want: Vec<_> = seeded
+        .then(|| seed(4, None, Some(point(-20, x.id, seq(3), Signal::Crash))))
+        .into_iter()
+        .collect();
+    assert_eq!(got.seeds(), want);
 }
 
 fn shutdown() -> Shutdown {
@@ -375,37 +367,36 @@ fn reset_all_stops_in_flight_seed() {
     );
 }
 
-#[test]
-fn commitment_stops_seed_walk() {
-    for reset_after in [false, true] {
-        let mut a = Source::new(day(1), &[5, 7], 2, 1).with_context(&context());
-        let failure = a
-            .fail(7, -30, Condition::Alone, Attribution::Attributed)
-            .failure;
-        let mut x = Source::new(day(9), &[5, 7], 3, 1).with_context(&context());
-        x.add(SessionCarried {
-            sources: vec![carried_source(a.id, 2)],
-            failure_points: true,
-            detail: None,
-            carried: vec![seed(
-                5,
-                None,
-                Some(point(-12, a.id, failure, Signal::Crash)),
-            )],
-        });
-        if reset_after {
-            x.add(reset(ResetTarget::Core(super::core(5))));
-        }
-        let (mut archive, chain) = chain_of(&[&x, &a]);
-        let got = pending(&mut archive, &chain, None, &[]);
-
-        assert_eq!(got.sources(), [carried_source(x.id, 3)]);
-        let want: Vec<_> = (!reset_after)
-            .then(|| seed(5, None, Some(point(-12, a.id, failure, Signal::Crash))))
-            .into_iter()
-            .collect();
-        assert_eq!(got.seeds(), want, "reset {reset_after}");
+#[test_case(false; "a commitment alone")]
+#[test_case(true; "a commitment then a reset of its core")]
+fn commitment_stops_seed_walk(reset_after: bool) {
+    let mut a = Source::new(day(1), &[5, 7], 2, 1).with_context(&context());
+    let failure = a
+        .fail(7, -30, Condition::Alone, Attribution::Attributed)
+        .failure;
+    let mut x = Source::new(day(9), &[5, 7], 3, 1).with_context(&context());
+    x.add(SessionCarried {
+        sources: vec![carried_source(a.id, 2)],
+        failure_points: true,
+        detail: None,
+        carried: vec![seed(
+            5,
+            None,
+            Some(point(-12, a.id, failure, Signal::Crash)),
+        )],
+    });
+    if reset_after {
+        x.add(reset(ResetTarget::Core(super::core(5))));
     }
+    let (mut archive, chain) = chain_of(&[&x, &a]);
+    let got = pending(&mut archive, &chain, None, &[]);
+
+    assert_eq!(got.sources(), [carried_source(x.id, 3)]);
+    let want: Vec<_> = (!reset_after)
+        .then(|| seed(5, None, Some(point(-12, a.id, failure, Signal::Crash))))
+        .into_iter()
+        .collect();
+    assert_eq!(got.seeds(), want, "reset {reset_after}");
 }
 
 fn unseeded_chain(
@@ -428,20 +419,20 @@ fn unseeded_chain(
     (archive, chain, x, b, a)
 }
 
-#[test]
-fn walk_back_through_unseeded_transitions() {
-    for (name, a_context, b_ruleset, sources, cores) in [
-        ("every transition", context(), 2, 3, vec![0, 1, 2]),
-        ("BIOS changed before B", other_context(), 2, 2, vec![1, 2]),
-        ("B ran the same ruleset", context(), 3, 1, vec![2]),
-    ] {
-        let (mut archive, chain, ..) = unseeded_chain(&a_context, b_ruleset);
-        let got = pending(&mut archive, &chain, None, &[]);
-        assert_eq!(got.sources().len(), sources, "{name}");
-        let seeded: Vec<_> = got.seeds().iter().map(|seed| seed.core.get()).collect();
-        let want: Vec<_> = cores.iter().map(|&n| u8::try_from(n).unwrap()).collect();
-        assert_eq!(seeded, want, "{name}");
-    }
+#[test_case(&context(), 2, 3, &[0, 1, 2]; "every transition")]
+#[test_case(&other_context(), 2, 2, &[1, 2]; "BIOS changed before B")]
+#[test_case(&context(), 3, 1, &[2]; "B ran the same ruleset")]
+fn walk_back_through_unseeded_transitions(
+    a_context: &togi_machine::BiosContext,
+    b_ruleset: u32,
+    sources: usize,
+    cores: &[u8],
+) {
+    let (mut archive, chain, ..) = unseeded_chain(a_context, b_ruleset);
+    let got = pending(&mut archive, &chain, None, &[]);
+    assert_eq!(got.sources().len(), sources);
+    let seeded: Vec<_> = got.seeds().iter().map(|seed| seed.core.get()).collect();
+    assert_eq!(seeded, cores);
 }
 
 #[test]
@@ -596,38 +587,24 @@ fn seed_extrema_tie_keeps_first() {
     );
 }
 
-#[test]
-fn only_a_singleton_culprit_of_a_known_hunt_seeds() {
+#[test_case(togi_journal::HuntOutcome::Direct, set(&[2]), true; "direct")]
+#[test_case(togi_journal::HuntOutcome::Culprit, set(&[2, 5]), true; "two culprits")]
+#[test_case(togi_journal::HuntOutcome::Culprit, set(&[2]), false; "no hunt start")]
+fn only_a_singleton_culprit_of_a_known_hunt_seeds(
+    outcome: togi_journal::HuntOutcome,
+    culprits: togi_machine::CoreSet,
+    start_hunt: bool,
+) {
     let failing = profile(&[(0, -10), (2, -35), (5, -20)]);
-    for (name, outcome, culprits, start_hunt) in [
-        ("direct", togi_journal::HuntOutcome::Direct, set(&[2]), true),
-        (
-            "two culprits",
-            togi_journal::HuntOutcome::Culprit,
-            set(&[2, 5]),
-            true,
-        ),
-        (
-            "no hunt start",
-            togi_journal::HuntOutcome::Culprit,
-            set(&[2]),
-            false,
-        ),
-    ] {
-        let mut x = Source::new(day(9), &[0, 2, 5], 3, 1).with_context(&context());
-        let failure = x.add(super::idle_failure(failing));
-        if start_hunt {
-            x.add(hunt_start(1, failure, failing, set(&[2])));
-        }
-        let mut end = culprit(1, culprits);
-        end.result = outcome;
-        x.add(end);
-
-        let (mut archive, chain) = chain_of(&[&x]);
-        assert_eq!(
-            pending(&mut archive, &chain, None, &[]).seeds(),
-            [],
-            "{name}"
-        );
+    let mut x = Source::new(day(9), &[0, 2, 5], 3, 1).with_context(&context());
+    let failure = x.add(super::idle_failure(failing));
+    if start_hunt {
+        x.add(hunt_start(1, failure, failing, set(&[2])));
     }
+    let mut end = culprit(1, culprits);
+    end.result = outcome;
+    x.add(end);
+
+    let (mut archive, chain) = chain_of(&[&x]);
+    assert_eq!(pending(&mut archive, &chain, None, &[]).seeds(), []);
 }

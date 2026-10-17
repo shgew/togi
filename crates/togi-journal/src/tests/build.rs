@@ -1,3 +1,5 @@
+use test_case::test_case;
+
 use crate::{Build, DefectId, Dimension, FixStamp, Operation, Refusal, Verdict};
 
 const BINARY: (u32, u32, u32) = (2, 5, 3);
@@ -35,16 +37,16 @@ const NEWER_EVIDENCE: (u32, u32, u32) = (2, 5, 4);
 const MIXED_NEWER_SCHEMA: (u32, u32, u32) = (3, 4, 3);
 const MIXED_NEWER_EVIDENCE: (u32, u32, u32) = (1, 5, 4);
 
+#[test_case(OLDER_SCHEMA; "older schema")]
+#[test_case(OLDER_RULESET; "older ruleset")]
+#[test_case(OLDER_EVIDENCE; "older evidence")]
+fn resume_archives_an_older_dimension(older: (u32, u32, u32)) {
+    assert_eq!(verdict(older, Operation::Resume), Verdict::Archive);
+}
+
 #[test]
 fn resume_uses_current_archives_older_and_refuses_any_newer_dimension() {
     assert_eq!(verdict(SAME, Operation::Resume), Verdict::Use);
-    for older in [OLDER_SCHEMA, OLDER_RULESET, OLDER_EVIDENCE] {
-        assert_eq!(
-            verdict(older, Operation::Resume),
-            Verdict::Archive,
-            "{older:?}"
-        );
-    }
     assert_eq!(
         verdict(NEWER_SCHEMA, Operation::Resume),
         refuse(Dimension::Schema, 3, 2)
@@ -96,36 +98,33 @@ fn append_needs_every_dimension_current() {
     );
 }
 
-#[test]
-fn reset_all_archives_unchanged_unless_the_schema_matches() {
-    for same_schema in [
-        SAME,
-        OLDER_RULESET,
-        NEWER_RULESET,
-        OLDER_EVIDENCE,
-        NEWER_EVIDENCE,
-    ] {
-        assert_eq!(
-            verdict(same_schema, Operation::ResetAll),
-            Verdict::Use,
-            "{same_schema:?}"
-        );
-    }
-    for other in [OLDER_SCHEMA, NEWER_SCHEMA, MIXED_NEWER_SCHEMA] {
-        assert_eq!(
-            verdict(other, Operation::ResetAll),
-            Verdict::Archive,
-            "{other:?}"
-        );
-    }
+#[test_case(SAME; "same")]
+#[test_case(OLDER_RULESET; "older ruleset")]
+#[test_case(NEWER_RULESET; "newer ruleset")]
+#[test_case(OLDER_EVIDENCE; "older evidence")]
+#[test_case(NEWER_EVIDENCE; "newer evidence")]
+fn reset_all_uses_the_archive_unchanged_when_the_schema_matches(same_schema: (u32, u32, u32)) {
+    assert_eq!(verdict(same_schema, Operation::ResetAll), Verdict::Use);
+}
+
+#[test_case(OLDER_SCHEMA; "older schema")]
+#[test_case(NEWER_SCHEMA; "newer schema")]
+#[test_case(MIXED_NEWER_SCHEMA; "mixed newer schema")]
+fn reset_all_archives_when_the_schema_differs(other: (u32, u32, u32)) {
+    assert_eq!(verdict(other, Operation::ResetAll), Verdict::Archive);
+}
+
+#[test_case(SAME; "same")]
+#[test_case(OLDER_RULESET; "older ruleset")]
+#[test_case(NEWER_RULESET; "newer ruleset")]
+#[test_case(NEWER_EVIDENCE; "newer evidence")]
+#[test_case(OLDER_EVIDENCE; "older evidence")]
+fn inspect_uses_the_same_schema(same_schema: (u32, u32, u32)) {
+    assert_eq!(verdict(same_schema, Operation::Inspect), Verdict::Use);
 }
 
 #[test]
-fn inspect_needs_the_same_schema() {
-    for same_schema in [SAME, OLDER_RULESET, NEWER_RULESET, NEWER_EVIDENCE] {
-        assert_eq!(verdict(same_schema, Operation::Inspect), Verdict::Use);
-    }
-    assert_eq!(verdict(OLDER_EVIDENCE, Operation::Inspect), Verdict::Use);
+fn inspect_refuses_another_schema() {
     assert_eq!(
         verdict(OLDER_SCHEMA, Operation::Inspect),
         refuse(Dimension::Schema, 1, 2)
@@ -136,15 +135,16 @@ fn inspect_needs_the_same_schema() {
     );
 }
 
+#[test_case(SAME; "same")]
+#[test_case(OLDER_SCHEMA; "older schema")]
+#[test_case(OLDER_EVIDENCE; "older evidence")]
+#[test_case(NEWER_EVIDENCE; "newer evidence")]
+fn replay_uses_a_known_schema_and_ignores_the_epoch(usable: (u32, u32, u32)) {
+    assert_eq!(verdict(usable, Operation::Replay), Verdict::Use);
+}
+
 #[test]
-fn replay_needs_a_known_schema_and_the_same_ruleset_and_ignores_the_epoch() {
-    for usable in [SAME, OLDER_SCHEMA, OLDER_EVIDENCE, NEWER_EVIDENCE] {
-        assert_eq!(
-            verdict(usable, Operation::Replay),
-            Verdict::Use,
-            "{usable:?}"
-        );
-    }
+fn replay_refuses_a_newer_schema_and_a_different_ruleset() {
     assert_eq!(
         verdict(NEWER_SCHEMA, Operation::Replay),
         refuse(Dimension::Schema, 3, 2)
@@ -159,21 +159,17 @@ fn replay_needs_a_known_schema_and_the_same_ruleset_and_ignores_the_epoch() {
     );
 }
 
+#[test_case(SAME; "same")]
+#[test_case(OLDER_SCHEMA; "older schema")]
+#[test_case(OLDER_RULESET; "older ruleset")]
+#[test_case(NEWER_RULESET; "newer ruleset")]
+#[test_case(NEWER_EVIDENCE; "newer evidence")]
+fn history_reads_any_shipped_schema_not_newer(usable: (u32, u32, u32)) {
+    assert_eq!(verdict(usable, Operation::History), Verdict::Use);
+}
+
 #[test]
-fn history_reads_any_shipped_schema_not_newer() {
-    for usable in [
-        SAME,
-        OLDER_SCHEMA,
-        OLDER_RULESET,
-        NEWER_RULESET,
-        NEWER_EVIDENCE,
-    ] {
-        assert_eq!(
-            verdict(usable, Operation::History),
-            Verdict::Use,
-            "{usable:?}"
-        );
-    }
+fn history_refuses_a_newer_or_unshipped_schema_and_reads_older_evidence() {
     assert_eq!(
         verdict(NEWER_SCHEMA, Operation::History),
         refuse(Dimension::Schema, 3, 2)
@@ -185,43 +181,43 @@ fn history_reads_any_shipped_schema_not_newer() {
     );
 }
 
-#[test]
-fn changing_only_version_rev_or_fixes_leaves_every_verdict_unchanged() {
-    let operations = [
-        Operation::Resume,
-        Operation::Append,
-        Operation::ResetAll,
-        Operation::Inspect,
-        Operation::Replay,
-        Operation::History,
-    ];
-    let recorded_stamps = [
-        SAME,
-        OLDER_SCHEMA,
-        OLDER_RULESET,
-        OLDER_EVIDENCE,
-        NEWER_SCHEMA,
-        NEWER_RULESET,
-        NEWER_EVIDENCE,
-    ];
-    for recorded in recorded_stamps {
-        let mut upgraded = stamp(recorded);
-        upgraded.version = "9.9.9".into();
-        upgraded.rev = Some("def5678".into());
-        upgraded.fixes = FixStamp::through(DefectId::new(7).unwrap());
-        for operation in operations {
-            assert_eq!(
-                stamp(BINARY).verdict(&upgraded, operation),
-                verdict(recorded, operation),
-                "{recorded:?} {operation:?}"
-            );
-        }
+const OPERATIONS: [Operation; 6] = [
+    Operation::Resume,
+    Operation::Append,
+    Operation::ResetAll,
+    Operation::Inspect,
+    Operation::Replay,
+    Operation::History,
+];
+
+#[test_case(SAME; "same")]
+#[test_case(OLDER_SCHEMA; "older schema")]
+#[test_case(OLDER_RULESET; "older ruleset")]
+#[test_case(OLDER_EVIDENCE; "older evidence")]
+#[test_case(NEWER_SCHEMA; "newer schema")]
+#[test_case(NEWER_RULESET; "newer ruleset")]
+#[test_case(NEWER_EVIDENCE; "newer evidence")]
+fn changing_only_version_rev_or_fixes_leaves_every_verdict_unchanged(recorded: (u32, u32, u32)) {
+    let mut upgraded = stamp(recorded);
+    upgraded.version = "9.9.9".into();
+    upgraded.rev = Some("def5678".into());
+    upgraded.fixes = FixStamp::through(DefectId::new(7).unwrap());
+    for operation in OPERATIONS {
+        assert_eq!(
+            stamp(BINARY).verdict(&upgraded, operation),
+            verdict(recorded, operation),
+            "{operation:?}"
+        );
     }
+}
+
+#[test]
+fn an_upgraded_binary_uses_a_journal_of_its_previous_build() {
     let mut upgraded_binary = stamp(BINARY);
     upgraded_binary.version = "9.9.9".into();
     upgraded_binary.rev = Some("def5678".into());
     upgraded_binary.fixes = FixStamp::through(DefectId::new(7).unwrap());
-    for operation in operations {
+    for operation in OPERATIONS {
         assert_eq!(
             upgraded_binary.verdict(&stamp(SAME), operation),
             Verdict::Use,
@@ -282,6 +278,8 @@ fn a_fixes_stamp_covers_every_defect_up_to_its_own() {
 mod recorded {
     use std::path::Path;
 
+    use test_case::test_case;
+
     use super::*;
     use crate::fs::MemFs;
     use crate::tests::fixtures::{at, sample};
@@ -338,37 +336,52 @@ mod recorded {
         ));
     }
 
-    #[test]
-    fn a_session_start_without_its_data_session_or_build_is_another_builds_journal() {
-        let start = serde_json::to_value(first_event()).unwrap();
-        let mut flat = start.clone();
-        flat.as_object_mut().unwrap().remove("data");
-        let mut no_build = start.clone();
-        no_build["data"].as_object_mut().unwrap().remove("build");
-        let mut no_session = start.clone();
-        no_session["data"]
-            .as_object_mut()
-            .unwrap()
-            .remove("session");
-        let mut listed = start.clone();
-        listed["data"] = serde_json::json!([]);
-        let mut bad_stamp = start;
-        bad_stamp["data"]["build"]["schema"] = "one".into();
-        for (name, line) in [
-            ("flat", flat),
-            ("no build", no_build),
-            ("no session", no_session),
-            ("array data", listed),
-            ("bad stamp", bad_stamp),
-        ] {
-            assert!(
-                matches!(
-                    build_of(&format!("{line}\n")),
-                    Err(DirError::ForeignJournal { .. })
-                ),
-                "{name}"
-            );
-        }
+    fn start_value() -> serde_json::Value {
+        serde_json::to_value(first_event()).unwrap()
+    }
+
+    fn start_without_data() -> serde_json::Value {
+        let mut start = start_value();
+        start.as_object_mut().unwrap().remove("data");
+        start
+    }
+
+    fn start_without_build() -> serde_json::Value {
+        let mut start = start_value();
+        start["data"].as_object_mut().unwrap().remove("build");
+        start
+    }
+
+    fn start_without_session() -> serde_json::Value {
+        let mut start = start_value();
+        start["data"].as_object_mut().unwrap().remove("session");
+        start
+    }
+
+    fn start_with_array_data() -> serde_json::Value {
+        let mut start = start_value();
+        start["data"] = serde_json::json!([]);
+        start
+    }
+
+    fn start_with_a_bad_stamp() -> serde_json::Value {
+        let mut start = start_value();
+        start["data"]["build"]["schema"] = "one".into();
+        start
+    }
+
+    #[test_case(&start_without_data(); "flat")]
+    #[test_case(&start_without_build(); "no build")]
+    #[test_case(&start_without_session(); "no session")]
+    #[test_case(&start_with_array_data(); "array data")]
+    #[test_case(&start_with_a_bad_stamp(); "bad stamp")]
+    fn a_session_start_without_its_data_session_or_build_is_another_builds_journal(
+        line: &serde_json::Value,
+    ) {
+        assert!(matches!(
+            build_of(&format!("{line}\n")),
+            Err(DirError::ForeignJournal { .. })
+        ));
     }
 
     #[test]
@@ -428,35 +441,29 @@ mod recorded {
     }
 
     /// The Go build's journal of a session that only started, first line alone, without its newline.
-    fn go_first_line_without_newline() -> String {
+    fn go_first_line_without_newline() -> &'static str {
         let go = include_str!("../../testdata/20260927T221954Z-config.jsonl");
-        go.lines().next().unwrap().to_owned()
+        go.lines().next().unwrap()
     }
 
-    #[test]
-    fn an_unterminated_first_line_that_is_not_a_journal_header_is_another_builds_journal() {
-        for (name, bytes) in [
-            ("go first line", go_first_line_without_newline()),
-            ("garbage", "garbage".to_owned()),
-            ("a complete object", "{\"seq\":1}".to_owned()),
-        ] {
-            let fs = MemFs::new();
-            fs.put("/state/events.jsonl", bytes.clone());
-            let mutations = fs.mutations();
-            assert!(
-                matches!(
-                    recorded_build_in(&fs, Path::new("/state")),
-                    Err(DirError::ForeignJournal { .. })
-                ),
-                "{name}"
-            );
-            assert_eq!(fs.mutations(), mutations, "{name}");
-            assert_eq!(
-                fs.contents("/state/events.jsonl").unwrap(),
-                bytes.as_bytes(),
-                "{name}"
-            );
-        }
+    #[test_case(go_first_line_without_newline(); "go first line")]
+    #[test_case("garbage"; "garbage")]
+    #[test_case("{\"seq\":1}"; "a complete object")]
+    fn an_unterminated_first_line_that_is_not_a_journal_header_is_another_builds_journal(
+        bytes: &str,
+    ) {
+        let fs = MemFs::new();
+        fs.put("/state/events.jsonl", bytes);
+        let mutations = fs.mutations();
+        assert!(matches!(
+            recorded_build_in(&fs, Path::new("/state")),
+            Err(DirError::ForeignJournal { .. })
+        ));
+        assert_eq!(fs.mutations(), mutations);
+        assert_eq!(
+            fs.contents("/state/events.jsonl").unwrap(),
+            bytes.as_bytes()
+        );
     }
 
     #[test]

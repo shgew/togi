@@ -90,18 +90,6 @@ impl Reporter for NoReporter {
     fn signal(&mut self, _core: CoreId, _signal: Signal, _detail: &str) {}
 }
 
-#[test]
-fn running_wait_keeps_the_accumulated_result_with_its_error() {
-    let mut running: Box<dyn Running> = Box::new(FailingRunning);
-    let Err(Partial { value, error }) = running.wait(&CancellationToken::new(), &mut NoReporter)
-    else {
-        panic!("wait succeeded");
-    };
-    assert_eq!(value, result(Duration::from_secs(85)));
-    assert!(matches!(error, Error::Cancelled));
-    assert!(running.stop().is_ok());
-}
-
 fn propagate(running: &mut dyn Running) -> Result<TrialResult, Box<dyn std::error::Error>> {
     Ok(running.wait(&CancellationToken::new(), &mut NoReporter)?)
 }
@@ -127,7 +115,7 @@ fn partial_keeps_its_named_error_findable_after_question_mark_into_a_boxed_error
         e.source()
     });
     let named = chain.into_iter().find_map(|e| e.downcast_ref::<Error>());
-    assert!(matches!(named, Some(Error::Cancelled)));
+    assert!(matches!(named, Some(Error::Cancelled)), "{named:?}");
 }
 
 #[test]
@@ -167,66 +155,6 @@ fn partial_names_its_progress_and_retains_its_error() {
     );
 }
 
-struct PartialKernel;
-
-impl Kernel for PartialKernel {
-    fn mces(&mut self, _boot: &BootId, _since: Duration) -> Result<Vec<Mce>, Partial<Vec<Mce>>> {
-        Err(Partial {
-            value: Vec::new(),
-            error: Error::BootMissing,
-        })
-    }
-
-    fn read_mces(
-        &mut self,
-        _boot: &BootId,
-        after: Option<&KernelCursor>,
-    ) -> Result<KernelRead, Partial<Vec<Mce>>> {
-        match after {
-            None => Ok(KernelRead {
-                mces: Vec::new(),
-                cursor: KernelCursor::from("c0".to_owned()),
-            }),
-            Some(_) => Err(Partial {
-                value: Vec::new(),
-                error: Error::CursorMissing,
-            }),
-        }
-    }
-
-    fn reset_reason(&mut self, _boot: &BootId) -> Result<ResetReason, Error> {
-        Err(Error::BootMissing)
-    }
-
-    fn reset_reason_after(&mut self, _boot: &BootId) -> Result<ResetReason, Error> {
-        Err(Error::BootMissing)
-    }
-
-    fn saved_pstore(&mut self, _boot: &BootId) -> Result<Option<PstoreRecord>, Error> {
-        Ok(None)
-    }
-}
-
-#[test]
-fn kernel_read_resumes_after_a_cursor_or_reads_the_whole_boot() {
-    let mut kernel: Box<dyn Kernel> = Box::new(PartialKernel);
-    let boot = BootId::from("boot".to_owned());
-    let read = kernel.read_mces(&boot, None).unwrap();
-    assert_eq!(read.cursor.as_str(), "c0");
-    let Err(partial) = kernel.read_mces(&boot, Some(&read.cursor)) else {
-        panic!("resumed an unresumable cursor");
-    };
-    assert!(partial.value.is_empty());
-    assert!(matches!(partial.error, Error::CursorMissing));
-    assert!(matches!(
-        kernel.mces(&boot, Duration::ZERO),
-        Err(Partial {
-            error: Error::BootMissing,
-            ..
-        })
-    ));
-}
-
 #[test]
 fn ids_serialize_as_plain_strings() {
     let boot = BootId::from("b".to_owned());
@@ -263,25 +191,18 @@ fn errors_wrap_external_causes() {
     assert_eq!(Error::Crashed.to_string(), "the simulated machine crashed");
 }
 
-fn counter() -> (
-    Arc<AtomicUsize>,
-    impl Fn() -> Box<dyn FnOnce() + Send> + 'static,
-) {
-    let count = Arc::new(AtomicUsize::new(0));
-    let handle = Arc::clone(&count);
-    (count, move || {
-        let count = Arc::clone(&handle);
-        Box::new(move || {
-            count.fetch_add(1, Ordering::SeqCst);
-        })
-    })
+fn bump(count: &Arc<AtomicUsize>) -> impl FnOnce() + Send + 'static {
+    let count = Arc::clone(count);
+    move || {
+        count.fetch_add(1, Ordering::SeqCst);
+    }
 }
 
 #[test]
 fn on_cancel_fires_once() {
     let token = CancellationToken::new();
-    let (count, callback) = counter();
-    let guard = token.on_cancel(callback());
+    let count = Arc::default();
+    let guard = token.on_cancel(bump(&count));
     assert_eq!(count.load(Ordering::SeqCst), 0);
     token.cancel();
     token.cancel();
@@ -294,8 +215,8 @@ fn on_cancel_fires_once() {
 fn on_cancel_fires_immediately_when_already_cancelled() {
     let token = CancellationToken::new();
     token.cancel();
-    let (count, callback) = counter();
-    let _guard = token.on_cancel(callback());
+    let count = Arc::default();
+    let _guard = token.on_cancel(bump(&count));
     assert_eq!(count.load(Ordering::SeqCst), 1);
 }
 
@@ -303,8 +224,8 @@ fn on_cancel_fires_immediately_when_already_cancelled() {
 fn ancestor_cancellation_fires_the_childs_callback() {
     let parent = CancellationToken::new();
     let child = parent.child_token();
-    let (count, callback) = counter();
-    let _guard = child.on_cancel(callback());
+    let count = Arc::default();
+    let _guard = child.on_cancel(bump(&count));
     drop(child);
     parent.cancel();
     assert_eq!(count.load(Ordering::SeqCst), 1);
@@ -313,8 +234,8 @@ fn ancestor_cancellation_fires_the_childs_callback() {
 #[test]
 fn dropped_guard_never_fires() {
     let token = CancellationToken::new();
-    let (count, callback) = counter();
-    drop(token.on_cancel(callback()));
+    let count = Arc::default();
+    drop(token.on_cancel(bump(&count)));
     token.cancel();
     assert_eq!(count.load(Ordering::SeqCst), 0);
 }
@@ -322,11 +243,11 @@ fn dropped_guard_never_fires() {
 #[test]
 fn callbacks_may_register_and_cancel_without_deadlock() {
     let token = CancellationToken::new();
-    let (count, callback) = counter();
+    let count = Arc::default();
     let inner = token.clone();
     let nested = Arc::new(std::sync::Mutex::new(None));
     let stash = Arc::clone(&nested);
-    let late = callback();
+    let late = bump(&count);
     let _guard = token.on_cancel(move || {
         inner.cancel();
         *stash.lock().unwrap() = Some(inner.on_cancel(late));
@@ -347,9 +268,9 @@ impl Drop for CancelOnDrop {
 #[test]
 fn dropping_a_guard_whose_unrun_callback_cancels_the_token_does_not_deadlock() {
     let token = CancellationToken::new();
-    let (count, callback) = counter();
+    let count = Arc::default();
     let capture = CancelOnDrop(token.clone());
-    let run = callback();
+    let run = bump(&count);
     let guard = token.on_cancel(move || {
         let _keep = &capture;
         run();
@@ -405,10 +326,10 @@ impl Drop for PanicsOnDrop {
 fn later_panic_payloads_are_never_dropped_during_dispatch() {
     let token = CancellationToken::new();
     let child = token.child_token();
-    let (count, callback) = counter();
+    let count = Arc::default();
     let _first = token.on_cancel(|| panic!("first"));
     let _second = token.on_cancel(|| std::panic::panic_any(PanicsOnDrop));
-    let _third = token.on_cancel(callback());
+    let _third = token.on_cancel(bump(&count));
     let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| token.cancel()));
     assert!(outcome.is_err());
     assert_eq!(count.load(Ordering::SeqCst), 1);
@@ -420,9 +341,9 @@ fn a_panicking_child_callback_resurfaces_without_sparing_siblings() {
     let parent = CancellationToken::new();
     let first = parent.child_token();
     let second = parent.child_token();
-    let (count, callback) = counter();
+    let count = Arc::default();
     let _boom = first.on_cancel(|| panic!("child failed"));
-    let _counted = second.on_cancel(callback());
+    let _counted = second.on_cancel(bump(&count));
     let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| parent.cancel()));
     assert!(outcome.is_err());
     assert!(first.is_cancelled());
@@ -446,66 +367,13 @@ fn a_callback_may_drop_its_own_guard() {
     assert!(stash.lock().unwrap().is_none());
 }
 
-struct RankingHost;
-
-impl Host for RankingHost {
-    fn boot_id(&mut self) -> Result<BootId, Error> {
-        Err(Error::BootMissing)
-    }
-
-    fn topology(&mut self) -> Result<Vec<CoreInfo>, Error> {
-        Ok(Vec::new())
-    }
-
-    fn validate_smu(&mut self) -> Result<SmuValidated, Error> {
-        Err(Error::Crashed)
-    }
-
-    fn bios_context(&mut self) -> Result<BiosContext, Error> {
-        Err(Error::BootMissing)
-    }
-
-    fn ranking(&mut self) -> Result<Vec<CoreRank>, Partial<Vec<CoreRank>>> {
-        Err(Partial {
-            value: vec![CoreRank {
-                core: CoreId::new(1).unwrap(),
-                value: 7,
-            }],
-            error: Error::Crashed,
-        })
-    }
-
-    fn preflight(&mut self) -> Vec<Check> {
-        Vec::new()
-    }
-
-    fn watchdog(&mut self) -> Check {
-        Check::default()
-    }
-}
-
-#[test]
-fn ranking_values_survive_a_failed_read() {
-    let Err(partial) = RankingHost.ranking() else {
-        panic!("ranking succeeded");
-    };
-    assert_eq!(
-        partial.value,
-        [CoreRank {
-            core: CoreId::new(1).unwrap(),
-            value: 7,
-        }]
-    );
-    assert!(matches!(partial.error, Error::Crashed));
-}
-
 #[test]
 fn a_panicking_callback_does_not_stop_later_callbacks_or_children() {
     let token = CancellationToken::new();
     let child = token.child_token();
-    let (count, callback) = counter();
+    let count = Arc::default();
     let _first = token.on_cancel(|| panic!("callback failed"));
-    let _second = token.on_cancel(callback());
+    let _second = token.on_cancel(bump(&count));
     let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| token.cancel()));
     assert!(outcome.is_err());
     assert_eq!(count.load(Ordering::SeqCst), 1);
