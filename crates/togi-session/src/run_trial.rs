@@ -64,7 +64,7 @@ struct Waited {
     crashed: bool,
 }
 
-impl Session {
+impl Session<'_> {
     pub(crate) fn run(&mut self, plan: &TrialPlan, tuned: &TunerValues<'_>) -> Step<Control> {
         if self.cancel.is_cancelled() {
             return Ok(self.shut_down(Stop::Signal));

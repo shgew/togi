@@ -35,7 +35,7 @@ fn bench() -> Bench {
     })
 }
 
-fn one_cycle(bench: &Bench, adjust: impl FnOnce(&mut RunInput)) -> Ended {
+fn one_cycle(bench: &Bench, adjust: impl FnOnce(&mut RunInput<'static>)) -> Ended {
     let mut input = bench.input();
     input.config = power_off_config();
     input.policy.cycles = Some(NonZeroU32::MIN);
@@ -246,7 +246,7 @@ fn a_defect_in_decisions_before_its_fix_is_found_once_however_often_the_session_
     drop(historic);
 
     bench.defects = &POWER_OFF;
-    let fixed = |input: &mut RunInput| {
+    let fixed = |input: &mut RunInput<'static>| {
         input.build.fixes = 1;
     };
     for resume in 0..2 {

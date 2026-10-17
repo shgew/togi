@@ -120,7 +120,7 @@ pub struct Host {
     pub lock_busy_in_diagnose: Cell<Option<bool>>,
     /// What `open_machine` hands out once: the machine of a command that opens one, or why it
     /// cannot. Empty when the test expects the command not to open any.
-    pub machine: RefCell<Option<Result<Machine, togi_hardware::Error>>>,
+    pub machine: RefCell<Option<Result<Machine<'static>, togi_hardware::Error>>>,
     pub facts: OutputFacts,
     pub stdout_facts: Option<OutputFacts>,
     directory: Option<TempDir>,
@@ -338,8 +338,9 @@ impl System for Host {
         &self,
         _: &Config,
         recorded: Option<&BiosContext>,
-        privileged: bool,
+        lock: Option<&HostLock>,
     ) -> Result<Diagnosis, togi_hardware::Error> {
+        let privileged = lock.is_some();
         self.calls.set(self.calls.get() + 1);
         self.diagnoses
             .borrow_mut()
@@ -397,12 +398,12 @@ impl System for Host {
         self.facts
     }
 
-    fn open_machine(
+    fn open_machine<'lock>(
         &self,
         _: &Config,
         _: &Path,
-        _: &HostLock,
-    ) -> Result<Machine, togi_hardware::Error> {
+        _: &'lock HostLock,
+    ) -> Result<Machine<'lock>, togi_hardware::Error> {
         self.steps.borrow_mut().push("open machine".into());
         self.machine
             .borrow_mut()

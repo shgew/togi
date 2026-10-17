@@ -250,10 +250,11 @@ pub trait Kernel {
     fn saved_pstore(&mut self, boot: &BootId) -> Result<Option<PstoreRecord>, Error>;
 }
 
-pub struct Machine {
-    pub clock: Box<dyn Clock>,
-    pub smu: Box<dyn Smu>,
-    pub host: Box<dyn Host>,
-    pub trials: Box<dyn Trials>,
-    pub kernel: Box<dyn Kernel>,
+/// Machine access bounded by the lifetime of the adapter's authority.
+pub struct Machine<'a> {
+    pub clock: Box<dyn Clock + 'a>,
+    pub smu: Box<dyn Smu + 'a>,
+    pub host: Box<dyn Host + 'a>,
+    pub trials: Box<dyn Trials + 'a>,
+    pub kernel: Box<dyn Kernel + 'a>,
 }

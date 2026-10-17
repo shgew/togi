@@ -36,7 +36,7 @@ use crate::write::{Hardware, ProfileRecord, ProfileRequest, apply_profile, check
 pub(crate) struct Rig {
     pub sim: Simulator,
     pub mem: MemFs,
-    pub appender: Appender,
+    pub appender: Appender<'static>,
     pub smu: Box<dyn Smu>,
     pub hardware: Hardware,
     pub stopped: Stopped,
@@ -245,7 +245,7 @@ impl Bench {
     }
 
     /// What a run on the simulator's current boot is given, with no bootloader, terminal or carry.
-    pub(crate) fn input(&self) -> RunInput {
+    pub(crate) fn input(&self) -> RunInput<'static> {
         let mut machine = self.sim.seams();
         let boot = machine.host.boot_id().unwrap();
         let journal = simulated(&self.mem)
@@ -274,7 +274,7 @@ impl Bench {
         }
     }
 
-    pub(crate) fn open(&self) -> Session {
+    pub(crate) fn open(&self) -> Session<'static> {
         match Session::open(self.input()) {
             Ok(session) => session,
             Err(ended) => panic!("open: {:?}", ended.errors),
@@ -407,7 +407,7 @@ pub(crate) fn put(session: &mut Session, values: &[i64]) {
     .unwrap();
 }
 
-pub(crate) fn swept(bench: &Bench) -> Session {
+pub(crate) fn swept(bench: &Bench) -> Session<'static> {
     let mut session = bench.open();
     assert_eq!(session.start().unwrap(), Control::Continue);
     assert_eq!(session.sweep().unwrap(), Control::Continue);
@@ -449,7 +449,7 @@ impl togi_machine::Host for ValidationFails {
     }
 }
 
-pub(crate) fn begun(bench: &Bench) -> Session {
+pub(crate) fn begun(bench: &Bench) -> Session<'static> {
     let mut session = swept(bench);
     assert_eq!(session.begin().unwrap(), Control::Continue);
     session

@@ -29,7 +29,7 @@ fn offsets(driver: &mut Driver, cores: &[CoreId]) -> Vec<(CoreId, ObservedOffset
 
 #[test]
 fn diagnosing_leaves_every_offset_unchanged() {
-    let _lock = &*HOST_LOCK;
+    let lock = &*HOST_LOCK;
     let mut driver = Driver::system().unwrap();
     let _validated = driver.validate().unwrap();
     let cores: Vec<CoreId> = driver
@@ -40,7 +40,7 @@ fn diagnosing_leaves_every_offset_unchanged() {
         .collect();
     let before = offsets(&mut driver, &cores);
 
-    let diagnosis = togi_hardware::diagnose(&Config::default(), None, true).unwrap();
+    let diagnosis = togi_hardware::diagnose(&Config::default(), None, Some(lock)).unwrap();
     for check in &diagnosis.ran {
         println!("{} ok={}: {}", check.name, check.ok, check.detail);
     }

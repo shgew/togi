@@ -156,7 +156,7 @@ impl<F: Fn(&Stop) -> Result<(), String> + Send + Sync> Surface for Scripted<F> {
     }
 }
 
-type WrapMachine = dyn Fn(Machine, &CancellationToken) -> Machine;
+type WrapMachine = dyn Fn(Machine<'static>, &CancellationToken) -> Machine<'static>;
 
 #[expect(
     clippy::struct_excessive_bools,
@@ -444,7 +444,12 @@ impl System for Fake {
         Ok(())
     }
 
-    fn open_machine(&self, _: &Config, _: &Path, _: &HostLock) -> Result<Machine, Error> {
+    fn open_machine<'lock>(
+        &self,
+        _: &Config,
+        _: &Path,
+        _: &'lock HostLock,
+    ) -> Result<Machine<'lock>, Error> {
         self.calls.borrow_mut().push("open_machine");
         self.opened.set(self.opened.get() + 1);
         if self.open_error {
@@ -504,7 +509,12 @@ impl System for Fake {
         TimeZone::UTC
     }
 
-    fn diagnose(&self, _: &Config, _: Option<&BiosContext>, _: bool) -> Result<Diagnosis, Error> {
+    fn diagnose(
+        &self,
+        _: &Config,
+        _: Option<&BiosContext>,
+        _: Option<&HostLock>,
+    ) -> Result<Diagnosis, Error> {
         panic!("run does not diagnose")
     }
 
@@ -566,7 +576,10 @@ impl Smu for InterruptingSmu {
 }
 
 /// The machine, cancelled at its first offset write.
-pub(crate) fn interrupt_on_first_write(machine: Machine, cancel: &CancellationToken) -> Machine {
+pub(crate) fn interrupt_on_first_write(
+    machine: Machine<'static>,
+    cancel: &CancellationToken,
+) -> Machine<'static> {
     Machine {
         smu: Box::new(InterruptingSmu {
             inner: machine.smu,
@@ -616,7 +629,10 @@ impl Trials for InterruptingTrials {
 }
 
 /// The machine, cancelled when its first trial starts.
-pub(crate) fn interrupt_at_first_trial(machine: Machine, cancel: &CancellationToken) -> Machine {
+pub(crate) fn interrupt_at_first_trial(
+    machine: Machine<'static>,
+    cancel: &CancellationToken,
+) -> Machine<'static> {
     Machine {
         trials: Box::new(InterruptingTrials {
             inner: machine.trials,

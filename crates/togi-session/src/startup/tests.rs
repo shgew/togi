@@ -30,7 +30,7 @@ use crate::testing::{
 };
 use crate::{Ended, run};
 
-fn started(bench: &Bench) -> Session {
+fn started(bench: &Bench) -> Session<'static> {
     let mut session = bench.open();
     assert_eq!(session.start().unwrap(), Control::Continue);
     session
@@ -281,7 +281,7 @@ fn a_machine_that_crashes_in_the_sweep_is_an_error_not_a_dead_end() {
     ));
 }
 
-fn started_with_failing_validation(bench: &Bench, error: fn() -> Error) -> Session {
+fn started_with_failing_validation(bench: &Bench, error: fn() -> Error) -> Session<'static> {
     let mut input = bench.input();
     let host = input.machine.host;
     input.machine.host = Box::new(ValidationFails(host, error));
@@ -325,7 +325,7 @@ fn an_smu_that_cannot_be_validated_is_a_warning_and_leaves_the_emergency_withhel
     assert!(warning.error.contains("no SMU driver"));
 }
 
-fn from_the_tuning_boot(bench: &Bench, cancel: CancellationToken) -> Session {
+fn from_the_tuning_boot(bench: &Bench, cancel: CancellationToken) -> Session<'static> {
     let mut input = bench.input();
     input.bootloader = Some(Box::new(MemBoot::default()));
     input.cancel = cancel;
@@ -376,14 +376,14 @@ fn a_signal_while_waiting_for_the_watchdog_stops_the_run() {
     assert!(checks(&session).is_empty());
 }
 
-fn left_applied(bench: &Bench, values: &[i64]) -> Session {
+fn left_applied(bench: &Bench, values: &[i64]) -> Session<'static> {
     let mut session = swept(bench);
     recorded_baseline(&mut session, &[0, 0]);
     put(&mut session, values);
     session
 }
 
-fn resumed(bench: &Bench) -> Session {
+fn resumed(bench: &Bench) -> Session<'static> {
     let mut session = bench.open();
     assert!(session.unreconciled());
     assert_eq!(session.start().unwrap(), Control::Continue);
@@ -683,7 +683,7 @@ impl Running for DiesInWait {
 }
 
 /// Runs `input` with observed trials that stop the run once its first trial started.
-fn observed_run(mut input: RunInput, sweep_fails: bool) -> (Ended, Vec<Touch>) {
+fn observed_run(mut input: RunInput<'static>, sweep_fails: bool) -> (Ended, Vec<Touch>) {
     let touched = Touched::default();
     let at_start = AtStart::Cancel(input.cancel.clone());
     input.machine.trials = Box::new(Observed {

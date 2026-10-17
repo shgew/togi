@@ -10,17 +10,17 @@ pub(crate) use crate::write::authority::{authorize, start};
 
 /// Journals what a running trial reports, each event citing the trial's start. The first append that fails is kept,
 /// later reports are dropped, and the trial is cancelled.
-pub(crate) struct Journaled<'a> {
-    appender: &'a mut Appender,
+pub(crate) struct Journaled<'a, 'machine> {
+    appender: &'a mut Appender<'machine>,
     trial: &'a TrialId,
     start: Seq,
     cancel: &'a CancellationToken,
     failure: Option<AppendFailure>,
 }
 
-impl<'a> Journaled<'a> {
+impl<'a, 'machine> Journaled<'a, 'machine> {
     pub(crate) fn new(
-        appender: &'a mut Appender,
+        appender: &'a mut Appender<'machine>,
         trial: &'a TrialId,
         start: Seq,
         cancel: &'a CancellationToken,
@@ -49,7 +49,7 @@ impl<'a> Journaled<'a> {
     }
 }
 
-impl Reporter for Journaled<'_> {
+impl Reporter for Journaled<'_, '_> {
     fn progress(&mut self, detail: &str) {
         self.record(Payload::TrialProgress(TrialProgress {
             trial: self.trial.clone(),

@@ -11,7 +11,7 @@ use togi_machine::CoreSet;
 use crate::error::SessionError;
 use crate::session::{PromptError, Session, Stop};
 
-impl Session {
+impl Session<'_> {
     /// Records the defects the journal's decisions match, queues the resets of every answered "yes", and puts each
     /// unanswered finding to the prompt. Without one, a finding that says the tuner was too aggressive is a dead end.
     pub(crate) fn check_defects(&mut self) -> Result<Option<Stop>, SessionError> {

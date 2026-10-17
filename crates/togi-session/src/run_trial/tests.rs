@@ -329,7 +329,7 @@ impl Running for RiggedRunning {
 }
 
 struct Rigged3 {
-    session: Session,
+    session: Session<'static>,
     log: Log,
     rigs: Rigs,
     waits: Rc<RefCell<Vec<Duration>>>,
@@ -340,7 +340,7 @@ struct Rigged3 {
 fn rig_input(
     bench: &Bench,
 ) -> (
-    crate::session::RunInput,
+    crate::session::RunInput<'static>,
     Log,
     Rigs,
     Rc<RefCell<Vec<Duration>>>,
