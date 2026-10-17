@@ -4,14 +4,14 @@ use std::sync::Arc;
 use rustix::process::geteuid;
 use togi_machine::{
     BiosContext, BootId, Check, CoreInfo, CoreRank, Error as MachineError, Host, Partial,
-    SmuValidated,
+    SmuValidated, error_chain,
 };
 use togi_smu::Driver;
 use togi_trial::{Backends, Runner};
 
 use crate::adapters::{PmSlot, SharedDriver, lock};
 use crate::checks::{CheckName, failed, outcome, passed};
-use crate::error::{Error, describe};
+use crate::error::Error;
 use crate::preflight::{self, Account, Outcome, Step};
 use crate::{ranking, watchdog};
 
@@ -95,7 +95,7 @@ impl<R: HostReadings> SystemHost<R> {
         let mut driver = lock(&self.driver);
         match driver.validate() {
             Ok(_) => check(&mut driver),
-            Err(error) => failed(name, describe(&error)),
+            Err(error) => failed(name, error_chain(&error)),
         }
     }
 
@@ -118,7 +118,7 @@ impl<R: HostReadings> SystemHost<R> {
             }
             Err(error) => passed(
                 CheckName::PmTable,
-                format!("pm_table unavailable: {}", describe(&error)),
+                format!("pm_table unavailable: {}", error_chain(&error)),
             ),
         }
     }
@@ -130,7 +130,7 @@ impl<R: HostReadings> SystemHost<R> {
                 CheckName::SystemdRun,
                 format!(
                     "systemd-run needs a usable backend_user: {}",
-                    describe(error)
+                    error_chain(error)
                 ),
             ),
         }

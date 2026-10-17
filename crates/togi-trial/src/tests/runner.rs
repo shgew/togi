@@ -811,17 +811,18 @@ fn shared_errors_render_each_cause_once() {
     for (error, expected) in [
         (
             launch(),
-            "launch instance c01 in scope togi-trial-t1-c01: systemd-run missing",
+            "wait for the trial: launch instance c01 in scope togi-trial-t1-c01: systemd-run missing",
         ),
         (
             joined,
-            "trial cleanup could not be confirmed: trial cleanup could not be confirmed: \
+            "trial cleanup could not be confirmed: wait for the trial: \
+             trial cleanup could not be confirmed: \
              the start failed: launch instance c01 in scope togi-trial-t1-c01: systemd-run missing; \
              reap instance c00: the leader did not exit; cancelled",
         ),
     ] {
         let error = crate::error::Shared::seam(&std::sync::Arc::new(error));
-        assert_eq!(crate::error::with_causes(&error), expected);
+        assert_eq!(togi_machine::error_chain(&error), expected);
     }
 }
 
@@ -860,12 +861,99 @@ fn a_kept_joined_error_is_reachable_through_the_public_source_chain() {
         operation: "stop",
         bound: Duration::from_secs(1),
     };
-    let text = stuck.to_string();
     let seam = crate::error::Shared::seam(&Arc::new(stuck));
     assert_eq!(
-        crate::error::with_causes(&seam),
-        format!("trial cleanup could not be confirmed: {text}")
+        togi_machine::error_chain(&seam),
+        "trial cleanup could not be confirmed: wait for the trial: \
+         the trial runtime did not answer stop within 1s"
     );
+}
+
+#[test]
+fn a_cause_whose_text_is_part_of_another_is_rendered_each_time_it_occurs() {
+    let reap = |detail: &str| CleanupFailure::Reap {
+        instance: "c00".into(),
+        source: std::io::Error::other(detail.to_owned()),
+    };
+    let mut containment = crate::Containment::new(reap("gone"));
+    containment.push(reap("gone"));
+    containment.push(reap("gone for good"));
+    assert_eq!(
+        togi_machine::error_chain(&containment),
+        "reap instance c00: gone; reap instance c00: gone; reap instance c00: gone for good"
+    );
+    let joined = Error::join_after(
+        Error::Signal {
+            instance: "c00".into(),
+            signal: "SIGTERM",
+            source: std::io::Error::other("signal"),
+        },
+        vec![Error::Signal {
+            instance: "c00".into(),
+            signal: "SIGTERM",
+            source: std::io::Error::other("signal"),
+        }],
+    );
+    assert_eq!(
+        togi_machine::error_chain(&joined),
+        "signal instance c00 with SIGTERM: signal; signal instance c00 with SIGTERM: signal"
+    );
+}
+
+#[test]
+fn a_kept_error_names_its_operation_and_keeps_the_error_as_its_source() {
+    let kept = Arc::new(Error::Launch {
+        instance: "c01".into(),
+        scope: "togi-trial-t1-c01".into(),
+        source: std::io::Error::other("systemd-run missing"),
+    });
+    let seam = crate::error::Shared::seam(&kept);
+    let togi_machine::Error::Other(inner) = &seam else {
+        panic!("{seam:?}");
+    };
+    assert_eq!(inner.to_string(), "wait for the trial");
+    let source = inner.source().expect("the kept error is the source");
+    assert!(matches!(
+        source.downcast_ref::<Error>(),
+        Some(Error::Launch { .. })
+    ));
+    assert!(std::ptr::eq(
+        source.downcast_ref::<Error>().unwrap(),
+        &*kept
+    ));
+    let io = source
+        .source()
+        .and_then(|cause| cause.downcast_ref::<std::io::Error>())
+        .expect("the io cause stays downcastable");
+    assert_eq!(io.to_string(), "systemd-run missing");
+}
+
+#[test]
+fn storage_failures_list_each_member_with_its_own_causes() {
+    use crate::error::{StorageError, StorageFailure};
+    let failure = StorageFailure(vec![
+        StorageError::Append(std::io::Error::other("sync failed")),
+        StorageError::Close(std::io::Error::other("sync failed")),
+    ]);
+    assert_eq!(
+        togi_machine::error_chain(&failure),
+        "append a conditions sample: sync failed; close the samples file: sync failed"
+    );
+    let error = Error::from(failure);
+    assert_eq!(
+        togi_machine::error_chain(&error),
+        "the samples file: append a conditions sample: sync failed; \
+         close the samples file: sync failed"
+    );
+    let Error::Storage(kept) = &error else {
+        panic!("{error:?}");
+    };
+    let io = kept.errors().iter().map(|member| {
+        std::error::Error::source(member)
+            .and_then(|cause| cause.downcast_ref::<std::io::Error>())
+            .is_some()
+    });
+    assert!(io.eq([true, true]));
 }
 
 #[test]

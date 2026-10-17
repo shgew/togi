@@ -15,13 +15,13 @@ pub trait Archives {
 
 #[derive(Debug, thiserror::Error)]
 pub enum CarryError<E: Error + 'static> {
-    #[error("open archived session {session}: {source}")]
+    #[error("open archived session {session}")]
     Open {
         session: SessionId,
         #[source]
         source: E,
     },
-    #[error("read archived session {session}: {source}")]
+    #[error("read archived session {session}")]
     Read {
         session: SessionId,
         #[source]

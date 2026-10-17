@@ -184,7 +184,7 @@ fn repeated_decisions_are_equal_and_leave_the_state_alone() {
     let _ = (Decision::Hold, Action::ReadRanking);
 }
 
-type Case = Box<dyn Fn(&TrialId, Seq) -> (Payload, FoldError)>;
+type Case = Box<dyn Fn(&TrialId, Seq) -> (Payload, Box<dyn Fn(&FoldError) -> bool>)>;
 type MakePayload = Box<dyn Fn(&TrialId) -> Payload>;
 
 fn poisoned(j: &Journal, state: &mut State) {
@@ -196,7 +196,7 @@ fn poisoned(j: &Journal, state: &mut State) {
         .into(),
         &[],
     );
-    assert_eq!(state.fold(&next), Err(FoldError::Poisoned));
+    assert!(matches!(state.fold(&next), Err(FoldError::Poisoned)));
     assert_eq!(state.next().ok(), None);
 }
 
@@ -273,7 +273,7 @@ fn a_second_session_start_poisons_the_state() {
     let mut state = j.state.clone();
     let mut again = j.events[0].clone();
     again.seq = j.next_seq();
-    assert_eq!(state.fold(&again), Err(FoldError::DuplicateStart));
+    assert!(matches!(state.fold(&again), Err(FoldError::DuplicateStart)));
     poisoned(&j, &mut state);
 }
 
@@ -281,7 +281,10 @@ fn a_second_session_start_poisons_the_state() {
 fn events_before_the_start_are_refused() {
     let j = Journal::search_at(&[-10]);
     let mut state = State::new();
-    assert_eq!(state.fold(&j.events[1]), Err(FoldError::NotStarted));
+    assert!(matches!(
+        state.fold(&j.events[1]),
+        Err(FoldError::NotStarted)
+    ));
     poisoned(&j, &mut state);
 }
 
@@ -307,30 +310,38 @@ fn a_fold_error_poisons_the_state() {
         Box::new(move |_, _| {
             (
                 transition(9, togi_journal::CorePhase::Search, 0).into(),
-                FoldError::UnknownCore(outside),
+                Box::new(
+                    move |error| matches!(error, FoldError::UnknownCore(found) if *found == outside),
+                ),
             )
         }),
         Box::new({
             let other = other.clone();
             move |_, _| {
+                let expected = other.clone();
                 (
                     Journal::end_payload(&other, Outcome::Pass, None).into(),
-                    FoldError::NoOpenTrial(other.clone()),
+                    Box::new(
+                        move |error| matches!(error, FoldError::NoOpenTrial(found) if *found == expected),
+                    ),
                 )
             }
         }),
         Box::new(|trial, _| {
             (
                 Journal::end_payload(trial, Outcome::Failure, None).into(),
-                FoldError::MissingSignal,
+                Box::new(|error| matches!(error, FoldError::MissingSignal)),
             )
         }),
         Box::new({
             let other = other.clone();
             move |_, _| {
+                let expected = other.clone();
                 (
                     failure(Some(&other), None).into(),
-                    FoldError::NotAwaiting(other.clone()),
+                    Box::new(
+                        move |error| matches!(error, FoldError::NotAwaiting(found) if *found == expected),
+                    ),
                 )
             }
         }),
@@ -338,7 +349,9 @@ fn a_fold_error_poisons_the_state() {
             move |_, intent| {
                 (
                     failure(None, Some(intent)).into(),
-                    FoldError::UnknownFailure(intent),
+                    Box::new(
+                        move |error| matches!(error, FoldError::UnknownFailure(found) if *found == intent),
+                    ),
                 )
             }
         }),
@@ -348,7 +361,9 @@ fn a_fold_error_poisons_the_state() {
                     target: togi_journal::ResetTarget::Core(outside),
                 }
                 .into(),
-                FoldError::UnknownCore(outside),
+                Box::new(
+                    move |error| matches!(error, FoldError::UnknownCore(found) if *found == outside),
+                ),
             )
         }),
     ];
@@ -357,7 +372,7 @@ fn a_fold_error_poisons_the_state() {
         let plan = j.next_trial();
         let (intent, trial) = j.intent(&plan);
         let (payload, expected) = case(&trial, intent);
-        assert_eq!(j.try_append(payload, &[]), Err(expected));
+        assert!(matches!(j.try_append(payload, &[]), Err(error) if expected(&error)));
         let mut state = j.state.clone();
         poisoned(&j, &mut state);
     }
@@ -369,13 +384,10 @@ fn a_fold_error_poisons_the_state() {
         &[],
     );
     stale.seq = intent;
-    assert_eq!(
+    assert!(matches!(
         j.state.fold(&stale),
-        Err(FoldError::OutOfOrder {
-            last: intent,
-            seq: intent
-        })
-    );
+        Err(FoldError::OutOfOrder { last, seq }) if last == intent && seq == intent
+    ));
     let mut state = j.state.clone();
     poisoned(&j, &mut state);
 }
@@ -434,9 +446,11 @@ fn every_core_a_payload_names_must_be_in_the_topology() {
         let mut j = Journal::search_at(&[-10]);
         let plan = j.next_trial();
         let (_, trial) = j.intent(&plan);
-        assert_eq!(
-            j.try_append(make(&trial), &[]),
-            Err(FoldError::UnknownCore(outside)),
+        assert!(
+            matches!(
+                j.try_append(make(&trial), &[]),
+                Err(FoldError::UnknownCore(found)) if found == outside
+            ),
             "{name}"
         );
     }

@@ -1158,10 +1158,10 @@ fn ccd_count_above_three_is_refused_at_session_start() {
         session: "20231114T221320Z".parse().unwrap(),
         cores: grouped(&[&[0], &[1], &[2], &[3]]),
     };
-    assert_eq!(
+    assert!(matches!(
         j.try_append(start.into(), &[]),
         Err(FoldError::Topology(TopologyError::TooManyCcds(4)))
-    );
+    ));
     let three = SessionStart {
         build: testkit::build(),
         session: "20231114T221320Z".parse().unwrap(),

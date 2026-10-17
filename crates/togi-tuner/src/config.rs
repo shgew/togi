@@ -27,8 +27,7 @@ pub(crate) struct TunerConfig {
 impl TunerConfig {
     /// What a `config.loaded` event stands for, or why its recorded configuration is not one this build accepts.
     pub(crate) fn from_loaded(loaded: &ConfigLoaded) -> Result<Self, FoldError> {
-        let config = Config::from_snapshot(&loaded.config)
-            .map_err(|error| FoldError::Config(error.to_string()))?;
+        let config = Config::from_snapshot(&loaded.config)?;
         Ok(Self::from_config(&config))
     }
 

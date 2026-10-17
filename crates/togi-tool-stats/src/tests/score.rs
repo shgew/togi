@@ -216,7 +216,10 @@ fn a_state_directory_whose_journal_through_the_anchor_changed_is_refused() {
         ),
         "{error}"
     );
-    assert!(error.to_string().contains("anchor changed"), "{error}");
+    assert!(
+        togi_machine::error_chain(&error).contains("anchor changed"),
+        "{error}"
+    );
 }
 
 #[test]

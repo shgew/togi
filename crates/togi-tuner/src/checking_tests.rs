@@ -772,7 +772,7 @@ fn a_checking_chain_rejects_an_unknown_ccd_without_changing_state() {
         .into(),
         &[],
     );
-    assert_eq!(result, Err(crate::FoldError::UnknownCcd(ccd)));
+    assert!(matches!(result, Err(crate::FoldError::UnknownCcd(found)) if found == ccd));
     assert_eq!(j.state.run(), before.run());
 }
 

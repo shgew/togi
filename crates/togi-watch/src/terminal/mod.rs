@@ -1271,7 +1271,7 @@ mod tests {
         let words = match journal {
             Journal::Missing => "no session yet".to_owned(),
             Journal::Starting => "starting".to_owned(),
-            Journal::Problem(error) => format!("problem: {error}"),
+            Journal::Problem(error) => format!("problem: {}", togi_render::error_chain(error)),
             Journal::Ready { log, .. } => format!("{} events", log.total),
         };
         let style = ratatui::style::Style::default()
@@ -1355,7 +1355,7 @@ mod tests {
             matches!(&error, Error::Journal(SourceError::Read(_))),
             "{error:?}"
         );
-        assert!(error.to_string().contains("line 2"));
+        assert!(togi_render::error_chain(&error).contains("line 2"));
     }
 
     #[test]

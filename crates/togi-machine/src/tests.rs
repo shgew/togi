@@ -228,7 +228,10 @@ fn read_samples_read_error_is_not_clean_eof() {
     assert_eq!(samples.next().unwrap().unwrap().elapsed_ms, 1000);
     let error = samples.next().unwrap().unwrap_err();
     assert!(matches!(error, SampleError::Read(_)));
-    assert!(error.to_string().contains("injected samples read failure"));
+    assert_eq!(
+        crate::error_chain(&error),
+        "read conditions samples (including gzip decoding): injected samples read failure"
+    );
     assert!(samples.next().is_none());
 }
 

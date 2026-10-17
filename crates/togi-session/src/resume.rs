@@ -21,7 +21,7 @@ pub struct ResumeCapsule {
 /// The part of a capsule that is not what folding the journal's events gives.
 #[derive(Debug, thiserror::Error)]
 pub enum Divergence {
-    #[error("the events do not fold: {0}")]
+    #[error("the events do not fold")]
     Fold(#[from] FoldError),
     #[error("the capsule's last event is {capsule:?}, the journal's is {journal:?}")]
     Last {
@@ -36,16 +36,16 @@ pub enum Divergence {
     Recovery,
     #[error("the defect state differs")]
     Defects,
-    #[error("the published state document {0}")]
+    #[error("the published state document differs")]
     Document(#[from] DocumentDivergence),
 }
 
 /// How the state document published from a capsule's folds fails to be the one a cold fold publishes.
 #[derive(Debug, thiserror::Error)]
 pub enum DocumentDivergence {
-    #[error("does not encode: {0}")]
+    #[error("does not encode")]
     Encode(#[source] serde_json::Error),
-    #[error("does not decode: {0}")]
+    #[error("does not decode")]
     Decode(#[source] serde_json::Error),
     #[error("decodes to a different document")]
     RoundTrip,

@@ -20,7 +20,7 @@ pub enum CommandError {
     Append(#[from] AppendError),
     #[error(transparent)]
     Fold(#[from] FoldError),
-    #[error("archive the session: {0}")]
+    #[error("archive the session")]
     Archive(#[from] ArchiveError),
     #[error(transparent)]
     Close(#[from] CloseError),

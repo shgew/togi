@@ -117,7 +117,7 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
             let message = "another togi process holds the journal lock";
             return exit_with(ctx, COMMAND, message, Exit::Locked);
         }
-        Err(error) => return fail(ctx, COMMAND, error),
+        Err(error) => return fail(ctx, COMMAND, chain(&error)),
     };
     match args.target.core {
         Some(core) => reset_one(ctx, dir, boot, core),

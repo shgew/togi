@@ -11,13 +11,13 @@ use togi_journal::{BootLeaveReason, BootSavedEntry, LookupError, Payload};
 use togi_tuningboot::{self as tuningboot, Bootloader, LeaveReason, RestartCount};
 
 use crate::appender::Appender;
-use crate::error::{AppendFailure, describe};
+use crate::error::AppendFailure;
 
 #[derive(Debug, thiserror::Error)]
 pub enum BootError {
     #[error(transparent)]
     Bootloader(#[from] tuningboot::Error),
-    #[error("look up the journaled tuning-boot reason: {0}")]
+    #[error("look up the journaled tuning-boot reason")]
     Lookup(#[from] LookupError),
 }
 
@@ -34,13 +34,16 @@ impl Left {
     pub(crate) fn payload(&self) -> BootSavedEntry {
         let (before, after, error) = match &self.entry {
             Ok(entry) => (Some(entry.before.clone()), Some(entry.after.clone()), None),
-            Err(error) => (None, None, Some(describe(error))),
+            Err(error) => (None, None, Some(togi_render::error_chain(error))),
         };
         BootSavedEntry {
             before,
             after,
             error,
-            reason_error: self.reason_error.as_ref().map(|error| describe(error)),
+            reason_error: self
+                .reason_error
+                .as_ref()
+                .map(|error| togi_render::error_chain(error)),
         }
     }
 }

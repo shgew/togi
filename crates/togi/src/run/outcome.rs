@@ -40,7 +40,7 @@ pub(super) fn conclude(
 ) -> Outcome {
     if let Some(first) = errors.first() {
         for error in errors {
-            let line = format!("togi run: {}", escape_text(&error.to_string()));
+            let line = format!("togi run: {}", escape_text(&crate::report::chain(error)));
             let style = if matches!(error, SessionError::Compatibility(_)) {
                 Style::RedBold
             } else {

@@ -11,6 +11,7 @@ description = "Human output for the journal: terminal-safe escaping, the event l
 jiff.workspace = true
 rustix.workspace = true
 togi-journal.workspace = true
+togi-machine.workspace = true
 
 [dev-dependencies]
 rustix = { workspace = true, features = ["pty"] }

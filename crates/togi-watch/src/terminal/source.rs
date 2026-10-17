@@ -20,7 +20,7 @@ use crate::screen::{Journal, Log, Screen, View};
 #[derive(Debug, thiserror::Error)]
 pub enum SourceError {
     /// The journal's file cannot be examined.
-    #[error("{path}: {source}", path = path.display())]
+    #[error("examine {path}", path = path.display())]
     Stat {
         path: PathBuf,
         #[source]
@@ -517,7 +517,7 @@ mod tests {
         match source.journal(screen) {
             Journal::Missing => Shown::Missing,
             Journal::Starting => Shown::Starting,
-            Journal::Problem(error) => Shown::Problem(error.to_string()),
+            Journal::Problem(error) => Shown::Problem(togi_render::error_chain(error)),
             Journal::Ready { log, .. } => Shown::Ready {
                 messages: log.entries.iter().map(|entry| entry.msg.clone()).collect(),
                 total: log.total,

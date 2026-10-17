@@ -7,30 +7,13 @@ use togi_machine::{CoreId, CoreSet};
 use crate::boot::BootError;
 use crate::write::{ProfileFailure, WriteFailure};
 
-/// An error with its source chain, each cause once: a cause that displays exactly its parent adds nothing.
-pub(crate) fn describe(error: &dyn std::error::Error) -> String {
-    let mut text = error.to_string();
-    let mut previous = text.clone();
-    let mut source = error.source();
-    while let Some(cause) = source {
-        let cause_text = cause.to_string();
-        if cause_text != previous {
-            text.push_str(": ");
-            text.push_str(&cause_text);
-        }
-        previous = cause_text;
-        source = cause.source();
-    }
-    text
-}
-
 /// Why the journal can no longer be trusted to match the run: an append failed, or an event reached the journal that
 /// the run's state cannot absorb.
 #[derive(Debug, thiserror::Error)]
 pub enum JournalCause {
-    #[error("journal write: {0}")]
+    #[error("journal write")]
     Append(#[source] AppendError),
-    #[error("an event is durable but the run's state does not take it in: {0}")]
+    #[error("an event is durable but the run's state does not take it in")]
     Fold(#[source] FoldError),
     /// A panic unwound while a durable event was being logged and folded, so the run's state may lack it.
     #[error("an event is durable but a panic interrupted the run taking it in: {0}")]
@@ -61,20 +44,20 @@ impl JournalFailure {
 }
 
 /// A journal that cannot be folded into the run's state.
-#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+#[derive(Clone, Debug, thiserror::Error)]
 pub enum FoldError {
     #[error("event #{seq} is {kind} before session.start")]
     BeforeStart { seq: Seq, kind: EventKind },
     #[error("event #{seq} is a second session.start")]
     DuplicateStart { seq: Seq },
     /// The tuner cannot have written the journal: an event contradicts its state.
-    #[error("event #{seq} does not fold into the tuner state: {error}")]
+    #[error("event #{seq} does not fold into the tuner state")]
     Tuner {
         seq: Seq,
         #[source]
         error: togi_tuner::FoldError,
     },
-    #[error("event does not fold into the shared journal facts: {0}")]
+    #[error("event does not fold into the shared journal facts")]
     Facts(#[from] togi_journal::FoldError),
 }
 
@@ -106,11 +89,11 @@ pub enum SessionError {
     Config(#[from] togi_config::ConfigError),
     #[error(transparent)]
     Bootloader(#[from] togi_tuningboot::Error),
-    #[error("look up journaled tuning-boot reason: {0}")]
+    #[error("look up journaled tuning-boot reason")]
     Lookup(#[from] LookupError),
     #[error(transparent)]
     Write(#[from] WriteFailure),
-    #[error("write the event log: {0}")]
+    #[error("write the event log")]
     Log(#[source] io::Error),
     #[error("an initial offset is configured for core {core:02}, which this machine does not have")]
     NoSuchCore { core: CoreId },
@@ -132,16 +115,16 @@ pub enum SessionError {
     /// The profile a trial together was planned on is not the one the tuner stands at.
     #[error("the trial's profile is not the one the machine is set to")]
     PlanDisagrees,
-    #[error("the tuner cannot choose the next action after startup: {0}")]
+    #[error("the tuner cannot choose the next action after startup")]
     NotReady(#[from] togi_tuner::NotReady),
-    #[error("clear GRUB's saved entry after an incompatible journal: {0}")]
+    #[error("clear GRUB's saved entry after an incompatible journal")]
     ClearSavedEntry(#[source] io::Error),
-    #[error("allocate the session id: {0}")]
+    #[error("allocate the session id")]
     SessionId(#[from] DirError),
     /// A step reported dead-end evidence, and the journal supports no dead end.
     #[error("{0} dead-end evidence reported without a recorded dead end")]
     DeadEndUnrecorded(DeadEndCondition),
-    #[error("ask whether to reset the cores of defect {defect}: {source}")]
+    #[error("ask whether to reset the cores of defect {defect}")]
     Prompt {
         defect: u32,
         #[source]
@@ -151,7 +134,7 @@ pub enum SessionError {
     #[error("panic: {0}")]
     Panicked(String),
     /// A profile the run built is one it may not put on the machine, or not one of this machine.
-    #[error("put a profile on the machine: {0}")]
+    #[error("put a profile on the machine")]
     Profile(#[source] ProfileFailure),
 }
 

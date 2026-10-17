@@ -147,10 +147,10 @@ fn a_known_multi_core_r7_failure_leaves_the_cores_alone() {
 #[test]
 fn a_failure_with_no_trial_that_is_not_an_idle_crash_has_no_class() {
     let mut j = Journal::has_room(&[-10]);
-    assert_eq!(
+    assert!(matches!(
         j.try_append(failure(None, None).into(), &[]),
         Err(FoldError::NoFailureClass)
-    );
+    ));
 }
 
 #[test]
@@ -259,9 +259,11 @@ fn a_candidate_check_needs_its_r1_and_r2_workloads() {
             workloads: workloads.clone(),
             ..transition(0, CorePhase::Search, -20)
         };
-        assert_eq!(
-            j.try_append(transition.into(), &[]),
-            Err(FoldError::BadCandidate(core(0))),
+        assert!(
+            matches!(
+                j.try_append(transition.into(), &[]),
+                Err(FoldError::BadCandidate(found)) if found == core(0)
+            ),
             "{workloads:?}"
         );
         let mut j = Journal::search_at(&[-20]);
@@ -276,10 +278,10 @@ fn a_candidate_check_needs_its_r1_and_r2_workloads() {
             workloads,
             reason: "test".to_owned(),
         };
-        assert_eq!(
+        assert!(matches!(
             j.try_append(decision.into(), &[]),
-            Err(FoldError::BadCandidate(core(0)))
-        );
+            Err(FoldError::BadCandidate(found)) if found == core(0)
+        ));
     }
 }
 
@@ -341,19 +343,19 @@ fn trial_intent(j: &Journal) -> (togi_journal::TrialIntent, TrialPlan) {
 #[test]
 fn an_intent_naming_another_regimes_workload_a_missing_load_or_a_foreign_core_is_refused() {
     type Change = fn(&mut togi_journal::TrialIntent);
-    let cases: [(&str, Change, FoldError); 4] = [
+    let cases: [(&str, Change, fn(&FoldError) -> bool); 4] = [
         (
             "workload of another regime",
             |intent| intent.workload = workloads(Regime::R2)[0].id(),
-            FoldError::WorkloadRegime {
-                regime: Regime::R1,
-                workload: workloads(Regime::R2)[0].id(),
+            |error| {
+                matches!(error, FoldError::WorkloadRegime { regime: Regime::R1, workload }
+                    if *workload == workloads(Regime::R2)[0].id())
             },
         ),
         (
             "no loaded core",
             |intent| intent.core = None,
-            FoldError::NoLoad(TrialId::from("0001".to_owned())),
+            |error| matches!(error, FoldError::NoLoad(trial) if *trial == TrialId::from("0001".to_owned())),
         ),
         (
             "loaded cores outside the topology",
@@ -361,19 +363,22 @@ fn an_intent_naming_another_regimes_workload_a_missing_load_or_a_foreign_core_is
                 intent.core = None;
                 intent.cores = set(&[9]);
             },
-            FoldError::UnknownCore(core(9)),
+            |error| matches!(error, FoldError::UnknownCore(found) if *found == core(9)),
         ),
         (
             "core outside the topology",
             |intent| intent.core = Some(core(9)),
-            FoldError::UnknownCore(core(9)),
+            |error| matches!(error, FoldError::UnknownCore(found) if *found == core(9)),
         ),
     ];
     for (name, change, expected) in cases {
         let mut j = Journal::search_at(&[-10]);
         let (mut intent, _) = trial_intent(&j);
         change(&mut intent);
-        assert_eq!(j.try_append(intent.into(), &[]), Err(expected), "{name}");
+        assert!(
+            matches!(j.try_append(intent.into(), &[]), Err(error) if expected(&error)),
+            "{name}"
+        );
     }
 }
 
@@ -390,10 +395,22 @@ fn a_recorded_configuration_this_build_refuses_is_not_folded() {
         kernel_cursor: None,
         kernel_error: None,
     };
+    let error = j.try_append(loaded.into(), &[]).unwrap_err();
+    assert!(matches!(error, FoldError::Config(_)));
+    let source = std::error::Error::source(&error)
+        .and_then(|source| source.downcast_ref::<std::sync::Arc<togi_config::ConfigError>>())
+        .expect("config.loaded refusal keeps the config error as its source");
     assert!(matches!(
-        j.try_append(loaded.into(), &[]),
-        Err(FoldError::Config(message)) if message.contains("search_trial_s")
+        &**source,
+        togi_config::ConfigError::Duration {
+            field: "search_trial_s",
+            ..
+        }
     ));
+    assert_eq!(
+        togi_machine::error_chain(&error),
+        "config.loaded records a configuration this build refuses: durations.search_trial_s: 0 is not within [1, 86400]"
+    );
 }
 
 #[test]
@@ -483,10 +500,10 @@ fn trial_progress_belongs_to_the_open_trial() {
     };
     j.append(progress(&trial, Some(Signal::Crash)).into(), &[]);
     let other = TrialId::from("elsewhere".to_owned());
-    assert_eq!(
+    assert!(matches!(
         j.try_append(progress(&other, None).into(), &[]),
-        Err(FoldError::NoOpenTrial(other))
-    );
+        Err(FoldError::NoOpenTrial(found)) if found == other
+    ));
 }
 
 #[test]
@@ -505,20 +522,17 @@ fn carried_trials_name_a_workload_of_their_regime_or_the_first() {
     ok.append(carry(class(None), Outcome::Pass).into(), &[]);
     let mut wrong = j.resumed();
     let foreign = workloads(Regime::R1)[0].id();
-    assert_eq!(
+    assert!(matches!(
         wrong.try_append(carry(class(Some(foreign)), Outcome::Pass).into(), &[]),
-        Err(FoldError::WorkloadRegime {
-            regime: Regime::R6,
-            workload: foreign,
-        })
-    );
+        Err(FoldError::WorkloadRegime { regime: Regime::R6, workload }) if workload == foreign
+    ));
     let mut unsigned = j.resumed();
     let mut payload = carry(class(None), Outcome::Failure);
     payload.signal = None;
-    assert_eq!(
+    assert!(matches!(
         unsigned.try_append(payload.into(), &[]),
         Err(FoldError::MissingSignal)
-    );
+    ));
     let mut inconclusive = j.resumed();
     let before = inconclusive.run().evidence.clone();
     inconclusive.append(carry(class(None), Outcome::Inconclusive).into(), &[]);
@@ -672,10 +686,10 @@ fn a_baseline_for_a_foreign_core_is_refused() {
             .into_iter()
             .collect(),
     };
-    assert_eq!(
+    assert!(matches!(
         j.try_append(baseline.into(), &[]),
-        Err(FoldError::UnknownCore(core(9)))
-    );
+        Err(FoldError::UnknownCore(found)) if found == core(9)
+    ));
 }
 
 #[test]
@@ -700,13 +714,13 @@ fn only_a_failure_at_zero_naming_a_core_sets_a_failure_point() {
     );
     assert_eq!(j.run().failure_point(core(0)), Some(off(0)));
     assert_eq!(j.run().core(core(0)).zero_seq, Some(seq));
-    assert_eq!(
+    assert!(matches!(
         j.try_append(
             dead_end(DeadEndCondition::FailureAtZero, Some(9)).into(),
             &[]
         ),
-        Err(FoldError::UnknownCore(core(9)))
-    );
+        Err(FoldError::UnknownCore(found)) if found == core(9)
+    ));
 }
 
 #[test]
@@ -867,13 +881,11 @@ fn an_intent_while_a_trial_is_open_or_awaiting_attribution_is_refused() {
     j.append(crash_detected(intent), &[]);
     let before = j.run().clone();
     let second = plan.intent(TrialId::from("0002".to_owned()), j.rotation(&plan));
-    assert_eq!(
+    assert!(matches!(
         j.try_append(second.into(), &plan.cause),
-        Err(FoldError::OverlappingIntent {
-            trial: TrialId::from("0002".to_owned()),
-            open,
-        })
-    );
+        Err(FoldError::OverlappingIntent { trial, open: found })
+            if trial == TrialId::from("0002".to_owned()) && found == open
+    ));
     assert_eq!(j.run(), &before);
 
     let mut j = Journal::new(&[0], &[Start::search(-20).checking()]);
@@ -883,12 +895,10 @@ fn an_intent_while_a_trial_is_open_or_awaiting_attribution_is_refused() {
     assert!(j.run().flight.awaiting.is_some());
     let before = j.run().clone();
     let second = plan.intent(TrialId::from("0002".to_owned()), j.rotation(&plan));
-    assert_eq!(
+    assert!(matches!(
         j.try_append(second.into(), &plan.cause),
-        Err(FoldError::OverlappingIntent {
-            trial: TrialId::from("0002".to_owned()),
-            open: failed,
-        })
-    );
+        Err(FoldError::OverlappingIntent { trial, open })
+            if trial == TrialId::from("0002".to_owned()) && open == failed
+    ));
     assert_eq!(j.run(), &before);
 }

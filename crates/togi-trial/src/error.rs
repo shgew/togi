@@ -98,9 +98,10 @@ impl Error {
     }
 }
 
-/// Several errors of one operation, in the order they happened.
+/// Several errors of one operation, in the order they happened; each member reads with its
+/// own causes, so the list has no source of its own.
 #[derive(Debug, thiserror::Error)]
-#[error("{}", .errors.iter().map(|member| with_causes(member)).collect::<Vec<_>>().join("; "))]
+#[error("{}", .errors.iter().map(|member| togi_machine::error_chain(member)).collect::<Vec<_>>().join("; "))]
 pub struct Joined {
     errors: Vec<Error>,
 }
@@ -124,22 +125,12 @@ impl OutputFailure {
     }
 }
 
-/// Every failure a cleanup met, in the order it met them; the first never gets replaced.
+/// Every failure a cleanup met, in the order it met them; the first never gets replaced. Each
+/// failure reads with its own causes, so the list has no source of its own.
 #[derive(Debug, thiserror::Error)]
-#[error("{}", .failures.iter().map(failure_text).collect::<Vec<_>>().join("; "))]
+#[error("{}", .failures.iter().map(|failure| togi_machine::error_chain(failure)).collect::<Vec<_>>().join("; "))]
 pub struct Containment {
     failures: Vec<CleanupFailure>,
-}
-
-fn failure_text(failure: &CleanupFailure) -> String {
-    let mut text = failure.to_string();
-    let mut source = std::error::Error::source(failure);
-    while let Some(cause) = source {
-        text.push_str(": ");
-        text.push_str(&cause.to_string());
-        source = cause.source();
-    }
-    text
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -270,7 +261,9 @@ impl From<Error> for togi_machine::Error {
     }
 }
 
-/// An error a trial keeps after reporting it, so every later report reads the same.
+/// An error a trial keeps after reporting it, so every later report reads the same. It names
+/// the operation that reported the kept error and keeps that error as its source, so the
+/// chain renders it once and callers downcast to it.
 #[cfg(target_os = "linux")]
 #[derive(Debug)]
 pub(crate) struct Shared(Arc<Error>);
@@ -278,7 +271,7 @@ pub(crate) struct Shared(Arc<Error>);
 #[cfg(target_os = "linux")]
 impl std::fmt::Display for Shared {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Display::fmt(&self.0, f)
+        f.write_str("wait for the trial")
     }
 }
 
@@ -306,37 +299,6 @@ impl Shared {
                 Seam::Other => togi_machine::Error::Other(Box::new(Self(Arc::clone(error)))),
             },
         }
-    }
-}
-
-/// An error with every cause behind it: joined errors and cleanup failures are listed one by
-/// one, each followed by its own source chain. A source that displays exactly its parent (a
-/// kept error behind its wrapper) is the same cause, so only the source is rendered.
-pub(crate) fn with_causes(error: &(dyn std::error::Error + 'static)) -> String {
-    if let Some(Error::Joined(joined)) = error.downcast_ref::<Error>() {
-        return joined
-            .errors
-            .iter()
-            .map(|member| with_causes(member))
-            .collect::<Vec<_>>()
-            .join("; ");
-    }
-    let containment = error
-        .downcast_ref::<Arc<Containment>>()
-        .map(|containment| &**containment)
-        .or_else(|| error.downcast_ref::<Containment>());
-    if let Some(containment) = containment {
-        return containment
-            .failures
-            .iter()
-            .map(|failure| with_causes(failure))
-            .collect::<Vec<_>>()
-            .join("; ");
-    }
-    match error.source() {
-        Some(source) if source.to_string() == error.to_string() => with_causes(source),
-        Some(source) => format!("{error}: {}", with_causes(source)),
-        None => error.to_string(),
     }
 }
 
@@ -437,9 +399,10 @@ pub enum StorageError {
     Spawn(#[source] io::Error),
 }
 
-/// Every storage failure of one trial, in the order they happened.
+/// Every storage failure of one trial, in the order they happened; each member reads with its
+/// own causes, so the list has no source of its own.
 #[derive(Debug, thiserror::Error)]
-#[error("{}", .0.iter().map(ToString::to_string).collect::<Vec<_>>().join("; "))]
+#[error("{}", .0.iter().map(|member| togi_machine::error_chain(member)).collect::<Vec<_>>().join("; "))]
 pub struct StorageFailure(pub(crate) Vec<StorageError>);
 
 impl StorageFailure {

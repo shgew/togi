@@ -195,8 +195,7 @@ fn the_anchor_of_an_empty_or_missing_live_journal_is_an_error() {
         "{error}"
     );
     assert!(
-        error
-            .to_string()
+        togi_machine::error_chain(&error)
             .contains("first line is not a complete header of this build"),
         "{error}"
     );

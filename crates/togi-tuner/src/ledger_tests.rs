@@ -1240,7 +1240,7 @@ fn poisoned(j: &Journal, state: &mut crate::State) {
         .into(),
         &[],
     );
-    assert_eq!(state.fold(&next), Err(FoldError::Poisoned));
+    assert!(matches!(state.fold(&next), Err(FoldError::Poisoned)));
     assert_eq!(state.next().ok(), None);
 }
 
@@ -1262,9 +1262,11 @@ fn carried_naming_outside(change: fn(&mut togi_journal::TrialCarried)) {
             None,
         );
         change(&mut carried);
-        assert_eq!(
-            j.try_append(carried.into(), &[]),
-            Err(FoldError::UnknownCore(outside)),
+        assert!(
+            matches!(
+                j.try_append(carried.into(), &[]),
+                Err(FoldError::UnknownCore(found)) if found == outside
+            ),
             "{outcome:?}"
         );
         let mut state = j.state.clone();

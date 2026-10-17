@@ -7,7 +7,7 @@ use togi_machine::{CancellationToken, Partial, Stopped, Swept, TrialSpec};
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 use tokio::task::LocalSet;
 
-use crate::error::{Error, with_causes};
+use crate::error::Error;
 use crate::os::Os;
 use crate::supervisor::{Env, Handle, TrialCommand, start};
 use crate::sweep;
@@ -183,7 +183,7 @@ async fn serve<O: Os>(env: Rc<Env<O>>, command: Command) {
             {
                 report(&format!(
                     "a start nobody waits for ended without confirmed cleanup: {}",
-                    with_causes(&error)
+                    togi_machine::error_chain(&error)
                 ));
             }
         }
@@ -202,7 +202,7 @@ async fn serve<O: Os>(env: Rc<Env<O>>, command: Command) {
             if let Err(std::sync::mpsc::SendError(Err(error))) = reply.send(outcome) {
                 report(&format!(
                     "a sweep nobody waits for failed: {}",
-                    with_causes(&error)
+                    togi_machine::error_chain(&error)
                 ));
             }
         }

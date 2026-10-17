@@ -107,7 +107,7 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
     match result {
         Ok(()) => Exit::Ok,
         Err(terminal::Error::Journal(SourceError::Read(error))) => {
-            let message = unknown_kind(&error).unwrap_or_else(|| error.to_string());
+            let message = unknown_kind(&error).unwrap_or_else(|| crate::report::chain(&error));
             fail(ctx, "watch", message)
         }
         Err(error) => fail(ctx, "watch", error),

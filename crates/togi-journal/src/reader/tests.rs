@@ -70,8 +70,9 @@ fn an_unknown_kind_is_its_own_error_with_its_line_and_kind() {
         matches!(&error, ReadError::UnknownKind { line: 5, source } if source.0 == "future.thing"),
         "{error:?}"
     );
+    assert_eq!(error.to_string(), "line 5");
     assert_eq!(
-        error.to_string(),
+        togi_machine::error_chain(&error),
         r#"line 5: unknown event kind "future.thing""#
     );
 }
@@ -87,6 +88,94 @@ fn a_known_kind_with_a_bad_payload_and_a_broken_line_stay_decode_errors() {
         EventReader::new(bytes.as_slice()).find_map(Result::err),
         Some(ReadError::Decode { line: 5, .. })
     ));
+}
+
+#[test]
+fn a_decode_failure_keeps_every_level_as_a_downcastable_source() {
+    let mut bytes = recorded(&MemFs::new());
+    bytes.extend_from_slice(
+        br#"{"seq":5,"time":"2026-01-01T00:00:00Z","boot":"b","kind":"shutdown","msg":"x","data":{"reason":7}}"#,
+    );
+    bytes.push(b'\n');
+    let fs = MemFs::new();
+    fs.put("/j.jsonl", bytes);
+    let file = Recording::read_in(&fs, Path::new("/j.jsonl")).unwrap_err();
+    assert_eq!(file.to_string(), "/j.jsonl");
+    let read = std::error::Error::source(&file)
+        .and_then(|source| source.downcast_ref::<ReadError>())
+        .expect("the file error keeps the read error as its source");
+    assert_eq!(read.to_string(), "line 5");
+    let decode = std::error::Error::source(read)
+        .and_then(|source| source.downcast_ref::<DecodeError>())
+        .expect("the read error keeps the decode error as its source");
+    assert_eq!(decode.to_string(), "shutdown event");
+    let serde = std::error::Error::source(decode)
+        .and_then(|source| source.downcast_ref::<serde_json::Error>())
+        .expect("the decode error keeps the serde error as its source");
+    assert_eq!(
+        togi_machine::error_chain(&file),
+        format!("/j.jsonl: line 5: shutdown event: {serde}")
+    );
+}
+
+#[test]
+fn a_line_that_is_not_utf8_names_its_line_and_keeps_the_utf8_error_as_its_source() {
+    let mut bytes = recorded(&MemFs::new());
+    bytes.extend_from_slice(b"\xff\xfe\n");
+    let fs = MemFs::new();
+    fs.put("/j.jsonl", bytes);
+    let file = Recording::read_in(&fs, Path::new("/j.jsonl")).unwrap_err();
+    let read = std::error::Error::source(&file)
+        .and_then(|source| source.downcast_ref::<ReadError>())
+        .expect("the file error keeps the read error as its source");
+    assert!(matches!(read, ReadError::Utf8 { line: 5, .. }), "{read:?}");
+    assert_eq!(read.to_string(), "line 5");
+    let utf8 = std::error::Error::source(read)
+        .and_then(|source| source.downcast_ref::<std::str::Utf8Error>())
+        .expect("the read error keeps the utf-8 error as its source");
+    assert_eq!(
+        utf8.to_string(),
+        "invalid utf-8 sequence of 1 bytes from index 0"
+    );
+    assert_eq!(
+        togi_machine::error_chain(&file),
+        "/j.jsonl: line 5: invalid utf-8 sequence of 1 bytes from index 0"
+    );
+}
+
+#[test]
+fn a_file_error_renders_the_path_then_the_line_then_the_cause_and_keeps_each_source() {
+    let error = FileError {
+        path: "/j.jsonl".into(),
+        source: ReadError::UnknownKind {
+            line: 5,
+            source: UnknownKind("future.thing".to_owned()),
+        },
+    };
+    assert_eq!(error.to_string(), "/j.jsonl");
+    assert_eq!(
+        togi_machine::error_chain(&error),
+        r#"/j.jsonl: line 5: unknown event kind "future.thing""#
+    );
+    let read = std::error::Error::source(&error)
+        .and_then(|source| source.downcast_ref::<ReadError>())
+        .expect("the file error keeps the read error as its source");
+    let kind = std::error::Error::source(read)
+        .and_then(|source| source.downcast_ref::<UnknownKind>())
+        .expect("the read error keeps the unknown kind as its source");
+    assert_eq!(kind.0, "future.thing");
+}
+
+#[test]
+fn an_open_error_over_a_file_error_renders_the_chain_once() {
+    let error = crate::OpenError::Read(FileError {
+        path: "/j.jsonl".into(),
+        source: ReadError::Io(io::Error::other("disk gone")),
+    });
+    assert_eq!(
+        togi_machine::error_chain(&error),
+        "/j.jsonl: read: disk gone"
+    );
 }
 
 #[test]
@@ -247,7 +336,7 @@ fn a_first_line_that_is_not_a_journal_header_is_another_builds_journal_and_nothi
         fs.put("/j.jsonl", bytes);
         let error = recorded_context_in(&fs, Path::new("/j.jsonl")).unwrap_err();
         assert!(matches!(error.source, ReadError::Foreign), "{name}");
-        let text = error.to_string();
+        let text = togi_machine::error_chain(&error);
         assert!(text.starts_with("/j.jsonl: "), "{text}");
         assert!(text.contains("docs/howto.md#go-to-rust-cutover"), "{text}");
     }

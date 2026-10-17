@@ -64,7 +64,7 @@ impl Appender {
                     Payload::SessionWarning(SessionWarning {
                         operation: "write state projection".into(),
                         trial: None,
-                        error: error.to_string(),
+                        error: togi_render::error_chain(&error),
                     }),
                     &durable,
                 );

@@ -67,7 +67,7 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
         .map(|(config, _)| config)
     {
         Ok(config) => config,
-        Err(error) => return exit_with(ctx, COMMAND, error, Exit::Usage),
+        Err(error) => return exit_with(ctx, COMMAND, chain(&error), Exit::Usage),
     };
     let privileged = system.privileged();
     let _lock = if privileged {

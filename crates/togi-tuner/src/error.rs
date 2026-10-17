@@ -5,7 +5,7 @@ use crate::{ConstraintError, ProfileError, RankingError, TopologyError, Topology
 
 /// A journal the tuner cannot have written: the event contradicts the state it folds into. The
 /// state is unchanged when `fold` returns one.
-#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+#[derive(Clone, Debug, thiserror::Error)]
 pub enum FoldError {
     #[error("event {seq} does not follow event {last}")]
     OutOfOrder { last: Seq, seq: Seq },
@@ -13,19 +13,19 @@ pub enum FoldError {
     NotStarted,
     #[error("session.start folded twice")]
     DuplicateStart,
-    #[error("topology: {0}")]
+    #[error("invalid topology")]
     Topology(#[from] TopologyError),
     #[error("core {0} is outside the topology")]
     UnknownCore(CoreId),
-    #[error("profile: {0}")]
+    #[error("invalid profile")]
     Profile(#[from] ProfileError),
-    #[error("{0}")]
+    #[error(transparent)]
     Mismatch(#[from] TopologyMismatch),
     #[error("an earlier event could not be folded")]
     Poisoned,
-    #[error("ranking: {0}")]
+    #[error("invalid ranking")]
     Ranking(#[from] RankingError),
-    #[error("constraint: {0}")]
+    #[error("invalid constraint")]
     Constraint(#[from] ConstraintError),
     #[error("trial {0} is not the open trial")]
     NoOpenTrial(TrialId),
@@ -60,6 +60,12 @@ pub enum FoldError {
     UnknownCcd(togi_machine::CcdId),
     #[error("hunt {0} has no candidate to narrow")]
     NoCandidates(std::num::NonZeroU32),
-    #[error("config.loaded records a configuration this build refuses: {0}")]
-    Config(String),
+    #[error("config.loaded records a configuration this build refuses")]
+    Config(#[source] std::sync::Arc<togi_config::ConfigError>),
+}
+
+impl From<togi_config::ConfigError> for FoldError {
+    fn from(error: togi_config::ConfigError) -> Self {
+        Self::Config(std::sync::Arc::new(error))
+    }
 }

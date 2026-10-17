@@ -236,9 +236,11 @@ fn unscheduled(j: &Journal, plan: &TrialPlan) {
     let trial = TrialId::from("9999".to_owned());
     let event = j.event(plan.intent(trial.clone(), 0).into(), &plan.cause);
     let mut probe = j.state.clone();
-    assert_eq!(
-        probe.fold(&event),
-        Err(FoldError::UnscheduledIntent(trial)),
+    assert!(
+        matches!(
+            probe.fold(&event),
+            Err(FoldError::UnscheduledIntent(found)) if found == trial
+        ),
         "{plan:?}"
     );
     assert_eq!(

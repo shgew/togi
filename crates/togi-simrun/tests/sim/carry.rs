@@ -1087,7 +1087,10 @@ fn a_journal_with_an_unknown_kind_is_refused_untouched_by_the_build_that_wrote_i
         ),
         "{error}"
     );
-    assert!(error.to_string().contains("retired.fact"), "{error}");
+    assert!(
+        togi_machine::error_chain(&error).contains("retired.fact"),
+        "{error}"
+    );
     assert_eq!(
         bench.fs.contents(format!("{STATE}/events.jsonl")),
         Some(original)

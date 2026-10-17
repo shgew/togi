@@ -510,11 +510,18 @@ impl Session {
                     }) => return Err(SessionError::Machine(Error::Crashed).into()),
                     Err(Partial { value, error }) => {
                         mces.extend(value);
-                        (mces, Some(format!("{}; {error}", Error::CursorMissing)))
+                        (
+                            mces,
+                            Some(format!(
+                                "{}; {}",
+                                Error::CursorMissing,
+                                togi_render::error_chain(&error)
+                            )),
+                        )
                     }
                 }
             }
-            Err(Partial { value, error }) => (value, Some(error.to_string())),
+            Err(Partial { value, error }) => (value, Some(togi_render::error_chain(&error))),
         };
         let until = self.appender.clock().monotonic();
         let crashed_boots = self

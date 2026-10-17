@@ -644,7 +644,7 @@ mod hardware {
             return Err("the teardown deadline elapsed".to_owned());
         }
         systemctl_within(args, remaining.min(Duration::from_secs(10)))
-            .map_err(|error| chain(&error))
+            .map_err(|error| togi_machine::error_chain(&error))
     }
 
     fn systemctl_within(
@@ -696,17 +696,6 @@ mod hardware {
             std::thread::sleep(Duration::from_millis(50));
         }
         condition()
-    }
-
-    fn chain(error: &dyn std::error::Error) -> String {
-        let mut text = error.to_string();
-        let mut source = error.source();
-        while let Some(cause) = source {
-            text.push_str(": ");
-            text.push_str(&cause.to_string());
-            source = cause.source();
-        }
-        text
     }
 
     trait StrayChild: Send + 'static {
@@ -1186,7 +1175,7 @@ mod hardware {
             .expect("the second instance was planned")
             .unwrap();
         assert!(returned - displaced.at <= TEARDOWN, "the rollback overran");
-        let error = chain(&partial.error);
+        let error = togi_machine::error_chain(&partial.error);
         assert!(
             error.contains("launch instance c01 in scope togi-trial-hardware-c01"),
             "{error}"

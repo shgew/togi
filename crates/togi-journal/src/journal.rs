@@ -30,7 +30,7 @@ pub struct WriteFailure {
 
 impl fmt::Display for WriteFailure {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}: {}", self.op, self.source)
+        write!(f, "{}", self.op)
     }
 }
 
@@ -42,9 +42,9 @@ impl std::error::Error for WriteFailure {
 
 #[derive(Debug, thiserror::Error)]
 pub enum AppendError {
-    #[error("journal write failed: {0}")]
+    #[error("journal write failed")]
     Failed(#[source] Arc<WriteFailure>),
-    #[error("journal refuses writes after an earlier failure: {0}")]
+    #[error("journal refuses writes after an earlier failure")]
     Poisoned(#[source] Arc<WriteFailure>),
     #[error("{} is written only through its own append method", .0.as_str())]
     Refused(EventKind),
@@ -54,9 +54,9 @@ pub enum AppendError {
     Cause { seq: Seq, cause: Seq },
     #[error("the journal has no seq left")]
     SeqExhausted,
-    #[error("encode event: {0}")]
+    #[error("encode event")]
     Encode(#[source] serde_json::Error),
-    #[error("the event would not read back: {0}")]
+    #[error("the event would not read back")]
     Unreadable(#[source] crate::DecodeError),
     #[error("the event would read back as a different payload")]
     Lossy,
@@ -75,13 +75,13 @@ pub enum OpenError {
         recorded: SessionId,
         live: SessionId,
     },
-    #[error("repair torn tail ({step}): {source}")]
+    #[error("repair torn tail ({step})")]
     Repair {
         step: &'static str,
         #[source]
         source: io::Error,
     },
-    #[error("encode torn record: {0}")]
+    #[error("encode torn record")]
     Encode(#[source] serde_json::Error),
     #[error("the journal has no seq left")]
     SeqExhausted,
@@ -89,7 +89,7 @@ pub enum OpenError {
 
 #[derive(Debug, thiserror::Error)]
 pub enum CloseError {
-    #[error("close journal: {0}")]
+    #[error("close journal")]
     Io(#[source] io::Error),
 }
 
@@ -101,7 +101,7 @@ pub enum ArchiveError {
     Append(#[from] AppendError),
     #[error("the journal has no session to archive")]
     NoSession,
-    #[error("flush journal: {0}")]
+    #[error("flush journal")]
     Flush(#[source] io::Error),
 }
 

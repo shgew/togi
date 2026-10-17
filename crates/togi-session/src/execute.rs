@@ -92,7 +92,10 @@ impl Session {
             Err(partial) if matches!(partial.error, togi_machine::Error::Crashed) => {
                 return Err(SessionError::from(partial.error).into());
             }
-            Err(partial) => (partial.value, Some(partial.error.to_string())),
+            Err(partial) => (
+                partial.value,
+                Some(togi_render::error_chain(&partial.error)),
+            ),
         };
         let values: PerCore<i64> = ranks.iter().map(|rank| (rank.core, rank.value)).collect();
         let ranking = ranking(&self.topology, ranks, error);

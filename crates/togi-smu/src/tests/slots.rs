@@ -1,10 +1,10 @@
 use super::fixture::{
-    CCD0_FUSE, CCD1_FUSE, Fake, RSMU_COMMAND, RSMU_RESPONSE, Tree, chain, open, read, smu_error,
+    CCD0_FUSE, CCD1_FUSE, Fake, RSMU_COMMAND, RSMU_RESPONSE, Tree, open, read, smu_error,
     validated, write,
 };
 use crate::mailbox::{Command, MailboxError};
 use crate::{Driver, Error, FuseRead, Misplaced, Operation, SlotError};
-use togi_machine::{CcdId, CpuId, TargetOffset};
+use togi_machine::{CcdId, CpuId, TargetOffset, error_chain};
 
 fn mapping_detail(driver: &mut Driver) -> (bool, String) {
     let check = driver.check_slot_mapping();
@@ -312,7 +312,7 @@ fn fuse_read_failure_at_each_stage_refuses_per_core_access() {
             "{failed}: {source:?}"
         );
         assert!(
-            chain(smu_error(&error)).contains("SMN unavailable"),
+            error_chain(smu_error(&error)).contains("SMN unavailable"),
             "{failed}"
         );
         assert!(fake.commands().is_empty());
@@ -417,7 +417,7 @@ fn slot_error_details_name_every_offender() {
         },
     ]);
     assert_eq!(
-        chain(&error),
+        error_chain(&error),
         "core IDs disagree with their CCD (core ID / 8): core 09 on CCD0, want CCD1; core 03 on CCD1, want CCD0"
     );
     let siblings = SlotError::Siblings(vec![

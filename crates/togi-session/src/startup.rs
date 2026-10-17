@@ -200,7 +200,7 @@ impl Session {
             Err(Error::Crashed) => Err(Error::Crashed.into()),
             Err(error) => {
                 self.fault.get_or_insert(Fault::Containment);
-                let detail = error.to_string();
+                let detail = togi_render::error_chain(&error);
                 let seq = self.record_check("trial_scopes", detail.clone(), false)?;
                 let dead_end = DeadEnd {
                     condition: DeadEndCondition::Containment,

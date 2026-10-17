@@ -1,11 +1,11 @@
 use super::fixture::{
-    Fake, Tree, accepted_unvalidated, chain, core, open, open_error, read, smu_error, validated,
-    write, write_all,
+    Fake, Tree, accepted_unvalidated, core, open, open_error, read, smu_error, validated, write,
+    write_all,
 };
 use crate::mailbox::{Command, MailboxError, Status};
 use crate::{Driver, Error, Operation};
 use std::num::IntErrorKind;
-use togi_machine::{BiosContext, CcdId, CpuId, ObservedOffset, TargetOffset};
+use togi_machine::{BiosContext, CcdId, CpuId, ObservedOffset, TargetOffset, error_chain};
 
 #[test]
 fn topology_groups_online_cpus_and_encodes_offsets() {
@@ -271,7 +271,7 @@ fn invalid_identity_files_prevent_hardware_access() {
         }
         let fake = Fake::new();
         let mut driver = open(&tree, &fake);
-        let refusal = chain(&driver.validate().unwrap_err());
+        let refusal = error_chain(&driver.validate().unwrap_err());
         let detail = if path == "proc/cpuinfo" {
             driver.check_cpu().detail
         } else {
@@ -316,7 +316,7 @@ fn mailbox_failures_keep_the_cause_and_the_clamped_argument() {
             },
         }
     ));
-    assert!(chain(smu_error(&per_core)).starts_with("set core 09 offset"));
+    assert!(error_chain(smu_error(&per_core)).starts_with("set core 09 offset"));
 
     let all = write_all(&mut driver, TargetOffset::clamped(10)).unwrap_err();
     assert_eq!(fake.commands().last(), Some(&(Command::SetAllOffsets, 0)));
@@ -352,7 +352,7 @@ fn malformed_topology_files_are_open_errors() {
         let fake = Fake::new();
         let error = open_error(&tree, &fake);
         assert!(
-            chain(&error).contains(&path.display().to_string()),
+            error_chain(&error).contains(&path.display().to_string()),
             "{relative}: {error}"
         );
         assert_eq!(fake.hardware_calls(), 0);
@@ -562,7 +562,7 @@ fn an_unreadable_cache_id_is_a_fatal_open_error_not_a_die_fallback() {
     };
     assert_eq!(failed, &path);
     assert_ne!(source.kind(), std::io::ErrorKind::NotFound);
-    assert!(chain(&error).contains(&path.display().to_string()));
+    assert!(error_chain(&error).contains(&path.display().to_string()));
     assert_eq!(fake.hardware_calls(), 0);
 }
 

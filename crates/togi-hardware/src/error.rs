@@ -1,6 +1,3 @@
-use std::error::Error as StdError;
-use std::fmt::Write as _;
-
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("hardware runs need Linux: unsupported operation")]
@@ -27,14 +24,4 @@ impl From<Error> for togi_machine::Error {
     fn from(error: Error) -> Self {
         Self::Other(Box::new(error))
     }
-}
-
-pub(crate) fn describe(error: &dyn StdError) -> String {
-    let mut text = error.to_string();
-    let mut source = error.source();
-    while let Some(cause) = source {
-        let _ = write!(text, ": {cause}");
-        source = cause.source();
-    }
-    text
 }
