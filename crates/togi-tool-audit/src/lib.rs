@@ -24,9 +24,9 @@ use togi_journal::{DirError, Event, LookupError, Skipped, StateDir, StateError};
 
 pub use interrupt::{Holding, INTERRUPTED, Interrupt};
 pub use report::{
-    Finding, JournalSkip, Kind, OpenError, Record, RecordError, Report, Split, Status,
-    audit as audit_directories, audit_directory, audit_directory_with, audit_holding, audit_with,
-    check_records, read_records, read_records_from, run_directory, timing,
+    DirectoryAudit, Finding, JournalSkip, Kind, OpenError, Record, RecordError, Report, Split,
+    Status, audit as audit_directories, audit_directory, audit_directory_with, audit_holding,
+    audit_with, check_records, read_records, read_records_from, run_directory, timing,
 };
 pub use sweep::{Evidence, RunError, Sweep, SweepError, sweep_suite};
 pub use violation::{Check, Completion, JournalAudit, Source, Violation};

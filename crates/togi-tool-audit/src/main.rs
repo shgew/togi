@@ -5,17 +5,15 @@ use std::process::ExitCode;
 
 use clap::Parser;
 use togi_tool_audit::{
-    Evidence, Finding, INTERRUPTED, Interrupt, JournalSkip, Record, RecordError, Sweep,
-    audit_directory, audit_with, read_records,
+    Completion, DirectoryAudit, Evidence, Finding, INTERRUPTED, Interrupt, Record, RecordError,
+    Sweep, audit_directory, audit_with, read_records,
 };
 
 const USAGE: u8 = 2;
 
-type Inspection = (Vec<Finding>, usize, Vec<JournalSkip>);
-
 /// The command's journal/record readers and output streams; production supplies durable disk readers.
 pub(crate) struct Io<'a> {
-    pub(crate) inspect: &'a dyn Fn(&Path, bool) -> Inspection,
+    pub(crate) inspect: &'a dyn Fn(&Path, Completion) -> DirectoryAudit,
     pub(crate) records: &'a dyn Fn(&Path) -> Result<Vec<Record>, RecordError>,
     pub(crate) out: &'a mut dyn io::Write,
     pub(crate) err: &'a mut dyn io::Write,

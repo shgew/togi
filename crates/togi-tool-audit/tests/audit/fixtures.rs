@@ -292,13 +292,9 @@ pub(crate) fn assert_snapshot(actual: &str, expected: &str) {
 )]
 pub(crate) fn disk_inspect(
     path: &std::path::Path,
-    simulated: bool,
-) -> (
-    Vec<togi_tool_audit::Finding>,
-    usize,
-    Vec<togi_tool_audit::JournalSkip>,
-) {
-    togi_tool_audit::audit_directory_with(path, simulated, |path| {
+    completion: togi_tool_audit::Completion,
+) -> togi_tool_audit::DirectoryAudit {
+    togi_tool_audit::audit_directory_with(path, completion, |path| {
         if !path.is_dir() {
             return Err(togi_tool_audit::OpenError::NotADirectory);
         }
