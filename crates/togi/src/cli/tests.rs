@@ -223,9 +223,50 @@ fn a_leading_config_moves_after_the_command_name() {
             &["togi", "--config", "c", "--state-dir=s", "run"],
             &["togi", "--state-dir=s", "run", "--config", "c"],
         ),
+        (
+            &[
+                "togi",
+                "--config",
+                "a",
+                "--state-dir",
+                "s",
+                "--config=b",
+                "--state-dir=t",
+                "run",
+                "x",
+            ],
+            &[
+                "togi",
+                "--state-dir",
+                "s",
+                "--state-dir=t",
+                "run",
+                "--config",
+                "a",
+                "--config=b",
+                "x",
+            ],
+        ),
     ] {
         assert_eq!(moved(args), want, "{args:?}");
     }
+}
+
+#[test]
+fn a_leading_config_moves_after_a_non_utf8_command_name() {
+    let arg = |text: &str| OsString::from(text);
+    let command = OsString::from_vec(vec![0xff]);
+    let args = vec![
+        arg("togi"),
+        arg("--config"),
+        arg("c"),
+        command.clone(),
+        arg("x"),
+    ];
+    assert_eq!(
+        config_after_command(args),
+        [arg("togi"), command, arg("--config"), arg("c"), arg("x")]
+    );
 }
 
 #[test]

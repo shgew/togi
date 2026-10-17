@@ -57,7 +57,7 @@ cover base: _dev-shell
     target=${CARGO_LLVM_COV_TARGET_DIR:-${CARGO_TARGET_DIR:-target}/llvm-cov-target}
     go run ./tools/cover --lcov "$trace" --build-dir "$target/debug" --base "$1"
 
-# Lint the retained Go tools for Linux and macOS, check the Nushell board's syntax, and run workspace clippy for the host and aarch64 macOS, with optional Go lint flags
+# Lint the retained Go tool for Linux and macOS, check the Nushell board's syntax, and run workspace clippy for the host and aarch64 macOS, with optional Go lint flags
 [group('quality')]
 lint *args: _dev-shell
     for target in linux/amd64 darwin/arm64; do env GOOS="${target%/*}" GOARCH="${target#*/}" CGO_ENABLED=0 golangci-lint run ./... "$@"; done
@@ -410,7 +410,7 @@ land number: _dev-shell
 bot +args: _dev-shell
     exec just --justfile '{{ justfile() }}' as-bot gh "$@"
 
-# Run a command with one robotogi App token in GH_TOKEN (`just as-bot go run ./tools/reviews publish <snapshot directory>`)
+# Run a command with one robotogi App token in GH_TOKEN (`just as-bot just reviews publish <snapshot directory>`)
 [group('github')]
 as-bot +cmd: _dev-shell
     #!/usr/bin/env bash
@@ -421,4 +421,4 @@ as-bot +cmd: _dev-shell
 # Print the review track record of merged pull requests; subcommands snapshot, render and publish run a review's mechanical steps (docs/review-record.md)
 [group('github')]
 reviews *args: _dev-shell
-    go run ./tools/reviews "$@"
+    cargo run --quiet --locked -p togi-tool-reviews -- "$@"
