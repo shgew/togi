@@ -243,6 +243,7 @@
                 pkgs.nixfmt
                 pkgs.bashInteractive
                 pkgs.nushell
+                pkgs.duckdb
                 rustToolchain
                 pkgs.cargo-deny
                 pkgs.cargo-fuzz
@@ -269,6 +270,19 @@
                 ''
                   cd "$src"
                   HOME=$TMPDIR nu --no-config-file tests.nu
+                  touch "$out"
+                '';
+            sql-test =
+              pkgs.runCommand "togi-sql-test"
+                {
+                  nativeBuildInputs = [ pkgs.duckdb ];
+                  src = ./tools/sql;
+                }
+                ''
+                  cp -R "$src" sql
+                  chmod -R u+w sql
+                  patchShebangs sql
+                  HOME=$TMPDIR sql/test.sh
                   touch "$out"
                 '';
             clippy = craneLib.mkCargoDerivation (

@@ -68,7 +68,7 @@ The tests compare rendered output with compile-time golden fixtures in `crates/t
 
 ## Retros
 
-After an unattended run on the target machine, write a retro as a new comment on the pinned [Target-machine runs](https://github.com/shgew/togi/issues/260) issue. Build it from `just stats` and `togi events`, not from memory. In omp, `/retro` runs the whole workflow ([`.omp/commands/retro.md`](../.omp/commands/retro.md)).
+After an unattended run on the target machine, write a retro as a new comment on the pinned [Target-machine runs](https://github.com/shgew/togi/issues/260) issue. Build it from `just stats` and `togi events`, not from memory. A question they do not answer, such as how clocks and voltage requests moved with offset, can be asked of the journals and samples with [`just sql`](#querying-journals-and-samples-just-sql); the retro still reports from `just stats` and `togi events`. In omp, `/retro` runs the whole workflow ([`.omp/commands/retro.md`](../.omp/commands/retro.md)).
 
 A full retro has these sections:
 
@@ -82,6 +82,46 @@ A full retro has these sections:
 A run with nothing new gets the short form instead: no failure pattern that earlier retros have not recorded, no decision that contradicts the spec, no device trouble and no forecast to score. Its retro is the **Session** paragraph, the numbers that changed since the previous retro, the **Dashboard on the target** line when the operator saw something, and **Actions:** none.
 
 A finding that holds beyond one run moves to where the next change reads it: how the machine fails goes into its bench machine files under `tools/bench/machines/`, and what simulated runs should show goes into `docs/simulating.md`. The retro links to the pull request that moved it.
+
+## Querying journals and samples (`just sql`)
+
+`just sql [DIR]` opens [DuckDB](https://duckdb.org) on a state directory, `/var/lib/togi` by default, with views over its current and archived journals and every trial's samples, plain or gzip-compressed ([Files](spec/journal.md#files)). It answers aggregate questions across trials and sessions in one query, where `jq` would read every file. DuckDB comes with the development shell only; togi never ships or imports it. The database lives in memory and the views only read, so a live state directory is safe to query; for another machine, copy its whole state directory, `trials/` and `archive/` included. The views list the files once, when DuckDB starts: restart it to see trials written since. They skip a line that does not parse, such as a torn tail, without saying so, which is one reason `just stats` and `togi events` stay what a review reports from. Further arguments go to `duckdb`, so `-c` runs a query and exits:
+
+```sh
+just sql                                                  # target machine, interactive
+just sql <copied-state-dir> -c 'from trials limit 5'
+just sim --samples --machine tools/bench/machines/target-shared-voltage.json --state-dir <dir>
+just sql <dir>                                            # a simulated session with PM-table lanes
+```
+
+| View | One row per | Columns |
+|---|---|---|
+| `events` | event of the current or an archived journal | `session` and `archived`, then the event's `seq`, `time`, `boot`, `mono_ms`, `cause`, `kind`, `msg` and `data` (JSON) |
+| `trials` | trial, from its `trial.intent` and `trial.end` | `session`, `archived`, `trial`, `started`, `ended`, `regime`, `workload`, `condition`, `activity`, `cores` (the loaded cores the intent names), `profile` (core → offset), `outcome`, `duration_s`, `tctl_max_c`, and the whole payloads as `intent_data` and `end_data` |
+| `samples` | conditions sample | `session`, `archived`, `trial`, then the sample's fields: maps keyed by core ID and `pm_table` as a struct of 16-element lists |
+| `core_samples` | sample and loaded core (one with a clock or a worker in it) | `session`, `archived`, `trial`, `regime`, `workload`, `core`, its `offset` from the trial's profile, `elapsed_ms`, `mhz`, `worker_cpu_ms`, its own PM-table lanes (`voltage_request_v`, `power_w`, `temperature_c`, `c0_pct`, `cc1_pct`, `cc6_pct`), `tctl_c` and `package_power_w` |
+
+Trial IDs restart in every session, so join on `session` and `trial`, never on `trial` alone. `offset` is an SQL keyword: quote it as `"offset"`. DuckDB lists start at 1, so core `c` of a PM-table lane is `pm_table.voltage_request_v[c + 1]`; `core_samples` has done that already. The views are in `tools/sql/views.sql`; `just sql-test` checks them against fixtures.
+
+Trials and outcomes by regime and workload, across every session of the directory:
+
+```sql
+select regime, workload, outcome, count(*) as trials, round(avg(tctl_max_c), 1) as avg_tctl_max_c
+from trials
+where outcome is not null
+group by all
+order by all;
+```
+
+How each core's voltage request and clock moved with its offset in R7 trials, from the fifth second on as the request summaries of `trial.end` count them ([Event format](spec/journal.md#event-format)):
+
+```sql
+select core, "offset", count(*) as samples, round(median(voltage_request_v), 3) as median_v, median(mhz) as median_mhz
+from core_samples
+where regime = 'R7' and elapsed_ms >= 5000 and voltage_request_v is not null
+group by all
+order by core, "offset" desc;
+```
 
 ## Inspecting a transition on recorded state
 
