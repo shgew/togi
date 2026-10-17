@@ -57,7 +57,7 @@ impl Phase {
 /// The requirement a failed trial was scheduled for, as the tuner held it once the trial's intent folded.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct Required {
-    pub(crate) kind: &'static str,
+    pub(crate) kind: RequirementKind,
     /// Passes of the trial's class the requirement needed.
     pub(crate) needed: u16,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -69,15 +69,7 @@ pub(crate) struct Required {
 impl Required {
     fn of(requirement: Requirement) -> Self {
         Self {
-            kind: match requirement.kind {
-                RequirementKind::Search => "search",
-                RequirementKind::SoloLimit => "solo_limit",
-                RequirementKind::Cycle => "cycle",
-                RequirementKind::Rerun => "rerun",
-                RequirementKind::ZeroRerun => "zero_rerun",
-                RequirementKind::Round => "round",
-                RequirementKind::Hunt => "hunt",
-            },
+            kind: requirement.kind,
             needed: requirement.needed.get(),
             step: requirement.step.map(StepNo::get),
             part: requirement.part.map(PartNo::get),
@@ -86,7 +78,16 @@ impl Required {
 
     /// `cycle 2.3 x3`: the kind, the step and part when it has them, and the passes needed.
     fn label(self) -> String {
-        let mut label = self.kind.to_owned();
+        let mut label = match self.kind {
+            RequirementKind::Search => "search",
+            RequirementKind::SoloLimit => "solo_limit",
+            RequirementKind::Cycle => "cycle",
+            RequirementKind::Rerun => "rerun",
+            RequirementKind::ZeroRerun => "zero_rerun",
+            RequirementKind::Round => "round",
+            RequirementKind::Hunt => "hunt",
+        }
+        .to_owned();
         match (self.step, self.part) {
             (Some(step), Some(part)) => {
                 let _ = write!(label, " {step}.{part}");
@@ -123,6 +124,21 @@ pub(crate) struct Backoff<'a> {
     pub(crate) causes: &'a [Seq],
 }
 
+/// Where a failure was observed: a trial of this journal, or a failure carried into it from another session.
+#[derive(Debug, PartialEq, Serialize)]
+#[serde(tag = "origin", rename_all = "snake_case")]
+pub(crate) enum Origin<'a> {
+    Trial {
+        trial: &'a TrialId,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cycle: Option<NonZeroU32>,
+        /// None when the tuner could not fold the journal up to the trial.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        requirement: Option<Required>,
+    },
+    Carried,
+}
+
 /// A multi-core R7 failure of this journal or carried into it, with the backoffs charged to it: those whose
 /// first multi-core R7 cause it is.
 #[derive(Debug, PartialEq, Serialize)]
@@ -134,27 +150,34 @@ pub(crate) struct R7Failure<'a> {
     /// Hours from the session's first event.
     pub(crate) hours: f64,
     pub(crate) phase: Option<Phase>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) trial: Option<&'a TrialId>,
-    pub(crate) carried: bool,
+    #[serde(flatten)]
+    pub(crate) origin: Origin<'a>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) workload: Option<WorkloadId>,
     pub(crate) cores: CoreSet,
     pub(crate) duration_s: u32,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) cycle: Option<NonZeroU32>,
     pub(crate) rerun: bool,
-    /// None for a carried failure, or when the tuner could not fold the journal up to its trial.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) requirement: Option<Required>,
     pub(crate) backoffs: Vec<Backoff<'a>>,
 }
 
 impl R7Failure<'_> {
     /// The trial, or `carried SEQ`.
     fn name(&self) -> String {
-        self.trial
-            .map_or_else(|| format!("carried {}", self.seq), ToString::to_string)
+        match &self.origin {
+            Origin::Trial { trial, .. } => trial.to_string(),
+            Origin::Carried => format!("carried {}", self.seq),
+        }
+    }
+
+    const fn requirement(&self) -> Option<Required> {
+        match &self.origin {
+            Origin::Trial { requirement, .. } => *requirement,
+            Origin::Carried => None,
+        }
+    }
+
+    const fn carried(&self) -> bool {
+        matches!(self.origin, Origin::Carried)
     }
 
     fn counts(&self) -> i64 {
@@ -200,7 +223,7 @@ enum Key<'a> {
 /// A multi-core R7 failure as one of its events observes it.
 #[derive(Clone, Copy)]
 enum Source<'a> {
-    Trial(&'a TrialId),
+    Trial(&'a TrialId, &'a TrialIntent),
     Carried(&'a TrialCarried),
 }
 
@@ -228,8 +251,9 @@ impl<'a> Attribution<'a> {
         let live = |trial: &'a TrialId| {
             self.intents
                 .get(trial)
-                .is_some_and(|intent| multi_core_r7(intent))
-                .then_some(Source::Trial(trial))
+                .copied()
+                .filter(|intent| multi_core_r7(intent))
+                .map(|intent| Source::Trial(trial, intent))
         };
         if let Payload::Failure(f) = &event.payload {
             return f.trial.as_ref().and_then(live);
@@ -247,7 +271,7 @@ impl<'a> Attribution<'a> {
     /// The failure `source` observes at `event`, recorded there when this is its first event.
     fn failure(&mut self, source: Source<'a>, event: &'a Event, phase: Option<Phase>) -> usize {
         let key = match source {
-            Source::Trial(trial) => Key::Trial(trial),
+            Source::Trial(trial, _) => Key::Trial(trial),
             Source::Carried(_) => Key::Carried(event.seq),
         };
         if let Some(&at) = self.keys.get(&key) {
@@ -255,37 +279,32 @@ impl<'a> Attribution<'a> {
         }
         let hours = self.hours(event.time);
         let failure = match source {
-            Source::Trial(trial) => {
-                let intent = self.intents.get(trial);
-                R7Failure {
-                    seq: event.seq,
-                    time: event.time,
-                    hours,
-                    phase,
-                    trial: Some(trial),
-                    carried: false,
-                    workload: intent.map(|intent| intent.workload),
-                    cores: intent.map(|intent| intent.cores).unwrap_or_default(),
-                    duration_s: intent.map_or(0, |intent| intent.duration_s),
-                    cycle: intent.and_then(|intent| intent.cycle),
-                    rerun: intent.is_some_and(|intent| intent.rerun),
+            Source::Trial(trial, intent) => R7Failure {
+                seq: event.seq,
+                time: event.time,
+                hours,
+                phase,
+                origin: Origin::Trial {
+                    trial,
+                    cycle: intent.cycle,
                     requirement: self.required.get(trial).copied(),
-                    backoffs: Vec::new(),
-                }
-            }
+                },
+                workload: Some(intent.workload),
+                cores: intent.cores,
+                duration_s: intent.duration_s,
+                rerun: intent.rerun,
+                backoffs: Vec::new(),
+            },
             Source::Carried(c) => R7Failure {
                 seq: event.seq,
                 time: event.time,
                 hours,
                 phase,
-                trial: None,
-                carried: true,
+                origin: Origin::Carried,
                 workload: c.class.workload,
                 cores: c.class.cores,
                 duration_s: c.class.duration_s,
-                cycle: None,
                 rerun: c.rerun,
-                requirement: None,
                 backoffs: Vec::new(),
             },
         };
@@ -407,7 +426,7 @@ pub(crate) fn totals(r: &R7Decisions<'_>) -> BTreeMap<Option<Phase>, PhaseTotals
     for f in r.failures() {
         let t = totals.entry(f.phase).or_default();
         t.failures += 1;
-        t.carried += u32::from(f.carried);
+        t.carried += u32::from(f.carried());
         t.charged += u32::from(!f.backoffs.is_empty());
     }
     for (_, b) in r.backoffs() {
@@ -469,8 +488,7 @@ pub(crate) fn render_decisions(table: &mut Table, r: &R7Decisions<'_>) {
             b.counts,
             f.name(),
             core_list(f.cores),
-            f.requirement
-                .map_or_else(|| "-".to_owned(), Required::label),
+            f.requirement().map_or_else(|| "-".to_owned(), Required::label),
             seq_list(b.causes),
             escape_text(&b.decision.reason)
         );
