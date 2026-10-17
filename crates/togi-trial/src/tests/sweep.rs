@@ -565,11 +565,16 @@ fn the_probe_reports_a_confined_scope_and_names_failures() {
                 }),
                 _ => None,
             });
-            assert!(matches!(
-                probe(&rig.env).await,
-                Err(Error::Probe(SystemdError::Exit { status, output }))
-                    if !status.success() && output.is_empty()
-            ));
+            let error = probe(&rig.env).await.unwrap_err();
+            assert!(
+                matches!(&error, Error::Probe(SystemdError::Exit { status, output })
+                    if !status.success() && output.is_empty()),
+                "{error:?}"
+            );
+            assert_eq!(
+                togi_machine::error_chain(&error),
+                "the preflight scope probe failed: exited with exit status: 1"
+            );
         })
         .await;
     });
