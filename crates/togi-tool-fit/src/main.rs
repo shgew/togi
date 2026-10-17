@@ -31,6 +31,10 @@ struct Cli {
     /// With --forward-only, leave the newest N sessions out of the check.
     #[arg(long, default_value_t = 0, requires = "forward_only")]
     seal: usize,
+    /// With --forward-only, also score these committed machine files, as one ensemble, on the same held-out
+    /// sessions beside the fit: each trial's probability is the mean over all of them. They are not fitted.
+    #[arg(long, num_args = 1.., value_name = "MACHINE", requires = "forward_only")]
+    reference_machine: Vec<PathBuf>,
     /// Fit all decisive facts to target-shared-voltage.json; in-sample only, not forward-validated.
     #[arg(
         long,
@@ -55,6 +59,7 @@ fn main() -> ExitCode {
         facts: cli.facts,
         out: cli.out,
         jobs: cli.jobs,
+        reference: cli.reference_machine,
         mode,
     };
     let mut stdout = std::io::stdout();

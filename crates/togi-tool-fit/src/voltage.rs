@@ -1,4 +1,5 @@
-//! The in-sample shared-voltage anchor: the 16-core rail model fitted to every decisive trial.
+//! The shared-voltage model of the fit: starting values from a sample's own request and clock telemetry,
+//! the prior, the named-core attribution term and the voltage coordinate search.
 
 use std::collections::BTreeMap;
 
@@ -6,14 +7,10 @@ use togi_facts::{Decisive, TrialClass};
 use togi_machine::{CcdId, CoreId, Regime, pick_workload, workloads};
 use togi_sim::definition::{SharedVoltageDef, VoltageCoreDef, VoltageWorkloadDef};
 use togi_sim::{MachineDefinition, Model};
-use togi_tool_modelcheck::Checker;
 use togi_tool_trialfacts::{Profile, TrialFact};
 
-use crate::error::Error;
-use crate::evidence::{aggregate, initial_config, load_of, regime_of, trial_class};
+use crate::evidence::{load_of, regime_of, trial_class};
 use crate::likelihood::Likelihood;
-use crate::search::fit;
-use crate::signals::fit_signals;
 
 const REFERENCE_MHZ: f64 = 5240.0;
 const CORES: usize = 16;
@@ -396,7 +393,9 @@ fn voltage_of(def: &mut MachineDefinition) -> Option<&mut SharedVoltageDef> {
 }
 
 impl Likelihood<'_> {
-    fn fit_voltage(&mut self) {
+    /// Fits the shared-voltage parameters: thresholds, then rate, margin and background, each minimizing
+    /// the shared augmented objective on the multi-core R7 observations.
+    pub(crate) fn fit_voltage(&mut self) {
         let indices = self.select(|o| o.regime() == Regime::R7 && o.class.loaded.len() > 1);
         if indices.is_empty() {
             return;
@@ -499,189 +498,4 @@ impl Likelihood<'_> {
             0.001,
         );
     }
-
-    /// Profiles the shared-voltage rate, then the background rate, inside the interval every original
-    /// group admits; holds the voltage geometry fixed. True when the machine passes the model check.
-    pub(crate) fn constrain_rate(&mut self, records: &[TrialFact]) -> Result<bool, Error> {
-        if self.constrain_time_rate(records, |v| &mut v.rate, 1e-5, 0.03)? {
-            return Ok(true);
-        }
-        self.constrain_time_rate(records, |v| &mut v.background_rate, 0.0, 0.001)
-    }
-
-    fn set_rate(&mut self, field: fn(&mut SharedVoltageDef) -> &mut f64, rate: f64) {
-        if let Some(v) = self.cfg.shared_voltage.as_mut() {
-            *field(v) = rate;
-        }
-        self.rebuild();
-    }
-
-    fn accepted(&self, checker: &Checker) -> bool {
-        self.model
-            .as_ref()
-            .is_some_and(|model| checker.accepts(model).unwrap_or(false))
-    }
-
-    pub(crate) fn constrain_time_rate(
-        &mut self,
-        records: &[TrialFact],
-        field: fn(&mut SharedVoltageDef) -> &mut f64,
-        minimum_rate: f64,
-        maximum_rate: f64,
-    ) -> Result<bool, Error> {
-        let Some(model) = &self.model else {
-            return Ok(false);
-        };
-        let checker = Checker::new(model, records)?;
-        if self.accepted(&checker) {
-            return Ok(true);
-        }
-        let original = self.cfg.shared_voltage.as_mut().map_or(0.0, |v| *field(v));
-        let (mut low, mut high) = (minimum_rate, maximum_rate);
-        let mut found = false;
-        for _ in 0..64 {
-            let mid = f64::midpoint(low, high);
-            self.set_rate(field, mid);
-            let Some(model) = &self.model else { break };
-            let groups = checker.groups(model)?;
-            let too_low = groups.iter().any(|g| g.k > g.interval.high);
-            let too_high = groups.iter().any(|g| g.k < g.interval.low);
-            if too_low && too_high {
-                break;
-            }
-            if !too_low && !too_high {
-                found = true;
-                break;
-            }
-            if mid.total_cmp(&low).is_eq() || mid.total_cmp(&high).is_eq() {
-                break;
-            }
-            if too_low {
-                low = mid;
-            } else {
-                high = mid;
-            }
-        }
-        if !found {
-            self.set_rate(field, original);
-            return Ok(false);
-        }
-        let seed = self.cfg.shared_voltage.as_mut().map_or(0.0, |v| *field(v));
-        let minimum = self.feasible_edge(&checker, field, (minimum_rate, seed), true);
-        let maximum = self.feasible_edge(&checker, field, (seed, maximum_rate), false);
-        self.set_rate(field, seed);
-        let mut guarded = Likelihood::new(self.cfg.clone(), self.obs, Some(&checker), self.named);
-        let all = guarded.all();
-        let mut best = (seed, guarded.score(&all));
-        let mut evaluate = |l: &mut Likelihood<'_>, rate: f64| {
-            l.set_rate(field, rate);
-            let candidate = l.score(&all);
-            if candidate < best.1 - crate::likelihood::IMPROVEMENT {
-                best = (rate, candidate);
-            }
-            candidate
-        };
-        evaluate(&mut guarded, minimum);
-        evaluate(&mut guarded, maximum);
-        let ratio = 0.618_033_988_749_894_9;
-        let (mut a, mut b) = (minimum, maximum);
-        let mut x = b - ratio * (b - a);
-        let mut y = a + ratio * (b - a);
-        let mut fx = evaluate(&mut guarded, x);
-        let mut fy = evaluate(&mut guarded, y);
-        for _ in 0..24 {
-            if fx < fy {
-                b = y;
-                y = x;
-                fy = fx;
-                x = b - ratio * (b - a);
-                fx = evaluate(&mut guarded, x);
-            } else {
-                a = x;
-                x = y;
-                fx = fy;
-                y = a + ratio * (b - a);
-                fy = evaluate(&mut guarded, y);
-            }
-        }
-        guarded.set_rate(field, best.0);
-        let accepted = guarded.accepted(&checker);
-        self.cfg = guarded.cfg;
-        self.model = guarded.model;
-        Ok(accepted)
-    }
-
-    /// The rate nearest `bounds`' far end that the checker still admits, by bisection: the lowest admitted
-    /// rate when `lowest`, else the highest.
-    fn feasible_edge(
-        &mut self,
-        checker: &Checker,
-        field: fn(&mut SharedVoltageDef) -> &mut f64,
-        bounds: (f64, f64),
-        lowest: bool,
-    ) -> f64 {
-        let (mut low, mut high) = bounds;
-        self.set_rate(field, if lowest { low } else { high });
-        if !self.accepted(checker) {
-            for _ in 0..52 {
-                let mid = f64::midpoint(low, high);
-                self.set_rate(field, mid);
-                if self.accepted(checker) == lowest {
-                    high = mid;
-                } else {
-                    low = mid;
-                }
-            }
-            return if lowest { high } else { low };
-        }
-        if lowest { low } else { high }
-    }
-}
-
-/// Fits the 16-core shared-voltage model to every decisive trial, in sample. A separate fitter from
-/// [`fit`]: anchoring must not silently change either the target-fit ensemble or the forward-chained model.
-pub(crate) fn fit_shared_voltage(records: &[TrialFact]) -> Result<(MachineDefinition, f64), Error> {
-    let legacy: Vec<TrialFact> = records
-        .iter()
-        .filter(|fact| {
-            trial_class(fact)
-                .is_none_or(|class| class.workload.regime() != Regime::R7 || class.loaded.len() < 2)
-        })
-        .cloned()
-        .collect();
-    let mut cfg = initial_config(records);
-    if !legacy.is_empty() {
-        cfg = fit(&legacy)?.0;
-    }
-    cfg.joint.clear();
-    cfg.ccd = None;
-    fit_signals(&mut cfg, records);
-    let mut shared = voltage_config(records);
-    sync_ycruncher(&mut shared);
-    cfg.shared_voltage = Some(shared);
-    let obs = aggregate(records);
-    let named = named_failures(records);
-    let mut l = Likelihood::new(cfg, &obs, None, Some(&named));
-    let all = l.all();
-    let mut best = l.cfg.clone();
-    let mut previous = f64::INFINITY;
-    for _ in 0..20 {
-        l.fit_voltage();
-        l.fit_hazard_shape(&all);
-        l.fit_flat();
-        l.fit_idle();
-        l.fit_limit_rate_shift(&all);
-        let score = l.score(&all);
-        if previous - score < 1e-5 {
-            break;
-        }
-        best = l.cfg.clone();
-        previous = score;
-    }
-    l.cfg = best;
-    l.rebuild();
-    l.constrain_rate(records)?;
-    Model::new(&l.cfg, 0)?;
-    let loss = l.raw_score(&all);
-    Ok((l.cfg, loss))
 }

@@ -210,22 +210,6 @@ fn write_ensemble(
             draft.sample.len(),
             draft.loss
         )?;
-        for (j, joint) in definition.joint.iter().enumerate() {
-            let half = (definition.cores / 2).max(1);
-            let ccd = joint.members.keys().next().map_or(0, |core| core / half);
-            let members: Vec<String> = joint
-                .members
-                .iter()
-                .map(|(core, offset)| format!("{core}:{offset}"))
-                .collect();
-            writeln!(
-                text,
-                "  CCD{ccd} joint{j}: members={} rate={}/s after={}s",
-                members.join(","),
-                joint.rate.unwrap_or(0.0),
-                joint.after_s
-            )?;
-        }
         report_signals(&mut text, &definition.model)?;
         fits.push(Fitted {
             sample: draft.sample,

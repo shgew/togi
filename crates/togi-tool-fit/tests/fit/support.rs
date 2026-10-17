@@ -66,7 +66,7 @@ pub(crate) fn fact(
     }
 }
 
-/// Three sessions of a four-core machine: solo R1 trials and R7 trials of each CCD at several depths, with
+/// Three sessions of a sixteen-core machine: solo R1 trials and R7 trials of each CCD at several depths, with
 /// failures that grow with depth by a fixed pattern.
 pub(crate) fn evidence() -> Vec<TrialFact> {
     let mut facts = Vec::new();
@@ -79,7 +79,7 @@ pub(crate) fn evidence() -> Vec<TrialFact> {
         for core in 0..4_i64 {
             for depth in [10, 20, 30, 40] {
                 for rep in 0..5 {
-                    let mut offsets = [0_i64; 4];
+                    let mut offsets = [0_i64; 16];
                     offsets[usize::try_from(core).unwrap()] = -depth;
                     let failing = (s * 31 + core * 17 + depth * 3 + rep * 13) % 10 < depth / 10;
                     seq += 1;
@@ -98,9 +98,9 @@ pub(crate) fn evidence() -> Vec<TrialFact> {
         for ccd in 0..2_i64 {
             for depth in [15, 20, 25, 30, 35, 40] {
                 for rep in 0..6 {
-                    let mut offsets = [0_i64; 4];
-                    offsets[usize::try_from(ccd * 2).unwrap()] = -depth;
-                    offsets[usize::try_from(ccd * 2 + 1).unwrap()] = -depth;
+                    let mut offsets = [0_i64; 16];
+                    offsets[usize::try_from(ccd * 8).unwrap()] = -depth;
+                    offsets[usize::try_from(ccd * 8 + 1).unwrap()] = -depth;
                     let failing = (s * 19 + ccd * 7 + depth + rep * 11) % 20 < depth / 5;
                     seq += 1;
                     facts.push(fact(
@@ -108,7 +108,7 @@ pub(crate) fn evidence() -> Vec<TrialFact> {
                         seq,
                         &offsets,
                         Regime::R7,
-                        &[ccd * 2, ccd * 2 + 1],
+                        &[ccd * 8, ccd * 8 + 1],
                         120,
                         failing,
                     ));

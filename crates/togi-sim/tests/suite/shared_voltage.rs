@@ -284,38 +284,88 @@ fn the_rail_replaces_loaded_core_hazards_joints_and_ccd_for_multi_core_r7_only()
 }
 
 #[test]
-fn unloaded_core_hazards_survive_the_rail_and_sources_keep_their_order() {
+fn the_rail_drops_unloaded_flat_and_idle_hazards_but_other_loads_keep_theirs() {
     let mut definition = committed_machine("shared-voltage.json");
     definition
         .shared_voltage
         .as_mut()
         .expect("a rail")
         .background_rate = 0.001;
-    definition
-        .core
-        .iter_mut()
-        .find(|core| core.id == 12)
-        .expect("core 12")
-        .flat = 0.01;
+    for (id, flat, idle) in [(2, 0.02, None), (12, 0.01, Some(-20))] {
+        let entry = definition
+            .core
+            .iter_mut()
+            .find(|core| core.id == id)
+            .expect("a core");
+        entry.flat = flat;
+        entry.idle = idle;
+    }
     let model = model(&definition);
     let regime = r7();
-    let sources = model
-        .sources(
-            &offsets(&[-35; 16]),
-            &load(regime, r7_workload(0), &[0, 1], SECONDS),
+    let workload = r7_workload(0);
+    let shallow = offsets(&[-35; 16]);
+    let mut moved = [-35; 16];
+    moved[2] = 0;
+    moved[12] = -45;
+    moved[13] = -45;
+    let moved = offsets(&moved);
+
+    let two = load(regime, workload, &[0, 1], SECONDS);
+    let seen = |profile| {
+        let sources = model.sources(profile, &two).expect("shape");
+        let pairs: Vec<_> = sources.iter().map(|s| (s.kind, s.rate)).collect();
+        (
+            pairs,
+            model.hazard(profile, &two).expect("shape"),
+            model.failure_probability(profile, &two).expect("shape"),
+            model
+                .r7_failure_share(profile, &two, core(0))
+                .expect("shape"),
         )
-        .expect("shape");
-    let kinds: Vec<_> = sources.iter().map(|source| source.kind).collect();
+    };
+    let (pairs, ..) = seen(&shallow);
+    let kinds: Vec<_> = pairs.iter().map(|(kind, _)| *kind).collect();
     assert_eq!(
         kinds,
         [
-            SourceKind::Idle(core(12)),
             SourceKind::Voltage(core(0)),
             SourceKind::Voltage(core(1)),
             SourceKind::Background,
-        ]
+        ],
+        "a multi-core R7 load on the rail has the rail's and the background's sources only"
     );
-    assert_eq!(sources[0].rate, 0.01);
+    assert_eq!(
+        seen(&shallow),
+        seen(&moved),
+        "unloaded offsets change nothing of a multi-core R7 load"
+    );
+
+    let kinds_of = |profile, load: &_| -> Vec<_> {
+        model
+            .sources(profile, load)
+            .expect("shape")
+            .iter()
+            .map(|s| (s.kind, s.rate))
+            .collect()
+    };
+    let single = load(regime, workload, &[0], SECONDS);
+    let before = kinds_of(&shallow, &single);
+    assert!(
+        before
+            .iter()
+            .any(|(kind, rate)| *kind == SourceKind::Idle(core(12)) && *rate >= 0.01),
+        "a single-core R7 load keeps the unloaded cores' mechanisms: {before:?}"
+    );
+    assert_ne!(before, kinds_of(&moved, &single));
+    let other = load(Regime::R2, workload, &[0, 1], SECONDS);
+    let before = kinds_of(&shallow, &other);
+    assert!(
+        before
+            .iter()
+            .any(|(kind, _)| *kind == SourceKind::Idle(core(12))),
+        "an R2 load keeps them too: {before:?}"
+    );
+    assert_ne!(before, kinds_of(&moved, &other));
 }
 
 #[test]

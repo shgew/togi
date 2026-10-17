@@ -1,5 +1,5 @@
-//! The in-sample shared-voltage anchor: one machine file fitted to every decisive trial and checked against
-//! the whole extract before it is written.
+//! The in-sample shared-voltage anchor: the unified fit of every decisive trial, checked against the whole
+//! extract before it is written. An anchor that fails the check is reported and never repaired.
 
 use std::io;
 use std::path::Path;
@@ -14,8 +14,8 @@ use crate::error::Error;
 use crate::evidence::{bios_context_def, decisive, is_failure, load_of, regime_of, trial_class};
 use crate::output::{DiskOutput, MachineOutput};
 use crate::paths::facts_reference;
+use crate::search::fit;
 use crate::signals::report_signals;
-use crate::voltage::fit_shared_voltage;
 
 const CORES: usize = 16;
 
@@ -36,7 +36,7 @@ pub fn shared_voltage_anchor_records(
     report: &mut impl io::Write,
     output: &mut impl MachineOutput,
 ) -> Result<(), Error> {
-    anchor_with(records, facts, out_dir, report, fit_shared_voltage, output)
+    anchor_with(records, facts, out_dir, report, fit, output)
 }
 
 pub(crate) fn anchor_with(

@@ -7,7 +7,9 @@ use crate::error::{EvidenceError, Problem};
 use crate::evidence::{aggregate, bootstrap, decisive, initial_config};
 
 fn valid() -> togi_tool_trialfacts::TrialFact {
-    fact(&[-50, 0], Regime::R1, &[0], 60, Decisive::Pass)
+    let mut fact = fact(&[-50, 0], Regime::R1, &[0], 60, Decisive::Pass);
+    fact.profile = super::profile(&[-50, 0]);
+    fact
 }
 
 #[test]
@@ -125,7 +127,7 @@ fn equal_profiles_and_classes_aggregate_with_their_counts_in_first_seen_order() 
     records.extend(repeated(&a, 2, 2));
     let got: Vec<_> = aggregate(&records)
         .iter()
-        .map(|o| (o.offset(0), o.n, o.k))
+        .map(|o| (o.profile.as_slice()[0].get(), o.n, o.k))
         .collect();
     assert_eq!(got, [(-10, 7, 4), (-20, 3, 1)]);
 }

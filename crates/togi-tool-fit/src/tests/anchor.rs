@@ -47,8 +47,6 @@ fn idle_failure() -> TrialFact {
 /// A shared-voltage machine whose multi-core R7 trials fail with probability exactly 1/2 at 120 s.
 fn anchor_config(records: &[TrialFact]) -> (MachineDefinition, f64) {
     let mut cfg = initial_config(records);
-    cfg.joint.clear();
-    cfg.ccd = None;
     cfg.model.past_limit_rate = 0.0;
     cfg.model.near_limit_rate = 0.0;
     let background = 0.000_123_456_789_012_345_6;
