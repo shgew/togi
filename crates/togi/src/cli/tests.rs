@@ -1,6 +1,7 @@
 use std::io::{self, Write};
 
 use clap::CommandFactory;
+use test_case::test_case;
 
 use std::ffi::OsString;
 use std::os::unix::ffi::OsStringExt;
@@ -45,14 +46,13 @@ fn the_definition_is_consistent() {
     Cli::command().debug_assert();
 }
 
-#[test]
-fn version_is_the_togi_version_on_stdout_only() {
-    for flag in ["--version", "-V"] {
-        let ran = togi(&[flag]);
-        assert_eq!(ran.exit, Exit::Ok);
-        assert_eq!(ran.out, format!("togi {}\n", togi_version::string()));
-        assert_eq!(ran.err, "");
-    }
+#[test_case("--version" ; "long flag")]
+#[test_case("-V" ; "short flag")]
+fn version_is_the_togi_version_on_stdout_only(flag: &str) {
+    let ran = togi(&[flag]);
+    assert_eq!(ran.exit, Exit::Ok);
+    assert_eq!(ran.out, format!("togi {}\n", togi_version::string()));
+    assert_eq!(ran.err, "");
 }
 
 #[test]
@@ -67,20 +67,16 @@ fn version_after_a_command_is_a_usage_error() {
     );
 }
 
-#[test]
-fn help_goes_to_stdout_and_exits_0() {
-    for args in [
-        &["--help"][..],
-        &["-h"],
-        &["help"],
-        &["completion", "--help"],
-        &["help", "completion"],
-    ] {
-        let ran = togi(args);
-        assert_eq!(ran.exit, Exit::Ok, "{args:?}");
-        assert!(ran.out.contains("Usage: togi"), "{args:?}: {}", ran.out);
-        assert_eq!(ran.err, "", "{args:?}");
-    }
+#[test_case(&["--help"] ; "long flag")]
+#[test_case(&["-h"] ; "short flag")]
+#[test_case(&["help"] ; "help command")]
+#[test_case(&["completion", "--help"] ; "command flag")]
+#[test_case(&["help", "completion"] ; "help for a command")]
+fn help_goes_to_stdout_and_exits_0(args: &[&str]) {
+    let ran = togi(args);
+    assert_eq!(ran.exit, Exit::Ok);
+    assert!(ran.out.contains("Usage: togi"), "{}", ran.out);
+    assert_eq!(ran.err, "");
 }
 
 #[test]
@@ -92,77 +88,58 @@ fn no_command_prints_the_wordmark_and_usage_to_stderr_and_exits_2() {
     assert!(ran.err.contains("Usage: togi"), "{}", ran.err);
 }
 
-#[test]
-fn state_dir_without_a_command_prints_the_wordmark_and_usage_to_stderr_and_exits_2() {
-    for args in [&["--state-dir", "/x"][..], &["--state-dir=/x"]] {
-        let ran = togi(args);
-        assert_eq!(ran.exit, Exit::Usage, "{args:?}");
-        assert_eq!(ran.out, "", "{args:?}");
-        assert!(ran.err.starts_with(BANNER), "{args:?}: {}", ran.err);
-        assert!(ran.err.contains("Usage: togi"), "{args:?}: {}", ran.err);
-        assert!(ran.err.contains("Commands:"), "{args:?}: {}", ran.err);
-    }
+#[test_case(&["--state-dir", "/x"] ; "separate value")]
+#[test_case(&["--state-dir=/x"] ; "attached value")]
+fn state_dir_without_a_command_prints_the_wordmark_and_usage_to_stderr_and_exits_2(args: &[&str]) {
+    let ran = togi(args);
+    assert_eq!(ran.exit, Exit::Usage);
+    assert_eq!(ran.out, "");
+    assert!(ran.err.starts_with(BANNER), "{}", ran.err);
+    assert!(ran.err.contains("Usage: togi"), "{}", ran.err);
+    assert!(ran.err.contains("Commands:"), "{}", ran.err);
 }
 
-#[test]
-fn usage_errors_exit_2_with_stderr_only() {
-    for (args, text) in [
-        (&["bogus"][..], "unrecognized subcommand 'bogus'"),
-        (&["--bogus"], "unexpected argument '--bogus'"),
-        (
-            &["--state-dir"],
-            "a value is required for '--state-dir <path>'",
-        ),
-        (&["completion"], "required arguments were not provided"),
-        (&["completion", "tcsh"], "invalid value 'tcsh'"),
-        (&["completion", "bash", "zsh"], "unexpected argument 'zsh'"),
-        (
-            &["completion", "--shell", "bash"],
-            "unexpected argument '--shell'",
-        ),
-    ] {
-        let ran = togi(args);
-        assert_eq!(ran.exit, Exit::Usage, "{args:?}");
-        assert_eq!(ran.out, "", "{args:?}");
-        assert!(ran.err.contains(text), "{args:?}: {}", ran.err);
-        assert!(ran.err.contains("--help"), "{args:?}: {}", ran.err);
-    }
+#[test_case(&["bogus"], "unrecognized subcommand 'bogus'" ; "unknown subcommand")]
+#[test_case(&["--bogus"], "unexpected argument '--bogus'" ; "unknown flag")]
+#[test_case(&["--state-dir"], "a value is required for '--state-dir <path>'" ; "state dir without a value")]
+#[test_case(&["completion"], "required arguments were not provided" ; "completion without a shell")]
+#[test_case(&["completion", "tcsh"], "invalid value 'tcsh'" ; "unknown shell")]
+#[test_case(&["completion", "bash", "zsh"], "unexpected argument 'zsh'" ; "two shells")]
+#[test_case(&["completion", "--shell", "bash"], "unexpected argument '--shell'" ; "shell flag")]
+fn usage_errors_exit_2_with_stderr_only(args: &[&str], text: &str) {
+    let ran = togi(args);
+    assert_eq!(ran.exit, Exit::Usage);
+    assert_eq!(ran.out, "");
+    assert!(ran.err.contains(text), "{}", ran.err);
+    assert!(ran.err.contains("--help"), "{}", ran.err);
 }
 
-#[test]
-fn config_is_rejected_with_the_scope_error_wherever_it_is_written() {
-    for args in [
-        &["--config", "c.json", "completion", "bash"][..],
-        &["--config=c.json", "completion", "bash"],
-        &[
-            "--state-dir",
-            "s",
-            "--config",
-            "c.json",
-            "completion",
-            "bash",
-        ],
-        &["completion", "bash", "--config", "c.json"],
-        &["completion", "--config=c.json", "bash"],
-        &["completion", "--config", "c.json", "bash"],
-        &["--config", "c.json"],
-        &["--config=c.json"],
-        &["--config"],
-        &["--config", "completion"],
-        &["--config=c.json", "--version"],
-        &["--config", "c.json", "--help"],
-        &["completion", "--config"],
-    ] {
-        let ran = togi(args);
-        assert_eq!(ran.exit, Exit::Usage, "{args:?}");
-        assert_eq!(ran.out, "", "{args:?}");
-        assert!(
-            ran.err
-                .starts_with("error: --config applies only to doctor, run and reset\n"),
-            "{args:?}: {}",
-            ran.err
-        );
-    }
+#[test_case(&["--config", "c.json", "completion", "bash"] ; "leading")]
+#[test_case(&["--config=c.json", "completion", "bash"] ; "leading attached")]
+#[test_case(
+    &["--state-dir", "s", "--config", "c.json", "completion", "bash"] ;
+    "after a state dir"
+)]
+#[test_case(&["completion", "bash", "--config", "c.json"] ; "trailing")]
+#[test_case(&["completion", "--config=c.json", "bash"] ; "between attached")]
+#[test_case(&["completion", "--config", "c.json", "bash"] ; "between")]
+#[test_case(&["--config", "c.json"] ; "without a command")]
+#[test_case(&["--config=c.json"] ; "attached without a command")]
+#[test_case(&["--config"] ; "without a value")]
+#[test_case(&["--config", "completion"] ; "command as the value")]
+#[test_case(&["--config=c.json", "--version"] ; "before version")]
+#[test_case(&["--config", "c.json", "--help"] ; "before help")]
+#[test_case(&["completion", "--config"] ; "trailing without a value")]
+fn config_is_rejected_with_the_scope_error_wherever_it_is_written(args: &[&str]) {
+    let ran = togi(args);
+    assert_eq!(ran.exit, Exit::Usage);
+    assert_eq!(ran.out, "");
+    assert!(
+        ran.err
+            .starts_with("error: --config applies only to doctor, run and reset\n"),
+        "{}",
+        ran.err
+    );
 }
 
 #[test]
@@ -188,60 +165,48 @@ fn moved(args: &[&str]) -> Vec<String> {
         .collect()
 }
 
-#[test]
-fn a_leading_config_moves_after_the_command_name() {
-    for (args, want) in [
-        (
-            &["togi", "--config", "c", "doctor"][..],
-            &["togi", "doctor", "--config", "c"][..],
-        ),
-        (
-            &["togi", "--config=c", "run", "--no-tui"],
-            &["togi", "run", "--config=c", "--no-tui"],
-        ),
-        (
-            &[
-                "togi",
-                "--state-dir",
-                "s",
-                "--config",
-                "c",
-                "reset",
-                "--all",
-            ],
-            &[
-                "togi",
-                "--state-dir",
-                "s",
-                "reset",
-                "--config",
-                "c",
-                "--all",
-            ],
-        ),
-        (
-            &["togi", "--config", "c", "--state-dir=s", "run"],
-            &["togi", "--state-dir=s", "run", "--config", "c"],
-        ),
-    ] {
-        assert_eq!(moved(args), want, "{args:?}");
-    }
+#[test_case(
+    &["togi", "--config", "c", "doctor"],
+    &["togi", "doctor", "--config", "c"] ;
+    "doctor"
+)]
+#[test_case(
+    &["togi", "--config=c", "run", "--no-tui"],
+    &["togi", "run", "--config=c", "--no-tui"] ;
+    "attached value"
+)]
+#[test_case(
+    &["togi", "--state-dir", "s", "--config", "c", "reset", "--all"],
+    &["togi", "--state-dir", "s", "reset", "--config", "c", "--all"] ;
+    "after a state dir"
+)]
+#[test_case(
+    &["togi", "--config", "c", "--state-dir=s", "run"],
+    &["togi", "--state-dir=s", "run", "--config", "c"] ;
+    "before an attached state dir"
+)]
+fn a_leading_config_moves_after_the_command_name(args: &[&str], want: &[&str]) {
+    assert_eq!(moved(args), want);
+}
+
+#[test_case(&["togi"] ; "no arguments")]
+#[test_case(&["togi", "doctor", "--config", "c"] ; "config already after the command")]
+#[test_case(&["togi", "--config", "c"] ; "config without a command")]
+#[test_case(&["togi", "--config"] ; "config without a value")]
+#[test_case(&["togi", "--config", "c", "--help"] ; "config before help")]
+#[test_case(&["togi", "--help", "--config", "c", "doctor"] ; "help before config")]
+#[test_case(&["togi", "--state-dir", "s", "doctor"] ; "no config")]
+fn other_arguments_are_left_as_they_are(args: &[&str]) {
+    assert_eq!(moved(args), args);
 }
 
 #[test]
-fn other_arguments_are_left_as_they_are() {
-    for args in [
-        &["togi"][..],
-        &["togi", "doctor", "--config", "c"],
-        &["togi", "--config", "c"],
-        &["togi", "--config"],
-        &["togi", "--config", "c", "--help"],
-        &["togi", "--help", "--config", "c", "doctor"],
-        &["togi", "--state-dir", "s", "doctor"],
-    ] {
-        assert_eq!(moved(args), args, "{args:?}");
-    }
+fn no_arguments_at_all_are_left_as_they_are() {
     assert!(config_after_command(Vec::new()).is_empty());
+}
+
+#[test]
+fn a_non_utf8_argument_is_left_as_it_is() {
     let non_utf8 = vec![
         OsString::from("togi"),
         OsString::from_vec(vec![0xff]),
@@ -261,16 +226,12 @@ fn a_bad_shell_lists_the_supported_ones() {
     );
 }
 
-#[test]
-fn state_dir_before_or_after_the_command_is_accepted() {
-    for args in [
-        &["--state-dir", "unused", "completion", "fish"][..],
-        &["completion", "fish", "--state-dir", "unused"],
-    ] {
-        let ran = togi(args);
-        assert_eq!(ran.exit, Exit::Ok, "{args:?}: {}", ran.err);
-        assert!(!ran.out.is_empty());
-    }
+#[test_case(&["--state-dir", "unused", "completion", "fish"] ; "before the command")]
+#[test_case(&["completion", "fish", "--state-dir", "unused"] ; "after the command")]
+fn state_dir_before_or_after_the_command_is_accepted(args: &[&str]) {
+    let ran = togi(args);
+    assert_eq!(ran.exit, Exit::Ok, "{args:?}: {}", ran.err);
+    assert!(!ran.out.is_empty());
 }
 
 #[test]
