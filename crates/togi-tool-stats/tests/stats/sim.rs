@@ -82,20 +82,29 @@ fn chain_machine() -> MachineDefinition {
 
 /// The events of a simulated session through its first clean cycle, over every reboot its crashes cause.
 pub(crate) fn hunting_session() -> Vec<Event> {
-    session(&hunting_machine())
+    session(&hunting_machine(), 1)
 }
 
 /// The events of a simulated eight-core session through its first clean cycle, whose R7 chains load
 /// partials and are re-derived after a backoff.
 pub(crate) fn chain_session() -> Vec<Event> {
-    session(&chain_machine())
+    session(&chain_machine(), 1)
 }
 
-fn session(definition: &MachineDefinition) -> Vec<Event> {
+/// The events of a simulated session of the committed bench machine `file` drawn from `seed`, through its
+/// first clean cycle.
+pub(crate) fn machine_session(file: &str, seed: u64) -> Vec<Event> {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tools/bench/machines")
+        .join(file);
+    session(&togi_sim::file::load(path).unwrap(), seed)
+}
+
+fn session(definition: &MachineDefinition, seed: u64) -> Vec<Event> {
     let simulator = Simulator::new(
-        Model::new(definition, 1).unwrap(),
+        Model::new(definition, seed).unwrap(),
         RunSettings {
-            seed: 1,
+            seed,
             ..RunSettings::default()
         },
     );

@@ -414,6 +414,30 @@ hazard 2.00/h
   ccd +2 short                         5x120s+1x300s  0.0645/0.1535   0.6065       7.3     0.30    1.0000     1.0000      7.3    0.30       2.7    0.09
 ```
 
+## Counterfactual re-derivation accounting
+
+`just stats --counterfactual` accounts a journal's R7 chain re-derivations ([ADR 0055](adr/0055-rederive-r7-chains-after-a-backoff.md)) under the three candidate rules of [#896](https://github.com/shgew/togi/issues/896)'s brief ([`tools/bench/research/896.md`](../tools/bench/research/896.md)). It is readiness tooling for that campaign: it reads one journal, never changes the tuner, and no number it prints is tuner evidence. Removing a derivation's trials from a journal is not what a tuner with that rule would have done, so every figure is an upper bound and the output says so.
+
+```sh
+just stats --state-dir <copied-state-dir> --counterfactual [--witnesses records.jsonl]
+```
+
+It folds the journal into the tuner event by event and attributes each `checking.chain` event and its trials as [`--chains`](reviewing.md#the-stats-tool-togi-tool-stats) does. Each candidate decides every derivation before the tuner folds it:
+
+- **coalesce** skips a re-derivation that a later derivation of the same cycle, step and CCD replaces at the same or an earlier part, as if repeated derivations were merged before the chain returned to the step.
+- **defer** skips a re-derivation of a step before the cycle's last R7 step, made before that step began, as if earlier steps' re-tests waited for it.
+- **tie** keeps a position's earlier set instead of a changed one when every core the earlier set idles requests within one count (`VOLTS_PER_COUNT`) of the CCD's highest request in the order the tuner derived the changed set from (`State::chain_order`); when that order is not the recorded one the case is unresolved. Later positions are re-derived from the kept set with the tuner's order and must match the recorded set to stay resolved.
+
+First derivations are always kept. A skipped derivation's seconds count only in a cycle that ends passed with every final chain class covered; the rest stay unresolved:
+
+- A derivation whose `source_seqs`, or whose re-derived order's sources, cite a skipped trial, and every position after one the candidate could not re-derive, are unresolved.
+- A skipped failing trial is reported as **delayed** when the step's final chain still holds its set (coalesce and defer) and as **lost** otherwise; from it on, every derivation and the cycles it and later ones end are unresolved, since the tuner's backoff would not have happened.
+- At each passed cycle end the coverage is counted by the tuner's evidence ledger (`State::evidence`) for every partial R7 part of `State::cycle_plan`, as the candidate holds the chain: each class's short and long requirements, summed over parts that share a class, at the cycle's ending checking profile and within the cycle's window. A pass the candidate skipped is no witness: needed passes fall back to skipped ones, which count as **required** seconds to run again, then to **unobserved** passes the journal does not have, also required at their duration.
+
+`avoidable_s` is the skipped seconds less the required seconds, and may be negative. Every chain trial second is kept, skipped or unresolved, so the three add up to the chain trial seconds; reruns belong to no cycle and are not counted. The **Candidates** table prints these totals per candidate with the avoidable hours and their fraction of the time from the session's first event to its first clean cycle's end (or its last event). **Skipped failures** lists each lost or delayed failure.
+
+`--witnesses FILE` writes the records as JSON Lines, tagged by `record`: `derivation` for each derivation a candidate does not keep (`verdict` `skipped` or `unresolved`, with `reason` `after_failure`, `source`, `diverged` or `order`, its trials and seconds); `failure` for each skipped failure; `cycle` for each cycle, with `status` (`covered`, `diverged`, `unidentified` when the final chain is unknown, `abandoned`, `open`), the ending `profile` and per class `needed` passes, the `witnesses`' and `rerun` passes' `trial.end` sequences, `unobserved` and, for a tie-kept set, `instead_of` the recorded one; and one `summary` per candidate.
+
 ## Research campaigns
 
 A research campaign is a finite run of experiments by an agent following one issue's brief. Only the owner starts one, naming the issue, the limits and the output directory; a brief, a readiness change or a scheduled issue is not authorization. This section owns the rules every campaign shares; a mode's program and an issue's brief add only their own.
