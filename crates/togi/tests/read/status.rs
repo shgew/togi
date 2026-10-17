@@ -76,7 +76,7 @@ fn a_refused_configuration_prints_its_field_value_and_range() {
 fn a_malformed_journal_line_prints_its_path_line_and_parser_cause() {
     let dir = session(Scenario::Between);
     let header = crate::support::lines(&dir).remove(0);
-    crate::support::write_journal(&dir, &format!("{header}\nnot an event\n"));
+    crate::support::write_journal(&dir, format!("{header}\nnot an event\n"));
     let ran = togi(&dir, &["status"]);
     assert_eq!(ran.status.code(), Some(1));
     assert_eq!(text(&ran.stdout), "");
