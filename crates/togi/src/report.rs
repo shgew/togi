@@ -95,7 +95,13 @@ pub fn unknown_event_message(
         ReadError::UnknownField { kind, field, .. } => {
             format!("unknown field {field:?} of a {kind} event")
         }
-        _ => return None,
+        ReadError::Io(_)
+        | ReadError::Decode { .. }
+        | ReadError::Utf8 { .. }
+        | ReadError::Gap { .. }
+        | ReadError::Foreign
+        | ReadError::FirstEvent { .. }
+        | ReadError::Cause { .. } => return None,
     };
     Some(format!(
         "{unknown} in journal written by {recorded} (schema {}, ruleset {}); this build, {current} (schema {}, ruleset {}), cannot safely modify it; install the build that wrote it",

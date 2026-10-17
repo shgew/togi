@@ -54,7 +54,9 @@ fn lexical(path: &Path) -> PathBuf {
             std::path::Component::ParentDir => {
                 resolved.pop();
             }
-            other => resolved.push(other),
+            other @ (std::path::Component::Prefix(_)
+            | std::path::Component::RootDir
+            | std::path::Component::Normal(_)) => resolved.push(other),
         }
     }
     resolved

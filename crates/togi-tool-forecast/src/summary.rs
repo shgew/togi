@@ -111,7 +111,9 @@ impl Metric {
     pub fn format(&self, value: f64) -> String {
         match self.kind {
             MetricKind::Hours => format!("{value:.2}"),
-            _ => value.to_string(),
+            MetricKind::Core(_) | MetricKind::Depth | MetricKind::Crashes | MetricKind::Hunts => {
+                value.to_string()
+            }
         }
     }
 
