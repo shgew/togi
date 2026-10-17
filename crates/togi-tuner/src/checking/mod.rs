@@ -21,6 +21,7 @@ use crate::{ClassKey, FoldError, Profile, RequirementKind, Topology, Window};
 pub(crate) use chains::{Node, R7Step};
 pub(crate) use reruns::Reruns;
 pub(crate) use schedule::{PartPlan, Quota, StepPlan};
+pub use schedule::{R7PartRole, r7_part_passes};
 
 /// A cycle that is open: the schedule its start captured, the R7 occurrences that began, and for
 /// each class of the schedule the live passes since the start that cover the checking profile.
