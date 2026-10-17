@@ -80,7 +80,7 @@ fn restore(driver: &mut Driver, originals: &[(CoreId, ObservedOffset)]) -> Vec<S
                 original.0, read.0
             )),
             Err(error) => {
-                failures.push(format!("read back core {core:02}: {}", error_chain(&error)))
+                failures.push(format!("read back core {core:02}: {}", error_chain(&error)));
             }
         }
     }
