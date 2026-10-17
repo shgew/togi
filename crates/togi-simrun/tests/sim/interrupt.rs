@@ -4,7 +4,7 @@ use std::num::NonZeroU32;
 use std::rc::Rc;
 
 use togi_config::Config;
-use togi_journal::fs::{Fault, FileKind, Op};
+use togi_journal::fs::{AppendPoint, AppendTrigger, Fault, FileKind, Op};
 use togi_journal::{
     Combination, CoreTransition, CycleEvent, DeepeningRound, Event, EventKind, Failure, HuntEnd,
     HuntGroup, HuntStart, MemFs, Outcome, Payload, ProfileChange, RoundEvent, Seq, TrialId,
@@ -438,11 +438,11 @@ impl Case {
     /// before the first append when `at` is 0. A write fault only keeps the already crashed boot from journaling more.
     fn lose_power_at_append(&self, bench: &Bench, at: usize) {
         let label = format!("{} {}", self.name, Interruption::Append(at).label());
-        let landed = Rc::new(Cell::new(false));
+        let trigger = AppendTrigger::new(self.prefix_len + at, AppendPoint::Landed);
         let writes_after = Rc::new(Cell::new(0_usize));
-        let (flag, writes) = (Rc::clone(&landed), Rc::clone(&writes_after));
+        let (landed, writes) = (trigger.clone(), Rc::clone(&writes_after));
         bench.sim.interrupt_smu(move |operation: &SmuOperation| {
-            if flag.get() && operation.op != SmuOp::Read {
+            if landed.fired() && operation.op != SmuOp::Read {
                 writes.set(writes.get() + 1);
             }
             Ok(())
@@ -455,17 +455,11 @@ impl Case {
         if at == 0 {
             bench.sim.power_loss();
         } else {
-            let (sim, fs, landed, mut appended) = (
-                bench.sim.clone(),
-                bench.fs.clone(),
-                Rc::clone(&landed),
-                0_usize,
-            );
-            input.observer = Some(Box::new(move |_| {
-                appended += 1;
-                if appended == at {
+            assert!(trigger.arm(&bench.fs, self.prefix_len));
+            let (sim, fs, trigger) = (bench.sim.clone(), bench.fs.clone(), trigger.clone());
+            input.observer = Some(Box::new(move |event| {
+                if trigger.lands(event) {
                     sim.power_loss();
-                    landed.set(true);
                     fs.inject(Fault::before(Op::Write, 1).named("events.jsonl"));
                 }
                 Observe::Continue
@@ -481,6 +475,11 @@ impl Case {
             ),
         };
         bench.fs.clear_faults();
+        assert_eq!(
+            trigger.disarm(&bench.fs),
+            at > 0,
+            "{label}: the selected append never landed"
+        );
         assert_eq!(
             bench.events().len(),
             self.prefix_len + at,
