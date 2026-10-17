@@ -182,7 +182,9 @@ pub(crate) fn snapshot(fs: &dyn Fs, root: &Path) -> Snapshot {
                     },
                 );
             }
-            kind => panic!("{}: unexpected {kind:?}", at.display()),
+            kind @ (FileKind::Symlink | FileKind::Other) => {
+                panic!("{}: unexpected {kind:?}", at.display())
+            }
         }
     }
     let mut seen = Snapshot::new();

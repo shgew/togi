@@ -141,9 +141,12 @@ fn a_run_that_goes_on_past_its_conclusion_scores_as_the_cycles_one_run_with_the_
     let recorded: Vec<_> = stopped.events()[..terminal]
         .iter()
         .rev()
-        .find_map(|event| match &event.payload {
-            Payload::ProfileChange(change) => Some(change.to),
-            _ => None,
+        .find_map(|event| {
+            if let Payload::ProfileChange(change) = &event.payload {
+                Some(change.to)
+            } else {
+                None
+            }
         })
         .unwrap()
         .iter()
@@ -154,9 +157,12 @@ fn a_run_that_goes_on_past_its_conclusion_scores_as_the_cycles_one_run_with_the_
     let baseline = stopped
         .events()
         .iter()
-        .find_map(|event| match &event.payload {
-            Payload::SessionBaseline(baseline) => Some(baseline.offsets),
-            _ => None,
+        .find_map(|event| {
+            if let Payload::SessionBaseline(baseline) = &event.payload {
+                Some(baseline.offsets)
+            } else {
+                None
+            }
         })
         .unwrap();
     assert_ne!(
