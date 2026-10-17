@@ -1317,6 +1317,38 @@ fn a_crash_beside_unconfirmed_containment_during_a_failed_report_is_withheld_as_
     });
 }
 
+#[test]
+fn a_crash_in_the_teardown_kernel_read_during_a_failed_report_withholds_the_journal_emergency() {
+    let mut rig = rigged(Bench::new(2));
+    rig.session.validated = Some(rig.session.host.validate_smu().unwrap());
+    rig.rigs.borrow_mut().result = Some(failing_with(Signal::ComputationError));
+    lose_read(&rig.log, 2, || Error::Crashed);
+    let mem = rig.bench.mem.clone();
+    rig.rigs.borrow_mut().after_wait =
+        Some(Rc::new(move || mem.inject(FsFault::before(Op::Write, 4))));
+    let touched = Rc::new(Cell::new(0_usize));
+    let count = touched.clone();
+    rig.bench.sim.interrupt_smu(move |_: &SmuOperation| {
+        count.set(count.get() + 1);
+        Ok(())
+    });
+    let error = trial(&mut rig).unwrap_err();
+    assert!(matches!(error, SessionError::Journal(_)), "{error:?}");
+    assert_eq!(rig.log.borrow().reads, 3);
+    assert!(ends(&rig.session).is_empty());
+    let before_close = touched.get();
+    let ended = rig.session.close(Err(error));
+    assert!(
+        matches!(
+            ended.emergency.as_ref().map(|outcome| &outcome.response),
+            Some(crate::Response::Withheld(crate::Withheld::Crashed))
+        ),
+        "{:?}",
+        ended.emergency
+    );
+    assert_eq!(touched.get(), before_close);
+}
+
 fn crash_during_a_failed_report(crash: impl FnOnce(&mut Rigging)) {
     let mut rig = rigged(Bench::new(2));
     rig.session.validated = Some(rig.session.host.validate_smu().unwrap());
