@@ -21,3 +21,7 @@ Review sees only gaps the change introduced or touched; an unchanged untested li
 ## Amendment (#918)
 
 The mechanism after the Rust cutover; the decision and its reasons are unchanged. `tools/cover` reads the new-side ranges of `git diff -U0` against the merge base for `*.rs` files and intersects them with a cargo-llvm-cov LCOV trace, where a line listed more than once counts as reached if any listing reached it. With no changed Rust lines it prints `No Rust lines changed since BASE.`; with none unreached, `Every changed Rust line the trace measures ran in a test since BASE.` The Consequences' last sentence no longer holds for Rust: a changed file the coverage build leaves out, or a changed item under a `cfg` predicate the host does not satisfy or cannot decide whose lines the trace does not measure, is printed as `path: not built for <host triple>` instead of nothing. Reviewers still judge those by reading them. The Go profile route remains for the retained Go tools.
+
+## Amendment (#633, #1038)
+
+The program is the `togi-tool-cover` crate, which keeps the LCOV route's flags, output, exit codes and refusals; the decision and its reasons are unchanged. The Go profile route is gone with the last Go code.

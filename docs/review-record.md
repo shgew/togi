@@ -27,7 +27,7 @@ No findings.
 
 - Base: <full base sha>
 - Files: `crates/togi-tuner/src/decide.rs`, `crates/togi-tuner/src/optimum.rs`
-- Excluded: `go.sum` (generated)
+- Excluded: `flake.lock` (generated)
 - Reviewers: reviewer-1 (<model>): both files
 - Coverage: 0 uncovered ranges.
 
