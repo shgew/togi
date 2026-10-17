@@ -170,7 +170,7 @@ pub(super) fn hunt_facts() -> HuntFacts {
             rerun_of: false,
             trial_number: 0,
         },
-        parked_zero: false,
+        parking: None,
         group_signals: Vec::new(),
     }
 }

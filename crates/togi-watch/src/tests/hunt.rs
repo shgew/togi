@@ -517,7 +517,7 @@ fn a_located_hunt_reruns_with_every_unloaded_core_at_zero() {
     let facts = crate::model::HuntFacts {
         started: None,
         cause: hunt_cause(carried_trial().into()),
-        parked_zero: true,
+        parking: None,
         group_signals: vec![(1, Signal::Stall)],
     };
     let view = HuntView {
@@ -774,4 +774,47 @@ fn a_parked_group_judges_its_members_and_not_the_parked_cores() {
             .any(|c| running.parked.contains(c.id) && !group.cores.contains(c.id)),
         "the group parks some cores"
     );
+}
+
+#[test]
+fn a_hunt_parks_held_kept_shallow_and_zero_cores_apart() {
+    let mut h = Hist::three();
+    h.facts.shapes.insert(
+        1,
+        HuntShape {
+            failing: offsets(&[-43, -45, -49, -49, -49, -49]),
+            parked: offsets(&[-43, -45, -49, -49, -10, 0]),
+        },
+    );
+    let mut hunt = plan(Vec::new());
+    hunt.candidates = set(&[3, 4, 5]);
+    let empty = CyclePlan {
+        number: None,
+        open: false,
+        steps: Vec::new(),
+        current: 0,
+        paused: false,
+    };
+    let facts = hunt_facts(&hunt, &empty, &h.facts, &h.journal);
+    let parking = facts
+        .parking
+        .as_ref()
+        .expect("the hunt's shape is recorded");
+    assert_eq!(parking.held, set(&[0, 1, 2]), "loaded cores at failing");
+    assert_eq!(parking.kept, set(&[3]), "a candidate at its failing offset");
+    assert_eq!(parking.zero, set(&[5]));
+    assert_eq!(parking.shallow, [(core(4), off(-10))]);
+    assert!(!facts.parked_at_zero(), "a kept core is not parked at 0");
+
+    h.facts.shapes.insert(
+        1,
+        HuntShape {
+            failing: offsets(&[-43, -45, -49, -49]),
+            parked: offsets(&[-43, -45, 0, 0]),
+        },
+    );
+    hunt.candidates = set(&[2, 3]);
+    let located = hunt_facts(&hunt, &empty, &h.facts, &h.journal);
+    assert!(located.parked_at_zero());
+    assert_eq!(located.parking.expect("shape").held, set(&[0, 1]));
 }

@@ -11,7 +11,7 @@ use crate::facts::{Facts, secs, trial_cores};
 use crate::history::Entry;
 use crate::model::{
     ComboView, Confirm, CoreState, CoreView, Count, CyclePlace, HuntCause, HuntFacts, HuntPlace,
-    RecoveryView, TrialView,
+    HuntShape, Parking, RecoveryView, TrialView,
 };
 
 #[derive(Debug)]
@@ -260,6 +260,26 @@ pub(crate) fn fit_hunt(trial: &mut TrialView, plan: &togi_tuner::HuntPlan) {
     }
 }
 
+/// Where a hunt's parked profile puts each core. A core parked at 0 is parked at 0 whatever it failed at; one
+/// parked at its failing offset is held, or kept when it is a candidate; the rest sit shallower than they failed.
+pub(crate) fn parking_of(shape: &HuntShape, candidates: CoreSet) -> Parking {
+    let mut parking = Parking::default();
+    for (core, parked) in shape.parked.iter() {
+        if parked == TargetOffset::ZERO {
+            parking.zero.insert(core);
+        } else if shape.failing.get(core) == Some(parked) {
+            if candidates.contains(core) {
+                parking.kept.insert(core);
+            } else {
+                parking.held.insert(core);
+            }
+        } else {
+            parking.shallow.push((core, parked));
+        }
+    }
+    parking
+}
+
 pub(crate) fn hunt_facts(
     plan: &togi_tuner::HuntPlan,
     cycle: &CyclePlan,
@@ -298,16 +318,14 @@ pub(crate) fn hunt_facts(
         cause.end = facts.ends.get(&intent.trial).cloned();
         cause.trial = Some(view);
     }
-    let parked_zero = facts.shapes.get(&plan.number).is_some_and(|shape| {
-        shape
-            .parked
-            .iter()
-            .all(|(core, offset)| shape.failing.get(core) == Some(offset) || offset.get() == 0)
-    });
+    let parking = facts
+        .shapes
+        .get(&plan.number)
+        .map(|shape| parking_of(shape, plan.candidates));
     HuntFacts {
         started: facts.hunt_started.get(&plan.number).copied(),
         cause,
-        parked_zero,
+        parking,
         group_signals: facts
             .group_signals
             .iter()

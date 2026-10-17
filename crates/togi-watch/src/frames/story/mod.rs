@@ -469,7 +469,7 @@ fn recover_story(scene: &Scene<'_>) -> Story {
             .started
             .is_some_and(|started| started >= recover.crash_at)
     }) {
-        let parked = parked_word(hunt.facts.parked_zero);
+        let parked = parked_word(hunt.facts.parked_at_zero());
         let candidates = core_ids(hunt.plan.candidates);
         return Story::new(
             format!("HUNT {}", hunt.plan.number),
@@ -586,7 +586,7 @@ fn split_words(scene: &Scene<'_>, hunt: HuntView<'_>, trial: &TrialView) -> Stri
     format!(
         "part of {} at its offsets, the rest {}",
         core_ids(hunt.plan.candidates),
-        parked_word(hunt.facts.parked_zero)
+        parked_word(hunt.facts.parked_at_zero())
     )
 }
 
