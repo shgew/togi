@@ -110,10 +110,46 @@ fn folded_count(n: usize) -> String {
     format!("{n} self-test {} passed", noun(n, "check"))
 }
 
-/// The rows of a profile entry whose message lists the cores it moved (`head: 00 -23 → 0, 01 -15 → 0`): the
-/// list wrapped onto continuation rows under the message column, breaking only between whole `core old → new`
-/// items. `None` when the entry is not such a list, or the head or an item is wider than the message column,
-/// which then takes one cut row.
+/// The tokens of a profile message's list, each a whole item that a row may not break: the cores a diff moved
+/// (`00 -23 → 0, 01 -15 → 0`) or the first profile recorded in full (`[00: -43, 01: -33] remark`), whose
+/// closing bracket stays on its last item and whose remark breaks between words. `None` for any other text.
+fn profile_tokens(list: &str) -> Option<Vec<String>> {
+    let with_commas = |items: &[&str]| -> Vec<String> {
+        items
+            .iter()
+            .enumerate()
+            .map(|(n, item)| {
+                if n + 1 < items.len() {
+                    format!("{item},")
+                } else {
+                    (*item).to_owned()
+                }
+            })
+            .collect()
+    };
+    let items: Vec<&str> = list.split(", ").collect();
+    if items.iter().all(|item| item.contains(" → ")) {
+        return Some(with_commas(&items));
+    }
+    let inner = list.strip_prefix('[')?;
+    let (body, remark) = inner.split_once(']')?;
+    let items: Vec<&str> = body.split(", ").collect();
+    if !items.iter().all(|item| {
+        item.split_once(": ")
+            .is_some_and(|(core, offset)| !core.is_empty() && !offset.is_empty())
+    }) {
+        return None;
+    }
+    let mut tokens = with_commas(&items);
+    tokens.first_mut()?.insert(0, '[');
+    tokens.last_mut()?.push(']');
+    tokens.extend(remark.split_whitespace().map(str::to_owned));
+    Some(tokens)
+}
+
+/// The rows of a profile entry whose message lists cores: the list wrapped onto continuation rows under the
+/// message column, breaking only between whole items. `None` when the entry is not such a list, or the head or
+/// an item is wider than the message column, which then takes one cut row.
 fn profile_rows(
     entry: &LogEntry,
     width: usize,
@@ -125,21 +161,13 @@ fn profile_rows(
     }
     let room = width.saturating_sub(LOG_PREFIX);
     let (head, list) = entry.msg.split_once(": ")?;
-    let items: Vec<&str> = list.split(", ").collect();
-    if !items.iter().all(|item| item.contains(" → ")) {
-        return None;
-    }
+    let tokens = profile_tokens(list)?;
     let mut lines: Vec<String> = Vec::new();
     let mut current = format!("{head}:");
     if display_width(&current) > room {
         return None;
     }
-    for (n, item) in items.iter().enumerate() {
-        let token = if n + 1 < items.len() {
-            format!("{item},")
-        } else {
-            (*item).to_owned()
-        };
+    for token in tokens {
         if display_width(&token) > room {
             return None;
         }
@@ -259,7 +287,7 @@ mod tests {
     use super::super::super::fit::{CUT_MARKER, cut_words, fit_clauses, line_width, plain};
     use super::super::super::footer::key_hints;
     use super::super::fixtures::at;
-    use super::{arrivals, body, rule_line};
+    use super::{LOG_PREFIX, arrivals, body, rule_line};
     use crate::history::{LOG_LIMIT, LogEntry};
     use crate::screen::{Colours, Log, Quit, View};
     use crate::tests::kit::seq;
@@ -388,6 +416,54 @@ mod tests {
             rebuilt.push(message);
         }
         assert_eq!(rebuilt.join(" "), msg);
+    }
+
+    #[test]
+    fn a_sixteen_core_first_profile_wraps_on_whole_items_and_invents_no_prior_offset() {
+        let items: Vec<String> = (0..16)
+            .map(|core| format!("{core:02}: -{}", 8 + core))
+            .collect();
+        let list = format!("[{}]", items.join(", "));
+        for (tag, msg, last) in [
+            ("profile applied", format!("profile applied: {list}"), ']'),
+            (
+                "profile restored",
+                format!("offsets restored before stopping: {list} (each core's baseline)"),
+                ')',
+            ),
+        ] {
+            let entries = [entry(1, at(1000), tag, &msg)];
+            let (page, _) = rows(&log(&entries), 160, 20, 0);
+            let listed: Vec<&String> = page[3..]
+                .iter()
+                .take_while(|row| !text_cells(row).is_empty())
+                .collect();
+            assert!(listed.len() >= 2, "{page:?}");
+            let mut rebuilt = Vec::new();
+            for (n, row) in listed.iter().enumerate() {
+                let text = text_cells(row);
+                let message: String = if n == 0 {
+                    text.chars().skip(LOG_PREFIX).collect()
+                } else {
+                    assert!(row.starts_with(&" ".repeat(LOG_PREFIX + 2)), "{row:?}");
+                    text.trim_start().to_owned()
+                };
+                assert!(!message.contains(CUT_MARKER), "{message:?}");
+                assert!(!message.contains('→'), "{message:?}");
+                rebuilt.push(message);
+            }
+            assert_eq!(rebuilt.join(" "), msg);
+            for row in &rebuilt[..rebuilt.len() - 1] {
+                assert!(
+                    row.ends_with(',') || row.ends_with(']') || row.ends_with("baseline)"),
+                    "a row ends on a whole item: {row:?}"
+                );
+            }
+            assert!(
+                rebuilt.last().is_some_and(|row| row.ends_with(last)),
+                "{rebuilt:?}"
+            );
+        }
     }
 
     #[test]
