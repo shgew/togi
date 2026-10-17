@@ -751,7 +751,11 @@ fn an_unattributed_hold_shows_only_the_cores_its_hunt_would_search() {
     j.decide(action);
     let shown = j.run().bios_profile();
     assert_eq!(
-        shown.unconfirmed.iter().map(|mark| mark.core).collect::<Vec<_>>(),
+        shown
+            .unconfirmed
+            .iter()
+            .map(|mark| mark.core)
+            .collect::<Vec<_>>(),
         [core(1)],
         "core 00 passed a full cycle at its offset, so the hunt would not search it"
     );
