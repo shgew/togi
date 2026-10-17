@@ -390,6 +390,29 @@ fn an_undeclared_machine_checks_each_recorded_context_separately() {
 }
 
 #[test]
+fn contexts_order_by_their_boost_limit_as_text() {
+    let two = model(&machine(0.0));
+    let boosted = |boost_limit_mhz: u32| BiosContext {
+        boost_limit_mhz,
+        ..context("board")
+    };
+    let mut records = Vec::new();
+    for (boost, seqs) in [(5700, 1..=10), (570, 11..=20), (10_000, 21..=30)] {
+        records.extend(seqs.map(|seq| {
+            let mut record = fact(seq, &[-10, 0], &[0], 90, Decisive::Pass);
+            record.context = Some(boosted(boost));
+            record
+        }));
+    }
+    let groups = Checker::new(&two, &records).unwrap().groups(&two).unwrap();
+    let boosts: Vec<_> = groups
+        .iter()
+        .map(|group| group.context.as_ref().unwrap().boost_limit_mhz)
+        .collect();
+    assert_eq!(boosts, [10_000, 570, 5700]);
+}
+
+#[test]
 fn a_failed_extract_read_is_reported_with_its_path() {
     let mut machine = machine(0.0);
     machine["facts"] = json!("missing.jsonl.gz");

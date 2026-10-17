@@ -1727,6 +1727,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "test-case",
  "thiserror",
  "togi-trialfiles",
 ]
@@ -1806,6 +1807,7 @@ dependencies = [
  "jiff",
  "serde_json",
  "tempfile",
+ "test-case",
  "thiserror",
  "togi-config",
  "togi-defect",
@@ -2115,6 +2117,7 @@ dependencies = [
  "proptest",
  "serde",
  "serde_json",
+ "test-case",
  "thiserror",
 ]
 
