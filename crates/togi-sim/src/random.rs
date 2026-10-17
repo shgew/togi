@@ -144,7 +144,9 @@ mod tests {
     fn a_stream_repeats_for_the_same_arguments() {
         let mut a = stream(7, Domain::Core, &[1, 2, 3]);
         let mut b = stream(7, Domain::Core, &[1, 2, 3]);
-        assert!((0..16).all(|_| a.next_u64() == b.next_u64()));
+        let first: [u64; 16] = std::array::from_fn(|_| a.next_u64());
+        let second: [u64; 16] = std::array::from_fn(|_| b.next_u64());
+        assert_eq!(first, second);
     }
 
     #[test]

@@ -28,3 +28,7 @@ A fix can reach CI with a failure that only the gate's other checks (the full su
 The mechanism after the Rust cutover; the decision and its reasons are unchanged. `just push-fix` runs `nix fmt`, `just lint` and `go test` on the retained Go tools' packages changed since the last pushed head, then `just test` on the Rust crates changed since then, instead of `just gate`. `just test` runs `-p <crate>` for each changed crate, and the whole workspace (`--workspace`) when `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml`, `clippy.toml`, `.config/nextest.toml` or `.cargo/config.toml` changed; a fix that changed no crate runs no Rust test. A crate that depends on a touched crate is not retested locally, and `just lint` still covers the whole workspace, including the cross-Darwin clippy. The Consequences' mention of `-race` describes the Go gate; ADR 0062 records that Rust has none. The rule for `just check` on a Mac was removed by [ADR 0061](0061-no-macos-ci.md).
 
 The Nushell board's scripts, tests and fixtures live under `tools/board/`. A change there also runs `just board-test` on the review-fix path; `just lint` checks its syntax on every fix. A change under `tools/sql/`, the `just sql` views, runs `just sql-test` there the same way.
+
+## Amendment (#633, #1038)
+
+With the last Go tool gone, `just push-fix` runs no `go test`: it runs `nix fmt`, `just lint`, `just test` on the changed crates and the Nushell and SQL tests as above. The decision and its reasons are unchanged.
