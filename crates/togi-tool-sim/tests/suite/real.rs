@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
+use test_case::test_case;
 use togi_tool_sim::{Run, Split, Suite};
 
 pub(crate) fn suite_path() -> PathBuf {
@@ -39,52 +40,43 @@ fn the_suite_expands_to_two_hundred_twenty_runs_split_evenly() {
 }
 
 #[test]
-fn every_scenario_has_its_declared_seeds() {
+fn the_suite_has_eleven_scenarios() {
     let runs = real_runs();
-    let per_scenario = [
-        ("default", 24),
-        ("target", 18),
-        ("flat-hazard", 4),
-        ("late-onset", 4),
-        ("idle-limit", 4),
-        ("misleading-mce", 4),
-        ("target-nonmember-mce", 4),
-        ("shared-voltage", 12),
-        ("target-shared-voltage", 12),
-        ("target-r7-vf-boost", 12),
-        ("target-r7-request-gap", 12),
-    ];
-    let scenarios: Vec<&str> = runs
+    let scenarios: BTreeSet<&str> = runs.iter().map(|run| run.scenario.as_str()).collect();
+    assert_eq!(scenarios.len(), 11, "{scenarios:?}");
+}
+
+#[test_case("default", 24)]
+#[test_case("target", 18)]
+#[test_case("flat-hazard", 4)]
+#[test_case("late-onset", 4)]
+#[test_case("idle-limit", 4)]
+#[test_case("misleading-mce", 4)]
+#[test_case("target-nonmember-mce", 4)]
+#[test_case("shared-voltage", 12)]
+#[test_case("target-shared-voltage", 12)]
+#[test_case("target-r7-vf-boost", 12)]
+#[test_case("target-r7-request-gap", 12)]
+fn every_scenario_has_its_declared_seeds(name: &str, seeds: usize) {
+    let runs = real_runs();
+    assert_eq!(count(&runs, name, Split::Dev), seeds, "dev");
+    assert_eq!(count(&runs, name, Split::Holdout), seeds, "holdout");
+    let dev: Vec<u64> = runs
         .iter()
-        .map(|run| run.scenario.as_str())
-        .collect::<BTreeSet<_>>()
-        .into_iter()
+        .filter(|run| run.scenario == name && run.split == Split::Dev)
+        .map(|run| run.seed)
         .collect();
-    assert_eq!(scenarios.len(), per_scenario.len());
-    for (name, seeds) in per_scenario {
-        assert_eq!(count(&runs, name, Split::Dev), seeds, "{name} dev");
-        assert_eq!(count(&runs, name, Split::Holdout), seeds, "{name} holdout");
-        let dev: Vec<u64> = runs
-            .iter()
-            .filter(|run| run.scenario == name && run.split == Split::Dev)
-            .map(|run| run.seed)
-            .collect();
-        assert_eq!(
-            dev,
-            (1..=seeds as u64).collect::<Vec<_>>(),
-            "{name} dev seeds"
-        );
-        let holdout: Vec<u64> = runs
-            .iter()
-            .filter(|run| run.scenario == name && run.split == Split::Holdout)
-            .map(|run| run.seed)
-            .collect();
-        assert_eq!(
-            holdout,
-            (101..=100 + seeds as u64).collect::<Vec<_>>(),
-            "{name} holdout seeds"
-        );
-    }
+    assert_eq!(dev, (1..=seeds as u64).collect::<Vec<_>>(), "dev seeds");
+    let holdout: Vec<u64> = runs
+        .iter()
+        .filter(|run| run.scenario == name && run.split == Split::Holdout)
+        .map(|run| run.seed)
+        .collect();
+    assert_eq!(
+        holdout,
+        (101..=100 + seeds as u64).collect::<Vec<_>>(),
+        "holdout seeds"
+    );
 }
 
 #[test]
