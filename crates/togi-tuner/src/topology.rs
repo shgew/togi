@@ -18,7 +18,7 @@ pub enum TopologyError {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Topology {
     order: Vec<CoreId>,
-    ccd: PerCore<CcdId>,
+    ccd: PerCore<Option<CcdId>>,
     ccds: Vec<(CcdId, CoreSet)>,
     all: CoreSet,
     parts: Vec<CoreSet>,
@@ -36,7 +36,7 @@ impl Topology {
             if !all.insert(info.core) {
                 return Err(TopologyError::DuplicateCore(info.core));
             }
-            ccd.set(info.core, info.ccd);
+            ccd.set(info.core, Some(info.ccd));
             by_ccd.entry(info.ccd).or_default().insert(info.core);
         }
         if by_ccd.len() > MAX_CCDS {
@@ -63,7 +63,7 @@ impl Topology {
     }
 
     pub fn ccd_of(&self, core: CoreId) -> Option<CcdId> {
-        self.ccd.get(core)
+        self.ccd.get(core).flatten()
     }
 
     /// The CCDs in ascending order with their cores.

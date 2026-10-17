@@ -1,7 +1,7 @@
 use std::error::Error as _;
 use std::io;
 
-use togi_machine::{CoreId, CoreInfo, CoreRank, CpuId};
+use togi_machine::{CcdId, CoreId, CoreInfo, CoreRank, CpuId};
 
 use super::support::Tree;
 use crate::ranking::RankingError;
@@ -9,8 +9,8 @@ use crate::ranking::RankingError;
 fn core(id: i64, cpus: &[u16]) -> CoreInfo {
     CoreInfo {
         core: CoreId::new(id).unwrap(),
-        cpus: cpus.iter().copied().map(CpuId).collect(),
-        ..CoreInfo::default()
+        ccd: CcdId::new(0).unwrap(),
+        cpus: cpus.iter().copied().map(CpuId::from).collect(),
     }
 }
 
@@ -55,7 +55,7 @@ fn a_missing_file_ends_the_read_and_keeps_the_ranks_before_it() {
     assert_eq!(partial.value, [rank(0, 125)]);
     let error = source_of(&partial);
     assert!(
-        matches!(error, RankingError::Read { cpu: CpuId(8), .. }),
+        matches!(error, RankingError::Read { cpu, .. } if *cpu == CpuId::from(8)),
         "{error:?}"
     );
     assert_eq!(

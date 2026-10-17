@@ -326,13 +326,13 @@ mod tests {
         let late = 1 + repeats;
         let mut r7: BTreeMap<usize, R7Step> = BTreeMap::new();
         let mut started = R7Step::new(seq(5));
-        started.record(CcdId(0), partial(profile), Some(&profile));
+        started.record(CcdId::new(0).unwrap(), partial(profile), Some(&profile));
         r7.insert(late, started);
         let mut plans = build(config, topo, &steps, &r7);
         assert_eq!(plans[1].workload, plans[late].workload);
 
         let mut early = R7Step::new(seq(4));
-        early.record(CcdId(0), partial(profile), Some(&profile));
+        early.record(CcdId::new(0).unwrap(), partial(profile), Some(&profile));
         r7.insert(1, early);
         let reached = dirty(&plans, &[1]);
         let expected: Vec<usize> = (0..steps.len())

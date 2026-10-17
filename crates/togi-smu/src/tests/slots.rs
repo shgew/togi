@@ -60,7 +60,8 @@ fn full_mapping_writes_every_core_to_its_slot(cores: usize, fuse: u32, ccd: u32,
             TargetOffset::clamped(-10),
         )
         .unwrap();
-        let want = u32::from(info.ccd.0) << 28 | (u32::from(info.core.get()) % 8) << 20 | 0xfff6;
+        let want =
+            u32::from(info.ccd.get()) << 28 | (u32::from(info.core.get()) % 8) << 20 | 0xfff6;
         assert_eq!(fake.commands().last(), Some(&(Command::SetOffset, want)));
     }
 }
@@ -129,7 +130,7 @@ fn slot_identity_preflight_accepts_the_full_topology() {
         .map(|info| {
             (
                 Command::ReadOffset,
-                u32::from(info.ccd.0) << 28 | (u32::from(info.core.get()) % 8) << 20,
+                u32::from(info.ccd.get()) << 28 | (u32::from(info.core.get()) % 8) << 20,
             )
         })
         .collect();
@@ -368,13 +369,13 @@ fn slot_error_details_name_every_offender() {
     let error = SlotError::CcdIdentity(vec![
         Misplaced {
             core: super::fixture::core(9),
-            ccd: CcdId(0),
-            want: CcdId(1),
+            ccd: CcdId::new(0).unwrap(),
+            want: CcdId::new(1).unwrap(),
         },
         Misplaced {
             core: super::fixture::core(3),
-            ccd: CcdId(1),
-            want: CcdId(0),
+            ccd: CcdId::new(1).unwrap(),
+            want: CcdId::new(0).unwrap(),
         },
     ]);
     assert_eq!(
@@ -382,8 +383,8 @@ fn slot_error_details_name_every_offender() {
         "core IDs disagree with their CCD (core ID / 8): core 09 on CCD0, want CCD1; core 03 on CCD1, want CCD0"
     );
     let siblings = SlotError::Siblings(vec![
-        (3, vec![(CpuId(3), 20), (CpuId(19), 21)]),
-        (5, vec![(CpuId(5), 20), (CpuId(21), 21)]),
+        (3, vec![(CpuId::from(3), 20), (CpuId::from(19), 21)]),
+        (5, vec![(CpuId::from(5), 20), (CpuId::from(21), 21)]),
     ]);
     assert_eq!(
         siblings.to_string(),

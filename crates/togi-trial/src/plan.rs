@@ -150,8 +150,8 @@ mod tests {
         (0..4)
             .map(|n| CoreInfo {
                 core: core(n),
-                ccd: CcdId(n / 2),
-                cpus: vec![CpuId(u16::from(n)), CpuId(u16::from(n) + 8)],
+                ccd: CcdId::try_from(n / 2).unwrap(),
+                cpus: vec![CpuId::from(u16::from(n)), CpuId::from(u16::from(n) + 8)],
             })
             .collect()
     }
@@ -163,7 +163,7 @@ mod tests {
             workload: pick_workload(regime, 0).id(),
             condition: Condition::Alone,
             cores: cores.iter().map(|&n| core(n)).collect(),
-            cpus: cpus.iter().map(|&n| CpuId(n)).collect(),
+            cpus: cpus.iter().map(|&n| CpuId::from(n)).collect(),
             duration: Duration::from_secs(10),
             index: 0,
             seed: 7,
@@ -177,7 +177,7 @@ mod tests {
         assert_eq!(plan.instances.len(), 1);
         assert_eq!(plan.instances[0].name, InstanceName::Work);
         assert_eq!(plan.instances[0].core, core(1));
-        assert_eq!(plan.instances[0].cpus, [CpuId(1), CpuId(9)]);
+        assert_eq!(plan.instances[0].cpus, [CpuId::from(1), CpuId::from(9)]);
         assert_eq!(plan.load, Load::Continuous);
     }
 
@@ -186,7 +186,7 @@ mod tests {
         let plan = TrialPlan::build(&spec(Regime::R7, &[2, 0], &[2, 0]), &topology()).unwrap();
         let names: Vec<_> = plan.instances.iter().map(|i| i.name.dir_name()).collect();
         assert_eq!(names, ["c02", "c00"]);
-        assert_eq!(plan.instances[1].cpus, [CpuId(0)]);
+        assert_eq!(plan.instances[1].cpus, [CpuId::from(0)]);
         assert_eq!(plan.load, Load::Continuous);
     }
 
@@ -250,7 +250,7 @@ mod tests {
         );
         assert_eq!(
             TrialPlan::build(&spec(Regime::R1, &[0], &[1]), &topo).unwrap_err(),
-            InvalidTrial::ForeignCpu(CpuId(1))
+            InvalidTrial::ForeignCpu(CpuId::from(1))
         );
         assert_eq!(
             TrialPlan::build(&spec(Regime::R1, &[0, 1], &[1]), &topo).unwrap_err(),
@@ -263,7 +263,7 @@ mod tests {
         );
         assert_eq!(
             TrialPlan::build(&spec(Regime::R5, &[1], &[1, 8]), &topo).unwrap_err(),
-            InvalidTrial::ForeignCpu(CpuId(8)),
+            InvalidTrial::ForeignCpu(CpuId::from(8)),
             "a CPU of another core is refused for the one assigned core"
         );
         assert_eq!(

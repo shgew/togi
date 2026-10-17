@@ -46,7 +46,7 @@ fn sample() -> Vec<TrialFact> {
         .into_iter()
         .collect();
     telemetry.top_requesters = set(&[1]);
-    telemetry.ccd_mhz = BTreeMap::from([(CcdId(0), 4800)]);
+    telemetry.ccd_mhz = BTreeMap::from([(CcdId::new(0).unwrap(), 4800)]);
     let mut idle = fact(FIRST, 9, &[-10, -20], crash(None));
     idle.class = Class::Idle {
         loaded: set(&[0, 1]),

@@ -97,8 +97,8 @@ mod cached_errors {
     fn topology() -> Vec<CoreInfo> {
         vec![CoreInfo {
             core: CoreId::new(0).unwrap(),
-            ccd: CcdId(0),
-            cpus: vec![CpuId(2)],
+            ccd: CcdId::new(0).unwrap(),
+            cpus: vec![CpuId::from(2)],
         }]
     }
 
@@ -109,7 +109,7 @@ mod cached_errors {
             workload: pick_workload(Regime::R1, 0).id(),
             condition: Condition::Alone,
             cores: vec![CoreId::new(0).unwrap()],
-            cpus: vec![CpuId(2)],
+            cpus: vec![CpuId::from(2)],
             duration: Duration::from_secs(600),
             index: 0,
             seed: 1,

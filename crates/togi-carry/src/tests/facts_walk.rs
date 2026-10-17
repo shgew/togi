@@ -369,7 +369,12 @@ fn telemetry_failure(source: &mut Source, recorded: bool) -> togi_journal::Seq {
     if recorded {
         end.voltage_requests_v = [(core(0), 1.125), (core(1), 1.25)].into_iter().collect();
         end.top_requesters = set(&[0, 1]);
-        end.ccd_mhz = [(CcdId(4), 4800), (CcdId(9), 4900)].into_iter().collect();
+        end.ccd_mhz = [
+            (CcdId::new(4).unwrap(), 4800),
+            (CcdId::new(9).unwrap(), 4900),
+        ]
+        .into_iter()
+        .collect();
     }
     source.add(end)
 }
@@ -390,7 +395,12 @@ fn copied_telemetry_dedup_prefix() {
         let expected = recorded.then(|| Telemetry {
             voltage_requests_v: [(core(0), 1.125), (core(1), 1.25)].into_iter().collect(),
             top_requesters: set(&[0, 1]),
-            ccd_mhz: [(CcdId(4), 4800), (CcdId(9), 4900)].into_iter().collect(),
+            ccd_mhz: [
+                (CcdId::new(4).unwrap(), 4800),
+                (CcdId::new(9).unwrap(), 4900),
+            ]
+            .into_iter()
+            .collect(),
         });
         assert_eq!(*telemetry, expected);
         assert!(matches!(

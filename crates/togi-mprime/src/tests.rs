@@ -25,7 +25,7 @@ fn executable(name: &'static str, path: &Path) -> Result<(), Error> {
 }
 
 fn cpus(ids: &[u16]) -> Vec<CpuId> {
-    ids.iter().map(|&id| CpuId(id)).collect()
+    ids.iter().map(|&id| CpuId::from(id)).collect()
 }
 
 fn workload(base: &str) -> &'static Workload {

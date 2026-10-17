@@ -274,7 +274,7 @@ mod tests {
     /// A machine check as the startup or stop kernel boundary records it: between trials, no trial's.
     fn mce() -> Payload {
         Mce {
-            cpu: CpuId(0),
+            cpu: CpuId::from(0),
             core: Some(core(0)),
             bank: 0,
             bank_type: BankType::LoadStore,

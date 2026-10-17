@@ -409,7 +409,7 @@ impl Backend for Helper {
     }
 
     fn plan(&self, _: &Workload, _: &Path, cpus: &[togi_machine::CpuId]) -> Result<Plan, Error> {
-        let cpu = cpus.first().map_or(0, |cpu| cpu.0);
+        let cpu = cpus.first().map_or(0, |cpu| cpu.get());
         let mode = if self.mode.starts_with("escape") {
             let from = cpu;
             let to = allowed_cpus()
@@ -436,7 +436,7 @@ impl Backend for Helper {
         if line.contains("COMPUTE ERROR") {
             Line::ComputationError
         } else if let Some(cpu) = line.strip_prefix("AFFINITY:") {
-            Line::AffinityError(cpu.parse().ok().map(CpuId))
+            Line::AffinityError(cpu.parse::<u16>().ok().map(CpuId::from))
         } else if line.starts_with("ok") {
             if let Some(cancelling) = &self.cancelling
                 && !cancelling.fired.swap(true, Ordering::SeqCst)
@@ -465,13 +465,13 @@ fn topology() -> Vec<togi_machine::CoreInfo> {
     vec![
         togi_machine::CoreInfo {
             core: core(0),
-            ccd: togi_machine::CcdId(0),
-            cpus: vec![CpuId(first)],
+            ccd: togi_machine::CcdId::new(0).unwrap(),
+            cpus: vec![CpuId::from(first)],
         },
         togi_machine::CoreInfo {
             core: core(1),
-            ccd: togi_machine::CcdId(0),
-            cpus: vec![CpuId(second)],
+            ccd: togi_machine::CcdId::new(0).unwrap(),
+            cpus: vec![CpuId::from(second)],
         },
     ]
 }
@@ -521,14 +521,16 @@ fn spec(regime: Regime, cores: &[u8], duration: Duration) -> togi_machine::Trial
         Regime::R6 | Regime::R7 => cores
             .iter()
             .map(|&n| {
-                CpuId(if n == 0 {
+                CpuId::from(if n == 0 {
                     cpus[0]
                 } else {
                     cpus.get(1).copied().unwrap_or(cpus[0])
                 })
             })
             .collect(),
-        Regime::R1 | Regime::R2 | Regime::R3 | Regime::R4 | Regime::R5 => vec![CpuId(cpus[0])],
+        Regime::R1 | Regime::R2 | Regime::R3 | Regime::R4 | Regime::R5 => {
+            vec![CpuId::from(cpus[0])]
+        }
     };
     spec
 }
@@ -681,7 +683,7 @@ fn real_process_a_helper_that_pins_itself_elsewhere_is_an_escape() {
     let mut escaping = runner("escape", false, timing(), dir.path());
     let outcome = run(&mut escaping, spec(Regime::R1, &[0], secs(10)));
     outcome.assert_clean("escape");
-    assert_eq!(outcome.result.escaped, [CpuId(allowed_cpus()[1])]);
+    assert_eq!(outcome.result.escaped, [CpuId::from(allowed_cpus()[1])]);
     assert_eq!(outcome.result.failure, None);
 }
 
@@ -730,7 +732,7 @@ fn real_process_affinity_and_computation_errors_beat_an_overlong_line() {
         outcome.assert_clean(mode);
         assert_eq!(outcome.result.inconclusive, None, "{mode}");
         if mode.contains("affinity") {
-            assert_eq!(outcome.result.escaped, [CpuId(9)], "{mode}");
+            assert_eq!(outcome.result.escaped, [CpuId::from(9)], "{mode}");
             assert_eq!(outcome.failure(), None, "{mode}");
         } else {
             assert_eq!(outcome.failure(), Some(Signal::ComputationError), "{mode}");

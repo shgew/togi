@@ -39,10 +39,10 @@ fn cpu_numbers(files: &Files, base: &Path) -> Result<Vec<CpuId>, Error> {
         else {
             return Ok(());
         };
-        let cpu = digits.parse().map_err(|_| Error::CpuNumber {
+        let cpu: u16 = digits.parse().map_err(|_| Error::CpuNumber {
             name: name.to_string_lossy().into_owned(),
         })?;
-        cpus.push(CpuId(cpu));
+        cpus.push(CpuId::from(cpu));
         Ok(())
     };
     match files {
@@ -76,7 +76,7 @@ pub(crate) fn read(root: &Path, files: &Files) -> Result<Vec<RawCpu>, Error> {
     let base = root.join(CPU_DIR);
     let mut seen = Vec::new();
     for cpu in cpu_numbers(files, &base)? {
-        let dir = base.join(format!("cpu{}", cpu.0));
+        let dir = base.join(format!("cpu{}", cpu.get()));
         if !online(files, &dir)? {
             continue;
         }
@@ -147,9 +147,8 @@ pub(crate) fn group(cpus: &[RawCpu]) -> Result<Vec<CoreGroup>, SlotError> {
         .into_iter()
         .map(|(core_id, members)| {
             let index = keys.partition_point(|candidate| *candidate < members[0].ccd_key);
-            let ccd = u8::try_from(index)
-                .map(CcdId)
-                .map_err(|_| SlotError::TooManyCcds { count: keys.len() })?;
+            let ccd =
+                CcdId::try_from(index).map_err(|_| SlotError::TooManyCcds { count: keys.len() })?;
             Ok(CoreGroup {
                 core_id,
                 ccd,

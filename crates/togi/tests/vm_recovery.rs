@@ -101,8 +101,8 @@ mod vm_recovery {
         (0..cores())
             .map(|n| CoreInfo {
                 core: CoreId::new(i64::try_from(n).unwrap()).unwrap(),
-                ccd: CcdId(0),
-                cpus: vec![CpuId(u16::try_from(n).unwrap())],
+                ccd: CcdId::new(0).unwrap(),
+                cpus: vec![CpuId::from(u16::try_from(n).unwrap())],
             })
             .collect()
     }

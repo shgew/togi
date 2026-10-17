@@ -34,8 +34,8 @@ pub(super) fn topology(cores: &[(i64, &[u16])]) -> Vec<CoreInfo> {
         .iter()
         .map(|&(number, cpus)| CoreInfo {
             core: core(number),
-            ccd: CcdId(0),
-            cpus: cpus.iter().copied().map(CpuId).collect(),
+            ccd: CcdId::new(0).unwrap(),
+            cpus: cpus.iter().copied().map(CpuId::from).collect(),
         })
         .collect()
 }

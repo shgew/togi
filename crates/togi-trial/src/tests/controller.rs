@@ -42,7 +42,7 @@ fn all_but(loaded: u8) -> Vec<CpuId> {
         .filter(|info| info.core != core(loaded))
         .flat_map(|info| info.cpus)
         .collect();
-    cpus.sort_unstable_by_key(|cpu| cpu.0);
+    cpus.sort_unstable_by_key(|cpu| cpu.get());
     cpus
 }
 
@@ -550,8 +550,8 @@ fn seam() {
         .enumerate()
         .map(|(n, cpus)| CoreInfo {
             core: core(u8::try_from(n).unwrap()),
-            ccd: CcdId(0),
-            cpus: cpus.into_iter().map(CpuId).collect(),
+            ccd: CcdId::new(0).unwrap(),
+            cpus: cpus.into_iter().map(CpuId::from).collect(),
         })
         .collect();
 
@@ -583,9 +583,9 @@ fn seam() {
     let mut runner = Runner::build(options, settings, linux).unwrap();
 
     for (id, loaded, expected) in [("t1", 0, &second), ("t2", 1, &first)] {
-        let loaded_cpus: Vec<u16> = topology[loaded].cpus.iter().map(|cpu| cpu.0).collect();
+        let loaded_cpus: Vec<u16> = topology[loaded].cpus.iter().map(|cpu| cpu.get()).collect();
         let spec = trial_spec(id, loaded, &topology);
-        let workload = spec.cpus[0].0;
+        let workload = spec.cpus[0].get();
         let trial = runner
             .start(&CancellationToken::new(), spec, nothing_runs())
             .map_err(|partial| partial.error)

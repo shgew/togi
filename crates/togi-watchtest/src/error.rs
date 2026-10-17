@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use togi_journal::{AppendError, CloseError, DirError, InvalidSessionId, LockError, OpenError};
-use togi_machine::{InvalidCore, InvalidTarget};
+use togi_machine::{InvalidCcd, InvalidCore, InvalidTarget};
 use togi_session::SessionError;
 use togi_sim::{InvalidMachine, ScriptError};
 use togi_simrun::{HistoryError, SimError};
@@ -44,6 +44,8 @@ pub enum Error {
     Fixture(String),
     #[error("pick a fixture core")]
     Core(#[from] InvalidCore),
+    #[error("pick a fixture CCD")]
+    Ccd(#[from] InvalidCcd),
     #[error("pick a fixture offset")]
     Offset(#[from] InvalidTarget),
     #[error("name the fixture session")]

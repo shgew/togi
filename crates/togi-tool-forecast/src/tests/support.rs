@@ -59,12 +59,12 @@ pub(super) fn start_with(session: &str, build: Build) -> Payload {
         cores: vec![
             CoreInfo {
                 core: core(0),
-                ccd: CcdId(0),
+                ccd: CcdId::new(0).unwrap(),
                 cpus: Vec::new(),
             },
             CoreInfo {
                 core: core(1),
-                ccd: CcdId(1),
+                ccd: CcdId::new(1).unwrap(),
                 cpus: Vec::new(),
             },
         ],
@@ -123,7 +123,7 @@ pub(super) fn leave_reason() -> Payload {
 
 pub(super) fn mce() -> Payload {
     Payload::Mce(Mce {
-        cpu: CpuId(0),
+        cpu: CpuId::from(0),
         core: Some(core(0)),
         bank: 0,
         bank_type: BankType::LoadStore,

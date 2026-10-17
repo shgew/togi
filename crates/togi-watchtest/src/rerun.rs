@@ -64,13 +64,13 @@ impl Fixture {
         let cores = vec![
             CoreInfo {
                 core: core(0)?,
-                ccd: CcdId(0),
-                cpus: vec![CpuId(0), CpuId(2)],
+                ccd: CcdId::new(0)?,
+                cpus: vec![CpuId::from(0), CpuId::from(2)],
             },
             CoreInfo {
                 core: core(1)?,
-                ccd: CcdId(1),
-                cpus: vec![CpuId(1), CpuId(3)],
+                ccd: CcdId::new(1)?,
+                cpus: vec![CpuId::from(1), CpuId::from(3)],
             },
         ];
         let begin = fixture.add(

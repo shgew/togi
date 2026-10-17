@@ -58,7 +58,7 @@ fn two_ccds() -> Topology {
     let infos: Vec<CoreInfo> = (0..4_u8)
         .map(|id| CoreInfo {
             core: core(id),
-            ccd: CcdId(id / 2),
+            ccd: CcdId::try_from(id / 2).unwrap(),
             cpus: Vec::new(),
         })
         .collect();
@@ -91,7 +91,7 @@ fn volts(order: &RequestOrder, id: u8) -> f64 {
 
 fn groups_of(order: &RequestOrder, ccd: u8) -> Vec<Vec<u8>> {
     order
-        .ccd(CcdId(ccd))
+        .ccd(CcdId::try_from(ccd).unwrap())
         .unwrap()
         .groups()
         .iter()
@@ -224,9 +224,21 @@ mod order {
             .iter()
             .map(|ccd| (ccd.ccd(), ccd.loaded()))
             .collect();
-        assert_eq!(ccds, [(CcdId(0), set(&[0, 1])), (CcdId(1), set(&[2, 3]))]);
-        assert!(close(order.ccd(CcdId(0)).unwrap().rail(), 1.1));
-        assert!(close(order.ccd(CcdId(1)).unwrap().rail(), 1.2));
+        assert_eq!(
+            ccds,
+            [
+                (CcdId::new(0).unwrap(), set(&[0, 1])),
+                (CcdId::new(1).unwrap(), set(&[2, 3]))
+            ]
+        );
+        assert!(close(
+            order.ccd(CcdId::new(0).unwrap()).unwrap().rail(),
+            1.1
+        ));
+        assert!(close(
+            order.ccd(CcdId::new(1).unwrap()).unwrap().rail(),
+            1.2
+        ));
     }
 
     #[test]
@@ -283,7 +295,7 @@ mod order {
             &(0..3_u8)
                 .map(|id| CoreInfo {
                     core: core(id),
-                    ccd: CcdId(0),
+                    ccd: CcdId::new(0).unwrap(),
                     cpus: Vec::new(),
                 })
                 .collect::<Vec<_>>(),
@@ -313,7 +325,7 @@ mod order {
         let at = profile_of(&topo, &[0, -30, -30, -30]);
         let own = measurement(1, at, &[(0, 1.2), (1, 1.15)]);
         let order = RequestOrder::measured(&topo, load(0, &[0, 1]), &own);
-        let ccd = order.ccd(CcdId(0)).unwrap();
+        let ccd = order.ccd(CcdId::new(0).unwrap()).unwrap();
         let movable = ccd.first_movable(&at).unwrap();
         assert_eq!(movable.cores, set(&[1]));
         assert_eq!(movable.skipped, [set(&[0])]);
@@ -327,7 +339,11 @@ mod order {
         let at = profile_of(&topo, &[0, -30, -30, -30]);
         let own = measurement(1, at, &[(0, 1.2), (1, 1.1995)]);
         let order = RequestOrder::measured(&topo, load(0, &[0, 1]), &own);
-        let movable = order.ccd(CcdId(0)).unwrap().first_movable(&at).unwrap();
+        let movable = order
+            .ccd(CcdId::new(0).unwrap())
+            .unwrap()
+            .first_movable(&at)
+            .unwrap();
         assert_eq!(movable.cores, set(&[1]));
         assert!(!movable.stepped_down());
     }
@@ -337,7 +353,13 @@ mod order {
         let topo = two_ccds();
         let at = profile_of(&topo, &[0, 0, -30, -30]);
         let order = RequestOrder::derive(&Measurements::default(), &topo, load(0, &[0, 1]), &at);
-        assert!(order.ccd(CcdId(0)).unwrap().first_movable(&at).is_none());
+        assert!(
+            order
+                .ccd(CcdId::new(0).unwrap())
+                .unwrap()
+                .first_movable(&at)
+                .is_none()
+        );
     }
 
     #[test]
@@ -364,7 +386,10 @@ fn record(
         backend: backend(),
         profile,
         requests: requests(lanes),
-        ccd_mhz: mhz.iter().map(|&(ccd, m)| (CcdId(ccd), m)).collect(),
+        ccd_mhz: mhz
+            .iter()
+            .map(|&(ccd, m)| (CcdId::try_from(ccd).unwrap(), m))
+            .collect(),
     }
 }
 
@@ -509,7 +534,7 @@ fn reconstructed_0106_to_0119_uses_the_recorded_ccd1_target() {
     let infos: Vec<CoreInfo> = (0..16_u8)
         .map(|id| CoreInfo {
             core: core(id),
-            ccd: CcdId(id / 8),
+            ccd: CcdId::try_from(id / 8).unwrap(),
             cpus: Vec::new(),
         })
         .collect();
@@ -639,7 +664,7 @@ fn reconstructed_0106_to_0119_uses_the_recorded_ccd1_target() {
         togi_journal::CheckingChain {
             cycle: journal.run().checking.open().unwrap().number,
             step: NonZeroU32::new(u32::try_from(step).unwrap() + 1).unwrap(),
-            ccd: CcdId(1),
+            ccd: CcdId::new(1).unwrap(),
             workload: workload(0),
             groups: vec![set(&[10])],
             cores: set(&[8, 9, 11, 12, 13, 14, 15]),
@@ -687,13 +712,28 @@ fn latest_load_clocks_survive_empty_reports_and_backend_changes_but_not_reset() 
     let load = load(0, &[0, 1]);
     let mut evidence = Evidence::new(two_ccds().all());
     let backend = evidence.active_backend(togi_machine::Backend::Mprime);
-    store.record_clocks(load, backend, seq(1), &[(CcdId(0), 5000)].into());
+    store.record_clocks(
+        load,
+        backend,
+        seq(1),
+        &[(CcdId::new(0).unwrap(), 5000)].into(),
+    );
     store.record_clocks(load, backend, seq(2), &BTreeMap::default());
-    store.record_clocks(load, backend, seq(3), &[(CcdId(0), 5100)].into());
-    store.record_clocks(load, backend, seq(2), &[(CcdId(0), 4900)].into());
+    store.record_clocks(
+        load,
+        backend,
+        seq(3),
+        &[(CcdId::new(0).unwrap(), 5100)].into(),
+    );
+    store.record_clocks(
+        load,
+        backend,
+        seq(2),
+        &[(CcdId::new(0).unwrap(), 4900)].into(),
+    );
     assert_eq!(
         store.clocks(load, backend).collect::<Vec<_>>(),
-        vec![(CcdId(0), seq(3), 5100)]
+        vec![(CcdId::new(0).unwrap(), seq(3), 5100)]
     );
     assert_eq!(
         store.clocks(super::tests::load(0, &[0]), backend).count(),
@@ -708,12 +748,30 @@ fn latest_load_clocks_survive_empty_reports_and_backend_changes_but_not_reset() 
     assert_eq!(store.clocks(load, changed).count(), 0);
     // Interleaved reports keep one newest clock per CCD under each backend, and a CCD the
     // backend never reported stays missing.
-    store.record_clocks(load, changed, seq(4), &[(CcdId(1), 4800)].into());
-    store.record_clocks(load, backend, seq(5), &[(CcdId(1), 4900)].into());
-    store.record_clocks(load, changed, seq(6), &[(CcdId(0), 5200)].into());
+    store.record_clocks(
+        load,
+        changed,
+        seq(4),
+        &[(CcdId::new(1).unwrap(), 4800)].into(),
+    );
+    store.record_clocks(
+        load,
+        backend,
+        seq(5),
+        &[(CcdId::new(1).unwrap(), 4900)].into(),
+    );
+    store.record_clocks(
+        load,
+        changed,
+        seq(6),
+        &[(CcdId::new(0).unwrap(), 5200)].into(),
+    );
     assert_eq!(
         store.clocks(load, changed).collect::<Vec<_>>(),
-        vec![(CcdId(0), seq(6), 5200), (CcdId(1), seq(4), 4800)]
+        vec![
+            (CcdId::new(0).unwrap(), seq(6), 5200),
+            (CcdId::new(1).unwrap(), seq(4), 4800)
+        ]
     );
     evidence.set_backend(togi_machine::Backend::Mprime, None);
     assert_eq!(
@@ -722,10 +780,23 @@ fn latest_load_clocks_survive_empty_reports_and_backend_changes_but_not_reset() 
     );
     assert_eq!(
         store.clocks(load, backend).collect::<Vec<_>>(),
-        vec![(CcdId(0), seq(3), 5100), (CcdId(1), seq(5), 4900)]
+        vec![
+            (CcdId::new(0).unwrap(), seq(3), 5100),
+            (CcdId::new(1).unwrap(), seq(5), 4900)
+        ]
     );
-    store.record_clocks(other, backend, seq(7), &[(CcdId(0), 5300)].into());
-    store.record_clocks(other, changed, seq(8), &[(CcdId(0), 5400)].into());
+    store.record_clocks(
+        other,
+        backend,
+        seq(7),
+        &[(CcdId::new(0).unwrap(), 5300)].into(),
+    );
+    store.record_clocks(
+        other,
+        changed,
+        seq(8),
+        &[(CcdId::new(0).unwrap(), 5400)].into(),
+    );
     store.reset_core(core(1));
     assert_eq!(store.clocks(load, backend).count(), 0);
     assert_eq!(store.clocks(load, changed).count(), 0);
@@ -738,7 +809,7 @@ fn named_allcore_on_one_ccd_uses_that_ccds_top_and_current_backend() {
     let infos: Vec<CoreInfo> = (0..4_u8)
         .map(|id| CoreInfo {
             core: core(id),
-            ccd: CcdId(0),
+            ccd: CcdId::new(0).unwrap(),
             cpus: Vec::new(),
         })
         .collect();
@@ -1304,7 +1375,7 @@ mod target {
         );
         let failed = profile_of(&topo, &[0, -30, -30, -30]);
         let order = RequestOrder::derive(&store, &topo, load(0, &[0, 1]), &failed);
-        let ccd = order.ccd(CcdId(0)).unwrap();
+        let ccd = order.ccd(CcdId::new(0).unwrap()).unwrap();
         let movable = ccd.first_movable(&failed).unwrap();
         assert!(movable.stepped_down());
         assert!(close(movable.rail, 1.2 + 5.0 * VOLTS_PER_COUNT));
@@ -1480,7 +1551,8 @@ mod escalation {
         assert_eq!(build(), build());
         let topo = two_ccds();
         let profile = profile_of(&topo, &[-30, -30, -30, -30]);
-        let found = build().escalation(&topo, load(0, &[0, 1]), &profile, &[CcdId(0)]);
+        let found =
+            build().escalation(&topo, load(0, &[0, 1]), &profile, &[CcdId::new(0).unwrap()]);
         assert_eq!(
             found,
             Some(Escalation::Backoffs {
@@ -1497,13 +1569,19 @@ mod escalation {
         let key = load(0, &[0, 1]);
         let stuck = profile_of(&topo, &[0, 0, -30, -30]);
         assert_eq!(
-            strikes.escalation(&topo, key, &stuck, &[CcdId(0)]),
+            strikes.escalation(&topo, key, &stuck, &[CcdId::new(0).unwrap()]),
             Some(Escalation::LoadedAtZero)
         );
         let movable = profile_of(&topo, &[0, -30, -30, -30]);
-        assert_eq!(strikes.escalation(&topo, key, &movable, &[CcdId(0)]), None);
+        assert_eq!(
+            strikes.escalation(&topo, key, &movable, &[CcdId::new(0).unwrap()]),
+            None
+        );
         let all_zero = profile_of(&topo, &[0, 0, 0, 0]);
-        assert_eq!(strikes.escalation(&topo, key, &all_zero, &[CcdId(0)]), None);
+        assert_eq!(
+            strikes.escalation(&topo, key, &all_zero, &[CcdId::new(0).unwrap()]),
+            None
+        );
     }
 
     #[test]
@@ -1511,12 +1589,17 @@ mod escalation {
         let topo = two_ccds();
         let all = load(0, &[0, 1, 2, 3]);
         let profile = profile_of(&topo, &[0, 0, -30, -30]);
-        assert!(loaded_stuck_at_zero(&topo, all, &profile, &[CcdId(0)]));
+        assert!(loaded_stuck_at_zero(
+            &topo,
+            all,
+            &profile,
+            &[CcdId::new(0).unwrap()]
+        ));
         assert!(!loaded_stuck_at_zero(
             &topo,
             all,
             &profile,
-            &[CcdId(0), CcdId(1)]
+            &[CcdId::new(0).unwrap(), CcdId::new(1).unwrap()]
         ));
         assert!(unloaded_off_zero(&topo, load(0, &[0, 1]), &profile));
         assert!(!unloaded_off_zero(&topo, all, &profile));

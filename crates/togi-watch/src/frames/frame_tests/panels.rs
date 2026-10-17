@@ -22,7 +22,7 @@ fn a_between_trial_machine_check_is_not_hidden() {
     append(
         &mut events,
         Mce {
-            cpu: CpuId(0),
+            cpu: CpuId::from(0),
             core: Some(core(0)),
             bank: 0,
             bank_type: BankType::LoadStore,

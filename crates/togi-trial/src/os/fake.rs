@@ -561,7 +561,7 @@ impl Os for Fake {
             ready: Cell::new(self.shared.ready_default.get()),
             usage: RefCell::new(Ok(Usage {
                 cpu_time: Duration::ZERO,
-                cpu: 0,
+                cpu: togi_machine::CpuId::from(0),
             })),
             threads: RefCell::new(Ok(Threads::default())),
             signals: RefCell::default(),

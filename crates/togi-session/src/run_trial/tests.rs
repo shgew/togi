@@ -61,7 +61,7 @@ fn stamp_mce(log: &Log, corrected: bool, label: &str, ago: Duration) {
 
 fn mce_now(clock: &dyn Clock, corrected: bool, label: &str, ago: Duration) -> Mce {
     Mce {
-        cpu: CpuId(0),
+        cpu: CpuId::from(0),
         core: Some(core(0)),
         bank: 0,
         bank_type: BankType::LoadStore,
@@ -546,13 +546,13 @@ fn a_joint_trial_start_records_every_instance_and_a_single_one_is_left_out() {
     let two = vec![
         Instance {
             core: core(0),
-            cpus: vec![CpuId(0)],
+            cpus: vec![CpuId::from(0)],
             pid: 4101,
             scope: "togi-trial-0001-a.scope".into(),
         },
         Instance {
             core: core(1),
-            cpus: vec![CpuId(2), CpuId(3)],
+            cpus: vec![CpuId::from(2), CpuId::from(3)],
             pid: 4102,
             scope: "togi-trial-0001-b.scope".into(),
         },
@@ -574,7 +574,7 @@ fn a_joint_trial_start_records_every_instance_and_a_single_one_is_left_out() {
     let mut rig = rigged(Bench::new(2));
     rig.rigs.borrow_mut().instances = Some(vec![Instance {
         core: core(0),
-        cpus: vec![CpuId(0)],
+        cpus: vec![CpuId::from(0)],
         pid: 4101,
         scope: "togi-trial-0001-a.scope".into(),
     }]);
@@ -1111,7 +1111,7 @@ fn evidence_survives_a_runner_error_and_the_error_stays_in_the_reason() {
             "escape",
             Some(TrialResult {
                 ran: full_run(),
-                escaped: vec![CpuId(99)],
+                escaped: vec![CpuId::from(99)],
                 ..TrialResult::default()
             }),
             false,
@@ -1984,7 +1984,7 @@ fn an_escaped_worker_ends_the_trial_inconclusive_with_its_cpus_and_dead_ends_on_
     let run = whole(Faults::default(), |rigging| {
         rigging.result = Some(TrialResult {
             ran: full_run(),
-            escaped: vec![CpuId(42)],
+            escaped: vec![CpuId::from(42)],
             ..TrialResult::default()
         });
     });
@@ -2023,5 +2023,5 @@ fn an_escaped_worker_ends_the_trial_inconclusive_with_its_cpus_and_dead_ends_on_
     assert_eq!(ends.len(), 1);
     assert_eq!(ends[0].outcome, Verdict::Inconclusive);
     assert_eq!(ends[0].containment_error, None);
-    assert_eq!(ends[0].escaped, [CpuId(42)]);
+    assert_eq!(ends[0].escaped, [CpuId::from(42)]);
 }

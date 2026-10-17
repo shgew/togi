@@ -157,7 +157,10 @@ fn trial_end() -> TrialEnd {
         voltage_request_min_v: Some(1.05),
         voltage_requests_v: [(core(3), 1.125_f64), (core(5), 1.1)].into_iter().collect(),
         top_requesters: set(&[3]),
-        ccd_mhz: BTreeMap::from([(CcdId(0), 5420), (CcdId(1), 5380)]),
+        ccd_mhz: BTreeMap::from([
+            (CcdId::new(0).unwrap(), 5420),
+            (CcdId::new(1).unwrap(), 5380),
+        ]),
         last_sample_s: Some(40),
         last_sample_tctl_c: Some(70),
         last_sample_min_mhz: Some(5400),
@@ -167,7 +170,7 @@ fn trial_end() -> TrialEnd {
         reason: None,
         interrupted: false,
         last_evidence: true,
-        escaped: vec![CpuId(7)],
+        escaped: vec![CpuId::from(7)],
         backend_missing: false,
         containment_error: Some("scope still has a process".into()),
     }
@@ -184,13 +187,13 @@ pub(crate) fn samples() -> Vec<Payload> {
     let cores = vec![
         CoreInfo {
             core: core(0),
-            ccd: CcdId(0),
-            cpus: vec![CpuId(0), CpuId(8)],
+            ccd: CcdId::new(0).unwrap(),
+            cpus: vec![CpuId::from(0), CpuId::from(8)],
         },
         CoreInfo {
             core: core(1),
-            ccd: CcdId(0),
-            cpus: vec![CpuId(1), CpuId(9)],
+            ccd: CcdId::new(0).unwrap(),
+            cpus: vec![CpuId::from(1), CpuId::from(9)],
         },
     ];
     let command = SmuCommand::Set {
@@ -331,12 +334,12 @@ pub(crate) fn samples() -> Vec<Payload> {
             window_start_ns: Some(12_345),
             scope: "togi-trial-0413".into(),
             pid: 48211,
-            cpus: vec![CpuId(7)],
+            cpus: vec![CpuId::from(7)],
             argv: vec!["mprime".into(), "-t".into()],
             files: vec!["samples.jsonl".into()],
             instances: vec![TrialInstance {
                 core: core(3),
-                cpus: vec![CpuId(3), CpuId(11)],
+                cpus: vec![CpuId::from(3), CpuId::from(11)],
                 pid: 48211,
                 scope: "togi-trial-0413-c03".into(),
             }],
@@ -361,7 +364,7 @@ pub(crate) fn samples() -> Vec<Payload> {
             warning: "escaped the scope".into(),
             pid: 1,
             tid: 2,
-            cpu: CpuId(3),
+            cpu: CpuId::from(3),
         }
         .into(),
         trial_end().into(),
@@ -379,7 +382,7 @@ pub(crate) fn samples() -> Vec<Payload> {
             stalled_core: None,
             voltage_requests_v: [(core(3), 1.1)].into_iter().collect(),
             top_requesters: set(&[3]),
-            ccd_mhz: BTreeMap::from([(CcdId(0), 5400)]),
+            ccd_mhz: BTreeMap::from([(CcdId::new(0).unwrap(), 5400)]),
         }
         .into(),
         failure().into(),
@@ -404,7 +407,7 @@ pub(crate) fn samples() -> Vec<Payload> {
         }
         .into(),
         Mce {
-            cpu: CpuId(3),
+            cpu: CpuId::from(3),
             core: Some(core(3)),
             bank: 5,
             bank_type: BankType::ExecutionUnit,
@@ -474,7 +477,7 @@ pub(crate) fn samples() -> Vec<Payload> {
         CheckingChain {
             cycle: ord(1),
             step: ord(1),
-            ccd: CcdId(0),
+            ccd: CcdId::new(0).unwrap(),
             workload: workload("mprime-avx2-36k-248k"),
             groups: vec![set(&[1, 2]), set(&[3])],
             cores: set(&[3, 4]),

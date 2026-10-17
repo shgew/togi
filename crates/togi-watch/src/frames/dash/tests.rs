@@ -35,7 +35,7 @@ fn at(text: &str) -> Timestamp {
 fn core_view(id: u8, ccd: u8, state: CoreState) -> CoreView {
     CoreView {
         id: core(id),
-        ccd: CcdId(ccd),
+        ccd: CcdId::try_from(ccd).unwrap(),
         state,
         queued: None,
         applied: Some(ObservedOffset(0)),
@@ -442,7 +442,7 @@ fn drawn_with(
     s.trial = running;
     let scene = scene(&s, Timestamp::UNIX_EPOCH, &zone, colours);
     let mut buf = Buffer::empty(OVERVIEW);
-    draw_core_overview(&mut buf, OVERVIEW, &scene, CcdId(0));
+    draw_core_overview(&mut buf, OVERVIEW, &scene, CcdId::new(0).unwrap());
     buf
 }
 
@@ -594,7 +594,7 @@ fn a_queued_reset_and_a_current_failure_badge_both_records_beside_the_load_role(
     s.cores = &both;
     let scene = scene(&s, Timestamp::UNIX_EPOCH, &zone, Colours::None);
     let mut buf = Buffer::empty(OVERVIEW);
-    draw_core_overview(&mut buf, OVERVIEW, &scene, CcdId(0));
+    draw_core_overview(&mut buf, OVERVIEW, &scene, CcdId::new(0).unwrap());
     assert_eq!(cells(&buf, 2, 0, 2), "00!");
     assert_eq!(cells(&buf, 3, 0, 2), "!R ");
     assert_eq!(values(&buf, 4), "loaded");
@@ -721,7 +721,7 @@ fn the_overview_stays_inside_its_rectangle() {
     let area = Rect::new(0, 0, 90, 34);
     let inside = Rect::new(6, 4, 77, 26);
     let mut buf = Buffer::filled(area, ratatui::buffer::Cell::new("~"));
-    draw_core_overview(&mut buf, inside, &scene, CcdId(0));
+    draw_core_overview(&mut buf, inside, &scene, CcdId::new(0).unwrap());
     for y in 0..area.height {
         for x in 0..area.width {
             if !inside.contains(ratatui::layout::Position::new(x, y)) {
@@ -775,7 +775,7 @@ fn the_compact_table_lists_every_core_in_ccd_and_core_order_with_exact_values() 
     for id in 0..16u8 {
         cores.push(CoreView {
             id: core(id),
-            ccd: CcdId(id % 2),
+            ccd: CcdId::try_from(id % 2).unwrap(),
             ..recorded(-(i64::from(id)), Some(-30), (id == 3).then_some(-31))
         });
     }
@@ -969,7 +969,7 @@ fn r7_fixture(
 fn r7_status(core_id: u8, top: bool, proxy: bool, own: bool) -> R7CoreStatus {
     R7CoreStatus {
         core: core(core_id),
-        ccd: CcdId(core_id / 8),
+        ccd: CcdId::try_from(core_id / 8).unwrap(),
         workload: WorkloadId::new(Regime::R7, 0).expect("a workload"),
         top_requester: top,
         offset_proxy: proxy,
@@ -1140,7 +1140,7 @@ fn every_r7_workload_has_its_row() {
         .iter()
         .map(|&workload| R7CoreStatus {
             core: core(0),
-            ccd: CcdId(0),
+            ccd: CcdId::new(0).unwrap(),
             workload,
             top_requester: true,
             offset_proxy: false,

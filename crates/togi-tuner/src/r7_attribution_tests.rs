@@ -73,7 +73,7 @@ impl Journal {
     fn at_mce(&mut self, trial: &togi_journal::TrialId, id: u8) -> Seq {
         self.append(
             togi_journal::Mce {
-                cpu: CpuId(id.into()),
+                cpu: CpuId::from(u16::from(id)),
                 core: Some(core(id)),
                 bank: 0,
                 bank_type: BankType::LoadStore,
@@ -192,7 +192,7 @@ fn r7_live_named_and_mce_attribution() {
         end.top_requesters = set(&[0]);
         if local_mce {
             let mce = togi_journal::Mce {
-                cpu: CpuId(1),
+                cpu: CpuId::from(1),
                 core: Some(core(1)),
                 bank: 0,
                 bank_type: BankType::LoadStore,
@@ -366,7 +366,7 @@ fn r7_backoff_reason() {
                 .map(|&(id, volts)| (core(id), volts))
                 .collect();
             end.top_requesters = set(&[0]);
-            end.ccd_mhz.insert(CcdId(0), 5000);
+            end.ccd_mhz.insert(CcdId::new(0).unwrap(), 5000);
             j.append(end.into(), &[intent, mce]);
             let attribution = j.next_decision();
             let DecisionPayload::Failure(failure) = &attribution.payload else {
@@ -448,7 +448,7 @@ fn r7_zero_top_steps_down_within_ccd() {
             assert_eq!(
                 steps,
                 [&Note::SteppedDown {
-                    ccd: CcdId(0),
+                    ccd: CcdId::new(0).unwrap(),
                     skipped: vec![set(&[0])],
                     group: set(&[1]),
                 }],
@@ -617,7 +617,7 @@ fn r7_named_zero_attribution_uses_start_top() {
                 why.notes,
                 [Note::NamedZeroNotTop {
                     core: core(0),
-                    ccd: CcdId(0)
+                    ccd: CcdId::new(0).unwrap()
                 }],
                 "{name}"
             );
@@ -669,8 +669,8 @@ fn r7_named_idle_zero_core_counts_against_loaded_ccd() {
         why.notes,
         [Note::NamedOnEmptyCcd {
             named: core(2),
-            named_ccd: CcdId(1),
-            loaded_ccd: CcdId(0),
+            named_ccd: CcdId::new(1).unwrap(),
+            loaded_ccd: CcdId::new(0).unwrap(),
         }]
     );
     let (action, moved) = j.at_next_backoff();
@@ -878,7 +878,7 @@ fn r7_mce_named_unloaded_core_uses_its_lane() {
                 .iter()
                 .map(|&id| togi_machine::CoreInfo {
                     core: core(id),
-                    ccd: CcdId(0),
+                    ccd: CcdId::new(0).unwrap(),
                     cpus: Vec::new(),
                 })
                 .collect();
@@ -940,7 +940,7 @@ fn r7_mce_named_unloaded_core_uses_its_lane() {
             end.duration_s = 120;
             end.core = (!local_mce).then_some(core(3));
             if let Some(mhz) = clock {
-                end.ccd_mhz.insert(CcdId(0), mhz);
+                end.ccd_mhz.insert(CcdId::new(0).unwrap(), mhz);
             }
             j.append(end.into(), &cause);
             let attribution = j.next_decision();

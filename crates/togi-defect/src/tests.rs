@@ -117,8 +117,8 @@ impl Log {
                 session: "20231114T221320Z".parse().unwrap(),
                 cores: vec![CoreInfo {
                     core: core(0),
-                    ccd: CcdId(0),
-                    cpus: vec![CpuId(0)],
+                    ccd: CcdId::new(0).unwrap(),
+                    cpus: vec![CpuId::from(0)],
                 }],
             },
         )

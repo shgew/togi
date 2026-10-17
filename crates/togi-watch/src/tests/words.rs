@@ -505,7 +505,7 @@ fn chains_cycles_and_rounds_have_phrases() {
         CheckingChain {
             cycle: nz(1),
             step: nz(1),
-            ccd: CcdId(1),
+            ccd: CcdId::new(1).unwrap(),
             workload: togi_machine::workloads(Regime::R7)[0].id(),
             groups: Vec::new(),
             cores: set(cores),

@@ -33,7 +33,7 @@ pub(super) fn at(second: i64) -> Timestamp {
 pub(super) fn core_view(id: u8, ccd: u8) -> CoreView {
     CoreView {
         id: core(id),
-        ccd: CcdId(ccd),
+        ccd: CcdId::try_from(ccd).unwrap(),
         state: CoreState::Waiting,
         queued: None,
         applied: Some(ObservedOffset(0)),
@@ -187,7 +187,7 @@ pub(super) fn cycle_part(
 ) -> CyclePart {
     CyclePart {
         cores: set(cores),
-        ccd: ccd.map(CcdId),
+        ccd: ccd.map(|ccd| CcdId::try_from(ccd).unwrap()),
         full,
         partial: !full,
         short: 1,

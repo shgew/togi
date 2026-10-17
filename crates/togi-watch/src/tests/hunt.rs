@@ -20,7 +20,7 @@ use crate::model::{
 fn core_view(id: u8) -> CoreView {
     CoreView {
         id: core(id),
-        ccd: CcdId(id / 8),
+        ccd: CcdId::try_from(id / 8).unwrap(),
         state: CoreState::Waiting,
         queued: None,
         applied: Some(ObservedOffset(0)),

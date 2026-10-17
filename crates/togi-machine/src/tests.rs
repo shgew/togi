@@ -56,7 +56,7 @@ fn core_order() {
         .rev()
         .map(|value| CoreInfo {
             core: core(i64::from(value)),
-            ccd: CcdId(value / 8),
+            ccd: CcdId::try_from(value / 8).unwrap(),
             cpus: Vec::new(),
         })
         .collect();
@@ -67,17 +67,17 @@ fn core_order() {
     let uneven = [
         CoreInfo {
             core: core(9),
-            ccd: CcdId(3),
+            ccd: CcdId::new(3).unwrap(),
             cpus: Vec::new(),
         },
         CoreInfo {
             core: core(2),
-            ccd: CcdId(1),
+            ccd: CcdId::new(1).unwrap(),
             cpus: Vec::new(),
         },
         CoreInfo {
             core: core(0),
-            ccd: CcdId(1),
+            ccd: CcdId::new(1).unwrap(),
             cpus: Vec::new(),
         },
     ];
@@ -538,16 +538,46 @@ fn context_difference_after_journal_round_trip() {
 }
 
 #[test]
+fn identities_refuse_values_outside_their_domain() {
+    assert_eq!(CcdId::new(15).map(CcdId::get), Ok(15));
+    assert_eq!(CcdId::new(16), Err(InvalidCcd(16)));
+    assert_eq!(CcdId::new(-1), Err(InvalidCcd(-1)));
+    assert_eq!(CcdId::try_from(usize::MAX), Err(InvalidCcd(i64::MAX)));
+    assert_eq!(InvalidCcd(16).to_string(), "ccd 16 outside 0–15");
+    assert_eq!(CpuId::new(65535).map(CpuId::get), Ok(u16::MAX));
+    assert_eq!(CpuId::new(65536), Err(InvalidCpu(65536)));
+    assert_eq!(CpuId::new(-1), Err(InvalidCpu(-1)));
+    assert_eq!(CpuId::try_from(65536_u32), Err(InvalidCpu(65536)));
+    assert_eq!(InvalidCpu(-1).to_string(), "cpu -1 outside 0–65535");
+    for json in [
+        r#"{"core":3,"ccd":16,"cpus":[]}"#,
+        r#"{"core":3,"ccd":-1,"cpus":[]}"#,
+        r#"{"core":3,"ccd":0,"cpus":[65536]}"#,
+        r#"{"core":3,"ccd":0,"cpus":[-1]}"#,
+    ] {
+        assert!(serde_json::from_str::<CoreInfo>(json).is_err(), "{json}");
+    }
+    assert!(serde_json::from_str::<std::collections::BTreeMap<CcdId, u32>>(r#"{"16":1}"#).is_err());
+}
+
+#[test]
 fn topology_and_pstore_round_trip() {
     let info = CoreInfo {
         core: core(3),
-        ccd: CcdId(1),
-        cpus: vec![CpuId(3), CpuId(19)],
+        ccd: CcdId::new(1).unwrap(),
+        cpus: vec![CpuId::from(3), CpuId::from(19)],
     };
     let json = serde_json::to_string(&info).unwrap();
     assert_eq!(json, r#"{"core":3,"ccd":1,"cpus":[3,19]}"#);
     assert_eq!(serde_json::from_str::<CoreInfo>(&json).unwrap(), info);
     assert!(serde_json::from_str::<CoreInfo>(r#"{"core":16,"ccd":0,"cpus":[]}"#).is_err());
+    let clocks = std::collections::BTreeMap::from([(CcdId::new(1).unwrap(), 5200)]);
+    let json = serde_json::to_string(&clocks).unwrap();
+    assert_eq!(json, r#"{"1":5200}"#);
+    assert_eq!(
+        serde_json::from_str::<std::collections::BTreeMap<CcdId, u32>>(&json).unwrap(),
+        clocks
+    );
     let record = PstoreRecord {
         path: "dmesg-ramoops-0".to_owned(),
         lines: vec!["panic".to_owned()],
@@ -742,6 +772,6 @@ fn containment_keeps_its_cause_behind_a_fixed_message() {
 
 #[test]
 fn ccd_and_cpu_ids_display_as_numbers() {
-    assert_eq!(CcdId(1).to_string(), "1");
-    assert_eq!(CpuId(23).to_string(), "23");
+    assert_eq!(CcdId::new(1).unwrap().to_string(), "1");
+    assert_eq!(CpuId::from(23).to_string(), "23");
 }
