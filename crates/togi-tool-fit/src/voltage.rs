@@ -7,7 +7,7 @@ use togi_facts::{Decisive, TrialClass};
 use togi_machine::{CcdId, CoreId, Regime, TargetOffset, pick_workload, workloads};
 use togi_sim::definition::{SharedVoltageDef, VoltageCoreDef, VoltageWorkloadDef};
 use togi_sim::voltage::core_watts;
-use togi_sim::{MachineDefinition, Model};
+use togi_sim::{MachineDefinition, Model, saturating_count};
 use togi_tool_trialfacts::{Profile, TrialFact};
 
 use crate::evidence::{load_of, regime_of, trial_class};
@@ -38,10 +38,6 @@ fn r7_ids() -> Vec<&'static str> {
 
 fn float(value: i64) -> f64 {
     f64::from(i32::try_from(value).unwrap_or(0))
-}
-
-fn count(n: usize) -> f64 {
-    f64::from(u32::try_from(n).unwrap_or(u32::MAX))
 }
 
 pub(crate) fn voltage_config(records: &[TrialFact]) -> SharedVoltageDef {
@@ -148,7 +144,7 @@ fn fit_requests(v: &mut SharedVoltageDef, records: &[TrialFact], id: &str) {
             continue;
         }
         total += ps.len();
-        let n = count(ps.len());
+        let n = saturating_count(ps.len());
         let x = ps.iter().map(|p| p.offset).sum::<f64>() / n;
         let y = ps.iter().map(|p| p.clock).sum::<f64>() / n;
         let z = ps.iter().map(|p| p.voltage).sum::<f64>() / n;
@@ -191,7 +187,7 @@ fn fit_requests(v: &mut SharedVoltageDef, records: &[TrialFact], id: &str) {
         }
         let mean = median(&mut values);
         for core in range {
-            let n = count(points[core].len());
+            let n = saturating_count(points[core].len());
             let c = &mut w.core[core];
             c.base_v = ((n * bases[core] + 5.0 * mean) / (n + 5.0)).clamp(0.9, 1.5);
             c.count_v = count_v;
