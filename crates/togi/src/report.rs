@@ -59,7 +59,12 @@ pub fn refusal_message(refusal: &Refusal, recorded: &Build, current: &Build) -> 
 
 /// Writes `text` and a newline to stdout; a failed write is [`Exit::Error`].
 pub fn emit(ctx: &mut Context<'_>, text: impl Display) -> Result<(), Exit> {
-    writeln!(ctx.out, "{text}").map_err(|error| ctx.error(format!("write output: {error}")))
+    writeln!(ctx.out, "{text}").map_err(|error| {
+        ctx.error(format!(
+            "write output: {}",
+            togi_render::error_chain(&error)
+        ))
+    })
 }
 
 /// Writes `togi <command>: <message>` to stderr, the message escaped, and returns `exit`.

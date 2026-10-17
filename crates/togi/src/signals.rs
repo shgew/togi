@@ -9,15 +9,39 @@
 use std::io;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc;
-use std::sync::{Mutex, MutexGuard, OnceLock, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
 use std::thread;
 
 use togi_machine::CancellationToken;
 
 static TOKENS: Mutex<Vec<(u64, CancellationToken)>> = Mutex::new(Vec::new());
 static NEXT: AtomicU64 = AtomicU64::new(1);
-static LISTENER: OnceLock<Result<(), String>> = OnceLock::new();
+static LISTENER: OnceLock<Result<(), Arc<StartError>>> = OnceLock::new();
 static LOST: AtomicBool = AtomicBool::new(false);
+
+/// Why a run cannot listen for the signals that stop it.
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    /// The process's listener did not start; every later run in this process gets the same failure.
+    #[error("start the signal listener")]
+    Start(#[source] Arc<StartError>),
+    /// The listener of an earlier run in this process died by a panic.
+    #[error("the signal listener stopped")]
+    Lost,
+}
+
+/// Why the process's listener did not start.
+#[derive(Debug, thiserror::Error)]
+pub enum StartError {
+    #[error("spawn the listener thread")]
+    Spawn(#[source] io::Error),
+    #[error("build the listener runtime")]
+    Runtime(#[source] io::Error),
+    #[error("register the signal handlers")]
+    Register(#[source] io::Error),
+    #[error("the listener ended before it registered")]
+    Ended,
+}
 
 fn tokens() -> MutexGuard<'static, Vec<(u64, CancellationToken)>> {
     TOKENS.lock().unwrap_or_else(PoisonError::into_inner)
@@ -43,23 +67,23 @@ impl Drop for Listening {
 /// # Errors
 ///
 /// The runtime or the signal registration failed, or the listener of an earlier run in this process died.
-pub fn listen(token: &CancellationToken) -> io::Result<Listening> {
+pub fn listen(token: &CancellationToken) -> Result<Listening, Error> {
     listen_after(token, start)
 }
 
 fn listen_after(
     token: &CancellationToken,
-    start: impl FnOnce() -> io::Result<()>,
-) -> io::Result<Listening> {
+    start: impl FnOnce() -> Result<(), StartError>,
+) -> Result<Listening, Error> {
     let id = NEXT.fetch_add(1, Ordering::Relaxed);
     tokens().push((id, token.clone()));
     let listening = Listening { id };
     LISTENER
-        .get_or_init(|| start().map_err(|error| error.to_string()))
+        .get_or_init(|| start().map_err(Arc::new))
         .as_ref()
-        .map_err(|message| io::Error::other(message.clone()))?;
+        .map_err(|error| Error::Start(Arc::clone(error)))?;
     if LOST.load(Ordering::SeqCst) {
-        return Err(io::Error::other("the signal listener stopped"));
+        return Err(Error::Lost);
     }
     Ok(listening)
 }
@@ -87,17 +111,16 @@ fn guarded(body: impl FnOnce()) {
     body();
 }
 
-fn start() -> io::Result<()> {
+fn start() -> Result<(), StartError> {
     let (ready, started) = mpsc::channel();
     thread::Builder::new()
         .name("togi-signals".to_owned())
-        .spawn(move || guarded(|| listener(&ready)))?;
-    started
-        .recv()
-        .map_err(|_| io::Error::other("the signal listener ended before it registered"))?
+        .spawn(move || guarded(|| listener(&ready)))
+        .map_err(StartError::Spawn)?;
+    started.recv().map_err(|_| StartError::Ended)?
 }
 
-fn listener(ready: &mpsc::Sender<io::Result<()>>) {
+fn listener(ready: &mpsc::Sender<Result<(), StartError>>) {
     use tokio::signal::unix::{SignalKind, signal};
     let runtime = match tokio::runtime::Builder::new_current_thread()
         .enable_io()
@@ -105,7 +128,7 @@ fn listener(ready: &mpsc::Sender<io::Result<()>>) {
     {
         Ok(runtime) => runtime,
         Err(error) => {
-            let _ = ready.send(Err(error));
+            let _ = ready.send(Err(StartError::Runtime(error)));
             return;
         }
     };
@@ -120,7 +143,7 @@ fn listener(ready: &mpsc::Sender<io::Result<()>>) {
         let (mut interrupt, mut terminate, mut hangup) = match registered {
             Ok(signals) => signals,
             Err(error) => {
-                let _ = ready.send(Err(error));
+                let _ = ready.send(Err(StartError::Register(error)));
                 return;
             }
         };

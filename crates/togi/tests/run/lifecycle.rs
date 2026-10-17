@@ -690,6 +690,43 @@ fn a_host_lock_that_is_not_safe_is_refused_before_hardware() {
 }
 
 #[test]
+fn a_host_lock_that_cannot_be_taken_names_its_cause_once_before_hardware() {
+    let fake = Fake::new();
+    *fake.lock_error.borrow_mut() = Some(togi_hostlock::Error::Io {
+        path: fake.lock.clone(),
+        operation: togi_hostlock::Operation::Lock,
+        source: std::io::Error::other("disk gone"),
+    });
+    let (exit, _, err) = fake.run(&["run", "--no-tui"]);
+    assert_eq!(exit, Exit::Error, "{err}");
+    assert_eq!(
+        err,
+        format!(
+            "togi run: lock host lock {}: disk gone\n",
+            fake.lock.display()
+        )
+    );
+    assert_eq!((fake.boots_read.get(), fake.opened.get()), (0, 0));
+    assert!(fake.events().is_empty());
+}
+
+#[test]
+fn a_signal_listener_that_does_not_start_names_the_failed_step_before_hardware() {
+    let fake = Fake::new();
+    *fake.listen_error.borrow_mut() = Some(togi_cli::signals::Error::Start(std::sync::Arc::new(
+        togi_cli::signals::StartError::Register(std::io::Error::other("no handlers left")),
+    )));
+    let (exit, _, err) = fake.run(&["run", "--no-tui"]);
+    assert_eq!(exit, Exit::Error, "{err}");
+    assert_eq!(
+        err,
+        "togi run: start the signal listener: register the signal handlers: no handlers left\n"
+    );
+    assert_eq!((fake.boots_read.get(), fake.opened.get()), (0, 0));
+    assert!(fake.events().is_empty());
+}
+
+#[test]
 fn the_bios_context_is_not_read_from_a_machine_whose_identity_is_not_validated() {
     let bios_reads = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
     let mut fake = Fake::new();
@@ -827,7 +864,7 @@ impl togi_cli::dashboard::Surface for Records {
         state_dir: &std::path::Path,
         since: u64,
         stop: &togi_cli::dashboard::Stop,
-    ) -> Result<(), String> {
+    ) -> Result<(), togi_watch::terminal::Error> {
         *self.seen.lock().unwrap() = Some((
             since,
             self.fs
@@ -1009,7 +1046,7 @@ impl togi_cli::dashboard::Surface for Finishes {
         _: &std::path::Path,
         _: u64,
         stop: &togi_cli::dashboard::Stop,
-    ) -> Result<(), String> {
+    ) -> Result<(), togi_watch::terminal::Error> {
         stop.wait();
         self.0.store(true, std::sync::atomic::Ordering::SeqCst);
         Ok(())

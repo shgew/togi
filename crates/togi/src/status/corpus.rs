@@ -28,7 +28,7 @@ use togi_tuner::{Depth as _, GroupState};
 use togi_watch::model::{HuntView, Model};
 use togi_watchtest::{Base, Scenario, cut_trial, cut_when};
 
-use super::{Args, Problem, Scan, Status, dead_end_label, render, run};
+use super::{Args, FoldError, Problem, Scan, Status, dead_end_label, render, run};
 use crate::cli::Context;
 use crate::system::Real;
 
@@ -129,7 +129,7 @@ struct Folding {
     model: Model,
     journal: JournalState,
     tuner: togi_tuner::State,
-    broken: Option<String>,
+    broken: Option<FoldError>,
 }
 
 impl Folding {
@@ -150,9 +150,8 @@ impl Folding {
         let folded = self
             .model
             .fold(event)
-            .map_err(|error| error.to_string())
-            .and_then(|()| self.journal.apply(event).map_err(|error| error.to_string()))
-            .and_then(|()| self.tuner.fold(event).map_err(|error| error.to_string()));
+            .and_then(|()| self.journal.apply(event).map_err(FoldError::Journal))
+            .and_then(|()| self.tuner.fold(event).map_err(FoldError::Tuner));
         if let Err(error) = folded {
             self.broken = Some(error);
         }
@@ -161,7 +160,7 @@ impl Folding {
     /// What [`render`] gives for `events`, the events folded so far.
     fn render(&self, events: &[Event]) -> Result<String, String> {
         if let Some(broken) = &self.broken {
-            return Err(broken.clone());
+            return Err(togi_render::error_chain(broken));
         }
         if self.journal.session.is_none() {
             return Err(problem_text(&Problem::NoSession));
@@ -184,7 +183,7 @@ impl Folding {
 fn problem_text(problem: &Problem) -> String {
     match problem {
         Problem::NoSession => "no session".to_owned(),
-        Problem::Replay(message) => message.clone(),
+        Problem::Replay(error) => togi_render::error_chain(error),
     }
 }
 
@@ -950,10 +949,10 @@ enum Synth {
 fn synthetic_render(events: &[Event], synth: Synth) -> Result<String, String> {
     let model = togi_watch::model::project(events);
     if let Some(problem) = model.problem() {
-        return Err(problem.to_string());
+        return Err(togi_render::error_chain(problem));
     }
-    let journal = JournalState::replay(events).map_err(|error| error.to_string())?;
-    let tuner = togi_tuner::replay(events).map_err(|error| error.to_string())?;
+    let journal = JournalState::replay(events).map_err(|error| togi_render::error_chain(&error))?;
+    let tuner = togi_tuner::replay(events).map_err(|error| togi_render::error_chain(&error))?;
     let mut projection = tuner.project();
     let scan = Scan::of(events);
     let base = model.snapshot();

@@ -322,6 +322,29 @@ fn a_busy_host_lock_exits_3_before_the_machine_is_opened() {
 }
 
 #[test]
+fn a_host_lock_that_cannot_be_opened_exits_1_with_its_cause_before_the_machine_is_opened() {
+    let rig = Rig::new();
+    *rig.host.lock_error.borrow_mut() = Some(togi_hostlock::Error::Io {
+        path: rig.host.lock.clone(),
+        operation: togi_hostlock::Operation::Open,
+        source: std::io::Error::other("disk gone"),
+    });
+    let ran = rig.run();
+    assert_eq!(ran.exit, Exit::Error);
+    assert_eq!(ran.out, "");
+    assert_eq!(
+        ran.err,
+        format!(
+            "togi emergency-stop: open host lock {}: disk gone; offsets unchanged\n",
+            rig.host.lock.display()
+        )
+    );
+    assert!(rig.unopened());
+    assert_eq!(rig.ops(), Vec::<String>::new());
+    rig.assert_untouched();
+}
+
+#[test]
 fn real_fs_an_unsafe_host_lock_exits_1_before_the_machine_is_opened() {
     let mut rig = Rig::new();
     let host = Host::real();
@@ -411,8 +434,9 @@ fn a_refused_zero_write_exits_1_and_reads_every_core_still_unchanged() {
     );
     let last = ran.err.lines().last().unwrap();
     assert!(
-        last.starts_with("togi emergency-stop: setting every core to 0 failed: ")
-            && last.ends_with("; 16 of 16 cores did not read back 0"),
+        last.starts_with(
+            "togi emergency-stop: 16 of 16 cores did not read back 0: set every core to 0: "
+        ),
         "{last}"
     );
     assert!(
@@ -478,8 +502,8 @@ fn a_machine_that_crashes_while_zeroing_fails_the_stop_with_every_core_unconfirm
     assert_eq!(ran.exit, Exit::Error);
     assert!(
         ran.err.contains(
-            "togi emergency-stop: setting every core to 0 failed: the simulated machine crashed; \
-             16 of 16 cores did not read back 0\n"
+            "togi emergency-stop: 16 of 16 cores did not read back 0: set every core to 0: \
+             the simulated machine crashed\n"
         ),
         "{}",
         ran.err

@@ -296,7 +296,12 @@ fn watch_the_locks(dir: &Path, order: &Order) {
 struct PanicsAtOnce;
 
 impl togi_cli::dashboard::Surface for PanicsAtOnce {
-    fn draw(&self, _: &Path, _: u64, _: &togi_cli::dashboard::Stop) -> Result<(), String> {
+    fn draw(
+        &self,
+        _: &Path,
+        _: u64,
+        _: &togi_cli::dashboard::Stop,
+    ) -> Result<(), togi_watch::terminal::Error> {
         panic!("injected panic in the dashboard\x1b[31m");
     }
 }
@@ -318,7 +323,12 @@ fn wait_for_release(dir: &Path) {
 struct SaysWhenItStops;
 
 impl togi_cli::dashboard::Surface for SaysWhenItStops {
-    fn draw(&self, _: &Path, _: u64, stop: &togi_cli::dashboard::Stop) -> Result<(), String> {
+    fn draw(
+        &self,
+        _: &Path,
+        _: u64,
+        stop: &togi_cli::dashboard::Stop,
+    ) -> Result<(), togi_watch::terminal::Error> {
         stop.wait();
         let _ = writeln!(std::io::stderr(), "dashboard stopped drawing");
         Ok(())
@@ -329,14 +339,21 @@ impl togi_cli::dashboard::Surface for SaysWhenItStops {
 struct FailsOnCue(Arc<AtomicBool>);
 
 impl togi_cli::dashboard::Surface for FailsOnCue {
-    fn draw(&self, _: &Path, _: u64, stop: &togi_cli::dashboard::Stop) -> Result<(), String> {
+    fn draw(
+        &self,
+        _: &Path,
+        _: u64,
+        stop: &togi_cli::dashboard::Stop,
+    ) -> Result<(), togi_watch::terminal::Error> {
         while !self.0.load(Ordering::SeqCst) {
             if stop.is_stopped() {
                 return Ok(());
             }
             thread::sleep(Duration::from_millis(1));
         }
-        Err("the dashboard fell over".to_owned())
+        Err(togi_watch::terminal::Error::Output(std::io::Error::other(
+            "the dashboard fell over",
+        )))
     }
 }
 

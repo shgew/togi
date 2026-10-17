@@ -41,7 +41,10 @@ pub trait System {
     fn privileged(&self) -> bool;
 
     /// Installs the command's signal listener; fake hosts can retain the token without host effects.
-    fn listen(&self, token: &CancellationToken) -> io::Result<Box<dyn std::any::Any>> {
+    fn listen(
+        &self,
+        token: &CancellationToken,
+    ) -> Result<Box<dyn std::any::Any>, crate::signals::Error> {
         listen_for_signals(token)
     }
 
@@ -320,6 +323,8 @@ mod tests;
 /// # Errors
 ///
 /// Returns the error from registering the process signal listener.
-pub fn listen_for_signals(token: &CancellationToken) -> io::Result<Box<dyn std::any::Any>> {
+pub fn listen_for_signals(
+    token: &CancellationToken,
+) -> Result<Box<dyn std::any::Any>, crate::signals::Error> {
     crate::signals::listen(token).map(|guard| Box::new(guard) as Box<dyn std::any::Any>)
 }

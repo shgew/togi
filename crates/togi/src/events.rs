@@ -150,11 +150,19 @@ fn run_with(args: &Args, ctx: &mut Context<'_>, facts: OutputFacts, zone: &TimeZ
     let renderer = Renderer::new(facts);
     for event in filter.select(recording.events()) {
         if let Err(error) = write_event(ctx.out, renderer, event, zone, args.json) {
-            return fail(ctx, "events", format!("write output: {error}"));
+            return fail(
+                ctx,
+                "events",
+                format!("write output: {}", togi_render::error_chain(&error)),
+            );
         }
     }
     if let Err(error) = ctx.out.flush() {
-        return fail(ctx, "events", format!("write output: {error}"));
+        return fail(
+            ctx,
+            "events",
+            format!("write output: {}", togi_render::error_chain(&error)),
+        );
     }
     read::report(ctx, "events", &recording);
     Exit::Ok

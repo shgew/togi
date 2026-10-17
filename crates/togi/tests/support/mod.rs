@@ -101,6 +101,8 @@ pub struct Host {
     pub fs: Arc<MemFs>,
     pub locks: MemHostLocks,
     pub lock_acquisitions: Cell<usize>,
+    /// Why the next claim on the host lock fails, once.
+    pub lock_error: RefCell<Option<LockError>>,
     pub real_fs: bool,
     pub lock: PathBuf,
     pub config: PathBuf,
@@ -139,6 +141,7 @@ impl Host {
             fs,
             locks: MemHostLocks::default(),
             lock_acquisitions: Cell::new(0),
+            lock_error: RefCell::new(None),
             real_fs: false,
             lock: PathBuf::from("/host/togi.lock"),
             config: PathBuf::from("/host/config.json"),
@@ -284,6 +287,9 @@ impl System for Host {
 
     fn acquire_host_lock(&self) -> Result<HostLock, LockError> {
         self.lock_acquisitions.set(self.lock_acquisitions.get() + 1);
+        if let Some(error) = self.lock_error.borrow_mut().take() {
+            return Err(error);
+        }
         if self.real_fs {
             HostLock::acquire(&self.lock, Policy::Private)
         } else {
@@ -303,7 +309,10 @@ impl System for Host {
         })
     }
 
-    fn listen(&self, _: &togi_machine::CancellationToken) -> io::Result<Box<dyn std::any::Any>> {
+    fn listen(
+        &self,
+        _: &togi_machine::CancellationToken,
+    ) -> Result<Box<dyn std::any::Any>, togi_cli::signals::Error> {
         Ok(Box::new(()))
     }
 

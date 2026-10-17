@@ -235,6 +235,20 @@ fn real_fs_missing_parent_is_not_created() {
 }
 
 #[test]
+fn an_io_failure_names_the_operation_and_keeps_the_os_error_as_its_source() {
+    let error = Error::Io {
+        path: PathBuf::from("/run/lock/togi.lock"),
+        operation: Operation::Lock,
+        source: io::Error::other("disk gone"),
+    };
+    assert_eq!(error.to_string(), "lock host lock /run/lock/togi.lock");
+    let source = std::error::Error::source(&error)
+        .and_then(|source| source.downcast_ref::<io::Error>())
+        .unwrap();
+    assert_eq!(source.to_string(), "disk gone");
+}
+
+#[test]
 fn real_fs_read_only_descriptor_to_a_secure_lock_is_refused_without_chmod() {
     for mode in [0o600, 0o660] {
         let dir = private_dir();
