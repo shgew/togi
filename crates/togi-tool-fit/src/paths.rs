@@ -15,7 +15,9 @@ fn absolute(path: &Path) -> Result<PathBuf, Error> {
             Component::ParentDir => {
                 clean.pop();
             }
-            other => clean.push(other),
+            other @ (Component::Prefix(_) | Component::RootDir | Component::Normal(_)) => {
+                clean.push(other);
+            }
         }
     }
     Ok(clean)

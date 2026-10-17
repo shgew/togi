@@ -1999,6 +1999,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "togi-tool-reviews"
+version = "0.0.0"
+dependencies = [
+ "jiff",
+ "regex",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "test-case",
+ "thiserror",
+ "togi-machine",
+]
+
+[[package]]
 name = "togi-tool-sim"
 version = "0.0.0"
 dependencies = [

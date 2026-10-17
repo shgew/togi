@@ -91,7 +91,9 @@ fn clean(path: &Path) -> PathBuf {
                 clean.pop();
             }
             Component::CurDir => {}
-            component => clean.push(component.as_os_str()),
+            component @ (Component::Prefix(_) | Component::RootDir | Component::Normal(_)) => {
+                clean.push(component.as_os_str());
+            }
         }
     }
     clean

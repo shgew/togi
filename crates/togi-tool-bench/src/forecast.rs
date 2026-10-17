@@ -750,7 +750,9 @@ mod tests {
                         normalized.pop();
                     }
                     std::path::Component::CurDir => {}
-                    part => normalized.push(part.as_os_str()),
+                    part @ (std::path::Component::Prefix(_)
+                    | std::path::Component::RootDir
+                    | std::path::Component::Normal(_)) => normalized.push(part.as_os_str()),
                 }
             }
             normalized

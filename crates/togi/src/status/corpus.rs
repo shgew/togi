@@ -336,9 +336,12 @@ fn rewritten(events: &[Event], mut change: impl FnMut(&mut Payload) -> bool) -> 
 fn first_hunt_start(events: &[Event]) -> HuntStart {
     events
         .iter()
-        .find_map(|event| match &event.payload {
-            Payload::HuntStart(start) => Some(start.clone()),
-            _ => None,
+        .find_map(|event| {
+            if let Payload::HuntStart(start) = &event.payload {
+                Some(start.clone())
+            } else {
+                None
+            }
         })
         .expect("a hunt")
 }
@@ -347,9 +350,12 @@ fn last_intent(events: &[Event]) -> TrialIntent {
     events
         .iter()
         .rev()
-        .find_map(|event| match &event.payload {
-            Payload::TrialIntent(intent) => Some(intent.clone()),
-            _ => None,
+        .find_map(|event| {
+            if let Payload::TrialIntent(intent) = &event.payload {
+                Some(intent.clone())
+            } else {
+                None
+            }
         })
         .expect("a trial intent")
 }
@@ -495,10 +501,10 @@ fn short_cycle() -> Vec<Event> {
     let machine = togi_watchtest::default_machine(1).expect("the machine builds");
     let mut checking = false;
     let stop_at_the_first_checking_trial: togi_watchtest::Until = Box::new(move |event| {
-        match &event.payload {
-            Payload::TrialIntent(intent) => checking = intent.activity == Some(Activity::Checking),
-            Payload::TrialStart(_) => return checking,
-            _ => {}
+        if let Payload::TrialIntent(intent) = &event.payload {
+            checking = intent.activity == Some(Activity::Checking);
+        } else if let Payload::TrialStart(_) = &event.payload {
+            return checking;
         }
         false
     });
@@ -577,12 +583,15 @@ fn hunt_parked_at_a_cycle_end() -> Vec<Event> {
         false
     })
     .expect("a hunt trial after a passed full cycle");
-    rewritten(events, |payload| match payload {
-        Payload::HuntStart(start) if start.hunt.get() == hunt_number => {
+    rewritten(events, |payload| {
+        if let Payload::HuntStart(start) = payload
+            && start.hunt.get() == hunt_number
+        {
             start.parked_seq = cycle_end;
             true
+        } else {
+            false
         }
-        _ => false,
     })
 }
 
@@ -604,18 +613,20 @@ fn r7_with_request_telemetry() -> Vec<Event> {
     let (at, ccd, intent) = base
         .iter()
         .enumerate()
-        .find_map(|(at, event)| match &event.payload {
-            Payload::TrialIntent(intent) => {
+        .find_map(|(at, event)| {
+            if let Payload::TrialIntent(intent) = &event.payload {
                 open = Some(intent);
                 None
-            }
-            Payload::TrialEnd(end) if end.outcome == Outcome::Pass => {
+            } else if let Payload::TrialEnd(end) = &event.payload
+                && end.outcome == Outcome::Pass
+            {
                 let intent =
                     open.filter(|intent| intent.trial == end.trial && intent.regime == Regime::R7)?;
                 let (&ccd, _) = parts.iter().find(|(_, part)| **part == intent.cores)?;
                 Some((at, ccd, intent))
+            } else {
+                None
             }
-            _ => None,
         })
         .expect("a passing R7 trial that loads one whole CCD");
     let top = intent
@@ -631,8 +642,10 @@ fn r7_with_request_telemetry() -> Vec<Event> {
             )
         })
         .expect("a loaded core");
-    rewritten(&base[..=at], |payload| match payload {
-        Payload::TrialEnd(end) if end.trial == intent.trial => {
+    rewritten(&base[..=at], |payload| {
+        if let Payload::TrialEnd(end) = payload
+            && end.trial == intent.trial
+        {
             end.voltage_requests_v = intent
                 .cores
                 .iter()
@@ -643,8 +656,9 @@ fn r7_with_request_telemetry() -> Vec<Event> {
             end.voltage_request_median_v = Some(TOP_V);
             end.voltage_request_min_v = Some(TOP_V);
             true
+        } else {
+            false
         }
-        _ => false,
     })
 }
 
@@ -766,12 +780,13 @@ fn edge_journals() -> Vec<(String, String, Vec<Event>)> {
     add(
         "r7-without-request-telemetry",
         "between with every trial.end's per-core voltage requests removed",
-        rewritten(&between, |payload| match payload {
-            Payload::TrialEnd(end) => {
+        rewritten(&between, |payload| {
+            if let Payload::TrialEnd(end) = payload {
                 end.voltage_requests_v = PerCore::default();
                 true
+            } else {
+                false
             }
-            _ => false,
         }),
     );
     add(
@@ -783,12 +798,13 @@ fn edge_journals() -> Vec<(String, String, Vec<Event>)> {
     add(
         "evidence-without-tctl",
         "between with every trial.end's Tctl maximum removed",
-        rewritten(&between, |payload| match payload {
-            Payload::TrialEnd(end) => {
+        rewritten(&between, |payload| {
+            if let Payload::TrialEnd(end) = payload {
                 end.tctl_max_c = None;
                 true
+            } else {
+                false
             }
-            _ => false,
         }),
     );
     add(
@@ -854,12 +870,13 @@ fn edge_journals() -> Vec<(String, String, Vec<Event>)> {
         "combination with its combination event marked fallback",
         rewritten(
             &Scenario::Combination.events().expect("the scenario cuts"),
-            |payload| match payload {
-                Payload::Combination(combination) => {
+            |payload| {
+                if let Payload::Combination(combination) = payload {
                     combination.fallback = true;
                     true
+                } else {
+                    false
                 }
-                _ => false,
             },
         ),
     );
@@ -899,12 +916,13 @@ fn edge_journals() -> Vec<(String, String, Vec<Event>)> {
         add(
             &format!("dead-end-{}", condition.as_str()),
             "deadend with its deadend event's condition replaced",
-            rewritten(&deadend, |payload| match payload {
-                Payload::DeadEnd(dead_end) => {
+            rewritten(&deadend, |payload| {
+                if let Payload::DeadEnd(dead_end) = payload {
                     dead_end.condition = condition;
                     true
+                } else {
+                    false
                 }
-                _ => false,
             }),
         );
     }
@@ -912,10 +930,10 @@ fn edge_journals() -> Vec<(String, String, Vec<Event>)> {
     add(
         "solo-limits-three-counts-deep",
         "first-result with the pass of every search transition two counts deeper and its failure point one beyond: each candidate's solo limit is three counts below its checking offset",
-        rewritten(&first_result, |payload| match payload {
-            Payload::CorePhase(transition)
-                if transition.from == Some(togi_journal::CorePhase::Search)
-                    && transition.to != togi_journal::CorePhase::Search =>
+        rewritten(&first_result, |payload| {
+            if let Payload::CorePhase(transition) = payload
+                && transition.from == Some(togi_journal::CorePhase::Search)
+                && transition.to != togi_journal::CorePhase::Search
             {
                 let Some(pass) = transition.pass else {
                     return false;
@@ -926,8 +944,9 @@ fn edge_journals() -> Vec<(String, String, Vec<Event>)> {
                     transition.failure_point = Some(deeper.deeper_or_floor(1));
                 }
                 true
+            } else {
+                false
             }
-            _ => false,
         }),
     );
     let member_probe = Scenario::MemberProbe.events().expect("the scenario cuts");
@@ -935,13 +954,17 @@ fn edge_journals() -> Vec<(String, String, Vec<Event>)> {
     add(
         "hunt-group-skipped",
         "member-probe with its first non-probe hunt.group recorded as skipped",
-        rewritten(&member_probe, |payload| match payload {
-            Payload::HuntGroup(group) if !skipped && group.probe.is_none() => {
+        rewritten(&member_probe, |payload| {
+            if let Payload::HuntGroup(group) = payload
+                && !skipped
+                && group.probe.is_none()
+            {
                 skipped = true;
                 group.skipped = true;
                 true
+            } else {
+                false
             }
-            _ => false,
         }),
     );
     edges

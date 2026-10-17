@@ -411,7 +411,11 @@ fn compare_file(
                 line,
                 source,
             },
-            other => other,
+            other @ (JournalError::List { .. }
+            | JournalError::Missing
+            | JournalError::Empty
+            | JournalError::MissingOnASide { .. }
+            | JournalError::EmptyOnASide { .. }) => other,
         })?;
     let missing = [paths[0].is_none(), paths[1].is_none()];
     let (line, mut base, mut head) = match found {
