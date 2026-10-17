@@ -23,4 +23,4 @@ The mechanism after the Rust cutover; the decision and its reasons are unchanged
 
 ## Amendment (#630)
 
-[ADR 0071](0071-no-go-in-the-repository.md) rewrites the Go programs; the decision and its reasons are unchanged. The release tool is the `togi-tool-release` crate (`just release-preview` runs `cargo run --quiet --locked -p togi-tool-release`). `tools/` keeps the benchmark data, the Nushell `board` and the two retained Go programs, `reviews` and `cover`, until their Rust rewrites land.
+[ADR 0071](0071-no-go-in-the-repository.md) rewrites the Go programs; the decision and its reasons are unchanged. The release tool is the `togi-tool-release` crate (`just release-preview` runs `cargo run --quiet --locked -p togi-tool-release`). `tools/` keeps the benchmark data, the Nushell `board`, the `just sql` views and the two retained Go programs, `reviews` and `cover`, until their Rust rewrites land.
