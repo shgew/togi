@@ -160,8 +160,11 @@ fn partial_reads_as_its_error() {
 struct PartialKernel;
 
 impl Kernel for PartialKernel {
-    fn mces(&mut self, _boot: &BootId, _since: Duration) -> Result<Vec<Mce>, Error> {
-        Err(Error::BootMissing)
+    fn mces(&mut self, _boot: &BootId, _since: Duration) -> Result<Vec<Mce>, Partial<Vec<Mce>>> {
+        Err(Partial {
+            value: Vec::new(),
+            error: Error::BootMissing,
+        })
     }
 
     fn read_mces(
@@ -207,7 +210,10 @@ fn kernel_read_resumes_after_a_cursor_or_reads_the_whole_boot() {
     assert!(matches!(partial.error, Error::CursorMissing));
     assert!(matches!(
         kernel.mces(&boot, Duration::ZERO),
-        Err(Error::BootMissing)
+        Err(Partial {
+            error: Error::BootMissing,
+            ..
+        })
     ));
 }
 

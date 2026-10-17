@@ -110,7 +110,7 @@ fn real_process_a_hung_journalctl_is_killed_at_the_deadline() {
     let elapsed = started_at.elapsed();
     let helper = identity(&pid_file);
     let _reaped = Reaped::arm(&helper);
-    assert!(timed_out(&error), "{error:?}");
+    assert!(timed_out(&error.error), "{error:?}");
     assert!(elapsed < DEADLINE + SLACK, "{elapsed:?}");
     assert_gone(&helper);
 }
@@ -126,7 +126,7 @@ fn real_process_a_descendant_holding_the_pipes_cannot_extend_the_deadline() {
     let elapsed = started_at.elapsed();
     let helper = identity(&pid_file);
     let _reaped = Reaped::arm(&helper);
-    assert!(timed_out(&error), "{error:?}");
+    assert!(timed_out(&error.error), "{error:?}");
     assert!(
         elapsed + Duration::from_millis(100) >= DEADLINE,
         "{elapsed:?}"

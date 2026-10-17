@@ -287,9 +287,16 @@ fn unreadable() -> Error {
 }
 
 impl Kernel for UnreadableOnce {
-    fn mces(&mut self, boot: &BootId, since: Duration) -> Result<Vec<togi_machine::Mce>, Error> {
+    fn mces(
+        &mut self,
+        boot: &BootId,
+        since: Duration,
+    ) -> Result<Vec<togi_machine::Mce>, Partial<Vec<togi_machine::Mce>>> {
         if self.fails(boot) {
-            return Err(unreadable());
+            return Err(Partial {
+                value: Vec::new(),
+                error: unreadable(),
+            });
         }
         self.inner.mces(boot, since)
     }

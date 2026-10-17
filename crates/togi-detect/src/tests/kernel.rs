@@ -84,13 +84,16 @@ fn missing_boot_no_match_and_failure_are_told_apart() {
     let (mut missing, _) = kernel(&[], |_| exit(1, b"", NO_BOOT));
     assert!(matches!(
         missing.mces(&boot(MISSING), Duration::ZERO),
-        Err(togi_machine::Error::BootMissing)
+        Err(togi_machine::Partial {
+            error: togi_machine::Error::BootMissing,
+            ..
+        })
     ));
     let (mut empty, _) = kernel(&[], |_| exit(1, b"", ""));
     assert!(empty.mces(&boot(OLD), Duration::ZERO).unwrap().is_empty());
     let (mut broken, _) = kernel(&[], |_| exit(2, b"", "permission denied\n"));
     let error = broken.mces(&boot(OLD), Duration::ZERO).unwrap_err();
-    assert!(!matches!(error, togi_machine::Error::BootMissing));
+    assert!(!matches!(error.error, togi_machine::Error::BootMissing));
     assert!(error.to_string().contains(OLD), "{error}");
     let (mut half_empty, _) = kernel(&[], |_| exit(1, b"{}\n", ""));
     assert!(half_empty.mces(&boot(OLD), Duration::ZERO).is_err());

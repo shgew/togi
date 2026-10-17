@@ -294,8 +294,35 @@ fn malformed_messages_keep_only_earlier_evidence() {
         assert_eq!(partial.value.len(), 1, "{name}");
         assert!(partial.value[0].corrected, "{name}");
         assert_eq!(partial.value[0].core, Some(core(1)), "{name}");
-        assert!(kernel.mces(&boot(OLD), Duration::ZERO).is_err(), "{name}");
+        let partial = kernel.mces(&boot(OLD), Duration::ZERO).unwrap_err();
+        assert!(caused_by::<DecodeError>(&partial).is_some(), "{name}");
+        assert_eq!(partial.value.len(), 1, "{name}");
+        assert!(partial.value[0].corrected, "{name}");
+        assert_eq!(partial.value[0].core, Some(core(1)), "{name}");
     }
+}
+
+#[test]
+fn a_whole_boot_read_keeps_checks_before_a_malformed_status_line() {
+    let out = lines(&[
+        entry("valid", OLD, STATUS, 1_000_000),
+        entry(
+            "bad",
+            OLD,
+            "[Hardware Error]: CPU:abc (1a:44:0) MC1_STATUS[Over|CE|-]: 0xbc00000000010135",
+            2_000_000,
+        ),
+    ]);
+    let (mut kernel, _) = kernel(&[(1, &[2])], move |_| ok(&out));
+    let partial = kernel.mces(&boot(OLD), Duration::ZERO).unwrap_err();
+    assert_eq!(partial.value.len(), 1);
+    assert_eq!(partial.value[0].core, Some(core(1)));
+    assert!(partial.value[0].corrected);
+    assert_eq!(partial.value[0].monotonic, Duration::from_secs(1));
+    assert_eq!(
+        caused_by::<StatusError>(&partial),
+        Some(&StatusError::Cpu("abc".to_owned()))
+    );
 }
 
 #[test]

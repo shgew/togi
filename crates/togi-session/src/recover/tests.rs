@@ -80,33 +80,46 @@ struct KernelScript {
     failing: Option<BootId>,
     failures: u32,
     crashed: bool,
+    reasons_unreadable: bool,
     reads: Vec<BootId>,
 }
 
 struct TestKernel(Rc<RefCell<KernelScript>>);
 
 impl Kernel for TestKernel {
-    fn mces(&mut self, boot: &BootId, since: Duration) -> Result<Vec<togi_machine::Mce>, Error> {
+    fn mces(
+        &mut self,
+        boot: &BootId,
+        since: Duration,
+    ) -> Result<Vec<togi_machine::Mce>, Partial<Vec<togi_machine::Mce>>> {
         let mut script = self.0.borrow_mut();
+        let nothing = |error| Partial {
+            value: Vec::new(),
+            error,
+        };
         if script.crashed {
-            return Err(Error::Crashed);
+            return Err(nothing(Error::Crashed));
         }
         script.reads.push(boot.clone());
         if script.gone.contains(boot) {
-            return Err(Error::BootMissing);
+            return Err(nothing(Error::BootMissing));
         }
-        if script.failing.as_ref() == Some(boot) && script.failures > 0 {
-            script.failures -= 1;
-            return Err(Error::Other("kernel log unreadable".into()));
-        }
-        Ok(script
+        let mces = script
             .mces
             .get(boot)
             .into_iter()
             .flatten()
             .filter(|mce| mce.monotonic >= since)
             .cloned()
-            .collect())
+            .collect();
+        if script.failing.as_ref() == Some(boot) && script.failures > 0 {
+            script.failures -= 1;
+            return Err(Partial {
+                value: mces,
+                error: Error::Other("kernel log unreadable".into()),
+            });
+        }
+        Ok(mces)
     }
 
     fn read_mces(
@@ -122,6 +135,9 @@ impl Kernel for TestKernel {
         if script.crashed {
             return Err(Error::Crashed);
         }
+        if script.reasons_unreadable {
+            return Err(Error::Other("reset reason unreadable".into()));
+        }
         if script.gone.contains(boot) {
             return Err(Error::BootMissing);
         }
@@ -132,6 +148,9 @@ impl Kernel for TestKernel {
         let script = self.0.borrow();
         if script.crashed {
             return Err(Error::Crashed);
+        }
+        if script.reasons_unreadable {
+            return Err(Error::Other("reset reason unreadable".into()));
         }
         let next = script
             .order
@@ -1151,6 +1170,196 @@ fn the_kernel_log_is_retried_after_one_five_and_thirty_minutes_then_read_or_give
     assert_eq!(cited, retries);
     assert!(h.crashes().is_empty() && h.ends().is_empty());
     assert_eq!(h.sleeps().len(), 3);
+}
+
+#[test]
+fn partial_machine_checks_survive_retries_and_decide_the_crash() {
+    for (from, corrected, evidence) in [
+        ("b0", false, true),
+        ("b0", true, true),
+        ("b1", false, true),
+        ("b1", true, false),
+    ] {
+        let mut h = Harness::new(&trial_log(), "b1");
+        h.reasons(&[("b0", None), ("b1", Some(ResetKind::ThermalTrip))]);
+        {
+            let mut script = h.kernel.borrow_mut();
+            script
+                .mces
+                .insert(boot(from), vec![kernel_mce(20, corrected)]);
+            script.failing = Some(boot(from));
+            script.failures = u32::MAX;
+        }
+        let recovered = h.recover().unwrap();
+        assert_eq!(
+            h.sleeps(),
+            [
+                Duration::from_mins(1),
+                Duration::from_mins(5),
+                Duration::from_mins(30),
+            ]
+        );
+        assert_eq!(h.retries().len(), 3);
+        if !evidence {
+            assert!(matches!(recovered, Recovered::Unreadable(_)));
+            assert!(h.mces().is_empty());
+            assert!(h.crashes().is_empty());
+            continue;
+        }
+        assert_eq!(recovered, Recovered::Done);
+        let mces = h.mces();
+        assert_eq!(mces.len(), 1);
+        let (mce_event, mce) = mces[0];
+        assert_eq!(mce.from_boot, Some(boot(from)));
+        assert!(!mce.between_trials);
+        assert!(mce_event.seq < h.retries()[0].0.seq);
+        let (crash_event, crash) = h.crashes()[0];
+        assert_eq!(crash_event.cause, [mce_event.seq]);
+        assert!(!crash.inconclusive);
+        let (end_event, end) = h.ends()[0];
+        assert_eq!(end.outcome, Outcome::Failure);
+        assert_eq!(
+            end.signal,
+            Some(if corrected {
+                Signal::CorrectedMce
+            } else {
+                Signal::UncorrectedMce
+            })
+        );
+        assert!(end_event.cause.contains(&mce_event.seq));
+        let before = h.events().len();
+        h.reopen();
+        h.recover().unwrap();
+        assert_eq!(h.events().len(), before);
+        h.consistent();
+    }
+}
+
+#[test]
+fn partial_between_trial_checks_are_recorded_but_do_not_avert_no_evidence() {
+    let mut h = Harness::new(&trial_log(), "b1");
+    {
+        let mut script = h.kernel.borrow_mut();
+        script.mces.insert(boot("b0"), vec![kernel_mce(5, false)]);
+        script.failing = Some(boot("b0"));
+        script.failures = u32::MAX;
+    }
+    assert!(matches!(h.recover().unwrap(), Recovered::Unreadable(_)));
+    assert_eq!(h.mces().len(), 1);
+    assert!(h.mces()[0].1.between_trials);
+    assert_eq!(h.retries().len(), 3);
+    assert!(h.crashes().is_empty());
+    h.consistent();
+}
+
+#[test]
+fn partial_checks_are_durable_before_a_cancelled_wait_and_reused_after_resume() {
+    let mut h = Harness::new(&trial_log(), "b1");
+    h.reasons(&[("b0", None), ("b1", Some(ResetKind::PowerButton))]);
+    {
+        let mut script = h.kernel.borrow_mut();
+        script.mces.insert(boot("b0"), vec![kernel_mce(20, false)]);
+        script.failing = Some(boot("b0"));
+        script.failures = u32::MAX;
+    }
+    h.clock.borrow_mut().cancel_at = Some(0);
+    assert_eq!(h.recover().unwrap(), Recovered::Cancelled);
+    assert_eq!(h.mces().len(), 1);
+    let held = h.mces()[0].0.seq;
+    assert!(held < h.retries()[0].0.seq);
+    h.kernel.borrow_mut().mces.clear();
+    h.cancel = CancellationToken::new();
+    h.reopen();
+    assert_eq!(h.recover().unwrap(), Recovered::Done);
+    assert_eq!(h.mces().len(), 1);
+    assert_eq!(h.crashes()[0].0.cause, [held]);
+    assert_eq!(h.ends()[0].1.signal, Some(Signal::UncorrectedMce));
+    h.consistent();
+}
+
+#[test]
+fn unreadable_reset_reasons_leave_the_crash_to_relevant_evidence_after_retries() {
+    for evidence in [true, false] {
+        let mut h = Harness::new(&trial_log(), "b1");
+        {
+            let mut script = h.kernel.borrow_mut();
+            if evidence {
+                script.mces.insert(boot("b0"), vec![kernel_mce(20, false)]);
+            }
+            script.reasons_unreadable = true;
+        }
+        let recovered = h.recover().unwrap();
+        assert_eq!(
+            h.sleeps(),
+            [
+                Duration::from_mins(1),
+                Duration::from_mins(5),
+                Duration::from_mins(30),
+            ],
+            "evidence {evidence}"
+        );
+        assert_eq!(h.retries().len(), 3, "evidence {evidence}");
+        if !evidence {
+            assert!(
+                matches!(recovered, Recovered::Unreadable(_)),
+                "{recovered:?}"
+            );
+            assert!(h.crashes().is_empty() && h.ends().is_empty());
+            continue;
+        }
+        assert_eq!(recovered, Recovered::Done);
+        let (mce_event, mce) = h.mces()[0];
+        assert!(!mce.corrected && !mce.between_trials);
+        let (crash_event, crash) = h.crashes()[0];
+        assert_eq!(crash.reset_reason, None);
+        assert!(crash.reset_reason_raw.is_empty());
+        assert_eq!(crash_event.cause, [mce_event.seq]);
+        let (end_event, end) = h.ends()[0];
+        assert_eq!(end.outcome, Outcome::Failure);
+        assert_eq!(end.signal, Some(Signal::UncorrectedMce));
+        assert!(end_event.cause.contains(&mce_event.seq));
+        h.consistent();
+    }
+}
+
+#[test]
+fn a_backend_signal_decides_the_crash_when_its_kernel_log_stays_unreadable() {
+    let mut log = base();
+    log.at("b0", 10_000);
+    let intent = log.add(intent("0001"), &[]);
+    log.mono(11_000);
+    let start = log.started("0001", Some(11_000_000_000), intent);
+    log.mono(40_000);
+    log.add(progress("0001", Some(Signal::Stall)), &[start]);
+    let mut h = Harness::new(&log, "b1");
+    h.reasons(&[("b0", None), ("b1", Some(ResetKind::Watchdog))]);
+    {
+        let mut script = h.kernel.borrow_mut();
+        script.failing = Some(boot("b0"));
+        script.failures = u32::MAX;
+    }
+    assert_eq!(h.recover().unwrap(), Recovered::Done);
+    assert_eq!(
+        h.sleeps(),
+        [
+            Duration::from_mins(1),
+            Duration::from_mins(5),
+            Duration::from_mins(30),
+        ]
+    );
+    assert_eq!(h.retries().len(), 3);
+    assert!(h.mces().is_empty());
+    assert_eq!(h.crashes().len(), 1);
+    let (_, end) = h.ends()[0];
+    assert_eq!(
+        (end.outcome, end.signal, end.core),
+        (Outcome::Failure, Some(Signal::Stall), Some(core(0)))
+    );
+    assert_eq!(
+        end.reason.as_deref(),
+        Some("backend reported a failure before the reset")
+    );
+    h.consistent();
 }
 
 #[test]

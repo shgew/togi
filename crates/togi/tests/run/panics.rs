@@ -380,7 +380,7 @@ impl Drop for FailsTheDashboard {
 }
 
 impl Kernel for FailsTheDashboard {
-    fn mces(&mut self, boot: &BootId, since: Duration) -> Result<Vec<Mce>, MachineError> {
+    fn mces(&mut self, boot: &BootId, since: Duration) -> Result<Vec<Mce>, Partial<Vec<Mce>>> {
         self.inner.mces(boot, since)
     }
 

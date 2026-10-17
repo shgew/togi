@@ -90,7 +90,7 @@ struct LogKernel {
 }
 
 impl Kernel for LogKernel {
-    fn mces(&mut self, _boot: &BootId, since: Duration) -> Result<Vec<Mce>, Error> {
+    fn mces(&mut self, _boot: &BootId, since: Duration) -> Result<Vec<Mce>, Partial<Vec<Mce>>> {
         Ok(self
             .log
             .borrow()

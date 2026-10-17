@@ -83,19 +83,42 @@ impl Kernel {
         }
     }
 
-    fn read_whole_boot(&self, boot: &JournalBoot, since: Duration) -> Result<Vec<Mce>, Error> {
+    fn read_whole_boot(
+        &self,
+        boot: &JournalBoot,
+        since: Duration,
+    ) -> Result<Vec<Mce>, Partial<Vec<Mce>>> {
         let operation = Operation::ReadKernelLog {
             boot: boot.as_str().to_owned(),
         };
         let out = self
             .journal()
-            .query(&operation, &mces_args(boot), ExitRules::GREP)?;
-        let messages =
-            mce_messages(&out, since).map_err(|source| Self::decode_failure(&operation, source))?;
-        parse(&messages, &self.cores).map_err(|failure| Error::Status {
-            operation,
-            source: failure.error,
-        })
+            .query(&operation, &mces_args(boot), ExitRules::GREP)
+            .map_err(|error| Partial {
+                value: Vec::new(),
+                error: error.into(),
+            })?;
+        let (messages, decode_error) = mce_messages(&out, since);
+        let (mces, error) = match parse(&messages, &self.cores) {
+            Ok(mces) => (
+                mces,
+                decode_error.map(|source| Self::decode_failure(&operation, source)),
+            ),
+            Err(failure) => (
+                failure.mces,
+                Some(Error::Status {
+                    operation,
+                    source: failure.error,
+                }),
+            ),
+        };
+        match error {
+            None => Ok(mces),
+            Some(error) => Err(Partial {
+                value: mces,
+                error: error.into(),
+            }),
+        }
     }
 
     fn read_interval(
@@ -233,9 +256,12 @@ impl Kernel {
 }
 
 impl togi_machine::Kernel for Kernel {
-    fn mces(&mut self, boot: &BootId, since: Duration) -> Result<Vec<Mce>, togi_machine::Error> {
-        let boot = JournalBoot::parse(boot.as_str())?;
-        Ok(self.read_whole_boot(&boot, since)?)
+    fn mces(&mut self, boot: &BootId, since: Duration) -> Result<Vec<Mce>, Partial<Vec<Mce>>> {
+        let boot = JournalBoot::parse(boot.as_str()).map_err(|error| Partial {
+            value: Vec::new(),
+            error: error.into(),
+        })?;
+        self.read_whole_boot(&boot, since)
     }
 
     fn read_mces(

@@ -126,7 +126,13 @@ fn a_used_up_budget_runs_nothing() {
     let error = kernel
         .read_whole_boot(&JournalBoot::parse(OLD).unwrap(), Duration::ZERO)
         .unwrap_err();
-    assert!(matches!(error, Error::BudgetExhausted { .. }));
+    let togi_machine::Error::Other(source) = error.error else {
+        panic!("{error:?}");
+    };
+    assert!(matches!(
+        source.downcast_ref::<Error>(),
+        Some(Error::BudgetExhausted { .. })
+    ));
     assert!(locked(&calls).is_empty());
 }
 

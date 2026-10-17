@@ -339,8 +339,11 @@ impl SimKernel {
 }
 
 impl Kernel for SimKernel {
-    fn mces(&mut self, boot: &BootId, since: Duration) -> Result<Vec<Mce>, Error> {
-        self.known(boot)?;
+    fn mces(&mut self, boot: &BootId, since: Duration) -> Result<Vec<Mce>, Partial<Vec<Mce>>> {
+        self.known(boot).map_err(|error| Partial {
+            value: Vec::new(),
+            error,
+        })?;
         let runtime = self.0.borrow();
         Ok(runtime
             .mces(boot)
