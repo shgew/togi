@@ -180,7 +180,13 @@ fn reset_one(ctx: &mut Context<'_>, dir: StateDir, boot: BootId, core: u8) -> Ex
     if let Err(error) = reset {
         return match error {
             CommandError::NoSuchCore { .. } => no_such_core(ctx, core),
-            error => command_failure(ctx, &error),
+            error @ (CommandError::NoSession
+            | CommandError::Compatibility(_)
+            | CommandError::Append(_)
+            | CommandError::Fold(_)
+            | CommandError::Archive(_)
+            | CommandError::Close(_)
+            | CommandError::Dir(_)) => command_failure(ctx, &error),
         };
     }
     if let Err(error) = journal.close() {
@@ -243,7 +249,11 @@ fn command_failure(ctx: &mut Context<'_>, error: &CommandError) -> Exit {
         CommandError::NoSession => no_session(ctx),
         CommandError::NoSuchCore { .. } => exit_with(ctx, COMMAND, error, Exit::Usage),
         CommandError::Compatibility(_) => exit_with(ctx, COMMAND, error, Exit::Incompatible),
-        _ => fail(ctx, COMMAND, togi_render::error_chain(error)),
+        CommandError::Append(_)
+        | CommandError::Fold(_)
+        | CommandError::Archive(_)
+        | CommandError::Close(_)
+        | CommandError::Dir(_) => fail(ctx, COMMAND, togi_render::error_chain(error)),
     }
 }
 

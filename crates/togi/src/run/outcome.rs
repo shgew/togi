@@ -54,7 +54,25 @@ pub(super) fn conclude(
         return Outcome::exit(match first {
             SessionError::Compatibility(_) => Exit::Incompatible,
             SessionError::NoSuchCore { .. } => Exit::Usage,
-            _ => Exit::Error,
+            SessionError::Journal(_)
+            | SessionError::Fold(_)
+            | SessionError::Machine(_)
+            | SessionError::Config(_)
+            | SessionError::Bootloader(_)
+            | SessionError::Lookup(_)
+            | SessionError::Write(_)
+            | SessionError::Log(_)
+            | SessionError::TopologyChanged { .. }
+            | SessionError::NoSuchTrialCore { .. }
+            | SessionError::Unproven
+            | SessionError::PlanDisagrees
+            | SessionError::NotReady(_)
+            | SessionError::ClearSavedEntry(_)
+            | SessionError::SessionId(_)
+            | SessionError::DeadEndUnrecorded(_)
+            | SessionError::Prompt { .. }
+            | SessionError::Panicked(_)
+            | SessionError::Profile(_) => Exit::Error,
         });
     }
     match stop {
@@ -119,7 +137,52 @@ impl HiddenClosing {
                 }
             }
             EventKind::SessionWarning | EventKind::Mce => {}
-            _ => self.0.clear(),
+            EventKind::SessionStart
+            | EventKind::SessionContext
+            | EventKind::SessionBaseline
+            | EventKind::SessionNotice
+            | EventKind::SessionArchived
+            | EventKind::SessionCarried
+            | EventKind::ConfigLoaded
+            | EventKind::PreflightCheck
+            | EventKind::SmuIntent
+            | EventKind::SmuWrite
+            | EventKind::SmuReadback
+            | EventKind::SmuError
+            | EventKind::ProfileApplied
+            | EventKind::ProfileChange
+            | EventKind::TrialIntent
+            | EventKind::TrialStart
+            | EventKind::TrialProgress
+            | EventKind::TrialSignal
+            | EventKind::TrialSample
+            | EventKind::TrialEnd
+            | EventKind::TrialCarried
+            | EventKind::Failure
+            | EventKind::FailureCarried
+            | EventKind::CrashDetected
+            | EventKind::TunerDecision
+            | EventKind::CorePhase
+            | EventKind::CheckingCycle
+            | EventKind::CheckingStep
+            | EventKind::CheckingChain
+            | EventKind::HostRanking
+            | EventKind::HuntStart
+            | EventKind::HuntGroup
+            | EventKind::HuntEnd
+            | EventKind::HuntSkipped
+            | EventKind::Combination
+            | EventKind::DeepeningRound
+            | EventKind::TunerWarning
+            | EventKind::BackendRetry
+            | EventKind::CommandReset
+            | EventKind::DefectFound
+            | EventKind::DefectAnswered
+            | EventKind::DeadEnd
+            | EventKind::BootSavedEntry
+            | EventKind::BootLeaveReason
+            | EventKind::JournalTorn
+            | EventKind::StateRebuilt => self.0.clear(),
         }
     }
 
