@@ -209,7 +209,6 @@
             vendorHash = "sha256-uPqabZgQGQulf+F3BvMLhv4O0h5jOq12F7K60u5xjtA=";
             nativeCheckInputs = [ pkgs.gitMinimal ];
             subPackages = [
-              "tools/release"
               "tools/reviews"
               "tools/cover"
             ];
@@ -374,25 +373,19 @@
                   HOME=$TMPDIR treefmt --ci --walk filesystem
                   touch "$out"
                 '';
-            changes =
-              pkgs.runCommand "togi-changes"
+            changes = craneLib.mkCargoDerivation (
+              cargoCheck
+                (cargoSources.source {
+                  code = cargoSources.closure [ "togi-tool-release" ];
+                  files = [ ./changes ];
+                })
                 {
-                  nativeBuildInputs = [ pkgs.go_1_27 ];
-                  src = lib.fileset.toSource {
-                    root = ./.;
-                    fileset = lib.fileset.unions [
-                      ./go.mod
-                      ./go.sum
-                      ./tools/release
-                      ./changes
-                    ];
-                  };
+                  pnameSuffix = "-changes";
+                  doInstallCargoArtifacts = false;
+                  buildPhaseCargoCommand = "cargoWithProfile run --locked -p togi-tool-release -- -check changes";
+                  installPhaseCommand = "touch $out";
                 }
-                ''
-                  cd "$src"
-                  HOME=$TMPDIR GOCACHE=$TMPDIR/go-cache GOPROXY=off GOTOOLCHAIN=local CGO_ENABLED=0 go run ./tools/release -check changes
-                  touch "$out"
-                '';
+            );
             module = import ./nix/module-test.nix {
               pkgs = inputs.nixpkgs.legacyPackages.x86_64-linux;
               hostPkgs = pkgs;

@@ -25,7 +25,7 @@ jobs:
       - name: Commit the release
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: nix develop --command go run ./tools/release -commit
+        run: nix develop --command cargo run --locked -p togi-tool-release -- -commit
       - name: Build the package and run its tests
         run: nix build --no-link --print-build-logs .#packages.x86_64-linux.default .#checks.x86_64-linux.nextest
       - name: Push to main
@@ -41,4 +41,4 @@ jobs:
       - name: Publish
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: nix develop --command go run ./tools/release -publish
+        run: nix develop --command cargo run --locked -p togi-tool-release -- -publish
