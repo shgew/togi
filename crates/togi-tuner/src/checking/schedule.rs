@@ -22,14 +22,22 @@ pub enum R7PartRole {
 /// `config`, by intended duration in the order the cycle runs them: three at `short_trial_s`, then one long
 /// trial, one requirement of four when the two durations coincide (`docs/spec/tuner.md`, Checking).
 pub fn r7_part_passes(config: &Config, ccds: usize, role: R7PartRole) -> Vec<(Secs, u32)> {
-    let config = TunerConfig::from_config(config);
-    let short = config.short_trial;
-    let long = long_duration(&config, ccds, role);
+    let [(short, shorts), (long, longs)] =
+        part_passes(&TunerConfig::from_config(config), ccds, role);
     if short == long {
-        vec![(short, SHORT_TRIALS + 1)]
+        vec![(short, shorts + longs)]
     } else {
-        vec![(short, SHORT_TRIALS), (long, 1)]
+        vec![(short, shorts), (long, longs)]
     }
+}
+
+/// The passes of one R7 part by intended duration, short then long, as the cycle runs them; the two durations
+/// may coincide, and then the step's plan adds the counts of their one class.
+fn part_passes(config: &TunerConfig, ccds: usize, role: R7PartRole) -> [(Secs, u32); 2] {
+    [
+        (config.short_trial, SHORT_TRIALS),
+        (long_duration(config, ccds, role), 1),
+    ]
 }
 
 /// The passes one trial class must have earned by this requirement; a class repeated in a step
@@ -85,20 +93,16 @@ fn r7_part(
     ccd: Option<CcdId>,
     role: R7PartRole,
 ) -> PartPlan {
-    let long = long_duration(config, topo.ccds().len(), role);
     PartPlan {
         cores,
         ccd,
-        quotas: vec![
-            Quota {
-                class: ClassKey::new(workload, cores, config.short_trial),
-                count: SHORT_TRIALS,
-            },
-            Quota {
-                class: ClassKey::new(workload, cores, long),
-                count: 1,
-            },
-        ],
+        quotas: part_passes(config, topo.ccds().len(), role)
+            .into_iter()
+            .map(|(secs, count)| Quota {
+                class: ClassKey::new(workload, cores, secs),
+                count,
+            })
+            .collect(),
     }
 }
 

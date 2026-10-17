@@ -17,7 +17,7 @@ use togi_machine::{CoreId, CoreSet, Regime, TargetOffset, workloads};
 use togi_sim::{Load, Model, ShapeError};
 use togi_tuner::{R7PartRole, Secs, r7_part_passes};
 
-use crate::metrics::{CORES_PER_CCD, next_partial};
+use crate::metrics::next_partial;
 
 /// The constant hazards of the #490 readiness grid, failures per hour.
 pub const GRID_PER_HOUR: [f64; 8] = [0.0, 0.1, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0];
@@ -318,14 +318,14 @@ pub fn machine_blocks(
         ],
         None => catalog.iter().map(|w| w.id).collect(),
     };
-    let ccds = model.cores().div_ceil(CORES_PER_CCD);
     let all: CoreSet = (0..model.cores()).filter_map(core).collect();
+    let ccds = all.iter().map(|c| model.ccd_of(c) + 1).max().unwrap_or(0);
     selected
         .into_iter()
         .map(|workload| {
             let loads = match query.cores {
                 Some(cores) if cores.len() < 2 => return Err(MachineError::SingleCore),
-                Some(cores) => vec![(role_of(cores, all, ccds), cores)],
+                Some(cores) => vec![(role_of(model, cores, all, ccds), cores)],
                 None => step_loads(model, query.profile, workload, ccds, all)?,
             };
             let parts = loads
@@ -362,11 +362,11 @@ pub fn machine_blocks(
         .collect()
 }
 
-fn role_of(cores: CoreSet, all: CoreSet, ccds: usize) -> R7PartRole {
+fn role_of(model: &Model, cores: CoreSet, all: CoreSet, ccds: usize) -> R7PartRole {
     if ccds > 1 && cores == all {
         return R7PartRole::AllCore;
     }
-    let full = (0..ccds).any(|ccd| ccd_cores(ccd, all) == cores);
+    let full = (0..ccds).any(|ccd| ccd_cores(model, ccd, all) == cores);
     if full {
         R7PartRole::Ccd
     } else {
@@ -374,9 +374,10 @@ fn role_of(cores: CoreSet, all: CoreSet, ccds: usize) -> R7PartRole {
     }
 }
 
-fn ccd_cores(ccd: usize, all: CoreSet) -> CoreSet {
+/// The cores of `ccd` by the simulator's own mapping, the topology it reports to the tuner.
+fn ccd_cores(model: &Model, ccd: usize, all: CoreSet) -> CoreSet {
     all.iter()
-        .filter(|core| core.index() / CORES_PER_CCD == ccd)
+        .filter(|&core| model.ccd_of(core) == ccd)
         .collect()
 }
 
@@ -389,7 +390,7 @@ fn step_loads(
 ) -> Result<Vec<(R7PartRole, CoreSet)>, ShapeError> {
     let mut loads = Vec::new();
     for ccd in 0..ccds {
-        let full = ccd_cores(ccd, all);
+        let full = ccd_cores(model, ccd, all);
         loads.push((R7PartRole::Ccd, full));
         let mut loaded: Vec<CoreId> = full.iter().collect();
         loop {
@@ -635,6 +636,7 @@ fn expected(value: f64, decimals: usize) -> String {
 #[cfg(test)]
 mod tests {
     use test_case::test_case;
+    use togi_sim::MachineDefinition;
     use togi_sim::definition::SharedVoltageDef;
 
     use super::*;
@@ -962,23 +964,51 @@ mod tests {
         );
     }
 
-    #[test]
-    fn a_machine_part_by_its_cores_is_one_partial_and_needs_two_cores() {
+    fn cores(ids: &[i64]) -> CoreSet {
+        ids.iter().map(|&id| CoreId::new(id).unwrap()).collect()
+    }
+
+    fn passes(obligation: &Obligation) -> Vec<(u32, u32)> {
+        obligation
+            .requirements()
+            .iter()
+            .map(|r| (r.trial.get(), r.count))
+            .collect()
+    }
+
+    const ALL_CORES: [i64; 16] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+
+    #[test_case(&[14, 15], R7PartRole::Partial, 300 ; "a pair is a partial")]
+    #[test_case(&[8, 9, 10, 11, 12, 13, 14, 15], R7PartRole::Ccd, 300 ; "a whole ccd is its ccd part")]
+    #[test_case(&ALL_CORES, R7PartRole::AllCore, 600 ; "every core is the all-core part")]
+    fn a_machine_part_by_its_cores_needs_the_long_trial_of_its_role(
+        ids: &[i64],
+        role: R7PartRole,
+        long: u32,
+    ) {
         let model = background_only(1.0 / 3600.0);
         let profile = rail::profile();
-        let cores =
-            |ids: &[i64]| -> CoreSet { ids.iter().map(|&id| CoreId::new(id).unwrap()).collect() };
-        let pair = MachineQuery {
+        let query = MachineQuery {
             profile: &profile,
             workload: Some(workloads(Regime::R7)[0].id),
-            cores: Some(cores(&[14, 15])),
+            cores: Some(cores(ids)),
         };
-        let blocks = machine_blocks(&Config::default(), &model, &pair).unwrap();
-        assert_eq!(blocks[0].parts.len(), 1);
-        assert_eq!(blocks[0].parts[0].role, R7PartRole::Partial);
+        let blocks = machine_blocks(&Config::default(), &model, &query).unwrap();
+        let [part] = blocks[0].parts.as_slice() else {
+            panic!("a query by cores gives one part: {blocks:?}");
+        };
+        assert_eq!(part.role, role);
+        assert_eq!(passes(&part.obligation), [(120, 3), (long, 1)]);
+    }
+
+    #[test]
+    fn a_machine_part_by_its_cores_needs_two_cores_and_a_known_workload() {
+        let model = background_only(1.0 / 3600.0);
+        let profile = rail::profile();
         let single = MachineQuery {
+            profile: &profile,
+            workload: Some(workloads(Regime::R7)[0].id),
             cores: Some(cores(&[14])),
-            ..pair.clone()
         };
         assert!(matches!(
             machine_blocks(&Config::default(), &model, &single),
@@ -986,7 +1016,8 @@ mod tests {
         ));
         let unknown = MachineQuery {
             workload: Some("nonesuch"),
-            ..pair
+            cores: Some(cores(&[14, 15])),
+            ..single
         };
         assert!(matches!(
             machine_blocks(&Config::default(), &model, &unknown),
@@ -994,31 +1025,116 @@ mod tests {
         ));
     }
 
+    /// A part's role, cores and passes by duration.
+    type PartShape = (R7PartRole, Vec<u8>, Vec<(u32, u32)>);
+
     #[test]
-    fn the_report_labels_every_retry_and_extra_pass_counterfactual() {
-        let settings = Settings {
+    fn an_eight_core_machine_steps_through_the_simulators_two_ccds_of_four() {
+        let definition = MachineDefinition {
+            cores: 8,
+            ..MachineDefinition::default()
+        };
+        let model = Model::new(&definition, 1).unwrap();
+        let profile = vec![TargetOffset::clamped(-20); 8];
+        let query = MachineQuery {
+            profile: &profile,
+            workload: Some(workloads(Regime::R7)[0].id),
+            cores: None,
+        };
+        let blocks = machine_blocks(&Config::default(), &model, &query).unwrap();
+        let parts: Vec<PartShape> = blocks[0]
+            .parts
+            .iter()
+            .map(|part| (part.role, ids(part.cores), passes(&part.obligation)))
+            .collect();
+        assert_eq!(
+            parts,
+            [
+                (R7PartRole::Ccd, (0..4).collect(), vec![(120, 3), (300, 1)]),
+                (R7PartRole::Ccd, (4..8).collect(), vec![(120, 3), (300, 1)]),
+                (
+                    R7PartRole::AllCore,
+                    (0..8).collect(),
+                    vec![(120, 3), (600, 1)]
+                ),
+            ]
+        );
+    }
+
+    fn assert_snapshot(report: Vec<u8>, snapshot: &str) {
+        assert_eq!(
+            String::from_utf8(report).unwrap(),
+            snapshot
+                .splitn(3, "---")
+                .nth(2)
+                .unwrap()
+                .trim_start_matches('\n')
+        );
+    }
+
+    fn settings() -> Settings {
+        Settings {
             short_trial_s: 120,
             launches: 40,
             seconds: 14_400,
             extra_short: vec![NonZeroU32::new(2).unwrap()],
-        };
+        }
+    }
+
+    #[test]
+    fn the_report_labels_every_retry_and_extra_pass_counterfactual() {
         let header = [
             "short_trial_s 120, checking_all_core_s 1200".to_owned(),
             "constant hazards on 2 CCDs; a partial's requirement is its CCD part's".to_owned(),
         ];
         let blocks = hazard_blocks(&Config::default(), 2, &[2.0]).unwrap();
         let mut report = Vec::new();
-        super::report(&mut report, &header, &settings, &blocks).unwrap();
-        let expected = include_str!(
-            "snapshots/togi_tool_bench__pass_cost__tests__the_report_labels_every_retry_and_extra_pass_counterfactual.snap"
+        super::report(&mut report, &header, &settings(), &blocks).unwrap();
+        assert_snapshot(
+            report,
+            include_str!(
+                "snapshots/togi_tool_bench__pass_cost__tests__the_report_labels_every_retry_and_extra_pass_counterfactual.snap"
+            ),
         );
-        assert_eq!(
-            String::from_utf8(report).unwrap(),
-            expected
-                .splitn(3, "---")
-                .nth(2)
-                .unwrap()
-                .trim_start_matches('\n')
+    }
+
+    #[test]
+    fn a_machine_report_names_each_parts_cores_chains_the_step_and_marks_what_is_never_met() {
+        let blocks = [Block {
+            source: Source::Step {
+                workload: workloads(Regime::R7)[0].id,
+            },
+            parts: vec![
+                Part {
+                    role: R7PartRole::Ccd,
+                    cores: Some(cores(&[0, 1, 2, 3, 4, 5, 6, 7])),
+                    obligation: part(0.0, 0.0),
+                },
+                Part {
+                    role: R7PartRole::Partial,
+                    cores: Some(cores(&[6, 7])),
+                    obligation: part(0.1, 0.2),
+                },
+                Part {
+                    role: R7PartRole::AllCore,
+                    cores: Some(cores(&ALL_CORES)),
+                    obligation: obligation(&[req(120, 3, 0.0), req(600, 1, 1.0)]),
+                },
+            ],
+        }];
+        let mut report = Vec::new();
+        super::report(
+            &mut report,
+            &["machine fixture".to_owned()],
+            &settings(),
+            &blocks,
+        )
+        .unwrap();
+        assert_snapshot(
+            report,
+            include_str!(
+                "snapshots/togi_tool_bench__pass_cost__tests__a_machine_report_names_each_parts_cores_chains_the_step_and_marks_what_is_never_met.snap"
+            ),
         );
     }
 }

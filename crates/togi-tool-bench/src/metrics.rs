@@ -14,7 +14,7 @@ use togi_sim::{Load, Model};
 use crate::error::{MeasureError, RunError};
 use crate::stats::share;
 
-pub(crate) const CORES_PER_CCD: usize = 8;
+const CORES_PER_CCD: usize = 8;
 const R7_CORES: usize = 16;
 
 /// What one session's journal says, in the units a record keeps.
