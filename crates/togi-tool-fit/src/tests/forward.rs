@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, HashSet};
 
 use togi_facts::Decisive;
 use togi_machine::{Regime, WorkloadId};
+use togi_sim::MachineDefinition;
 use togi_tool_trialfacts::{ProfileClassKey, TrialFact};
 
 use super::{blank_machine, crash, fact_at};
@@ -381,5 +382,93 @@ fn the_reference_ensemble_scores_each_trial_with_the_mean_probability_of_all_mem
             && text.contains("the mean over all 2 members")
             && text.contains("flagged_by_any_member/eligible=0/0"),
         "{text}"
+    );
+}
+
+/// Ten held-out one-second R1 trials loading `core` alone at offset -1, the first `failures` failing,
+/// numbered from `first`: one model-check group, just eligible.
+fn eligible_group(core: usize, failures: u64, first: u64) -> Vec<TrialFact> {
+    let mut offsets = [0; 16];
+    offsets[core] = -1;
+    let loaded = [i64::try_from(core).unwrap()];
+    (0..10)
+        .map(|i| {
+            let outcome = if i < failures {
+                crash()
+            } else {
+                Decisive::Pass
+            };
+            fact_at(S2, first + i, &offsets, Regime::R1, 0, &loaded, 1, outcome)
+        })
+        .collect()
+}
+
+#[test]
+fn a_reference_group_counts_once_when_any_member_flags_it_in_any_member_order() {
+    // A blank machine whose only hazard is a loaded core's flat rate: a one-second trial loading core
+    // 0, 1 or 2 alone fails with probability p[0], p[1] or p[2].
+    let member = |p: [f64; 3]| {
+        let mut cfg = blank_machine(16);
+        cfg.model.past_limit_rate = 0.0;
+        for (core, p) in p.into_iter().enumerate() {
+            cfg.core[core].flat = -(1.0 - p).ln();
+        }
+        cfg
+    };
+    // Core 0 failed 10 of 10: Binomial(10, 0.4) puts 1e-4 on that count and flags it, Binomial(10, 0.99)
+    // puts 0.90 and does not. Core 1 failed 0 of 10, which both 0.9 and 0.6 flag. Core 2 failed 5 of 10,
+    // which neither flags at 0.5. Every member groups the same held-out trials: the same three keys.
+    let x = member([0.4, 0.9, 0.5]);
+    let y = member([0.99, 0.6, 0.5]);
+    let mut trials = vec![trial(S1, 1, 1, false)];
+    trials.extend(eligible_group(0, 10, 1));
+    trials.extend(eligible_group(1, 0, 11));
+    trials.extend(eligible_group(2, 5, 21));
+    let groups = |members: &[MachineDefinition]| {
+        let check = reference_check(&trials, 0, members).unwrap();
+        assert_eq!(check.rows.len(), 1);
+        let row = &check.rows[0].score;
+        assert_eq!(shape(&row.counts), (30, 15));
+        assert_eq!(
+            (check.pooled.flagged, check.pooled.eligible),
+            (row.flagged, row.eligible)
+        );
+        (row.flagged, row.eligible)
+    };
+    assert_eq!(
+        groups(std::slice::from_ref(&x)),
+        (2, 3),
+        "x flags cores 0 and 1"
+    );
+    assert_eq!(
+        groups(std::slice::from_ref(&y)),
+        (1, 3),
+        "y flags core 1 only"
+    );
+    assert_eq!(
+        groups(&[member([0.695, 0.75, 0.5])]),
+        (1, 3),
+        "the mean prediction of x and y flags core 1 only"
+    );
+    for members in [
+        vec![x.clone(), y.clone()],
+        vec![y.clone(), x.clone()],
+        vec![y.clone(), x.clone(), y.clone()],
+    ] {
+        assert_eq!(
+            groups(&members),
+            (2, 3),
+            "core 0 flagged by x alone and core 1 by both count once each, core 2 is eligible only"
+        );
+    }
+
+    let check = reference_check(&trials, 0, &[y, x]).unwrap();
+    let mut out = Vec::new();
+    report_reference(&mut out, &check, 0, 2).unwrap();
+    let text = String::from_utf8(out).unwrap();
+    assert_eq!(
+        text.matches("flagged_by_any_member/eligible=2/3").count(),
+        2,
+        "the row and the pool: {text}"
     );
 }
