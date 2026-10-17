@@ -1195,7 +1195,10 @@ mod the_story {
         let mut facts = HuntFacts {
             started: Some(ts(990)),
             cause: cause(),
-            parked_zero,
+            parking: parked_zero.then(|| crate::model::Parking {
+                zero: set(&[1, 2]),
+                ..crate::model::Parking::default()
+            }),
             group_signals: Vec::new(),
         };
         facts.cause.signal = Some(Signal::ComputationError);
@@ -2990,7 +2993,7 @@ mod the_outcome_lines {
             HuntFacts {
                 started: None,
                 cause: cause(),
-                parked_zero: false,
+                parking: None,
                 group_signals: Vec::new(),
             },
         ));

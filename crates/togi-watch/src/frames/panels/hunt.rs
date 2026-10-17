@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use ratatui::text::Line;
 use togi_journal::HuntStage;
-use togi_machine::{CoreId, Signal};
+use togi_machine::{CoreId, CoreSet, Signal};
 use togi_tuner::{GroupState, HuntGroup, MemberProbe, RerunPlan};
 
 use super::super::colours::Paint;
@@ -219,7 +219,25 @@ fn part_lines(
     let compact = class == SizeClass::Compact;
     let plan = hunt.plan;
     let mut out = Vec::new();
-    let parked = if hunt.facts.parked_zero && t.parts[3].w >= "parked at 0".len() {
+    let parking = hunt.facts.parking.as_ref();
+    let shown = |part: &togi_tuner::HuntPart| -> CoreSet {
+        part.parked
+            .iter()
+            .filter(|&core| {
+                parking.is_none_or(|p| !p.held.contains(core) && !p.kept.contains(core))
+            })
+            .collect()
+    };
+    let at_zero = parking.is_some_and(|p| {
+        let mut any = false;
+        plan.parts.iter().all(|part| {
+            shown(part).iter().all(|core| {
+                any = true;
+                p.zero.contains(core)
+            })
+        }) && any
+    });
+    let parked = if at_zero && t.parts[3].w >= "parked at 0".len() {
         "parked at 0"
     } else {
         "parked"
@@ -291,7 +309,7 @@ fn part_lines(
                 marker,
                 cell(scene, style, name),
                 cell(scene, style, cores),
-                cell(scene, Paint::Text, core_ids(part.parked.iter())),
+                cell(scene, Paint::Text, core_ids(shown(part))),
                 cell(
                     scene,
                     faint,
@@ -300,6 +318,9 @@ fn part_lines(
                 state,
             ],
         ));
+    }
+    if !compact && let Some(row) = holding_row(scene, hunt, t, width) {
+        out.push(row);
     }
     if !compact && plan.parts.len() > 1 {
         out.push(field_row(
@@ -315,6 +336,45 @@ fn part_lines(
         ));
     }
     out
+}
+
+/// The cores no part moves, said as they run: held or kept at their failing offsets, or parked at a nonzero
+/// offset. The parts table lists only the parked cores, so a part's table never calls these zero.
+fn holding_row(
+    scene: &Scene<'_>,
+    hunt: &HuntView<'_>,
+    t: &Tables,
+    width: usize,
+) -> Option<Line<'static>> {
+    let parking = hunt.facts.parking.as_ref()?;
+    let mut clauses = Vec::new();
+    let mut push = |text: String| {
+        let sep = if clauses.is_empty() { "" } else { " · " };
+        clauses.push(Clause::new(
+            sep,
+            vec![Form::new(cell(scene, Paint::Text, text), 1), Form::empty()],
+        ));
+    };
+    if !parking.held.is_empty() {
+        push(format!(
+            "{} held at failing offsets",
+            core_ids(parking.held.iter())
+        ));
+    }
+    if !parking.kept.is_empty() {
+        push(format!(
+            "{} kept at failing offsets",
+            core_ids(parking.kept.iter())
+        ));
+    }
+    for (core, offset) in &parking.shallow {
+        push(format!("{} parked at {}", core_ids([*core]), offset.get()));
+    }
+    if clauses.is_empty() {
+        return None;
+    }
+    let line = fit_clauses(width.saturating_sub(t.field), &clauses);
+    Some(field_row(scene, t, "others", line, width))
 }
 
 /// A stretch of consecutive groups that ended the same way.
@@ -996,7 +1056,10 @@ mod tests {
             ],
         );
         let mut facts = hunt_facts();
-        facts.parked_zero = true;
+        facts.parking = Some(crate::model::Parking {
+            zero: set(&[0, 1, 2]),
+            ..crate::model::Parking::default()
+        });
         let model = Model::new();
         let trial = trial_view(2, 5);
         let mut s = model.snapshot();
@@ -1542,5 +1605,69 @@ mod tests {
             SizeClass::Compact,
         ));
         assert_eq!(compact.len(), 3, "{compact:?}");
+    }
+
+    fn parts_of_a_located_hunt(parking: crate::model::Parking) -> Vec<String> {
+        let plan = hunt_plan(
+            Vec::new(),
+            vec![
+                part(
+                    &[3],
+                    &[0, 1, 2, 4, 5],
+                    Some(2),
+                    Some(GroupState::Running),
+                    true,
+                ),
+                part(&[4, 5], &[0, 1, 2, 3], None, None, false),
+            ],
+        );
+        let mut facts = hunt_facts();
+        facts.parking = Some(parking);
+        with_hunt(&plan, &facts, |scene, hunt| {
+            texts(&part_lines(
+                scene,
+                hunt,
+                &Tables::new(SizeClass::Wide, 100),
+                100,
+                SizeClass::Wide,
+            ))
+        })
+    }
+
+    #[test]
+    fn a_located_hunt_says_held_cores_are_held_and_the_rest_parked_at_zero() {
+        let rows = parts_of_a_located_hunt(crate::model::Parking {
+            held: set(&[0, 1, 2]),
+            zero: set(&[3, 4, 5]),
+            ..crate::model::Parking::default()
+        });
+        assert!(rows[0].contains("parked at 0"), "{rows:?}");
+        assert!(
+            rows[1].contains("04 05") && !rows[1].contains("00"),
+            "the held cores are not in the parked column: {rows:?}"
+        );
+        assert!(
+            rows.iter()
+                .any(|row| row.contains("00-02 held at failing offsets")),
+            "{rows:?}"
+        );
+    }
+
+    #[test]
+    fn a_hunt_never_calls_kept_or_nonzero_parked_cores_zero() {
+        let rows = parts_of_a_located_hunt(crate::model::Parking {
+            held: set(&[0, 1, 2]),
+            kept: set(&[3]),
+            zero: set(&[5]),
+            shallow: vec![(crate::tests::kit::core(4), off(-10))],
+        });
+        assert!(!rows[0].contains("at 0"), "{rows:?}");
+        assert!(
+            rows.iter()
+                .any(|row| row.contains("00-02 held at failing offsets")
+                    && row.contains("03 kept at failing offsets")
+                    && row.contains("04 parked at -10")),
+            "{rows:?}"
+        );
     }
 }

@@ -125,6 +125,37 @@ pub struct HuntShape {
     pub parked: PerCore<TargetOffset>,
 }
 
+/// What a hunt's parked profile does to each core, against its failing profile and its candidates.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Parking {
+    /// Cores that are not candidates and run at their failing offsets in every group, the loaded cores of a
+    /// located hunt among them.
+    pub held: CoreSet,
+    /// Candidates kept at their failing offsets: nonzero, and parked no shallower.
+    pub kept: CoreSet,
+    /// Cores parked at offset 0.
+    pub zero: CoreSet,
+    /// Cores parked at a nonzero offset shallower than their failing one, with that offset.
+    pub shallow: Vec<(CoreId, TargetOffset)>,
+}
+
+impl Parking {
+    /// Whether every core the hunt parks sits at 0: some are parked, none is kept at its failing offset or
+    /// parked at a nonzero offset. Held cores run at their failing offsets and are not parked.
+    #[must_use]
+    pub fn rest_at_zero(&self) -> bool {
+        !self.zero.is_empty() && self.kept.is_empty() && self.shallow.is_empty()
+    }
+}
+
+impl HuntFacts {
+    /// Whether every core the hunt parks sits at offset 0.
+    #[must_use]
+    pub fn parked_at_zero(&self) -> bool {
+        self.parking.as_ref().is_some_and(Parking::rest_at_zero)
+    }
+}
+
 /// A recorded combination: offsets at which these cores failed together.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ComboView {
@@ -323,8 +354,8 @@ pub struct HuntFacts {
     pub started: Option<Timestamp>,
     /// Why.
     pub cause: HuntCause,
-    /// Parked cores run at offset 0.
-    pub parked_zero: bool,
+    /// Where the hunt's shape puts each core; none until the journal records it.
+    pub parking: Option<Parking>,
     /// How each group's trial failed, by group number.
     pub group_signals: Vec<(u32, Signal)>,
 }
