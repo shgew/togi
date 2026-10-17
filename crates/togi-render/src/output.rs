@@ -84,6 +84,8 @@ mod tests {
     use std::os::unix::ffi::OsStrExt as _;
     use std::os::unix::fs::MetadataExt as _;
 
+    use test_case::test_case;
+
     use super::{OutputFacts, StreamIdentity, parse_journal_stream};
 
     fn parse(value: &str) -> Option<StreamIdentity> {
@@ -127,30 +129,30 @@ mod tests {
         );
     }
 
+    #[test_case(""; "empty")]
+    #[test_case(":"; "colon only")]
+    #[test_case("8"; "device only")]
+    #[test_case("8:"; "missing inode")]
+    #[test_case(":8"; "missing device")]
+    #[test_case("8:9:10"; "three fields")]
+    #[test_case("a:1"; "letter device")]
+    #[test_case("1:b"; "letter inode")]
+    #[test_case("-1:2"; "negative device")]
+    #[test_case("1:-2"; "negative inode")]
+    #[test_case("+1:2"; "signed device")]
+    #[test_case("1:+2"; "signed inode")]
+    #[test_case(" 1:2"; "leading space")]
+    #[test_case("1: 2"; "space before inode")]
+    #[test_case("1:2 "; "trailing space")]
+    #[test_case("18446744073709551616:1"; "device overflow")]
+    #[test_case("1:18446744073709551616"; "inode overflow")]
+    #[test_case("0x8:1"; "hex device")]
+    fn malformed_journal_streams_name_nothing(value: &str) {
+        assert_eq!(parse(value), None);
+    }
+
     #[test]
-    fn malformed_journal_streams_name_nothing() {
-        for value in [
-            "",
-            ":",
-            "8",
-            "8:",
-            ":8",
-            "8:9:10",
-            "a:1",
-            "1:b",
-            "-1:2",
-            "1:-2",
-            "+1:2",
-            "1:+2",
-            " 1:2",
-            "1: 2",
-            "1:2 ",
-            "18446744073709551616:1",
-            "1:18446744073709551616",
-            "0x8:1",
-        ] {
-            assert_eq!(parse(value), None, "{value:?}");
-        }
+    fn a_journal_stream_that_is_not_utf8_names_nothing() {
         assert_eq!(parse_journal_stream(OsStr::from_bytes(b"1:\xff")), None);
     }
 
@@ -241,19 +243,19 @@ mod tests {
         );
     }
 
-    #[test]
-    fn a_journal_stream_naming_another_stream_is_ignored() {
+    #[test_case("8:12346"; "other inode")]
+    #[test_case("9:12345"; "other device")]
+    #[test_case("8:12345:1"; "extra field")]
+    #[test_case("8:"; "missing inode")]
+    #[test_case("garbage"; "not a stream")]
+    fn a_journal_stream_naming_another_stream_is_ignored(wrong: &str) {
         let identity = StreamIdentity {
             device: 8,
             inode: 12345,
         };
-        for wrong in ["8:12346", "9:12345", "8:12345:1", "8:", "garbage"] {
-            assert!(
-                !OutputFacts::from_parts(false, Some(identity), None, Some(OsStr::new(wrong)))
-                    .journald,
-                "{wrong}"
-            );
-        }
+        assert!(
+            !OutputFacts::from_parts(false, Some(identity), None, Some(OsStr::new(wrong))).journald
+        );
     }
 
     #[test]

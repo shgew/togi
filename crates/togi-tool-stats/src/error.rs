@@ -19,4 +19,10 @@ pub enum Error {
         #[source]
         source: togi_tool_forecast::Error,
     },
+    #[error("write chain records {path}")]
+    Chains {
+        path: String,
+        #[source]
+        source: std::io::Error,
+    },
 }

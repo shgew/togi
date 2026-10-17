@@ -155,7 +155,7 @@ pub(super) fn r7_rows(scene: &Scene<'_>, class: SizeClass, width: usize) -> Vec<
     match class {
         SizeClass::Wide if width >= 100 => (name, top) = (30, 24),
         SizeClass::Medium if width >= 70 => (name, top) = (24, 20),
-        _ => {}
+        SizeClass::Compact | SizeClass::Medium | SizeClass::Wide => {}
     }
     if width < name + top + 1 {
         name = name.min(width.saturating_sub(1 + BY_OFFSET.len() - 1));

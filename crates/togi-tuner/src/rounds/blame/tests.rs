@@ -24,7 +24,7 @@ fn a_multi_core_r7_failure_without_an_open_record_is_charged_by_depth_not_by_req
     let plan = loop {
         match j.next() {
             Action::RunTrial(plan) if plan.regime == Regime::R7 => break plan,
-            _ => {
+            Action::RunTrial(_) | Action::Decide(_) | Action::ReadRanking => {
                 j.step(&mut |_| Outcome::Pass);
             }
         }

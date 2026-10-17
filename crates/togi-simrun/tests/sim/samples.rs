@@ -5,18 +5,26 @@ use togi_simrun::{Observer, Persistence, events, simulate};
 use crate::common::{hunt_machine, input, simulator, until_kind};
 
 fn trial_end<'a>(events: &'a [Event], trial: &str) -> Option<&'a TrialEnd> {
-    events.iter().find_map(|event| match &event.payload {
-        Payload::TrialEnd(end) if end.trial.as_str() == trial => Some(end),
-        _ => None,
+    events.iter().find_map(|event| {
+        if let Payload::TrialEnd(end) = &event.payload
+            && end.trial.as_str() == trial
+        {
+            Some(end)
+        } else {
+            None
+        }
     })
 }
 
 fn session_id(events: &[Event]) -> &SessionId {
     events
         .iter()
-        .find_map(|event| match &event.payload {
-            Payload::SessionStart(start) => Some(&start.session),
-            _ => None,
+        .find_map(|event| {
+            if let Payload::SessionStart(start) = &event.payload {
+                Some(&start.session)
+            } else {
+                None
+            }
         })
         .unwrap()
 }
@@ -75,11 +83,17 @@ fn a_new_session_after_an_earlier_one(
 
     let second = events(persistence).unwrap();
     assert_ne!(session_id(&first), session_id(&second));
-    let is_trial_0001 = |event: &Event| match &event.payload {
-        Payload::TrialIntent(intent) => intent.trial.as_str() == "0001",
-        Payload::TrialStart(start) => start.trial.as_str() == "0001",
-        Payload::TrialEnd(end) => end.trial.as_str() == "0001",
-        _ => false,
+    let is_trial_0001 = |event: &Event| {
+        let trial = if let Payload::TrialIntent(intent) = &event.payload {
+            &intent.trial
+        } else if let Payload::TrialStart(start) = &event.payload {
+            &start.trial
+        } else if let Payload::TrialEnd(end) = &event.payload {
+            &end.trial
+        } else {
+            return false;
+        };
+        trial.as_str() == "0001"
     };
     let kinds: Vec<EventKind> = second
         .iter()

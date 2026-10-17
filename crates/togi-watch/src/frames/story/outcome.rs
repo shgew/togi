@@ -23,21 +23,36 @@ fn duration_of(plan: &TrialPlan) -> Duration {
 fn cycle_of(plan: &TrialPlan) -> Option<(u32, u32)> {
     match plan.context {
         TrialContext::Cycle { cycle, step, .. } => Some((cycle.get(), step.get().get())),
-        _ => None,
+        TrialContext::Search { .. }
+        | TrialContext::SoloLimit { .. }
+        | TrialContext::Rerun { .. }
+        | TrialContext::ZeroRerun { .. }
+        | TrialContext::Round { .. }
+        | TrialContext::Hunt { .. } => None,
     }
 }
 
 fn hunt_of(plan: &TrialPlan) -> Option<(u32, u32)> {
     match plan.context {
         TrialContext::Hunt { hunt, group } => Some((hunt.get(), group.get())),
-        _ => None,
+        TrialContext::Search { .. }
+        | TrialContext::SoloLimit { .. }
+        | TrialContext::Cycle { .. }
+        | TrialContext::Rerun { .. }
+        | TrialContext::ZeroRerun { .. }
+        | TrialContext::Round { .. } => None,
     }
 }
 
 fn round_of(plan: &TrialPlan) -> Option<u32> {
     match plan.context {
         TrialContext::Round { round } => Some(round.get()),
-        _ => None,
+        TrialContext::Search { .. }
+        | TrialContext::SoloLimit { .. }
+        | TrialContext::Cycle { .. }
+        | TrialContext::Rerun { .. }
+        | TrialContext::ZeroRerun { .. }
+        | TrialContext::Hunt { .. } => None,
     }
 }
 

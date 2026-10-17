@@ -573,25 +573,6 @@ impl Entry {
         (self.text(), String::new(), String::new())
     }
 
-    /// The name of the kind of sentence, as the narration corpus files it.
-    #[cfg(test)]
-    pub(crate) const fn form(&self) -> &'static str {
-        match self.what {
-            What::Said(_) => "Said",
-            What::OfHunt { .. } => "OfHunt",
-            What::List { .. } => "List",
-            What::Session { .. } => "Session",
-            What::Step(_) => "Step",
-            What::Passes(_) => "Passes",
-            What::Failed(_) => "Failed",
-            What::Reboot { .. } => "Reboot",
-            What::Limits { .. } => "Limits",
-            What::Answered { .. } => "Answered",
-            What::KnownFailure(_) => "KnownFailure",
-            What::HuntStart(_) => "HuntStart",
-        }
-    }
-
     /// Merges `line` into this entry when it continues it: solo limits at the same offset, neighbouring groups
     /// answered alike, or passes of the same subject in the same step.
     fn absorb(&mut self, line: &Self) -> bool {
@@ -743,5 +724,30 @@ impl History {
         }
         kept.reverse();
         (kept, dropped)
+    }
+}
+
+#[cfg(test)]
+mod corpus_form {
+    use super::{Entry, What};
+
+    impl Entry {
+        /// The name of the kind of sentence, as the narration corpus files it.
+        pub(crate) const fn form(&self) -> &'static str {
+            match self.what {
+                What::Said(_) => "Said",
+                What::OfHunt { .. } => "OfHunt",
+                What::List { .. } => "List",
+                What::Session { .. } => "Session",
+                What::Step(_) => "Step",
+                What::Passes(_) => "Passes",
+                What::Failed(_) => "Failed",
+                What::Reboot { .. } => "Reboot",
+                What::Limits { .. } => "Limits",
+                What::Answered { .. } => "Answered",
+                What::KnownFailure(_) => "KnownFailure",
+                What::HuntStart(_) => "HuntStart",
+            }
+        }
     }
 }

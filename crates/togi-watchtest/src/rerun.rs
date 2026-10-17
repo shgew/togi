@@ -274,7 +274,12 @@ impl Fixture {
                             plan.context
                         )));
                     }
-                    _ => {
+                    TrialContext::Search { .. }
+                    | TrialContext::SoloLimit { .. }
+                    | TrialContext::Cycle { .. }
+                    | TrialContext::ZeroRerun { .. }
+                    | TrialContext::Round { .. }
+                    | TrialContext::Hunt { .. } => {
                         let trial = self.trial(&plan)?;
                         self.end(&plan, trial, Outcome::Pass, None)?;
                     }

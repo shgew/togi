@@ -176,7 +176,7 @@ impl Report {
         )?;
         writeln!(
             w,
-            "forecast: hours run from the anchor to conclusion, over concluded runs only; {}",
+            "forecast: hours of run time from the anchor to conclusion, over concluded runs only; {}",
             togi_tool_forecast::recovery_bias()
         )?;
         let metrics = togi_tool_forecast::metrics(&record.runs).map_err(io::Error::other)?;
@@ -487,7 +487,7 @@ fn forecast_run(
         })?;
     let sessions = read_dir(&dir, Some(anchor.session))
         .map_err(|error| ForecastError::Read(Box::new(error)))?;
-    let outcome = outcome(&sessions, anchor, launched.exit, launched.log_dead_end())?;
+    let outcome = outcome(&sessions, anchor, launched.exit, launched.log_dead_end)?;
     if options.keep.is_none() {
         fs::remove_dir_all(&dir).map_err(|source| ForecastError::Io {
             what: "remove the run",

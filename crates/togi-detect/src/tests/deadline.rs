@@ -2,6 +2,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use serde_json::json;
+use test_case::test_case;
 use togi_machine::Kernel as _;
 
 use super::support::{
@@ -18,47 +19,23 @@ fn timed_out() -> Result<togi_command::Output, RunError> {
     }))
 }
 
-#[test]
-fn every_seam_call_starts_its_command_with_the_whole_budget() {
-    type Call = Box<dyn Fn(&mut Kernel)>;
-    let calls: [(&str, Call); 5] = [
-        (
-            "mces",
-            Box::new(|k| drop(k.mces(&boot(OLD), Duration::ZERO))),
-        ),
-        (
-            "read_mces",
-            Box::new(|k| drop(k.read_mces(&boot(OLD), None))),
-        ),
-        (
-            "reset_reason",
-            Box::new(|k| drop(k.reset_reason(&boot(OLD)))),
-        ),
-        (
-            "reset_reason_after",
-            Box::new(|k| drop(k.reset_reason_after(&boot(OLD)))),
-        ),
-        (
-            "saved_pstore",
-            Box::new(|k| drop(k.saved_pstore(&boot(OLD)))),
-        ),
-    ];
-    for (name, call) in calls {
-        let (mut kernel, recorded) = scripted(
-            &[],
-            pstore(&[("150/001/dmesg.txt", b"")]),
-            JOURNALCTL_BUDGET,
-            |_| ok(b"[]"),
-        );
-        call(&mut kernel);
-        let recorded = locked(&recorded);
-        assert_eq!(recorded.len(), 1, "{name}");
-        assert!(recorded[0].remaining <= JOURNALCTL_BUDGET, "{name}");
-        assert!(
-            recorded[0].remaining + Duration::from_secs(5) > JOURNALCTL_BUDGET,
-            "{name}"
-        );
-    }
+#[test_case(&|k| drop(k.mces(&boot(OLD), Duration::ZERO)); "mces")]
+#[test_case(&|k| drop(k.read_mces(&boot(OLD), None)); "read_mces")]
+#[test_case(&|k| drop(k.reset_reason(&boot(OLD))); "reset_reason")]
+#[test_case(&|k| drop(k.reset_reason_after(&boot(OLD))); "reset_reason_after")]
+#[test_case(&|k| drop(k.saved_pstore(&boot(OLD))); "saved_pstore")]
+fn every_seam_call_starts_its_command_with_the_whole_budget(call: &dyn Fn(&mut Kernel)) {
+    let (mut kernel, recorded) = scripted(
+        &[],
+        pstore(&[("150/001/dmesg.txt", b"")]),
+        JOURNALCTL_BUDGET,
+        |_| ok(b"[]"),
+    );
+    call(&mut kernel);
+    let recorded = locked(&recorded);
+    assert_eq!(recorded.len(), 1);
+    assert!(recorded[0].remaining <= JOURNALCTL_BUDGET);
+    assert!(recorded[0].remaining + Duration::from_secs(5) > JOURNALCTL_BUDGET);
 }
 
 #[test]

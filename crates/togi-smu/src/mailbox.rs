@@ -172,6 +172,7 @@ const STARTED: u8 = 1;
 const ABANDONED: u8 = 2;
 
 /// A queued transaction the caller still waits on.
+#[must_use = "wait on the ticket for the transaction's answer"]
 pub(crate) struct Ticket<T> {
     request: Request,
     state: Arc<AtomicU8>,

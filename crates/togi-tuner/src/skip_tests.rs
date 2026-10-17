@@ -12,12 +12,12 @@ fn skipped(j: &Journal, plan: &TrialPlan) -> Action {
 }
 
 fn known_failure(action: &Action) -> Option<(togi_journal::Failure, Vec<togi_journal::Seq>)> {
-    match action {
-        Action::Decide(decision) => match &decision.payload {
-            DecisionPayload::Failure(failure) => Some((failure.clone(), decision.cause.clone())),
-            _ => None,
-        },
-        _ => None,
+    if let Action::Decide(decision) = action
+        && let DecisionPayload::Failure(failure) = &decision.payload
+    {
+        Some((failure.clone(), decision.cause.clone()))
+    } else {
+        None
     }
 }
 

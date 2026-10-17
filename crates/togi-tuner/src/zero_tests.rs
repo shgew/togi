@@ -36,13 +36,13 @@ fn class(regime: Regime, cores: &[u8]) -> ClassKey {
 }
 
 fn dead_end(action: &Action) -> (&DeadEnd, &[Seq]) {
-    match action {
-        Action::Decide(decision) => match &decision.payload {
-            DecisionPayload::DeadEnd(dead_end) => (dead_end, &decision.cause),
-            other => panic!("expected a dead end, got {other:?}"),
-        },
-        other => panic!("expected a dead end, got {other:?}"),
-    }
+    let Action::Decide(decision) = action else {
+        panic!("expected a dead end, got {action:?}");
+    };
+    let DecisionPayload::DeadEnd(dead_end) = &decision.payload else {
+        panic!("expected a dead end, got {:?}", decision.payload);
+    };
+    (dead_end, &decision.cause)
 }
 
 impl Journal {
@@ -108,10 +108,11 @@ impl Journal {
 
     fn intent_at(&self, seq: Seq) -> &TrialIntent {
         let index = usize::try_from(seq.get() - 1).unwrap();
-        match &self.events[index].payload {
-            Payload::TrialIntent(intent) => intent,
-            other => panic!("expected a trial intent, got {other:?}"),
-        }
+        let payload = &self.events[index].payload;
+        let Payload::TrialIntent(intent) = payload else {
+            panic!("expected a trial intent, got {payload:?}");
+        };
+        intent
     }
 
     fn queued(&self, failure: Seq) -> bool {
@@ -620,7 +621,8 @@ fn zero_diagnostic_lifecycle() {
         let end = j.end(intent, &trial, outcome);
         let want = match outcome {
             Outcome::Pass => Diagnostic::Passed { end },
-            _ => Diagnostic::Failed { end },
+            Outcome::Failure => Diagnostic::Failed { end },
+            Outcome::Inconclusive => unreachable!("the lifecycle ends only in a pass or a failure"),
         };
         assert_eq!(j.diagnostic(failure), Some(&want), "{outcome:?}");
         j.assert_resumes();

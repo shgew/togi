@@ -9,6 +9,7 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant};
+use test_case::test_case;
 use togi_machine::{CcdId, CoreInfo, PmTable, PmTableReader};
 
 const VERSION_BYTES: [u8; 4] = [0x05, 0x02, 0x62, 0x00];
@@ -59,14 +60,15 @@ fn decode_reads_six_lane_blocks_and_ignores_unknown_fields() {
     assert_eq!(want.cc6_pct[15], 428.0 / 4.0);
 }
 
-#[test]
-fn decode_refuses_any_other_size() {
+#[test_case(0; "empty")]
+#[test_case(100; "short")]
+#[test_case(TABLE_LEN - 1; "one byte short")]
+#[test_case(TABLE_LEN + 1; "one byte long")]
+fn decode_refuses_any_other_size(len: usize) {
     let (raw, _) = synthetic();
-    for len in [0, 100, TABLE_LEN - 1, TABLE_LEN + 1] {
-        let mut sized = raw.clone();
-        sized.resize(len, 0);
-        assert_eq!(decode(&sized).unwrap_err(), DecodeError::Size { len });
-    }
+    let mut sized = raw;
+    sized.resize(len, 0);
+    assert_eq!(decode(&sized).unwrap_err(), DecodeError::Size { len });
 }
 
 #[test]
@@ -90,9 +92,14 @@ fn decode_rejects_a_non_finite_lane_in_every_block() {
 fn the_version_is_exactly_four_little_endian_bytes() {
     assert_eq!(parse_version(&VERSION_BYTES), Some(VERSION));
     assert_eq!(VERSION, 0x0062_0205);
-    for raw in [&b"0x620205\n"[..], &[5, 2, 0x62], &[5, 2, 0x62, 0, 0], &[]] {
-        assert_eq!(parse_version(raw), None);
-    }
+}
+
+#[test_case(b"0x620205\n"; "text")]
+#[test_case(&[5, 2, 0x62]; "three bytes")]
+#[test_case(&[5, 2, 0x62, 0, 0]; "five bytes")]
+#[test_case(&[]; "empty")]
+fn a_version_that_is_not_four_little_endian_bytes_is_refused(raw: &[u8]) {
+    assert_eq!(parse_version(raw), None);
 }
 
 #[derive(Clone)]
@@ -226,68 +233,69 @@ fn settle(reader: &PmReader) {
     );
 }
 
-#[test]
-fn reads_cover_the_version_and_table_failures() {
-    let (raw, want) = synthetic();
-    let wrong_version = [0x05, 0x01, 0x62, 0x00];
-    let mut long = raw.clone();
+fn long_table() -> Vec<u8> {
+    let mut long = synthetic().0;
     long.push(0);
-    for (name, version, table, reason) in [
-        ("missing files", None, None, "table version unreadable"),
-        (
-            "missing table",
-            Some(&VERSION_BYTES[..]),
-            None,
-            "table unreadable",
-        ),
-        (
-            "wrong version",
-            Some(&wrong_version[..]),
-            Some(&raw[..]),
-            "unsupported version",
-        ),
-        (
-            "text version",
-            Some(&b"0x620205\n"[..]),
-            Some(&raw[..]),
-            "table version invalid",
-        ),
-        (
-            "short version",
-            Some(&VERSION_BYTES[..3]),
-            Some(&raw[..]),
-            "table version invalid",
-        ),
-        (
-            "long version",
-            Some(&[5, 2, 0x62, 0, 0][..]),
-            Some(&raw[..]),
-            "table version invalid",
-        ),
-        (
-            "short read",
-            Some(&VERSION_BYTES[..]),
-            Some(&raw[..100]),
-            "table is 100 bytes",
-        ),
-        (
-            "wrong size",
-            Some(&VERSION_BYTES[..]),
-            Some(&long[..]),
-            "table is 2453 bytes",
-        ),
-    ] {
-        let source = Source::with(version, table);
-        let reader = start(&source, Clockwork::new(), fake_timing());
-        settle(&reader);
-        assert!(reader.pm_table().is_none(), "{name}");
-        settle(&reader);
-        let check = reader.check();
-        assert!(check.ok, "{name}");
-        assert_eq!(check.name, "pm_table");
-        assert!(check.detail.contains(reason), "{name}: {}", check.detail);
-    }
+    long
+}
 
+#[test_case(None, None, "table version unreadable"; "missing files")]
+#[test_case(Some(&VERSION_BYTES[..]), None, "table unreadable"; "missing table")]
+#[test_case(
+    Some(&[0x05, 0x01, 0x62, 0x00][..]),
+    Some(&synthetic().0[..]),
+    "unsupported version";
+    "wrong version"
+)]
+#[test_case(
+    Some(&b"0x620205\n"[..]),
+    Some(&synthetic().0[..]),
+    "table version invalid";
+    "text version"
+)]
+#[test_case(
+    Some(&VERSION_BYTES[..3]),
+    Some(&synthetic().0[..]),
+    "table version invalid";
+    "short version"
+)]
+#[test_case(
+    Some(&[5, 2, 0x62, 0, 0][..]),
+    Some(&synthetic().0[..]),
+    "table version invalid";
+    "long version"
+)]
+#[test_case(
+    Some(&VERSION_BYTES[..]),
+    Some(&synthetic().0[..100]),
+    "table is 100 bytes";
+    "short read"
+)]
+#[test_case(
+    Some(&VERSION_BYTES[..]),
+    Some(&long_table()[..]),
+    "table is 2453 bytes";
+    "wrong size"
+)]
+fn reads_cover_the_version_and_table_failures(
+    version: Option<&[u8]>,
+    table: Option<&[u8]>,
+    reason: &str,
+) {
+    let source = Source::with(version, table);
+    let reader = start(&source, Clockwork::new(), fake_timing());
+    settle(&reader);
+    assert!(reader.pm_table().is_none());
+    settle(&reader);
+    let check = reader.check();
+    assert!(check.ok);
+    assert_eq!(check.name, "pm_table");
+    assert!(check.detail.contains(reason), "{}", check.detail);
+}
+
+#[test]
+fn a_failed_refresh_drops_the_old_lanes() {
+    let (_, want) = synthetic();
     let source = Source::good();
     let reader = start(&source, Clockwork::new(), fake_timing());
     settle(&reader);
@@ -315,75 +323,122 @@ fn a_decoded_table_is_reported_with_its_version() {
 }
 
 #[test]
-fn layout_needs_cores_0_to_15_on_ccd_index_over_8() {
+fn layout_accepts_cores_0_to_15_on_ccd_index_over_8() {
     assert_eq!(layout(&cores()), Ok(()));
-    let mut duplicated = cores();
-    duplicated[9].core = core(10);
-    let mut reversed = cores();
-    for info in &mut reversed {
-        info.ccd = CcdId(1 - info.ccd.0);
-    }
-    let mut swapped = cores();
-    swapped.swap(0, 1);
-    for (name, topology) in [
-        ("noncontiguous", duplicated),
-        ("reversed CCDs", reversed),
-        ("wrong slot order", swapped),
-    ] {
-        assert_eq!(layout(&topology), Err(Unavailable::Topology), "{name}");
-    }
     assert_eq!(layout(&cores()[..8]), Err(Unavailable::CoreCount(8)));
 }
 
-#[test]
-fn an_unsupported_topology_reads_the_version_but_no_payload() {
+fn noncontiguous_topology() -> Vec<CoreInfo> {
+    let mut duplicated = cores();
+    duplicated[9].core = core(10);
+    duplicated
+}
+
+fn swapped_topology() -> Vec<CoreInfo> {
+    let mut swapped = cores();
+    swapped.swap(0, 1);
+    swapped
+}
+
+#[test_case(&noncontiguous_topology(); "noncontiguous")]
+#[test_case(&reversed_topology(); "reversed CCDs")]
+#[test_case(&swapped_topology(); "wrong slot order")]
+fn layout_refuses_a_topology_that_is_not_cores_0_to_15_on_ccd_index_over_8(topology: &[CoreInfo]) {
+    assert_eq!(layout(topology), Err(Unavailable::Topology));
+}
+
+fn reversed_topology() -> Vec<CoreInfo> {
     let mut reversed = cores();
     for info in &mut reversed {
         info.ccd = CcdId(1 - info.ccd.0);
     }
-    for topology in [reversed, cores()[..8].to_vec()] {
-        let source = Source::good();
-        let reader = PmReader::start(
-            Box::new(source.clone()),
-            layout(&topology),
-            Box::new(Clockwork::new()),
-            fake_timing(),
-        )
-        .unwrap();
-        settle(&reader);
-        let check = reader.check();
+    reversed
+}
+
+#[test_case(&reversed_topology(); "reversed CCDs")]
+#[test_case(&cores()[..8]; "one CCD only")]
+fn an_unsupported_topology_reads_the_version_but_no_payload(topology: &[CoreInfo]) {
+    let source = Source::good();
+    let reader = PmReader::start(
+        Box::new(source.clone()),
+        layout(topology),
+        Box::new(Clockwork::new()),
+        fake_timing(),
+    )
+    .unwrap();
+    settle(&reader);
+    let check = reader.check();
+    assert!(
+        check.ok && check.detail.contains("unsupported"),
+        "{}",
+        check.detail
+    );
+    assert!(reader.pm_table().is_none());
+    settle(&reader);
+    assert_eq!(source.reads(PmFile::Table), 0);
+    assert!(source.reads(PmFile::Version) >= 1);
+}
+
+#[test_case(PmFile::Version; "version")]
+#[test_case(PmFile::Table; "table")]
+fn check_waits_the_read_budget_for_a_stuck_read_and_stays_informational(file: PmFile) {
+    let source = Source::good();
+    let gate = source.block(file, 0);
+    let budget = Duration::from_millis(40);
+    let created = Instant::now();
+    let reader = start(
+        &source,
+        Monotonic::new(),
+        Timing {
+            budget,
+            max_age: Duration::from_secs(2),
+        },
+    );
+    assert!(reader.pm_table().is_none());
+    assert!(created.elapsed() < budget, "pm_table waited for the read");
+    source.wait_for_reads(file, 1);
+    let check = reader.check();
+    assert!(created.elapsed() >= budget, "{file:?}");
+    assert!(
+        check.ok && check.detail.contains("overdue"),
+        "{}",
+        check.detail
+    );
+    if file == PmFile::Table {
+        assert!(check.detail.contains("0x620205"), "{}", check.detail);
+    } else {
         assert!(
-            check.ok && check.detail.contains("unsupported"),
+            check.detail.contains("version unavailable"),
             "{}",
             check.detail
         );
-        assert!(reader.pm_table().is_none());
-        settle(&reader);
-        assert_eq!(source.reads(PmFile::Table), 0);
-        assert!(source.reads(PmFile::Version) >= 1);
     }
+    let again = Instant::now();
+    for _ in 0..20 {
+        assert!(reader.pm_table().is_none());
+        assert!(reader.check().ok);
+    }
+    assert!(
+        again.elapsed() < budget * 10,
+        "an overdue read delayed its callers"
+    );
+    assert_eq!(source.reads(file), 1);
+    gate.open();
 }
 
-#[test]
-fn check_waits_the_read_budget_for_a_stuck_read_and_stays_informational() {
-    for file in [PmFile::Version, PmFile::Table] {
-        let source = Source::good();
-        let gate = source.block(file, 0);
-        let budget = Duration::from_millis(40);
-        let created = Instant::now();
-        let reader = start(
-            &source,
-            Monotonic::new(),
-            Timing {
-                budget,
-                max_age: Duration::from_secs(2),
-            },
-        );
+#[test_case(PmFile::Version; "version")]
+#[test_case(PmFile::Table; "table")]
+fn a_stuck_read_is_never_replaced_and_its_late_result_is_discarded(file: PmFile) {
+    let source = Source::good();
+    let gate = source.block(file, 0);
+    let clock = Clockwork::new();
+    let reader = start(&source, clock.clone(), fake_timing());
+    source.wait_for_reads(file, 1);
+    assert!(reader.pm_table().is_none());
+    clock.advance(Duration::from_secs(10));
+    for _ in 0..20 {
         assert!(reader.pm_table().is_none());
-        assert!(created.elapsed() < budget, "pm_table waited for the read");
-        source.wait_for_reads(file, 1);
         let check = reader.check();
-        assert!(created.elapsed() >= budget, "{file:?}");
         assert!(
             check.ok && check.detail.contains("overdue"),
             "{}",
@@ -391,91 +446,45 @@ fn check_waits_the_read_budget_for_a_stuck_read_and_stays_informational() {
         );
         if file == PmFile::Table {
             assert!(check.detail.contains("0x620205"), "{}", check.detail);
-        } else {
-            assert!(
-                check.detail.contains("version unavailable"),
-                "{}",
-                check.detail
-            );
         }
-        let again = Instant::now();
-        for _ in 0..20 {
-            assert!(reader.pm_table().is_none());
-            assert!(reader.check().ok);
-        }
-        assert!(
-            again.elapsed() < budget * 10,
-            "an overdue read delayed its callers"
-        );
-        assert_eq!(source.reads(file), 1);
-        gate.open();
     }
+    assert_eq!(
+        source.reads(file),
+        1,
+        "{file:?}: a replacement read started"
+    );
+
+    gate.open();
+    settle(&reader);
+    assert!(
+        reader.pm_table().is_none(),
+        "{file:?}: the late result was accepted"
+    );
+    settle(&reader);
+    assert_eq!(reader.pm_table(), Some(synthetic().1), "{file:?}");
+    settle(&reader);
 }
 
-#[test]
-fn a_stuck_read_is_never_replaced_and_its_late_result_is_discarded() {
-    for file in [PmFile::Version, PmFile::Table] {
-        let source = Source::good();
-        let gate = source.block(file, 0);
-        let clock = Clockwork::new();
-        let reader = start(&source, clock.clone(), fake_timing());
-        source.wait_for_reads(file, 1);
-        assert!(reader.pm_table().is_none());
-        clock.advance(Duration::from_secs(10));
-        for _ in 0..20 {
-            assert!(reader.pm_table().is_none());
-            let check = reader.check();
-            assert!(
-                check.ok && check.detail.contains("overdue"),
-                "{}",
-                check.detail
-            );
-            if file == PmFile::Table {
-                assert!(check.detail.contains("0x620205"), "{}", check.detail);
-            }
-        }
-        assert_eq!(
-            source.reads(file),
-            1,
-            "{file:?}: a replacement read started"
-        );
-
-        gate.open();
-        settle(&reader);
-        assert!(
-            reader.pm_table().is_none(),
-            "{file:?}: the late result was accepted"
-        );
-        settle(&reader);
-        assert_eq!(reader.pm_table(), Some(synthetic().1), "{file:?}");
-        settle(&reader);
-    }
-}
-
-#[test]
-fn a_cached_table_is_reused_for_two_seconds_from_its_read_start() {
+#[test_case(Duration::from_secs(1), true; "within the window")]
+#[test_case(Duration::from_secs(2), true; "at the window edge")]
+#[test_case(Duration::from_secs(2) + Duration::from_nanos(1), false; "past the window")]
+fn a_cached_table_is_reused_for_two_seconds_from_its_read_start(age: Duration, reused: bool) {
     let (_, want) = synthetic();
-    for (age, reused) in [
-        (Duration::from_secs(1), true),
-        (Duration::from_secs(2), true),
-        (Duration::from_secs(2) + Duration::from_nanos(1), false),
-    ] {
-        let source = Source::good();
-        let clock = Clockwork::new();
-        let reader = start(&source, clock.clone(), fake_timing());
-        settle(&reader);
-        let gate = source.block(PmFile::Table, source.reads(PmFile::Table));
-        clock.advance(age);
-        assert_eq!(reader.pm_table(), reused.then_some(want), "{age:?}");
-        source.wait_for_reads(PmFile::Table, 2);
-        clock.advance(BUDGET);
-        assert!(
-            reader.pm_table().is_none(),
-            "{age:?}: an overdue refresh reused old lanes"
-        );
-        gate.open();
-        settle(&reader);
-    }
+    let source = Source::good();
+    let clock = Clockwork::new();
+    let reader = start(&source, clock.clone(), fake_timing());
+    settle(&reader);
+    let gate = source.block(PmFile::Table, source.reads(PmFile::Table));
+    clock.advance(age);
+    assert_eq!(reader.pm_table(), reused.then_some(want), "{age:?}");
+    source.wait_for_reads(PmFile::Table, 2);
+    clock.advance(BUDGET);
+    assert!(
+        reader.pm_table().is_none(),
+        "{age:?}: an overdue refresh reused old lanes"
+    );
+    gate.open();
+    settle(&reader);
 }
 
 #[test]
@@ -546,38 +555,37 @@ impl PmClock for Probe {
     }
 }
 
-#[test]
-fn check_never_waits_longer_than_what_is_left_of_the_read_budget() {
-    for file in [PmFile::Version, PmFile::Table] {
-        let source = Source::good();
-        let gate = source.block(file, 0);
-        let probe = Probe {
-            clock: Clockwork::new(),
-            waits: Arc::default(),
-        };
-        let reader = start(&source, probe.clone(), fake_timing());
-        source.wait_for_reads(file, 1);
-        for step in [
-            Duration::ZERO,
-            Duration::from_millis(30),
-            Duration::from_millis(70),
-            Duration::from_secs(3600),
-        ] {
-            probe.clock.advance(step);
-            assert!(reader.check().ok);
-        }
-        assert_eq!(
-            *lock(&probe.waits),
-            [
-                BUDGET,
-                Duration::from_millis(70),
-                Duration::ZERO,
-                Duration::ZERO
-            ],
-            "{file:?}: the wait was not the remaining budget"
-        );
-        gate.open();
+#[test_case(PmFile::Version; "version")]
+#[test_case(PmFile::Table; "table")]
+fn check_never_waits_longer_than_what_is_left_of_the_read_budget(file: PmFile) {
+    let source = Source::good();
+    let gate = source.block(file, 0);
+    let probe = Probe {
+        clock: Clockwork::new(),
+        waits: Arc::default(),
+    };
+    let reader = start(&source, probe.clone(), fake_timing());
+    source.wait_for_reads(file, 1);
+    for step in [
+        Duration::ZERO,
+        Duration::from_millis(30),
+        Duration::from_millis(70),
+        Duration::from_secs(3600),
+    ] {
+        probe.clock.advance(step);
+        assert!(reader.check().ok);
     }
+    assert_eq!(
+        *lock(&probe.waits),
+        [
+            BUDGET,
+            Duration::from_millis(70),
+            Duration::ZERO,
+            Duration::ZERO
+        ],
+        "{file:?}: the wait was not the remaining budget"
+    );
+    gate.open();
 }
 
 fn pm_file(tree: &Tree, name: &str, bytes: &[u8]) -> FileSource {
@@ -585,52 +593,50 @@ fn pm_file(tree: &Tree, name: &str, bytes: &[u8]) -> FileSource {
     FileSource::new(tree.root(), tree.source())
 }
 
-#[test]
-fn the_file_source_reads_at_most_one_byte_past_the_version_length() {
+#[test_case(0, 0; "empty")]
+#[test_case(3, 3; "three bytes")]
+#[test_case(4, 4; "exact length")]
+#[test_case(5, 5; "five bytes")]
+#[test_case(6, 5; "six bytes is cut")]
+#[test_case(64 * 1024, 5; "sixty-four kibibytes is cut")]
+fn the_file_source_reads_at_most_one_byte_past_the_version_length(len: usize, returned: usize) {
     let tree = Tree::new(8, true);
-    for (len, returned) in [(0, 0), (3, 3), (4, 4), (5, 5), (6, 5), (64 * 1024, 5)] {
-        let bytes = if len == 4 {
-            VERSION_BYTES.to_vec()
-        } else {
-            vec![0xab; len]
-        };
-        let source = pm_file(&tree, "pm_table_version", &bytes);
-        let read = source.read(PmFile::Version).unwrap();
-        assert_eq!(read.len(), returned, "{len} input bytes");
-        assert_eq!(
-            parse_version(&read),
-            (len == 4).then_some(VERSION),
-            "{len} input bytes"
-        );
+    let bytes = if len == 4 {
+        VERSION_BYTES.to_vec()
+    } else {
+        vec![0xab; len]
+    };
+    let source = pm_file(&tree, "pm_table_version", &bytes);
+    let read = source.read(PmFile::Version).unwrap();
+    assert_eq!(read.len(), returned, "{len} input bytes");
+    assert_eq!(
+        parse_version(&read),
+        (len == 4).then_some(VERSION),
+        "{len} input bytes"
+    );
+}
+
+#[test_case(0, 0; "empty")]
+#[test_case(100, 100; "short")]
+#[test_case(TABLE_LEN - 1, TABLE_LEN - 1; "one byte short")]
+#[test_case(TABLE_LEN, TABLE_LEN; "exact length")]
+#[test_case(TABLE_LEN + 1, TABLE_LEN + 1; "one byte long")]
+#[test_case(TABLE_LEN + 2, TABLE_LEN + 1; "two bytes long is cut")]
+#[test_case(1 << 20, TABLE_LEN + 1; "a mebibyte is cut")]
+fn the_file_source_reads_at_most_one_byte_past_the_table_length(len: usize, returned: usize) {
+    let tree = Tree::new(8, true);
+    let source = pm_file(&tree, "pm_table", &vec![0_u8; len]);
+    let read = source.read(PmFile::Table).unwrap();
+    assert_eq!(read.len(), returned, "{len} input bytes");
+    match decode(&read) {
+        Ok(_) => assert_eq!(len, TABLE_LEN),
+        Err(error) => assert_eq!(error, DecodeError::Size { len: returned }),
     }
 }
 
-#[test]
-fn the_file_source_reads_at_most_one_byte_past_the_table_length() {
-    let tree = Tree::new(8, true);
-    for (len, returned) in [
-        (0, 0),
-        (100, 100),
-        (TABLE_LEN - 1, TABLE_LEN - 1),
-        (TABLE_LEN, TABLE_LEN),
-        (TABLE_LEN + 1, TABLE_LEN + 1),
-        (TABLE_LEN + 2, TABLE_LEN + 1),
-        (1 << 20, TABLE_LEN + 1),
-    ] {
-        let source = pm_file(&tree, "pm_table", &vec![0_u8; len]);
-        let read = source.read(PmFile::Table).unwrap();
-        assert_eq!(read.len(), returned, "{len} input bytes");
-        match decode(&read) {
-            Ok(_) => assert_eq!(len, TABLE_LEN),
-            Err(error) => assert_eq!(error, DecodeError::Size { len: returned }),
-        }
-    }
-}
-
-#[test]
-fn the_file_source_stops_reading_an_endless_reader() {
-    for limit in [5, TABLE_LEN + 1] {
-        let read = crate::files::read_limited(io::repeat(0), limit as u64, limit).unwrap();
-        assert_eq!(read.len(), limit);
-    }
+#[test_case(5; "version length plus one")]
+#[test_case(TABLE_LEN + 1; "table length plus one")]
+fn the_file_source_stops_reading_an_endless_reader(limit: usize) {
+    let read = crate::files::read_limited(io::repeat(0), limit as u64, limit).unwrap();
+    assert_eq!(read.len(), limit);
 }

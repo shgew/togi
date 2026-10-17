@@ -1,7 +1,9 @@
 use std::io;
 
+use togi_sim::saturating_count;
+
 use crate::record::{Record, Status};
-use crate::stats::{float, percentile, share};
+use crate::stats::{percentile, share};
 
 /// Writes the per-scenario summary of `records`, scenarios in the order the records first name them, then the
 /// total.
@@ -49,7 +51,7 @@ pub(crate) fn row(w: &mut impl io::Write, name: &str, rows: &[&Record]) -> io::R
     let real: u32 = rows.iter().map(|r| r.real_answers).sum();
     let trials: u32 = rows.iter().map(|r| r.trials).sum();
     #[expect(clippy::cast_precision_loss, reason = "depths are small integers")]
-    let depth = rows.iter().map(|r| r.depth as f64).sum::<f64>() / float(rows.len());
+    let depth = rows.iter().map(|r| r.depth as f64).sum::<f64>() / saturating_count(rows.len());
     let hazard = rows.iter().map(|r| r.hazard_max_per_h).fold(0.0, f64::max);
     writeln!(
         w,
@@ -58,7 +60,7 @@ pub(crate) fn row(w: &mut impl io::Write, name: &str, rows: &[&Record]) -> io::R
         count(Status::Concluded),
         count(Status::Censored),
         percentile(&hours, 0.5),
-        hours.iter().sum::<f64>() / float(rows.len()),
+        hours.iter().sum::<f64>() / saturating_count(rows.len()),
         percentile(&crashes, 0.5),
         depth,
         hazard,

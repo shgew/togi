@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use togi_machine::{CoreId, Regime};
 use togi_sim::definition::{CcdDef, JointDef};
-use togi_sim::{HazardSource, MachineDefinition, Model, ShapeError, SourceKind};
+use togi_sim::{HazardSource, MachineDefinition, Model, ShapeError, SourceKind, saturating_count};
 
 use crate::common::{committed_machine, flat_cores, load, machine, model, offsets, r7_workload};
 
@@ -16,6 +16,16 @@ fn base() -> MachineDefinition {
     definition.core[0].workload =
         BTreeMap::from([(togi_machine::pick_workload(Regime::R1, 0).id(), -8)]);
     definition
+}
+
+#[test]
+fn a_count_is_exact_up_to_u32_max_and_saturates_beyond() {
+    let max = usize::try_from(u32::MAX).expect("a 64-bit usize");
+    assert_eq!(saturating_count(0).to_bits(), 0.0_f64.to_bits());
+    assert_eq!(saturating_count(7) / saturating_count(2), 3.5);
+    assert_eq!(saturating_count(max), f64::from(u32::MAX));
+    assert_eq!(saturating_count(max + 1), f64::from(u32::MAX));
+    assert_eq!(saturating_count(usize::MAX), f64::from(u32::MAX));
 }
 
 fn joint(members: &[(i64, i64)], regimes: &[Regime], rate: Option<f64>, after_s: f64) -> JointDef {

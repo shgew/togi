@@ -22,6 +22,7 @@
 //! only the suite's smoke sessions, by comparing their journals. [`forecast`] resumes copies of a real run's
 //! state directory on the simulator with the suite's `target` scenario and summarizes what the runs did.
 //! [`pass_cost`] computes, without simulating, what the R7 part requirements cost at a fixed profile.
+//! [`research`] dispatches the steps of a bounded research campaign under its launch manifest.
 //!
 //! ```
 //! use togi_tool_bench::{Selection, Suite};
@@ -50,6 +51,7 @@ pub mod pass_cost;
 mod pool;
 mod process;
 mod record;
+pub mod research;
 mod run;
 pub mod same;
 pub mod sanity;

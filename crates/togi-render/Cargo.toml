@@ -17,6 +17,7 @@ togi-machine.workspace = true
 rustix = { workspace = true, features = ["pty"] }
 serde_json.workspace = true
 tempfile.workspace = true
+test-case.workspace = true
 
 [lints]
 workspace = true

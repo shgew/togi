@@ -255,7 +255,9 @@ fn normalized(path: &Path) -> PathBuf {
                 parts.pop();
             }
             std::path::Component::CurDir => {}
-            other => parts.push(other),
+            other @ (std::path::Component::Prefix(_)
+            | std::path::Component::RootDir
+            | std::path::Component::Normal(_)) => parts.push(other),
         }
     }
     parts.into_iter().collect()

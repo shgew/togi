@@ -369,7 +369,9 @@ fn clean(path: &Path) -> PathBuf {
                 Some(Component::RootDir | Component::Prefix(_)) => {}
                 _ => parts.push(component),
             },
-            _ => parts.push(component),
+            Component::Prefix(_) | Component::RootDir | Component::Normal(_) => {
+                parts.push(component);
+            }
         }
     }
     parts.into_iter().collect()

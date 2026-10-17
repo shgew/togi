@@ -405,9 +405,12 @@ fn cancelling_a_wait_returns_a_partial_result_and_stop_still_proves_the_teardown
 fn an_unconfirmed_teardown_is_containment_for_wait_and_for_stop() {
     let (mut runner, _dir) = runner(
         |fake| {
-            fake.on_systemd(|call| match call {
-                Systemd::Kill { .. } => Some(Reply::Hang),
-                _ => None,
+            fake.on_systemd(|call| {
+                if let Systemd::Kill { .. } = call {
+                    Some(Reply::Hang)
+                } else {
+                    None
+                }
             });
         },
         fast(),
@@ -437,9 +440,12 @@ fn dropping_the_runner_is_bounded_even_with_a_stuck_trial() {
                     std::future::pending::<()>().await;
                 }))
             });
-            fake.on_systemd(|call| match call {
-                Systemd::Kill { .. } => Some(Reply::Hang),
-                _ => None,
+            fake.on_systemd(|call| {
+                if let Systemd::Kill { .. } = call {
+                    Some(Reply::Hang)
+                } else {
+                    None
+                }
             });
         },
         fast(),
@@ -508,9 +514,12 @@ fn the_runner_sweeps_probes_compresses_and_reads_samples() {
 fn a_cancelled_sweep_returns_cancelled_without_waiting_out_its_deadline() {
     let (mut runner, _dir) = runner(
         |fake| {
-            fake.on_systemd(|call| match call {
-                Systemd::ListScopes => Some(Reply::Hang),
-                _ => None,
+            fake.on_systemd(|call| {
+                if let Systemd::ListScopes = call {
+                    Some(Reply::Hang)
+                } else {
+                    None
+                }
             });
         },
         Timing::default(),
@@ -644,9 +653,12 @@ fn a_backlog_of_reports_cannot_carry_wait_past_its_absolute_bound() {
 fn containment_carries_the_ordered_cleanup_failures_as_its_source() {
     let (mut runner, _dir) = runner(
         |fake| {
-            fake.on_systemd(|call| match call {
-                Systemd::Kill { .. } => Some(Reply::Hang),
-                _ => None,
+            fake.on_systemd(|call| {
+                if let Systemd::Kill { .. } = call {
+                    Some(Reply::Hang)
+                } else {
+                    None
+                }
             });
         },
         fast(),
@@ -1269,7 +1281,7 @@ fn cancelled_after_term(
                     text: String::new(),
                 })
             }
-            _ => None,
+            Systemd::ListScopes | Systemd::Probe { .. } => None,
         });
     }
 }
@@ -1332,9 +1344,12 @@ async fn abandoned_during(phase: Phase, fault: bool) -> Abandoned {
                 }))
             });
             if fault {
-                rig.fake.on_systemd(|call| match call {
-                    Systemd::Kill { .. } => Some(Reply::Hang),
-                    _ => None,
+                rig.fake.on_systemd(|call| {
+                    if let Systemd::Kill { .. } = call {
+                        Some(Reply::Hang)
+                    } else {
+                        None
+                    }
                 });
             }
         }
@@ -1358,12 +1373,15 @@ async fn abandoned_during(phase: Phase, fault: bool) -> Abandoned {
                 starttime: 1,
             });
             member = survivor.alive;
-            rig.fake.on_systemd(|call| match call {
-                Systemd::Kill { .. } => Some(Reply::Output {
-                    success: true,
-                    text: String::new(),
-                }),
-                _ => None,
+            rig.fake.on_systemd(|call| {
+                if let Systemd::Kill { .. } = call {
+                    Some(Reply::Output {
+                        success: true,
+                        text: String::new(),
+                    })
+                } else {
+                    None
+                }
             });
         }
     }
@@ -1485,7 +1503,7 @@ async fn shutdown_overlaps_pending_rollback_and_live_teardown_in_one_slot() {
         let rig = super::harness::rig_with(TestBackend::new("/bin/true"), timing);
         rig.fake.on_systemd(|call| match call {
             Systemd::Kill { .. } => Some(Reply::Hang),
-            _ => None,
+            Systemd::Stop { .. } | Systemd::ListScopes | Systemd::Probe { .. } => None,
         });
         let live = rig.start(spec(Regime::R1, &[0], secs(600))).await.unwrap();
         rig.fake.on_launch(|_, _| {
@@ -1511,7 +1529,7 @@ async fn shutdown_overlaps_pending_rollback_and_live_teardown_in_one_slot() {
             .iter()
             .filter_map(|(call, at)| match call {
                 Systemd::Kill { scope, .. } => Some((scope.as_str(), *at)),
-                _ => None,
+                Systemd::Stop { .. } | Systemd::ListScopes | Systemd::Probe { .. } => None,
             })
             .collect();
         assert_eq!(kills.len(), 2, "{kills:?}");
@@ -1617,7 +1635,7 @@ async fn a_handle_dropped_after_the_last_abandon_check_still_reports_an_unconfir
                 success: true,
                 text: String::new(),
             }),
-            _ => None,
+            Systemd::Stop { .. } | Systemd::ListScopes | Systemd::Probe { .. } => None,
         });
         let handle = rig.start(spec(Regime::R1, &[0], secs(600))).await.unwrap();
         let commands = handle.commands.clone();
@@ -1779,7 +1797,7 @@ async fn a_start_nobody_waits_for_that_ends_without_proof_is_reported_and_bounde
         });
         rig.fake.on_systemd(|call| match call {
             Systemd::Kill { .. } => Some(Reply::Hang),
-            _ => None,
+            Systemd::Stop { .. } | Systemd::ListScopes | Systemd::Probe { .. } => None,
         });
         crate::runtime::RUNTIME_REPORTS.with_borrow_mut(Vec::clear);
         let begun = tokio::time::Instant::now();
@@ -1824,7 +1842,7 @@ async fn a_sweep_nobody_waits_for_that_fails_is_reported_and_bounded() {
                 success: true,
                 text: String::new(),
             }),
-            _ => None,
+            Systemd::Kill { .. } | Systemd::ListScopes | Systemd::Probe { .. } => None,
         });
         let (reply, nobody) = std::sync::mpsc::sync_channel(1);
         drop(nobody);
@@ -1890,9 +1908,12 @@ async fn shutdown_reports_the_live_supervisor_still_running_at_the_shared_deadli
 fn a_cached_cancellation_joined_to_a_failed_teardown_stays_containment_with_every_diagnostic() {
     let (mut runner, _dir) = runner(
         |fake| {
-            fake.on_systemd(|call| match call {
-                Systemd::Kill { .. } => Some(Reply::Hang),
-                _ => None,
+            fake.on_systemd(|call| {
+                if let Systemd::Kill { .. } = call {
+                    Some(Reply::Hang)
+                } else {
+                    None
+                }
             });
         },
         fast(),
@@ -1938,12 +1959,15 @@ fn a_containment_shows_each_failure_with_its_causes_once_in_order() {
     containment.push(CleanupFailure::KillScope {
         scope: "togi-trial-t1".into(),
         signal: "SIGKILL",
-        source: Box::new(std::io::Error::other("timed out")),
+        source: crate::SystemdError::Command(togi_command::Error::TimedOut {
+            program: "systemctl".into(),
+            timeout: std::time::Duration::from_secs(5),
+        }),
     });
     assert_eq!(
         containment.to_string(),
         "the start failed: launch instance work in scope togi-trial-t1: no such file; \
-         signal scope togi-trial-t1 with SIGKILL: timed out"
+         signal scope togi-trial-t1 with SIGKILL: systemctl did not finish within 5s"
     );
 }
 
@@ -1966,7 +1990,7 @@ async fn a_cancelled_sweep_nobody_waits_for_with_failed_cleanup_reports_every_ca
                     success: false,
                     text: "unit busy".into(),
                 }),
-                _ => None,
+                Systemd::ListScopes | Systemd::Probe { .. } => None,
             }
         });
         let (reply, nobody) = std::sync::mpsc::sync_channel(1);

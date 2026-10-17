@@ -169,8 +169,11 @@ pub(crate) fn largest_limit_rate(past_limit_rate: f64, growth: f64, near_limit_r
         .max(grown(past_limit_rate, growth, DEEPEST_STEPS))
 }
 
-/// Counts and ratios of small integers as `f64`.
-pub(crate) fn exact(value: usize) -> f64 {
+/// A count of trials, samples or rows as `f64`, saturating at `u32::MAX`: below that it is exact, so the
+/// ratio of two counts is the correctly rounded quotient. The simulator, the fitter and the bench take every
+/// such count through here.
+#[must_use]
+pub fn saturating_count(value: usize) -> f64 {
     f64::from(u32::try_from(value).unwrap_or(u32::MAX))
 }
 
@@ -397,7 +400,7 @@ impl Model {
             .iter()
             .map(|offset| -offset.get())
             .sum();
-        let mean = steps(depth) / exact(size);
+        let mean = steps(depth) / saturating_count(size);
         (parameters.log_rate + parameters.effect[ccd] + parameters.slope * (mean - 25.0)).exp()
     }
 }

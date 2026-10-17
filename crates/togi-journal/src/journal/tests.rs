@@ -105,6 +105,7 @@ fn events_are_published_in_order_and_found_by_seq() {
 #[test]
 fn an_event_is_one_write_then_one_fsync() {
     let fs = MemFs::new();
+    fs.record_history();
     let mut journal = begin_default(&fs);
     let before = fs.log().len();
     journal.append(stamp(1), note("a"), &[]).unwrap();
@@ -282,6 +283,7 @@ fn a_receipt_is_refused_by_another_journal_and_by_a_reopened_one() {
 #[test]
 fn a_reboot_keeps_the_events_and_appends_as_the_new_boot_without_reading_the_file() {
     let fs = MemFs::new();
+    fs.record_history();
     let mut journal = begin_default(&fs);
     journal.append(stamp(1), note("before"), &[]).unwrap();
     let reads = fs.reads().len();

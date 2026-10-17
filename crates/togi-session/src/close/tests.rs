@@ -84,9 +84,10 @@ fn dead_end(condition: DeadEndCondition) -> DeadEnd {
 }
 
 fn shutdown_reason(events: &[Event]) -> Option<ShutdownReason> {
-    match &events.last()?.payload {
-        Payload::Shutdown(shutdown) => Some(shutdown.reason),
-        _ => None,
+    if let Payload::Shutdown(shutdown) = &events.last()?.payload {
+        Some(shutdown.reason)
+    } else {
+        None
     }
 }
 
@@ -878,9 +879,12 @@ fn a_crash_at_the_restoration_intent_is_classified_by_the_condition_applied_befo
         .journal
         .events()
         .iter()
-        .filter_map(|event| match &event.payload {
-            Payload::CrashDetected(detected) => Some(detected.condition),
-            _ => None,
+        .filter_map(|event| {
+            if let Payload::CrashDetected(detected) = &event.payload {
+                Some(detected.condition)
+            } else {
+                None
+            }
         })
         .collect();
     assert_eq!(detected, [Some(togi_machine::Condition::Alone)]);
@@ -979,16 +983,14 @@ struct CancelAt {
 impl Edge {
     fn names(self, kind: &str, line: &str) -> bool {
         let unattributed = line.contains(" unattributed ");
-        match (self, kind) {
-            (
-                Self::TogetherTrialEnd | Self::UnattributedTrialEnd | Self::ZeroTrialEnd,
-                "trial.end",
-            ) => line.contains(" FAIL "),
-            (Self::TogetherFailure, "failure") => !unattributed,
-            (Self::UnattributedFailure | Self::ZeroFailure, "failure") => unattributed,
-            (Self::HuntEnd, "hunt.end") => line.contains("combination"),
-            (Self::Combination, "combination") => true,
-            _ => false,
+        match self {
+            Self::TogetherTrialEnd | Self::UnattributedTrialEnd | Self::ZeroTrialEnd => {
+                kind == "trial.end" && line.contains(" FAIL ")
+            }
+            Self::TogetherFailure => kind == "failure" && !unattributed,
+            Self::UnattributedFailure | Self::ZeroFailure => kind == "failure" && unattributed,
+            Self::HuntEnd => kind == "hunt.end" && line.contains("combination"),
+            Self::Combination => kind == "combination",
         }
     }
 
@@ -1033,26 +1035,29 @@ impl std::io::Write for CancelAt {
 
 /// The first journal event `edge` names.
 fn edge_event(events: &[Event], edge: Edge) -> Option<usize> {
-    events.iter().position(|event| match &event.payload {
-        Payload::TrialEnd(end) => {
+    events.iter().position(|event| {
+        let payload = &event.payload;
+        if let Payload::TrialEnd(end) = payload {
             matches!(
                 edge,
                 Edge::TogetherTrialEnd | Edge::UnattributedTrialEnd | Edge::ZeroTrialEnd
             ) && end.outcome == togi_journal::Outcome::Failure
-        }
-        Payload::Failure(failure) => {
+        } else if let Payload::Failure(failure) = payload {
             let unattributed = failure.attribution == togi_journal::Attribution::Unattributed;
             match edge {
                 Edge::TogetherFailure => !unattributed,
                 Edge::UnattributedFailure | Edge::ZeroFailure => unattributed,
-                _ => false,
+                Edge::TogetherTrialEnd
+                | Edge::UnattributedTrialEnd
+                | Edge::ZeroTrialEnd
+                | Edge::HuntEnd
+                | Edge::Combination => false,
             }
-        }
-        Payload::HuntEnd(end) => {
+        } else if let Payload::HuntEnd(end) = payload {
             edge_is(edge, Edge::HuntEnd) && end.result == togi_journal::HuntOutcome::Combination
+        } else {
+            matches!(payload, Payload::Combination(_)) && edge_is(edge, Edge::Combination)
         }
-        Payload::Combination(_) => edge_is(edge, Edge::Combination),
-        _ => false,
     })
 }
 
@@ -1125,7 +1130,49 @@ fn a_stop_at_a_durable_boundary_drains_what_it_owes_and_starts_no_new_work() {
                     moves += 1;
                 }
                 Payload::ProfileRestored(profile) => restored = Some(profile.offsets),
-                _ => {}
+                Payload::SessionStart(_)
+                | Payload::SessionContext(_)
+                | Payload::SessionBaseline(_)
+                | Payload::SessionNotice(_)
+                | Payload::SessionWarning(_)
+                | Payload::SessionArchived(_)
+                | Payload::SessionCarried(_)
+                | Payload::ConfigLoaded(_)
+                | Payload::PreflightCheck(_)
+                | Payload::SmuIntent(_)
+                | Payload::SmuWrite(_)
+                | Payload::SmuReadback(_)
+                | Payload::SmuError(_)
+                | Payload::ProfileApplied(_)
+                | Payload::ProfileChange(_)
+                | Payload::TrialStart(_)
+                | Payload::TrialProgress(_)
+                | Payload::TrialSignal(_)
+                | Payload::TrialSample(_)
+                | Payload::TrialEnd(_)
+                | Payload::TrialCarried(_)
+                | Payload::Failure(_)
+                | Payload::FailureCarried(_)
+                | Payload::Mce(_)
+                | Payload::CrashDetected(_)
+                | Payload::CorePhase(_)
+                | Payload::CheckingCycle(_)
+                | Payload::CheckingStep(_)
+                | Payload::CheckingChain(_)
+                | Payload::HuntEnd(_)
+                | Payload::HuntSkipped(_)
+                | Payload::Combination(_)
+                | Payload::TunerWarning(_)
+                | Payload::BackendRetry(_)
+                | Payload::CommandReset(_)
+                | Payload::DefectFound(_)
+                | Payload::DefectAnswered(_)
+                | Payload::DeadEnd(_)
+                | Payload::BootSavedEntry(_)
+                | Payload::BootLeaveReason(_)
+                | Payload::Shutdown(_)
+                | Payload::JournalTorn(_)
+                | Payload::StateRebuilt(_) => {}
             }
         }
         assert_eq!(moves, usize::from(edge.owes_a_move()), "{edge:?}");
@@ -1142,23 +1189,19 @@ fn a_stop_at_a_durable_boundary_drains_what_it_owes_and_starts_no_new_work() {
             }
         });
         for event in events {
-            match &event.payload {
-                Payload::Failure(failure) => {
-                    if let (Some(failed), Some(offset)) = (failure.core, failure.offset) {
-                        assert!(
-                            restored.get(failed).unwrap() > offset,
-                            "{edge:?}: {restored:?} reaches {failure:?}"
-                        );
-                    }
+            if let Payload::Failure(failure) = &event.payload {
+                if let (Some(failed), Some(offset)) = (failure.core, failure.offset) {
+                    assert!(
+                        restored.get(failed).unwrap() > offset,
+                        "{edge:?}: {restored:?} reaches {failure:?}"
+                    );
                 }
-                Payload::Combination(combination) => {
-                    let reaches = combination
-                        .members
-                        .iter()
-                        .all(|member| restored.get(member.core).unwrap() <= member.offset);
-                    assert!(!reaches, "{edge:?}: {restored:?} reaches {combination:?}");
-                }
-                _ => {}
+            } else if let Payload::Combination(combination) = &event.payload {
+                let reaches = combination
+                    .members
+                    .iter()
+                    .all(|member| restored.get(member.core).unwrap() <= member.offset);
+                assert!(!reaches, "{edge:?}: {restored:?} reaches {combination:?}");
             }
         }
         let mut smu = bench.sim.seams().smu;

@@ -73,36 +73,12 @@ services.togi.hardwareTestGroup = "togi-hardware";
 
 Rebuild, then reboot to provision the lock for that group; log in again for group membership to take effect. A rebuild alone does not change an existing lock ([Host lock](spec/runtime.md#host-lock)). Run `just hardware` sequentially as before; ordinary users without this group cannot open the lock, even if they can read togi's state.
 
-For a manual Linux install, protect the lock's parent from unprivileged writes, or provision it during trusted early boot before users can precreate its name in a sticky shared directory. After quiescing all lock users, this descriptor-based procedure provisions or migrates a single root-owned regular inode without following a lock symlink. The example requires an existing `togi-hardware` group; replace the final argument with `-` for root-only mode 0600. An existing foreign or multiply linked inode is refused without changing it, and a held lock makes the procedure fail rather than replacing it.
+For a manual Linux install, protect the lock's parent from unprivileged writes, or provision it during trusted early boot before users can precreate its name in a sticky shared directory. After quiescing all lock users, the descriptor-based program [`nix/provision-lock.py`](../nix/provision-lock.py) provisions or migrates a single root-owned regular inode without following a lock symlink. The example requires an existing `togi-hardware` group; replace the final argument with `-` for root-only mode 0600. An existing foreign or multiply linked inode is refused without changing it, and a held lock makes the program fail rather than replacing it.
 
-The procedure creates the lock only under a parent that [Host lock](spec/runtime.md#host-lock) accepts.
+The program creates the lock only under a parent that [Host lock](spec/runtime.md#host-lock) accepts. Run it from a checkout of the togi revision you install:
 
 ```sh
-nix-shell -p python3 --run 'sudo "$(command -v python3)" - /run/lock/togi.lock togi-hardware' <<'PY'
-import fcntl
-import grp
-import os
-import stat
-import sys
-
-path, group = sys.argv[1:]
-parent = os.stat(os.path.dirname(path))
-if parent.st_uid != 0 or parent.st_mode & 0o022:
-    raise SystemExit("lock parent must be root-owned and not writable by other users")
-gid = 0 if group == "-" else grp.getgrnam(group).gr_gid
-fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600)
-try:
-    info = os.fstat(fd)
-    if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_nlink != 1:
-        raise SystemExit("refusing an unsafe or foreign lock inode")
-    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    os.fchmod(fd, 0o600)
-    os.fchown(fd, 0, gid)
-    if group != "-":
-        os.fchmod(fd, 0o660)
-finally:
-    os.close(fd)
-PY
+nix-shell -p python3 --run 'sudo "$(command -v python3)" nix/provision-lock.py /run/lock/togi.lock togi-hardware'
 ```
 
 On Darwin, only copied-journal `reset` uses a private lock; [Host lock](spec/runtime.md#host-lock) says who may reuse it. A different operator cannot rely on the old public-readable file; use the owning operator or explicitly provision root-owned group access after quiescing all old descriptors. Hardware tuning remains Linux-only.

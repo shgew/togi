@@ -199,9 +199,10 @@ impl Plan {
     }
 
     pub(crate) fn end(&self) -> Option<End> {
-        match self.step {
-            Step::Done(end) => Some(end),
-            _ => None,
+        if let Step::Done(end) = self.step {
+            Some(end)
+        } else {
+            None
         }
     }
 

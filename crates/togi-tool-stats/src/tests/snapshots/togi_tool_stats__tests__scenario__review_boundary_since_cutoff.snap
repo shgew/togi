@@ -87,7 +87,19 @@ R7 voltage-targeted backoffs
 seq  decision  core  from  to  counts  causes  reason
 
 R7 chain derivations
-seq  cycle  step  CCD  workload  part  request groups  loaded cores  sources
+seq  cycle  step  CCD  workload  part  request groups  loaded cores  kind  moved  result  held  trials  trial s  sources
+
+R7 chain cost by derivation
+kind  result  derivations  trials  trial s  hours  failed s  recovery s  failures
+none
+
+R7 chain attribution
+field                                           derivations  trials  trial s  hours  failed s  recovery s  failures
+unchanged after a move on the other CCD         0            0       0        0.000  0         0           0
+changed back to a set the step required before  0            0       0        0.000  0         0           0
+changed to a set the step never required        0            0       0        0.000  0         0           0
+sets the step's chain no longer holds           0            0       0        0.000  0         0           0
+reruns of derived sets, not in the cost above   0            0       0        0.000  0         0           0
 
 Failure rate by depth
 regime / workload / loaded cores / duration  shallowest offset  trials  failures  rate

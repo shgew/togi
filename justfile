@@ -85,12 +85,12 @@ gate: _dev-shell
     cargo deny --locked check bans licenses sources
     cargo shear
 
-# Run every flake check this host builds, streaming their build logs: board-test, go-tools, lint, fmt, changes, module, clippy, nextest, doc, cargo-fmt, deny, shear, package and, on Linux, trial-scope-tests, the sim-suite-* shards and the VM tests
+# Run every flake check this host builds, streaming their build logs: board-test, go-tools, lint, fmt, changes, module, clippy, nextest, doc, cargo-deps, cargo-fmt, deny, shear, package and, on Linux, trial-scope-tests, the sim-suite-* shards and the VM tests
 [group('nix')]
 check *args:
     nix flake check --print-build-logs "$@"
 
-# Build named flake checks, streaming their build logs: board-test, go-tools, lint, fmt, changes, module, clippy, nextest, doc, cargo-fmt, deny, shear, package or, on Linux, trial-scope-tests, vm-recovery-tests, sim-suite-<i>, vm, vm-trial-scope, vm-restart-limit and vm-emergency-stop (`just check-one lint`)
+# Build named flake checks, streaming their build logs: board-test, go-tools, lint, fmt, changes, module, clippy, nextest, doc, cargo-deps, cargo-fmt, deny, shear, package or, on Linux, trial-scope-tests, vm-recovery-tests, sim-suite-<i>, vm, vm-host-lock, vm-trial-scope, vm-restart-limit and vm-emergency-stop (`just check-one lint`)
 [group('nix')]
 check-one +names:
     nix build --no-link --print-build-logs $(printf '.#checks.{{ system }}.%s ' "$@")
@@ -175,6 +175,11 @@ fit-shared-voltage *args: _dev-shell
 [group('run')]
 forward *args: _dev-shell
     cargo run --release --locked -p togi-tool-fit -- --forward-only "$@"
+
+# Dispatch one step of a research campaign under its launch manifest, never the campaign itself (`just research 427 start --manifest FILE`; see docs/benchmarking.md#research-campaigns)
+[group('run')]
+research issue *args: _dev-shell
+    cargo run --release --locked -p togi-tool-bench -- research "$@"
 
 # Start the release workflow on main and follow it: unless an issue, open or closed, is labeled needs-hardware, once check passes on main, it commits the release, builds the package, pushes to main and publishes
 [group('release')]

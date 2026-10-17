@@ -1197,6 +1197,7 @@ fn interrupted_archive() -> (Host, support::MemoryDir) {
 #[test]
 fn interrupted_archive_removes_before_sync_and_reports_each_failed_step() {
     let (host, state) = interrupted_archive();
+    host.fs.record_history();
     let ran = reset(&host, state.path(), &["--all"]);
     assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
     let journal = state.path().join("events.jsonl");

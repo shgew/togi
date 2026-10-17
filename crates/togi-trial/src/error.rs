@@ -1,5 +1,6 @@
 use std::io;
 use std::path::PathBuf;
+use std::process::ExitStatus;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -50,12 +51,8 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
-    #[error("the preflight scope probe failed: {detail}")]
-    Probe {
-        detail: String,
-        #[source]
-        source: Option<Box<dyn std::error::Error + Send + Sync>>,
-    },
+    #[error("the preflight scope probe failed")]
+    Probe(#[source] SystemdError),
     #[error("trial cleanup could not be confirmed")]
     Containment(#[source] Arc<Containment>),
     #[error("cancelled")]
@@ -150,13 +147,13 @@ pub enum CleanupFailure {
         scope: String,
         signal: &'static str,
         #[source]
-        source: Box<dyn std::error::Error + Send + Sync>,
+        source: SystemdError,
     },
     #[error("stop scope {scope}")]
     StopScope {
         scope: String,
         #[source]
-        source: Box<dyn std::error::Error + Send + Sync>,
+        source: SystemdError,
     },
     #[error("reap instance {instance}")]
     Reap {
@@ -185,6 +182,25 @@ pub enum CleanupFailure {
         #[source]
         source: Box<dyn std::error::Error + Send + Sync>,
     },
+}
+
+/// A systemd call that did not do what it was asked.
+#[derive(Debug, thiserror::Error)]
+pub enum SystemdError {
+    #[error(transparent)]
+    Command(togi_command::Error),
+    #[error(transparent)]
+    Timeout(tokio::time::error::Elapsed),
+    #[error("exited with {status}{}", output_suffix(output))]
+    Exit { status: ExitStatus, output: String },
+}
+
+fn output_suffix(output: &str) -> String {
+    if output.is_empty() {
+        String::new()
+    } else {
+        format!(": {output}")
+    }
 }
 
 impl Containment {
@@ -241,22 +257,41 @@ impl Error {
                     Seam::Other
                 }
             }
-            _ => Seam::Other,
+            Self::InsideRuntime { .. }
+            | Self::RuntimeThread(_)
+            | Self::RuntimeBuild(_)
+            | Self::RuntimeGone
+            | Self::Invalid(_)
+            | Self::Identity(_)
+            | Self::Backend(_)
+            | Self::Prepare(_)
+            | Self::Launch { .. }
+            | Self::PipeSetup { .. }
+            | Self::LogWriter(_)
+            | Self::Signal { .. }
+            | Self::Probe { .. }
+            | Self::Panicked { .. }
+            | Self::Storage(_)
+            | Self::Output(_)
+            | Self::Compress(_)
+            | Self::Unsupported { .. } => Seam::Other,
         }
     }
 }
 
 impl From<Error> for togi_machine::Error {
     fn from(error: Error) -> Self {
-        match error {
-            Error::Containment(containment) => Self::Containment(Box::new(containment)),
-            Error::Backend(backend) => backend.into(),
-            other => match other.seam() {
+        if let Error::Containment(containment) = error {
+            Self::Containment(Box::new(containment))
+        } else if let Error::Backend(backend) = error {
+            backend.into()
+        } else {
+            match error.seam() {
                 Seam::Cancelled => Self::Cancelled,
                 Seam::BackendMissing => Self::BackendMissing,
-                Seam::Containment => Self::Containment(Box::new(other)),
-                Seam::Other => Self::Other(Box::new(other)),
-            },
+                Seam::Containment => Self::Containment(Box::new(error)),
+                Seam::Other => Self::Other(Box::new(error)),
+            }
         }
     }
 }
@@ -286,18 +321,17 @@ impl std::error::Error for Shared {
 impl Shared {
     /// The seam error for a kept error, the same each time it is asked for.
     pub(crate) fn seam(error: &Arc<Error>) -> togi_machine::Error {
-        match &**error {
-            Error::Containment(containment) => {
-                togi_machine::Error::Containment(Box::new(Arc::clone(containment)))
-            }
-            other => match other.seam() {
+        if let Error::Containment(containment) = &**error {
+            togi_machine::Error::Containment(Box::new(Arc::clone(containment)))
+        } else {
+            match error.seam() {
                 Seam::Cancelled => togi_machine::Error::Cancelled,
                 Seam::BackendMissing => togi_machine::Error::BackendMissing,
                 Seam::Containment => {
                     togi_machine::Error::Containment(Box::new(Self(Arc::clone(error))))
                 }
                 Seam::Other => togi_machine::Error::Other(Box::new(Self(Arc::clone(error)))),
-            },
+            }
         }
     }
 }

@@ -171,9 +171,10 @@ impl Charge {
 impl Run {
     pub(crate) fn failed<'a>(&'a self, record: &'a OpenFailure) -> Failed<'a> {
         let trial = &record.r7;
-        let rerun_end = match self.zero.get(record.seq) {
-            Some(&Diagnostic::Passed { end }) => Some(end),
-            _ => None,
+        let rerun_end = if let Some(&Diagnostic::Passed { end }) = self.zero.get(record.seq) {
+            Some(end)
+        } else {
+            None
         };
         let confined = rerun_end.is_none();
         Failed {
@@ -741,7 +742,9 @@ impl Run {
                     .find_map(|&core| self.core_response(&view, core, None))?;
                 return Some(match required {
                     R7Response::ReadRanking => R7Route::Respond(Box::new(R7Response::ReadRanking)),
-                    _ => R7Route::Locate {
+                    R7Response::Backoff { .. }
+                    | R7Response::DeadEnd(_)
+                    | R7Response::ZeroRerun(_) => R7Route::Locate {
                         failure: record.seq,
                         reason,
                     },

@@ -109,7 +109,9 @@ impl Journal {
                 {
                     self.decide(decision.clone());
                 }
-                _ => return Some(action),
+                Action::Decide(_) | Action::RunTrial(_) | Action::ReadRanking => {
+                    return Some(action);
+                }
             }
         }
     }
@@ -189,37 +191,36 @@ impl Journal {
     }
 
     fn r7_backoff(&self) -> R7Reason {
-        match self.run().r7_decision() {
-            Some(R7Response::Backoff { why, decision }) => {
-                assert_eq!(self.next_decision(), decision);
-                why
-            }
-            other => panic!("expected a voltage-targeted backoff, got {other:?}"),
-        }
+        let response = self.run().r7_decision();
+        let Some(R7Response::Backoff { why, decision }) = response else {
+            panic!("expected a voltage-targeted backoff, got {response:?}");
+        };
+        assert_eq!(self.next_decision(), decision);
+        why
     }
 
     fn located(&self) -> (Seq, Escalation, Vec<Seq>) {
         assert_eq!(self.run().r7_decision(), None);
-        match self.run().locate_due() {
-            Some(R7Route::Locate { failure, reason }) => {
-                assert_eq!(reason.rerun_passed, None);
-                let cause = reason.cause();
-                (failure, reason.escalation.expect("an escalation"), cause)
-            }
-            other => panic!("expected a located failure, got {other:?}"),
-        }
+        let route = self.run().locate_due();
+        let Some(R7Route::Locate { failure, reason }) = route else {
+            panic!("expected a located failure, got {route:?}");
+        };
+        assert_eq!(reason.rerun_passed, None);
+        let cause = reason.cause();
+        (failure, reason.escalation.expect("an escalation"), cause)
     }
 }
 
 fn ordinal(why: &R7Reason) -> u32 {
     why.notes
         .iter()
-        .find_map(|note| match note {
-            Note::Ordinal { n, after } => {
+        .find_map(|note| {
+            if let Note::Ordinal { n, after } = note {
                 assert_eq!(*after, ESCALATE_AFTER);
                 Some(*n)
+            } else {
+                None
             }
-            _ => None,
         })
         .expect("an ordinal note")
 }
@@ -433,7 +434,7 @@ fn escalation_reset_drops_discarded_backoffs() {
                 {
                     j.decide(decision);
                 }
-                _ => break,
+                Some(Action::Decide(_) | Action::RunTrial(_) | Action::ReadRanking) | None => break,
             }
         }
         j.place(reset, offsets[usize::from(reset)]);
@@ -677,10 +678,11 @@ fn passes_after_the_fold_never_lift_a_covered_failure_over_a_larger_count() {
     ));
     let after = usize::from(j.run().config.needed.get());
     assert!(after > passes.len());
-    match j.run().r7_decision() {
-        Some(R7Response::Backoff { why, .. }) => assert_eq!(why.failure, failure),
-        other => panic!("expected a voltage-targeted backoff, got {other:?}"),
-    }
+    let response = j.run().r7_decision();
+    let Some(R7Response::Backoff { why, .. }) = response else {
+        panic!("expected a voltage-targeted backoff, got {response:?}");
+    };
+    assert_eq!(why.failure, failure);
     j.assert_resumes();
 }
 

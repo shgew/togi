@@ -14,6 +14,7 @@ use togi_tool_bench::{Fleet, Options, Selection, execute, inspect, sanity};
 
 mod forecast_cli;
 mod pass_cost_cli;
+mod research_cli;
 mod same_cli;
 
 const USAGE: u8 = 2;
@@ -42,6 +43,8 @@ enum Command {
     Forecast(forecast_cli::ForecastArgs),
     /// Compute what the R7 part requirements cost at a fixed profile, as a counterfactual study that never becomes tuner evidence.
     PassCost(pass_cost_cli::PassCostArgs),
+    /// Dispatch one step of a bounded research campaign under its launch manifest.
+    Research(research_cli::ResearchArgs),
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
@@ -113,6 +116,7 @@ fn main() -> ExitCode {
             Some(Command::Same(args)) => same_cli::run(args),
             Some(Command::Forecast(args)) => forecast_cli::run(args),
             Some(Command::PassCost(args)) => pass_cost_cli::run(args),
+            Some(Command::Research(args)) => research_cli::run(args),
         },
         Err(error) => {
             if error.use_stderr() {

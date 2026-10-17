@@ -16,10 +16,10 @@ use std::io;
 use std::path::Path;
 
 use serde::Deserialize;
+use togi_sim::saturating_count;
 
 use crate::error::Error;
 use crate::record::{Record, Status};
-use crate::stats::float;
 
 /// The metric a run either has or lacks: any drop in the share of runs that concluded is flagged, since a share of
 /// zeros and ones has no spread to judge it by.
@@ -363,7 +363,7 @@ pub fn compare(current: &[Record], baseline: &[BaselineRun]) -> Vec<Line> {
 }
 
 fn mean(values: &[f64]) -> f64 {
-    values.iter().sum::<f64>() / float(values.len())
+    values.iter().sum::<f64>() / saturating_count(values.len())
 }
 
 fn variance(values: &[f64]) -> f64 {
@@ -371,7 +371,7 @@ fn variance(values: &[f64]) -> f64 {
         return 0.0;
     }
     let m = mean(values);
-    values.iter().map(|v| (v - m).powi(2)).sum::<f64>() / float(values.len() - 1)
+    values.iter().map(|v| (v - m).powi(2)).sum::<f64>() / saturating_count(values.len() - 1)
 }
 
 /// One scenario's values of a metric on each side.
@@ -410,10 +410,10 @@ fn line(scenario: &str, metric: &Metric, strata: &[Stratum]) -> Option<Line> {
     let error = spread
         .clone()
         .map(|s| {
-            let weight = float(s.baseline.len()) / float(baseline_total);
+            let weight = saturating_count(s.baseline.len()) / saturating_count(baseline_total);
             weight.powi(2)
-                * (variance(&s.current) / float(s.current.len())
-                    + variance(&s.baseline) / float(s.baseline.len()))
+                * (variance(&s.current) / saturating_count(s.current.len())
+                    + variance(&s.baseline) / saturating_count(s.baseline.len()))
         })
         .sum::<f64>()
         .sqrt();

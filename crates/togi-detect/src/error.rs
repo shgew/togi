@@ -101,7 +101,16 @@ impl From<Error> for togi_machine::Error {
         match error {
             Error::BootMissing => Self::BootMissing,
             Error::CursorMissing => Self::CursorMissing,
-            other => Self::Other(Box::new(other)),
+            other @ (Error::InvalidBootId { .. }
+            | Error::Command { .. }
+            | Error::Unsupported { .. }
+            | Error::BudgetExhausted { .. }
+            | Error::Exit { .. }
+            | Error::Decode { .. }
+            | Error::Status { .. }
+            | Error::Version { .. }
+            | Error::Pstore(_)
+            | Error::BootId(_)) => Self::Other(Box::new(other)),
         }
     }
 }

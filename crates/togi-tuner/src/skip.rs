@@ -79,9 +79,10 @@ impl Run {
         let mut failure: Failure = known.failure.clone();
         failure.known_failure = Some(seq);
         failure.reason = Some(reason);
-        failure.round = match plan.context {
-            TrialContext::Round { round } => Some(round),
-            _ => None,
+        failure.round = if let TrialContext::Round { round } = plan.context {
+            Some(round)
+        } else {
+            None
         };
         failure.condition = Some(plan.condition);
         failure.regime = Some(plan.regime);

@@ -184,7 +184,10 @@ proptest! {
                 let found: Vec<CoreId> = end.members.iter().map(|m| m.core).collect();
                 prop_assert_eq!(found, culprits);
             }
-            other => prop_assert!(false, "unexpected end {other:?}"),
+            other @ (HuntOutcome::Fallback
+            | HuntOutcome::Cancelled
+            | HuntOutcome::Direct
+            | HuntOutcome::Loaded) => prop_assert!(false, "unexpected end {other:?}"),
         }
     }
 }
@@ -522,12 +525,15 @@ fn hunt_cost_distinct_probes() {
         let (large, large_visits, large_next) = probing(300, settled_probes);
         assert!(small_visits > 0);
         assert_eq!(small_visits, large_visits, "{settled_probes} probes");
-        let probe_of = |action: &Action| match action {
-            Action::Decide(DecisionAction {
+        let probe_of = |action: &Action| {
+            let Action::Decide(DecisionAction {
                 payload: DecisionPayload::HuntGroup(group),
                 ..
-            }) => (group.probe, group.profile),
-            other => panic!("expected the next probe group, got {other:?}"),
+            }) = action
+            else {
+                panic!("expected the next probe group, got {action:?}");
+            };
+            (group.probe, group.profile)
         };
         assert_eq!(probe_of(&small_next), probe_of(&large_next));
         assert_eq!(

@@ -101,9 +101,12 @@ impl Recorder {
         self.ops
             .borrow()
             .iter()
-            .filter_map(|op| match op {
-                Op::Draw(cells) => Some(cells.clone()),
-                _ => None,
+            .filter_map(|op| {
+                if let Op::Draw(cells) = op {
+                    Some(cells.clone())
+                } else {
+                    None
+                }
             })
             .collect()
     }
@@ -113,9 +116,12 @@ impl Recorder {
         self.ops
             .borrow()
             .iter()
-            .filter_map(|op| match op {
-                Op::Raw(text) => Some(text.clone()),
-                _ => None,
+            .filter_map(|op| {
+                if let Op::Raw(text) = op {
+                    Some(text.clone())
+                } else {
+                    None
+                }
             })
             .collect()
     }

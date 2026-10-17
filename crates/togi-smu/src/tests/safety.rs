@@ -7,6 +7,7 @@ use super::fixture::{
 use crate::mailbox::Command;
 use crate::pm_table::PmFile;
 use crate::{Driver, Error, Operation};
+use test_case::test_case;
 use togi_machine::{ObservedOffset, PmTableReader, TargetOffset};
 
 #[test]
@@ -55,46 +56,50 @@ fn the_pm_table_reader_exists_only_for_a_validated_driver() {
     assert!(reader.pm_table().is_none());
 }
 
-#[test]
-fn targets_are_clamped_before_they_reach_the_mailbox() {
+#[test_case(-60, 0xffce; "below the floor")]
+#[test_case(-51, 0xffce; "one below the floor")]
+#[test_case(-50, 0xffce; "at the floor")]
+#[test_case(5, 0; "above zero")]
+#[test_case(1, 0; "one above zero")]
+fn targets_are_clamped_before_they_reach_the_mailbox(target: i64, word: u32) {
     let tree = Tree::new(8, true);
     let fake = Fake::new();
     let mut driver = validated(&tree, &fake);
-    for (target, word) in [(-60, 0xffce), (-51, 0xffce), (-50, 0xffce), (5, 0), (1, 0)] {
-        let target = TargetOffset::clamped(target);
-        write(&mut driver, 9, target).unwrap();
-        assert_eq!(
-            fake.commands().last(),
-            Some(&(Command::SetOffset, 0x1010_0000 | word))
-        );
-        write_all(&mut driver, target).unwrap();
-        assert_eq!(
-            fake.commands().last(),
-            Some(&(Command::SetAllOffsets, word))
-        );
-    }
+    let target = TargetOffset::clamped(target);
+    write(&mut driver, 9, target).unwrap();
+    assert_eq!(
+        fake.commands().last(),
+        Some(&(Command::SetOffset, 0x1010_0000 | word))
+    );
+    write_all(&mut driver, target).unwrap();
+    assert_eq!(
+        fake.commands().last(),
+        Some(&(Command::SetAllOffsets, word))
+    );
 }
 
-#[test]
-fn readbacks_outside_the_writable_range_are_reported_raw() {
+#[test_case(0x000a, 10; "positive")]
+#[test_case(0xffc4, -60; "below the writable range")]
+#[test_case(0x7fff, 32767; "i16 max")]
+#[test_case(0x8000, -32768; "i16 min")]
+fn readbacks_outside_the_writable_range_are_reported_raw(raw: u32, want: i64) {
     let tree = Tree::new(8, true);
     let fake = Fake::new();
     let mut driver = validated(&tree, &fake);
-    for (raw, want) in [
-        (0x000a, 10),
-        (0xffc4, -60),
-        (0x7fff, 32767),
-        (0x8000, -32768),
-    ] {
-        fake.respond(Command::ReadOffset, raw);
-        assert_eq!(read(&mut driver, 4).unwrap(), ObservedOffset(want));
-    }
+    fake.respond(Command::ReadOffset, raw);
+    assert_eq!(read(&mut driver, 4).unwrap(), ObservedOffset(want));
+}
+
+#[test_case(0x000a, 10; "positive")]
+#[test_case(0xffc4, -60; "below the writable range")]
+fn readbacks_are_reported_raw_after_an_emergency_zero(raw: u32, want: i64) {
+    let tree = Tree::new(8, true);
+    let fake = Fake::new();
+    let mut driver = validated(&tree, &fake);
     let proof = driver.validate().unwrap();
     zero_all(&mut driver, proof).unwrap();
-    for (raw, want) in [(0x000a, 10), (0xffc4, -60)] {
-        fake.respond(Command::ReadOffset, raw);
-        assert_eq!(read(&mut driver, 4).unwrap(), ObservedOffset(want));
-    }
+    fake.respond(Command::ReadOffset, raw);
+    assert_eq!(read(&mut driver, 4).unwrap(), ObservedOffset(want));
 }
 
 #[test]

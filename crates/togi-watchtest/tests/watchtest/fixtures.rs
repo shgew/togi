@@ -35,9 +35,12 @@ fn reruns_that_pass_complete_the_cycle_before_the_next_cycle_starts() {
         journals
             .ended
             .iter()
-            .filter_map(|event| match &event.payload {
-                Payload::TrialIntent(intent) => Some(intent),
-                _ => None,
+            .filter_map(|event| {
+                if let Payload::TrialIntent(intent) = &event.payload {
+                    Some(intent)
+                } else {
+                    None
+                }
             })
             .all(|intent| intent.cycle.is_none_or(|cycle| cycle.get() == 1)),
         "no cycle 2 trial has begun"
@@ -101,7 +104,54 @@ pub(crate) fn crashed_cycle_trials(events: &[Event]) -> (usize, usize) {
                     pending.push(ran_in[&end.trial]);
                 }
             }
-            _ => {}
+            Payload::SessionStart(_)
+            | Payload::SessionContext(_)
+            | Payload::SessionBaseline(_)
+            | Payload::SessionNotice(_)
+            | Payload::SessionWarning(_)
+            | Payload::SessionArchived(_)
+            | Payload::SessionCarried(_)
+            | Payload::ConfigLoaded(_)
+            | Payload::PreflightCheck(_)
+            | Payload::SmuIntent(_)
+            | Payload::SmuWrite(_)
+            | Payload::SmuReadback(_)
+            | Payload::SmuError(_)
+            | Payload::ProfileApplied(_)
+            | Payload::ProfileChange(_)
+            | Payload::ProfileRestored(_)
+            | Payload::TrialProgress(_)
+            | Payload::TrialSignal(_)
+            | Payload::TrialSample(_)
+            | Payload::TrialEnd(_)
+            | Payload::TrialCarried(_)
+            | Payload::Failure(_)
+            | Payload::FailureCarried(_)
+            | Payload::Mce(_)
+            | Payload::CrashDetected(_)
+            | Payload::TunerDecision(_)
+            | Payload::CorePhase(_)
+            | Payload::CheckingCycle(_)
+            | Payload::CheckingStep(_)
+            | Payload::CheckingChain(_)
+            | Payload::HostRanking(_)
+            | Payload::HuntStart(_)
+            | Payload::HuntGroup(_)
+            | Payload::HuntEnd(_)
+            | Payload::HuntSkipped(_)
+            | Payload::Combination(_)
+            | Payload::DeepeningRound(_)
+            | Payload::TunerWarning(_)
+            | Payload::BackendRetry(_)
+            | Payload::CommandReset(_)
+            | Payload::DefectFound(_)
+            | Payload::DefectAnswered(_)
+            | Payload::DeadEnd(_)
+            | Payload::BootSavedEntry(_)
+            | Payload::BootLeaveReason(_)
+            | Payload::Shutdown(_)
+            | Payload::JournalTorn(_)
+            | Payload::StateRebuilt(_) => {}
         }
     }
     settle(&state, &mut pending);

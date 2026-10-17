@@ -443,7 +443,41 @@ fn assert_decision_words(payload: &Payload) {
         Payload::HuntSkipped(d) => d.into(),
         Payload::Combination(d) => d.into(),
         Payload::DeepeningRound(d) => d.into(),
-        _ => return,
+        Payload::SessionStart(_)
+        | Payload::SessionContext(_)
+        | Payload::SessionBaseline(_)
+        | Payload::SessionNotice(_)
+        | Payload::SessionWarning(_)
+        | Payload::SessionArchived(_)
+        | Payload::SessionCarried(_)
+        | Payload::ConfigLoaded(_)
+        | Payload::PreflightCheck(_)
+        | Payload::SmuIntent(_)
+        | Payload::SmuWrite(_)
+        | Payload::SmuReadback(_)
+        | Payload::SmuError(_)
+        | Payload::ProfileApplied(_)
+        | Payload::ProfileRestored(_)
+        | Payload::TrialIntent(_)
+        | Payload::TrialStart(_)
+        | Payload::TrialProgress(_)
+        | Payload::TrialSignal(_)
+        | Payload::TrialSample(_)
+        | Payload::TrialEnd(_)
+        | Payload::TrialCarried(_)
+        | Payload::FailureCarried(_)
+        | Payload::Mce(_)
+        | Payload::CrashDetected(_)
+        | Payload::HostRanking(_)
+        | Payload::BackendRetry(_)
+        | Payload::CommandReset(_)
+        | Payload::DefectFound(_)
+        | Payload::DefectAnswered(_)
+        | Payload::BootSavedEntry(_)
+        | Payload::BootLeaveReason(_)
+        | Payload::Shutdown(_)
+        | Payload::JournalTorn(_)
+        | Payload::StateRebuilt(_) => return,
     };
     let table = words(payload.kind());
     let detailed = match table.detailed {
@@ -709,7 +743,52 @@ fn a_phrase_applies_only_to_its_own_kind() {
             EventKind::Failure => Tag::Fail,
             EventKind::TunerDecision => Tag::Backoff,
             EventKind::HuntGroup => Tag::Group,
-            _ => Tag::Limit,
+            EventKind::SessionStart
+            | EventKind::SessionContext
+            | EventKind::SessionBaseline
+            | EventKind::SessionNotice
+            | EventKind::SessionWarning
+            | EventKind::SessionArchived
+            | EventKind::SessionCarried
+            | EventKind::ConfigLoaded
+            | EventKind::PreflightCheck
+            | EventKind::SmuIntent
+            | EventKind::SmuWrite
+            | EventKind::SmuReadback
+            | EventKind::SmuError
+            | EventKind::ProfileApplied
+            | EventKind::ProfileChange
+            | EventKind::ProfileRestored
+            | EventKind::TrialIntent
+            | EventKind::TrialStart
+            | EventKind::TrialProgress
+            | EventKind::TrialSignal
+            | EventKind::TrialSample
+            | EventKind::TrialCarried
+            | EventKind::FailureCarried
+            | EventKind::Mce
+            | EventKind::CrashDetected
+            | EventKind::CorePhase
+            | EventKind::CheckingCycle
+            | EventKind::CheckingStep
+            | EventKind::CheckingChain
+            | EventKind::HostRanking
+            | EventKind::HuntStart
+            | EventKind::HuntEnd
+            | EventKind::HuntSkipped
+            | EventKind::Combination
+            | EventKind::DeepeningRound
+            | EventKind::TunerWarning
+            | EventKind::BackendRetry
+            | EventKind::CommandReset
+            | EventKind::DefectFound
+            | EventKind::DefectAnswered
+            | EventKind::DeadEnd
+            | EventKind::BootSavedEntry
+            | EventKind::BootLeaveReason
+            | EventKind::Shutdown
+            | EventKind::JournalTorn
+            | EventKind::StateRebuilt => Tag::Limit,
         };
         assert_eq!(of(&other), fallback, "{kind}");
     }
