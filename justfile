@@ -41,10 +41,10 @@ hardware *args:
     @[[ "{{ os() }}" == linux ]] || { echo 'just hardware needs Linux: run it on the target machine' >&2; exit 1; }
     tests=(--test hardware); [[ "$(id -u)" == 0 ]] || tests+=(--test cached_errors); [[ "$(id -u)" != 0 ]] || export CARGO_TARGET_DIR=~root/.cache/togi/hardware-target; nix develop --command env TMPDIR=/tmp RUST_TEST_THREADS=1 cargo test --locked --no-fail-fast -p togi-smu -p togi-detect -p togi-trial -p togi-hardware --features hardware "${tests[@]}" "$@"
 
-# Fuzz the journal reader for the given seconds (`just fuzz 300`), seeded from fuzz/seeds
+# Fuzz the journal reader for the given seconds (`just fuzz 300`), seeded from tests/reader_fuzz/seeds, which the reader_fuzz test replays on every run
 [group('test')]
 fuzz seconds="60": _dev-shell
-    cd crates/togi-journal && mkdir -p fuzz/corpus/reader && cargo fuzz run -s none reader fuzz/corpus/reader fuzz/seeds/reader -- -max_total_time="$1"
+    cd crates/togi-journal && mkdir -p fuzz/corpus/reader && cargo fuzz run -s none reader fuzz/corpus/reader tests/reader_fuzz/seeds -- -max_total_time="$1"
 
 # Print changed lines no test reached since a base, and the changed files the run does not build (`just cover origin/main`)
 [group('test')]
@@ -57,13 +57,14 @@ cover base: _dev-shell
     target=${CARGO_LLVM_COV_TARGET_DIR:-${CARGO_TARGET_DIR:-target}/llvm-cov-target}
     go run ./tools/cover --lcov "$trace" --build-dir "$target/debug" --base "$1"
 
-# Lint the retained Go tools for Linux and macOS, check the Nushell board's syntax, and run workspace clippy for the host and aarch64 macOS, with optional Go lint flags
+# Lint the retained Go tools for Linux and macOS, check the Nushell board's syntax, and run workspace clippy for the host with default and all features and, with all features, for whichever of x86_64 Linux and aarch64 macOS is not the host, with optional Go lint flags
 [group('quality')]
 lint *args: _dev-shell
     for target in linux/amd64 darwin/arm64; do env GOOS="${target%/*}" GOARCH="${target#*/}" CGO_ENABLED=0 golangci-lint run ./... "$@"; done
     nu --no-config-file -c 'nu-check --debug ("tools/board/main.nu" | path expand); nu-check --debug --as-module ("tools/board/mod.nu" | path expand)'
     cargo clippy --locked --all-targets -- --deny warnings
-    cargo clippy --locked --all-targets --target aarch64-apple-darwin -- --deny warnings
+    cargo clippy --locked --all-targets --all-features -- --deny warnings
+    host=$(rustc -vV | sed -n 's/^host: //p'); for target in x86_64-unknown-linux-gnu aarch64-apple-darwin; do [[ "$target" == "$host" ]] || cargo clippy --locked --all-targets --all-features --target "$target" -- --deny warnings; done
 
 # Format Go, Nix and this justfile in place
 [group('quality')]
