@@ -46,13 +46,37 @@ fn every_kind_round_trips_through_the_wire() {
     }
 }
 
+/// The line of every sample payload, pinned: the kind names and the payload fields and numbers on the wire.
+#[test]
+fn every_kind_matches_its_golden() {
+    let lines: Vec<String> = samples()
+        .into_iter()
+        .map(|payload| {
+            Event::new(seq(2), stamp(None), boot(), vec![seq(1)], payload)
+                .encode()
+                .unwrap()
+        })
+        .collect();
+    let golden = include_str!("snapshots/every_kind.jsonl");
+    assert_eq!(lines.len(), golden.lines().count());
+    for (line, pinned) in lines.iter().zip(golden.lines()) {
+        assert_eq!(line, pinned);
+    }
+}
+
 #[test]
 fn kind_names_round_trip() {
     for kind in EventKind::ALL {
         assert_eq!(kind.as_str().parse::<EventKind>().unwrap(), *kind);
+        let wire = serde_json::to_value(kind).unwrap();
+        assert_eq!(wire, serde_json::json!(kind.as_str()));
+        assert_eq!(serde_json::from_value::<EventKind>(wire).unwrap(), *kind);
     }
     assert!("trial.nope".parse::<EventKind>().is_err());
+    assert!(serde_json::from_str::<EventKind>(r#""trial.nope""#).is_err());
+    assert!(serde_json::from_str::<EventKind>("0").is_err());
 }
+
 /// Any known event: a sample payload of any kind with arbitrary seq, mono time and causes.
 pub(super) fn arbitrary_event() -> impl Strategy<Value = Event> {
     (
