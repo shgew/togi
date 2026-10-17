@@ -361,10 +361,20 @@ fn yielded_movers_retry_without_repeating_their_valid_own_checks() {
         j.trial(&first, Outcome::Pass);
     }
     let first_class = first.requirement.class;
+    assert_eq!(first_class.loaded(), set(&[0, 1, 2, 3]));
+    assert_eq!(
+        first_class.workload(),
+        togi_machine::pick_workload(Regime::R7, 0).id()
+    );
     let origins: Vec<_> = (0..4)
         .map(|id| j.run().phases.mark(core(id)).unwrap())
         .collect();
     let failed_class = until_r7_check(&mut j).requirement.class;
+    assert_eq!(failed_class.loaded(), first_class.loaded());
+    assert_eq!(
+        failed_class.workload(),
+        togi_machine::pick_workload(Regime::R7, 1).id()
+    );
     let (_, _, decided) = fail_r7_and_blame(&mut j);
     let blamed = decided.last().unwrap().core;
     let yielded: Vec<CoreId> = decided
@@ -375,6 +385,10 @@ fn yielded_movers_retry_without_repeating_their_valid_own_checks() {
     assert!(!yielded.is_empty());
     until_round(&mut j);
     let round = j.run().rounds.active().unwrap();
+    let retry_round = round.id();
+    let retry_profile = j.profile(&[-11, -11, -11, -10]);
+    assert_eq!(blamed, core(3));
+    assert_eq!(round.profile(), &retry_profile);
     assert!(!round.cores().contains(blamed));
     for &id in &yielded {
         assert!(round.cores().contains(id));
@@ -387,13 +401,48 @@ fn yielded_movers_retry_without_repeating_their_valid_own_checks() {
         assert_eq!(mark.attempt, round.id());
     }
     finish_moves(&mut j);
-    let next = first_trial_after(&mut j);
-    assert_eq!(next.regime, Regime::R7);
-    assert_ne!(next.requirement.class, first_class);
-    assert_eq!(next.requirement.class, failed_class);
+    // The blamed core now tops the full CCD, exposing a new own-partial for the
+    // other three cores. Full-CCD passes cannot answer that different class.
+    let partial = set(&[0, 1, 2]);
+    let retry_classes: Vec<_> = togi_machine::workloads(Regime::R7)
+        .iter()
+        .flat_map(|workload| {
+            [first_class.loaded(), partial].map(|loaded| {
+                crate::ClassKey::new(workload.id(), loaded, first_class.duration())
+            })
+        })
+        .filter(|&class| class != first_class)
+        .collect();
+    assert_eq!(
+        retry_classes[0],
+        crate::ClassKey::new(first_class.workload(), partial, first_class.duration())
+    );
+    assert_eq!(retry_classes[1], failed_class);
+    // No R1/R2 checks or already-passed full-CCD class repeat. The failed class
+    // still owes all n passes: its baseline rerun does not cover these movers.
+    for class in retry_classes {
+        for _ in 0..needed {
+            let next = first_trial_after(&mut j);
+            assert_eq!(next.regime, Regime::R7);
+            assert_eq!(next.activity, Activity::Deepening);
+            assert_eq!(next.requirement.class, class);
+            assert_eq!(next.profile, retry_profile);
+            j.trial(&next, Outcome::Pass);
+        }
+    }
+    let end = j.next_decision();
+    assert!(matches!(
+        &end.payload,
+        DecisionPayload::DeepeningRound(round)
+            if round.round == retry_round && round.event == RoundEvent::End && round.passed
+    ));
+    j.decide(end);
     for &id in &yielded {
         assert_eq!(j.run().core(id).offset.get(), -11);
+        assert_eq!(j.run().phases.mark(id), None);
     }
+    assert_eq!(j.run().failure_point(blamed), Some(off(-11)));
+    assert_eq!(j.run().core(blamed).offset, off(-10));
     drive(&mut j, 4000, |j| j.run().phases.confirm_start().is_some());
     assert_eq!(round_starts(&j.events).len(), 2);
     j.assert_resumes();
