@@ -307,7 +307,7 @@ pub(crate) struct Session<'machine> {
     pub(crate) carry: Option<PendingCarry>,
     pub(crate) cancel: CancellationToken,
     pub(crate) report: Box<dyn Write>,
-    /// Sorted by core id. [`Session::open`] reads it for a journal with no session yet, [`Session::start`] otherwise.
+    /// Sorted by core id, as [`Session::open`] read it.
     pub(crate) topology: Vec<CoreInfo>,
     pub(crate) hardware: Hardware,
     pub(crate) lifecycle: Lifecycle,
@@ -324,9 +324,9 @@ pub(crate) struct Session<'machine> {
 }
 
 impl<'machine> Session<'machine> {
-    /// Takes over the journal: refuses one this build may not append to and, for a journal with no session yet, a
-    /// machine whose topology the tuner cannot work on; reads the pending tuning-boot reason and folds the journal.
-    /// Nothing is appended.
+    /// Takes over the journal: refuses one this build may not append to, reads the topology and, for a journal with
+    /// no session yet, refuses one the tuner cannot work on; then reads the pending tuning-boot reason and folds the
+    /// journal. Nothing is appended.
     pub(crate) fn open(input: RunInput<'machine>) -> Result<Self, Box<Ended>> {
         let RunInput {
             config,
@@ -374,21 +374,20 @@ impl<'machine> Session<'machine> {
             trials,
             kernel,
         } = machine;
-        let mut topology = Vec::new();
-        if journal.events().is_empty() {
-            topology = match host.topology() {
-                Ok(topology) => topology,
-                Err(error) => return Err(refused(journal, vec![error.into()])),
-            };
-            topology.sort_by_key(|info| info.core);
-            if let Err(error) = Topology::new(&topology) {
-                let errors = leaving(
-                    SessionError::UnsupportedTopology(error),
-                    &mut bootloader,
-                    &format!("unsupported topology: {error}"),
-                );
-                return Err(refused(journal, errors));
-            }
+        let mut topology = match host.topology() {
+            Ok(topology) => topology,
+            Err(error) => return Err(refused(journal, vec![error.into()])),
+        };
+        topology.sort_by_key(|info| info.core);
+        if journal.events().is_empty()
+            && let Err(error) = Topology::new(&topology)
+        {
+            let errors = leaving(
+                SessionError::UnsupportedTopology(error),
+                &mut bootloader,
+                &format!("unsupported topology: {error}"),
+            );
+            return Err(refused(journal, errors));
         }
         let handoff = match bootloader.map(BootHandoff::read).transpose() {
             Ok(handoff) => handoff,
@@ -464,18 +463,11 @@ impl<'machine> Session<'machine> {
         matches!(self.visit, Visit::Same { reconciled: false })
     }
 
-    /// Reads the topology, unless [`Session::open`] read it for a journal with no session yet, and refuses changed
-    /// session cores before finishing an earlier boot's dead end; then refuses configured cores it lacks and, unless
-    /// a dead end stays pending until reconciliation, records the startup kernel boundary and the configuration.
+    /// Refuses changed session cores before finishing an earlier boot's dead end; then refuses configured cores the
+    /// machine lacks and, unless a dead end stays pending until reconciliation, records the startup kernel boundary
+    /// and the configuration.
     pub(crate) fn start(&mut self) -> Outcome {
-        let topology = if self.topology.is_empty() {
-            let mut topology = self.host.topology()?;
-            topology.sort_by_key(|info| info.core);
-            topology
-        } else {
-            std::mem::take(&mut self.topology)
-        };
-        let cores: CoreSet = topology.iter().map(|info| info.core).collect();
+        let cores: CoreSet = self.topology.iter().map(|info| info.core).collect();
         let recorded = self.appender.recovery();
         if recorded.started() {
             let known: CoreSet = recorded.topology().keys().copied().collect();
@@ -498,7 +490,6 @@ impl<'machine> Session<'machine> {
         {
             return Err(SessionError::NoSuchCore { core });
         }
-        self.topology = topology;
         self.hardware = Hardware::new(cores);
         if self.appender.recovery().pending_dead_end().is_some() {
             return Ok(Control::Continue);

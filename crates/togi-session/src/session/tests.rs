@@ -264,25 +264,20 @@ fn a_host_that_cannot_be_read_does_not_start_tuning() {
         });
         input
     };
-    let Err(ended) = Session::open(unreadable_topology(&bench)) else {
-        panic!("a new session opened without its topology");
+    let refused = |bench: &Bench, when: &str| {
+        let Err(ended) = Session::open(unreadable_topology(bench)) else {
+            panic!("{when}: opened without the topology");
+        };
+        assert!(
+            matches!(ended.errors.as_slice(), [SessionError::Machine(_)]),
+            "{when}: {:?}",
+            ended.errors
+        );
+        ended.journal.events().len()
     };
-    assert!(matches!(
-        ended.errors.as_slice(),
-        [SessionError::Machine(_)]
-    ));
-    assert!(ended.journal.events().is_empty());
-    drop(ended);
-
+    assert_eq!(refused(&bench, "new session"), 0);
     bench.open().start().unwrap();
-    let Ok(mut session) = Session::open(unreadable_topology(&bench)) else {
-        panic!("open");
-    };
-    let before = crate::testing::kinds_of(session.appender());
-    assert!(matches!(session.start(), Err(SessionError::Machine(_))));
-    assert_eq!(crate::testing::kinds_of(session.appender()), before);
-    untouched(&bench, &session);
-    drop(session);
+    assert_eq!(refused(&bench, "resumed session"), 2);
 
     let mut session = crate::testing::swept(&bench);
     let inner = std::mem::replace(&mut session.host, bench.sim.seams().host);
