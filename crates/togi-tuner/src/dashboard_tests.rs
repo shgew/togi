@@ -1,12 +1,19 @@
 use std::num::NonZeroU32;
 
 use togi_journal::{
-    Activity, Attribution, CommandReset, HuntEnd, HuntGroup, HuntOutcome, HuntStage, HuntStart,
-    Inference, Member, Outcome, ResetTarget, Seq,
+    Activity, CommandReset, HuntGroup, HuntStage, HuntStart, Inference, Member, Outcome,
+    ResetTarget, Seq,
 };
 use togi_machine::{Condition, Regime, workloads};
 
-use crate::chain_tests::{chain_journal, pass_part};
+use crate::chain_tests::{
+    FULL_REQUESTS, PARTIAL_REQUESTS, SHORT, STARTS, chain_journal, decided, journal, one_ccd,
+    pass_part, run, shallower, two_ccds,
+};
+use crate::hunt::support::{
+    at, attribute, cancel_hunt, group_of, hunt_of, ids, limit_session, members_of,
+    repeated_core_oracle, repeated_session, run_group, start_hunt_at,
+};
 use crate::dashboard::{CyclePart, GroupState, MemberProbe, TrialRequirement};
 use crate::testkit::{Journal, Start, config, fresh, set};
 use crate::tests::{core, off};
@@ -14,91 +21,6 @@ use crate::{
     Action, CombinationId, DecisionAction, DecisionPayload, FailurePoint, Limit, Load, PartNo,
     Reached, StepNo, TrialContext, TrialHistory, TrialPlan,
 };
-
-const STARTS: [i64; 8] = [-10, -20, -30, -40, -20, -20, -20, -20];
-const SHORT: u32 = 120;
-const FULL_REQUESTS: [(u8, f64); 4] = [(0, 1.19), (1, 1.11), (2, 1.2), (3, 1.09)];
-const PARTIAL_REQUESTS: [(u8, f64); 3] = [(0, 1.19), (1, 1.25), (3, 1.1)];
-
-fn grouped(ccds: &[&[u8]]) -> Vec<togi_machine::CoreInfo> {
-    ccds.iter()
-        .zip(0_u8..)
-        .flat_map(|(ids, ccd)| {
-            ids.iter().map(move |&id| togi_machine::CoreInfo {
-                core: core(id),
-                ccd: togi_machine::CcdId(ccd),
-                cpus: Vec::new(),
-            })
-        })
-        .collect()
-}
-
-fn two_ccds() -> Vec<togi_machine::CoreInfo> {
-    grouped(&[&[0, 1, 2, 3], &[4, 5, 6, 7]])
-}
-
-fn one_ccd() -> Vec<togi_machine::CoreInfo> {
-    grouped(&[&[0, 1, 2, 3, 4, 5, 6, 7]])
-}
-
-fn journal(cores: Vec<togi_machine::CoreInfo>, offsets: &[i64], cycle: Option<&str>) -> Journal {
-    let ids: Vec<u8> = cores.iter().map(|info| info.core.get()).collect();
-    let starts: Vec<Start> = offsets
-        .iter()
-        .map(|&offset| Start::has_room(offset))
-        .collect();
-    let mut j = Journal::on(&ids, cores, &starts);
-    j.ranking(&ids);
-    if let Some(cycle) = cycle {
-        j.load(&config(cycle));
-    }
-    for _ in 0..3 {
-        decide_next(&mut j);
-    }
-    assert!(j.run().checking.open().is_some());
-    j
-}
-
-fn decided(action: Action) -> DecisionAction {
-    let Action::Decide(decision) = action else {
-        panic!("expected a decision, got {action:?}");
-    };
-    decision
-}
-
-fn run(
-    j: &mut Journal,
-    plan: &TrialPlan,
-    outcome: Outcome,
-    requests: &[(u8, f64)],
-    named: Option<u8>,
-) -> Seq {
-    let (intent, trial) = j.intent(plan);
-    let signal = (outcome == Outcome::Failure).then_some(togi_machine::Signal::ComputationError);
-    let mut end = Journal::end_payload(&trial, outcome, signal);
-    end.duration_s = plan.duration.get();
-    end.voltage_requests_v = requests
-        .iter()
-        .map(|&(id, volts)| (core(id), volts))
-        .collect();
-    end.core = named.map(core);
-    j.append(end.into(), &[intent])
-}
-
-fn shallower(j: &mut Journal, id: u8, counts: i64) {
-    let to = j.offsets().get(core(id)).unwrap().get() + counts;
-    j.core_phase(crate::schedule_tests::transition(
-        id,
-        togi_journal::CorePhase::HasRoom,
-        to,
-    ));
-    let change = j.next_decision();
-    assert!(
-        matches!(change.payload, DecisionPayload::ProfileChange(_)),
-        "{change:?}"
-    );
-    j.decide(change);
-}
 
 fn chain_record(j: &Journal, step: u32, part: u32, cores: &[u8]) -> togi_journal::Payload {
     togi_journal::CheckingChain {
@@ -123,10 +45,6 @@ fn step_record(j: &Journal, step: u32) -> togi_journal::Payload {
         profile: j.run().checking.profile().unwrap().offsets(),
     }
     .into()
-}
-
-fn ids(count: usize) -> Vec<u8> {
-    (0..count).map(|id| u8::try_from(id).unwrap()).collect()
 }
 
 fn part(cores: &[u8], ccd: Option<u8>, partial: bool, short_s: u32, long: (u32, u32)) -> CyclePart {
@@ -625,116 +543,6 @@ fn cycle_plan_runs_only_the_current_steps_part() {
     }
 }
 
-fn limit_session(count: usize) -> Journal {
-    let ids = ids(count);
-    let starts = vec![Start::at_limit(-30).fail(-31); count];
-    let mut j = Journal::new(&ids, &starts);
-    j.profile_change(&vec![-30; count]);
-    j.ranking(&ids);
-    j
-}
-
-fn together_failure(j: &mut Journal, duration: u32) {
-    let count = j.offsets().offsets().len();
-    if j.run().config.checking_idle.get() != duration {
-        j.load(&config(&format!(
-            r#"{{"durations":{{"checking_idle_s":{duration}}}}}"#
-        )));
-    }
-    let plan = j.manual(
-        Regime::R6,
-        0,
-        Load::Many(set(&ids(count))),
-        Condition::Together,
-        &vec![-30; count],
-        duration,
-    );
-    j.trial(&plan, Outcome::Failure);
-    let decision = j.next_decision();
-    assert!(matches!(
-        &decision.payload,
-        DecisionPayload::Failure(f) if f.attribution == Attribution::Unattributed
-    ));
-    j.decide(decision);
-}
-
-fn start_hunt(j: &mut Journal) {
-    let decision = j.next_decision();
-    assert!(
-        matches!(decision.payload, DecisionPayload::HuntStart(_)),
-        "{decision:?}"
-    );
-    j.decide(decision);
-}
-
-fn hunt_of(count: usize, duration: u32) -> Journal {
-    let mut j = limit_session(count);
-    together_failure(&mut j, duration);
-    start_hunt(&mut j);
-    j
-}
-
-fn attribute(j: &mut Journal) {
-    let decision = j.next_decision();
-    assert!(
-        matches!(&decision.payload, DecisionPayload::Failure(f) if f.attribution == Attribution::Unattributed),
-        "{decision:?}"
-    );
-    j.decide(decision);
-}
-
-fn run_group(j: &mut Journal, fail: bool) {
-    let plan = j.next_trial();
-    assert_eq!(plan.condition, Condition::Parked, "{plan:?}");
-    j.trial(
-        &plan,
-        if fail {
-            Outcome::Failure
-        } else {
-            Outcome::Pass
-        },
-    );
-    if fail {
-        attribute(j);
-    }
-}
-
-fn start_hunt_at(j: &mut Journal, hunt: u32, loaded: &[u8], failing: &[i64]) -> Seq {
-    let count = failing.len();
-    let start = HuntStart {
-        hunt: NonZeroU32::new(hunt).unwrap(),
-        failure: Seq::new(1).unwrap(),
-        trial: None,
-        regime: Regime::R6,
-        workload: workloads(Regime::R6)[0].id(),
-        cores: set(loaded),
-        duration_s: SHORT,
-        failing: j.profile(failing).offsets(),
-        parked: j.profile(&vec![0; count]).offsets(),
-        parked_seq: None,
-        candidates: set(&ids(count)),
-        trials: 5,
-        trial_s: SHORT,
-        miss: 0.0,
-        rate: 0.0,
-        ranking: ids(count).into_iter().map(core).collect(),
-        reason: None,
-    };
-    j.append(start.into(), &[])
-}
-
-fn cancel_hunt(j: &mut Journal, hunt: u32) {
-    let end = HuntEnd {
-        hunt: NonZeroU32::new(hunt).unwrap(),
-        result: HuntOutcome::Cancelled,
-        cores: set(&[]),
-        members: Vec::new(),
-        groups: 0,
-        reason: "test".to_owned(),
-    };
-    j.append(end.into(), &[]);
-}
-
 fn group_payload(
     hunt: u32,
     group: u32,
@@ -869,41 +677,6 @@ fn hunt_plan_cut_counts_an_upcoming_distinct_set_as_a_new_cut() {
         same_granularity_new_set && want == 2,
         "the hunt never cut a distinct set at the same granularity (cuts {want})"
     );
-}
-
-fn repeated_session() -> Journal {
-    let count = 16;
-    let mut j = Journal::new(&ids(count), &vec![Start::at_limit(-10).fail(-11); count]);
-    j.profile_change(&vec![-10; count]);
-    j.ranking(&ids(count));
-    j.load(&config(
-        r#"{"checking":{"cycle":["R6"]},"durations":{"checking_idle_s":120}}"#,
-    ));
-    j
-}
-
-fn at(plan: &TrialPlan, id: u8) -> i64 {
-    plan.profile.get(core(id)).unwrap().get()
-}
-
-fn repeated_core_oracle(plan: &TrialPlan) -> Outcome {
-    if at(plan, 3) < -8 || (at(plan, 3) < 0 && at(plan, 4) < -9) {
-        Outcome::Failure
-    } else {
-        Outcome::Pass
-    }
-}
-
-fn group_of(action: &Action) -> Option<&HuntGroup> {
-    if let Action::Decide(DecisionAction {
-        payload: DecisionPayload::HuntGroup(group),
-        ..
-    }) = action
-    {
-        Some(group)
-    } else {
-        None
-    }
 }
 
 #[test]
@@ -1122,16 +895,6 @@ fn hunt_probe_without_recorded_checking_profile() {
     assert_eq!(view.groups[0].probe, Some(probe));
     assert_eq!(view.groups[0].held, vec![held]);
     j.assert_resumes();
-}
-
-fn members_of(pairs: &[(u8, i64)]) -> Vec<Member> {
-    pairs
-        .iter()
-        .map(|&(id, offset)| Member {
-            core: core(id),
-            offset: off(offset),
-        })
-        .collect()
 }
 
 #[test]

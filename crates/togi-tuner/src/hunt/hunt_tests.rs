@@ -5,26 +5,15 @@ use togi_journal::{
 use togi_machine::{Condition, Regime, workloads};
 
 use super::plan::GroupOutcome;
-use super::support::{ended, passed_cycle};
+use super::support::{
+    SHORT, at, attribute, cancel_hunt, ended, group_of, hunt_of, ids, limit_session, members_of,
+    passed_cycle, repeated_core_oracle, repeated_session, run_group, start_hunt_at,
+    start_regime_hunt,
+};
 use crate::later_tests::{pass_cycles, start_cycle, strikes};
 use crate::testkit::{Journal, Start, config, set};
 use crate::tests::{core, off};
 use crate::{Action, DecisionPayload, Load, TrialContext, TrialPlan};
-
-const SHORT: u32 = 120;
-
-fn ids(count: usize) -> Vec<u8> {
-    (0..count).map(|id| u8::try_from(id).unwrap()).collect()
-}
-
-fn limit_session(count: usize) -> Journal {
-    let ids = ids(count);
-    let starts = vec![Start::at_limit(-30).fail(-31); count];
-    let mut j = Journal::new(&ids, &starts);
-    j.profile_change(&vec![-30; count]);
-    j.ranking(&ids);
-    j
-}
 
 fn current(j: &Journal) -> Vec<i64> {
     j.offsets().iter().map(|(_, offset)| offset.get()).collect()
@@ -65,15 +54,6 @@ fn together_plan(j: &mut Journal, loaded: &[u8], profile: &[i64], duration: u32)
     )
 }
 
-fn attribute(j: &mut Journal) -> Seq {
-    let decision = j.next_decision();
-    assert!(
-        matches!(&decision.payload, DecisionPayload::Failure(f) if f.attribution == Attribution::Unattributed),
-        "{decision:?}"
-    );
-    j.decide(decision)
-}
-
 fn fail_together(j: &mut Journal, loaded: &[u8], profile: &[i64], duration: u32) -> Seq {
     let plan = together_plan(j, loaded, profile, duration);
     j.trial(&plan, Outcome::Failure);
@@ -86,23 +66,6 @@ fn fail_all_together(j: &mut Journal, duration: u32) -> Seq {
     fail_together(j, &all, &profile, duration)
 }
 
-fn hunt_of(count: usize, duration: u32) -> Journal {
-    let mut j = limit_session(count);
-    fail_all_together(&mut j, duration);
-    j.start_hunt();
-    j
-}
-
-fn group_of(action: &Action) -> Option<&HuntGroup> {
-    if let Action::Decide(decision) = action
-        && let DecisionPayload::HuntGroup(group) = &decision.payload
-    {
-        Some(group)
-    } else {
-        None
-    }
-}
-
 fn end_of(action: &Action) -> Option<&HuntEnd> {
     if let Action::Decide(decision) = action
         && let DecisionPayload::HuntEnd(end) = &decision.payload
@@ -113,76 +76,12 @@ fn end_of(action: &Action) -> Option<&HuntEnd> {
     }
 }
 
-fn at(plan: &TrialPlan, id: u8) -> i64 {
-    plan.profile.get(core(id)).unwrap().get()
-}
-
 fn core_ids(cores: togi_machine::CoreSet) -> Vec<u8> {
     cores.iter().map(togi_machine::CoreId::get).collect()
 }
 
-fn run_group(j: &mut Journal, fail: bool) {
-    let plan = j.next_trial();
-    assert_eq!(plan.condition, Condition::Parked, "{plan:?}");
-    let outcome = if fail {
-        Outcome::Failure
-    } else {
-        Outcome::Pass
-    };
-    j.trial(&plan, outcome);
-    if fail {
-        attribute(j);
-    }
-}
-
 fn pass_all(_: &TrialPlan) -> Outcome {
     Outcome::Pass
-}
-
-fn start_regime_hunt(
-    j: &mut Journal,
-    hunt: u32,
-    regime: Regime,
-    loaded: &[u8],
-    failing: &[i64],
-) -> Seq {
-    let count = failing.len();
-    let start = HuntStart {
-        hunt: std::num::NonZeroU32::new(hunt).unwrap(),
-        failure: Seq::new(1).unwrap(),
-        trial: None,
-        regime,
-        workload: workloads(regime)[0].id(),
-        cores: set(loaded),
-        duration_s: SHORT,
-        failing: j.profile(failing).offsets(),
-        parked: j.profile(&vec![0; count]).offsets(),
-        parked_seq: None,
-        candidates: set(&ids(count)),
-        trials: 5,
-        trial_s: SHORT,
-        miss: 0.0,
-        rate: 0.0,
-        ranking: ids(count).into_iter().map(core).collect(),
-        reason: None,
-    };
-    j.append(start.into(), &[])
-}
-
-fn start_hunt_at(j: &mut Journal, hunt: u32, loaded: &[u8], failing: &[i64]) -> Seq {
-    start_regime_hunt(j, hunt, Regime::R6, loaded, failing)
-}
-
-fn cancel_hunt(j: &mut Journal, hunt: u32) {
-    let end = HuntEnd {
-        hunt: std::num::NonZeroU32::new(hunt).unwrap(),
-        result: HuntOutcome::Cancelled,
-        cores: set(&[]),
-        members: Vec::new(),
-        groups: 0,
-        reason: "test".to_owned(),
-    };
-    j.append(end.into(), &[]);
 }
 
 fn ran_group(
@@ -696,25 +595,6 @@ fn hunt_skips_reached_group() {
     j.assert_resumes();
 }
 
-fn repeated_session() -> Journal {
-    let count = 16;
-    let mut j = Journal::new(&ids(count), &vec![Start::at_limit(-10).fail(-11); count]);
-    j.profile_change(&vec![-10; count]);
-    j.ranking(&ids(count));
-    j.load(&config(
-        r#"{"checking":{"cycle":["R6"]},"durations":{"checking_idle_s":120}}"#,
-    ));
-    j
-}
-
-fn repeated_core_oracle(plan: &TrialPlan) -> Outcome {
-    if at(plan, 3) < -8 || (at(plan, 3) < 0 && at(plan, 4) < -9) {
-        Outcome::Failure
-    } else {
-        Outcome::Pass
-    }
-}
-
 fn active_plan(j: &Journal) -> &super::plan::Plan {
     &j.run().hunts.active.as_ref().unwrap().plan
 }
@@ -1001,16 +881,6 @@ fn backoff_of(decision: &crate::DecisionAction) -> &TunerDecision {
         panic!("expected a backoff, got {:?}", decision.payload);
     };
     backoff
-}
-
-fn members_of(pairs: &[(u8, i64)]) -> Vec<Member> {
-    pairs
-        .iter()
-        .map(|&(id, offset)| Member {
-            core: core(id),
-            offset: off(offset),
-        })
-        .collect()
 }
 
 fn reaches_combination(j: &Journal) -> bool {
