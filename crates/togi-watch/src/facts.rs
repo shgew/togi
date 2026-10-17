@@ -77,7 +77,6 @@ fn failure_source(failure: &Failure) -> FailureSource {
 #[derive(Debug, Clone)]
 pub(crate) struct HuntStartFacts {
     pub(crate) at: Timestamp,
-    pub(crate) candidates: CoreSet,
     pub(crate) named: bool,
     pub(crate) live: u32,
 }

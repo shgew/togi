@@ -7,6 +7,7 @@ use togi_journal::{
 use togi_machine::{BankType, CcdId, Condition, CpuId, Regime, Signal};
 
 use super::kit::*;
+use crate::history::What;
 use crate::words::Tag;
 
 fn phase(id: u8, from: CorePhase, to: CorePhase, offset: i64) -> Payload {
@@ -179,12 +180,15 @@ fn a_passed_trial_names_its_checking_step_and_passes_of_different_steps_never_me
         .filter(|entry| entry.tag == Tag::Pass)
         .collect();
     assert_eq!(passes.len(), 2, "{passes:?}");
-    assert_eq!(passes[0].runs, 2);
-    let (first, second) = (passes[0].step.as_ref(), passes[1].step.as_ref());
+    let What::Passes(merged) = &passes[0].what else {
+        panic!("{passes:?}");
+    };
+    assert_eq!(merged.runs, 2);
+    let (first, second) = (passes[0].step(), passes[1].step());
     assert_eq!(first.map(|at| (at.cycle, at.step)), Some((1, 2)));
     assert_eq!(second.map(|at| (at.cycle, at.step)), Some((1, 3)));
     assert!(
-        first.is_some_and(|at| at.label.starts_with("cycle 1 step 2: R2 heavy vector, ")),
+        first.is_some_and(|at| at.label().starts_with("cycle 1 step 2: R2 heavy vector, ")),
         "{first:?}"
     );
 }

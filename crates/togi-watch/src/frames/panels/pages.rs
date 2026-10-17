@@ -12,6 +12,7 @@ use super::super::scene::Scene;
 use super::cycle::{combination_lines, cycle_lines};
 use super::hunt::hunt_lines;
 use super::search::{bios_page, phase2_lines, turn_lines};
+use crate::history::Entry;
 use crate::screen::View;
 
 const NO_SESSION: &str =
@@ -104,7 +105,7 @@ fn no_hunt(scene: &Scene<'_>) -> String {
         .s
         .history
         .iter()
-        .filter_map(|entry| entry.hunt)
+        .filter_map(Entry::hunt)
         .chain(scene.s.shapes.keys().copied())
         .max();
     match latest {
@@ -129,7 +130,7 @@ mod tests {
     use super::super::super::layout::SizeClass;
     use super::super::super::scene::Scene;
     use super::page_lines;
-    use crate::history::Entry;
+    use crate::history::{Entry, What};
     use crate::model::Model;
     use crate::screen::{Colours, View};
     use crate::words::{Tag, Tone};
@@ -149,14 +150,15 @@ mod tests {
     }
 
     fn hunt_entry(hunt: u32) -> Entry {
-        let mut entry = Entry::line(
+        Entry::new(
             Timestamp::UNIX_EPOCH,
             Tag::Hunt,
-            format!("#{hunt} started"),
+            What::OfHunt {
+                hunt,
+                text: format!("#{hunt} started"),
+            },
             Tone::Warn,
-        );
-        entry.hunt = Some(hunt);
-        entry
+        )
     }
 
     #[test]

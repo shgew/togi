@@ -850,11 +850,9 @@ fn a_crash_ending_a_cycle_trial_says_which_trial_of_its_part_it_was() {
         .find(|entry| entry.tag == crate::words::Tag::Crash)
         .expect("one crash line");
     assert!(
-        ended
-            .full_text()
-            .contains(" · rebooted · late in trial 1 of "),
+        ended.text().contains(" · rebooted · late in trial 1 of "),
         "{}",
-        ended.full_text()
+        ended.text()
     );
     assert_eq!(
         history
