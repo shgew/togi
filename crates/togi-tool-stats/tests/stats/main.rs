@@ -5,5 +5,6 @@
 )]
 
 mod cli;
+mod counterfactual;
 mod sim;
 mod simulated;

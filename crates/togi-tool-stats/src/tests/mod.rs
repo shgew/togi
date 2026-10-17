@@ -11,6 +11,7 @@ macro_rules! assert_snapshot {
 }
 
 mod chains;
+mod counterfactual;
 mod evidence;
 mod hunts;
 mod recovery;
