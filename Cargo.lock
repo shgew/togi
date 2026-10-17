@@ -1901,6 +1901,8 @@ dependencies = [
  "proptest",
  "rand",
  "rayon",
+ "serde",
+ "serde_json",
  "sha2",
  "tempfile",
  "thiserror",

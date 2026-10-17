@@ -62,6 +62,90 @@ fn real_process_forward_only_prints_the_check_and_writes_no_machine_files() {
     assert_eq!(entries, [extract], "a forward-only run wrote a file");
 }
 
+#[test]
+fn real_process_records_pair_with_a_rerun_and_compare_equal() {
+    let dir = tempfile::tempdir().unwrap();
+    let extract = two_sessions(dir.path());
+    let facts = extract.to_str().unwrap();
+    let runs = ["candidate.jsonl", "reference.jsonl"].map(|name| dir.path().join(name));
+    for records in &runs {
+        let ran = fit(&[
+            "--facts",
+            facts,
+            "--forward-only",
+            "--records",
+            records.to_str().unwrap(),
+        ]);
+        assert_eq!(ran.status.code(), Some(0), "{}", text(&ran.stderr));
+    }
+    let lines = std::fs::read_to_string(&runs[0]).unwrap();
+    let kinds: Vec<&str> = lines
+        .lines()
+        .map(|line| line.split('"').nth(3).unwrap())
+        .collect();
+    assert_eq!(kinds, ["input", "trial", "session", "pooled"], "{lines}");
+    assert_eq!(lines, std::fs::read_to_string(&runs[1]).unwrap());
+
+    let metrics = dir.path().join("metrics.json");
+    let [candidate, reference] = runs.each_ref().map(|path| path.to_str().unwrap());
+    let ran = fit(&[
+        "--compare",
+        candidate,
+        reference,
+        "--metrics",
+        metrics.to_str().unwrap(),
+    ]);
+    let stdout = text(&ran.stdout);
+    assert_eq!(ran.status.code(), Some(0), "{}", text(&ran.stderr));
+    assert!(
+        stdout.contains("Pooled all: trials=1 failures=1 ") && stdout.contains(" ratio=1 "),
+        "{stdout}"
+    );
+    assert!(
+        stdout.ends_with("F3: candidate loss lower in 0 of 1 held-out sessions: fails\n"),
+        "{stdout}"
+    );
+    let metrics: std::collections::BTreeMap<String, f64> =
+        serde_json::from_str(&std::fs::read_to_string(&metrics).unwrap()).unwrap();
+    assert_eq!(metrics["pooled.all.loss_ratio"], 1.0);
+    assert_eq!(metrics["pooled.f3_sessions"], 1.0);
+
+    let again = fit(&["--facts", facts, "--forward-only", "--records", candidate]);
+    assert_eq!(
+        again.status.code(),
+        Some(1),
+        "an existing records file was replaced"
+    );
+
+    let other = tempfile::tempdir().unwrap();
+    let mut offsets = [0; 16];
+    offsets[0] = -10;
+    let changed = write_extract(
+        other.path(),
+        &[
+            fact("20260101T000000Z", 1, &offsets, Regime::R1, &[0], 60, true),
+            fact("20260102T000000Z", 1, &offsets, Regime::R1, &[0], 60, true),
+        ],
+    );
+    let elsewhere = other.path().join("records.jsonl");
+    let ran = fit(&[
+        "--facts",
+        changed.to_str().unwrap(),
+        "--forward-only",
+        "--records",
+        elsewhere.to_str().unwrap(),
+    ]);
+    assert_eq!(ran.status.code(), Some(0), "{}", text(&ran.stderr));
+    let unpaired = fit(&["--compare", candidate, elsewhere.to_str().unwrap()]);
+    assert_eq!(unpaired.status.code(), Some(1));
+    assert!(
+        text(&unpaired.stderr).contains("the records do not pair: the candidate read sha256 "),
+        "{}",
+        text(&unpaired.stderr)
+    );
+    assert!(unpaired.stdout.is_empty());
+}
+
 /// Two sessions recorded after the original research artifact: #480's spent score sessions.
 fn later_sessions(dir: &Path) -> PathBuf {
     let mut offsets = [0; 16];
@@ -278,6 +362,12 @@ fn real_process_flags_that_do_not_go_together_are_usage_errors() {
         &["--facts", "f.gz", "--forward-only", "--jobs", "0"],
         &["--facts", "f.gz", "--out", "o", "--bootstrap", "-1"],
         &["--facts", "f.gz", "--forward-only", "extra"],
+        &["--facts", "f.gz", "--records", "r.jsonl"],
+        &["--compare", "a.jsonl"],
+        &["--compare", "a.jsonl", "b.jsonl", "--facts", "f.gz"],
+        &["--compare", "a.jsonl", "b.jsonl", "--forward-only"],
+        &["--compare", "a.jsonl", "b.jsonl", "--jobs", "1"],
+        &["--metrics", "m.json"],
     ] {
         let ran = fit(args);
         assert_eq!(
@@ -300,6 +390,9 @@ fn real_process_the_help_lists_the_modes() {
         "--shared-voltage-in-sample",
         "--write-artifact",
         "--current-extract",
+        "--records",
+        "--compare",
+        "--metrics",
         "--jobs",
         "--seal",
     ] {
