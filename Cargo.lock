@@ -1694,6 +1694,7 @@ dependencies = [
  "nix",
  "rustix",
  "tempfile",
+ "test-case",
  "thiserror",
 ]
 
@@ -1818,6 +1819,7 @@ version = "0.0.0"
 dependencies = [
  "rustix",
  "tempfile",
+ "test-case",
  "thiserror",
  "togi-hostlock",
  "togi-machine",

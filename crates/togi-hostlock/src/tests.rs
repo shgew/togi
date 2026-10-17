@@ -10,6 +10,7 @@ use nix::sys::stat::Mode as NixMode;
 use nix::unistd::mkfifo;
 use rustix::process::geteuid;
 use tempfile::TempDir;
+use test_case::test_case;
 
 use super::*;
 
@@ -74,17 +75,17 @@ fn real_fs_exclusive_until_dropped() {
     assert_eq!(identity(&path), before);
 }
 
-#[test]
-fn real_fs_legacy_locks_are_tightened_in_place() {
-    for mode in [0o644, 0o444, 0o640] {
-        let dir = private_dir();
-        let path = legacy_lock(&dir, "persistent host lock\n", mode);
-        let before = identity(&path);
-        drop(acquire(&path).unwrap());
-        assert_eq!(identity(&path), before, "{mode:o}");
-        assert_eq!(mode_of(&path), 0o600, "{mode:o}");
-        assert_eq!(fs::read_to_string(&path).unwrap(), "persistent host lock\n");
-    }
+#[test_case(0o644; "world readable")]
+#[test_case(0o444; "read only")]
+#[test_case(0o640; "group readable")]
+fn real_fs_legacy_locks_are_tightened_in_place(mode: u32) {
+    let dir = private_dir();
+    let path = legacy_lock(&dir, "persistent host lock\n", mode);
+    let before = identity(&path);
+    drop(acquire(&path).unwrap());
+    assert_eq!(identity(&path), before);
+    assert_eq!(mode_of(&path), 0o600);
+    assert_eq!(fs::read_to_string(&path).unwrap(), "persistent host lock\n");
 }
 
 #[test]
@@ -139,36 +140,48 @@ fn real_fs_concurrent_creators_yield_one_owner() {
     }
 }
 
-#[test]
-fn real_fs_unsafe_lock_objects_are_refused_untouched() {
-    for kind in ["symlink", "hardlink", "directory", "fifo"] {
-        let dir = private_dir();
-        let target = dir.path().join("target");
-        fs::write(&target, "unchanged").unwrap();
-        set_mode(&target, 0o644);
-        let path = lock_in(&dir);
-        match kind {
-            "symlink" => std::os::unix::fs::symlink(&target, &path).unwrap(),
-            "hardlink" => fs::hard_link(&target, &path).unwrap(),
-            "directory" => fs::create_dir(&path).unwrap(),
-            _ => mkfifo(&path, NixMode::S_IRUSR | NixMode::S_IWUSR).unwrap(),
-        }
-        let before = (identity(&path), mode_of(&path));
-        let refused = acquire(&path).unwrap_err();
-        assert!(
-            matches!(
-                refused,
-                Error::UnsafeLock {
-                    problem: LockProblem::NotRegularFile | LockProblem::MultipleLinks,
-                    ..
-                }
-            ),
-            "{kind}: {refused}"
-        );
-        assert_eq!((identity(&path), mode_of(&path)), before, "{kind}");
-        assert_eq!(mode_of(&target), 0o644, "{kind}");
-        assert_eq!(fs::read_to_string(&target).unwrap(), "unchanged", "{kind}");
-    }
+fn make_symlink(target: &Path, path: &Path) {
+    std::os::unix::fs::symlink(target, path).unwrap();
+}
+
+fn make_hardlink(target: &Path, path: &Path) {
+    fs::hard_link(target, path).unwrap();
+}
+
+fn make_directory(_target: &Path, path: &Path) {
+    fs::create_dir(path).unwrap();
+}
+
+fn make_fifo(_target: &Path, path: &Path) {
+    mkfifo(path, NixMode::S_IRUSR | NixMode::S_IWUSR).unwrap();
+}
+
+#[test_case(make_symlink; "symlink")]
+#[test_case(make_hardlink; "hardlink")]
+#[test_case(make_directory; "directory")]
+#[test_case(make_fifo; "fifo")]
+fn real_fs_unsafe_lock_objects_are_refused_untouched(make: fn(&Path, &Path)) {
+    let dir = private_dir();
+    let target = dir.path().join("target");
+    fs::write(&target, "unchanged").unwrap();
+    set_mode(&target, 0o644);
+    let path = lock_in(&dir);
+    make(&target, &path);
+    let before = (identity(&path), mode_of(&path));
+    let refused = acquire(&path).unwrap_err();
+    assert!(
+        matches!(
+            refused,
+            Error::UnsafeLock {
+                problem: LockProblem::NotRegularFile | LockProblem::MultipleLinks,
+                ..
+            }
+        ),
+        "{refused}"
+    );
+    assert_eq!((identity(&path), mode_of(&path)), before);
+    assert_eq!(mode_of(&target), 0o644);
+    assert_eq!(fs::read_to_string(&target).unwrap(), "unchanged");
 }
 
 #[test]
@@ -187,33 +200,37 @@ fn real_fs_hardlinked_lock_is_named_as_multiply_linked() {
     ));
 }
 
+fn writable_ancestor_with_child_lock(mode: u32) -> (TempDir, PathBuf) {
+    let dir = private_dir();
+    set_mode(dir.path(), mode);
+    let child = dir.path().join("child");
+    fs::create_dir(&child).unwrap();
+    set_mode(&child, 0o700);
+    let path = child.join("togi.lock");
+    (dir, path)
+}
+
 #[test]
-fn real_fs_writable_ancestor_needs_the_sticky_bit() {
-    for sticky in [false, true] {
-        let dir = private_dir();
-        set_mode(dir.path(), if sticky { 0o1777 } else { 0o777 });
-        let child = dir.path().join("child");
-        fs::create_dir(&child).unwrap();
-        set_mode(&child, 0o700);
-        let path = child.join("togi.lock");
-        let outcome = acquire(&path);
-        if sticky {
-            drop(outcome.unwrap());
-        } else {
-            let refused = outcome.unwrap_err();
-            assert!(
-                matches!(
-                    refused,
-                    Error::UnsafeDirectory {
-                        problem: DirectoryProblem::WritableWithoutSticky,
-                        ..
-                    }
-                ),
-                "{refused}"
-            );
-            assert!(!path.exists());
-        }
-    }
+fn real_fs_writable_ancestor_without_the_sticky_bit_is_refused() {
+    let (_dir, path) = writable_ancestor_with_child_lock(0o777);
+    let refused = acquire(&path).unwrap_err();
+    assert!(
+        matches!(
+            refused,
+            Error::UnsafeDirectory {
+                problem: DirectoryProblem::WritableWithoutSticky,
+                ..
+            }
+        ),
+        "{refused}"
+    );
+    assert!(!path.exists());
+}
+
+#[test]
+fn real_fs_writable_ancestor_with_the_sticky_bit_is_accepted() {
+    let (_dir, path) = writable_ancestor_with_child_lock(0o1777);
+    drop(acquire(&path).unwrap());
 }
 
 #[test]
@@ -248,25 +265,24 @@ fn an_io_failure_names_the_operation_and_keeps_the_os_error_as_its_source() {
     assert_eq!(source.to_string(), "disk gone");
 }
 
-#[test]
-fn real_fs_read_only_descriptor_to_a_secure_lock_is_refused_without_chmod() {
-    for mode in [0o600, 0o660] {
-        let dir = private_dir();
-        let path = legacy_lock(&dir, "persistent", mode);
-        let file = File::open(&path).unwrap();
-        let refused = secure_lock(&file, &path, Policy::Private, Access::ReadOnly).unwrap_err();
-        assert!(
-            matches!(
-                refused,
-                Error::UnsafeLock {
-                    problem: LockProblem::ReadOnly,
-                    ..
-                }
-            ),
-            "{refused}"
-        );
-        assert_eq!(mode_of(&path), mode);
-    }
+#[test_case(0o600; "owner only")]
+#[test_case(0o660; "owner and group")]
+fn real_fs_read_only_descriptor_to_a_secure_lock_is_refused_without_chmod(mode: u32) {
+    let dir = private_dir();
+    let path = legacy_lock(&dir, "persistent", mode);
+    let file = File::open(&path).unwrap();
+    let refused = secure_lock(&file, &path, Policy::Private, Access::ReadOnly).unwrap_err();
+    assert!(
+        matches!(
+            refused,
+            Error::UnsafeLock {
+                problem: LockProblem::ReadOnly,
+                ..
+            }
+        ),
+        "{refused}"
+    );
+    assert_eq!(mode_of(&path), mode);
 }
 
 #[test]
