@@ -1808,16 +1808,16 @@ fn branches() -> Vec<Branch> {
         branch(
             "phase.rounds-one",
             "status.rs:phase_clause, rounds",
-            "| phase 2: at most 1 round left",
-            |b| header(b).contains("| phase 2: at most 1 round left"),
+            "| phase 2: 1 round left if none fails",
+            |b| header(b).contains("| phase 2: 1 round left if none fails"),
         ),
         branch(
             "phase.rounds-many",
             "status.rs:phase_clause, rounds",
-            "| phase 2: at most N rounds left",
+            "| phase 2: N rounds left if none fails",
             |b| {
-                header(b).contains("| phase 2: at most ")
-                    && !header(b).contains("at most 1 round left")
+                header(b).contains("| phase 2: ")
+                    && header(b).contains(" rounds left if none fails")
             },
         ),
         branch(
