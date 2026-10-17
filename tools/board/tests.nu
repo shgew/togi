@@ -50,14 +50,14 @@ def test-ascii-issue-patterns [] {
     let pulls = [
         {number: 1, body: 'Closes #1é'}
         {number: 2, body: 'éCloses #1'}
-        {number: 3, body: 'Closes #١'}
+        {number: 3, body: 'Closes #1١'}
         {number: 4, body: 'Refs #2 Refs #1'}
         {number: 5, body: 'Closes #1_'}
         {number: 6, body: 'xCloses #1'}
         {number: 7, body: 'ſCloses #1'}
         {number: 8, body: 'Closes #1K'}
     ]
-    assert equal (pulls-for 1 $pulls | get number) [1 2 4 7 8]
+    assert equal (pulls-for 1 $pulls | get number) [1 2 3 4 7 8]
     let b = (build shgew/togi [
         ($base | merge {number: 1, title: 'Ruleset 1'})
         ($base | merge {number: 2, title: 'Ruleset ١'})
