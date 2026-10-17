@@ -1440,7 +1440,7 @@ fn an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_eve
     );
     assert_eq!(
         snap.tuning.at(ended),
-        std::time::Duration::from_secs(6 * 3600),
+        Duration::from_hours(6),
         "the accumulator advanced behind the hold and counts through the trial's end"
     );
 }
