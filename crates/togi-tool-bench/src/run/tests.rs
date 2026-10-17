@@ -124,7 +124,7 @@ impl SuiteSource for MemoryIo {
 struct MemoryRunner {
     digest: String,
     exit: i32,
-    log: String,
+    log_dead_end: bool,
     calls: Arc<AtomicUsize>,
     mode: String,
     tree: common::Tree,
@@ -168,7 +168,7 @@ impl SessionRunner for MemoryRunner {
             dir: root.join(spec.name()),
             events,
             exit: self.exit,
-            log: self.log.clone(),
+            log_dead_end: self.log_dead_end,
             wall: Duration::from_millis(1),
         })
     }
@@ -209,7 +209,7 @@ impl ExecutionIo for MemoryIo {
         Ok(MemoryRunner {
             digest,
             exit: i32::try_from(config["exit"].as_i64().unwrap()).unwrap(),
-            log: config["log"].as_str().unwrap().into(),
+            log_dead_end: config["log"].as_str().unwrap().contains("sim: dead end "),
             calls: self.calls.clone(),
             mode,
             tree: self.tree.clone(),

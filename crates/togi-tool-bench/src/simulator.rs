@@ -38,7 +38,8 @@ pub struct Session {
     pub exit: i32,
     pub wall: Duration,
     pub events: Vec<togi_journal::Event>,
-    pub log: String,
+    /// Whether the process's log holds the simulator's dead-end line.
+    pub log_dead_end: bool,
 }
 
 impl Session {
@@ -46,10 +47,6 @@ impl Session {
         self.events
             .iter()
             .any(|event| matches!(event.payload, Payload::DeadEnd(_)))
-    }
-
-    pub fn log_dead_end(&self) -> bool {
-        self.log.contains(DEAD_END_LINE)
     }
 
     /// Whether a signal ended the session rather than the session itself: the process died of one, or its
@@ -133,7 +130,7 @@ impl Simulator {
             exit: launched.exit,
             wall: launched.wall,
             events,
-            log: launched.log,
+            log_dead_end: launched.log_dead_end,
         })
     }
 
@@ -179,15 +176,17 @@ impl Simulator {
         }
         command.stdin(Stdio::null()).stdout(log).stderr(again);
         let finished = process::run(fleet, &mut command, limit)?;
-        let log = fs::read(&log_path).map_err(|source| RunError::Read {
-            what: "log",
-            source,
-        })?;
+        let log_dead_end = File::open(&log_path)
+            .and_then(holds_dead_end)
+            .map_err(|source| RunError::Read {
+                what: "log",
+                source,
+            })?;
         Ok(Launched {
             dir,
             exit: finished.exit,
             wall: finished.wall,
-            log: String::from_utf8_lossy(&log).into_owned(),
+            log_dead_end,
         })
     }
 }
@@ -198,13 +197,8 @@ pub(crate) struct Launched {
     pub dir: PathBuf,
     pub exit: i32,
     pub wall: Duration,
-    pub log: String,
-}
-
-impl Launched {
-    pub(crate) fn log_dead_end(&self) -> bool {
-        self.log.contains(DEAD_END_LINE)
-    }
+    /// Whether the process's log holds the simulator's dead-end line.
+    pub log_dead_end: bool,
 }
 
 /// Builds `togi-tool-sim` in the tree the bench runs in and returns the binary cargo reports.
@@ -395,6 +389,36 @@ fn recorded_events(
     }
 }
 
+/// How many bytes of a log [`holds_dead_end`] reads at a time.
+const SCAN_CHUNK: usize = 64 * 1024;
+
+/// Whether `log` holds [`DEAD_END_LINE`], read through one buffer of [`SCAN_CHUNK`] bytes whatever the log's size
+/// or the length of its lines. The buffer keeps the last bytes of each chunk, too few to hold the marker, ahead of
+/// the next, so a marker split across reads is still found. The bytes are searched as they are: the marker is
+/// ASCII, and invalid UTF-8 around it never absorbs an ASCII byte.
+fn holds_dead_end(mut log: impl io::Read) -> io::Result<bool> {
+    let marker = DEAD_END_LINE.as_bytes();
+    let mut buf = vec![0; SCAN_CHUNK];
+    let mut kept = 0;
+    loop {
+        let read = match log.read(&mut buf[kept..]) {
+            Ok(0) => return Ok(false),
+            Ok(read) => read,
+            Err(error) if error.kind() == ErrorKind::Interrupted => continue,
+            Err(error) => return Err(error),
+        };
+        let filled = kept + read;
+        if buf[..filled]
+            .windows(marker.len())
+            .any(|window| window == marker)
+        {
+            return Ok(true);
+        }
+        kept = filled.min(marker.len() - 1);
+        buf.copy_within(filled - kept..filled, 0);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -415,6 +439,59 @@ mod tests {
             error.to_string(),
             "read the run journal: /runs/events.jsonl: first line is not a complete header of this build; either another build's journal or a header torn by a crash; see docs/howto.md#go-to-rust-cutover"
         );
+    }
+
+    /// Hands out at most `step` bytes of `inner` per read and remembers the largest buffer it was offered.
+    struct Offered<R> {
+        inner: R,
+        step: usize,
+        largest: usize,
+    }
+
+    impl<R: io::Read> io::Read for Offered<R> {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            self.largest = self.largest.max(buf.len());
+            let len = buf.len().min(self.step);
+            self.inner.read(&mut buf[..len])
+        }
+    }
+
+    fn offered(log: impl io::Read, step: usize) -> (bool, usize) {
+        let mut reader = Offered {
+            inner: log,
+            step,
+            largest: 0,
+        };
+        let found = holds_dead_end(&mut reader).unwrap();
+        (found, reader.largest)
+    }
+
+    #[test]
+    fn a_log_far_larger_than_the_scan_buffer_is_read_through_it() {
+        let line = 16 << 20;
+        for (tail, want) in [
+            (&b"\xff\xfe sim: dead end 3"[..], true),
+            (b"\xff\xfe sim: dead en", false),
+            (b"", false),
+        ] {
+            let log = io::repeat(b'x').take(line).chain(tail);
+            let (found, largest) = offered(log, usize::MAX);
+            assert_eq!(found, want, "{tail:?}");
+            assert!(largest <= SCAN_CHUNK, "offered {largest} bytes");
+        }
+    }
+
+    #[test]
+    fn a_marker_split_across_reads_is_found() {
+        let marker = DEAD_END_LINE.as_bytes();
+        for step in 1..=marker.len() + 1 {
+            for lead in 0..step {
+                let mut log = vec![b'x'; lead];
+                log.extend_from_slice(marker);
+                log.extend_from_slice(b"7\n");
+                assert!(offered(log.as_slice(), step).0, "step {step} lead {lead}");
+            }
+        }
     }
 
     const MACH_O_EXECUTE: [u8; 16] = [

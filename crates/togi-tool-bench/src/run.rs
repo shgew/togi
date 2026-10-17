@@ -309,7 +309,7 @@ fn record_of(
                 session.exit,
                 !session.events.is_empty(),
                 session.journal_dead_end(),
-                session.log_dead_end(),
+                session.log_dead_end,
             )
         },
         model_check: spec
