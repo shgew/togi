@@ -40,7 +40,10 @@ expression: body
 │                                         white=tune · red point=recorded failure · gap=counts shallower than solo
 │
 │ WHAT HAPPENED
-│ 20:21  pass     42 credited checks · 33 chain notes
+│ 20:21  step     cycle 1 step 6: R2 heavy vector, y-cruncher FFTv4 + N63 + VT3 · 16 credited checks
+│ 19:49  step     cycle 1 step 5: R2 heavy vector, mprime AVX-512 36K-248K · 16 credited checks
+│ 19:17  step     cycle 1 step 4: R2 heavy vector, mprime AVX2 36K-248K · 5 credited checks
+│ 19:07  pass     5 credited checks · 33 chain notes
 │ 18:57  backoff  core 05 -9 → -8
 │ 18:57  hunt     #1 done · 5 groups in 21m34s · core 05 named
 │ 18:57  fail     core 05 fails at -9
@@ -50,21 +53,18 @@ expression: body
 │ 18:55  pass     10 credited checks
 │ 18:35  hunt     #1 started · part 1: 00-04 06-15 at failing offsets, 05 parked
 │ 18:35  fail     R2 heavy vector on core 05 at -9 · corrected hardware error · no core named
-│ 18:33  pass     14 credited checks · 33 chain notes
+│ 18:33  step     cycle 1 step 3: R7 all-core, y-cruncher FFTv4 + N63 + VT3 · 3 credited checks · 2 chain notes
+│ 18:22  step     cycle 1 step 2: R7 all-core, mprime AVX-512 36K-248K · 3 credited checks · 11 chain notes
+│ 18:11  step     cycle 1 step 1: R7 all-core, mprime AVX2 36K-248K · 3 credited checks · 11 chain notes
+│ 18:00  pass     5 credited checks · 9 chain notes
 │ 17:50  backoff  core 12 -15 → -14
 │ 17:50  fail     core 12 fails at -15
 │ 17:50  fail     rerun of R2 heavy vector on core 12 at -15 · the backend quit · core 12 named
 │ 17:49  backoff  core 12 -16 → -15
 │ 17:49  fail     core 12 fails at -16
 │ 17:49  fail     R2 heavy vector on core 12 at -16 · wrong result · core 12 named
-│ 17:49  pass     17 credited checks · 33 chain notes
-│ 17:00  backoff  core 10 -16 → -15
-│ 17:00  fail     core 10 fails at -16
-│ 17:00  fail     R2 heavy vector on core 10 at -16 · wrong result · core 10 named
-│ 17:00  step     cycle 1 step 3: R7 all-core, y-cruncher FFTv4 + N63 + VT3 · 47 credited checks · 13 chain notes
-│
-│
-│
-│
+│ 17:49  step     cycle 1 step 4: R2 heavy vector, mprime AVX2 36K-248K · 3 credited checks
+│ 17:43  step     cycle 1 step 3: R7 all-core, y-cruncher FFTv4 + N63 + VT3 · 3 credited checks · 2 chain notes
+│ 17:32  step     cycle 1 step 2: R7 all-core, mprime AVX-512 36K-248K · 3 credited checks · 11 chain notes
 │
 │  ←/→  pages  1/9 Main   ↑/↓  scroll   PgUp/PgDn    Esc  Main   ?  help   q  exit dashboard

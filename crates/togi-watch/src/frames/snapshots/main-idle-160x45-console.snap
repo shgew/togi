@@ -75,12 +75,12 @@ legend: t=Text g=Grey w=White c=Running a=Hunt p=Good f=Bad m=Combination k=Trac
 │
 │ WHAT HAPPENED
 ~ ttttttttttttt
-│ 20:21  pass     42 credited checks · 33 chain notes
-~ ggggg  tttttttt ttttttttttttttttttttttttttttttttttt
-│ 18:57  backoff  core 05 -9 → -8
-~ ggggg  aaaaaaaa ttttttttttttttt
-│ 18:57  hunt     #1 done · 5 groups in 21m34s · core 05 named
-~ ggggg  pppppppp tttttttttttttttttttttttttttttttttttttttttttt
+│ 20:21  step     cycle 1 step 6: R2 heavy vector, y-cruncher FFTv4 + N63 + VT3 · 16 credited checks
+~ ggggg  tttttttt tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│ 19:49  step     cycle 1 step 5: R2 heavy vector, mprime AVX-512 36K-248K · 16 credited checks
+~ ggggg  tttttttt ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│ 19:17  step     cycle 1 step 4: R2 heavy vector, mprime AVX2 36K-248K · 5 credited checks
+~ ggggg  tttttttt ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
 │ 18:57  fail     core 05 fails at -9
 ~ ggggg  aaaaaaaa ttttttttttttttttttt
 │

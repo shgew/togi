@@ -10,7 +10,7 @@ use togi_tuner::{Action, PhaseNo};
 
 use super::kit::*;
 use crate::history::{LOG_LIMIT, LogEntry};
-use crate::model::{CoreState, FailureSource, FoldError, Model, project};
+use crate::model::{CoreState, FailureEvidence, FailureSource, FoldError, Model, project};
 use crate::words::Tag;
 
 fn searching() -> Script {
@@ -1098,6 +1098,38 @@ fn a_failure_point_keeps_the_source_and_event_that_set_it() {
     );
     h.push(decided(Activity::Hunt, None));
     assert_eq!(h.facts.evidence[&core(0)].failure, None);
+}
+
+#[test]
+fn a_named_failure_at_zero_dead_end_is_the_cores_zero_constraint_and_its_evidence() {
+    let mut script = at_limit();
+    let before = script.model().snapshot().cores[0].evidence;
+    let dead_end = script.append(
+        togi_journal::DeadEnd {
+            condition: DeadEndCondition::FailureAtZero,
+            core: Some(core(1)),
+            detail: "core 01 failed at 0".to_owned(),
+            action: None,
+        }
+        .into(),
+        &[],
+    );
+    let model = script.model();
+    let snap = model.snapshot();
+    let named = &snap.cores[1];
+    assert_eq!(named.fail, Some(off(0)));
+    assert_eq!(
+        named.evidence.failure,
+        Some(FailureEvidence {
+            offset: off(0),
+            source: FailureSource::Named,
+            seq: dead_end,
+        })
+    );
+    assert_eq!(
+        snap.cores[0].evidence, before,
+        "the dead end names only core 01"
+    );
 }
 
 #[test]

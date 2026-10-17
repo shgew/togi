@@ -811,6 +811,44 @@ fn a_narrow_table_drops_the_role_words_before_any_number() {
 }
 
 #[test]
+fn a_table_too_narrow_for_every_role_word_keeps_the_failure_and_reset_badges() {
+    let model = Model::new();
+    let zone = TimeZone::UTC;
+    let view = session(Timestamp::UNIX_EPOCH);
+    let running = trial(Regime::R1, Some(Timestamp::UNIX_EPOCH), 60);
+    let mut s = model.snapshot();
+    s.session = Some(&view);
+    s.trial = Some(&running);
+    let mut loaded = recorded(-20, Some(-25), Some(-21));
+    loaded.loaded = true;
+    loaded.queued = Some(seq(9));
+    loaded.evidence.current_failure = true;
+    let held = CoreView {
+        state: CoreState::Suspect,
+        ..loaded.clone()
+    };
+    let table = |core: &CoreView, width| {
+        let cores = [core.clone()];
+        let mut snapshot = s;
+        snapshot.cores = &cores;
+        let scene = scene(&snapshot, Timestamp::UNIX_EPOCH, &zone, Colours::None);
+        plain(&core_table(&scene, width)[1])
+    };
+    let numbers = "  0   00  -20    0  -25    5  -21";
+    assert_eq!(
+        table(&loaded, 79),
+        format!("{numbers}  loaded · failing now · reset queued")
+    );
+    assert_eq!(table(&loaded, 60), format!("{numbers}  !R loaded"));
+    assert_eq!(table(&held, 47), format!("{numbers}  !R"));
+    let only_queued = CoreView {
+        evidence: CoreEvidence::default(),
+        ..loaded
+    };
+    assert_eq!(table(&only_queued, 47), format!("{numbers}  R loaded"));
+}
+
+#[test]
 fn the_cores_page_explains_each_value_and_where_the_failure_came_from() {
     let model = Model::new();
     let zone = TimeZone::UTC;
@@ -842,7 +880,11 @@ fn the_cores_page_explains_each_value_and_where_the_failure_came_from() {
         id: core(2),
         ..recorded(-3, Some(-3), None)
     };
-    let cores = [gapped, zero, none];
+    let deeper = CoreView {
+        id: core(3),
+        ..recorded(-50, Some(-45), None)
+    };
+    let cores = [gapped, zero, none, deeper];
     let mut s = model.snapshot();
     s.session = Some(&view);
     s.cores = &cores;
@@ -863,6 +905,7 @@ fn the_cores_page_explains_each_value_and_where_the_failure_came_from() {
         "  R reset queued: command #5, the core searches again at the next run",
         "  last decision: none recorded",
         "  solo -3 · gap 0: at the solo limit",
+        "  solo -45 · gap -5: 5 counts deeper than solo",
         "  no failure recorded",
     ] {
         assert!(page.iter().any(|line| line == want), "{want:?} in\n{text}");

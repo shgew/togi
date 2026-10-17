@@ -5,7 +5,7 @@ use ratatui::text::Line;
 use super::super::super::fit::plain;
 use super::super::super::scene::Scene;
 use super::{history_page, main_history};
-use crate::history::{Entry, EntryKind, Key, Verdict};
+use crate::history::{Entry, EntryKind, Key, StepAt, Verdict};
 use crate::model::Model;
 use crate::screen::Colours;
 use crate::words::{Tag, Tone};
@@ -63,6 +63,16 @@ fn marker(n: i64, cycle: u32, step: u32) -> Entry {
     entry
 }
 
+/// `entry` as passed in `step` of `cycle`, the way a trial that ran in a checking step records it.
+fn in_step(mut entry: Entry, cycle: u32, step: u32, label: &str) -> Entry {
+    entry.step = Some(StepAt {
+        cycle,
+        step,
+        label: label.to_owned(),
+    });
+    entry
+}
+
 fn plain_entry(n: i64, tag: Tag, text: &str, tone: Tone) -> Entry {
     Entry::line(minute(n), tag, text.to_owned(), tone)
 }
@@ -88,8 +98,14 @@ fn newest_first(mut oldest_first: Vec<Entry>) -> Vec<Entry> {
 fn a_recent_failure_stays_visible_under_many_routine_passes() {
     let mut story = vec![failure(0, "R3 all-core on 00-15 at -30")];
     for n in 1..=40 {
-        story.push(pass(n, &format!("core {:02} R1 light", n % 16), 1, 1));
-        story.push(marker(n, 3, u32::try_from(n).expect("small")));
+        let step = u32::try_from(n).expect("small");
+        story.push(marker(n, 3, step));
+        story.push(in_step(
+            pass(n, &format!("core {:02} R1 light", n % 16), 1, 1),
+            3,
+            step,
+            "unused: the marker names the step",
+        ));
     }
     let rows = main_rows(&newest_first(story), 100, 4);
     assert!(rows.len() <= 4, "{rows:?}");
@@ -100,9 +116,15 @@ fn a_recent_failure_stays_visible_under_many_routine_passes() {
     );
     assert_eq!(
         rows.len(),
-        2,
-        "one folded summary, then the failure: {rows:?}"
+        4,
+        "three folded step summaries, then the failure: {rows:?}"
     );
+    for (row, step) in rows.iter().zip([40, 39, 38]) {
+        assert!(
+            row.contains(&format!("cycle 3 step {step} ")) && row.contains("1 credited check"),
+            "{rows:?}"
+        );
+    }
 }
 
 #[test]
@@ -126,8 +148,8 @@ fn the_newest_failure_replaces_the_oldest_row_when_newer_important_entries_fill_
 fn routine_passes_fold_into_credited_checks_and_surplus_passes_do_not_add_up() {
     let story = vec![
         marker(0, 2, 5),
-        pass(1, "R3 all-core part 1", 5, 3),
-        pass(2, "R3 all-core part 2", 2, 2),
+        in_step(pass(1, "R3 all-core part 1", 5, 3), 2, 5, "unused"),
+        in_step(pass(2, "R3 all-core part 2", 2, 2), 2, 5, "unused"),
     ];
     let rows = main_rows(&newest_first(story), 120, 4);
     assert_eq!(rows.len(), 1, "{rows:?}");
@@ -136,6 +158,65 @@ fn routine_passes_fold_into_credited_checks_and_surplus_passes_do_not_add_up() {
         rows[0].contains("5 credited checks"),
         "3 + 2, not 5 + 2: {rows:?}"
     );
+}
+
+#[test]
+fn consecutive_successful_steps_fold_into_separately_attributed_summaries() {
+    let story = vec![
+        marker(0, 2, 4),
+        in_step(pass(1, "R3 all-core part 1", 3, 3), 2, 4, "unused"),
+        marker(2, 2, 5),
+        in_step(pass(3, "R7 all-core part 1", 2, 2), 2, 5, "unused"),
+    ];
+    let rows = main_rows(&newest_first(story), 120, 4);
+    assert_eq!(rows.len(), 2, "{rows:?}");
+    assert!(
+        rows[0].contains("cycle 2 step 5")
+            && rows[0].contains("2 credited checks")
+            && !rows[0].contains("step 4"),
+        "{rows:?}"
+    );
+    assert!(
+        rows[1].contains("cycle 2 step 4") && rows[1].contains("3 credited checks"),
+        "{rows:?}"
+    );
+}
+
+#[test]
+fn passes_of_a_step_without_a_marker_fold_apart_under_their_own_step() {
+    let r2 = "cycle 1 step 4: R2 heavy vector, y-cruncher FFTv4";
+    let story = vec![
+        marker(0, 1, 3),
+        in_step(pass(1, "R7 all-core part 1", 4, 4), 1, 3, "unused"),
+        in_step(pass(2, "R2 heavy vector on core 15", 2, 2), 1, 4, r2),
+        in_step(pass(3, "R2 heavy vector on core 14", 3, 3), 1, 4, r2),
+        pass(4, "core 00 R1 light", 1, 1),
+    ];
+    let rows = main_rows(&newest_first(story), 140, 6);
+    assert_eq!(rows.len(), 3, "{rows:?}");
+    assert!(
+        rows[0].contains("1 credited check") && !rows[0].contains("step"),
+        "a pass outside any step stays its own summary: {rows:?}"
+    );
+    assert!(
+        rows[1].contains(r2) && rows[1].contains("5 credited checks"),
+        "{rows:?}"
+    );
+    assert!(
+        rows[2].contains("cycle 1 step 3")
+            && rows[2].contains("4 credited checks")
+            && !rows[2].contains("R2"),
+        "{rows:?}"
+    );
+}
+
+#[test]
+fn a_lone_chain_note_keeps_its_explanation_when_folded() {
+    let note = "cycle 2 step 5 · CCD 1 partial 2 loads 04-07";
+    let rows = main_rows(&[plain_entry(0, Tag::Chain, note, Tone::Plain)], 120, 4);
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    assert!(rows[0].contains(note), "{rows:?}");
+    assert!(!rows[0].contains("chain note"), "{rows:?}");
 }
 
 #[test]

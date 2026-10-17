@@ -5,14 +5,17 @@ use std::time::Duration;
 
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
-use togi_journal::{Activity, DeadEndCondition, Outcome, ShutdownReason, TrialId};
+use togi_journal::{
+    Activity, DeadEndCondition, HuntStage, Outcome, ProfileChange, ShutdownReason, TrialId,
+};
 use togi_machine::{
     CcdId, Condition, CoreSet, ObservedOffset, PerCore, Regime, WorkloadId, workloads,
 };
 use togi_tuner::{
-    Between, Candidate, ClassKey, CyclePart, CyclePlan, CycleStep, DeepeningCheck, DeepeningView,
-    Forecast, HuntPlan, Load, PhaseNo, PhasePlan, Profile, Requirement, RequirementKind, RerunPlan,
-    Secs, StepNo, Topology, TrialContext, TrialPlan, Window, WorkloadChoice,
+    Action, Between, Candidate, ClassKey, CyclePart, CyclePlan, CycleStep, DeepeningCheck,
+    DeepeningView, Forecast, GroupState, HuntPlan, Load, PhaseNo, PhasePlan, Profile, Requirement,
+    RequirementKind, RerunPlan, Secs, StepNo, Topology, TrialContext, TrialPlan, Window,
+    WorkloadChoice,
 };
 
 use crate::frames::colours::Paint;
@@ -23,7 +26,7 @@ use crate::model::{
     HuntView, Model, RecoveryView, SessionView, Snapshot, StopView, TrialEndView, TrialView,
 };
 use crate::screen::Colours;
-use crate::tests::kit::{core, infos, nz, off, seq, set};
+use crate::tests::kit::{Script, Start, core, infos, nz, off, seq, set};
 
 use super::{phase_progress, stage_line};
 
@@ -904,4 +907,149 @@ fn a_headline_that_does_not_fit_gives_up_whole_clauses_and_never_ends_in_a_cut()
     }
     let narrow = plain(&phase_progress(&rig.scene(), 40)[0]);
     assert!(narrow.contains("0/18 steps"), "{narrow}");
+}
+
+#[test]
+fn a_rerun_after_every_step_is_done_says_the_cycle_ends_not_a_step_past_the_last() {
+    let mut rig = confirmation();
+    rig.plan = Some(cycle(
+        vec![
+            step(Regime::R1, vec![part(1, 0, 1, false)], true),
+            step(Regime::R3, vec![part(1, 0, 1, false)], true),
+            step(Regime::R4, vec![part(1, 0, 1, false)], true),
+        ],
+        3,
+        false,
+    ));
+    rig.trial = Some(TrialView {
+        rerun: true,
+        ..trial(Regime::R3, Some(rig.now), 60)
+    });
+    let [head, requirement] = rig.progress();
+    assert_eq!(
+        head,
+        "PHASE 2 · repairing after failure · cycle held · 3/3 steps complete"
+    );
+    assert_eq!(
+        requirement,
+        "chain closure at step 3 of 3 · every step is done · the cycle ends once the rerun passes"
+    );
+}
+
+#[test]
+fn a_hunt_or_a_repair_in_the_clean_cycles_keeps_the_clean_cycles_recorded() {
+    let mut rig = clean();
+    let (mut plan, facts) = hunt(14, 3);
+    plan.groups.push(group(3));
+    rig.hunt = Some((plan, facts));
+    assert_eq!(
+        rig.progress()[0],
+        "CLEAN CYCLES · HUNT 14 · group 3 · re-cut 2 · 4 clean cycles recorded · 1/3 steps complete"
+    );
+    rig.hunt = None;
+    rig.plan = Some(checking_plan(true));
+    assert_eq!(
+        rig.progress()[0],
+        "CLEAN CYCLES · repairing after failure · cycle held · 4 clean cycles recorded · 1/3 steps complete"
+    );
+}
+
+#[test]
+fn a_hunt_in_a_round_keeps_the_round_and_its_credited_checks() {
+    let mut rig = phase2_round();
+    let (mut plan, facts) = hunt(14, 3);
+    plan.groups.push(group(3));
+    rig.hunt = Some((plan, facts));
+    assert_eq!(
+        rig.progress()[0],
+        "PHASE 2 · HUNT 14 · group 3 · re-cut 2 · round 3 · 4/8 credited checks"
+    );
+}
+
+#[test]
+fn a_completed_round_says_every_check_is_credited() {
+    let mut rig = phase2_round();
+    rig.deepening = Some(round(vec![check(3, 3, false), check(2, 2, false)]));
+    let [head, requirement] = rig.progress();
+    assert_eq!(
+        head,
+        "PHASE 2 · round 3 · 5/5 credited checks · 3 candidates · 2 moving · at most 2 left"
+    );
+    assert_eq!(requirement, "every check of the round is credited");
+}
+
+/// The model of a tuner session failing together until it asks for a parked hunt trial that `wanted` accepts,
+/// with that trial running.
+fn parked_hunt_trial(mut script: Script, wanted: impl Fn(&HuntPlan) -> bool) -> Model {
+    for _ in 0..300 {
+        if let (Ok(Action::RunTrial(plan)), Some(hunt)) =
+            (script.shadow.next(), script.shadow.hunt_plan())
+            && plan.condition == Condition::Parked
+            && wanted(&hunt)
+        {
+            let (_, trial) = script.intent(&plan);
+            script.start(&trial);
+            return script.model();
+        }
+        script.step(|plan| {
+            if plan.condition == Condition::Together {
+                Outcome::Failure
+            } else {
+                Outcome::Pass
+            }
+        });
+    }
+    panic!("no parked hunt trial was accepted");
+}
+
+fn hunt_requirement_of(model: &Model) -> String {
+    let zone = TimeZone::UTC;
+    let scene = Scene::new(
+        model.snapshot(),
+        at("2026-10-12T10:00:00Z"),
+        &zone,
+        Colours::Full,
+    );
+    plain(&phase_progress(&scene, 200)[1])
+}
+
+#[test]
+fn a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split() {
+    let locating = parked_hunt_trial(Script::at_limit(), |_| true);
+    assert!(locating.snapshot().hunt.is_some_and(|hunt| hunt.locating()));
+    assert_eq!(
+        hunt_requirement_of(&locating),
+        "locating: the failing load reruns at its failing offsets · total hunt work unknown"
+    );
+
+    let cores: Vec<(u8, u8)> = (0..8).map(|id| (id, id / 4)).collect();
+    let mut script = Script::new(&cores, &[Start::at_limit(-30, -31); 8]);
+    script.append(
+        ProfileChange {
+            from: None,
+            to: (0..8).map(|id| (core(id), off(-30))).collect(),
+        }
+        .into(),
+        &[],
+    );
+    script.ranking();
+    let splitting = parked_hunt_trial(script, |hunt| {
+        hunt.groups.iter().any(|group| {
+            group.outcome == GroupState::Running
+                && !group.cores.is_empty()
+                && group.stage != HuntStage::Locate
+        })
+    });
+    assert!(
+        !splitting
+            .snapshot()
+            .hunt
+            .is_some_and(|hunt| hunt.locating())
+    );
+    let requirement = hunt_requirement_of(&splitting);
+    assert!(
+        requirement.starts_with("part ")
+            && requirement.ends_with(" of this split · total hunt work unknown"),
+        "{requirement}"
+    );
 }

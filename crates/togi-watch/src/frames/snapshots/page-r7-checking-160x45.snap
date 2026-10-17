@@ -7,8 +7,9 @@ expression: body
 │ R7 EVIDENCE · 4/9 · < Cycle | Hunts / probes >
 │   R7 EVIDENCE ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────── observed, not a guarantee
 │
-│   The cores of a CCD share one voltage rail, and the loaded core that requests the most voltage sets it, so a failure is charged to that top requester first.
-│   Cores within 1 mV of the highest request tie.
+│   All loaded cores share one voltage rail, set by the loaded core with the highest voltage request. R7 attribution keeps a separate top-request group on each
+│   loaded CCD: the cores within 1 mV of that CCD's highest request, tied. An unattributed failure is charged to the affected CCD's top group first, and that
+│   group need not contain the core that sets the rail.
 │   Request order is read from the telemetry recorded for each CCD's full part. `per offset order` marks a CCD where no measurement covers a loaded core, so
 │   the order is taken from the offsets instead.
 │   Self-sufficient means the core has been observed passing as a top requester at its current offset or deeper. That is evidence so far, not a guarantee
@@ -39,7 +40,6 @@ expression: body
 │          self-sufficient: none yet
 │   CCD 1  top requesters 08 · per offset order
 │          self-sufficient: none yet
-│
 │
 │
 │

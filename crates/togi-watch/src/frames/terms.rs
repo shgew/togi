@@ -27,7 +27,7 @@ pub(crate) fn dead_end_words(condition: DeadEndCondition) -> &'static str {
         DeadEndCondition::FailureAtZero => "a core failed at offset 0",
         DeadEndCondition::Smu => "the CPU did not take an offset as written",
         DeadEndCondition::NoEvidence => "no conclusive trial evidence",
-        DeadEndCondition::BootLoop => "three crashes in a row before any offset was applied",
+        DeadEndCondition::BootLoop => "repeated crashes before any offset was applied",
         DeadEndCondition::Containment => "stress programs not confirmed contained",
         DeadEndCondition::Preflight => "a check before tuning failed",
         DeadEndCondition::Defect => "an earlier build may have moved offsets deeper than proven",
@@ -105,10 +105,11 @@ pub(crate) fn recut_words(cut: u32, upper: bool) -> String {
 
 #[cfg(test)]
 mod tests {
+    use togi_journal::DeadEndCondition;
     use togi_machine::{CcdId, CoreId, CoreSet, Regime};
     use togi_tuner::{CyclePart, CycleStep};
 
-    use super::{first_open_part, part_name, recut_words};
+    use super::{dead_end_words, first_open_part, part_name, recut_words};
 
     fn part(cores: &[u8], ccd: Option<u8>, full: bool, done: bool, running: bool) -> CyclePart {
         CyclePart {
@@ -172,5 +173,36 @@ mod tests {
         assert_eq!(recut_words(1, true), "");
         assert_eq!(recut_words(2, false), "re-cut 1 · ");
         assert_eq!(recut_words(3, true), "RE-CUT 2 · ");
+    }
+
+    #[test]
+    fn every_dead_end_cause_has_its_own_true_explanation() {
+        let table = [
+            (DeadEndCondition::FailureAtZero, "a core failed at offset 0"),
+            (
+                DeadEndCondition::Smu,
+                "the CPU did not take an offset as written",
+            ),
+            (DeadEndCondition::NoEvidence, "no conclusive trial evidence"),
+            (
+                DeadEndCondition::BootLoop,
+                "repeated crashes before any offset was applied",
+            ),
+            (
+                DeadEndCondition::Containment,
+                "stress programs not confirmed contained",
+            ),
+            (DeadEndCondition::Preflight, "a check before tuning failed"),
+            (
+                DeadEndCondition::Defect,
+                "an earlier build may have moved offsets deeper than proven",
+            ),
+            (DeadEndCondition::ThermalTrip, "the CPU shut down from heat"),
+        ];
+        let causes: Vec<DeadEndCondition> = table.iter().map(|&(cause, _)| cause).collect();
+        assert_eq!(causes, DeadEndCondition::ALL, "every cause is in the table");
+        for (cause, words) in table {
+            assert_eq!(dead_end_words(cause), words, "{cause}");
+        }
     }
 }

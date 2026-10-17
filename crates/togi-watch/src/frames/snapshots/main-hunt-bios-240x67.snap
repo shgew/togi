@@ -5,7 +5,7 @@ expression: body
 │ togi   21:51:32   tuning 69h51m   session 69h51m   60 failures · 15 crashes   last observed failure 21:50, a moment ago
 │ ■ SOLO LIMITS  16/16 → ■ PHASE 1 → ■ PHASE 2 → ► CLEAN CYCLES · repeats until stopped · HUNT 4 · parts · part 1 of 2
 │
-│ CLEAN CYCLES · HUNT 4 · group 1 · 3/18 steps complete
+│ CLEAN CYCLES · HUNT 4 · group 1 · 2 clean cycles recorded · 3/18 steps complete
 │ part 1/2 of this split · total hunt work unknown
 │
 │ NOW  HUNT 4 · PART 1 OF 2   R2   heavy vector load  on 00 · 01-15 at failing offsets, 00 parked at 0   mprime AVX2 36K-248K · 1 worker
@@ -48,19 +48,19 @@ expression: body
 │ 21:49  crash    with the offsets applied, rebooted
 │ 21:47  hunt     not hunted: held: first unattributed failure loading cores [00] since the profile passed cycle 3 (#10468); a second failure loading any of them by cycle 8 (K = 5) is hunted
 │ 21:47  crash    R2 heavy vector on core 00 at -23 · rebooted · early in trial 1 of 1 · no core named
-│ 21:46  step     cycle 4 step 3: R7 all-core, y-cruncher FFTv4 + N63 + VT3 · 117 credited checks · 36 chain notes
+│ 21:46  step     cycle 4 step 3: R7 all-core, y-cruncher FFTv4 + N63 + VT3 · 39 credited checks · 12 chain notes
+│ 19:18  step     cycle 4 step 2: R7 all-core, mprime AVX-512 36K-248K · 39 credited checks · 12 chain notes
+│ 16:50  step     cycle 4 step 1: R7 all-core, mprime AVX2 36K-248K · 39 credited checks · 12 chain notes
 │ 14:22  cycle    cycle 4 started · 18 steps
 │ 14:22  cycle    cycle 3 passed, a full cycle
-│ 14:22  pass     112 credited checks
-│
-│
-│
-│
-│
-│
-│
-│
-│
+│ 14:22  step     cycle 3 step 18: R6 idle + bursts, y-cruncher BKT + SFTv4 · 1 credited check
+│ 14:07  step     cycle 3 step 17: R4 partial load, y-cruncher SNT + SVT · 16 credited checks
+│ 13:35  step     cycle 3 step 16: R4 partial load, y-cruncher BKT + SFTv4 · 16 credited checks
+│ 13:03  step     cycle 3 step 15: R4 partial load, mprime SSE 4K-21K · 16 credited checks
+│ 12:31  step     cycle 3 step 14: R3 load steps, y-cruncher SNT + SVT · 16 credited checks
+│ 11:59  step     cycle 3 step 13: R3 load steps, y-cruncher BKT + SFTv4 · 16 credited checks
+│ 11:27  step     cycle 3 step 12: R3 load steps, mprime SSE 4K-21K · 16 credited checks
+│ 10:55  step     cycle 3 step 11: R1 light, y-cruncher SNT + SVT · 15 credited checks
 │
 │
 │

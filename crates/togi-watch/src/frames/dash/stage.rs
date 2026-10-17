@@ -443,7 +443,7 @@ fn headline(scene: &Scene<'_>, stage: Stage, life: Lifecycle) -> Vec<Clause> {
     out.push(stage_label(scene, stage));
     if let Some(hunt) = s.hunt {
         out.extend(hunt_head(scene, hunt.plan));
-        out.extend(cycle_progress_tail(scene));
+        out.extend(enclosing_progress(scene, stage));
         return out;
     }
     if repairing(scene) {
@@ -455,20 +455,12 @@ fn headline(scene: &Scene<'_>, stage: Stage, life: Lifecycle) -> Vec<Clause> {
                 ("repairing".to_owned(), 0),
             ],
         ));
-        out.extend(cycle_progress_tail(scene));
+        out.extend(enclosing_progress(scene, stage));
         return out;
     }
     match (stage, s.phases) {
         (Stage::Two, Some(phases)) if phases.round.is_some() => {
-            let round = phases.round.unwrap_or(0);
-            out.push(whole(scene, Paint::Text, format!("round {round}")));
-            if let Some((credited, required)) = round_checks(scene) {
-                let credited_checks = vec![
-                    (format!("{credited}/{required} credited checks"), 1),
-                    (format!("{credited}/{required} checks"), 0),
-                ];
-                out.push(forms(scene, Paint::Text, credited_checks));
-            }
+            out.extend(round_progress(scene, phases.round.unwrap_or(0)));
             out.extend(candidates(scene));
             out.push(extra(
                 scene,
@@ -495,25 +487,58 @@ fn headline(scene: &Scene<'_>, stage: Stage, life: Lifecycle) -> Vec<Clause> {
             ));
         }
         (Stage::Clean, _) => {
-            out.push(forms(
-                scene,
-                Paint::Text,
-                vec![
-                    (
-                        format!(
-                            "{} recorded",
-                            plural(s.clean_cycles as usize, "clean cycle")
-                        ),
-                        1,
-                    ),
-                    (format!("{} clean", s.clean_cycles), 0),
-                ],
-            ));
+            out.push(clean_recorded(scene));
             out.extend(cycle_progress(scene));
         }
         (Stage::Solo | Stage::One | Stage::Two, _) => out.extend(cycle_progress(scene)),
     }
     out
+}
+
+fn clean_recorded(scene: &Scene<'_>) -> Clause {
+    let cycles = scene.s.clean_cycles;
+    forms(
+        scene,
+        Paint::Text,
+        vec![
+            (
+                format!("{} recorded", plural(cycles as usize, "clean cycle")),
+                1,
+            ),
+            (format!("{cycles} clean"), 0),
+        ],
+    )
+}
+
+fn round_progress(scene: &Scene<'_>, round: u32) -> Vec<Clause> {
+    let mut out = vec![whole(scene, Paint::Text, format!("round {round}"))];
+    if let Some((credited, required)) = round_checks(scene) {
+        out.push(forms(
+            scene,
+            Paint::Text,
+            vec![
+                (format!("{credited}/{required} credited checks"), 1),
+                (format!("{credited}/{required} checks"), 0),
+            ],
+        ));
+    }
+    out
+}
+
+/// What the enclosing stage has recorded, kept beside a hunt or a repair: the clean cycles recorded, the open
+/// round and its credited checks, or the cycle's steps.
+fn enclosing_progress(scene: &Scene<'_>, stage: Stage) -> Vec<Clause> {
+    match (stage, scene.s.phases.and_then(|phases| phases.round)) {
+        (Stage::Two, Some(round)) => round_progress(scene, round),
+        (Stage::Clean, _) => {
+            let mut out = vec![clean_recorded(scene)];
+            out.extend(cycle_progress_tail(scene));
+            out
+        }
+        (Stage::Solo | Stage::One | Stage::Two, _) => {
+            cycle_progress_tail(scene).into_iter().collect()
+        }
+    }
 }
 
 /// The cycle's steps under a hunt or a repair, the first thing the headline gives up.
@@ -852,6 +877,23 @@ fn requirement(scene: &Scene<'_>, stage: Stage, life: Lifecycle) -> Vec<Clause> 
     }
     if repairing(scene) {
         let closure = (cycle.plan.current + 1).min(steps);
+        if cycle.resume_step() >= steps {
+            if steps == 0 {
+                return Vec::new();
+            }
+            return vec![
+                whole(
+                    scene,
+                    Paint::White,
+                    format!("chain closure at step {closure} of {steps}"),
+                ),
+                whole(
+                    scene,
+                    Paint::Text,
+                    "every step is done · the cycle ends once the rerun passes",
+                ),
+            ];
+        }
         let resume = cycle.resume_step() + 1;
         let resumes = whole(
             scene,

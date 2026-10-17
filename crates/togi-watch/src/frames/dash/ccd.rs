@@ -347,6 +347,27 @@ fn role_full(scene: &Scene<'_>, core: &CoreView) -> String {
     words.join(" · ")
 }
 
+/// The role column in `room` cells: every role word if they fit, else the `!` and `R` badges before the load
+/// role, else the badges alone, so a current failure and a queued reset outlast the words.
+fn role_cells(scene: &Scene<'_>, core: &CoreView, room: usize) -> Vec<(Paint, String)> {
+    let full = role_full(scene, core);
+    if full.chars().count() <= room {
+        return vec![(Paint::Grey, full)];
+    }
+    let mut cells = Vec::new();
+    if core.evidence.current_failure {
+        cells.push((Paint::Bad, "!".to_owned()));
+    }
+    if core.queued.is_some() {
+        cells.push((Paint::White, "R".to_owned()));
+    }
+    let role = role_word(scene, core);
+    if cells.len() + 1 + role.chars().count() <= room {
+        cells.push((Paint::Grey, format!(" {role}")));
+    }
+    cells
+}
+
 const TABLE_HEADINGS: [&str; 7] = ["CCD", "core", "tune", "now", "solo", "gap", "fail"];
 const TABLE_WIDTHS: [usize; 7] = [3, 4, 4, 4, 4, 4, 4];
 const TABLE_NUMBERS: usize = 3 + 4 * 6 + 6;
@@ -361,7 +382,7 @@ fn table_row(cells: &[String; 7]) -> String {
 }
 
 /// The compact numeric core table in `width` cells: one heading row, then one row per core in CCD and core order.
-/// The numbers keep their columns; the role words go first when the width falls short.
+/// The numbers keep their columns; the role words go first when the width falls short, the badges last.
 pub(crate) fn core_table(scene: &Scene<'_>, width: usize) -> Vec<Line<'static>> {
     let roles = width >= TABLE_NUMBERS + 2 + "reset queued".len();
     let mut heading = table_row(&TABLE_HEADINGS.map(str::to_owned));
@@ -386,15 +407,8 @@ pub(crate) fn core_table(scene: &Scene<'_>, width: usize) -> Vec<Line<'static>> 
         };
         let mut row = vec![(Paint::Text, numbers(usize::MAX))];
         if roles {
-            let full = role_full(scene, core);
-            let room = width - TABLE_NUMBERS - 2;
-            let role = if full.chars().count() <= room {
-                full
-            } else {
-                role_word(scene, core).to_owned()
-            };
             row.push((Paint::Text, "  ".to_owned()));
-            row.push((Paint::Grey, role));
+            row.extend(role_cells(scene, core, width - TABLE_NUMBERS - 2));
         }
         lines.push(parts(scene, row));
     }

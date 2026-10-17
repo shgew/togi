@@ -42,21 +42,21 @@ expression: body
 │ WHAT HAPPENED
 │ 23:32  stop     stopped
 │ 23:32  cycle    cycle 2 passed, a full cycle
-│ 23:32  pass     198 credited checks
-│
-│
-│
-│
-│
-│
-│
-│
-│
-│
-│
-│
-│
-│
+│ 23:32  step     cycle 2 step 18: R6 idle + bursts, y-cruncher BKT + SFTv4 · 1 credited check
+│ 23:17  step     cycle 2 step 17: R4 partial load, y-cruncher SNT + SVT · 16 credited checks
+│ 22:45  step     cycle 2 step 16: R4 partial load, y-cruncher BKT + SFTv4 · 16 credited checks
+│ 22:13  step     cycle 2 step 15: R4 partial load, mprime SSE 4K-21K · 16 credited checks
+│ 21:41  step     cycle 2 step 14: R3 load steps, y-cruncher SNT + SVT · 16 credited checks
+│ 21:09  step     cycle 2 step 13: R3 load steps, y-cruncher BKT + SFTv4 · 16 credited checks
+│ 20:37  step     cycle 2 step 12: R3 load steps, mprime SSE 4K-21K · 16 credited checks
+│ 20:05  step     cycle 2 step 11: R1 light, y-cruncher SNT + SVT · 16 credited checks
+│ 19:33  step     cycle 2 step 10: R1 light, y-cruncher BKT + SFTv4 · 16 credited checks
+│ 19:01  step     cycle 2 step 9: R1 light, mprime SSE 4K-21K · 16 credited checks
+│ 18:29  step     cycle 2 step 8: R5 both threads, mprime SSE 4K-21K · 16 credited checks
+│ 17:57  step     cycle 2 step 7: R6 idle + bursts, mprime SSE 4K-21K · 1 credited check
+│ 17:42  step     cycle 2 step 6: R2 heavy vector, y-cruncher FFTv4 + N63 + VT3 · 16 credited checks
+│ 17:10  step     cycle 2 step 5: R2 heavy vector, mprime AVX-512 36K-248K · 16 credited checks
+│ 16:38  step     cycle 2 step 4: R2 heavy vector, mprime AVX2 36K-248K · 4 credited checks
 │
 │
 │

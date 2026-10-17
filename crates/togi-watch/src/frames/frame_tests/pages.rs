@@ -11,6 +11,7 @@ use crate::frames::layout::SizeClass;
 use crate::frames::scene::Scene;
 use crate::frames::testing::{rows_of, screen};
 use crate::screen::{Colours, Screen, View};
+use crate::tests::kit::{Script, Start, readback};
 
 const EXPLANATION: &str =
     "white=tune · red point=recorded failure · gap=counts shallower than solo";
@@ -109,6 +110,51 @@ fn main_at_160_by_45_has_the_designs_exact_rows_and_margins() {
             "row {y} is shared chrome or the gauge heading"
         );
     }
+}
+
+#[test]
+fn one_full_ccd_at_160_by_45_shows_every_core_in_the_numeric_table_over_the_gauges_rows() {
+    let cores: Vec<(u8, u8)> = (0..8).map(|id| (id, 0)).collect();
+    let tune = |id: u8| -10 - 2 * i64::from(id);
+    let now = |id: u8| -30 - i64::from(id);
+    let starts: Vec<Start> = (0..8)
+        .map(|id| Start::at_limit(tune(id), tune(id) - 1))
+        .collect();
+    let mut script = Script::new(&cores, &starts);
+    for id in 0..8 {
+        script.append(readback(id, now(id)), &[]);
+    }
+    let fx = Fixture::of(&script.events);
+    let rows = frame_rows(&fx, View::Main, (160, 45), 0);
+    assert_eq!(rows.len(), 44);
+    for (y, row) in rows.iter().enumerate() {
+        let cells: Vec<char> = row.chars().collect();
+        assert_eq!(cells.len(), 159, "row {y}");
+        assert!(
+            cells[0] == ' ' && cells[158] == ' ',
+            "row {y} writes into a margin column: {row:?}"
+        );
+    }
+    assert!(
+        rows[9].starts_with(" CCD core tune  now"),
+        "the table's heading: {:?}",
+        rows[9]
+    );
+    for id in 0..8 {
+        let row = &rows[10 + usize::from(id)];
+        let numbers = format!(
+            " {:>3} {:>4} {:>4} {:>4} ",
+            0,
+            format!("{id:02}"),
+            tune(id),
+            now(id)
+        );
+        assert!(row.starts_with(&numbers), "core {id}: {row:?}");
+    }
+    for (y, row) in rows.iter().enumerate().take(37).skip(18) {
+        assert_eq!(row.trim(), "", "row {y} is under the table");
+    }
+    assert_eq!(rows[37].trim(), "WHAT HAPPENED");
 }
 
 #[test]

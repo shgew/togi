@@ -78,6 +78,8 @@ fn is_important(entry: &Entry) -> bool {
 #[derive(Default)]
 struct Burst {
     at: Option<Timestamp>,
+    /// The cycle and step the burst belongs to, from its step marker or the step its passes ran in.
+    place: Option<(u32, u32)>,
     step: Option<String>,
     credited: u32,
     chains: usize,
@@ -86,6 +88,12 @@ struct Burst {
 }
 
 impl Burst {
+    /// Whether a pass in `place` belongs to another step than what the burst holds. A burst of passes outside
+    /// any step never takes a step's passes, nor the other way round.
+    fn is_elsewhere(&self, place: Option<(u32, u32)>) -> bool {
+        self.at.is_some() && self.place != place
+    }
+
     fn add(&mut self, kind: Routine, entry: &Entry) {
         self.at = Some(entry.at);
         match kind {
@@ -96,12 +104,21 @@ impl Burst {
                     entry.runs
                 };
                 self.credited += credited;
+                if let Some(at) = &entry.step {
+                    self.place = Some((at.cycle, at.step));
+                    self.step.get_or_insert_with(|| at.label.clone());
+                }
             }
             Routine::Chain => {
                 self.chains += 1;
                 self.chain = Some(entry.text.clone());
             }
-            Routine::Step => self.step = Some(entry.text.clone()),
+            Routine::Step => {
+                if let Some(Key::Step { cycle, step }) = entry.key {
+                    self.place = Some((cycle, step));
+                }
+                self.step = Some(entry.text.clone());
+            }
             Routine::Round => self.round = Some(entry.text.clone()),
         }
     }
@@ -135,16 +152,33 @@ impl Burst {
     }
 }
 
-/// `entries`, newest first, with every run of routine progress folded into one summary.
+/// `entries`, newest first, with every run of routine progress folded into one summary per step or round: a step
+/// marker, or a pass in another step than the burst's, opens a new summary, and a round's completion closes its
+/// own, so each summary names only its own credited checks.
 fn fold(entries: &[Entry]) -> Vec<Entry> {
     let mut out = Vec::new();
     let mut burst = Burst::default();
     for entry in entries.iter().rev() {
-        if let Some(kind) = routine(entry) {
-            burst.add(kind, entry);
-        } else {
-            out.extend(burst.take());
-            out.push(entry.clone());
+        match routine(entry) {
+            Some(Routine::Step) => {
+                out.extend(burst.take());
+                burst.add(Routine::Step, entry);
+            }
+            Some(Routine::Round) => {
+                burst.add(Routine::Round, entry);
+                out.extend(burst.take());
+            }
+            Some(Routine::Pass) => {
+                if burst.is_elsewhere(entry.step.as_ref().map(|at| (at.cycle, at.step))) {
+                    out.extend(burst.take());
+                }
+                burst.add(Routine::Pass, entry);
+            }
+            Some(Routine::Chain) => burst.add(Routine::Chain, entry),
+            None => {
+                out.extend(burst.take());
+                out.push(entry.clone());
+            }
         }
     }
     out.extend(burst.take());

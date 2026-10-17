@@ -43,7 +43,14 @@ expression: body
 │ 16:53  backoff  core 01 -16 → -15
 │ 16:53  fail     core 01 fails at -16
 │ 16:53  fail     R5 both threads on core 01 at -16 · wrong result · core 01 named
-│ 16:52  step     cycle 2 step 3: R7 all-core, y-cruncher FFTv4 + N63 + VT3 · 177 credited checks · 39 chain notes
+│ 16:52  step     cycle 2 step 8: R5 both threads, mprime SSE 4K-21K · 2 credited checks
+│ 16:48  step     cycle 2 step 7: R6 idle + bursts, mprime SSE 4K-21K · 1 credited check
+│ 16:33  step     cycle 2 step 6: R2 heavy vector, y-cruncher FFTv4 + N63 + VT3 · 16 credited checks
+│ 16:01  step     cycle 2 step 5: R2 heavy vector, mprime AVX-512 36K-248K · 16 credited checks
+│ 15:29  step     cycle 2 step 4: R2 heavy vector, mprime AVX2 36K-248K · 16 credited checks
+│ 14:57  step     cycle 2 step 3: R7 all-core, y-cruncher FFTv4 + N63 + VT3 · 42 credited checks · 13 chain notes
+│ 12:18  step     cycle 2 step 2: R7 all-core, mprime AVX-512 36K-248K · 42 credited checks · 13 chain notes
+│ 09:39  step     cycle 2 step 1: R7 all-core, mprime AVX2 36K-248K · 42 credited checks · 13 chain notes
 │ 07:00  cycle    cycle 2 started · 18 steps
 │ 07:00  pass     5 credited checks
 │ 06:50  room     core 07 has room again at -20
@@ -59,12 +66,5 @@ expression: body
 │ 06:50  room     core 12 yields -34 → -33; no later round moves it
 │ 06:50  room     core 09 yields -11 → -10; no later round moves it
 │ 06:50  room     core 00 yields -34 → -33; no later round moves it
-│ 06:50  round    #1 stopped: failure #7637: blame goes to the deepened cores
-│ 06:50  fail     core 05 fails at -24
-│ 06:50  fail     R7 all-core on 00 02 04-07 · the backend quit · core 05 named
-│ 04:30  room     core 07 -20 → -21
-│ 04:30  room     core 14 -11 → -12
-│ 04:30  room     core 13 -24 → -25
-│ 04:30  room     core 05 -23 → -24
 │
 │  ←/→  pages  1/9 Main   ↑/↓  scroll   PgUp/PgDn    Esc  Main   ?  help   q  exit dashboard

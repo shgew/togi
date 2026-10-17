@@ -37,8 +37,8 @@ expression: body
 │ │
 │ │ tune       The tuning profile's offset for the core: a white full-height █ bar, one cell per count, -1 at the left to -50 at the right. It is drawn from
 │ │            the profile in every phase, never from what is applied. A core at 0 has an empty bar.
-│ │ now        The offset observed applied to the hardware now. After a stop restores the hardware, now is 0 while tune keeps the profile. now ? means no
-│ │            application was observed; it is not a zero.
+│ │ now        The offset observed applied to the hardware now. After a stop, now shows the offset the stop restored, such as 0 for a zero baseline, while tune
+│ │            keeps the profile. now ? means no application was observed; it is not a zero.
 │ │ red point  One full-height red █ in a lane of its own under the bar, at the depth of the recorded failure constraint. No recorded failure reads f none; a
 │ │            failure at 0 reads f0 and draws no cell.
 │ │ solo       The deepest offset the core confirmed alone under load. s? means none is known, and then g? too.

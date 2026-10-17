@@ -40,7 +40,8 @@ expression: body
 │                                         white=tune · red point=recorded failure · gap=counts shallower than solo
 │
 │ WHAT HAPPENED
-│ 10:03  pass     6 credited checks
+│ 10:03  step     cycle 1 step 1: R7 all-core, mprime AVX2 36K-248K · 1 credited check
+│ 09:58  pass     5 credited checks
 │ 09:48  backoff  core 01 -16 → -15
 │ 09:48  fail     core 01 fails at -16
 │ 09:48  fail     rerun of R7 all-core on 00-07 · the backend stalled · core 01 named
@@ -65,6 +66,5 @@ expression: body
 │ 07:34  confirm  core 06 confirming -38 as its solo limit
 │ 07:34  fail     core 06 fails at -39
 │ 07:34  fail     core 06 · R2 heavy vector at -39 · the backend stalled
-│ 07:32  confirm  core 13 confirming -38 as its solo limit
 │
 │  ←/→  pages  1/9 Main   ↑/↓  scroll   PgUp/PgDn    Esc  Main   ?  help   q  exit dashboard

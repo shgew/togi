@@ -108,7 +108,7 @@ const GAUGES: Section = Section {
         ),
         (
             "now",
-            "The offset observed applied to the hardware now. After a stop restores the hardware, now is 0 while tune keeps the profile. now ? means no application was observed; it is not a zero.",
+            "The offset observed applied to the hardware now. After a stop, now shows the offset the stop restored, such as 0 for a zero baseline, while tune keeps the profile. now ? means no application was observed; it is not a zero.",
         ),
         (
             "red point",
@@ -153,7 +153,10 @@ const SOURCES: Section = Section {
             "alone",
             "The core failed by itself, loaded alone. Its red point is that failure.",
         ),
-        ("named", "A hunt traced a group's failure to this core."),
+        (
+            "named",
+            "A failure named this core directly, or a hunt traced a group's failure to it.",
+        ),
         (
             "R7-charged",
             "An all-core R7 failure the decision charged to this core. The attribution may be uncertain.",
@@ -613,7 +616,7 @@ mod tests {
             "tune The tuning profile's offset for the core: a white full-height █ bar, one cell per count, -1 at the left to -50 at the right.",
             "never from what is applied.",
             "now The offset observed applied to the hardware now.",
-            "now is 0 while tune keeps the profile.",
+            "After a stop, now shows the offset the stop restored, such as 0 for a zero baseline, while tune keeps the profile.",
             "now ? means no application was observed; it is not a zero.",
             "One full-height red █ in a lane of its own under the bar, at the depth of the recorded failure constraint.",
             "No recorded failure reads f none; a failure at 0 reads f0 and draws no cell.",
@@ -632,7 +635,7 @@ mod tests {
         let help = words(Quit::Keys);
         for said in [
             "alone The core failed by itself, loaded alone.",
-            "named A hunt traced a group's failure to this core.",
+            "named A failure named this core directly, or a hunt traced a group's failure to it.",
             "R7-charged An all-core R7 failure the decision charged to this core.",
             "not always a core that failed alone.",
             "SOLO LIMITS Finding each core's solo limit alone.",

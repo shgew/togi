@@ -5,7 +5,6 @@ expression: body
 │ togi   23:32:41   tuning 47h32m   session 47h32m   57 failures · 12 crashes   last observed failure 08:32, 15h00m ago
 │ STOPPED  ■ SOLO LIMITS  16/16 → ■ PHASE 1 → ■ PHASE 2 → ○ CLEAN CYCLES
 │ JOURNAL · 8/9 · < History | Help >
-│ │ 23:05:01  trial signal          trial 1357 load steps: 1200 stops, 1199 continues
 │ │ 23:05:01  pass                  trial 1357 PASS 120 s | Tctl max 72°C
 │ │ 23:05:01  trial intent          trial 1358 core 05 offset -8 R4 y-cruncher SNT + SVT 75% duty 120 s together cycle 2 step 17
 │ │ 23:05:01  trial start           trial 1358 started pid 2358 in scope togi-trial-1358 on cpu 5
@@ -42,7 +41,8 @@ expression: body
 │ │ 23:32:01  trial progress        trial 1364 first half idle, then 100ms bursts every 2s, one core at a time
 │ │ 23:32:01  trial progress        trial 1364 bursts: 225 continues, 241 stops
 │ │ 23:32:01  pass                  trial 1364 PASS 900 s | Tctl max 76°C
-│ █ 23:32:01  cycle                 checking cycle 2 end passed; phase 2 ends: the confirmation cycle passed, so this is the confirmed profile
-│ █ 23:32:01  profile restored      offsets restored before stopping: 00 -23 → 0, 01 -15 → 0, 02 -24 → 0, 03 -24 → 0, 04 -13 → 0, 05 -8 → 0, 06 -37 → 0, 07...
+│ │ 23:32:01  cycle                 checking cycle 2 end passed; phase 2 ends: the confirmation cycle passed, so this is the confirmed profile
+│ █ 23:32:01  profile restored      offsets restored before stopping: 00 -23 → 0, 01 -15 → 0, 02 -24 → 0, 03 -24 → 0, 04 -13 → 0, 05 -8 → 0, 06 -37 → 0,
+│ █                                 07 -29 → 0, 08 -5 → 0, 09 -33 → 0, 10 -13 → 0, 11 -7 → 0, 12 -14 → 0, 13 -35 → 0, 14 -12 → 0, 15 -13 → 0
 │ █ 23:32:01  stop                  phase 2 is confirmed and the profile passed the requested clean cycle; stopping
 │  ←/→  pages  8/9 Journal   ↑/↓  scroll   PgUp/PgDn    Esc  Main   ?  help   q  exit dashboard

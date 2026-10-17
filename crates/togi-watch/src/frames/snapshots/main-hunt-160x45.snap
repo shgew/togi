@@ -42,7 +42,7 @@ expression: body
 │ WHAT HAPPENED
 │ 18:35  hunt     #1 started · part 1: 00-04 06-15 at failing offsets, 05 parked
 │ 18:35  fail     R2 heavy vector on core 05 at -9 · corrected hardware error · no core named
-│ 18:33  pass     14 credited checks · 33 chain notes
-│ 17:50  backoff  core 12 -15 → -14
+│ 18:33  step     cycle 1 step 3: R7 all-core, y-cruncher FFTv4 + N63 + VT3 · 3 credited checks · 2 chain notes
+│ 18:22  step     cycle 1 step 2: R7 all-core, mprime AVX-512 36K-248K · 3 credited checks · 11 chain notes
 │
 │  ←/→  pages  1/9 Main   ↑/↓  scroll   PgUp/PgDn    Esc  Main   ?  help   q  exit dashboard

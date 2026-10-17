@@ -57,14 +57,14 @@ expression: body
 │ 15:15  room     core 00 -10 → -11
 │ 15:15  round    #1: core 00 goes deeper to -11, core 01 goes deeper to -11, core 02 goes deeper to -11, core 03 goes deeper to -11, core 04 goes deeper to -11, core 05 goes deeper to -11, core 06 goes deeper to -11 and 8 more
 │ 15:15  cycle    cycle 1 passed, a full cycle
-│ 15:15  pass     175 credited checks · 9 chain notes
-│ 08:42  backoff  core 11 -10 → -9 · clear of C1
-│ 08:42  combo    C1: 03 -10  11 -10
-│ 08:42  hunt     #1 done · 43 groups in 1h10m · 03 11 kept together, probed
-│ 08:42  pass     5 credited checks
-│ 08:22  group    hunt 1 groups 40-41 · parts of 03 11 · all passed on existing evidence
+│ 15:15  step     cycle 1 step 18: R6 idle + bursts, y-cruncher BKT + SFTv4 · 1 credited check
+│ 15:00  step     cycle 1 step 17: R4 partial load, y-cruncher SNT + SVT · 16 credited checks
+│ 14:28  step     cycle 1 step 16: R4 partial load, y-cruncher BKT + SFTv4 · 16 credited checks
+│ 13:56  step     cycle 1 step 15: R4 partial load, mprime SSE 4K-21K · 16 credited checks
+│ 13:24  step     cycle 1 step 14: R3 load steps, y-cruncher SNT + SVT · 16 credited checks
+│ 12:52  step     cycle 1 step 13: R3 load steps, y-cruncher BKT + SFTv4 · 16 credited checks
+│ 12:20  step     cycle 1 step 12: R3 load steps, mprime SSE 4K-21K · 16 credited checks
+│ 11:48  step     cycle 1 step 11: R1 light, y-cruncher SNT + SVT · 16 credited checks
 │ 08:22  crash    hunt 1 group 39 · 03 11 at failing offsets · rebooted
-│ 08:20  group    hunt 1 groups 35-38 · parts of 03 10 11 · all passed on existing evidence
-│ 08:20  crash    hunt 1 group 34 · 03 10 11 at failing offsets · rebooted
 │
 │  ←/→  pages  1/9 Main   ↑/↓  scroll   PgUp/PgDn    Esc  Main   ?  help   q  exit dashboard

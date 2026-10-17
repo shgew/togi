@@ -42,29 +42,29 @@ expression: body
 │ WHAT HAPPENED
 │ 06:49  stop     stopped
 │ 06:49  cycle    cycle 1 passed, a full cycle
-│ 06:49  pass     49 credited checks · 36 chain notes
+│ 06:49  step     cycle 1 step 18: R6 idle + bursts, y-cruncher BKT + SFTv4 · 1 credited check
+│ 06:34  step     cycle 1 step 17: R4 partial load, y-cruncher SNT + SVT · 16 credited checks
+│ 06:02  step     cycle 1 step 16: R4 partial load, y-cruncher BKT + SFTv4 · 16 credited checks
+│ 05:30  step     cycle 1 step 15: R4 partial load, mprime SSE 4K-21K · 2 credited checks
+│ 05:26  step     cycle 1 step 3: R7 all-core, y-cruncher FFTv4 + N63 + VT3 · 3 credited checks · 3 chain notes
+│ 05:15  step     cycle 1 step 2: R7 all-core, mprime AVX-512 36K-248K · 3 credited checks · 12 chain notes
+│ 05:04  step     cycle 1 step 1: R7 all-core, mprime AVX2 36K-248K · 3 credited checks · 12 chain notes
+│ 04:53  pass     5 credited checks · 9 chain notes
 │ 04:43  backoff  core 14 -13 → -12
 │ 04:43  fail     core 14 fails at -13
 │ 04:43  fail     rerun of R4 partial load on core 14 at -13 · corrected hardware error · no core named
 │ 04:41  backoff  core 14 -14 → -13
 │ 04:41  fail     core 14 fails at -14
 │ 04:41  fail     R4 partial load on core 14 at -14 · wrong result · core 14 named
-│ 04:41  pass     74 credited checks · 33 chain notes
+│ 04:41  step     cycle 1 step 15: R4 partial load, mprime SSE 4K-21K · 13 credited checks
+│ 04:15  step     cycle 1 step 14: R3 load steps, y-cruncher SNT + SVT · 16 credited checks
+│ 03:43  step     cycle 1 step 13: R3 load steps, y-cruncher BKT + SFTv4 · 16 credited checks
+│ 03:11  step     cycle 1 step 12: R3 load steps, mprime SSE 4K-21K · 15 credited checks
+│ 02:41  step     cycle 1 step 3: R7 all-core, y-cruncher FFTv4 + N63 + VT3 · 3 credited checks · 7 chain notes
+│ 02:30  step     cycle 1 step 2: R7 all-core, mprime AVX-512 36K-248K · 3 credited checks · 11 chain notes
+│ 02:19  step     cycle 1 step 1: R7 all-core, mprime AVX2 36K-248K · 3 credited checks · 11 chain notes
+│ 02:08  pass     5 credited checks · 4 chain notes
 │ 01:58  backoff  core 00 -24 → -23
 │ 01:58  hunt     #3 done · 4 groups in 20m15s · core 00 named
-│ 01:58  fail     core 00 fails at -24
-│ 01:58  fail     hunt 3 group 4 · 00-03 at failing offsets · wrong result · core 00 named
-│ 01:57  group    hunt 3 group 3 · 12-15 · passed on existing evidence
-│ 01:57  pass     10 credited checks
-│ 01:37  hunt     #3 started · part 1: 01-15 at failing offsets, 00 parked
-│ 01:37  crash    R3 load steps on core 00 at -24 · rebooted · early in trial 1 of 1 · no core named
-│ 01:36  pass     11 credited checks
-│
-│
-│
-│
-│
-│
-│
 │
 │  ←/→  pages  1/9 Main   ↑/↓  scroll   PgUp/PgDn    Esc  Main   ?  help   q  exit dashboard

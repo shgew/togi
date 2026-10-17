@@ -29,8 +29,8 @@ expression: body
 │   1   14  -15  -15  -16    1  -17  judged
 │   1   15  -13  -13  -14    1  -15  judged
 │ WHAT HAPPENED
-│ 20:21  pass     42 credited checks · 33 chain notes
-│ 18:57  backoff  core 05 -9 → -8
+│ 20:21  step     cycle 1 step 6: R2 heavy vector, y-cruncher FFTv4 + N63 + VT3 · 16 credited checks
+│ 19:49  step     cycle 1 step 5: R2 heavy vector, mprime AVX-512 36K-248K · 16 credited checks
 │ 18:57  fail     core 05 fails at -9
 │
 │  ←/→  pages  1/9 Main   ↑/↓  scroll   PgUp/PgDn    Esc  Main   ?  help   q  exit dashboard

@@ -75,8 +75,14 @@ legend: t=Text g=Grey w=White c=Running a=Hunt p=Good f=Bad m=Combination k=Trac
 │
 │ WHAT HAPPENED
 ~ ttttttttttttt
-│ 20:21  pass     42 credited checks · 33 chain notes
-~ ggggg  tttttttt ttttttttttttttttttttttttttttttttttt
+│ 20:21  step     cycle 1 step 6: R2 heavy vector, y-cruncher FFTv4 + N63 + VT3 · 16 credited checks
+~ ggggg  tttttttt tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│ 19:49  step     cycle 1 step 5: R2 heavy vector, mprime AVX-512 36K-248K · 16 credited checks
+~ ggggg  tttttttt ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│ 19:17  step     cycle 1 step 4: R2 heavy vector, mprime AVX2 36K-248K · 5 credited checks
+~ ggggg  tttttttt ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│ 19:07  pass     5 credited checks · 33 chain notes
+~ ggggg  tttttttt tttttttttttttttttttttttttttttttttt
 │ 18:57  backoff  core 05 -9 → -8
 ~ ggggg  aaaaaaaa ttttttttttttttt
 │ 18:57  hunt     #1 done · 5 groups in 21m34s · core 05 named
@@ -95,8 +101,14 @@ legend: t=Text g=Grey w=White c=Running a=Hunt p=Good f=Bad m=Combination k=Trac
 ~ ggggg  aaaaaaaa tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
 │ 18:35  fail     R2 heavy vector on core 05 at -9 · corrected hardware error · no core named
 ~ ggggg  ffffffff tttttttttttttttttttttttttttttttttttfffffffffffffffffffffffftttttttttttttttt
-│ 18:33  pass     14 credited checks · 33 chain notes
-~ ggggg  tttttttt ttttttttttttttttttttttttttttttttttt
+│ 18:33  step     cycle 1 step 3: R7 all-core, y-cruncher FFTv4 + N63 + VT3 · 3 credited checks · 2 chain notes
+~ ggggg  tttttttt ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│ 18:22  step     cycle 1 step 2: R7 all-core, mprime AVX-512 36K-248K · 3 credited checks · 11 chain notes
+~ ggggg  tttttttt ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│ 18:11  step     cycle 1 step 1: R7 all-core, mprime AVX2 36K-248K · 3 credited checks · 11 chain notes
+~ ggggg  tttttttt tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│ 18:00  pass     5 credited checks · 9 chain notes
+~ ggggg  tttttttt ttttttttttttttttttttttttttttttttt
 │ 17:50  backoff  core 12 -15 → -14
 ~ ggggg  aaaaaaaa ttttttttttttttttt
 │ 17:50  fail     core 12 fails at -15
@@ -109,20 +121,12 @@ legend: t=Text g=Grey w=White c=Running a=Hunt p=Good f=Bad m=Combination k=Trac
 ~ ggggg  aaaaaaaa tttttttttttttttttttt
 │ 17:49  fail     R2 heavy vector on core 12 at -16 · wrong result · core 12 named
 ~ ggggg  ffffffff ttttttttttttttttttttttttttttttttttttfffffffffffftttttttttttttttt
-│ 17:49  pass     17 credited checks · 33 chain notes
-~ ggggg  tttttttt ttttttttttttttttttttttttttttttttttt
-│ 17:00  backoff  core 10 -16 → -15
-~ ggggg  aaaaaaaa ttttttttttttttttt
-│ 17:00  fail     core 10 fails at -16
-~ ggggg  aaaaaaaa tttttttttttttttttttt
-│ 17:00  fail     R2 heavy vector on core 10 at -16 · wrong result · core 10 named
-~ ggggg  ffffffff ttttttttttttttttttttttttttttttttttttfffffffffffftttttttttttttttt
-│ 17:00  step     cycle 1 step 3: R7 all-core, y-cruncher FFTv4 + N63 + VT3 · 47 credited checks · 13 chain notes
-~ ggggg  tttttttt ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│
-│
-│
-│
+│ 17:49  step     cycle 1 step 4: R2 heavy vector, mprime AVX2 36K-248K · 3 credited checks
+~ ggggg  tttttttt ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│ 17:43  step     cycle 1 step 3: R7 all-core, y-cruncher FFTv4 + N63 + VT3 · 3 credited checks · 2 chain notes
+~ ggggg  tttttttt ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│ 17:32  step     cycle 1 step 2: R7 all-core, mprime AVX-512 36K-248K · 3 credited checks · 11 chain notes
+~ ggggg  tttttttt ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
 │
 │  ←/→  pages  1/9 Main   ↑/↓  scroll   PgUp/PgDn    Esc  Main   ?  help   q  exit dashboard
 ~ hhhhh ggggg  wwwwwwww  hhhhh gggggg  hhhhhhhhhhh  kkkkk kkkk  hhh gggg  hhh gggggggggggggg

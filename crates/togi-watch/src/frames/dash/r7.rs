@@ -192,7 +192,7 @@ pub(super) fn r7_rows(scene: &Scene<'_>, class: SizeClass, width: usize) -> Vec<
 
 const EMPTY: &str =
     "No R7 evidence yet: request order and self-sufficiency appear once checking has a cycle.";
-const RAIL: &str = "The cores of a CCD share one voltage rail, and the loaded core that requests the most voltage sets it, so a failure is charged to that top requester first. Cores within 1 mV of the highest request tie.";
+const RAIL: &str = "All loaded cores share one voltage rail, set by the loaded core with the highest voltage request. R7 attribution keeps a separate top-request group on each loaded CCD: the cores within 1 mV of that CCD's highest request, tied. An unattributed failure is charged to the affected CCD's top group first, and that group need not contain the core that sets the rail.";
 const PROVENANCE: &str = "Request order is read from the telemetry recorded for each CCD's full part. `per offset order` marks a CCD where no measurement covers a loaded core, so the order is taken from the offsets instead.";
 const SELF_SUFFICIENT: &str = "Self-sufficient means the core has been observed passing as a top requester at its current offset or deeper. That is evidence so far, not a guarantee against future failures.";
 const CONDITIONAL: &str = "While this R7 trial runs, any outcome is conditional: its end may add request or clock telemetry that changes the top requesters, the backoff targets and the partials derived from them.";
@@ -219,12 +219,12 @@ pub(crate) fn r7_lines(scene: &Scene<'_>, width: usize, class: SizeClass) -> Vec
     for note in [RAIL, PROVENANCE, SELF_SUFFICIENT] {
         out.extend(wrap_styled(note, width, grey));
     }
-    if scene
+    let r7_runs = scene
         .s
         .trial
         .is_some_and(|trial| trial.regime == Regime::R7)
-        && scene.trial_runs()
-    {
+        && scene.trial_runs();
+    if r7_runs {
         out.push(Line::default());
         out.extend(wrap_styled(CONDITIONAL, width, grey));
     }
@@ -245,10 +245,10 @@ pub(crate) fn r7_lines(scene: &Scene<'_>, width: usize, class: SizeClass) -> Vec
             continue;
         }
         out.push(Line::default());
-        let name = if current == Some(id) {
-            format!("{} · loading now", workload_display(id))
-        } else {
-            workload_display(id).to_owned()
+        let name = match (current == Some(id), r7_runs) {
+            (true, true) => format!("{} · loading now", workload_display(id)),
+            (true, false) => format!("{} · current step", workload_display(id)),
+            (false, _) => workload_display(id).to_owned(),
         };
         out.push(Line::from(scene.paint(Paint::Text, name)));
         let mut ccds: Vec<_> = rows.iter().map(|status| status.ccd).collect();
@@ -317,3 +317,6 @@ pub(crate) fn r7_lines(scene: &Scene<'_>, width: usize, class: SizeClass) -> Vec
     crate::corpus::lines("page.r7", &format!("{class:?}"), &out);
     out
 }
+
+#[cfg(test)]
+mod tests;

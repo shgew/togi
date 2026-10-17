@@ -81,7 +81,10 @@ fn entry_rows(
             date = today;
         }
         let Some(trial) = self_test_trial(entry) else {
-            out.push(row(entry, width, zone, colours));
+            match profile_rows(entry, width, zone, colours) {
+                Some(rows) => out.extend(rows),
+                None => out.push(row(entry, width, zone, colours)),
+            }
             i += 1;
             continue;
         };
@@ -105,6 +108,64 @@ fn entry_rows(
 
 fn folded_count(n: usize) -> String {
     format!("{n} self-test {} passed", noun(n, "check"))
+}
+
+/// The rows of a profile entry whose message lists the cores it moved (`head: 00 -23 → 0, 01 -15 → 0`): the
+/// list wrapped onto continuation rows under the message column, breaking only between whole `core old → new`
+/// items. `None` when the entry is not such a list, or the head or an item is wider than the message column,
+/// which then takes one cut row.
+fn profile_rows(
+    entry: &LogEntry,
+    width: usize,
+    zone: &TimeZone,
+    colours: Colours,
+) -> Option<Vec<Line<'static>>> {
+    if !entry.tag.starts_with("profile") {
+        return None;
+    }
+    let room = width.saturating_sub(LOG_PREFIX);
+    let (head, list) = entry.msg.split_once(": ")?;
+    let items: Vec<&str> = list.split(", ").collect();
+    if !items.iter().all(|item| item.contains(" → ")) {
+        return None;
+    }
+    let mut lines: Vec<String> = Vec::new();
+    let mut current = format!("{head}:");
+    if display_width(&current) > room {
+        return None;
+    }
+    for (n, item) in items.iter().enumerate() {
+        let token = if n + 1 < items.len() {
+            format!("{item},")
+        } else {
+            (*item).to_owned()
+        };
+        if display_width(&token) > room {
+            return None;
+        }
+        if display_width(&current) + 1 + display_width(&token) <= room {
+            current.push(' ');
+            current.push_str(&token);
+        } else {
+            lines.push(std::mem::replace(&mut current, token));
+        }
+    }
+    lines.push(current);
+    let mut lines = lines.into_iter();
+    let first = LogEntry {
+        seq: entry.seq,
+        at: entry.at,
+        tag: entry.tag.clone(),
+        msg: lines.next()?,
+    };
+    let mut rows = vec![row(&first, width, zone, colours)];
+    rows.extend(lines.map(|text| {
+        Line::from(vec![
+            Span::raw(" ".repeat(LOG_PREFIX)),
+            Paint::Text.span(colours, text),
+        ])
+    }));
+    Some(rows)
 }
 
 /// The rule that heads the journal view: how many events the journal holds that the view lists, and how many
@@ -288,6 +349,45 @@ mod tests {
                 assert_eq!(field, want, "width {width}: {row:?}");
             }
         }
+    }
+
+    #[test]
+    fn a_sixteen_core_profile_diff_wraps_on_whole_items_under_the_message_column() {
+        let items: Vec<String> = (0..16)
+            .map(|core| format!("{core:02} -{} → 0", 8 + core))
+            .collect();
+        let msg = format!("offsets restored before stopping: {}", items.join(", "));
+        let entries = [entry(1, at(1000), "profile restored", &msg)];
+        let (page, _) = rows(&log(&entries), 160, 20, 0);
+        let listed: Vec<&String> = page[3..]
+            .iter()
+            .take_while(|row| !text_cells(row).is_empty())
+            .collect();
+        assert!(listed.len() >= 2, "{page:?}");
+        let mut rebuilt = Vec::new();
+        for (n, row) in listed.iter().enumerate() {
+            let text = text_cells(row);
+            let message = if n == 0 {
+                text.split_once("  offsets").map_or("", |(_, rest)| rest)
+            } else {
+                assert!(row.starts_with(&" ".repeat(34)), "{row:?}");
+                text.trim_start()
+            };
+            let message = if n == 0 {
+                format!("offsets{message}")
+            } else {
+                message.to_owned()
+            };
+            assert!(
+                message.ends_with(" → 0,")
+                    || message.ends_with(" → 0")
+                    || n == 0 && message.ends_with("stopping:"),
+                "a row ends on a whole item: {message:?}"
+            );
+            assert!(!message.contains(CUT_MARKER), "{message:?}");
+            rebuilt.push(message);
+        }
+        assert_eq!(rebuilt.join(" "), msg);
     }
 
     #[test]

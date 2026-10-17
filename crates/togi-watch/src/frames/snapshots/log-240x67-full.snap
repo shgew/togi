@@ -9,8 +9,6 @@ legend: t=Text g=Grey w=White c=Running a=Hunt p=Good f=Bad m=Combination k=Trac
 ~ wwwwwww  pptttttttttttgggggggtktppttttttttktppttttttttktkkgggggggggggg
 │ JOURNAL · 8/9 · < History | Help >
 ~ tttttttggggggggggggggggggggggggggg
-│ │ 22:55:01  trial start           trial 1353 started pid 2353 in scope togi-trial-1353 on cpu 10
-~ g gggggggg  tttttttttttttttttttt  tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
 │ │ 22:55:01  trial signal          trial 1353 load steps: 75% duty, 100 ms period
 ~ g gggggggg  tttttttttttttttttttt  tttttttttttttttttttttttttttttttttttttttttttttt
 │ │ 22:57:01  trial signal          trial 1353 load steps: 1200 stops, 1199 continues
@@ -115,8 +113,8 @@ legend: t=Text g=Grey w=White c=Running a=Hunt p=Good f=Bad m=Combination k=Trac
 ~ g gggggggg  tttttttttttttttttttt  tttttttttttttttttttttttttttttttttttttttttttttt
 │ │ 23:17:01  trial signal          trial 1363 load steps: 1200 stops, 1199 continues
 ~ g gggggggg  tttttttttttttttttttt  ttttttttttttttttttttttttttttttttttttttttttttttttt
-│ █ 23:17:01  pass                  trial 1363 PASS 120 s | Tctl max 67°C
-~ t gggggggg  tttttttttttttttttttt  ttttttttttttttttttttttttttttttttttttt
+│ │ 23:17:01  pass                  trial 1363 PASS 120 s | Tctl max 67°C
+~ g gggggggg  tttttttttttttttttttt  ttttttttttttttttttttttttttttttttttttt
 │ █ 23:17:01  trial intent          trial 1364 cores 00, 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 13, 14, 15 R6 y-cruncher BKT + SFTv4 idle then bursts 900 s together cycle 2 step 18
 ~ t gggggggg  tttttttttttttttttttt  ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
 │ █ 23:17:01  trial start           trial 1364 started pid 2364 in scope togi-trial-1364 on cpus 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15
@@ -129,8 +127,10 @@ legend: t=Text g=Grey w=White c=Running a=Hunt p=Good f=Bad m=Combination k=Trac
 ~ t gggggggg  tttttttttttttttttttt  ttttttttttttttttttttttttttttttttttttt
 │ █ 23:32:01  cycle                 checking cycle 2 end passed; phase 2 ends: the confirmation cycle passed, so this is the confirmed profile
 ~ t gggggggg  tttttttttttttttttttt  tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│ █ 23:32:01  profile restored      offsets restored before stopping: 00 -23 → 0, 01 -15 → 0, 02 -24 → 0, 03 -24 → 0, 04 -13 → 0, 05 -8 → 0, 06 -37 → 0, 07 -29 → 0, 08 -5 → 0, 09 -33 → 0, 10 -13 → 0, 11 -7 → 0, 12 -14 → 0, 13 -35 → 0...
-~ t gggggggg  tttttttttttttttttttt  tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│ █ 23:32:01  profile restored      offsets restored before stopping: 00 -23 → 0, 01 -15 → 0, 02 -24 → 0, 03 -24 → 0, 04 -13 → 0, 05 -8 → 0, 06 -37 → 0, 07 -29 → 0, 08 -5 → 0, 09 -33 → 0, 10 -13 → 0, 11 -7 → 0, 12 -14 → 0, 13 -35 → 0,
+~ t gggggggg  tttttttttttttttttttt  tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│ █                                 14 -12 → 0, 15 -13 → 0
+~ t                                 tttttttttttttttttttttt
 │ █ 23:32:01  stop                  phase 2 is confirmed and the profile passed the requested clean cycle; stopping
 ~ t gggggggg  tttttttttttttttttttt  ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
 │  ←/→  pages  8/9 Journal   ↑/↓  scroll   PgUp/PgDn    Esc  Main   ?  help   q  exit dashboard

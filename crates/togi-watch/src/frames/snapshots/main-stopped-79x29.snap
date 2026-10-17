@@ -26,7 +26,7 @@ expression: body
 │ █   1   12  -14    0  -17    3  -15  idle at 0
 │ █   1   13  -35    0  -38    3  -36  idle at 0
 │ █   1   14  -12    0  -16    4  -13  idle at 0
-│ █   1   15  -13    0  -14    1  -15  idle at 0
+│ │   1   15  -13    0  -14    1  -15  idle at 0
 │ │ WHAT HAPPENED
 │ │ 23:32  stop     stopped
 │  ←/→  pages  1/9 Main   Esc  Main   ?  help   q  exit dashboard

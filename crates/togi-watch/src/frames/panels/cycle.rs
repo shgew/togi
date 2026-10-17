@@ -683,6 +683,48 @@ mod tests {
     }
 
     #[test]
+    fn steps_between_chain_closure_and_checking_resume_close_with_the_chain() {
+        let step = |done: bool| {
+            cycle_step(
+                Regime::R1,
+                vec![cycle_part(&[0], None, true, false, done)],
+                done,
+                true,
+            )
+        };
+        let repair = cycle_plan(
+            vec![
+                step(true),
+                step(false),
+                step(false),
+                step(false),
+                step(false),
+            ],
+            1,
+            true,
+        );
+        let rows = cycle_rows_resuming(&repair, &[], false, Some(StepNo::new(nz(4))));
+        assert!(rows[3].contains("chain closure at step 2 of 5"), "{rows:?}");
+        assert!(
+            rows[4].contains("checking resumes at step 4 of 5"),
+            "{rows:?}"
+        );
+        let closure = &rows[8];
+        assert!(
+            closure.starts_with('○') && closure.ends_with("held"),
+            "{rows:?}"
+        );
+        let between = &rows[9];
+        assert!(
+            between.starts_with('○') && between.ends_with("closes with the chain"),
+            "{rows:?}"
+        );
+        for after in &rows[10..] {
+            assert!(!after.contains("closes with the chain"), "{rows:?}");
+        }
+    }
+
+    #[test]
     fn a_step_with_chains_to_come_counts_its_known_parts() {
         let mut open = plan();
         open.current = 2;

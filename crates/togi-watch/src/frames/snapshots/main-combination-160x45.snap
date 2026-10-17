@@ -42,7 +42,7 @@ expression: body
 │ WHAT HAPPENED
 │ 07:08  stop     stopped
 │ 07:08  cycle    cycle 2 passed, a full cycle
-│ 07:08  pass     198 credited checks
-│
+│ 07:08  step     cycle 2 step 18: R6 idle + bursts, y-cruncher BKT + SFTv4 · 1 credited check
+│ 06:53  step     cycle 2 step 17: R4 partial load, y-cruncher SNT + SVT · 16 credited checks
 │
 │  ←/→  pages  1/9 Main   ↑/↓  scroll   PgUp/PgDn    Esc  Main   ?  help   q  exit dashboard
