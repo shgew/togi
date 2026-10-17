@@ -91,16 +91,36 @@ fn a_session_bearing_entry_that_is_a_directory_fails_naming_it_before_anything_i
     assert_eq!(fs.kind(Path::new("/copy")).unwrap(), None);
 }
 
-#[test_case("20260101T000000Z.jsonl"; "archived journal")]
-#[test_case("20260101T000000Z-reset-all"; "reset marker")]
-#[test_case("20260101T000000Z-carry-pending"; "carry marker")]
-#[test_case("20260101T000000Z-compat-pending"; "compatibility marker")]
-fn real_fs_a_symlinked_session_bearing_entry_fails_naming_it(name: &str) {
+#[test_case("/state/events.jsonl", "/elsewhere/events.jsonl", "read /state/events.jsonl: "; "live journal")]
+#[test_case("/state/state.json", "/elsewhere/state.json", "read /state/state.json: "; "state file")]
+#[test_case("/state/archive", "/elsewhere/archive", "list the archive of /state: list archive /state/archive: "; "archive")]
+#[test_case(
+    "/state/archive/20260101T000000Z.jsonl",
+    "/elsewhere/archive/20260101T000000Z.jsonl",
+    "list the archive of /state: /state/archive/20260101T000000Z.jsonl is not a regular file";
+    "archived journal"
+)]
+fn a_link_in_the_state_directory_is_refused_naming_it(link: &str, target: &str, expected: &str) {
+    let fs = MemFs::new();
+    fs.put("/state/events.jsonl", "live\n");
+    fs.create_dir(Path::new("/state/archive")).unwrap();
+    fs.put("/elsewhere/events.jsonl", "elsewhere\n");
+    fs.put("/elsewhere/state.json", "{}");
+    fs.put("/elsewhere/archive/20260101T000000Z.jsonl", "elsewhere\n");
+    fs.symlink(target, link);
+    let error = copy_in(&fs, Path::new("/state"), Path::new("/copy")).unwrap_err();
+    let chain = togi_machine::error_chain(&error);
+    assert!(chain.starts_with(expected), "{chain}");
+}
+
+#[test]
+fn real_fs_a_symlinked_archive_entry_fails_naming_it() {
     let root = tempfile::tempdir().unwrap();
     let src = root.path().join("state");
     std::fs::create_dir_all(src.join("archive")).unwrap();
     std::fs::write(src.join("events.jsonl"), "live\n").unwrap();
     std::fs::write(root.path().join("elsewhere"), "archived\n").unwrap();
+    let name = "20260101T000000Z.jsonl";
     std::os::unix::fs::symlink(
         root.path().join("elsewhere"),
         src.join("archive").join(name),
