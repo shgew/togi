@@ -1,25 +1,4 @@
-use std::num::NonZeroU32;
-
-use togi_journal::{Decision, DefectDirection, EventKind};
-
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct DefectId(pub NonZeroU32);
-
-impl DefectId {
-    pub const fn new(id: u32) -> Option<Self> {
-        match NonZeroU32::new(id) {
-            Some(id) => Some(Self(id)),
-            None => None,
-        }
-    }
-
-    pub const fn get(self) -> u32 {
-        self.0.get()
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct FixStamp(pub u32);
+use togi_journal::{Decision, DefectDirection, DefectId, EventKind, FixStamp};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Clause {
@@ -55,7 +34,7 @@ pub const fn is_ordered(registry: &[Entry]) -> bool {
 
 pub const fn fixed_stamp(registry: &[Entry]) -> FixStamp {
     match registry.last() {
-        Some(entry) => FixStamp(entry.id.get()),
-        None => FixStamp(0),
+        Some(entry) => FixStamp::through(entry.id),
+        None => FixStamp::none(),
     }
 }

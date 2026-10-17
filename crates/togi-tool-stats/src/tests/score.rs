@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use togi_journal::{
-    Build, DeadEnd, DeadEndCondition, Event, SCHEMA, SessionBaseline, ShutdownReason,
+    Build, DeadEnd, DeadEndCondition, Event, FixStamp, SCHEMA, SessionBaseline, ShutdownReason,
 };
 use togi_machine::{ObservedOffset, PerCore};
 use togi_tool_forecast::{Anchor, Outcome, Record, Run, Session, Split, Status};
@@ -17,7 +17,7 @@ fn stamped(rev: Option<&str>) -> Build {
         rev: rev.map(str::to_owned),
         ruleset: RULESET,
         schema: SCHEMA,
-        fixes: 0,
+        fixes: FixStamp::none(),
         evidence: EVIDENCE_EPOCH,
     }
 }

@@ -1,10 +1,9 @@
 //! What the journal's defects ask of the run: the findings it records, the questions it puts to the person at the
 //! terminal and the resets an answer queues.
 
-use togi_defect::DefectId;
 use togi_journal::{
     CommandReset, DeadEnd, DeadEndCondition, DefectAnswer, DefectAnswered, DefectDirection,
-    DefectFound, Payload, ResetTarget, Seq,
+    DefectFound, DefectId, Payload, ResetTarget, Seq,
 };
 use togi_machine::CoreSet;
 
@@ -23,7 +22,7 @@ impl Session<'_> {
             .collect();
         for (entry, cores, decisions) in found {
             let payload = DefectFound {
-                id: entry.id.0,
+                id: entry.id,
                 title: entry.title.to_owned(),
                 detail: entry.detail.to_owned(),
                 pr: entry.pr,
@@ -72,8 +71,7 @@ impl Session<'_> {
                 condition: DeadEndCondition::Defect,
                 core: None,
                 detail: format!(
-                    "defect {} ({title}) affected cores {}; run in a terminal to decide whether to reset them",
-                    id.get(),
+                    "defect {id} ({title}) affected cores {}; run in a terminal to decide whether to reset them",
                     core_list(cores)
                 ),
                 action: None,
@@ -86,14 +84,11 @@ impl Session<'_> {
                 return Ok(Some(self.signal_stop()));
             }
             Err(PromptError::Io(source)) => {
-                return Err(SessionError::Prompt {
-                    defect: id.get(),
-                    source,
-                });
+                return Err(SessionError::Prompt { defect: id, source });
             }
         };
         let answered = DefectAnswered {
-            id: id.0,
+            id,
             cores,
             answer: if reset {
                 DefectAnswer::Yes

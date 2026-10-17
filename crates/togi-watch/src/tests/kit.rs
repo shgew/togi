@@ -7,7 +7,7 @@ use std::num::NonZeroU32;
 use jiff::Timestamp;
 use togi_config::Config;
 use togi_journal::{
-    Activity, Build, ConfigLoaded, CoreTransition, Event, Outcome, Payload, SCHEMA, Seq,
+    Activity, Build, ConfigLoaded, CoreTransition, Event, FixStamp, Outcome, Payload, SCHEMA, Seq,
     SessionStart, SessionWarning, Stamp, State as JournalState, TrialEnd, TrialId, TrialIntent,
 };
 use togi_machine::{
@@ -45,7 +45,7 @@ pub(crate) fn build() -> Build {
         rev: None,
         ruleset: togi_tuner::RULESET,
         schema: SCHEMA,
-        fixes: 0,
+        fixes: FixStamp::none(),
         evidence: togi_tuner::EVIDENCE_EPOCH,
     }
 }

@@ -17,7 +17,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Args, Parser, Subcommand};
-use togi_journal::{Build, SCHEMA};
+use togi_journal::{Build, FixStamp, SCHEMA};
 
 use crate::log::Log;
 
@@ -122,7 +122,7 @@ fn build() -> Build {
         rev: (!rev.is_empty()).then(|| rev.to_owned()),
         ruleset: togi_tuner::RULESET,
         schema: SCHEMA,
-        fixes: 0,
+        fixes: FixStamp::none(),
         evidence: togi_tuner::EVIDENCE_EPOCH,
     }
 }
