@@ -2278,6 +2278,11 @@ fn singleton_hunt(origin: i64, duration: u32) -> Journal {
     j.loc_set_core(2, origin);
     j.profile_change(&[-30, -30, origin, -30]);
     j.loc_back_off(&top0());
+    // A two-CCD cycle gives each CCD one quarter of the configured all-core duration.
+    j.load(&config(&format!(
+        r#"{{"durations":{{"checking_all_core_s":{}}}}}"#,
+        duration * 4
+    )));
     let plan = j.manual(
         Regime::R7,
         0,
@@ -2455,16 +2460,21 @@ fn singleton_anchor_evidence_keeps_the_exact_class_and_backend() {
             crate::testkit::MPRIME_OLD,
             crate::testkit::YCRUNCHER_OLD,
         ))));
-        let plan = j.manual(
-            Regime::R7,
-            workload,
-            Load::Many(set(loaded)),
-            Condition::Together,
-            &[-30, -30, 0, 0],
-            duration,
-        );
+        let backend = workloads(Regime::R7)[workload].backend;
+        let old = match backend {
+            togi_machine::Backend::Mprime => crate::testkit::MPRIME_OLD,
+            togi_machine::Backend::Ycruncher => crate::testkit::YCRUNCHER_OLD,
+        };
+        // These class variants need not be schedulable parts of the current cycle.
         for _ in 0..5 {
-            j.loc_finish(&plan, Outcome::Pass, &R7Report::default());
+            j.carry_under(
+                SESSION,
+                (Regime::R7, workload, loaded, duration),
+                Condition::Together,
+                &[-30, -30, 0, 0],
+                Outcome::Pass,
+                Some((backend, old)),
+            );
         }
         if changed_backend {
             j.load(&loc_config(Some((
