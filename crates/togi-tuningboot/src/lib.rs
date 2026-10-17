@@ -177,7 +177,7 @@ impl ReasonText {
     /// characters become `?`, and the text is cut to 160 bytes and trimmed. `None` if nothing is
     /// left.
     pub fn sanitize(text: &str) -> Option<Self> {
-        let cleaned: String = text
+        let mut cleaned: String = text
             .chars()
             .take(MAX_REASON_BYTES)
             .map(|c| match c {
@@ -186,8 +186,10 @@ impl ReasonText {
                 _ => '?',
             })
             .collect();
-        let trimmed = cleaned.trim_matches(' ');
-        (!trimmed.is_empty()).then(|| Self(trimmed.to_owned()))
+        cleaned.truncate(cleaned.trim_end_matches(' ').len());
+        let leading = cleaned.len() - cleaned.trim_start_matches(' ').len();
+        cleaned.drain(..leading);
+        (!cleaned.is_empty()).then_some(Self(cleaned))
     }
 
     pub fn as_str(&self) -> &str {
