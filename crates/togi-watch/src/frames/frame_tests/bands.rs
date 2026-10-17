@@ -544,3 +544,65 @@ fn a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the
         }
     }
 }
+
+fn header_row(buf: &Buffer, screen: &Screen) -> String {
+    rows_of(buf)[usize::from(Layout::new(screen).header.y)]
+        .trim()
+        .to_owned()
+}
+
+/// The minutes in the `XhYYm` that follows `label` on the header row.
+fn header_minutes(row: &str, label: &str) -> Option<u64> {
+    let value = row.split_once(label)?.1.split_whitespace().next()?;
+    let (hours, minutes) = value.split_once('h')?;
+    Some(hours.parse::<u64>().ok()? * 60 + minutes.trim_end_matches('m').parse::<u64>().ok()?)
+}
+
+#[test]
+fn the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame() {
+    for scenario in [
+        Scenario::Search,
+        Scenario::Idle,
+        Scenario::Stopped,
+        Scenario::Deadend,
+    ] {
+        let fx = Fixture::scenario(scenario);
+        for (width, height) in ALL_SIZES {
+            let screen = main_screen(width, height);
+            let (buf, _) = fx.draw(&screen, fx.now);
+            let head = header_row(&buf, &screen);
+            let long = head.contains("tuning ") && head.contains("session ");
+            let short = head.contains("tune ") && head.contains("age ");
+            assert!(
+                long || short,
+                "{scenario} {width}x{height} lacks a clock: {head:?}"
+            );
+            assert!(
+                width < 160 || long,
+                "{scenario} {width}x{height} abbreviates a clock it has room for: {head:?}"
+            );
+            let (tuning, age) = if long {
+                ("tuning ", "session ")
+            } else {
+                ("tune ", "age ")
+            };
+            let (tuned, aged) = (
+                header_minutes(&head, tuning).expect("the tuning time"),
+                header_minutes(&head, age).expect("the session age"),
+            );
+            assert!(tuned <= aged, "{scenario} {width}x{height}: {head:?}");
+            if matches!(scenario, Scenario::Search) {
+                continue;
+            }
+            // The wall clock and the failure's age move with the time; the two durations hold still while the
+            // frame does.
+            let (after, _) = fx.draw(&screen, later(fx.now, 7 * 3600));
+            let after = header_row(&after, &screen);
+            assert_eq!(
+                (header_minutes(&after, tuning), header_minutes(&after, age)),
+                (Some(tuned), Some(aged)),
+                "{scenario} {width}x{height}: a frozen frame's clocks moved: {after:?}"
+            );
+        }
+    }
+}

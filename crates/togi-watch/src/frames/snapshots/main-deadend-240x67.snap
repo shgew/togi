@@ -2,7 +2,7 @@
 source: crates/togi-watch/src/frames/snapshots.rs
 expression: body
 ---
-│  togi   09:48:45   session 9h48m   32 failures · 7 crashes   last observed failure 09:48, a moment ago
+│  togi   09:48:45   tuning 9h48m   session 9h48m   32 failures · 7 crashes   last observed failure 09:48, a moment ago
 │
 │  ■ SOLO LIMITS  16/16  ───  ○ PHASE 1  ───  ○ PHASE 2  ───  CLEAN CYCLES 0  ───  ○ CYCLE 1  paused at step 1 of 18, part 1
 │

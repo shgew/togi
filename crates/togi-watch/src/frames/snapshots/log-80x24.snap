@@ -2,7 +2,7 @@
 source: crates/togi-watch/src/frames/snapshots.rs
 expression: body
 ---
-│ togi   23:32:41   session 47h32m   57 failures · 12 crashes
+│ togi   23:32:41   tuning 47h32m   session 47h32m   57 failures · 12 crashes
 │ ■ SOLO ─ ■ P1 ─ ■ P2 ─ CLEAN 1 ─ ■ CYCLE 2
 │
 │ │ 23:13:01  trial intent          trial 1362 core 07 offset -29 R4...

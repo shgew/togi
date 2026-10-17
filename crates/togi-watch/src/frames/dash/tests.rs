@@ -5,8 +5,10 @@ use jiff::tz::{TimeZone, offset};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::text::Line;
-use togi_journal::ShutdownReason;
-use togi_machine::{CcdId, Condition, CoreSet, ObservedOffset, PerCore, Regime, WorkloadId};
+use togi_journal::{DeadEndCondition, Event, Shutdown, ShutdownReason, Stamp};
+use togi_machine::{
+    BootId, CcdId, Condition, CoreSet, ObservedOffset, PerCore, Regime, WorkloadId,
+};
 use togi_tuner::{
     CombinationId, CyclePlan, CycleStep, HuntPlan, Limit, PhaseNo, PhasePlan, R7CoreStatus,
     Reached, RerunPlan,
@@ -25,11 +27,12 @@ use crate::frames::notes::top_note;
 use crate::frames::scene::Scene;
 use crate::frames::testing::rows_of;
 use crate::model::{
-    CoreState, CoreView, Count, CycleView, HuntCause, HuntFacts, HuntView, IdleHold, Model,
-    SessionView, Snapshot, StopView, TrialView,
+    CoreState, CoreView, Count, CycleView, DeadEndView, HuntCause, HuntFacts, HuntView, IdleHold,
+    Model, SessionView, Snapshot, StopView, TrialView,
 };
 use crate::screen::Colours;
-use crate::tests::kit::{core, off, seq};
+use crate::tests::kit::{config_loaded, core, off, seq};
+use crate::tuning::TuningClock;
 
 fn at(text: &str) -> Timestamp {
     text.parse().expect("a timestamp")
@@ -144,13 +147,121 @@ fn the_header_drops_clauses_in_order_and_keeps_the_counts() {
         full.contains("last observed failure 10:20, 2h10m ago"),
         "{full}"
     );
-    let narrow = header_text(&s, now, 46, false);
+    let narrow = header_text(&s, now, 69, false);
     assert!(narrow.contains("3 failures · 1 crash"), "{narrow}");
+    assert!(narrow.contains("tuning 0h00m"), "{narrow}");
+    assert!(narrow.contains("session 2h30m"), "{narrow}");
     assert!(!narrow.contains("last observed"), "{narrow}");
+    let tight = header_text(&s, now, 59, false);
+    assert!(tight.contains("3 fail · 1 crash"), "{tight}");
+    assert!(
+        tight.contains("tune 0h00m") && tight.contains("age 2h30m"),
+        "{tight}"
+    );
     for width in 18..60 {
         let line = header(&scene(&s, now, &TimeZone::UTC, Colours::None), width, false);
         assert!(line_width(&line) <= width, "{width}: {}", plain(&line));
     }
+}
+
+fn tuning_over(runs: &[(&str, Option<&str>)]) -> TuningClock {
+    let event = |time: &str, payload| {
+        Event::new(
+            seq(1),
+            Stamp {
+                time: at(time),
+                mono: None,
+            },
+            BootId::from("boot".to_owned()),
+            Vec::new(),
+            payload,
+        )
+    };
+    let mut clock = TuningClock::default();
+    for (start, end) in runs {
+        clock.fold(&event(start, config_loaded()));
+        if let Some(end) = end {
+            let stop = Shutdown {
+                reason: ShutdownReason::Signal,
+                kernel_cursor: None,
+                kernel_error: None,
+                cycles: None,
+            };
+            clock.fold(&event(end, stop.into()));
+        }
+    }
+    clock
+}
+
+#[test]
+fn the_header_shows_the_tuning_time_beside_the_session_age_and_freezes_both() {
+    let model = Model::new();
+    let start = at("2026-10-12T10:00:00Z");
+    let view = session(start);
+    let clock = tuning_over(&[
+        ("2026-10-12T10:00:00Z", Some("2026-10-12T11:00:00Z")),
+        ("2026-10-12T12:00:00Z", None),
+    ]);
+    let mut s = model.snapshot();
+    s.session = Some(&view);
+    s.tuning = &clock;
+    s.failures = 3;
+    s.crashes = 1;
+    s.last_failure = Some(at("2026-10-12T10:20:00Z"));
+    let now = at("2026-10-12T12:20:00Z");
+    for width in [160, 80] {
+        let text = header_text(&s, now, width, false);
+        let tuning = text.find("tuning 1h20m");
+        let age = text.find("session 2h20m");
+        assert!(tuning.is_some() && tuning < age, "{width}: {text}");
+    }
+    let wide = header_text(&s, now, 160, false);
+    assert!(
+        wide.contains("last observed failure 10:20, 2h00m ago"),
+        "{wide}"
+    );
+    for width in 18..=160 {
+        let line = header(&scene(&s, now, &TimeZone::UTC, Colours::None), width, false);
+        assert!(line_width(&line) <= width, "{width}: {}", plain(&line));
+    }
+
+    let later = at("2026-10-12T14:00:00Z");
+    let stop = StopView {
+        at: at("2026-10-12T12:05:00Z"),
+        reason: ShutdownReason::Signal,
+        saved: true,
+    };
+    let mut stopped = s;
+    stopped.stopped = Some(&stop);
+    let text = header_text(&stopped, later, 160, false);
+    assert!(
+        text.contains("tuning 1h05m") && text.contains("session 2h05m"),
+        "{text}"
+    );
+
+    let dead = DeadEndView {
+        at: at("2026-10-12T12:10:00Z"),
+        condition: DeadEndCondition::Smu,
+        detail: String::new(),
+    };
+    let mut ended = s;
+    ended.dead_end = Some(&dead);
+    let text = header_text(&ended, later, 160, false);
+    assert!(
+        text.contains("tuning 1h10m") && text.contains("session 2h10m"),
+        "{text}"
+    );
+
+    let running = trial(Regime::R6, Some(at("2026-10-12T12:15:00Z")), 900);
+    let mut idle = s;
+    idle.trial = Some(&running);
+    let zone = TimeZone::UTC;
+    let held = scene(&idle, later, &zone, Colours::None);
+    let text = plain(&header(&held, 160, false));
+    assert!(
+        text.contains("tuning 1h15m") && text.contains("session 2h15m"),
+        "{text}"
+    );
 }
 
 #[test]

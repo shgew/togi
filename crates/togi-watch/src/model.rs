@@ -27,6 +27,7 @@ use crate::derive::Derived;
 use crate::facts::Facts;
 use crate::history::{Entry, LOG_LIMIT, LogEntry};
 use crate::screen::Log;
+use crate::tuning::TuningClock;
 
 /// Why the model cannot stand for the journal: one of the two folds refused an event.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
@@ -468,6 +469,8 @@ pub struct Snapshot<'a> {
     pub failures: u32,
     /// Boots that ended without a clean shutdown.
     pub crashes: u32,
+    /// The time spent inside runs, crash reboots included, the time between runs excluded.
+    pub tuning: &'a TuningClock,
     /// The last failure that changed a decision; skips are excluded.
     pub last_failure: Option<Timestamp>,
     /// Clean cycles counted for the current profile.
@@ -744,6 +747,7 @@ impl Model {
             session: facts.session.as_ref().filter(|_| live),
             failures: facts.failures,
             crashes: facts.crashes,
+            tuning: &facts.tuning,
             last_failure: facts.last_failure,
             clean_cycles: projection.clean_cycles,
             cores: &derived.cores,

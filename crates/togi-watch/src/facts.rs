@@ -14,6 +14,7 @@ use togi_tuner::{CombinationId, State as TunerState, TrialHistory};
 
 use crate::history::{History, LOG_LIMIT, LogEntry};
 use crate::model::{Count, DeadEndView, HuntShape, SessionView, StopView, TrialEndView};
+use crate::tuning::TuningClock;
 use crate::words::{tag_word, words};
 
 #[derive(Debug, Clone)]
@@ -94,6 +95,7 @@ pub(crate) struct Facts {
     pub(crate) stop: Option<StopView>,
     pub(crate) dead_end: Option<DeadEndView>,
     pub(crate) history: History,
+    pub(crate) tuning: TuningClock,
     pub(crate) log: Vec<LogEntry>,
     pub(crate) log_total: usize,
 }
@@ -113,6 +115,7 @@ impl Facts {
     /// Takes one event, after both states took it. The tuner state has folded `event`, so a trial end finds its
     /// requirement in [`TunerState::trial_history`].
     pub(crate) fn fold(&mut self, event: &Event, journal: &JournalState, tuner: &TunerState) {
+        self.tuning.fold(event);
         self.clears_combination(event);
         if let Some(current) = &mut self.current {
             if !event.boot.as_str().is_empty()
