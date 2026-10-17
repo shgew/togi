@@ -4,15 +4,17 @@
 //! The one exception to intent before write, so it is gated three ways. A stale trial scope may still hold a
 //! workload until a sweep succeeded, the SMU may not be what togi expects until it was validated, and a workload of
 //! this run may still run until teardown is confirmed. Without all three nothing touches the SMU. In a session only
-//! a successful sweep makes a [`SweepCleared`] for `Access::gate`. `togi emergency-stop` has no session: it
-//! validates the SMU and sweeps itself, and its proofs of both go straight to [`zero_and_read_back`]. The hardware
-//! SMU adds one refusal to both: no zero is written before the core slots are mapped.
+//! a successful sweep makes a [`SweepCleared`], which only the swept [`Lifecycle`] holds for `Access::gate`. `togi
+//! emergency-stop` has no session: it validates the SMU and sweeps itself, and its proofs of both go straight to
+//! [`zero_and_read_back`]. The hardware SMU adds one refusal to both: no zero is written before the core slots are
+//! mapped.
 
 use std::io::{self, Write};
 
 use togi_machine::{CoreId, CoreSet, Error, ObservedOffset, Smu, SmuValidated, Stopped, Swept};
 
 use crate::error::JournalFailure;
+use crate::session::{Fault, Lifecycle};
 
 /// A stale-scope sweep of this run succeeded.
 #[derive(Clone, Copy, Debug)]
@@ -45,14 +47,23 @@ pub(crate) struct Access<'a> {
 }
 
 impl<'a> Access<'a> {
+    /// The right the run's `lifecycle` and SMU validation give: a fault withholds it first, then a missing sweep,
+    /// validation or proof that no workload runs.
     pub(crate) fn gate(
-        sweep: Option<SweepCleared>,
+        lifecycle: &'a Lifecycle,
         validated: Option<SmuValidated>,
-        stopped: Option<&'a Stopped>,
     ) -> Result<Self, Withheld> {
-        sweep.ok_or(Withheld::NoSweep)?;
+        let swept = match lifecycle {
+            Lifecycle::Faulted(Fault::Crashed) => return Err(Withheld::Crashed),
+            Lifecycle::Faulted(Fault::Containment) => return Err(Withheld::TeardownUnconfirmed),
+            Lifecycle::Unswept => return Err(Withheld::NoSweep),
+            Lifecycle::Swept(swept) => swept,
+        };
         let validated = validated.ok_or(Withheld::NoValidation)?;
-        let stopped = stopped.ok_or(Withheld::TeardownUnconfirmed)?;
+        let stopped = swept
+            .stopped
+            .as_ref()
+            .ok_or(Withheld::TeardownUnconfirmed)?;
         Ok(Self { validated, stopped })
     }
 }
@@ -78,6 +89,7 @@ impl Readback {
 }
 
 #[derive(Debug)]
+#[must_use = "the zeroing may have failed or read back a nonzero offset, which has to be reported"]
 pub struct Zeroed {
     pub zero: Result<(), Error>,
     pub readbacks: Vec<Readback>,
@@ -110,6 +122,7 @@ pub enum Response {
 
 /// What the emergency did, and whether its report reached `report`.
 #[derive(Debug)]
+#[must_use = "what the emergency did to the SMU, and whether its report was written, has to be reported"]
 pub struct Outcome {
     pub response: Response,
     pub report: io::Result<()>,

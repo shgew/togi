@@ -35,7 +35,7 @@ impl Rig {
         apply(
             &mut self.appender,
             &mut *self.smu,
-            &self.stopped,
+            self.lifecycle.stopped().unwrap(),
             checked,
             &[],
         )
@@ -46,7 +46,7 @@ impl Rig {
         apply(
             &mut self.appender,
             &mut *self.smu,
-            &self.stopped,
+            self.lifecycle.stopped().unwrap(),
             checked,
             &[],
         )
@@ -61,7 +61,7 @@ impl Rig {
         apply_profile(
             &mut self.appender,
             &mut *self.smu,
-            &self.stopped,
+            self.lifecycle.stopped().unwrap(),
             &mut self.hardware,
             ProfileRequest {
                 target: &target,
@@ -448,7 +448,7 @@ fn a_failed_write_event_leaves_no_readback_and_hands_off_to_the_emergency() {
     assert_eq!(rig.hardware.slot(core(0)), Some(Slot::Unknown));
 
     let mut report = Vec::new();
-    let gate = Access::gate(Some(rig.sweep), Some(rig.validated), Some(&rig.stopped));
+    let gate = Access::gate(&rig.lifecycle, Some(rig.validated));
     let cores = rig.hardware.cores();
     let outcome = respond(&journal, gate, &mut *rig.smu, cores, &mut report);
     assert!(matches!(&outcome.response, Response::Zeroed(zeroed) if zeroed.is_clean()));
@@ -482,7 +482,7 @@ fn assert_unrecorded_smu_failure_hands_off(rig: &mut Rig, failure: WriteFailure,
     assert!(!events_before.contains(&"smu.error"));
 
     let mut report = Vec::new();
-    let gate = Access::gate(Some(rig.sweep), Some(rig.validated), Some(&rig.stopped));
+    let gate = Access::gate(&rig.lifecycle, Some(rig.validated));
     let cores = rig.hardware.cores();
     let outcome = respond(&journal, gate, &mut *rig.smu, cores, &mut report);
     assert!(matches!(&outcome.response, Response::Zeroed(zeroed) if zeroed.is_clean()));
