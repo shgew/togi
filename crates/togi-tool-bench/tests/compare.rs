@@ -10,7 +10,8 @@ mod common;
 use common::record;
 use togi_tool_bench::compare::{Pair, Verdict, compare, pairing, report};
 use togi_tool_bench::summary;
-use togi_tool_bench::{ModelCheck, Record, Split, Status, set_scenario_shares};
+use togi_tool_bench::{ModelCheck, Record, Status, set_scenario_shares};
+use togi_tool_forecast::Split;
 
 fn pair<'a>(candidate: &'a Record, baseline: &'a Record) -> Pair<'a> {
     Pair {

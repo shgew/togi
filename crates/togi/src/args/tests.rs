@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use clap::{Args, CommandFactory, Parser};
+use test_case::test_case;
 
 use crate::cli::config_after_command;
 
@@ -42,28 +43,12 @@ fn state_dir_defaults_to_the_spec_directory() {
     assert_eq!(DEFAULT_STATE_DIR, "/var/lib/togi");
 }
 
-#[test]
-fn state_dir_is_accepted_before_and_after_every_command() {
-    for args in [
-        ["--state-dir", "/s", "without-config"],
-        ["without-config", "--state-dir", "/s"],
-    ] {
-        assert_eq!(
-            parse(&args).unwrap().state_dir.state_dir,
-            Path::new("/s"),
-            "{args:?}"
-        );
-    }
-    for args in [
-        ["--state-dir", "/s", "with-config"],
-        ["with-config", "--state-dir", "/s"],
-    ] {
-        assert_eq!(
-            parse(&args).unwrap().state_dir.state_dir,
-            Path::new("/s"),
-            "{args:?}"
-        );
-    }
+#[test_case(&["--state-dir", "/s", "without-config"] ; "before a command without config")]
+#[test_case(&["without-config", "--state-dir", "/s"] ; "after a command without config")]
+#[test_case(&["--state-dir", "/s", "with-config"] ; "before a command with config")]
+#[test_case(&["with-config", "--state-dir", "/s"] ; "after a command with config")]
+fn state_dir_is_accepted_before_and_after_every_command(args: &[&str]) {
+    assert_eq!(parse(args).unwrap().state_dir.state_dir, Path::new("/s"));
 }
 
 #[test]
@@ -90,47 +75,31 @@ fn config_defaults_and_reports_whether_it_was_given() {
     );
 }
 
-#[test]
-fn config_is_rejected_where_it_is_not_attached() {
-    for args in [
-        &["without-config", "--config", "/c.json"][..],
-        &["--config", "/c.json", "without-config"][..],
-    ] {
-        let error = parse(args).unwrap_err();
-        assert_eq!(
-            error.kind(),
-            clap::error::ErrorKind::UnknownArgument,
-            "{args:?}"
-        );
-    }
+#[test_case(&["without-config", "--config", "/c.json"] ; "after the command")]
+#[test_case(&["--config", "/c.json", "without-config"] ; "before the command")]
+fn config_is_rejected_where_it_is_not_attached(args: &[&str]) {
+    let error = parse(args).unwrap_err();
+    assert_eq!(error.kind(), clap::error::ErrorKind::UnknownArgument);
 }
 
-#[test]
-fn config_is_accepted_before_and_after_the_command_name_it_is_attached_to() {
-    for args in [
-        &["--config", "/c.json", "with-config"][..],
-        &["--config=/c.json", "with-config"],
-        &["with-config", "--config", "/c.json"],
-        &["with-config", "--config=/c.json"],
-        &["--state-dir", "/s", "--config", "/c.json", "with-config"],
-    ] {
-        let normalized = config_after_command(
-            std::iter::once("togi")
-                .chain(args.iter().copied())
-                .map(Into::into)
-                .collect(),
-        );
-        let top = Top::try_parse_from(normalized).unwrap();
-        let Sub::WithConfig(with) = top.command else {
-            panic!("wrong command")
-        };
-        assert!(with.config.is_explicit(), "{args:?}");
-        assert_eq!(
-            with.config.path(Path::new("/d.json")),
-            Path::new("/c.json"),
-            "{args:?}"
-        );
-    }
+#[test_case(&["--config", "/c.json", "with-config"] ; "before separate")]
+#[test_case(&["--config=/c.json", "with-config"] ; "before attached")]
+#[test_case(&["with-config", "--config", "/c.json"] ; "after separate")]
+#[test_case(&["with-config", "--config=/c.json"] ; "after attached")]
+#[test_case(&["--state-dir", "/s", "--config", "/c.json", "with-config"] ; "after a state dir")]
+fn config_is_accepted_before_and_after_the_command_name_it_is_attached_to(args: &[&str]) {
+    let normalized = config_after_command(
+        std::iter::once("togi")
+            .chain(args.iter().copied())
+            .map(Into::into)
+            .collect(),
+    );
+    let top = Top::try_parse_from(normalized).unwrap();
+    let Sub::WithConfig(with) = top.command else {
+        panic!("wrong command")
+    };
+    assert!(with.config.is_explicit());
+    assert_eq!(with.config.path(Path::new("/d.json")), Path::new("/c.json"));
 }
 
 #[test]

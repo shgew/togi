@@ -308,25 +308,30 @@ fn evidence_rejected(text: &str, message: &str) {
     assert!(got.contains(message), "{got}");
 }
 
+#[test_case(0.0 ; "zero")]
+#[test_case(1.0 ; "one")]
+#[test_case(-0.0 ; "negative zero")]
+#[test_case(-1.0 ; "negative one")]
+#[test_case(2.0 ; "two")]
+#[test_case(f64::NAN ; "nan")]
+#[test_case(f64::INFINITY ; "infinity")]
+#[test_case(f64::NEG_INFINITY ; "negative infinity")]
+fn probability_constructor_rejects_endpoints_and_non_finite(value: f64) {
+    assert!(Probability::new(value).is_err(), "{value}");
+}
+
 #[test]
-fn probability_constructor_rejects_endpoints_and_non_finite() {
-    for value in [
-        0.0,
-        1.0,
-        -0.0,
-        -1.0,
-        2.0,
-        f64::NAN,
-        f64::INFINITY,
-        f64::NEG_INFINITY,
-    ] {
-        assert!(Probability::new(value).is_err(), "{value}");
-    }
-    for value in [f64::MIN_POSITIVE, 1e-300, 0.5, 1.0 - f64::EPSILON / 2.0] {
-        assert_eq!(Probability::new(value).unwrap().get(), value);
-        assert_eq!(Probability::try_from(value), Probability::new(value));
-    }
+fn probability_conversion_rejects_nan() {
     assert!(Probability::try_from(f64::NAN).is_err());
+}
+
+#[test_case(f64::MIN_POSITIVE ; "smallest normal")]
+#[test_case(1e-300 ; "tiny")]
+#[test_case(0.5 ; "half")]
+#[test_case(1.0 - f64::EPSILON / 2.0 ; "just below one")]
+fn probability_constructor_accepts_the_open_interval(value: f64) {
+    assert_eq!(Probability::new(value).unwrap().get(), value);
+    assert_eq!(Probability::try_from(value), Probability::new(value));
 }
 
 #[test_case(0.05, 0.5, 5 ; "default")]
@@ -401,62 +406,84 @@ fn cycles_rejected(text: &str, message: &str) {
     assert!(got.contains(message), "{got}");
 }
 
-#[test_case("3", -10 ; "single digit")]
-#[test_case("0", 0 ; "zero core")]
-#[test_case("10", -50 ; "two digits at the floor")]
-#[test_case("15", -1 ; "last core")]
-fn core_keys_accepted_in_both_tables(key: &str, value: i64) {
-    for table in ["start_offsets", "candidate_solo_limits"] {
-        let config = parse(&json!({table: {key: value}}).to_string());
-        let (id, over) = config.overrides().next().unwrap();
-        assert_eq!(id.to_string(), key);
-        assert_eq!(over.offset().get(), value);
-    }
+const START: &str = "start_offsets";
+const SOLO: &str = "candidate_solo_limits";
+
+#[test_case(START, "3", -10 ; "start offsets single digit")]
+#[test_case(START, "0", 0 ; "start offsets zero core")]
+#[test_case(START, "10", -50 ; "start offsets two digits at the floor")]
+#[test_case(START, "15", -1 ; "start offsets last core")]
+#[test_case(SOLO, "3", -10 ; "solo limits single digit")]
+#[test_case(SOLO, "0", 0 ; "solo limits zero core")]
+#[test_case(SOLO, "10", -50 ; "solo limits two digits at the floor")]
+#[test_case(SOLO, "15", -1 ; "solo limits last core")]
+fn core_keys_accepted_in_both_tables(table: &str, key: &str, value: i64) {
+    let config = parse(&json!({table: {key: value}}).to_string());
+    let (id, over) = config.overrides().next().unwrap();
+    assert_eq!(id.to_string(), key);
+    assert_eq!(over.offset().get(), value);
 }
 
-#[test_case("03" ; "leading zero")]
-#[test_case("00" ; "double zero")]
-#[test_case("+3" ; "plus sign")]
-#[test_case("-1" ; "negative")]
-#[test_case("-0" ; "negative zero")]
-#[test_case(" 3" ; "leading space")]
-#[test_case("3 " ; "trailing space")]
-#[test_case("" ; "empty key")]
-#[test_case("x" ; "letters")]
-#[test_case("3.0" ; "decimal point")]
-#[test_case("1e1" ; "exponent")]
-#[test_case("0x3" ; "hex")]
-#[test_case("٣" ; "non-ascii digit")]
-#[test_case("99999999999999999999" ; "beyond i64")]
-fn non_canonical_core_keys_rejected(key: &str) {
-    for table in ["start_offsets", "candidate_solo_limits"] {
-        let err = Config::parse(&json!({table: {key: -1}}).to_string()).unwrap_err();
-        assert!(matches!(err, ConfigError::CoreKey { .. }), "{key:?}: {err}");
-    }
+#[test_case(START, "03" ; "start offsets leading zero")]
+#[test_case(START, "00" ; "start offsets double zero")]
+#[test_case(START, "+3" ; "start offsets plus sign")]
+#[test_case(START, "-1" ; "start offsets negative")]
+#[test_case(START, "-0" ; "start offsets negative zero")]
+#[test_case(START, " 3" ; "start offsets leading space")]
+#[test_case(START, "3 " ; "start offsets trailing space")]
+#[test_case(START, "" ; "start offsets empty key")]
+#[test_case(START, "x" ; "start offsets letters")]
+#[test_case(START, "3.0" ; "start offsets decimal point")]
+#[test_case(START, "1e1" ; "start offsets exponent")]
+#[test_case(START, "0x3" ; "start offsets hex")]
+#[test_case(START, "٣" ; "start offsets non-ascii digit")]
+#[test_case(START, "99999999999999999999" ; "start offsets beyond i64")]
+#[test_case(SOLO, "03" ; "solo limits leading zero")]
+#[test_case(SOLO, "00" ; "solo limits double zero")]
+#[test_case(SOLO, "+3" ; "solo limits plus sign")]
+#[test_case(SOLO, "-1" ; "solo limits negative")]
+#[test_case(SOLO, "-0" ; "solo limits negative zero")]
+#[test_case(SOLO, " 3" ; "solo limits leading space")]
+#[test_case(SOLO, "3 " ; "solo limits trailing space")]
+#[test_case(SOLO, "" ; "solo limits empty key")]
+#[test_case(SOLO, "x" ; "solo limits letters")]
+#[test_case(SOLO, "3.0" ; "solo limits decimal point")]
+#[test_case(SOLO, "1e1" ; "solo limits exponent")]
+#[test_case(SOLO, "0x3" ; "solo limits hex")]
+#[test_case(SOLO, "٣" ; "solo limits non-ascii digit")]
+#[test_case(SOLO, "99999999999999999999" ; "solo limits beyond i64")]
+fn non_canonical_core_keys_rejected(table: &str, key: &str) {
+    let err = Config::parse(&json!({table: {key: -1}}).to_string()).unwrap_err();
+    assert!(matches!(err, ConfigError::CoreKey { .. }), "{key:?}: {err}");
 }
 
-#[test_case("16" ; "first beyond")]
-#[test_case("99" ; "two digits beyond")]
-#[test_case("255" ; "u8 edge")]
-#[test_case("256" ; "past u8")]
-fn core_ids_beyond_fifteen_rejected(key: &str) {
-    for table in ["start_offsets", "candidate_solo_limits"] {
-        let err = Config::parse(&json!({table: {key: -1}}).to_string()).unwrap_err();
-        assert!(matches!(err, ConfigError::Core { .. }), "{key:?}: {err}");
-    }
+#[test_case(START, "16" ; "start offsets first beyond")]
+#[test_case(START, "99" ; "start offsets two digits beyond")]
+#[test_case(START, "255" ; "start offsets u8 edge")]
+#[test_case(START, "256" ; "start offsets past u8")]
+#[test_case(SOLO, "16" ; "solo limits first beyond")]
+#[test_case(SOLO, "99" ; "solo limits two digits beyond")]
+#[test_case(SOLO, "255" ; "solo limits u8 edge")]
+#[test_case(SOLO, "256" ; "solo limits past u8")]
+fn core_ids_beyond_fifteen_rejected(table: &str, key: &str) {
+    let err = Config::parse(&json!({table: {key: -1}}).to_string()).unwrap_err();
+    assert!(matches!(err, ConfigError::Core { .. }), "{key:?}: {err}");
 }
 
-#[test_case(1 ; "positive")]
-#[test_case(50 ; "far positive")]
-#[test_case(-51 ; "below floor")]
-#[test_case(-1000 ; "far below floor")]
-#[test_case(i64::MIN ; "minimum")]
-fn offsets_out_of_range_rejected(value: i64) {
-    for table in ["start_offsets", "candidate_solo_limits"] {
-        let err = Config::parse(&json!({table: {"3": value}}).to_string()).unwrap_err();
-        assert!(matches!(err, ConfigError::Offset { .. }), "{value}: {err}");
-        assert!(err.to_string().contains(table), "{err}");
-    }
+#[test_case(START, 1 ; "start offsets positive")]
+#[test_case(START, 50 ; "start offsets far positive")]
+#[test_case(START, -51 ; "start offsets below floor")]
+#[test_case(START, -1000 ; "start offsets far below floor")]
+#[test_case(START, i64::MIN ; "start offsets minimum")]
+#[test_case(SOLO, 1 ; "solo limits positive")]
+#[test_case(SOLO, 50 ; "solo limits far positive")]
+#[test_case(SOLO, -51 ; "solo limits below floor")]
+#[test_case(SOLO, -1000 ; "solo limits far below floor")]
+#[test_case(SOLO, i64::MIN ; "solo limits minimum")]
+fn offsets_out_of_range_rejected(table: &str, value: i64) {
+    let err = Config::parse(&json!({table: {"3": value}}).to_string()).unwrap_err();
+    assert!(matches!(err, ConfigError::Offset { .. }), "{value}: {err}");
+    assert!(err.to_string().contains(table), "{err}");
 }
 
 #[test]
@@ -605,50 +632,52 @@ fn a_customised_snapshot_carries_every_effective_value() {
     );
 }
 
-#[test]
-fn a_snapshot_reads_back_to_the_same_configuration() {
-    for config in [Config::default(), customised()] {
-        let snapshot = config.snapshot();
-        assert_eq!(Config::from_snapshot(&snapshot).unwrap(), config);
-        let wire = serde_json::to_string(&snapshot).unwrap();
-        let decoded = serde_json::from_str::<ConfigSnapshot>(&wire).unwrap();
-        assert_eq!(decoded, snapshot);
-        assert_eq!(Config::from_snapshot(&decoded).unwrap(), config);
-    }
+#[test_case(&Config::default() ; "default")]
+#[test_case(&customised() ; "customised")]
+fn a_snapshot_reads_back_to_the_same_configuration(config: &Config) {
+    let snapshot = config.snapshot();
+    assert_eq!(&Config::from_snapshot(&snapshot).unwrap(), config);
+    let wire = serde_json::to_string(&snapshot).unwrap();
+    let decoded = serde_json::from_str::<ConfigSnapshot>(&wire).unwrap();
+    assert_eq!(decoded, snapshot);
+    assert_eq!(&Config::from_snapshot(&decoded).unwrap(), config);
 }
 
-#[test]
-fn a_snapshot_the_configuration_would_refuse_is_refused_when_read_back() {
-    let mut cases = Vec::new();
+#[test_case(|snapshot| snapshot.durations.search_trial_s = 0, "search_trial_s" ; "zero search trial")]
+#[test_case(
+    |snapshot| snapshot.durations.checking_all_core_s = 3,
+    "checking_all_core_s" ;
+    "short all-core check"
+)]
+#[test_case(|snapshot| snapshot.evidence.miss = 1.0, "miss" ; "certain miss")]
+#[test_case(|snapshot| snapshot.checking.cycle.clear(), "checking.cycle" ; "empty cycle")]
+#[test_case(
+    |snapshot| snapshot.dead_ends.stray_crashes_in_a_row = 101,
+    "stray_crashes_in_a_row" ;
+    "stray threshold above range"
+)]
+#[test_case(
+    |snapshot| snapshot.backends.mprime = Some("relative/path".into()),
+    "mprime" ;
+    "relative backend path"
+)]
+#[test_case(|snapshot| snapshot.backend_user = Some(String::new()), "backend_user" ; "empty backend user")]
+#[test_case(
+    |snapshot| {
+        snapshot.start_offsets.set(core(4), offset(-5));
+        snapshot.candidate_solo_limits.set(core(4), offset(-9));
+    },
+    "start_offsets.4" ;
+    "start offset below its solo limit"
+)]
+fn a_snapshot_the_configuration_would_refuse_is_refused_when_read_back(
+    corrupt: fn(&mut ConfigSnapshot),
+    needle: &str,
+) {
     let mut snapshot = Config::default().snapshot();
-    snapshot.durations.search_trial_s = 0;
-    cases.push(("search_trial_s", snapshot));
-    let mut snapshot = Config::default().snapshot();
-    snapshot.durations.checking_all_core_s = 3;
-    cases.push(("checking_all_core_s", snapshot));
-    let mut snapshot = Config::default().snapshot();
-    snapshot.evidence.miss = 1.0;
-    cases.push(("miss", snapshot));
-    let mut snapshot = Config::default().snapshot();
-    snapshot.checking.cycle.clear();
-    cases.push(("checking.cycle", snapshot));
-    let mut snapshot = Config::default().snapshot();
-    snapshot.dead_ends.stray_crashes_in_a_row = 101;
-    cases.push(("stray_crashes_in_a_row", snapshot));
-    let mut snapshot = Config::default().snapshot();
-    snapshot.backends.mprime = Some("relative/path".into());
-    cases.push(("mprime", snapshot));
-    let mut snapshot = Config::default().snapshot();
-    snapshot.backend_user = Some(String::new());
-    cases.push(("backend_user", snapshot));
-    let mut snapshot = Config::default().snapshot();
-    snapshot.start_offsets.set(core(4), offset(-5));
-    snapshot.candidate_solo_limits.set(core(4), offset(-9));
-    cases.push(("start_offsets.4", snapshot));
-    for (needle, snapshot) in cases {
-        let message = togi_machine::error_chain(&Config::from_snapshot(&snapshot).unwrap_err());
-        assert!(message.contains(needle), "{needle}: {message}");
-    }
+    corrupt(&mut snapshot);
+    let message = togi_machine::error_chain(&Config::from_snapshot(&snapshot).unwrap_err());
+    assert!(message.contains(needle), "{needle}: {message}");
 }
 
 #[test]
@@ -782,21 +811,34 @@ fn the_default_schedule_is_full_and_a_short_one_is_not() {
     assert!(!short.is_full());
 }
 
-#[test]
-fn a_schedule_is_full_at_each_regime_s_least_count_and_not_one_short() {
+fn least_schedule() -> Vec<Regime> {
     use Regime::{R1, R2, R3, R4, R5, R6, R7};
-    let least = vec![R1, R1, R1, R2, R2, R2, R3, R4, R5, R6, R7, R7, R7];
-    assert!(CheckingSchedule::new(least.clone()).unwrap().is_full());
-    let mut padded = least.clone();
+    vec![R1, R1, R1, R2, R2, R2, R3, R4, R5, R6, R7, R7, R7]
+}
+
+#[test]
+fn a_schedule_is_full_at_each_regime_s_least_count() {
+    assert!(CheckingSchedule::new(least_schedule()).unwrap().is_full());
+}
+
+#[test]
+fn a_schedule_stays_full_with_extra_steps() {
+    use Regime::{R3, R5, R7};
+    let mut padded = least_schedule();
     padded.extend([R3, R5, R7]);
     assert!(CheckingSchedule::new(padded).unwrap().is_full());
-    for regime in [R1, R2, R3, R4, R5, R6, R7] {
-        let at = least.iter().position(|&step| step == regime).unwrap();
-        let mut one_short = least.clone();
-        one_short.remove(at);
-        assert!(
-            !CheckingSchedule::new(one_short).unwrap().is_full(),
-            "{regime} one step short"
-        );
-    }
+}
+
+#[test_case(Regime::R1 ; "r1")]
+#[test_case(Regime::R2 ; "r2")]
+#[test_case(Regime::R3 ; "r3")]
+#[test_case(Regime::R4 ; "r4")]
+#[test_case(Regime::R5 ; "r5")]
+#[test_case(Regime::R6 ; "r6")]
+#[test_case(Regime::R7 ; "r7")]
+fn a_schedule_one_step_short_of_a_regime_is_not_full(regime: Regime) {
+    let mut one_short = least_schedule();
+    let at = one_short.iter().position(|&step| step == regime).unwrap();
+    one_short.remove(at);
+    assert!(!CheckingSchedule::new(one_short).unwrap().is_full());
 }

@@ -9,7 +9,9 @@ use jiff::Timestamp;
 use ratatui::backend::{Backend, ClearType, WindowSize};
 use ratatui::buffer::Cell;
 use ratatui::layout::{Position, Size};
-use togi_journal::{Build, Event, Payload, SCHEMA, SessionId, SessionStart, SessionWarning, Stamp};
+use togi_journal::{
+    Build, Event, FixStamp, Payload, SCHEMA, SessionId, SessionStart, SessionWarning, Stamp,
+};
 use togi_machine::{BootId, CcdId, CoreId, CoreInfo, CpuId};
 
 /// Runs fake asynchronous loops with deterministic time and no I/O reactor descriptors.
@@ -278,7 +280,7 @@ pub(super) fn session_start(seq: u64) -> Event {
                 rev: None,
                 ruleset: 1,
                 schema: SCHEMA,
-                fixes: 0,
+                fixes: FixStamp::none(),
                 evidence: 1,
             },
             session: "20231114T221320Z".parse::<SessionId>().unwrap(),

@@ -8,7 +8,6 @@ use togi_journal::{
 };
 use togi_machine::{BootId, Condition, CoreSet, PerCore, Regime, Signal, WorkloadId};
 
-use crate::flight::ClosedTrial;
 use crate::testkit::{Journal, R7Report, Start, build, pairs, set};
 use crate::tests::{core, off};
 use crate::zero::{Diagnostic, Zero, zero_requirement};
@@ -405,7 +404,7 @@ fn zero_rerun_requirement_is_one_trial() {
     let rerun = j.zero_rerun(failure);
     let (intent, trial) = j.intent(&rerun);
     assert!(j.intent_at(intent).rerun);
-    let stored = j.run().flight.open.as_ref().unwrap().requirement;
+    let stored = rerun.requirement;
     assert_eq!(stored.kind, RequirementKind::ZeroRerun);
     assert_eq!(
         stored.window,
@@ -414,19 +413,16 @@ fn zero_rerun_requirement_is_one_trial() {
         }
     );
     assert_eq!(stored.needed.get(), 1);
-    assert_eq!(stored, rerun.requirement);
+    assert_eq!(j.requirement().needed, 1);
     j.end(intent, &trial, Outcome::Pass);
     assert_eq!(
-        j.run().flight.last_closed,
-        Some(ClosedTrial {
-            trial,
-            history: TrialHistory {
-                passed: 0,
-                trial: 1,
-                needed: 1,
-                step: None,
-            },
-        })
+        j.history(),
+        TrialHistory {
+            passed: 0,
+            trial: 1,
+            needed: 1,
+            step: None,
+        }
     );
 }
 

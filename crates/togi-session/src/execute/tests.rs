@@ -364,7 +364,7 @@ fn a_crash_under_the_ranking_ends_the_run_and_cleanup_touches_nothing() {
 
     let error = run_action(&mut session, Action::ReadRanking).unwrap_err();
     assert!(error.is_crash(), "{error:?}");
-    assert_eq!(session.fault, Some(Fault::Crashed));
+    assert_eq!(session.lifecycle.fault(), Some(Fault::Crashed));
     assert_eq!(session.appender().journal().events().len(), before);
 
     let ended = session.close(Err(error));

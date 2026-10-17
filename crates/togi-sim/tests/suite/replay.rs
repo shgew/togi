@@ -309,8 +309,9 @@ fn a_replay_miss_runs_the_fitted_failure_model_exactly_as_if_there_were_no_repla
         let hit = run_against(Some(replay()), signal, &base);
         let model_only = run_against(None, signal, &base);
         assert_ne!(hit, model_only, "{signal}: the recorded pass is used");
-        assert!(
-            model_only.2 == (signal == Signal::Crash),
+        assert_eq!(
+            model_only.2,
+            signal == Signal::Crash,
             "{signal}: the model fails the trial"
         );
         assert!(
@@ -381,9 +382,9 @@ fn condition_and_phase_are_not_part_of_the_key() {
     assert!(replay.has_answer(&context("A"), &load, &offsets(&[-20, -21])));
 }
 
-type Edit = Box<dyn FnOnce(&mut ReplayFact)>;
+type Edit = fn(&mut ReplayFact);
 
-fn rejected(edit: impl FnOnce(&mut ReplayFact)) -> InvalidFact {
+fn rejected(edit: Edit) -> InvalidFact {
     let mut bad = fact(failure(Signal::Stall, 7));
     edit(&mut bad);
     Replay::new([fact(ReplayOutcome::Pass), bad]).expect_err("an invalid fact")
@@ -391,31 +392,25 @@ fn rejected(edit: impl FnOnce(&mut ReplayFact)) -> InvalidFact {
 
 #[test]
 fn facts_with_invalid_evidence_are_refused_with_their_index() {
-    let cases: Vec<(&str, FactProblem, Edit)> = vec![
-        (
-            "no context",
-            FactProblem::NoContext,
-            Box::new(|f| f.context = BiosContext::default()),
-        ),
-        (
-            "no cores",
-            FactProblem::NoCores,
-            Box::new(|f| f.cores = CoreSet::default()),
-        ),
+    let cases: [(&str, FactProblem, Edit); 5] = [
+        ("no context", FactProblem::NoContext, |f| {
+            f.context = BiosContext::default();
+        }),
+        ("no cores", FactProblem::NoCores, |f| {
+            f.cores = CoreSet::default();
+        }),
         (
             "a core outside the profile",
             FactProblem::CoreOutsideProfile { core: 2, cores: 2 },
-            Box::new(|f| f.cores = cores(&[0, 2])),
+            |f| f.cores = cores(&[0, 2]),
         ),
-        (
-            "no duration",
-            FactProblem::NoDuration,
-            Box::new(|f| f.duration = Duration::ZERO),
-        ),
+        ("no duration", FactProblem::NoDuration, |f| {
+            f.duration = Duration::ZERO;
+        }),
         (
             "an exposure beyond the duration",
             FactProblem::ExposureTooLong,
-            Box::new(|f| f.outcome = failure(Signal::Stall, 61)),
+            |f| f.outcome = failure(Signal::Stall, 61),
         ),
     ];
     for (name, problem, edit) in cases {

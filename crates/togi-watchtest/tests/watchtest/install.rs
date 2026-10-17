@@ -1,34 +1,31 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use test_case::test_case;
 use togi_journal::fs::Fs;
 use togi_journal::{MemFs, Payload, Recording};
 use togi_watchtest::{Error, InstallError, Scenario, install_with_fs};
 
 use crate::support::lines;
 
-#[test]
-fn an_installed_scenario_reads_back_through_the_journal_reader() {
-    for scenario in [
-        Scenario::Search,
-        Scenario::Recovering,
-        Scenario::Deadend,
-        Scenario::Stopped,
-    ] {
-        let fs = MemFs::new();
-        let dir = Path::new("/session");
-        let build =
-            install_with_fs(Arc::new(fs.clone()), dir, scenario).expect("the scenario installs");
-        let recording = Recording::read_in(&fs, &dir.join("events.jsonl")).expect("it reads back");
-        assert!(recording.torn().is_none(), "{scenario}");
-        let want = scenario.events().expect("the scenario builds");
-        assert_eq!(lines(recording.events()), lines(&want), "{scenario}");
-        let Payload::SessionStart(start) = &recording.events()[0].payload else {
-            panic!("a journal opens with session.start");
-        };
-        assert_eq!(start.build, build, "{scenario}");
-        assert_eq!(build, togi_watchtest::build(), "{scenario}");
-    }
+#[test_case(Scenario::Search; "search")]
+#[test_case(Scenario::Recovering; "recovering")]
+#[test_case(Scenario::Deadend; "dead end")]
+#[test_case(Scenario::Stopped; "stopped")]
+fn an_installed_scenario_reads_back_through_the_journal_reader(scenario: Scenario) {
+    let fs = MemFs::new();
+    let dir = Path::new("/session");
+    let build =
+        install_with_fs(Arc::new(fs.clone()), dir, scenario).expect("the scenario installs");
+    let recording = Recording::read_in(&fs, &dir.join("events.jsonl")).expect("it reads back");
+    assert!(recording.torn().is_none(), "{scenario}");
+    let want = scenario.events().expect("the scenario builds");
+    assert_eq!(lines(recording.events()), lines(&want), "{scenario}");
+    let Payload::SessionStart(start) = &recording.events()[0].payload else {
+        panic!("a journal opens with session.start");
+    };
+    assert_eq!(start.build, build, "{scenario}");
+    assert_eq!(build, togi_watchtest::build(), "{scenario}");
 }
 
 #[test]

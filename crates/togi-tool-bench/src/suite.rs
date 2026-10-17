@@ -1,14 +1,14 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use sha2::{Digest, Sha256};
 use togi_machine::object_only;
 use togi_sim::replay::Replay;
 use togi_sim::{InvalidMachine, MachineDefinition, Model, file};
+use togi_tool_forecast::Split;
 use togi_tool_trialfacts::Extracts;
 
 use crate::error::Error;
@@ -54,28 +54,6 @@ impl SuiteSource for DiskSource {
         path: &Path,
     ) -> Result<Vec<togi_tool_trialfacts::TrialFact>, togi_tool_trialfacts::ReadError> {
         togi_tool_trialfacts::read(path)
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Split {
-    Dev,
-    Holdout,
-}
-
-impl Split {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Dev => "dev",
-            Self::Holdout => "holdout",
-        }
-    }
-}
-
-impl fmt::Display for Split {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
     }
 }
 

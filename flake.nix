@@ -37,13 +37,6 @@
           ...
         }:
         let
-          goFiles = lib.fileset.unions [
-            ./go.mod
-            ./go.sum
-            ./.golangci.yml
-            ./version.txt
-            ./tools
-          ];
           rustPkgs = pkgs.extend inputs.rust-overlay.overlays.default;
           rustToolchain = rustPkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
           craneLib = (inputs.crane.mkLib rustPkgs).overrideToolchain rustToolchain;
@@ -82,12 +75,17 @@
           rustLinker = lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
             CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS = "-C link-arg=-fuse-ld=mold";
           };
-          # Linting aarch64-apple-darwin from Linux runs C build scripts (criterion's alloca) for that target,
-          # which needs a compiler that takes Apple's flags; the host gcc does not. The unwrapped clang and
+          # Clippy checks the other of the two supported targets from each host: aarch64-apple-darwin from
+          # Linux and x86_64-unknown-linux-gnu from macOS.
+          crossTarget =
+            if pkgs.stdenv.hostPlatform.isLinux then "aarch64-apple-darwin" else "x86_64-unknown-linux-gnu";
+          # Linting the cross target runs C build scripts (criterion's alloca) for it, which needs a compiler
+          # that takes that target's flags; the host's wrapped compiler does not. The unwrapped clang and
           # llvm-ar are cross compilers; alloca.c needs only the compiler's own stddef.h and stdint.h.
-          darwinCrossCc = lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
-            CC_aarch64_apple_darwin = lib.getExe' pkgs.llvmPackages.clang-unwrapped "clang";
-            AR_aarch64_apple_darwin = lib.getExe' pkgs.llvm "llvm-ar";
+          crossCc = {
+            "CC_${lib.replaceStrings [ "-" ] [ "_" ] crossTarget}" =
+              lib.getExe' pkgs.llvmPackages.clang-unwrapped "clang";
+            "AR_${lib.replaceStrings [ "-" ] [ "_" ] crossTarget}" = lib.getExe' pkgs.llvm "llvm-ar";
           };
           # Dependencies read only the manifests and the lock: the dummy source and the vendor directory ignore code.
           depsSource = cargoSources.source { code = allCrates; };
@@ -180,12 +178,6 @@
             git add --all
             git -c user.name=nix -c user.email=nix@localhost commit --quiet --message advisory-db
           '';
-          testPhase = flags: packages: ''
-            runHook preCheck
-            export GOFLAGS=''${GOFLAGS//-trimpath/}
-            go test -p $NIX_BUILD_CORES ${flags} -shuffle=on -tags integration ${packages}
-            runHook postCheck
-          '';
           version = lib.fileContents ./version.txt;
           rev = inputs.self.shortRev or inputs.self.dirtyShortRev or "dev";
           installCompletions = lib.optionalString (pkgs.stdenv.buildPlatform.canExecute pkgs.stdenv.hostPlatform) ''
@@ -200,20 +192,6 @@
             license = lib.licenses.gpl3Plus;
             mainProgram = "togi";
             platforms = [ system ];
-          };
-          goTools = pkgs.buildGo127Module {
-            pname = "togi-go-tools";
-            inherit version;
-            src = lib.fileset.toSource {
-              root = ./.;
-              fileset = goFiles;
-            };
-            vendorHash = "sha256-uPqabZgQGQulf+F3BvMLhv4O0h5jOq12F7K60u5xjtA=";
-            nativeCheckInputs = [ pkgs.gitMinimal ];
-            subPackages = [
-              "tools/cover"
-            ];
-            checkPhase = testPhase "" "./...";
           };
           togiPackage =
             rev:
@@ -239,11 +217,8 @@
           devShells.default = pkgs.mkShell (
             {
               packages = [
-                pkgs.go_1_27
                 pkgs.gh
                 pkgs.gh-token
-                pkgs.gopls
-                pkgs.golangci-lint
                 pkgs.just
                 pkgs.nixfmt
                 pkgs.bashInteractive
@@ -257,15 +232,13 @@
                 pkgs.cargo-shear
                 pkgs.mold
               ];
-              GOTOOLCHAIN = "local";
               TOGI_DEV_SHELL = "1";
             }
             // rustLinker
-            // darwinCrossCc
+            // crossCc
           );
 
           checks = {
-            go-tools = goTools;
             board-test =
               pkgs.runCommand "togi-board-test"
                 {
@@ -296,10 +269,10 @@
                 buildPhaseCargoCommand = ''
                   cargoWithProfile clippy --locked --all-targets -- --deny warnings
                   cargoWithProfile clippy --locked --all-targets --all-features -- --deny warnings
-                  cargoWithProfile clippy --locked --all-targets --target aarch64-apple-darwin -- --deny warnings
+                  cargoWithProfile clippy --locked --all-targets --all-features --target ${crossTarget} -- --deny warnings
                 '';
               }
-              // darwinCrossCc
+              // crossCc
             );
             nextest = craneLib.cargoNextest (
               cargoCheck testSource {
@@ -351,22 +324,6 @@
                 done
                 touch "$out"
               '';
-            lint = config.checks.go-tools.overrideAttrs (old: {
-              pname = "togi-lint";
-              goModules = config.checks.go-tools.goModules;
-              nativeBuildInputs = old.nativeBuildInputs ++ [ pkgs.golangci-lint ];
-              buildPhase = ''
-                runHook preBuild
-                export HOME=$TMPDIR GOLANGCI_LINT_CACHE=$TMPDIR/golangci-lint
-                for target in linux/amd64 darwin/arm64; do
-                  GOOS=''${target%/*} GOARCH=''${target#*/} CGO_ENABLED=0 golangci-lint run ./...
-                done
-                runHook postBuild
-              '';
-              doCheck = false;
-              installPhase = "mkdir -p $out";
-              dontFixup = true;
-            });
             fmt =
               pkgs.runCommand "togi-fmt"
                 {
@@ -376,7 +333,7 @@
                     fileset = lib.fileset.unions [
                       ./flake.nix
                       ./justfile
-                      (lib.fileset.fileFilter (f: f.hasExt "go" || f.hasExt "nix" || f.hasExt "rs") ./.)
+                      (lib.fileset.fileFilter (f: f.hasExt "nix" || f.hasExt "rs") ./.)
                     ];
                   };
                 }
@@ -466,7 +423,6 @@
           formatter = pkgs.treefmt.withConfig {
             runtimeInputs = [
               pkgs.nixfmt
-              pkgs.go_1_27
               pkgs.just
               rustToolchain
             ];
@@ -476,11 +432,6 @@
               formatter.nixfmt = {
                 command = "nixfmt";
                 includes = [ "*.nix" ];
-              };
-              formatter.gofmt = {
-                command = "gofmt";
-                options = [ "-w" ];
-                includes = [ "*.go" ];
               };
               formatter.rustfmt = {
                 command = "rustfmt";

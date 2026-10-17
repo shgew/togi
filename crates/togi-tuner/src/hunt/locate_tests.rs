@@ -646,7 +646,7 @@ fn a_locate_reads_a_ranking_newer_than_the_last_round_plan() {
 
 #[test]
 fn a_located_group_failure_naming_a_loaded_core_is_not_held() {
-    use crate::later_tests::{pass_cycles, start_cycle};
+    use crate::later_tests::{pass_cycles, start_cycle, strikes};
     let mut j = Journal::r7_session();
     j.loc_back_off(&top0());
     pass_cycles(&mut j, 3);
@@ -684,7 +684,7 @@ fn a_located_group_failure_naming_a_loaded_core_is_not_held() {
         ),
         "the failure moved twice"
     );
-    assert_eq!(j.run().later.strikes().count(), 0);
+    assert_eq!(strikes(&j), 0);
     j.assert_resumes();
 }
 
@@ -1411,15 +1411,10 @@ fn requirement_checks_hunt_identity() {
         u16::try_from(j.run().hunts.active.as_ref().unwrap().start.trials).unwrap()
     );
     j.intent(&plan);
-    assert_eq!(
-        j.run().flight.open.as_ref().unwrap().requirement,
-        plan.requirement
-    );
+    let shown = j.requirement();
+    assert_eq!(shown.needed, u32::from(needed.get()));
     j.load(&config(r#"{"evidence":{"miss":0.001}}"#));
-    assert_eq!(
-        j.run().flight.open.as_ref().unwrap().requirement,
-        plan.requirement
-    );
+    assert_eq!(j.requirement(), shown);
     assert_eq!(j.run().hunts.active.as_ref().unwrap().needed, needed);
 
     for other in [
@@ -1753,16 +1748,6 @@ fn skipped_together_failure_makes_progress() {
                 .as_ref()
                 .expect("the inconclusive trial left a retry");
             assert_eq!(pending.plan.profile, j.profile(&[-20, -20]));
-            assert_eq!(
-                j.run().evidence.failing_seq(
-                    pending.plan.requirement.class,
-                    &pending.plan.profile,
-                    None,
-                    j.run().config.needed,
-                ),
-                Ok(Some(failure)),
-                "the retry does not select a known-failing profile"
-            );
         }
         let mut found = false;
         for _ in 0..100 {

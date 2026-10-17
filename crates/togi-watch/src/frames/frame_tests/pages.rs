@@ -2,6 +2,7 @@
 //! 160 by 45, its numeric form under that and its scrolled body under 80 by 30.
 
 use jiff::tz::TimeZone;
+use test_case::test_case;
 use togi_journal::TrialProgress;
 use togi_watchtest::Scenario;
 
@@ -36,47 +37,43 @@ fn title_of(view: View) -> String {
     )
 }
 
-#[test]
-fn every_page_titles_itself_with_its_place_and_its_neighbours_even_scrolled() {
-    for scenario in [Scenario::Checking, Scenario::Stopped, Scenario::Hunt] {
-        let fx = Fixture::scenario(scenario);
-        for view in View::ALL {
-            for size in [(160, 45), (120, 33), (80, 30), (80, 24), (79, 29)] {
-                for scroll in [0, usize::MAX] {
-                    let rows = frame_rows(&fx, view, size, scroll);
-                    let title = rows[2].trim();
-                    let gauges =
-                        view == View::Main && SizeClass::of(size.0, size.1) != SizeClass::Compact;
-                    if gauges {
-                        assert_eq!(
-                            title, "",
-                            "{scenario} Main {size:?}: row 2 is blank at the reference size"
-                        );
-                    } else {
-                        assert_eq!(
-                            title,
-                            title_of(view),
-                            "{scenario} {view:?} {size:?} scrolled {scroll}"
-                        );
-                    }
+#[test_case(Scenario::Checking; "checking")]
+#[test_case(Scenario::Stopped; "stopped")]
+#[test_case(Scenario::Hunt; "hunt")]
+fn every_page_titles_itself_with_its_place_and_its_neighbours_even_scrolled(scenario: Scenario) {
+    let fx = Fixture::scenario(scenario);
+    for view in View::ALL {
+        for size in [(160, 45), (120, 33), (80, 30), (80, 24), (79, 29)] {
+            for scroll in [0, usize::MAX] {
+                let rows = frame_rows(&fx, view, size, scroll);
+                let title = rows[2].trim();
+                let gauges =
+                    view == View::Main && SizeClass::of(size.0, size.1) != SizeClass::Compact;
+                if gauges {
+                    assert_eq!(
+                        title, "",
+                        "{scenario} Main {size:?}: row 2 is blank at the reference size"
+                    );
+                } else {
+                    assert_eq!(
+                        title,
+                        title_of(view),
+                        "{scenario} {view:?} {size:?} scrolled {scroll}"
+                    );
                 }
             }
         }
     }
 }
 
-#[test]
-fn a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name() {
+#[test_case(32, "CORES · 2/9 · <Main|Cycle>"; "the compact neighbours")]
+#[test_case(27, "CORES · 2/9"; "no neighbours")]
+#[test_case(14, "CORES · 2/9"; "the place only")]
+#[test_case(13, "CORES"; "the name only")]
+fn a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name(width: u16, want: &str) {
     let fx = Fixture::scenario(Scenario::Checking);
-    for (width, want) in [
-        (32, "CORES · 2/9 · <Main|Cycle>"),
-        (27, "CORES · 2/9"),
-        (14, "CORES · 2/9"),
-        (13, "CORES"),
-    ] {
-        let rows = frame_rows(&fx, View::Cores, (width, 12), 0);
-        assert_eq!(rows[2].trim(), want, "{width} columns");
-    }
+    let rows = frame_rows(&fx, View::Cores, (width, 12), 0);
+    assert_eq!(rows[2].trim(), want, "{width} columns");
 }
 
 #[test]
@@ -158,37 +155,36 @@ fn one_full_ccd_at_160_by_45_shows_every_core_in_the_numeric_table_over_the_gaug
     assert_eq!(rows[37].trim(), "WHAT HAPPENED");
 }
 
-#[test]
-fn one_cell_under_the_reference_size_is_the_numeric_main() {
+#[test_case((159, 45); "one column under")]
+#[test_case((160, 44); "one row under")]
+fn one_cell_under_the_reference_size_is_the_numeric_main(size: (u16, u16)) {
     let fx = Fixture::scenario(Scenario::Checking);
-    for size in [(159, 45), (160, 44)] {
-        let rows = frame_rows(&fx, View::Main, size, 0);
+    let rows = frame_rows(&fx, View::Main, size, 0);
+    assert!(
+        rows[2].starts_with(" MAIN · 1/9"),
+        "{size:?}: Main names its page: {:?}",
+        rows[2]
+    );
+    let shown = rows.join("\n");
+    assert!(
+        !shown.contains("white=tune"),
+        "{size:?} draws gauges:\n{shown}"
+    );
+    for word in ["tune", "solo", "fail"] {
         assert!(
-            rows[2].starts_with(" MAIN · 1/9"),
-            "{size:?}: Main names its page: {:?}",
-            rows[2]
-        );
-        let shown = rows.join("\n");
-        assert!(
-            !shown.contains("white=tune"),
-            "{size:?} draws gauges:\n{shown}"
-        );
-        for word in ["tune", "solo", "fail"] {
-            assert!(
-                rows[9].contains(word),
-                "{size:?} heading lacks {word:?}: {:?}",
-                rows[9]
-            );
-        }
-        for (y, row) in rows.iter().enumerate().take(26).skip(10) {
-            assert_ne!(row.trim(), "", "{size:?} core row {y}");
-        }
-        assert!(
-            rows[26].trim_start().starts_with("WHAT HAPPENED"),
-            "{size:?}: {:?}",
-            rows[26]
+            rows[9].contains(word),
+            "{size:?} heading lacks {word:?}: {:?}",
+            rows[9]
         );
     }
+    for (y, row) in rows.iter().enumerate().take(26).skip(10) {
+        assert_ne!(row.trim(), "", "{size:?} core row {y}");
+    }
+    assert!(
+        rows[26].trim_start().starts_with("WHAT HAPPENED"),
+        "{size:?}: {:?}",
+        rows[26]
+    );
 }
 
 #[test]
@@ -218,59 +214,61 @@ fn main_at_80_by_30_has_the_numeric_designs_rows() {
     assert_ne!(rows[28].trim(), "", "the footer");
 }
 
-#[test]
-fn under_80_by_30_main_scrolls_and_every_core_is_reachable() {
+#[test_case((79, 29); "79 by 29")]
+#[test_case((80, 29); "80 by 29")]
+#[test_case((79, 30); "79 by 30")]
+#[test_case((60, 20); "60 by 20")]
+#[test_case((40, 12); "40 by 12")]
+fn under_80_by_30_main_scrolls_and_every_core_is_reachable(size: (u16, u16)) {
     let fx = Fixture::scenario(Scenario::Checking);
-    for size in [(79, 29), (80, 29), (79, 30), (60, 20), (40, 12)] {
-        let top = frame_rows(&fx, View::Main, size, 0);
-        let mut sc = screen(View::Main, size.0, size.1, Colours::None, true);
-        let drawn = fx.draw(&sc, fx.now).1;
-        assert!(
-            drawn.scroll > 0,
-            "{size:?}: the numeric body does not fit and must scroll"
+    let top = frame_rows(&fx, View::Main, size, 0);
+    let mut sc = screen(View::Main, size.0, size.1, Colours::None, true);
+    let drawn = fx.draw(&sc, fx.now).1;
+    assert!(
+        drawn.scroll > 0,
+        "{size:?}: the numeric body does not fit and must scroll"
+    );
+    assert!(
+        top.join("\n").contains("compact · scroll for all cores"),
+        "{size:?} does not say that it scrolls:\n{}",
+        top.join("\n")
+    );
+    let zone = TimeZone::UTC;
+    let scene = Scene::new(fx.model.snapshot(), fx.now, &zone, Colours::None);
+    let inner = usize::from(size.0.saturating_sub(1)).saturating_sub(2 + 2);
+    let table: Vec<String> = core_table(&scene, inner)
+        .iter()
+        .map(|line| plain(line).trim().to_owned())
+        .filter(|line| !line.is_empty())
+        .collect();
+    assert!(table.len() > 16, "{size:?}: a heading and sixteen cores");
+    let mut seen = vec![false; table.len()];
+    for scroll in 0..=drawn.scroll {
+        sc.scroll = scroll;
+        let (buf, again) = fx.draw(&sc, fx.now);
+        assert_eq!(
+            again.scroll, drawn.scroll,
+            "{size:?}: the extent does not move"
         );
+        let rows = rows_of(&buf);
         assert!(
-            top.join("\n").contains("compact · scroll for all cores"),
-            "{size:?} does not say that it scrolls:\n{}",
-            top.join("\n")
+            rows[2].trim().starts_with("MAIN"),
+            "{size:?}: the title is sticky"
         );
-        let zone = TimeZone::UTC;
-        let scene = Scene::new(fx.model.snapshot(), fx.now, &zone, Colours::None);
-        let inner = usize::from(size.0.saturating_sub(1)).saturating_sub(2 + 2);
-        let table: Vec<String> = core_table(&scene, inner)
-            .iter()
-            .map(|line| plain(line).trim().to_owned())
-            .filter(|line| !line.is_empty())
-            .collect();
-        assert!(table.len() > 16, "{size:?}: a heading and sixteen cores");
-        let mut seen = vec![false; table.len()];
-        for scroll in 0..=drawn.scroll {
-            sc.scroll = scroll;
-            let (buf, again) = fx.draw(&sc, fx.now);
-            assert_eq!(
-                again.scroll, drawn.scroll,
-                "{size:?}: the extent does not move"
-            );
-            let rows = rows_of(&buf);
-            assert!(
-                rows[2].trim().starts_with("MAIN"),
-                "{size:?}: the title is sticky"
-            );
-            for (n, line) in table.iter().enumerate() {
-                seen[n] |= rows.iter().any(|row| row.contains(line.as_str()));
-            }
+        for (n, line) in table.iter().enumerate() {
+            seen[n] |= rows.iter().any(|row| row.contains(line.as_str()));
         }
-        assert!(
-            seen.iter().all(|&shown| shown),
-            "{size:?}: unreachable rows {:?}",
-            table
-                .iter()
-                .zip(&seen)
-                .filter(|(_, shown)| !**shown)
-                .map(|(line, _)| line)
-                .collect::<Vec<_>>()
-        );
     }
+    assert!(
+        seen.iter().all(|&shown| shown),
+        "{size:?}: unreachable rows {:?}",
+        table
+            .iter()
+            .zip(&seen)
+            .filter(|(_, shown)| !**shown)
+            .map(|(line, _)| line)
+            .collect::<Vec<_>>()
+    );
 }
 
 #[test]

@@ -1,6 +1,7 @@
 use jiff::Timestamp;
 use jiff::tz::{self, TimeZone};
 use ratatui::text::Line;
+use test_case::test_case;
 
 use super::super::super::fit::plain;
 use super::super::super::scene::Scene;
@@ -333,23 +334,33 @@ fn an_important_entry_takes_a_second_row_only_when_one_does_not_fit() {
     assert_eq!(rows.len(), 1);
 }
 
-#[test]
-fn main_history_never_exceeds_its_rows_or_its_width() {
+fn main_story() -> Vec<Entry> {
     let mut story = Vec::new();
     for n in 0..30 {
         story.push(failure(n, "R3 all-core on 00-15 at -30"));
         story.push(pass(n, "core 00 R1 light", 1, 1));
     }
-    let story = newest_first(story);
-    for width in [20, 40, 60, 100] {
-        for height in 1..6 {
-            let rows = main_rows(&story, width, height);
-            assert!(rows.len() <= height, "{width}x{height}: {rows:?}");
-            for row in &rows {
-                assert!(row.chars().count() <= width, "{width}x{height}: {row:?}");
-            }
+    newest_first(story)
+}
+
+#[test_case(20; "20 columns")]
+#[test_case(40; "40 columns")]
+#[test_case(60; "60 columns")]
+#[test_case(100; "100 columns")]
+fn main_history_never_exceeds_its_rows_or_its_width(width: usize) {
+    let story = main_story();
+    for height in 1..6 {
+        let rows = main_rows(&story, width, height);
+        assert!(rows.len() <= height, "{width}x{height}: {rows:?}");
+        for row in &rows {
+            assert!(row.chars().count() <= width, "{width}x{height}: {row:?}");
         }
     }
+}
+
+#[test]
+fn main_history_shows_nothing_in_no_room() {
+    let story = main_story();
     assert!(main_rows(&story, 0, 4).is_empty());
     assert!(main_rows(&story, 80, 0).is_empty());
 }
@@ -459,8 +470,10 @@ fn a_sentence_that_is_no_list_is_cut_to_whole_words_not_counted() {
     );
 }
 
-#[test]
-fn a_round_that_lists_many_cores_keeps_whole_items_and_counts_the_rest() {
+#[test_case(80; "80 columns")]
+#[test_case(100; "100 columns")]
+#[test_case(120; "120 columns")]
+fn a_round_that_lists_many_cores_keeps_whole_items_and_counts_the_rest(width: usize) {
     let round = Entry::new(
         minute(1),
         Tag::Round,
@@ -478,20 +491,18 @@ fn a_round_that_lists_many_cores_keeps_whole_items_and_counts_the_rest() {
         },
         Tone::Plain,
     );
-    for width in [80, 100, 120] {
-        let rows = main_rows(std::slice::from_ref(&round), width, 3);
-        let joined = rows.join(" ");
-        assert!(
-            !joined.contains("..") && !joined.contains('…'),
-            "{width}: {rows:?}"
-        );
-        assert!(
-            joined.contains("core 00 goes deeper to -26"),
-            "{width}: {rows:?}"
-        );
-        assert!(
-            joined.contains("-41") || joined.contains(" more"),
-            "{width}: the cores left out are counted: {rows:?}"
-        );
-    }
+    let rows = main_rows(std::slice::from_ref(&round), width, 3);
+    let joined = rows.join(" ");
+    assert!(
+        !joined.contains("..") && !joined.contains('…'),
+        "{width}: {rows:?}"
+    );
+    assert!(
+        joined.contains("core 00 goes deeper to -26"),
+        "{width}: {rows:?}"
+    );
+    assert!(
+        joined.contains("-41") || joined.contains(" more"),
+        "{width}: the cores left out are counted: {rows:?}"
+    );
 }

@@ -127,12 +127,12 @@ fn config_loaded_refreshes_only_version_rev_and_fixes() {
         unreachable!()
     };
     config.build.version = "9.9.9".into();
-    config.build.fixes = 7;
+    config.build.fixes = FixStamp::through(DefectId::new(7).unwrap());
     config.build.ruleset = 99;
     config.build.evidence = 99;
     let state = replay(&[start(), at(2, "boot-a", 1, &[], config.into())]).unwrap();
     let build = &state.session.unwrap().build;
-    assert_eq!((build.version.as_str(), build.fixes), ("9.9.9", 7));
+    assert_eq!((build.version.as_str(), build.fixes.get()), ("9.9.9", 7));
     assert_eq!((build.ruleset, build.evidence), (10, 1));
 }
 

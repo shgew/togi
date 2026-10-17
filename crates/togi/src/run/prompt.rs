@@ -122,7 +122,7 @@ pub(super) fn ask(
     writeln!(
         out,
         "togi: defect {}: {} (fixed by pull request #{}); {} decisions [{decisions}] affected cores [{cores}]",
-        finding.id.0, finding.title, finding.pr, finding.direction
+        finding.id, finding.title, finding.pr, finding.direction
     )?;
     if !finding.detail.is_empty() {
         writeln!(out, "{}", finding.detail)?;

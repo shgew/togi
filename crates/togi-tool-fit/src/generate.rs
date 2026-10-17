@@ -203,7 +203,6 @@ fn write_ensemble(
             check,
         });
     }
-    let checks: Vec<Check> = fits.iter().map(|fitted| fitted.check.clone()).collect();
-    report(&mut text, &checks)?;
+    report(&mut text, fits.iter().map(|fitted| &fitted.check))?;
     Ok((fits, text))
 }

@@ -32,3 +32,7 @@ ADR 0022 ran Go's race detector as a flake check on every pull request and in `j
 - `just test` reruns every test on every invocation. How long that takes, and how long `just focus` takes, is a measurement, not a decision of this ADR.
 - A test that depends on another test's file effects, or on the clock, is not made to fail by an order change. It fails intermittently or not at all, and the test groups, not shuffling, contain the shared-resource cases.
 - ADR 0021 and ADR 0042 speak of fresh `-shuffle=on` seeds. Rust checks draw none; a substituted check skips only the run.
+
+## Amendment (#633, #1038)
+
+The bullet about the retained Go tools no longer holds: the last of them is a Rust crate, and no check runs `go test` with or without `-shuffle`. The decisions and their reasons are unchanged.

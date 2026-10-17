@@ -114,8 +114,9 @@ fn real_process_since_keeps_what_starts_at_or_after_the_cutoff() {
     assert!(out.contains("since     2100-01-01T00:00:00Z\n"), "{out}");
     assert!(out.contains("Hunts\nhunt  start"), "{out}");
     let hunts = out.split("\nHunts\n").nth(1).unwrap();
-    assert!(
-        hunts.split("\n\n").next().unwrap().lines().count() == 1,
+    assert_eq!(
+        hunts.split("\n\n").next().unwrap().lines().count(),
+        1,
         "{out}"
     );
 }
@@ -280,7 +281,7 @@ fn forecast_run(cores: &[i64], status: togi_tool_forecast::Status) -> togi_tool_
     togi_tool_forecast::Run {
         machine: "m.json".to_owned(),
         seed: 1,
-        split: "dev".to_owned(),
+        split: togi_tool_forecast::Split::Dev,
         outcome: togi_tool_forecast::Outcome {
             status,
             hours: 5.0,

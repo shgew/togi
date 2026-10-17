@@ -1,0 +1,68 @@
+use test_case::test_case;
+
+use super::*;
+use crate::fakes::linux_host;
+
+#[test_case("unix", CfgValue::True ; "set name")]
+#[test_case(r#"target_os = "linux""#, CfgValue::True ; "set key and value")]
+#[test_case(r#"target_os = "macos""#, CfgValue::False ; "set key with another value")]
+#[test_case("windows", CfgValue::False ; "well-known name not set")]
+#[test_case("debug_assertions", CfgValue::True ; "debug assertions")]
+#[test_case("miri", CfgValue::False ; "miri")]
+#[test_case("test", CfgValue::Unknown ; "test")]
+#[test_case("not(test)", CfgValue::Unknown ; "not test")]
+#[test_case(r#"feature = "x""#, CfgValue::Unknown ; "cargo feature")]
+#[test_case("my_build", CfgValue::Unknown ; "custom cfg")]
+#[test_case(r#"not(feature = "x")"#, CfgValue::Unknown ; "not feature")]
+#[test_case(r#"not(target_os = "macos")"#, CfgValue::True ; "not false")]
+#[test_case("not(unix)", CfgValue::False ; "not true")]
+#[test_case(r#"all(unix, target_os = "macos")"#, CfgValue::False ; "all with a false")]
+#[test_case("all(unix, test)", CfgValue::Unknown ; "all true and unknown")]
+#[test_case("all(windows, test)", CfgValue::False ; "all false then unknown")]
+#[test_case("all(test, windows)", CfgValue::False ; "all unknown then false")]
+#[test_case("all()", CfgValue::True ; "empty all")]
+#[test_case("any()", CfgValue::False ; "empty any")]
+#[test_case(r#"any(target_os = "macos", test)"#, CfgValue::Unknown ; "any false and unknown")]
+#[test_case("any(unix, test)", CfgValue::True ; "any true then unknown")]
+#[test_case("any(test, unix)", CfgValue::True ; "any unknown then true")]
+#[test_case("any(windows, my_build)", CfgValue::Unknown ; "any false and custom")]
+#[test_case("true", CfgValue::True ; "true literal")]
+#[test_case("false", CfgValue::False ; "false literal")]
+#[test_case("all(unix, not(any(windows, miri)))", CfgValue::True ; "nested")]
+#[test_case(r#"any(all(unix, target_os = "macos"), test)"#, CfgValue::Unknown ; "nested unknown")]
+#[test_case("unix,", CfgValue::Unknown ; "trailing comma at the top")]
+#[test_case("all(unix,)", CfgValue::True ; "trailing comma in all")]
+#[test_case("any(windows,)", CfgValue::False ; "trailing comma in any")]
+#[test_case("all (unix)", CfgValue::True ; "space before the parenthesis")]
+#[test_case("all(\n    unix, // on unix\n    /* and */ target_os = \"linux\",\n)", CfgValue::True ; "comments and newlines")]
+#[test_case(r#"target_os = "li\x6eux""#, CfgValue::True ; "hex escape")]
+#[test_case(r#"target_os = "li\u{6e}ux""#, CfgValue::True ; "unicode escape")]
+#[test_case(r#"target_os = r"linux""#, CfgValue::True ; "raw string")]
+#[test_case(r##"target_os = r#"linux"#"##, CfgValue::True ; "raw string with hashes")]
+#[test_case(r###"target_os = r##"mac"os"##"###, CfgValue::False ; "raw string holding a quote")]
+#[test_case("r#unix", CfgValue::True ; "raw identifier")]
+#[test_case("all(unix", CfgValue::Unknown ; "unclosed call")]
+#[test_case("unix windows", CfgValue::Unknown ; "two names")]
+#[test_case("target_os =", CfgValue::Unknown ; "no value")]
+#[test_case("target_os = linux", CfgValue::Unknown ; "unquoted value")]
+#[test_case(r#"target_os = "linux"#, CfgValue::Unknown ; "unclosed string")]
+#[test_case("not(unix, windows)", CfgValue::Unknown ; "not of two")]
+#[test_case("not()", CfgValue::Unknown ; "not of none")]
+#[test_case(r#"version("1.80")"#, CfgValue::Unknown ; "unsupported operator")]
+#[test_case(r#"all(windows, version("1.80"))"#, CfgValue::False ; "unsupported operator beside a false")]
+#[test_case("", CfgValue::Unknown ; "empty")]
+fn predicates(predicate: &str, want: CfgValue) {
+    assert_eq!(linux_host().eval(predicate), want);
+}
+
+#[test_case("derive(Debug)", None ; "not a cfg")]
+#[test_case("cfg_attr(windows, derive(Debug))", None ; "cfg_attr")]
+#[test_case("cfg(unix)", Some(CfgValue::True) ; "true cfg")]
+#[test_case("cfg(windows)", Some(CfgValue::False) ; "false cfg")]
+#[test_case("cfg(windows, )", Some(CfgValue::False) ; "trailing comma")]
+#[test_case("cfg", Some(CfgValue::Unknown) ; "no predicate")]
+#[test_case("cfg(all(unix,, windows))", Some(CfgValue::Unknown) ; "does not parse")]
+#[test_case("cfg(unix) extra", Some(CfgValue::Unknown) ; "text after the predicate")]
+fn attributes(body: &str, want: Option<CfgValue>) {
+    assert_eq!(linux_host().attribute(body.as_bytes()), want);
+}

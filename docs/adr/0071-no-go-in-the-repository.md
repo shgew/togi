@@ -22,3 +22,7 @@ By that rule `release` ([#630](https://github.com/shgew/togi/issues/630)), `revi
 ## Consequences
 
 The development programs follow the same conventions as togi itself, and the dev shell, checks and dependency updates shrink to Rust, Nix and nushell once [#1038](https://github.com/shgew/togi/issues/1038) lands. A Rust tool's dependencies enter `Cargo.lock` and pass `cargo deny` like togi's own; a tool that talks to GitHub runs `gh api`, as `togi-tool-release` does, rather than linking an HTTP client and TLS library. Until the last rewrite lands, Go remains in the dev shell for the programs still in it.
+
+## Amendment (#633, #1038)
+
+The last rewrite, `cover` ([#633](https://github.com/shgew/togi/issues/633)), landed together with the removal of `go.mod`, `go.sum`, `.golangci.yml`, the Go toolchain in the dev shell, the `go-tools` and Go `lint` checks and treefmt's Go formatter ([#1038](https://github.com/shgew/togi/issues/1038)), in one pull request: deleting the last Go package left a module with no packages, on which `go test` and golangci-lint fail. The decision and its reasons are unchanged.

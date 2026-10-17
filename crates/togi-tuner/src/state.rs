@@ -378,11 +378,6 @@ impl State {
     }
 
     #[cfg(test)]
-    pub(crate) fn run_mut_for_test(&mut self) -> Option<&mut Run> {
-        self.run.as_mut()
-    }
-
-    #[cfg(test)]
     pub(crate) fn visits(&self) -> u64 {
         self.run().map_or(0, |run| {
             run.evidence.take_visits() + run.r7.targets.take_visits()

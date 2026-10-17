@@ -102,6 +102,9 @@ object_only! {
         pub status: String,
         #[serde(default, deserialize_with = "nullable", skip_serializing_if = "String::is_empty")]
         pub sha: String,
+        /// What a fix made only in the pull request body changed, for a fix with no commit.
+        #[serde(default, deserialize_with = "nullable", skip_serializing_if = "String::is_empty")]
+        pub body: String,
         #[serde(default, deserialize_with = "nullable", skip_serializing_if = "String::is_empty")]
         pub reason: String,
         #[serde(default, deserialize_with = "nullable", skip_serializing_if = "is_zero")]
@@ -308,14 +311,18 @@ fn check_finding(f: &RecordFinding) -> Result<(), Error> {
         .map_err(|error| Error::wrap("compile a pattern", error.clone()))?;
     let o = &f.outcome;
     let valid = match o.status.as_str() {
-        "fixed" => full_sha.is_match(&o.sha) && o.reason.is_empty() && o.issue == 0,
-        "rejected" => !o.reason.is_empty() && o.sha.is_empty() && o.issue == 0,
-        "deferred" => o.issue > 0 && o.sha.is_empty() && o.reason.is_empty(),
+        "fixed" => {
+            let commit = full_sha.is_match(&o.sha) && o.body.is_empty();
+            let body = o.sha.is_empty() && !o.body.is_empty();
+            (commit || body) && o.reason.is_empty() && o.issue == 0
+        }
+        "rejected" => !o.reason.is_empty() && o.sha.is_empty() && o.body.is_empty() && o.issue == 0,
+        "deferred" => o.issue > 0 && o.sha.is_empty() && o.body.is_empty() && o.reason.is_empty(),
         _ => false,
     };
     if !valid {
         return Err(Error::new(format!(
-            "finding from {}: outcome must be fixed with a full sha, rejected with a reason, or deferred with an issue number",
+            "finding from {}: outcome must be fixed with a full sha or a description of the pull request body edit, rejected with a reason, or deferred with an issue number",
             f.source
         )));
     }
@@ -417,6 +424,9 @@ impl RecordModel {
 impl RecordOutcome {
     fn text(&self) -> String {
         match self.status.as_str() {
+            "fixed" if self.sha.is_empty() => {
+                format!("fixed in the pull request body: {}", self.body)
+            }
             "fixed" => format!("fixed in {}", self.sha),
             "rejected" => format!("rejected: {}", self.reason),
             _ => format!("deferred: #{}", self.issue),
