@@ -574,6 +574,7 @@ fn reconstructed_0106_to_0119_uses_the_recorded_ccd1_target() {
         .collect();
     let mut journal = crate::testkit::Journal::on(&ids, infos, &starts);
     journal.profile_change(&failing_profile);
+    let mut sources = Vec::new();
     for (top, own, mhz) in [
         (1.0470696687698364, 1.0286043882369995, 5029),
         (1.0468533039093018, 1.0283397436141968, 5029),
@@ -581,7 +582,7 @@ fn reconstructed_0106_to_0119_uses_the_recorded_ccd1_target() {
         (1.047187328338623, 1.0287102460861206, 5029),
         (1.046082615852356, 1.0274772644042969, 5026),
     ] {
-        journal.r7_fact(
+        sources.push(journal.r7_fact(
             true,
             &ccd1,
             &[
@@ -591,8 +592,32 @@ fn reconstructed_0106_to_0119_uses_the_recorded_ccd1_target() {
                 .requests(&[(10, top), (11, own)])
                 .top(&[10])
                 .clocks(&[(1, mhz)]),
-        );
+        ));
     }
+    // Install the recorded first CCD1 partial in the cycle before folding its live failure.
+    // The default cycle contains the full CCD, not an arbitrary loaded subset.
+    journal.open_default_cycle();
+    let (step, _) = journal
+        .run()
+        .checking
+        .locate(class(0, &ccd1, 120), None)
+        .unwrap();
+    journal.append(
+        togi_journal::CheckingChain {
+            cycle: journal.run().checking.open().unwrap().number,
+            step: NonZeroU32::new(u32::try_from(step).unwrap() + 1).unwrap(),
+            ccd: CcdId(1),
+            workload: workload(0),
+            groups: vec![set(&[10])],
+            cores: set(&[8, 9, 11, 12, 13, 14, 15]),
+            source_seqs: sources.clone(),
+            profile: journal.profile(&failing_profile).offsets(),
+            part: NonZeroU32::MIN,
+            rederived: None,
+        }
+        .into(),
+        &sources,
+    );
     journal.r7_failed(
         &[8, 9, 11, 12, 13, 14, 15],
         &failing_profile,

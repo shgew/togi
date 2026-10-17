@@ -553,9 +553,33 @@ fn cycle_plan_runs_no_part_during_a_rerun() {
     let plan = j.next_trial();
     assert_eq!(plan.load, Load::Many(set(&[0, 3])));
     run(&mut j, &plan, Outcome::Failure, &[], Some(3));
-    for _ in 0..3 {
-        decide_next(&mut j);
-    }
+    let attribution = j.next_decision();
+    assert!(matches!(attribution.payload, DecisionPayload::Failure(_)));
+    j.decide(attribution);
+    let backoff = j.next_decision();
+    let DecisionPayload::TunerDecision(moved) = &backoff.payload else {
+        panic!("expected a backoff, got {backoff:?}");
+    };
+    assert_eq!((moved.core, moved.to_offset.get()), (core(3), -39));
+    assert_eq!(moved.decision, togi_journal::Decision::Backoff);
+    j.decide(backoff);
+    // Without a failure clock there is no V*: one count leaves no room before the failure point.
+    let limit = j.next_decision();
+    let DecisionPayload::CorePhase(transition) = &limit.payload else {
+        panic!("expected the failure-point limit, got {limit:?}");
+    };
+    assert_eq!(
+        (transition.core, transition.from, transition.to),
+        (
+            core(3),
+            togi_journal::CorePhase::HasRoom,
+            togi_journal::CorePhase::AtLimit,
+        )
+    );
+    j.decide(limit);
+    let change = j.next_decision();
+    assert!(matches!(change.payload, DecisionPayload::ProfileChange(_)));
+    j.decide(change);
     assert!(!j.run().reruns.is_empty());
     let Action::RunTrial(rerun) = j.next() else {
         panic!("the failure did not rerun");
