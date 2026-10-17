@@ -1,9 +1,9 @@
 //! The model: the journal folded into the facts one frame shows.
 //!
-//! [`Model::fold`] takes each event once, through the journal's and the tuner's own states. The tuner's
-//! projection and forecast are computed once per change, on the first [`Model::snapshot`] after it, never per
-//! frame. The views keep the tuner's plan types and add only what the journal says about them: when, why and
-//! after what. Raw facts stay raw; the frames escape them at output.
+//! [`Model::fold_batch`] takes each batch once, through the journal's and the tuner's own states, retaining
+//! outcomes only for its last trial end. The tuner's projection and forecast are computed once per change, on
+//! the first [`Model::snapshot`] after it, never per frame. The views keep the tuner's plan types and add only
+//! what the journal says about them: when, why and after what. Raw facts stay raw; the frames escape them at output.
 
 use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet};
@@ -38,6 +38,17 @@ pub enum FoldError {
     /// The tuner's state refused an event.
     #[error("{0}")]
     Tuner(#[from] togi_tuner::FoldError),
+}
+
+/// The first event a batch could not fold.
+#[derive(Debug, thiserror::Error)]
+#[error("cannot fold journal event at batch index {index}")]
+pub struct BatchFoldError {
+    /// The zero-based index of the refused event within the batch.
+    pub index: usize,
+    /// Why the model refused it.
+    #[source]
+    pub source: FoldError,
 }
 
 /// Where a core stands on the dashboard.
@@ -826,12 +837,21 @@ impl Model {
         self.fold_ending(event, true)
     }
 
-    /// [`Model::fold`], where `keep_outcomes` says whether a trial end folded now keeps what the trial in flight
-    /// led to, for the frame between trials to show. A caller folding several events before the next frame passes
-    /// `true` only for the last trial end among them, since a later end or any stop replaces what an earlier one
-    /// kept, so it computes one projection instead of one per trial; an event other than a session start or a
-    /// trial end keeps what the last one kept.
-    pub fn fold_ending(&mut self, event: &Event, keep_outcomes: bool) -> Result<(), FoldError> {
+    /// Folds a batch in journal order, stopping at the first refused event. Only the last trial end retains its
+    /// pre-end outcomes for the next frame; a batch without a trial end leaves the previous outcomes in place.
+    /// An empty batch leaves the model unchanged.
+    pub fn fold_batch(&mut self, events: &[Event]) -> Result<(), BatchFoldError> {
+        let last_end = events
+            .iter()
+            .rposition(|event| matches!(event.payload, Payload::TrialEnd(_)));
+        for (at, event) in events.iter().enumerate() {
+            self.fold_ending(event, last_end == Some(at))
+                .map_err(|source| BatchFoldError { index: at, source })?;
+        }
+        Ok(())
+    }
+
+    fn fold_ending(&mut self, event: &Event, keep_outcomes: bool) -> Result<(), FoldError> {
         if let Some(problem) = &self.problem {
             return Err(problem.clone());
         }
@@ -947,14 +967,8 @@ impl Model {
 /// Folds events into a new model, stopping at the first one the model refuses. The model is then in its problem
 /// state, like one that was folded event by event.
 pub fn project(events: &[Event]) -> Model {
-    let last_end = events
-        .iter()
-        .rposition(|event| matches!(event.payload, Payload::TrialEnd(_)));
     let mut model = Model::new();
-    for (at, event) in events.iter().enumerate() {
-        if model.fold_ending(event, last_end == Some(at)).is_err() {
-            break;
-        }
-    }
+    // A refused batch leaves the model in the problem state returned to the caller.
+    let _ = model.fold_batch(events);
     model
 }
