@@ -803,6 +803,16 @@ impl Journal {
         self.state.run().unwrap()
     }
 
+    /// The open trial's requirement as the dashboard shows it.
+    pub(crate) fn requirement(&self) -> crate::TrialRequirement {
+        self.state.requirement().expect("a trial is open")
+    }
+
+    /// Where the last closed trial's requirement stood when it ended.
+    pub(crate) fn history(&self) -> crate::TrialHistory {
+        self.state.trial_history().expect("a trial closed")
+    }
+
     /// Starts round `round` moving `cores` to `profile`, needing `trials` passes of 120 s.
     pub(crate) fn round_start(
         &mut self,
